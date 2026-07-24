@@ -201,21 +201,41 @@ export class RpcIdentityProvider implements IdentityProvider {
       // (e.g. #849980), so a 1..N scan can't find them. Instead read the Transfer(to=address)
       // logs — `to` is indexed, so this is a cheap filter — and return the newest token this
       // address still owns (it may have transferred some out since).
-      const logs = await client.getLogs({
-        address: chain.registry,
-        event: {
-          type: 'event',
-          name: 'Transfer',
-          inputs: [
-            { name: 'from', type: 'address', indexed: true },
-            { name: 'to', type: 'address', indexed: true },
-            { name: 'tokenId', type: 'uint256', indexed: true },
-          ],
-        },
-        args: { to: address },
-        fromBlock: 0n,
-        toBlock: 'latest',
-      })
+      let logs: Array<{ args?: unknown }> = []
+      try {
+        logs = await client.getLogs({
+          address: chain.registry,
+          event: {
+            type: 'event',
+            name: 'Transfer',
+            inputs: [
+              { name: 'from', type: 'address', indexed: true },
+              { name: 'to', type: 'address', indexed: true },
+              { name: 'tokenId', type: 'uint256', indexed: true },
+            ],
+          },
+          args: { to: address },
+          fromBlock: 0n,
+          toBlock: 'latest',
+        })
+      } catch {
+        // Some public RPCs (X Layer caps getLogs at 100 blocks) can't enumerate the
+        // owner's tokens. balanceOf > 0 is still a REAL on-chain proof that this address
+        // holds an identity in the registry — return a partial identity rather than
+        // pretending the agent doesn't exist. Callers surface "resolve by token id for
+        // the full record".
+        return {
+          agentId: `${chain.caipPrefix}:8004/owned-by-${address.toLowerCase()}`,
+          tokenId: 0,
+          owner: address,
+          registrationUri: '',
+          domain: '',
+          valid: false,
+          registeredAt: '',
+          chain: chain.chainName as AgentIdentity['chain'],
+          partial: true,
+        }
+      }
       const tokenIds = [...new Set(logs.map((l) => (l.args as { tokenId?: bigint }).tokenId).filter((t): t is bigint => t !== undefined))].reverse()
       for (const tokenId of tokenIds) {
         try {
@@ -280,6 +300,18 @@ export function createIdentityProvider(env: NodeJS.ProcessEnv = process.env): Id
       rpcUrl: ARC_RPC,
       registry: CONTRACTS.identityRegistry as `0x${string}`,
       caipPrefix: 'eip155:5042002',
+    },
+    {
+      // OKX.AI's ERC-8004 IdentityRegistry on X Layer mainnet (verified live: our own
+      // ASP identities #6271/#8913 resolve via ownerOf, tokenURI points at the OKX CDN
+      // agent card). Makes any OKX.AI agent verifiable by token id; owner-address
+      // queries degrade to an existence check (the public RPC caps getLogs at 100
+      // blocks, so token enumeration by owner isn't possible there).
+      chainId: 196,
+      chainName: 'xlayer',
+      rpcUrl: env.XLAYER_RPC_URL ?? 'https://rpc.xlayer.tech',
+      registry: '0x8004a169fb4a3325136eb29fa0ceb6d2e539a432' as `0x${string}`,
+      caipPrefix: 'eip155:196',
     },
   ]
 

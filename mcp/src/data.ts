@@ -7,7 +7,7 @@
  * chain metadata (CHAIN_CONFIG) and the capability manifest (listCapabilities).
  */
 
-export type ChainName = 'arc' | 'ethereum' | 'base' | 'arbitrum' | 'stellar' | 'algorand'
+export type ChainName = 'arc' | 'xlayer' | 'ethereum' | 'base' | 'arbitrum' | 'stellar' | 'algorand'
 
 export type AgentIdentity = {
   agentId: string
@@ -18,6 +18,10 @@ export type AgentIdentity = {
   valid: boolean
   registeredAt: string
   chain: ChainName
+  /** True when only EXISTENCE could be proven (owner holds an identity token) but the
+   *  token id could not be enumerated (e.g. X Layer's public RPC caps getLogs), so
+   *  tokenId/tokenURI fields are unset. Resolve by token id for the full identity. */
+  partial?: boolean
 }
 
 export type AgentActionHistory = {

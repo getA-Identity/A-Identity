@@ -127,8 +127,10 @@ export default function VerifyStepper({ identity, reputation, query, onComplete 
       </div>
       <div className="divide-y divide-border/60">
         <StepRow state={state(1)} ok={verified} Icon={Fingerprint} title="Resolve identity" standard="ERC-8004">
-          {verified && identity ? (
-            <>Live read from the IdentityRegistry on Circle Arc: token <b className="font-mono text-foreground">#{identity.tokenId}</b>, owner <b className="font-mono text-foreground">{identity.owner.slice(0, 6)}…{identity.owner.slice(-4)}</b>. The identity exists on-chain.</>
+          {verified && identity?.partial ? (
+            <>Live read from the OKX.AI IdentityRegistry on X Layer: this wallet <b className="text-foreground">holds an ERC-8004 identity token</b>. The public RPC cannot enumerate the token id; search by agent id for the full record.</>
+          ) : verified && identity ? (
+            <>Live read from the IdentityRegistry on {identity.chain === 'xlayer' ? 'X Layer (OKX.AI)' : 'Circle Arc'}: token <b className="font-mono text-foreground">#{identity.tokenId}</b>, owner <b className="font-mono text-foreground">{identity.owner.slice(0, 6)}…{identity.owner.slice(-4)}</b>. The identity exists on-chain.</>
           ) : verified ? (
             <>Registered on the platform with a verified on-chain anchor.</>
           ) : (

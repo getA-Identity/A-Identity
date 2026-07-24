@@ -80,7 +80,7 @@ export const PROOF = {
   engineering: {
     tests: 163,
     deterministicReputation: true,
-    liveOnchainReads: 'ERC-8004 IdentityRegistry + ValidationRegistry (KYA) on Circle Arc, read live via viem',
+    liveOnchainReads: 'ERC-8004 IdentityRegistry + ValidationRegistry (KYA) on Circle Arc, plus the OKX.AI IdentityRegistry on X Layer mainnet (any OKX.AI agent resolves by token id or owner address), read live via viem',
     onchainReputationWrites: 'ERC-8004 ReputationRegistry on Circle Arc: the score is anchored on-chain as a signed observer attestation (A1)',
     standards: ['ERC-8004', 'x402'],
     reputationBasis: 'real on-chain settlements + verified identity credit + tenure + real job outcomes (behavior) — see /methodology',

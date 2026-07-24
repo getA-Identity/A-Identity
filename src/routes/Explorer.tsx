@@ -149,7 +149,7 @@ function TrustProfile({ identity, reputation, query }: { identity: AgentIdentity
   const score = reputation?.score ?? 0
   const shownScore = useCountUp(score)
   const verdict = riskOf(score, reputation?.kya, verified, reputation?.sybil?.level)
-  const name = reputation?.name || (identity ? `Agent #${identity.tokenId}` : query)
+  const name = reputation?.name || (identity && !identity.partial ? `Agent #${identity.tokenId}` : identity?.partial ? 'OKX.AI agent' : query)
   const bd = reputation?.breakdown
   const beh = reputation?.behavioral
   const owner = identity?.owner
@@ -183,9 +183,12 @@ function TrustProfile({ identity, reputation, query }: { identity: AgentIdentity
             )}
           </div>
           <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 font-mono text-xs text-foreground/45">
-            {identity && <span>#{identity.tokenId}</span>}
+            {identity && !identity.partial && <span>#{identity.tokenId}</span>}
             {owner && <CopyAddr value={owner} href={arcUrl} />}
-            <span className="rounded bg-foreground/[0.06] px-1.5 py-0.5 text-[10px] uppercase tracking-wide">Arc testnet</span>
+            <span className="rounded bg-foreground/[0.06] px-1.5 py-0.5 text-[10px] uppercase tracking-wide">
+              {identity?.chain === 'xlayer' ? 'X Layer mainnet' : 'Arc testnet'}
+            </span>
+            {identity?.partial && <span className="text-[11px] normal-case">identity held on-chain; search by token id for the full record</span>}
           </div>
         </div>
       </div>

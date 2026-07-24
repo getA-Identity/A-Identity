@@ -91,9 +91,15 @@ async function gather(agentId: string): Promise<Bundle> {
   const provider = createIdentityProvider()
   const identity: Bundle['identity'] = await withTimeout(provider.resolve(onchainQuery), RPC_TIMEOUT_MS, null)
 
-  const tokenId =
-    (platform?.onchainAgentId ? asTokenId(platform.onchainAgentId) : null) ??
-    (identity ? BigInt(identity.tokenId) : asTokenId(q))
+  // Bundle.tokenId feeds ARC-scoped reads (ValidationRegistry KYA, reputation
+  // attestation), so it must only be set for Arc identities. An X Layer (OKX.AI)
+  // token id must never be looked up in Arc's registries: the same numeric id can
+  // belong to a different agent there. Partial identities carry no usable id.
+  const chainIsArc = !identity || identity.chain === 'arc'
+  const tokenId = chainIsArc
+    ? ((platform?.onchainAgentId ? asTokenId(platform.onchainAgentId) : null) ??
+       (identity && !identity.partial ? BigInt(identity.tokenId) : asTokenId(q)))
+    : null
 
   // On-chain KYA validation summary (real ValidationRegistry read), when a token id is
   // known. Also timeout-guarded.
@@ -220,13 +226,14 @@ export async function verifyAgent(agentId: string) {
     liveness,
     identity: b.identity
       ? {
-          tokenId: b.identity.tokenId,
+          tokenId: b.identity.partial ? null : b.identity.tokenId,
           owner: b.identity.owner,
           chain: b.identity.chain,
-          registrationUri: b.identity.registrationUri,
+          registrationUri: b.identity.registrationUri || null,
           domain: b.identity.domain || null,
           valid: b.identity.valid,
-          registeredAt: b.identity.registeredAt,
+          registeredAt: b.identity.registeredAt || null,
+          partial: b.identity.partial ?? false,
         }
       : null,
     kya_onchain: b.validation ?? null,
@@ -298,7 +305,7 @@ export async function agentPassport(agentId: string) {
     name: b.platform?.name ?? null,
     standard: 'ERC-8004',
     identity: b.identity
-      ? { tokenId: b.identity.tokenId, owner: b.identity.owner, chain: b.identity.chain, registrationUri: b.identity.registrationUri, domain: b.identity.domain || null, valid: b.identity.valid, registeredAt: b.identity.registeredAt }
+      ? { tokenId: b.identity.partial ? null : b.identity.tokenId, owner: b.identity.owner, chain: b.identity.chain, registrationUri: b.identity.registrationUri || null, domain: b.identity.domain || null, valid: b.identity.valid, registeredAt: b.identity.registeredAt || null, partial: b.identity.partial ?? false }
       : null,
     verified: b.onchainVerified,
     liveness,

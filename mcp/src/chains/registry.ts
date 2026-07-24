@@ -135,13 +135,16 @@ export const CHAINS: ChainDescriptor[] = [
     rpcUrls: ['https://rpc.xlayer.tech'],
     explorer: 'https://www.oklink.com/xlayer',
     contracts: {
-      // Verify the canonical USDC address on X Layer before wiring payments.
+      // OKX.AI's live ERC-8004 IdentityRegistry (verified: our ASP identities #6271/#8913
+      // resolve via ownerOf; tokenURI serves the OKX CDN agent card). Payments still
+      // pending: verify the canonical USDC address on X Layer before wiring them.
+      identityRegistry: '0x8004a169fb4a3325136eb29fa0ceb6d2e539a432',
     },
     confirmations: 5,
     stablecoins: ['USDC', 'USDT'],
     signerEnvVar: 'XLAYER_SIGNER_KEY',
     rpcEnvVar: 'XLAYER_RPC_URL',
-    identity: { standard: 'ERC-8004', erc8004Native: true, note: 'ERC-8004 registry to be deployed; verify USDC + CCTP first.' },
+    identity: { standard: 'ERC-8004', erc8004Native: true, note: 'OKX.AI identity registry LIVE (read-side wired); payment rails still planned.' },
     payment: { x402: true, note: 'x402 over USDC once the USDC address is confirmed.' },
   },
 

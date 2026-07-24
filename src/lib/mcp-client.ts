@@ -54,6 +54,9 @@ export type AgentIdentity = {
   registeredAt: string
   registrationUri?: string
   chain?: string
+  /** Existence proven (owner holds an identity token) but the token id could not be
+   *  enumerated on this chain's public RPC; tokenId is 0 and metadata is unset. */
+  partial?: boolean
 }
 
 export type Behavioral = {
