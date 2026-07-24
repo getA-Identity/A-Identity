@@ -127,7 +127,7 @@ async function gather(agentId: string): Promise<Bundle> {
     if ('error' in r) {
       reputation = { ...computeAgentReputation({ settledCount: 0, rejected: 0, onchainRegistered: onchainVerified, createdAt: createdAt ?? new Date() }), basis: 'onchain-identity+tenure', behavioral: null, sybil: null }
     } else {
-      reputation = { score: r.score, breakdown: r.breakdown, settledOnchain: r.settledOnchain, settledUsd: r.settledUsd, basis: 'platform-settlements+identity+tenure+behavior', behavioral: r.behavioral, sybil: r.sybil }
+      reputation = { score: r.score, breakdown: r.breakdown, settledOnchain: r.settledOnchain, settledEffective: r.settledEffective, settledUsd: r.settledUsd, basis: 'platform-settlements+identity+tenure+behavior', behavioral: r.behavioral, sybil: r.sybil }
     }
   } else {
     reputation = {
@@ -195,6 +195,7 @@ export async function reputationScore(agentId: string) {
     behavioral: b.reputation.behavioral,
     sybil: b.reputation.sybil,
     settledOnchain: b.reputation.settledOnchain,
+    settledEffective: b.reputation.settledEffective,
     settledUsd: b.reputation.settledUsd,
     // A1: the latest ERC-8004 on-chain anchor of this score (null if none published), so a
     // caller can verify the score on-chain instead of trusting this response.
@@ -246,7 +247,7 @@ export async function agentPassport(agentId: string) {
       : null,
     verified: b.onchainVerified,
     kya: { status: b.kyaStatus, revoked: b.revoked, onchain: b.validation ?? null },
-    reputation: { score: b.reputation.score, breakdown: b.reputation.breakdown, behavioral: b.reputation.behavioral, sybil: b.reputation.sybil, settledOnchain: b.reputation.settledOnchain, settledUsd: b.reputation.settledUsd, onchainAttestation: getReputationAttestation(b.tokenId), basis: b.reputation.basis },
+    reputation: { score: b.reputation.score, breakdown: b.reputation.breakdown, behavioral: b.reputation.behavioral, sybil: b.reputation.sybil, settledOnchain: b.reputation.settledOnchain, settledEffective: b.reputation.settledEffective, settledUsd: b.reputation.settledUsd, onchainAttestation: getReputationAttestation(b.tokenId), basis: b.reputation.basis },
     risk: { decision: risk.decision, level: risk.risk, reasons: risk.reasons },
     platform: b.platform
       ? {

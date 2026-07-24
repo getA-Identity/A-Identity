@@ -17,6 +17,9 @@
 
 const DAY_MS = 86_400_000
 
+/** Recency half-life: a settlement's score weight halves every 90 days. */
+const HALF_LIFE_DAYS = 90
+
 /** The real, verifiable signals an agent's score is computed from. */
 export type ReputationSignals = {
   /** Count of instructions that settled on-chain (status executed_onchain). */
@@ -29,6 +32,12 @@ export type ReputationSignals = {
   createdAt: string | number | Date
   /** Total USD settled on-chain (carried through for display; not part of the score). */
   settledUsd?: number
+  /**
+   * Timestamps of the individual on-chain settlements, for recency weighting. When absent,
+   * every settlement weighs 1 (the pre-decay behavior), so callers without per-settlement
+   * timestamps keep scoring exactly as before.
+   */
+  settledAt?: Array<string | number | Date>
   // ── behavioral signals (all optional; absent/zero => neutral, score unchanged) ──
   /** Marketplace jobs this agent completed as the worker (task status 'released'). */
   completedTasks?: number
@@ -44,6 +53,9 @@ export type ReputationResult = {
   score: number
   breakdown: { settlement: number; validation: number; tenure: number; behavior: number }
   settledOnchain: number
+  /** Recency-weighted settlement mass actually scored (== settledOnchain when no
+   *  per-settlement timestamps were supplied). Surfaced so the decay is auditable. */
+  settledEffective: number
   settledUsd: number
 }
 
@@ -79,10 +91,25 @@ function behaviorAdjustment(s: ReputationSignals): number {
  */
 export function computeAgentReputation(s: ReputationSignals, asOf: Date = new Date()): ReputationResult {
   const total = s.settledCount + s.rejected
+  // Recency decay (time-weighting): a settlement's weight halves every HALF_LIFE_DAYS, so
+  // a score is dominated by RECENT verified activity and an agent cannot coast forever on
+  // ancient history. Only the settlement-volume curve decays; the validation share stays a
+  // ratio of raw counts (a rejection does not become "clean" by aging). Without timestamps
+  // every settlement weighs 1 (backward compatible). An unparseable timestamp weighs 1
+  // (neutral), never NaN.
+  let effectiveSettled = s.settledCount
+  if (Array.isArray(s.settledAt) && s.settledAt.length > 0) {
+    effectiveSettled = s.settledAt.reduce((sum: number, t) => {
+      const ms = new Date(t).getTime()
+      if (!Number.isFinite(ms)) return sum + 1
+      const ageDays = Math.max(0, (asOf.getTime() - ms) / DAY_MS)
+      return sum + Math.pow(0.5, ageDays / HALF_LIFE_DAYS)
+    }, 0)
+  }
   // Settlement: on-chain settlements with diminishing returns, plus a credit for holding
   // a verified on-chain identity. Capped at 600.
   const idBonus = s.onchainRegistered ? 60 : 0
-  const settlement = Math.min(600, Math.round(600 * (1 - Math.exp(-s.settledCount / 6))) + idBonus)
+  const settlement = Math.min(600, Math.round(600 * (1 - Math.exp(-effectiveSettled / 6))) + idBonus)
   // Validation: share of clean (settled vs rejected) actions. Capped at 240.
   const validation = total === 0 ? 0 : Math.round(240 * (s.settledCount / total))
   // Tenure: ~1 point per 2 days since creation. Capped at 160. An unparseable/absent
@@ -96,5 +123,11 @@ export function computeAgentReputation(s: ReputationSignals, asOf: Date = new Da
   // rewriting how an agent with no jobs is scored.
   const behavior = behaviorAdjustment(s)
   const score = Math.max(0, Math.min(1000, settlement + validation + tenure + behavior))
-  return { score, breakdown: { settlement, validation, tenure, behavior }, settledOnchain: s.settledCount, settledUsd: s.settledUsd ?? 0 }
+  return {
+    score,
+    breakdown: { settlement, validation, tenure, behavior },
+    settledOnchain: s.settledCount,
+    settledEffective: Math.round(effectiveSettled * 100) / 100,
+    settledUsd: s.settledUsd ?? 0,
+  }
 }

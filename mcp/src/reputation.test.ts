@@ -99,3 +99,56 @@ test('breakdown exposes a finite numeric behavior band', () => {
   assert.equal(typeof r.breakdown.behavior, 'number')
   assert.ok(Number.isFinite(r.breakdown.behavior))
 })
+
+// ── recency decay (B3): recent settlements outweigh ancient ones ───────────────────
+
+test('no timestamps => every settlement weighs 1 (backward compatible)', () => {
+  const plain = computeAgentReputation({ settledCount: 10, rejected: 0, onchainRegistered: false, createdAt: '2026-01-01' }, asOf)
+  assert.equal(plain.settledEffective, 10)
+})
+
+test('fresh settlements weigh ~1 each', () => {
+  const fresh = computeAgentReputation(
+    { settledCount: 4, rejected: 0, onchainRegistered: false, createdAt: '2026-01-01', settledAt: ['2026-07-09', '2026-07-09', '2026-07-08', '2026-07-08'] },
+    asOf,
+  )
+  assert.ok(fresh.settledEffective > 3.9 && fresh.settledEffective <= 4, `got ${fresh.settledEffective}`)
+})
+
+test('a 90-day-old settlement weighs ~0.5 (the half-life)', () => {
+  const r = computeAgentReputation(
+    { settledCount: 1, rejected: 0, onchainRegistered: false, createdAt: '2025-01-01', settledAt: ['2026-04-11'] }, // 90 days before asOf
+    asOf,
+  )
+  assert.ok(Math.abs(r.settledEffective - 0.5) < 0.01, `got ${r.settledEffective}`)
+})
+
+test('recent history outscores identical-but-ancient history', () => {
+  const recent = computeAgentReputation(
+    { settledCount: 8, rejected: 0, onchainRegistered: false, createdAt: '2024-01-01', settledAt: Array(8).fill('2026-07-05') },
+    asOf,
+  )
+  const ancient = computeAgentReputation(
+    { settledCount: 8, rejected: 0, onchainRegistered: false, createdAt: '2024-01-01', settledAt: Array(8).fill('2024-07-05') },
+    asOf,
+  )
+  assert.ok(recent.breakdown.settlement > ancient.breakdown.settlement, `${recent.breakdown.settlement} !> ${ancient.breakdown.settlement}`)
+})
+
+test('decay never touches the validation share (a rejection does not age away)', () => {
+  const aged = computeAgentReputation(
+    { settledCount: 5, rejected: 5, onchainRegistered: false, createdAt: '2024-01-01', settledAt: Array(5).fill('2024-07-05') },
+    asOf,
+  )
+  const fresh = computeAgentReputation({ settledCount: 5, rejected: 5, onchainRegistered: false, createdAt: '2024-01-01' }, asOf)
+  assert.equal(aged.breakdown.validation, fresh.breakdown.validation)
+})
+
+test('an unparseable settlement timestamp weighs 1 (neutral, never NaN)', () => {
+  const r = computeAgentReputation(
+    { settledCount: 2, rejected: 0, onchainRegistered: false, createdAt: '2026-01-01', settledAt: ['garbage', '2026-07-09'] },
+    asOf,
+  )
+  assert.ok(Number.isFinite(r.settledEffective) && r.settledEffective > 1.9, `got ${r.settledEffective}`)
+  assert.ok(Number.isFinite(r.score))
+})

@@ -102,7 +102,8 @@ export const METHODOLOGY = {
     range: '0-1000',
     deterministic: true,
     formula: 'score = settlement(0-600) + validation(0-240) + tenure(0-160) + behavior(-150..+40), clamped 0-1000',
-    settlement: 'min(600, round(600 * (1 - e^(-settledOnchain / 6))) + (onchainIdentity ? 60 : 0))',
+    settlement: 'min(600, round(600 * (1 - e^(-settledEffective / 6))) + (onchainIdentity ? 60 : 0))',
+    recency: 'settledEffective = sum over settlements of 0.5^(ageDays / 90) — a settlement\'s weight halves every 90 days, so the score is dominated by RECENT verified activity and cannot coast on ancient history. The validation share deliberately does NOT decay (a rejection never ages away). Both settledOnchain (raw) and settledEffective (weighted) are returned, so the decay is auditable.',
     validation: 'settledOnchain + rejected == 0 ? 0 : round(240 * settledOnchain / (settledOnchain + rejected))',
     tenure: 'min(160, round(daysSinceCreated / 2))',
     behavior: 'clamp(-150, +40, -round(150 * contestedJobs / (completedJobs + contestedJobs)) + (ratedJobs >= 2 ? clamp(-40, +40, round((avgRating - 4) * 40)) : 0)); 0 with no marketplace job history',
@@ -137,8 +138,9 @@ export const METHODOLOGY = {
     allow: 'none of the above — verified identity, attested KYA, strong reputation',
     note: 'DENY overrides WARN overrides ALLOW; every triggered reason is returned. Pure and unit-tested.',
   },
-  // The paid tools (each a thin wrapper over the live engine; prices settle over x402 on X Layer).
+  // The tools (each a thin wrapper over the live engine; paid prices settle over x402 on X Layer).
   tools: {
+    trust_preview: 'free — coarse trust band + revoked/Sybil flags for one agent (rate-limited per IP); the adoption on-ramp to the paid depth',
     verify_agent: '$0.001 — ERC-8004 identity + KYA status',
     reputation_score: '$0.002 — the deterministic 0-1000 score (+ its on-chain attestation, if published)',
     risk_check: '$0.005 — pre-transaction ALLOW / WARN / DENY on a counterparty',

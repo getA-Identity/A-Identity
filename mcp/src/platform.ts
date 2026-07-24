@@ -1050,6 +1050,9 @@ function repOf(agent: PlatformAgent) {
     onchainRegistered: agent.onchain === 'registered',
     createdAt: agent.createdAt,
     settledUsd,
+    // B3 recency decay: per-settlement timestamps so recent verified activity outweighs
+    // ancient history (see reputation.ts HALF_LIFE_DAYS).
+    settledAt: settled.map((i) => i.createdAt),
     ...behavioralSignals(agent),
   })
 }
