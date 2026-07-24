@@ -119,6 +119,10 @@ export const METHODOLOGY = {
     scale: 'written on the ERC-8004 0-100 convention (the 0-1000 score / 10); the raw 0-1000 value + tag are committed in the feedback hash for exact verification.',
     surfaced: 'reputation_score and agent_passport return the latest attestation as `onchainAttestation` (chain, registry, validator, tx). Absent until an agent has a published attestation — the score is always recomputed live, so the anchor is a verifiable snapshot, never the source of truth.',
   },
+  liveness: {
+    what: 'registered != live: verify_agent and agent_passport probe the agent\'s registered public surface (domain first, else the registration URI) with an SSRF-guarded, redirect-blocked request (3.5s cap). Any HTTP answer proves a listening server.',
+    honest: 'informational only, never scored into the risk verdict — a transient outage must not flip a decision. Most ERC-8004 registrations are never liveness-checked; this closes that gap transparently.',
+  },
   risk: {
     decisions: ['ALLOW', 'WARN', 'DENY'],
     deny: [

@@ -13,7 +13,7 @@
  * an owner address, or a CAIP-10 id. We resolve platform state first (richest signals),
  * then fall back to a live on-chain read, and cross-link the two when both exist.
  */
-import { createIdentityProvider } from '../erc8004.js'
+import { createIdentityProvider, isSafePublicHttpUrl } from '../erc8004.js'
 import { readValidation } from '../arc-contracts.js'
 import { computeAgentReputation, type ReputationResult } from '../reputation.js'
 import { listPlatformAgents, agentReputation, type PlatformAgent } from '../platform.js'
@@ -141,6 +141,58 @@ async function gather(agentId: string): Promise<Bundle> {
   return { agentId: q, platform, identity, tokenId, validation, reputation, onchainVerified, kyaVerified, kyaStatus, revoked: kyaStatus === 'revoked', tenureDays }
 }
 
+/**
+ * "Registered != live" (REC 3a): pick the agent's registered public surface to probe.
+ * Pure so it is unit-testable: a bare domain becomes https://<domain>/, an http(s)
+ * registration URI is used as-is, and anything unsafe (SSRF guard) yields null.
+ */
+export function livenessTarget(domain: string | null | undefined, registrationUri: string | null | undefined): string | null {
+  const d = domain?.trim()
+  if (d) {
+    const url = /^https?:\/\//i.test(d) ? d : `https://${d}/`
+    if (isSafePublicHttpUrl(url)) return url
+  }
+  const uri = registrationUri?.trim()
+  if (uri && isSafePublicHttpUrl(uri)) return uri
+  return null
+}
+
+/** Probe result: informational only — liveness is surfaced, never scored into risk,
+ *  so a transient outage can't flip a verdict. */
+type Liveness = { checked: boolean; target: string | null; reachable: boolean | null; httpStatus: number | null; note: string }
+
+/** Hard cap on the liveness probe so a paid call never hangs on a dead endpoint. */
+const LIVENESS_TIMEOUT_MS = 3500
+
+/**
+ * Probe the agent's registered public endpoint (domain first, else the registration URI).
+ * Most ERC-8004 registrations are never checked for liveness — a registered token proves
+ * existence, not an operating agent. Any HTTP answer (including 3xx/4xx, unfollowed)
+ * proves a listening server; redirects are NOT followed (SSRF: a public URL must not 30x
+ * us into an internal target).
+ */
+async function checkLiveness(b: Bundle): Promise<Liveness> {
+  const target = livenessTarget(b.identity?.domain, b.identity?.registrationUri)
+  if (!target) {
+    return {
+      checked: false, target: null, reachable: null, httpStatus: null,
+      note: 'No safe public endpoint registered to probe; on-chain registration proves existence, not liveness.',
+    }
+  }
+  try {
+    const res = await fetch(target, { signal: AbortSignal.timeout(LIVENESS_TIMEOUT_MS), redirect: 'manual' })
+    return {
+      checked: true, target, reachable: true, httpStatus: res.status,
+      note: 'The registered endpoint answered (any HTTP status proves a listening server). Informational: not scored into the risk verdict.',
+    }
+  } catch {
+    return {
+      checked: true, target, reachable: false, httpStatus: null,
+      note: `The registered endpoint did not answer within ${LIVENESS_TIMEOUT_MS}ms; registered, but not verifiably live right now. Informational: not scored into the risk verdict.`,
+    }
+  }
+}
+
 /** Attached to every tool response so each paid call is self-documenting and points a
  *  caller (or a reviewer) at the verifiable proof + the exact scoring methodology. */
 const TOOL_META = {
@@ -157,6 +209,7 @@ const TOOL_META = {
 /** verify_agent — ERC-8004 identity + KYA status for an agent. */
 export async function verifyAgent(agentId: string) {
   const b = await gather(agentId)
+  const liveness = await checkLiveness(b)
   return {
     tool: 'verify_agent',
     _meta: TOOL_META,
@@ -164,6 +217,7 @@ export async function verifyAgent(agentId: string) {
     verified: b.onchainVerified,
     kya_status: b.kyaStatus,
     revoked: b.revoked,
+    liveness,
     identity: b.identity
       ? {
           tokenId: b.identity.tokenId,
@@ -232,6 +286,7 @@ export async function riskCheck(agentId: string, txContext: TxContext | null = n
 /** agent_passport — the full identity + reputation + validation + risk passport. */
 export async function agentPassport(agentId: string) {
   const b = await gather(agentId)
+  const liveness = await checkLiveness(b)
   const risk = assessRisk(
     { onchainVerified: b.onchainVerified, kyaVerified: b.kyaVerified, reputationScore: b.reputation.score, tenureDays: b.tenureDays, revoked: b.revoked, sybil: b.reputation.sybil?.level },
     null,
@@ -246,6 +301,7 @@ export async function agentPassport(agentId: string) {
       ? { tokenId: b.identity.tokenId, owner: b.identity.owner, chain: b.identity.chain, registrationUri: b.identity.registrationUri, domain: b.identity.domain || null, valid: b.identity.valid, registeredAt: b.identity.registeredAt }
       : null,
     verified: b.onchainVerified,
+    liveness,
     kya: { status: b.kyaStatus, revoked: b.revoked, onchain: b.validation ?? null },
     reputation: { score: b.reputation.score, breakdown: b.reputation.breakdown, behavioral: b.reputation.behavioral, sybil: b.reputation.sybil, settledOnchain: b.reputation.settledOnchain, settledEffective: b.reputation.settledEffective, settledUsd: b.reputation.settledUsd, onchainAttestation: getReputationAttestation(b.tokenId), basis: b.reputation.basis },
     risk: { decision: risk.decision, level: risk.risk, reasons: risk.reasons },

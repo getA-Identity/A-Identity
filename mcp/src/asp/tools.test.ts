@@ -4,7 +4,7 @@
  */
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { asTokenId, isAddress, sameOperator, scoreBand } from './tools.js'
+import { asTokenId, isAddress, sameOperator, scoreBand, livenessTarget } from './tools.js'
 import type { PlatformAgent } from '../platform.js'
 
 // A minimal agent for the counterparty_check same-operator relationship signal.
@@ -60,6 +60,36 @@ test('sameOperator: the same agent id is not a self-deal counterparty', () => {
 test('sameOperator: missing owner/wallet on either side => false (no false positive)', () => {
   assert.equal(sameOperator(agent({ id: 'a' }), agent({ id: 'b' })), false)
   assert.equal(sameOperator(null, agent({ id: 'b', owner: '0xABC' })), false)
+})
+
+test('livenessTarget: bare domain becomes https://<domain>/', () => {
+  assert.equal(livenessTarget('agent.example.com', null), 'https://agent.example.com/')
+})
+
+test('livenessTarget: an http(s) domain value is used as-is', () => {
+  assert.equal(livenessTarget('https://agent.example.com/api', null), 'https://agent.example.com/api')
+})
+
+test('livenessTarget: falls back to the registration URI when no domain', () => {
+  assert.equal(livenessTarget('', 'https://cdn.example.com/agent.json'), 'https://cdn.example.com/agent.json')
+  assert.equal(livenessTarget(null, 'https://cdn.example.com/agent.json'), 'https://cdn.example.com/agent.json')
+})
+
+test('livenessTarget: SSRF-unsafe targets yield null (never probed)', () => {
+  assert.equal(livenessTarget('localhost', null), null)
+  assert.equal(livenessTarget('192.168.1.10', null), null)
+  assert.equal(livenessTarget('169.254.169.254', null), null)
+  assert.equal(livenessTarget(null, 'ipfs://Qm123'), null)
+  assert.equal(livenessTarget(null, 'http://127.0.0.1/x'), null)
+})
+
+test('livenessTarget: unsafe domain still falls back to a safe registration URI', () => {
+  assert.equal(livenessTarget('localhost', 'https://cdn.example.com/agent.json'), 'https://cdn.example.com/agent.json')
+})
+
+test('livenessTarget: nothing registered yields null', () => {
+  assert.equal(livenessTarget(null, null), null)
+  assert.equal(livenessTarget('', ''), null)
 })
 
 test('scoreBand: bands align with the risk thresholds (DENY < 200, WARN 200-500)', () => {
