@@ -2,8 +2,9 @@
 /**
  * A-Identity MCP server - stdio entry.
  *
- * Read-only tools (resolve_agent, get_reputation, list_capabilities) over mock
- * data. No private keys, no funds, no chain writes.
+ * Read-only tools (resolve_agent, get_reputation, list_capabilities) over LIVE
+ * on-chain reads (Arc ERC-8004) + platform state. No mocks, no private keys, no
+ * funds, no chain writes.
  *
  * stdout is reserved for the MCP wire protocol - this process never
  * `console.log`s; diagnostics go to stderr only.

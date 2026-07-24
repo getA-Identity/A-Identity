@@ -58,7 +58,7 @@ export default function AgentId() {
   const mcpOnline = useMcpHealth() === 'online'
 
   // The user's first real agent (from the platform), when available. Drives the
-  // identity card below; falls back to the mock resolve only when there are no agents.
+  // identity card below; falls back to the live example agent (#849980) only when there are none.
   const [agents, setAgents] = useState<RealAgent[]>([])
   const [selectedId, setSelectedId] = useState('')
   const [realAgent, setRealAgent] = useState<RealAgent | null>(null)
@@ -116,9 +116,9 @@ export default function AgentId() {
     }
   }, [selectedId, agents])
 
-  // Only resolve the MOCK demo agent as a fallback, and only once we've confirmed the
-  // account has no real agent. Avoids two throwaway requests on every mount when a real
-  // agent already exists.
+  // Only resolve the live example agent (#849980, a real ERC-8004 token read on-chain) as a
+  // fallback, and only once we've confirmed the account has no real agent. Avoids two throwaway
+  // requests on every mount when a real agent already exists.
   const useExampleFallback = realChecked && !realAgent
   const { agent: liveAgent, source, loading: agentLoading } = useResolveAgent(DEMO_AGENT_ID, useExampleFallback)
   const { reputation: liveRep, loading: repLoading } = useAgentReputation(DEMO_AGENT_ID, useExampleFallback)
@@ -127,7 +127,7 @@ export default function AgentId() {
   const score = realRep?.score ?? liveRep?.score ?? null
   const breakdown = realRep?.breakdown ?? liveRep?.breakdown ?? { settlement: 0, validation: 0, tenure: 0 }
 
-  // Identity-card fields: prefer the real agent, else the mock resolve / placeholders.
+  // Identity-card fields: prefer the real agent, else the live example resolve / placeholders.
   const agentName = realAgent?.name ?? `${liveAgent?.domain?.split('.')[0] ?? user?.name ?? 'My Agent'} Agent`
   const agentIdLabel = realAgent?.onchainAgentId
     ? `ERC-8004 #${realAgent.onchainAgentId}`
