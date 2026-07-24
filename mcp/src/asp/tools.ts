@@ -1,6 +1,6 @@
 /**
  * The A-Identity ASP tools sold on OKX.AI, each a THIN wrapper over logic the
- * backend already runs live — no new trust claims, no mocks:
+ * backend already runs live - no new trust claims, no mocks:
  *
  *   verify_agent       → on-chain ERC-8004 resolve (erc8004.ts) + KYA (readValidation)
  *   reputation_score   → the deterministic 0-1000 scorer (reputation.ts / platform repOf)
@@ -36,7 +36,7 @@ type Bundle = {
   onchainVerified: boolean
   kyaVerified: boolean
   kyaStatus: 'verified' | 'unverified' | 'revoked' | 'unknown'
-  /** KYA revoked (incident) — forces a risk DENY. */
+  /** KYA revoked (incident) - forces a risk DENY. */
   revoked: boolean
   tenureDays: number
 }
@@ -60,7 +60,7 @@ const RPC_TIMEOUT_MS = 6000
 
 /**
  * Race a promise against a timeout so a paid tool call never hangs on a slow or
- * unavailable RPC — it degrades gracefully to `fallback` and still responds fast.
+ * unavailable RPC - it degrades gracefully to `fallback` and still responds fast.
  * Also absorbs rejections (returns fallback) so the caller never sees an error from
  * a best-effort on-chain read.
  */
@@ -116,7 +116,7 @@ async function gather(agentId: string): Promise<Bundle> {
   const kyaVerified = kyaStatus === 'verified'
 
   // Tenure only from a timestamp WE can vouch for (platform-tracked creation). We do NOT
-  // trust `identity.registeredAt`, which is read from the agent's own tokenURI JSON — a
+  // trust `identity.registeredAt`, which is read from the agent's own tokenURI JSON - a
   // counterparty could self-attest an ancient date to inflate tenure (worth up to 160
   // reputation points) and flip a DENY into a WARN. Unknown tenure → 0, not self-reported.
   const createdAt = platform?.createdAt ?? null
@@ -163,7 +163,7 @@ export function livenessTarget(domain: string | null | undefined, registrationUr
   return null
 }
 
-/** Probe result: informational only — liveness is surfaced, never scored into risk,
+/** Probe result: informational only - liveness is surfaced, never scored into risk,
  *  so a transient outage can't flip a verdict. */
 type Liveness = { checked: boolean; target: string | null; reachable: boolean | null; httpStatus: number | null; note: string }
 
@@ -172,7 +172,7 @@ const LIVENESS_TIMEOUT_MS = 3500
 
 /**
  * Probe the agent's registered public endpoint (domain first, else the registration URI).
- * Most ERC-8004 registrations are never checked for liveness — a registered token proves
+ * Most ERC-8004 registrations are never checked for liveness - a registered token proves
  * existence, not an operating agent. Any HTTP answer (including 3xx/4xx, unfollowed)
  * proves a listening server; redirects are NOT followed (SSRF: a public URL must not 30x
  * us into an internal target).
@@ -212,7 +212,7 @@ const TOOL_META = {
 
 // ── the four tools ────────────────────────────────────────────────────────────────
 
-/** verify_agent — ERC-8004 identity + KYA status for an agent. */
+/** verify_agent - ERC-8004 identity + KYA status for an agent. */
 export async function verifyAgent(agentId: string) {
   const b = await gather(agentId)
   const liveness = await checkLiveness(b)
@@ -243,7 +243,7 @@ export async function verifyAgent(agentId: string) {
   }
 }
 
-/** reputation_score — deterministic 0-1000 reputation from real signals. */
+/** reputation_score - deterministic 0-1000 reputation from real signals. */
 export async function reputationScore(agentId: string) {
   const b = await gather(agentId)
   return {
@@ -266,7 +266,7 @@ export async function reputationScore(agentId: string) {
   }
 }
 
-/** risk_check — pre-transaction ALLOW/WARN/DENY over an agent's trust signals. */
+/** risk_check - pre-transaction ALLOW/WARN/DENY over an agent's trust signals. */
 export async function riskCheck(agentId: string, txContext: TxContext | null = null) {
   const b = await gather(agentId)
   const signals: RiskSignals = {
@@ -290,7 +290,7 @@ export async function riskCheck(agentId: string, txContext: TxContext | null = n
   }
 }
 
-/** agent_passport — the full identity + reputation + validation + risk passport. */
+/** agent_passport - the full identity + reputation + validation + risk passport. */
 export async function agentPassport(agentId: string) {
   const b = await gather(agentId)
   const liveness = await checkLiveness(b)
@@ -344,7 +344,7 @@ export function scoreBand(score: number): 'very-low' | 'low' | 'medium' | 'high'
 }
 
 /**
- * trust_preview — the FREE tier: real (never mocked) but deliberately coarse signals on
+ * trust_preview - the FREE tier: real (never mocked) but deliberately coarse signals on
  * one agent, plus pointers to the paid depth. The adoption on-ramp: an agent can sanity-
  * check a counterparty for free, then pay per call when a decision actually needs the
  * exact score, the reasons, or the full passport.
@@ -375,7 +375,7 @@ export async function trustPreview(agentId: string) {
 }
 
 /** True when two DISTINCT agents are controlled by the same human owner (or share a
- *  settlement wallet) — i.e. paying one is paying yourself, which builds no independent trust. */
+ *  settlement wallet) - i.e. paying one is paying yourself, which builds no independent trust. */
 export function sameOperator(a: PlatformAgent | null, b: PlatformAgent | null): boolean {
   if (!a || !b || a.id === b.id) return false
   const ao = a.owner?.toLowerCase(); const bo = b.owner?.toLowerCase()
@@ -385,7 +385,7 @@ export function sameOperator(a: PlatformAgent | null, b: PlatformAgent | null): 
 }
 
 /**
- * counterparty_check — a deal-specific verdict for a SPECIFIC payment between two agents:
+ * counterparty_check - a deal-specific verdict for a SPECIFIC payment between two agents:
  * "should `from` pay `to` (amount X, kind Y)?". It is risk_check on the counterparty (`to`)
  * PLUS a relationship signal risk_check alone cannot see: whether `to` is operated by the
  * same owner as `from` (a self-deal, which inflates no real reputation). A clean counterparty

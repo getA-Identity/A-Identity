@@ -10,15 +10,15 @@
  * with no creds the gateway runs in FREE mode (tools still work, nothing is charged), so
  * it is always deployable and testable. The SDK is imported DYNAMICALLY with loose typing
  * so `tsc` never hard-depends on it and a missing optional dep can't break the build or the
- * boot — it just falls back to free mode.
+ * boot - it just falls back to free mode.
  *
  * NOTE: the OKX *seller* side requires OKX_API_KEY / OKX_SECRET_KEY / OKX_PASSPHRASE
- * (from web3.okx.com/onchainos/dev-portal). A recipient address alone is NOT enough —
+ * (from web3.okx.com/onchainos/dev-portal). A recipient address alone is NOT enough -
  * settlement is brokered through OKX's facilitator via an HMAC-signed client.
  */
 import type { Express } from 'express'
 
-/** X Layer mainnet. Testnet is eip155:1952; 195 is deprecated — never use it. */
+/** X Layer mainnet. Testnet is eip155:1952; 195 is deprecated - never use it. */
 const NETWORK = process.env.OKX_X402_NETWORK ?? 'eip155:196'
 
 /** Per-call USD prices; OKX auto-converts to the X Layer settlement token (USD₮0, 6 dp).
@@ -37,7 +37,7 @@ const TX_CONTEXT_DOC = 'optional object: { "amountUsd": number, "payee": "0x… 
 /**
  * The machine-readable calling contract for each paid tool, served INSIDE the 402
  * response body (via the SDK's unpaidResponseBody hook) so a buyer agent knows the
- * exact method, JSON fields, and an example BEFORE paying — no guessing from prose.
+ * exact method, JSON fields, and an example BEFORE paying - no guessing from prose.
  */
 const CONTRACTS: Record<string, { description: string; input: Record<string, string>; example: Record<string, unknown> }> = {
   'POST /tools/verify_agent': {

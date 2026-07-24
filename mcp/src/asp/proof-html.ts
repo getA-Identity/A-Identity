@@ -1,9 +1,9 @@
 /**
- * Human-readable HTML for GET /proof — served when a browser (a judge clicking the link)
+ * Human-readable HTML for GET /proof - served when a browser (a judge clicking the link)
  * hits the endpoint; agents/API callers still get JSON via content negotiation. Restyled to
  * match a-identity.xyz/explorer: an onchain-explorer aesthetic (mono/tabular figures, hairline
  * tables, a credit-score spectrum for the showcase agent), light/dark with a manual toggle,
- * self-contained. Data comes from ./proof.ts — the same verifiable facts, presented for a person.
+ * self-contained. Data comes from ./proof.ts - the same verifiable facts, presented for a person.
  */
 import { PROOF } from './proof.js'
 
@@ -67,7 +67,7 @@ export function renderProofHtml(): string {
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="color-scheme" content="light dark">
-<title>A-Identity Trust Oracle — Proof (OKX.AI Agent #6271)</title>
+<title>A-Identity Trust Oracle - Proof (OKX.AI Agent #6271)</title>
 <style>
   :root {
     --bg:#f6f5f2; --surface:#ffffff; --surface2:#faf9f6; --border:#e7e3dd; --border2:#f0ece7;
@@ -163,12 +163,12 @@ export function renderProofHtml(): string {
     <div><b>${esc(p.asp.agentId)}</b><span>OKX.AI Agent</span></div>
     <div><b>${rev.totalSettlements}</b><span>mainnet settlements</span></div>
     <div><b>$${rev.totalUsd}</b><span>on-chain revenue</span></div>
-    <div><b id="live-recv">—</b><span>received · live</span></div>
+    <div><b id="live-recv">-</b><span>received · live</span></div>
     <div><b>${SERVICES.length}</b><span>x402 services</span></div>
     <div><b>${p.engineering.tests}</b><span>unit tests</span></div>
   </div>
 
-  <h2>Showcase agent — real, not a mock</h2>
+  <h2>Showcase agent - real, not a mock</h2>
   <div class="panel"><div class="pad showcase">
     <div>
       <div style="font-size:12px;color:var(--faint);text-transform:uppercase;letter-spacing:0.05em;">${esc(p.showcaseAgent.name)} · ERC-8004 ${esc(p.showcaseAgent.erc8004TokenId)}</div>
@@ -193,11 +193,11 @@ export function renderProofHtml(): string {
     <dt>Docs</dt><dd><a href="${esc(p.docs)}" target="_blank" rel="noopener">${esc(p.docs)}</a></dd>
   </dl>
 
-  <h2>Services — x402 pay-per-call</h2>
+  <h2>Services - x402 pay-per-call</h2>
   <div class="panel overflow"><table><thead><tr><th>Tool</th><th>Price</th><th>Returns</th></tr></thead><tbody>${serviceRows}</tbody></table></div>
 
-  <h2>Real on-chain revenue — <span id="count">${rev.totalSettlements}</span> settlements</h2>
-  <div class="tag" style="margin-bottom:8px;">Real x402 settlements on ${esc(rev.network)} in ${esc(rev.asset)} — each a verifiable USD₮0 transfer to <a href="${esc(rev.payToUrl)}" target="_blank" rel="noopener"><code>${esc(short(rev.payTo))}</code></a>. <span class="demo">demo</span> = the live demo calls; the rest are seeded usage.</div>
+  <h2>Real on-chain revenue - <span id="count">${rev.totalSettlements}</span> settlements</h2>
+  <div class="tag" style="margin-bottom:8px;">Real x402 settlements on ${esc(rev.network)} in ${esc(rev.asset)} - each a verifiable USD₮0 transfer to <a href="${esc(rev.payToUrl)}" target="_blank" rel="noopener"><code>${esc(short(rev.payTo))}</code></a>. <span class="demo">demo</span> = the live demo calls; the rest are seeded usage.</div>
   <div class="filters">${chips}</div>
   <div class="panel overflow scroll"><table><thead><tr><th>#</th><th>Round</th><th>Tool</th><th>Amount</th><th>Settlement tx</th></tr></thead><tbody>${settleRows}</tbody></table></div>
 
@@ -206,7 +206,7 @@ export function renderProofHtml(): string {
     <dt>Tests</dt><dd>${p.engineering.tests} unit tests · deterministic reputation scorer</dd>
     <dt>On-chain reads</dt><dd>${esc(p.engineering.liveOnchainReads)}</dd>
     <dt>Standards</dt><dd class="mono">${esc(p.engineering.standards.join(' · '))}</dd>
-    <dt>Methodology</dt><dd><a href="/methodology">/methodology</a> — exact, reproducible formulas</dd>
+    <dt>Methodology</dt><dd><a href="/methodology">/methodology</a> - exact, reproducible formulas</dd>
     <dt>Repo</dt><dd><a href="${esc(p.engineering.repo)}" target="_blank" rel="noopener">${esc(p.engineering.repo)}</a></dd>
   </dl>
 

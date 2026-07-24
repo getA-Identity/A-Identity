@@ -1,5 +1,5 @@
 /**
- * A-Identity — Agent Trust Oracle: the OKX.AI ASP (A2MCP) gateway.
+ * A-Identity - Agent Trust Oracle: the OKX.AI ASP (A2MCP) gateway.
  *
  * A thin public HTTPS service that sells four pay-per-call tools, each a wrapper over
  * A-Identity's existing live engine (see ./asp/tools.ts). OKX x402 charges per call on
@@ -8,13 +8,13 @@
  *
  * Run: `npm run build && npm run start:asp` (PORT / ASP_PORT selects the port).
  *
- *   GET  /health           free — liveness + service card (discovery)
- *   POST /tools/trust_preview       free  — coarse band + flags (rate-limited on-ramp)
- *   POST /tools/verify_agent        $0.001 — ERC-8004 identity + KYA
- *   POST /tools/reputation_score    $0.002 — 0-1000 on-chain reputation
- *   POST /tools/risk_check          $0.005 — ALLOW/WARN/DENY pre-tx risk
- *   POST /tools/counterparty_check  $0.008 — deal-specific two-agent verdict
- *   POST /tools/agent_passport      $0.01  — full agent passport
+ *   GET  /health           free - liveness + service card (discovery)
+ *   POST /tools/trust_preview       free  - coarse band + flags (rate-limited on-ramp)
+ *   POST /tools/verify_agent        $0.001 - ERC-8004 identity + KYA
+ *   POST /tools/reputation_score    $0.002 - 0-1000 on-chain reputation
+ *   POST /tools/risk_check          $0.005 - ALLOW/WARN/DENY pre-tx risk
+ *   POST /tools/counterparty_check  $0.008 - deal-specific two-agent verdict
+ *   POST /tools/agent_passport      $0.01  - full agent passport
  */
 import express, { type Request, type Response } from 'express'
 import { readFileSync } from 'node:fs'
@@ -27,10 +27,10 @@ import { PROOF, METHODOLOGY } from './asp/proof.js'
 import { renderProofHtml } from './asp/proof-html.js'
 import { getLiveStats } from './asp/stats.js'
 
-const SERVICE = 'A-Identity — Agent Trust Oracle'
+const SERVICE = 'A-Identity - Agent Trust Oracle'
 const PORT = Number(process.env.ASP_PORT ?? process.env.PORT ?? 4000)
 
-/** The Circle Agent Marketplace service manifest — the descriptor an agent (or the
+/** The Circle Agent Marketplace service manifest - the descriptor an agent (or the
  *  `circle services inspect` CLI) reads to discover this service. Loaded once from the
  *  committed JSON (single source of truth; ../marketplace/ ships with the mcp/ deploy).
  *  A missing file degrades to a minimal card so discovery never 500s. */
@@ -91,7 +91,7 @@ function txContextFrom(req: Request): TxContext | null {
 
 /**
  * Free-tier rate limit for trust_preview: per-IP fixed window, in-memory (single-instance,
- * same accepted tradeoff as the rest of this backend — see SECURITY.md). Paid tools are
+ * same accepted tradeoff as the rest of this backend - see SECURITY.md). Paid tools are
  * never rate-limited this way; x402 pricing is their throttle.
  */
 const PREVIEW_WINDOW_MS = 60 * 60 * 1000
@@ -158,7 +158,7 @@ async function main() {
   // Behind Render's (and Cloudflare's) proxy, TLS terminates upstream, so Express's
   // `req.protocol` defaults to 'http'. The OKX x402 middleware builds the 402 challenge's
   // `resource.url` as `${req.protocol}://${req.headers.host}${req.originalUrl}`, and OKX
-  // requires a public HTTPS resource — an `http://` URL can fail the ASP review / a strict
+  // requires a public HTTPS resource - an `http://` URL can fail the ASP review / a strict
   // buyer client. Trusting the proxy makes `req.protocol` read `X-Forwarded-Proto` ('https'),
   // so the advertised resource URL is correctly `https://`.
   app.set('trust proxy', true)
@@ -176,7 +176,7 @@ async function main() {
     next()
   })
 
-  // Free discovery endpoints — never charged (payment middleware only guards POST /tools/*).
+  // Free discovery endpoints - never charged (payment middleware only guards POST /tools/*).
   const health = (payment: PaymentStatus) => (_req: Request, res: Response) =>
     res.json({ ok: true, ...serviceCard(payment), paymentReason: payment.reason })
 
@@ -196,7 +196,7 @@ async function main() {
   })
   app.get('/proof.json', (_req: Request, res: Response) => res.json(PROOF))
   app.get('/methodology', (_req: Request, res: Response) => res.json(METHODOLOGY))
-  // Circle Agent Marketplace discovery: the inspectable service manifest. Free, public —
+  // Circle Agent Marketplace discovery: the inspectable service manifest. Free, public -
   // this is what `circle services inspect "<url>"` (and agents.circle.com) read to list us.
   app.get('/.well-known/agent.json', (_req: Request, res: Response) => res.json(MANIFEST))
   app.get('/manifest', (_req: Request, res: Response) => res.json(MANIFEST))
@@ -207,7 +207,7 @@ async function main() {
   // probes with GET by default, so a POST-only route would return 404 on the probe
   // ("endpoint_unreachable") and lose the sale before the 402 is ever seen.
 
-  // The FREE tier (never behind x402 — its route is deliberately absent from PRICES).
+  // The FREE tier (never behind x402 - its route is deliberately absent from PRICES).
   app.all('/tools/trust_preview', (req: Request, res: Response) => {
     if (req.method !== 'GET' && req.method !== 'POST') { res.status(405).json({ error: 'Use GET or POST.' }); return }
     const gate = previewGate(req.ip ?? 'unknown')

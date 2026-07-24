@@ -1,6 +1,6 @@
 /**
  * Live on-chain stats for the ASP. Reads payTo's current USD₮0 balance on X Layer
- * mainnet — since payTo only ever receives from our ASP, this is the live cumulative
+ * mainnet - since payTo only ever receives from our ASP, this is the live cumulative
  * revenue. Raw JSON-RPC eth_call, timeout-guarded, no extra deps, never throws.
  * Served at GET /stats and fetched by the /proof page so the number reads "live".
  */
