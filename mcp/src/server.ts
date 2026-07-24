@@ -6,6 +6,7 @@ import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
 import { z } from 'zod'
 import { listCapabilities, CHAIN_CONFIG } from './data.js'
 import { createIdentityProvider } from './erc8004.js'
+import { computeAgentReputation } from './reputation.js'
 import { getArcStatus } from './arc.js'
 import { getCircleStatus } from './circle.js'
 
@@ -15,7 +16,7 @@ const json = (value: unknown) => ({
 
 /**
  * Real-data hooks the HTTP entry (http.ts) injects so the discovery tools return
- * live platform state instead of nothing. The stdio entry passes none — there,
+ * live platform state instead of nothing. The stdio entry passes none - there,
  * `list_agents` is empty (the Arc registry isn't enumerable) and `get_reputation`
  * says reputation lives on the platform. No mocks in either path.
  */
@@ -85,18 +86,36 @@ export function buildServer(data: ServerData = {}): McpServer {
       },
     },
     async ({ agentId }) => {
-      if (!data.getReputation) {
+      const rep = data.getReputation?.(agentId)
+      if (rep && !(typeof rep === 'object' && 'error' in (rep as object))) {
+        return json({ found: true, reputation: rep })
+      }
+      // No platform history: fall back to the SAME identity-only basis the paid
+      // reputation_score uses, so the free surface and the paid tool never disagree
+      // on the number. A live on-chain identity earns exactly the identity credit;
+      // tenure is 0 because we cannot vouch for a self-reported registration date.
+      const id = await identity.resolve(agentId).catch(() => null)
+      if (id) {
+        const r = computeAgentReputation({ settledCount: 0, rejected: 0, onchainRegistered: true, createdAt: new Date() })
         return json({
-          found: false,
-          agentId,
-          reason:
-            'Reputation is computed from real platform settlements; query it against a running A-Identity platform instance (REST /api/agents/reputation) or the app.',
+          found: true,
+          reputation: {
+            agentId,
+            name: null,
+            onchain: 'registered',
+            score: r.score,
+            breakdown: r.breakdown,
+            settledOnchain: 0,
+            settledEffective: 0,
+            settledUsd: 0,
+            basis: id.partial
+              ? 'onchain-identity (existence proven; no platform settlement history)'
+              : 'onchain-identity (no platform settlement history)',
+            computedAt: new Date().toISOString(),
+          },
         })
       }
-      const rep = data.getReputation(agentId)
-      if (!rep || (typeof rep === 'object' && 'error' in (rep as object)))
-        return json({ found: false, agentId, reason: 'Unknown agent or no activity yet' })
-      return json({ found: true, reputation: rep })
+      return json({ found: false, agentId, reason: 'Unknown agent or no activity yet' })
     },
   )
 
@@ -105,7 +124,7 @@ export function buildServer(data: ServerData = {}): McpServer {
     {
       title: 'List registered agents',
       description:
-        'List the real agents registered on this A-Identity platform (name, chain, KYA + on-chain status). The Arc ERC-8004 registry is not enumerable, so this lists agents this instance knows — not every token ever minted.',
+        'List the real agents registered on this A-Identity platform (name, chain, KYA + on-chain status). The Arc ERC-8004 registry is not enumerable, so this lists agents this instance knows - not every token ever minted.',
       inputSchema: {},
     },
     async () => {
