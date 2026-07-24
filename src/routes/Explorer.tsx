@@ -141,7 +141,10 @@ function StatRow({ label, value, cap, tone }: { label: string; value: number | s
 }
 
 function TrustProfile({ identity, reputation, query }: { identity: AgentIdentity | null; reputation: Reputation | null; query: string }) {
-  const verified = identity?.valid ?? reputation?.onchain === 'registered'
+  // A resolved on-chain identity (ownerOf succeeded) IS the registration proof. Do NOT
+  // read `identity.valid` here: the backend deliberately pins it to false (a tokenURI
+  // self-claim is never trusted), so using it would wrongly DENY every resolved agent.
+  const verified = Boolean(identity) || reputation?.onchain === 'registered'
   const score = reputation?.score ?? 0
   const shownScore = useCountUp(score)
   const verdict = riskOf(score, reputation?.kya, verified, reputation?.sybil?.level)
