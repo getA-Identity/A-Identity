@@ -44,11 +44,17 @@ function loadManifest(): Record<string, unknown> {
 }
 const MANIFEST = loadManifest()
 
-/** Pull a required string `agentId` from a request body, or explain what's missing. */
+/** Merge JSON body + query string so every tool accepts POST (body) AND GET (query). */
+function params(req: Request): Record<string, unknown> {
+  return { ...(req.query as Record<string, unknown>), ...(req.body as Record<string, unknown> | undefined) }
+}
+
+/** Pull a required string `agentId` (with common aliases), or explain what's missing. */
 function requireAgentId(req: Request): { agentId: string } | { error: string } {
-  const id = req.body?.agentId ?? req.body?.agent_id
+  const p = params(req)
+  const id = p.agentId ?? p.agent_id ?? p.agent ?? p.id ?? p.address ?? p.wallet
   if (typeof id !== 'string' || id.trim() === '') {
-    return { error: 'Body must include a non-empty string "agentId" (platform id, ERC-8004 token id like "#849980", or owner address).' }
+    return { error: 'Provide a non-empty string "agentId" (ERC-8004 token id like "#849980", CAIP id, or 0x owner address) in the JSON body or as a query param.' }
   }
   // Bound the length so a giant numeric agentId can't force an O(n^2) BigInt parse (DoS).
   if (id.length > 128) return { error: 'agentId too long (max 128 characters).' }
@@ -57,13 +63,30 @@ function requireAgentId(req: Request): { agentId: string } | { error: string } {
 
 /** Pull the two agent ids a counterparty_check needs (`from` = payer, `to` = counterparty). */
 function requireFromTo(req: Request): { from: string; to: string } | { error: string } {
-  const from = req.body?.from ?? req.body?.payer
-  const to = req.body?.to ?? req.body?.counterparty ?? req.body?.agentId
+  const p = params(req)
+  const from = p.from ?? p.payer
+  const to = p.to ?? p.counterparty ?? p.agentId
   for (const [k, v] of [['from', from], ['to', to]] as const) {
-    if (typeof v !== 'string' || v.trim() === '') return { error: `Body must include a non-empty string "${k}" (the ${k === 'from' ? 'paying' : 'counterparty'} agent id).` }
+    if (typeof v !== 'string' || v.trim() === '') return { error: `Provide a non-empty string "${k}" (the ${k === 'from' ? 'paying' : 'counterparty'} agent id) in the JSON body or as a query param.` }
     if (v.length > 128) return { error: `"${k}" too long (max 128 characters).` }
   }
   return { from: (from as string).trim(), to: (to as string).trim() }
+}
+
+/** Read an optional TxContext from the JSON body (object) or flat query params. */
+function txContextFrom(req: Request): TxContext | null {
+  const body = req.body as { txContext?: TxContext; tx_context?: TxContext } | undefined
+  const ctx = body?.txContext ?? body?.tx_context
+  if (ctx && typeof ctx === 'object') return ctx
+  const q = req.query as Record<string, string | undefined>
+  const amount = q.amountUsd ?? q.amount_usd ?? q.amount
+  const payee = q.payee
+  if (amount === undefined && payee === undefined) return null
+  const amountUsd = amount !== undefined ? Number(amount) : undefined
+  return {
+    ...(amountUsd !== undefined && Number.isFinite(amountUsd) ? { amountUsd } : {}),
+    ...(payee ? { payee } : {}),
+  }
 }
 
 /**
@@ -180,8 +203,13 @@ async function main() {
   // Live on-chain stats (payTo's current USD₮0), so the /proof page reads "live".
   app.get('/stats', async (_req: Request, res: Response) => res.json(await getLiveStats()))
 
+  // Every tool answers BOTH GET (query params) and POST (JSON body): the OKX buyer CLI
+  // probes with GET by default, so a POST-only route would return 404 on the probe
+  // ("endpoint_unreachable") and lose the sale before the 402 is ever seen.
+
   // The FREE tier (never behind x402 — its route is deliberately absent from PRICES).
-  app.post('/tools/trust_preview', (req: Request, res: Response) => {
+  app.all('/tools/trust_preview', (req: Request, res: Response) => {
+    if (req.method !== 'GET' && req.method !== 'POST') { res.status(405).json({ error: 'Use GET or POST.' }); return }
     const gate = previewGate(req.ip ?? 'unknown')
     if (!gate.allowed) {
       res.status(429).set('Retry-After', String(gate.retryAfterSeconds)).json({
@@ -196,27 +224,25 @@ async function main() {
   })
 
   // The paid tools.
-  app.post('/tools/verify_agent', handle(async (req) => {
+  app.all('/tools/verify_agent', handle(async (req) => {
     const v = requireAgentId(req); if ('error' in v) return v
     return verifyAgent(v.agentId)
   }))
-  app.post('/tools/reputation_score', handle(async (req) => {
+  app.all('/tools/reputation_score', handle(async (req) => {
     const v = requireAgentId(req); if ('error' in v) return v
     return reputationScore(v.agentId)
   }))
-  app.post('/tools/risk_check', handle(async (req) => {
+  app.all('/tools/risk_check', handle(async (req) => {
     const v = requireAgentId(req); if ('error' in v) return v
-    const txContext = (req.body?.txContext ?? req.body?.tx_context ?? null) as TxContext | null
-    return riskCheck(v.agentId, txContext)
+    return riskCheck(v.agentId, txContextFrom(req))
   }))
-  app.post('/tools/agent_passport', handle(async (req) => {
+  app.all('/tools/agent_passport', handle(async (req) => {
     const v = requireAgentId(req); if ('error' in v) return v
     return agentPassport(v.agentId)
   }))
-  app.post('/tools/counterparty_check', handle(async (req) => {
+  app.all('/tools/counterparty_check', handle(async (req) => {
     const v = requireFromTo(req); if ('error' in v) return v
-    const txContext = (req.body?.txContext ?? req.body?.tx_context ?? null) as TxContext | null
-    return counterpartyCheck(v.from, v.to, txContext)
+    return counterpartyCheck(v.from, v.to, txContextFrom(req))
   }))
 
   app.listen(PORT, () => {

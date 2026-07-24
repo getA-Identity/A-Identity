@@ -32,7 +32,7 @@ export const PRICES: Record<string, string> = {
 }
 
 const AGENT_ID_DOC = 'ERC-8004 token id ("#849980"), CAIP id ("eip155:196:8004/6271"), or 0x owner address'
-const TX_CONTEXT_DOC = 'optional object: { "amountUsd": number, "kind": "payment" | "purchase" | "rental" }'
+const TX_CONTEXT_DOC = 'optional object: { "amountUsd": number, "payee": "0x… address" }'
 
 /**
  * The machine-readable calling contract for each paid tool, served INSIDE the 402
@@ -53,12 +53,12 @@ const CONTRACTS: Record<string, { description: string; input: Record<string, str
   'POST /tools/risk_check': {
     description: 'Pre-transaction ALLOW / WARN / DENY verdict on a counterparty, with reasons.',
     input: { agentId: AGENT_ID_DOC, txContext: TX_CONTEXT_DOC },
-    example: { agentId: '#849980', txContext: { amountUsd: 25, kind: 'payment' } },
+    example: { agentId: '#849980', txContext: { amountUsd: 25 } },
   },
   'POST /tools/counterparty_check': {
     description: 'Deal-specific verdict between two agents: counterparty risk + same-operator self-deal detection.',
     input: { from: `the paying agent: ${AGENT_ID_DOC}`, to: `the counterparty: ${AGENT_ID_DOC}`, txContext: TX_CONTEXT_DOC },
-    example: { from: '#6271', to: '#849980', txContext: { amountUsd: 25, kind: 'payment' } },
+    example: { from: '#6271', to: '#849980', txContext: { amountUsd: 25 } },
   },
   'POST /tools/agent_passport': {
     description: 'The full trust passport: identity + KYA + reputation + risk in one call.',
@@ -111,21 +111,52 @@ export async function applyOkxX402(app: Express): Promise<PaymentStatus> {
     const routes: Record<string, unknown> = {}
     for (const [route, price] of Object.entries(PRICES)) {
       const contract = CONTRACTS[route]
-      routes[route] = {
+      const path = route.replace('POST ', '')
+      const tool = path.replace('/tools/', '')
+      const required = contract ? Object.keys(contract.input).filter((k) => !contract.input[k].startsWith('optional')) : []
+      // Key WITHOUT the verb so the SDK compiles it as any-method ("*"): the OKX buyer
+      // CLI probes with GET by default, and a POST-only key would let that probe fall
+      // through to a 404 ("endpoint_unreachable") instead of the 402 challenge. The
+      // gateway serves both GET (query params) and POST (JSON body) for every paid tool.
+      routes[path] = {
         accepts: { scheme: 'exact', network: NETWORK, payTo, price },
         // Fills the 402 challenge's resource.description (was empty before).
         description: contract?.description,
-        // The 402 body carries the exact calling contract, so a buyer agent can
-        // assemble a correct paid replay without guessing from the listing prose.
+        // Best-effort Bazaar-style schema for buyers that read extensions.
+        extensions: contract
+          ? {
+              outputSchema: {
+                input: {
+                  type: 'http',
+                  method: 'POST',
+                  bodyType: 'json',
+                  body: {
+                    type: 'object',
+                    properties: Object.fromEntries(Object.entries(contract.input).map(([k, v]) => [k, { description: v }])),
+                    required,
+                  },
+                },
+              },
+            }
+          : undefined,
+        // The 402 body carries the exact calling contract in the fields buyer agents
+        // actually scan for (required / inputSchema), so a correct paid replay can be
+        // assembled without guessing from the listing prose.
         unpaidResponseBody: contract
           ? () => ({
               contentType: 'application/json',
               body: {
                 error: 'Payment required',
-                tool: route.replace('POST /tools/', ''),
+                message: `Payment required. ${contract.description} Call with POST (JSON body) or GET (query params).`,
+                tool,
                 method: 'POST',
                 contentTypeExpected: 'application/json',
-                input: contract.input,
+                required,
+                inputSchema: {
+                  type: 'object',
+                  properties: Object.fromEntries(Object.entries(contract.input).map(([k, v]) => [k, { description: v }])),
+                  required,
+                },
                 example: contract.example,
                 freeTier: 'POST /tools/trust_preview (no payment, rate-limited): coarse band + flags',
                 methodology: 'https://a-identity-asp.onrender.com/methodology',
