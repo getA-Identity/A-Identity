@@ -4,7 +4,7 @@
  * Everything here is REAL and independently checkable on-chain — no claims a
  * reviewer can't verify themselves:
  *   - the ASP identity registered on X Layer mainnet (Agent #6271),
- *   - 119 real x402 settlements on X Layer mainnet (4 featured, one per original paid tool),
+ *   - 120 real x402 settlements on X Layer mainnet (4 featured, one per original paid tool),
  *   - the on-chain showcase agent the tools return real data for (Meridian #849980),
  *   - the engineering rigor behind the scores (deterministic, unit-tested engine).
  *

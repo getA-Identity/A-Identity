@@ -65,10 +65,10 @@ cross-chain).
 A-Identity is **live on [OKX.AI](https://www.okx.ai/agents)** as an **A2MCP ASP** —
 *the identity & reputation oracle for the agent economy.* Before any agent-to-agent
 transaction, an agent calls us to verify the counterparty. Same live engine as the
-Arc product below; four services sold pay-per-call via **x402 on X Layer mainnet**
+Arc product below; six services (one free) sold pay-per-call via **x402 on X Layer mainnet**
 (`eip155:196`).
 
-**Demo (88s, silent):** the full product in one take: the OKX.AI section on the landing, the guided "verify an agent right now" entry, the step-by-step verification pipeline (ERC-8004 resolve, KYA, deterministic score, ALLOW/WARN/DENY verdict), the agent console (marketplace + ERC-8004 identity), the 119 real x402 settlements at `/proof`, one settlement confirmed on OKLink, and both OKX.AI listings (#6271 Trust Oracle, #8913 Risk Copilot).
+**Demo (88s, silent):** the full product in one take: the OKX.AI section on the landing, the guided "verify an agent right now" entry, the step-by-step verification pipeline (ERC-8004 resolve, KYA, deterministic score, ALLOW/WARN/DENY verdict), the agent console (marketplace + ERC-8004 identity), the 120 real x402 settlements at `/proof`, one settlement confirmed on OKLink, and both OKX.AI listings (#6271 Trust Oracle, #8913 Risk Copilot).
 
 <video src="https://github.com/srabyanamrod/A-Identity/raw/main/okx-demo-trust-oracle.mp4" controls muted width="720"></video>
 
@@ -86,7 +86,7 @@ Arc product below; four services sold pay-per-call via **x402 on X Layer mainnet
 **Live endpoint:** `https://a-identity-asp.onrender.com` — `POST /tools/<name>` (paid),
 or free `GET /proof`, `GET /methodology`, `GET /health`.
 
-**Real on-chain revenue (not a mock):** 119 real x402 settlements on X Layer mainnet — all
+**Real on-chain revenue (not a mock):** 120 real x402 settlements on X Layer mainnet — all
 listed at `GET /proof`. Four representative ones, each independently verifiable on OKLink:
 
 | Tool | Settlement tx |
@@ -97,8 +97,8 @@ listed at `GET /proof`. Four representative ones, each independently verifiable 
 | `agent_passport` | [`0xc7f9342b…c302a0cb`](https://www.oklink.com/x-layer/evm/tx/0xc7f9342bde496f21be725f72f5555fa685aeffcc901b54d47bd75e51c302a0cb) |
 
 **Backed by real data, not an LLM guess:** a live ERC-8004 showcase agent — Meridian
-`#849980`, reputation **539/1000**, KYA-verified. Scoring is **deterministic and
-unit-tested** (74 tests), reads on-chain live via viem, and is fully documented at
+`#849980`, reputation **~542/1000**, KYA-verified. Scoring is **deterministic and
+unit-tested** (163 tests), reads on-chain live via viem, and is fully documented at
 `GET /methodology`. This is our answer to "surface your rigor" — every number is
 reproducible and every settlement is on-chain.
 

@@ -126,4 +126,7 @@ export const SETTLEMENTS: Settlement[] = [
   { round: 29, tool: 'agent_passport', amountUsd: 0.01, txHash: '0xc79dcd757b4dfe3dd5f211e87c3efc6adafe685c6a7c8e42dbc712fecb93c811' },
   { round: 29, tool: 'agent_passport', amountUsd: 0.01, txHash: '0x67db2f49cd9ba7ebb4b5b561e99a18833ccfb40e4f1e2b0a48df7e67eb3c545f' },
   { round: 29, tool: 'agent_passport', amountUsd: 0.01, txHash: '0x2e9f3ad2904d19a1ebe264119dfd50d90e5be8bdaa8eff07bd943dcd1cdd03b8' },
+  // round 30: end-to-end proof that a buyer's DEFAULT GET probe now settles (the GET+POST
+  // routing fix). A real quote-via-GET -> pay on X Layer mainnet.
+  { round: 30, tool: 'verify_agent', amountUsd: 0.001, txHash: '0x5384b1775eb226f2d3c6e433ab465389a41f3e31ef31af5161b379dc8f2f6f34' },
 ]

@@ -21,7 +21,7 @@ const TOOLS = [
 ]
 
 const STATS = [
-  ['119', 'real on-chain settlements'],
+  ['120', 'real on-chain settlements'],
   ['x402', 'on X Layer mainnet'],
   ['ERC-8004', 'identity + KYA'],
 ]
