@@ -1,5 +1,6 @@
 import Navbar from '../components/Navbar'
 import Hero from '../components/Hero'
+import VerifyCta from '../components/sections/VerifyCta'
 import Problem from '../components/sections/Problem'
 import Pillars from '../components/sections/Pillars'
 import Web25Layer from '../components/sections/Web25Layer'
@@ -54,6 +55,7 @@ export default function Landing() {
       </header>
 
       {/* Narrative sections */}
+      <VerifyCta />
       <Problem />
       <Pillars />
       <Web25Layer />
