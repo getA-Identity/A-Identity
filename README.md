@@ -76,15 +76,17 @@ Arc product below; four services sold pay-per-call via **x402 on X Layer mainnet
 
 | Tool | Price | What it returns |
 |---|---|---|
+| `trust_preview` | free | coarse trust band + revoked/Sybil flags (rate-limited adoption on-ramp) |
 | `verify_agent` | $0.001 | ERC-8004 on-chain identity + KYA status |
 | `reputation_score` | $0.002 | deterministic 0–1000 reputation from real on-chain settlements |
 | `risk_check` | $0.005 | pre-transaction **ALLOW / WARN / DENY** with reasons |
+| `counterparty_check` | $0.008 | deal-specific two-agent verdict + same-operator self-deal detection |
 | `agent_passport` | $0.01 | full passport: identity + KYA + reputation + risk |
 
 **Live endpoint:** `https://a-identity-asp.onrender.com` — `POST /tools/<name>` (paid),
 or free `GET /proof`, `GET /methodology`, `GET /health`.
 
-**Real on-chain revenue (not a mock):** 83 real x402 settlements on X Layer mainnet — all
+**Real on-chain revenue (not a mock):** 119 real x402 settlements on X Layer mainnet — all
 listed at `GET /proof`. Four representative ones, each independently verifiable on OKLink:
 
 | Tool | Settlement tx |

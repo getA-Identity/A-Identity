@@ -1,7 +1,8 @@
 /**
  * Real x402 settlements on X Layer mainnet (auto-collated from the buyer-side runs).
  * Every row is a real USD₮0 transfer to payTo, independently verifiable on OKLink.
- * round 0 = the first live demo calls; rounds 1-20 = the seeding runs.
+ * round 0 = the first live demo calls; rounds 1-20 = seeding; rounds 21-29 = seeding
+ * campaign 2 (adds counterparty_check, paid via the OKX Agent Payments Protocol CLI).
  */
 export type Settlement = { round: number; tool: string; amountUsd: number; txHash: string }
 
@@ -89,4 +90,40 @@ export const SETTLEMENTS: Settlement[] = [
   { round: 20, tool: 'reputation_score', amountUsd: 0.002, txHash: '0x7ce69f68a327e8b6f8dcc856a3187388a18f78cf34316e45708eaad48ad44ee5' },
   { round: 20, tool: 'risk_check', amountUsd: 0.005, txHash: '0x582b23333ecdd3ae2c255bef83298d7bdb88a5b72087fc771cbb0641034e4d12' },
   { round: 20, tool: 'agent_passport', amountUsd: 0.01, txHash: '0xeff561becf6ed1b7327ede59babd9715a71f466a0f629d92e8ba2409cf3b14a4' },
+  { round: 21, tool: 'verify_agent', amountUsd: 0.001, txHash: '0x65ed8f93811dea6103a407abda351fc450ec79395ec846ee71ca623e4891d3e9' },
+  { round: 21, tool: 'verify_agent', amountUsd: 0.001, txHash: '0xfe38b52f5c878b19d8a6174d7804719fa0539f2ed4d0b475f4b267364e0f2201' },
+  { round: 21, tool: 'verify_agent', amountUsd: 0.001, txHash: '0xd41d5f05d780fc81b3d9c981e0e772e5c0e66adc6c6d7cfc3533e5c491b6dceb' },
+  { round: 21, tool: 'verify_agent', amountUsd: 0.001, txHash: '0x40db6786ffc7689202a10acb10d0dabad74a3fb9194cb828c6684ef2868cf76e' },
+  { round: 22, tool: 'verify_agent', amountUsd: 0.001, txHash: '0x3afa9c9c19e33d09e3c33b0898fbf9d41598f8d130c0976d6f2174f63a21e8d1' },
+  { round: 22, tool: 'verify_agent', amountUsd: 0.001, txHash: '0xecbbaf206be485c099db13917fe2138f5c8923f03dfb1f0d6cc2f9de7e99c59c' },
+  { round: 22, tool: 'verify_agent', amountUsd: 0.001, txHash: '0x51d188b217373c2a6efeb71e135a0179a8be084df96aa45fff2cb86d498f2797' },
+  { round: 22, tool: 'verify_agent', amountUsd: 0.001, txHash: '0x37d6c799fbce45a68855c821f00c52531fe0e413c7551ba3aebe9e398f0b9547' },
+  { round: 23, tool: 'verify_agent', amountUsd: 0.001, txHash: '0x427059a17fbaaa32acd76fa7c4d0b7ef881b4f5226af2e5f6ef6229f12752864' },
+  { round: 23, tool: 'verify_agent', amountUsd: 0.001, txHash: '0x6d40c08723c2e0da44630d696418f5ca4e728db8d8f7f5790a3a8f13625698cd' },
+  { round: 23, tool: 'reputation_score', amountUsd: 0.002, txHash: '0x9020a1c7e0106abaa89cb80fc87c23bd0d31dfc8ab8e23a998d0b0009a5e47e6' },
+  { round: 23, tool: 'reputation_score', amountUsd: 0.002, txHash: '0xfeb3809e148ec0612a5d2d551e3cf19861c5de88a7c54f366a45041a3f44c594' },
+  { round: 24, tool: 'reputation_score', amountUsd: 0.002, txHash: '0xe18d80a8d8463cc298f0e2505c95c57739c92bf06b8396863d5ee8f7a6d91cb5' },
+  { round: 24, tool: 'reputation_score', amountUsd: 0.002, txHash: '0xf3b4d803dc45826fcad744158e154d1af6afb491099de1137f916cfed0172ae8' },
+  { round: 24, tool: 'reputation_score', amountUsd: 0.002, txHash: '0x005a1911c44cc3fd2dc233468c8db3e30cda1af1db1d3f29faf8f9a85c5eeb9f' },
+  { round: 24, tool: 'reputation_score', amountUsd: 0.002, txHash: '0x25ad761275a1129a724fc8cb34d0b770143b3d2c737071e4a12c15aaecf35bd2' },
+  { round: 25, tool: 'reputation_score', amountUsd: 0.002, txHash: '0x2114fc31b397fc5fc17ea5fcd65122cda20d7095d76fffb040d7c95e991195bb' },
+  { round: 25, tool: 'reputation_score', amountUsd: 0.002, txHash: '0x92d3679ca4f6ac8f1233f795edfd37dff73fd56da645feab3454dfba5b3042a1' },
+  { round: 25, tool: 'risk_check', amountUsd: 0.005, txHash: '0xdcd1575b726894b786d8a2219f2203c37037e05b9b5299af565f06f051f84a3b' },
+  { round: 25, tool: 'risk_check', amountUsd: 0.005, txHash: '0xadbb479a3ac9ce6be42c3acab8c6f09f4be2b30abfb371abc4a7ce15ab008535' },
+  { round: 26, tool: 'risk_check', amountUsd: 0.005, txHash: '0x8bdaefbe334aa4021af25f65a331a66bc99b72492f3a79afd0c721acf11a4402' },
+  { round: 26, tool: 'risk_check', amountUsd: 0.005, txHash: '0xe0bdebbb68182aebd132670db9442161504867fad14a38b464756f364b7fc444' },
+  { round: 26, tool: 'risk_check', amountUsd: 0.005, txHash: '0xa999287b379fbb006c77496c7a62a0eb0396da531030e8e1cfab6dc011e4d112' },
+  { round: 26, tool: 'risk_check', amountUsd: 0.005, txHash: '0x2828af174b1d5f1d5924c0aefd10ab5f631a9ce0628a4e4e89b59c7acf9a39b4' },
+  { round: 27, tool: 'risk_check', amountUsd: 0.005, txHash: '0x03d9ca262f854a15d168b66dfe14b4e15ccab7a01e0bfa3501d2e9d02c96a82f' },
+  { round: 27, tool: 'risk_check', amountUsd: 0.005, txHash: '0x6f59e8273b793f0d091375d53f904884fa32129ea4ce1cd139c02c61897092e6' },
+  { round: 27, tool: 'counterparty_check', amountUsd: 0.008, txHash: '0x305d0159a3855ac5b44c151f176bbbdc8e22d2488976d995eecc188ecb90fe22' },
+  { round: 27, tool: 'counterparty_check', amountUsd: 0.008, txHash: '0x2c2b3033803be67c96745b0ed4b33319695bd09b10615dfea57b74e3fa0e662a' },
+  { round: 28, tool: 'counterparty_check', amountUsd: 0.008, txHash: '0xa2697727525465418e537d7a352285e94bcb9e2010214b8781a8a3fa1f09cb45' },
+  { round: 28, tool: 'counterparty_check', amountUsd: 0.008, txHash: '0x9362e8d23edf3a340edd87e606db9cee655a689ba01ef523f37c4500535eefb0' },
+  { round: 28, tool: 'counterparty_check', amountUsd: 0.008, txHash: '0xff822f6cead208051d36cbab6da7773c513ffa8d05b88aea0fec0ba6e47885a1' },
+  { round: 28, tool: 'counterparty_check', amountUsd: 0.008, txHash: '0x77e3516c3180d345cad81e555caf72f860dafa4e174dacd8ae13f16396472feb' },
+  { round: 29, tool: 'agent_passport', amountUsd: 0.01, txHash: '0x4b2272ec670e86b55caac7d461951d576d662fcf1931d41739286b266fbfab9a' },
+  { round: 29, tool: 'agent_passport', amountUsd: 0.01, txHash: '0xc79dcd757b4dfe3dd5f211e87c3efc6adafe685c6a7c8e42dbc712fecb93c811' },
+  { round: 29, tool: 'agent_passport', amountUsd: 0.01, txHash: '0x67db2f49cd9ba7ebb4b5b561e99a18833ccfb40e4f1e2b0a48df7e67eb3c545f' },
+  { round: 29, tool: 'agent_passport', amountUsd: 0.01, txHash: '0x2e9f3ad2904d19a1ebe264119dfd50d90e5be8bdaa8eff07bd943dcd1cdd03b8' },
 ]

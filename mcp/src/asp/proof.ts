@@ -4,7 +4,7 @@
  * Everything here is REAL and independently checkable on-chain — no claims a
  * reviewer can't verify themselves:
  *   - the ASP identity registered on X Layer mainnet (Agent #6271),
- *   - 83 real x402 settlements on X Layer mainnet (4 featured, one per paid tool),
+ *   - 119 real x402 settlements on X Layer mainnet (4 featured, one per original paid tool),
  *   - the on-chain showcase agent the tools return real data for (Meridian #849980),
  *   - the engineering rigor behind the scores (deterministic, unit-tested engine).
  *
@@ -22,7 +22,7 @@ const OKLINK_ADDR = 'https://www.oklink.com/x-layer/evm/address/'
 const PAYER = '0x169ead25d35c146f3f3a7d2936ae37eab2e256d1'
 const PAY_TO = '0x6a5f1b8e56a19d456b799c2fa00e513244f58ce6'
 
-// All real settlements (round 0 = live demo, rounds 1-20 = seeding), each + an OKLink link.
+// All real settlements (round 0 = live demo, rounds 1-29 = seeding incl. campaign 2), each + an OKLink link.
 const WITH_URLS = SETTLEMENTS.map((s) => ({ ...s, txUrl: `${OKLINK_TX}${s.txHash}` }))
 const FEATURED = WITH_URLS.filter((s) => s.round === 0)
 const TOTAL_USD = Math.round(SETTLEMENTS.reduce((a, s) => a + s.amountUsd, 0) * 1000) / 1000
@@ -42,7 +42,8 @@ export const PROOF = {
     registrationTxUrl: `${OKLINK_TX}0x03a614a902ed742526047dffa165378cb16350a81bf083d4672f6d7a9ecfb078`,
   },
   // REAL x402 pay-per-call settlements on X Layer mainnet — round 0 = the live demo,
-  // rounds 1-20 = seeding. Every row is a real USD₮0 transfer to payTo.
+  // rounds 1-29 = seeding (campaign 2 adds counterparty_check). Every row is a real
+  // USD₮0 transfer to payTo.
   realOnchainRevenue: {
     network: 'X Layer mainnet (eip155:196)',
     asset: 'USD₮0 (0x779Ded0c9e1022225f8E0630b35a9b54bE713736)',
