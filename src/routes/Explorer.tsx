@@ -6,6 +6,7 @@ import Logo from '../components/Logo'
 import ThemeToggle from '../components/ThemeToggle'
 import SiteFooter from '../components/sections/SiteFooter'
 import { Input } from '../components/ui/input'
+import VerifyStepper from '../components/VerifyStepper'
 import { useTheme } from '../components/ThemeProvider'
 import { APP_NAME } from '../lib/brand'
 import {
@@ -283,12 +284,14 @@ export default function Explorer() {
   const [shown, setShown] = useState('')
   const [board, setBoard] = useState<FeedAgent[]>([])
   const [boardLoading, setBoardLoading] = useState(true)
+  // The step-by-step pipeline runs first; the full profile card reveals when it completes.
+  const [pipelineDone, setPipelineDone] = useState(false)
   const topRef = useRef<HTMLElement>(null)
 
   async function lookup(raw: string, scroll = false) {
     const q = raw.trim()
     if (!q) return
-    setLoading(true); setError(null)
+    setLoading(true); setError(null); setPipelineDone(false)
     const [idRes, repRes] = await Promise.all([resolveAgent(q), getReputation(q)])
     const id = idRes.ok && idRes.data.found ? (idRes.data.agent ?? null) : null
     const rep = repRes.ok && repRes.data.found ? (repRes.data.reputation ?? null) : null
@@ -350,9 +353,14 @@ export default function Explorer() {
           <div className="mt-6">
             {error && <div className="rounded-lg border border-border bg-card p-5 text-sm text-foreground/60">{error}</div>}
             {!error && loading && !identity && !reputation && <ProfileSkeleton />}
+            {!error && (identity || reputation) && (
+              <motion.div key={`pipe-${shown}`} initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.3, ease: [0.16, 1, 0.3, 1] }}>
+                <VerifyStepper identity={identity} reputation={reputation} query={shown} onComplete={() => setPipelineDone(true)} />
+              </motion.div>
+            )}
             <AnimatePresence mode="wait">
-              {!error && (identity || reputation) && (
-                <motion.div key={shown} initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} transition={{ duration: 0.3, ease: [0.16, 1, 0.3, 1] }}>
+              {!error && (identity || reputation) && pipelineDone && (
+                <motion.div key={shown} initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} transition={{ duration: 0.3, ease: [0.16, 1, 0.3, 1] }} className="mt-4">
                   <TrustProfile identity={identity} reputation={reputation} query={shown} />
                 </motion.div>
               )}
