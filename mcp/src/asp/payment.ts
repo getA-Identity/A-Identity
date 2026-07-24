@@ -31,6 +31,42 @@ export const PRICES: Record<string, string> = {
   'POST /tools/counterparty_check': '$0.008',
 }
 
+const AGENT_ID_DOC = 'ERC-8004 token id ("#849980"), CAIP id ("eip155:196:8004/6271"), or 0x owner address'
+const TX_CONTEXT_DOC = 'optional object: { "amountUsd": number, "kind": "payment" | "purchase" | "rental" }'
+
+/**
+ * The machine-readable calling contract for each paid tool, served INSIDE the 402
+ * response body (via the SDK's unpaidResponseBody hook) so a buyer agent knows the
+ * exact method, JSON fields, and an example BEFORE paying — no guessing from prose.
+ */
+const CONTRACTS: Record<string, { description: string; input: Record<string, string>; example: Record<string, unknown> }> = {
+  'POST /tools/verify_agent': {
+    description: 'Verify an AI agent: ERC-8004 identity + KYA status + endpoint liveness.',
+    input: { agentId: AGENT_ID_DOC },
+    example: { agentId: '#849980' },
+  },
+  'POST /tools/reputation_score': {
+    description: 'Deterministic 0-1000 reputation with a full breakdown and its on-chain attestation.',
+    input: { agentId: AGENT_ID_DOC },
+    example: { agentId: '#849980' },
+  },
+  'POST /tools/risk_check': {
+    description: 'Pre-transaction ALLOW / WARN / DENY verdict on a counterparty, with reasons.',
+    input: { agentId: AGENT_ID_DOC, txContext: TX_CONTEXT_DOC },
+    example: { agentId: '#849980', txContext: { amountUsd: 25, kind: 'payment' } },
+  },
+  'POST /tools/counterparty_check': {
+    description: 'Deal-specific verdict between two agents: counterparty risk + same-operator self-deal detection.',
+    input: { from: `the paying agent: ${AGENT_ID_DOC}`, to: `the counterparty: ${AGENT_ID_DOC}`, txContext: TX_CONTEXT_DOC },
+    example: { from: '#6271', to: '#849980', txContext: { amountUsd: 25, kind: 'payment' } },
+  },
+  'POST /tools/agent_passport': {
+    description: 'The full trust passport: identity + KYA + reputation + risk in one call.',
+    input: { agentId: AGENT_ID_DOC },
+    example: { agentId: '#849980' },
+  },
+}
+
 export type PaymentStatus = {
   enabled: boolean
   mode: 'paid' | 'free'
@@ -74,7 +110,30 @@ export async function applyOkxX402(app: Express): Promise<PaymentStatus> {
 
     const routes: Record<string, unknown> = {}
     for (const [route, price] of Object.entries(PRICES)) {
-      routes[route] = { accepts: { scheme: 'exact', network: NETWORK, payTo, price } }
+      const contract = CONTRACTS[route]
+      routes[route] = {
+        accepts: { scheme: 'exact', network: NETWORK, payTo, price },
+        // Fills the 402 challenge's resource.description (was empty before).
+        description: contract?.description,
+        // The 402 body carries the exact calling contract, so a buyer agent can
+        // assemble a correct paid replay without guessing from the listing prose.
+        unpaidResponseBody: contract
+          ? () => ({
+              contentType: 'application/json',
+              body: {
+                error: 'Payment required',
+                tool: route.replace('POST /tools/', ''),
+                method: 'POST',
+                contentTypeExpected: 'application/json',
+                input: contract.input,
+                example: contract.example,
+                freeTier: 'POST /tools/trust_preview (no payment, rate-limited): coarse band + flags',
+                methodology: 'https://a-identity-asp.onrender.com/methodology',
+                proof: 'https://a-identity-asp.onrender.com/proof',
+              },
+            })
+          : undefined,
+      }
     }
     const httpServer = new coreServer.x402HTTPResourceServer(resourceServer, routes)
     app.use(expressX402.paymentMiddlewareFromHTTPServer(httpServer))

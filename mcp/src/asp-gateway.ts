@@ -141,6 +141,18 @@ async function main() {
   app.set('trust proxy', true)
   app.use(express.json({ limit: '16kb' }))
 
+  // CORS: agent-to-agent callers are servers, but browser-based agent clients (and the
+  // OKX web surfaces) preflight; expose the x402 headers so a web client can read the
+  // challenge and attach payment proofs.
+  app.use((req: Request, res: Response, next: () => void) => {
+    res.set('Access-Control-Allow-Origin', '*')
+    res.set('Access-Control-Allow-Methods', 'GET, POST, OPTIONS')
+    res.set('Access-Control-Allow-Headers', 'Content-Type, X-PAYMENT, X-Payment-Nonce, X-Payment-Payer, X-Payment-Sig, PAYMENT-SIGNATURE, Authorization')
+    res.set('Access-Control-Expose-Headers', 'PAYMENT-REQUIRED, PAYMENT-RESPONSE')
+    if (req.method === 'OPTIONS') { res.status(204).end(); return }
+    next()
+  })
+
   // Free discovery endpoints — never charged (payment middleware only guards POST /tools/*).
   const health = (payment: PaymentStatus) => (_req: Request, res: Response) =>
     res.json({ ok: true, ...serviceCard(payment), paymentReason: payment.reason })
