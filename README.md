@@ -68,11 +68,11 @@ transaction, an agent calls us to verify the counterparty. Same live engine as t
 Arc product below; four services sold pay-per-call via **x402 on X Layer mainnet**
 (`eip155:196`).
 
-**Demo (15s, silent):** a buyer agent calls `risk_check` on an unknown counterparty and gets `DENY` (don't pay), then hits the real x402 `402 Payment Required` challenge on X Layer mainnet.
+**Demo (49s, silent):** verify an agent from the landing page spotlight, read the live 0-1000 trust profile with its ALLOW/WARN/DENY verdict, then see the 119 real x402 settlements at `/proof` and one of them confirmed on OKLink.
 
-<video src="https://github.com/srabyanamrod/A-Identity/raw/main/okx-demo-risk-402.mp4" controls muted width="720"></video>
+<video src="https://github.com/srabyanamrod/A-Identity/raw/main/okx-demo-trust-oracle.mp4" controls muted width="720"></video>
 
-▶️ [okx-demo-risk-402.mp4](./okx-demo-risk-402.mp4)
+▶️ [okx-demo-trust-oracle.mp4](./okx-demo-trust-oracle.mp4) · 15s risk_check + 402 clip: [okx-demo-risk-402.mp4](./okx-demo-risk-402.mp4)
 
 | Tool | Price | What it returns |
 |---|---|---|
