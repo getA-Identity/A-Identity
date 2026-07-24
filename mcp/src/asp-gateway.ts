@@ -9,17 +9,19 @@
  * Run: `npm run build && npm run start:asp` (PORT / ASP_PORT selects the port).
  *
  *   GET  /health           free — liveness + service card (discovery)
- *   POST /tools/verify_agent      $0.001 — ERC-8004 identity + KYA
- *   POST /tools/reputation_score  $0.002 — 0-1000 on-chain reputation
- *   POST /tools/risk_check        $0.005 — ALLOW/WARN/DENY pre-tx risk
- *   POST /tools/agent_passport    $0.01  — full agent passport
+ *   POST /tools/trust_preview       free  — coarse band + flags (rate-limited on-ramp)
+ *   POST /tools/verify_agent        $0.001 — ERC-8004 identity + KYA
+ *   POST /tools/reputation_score    $0.002 — 0-1000 on-chain reputation
+ *   POST /tools/risk_check          $0.005 — ALLOW/WARN/DENY pre-tx risk
+ *   POST /tools/counterparty_check  $0.008 — deal-specific two-agent verdict
+ *   POST /tools/agent_passport      $0.01  — full agent passport
  */
 import express, { type Request, type Response } from 'express'
 import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { dirname, join } from 'node:path'
 import { initState } from './platform.js'
-import { verifyAgent, reputationScore, riskCheck, agentPassport, counterpartyCheck, type TxContext } from './asp/tools.js'
+import { verifyAgent, reputationScore, riskCheck, agentPassport, counterpartyCheck, trustPreview, type TxContext } from './asp/tools.js'
 import { applyOkxX402, type PaymentStatus } from './asp/payment.js'
 import { PROOF, METHODOLOGY } from './asp/proof.js'
 import { renderProofHtml } from './asp/proof-html.js'
@@ -64,6 +66,30 @@ function requireFromTo(req: Request): { from: string; to: string } | { error: st
   return { from: (from as string).trim(), to: (to as string).trim() }
 }
 
+/**
+ * Free-tier rate limit for trust_preview: per-IP fixed window, in-memory (single-instance,
+ * same accepted tradeoff as the rest of this backend — see SECURITY.md). Paid tools are
+ * never rate-limited this way; x402 pricing is their throttle.
+ */
+const PREVIEW_WINDOW_MS = 60 * 60 * 1000
+const PREVIEW_LIMIT = 20 // calls per IP per window
+const previewHits = new Map<string, { count: number; resetAt: number }>()
+function previewGate(ip: string): { allowed: true } | { allowed: false; retryAfterSeconds: number } {
+  const now = Date.now()
+  // Lazy sweep so the map can't grow unboundedly across many IPs.
+  if (previewHits.size > 10_000) {
+    for (const [k, v] of previewHits) if (v.resetAt <= now) previewHits.delete(k)
+  }
+  const hit = previewHits.get(ip)
+  if (!hit || hit.resetAt <= now) {
+    previewHits.set(ip, { count: 1, resetAt: now + PREVIEW_WINDOW_MS })
+    return { allowed: true }
+  }
+  if (hit.count >= PREVIEW_LIMIT) return { allowed: false, retryAfterSeconds: Math.ceil((hit.resetAt - now) / 1000) }
+  hit.count++
+  return { allowed: true }
+}
+
 /** Run a tool handler, translating errors into a clean 400/500 JSON envelope. */
 function handle(fn: (req: Request) => Promise<unknown>) {
   return async (req: Request, res: Response) => {
@@ -89,6 +115,7 @@ function serviceCard(payment: PaymentStatus) {
     type: 'A2MCP',
     payment: { mode: payment.mode, network: payment.network, payTo: payment.payTo },
     tools: [
+      { name: 'trust_preview', method: 'POST /tools/trust_preview', price: 'free', desc: `Free tier: coarse trust band + flags for one agent (rate-limited ${PREVIEW_LIMIT}/hour per IP).` },
       { name: 'verify_agent', method: 'POST /tools/verify_agent', price: payment.prices['POST /tools/verify_agent'], desc: 'Verify an AI agent identity (ERC-8004 / KYA status).' },
       { name: 'reputation_score', method: 'POST /tools/reputation_score', price: payment.prices['POST /tools/reputation_score'], desc: 'On-chain 0-1000 reputation score for an agent.' },
       { name: 'risk_check', method: 'POST /tools/risk_check', price: payment.prices['POST /tools/risk_check'], desc: 'Pre-transaction counterparty risk: ALLOW / WARN / DENY.' },
@@ -141,7 +168,22 @@ async function main() {
   // Live on-chain stats (payTo's current USD₮0), so the /proof page reads "live".
   app.get('/stats', async (_req: Request, res: Response) => res.json(await getLiveStats()))
 
-  // The four paid tools.
+  // The FREE tier (never behind x402 — its route is deliberately absent from PRICES).
+  app.post('/tools/trust_preview', (req: Request, res: Response) => {
+    const gate = previewGate(req.ip ?? 'unknown')
+    if (!gate.allowed) {
+      res.status(429).set('Retry-After', String(gate.retryAfterSeconds)).json({
+        error: `Free-tier limit reached (${PREVIEW_LIMIT}/hour per IP). Retry in ${gate.retryAfterSeconds}s, or use the paid tools (no free-tier limit).`,
+      })
+      return
+    }
+    void handle(async (r) => {
+      const v = requireAgentId(r); if ('error' in v) return v
+      return trustPreview(v.agentId)
+    })(req, res)
+  })
+
+  // The paid tools.
   app.post('/tools/verify_agent', handle(async (req) => {
     const v = requireAgentId(req); if ('error' in v) return v
     return verifyAgent(v.agentId)

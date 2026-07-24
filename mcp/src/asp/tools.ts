@@ -1,11 +1,13 @@
 /**
- * The four A-Identity ASP tools sold on OKX.AI, each a THIN wrapper over logic the
+ * The A-Identity ASP tools sold on OKX.AI, each a THIN wrapper over logic the
  * backend already runs live — no new trust claims, no mocks:
  *
- *   verify_agent      → on-chain ERC-8004 resolve (erc8004.ts) + KYA (readValidation)
- *   reputation_score  → the deterministic 0-1000 scorer (reputation.ts / platform repOf)
- *   risk_check        → NEW ALLOW/WARN/DENY composition over those signals (./risk.ts)
- *   agent_passport    → aggregation of all of the above into one passport JSON
+ *   verify_agent       → on-chain ERC-8004 resolve (erc8004.ts) + KYA (readValidation)
+ *   reputation_score   → the deterministic 0-1000 scorer (reputation.ts / platform repOf)
+ *   risk_check         → ALLOW/WARN/DENY composition over those signals (./risk.ts)
+ *   counterparty_check → deal-specific verdict between two agents (+ same-operator signal)
+ *   agent_passport     → aggregation of all of the above into one passport JSON
+ *   trust_preview      → FREE tier: coarse band + flags only (the adoption on-ramp)
  *
  * An `agentId` may be a platform agent id, an ERC-8004 token id ("#849980" / "849980"),
  * an owner address, or a CAIP-10 id. We resolve platform state first (richest signals),
@@ -17,6 +19,7 @@ import { computeAgentReputation, type ReputationResult } from '../reputation.js'
 import { listPlatformAgents, agentReputation, type PlatformAgent } from '../platform.js'
 import { assessRisk, type RiskSignals, type TxContext, type SybilLevel } from './risk.js'
 import { getReputationAttestation } from './attestations.js'
+import { PRICES } from './payment.js'
 
 const DAY_MS = 86_400_000
 
@@ -260,6 +263,50 @@ export async function agentPassport(agentId: string) {
       : null,
     tenureDays: b.tenureDays,
     issuedAt: new Date().toISOString(),
+  }
+}
+
+/**
+ * Coarse public band for a 0-1000 score. The free tier deliberately returns a band, not
+ * the exact score: bands align with the risk thresholds (DENY < 200, WARN 200-500), so a
+ * free caller still gets an actionable signal while the exact score + breakdown stay a
+ * paid read.
+ */
+export function scoreBand(score: number): 'very-low' | 'low' | 'medium' | 'high' {
+  if (score < 200) return 'very-low'
+  if (score < 500) return 'low'
+  if (score < 700) return 'medium'
+  return 'high'
+}
+
+/**
+ * trust_preview — the FREE tier: real (never mocked) but deliberately coarse signals on
+ * one agent, plus pointers to the paid depth. The adoption on-ramp: an agent can sanity-
+ * check a counterparty for free, then pay per call when a decision actually needs the
+ * exact score, the reasons, or the full passport.
+ */
+export async function trustPreview(agentId: string) {
+  const b = await gather(agentId)
+  const sybilLevel = b.reputation.sybil?.level ?? 'none'
+  return {
+    tool: 'trust_preview',
+    _meta: TOOL_META,
+    tier: 'free',
+    agentId: b.agentId,
+    verified: b.onchainVerified,
+    kya_status: b.kyaStatus,
+    scoreBand: scoreBand(b.reputation.score),
+    flags: { revoked: b.revoked, sybilSuspected: sybilLevel === 'medium' || sybilLevel === 'high' },
+    upgrade: {
+      note: 'The free preview is coarse by design. Paid tools return the exact 0-1000 score with a full breakdown, an ALLOW/WARN/DENY verdict with reasons, and the complete passport.',
+      tools: [
+        { name: 'reputation_score', method: 'POST /tools/reputation_score', price: PRICES['POST /tools/reputation_score'] },
+        { name: 'risk_check', method: 'POST /tools/risk_check', price: PRICES['POST /tools/risk_check'] },
+        { name: 'counterparty_check', method: 'POST /tools/counterparty_check', price: PRICES['POST /tools/counterparty_check'] },
+        { name: 'agent_passport', method: 'POST /tools/agent_passport', price: PRICES['POST /tools/agent_passport'] },
+      ],
+    },
+    checkedAt: new Date().toISOString(),
   }
 }
 

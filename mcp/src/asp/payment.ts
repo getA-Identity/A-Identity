@@ -21,8 +21,9 @@ import type { Express } from 'express'
 /** X Layer mainnet. Testnet is eip155:1952; 195 is deprecated — never use it. */
 const NETWORK = process.env.OKX_X402_NETWORK ?? 'eip155:196'
 
-/** Per-call USD prices; OKX auto-converts to the X Layer settlement token (USD₮0, 6 dp). */
-const PRICES: Record<string, string> = {
+/** Per-call USD prices; OKX auto-converts to the X Layer settlement token (USD₮0, 6 dp).
+ *  Routes NOT listed here (e.g. the free-tier trust_preview) are never charged. */
+export const PRICES: Record<string, string> = {
   'POST /tools/verify_agent': '$0.001',
   'POST /tools/reputation_score': '$0.002',
   'POST /tools/risk_check': '$0.005',

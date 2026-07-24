@@ -4,7 +4,7 @@
  */
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { asTokenId, isAddress, sameOperator } from './tools.js'
+import { asTokenId, isAddress, sameOperator, scoreBand } from './tools.js'
 import type { PlatformAgent } from '../platform.js'
 
 // A minimal agent for the counterparty_check same-operator relationship signal.
@@ -60,4 +60,15 @@ test('sameOperator: the same agent id is not a self-deal counterparty', () => {
 test('sameOperator: missing owner/wallet on either side => false (no false positive)', () => {
   assert.equal(sameOperator(agent({ id: 'a' }), agent({ id: 'b' })), false)
   assert.equal(sameOperator(null, agent({ id: 'b', owner: '0xABC' })), false)
+})
+
+test('scoreBand: bands align with the risk thresholds (DENY < 200, WARN 200-500)', () => {
+  assert.equal(scoreBand(0), 'very-low')
+  assert.equal(scoreBand(199), 'very-low')
+  assert.equal(scoreBand(200), 'low')
+  assert.equal(scoreBand(499), 'low')
+  assert.equal(scoreBand(500), 'medium')
+  assert.equal(scoreBand(699), 'medium')
+  assert.equal(scoreBand(700), 'high')
+  assert.equal(scoreBand(1000), 'high')
 })
