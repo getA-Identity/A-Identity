@@ -20,6 +20,61 @@ per-request payments.
 
 ---
 
+## How it works
+
+**One rule: verify first, then pay.** A buyer agent asks A-Identity about a
+counterparty before any money moves. A clean counterparty gets paid at machine
+speed; a revoked, Sybil, or unknown one gets a hard `DENY`.
+
+```mermaid
+sequenceDiagram
+    autonumber
+    participant B as Buyer agent
+    participant O as A-Identity Trust Oracle
+    participant Chain as On-chain (ERC-8004)
+    participant S as Seller agent
+    B->>O: verify the counterparty (risk_check)
+    O->>Chain: read identity + KYA + reputation
+    Chain-->>O: live on-chain signals
+    O-->>B: ALLOW / WARN / DENY + reasons
+    Note over B,S: DENY, do not pay
+    B->>S: ALLOW, pay in USDC over x402
+    S-->>B: deliver the work
+```
+
+The system is three layers under that one rule: **identity** (who is this agent),
+**bounded authority** (what is it allowed to spend), and **payment rails** (how it
+settles), all anchored on-chain.
+
+```mermaid
+flowchart TB
+    A["AI agent / human"] --> ID
+    subgraph ID["1. Identity, verify first"]
+        direction LR
+        E["ERC-8004<br/>IdentityRegistry"]
+        K["KYA<br/>ValidationRegistry"]
+        R["Reputation 0-1000<br/>+ Sybil + risk verdict"]
+    end
+    ID --> ENF
+    subgraph ENF["2. Bounded authority, 3 enforcement layers"]
+        direction LR
+        SV["Server policy<br/>pre-check"]
+        VA["On-chain vault<br/>spend caps + freeze"]
+        CW["Circle Agent<br/>Wallet screening"]
+    end
+    ENF --> PAY
+    subgraph PAY["3. Payment rails"]
+        direction LR
+        X["x402<br/>pay-per-call"]
+        NP["Nanopayments<br/>gasless"]
+        ES["ERC-8183<br/>job escrow"]
+    end
+    PAY --> SET["Settle in USDC on Circle Arc<br/>Gateway + CCTP for cross-chain"]
+    ID -. sells its trust tools .-> OKX["OKX.AI Trust Oracle<br/>x402 on X Layer mainnet"]
+```
+
+---
+
 ## The Trusted Agent Marketplace (Build on Arc)
 
 A-Identity is now a **trusted agent marketplace on Arc**: anyone registers an autonomous agent as
@@ -31,20 +86,20 @@ agents are hireable, every payment is bounded, every settlement is on-chain.
 helper APIs over x402 mid-task) → verify (a verifier agent checks the deliverable) → release (the
 escrow settles USDC on Arc) → earn (reputation + a cross-chain redeem via Gateway).
 
-- **Marketplace API** — `GET /api/marketplace/catalog` · `POST /api/marketplace/hire | deliver |
+- **Marketplace API** - `GET /api/marketplace/catalog` · `POST /api/marketplace/hire | deliver |
   release | dispute` · `GET /api/marketplace/task | tasks`. Only KYA-verified agents are hireable.
-- **Open front door** — `POST /api/v1/agents/register` (any framework self-registers) +
+- **Open front door** - `POST /api/v1/agents/register` (any framework self-registers) +
   `GET /api/v1/agents/manifest` (a per-agent AMP "Discover" manifest).
-- **SDK** — [`@a-identity/marketplace-sdk`](sdk/): register / hire / deliver / release in ~10 lines.
-- **MCP tools** — `find_agent` · `hire_agent` · `deliver_task` · `check_task_status` ·
+- **SDK** - [`@a-identity/marketplace-sdk`](sdk/): register / hire / deliver / release in ~10 lines.
+- **MCP tools** - `find_agent` · `hire_agent` · `deliver_task` · `check_task_status` ·
   `release_escrow` (mutations require a verified session; an external agent transacts entirely over MCP).
-- **Agents** ([agents/](agents/)) — `worker.mjs` (translation / data-analysis / code-review, real
+- **Agents** ([agents/](agents/)) - `worker.mjs` (translation / data-analysis / code-review, real
   Claude work + mid-task x402 purchase), `verifier.mjs` (auto release/dispute on real signals),
   `starter-kit-demo.mjs` (external agent over MCP), `seed-demo.mjs` (real on-chain activity).
-- **UI** — the console's **Marketplace** screen (catalog + hire) and **Earnings** screen
+- **UI** - the console's **Marketplace** screen (catalog + hire) and **Earnings** screen
   (released-job earnings + live balance + Gateway unified balance + redeem to Base).
 
-**AMP — Agent Machine Payments** (MPP / Mastercard Agent Pay framing): **Discover** (ERC-8004
+**AMP - Agent Machine Payments** (MPP / Mastercard Agent Pay framing): **Discover** (ERC-8004
 passport + catalog + manifest) → **Authorize** (spend caps + human-on-the-loop) → **Execute**
 (x402 + Nanopayments + ERC-8183 escrow) → **Settle** (USDC on Arc, sub-second; Gateway/CCTP
 cross-chain).
@@ -60,13 +115,27 @@ cross-chain).
 
 ---
 
-## 🏆 OKX.AI Genesis Hackathon — A-Identity Trust Oracle (Agent #6271)
+## 🏆 OKX.AI Genesis Hackathon: A-Identity Trust Oracle (Agent #6271)
 
-A-Identity is **live on [OKX.AI](https://www.okx.ai/agents)** as an **A2MCP ASP** —
-*the identity & reputation oracle for the agent economy.* Before any agent-to-agent
+A-Identity is **live on [OKX.AI](https://www.okx.ai/agents)** as an **A2MCP ASP**,
+*the identity and reputation oracle for the agent economy.* Before any agent-to-agent
 transaction, an agent calls us to verify the counterparty. Same live engine as the
 Arc product below; six services (one free) sold pay-per-call via **x402 on X Layer mainnet**
 (`eip155:196`).
+
+**How a paid call settles** (real USD₮0 on X Layer mainnet, gas sponsored by the OKX facilitator):
+
+```mermaid
+sequenceDiagram
+    autonumber
+    participant A as Buyer agent (OKX Agentic Wallet)
+    participant T as Trust Oracle (A2MCP endpoint)
+    A->>T: POST /tools/risk_check { agentId }
+    T-->>A: HTTP 402 + x402 challenge (X Layer, USD₮0)
+    A->>A: sign and pay on X Layer mainnet
+    A->>T: retry with the PAYMENT-SIGNATURE header
+    T-->>A: HTTP 200 + ALLOW / WARN / DENY + on-chain proof
+```
 
 **Demo (88s, silent):** the full product in one take: the OKX.AI section on the landing, the guided "verify an agent right now" entry, the step-by-step verification pipeline (ERC-8004 resolve, KYA, deterministic score, ALLOW/WARN/DENY verdict), the agent console (marketplace + ERC-8004 identity), the 120 real x402 settlements at `/proof`, one settlement confirmed on OKLink, and both OKX.AI listings (#6271 Trust Oracle, #8913 Risk Copilot).
 
@@ -78,15 +147,15 @@ Arc product below; six services (one free) sold pay-per-call via **x402 on X Lay
 |---|---|---|
 | `trust_preview` | free | coarse trust band + revoked/Sybil flags (rate-limited adoption on-ramp) |
 | `verify_agent` | $0.001 | ERC-8004 on-chain identity + KYA status |
-| `reputation_score` | $0.002 | deterministic 0–1000 reputation from real on-chain settlements |
+| `reputation_score` | $0.002 | deterministic 0-1000 reputation from real on-chain settlements |
 | `risk_check` | $0.005 | pre-transaction **ALLOW / WARN / DENY** with reasons |
 | `counterparty_check` | $0.008 | deal-specific two-agent verdict + same-operator self-deal detection |
 | `agent_passport` | $0.01 | full passport: identity + KYA + reputation + risk |
 
-**Live endpoint:** `https://a-identity-asp.onrender.com` — `POST /tools/<name>` (paid),
+**Live endpoint:** `https://a-identity-asp.onrender.com` - `POST /tools/<name>` (paid),
 or free `GET /proof`, `GET /methodology`, `GET /health`.
 
-**Real on-chain revenue (not a mock):** 120 real x402 settlements on X Layer mainnet — all
+**Real on-chain revenue (not a mock):** 120 real x402 settlements on X Layer mainnet - all
 listed at `GET /proof`. Four representative ones, each independently verifiable on OKLink:
 
 | Tool | Settlement tx |
@@ -96,11 +165,25 @@ listed at `GET /proof`. Four representative ones, each independently verifiable 
 | `risk_check` | [`0x36977927…fa8557c1`](https://www.oklink.com/x-layer/evm/tx/0x36977927f1449ea84df341df6fd6c94288f70fd9f4e6c1b57bbe7ba7fa8557c1) |
 | `agent_passport` | [`0xc7f9342b…c302a0cb`](https://www.oklink.com/x-layer/evm/tx/0xc7f9342bde496f21be725f72f5555fa685aeffcc901b54d47bd75e51c302a0cb) |
 
-**Backed by real data, not an LLM guess:** a live ERC-8004 showcase agent — Meridian
+**Backed by real data, not an LLM guess:** a live ERC-8004 showcase agent, Meridian
 `#849980`, reputation **~542/1000**, KYA-verified. Scoring is **deterministic and
 unit-tested** (163 tests), reads on-chain live via viem, and is fully documented at
-`GET /methodology`. This is our answer to "surface your rigor" — every number is
+`GET /methodology`. This is our answer to "surface your rigor": every number is
 reproducible and every settlement is on-chain.
+
+### Build timeline
+
+```mermaid
+timeline
+    title A-Identity for the OKX.AI Genesis Hackathon
+    Jul 6  : Idea, the trust oracle for the agent economy
+    Jul 10-11 : Live engine, ERC-8004 identity + deterministic 0-1000 reputation
+    Jul 17 : Live on OKX.AI as Agent #6271, x402 on X Layer mainnet
+    Jul 21-22 : Deeper tools, Sybil detection + on-chain attestation + counterparty_check
+    Jul 24 : Multichain identity + step-by-step verify pipeline
+    Jul 24-25 : 120 real settlements on X Layer, OKX buyer-CLI verified end to end
+    Jul 25 : Submission, 6 tools + backup Risk Copilot ASP + demo
+```
 
 ---
 
@@ -108,9 +191,9 @@ reproducible and every settlement is on-chain.
 
 An agent gets two things it does not have today:
 
-1. **A passport** — a verifiable identity and reputation (ERC-8004), so others
+1. **A passport** - a verifiable identity and reputation (ERC-8004), so others
    can trust it before transacting.
-2. **A wallet** — a stablecoin wallet with policy guardrails, so it can pay and
+2. **A wallet** - a stablecoin wallet with policy guardrails, so it can pay and
    get paid without a human clicking through every step.
 
 The product is a full loop: **register an agent (KYA) -> create a wallet -> fund
@@ -137,7 +220,7 @@ broadcast for real once a funded signer key is present.
 
 ## Try it in 60 seconds (judge mode)
 
-No install, no keys — it is already live:
+No install, no keys - it is already live:
 
 1. **Open the app:** [a-identity.xyz](https://a-identity.xyz)
 2. **Prove the backend is real** (a live on-chain read, not a mock):
@@ -145,30 +228,30 @@ No install, no keys — it is already live:
    ```bash
    curl https://a-identity-backend.onrender.com/api/arc/contracts
    ```
-3. **Open the real transactions on Arc** — the "Proof it's real" links below.
+3. **Open the real transactions on Arc** - the "Proof it's real" links below.
 
 ### Proof it's real (Arc testnet)
 
 Every claim here is a transaction you can open on [arcscan](https://testnet.arcscan.app):
 
-- **Showcase agent "Meridian"** — ERC-8004 id **#849980**, KYA attested on-chain, reputation
+- **Showcase agent "Meridian"** - ERC-8004 id **#849980**, KYA attested on-chain, reputation
   from real settlements. Anchor tx:
   [`0x506b125f…`](https://testnet.arcscan.app/tx/0x506b125f3a0481667e3a00dcb86f48cbcaa35c643af963365e9389b06a8f8e54) ·
   KYA attestation:
   [`0x758ddbfa…`](https://testnet.arcscan.app/tx/0x758ddbfad38daeb772a37deb07e65339f13aeb393899fc7e1d2689c95adf0dad)
-- **ERC-8183 escrow job #155504** — full lifecycle settled on Arc: createJob
+- **ERC-8183 escrow job #155504** - full lifecycle settled on Arc: createJob
   [`0xcce5a56c…`](https://testnet.arcscan.app/tx/0xcce5a56cc0518d5760f90d11d88eb70d5097636179eb3e92903152a96a684cc5) →
   complete
   [`0x245f0ee7…`](https://testnet.arcscan.app/tx/0x245f0ee76a6d8dd21e8a14cbd1f489a3d80a1824113316f3b39c58c0e50f25e3)
-- **Circle Gateway** — USDC deposited on Arc, moved to Base Sepolia gaslessly and minted there:
+- **Circle Gateway** - USDC deposited on Arc, moved to Base Sepolia gaslessly and minted there:
   [recipient on Basescan](https://sepolia.basescan.org/address/0xd305607510E0Db2c95807173c7A05BEA53c1ed36)
 
-### On-chain policy vault — programmable money that enforces itself
+### On-chain policy vault - programmable money that enforces itself
 
 An agent's spend policy can be deployed **as its own smart contract on Arc**:
 `AgentSpendPolicy` (`mcp/contracts/AgentSpendPolicy.sol`). Once an agent is given a
 vault, its USDC payments settle **through the contract**, which enforces the policy
-on-chain — a per-UTC-day cap, an auto-approve ceiling, a payee allowlist, and a freeze
+on-chain - a per-UTC-day cap, an auto-approve ceiling, a payee allowlist, and a freeze
 switch. A payment that breaks a rule **reverts on Arc** with a typed error (verifiable
 on arcscan), not just a server "no"; the human owner can override, adjust limits, freeze,
 or withdraw. The server policy engine stays as the fast pre-check and fallback, so agents
@@ -176,13 +259,13 @@ without a vault behave exactly as before.
 
 Try it: `cd mcp && node --env-file=.env scripts/test-vault.mjs` (needs a funded
 `ARC_SIGNER_KEY`) deploys a vault and plays pay / over-limit-revert / freeze / cap out on
-real Arc testnet — or use the **Permissions → On-chain policy vault** panel in the app.
+real Arc testnet - or use the **Permissions → On-chain policy vault** panel in the app.
 
-### On-chain reason for every payment — Arc `Memo` precompile
+### On-chain reason for every payment - Arc `Memo` precompile
 
 Every direct USDC settlement is routed through Arc's predeployed **`Memo` precompile**
 (`0x5294…`), so each agent payment carries an **on-chain, indexable audit trail of *why* it
-happened** — `{agentId, instructionId, service, policyDecision}` — emitted as a `Memo` event on
+happened** - `{agentId, instructionId, service, policyDecision}` - emitted as a `Memo` event on
 arcscan, not a server log. `Memo.memo(usdc, transferCalldata, memoId, memoBytes)` routes the
 transfer via the `CallFrom` precompile, so the paying wallet stays `msg.sender` (the USDC still
 moves exactly as a bare transfer, plus the reason). The `memoId` is a deterministic keccak of the
@@ -195,7 +278,7 @@ Try it: `cd mcp && node --env-file=.env scripts/test-memo.mjs` settles $0.01 thr
 precompile on real Arc testnet, then reads the emitted event back by its `memoId` to prove the
 reason is provably on-chain. Read it live: `GET /api/arc/memos?memoId=<0x…>` (or `?sender=<0x…>`).
 
-### Batched settlement in one Arc tx — Multicall3From
+### Batched settlement in one Arc tx - Multicall3From
 
 An agent can pay a whole burst of USDC transfers in a single, all-or-nothing Arc transaction
 through the predeployed `Multicall3From` precompile (`0x522f…`): `aggregate3(...)` routes each
@@ -209,14 +292,14 @@ degrades to a sequential loop; prepared without a signer.
 Try it: `cd mcp && node --env-file=.env scripts/test-batch.mjs` settles three USDC transfers in
 one tx and verifies the three `Transfer` events, each with `from` set to your wallet.
 
-### Dispute-safe agent commerce — ERC-8183 escrow refunds
+### Dispute-safe agent commerce - ERC-8183 escrow refunds
 
 When an agent hires another through the **ERC-8183 escrow**, the money isn't a blind prepay: the
 budget is held in escrow and only released to the provider **on delivery**. If the deliverable is
 disputed, the **evaluator rejects it and the escrowed USDC is refunded to the client in the same
-transaction** (`reject` → `Refunded`) — buyer protection, on-chain. A second safety net,
+transaction** (`reject` → `Refunded`) - buyer protection, on-chain. A second safety net,
 `claimRefund`, lets the client reclaim the escrow after the job's deadline passes (an expiry
-refund). This is the ERC-8183 AgenticCommerce reference implementation's own refund path — no
+refund). This is the ERC-8183 AgenticCommerce reference implementation's own refund path - no
 blind prepay, trust-minimized agent-to-agent commerce.
 
 - **Backend:** `mcp/src/chains/evm/adapter.ts` (`runEscrowDemo({ outcome })`, `rejectJob`,
@@ -228,22 +311,22 @@ blind prepay, trust-minimized agent-to-agent commerce.
 Try it: `cd mcp && node --env-file=.env scripts/test-refund.mjs` runs the full dispute lifecycle
 (create → fund → submit → reject) on real Arc testnet and proves the client is refunded on-chain.
 
-### An agent pays an agent for trust — Trust Oracle over x402
+### An agent pays an agent for trust - Trust Oracle over x402
 
-The same **Trust Oracle** we sell on OKX.AI (and list on **Circle's Agent Marketplace** — manifest
+The same **Trust Oracle** we sell on OKX.AI (and list on **Circle's Agent Marketplace** - manifest
 in `mcp/marketplace/`, served live at
 [`/.well-known/agent.json`](https://a-identity-asp.onrender.com/.well-known/agent.json)) is
 **dogfooded by our own agents**: before it pays a counterparty, a buyer agent **buys a `risk_check`
-over x402** — a gasless Arc-testnet nanopayment via Circle Gateway — and acts on the returned
+over x402** - a gasless Arc-testnet nanopayment via Circle Gateway - and acts on the returned
 **ALLOW / WARN / DENY** verdict. A live "agent pays an agent for trust" loop, on real Arc.
 
 - **Backend:** `mcp/src/trust-oracle.ts` (`runTrustOracleDogfood`) · `POST /api/arc/trust-oracle-demo`.
 - **Frontend:** the Settlements → "Trust Oracle" panel: enter a counterparty, pay $0.005, get the verdict.
 
-Try it: `cd mcp && node --env-file=.env scripts/test-dogfood.mjs` — a buyer agent pays $0.005 over
+Try it: `cd mcp && node --env-file=.env scripts/test-dogfood.mjs` - a buyer agent pays $0.005 over
 x402 on real Arc testnet and gets a DENY on a low-reputation counterparty before it can transact.
 
-### Know Your Agent (KYA) — a real check, not a stamp
+### Know Your Agent (KYA) - a real check, not a stamp
 
 An agent is no longer marked `verified` for free. It must **prove control of its wallet** by
 signing a challenge (the same `verifyMessage` primitive as wallet sign-in); only then does its
@@ -252,24 +335,24 @@ is attested on Arc's real **ERC-8004 ValidationRegistry** (`validationRequest` +
 `validationResponse`=100, tag `"kya"`, readable via `getSummary`). Honest by design: an
 operator/wallet-proof attestation, not a third-party audit.
 
-### Session key — bounded authority with a time limit
+### Session key - bounded authority with a time limit
 
 An agent's on-chain policy vault can be granted a **session key**: the `operator` (the agent's
-signer) is authorized by the human `owner`, scoped by the spend cap and payee allowlist and — now
-— by **time**. The owner grants the key for a duration; the agent acts on its own within those
+signer) is authorized by the human `owner`, scoped by the spend cap and payee allowlist and - now
+- by **time**. The owner grants the key for a duration; the agent acts on its own within those
 bounds; when the key **expires**, its on-chain `pay` reverts (`SessionKeyExpired`) until the owner
 extends, re-grants, or revokes it (`ownerPay` overrides are never time-bound). This is the purest
-expression of *bounded authority — no human in the loop, but it can't run amok* — enforced by the
+expression of *bounded authority - no human in the loop, but it can't run amok* - enforced by the
 contract (`mcp/contracts/AgentSpendPolicy.sol` `sessionKeyExpiry` / `setSessionKeyExpiry`), not a
 server. Grant it from **Permissions → On-chain Policy Vault → Session key**.
 
 Try it: `cd mcp && node --env-file=.env scripts/test-session.mjs` runs the full lifecycle on real
-Arc testnet — grant → pay within the window → the key expires → the agent's pay reverts → the owner
+Arc testnet - grant → pay within the window → the key expires → the agent's pay reverts → the owner
 extends → pays again → revoke → reverts.
 
 **Real ERC-4337 session key (the standard AA primitive).** The same idea, expressed as an actual
 account-abstraction session key: the owner deploys a **Kernel (ERC-4337 v0.7) smart account** and
-grants the agent a **session key** scoped by standard permission policies — `toTimestampPolicy`
+grants the agent a **session key** scoped by standard permission policies - `toTimestampPolicy`
 (expiry), `toCallPolicy` (a payee allowlist + a per-tx cap). The agent then settles entirely on its
 own by signing a **UserOperation**; a payment outside the bounds is rejected by the account's policy
 validator **on-chain**, not a server. Runs on Arc testnet via a **Pimlico bundler** (Zerodev Kernel).
@@ -281,18 +364,18 @@ Try it: `cd mcp && node --env-file=.env scripts/test-aa-session.mjs` deploys a K
 grants a session key (cap + allowlist + expiry), and proves it settles a real UserOp **within**
 bounds while an **out-of-bounds** payment is rejected on-chain by the policy validator.
 
-### Circle Agent Wallet — hosted wallet-layer screening
+### Circle Agent Wallet - hosted wallet-layer screening
 
 An agent can also be given a **Circle Agent Wallet** (Developer-Controlled, on ARC-TESTNET):
 Circle's hosted policy engine screens every USDC transfer at the wallet layer (sanctions, address
 allow/block, freeze). Credential-gated behind `CIRCLE_API_KEY` + `CIRCLE_ENTITY_SECRET`; a clean
-no-op without them. Precise by design: Circle screens transfers — the USD spend cap stays enforced
+no-op without them. Precise by design: Circle screens transfers - the USD spend cap stays enforced
 by our server and the on-chain vault. Together: **server pre-check + Circle screening + on-chain
 vault** = three independent guarantees.
 
 ## Architecture
 
-![A-Identity architecture — agent identity (ERC-8004 + KYA), the three-layer spend-policy enforcement (server pre-check → on-chain vault → Circle Agent Wallet), the USDC payment rails (x402, Nanopayments, escrow), and cross-chain USDC via Circle Gateway + CCTP, all on Arc.](docs/images/architecture.png)
+![A-Identity architecture - agent identity (ERC-8004 + KYA), the three-layer spend-policy enforcement (server pre-check → on-chain vault → Circle Agent Wallet), the USDC payment rails (x402, Nanopayments, escrow), and cross-chain USDC via Circle Gateway + CCTP, all on Arc.](docs/images/architecture.png)
 
 The same system in three views (also drop-in slides for a deck):
 
@@ -312,7 +395,7 @@ The same system in three views (also drop-in slides for a deck):
 a-identity/
 ├─ src/               React 19 + Vite + Tailwind v4 frontend (landing, app, blog, use cases)
 ├─ mcp/               Backend: MCP server + REST companion (Node + viem)
-│  ├─ contracts/      AgentSpendPolicy.sol — on-chain spend-policy vault (npm run compile)
+│  ├─ contracts/      AgentSpendPolicy.sol - on-chain spend-policy vault (npm run compile)
 │  └─ src/
 │     ├─ arc.ts             Live Arc testnet status (block reads)
 │     ├─ arc-contracts.ts   Real ERC-8004 + ERC-8183 reads/writes + AgentSpendPolicy vault
@@ -376,7 +459,7 @@ curl http://localhost:3399/api/arc/contracts
 ```
 
 Copy `.env.example` to `.env.local` for the frontend (Vite). The backend reads
-its config from the process env directly — see below. Everything is optional for
+its config from the process env directly - see below. Everything is optional for
 a demo: without a signer key the app still does live contract reads and labels
 on-chain writes as prepared/simulated; add a funded `ARC_SIGNER_KEY` to
 broadcast real transactions.
@@ -412,34 +495,34 @@ serverless).
   directory `mcp`, build `npm install --include=dev && npm run build`, start
   `npm run start:http`. The server binds to the host-provided `$PORT` and self-pings
   to stay warm on free tiers. Set in the host's env panel:
-  - `AUTH_SECRET` — **required**: a strong, stable random string. Without it the
+  - `AUTH_SECRET` - **required**: a strong, stable random string. Without it the
     server signs session tokens with a random per-process secret (safe, but sessions
     drop on restart) and logs a warning; a public default is never used.
-  - `ALLOWED_ORIGINS` — comma-separated site origins allowed to call the API
+  - `ALLOWED_ORIGINS` - comma-separated site origins allowed to call the API
     cross-origin (e.g. `https://a-identity.xyz`). Unset → `*` (dev only).
-  - `ARC_SIGNER_KEY` — funded key to broadcast real Arc writes (optional; without it
+  - `ARC_SIGNER_KEY` - funded key to broadcast real Arc writes (optional; without it
     writes are prepared/simulated and labeled as such).
-  - `DATABASE_URL` — Postgres connection string for durable state.
+  - `DATABASE_URL` - Postgres connection string for durable state.
 
 State persists to Postgres when `DATABASE_URL` is set, else to
 `mcp/data/platform.json` (gitignored). x402 replay protection (spent-payment
 hashes) persists the same way, so a restart can't reset it.
 
-### Reliability — keeping the backend warm (avoiding cold-start 502s)
+### Reliability - keeping the backend warm (avoiding cold-start 502s)
 
 A **free** Render web service spins down after ~15 min idle and takes ~50s to wake.
 Because the frontend reaches it through a same-origin Vercel proxy whose gateway times
-out at ~30s, a cold wake shows up in the app as a hard **502** — and the poller can't
+out at ~30s, a cold wake shows up in the app as a hard **502** - and the poller can't
 warm it through the proxy, so "waiting" doesn't help. This is handled in three layers:
 
-1. **Definitive fix — upgrade Render to the paid Starter plan (~$7/mo).** No spin-down,
+1. **Definitive fix - upgrade Render to the paid Starter plan (~$7/mo).** No spin-down,
    no cold start, instant responses. Render dashboard → the `a-identity-backend` service
    → **Settings → Instance Type → Starter**. This is the only way to fully eliminate the
    cold-start 502 for a live demo. Recommended before any presentation.
 2. **Keep-warm cron (free).** `.github/workflows/keep-warm.yml` pings `/health` every
    ~10 min so the service never idles out. Set the repo Actions variable `BACKEND_URL` if
-   the host changes. Note: GitHub cron can be delayed under load, so it reduces — but
-   doesn't guarantee zero — cold starts on the free plan.
+   the host changes. Note: GitHub cron can be delayed under load, so it reduces - but
+   doesn't guarantee zero - cold starts on the free plan.
 3. **Frontend resilience (`src/lib/api.ts`).** `wakeBackend()` fires a direct `no-cors`
    ping to the backend origin (bypassing the proxy's 30s cap so a cold boot can finish);
    `apiFetch()` retries idempotent reads through a cold start and, for mutations, waits
@@ -450,7 +533,7 @@ warm it through the proxy, so "waiting" doesn't help. This is handled in three l
 
 A-Identity never custodies a key autonomously, never deploys a contract on its
 own, and never moves real value without an explicit human approval. Wallet keys
-are generated in the browser and never leave it — the server only ever sees the
+are generated in the browser and never leave it - the server only ever sees the
 public address, and sign-in is by wallet signature (no passwords). This is a
 design rule, not an afterthought.
 
@@ -467,28 +550,28 @@ New networks follow the same provider pattern in `mcp/src` (see `erc8004.ts` and
 
 ## Tech stack
 
-- **Frontend** — React 19, Vite 6, Tailwind v4, Framer Motion, React Router v7, Zustand, viem
-- **Backend** — TypeScript, Node.js, Arc Testnet (viem), Model Context Protocol SDK, Zod
-- **Circle** — USDC / EURC, Wallets (`@circle-fin/developer-controlled-wallets`), Gateway,
+- **Frontend** - React 19, Vite 6, Tailwind v4, Framer Motion, React Router v7, Zustand, viem
+- **Backend** - TypeScript, Node.js, Arc Testnet (viem), Model Context Protocol SDK, Zod
+- **Circle** - USDC / EURC, Wallets (`@circle-fin/developer-controlled-wallets`), Gateway,
   CCTP / Bridge Kit (`@circle-fin/bridge-kit`), Nanopayments (`@circle-fin/x402-batching`),
   USYC (tokenized money-market yield)
-- **Standards** — ERC-8004 (agent identity + validation), ERC-8183 (agentic-commerce escrow),
+- **Standards** - ERC-8004 (agent identity + validation), ERC-8183 (agentic-commerce escrow),
   x402 (HTTP-native pay-per-call), MCP (agent tool access)
-- **Core** — a three-layer spend policy (server pre-check, on-chain `AgentSpendPolicy` vault,
+- **Core** - a three-layer spend policy (server pre-check, on-chain `AgentSpendPolicy` vault,
   Circle Agent Wallet screening) and honest settlement: an instruction is never marked
   `executed_onchain` without a confirmed transaction hash
-- **Docs** — Mintlify (`a-identity.mintlify.site`)
+- **Docs** - Mintlify (`a-identity.mintlify.site`)
 
 ## Circle integration
 
 How each Circle product is wired, the code path, the credential to set, and the live
-endpoint — so any of it can be verified against the repo. Nothing is mocked: with the
+endpoint - so any of it can be verified against the repo. Nothing is mocked: with the
 credentials set, every path runs a real transaction on Arc; without them it returns a
 `prepared` / `not configured` state and says so. The on-chain rails (Gateway, CCTP,
-Nanopayments) are **permissionless** on Arc testnet — they need only a funded
+Nanopayments) are **permissionless** on Arc testnet - they need only a funded
 `ARC_SIGNER_KEY`, no Circle API key.
 
-- **USDC** — the settlement dollar for every payment, receipt and payout. Native Arc USDC
+- **USDC** - the settlement dollar for every payment, receipt and payout. Native Arc USDC
   (`0x3600…0000`, 6-decimal ERC-20 view); real `transfer` / `balanceOf`.
   → `mcp/src/arc-contracts.ts` · credential `ARC_SIGNER_KEY` (to broadcast) · read live at
   `GET /api/wallet-balance`.
@@ -513,7 +596,7 @@ Nanopayments) are **permissionless** on Arc testnet — they need only a funded
   → `mcp/src/nanopay.ts` · permissionless (`ARC_SIGNER_KEY` only) · seller
   `GET /api/x402/nano/data`, one-click `POST /api/arc/nanopay-demo`, autonomous
   `POST /api/arc/agent-run` (the agent pays a burst on its own, then stops at its budget).
-- **USYC** (Circle's yield-bearing token) — the agent treasury: idle USDC/EURC above a
+- **USYC** (Circle's yield-bearing token) - the agent treasury: idle USDC/EURC above a
   working-capital cap is put to work in USYC, Circle's tokenized money-market fund on Arc,
   with a live projected-earnings review and owner authorization. Balances and the review are
   real (no key); the USDC→USYC mint targets the real USYC Teller and is gated on USYC
@@ -521,7 +604,7 @@ Nanopayments) are **permissionless** on Arc testnet — they need only a funded
   Integration, never a mocked position.
   → `mcp/src/treasury.ts` · `GET`/`POST /api/agents/treasury`.
 
-> StableFX is **not** used. USDY is deliberately avoided too — it is an Ondo product, not
+> StableFX is **not** used. USDY is deliberately avoided too - it is an Ondo product, not
 > Circle, and not deployed on Arc; **USYC** is the Circle-native yield token used here.
 
 ## Circle Product Feedback
@@ -549,11 +632,11 @@ first-class Arc faucet support would remove that step. Also, screening is transa
 *screening*, not a per-wallet USD spend cap; we enforce the cap in our server + the
 on-chain vault and are explicit about that split.
 
-**USDC / faucet** — the unit of account throughout; `faucet.circle.com` for testnet
+**USDC / faucet** - the unit of account throughout; `faucet.circle.com` for testnet
 funding.
 
 **Circle Nanopayments, gasless, sub-cent, Gateway-batched.** We ship **two** x402 rails:
-1. **On-chain, self-verifying x402** (`mcp/src/x402.ts`) — server returns 402 + requirements →
+1. **On-chain, self-verifying x402** (`mcp/src/x402.ts`) - server returns 402 + requirements →
    client pays USDC on Arc → server verifies the payment on-chain with replay protection + a
    single-use request nonce → serves. Open standard, *provable* settlement, no hosted meter.
 2. **Circle Nanopayments** (`mcp/src/nanopay.ts`), the same x402 negotiation over Circle
@@ -565,10 +648,10 @@ funding.
    would remove the one-time deposit step from a first-run demo.
 
 **Circle CCTP (Bridge Kit)**, native USDC cross-chain by burn-and-mint (`mcp/src/cctp.ts`):
-USDC is burned on Arc and minted **natively** on Base Sepolia — never wrapped — via CCTPv2
+USDC is burned on Arc and minted **natively** on Base Sepolia - never wrapped - via CCTPv2
 (`@circle-fin/bridge-kit`). Distinct from Gateway's unified-balance forwarding; together they
 show both canonical USDC-liquidity primitives. *Improve:* the "leaving Arc, amount must exceed
-the CCTPv2 max fee" floor is easy to trip on tiny testnet transfers — a clearer SDK error would help.
+the CCTPv2 max fee" floor is easy to trip on tiny testnet transfers - a clearer SDK error would help.
 
 ## Team
 

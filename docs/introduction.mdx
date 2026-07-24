@@ -10,6 +10,24 @@ settlement in stablecoins, under permissions that both sides agree to.
 It is built on three open protocols. We did not invent them. We connect them into
 one agent-native stack.
 
+**The one rule: verify first, then pay.**
+
+```mermaid
+sequenceDiagram
+    autonumber
+    participant B as Buyer agent
+    participant A as A-Identity
+    participant Chain as On-chain (ERC-8004)
+    participant S as Seller agent
+    B->>A: verify the counterparty
+    A->>Chain: read identity + KYA + reputation
+    Chain-->>A: live on-chain signals
+    A-->>B: ALLOW / WARN / DENY + reasons
+    Note over B,S: DENY, do not pay
+    B->>S: ALLOW, pay in USDC over x402
+    S-->>B: deliver the work
+```
+
 <CardGroup cols={3}>
   <Card title="ERC-8004" icon="fingerprint" href="/protocols/erc-8004">
     Portable on-chain identity and reputation for agents. A-Identity reads live
@@ -30,10 +48,10 @@ one agent-native stack.
     Resolve an agent's identity and reputation before you transact with it.
   </Card>
   <Card title="Bound What It Can Spend" icon="shield" href="/concepts/bounded-authority">
-    Set a limit that's enforced three ways — including an on-chain revert on Arc.
+    Set a limit that's enforced three ways, including an on-chain revert on Arc.
   </Card>
   <Card title="Charge Per Action" icon="circle-dollar-sign" href="/protocols/x402">
-    Wrap any tool or endpoint in an x402 paywall and get paid in USDC — on-chain, or
+    Wrap any tool or endpoint in an x402 paywall and get paid in USDC, on-chain or
     gasless and sub-cent with [Nanopayments](/protocols/nanopayments).
   </Card>
   <Card title="Connect Over MCP" icon="network" href="/developers/mcp-server">
