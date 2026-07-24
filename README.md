@@ -68,7 +68,7 @@ transaction, an agent calls us to verify the counterparty. Same live engine as t
 Arc product below; four services sold pay-per-call via **x402 on X Layer mainnet**
 (`eip155:196`).
 
-**Demo (49s, silent):** verify an agent from the landing page spotlight, read the live 0-1000 trust profile with its ALLOW/WARN/DENY verdict, then see the 119 real x402 settlements at `/proof` and one of them confirmed on OKLink.
+**Demo (84s, silent):** the full product in one take: the OKX.AI section on the landing, a spotlight verification, the live 0-1000 trust profile with its ALLOW/WARN/DENY verdict, the agent console (marketplace + ERC-8004 identity), the 119 real x402 settlements at `/proof`, one settlement confirmed on OKLink, and both OKX.AI listings (#6271 Trust Oracle, #8913 Risk Copilot).
 
 <video src="https://github.com/srabyanamrod/A-Identity/raw/main/okx-demo-trust-oracle.mp4" controls muted width="720"></video>
 
