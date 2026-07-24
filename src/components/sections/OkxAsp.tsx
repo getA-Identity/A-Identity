@@ -12,22 +12,24 @@ const reveal = {
 const PROOF_URL = 'https://a-identity-asp.onrender.com/proof'
 
 const TOOLS = [
-  { name: 'verify_agent', price: '$0.001', desc: 'ERC-8004 identity + KYA' },
+  { name: 'trust_preview', price: 'free', desc: 'coarse trust band + flags' },
+  { name: 'verify_agent', price: '$0.001', desc: 'ERC-8004 identity + KYA + liveness' },
   { name: 'reputation_score', price: '$0.002', desc: 'on-chain 0–1000 reputation' },
   { name: 'risk_check', price: '$0.005', desc: 'pre-tx ALLOW / WARN / DENY' },
+  { name: 'counterparty_check', price: '$0.008', desc: 'two-agent deal verdict + self-deal' },
   { name: 'agent_passport', price: '$0.01', desc: 'full trust passport' },
 ]
 
 const STATS = [
-  ['83', 'real on-chain settlements'],
+  ['119', 'real on-chain settlements'],
   ['x402', 'on X Layer mainnet'],
   ['ERC-8004', 'identity + KYA'],
 ]
 
 /**
  * "Live on OKX.AI" section — the shipped, revenue-generating realization of the
- * agent-trust story: A-Identity as an A2MCP ASP (Agent #6271) with four pay-per-call
- * tools and real on-chain settlements, linking to the public proof page.
+ * agent-trust story: A-Identity as an A2MCP ASP (Agent #6271) with six pay-per-call
+ * tools (one free tier) and real on-chain settlements, linking to the public proof page.
  */
 export default function OkxAsp() {
   return (
@@ -53,7 +55,7 @@ export default function OkxAsp() {
           agent calls us to verify the counterparty — pay-per-call via x402 on X Layer mainnet.
         </motion.p>
 
-        <div className="mt-10 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+        <div className="mt-10 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
           {TOOLS.map((t) => (
             <motion.div {...reveal} key={t.name} className="rounded-2xl border border-sand bg-card p-5">
               <div className="flex items-baseline justify-between gap-2">
