@@ -13,6 +13,7 @@ import Blog from './routes/Blog'
 import BlogPost from './routes/BlogPost'
 import UseCase from './routes/UseCase'
 import Explorer from './routes/Explorer'
+import Architecture from './routes/Architecture'
 import ProtectedRoute from './routes/ProtectedRoute'
 import AppLayout from './routes/app/AppLayout'
 import Dashboard from './routes/app/Dashboard'
@@ -45,6 +46,7 @@ export default function App() {
         <Route path="/blog/:slug" element={<BlogPost />} />
         <Route path="/use-cases/:slug" element={<UseCase />} />
         <Route path="/explorer" element={<Explorer />} />
+        <Route path="/architecture" element={<Architecture />} />
 
         <Route element={<ProtectedRoute />}>
           <Route path="/app" element={<AppLayout />}>

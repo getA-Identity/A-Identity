@@ -80,6 +80,16 @@ export default function MobileMenu({ open, onClose }: MobileMenuProps) {
                   {link.label}
                 </motion.a>
               ))}
+              <motion.a
+                href="/architecture"
+                onClick={onClose}
+                className="py-2 text-lg font-medium opacity-90 transition-opacity hover:opacity-100"
+                initial={{ opacity: 0, x: 20 }}
+                animate={{ opacity: 1, x: 0 }}
+                transition={{ delay: 0.18 + NAV_LINKS.length * 0.07, duration: 0.4, ease: EASE_OUT_EXPO }}
+              >
+                Architecture
+              </motion.a>
             </nav>
 
             {/* Bottom CTAs */}

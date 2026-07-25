@@ -49,6 +49,18 @@ export default function Navbar() {
                   </NavigationMenuLink>
                 </NavigationMenuItem>
               ))}
+              {/* Architecture: label swaps to "For developers" on hover. Both texts are
+                  stacked in one grid cell so the width never shifts as they cross-fade. */}
+              <NavigationMenuItem>
+                <Link to="/architecture" className="group grid text-sm font-medium">
+                  <span className="col-start-1 row-start-1 opacity-70 transition-opacity duration-200 group-hover:opacity-0">
+                    Architecture
+                  </span>
+                  <span className="col-start-1 row-start-1 whitespace-nowrap text-accent opacity-0 transition-opacity duration-200 group-hover:opacity-100">
+                    For developers
+                  </span>
+                </Link>
+              </NavigationMenuItem>
             </NavigationMenuList>
           </NavigationMenu>
 
