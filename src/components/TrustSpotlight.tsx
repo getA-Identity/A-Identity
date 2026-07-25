@@ -4,7 +4,7 @@ import { motion, AnimatePresence } from 'framer-motion'
 import { Sparkles, Search, X, ArrowUpRight, ArrowRight, ShieldCheck, Wallet, QrCode, Check, Loader2 } from 'lucide-react'
 import { resolveAgent, getReputation, getLeaderboard, type AgentIdentity, type Reputation, type FeedAgent } from '../lib/mcp-client'
 import { useAuth } from '../store/auth'
-import { connectWalletConnect, getInjectedWallets, refreshInjectedWallets, walletConnectEnabled, type WalletOption } from '../lib/wallets'
+import { connectWalletConnect, getInjectedWallets, refreshInjectedWallets, walletConnectEnabled, type WalletOption, type Eip1193 } from '../lib/wallets'
 
 /*
  * TrustSpotlight — the ⌘K / FAB popup, now a self-contained two-tab flow:
@@ -24,6 +24,7 @@ const riskOf = (s: number, kya?: string, verified = true): Verdict => (kya === '
 const gradeOf = (s: number) =>
   s >= 800 ? 'Excellent' : s >= 650 ? 'Strong' : s >= 500 ? 'Good' : s >= 350 ? 'Fair' : s >= 200 ? 'Weak' : 'High risk'
 const shorten = (a?: string | null) => (a && a.length > 14 ? `${a.slice(0, 8)}…${a.slice(-6)}` : a ?? '')
+const isAddr = (s?: string | null) => !!s && /^0x[0-9a-fA-F]{40}$/.test(s.trim())
 
 function hash(s: string): number {
   let h = 5381
@@ -111,8 +112,10 @@ function ResultCard({ result, q, onOpen, onClaim }: { result: NonNullable<Result
   )
 }
 
-/** The Onboard tab: connect the owning wallet + sign once. Completes here. */
-function OnboardPanel({ onClose }: { onClose: () => void }) {
+/** The Onboard tab: connect the owning wallet + sign once. Completes here.
+ *  When reached from a specific lookup, `claimAddress` is the agent wallet the user is
+ *  claiming, shown for context and softly checked against the wallet they connect. */
+function OnboardPanel({ onClose, claimAddress }: { onClose: () => void; claimAddress?: string | null }) {
   const navigate = useNavigate()
   const loginWallet = useAuth((s) => s.loginWallet)
   const verified = useAuth((s) => s.verified)
@@ -120,6 +123,9 @@ function OnboardPanel({ onClose }: { onClose: () => void }) {
   const [busy, setBusy] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [done, setDone] = useState(false)
+  const [mismatch, setMismatch] = useState<string | null>(null)
+
+  const claiming = isAddr(claimAddress)
 
   useEffect(() => {
     refreshInjectedWallets()
@@ -128,9 +134,22 @@ function OnboardPanel({ onClose }: { onClose: () => void }) {
     return () => clearTimeout(t)
   }, [])
 
-  const connect = async (fn: () => Promise<void>, id: string) => {
-    setBusy(id); setError(null)
-    try { await fn(); setDone(true) }
+  const connect = async (getProvider: () => Eip1193 | Promise<Eip1193>, id: string) => {
+    setBusy(id); setError(null); setMismatch(null)
+    try {
+      const provider = await getProvider()
+      await loginWallet(provider)
+      // Soft ownership check: if the user looked up a specific agent address, warn (do not
+      // block) when the wallet they connected is not that address.
+      if (claiming) {
+        try {
+          const accts = (await provider.request({ method: 'eth_accounts' })) as string[]
+          const connected = accts?.[0]?.toLowerCase()
+          if (connected && connected !== claimAddress!.trim().toLowerCase()) setMismatch(connected)
+        } catch { /* best-effort; never blocks the flow */ }
+      }
+      setDone(true)
+    }
     catch (e) { setError(e instanceof Error ? e.message : 'Connection failed.') }
     finally { setBusy(null) }
   }
@@ -147,6 +166,11 @@ function OnboardPanel({ onClose }: { onClose: () => void }) {
         <p className="mx-auto mt-1.5 max-w-xs text-sm leading-relaxed text-foreground/55">
           Wallet control proven. Your agent identity is ready. Finish the details, register, set spend limits, in your console.
         </p>
+        {mismatch && (
+          <p className="mx-auto mt-3 max-w-sm rounded-lg bg-amber-500/10 px-3 py-2 text-xs leading-relaxed text-amber-700 dark:text-amber-400">
+            Heads up: you connected <span className="font-mono">{shorten(mismatch)}</span>, which does not match the agent address you looked up (<span className="font-mono">{shorten(claimAddress)}</span>). This wallet onboards as its own identity. To claim that specific agent, connect the wallet that owns it.
+          </p>
+        )}
         <button onClick={goApp} className="mt-5 inline-flex items-center gap-2 rounded-lg bg-accent px-5 py-2.5 text-sm font-semibold text-white transition hover:opacity-90">
           Open your console <ArrowRight size={15} />
         </button>
@@ -167,8 +191,21 @@ function OnboardPanel({ onClose }: { onClose: () => void }) {
         <span>verified</span>
         <span className="ml-auto normal-case tracking-normal text-foreground/35">no gas · no signup</span>
       </div>
+
+      {claiming && (
+        <div className="mb-4 flex items-center gap-3 rounded-xl border border-border bg-background/40 px-3 py-2.5">
+          <Identicon seed={claimAddress!} size={32} />
+          <div className="min-w-0">
+            <div className="text-xs font-semibold text-foreground">Claiming this agent</div>
+            <div className="truncate font-mono text-[11px] text-foreground/45">{shorten(claimAddress)}</div>
+          </div>
+        </div>
+      )}
+
       <p className="mb-4 px-1 text-sm leading-relaxed text-foreground/60">
-        Claim your agent: connect the wallet that owns it and sign a one-time message to prove control.
+        {claiming
+          ? 'Connect the wallet that owns this agent and sign a one-time message to prove control.'
+          : 'Claim your agent: connect the wallet that owns it and sign a one-time message to prove control.'}
       </p>
 
       {nothing ? (
@@ -180,7 +217,7 @@ function OnboardPanel({ onClose }: { onClose: () => void }) {
       ) : (
         <div className="flex flex-col gap-2">
           {wallets.map((w) => (
-            <button key={w.id} onClick={() => w.provider && connect(() => loginWallet(w.provider!), w.id)} disabled={!!busy}
+            <button key={w.id} onClick={() => w.provider && connect(() => w.provider!, w.id)} disabled={!!busy}
               className="flex items-center gap-3 rounded-xl border border-border bg-background px-4 py-3 text-left transition-colors hover:border-accent/50 disabled:opacity-50">
               {w.icon ? <img src={w.icon} alt="" className="h-7 w-7 rounded-lg" /> : <Wallet size={20} className="text-foreground/50" />}
               <span className="flex-1 text-sm font-semibold text-foreground">{w.name}</span>
@@ -188,7 +225,7 @@ function OnboardPanel({ onClose }: { onClose: () => void }) {
             </button>
           ))}
           {wcOn && (
-            <button onClick={() => connect(async () => loginWallet(await connectWalletConnect()), 'wc')} disabled={!!busy}
+            <button onClick={() => connect(() => connectWalletConnect(), 'wc')} disabled={!!busy}
               className="flex items-center gap-3 rounded-xl border border-border bg-background px-4 py-3 text-left transition-colors hover:border-accent/50 disabled:opacity-50">
               <QrCode size={20} className="text-[#3b99fc]" />
               <span className="flex-1 text-sm font-semibold text-foreground">WalletConnect <span className="text-foreground/40">(mobile)</span></span>
@@ -206,6 +243,7 @@ export default function TrustSpotlight() {
   const navigate = useNavigate()
   const [open, toggle] = useReducer((o: boolean, next?: boolean) => (typeof next === 'boolean' ? next : !o), false)
   const [tab, setTab] = useState<'verify' | 'onboard'>('verify')
+  const [claimAddress, setClaimAddress] = useState<string | null>(null)
   const [q, setQ] = useState('')
   const [loading, setLoading] = useState(false)
   const [result, setResult] = useState<Result>(null)
@@ -217,7 +255,7 @@ export default function TrustSpotlight() {
       if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') { e.preventDefault(); toggle() }
       else if (e.key === 'Escape') toggle(false)
     }
-    const onOpen = () => { setTab('verify'); toggle(true) }
+    const onOpen = () => { setTab('verify'); setClaimAddress(null); toggle(true) }
     window.addEventListener('keydown', onKey)
     window.addEventListener('open-trust-spotlight', onOpen)
     return () => { window.removeEventListener('keydown', onKey); window.removeEventListener('open-trust-spotlight', onOpen) }
@@ -244,10 +282,12 @@ export default function TrustSpotlight() {
   }, [q])
 
   const goExplorer = (term?: string) => { toggle(false); navigate(`/explorer${term ? `?q=${encodeURIComponent(term)}` : ''}`) }
+  /** Bridge from a lookup into the claim/onboard flow, carrying the looked-up address. */
+  const startClaim = (addr?: string) => { setClaimAddress(addr && addr.trim() ? addr.trim() : null); setTab('onboard') }
   const kbd = isMac ? '⌘K' : 'Ctrl K'
 
   const TabBtn = ({ id, label }: { id: 'verify' | 'onboard'; label: string }) => (
-    <button onClick={() => setTab(id)} className={`relative px-1.5 pb-2.5 pt-1 text-sm font-semibold text-foreground transition-opacity ${tab === id ? 'opacity-100' : 'opacity-50 hover:opacity-80'}`}>
+    <button onClick={() => { if (id === 'onboard') setClaimAddress(null); setTab(id) }} className={`relative px-1.5 pb-2.5 pt-1 text-sm font-semibold text-foreground transition-opacity ${tab === id ? 'opacity-100' : 'opacity-50 hover:opacity-80'}`}>
       {label}
       {tab === id && <motion.span layoutId="spotlight-tab" className="absolute inset-x-0 -bottom-px h-0.5 rounded-full" style={{ background: ACCENT }} />}
     </button>
@@ -258,7 +298,7 @@ export default function TrustSpotlight() {
       <AnimatePresence>
         {!open && (
           <motion.button
-            key="fab" onClick={() => { setTab('verify'); toggle(true) }} aria-label="Verify an agent"
+            key="fab" onClick={() => { setTab('verify'); setClaimAddress(null); toggle(true) }} aria-label="Verify an agent"
             initial={{ scale: 0, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} exit={{ scale: 0, opacity: 0 }}
             whileHover={{ scale: 1.06 }} whileTap={{ scale: 0.94 }}
             className="group fixed bottom-6 right-6 z-40 flex items-center gap-2 rounded-full py-3 pl-3.5 pr-4 text-white shadow-[0_12px_40px_-8px_rgba(115,66,226,0.6)]"
@@ -304,8 +344,21 @@ export default function TrustSpotlight() {
                   </div>
                   <div className="max-h-[52vh] overflow-y-auto p-4">
                     {loading && <div className="flex items-center gap-2 px-1 py-6 text-sm text-foreground/45"><span className="h-3 w-3 animate-spin rounded-full border-2 border-foreground/20 border-t-accent" /> Reading the chain…</div>}
-                    {!loading && result && <ResultCard result={result} q={q.trim()} onOpen={() => goExplorer(q.trim())} onClaim={() => setTab('onboard')} />}
-                    {!loading && !result && q.trim() && <div className="px-1 py-6 text-sm text-foreground/50">No agent found for <span className="font-mono text-foreground/70">{q.trim()}</span>. Try a token id like <button onClick={() => setQ('849980')} className="font-mono text-accent hover:underline">849980</button>.</div>}
+                    {!loading && result && <ResultCard result={result} q={q.trim()} onOpen={() => goExplorer(q.trim())} onClaim={() => startClaim(result.identity?.owner || q.trim())} />}
+                    {!loading && !result && q.trim() && (
+                      <div className="flex flex-col gap-3 px-1 py-4">
+                        <p className="text-sm text-foreground/55">
+                          No verified agent found for <span className="font-mono text-foreground/70">{shorten(q.trim())}</span>. It may not be registered on A-Identity yet.
+                        </p>
+                        <button onClick={() => startClaim(q.trim())}
+                          className="inline-flex items-center gap-2 self-start rounded-lg bg-accent px-4 py-2.5 text-sm font-semibold text-white transition hover:opacity-90">
+                          <ShieldCheck size={15} /> Are you the owner? Claim this agent
+                        </button>
+                        <p className="text-xs text-foreground/40">
+                          Or try a demo token id like <button onClick={() => setQ('849980')} className="font-mono text-accent hover:underline">849980</button>.
+                        </p>
+                      </div>
+                    )}
                     {!loading && !q.trim() && (
                       <div>
                         <div className="px-1 pb-2 text-[11px] font-semibold uppercase tracking-wide text-foreground/40">Featured agents</div>
@@ -341,7 +394,7 @@ export default function TrustSpotlight() {
                   </div>
                 </>
               ) : (
-                <OnboardPanel onClose={() => toggle(false)} />
+                <OnboardPanel onClose={() => toggle(false)} claimAddress={claimAddress} />
               )}
             </motion.div>
           </motion.div>
