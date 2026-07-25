@@ -27,13 +27,12 @@ export const PROTOCOLS = [
 
 export type NavLink = { label: string; href: string; external?: boolean }
 
+// The landing stays lean; the deeper material lives off it, reachable here. Order matters
+// (left to right): try the product, read how it works, then the developer surfaces.
 export const NAV_LINKS: readonly NavLink[] = [
-  { label: 'Protocol', href: '#pillars' },
-  { label: 'Compare', href: '#positioning' },
-  { label: 'Developers', href: '#developers' },
-  { label: 'Blog', href: '#blog' },
-  { label: 'FAQ', href: '#faq' },
   { label: 'Explorer', href: '/explorer' },
+  { label: 'Developers', href: `${DOCS_URL}/developers/quickstart`, external: true },
+  { label: 'Blog', href: '/blog' },
   { label: 'Docs', href: DOCS_URL, external: true },
 ]
 

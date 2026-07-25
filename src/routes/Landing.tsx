@@ -1,16 +1,10 @@
 import Navbar from '../components/Navbar'
 import Hero from '../components/Hero'
 import VerifyCta from '../components/sections/VerifyCta'
-import Problem from '../components/sections/Problem'
-import Pillars from '../components/sections/Pillars'
-import Web25Layer from '../components/sections/Web25Layer'
-import UseCases from '../components/sections/UseCases'
-import Positioning from '../components/sections/Positioning'
-import Vision from '../components/sections/Vision'
-import DeveloperExperience from '../components/sections/DeveloperExperience'
-import OkxAsp from '../components/sections/OkxAsp'
-import BlogTeaser from '../components/sections/BlogTeaser'
-import FAQ from '../components/sections/FAQ'
+import Shift from '../components/sections/Shift'
+import WhatYouGet from '../components/sections/WhatYouGet'
+import LiveProof from '../components/sections/LiveProof'
+import CloseCta from '../components/sections/CloseCta'
 import SiteFooter from '../components/sections/SiteFooter'
 import TrustSpotlight from '../components/TrustSpotlight'
 import { BACKGROUND_VIDEO } from '../lib/brand'
@@ -54,18 +48,14 @@ export default function Landing() {
         <Hero />
       </header>
 
-      {/* Narrative sections */}
+      {/* Lean narrative: prove it, frame it, show what you get, prove it is real, close.
+          The deeper material (protocols, use cases, developer docs, FAQ, blog) lives off
+          the landing, reachable from the navbar and docs. */}
       <VerifyCta />
-      <Problem />
-      <Pillars />
-      <Web25Layer />
-      <UseCases />
-      <Positioning />
-      <Vision />
-      <DeveloperExperience />
-      <OkxAsp />
-      <BlogTeaser />
-      <FAQ />
+      <Shift />
+      <WhatYouGet />
+      <LiveProof />
+      <CloseCta />
       <SiteFooter />
 
       {/* ⌘K / floating magic trust lookup, available across the landing */}
