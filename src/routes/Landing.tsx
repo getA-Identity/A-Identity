@@ -4,6 +4,7 @@ import VerifyCta from '../components/sections/VerifyCta'
 import Shift from '../components/sections/Shift'
 import WhatYouGet from '../components/sections/WhatYouGet'
 import LiveProof from '../components/sections/LiveProof'
+import BuiltOn from '../components/sections/BuiltOn'
 import CloseCta from '../components/sections/CloseCta'
 import SiteFooter from '../components/sections/SiteFooter'
 import TrustSpotlight from '../components/TrustSpotlight'
@@ -55,6 +56,7 @@ export default function Landing() {
       <Shift />
       <WhatYouGet />
       <LiveProof />
+      <BuiltOn />
       <CloseCta />
       <SiteFooter />
 
