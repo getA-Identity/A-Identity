@@ -1,15 +1,20 @@
 import { useEffect, useReducer, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { motion, AnimatePresence } from 'framer-motion'
-import { Sparkles, Search, CornerDownLeft, X, ArrowUpRight } from 'lucide-react'
+import { Sparkles, Search, X, ArrowUpRight, ArrowRight, ShieldCheck, Wallet, QrCode, Check, Loader2 } from 'lucide-react'
 import { resolveAgent, getReputation, getLeaderboard, type AgentIdentity, type Reputation, type FeedAgent } from '../lib/mcp-client'
+import { useAuth } from '../store/auth'
+import { connectWalletConnect, getInjectedWallets, refreshInjectedWallets, walletConnectEnabled, type WalletOption } from '../lib/wallets'
 
 /*
- * TrustSpotlight — a command-palette (⌘K / Ctrl+K) + a floating "magic" FAB that opens a
- * live agent trust lookup from anywhere. Follows command-palette best practice (platform-aware
- * shortcut, ESC to close, autofocus, debounced lookup, featured quick-picks) with a delightful
- * glowing sparkle trigger. Opens on ⌘K, on the FAB, or on a window 'open-trust-spotlight' event
- * (fired by the hero button). Palette unchanged; status hues match /explorer.
+ * TrustSpotlight — the ⌘K / FAB popup, now a self-contained two-tab flow:
+ *
+ *   Verify   — look up any agent and read its trust INLINE (identity, KYA, score, verdict).
+ *              Detail lives in the explorer; a gentle nudge offers "is this yours? claim it".
+ *   Onboard  — prove you own an agent by connecting its wallet and signing once. This is the
+ *              whole quick-onboarding: no gas, no signup; the console handles the details after.
+ *
+ * Opens on ⌘K, the FAB, or a window 'open-trust-spotlight' event. Status hues match /explorer.
  */
 
 const ACCENT = '#7342E2'
@@ -54,24 +59,23 @@ const isMac = typeof navigator !== 'undefined' && /mac/i.test(navigator.platform
 
 type Result = { identity: AgentIdentity | null; reputation: Reputation | null } | null
 
-function ResultCard({ result, q, onOpen }: { result: NonNullable<Result>; q: string; onOpen: () => void }) {
+function ResultCard({ result, q, onOpen, onClaim }: { result: NonNullable<Result>; q: string; onOpen: () => void; onClaim: () => void }) {
   const { identity, reputation } = result
-  const verified = identity?.valid ?? reputation?.onchain === 'registered'
+  const verified = Boolean(identity) || reputation?.onchain === 'registered'
   const score = reputation?.score ?? 0
   const shown = useCountUp(score)
   const v = riskOf(score, reputation?.kya, verified)
-  const name = reputation?.name || (identity ? `Agent #${identity.tokenId}` : q)
+  const name = reputation?.name || (identity && !identity.partial ? `Agent #${identity.tokenId}` : identity?.partial ? 'On-chain agent' : q)
   const seed = identity?.owner || identity?.tokenId?.toString() || q
   return (
-    <motion.button onClick={onOpen} initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.3 }}
-      className="group flex w-full flex-col gap-4 rounded-xl border border-border bg-background/40 p-4 text-left transition-colors hover:bg-foreground/[0.03]">
+    <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.3 }} className="flex flex-col gap-4 rounded-xl border border-border bg-background/40 p-4">
       <div className="flex items-center justify-between gap-3">
         <div className="flex min-w-0 items-center gap-3">
           <Identicon seed={seed} />
           <div className="min-w-0">
             <div className="truncate text-sm font-bold text-foreground">{name}</div>
             <div className="truncate font-mono text-[11px] text-foreground/45">
-              {identity ? `#${identity.tokenId}` : q}{identity?.owner ? ` · ${shorten(identity.owner)}` : ''} · KYA {reputation?.kya ?? '—'}
+              {identity && !identity.partial ? `#${identity.tokenId}` : shorten(identity?.owner || q)}{identity?.owner ? ` · ${shorten(identity.owner)}` : ''} · KYA {reputation?.kya ?? '—'}
             </div>
           </div>
         </div>
@@ -94,40 +98,137 @@ function ResultCard({ result, q, onOpen }: { result: NonNullable<Result>; q: str
           </div>
         </div>
       )}
-      <div className="flex items-center gap-1 text-xs font-semibold text-accent opacity-0 transition-opacity group-hover:opacity-100">Open full profile <ArrowUpRight size={13} /></div>
-    </motion.button>
+      {/* actions: claim (primary nudge) + open full profile (detail) */}
+      <div className="flex items-center gap-2 border-t border-border pt-3">
+        <button onClick={onClaim} className="inline-flex items-center gap-1.5 rounded-lg bg-accent/10 px-3 py-2 text-xs font-semibold text-accent transition-colors hover:bg-accent/15">
+          <ShieldCheck size={14} /> Is this yours? Claim it
+        </button>
+        <button onClick={onOpen} className="ml-auto inline-flex items-center gap-1 text-xs font-semibold text-foreground/50 transition-colors hover:text-foreground">
+          Full profile <ArrowUpRight size={13} />
+        </button>
+      </div>
+    </motion.div>
+  )
+}
+
+/** The Onboard tab: connect the owning wallet + sign once. Completes here. */
+function OnboardPanel({ onClose }: { onClose: () => void }) {
+  const navigate = useNavigate()
+  const loginWallet = useAuth((s) => s.loginWallet)
+  const verified = useAuth((s) => s.verified)
+  const [wallets, setWallets] = useState<WalletOption[]>([])
+  const [busy, setBusy] = useState<string | null>(null)
+  const [error, setError] = useState<string | null>(null)
+  const [done, setDone] = useState(false)
+
+  useEffect(() => {
+    refreshInjectedWallets()
+    setWallets(getInjectedWallets())
+    const t = setTimeout(() => setWallets(getInjectedWallets()), 150)
+    return () => clearTimeout(t)
+  }, [])
+
+  const connect = async (fn: () => Promise<void>, id: string) => {
+    setBusy(id); setError(null)
+    try { await fn(); setDone(true) }
+    catch (e) { setError(e instanceof Error ? e.message : 'Connection failed.') }
+    finally { setBusy(null) }
+  }
+
+  const goApp = () => { onClose(); navigate('/app') }
+
+  if (done || verified) {
+    return (
+      <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} className="p-6 text-center">
+        <span className="mx-auto grid h-12 w-12 place-items-center rounded-full bg-emerald-500/12 text-emerald-600 dark:text-emerald-400">
+          <Check size={24} />
+        </span>
+        <h3 className="mt-4 text-lg font-bold text-foreground">You are verified.</h3>
+        <p className="mx-auto mt-1.5 max-w-xs text-sm leading-relaxed text-foreground/55">
+          Wallet control proven. Your agent identity is ready. Finish the details, register, set spend limits, in your console.
+        </p>
+        <button onClick={goApp} className="mt-5 inline-flex items-center gap-2 rounded-lg bg-accent px-5 py-2.5 text-sm font-semibold text-white transition hover:opacity-90">
+          Open your console <ArrowRight size={15} />
+        </button>
+      </motion.div>
+    )
+  }
+
+  const wcOn = walletConnectEnabled()
+  const nothing = wallets.length === 0 && !wcOn
+  return (
+    <div className="p-4">
+      {/* three-step hint */}
+      <div className="mb-4 flex items-center gap-2 px-1 font-mono text-[11px] text-foreground/40">
+        <span className="text-accent">connect</span>
+        <ArrowRight size={11} />
+        <span>sign once</span>
+        <ArrowRight size={11} />
+        <span>verified</span>
+        <span className="ml-auto normal-case tracking-normal text-foreground/35">no gas · no signup</span>
+      </div>
+      <p className="mb-4 px-1 text-sm leading-relaxed text-foreground/60">
+        Claim your agent: connect the wallet that owns it and sign a one-time message to prove control.
+      </p>
+
+      {nothing ? (
+        <p className="px-1 py-4 text-sm text-foreground/55">
+          No wallet detected. Install{' '}
+          <a className="font-semibold text-accent hover:underline" href="https://metamask.io/download" target="_blank" rel="noreferrer">MetaMask</a>{' '}
+          and reopen this.
+        </p>
+      ) : (
+        <div className="flex flex-col gap-2">
+          {wallets.map((w) => (
+            <button key={w.id} onClick={() => w.provider && connect(() => loginWallet(w.provider!), w.id)} disabled={!!busy}
+              className="flex items-center gap-3 rounded-xl border border-border bg-background px-4 py-3 text-left transition-colors hover:border-accent/50 disabled:opacity-50">
+              {w.icon ? <img src={w.icon} alt="" className="h-7 w-7 rounded-lg" /> : <Wallet size={20} className="text-foreground/50" />}
+              <span className="flex-1 text-sm font-semibold text-foreground">{w.name}</span>
+              {busy === w.id ? <Loader2 size={15} className="animate-spin text-foreground/45" /> : <ArrowRight size={15} className="text-foreground/30" />}
+            </button>
+          ))}
+          {wcOn && (
+            <button onClick={() => connect(async () => loginWallet(await connectWalletConnect()), 'wc')} disabled={!!busy}
+              className="flex items-center gap-3 rounded-xl border border-border bg-background px-4 py-3 text-left transition-colors hover:border-accent/50 disabled:opacity-50">
+              <QrCode size={20} className="text-[#3b99fc]" />
+              <span className="flex-1 text-sm font-semibold text-foreground">WalletConnect <span className="text-foreground/40">(mobile)</span></span>
+              {busy === 'wc' ? <Loader2 size={15} className="animate-spin text-foreground/45" /> : <ArrowRight size={15} className="text-foreground/30" />}
+            </button>
+          )}
+        </div>
+      )}
+      {error && <p className="mt-3 px-1 text-xs text-red-600 dark:text-red-400">{error}</p>}
+    </div>
   )
 }
 
 export default function TrustSpotlight() {
   const navigate = useNavigate()
   const [open, toggle] = useReducer((o: boolean, next?: boolean) => (typeof next === 'boolean' ? next : !o), false)
+  const [tab, setTab] = useState<'verify' | 'onboard'>('verify')
   const [q, setQ] = useState('')
   const [loading, setLoading] = useState(false)
   const [result, setResult] = useState<Result>(null)
   const [featured, setFeatured] = useState<FeedAgent[]>([])
   const inputRef = useRef<HTMLInputElement>(null)
 
-  // Global open triggers: ⌘K / Ctrl+K, and a window event fired by the hero button.
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') { e.preventDefault(); toggle() }
       else if (e.key === 'Escape') toggle(false)
     }
-    const onOpen = () => toggle(true)
+    const onOpen = () => { setTab('verify'); toggle(true) }
     window.addEventListener('keydown', onKey)
     window.addEventListener('open-trust-spotlight', onOpen)
     return () => { window.removeEventListener('keydown', onKey); window.removeEventListener('open-trust-spotlight', onOpen) }
   }, [])
 
-  // On first open: featured agents + focus.
   useEffect(() => {
     if (!open) return
-    setTimeout(() => inputRef.current?.focus(), 40)
+    if (tab === 'verify') setTimeout(() => inputRef.current?.focus(), 40)
     if (!featured.length) void getLeaderboard().then((r) => { if (r.ok) setFeatured(r.data.filter((a) => (a.reputation?.score ?? 0) > 0).slice(0, 5)) })
-  }, [open, featured.length])
+  }, [open, tab, featured.length])
 
-  // Debounced live lookup.
   useEffect(() => {
     const term = q.trim()
     if (!term) { setResult(null); setLoading(false); return }
@@ -145,13 +246,19 @@ export default function TrustSpotlight() {
   const goExplorer = (term?: string) => { toggle(false); navigate(`/explorer${term ? `?q=${encodeURIComponent(term)}` : ''}`) }
   const kbd = isMac ? '⌘K' : 'Ctrl K'
 
+  const TabBtn = ({ id, label }: { id: 'verify' | 'onboard'; label: string }) => (
+    <button onClick={() => setTab(id)} className={`relative px-1.5 pb-2.5 pt-1 text-sm font-semibold text-foreground transition-opacity ${tab === id ? 'opacity-100' : 'opacity-50 hover:opacity-80'}`}>
+      {label}
+      {tab === id && <motion.span layoutId="spotlight-tab" className="absolute inset-x-0 -bottom-px h-0.5 rounded-full" style={{ background: ACCENT }} />}
+    </button>
+  )
+
   return (
     <>
-      {/* Floating magic trigger */}
       <AnimatePresence>
         {!open && (
           <motion.button
-            key="fab" onClick={() => toggle(true)} aria-label="Verify an agent"
+            key="fab" onClick={() => { setTab('verify'); toggle(true) }} aria-label="Verify an agent"
             initial={{ scale: 0, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} exit={{ scale: 0, opacity: 0 }}
             whileHover={{ scale: 1.06 }} whileTap={{ scale: 0.94 }}
             className="group fixed bottom-6 right-6 z-40 flex items-center gap-2 rounded-full py-3 pl-3.5 pr-4 text-white shadow-[0_12px_40px_-8px_rgba(115,66,226,0.6)]"
@@ -168,67 +275,74 @@ export default function TrustSpotlight() {
         )}
       </AnimatePresence>
 
-      {/* Spotlight modal */}
       <AnimatePresence>
         {open && (
           <motion.div className="fixed inset-0 z-50 flex items-start justify-center px-4 pt-[14vh]"
             initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
             <motion.div className="absolute inset-0 bg-black/45 backdrop-blur-sm" onClick={() => toggle(false)}
               initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} />
-            <motion.div role="dialog" aria-modal="true" aria-label="Trust lookup"
+            <motion.div role="dialog" aria-modal="true" aria-label="Trust lookup and onboarding"
               initial={{ opacity: 0, scale: 0.97, y: -8 }} animate={{ opacity: 1, scale: 1, y: 0 }} exit={{ opacity: 0, scale: 0.98, y: -6 }}
               transition={{ type: 'spring', stiffness: 380, damping: 30 }}
               className="relative w-full max-w-[560px] overflow-hidden rounded-2xl border border-border bg-card shadow-[0_40px_120px_-20px_rgba(10,15,25,0.6)]">
-              {/* search row */}
-              <div className="flex items-center gap-3 border-b border-border px-4 py-3.5">
-                <Search size={18} className="shrink-0 text-foreground/40" />
-                <input ref={inputRef} value={q} onChange={(e) => setQ(e.target.value)}
-                  onKeyDown={(e) => { if (e.key === 'Enter') goExplorer(q.trim() || undefined) }}
-                  placeholder="Verify an agent by token id or 0x address"
-                  className="w-full bg-transparent font-mono text-sm text-foreground outline-none placeholder:font-sans placeholder:text-foreground/40" />
-                <button onClick={() => toggle(false)} aria-label="Close" className="shrink-0 rounded-md p-1 text-foreground/40 hover:bg-foreground/5 hover:text-foreground"><X size={16} /></button>
+
+              {/* tabbar */}
+              <div className="flex items-center gap-5 border-b border-border px-4 pt-3">
+                <TabBtn id="verify" label="Verify an agent" />
+                <TabBtn id="onboard" label="Claim yours" />
+                <button onClick={() => toggle(false)} aria-label="Close" className="ml-auto mb-2 rounded-md p-1 text-foreground/40 hover:bg-foreground/5 hover:text-foreground"><X size={16} /></button>
               </div>
 
-              {/* body */}
-              <div className="max-h-[52vh] overflow-y-auto p-4">
-                {loading && <div className="flex items-center gap-2 px-1 py-6 text-sm text-foreground/45"><span className="h-3 w-3 animate-spin rounded-full border-2 border-foreground/20 border-t-accent" /> Reading the chain…</div>}
-                {!loading && result && <ResultCard result={result} q={q.trim()} onOpen={() => goExplorer(q.trim())} />}
-                {!loading && !result && q.trim() && <div className="px-1 py-6 text-sm text-foreground/50">No agent found for <span className="font-mono text-foreground/70">{q.trim()}</span>. Try a token id like <button onClick={() => setQ('849980')} className="font-mono text-accent hover:underline">849980</button>.</div>}
-                {!loading && !q.trim() && (
-                  <div>
-                    <div className="px-1 pb-2 text-[11px] font-semibold uppercase tracking-wide text-foreground/40">Featured agents</div>
-                    <div className="flex flex-col">
-                      {(featured.length ? featured : []).map((a) => {
-                        const s = a.reputation?.score ?? 0, v = riskOf(s, a.kya)
-                        return (
-                          <button key={a.id} onClick={() => setQ(a.onchainAgentId || a.id)}
-                            className="flex items-center gap-3 rounded-lg px-2 py-2.5 text-left transition-colors hover:bg-foreground/[0.04]">
-                            <Identicon seed={a.onchainAgentId || a.id} size={30} />
-                            <div className="min-w-0 flex-1">
-                              <div className="truncate text-sm font-medium text-foreground">{a.name}</div>
-                              <div className="truncate font-mono text-[11px] text-foreground/40">{a.category}{a.onchainAgentId ? ` · #${a.onchainAgentId}` : ''}</div>
-                            </div>
-                            <span className="font-mono text-xs font-semibold tabular-nums text-foreground/70">{s}</span>
-                            <span className="h-1.5 w-1.5 rounded-full" style={{ background: RISK[v] }} />
-                          </button>
-                        )
-                      })}
-                      {!featured.length && Array.from({ length: 4 }).map((_, i) => (
-                        <div key={i} className="flex items-center gap-3 px-2 py-2.5">
-                          <div className="h-[30px] w-[30px] animate-pulse rounded-lg bg-foreground/[0.08]" />
-                          <div className="flex-1 space-y-1.5"><div className="h-3 w-28 animate-pulse rounded bg-foreground/[0.08]" /><div className="h-2.5 w-16 animate-pulse rounded bg-foreground/[0.08]" /></div>
-                        </div>
-                      ))}
-                    </div>
+              {tab === 'verify' ? (
+                <>
+                  <div className="flex items-center gap-3 border-b border-border px-4 py-3.5">
+                    <Search size={18} className="shrink-0 text-foreground/40" />
+                    <input ref={inputRef} value={q} onChange={(e) => setQ(e.target.value)}
+                      onKeyDown={(e) => { if (e.key === 'Enter') e.preventDefault() }}
+                      placeholder="Verify an agent by token id or 0x address"
+                      className="w-full bg-transparent font-mono text-sm text-foreground outline-none placeholder:font-sans placeholder:text-foreground/40" />
                   </div>
-                )}
-              </div>
-
-              {/* footer hints */}
-              <div className="flex items-center justify-between gap-3 border-t border-border px-4 py-2.5 text-[11px] text-foreground/45">
-                <span className="inline-flex items-center gap-1.5"><CornerDownLeft size={12} /> open in explorer</span>
-                <span className="inline-flex items-center gap-1.5"><kbd className="rounded border border-border px-1.5 py-0.5 font-mono">{kbd}</kbd> toggle · <kbd className="rounded border border-border px-1.5 py-0.5 font-mono">Esc</kbd> close</span>
-              </div>
+                  <div className="max-h-[52vh] overflow-y-auto p-4">
+                    {loading && <div className="flex items-center gap-2 px-1 py-6 text-sm text-foreground/45"><span className="h-3 w-3 animate-spin rounded-full border-2 border-foreground/20 border-t-accent" /> Reading the chain…</div>}
+                    {!loading && result && <ResultCard result={result} q={q.trim()} onOpen={() => goExplorer(q.trim())} onClaim={() => setTab('onboard')} />}
+                    {!loading && !result && q.trim() && <div className="px-1 py-6 text-sm text-foreground/50">No agent found for <span className="font-mono text-foreground/70">{q.trim()}</span>. Try a token id like <button onClick={() => setQ('849980')} className="font-mono text-accent hover:underline">849980</button>.</div>}
+                    {!loading && !q.trim() && (
+                      <div>
+                        <div className="px-1 pb-2 text-[11px] font-semibold uppercase tracking-wide text-foreground/40">Featured agents</div>
+                        <div className="flex flex-col">
+                          {(featured.length ? featured : []).map((a) => {
+                            const s = a.reputation?.score ?? 0, v = riskOf(s, a.kya)
+                            return (
+                              <button key={a.id} onClick={() => setQ(a.onchainAgentId || a.id)}
+                                className="flex items-center gap-3 rounded-lg px-2 py-2.5 text-left transition-colors hover:bg-foreground/[0.04]">
+                                <Identicon seed={a.onchainAgentId || a.id} size={30} />
+                                <div className="min-w-0 flex-1">
+                                  <div className="truncate text-sm font-medium text-foreground">{a.name}</div>
+                                  <div className="truncate font-mono text-[11px] text-foreground/40">{a.category}{a.onchainAgentId ? ` · #${a.onchainAgentId}` : ''}</div>
+                                </div>
+                                <span className="font-mono text-xs font-semibold tabular-nums text-foreground/70">{s}</span>
+                                <span className="h-1.5 w-1.5 rounded-full" style={{ background: RISK[v] }} />
+                              </button>
+                            )
+                          })}
+                          {!featured.length && Array.from({ length: 4 }).map((_, i) => (
+                            <div key={i} className="flex items-center gap-3 px-2 py-2.5">
+                              <div className="h-[30px] w-[30px] animate-pulse rounded-lg bg-foreground/[0.08]" />
+                              <div className="flex-1 space-y-1.5"><div className="h-3 w-28 animate-pulse rounded bg-foreground/[0.08]" /><div className="h-2.5 w-16 animate-pulse rounded bg-foreground/[0.08]" /></div>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                  <div className="flex items-center justify-between gap-3 border-t border-border px-4 py-2.5 text-[11px] text-foreground/45">
+                    <span>Results are live on-chain reads. No login to look up.</span>
+                    <span className="inline-flex items-center gap-1.5"><kbd className="rounded border border-border px-1.5 py-0.5 font-mono">Esc</kbd> close</span>
+                  </div>
+                </>
+              ) : (
+                <OnboardPanel onClose={() => toggle(false)} />
+              )}
             </motion.div>
           </motion.div>
         )}
