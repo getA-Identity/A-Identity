@@ -1,0 +1,33 @@
+{
+  "name": "@a-identity/guardrails",
+  "version": "0.1.0",
+  "description": "The seatbelt for agentic finance: check an AI agent's intended brokerage or card action against the limits its owner set, before it reaches the venue.",
+  "license": "MIT",
+  "type": "module",
+  "private": false,
+  "exports": {
+    ".": "./src/index.js",
+    "./guard": "./src/guard.js",
+    "./callers": "./src/callers.js",
+    "./defaults": "./src/defaults.js"
+  },
+  "files": [
+    "src",
+    "SKILL.md",
+    "README.md"
+  ],
+  "scripts": {
+    "test": "node --test test/*.test.js"
+  },
+  "keywords": [
+    "ai-agent",
+    "guardrails",
+    "policy",
+    "mcp",
+    "agentic-finance",
+    "erc-8004"
+  ],
+  "engines": {
+    "node": ">=20"
+  }
+}
