@@ -84,3 +84,14 @@ A-Identity_Robinhood_Runbook_Site.html
 # Checkpoint screenshots (local only, for HackQuest submission)
 _checkpoint-shots/
 important-source.md
+
+# Internal Robinhood opportunity/revenue doc (kept local, not for the public repo)
+robinhood.md
+robinhood-handoff.md
+
+# Robinhood phase-0 working docs (tool inventory, intent-capture spec, compliance
+# posture). Local only: they discuss a third-party unofficial client and are not for
+# the public origin remote. Never added to docs.json, so they never publish either.
+docs/robinhood-mcp-tools.md
+docs/robinhood-intent-capture.md
+docs/compliance-robinhood.md

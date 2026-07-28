@@ -1,7 +1,7 @@
 {
   "$schema": "https://a-identity.xyz/schemas/agent-manifest-0.2.json",
   "name": "A-Identity",
-  "description": "The passport and wallet for the agentic economy. On-chain agent identity (ERC-8004), x402 micro-payments, MCP-native tool access, and USDC settlement — live today on Circle Arc, with multi-chain identity planned across Base, Arbitrum, Stellar, and Algorand.",
+  "description": "The passport and wallet for the agentic economy. On-chain agent identity (ERC-8004), x402 micro-payments, MCP-native tool access, and USDC settlement — live today on Circle Arc, with multi-chain identity planned across Base, Arbitrum, and Stellar.",
   "version": "0.2.0",
   "audience": ["ai-agent", "developer"],
   "status": "preview",
@@ -13,8 +13,7 @@
         { "id": "ethereum", "chainId": 1, "identity": "ERC-8004", "erc8004Native": true, "status": "preview" },
         { "id": "base", "chainId": 8453, "identity": "ERC-8004", "erc8004Native": true, "status": "preview" },
         { "id": "arbitrum", "chainId": 42161, "identity": "ERC-8004", "erc8004Native": true, "status": "preview" },
-        { "id": "stellar", "caip2": "stellar:pubnet", "identity": "Soroban registry + SEP-10", "erc8004Native": false, "note": "ERC-8004 passport bridged from EVM", "status": "planned" },
-        { "id": "algorand", "caip2": "algorand:mainnet", "identity": "did:algo + ARC registry", "erc8004Native": false, "note": "ERC-8004 passport bridged from EVM", "status": "planned" }
+        { "id": "stellar", "caip2": "stellar:pubnet", "identity": "Soroban registry + SEP-10", "erc8004Native": false, "note": "ERC-8004 passport bridged from EVM", "status": "planned" }
       ],
       "multiChain": true
     },
@@ -26,8 +25,7 @@
         { "id": "arc", "name": "Circle Arc (Testnet)", "chainId": 5042002, "role": "primary: gas in USDC, App Kit unified balance, Gateway", "x402": true, "unified_balance": true, "status": "preview" },
         { "id": "base", "name": "Base", "chainId": 8453, "role": "EVM fallback", "x402": true, "status": "preview" },
         { "id": "arbitrum", "name": "Arbitrum One", "chainId": 42161, "role": "DeFi gateway", "x402": true, "status": "preview" },
-        { "id": "stellar", "caip2": "stellar:pubnet", "role": "USDC + EURC native (Circle), Soroban", "x402": true, "status": "planned" },
-        { "id": "algorand", "caip2": "algorand:mainnet", "role": "USDC native (Circle), instant finality", "x402": true, "status": "planned" }
+        { "id": "stellar", "caip2": "stellar:pubnet", "role": "USDC + EURC native (Circle), Soroban", "x402": true, "status": "planned" }
       ],
       "wallets": "circle-agent-wallets",
       "status": "planned"
@@ -77,8 +75,8 @@
     "agent_to_agent": {
       "flow": ["resolve_agent", "get_reputation", "negotiate", "pay_x402", "deliver"],
       "trust": "Both agents verify each other via ERC-8004 before value moves. Reputation gate (default: 300+).",
-      "settlement": "x402 in stablecoins on Arc (primary today) or Base/Arbitrum/Stellar/Algorand (planned). No shared accounts or API keys.",
-      "chains_supported": ["arc", "base", "arbitrum", "stellar", "algorand"]
+      "settlement": "x402 in stablecoins on Arc (primary today) or Base/Arbitrum/Stellar (planned). No shared accounts or API keys.",
+      "chains_supported": ["arc", "base", "arbitrum", "stellar"]
     },
     "agent_to_human": {
       "flow": ["agent_proposes", "human_reviews", "human_approves", "settle"],

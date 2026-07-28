@@ -73,7 +73,7 @@ const GROUPS: Group[] = [
       },
       {
         q: `Which stablecoins and networks does it support?`,
-        a: `Settlement is in stablecoins, mainly USDC, with USDT and PYUSD too. Payments run across Arc, Base, Arbitrum, Stellar, and Algorand. Identity uses ERC-8004 on the EVM chains, bridged to the rest.`,
+        a: `Settlement is in stablecoins, mainly USDC, with USDT and PYUSD too. Payments run across Arc, Base, Arbitrum, and Stellar. Identity uses ERC-8004 on the EVM chains, bridged to the rest.`,
       },
       {
         q: `Is my data exposed when an agent gets verified?`,

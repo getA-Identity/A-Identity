@@ -284,48 +284,6 @@ export const POSTS: BlogPost[] = [
     ],
   },
   {
-    slug: 'instant-finality-algorand-agents',
-    title: 'Instant finality: why Algorand fits agent payments',
-    excerpt:
-      "Agents do not like 'probably settled.' Algorand gives a clean yes, in a single round.",
-    chain: 'Algorand',
-    accent: '#2EC8B0',
-    date: 'May 24, 2026',
-    readingTime: '3 min read',
-    seed: 5,
-    author: AUTHORS.protocol,
-    sections: [
-      {
-        heading: 'Finality is a feature',
-        body: [
-          'Many chains settle eventually, with a small chance the transaction reverses. An agent deciding what to do next cannot wait and cannot guess.',
-          'Maybe-settled is a hard state to write code against.',
-        ],
-      },
-      {
-        heading: 'One round, done',
-        body: [
-          'Algorand finalizes in a single round, with no forks to second-guess. The payment either happened or it did not, with no asterisk.',
-          'For an agent, a clean yes or no is worth more than raw speed alone.',
-        ],
-      },
-      {
-        heading: 'USDC native, did:algo identity',
-        body: [
-          'Circle issues USDC on Algorand, and the chain supports W3C decentralized identifiers (did:algo) as a native place to anchor identity.',
-          'Money and a name, both first-class on the same chain.',
-        ],
-      },
-      {
-        heading: 'Where it fits',
-        body: [
-          'For high-volume, low-value agent payments that must be certain, Algorand earns its place in our multi-chain mix.',
-          'Pick the rail to match the job. This one is for certainty at scale.',
-        ],
-      },
-    ],
-  },
-  {
     slug: 'watching-monad-parallel-evm',
     title: 'Watching Monad: parallel EVM for agent throughput',
     excerpt:

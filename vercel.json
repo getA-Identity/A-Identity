@@ -1,5 +1,12 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
+  "redirects": [
+    {
+      "source": "/blog/instant-finality-algorand-agents",
+      "destination": "/blog",
+      "permanent": true
+    }
+  ],
   "rewrites": [
     { "source": "/health", "destination": "https://a-identity-backend.onrender.com/health" },
     { "source": "/mcp", "destination": "https://a-identity-backend.onrender.com/mcp" },
