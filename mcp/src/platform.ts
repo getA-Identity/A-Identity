@@ -28,6 +28,7 @@ import {
 import { createAgentWallet, circlePay, readCircleWallet } from './circle-agent.js'
 import { previewTreasury, startAutoYield, type TreasuryPreview, type TreasuryExecution } from './treasury.js'
 import { computeAgentReputation } from './reputation.js'
+import { applyPolicyPatch, resolveActionPolicy, type ActionPolicy } from './policy/index.js'
 import { classifySybil, type SybilSignals } from './asp/risk.js'
 import { getReputationAttestation } from './asp/attestations.js'
 import {
@@ -98,6 +99,14 @@ export type PlatformAgent = {
   /** Owner-authorized auto-yield: idle balance above capUsd is earmarked for USYC
    *  (Circle's yield-bearing token). Off by default; the owner turns it on. */
   treasury?: { autoYieldEnabled: boolean; capUsd: number; authorizedAt?: string }
+  /**
+   * Policy Engine v2 policy for the action surfaces (trade today, spend next). Distinct
+   * from `permissions`, which is this agent's USDC payment policy on Arc: the two govern
+   * different surfaces and merging them would put payee allowlists next to ticker
+   * allowlists. Absent until the owner configures one, and `resolveActionPolicy` fills in
+   * safe defaults meanwhile, so an unconfigured agent is never permissive.
+   */
+  actionPolicy?: ActionPolicy
   passport: {
     standard: 'ERC-8004'
     registrationJson: Record<string, unknown>
@@ -974,6 +983,56 @@ export async function updateAgentPermissions(
   const vaultSync = agent.vaultAddress ? await syncVaultPolicy(agent) : undefined
   save(state)
   return vaultSync ? { ...agent, vaultSync } : agent
+}
+
+// ── Policy Engine v2 store (Phase 1.3) ───────────────────────────────────────────
+//
+// Owner-gated CRUD over the action policy, versioned so an audit entry (Phase 1.4) can
+// name the exact policy version that produced a verdict. The decision logic itself lives
+// in the pure `policy/` module and is unit-tested there; this is only storage, ownership
+// and persistence. Free: no x402 on reading or writing your own rules.
+
+/**
+ * Read an agent's action policy. Owner-gated, since a policy reveals the owner's limits
+ * and holdings strategy. Returns the safe defaults with `configured: false` when the owner
+ * has not set one yet, rather than an error, so a client can render the starting point.
+ */
+export function getAgentActionPolicy(
+  agentId: string,
+  caller?: string,
+): { agentId: string; policy: ActionPolicy; configured: boolean } | { error: string } {
+  const agent = state.agents.find((a) => a.id === agentId)
+  if (!agent) return { error: 'Unknown agent' }
+  if (!ownsAgent(agent, caller)) return { error: 'Forbidden: not the agent owner' }
+  const { policy, configured } = resolveActionPolicy(agent.actionPolicy, id('pol'), new Date().toISOString())
+  return { agentId: agent.id, policy, configured }
+}
+
+/**
+ * Update an agent's action policy from a client patch. Owner-gated. The patch goes through
+ * the sanitizer (clamps, symbol normalization, margin forced off) and the version bumps by
+ * one, so a stored policy can only ever have been produced by sanitized input.
+ *
+ * First write materializes the resolved defaults, so an owner who sets only a daily cap
+ * still ends up with a complete, safe policy rather than a one-field object.
+ */
+export function updateAgentActionPolicy(
+  agentId: string,
+  patch: unknown,
+  caller?: string,
+): { agentId: string; policy: ActionPolicy; configured: true } | { error: string } {
+  const agent = state.agents.find((a) => a.id === agentId)
+  if (!agent) return { error: 'Unknown agent' }
+  if (!ownsAgent(agent, caller)) return { error: 'Forbidden: not the agent owner' }
+  if (typeof patch !== 'object' || patch === null) return { error: 'policy object required' }
+
+  const now = new Date().toISOString()
+  const { policy: current } = resolveActionPolicy(agent.actionPolicy, id('pol'), now)
+  const next = applyPolicyPatch(current, patch, now)
+  agent.actionPolicy = next
+  pushActivity(agent, `Action policy updated by a human (v${next.version})`)
+  save(state)
+  return { agentId: agent.id, policy: next, configured: true }
 }
 
 /** Live policy view for one agent: limits + today's spend + reset time. */

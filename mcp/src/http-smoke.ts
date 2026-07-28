@@ -32,12 +32,37 @@ async function main() {
   for (const id of ['arc', 'base', 'arbitrum', 'avalanche', 'xlayer', 'stellar', 'solana']) {
     if (!ids.includes(id)) throw new Error(`REST /api/chains missing ${id}`)
   }
+  // /api/reputation must ANSWER correctly, which for an agent that does not exist means a
+  // clean found:false with a reason. This used to assert a numeric score for a seeded
+  // "aid/8" agent, but the fabricated demo agents were removed (data.ts AGENTS = []), so
+  // that assertion could never pass again and the whole script died before its later
+  // checks. Real reputation needs real state; a smoke test must not require invented data.
   const repRes = await fetch(`http://localhost:${PORT}/api/reputation?id=stellar:pubnet:aid/8`).then(
     (r) => r.json(),
   )
-  if (typeof repRes.reputation?.score !== 'number') throw new Error('REST /api/reputation failed')
+  if (repRes.found !== false || typeof repRes.reason !== 'string') {
+    throw new Error(`REST /api/reputation did not answer cleanly for an unknown agent: ${JSON.stringify(repRes)}`)
+  }
 
-  console.log(`✅ HTTP smoke test passed (MCP + REST, 7 chains, stellar score=${repRes.reputation.score})`)
+  // The action-policy routes are wired and gated. An unknown agent must come back as
+  // "Unknown agent" from the handler, NOT the router's own lowercase "not found": that
+  // difference is what proves the route exists rather than falling through. The POST is
+  // additionally behind the mutation auth gate, so unauthenticated it must 401.
+  const gr = await fetch(`http://localhost:${PORT}/api/agents/action-policy?agentId=missing`)
+  const gb = (await gr.json().catch(() => ({}))) as { error?: string }
+  if (gr.status !== 404 || gb.error !== 'Unknown agent') {
+    throw new Error(`GET /api/agents/action-policy not wired (got ${gr.status} ${JSON.stringify(gb)})`)
+  }
+  const pr = await fetch(`http://localhost:${PORT}/api/agents/action-policy`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ agentId: 'missing', policy: {} }),
+  })
+  if (pr.status !== 401) {
+    throw new Error(`POST /api/agents/action-policy should require a verified session (got ${pr.status})`)
+  }
+
+  console.log('✅ HTTP smoke test passed (MCP + REST, 7 chains, action-policy wired + gated)')
 }
 
 main().catch((err) => {

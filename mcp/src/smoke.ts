@@ -93,7 +93,7 @@ async function main() {
 
   await client.close()
   console.log(
-    `\n✅ smoke test passed (live Arc resolve, capabilities, honest reputation pointer, 5 chains, chain filter)`,
+    `\n✅ smoke test passed (live Arc resolve, capabilities, honest reputation pointer, 7 chains, chain filter)`,
   )
 }
 

@@ -121,6 +121,43 @@ export function sanitizeActionPolicy(partial: unknown): Partial<Omit<ActionPolic
 }
 
 /**
+ * Normalize whatever is in storage into a usable policy (Phase 1.3).
+ *
+ * Persisted state is JSON in Postgres or a file, written by older builds and hand-editable
+ * in dev, so a stored policy can be absent, partial, or shaped like a previous version.
+ * The engine must never see `undefined.trade`, and a half-written policy must not read as
+ * permissive, so everything is merged over the safe defaults.
+ *
+ * `configured` distinguishes "the user set this" from "this is the default we are showing
+ * them", which the UI needs in order not to imply the user made choices they never made.
+ */
+export function resolveActionPolicy(
+  stored: unknown,
+  fallbackPolicyId: string,
+  now: string,
+): { policy: ActionPolicy; configured: boolean } {
+  const base = defaultActionPolicy(fallbackPolicyId, now)
+  if (typeof stored !== 'object' || stored === null) return { policy: base, configured: false }
+
+  const s = stored as Record<string, unknown>
+  const clean = sanitizeActionPolicy(s)
+  const version = typeof s.version === 'number' && Number.isFinite(s.version) && s.version >= 1 ? Math.floor(s.version) : 1
+  return {
+    policy: {
+      ...base,
+      ...clean,
+      policyId: typeof s.policyId === 'string' && s.policyId ? s.policyId : fallbackPolicyId,
+      version,
+      updatedAt: typeof s.updatedAt === 'string' && s.updatedAt ? s.updatedAt : now,
+      // Merge the block explicitly: a stored policy missing `trade` entirely must still
+      // come back with the safe defaults rather than an undefined block.
+      trade: { ...base.trade, ...(clean.trade ?? {}), allowMargin: false },
+    },
+    configured: true,
+  }
+}
+
+/**
  * Merge a sanitized patch onto an existing policy, bumping the version. Kept here so the
  * version can never be bumped without going through the sanitizer.
  */

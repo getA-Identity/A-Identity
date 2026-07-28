@@ -20,6 +20,8 @@ import { getCircleStatus } from './circle.js'
 import { readArcContracts, registerAgentOnchain, createJobOnchain, runEscrowJobDemo, readMemosOnchain, rejectJobOnchain, claimJobRefundOnchain, readJobOnchain, payUsdcBatchOnchain } from './arc-contracts.js'
 import {
   agentPolicy,
+  getAgentActionPolicy,
+  updateAgentActionPolicy,
   agentReputation,
   anchorAgentOnchain,
   approveInstruction,
@@ -954,6 +956,28 @@ const server = http.createServer(async (req, res) => {
     sendJson(res, 'error' in p ? 404 : 200, p)
     return
   }
+  // ── Policy Engine v2: the action policy (trade surface today) ────────────────
+  // Distinct from /api/agents/policy above, which is the USDC payment policy. Free to
+  // read and write: these are the owner's own rules. Owner-gated both ways, since a
+  // policy exposes the owner's limits.
+  if (req.method === 'GET' && url.pathname === '/api/agents/action-policy') {
+    const agentId = url.searchParams.get('agentId') ?? ''
+    if (!agentId) { sendJson(res, 400, { error: 'agentId required' }); return }
+    if (denyRead(res, agentId, callerId)) return
+    const p = getAgentActionPolicy(agentId, callerId)
+    sendJson(res, 'error' in p ? errStatus(p.error) : 200, p)
+    return
+  }
+  if (req.method === 'POST' && url.pathname === '/api/agents/action-policy') {
+    const body = (await readBody(req).catch(() => null)) as { agentId?: string; policy?: unknown } | null
+    if (!body?.agentId || body.policy === undefined) {
+      sendJson(res, 400, { error: 'agentId and policy required' }); return
+    }
+    const p = updateAgentActionPolicy(body.agentId, body.policy, callerId)
+    sendJson(res, 'error' in p ? errStatus(p.error) : 200, p)
+    return
+  }
+
   // Update an agent's permissions (the real policy the engine enforces)
   if (req.method === 'POST' && url.pathname === '/api/agents/permissions') {
     const body = (await readBody(req).catch(() => null)) as { agentId?: string; permissions?: Record<string, unknown> } | null
@@ -1203,6 +1227,8 @@ server.listen(PORT, () => {
   console.error(`  GET  /api/arc           live Circle Arc testnet status`)
   console.error(`  GET  /api/circle        Circle platform link (wallets, gateway, USDC)`)
   console.error(`  GET  /api/agents        list agents (?chain=base|arbitrum|ethereum)`)
+  console.error(`  GET  /api/agents/action-policy   owner-gated action policy (free)`)
+  console.error(`  POST /api/agents/action-policy   update the action policy (free, versioned)`)
 })
 
 // Keep-alive: free-tier hosts (e.g. Render) idle-sleep after ~15 min without inbound

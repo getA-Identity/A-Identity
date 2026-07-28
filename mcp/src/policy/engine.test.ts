@@ -3,7 +3,13 @@ import assert from 'node:assert/strict'
 import { readFileSync, readdirSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { evaluateAction } from './engine.js'
-import { applyPolicyPatch, defaultActionPolicy, sanitizeActionPolicy, sanitizeTradePolicy } from './policy.js'
+import {
+  applyPolicyPatch,
+  defaultActionPolicy,
+  resolveActionPolicy,
+  sanitizeActionPolicy,
+  sanitizeTradePolicy,
+} from './policy.js'
 import { SURFACES, getSurface, liveSurfaces } from './registry.js'
 import type { AccountSnapshot, ActionPolicy, NormalizedIntent } from './types.js'
 
@@ -347,6 +353,83 @@ test('a half-specified trading window is dropped, not half-applied', () => {
 test('concentration percent is clamped to 0-100', () => {
   assert.equal(sanitizeTradePolicy({ maxConcentrationPct: 5000 }).maxConcentrationPct, 100)
   assert.equal(sanitizeTradePolicy({ maxConcentrationPct: -1 }).maxConcentrationPct, 0)
+})
+
+// ── the store resolver (Phase 1.3): whatever is in storage must come back safe ─────
+
+const NOW = '2026-07-29T12:00:00Z'
+
+test('an unconfigured agent resolves to the safe defaults, flagged unconfigured', () => {
+  for (const stored of [undefined, null, 'nonsense', 42]) {
+    const r = resolveActionPolicy(stored, 'pol_new', NOW)
+    assert.equal(r.configured, false, String(stored))
+    assert.equal(r.policy.policyId, 'pol_new')
+    assert.equal(r.policy.version, 1)
+    assert.equal(r.policy.trade.allowOptions, false)
+    assert.equal(r.policy.trade.allowMargin, false)
+  }
+})
+
+test('an unconfigured policy still DENYs an out-of-policy action', () => {
+  // The point of defaulting rather than erroring: a client can render the starting point,
+  // but the engine is never handed a permissive policy.
+  const { policy: p } = resolveActionPolicy(undefined, 'pol_new', NOW)
+  const d = evaluateAction({ surface: 'trade', policy: p, intent: buy({ notionalUsd: 5_000 }), snapshot: snap(), now: AT })
+  assert.equal(d.verdict, 'DENY')
+  assert.ok(d.codes.includes('PER_ACTION_CAP'))
+})
+
+test('a stored policy missing the trade block comes back with safe defaults, not undefined', () => {
+  const r = resolveActionPolicy({ policyId: 'pol_old', version: 3, updatedAt: NOW, dailyCapUsd: 250 }, 'pol_fb', NOW)
+  assert.equal(r.configured, true)
+  assert.equal(r.policy.policyId, 'pol_old')
+  assert.equal(r.policy.version, 3)
+  assert.equal(r.policy.dailyCapUsd, 250)
+  assert.equal(r.policy.trade.allowMargin, false)
+  assert.deepEqual(r.policy.trade.allowSymbols, [])
+  assert.equal(r.policy.trade.maxConcentrationPct, 100)
+})
+
+test('a stored policy with margin flipped on in the database is neutralized on read', () => {
+  // Persisted state is JSON that a previous build or a hand edit could have written.
+  const r = resolveActionPolicy(
+    { policyId: 'pol_x', version: 2, updatedAt: NOW, trade: { allowMargin: true, allowOptions: true } },
+    'pol_fb',
+    NOW,
+  )
+  assert.equal(r.policy.trade.allowMargin, false)
+  assert.equal(r.policy.trade.allowOptions, true)
+})
+
+test('a stored policy with junk caps is clamped, not trusted', () => {
+  const r = resolveActionPolicy({ policyId: 'p', version: 1, updatedAt: NOW, perActionCapUsd: 1e309, dailyCapUsd: -3 }, 'pol_fb', NOW)
+  assert.equal(r.policy.perActionCapUsd, 100) // 1e309 is Infinity, so the field is dropped and the default stands
+  assert.equal(r.policy.dailyCapUsd, 0)
+})
+
+test('a bogus stored version cannot go backwards or fractional', () => {
+  for (const [stored, expected] of [[0, 1], [-5, 1], [2.7, 2], ['x', 1]] as const) {
+    const r = resolveActionPolicy({ policyId: 'p', version: stored, updatedAt: NOW }, 'pol_fb', NOW)
+    assert.equal(r.policy.version, expected, String(stored))
+  }
+})
+
+test('resolve then patch bumps the version by exactly one', () => {
+  const { policy: first } = resolveActionPolicy(undefined, 'pol_1', NOW)
+  const second = applyPolicyPatch(first, { dailyCapUsd: 300 }, '2026-07-30T00:00:00Z')
+  const third = applyPolicyPatch(second, { dailyCapUsd: 400 }, '2026-07-31T00:00:00Z')
+  assert.deepEqual([first.version, second.version, third.version], [1, 2, 3])
+  assert.equal(third.policyId, 'pol_1', 'the policy id is stable across edits')
+  assert.equal(third.updatedAt, '2026-07-31T00:00:00Z')
+})
+
+test('a round trip through storage is stable', () => {
+  const { policy: p } = resolveActionPolicy(undefined, 'pol_rt', NOW)
+  const edited = applyPolicyPatch(p, { trade: { allowSymbols: ['aapl'], allowOptions: true }, dailyCapUsd: 300 }, NOW)
+  // JSON is exactly what Postgres and the file store hold.
+  const reread = resolveActionPolicy(JSON.parse(JSON.stringify(edited)), 'pol_other', NOW)
+  assert.deepEqual(reread.policy, edited)
+  assert.equal(reread.configured, true)
 })
 
 // ── the caller-agnostic invariant, enforced rather than documented ────────────────
