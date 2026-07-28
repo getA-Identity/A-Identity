@@ -14,6 +14,7 @@ import { URL } from 'node:url'
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js'
 import { buildServer } from './server.js'
 import { CHAIN_CONFIG } from './data.js'
+import { renderBadgeSvg } from './policy/index.js'
 import { createIdentityProvider } from './erc8004.js'
 import { getArcStatus } from './arc.js'
 import { getCircleStatus } from './circle.js'
@@ -25,6 +26,10 @@ import {
   checkAgentAction,
   listAgentAudits,
   recordAuditOutcome,
+  registerAgentFromManifest,
+  agentRegistration,
+  setBadgeVisibility,
+  agentBadge,
   agentReputation,
   anchorAgentOnchain,
   approveInstruction,
@@ -981,6 +986,59 @@ const server = http.createServer(async (req, res) => {
     return
   }
 
+  // ── register_agent + guardrail badge (Phase 1.5) ─────────────────────────────
+  // A manifest-shaped registration over the SAME createAgent path the UI uses. Free.
+  if (req.method === 'POST' && url.pathname === '/api/agents/register') {
+    const body = (await readBody(req).catch(() => null)) as { manifest?: Record<string, unknown> } | null
+    const manifest = (body?.manifest ?? body) as Record<string, unknown> | null
+    if (!manifest?.name) { sendJson(res, 400, { error: 'manifest.name required' }); return }
+    const r = registerAgentFromManifest(manifest as never, callerId)
+    sendJson(res, 'error' in r ? errStatus(r.error) : 201, r)
+    return
+  }
+  // The owner's own registration + badge view.
+  if (req.method === 'GET' && url.pathname === '/api/agents/register') {
+    const agentId = url.searchParams.get('agentId') ?? ''
+    if (!agentId) { sendJson(res, 400, { error: 'agentId required' }); return }
+    if (denyRead(res, agentId, callerId)) return
+    const r = agentRegistration(agentId, callerId)
+    sendJson(res, 'error' in r ? errStatus(r.error) : 200, r)
+    return
+  }
+  // Publish or unpublish the badge. Off by default: a badge is the owner's own claim.
+  if (req.method === 'POST' && url.pathname === '/api/agents/badge-visibility') {
+    const body = (await readBody(req).catch(() => null)) as { agentId?: string; public?: boolean } | null
+    if (!body?.agentId || typeof body.public !== 'boolean') {
+      sendJson(res, 400, { error: 'agentId and public (boolean) required' }); return
+    }
+    const r = setBadgeVisibility(body.agentId, body.public, callerId)
+    sendJson(res, 'error' in r ? errStatus(r.error) : 200, r)
+    return
+  }
+  // The public badge. Served only for agents whose owner opted in. Content-negotiated:
+  // an SVG for embedding, JSON otherwise. Coarse by design, and it carries no number.
+  if (req.method === 'GET' && url.pathname === '/api/agents/badge') {
+    const agentId = url.searchParams.get('agentId') ?? ''
+    const surface = url.searchParams.get('surface') ?? 'trade'
+    if (!agentId) { sendJson(res, 400, { error: 'agentId required' }); return }
+    const r = agentBadge(agentId, surface)
+    if ('error' in r) { sendJson(res, errStatus(r.error), r); return }
+    const wantsSvg = (req.headers.accept ?? '').includes('image/svg') || url.searchParams.get('format') === 'svg'
+    if (wantsSvg) {
+      const svg = renderBadgeSvg(r.badge)
+      res.writeHead(200, {
+        'Content-Type': 'image/svg+xml; charset=utf-8',
+        // Short cache: a badge must not keep showing "enforced" long after the state moved.
+        'Cache-Control': 'public, max-age=300',
+        'Access-Control-Allow-Origin': '*',
+      })
+      res.end(svg)
+      return
+    }
+    sendJson(res, 200, { agentId, agentName: r.agentName, ...r.badge })
+    return
+  }
+
   // Check an intended action against the policy. Returns a verdict and the audit id; it
   // never executes anything, so the caller stays the one that acts.
   if (req.method === 'POST' && url.pathname === '/api/agents/action-check') {
@@ -1286,6 +1344,8 @@ server.listen(PORT, () => {
   console.error(`  POST /api/agents/action-check    policy verdict for an intended action`)
   console.error(`  GET  /api/agents/audit-log       decision trail (?since= &limit=)`)
   console.error(`  POST /api/agents/audit-log/outcome  record what happened after a verdict`)
+  console.error(`  POST /api/agents/register         register an agent from a manifest (free)`)
+  console.error(`  GET  /api/agents/badge           public guardrail badge (SVG or JSON, opt-in)`)
 })
 
 // Keep-alive: free-tier hosts (e.g. Render) idle-sleep after ~15 min without inbound

@@ -39,6 +39,10 @@ import {
   guardrailProfile,
   unobservableProfile,
   notRegisteredProfile,
+  deriveBadges,
+  badgeFor,
+  SURFACES,
+  type Badge,
   type AccountSnapshot,
   type ActionPolicy,
   type AuditEntry,
@@ -125,6 +129,13 @@ export type PlatformAgent = {
    * safe defaults meanwhile, so an unconfigured agent is never permissive.
    */
   actionPolicy?: ActionPolicy
+  /**
+   * Whether the owner published their guardrail badge. Opt-in and default OFF: a badge is
+   * a claim the owner chooses to make about themselves, and serving one for every agent by
+   * default would publish guardrail state nobody asked us to publish (and undercut the
+   * paid third-party pull, which is the product).
+   */
+  badgePublic?: boolean
   passport: {
     standard: 'ERC-8004'
     registrationJson: Record<string, unknown>
@@ -1165,6 +1176,118 @@ export function listAgentAudits(
   const { audits, sinceApplied } = filterAudits(all, opts)
   // The summary covers the SAME window the rows do, so the counts and the list agree.
   return { agentId: agent.id, audits, summary: summarizeAudits(audits), sinceApplied }
+}
+
+// ── register_agent + guardrail badges (Phase 1.5) ────────────────────────────────
+
+/** What a manifest registration answers with. */
+export type RegistrationResult = {
+  agentId: string
+  /** Honest on-chain state. `queued` means no ERC-8004 tx has been broadcast yet. */
+  erc8004Status: {
+    onchain: 'queued' | 'registered'
+    tokenId?: string
+    explorerUrl?: string
+    kya: 'unverified' | 'verified' | 'revoked'
+  }
+  badges: Badge[]
+  /** Present only once the owner opts in to publishing (see setBadgeVisibility). */
+  badgeUrl: string | null
+}
+
+/**
+ * Register an agent from a manifest (Phase 1.5). A THIN wrapper over createAgent, not a
+ * second registration path: two ways to create an agent is exactly the drift this session
+ * has been removing everywhere else.
+ *
+ * A fresh registration is honest about itself: `queued`, KYA `unverified`, and a badge set
+ * that reads `no policy` until the owner actually configures one.
+ */
+export function registerAgentFromManifest(
+  manifest: {
+    name?: string
+    description?: string
+    category?: string
+    capabilities?: unknown
+    services?: Service[]
+    endpoint?: string
+    walletAddress?: string
+  },
+  caller?: string,
+): RegistrationResult | { error: string } {
+  if (!manifest?.name || typeof manifest.name !== 'string') return { error: 'manifest.name required' }
+
+  const agent = createAgent({
+    name: manifest.name,
+    description: typeof manifest.description === 'string' ? manifest.description : '',
+    category: typeof manifest.category === 'string' ? manifest.category : 'Other',
+    capabilities: Array.isArray(manifest.capabilities) ? (manifest.capabilities as string[]) : [],
+    services: manifest.services,
+    endpoint: manifest.endpoint,
+    walletAddress: manifest.walletAddress,
+    permissions: {},
+    owner: caller,
+  })
+  return buildRegistrationResult(agent)
+}
+
+function buildRegistrationResult(agent: PlatformAgent): RegistrationResult {
+  const { configured } = resolveActionPolicy(agent.actionPolicy, id('pol'), new Date().toISOString())
+  return {
+    agentId: agent.id,
+    erc8004Status: {
+      onchain: agent.onchain,
+      ...(agent.onchainAgentId ? { tokenId: agent.onchainAgentId } : {}),
+      ...(agent.onchainExplorer ? { explorerUrl: agent.onchainExplorer } : {}),
+      kya: agent.kya,
+    },
+    badges: deriveBadges({ surfaces: SURFACES, policyConfigured: configured, entries: state.audits[agent.id] ?? [] }),
+    badgeUrl: agent.badgePublic ? badgeUrlFor(agent.id) : null,
+  }
+}
+
+const badgeUrlFor = (agentId: string) => `/api/agents/badge?agentId=${encodeURIComponent(agentId)}&surface=trade`
+
+/** The current registration + badge view for an existing agent. Owner-gated. */
+export function agentRegistration(agentId: string, caller?: string): RegistrationResult | { error: string } {
+  const agent = state.agents.find((a) => a.id === agentId)
+  if (!agent) return { error: 'Unknown agent' }
+  if (!ownsAgent(agent, caller)) return { error: 'Forbidden: not the agent owner' }
+  return buildRegistrationResult(agent)
+}
+
+/** Owner opts in or out of publishing the badge. Off by default. */
+export function setBadgeVisibility(
+  agentId: string,
+  isPublic: boolean,
+  caller?: string,
+): { agentId: string; badgePublic: boolean; badgeUrl: string | null } | { error: string } {
+  const agent = state.agents.find((a) => a.id === agentId)
+  if (!agent) return { error: 'Unknown agent' }
+  if (!ownsAgent(agent, caller)) return { error: 'Forbidden: not the agent owner' }
+  agent.badgePublic = isPublic
+  pushActivity(agent, isPublic ? 'Guardrail badge published' : 'Guardrail badge unpublished')
+  save(state)
+  return { agentId: agent.id, badgePublic: isPublic, badgeUrl: isPublic ? badgeUrlFor(agent.id) : null }
+}
+
+/**
+ * The public badge for one surface. Served ONLY when the owner opted in: without that a
+ * free public endpoint would publish everyone's guardrail state and undercut the paid
+ * third-party pull, which is where the revenue is.
+ */
+export function agentBadge(
+  agentId: string,
+  surface: string,
+): { badge: Badge; agentName: string } | { error: string } {
+  const agent = state.agents.find((a) => a.id === agentId)
+  if (!agent) return { error: 'Unknown agent' }
+  if (!agent.badgePublic) return { error: 'Forbidden: this agent has not published a badge' }
+  const { configured } = resolveActionPolicy(agent.actionPolicy, id('pol'), new Date().toISOString())
+  const badges = deriveBadges({ surfaces: SURFACES, policyConfigured: configured, entries: state.audits[agent.id] ?? [] })
+  const badge = badgeFor(badges, surface)
+  if (!badge) return { error: `Unknown surface: ${surface}` }
+  return { badge, agentName: agent.name }
 }
 
 /**
