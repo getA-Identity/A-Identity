@@ -22,6 +22,9 @@ import {
   agentPolicy,
   getAgentActionPolicy,
   updateAgentActionPolicy,
+  checkAgentAction,
+  listAgentAudits,
+  recordAuditOutcome,
   agentReputation,
   anchorAgentOnchain,
   approveInstruction,
@@ -978,6 +981,57 @@ const server = http.createServer(async (req, res) => {
     return
   }
 
+  // Check an intended action against the policy. Returns a verdict and the audit id; it
+  // never executes anything, so the caller stays the one that acts.
+  if (req.method === 'POST' && url.pathname === '/api/agents/action-check') {
+    const body = (await readBody(req).catch(() => null)) as
+      | { agentId?: string; surface?: string; intent?: unknown; snapshot?: unknown }
+      | null
+    if (!body?.agentId || !body?.surface || !body?.intent) {
+      sendJson(res, 400, { error: 'agentId, surface and intent required' }); return
+    }
+    const r = checkAgentAction(
+      body.agentId,
+      { surface: body.surface, intent: body.intent as never, snapshot: body.snapshot as never },
+      callerId,
+    )
+    sendJson(res, 'error' in r ? errStatus(r.error) : 200, r)
+    return
+  }
+  // The decision trail for one agent (owner-gated, newest first, optional ?since=).
+  if (req.method === 'GET' && url.pathname === '/api/agents/audit-log') {
+    const agentId = url.searchParams.get('agentId') ?? ''
+    if (!agentId) { sendJson(res, 400, { error: 'agentId required' }); return }
+    if (denyRead(res, agentId, callerId)) return
+    const limitRaw = url.searchParams.get('limit')
+    const r = listAgentAudits(
+      agentId,
+      {
+        since: url.searchParams.get('since') ?? undefined,
+        limit: limitRaw ? Number(limitRaw) : undefined,
+      },
+      callerId,
+    )
+    sendJson(res, 'error' in r ? errStatus(r.error) : 200, r)
+    return
+  }
+  // Record what happened after a verdict (a WARN a human confirmed, or an abandon).
+  if (req.method === 'POST' && url.pathname === '/api/agents/audit-log/outcome') {
+    const body = (await readBody(req).catch(() => null)) as
+      | { agentId?: string; auditId?: string; outcome?: string; evidenceRef?: string }
+      | null
+    const allowed = ['executed', 'blocked', 'awaiting_human', 'abandoned']
+    if (!body?.agentId || !body?.auditId || !body?.outcome) {
+      sendJson(res, 400, { error: 'agentId, auditId and outcome required' }); return
+    }
+    if (!allowed.includes(body.outcome)) {
+      sendJson(res, 400, { error: `outcome must be one of: ${allowed.join(', ')}` }); return
+    }
+    const r = recordAuditOutcome(body.agentId, body.auditId, body.outcome as never, callerId, body.evidenceRef)
+    sendJson(res, 'error' in r ? errStatus(r.error) : 200, r)
+    return
+  }
+
   // Update an agent's permissions (the real policy the engine enforces)
   if (req.method === 'POST' && url.pathname === '/api/agents/permissions') {
     const body = (await readBody(req).catch(() => null)) as { agentId?: string; permissions?: Record<string, unknown> } | null
@@ -1229,6 +1283,9 @@ server.listen(PORT, () => {
   console.error(`  GET  /api/agents        list agents (?chain=base|arbitrum|ethereum)`)
   console.error(`  GET  /api/agents/action-policy   owner-gated action policy (free)`)
   console.error(`  POST /api/agents/action-policy   update the action policy (free, versioned)`)
+  console.error(`  POST /api/agents/action-check    policy verdict for an intended action`)
+  console.error(`  GET  /api/agents/audit-log       decision trail (?since= &limit=)`)
+  console.error(`  POST /api/agents/audit-log/outcome  record what happened after a verdict`)
 })
 
 // Keep-alive: free-tier hosts (e.g. Render) idle-sleep after ~15 min without inbound

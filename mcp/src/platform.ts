@@ -28,7 +28,21 @@ import {
 import { createAgentWallet, circlePay, readCircleWallet } from './circle-agent.js'
 import { previewTreasury, startAutoYield, type TreasuryPreview, type TreasuryExecution } from './treasury.js'
 import { computeAgentReputation } from './reputation.js'
-import { applyPolicyPatch, resolveActionPolicy, type ActionPolicy } from './policy/index.js'
+import {
+  applyPolicyPatch,
+  buildAuditEntry,
+  capAudits,
+  evaluateAction,
+  filterAudits,
+  resolveActionPolicy,
+  summarizeAudits,
+  type AccountSnapshot,
+  type ActionPolicy,
+  type AuditEntry,
+  type AuditOutcome,
+  type Decision,
+  type NormalizedIntent,
+} from './policy/index.js'
 import { classifySybil, type SybilSignals } from './asp/risk.js'
 import { getReputationAttestation } from './asp/attestations.js'
 import {
@@ -164,11 +178,14 @@ type State = {
   wallets: Wallet[]
   instructions: Instruction[]
   tasks: Task[]
+  /** Policy Engine v2 decision trail, keyed by agent id. Bounded per agent
+   *  (capAudits), because this whole state is persisted as one document. */
+  audits: Record<string, AuditEntry[]>
 }
 
 // ── persistence ───────────────────────────────────────────────────────────────
 
-const state: State = { agents: [], wallets: [], instructions: [], tasks: [] }
+const state: State = { agents: [], wallets: [], instructions: [], tasks: [], audits: {} }
 
 /**
  * Load persisted state (Postgres via DATABASE_URL, else the local JSON file) into
@@ -181,6 +198,9 @@ export async function initState() {
     state.wallets = loaded.wallets ?? []
     state.instructions = loaded.instructions ?? []
     state.tasks = loaded.tasks ?? []
+    // Older persisted documents predate the audit trail, so default it rather than
+    // letting an undefined map reach the decision path.
+    state.audits = loaded.audits ?? {}
   }
 }
 
@@ -1033,6 +1053,109 @@ export function updateAgentActionPolicy(
   pushActivity(agent, `Action policy updated by a human (v${next.version})`)
   save(state)
   return { agentId: agent.id, policy: next, configured: true }
+}
+
+// ── Policy Engine v2 decision path + audit trail (Phase 1.2 wiring, Phase 1.4) ───
+
+/**
+ * Check one intended action against the agent's policy, record the decision, and return
+ * it. This is the server side of `pre_action_check`: resolve the owner's policy (1.3),
+ * evaluate it with the pure engine (1.2), persist the outcome (1.4).
+ *
+ * We never execute anything. The caller acts on the verdict, which keeps the same
+ * prepared-or-executed separation the chain writes use.
+ *
+ * The snapshot comes from the CALLER, and per docs/robinhood-intent-capture.md bypass 8
+ * that caller must be the skill rather than the agent being policed: an agent that can
+ * author its own snapshot can buy an ALLOW by lying about buying power. We cannot verify
+ * that from here, so the audit entry records a hash of exactly what was used, which makes
+ * a falsified snapshot detectable after the fact instead of invisible.
+ */
+export function checkAgentAction(
+  agentId: string,
+  input: { surface: string; intent: NormalizedIntent; snapshot?: AccountSnapshot },
+  caller?: string,
+): { decision: Decision; auditId: string; policyConfigured: boolean } | { error: string } {
+  const agent = state.agents.find((a) => a.id === agentId)
+  if (!agent) return { error: 'Unknown agent' }
+  if (!ownsAgent(agent, caller)) return { error: 'Forbidden: not the agent owner' }
+  if (!input?.intent || typeof input.intent !== 'object') return { error: 'intent required' }
+  if (!input.surface) return { error: 'surface required' }
+
+  const now = new Date().toISOString()
+  const { policy, configured } = resolveActionPolicy(agent.actionPolicy, id('pol'), now)
+  const decision = evaluateAction({
+    surface: input.surface,
+    policy,
+    intent: input.intent,
+    snapshot: input.snapshot,
+    now: new Date(now),
+  })
+
+  const entry = buildAuditEntry({
+    id: id('aud'),
+    ts: now,
+    agentId: agent.id,
+    intent: input.intent,
+    snapshot: input.snapshot,
+    decision,
+  })
+  state.audits[agent.id] = capAudits([...(state.audits[agent.id] ?? []), entry])
+  // Only surface it on the agent's activity feed when the policy actually intervened;
+  // an ALLOW on every routine action would drown the feed.
+  if (decision.verdict !== 'ALLOW') {
+    pushActivity(agent, `Policy ${decision.verdict} on a ${entry.intent.kind} action: ${decision.reasons[0] ?? ''}`.trim())
+  }
+  save(state)
+
+  return { decision, auditId: entry.id, policyConfigured: configured }
+}
+
+/**
+ * Record what actually happened after a verdict. Kept separate from the decision because
+ * the outcome is only known later: a WARN sits at `awaiting_human` until someone acts.
+ * `evidenceRef` is the caller's post-action proof (e.g. a venue order id), so an entry can
+ * be reconciled against the venue rather than believed.
+ */
+export function recordAuditOutcome(
+  agentId: string,
+  auditId: string,
+  outcome: AuditOutcome,
+  caller?: string,
+  evidenceRef?: string,
+): { audit: AuditEntry } | { error: string } {
+  const agent = state.agents.find((a) => a.id === agentId)
+  if (!agent) return { error: 'Unknown agent' }
+  if (!ownsAgent(agent, caller)) return { error: 'Forbidden: not the agent owner' }
+  const entry = (state.audits[agent.id] ?? []).find((e) => e.id === auditId)
+  if (!entry) return { error: 'Unknown audit entry' }
+  // A DENY is final. Letting a caller mark a blocked action "executed" would turn the
+  // audit trail into a place where the policy can be overridden retroactively.
+  if (entry.verdict === 'DENY' && outcome === 'executed') {
+    return { error: 'Forbidden: a DENY cannot be recorded as executed' }
+  }
+  entry.outcome = outcome
+  entry.outcomeAt = new Date().toISOString()
+  if (evidenceRef) entry.evidenceRef = evidenceRef.slice(0, 200)
+  save(state)
+  return { audit: entry }
+}
+
+/** An agent's decision trail, newest first, owner-gated. Optionally bounded by `since`. */
+export function listAgentAudits(
+  agentId: string,
+  opts: { since?: string; limit?: number } = {},
+  caller?: string,
+):
+  | { agentId: string; audits: AuditEntry[]; summary: ReturnType<typeof summarizeAudits>; sinceApplied: boolean }
+  | { error: string } {
+  const agent = state.agents.find((a) => a.id === agentId)
+  if (!agent) return { error: 'Unknown agent' }
+  if (!ownsAgent(agent, caller)) return { error: 'Forbidden: not the agent owner' }
+  const all = state.audits[agent.id] ?? []
+  const { audits, sinceApplied } = filterAudits(all, opts)
+  // The summary covers the SAME window the rows do, so the counts and the list agree.
+  return { agentId: agent.id, audits, summary: summarizeAudits(audits), sinceApplied }
 }
 
 /** Live policy view for one agent: limits + today's spend + reset time. */
