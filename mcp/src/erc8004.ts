@@ -13,7 +13,7 @@
  *   ARB_RPC_URL / ARB_ERC8004_REGISTRY               (Arbitrum One)
  */
 import type { AgentIdentity } from './data.js'
-import { ARC_RPC, CONTRACTS } from './arc-contracts.js'
+import { CHAINS, resolveRpcUrls } from './chains/index.js'
 
 export interface IdentityProvider {
   resolve(query: string): Promise<AgentIdentity | null>
@@ -291,29 +291,31 @@ export function isSafePublicHttpUrl(raw: string): boolean {
 }
 
 export function createIdentityProvider(env: NodeJS.ProcessEnv = process.env): IdentityProvider {
-  // Circle Arc is always on: its ERC-8004 IdentityRegistry is deployed and known,
-  // so identity resolution is real out of the box — no env vars required.
-  const clients: ChainClient[] = [
-    {
-      chainId: 5042002,
-      chainName: 'arc',
-      rpcUrl: ARC_RPC,
-      registry: CONTRACTS.identityRegistry as `0x${string}`,
-      caipPrefix: 'eip155:5042002',
-    },
-    {
-      // OKX.AI's ERC-8004 IdentityRegistry on X Layer mainnet (verified live: our own
-      // ASP identities #6271/#8913 resolve via ownerOf, tokenURI points at the OKX CDN
-      // agent card). Makes any OKX.AI agent verifiable by token id; owner-address
-      // queries degrade to an existence check (the public RPC caps getLogs at 100
-      // blocks, so token enumeration by owner isn't possible there).
-      chainId: 196,
-      chainName: 'xlayer',
-      rpcUrl: env.XLAYER_RPC_URL ?? 'https://rpc.xlayer.tech',
-      registry: '0x8004a169fb4a3325136eb29fa0ceb6d2e539a432' as `0x${string}`,
-      caipPrefix: 'eip155:196',
-    },
-  ]
+  /**
+   * Every EVM chain in the registry that has a known ERC-8004 IdentityRegistry, derived
+   * rather than restated. Before this, Arc's chain id and RPC and X Layer's registry
+   * ADDRESS were hardcoded here as a second copy of what chains/registry.ts already
+   * knows, which is exactly the drift the registry exists to prevent. Adding an identity
+   * chain is now a descriptor with an `identityRegistry` address.
+   *
+   * Chains included today:
+   *  - Arc: always on, its registry is deployed and known, so identity resolution is real
+   *    out of the box with no env vars.
+   *  - X Layer: OKX.AI's own registry (verified live: our ASP identities #6271/#8913
+   *    resolve via ownerOf and tokenURI points at the OKX CDN agent card). Any OKX.AI
+   *    agent is verifiable by token id; owner-address queries degrade to an existence
+   *    check, because that public RPC caps getLogs at 100 blocks so token enumeration by
+   *    owner is not possible there.
+   */
+  const clients: ChainClient[] = CHAINS.filter(
+    (c) => c.ecosystem === 'evm' && c.evmChainId !== null && c.contracts.identityRegistry,
+  ).map((c) => ({
+    chainId: c.evmChainId as number,
+    chainName: c.id,
+    rpcUrl: resolveRpcUrls(c, env)[0],
+    registry: c.contracts.identityRegistry as `0x${string}`,
+    caipPrefix: c.caip2,
+  }))
 
   if (env.A_IDENTITY_RPC_URL && env.ERC8004_IDENTITY_REGISTRY) {
     clients.push({

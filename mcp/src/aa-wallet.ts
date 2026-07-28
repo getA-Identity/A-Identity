@@ -20,6 +20,7 @@
  * does NOT; `rpc.blockdaemon.testnet.arc.network` does — so the AA reads route through it.
  */
 import { ARC_EXPLORER, CONTRACTS } from './arc-contracts.js'
+import { ARC_CHAIN } from './chains/index.js'
 
 /** Arc RPCs whose eth_call revert format works with the Kernel getSenderAddress step. */
 const AA_RPCS = [
@@ -27,7 +28,7 @@ const AA_RPCS = [
   'https://rpc.drpc.testnet.arc.network',
   'https://rpc.quicknode.testnet.arc.network',
 ]
-const ARC_CHAIN_ID = 5042002
+const ARC_CHAIN_ID = ARC_CHAIN.evmChainId as number
 const USDC = CONTRACTS.usdc as `0x${string}`
 const ERC20_TRANSFER_ABI = [
   { type: 'function', name: 'transfer', stateMutability: 'nonpayable', inputs: [{ name: 'to', type: 'address' }, { name: 'amount', type: 'uint256' }], outputs: [{ type: 'bool' }] },

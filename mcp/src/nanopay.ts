@@ -19,11 +19,12 @@
 import { ARC_EXPLORER, CONTRACTS } from './arc-contracts.js'
 import { gatewayBalance, gatewayDeposit } from './gateway.js'
 import { x402PayTo } from './x402.js'
+import { ARC_CHAIN } from './chains/index.js'
 
 /** Circle's public testnet Gateway (permissionless — no API key). */
 const GATEWAY_TESTNET = 'https://gateway-api-testnet.circle.com'
-/** Arc testnet as an x402 network id (CAIP-2). */
-const ARC_NETWORK = 'eip155:5042002'
+/** Arc testnet as an x402 network id (CAIP-2), from the chain registry. */
+const ARC_NETWORK = ARC_CHAIN.caip2
 /** Price per call: 0.001 USDC (6-decimal units). A true sub-cent nanopayment. */
 const PRICE_UNITS = '1000'
 
@@ -131,7 +132,7 @@ export function nanoResource(settle: unknown) {
     paid: true,
     rail: 'nanopayment',
     settle,
-    resource: { title: 'Live Arc chain data (gasless nanopayment)', chainId: 5042002, servedAt: new Date().toISOString() },
+    resource: { title: 'Live Arc chain data (gasless nanopayment)', chainId: ARC_CHAIN.evmChainId, servedAt: new Date().toISOString() },
   }
 }
 

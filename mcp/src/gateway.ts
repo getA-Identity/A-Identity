@@ -10,16 +10,20 @@
  * elsewhere). USDC uses the 6-decimal ERC-20 interface on both chains.
  */
 import { randomBytes } from 'node:crypto'
+import { ARC_CHAIN } from './chains/index.js'
 
 export const GATEWAY_API = 'https://gateway-api-testnet.circle.com/v1'
 const GATEWAY_WALLET = '0x0077777d7EBA4688BDeF3E311b846F25870A19B9'
 const GATEWAY_MINTER = '0x0022222ABE238Cc2C7Bb1f21003F0a260052475B'
 
+/** Arc, from the one place a chain is described. RPC, USDC, the CCTP domain and the
+ *  explorer were all restated here before; the CCTP domain in particular is its own id
+ *  space, so a second copy of it is exactly the kind of value that drifts unnoticed. */
 const ARC = {
-  rpc: 'https://rpc.testnet.arc.network',
-  usdc: '0x3600000000000000000000000000000000000000',
-  domain: 26,
-  explorer: 'https://testnet.arcscan.app',
+  rpc: ARC_CHAIN.rpcUrls[0],
+  usdc: ARC_CHAIN.contracts.usdc as string,
+  domain: ARC_CHAIN.cctpDomain as number,
+  explorer: ARC_CHAIN.explorer as string,
 }
 const BASE_SEPOLIA = {
   rpc: 'https://base-sepolia-rpc.publicnode.com',
@@ -59,7 +63,7 @@ async function arcSigner(env: NodeJS.ProcessEnv) {
   if (!key) return null
   const { createWalletClient, createPublicClient, http, defineChain } = await import('viem')
   const { privateKeyToAccount } = await import('viem/accounts')
-  const chain = defineChain({ id: 5042002, name: 'Arc Testnet', nativeCurrency: { name: 'USD Coin', symbol: 'USDC', decimals: 18 }, rpcUrls: { default: { http: [ARC.rpc] } } })
+  const chain = defineChain({ id: ARC_CHAIN.evmChainId as number, name: ARC_CHAIN.name, nativeCurrency: ARC_CHAIN.nativeCurrency, rpcUrls: { default: { http: [ARC.rpc] } } })
   const account = privateKeyToAccount(key as `0x${string}`)
   return {
     account,

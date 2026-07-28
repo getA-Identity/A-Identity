@@ -58,6 +58,49 @@ test('the projection agrees with each descriptor it came from', () => {
   }
 })
 
+// ── the public agent manifest: the fifth surface that used to drift ───────────────
+
+/** Compiled to dist/chains/, so the repo root is three levels up. */
+const manifestPath = fileURLToPath(new URL('../../../public/.well-known/ai-agent-manifest.json', import.meta.url))
+
+type ManifestChain = { id: string; status: string }
+
+function manifest(): {
+  capabilities: { identity: { chains: ManifestChain[] }; payments: { rails: ManifestChain[] } }
+  interaction: { agent_to_agent: { chains_supported: string[] } }
+} {
+  return JSON.parse(readFileSync(manifestPath, 'utf8'))
+}
+
+// This file is hand-maintained on purpose (a human owns its prose), so instead of
+// generating it we make drift impossible to ship. It previously advertised Ethereum as a
+// supported identity chain while OMITTING Arc, the only chain where identity actually
+// works, and marked the live Arc rail as "preview".
+test('the agent manifest identity chains match the registry exactly', () => {
+  const expected = CHAINS.map((c) => ({ id: c.id, status: c.status }))
+  assert.deepEqual(
+    manifest().capabilities.identity.chains.map((c) => ({ id: c.id, status: c.status })),
+    expected,
+    'public/.well-known/ai-agent-manifest.json identity.chains disagrees with chains/registry.ts',
+  )
+})
+
+test('the agent manifest payment rails match the registry exactly', () => {
+  const expected = CHAINS.map((c) => ({ id: c.id, status: c.status }))
+  assert.deepEqual(
+    manifest().capabilities.payments.rails.map((c) => ({ id: c.id, status: c.status })),
+    expected,
+    'public/.well-known/ai-agent-manifest.json payments.rails disagrees with chains/registry.ts',
+  )
+})
+
+test('the agent manifest chains_supported matches the registry', () => {
+  assert.deepEqual(
+    manifest().interaction.agent_to_agent.chains_supported,
+    CHAINS.map((c) => c.id),
+  )
+})
+
 test('Arc is the only chain the public surface reports as live', () => {
   const live = publicChains().filter((c) => c.status === 'live' || c.status === 'beta')
   assert.deepEqual(

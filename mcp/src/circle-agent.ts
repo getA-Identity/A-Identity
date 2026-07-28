@@ -36,11 +36,12 @@
  */
 import type { CircleDeveloperControlledWalletsClient } from '@circle-fin/developer-controlled-wallets'
 import { ARC_EXPLORER, payUsdcOnchain } from './arc-contracts.js'
+import { ARC_CHAIN } from './chains/index.js'
 
 /** Arc Testnet, in Circle's blockchain vocabulary. */
 const ARC_BLOCKCHAIN = 'ARC-TESTNET'
 /** Native USDC on Arc testnet — the same dollar our vault settles in (6 display decimals). */
-const ARC_USDC = '0x3600000000000000000000000000000000000000'
+const ARC_USDC = ARC_CHAIN.contracts.usdc as string
 /** Default USDC to seed a new Circle wallet with, from our Arc signer. */
 const DEFAULT_FUND_USD = 0.5
 

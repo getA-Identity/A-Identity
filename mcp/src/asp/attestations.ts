@@ -9,6 +9,7 @@
  * The tools surface the LATEST attestation per agent; the score itself is always recomputed
  * live, so an attestation is a verifiable snapshot, never the source of truth.
  */
+import { ARC_CHAIN } from '../chains/index.js'
 export type ReputationAttestation = {
   /** ERC-8004 token id the attestation is about (matches identity.tokenId / onchainAgentId). */
   tokenId: string
@@ -43,7 +44,7 @@ export const ATTESTATIONS: ReputationAttestation[] = [
     registry: '0x8004B663056A597Dffe9eCcC1965A193B7388713',
     validator: '0xee602A161232Aac1436E812676b6626382FC84a9',
     txHash: '0x3f5429819347fb0f75e66ee1416fc2c9ad3dade8fb1bf8dac1b9d2606de92a8c',
-    txUrl: 'https://testnet.arcscan.app/tx/0x3f5429819347fb0f75e66ee1416fc2c9ad3dade8fb1bf8dac1b9d2606de92a8c',
+    txUrl: `${ARC_CHAIN.explorer}/tx/0x3f5429819347fb0f75e66ee1416fc2c9ad3dade8fb1bf8dac1b9d2606de92a8c`,
     feedbackHash: '0x135f58dd7871de3e006be5611a62050ca7b60d80863455c14ae2543df7e8e813',
     attestedAt: '2026-07-22T01:15:34.932Z',
   },

@@ -23,12 +23,14 @@
  *   USYC Teller 0x9fdF...105A (mint/redeem) · Entitlements 0xcc20...6113 (allowlist)
  */
 import { ARC_EXPLORER } from './arc-contracts.js'
+import { ARC_CHAIN } from './chains/index.js'
 
-const ARC_RPC = 'https://rpc.testnet.arc.network'
+/** Arc's primary RPC, from the one place a chain is described. */
+const ARC_RPC = ARC_CHAIN.rpcUrls[0]
 
 /** Real Arc-testnet token contracts. All three use 6 decimals on Arc. */
 export const TREASURY_ASSETS = {
-  usdc: '0x3600000000000000000000000000000000000000',
+  usdc: ARC_CHAIN.contracts.usdc as string,
   eurc: '0x89B50855Aa3bE2F677cD6303Cec089B5F319D72a',
   usyc: '0xe9185F0c5F296Ed1797AaE4238D26CCaBEadb86C',
 } as const

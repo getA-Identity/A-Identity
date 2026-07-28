@@ -13,6 +13,7 @@
 import { fileURLToPath } from 'node:url'
 import { Client } from '@modelcontextprotocol/sdk/client/index.js'
 import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js'
+import { ARC_CHAIN } from './chains/index.js'
 
 const serverPath = fileURLToPath(new URL('./index.js', import.meta.url))
 
@@ -45,7 +46,7 @@ async function main() {
   }
 
   // 1) Resolve the live Arc showcase agent (ERC-8004 #849980) with a real on-chain read.
-  const SHOWCASE = 'eip155:5042002:8004/849980'
+  const SHOWCASE = `${ARC_CHAIN.caip2}:8004/849980`
   const resolved = (await client.callTool({
     name: 'resolve_agent',
     arguments: { query: SHOWCASE },

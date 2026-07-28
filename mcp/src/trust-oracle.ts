@@ -11,6 +11,7 @@
  * without ARC_SIGNER_KEY. The risk engine is the same deterministic one the ASP sells.
  */
 import { ARC_EXPLORER } from './arc-contracts.js'
+import { ARC_CHAIN } from './chains/index.js'
 import { buyerAddress, ensureGatewayBalance, nanopayOnce } from './nanopay.js'
 import { x402PayTo } from './x402.js'
 import { riskCheck } from './asp/tools.js'
@@ -92,7 +93,7 @@ export async function runTrustOracleDogfood(
     payTo,
     payment: {
       rail: 'x402-nanopayment',
-      network: 'eip155:5042002',
+      network: ARC_CHAIN.caip2,
       amountUsd,
       transaction: pay.transaction,
       explorerUrl: pay.transaction?.startsWith('0x') ? `${ARC_EXPLORER}/tx/${pay.transaction}` : undefined,

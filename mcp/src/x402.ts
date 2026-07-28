@@ -10,6 +10,7 @@
  */
 import { randomBytes } from 'node:crypto'
 import { CONTRACTS, ARC_RPC, ARC_EXPLORER } from './arc-contracts.js'
+import { ARC_CHAIN } from './chains/index.js'
 import { loadSpentPayments, persistSpentPayment } from './storage.js'
 
 /** Price per call: 0.001 USDC (6 decimals). A true sub-cent nanopayment. */
@@ -231,6 +232,6 @@ export async function premiumResource(txHash: string) {
     paid: true,
     tx: txHash,
     explorerUrl: `${ARC_EXPLORER}/tx/${txHash}`,
-    resource: { title: 'Live Arc chain data', arcBlock, chainId: 5042002, servedAt: new Date().toISOString() },
+    resource: { title: 'Live Arc chain data', arcBlock, chainId: ARC_CHAIN.evmChainId, servedAt: new Date().toISOString() },
   }
 }

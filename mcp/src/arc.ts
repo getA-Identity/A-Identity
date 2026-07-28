@@ -8,27 +8,31 @@
  *   - tutorials/deploy-on-arc    (Foundry, gas paid in USDC)
  *   - app-kit                    (@circle-fin/app-kit unified balance)
  */
+import { ARC_CHAIN } from './chains/index.js'
 
+/**
+ * Arc's public shape for this module's callers, DERIVED from the chain registry rather
+ * than restated. This object used to be a second hand-written copy of Arc's chain id,
+ * RPCs, explorer, faucet and decimals; `arc-parity.test.ts` existed only to catch it
+ * drifting from the registry. Deriving it removes the possibility instead of testing for
+ * it, and the parity test now holds by construction.
+ */
 export const ARC_TESTNET = {
-  id: 5042002,
-  caip2: 'eip155:5042002',
-  name: 'Arc Testnet',
-  nativeCurrency: { name: 'USD Coin', symbol: 'USDC', decimals: 18 },
+  id: ARC_CHAIN.evmChainId as number,
+  caip2: ARC_CHAIN.caip2,
+  name: ARC_CHAIN.name,
+  nativeCurrency: ARC_CHAIN.nativeCurrency,
   rpc: {
-    primary: 'https://rpc.testnet.arc.network',
-    ws: 'wss://rpc.testnet.arc.network',
-    alternates: [
-      'https://rpc.blockdaemon.testnet.arc.network',
-      'https://rpc.drpc.testnet.arc.network',
-      'https://rpc.quicknode.testnet.arc.network',
-    ],
+    primary: ARC_CHAIN.rpcUrls[0],
+    ws: ARC_CHAIN.wsUrl as string,
+    alternates: ARC_CHAIN.rpcUrls.slice(1),
   },
-  explorer: 'https://testnet.arcscan.app',
-  faucet: 'https://faucet.circle.com',
-  gasToken: 'USDC',
+  explorer: ARC_CHAIN.explorer as string,
+  faucet: ARC_CHAIN.faucet as string,
+  gasToken: ARC_CHAIN.nativeCurrency.symbol,
   /** Native USDC uses 18 decimals; the ERC-20 interface uses 6. Same balance. */
-  nativeDecimals: 18,
-  erc20Decimals: 6,
+  nativeDecimals: ARC_CHAIN.nativeCurrency.decimals,
+  erc20Decimals: ARC_CHAIN.usdcDecimals,
   finality: 'deterministic, sub-second',
 } as const
 

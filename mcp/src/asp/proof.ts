@@ -14,6 +14,7 @@
  */
 
 import { SETTLEMENTS } from './settlements.js'
+import { ARC_CHAIN } from '../chains/index.js'
 
 const OKLINK_TX = 'https://www.oklink.com/x-layer/evm/tx/'
 const OKLINK_ADDR = 'https://www.oklink.com/x-layer/evm/address/'
@@ -72,13 +73,13 @@ export const PROOF = {
       validator: '0xee602A161232Aac1436E812676b6626382FC84a9',
       scoreOnchain: '54 / 100 (the 0-1000 score on the ERC-8004 convention)',
       tx: '0x3f5429819347fb0f75e66ee1416fc2c9ad3dade8fb1bf8dac1b9d2606de92a8c',
-      txUrl: 'https://testnet.arcscan.app/tx/0x3f5429819347fb0f75e66ee1416fc2c9ad3dade8fb1bf8dac1b9d2606de92a8c',
+      txUrl: `${ARC_CHAIN.explorer}/tx/0x3f5429819347fb0f75e66ee1416fc2c9ad3dade8fb1bf8dac1b9d2606de92a8c`,
       note: 'reputation_score / agent_passport return this as onchainAttestation - verify the score on-chain instead of trusting the API',
     },
   },
   // The rigor behind the numbers - deterministic and unit-tested, not an LLM guess.
   engineering: {
-    tests: 163,
+    tests: 224,
     deterministicReputation: true,
     liveOnchainReads: 'ERC-8004 IdentityRegistry + ValidationRegistry (KYA) on Circle Arc, plus the OKX.AI IdentityRegistry on X Layer mainnet (any OKX.AI agent resolves by token id or owner address), read live via viem',
     onchainReputationWrites: 'ERC-8004 ReputationRegistry on Circle Arc: the score is anchored on-chain as a signed observer attestation (A1)',
