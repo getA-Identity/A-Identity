@@ -8,6 +8,7 @@
 export * from './types.js'
 export * from './caip.js'
 export * from './registry.js'
+export * from './public-view.js'
 export { createEvmAdapter, type EvmAdapter } from './evm/adapter.js'
 export {
   resolveRpcUrls,

@@ -45,6 +45,14 @@ export interface ChainDescriptor {
   /** Short slug for UI / logs. e.g. 'arc', 'base'. */
   id: string
   name: string
+  /** Short label for UI chips. e.g. 'Arc', 'Arbitrum'. */
+  shortName: string
+  /** Brand hex color for UI badges. Must stay readable as chip text on its own tint
+   *  in BOTH light and dark themes, so avoid near-black and near-white. */
+  color: string
+  /** One line on what this chain's job is in the product. Shown in the UI and served
+   *  by GET /api/chains, so keep it honest about what is live vs planned. */
+  role: string
   ecosystem: Ecosystem
   testnet: boolean
   status: ChainStatus

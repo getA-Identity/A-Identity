@@ -75,10 +75,10 @@ async function main() {
     throw new Error('get_reputation score out of range')
   }
 
-  // 4) All five chains are reported by get_chain_status.
+  // 4) Every registry chain is reported by get_chain_status.
   const chainStatus = (await client.callTool({ name: 'get_chain_status', arguments: {} })) as TextResult
   const chainIds = JSON.parse(textOf(chainStatus)).chains.map((c: { id: string }) => c.id)
-  for (const id of ['arc', 'base', 'arbitrum', 'stellar', 'algorand']) {
+  for (const id of ['arc', 'base', 'arbitrum', 'avalanche', 'xlayer', 'stellar', 'solana']) {
     if (!chainIds.includes(id)) throw new Error(`get_chain_status missing chain: ${id}`)
   }
 

@@ -25,28 +25,49 @@ REST + MCP) share the same modules:
 
 Run `cd mcp && npm run build && npm run smoke` after any change.
 
-## Adding a network (the Stellar pattern)
+## Adding a network
 
-Networks are additive. To add Stellar, follow the shape of `arc-contracts.ts`:
+**Do not copy `arc-contracts.ts`.** That was the pre-registry recipe and it does not
+scale; Arc is now just the first descriptor served by a generic engine. Config is data,
+logic is chain-agnostic. The single source of truth is
+`mcp/src/chains/registry.ts`, and everything public is derived from it: the
+`GET /api/chains` payload, the `get_chain_status` MCP tool (both via `CHAIN_CONFIG` in
+`data.ts`), and the frontend's `src/lib/chains.ts`, which is a GENERATED file.
 
-1. **New module** `mcp/src/stellar.ts`. Export:
-   - a `readStellarStatus()` that hits Horizon (`https://horizon-testnet.stellar.org`)
-     and returns a live status object (no key), mirroring `getArcStatus()`.
-   - `registerAgentStellar(...)` and payment/settlement functions, env-gated
-     behind a Stellar signing secret. Stellar is not EVM, so use the
-     `@stellar/stellar-sdk`, not viem. Identity is anchored via a Soroban
-     contract or SEP-10 auth; the ERC-8004 passport is bridged, not native
-     (see `docs/chains` for the framing).
-2. **Wire REST** in `http.ts`: `GET /api/stellar`, `GET /api/stellar/contracts`,
-   and any write endpoints, next to the Arc ones. Keep the prepared-vs-executed
-   pattern (return the exact call when no key, broadcast when a key is present).
-3. **Register MCP tools** in `server.ts` if agents should read Stellar state
-   (`get_stellar_status`), matching the read-only rule (MCP is read-only; writes
-   are REST-only).
-4. **Config** in `.env.example`: document the Stellar RPC and signer vars.
-5. **Frontend flips on** when the integration lands: set the chain `status` to
-   `active` in `src/lib/chains.ts`. Until then it stays `planned` and the UI
-   labels it honestly.
+**Adding an EVM chain (Base, Arbitrum, Avalanche, X Layer) is a data edit:**
+
+1. Add one **descriptor** to `mcp/src/chains/registry.ts` (CAIP-2 as the primary key,
+   `evmChainId`, `cctpDomain`, RPC list, explorer, `shortName`/`color`/`role` for the
+   UI, `confirmations`, `status: 'planned'`).
+2. Deploy the contracts with the same salt via a deterministic factory (so the address
+   matches the other chains), paste the addresses into the descriptor `contracts` block.
+3. Run `cd mcp && npm run gen:chains` to regenerate the frontend module, then
+   `npm test`. There is **no new adapter and no new product code**: the chain gets
+   identity register, ERC-8183 escrow, USDC settlement, the AgentSpendPolicy vault and
+   ERC-8004 attestation from `chains/evm/adapter.ts` for free.
+4. Flip `status`: `planned` -> `beta` (team-only) -> `live`, regenerate, ship.
+
+If adding an EVM chain requires touching anything other than the registry plus a deploy,
+the abstraction is leaking. Fix the leak instead of special-casing the chain.
+
+**Adding a non-EVM chain (Stellar, Solana) additionally needs one adapter:**
+
+1. Descriptor with `ecosystem: 'stellar' | 'solana'`, the correct CAIP-2 reference
+   (Stellar = network label, Solana = truncated genesis hash) and `evmChainId: null`.
+2. A new adapter under `mcp/src/chains/<ecosystem>/` behind the same interface, using
+   the native SDK (`@stellar/stellar-sdk`, `@solana/kit`), never viem. It owns exactly
+   three things: address resolution/validation, balance + account reads, and
+   transaction build/sign/submit.
+3. Reimplement the contract in the native language (Soroban Rust / Anchor Rust) against
+   a VM-neutral interface spec, and prove equivalence with shared test vectors run
+   against both it and the Solidity reference.
+4. Identity is the native registry (Soroban registry + SEP-10 on Stellar); the ERC-8004
+   passport is bridged, not native. See `docs/chains` for the framing.
+5. Document the RPC and signer env vars in `.env.example`.
+
+`src/lib/chains.ts` is generated. Never hand-edit it: `npm test` fails if it drifts
+from the registry (`mcp/src/chains/frontend-sync.test.ts`). Change the registry and
+regenerate.
 
 Golden rules that must hold for every network:
 

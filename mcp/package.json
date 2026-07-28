@@ -10,7 +10,8 @@
   "scripts": {
     "build": "tsc",
     "compile": "node scripts/compile-contracts.mjs",
-    "test": "npm run build && node --test dist/auth.test.js dist/reputation.test.js dist/marketplace.test.js dist/x402.test.js dist/erc8004.test.js dist/chains/caip.test.js dist/chains/registry.test.js dist/chains/evm/adapter.test.js dist/chains/evm/memo.test.js dist/chains/arc-parity.test.js dist/asp/risk.test.js dist/asp/tools.test.js dist/asp/attestations.test.js dist/airdrop.test.js dist/trust-oracle.test.js",
+    "gen:chains": "npm run build && node scripts/gen-frontend-chains.mjs",
+    "test": "npm run build && node --test dist/auth.test.js dist/reputation.test.js dist/marketplace.test.js dist/x402.test.js dist/erc8004.test.js dist/chains/caip.test.js dist/chains/registry.test.js dist/chains/frontend-sync.test.js dist/chains/evm/adapter.test.js dist/chains/evm/memo.test.js dist/chains/arc-parity.test.js dist/asp/risk.test.js dist/asp/tools.test.js dist/asp/attestations.test.js dist/airdrop.test.js dist/trust-oracle.test.js",
     "e2e": "node e2e.mjs",
     "start": "node dist/index.js",
     "start:http": "node dist/http.js",

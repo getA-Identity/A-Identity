@@ -142,7 +142,7 @@ export function buildServer(data: ServerData = {}): McpServer {
     {
       title: 'Get supported chain status',
       description:
-        'List the chains A-Identity supports for identity and x402 payments (Arc, Base, Arbitrum, Stellar, Algorand), with identity standard, x402 support, status, and registered agent counts.',
+        'List every chain in the A-Identity chain registry, with its identity standard, x402 support, lifecycle status (live | beta | planned | deprecated) and registered agent counts. Arc is the live chain today; the rest are planned.',
       inputSchema: {},
     },
     async () => {

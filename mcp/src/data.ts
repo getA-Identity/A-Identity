@@ -4,10 +4,12 @@
  * No fabricated agents: identity resolution is REAL on-chain (see erc8004.ts, which
  * reads Circle Arc's deployed ERC-8004 registry), and the agent list / reputation
  * come from real platform state (see http.ts / platform.ts). What remains here is
- * chain metadata (CHAIN_CONFIG) and the capability manifest (listCapabilities).
+ * the public chain projection (CHAIN_CONFIG, derived from chains/registry.ts) and the
+ * capability manifest (listCapabilities).
  */
+import { publicChains } from './chains/public-view.js'
 
-export type ChainName = 'arc' | 'xlayer' | 'ethereum' | 'base' | 'arbitrum' | 'stellar' | 'algorand'
+export type ChainName = 'arc' | 'xlayer' | 'ethereum' | 'base' | 'arbitrum' | 'stellar'
 
 export type AgentIdentity = {
   agentId: string
@@ -65,46 +67,16 @@ export function listAgents(chain?: string): AgentIdentity[] {
   return AGENTS.filter((a) => a.chain === chainKey)
 }
 
-export const CHAIN_CONFIG = [
-  {
-    id: 'arc', name: 'Circle Arc (Testnet)', shortName: 'Arc', chainId: 5042002 as number | null,
-    evmCompatible: true, color: '#2775CA',
-    identity: 'ERC-8004', erc8004Native: true, x402: true,
-    role: 'Primary payment rail: gas in USDC, sub-second finality, App Kit unified balance.',
-    // Active: the core flow (identity, KYA, vault, USDC settlement) runs on Arc testnet
-    // today with real transactions. Value matches src/lib/chains.ts (arc: 'active');
-    // base/arbitrum are 'planned' EVM fallbacks, not yet wired end to end.
-    status: 'active',
-  },
-  {
-    id: 'base', name: 'Base', shortName: 'Base', chainId: 8453,
-    evmCompatible: true, color: '#0052FF',
-    identity: 'ERC-8004', erc8004Native: true, x402: true,
-    role: 'EVM fallback: ERC-8004 compatible, Coinbase ecosystem, low fees.',
-    status: 'planned',
-  },
-  {
-    id: 'arbitrum', name: 'Arbitrum One', shortName: 'Arbitrum', chainId: 42161,
-    evmCompatible: true, color: '#28A0F0',
-    identity: 'ERC-8004', erc8004Native: true, x402: true,
-    role: 'DeFi gateway: large protocol ecosystem, USDC via Circle, ERC-8004 compatible.',
-    status: 'planned',
-  },
-  {
-    id: 'stellar', name: 'Stellar', shortName: 'Stellar', chainId: null,
-    evmCompatible: false, color: '#C79A1E',
-    identity: 'Soroban registry + SEP-10', erc8004Native: false, x402: true,
-    role: 'Fast, low-cost settlement: USDC + EURC native (Circle), Soroban contracts.',
-    status: 'planned',
-  },
-  {
-    id: 'algorand', name: 'Algorand', shortName: 'Algorand', chainId: null,
-    evmCompatible: false, color: '#1A1A1A',
-    identity: 'did:algo + ARC registry', erc8004Native: false, x402: true,
-    role: 'Instant finality: USDC native (Circle), W3C did:algo, ARC smart contracts.',
-    status: 'planned',
-  },
-]
+/**
+ * The chains this server reports, DERIVED from the one source of truth
+ * (`chains/registry.ts`). Adding a chain is a registry edit; this list, the
+ * `GET /api/chains` payload, the `get_chain_status` MCP tool and the frontend's
+ * generated `src/lib/chains.ts` all follow automatically.
+ *
+ * Status uses the registry's honest lifecycle vocabulary: `live` (wired end to end,
+ * Arc today) | `beta` | `planned` | `deprecated`.
+ */
+export const CHAIN_CONFIG = publicChains()
 
 export function listCapabilities() {
   return {
@@ -112,20 +84,23 @@ export function listCapabilities() {
     version: '0.2.0',
     status: 'preview',
     capabilities: {
+      // Also derived from the registry, so the manifest can never advertise a chain
+      // the rest of the system does not know about.
       identity: {
         standard: 'ERC-8004',
-        evmChains: ['ethereum-mainnet', 'base', 'arbitrum-one', 'arc'],
-        nonEvmChains: [
-          { chain: 'stellar', standard: 'Soroban registry + SEP-10', note: 'ERC-8004 passport bridged from EVM' },
-          { chain: 'algorand', standard: 'did:algo + ARC registry', note: 'ERC-8004 passport bridged from EVM' },
-        ],
+        evmChains: CHAIN_CONFIG.filter((c) => c.evmCompatible).map((c) => c.id),
+        nonEvmChains: CHAIN_CONFIG.filter((c) => !c.evmCompatible).map((c) => ({
+          chain: c.id,
+          standard: c.protocols.identity.standard,
+          note: c.protocols.identity.note ?? 'ERC-8004 passport bridged from EVM',
+        })),
         status: 'preview',
       },
       payments: {
         standard: 'x402',
         settlement: 'USDC',
         also_supported: ['USDT', 'PYUSD', 'EURC'],
-        rails: ['arc', 'base', 'arbitrum', 'stellar', 'algorand'],
+        rails: CHAIN_CONFIG.filter((c) => c.x402).map((c) => c.id),
         wallets: 'circle-agent-wallets',
         status: 'planned',
       },

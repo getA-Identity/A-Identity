@@ -29,7 +29,7 @@ async function main() {
   // REST companion endpoints (used by the frontend)
   const chainsRes = await fetch(`http://localhost:${PORT}/api/chains`).then((r) => r.json())
   const ids = (chainsRes.chains as { id: string }[]).map((c) => c.id)
-  for (const id of ['arc', 'base', 'arbitrum', 'stellar', 'algorand']) {
+  for (const id of ['arc', 'base', 'arbitrum', 'avalanche', 'xlayer', 'stellar', 'solana']) {
     if (!ids.includes(id)) throw new Error(`REST /api/chains missing ${id}`)
   }
   const repRes = await fetch(`http://localhost:${PORT}/api/reputation?id=stellar:pubnet:aid/8`).then(
@@ -37,7 +37,7 @@ async function main() {
   )
   if (typeof repRes.reputation?.score !== 'number') throw new Error('REST /api/reputation failed')
 
-  console.log(`✅ HTTP smoke test passed (MCP + REST, 5 chains, stellar score=${repRes.reputation.score})`)
+  console.log(`✅ HTTP smoke test passed (MCP + REST, 7 chains, stellar score=${repRes.reputation.score})`)
 }
 
 main().catch((err) => {
