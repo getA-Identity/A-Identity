@@ -1306,6 +1306,17 @@ const server = http.createServer(async (req, res) => {
           checkTask: (taskId) => getTask(taskId, mcpCaller),
           release: (taskId, opts) => releaseTask(taskId, opts, mcpCaller),
         },
+        // Same per-request caller, same ownership gate in platform.ts. Without a verified
+        // session mcpCaller is undefined and every one of these returns Forbidden.
+        policy: {
+          getPolicy: (agentId) => getAgentActionPolicy(agentId, mcpCaller),
+          setPolicy: (agentId, policy) => updateAgentActionPolicy(agentId, policy, mcpCaller),
+          check: (agentId, input) => checkAgentAction(agentId, input as never, mcpCaller),
+          auditLog: (agentId, opts) => listAgentAudits(agentId, opts, mcpCaller),
+          recordOutcome: (agentId, auditId, outcome, evidenceRef) =>
+            recordAuditOutcome(agentId, auditId, outcome as never, mcpCaller, evidenceRef),
+          register: (manifest) => registerAgentFromManifest(manifest as never, mcpCaller),
+        },
       })
       const transport = new StreamableHTTPServerTransport({
         sessionIdGenerator: undefined,

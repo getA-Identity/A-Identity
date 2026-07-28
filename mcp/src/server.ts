@@ -35,6 +35,24 @@ export type ServerData = {
     checkTask: (taskId: string) => unknown
     release: (taskId: string, opts: { rating?: number; review?: string }) => Promise<unknown>
   }
+  /**
+   * Policy Engine v2 hooks (Phase 1.7), injected by the HTTP entry with the per-request
+   * verified caller baked in. Same security model as the marketplace hooks and no new
+   * one: every hook is ownership-gated inside platform.ts, so without a verified caller
+   * they return Forbidden and exposing them over MCP cannot bypass auth.
+   *
+   * These are the OWNER surface and they are free. The paid counterparty signal
+   * (guardrail_check) lives on the ASP behind x402 instead, because payment proves
+   * someone paid, not that they own the agent: see docs/compliance-robinhood.md 2.5.
+   */
+  policy?: {
+    getPolicy: (agentId: string) => unknown
+    setPolicy: (agentId: string, policy: unknown) => unknown
+    check: (agentId: string, input: { surface: string; intent: unknown; snapshot?: unknown }) => unknown
+    auditLog: (agentId: string, opts: { since?: string; limit?: number }) => unknown
+    recordOutcome: (agentId: string, auditId: string, outcome: string, evidenceRef?: string) => unknown
+    register: (manifest: Record<string, unknown>) => unknown
+  }
 }
 
 export function buildServer(data: ServerData = {}): McpServer {
@@ -275,6 +293,111 @@ export function buildServer(data: ServerData = {}): McpServer {
         },
       },
       async ({ taskId, rating, review }) => json(await mp.release(taskId, { rating, review })),
+    )
+  }
+
+  // ── policy tools (Phase 1.7; only when the HTTP entry injects the hooks) ─────────
+  // The guardrail an agent's own actions clear before they reach a venue. Every tool is
+  // ownership-gated in platform.ts, so a request without a verified session gets Forbidden.
+  // Free: these are the owner's own rules on their own account.
+  if (data.policy) {
+    const p = data.policy
+
+    server.registerTool(
+      'register_agent',
+      {
+        title: 'Register an agent from a manifest',
+        description:
+          'Register an agent from a manifest and get back its id, its honest ERC-8004 status (queued until a registration tx is broadcast) and its guardrail badge set. Free. Requires a verified session.',
+        inputSchema: {
+          name: z.string().describe('Agent name'),
+          description: z.string().optional(),
+          category: z.string().optional(),
+          capabilities: z.array(z.string()).optional(),
+          endpoint: z.string().optional().describe('Where the agent is reachable'),
+          walletAddress: z.string().optional(),
+        },
+      },
+      async (manifest) => json(p.register(manifest as Record<string, unknown>)),
+    )
+
+    server.registerTool(
+      'policy_get',
+      {
+        title: 'Read the action policy',
+        description:
+          "Read this agent's action policy: per-action and daily caps, the human-approval line, symbol allow/deny lists, options and margin switches, trading hours and concentration limit, plus its version. Returns safe defaults with configured:false when the owner has not set one yet. Owner only.",
+        inputSchema: { agentId: z.string() },
+      },
+      async ({ agentId }) => json(p.getPolicy(agentId)),
+    )
+
+    server.registerTool(
+      'policy_set',
+      {
+        title: 'Update the action policy',
+        description:
+          "Update this agent's action policy. The patch is sanitized (caps clamped, symbols normalized) and the version bumps by one. Margin cannot be enabled: it is off by construction. Owner only, and a mutating call, so it requires a verified session.",
+        inputSchema: {
+          agentId: z.string(),
+          policy: z
+            .record(z.unknown())
+            .describe('Partial policy: perActionCapUsd, dailyCapUsd, humanApprovalAboveUsd, frozen, trade{allowSymbols,denySymbols,allowOptions,tradingHoursUtc,maxConcentrationPct}'),
+        },
+      },
+      async ({ agentId, policy }) => json(p.setPolicy(agentId, policy)),
+    )
+
+    server.registerTool(
+      'pre_action_check',
+      {
+        title: 'Check an intended action against the policy',
+        description:
+          'Ask whether an action the agent intends to take is allowed: returns ALLOW, WARN or DENY with every reason, plus the audit id. It NEVER executes anything, so the caller acts on the verdict. Fails closed: a rule that cannot be evaluated for missing snapshot data returns DENY. The snapshot must be gathered by the caller, not authored by the agent being checked. Free. Owner only.',
+        inputSchema: {
+          agentId: z.string(),
+          surface: z.enum(['trade', 'spend', 'bet']).describe('Which action surface; only trade is live'),
+          intent: z
+            .record(z.unknown())
+            .describe('{ kind: order|cancel|recurring|settings|transfer|document, notionalUsd, side?, symbol?, assetClass?, protective?, settingKey?, settingValue?, cadence? }'),
+          snapshot: z
+            .record(z.unknown())
+            .optional()
+            .describe('{ todayNotionalUsd, positions[], portfolioValueUsd?, cashAvailableUsd?, marginUsedUsd?, accountType? } gathered by the caller'),
+        },
+      },
+      async ({ agentId, surface, intent, snapshot }) => json(p.check(agentId, { surface, intent, snapshot })),
+    )
+
+    server.registerTool(
+      'audit_log',
+      {
+        title: 'Read the decision trail',
+        description:
+          "This agent's recorded decisions, newest first, with a summary including the USD value the policy actually refused. Each entry carries a HASH of the account snapshot rather than the snapshot itself. Free. Owner only.",
+        inputSchema: {
+          agentId: z.string(),
+          since: z.string().optional().describe('ISO timestamp; ignored if unparseable'),
+          limit: z.number().optional().describe('1-500, default 100'),
+        },
+      },
+      async ({ agentId, since, limit }) => json(p.auditLog(agentId, { since, limit })),
+    )
+
+    server.registerTool(
+      'record_audit_outcome',
+      {
+        title: 'Record what happened after a verdict',
+        description:
+          'Record the outcome of a decision: executed, blocked, awaiting_human or abandoned, with an optional evidence reference (e.g. a venue order id) so the entry can be reconciled rather than believed. A DENY can never be recorded as executed. Owner only.',
+        inputSchema: {
+          agentId: z.string(),
+          auditId: z.string(),
+          outcome: z.enum(['executed', 'blocked', 'awaiting_human', 'abandoned']),
+          evidenceRef: z.string().optional(),
+        },
+      },
+      async ({ agentId, auditId, outcome, evidenceRef }) => json(p.recordOutcome(agentId, auditId, outcome, evidenceRef)),
     )
   }
 

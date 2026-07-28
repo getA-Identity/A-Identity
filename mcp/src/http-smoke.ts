@@ -19,10 +19,32 @@ async function main() {
   await client.connect(transport)
 
   const { tools } = await client.listTools()
-  console.log('tools over HTTP:', tools.map((t) => t.name).sort().join(', '))
+  const names = tools.map((t) => t.name).sort()
+  console.log('tools over HTTP:', names.join(', '))
+
+  // The policy tools are registered only when the HTTP entry injects its hooks, so a
+  // broken injection would silently drop the whole guardrail surface from MCP while every
+  // REST route kept working. Assert they are present, and that each still advertises a
+  // schema a client can build a call from.
+  for (const name of ['register_agent', 'policy_get', 'policy_set', 'pre_action_check', 'audit_log', 'record_audit_outcome']) {
+    const tool = tools.find((t) => t.name === name)
+    if (!tool) throw new Error(`MCP is missing the policy tool: ${name}`)
+    const props = Object.keys((tool.inputSchema as { properties?: Record<string, unknown> })?.properties ?? {})
+    if (!props.length) throw new Error(`MCP tool ${name} advertises no input schema`)
+  }
 
   const caps = (await client.callTool({ name: 'list_capabilities', arguments: {} })) as TextResult
   if (!textOf(caps).includes('ERC-8004')) throw new Error('list_capabilities failed over HTTP')
+
+  // Owner-gated by construction: an unauthenticated MCP caller must be refused, not served.
+  // The exact refusal depends on whether the id exists at all ("Unknown agent" is checked
+  // before ownership, matching the REST gate), so assert what actually matters: an error
+  // came back and no policy did.
+  const gated = textOf((await client.callTool({ name: 'policy_get', arguments: { agentId: 'anything' } })) as TextResult)
+  const refused = gated.includes('Forbidden') || gated.includes('Unknown agent')
+  if (!refused || gated.includes('perActionCapUsd')) {
+    throw new Error(`policy_get served an unauthenticated MCP caller: ${gated.slice(0, 160)}`)
+  }
 
   await client.close()
 
@@ -62,7 +84,7 @@ async function main() {
     throw new Error(`POST /api/agents/action-policy should require a verified session (got ${pr.status})`)
   }
 
-  console.log('✅ HTTP smoke test passed (MCP + REST, 7 chains, action-policy wired + gated)')
+  console.log('✅ HTTP smoke test passed (MCP + REST, 7 chains, 6 policy tools over MCP, action-policy wired + gated)')
 }
 
 main().catch((err) => {
