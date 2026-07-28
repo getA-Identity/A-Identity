@@ -79,7 +79,7 @@ export const PROOF = {
   },
   // The rigor behind the numbers - deterministic and unit-tested, not an LLM guess.
   engineering: {
-    tests: 244,
+    tests: 265,
     deterministicReputation: true,
     liveOnchainReads: 'ERC-8004 IdentityRegistry + ValidationRegistry (KYA) on Circle Arc, plus the OKX.AI IdentityRegistry on X Layer mainnet (any OKX.AI agent resolves by token id or owner address), read live via viem',
     onchainReputationWrites: 'ERC-8004 ReputationRegistry on Circle Arc: the score is anchored on-chain as a signed observer attestation (A1)',
@@ -152,6 +152,7 @@ export const METHODOLOGY = {
     risk_check: '$0.005 - pre-transaction ALLOW / WARN / DENY on a counterparty',
     agent_passport: '$0.01 - identity + reputation + KYA + risk in one call',
     counterparty_check: "$0.008 - a deal-specific verdict between two agents: risk_check on the counterparty PLUS a same-operator self-deal check (paying an agent you also operate builds no independent reputation).",
+    guardrail_check: "$0.005 - does this agent operate under an ENFORCED spend/trade policy, and does it respect the verdicts? Bands only (policy enforced, block rate, refused override attempts, unclosed approvals): the policy itself, its caps, its allowlists, the symbols and the amounts are never disclosed. The owner's own policy checks are free and owner-gated; we sell the counterparty signal, not the seatbelt.",
   },
   standards: {
     'ERC-8004': 'on-chain agent identity (IdentityRegistry) + validation/KYA (ValidationRegistry) + reputation attestation (ReputationRegistry)',

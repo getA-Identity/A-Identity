@@ -21,7 +21,7 @@ import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { dirname, join } from 'node:path'
 import { initState } from './platform.js'
-import { verifyAgent, reputationScore, riskCheck, agentPassport, counterpartyCheck, trustPreview, type TxContext } from './asp/tools.js'
+import { verifyAgent, reputationScore, riskCheck, agentPassport, counterpartyCheck, trustPreview, guardrailCheck, type TxContext } from './asp/tools.js'
 import { applyOkxX402, type PaymentStatus } from './asp/payment.js'
 import { PROOF, METHODOLOGY } from './asp/proof.js'
 import { renderProofHtml } from './asp/proof-html.js'
@@ -243,6 +243,13 @@ async function main() {
   app.all('/tools/counterparty_check', handle(async (req) => {
     const v = requireFromTo(req); if ('error' in v) return v
     return counterpartyCheck(v.from, v.to, txContextFrom(req))
+  }))
+  // Policy discipline about a THIRD party. The engine's own pre_action_check stays free
+  // and owner-gated on the main backend: payment cannot prove ownership, so it must never
+  // be the gate for owner-scoped data. See docs/compliance-robinhood.md section 2.
+  app.all('/tools/guardrail_check', handle(async (req) => {
+    const v = requireAgentId(req); if ('error' in v) return v
+    return guardrailCheck(v.agentId)
   }))
 
   app.listen(PORT, () => {

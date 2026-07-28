@@ -65,6 +65,13 @@ export type AuditEntry = {
    *  only proof an action happened, so an audit entry can be reconciled rather than
    *  trusted (the upstream tool calls this the order-evidence rule). */
   evidenceRef?: string
+  /**
+   * How many times someone tried to record this blocked action as executed. Refusing the
+   * override is not enough on its own: an operator repeatedly trying to mark DENYed
+   * actions as done is the single most informative behavioral signal we have, and it only
+   * exists if we count the attempt instead of silently rejecting it.
+   */
+  overrideAttempts?: number
 }
 
 const MAX_STR = 120

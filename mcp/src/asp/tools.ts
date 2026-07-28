@@ -16,7 +16,14 @@
 import { createIdentityProvider, isSafePublicHttpUrl } from '../erc8004.js'
 import { readValidation } from '../arc-contracts.js'
 import { computeAgentReputation, type ReputationResult } from '../reputation.js'
-import { listPlatformAgents, agentReputation, type PlatformAgent } from '../platform.js'
+import {
+  listPlatformAgents,
+  agentReputation,
+  agentGuardrailProfile,
+  refreshPlatformState,
+  type PlatformAgent,
+} from '../platform.js'
+import { notRegisteredProfile, unobservableProfile } from '../policy/index.js'
 import { assessRisk, type RiskSignals, type TxContext, type SybilLevel } from './risk.js'
 import { getReputationAttestation } from './attestations.js'
 import { PRICES } from './payment.js'
@@ -372,6 +379,107 @@ export async function trustPreview(agentId: string) {
     },
     checkedAt: new Date().toISOString(),
   }
+}
+
+/**
+ * guardrail_check ($0.005): does this agent operate under an ENFORCED policy, and does it
+ * respect the verdicts?
+ *
+ * This is the paid product that fits the guardrail engine. The engine's own
+ * `pre_action_check` is deliberately NOT sold: the payer there would be the owner, and
+ * charging per check taxes safety while payment cannot prove ownership, so an x402 gate on
+ * it would let a stranger probe someone's caps and holdings. Here the payer IS a stranger
+ * asking about someone else, which is exactly what payment is good for.
+ *
+ * Bands only. Caps, allowlists, symbols, amounts, holdings and exact counts never leave
+ * the owner's side; `compliance.test.ts` enforces that.
+ */
+export async function guardrailCheck(agentId: string) {
+  // The ASP is a separate process that loads state at boot, so refresh (cached) before
+  // reading the trail. Without this a paying caller could get a frozen answer.
+  const stateFresh = await refreshGuardrailState()
+
+  const q = agentId.trim()
+  const agents = listPlatformAgents()
+
+  // If we could not read state, say so. Answering "not registered" off an unreadable
+  // store would be a confident wrong answer to someone who paid for it.
+  if (!stateFresh) {
+    return {
+      tool: 'guardrail_check',
+      _meta: TOOL_META,
+      agentId: q,
+      found: false,
+      guardrails: unobservableProfile(),
+      note: unobservableProfile().disclosure[0],
+      checkedAt: new Date().toISOString(),
+    }
+  }
+  // Same resolution order as gather(), so a buyer can pass the id they already use.
+  const platform =
+    agents.find((a) => a.id === q) ??
+    agents.find((a) => a.onchainAgentId && (a.onchainAgentId === q || `#${a.onchainAgentId}` === q)) ??
+    (isAddress(q) ? agents.find((a) => a.walletAddress?.toLowerCase() === q.toLowerCase()) : undefined) ??
+    null
+
+  // No platform match: if we can see a roster at all, this agent simply is not on it
+  // (a real finding). If the roster is empty, we cannot see policy state (no finding).
+  const result = platform
+    ? agentGuardrailProfile(platform.id)
+    : { found: false, agentId: q, profile: agents.length ? notRegisteredProfile() : unobservableProfile() }
+
+  return {
+    tool: 'guardrail_check',
+    _meta: TOOL_META,
+    agentId: q,
+    found: result.found,
+    guardrails: result.profile,
+    note: result.found
+      ? 'Bands describe policy discipline, not performance. A-Identity does not disclose the policy itself.'
+      : result.profile.disclosure[0],
+    checkedAt: new Date().toISOString(),
+  }
+}
+
+/**
+ * Cached state refresh: a full document read, so do it at most once per window. Returns
+ * whether this process currently has a state view it can trust.
+ *
+ * Two things here are deliberate, because getting either wrong makes a PAID call return a
+ * confidently wrong answer:
+ *
+ *  - The timestamp advances only on SUCCESS. Advancing it in a `finally` would pin a
+ *    transient store error in place for the whole window, and every buyer in that window
+ *    would be told an agent is not registered when we simply could not look.
+ *  - Concurrent calls share one in-flight read instead of the second returning early off a
+ *    not-yet-updated cache and reading a stale roster.
+ */
+const GUARDRAIL_STATE_TTL_MS = 60_000
+let lastRefreshAt = 0
+let lastRefreshOk = false
+let refreshInFlight: Promise<void> | null = null
+
+async function refreshGuardrailState(): Promise<boolean> {
+  if (lastRefreshAt !== 0 && Date.now() - lastRefreshAt < GUARDRAIL_STATE_TTL_MS) return lastRefreshOk
+  if (refreshInFlight) {
+    await refreshInFlight
+    return lastRefreshOk
+  }
+  refreshInFlight = (async () => {
+    try {
+      await refreshPlatformState()
+      lastRefreshAt = Date.now()
+      lastRefreshOk = true
+    } catch {
+      // Never throw into a call the buyer already paid for. The caller reports
+      // `unavailable` instead, which is the honest answer.
+      lastRefreshOk = false
+    } finally {
+      refreshInFlight = null
+    }
+  })()
+  await refreshInFlight
+  return lastRefreshOk
 }
 
 /** True when two DISTINCT agents are controlled by the same human owner (or share a

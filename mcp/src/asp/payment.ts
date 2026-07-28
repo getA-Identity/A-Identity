@@ -29,6 +29,7 @@ export const PRICES: Record<string, string> = {
   'POST /tools/risk_check': '$0.005',
   'POST /tools/agent_passport': '$0.01',
   'POST /tools/counterparty_check': '$0.008',
+  'POST /tools/guardrail_check': '$0.005',
 }
 
 const AGENT_ID_DOC = 'ERC-8004 token id ("#849980"), CAIP id ("eip155:196:8004/6271"), or 0x owner address'
@@ -62,6 +63,12 @@ const CONTRACTS: Record<string, { description: string; input: Record<string, str
   },
   'POST /tools/agent_passport': {
     description: 'The full trust passport: identity + KYA + reputation + risk in one call.',
+    input: { agentId: AGENT_ID_DOC },
+    example: { agentId: '#849980' },
+  },
+  'POST /tools/guardrail_check': {
+    description:
+      'Does this agent operate under an enforced spend/trade policy, and does it respect the verdicts? Returns bands only: no caps, allowlists, symbols, amounts or holdings are ever disclosed.',
     input: { agentId: AGENT_ID_DOC },
     example: { agentId: '#849980' },
   },

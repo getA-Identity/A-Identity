@@ -36,11 +36,15 @@ import {
   filterAudits,
   resolveActionPolicy,
   summarizeAudits,
+  guardrailProfile,
+  unobservableProfile,
+  notRegisteredProfile,
   type AccountSnapshot,
   type ActionPolicy,
   type AuditEntry,
   type AuditOutcome,
   type Decision,
+  type GuardrailProfile,
   type NormalizedIntent,
 } from './policy/index.js'
 import { classifySybil, type SybilSignals } from './asp/risk.js'
@@ -1130,8 +1134,13 @@ export function recordAuditOutcome(
   const entry = (state.audits[agent.id] ?? []).find((e) => e.id === auditId)
   if (!entry) return { error: 'Unknown audit entry' }
   // A DENY is final. Letting a caller mark a blocked action "executed" would turn the
-  // audit trail into a place where the policy can be overridden retroactively.
+  // audit trail into a place where the policy can be overridden retroactively. The
+  // attempt is COUNTED before it is refused: repeated attempts are the most informative
+  // behavioral signal we have, and rejecting them silently would throw that away.
   if (entry.verdict === 'DENY' && outcome === 'executed') {
+    entry.overrideAttempts = (entry.overrideAttempts ?? 0) + 1
+    pushActivity(agent, 'Refused an attempt to record a blocked action as executed')
+    save(state)
     return { error: 'Forbidden: a DENY cannot be recorded as executed' }
   }
   entry.outcome = outcome
@@ -1156,6 +1165,54 @@ export function listAgentAudits(
   const { audits, sinceApplied } = filterAudits(all, opts)
   // The summary covers the SAME window the rows do, so the counts and the list agree.
   return { agentId: agent.id, audits, summary: summarizeAudits(audits), sinceApplied }
+}
+
+/**
+ * The guardrail profile for one agent (Phase 1.6). Deliberately NOT owner-gated: it
+ * returns bands only, never caps, allowlists, symbols, amounts or holdings, which is
+ * exactly what makes it safe to sell to a counterparty. The owner-scoped data stays
+ * behind `getAgentActionPolicy` and `listAgentAudits`.
+ *
+ * Returns `observability: 'unavailable'` rather than a clean-looking profile when the
+ * store cannot be read, so absence of data is never reported as absence of guardrails.
+ */
+export function agentGuardrailProfile(agentId: string): {
+  found: boolean
+  agentId: string
+  profile: GuardrailProfile
+} {
+  // An entirely empty roster means this process has no view of platform state (the ASP is
+  // a separate process; see refreshPlatformState). Reporting "no policy" here would be a
+  // lie dressed as a fact.
+  if (state.agents.length === 0) {
+    return { found: false, agentId, profile: unobservableProfile() }
+  }
+  // Roster readable, agent not on it: a real finding, and a DIFFERENT one from "we cannot
+  // see policy state". Collapsing the two would let a buyer read either as "no problems".
+  const agent = state.agents.find((a) => a.id === agentId)
+  if (!agent) return { found: false, agentId, profile: notRegisteredProfile() }
+
+  const now = new Date()
+  const { policy, configured } = resolveActionPolicy(agent.actionPolicy, id('pol'), now.toISOString())
+  return {
+    found: true,
+    agentId: agent.id,
+    profile: guardrailProfile({
+      entries: state.audits[agent.id] ?? [],
+      policyConfigured: configured,
+      policyVersion: policy.version,
+      now,
+    }),
+  }
+}
+
+/**
+ * Reload persisted state into this process. The ASP gateway is a separate service that
+ * calls initState() once at boot, so without this its view of the audit trail is frozen at
+ * whatever the store held then. Callers should cache: this is a full document read.
+ */
+export async function refreshPlatformState(): Promise<void> {
+  await initState()
 }
 
 /** Live policy view for one agent: limits + today's spend + reset time. */
