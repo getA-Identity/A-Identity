@@ -1,0 +1,41 @@
+# CI for the standalone a-identity-skills repo.
+#
+# The bypass suite is the reason this package can be trusted, so it runs on every push. It
+# needs no dependencies, no network, no credentials and no brokerage account: the venue is a
+# spy and the fixtures are deterministic. That is why there is no install step here.
+#
+# This file is inert while the package still lives inside the main repo, because GitHub only
+# reads workflows from a repository root.
+name: CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  bypass-suite:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Bypass suite (no unchecked live write)
+        run: npm test
+
+      - name: Guard against an accidental dependency
+        # A guardrail people are asked to trust should stay auditable in the form it ships
+        # in. If this package ever grows a runtime dependency, that is a deliberate decision
+        # and it should fail here first rather than arrive unnoticed.
+        run: |
+          node -e "
+            const pkg = require('./package.json');
+            const deps = Object.keys(pkg.dependencies ?? {});
+            if (deps.length) {
+              console.error('Unexpected runtime dependencies: ' + deps.join(', '));
+              process.exit(1);
+            }
+            console.log('No runtime dependencies, as intended.');
+          "
