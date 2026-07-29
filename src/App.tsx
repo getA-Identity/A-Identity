@@ -17,6 +17,7 @@ import Explorer from './routes/Explorer'
 import Architecture from './routes/Architecture'
 import Mascot from './routes/Mascot'
 import BrandKit from './routes/BrandKit'
+import Motion from './routes/Motion'
 import NotFound from './routes/NotFound'
 import ProtectedRoute from './routes/ProtectedRoute'
 import AppLayout from './routes/app/AppLayout'
@@ -55,6 +56,7 @@ export default function App() {
         {/* Internal design surfaces. Unlinked and noindex. */}
         <Route path="/mascot" element={<Mascot />} />
         <Route path="/brand-kit" element={<BrandKit />} />
+        <Route path="/motion" element={<Motion />} />
 
         <Route element={<ProtectedRoute />}>
           <Route path="/app" element={<AppLayout />}>
