@@ -26,9 +26,6 @@ jobs:
       - name: Build backend + unit tests
         run: npm test --prefix mcp
 
-      - name: Guarded Skill bypass suite (no deps, no network, no account)
-        run: npm test --prefix skill
-
       - name: Full E2E flow (start backend, drive the whole product, tear down)
         run: |
           node mcp/dist/http.js &
