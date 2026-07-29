@@ -31,7 +31,14 @@ jobs:
           node mcp/dist/http.js &
           BACKEND=$!
           for i in $(seq 1 30); do curl -sf http://localhost:3399/health >/dev/null && break; sleep 1; done
+          # Payments and identity end to end.
           npm run e2e --prefix mcp
+          # The guardrail product end to end: policy storage, both live surfaces, the
+          # planned one staying inert, the audit trail, the badge, ownership, and traction
+          # accounting. Unit tests prove each piece; this proves they are wired together.
+          npm run e2e:guardrail --prefix mcp
+          # MCP transport + REST companions against the same running server.
+          npm run http-smoke --prefix mcp
           kill $BACKEND 2>/dev/null || true
 
       - name: Build frontend
