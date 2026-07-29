@@ -1,13 +1,19 @@
 import { useNavigate } from 'react-router-dom'
 import { motion, type Variants } from 'framer-motion'
-import { ArrowRight, ArrowUpRight, Sparkles } from 'lucide-react'
+import { ArrowRight, Sparkles } from 'lucide-react'
 import { CAL_URL, EASE_OUT_EXPO } from '../lib/brand'
-import LiveTicker from './sections/LiveTicker'
 
 /*
- * Clean, left-weighted hero (sits over the video's scrimmed side). The interactive live
- * trust lookup moved into the ⌘K spotlight (TrustSpotlight) so the hero stays uncluttered;
- * the "Verify an agent" button opens it. Palette unchanged (accent #7342E2 + ink + cream).
+ * Centered hero over the background video (the dashx stance): claim, lede and the
+ * CTA pair stacked on the center axis, and under them the real /app console as a
+ * wide framed still that the fold crops on desktop, so the first screen ends on
+ * the product itself. The interactive live trust lookup stays one keystroke away
+ * in the ⌘K spotlight; the small link under the CTAs opens it. Palette unchanged
+ * (accent #7342E2 + semantic tokens).
+ *
+ * The still is a capture of the live console in dark theme (public/console-hero.webp,
+ * regenerate by re-shooting /app); it reads as a product photo, so it does not
+ * flip with the theme.
  */
 
 const ACCENT = '#7342E2'
@@ -24,61 +30,106 @@ export default function Hero() {
   const openSpotlight = () => window.dispatchEvent(new Event('open-trust-spotlight'))
 
   return (
-    <section className="relative z-10 mx-auto w-full max-w-[1280px] px-5 sm:px-8" style={{ paddingTop: 'clamp(56px, 10vw, 104px)' }}>
-      {/* Split hero: the claim on the left, the proof on the right. The ticker column is the
-          BlockRun lesson: a landing that opens with its own verifiable numbers does not need
-          to spend copy convincing anyone. Below lg it stacks under the CTAs. */}
-      <div className="grid items-center gap-12 lg:grid-cols-[minmax(0,1fr)_400px]">
-      <div className="max-w-[640px]">
-        <motion.h1 custom={0} variants={fadeUp} initial="hidden" animate="visible"
-          style={{ fontFamily: 'var(--font-heading)', fontSize: 'clamp(2.4rem, 6.5vw, 4.4rem)', lineHeight: 1.0, letterSpacing: '-0.035em', color: 'var(--foreground)' }}>
-          Trust, before<br />you pay.
-        </motion.h1>
+    <section
+      className="relative z-10 mx-auto flex w-full max-w-[1280px] flex-col items-center px-5 text-center sm:px-8"
+      style={{ paddingTop: 'clamp(40px, 7vw, 80px)' }}
+    >
+      <motion.h1
+        custom={0}
+        variants={fadeUp}
+        initial="hidden"
+        animate="visible"
+        style={{
+          fontFamily: 'var(--font-heading)',
+          fontSize: 'clamp(2.6rem, 6.6vw, 4.8rem)',
+          lineHeight: 1.02,
+          letterSpacing: '-0.035em',
+          color: 'var(--foreground)',
+          textWrap: 'balance',
+        }}
+      >
+        Trust, before you pay.
+      </motion.h1>
 
-        <motion.p custom={1} variants={fadeUp} initial="hidden" animate="visible"
-          className="mt-6 max-w-md text-foreground/65"
-          style={{ fontFamily: 'var(--font-body)', fontSize: 'clamp(1rem, 2.4vw, 1.15rem)', lineHeight: 1.6 }}>
-          A verified on-chain identity and a bounded wallet for every AI agent.
-        </motion.p>
+      <motion.p
+        custom={1}
+        variants={fadeUp}
+        initial="hidden"
+        animate="visible"
+        className="mt-5 max-w-[46ch] text-foreground/65"
+        style={{ fontFamily: 'var(--font-body)', fontSize: 'clamp(1rem, 2.4vw, 1.2rem)', lineHeight: 1.6 }}
+      >
+        A verified on-chain identity and a bounded wallet for every AI agent.
+      </motion.p>
 
-        <motion.div custom={2} variants={fadeUp} initial="hidden" animate="visible" className="mt-9 flex flex-wrap items-center gap-3.5">
-          <motion.button type="button" onClick={() => navigate('/signup')} whileHover={{ scale: 1.03 }} whileTap={{ scale: 0.97 }}
-            className="inline-flex items-center gap-2.5 rounded-full px-6 py-3.5 text-sm font-semibold text-white sm:text-base"
-            style={{ background: ACCENT, boxShadow: '0 10px 34px rgba(115,66,226,0.34)', border: '1px solid transparent' }}>
-            Get your Agent ID <ArrowRight size={18} />
-          </motion.button>
+      <motion.div
+        custom={2}
+        variants={fadeUp}
+        initial="hidden"
+        animate="visible"
+        className="mt-8 flex flex-wrap items-center justify-center gap-3.5"
+      >
+        <motion.button
+          type="button"
+          onClick={() => navigate('/signup')}
+          whileHover={{ scale: 1.03 }}
+          whileTap={{ scale: 0.97 }}
+          className="inline-flex items-center gap-2.5 rounded-full px-7 py-3.5 text-sm font-semibold text-white sm:px-8 sm:py-4 sm:text-base"
+          style={{ background: ACCENT, boxShadow: '0 10px 34px rgba(115,66,226,0.34)', border: '1px solid transparent' }}
+        >
+          Get your Agent ID <ArrowRight size={18} />
+        </motion.button>
 
-          <motion.button type="button" onClick={openSpotlight} whileHover={{ scale: 1.03 }} whileTap={{ scale: 0.97 }}
-            className="group inline-flex items-center gap-2 rounded-full border border-border bg-card/70 px-5 py-3.5 text-sm font-semibold text-foreground backdrop-blur-md transition-colors hover:border-accent/50 sm:text-base"
-            style={{ borderColor: undefined }}>
-            <Sparkles size={17} style={{ color: ACCENT }} className="transition-transform group-hover:rotate-12" />
-            Verify an agent
-            <kbd className="ml-1 hidden rounded border border-border px-1.5 py-0.5 font-mono text-[10px] font-semibold text-foreground/55 sm:inline">{kbd}</kbd>
-          </motion.button>
+        <motion.a
+          href={CAL_URL}
+          target="_blank"
+          rel="noopener noreferrer"
+          whileHover={{ scale: 1.03 }}
+          whileTap={{ scale: 0.97 }}
+          className="inline-flex items-center rounded-full border border-border bg-card px-7 py-3.5 text-sm font-semibold text-foreground sm:px-8 sm:py-4 sm:text-base"
+        >
+          Book a call
+        </motion.a>
+      </motion.div>
 
-          <a
-            href={CAL_URL}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="inline-flex items-center gap-1.5 px-2 py-3 text-sm font-semibold text-foreground/60 transition-colors hover:text-foreground"
-          >
-            Book a call <ArrowUpRight size={15} />
-          </a>
-        </motion.div>
-      </div>
+      <motion.button
+        custom={3}
+        variants={fadeUp}
+        initial="hidden"
+        animate="visible"
+        type="button"
+        onClick={openSpotlight}
+        className="group mt-5 inline-flex items-center gap-2 text-sm font-semibold text-foreground/60 transition-colors hover:text-foreground"
+      >
+        <Sparkles size={15} style={{ color: ACCENT }} className="transition-transform group-hover:rotate-12" />
+        Verify an agent right now
+        <kbd className="rounded border border-border px-1.5 py-0.5 font-mono text-[10px] font-semibold text-foreground/55">
+          {kbd}
+        </kbd>
+      </motion.button>
 
-      <motion.div custom={3} variants={fadeUp} initial="hidden" animate="visible" className="w-full max-w-[440px] lg:max-w-none">
-        {/* On desktop the card sits on top of the hero film, so at rest it yields: invisible
-            until the pointer is over it (or focus lands inside it, for keyboards). The hover
-            class lives on this inner div because framer writes an inline opacity on the
-            wrapper above, which would win over any Tailwind opacity utility placed there.
-            Below lg the card stacks under the copy instead of covering the film, and touch
-            has no hover, so it stays always-visible there. */}
-        <div className="transition-opacity duration-500 lg:opacity-0 lg:hover:opacity-100 lg:focus-within:opacity-100">
-          <LiveTicker />
+      {/* The console itself, horizontal, as the hero's floor. On desktop the header is
+          exactly one viewport tall and overflow-hidden, so the fold crops this frame the
+          way dashx crops its dashboard; on mobile it simply flows. */}
+      <motion.div
+        custom={4}
+        variants={fadeUp}
+        initial="hidden"
+        animate="visible"
+        className="mt-12 w-full max-w-[1160px]"
+      >
+        <div className="overflow-hidden rounded-t-[20px] border border-b-0 border-border/70 bg-card shadow-[0_-12px_80px_-20px_rgba(115,66,226,0.35),0_24px_80px_-24px_rgba(16,24,40,0.5)]">
+          <img
+            src="/console-hero.webp"
+            alt="The A-Identity agent console: reputation, wallet balance, on-chain settlements and the daily cap for the showcase agent Meridian."
+            width={2560}
+            height={1360}
+            loading="eager"
+            decoding="async"
+            className="block w-full"
+          />
         </div>
       </motion.div>
-      </div>
     </section>
   )
 }

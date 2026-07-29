@@ -34,8 +34,10 @@ export default function Landing() {
       className={`w-full bg-background ${theme === 'dark' ? 'dark' : ''}`}
       style={{ fontFamily: 'var(--font-body)', color: 'var(--color-text)' }}
     >
-      {/* Hero block */}
-      <header className="relative min-h-screen w-full overflow-hidden pt-[72px]">
+      {/* Hero block. Exactly one viewport tall on desktop with overflow-hidden, so the
+          fold crops the console still at the hero's floor (the dashx stance); on mobile
+          it grows with the content instead. */}
+      <header className="relative min-h-screen w-full overflow-hidden pt-[72px] lg:h-screen lg:min-h-0">
         <video
           className="absolute inset-0 h-full w-full object-cover"
           src={BACKGROUND_VIDEO}
@@ -45,12 +47,12 @@ export default function Landing() {
           playsInline
           aria-hidden="true"
         />
-        {/* Dark-mode only: the hero video is a bright/light scene tuned for dark
-            text, so in dark mode we lay a left-weighted scrim over it to keep the
-            (now light) heading and copy readable while leaving the art visible on
-            the right. Hidden in light mode → the original look is untouched. */}
+        {/* Dark-mode only: the hero video is a bright/light scene tuned for dark text,
+            so in dark mode we lay a vertical scrim over it (heavier at the top and the
+            floor, where the centered copy and the console frame sit) to keep the now
+            light heading readable. Hidden in light mode → the original look is untouched. */}
         <div
-          className="pointer-events-none absolute inset-0 hidden bg-gradient-to-r from-background/90 via-background/50 to-transparent dark:block"
+          className="pointer-events-none absolute inset-0 hidden bg-gradient-to-b from-background/85 via-background/40 to-background/80 dark:block"
           aria-hidden="true"
         />
         <Navbar />
