@@ -46,7 +46,7 @@ export function StepRow({
   icon,
   action,
 }: {
-  /** One-based. Rendered zero-padded, so a run reads 01 02 03 rather than 1 2 3. */
+  /** One-based. Rendered bare: a run reads 1 2 3, never 01 02 03, which is the house rule. */
   index: number
   title: ReactNode
   children?: ReactNode
@@ -57,7 +57,7 @@ export function StepRow({
   return (
     <motion.div {...revealAt(index - 1)} className="border-t border-border pt-6">
       <span className="block font-mono text-sm font-semibold tabular-nums text-foreground/30">
-        {String(index).padStart(2, '0')}
+        {index}
       </span>
       <h3 className="mt-4 flex items-center gap-2 text-xl font-semibold tracking-tight text-foreground">
         {title}

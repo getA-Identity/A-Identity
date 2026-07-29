@@ -16,6 +16,7 @@ import UseCase from './routes/UseCase'
 import Explorer from './routes/Explorer'
 import Architecture from './routes/Architecture'
 import Mascot from './routes/Mascot'
+import BrandKit from './routes/BrandKit'
 import NotFound from './routes/NotFound'
 import ProtectedRoute from './routes/ProtectedRoute'
 import AppLayout from './routes/app/AppLayout'
@@ -51,8 +52,9 @@ export default function App() {
         <Route path="/use-cases/:slug" element={<UseCase />} />
         <Route path="/explorer" element={<Explorer />} />
         <Route path="/architecture" element={<Architecture />} />
-        {/* Internal design-review surface for the mascot drafts. Unlinked and noindex. */}
+        {/* Internal design surfaces. Unlinked and noindex. */}
         <Route path="/mascot" element={<Mascot />} />
+        <Route path="/brand-kit" element={<BrandKit />} />
 
         <Route element={<ProtectedRoute />}>
           <Route path="/app" element={<AppLayout />}>

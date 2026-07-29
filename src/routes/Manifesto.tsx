@@ -66,7 +66,7 @@ export default function Manifesto() {
           {BELIEFS.map((b, i) => (
             <motion.section {...reveal} key={b.title} className="border-l-2 border-accent/25 pl-6">
               <div className="text-xs font-semibold tracking-wide text-accent/70">
-                {String(i + 1).padStart(2, '0')}
+                {i + 1}
               </div>
               <h2 className="mt-2 text-xl font-bold tracking-tight text-foreground sm:text-2xl">
                 {b.title}

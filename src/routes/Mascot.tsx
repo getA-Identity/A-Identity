@@ -298,11 +298,6 @@ export default function Mascot() {
           <h2 className="text-2xl font-bold tracking-tight text-foreground">What is left</h2>
           <ul className="mt-4 space-y-3 text-sm leading-relaxed text-foreground/70">
             <li>
-              <span className="font-semibold text-foreground">Officer texture pass.</span> Its
-              mesh came off a cheaper model than the other two, so the palette drifted and had
-              to be corrected after the fact. Worth regenerating at full fidelity to match.
-            </li>
-            <li>
               <span className="font-semibold text-foreground">Favicon.</span> Deliberately
               untouched. The tab icon is still the A-Identity logo mark, which is already
               theme-aware. The owl is the mascot, not the logo.
