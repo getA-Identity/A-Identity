@@ -18,6 +18,7 @@
  */
 import type {
   AccountSnapshot,
+  ActionKind,
   ActionPolicy,
   Decision,
   NormalizedIntent,
@@ -89,7 +90,20 @@ const humanApproval: Rule = ({ policy, intent }) =>
 
 // ── trade-surface rules ──────────────────────────────────────────────────────────
 
+/**
+ * Action kinds a ticker rule can meaningfully apply to.
+ *
+ * A transfer, a settings change and a document pull have no security, so a ticker allow or
+ * deny list says nothing about them. Applying the list anyway used to DENY every one of
+ * them with "this action carries no symbol": setting "only trade AAPL" silently also blocked
+ * transfers, and worse, it stopped a transfer from ever reaching its human-approval WARN.
+ * Over-blocking is not the safe side when it replaces a human decision with a confusing
+ * refusal.
+ */
+const SYMBOL_KINDS = new Set<ActionKind>(['order', 'cancel', 'recurring'])
+
 const symbolDenied: Rule = ({ policy, intent }) => {
+  if (!SYMBOL_KINDS.has(intent.kind)) return null
   const sym = norm(intent.symbol)
   if (!sym) return null
   return policy.trade.denySymbols.map(norm).includes(sym)
@@ -98,9 +112,12 @@ const symbolDenied: Rule = ({ policy, intent }) => {
 }
 
 const symbolNotAllowed: Rule = ({ policy, intent }) => {
+  if (!SYMBOL_KINDS.has(intent.kind)) return null
   const allow = policy.trade.allowSymbols.map(norm).filter(Boolean)
   if (!allow.length) return null // empty allowlist means "no allowlist restriction"
   const sym = norm(intent.symbol)
+  // A symbol-bearing action with no symbol, under an allow list, still fails closed: there
+  // the missing ticker is exactly what the rule needed to see.
   if (!sym) {
     return { verdict: 'DENY', code: 'SYMBOL_UNKNOWN', reason: 'An allow list is set but this action carries no symbol.' }
   }

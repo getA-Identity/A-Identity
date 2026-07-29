@@ -14,6 +14,8 @@ import {
 } from 'lucide-react'
 import { useAuth, authHeaders } from '../../store/auth'
 import { Stat } from '../../components/app/WalletPanels'
+import TradingPermissions from '../../components/app/TradingPermissions'
+import AuditTrail from '../../components/app/AuditTrail'
 
 import { BACKEND_UNREACHABLE } from '../../lib/mcpBase'
 import { apiFetch, readJson, explainError } from '../../lib/api'
@@ -57,6 +59,7 @@ export default function Permissions() {
   const logout = useAuth((s) => s.logout)
   const navigate = useNavigate()
 
+  const [tab, setTab] = useState<'payments' | 'trading' | 'spend' | 'audit'>('payments')
   const [agents, setAgents] = useState<Agent[]>([])
   const [agentId, setAgentId] = useState('')
   const [policy, setPolicy] = useState<Policy | null>(null)
@@ -122,11 +125,11 @@ export default function Permissions() {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', ...authHeaders() },
         body: JSON.stringify({ agentId, permissions: draft }),
-        onWaking: () => setError('Waking up the backend (free tier)…'),
+        onWaking: () => setError('Waking up the backend (free tier)...'),
       })
       // Fail loudly instead of showing a false "saved": a guest (401) or a caller who
       // does not own this agent (403) is rejected by the backend, and the limits revert
-      // on reload — which reads as "I set it but nothing changed".
+      // on reload, which reads as "I set it but nothing changed".
       if (!res.ok) {
         const j = await readJson<{ error?: string }>(res)
         setError(explainError(res.status, j.error))
@@ -244,6 +247,32 @@ export default function Permissions() {
             </div>
           )}
 
+          {/* Surface tabs. Payments is the USDC policy on Arc; Trading is the brokerage
+              action policy. They are separate on purpose: the two govern different
+              surfaces, and merging them would put payee allowlists next to tickers. */}
+          <div className="mt-5 flex flex-wrap gap-1 rounded-xl border border-foreground/10 bg-card p-1">
+            {([
+              ['payments', 'Payments'],
+              ['trading', 'Trading'],
+              ['spend', 'Spend'],
+              ['audit', 'Audit'],
+            ] as const).map(([id, labelText]) => (
+              <button
+                key={id}
+                type="button"
+                onClick={() => setTab(id)}
+                className={`rounded-lg px-3.5 py-2 text-sm font-semibold transition-colors ${
+                  tab === id ? 'bg-accent text-white' : 'text-foreground/55 hover:text-foreground'
+                }`}
+                aria-current={tab === id}
+              >
+                {labelText}
+              </button>
+            ))}
+          </div>
+
+          {tab === 'payments' && (
+          <>
           {/* Daily limit status */}
           <div className="mt-5 rounded-2xl border border-foreground/10 bg-card p-5">
             <div className="flex items-center justify-between">
@@ -417,7 +446,7 @@ export default function Permissions() {
                         rel="noopener noreferrer"
                         className="font-semibold text-[#7342E2] hover:underline"
                       >
-                        View setPolicy tx →
+                        View setPolicy tx
                       </a>
                     </>
                   )}
@@ -433,6 +462,36 @@ export default function Permissions() {
 
           {/* Try a payment (live policy tester) */}
           <PolicyTester agentId={agentId} onSpent={() => loadPolicy(agentId)} />
+          </>
+          )}
+
+          {tab === 'trading' && <TradingPermissions agentId={agentId} />}
+          {tab === 'audit' && <AuditTrail agentId={agentId} />}
+
+          {/* The spend surface is `planned` in the backend registry, so every check on it
+              returns SURFACE_NOT_LIVE. Rendering an editable form here would let someone
+              set merchant limits that nothing enforces, which is worse than showing
+              nothing. So this states where it stands instead. */}
+          {tab === 'spend' && (
+            <section className="mt-4 rounded-2xl border border-foreground/10 bg-card p-6">
+              <div className="mb-2 flex items-center gap-2">
+                <CreditCard size={16} className="text-foreground/40" />
+                <h3 className="font-semibold text-foreground">Spend permissions</h3>
+                <span className="rounded-md bg-foreground/[0.06] px-2 py-0.5 text-[11px] font-semibold text-foreground/60">
+                  not live yet
+                </span>
+              </div>
+              <p className="text-sm text-foreground/60">
+                The card surface is not wired end to end. The engine knows about it, but every check against it is
+                refused rather than allowed, so there is nothing to configure here yet and we are not going to show a
+                form that would not be enforced.
+              </p>
+              <p className="mt-3 text-xs text-foreground/45">
+                When it lands it will carry per-card caps, merchant allow and deny lists, per-category limits and the
+                same human-approval line, checked by the same engine your trading limits already use.
+              </p>
+            </section>
+          )}
         </>
       )}
 
@@ -553,7 +612,7 @@ function PolicyTester({ agentId, onSpent }: { agentId: string; onSpent: () => vo
         method: 'POST',
         headers: { 'Content-Type': 'application/json', ...authHeaders() },
         body: JSON.stringify({ agentId, type: 'payment', amountUsd: Math.max(0, Number(amount) || 0), payee, memo: 'policy test' }),
-        onWaking: () => setResult({ status: 'error', policyNote: 'Waking up the backend (free tier)…' }),
+        onWaking: () => setResult({ status: 'error', policyNote: 'Waking up the backend (free tier)...' }),
       })
       const ix = await readJson<{ status?: string; policyNote?: string; error?: string }>(res)
       if (!res.ok) {
@@ -563,7 +622,7 @@ function PolicyTester({ agentId, onSpent }: { agentId: string; onSpent: () => vo
       setResult({ status: ix.status ?? 'error', policyNote: ix.policyNote ?? ix.error ?? '' })
       onSpent()
     } catch {
-      setResult({ status: 'error', policyNote: 'Backend not reachable. It may be waking up — try again.' })
+      setResult({ status: 'error', policyNote: 'Backend not reachable. It may be waking up, try again.' })
     } finally {
       setBusy(false)
     }
@@ -695,7 +754,7 @@ function VaultPanel({ agentId }: { agentId: string }) {
         headers: { 'Content-Type': 'application/json', ...authHeaders() },
         body: JSON.stringify({ agentId, fundUsd: Math.max(0, Number(fund) || 0) }),
         timeoutMs: 90_000, // deploying a contract + funding it on-chain takes a while
-        onWaking: () => setErr('Waking up the backend (free tier)…'),
+        onWaking: () => setErr('Waking up the backend (free tier)...'),
       })
       const j = await readJson<{ error?: string }>(res)
       if (!res.ok) {
@@ -706,7 +765,7 @@ function VaultPanel({ agentId }: { agentId: string }) {
       else setErr(null)
       await load()
     } catch {
-      setErr('Deploying the vault timed out. It runs on-chain and can be slow — give it a moment and try again.')
+      setErr('Deploying the vault timed out. It runs on-chain and can be slow, give it a moment and try again.')
     } finally {
       setBusy(false)
     }
@@ -831,7 +890,7 @@ function VaultPanel({ agentId }: { agentId: string }) {
                 disabled={busyKey}
                 className="rounded-full bg-[#7342E2] px-3 py-1.5 text-xs font-semibold text-white hover:scale-[1.02] disabled:opacity-50"
               >
-                {busyKey ? 'Signing…' : keyActive ? 'Extend / re-grant' : 'Grant session key'}
+                {busyKey ? 'Signing...' : keyActive ? 'Extend / re-grant' : 'Grant session key'}
               </button>
               {keyActive && (
                 <button

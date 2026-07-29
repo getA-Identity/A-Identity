@@ -117,6 +117,41 @@ test('a non-empty allow list refuses everything outside it', () => {
   assert.equal(decide({ policy: p, intent: buy({ symbol: 'MSFT' }) }).verdict, 'ALLOW')
 })
 
+test('a ticker allow list does not block actions that have no security', () => {
+  // Setting "only trade AAPL" must not also block transfers, settings changes and document
+  // pulls. It used to DENY all three with "this action carries no symbol", which replaced a
+  // transfer's human-approval WARN with a confusing refusal.
+  const p = policy({ trade: { ...policy().trade, allowSymbols: ['AAPL'] } })
+  const transfer = decide({ policy: p, intent: { kind: 'transfer', notionalUsd: 20 } })
+  assert.equal(transfer.verdict, 'WARN', 'a transfer must still reach the human')
+  assert.ok(transfer.codes.includes('TRANSFER'))
+  assert.equal(transfer.codes.includes('SYMBOL_UNKNOWN'), false)
+
+  for (const intent of [
+    { kind: 'settings', notionalUsd: 0, settingKey: 'pdt', settingValue: true },
+    { kind: 'document', notionalUsd: 0 },
+  ] as const) {
+    const d = decide({ policy: p, intent })
+    assert.equal(d.codes.includes('SYMBOL_UNKNOWN'), false, intent.kind)
+  }
+})
+
+test('a ticker deny list does not block a non-security action either', () => {
+  const p = policy({ trade: { ...policy().trade, denySymbols: ['GME'] } })
+  const d = decide({ policy: p, intent: { kind: 'transfer', notionalUsd: 5 } })
+  assert.equal(d.codes.includes('SYMBOL_DENIED'), false)
+})
+
+test('a symbol-bearing action with no symbol still fails closed under an allow list', () => {
+  // For an order the missing ticker IS the thing the rule needed, so DENY is correct.
+  const p = policy({ trade: { ...policy().trade, allowSymbols: ['AAPL'] } })
+  for (const kind of ['order', 'cancel', 'recurring'] as const) {
+    const d = decide({ policy: p, intent: { kind, side: 'buy', notionalUsd: 10 } })
+    assert.ok(d.codes.includes('SYMBOL_UNKNOWN'), kind)
+    assert.equal(d.verdict, 'DENY', kind)
+  }
+})
+
 test('the deny list wins over the allow list', () => {
   const p = policy({ trade: { ...policy().trade, allowSymbols: ['AAPL'], denySymbols: ['AAPL'] } })
   assert.ok(decide({ policy: p }).codes.includes('SYMBOL_DENIED'))
