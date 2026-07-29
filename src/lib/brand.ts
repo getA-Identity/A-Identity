@@ -90,6 +90,7 @@ export const SOCIALS = {
   // Permanent invite: no expiry, unlimited uses, verified against Discord's invite API.
   // If this ever needs replacing, keep it permanent — a landing-page link with an expiry
   // date is a Join button with a scheduled death that nobody notices for a month.
+  x: 'https://x.com/ai_dentity',
   discord: 'https://discord.gg/ak4rC3p7Tz',
   github: 'https://github.com/getA-Identity/A-Identity',
 } as const

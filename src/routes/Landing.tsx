@@ -5,6 +5,7 @@ import Shift from '../components/sections/Shift'
 import WhatYouGet from '../components/sections/WhatYouGet'
 import LiveProof from '../components/sections/LiveProof'
 import BuiltOn from '../components/sections/BuiltOn'
+import LandingFaq from '../components/sections/LandingFaq'
 import CloseCta from '../components/sections/CloseCta'
 import SiteFooter from '../components/sections/SiteFooter'
 import TrustSpotlight from '../components/TrustSpotlight'
@@ -49,14 +50,17 @@ export default function Landing() {
         <Hero />
       </header>
 
-      {/* Lean narrative: prove it, frame it, show what you get, prove it is real, close.
-          The deeper material (protocols, use cases, developer docs, FAQ, blog) lives off
-          the landing, reachable from the navbar and docs. */}
+      {/* Lean narrative: prove it, frame it, show what you get, prove it is real, answer
+          the objections, close. The FAQ sits second-to-last on purpose: by then a reader is
+          either convinced or has exactly one thing still bothering them, and that is the
+          cheapest possible place to handle it. The deeper reference material (protocols, use
+          cases, developer docs, blog) still lives off the landing. */}
       <VerifyCta />
       <Shift />
       <WhatYouGet />
       <LiveProof />
       <BuiltOn />
+      <LandingFaq />
       <CloseCta />
       <SiteFooter />
 

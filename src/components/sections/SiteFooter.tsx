@@ -2,7 +2,18 @@ import { Terminal, Github } from 'lucide-react'
 import { Link } from 'react-router-dom'
 import Logo from '../Logo'
 import DiscordIcon from '../DiscordIcon'
+import XIcon from '../XIcon'
 import { APP_NAME, FOOTER_COLUMNS, SOCIALS, type FooterLink } from '../../lib/brand'
+
+/**
+ * The social row, in reading order: broadest reach first, then community, then code.
+ * Kept as data so adding a channel is one line and the markup stays single-copy.
+ */
+const SOCIAL_LINKS = [
+  { key: 'x', href: SOCIALS.x, label: 'A-Identity on X', Icon: XIcon },
+  { key: 'discord', href: SOCIALS.discord, label: 'Join the A-Identity Discord', Icon: DiscordIcon },
+  { key: 'github', href: SOCIALS.github, label: 'A-Identity on GitHub', Icon: Github },
+] as const
 
 /** Render an internal route link or an external (new-tab) anchor. */
 function FooterItem({ link }: { link: FooterLink }) {
@@ -61,33 +72,22 @@ export default function SiteFooter() {
               The passport &amp; wallet for the agentic economy.
             </p>
 
-            {/* Socials. Each one renders only when its link is set, so an unpublished
-                invite is simply absent rather than a button that goes nowhere. */}
+            {/* Socials. Each renders only when its link is set, so an unpublished channel
+                is simply absent rather than a button that goes nowhere. */}
             <div className="mt-5 flex items-center gap-3">
-              {SOCIALS.discord && (
+              {SOCIAL_LINKS.filter((s) => s.href).map(({ key, href, label, Icon }) => (
                 <a
-                  href={SOCIALS.discord}
+                  key={key}
+                  href={href}
                   target="_blank"
                   rel="noopener noreferrer"
-                  aria-label="Join the A-Identity Discord"
-                  title="Join the A-Identity Discord"
+                  aria-label={label}
+                  title={label}
                   className="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-white/10 bg-white/[0.04] text-white/60 transition-colors hover:border-accent/40 hover:bg-accent/10 hover:text-accent"
                 >
-                  <DiscordIcon size={17} />
+                  <Icon size={17} />
                 </a>
-              )}
-              {SOCIALS.github && (
-                <a
-                  href={SOCIALS.github}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  aria-label="A-Identity on GitHub"
-                  title="A-Identity on GitHub"
-                  className="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-white/10 bg-white/[0.04] text-white/60 transition-colors hover:border-accent/40 hover:bg-accent/10 hover:text-accent"
-                >
-                  <Github size={17} />
-                </a>
-              )}
+              ))}
             </div>
           </div>
 
