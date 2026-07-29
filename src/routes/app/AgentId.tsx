@@ -681,8 +681,8 @@ function RegisterForm({ onClose, onCreated }: { onClose: () => void; onCreated?:
             never overlaps the text: it sits in the card's empty top-right corner. */}
         <OwlMascot
           variant="geometric"
-          width={148}
-          className="pointer-events-none absolute -right-3 -top-3 hidden w-[148px] select-none opacity-90 sm:block"
+          width={264}
+          className="pointer-events-none absolute -right-14 -top-16 hidden w-[264px] select-none opacity-90 sm:block"
         />
         <div className="flex items-center gap-2 font-bold text-emerald-700 dark:text-emerald-300">
           <CheckCircle2 size={18} /> {name} is registered.

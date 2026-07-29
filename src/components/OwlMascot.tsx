@@ -27,6 +27,11 @@ const ALT: Record<OwlVariant, string> = {
 /**
  * Static cutout. This is the default: an inline success or error state should not pay for
  * a 3D runtime, and a PNG cannot fail to load a decoder.
+ *
+ * The PNGs are rendered from the GLBs through the same camera the 3D viewer uses and are
+ * deliberately NOT trimmed to the mesh, so the poster and the model frame identically and
+ * the handover is invisible. The cost is transparent padding, which means a standalone use
+ * needs to be sized roughly a third larger than the owl you want to see.
  */
 export function OwlMascot({
   variant = 'soft',
