@@ -21,6 +21,7 @@ applies it:
 | `config.mjs` | The server as data: roles, channels, AutoMod inputs, pinned copy. **Edit this.** |
 | `setup.mjs` | Applies the config to Discord. Idempotent. |
 | `validate.mjs` | Checks the config against Discord's limits offline. Runs automatically before setup. |
+| `whoami.mjs` | `npm run whoami` — is the token valid, which servers is the bot in, what is the GUILD_ID |
 | `announce.mjs` | Posts an announcement from a text file. For whoever handles comms. |
 
 `npm run setup` runs the validator first and refuses to touch Discord if it fails. A
@@ -65,6 +66,26 @@ validator refuses any name that would not survive.
 
 5. Get the server id: Discord → Settings → Advanced → **Developer Mode** on, then
    right-click the server → **Copy Server ID** → `GUILD_ID` in `.env`.
+
+### When something goes wrong
+
+```bash
+npm run whoami
+```
+
+It prints the bot, every server it is in with the `GUILD_ID` line ready to paste, whether
+it has admin, and which permission it is missing if any. It never prints the token.
+
+`DiscordAPIError[10004]: Unknown Guild` is the first error nearly everyone hits, and the
+API text explains nothing. There are exactly three causes:
+
+1. **`GUILD_ID` holds the Application ID.** Both are 18-19 digit snowflakes and look
+   identical, so this is the usual one. The Application ID is on the General Information
+   page; the server id comes from right-clicking the server itself.
+2. The bot was never invited.
+3. The token belongs to a different application than the invite did.
+
+`setup.mjs` catches that error and says all three rather than printing a stack trace.
 
 ## 2. What it builds
 

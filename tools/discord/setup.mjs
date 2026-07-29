@@ -563,6 +563,23 @@ async function setupOnboarding(guild, chan, role, real) {
 }
 
 main().catch((e) => {
+  // "Unknown Guild" is the first error nearly everyone hits, and the API text explains
+  // nothing. There are only three causes, so name them instead of printing a stack.
+  if (e?.code === 10004) {
+    console.error('\n\x1b[31mDiscord does not recognize GUILD_ID.\x1b[0m One of three things:')
+    console.error('  1. GUILD_ID holds the APPLICATION id by mistake. Both are 18-19 digit')
+    console.error('     snowflakes and look identical, so this is the usual one.')
+    console.error('  2. The bot was never invited to the server.')
+    console.error('  3. The token belongs to a different application than the invite did.')
+    console.error('\nRun \x1b[1mnpm run whoami\x1b[0m — it prints the bot, every server it is in, and the')
+    console.error('GUILD_ID line to paste.\n')
+    process.exit(1)
+  }
+  if (e?.code === 50001 || e?.code === 50013) {
+    console.error('\n\x1b[31mMissing access or permissions.\x1b[0m Re-invite the bot with permissions=8,')
+    console.error('or check `npm run whoami` for which permission it lacks.\n')
+    process.exit(1)
+  }
   console.error('\x1b[31mSetup failed:\x1b[0m', e)
   process.exit(1)
 })
