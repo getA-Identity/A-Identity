@@ -1,21 +1,15 @@
-import { Link } from 'react-router-dom'
-import { motion } from 'framer-motion'
-import { ArrowUpRight } from 'lucide-react'
-import { EASE_OUT_EXPO } from '../../lib/brand'
-import {
-  Accordion,
-  AccordionContent,
-  AccordionItem,
-  AccordionTrigger,
-} from '../ui/accordion'
-import { Button } from '../ui/button'
-
-const reveal = {
-  initial: { opacity: 0, y: 24 },
-  whileInView: { opacity: 1, y: 0 },
-  viewport: { once: true, margin: '-80px' },
-  transition: { duration: 0.6, ease: EASE_OUT_EXPO },
-}
+/**
+ * Every question the site answers, in one place.
+ *
+ * Two sets, written for different readers and both kept whole. The four reference categories
+ * are the educational set: what the thing is, how it works, who it is for. The fifth is the
+ * landing's objection set, which is what somebody actually hesitates over before letting an
+ * agent near their money, and it lives in LandingFaq because those answers carry links and
+ * emphasis that only make sense as markup.
+ *
+ * This file is the single source. The landing renders a cut of it, /faq renders all of it,
+ * and neither can drift from the other.
+ */
 
 type Item = { q: string; a: string; tag?: string }
 type Group = { category: string; items: Item[] }
@@ -125,116 +119,8 @@ const GROUPS: Group[] = [
     ],
   },
 ]
+/** Flat list in reading order, for counts and for the FAQPage schema. */
+export const FAQ_ITEMS = GROUPS.flatMap((g) => g.items)
 
-// Flatten for a single open-at-a-time accordion across all groups.
-const FLAT = GROUPS.flatMap((g) => g.items)
-
-// FAQPage structured data — makes every Q&A machine-readable (search engines +
-// agents) even while the visible accordion keeps answers collapsed. A cleaner,
-// richer signal than the old "keep every answer mounted in the DOM" trick.
-const faqJsonLd = {
-  '@context': 'https://schema.org',
-  '@type': 'FAQPage',
-  mainEntity: FLAT.map((item) => ({
-    '@type': 'Question',
-    name: item.q,
-    acceptedAnswer: {
-      '@type': 'Answer',
-      text: item.tag ? `${item.a} ${item.tag}` : item.a,
-    },
-  })),
-}
-
-export default function FAQ() {
-  let runningIndex = -1
-
-  return (
-    <section id="faq" className="w-full bg-background px-5 py-20 sm:px-8 sm:py-28">
-      <script
-        type="application/ld+json"
-        dangerouslySetInnerHTML={{ __html: JSON.stringify(faqJsonLd) }}
-      />
-      <div className="mx-auto max-w-[820px]">
-        <motion.span {...reveal} className="text-base font-semibold tracking-wide text-accent">
-          FAQ
-        </motion.span>
-        <motion.h2
-          {...reveal}
-          className="mt-4 text-2xl font-bold leading-tight tracking-tight text-foreground sm:text-3xl"
-          style={{ fontFamily: 'var(--font-heading)' }}
-        >
-          Questions humans (still) ask.
-        </motion.h2>
-
-        {/* One shadcn Accordion across all groups → single open-at-a-time; first
-            item open by default. Category headers interleave between the items. */}
-        <Accordion
-          type="single"
-          collapsible
-          defaultValue="faq-0"
-          className="mt-10 flex flex-col gap-10"
-        >
-          {GROUPS.map((group) => (
-            <div key={group.category}>
-              <motion.h3
-                {...reveal}
-                className="mb-3 text-xs font-bold tracking-widest text-foreground/40"
-              >
-                {group.category}
-              </motion.h3>
-              <div className="flex flex-col gap-3">
-                {group.items.map((item) => {
-                  runningIndex += 1
-                  const i = runningIndex
-                  return (
-                    <motion.div {...reveal} key={item.q}>
-                      <AccordionItem
-                        value={`faq-${i}`}
-                        className="overflow-hidden rounded-2xl border border-foreground/10 bg-card"
-                      >
-                        <AccordionTrigger className="justify-between gap-4 px-6 py-5 text-left font-semibold text-foreground">
-                          <span>{item.q}</span>
-                        </AccordionTrigger>
-                        <AccordionContent>
-                          <div className="px-6 pb-6">
-                            <p className="text-sm leading-relaxed text-foreground/65">{item.a}</p>
-                            {item.tag && (
-                              <p className="mt-3 text-sm font-bold text-accent">{item.tag}</p>
-                            )}
-                          </div>
-                        </AccordionContent>
-                      </AccordionItem>
-                    </motion.div>
-                  )
-                })}
-              </div>
-            </div>
-          ))}
-        </Accordion>
-
-        {/* Closing CTA */}
-        <motion.div
-          {...reveal}
-          className="mt-12 rounded-3xl border border-accent/20 bg-accent/[0.05] p-8 text-center sm:p-10"
-        >
-          <h3 className="text-xl font-bold tracking-tight text-foreground sm:text-2xl">
-            Building agent-native products?
-          </h3>
-          <p className="mx-auto mt-3 max-w-xl text-foreground/65">
-            A-Identity gives your agents verified identity, wallets, and payment infrastructure
-            built for the next economy.
-          </p>
-          <p className="mt-4 font-bold text-accent">Verify first. Pay at machine speed.</p>
-          <Button asChild size="lg" className="mt-6">
-            <Link to="/signup">
-              Get Your Agent ID <ArrowUpRight size={16} />
-            </Link>
-          </Button>
-        </motion.div>
-      </div>
-    </section>
-  )
-}
-
-// Exposed for any future count badge or sitemap use.
-export const FAQ_COUNT = FLAT.length
+export type { Item, Group }
+export { GROUPS }

@@ -9,6 +9,7 @@ import AuthCallback from './routes/AuthCallback'
 import Manifesto from './routes/Manifesto'
 import Brand from './routes/Brand'
 import Contact from './routes/Contact'
+import Faq from './routes/Faq'
 import Blog from './routes/Blog'
 import BlogPost from './routes/BlogPost'
 import UseCase from './routes/UseCase'
@@ -44,6 +45,7 @@ export default function App() {
         <Route path="/manifesto" element={<Manifesto />} />
         <Route path="/brand" element={<Brand />} />
         <Route path="/contact" element={<Contact />} />
+        <Route path="/faq" element={<Faq />} />
         <Route path="/blog" element={<Blog />} />
         <Route path="/blog/:slug" element={<BlogPost />} />
         <Route path="/use-cases/:slug" element={<UseCase />} />

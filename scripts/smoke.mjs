@@ -6,7 +6,7 @@ import { chromium } from 'playwright'
  * component introduced while moving code between files.
  */
 const BASE = 'http://localhost:4173'
-const PUBLIC = ['/', '/explorer?q=849980', '/mascot', '/manifesto', '/brand', '/contact', '/blog', '/architecture', '/login', '/bozuk-link']
+const PUBLIC = ['/', '/explorer?q=849980', '/mascot', '/manifesto', '/brand', '/contact', '/faq', '/blog', '/architecture', '/login', '/bozuk-link']
 const CONSOLE = ['/app', '/app/agent-id', '/app/wallet', '/app/settlements', '/app/permissions', '/app/marketplace', '/app/earnings']
 
 const IGNORE = [/favicon/i, /net::ERR/i, /Failed to load resource/i, /model-viewer/i, /unpkg\.com/i]

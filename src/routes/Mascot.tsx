@@ -1,6 +1,7 @@
 import { createElement, useEffect, useState } from 'react'
 import PageHeader from '../components/PageHeader'
 import ThemeScope from '../components/ThemeScope'
+import { usePageMeta } from '../lib/head'
 import OwlMark, { type OwlVerdict } from '../components/OwlMark'
 
 /**
@@ -105,8 +106,9 @@ export default function Mascot() {
   const [silhouette, setSilhouette] = useState(false)
   const [surface, setSurface] = useState<'background' | 'card'>('background')
 
+  usePageMeta({ title: 'Mascot — A-Identity', noindex: true })
+
   useEffect(() => {
-    document.title = 'Mascot — A-Identity'
     if (document.querySelector('script[data-model-viewer]')) {
       setReady(true)
       return
@@ -119,13 +121,6 @@ export default function Mascot() {
     document.head.appendChild(script)
   }, [])
 
-  useEffect(() => {
-    const meta = document.createElement('meta')
-    meta.name = 'robots'
-    meta.content = 'noindex, nofollow'
-    document.head.appendChild(meta)
-    return () => meta.remove()
-  }, [])
 
   const modelled = VARIANTS.filter((v) => v.model)
 

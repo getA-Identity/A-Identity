@@ -68,6 +68,7 @@ export const FOOTER_COLUMNS: readonly FooterColumn[] = [
     title: 'Company',
     links: [
       { label: 'Manifesto', href: '/manifesto' },
+      { label: 'FAQ', href: '/faq' },
       { label: 'Blog', href: '/blog' },
       { label: 'Brand', href: '/brand' },
       { label: 'Contact', href: '/contact' },

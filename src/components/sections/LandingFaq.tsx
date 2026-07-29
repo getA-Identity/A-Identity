@@ -1,4 +1,6 @@
 import type { ReactNode } from 'react'
+import { Link } from 'react-router-dom'
+import { ArrowRight } from 'lucide-react'
 import { motion } from 'framer-motion'
 import { EASE_OUT_EXPO } from '../../lib/brand'
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from '../ui/accordion'
@@ -30,13 +32,29 @@ const reveal = {
   transition: { duration: 0.6, ease: EASE_OUT_EXPO },
 }
 
+import { FAQ_ITEMS } from '../../lib/faq'
+
 const linkClass = 'font-medium text-accent underline-offset-2 hover:underline'
 
-type Item = { q: string; a: ReactNode }
+type Item = {
+  q: string
+  a: ReactNode
+  /**
+   * The same answer as plain text, word for word with the markup removed.
+   *
+   * Needed because /faq emits FAQPage structured data and a schema field cannot carry JSX.
+   * If one of these is edited, edit the other in the same commit: a rich result that
+   * disagrees with the page is worse than no rich result.
+   */
+  plain: string
+}
 
-const ITEMS: Item[] = [
+/** Exported so /faq can carry these too. The landing shows them; /faq keeps the full set. */
+export const LANDING_FAQ: Item[] = [
   {
     q: 'Does A-Identity touch my money or hold my keys?',
+    plain:
+      'No. We never hold a key, never move a dollar, and never place the order. Your agent asks whether an action is inside the limits you set, we answer allow, ask a human or no, and the account stays exactly where it was. That is not a promise we are asking you to trust, it is the shape of the product: there is no endpoint that accepts your brokerage credentials, because we never want to be the reason someone loses them.',
     a: (
       <>
         No. We never hold a key, never move a dollar, and never place the order. Your agent asks
@@ -50,6 +68,8 @@ const ITEMS: Item[] = [
   },
   {
     q: 'Can the agent talk its way past the limits?',
+    plain:
+      'The limits are not a prompt, so there is nothing to argue with. They are checked outside the model, and on every path that moves money rather than only on orders: a recurring buy, an account setting, money wired out, a cancelled protective position. That last part is where naive guardrails leak, because an agent blocked from buying can simply schedule the buy instead. A refusal cannot be overwritten, and attempts to overwrite one are counted rather than quietly rejected. Trading on borrowed money is not a setting we offer at all.',
     a: (
       <>
         The limits are not a prompt, so there is nothing to argue with. They are checked outside the
@@ -63,6 +83,8 @@ const ITEMS: Item[] = [
   },
   {
     q: 'What happens if you go down while my agent is running?',
+    plain:
+      'Nothing of ours can break a trade, because we are not in the execution path. When our own package cannot get a verdict it refuses to act rather than guessing, which is the safe direction to fail in. And you do not have to take our word for whether the engine is up: this endpoint (https://a-identity-backend.onrender.com/api/guardrail-status) runs the real engine on request and answers 503 if it is not enforcing. A monitor checks it every hour.',
     a: (
       <>
         Nothing of ours can break a trade, because we are not in the execution path. When our own
@@ -83,6 +105,8 @@ const ITEMS: Item[] = [
   },
   {
     q: 'Do you see my portfolio?',
+    plain:
+      'Only for the length of one question. The account state arrives with each check and is never stored. The decision log keeps a hash of it instead, which proves which state a verdict was computed against without keeping the contents, so a refusal stays auditable and your positions stay yours. The public numbers are aggregate only: nothing in them identifies an agent, an owner, a holding or a single amount.',
     a: (
       <>
         Only for the length of one question. The account state arrives with each check and is never
@@ -95,6 +119,8 @@ const ITEMS: Item[] = [
   },
   {
     q: 'Is this live, or a demo?',
+    plain:
+      'Live, and here is the part most products would hide: the public counters currently read zero. The engine is real and enforcing, but no live agent has produced a decision yet, so there is nothing honest to count. We would rather show a zero you can verify than a number you cannot reproduce. When that changes it changes on the same public endpoint (https://a-identity-backend.onrender.com/api/traction), measured rather than projected.',
     a: (
       <>
         Live, and here is the part most products would hide: the public counters currently read{' '}
@@ -115,6 +141,8 @@ const ITEMS: Item[] = [
   },
   {
     q: 'What does it actually cover today?',
+    plain:
+      'Brokerage trading and card spending, both live. The engine does not know which venue is asking, so a new one is an adapter rather than a rewrite. Two honest limits: on a card we can refuse a charge before it happens but we cannot physically stop an agent that already holds the card number, and prediction markets are designed and deliberately not built — a separately regulated venue with no agent surface yet, and we will not write rules against a payload nobody has published.',
     a: (
       <>
         Brokerage trading and card spending, both live. The engine does not know which venue is
@@ -127,6 +155,9 @@ const ITEMS: Item[] = [
     ),
   },
 ]
+
+/** Landing six plus the reference set, so the link never advertises a stale number. */
+const TOTAL_FAQ_COUNT = FAQ_ITEMS.length + LANDING_FAQ.length
 
 export default function LandingFaq() {
   return (
@@ -145,7 +176,7 @@ export default function LandingFaq() {
 
         <motion.div {...reveal} transition={{ ...reveal.transition, delay: 0.08 }} className="mt-12">
           <Accordion type="single" collapsible className="divide-y divide-border border-y border-border">
-            {ITEMS.map((item, i) => (
+            {LANDING_FAQ.map((item, i) => (
               <AccordionItem key={item.q} value={`q${i}`} className="group">
                 <AccordionTrigger className="justify-between gap-6 py-6 text-left">
                   <span className="text-base font-semibold leading-snug transition-colors group-hover:text-accent sm:text-lg">
@@ -160,6 +191,16 @@ export default function LandingFaq() {
               </AccordionItem>
             ))}
           </Accordion>
+        </motion.div>
+
+        {/* Six is the landing cut. The full reference set, categories and all, lives on /faq. */}
+        <motion.div {...reveal} transition={{ ...reveal.transition, delay: 0.12 }} className="mt-8">
+          <Link
+            to="/faq"
+            className="inline-flex items-center gap-1.5 text-sm font-semibold text-accent transition-opacity hover:opacity-80"
+          >
+            Read all {TOTAL_FAQ_COUNT} questions <ArrowRight size={15} />
+          </Link>
         </motion.div>
       </div>
     </section>
