@@ -262,6 +262,16 @@ function ProfileSkeleton() {
   )
 }
 
+/** Badge levels share the palette the console and the SVG badge use, so one agent reads the
+ *  same everywhere it appears. */
+const GUARDRAIL_COLOR: Record<string, string> = {
+  enforced: '#059669',
+  enforced_with_flags: '#d97706',
+  configured: '#b8860b',
+  none: '#8a8f98',
+  unavailable: '#8a8f98',
+}
+
 function LeaderboardSkeleton({ rows = 6 }: { rows?: number }) {
   return (
     <div className="divide-y divide-border/60">
@@ -389,6 +399,7 @@ export default function Explorer() {
                       <th className="w-10 py-2.5 pl-4 font-medium">#</th>
                       <th className="py-2.5 font-medium">Agent</th>
                       <th className="hidden py-2.5 font-medium sm:table-cell">Reputation</th>
+                      <th className="hidden py-2.5 font-medium md:table-cell">Guardrails</th>
                       <th className="py-2.5 pr-4 text-right font-medium">Risk</th>
                     </tr>
                   </thead>
@@ -417,6 +428,24 @@ export default function Explorer() {
                               </div>
                               <span className="font-mono text-xs font-semibold tabular-nums text-foreground/80">{s}</span>
                             </div>
+                          </td>
+                          {/* Guardrail standing, shown only for agents whose owner PUBLISHED
+                              their badge. Opt-in from Phase 1.5, so an agent that has not
+                              published shows nothing about its policy here. */}
+                          <td className="hidden py-3 pr-3 md:table-cell">
+                            {a.guardrails?.published ? (
+                              <span
+                                className="inline-flex items-center rounded-md px-2 py-0.5 text-[11px] font-semibold"
+                                style={{
+                                  color: GUARDRAIL_COLOR[a.guardrails.level ?? 'none'],
+                                  background: `${GUARDRAIL_COLOR[a.guardrails.level ?? 'none']}14`,
+                                }}
+                              >
+                                {a.guardrails.label ?? a.guardrails.level}
+                              </span>
+                            ) : (
+                              <span className="font-mono text-[11px] text-foreground/25">not published</span>
+                            )}
                           </td>
                           <td className="py-3 pr-4 text-right">
                             <span className="inline-flex items-center gap-1 font-mono text-xs font-semibold" style={{ color: VERDICT[v].color }}>

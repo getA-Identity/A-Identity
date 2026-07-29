@@ -8,8 +8,11 @@
  * It is deliberately labeled as protected value and NOT as revenue, because conflating the
  * two would be the easiest and most dishonest number to inflate in this whole product.
  *
- * Renders nothing at all when there is no activity yet, rather than a row of zeroes dressed
- * up as a dashboard.
+ * With no decisions recorded yet it does NOT hide, and it does not show a row of zeroes
+ * dressed up as a dashboard either. It shows the live engine self-check, which has real
+ * content even at zero usage, and says plainly that no decisions have been recorded. Hiding
+ * would make a shipped guardrail look absent; faking numbers would be worse. It renders
+ * nothing only when the backend cannot be reached at all.
  */
 import { useEffect, useState } from 'react'
 import { ShieldCheck, ShieldAlert } from 'lucide-react'
@@ -58,9 +61,11 @@ export default function TractionPanel() {
     }
   }, [])
 
-  if (!t || t.checks === 0) return null
+  // Nothing to say only when the backend answered neither call.
+  if (!t && !status) return null
 
-  const surfaces = Object.entries(t.bySurface).filter(([, n]) => n > 0)
+  const surfaces = Object.entries(t?.bySurface ?? {}).filter(([, n]) => n > 0)
+  const hasActivity = (t?.checks ?? 0) > 0
 
   return (
     <div className="mt-12">
@@ -70,20 +75,32 @@ export default function TractionPanel() {
       </div>
 
       <div className="overflow-hidden rounded-xl border border-border bg-card">
-        <div className="grid gap-px bg-border sm:grid-cols-4">
-          {[
-            ['Value stopped', usd(t.protectedNotionalUsd), 'action the policy refused'],
-            ['Decisions', t.checks.toLocaleString('en-US'), `${t.activeAgents} active agent${t.activeAgents === 1 ? '' : 's'}`],
-            ['Needed a human', `${pct(t.warn, t.checks)}%`, `${t.warn.toLocaleString('en-US')} paused for approval`],
-            ['Stopped', `${pct(t.deny, t.checks)}%`, `${t.deny.toLocaleString('en-US')} refused`],
-          ].map(([k, v, sub]) => (
-            <div key={k} className="bg-card p-4">
-              <div className="text-[11px] font-semibold uppercase tracking-wide text-foreground/45">{k}</div>
-              <div className="mt-1 font-mono text-xl tabular-nums text-foreground">{v}</div>
-              <div className="mt-0.5 text-[11px] text-foreground/40">{sub}</div>
+        {hasActivity && t ? (
+          <div className="grid gap-px bg-border sm:grid-cols-4">
+            {[
+              ['Value stopped', usd(t.protectedNotionalUsd), 'action the policy refused'],
+              ['Decisions', t.checks.toLocaleString('en-US'), `${t.activeAgents} active agent${t.activeAgents === 1 ? '' : 's'}`],
+              ['Needed a human', `${pct(t.warn, t.checks)}%`, `${t.warn.toLocaleString('en-US')} paused for approval`],
+              ['Stopped', `${pct(t.deny, t.checks)}%`, `${t.deny.toLocaleString('en-US')} refused`],
+            ].map(([k, v, sub]) => (
+              <div key={k} className="bg-card p-4">
+                <div className="text-[11px] font-semibold uppercase tracking-wide text-foreground/45">{k}</div>
+                <div className="mt-1 font-mono text-xl tabular-nums text-foreground">{v}</div>
+                <div className="mt-0.5 text-[11px] text-foreground/40">{sub}</div>
+              </div>
+            ))}
+          </div>
+        ) : (
+          <div className="p-4">
+            <div className="text-sm text-foreground/70">
+              The engine is live and answering, and no policy decisions have been recorded yet.
             </div>
-          ))}
-        </div>
+            <div className="mt-1 text-[11px] text-foreground/40">
+              Numbers appear here once agents start asking for verdicts. We would rather show none than invent any.
+              {t ? ` ${t.registeredAgents} agent${t.registeredAgents === 1 ? '' : 's'} registered so far, which is not the same as traction.` : ''}
+            </div>
+          </div>
+        )}
 
         <div className="flex flex-wrap items-center gap-x-4 gap-y-2 border-t border-border px-4 py-3 text-[11px] text-foreground/45">
           {status && (
@@ -115,9 +132,9 @@ export default function TractionPanel() {
               ))}
             </span>
           )}
-          {t.overrideAttempts > 0 && (
+          {(t?.overrideAttempts ?? 0) > 0 && (
             <span className="text-amber-600">
-              {t.overrideAttempts} refused attempt{t.overrideAttempts === 1 ? '' : 's'} to overwrite a refusal
+              {t?.overrideAttempts} refused attempt{t?.overrideAttempts === 1 ? '' : 's'} to overwrite a refusal
             </span>
           )}
         </div>
@@ -125,7 +142,7 @@ export default function TractionPanel() {
         <div className="border-t border-border px-4 py-3 text-[11px] leading-relaxed text-foreground/35">
           Value stopped is USD of intended action the policy refused. It is protected value, not revenue. Aggregate
           only: nothing here identifies an agent, an owner, a holding or an individual amount.
-          {t.ci.checks > 0 && ` Monitoring activity (${t.ci.checks} canary checks) is excluded from every number above.`}
+          {(t?.ci.checks ?? 0) > 0 && ` Monitoring activity (${t?.ci.checks} canary checks) is excluded from every number above.`}
         </div>
       </div>
     </div>

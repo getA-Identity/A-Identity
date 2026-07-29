@@ -172,6 +172,9 @@ export type FeedAgent = {
   reputation?: { score: number; breakdown?: { settlement: number; validation: number; tenure: number; behavior?: number } }
   walletAddress?: string | null
   followers?: number
+  /** Guardrail standing. Only populated when the owner published their badge (Phase 1.5
+   *  made that opt-in), so `published: false` is the normal case, not an error. */
+  guardrails?: { published: boolean; level?: string; label?: string; surfaces?: string[] }
 }
 
 /** The public Agent House feed: KYA-verified agents ranked by trust. Backs the leaderboard. */
