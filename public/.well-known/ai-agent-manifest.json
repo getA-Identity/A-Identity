@@ -10,13 +10,15 @@
       "standard": "ERC-8004",
       "registries": ["identity", "reputation", "validation"],
       "chains": [
-        { "id": "arc", "chainId": 5042002, "caip2": "eip155:5042002", "identity": "ERC-8004", "erc8004Native": true, "status": "live" },
-        { "id": "base", "chainId": 8453, "caip2": "eip155:8453", "identity": "ERC-8004", "erc8004Native": true, "status": "planned" },
-        { "id": "arbitrum", "chainId": 42161, "caip2": "eip155:42161", "identity": "ERC-8004", "erc8004Native": true, "status": "planned" },
-        { "id": "avalanche", "chainId": 43114, "caip2": "eip155:43114", "identity": "ERC-8004", "erc8004Native": true, "status": "planned" },
-        { "id": "xlayer", "chainId": 196, "caip2": "eip155:196", "identity": "ERC-8004", "erc8004Native": true, "note": "OKX.AI identity registry reads are live; payment rails still planned", "status": "planned" },
-        { "id": "stellar", "caip2": "stellar:testnet", "identity": "Soroban registry + SEP-10", "erc8004Native": false, "note": "ERC-8004 passport bridged from EVM", "status": "planned" },
-        { "id": "solana", "caip2": "solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp", "identity": "Anchor registry program", "erc8004Native": false, "note": "ERC-8004 passport bridged from EVM", "status": "planned" }
+        {"id":"arc","chainId":5042002,"caip2":"eip155:5042002","identity":"ERC-8004","erc8004Native":true,"status":"live"},
+        {"id":"base","chainId":8453,"caip2":"eip155:8453","identity":"ERC-8004","erc8004Native":true,"note":"ERC-8004 registry to be deployed.","status":"planned"},
+        {"id":"arbitrum","chainId":42161,"caip2":"eip155:42161","identity":"ERC-8004","erc8004Native":true,"note":"ERC-8004 registry to be deployed.","status":"planned"},
+        {"id":"avalanche","chainId":43114,"caip2":"eip155:43114","identity":"ERC-8004","erc8004Native":true,"note":"ERC-8004 registry to be deployed.","status":"planned"},
+        {"id":"xlayer","chainId":196,"caip2":"eip155:196","identity":"ERC-8004","erc8004Native":true,"note":"OKX.AI identity registry LIVE (read-side wired); payment rails still planned.","status":"planned"},
+        {"id":"rhchain-testnet","chainId":46630,"caip2":"eip155:46630","identity":"ERC-8004","erc8004Native":true,"note":"ERC-8004 registry to be deployed.","status":"planned"},
+        {"id":"rhchain","chainId":4663,"caip2":"eip155:4663","identity":"ERC-8004","erc8004Native":true,"note":"ERC-8004 registry to be deployed.","status":"planned"},
+        {"id":"stellar","caip2":"stellar:testnet","identity":"Soroban registry + SEP-10","erc8004Native":false,"note":"No native ERC-8004 (EVM-only). Identity via Soroban registry / SEP-10; ERC-8004 passport bridged.","status":"planned"},
+        {"id":"solana","caip2":"solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp","identity":"Anchor registry program","erc8004Native":false,"note":"No native ERC-8004 (EVM-only). Identity via an Anchor registry program; ERC-8004 passport bridged.","status":"planned"}
       ],
       "multiChain": true
     },
@@ -25,13 +27,15 @@
       "settlement": "USDC",
       "also_supported": ["USDT", "PYUSD", "EURC"],
       "rails": [
-        { "id": "arc", "name": "Circle Arc (Testnet)", "chainId": 5042002, "role": "primary: gas in USDC, App Kit unified balance, Gateway", "x402": true, "unified_balance": true, "status": "live" },
-        { "id": "base", "name": "Base", "chainId": 8453, "role": "EVM fallback", "x402": true, "status": "planned" },
-        { "id": "arbitrum", "name": "Arbitrum One", "chainId": 42161, "role": "DeFi gateway", "x402": true, "status": "planned" },
-        { "id": "avalanche", "name": "Avalanche C-Chain", "chainId": 43114, "role": "fast-finality EVM, native Circle USDC", "x402": true, "status": "planned" },
-        { "id": "xlayer", "name": "OKX X Layer", "chainId": 196, "role": "OKX.AI marketplace rail", "x402": true, "status": "planned" },
-        { "id": "stellar", "caip2": "stellar:testnet", "role": "USDC + EURC native (Circle), Soroban", "x402": true, "status": "planned" },
-        { "id": "solana", "caip2": "solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp", "role": "high-throughput SPL USDC settlement", "x402": true, "status": "planned" }
+        {"id":"arc","name":"Circle Arc (Testnet)","chainId":5042002,"role":"Primary payment rail: gas in USDC, sub-second finality, App Kit unified balance.","x402":true,"status":"live"},
+        {"id":"base","name":"Base","chainId":8453,"role":"EVM fallback: ERC-8004 compatible, Coinbase ecosystem, low fees.","x402":true,"status":"planned"},
+        {"id":"arbitrum","name":"Arbitrum One","chainId":42161,"role":"DeFi gateway: large protocol ecosystem, USDC via Circle, ERC-8004 compatible.","x402":true,"status":"planned"},
+        {"id":"avalanche","name":"Avalanche C-Chain","chainId":43114,"role":"Fast-finality EVM: native Circle USDC, low latency for burst settlement.","x402":true,"status":"planned"},
+        {"id":"xlayer","name":"OKX X Layer","chainId":196,"role":"OKX.AI marketplace rail: identity reads live from OKX ERC-8004; x402 trust tools settle here.","x402":true,"status":"planned"},
+        {"id":"rhchain-testnet","name":"Robinhood Chain Testnet","chainId":46630,"role":"Where a Robinhood Chain deployment would actually happen: the project does not deploy contracts autonomously to any mainnet.","x402":true,"status":"planned"},
+        {"id":"rhchain","name":"Robinhood Chain","chainId":4663,"role":"Robinhood's own L2 for tokenized real-world assets, stock tokens and ETFs. Day-one identity and policy positioning for agents that trade there.","x402":true,"status":"planned"},
+        {"id":"stellar","name":"Stellar Testnet","caip2":"stellar:testnet","role":"Fast, low-cost settlement: USDC + EURC native (Circle), Soroban contracts.","x402":true,"status":"planned"},
+        {"id":"solana","name":"Solana","caip2":"solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp","role":"High-throughput settlement: SPL USDC, sub-second confirmation.","x402":true,"status":"planned"}
       ],
       "wallets": "circle-agent-wallets",
       "status": "planned"
@@ -82,7 +86,7 @@
       "flow": ["resolve_agent", "get_reputation", "negotiate", "pay_x402", "deliver"],
       "trust": "Both agents verify each other via ERC-8004 before value moves. Reputation gate (default: 300+).",
       "settlement": "x402 in stablecoins on Arc, the live chain today. Base, Arbitrum, Avalanche, OKX X Layer, Stellar and Solana are planned. No shared accounts or API keys.",
-      "chains_supported": ["arc", "base", "arbitrum", "avalanche", "xlayer", "stellar", "solana"]
+      "chains_supported": ["arc","base","arbitrum","avalanche","xlayer","rhchain-testnet","rhchain","stellar","solana"]
     },
     "agent_to_human": {
       "flow": ["agent_proposes", "human_reviews", "human_approves", "settle"],

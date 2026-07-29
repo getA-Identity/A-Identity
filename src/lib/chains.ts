@@ -10,7 +10,7 @@
  */
 
 /** Short slug of a chain in the registry. */
-export type ChainId = 'arc' | 'base' | 'arbitrum' | 'avalanche' | 'xlayer' | 'stellar' | 'solana'
+export type ChainId = 'arc' | 'base' | 'arbitrum' | 'avalanche' | 'xlayer' | 'rhchain-testnet' | 'rhchain' | 'stellar' | 'solana'
 
 export type ChainProtocols = {
   /** x402 HTTP-402 payment support. Settlement is in a stablecoin. */
@@ -203,6 +203,64 @@ export const CHAINS: readonly Chain[] = [
         "standard": "ERC-8004",
         "erc8004Native": true,
         "note": "OKX.AI identity registry LIVE (read-side wired); payment rails still planned."
+      }
+    },
+    "identity": "ERC-8004",
+    "erc8004Native": true,
+    "x402": true
+  },
+  {
+    "id": "rhchain-testnet",
+    "name": "Robinhood Chain Testnet",
+    "shortName": "RH Chain test",
+    "color": "#0F9D30",
+    "chainId": 46630,
+    "caip2": "eip155:46630",
+    "evmCompatible": true,
+    "testnet": true,
+    "stablecoins": [],
+    "rpcUrl": "https://rpc.testnet.chain.robinhood.com",
+    "explorer": "https://explorer.testnet.chain.robinhood.com",
+    "role": "Where a Robinhood Chain deployment would actually happen: the project does not deploy contracts autonomously to any mainnet.",
+    "status": "planned",
+    "protocols": {
+      "payment": {
+        "x402": true,
+        "note": "x402 needs a settlement token first: no canonical USDC is documented on this chain yet."
+      },
+      "identity": {
+        "standard": "ERC-8004",
+        "erc8004Native": true,
+        "note": "ERC-8004 registry to be deployed."
+      }
+    },
+    "identity": "ERC-8004",
+    "erc8004Native": true,
+    "x402": true
+  },
+  {
+    "id": "rhchain",
+    "name": "Robinhood Chain",
+    "shortName": "RH Chain",
+    "color": "#0F9D30",
+    "chainId": 4663,
+    "caip2": "eip155:4663",
+    "evmCompatible": true,
+    "testnet": false,
+    "stablecoins": [],
+    "rpcUrl": "https://rpc.mainnet.chain.robinhood.com",
+    "explorer": "https://robinhoodchain.blockscout.com",
+    "role": "Robinhood's own L2 for tokenized real-world assets, stock tokens and ETFs. Day-one identity and policy positioning for agents that trade there.",
+    "status": "planned",
+    "protocols": {
+      "payment": {
+        "x402": true,
+        "note": "x402 needs a settlement token first: no canonical USDC is documented on this chain yet."
+      },
+      "identity": {
+        "standard": "ERC-8004",
+        "erc8004Native": true,
+        "note": "ERC-8004 registry to be deployed."
       }
     },
     "identity": "ERC-8004",

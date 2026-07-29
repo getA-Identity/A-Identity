@@ -70,21 +70,71 @@ test('Arc is the one live chain and carries all its known contracts', () => {
   assert.equal(ARC_CHAIN.signerEnvVar, 'ARC_SIGNER_KEY')
 })
 
-test('the six next chains are present and planned', () => {
-  for (const id of ['base', 'arbitrum', 'avalanche', 'xlayer', 'stellar', 'solana']) {
+test('every chain other than Arc is present and planned', () => {
+  for (const id of ['base', 'arbitrum', 'avalanche', 'xlayer', 'rhchain', 'rhchain-testnet', 'stellar', 'solana']) {
     const c = getChainById(id)
     assert.ok(c, `${id} missing from registry`)
     assert.equal(c.status, 'planned', `${id} should be planned`)
   }
 })
 
-test('four of the next chains are EVM, two are non-EVM', () => {
+test('the planned set is mostly EVM, with two non-EVM', () => {
   const planned = CHAINS.filter((c) => c.status === 'planned')
-  assert.equal(planned.filter((c) => c.ecosystem === 'evm').length, 4)
-  assert.equal(planned.filter((c) => c.ecosystem !== 'evm').length, 2)
+  assert.equal(planned.filter((c) => c.ecosystem !== 'evm').length, 2, 'stellar and solana')
+  assert.equal(planned.filter((c) => c.ecosystem === 'evm').length, planned.length - 2)
 })
 
-test('evmChains includes Arc and the four planned EVM chains', () => {
+test('evmChains covers Arc and every planned EVM chain', () => {
   const ids = evmChains().map((c) => c.id).sort()
-  assert.deepEqual(ids, ['arbitrum', 'arc', 'avalanche', 'base', 'xlayer'])
+  assert.deepEqual(ids, ['arbitrum', 'arc', 'avalanche', 'base', 'rhchain', 'rhchain-testnet', 'xlayer'])
 })
+
+// ── Robinhood Chain (Phase 6.1) ──────────────────────────────────────────────────
+
+test('Robinhood Chain carries the values verified against its live RPCs', () => {
+  // Every one of these was confirmed with an eth_chainId / eth_getCode call rather than
+  // copied from a doc page, so pinning them means a later edit that drifts gets caught.
+  const main = getChainById('rhchain')
+  assert.ok(main)
+  assert.equal(main.evmChainId, 4663) // eth_chainId returned 0x1237
+  assert.equal(main.caip2, 'eip155:4663')
+  assert.equal(main.testnet, false)
+  assert.equal(main.rpcUrls[0], 'https://rpc.mainnet.chain.robinhood.com')
+  assert.equal(main.explorer, 'https://robinhoodchain.blockscout.com')
+  assert.equal(main.nativeCurrency.symbol, 'ETH')
+
+  const test_ = getChainById('rhchain-testnet')
+  assert.ok(test_)
+  assert.equal(test_.evmChainId, 46630) // eth_chainId returned 0xb626
+  assert.equal(test_.caip2, 'eip155:46630')
+  assert.equal(test_.testnet, true)
+  assert.equal(test_.rpcUrls[0], 'https://rpc.testnet.chain.robinhood.com')
+})
+
+test('Robinhood Chain asserts no USDC and no CCTP domain it cannot back up', () => {
+  // Neither is documented for this chain. Inventing either would put a wrong address or a
+  // wrong bridge domain into a payment path.
+  for (const id of ['rhchain', 'rhchain-testnet']) {
+    const c = getChainById(id)
+    assert.equal(c?.contracts.usdc, undefined, id)
+    assert.equal(c?.cctpDomain, null, id)
+    assert.deepEqual(c?.stablecoins, [], id)
+  }
+})
+
+test('every EVM chain records a verified CREATE2 factory, and no non-EVM chain does', () => {
+  // The same-address promise in MULTICHAIN-STRATEGY 1.5 only holds where the factory is
+  // actually deployed, so this is data gathered by eth_getCode, not an assumption.
+  for (const c of CHAINS) {
+    if (c.ecosystem === 'evm') {
+      assert.equal(
+        c.contracts.create2Factory,
+        '0x4e59b44847B379578588920cA78FbF26c0B4956C',
+        `${c.id} is missing its verified CREATE2 factory`,
+      )
+    } else {
+      assert.equal(c.contracts.create2Factory, undefined, `${c.id} is not EVM and must not claim a factory`)
+    }
+  }
+})
+

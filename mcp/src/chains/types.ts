@@ -31,6 +31,13 @@ export interface ChainContracts {
   /** Arc's predeployed `Multicall3From` precompile: batches many contract calls into
    *  one tx, EOA preserved via `CallFrom`. Present only on chains that ship it (Arc). */
   multicall3From?: string
+  /**
+   * Deterministic CREATE2 factory, the thing that makes one contract ADDRESS possible on
+   * every EVM chain (see MULTICHAIN-STRATEGY 1.5). Only set where its presence was actually
+   * verified with an eth_getCode call, never assumed from the fact that it is "usually
+   * there": deploying against an absent factory fails in a confusing way.
+   */
+  create2Factory?: string
 }
 
 /**

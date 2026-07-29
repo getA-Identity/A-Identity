@@ -51,7 +51,7 @@ async function main() {
   // REST companion endpoints (used by the frontend)
   const chainsRes = await fetch(`http://localhost:${PORT}/api/chains`).then((r) => r.json())
   const ids = (chainsRes.chains as { id: string }[]).map((c) => c.id)
-  for (const id of ['arc', 'base', 'arbitrum', 'avalanche', 'xlayer', 'stellar', 'solana']) {
+  for (const id of ['arc', 'base', 'arbitrum', 'avalanche', 'xlayer', 'rhchain', 'rhchain-testnet', 'stellar', 'solana']) {
     if (!ids.includes(id)) throw new Error(`REST /api/chains missing ${id}`)
   }
   // /api/reputation must ANSWER correctly, which for an agent that does not exist means a
@@ -84,7 +84,7 @@ async function main() {
     throw new Error(`POST /api/agents/action-policy should require a verified session (got ${pr.status})`)
   }
 
-  console.log('✅ HTTP smoke test passed (MCP + REST, 7 chains, 6 policy tools over MCP, action-policy wired + gated)')
+  console.log('✅ HTTP smoke test passed (MCP + REST, 9 chains, 6 policy tools over MCP, action-policy wired + gated)')
 }
 
 main().catch((err) => {

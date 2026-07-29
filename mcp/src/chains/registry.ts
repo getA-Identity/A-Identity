@@ -12,6 +12,17 @@
 import type { ChainDescriptor } from './types.js'
 import { evmChainIdFromCaip2, isValidCaip2 } from './caip.js'
 
+/**
+ * The Arachnid deterministic CREATE2 factory. Verified present with a live eth_getCode call
+ * on EVERY EVM chain in this registry on 2026-07-29 (arc, base, arbitrum, avalanche, xlayer,
+ * rhchain, rhchain-testnet), which is what makes MULTICHAIN-STRATEGY's same-address promise
+ * actually achievable rather than merely intended.
+ *
+ * CreateX (0xba5Ed099...) is NOT present on Robinhood Chain, either network, so CREATE3
+ * (address independent of constructor args) would need CreateX deployed there first.
+ */
+const CREATE2_FACTORY = '0x4e59b44847B379578588920cA78FbF26c0B4956C'
+
 export const CHAINS: ChainDescriptor[] = [
   // ── LIVE ────────────────────────────────────────────────────────────────────
   {
@@ -45,6 +56,7 @@ export const CHAINS: ChainDescriptor[] = [
       usdc: '0x3600000000000000000000000000000000000000',
       memo: '0x5294E9927c3306DcBaDb03fe70b92e01cCede505', // Arc predeployed Memo precompile (transaction memos)
       multicall3From: '0x522fAf9A91c41c443c66765030741e4AaCe147D0', // Arc predeployed Multicall3From (batched transactions)
+      create2Factory: CREATE2_FACTORY,
     },
     confirmations: 1, // deterministic sub-second finality
     stablecoins: ['USDC', 'EURC', 'USYC'],
@@ -73,6 +85,7 @@ export const CHAINS: ChainDescriptor[] = [
     explorer: 'https://basescan.org',
     contracts: {
       usdc: '0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913', // native Circle USDC on Base
+      create2Factory: CREATE2_FACTORY,
     },
     confirmations: 3,
     stablecoins: ['USDC', 'USDT', 'PYUSD'],
@@ -99,6 +112,7 @@ export const CHAINS: ChainDescriptor[] = [
     explorer: 'https://arbiscan.io',
     contracts: {
       usdc: '0xaf88d065e77c8cC2239327C5EDb3A432268e5831', // native Circle USDC on Arbitrum One
+      create2Factory: CREATE2_FACTORY,
     },
     confirmations: 3,
     stablecoins: ['USDC', 'USDT'],
@@ -125,6 +139,7 @@ export const CHAINS: ChainDescriptor[] = [
     explorer: 'https://snowtrace.io',
     contracts: {
       usdc: '0xB97EF9Ef8734C71904D8002F8b6Bc66Dd9c48a6E', // native Circle USDC on Avalanche C-Chain
+      create2Factory: CREATE2_FACTORY,
     },
     confirmations: 1, // Avalanche has fast finality
     stablecoins: ['USDC', 'USDT'],
@@ -156,6 +171,7 @@ export const CHAINS: ChainDescriptor[] = [
       // resolve via ownerOf; tokenURI serves the OKX CDN agent card). Payments still
       // pending: verify the canonical USDC address on X Layer before wiring them.
       identityRegistry: '0x8004a169fb4a3325136eb29fa0ceb6d2e539a432',
+      create2Factory: CREATE2_FACTORY,
     },
     confirmations: 5,
     stablecoins: ['USDC', 'USDT'],
@@ -163,6 +179,72 @@ export const CHAINS: ChainDescriptor[] = [
     rpcEnvVar: 'XLAYER_RPC_URL',
     identity: { standard: 'ERC-8004', erc8004Native: true, note: 'OKX.AI identity registry LIVE (read-side wired); payment rails still planned.' },
     payment: { x402: true, note: 'x402 over USDC once the USDC address is confirmed.' },
+  },
+
+  // ── PLANNED: Robinhood Chain (Phase 6.1) ──────────────────────────────────────
+  // Every value below was VERIFIED against the live RPCs, not copied from a doc:
+  //   mainnet eth_chainId -> 0x1237 (4663), testnet -> 0xb626 (46630), both producing blocks.
+  // Robinhood's own words: "a permissionless, Ethereum-compatible, Layer-2 blockchain",
+  // "anyone can interact with the network, build applications, and deploy smart contracts",
+  // an Arbitrum Orbit L2 using Ethereum blobs for data availability with ETH as gas.
+  {
+    caip2: 'eip155:46630',
+    id: 'rhchain-testnet',
+    name: 'Robinhood Chain Testnet',
+    shortName: 'RH Chain test',
+    // Robinhood's brand green is #00C805, which is too light to read as chip text on its own
+    // tint in a light theme. This is a darkened variant of it, not a different brand.
+    color: '#0F9D30',
+    role: 'Where a Robinhood Chain deployment would actually happen: the project does not deploy contracts autonomously to any mainnet.',
+    ecosystem: 'evm',
+    testnet: true,
+    status: 'planned',
+    evmChainId: 46630,
+    // Not documented for this chain. Verify with Circle before wiring any CCTP path.
+    cctpDomain: null,
+    nativeCurrency: { name: 'Ether', symbol: 'ETH', decimals: 18 },
+    usdcDecimals: 6,
+    rpcUrls: ['https://rpc.testnet.chain.robinhood.com'],
+    explorer: 'https://explorer.testnet.chain.robinhood.com',
+    contracts: {
+      // No canonical USDC is documented on Robinhood Chain, so none is asserted here.
+      // AgentSpendPolicy + an ERC-8004 registry would be deployed with the same salt the
+      // other EVM chains use, which is why this stays a data edit rather than new code.
+      create2Factory: CREATE2_FACTORY,
+    },
+    confirmations: 3, // same Orbit stack as Arbitrum, so the same soft-finality assumption
+    stablecoins: [],
+    signerEnvVar: 'RHCHAIN_TESTNET_SIGNER_KEY',
+    rpcEnvVar: 'RHCHAIN_TESTNET_RPC_URL',
+    identity: { standard: 'ERC-8004', erc8004Native: true, note: 'ERC-8004 registry to be deployed.' },
+    payment: { x402: true, note: 'x402 needs a settlement token first: no canonical USDC is documented on this chain yet.' },
+  },
+  {
+    caip2: 'eip155:4663',
+    id: 'rhchain',
+    name: 'Robinhood Chain',
+    shortName: 'RH Chain',
+    color: '#0F9D30',
+    role: 'Robinhood\'s own L2 for tokenized real-world assets, stock tokens and ETFs. Day-one identity and policy positioning for agents that trade there.',
+    ecosystem: 'evm',
+    testnet: false,
+    status: 'planned',
+    evmChainId: 4663,
+    cctpDomain: null,
+    nativeCurrency: { name: 'Ether', symbol: 'ETH', decimals: 18 },
+    usdcDecimals: 6,
+    // The documented public endpoint. Robinhood describes it as rate limited and meant for
+    // wallet connectivity and quick tests, so production traffic needs the env override
+    // (an Alchemy or QuickNode key).
+    rpcUrls: ['https://rpc.mainnet.chain.robinhood.com'],
+    explorer: 'https://robinhoodchain.blockscout.com',
+    contracts: { create2Factory: CREATE2_FACTORY },
+    confirmations: 3,
+    stablecoins: [],
+    signerEnvVar: 'RHCHAIN_SIGNER_KEY',
+    rpcEnvVar: 'RHCHAIN_RPC_URL',
+    identity: { standard: 'ERC-8004', erc8004Native: true, note: 'ERC-8004 registry to be deployed.' },
+    payment: { x402: true, note: 'x402 needs a settlement token first: no canonical USDC is documented on this chain yet.' },
   },
 
   // ── PLANNED: non-EVM (each needs its own adapter + a native contract) ──────────
