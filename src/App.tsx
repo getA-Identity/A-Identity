@@ -1,5 +1,5 @@
 import { useEffect } from 'react'
-import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom'
+import { BrowserRouter, Route, Routes } from 'react-router-dom'
 import ScrollToTop from './components/ScrollToTop'
 import { useAuth } from './store/auth'
 import Landing from './routes/Landing'
@@ -14,6 +14,8 @@ import BlogPost from './routes/BlogPost'
 import UseCase from './routes/UseCase'
 import Explorer from './routes/Explorer'
 import Architecture from './routes/Architecture'
+import Mascot from './routes/Mascot'
+import NotFound from './routes/NotFound'
 import ProtectedRoute from './routes/ProtectedRoute'
 import AppLayout from './routes/app/AppLayout'
 import Dashboard from './routes/app/Dashboard'
@@ -47,6 +49,8 @@ export default function App() {
         <Route path="/use-cases/:slug" element={<UseCase />} />
         <Route path="/explorer" element={<Explorer />} />
         <Route path="/architecture" element={<Architecture />} />
+        {/* Internal design-review surface for the mascot drafts. Unlinked and noindex. */}
+        <Route path="/mascot" element={<Mascot />} />
 
         <Route element={<ProtectedRoute />}>
           <Route path="/app" element={<AppLayout />}>
@@ -60,7 +64,8 @@ export default function App() {
           </Route>
         </Route>
 
-        <Route path="*" element={<Navigate to="/" replace />} />
+        {/* Was a silent redirect home, which made a dead link look like a working one. */}
+        <Route path="*" element={<NotFound />} />
       </Routes>
     </BrowserRouter>
   )

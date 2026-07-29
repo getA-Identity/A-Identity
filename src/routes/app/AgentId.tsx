@@ -17,6 +17,7 @@ import { BACKEND_UNREACHABLE } from '../../lib/mcpBase'
 import { apiFetch, readJson, explainError } from '../../lib/api'
 import { Button } from '../../components/ui/button'
 import { Skeleton } from '../../components/ui/skeleton'
+import { OwlMascot } from '../../components/OwlMascot'
 
 type Stage = 'register' | 'verify' | 'live'
 
@@ -675,7 +676,14 @@ function RegisterForm({ onClose, onCreated }: { onClose: () => void; onCreated?:
 
   if (done) {
     return (
-      <div className="mt-5 rounded-2xl border border-emerald-200 dark:border-emerald-500/25 bg-emerald-50/50 p-6">
+      <div className="relative mt-5 overflow-hidden rounded-2xl border border-emerald-200 dark:border-emerald-500/25 bg-emerald-50/50 p-6">
+        {/* The owl marks the good outcome. Decorative, so it stays out of the a11y tree and
+            never overlaps the text: it sits in the card's empty top-right corner. */}
+        <OwlMascot
+          variant="geometric"
+          width={104}
+          className="pointer-events-none absolute -right-2 -top-2 hidden w-[104px] select-none opacity-90 sm:block"
+        />
         <div className="flex items-center gap-2 font-bold text-emerald-700 dark:text-emerald-300">
           <CheckCircle2 size={18} /> {name} is registered.
         </div>

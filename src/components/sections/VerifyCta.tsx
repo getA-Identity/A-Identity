@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import { motion } from 'framer-motion'
 import { Search, ArrowRight } from 'lucide-react'
 import { EASE_OUT_EXPO } from '../../lib/brand'
+import { OwlMascot3D } from '../OwlMascot'
 
 const reveal = {
   initial: { opacity: 0, y: 24 },
@@ -31,7 +32,11 @@ export default function VerifyCta() {
 
   return (
     <section id="verify" className="w-full bg-background px-5 py-24 text-foreground sm:px-8 sm:py-32">
-      <div className="mx-auto max-w-[1080px]">
+      {/* Two columns from lg up: the lookup keeps the reading edge, the owl takes the empty
+          right half it was already leaving behind. Below lg the owl drops out entirely
+          rather than stacking, because on a phone the input is the only thing that matters. */}
+      <div className="mx-auto grid max-w-[1080px] items-center gap-12 lg:grid-cols-[minmax(0,1fr)_320px]">
+        <div>
         <motion.h2 {...reveal} className="text-3xl font-bold leading-[1.1] tracking-tight sm:text-[2.6rem]" style={{ fontFamily: 'var(--font-heading)' }}>
           Trust an agent in one lookup.
         </motion.h2>
@@ -73,6 +78,11 @@ export default function VerifyCta() {
           <span className="font-semibold text-amber-600 dark:text-amber-500">warn</span>, or{' '}
           <span className="font-semibold text-red-600 dark:text-red-400">deny</span>.
         </motion.p>
+        </div>
+
+        <motion.div {...reveal} className="order-first justify-self-center lg:order-none" aria-hidden="true">
+          <OwlMascot3D className="h-[180px] w-[180px] sm:h-[240px] sm:w-[240px] lg:h-[320px] lg:w-[320px]" />
+        </motion.div>
       </div>
     </section>
   )

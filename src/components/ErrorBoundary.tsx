@@ -1,4 +1,5 @@
 import { Component, type ErrorInfo, type ReactNode } from 'react'
+import { OwlMascot } from './OwlMascot'
 
 type Props = { children: ReactNode }
 type State = { error: Error | null }
@@ -25,6 +26,8 @@ export default class ErrorBoundary extends Component<Props, State> {
     return (
       <div className="grid min-h-screen place-items-center bg-background px-6 text-foreground">
         <div className="w-full max-w-md rounded-2xl border border-border bg-card p-8 text-center shadow-sm">
+          {/* Same owl as the 404, so a failure still reads as part of the product. */}
+          <OwlMascot variant="officer" className="mx-auto mb-5 w-24" width={96} />
           <h1 className="text-lg font-bold">Something went wrong</h1>
           <p className="mt-2 text-sm text-foreground/60">
             A panel hit an unexpected error. Your data is safe, reloading usually fixes it.

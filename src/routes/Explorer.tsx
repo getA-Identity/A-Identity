@@ -14,6 +14,7 @@ import {
   resolveAgent, getReputation, getLeaderboard,
   type AgentIdentity, type Reputation, type FeedAgent,
 } from '../lib/mcp-client'
+import OwlMark, { type OwlVerdict } from '../components/OwlMark'
 
 type Verdict = 'ALLOW' | 'WARN' | 'DENY'
 const VERDICT: Record<Verdict, { color: string; Icon: typeof ShieldCheck }> = {
@@ -89,6 +90,15 @@ function RiskPill({ verdict }: { verdict: Verdict }) {
       <v.Icon size={13} /> {verdict}
     </span>
   )
+}
+
+/**
+ * The owl reporting the same verdict as the pill, at avatar scale. The mark takes its eye
+ * colour from the decision, which is the mascot doing the product's job instead of sitting
+ * next to it. Decorative here: RiskPill already says the word.
+ */
+function VerdictOwl({ verdict }: { verdict: Verdict }) {
+  return <OwlMark verdict={verdict.toLowerCase() as OwlVerdict} size={40} />
 }
 
 /** FICO-style spectrum: a red→amber→green gradient bar with a precise pointer at the score. */
@@ -205,7 +215,10 @@ function TrustProfile({ identity, reputation, query }: { identity: AgentIdentity
               <span className="ml-1 text-sm font-semibold" style={{ color: VERDICT[verdict].color }}>{g.label}<span className="text-foreground/35"> · {g.tier}</span></span>
             </div>
           </div>
-          <RiskPill verdict={verdict} />
+          <div className="flex items-center gap-3">
+            <VerdictOwl verdict={verdict} />
+            <RiskPill verdict={verdict} />
+          </div>
         </div>
         <div className="mt-4"><Spectrum score={score} /></div>
         {reputation?.onchainAttestation && (
