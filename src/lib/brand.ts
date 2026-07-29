@@ -87,7 +87,11 @@ export const FOOTER_COLUMNS: readonly FooterColumn[] = [
  * the empty ones rather than shipping a link to nowhere.
  */
 export const SOCIALS = {
-  discord: '',
+  // NOT PERMANENT YET: this code expires 2026-08-28. Replace it with a never-expiring
+  // invite (`npm run invite --prefix tools/discord`, or Discord's invite dialog with
+  // Expire After = Never) before then, or the Join button dies quietly right after the
+  // hackathon window closes and nobody notices.
+  discord: 'https://discord.gg/zyZM77JzB',
   github: 'https://github.com/getA-Identity/A-Identity',
 } as const
 
