@@ -139,6 +139,16 @@ select {
   cursor: pointer;
 }
 
+/* model-viewer draws a progress bar across the top of its own canvas while a mesh loads.
+   On the owl that reads as a stray dark rule floating above the mascot for the second or
+   two the GLB takes, on a page where nothing else has a line there. The PNG poster already
+   covers the wait, so the bar has no job. Hidden via the exposed part, and the component
+   also slots an empty element over it, since a shadow-part rule is the kind of thing that
+   quietly stops matching on a library upgrade. */
+model-viewer::part(default-progress-bar) {
+  display: none;
+}
+
 /* Progressive-reveal fade used by the autonomous-run log (see AutopilotPanel). */
 @keyframes fadeIn {
   from {

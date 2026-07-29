@@ -97,9 +97,11 @@ export function OwlMascot3D({
   imgClassName?: string
 }) {
   const hostRef = useRef<HTMLDivElement>(null)
+  const viewerRef = useRef<HTMLElement>(null)
   const [near, setNear] = useState(false)
   const [wide, setWide] = useState(false)
   const [ready, setReady] = useState(false)
+  const [painted, setPainted] = useState(false)
   const [reduced, setReduced] = useState(false)
   const active = near && wide
 
@@ -153,18 +155,40 @@ export function OwlMascot3D({
     document.head.appendChild(script)
   }, [active])
 
+  /**
+   * The poster hands over on the mesh's `load` event, not on the script's.
+   *
+   * Those are seconds apart: the module lands quickly, the GLB does not. Fading the PNG when
+   * the script arrived left the owl missing entirely for the whole download, which is the
+   * exact gap the poster exists to cover.
+   */
+  useEffect(() => {
+    setPainted(false)
+    if (!(active && ready)) return
+    const el = viewerRef.current as (HTMLElement & { loaded?: boolean }) | null
+    if (!el) return
+    if (el.loaded) {
+      setPainted(true)
+      return
+    }
+    const onLoad = () => setPainted(true)
+    el.addEventListener('load', onLoad)
+    return () => el.removeEventListener('load', onLoad)
+  }, [active, ready, variant])
+
   return (
     <div ref={hostRef} className={`relative ${className}`}>
       {/* Paints instantly and stays behind the canvas, so there is never an empty box. */}
       <OwlMascot
         variant={variant}
         className={`h-full w-full object-contain transition-opacity duration-500 ${
-          active && ready ? 'opacity-0' : 'opacity-100'
+          painted ? 'opacity-0' : 'opacity-100'
         } ${imgClassName}`}
       />
       {active && ready && (
         <div className="absolute inset-0">
           {createElement('model-viewer', {
+            ref: viewerRef,
             src: `/mascots/owl-${variant}.glb`,
             alt: ALT[variant],
             'camera-controls': true,
@@ -182,7 +206,11 @@ export function OwlMascot3D({
             'interaction-prompt': 'none',
             'touch-action': 'pan-y',
             style: { width: '100%', height: '100%', backgroundColor: 'transparent' },
-          })}
+          },
+          // Slotting an empty element replaces model-viewer's built-in loading bar. The
+          // matching ::part rule in index.css covers the same thing from the other side.
+          createElement('div', { key: 'progress-bar', slot: 'progress-bar' }),
+        )}
         </div>
       )}
     </div>
