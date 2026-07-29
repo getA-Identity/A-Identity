@@ -5,6 +5,8 @@ import Shift from '../components/sections/Shift'
 import VerifyPayFlow from '../components/sections/VerifyPayFlow'
 import ConsoleShowcase from '../components/sections/ConsoleShowcase'
 import QuickStart from '../components/sections/QuickStart'
+import ProtocolsWall from '../components/sections/ProtocolsWall'
+import TractionSim from '../components/sections/TractionSim'
 import ScrollTopButton from '../components/ScrollTopButton'
 import WhatYouGet from '../components/sections/WhatYouGet'
 import LiveProof from '../components/sections/LiveProof'
@@ -65,7 +67,9 @@ export default function Landing() {
       <WhatYouGet />
       <ConsoleShowcase />
       <LiveProof />
+      <TractionSim />
       <BuiltOn />
+      <ProtocolsWall />
       <QuickStart />
       <LandingFaq />
       <CloseCta />
