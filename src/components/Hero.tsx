@@ -31,15 +31,26 @@ export default function Hero() {
   const openSpotlight = () => window.dispatchEvent(new Event('open-trust-spotlight'))
 
   /* The console still stays hidden while the page is at rest, so the first
-     screen belongs to the video; the first light scroll (~24px) raises it into
-     place. One-way on purpose: once seen it stays, so scrolling back up does
-     not blink the frame out from under the reader. */
+     screen belongs to the video; a light scroll raises it into place and
+     scrolling back to the very top lowers it out again. The two thresholds
+     are deliberately apart (show past 32px, hide only under 12px) so the
+     frame never flickers while the reader hovers around the boundary, and
+     the state writes are batched through rAF so a fast trackpad cannot
+     queue a render per scroll event. */
   const [consoleRevealed, setConsoleRevealed] = useState(false)
   useEffect(() => {
-    const onScroll = () => {
-      if (window.scrollY > 24) setConsoleRevealed(true)
+    let ticking = false
+    const update = () => {
+      ticking = false
+      setConsoleRevealed((prev) => (prev ? window.scrollY > 12 : window.scrollY > 32))
     }
-    onScroll()
+    const onScroll = () => {
+      if (!ticking) {
+        ticking = true
+        requestAnimationFrame(update)
+      }
+    }
+    update()
     window.addEventListener('scroll', onScroll, { passive: true })
     return () => window.removeEventListener('scroll', onScroll)
   }, [])
@@ -133,9 +144,23 @@ export default function Hero() {
         animate={
           consoleRevealed
             ? { opacity: 1, y: 0, scale: 1 }
-            : { opacity: 0, y: 110, scale: 0.98 }
+            : { opacity: 0, y: 120, scale: 0.97 }
         }
-        transition={{ duration: 0.9, ease: EASE_OUT_EXPO }}
+        transition={
+          consoleRevealed
+            ? // Entering: a soft spring, so the frame decelerates into place and
+              // settles with a barely-there overshoot instead of a hard stop.
+              {
+                type: 'spring',
+                stiffness: 120,
+                damping: 22,
+                mass: 0.9,
+                opacity: { duration: 0.4, ease: 'easeOut' },
+              }
+            : // Leaving: a quicker tween; an exit should clear the stage, not perform.
+              { duration: 0.45, ease: EASE_OUT_EXPO, opacity: { duration: 0.3 } }
+        }
+        style={{ willChange: 'transform, opacity' }}
         className="mt-12 w-full max-w-[1160px]"
       >
         <div className="overflow-hidden rounded-t-[20px] border border-b-0 border-border/70 bg-card shadow-[0_-12px_80px_-20px_rgba(115,66,226,0.35),0_24px_80px_-24px_rgba(16,24,40,0.5)]">
