@@ -17,4 +17,8 @@ export * from './compliance.js'
 export * from './badge.js'
 export * from './meter.js'
 export * from './mcc.js'
+// Phase 7, schema only. Exported so it can be reviewed and built against, and inert by
+// construction: it holds types and frozen data, the `bet` surface stays `planned`, and
+// bet-schema.test.ts fails if either changes.
+export * from './bet-schema.js'
 export { evaluateAction } from './engine.js'
