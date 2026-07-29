@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState, type FormEvent } from 'react'
+import TractionPanel from '../components/TractionPanel'
 import { Link, useSearchParams } from 'react-router-dom'
 import { motion, AnimatePresence } from 'framer-motion'
 import { Search, Loader2, Copy, Check, ArrowUpRight, ShieldCheck, ShieldAlert, ShieldX, BadgeCheck } from 'lucide-react'
@@ -369,6 +370,10 @@ export default function Explorer() {
               )}
             </AnimatePresence>
           </div>
+
+          {/* Aggregate guardrail traction. Renders nothing until there is activity, so it
+              never shows a dashboard of zeroes. */}
+          <TractionPanel />
 
           {/* leaderboard table */}
           {(boardLoading || board.length > 0) && (

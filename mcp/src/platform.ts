@@ -42,6 +42,12 @@ import {
   deriveBadges,
   badgeFor,
   SURFACES,
+  meterDecision,
+  meterOverrideAttempt,
+  aggregateTraction,
+  defaultActionPolicy,
+  type AgentMeter,
+  type Traction,
   type Badge,
   type AccountSnapshot,
   type ActionPolicy,
@@ -129,6 +135,9 @@ export type PlatformAgent = {
    * safe defaults meanwhile, so an unconfigured agent is never permissive.
    */
   actionPolicy?: ActionPolicy
+  /** Set on agents created by the scheduled canary. Their activity is counted but kept OUT
+   *  of every traction headline, so our own monitoring cannot inflate usage. */
+  ci?: boolean
   /**
    * Whether the owner published their guardrail badge. Opt-in and default OFF: a badge is
    * a claim the owner chooses to make about themselves, and serving one for every agent by
@@ -196,11 +205,14 @@ type State = {
   /** Policy Engine v2 decision trail, keyed by agent id. Bounded per agent
    *  (capAudits), because this whole state is persisted as one document. */
   audits: Record<string, AuditEntry[]>
+  /** Monotonic per-agent counters. NOT trimmed, unlike `audits`: traction counted from
+   *  capped rows would understate exactly the agents busy enough to matter. */
+  meters: Record<string, AgentMeter>
 }
 
 // ── persistence ───────────────────────────────────────────────────────────────
 
-const state: State = { agents: [], wallets: [], instructions: [], tasks: [], audits: {} }
+const state: State = { agents: [], wallets: [], instructions: [], tasks: [], audits: {}, meters: {} }
 
 /**
  * Load persisted state (Postgres via DATABASE_URL, else the local JSON file) into
@@ -216,6 +228,7 @@ export async function initState() {
     // Older persisted documents predate the audit trail, so default it rather than
     // letting an undefined map reach the decision path.
     state.audits = loaded.audits ?? {}
+    state.meters = loaded.meters ?? {}
   }
 }
 
@@ -1116,6 +1129,12 @@ export function checkAgentAction(
     decision,
   })
   state.audits[agent.id] = capAudits([...(state.audits[agent.id] ?? []), entry])
+  // Monotonic counters alongside the capped rows, so traction survives the audit cap.
+  state.meters[agent.id] = meterDecision(state.meters[agent.id], {
+    decision,
+    notionalUsd: input.intent.notionalUsd,
+    at: now,
+  })
   // Only surface it on the agent's activity feed when the policy actually intervened;
   // an ALLOW on every routine action would drown the feed.
   if (decision.verdict !== 'ALLOW') {
@@ -1150,6 +1169,7 @@ export function recordAuditOutcome(
   // behavioral signal we have, and rejecting them silently would throw that away.
   if (entry.verdict === 'DENY' && outcome === 'executed') {
     entry.overrideAttempts = (entry.overrideAttempts ?? 0) + 1
+    state.meters[agent.id] = meterOverrideAttempt(state.meters[agent.id], new Date().toISOString())
     pushActivity(agent, 'Refused an attempt to record a blocked action as executed')
     save(state)
     return { error: 'Forbidden: a DENY cannot be recorded as executed' }
@@ -1288,6 +1308,98 @@ export function agentBadge(
   const badge = badgeFor(badges, surface)
   if (!badge) return { error: `Unknown surface: ${surface}` }
   return { badge, agentName: agent.name }
+}
+
+/**
+ * The public traction view (Phase 5.5). Aggregate only, no auth: there is nothing here that
+ * identifies an agent, an owner, a holding or an individual amount, which is what makes it
+ * safe to publish. Counted from monotonic meters rather than the capped audit rows, so it
+ * cannot shrink as usage grows.
+ */
+export function platformTraction(): Traction {
+  const rows = state.agents
+    .map((a) => ({ meter: state.meters[a.id], ci: a.ci === true }))
+    .filter((r): r is { meter: AgentMeter; ci: boolean } => Boolean(r.meter))
+  const registered = state.agents.filter((a) => a.ci !== true).length
+  const ciAgents = state.agents.filter((a) => a.ci === true).length
+  return aggregateTraction(rows, registered, ciAgents)
+}
+
+/**
+ * A live self-check of the decision engine (Phase 5.4). Runs canonical vectors through the
+ * PURE engine at request time and reports what it answered, so "the guardrail is enforcing
+ * right now" is a verifiable claim rather than an assurance.
+ *
+ * No state, no auth, no side effects: it creates no agent, records no decision and moves
+ * nothing. That is deliberate, because a monitor that writes is a monitor that can fake
+ * traction.
+ */
+export function guardrailSelfCheck(now: Date = new Date()) {
+  const policy = defaultActionPolicy('selfcheck', now.toISOString())
+  const snapshot = {
+    todayNotionalUsd: 0,
+    positions: [],
+    portfolioValueUsd: 10_000,
+    cashAvailableUsd: 10_000,
+    marginUsedUsd: 0,
+    accountType: 'cash' as const,
+  }
+  const vectors = [
+    {
+      name: 'in-policy equity buy is allowed',
+      surface: 'trade',
+      intent: { kind: 'order' as const, side: 'buy' as const, symbol: 'AAPL', assetClass: 'equity' as const, notionalUsd: 20 },
+      expect: 'ALLOW',
+    },
+    {
+      name: 'over the per-action cap is refused',
+      surface: 'trade',
+      intent: { kind: 'order' as const, side: 'buy' as const, symbol: 'AAPL', notionalUsd: 5_000 },
+      expect: 'DENY',
+    },
+    {
+      name: 'money leaving the account waits for a human',
+      surface: 'trade',
+      intent: { kind: 'transfer' as const, notionalUsd: 5 },
+      expect: 'WARN',
+    },
+    {
+      name: 'an ATM cash purchase on a card is refused by default',
+      surface: 'spend',
+      intent: { kind: 'purchase' as const, notionalUsd: 20, merchant: 'ATM', mcc: '6011', cardId: 'selfcheck' },
+      expect: 'DENY',
+    },
+    {
+      name: 'a decision with no account snapshot fails closed',
+      surface: 'trade',
+      intent: { kind: 'order' as const, side: 'buy' as const, symbol: 'AAPL', notionalUsd: 20 },
+      snapshot: undefined,
+      expect: 'DENY',
+    },
+  ]
+
+  const results = vectors.map((v) => {
+    const d = evaluateAction({
+      surface: v.surface,
+      policy,
+      intent: v.intent,
+      snapshot: 'snapshot' in v ? v.snapshot : snapshot,
+      now,
+    })
+    return { name: v.name, expected: v.expect, got: d.verdict, pass: d.verdict === v.expect, codes: d.codes }
+  })
+
+  const failed = results.filter((r) => !r.pass)
+  return {
+    enforcing: failed.length === 0,
+    checkedAt: now.toISOString(),
+    surfaces: SURFACES.map((s) => ({ id: s.id, status: s.status })),
+    vectors: results,
+    note:
+      failed.length === 0
+        ? 'Every canonical vector answered as expected. This runs the same pure engine the product uses, with no state and no side effects.'
+        : `${failed.length} canonical vector(s) did NOT answer as expected. Treat the guardrail as unreliable until this is green.`,
+  }
 }
 
 /**
@@ -1822,9 +1934,48 @@ function marketRank(a: PlatformAgent): number {
 /** The marketplace feed: presentable platform agents as showcase cards, best first.
  *  Sorted by on-chain/KYA prominence, then reputation, then newest. `includeAll`
  *  (from `?all=1`) bypasses the hygiene filter and shows every agent. */
-export function marketplace(viewer?: string, includeAll = false) {
+/**
+ * Guardrail standing for the public feed (Phase 5.2).
+ *
+ * Only surfaced for agents whose owner PUBLISHED their badge. Phase 1.5 made publishing
+ * opt-in, and a leaderboard that revealed guardrail state for everyone would quietly undo
+ * that consent, as well as give away the paid counterparty signal for free. So an agent that
+ * has not published reports `published: false` and nothing else, and the categories below
+ * only contain agents who opted in.
+ */
+function feedGuardrails(agent: PlatformAgent): {
+  published: boolean
+  level?: string
+  label?: string
+  surfaces?: string[]
+} {
+  if (!agent.badgePublic) return { published: false }
+  const { configured } = resolveActionPolicy(agent.actionPolicy, agent.id, agent.createdAt)
+  const entries = state.audits[agent.id] ?? []
+  const badge = badgeFor(deriveBadges({ surfaces: SURFACES, policyConfigured: configured, entries }), 'trade')
+  // Which live surfaces this agent has actually been checked on, from the monotonic meter
+  // so it survives the audit cap. This is what the Trading / Spend categories filter on.
+  const meter = state.meters[agent.id]
+  const surfaces = SURFACES.filter((s) => s.status === 'live' && (meter?.bySurface?.[s.id] ?? 0) > 0).map((s) => s.id)
+  return { published: true, level: badge?.level, label: badge?.label, surfaces }
+}
+
+/**
+ * @param category optional filter. `trading` and `spend` list only agents who PUBLISHED a
+ *   badge and have been checked on that surface, so appearing there is something an owner
+ *   opted into and earned rather than something we inferred about them.
+ */
+export function marketplace(viewer?: string, includeAll = false, category?: string) {
+  const wanted = (category ?? '').trim().toLowerCase()
+  const surfaceFilter = wanted === 'trading' ? 'trade' : wanted === 'spend' ? 'spend' : null
+
   const shown = state.agents
     .filter((a) => includeAll || isShowcase(a))
+    .filter((a) => {
+      if (!surfaceFilter) return true
+      const g = feedGuardrails(a)
+      return g.published && (g.surfaces ?? []).includes(surfaceFilter)
+    })
     .map((a) => ({ a, rep: repOf(a) }))
     .sort((x, y) => {
       const byRank = marketRank(y.a) - marketRank(x.a)
@@ -1845,6 +1996,7 @@ export function marketplace(viewer?: string, includeAll = false) {
       onchainTx: a.onchainTx,
       onchainExplorer: a.onchainExplorer,
       onchainAgentId: a.onchainAgentId,
+      guardrails: feedGuardrails(a),
       reputation: rep,
       walletAddress: a.walletAddress,
       followers: a.followers.length,

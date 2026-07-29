@@ -77,9 +77,19 @@ export const PROOF = {
       note: 'reputation_score / agent_passport return this as onchainAttestation - verify the score on-chain instead of trusting the API',
     },
   },
+  // Bounded-authority guardrails. LINKED, not embedded: the ASP is a separate process that
+  // loads state at boot, so a traction number copied in here could be stale, and a stale
+  // traction figure is exactly the kind of claim that should not exist.
+  guardrails: {
+    what: 'Policy checks before an agent acts on a brokerage or card account: ALLOW / WARN / DENY with reasons, plus a decision trail.',
+    liveTraction: 'https://a-identity-backend.onrender.com/api/traction',
+    liveEngineSelfCheck: 'https://a-identity-backend.onrender.com/api/guardrail-status',
+    honesty:
+      'The headline is protected value (USD of intended action the policy refused). Measured, not projected, and NOT revenue. Canary activity is excluded from it.',
+  },
   // The rigor behind the numbers - deterministic and unit-tested, not an LLM guess.
   engineering: {
-    tests: 327,
+    tests: 342,
     deterministicReputation: true,
     liveOnchainReads: 'ERC-8004 IdentityRegistry + ValidationRegistry (KYA) on Circle Arc, plus the OKX.AI IdentityRegistry on X Layer mainnet (any OKX.AI agent resolves by token id or owner address), read live via viem',
     onchainReputationWrites: 'ERC-8004 ReputationRegistry on Circle Arc: the score is anchored on-chain as a signed observer attestation (A1)',
@@ -153,6 +163,16 @@ export const METHODOLOGY = {
     agent_passport: '$0.01 - identity + reputation + KYA + risk in one call',
     counterparty_check: "$0.008 - a deal-specific verdict between two agents: risk_check on the counterparty PLUS a same-operator self-deal check (paying an agent you also operate builds no independent reputation).",
     guardrail_check: "$0.005 - does this agent operate under an ENFORCED spend/trade policy, and does it respect the verdicts? Bands only (policy enforced, block rate, refused override attempts, unclosed approvals): the policy itself, its caps, its allowlists, the symbols and the amounts are never disclosed. The owner's own policy checks are free and owner-gated; we sell the counterparty signal, not the seatbelt.",
+  },
+  // Guardrail traction lives on the main backend and is LINKED rather than embedded: the ASP
+  // is a separate process that loads state at boot, so a number copied in here could be
+  // stale, and a stale traction figure is exactly the kind of claim that should not exist.
+  guardrails: {
+    what: 'Bounded-authority policy checks before an agent acts on a brokerage or card account: ALLOW / WARN / DENY, with reasons and a decision trail.',
+    liveTraction: 'https://a-identity-backend.onrender.com/api/traction',
+    liveEngineSelfCheck: 'https://a-identity-backend.onrender.com/api/guardrail-status',
+    honesty:
+      'The headline is protected value (USD of intended action the policy refused), which is measured and is NOT revenue. Canary activity is excluded from it.',
   },
   standards: {
     'ERC-8004': 'on-chain agent identity (IdentityRegistry) + validation/KYA (ValidationRegistry) + reputation attestation (ReputationRegistry)',

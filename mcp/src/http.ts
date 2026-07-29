@@ -24,6 +24,8 @@ import {
   getAgentActionPolicy,
   updateAgentActionPolicy,
   checkAgentAction,
+  platformTraction,
+  guardrailSelfCheck,
   listAgentAudits,
   recordAuditOutcome,
   registerAgentFromManifest,
@@ -986,6 +988,22 @@ const server = http.createServer(async (req, res) => {
     return
   }
 
+  // ── traction + engine self-check (Phase 5.4 and 5.5) ─────────────────────────
+  // Public and unauthenticated on purpose: both are aggregate or stateless, so there is
+  // nothing here that identifies an agent, an owner, a holding or an individual amount.
+  if (req.method === 'GET' && url.pathname === '/api/traction') {
+    sendJson(res, 200, platformTraction())
+    return
+  }
+  // "Is the guardrail enforcing right now?" answered by running canonical vectors through
+  // the pure engine. Creates nothing and records nothing, so this monitor cannot inflate
+  // the traction numbers above.
+  if (req.method === 'GET' && url.pathname === '/api/guardrail-status') {
+    const status = guardrailSelfCheck()
+    sendJson(res, status.enforcing ? 200 : 503, status)
+    return
+  }
+
   // ── register_agent + guardrail badge (Phase 1.5) ─────────────────────────────
   // A manifest-shaped registration over the SAME createAgent path the UI uses. Free.
   if (req.method === 'POST' && url.pathname === '/api/agents/register') {
@@ -1150,7 +1168,13 @@ const server = http.createServer(async (req, res) => {
   // ── Platform: marketplace (Agent House) ──────────────────────────────────────
   if (req.method === 'GET' && url.pathname === '/api/marketplace') {
     const includeAll = url.searchParams.get('all') === '1'
-    sendJson(res, 200, marketplace(url.searchParams.get('viewer') ?? undefined, includeAll))
+    // ?category=trading|spend lists only agents who published a badge AND have been checked
+    // on that surface (Phase 5.2).
+    sendJson(
+      res,
+      200,
+      marketplace(url.searchParams.get('viewer') ?? undefined, includeAll, url.searchParams.get('category') ?? undefined),
+    )
     return
   }
   if (req.method === 'POST' && url.pathname === '/api/follow') {
@@ -1357,6 +1381,8 @@ server.listen(PORT, () => {
   console.error(`  POST /api/agents/audit-log/outcome  record what happened after a verdict`)
   console.error(`  POST /api/agents/register         register an agent from a manifest (free)`)
   console.error(`  GET  /api/agents/badge           public guardrail badge (SVG or JSON, opt-in)`)
+  console.error(`  GET  /api/traction               aggregate guardrail traction (public)`)
+  console.error(`  GET  /api/guardrail-status       live engine self-check (503 if not enforcing)`)
 })
 
 // Keep-alive: free-tier hosts (e.g. Render) idle-sleep after ~15 min without inbound

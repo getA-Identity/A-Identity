@@ -1,0 +1,87 @@
+# Guardrail canary (Phase 5.4).
+#
+# Answers one question on a schedule: is the guardrail still enforcing? It does that two
+# ways, and NEITHER of them touches real money or creates anything:
+#
+#   1. Reruns the deterministic decision vectors locally. Pure functions, no account, no
+#      network, no fabricated market data.
+#   2. Probes the live public surfaces, including /api/guardrail-status, which runs canonical
+#      vectors through the same pure engine the product uses and returns 503 if any of them
+#      answers wrongly.
+#
+# Explicitly NOT done here, because a monitor that writes is a monitor that can fake
+# traction: no agent is created, no decision is recorded, no order or payment is placed on
+# any real-money surface. Any synthetic activity that ever does get recorded is flagged `ci`
+# and excluded from every traction headline (see policy/meter.ts aggregateTraction).
+name: Guardrail canary
+
+on:
+  schedule:
+    # Hourly. Slower than the keep-warm ping on purpose: this is a correctness check, not a
+    # liveness one, and GitHub delays scheduled runs under load anyway.
+    - cron: '17 * * * *'
+  workflow_dispatch:
+
+jobs:
+  vectors:
+    name: Deterministic decision vectors
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Install backend deps
+        run: npm install --prefix mcp
+
+      - name: Policy engine vectors (pure, offline)
+        run: npm test --prefix mcp
+
+  live:
+    name: Live public surfaces
+    runs-on: ubuntu-latest
+    steps:
+      - name: Engine self-check on the live backend
+        run: |
+          set -euo pipefail
+          URL="https://a-identity-backend.onrender.com/api/guardrail-status"
+          # Render's free tier cold-starts, so allow a few attempts before calling it a
+          # failure. A cold start is not the same as a guardrail that stopped enforcing.
+          for i in 1 2 3 4 5 6; do
+            code=$(curl -s -o /tmp/status.json -w "%{http_code}" --max-time 45 "$URL" || echo 000)
+            echo "attempt $i: HTTP $code"
+            if [ "$code" = "200" ]; then
+              node -e "
+                const s = require('/tmp/status.json');
+                if (!s.enforcing) { console.error('NOT ENFORCING'); process.exit(1) }
+                const failed = (s.vectors || []).filter(v => !v.pass);
+                if (failed.length) { console.error('failed vectors:', JSON.stringify(failed)); process.exit(1) }
+                console.log('enforcing, ' + s.vectors.length + ' vectors passed at ' + s.checkedAt);
+              "
+              exit 0
+            fi
+            # 503 means the engine answered and said it is NOT enforcing. That is a real
+            # failure and must not be retried away.
+            if [ "$code" = "503" ]; then
+              echo "guardrail reported NOT enforcing"
+              cat /tmp/status.json || true
+              exit 1
+            fi
+            sleep 20
+          done
+          echo "could not reach the self-check after 6 attempts"
+          exit 1
+
+      - name: Traction endpoint answers and excludes CI from its headlines
+        run: |
+          set -euo pipefail
+          curl -sf --max-time 45 "https://a-identity-backend.onrender.com/api/traction" -o /tmp/traction.json
+          node -e "
+            const t = require('/tmp/traction.json');
+            for (const k of ['activeAgents','checks','protectedNotionalUsd','ci','disclosure']) {
+              if (!(k in t)) { console.error('missing field: ' + k); process.exit(1) }
+            }
+            if (typeof t.ci.checks !== 'number') { console.error('ci.checks must be a number'); process.exit(1) }
+            console.log('traction ok: ' + t.checks + ' checks, \$' + t.protectedNotionalUsd + ' protected, ci kept separate (' + t.ci.checks + ')');
+          "
