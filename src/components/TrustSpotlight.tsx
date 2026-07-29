@@ -59,7 +59,7 @@ function ResultCard({ result, q, onOpen, onClaim }: { result: NonNullable<Result
     <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.3 }} className="flex flex-col gap-4 rounded-xl border border-border bg-background/40 p-4">
       <div className="flex items-center justify-between gap-3">
         <div className="flex min-w-0 items-center gap-3">
-          <AgentAvatar seed={seed} size={44} verdict={v.toLowerCase() as OwlVerdict} />
+          <AgentAvatar seed={seed} size={54} verdict={v.toLowerCase() as OwlVerdict} />
           <div className="min-w-0">
             <div className="truncate text-sm font-bold text-foreground">{name}</div>
             <div className="truncate font-mono text-[11px] text-foreground/45">
@@ -355,7 +355,7 @@ export default function TrustSpotlight() {
                             return (
                               <button key={a.id} onClick={() => setQ(a.onchainAgentId || a.id)}
                                 className="flex items-center gap-3 rounded-lg px-2 py-2.5 text-left transition-colors hover:bg-foreground/[0.04]">
-                                <AgentAvatar seed={a.onchainAgentId || a.id} size={30} verdict={v.toLowerCase() as OwlVerdict} />
+                                <AgentAvatar seed={a.onchainAgentId || a.id} size={34} verdict={v.toLowerCase() as OwlVerdict} />
                                 <div className="min-w-0 flex-1">
                                   <div className="truncate text-sm font-medium text-foreground">{a.name}</div>
                                   <div className="truncate font-mono text-[11px] text-foreground/40">{a.category}{a.onchainAgentId ? ` · #${a.onchainAgentId}` : ''}</div>

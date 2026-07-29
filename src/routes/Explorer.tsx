@@ -139,7 +139,7 @@ function TrustProfile({ identity, reputation, query }: { identity: AgentIdentity
     <div className="overflow-hidden rounded-xl border border-border bg-card">
       {/* entity header */}
       <div className="flex flex-wrap items-center gap-4 border-b border-border p-5">
-        <AgentAvatar seed={seed} size={44} verdict={verdict.toLowerCase() as OwlVerdict} />
+        <AgentAvatar seed={seed} size={56} verdict={verdict.toLowerCase() as OwlVerdict} />
         <div className="min-w-0 flex-1">
           <div className="flex flex-wrap items-center gap-2">
             <h2 className="truncate text-lg font-bold tracking-tight text-foreground">{name}</h2>
@@ -423,7 +423,7 @@ export default function Explorer() {
                           <td className="py-3 pl-4 font-mono text-foreground/35">{i + 1}</td>
                           <td className="py-3 pr-3">
                             <div className="flex items-center gap-2.5">
-                              <AgentAvatar seed={a.onchainAgentId || a.id} size={26} verdict={v.toLowerCase() as OwlVerdict} />
+                              <AgentAvatar seed={a.onchainAgentId || a.id} size={32} verdict={v.toLowerCase() as OwlVerdict} />
                               <div className="min-w-0">
                                 <div className="truncate font-medium text-foreground">{a.name}</div>
                                 <div className="truncate font-mono text-[11px] text-foreground/40">{a.category}{a.onchainAgentId ? ` · #${a.onchainAgentId}` : ''}</div>
