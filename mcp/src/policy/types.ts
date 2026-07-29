@@ -44,7 +44,7 @@ export type ActionKind =
   | 'document'
 
 export type Side = 'buy' | 'sell'
-export type AssetClass = 'equity' | 'option'
+export type AssetClass = 'equity' | 'option' | 'crypto'
 
 /**
  * The caller-neutral intent. A caller adapter produces this; the engine consumes only

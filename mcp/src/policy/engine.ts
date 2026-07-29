@@ -199,6 +199,10 @@ function withinWindow(now: Date, w: UtcWindow): boolean | null {
 const outsideTradingHours: Rule = ({ policy, intent, now }) => {
   const w = policy.trade.tradingHoursUtc
   if (!w || intent.kind !== 'order') return null
+  // Crypto trades round the clock, so a market-session window written for equities does not
+  // describe it. Applying the window anyway would refuse every crypto order outside
+  // 13:30-20:00 UTC, which is not the limit the user set: they set an equity session.
+  if (intent.assetClass === 'crypto') return null
   const inside = withinWindow(now, w)
   if (inside === null) {
     return { verdict: 'DENY', code: 'HOURS_MALFORMED', reason: 'The trading-hours window in your policy is malformed.' }
