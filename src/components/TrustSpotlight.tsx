@@ -1,9 +1,10 @@
 import { useEffect, useReducer, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { motion, AnimatePresence } from 'framer-motion'
+import { motion, AnimatePresence, useReducedMotion } from 'framer-motion'
 import { Sparkles, Search, X, ArrowUpRight, ArrowRight, ShieldCheck, Wallet, QrCode, Check, Loader2 } from 'lucide-react'
 import { resolveAgent, getReputation, getLeaderboard, type AgentIdentity, type Reputation, type FeedAgent } from '../lib/mcp-client'
 import { useAuth } from '../store/auth'
+import { EASE_OUT_EXPO } from '../lib/brand'
 import AgentAvatar from './AgentAvatar'
 import { type OwlVerdict } from './OwlMark'
 import { connectWalletConnect, getInjectedWallets, refreshInjectedWallets, walletConnectEnabled, type WalletOption, type Eip1193 } from '../lib/wallets'
@@ -229,6 +230,21 @@ function OnboardPanel({ onClose, claimAddress }: { onClose: () => void; claimAdd
 export default function TrustSpotlight() {
   const navigate = useNavigate()
   const [open, toggle] = useReducer((o: boolean, next?: boolean) => (typeof next === 'boolean' ? next : !o), false)
+
+  // The FAB is expanded at the top of the page, where it is introducing itself, and collapses
+  // to its icon once the reader has started reading. Hover and focus re-open it, so the label
+  // is one intention away rather than gone.
+  const [scrolled, setScrolled] = useState(false)
+  const [fabHover, setFabHover] = useState(false)
+  const reducedMotion = useReducedMotion() ?? false
+  const fabExpanded = !scrolled || fabHover
+
+  useEffect(() => {
+    const onScroll = () => setScrolled(window.scrollY > 420)
+    onScroll()
+    window.addEventListener('scroll', onScroll, { passive: true })
+    return () => window.removeEventListener('scroll', onScroll)
+  }, [])
   const [tab, setTab] = useState<'verify' | 'onboard'>('verify')
   const [claimAddress, setClaimAddress] = useState<string | null>(null)
   const [q, setQ] = useState('')
@@ -286,26 +302,63 @@ export default function TrustSpotlight() {
         {!open && (
           <motion.button
             key="fab" onClick={() => { setTab('verify'); setClaimAddress(null); toggle(true) }} aria-label="Verify an agent"
+            onHoverStart={() => setFabHover(true)} onHoverEnd={() => setFabHover(false)}
+            onFocus={() => setFabHover(true)} onBlur={() => setFabHover(false)}
             initial={{ scale: 0, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} exit={{ scale: 0, opacity: 0 }}
             whileHover={{ scale: 1.06 }} whileTap={{ scale: 0.94 }}
-            className="group fixed bottom-6 right-6 z-40 flex items-center gap-2 rounded-full py-3 pl-3.5 pr-4 text-white shadow-[0_12px_40px_-8px_rgba(115,66,226,0.6)]"
+            className="group fixed bottom-6 right-6 z-40 flex items-center gap-2 rounded-full py-3 pl-3.5 pr-3.5 text-white shadow-[0_12px_40px_-8px_rgba(115,66,226,0.6)]"
             style={{ background: `linear-gradient(135deg, ${ACCENT}, #4f2bb0)` }}
           >
-            <span className="pointer-events-none absolute inset-0 rounded-full" style={{ boxShadow: `0 0 0 0 ${ACCENT}` }}>
-              <motion.span className="absolute inset-0 rounded-full" style={{ border: `1px solid ${ACCENT}` }}
-                animate={{ scale: [1, 1.5], opacity: [0.6, 0] }} transition={{ duration: 2, repeat: Infinity, ease: 'easeOut' }} />
-            </span>
-            <Sparkles size={18} className="relative" />
-            <span className="relative hidden text-sm font-semibold sm:inline">Verify an agent</span>
-            <kbd className="relative hidden rounded bg-white/20 px-1.5 py-0.5 font-mono text-[10px] font-semibold sm:inline">{kbd}</kbd>
+            {/* The ring introduces the button and then stops. A pulse that never ends is not
+                an invitation, it is a nag, and it keeps a compositor layer awake for the whole
+                session. It also goes quiet once the button has collapsed, because by then the
+                reader has scrolled past the moment it was asking for. */}
+            {fabExpanded && !reducedMotion && (
+              <span className="pointer-events-none absolute inset-0 rounded-full">
+                <motion.span className="absolute inset-0 rounded-full" style={{ border: `1px solid ${ACCENT}` }}
+                  animate={{ scale: [1, 1.5], opacity: [0.6, 0] }}
+                  transition={{ duration: 2, repeat: 3, ease: 'easeOut' }} />
+              </span>
+            )}
+            <Sparkles size={18} className="relative shrink-0" />
+            {/*
+              Collapses to the icon once the reader scrolls, and re-opens on hover or focus.
+              Expanded it is roughly 200px of fixed overlay parked in the bottom-right corner,
+              which sits on top of whatever a long section happens to put there. Animating
+              max-width rather than width keeps the label in the DOM, so the accessible name
+              and the keyboard hint never depend on the visual state.
+            */}
+            <motion.span
+              className="relative hidden items-center gap-2 overflow-hidden whitespace-nowrap sm:flex"
+              initial={false}
+              animate={{ maxWidth: fabExpanded ? 200 : 0, opacity: fabExpanded ? 1 : 0 }}
+              transition={{ duration: 0.28, ease: EASE_OUT_EXPO }}
+            >
+              <span className="pl-0.5 text-sm font-semibold">Verify an agent</span>
+              <kbd className="rounded bg-white/20 px-1.5 py-0.5 font-mono text-[10px] font-semibold">{kbd}</kbd>
+            </motion.span>
           </motion.button>
         )}
       </AnimatePresence>
 
       <AnimatePresence>
         {open && (
-          <motion.div className="fixed inset-0 z-50 flex items-start justify-center px-4 pt-[14vh]"
-            initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
+          <motion.div
+            // Keyed for AnimatePresence. Without it the exiting subtree was left mounted at
+            // opacity 0 with pointer-events still on, so once the spotlight had been closed
+            // an invisible full-screen overlay swallowed every click on the page. That is the
+            // bug this key fixes; `pointer-events-none` below is the belt to its braces, since
+            // a stuck exit should never be able to take the site down again.
+            key="spotlight"
+            className="fixed inset-0 z-50 flex items-start justify-center px-4 pt-[14vh]"
+            initial={{ opacity: 0, visibility: 'visible' }} animate={{ opacity: 1, visibility: 'visible' }}
+            // The exiting subtree is a snapshot: it never re-renders, so nothing driven off
+            // React state (an aria-hidden, a conditional class) can change once the exit has
+            // begun. The only channel that still works is the animation itself, so the exit
+            // carries all three: pointer-events off immediately, and visibility flipped when
+            // the fade completes, which also drops the lingering dialog out of the
+            // accessibility tree if the node overstays.
+            exit={{ opacity: 0, pointerEvents: 'none', transitionEnd: { visibility: 'hidden' } }}>
             <motion.div className="absolute inset-0 bg-black/45 backdrop-blur-sm" onClick={() => toggle(false)}
               initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} />
             <motion.div role="dialog" aria-modal="true" aria-label="Trust lookup and onboarding"
