@@ -12,7 +12,9 @@
     "mcp:http": "npm run build --prefix mcp && node mcp/dist/http.js",
     "lint": "eslint \"src/**/*.{ts,tsx}\"",
     "build": "tsc --noEmit && vite build",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "smoke": "vite build && (vite preview --port 4173 & sleep 4 && node scripts/smoke.mjs); kill %1 2>/dev/null",
+    "smoke:only": "node scripts/smoke.mjs"
   },
   "dependencies": {
     "@radix-ui/react-accordion": "^1.2.16",
@@ -21,7 +23,6 @@
     "@walletconnect/ethereum-provider": "^2.23.10",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
-    "embla-carousel-react": "^8.6.0",
     "framer-motion": "^11.18.2",
     "lucide-react": "^0.469.0",
     "react": "^19.0.0",
