@@ -7,11 +7,13 @@ import MobileMenu from './MobileMenu'
 import ThemeToggle from './ThemeToggle'
 import {
   NavigationMenu,
+  NavigationMenuContent,
   NavigationMenuItem,
   NavigationMenuLink,
   NavigationMenuList,
+  NavigationMenuTrigger,
 } from './ui/navigation-menu'
-import { APP_NAME, NAV_LINKS } from '../lib/brand'
+import { APP_NAME, NAV_MENU } from '../lib/brand'
 
 /**
  * Top navigation bar. Two scroll states, morphed by a single 400ms ease-out
@@ -49,7 +51,7 @@ export default function Navbar() {
               : 'border-b border-transparent bg-transparent shadow-none'
           }`}
         >
-          <nav className="mx-auto flex w-full max-w-[1280px] items-center justify-between">
+          <nav className="relative mx-auto flex w-full max-w-[1280px] items-center justify-between">
             {/* Left: logo + wordmark */}
             <Link
               to="/"
@@ -60,21 +62,55 @@ export default function Navbar() {
               <span className="text-lg font-bold tracking-tight">{APP_NAME}</span>
             </Link>
 
-            {/* Center: links (desktop only). Padded, rounded hit areas; hover
-                only recolors the label toward the accent (200ms), no backdrop. */}
-            <NavigationMenu className="hidden md:block">
-              <NavigationMenuList className="gap-1">
-                {NAV_LINKS.map((link) => (
-                  <NavigationMenuItem key={link.label}>
-                    <NavigationMenuLink
-                      href={link.href}
-                      {...(link.external ? { target: '_blank', rel: 'noopener noreferrer' } : {})}
-                      className="inline-block rounded-xl px-4 py-2 text-sm font-medium text-foreground/70 transition-colors duration-200 hover:text-accent"
-                    >
-                      {link.label}
-                    </NavigationMenuLink>
+            {/* Center: truly centered (absolute, so uneven logo/auth widths cannot
+                pull it sideways). One direct link, three dropdown groups promoted
+                from the footer, and the Architecture hover-swap. Dropdowns share
+                one animated viewport that morphs between panel sizes. */}
+            <NavigationMenu className="absolute left-1/2 top-1/2 hidden -translate-x-1/2 -translate-y-1/2 md:block">
+              <NavigationMenuList>
+                <NavigationMenuItem>
+                  <NavigationMenuLink
+                    href="/explorer"
+                    className="inline-block rounded-xl px-4 py-2 text-sm font-medium text-foreground/70 transition-colors duration-200 hover:text-accent"
+                  >
+                    Explorer
+                  </NavigationMenuLink>
+                </NavigationMenuItem>
+
+                {NAV_MENU.map((group) => (
+                  <NavigationMenuItem key={group.label}>
+                    <NavigationMenuTrigger>{group.label}</NavigationMenuTrigger>
+                    <NavigationMenuContent>
+                      <ul
+                        className={
+                          group.items.length > 4
+                            ? 'grid w-[520px] grid-cols-2 gap-1'
+                            : 'grid w-[300px] gap-1'
+                        }
+                      >
+                        {group.items.map((item) => (
+                          <li key={item.label}>
+                            <NavigationMenuLink
+                              href={item.href}
+                              {...(item.external
+                                ? { target: '_blank', rel: 'noopener noreferrer' }
+                                : {})}
+                              className="block rounded-xl px-4 py-3 transition-colors duration-150 hover:bg-accent/[0.07] focus-visible:bg-accent/[0.07]"
+                            >
+                              <span className="block text-sm font-semibold text-foreground">
+                                {item.label}
+                              </span>
+                              <span className="mt-0.5 block text-xs leading-relaxed text-foreground/50">
+                                {item.desc}
+                              </span>
+                            </NavigationMenuLink>
+                          </li>
+                        ))}
+                      </ul>
+                    </NavigationMenuContent>
                   </NavigationMenuItem>
                 ))}
+
                 {/* Architecture: label swaps to "For developers" on hover. Both texts are
                     stacked in one grid cell so the width never shifts as they cross-fade. */}
                 <NavigationMenuItem>

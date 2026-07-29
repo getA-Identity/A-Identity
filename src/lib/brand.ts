@@ -42,6 +42,48 @@ export const NAV_LINKS: readonly NavLink[] = [
   { label: 'Docs', href: DOCS_URL, external: true },
 ]
 
+export type NavMenuItem = { label: string; href: string; desc: string; external?: boolean }
+export type NavMenuGroup = { label: string; items: NavMenuItem[] }
+
+/**
+ * Desktop dropdown groups. The most important footer destinations, promoted
+ * into the top nav: each item carries a one-line description so a dropdown
+ * panel reads as a map, not a list of words. NAV_LINKS above stays the flat
+ * fallback (mobile sheet).
+ */
+export const NAV_MENU: readonly NavMenuGroup[] = [
+  {
+    label: 'Protocol',
+    items: [
+      { label: 'ERC-8004 Identity', href: `${DOCS_URL}/protocols/erc-8004`, desc: 'The on-chain agent passport', external: true },
+      { label: 'x402 Payments', href: `${DOCS_URL}/protocols/x402`, desc: 'Pay-per-call over HTTP 402', external: true },
+      { label: 'MCP', href: `${DOCS_URL}/protocols/mcp`, desc: 'The tool layer agents call', external: true },
+      { label: 'Reputation', href: `${DOCS_URL}/concepts/reputation`, desc: 'A deterministic 0-1000 score', external: true },
+    ],
+  },
+  {
+    label: 'Developers',
+    items: [
+      { label: 'Quickstart', href: `${DOCS_URL}/developers/quickstart`, desc: 'Register and verify in minutes', external: true },
+      { label: 'SDK', href: `${DOCS_URL}/developers/sdk`, desc: 'Hire and settle in ~10 lines', external: true },
+      { label: 'CLI', href: `${DOCS_URL}/developers/cli`, desc: 'The console from your terminal', external: true },
+      { label: 'Agent Manifest', href: `${DOCS_URL}/developers/agent-manifest`, desc: 'Machine-readable discovery', external: true },
+      { label: 'Docs', href: DOCS_URL, desc: 'Everything, in one place', external: true },
+      { label: 'Live Proof', href: 'https://a-identity-asp.onrender.com/proof', desc: 'Real x402 settlements, on-chain', external: true },
+    ],
+  },
+  {
+    label: 'Company',
+    items: [
+      { label: 'Manifesto', href: '/manifesto', desc: 'Why agents need a passport' },
+      { label: 'Blog', href: '/blog', desc: 'Notes from the build' },
+      { label: 'FAQ', href: '/faq', desc: 'The questions we actually get' },
+      { label: 'Brand', href: '/brand', desc: 'The owl, the marks, the rules' },
+      { label: 'Contact', href: '/contact', desc: 'Talk to the founders' },
+    ],
+  },
+]
+
 export type FooterLink = { label: string; href: string; external?: boolean }
 export type FooterColumn = { title: string; links: FooterLink[] }
 

@@ -23,6 +23,16 @@
   /* Radix accordion open/close (shadcn Accordion). */
   --animate-accordion-down: accordion-down 0.3s ease-out;
   --animate-accordion-up: accordion-up 0.3s ease-out;
+
+  /* Radix navigation-menu dropdown: the shared viewport scales in from just
+     above its resting place; panels slide sideways when the pointer moves
+     between triggers (data-motion). Timing matches the site's ease-out feel. */
+  --animate-nav-in: nav-in 0.22s cubic-bezier(0.16, 1, 0.3, 1);
+  --animate-nav-out: nav-out 0.16s ease-in;
+  --animate-nav-from-left: nav-from-left 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+  --animate-nav-from-right: nav-from-right 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+  --animate-nav-to-left: nav-to-left 0.2s ease-in;
+  --animate-nav-to-right: nav-to-right 0.2s ease-in;
 }
 
 @keyframes accordion-down {
@@ -32,6 +42,31 @@
 @keyframes accordion-up {
   from { height: var(--radix-accordion-content-height); opacity: 1; }
   to { height: 0; opacity: 0; }
+}
+
+@keyframes nav-in {
+  from { opacity: 0; transform: translateY(-8px) scale(0.97); }
+  to { opacity: 1; transform: none; }
+}
+@keyframes nav-out {
+  from { opacity: 1; transform: none; }
+  to { opacity: 0; transform: translateY(-6px) scale(0.98); }
+}
+@keyframes nav-from-left {
+  from { opacity: 0; transform: translateX(-48px); }
+  to { opacity: 1; transform: none; }
+}
+@keyframes nav-from-right {
+  from { opacity: 0; transform: translateX(48px); }
+  to { opacity: 1; transform: none; }
+}
+@keyframes nav-to-left {
+  from { opacity: 1; transform: none; }
+  to { opacity: 0; transform: translateX(-48px); }
+}
+@keyframes nav-to-right {
+  from { opacity: 1; transform: none; }
+  to { opacity: 0; transform: translateX(48px); }
 }
 
 /*
