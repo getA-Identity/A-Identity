@@ -421,16 +421,35 @@ check('the feed is an array', Array.isArray(feed.json?.agents))
 // The guardrail column in the explorer reads /api/marketplace (src/lib/mcp-client.ts
 // getLeaderboard), NOT /api/agents. Asserting the endpoint the UI actually calls is the
 // whole point: a column wired to a field the endpoint never sends renders blank forever.
-const market = await get('/api/marketplace')
+//
+// `?all=1` is the unfiltered feed. It is used here so the assertion means something in a
+// clean environment: the DEFAULT feed shows only KYA-verified, described agents, so on a
+// fresh backend it is legitimately empty and "every row carries X" would pass vacuously.
+const market = await get('/api/marketplace?all=1')
 eq('/api/marketplace answers', market.status, 200)
 const rows = market.json?.agents ?? []
-check('the marketplace feed has rows', rows.length > 0, `${rows.length} rows`)
+check('the unfiltered feed contains the agents this run created', rows.some((r) => r.id === agentId), `${rows.length} rows, none of them ours`)
 const withGuardrails = rows.filter((a) => a && typeof a === 'object' && 'guardrails' in a)
 eq('EVERY row carries a guardrail summary', withGuardrails.length, rows.length)
 const g = JSON.stringify(rows.map((r) => r.guardrails))
 check('an unpublished badge reads as published:false rather than absent', rows.every((r) => typeof r.guardrails?.published === 'boolean'), g.slice(0, 200))
 check('the public summary carries no exact dollar figure', !/\d{3,}/.test(g), g.slice(0, 200))
-check('the feed leaks no owner address', !/0x[0-9a-f]{40}/i.test(JSON.stringify(rows.map((r) => r.guardrails))))
+check('the feed leaks no owner address', !/0x[0-9a-f]{40}/i.test(g))
+
+// The strict default filter is a product decision, so it is pinned rather than assumed: a
+// freshly registered agent with no KYA must NOT appear in the public feed just by existing.
+const strict = await get('/api/marketplace')
+const strictRows = strict.json?.agents ?? []
+check('the default feed excludes an unverified agent', !strictRows.some((r) => r.id === agentId), `${strictRows.length} rows`)
+check('the default feed is a subset of the unfiltered one', strictRows.length <= rows.length, `${strictRows.length} > ${rows.length}`)
+
+// The surface categories list only agents whose owner PUBLISHED a badge. This run
+// unpublished its badge above, so it must be absent from both.
+for (const category of ['trading', 'spend']) {
+  const catRows = (await get(`/api/marketplace?category=${category}`)).json?.agents ?? []
+  check(`?category=${category} excludes an agent with no published badge`, !catRows.some((r) => r.id === agentId), `${catRows.length} rows`)
+  check(`?category=${category} rows all published a badge`, catRows.every((r) => r.guardrails?.published === true), JSON.stringify(catRows.map((r) => r.guardrails)).slice(0, 160))
+}
 
 // ── 14. the same question through MCP ───────────────────────────────────────────────
 section('MCP parity')
