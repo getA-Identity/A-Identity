@@ -241,6 +241,15 @@ export default function SpendPermissions({ agentId }: { agentId: string }) {
           The caps and the approval line on the Trading tab are shared: they apply to card purchases too, since they sit
           on the same policy.
         </p>
+        <p className="mt-3 flex items-start gap-2 rounded-xl border border-amber-500/25 bg-amber-500/[0.05] p-3 text-[11px] text-foreground/60">
+          <AlertTriangle size={13} className="mt-0.5 shrink-0 text-amber-500" />
+          <span>
+            Worth knowing on this surface: a card agent is given the virtual card details, and a purchase happens at the
+            merchant, not through an API we sit in front of. These limits are load-bearing when your agent asks us
+            first, and they cannot physically stop one that already holds the card. Keep your issuer&apos;s
+            approve-each-purchase setting on alongside this, not instead of it.
+          </span>
+        </p>
       </section>
 
       {/* Merchants */}
@@ -308,9 +317,10 @@ export default function SpendPermissions({ agentId }: { agentId: string }) {
       <section className="mt-4 rounded-2xl border border-foreground/10 bg-card p-6">
         <h3 className="mb-1 font-semibold text-foreground">Daily ceiling per category</h3>
         <p className="mb-4 text-[11px] text-foreground/45">
-          Categories come from the card network&apos;s merchant code where we recognize it, otherwise from whatever
-          label the caller sends. Unrecognized purchases land in <span className="font-mono">uncategorized</span>, which
-          you can put a ceiling on like any other, so the unknown case is limitable rather than exempt.
+          Categories come from the card network&apos;s merchant code when one reaches us. Robinhood&apos;s card surface
+          does not document sending it, so in practice the category usually comes from the label your caller supplies.
+          Anything without one lands in <span className="font-mono">uncategorized</span>, which you can put a ceiling on
+          like any other, so the unknown case is limitable rather than exempt.
         </p>
         <UsdMapEditor
           rows={catRows}
