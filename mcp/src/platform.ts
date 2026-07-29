@@ -1401,6 +1401,27 @@ function sybilSignals(agent: PlatformAgent): SybilSignals {
   return { siblingCount, jobs, uniqueClients, selfDealt, selfDealRate, diversity }
 }
 
+/**
+ * Real guardrail-discipline signals from this agent's own decision trail (Phase 5.1). Every
+ * input is recorded, not self-reported: the audit entries come from actual checks.
+ *
+ * The block rate is deliberately NOT gathered. A high share of refusals is not evidence of a
+ * bad agent, and scoring it would punish whoever configured themselves most carefully.
+ */
+function disciplineSignals(agent: PlatformAgent) {
+  const entries = state.audits[agent.id] ?? []
+  const { configured } = resolveActionPolicy(agent.actionPolicy, agent.id, agent.createdAt)
+  const warns = entries.filter((e) => e.verdict === 'WARN')
+  return {
+    policyDecisions: entries.length,
+    overrideAttempts: entries.reduce((a, e) => a + (e.overrideAttempts ?? 0), 0),
+    unverifiableDecisions: entries.filter((e) => e.unverifiable).length,
+    warnDecisions: warns.length,
+    danglingApprovals: warns.filter((e) => e.outcome === 'awaiting_human' || e.outcome === 'abandoned').length,
+    policyConfigured: configured,
+  }
+}
+
 function repOf(agent: PlatformAgent) {
   const ixs = state.instructions.filter((i) => i.agentId === agent.id)
   const settled = ixs.filter((i) => i.status === 'executed_onchain')
@@ -1416,6 +1437,7 @@ function repOf(agent: PlatformAgent) {
     // ancient history (see reputation.ts HALF_LIFE_DAYS).
     settledAt: settled.map((i) => i.createdAt),
     ...behavioralSignals(agent),
+    ...disciplineSignals(agent),
   })
 }
 
@@ -1450,10 +1472,30 @@ export function agentReputation(agentId: string) {
     selfDealRate: Math.round(sig.selfDealRate * 100) / 100,
     diversity: Math.round(sig.diversity * 100) / 100,
   }
+  // A transparent echo of the guardrail-discipline inputs, so the discipline band is
+  // explainable the same way behavior and Sybil are. The block rate is reported for context
+  // but is NOT scored: a tight policy doing its job is indistinguishable from an agent
+  // pushing at its limits, and penalizing it would punish the most careful users.
+  const dsc = disciplineSignals(agent)
+  const entries = state.audits[agent.id] ?? []
+  const discipline = {
+    decisions: dsc.policyDecisions,
+    policyConfigured: dsc.policyConfigured,
+    overrideAttempts: dsc.overrideAttempts,
+    unverifiableDecisions: dsc.unverifiableDecisions,
+    approvalsAwaited: dsc.warnDecisions,
+    approvalsUnclosed: dsc.danglingApprovals,
+    blockRate:
+      dsc.policyDecisions > 0
+        ? Math.round((entries.filter((e) => e.verdict === 'DENY').length / dsc.policyDecisions) * 100) / 100
+        : 0,
+    blockRateScored: false,
+    excludesPnl: true,
+  }
   // A1: the latest ERC-8004 on-chain attestation of this score (null until one is published),
   // so the public explorer / get_reputation can link the on-chain anchor, not just the number.
   const onchainAttestation = getReputationAttestation(agent.onchainAgentId ?? null)
-  return { agentId: agent.id, name: agent.name, onchain: agent.onchain, kya: agent.kya, ...repOf(agent), behavioral, sybil, onchainAttestation, computedAt: new Date().toISOString() }
+  return { agentId: agent.id, name: agent.name, onchain: agent.onchain, kya: agent.kya, ...repOf(agent), behavioral, sybil, discipline, onchainAttestation, computedAt: new Date().toISOString() }
 }
 
 // ── instructions ──────────────────────────────────────────────────────────────

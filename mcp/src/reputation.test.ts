@@ -1,4 +1,5 @@
 import { test } from 'node:test'
+import { readFileSync } from 'node:fs'
 import assert from 'node:assert/strict'
 import { computeAgentReputation } from './reputation.js'
 
@@ -151,4 +152,117 @@ test('an unparseable settlement timestamp weighs 1 (neutral, never NaN)', () => 
   )
   assert.ok(Number.isFinite(r.settledEffective) && r.settledEffective > 1.9, `got ${r.settledEffective}`)
   assert.ok(Number.isFinite(r.score))
+})
+
+// ── guardrail discipline (Phase 5.1) ─────────────────────────────────────────────
+
+const baseSignals = {
+  settledCount: 4,
+  rejected: 0,
+  onchainRegistered: true,
+  createdAt: '2026-05-01T00:00:00Z',
+}
+const AS_OF = new Date('2026-07-29T00:00:00Z')
+const scoreWith = (extra: Record<string, unknown>) =>
+  computeAgentReputation({ ...baseSignals, ...extra } as never, AS_OF)
+
+test('discipline is neutral when the agent has no guardrail history', () => {
+  // An agent that predates the policy engine must score exactly as it did before.
+  const before = computeAgentReputation(baseSignals, AS_OF)
+  assert.equal(before.breakdown.discipline, 0)
+  assert.equal(scoreWith({ policyDecisions: 0 }).score, before.score)
+})
+
+test('operating under a configured policy with a record is a credit', () => {
+  const d = scoreWith({ policyDecisions: 12, policyConfigured: true })
+  assert.equal(d.breakdown.discipline, 60)
+  assert.ok(d.score > computeAgentReputation(baseSignals, AS_OF).score)
+})
+
+test('a configured policy nobody ever checked against earns nothing', () => {
+  // A setting is not a track record.
+  assert.equal(scoreWith({ policyDecisions: 0, policyConfigured: true }).breakdown.discipline, 0)
+})
+
+test('decisions under an unconfigured policy earn no credit either', () => {
+  assert.equal(scoreWith({ policyDecisions: 12, policyConfigured: false }).breakdown.discipline, 0)
+})
+
+test('a HIGH BLOCK RATE does not lower the score', () => {
+  // The load-bearing honesty rule of this term. A tight policy doing its job is
+  // indistinguishable from an agent pushing at its limits, so penalizing refusals would
+  // punish the most careful users and push everyone toward loose policies.
+  const clean = scoreWith({ policyDecisions: 20, policyConfigured: true })
+  const mostlyRefused = scoreWith({ policyDecisions: 20, policyConfigured: true, policyDenied: 19 })
+  assert.equal(mostlyRefused.score, clean.score)
+  assert.equal(mostlyRefused.breakdown.discipline, clean.breakdown.discipline)
+})
+
+test('override attempts are penalized steeply, and one already counts', () => {
+  const clean = scoreWith({ policyDecisions: 20, policyConfigured: true })
+  const one = scoreWith({ policyDecisions: 20, policyConfigured: true, overrideAttempts: 1 })
+  const many = scoreWith({ policyDecisions: 20, policyConfigured: true, overrideAttempts: 8 })
+  assert.ok(one.breakdown.discipline < clean.breakdown.discipline)
+  assert.ok(many.breakdown.discipline < one.breakdown.discipline)
+  assert.ok(many.score < clean.score)
+})
+
+test('an override attempt counts even with no other history', () => {
+  // Someone with a single audit entry who tried to overwrite it must not look neutral.
+  assert.ok(scoreWith({ policyDecisions: 0, overrideAttempts: 2 }).breakdown.discipline < 0)
+})
+
+test('approvals nobody closes are penalized, because an unclosed loop is theatre', () => {
+  const closed = scoreWith({ policyDecisions: 20, policyConfigured: true, warnDecisions: 6, danglingApprovals: 0 })
+  const open = scoreWith({ policyDecisions: 20, policyConfigured: true, warnDecisions: 6, danglingApprovals: 6 })
+  assert.ok(open.breakdown.discipline < closed.breakdown.discipline)
+})
+
+test('a single unanswered approval is not enough to penalize', () => {
+  const d = scoreWith({ policyDecisions: 20, policyConfigured: true, warnDecisions: 1, danglingApprovals: 1 })
+  assert.equal(d.breakdown.discipline, 60, 'one open approval is noise, not a pattern')
+})
+
+test('decisions made on incomplete data are penalized once there are enough of them', () => {
+  const few = scoreWith({ policyDecisions: 4, policyConfigured: true, unverifiableDecisions: 4 })
+  assert.equal(few.breakdown.discipline, 60, 'under the sample floor, rates are too noisy to score')
+  const many = scoreWith({ policyDecisions: 20, policyConfigured: true, unverifiableDecisions: 20 })
+  assert.ok(many.breakdown.discipline < 60)
+})
+
+test('discipline is bounded so it sharpens the score without dominating it', () => {
+  const worst = scoreWith({
+    policyDecisions: 50,
+    policyConfigured: true,
+    overrideAttempts: 500,
+    unverifiableDecisions: 50,
+    warnDecisions: 50,
+    danglingApprovals: 50,
+  })
+  assert.equal(worst.breakdown.discipline, -200)
+  assert.ok(worst.score >= 0, 'the total is still clamped at zero')
+})
+
+test('the discipline term is deterministic', () => {
+  const args = { policyDecisions: 9, policyConfigured: true, overrideAttempts: 1, warnDecisions: 3, danglingApprovals: 1 }
+  assert.deepEqual(scoreWith(args), scoreWith(args))
+})
+
+test('P&L is not a reputation input, by construction', () => {
+  // Scoring an agent on returns would be a performance claim, which is exactly the line
+  // docs/compliance-robinhood.md says we do not cross. This asserts the shape of the
+  // signals rather than trusting a comment.
+  const forbidden = ['pnl', 'profit', 'return', 'gain', 'loss', 'performance', 'yield']
+  // Compiled to dist/, so mcp/src is one level up.
+  const src = readFileSync(new URL('../src/reputation.ts', import.meta.url), 'utf8')
+  const signalBlock = src.slice(src.indexOf('export type ReputationSignals'), src.indexOf('export type ReputationResult'))
+  const code = signalBlock
+    .replace(/\/\*[\s\S]*?\*\//g, '')
+    .split('\n')
+    .filter((l: string) => !l.trim().startsWith('//') && !l.trim().startsWith('*'))
+    .join('\n')
+    .toLowerCase()
+  for (const word of forbidden) {
+    assert.equal(code.includes(word), false, `ReputationSignals mentions "${word}"`)
+  }
 })
