@@ -71,20 +71,20 @@ export default function WalletModal({
   const nothing = wallets.length === 0 && !wcOn
 
   return (
-    <div className="fixed inset-0 z-50 grid place-items-center bg-ink/40 p-4" onClick={onClose}>
+    <div className="fixed inset-0 z-50 grid place-items-center bg-foreground/40 p-4" onClick={onClose}>
       <div
-        className="w-full max-w-sm rounded-3xl bg-white p-6 shadow-[0_24px_64px_rgba(25,40,55,0.18)]"
+        className="w-full max-w-sm rounded-3xl bg-card p-6 shadow-[0_24px_64px_rgba(25,40,55,0.18)]"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="mb-4 flex items-center justify-between">
-          <h3 className="text-lg font-bold tracking-tight text-ink">Connect a wallet</h3>
-          <button type="button" onClick={onClose} className="text-ink/40 transition-colors hover:text-ink">
+          <h3 className="text-lg font-bold tracking-tight text-foreground">Connect a wallet</h3>
+          <button type="button" onClick={onClose} className="text-foreground/40 transition-colors hover:text-foreground">
             <X size={18} />
           </button>
         </div>
 
         {nothing ? (
-          <p className="text-sm text-ink/60">
+          <p className="text-sm text-foreground/60">
             No wallet detected. Install{' '}
             <a
               className="font-semibold text-accent hover:underline"
@@ -104,15 +104,15 @@ export default function WalletModal({
                 type="button"
                 onClick={() => connectInjected(w)}
                 disabled={!!busy}
-                className="flex items-center gap-3 rounded-2xl border border-ink/10 bg-cream/40 px-4 py-3 text-left transition-colors hover:border-accent disabled:opacity-50"
+                className="flex items-center gap-3 rounded-2xl border border-border bg-background/40 px-4 py-3 text-left transition-colors hover:border-accent disabled:opacity-50"
               >
                 {w.icon ? (
                   <img src={w.icon} alt="" className="h-7 w-7 rounded-lg" />
                 ) : (
-                  <Wallet size={22} className="text-ink/50" />
+                  <Wallet size={22} className="text-foreground/50" />
                 )}
-                <span className="flex-1 text-sm font-semibold text-ink">{w.name}</span>
-                {busy === w.id && <span className="text-xs text-ink/45">Connecting</span>}
+                <span className="flex-1 text-sm font-semibold text-foreground">{w.name}</span>
+                {busy === w.id && <span className="text-xs text-foreground/45">Connecting</span>}
               </button>
             ))}
             {wcOn && (
@@ -120,13 +120,13 @@ export default function WalletModal({
                 type="button"
                 onClick={connectWc}
                 disabled={!!busy}
-                className="flex items-center gap-3 rounded-2xl border border-ink/10 bg-cream/40 px-4 py-3 text-left transition-colors hover:border-accent disabled:opacity-50"
+                className="flex items-center gap-3 rounded-2xl border border-border bg-background/40 px-4 py-3 text-left transition-colors hover:border-accent disabled:opacity-50"
               >
                 <QrCode size={22} className="text-[#3b99fc]" />
-                <span className="flex-1 text-sm font-semibold text-ink">
-                  WalletConnect <span className="text-ink/40">(mobile)</span>
+                <span className="flex-1 text-sm font-semibold text-foreground">
+                  WalletConnect <span className="text-foreground/40">(mobile)</span>
                 </span>
-                {busy === 'wc' && <span className="text-xs text-ink/45">Opening</span>}
+                {busy === 'wc' && <span className="text-xs text-foreground/45">Opening</span>}
               </button>
             )}
           </div>

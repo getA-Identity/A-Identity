@@ -6,6 +6,7 @@ import Logo from './Logo'
 import WalletModal from './WalletModal'
 import { useAuth } from '../store/auth'
 import { APP_NAME, EASE_OUT_EXPO } from '../lib/brand'
+import ThemeScope from './ThemeScope'
 
 type AuthScreenProps = {
   mode: 'login' | 'signup'
@@ -70,10 +71,7 @@ export default function AuthScreen({ mode }: AuthScreenProps) {
   }
 
   return (
-    <main
-      className="grid min-h-screen w-full place-items-center px-5 py-10"
-      style={{ background: 'var(--color-cream)' }}
-    >
+    <ThemeScope as="main" className="grid min-h-screen w-full place-items-center px-5 py-10">
       <WalletModal
         open={walletOpen}
         onClose={() => setWalletOpen(false)}
@@ -87,36 +85,36 @@ export default function AuthScreen({ mode }: AuthScreenProps) {
         initial={{ opacity: 0, y: 20 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.5, ease: EASE_OUT_EXPO }}
-        className="w-full max-w-[420px] rounded-3xl bg-white p-8 shadow-[0_24px_64px_rgba(25,40,55,0.10)]"
+        className="w-full max-w-[420px] rounded-3xl bg-card p-8 shadow-[0_24px_64px_rgba(25,40,55,0.10)]"
       >
         <Link to="/" className="mb-8 inline-flex items-center gap-2">
           <Logo size={28} />
-          <span className="text-lg font-bold tracking-tight text-ink">{APP_NAME}</span>
+          <span className="text-lg font-bold tracking-tight text-foreground">{APP_NAME}</span>
         </Link>
 
-        <h1 className="mb-1.5 text-2xl font-bold tracking-tight text-ink">{copy.title}</h1>
-        <p className="mb-7 text-sm text-ink/60">{copy.subtitle}</p>
+        <h1 className="mb-1.5 text-2xl font-bold tracking-tight text-foreground">{copy.title}</h1>
+        <p className="mb-7 text-sm text-foreground/60">{copy.subtitle}</p>
 
         <button
           type="button"
           onClick={() => setWalletOpen(true)}
-          className="inline-flex w-full items-center justify-center gap-2 rounded-full bg-ink px-5 py-3.5 text-sm font-semibold text-white transition-transform duration-200 hover:scale-[1.02]"
+          className="inline-flex w-full items-center justify-center gap-2 rounded-full bg-foreground px-5 py-3.5 text-sm font-semibold text-background transition-transform duration-200 hover:scale-[1.02]"
         >
           <Wallet size={18} />
           Sign in with your wallet
         </button>
-        <p className="mt-2 text-center text-[11px] text-ink/45">
+        <p className="mt-2 text-center text-[11px] text-foreground/45">
           The real sign-in: proves you own your wallet. No password.
         </p>
 
-        <div className="my-5 flex items-center gap-3 text-[11px] font-semibold uppercase tracking-wide text-ink/35">
-          <span className="h-px flex-1 bg-ink/10" /> or with email <span className="h-px flex-1 bg-ink/10" />
+        <div className="my-5 flex items-center gap-3 text-[11px] font-semibold uppercase tracking-wide text-foreground/35">
+          <span className="h-px flex-1 bg-foreground/10" /> or with email <span className="h-px flex-1 bg-foreground/10" />
         </div>
 
         {magicSent ? (
-          <div className="rounded-2xl border border-emerald-200 bg-emerald-50/60 p-4 text-center text-sm text-emerald-800">
+          <div className="rounded-2xl border border-emerald-500/25 bg-emerald-500/10 p-4 text-center text-sm text-emerald-800 dark:text-emerald-300">
             <div className="font-semibold">Check your inbox ✉️</div>
-            <p className="mt-1 text-xs text-emerald-700/80">
+            <p className="mt-1 text-xs text-emerald-700/80 dark:text-emerald-400/80">
               We sent a one-time sign-in link to {email}. Open it to finish.
             </p>
             <button
@@ -159,7 +157,7 @@ export default function AuthScreen({ mode }: AuthScreenProps) {
           </form>
         )}
 
-        <p className="mt-4 text-center text-[11px] text-ink/45">
+        <p className="mt-4 text-center text-[11px] text-foreground/45">
           No wallet or email?{' '}
           <button type="button" onClick={onGuest} className="font-semibold text-accent hover:underline">
             Continue as guest
@@ -167,14 +165,14 @@ export default function AuthScreen({ mode }: AuthScreenProps) {
           (browse-only)
         </p>
 
-        <p className="mt-6 text-center text-sm text-ink/60">
+        <p className="mt-6 text-center text-sm text-foreground/60">
           {copy.switchText}{' '}
           <Link to={copy.switchTo} className="font-semibold text-accent hover:underline">
             {copy.switchCta}
           </Link>
         </p>
       </motion.div>
-    </main>
+    </ThemeScope>
   )
 }
 
@@ -189,15 +187,15 @@ type FieldProps = {
 
 function Field({ icon, type, placeholder, value, onChange, autoComplete }: FieldProps) {
   return (
-    <label className="flex items-center gap-3 rounded-2xl border border-ink/10 bg-cream/40 px-4 py-3 transition-colors focus-within:border-accent">
-      <span className="text-ink/40">{icon}</span>
+    <label className="flex items-center gap-3 rounded-2xl border border-border bg-background/40 px-4 py-3 transition-colors focus-within:border-accent">
+      <span className="text-foreground/40">{icon}</span>
       <input
         type={type}
         placeholder={placeholder}
         value={value}
         autoComplete={autoComplete}
         onChange={(e) => onChange(e.target.value)}
-        className="w-full bg-transparent text-sm text-ink outline-none placeholder:text-ink/40"
+        className="w-full bg-transparent text-sm text-foreground outline-none placeholder:text-foreground/40"
       />
     </label>
   )

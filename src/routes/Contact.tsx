@@ -4,6 +4,7 @@ import { Bot, Check, Handshake, Mail, Megaphone } from 'lucide-react'
 import PageHeader from '../components/PageHeader'
 import SiteFooter from '../components/sections/SiteFooter'
 import { CONTACT, DOCS_URL, EASE_OUT_EXPO } from '../lib/brand'
+import ThemeScope from '../components/ThemeScope'
 
 const reveal = {
   initial: { opacity: 0, y: 24 },
@@ -43,10 +44,10 @@ export default function Contact() {
   }
 
   const input =
-    'w-full rounded-xl border border-ink/12 bg-white px-4 py-3 text-sm text-ink outline-none transition-colors focus:border-accent placeholder:text-ink/40'
+    'w-full rounded-xl border border-border bg-card px-4 py-3 text-sm text-foreground outline-none transition-colors focus:border-accent placeholder:text-foreground/40'
 
   return (
-    <div className="w-full bg-cream" style={{ fontFamily: 'var(--font-body)' }}>
+    <ThemeScope surface="background" className="w-full" style={{ fontFamily: 'var(--font-body)' }}>
       <PageHeader />
 
       <main className="mx-auto w-full max-w-[980px] px-5 py-16 sm:px-8 sm:py-24">
@@ -55,12 +56,12 @@ export default function Contact() {
         </motion.span>
         <motion.h1
           {...reveal}
-          className="mt-4 text-4xl font-bold leading-[1.1] tracking-tight text-ink sm:text-5xl"
+          className="mt-4 text-4xl font-bold leading-[1.1] tracking-tight text-foreground sm:text-5xl"
           style={{ fontFamily: 'var(--font-heading)' }}
         >
           Talk to a human.
         </motion.h1>
-        <motion.p {...reveal} className="mt-6 max-w-2xl text-lg leading-relaxed text-ink/65">
+        <motion.p {...reveal} className="mt-6 max-w-2xl text-lg leading-relaxed text-foreground/65">
           Agents reach us through the protocol. People can use the form, or email{' '}
           <a href={`mailto:${CONTACT.agents}`} className="font-semibold text-accent hover:underline">
             {CONTACT.agents}
@@ -70,21 +71,21 @@ export default function Contact() {
 
         <div className="mt-12 grid gap-10 lg:grid-cols-[1.1fr_0.9fr]">
           {/* Form */}
-          <motion.div {...reveal} className="rounded-3xl border border-ink/10 bg-white p-7 sm:p-8">
+          <motion.div {...reveal} className="rounded-3xl border border-border bg-card p-7 sm:p-8">
             {sent ? (
               <div className="flex flex-col items-center justify-center py-16 text-center">
-                <div className="grid h-12 w-12 place-items-center rounded-full bg-emerald-100 text-emerald-600">
+                <div className="grid h-12 w-12 place-items-center rounded-full bg-emerald-500/15 text-emerald-600 dark:text-emerald-400">
                   <Check size={24} />
                 </div>
-                <h2 className="mt-4 text-xl font-bold text-ink">Message queued.</h2>
-                <p className="mt-2 max-w-sm text-sm text-ink/55">
+                <h2 className="mt-4 text-xl font-bold text-foreground">Message queued.</h2>
+                <p className="mt-2 max-w-sm text-sm text-foreground/55">
                   This is a preview form, so nothing was sent. In production it would route to the
                   right inbox. For now, email us directly at {CONTACT.hello}.
                 </p>
                 <button
                   type="button"
                   onClick={() => setSent(false)}
-                  className="mt-5 rounded-full border border-ink/15 px-5 py-2.5 text-sm font-semibold text-ink/70 transition-colors hover:bg-ink/5"
+                  className="mt-5 rounded-full border border-foreground/15 px-5 py-2.5 text-sm font-semibold text-foreground/70 transition-colors hover:bg-foreground/5"
                 >
                   Send another
                 </button>
@@ -117,7 +118,7 @@ export default function Contact() {
                   <Mail size={16} />
                   Send message
                 </button>
-                <p className="text-xs text-ink/40">
+                <p className="text-xs text-foreground/40">
                   Preview form. No data leaves your browser.
                 </p>
               </form>
@@ -127,14 +128,14 @@ export default function Contact() {
           {/* Channels */}
           <motion.div {...reveal} className="flex flex-col gap-4">
             {CHANNELS.map(({ icon: Icon, title, body, action }) => (
-              <div key={title} className="rounded-2xl border border-ink/10 bg-white p-5">
+              <div key={title} className="rounded-2xl border border-border bg-card p-5">
                 <div className="flex items-center gap-2">
                   <div className="grid h-8 w-8 place-items-center rounded-lg bg-accent/10 text-accent">
                     <Icon size={16} />
                   </div>
-                  <h3 className="font-semibold text-ink">{title}</h3>
+                  <h3 className="font-semibold text-foreground">{title}</h3>
                 </div>
-                <p className="mt-2 text-sm text-ink/60">{body}</p>
+                <p className="mt-2 text-sm text-foreground/60">{body}</p>
                 <a
                   href={action.href}
                   {...(action.href.startsWith('http')
@@ -151,6 +152,6 @@ export default function Contact() {
       </main>
 
       <SiteFooter />
-    </div>
+    </ThemeScope>
   )
 }

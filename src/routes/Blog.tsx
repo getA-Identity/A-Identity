@@ -6,6 +6,7 @@ import SiteFooter from '../components/sections/SiteFooter'
 import BlogCover from '../components/BlogCover'
 import { POSTS } from '../lib/blog'
 import { EASE_OUT_EXPO } from '../lib/brand'
+import ThemeScope from '../components/ThemeScope'
 
 const reveal = {
   initial: { opacity: 0, y: 24 },
@@ -26,14 +27,14 @@ export default function Blog() {
   )
 
   return (
-    <div className="w-full bg-white" style={{ fontFamily: 'var(--font-body)' }}>
+    <ThemeScope surface="card" className="w-full" style={{ fontFamily: 'var(--font-body)' }}>
       <PageHeader />
 
       <main className="mx-auto w-full max-w-[1160px] px-5 py-14 sm:px-8 sm:py-20">
         {/* Big, quiet hero in the reference style */}
         <motion.h1
           {...reveal}
-          className="max-w-3xl font-bold tracking-tight text-ink"
+          className="max-w-3xl font-bold tracking-tight text-foreground"
           style={{
             fontFamily: 'var(--font-heading)',
             fontSize: 'clamp(2.6rem, 6vw, 4.2rem)',
@@ -42,7 +43,7 @@ export default function Blog() {
         >
           Blog
         </motion.h1>
-        <motion.p {...reveal} className="mt-5 max-w-2xl text-lg leading-relaxed text-ink/60">
+        <motion.p {...reveal} className="mt-5 max-w-2xl text-lg leading-relaxed text-foreground/60">
           Notes from the agentic economy. Where we are building, why these chains, and what
           we are still figuring out.
         </motion.p>
@@ -51,7 +52,7 @@ export default function Blog() {
           {/* Browse by type (left rail, sticky on desktop) */}
           <aside>
             <div className="lg:sticky lg:top-24">
-              <div className="text-[11px] font-bold uppercase tracking-widest text-ink/45">
+              <div className="text-[11px] font-bold uppercase tracking-widest text-foreground/45">
                 Browse by type
               </div>
               {/* Horizontal chips on mobile, vertical list on desktop */}
@@ -66,7 +67,7 @@ export default function Blog() {
                       className={`shrink-0 rounded-full px-3 py-1.5 text-left text-sm transition-colors lg:rounded-none lg:px-0 lg:py-2 ${
                         active
                           ? 'bg-accent/10 font-bold text-accent lg:bg-transparent lg:underline lg:decoration-2 lg:underline-offset-8'
-                          : 'font-medium text-ink/60 hover:text-ink lg:hover:translate-x-0'
+                          : 'font-medium text-foreground/60 hover:text-foreground lg:hover:translate-x-0'
                       }`}
                     >
                       {t}
@@ -103,10 +104,10 @@ export default function Blog() {
                     >
                       {post.chain}
                     </div>
-                    <h3 className="mt-2 text-xl font-bold leading-snug tracking-tight text-ink transition-colors group-hover:text-accent">
+                    <h3 className="mt-2 text-xl font-bold leading-snug tracking-tight text-foreground transition-colors group-hover:text-accent">
                       {post.title}
                     </h3>
-                    <div className="mt-2 text-sm text-ink/45">{post.date}</div>
+                    <div className="mt-2 text-sm text-foreground/45">{post.date}</div>
                   </Link>
                 ))}
               </motion.div>
@@ -116,7 +117,7 @@ export default function Blog() {
       </main>
 
       <SiteFooter />
-    </div>
+    </ThemeScope>
   )
 }
 

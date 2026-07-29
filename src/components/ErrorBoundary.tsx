@@ -23,10 +23,10 @@ export default class ErrorBoundary extends Component<Props, State> {
   render() {
     if (!this.state.error) return this.props.children
     return (
-      <div className="grid min-h-screen place-items-center bg-cream px-6 text-ink">
-        <div className="w-full max-w-md rounded-2xl border border-ink/10 bg-white p-8 text-center shadow-sm">
+      <div className="grid min-h-screen place-items-center bg-background px-6 text-foreground">
+        <div className="w-full max-w-md rounded-2xl border border-border bg-card p-8 text-center shadow-sm">
           <h1 className="text-lg font-bold">Something went wrong</h1>
-          <p className="mt-2 text-sm text-ink/60">
+          <p className="mt-2 text-sm text-foreground/60">
             A panel hit an unexpected error. Your data is safe, reloading usually fixes it.
           </p>
           <button

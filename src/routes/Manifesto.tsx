@@ -4,6 +4,7 @@ import { ArrowUpRight } from 'lucide-react'
 import PageHeader from '../components/PageHeader'
 import SiteFooter from '../components/sections/SiteFooter'
 import { DOCS_URL, EASE_OUT_EXPO } from '../lib/brand'
+import ThemeScope from '../components/ThemeScope'
 
 const reveal = {
   initial: { opacity: 0, y: 24 },
@@ -41,7 +42,7 @@ const PRINCIPLES = [
 
 export default function Manifesto() {
   return (
-    <div className="w-full bg-cream" style={{ fontFamily: 'var(--font-body)' }}>
+    <ThemeScope surface="background" className="w-full" style={{ fontFamily: 'var(--font-body)' }}>
       <PageHeader />
 
       <main className="mx-auto w-full max-w-[820px] px-5 py-16 sm:px-8 sm:py-24">
@@ -50,12 +51,12 @@ export default function Manifesto() {
         </motion.span>
         <motion.h1
           {...reveal}
-          className="mt-4 text-4xl font-bold leading-[1.1] tracking-tight text-ink sm:text-5xl"
+          className="mt-4 text-4xl font-bold leading-[1.1] tracking-tight text-foreground sm:text-5xl"
           style={{ fontFamily: 'var(--font-heading)' }}
         >
           The agentic economy needs a passport.
         </motion.h1>
-        <motion.p {...reveal} className="mt-6 text-lg leading-relaxed text-ink/65">
+        <motion.p {...reveal} className="mt-6 text-lg leading-relaxed text-foreground/65">
           Software is starting to transact on its own. That is not a someday story, it is a
           this-year one. We are building the layer that lets agents prove they are real and pay
           each other safely, with humans supervising the parts that matter.
@@ -67,10 +68,10 @@ export default function Manifesto() {
               <div className="text-xs font-semibold tracking-wide text-accent/70">
                 {String(i + 1).padStart(2, '0')}
               </div>
-              <h2 className="mt-2 text-xl font-bold tracking-tight text-ink sm:text-2xl">
+              <h2 className="mt-2 text-xl font-bold tracking-tight text-foreground sm:text-2xl">
                 {b.title}
               </h2>
-              <p className="mt-3 leading-relaxed text-ink/65">{b.body}</p>
+              <p className="mt-3 leading-relaxed text-foreground/65">{b.body}</p>
             </motion.section>
           ))}
         </div>
@@ -78,12 +79,12 @@ export default function Manifesto() {
         {/* Principles */}
         <motion.div
           {...reveal}
-          className="mt-16 rounded-3xl border border-ink/10 bg-white p-8 sm:p-10"
+          className="mt-16 rounded-3xl border border-border bg-card p-8 sm:p-10"
         >
-          <h2 className="text-lg font-bold tracking-tight text-ink">What we hold to</h2>
+          <h2 className="text-lg font-bold tracking-tight text-foreground">What we hold to</h2>
           <ul className="mt-5 flex flex-col gap-3">
             {PRINCIPLES.map((p) => (
-              <li key={p} className="flex items-start gap-3 text-ink/75">
+              <li key={p} className="flex items-start gap-3 text-foreground/75">
                 <span className="mt-2 h-1.5 w-1.5 shrink-0 rounded-full bg-accent" />
                 <span className="leading-relaxed">{p}</span>
               </li>
@@ -103,7 +104,7 @@ export default function Manifesto() {
             href={DOCS_URL}
             target="_blank"
             rel="noopener noreferrer"
-            className="inline-flex items-center gap-1.5 text-sm font-semibold text-ink/70 transition-colors hover:text-ink"
+            className="inline-flex items-center gap-1.5 text-sm font-semibold text-foreground/70 transition-colors hover:text-foreground"
           >
             Read the docs <ArrowUpRight size={15} />
           </a>
@@ -111,6 +112,6 @@ export default function Manifesto() {
       </main>
 
       <SiteFooter />
-    </div>
+    </ThemeScope>
   )
 }

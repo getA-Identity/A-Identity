@@ -343,7 +343,7 @@ export default function Permissions() {
               </div>
               <h3 className="font-semibold text-foreground">Access controls</h3>
             </div>
-            <ul className="divide-y divide-ink/8">
+            <ul className="divide-y divide-foreground/8">
               <Row
                 label="Agent-to-agent payments"
                 desc="Let the agent pay other verified agents autonomously, within the limits above."
@@ -401,7 +401,7 @@ export default function Permissions() {
               </div>
               <h3 className="font-semibold text-foreground">Safety</h3>
             </div>
-            <ul className="divide-y divide-ink/8">
+            <ul className="divide-y divide-foreground/8">
               <Row
                 label="Freeze all activity"
                 desc="Emergency off switch. Every payment pauses for your approval until you unfreeze."

@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import { useAuth } from '../store/auth'
+import ThemeScope from '../components/ThemeScope'
 
 /** Lands here from an emailed magic link (?token=…), verifies it, and signs in. */
 export default function AuthCallback() {
@@ -24,12 +25,12 @@ export default function AuthCallback() {
   }, [params, navigate, loginWithMagicToken])
 
   return (
-    <main className="grid min-h-screen place-items-center px-5" style={{ background: 'var(--color-cream)' }}>
-      <div className="w-full max-w-sm rounded-3xl bg-white p-8 text-center shadow-[0_24px_64px_rgba(25,40,55,0.10)]">
+    <ThemeScope as="main" className="grid min-h-screen place-items-center px-5">
+      <div className="w-full max-w-sm rounded-3xl bg-card p-8 text-center shadow-[0_24px_64px_rgba(25,40,55,0.10)]">
         {error ? (
           <>
-            <h1 className="text-lg font-bold text-ink">Sign-in link problem</h1>
-            <p className="mt-2 text-sm text-ink/60">{error}</p>
+            <h1 className="text-lg font-bold text-foreground">Sign-in link problem</h1>
+            <p className="mt-2 text-sm text-foreground/60">{error}</p>
             <Link
               to="/login"
               className="mt-4 inline-block rounded-full bg-accent px-5 py-2.5 text-sm font-semibold text-white"
@@ -39,11 +40,11 @@ export default function AuthCallback() {
           </>
         ) : (
           <>
-            <h1 className="text-lg font-bold text-ink">Signing you in</h1>
-            <p className="mt-2 text-sm text-ink/60">Verifying your link.</p>
+            <h1 className="text-lg font-bold text-foreground">Signing you in</h1>
+            <p className="mt-2 text-sm text-foreground/60">Verifying your link.</p>
           </>
         )}
       </div>
-    </main>
+    </ThemeScope>
   )
 }

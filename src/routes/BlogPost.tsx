@@ -9,6 +9,7 @@ import Logo from '../components/Logo'
 import { ChainChip } from './Blog'
 import { getPost, POSTS } from '../lib/blog'
 import { EASE_OUT_EXPO } from '../lib/brand'
+import ThemeScope from '../components/ThemeScope'
 
 const reveal = {
   initial: { opacity: 0, y: 20 },
@@ -27,7 +28,7 @@ export default function BlogPost() {
     .slice(0, 3)
 
   return (
-    <div className="w-full bg-white" style={{ fontFamily: 'var(--font-body)' }}>
+    <ThemeScope surface="card" className="w-full" style={{ fontFamily: 'var(--font-body)' }}>
       <PageHeader />
 
       <main className="mx-auto w-full max-w-[1160px] px-5 py-10 sm:px-8 sm:py-14">
@@ -36,19 +37,19 @@ export default function BlogPost() {
           <Link to="/" className="text-accent hover:underline">
             Home
           </Link>
-          <span className="text-ink/30">/</span>
+          <span className="text-foreground/30">/</span>
           <Link to="/blog" className="text-accent hover:underline">
             Blog
           </Link>
-          <span className="text-ink/30">/</span>
-          <span className="truncate text-ink/50">{post.title}</span>
+          <span className="text-foreground/30">/</span>
+          <span className="truncate text-foreground/50">{post.title}</span>
         </motion.nav>
 
         {/* Date, huge title, category chip */}
         <motion.div {...reveal} className="mt-10">
-          <div className="text-sm text-ink/50">{post.date}</div>
+          <div className="text-sm text-foreground/50">{post.date}</div>
           <h1
-            className="mt-4 max-w-4xl font-bold tracking-tight text-ink"
+            className="mt-4 max-w-4xl font-bold tracking-tight text-foreground"
             style={{
               fontFamily: 'var(--font-heading)',
               fontSize: 'clamp(2.2rem, 5.5vw, 3.6rem)',
@@ -66,11 +67,11 @@ export default function BlogPost() {
         <div className="mt-10 grid gap-10 lg:grid-cols-[minmax(0,1fr)_320px]">
           <article className="min-w-0">
             {/* What you'll learn */}
-            <motion.div {...reveal} className="rounded-2xl border border-ink/12 bg-white p-6">
-              <div className="text-[11px] font-bold uppercase tracking-widest text-ink/50">
+            <motion.div {...reveal} className="rounded-2xl border border-border bg-card p-6">
+              <div className="text-[11px] font-bold uppercase tracking-widest text-foreground/50">
                 What you'll learn
               </div>
-              <p className="mt-2 leading-relaxed text-ink/70">{post.excerpt}</p>
+              <p className="mt-2 leading-relaxed text-foreground/70">{post.excerpt}</p>
             </motion.div>
 
             {/* Cover */}
@@ -83,14 +84,14 @@ export default function BlogPost() {
               {post.sections.map((s) => (
                 <section key={s.heading}>
                   <h2
-                    className="text-2xl font-bold tracking-tight text-ink sm:text-3xl"
+                    className="text-2xl font-bold tracking-tight text-foreground sm:text-3xl"
                     style={{ fontFamily: 'var(--font-heading)' }}
                   >
                     {s.heading}
                   </h2>
                   <div className="mt-4 flex flex-col gap-4">
                     {s.body.map((p, i) => (
-                      <p key={i} className="text-[17px] leading-relaxed text-ink/70">
+                      <p key={i} className="text-[17px] leading-relaxed text-foreground/70">
                         {p}
                       </p>
                     ))}
@@ -104,23 +105,23 @@ export default function BlogPost() {
           <aside className="flex flex-col gap-5">
             <div className="lg:sticky lg:top-24 lg:flex lg:flex-col lg:gap-5">
               {/* Author */}
-              <div className="rounded-2xl border border-ink/12 bg-white p-6">
-                <div className="text-[11px] font-bold uppercase tracking-widest text-ink/50">
+              <div className="rounded-2xl border border-border bg-card p-6">
+                <div className="text-[11px] font-bold uppercase tracking-widest text-foreground/50">
                   Author
                 </div>
                 <div className="mt-4 flex items-center gap-3">
-                  <div className="grid h-11 w-11 place-items-center rounded-full bg-cream">
+                  <div className="grid h-11 w-11 place-items-center rounded-full bg-background">
                     <Logo size={22} />
                   </div>
                   <div>
-                    <div className="text-sm font-bold text-ink">{post.author.name}</div>
-                    <div className="text-xs text-ink/50">{post.author.role}</div>
+                    <div className="text-sm font-bold text-foreground">{post.author.name}</div>
+                    <div className="text-xs text-foreground/50">{post.author.role}</div>
                   </div>
                 </div>
-                <div className="mt-5 border-t border-ink/10 pt-4">
+                <div className="mt-5 border-t border-border pt-4">
                   <ShareRow title={post.title} />
                 </div>
-                <div className="mt-4 text-xs text-ink/40">{post.readingTime}</div>
+                <div className="mt-4 text-xs text-foreground/40">{post.readingTime}</div>
               </div>
 
               {/* CTA card (subscribe slot in the reference) */}
@@ -128,16 +129,16 @@ export default function BlogPost() {
                 className="mt-5 rounded-2xl p-6 lg:mt-0"
                 style={{ background: 'linear-gradient(135deg, #EEF4FF 0%, #F4F1FB 100%)' }}
               >
-                <div className="text-[11px] font-bold uppercase tracking-widest text-ink/55">
+                <div className="text-[11px] font-bold uppercase tracking-widest text-foreground/55">
                   Build with A-Identity
                 </div>
-                <p className="mt-3 text-sm leading-relaxed text-ink/70">
+                <p className="mt-3 text-sm leading-relaxed text-foreground/70">
                   Give your agent a verified identity and a wallet. Verify first, pay at
                   machine speed.
                 </p>
                 <Link
                   to="/signup"
-                  className="mt-4 inline-flex items-center gap-1.5 rounded-full bg-ink px-4 py-2.5 text-sm font-semibold text-white transition-transform hover:scale-[1.03]"
+                  className="mt-4 inline-flex items-center gap-1.5 rounded-full bg-foreground px-4 py-2.5 text-sm font-semibold text-background transition-transform hover:scale-[1.03]"
                 >
                   Get Your Agent ID <ArrowUpRight size={14} />
                 </Link>
@@ -147,8 +148,8 @@ export default function BlogPost() {
         </div>
 
         {/* Keep reading */}
-        <section className="mt-20 border-t border-ink/10 pt-12">
-          <h2 className="text-[11px] font-bold uppercase tracking-widest text-ink/50">
+        <section className="mt-20 border-t border-border pt-12">
+          <h2 className="text-[11px] font-bold uppercase tracking-widest text-foreground/50">
             Keep reading
           </h2>
           <div className="mt-6 grid gap-x-8 gap-y-10 sm:grid-cols-3">
@@ -167,10 +168,10 @@ export default function BlogPost() {
                 >
                   {p.chain}
                 </div>
-                <h3 className="mt-1.5 text-lg font-bold leading-snug tracking-tight text-ink transition-colors group-hover:text-accent">
+                <h3 className="mt-1.5 text-lg font-bold leading-snug tracking-tight text-foreground transition-colors group-hover:text-accent">
                   {p.title}
                 </h3>
-                <div className="mt-1.5 text-sm text-ink/45">{p.date}</div>
+                <div className="mt-1.5 text-sm text-foreground/45">{p.date}</div>
               </Link>
             ))}
           </div>
@@ -178,7 +179,7 @@ export default function BlogPost() {
       </main>
 
       <SiteFooter />
-    </div>
+    </ThemeScope>
   )
 }
 
@@ -199,12 +200,12 @@ function ShareRow({ title }: { title: string }) {
 
   return (
     <div className="flex items-center gap-3">
-      <span className="text-[11px] font-bold uppercase tracking-widest text-ink/50">Share</span>
+      <span className="text-[11px] font-bold uppercase tracking-widest text-foreground/50">Share</span>
       <button
         type="button"
         onClick={copy}
         aria-label="Copy link"
-        className="grid h-8 w-8 place-items-center rounded-full bg-ink/5 text-ink/60 transition-colors hover:bg-ink/10"
+        className="grid h-8 w-8 place-items-center rounded-full bg-foreground/5 text-foreground/60 transition-colors hover:bg-foreground/10"
       >
         {copied ? <Check size={14} className="text-emerald-600" /> : <Link2 size={14} />}
       </button>
@@ -213,7 +214,7 @@ function ShareRow({ title }: { title: string }) {
         target="_blank"
         rel="noopener noreferrer"
         aria-label="Share on X"
-        className="grid h-8 w-8 place-items-center rounded-full bg-ink/5 text-xs font-bold text-ink/60 transition-colors hover:bg-ink/10"
+        className="grid h-8 w-8 place-items-center rounded-full bg-foreground/5 text-xs font-bold text-foreground/60 transition-colors hover:bg-foreground/10"
       >
         X
       </a>
@@ -222,7 +223,7 @@ function ShareRow({ title }: { title: string }) {
         target="_blank"
         rel="noopener noreferrer"
         aria-label="Share on LinkedIn"
-        className="grid h-8 w-8 place-items-center rounded-full bg-ink/5 text-xs font-bold text-ink/60 transition-colors hover:bg-ink/10"
+        className="grid h-8 w-8 place-items-center rounded-full bg-foreground/5 text-xs font-bold text-foreground/60 transition-colors hover:bg-foreground/10"
       >
         in
       </a>

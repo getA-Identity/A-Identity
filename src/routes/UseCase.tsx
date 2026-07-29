@@ -6,6 +6,7 @@ import SiteFooter from '../components/sections/SiteFooter'
 import BlogCover from '../components/BlogCover'
 import { getUseCase, USE_CASES, type UseCaseProduct } from '../lib/usecases'
 import { EASE_OUT_EXPO } from '../lib/brand'
+import ThemeScope from '../components/ThemeScope'
 
 const reveal = {
   initial: { opacity: 0, y: 20 },
@@ -15,17 +16,17 @@ const reveal = {
 
 function ProductLink({ p }: { p: UseCaseProduct }) {
   const cls =
-    'flex items-center justify-between gap-2 border-t border-ink/10 py-3 text-sm font-semibold text-ink transition-colors hover:text-accent'
+    'flex items-center justify-between gap-2 border-t border-border py-3 text-sm font-semibold text-foreground transition-colors hover:text-accent'
   if (p.external || p.href.startsWith('http')) {
     return (
       <a href={p.href} target="_blank" rel="noopener noreferrer" className={cls}>
-        {p.name} <ArrowUpRight size={14} className="shrink-0 text-ink/40" />
+        {p.name} <ArrowUpRight size={14} className="shrink-0 text-foreground/40" />
       </a>
     )
   }
   return (
     <Link to={p.href} className={cls}>
-      {p.name} <ArrowRight size={14} className="shrink-0 text-ink/40" />
+      {p.name} <ArrowRight size={14} className="shrink-0 text-foreground/40" />
     </Link>
   )
 }
@@ -39,7 +40,7 @@ export default function UseCase() {
   const more = USE_CASES.filter((u) => u.slug !== uc.slug).slice(0, 4)
 
   return (
-    <div className="w-full bg-white" style={{ fontFamily: 'var(--font-body)' }}>
+    <ThemeScope surface="card" className="w-full" style={{ fontFamily: 'var(--font-body)' }}>
       <PageHeader />
 
       <main className="mx-auto w-full max-w-[1160px] px-5 py-10 sm:px-8 sm:py-14">
@@ -48,12 +49,12 @@ export default function UseCase() {
           <Link to="/" className="text-accent hover:underline">
             Home
           </Link>
-          <span className="text-ink/30">/</span>
+          <span className="text-foreground/30">/</span>
           <Link to="/#use-cases" className="text-accent hover:underline">
             Use Cases
           </Link>
-          <span className="text-ink/30">/</span>
-          <span className="truncate text-ink/50">{uc.service}</span>
+          <span className="text-foreground/30">/</span>
+          <span className="truncate text-foreground/50">{uc.service}</span>
         </motion.nav>
 
         {/* Title row: huge outcome h1 left, metric stack right */}
@@ -66,7 +67,7 @@ export default function UseCase() {
               {uc.service}
             </div>
             <h1
-              className="mt-4 max-w-3xl font-bold tracking-tight text-ink"
+              className="mt-4 max-w-3xl font-bold tracking-tight text-foreground"
               style={{
                 fontFamily: 'var(--font-heading)',
                 fontSize: 'clamp(2.2rem, 5.5vw, 3.6rem)',
@@ -75,7 +76,7 @@ export default function UseCase() {
             >
               {uc.title}
             </h1>
-            <p className="mt-5 max-w-2xl text-lg leading-relaxed text-ink/60">{uc.teaser}</p>
+            <p className="mt-5 max-w-2xl text-lg leading-relaxed text-foreground/60">{uc.teaser}</p>
           </motion.div>
 
           {/* Metric cards, staggered like the reference stack */}
@@ -86,13 +87,13 @@ export default function UseCase() {
                 initial={{ opacity: 0, y: 24 }}
                 animate={{ opacity: 1, y: 0 }}
                 transition={{ delay: 0.15 + i * 0.15, duration: 0.55, ease: EASE_OUT_EXPO }}
-                className="rounded-2xl border border-ink/8 bg-cream/60 p-5 shadow-[0_10px_30px_rgba(25,40,55,0.06)]"
+                className="rounded-2xl border border-foreground/8 bg-background/60 p-5 shadow-[0_10px_30px_rgba(25,40,55,0.06)]"
               >
                 <div className="flex items-baseline gap-2">
-                  <span className="text-2xl font-bold tracking-tight text-ink">{m.value}</span>
-                  <span className="text-sm font-semibold text-ink/60">{m.label}</span>
+                  <span className="text-2xl font-bold tracking-tight text-foreground">{m.value}</span>
+                  <span className="text-sm font-semibold text-foreground/60">{m.label}</span>
                 </div>
-                <p className="mt-1 text-xs leading-relaxed text-ink/50">{m.note}</p>
+                <p className="mt-1 text-xs leading-relaxed text-foreground/50">{m.note}</p>
               </motion.div>
             ))}
           </div>
@@ -103,8 +104,8 @@ export default function UseCase() {
           {/* Products used (sticky rail) */}
           <aside>
             <div className="lg:sticky lg:top-24">
-              <div className="rounded-2xl border border-ink/12 bg-white p-6">
-                <div className="text-[11px] font-bold tracking-widest text-ink/50">
+              <div className="rounded-2xl border border-border bg-card p-6">
+                <div className="text-[11px] font-bold tracking-widest text-foreground/50">
                   Products used
                 </div>
                 <div className="mt-3">
@@ -120,11 +121,11 @@ export default function UseCase() {
             {/* Principle quote, in place of the reference's customer quote */}
             <motion.blockquote
               {...reveal}
-              className="border-l-2 pl-6 text-xl font-semibold leading-relaxed text-ink sm:text-2xl"
+              className="border-l-2 pl-6 text-xl font-semibold leading-relaxed text-foreground sm:text-2xl"
               style={{ borderColor: uc.accent }}
             >
               &lsquo;{uc.principle}&rsquo;
-              <footer className="mt-3 text-sm font-normal text-ink/50">
+              <footer className="mt-3 text-sm font-normal text-foreground/50">
                 The A-Identity principle
               </footer>
             </motion.blockquote>
@@ -142,14 +143,14 @@ export default function UseCase() {
               {uc.sections.map((s) => (
                 <section key={s.heading}>
                   <h2
-                    className="text-2xl font-bold tracking-tight text-ink sm:text-3xl"
+                    className="text-2xl font-bold tracking-tight text-foreground sm:text-3xl"
                     style={{ fontFamily: 'var(--font-heading)' }}
                   >
                     {s.heading}
                   </h2>
                   <div className="mt-4 flex flex-col gap-4">
                     {s.body.map((p, i) => (
-                      <p key={i} className="text-[17px] leading-relaxed text-ink/70">
+                      <p key={i} className="text-[17px] leading-relaxed text-foreground/70">
                         {p}
                       </p>
                     ))}
@@ -160,10 +161,10 @@ export default function UseCase() {
 
             {/* CTA */}
             <div className="mt-12 rounded-2xl border border-accent/20 bg-accent/[0.05] p-7">
-              <h3 className="text-lg font-bold tracking-tight text-ink">
+              <h3 className="text-lg font-bold tracking-tight text-foreground">
                 Run this with your own agent.
               </h3>
-              <p className="mt-2 text-sm text-ink/65">
+              <p className="mt-2 text-sm text-foreground/65">
                 Register it, set the permissions, and watch it in Agent House. Arc testnet,
                 real rails, you in the tower.
               </p>
@@ -178,9 +179,9 @@ export default function UseCase() {
         </div>
 
         {/* Explore more use cases */}
-        <section className="mt-20 border-t border-ink/10 pt-12">
+        <section className="mt-20 border-t border-border pt-12">
           <h2
-            className="text-2xl font-bold tracking-tight text-ink sm:text-3xl"
+            className="text-2xl font-bold tracking-tight text-foreground sm:text-3xl"
             style={{ fontFamily: 'var(--font-heading)' }}
           >
             Explore more use cases
@@ -226,6 +227,6 @@ export default function UseCase() {
       </main>
 
       <SiteFooter />
-    </div>
+    </ThemeScope>
   )
 }
