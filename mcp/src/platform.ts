@@ -1232,6 +1232,13 @@ export function registerAgentFromManifest(
     services?: Service[]
     endpoint?: string
     walletAddress?: string
+    /**
+     * Mark this agent as canary/monitoring. Its decisions are still recorded in full, but
+     * they are EXCLUDED from every traction headline (see policy/meter.ts). There is no
+     * abuse vector worth gating: labelling yourself `ci` only removes you from a public
+     * aggregate, so it costs visibility rather than buying any.
+     */
+    ci?: boolean
   },
   caller?: string,
 ): RegistrationResult | { error: string } {
@@ -1248,6 +1255,11 @@ export function registerAgentFromManifest(
     permissions: {},
     owner: caller,
   })
+  if (manifest.ci === true) {
+    agent.ci = true
+    pushActivity(agent, 'Marked as canary: activity is excluded from traction headlines')
+    save(state)
+  }
   return buildRegistrationResult(agent)
 }
 

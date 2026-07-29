@@ -1010,6 +1010,7 @@ const server = http.createServer(async (req, res) => {
     const body = (await readBody(req).catch(() => null)) as { manifest?: Record<string, unknown> } | null
     const manifest = (body?.manifest ?? body) as Record<string, unknown> | null
     if (!manifest?.name) { sendJson(res, 400, { error: 'manifest.name required' }); return }
+    // `ci: true` marks a canary: recorded in full, excluded from traction headlines.
     const r = registerAgentFromManifest(manifest as never, callerId)
     sendJson(res, 'error' in r ? errStatus(r.error) : 201, r)
     return
