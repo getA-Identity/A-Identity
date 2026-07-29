@@ -46,11 +46,23 @@ jobs:
         run: |
           set -euo pipefail
           URL="https://a-identity-backend.onrender.com/api/guardrail-status"
-          # Render's free tier cold-starts, so allow a few attempts before calling it a
-          # failure. A cold start is not the same as a guardrail that stopped enforcing.
+          # Retries cover a restart or a deploy in progress. A service that is briefly
+          # unreachable is not the same as a guardrail that stopped enforcing.
           for i in 1 2 3 4 5 6; do
-            code=$(curl -s -o /tmp/status.json -w "%{http_code}" --max-time 45 "$URL" || echo 000)
+            code=$(curl -s -D /tmp/status.hdr -o /tmp/status.json -w "%{http_code}" --max-time 45 "$URL" || echo 000)
             echo "attempt $i: HTTP $code"
+            # Render answers 503 for a SUSPENDED service, and our own endpoint answers 503
+            # for "not enforcing". Same status code, completely different problem, and
+            # conflating them means an infrastructure outage gets reported as a broken
+            # guardrail. Render marks its own with a routing header, so check that first.
+            # Learned the hard way on 2026-07-29, when both services were suspended for
+            # exceeding the free monthly instance hours and this step would have blamed
+            # the policy engine.
+            if grep -qi '^x-render-routing:[[:space:]]*suspend' /tmp/status.hdr 2>/dev/null; then
+              echo "::error::The backend service is SUSPENDED on Render. This is infrastructure,"
+              echo "::error::not the guardrail. Check Render billing and instance-hour usage."
+              exit 1
+            fi
             if [ "$code" = "200" ]; then
               node -e "
                 const s = require('/tmp/status.json');
@@ -61,10 +73,11 @@ jobs:
               "
               exit 0
             fi
-            # 503 means the engine answered and said it is NOT enforcing. That is a real
-            # failure and must not be retried away.
+            # A 503 that is NOT a Render suspension came from our own endpoint, which
+            # answers 503 exactly when the engine is not enforcing. A real failure, and it
+            # must not be retried away.
             if [ "$code" = "503" ]; then
-              echo "guardrail reported NOT enforcing"
+              echo "::error::The guardrail reported NOT enforcing."
               cat /tmp/status.json || true
               exit 1
             fi
@@ -83,10 +96,18 @@ jobs:
           # nothing would say so. So the 402 challenge itself is monitored.
           ASP="https://a-identity-asp.onrender.com"
           for i in 1 2 3 4 5 6; do
-            code=$(curl -s -o /tmp/paid.json -w "%{http_code}" --max-time 45 \
+            code=$(curl -s -D /tmp/paid.hdr -o /tmp/paid.json -w "%{http_code}" --max-time 45 \
               -X POST -H 'Content-Type: application/json' \
               -d '{"agentId":"aid/1"}' "$ASP/tools/verify_agent" || echo 000)
             echo "attempt $i: HTTP $code"
+            # Same trap as the step above: a suspended service also answers 503, and an
+            # unreachable ASP during an OKX review window is urgent for a different reason
+            # than a disabled paywall. Name it rather than retrying six times first.
+            if grep -qi '^x-render-routing:[[:space:]]*suspend' /tmp/paid.hdr 2>/dev/null; then
+              echo "::error::The ASP service is SUSPENDED on Render, so every paid tool is"
+              echo "::error::unreachable. OKX reviewers hitting it see 503 instead of a 402."
+              exit 1
+            fi
             # 402 is the correct answer: the paywall is live and issued a challenge.
             if [ "$code" = "402" ]; then echo "x402 challenge served, paid mode is on"; exit 0; fi
             # 200 means a PAID tool answered without payment. Not a cold start, a real
