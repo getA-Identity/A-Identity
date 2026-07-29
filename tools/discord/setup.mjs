@@ -346,6 +346,7 @@ async function ensureChannel({ guild, everyone, staffIds, chan, ch, cat, readOnl
       }
     }
     skip(`#${ch.name}`)
+    if (!DRY && ch.webhook) await ensureWebhook(existing, ch.webhook)
     return
   }
 
@@ -379,15 +380,47 @@ async function ensureChannel({ guild, everyone, staffIds, chan, ch, cat, readOnl
     } catch (e) { warn(`convert #${ch.name}: ${e.message}`) }
   }
 
-  if (ch.webhook) {
-    try {
-      const hooks = await created.fetchWebhooks()
-      if (!hooks.find((h) => h.name === ch.webhook)) {
-        const wh = await created.createWebhook({ name: ch.webhook, reason: 'A-Identity setup' })
-        ok(`webhook for #${ch.name} (copy this once, it is a write credential):\n      ${wh.url}`)
-      }
-    } catch (e) { warn(`webhook for #${ch.name}: ${e.message}`) }
+  if (ch.webhook) await ensureWebhook(created, ch.webhook)
+}
+
+/**
+ * Make sure a channel has its webhook, and print the URL whether it was just created or
+ * already existed.
+ *
+ * The second half is the point. This used to run only when the channel was created, so a
+ * re-run said nothing and there was no way to recover a URL you had scrolled past. A
+ * webhook URL is not a secret you can look up later from here, it is a credential Discord
+ * shows on creation, so a script that prints it once and never again is a script that
+ * loses it. Discord does return the token to a bot with Manage Webhooks, so a re-run can
+ * reprint it, and now does.
+ */
+async function ensureWebhook(channel, name) {
+  try {
+    const hooks = await channel.fetchWebhooks()
+    const existing = hooks.find((h) => h.name === name)
+    if (existing) {
+      if (existing.url) ok(`webhook for #${channel.name} (existing):\n      ${existing.url}`)
+      else skip(`webhook for #${channel.name} (exists, but Discord did not return its token)`)
+      return
+    }
+    const wh = await channel.createWebhook({ name, reason: 'A-Identity setup' })
+    ok(`webhook for #${channel.name} (a write credential, keep it somewhere safe):\n      ${wh.url}`)
+  } catch (e) {
+    warn(`webhook for #${channel.name}: ${e.message}`)
   }
+}
+
+/**
+ * Pinned messages, across the discord.js versions that matter. `fetchPinned` is deprecated
+ * in v14 and gone in v15; `fetchPins` returns `{ items: [{ message }] }` rather than a
+ * collection. Normalizing here keeps the deprecation warning out of every run.
+ */
+async function pinnedMessages(channel) {
+  if (typeof channel.messages.fetchPins === 'function') {
+    const { items } = await channel.messages.fetchPins()
+    return items.map((i) => i.message)
+  }
+  return [...(await channel.messages.fetchPinned()).values()]
 }
 
 /** Post and pin one embed, unless a pin with the same footer marker already exists. */
@@ -395,8 +428,8 @@ async function postOnce(channel, embed) {
   if (!channel) { warn(`skipped a pin, channel missing`); return }
   if (DRY) { ok(`would post and pin "${embed.title}" in #${channel.name}`); return }
   try {
-    const pins = await channel.messages.fetchPinned()
-    if ([...pins.values()].some((m) => m.embeds?.[0]?.footer?.text === embed.footer?.text)) {
+    const pins = await pinnedMessages(channel)
+    if (pins.some((m) => m.embeds?.[0]?.footer?.text === embed.footer?.text)) {
       skip(`"${embed.title}" in #${channel.name}`)
       return
     }

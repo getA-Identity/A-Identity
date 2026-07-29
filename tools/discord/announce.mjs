@@ -125,8 +125,12 @@ console.log(`  ✓ posted: ${msg.url}`)
 if (flag('pin')) {
   try {
     // Keep exactly one announcement pinned. A channel with fifteen pins has none.
-    const pins = await channel.messages.fetchPinned()
-    for (const old of pins.values()) {
+    // fetchPinned is deprecated in v14 and gone in v15; fetchPins returns a different shape.
+    const pins =
+      typeof channel.messages.fetchPins === 'function'
+        ? (await channel.messages.fetchPins()).items.map((i) => i.message)
+        : [...(await channel.messages.fetchPinned()).values()]
+    for (const old of pins) {
       if (old.id !== msg.id && old.embeds?.[0]?.footer?.text === 'aid-announce') {
         await old.unpin('superseded by a newer announcement')
       }
