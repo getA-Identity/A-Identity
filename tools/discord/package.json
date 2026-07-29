@@ -8,10 +8,11 @@
   "scripts": {
     "validate": "node validate.mjs",
     "whoami": "node whoami.mjs",
+    "invite": "node invite.mjs",
     "setup": "node validate.mjs && node setup.mjs",
     "setup:dry": "node validate.mjs && DRY_RUN=1 node setup.mjs",
     "announce": "node announce.mjs",
-    "check": "node --check config.mjs && node --check setup.mjs && node --check announce.mjs && node --check validate.mjs && node --check whoami.mjs && node validate.mjs"
+    "check": "node --check config.mjs && node --check setup.mjs && node --check announce.mjs && node --check validate.mjs && node --check whoami.mjs && node --check invite.mjs && node validate.mjs"
   },
   "dependencies": {
     "discord.js": "^14.27.0",

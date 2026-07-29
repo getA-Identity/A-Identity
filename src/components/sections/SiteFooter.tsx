@@ -1,7 +1,8 @@
-import { Terminal } from 'lucide-react'
+import { Terminal, Github } from 'lucide-react'
 import { Link } from 'react-router-dom'
 import Logo from '../Logo'
-import { APP_NAME, FOOTER_COLUMNS, type FooterLink } from '../../lib/brand'
+import DiscordIcon from '../DiscordIcon'
+import { APP_NAME, FOOTER_COLUMNS, SOCIALS, type FooterLink } from '../../lib/brand'
 
 /** Render an internal route link or an external (new-tab) anchor. */
 function FooterItem({ link }: { link: FooterLink }) {
@@ -59,6 +60,35 @@ export default function SiteFooter() {
             <p className="mt-3 max-w-xs text-sm text-white/55">
               The passport &amp; wallet for the agentic economy.
             </p>
+
+            {/* Socials. Each one renders only when its link is set, so an unpublished
+                invite is simply absent rather than a button that goes nowhere. */}
+            <div className="mt-5 flex items-center gap-3">
+              {SOCIALS.discord && (
+                <a
+                  href={SOCIALS.discord}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  aria-label="Join the A-Identity Discord"
+                  title="Join the A-Identity Discord"
+                  className="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-white/10 bg-white/[0.04] text-white/60 transition-colors hover:border-accent/40 hover:bg-accent/10 hover:text-accent"
+                >
+                  <DiscordIcon size={17} />
+                </a>
+              )}
+              {SOCIALS.github && (
+                <a
+                  href={SOCIALS.github}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  aria-label="A-Identity on GitHub"
+                  title="A-Identity on GitHub"
+                  className="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-white/10 bg-white/[0.04] text-white/60 transition-colors hover:border-accent/40 hover:bg-accent/10 hover:text-accent"
+                >
+                  <Github size={17} />
+                </a>
+              )}
+            </div>
           </div>
 
           {FOOTER_COLUMNS.map((col) => (

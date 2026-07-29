@@ -75,6 +75,22 @@ export const FOOTER_COLUMNS: readonly FooterColumn[] = [
   },
 ]
 
+/**
+ * Public places to find us. One source, because a social link that lives in three files
+ * is a social link that is wrong in two of them.
+ *
+ * The Discord invite is a PERMANENT one (no expiry, unlimited uses), created with
+ * `npm run invite --prefix tools/discord`. Discord's default invite dies after 7 days,
+ * which is exactly how a landing page ends up with a dead Join button nobody notices.
+ *
+ * An empty string means "not published yet", and every surface that renders these skips
+ * the empty ones rather than shipping a link to nowhere.
+ */
+export const SOCIALS = {
+  discord: '',
+  github: 'https://github.com/getA-Identity/A-Identity',
+} as const
+
 /** Contact addresses surfaced on the contact page and manifest. */
 export const CONTACT = {
   agents: 'agents@a-identity.xyz',
