@@ -7,6 +7,7 @@ import ConsoleShowcase from '../components/sections/ConsoleShowcase'
 import QuickStart from '../components/sections/QuickStart'
 import ProtocolsWall from '../components/sections/ProtocolsWall'
 import TractionSim from '../components/sections/TractionSim'
+import AgentVitrine from '../components/sections/AgentVitrine'
 import ScrollTopButton from '../components/ScrollTopButton'
 import WhatYouGet from '../components/sections/WhatYouGet'
 import LiveProof from '../components/sections/LiveProof'
@@ -70,6 +71,7 @@ export default function Landing() {
       <TractionSim />
       <BuiltOn />
       <ProtocolsWall />
+      <AgentVitrine />
       <QuickStart />
       <LandingFaq />
       <CloseCta />

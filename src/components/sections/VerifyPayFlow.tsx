@@ -1,5 +1,5 @@
 import { motion, useReducedMotion } from 'framer-motion'
-import { ArrowRight, Bot, ShieldCheck, User } from 'lucide-react'
+import { ArrowRight, Bot, Check, Landmark, ShieldCheck, User } from 'lucide-react'
 import { Link } from 'react-router-dom'
 import { DOCS_URL } from '../../lib/brand'
 import { DisplayHeading, Eyebrow, Lede } from '../ui/display'
@@ -28,10 +28,10 @@ const LOOP = 9
 /** The verdict the run lands on. Two of three pass, which is roughly honest. */
 type Verdict = 'ALLOW' | 'DENY'
 
-const RUNS: { id: string; from: string; to: string; amount: string; verdict: Verdict; reason: string }[] = [
-  { id: 'a', from: 'Research agent', to: 'Data API', amount: '$0.004', verdict: 'ALLOW', reason: 'KYA attested, reputation 720' },
+const RUNS: { id: string; from: string; to: string; amount: string; verdict: Verdict; reason: string; settle?: 'direct' | 'bridge' }[] = [
+  { id: 'a', from: 'Research agent', to: 'Data API', amount: '$0.004', verdict: 'ALLOW', reason: 'KYA attested, reputation 720', settle: 'direct' },
   { id: 'b', from: 'Unknown agent', to: 'Your agent', amount: '$240.00', verdict: 'DENY', reason: 'No on-chain identity' },
-  { id: 'c', from: 'Your agent', to: 'Compute vendor', amount: '$1.20', verdict: 'ALLOW', reason: 'Inside the daily cap' },
+  { id: 'c', from: 'Your agent', to: 'Compute vendor', amount: '$1.20', verdict: 'ALLOW', reason: 'Inside the daily cap', settle: 'bridge' },
 ]
 
 const VERDICT_COLOR: Record<Verdict, string> = { ALLOW: '#059669', DENY: '#dc2626' }
@@ -44,14 +44,14 @@ const VERDICT_COLOR: Record<Verdict, string> = { ALLOW: '#059669', DENY: '#dc262
 function Gate({ run, index, reduced }: { run: (typeof RUNS)[number]; index: number; reduced: boolean }) {
   const start = index * (LOOP / RUNS.length)
   const allow = run.verdict === 'ALLOW'
+  const bridge = run.settle === 'bridge'
   const color = VERDICT_COLOR[run.verdict]
 
-  // Geometry, and the reason for each number. The checkpoint sits at the midpoint. The
-  // request stops short of it rather than on top of it, because a request that overlaps the
-  // gate reads as already through. The verdict is stamped above the gate, and the lane is
-  // tall enough that the stamp and the request never occupy the same band.
+  // Lane geometry. Verification happens at the midpoint; settlement happens at the dock on
+  // the right edge, and a denied request never sees the right half of the lane at all. The
+  // space itself is the claim: money only exists past the check.
   const ARRIVE = '30%'
-  const PASS = '104%'
+  const DOCK = '66%'
 
   return (
     <div className="relative h-[84px] overflow-hidden rounded-2xl border border-border bg-background/60">
@@ -62,10 +62,6 @@ function Gate({ run, index, reduced }: { run: (typeof RUNS)[number]; index: numb
       <div className="absolute left-1/2 top-0 h-full w-px -translate-x-1/2 bg-border" />
       <div className="absolute left-1/2 top-[58%] grid h-9 w-9 -translate-x-1/2 -translate-y-1/2 place-items-center rounded-full border border-border bg-card">
         <ShieldCheck size={15} className="text-foreground/45" />
-        {/* The verdict ring is a separate element whose opacity animates, rather than an
-            animated borderColor. A hardcoded resting colour would have to be one of light or
-            dark and would be invisible in the other; this leaves `border-border` to the token
-            system and only adds colour while the check is resolving. */}
         <motion.span
           className="pointer-events-none absolute inset-[-3px] rounded-full border-2"
           style={{ borderColor: color }}
@@ -79,18 +75,56 @@ function Gate({ run, index, reduced }: { run: (typeof RUNS)[number]; index: numb
         />
       </div>
 
-      {/* The request. */}
+      {/* The Gateway/CCTP arch. Only the cross-chain lane has one, and it lights exactly as
+          the settled payment passes under it. */}
+      {bridge && (
+        <div className="pointer-events-none absolute left-[72%] top-[58%] h-8 w-12 -translate-x-1/2 -translate-y-[92%]">
+          <div className="h-full w-full rounded-t-full border-2 border-b-0 border-border" />
+          <motion.div
+            className="absolute inset-0 rounded-t-full border-2 border-b-0"
+            style={{ borderColor: '#7342e2' }}
+            initial={{ opacity: 0 }}
+            animate={reduced ? { opacity: 0.35 } : { opacity: [0, 0, 0.9, 0] }}
+            transition={
+              reduced
+                ? { duration: 0 }
+                : { duration: LOOP, times: [0, 0.46, 0.54, 0.64], repeat: Infinity, delay: start }
+            }
+          />
+        </div>
+      )}
+
+      {/* The dock, where settled money lands. Every lane has one; on the denied lane it
+          stays dark forever, which is the story told without a word. */}
+      <div className="absolute left-[88%] top-[58%] grid h-7 w-7 -translate-x-1/2 -translate-y-1/2 place-items-center rounded-full border border-border bg-card">
+        <Landmark size={12} className="text-foreground/35" />
+        {allow && (
+          <motion.span
+            className="pointer-events-none absolute inset-[-3px] rounded-full border-2"
+            style={{ borderColor: '#059669' }}
+            initial={{ opacity: 0 }}
+            animate={reduced ? { opacity: 0.5 } : { opacity: [0, 0, 0.6, 0.6, 0] }}
+            transition={
+              reduced
+                ? { duration: 0 }
+                : { duration: LOOP, times: [0, 0.54, 0.6, 0.86, 0.94], repeat: Infinity, delay: start }
+            }
+          />
+        )}
+      </div>
+
+      {/* The request in flight. An allowed one ends at the dock instead of sliding off the
+          edge, because "left the frame" and "settled" are different claims. */}
       <motion.div
         className="absolute top-[58%] -translate-y-1/2"
-        // No `initial={false}` here: paired with a keyframe array it makes framer skip the
-        // animation and pin the element to the LAST frame, which is opacity 0. The lane
-        // rendered permanently empty for exactly that reason.
         initial={{ left: '-22%', opacity: 0 }}
         animate={
           reduced
-            ? { left: allow ? PASS : ARRIVE, opacity: 1 }
+            ? allow
+              ? { left: DOCK, opacity: 0 }
+              : { left: ARRIVE, opacity: 1 }
             : {
-                left: ['-22%', ARRIVE, ARRIVE, allow ? PASS : ARRIVE, allow ? PASS : ARRIVE],
+                left: ['-22%', ARRIVE, ARRIVE, allow ? DOCK : ARRIVE, allow ? DOCK : ARRIVE],
                 opacity: [0, 1, 1, 1, 0],
               }
         }
@@ -99,7 +133,7 @@ function Gate({ run, index, reduced }: { run: (typeof RUNS)[number]; index: numb
             ? { duration: 0 }
             : {
                 duration: LOOP,
-                times: [0, 0.2, 0.36, 0.56, 0.68],
+                times: [0, 0.2, 0.36, 0.52, allow ? 0.58 : 0.68],
                 repeat: Infinity,
                 delay: start,
                 ease: 'easeInOut',
@@ -113,6 +147,28 @@ function Gate({ run, index, reduced }: { run: (typeof RUNS)[number]; index: numb
           {run.amount}
         </span>
       </motion.div>
+
+      {/* The settled chip: the same amount, now as money that arrived. */}
+      {allow && (
+        <motion.div
+          className="absolute top-[58%] -translate-y-1/2"
+          style={{ left: DOCK }}
+          initial={{ opacity: 0, scale: 0.85 }}
+          animate={reduced ? { opacity: 1, scale: 1 } : { opacity: [0, 0, 1, 1, 0], scale: [0.85, 0.85, 1, 1, 1] }}
+          transition={
+            reduced
+              ? { duration: 0 }
+              : { duration: LOOP, times: [0, 0.56, 0.62, 0.88, 0.96], repeat: Infinity, delay: start }
+          }
+        >
+          <span
+            className="flex items-center gap-1 whitespace-nowrap rounded-full px-2.5 py-1 font-mono text-[11px] font-bold text-white shadow-sm"
+            style={{ background: '#059669' }}
+          >
+            <Check size={11} /> {run.amount}
+          </span>
+        </motion.div>
+      )}
 
       {/* The verdict, stamped above the checkpoint once the check resolves. */}
       <motion.span
@@ -132,6 +188,11 @@ function Gate({ run, index, reduced }: { run: (typeof RUNS)[number]; index: numb
       >
         {run.verdict}
       </motion.span>
+
+      {/* What this lane settles in. Static, because it describes the lane, not the moment. */}
+      <span className="absolute bottom-1.5 right-3 font-mono text-[9px] uppercase tracking-wider text-foreground/30">
+        {allow ? (bridge ? 'USDC · cross-chain' : 'USDC · Arc') : 'never funded'}
+      </span>
     </div>
   )
 }
@@ -193,6 +254,10 @@ export default function VerifyPayFlow() {
           <span className="flex items-center gap-2 text-foreground/55">
             <span className="h-2 w-2 rounded-full" style={{ background: VERDICT_COLOR.DENY }} />
             Refused before it moves
+          </span>
+          <span className="flex items-center gap-2 text-foreground/55">
+            <span className="h-2 w-2 rounded-full" style={{ background: '#7342e2' }} />
+            Cross-chain settle via Circle Gateway + CCTP
           </span>
           <Link
             to="/explorer"
