@@ -68,7 +68,15 @@ export default function Hero() {
       </div>
 
       <motion.div custom={3} variants={fadeUp} initial="hidden" animate="visible" className="w-full max-w-[440px] lg:max-w-none">
-        <LiveTicker />
+        {/* On desktop the card sits on top of the hero film, so at rest it yields: invisible
+            until the pointer is over it (or focus lands inside it, for keyboards). The hover
+            class lives on this inner div because framer writes an inline opacity on the
+            wrapper above, which would win over any Tailwind opacity utility placed there.
+            Below lg the card stacks under the copy instead of covering the film, and touch
+            has no hover, so it stays always-visible there. */}
+        <div className="transition-opacity duration-500 lg:opacity-0 lg:hover:opacity-100 lg:focus-within:opacity-100">
+          <LiveTicker />
+        </div>
       </motion.div>
       </div>
     </section>
