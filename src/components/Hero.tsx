@@ -1,3 +1,4 @@
+import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { motion, type Variants } from 'framer-motion'
 import { ArrowRight, Sparkles } from 'lucide-react'
@@ -28,6 +29,20 @@ export default function Hero() {
   const navigate = useNavigate()
   const kbd = isMac ? '⌘K' : 'Ctrl K'
   const openSpotlight = () => window.dispatchEvent(new Event('open-trust-spotlight'))
+
+  /* The console still stays hidden while the page is at rest, so the first
+     screen belongs to the video; the first light scroll (~24px) raises it into
+     place. One-way on purpose: once seen it stays, so scrolling back up does
+     not blink the frame out from under the reader. */
+  const [consoleRevealed, setConsoleRevealed] = useState(false)
+  useEffect(() => {
+    const onScroll = () => {
+      if (window.scrollY > 24) setConsoleRevealed(true)
+    }
+    onScroll()
+    window.addEventListener('scroll', onScroll, { passive: true })
+    return () => window.removeEventListener('scroll', onScroll)
+  }, [])
 
   return (
     <section
@@ -110,12 +125,17 @@ export default function Hero() {
 
       {/* The console itself, horizontal, as the hero's floor. On desktop the header is
           exactly one viewport tall and overflow-hidden, so the fold crops this frame the
-          way dashx crops its dashboard; on mobile it simply flows. */}
+          way dashx crops its dashboard; on mobile it simply flows. It occupies its layout
+          slot from the start (transform/opacity only), so the reveal never shifts the
+          copy above it. */}
       <motion.div
-        custom={4}
-        variants={fadeUp}
-        initial="hidden"
-        animate="visible"
+        initial={false}
+        animate={
+          consoleRevealed
+            ? { opacity: 1, y: 0, scale: 1 }
+            : { opacity: 0, y: 110, scale: 0.98 }
+        }
+        transition={{ duration: 0.9, ease: EASE_OUT_EXPO }}
         className="mt-12 w-full max-w-[1160px]"
       >
         <div className="overflow-hidden rounded-t-[20px] border border-b-0 border-border/70 bg-card shadow-[0_-12px_80px_-20px_rgba(115,66,226,0.35),0_24px_80px_-24px_rgba(16,24,40,0.5)]">
