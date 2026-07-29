@@ -95,6 +95,31 @@ export const SOCIALS = {
   github: 'https://github.com/getA-Identity/A-Identity',
 } as const
 
+/**
+ * "Ask an AI about us" links.
+ *
+ * The question carries the URL on purpose: every one of these assistants can fetch a page,
+ * so handing it the site is the difference between an answer built from our own words and
+ * one improvised from whatever the model half-remembers. It also fits what the footer
+ * already claims a line above, that the page is written to be machine-readable.
+ *
+ * Prefill support is NOT uniform, and the difference is worth knowing before adding one:
+ *   chatgpt / claude / perplexity / grok  fill the box from the URL (grok also auto-sends)
+ *   gemini                               has no native prefill; the parameter is ignored
+ *                                        and the visitor lands on an empty Gemini
+ * Gemini is kept because landing on it is still useful and the link starts working the day
+ * Google adds support, but that is the one that does less than it looks like it does.
+ */
+export const ASK_AI_PROMPT = 'What is A-Identity (https://a-identity.xyz) and what problem does it solve?'
+
+export const ASK_AI_LINKS = [
+  { label: 'ChatGPT', href: `https://chatgpt.com/?prompt=${encodeURIComponent(ASK_AI_PROMPT)}` },
+  { label: 'Claude', href: `https://claude.ai/new?q=${encodeURIComponent(ASK_AI_PROMPT)}` },
+  { label: 'Perplexity', href: `https://www.perplexity.ai/search/new?q=${encodeURIComponent(ASK_AI_PROMPT)}` },
+  { label: 'Gemini', href: `https://gemini.google.com/app?q=${encodeURIComponent(ASK_AI_PROMPT)}` },
+  { label: 'Grok', href: `https://grok.com/?q=${encodeURIComponent(ASK_AI_PROMPT)}` },
+] as const
+
 /** Contact addresses surfaced on the contact page and manifest. */
 export const CONTACT = {
   agents: 'agents@a-identity.xyz',
