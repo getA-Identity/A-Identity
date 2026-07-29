@@ -57,14 +57,33 @@ const VIEWER_SRC = 'https://unpkg.com/@google/model-viewer@4.0.0/dist/model-view
 const MIN_3D_WIDTH = 1024
 
 /**
+ * A fixed three-quarter framing per variant, and deliberately no auto-rotation.
+ *
+ * Spinning meant the owl was showing its back or a flat side profile most of the time, and
+ * on a wide angle it pushed past the frame. Composition on a landing page and on a 404 is
+ * not something to leave to whatever second the visitor arrives in, so the camera is pinned
+ * to an angle that reads well and the model can still be dragged.
+ *
+ * `auto` radius asks model-viewer to frame the whole mesh, which is what makes these fill
+ * their box consistently even though the three meshes have very different proportions.
+ */
+const ORBIT: Record<OwlVariant, string> = {
+  soft: '18deg 76deg auto',
+  geometric: '18deg 76deg auto',
+  // Tighter than the others: the officer is tall and narrow, so `auto` leaves it floating in
+  // a lot of side margin on a page where it is meant to be the largest thing on screen.
+  officer: '12deg 79deg 88%',
+}
+
+/**
  * The owl, 3D where that is affordable and a PNG everywhere else.
  *
  * The static cutout always renders, and the 3D canvas is an upgrade layered over it. That
  * ordering is what makes this safe to drop anywhere: on a phone, on a slow link, or with a
  * CDN that never answers, the component still shows an owl at the right size.
  *
- * Four gates before the mesh loads: the viewport must be at least desktop width, the element
- * must be near the screen, the module must actually arrive, and auto-rotation is dropped for
+ * Three gates before the mesh loads: the viewport must be at least desktop width, the element
+ * must be near the screen, and the module must actually arrive. Drag easing is dropped for
  * anyone who asked for reduced motion.
  */
 export function OwlMascot3D({
@@ -149,13 +168,14 @@ export function OwlMascot3D({
             src: `/mascots/owl-${variant}.glb`,
             alt: ALT[variant],
             'camera-controls': true,
-            'auto-rotate': !reduced,
-            'auto-rotate-delay': 600,
-            'rotation-per-second': '14deg',
-            'camera-orbit': '15deg 78deg 140%',
-            'min-camera-orbit': 'auto 55deg auto',
-            'max-camera-orbit': 'auto 100deg auto',
+            'camera-orbit': ORBIT[variant],
+            // Dragging is allowed, but only within the arc where the owl still looks like
+            // itself. Past these it turns into a featureless back or a view up its chin.
+            'min-camera-orbit': '-55deg 62deg auto',
+            'max-camera-orbit': '55deg 94deg auto',
             'disable-zoom': true,
+            'disable-pan': true,
+            'interpolation-decay': reduced ? 0 : 120,
             'shadow-intensity': '0',
             'environment-image': 'neutral',
             exposure: '1.15',

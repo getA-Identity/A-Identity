@@ -4,6 +4,8 @@ import { motion, AnimatePresence } from 'framer-motion'
 import { Sparkles, Search, X, ArrowUpRight, ArrowRight, ShieldCheck, Wallet, QrCode, Check, Loader2 } from 'lucide-react'
 import { resolveAgent, getReputation, getLeaderboard, type AgentIdentity, type Reputation, type FeedAgent } from '../lib/mcp-client'
 import { useAuth } from '../store/auth'
+import AgentAvatar from './AgentAvatar'
+import { type OwlVerdict } from './OwlMark'
 import { connectWalletConnect, getInjectedWallets, refreshInjectedWallets, walletConnectEnabled, type WalletOption, type Eip1193 } from '../lib/wallets'
 
 /*
@@ -26,21 +28,6 @@ const gradeOf = (s: number) =>
 const shorten = (a?: string | null) => (a && a.length > 14 ? `${a.slice(0, 8)}…${a.slice(-6)}` : a ?? '')
 const isAddr = (s?: string | null) => !!s && /^0x[0-9a-fA-F]{40}$/.test(s.trim())
 
-function hash(s: string): number {
-  let h = 5381
-  for (let i = 0; i < s.length; i++) h = ((h << 5) + h + s.charCodeAt(i)) >>> 0
-  return h
-}
-function Identicon({ seed, size = 40 }: { seed: string; size?: number }) {
-  const h = hash(seed), hue = h % 360, fg = `hsl(${hue} 62% 52%)`
-  const at = (r: number, c: number) => ((h >> (r * 3 + (c < 3 ? c : 4 - c))) & 1) === 1
-  const u = size / 5
-  return (
-    <svg width={size} height={size} className="shrink-0 rounded-lg" style={{ background: `hsl(${hue} 40% 96% / 0.08)` }}>
-      {Array.from({ length: 5 }).map((_, r) => Array.from({ length: 5 }).map((_, c) => (at(r, c) ? <rect key={`${r}-${c}`} x={c * u} y={r * u} width={u} height={u} fill={fg} /> : null)))}
-    </svg>
-  )
-}
 function useCountUp(target: number, duration = 800) {
   const [val, setVal] = useState(0)
   const from = useRef(0)
@@ -72,7 +59,7 @@ function ResultCard({ result, q, onOpen, onClaim }: { result: NonNullable<Result
     <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.3 }} className="flex flex-col gap-4 rounded-xl border border-border bg-background/40 p-4">
       <div className="flex items-center justify-between gap-3">
         <div className="flex min-w-0 items-center gap-3">
-          <Identicon seed={seed} />
+          <AgentAvatar seed={seed} size={44} verdict={v.toLowerCase() as OwlVerdict} />
           <div className="min-w-0">
             <div className="truncate text-sm font-bold text-foreground">{name}</div>
             <div className="truncate font-mono text-[11px] text-foreground/45">
@@ -194,7 +181,7 @@ function OnboardPanel({ onClose, claimAddress }: { onClose: () => void; claimAdd
 
       {claiming && (
         <div className="mb-4 flex items-center gap-3 rounded-xl border border-border bg-background/40 px-3 py-2.5">
-          <Identicon seed={claimAddress!} size={32} />
+          <AgentAvatar seed={claimAddress!} size={32} />
           <div className="min-w-0">
             <div className="text-xs font-semibold text-foreground">Claiming this agent</div>
             <div className="truncate font-mono text-[11px] text-foreground/45">{shorten(claimAddress)}</div>
@@ -368,7 +355,7 @@ export default function TrustSpotlight() {
                             return (
                               <button key={a.id} onClick={() => setQ(a.onchainAgentId || a.id)}
                                 className="flex items-center gap-3 rounded-lg px-2 py-2.5 text-left transition-colors hover:bg-foreground/[0.04]">
-                                <Identicon seed={a.onchainAgentId || a.id} size={30} />
+                                <AgentAvatar seed={a.onchainAgentId || a.id} size={30} verdict={v.toLowerCase() as OwlVerdict} />
                                 <div className="min-w-0 flex-1">
                                   <div className="truncate text-sm font-medium text-foreground">{a.name}</div>
                                   <div className="truncate font-mono text-[11px] text-foreground/40">{a.category}{a.onchainAgentId ? ` · #${a.onchainAgentId}` : ''}</div>

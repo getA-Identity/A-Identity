@@ -9,45 +9,63 @@ import { OwlMascot3D } from '../components/OwlMascot'
  *
  * The catch-all used to redirect to `/`, which quietly told a visitor their link was fine
  * and they had simply arrived home. A dead link deserves to be named, and the two things
- * worth offering here are the same two things the landing offers: go back, or look an
- * agent up.
+ * worth offering here are the same two the landing offers: go back, or look an agent up.
  *
- * The officer owl carries the negative states across the app (this page and the render
- * error boundary), so an unhappy path still looks like the product rather than like a stack
- * trace someone forgot to style.
+ * Centred rather than split left-and-right, because a dead end is not a page with content to
+ * read: it is one object and one decision. The owl is the largest thing on the screen and
+ * everything else is arranged under it.
+ *
+ * The officer variant carries every negative state in the app, here and in the render error
+ * boundary, so a failure still looks like the product.
  */
 export default function NotFound() {
   return (
     <ThemeScope as="main" className="flex min-h-screen flex-col">
       <PageHeader />
 
-      <div className="mx-auto flex w-full max-w-[900px] flex-1 flex-col items-center justify-center gap-10 px-5 py-16 text-center sm:px-8 md:flex-row md:gap-16 md:text-left">
-        <OwlMascot3D
-          variant="officer"
-          className="h-44 w-44 shrink-0 sm:h-56 sm:w-56 lg:h-72 lg:w-72"
+      <div className="relative flex flex-1 items-center justify-center overflow-hidden px-5 py-12 sm:px-8">
+        {/* A single soft pool of light under the owl. It gives the cutout a floor to stand on
+            in dark mode, where a transparent PNG otherwise reads as pasted onto the page. */}
+        <div
+          aria-hidden="true"
+          className="pointer-events-none absolute left-1/2 top-1/2 h-[560px] w-[560px] -translate-x-1/2 -translate-y-[58%] rounded-full opacity-70 blur-3xl"
+          style={{
+            background:
+              'radial-gradient(circle, color-mix(in srgb, var(--ring) 22%, transparent) 0%, transparent 68%)',
+          }}
         />
 
-        <div>
-          <p className="font-mono text-sm font-semibold tracking-[0.2em] text-foreground/40">404</p>
-          <h1 className="mt-3 text-3xl font-bold tracking-tight text-foreground sm:text-4xl">
-            Nothing lives at this address.
+        <div className="relative flex w-full max-w-[560px] flex-col items-center text-center">
+          <OwlMascot3D
+            variant="officer"
+            className="h-[260px] w-[260px] sm:h-[340px] sm:w-[340px] lg:h-[440px] lg:w-[440px]"
+          />
+
+          <p className="mt-2 font-mono text-xs font-semibold uppercase tracking-[0.32em] text-foreground/35">
+            Error 404
+          </p>
+          <h1 className="mt-4 text-[2rem] font-bold leading-[1.08] tracking-tight text-foreground sm:text-[2.75rem]">
+            Nothing lives at
+            <br />
+            this address.
           </h1>
-          <p className="mt-4 max-w-[46ch] text-base leading-relaxed text-foreground/60">
+          <p className="mt-5 max-w-[42ch] text-base leading-relaxed text-foreground/55">
             The link is either out of date or was never real. Neither is your fault, and
             nothing is broken.
           </p>
 
-          <div className="mt-8 flex flex-wrap items-center justify-center gap-3 md:justify-start">
+          <div className="mt-9 flex flex-wrap items-center justify-center gap-3">
             <Link
               to="/"
-              className="inline-flex items-center gap-2 rounded-full bg-accent px-5 py-2.5 text-sm font-semibold text-white transition-opacity hover:opacity-90"
+              className="inline-flex items-center gap-2 rounded-full bg-accent px-6 py-3 text-sm font-semibold text-white transition-transform hover:scale-[1.03]"
+              style={{ boxShadow: '0 10px 34px rgba(115,66,226,0.34)' }}
             >
               <ArrowLeft size={16} />
               Back to home
             </Link>
             <Link
               to="/explorer"
-              className="inline-flex items-center gap-2 rounded-full border border-border px-5 py-2.5 text-sm font-semibold text-foreground/70 transition-colors hover:text-foreground"
+              className="inline-flex items-center gap-2 rounded-full border border-border bg-card/70 px-6 py-3 text-sm font-semibold text-foreground backdrop-blur-md transition-colors hover:border-accent/50"
             >
               <Search size={16} />
               Verify an agent

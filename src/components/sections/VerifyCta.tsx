@@ -35,7 +35,7 @@ export default function VerifyCta() {
       {/* Two columns from lg up: the lookup keeps the reading edge, the owl takes the empty
           right half it was already leaving behind. Below lg the owl drops out entirely
           rather than stacking, because on a phone the input is the only thing that matters. */}
-      <div className="mx-auto grid max-w-[1080px] items-center gap-12 lg:grid-cols-[minmax(0,1fr)_320px]">
+      <div className="mx-auto grid max-w-[1080px] items-center gap-10 lg:grid-cols-[minmax(0,1fr)_420px] lg:gap-8">
         <div>
         <motion.h2 {...reveal} className="text-3xl font-bold leading-[1.1] tracking-tight sm:text-[2.6rem]" style={{ fontFamily: 'var(--font-heading)' }}>
           Trust an agent in one lookup.
@@ -81,7 +81,7 @@ export default function VerifyCta() {
         </div>
 
         <motion.div {...reveal} className="order-first justify-self-center lg:order-none" aria-hidden="true">
-          <OwlMascot3D className="h-[180px] w-[180px] sm:h-[240px] sm:w-[240px] lg:h-[320px] lg:w-[320px]" />
+          <OwlMascot3D className="h-[260px] w-[260px] sm:h-[340px] sm:w-[340px] lg:h-[420px] lg:w-[420px]" />
         </motion.div>
       </div>
     </section>

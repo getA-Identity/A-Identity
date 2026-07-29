@@ -14,7 +14,8 @@ import {
   resolveAgent, getReputation, getLeaderboard,
   type AgentIdentity, type Reputation, type FeedAgent,
 } from '../lib/mcp-client'
-import OwlMark, { type OwlVerdict } from '../components/OwlMark'
+import { type OwlVerdict } from '../components/OwlMark'
+import AgentAvatar from '../components/AgentAvatar'
 
 type Verdict = 'ALLOW' | 'WARN' | 'DENY'
 const VERDICT: Record<Verdict, { color: string; Icon: typeof ShieldCheck }> = {
@@ -38,31 +39,6 @@ function grade(score: number): { label: string; tier: string } {
 }
 const short = (a?: string | null) => (a && a.length > 14 ? `${a.slice(0, 8)}…${a.slice(-6)}` : a ?? '')
 
-function hash(s: string): number {
-  let h = 5381
-  for (let i = 0; i < s.length; i++) h = ((h << 5) + h + s.charCodeAt(i)) >>> 0
-  return h
-}
-
-/** Deterministic blocky identicon (5x5 mirrored) from an address/id — the onchain-explorer touch. */
-function Identicon({ seed, size = 44 }: { seed: string; size?: number }) {
-  const h = hash(seed)
-  const hue = h % 360
-  const fg = `hsl(${hue} 62% 52%)`
-  const cells: boolean[] = []
-  for (let c = 0; c < 3; c++) for (let r = 0; r < 5; r++) cells[r * 3 + c] = ((h >> (r * 3 + c)) & 1) === 1
-  const at = (r: number, c: number) => cells[r * 3 + (c < 3 ? c : 4 - c)]
-  const u = size / 5
-  return (
-    <svg width={size} height={size} className="shrink-0 rounded-lg" style={{ background: `hsl(${hue} 40% 96% / 0.06)` }}>
-      {Array.from({ length: 5 }).map((_, r) =>
-        Array.from({ length: 5 }).map((_, c) =>
-          at(r, c) ? <rect key={`${r}-${c}`} x={c * u} y={r * u} width={u} height={u} fill={fg} /> : null,
-        ),
-      )}
-    </svg>
-  )
-}
 
 function useCountUp(target: number, duration = 900) {
   const [val, setVal] = useState(0)
@@ -90,15 +66,6 @@ function RiskPill({ verdict }: { verdict: Verdict }) {
       <v.Icon size={13} /> {verdict}
     </span>
   )
-}
-
-/**
- * The owl reporting the same verdict as the pill, at avatar scale. The mark takes its eye
- * colour from the decision, which is the mascot doing the product's job instead of sitting
- * next to it. Decorative here: RiskPill already says the word.
- */
-function VerdictOwl({ verdict }: { verdict: Verdict }) {
-  return <OwlMark verdict={verdict.toLowerCase() as OwlVerdict} size={40} />
 }
 
 /** FICO-style spectrum: a red→amber→green gradient bar with a precise pointer at the score. */
@@ -172,7 +139,7 @@ function TrustProfile({ identity, reputation, query }: { identity: AgentIdentity
     <div className="overflow-hidden rounded-xl border border-border bg-card">
       {/* entity header */}
       <div className="flex flex-wrap items-center gap-4 border-b border-border p-5">
-        <Identicon seed={seed} />
+        <AgentAvatar seed={seed} size={44} verdict={verdict.toLowerCase() as OwlVerdict} />
         <div className="min-w-0 flex-1">
           <div className="flex flex-wrap items-center gap-2">
             <h2 className="truncate text-lg font-bold tracking-tight text-foreground">{name}</h2>
@@ -215,10 +182,7 @@ function TrustProfile({ identity, reputation, query }: { identity: AgentIdentity
               <span className="ml-1 text-sm font-semibold" style={{ color: VERDICT[verdict].color }}>{g.label}<span className="text-foreground/35"> · {g.tier}</span></span>
             </div>
           </div>
-          <div className="flex items-center gap-3">
-            <VerdictOwl verdict={verdict} />
-            <RiskPill verdict={verdict} />
-          </div>
+          <RiskPill verdict={verdict} />
         </div>
         <div className="mt-4"><Spectrum score={score} /></div>
         {reputation?.onchainAttestation && (
@@ -459,7 +423,7 @@ export default function Explorer() {
                           <td className="py-3 pl-4 font-mono text-foreground/35">{i + 1}</td>
                           <td className="py-3 pr-3">
                             <div className="flex items-center gap-2.5">
-                              <Identicon seed={a.onchainAgentId || a.id} size={26} />
+                              <AgentAvatar seed={a.onchainAgentId || a.id} size={26} verdict={v.toLowerCase() as OwlVerdict} />
                               <div className="min-w-0">
                                 <div className="truncate font-medium text-foreground">{a.name}</div>
                                 <div className="truncate font-mono text-[11px] text-foreground/40">{a.category}{a.onchainAgentId ? ` · #${a.onchainAgentId}` : ''}</div>
