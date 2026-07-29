@@ -3,6 +3,7 @@ import { ShieldCheck, ShieldAlert, ShieldX, Loader2, Coins } from 'lucide-react'
 import { apiFetch } from '../../lib/api'
 import { Button } from '../ui/button'
 import { authHeaders } from '../../store/auth'
+import { Panel } from '../ui/panel'
 
 type Decision = 'ALLOW' | 'WARN' | 'DENY'
 type Result =
@@ -68,7 +69,7 @@ export default function TrustOraclePanel() {
   const VIcon = v?.icon ?? ShieldCheck
 
   return (
-    <div className="mt-8 rounded-2xl border border-foreground/10 bg-card p-6">
+<Panel className="mt-8">
       <div className="flex items-start gap-3">
         <div className="grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-[#2775CA]/10 text-[#2775CA]">
           <ShieldCheck size={18} />
@@ -146,6 +147,6 @@ export default function TrustOraclePanel() {
           </p>
         </div>
       )}
-    </div>
+    </Panel>
   )
 }

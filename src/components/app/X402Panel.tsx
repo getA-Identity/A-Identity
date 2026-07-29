@@ -6,6 +6,7 @@ import { apiFetch } from '../../lib/api'
 import { Button } from '../ui/button'
 import { getActiveInjectedProvider, getConnectedProvider } from '../../lib/wallets'
 import { ARC_TESTNET } from '../../lib/arc'
+import { Panel } from '../ui/panel'
 
 /** Arc Testnet chain id as the 0x-hex EIP-155 wallets expect. */
 const ARC_CHAIN_HEX = '0x' + ARC_TESTNET.id.toString(16)
@@ -166,7 +167,7 @@ export default function X402Panel() {
           : `Pay ${priceUsdc} USDC & call`
 
   return (
-    <section className="mt-8 rounded-2xl border border-[#7342E2]/20 bg-[#7342E2]/[0.04] p-6">
+<Panel tone="brand" className="mt-8">
       <div className="flex items-center gap-2">
         <div className="grid h-8 w-8 place-items-center rounded-lg bg-[#7342E2] text-white">
           <Zap size={15} />
@@ -231,6 +232,6 @@ export default function X402Panel() {
           </div>
         </div>
       )}
-    </section>
+    </Panel>
   )
 }

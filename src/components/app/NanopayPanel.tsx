@@ -1,8 +1,10 @@
 import { useState } from 'react'
-import { Gauge, CheckCircle2, ExternalLink, Loader2, Zap } from 'lucide-react'
+import { Gauge, ExternalLink, Loader2, Zap } from 'lucide-react'
 import { apiFetch } from '../../lib/api'
 import { Button } from '../ui/button'
 import { authHeaders } from '../../store/auth'
+import { DataRow } from '../ui/data-row'
+import { Panel } from '../ui/panel'
 
 type Result =
   | { executed: false; reason: string; verifyingContract?: string }
@@ -58,7 +60,7 @@ export default function NanopayPanel() {
   const short = (a?: string) => (a ? `${a.slice(0, 6)}...${a.slice(-4)}` : '-')
 
   return (
-    <div className="mt-8 rounded-2xl border border-foreground/10 bg-card p-6">
+<Panel className="mt-8">
       <div className="flex items-start gap-3">
         <div className="grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-[#7342E2]/10 text-[#7342E2]">
           <Gauge size={18} />
@@ -107,14 +109,14 @@ export default function NanopayPanel() {
       {result && result.executed && (
         <div className="mt-4 space-y-2 text-sm">
           {result.deposit && (
-            <Row label={`Topped up Gateway balance +${result.deposit.amountUsd} USDC`} link={result.deposit.explorerUrl} linkText="tx" />
+            <DataRow label={`Topped up Gateway balance +${result.deposit.amountUsd} USDC`} link={result.deposit.explorerUrl} linkText="tx" />
           )}
-          <Row
+          <DataRow
             label="EIP-3009 authorization signed, 0 gas"
             value={`nonce ${short(result.authorization.nonce)}`}
             badge={<span className="rounded bg-[#7342E2]/10 px-1.5 py-0.5 text-[10px] font-semibold text-[#7342E2]">offchain</span>}
           />
-          <Row label={`Paid ${result.amountUsd} USDC → ${short(result.payTo)}`} value={`from Gateway balance`} />
+          <DataRow label={`Paid ${result.amountUsd} USDC → ${short(result.payTo)}`} value={`from Gateway balance`} />
           <div
             className={`flex items-center gap-2 rounded-lg border px-3 py-2 ${
               settled ? 'border-emerald-200 dark:border-emerald-500/25 bg-emerald-50/60 dark:bg-emerald-500/10' : 'border-amber-200 dark:border-amber-500/25 bg-amber-50/60 dark:bg-amber-500/10'
@@ -144,41 +146,7 @@ export default function NanopayPanel() {
           </div>
         </div>
       )}
-    </div>
+    </Panel>
   )
 }
 
-function Row({
-  label,
-  value,
-  link,
-  linkText,
-  badge,
-}: {
-  label: string
-  value?: string
-  link?: string
-  linkText?: string
-  badge?: React.ReactNode
-}) {
-  return (
-    <div className="flex items-center gap-2 rounded-lg border border-foreground/8 bg-background/40 px-3 py-2">
-      <CheckCircle2 size={13} className="shrink-0 text-emerald-500" />
-      <span className="text-foreground/75">{label}</span>
-      {badge}
-      <span className="ml-auto flex items-center gap-2">
-        {value && <span className="text-xs font-semibold text-foreground/50">{value}</span>}
-        {link && (
-          <a
-            href={link}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="inline-flex items-center gap-0.5 text-[11px] font-semibold text-accent hover:underline"
-          >
-            {linkText ?? 'link'} <ExternalLink size={9} />
-          </a>
-        )}
-      </span>
-    </div>
-  )
-}

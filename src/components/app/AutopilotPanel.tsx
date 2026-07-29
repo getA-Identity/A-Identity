@@ -3,6 +3,7 @@ import { Bot, CheckCircle2, Loader2, Hand, Coins } from 'lucide-react'
 import { apiFetch } from '../../lib/api'
 import { Button } from '../ui/button'
 import { authHeaders } from '../../store/auth'
+import { Panel } from '../ui/panel'
 
 type Payment = { n: number; amountUsd: number; cumulativeUsd: number; ok: boolean; transaction?: string; reason?: string }
 type Result =
@@ -100,7 +101,7 @@ export default function AutopilotPanel() {
   const budgetPct = executed && executed.budgetUsd > 0 ? Math.min(100, (spent / executed.budgetUsd) * 100) : 0
 
   return (
-    <div className="mt-8 rounded-2xl border-2 border-accent/30 bg-accent/[0.03] p-6">
+<Panel tone="accent" className="mt-8">
       <div className="flex items-start gap-3">
         <div className="grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-accent/15 text-accent">
           <Bot size={18} />
@@ -228,7 +229,7 @@ export default function AutopilotPanel() {
           )}
         </div>
       )}
-    </div>
+    </Panel>
   )
 }
 

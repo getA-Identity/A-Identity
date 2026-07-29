@@ -3,6 +3,7 @@ import { Layers, CheckCircle2, ExternalLink, Loader2, ArrowRight } from 'lucide-
 import { apiFetch } from '../../lib/api'
 import { authHeaders } from '../../store/auth'
 import { Button } from '../ui/button'
+import { Panel } from '../ui/panel'
 
 type Result =
   | { executed: false; reason: string; reverted?: boolean }
@@ -44,7 +45,7 @@ export default function BatchPanel() {
   }
 
   return (
-    <div className="mt-8 rounded-2xl border border-foreground/10 bg-card p-6">
+<Panel className="mt-8">
       <div className="flex items-start gap-3">
         <div className="grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-[#2775CA]/10 text-[#2775CA]">
           <Layers size={18} />
@@ -97,6 +98,6 @@ export default function BatchPanel() {
           </a>
         </div>
       )}
-    </div>
+    </Panel>
   )
 }

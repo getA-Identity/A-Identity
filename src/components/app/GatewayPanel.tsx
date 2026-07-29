@@ -1,8 +1,10 @@
 import { useState } from 'react'
-import { Globe, CheckCircle2, ExternalLink, Loader2, ArrowRight, Zap } from 'lucide-react'
+import { Globe, ExternalLink, Loader2, ArrowRight, Zap } from 'lucide-react'
 import { apiFetch } from '../../lib/api'
 import { Button } from '../ui/button'
 import { authHeaders } from '../../store/auth'
+import { DataRow } from '../ui/data-row'
+import { Panel } from '../ui/panel'
 
 type Result =
   | { executed: false; reason: string; gatewayWallet: string }
@@ -53,7 +55,7 @@ export default function GatewayPanel() {
   const minted = result?.executed && result.baseMint?.minted
 
   return (
-    <div className="mt-8 rounded-2xl border border-foreground/10 bg-card p-6">
+<Panel className="mt-8">
       <div className="flex items-start gap-3">
         <div className="grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-[#1AAB7A]/10 text-[#1AAB7A]">
           <Globe size={18} />
@@ -97,9 +99,9 @@ export default function GatewayPanel() {
 
       {result && result.executed && (
         <div className="mt-4 space-y-2 text-sm">
-          <Row label="Unified balance (Arc)" value={`${result.unifiedBalanceUsd.toFixed(4)} USDC`} />
+          <DataRow label="Unified balance (Arc)" value={`${result.unifiedBalanceUsd.toFixed(4)} USDC`} />
           {result.deposit && (
-            <Row
+            <DataRow
               label={`Deposited ${result.deposit.amountUsd} USDC to Gateway`}
               link={result.deposit.explorerUrl}
               linkText="tx"
@@ -110,7 +112,7 @@ export default function GatewayPanel() {
               Transfer failed: {result.transfer.error}
             </div>
           ) : (
-            <Row
+            <DataRow
               label={`Forwarded ${result.amountUsd} USDC → ${result.transfer.destination}`}
               value={result.transfer.forwardingFee ? `fee ~$${result.transfer.forwardingFee}` : undefined}
               badge={<span className="font-mono text-[10px] text-foreground/40">{result.transfer.transferId?.slice(0, 8)}...</span>}
@@ -145,41 +147,7 @@ export default function GatewayPanel() {
           )}
         </div>
       )}
-    </div>
+    </Panel>
   )
 }
 
-function Row({
-  label,
-  value,
-  link,
-  linkText,
-  badge,
-}: {
-  label: string
-  value?: string
-  link?: string
-  linkText?: string
-  badge?: React.ReactNode
-}) {
-  return (
-    <div className="flex items-center gap-2 rounded-lg border border-foreground/8 bg-background/40 px-3 py-2">
-      <CheckCircle2 size={13} className="shrink-0 text-emerald-500" />
-      <span className="text-foreground/75">{label}</span>
-      {badge}
-      <span className="ml-auto flex items-center gap-2">
-        {value && <span className="text-xs font-semibold text-foreground/50">{value}</span>}
-        {link && (
-          <a
-            href={link}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="inline-flex items-center gap-0.5 text-[11px] font-semibold text-accent hover:underline"
-          >
-            {linkText ?? 'link'} <ExternalLink size={9} />
-          </a>
-        )}
-      </span>
-    </div>
-  )
-}

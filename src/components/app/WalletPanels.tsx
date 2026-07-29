@@ -3,17 +3,12 @@ import { Check, ExternalLink, TrendingUp, Wallet } from 'lucide-react'
 import { authHeaders } from '../../store/auth'
 import { apiFetch, readJson, explainError } from '../../lib/api'
 import { Skeleton } from '../ui/skeleton'
+import { Stat, StatBadge } from '../ui/stat'
 
 const short = (a: string) => (a.length > 14 ? `${a.slice(0, 8)}...${a.slice(-4)}` : a)
 
-export function Stat({ label, value }: { label: string; value: string }) {
-  return (
-    <div className="rounded-2xl border border-foreground/[0.06] bg-card px-4 py-3">
-      <div className="text-[11px] font-medium text-foreground/45">{label}</div>
-      <div className="mt-0.5 text-base font-semibold tracking-tight text-foreground tabular-nums">{value}</div>
-    </div>
-  )
-}
+// Re-exported so the panels that already imported Stat from here keep working.
+export { Stat }
 
 type CircleWalletState = {
   circleWalletId: string | null
@@ -181,28 +176,7 @@ type TreasuryState = {
 
 const CAP_PRESETS = [0, 5, 25, 100]
 
-function BalanceTile({ ticker, value, yielding }: { ticker: string; value: string; yielding?: boolean }) {
-  return (
-    <div className="rounded-2xl border border-foreground/[0.06] bg-card px-4 py-3 shadow-[0_1px_2px_rgba(16,24,40,0.04)]">
-      <div className="flex items-center gap-1.5">
-        <span className="text-xs font-semibold text-foreground/55">{ticker}</span>
-        {yielding && (
-          <span className="rounded-full bg-emerald-100 dark:bg-emerald-500/15 px-1.5 py-[1px] text-[9px] font-semibold text-emerald-700 dark:text-emerald-300">Yielding</span>
-        )}
-      </div>
-      <div className="mt-1 text-lg font-semibold tracking-tight text-foreground tabular-nums">{value}</div>
-    </div>
-  )
-}
 
-function MetricTile({ label, value }: { label: string; value: string }) {
-  return (
-    <div className="rounded-2xl border border-foreground/[0.06] bg-card px-4 py-3">
-      <div className="text-[11px] font-medium text-foreground/45">{label}</div>
-      <div className="mt-0.5 text-base font-semibold tracking-tight text-foreground tabular-nums">{value}</div>
-    </div>
-  )
-}
 
 /**
  * Treasury: put the agent's idle stablecoin to work in USYC, Circle's yield-bearing token.
@@ -381,9 +355,9 @@ export function TreasuryPanel({ agentId }: { agentId: string }) {
           <div>
             <div className="mb-2 text-[11px] font-medium text-foreground/45">Wallet Balances</div>
             <div className="grid grid-cols-3 gap-2.5">
-              <BalanceTile ticker="USDC" value={money(b?.usdcUsd)} />
-              <BalanceTile ticker="EURC" value={money(b?.eurcUsd)} />
-              <BalanceTile ticker="USYC" value={money(b?.usycUsd)} yielding />
+              <Stat raised label="USDC" value={money(b?.usdcUsd)} />
+              <Stat raised label="EURC" value={money(b?.eurcUsd)} />
+              <Stat raised label="USYC" value={money(b?.usycUsd)} badge={<StatBadge>Yielding</StatBadge>} />
             </div>
           </div>
 
@@ -455,10 +429,10 @@ export function TreasuryPanel({ agentId }: { agentId: string }) {
           </div>
 
           <div className="grid grid-cols-2 gap-2.5 sm:grid-cols-4">
-            <MetricTile label="Idle Now" value={money(b?.idleUsd)} />
-            <MetricTile label="Deployable" value={money(deployable)} />
-            <MetricTile label="Est. Monthly" value={money(proj?.monthlyUsd)} />
-            <MetricTile label="Est. Yearly" value={money(proj?.yearlyUsd)} />
+            <Stat label="Idle Now" value={money(b?.idleUsd)} />
+            <Stat label="Deployable" value={money(deployable)} />
+            <Stat label="Est. Monthly" value={money(proj?.monthlyUsd)} />
+            <Stat label="Est. Yearly" value={money(proj?.yearlyUsd)} />
           </div>
 
           {deployable <= 0 && (

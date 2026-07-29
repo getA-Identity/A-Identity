@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { ArrowLeftRight, CheckCircle2, ExternalLink, Loader2, Flame } from 'lucide-react'
 import { apiFetch } from '../../lib/api'
 import { authHeaders } from '../../store/auth'
+import { Panel } from '../ui/panel'
 
 type Step = { name: string; state: string; txHash?: string; explorerUrl?: string }
 type Result =
@@ -46,7 +47,7 @@ export default function CctpPanel() {
   const minted = result?.executed && result.steps.some((s) => s.name.toLowerCase().includes('mint') && s.state === 'success')
 
   return (
-    <div className="mt-8 rounded-2xl border border-foreground/10 bg-card p-6">
+<Panel className="mt-8">
       <div className="flex items-start gap-3">
         <div className="grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-[#2775CA]/10 text-[#2775CA]">
           <ArrowLeftRight size={18} />
@@ -137,6 +138,6 @@ export default function CctpPanel() {
           )}
         </div>
       )}
-    </div>
+    </Panel>
   )
 }

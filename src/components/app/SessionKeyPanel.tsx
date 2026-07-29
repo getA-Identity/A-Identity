@@ -3,6 +3,7 @@ import { KeyRound, CheckCircle2, XCircle, ExternalLink, Loader2, Cpu } from 'luc
 import { apiFetch } from '../../lib/api'
 import { authHeaders } from '../../store/auth'
 import { Button } from '../ui/button'
+import { Panel } from '../ui/panel'
 
 type Attempt = { label: string; to: string; amountUsd: number; settled: boolean; txHash?: string; explorerUrl?: string; rejectedReason?: string }
 type Result =
@@ -54,7 +55,7 @@ export default function SessionKeyPanel() {
   }
 
   return (
-    <div className="mt-8 rounded-2xl border border-foreground/10 bg-card p-6">
+<Panel className="mt-8">
       <div className="flex items-start gap-3">
         <div className="grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-[#7342E2]/10 text-[#7342E2]">
           <KeyRound size={18} />
@@ -140,6 +141,6 @@ export default function SessionKeyPanel() {
           </p>
         </div>
       )}
-    </div>
+    </Panel>
   )
 }
