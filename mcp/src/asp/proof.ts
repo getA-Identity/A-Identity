@@ -86,7 +86,7 @@ export const PROOF = {
     standards: ['ERC-8004', 'x402'],
     reputationBasis: 'real on-chain settlements + verified identity credit + tenure + real job outcomes (behavior) - see /methodology',
     riskBasis: 'ALLOW / WARN / DENY composed from identity + KYA + reputation + tenure + Sybil - see /methodology',
-    repo: 'https://github.com/srabyanamrod/A-Identity',
+    repo: 'https://github.com/getA-Identity/A-Identity',
   },
   howToVerify: [
     'Call any tool endpoint (POST /tools/*) - it returns HTTP 402 with an x402 challenge on X Layer mainnet (eip155:196).',

@@ -10,7 +10,7 @@ credentials.
 ## Install
 
 ```
-npx skills add a-identity/skills
+npx skills add getA-Identity/a-identity-skills
 ```
 
 Then point it at the client you already use (see **Callers** below). Out of the box it

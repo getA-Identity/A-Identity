@@ -38,11 +38,11 @@
   "homepage": "https://a-identity.xyz",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/srabyanamrod/A-Identity.git",
+    "url": "git+https://github.com/getA-Identity/A-Identity.git",
     "directory": "sdk"
   },
   "bugs": {
-    "url": "https://github.com/srabyanamrod/A-Identity/issues"
+    "url": "https://github.com/getA-Identity/A-Identity/issues"
   },
   "author": "A-Identity",
   "license": "MIT",

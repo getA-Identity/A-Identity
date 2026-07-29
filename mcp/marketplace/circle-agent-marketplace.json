@@ -9,7 +9,7 @@
   "provider": {
     "name": "A-Identity",
     "url": "https://a-identity.xyz",
-    "repo": "https://github.com/srabyanamrod/A-Identity",
+    "repo": "https://github.com/getA-Identity/A-Identity",
     "identity": {
       "standard": "ERC-8004",
       "showcaseAgentId": "849980",
