@@ -33,6 +33,19 @@ const VERDICTS: { v: OwlVerdict; label: string }[] = [
   { v: 'deny', label: 'Deny' },
 ]
 
+const ART = [
+  { file: 'art-seal', name: 'The seal', idea: 'identity', alt: 'An embossed medallion with concentric rings' },
+  { file: 'art-vault', name: 'The vault', idea: 'spend limits', alt: 'A ceramic vault door with a glowing dial' },
+  { file: 'art-lens', name: 'The lens', idea: 'verification', alt: 'An aperture closing around a glowing iris' },
+  { file: 'art-gate', name: 'The gate', idea: 'x402', alt: 'A toll gate with a glowing orb passing through' },
+  { file: 'art-gateway', name: 'The gateway', idea: 'CCTP / Gateway', alt: 'Two arcs bridging with a coin mid-flight' },
+  { file: 'art-network', name: 'The network', idea: 'traction', alt: 'A ring of nodes orbiting a core' },
+  { file: 'art-guardrail', name: 'The guardrail', idea: 'bounded authority', alt: 'A sweeping curved rail with a light line' },
+  { file: 'art-knot', name: 'The knot', idea: 'escrow', alt: 'Two ropes tied in a square knot' },
+  { file: 'art-grid', name: 'The grid', idea: 'multichain', alt: 'An isometric tile grid with one lit tile' },
+  { file: 'art-market', name: 'The market', idea: 'marketplace', alt: 'Three small kiosks, one glowing' },
+]
+
 const MASCOTS: { variant: OwlVariant; name: string; role: string }[] = [
   { variant: 'soft', name: 'Soft', role: 'The default face. Landing, hero surfaces.' },
   { variant: 'geometric', name: 'Geometric', role: 'Positive outcomes: registration, KYA proven.' },
@@ -193,6 +206,29 @@ export default function BrandKit() {
               </article>
             ))}
           </div>
+          {/* Poses: the same soft owl in scene-specific attitudes, for heroes and cards. */}
+          <div className="mt-8 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+            {[
+              { file: 'owl-card', name: 'Perched on the card', note: 'For payment and wallet surfaces.' },
+              { file: 'owl-wing', name: 'Presenting', note: 'For introductions: points at whatever sits beside it.' },
+              { file: 'owl-tpose', name: 'T-pose (source)', note: 'Rigging source. Meshy pose estimation rejects the proportions, kept for future attempts.' },
+            ].map((m) => (
+              <figure key={m.file} className="overflow-hidden rounded-2xl border border-border bg-card">
+                {m.file !== 'owl-tpose' ? (
+                  <img src={`/mascots/${m.file}.png`} alt={m.name} loading="lazy" className="aspect-square w-full object-contain p-4" />
+                ) : (
+                  <div className="flex aspect-square w-full items-center justify-center p-4 text-xs text-foreground/35">GLB only</div>
+                )}
+                <figcaption className="border-t border-border px-4 py-3">
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="text-sm font-semibold text-foreground">{m.name}</span>
+                    <AssetLink href={`/mascots/${m.file}.glb`} label="GLB" />
+                  </div>
+                  <p className="mt-1 text-xs leading-relaxed text-foreground/50">{m.note}</p>
+                </figcaption>
+              </figure>
+            ))}
+          </div>
           <p className="mt-4 text-xs text-foreground/40">
             Full design review, silhouette tests included, lives on{' '}
             <a href="/mascot" className="font-semibold text-accent hover:underline">
@@ -200,6 +236,60 @@ export default function BrandKit() {
             </a>
             .
           </p>
+        </section>
+
+        {/* -------------------------------------------------------- illustrations --- */}
+        <section className="mt-20">
+          <DisplayHeading size="sub" as="h2">
+            Section art
+          </DisplayHeading>
+          <p className="mt-2 max-w-[62ch] text-sm leading-relaxed text-foreground/55">
+            Ten abstract pieces, one per product idea, all on the same navy stage with the
+            same cream-and-accent vocabulary so any two can sit on one page without arguing.
+            Generated in-palette; the navy background makes them read correctly in both
+            themes.
+          </p>
+          <div className="mt-6 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+            {ART.map((a) => (
+              <figure key={a.file} className="overflow-hidden rounded-2xl border border-border bg-card">
+                <img
+                  src={`/art/${a.file}.webp`}
+                  alt={a.alt}
+                  loading="lazy"
+                  decoding="async"
+                  className="aspect-[4/3] w-full object-cover"
+                />
+                <figcaption className="flex items-baseline justify-between gap-2 px-4 py-3">
+                  <span className="text-sm font-semibold text-foreground">{a.name}</span>
+                  <span className="font-mono text-[11px] text-foreground/40">{a.idea}</span>
+                </figcaption>
+              </figure>
+            ))}
+          </div>
+        </section>
+
+        {/* ------------------------------------------------------ verdict variants --- */}
+        <section className="mt-20">
+          <DisplayHeading size="sub" as="h2">
+            Verdict owls (experimental)
+          </DisplayHeading>
+          <p className="mt-2 max-w-[62ch] text-sm leading-relaxed text-foreground/55">
+            The soft owl retextured with allow, warn and deny eyes. The eye colours landed
+            exactly; the body picked up a feathered speckle the flat vinyl set does not have,
+            so these stay in the kit as expressive variants and are not wired into any
+            surface yet. An honest kit records the misses too.
+          </p>
+          <div className="mt-6 grid gap-4 sm:grid-cols-3">
+            {(['allow', 'warn', 'deny'] as const).map((v) => (
+              <figure key={v} className="overflow-hidden rounded-2xl border border-border bg-card">
+                <img src={`/mascots/owl-soft-${v}.png`} alt={`Owl with ${v} eyes`} loading="lazy" className="aspect-square w-full object-contain p-4" />
+                <figcaption className="flex items-center justify-between px-4 py-3">
+                  <span className="text-sm font-semibold uppercase tracking-wide" style={{ color: v === 'allow' ? '#059669' : v === 'warn' ? '#d97706' : '#dc2626' }}>{v}</span>
+                  <AssetLink href={`/mascots/owl-soft-${v}.glb`} label="GLB" />
+                </figcaption>
+              </figure>
+            ))}
+          </div>
         </section>
 
         {/* -------------------------------------------------------------- motion --- */}

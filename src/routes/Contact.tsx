@@ -3,7 +3,7 @@ import { motion } from 'framer-motion'
 import { Bot, Check, Handshake, Mail, Megaphone } from 'lucide-react'
 import PageHeader from '../components/PageHeader'
 import SiteFooter from '../components/sections/SiteFooter'
-import { CONTACT, DOCS_URL, EASE_OUT_EXPO } from '../lib/brand'
+import { CAL_URL, CONTACT, DOCS_URL, EASE_OUT_EXPO } from '../lib/brand'
 import ThemeScope from '../components/ThemeScope'
 
 const reveal = {
@@ -149,6 +149,34 @@ export default function Contact() {
             ))}
           </motion.div>
         </div>
+
+        {/* Booking. An embedded calendar beats a mailto for anything with a clock attached:
+            the visitor leaves with a time, not with an intention. The iframe keeps the page
+            self-contained; the link below it is the fallback for blockers. */}
+        <motion.div {...reveal} className="mt-12">
+          <h2 className="text-2xl font-bold tracking-tight text-foreground" style={{ fontFamily: 'var(--font-heading)' }}>
+            Or just book a call.
+          </h2>
+          <p className="mt-2 max-w-xl text-sm leading-relaxed text-foreground/55">
+            Fifteen minutes with the founders. Pick a slot that suits you.
+          </p>
+          <div className="mt-6 overflow-hidden rounded-3xl border border-border bg-card">
+            <iframe
+              src={`${CAL_URL}?embed=true&theme=auto`}
+              title="Book a call with A-Identity"
+              loading="lazy"
+              className="h-[680px] w-full"
+            />
+          </div>
+          <a
+            href={CAL_URL}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="mt-3 inline-block text-sm font-semibold text-accent hover:underline"
+          >
+            Calendar not loading? Open it directly.
+          </a>
+        </motion.div>
       </main>
 
       <SiteFooter />

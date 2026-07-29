@@ -3,6 +3,9 @@ import Hero from '../components/Hero'
 import VerifyCta from '../components/sections/VerifyCta'
 import Shift from '../components/sections/Shift'
 import VerifyPayFlow from '../components/sections/VerifyPayFlow'
+import ConsoleShowcase from '../components/sections/ConsoleShowcase'
+import QuickStart from '../components/sections/QuickStart'
+import ScrollTopButton from '../components/ScrollTopButton'
 import WhatYouGet from '../components/sections/WhatYouGet'
 import LiveProof from '../components/sections/LiveProof'
 import BuiltOn from '../components/sections/BuiltOn'
@@ -60,13 +63,16 @@ export default function Landing() {
       <Shift />
       <VerifyPayFlow />
       <WhatYouGet />
+      <ConsoleShowcase />
       <LiveProof />
       <BuiltOn />
+      <QuickStart />
       <LandingFaq />
       <CloseCta />
       <SiteFooter />
 
-      {/* ⌘K / floating magic trust lookup, available across the landing */}
+      {/* Bottom-right stack: back-to-top above the ⌘K trust lookup FAB */}
+      <ScrollTopButton />
       <TrustSpotlight />
     </div>
   )

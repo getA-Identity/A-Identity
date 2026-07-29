@@ -16,6 +16,12 @@ export const APP_TAGLINE = 'The passport and wallet for the agentic economy'
  * var is unset. Prod (Vercel) sets VITE_DOCS_URL to the same value.
  */
 const DOCS_ENV = (import.meta.env.VITE_DOCS_URL as string | undefined)?.trim()
+/**
+ * The founders' booking page. One constant because it appears in the hero, the closing CTA
+ * and the contact page, and a booking link that differs between them is an embarrassment.
+ */
+export const CAL_URL = 'https://cal.com/meric-cintosun-knbum1/secret'
+
 export const DOCS_URL = DOCS_ENV ? DOCS_ENV.replace(/\/$/, '') : 'https://a-identity.mintlify.site'
 
 /** The three open protocols A-Identity connects, each with its own color. */

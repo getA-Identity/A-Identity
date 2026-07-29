@@ -3,6 +3,7 @@ import { ArrowUpRight } from 'lucide-react'
 import PageHeader from '../components/PageHeader'
 import ThemeScope from '../components/ThemeScope'
 import SiteFooter from '../components/sections/SiteFooter'
+import ScrollTopButton from '../components/ScrollTopButton'
 import { Button } from '../components/ui/button'
 import { GROUPS, FAQ_ITEMS } from '../lib/faq'
 import { usePageMeta } from '../lib/head'
@@ -157,6 +158,7 @@ export default function Faq() {
         </div>
       </div>
 
+      <ScrollTopButton />
       <SiteFooter />
     </ThemeScope>
   )

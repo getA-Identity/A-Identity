@@ -1,7 +1,8 @@
 import { useNavigate } from 'react-router-dom'
 import { motion, type Variants } from 'framer-motion'
-import { ArrowRight, Sparkles } from 'lucide-react'
-import { EASE_OUT_EXPO } from '../lib/brand'
+import { ArrowRight, ArrowUpRight, Sparkles } from 'lucide-react'
+import { CAL_URL, EASE_OUT_EXPO } from '../lib/brand'
+import LiveTicker from './sections/LiveTicker'
 
 /*
  * Clean, left-weighted hero (sits over the video's scrimmed side). The interactive live
@@ -24,6 +25,10 @@ export default function Hero() {
 
   return (
     <section className="relative z-10 mx-auto w-full max-w-[1280px] px-5 sm:px-8" style={{ paddingTop: 'clamp(56px, 10vw, 104px)' }}>
+      {/* Split hero: the claim on the left, the proof on the right. The ticker column is the
+          BlockRun lesson: a landing that opens with its own verifiable numbers does not need
+          to spend copy convincing anyone. Below lg it stacks under the CTAs. */}
+      <div className="grid items-center gap-12 lg:grid-cols-[minmax(0,1fr)_400px]">
       <div className="max-w-[640px]">
         <motion.h1 custom={0} variants={fadeUp} initial="hidden" animate="visible"
           style={{ fontFamily: 'var(--font-heading)', fontSize: 'clamp(2.4rem, 6.5vw, 4.4rem)', lineHeight: 1.0, letterSpacing: '-0.035em', color: 'var(--foreground)' }}>
@@ -50,7 +55,21 @@ export default function Hero() {
             Verify an agent
             <kbd className="ml-1 hidden rounded border border-border px-1.5 py-0.5 font-mono text-[10px] font-semibold text-foreground/55 sm:inline">{kbd}</kbd>
           </motion.button>
+
+          <a
+            href={CAL_URL}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="inline-flex items-center gap-1.5 px-2 py-3 text-sm font-semibold text-foreground/60 transition-colors hover:text-foreground"
+          >
+            Book a call <ArrowUpRight size={15} />
+          </a>
         </motion.div>
+      </div>
+
+      <motion.div custom={3} variants={fadeUp} initial="hidden" animate="visible" className="w-full max-w-[440px] lg:max-w-none">
+        <LiveTicker />
+      </motion.div>
       </div>
     </section>
   )
