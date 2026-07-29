@@ -73,6 +73,34 @@ jobs:
           echo "could not reach the self-check after 6 attempts"
           exit 1
 
+      - name: The paid ASP is still charging, not silently serving for free
+        run: |
+          set -euo pipefail
+          # asp/payment.ts enables x402 only when PAY_TO_ADDRESS + the three OKX keys are
+          # all present, and otherwise falls back to `mode: 'free'` and SERVES. That is
+          # convenient in development and fail-open in production: if the env were ever
+          # cleared on a redeploy, every paid tool would start answering for free and
+          # nothing would say so. So the 402 challenge itself is monitored.
+          ASP="https://a-identity-asp.onrender.com"
+          for i in 1 2 3 4 5 6; do
+            code=$(curl -s -o /tmp/paid.json -w "%{http_code}" --max-time 45 \
+              -X POST -H 'Content-Type: application/json' \
+              -d '{"agentId":"aid/1"}' "$ASP/tools/verify_agent" || echo 000)
+            echo "attempt $i: HTTP $code"
+            # 402 is the correct answer: the paywall is live and issued a challenge.
+            if [ "$code" = "402" ]; then echo "x402 challenge served, paid mode is on"; exit 0; fi
+            # 200 means a PAID tool answered without payment. Not a cold start, a real
+            # regression, so it must not be retried away.
+            if [ "$code" = "200" ]; then
+              echo "a paid tool answered without payment: x402 is disabled or misconfigured"
+              cat /tmp/paid.json || true
+              exit 1
+            fi
+            sleep 20
+          done
+          echo "could not reach the ASP after 6 attempts"
+          exit 1
+
       - name: Traction endpoint answers and excludes CI from its headlines
         run: |
           set -euo pipefail
