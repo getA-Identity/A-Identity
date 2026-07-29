@@ -2,6 +2,7 @@ import Navbar from '../components/Navbar'
 import Hero from '../components/Hero'
 import VerifyCta from '../components/sections/VerifyCta'
 import Shift from '../components/sections/Shift'
+import VerifyPayFlow from '../components/sections/VerifyPayFlow'
 import WhatYouGet from '../components/sections/WhatYouGet'
 import LiveProof from '../components/sections/LiveProof'
 import BuiltOn from '../components/sections/BuiltOn'
@@ -57,6 +58,7 @@ export default function Landing() {
           cases, developer docs, blog) still lives off the landing. */}
       <VerifyCta />
       <Shift />
+      <VerifyPayFlow />
       <WhatYouGet />
       <LiveProof />
       <BuiltOn />
