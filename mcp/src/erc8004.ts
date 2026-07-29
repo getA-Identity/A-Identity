@@ -93,12 +93,33 @@ export class RpcIdentityProvider implements IdentityProvider {
     const tokenMatch = q.match(/^#?(\d+)$/)
     if (tokenMatch) {
       const tokenId = BigInt(tokenMatch[1])
-      // Try all chains, return first match
-      for (const client of this.clients) {
-        const result = await this._readToken(createPublicClient, http, client, tokenId)
-        if (result) return result
+      // A bare token id is CHAIN-AMBIGUOUS: token #6271 on Arc and token #6271 on X Layer are
+      // unrelated agents. This used to stop at the first chain in registry order, which meant
+      // typing our own OKX agent number returned an unrelated Arc token's owner, presented as
+      // the answer. Probe every chain and DISCLOSE a collision instead of silently picking one.
+      const probed = await Promise.all(
+        this.clients.map(async (client) => ({
+          client,
+          hit: await this._readToken(createPublicClient, http, client, tokenId),
+        })),
+      )
+      const matches = probed.filter((p) => p.hit)
+      if (!matches.length) return null
+      const primary = matches[0].hit as AgentIdentity
+      if (matches.length === 1) return primary
+      return {
+        ...primary,
+        ambiguity: {
+          note:
+            `Token id ${tokenMatch[1]} exists on ${matches.length} chains, so this number alone does not identify one agent. ` +
+            'Use the full id to be certain.',
+          matches: matches.map((m) => ({
+            chain: m.client.chainName,
+            caip: `${m.client.caipPrefix}:8004/${tokenMatch[1]}`,
+            owner: String(m.hit?.owner ?? ''),
+          })),
+        },
       }
-      return null
     }
 
     // Owner address: resolve first token owned

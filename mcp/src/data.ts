@@ -24,6 +24,15 @@ export type AgentIdentity = {
    *  token id could not be enumerated (e.g. X Layer's public RPC caps getLogs), so
    *  tokenId/tokenURI fields are unset. Resolve by token id for the full identity. */
   partial?: boolean
+  /**
+   * Set when a BARE token id matched on more than one chain. The same number is a different
+   * agent on every registry, so a bare id does not identify one: returning whichever chain
+   * happens to be listed first would present a stranger's agent as the answer.
+   */
+  ambiguity?: {
+    note: string
+    matches: { chain: string; caip: string; owner: string }[]
+  }
 }
 
 export type AgentActionHistory = {

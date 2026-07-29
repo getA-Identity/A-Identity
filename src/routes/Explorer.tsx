@@ -2,7 +2,7 @@ import { useEffect, useRef, useState, type FormEvent } from 'react'
 import TractionPanel from '../components/TractionPanel'
 import { Link, useSearchParams } from 'react-router-dom'
 import { motion, AnimatePresence } from 'framer-motion'
-import { Search, Loader2, Copy, Check, ArrowUpRight, ShieldCheck, ShieldAlert, ShieldX, BadgeCheck } from 'lucide-react'
+import { Search, Loader2, Copy, Check, ArrowUpRight, ShieldCheck, ShieldAlert, ShieldX, BadgeCheck, AlertTriangle } from 'lucide-react'
 import Logo from '../components/Logo'
 import ThemeToggle from '../components/ThemeToggle'
 import SiteFooter from '../components/sections/SiteFooter'
@@ -375,6 +375,38 @@ export default function Explorer() {
             <AnimatePresence mode="wait">
               {!error && (identity || reputation) && pipelineDone && (
                 <motion.div key={shown} initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} transition={{ duration: 0.3, ease: [0.16, 1, 0.3, 1] }} className="mt-4">
+                  {/* A bare token id that exists on more than one chain does not identify
+                      one agent, so say that instead of letting the first chain's result read
+                      as the answer. Each candidate is a one-click, unambiguous lookup. */}
+                  {identity?.ambiguity && (
+                    <div className="mb-4 rounded-xl border border-amber-500/30 bg-amber-500/[0.06] p-4">
+                      <div className="flex items-start gap-2">
+                        <AlertTriangle size={15} className="mt-0.5 shrink-0 text-amber-500" />
+                        <div className="min-w-0">
+                          <div className="text-sm font-semibold text-foreground">This number is not unique</div>
+                          <div className="mt-0.5 text-[12px] text-foreground/60">{identity.ambiguity.note}</div>
+                          <div className="mt-3 space-y-1.5">
+                            {identity.ambiguity.matches.map((m) => (
+                              <button
+                                key={m.caip}
+                                type="button"
+                                onClick={() => { setQuery(m.caip); void lookup(m.caip, true) }}
+                                className="flex w-full items-center gap-2 rounded-lg border border-border bg-card px-3 py-2 text-left transition-colors hover:bg-foreground/[0.03]"
+                              >
+                                <span className="rounded bg-foreground/[0.06] px-1.5 py-0.5 font-mono text-[10px] uppercase tracking-wide text-foreground/60">
+                                  {m.chain}
+                                </span>
+                                <span className="truncate font-mono text-[11px] text-foreground/70">{m.caip}</span>
+                                <span className="ml-auto shrink-0 font-mono text-[11px] text-foreground/40">
+                                  {m.owner.slice(0, 8)}…{m.owner.slice(-4)}
+                                </span>
+                              </button>
+                            ))}
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  )}
                   <TrustProfile identity={identity} reputation={reputation} query={shown} />
                 </motion.div>
               )}

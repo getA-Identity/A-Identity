@@ -57,6 +57,9 @@ export type AgentIdentity = {
   /** Existence proven (owner holds an identity token) but the token id could not be
    *  enumerated on this chain's public RPC; tokenId is 0 and metadata is unset. */
   partial?: boolean
+  /** Set when a BARE token id matched on more than one chain, so the number alone does not
+   *  identify one agent. The UI must say so rather than present one of them as the answer. */
+  ambiguity?: { note: string; matches: { chain: string; caip: string; owner: string }[] }
 }
 
 export type Behavioral = {
