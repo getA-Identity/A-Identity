@@ -65,9 +65,12 @@ export default function Brand() {
         <motion.section {...reveal} className="mt-14">
           <h2 className="text-lg font-bold tracking-tight text-ink">Logo</h2>
           <div className="mt-4 grid gap-4 sm:grid-cols-2">
+            {/* Both swatches pass an explicit fill. These two panels demonstrate the mark on
+                a FIXED light and a FIXED dark background, so unlike every other placement
+                they must not inherit the surrounding text color. */}
             <div className="flex items-center justify-center rounded-2xl border border-ink/10 bg-white p-12">
               <div className="flex items-center gap-3">
-                <Logo size={40} />
+                <Logo size={40} fill="#192837" />
                 <span className="text-2xl font-bold tracking-tight text-ink">{APP_NAME}</span>
               </div>
             </div>

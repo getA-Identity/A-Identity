@@ -5,12 +5,13 @@
  * A-Identity watermark keep every cover on-brand while the accent makes it distinct.
  */
 
+/* The mark, used below as a faint watermark. Imported rather than pasted: this file used to
+ * carry its own copy of the path geometry, which is a third place for it to drift out of
+ * step with the Logo component and the favicon. */
+import { MARK_PATH } from './Logo'
+
 const INK_DARK = '#141f2b'
 const INK_LITE = '#1d2e3e'
-
-/** The A-Identity mark, on a 256 grid, used as a faint watermark. */
-const MARK_PATH =
-  'M 64 128 L 64.5 128 L 32 95 L 0 64 L 0 0 L 64 0 L 128 64 L 128 64.5 L 161 32 L 192 0 L 256 0 L 256 64 L 192 128 L 128 128 L 128 192 L 96 223 L 63.5 256 L 0 256 L 0 192 Z M 256 192 L 224 223 L 191.5 256 L 128 256 L 128 192 L 192 128 L 256 128 Z'
 
 type BlogCoverProps = {
   accent: string
