@@ -1,5 +1,23 @@
-import { useEffect, useState } from 'react'
-import { Menu } from 'lucide-react'
+import { useEffect, useState, type ComponentType } from 'react'
+import {
+  ArrowUpRight,
+  Activity,
+  BookOpen,
+  FileJson,
+  Fingerprint,
+  Gauge,
+  HelpCircle,
+  Mail,
+  Menu,
+  Newspaper,
+  Package,
+  Palette,
+  Plug,
+  Rocket,
+  ScrollText,
+  Terminal,
+  Zap,
+} from 'lucide-react'
 import { Link } from 'react-router-dom'
 import Logo from './Logo'
 import AuthButtons from './AuthButtons'
@@ -11,9 +29,30 @@ import {
   NavigationMenuItem,
   NavigationMenuLink,
   NavigationMenuList,
+  NavigationMenuPanel,
   NavigationMenuTrigger,
 } from './ui/navigation-menu'
 import { APP_NAME, NAV_MENU } from '../lib/brand'
+
+/** Leading icon per dropdown item (base.org's icon-tile rows). Keyed by label so
+    the data in brand.ts stays plain and framework-free. */
+const ITEM_ICONS: Record<string, ComponentType<{ size?: number | string }>> = {
+  'ERC-8004 Identity': Fingerprint,
+  'x402 Payments': Zap,
+  MCP: Plug,
+  Reputation: Gauge,
+  Quickstart: Rocket,
+  SDK: Package,
+  CLI: Terminal,
+  'Agent Manifest': FileJson,
+  Docs: BookOpen,
+  'Live Proof': Activity,
+  Manifesto: ScrollText,
+  Blog: Newspaper,
+  FAQ: HelpCircle,
+  Brand: Palette,
+  Contact: Mail,
+}
 
 /**
  * Top navigation bar. Two scroll states, morphed by a single 400ms ease-out
@@ -71,7 +110,7 @@ export default function Navbar() {
                 <NavigationMenuItem>
                   <NavigationMenuLink
                     href="/explorer"
-                    className="inline-block rounded-xl px-4 py-2 text-sm font-medium text-foreground/70 transition-colors duration-200 hover:text-accent"
+                    className="inline-block rounded-lg px-3.5 py-2 text-sm font-medium text-foreground/70 transition-colors duration-200 hover:bg-foreground/[0.06] hover:text-foreground"
                   >
                     Explorer
                   </NavigationMenuLink>
@@ -81,32 +120,50 @@ export default function Navbar() {
                   <NavigationMenuItem key={group.label}>
                     <NavigationMenuTrigger>{group.label}</NavigationMenuTrigger>
                     <NavigationMenuContent>
-                      <ul
-                        className={
-                          group.items.length > 4
-                            ? 'grid w-[520px] grid-cols-2 gap-1'
-                            : 'grid w-[300px] gap-1'
-                        }
-                      >
-                        {group.items.map((item) => (
-                          <li key={item.label}>
-                            <NavigationMenuLink
-                              href={item.href}
-                              {...(item.external
-                                ? { target: '_blank', rel: 'noopener noreferrer' }
-                                : {})}
-                              className="block rounded-xl px-4 py-3 transition-colors duration-150 hover:bg-accent/[0.07] focus-visible:bg-accent/[0.07]"
-                            >
-                              <span className="block text-sm font-semibold text-foreground">
-                                {item.label}
-                              </span>
-                              <span className="mt-0.5 block text-xs leading-relaxed text-foreground/50">
-                                {item.desc}
-                              </span>
-                            </NavigationMenuLink>
-                          </li>
-                        ))}
-                      </ul>
+                      <NavigationMenuPanel>
+                        <ul
+                          className={
+                            group.items.length > 4
+                              ? 'grid w-[540px] grid-cols-2 gap-0.5'
+                              : 'grid w-[320px] gap-0.5'
+                          }
+                        >
+                          {group.items.map((item) => {
+                            const Icon = ITEM_ICONS[item.label]
+                            return (
+                              <li key={item.label}>
+                                <NavigationMenuLink
+                                  href={item.href}
+                                  {...(item.external
+                                    ? { target: '_blank', rel: 'noopener noreferrer' }
+                                    : {})}
+                                  className="group/link flex items-start gap-3 rounded-xl px-3 py-2.5 transition-colors duration-150 hover:bg-foreground/[0.05] focus-visible:bg-foreground/[0.05]"
+                                >
+                                  {Icon && (
+                                    <span className="mt-0.5 grid h-9 w-9 shrink-0 place-items-center rounded-lg border border-border/70 bg-background/50 text-foreground/70 transition-colors duration-150 group-hover/link:border-accent/40 group-hover/link:text-accent">
+                                      <Icon size={17} />
+                                    </span>
+                                  )}
+                                  <span className="min-w-0">
+                                    <span className="flex items-center gap-1 text-sm font-semibold text-foreground">
+                                      {item.label}
+                                      {item.external && (
+                                        <ArrowUpRight
+                                          size={12}
+                                          className="text-foreground/40 transition-transform duration-150 group-hover/link:-translate-y-px group-hover/link:translate-x-px"
+                                        />
+                                      )}
+                                    </span>
+                                    <span className="mt-0.5 block text-xs leading-relaxed text-foreground/50">
+                                      {item.desc}
+                                    </span>
+                                  </span>
+                                </NavigationMenuLink>
+                              </li>
+                            )
+                          })}
+                        </ul>
+                      </NavigationMenuPanel>
                     </NavigationMenuContent>
                   </NavigationMenuItem>
                 ))}
@@ -116,7 +173,7 @@ export default function Navbar() {
                 <NavigationMenuItem>
                   <Link
                     to="/architecture"
-                    className="group grid rounded-xl px-4 py-2 text-sm font-medium"
+                    className="group grid rounded-lg px-3.5 py-2 text-sm font-medium transition-colors duration-200 hover:bg-foreground/[0.06]"
                   >
                     <span className="col-start-1 row-start-1 text-foreground/70 transition-opacity duration-200 group-hover:opacity-0">
                       Architecture

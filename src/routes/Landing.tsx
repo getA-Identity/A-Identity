@@ -16,6 +16,7 @@ import LandingFaq from '../components/sections/LandingFaq'
 import CloseCta from '../components/sections/CloseCta'
 import SiteFooter from '../components/sections/SiteFooter'
 import TrustSpotlight from '../components/TrustSpotlight'
+import MouseDither from '../components/MouseDither'
 import { BACKGROUND_VIDEO } from '../lib/brand'
 import { useTheme } from '../components/ThemeProvider'
 
@@ -82,6 +83,9 @@ export default function Landing() {
       {/* Bottom-right stack: back-to-top above the ⌘K trust lookup FAB */}
       <ScrollTopButton />
       <TrustSpotlight />
+
+      {/* The accent pixel cluster that trails the pointer across the whole landing. */}
+      <MouseDither />
     </div>
   )
 }
