@@ -3,7 +3,17 @@ import { Link } from 'react-router-dom'
 import Logo from '../Logo'
 import DiscordIcon from '../DiscordIcon'
 import XIcon from '../XIcon'
+import { ChatGptMark, ClaudeMark, PerplexityMark, GeminiMark, GrokMark } from '../AiMarks'
 import { APP_NAME, ASK_AI_LINKS, FOOTER_COLUMNS, SOCIALS, type FooterLink } from '../../lib/brand'
+
+/** Marks keyed to match ASK_AI_LINKS, so the link list stays the single source of order. */
+const AI_MARKS = {
+  chatgpt: ChatGptMark,
+  claude: ClaudeMark,
+  perplexity: PerplexityMark,
+  gemini: GeminiMark,
+  grok: GrokMark,
+} as const
 
 /**
  * The social row, in reading order: broadest reach first, then community, then code.
@@ -113,17 +123,22 @@ export default function SiteFooter() {
           <span className="font-mono text-xs tracking-tight text-accent">
             Ask AI about {APP_NAME}
           </span>
-          {ASK_AI_LINKS.map(({ label, href }) => (
-            <a
-              key={label}
-              href={href}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="rounded-full border border-border px-4 py-1.5 text-sm text-foreground/70 transition-colors hover:border-accent/40 hover:bg-accent/[0.07] hover:text-accent"
-            >
-              {label}
-            </a>
-          ))}
+          {ASK_AI_LINKS.map(({ key, label, href }) => {
+            const Mark = AI_MARKS[key]
+            return (
+              <a
+                key={key}
+                href={href}
+                target="_blank"
+                rel="noopener noreferrer"
+                aria-label={`Ask ${label} about ${APP_NAME}`}
+                title={`Ask ${label} about ${APP_NAME}`}
+                className="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-border text-foreground/55 transition-colors hover:border-accent/40 hover:bg-accent/[0.07] hover:text-accent"
+              >
+                <Mark size={17} />
+              </a>
+            )
+          })}
         </div>
 
         <div className="mt-8 border-t border-border pt-6 text-xs text-foreground/40">

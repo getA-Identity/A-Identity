@@ -112,12 +112,16 @@ export const SOCIALS = {
  */
 export const ASK_AI_PROMPT = 'What is A-Identity (https://a-identity.xyz) and what problem does it solve?'
 
+const q = encodeURIComponent(ASK_AI_PROMPT)
+
+/** `label` is not rendered: the footer shows the brand mark and uses this for the
+ *  accessible name and the hover tooltip, so the row stays readable to a screen reader. */
 export const ASK_AI_LINKS = [
-  { label: 'ChatGPT', href: `https://chatgpt.com/?prompt=${encodeURIComponent(ASK_AI_PROMPT)}` },
-  { label: 'Claude', href: `https://claude.ai/new?q=${encodeURIComponent(ASK_AI_PROMPT)}` },
-  { label: 'Perplexity', href: `https://www.perplexity.ai/search/new?q=${encodeURIComponent(ASK_AI_PROMPT)}` },
-  { label: 'Gemini', href: `https://gemini.google.com/app?q=${encodeURIComponent(ASK_AI_PROMPT)}` },
-  { label: 'Grok', href: `https://grok.com/?q=${encodeURIComponent(ASK_AI_PROMPT)}` },
+  { key: 'chatgpt', label: 'ChatGPT', href: `https://chatgpt.com/?prompt=${q}` },
+  { key: 'claude', label: 'Claude', href: `https://claude.ai/new?q=${q}` },
+  { key: 'perplexity', label: 'Perplexity', href: `https://www.perplexity.ai/search/new?q=${q}` },
+  { key: 'gemini', label: 'Gemini', href: `https://gemini.google.com/app?q=${q}` },
+  { key: 'grok', label: 'Grok', href: `https://grok.com/?q=${q}` },
 ] as const
 
 /** Contact addresses surfaced on the contact page and manifest. */
