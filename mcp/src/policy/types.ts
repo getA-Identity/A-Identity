@@ -30,6 +30,8 @@ export type SurfaceStatus = 'live' | 'planned'
 export type ActionKind =
   /** Place an order (equity or option). */
   | 'order'
+  /** A card purchase at a merchant. */
+  | 'purchase'
   /** Cancel an existing order. Cancelling a protective leg RAISES risk. */
   | 'cancel'
   /** Create or edit a standing/recurring order: one approval, many future executions. */
@@ -65,6 +67,13 @@ export type NormalizedIntent = {
   settingValue?: boolean | string | number
   /** For `recurring`: how often it will fire, for the standing-authority reason text. */
   cadence?: string
+  /** Spend surface: the merchant name as the venue reports it. */
+  merchant?: string
+  /** Spend surface: ISO 18245 merchant category code, when the venue supplies one. */
+  mcc?: string
+  /** Spend surface: which card is being used. Agent cards are per-agent virtual cards, so
+   *  this is what makes a per-card ceiling meaningful. */
+  cardId?: string
   /** Free-form label used only in reason strings. Never used in a decision. */
   label?: string
 }
@@ -92,6 +101,11 @@ export type AccountSnapshot = {
   /** Margin currently drawn. Any positive value under a no-margin policy is a violation. */
   marginUsedUsd?: number
   accountType?: 'individual' | 'margin' | 'cash' | 'ira' | 'roth_ira' | 'sep_ira' | 'hsa'
+  /** Spend surface: USD already spent today per card id. Absent = a per-card ceiling
+   *  cannot be checked, so a rule that needs it fails closed. */
+  cardSpentTodayUsd?: Record<string, number>
+  /** Spend surface: USD already spent today per normalized category. */
+  categorySpentTodayUsd?: Record<string, number>
 }
 
 /** A UTC clock window, inclusive of start, exclusive of end. "HH:MM" 24h. */
@@ -117,12 +131,33 @@ export type TradePolicy = {
   maxConcentrationPct: number
 }
 
-/** Spend-surface policy block (Phase 4 fills this in; declared now so the shape is fixed). */
+/**
+ * Spend-surface policy block.
+ *
+ * Deliberately does NOT restate what the venue already gives you. Robinhood's agent card
+ * already carries one spending limit, a monthly cap and an all-or-nothing approval toggle,
+ * so duplicating those would ship a worse copy of a control that already exists. What it
+ * does not have, and what this adds, is WHERE and on WHAT the money may go: merchants,
+ * categories, per-card ceilings, and a refusal that arrives with a reason and a record.
+ */
 export type SpendPolicy = {
+  /** Empty = no restriction. Non-empty = ONLY these merchants. Matched case-insensitively
+   *  as a substring, because venues report merchant names inconsistently. */
   merchantAllow: string[]
+  /** Always wins over the allow list. */
   merchantDeny: string[]
-  /** Per-category USD ceilings, keyed by a normalized category or MCC. */
+  /** Per-category USD ceiling for the day, keyed by a normalized category. */
   categoryLimits: Record<string, number>
+  /** Per-card USD ceiling for the day, keyed by card id. A per-agent virtual card is the
+   *  unit the venue actually hands out, so this is the ceiling that matches reality. */
+  cardCaps: Record<string, number>
+  /**
+   * Categories an agent card should not quietly reach at all. Defaults to cash advance,
+   * quasi-cash (which covers crypto purchases) and gambling: on a card an agent drives,
+   * those turn a spending mistake into an unrecoverable one. Emptying the list is the
+   * user's call, and it should be a deliberate act rather than an oversight.
+   */
+  categoryDeny: string[]
 }
 
 /**

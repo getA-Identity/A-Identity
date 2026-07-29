@@ -39,6 +39,11 @@ export type AuditIntent = {
   settingKey?: string
   cadence?: string
   label?: string
+  /** Spend surface. Without these the receipt for a card purchase would not say which
+   *  merchant or which card, which is most of what makes it a receipt. */
+  merchant?: string
+  mcc?: string
+  cardId?: string
 }
 
 export type AuditEntry = {
@@ -128,6 +133,12 @@ export function buildAuditEntry(input: {
   if (cadence) recorded.cadence = cadence
   const label = trunc(intent.label)
   if (label) recorded.label = label
+  const merchant = trunc(intent.merchant, 60)
+  if (merchant) recorded.merchant = merchant
+  const mcc = trunc(intent.mcc, 8)
+  if (mcc) recorded.mcc = mcc
+  const cardId = trunc(intent.cardId, 60)
+  if (cardId) recorded.cardId = cardId
 
   return {
     id: input.id,

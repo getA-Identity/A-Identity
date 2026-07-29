@@ -41,10 +41,12 @@ export const SURFACES: SurfaceDescriptor[] = [
   {
     id: 'spend',
     name: 'Card spending',
-    status: 'planned',
+    status: 'live',
     policyBlock: 'spend',
-    kinds: ['order', 'transfer'],
-    note: 'Phase 4. Schema fixed, rules not written, so it cannot ALLOW yet.',
+    // A card purchase, a subscription, and money moved off the card. No `settings` kind:
+    // card configuration lives with the venue, not with us.
+    kinds: ['purchase', 'recurring', 'transfer'],
+    note: 'Adds merchant, category and per-card control on top of the venue\'s own single limit and approval toggle.',
   },
   {
     id: 'bet',

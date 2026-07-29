@@ -152,6 +152,15 @@ test('a symbol-bearing action with no symbol still fails closed under an allow l
   }
 })
 
+test('an allow list of only junk restricts everything, it does not switch off', () => {
+  // "I set an allow list" must never silently become "there is no allow list". The
+  // sanitizer strips junk before storage, but the engine must not depend on that having run.
+  const p = policy({ trade: { ...policy().trade, allowSymbols: ['   ', ''] } })
+  const d = decide({ policy: p })
+  assert.equal(d.verdict, 'DENY')
+  assert.ok(d.codes.includes('SYMBOL_NOT_ALLOWED'))
+})
+
 test('the deny list wins over the allow list', () => {
   const p = policy({ trade: { ...policy().trade, allowSymbols: ['AAPL'], denySymbols: ['AAPL'] } })
   assert.ok(decide({ policy: p }).codes.includes('SYMBOL_DENIED'))
@@ -324,11 +333,11 @@ test('an unknown surface is refused', () => {
 })
 
 test('a planned surface can never authorize an action', () => {
-  for (const s of ['spend', 'bet']) {
-    const d = decide({ surface: s })
-    assert.equal(d.verdict, 'DENY', s)
-    assert.ok(d.codes.includes('SURFACE_NOT_LIVE'), s)
-  }
+  // `bet` is the only planned surface now that spend is live. Phase 7 is schema only by
+  // design, so this must keep holding for it.
+  const d = decide({ surface: 'bet' })
+  assert.equal(d.verdict, 'DENY')
+  assert.ok(d.codes.includes('SURFACE_NOT_LIVE'))
 })
 
 test('a transfer cannot be smuggled through the bet surface', () => {
@@ -336,9 +345,10 @@ test('a transfer cannot be smuggled through the bet surface', () => {
   assert.equal(getSurface('bet')?.kinds.includes('transfer'), false)
 })
 
-test('trade is the only live surface today', () => {
-  assert.deepEqual(liveSurfaces().map((s) => s.id), ['trade'])
+test('trade and spend are live, bet is not', () => {
+  assert.deepEqual(liveSurfaces().map((s) => s.id), ['trade', 'spend'])
   assert.equal(SURFACES.length, 3)
+  assert.equal(getSurface('bet')?.status, 'planned')
 })
 
 // ── the sanitizer (Phase 1.1 clamps) ─────────────────────────────────────────────

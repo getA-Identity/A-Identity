@@ -16,6 +16,7 @@ import { useAuth, authHeaders } from '../../store/auth'
 import { Stat } from '../../components/app/WalletPanels'
 import TradingPermissions from '../../components/app/TradingPermissions'
 import AuditTrail from '../../components/app/AuditTrail'
+import SpendPermissions from '../../components/app/SpendPermissions'
 
 import { BACKEND_UNREACHABLE } from '../../lib/mcpBase'
 import { apiFetch, readJson, explainError } from '../../lib/api'
@@ -468,30 +469,7 @@ export default function Permissions() {
           {tab === 'trading' && <TradingPermissions agentId={agentId} />}
           {tab === 'audit' && <AuditTrail agentId={agentId} />}
 
-          {/* The spend surface is `planned` in the backend registry, so every check on it
-              returns SURFACE_NOT_LIVE. Rendering an editable form here would let someone
-              set merchant limits that nothing enforces, which is worse than showing
-              nothing. So this states where it stands instead. */}
-          {tab === 'spend' && (
-            <section className="mt-4 rounded-2xl border border-foreground/10 bg-card p-6">
-              <div className="mb-2 flex items-center gap-2">
-                <CreditCard size={16} className="text-foreground/40" />
-                <h3 className="font-semibold text-foreground">Spend permissions</h3>
-                <span className="rounded-md bg-foreground/[0.06] px-2 py-0.5 text-[11px] font-semibold text-foreground/60">
-                  not live yet
-                </span>
-              </div>
-              <p className="text-sm text-foreground/60">
-                The card surface is not wired end to end. The engine knows about it, but every check against it is
-                refused rather than allowed, so there is nothing to configure here yet and we are not going to show a
-                form that would not be enforced.
-              </p>
-              <p className="mt-3 text-xs text-foreground/45">
-                When it lands it will carry per-card caps, merchant allow and deny lists, per-category limits and the
-                same human-approval line, checked by the same engine your trading limits already use.
-              </p>
-            </section>
-          )}
+          {tab === 'spend' && <SpendPermissions agentId={agentId} />}
         </>
       )}
 

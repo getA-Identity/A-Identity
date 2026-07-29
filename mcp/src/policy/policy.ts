@@ -8,6 +8,7 @@
  * has not finished configuring is still safe.
  */
 import type { ActionPolicy, SpendPolicy, TradePolicy } from './types.js'
+import { HIGH_RISK_CATEGORIES } from './mcc.js'
 
 /** Same ceiling `sanitizePermissions` uses, so the two surfaces cannot disagree. */
 const MAX_USD = 1_000_000
@@ -32,6 +33,10 @@ export const DEFAULT_SPEND_POLICY: SpendPolicy = {
   merchantAllow: [],
   merchantDeny: [],
   categoryLimits: {},
+  cardCaps: {},
+  // Cash advance, quasi-cash and gambling are denied out of the box. Emptying the list is
+  // the user's call; arriving at it by default is not.
+  categoryDeny: [...HIGH_RISK_CATEGORIES],
 }
 
 export function defaultActionPolicy(policyId: string, updatedAt: string): ActionPolicy {
@@ -44,6 +49,7 @@ export function defaultActionPolicy(policyId: string, updatedAt: string): Action
     dailyCapUsd: 500,
     humanApprovalAboveUsd: 100,
     trade: { ...DEFAULT_TRADE_POLICY },
+    spend: { ...DEFAULT_SPEND_POLICY },
   }
 }
 
@@ -117,6 +123,53 @@ export function sanitizeActionPolicy(partial: unknown): Partial<Omit<ActionPolic
     const trade = sanitizeTradePolicy(p.trade)
     if (Object.keys(trade).length) out.trade = { ...DEFAULT_TRADE_POLICY, ...trade }
   }
+  if (p.spend !== undefined) {
+    const spend = sanitizeSpendPolicy(p.spend)
+    if (Object.keys(spend).length) out.spend = { ...DEFAULT_SPEND_POLICY, ...spend }
+  }
+  return out
+}
+
+const MAX_MERCHANT_LEN = 60
+const MAX_CATEGORY_LEN = 40
+
+const stringList = (v: unknown, maxLen: number): string[] | undefined =>
+  Array.isArray(v)
+    ? v
+        .filter((x): x is string => typeof x === 'string')
+        .map((x) => x.trim())
+        .filter((x) => x.length > 0 && x.length <= maxLen)
+        .slice(0, MAX_LIST)
+    : undefined
+
+/** A {key: usd} map, with both halves bounded. */
+const usdMap = (v: unknown, keyMaxLen: number): Record<string, number> | undefined => {
+  if (typeof v !== 'object' || v === null || Array.isArray(v)) return undefined
+  const out: Record<string, number> = {}
+  for (const [k, raw] of Object.entries(v as Record<string, unknown>).slice(0, MAX_LIST)) {
+    const key = k.trim().toLowerCase()
+    const amount = clampUsd(raw)
+    if (key && key.length <= keyMaxLen && amount !== undefined) out[key] = amount
+  }
+  return out
+}
+
+/** Sanitize a client-supplied spend-policy patch. */
+export function sanitizeSpendPolicy(partial: unknown): Partial<SpendPolicy> {
+  const out: Partial<SpendPolicy> = {}
+  if (typeof partial !== 'object' || partial === null) return out
+  const p = partial as Record<string, unknown>
+
+  const allow = stringList(p.merchantAllow, MAX_MERCHANT_LEN)
+  if (allow) out.merchantAllow = allow
+  const deny = stringList(p.merchantDeny, MAX_MERCHANT_LEN)
+  if (deny) out.merchantDeny = deny
+  const catDeny = stringList(p.categoryDeny, MAX_CATEGORY_LEN)
+  if (catDeny) out.categoryDeny = catDeny.map((c) => c.toLowerCase().replace(/\s+/g, '_'))
+  const catLimits = usdMap(p.categoryLimits, MAX_CATEGORY_LEN)
+  if (catLimits) out.categoryLimits = catLimits
+  const cardCaps = usdMap(p.cardCaps, MAX_CATEGORY_LEN)
+  if (cardCaps) out.cardCaps = cardCaps
   return out
 }
 
@@ -152,6 +205,7 @@ export function resolveActionPolicy(
       // Merge the block explicitly: a stored policy missing `trade` entirely must still
       // come back with the safe defaults rather than an undefined block.
       trade: { ...base.trade, ...(clean.trade ?? {}), allowMargin: false },
+      spend: { ...base.spend, ...(clean.spend ?? {}) } as ActionPolicy['spend'],
     },
     configured: true,
   }
@@ -168,6 +222,7 @@ export function applyPolicyPatch(current: ActionPolicy, patch: unknown, updatedA
     ...clean,
     // Margin stays off no matter what arrives, belt and braces with the literal type.
     trade: { ...current.trade, ...(clean.trade ?? {}), allowMargin: false },
+    spend: { ...(current.spend ?? DEFAULT_SPEND_POLICY), ...(clean.spend ?? {}) },
     version: current.version + 1,
     updatedAt,
   }

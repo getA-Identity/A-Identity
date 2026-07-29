@@ -35,6 +35,9 @@ type AuditEntry = {
     settingKey?: string
     cadence?: string
     label?: string
+    merchant?: string
+    mcc?: string
+    cardId?: string
   }
   verdict: Verdict
   reasons: string[]
@@ -83,10 +86,14 @@ function describe(i: AuditEntry['intent']): string {
       return [i.side, i.symbol, amount && `for ${amount}`, i.assetClass === 'option' && '(option)']
         .filter(Boolean)
         .join(' ')
+    case 'purchase':
+      // The merchant is the whole point of a card receipt, so it leads.
+      return [amount ?? 'a purchase', i.merchant && `at ${i.merchant}`].filter(Boolean).join(' ')
     case 'cancel':
       return `cancel ${i.symbol ?? 'an order'}`
     case 'recurring':
-      return `recurring ${i.side ?? 'buy'} ${i.symbol ?? ''}${amount ? ` for ${amount}` : ''}${i.cadence ? `, ${i.cadence}` : ''}`
+      // Covers both a DCA buy and a card subscription, so it reads from whichever it has.
+      return `recurring ${[i.side, i.symbol, i.merchant && `at ${i.merchant}`].filter(Boolean).join(' ') || 'charge'}${amount ? ` for ${amount}` : ''}${i.cadence ? `, ${i.cadence}` : ''}`
     case 'settings':
       return `change setting "${i.settingKey ?? 'unknown'}"`
     case 'transfer':
@@ -298,7 +305,8 @@ export default function AuditTrail({ agentId }: { agentId: string }) {
                       <td className="px-5 py-3">
                         <div className="font-medium text-foreground">{describe(a.intent)}</div>
                         <div className="mt-0.5 text-[11px] text-foreground/40">
-                          {a.intent.kind} · policy v{a.policyVersion}
+                          {[a.intent.kind, a.intent.cardId, a.surface].filter(Boolean).join(' · ')} · policy v
+                          {a.policyVersion}
                         </div>
                       </td>
                       <td className="whitespace-nowrap px-5 py-3">

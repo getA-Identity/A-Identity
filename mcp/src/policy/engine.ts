@@ -27,6 +27,7 @@ import type {
   UtcWindow,
 } from './types.js'
 import { getSurface } from './registry.js'
+import { isKnownMcc, resolveCategory } from './mcc.js'
 
 /** Everything a rule may look at. */
 type RuleContext = {
@@ -113,8 +114,19 @@ const symbolDenied: Rule = ({ policy, intent }) => {
 
 const symbolNotAllowed: Rule = ({ policy, intent }) => {
   if (!SYMBOL_KINDS.has(intent.kind)) return null
+  // "The user set no allow list" and "the user set one that happens to match nothing" are
+  // different. Only the first means no restriction. Deciding that from the FILTERED list
+  // would let a junk-only list silently switch the restriction off, and for a guardrail
+  // under-blocking is the dangerous direction.
+  if (!policy.trade.allowSymbols.length) return null
   const allow = policy.trade.allowSymbols.map(norm).filter(Boolean)
-  if (!allow.length) return null // empty allowlist means "no allowlist restriction"
+  if (!allow.length) {
+    return {
+      verdict: 'DENY',
+      code: 'SYMBOL_NOT_ALLOWED',
+      reason: 'Your allow list has no usable symbols in it, so nothing can match it.',
+    }
+  }
   const sym = norm(intent.symbol)
   // A symbol-bearing action with no symbol, under an allow list, still fails closed: there
   // the missing ticker is exactly what the rule needed to see.
@@ -233,6 +245,125 @@ const overConcentrated: Rule = ({ policy, intent, snapshot }) => {
     : null
 }
 
+// ── spend-surface rules ──────────────────────────────────────────────────────────
+//
+// These add what the venue does not already give you. Robinhood's agent card carries a
+// spending limit, a monthly cap and an approval toggle of its own, so the value here is
+// WHERE and on WHAT the money goes, plus a refusal that arrives with a reason.
+
+/** Merchant matching is substring and case-insensitive: venues report names inconsistently
+ *  ("AMZN Mktp US*2H4" is Amazon), so exact matching would quietly fail to match. */
+const matchesMerchant = (patterns: string[], merchant: string): boolean => {
+  const m = merchant.trim().toLowerCase()
+  if (!m) return false
+  return patterns.some((p) => {
+    const pat = p.trim().toLowerCase()
+    return pat.length > 0 && m.includes(pat)
+  })
+}
+
+const spendPolicyOf = (policy: ActionPolicy) => policy.spend
+
+const merchantDenied: Rule = ({ policy, intent }) => {
+  const sp = spendPolicyOf(policy)
+  if (!sp || !intent.merchant) return null
+  return matchesMerchant(sp.merchantDeny, intent.merchant)
+    ? { verdict: 'DENY', code: 'MERCHANT_DENIED', reason: `"${intent.merchant}" matches your merchant deny list.` }
+    : null
+}
+
+const merchantNotAllowed: Rule = ({ policy, intent }) => {
+  const sp = spendPolicyOf(policy)
+  if (!sp) return null
+  // Same distinction as the symbol allow list: an empty list is no restriction, a list of
+  // junk is a restriction nothing satisfies.
+  if (!sp.merchantAllow.length) return null
+  const allow = sp.merchantAllow.filter((s) => s.trim())
+  if (!allow.length) {
+    return {
+      verdict: 'DENY',
+      code: 'MERCHANT_NOT_ALLOWED',
+      reason: 'Your merchant allow list has no usable entries in it, so nothing can match it.',
+    }
+  }
+  if (!intent.merchant) {
+    // Under an allow list, a purchase with no merchant is exactly the case the rule needed
+    // to see, so it fails closed.
+    return { verdict: 'DENY', code: 'MERCHANT_UNKNOWN', reason: 'A merchant allow list is set but this purchase names no merchant.' }
+  }
+  return matchesMerchant(allow, intent.merchant)
+    ? null
+    : { verdict: 'DENY', code: 'MERCHANT_NOT_ALLOWED', reason: `"${intent.merchant}" is not on your merchant allow list.` }
+}
+
+/** Cash advance, quasi-cash and gambling by default. On a card an agent drives, these turn
+ *  a spending mistake into one you cannot claw back. */
+const categoryDenied: Rule = ({ policy, intent }) => {
+  const sp = spendPolicyOf(policy)
+  if (!sp) return null
+  const category = resolveCategory(intent.mcc, intent.label)
+  return sp.categoryDeny.map((c) => c.trim().toLowerCase()).includes(category)
+    ? {
+        verdict: 'DENY',
+        code: 'CATEGORY_DENIED',
+        reason: `This is a "${category.replace(/_/g, ' ')}" purchase, which your policy does not allow on an agent card.`,
+      }
+    : null
+}
+
+const categoryOverLimit: Rule = ({ policy, intent, snapshot }) => {
+  const sp = spendPolicyOf(policy)
+  if (!sp) return null
+  const category = resolveCategory(intent.mcc, intent.label)
+  const limit = sp.categoryLimits[category]
+  if (limit === undefined) return null
+  if (!snapshot) {
+    return { verdict: 'DENY', code: 'CATEGORY_UNVERIFIABLE', reason: 'No account snapshot, so the category limit cannot be checked.' }
+  }
+  const spent = snapshot.categorySpentTodayUsd?.[category]
+  if (spent === undefined) {
+    return {
+      verdict: 'DENY',
+      code: 'CATEGORY_UNVERIFIABLE',
+      reason: `Today's spend in "${category.replace(/_/g, ' ')}" is unknown, so its limit cannot be checked.`,
+    }
+  }
+  const total = spent + intent.notionalUsd
+  return total > limit
+    ? {
+        verdict: 'DENY',
+        code: 'CATEGORY_LIMIT',
+        reason: `This would bring "${category.replace(/_/g, ' ')}" to ${usd(total)} today, above your ${usd(limit)} limit${isKnownMcc(intent.mcc) ? '' : ' (category taken from the caller, not from a recognized MCC)'}.`,
+      }
+    : null
+}
+
+const cardOverCap: Rule = ({ policy, intent, snapshot }) => {
+  const sp = spendPolicyOf(policy)
+  if (!sp || !intent.cardId) return null
+  const cap = sp.cardCaps[intent.cardId]
+  if (cap === undefined) return null
+  if (!snapshot) {
+    return { verdict: 'DENY', code: 'CARD_CAP_UNVERIFIABLE', reason: 'No account snapshot, so the per-card ceiling cannot be checked.' }
+  }
+  const spent = snapshot.cardSpentTodayUsd?.[intent.cardId]
+  if (spent === undefined) {
+    return {
+      verdict: 'DENY',
+      code: 'CARD_CAP_UNVERIFIABLE',
+      reason: `Today's spend on card ${intent.cardId} is unknown, so its ceiling cannot be checked.`,
+    }
+  }
+  const total = spent + intent.notionalUsd
+  return total > cap
+    ? {
+        verdict: 'DENY',
+        code: 'CARD_CAP',
+        reason: `This would bring card ${intent.cardId} to ${usd(total)} today, above its ${usd(cap)} ceiling.`,
+      }
+    : null
+}
+
 // ── non-order rules: the paths a cap-only policy misses ───────────────────────────
 
 /** Cancelling a protective leg removes downside cover, so it is a risk increase. */
@@ -312,11 +443,23 @@ const TRADE_RULES: Rule[] = [
 ]
 
 /** Adding a surface adds an entry here, not a branch in the pipeline. */
+const SPEND_RULES: Rule[] = [
+  ...SHARED,
+  merchantDenied,
+  merchantNotAllowed,
+  categoryDenied,
+  categoryOverLimit,
+  cardOverCap,
+  standingAuthority,
+  transferGuard,
+]
+
+/** Adding a surface adds an entry here, not a branch in the pipeline. */
 const RULES_BY_SURFACE: Record<Surface, Rule[]> = {
   trade: TRADE_RULES,
-  // Phase 4 replaces this with spend rules. Until then the surface is `planned` in the
-  // registry, so it is refused before any rule would run.
-  spend: SHARED,
+  spend: SPEND_RULES,
+  // Phase 7 is schema only by design, and the registry keeps `bet` planned, so it is
+  // refused before any rule would run.
   bet: SHARED,
 }
 
@@ -326,6 +469,8 @@ const UNVERIFIABLE_CODES = new Set([
   'DAILY_CAP_UNVERIFIABLE',
   'MARGIN_UNVERIFIABLE',
   'CONCENTRATION_UNVERIFIABLE',
+  'CATEGORY_UNVERIFIABLE',
+  'CARD_CAP_UNVERIFIABLE',
 ])
 
 function deny(surface: Surface, intent: NormalizedIntent, policy: ActionPolicy, code: string, reason: string): Decision {
