@@ -11,14 +11,6 @@
     { "source": "/health", "destination": "https://a-identity-backend.onrender.com/health" },
     { "source": "/mcp", "destination": "https://a-identity-backend.onrender.com/mcp" },
     { "source": "/api/:path*", "destination": "https://a-identity-backend.onrender.com/api/:path*" },
-    {
-      "source": "/.well-known/oauth-authorization-server",
-      "destination": "https://artistic-olive-45-staging.authkit.app/.well-known/oauth-authorization-server"
-    },
-    {
-      "source": "/.well-known/openid-configuration",
-      "destination": "https://artistic-olive-45-staging.authkit.app/.well-known/openid-configuration"
-    },
     { "source": "/(.*)", "destination": "/index.html" }
   ],
   "headers": [
@@ -39,6 +31,14 @@
           "key": "Link",
           "value": "</.well-known/api-catalog>; rel=\"api-catalog\"; type=\"application/linkset+json\", </llms.txt>; rel=\"describedby\"; type=\"text/markdown\"; title=\"A-Identity for machine readers\", </llms-full.txt>; rel=\"service-doc\"; type=\"text/markdown\"; title=\"Full documentation\", </.well-known/agent-card.json>; rel=\"service-desc\"; type=\"application/json\"; title=\"A2A agent card\", </.well-known/mcp/server-card.json>; rel=\"service-desc\"; type=\"application/json\"; title=\"MCP server card\", </.well-known/agent-skills/index.json>; rel=\"service-desc\"; type=\"application/json\"; title=\"Agent skills index\", </auth.md>; rel=\"service-doc\"; type=\"text/markdown\"; title=\"How to authenticate and pay\", </sitemap.xml>; rel=\"sitemap\"; type=\"application/xml\""
         }
+      ]
+    },
+    {
+      "source": "/.well-known/oauth-protected-resource",
+      "headers": [
+        { "key": "Content-Type", "value": "application/json; charset=utf-8" },
+        { "key": "Cache-Control", "value": "public, max-age=3600" },
+        { "key": "Access-Control-Allow-Origin", "value": "*" }
       ]
     },
     {
