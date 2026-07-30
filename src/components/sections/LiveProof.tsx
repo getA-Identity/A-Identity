@@ -3,6 +3,7 @@ import { animate, motion, useInView } from 'framer-motion'
 import { ArrowUpRight, Radio } from 'lucide-react'
 import { EASE_OUT_EXPO } from '../../lib/brand'
 import { SectionBackdrop } from '../ui/section-backdrop'
+import SettlementTicker from './SettlementTicker'
 
 const reveal = {
   initial: { opacity: 0, y: 24 },
@@ -146,6 +147,11 @@ export default function LiveProof() {
           >
             See every settlement on-chain <ArrowUpRight size={15} />
           </a>
+        </motion.div>
+
+        {/* The claim above, made checkable: every settlement as a row that opens on OKLink. */}
+        <motion.div {...reveal} transition={{ ...reveal.transition, delay: 0.1 }} className="mt-8">
+          <SettlementTicker />
         </motion.div>
       </div>
     </section>

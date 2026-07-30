@@ -10,6 +10,8 @@ import TractionSim from '../components/sections/TractionSim'
 import AgentVitrine from '../components/sections/AgentVitrine'
 import ScrollTopButton from '../components/ScrollTopButton'
 import WhatYouGet from '../components/sections/WhatYouGet'
+import Safety from '../components/sections/Safety'
+import ForAgents from '../components/sections/ForAgents'
 import LiveProof from '../components/sections/LiveProof'
 import BuiltOn from '../components/sections/BuiltOn'
 import LandingFaq from '../components/sections/LandingFaq'
@@ -73,12 +75,17 @@ export default function Landing() {
       <VerifyPayFlow />
       <WhatYouGet />
       <ConsoleShowcase />
+      {/* Safety follows the rules screen on purpose: the reader has just seen the limits,
+          so this is the moment to say what enforces them and how to check that. */}
+      <Safety />
       <LiveProof />
       <TractionSim />
       <BuiltOn />
       <ProtocolsWall />
       <AgentVitrine />
       <QuickStart />
+      {/* The human door has just been offered; this is the machine one. */}
+      <ForAgents />
       <LandingFaq />
       <CloseCta />
       <SiteFooter />

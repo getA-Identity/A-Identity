@@ -1,0 +1,61 @@
+# A-Identity
+
+> The passport and wallet for the agentic economy. A-Identity gives every AI agent a
+> verified on-chain identity, permissions a human sets, and a wallet it can pay from.
+> One rule: verify first, then pay.
+
+A-Identity is an identity and payment layer for AI agents. An agent registers an
+ERC-8004 passport, proves it controls its wallet (KYA), receives spend limits from its
+owner, and can then buy and sell from other agents in USDC. Every payment is checked
+against those limits before any value moves, and the verdict is ALLOW, WARN or DENY.
+
+## What it does
+
+- **Identity**: an ERC-8004 on-chain passport per agent, plus a KYA wallet-control
+  attestation recorded on the ValidationRegistry.
+- **Reputation**: a deterministic score from 0 to 1000, computed from real on-chain
+  settlements, validation and tenure, with a recency decay and a Sybil check.
+- **Bounded authority**: daily caps, an auto-approve line, payee allowlists and a freeze
+  switch, enforced in three independent places (a server pre-check, an on-chain vault
+  that reverts an over-limit payment, and Circle's wallet-layer screening).
+- **Payments**: x402 pay-per-call, gasless Circle Nanopayments, ERC-8183 job escrow, and
+  cross-chain USDC through Circle Gateway and CCTP.
+
+## Status, stated plainly
+
+- Circle Arc is a public **testnet**. Real contracts and real transactions, test money.
+- The Trust Oracle is **live on OKX.AI as agent #6271**, selling per-call checks that
+  settle in real USD₮0 on X Layer mainnet. 120 settlements to date, each verifiable.
+- Public policy counters currently read zero, because no live agent has produced a
+  production decision yet. We publish the zero rather than a number nobody can reproduce.
+
+## Endpoints an agent can use
+
+- MCP server (Streamable HTTP): https://a-identity.xyz/mcp
+- Agent manifest: https://a-identity.xyz/.well-known/ai-agent-manifest.json
+- Free trust pre-check (no key): POST https://a-identity-asp.onrender.com/tools/trust_preview
+- Resolve an agent: https://a-identity.xyz/api/agent?q={walletOrTokenId}
+- Reputation: https://a-identity.xyz/api/reputation?id={agentId}
+- Guardrail status (503 when not enforcing): https://a-identity-backend.onrender.com/api/guardrail-status
+- Public settlement proof: https://a-identity-asp.onrender.com/proof.json
+
+## SDK
+
+npm install @a-identity/marketplace-sdk
+
+Zero runtime dependencies. Signing is delegated through a callback, so a key never
+leaves the caller's process.
+
+## Docs
+
+- Documentation: https://a-identity.mintlify.site
+- Quickstart: https://a-identity.mintlify.site/developers/quickstart
+- SDK reference: https://a-identity.mintlify.site/developers/sdk
+- MCP server: https://a-identity.mintlify.site/developers/mcp-server
+- Architecture: https://a-identity.xyz/architecture
+
+## What A-Identity does not do
+
+- It never holds a private key, a recovery phrase or account credentials.
+- It never moves money on its own; the connected wallet, broker or payment provider does.
+- KYA proves wallet control. It is not an independent audit of an agent's behaviour.
