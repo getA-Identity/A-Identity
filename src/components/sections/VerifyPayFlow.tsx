@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { AnimatePresence, motion, useReducedMotion } from 'framer-motion'
+import { motion, useReducedMotion } from 'framer-motion'
 import { ArrowRight, Bot, User } from 'lucide-react'
 import { Link } from 'react-router-dom'
 import { DOCS_URL } from '../../lib/brand'
@@ -35,7 +35,8 @@ const LEDGER: {
   { from: 'Your agent', to: 'Inference API', reason: 'Auto-approved, under $5', verdict: 'ALLOW', amount: '$0.05', settle: 'Settled · USDC on Arc', you: true },
 ]
 
-const VISIBLE = 5
+/** Rows kept in the feed. The card scrolls internally past ~4.5 of them. */
+const VISIBLE = 6
 
 function VerdictPill({ verdict }: { verdict: Verdict }) {
   return (
@@ -99,14 +100,42 @@ function SettlementLedger() {
     Array.from({ length: VISIBLE }, (_, i) => ({ seq: VISIBLE - 1 - i, idx: (VISIBLE - 1 - i) % LEDGER.length })),
   )
 
+  /**
+   * The feed used to remove old rows through AnimatePresence exits, which is fine on a
+   * visible tab and a leak on a hidden one: framer drives exits with requestAnimationFrame,
+   * a background tab pauses rAF, the interval keeps firing, and the exiting rows never
+   * finish leaving. Come back after a few minutes and the card is thirty rows tall.
+   *
+   * So removal is now synchronous (slice, no exit animation, nothing to wait on) and the
+   * timer only runs while the tab is actually visible. Rows still animate IN, which is the
+   * part a reader can see.
+   */
   useEffect(() => {
     if (reduced) return
     let seq = VISIBLE
-    const t = setInterval(() => {
+    let timer: ReturnType<typeof setInterval> | undefined
+
+    const tick = () => {
       setRows((prev) => [{ seq, idx: seq % LEDGER.length }, ...prev].slice(0, VISIBLE))
       seq += 1
-    }, 2600)
-    return () => clearInterval(t)
+    }
+    const start = () => {
+      if (timer === undefined) timer = setInterval(tick, 2600)
+    }
+    const stop = () => {
+      if (timer !== undefined) {
+        clearInterval(timer)
+        timer = undefined
+      }
+    }
+    const onVisibility = () => (document.hidden ? stop() : start())
+
+    onVisibility()
+    document.addEventListener('visibilitychange', onVisibility)
+    return () => {
+      stop()
+      document.removeEventListener('visibilitychange', onVisibility)
+    }
   }, [reduced])
 
   return (
@@ -133,22 +162,19 @@ function SettlementLedger() {
         <span className="justify-self-end">Settlement</span>
       </div>
 
-      {/* the feed */}
-      <div className="divide-y divide-border/60">
-        <AnimatePresence initial={false} mode="popLayout">
-          {rows.map((r) => (
-            <motion.div
-              key={r.seq}
-              layout
-              initial={reduced ? false : { opacity: 0, y: -18 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0 }}
-              transition={{ duration: 0.45, ease: [0.16, 1, 0.3, 1] }}
-            >
-              <LedgerRow entry={LEDGER[r.idx]} />
-            </motion.div>
-          ))}
-        </AnimatePresence>
+      {/* The feed. Capped height with its own scroll, so a live list never grows the page:
+          about four and a half rows are visible and the rest is one flick away. */}
+      <div className="max-h-[280px] divide-y divide-border/60 overflow-y-auto overscroll-y-contain">
+        {rows.map((r) => (
+          <motion.div
+            key={r.seq}
+            initial={reduced ? false : { opacity: 0, y: -14 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.45, ease: [0.16, 1, 0.3, 1] }}
+          >
+            <LedgerRow entry={LEDGER[r.idx]} />
+          </motion.div>
+        ))}
       </div>
     </div>
   )
@@ -156,7 +182,7 @@ function SettlementLedger() {
 
 export default function VerifyPayFlow() {
   return (
-    <SectionShell id="flow" surface="card" size="lg">
+    <SectionShell id="flow" surface="card" size="lg" backdrop="ledger" backdropPosition="left">
       <SectionIntro
         eyebrow={<Eyebrow>Verify, then pay</Eyebrow>}
         heading={

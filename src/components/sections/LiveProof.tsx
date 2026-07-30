@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { animate, motion, useInView } from 'framer-motion'
 import { ArrowUpRight, Radio } from 'lucide-react'
 import { EASE_OUT_EXPO } from '../../lib/brand'
+import { SectionBackdrop } from '../ui/section-backdrop'
 
 const reveal = {
   initial: { opacity: 0, y: 24 },
@@ -84,7 +85,8 @@ export default function LiveProof() {
   }
 
   return (
-    <section id="okx-asp" className="w-full bg-card px-5 py-16 text-foreground sm:px-8 sm:py-20">
+    <section id="okx-asp" className="relative w-full overflow-hidden bg-card px-5 py-16 text-foreground sm:px-8 sm:py-20">
+      <SectionBackdrop name="proof" position="right" />
       <div className="mx-auto max-w-[1080px]">
         <motion.h2 {...reveal} className="text-3xl font-bold leading-[1.1] tracking-tight sm:text-[2.6rem]" style={{ fontFamily: 'var(--font-heading)' }}>
           Not a demo. Live and earning.

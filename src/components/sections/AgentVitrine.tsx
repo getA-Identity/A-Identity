@@ -46,7 +46,7 @@ export default function AgentVitrine() {
   if (top.length < 3) return null
 
   return (
-    <SectionShell id="agents" size="lg" surface="card">
+    <SectionShell id="agents" size="lg" surface="card" backdrop="vitrine" backdropPosition="left">
       <SectionIntro
         eyebrow={<Eyebrow>Agent House</Eyebrow>}
         heading={

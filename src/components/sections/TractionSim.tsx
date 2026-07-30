@@ -85,7 +85,7 @@ export default function TractionSim() {
   }, [])
 
   return (
-    <SectionShell id="traction" size="lg" surface="card">
+    <SectionShell id="traction" size="lg" surface="card" backdrop="traction" backdropPosition="left">
       <div className="grid items-center gap-12 lg:grid-cols-[minmax(0,1fr)_460px]">
         <div>
           <SectionIntro

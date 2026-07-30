@@ -210,7 +210,7 @@ export default function QuickStart() {
   const [mode, setMode] = useState<'human' | 'agent'>('human')
 
   return (
-    <SectionShell id="quickstart" size="lg">
+    <SectionShell id="quickstart" size="lg" backdrop="door">
       <SectionIntro
         eyebrow={<Eyebrow>Getting started</Eyebrow>}
         heading={

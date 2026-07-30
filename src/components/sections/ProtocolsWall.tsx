@@ -21,6 +21,7 @@ import { SectionShell, SectionIntro, reveal, revealAt } from '../ui/section'
 const PROTOCOLS = [
   {
     tag: 'ERC-8004',
+    color: '#7342E2',
     title: 'Verify',
     body: 'An on-chain passport for every agent, checkable by anyone before money moves.',
     art: '/art/art-seal.webp',
@@ -29,6 +30,7 @@ const PROTOCOLS = [
   },
   {
     tag: 'x402',
+    color: '#2775CA',
     title: 'Pay',
     body: 'HTTP 402 made real: pay-per-request APIs, settled in stablecoins.',
     art: '/art/art-gate.webp',
@@ -37,6 +39,7 @@ const PROTOCOLS = [
   },
   {
     tag: 'MCP',
+    color: '#1AAB7A',
     title: 'Connect',
     body: 'One endpoint any agent framework can plug into, from Claude Code to a curl.',
     art: '/art/art-network.webp',
@@ -45,6 +48,7 @@ const PROTOCOLS = [
   },
   {
     tag: 'Circle Nanopayments',
+    color: '#0B53BF',
     title: 'Stream',
     body: 'Sub-cent settlement on Circle rails, gasless for the paying agent.',
     art: '/art/art-gateway.webp',
@@ -53,6 +57,7 @@ const PROTOCOLS = [
   },
   {
     tag: 'ERC-8183',
+    color: '#D97706',
     title: 'Escrow',
     body: 'Hire, deliver, release, with dispute and refund paths when a job goes sideways.',
     art: '/art/art-knot.webp',
@@ -61,6 +66,7 @@ const PROTOCOLS = [
   },
   {
     tag: 'Reputation',
+    color: '#059669',
     title: 'Score',
     body: 'A deterministic 0 to 1000, computed from on-chain history rather than vibes.',
     art: '/art/art-guardrail.webp',
@@ -99,7 +105,7 @@ export default function ProtocolsWall() {
   const nudge = (dir: -1 | 1) => trackRef.current?.scrollBy({ left: dir * STEP, behavior: 'smooth' })
 
   return (
-    <SectionShell id="protocols" size="lg">
+    <SectionShell id="protocols" size="lg" backdrop="protocols">
       <div className="flex items-end justify-between gap-6">
         <SectionIntro
           eyebrow={<Eyebrow>The stack</Eyebrow>}
@@ -159,17 +165,37 @@ export default function ProtocolsWall() {
             href={p.href}
             target="_blank"
             rel="noopener noreferrer"
-            className="group flex h-[420px] shrink-0 snap-start basis-[min(85vw,360px)] flex-col overflow-hidden rounded-2xl border border-border bg-card transition-colors hover:border-accent/40"
+            /* The protocol's own color leads the card: a top rule in full strength,
+               a tinted surface, a matching tag, and a border that goes brand on hover. */
+            className="group relative flex h-[420px] shrink-0 snap-start basis-[min(85vw,360px)] flex-col overflow-hidden rounded-2xl border transition-colors"
+            style={{
+              borderColor: `color-mix(in srgb, ${p.color} 22%, var(--border))`,
+              background: `linear-gradient(180deg, color-mix(in srgb, ${p.color} 9%, var(--card)) 0%, var(--card) 62%)`,
+            }}
           >
+            <span
+              aria-hidden="true"
+              className="absolute inset-x-0 top-0 h-1 transition-all duration-300 group-hover:h-1.5"
+              style={{ background: p.color }}
+            />
             <div className="p-6 pb-4">
               <div className="flex items-center justify-between gap-3">
                 <h3 className="text-xl font-bold tracking-tight text-foreground">{p.title}</h3>
-                <span className="rounded-md bg-foreground/[0.06] px-2 py-0.5 font-mono text-[10px] font-semibold uppercase tracking-wider text-foreground/50">
+                <span
+                  className="rounded-md px-2 py-0.5 font-mono text-[10px] font-semibold uppercase tracking-wider"
+                  style={{
+                    color: p.color,
+                    background: `color-mix(in srgb, ${p.color} 14%, transparent)`,
+                  }}
+                >
                   {p.tag}
                 </span>
               </div>
               <p className="mt-2 text-sm leading-relaxed text-foreground/55">{p.body}</p>
-              <span className="mt-3 inline-flex items-center gap-1 text-sm font-semibold text-accent opacity-0 transition-opacity group-hover:opacity-100">
+              <span
+                className="mt-3 inline-flex items-center gap-1 text-sm font-semibold opacity-0 transition-opacity group-hover:opacity-100"
+                style={{ color: p.color }}
+              >
                 Read the docs <ArrowUpRight size={13} />
               </span>
             </div>

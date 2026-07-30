@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import { motion, useReducedMotion } from 'framer-motion'
 import { Search, ArrowRight } from 'lucide-react'
 import { EASE_OUT_EXPO } from '../../lib/brand'
+import { SectionBackdrop } from '../ui/section-backdrop'
 
 const reveal = {
   initial: { opacity: 0, y: 24 },
@@ -215,7 +216,8 @@ export default function VerifyCta() {
   const onSubmit = (e: FormEvent) => { e.preventDefault(); go(q) }
 
   return (
-    <section id="verify" className="w-full bg-background px-5 py-16 text-foreground sm:px-8 sm:py-20">
+    <section id="verify" className="relative w-full overflow-hidden bg-background px-5 py-16 text-foreground sm:px-8 sm:py-20">
+      <SectionBackdrop name="lookup" position="left" />
       {/* Two columns from lg up: the lookup keeps the reading edge, the terminal takes the
           right half. Below lg the terminal drops out entirely rather than stacking, because
           on a phone the input is the only thing that matters. */}

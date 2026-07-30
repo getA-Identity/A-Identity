@@ -2,6 +2,7 @@ import type { ReactNode } from 'react'
 import { motion } from 'framer-motion'
 import { EASE_OUT_EXPO } from '../../lib/brand'
 import { cn } from '../../lib/utils'
+import { SectionBackdrop } from './section-backdrop'
 
 /**
  * Vertical rhythm, in one place.
@@ -48,6 +49,8 @@ export function SectionShell({
   size = 'default',
   width = 'default',
   surface = 'background',
+  backdrop,
+  backdropPosition,
   className = '',
   innerClassName = '',
 }: {
@@ -57,6 +60,9 @@ export function SectionShell({
   width?: keyof typeof WIDTH
   /** `card` lifts a section off the page, which is how a run of sections gets punctuated. */
   surface?: 'background' | 'card'
+  /** File stem of the soft brand still to sit behind this section. */
+  backdrop?: string
+  backdropPosition?: 'right' | 'left' | 'center'
   className?: string
   innerClassName?: string
 }) {
@@ -64,13 +70,14 @@ export function SectionShell({
     <section
       id={id}
       className={cn(
-        'w-full px-5 text-foreground sm:px-8',
+        'relative w-full overflow-hidden px-5 text-foreground sm:px-8',
         surface === 'card' ? 'bg-card' : 'bg-background',
         PAD[size],
         className,
       )}
     >
-      <div className={cn('mx-auto', WIDTH[width], innerClassName)}>{children}</div>
+      {backdrop && <SectionBackdrop name={backdrop} position={backdropPosition} />}
+      <div className={cn('relative mx-auto', WIDTH[width], innerClassName)}>{children}</div>
     </section>
   )
 }

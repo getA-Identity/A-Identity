@@ -164,7 +164,7 @@ export default function WhatYouGet() {
   const inactive = CARDS.map((_, i) => i).filter((i) => i !== active)
 
   return (
-    <SectionShell size="lg" surface="card" width="wide">
+    <SectionShell size="lg" surface="card" width="wide" backdrop="claims">
       <motion.div
         {...reveal}
         className="relative overflow-hidden rounded-[24px] border border-border bg-[color-mix(in_srgb,var(--color-accent)_5%,var(--card))] shadow-[0_12px_44px_-16px_rgba(25,40,55,0.25)] dark:bg-[color-mix(in_srgb,var(--color-accent)_8%,var(--card))]"

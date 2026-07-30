@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState, type ReactElement } from 'rea
 import { motion } from 'framer-motion'
 import { ArrowLeft, ArrowRight } from 'lucide-react'
 import { EASE_OUT_EXPO } from '../../lib/brand'
+import { SectionBackdrop } from '../ui/section-backdrop'
 
 const reveal = {
   initial: { opacity: 0, y: 24 },
@@ -148,7 +149,8 @@ export default function BuiltOn() {
   }
 
   return (
-    <section className="w-full bg-background px-5 py-16 text-foreground sm:px-8 sm:py-20">
+    <section className="relative w-full overflow-hidden bg-background px-5 py-16 text-foreground sm:px-8 sm:py-20">
+      <SectionBackdrop name="rails" position="right" />
       <div className="mx-auto max-w-[1080px]">
         <div className="flex items-end justify-between gap-6">
           <div>
@@ -193,7 +195,16 @@ export default function BuiltOn() {
                 className="w-full shrink-0 snap-center"
                 aria-label={`${r.name}: ${r.role}`}
               >
-                <div className="relative grid gap-8 overflow-hidden rounded-2xl border border-border bg-card p-8 sm:grid-cols-[auto_minmax(0,1fr)] sm:items-center sm:p-12">
+                <div
+                  /* The rail's own hue leads the slide: a tinted surface and a border in
+                     its brand color, so each slide reads as that chain rather than as a
+                     generic card wearing a small logo. */
+                  className="relative grid gap-8 overflow-hidden rounded-2xl border p-8 sm:grid-cols-[auto_minmax(0,1fr)] sm:items-center sm:p-12"
+                  style={{
+                    borderColor: `color-mix(in srgb, ${r.color} 24%, var(--border))`,
+                    background: `linear-gradient(135deg, color-mix(in srgb, ${r.color} 10%, var(--card)) 0%, var(--card) 55%)`,
+                  }}
+                >
                   {/* The rail's own mark as a translucent watermark, bleeding off the
                       right edge, so every slide carries its brand without shouting it. */}
                   <div

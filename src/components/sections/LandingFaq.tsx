@@ -33,6 +33,7 @@ const reveal = {
 }
 
 import { FAQ_ITEMS } from '../../lib/faq'
+import { SectionBackdrop } from '../ui/section-backdrop'
 
 const linkClass = 'font-medium text-accent underline-offset-2 hover:underline'
 
@@ -161,7 +162,8 @@ const TOTAL_FAQ_COUNT = FAQ_ITEMS.length + LANDING_FAQ.length
 
 export default function LandingFaq() {
   return (
-    <section id="faq" className="w-full bg-background px-5 py-16 text-foreground sm:px-8 sm:py-20">
+    <section id="faq" className="relative w-full overflow-hidden bg-background px-5 py-16 text-foreground sm:px-8 sm:py-20">
+      <SectionBackdrop name="faq" position="right" />
       <div className="mx-auto max-w-[820px]">
         <motion.h2
           {...reveal}
@@ -193,7 +195,11 @@ export default function LandingFaq() {
                       rather than Radix's unmount animation, which forceMount defeats. */}
                   <AccordionContent
                     forceMount
-                    className="grid animate-none [transition:grid-template-rows_320ms_cubic-bezier(0.16,1,0.3,1)] data-[state=closed]:grid-rows-[0fr] data-[state=open]:grid-rows-[1fr]"
+                    plain
+                    /* `.faq-answer` carries the transition (see index.css): Radix rewrites
+                       this node's inline transition-duration, so the declaration has to
+                       win with !important from a stylesheet. */
+                    className="faq-answer grid data-[state=closed]:grid-rows-[0fr] data-[state=open]:grid-rows-[1fr]"
                   >
                     <div className="overflow-hidden">
                       <p className="max-w-[68ch] pb-7 pr-8 text-[15px] leading-relaxed text-foreground/60">

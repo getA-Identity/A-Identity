@@ -46,12 +46,23 @@ AccordionTrigger.displayName = 'AccordionTrigger'
 
 const AccordionContent = React.forwardRef<
   React.ElementRef<typeof AccordionPrimitive.Content>,
-  React.ComponentPropsWithoutRef<typeof AccordionPrimitive.Content>
->(({ className, children, ...props }, ref) => (
+  React.ComponentPropsWithoutRef<typeof AccordionPrimitive.Content> & {
+    /**
+     * Drop the built-in height keyframes so the caller can animate the open/close
+     * itself. Radix's keyframes read `--radix-accordion-content-height`, which the
+     * primitive only measures for content it is allowed to unmount; pair them with
+     * `forceMount` (as the FAQ must, to keep answers in the markup) and the height
+     * animation fights whatever the caller is doing. `plain` is the escape hatch.
+     */
+    plain?: boolean
+  }
+>(({ className, children, plain = false, ...props }, ref) => (
   <AccordionPrimitive.Content
     ref={ref}
     className={cn(
-      'overflow-hidden data-[state=closed]:animate-accordion-up data-[state=open]:animate-accordion-down',
+      plain
+        ? ''
+        : 'overflow-hidden data-[state=closed]:animate-accordion-up data-[state=open]:animate-accordion-down',
       className,
     )}
     {...props}

@@ -54,7 +54,7 @@ export default function ConsoleShowcase() {
   const [frozen, setFrozen] = useState(false)
 
   return (
-    <SectionShell size="lg" surface="card">
+    <SectionShell size="lg" surface="card" backdrop="console">
       <SectionIntro
         eyebrow={<Eyebrow>The console</Eyebrow>}
         heading={

@@ -5,6 +5,7 @@ import DiscordIcon from '../DiscordIcon'
 import XIcon from '../XIcon'
 import { ChatGptMark, ClaudeMark, PerplexityMark, GeminiMark, GrokMark } from '../AiMarks'
 import { APP_NAME, ASK_AI_LINKS, FOOTER_COLUMNS, SOCIALS, type FooterLink } from '../../lib/brand'
+import { SectionBackdrop } from '../ui/section-backdrop'
 
 /**
  * The footer, hybrid revision: the dashx composition carrying every piece the old footer
@@ -53,7 +54,8 @@ function FooterItem({ link }: { link: FooterLink }) {
 
 export default function SiteFooter() {
   return (
-    <footer className="w-full border-t border-border bg-background px-5 pb-8 pt-16 text-foreground/80 sm:px-8">
+    <footer className="relative w-full overflow-hidden border-t border-border bg-background px-5 pb-8 pt-16 text-foreground/80 sm:px-8">
+      <SectionBackdrop name="footer" position="right" />
       <div className="mx-auto max-w-[1100px]">
         {/* The sheet: everything except the legal line lives on one raised surface. */}
         <div className="rounded-[2rem] border border-border bg-card p-7 sm:p-10">

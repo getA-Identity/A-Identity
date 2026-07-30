@@ -3,6 +3,7 @@ import { motion } from 'framer-motion'
 import { ArrowRight, ArrowUpRight, Sparkles } from 'lucide-react'
 import { CAL_URL, EASE_OUT_EXPO } from '../../lib/brand'
 import { OwlMascot } from '../OwlMascot'
+import { SectionBackdrop } from '../ui/section-backdrop'
 
 const ACCENT = '#7342E2'
 
@@ -14,7 +15,8 @@ export default function CloseCta() {
   const navigate = useNavigate()
   const openSpotlight = () => window.dispatchEvent(new Event('open-trust-spotlight'))
   return (
-    <section className="w-full bg-background px-5 py-16 text-foreground sm:px-8 sm:py-20">
+    <section className="relative w-full overflow-hidden bg-background px-5 py-16 text-foreground sm:px-8 sm:py-20">
+      <SectionBackdrop name="cta" position="right" />
       {/* The dashx close: one tinted band, centered, the owl presiding. Same ask as before,
           plus the booking link for whoever wants a human first. */}
       <div className="mx-auto max-w-[1080px] rounded-[2rem] border border-accent/20 bg-gradient-to-b from-accent/[0.08] via-accent/[0.04] to-transparent px-6 py-14 text-center sm:px-12 sm:py-16">
