@@ -15,7 +15,9 @@ import { useTheme } from './ThemeProvider'
  *
  * The still is a capture of the live console in dark theme (public/console-hero.webp,
  * regenerate by re-shooting /app); it reads as a product photo, so it does not
- * flip with the theme.
+ * flip with the theme. Ship the recapture at 1280x484: the frame is 1158px wide at
+ * its widest, so anything past that is bytes nobody sees, and the declared width and
+ * height below have to match the file or the box shifts as it decodes.
  */
 
 const ACCENT = '#7342E2'
@@ -167,13 +169,22 @@ export default function Hero() {
       >
         <div className="relative overflow-hidden rounded-t-[20px] border border-b-0 border-border/70 bg-card shadow-[0_-12px_80px_-20px_rgba(115,66,226,0.35),0_24px_80px_-24px_rgba(16,24,40,0.5)]">
           {/* Both theme stills stay mounted and crossfade with the theme toggle, so the
-              switch reads as the console changing its own theme rather than a reload. */}
+              switch reads as the console changing its own theme rather than a reload.
+              That does mean two files on the wire, and it stays that way on purpose: the
+              build prerenders this page to static HTML, so the second <img> is in the
+              markup the preload scanner reads no matter what React does later, and the
+              only way to keep it out is to mount it on the toggle itself, which is the
+              one moment it has to be decoded already. So instead of dropping it, it is
+              made cheap: 1280px stills at ~25 KB each (down from 2560px/~54 KB), and the
+              still the current theme is not showing is demoted to lazy + low priority so
+              it queues behind everything the first screen actually needs. */}
           <img
             src="/console-hero.webp"
             alt="The A-Identity agent console: reputation, wallet balance, on-chain settlements and the daily cap for the showcase agent Meridian."
-            width={2560}
-            height={1360}
-            loading="eager"
+            width={1280}
+            height={484}
+            loading={theme === 'dark' ? 'eager' : 'lazy'}
+            fetchPriority={theme === 'dark' ? 'auto' : 'low'}
             decoding="async"
             className={`block w-full transition-opacity duration-700 ${theme === 'dark' ? 'opacity-100' : 'opacity-0'}`}
           />
@@ -181,9 +192,10 @@ export default function Hero() {
             src="/console-hero-light.webp"
             alt=""
             aria-hidden="true"
-            width={2560}
-            height={1360}
-            loading="eager"
+            width={1280}
+            height={484}
+            loading={theme === 'dark' ? 'lazy' : 'eager'}
+            fetchPriority={theme === 'dark' ? 'low' : 'auto'}
             decoding="async"
             className={`absolute inset-0 block w-full transition-opacity duration-700 ${theme === 'dark' ? 'opacity-0' : 'opacity-100'}`}
           />

@@ -11,18 +11,18 @@
     "mcp:build": "npm run build --prefix mcp",
     "mcp:http": "npm run build --prefix mcp && node mcp/dist/http.js",
     "lint": "eslint \"src/**/*.{ts,tsx}\"",
-    "build": "npm run check && tsc --noEmit && vite build && npm run prerender",
+    "build": "npm run check && tsc --noEmit && vite build && node scripts/apply-prerender.mjs",
     "preview": "vite preview",
     "smoke": "vite build && (vite preview --port 4173 & sleep 4 && node scripts/smoke.mjs); kill %1 2>/dev/null",
     "smoke:only": "node scripts/smoke.mjs",
     "check:seo": "node scripts/check-structured-data.mjs",
     "check:skills": "node scripts/gen-agent-skills-index.mjs --check",
-    "check": "npm run check:seo && npm run check:skills && npm run check:oauth && npm run check:sitemap",
+    "check": "npm run check:seo && npm run check:skills && npm run check:oauth && npm run check:sitemap && npm run check:prerender",
     "check:oauth": "node scripts/gen-oauth-mirror.mjs --check",
     "sitemap": "node scripts/gen-sitemap.mjs",
     "check:sitemap": "node scripts/gen-sitemap.mjs --check",
-    "prerender": "node scripts/prerender.mjs",
-    "vercel-build": "npx playwright install chromium && npm run build"
+    "prerender": "vite build && node scripts/prerender.mjs",
+    "check:prerender": "node scripts/check-prerender.mjs"
   },
   "dependencies": {
     "@radix-ui/react-accordion": "^1.2.16",

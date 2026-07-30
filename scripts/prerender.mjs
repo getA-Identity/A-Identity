@@ -1,5 +1,5 @@
 /**
- * Prerender the public routes to real HTML after the Vite build.
+ * Prerender the public routes to real HTML, into a committed directory.
  *
  * The problem this solves is not subtle: the deployed index.html has an empty
  * body, so every crawler that does not execute JavaScript sees zero words and
@@ -17,16 +17,25 @@
  * Deliberately excluded: everything under /app (auth-gated, nothing to show a
  * crawler) and the internal design surfaces.
  *
- * Run as part of `npm run build`.
+ * Output goes to `prerendered/`, which IS committed, and `npm run build` copies
+ * it over dist. That indirection exists because Vercel's build container cannot
+ * launch Chromium: it downloads fine and then dies on the sandbox. Rather than
+ * make every deploy depend on a browser starting on someone else's machine, the
+ * expensive step runs here, once, and the deploy just copies files.
+ *
+ * The cost of that trade is staleness, so `npm run check` hashes the sources
+ * that determine this output and fails the build when they have moved on. Run
+ * `npm run prerender` to refresh.
  */
 import { spawn } from 'node:child_process'
 import { mkdirSync, writeFileSync, readFileSync, existsSync } from 'node:fs'
 import { join, dirname } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import playwright from 'playwright'
+import { sourceHash } from './prerender-hash.mjs'
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..')
-const DIST = join(ROOT, 'dist')
+const DIST = join(ROOT, 'prerendered')
 const PORT = 4317
 const BASE = `http://localhost:${PORT}`
 
@@ -155,9 +164,12 @@ await browser.close()
 server.kill()
 
 if (!existsSync(join(DIST, 'index.html'))) {
-  console.error('prerender produced no homepage; refusing to ship an empty dist')
+  console.error('prerender produced no homepage; refusing to write a broken snapshot')
   process.exit(1)
 }
+
+// Record what this snapshot was made from, so the build can tell when it is stale.
+writeFileSync(join(DIST, '.sources.json'), JSON.stringify({ hash: sourceHash(ROOT) }, null, 2) + '\n')
 
 console.log(`\nprerendered ${written} routes`)
 if (problems.length) {

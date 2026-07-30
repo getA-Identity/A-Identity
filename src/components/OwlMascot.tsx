@@ -48,6 +48,10 @@ export function OwlMascot({
       src={`/mascots/owl-${variant}.png`}
       alt={ALT[variant]}
       width={width}
+      /* Every cutout is rendered square (700x700), padding included, so the height is the
+         width. Declaring both is what actually reserves the box: a lone `width` leaves the
+         height at 0 until the PNG decodes, and the page jumps by the owl's full height. */
+      height={width}
       className={className}
       loading="lazy"
       decoding="async"

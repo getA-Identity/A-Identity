@@ -25,8 +25,18 @@ function OkxMark(props: { className?: string }) {
 type Rail = {
   id: string
   name: string
-  /** The rail's own logo, extracted from the brand's artwork into /public/logos. */
+  /**
+   * The rail's own logo, extracted from the brand's artwork into /public/logos.
+   *
+   * WebP, and deliberately still 512px even though the tile shows it at 48: the same
+   * file is the 340px watermark below, which is the use that sets the floor. The flat
+   * marks are encoded lossless, so their brand colours and alpha are bit-identical to
+   * the artwork; only Circle's gradient is lossy, where nothing else was under 60 KB.
+   */
   logo?: string
+  /** Intrinsic size of that file. Both <img> below declare it, so neither reflows on decode. */
+  logoW?: number
+  logoH?: number
   /** Fallback for a brand whose file we do not ship (OKX). */
   Mark?: (p: { className?: string }) => ReactElement
   /** The tile behind the mark, in the brand's own presentation. */
@@ -47,7 +57,9 @@ const RAILS: Rail[] = [
   {
     id: 'circle',
     name: 'Circle',
-    logo: '/logos/circle-mark.png',
+    logo: '/logos/circle-mark.webp',
+    logoW: 512,
+    logoH: 512,
     tileBg: '#ffffff',
     color: '#4FBDEA',
     role: 'The settlement dollar, chain-abstracted.',
@@ -57,7 +69,9 @@ const RAILS: Rail[] = [
   {
     id: 'arc',
     name: 'Circle Arc',
-    logo: '/logos/arc-mark.png',
+    logo: '/logos/arc-mark.webp',
+    logoW: 512,
+    logoH: 478,
     tileBg: 'linear-gradient(155deg, #011667 0%, #3B1046 55%, #7B0E25 100%)',
     color: '#3B1B6E',
     role: 'Where identity and reputation live.',
@@ -77,7 +91,9 @@ const RAILS: Rail[] = [
   {
     id: 'stellar',
     name: 'Stellar',
-    logo: '/logos/stellar-mark.png',
+    logo: '/logos/stellar-mark.webp',
+    logoW: 512,
+    logoH: 512,
     tileBg: '#FFDA00',
     color: '#FFDA00',
     role: 'First stop of the multichain rollout.',
@@ -87,7 +103,9 @@ const RAILS: Rail[] = [
   {
     id: 'base',
     name: 'Base',
-    logo: '/logos/base-mark.png',
+    logo: '/logos/base-mark.webp',
+    logoW: 512,
+    logoH: 512,
     tileBg: '#ffffff',
     color: '#0000FF',
     role: 'Where the agent economy already trades.',
@@ -97,7 +115,9 @@ const RAILS: Rail[] = [
   {
     id: 'robinhood',
     name: 'Robinhood Chain',
-    logo: '/logos/robinhood-mark.png',
+    logo: '/logos/robinhood-mark.webp',
+    logoW: 512,
+    logoH: 512,
     tileBg: '#CCFF00',
     color: '#CCFF00',
     role: 'Where retail agents will trade.',
@@ -202,7 +222,15 @@ export default function BuiltOn() {
                     style={{ color: r.color }}
                   >
                     {r.logo ? (
-                      <img src={r.logo} alt="" className="max-h-full max-w-full object-contain" />
+                      <img
+                        src={r.logo}
+                        alt=""
+                        width={r.logoW}
+                        height={r.logoH}
+                        loading="lazy"
+                        decoding="async"
+                        className="max-h-full max-w-full object-contain"
+                      />
                     ) : (
                       r.Mark && <r.Mark className="h-full w-full" />
                     )}
@@ -219,6 +247,8 @@ export default function BuiltOn() {
                       <img
                         src={r.logo}
                         alt={`${r.name} logo`}
+                        width={r.logoW}
+                        height={r.logoH}
                         className="h-12 w-12 object-contain"
                         loading="lazy"
                         decoding="async"
