@@ -21,7 +21,8 @@
     "check:oauth": "node scripts/gen-oauth-mirror.mjs --check",
     "sitemap": "node scripts/gen-sitemap.mjs",
     "check:sitemap": "node scripts/gen-sitemap.mjs --check",
-    "prerender": "node scripts/prerender.mjs"
+    "prerender": "node scripts/prerender.mjs",
+    "vercel-build": "npx playwright install chromium && npm run build"
   },
   "dependencies": {
     "@radix-ui/react-accordion": "^1.2.16",

@@ -68,7 +68,26 @@ async function waitForServer(timeoutMs = 30_000) {
 
 await waitForServer()
 
-const browser = await playwright.chromium.launch()
+/**
+ * A build host without the Playwright browser downloaded should ship the site,
+ * not fail. The consequence of skipping is the behaviour we had before this
+ * script existed, which is bad for crawlers but not broken for people, and a
+ * deploy that refuses to happen is worse than one that renders client-side. The
+ * warning is loud because silently losing prerendering is how it stays lost.
+ */
+let browser
+try {
+  browser = await playwright.chromium.launch()
+} catch (e) {
+  server.kill()
+  console.warn(
+    `\n[prerender] SKIPPED: could not launch Chromium (${e.message.split('\n')[0]}).\n` +
+      '[prerender] The site will ship client-rendered, which means crawlers that do\n' +
+      '[prerender] not execute JavaScript will see an empty page. Install the browser\n' +
+      '[prerender] on this host with: npx playwright install chromium\n',
+  )
+  process.exit(0)
+}
 // A desktop viewport so responsive branches render their fuller markup; the
 // content is what matters here, not the layout that gets baked in.
 const ctx = await browser.newContext({ viewport: { width: 1280, height: 900 } })
