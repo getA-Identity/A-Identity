@@ -87,6 +87,7 @@ import { nanoPaymentRequirements, settleNano, nanoResource, runNanopayDemo } fro
 import { runGatewayDemo, gatewayBalance } from './gateway.js'
 import { runCctpDemo } from './cctp.js'
 import { appKitCapabilities, quoteArcSwap, runArcSwapDemo } from './appkit.js'
+import { paymasterStatus } from './paymaster.js'
 import { runAgentRun } from './autopilot.js'
 import { runTrustOracleDogfood } from './trust-oracle.js'
 import { runSessionKeyDemo } from './aa-wallet.js'
@@ -690,6 +691,13 @@ const server = http.createServer(async (req, res) => {
   if (req.method === 'POST' && url.pathname === '/api/arc/nanopay-demo') {
     const body = (await readBody(req).catch(() => null)) as { amountUsd?: number } | null
     sendJson(res, 200, await runNanopayDemo({ amountUsd: cappedDemoUsd(body?.amountUsd) }))
+    return
+  }
+
+  // ── Who pays the agent's gas: probed per chain, not asserted from a doc ──────────
+  if (req.method === 'GET' && url.pathname === '/api/arc/gas') {
+    const q = Number(url.searchParams.get('chainId'))
+    sendJson(res, 200, await paymasterStatus(Number.isFinite(q) && q > 0 ? q : undefined))
     return
   }
 

@@ -11,6 +11,7 @@ import EscrowPanel from '../../components/app/EscrowPanel'
 import GatewayPanel from '../../components/app/GatewayPanel'
 import CctpPanel from '../../components/app/CctpPanel'
 import AppKitPanel from '../../components/app/AppKitPanel'
+import GasPanel from '../../components/app/GasPanel'
 
 import { BACKEND_UNREACHABLE } from '../../lib/mcpBase'
 import { apiFetch, readJson, explainError } from '../../lib/api'
@@ -389,6 +390,7 @@ export default function Settlements() {
       <GatewayPanel />
       <CctpPanel />
       <AppKitPanel />
+      <GasPanel />
     </div>
   )
 }
