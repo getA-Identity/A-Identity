@@ -27,16 +27,41 @@ import { Steps, StepRow } from '../ui/step-row'
 
 const PROMPT_COLOR = 'text-[color-mix(in_srgb,var(--color-accent)_55%,white)]'
 
-const COMMANDS = [
+/** Step 1's choices: each runtime gets the exact line it actually needs. All four
+    endpoints are the live production surfaces; nothing here is aspirational. */
+const TOOLS = [
   {
+    key: 'claude-code',
+    label: 'Claude Code',
     comment: '# Add A-Identity to Claude Code (MCP over HTTP)',
     cmd: 'claude mcp add --transport http a-identity https://a-identity.xyz/mcp',
   },
   {
+    key: 'claude-ai',
+    label: 'Claude.ai',
+    comment: '# Settings → Connectors → Add custom connector, paste:',
+    cmd: 'https://a-identity.xyz/mcp',
+  },
+  {
+    key: 'cursor',
+    label: 'Cursor',
+    comment: '# .cursor/mcp.json',
+    cmd: `{ "mcpServers": { "a-identity": { "url": "https://a-identity.xyz/mcp" } } }`,
+  },
+  {
+    key: 'curl',
+    label: 'curl',
     comment: '# Free trust pre-check, no key required',
     cmd: `curl -X POST https://a-identity-asp.onrender.com/tools/trust_preview \\
   -H 'Content-Type: application/json' -d '{"agentId": "849980"}'`,
   },
+] as const
+
+/** Step 3's examples, one per MCP tool family the server actually exposes. */
+const TRY_PROMPTS = [
+  { tag: 'verify', text: 'Verify agent 849980 before I pay it' },
+  { tag: 'score', text: 'What is the reputation score of agent 849980?' },
+  { tag: 'hire', text: 'Find a KYA-verified translation agent and hire it for $2' },
 ]
 
 function CommandBlock({ comment, cmd }: { comment: string; cmd: string }) {
@@ -60,6 +85,122 @@ function CommandBlock({ comment, cmd }: { comment: string; cmd: string }) {
       >
         {copied ? <Check size={14} className="text-emerald-400" /> : <Copy size={14} />}
       </button>
+    </div>
+  )
+}
+
+/** One numbered row of the guided flow: circled index, connector line, content. */
+function Step({
+  index,
+  title,
+  sub,
+  last = false,
+  children,
+}: {
+  index: number
+  title: string
+  sub: string
+  last?: boolean
+  children?: React.ReactNode
+}) {
+  return (
+    <div className="relative pb-7 pl-11 last:pb-0">
+      {!last && <span aria-hidden="true" className="absolute bottom-0 left-[13px] top-8 w-px bg-border" />}
+      <span className="absolute left-0 top-0 grid h-7 w-7 place-items-center rounded-full border border-border bg-card font-mono text-[11px] font-semibold text-foreground/60">
+        {index}
+      </span>
+      <p className="pt-0.5 text-[15px] font-semibold leading-7 text-foreground">{title}</p>
+      <p className="mt-0.5 text-sm text-foreground/50">{sub}</p>
+      {children && <div className="mt-3">{children}</div>}
+    </div>
+  )
+}
+
+/** The agent door as a guided flow (the base.org agents stance, at half the height):
+    pick the runtime, get its exact line, then steal a first prompt. */
+function AgentSteps() {
+  const [tool, setTool] = useState<(typeof TOOLS)[number]['key']>('claude-code')
+  const [copiedPrompt, setCopiedPrompt] = useState<string | null>(null)
+  const active = TOOLS.find((t) => t.key === tool) ?? TOOLS[0]
+
+  return (
+    <div>
+      <Step index={1} title="Pick your runtime" sub="Each one gets the exact line it needs.">
+        <div className="flex flex-wrap gap-2">
+          {TOOLS.map((t) => (
+            <button
+              key={t.key}
+              type="button"
+              onClick={() => setTool(t.key)}
+              aria-pressed={tool === t.key}
+              className={`rounded-lg border px-4 py-2 text-sm font-medium transition-colors duration-150 ${
+                tool === t.key
+                  ? 'border-foreground bg-foreground text-background'
+                  : 'border-border bg-card text-foreground/60 hover:border-accent/40 hover:text-foreground'
+              }`}
+            >
+              {t.label}
+            </button>
+          ))}
+        </div>
+      </Step>
+
+      <Step index={2} title="Connect the MCP" sub="The endpoint is the live production server.">
+        <div className="overflow-hidden rounded-xl border border-accent/25 bg-[#10151d] shadow-[0_0_0_1px_rgba(115,66,226,0.12),0_18px_50px_-24px_rgba(115,66,226,0.45)]">
+          <div className="flex items-center justify-between border-b border-white/10 px-4 py-2">
+            <div className="flex items-center gap-1.5">
+              <span className="h-2 w-2 rounded-full border border-white/25" />
+              <span className="h-2 w-2 rounded-full border border-white/25" />
+              <span className="h-2 w-2 rounded-full border border-white/25" />
+            </div>
+            <span className="font-mono text-[10px] tracking-[0.14em] text-white/35">tty · mcp + x402</span>
+          </div>
+          <div className="p-4">
+            <CommandBlock key={active.key} comment={active.comment} cmd={active.cmd} />
+          </div>
+        </div>
+      </Step>
+
+      <Step index={3} title="Try it out" sub="A-Identity is connected. Steal a first prompt." last>
+        <div className="divide-y divide-border overflow-hidden rounded-xl border border-border bg-card">
+          {TRY_PROMPTS.map((p) => (
+            <button
+              key={p.tag}
+              type="button"
+              onClick={() => {
+                void navigator.clipboard?.writeText(p.text)
+                setCopiedPrompt(p.tag)
+                setTimeout(() => setCopiedPrompt(null), 1400)
+              }}
+              className="group flex w-full items-center gap-4 px-4 py-2.5 text-left transition-colors hover:bg-foreground/[0.03]"
+            >
+              <span className="w-12 shrink-0 font-mono text-[10px] font-semibold uppercase tracking-wider text-foreground/40">
+                {p.tag}
+              </span>
+              <span className="min-w-0 flex-1 truncate text-sm text-foreground/70">{p.text}</span>
+              {copiedPrompt === p.tag ? (
+                <Check size={13} className="shrink-0 text-emerald-500" />
+              ) : (
+                <Copy size={13} className="shrink-0 text-foreground/25 transition-colors group-hover:text-foreground/60" />
+              )}
+            </button>
+          ))}
+        </div>
+        <p className="mt-3 text-xs text-foreground/40">
+          Same flow as an SDK:{' '}
+          <span className="font-mono text-foreground/60">@a-identity/marketplace-sdk</span> · full
+          reference in the{' '}
+          <a
+            href="https://a-identity.mintlify.site/developers/mcp-server"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="font-semibold text-accent underline-offset-2 hover:underline"
+          >
+            docs
+          </a>
+          .
+        </p>
+      </Step>
     </div>
   )
 }
@@ -157,39 +298,9 @@ export default function QuickStart() {
               animate={{ opacity: 1, y: 0 }}
               exit={{ opacity: 0, y: -8 }}
               transition={{ duration: 0.28 }}
-              className="max-w-[780px] overflow-hidden rounded-2xl border border-accent/25 bg-[#10151d] shadow-[0_0_0_1px_rgba(115,66,226,0.12),0_24px_70px_-24px_rgba(115,66,226,0.45)]"
+              className="max-w-[780px]"
             >
-              {/* window chrome, same tty the verify section speaks */}
-              <div className="flex items-center justify-between border-b border-white/10 px-4 py-2.5">
-                <div className="flex items-center gap-1.5">
-                  <span className="h-2.5 w-2.5 rounded-full border border-white/25" />
-                  <span className="h-2.5 w-2.5 rounded-full border border-white/25" />
-                  <span className="h-2.5 w-2.5 rounded-full border border-white/25" />
-                </div>
-                <span className="font-mono text-[10px] tracking-[0.14em] text-white/35">
-                  tty · mcp + x402
-                </span>
-              </div>
-
-              <div className="flex flex-col gap-5 p-6 sm:p-7">
-                {COMMANDS.map((c) => (
-                  <CommandBlock key={c.cmd} {...c} />
-                ))}
-
-                <p className="border-t border-white/10 pt-4 font-mono text-[11px] leading-relaxed text-white/40">
-                  same flow as an sdk:{' '}
-                  <span className="text-white/70">@a-identity/marketplace-sdk</span> · full
-                  reference in the{' '}
-                  <a
-                    href="https://a-identity.mintlify.site/developers/mcp-server"
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className={`${PROMPT_COLOR} underline-offset-2 hover:underline`}
-                  >
-                    docs
-                  </a>
-                </p>
-              </div>
+              <AgentSteps />
             </motion.div>
           )}
         </AnimatePresence>
