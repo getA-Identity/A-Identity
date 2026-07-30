@@ -134,6 +134,16 @@ export function initAnalytics(): boolean {
     })
   }
 
+  // The landing page view, sent here rather than by the router.
+  //
+  // Loading is deferred until the browser is idle so a 167 KB tag does not
+  // compete with the fonts while the hero is painting. The cost of that is that
+  // the router's first trackPageView call has already come and gone by now, into
+  // a module that was not started yet. Without this line every session would be
+  // missing the page it began on, which is the one that tells you where your
+  // traffic comes from.
+  trackPageView(window.location.pathname)
+
   return true
 }
 

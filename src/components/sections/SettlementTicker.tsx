@@ -29,6 +29,15 @@ export default function SettlementTicker() {
 
   useEffect(() => {
     let alive = true
+    // Deferred to idle. This section is far below the fold and the fetch goes to
+    // a backend that may be cold, so on a phone it was competing for bandwidth
+    // with the fonts and the entry chunk while the hero was still painting. The
+    // ledger is proof, not the first thing anyone reads.
+    const idle =
+      window.requestIdleCallback?.(() => alive && load(), { timeout: 3000 }) ??
+      window.setTimeout(() => alive && load(), 1200)
+
+    function load() {
     fetch(PROOF_JSON)
       .then((r) => (r.ok ? r.json() : Promise.reject(new Error(String(r.status)))))
       .then((d: { realOnchainRevenue?: Record<string, unknown> }) => {
@@ -47,8 +56,12 @@ export default function SettlementTicker() {
         })
       })
       .catch(() => alive && setFailed(true))
+    }
+
     return () => {
       alive = false
+      if (typeof idle === 'number') window.clearTimeout(idle)
+      else window.cancelIdleCallback?.(idle)
     }
   }, [])
 

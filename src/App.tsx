@@ -57,8 +57,20 @@ export default function App() {
 
   // Nothing loads without a container id in the environment, which keeps local
   // development and preview deploys out of the numbers by construction.
+  //
+  // Deferred until the browser is idle. The tag is 167 KB and measuring a page
+  // must not be a reason the page is slower to arrive; on a phone it was
+  // competing for bandwidth with the fonts while the hero was still painting.
+  // The first page view is recorded either way, because trackPageView runs off
+  // the router and the timeout fires long before anyone can navigate.
   useEffect(() => {
-    initAnalytics()
+    const start = () => initAnalytics()
+    const id =
+      window.requestIdleCallback?.(start, { timeout: 4000 }) ?? window.setTimeout(start, 1500)
+    return () => {
+      if (typeof id === 'number') window.clearTimeout(id)
+      else window.cancelIdleCallback?.(id)
+    }
   }, [])
 
   return (
