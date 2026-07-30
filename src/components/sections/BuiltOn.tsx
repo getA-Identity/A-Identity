@@ -58,10 +58,17 @@ type Rail = {
   role: string
   detail: string
   status: 'live' | 'next'
+  /** For near-white brand hues (Robin Neon): solid color tile with a dark mark,
+      the way the brand itself presents its logo. */
+  tileDark?: boolean
 }
 
 const RAILS: Rail[] = [
   {
+    /* Rail colors are the researched brand hues: Circle keeps the USDC blue, Arc takes
+       Circle's deeper denim blue, OKX and Stellar are black/white monochrome brands (so
+       they ride the foreground token and stay correct in both themes), and Robinhood
+       wears the Robin Neon of its 2025 identity. */
     id: 'circle',
     Mark: CircleMark,
     name: 'Circle',
@@ -74,7 +81,7 @@ const RAILS: Rail[] = [
     id: 'arc',
     Mark: ArcMark,
     name: 'Circle Arc',
-    color: '#5B8DEF',
+    color: '#0B53BF',
     role: 'Where identity and reputation live.',
     detail: 'ERC-8004 passports, KYA attestations, spend vaults and escrow settle here, with sub-second finality and gas paid in USDC.',
     status: 'live',
@@ -92,7 +99,7 @@ const RAILS: Rail[] = [
     id: 'stellar',
     Mark: StellarMark,
     name: 'Stellar',
-    color: '#7D00FF',
+    color: 'var(--foreground)',
     role: 'First stop of the multichain rollout.',
     detail: 'The same passport and caps over Soroban rails: one chain-agnostic core, one adapter per chain, Stellar is next in line.',
     status: 'next',
@@ -101,10 +108,11 @@ const RAILS: Rail[] = [
     id: 'robinhood',
     Mark: RobinhoodMark,
     name: 'Robinhood Chain',
-    color: '#00C805',
+    color: '#CCFF00',
     role: 'Where retail agents will trade.',
     detail: 'A planned adapter for the chain built around agentic trading, so the guardrails travel with the money there too.',
     status: 'next',
+    tileDark: true,
   },
 ]
 
@@ -197,7 +205,11 @@ export default function BuiltOn() {
                   </div>
                   <div
                     className="relative grid h-24 w-24 place-items-center rounded-3xl border border-border"
-                    style={{ color: r.color, background: `color-mix(in srgb, ${r.color} 8%, var(--card))` }}
+                    style={
+                      r.tileDark
+                        ? { color: '#14150e', background: r.color }
+                        : { color: r.color, background: `color-mix(in srgb, ${r.color} 8%, var(--card))` }
+                    }
                   >
                     <r.Mark className="h-12 w-12" />
                   </div>

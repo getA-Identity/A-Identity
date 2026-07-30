@@ -146,7 +146,11 @@ export default function ProtocolsWall() {
         /* snap-proximity, not mandatory: mandatory snapping fights diagonal trackpad
            gestures and makes the page's vertical scroll stutter over the rail.
            overscroll-x-contain keeps a rail overshoot from chaining into the page. */
-        className="mt-12 flex snap-x snap-proximity gap-5 overflow-x-auto overscroll-x-contain pb-2 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden mx-[calc(50%-50vw)] w-screen px-[max(calc((100vw-1100px)/2),20px)] scroll-px-[max(calc((100vw-1100px)/2),20px)]"
+        /* Trailing inset via an ::after spacer rather than padding-right, which flex
+           scrollers are allowed to swallow: scrolled to the end, the last card now
+           stops on the same content axis the first card starts on. The spacer is
+           inset minus the 20px the gap already contributes. */
+        className="mt-12 flex snap-x snap-proximity gap-5 overflow-x-auto overscroll-x-contain pb-2 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden mx-[calc(50%-50vw)] w-screen pl-[max(calc((100vw-1100px)/2),20px)] scroll-px-[max(calc((100vw-1100px)/2),20px)] after:block after:w-[max(calc((100vw-1100px)/2-20px),1px)] after:shrink-0 after:content-['']"
       >
         {PROTOCOLS.map((p, i) => (
           <motion.a

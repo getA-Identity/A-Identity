@@ -5,7 +5,7 @@ import ThemeScope from '../components/ThemeScope'
 import SiteFooter from '../components/sections/SiteFooter'
 import ScrollTopButton from '../components/ScrollTopButton'
 import { Button } from '../components/ui/button'
-import { GROUPS, FAQ_ITEMS } from '../lib/faq'
+import { GROUPS, FAQ_ITEMS, PRINCIPLE, plainAnswer } from '../lib/faq'
 import { usePageMeta } from '../lib/head'
 import { LANDING_FAQ } from '../components/sections/LandingFaq'
 
@@ -52,10 +52,7 @@ export default function Faq() {
         ...FAQ_ITEMS.map((item) => ({
           '@type': 'Question',
           name: item.q,
-          acceptedAnswer: {
-            '@type': 'Answer',
-            text: item.tag ? `${item.a} ${item.tag}` : item.a,
-          },
+          acceptedAnswer: { '@type': 'Answer', text: plainAnswer(item) },
         })),
         ...LANDING_FAQ.map((item) => ({
           '@type': 'Question',
@@ -77,12 +74,11 @@ export default function Faq() {
           {total} questions
         </p>
         <h1 className="mt-3 text-4xl font-bold leading-[1.08] tracking-tight text-foreground sm:text-5xl">
-          Everything people ask.
+          Everything you need to know.
         </h1>
         <p className="mt-5 max-w-[60ch] text-lg leading-relaxed text-foreground/55">
-          Agent identity, verification, payments, and the limits an agent runs inside. Every
-          answer is open on this page. Nothing is hidden behind a click, for readers or for the
-          machines reading on their behalf.
+          A-Identity helps AI agents prove who they are, follow clear rules, and make safe
+          payments. Identity comes first. Payment comes after trust.
         </p>
 
         {/* Jump nav. Five categories is enough that a reader should not have to scroll to find
@@ -113,6 +109,21 @@ export default function Faq() {
                   <p className="mt-3 max-w-[68ch] text-[15px] leading-relaxed text-foreground/60">
                     {item.a}
                   </p>
+                  {item.bullets && (
+                    <ul className="mt-3 max-w-[68ch] space-y-1.5 text-[15px] leading-relaxed text-foreground/60">
+                      {item.bullets.map((b) => (
+                        <li key={b} className="flex gap-2.5">
+                          <span aria-hidden="true" className="mt-[9px] h-1 w-1 shrink-0 rounded-full bg-accent/60" />
+                          {b}
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                  {item.after && (
+                    <p className="mt-3 max-w-[68ch] text-[15px] leading-relaxed text-foreground/60">
+                      {item.after}
+                    </p>
+                  )}
                   {item.tag && (
                     <p className="mt-3 text-sm font-bold text-accent">{item.tag}</p>
                   )}
@@ -141,7 +152,24 @@ export default function Faq() {
           </div>
         </section>
 
-        <div className="mt-16 rounded-3xl border border-accent/20 bg-accent/[0.05] p-8 text-center sm:p-10">
+        {/* The closing principle: six questions that must have answers before an agent acts. */}
+        <section className="mt-16 rounded-3xl border border-border bg-card p-8 sm:p-10">
+          <h2 className="text-xl font-bold tracking-tight text-foreground sm:text-2xl">
+            {PRINCIPLE.title}
+          </h2>
+          <p className="mt-3 text-[15px] leading-relaxed text-foreground/60">{PRINCIPLE.intro}</p>
+          <ol className="mt-4 grid gap-2 sm:grid-cols-2">
+            {PRINCIPLE.questions.map((q, i) => (
+              <li key={q} className="flex items-baseline gap-3 text-[15px] text-foreground/75">
+                <span className="font-mono text-xs font-bold text-accent">{i + 1}</span>
+                {q}
+              </li>
+            ))}
+          </ol>
+          <p className="mt-5 text-sm font-bold text-accent">{PRINCIPLE.tag}</p>
+        </section>
+
+        <div className="mt-8 rounded-3xl border border-accent/20 bg-accent/[0.05] p-8 text-center sm:p-10">
           <h2 className="text-xl font-bold tracking-tight text-foreground sm:text-2xl">
             Building agent-native products?
           </h2>
