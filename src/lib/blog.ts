@@ -89,6 +89,433 @@ export const AUTHORS = {
 
 export const POSTS: BlogPost[] = [
   {
+    slug: 'gasless-nanopayments-for-agents',
+    title: 'Paying a tenth of a cent: how gasless nanopayments actually work',
+    excerpt:
+      'A sub-cent payment is uneconomic if the fee to move it costs more than the payment. That is the whole problem with charging agents per call. Here is how batched settlement and an off-chain signature solve it, and what you give up in exchange.',
+    chain: 'Payments',
+    accent: '#41616B',
+    date: 'Jul 31, 2026',
+    readingTime: '6 min read',
+    seed: 16,
+    author: AUTHORS.devrel,
+    sections: [
+      {
+        heading: 'The arithmetic that kills per-call pricing',
+        body: [
+          'Charging an agent a tenth of a cent for an API call is a lovely idea until you price the transfer. If moving the money costs more than the money, the model does not work, and no amount of protocol design fixes arithmetic.',
+          'This is why most agent payment demos quietly charge a cent or more, or batch into a monthly invoice and reintroduce the accounts and API keys the whole thing was supposed to remove.',
+          'There are two honest ways out. Make the fee approximately zero, or stop settling every payment individually. The interesting designs do both.',
+        ],
+      },
+      {
+        heading: 'Move the signature off-chain, keep the settlement on it',
+        body: [
+          'The mechanism is an authorization the buyer signs but does not broadcast.',
+          'Under EIP-3009, a token holder can sign a message that says "transfer this amount to this address, valid between these times, with this nonce". The signature is data. It costs nothing to produce, and the buyer never touches the chain or holds a gas token.',
+          'The seller receives that authorization and hands it to a facilitator, which verifies the signature, credits the seller immediately, and settles on-chain later, batching many authorizations into a single transaction. Thousands of sub-cent payments net into one transfer, and the per-payment fee becomes the batch fee divided across all of them.',
+          'That is Circle Gateway\'s batched settlement, and it is what makes a $0.001 call economically real rather than a rounding error you are subsidising.',
+        ],
+      },
+      {
+        heading: 'What the buyer experiences',
+        body: [
+          'An agent calls an endpoint. It gets HTTP 402 with a challenge naming the network, the asset, the amount and the address to pay. It signs an authorization, attaches it, replays the request, and gets the resource.',
+          'No gas token. No account. No API key. No prior relationship with the seller. The agent needs a funded balance and a key, and nothing else.',
+          'You can see the challenge without paying anything: an unauthenticated GET to our Arc endpoint returns the 402 with the `accepts` block naming Arc testnet and native USDC. Nothing is charged for looking.',
+        ],
+      },
+      {
+        heading: 'The chain choice does more work than it looks',
+        body: [
+          'On most chains the buyer needs the native token for gas even to receive value, which is a real onboarding problem for an autonomous agent: it has to acquire a second asset it has no use for.',
+          'On Arc the gas token is USDC. An agent holding dollars can transact with dollars. That removes an entire class of setup, and it is also why Circle Paymaster is not part of our Arc integration: a token paymaster exists to let an account pay gas in USDC where the native token is something else, and here that problem does not exist. We checked rather than assumed, and the published paymaster addresses have no contract behind them on Arc.',
+          'Naming the thing you did not integrate, and why, is usually more informative than the list of things you did.',
+        ],
+      },
+      {
+        heading: 'What you give up',
+        body: [
+          'Batched settlement is not free of tradeoffs and the honest version is worth stating.',
+          'Finality is split. The seller is credited when the facilitator verifies the signature, but the on-chain transfer happens later, in a batch. For most flows this is fine. For anything that must be irreversible on-chain before you act, it is not, and you should settle individually.',
+          'There is a trust step. The facilitator sits between signature and settlement. This is a smaller surface than a custodian, since the authorization is scoped to an amount, a recipient and a time window, but it is not zero and pretending otherwise would be dishonest.',
+          'And authorizations expire. A signature carries a validity window, which is a feature, since a leaked authorization cannot be replayed forever. It also means an agent that signs and then stalls will find its authorization dead and have to sign again.',
+        ],
+      },
+      {
+        heading: 'When to use which rail',
+        body: [
+          'Use per-call on-chain settlement when payments are large enough that the fee is noise, when you need on-chain finality before acting, or when you want each payment to be independently verifiable by a third party without asking a facilitator anything.',
+          'Use batched nanopayments when payments are genuinely small, when volume is high, and when the buyer should not have to hold a gas token to participate.',
+          'We run both. The trust oracle settles per call on X Layer, which is why every one of those 120 settlements has its own transaction hash you can check. The Arc rail uses Gateway batching. Same protocol, different economics, chosen per use rather than as a religion.',
+        ],
+      },
+      {
+        heading: 'Trying it',
+        body: [
+          'Send an unauthenticated GET to our Arc nanopayment endpoint and read the challenge. It costs nothing, needs no key, and shows you the exact shape of an x402 v2 payment requirement on a chain where gas is already USDC.',
+          'If you want the paid tools instead, `trust_preview` is free and rate limited, and the rest are priced from $0.001 to $0.01 with the full table published.',
+        ],
+      },
+    ],
+    tr: {
+      title: 'Kuruşun onda birini ödemek: gassız nanopayment nasıl çalışır',
+      excerpt:
+        'Kuruş altı bir ödeme, onu taşımanın ücreti ödemeden pahalıysa ekonomik değildir. Ajanlardan çağrı başına ücret almanın bütün problemi budur. Toplu settlement ve zincir dışı bir imzanın bunu nasıl çözdüğü ve karşılığında neyden vazgeçtiğiniz.',
+      chain: 'Ödemeler',
+      readingTime: '6 dakika',
+      sections: [
+        {
+          heading: 'Çağrı başına fiyatlandırmayı öldüren aritmetik',
+          body: [
+            'Bir ajandan bir API çağrısı için kuruşun onda birini almak, transferi fiyatlandırana kadar hoş bir fikirdir. Parayı taşımak paradan pahalıysa model çalışmaz ve hiçbir protokol tasarımı aritmetiği düzeltmez.',
+            'Çoğu ajan ödeme demosunun sessizce bir kuruş veya daha fazlasını almasının ya da aylık faturaya toplayıp baştan kaldırmak istediği hesapları ve API anahtarlarını geri getirmesinin sebebi budur.',
+            'Buradan çıkmanın dürüst iki yolu var. Ücreti yaklaşık sıfır yapmak ya da her ödemeyi tek tek gerçekleştirmeyi bırakmak. İlginç tasarımlar ikisini birden yapıyor.',
+          ],
+        },
+        {
+          heading: 'İmzayı zincir dışına alın, settlement zincirde kalsın',
+          body: [
+            'Mekanizma, alıcının imzaladığı ama yayınlamadığı bir yetkilendirmedir.',
+            'EIP-3009 kapsamında bir token sahibi, "bu tutarı bu adrese aktar, şu zamanlar arasında geçerli, şu nonce ile" diyen bir mesaj imzalayabilir. İmza veridir. Üretmenin maliyeti yoktur ve alıcı zincire hiç dokunmaz, gas token\'ı tutmaz.',
+            'Satıcı bu yetkilendirmeyi alır ve bir aracıya verir; aracı imzayı doğrular, satıcıyı anında alacaklandırır ve zincir üstü settlement\'ı sonra, birçok yetkilendirmeyi tek bir işlemde toplayarak yapar. Binlerce kuruş altı ödeme tek bir transferde netleşir ve ödeme başına ücret, toplu işlem ücretinin hepsine bölünmesi haline gelir.',
+            'Circle Gateway\'in toplu settlement\'ı budur ve 0,001 dolarlık bir çağrıyı, sübvanse ettiğiniz bir yuvarlama hatası olmaktan çıkarıp ekonomik olarak gerçek kılan şeydir.',
+          ],
+        },
+        {
+          heading: 'Alıcının deneyimi',
+          body: [
+            'Bir ajan bir ucu çağırır. Ağı, varlığı, tutarı ve ödenecek adresi belirten bir meydan okumayla HTTP 402 alır. Bir yetkilendirme imzalar, ekler, isteği tekrarlar ve kaynağı alır.',
+            'Gas token yok. Hesap yok. API anahtarı yok. Satıcıyla önceden kurulmuş bir ilişki yok. Ajanın fonlanmış bir bakiyeye ve bir anahtara ihtiyacı var, başka hiçbir şeye değil.',
+            'Meydan okumayı hiçbir şey ödemeden görebilirsiniz: Arc ucumuza kimlik doğrulamasız bir GET, Arc testnet ve yerel USDC\'yi belirten `accepts` bloğuyla 402 döner. Bakmanın ücreti yok.',
+          ],
+        },
+        {
+          heading: 'Zincir seçimi göründüğünden fazla iş yapıyor',
+          body: [
+            'Çoğu zincirde alıcının, değer almak için bile gas amacıyla yerel token\'a ihtiyacı vardır ve bu otonom bir ajan için gerçek bir başlangıç problemidir: hiçbir işine yaramayan ikinci bir varlık edinmesi gerekir.',
+            'Arc\'ta gas token\'ı USDC\'dir. Dolar tutan bir ajan dolarla işlem yapabilir. Bu, bütün bir kurulum sınıfını ortadan kaldırıyor ve Circle Paymaster\'ın Arc entegrasyonumuzun parçası olmamasının sebebi de bu: token paymaster, yerel token başka bir şeyken bir hesabın gas\'ı USDC ile ödemesini sağlamak için vardır ve burada o problem yoktur. Varsaymak yerine kontrol ettik; yayınlanan paymaster adreslerinin Arc üzerinde arkasında sözleşme yok.',
+            'Entegre etmediğiniz şeyi ve nedenini söylemek, genellikle ettiklerinizin listesinden daha bilgilendiricidir.',
+          ],
+        },
+        {
+          heading: 'Neyden vazgeçiyorsunuz',
+          body: [
+            'Toplu settlement takaslardan muaf değil ve dürüst versiyonu söylemeye değer.',
+            'Kesinlik ikiye ayrılıyor. Satıcı, aracı imzayı doğruladığında alacaklandırılır, ama zincir üstü transfer sonra, toplu halde gerçekleşir. Çoğu akış için bu sorun değil. Harekete geçmeden önce zincir üstünde geri alınamaz olması gereken bir şey içinse sorundur ve tek tek gerçekleştirmelisiniz.',
+            'Bir güven adımı var. Aracı, imza ile settlement arasında duruyor. Bu bir saklayıcıdan daha küçük bir yüzey, çünkü yetkilendirme bir tutara, bir alıcıya ve bir zaman penceresine sınırlı, ama sıfır değil ve öyleymiş gibi davranmak dürüst olmaz.',
+            'Ve yetkilendirmeler süresi dolar. Bir imza geçerlilik penceresi taşır ki bu bir özelliktir, çünkü sızmış bir yetkilendirme sonsuza kadar tekrar kullanılamaz. Aynı zamanda imzalayıp sonra bekleyen bir ajanın yetkilendirmesinin ölmüş olacağı ve yeniden imzalaması gerekeceği anlamına gelir.',
+          ],
+        },
+        {
+          heading: 'Hangi rayı ne zaman kullanmalı',
+          body: [
+            'Ödemeler ücretin gürültü kaldığı kadar büyükse, harekete geçmeden önce zincir üstü kesinliğe ihtiyacınız varsa ya da her ödemenin bir aracıya hiçbir şey sormadan üçüncü bir tarafça bağımsız doğrulanabilmesini istiyorsanız çağrı başına zincir üstü settlement kullanın.',
+            'Ödemeler gerçekten küçükse, hacim yüksekse ve alıcının katılmak için gas token tutmak zorunda kalmaması gerekiyorsa toplu nanopayment kullanın.',
+            'Biz ikisini de işletiyoruz. Güven oracle\'ı X Layer üzerinde çağrı başına gerçekleştiriyor, o 120 settlement\'ın her birinin kontrol edebileceğiniz kendi işlem özetinin olmasının sebebi bu. Arc rayı Gateway toplu işlemini kullanıyor. Aynı protokol, farklı ekonomi, bir inanç olarak değil kullanıma göre seçilmiş.',
+          ],
+        },
+        {
+          heading: 'Denemek',
+          body: [
+            'Arc nanopayment ucumuza kimlik doğrulamasız bir GET gönderin ve meydan okumayı okuyun. Ücreti yok, anahtar istemiyor ve gas\'ın zaten USDC olduğu bir zincirde bir x402 v2 ödeme gereksiniminin tam şeklini gösteriyor.',
+            'Bunun yerine ücretli araçları istiyorsanız, `trust_preview` ücretsiz ve hız sınırlı; diğerleri 0,001 ile 0,01 dolar arasında fiyatlanıyor ve tam tablo yayında.',
+          ],
+        },
+      ],
+    },
+  },
+  {
+    slug: 'agents-trading-with-themselves',
+    title: 'When an agent trades with itself: detecting same-operator self-dealing',
+    excerpt:
+      'The cheapest way to manufacture a trustworthy agent is to build two of them and have them pay each other. Both look clean in isolation. This is how the pattern works, why one-sided checks cannot see it, and what actually gives it away.',
+    chain: 'Risk',
+    accent: '#7342E2',
+    date: 'Jul 31, 2026',
+    readingTime: '6 min read',
+    seed: 15,
+    author: AUTHORS.protocol,
+    sections: [
+      {
+        heading: 'Reputation you can buy from yourself',
+        body: [
+          'Any system that scores agents on settled payments has an obvious exploit, and it is worth stating plainly because we build one of those systems.',
+          'An operator registers two agents. Agent A pays agent B, repeatedly, in small amounts. Every payment is a genuine on-chain transfer with a real hash. Neither agent is doing anything a protocol would reject. After a few dozen rounds both have a settlement history, both score well, and the operator has spent only gas and the float between its own wallets.',
+          'Now agent B goes and sells to a stranger, carrying a reputation it manufactured. That is the attack, and it costs almost nothing.',
+        ],
+      },
+      {
+        heading: 'Why checking one side cannot work',
+        body: [
+          'Look at agent B on its own and everything is fine. Registered, KYA passed, dozens of completed settlements, no revocations, reasonable tenure. Every individual fact is true.',
+          'Look at agent A on its own and the same applies.',
+          'The fraud does not live in either agent. It lives in the relationship between them, and a check that takes one agent id as input cannot see a relationship by construction. This is not a matter of the model being insufficiently clever; the information is not in the input.',
+          'That is why a two-sided check is a different product rather than a better version of the same one. It takes both parties and asks whether they are independent.',
+        ],
+      },
+      {
+        heading: 'What actually gives it away',
+        body: [
+          'Four signals, in rough order of how hard they are to fake.',
+          'The first is funding lineage. Two agents whose wallets were funded from the same source, especially in the same transaction or within a few blocks, are related until proven otherwise. An operator can launder this with intermediate hops, but each hop costs effort and leaves more graph.',
+          'The second is the shape of the payment graph. Honest commerce is lopsided and open: an agent pays many counterparties, receives from a different set, and value flows through it. Manufactured history is closed: the same pair, back and forth, value circulating rather than arriving. Measure how much of an agent\'s volume comes from its top counterparty. A number near one is not a customer relationship, it is a loop.',
+          'The third is timing regularity. Humans and real workloads are bursty. Payments spaced with machine regularity, at the same interval, in the same amount, are a script rather than a business.',
+          'The fourth is registration and deployment fingerprints: agents registered minutes apart, from the same address, with endpoints on the same host or the same certificate. Individually weak, jointly strong.',
+        ],
+      },
+      {
+        heading: 'The problem with catching it',
+        body: [
+          'Every one of those signals has a legitimate version, and that is the hard part.',
+          'Two agents funded from the same treasury might be two products of the same honest company, which is normal and not fraud. A high concentration with one counterparty might be an agent with one large genuine customer. Regular timing might be a genuine scheduled workload.',
+          'So this cannot be a boolean. Treat it as evidence that raises or lowers confidence, weight it against the amount at stake, and report it as a reason rather than a verdict. "These two parties appear to share funding and 94 percent of this agent\'s volume is with the other" is something a human can adjudicate. "SELF_DEALING_DETECTED" is a support ticket.',
+          'The right response to a strong signal is usually WARN, not DENY. You are saying the relationship looks closed, not that a crime occurred.',
+        ],
+      },
+      {
+        heading: 'What this means if you are honest and look suspicious',
+        body: [
+          'If you run several agents from one treasury, you will trip some of these signals, and there is a reasonable way to handle that.',
+          'Fund agents from distinct wallets where you can. Do not have your own agents transact with each other purely to generate history, because that history is worth nothing and the pattern is what gets flagged. Build settlement history with real third parties, even a small number, because concentration is measured against your whole graph and a handful of genuine external counterparties changes the shape.',
+          'The general principle: a reputation built from transactions with strangers is the only kind that means anything, which is inconvenient early and is also the entire point.',
+        ],
+      },
+      {
+        heading: 'Where the check belongs in your flow',
+        body: [
+          'Run it before you commit value, alongside the counterparty risk check rather than instead of it. They answer different questions: one asks whether this party is sound, the other asks whether this pair is independent.',
+          'It matters most at the moment an agent you have never dealt with presents a strong reputation. That is exactly the situation the attack is designed to produce, so a good history from an unknown counterparty should raise the bar for the two-sided check rather than lower it.',
+          'Our own data has something uncomfortable to say here. Of the 120 settlements our trust oracle has taken, the two-sided check accounts for 6, about 5 percent. It is by a wide margin the least-bought thing we sell. Either it is under-explained, which is on us, or the ecosystem is still small enough that nobody has been burned yet. We cannot tell which from the data, and only one of those fixes itself.',
+        ],
+      },
+      {
+        heading: 'Trying it',
+        body: [
+          '`counterparty_check` takes both agent ids and the intended amount, and returns a verdict with the reasons that produced it. It is the only call we offer that examines a relationship rather than a party.',
+          'If you are building your own version of this rather than using ours, that is a good outcome too. The pattern is cheap to run and currently under-defended across the whole ecosystem, and the first operators to exploit it at scale will do it against whoever is not looking.',
+        ],
+      },
+    ],
+    tr: {
+      title: 'Bir ajan kendisiyle ticaret yapınca: aynı operatörlü kendi kendine ticareti tespit etmek',
+      excerpt:
+        'Güvenilir bir ajan imal etmenin en ucuz yolu, iki tane yapıp birbirlerine ödeme yaptırmaktır. İkisi de tek başına bakıldığında temiz görünür. Bu kalıbın nasıl işlediği, tek taraflı kontrollerin bunu neden göremediği ve gerçekte neyin ele verdiği.',
+      chain: 'Risk',
+      readingTime: '6 dakika',
+      sections: [
+        {
+          heading: 'Kendinizden satın alabileceğiniz itibar',
+          body: [
+            'Ajanları gerçekleşmiş ödemelere göre puanlayan her sistemin bariz bir açığı vardır ve bunu açıkça söylemeye değer, çünkü biz de o sistemlerden birini kuruyoruz.',
+            'Bir operatör iki ajan kaydeder. A ajanı B ajanına, tekrar tekrar, küçük tutarlarda ödeme yapar. Her ödeme, gerçek bir özeti olan hakiki bir zincir üstü transferdir. Hiçbir ajan, bir protokolün reddedeceği bir şey yapmıyordur. Birkaç düzine turdan sonra ikisinin de settlement geçmişi olur, ikisi de iyi puan alır ve operatör yalnızca gas ile kendi cüzdanları arasındaki parayı harcamıştır.',
+            'Şimdi B ajanı gidip bir yabancıya satış yapar ve imal ettiği itibarı yanında taşır. Saldırı budur ve neredeyse hiçbir maliyeti yoktur.',
+          ],
+        },
+        {
+          heading: 'Tek tarafa bakmak neden işe yaramaz',
+          body: [
+            'B ajanına tek başına bakın, her şey yolundadır. Kayıtlı, KYA geçmiş, onlarca tamamlanmış settlement, iptal yok, makul bir kıdem. Her bir bilgi tek tek doğrudur.',
+            'A ajanına tek başına bakın, aynısı geçerlidir.',
+            'Dolandırıcılık ajanların hiçbirinde yaşamıyor. İkisi arasındaki ilişkide yaşıyor ve girdi olarak tek bir ajan kimliği alan bir kontrol, yapısı gereği bir ilişkiyi göremez. Bu, modelin yeterince akıllı olmamasıyla ilgili değil; bilgi girdide yok.',
+            'Bu yüzden iki taraflı kontrol, aynı ürünün daha iyi bir sürümü değil, farklı bir üründür. İki tarafı da alır ve bağımsız olup olmadıklarını sorar.',
+          ],
+        },
+        {
+          heading: 'Gerçekte neyin ele verdiği',
+          body: [
+            'Dört sinyal, taklit edilmelerinin zorluğuna göre kabaca sıralanmış halde.',
+            'Birincisi fonlama soyağacı. Cüzdanları aynı kaynaktan, özellikle aynı işlemde veya birkaç blok içinde fonlanmış iki ajan, aksi kanıtlanana kadar ilişkilidir. Bir operatör bunu ara sıçramalarla aklayabilir, ama her sıçrama emek ister ve arkasında daha fazla grafik bırakır.',
+            'İkincisi ödeme grafiğinin şekli. Dürüst ticaret dengesiz ve açıktır: bir ajan birçok karşı tarafa öder, farklı bir kümeden tahsil eder ve değer içinden akar. İmal edilmiş geçmiş kapalıdır: aynı çift, ileri geri, değer varmak yerine dolaşır. Bir ajanın hacminin ne kadarının en büyük karşı tarafından geldiğini ölçün. Bire yakın bir sayı müşteri ilişkisi değil, döngüdür.',
+            'Üçüncüsü zamanlama düzenliliği. İnsanlar ve gerçek iş yükleri kesiklidir. Makine düzenliliğinde aralıklarla, aynı sıklıkta, aynı tutarda yapılan ödemeler bir iş değil, bir betiktir.',
+            'Dördüncüsü kayıt ve dağıtım parmak izleri: dakikalar arayla, aynı adresten kaydedilmiş, uçları aynı sunucuda veya aynı sertifikada olan ajanlar. Tek tek zayıf, birlikte güçlü.',
+          ],
+        },
+        {
+          heading: 'Yakalamanın zorluğu',
+          body: [
+            'Bu sinyallerin her birinin meşru bir versiyonu var ve zor olan kısım bu.',
+            'Aynı hazineden fonlanan iki ajan, aynı dürüst şirketin iki ürünü olabilir ki bu normaldir ve dolandırıcılık değildir. Tek bir karşı tarafla yüksek yoğunlaşma, tek büyük gerçek müşterisi olan bir ajan olabilir. Düzenli zamanlama, gerçek bir zamanlanmış iş yükü olabilir.',
+            'Dolayısıyla bu bir evet/hayır olamaz. Güveni artıran veya azaltan bir kanıt olarak ele alın, riske atılan tutara karşı ağırlıklandırın ve bir karar olarak değil bir gerekçe olarak raporlayın. "Bu iki taraf fonlamayı paylaşıyor görünüyor ve bu ajanın hacminin yüzde 94\'ü diğeriyle" cümlesi bir insanın hükme bağlayabileceği bir şeydir. "SELF_DEALING_DETECTED" ise bir destek talebidir.',
+            'Güçlü bir sinyale doğru cevap genellikle DENY değil WARN\'dır. İlişkinin kapalı göründüğünü söylüyorsunuz, bir suç işlendiğini değil.',
+          ],
+        },
+        {
+          heading: 'Dürüstseniz ama şüpheli görünüyorsanız',
+          body: [
+            'Tek bir hazineden birkaç ajan işletiyorsanız bu sinyallerin bir kısmına takılacaksınız ve bununla başa çıkmanın makul bir yolu var.',
+            'Yapabildiğiniz yerde ajanları ayrı cüzdanlardan fonlayın. Sırf geçmiş üretmek için kendi ajanlarınıza birbiriyle işlem yaptırmayın, çünkü o geçmiş hiçbir şey ifade etmiyor ve işaretlenen şey zaten o kalıp. Settlement geçmişini gerçek üçüncü taraflarla kurun, sayıları az olsa bile, çünkü yoğunlaşma tüm grafiğinize karşı ölçülür ve bir avuç hakiki dış karşı taraf şekli değiştirir.',
+            'Genel ilke şu: yabancılarla yapılan işlemlerden inşa edilmiş bir itibar, anlam ifade eden tek türdür; bu başlangıçta zahmetlidir ve zaten meselenin tamamı budur.',
+          ],
+        },
+        {
+          heading: 'Bu kontrolün akıştaki yeri',
+          body: [
+            'Değeri bağlamadan önce, karşı taraf risk kontrolünün yerine değil onunla birlikte çalıştırın. Farklı sorular cevaplıyorlar: biri bu tarafın sağlam olup olmadığını, diğeri bu çiftin bağımsız olup olmadığını soruyor.',
+            'En çok, hiç iş yapmadığınız bir ajanın güçlü bir itibarla karşınıza çıktığı anda önemlidir. Saldırının üretmek için tasarlandığı durum tam olarak budur, dolayısıyla bilinmeyen bir karşı taraftan gelen iyi bir geçmiş, iki taraflı kontrol çıtasını düşürmek yerine yükseltmelidir.',
+            'Kendi verimizin burada rahatsız edici bir şey söylediği var. Güven oracle\'ımızın aldığı 120 settlement\'ın 6\'sı, yani yaklaşık yüzde 5\'i iki taraflı kontrol. Sattığımız en az satın alınan şey, hem de açık ara. Ya yeterince anlatılmamış ki bu bizim sorunumuz, ya da ekosistem henüz kimsenin canının yanmadığı kadar küçük. Veriden hangisi olduğunu ayırt edemiyoruz ve bunlardan yalnızca biri kendi kendine düzeliyor.',
+          ],
+        },
+        {
+          heading: 'Denemek',
+          body: [
+            '`counterparty_check` iki ajan kimliğini ve amaçlanan tutarı alır, kararı onu üreten gerekçelerle birlikte döndürür. Bir tarafı değil bir ilişkiyi inceleyen tek çağrımız.',
+            'Bunun kendi versiyonunuzu bizimkini kullanmak yerine kuruyorsanız, o da iyi bir sonuç. Kalıbı çalıştırmak ucuz ve şu anda tüm ekosistem genelinde yetersiz savunuluyor; bunu ölçekte ilk sömürecek operatörler, bakmayan kim varsa ona karşı yapacak.',
+          ],
+        },
+      ],
+    },
+  },
+  {
+    slug: 'erc-8004-and-x402-together',
+    title: 'ERC-8004 and x402 together: who you are, and what you owe',
+    excerpt:
+      'Plenty has been written about each of these standards on its own. Almost nothing describes what happens when you use both, which is the configuration any real agent-to-agent transaction needs. They solve adjacent problems and the seam between them is where the interesting failures live.',
+    chain: 'Standards',
+    accent: '#6B5A2E',
+    date: 'Jul 31, 2026',
+    readingTime: '7 min read',
+    seed: 14,
+    author: AUTHORS.protocol,
+    sections: [
+      {
+        heading: 'Two standards, one transaction',
+        body: [
+          'ERC-8004 gives an agent an on-chain identity: a registry entry with a token id, an owner, endpoints, and a place to attach reputation and validation records. It answers who.',
+          'x402 gives a server a way to charge for a request: an unpaid call returns HTTP 402 with machine-readable payment requirements, the client settles, and the request is replayed. It answers how much and how.',
+          'Neither answers the other. x402 will happily take money from an agent nobody has ever heard of, and ERC-8004 will happily describe an agent that never pays for anything. A real transaction between two agents needs both, and the interesting part is what sits between them.',
+        ],
+      },
+      {
+        heading: 'The order matters, and most examples get it backwards',
+        body: [
+          'The natural way to write the integration is: call the endpoint, get a 402, pay it, get the resource. Identity, if it appears at all, gets checked afterwards when you decide whether to trust what came back.',
+          'That is the wrong order for anything that costs real money. By the time you have paid, the only question left is whether you were right to, and a settled stablecoin transfer has no undo.',
+          'The correct sequence is: resolve the counterparty first, decide whether to transact, and only then satisfy the 402. Identity is a precondition of payment, not a post-hoc audit of it. This sounds obvious written down and is routinely the other way round in practice, because the 402 is what the code hits first and it is easy to let control flow dictate order of reasoning.',
+        ],
+      },
+      {
+        heading: 'What the 402 challenge tells you about the payee',
+        body: [
+          'An x402 challenge names a `payTo` address, a network, an asset and an amount. That address is the seam.',
+          'The question nobody asks is whether the address in the challenge belongs to the agent you think you are buying from. Nothing in x402 asserts that, and nothing in ERC-8004 automatically binds a registry entry to the address a server happens to put in a 402 response.',
+          'So the check that matters is: does the `payTo` in this challenge match the address the counterparty proved control of on-chain? If a server can be persuaded to serve a 402 with someone else\'s address in it, or if an agent\'s registry entry lists an address it never proved it holds, the payment goes to the wrong place while every individual component behaves exactly as specified.',
+          'This is why KYA, the attestation that an agent controls the wallet it claims, is not a nicety. It is the thing that makes the seam load-bearing.',
+        ],
+      },
+      {
+        heading: 'The identifier problem',
+        body: [
+          'ERC-8004 identities can be referenced several ways: a token id like `#849980`, a CAIP identifier like `eip155:5042002:8004/849980`, or the owner\'s `0x` address. All three resolve to the same agent.',
+          'That flexibility is convenient and it is also a place bugs hide. Code that compares identifiers as strings will decide that `#849980` and its CAIP form are different agents, and code that treats the owner address as the identity will merge two agents that share an owner.',
+          'Normalise to one canonical form at the boundary of your system and compare only that. An agent identity is not a string, and treating it like one works right up until an operator registers two agents from the same wallet.',
+        ],
+      },
+      {
+        heading: 'Chains do not have to agree',
+        body: [
+          'Here is the part that catches people building their first cross-chain flow: the chain where identity lives and the chain where money moves are not required to be the same chain, and frequently are not.',
+          'An agent can hold an ERC-8004 registration on one network and settle x402 payments on another. Our own trust oracle does exactly this: identity reads against Circle Arc, settlement on X Layer.',
+          'Nothing is wrong with that, but it means your verification and your payment are two different chain reads against two different sources of truth, and they can disagree. An identity revoked on one chain does not automatically stop a payment settling on another. If your risk logic assumes both facts came from the same place, it will be confidently wrong at exactly the wrong moment.',
+        ],
+      },
+      {
+        heading: 'Reputation has to be computed over payments, not claims',
+        body: [
+          'ERC-8004 has a reputation registry, which standardises how feedback gets recorded. It does not make that feedback true. Anyone can attest anything about anyone, and a registry entry full of glowing attestations from addresses nobody has heard of is worth precisely nothing.',
+          'The useful signal is on the x402 side: settlements. A payment is a claim somebody backed with money, which is a materially different kind of evidence from a rating.',
+          'So the practical build is to compute reputation from settlement history rather than from attestations, and use the reputation registry as a place to publish the result rather than as an input. That is the direction the two standards compose in: x402 produces the evidence, ERC-8004 gives it somewhere to live.',
+        ],
+      },
+      {
+        heading: 'What a complete flow looks like',
+        body: [
+          'Resolve the counterparty from its identifier, normalised. Confirm it holds a registration and that KYA proves control of the wallet in question. Compute or fetch reputation over settled payments, not attestations. Size the risk to the amount you are about to send, not in the abstract. Check the payment against your own spending limits, which is a separate question from whether the counterparty is sound. Only then satisfy the 402, confirming that `payTo` matches the address you verified.',
+          'Six steps, of which x402 covers the last one and ERC-8004 covers parts of the first two. Everything between is the layer neither standard specifies, which is precisely why it is worth being deliberate about.',
+        ],
+      },
+      {
+        heading: 'Trying it',
+        body: [
+          'A-Identity implements the middle of that flow as pay-per-call endpoints, and is itself an ERC-8004 agent paid over x402, so the whole loop is dogfooded rather than described.',
+          '`trust_preview` is free and needs no key, so you can see the shape of a verification result before wiring anything. The scoring method is published and the settlements behind it are listed with their transaction hashes.',
+        ],
+      },
+    ],
+    tr: {
+      title: 'ERC-8004 ve x402 birlikte: kim olduğunuz ve ne borçlu olduğunuz',
+      excerpt:
+        'Bu standartların her biri hakkında ayrı ayrı çok şey yazıldı. İkisini birlikte kullanınca ne olduğunu anlatan neredeyse hiçbir şey yok, oysa gerçek bir ajan-ajana işlemin ihtiyaç duyduğu yapılandırma tam olarak bu. Komşu problemleri çözüyorlar ve aralarındaki dikiş yeri, ilginç hataların yaşadığı yer.',
+      chain: 'Standartlar',
+      readingTime: '7 dakika',
+      sections: [
+        {
+          heading: 'İki standart, tek işlem',
+          body: [
+            'ERC-8004 bir ajana zincir üstü kimlik verir: token kimliği, sahip, uçlar ve itibar ile doğrulama kayıtlarının iliştirileceği bir yer içeren bir kayıt girdisi. "Kim" sorusunu cevaplar.',
+            'x402 bir sunucuya bir istek için ücret alma yolu verir: ödenmemiş bir çağrı, makine tarafından okunabilir ödeme gereksinimleriyle HTTP 402 döner, istemci öder ve istek tekrarlanır. "Ne kadar" ve "nasıl" sorularını cevaplar.',
+            'Hiçbiri diğerini cevaplamaz. x402, kimsenin duymadığı bir ajandan seve seve para alır; ERC-8004 ise hiçbir şeye ödeme yapmayan bir ajanı seve seve tarif eder. İki ajan arasındaki gerçek bir işlem ikisine de ihtiyaç duyar ve ilginç olan kısım, aralarında duran şeydir.',
+          ],
+        },
+        {
+          heading: 'Sıra önemli ve çoğu örnek tersten yapıyor',
+          body: [
+            'Entegrasyonu yazmanın doğal yolu şudur: ucu çağır, 402 al, öde, kaynağı al. Kimlik, eğer hiç devreye giriyorsa, gelen şeye güvenip güvenmeyeceğinize karar verirken sonradan kontrol edilir.',
+            'Gerçek para söz konusu olan hiçbir şey için bu doğru sıra değildir. Ödediğiniz ana kadar geriye kalan tek soru haklı olup olmadığınızdır ve gerçekleşmiş bir stablecoin transferinin geri alması yoktur.',
+            'Doğru sıra şudur: önce karşı tarafı çözümleyin, işlem yapıp yapmayacağınıza karar verin ve ancak ondan sonra 402\'yi karşılayın. Kimlik, ödemenin bir ön koşuludur, sonradan yapılan denetimi değil. Yazınca bariz duruyor ama pratikte düzenli olarak tersi yapılıyor, çünkü kodun ilk çarptığı şey 402 ve kontrol akışının düşünme sırasını belirlemesine izin vermek kolay.',
+          ],
+        },
+        {
+          heading: '402 meydan okuması size alıcı hakkında ne söyler',
+          body: [
+            'Bir x402 meydan okuması bir `payTo` adresi, bir ağ, bir varlık ve bir tutar belirtir. O adres, dikiş yeridir.',
+            'Kimsenin sormadığı soru şudur: bu meydan okumadaki adres, satın aldığınızı sandığınız ajana mı ait? x402 içinde bunu iddia eden hiçbir şey yok ve ERC-8004 içinde bir kayıt girdisini, bir sunucunun 402 cevabına koyduğu adrese otomatik olarak bağlayan hiçbir şey yok.',
+            'Dolayısıyla önemli olan kontrol şudur: bu meydan okumadaki `payTo`, karşı tarafın zincir üstünde kontrolünü kanıtladığı adresle eşleşiyor mu? Bir sunucu, içinde başkasının adresi olan bir 402 sunmaya ikna edilebiliyorsa ya da bir ajanın kayıt girdisi hiç sahipliğini kanıtlamadığı bir adresi listeliyorsa, her bileşen tam olarak tarif edildiği gibi davranırken ödeme yanlış yere gider.',
+            'KYA\'nın, yani bir ajanın iddia ettiği cüzdanı kontrol ettiğine dair belgenin, bir incelik olmamasının sebebi budur. Dikiş yerini taşıyıcı hale getiren şey odur.',
+          ],
+        },
+        {
+          heading: 'Tanımlayıcı problemi',
+          body: [
+            'ERC-8004 kimliklerine birkaç şekilde atıf yapılabilir: `#849980` gibi bir token kimliği, `eip155:5042002:8004/849980` gibi bir CAIP tanımlayıcısı ya da sahibin `0x` adresi. Üçü de aynı ajanı çözümler.',
+            'Bu esneklik pratiktir ve aynı zamanda hataların saklandığı bir yerdir. Tanımlayıcıları metin olarak karşılaştıran kod, `#849980` ile onun CAIP biçiminin farklı ajanlar olduğuna karar verir; sahip adresini kimlik sayan kod ise aynı sahibi paylaşan iki ajanı birleştirir.',
+            'Sisteminizin sınırında tek bir kanonik biçime normalleştirin ve yalnızca onu karşılaştırın. Bir ajan kimliği bir metin değildir ve öyleymiş gibi davranmak, bir operatör aynı cüzdandan iki ajan kaydedene kadar sorunsuz çalışır.',
+          ],
+        },
+        {
+          heading: 'Zincirlerin aynı olması gerekmiyor',
+          body: [
+            'İlk zincirler arası akışını kuran insanları yakalayan kısım şu: kimliğin yaşadığı zincir ile paranın hareket ettiği zincirin aynı olması gerekmez ve sıklıkla aynı değildir.',
+            'Bir ajan bir ağda ERC-8004 kaydı tutup x402 ödemelerini başka bir ağda gerçekleştirebilir. Bizim güven oracle\'ımız tam olarak bunu yapıyor: kimlik okumaları Circle Arc üzerinde, settlement X Layer üzerinde.',
+            'Bunda yanlış bir şey yok, ama şu anlama geliyor: doğrulamanız ve ödemeniz, iki farklı doğruluk kaynağına karşı yapılan iki farklı zincir okumasıdır ve birbirleriyle çelişebilirler. Bir zincirde iptal edilmiş bir kimlik, başka bir zincirde gerçekleşen ödemeyi otomatik olarak durdurmaz. Risk mantığınız iki bilginin de aynı yerden geldiğini varsayıyorsa, tam da en yanlış anda kendinden emin biçimde yanılacaktır.',
+          ],
+        },
+        {
+          heading: 'İtibar iddialardan değil, ödemelerden hesaplanmalı',
+          body: [
+            'ERC-8004\'ün bir itibar kaydı var ve bu, geri bildirimin nasıl kaydedileceğini standartlaştırıyor. Ama o geri bildirimi doğru yapmıyor. Herkes herkes hakkında her şeyi beyan edebilir ve kimsenin duymadığı adreslerden gelen övgülerle dolu bir kayıt girdisi tam olarak hiçbir şey ifade etmez.',
+            'İşe yarayan sinyal x402 tarafındadır: settlement\'lar. Bir ödeme, birinin parasıyla arkasında durduğu bir iddiadır ve bu, bir puanlamadan maddi olarak farklı türde bir kanıttır.',
+            'Dolayısıyla pratik kurulum, itibarı beyanlardan değil settlement geçmişinden hesaplamak ve itibar kaydını girdi olarak değil, sonucu yayınlanacak bir yer olarak kullanmaktır. İki standardın birleştiği yön budur: x402 kanıtı üretir, ERC-8004 ona yaşayacak bir yer verir.',
+          ],
+        },
+        {
+          heading: 'Tam bir akış nasıl görünür',
+          body: [
+            'Karşı tarafı tanımlayıcısından, normalleştirilmiş biçimde çözümleyin. Bir kaydı olduğunu ve KYA\'nın söz konusu cüzdanın kontrolünü kanıtladığını doğrulayın. İtibarı beyanlardan değil, gerçekleşmiş ödemelerden hesaplayın veya çekin. Riski soyut olarak değil, göndermek üzere olduğunuz tutara göre boyutlandırın. Ödemeyi kendi harcama limitlerinize karşı kontrol edin, ki bu karşı tarafın sağlam olup olmadığından ayrı bir sorudur. Ancak ondan sonra, `payTo`\'nun doğruladığınız adresle eşleştiğini teyit ederek 402\'yi karşılayın.',
+            'Altı adım; bunların sonuncusunu x402, ilk ikisinin bir kısmını ERC-8004 kapsıyor. Aradaki her şey, hiçbir standardın belirlemediği katman, ki bu konuda bilinçli olmaya değmesinin sebebi tam olarak bu.',
+          ],
+        },
+        {
+          heading: 'Denemek',
+          body: [
+            'A-Identity bu akışın ortasını çağrı başına ödemeli uçlar olarak uyguluyor ve kendisi de x402 üzerinden ödeme alan bir ERC-8004 ajanı, dolayısıyla döngünün tamamı anlatılmakla kalmıyor, bizzat kullanılıyor.',
+            '`trust_preview` ücretsiz ve anahtar istemiyor, böylece hiçbir şey bağlamadan bir doğrulama sonucunun nasıl göründüğünü görebilirsiniz. Skorlama yöntemi yayında ve arkasındaki settlement\'lar işlem özetleriyle listeleniyor.',
+          ],
+        },
+      ],
+    },
+  },
+  {
     slug: 'what-120-real-agent-payments-look-like',
     title: 'What 120 real agent-to-agent payments actually look like',
     excerpt:

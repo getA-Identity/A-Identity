@@ -78,6 +78,54 @@
     <priority>0.4</priority>
   </url>
   <url>
+    <loc>https://a-identity.xyz/blog/gasless-nanopayments-for-agents</loc>
+    <xhtml:link rel="alternate" hreflang="en" href="https://a-identity.xyz/blog/gasless-nanopayments-for-agents"/>
+    <xhtml:link rel="alternate" hreflang="tr" href="https://a-identity.xyz/tr/blog/gasless-nanopayments-for-agents"/>
+    <xhtml:link rel="alternate" hreflang="x-default" href="https://a-identity.xyz/blog/gasless-nanopayments-for-agents"/>
+    <changefreq>monthly</changefreq>
+    <priority>0.6</priority>
+  </url>
+  <url>
+    <loc>https://a-identity.xyz/tr/blog/gasless-nanopayments-for-agents</loc>
+    <xhtml:link rel="alternate" hreflang="en" href="https://a-identity.xyz/blog/gasless-nanopayments-for-agents"/>
+    <xhtml:link rel="alternate" hreflang="tr" href="https://a-identity.xyz/tr/blog/gasless-nanopayments-for-agents"/>
+    <xhtml:link rel="alternate" hreflang="x-default" href="https://a-identity.xyz/blog/gasless-nanopayments-for-agents"/>
+    <changefreq>monthly</changefreq>
+    <priority>0.6</priority>
+  </url>
+  <url>
+    <loc>https://a-identity.xyz/blog/agents-trading-with-themselves</loc>
+    <xhtml:link rel="alternate" hreflang="en" href="https://a-identity.xyz/blog/agents-trading-with-themselves"/>
+    <xhtml:link rel="alternate" hreflang="tr" href="https://a-identity.xyz/tr/blog/agents-trading-with-themselves"/>
+    <xhtml:link rel="alternate" hreflang="x-default" href="https://a-identity.xyz/blog/agents-trading-with-themselves"/>
+    <changefreq>monthly</changefreq>
+    <priority>0.6</priority>
+  </url>
+  <url>
+    <loc>https://a-identity.xyz/tr/blog/agents-trading-with-themselves</loc>
+    <xhtml:link rel="alternate" hreflang="en" href="https://a-identity.xyz/blog/agents-trading-with-themselves"/>
+    <xhtml:link rel="alternate" hreflang="tr" href="https://a-identity.xyz/tr/blog/agents-trading-with-themselves"/>
+    <xhtml:link rel="alternate" hreflang="x-default" href="https://a-identity.xyz/blog/agents-trading-with-themselves"/>
+    <changefreq>monthly</changefreq>
+    <priority>0.6</priority>
+  </url>
+  <url>
+    <loc>https://a-identity.xyz/blog/erc-8004-and-x402-together</loc>
+    <xhtml:link rel="alternate" hreflang="en" href="https://a-identity.xyz/blog/erc-8004-and-x402-together"/>
+    <xhtml:link rel="alternate" hreflang="tr" href="https://a-identity.xyz/tr/blog/erc-8004-and-x402-together"/>
+    <xhtml:link rel="alternate" hreflang="x-default" href="https://a-identity.xyz/blog/erc-8004-and-x402-together"/>
+    <changefreq>monthly</changefreq>
+    <priority>0.6</priority>
+  </url>
+  <url>
+    <loc>https://a-identity.xyz/tr/blog/erc-8004-and-x402-together</loc>
+    <xhtml:link rel="alternate" hreflang="en" href="https://a-identity.xyz/blog/erc-8004-and-x402-together"/>
+    <xhtml:link rel="alternate" hreflang="tr" href="https://a-identity.xyz/tr/blog/erc-8004-and-x402-together"/>
+    <xhtml:link rel="alternate" hreflang="x-default" href="https://a-identity.xyz/blog/erc-8004-and-x402-together"/>
+    <changefreq>monthly</changefreq>
+    <priority>0.6</priority>
+  </url>
+  <url>
     <loc>https://a-identity.xyz/blog/what-120-real-agent-payments-look-like</loc>
     <xhtml:link rel="alternate" hreflang="en" href="https://a-identity.xyz/blog/what-120-real-agent-payments-look-like"/>
     <xhtml:link rel="alternate" hreflang="tr" href="https://a-identity.xyz/tr/blog/what-120-real-agent-payments-look-like"/>
