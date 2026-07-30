@@ -16,6 +16,7 @@ import {
 } from '../lib/mcp-client'
 import { type OwlVerdict } from '../components/OwlMark'
 import AgentAvatar from '../components/AgentAvatar'
+import { track } from '../lib/analytics'
 
 type Verdict = 'ALLOW' | 'WARN' | 'DENY'
 const VERDICT: Record<Verdict, { color: string; Icon: typeof ShieldCheck }> = {
@@ -298,7 +299,14 @@ export default function Explorer() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
-  const onSubmit = (e: FormEvent) => { e.preventDefault(); void lookup(query) }
+  const onSubmit = (e: FormEvent) => {
+    e.preventDefault()
+    // Count that a lookup happened and roughly what kind, never what was looked
+    // up: the query is a wallet address or an agent id, and neither belongs in
+    // an analytics payload.
+    track('agent_lookup', { kind: /^0x/i.test(query.trim()) ? 'address' : /^#?\d+$/.test(query.trim()) ? 'token_id' : 'name' })
+    void lookup(query)
+  }
   const activeKey = reputation?.name ? shown : null
 
   return (

@@ -1,6 +1,8 @@
 import { useEffect } from 'react'
 import { BrowserRouter, Route, Routes } from 'react-router-dom'
 import ScrollToTop from './components/ScrollToTop'
+import PageViews from './components/PageViews'
+import { initAnalytics } from './lib/analytics'
 import { registerWebMcpTools } from './lib/webmcp'
 import { useAuth } from './store/auth'
 import Landing from './routes/Landing'
@@ -42,9 +44,16 @@ export default function App() {
   // No-op where the API is absent, which is most browsers today.
   useEffect(() => registerWebMcpTools(), [])
 
+  // Nothing loads without a container id in the environment, which keeps local
+  // development and preview deploys out of the numbers by construction.
+  useEffect(() => {
+    initAnalytics()
+  }, [])
+
   return (
     <BrowserRouter>
       <ScrollToTop />
+      <PageViews />
       <Routes>
         <Route path="/" element={<Landing />} />
         <Route path="/login" element={<Login />} />

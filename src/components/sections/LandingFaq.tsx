@@ -33,6 +33,7 @@ const reveal = {
 }
 
 import { FAQ_ITEMS } from '../../lib/faq'
+import { track } from '../../lib/analytics'
 import { SectionBackdrop } from '../ui/section-backdrop'
 
 const linkClass = 'font-medium text-accent underline-offset-2 hover:underline'
@@ -177,7 +178,18 @@ export default function LandingFaq() {
         </motion.p>
 
         <div className="mt-12">
-          <Accordion type="single" collapsible className="divide-y divide-border border-y border-border">
+          {/* Which question someone opens is the most useful thing this page can
+              tell us: it names the objection that is actually stopping them.
+              The question text is fixed copy, so there is nothing personal in it. */}
+          <Accordion
+            type="single"
+            collapsible
+            className="divide-y divide-border border-y border-border"
+            onValueChange={(v) => {
+              const idx = Number(v?.replace('q', ''))
+              if (Number.isInteger(idx) && LANDING_FAQ[idx]) track('faq_opened', { question: LANDING_FAQ[idx].q })
+            }}
+          >
             {LANDING_FAQ.map((item, i) => (
               <motion.div
                 key={item.q}
