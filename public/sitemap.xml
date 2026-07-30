@@ -16,6 +16,8 @@
   <url><loc>https://a-identity.xyz/use-cases/pay-per-data-call</loc><changefreq>monthly</changefreq><priority>0.7</priority></url>
   <url><loc>https://a-identity.xyz/use-cases/gpu-hours-rented-by-agent</loc><changefreq>monthly</changefreq><priority>0.7</priority></url>
   <url><loc>https://a-identity.xyz/use-cases/idle-usdc-parked-in-usyc</loc><changefreq>monthly</changefreq><priority>0.7</priority></url>
+  <url><loc>https://a-identity.xyz/architecture</loc><lastmod>2026-07-30</lastmod><changefreq>monthly</changefreq><priority>0.7</priority></url>
+  <url><loc>https://a-identity.xyz/explorer</loc><lastmod>2026-07-30</lastmod><changefreq>weekly</changefreq><priority>0.6</priority></url>
   <url><loc>https://a-identity.xyz/signup</loc><changefreq>yearly</changefreq><priority>0.5</priority></url>
   <url><loc>https://a-identity.xyz/login</loc><changefreq>yearly</changefreq><priority>0.5</priority></url>
 </urlset>
