@@ -44,15 +44,29 @@ export default function Landing() {
           fold crops the console still at the hero's floor (the dashx stance); on mobile
           it grows with the content instead. */}
       <header className="relative min-h-screen w-full overflow-hidden pt-[72px] lg:h-screen lg:min-h-0">
+        {/* The film is 3.4 MB and it was 79% of the page. On a phone that is most
+            of the bandwidth budget spent on decoration behind text, and it pushed
+            LCP past five seconds because it saturated the connection while the
+            fonts and the entry chunk were still in flight.
+
+            The `media` attribute on <source> is what fixes it: a narrow viewport
+            never selects the source, so the file is not merely deprioritised, it
+            is never requested. That works with no JavaScript, which matters here
+            because these pages are prerendered and a script-based check would
+            have been baked in at the desktop viewport the snapshot was taken at.
+            Phones get the poster, which is 19 KB and looks like the first frame,
+            because it is. */}
         <video
           className="absolute inset-0 h-full w-full object-cover"
-          src={BACKGROUND_VIDEO}
+          poster="/hero-poster.webp"
           autoPlay
           muted
           loop
           playsInline
           aria-hidden="true"
-        />
+        >
+          <source src={BACKGROUND_VIDEO} type="video/mp4" media="(min-width: 1024px)" />
+        </video>
         {/* Dark-mode only: the hero video is a bright/light scene tuned for dark text,
             so in dark mode we lay a vertical scrim over it (heavier at the top and the
             floor, where the centered copy and the console frame sit) to keep the now

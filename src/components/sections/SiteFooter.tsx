@@ -70,7 +70,7 @@ export default function SiteFooter() {
                 The passport &amp; wallet for the agentic economy.
               </p>
 
-              <p className="mt-6 flex items-start gap-2.5 text-[13px] leading-relaxed text-foreground/55">
+              <p className="mt-6 flex items-start gap-2.5 text-[13px] leading-relaxed text-foreground/70">
                 <Terminal size={15} className="mt-0.5 shrink-0 text-accent" />
                 <span>
                   This site speaks agent, too. Point your AI at our{' '}
