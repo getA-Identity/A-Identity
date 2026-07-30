@@ -47,13 +47,15 @@ export function SectionBackdrop({
       decoding="async"
       draggable={false}
       className={cn(
-        'pointer-events-none absolute hidden w-[min(46vw,640px)] select-none lg:block',
+        'pointer-events-none absolute hidden w-[min(54vw,760px)] select-none lg:block',
         /* The radial mask is what keeps this from reading as a pasted rectangle: the
-           still fades to nothing well before its own edge, so only the form survives. */
-        '[mask-image:radial-gradient(ellipse_at_center,black_28%,transparent_68%)]',
-        '[-webkit-mask-image:radial-gradient(ellipse_at_center,black_28%,transparent_68%)]',
-        'opacity-[0.38] mix-blend-multiply',
-        'dark:opacity-[0.22] dark:invert dark:hue-rotate-180 dark:mix-blend-screen',
+           still fades to nothing well before its own edge, so only the form survives.
+           The opaque core reaches further out than it used to, which is most of why
+           the form now reads instead of hiding. */
+        '[mask-image:radial-gradient(ellipse_at_center,black_42%,transparent_76%)]',
+        '[-webkit-mask-image:radial-gradient(ellipse_at_center,black_42%,transparent_76%)]',
+        'opacity-[0.62] mix-blend-multiply',
+        'dark:opacity-[0.42] dark:invert dark:hue-rotate-180 dark:mix-blend-screen',
         place,
         className,
       )}

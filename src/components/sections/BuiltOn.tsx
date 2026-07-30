@@ -198,7 +198,7 @@ export default function BuiltOn() {
                       right edge, so every slide carries its brand without shouting it. */}
                   <div
                     aria-hidden="true"
-                    className="pointer-events-none absolute -right-16 top-1/2 grid h-[340px] w-[340px] -translate-y-1/2 place-items-center opacity-[0.06]"
+                    className="pointer-events-none absolute -right-16 top-1/2 grid h-[340px] w-[340px] -translate-y-1/2 place-items-center opacity-[0.12] dark:opacity-[0.09]"
                     style={{ color: r.color }}
                   >
                     {r.logo ? (
