@@ -24,7 +24,7 @@ const STATS = [
  */
 export default function LiveProof() {
   return (
-    <section id="okx-asp" className="w-full bg-card px-5 py-24 text-foreground sm:px-8 sm:py-32">
+    <section id="okx-asp" className="w-full bg-card px-5 py-16 text-foreground sm:px-8 sm:py-20">
       <div className="mx-auto max-w-[1080px]">
         <motion.h2 {...reveal} className="text-3xl font-bold leading-[1.1] tracking-tight sm:text-[2.6rem]" style={{ fontFamily: 'var(--font-heading)' }}>
           Not a demo. Live and earning.

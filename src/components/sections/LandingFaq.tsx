@@ -161,7 +161,7 @@ const TOTAL_FAQ_COUNT = FAQ_ITEMS.length + LANDING_FAQ.length
 
 export default function LandingFaq() {
   return (
-    <section id="faq" className="w-full bg-background px-5 py-24 text-foreground sm:px-8 sm:py-32">
+    <section id="faq" className="w-full bg-background px-5 py-16 text-foreground sm:px-8 sm:py-20">
       <div className="mx-auto max-w-[820px]">
         <motion.h2
           {...reveal}

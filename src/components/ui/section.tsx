@@ -16,10 +16,10 @@ import { cn } from '../../lib/utils'
  * scale with five steps is a scale nobody uses consistently.
  */
 const PAD = {
-  default: 'py-20 sm:py-28',
-  lg: 'py-28 sm:py-40',
+  default: 'py-14 sm:py-20',
+  lg: 'py-20 sm:py-28',
   /** For a section that sits directly under another with no surface change. */
-  tight: 'py-14 sm:py-20',
+  tight: 'py-10 sm:py-14',
 } as const
 
 const WIDTH = {

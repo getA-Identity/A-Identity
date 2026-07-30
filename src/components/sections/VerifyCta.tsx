@@ -231,7 +231,7 @@ export default function VerifyCta() {
   const onSubmit = (e: FormEvent) => { e.preventDefault(); go(q) }
 
   return (
-    <section id="verify" className="w-full bg-background px-5 py-24 text-foreground sm:px-8 sm:py-32">
+    <section id="verify" className="w-full bg-background px-5 py-16 text-foreground sm:px-8 sm:py-20">
       {/* Two columns from lg up: the lookup keeps the reading edge, the stage takes the
           right half. Below lg the stage drops out entirely rather than stacking, because
           on a phone the input is the only thing that matters. */}

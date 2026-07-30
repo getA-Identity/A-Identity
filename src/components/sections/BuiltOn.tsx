@@ -59,7 +59,7 @@ const NEXT: { name: string; color: string }[] = [
 export default function BuiltOn() {
   const [active, setActive] = useState<string | null>(null)
   return (
-    <section className="w-full bg-background px-5 py-24 text-foreground sm:px-8 sm:py-32">
+    <section className="w-full bg-background px-5 py-16 text-foreground sm:px-8 sm:py-20">
       <div className="mx-auto max-w-[1080px]">
         <motion.h2 {...reveal} className="text-3xl font-bold leading-[1.1] tracking-tight sm:text-[2.6rem]" style={{ fontFamily: 'var(--font-heading)' }}>
           Built on rails that already move money.

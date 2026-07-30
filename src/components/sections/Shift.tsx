@@ -18,7 +18,7 @@ const reveal = {
  */
 export default function Shift() {
   return (
-    <section className="w-full bg-background px-5 py-28 text-foreground sm:px-8 sm:py-36">
+    <section className="w-full bg-background px-5 py-16 text-foreground sm:px-8 sm:py-24">
       <div className="mx-auto max-w-[1080px]">
         <motion.div {...reveal}>
           <Eyebrow className="mb-3">Why now</Eyebrow>

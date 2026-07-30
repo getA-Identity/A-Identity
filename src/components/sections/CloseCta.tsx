@@ -14,7 +14,7 @@ export default function CloseCta() {
   const navigate = useNavigate()
   const openSpotlight = () => window.dispatchEvent(new Event('open-trust-spotlight'))
   return (
-    <section className="w-full bg-background px-5 py-24 text-foreground sm:px-8 sm:py-32">
+    <section className="w-full bg-background px-5 py-16 text-foreground sm:px-8 sm:py-20">
       {/* The dashx close: one tinted band, centered, the owl presiding. Same ask as before,
           plus the booking link for whoever wants a human first. */}
       <div className="mx-auto max-w-[1080px] rounded-[2rem] border border-accent/20 bg-gradient-to-b from-accent/[0.08] via-accent/[0.04] to-transparent px-6 py-14 text-center sm:px-12 sm:py-16">
