@@ -1,23 +1,136 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
-  <url><loc>https://a-identity.xyz/</loc><lastmod>2026-07-11</lastmod><changefreq>weekly</changefreq><priority>1.0</priority></url>
-  <url><loc>https://a-identity.xyz/manifesto</loc><lastmod>2026-07-11</lastmod><changefreq>monthly</changefreq><priority>0.7</priority></url>
-  <url><loc>https://a-identity.xyz/faq</loc><lastmod>2026-07-29</lastmod><changefreq>monthly</changefreq><priority>0.8</priority></url>
-  <url><loc>https://a-identity.xyz/contact</loc><lastmod>2026-07-11</lastmod><changefreq>monthly</changefreq><priority>0.6</priority></url>
-  <url><loc>https://a-identity.xyz/brand</loc><lastmod>2026-07-11</lastmod><changefreq>monthly</changefreq><priority>0.4</priority></url>
-  <url><loc>https://a-identity.xyz/blog</loc><lastmod>2026-07-11</lastmod><changefreq>weekly</changefreq><priority>0.8</priority></url>
-  <url><loc>https://a-identity.xyz/blog/know-your-agent-identity-before-money</loc><changefreq>monthly</changefreq><priority>0.6</priority></url>
-  <url><loc>https://a-identity.xyz/blog/gas-in-usdc-why-arc</loc><changefreq>monthly</changefreq><priority>0.6</priority></url>
-  <url><loc>https://a-identity.xyz/blog/x402-on-base-pay-per-request</loc><changefreq>monthly</changefreq><priority>0.6</priority></url>
-  <url><loc>https://a-identity.xyz/blog/base-where-agents-meet-money</loc><changefreq>monthly</changefreq><priority>0.6</priority></url>
-  <url><loc>https://a-identity.xyz/blog/unified-balance-one-usdc-every-chain</loc><changefreq>monthly</changefreq><priority>0.6</priority></url>
-  <url><loc>https://a-identity.xyz/blog/bridging-agent-identity-to-stellar</loc><changefreq>monthly</changefreq><priority>0.6</priority></url>
-  <url><loc>https://a-identity.xyz/blog/watching-monad-parallel-evm</loc><changefreq>monthly</changefreq><priority>0.6</priority></url>
-  <url><loc>https://a-identity.xyz/use-cases/pay-per-data-call</loc><changefreq>monthly</changefreq><priority>0.7</priority></url>
-  <url><loc>https://a-identity.xyz/use-cases/gpu-hours-rented-by-agent</loc><changefreq>monthly</changefreq><priority>0.7</priority></url>
-  <url><loc>https://a-identity.xyz/use-cases/idle-usdc-parked-in-usyc</loc><changefreq>monthly</changefreq><priority>0.7</priority></url>
-  <url><loc>https://a-identity.xyz/architecture</loc><lastmod>2026-07-30</lastmod><changefreq>monthly</changefreq><priority>0.7</priority></url>
-  <url><loc>https://a-identity.xyz/explorer</loc><lastmod>2026-07-30</lastmod><changefreq>weekly</changefreq><priority>0.6</priority></url>
-  <url><loc>https://a-identity.xyz/signup</loc><changefreq>yearly</changefreq><priority>0.5</priority></url>
-  <url><loc>https://a-identity.xyz/login</loc><changefreq>yearly</changefreq><priority>0.5</priority></url>
+<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9"
+        xmlns:xhtml="http://www.w3.org/1999/xhtml">
+  <url>
+    <loc>https://a-identity.xyz/</loc>
+    <changefreq>weekly</changefreq>
+    <priority>1.0</priority>
+  </url>
+  <url>
+    <loc>https://a-identity.xyz/faq</loc>
+    <changefreq>monthly</changefreq>
+    <priority>0.8</priority>
+  </url>
+  <url>
+    <loc>https://a-identity.xyz/blog</loc>
+    <xhtml:link rel="alternate" hreflang="en" href="https://a-identity.xyz/blog"/>
+    <xhtml:link rel="alternate" hreflang="tr" href="https://a-identity.xyz/tr/blog"/>
+    <xhtml:link rel="alternate" hreflang="x-default" href="https://a-identity.xyz/blog"/>
+    <changefreq>weekly</changefreq>
+    <priority>0.8</priority>
+  </url>
+  <url>
+    <loc>https://a-identity.xyz/tr/blog</loc>
+    <xhtml:link rel="alternate" hreflang="en" href="https://a-identity.xyz/blog"/>
+    <xhtml:link rel="alternate" hreflang="tr" href="https://a-identity.xyz/tr/blog"/>
+    <xhtml:link rel="alternate" hreflang="x-default" href="https://a-identity.xyz/blog"/>
+    <changefreq>weekly</changefreq>
+    <priority>0.8</priority>
+  </url>
+  <url>
+    <loc>https://a-identity.xyz/manifesto</loc>
+    <changefreq>monthly</changefreq>
+    <priority>0.7</priority>
+  </url>
+  <url>
+    <loc>https://a-identity.xyz/architecture</loc>
+    <changefreq>monthly</changefreq>
+    <priority>0.7</priority>
+  </url>
+  <url>
+    <loc>https://a-identity.xyz/use-cases/pay-per-data-call</loc>
+    <changefreq>monthly</changefreq>
+    <priority>0.7</priority>
+  </url>
+  <url>
+    <loc>https://a-identity.xyz/use-cases/gpu-hours-rented-by-agent</loc>
+    <changefreq>monthly</changefreq>
+    <priority>0.7</priority>
+  </url>
+  <url>
+    <loc>https://a-identity.xyz/use-cases/idle-usdc-parked-in-usyc</loc>
+    <changefreq>monthly</changefreq>
+    <priority>0.7</priority>
+  </url>
+  <url>
+    <loc>https://a-identity.xyz/contact</loc>
+    <changefreq>monthly</changefreq>
+    <priority>0.6</priority>
+  </url>
+  <url>
+    <loc>https://a-identity.xyz/explorer</loc>
+    <changefreq>weekly</changefreq>
+    <priority>0.6</priority>
+  </url>
+  <url>
+    <loc>https://a-identity.xyz/signup</loc>
+    <changefreq>yearly</changefreq>
+    <priority>0.5</priority>
+  </url>
+  <url>
+    <loc>https://a-identity.xyz/login</loc>
+    <changefreq>yearly</changefreq>
+    <priority>0.5</priority>
+  </url>
+  <url>
+    <loc>https://a-identity.xyz/brand</loc>
+    <changefreq>monthly</changefreq>
+    <priority>0.4</priority>
+  </url>
+  <url>
+    <loc>https://a-identity.xyz/blog/verify-an-agent-before-you-pay-it</loc>
+    <xhtml:link rel="alternate" hreflang="en" href="https://a-identity.xyz/blog/verify-an-agent-before-you-pay-it"/>
+    <xhtml:link rel="alternate" hreflang="tr" href="https://a-identity.xyz/tr/blog/verify-an-agent-before-you-pay-it"/>
+    <xhtml:link rel="alternate" hreflang="x-default" href="https://a-identity.xyz/blog/verify-an-agent-before-you-pay-it"/>
+    <changefreq>monthly</changefreq>
+    <priority>0.6</priority>
+  </url>
+  <url>
+    <loc>https://a-identity.xyz/tr/blog/verify-an-agent-before-you-pay-it</loc>
+    <xhtml:link rel="alternate" hreflang="en" href="https://a-identity.xyz/blog/verify-an-agent-before-you-pay-it"/>
+    <xhtml:link rel="alternate" hreflang="tr" href="https://a-identity.xyz/tr/blog/verify-an-agent-before-you-pay-it"/>
+    <xhtml:link rel="alternate" hreflang="x-default" href="https://a-identity.xyz/blog/verify-an-agent-before-you-pay-it"/>
+    <changefreq>monthly</changefreq>
+    <priority>0.6</priority>
+  </url>
+  <url>
+    <loc>https://a-identity.xyz/blog/agentic-economy-when-agents-get-wallets</loc>
+    <changefreq>monthly</changefreq>
+    <priority>0.6</priority>
+  </url>
+  <url>
+    <loc>https://a-identity.xyz/blog/gas-in-usdc-why-arc</loc>
+    <changefreq>monthly</changefreq>
+    <priority>0.6</priority>
+  </url>
+  <url>
+    <loc>https://a-identity.xyz/blog/unified-balance-one-usdc-every-chain</loc>
+    <changefreq>monthly</changefreq>
+    <priority>0.6</priority>
+  </url>
+  <url>
+    <loc>https://a-identity.xyz/blog/base-where-agents-meet-money</loc>
+    <changefreq>monthly</changefreq>
+    <priority>0.6</priority>
+  </url>
+  <url>
+    <loc>https://a-identity.xyz/blog/x402-on-base-pay-per-request</loc>
+    <changefreq>monthly</changefreq>
+    <priority>0.6</priority>
+  </url>
+  <url>
+    <loc>https://a-identity.xyz/blog/bridging-agent-identity-to-stellar</loc>
+    <changefreq>monthly</changefreq>
+    <priority>0.6</priority>
+  </url>
+  <url>
+    <loc>https://a-identity.xyz/blog/watching-monad-parallel-evm</loc>
+    <changefreq>monthly</changefreq>
+    <priority>0.6</priority>
+  </url>
+  <url>
+    <loc>https://a-identity.xyz/blog/know-your-agent-identity-before-money</loc>
+    <changefreq>monthly</changefreq>
+    <priority>0.6</priority>
+  </url>
 </urlset>

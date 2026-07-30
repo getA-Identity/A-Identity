@@ -9,6 +9,17 @@ export type BlogSection = { heading: string; body: string[] }
 
 export type BlogAuthor = { name: string; role: string }
 
+/** The parts of a post that change between languages. Everything else (slug,
+ *  accent, seed, date) is deliberately shared so the two versions stay one post
+ *  with two renderings rather than drifting into two separate articles. */
+export type BlogTranslation = {
+  title: string
+  excerpt: string
+  chain: string
+  readingTime: string
+  sections: BlogSection[]
+}
+
 export type BlogPost = {
   slug: string
   title: string
@@ -22,6 +33,52 @@ export type BlogPost = {
   seed: number
   author: BlogAuthor
   sections: BlogSection[]
+  /** Turkish rendering. Absent means this post has not been translated yet, and
+   *  the Turkish index simply will not list it rather than showing English copy
+   *  under a Turkish URL, which is the thing that gets a site penalised. */
+  tr?: BlogTranslation
+}
+
+export type Lang = 'en' | 'tr'
+
+/** A post as it should render in one language. Falls back to nothing: callers
+ *  check `hasTranslation` first, because a half-translated page is worse than
+ *  an absent one for both readers and search engines. */
+export function localized(post: BlogPost, lang: Lang): BlogTranslation {
+  if (lang === 'tr' && post.tr) return post.tr
+  return {
+    title: post.title,
+    excerpt: post.excerpt,
+    chain: post.chain,
+    readingTime: post.readingTime,
+    sections: post.sections,
+  }
+}
+
+export const hasTranslation = (post: BlogPost, lang: Lang): boolean =>
+  lang === 'en' ? true : Boolean(post.tr)
+
+/** Posts available in a language, newest first as authored. */
+export const postsIn = (lang: Lang): BlogPost[] => POSTS.filter((p) => hasTranslation(p, lang))
+
+/** The path a post lives at in a given language. */
+export const postPath = (slug: string, lang: Lang): string =>
+  lang === 'tr' ? `/tr/blog/${slug}` : `/blog/${slug}`
+
+/**
+ * hreflang alternates for a post. Every version lists every version including
+ * itself; an incomplete cluster is ignored wholesale rather than partially
+ * honoured. `x-default` points at English as the version to serve when no
+ * language matches.
+ */
+export function alternatesFor(post: BlogPost): { hreflang: string; href: string }[] {
+  const base = 'https://a-identity.xyz'
+  const out = [
+    { hreflang: 'en', href: `${base}/blog/${post.slug}` },
+    { hreflang: 'x-default', href: `${base}/blog/${post.slug}` },
+  ]
+  if (post.tr) out.splice(1, 0, { hreflang: 'tr', href: `${base}/tr/blog/${post.slug}` })
+  return out
 }
 
 /** Team bylines; posts rotate between the two tracks. */
@@ -31,6 +88,153 @@ export const AUTHORS = {
 } as const
 
 export const POSTS: BlogPost[] = [
+  {
+    slug: 'verify-an-agent-before-you-pay-it',
+    title: 'How to verify an AI agent before you pay it',
+    excerpt:
+      'Your agent is about to send money to another agent. You have one question and a few hundred milliseconds to answer it. Here is what to check, in what order, and what each answer is actually worth.',
+    chain: 'Trust',
+    accent: '#2F6F4F',
+    date: 'Jul 31, 2026',
+    readingTime: '7 min read',
+    seed: 11,
+    author: AUTHORS.protocol,
+    sections: [
+      {
+        heading: 'The question is not "is this agent good"',
+        body: [
+          'When your agent is about to pay another agent, the useful question is never "is this counterparty trustworthy" in the abstract. It is "should this specific payment, for this amount, to this party, right now, go through". Those are different questions and only the second one has an answer you can act on.',
+          'The difference matters because risk is a function of exposure. A counterparty you would happily pay one dollar is not automatically a counterparty you should pay ten thousand. Any check that returns a verdict without knowing the amount is answering a question you did not ask.',
+        ],
+      },
+      {
+        heading: 'Check one: is there an identity at all',
+        body: [
+          'Start with whether the counterparty is registered on-chain. Under ERC-8004, an agent has an entry in an identity registry: a token id, an owner, and metadata describing its endpoints. This is cheap to check and cheap to fake, so treat it as a filter rather than a signal. An agent with no registration is a stranger. An agent with one is a stranger who filled in a form.',
+          'What you are ruling out here is the trivial case, and that is worth doing first because it is the fastest check you will run.',
+        ],
+      },
+      {
+        heading: 'Check two: has it proved it controls its own wallet',
+        body: [
+          'This is the check most people skip and it is the one that separates a claim from evidence. Anyone can register an agent that lists a wallet address. Proving that the agent actually controls that address requires signing a challenge with the corresponding key, and recording the result on-chain.',
+          'That is what KYA, Know Your Agent, means: not a background check on the operator, but a cryptographic demonstration that the agent and the wallet are the same actor. Without it, an attacker can register an agent claiming a reputable wallet and inherit its history for free.',
+          'When you read a reputation score, ask what it was computed over. If the underlying wallet was never proved, the score describes somebody else.',
+        ],
+      },
+      {
+        heading: 'Check three: what has it actually done',
+        body: [
+          'Now reputation becomes meaningful. The number you want is one computed from settled payments, not from ratings. Ratings are cheap to manufacture; a settlement is a transaction that moved real value and left a hash behind.',
+          'Two properties make a score usable. It should be deterministic, so the same inputs always produce the same number and you can recompute it yourself rather than trusting ours. And it should decay, so an agent that behaved well a year ago and has been silent since does not read the same as one that behaved well last week.',
+          'Ask any scoring provider for their method. If they will not publish it, the score is a brand, not a measurement.',
+        ],
+      },
+      {
+        heading: 'Check four: is the deal itself suspicious',
+        body: [
+          'Everything above examines one party. Some of the most common manipulation is only visible when you look at both.',
+          'The pattern is simple: an operator registers two agents, has them pay each other repeatedly, and manufactures a settlement history for both. Each agent looks fine in isolation. The relationship between them is the tell, and a one-sided scan cannot see it by construction.',
+          'So the last check takes both sides of the proposed deal and asks whether they are independent. Shared funding sources, shared deployment patterns, and payment graphs that only ever loop back on themselves are what give it away.',
+        ],
+      },
+      {
+        heading: 'What a verdict should look like',
+        body: [
+          'The output of all this should be a decision, not a dashboard. Your agent cannot act on a risk score of 0.72. It can act on ALLOW, WARN or DENY.',
+          'WARN is the important one and it is usually missing. It means the payment is permitted but crosses a line where a human should look. An agent that treats WARN as ALLOW has thrown away the only signal that was asking for a person.',
+          'Whatever verdict you get, it should arrive with reasons in plain language. You will eventually have to explain a blocked payment to whoever was expecting it to go through, and "the model said no" is not an explanation.',
+        ],
+      },
+      {
+        heading: 'The check that runs after the verdict',
+        body: [
+          'Verifying the counterparty answers whether you should pay. It does not answer whether you are allowed to. Those are separate, and conflating them is how agents overspend while passing every check.',
+          'A counterparty can be entirely legitimate and the payment can still be outside the budget its owner set. That limit needs to live somewhere the agent cannot argue with: a server-side pre-check is convenient, but an on-chain vault that reverts an over-limit transfer is what still holds when the server is wrong.',
+          'Verify the other party, then check your own limits. Skipping the second one means the only thing standing between an agent and your balance is its own judgement.',
+        ],
+      },
+      {
+        heading: 'Doing it in one call',
+        body: [
+          'A-Identity runs these four checks as pay-per-call endpoints. `risk_check` takes the counterparty and the intended amount and returns the verdict with its reasons. `counterparty_check` takes both sides and catches the self-dealing case. `trust_preview` is free and rate limited, so you can see the shape of an answer before spending anything.',
+          'Payment is per call in USDC over x402, which means no account and no API key: an unpaid request returns HTTP 402 describing exactly what is owed, and the resource is served on a paid retry.',
+          'The scoring method is published in full and every settlement we have taken is listed with its transaction hash. You should not have to trust a trust provider, and we would rather be checked than believed.',
+        ],
+      },
+    ],
+    tr: {
+      title: 'Bir AI ajanına ödeme yapmadan önce kimliğini nasıl doğrularsınız',
+      excerpt:
+        'Ajanınız başka bir ajana para göndermek üzere. Cevaplamanız gereken tek bir soru ve birkaç yüz milisaniyeniz var. Neye, hangi sırayla bakmalı ve her cevap gerçekte ne kadar değerli.',
+      chain: 'Güven',
+      readingTime: '7 dakika',
+      sections: [
+        {
+          heading: 'Soru "bu ajan iyi mi" değil',
+          body: [
+            'Ajanınız başka bir ajana ödeme yapmak üzereyken işe yarayan soru, soyut olarak "bu karşı taraf güvenilir mi" değildir. "Bu belirli ödeme, bu tutarda, bu tarafa, şu anda gerçekleşmeli mi" sorusudur. Bunlar farklı sorulardır ve yalnızca ikincisinin üzerine harekete geçebileceğiniz bir cevabı vardır.',
+            'Fark önemli, çünkü risk maruziyetin bir fonksiyonudur. Bir dolar ödemekte tereddüt etmeyeceğiniz bir karşı taraf, otomatik olarak on bin dolar ödemeniz gereken bir karşı taraf değildir. Tutarı bilmeden karar döndüren her kontrol, sormadığınız bir soruyu cevaplıyordur.',
+          ],
+        },
+        {
+          heading: 'Birinci kontrol: ortada bir kimlik var mı',
+          body: [
+            'Karşı tarafın zincir üzerinde kayıtlı olup olmadığıyla başlayın. ERC-8004 kapsamında bir ajanın kimlik kaydında bir girdisi bulunur: bir token kimliği, bir sahip ve uçlarını tarif eden meta veri. Bunu kontrol etmek de taklit etmek de ucuzdur, dolayısıyla bunu bir sinyal değil bir filtre olarak görün. Kaydı olmayan bir ajan yabancıdır. Kaydı olan bir ajan, form doldurmuş bir yabancıdır.',
+            'Burada elediğiniz şey en basit durumdur ve bunu ilk yapmaya değer, çünkü çalıştıracağınız en hızlı kontrol budur.',
+          ],
+        },
+        {
+          heading: 'İkinci kontrol: kendi cüzdanını kontrol ettiğini kanıtladı mı',
+          body: [
+            'Bu, çoğu kişinin atladığı kontroldür ve iddiayı kanıttan ayıran şey tam olarak budur. Herkes bir cüzdan adresi listeleyen bir ajan kaydedebilir. Ajanın o adresi gerçekten kontrol ettiğini kanıtlamak ise ilgili anahtarla bir meydan okumayı imzalamayı ve sonucu zincire yazmayı gerektirir.',
+            'KYA, yani Know Your Agent, budur: operatör hakkında bir geçmiş araştırması değil, ajan ile cüzdanın aynı aktör olduğunun kriptografik gösterimi. Bu olmadan bir saldırgan, itibarlı bir cüzdanı sahiplendiğini iddia eden bir ajan kaydedip o geçmişi bedavaya devralabilir.',
+            'Bir itibar skoru okuduğunuzda, neyin üzerinden hesaplandığını sorun. Altındaki cüzdan hiç kanıtlanmadıysa skor başka birini tarif ediyordur.',
+          ],
+        },
+        {
+          heading: 'Üçüncü kontrol: gerçekte ne yapmış',
+          body: [
+            'İtibar ancak burada anlam kazanır. İstediğiniz sayı, puanlamalardan değil, tamamlanmış ödemelerden hesaplanan sayıdır. Puanlama üretmek ucuzdur; bir settlement ise gerçek değer taşımış ve arkasında bir işlem özeti bırakmış bir işlemdir.',
+            'Bir skoru kullanılabilir kılan iki özellik var. Deterministik olmalı ki aynı girdiler her zaman aynı sayıyı üretsin ve bize güvenmek yerine kendiniz yeniden hesaplayabilesiniz. Ve zamanla azalmalı ki bir yıl önce iyi davranıp o zamandan beri susan bir ajan, geçen hafta iyi davranan bir ajanla aynı görünmesin.',
+            'Skor sağlayan herkesten yöntemini isteyin. Yayınlamıyorlarsa o skor bir ölçüm değil, bir markadır.',
+          ],
+        },
+        {
+          heading: 'Dördüncü kontrol: anlaşmanın kendisi şüpheli mi',
+          body: [
+            'Yukarıdakilerin hepsi tek bir tarafı inceler. En yaygın manipülasyonların bazıları ise ancak iki tarafa birden bakınca görünür.',
+            'Kalıp basit: bir operatör iki ajan kaydeder, onlara birbirlerine tekrar tekrar ödeme yaptırır ve ikisi için de settlement geçmişi imal eder. Her ajan tek başına bakıldığında düzgün görünür. Aradaki ilişki ele veren şeydir ve tek taraflı bir tarama bunu yapısı gereği göremez.',
+            'Bu yüzden son kontrol, önerilen anlaşmanın iki tarafını birden alıp bağımsız olup olmadıklarını sorar. Ortak fonlama kaynakları, ortak dağıtım kalıpları ve sürekli kendi üzerine kapanan ödeme grafikleri bunu ele verir.',
+          ],
+        },
+        {
+          heading: 'Bir karar nasıl görünmeli',
+          body: [
+            'Tüm bunların çıktısı bir gösterge paneli değil, bir karar olmalı. Ajanınız 0.72 risk skoruyla hareket edemez. ALLOW, WARN veya DENY ile edebilir.',
+            'Önemli olan WARN ve genellikle eksik olan da odur. Ödemeye izin verildiği ama bir insanın bakması gereken bir çizgiyi geçtiği anlamına gelir. WARN kararını ALLOW gibi işleyen bir ajan, elindeki tek "insan çağır" sinyalini çöpe atmış olur.',
+            'Hangi kararı alırsanız alın, yanında sade bir dille gerekçeler gelmeli. Er ya da geç, engellenmiş bir ödemeyi o ödemenin geçmesini bekleyen birine açıklamak zorunda kalacaksınız ve "model hayır dedi" bir açıklama değildir.',
+          ],
+        },
+        {
+          heading: 'Karardan sonra çalışan kontrol',
+          body: [
+            'Karşı tarafı doğrulamak, ödeme yapmalı mısınız sorusunu cevaplar. Ödeme yapmaya izniniz var mı sorusunu cevaplamaz. Bunlar ayrı şeylerdir ve ikisini birbirine karıştırmak, ajanların her kontrolü geçerken bütçeyi aşmasının yoludur.',
+            'Bir karşı taraf tamamen meşru olabilir ve ödeme yine de sahibinin koyduğu bütçenin dışında kalabilir. O sınırın, ajanın tartışamayacağı bir yerde durması gerekir: sunucu tarafındaki ön kontrol pratiktir, ama sunucu yanıldığında hâlâ ayakta duran şey, limit aşan transferi geri çeviren zincir üstü kasadır.',
+            'Önce karşı tarafı doğrulayın, sonra kendi limitlerinizi kontrol edin. İkincisini atlamak, bir ajanla bakiyeniz arasında duran tek şeyin ajanın kendi muhakemesi olması demektir.',
+          ],
+        },
+        {
+          heading: 'Bunu tek çağrıda yapmak',
+          body: [
+            'A-Identity bu dört kontrolü çağrı başına ödemeli uçlar olarak sunar. `risk_check` karşı tarafı ve amaçlanan tutarı alır, kararı gerekçeleriyle döndürür. `counterparty_check` iki tarafı birden alır ve kendi kendine ticaret durumunu yakalar. `trust_preview` ücretsiz ve hız sınırlıdır, böylece hiçbir şey harcamadan cevabın nasıl göründüğünü görebilirsiniz.',
+            'Ödeme, x402 üzerinden USDC ile çağrı başınadır: hesap yok, API anahtarı yok. Ödenmemiş bir istek, tam olarak ne borçlu olduğunuzu anlatan HTTP 402 döner ve kaynak ödenmiş tekrar denemede sunulur.',
+            'Skorlama yöntemi tamamıyla yayında ve aldığımız her settlement işlem özetiyle birlikte listeleniyor. Bir güven sağlayıcısına güvenmek zorunda kalmamalısınız; bize inanılmasındansa kontrol edilmeyi tercih ederiz.',
+          ],
+        },
+      ],
+    },
+  },
   {
     slug: 'agentic-economy-when-agents-get-wallets',
     title: 'The Agentic Economy: when agents get wallets',

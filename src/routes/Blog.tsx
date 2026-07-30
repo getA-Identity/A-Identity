@@ -1,10 +1,12 @@
 import { useMemo, useState } from 'react'
-import { Link } from 'react-router-dom'
+import { Link, useLocation } from 'react-router-dom'
 import { AnimatePresence, motion } from 'framer-motion'
 import PageHeader from '../components/PageHeader'
 import SiteFooter from '../components/sections/SiteFooter'
 import BlogCover from '../components/BlogCover'
-import { POSTS } from '../lib/blog'
+import { postsIn, localized, postPath, type Lang } from '../lib/blog'
+import { t } from '../lib/blog-strings'
+import { usePageMeta } from '../lib/head'
 import { EASE_OUT_EXPO } from '../lib/brand'
 import ThemeScope from '../components/ThemeScope'
 
@@ -16,14 +18,37 @@ const reveal = {
 }
 
 /** Filter list: All plus each distinct topic, in first-seen order. */
-const TYPES = ['All', ...Array.from(new Set(POSTS.map((p) => p.chain)))]
+/** Filter labels come from the posts that exist in the current language, so a
+ *  Turkish reader is never offered a category with nothing behind it. */
+const typesFor = (lang: Lang) => [
+  lang === 'tr' ? 'Tümü' : 'All',
+  ...Array.from(new Set(postsIn(lang).map((p) => localized(p, lang).chain))),
+]
 
 export default function Blog() {
-  const [filter, setFilter] = useState('All')
+  const { pathname } = useLocation()
+  const lang: Lang = pathname.startsWith('/tr/') ? 'tr' : 'en'
+  const L = t(lang)
+  const all = lang === 'tr' ? 'Tümü' : 'All'
+  const [filter, setFilter] = useState(all)
+  const TYPES = useMemo(() => typesFor(lang), [lang])
+
+  usePageMeta({
+    title: `${L.blogTitle} · A-Identity`,
+    description: L.blogIntro,
+    canonical: `https://a-identity.xyz${lang === 'tr' ? '/tr/blog' : '/blog'}`,
+    lang,
+    alternates: [
+      { hreflang: 'en', href: 'https://a-identity.xyz/blog' },
+      { hreflang: 'tr', href: 'https://a-identity.xyz/tr/blog' },
+      { hreflang: 'x-default', href: 'https://a-identity.xyz/blog' },
+    ],
+  })
 
   const shown = useMemo(
-    () => (filter === 'All' ? POSTS : POSTS.filter((p) => p.chain === filter)),
-    [filter],
+    () =>
+      postsIn(lang).filter((p) => filter === all || localized(p, lang).chain === filter),
+    [filter, lang, all],
   )
 
   return (
@@ -41,19 +66,27 @@ export default function Blog() {
             lineHeight: 1.05,
           }}
         >
-          Blog
+          {L.blogTitle}
         </motion.h1>
         <motion.p {...reveal} className="mt-5 max-w-2xl text-lg leading-relaxed text-foreground/60">
-          Notes from the agentic economy. Where we are building, why these chains, and what
-          we are still figuring out.
+          {L.blogIntro}
         </motion.p>
+        <motion.div {...reveal} className="mt-6">
+          <Link
+            to={lang === 'tr' ? '/blog' : '/tr/blog'}
+            hrefLang={lang === 'tr' ? 'en' : 'tr'}
+            className="inline-flex items-center gap-2 rounded-full border border-border px-3.5 py-1.5 text-sm text-foreground/70 transition-colors hover:border-accent/40 hover:text-accent"
+          >
+            {lang === 'tr' ? L.readInEnglish : L.readInTurkish}
+          </Link>
+        </motion.div>
 
         <div className="mt-12 grid gap-10 lg:grid-cols-[200px_1fr]">
           {/* Browse by type (left rail, sticky on desktop) */}
           <aside>
             <div className="lg:sticky lg:top-24">
               <div className="text-[11px] font-bold uppercase tracking-widest text-foreground/45">
-                Browse by type
+                {lang === 'tr' ? 'Konuya göre' : 'Browse by type'}
               </div>
               {/* Horizontal chips on mobile, vertical list on desktop */}
               <div className="mt-4 flex gap-2 overflow-x-auto pb-1 lg:flex-col lg:gap-0 lg:overflow-visible lg:pb-0">
@@ -90,7 +123,7 @@ export default function Blog() {
                 className="grid gap-x-8 gap-y-12 sm:grid-cols-2"
               >
                 {shown.map((post) => (
-                  <Link key={post.slug} to={`/blog/${post.slug}`} className="group block">
+                  <Link key={post.slug} to={postPath(post.slug, lang)} className="group block">
                     <div className="aspect-[16/9] w-full overflow-hidden rounded-2xl">
                       <BlogCover
                         accent={post.accent}
@@ -102,10 +135,10 @@ export default function Blog() {
                       className="mt-4 text-[11px] font-bold uppercase tracking-widest"
                       style={{ color: post.accent }}
                     >
-                      {post.chain}
+                      {localized(post, lang).chain}
                     </div>
                     <h3 className="mt-2 text-xl font-bold leading-snug tracking-tight text-foreground transition-colors group-hover:text-accent">
-                      {post.title}
+                      {localized(post, lang).title}
                     </h3>
                     <div className="mt-2 text-sm text-foreground/45">{post.date}</div>
                   </Link>

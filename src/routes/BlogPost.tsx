@@ -1,13 +1,15 @@
 import { useState } from 'react'
-import { Link, Navigate, useParams } from 'react-router-dom'
+import { Link, Navigate, useLocation, useParams } from 'react-router-dom'
 import { motion } from 'framer-motion'
-import { ArrowUpRight, Check, Link2 } from 'lucide-react'
+import { ArrowUpRight, Check, Link2, Languages } from 'lucide-react'
 import PageHeader from '../components/PageHeader'
 import SiteFooter from '../components/sections/SiteFooter'
 import BlogCover from '../components/BlogCover'
 import Logo from '../components/Logo'
 import { ChainChip } from './Blog'
-import { getPost, POSTS } from '../lib/blog'
+import { getPost, POSTS, localized, hasTranslation, postPath, alternatesFor, type Lang } from '../lib/blog'
+import { t } from '../lib/blog-strings'
+import { usePageMeta } from '../lib/head'
 import { EASE_OUT_EXPO } from '../lib/brand'
 import ThemeScope from '../components/ThemeScope'
 
@@ -19,12 +21,35 @@ const reveal = {
 
 export default function BlogPost() {
   const { slug } = useParams()
+  const { pathname } = useLocation()
+  // The URL is the single source of truth for language. No cookie, no browser
+  // sniffing: a given article must always be the same article at a given URL,
+  // or the version a search engine indexed is not the one a reader is served.
+  const lang: Lang = pathname.startsWith('/tr/') ? 'tr' : 'en'
   const post = slug ? getPost(slug) : undefined
+  const missingTranslation = post && !hasTranslation(post, lang)
 
-  if (!post) return <Navigate to="/blog" replace />
+  // Falling back to English copy under a Turkish URL would be worse than a
+  // redirect: duplicate content under two languages is the exact thing hreflang
+  // exists to prevent, and it costs both pages their standing.
+  usePageMeta({
+    title: post ? `${localized(post, lang).title} · ${t(lang).metaSuffix}` : t(lang).blogTitle,
+    description: post ? localized(post, lang).excerpt : undefined,
+    canonical: post ? `https://a-identity.xyz${postPath(post.slug, lang)}` : undefined,
+    lang,
+    alternates: post ? alternatesFor(post) : undefined,
+  })
 
-  const more = POSTS.filter((p) => p.slug !== post.slug && p.chain === post.chain)
-    .concat(POSTS.filter((p) => p.slug !== post.slug && p.chain !== post.chain))
+  if (!post) return <Navigate to={lang === 'tr' ? '/tr/blog' : '/blog'} replace />
+  if (missingTranslation) return <Navigate to={`/blog/${post.slug}`} replace />
+
+  const L = t(lang)
+  const view = localized(post, lang)
+  const other: Lang = lang === 'tr' ? 'en' : 'tr'
+  const canSwitch = hasTranslation(post, other)
+
+  const more = POSTS.filter((p) => p.slug !== post.slug && hasTranslation(p, lang) && p.chain === post.chain)
+    .concat(POSTS.filter((p) => p.slug !== post.slug && hasTranslation(p, lang) && p.chain !== post.chain))
     .slice(0, 3)
 
   return (
@@ -35,15 +60,29 @@ export default function BlogPost() {
         {/* Breadcrumb */}
         <motion.nav {...reveal} className="flex flex-wrap items-center gap-1.5 text-sm">
           <Link to="/" className="text-accent hover:underline">
-            Home
+            {L.home}
           </Link>
           <span className="text-foreground/30">/</span>
-          <Link to="/blog" className="text-accent hover:underline">
-            Blog
+          <Link to={lang === 'tr' ? '/tr/blog' : '/blog'} className="text-accent hover:underline">
+            {L.blog}
           </Link>
           <span className="text-foreground/30">/</span>
-          <span className="truncate text-foreground/50">{post.title}</span>
+          <span className="truncate text-foreground/50">{view.title}</span>
         </motion.nav>
+
+        {/* Language switch, shown only when the other version actually exists. */}
+        {canSwitch && (
+          <motion.div {...reveal} className="mt-6">
+            <Link
+              to={postPath(post.slug, other)}
+              hrefLang={other}
+              className="inline-flex items-center gap-2 rounded-full border border-border px-3.5 py-1.5 text-sm text-foreground/70 transition-colors hover:border-accent/40 hover:text-accent"
+            >
+              <Languages size={15} />
+              {other === 'tr' ? L.readInTurkish : L.readInEnglish}
+            </Link>
+          </motion.div>
+        )}
 
         {/* Date, huge title, category chip */}
         <motion.div {...reveal} className="mt-10">
@@ -56,10 +95,10 @@ export default function BlogPost() {
               lineHeight: 1.08,
             }}
           >
-            {post.title}
+            {view.title}
           </h1>
           <div className="mt-5">
-            <ChainChip chain={post.chain} accent={post.accent} />
+            <ChainChip chain={view.chain} accent={post.accent} />
           </div>
         </motion.div>
 
@@ -69,9 +108,9 @@ export default function BlogPost() {
             {/* What you'll learn */}
             <motion.div {...reveal} className="rounded-2xl border border-border bg-card p-6">
               <div className="text-[11px] font-bold uppercase tracking-widest text-foreground/50">
-                What you'll learn
+                {L.whatYoullLearn}
               </div>
-              <p className="mt-2 leading-relaxed text-foreground/70">{post.excerpt}</p>
+              <p className="mt-2 leading-relaxed text-foreground/70">{view.excerpt}</p>
             </motion.div>
 
             {/* Cover */}
@@ -81,7 +120,7 @@ export default function BlogPost() {
 
             {/* Body */}
             <div className="mt-10 flex flex-col gap-10">
-              {post.sections.map((s) => (
+              {view.sections.map((s) => (
                 <section key={s.heading}>
                   <h2
                     className="text-2xl font-bold tracking-tight text-foreground sm:text-3xl"
@@ -107,7 +146,7 @@ export default function BlogPost() {
               {/* Author */}
               <div className="rounded-2xl border border-border bg-card p-6">
                 <div className="text-[11px] font-bold uppercase tracking-widest text-foreground/50">
-                  Author
+                  {L.author}
                 </div>
                 <div className="mt-4 flex items-center gap-3">
                   <div className="grid h-11 w-11 place-items-center rounded-full bg-background">
@@ -119,9 +158,9 @@ export default function BlogPost() {
                   </div>
                 </div>
                 <div className="mt-5 border-t border-border pt-4">
-                  <ShareRow title={post.title} />
+                  <ShareRow title={view.title} lang={lang} />
                 </div>
-                <div className="mt-4 text-xs text-foreground/40">{post.readingTime}</div>
+                <div className="mt-4 text-xs text-foreground/40">{view.readingTime}</div>
               </div>
 
               {/* CTA card (subscribe slot in the reference) */}
@@ -130,17 +169,18 @@ export default function BlogPost() {
                 style={{ background: 'linear-gradient(135deg, #EEF4FF 0%, #F4F1FB 100%)' }}
               >
                 <div className="text-[11px] font-bold uppercase tracking-widest text-foreground/55">
-                  Build with A-Identity
+                  {lang === 'tr' ? "A-Identity ile geliştir" : 'Build with A-Identity'}
                 </div>
                 <p className="mt-3 text-sm leading-relaxed text-foreground/70">
-                  Give your agent a verified identity and a wallet. Verify first, pay at
-                  machine speed.
+                  {lang === 'tr'
+                    ? 'Ajanınıza doğrulanmış bir kimlik ve bir cüzdan verin. Önce doğrulayın, sonra makine hızında ödeyin.'
+                    : 'Give your agent a verified identity and a wallet. Verify first, pay at machine speed.'}
                 </p>
                 <Link
                   to="/signup"
                   className="mt-4 inline-flex items-center gap-1.5 rounded-full bg-foreground px-4 py-2.5 text-sm font-semibold text-background transition-transform hover:scale-[1.03]"
                 >
-                  Get Your Agent ID <ArrowUpRight size={14} />
+                  {lang === 'tr' ? 'Ajan kimliğini al' : 'Get Your Agent ID'} <ArrowUpRight size={14} />
                 </Link>
               </div>
             </div>
@@ -150,11 +190,11 @@ export default function BlogPost() {
         {/* Keep reading */}
         <section className="mt-20 border-t border-border pt-12">
           <h2 className="text-[11px] font-bold uppercase tracking-widest text-foreground/50">
-            Keep reading
+            {L.keepReading}
           </h2>
           <div className="mt-6 grid gap-x-8 gap-y-10 sm:grid-cols-3">
             {more.map((p) => (
-              <Link key={p.slug} to={`/blog/${p.slug}`} className="group block">
+              <Link key={p.slug} to={postPath(p.slug, lang)} className="group block">
                 <div className="aspect-[16/9] w-full overflow-hidden rounded-2xl">
                   <BlogCover
                     accent={p.accent}
@@ -166,10 +206,10 @@ export default function BlogPost() {
                   className="mt-3 text-[11px] font-bold uppercase tracking-widest"
                   style={{ color: p.accent }}
                 >
-                  {p.chain}
+                  {localized(p, lang).chain}
                 </div>
                 <h3 className="mt-1.5 text-lg font-bold leading-snug tracking-tight text-foreground transition-colors group-hover:text-accent">
-                  {p.title}
+                  {localized(p, lang).title}
                 </h3>
                 <div className="mt-1.5 text-sm text-foreground/45">{p.date}</div>
               </Link>
@@ -184,7 +224,8 @@ export default function BlogPost() {
 }
 
 /** Copy-link plus X and LinkedIn share intents. Uses the live page URL. */
-function ShareRow({ title }: { title: string }) {
+function ShareRow({ title, lang }: { title: string; lang: Lang }) {
+  const L = t(lang)
   const [copied, setCopied] = useState(false)
   const url = typeof window !== 'undefined' ? window.location.href : ''
 
@@ -200,11 +241,11 @@ function ShareRow({ title }: { title: string }) {
 
   return (
     <div className="flex items-center gap-3">
-      <span className="text-[11px] font-bold uppercase tracking-widest text-foreground/50">Share</span>
+      <span className="text-[11px] font-bold uppercase tracking-widest text-foreground/50">{L.share}</span>
       <button
         type="button"
         onClick={copy}
-        aria-label="Copy link"
+        aria-label={L.copyLink}
         className="grid h-8 w-8 place-items-center rounded-full bg-foreground/5 text-foreground/60 transition-colors hover:bg-foreground/10"
       >
         {copied ? <Check size={14} className="text-emerald-600" /> : <Link2 size={14} />}
@@ -213,7 +254,7 @@ function ShareRow({ title }: { title: string }) {
         href={`https://x.com/intent/post?text=${encodeURIComponent(title)}&url=${encodeURIComponent(url)}`}
         target="_blank"
         rel="noopener noreferrer"
-        aria-label="Share on X"
+        aria-label={L.shareOnX}
         className="grid h-8 w-8 place-items-center rounded-full bg-foreground/5 text-xs font-bold text-foreground/60 transition-colors hover:bg-foreground/10"
       >
         X
@@ -222,7 +263,7 @@ function ShareRow({ title }: { title: string }) {
         href={`https://www.linkedin.com/sharing/share-offsite/?url=${encodeURIComponent(url)}`}
         target="_blank"
         rel="noopener noreferrer"
-        aria-label="Share on LinkedIn"
+        aria-label={L.shareOnLinkedIn}
         className="grid h-8 w-8 place-items-center rounded-full bg-foreground/5 text-xs font-bold text-foreground/60 transition-colors hover:bg-foreground/10"
       >
         in

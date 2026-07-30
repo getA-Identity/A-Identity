@@ -17,8 +17,10 @@
     "smoke:only": "node scripts/smoke.mjs",
     "check:seo": "node scripts/check-structured-data.mjs",
     "check:skills": "node scripts/gen-agent-skills-index.mjs --check",
-    "check": "npm run check:seo && npm run check:skills && npm run check:oauth",
-    "check:oauth": "node scripts/gen-oauth-mirror.mjs --check"
+    "check": "npm run check:seo && npm run check:skills && npm run check:oauth && npm run check:sitemap",
+    "check:oauth": "node scripts/gen-oauth-mirror.mjs --check",
+    "sitemap": "node scripts/gen-sitemap.mjs",
+    "check:sitemap": "node scripts/gen-sitemap.mjs --check"
   },
   "dependencies": {
     "@radix-ui/react-accordion": "^1.2.16",

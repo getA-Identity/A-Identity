@@ -65,6 +65,10 @@ export default function App() {
         <Route path="/faq" element={<Faq />} />
         <Route path="/blog" element={<Blog />} />
         <Route path="/blog/:slug" element={<BlogPost />} />
+        {/* Turkish lives under a locale prefix rather than a query string or a
+            cookie, so each translation has its own crawlable, linkable URL. */}
+        <Route path="/tr/blog" element={<Blog />} />
+        <Route path="/tr/blog/:slug" element={<BlogPost />} />
         <Route path="/use-cases/:slug" element={<UseCase />} />
         <Route path="/explorer" element={<Explorer />} />
         <Route path="/architecture" element={<Architecture />} />

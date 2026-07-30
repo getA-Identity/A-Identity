@@ -19,6 +19,8 @@ export function usePageMeta({
   canonical,
   jsonLd,
   noindex,
+  lang,
+  alternates,
 }: {
   title: string
   description?: string
@@ -26,6 +28,15 @@ export function usePageMeta({
   canonical?: string
   jsonLd?: unknown
   noindex?: boolean
+  /** BCP 47 code for this page's content, written to <html lang>. */
+  lang?: string
+  /**
+   * Translations of this page, as hreflang alternates. Every version must list
+   * every version INCLUDING itself, which is what the spec requires and what
+   * most implementations get wrong: a page that only points at its translations
+   * and not at itself leaves the cluster incomplete and Google ignores the lot.
+   */
+  alternates?: { hreflang: string; href: string }[]
 }) {
   useEffect(() => {
     const restore: (() => void)[] = []
@@ -35,6 +46,26 @@ export function usePageMeta({
     restore.push(() => {
       document.title = prevTitle
     })
+
+    if (lang) {
+      const prevLang = document.documentElement.lang
+      document.documentElement.lang = lang
+      restore.push(() => {
+        document.documentElement.lang = prevLang
+      })
+    }
+
+    // Alternates are always created and removed rather than overwritten: unlike
+    // canonical there is no single site-wide tag to restore, and a stale one left
+    // behind by the previous route would advertise the wrong translation.
+    for (const alt of alternates ?? []) {
+      const l = document.createElement('link')
+      l.rel = 'alternate'
+      l.hreflang = alt.hreflang
+      l.href = alt.href
+      document.head.appendChild(l)
+      restore.push(() => l.remove())
+    }
 
     const setTag = <T extends HTMLElement>(
       selector: string,
@@ -116,5 +147,5 @@ export function usePageMeta({
     }
 
     return () => restore.forEach((f) => f())
-  }, [title, description, canonical, jsonLd, noindex])
+  }, [title, description, canonical, jsonLd, noindex, lang, alternates])
 }
