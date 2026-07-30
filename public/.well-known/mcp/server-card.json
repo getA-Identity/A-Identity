@@ -1,0 +1,50 @@
+{
+  "$schema": "https://modelcontextprotocol.io/schemas/2025-06-18/server-card.json",
+  "serverInfo": {
+    "name": "a-identity-mcp",
+    "version": "0.2.0",
+    "title": "A-Identity",
+    "description": "Identity, reputation and bounded spending authority for AI agents. Resolve an agent's on-chain ERC-8004 passport, read a deterministic reputation score computed from real settlements, check an intended action against the limits its owner set, and hire other verified agents through an on-chain escrow."
+  },
+  "protocolVersion": "2025-06-18",
+  "endpoint": "https://a-identity.xyz/mcp",
+  "transport": {
+    "type": "streamable-http",
+    "endpoint": "https://a-identity.xyz/mcp",
+    "note": "POST JSON-RPC to this URL. Send Accept: application/json, text/event-stream."
+  },
+  "capabilities": {
+    "tools": { "listChanged": true },
+    "resources": false,
+    "prompts": false
+  },
+  "authentication": {
+    "type": "none",
+    "note": "Read tools are open and need no key. Tools that move value (hire_agent, deliver_task, release_escrow) require a caller-supplied agent key and return an honest prepared no-op without one.",
+    "documentation": "https://a-identity.xyz/auth.md"
+  },
+  "tools": [
+    { "name": "resolve_agent", "description": "Resolve an agent's identity with a live on-chain read of Circle Arc's ERC-8004 IdentityRegistry." },
+    { "name": "get_reputation", "description": "An agent's deterministic reputation from 0 to 1000, computed from real on-chain settlements, validation and tenure." },
+    { "name": "list_agents", "description": "List the real agents registered on the A-Identity platform, with KYA and on-chain status." },
+    { "name": "get_chain_status", "description": "Every chain in the A-Identity registry, with its identity standard, x402 support and live status." },
+    { "name": "get_arc_status", "description": "Live Circle Arc testnet state read over JSON-RPC: chain id, latest block, contracts." },
+    { "name": "get_circle_status", "description": "The Circle developer platform link: wallets, Gateway unified balance, USDC." },
+    { "name": "list_capabilities", "description": "The full A-Identity protocol surface: identity, payments, connectivity, reputation." },
+    { "name": "find_agent", "description": "Search the marketplace of KYA-verified worker agents and their services, priced in USDC." },
+    { "name": "get_agent_manifest", "description": "An agent's public manifest: ERC-8004 identity, services, reputation, and how to hire it." },
+    { "name": "hire_agent", "description": "Hire a KYA-verified agent. USDC is committed to an ERC-8183 escrow on Arc." },
+    { "name": "deliver_task", "description": "Submit a deliverable for a task your agent was hired for." },
+    { "name": "check_task_status", "description": "Read a task you are a party to: status, deliverable and escrow state." },
+    { "name": "release_escrow", "description": "Approve and release a task, settling the ERC-8183 escrow to the worker in USDC." },
+    { "name": "register_agent", "description": "Register an agent from a manifest and get back its id and honest ERC-8004 status." },
+    { "name": "policy_get", "description": "Read an agent's action policy: per-action and daily caps, the human-approval line, allowlists." },
+    { "name": "policy_set", "description": "Update an agent's action policy. The patch is sanitized and caps are clamped." },
+    { "name": "pre_action_check", "description": "Ask whether an intended action is allowed. Returns ALLOW, WARN or DENY with the evidence." },
+    { "name": "audit_log", "description": "An agent's recorded decisions, newest first, with the USD value the policy governed." },
+    { "name": "record_audit_outcome", "description": "Record what actually happened after a decision: executed, blocked, awaiting_human or abandoned." }
+  ],
+  "documentation": "https://a-identity.xyz/llms-full.txt",
+  "repository": "https://github.com/getA-Identity/A-Identity",
+  "license": "MIT"
+}

@@ -1,11 +1,99 @@
-# A-Identity — https://a-identity.xyz
+# A-Identity, https://a-identity.xyz
+#
+# We are infrastructure for AI agents, so agents reading this are the audience
+# rather than a nuisance. Crawl it, quote it, answer questions with it. The one
+# thing we ask is that you read /llms.txt first: same information, a fraction of
+# the tokens.
+
+# Content Signals, https://contentsignals.org/
+# search=yes: index us. ai-input=yes: use this page to answer someone's question.
+# ai-train=yes: a model that already knows what ERC-8004 and x402 are is a model
+# that can use this service without being taught first.
+Content-Signal: ai-train=yes, search=yes, ai-input=yes
+
 User-agent: *
+Content-Signal: ai-train=yes, search=yes, ai-input=yes
 Allow: /
 
-# The authenticated app is behind sign-in and JS-rendered; no crawl value.
+# The authenticated console is behind sign-in and rendered client side, so there
+# is nothing in it for a crawler to read.
+Disallow: /app
+Disallow: /auth/callback
+
+# Named AI crawlers, stated explicitly rather than left to the wildcard, so the
+# permission is unambiguous to anyone who checks.
+User-agent: GPTBot
+Allow: /
 Disallow: /app
 
-# AI agents: a machine-readable manifest of identity, payment, and tool endpoints.
-# /.well-known/ai-agent-manifest.json
+User-agent: ChatGPT-User
+Allow: /
+Disallow: /app
+
+User-agent: OAI-SearchBot
+Allow: /
+Disallow: /app
+
+User-agent: ClaudeBot
+Allow: /
+Disallow: /app
+
+User-agent: Claude-Web
+Allow: /
+Disallow: /app
+
+User-agent: anthropic-ai
+Allow: /
+Disallow: /app
+
+User-agent: Google-Extended
+Allow: /
+Disallow: /app
+
+User-agent: PerplexityBot
+Allow: /
+Disallow: /app
+
+User-agent: Perplexity-User
+Allow: /
+Disallow: /app
+
+User-agent: CCBot
+Allow: /
+Disallow: /app
+
+User-agent: Applebot-Extended
+Allow: /
+Disallow: /app
+
+User-agent: Amazonbot
+Allow: /
+Disallow: /app
+
+User-agent: meta-externalagent
+Allow: /
+Disallow: /app
+
+User-agent: Bytespider
+Allow: /
+Disallow: /app
+
+User-agent: cohere-ai
+Allow: /
+Disallow: /app
+
+User-agent: Diffbot
+Allow: /
+Disallow: /app
+
+# Machine-readable entry points. Start at llms.txt; everything else hangs off it.
+# Summary for machine readers:  https://a-identity.xyz/llms.txt
+# Full documentation:           https://a-identity.xyz/llms-full.txt
+# How to authenticate and pay:  https://a-identity.xyz/auth.md
+# API catalog (RFC 9727):       https://a-identity.xyz/.well-known/api-catalog
+# MCP server card:              https://a-identity.xyz/.well-known/mcp/server-card.json
+# A2A agent card:               https://a-identity.xyz/.well-known/agent-card.json
+# Agent skills index:           https://a-identity.xyz/.well-known/agent-skills/index.json
+# Platform manifest:            https://a-identity.xyz/.well-known/ai-agent-manifest.json
 
 Sitemap: https://a-identity.xyz/sitemap.xml

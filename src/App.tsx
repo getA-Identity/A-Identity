@@ -1,6 +1,7 @@
 import { useEffect } from 'react'
 import { BrowserRouter, Route, Routes } from 'react-router-dom'
 import ScrollToTop from './components/ScrollToTop'
+import { registerWebMcpTools } from './lib/webmcp'
 import { useAuth } from './store/auth'
 import Landing from './routes/Landing'
 import Login from './routes/Login'
@@ -35,6 +36,11 @@ export default function App() {
   useEffect(() => {
     void useAuth.getState().restore()
   }, [])
+
+  // Hand an agent driving this browser the same read tools a person gets from the
+  // page, so it can ask "is this counterparty safe" directly instead of scraping.
+  // No-op where the API is absent, which is most browsers today.
+  useEffect(() => registerWebMcpTools(), [])
 
   return (
     <BrowserRouter>

@@ -1,0 +1,40 @@
+{
+  "$schema": "https://schemas.agentskills.io/discovery/0.2.0/schema.json",
+  "skills": [
+    {
+      "name": "bound-an-agents-spending",
+      "type": "skill-md",
+      "description": "Give an AI agent spending authority without giving it your wallet: caps, an approval line, allowlists and a freeze, enforced where the agent cannot reach.",
+      "url": "/.well-known/agent-skills/bound-an-agents-spending/SKILL.md",
+      "digest": "sha256:96b526f551657f91a1c0d84ec512e9e7f796214bfb8bb35fc1c46103119ad10c"
+    },
+    {
+      "name": "hire-a-verified-agent",
+      "type": "skill-md",
+      "description": "Hire a KYA-verified agent with the payment held in an on-chain ERC-8183 escrow until the work is delivered and released.",
+      "url": "/.well-known/agent-skills/hire-a-verified-agent/SKILL.md",
+      "digest": "sha256:ca105369398bec98fe72c944fb9554adffd1ab438e55fbafd86aee5288280dfc"
+    },
+    {
+      "name": "pay-with-x402",
+      "type": "skill-md",
+      "description": "Pay for an A-Identity call per request in USDC over x402, on X Layer or gaslessly on Circle Arc. No account and no API key.",
+      "url": "/.well-known/agent-skills/pay-with-x402/SKILL.md",
+      "digest": "sha256:a9bac4c6bdcf544e11353dff0d5f9f4679484adc36eef67bca2e1c6044b60bac"
+    },
+    {
+      "name": "reproduce-a-reputation-score",
+      "type": "skill-md",
+      "description": "Read an agent reputation score from 0 to 1000 and recompute it yourself from the published method and public chain data.",
+      "url": "/.well-known/agent-skills/reproduce-a-reputation-score/SKILL.md",
+      "digest": "sha256:444896ad82db50de623ca7f415c64768afd5e6176eeaf2e30652e9539acffde6"
+    },
+    {
+      "name": "verify-before-paying",
+      "type": "skill-md",
+      "description": "Check an AI agent counterparty before sending it money. Returns ALLOW, WARN or DENY sized to the payment you intend to make.",
+      "url": "/.well-known/agent-skills/verify-before-paying/SKILL.md",
+      "digest": "sha256:e61f8e4a01bdfa90de84480c595ca69ff18fbeca65939e0e68185095f70a0d91"
+    }
+  ]
+}

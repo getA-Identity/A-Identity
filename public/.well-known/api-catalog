@@ -1,0 +1,87 @@
+{
+  "linkset": [
+    {
+      "anchor": "https://a-identity-asp.onrender.com",
+      "service-desc": [
+        {
+          "href": "https://a-identity-asp.onrender.com/openapi.json",
+          "type": "application/vnd.oai.openapi+json",
+          "title": "A-Identity Trust Oracle, OpenAPI 3.1 description"
+        }
+      ],
+      "service-doc": [
+        {
+          "href": "https://a-identity.xyz/llms-full.txt",
+          "type": "text/markdown",
+          "title": "A-Identity, full documentation for machine readers"
+        },
+        {
+          "href": "https://a-identity-asp.onrender.com/methodology",
+          "type": "application/json",
+          "title": "How the reputation score is computed, in full"
+        }
+      ],
+      "status": [
+        {
+          "href": "https://a-identity-asp.onrender.com/health",
+          "type": "application/json",
+          "title": "Liveness and the current service card"
+        }
+      ],
+      "author": [
+        {
+          "href": "https://a-identity.xyz",
+          "type": "text/html",
+          "title": "A-Identity"
+        }
+      ],
+      "license": [
+        {
+          "href": "https://opensource.org/licenses/MIT",
+          "title": "MIT"
+        }
+      ]
+    },
+    {
+      "anchor": "https://a-identity.xyz/api",
+      "service-desc": [
+        {
+          "href": "https://a-identity.xyz/.well-known/ai-agent-manifest.json",
+          "type": "application/json",
+          "title": "A-Identity platform manifest: identity, payment and tool endpoints"
+        }
+      ],
+      "service-doc": [
+        {
+          "href": "https://a-identity.xyz/llms.txt",
+          "type": "text/markdown",
+          "title": "A-Identity, summary for machine readers"
+        }
+      ],
+      "status": [
+        {
+          "href": "https://a-identity.xyz/health",
+          "type": "application/json",
+          "title": "Platform liveness"
+        }
+      ]
+    },
+    {
+      "anchor": "https://a-identity.xyz/mcp",
+      "service-desc": [
+        {
+          "href": "https://a-identity.xyz/.well-known/mcp/server-card.json",
+          "type": "application/json",
+          "title": "MCP Server Card: transport, capabilities and the 19 tools"
+        }
+      ],
+      "service-doc": [
+        {
+          "href": "https://modelcontextprotocol.io/specification",
+          "type": "text/html",
+          "title": "Model Context Protocol specification"
+        }
+      ]
+    }
+  ]
+}

@@ -48,6 +48,13 @@ leaves the caller's process.
 
 ## Docs
 
+- Full documentation for machine readers: https://a-identity.xyz/llms-full.txt
+- How to authenticate and pay: https://a-identity.xyz/auth.md
+- API catalog (RFC 9727): https://a-identity.xyz/.well-known/api-catalog
+- MCP server card: https://a-identity.xyz/.well-known/mcp/server-card.json
+- A2A agent card: https://a-identity.xyz/.well-known/agent-card.json
+- Agent skills index: https://a-identity.xyz/.well-known/agent-skills/index.json
+- OpenAPI 3.1 for the paid tools: https://a-identity-asp.onrender.com/openapi.json
 - Documentation: https://a-identity.mintlify.site
 - Quickstart: https://a-identity.mintlify.site/developers/quickstart
 - SDK reference: https://a-identity.mintlify.site/developers/sdk

@@ -1,0 +1,134 @@
+{
+  "protocolVersion": "0.3.0",
+  "name": "A-Identity Trust Oracle",
+  "description": "Before one AI agent pays another, it calls A-Identity to verify the counterparty. Returns the counterparty's on-chain ERC-8004 identity and KYA status, a deterministic reputation score from 0 to 1000 computed from real settlements, and a single ALLOW, WARN or DENY verdict for the specific payment being considered. Every score is reproducible and every settlement it has taken is published with its transaction hash.",
+  "version": "1.1.0",
+  "url": "https://a-identity.xyz",
+  "documentationUrl": "https://a-identity.xyz/llms-full.txt",
+  "iconUrl": "https://a-identity.xyz/favicon.svg",
+  "preferredTransport": "JSONRPC",
+  "supportedInterfaces": [
+    {
+      "url": "https://a-identity.xyz/mcp",
+      "transport": "JSONRPC",
+      "protocol": "MCP",
+      "description": "Model Context Protocol over Streamable HTTP. 19 tools covering identity, reputation, policy and hiring."
+    },
+    {
+      "url": "https://a-identity-asp.onrender.com",
+      "transport": "HTTP+JSON",
+      "protocol": "x402",
+      "description": "Pay-per-call HTTP tools. An unpaid request returns HTTP 402 with the payment requirements; the resource is served on a paid retry."
+    }
+  ],
+  "provider": {
+    "organization": "A-Identity",
+    "url": "https://a-identity.xyz"
+  },
+  "capabilities": {
+    "streaming": false,
+    "pushNotifications": false,
+    "stateTransitionHistory": true,
+    "extensions": [
+      {
+        "uri": "https://x402.org",
+        "description": "Payment is settled per call in USDC over x402. No account, no API key, no subscription.",
+        "required": false
+      },
+      {
+        "uri": "https://eips.ethereum.org/EIPS/eip-8004",
+        "description": "Agent identity is an ERC-8004 on-chain passport, not a self-declared profile.",
+        "required": false
+      }
+    ]
+  },
+  "defaultInputModes": ["application/json", "text/plain"],
+  "defaultOutputModes": ["application/json"],
+  "securitySchemes": {
+    "x402": {
+      "type": "http",
+      "scheme": "x402",
+      "description": "Per-call payment in USDC. An unpaid request is answered with HTTP 402 and a machine-readable challenge carrying the price, the network, the asset and the address to pay."
+    }
+  },
+  "skills": [
+    {
+      "id": "verify_agent",
+      "name": "Verify an agent's identity",
+      "description": "Returns an agent's on-chain ERC-8004 registration and its KYA status, which is the agent proving control of its own wallet, recorded on-chain rather than self-declared.",
+      "tags": ["identity", "erc-8004", "kya", "verification"],
+      "examples": [
+        "Is agent #849980 a real registered agent, and has it proved it controls its wallet?"
+      ],
+      "inputModes": ["application/json"],
+      "outputModes": ["application/json"]
+    },
+    {
+      "id": "reputation_score",
+      "name": "Score an agent's reputation",
+      "description": "A deterministic score from 0 to 1000 computed from real on-chain settlements, validation and tenure, with a recency decay and a Sybil check. The same inputs always produce the same score, and any caller can reproduce it from the published method.",
+      "tags": ["reputation", "scoring", "on-chain", "deterministic"],
+      "examples": [
+        "What is agent #849980's reputation, and what drove the number?"
+      ],
+      "inputModes": ["application/json"],
+      "outputModes": ["application/json"]
+    },
+    {
+      "id": "risk_check",
+      "name": "Decide whether a payment should go through",
+      "description": "A pre-transaction verdict on a counterparty: ALLOW, WARN or DENY, with the reasons that produced it. Takes the intended amount so the risk is sized to the payment rather than judged in the abstract.",
+      "tags": ["risk", "payments", "pre-transaction", "policy"],
+      "examples": [
+        "I am about to pay agent #849980 twenty five dollars. Should I?"
+      ],
+      "inputModes": ["application/json"],
+      "outputModes": ["application/json"]
+    },
+    {
+      "id": "counterparty_check",
+      "name": "Check both sides of a proposed deal",
+      "description": "Inspects the payer and the payee together, which is how it catches same-operator self-dealing that a one-sided scan cannot see.",
+      "tags": ["risk", "counterparty", "self-dealing", "sybil"],
+      "examples": [
+        "Agent #6271 wants to pay agent #849980. Are these actually the same operator?"
+      ],
+      "inputModes": ["application/json"],
+      "outputModes": ["application/json"]
+    },
+    {
+      "id": "guardrail_check",
+      "name": "Check an action against its owner's limits",
+      "description": "Runs the live policy engine over a proposed action and answers allow, ask a human, or block, naming the rule that decided it. Reports bands only: caps, allowlists and holdings are never disclosed.",
+      "tags": ["policy", "guardrails", "spend-limits", "governance"],
+      "examples": [
+        "Does this agent operate under an enforced spend policy, and does it respect the verdicts?"
+      ],
+      "inputModes": ["application/json"],
+      "outputModes": ["application/json"]
+    },
+    {
+      "id": "agent_passport",
+      "name": "Fetch a full agent passport",
+      "description": "Identity, KYA, reputation and risk in a single call, for when a caller wants the whole picture rather than one answer.",
+      "tags": ["identity", "reputation", "risk", "passport"],
+      "examples": [
+        "Give me everything you know about agent #849980."
+      ],
+      "inputModes": ["application/json"],
+      "outputModes": ["application/json"]
+    },
+    {
+      "id": "trust_preview",
+      "name": "Free coarse trust band",
+      "description": "A free, rate-limited on-ramp returning a coarse trust band plus revoked and Sybil flags, so a caller can try the service before spending anything.",
+      "tags": ["free", "preview", "trust"],
+      "examples": [
+        "Give me a quick read on agent #849980 before I pay for the full check."
+      ],
+      "inputModes": ["application/json"],
+      "outputModes": ["application/json"]
+    }
+  ],
+  "supportsAuthenticatedExtendedCard": false
+}
