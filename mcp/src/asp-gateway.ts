@@ -44,6 +44,23 @@ function loadManifest(): Record<string, unknown> {
 }
 const MANIFEST = loadManifest()
 
+/** The OpenAPI spec for this service.
+ *
+ *  Circle's Agent Marketplace lists a prerequisite before it will review a service:
+ *  "Published an OpenAPI spec for your service, so agents can read its inputs and
+ *  outputs." The document already lived in the repo; this serves it, so the prerequisite
+ *  is met by a URL rather than by a file nobody can fetch. Same degrade-not-500 rule as
+ *  the manifest. */
+function loadOpenApi(): Record<string, unknown> {
+  try {
+    const here = dirname(fileURLToPath(import.meta.url)) // mcp/dist
+    return JSON.parse(readFileSync(join(here, '..', 'marketplace', 'openapi.json'), 'utf8'))
+  } catch {
+    return { openapi: '3.1.0', info: { title: SERVICE, version: '1.0.0' }, paths: {} }
+  }
+}
+const OPENAPI = loadOpenApi()
+
 /** Merge JSON body + query string so every tool accepts POST (body) AND GET (query). */
 function params(req: Request): Record<string, unknown> {
   return { ...(req.query as Record<string, unknown>), ...(req.body as Record<string, unknown> | undefined) }
@@ -200,6 +217,9 @@ async function main() {
   // this is what `circle services inspect "<url>"` (and agents.circle.com) read to list us.
   app.get('/.well-known/agent.json', (_req: Request, res: Response) => res.json(MANIFEST))
   app.get('/manifest', (_req: Request, res: Response) => res.json(MANIFEST))
+  // The Agent Marketplace prerequisite: a published OpenAPI spec buyers can read.
+  app.get('/openapi.json', (_req: Request, res: Response) => res.json(OPENAPI))
+  app.get('/.well-known/openapi.json', (_req: Request, res: Response) => res.json(OPENAPI))
   // Live on-chain stats (payTo's current USD₮0), so the /proof page reads "live".
   app.get('/stats', async (_req: Request, res: Response) => res.json(await getLiveStats()))
 

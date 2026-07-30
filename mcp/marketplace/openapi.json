@@ -1,105 +1,403 @@
 {
   "openapi": "3.1.0",
   "info": {
-    "title": "A-Identity — Agent Trust Oracle",
+    "title": "A-Identity \u2014 Agent Trust Oracle",
     "version": "1.0.0",
     "summary": "The identity & reputation oracle for the agent economy.",
-    "description": "Before one AI agent pays another, it calls A-Identity to verify the counterparty. Four pay-per-call x402 tools over a live on-chain engine: ERC-8004 identity + KYA (Know-Your-Agent), a deterministic 0-1000 reputation score computed from real on-chain settlements, and a pre-transaction ALLOW / WARN / DENY risk verdict. Every number is reproducible and every settlement is on-chain. Paid tools use the x402 protocol (USDC): an unpaid request returns HTTP 402 with payment requirements; after payment the request is replayed and served. Also live on OKX.AI as Agent #6271.",
-    "contact": { "name": "A-Identity", "url": "https://a-identity.xyz" },
-    "license": { "name": "MIT" }
+    "description": "Before one AI agent pays another, it calls A-Identity to verify the counterparty. Six x402 tools (five paid, one free) over a live on-chain engine: ERC-8004 identity + KYA (Know-Your-Agent), a deterministic 0-1000 reputation score computed from real on-chain settlements, a pre-transaction ALLOW / WARN / DENY risk verdict, a two-sided counterparty check, and a guardrail policy check. Every number is reproducible and every settlement is on-chain. Paid tools use the x402 protocol (USDC): an unpaid request returns HTTP 402 with payment requirements; after payment the request is replayed and served.",
+    "contact": {
+      "name": "A-Identity",
+      "url": "https://a-identity.xyz"
+    },
+    "license": {
+      "name": "MIT"
+    }
   },
-  "servers": [{ "url": "https://a-identity-asp.onrender.com", "description": "A-Identity Trust Oracle (production)" }],
+  "servers": [
+    {
+      "url": "https://a-identity-asp.onrender.com",
+      "description": "A-Identity Trust Oracle (production)"
+    }
+  ],
   "tags": [
-    { "name": "tools", "description": "Paid pay-per-call tools (x402, USDC)" },
-    { "name": "discovery", "description": "Free discovery, proof, and methodology endpoints" }
+    {
+      "name": "tools",
+      "description": "Paid pay-per-call tools (x402, USDC)"
+    },
+    {
+      "name": "discovery",
+      "description": "Free discovery, proof, and methodology endpoints"
+    }
   ],
   "paths": {
     "/tools/verify_agent": {
       "post": {
-        "tags": ["tools"],
+        "tags": [
+          "tools"
+        ],
         "summary": "Verify an AI agent's identity (ERC-8004 + KYA)",
         "description": "Returns the agent's on-chain ERC-8004 registration and KYA (wallet-control) status. Price: $0.001 (x402, USDC).",
         "x-price": "$0.001",
         "x-payment": "x402",
-        "requestBody": { "required": true, "content": { "application/json": { "schema": { "$ref": "#/components/schemas/AgentIdRequest" } } } },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AgentIdRequest"
+              }
+            }
+          }
+        },
         "responses": {
-          "200": { "description": "Identity + KYA result", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ToolResult" } } } },
-          "402": { "$ref": "#/components/responses/PaymentRequired" },
-          "400": { "$ref": "#/components/responses/BadRequest" }
+          "200": {
+            "description": "Identity + KYA result",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ToolResult"
+                }
+              }
+            }
+          },
+          "402": {
+            "$ref": "#/components/responses/PaymentRequired"
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          }
         }
       }
     },
     "/tools/reputation_score": {
       "post": {
-        "tags": ["tools"],
+        "tags": [
+          "tools"
+        ],
         "summary": "On-chain 0-1000 reputation score",
         "description": "A deterministic 0-1000 reputation score computed from real on-chain settlements, KYA, and tenure. Price: $0.002 (x402, USDC).",
         "x-price": "$0.002",
         "x-payment": "x402",
-        "requestBody": { "required": true, "content": { "application/json": { "schema": { "$ref": "#/components/schemas/AgentIdRequest" } } } },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AgentIdRequest"
+              }
+            }
+          }
+        },
         "responses": {
-          "200": { "description": "Reputation result", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ToolResult" } } } },
-          "402": { "$ref": "#/components/responses/PaymentRequired" },
-          "400": { "$ref": "#/components/responses/BadRequest" }
+          "200": {
+            "description": "Reputation result",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ToolResult"
+                }
+              }
+            }
+          },
+          "402": {
+            "$ref": "#/components/responses/PaymentRequired"
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          }
         }
       }
     },
     "/tools/risk_check": {
       "post": {
-        "tags": ["tools"],
+        "tags": [
+          "tools"
+        ],
         "summary": "Pre-transaction ALLOW / WARN / DENY risk verdict",
         "description": "A single ALLOW / WARN / DENY decision with reasons for a counterparty, before you pay it. Optionally takes a txContext to size the risk to the payment. Price: $0.005 (x402, USDC).",
         "x-price": "$0.005",
         "x-payment": "x402",
-        "requestBody": { "required": true, "content": { "application/json": { "schema": { "$ref": "#/components/schemas/RiskCheckRequest" } } } },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RiskCheckRequest"
+              }
+            }
+          }
+        },
         "responses": {
-          "200": { "description": "Risk verdict", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/RiskResult" } } } },
-          "402": { "$ref": "#/components/responses/PaymentRequired" },
-          "400": { "$ref": "#/components/responses/BadRequest" }
+          "200": {
+            "description": "Risk verdict",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RiskResult"
+                }
+              }
+            }
+          },
+          "402": {
+            "$ref": "#/components/responses/PaymentRequired"
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          }
         }
       }
     },
     "/tools/agent_passport": {
       "post": {
-        "tags": ["tools"],
+        "tags": [
+          "tools"
+        ],
         "summary": "Full agent passport (identity + reputation + KYA + risk)",
         "description": "The full passport in one call: ERC-8004 identity, KYA, reputation, and risk. Price: $0.01 (x402, USDC).",
         "x-price": "$0.01",
         "x-payment": "x402",
-        "requestBody": { "required": true, "content": { "application/json": { "schema": { "$ref": "#/components/schemas/AgentIdRequest" } } } },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AgentIdRequest"
+              }
+            }
+          }
+        },
         "responses": {
-          "200": { "description": "Agent passport", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ToolResult" } } } },
-          "402": { "$ref": "#/components/responses/PaymentRequired" },
-          "400": { "$ref": "#/components/responses/BadRequest" }
+          "200": {
+            "description": "Agent passport",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ToolResult"
+                }
+              }
+            }
+          },
+          "402": {
+            "$ref": "#/components/responses/PaymentRequired"
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          }
         }
       }
     },
     "/health": {
       "get": {
-        "tags": ["discovery"],
+        "tags": [
+          "discovery"
+        ],
         "summary": "Liveness + service card (free)",
-        "responses": { "200": { "description": "Service card (tools, prices, payment info)", "content": { "application/json": { "schema": { "type": "object" } } } } }
+        "responses": {
+          "200": {
+            "description": "Service card (tools, prices, payment info)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          }
+        }
       }
     },
     "/.well-known/agent.json": {
       "get": {
-        "tags": ["discovery"],
+        "tags": [
+          "discovery"
+        ],
         "summary": "Inspectable service manifest (free)",
-        "responses": { "200": { "description": "The Agent Marketplace service manifest", "content": { "application/json": { "schema": { "type": "object" } } } } }
+        "responses": {
+          "200": {
+            "description": "The Agent Marketplace service manifest",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          }
+        }
       }
     },
     "/proof": {
       "get": {
-        "tags": ["discovery"],
+        "tags": [
+          "discovery"
+        ],
         "summary": "Public, verifiable proof of real on-chain settlements (free)",
-        "responses": { "200": { "description": "Proof (HTML for a browser, JSON for an API caller)" } }
+        "responses": {
+          "200": {
+            "description": "Proof (HTML for a browser, JSON for an API caller)"
+          }
+        }
       }
     },
     "/methodology": {
       "get": {
-        "tags": ["discovery"],
+        "tags": [
+          "discovery"
+        ],
         "summary": "Deterministic scoring methodology (free)",
-        "responses": { "200": { "description": "Methodology", "content": { "application/json": { "schema": { "type": "object" } } } } }
+        "responses": {
+          "200": {
+            "description": "Methodology",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/tools/counterparty_check": {
+      "post": {
+        "tags": [
+          "tools"
+        ],
+        "summary": "Two-sided counterparty check before an agent-to-agent deal",
+        "description": "Checks BOTH sides of a proposed deal and flags same-operator self-dealing, which a one-sided scan cannot see. Price: $0.008 (x402, USDC).",
+        "x-payment": "x402",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RiskCheckRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Two-sided verdict",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RiskResult"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "402": {
+            "$ref": "#/components/responses/PaymentRequired"
+          }
+        },
+        "x-price": "$0.008"
+      }
+    },
+    "/tools/guardrail_check": {
+      "post": {
+        "tags": [
+          "tools"
+        ],
+        "summary": "Policy guardrail check for a proposed action",
+        "description": "Runs the live policy engine over a proposed action and answers allow / ask a human / block, with the rule that decided it. Price: $0.005 (x402, USDC).",
+        "x-payment": "x402",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RiskCheckRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Guardrail decision",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RiskResult"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "402": {
+            "$ref": "#/components/responses/PaymentRequired"
+          }
+        },
+        "x-price": "$0.005"
+      }
+    },
+    "/tools/trust_preview": {
+      "post": {
+        "tags": [
+          "tools"
+        ],
+        "summary": "Free coarse trust band (rate limited)",
+        "description": "A free, coarse trust band plus revoked and Sybil flags. No payment and no key; rate limited per IP. The on-ramp before a paid call.",
+        "x-payment": "x402",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/VerifyAgentRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Coarse trust band",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RiskResult"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          }
+        }
+      }
+    },
+    "/stats": {
+      "get": {
+        "tags": [
+          "discovery"
+        ],
+        "summary": "Live settlement stats",
+        "description": "Live balance of the payout wallet and settlement totals.",
+        "responses": {
+          "200": {
+            "description": "Live stats"
+          }
+        }
+      }
+    },
+    "/openapi.json": {
+      "get": {
+        "tags": [
+          "discovery"
+        ],
+        "summary": "This document",
+        "description": "The OpenAPI spec for this service, served so agents and the Circle Agent Marketplace can read its inputs and outputs.",
+        "responses": {
+          "200": {
+            "description": "OpenAPI 3.1 document"
+          }
+        }
       }
     }
   },
@@ -107,14 +405,25 @@
     "schemas": {
       "AgentIdRequest": {
         "type": "object",
-        "required": ["agentId"],
+        "required": [
+          "agentId"
+        ],
         "properties": {
-          "agentId": { "type": "string", "description": "Platform id, ERC-8004 token id (e.g. \"#849980\"), or the owner 0x address.", "maxLength": 128, "examples": ["#849980"] }
+          "agentId": {
+            "type": "string",
+            "description": "Platform id, ERC-8004 token id (e.g. \"#849980\"), or the owner 0x address.",
+            "maxLength": 128,
+            "examples": [
+              "#849980"
+            ]
+          }
         }
       },
       "RiskCheckRequest": {
         "allOf": [
-          { "$ref": "#/components/schemas/AgentIdRequest" },
+          {
+            "$ref": "#/components/schemas/AgentIdRequest"
+          },
           {
             "type": "object",
             "properties": {
@@ -122,8 +431,14 @@
                 "type": "object",
                 "description": "Optional context to size the risk to the intended payment.",
                 "properties": {
-                  "amountUsd": { "type": "number", "description": "The USD amount about to be paid." },
-                  "kind": { "type": "string", "description": "The kind of action (e.g. payment, purchase)." }
+                  "amountUsd": {
+                    "type": "number",
+                    "description": "The USD amount about to be paid."
+                  },
+                  "kind": {
+                    "type": "string",
+                    "description": "The kind of action (e.g. payment, purchase)."
+                  }
                 }
               }
             }
@@ -134,32 +449,86 @@
         "type": "object",
         "description": "Tool-specific result. Common fields shown; each tool adds its own.",
         "properties": {
-          "tool": { "type": "string" },
-          "agentId": { "type": "string" },
-          "checkedAt": { "type": "string", "format": "date-time" }
+          "tool": {
+            "type": "string"
+          },
+          "agentId": {
+            "type": "string"
+          },
+          "checkedAt": {
+            "type": "string",
+            "format": "date-time"
+          }
         }
       },
       "RiskResult": {
         "type": "object",
         "properties": {
-          "tool": { "type": "string", "const": "risk_check" },
-          "agentId": { "type": "string" },
-          "decision": { "type": "string", "enum": ["ALLOW", "WARN", "DENY"] },
-          "risk": { "type": "string", "enum": ["low", "medium", "high"] },
-          "reasons": { "type": "array", "items": { "type": "string" } },
-          "checkedAt": { "type": "string", "format": "date-time" }
+          "tool": {
+            "type": "string",
+            "const": "risk_check"
+          },
+          "agentId": {
+            "type": "string"
+          },
+          "decision": {
+            "type": "string",
+            "enum": [
+              "ALLOW",
+              "WARN",
+              "DENY"
+            ]
+          },
+          "risk": {
+            "type": "string",
+            "enum": [
+              "low",
+              "medium",
+              "high"
+            ]
+          },
+          "reasons": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "checkedAt": {
+            "type": "string",
+            "format": "date-time"
+          }
         }
       },
-      "Error": { "type": "object", "properties": { "error": { "type": "string" } } }
+      "Error": {
+        "type": "object",
+        "properties": {
+          "error": {
+            "type": "string"
+          }
+        }
+      }
     },
     "responses": {
       "PaymentRequired": {
         "description": "x402 Payment Required. The response body carries the payment requirements; pay in USDC and replay the request.",
-        "content": { "application/json": { "schema": { "type": "object", "description": "x402 payment requirements (accepts[], network, asset, amount, payTo)." } } }
+        "content": {
+          "application/json": {
+            "schema": {
+              "type": "object",
+              "description": "x402 payment requirements (accepts[], network, asset, amount, payTo)."
+            }
+          }
+        }
       },
       "BadRequest": {
         "description": "Missing or invalid agentId.",
-        "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } }
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/Error"
+            }
+          }
+        }
       }
     }
   }
