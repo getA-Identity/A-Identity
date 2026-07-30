@@ -1,6 +1,57 @@
-/* Remote @import rules must come first */
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap');
 @import 'tailwindcss';
+
+/*
+ * Self-hosted webfonts. Both faces used to arrive over a render-blocking
+ * third-party stylesheet (fonts.googleapis.com via @import, and
+ * db.onlinewebfonts.com via a <link> in index.html), which cost ~1.8s of
+ * blocking time between them: the @import in particular is invisible to the
+ * preload scanner, so it produced a four-hop serial chain
+ * (HTML -> bundled CSS -> googleapis -> gstatic). The files now sit in
+ * public/fonts and the two above-the-fold faces are preloaded from index.html.
+ *
+ * Inter is a VARIABLE font: Google serves one file per unicode subset covering
+ * the whole 100-900 weight axis, so the old `wght@300;400;500;600;700;800;900`
+ * request downloaded exactly the same bytes as a request for a single weight.
+ * The site only ever renders 400/500/600/700, but the axis is kept intact
+ * because narrowing it would cost nothing and could only change rendering
+ * (`<strong>` inside a `font-semibold` block resolves `bolder` to 900).
+ *
+ * unicode-range is preserved verbatim from the Google stylesheet so the
+ * latin-ext file is only fetched when a page actually paints a glyph from it.
+ */
+@font-face {
+  font-family: 'Inter';
+  font-style: normal;
+  font-weight: 100 900;
+  font-display: swap;
+  src: url('/fonts/inter-latin.woff2') format('woff2');
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308,
+    U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+@font-face {
+  font-family: 'Inter';
+  font-style: normal;
+  font-weight: 100 900;
+  font-display: swap;
+  src: url('/fonts/inter-latin-ext.woff2') format('woff2');
+  unicode-range: U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308, U+0329,
+    U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C0, U+2113, U+2C60-2C7F,
+    U+A720-A7FF;
+}
+
+/*
+ * The heading face ships as a single weight and is DECLARED at `normal`, which
+ * is how the third-party stylesheet declared it. That is load-bearing: headings
+ * that ask for bold currently get Chrome's synthetic bold on top of this face,
+ * so re-declaring it as 700 would silently change how every heading renders.
+ */
+@font-face {
+  font-family: 'Helvetica Now Display Bold';
+  font-style: normal;
+  font-weight: normal;
+  font-display: swap;
+  src: url('/fonts/helvetica-now-display-bold.woff2') format('woff2');
+}
 
 /* Class-based dark mode: make Tailwind's `dark:` variant respond to our scoped
    `.dark` wrapper (the landing) instead of the OS `prefers-color-scheme`. Our

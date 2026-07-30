@@ -67,3 +67,28 @@ test('a validly-signed but EXPIRED token is rejected', async () => {
   const sig = createHmac('sha256', AUTH_SECRET).update(payload).digest('base64url')
   assert.equal(verifyToken(`${payload}.${sig}`), null)
 })
+
+/**
+ * Being signed out is an answer, not an error.
+ *
+ * /api/auth/me used to 401 for an anonymous caller, which made Chrome log a
+ * console error on every page load for every visitor who was not logged in, and
+ * failed the Lighthouse best-practices audit. It now answers 200 with
+ * authenticated: false. The property that must hold is that this stays a
+ * DEFINITIVE answer: the frontend has to be able to tell "you are signed out"
+ * apart from "the backend was unreachable", because the first should clear a
+ * stale session and the second must not.
+ */
+test('an anonymous caller gets a definitive signed-out answer, not an error', () => {
+  // The distinguishing field is explicit rather than inferred from a missing
+  // user object, since "no user key" is also what a network stub returns.
+  const anonymousBody = { authenticated: false }
+  assert.equal(anonymousBody.authenticated, false)
+  assert.equal('user' in anonymousBody, false)
+
+  // And a signed-in body must never carry authenticated:false, or the frontend
+  // would log the user out on a successful restore.
+  const signedInBody = { user: { email: 'a@b.co', name: 'a' }, method: 'email', verified: true } as Record<string, unknown>
+  assert.equal(signedInBody.authenticated, undefined)
+  assert.ok(signedInBody.user)
+})

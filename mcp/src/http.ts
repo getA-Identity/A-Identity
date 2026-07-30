@@ -449,7 +449,11 @@ const server = http.createServer(async (req, res) => {
 
   // ── auth: who am I (restores a session from the HttpOnly cookie on reload) ─────
   if (req.method === 'GET' && url.pathname === '/api/auth/me') {
-    if (!caller) { sendJson(res, 401, { error: 'not signed in' }); return }
+    // "Who am I" is answered, not refused. Being signed out is a normal answer to
+    // this question, and a 401 makes Chrome log a console error on every page load
+    // for every anonymous visitor, which is both noise and a Lighthouse failure.
+    // The 401 is kept only for genuinely malformed credentials.
+    if (!caller) { sendJson(res, 200, { authenticated: false }); return }
     const name =
       caller.method === 'wallet'
         ? `${caller.subject.slice(0, 6)}...${caller.subject.slice(-4)}`

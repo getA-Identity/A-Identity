@@ -37,7 +37,7 @@ const SOCIAL_LINKS = [
 
 /** Render an internal route link or an external (new-tab) anchor. */
 function FooterItem({ link }: { link: FooterLink }) {
-  const className = 'text-sm text-foreground/55 transition-colors hover:text-foreground'
+  const className = 'text-sm text-foreground/70 transition-colors hover:text-foreground'
   if (link.external) {
     return (
       <a href={link.href} target="_blank" rel="noopener noreferrer" className={className}>
@@ -66,7 +66,7 @@ export default function SiteFooter() {
                 <Logo size={26} />
                 <span className="text-lg font-bold tracking-tight text-foreground">{APP_NAME}</span>
               </div>
-              <p className="mt-3 max-w-xs text-sm leading-relaxed text-foreground/55">
+              <p className="mt-3 max-w-xs text-sm leading-relaxed text-foreground/70">
                 The passport &amp; wallet for the agentic economy.
               </p>
 
@@ -115,7 +115,7 @@ export default function SiteFooter() {
             <div className="grid gap-8 sm:grid-cols-3">
               {FOOTER_COLUMNS.map((col) => (
                 <div key={col.title}>
-                  <h4 className="text-sm font-semibold text-foreground">{col.title}</h4>
+                  <h3 className="text-sm font-semibold text-foreground">{col.title}</h3>
                   <ul className="mt-3 flex flex-col gap-2">
                     {col.links.map((l) => (
                       <li key={l.label}>
@@ -155,7 +155,7 @@ export default function SiteFooter() {
         </div>
 
         {/* The slim bar: legal on the left, the way back up on the right. */}
-        <div className="mt-6 flex flex-wrap items-center justify-between gap-3 px-1 text-xs text-foreground/40">
+        <div className="mt-6 flex flex-wrap items-center justify-between gap-3 px-1 text-xs text-foreground/70">
           <span>
             © {new Date().getFullYear()} {APP_NAME}. Built for autonomous agents and the humans who
             supervise them.
@@ -163,7 +163,7 @@ export default function SiteFooter() {
           <button
             type="button"
             onClick={() => window.scrollTo({ top: 0, behavior: 'smooth' })}
-            className="inline-flex items-center gap-1.5 font-semibold text-foreground/50 transition-colors hover:text-foreground"
+            className="inline-flex items-center gap-1.5 font-semibold text-foreground/70 transition-colors hover:text-foreground"
           >
             Go all the way up <ArrowUp size={13} />
           </button>

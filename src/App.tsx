@@ -1,36 +1,47 @@
-import { useEffect } from 'react'
+import { lazy, Suspense, useEffect } from 'react'
 import { BrowserRouter, Route, Routes } from 'react-router-dom'
 import ScrollToTop from './components/ScrollToTop'
 import PageViews from './components/PageViews'
 import { initAnalytics } from './lib/analytics'
 import { registerWebMcpTools } from './lib/webmcp'
 import { useAuth } from './store/auth'
+
+// Landing stays in the entry chunk: it is the route almost everyone arrives on,
+// and making it wait for a second round trip would trade a smaller bundle for a
+// slower first paint on the only page that matters for that measurement.
 import Landing from './routes/Landing'
-import Login from './routes/Login'
-import Signup from './routes/Signup'
-import AuthCallback from './routes/AuthCallback'
-import Manifesto from './routes/Manifesto'
-import Brand from './routes/Brand'
-import Contact from './routes/Contact'
-import Faq from './routes/Faq'
-import Blog from './routes/Blog'
-import BlogPost from './routes/BlogPost'
-import UseCase from './routes/UseCase'
-import Explorer from './routes/Explorer'
-import Architecture from './routes/Architecture'
-import Mascot from './routes/Mascot'
-import BrandKit from './routes/BrandKit'
-import Motion from './routes/Motion'
-import NotFound from './routes/NotFound'
 import ProtectedRoute from './routes/ProtectedRoute'
-import AppLayout from './routes/app/AppLayout'
-import Dashboard from './routes/app/Dashboard'
-import AgentId from './routes/app/AgentId'
-import Wallet from './routes/app/Wallet'
-import Settlements from './routes/app/Settlements'
-import Permissions from './routes/app/Permissions'
-import Marketplace from './routes/app/Marketplace'
-import Earnings from './routes/app/Earnings'
+
+/**
+ * Everything else is split out. Before this, a visitor to the homepage
+ * downloaded and parsed the entire authenticated console, the internal design
+ * surfaces, the explorer and viem, in a single 1 MB chunk of which Lighthouse
+ * measured 162 KB as unused on first paint.
+ */
+const Login = lazy(() => import('./routes/Login'))
+const Signup = lazy(() => import('./routes/Signup'))
+const AuthCallback = lazy(() => import('./routes/AuthCallback'))
+const Manifesto = lazy(() => import('./routes/Manifesto'))
+const Brand = lazy(() => import('./routes/Brand'))
+const Contact = lazy(() => import('./routes/Contact'))
+const Faq = lazy(() => import('./routes/Faq'))
+const Blog = lazy(() => import('./routes/Blog'))
+const BlogPost = lazy(() => import('./routes/BlogPost'))
+const UseCase = lazy(() => import('./routes/UseCase'))
+const Explorer = lazy(() => import('./routes/Explorer'))
+const Architecture = lazy(() => import('./routes/Architecture'))
+const Mascot = lazy(() => import('./routes/Mascot'))
+const BrandKit = lazy(() => import('./routes/BrandKit'))
+const Motion = lazy(() => import('./routes/Motion'))
+const NotFound = lazy(() => import('./routes/NotFound'))
+const AppLayout = lazy(() => import('./routes/app/AppLayout'))
+const Dashboard = lazy(() => import('./routes/app/Dashboard'))
+const AgentId = lazy(() => import('./routes/app/AgentId'))
+const Wallet = lazy(() => import('./routes/app/Wallet'))
+const Settlements = lazy(() => import('./routes/app/Settlements'))
+const Permissions = lazy(() => import('./routes/app/Permissions'))
+const Marketplace = lazy(() => import('./routes/app/Marketplace'))
+const Earnings = lazy(() => import('./routes/app/Earnings'))
 
 export default function App() {
   // Restore the session from the HttpOnly cookie once on load (the token isn't in
@@ -54,6 +65,7 @@ export default function App() {
     <BrowserRouter>
       <ScrollToTop />
       <PageViews />
+      <Suspense fallback={null}>
       <Routes>
         <Route path="/" element={<Landing />} />
         <Route path="/login" element={<Login />} />
@@ -92,6 +104,7 @@ export default function App() {
         {/* Was a silent redirect home, which made a dead link look like a working one. */}
         <Route path="*" element={<NotFound />} />
       </Routes>
+      </Suspense>
     </BrowserRouter>
   )
 }

@@ -27,6 +27,15 @@
   ],
   "headers": [
     {
+      "source": "/(.*)",
+      "headers": [
+        {
+          "key": "Content-Signal",
+          "value": "ai-train=yes, search=yes, ai-input=yes"
+        }
+      ]
+    },
+    {
       "source": "/assets/(.*)",
       "headers": [
         {

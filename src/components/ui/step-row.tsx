@@ -64,7 +64,7 @@ export function StepRow({
         {icon && <span className="text-foreground/35">{icon}</span>}
       </h3>
       {children && (
-        <p className="mt-3 max-w-[42ch] text-[15px] leading-relaxed text-foreground/55">
+        <p className="mt-3 max-w-[42ch] text-[15px] leading-relaxed text-foreground/70">
           {children}
         </p>
       )}

@@ -109,7 +109,7 @@ export default function LiveProof() {
                 <CountUp to={s.n} fallback={s.k} />
               </div>
               <div className="mt-2 text-[15px] font-medium text-foreground/70">{s.v}</div>
-              <div className="mt-1 text-sm text-foreground/45">{s.sub}</div>
+              <div className="mt-1 text-sm text-foreground/70">{s.sub}</div>
             </motion.div>
           ))}
         </div>

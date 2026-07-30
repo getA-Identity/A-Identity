@@ -326,7 +326,7 @@ export default function QuickStart() {
                 width={300}
                 className="mx-auto w-[280px] max-w-full"
               />
-              <p className="mt-1 font-mono text-[11px] tracking-[0.12em] text-foreground/35">
+              <p className="mt-1 font-mono text-[11px] tracking-[0.12em] text-foreground/70">
                 {mode === 'human' ? 'welcome in' : 'papers, please'}
               </p>
             </motion.div>

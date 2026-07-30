@@ -132,12 +132,21 @@ export const useAuth = create<AuthState>()(
             credentials: 'include',
             headers: t ? { Authorization: `Bearer ${t}` } : {},
           })
+          // A 401 is still treated as definitive, so this keeps working against a
+          // backend that has not been redeployed yet.
           if (res.status === 401) {
             set({ user: null, token: null, verified: false })
             return
           }
           if (res.ok) {
-            const data = (await res.json()) as { user: User; verified?: boolean }
+            const data = (await res.json()) as { user?: User; verified?: boolean; authenticated?: boolean }
+            // The backend now answers "signed out" with 200 { authenticated: false }
+            // rather than a 401, because a 401 made every anonymous page load emit a
+            // console error. This is the same definitive signal, just not shouted.
+            if (data.authenticated === false) {
+              set({ user: null, token: null, verified: false })
+              return
+            }
             if (data.user) set({ user: data.user, verified: Boolean(data.verified) })
           }
         } catch {

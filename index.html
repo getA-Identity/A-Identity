@@ -221,11 +221,17 @@
       }
     </script>
 
-    <!-- Heading font: Helvetica Now Display Bold -->
-    <link
-      rel="stylesheet"
-      href="https://db.onlinewebfonts.com/c/04e6981992c0e2e7642af2074ebe3901?family=Helvetica+Now+Display+Bold"
-    />
+    <!--
+      Fonts are self-hosted from /public/fonts and declared in src/index.css.
+      These two faces paint above the fold (the hero heading and body copy), so
+      they are preloaded here to start downloading alongside the HTML instead of
+      waiting for the bundled stylesheet to parse. `crossorigin` is required
+      even for same-origin fonts, which are always fetched in CORS mode; without
+      it the browser downloads the file twice. The latin-ext subset is
+      deliberately not preloaded, since unicode-range keeps it conditional.
+    -->
+    <link rel="preload" as="font" type="font/woff2" href="/fonts/helvetica-now-display-bold.woff2" crossorigin />
+    <link rel="preload" as="font" type="font/woff2" href="/fonts/inter-latin.woff2" crossorigin />
   </head>
   <body>
     <div id="root"></div>
