@@ -79,6 +79,7 @@ import {
   type InstructionType,
 } from './platform.js'
 import { issueToken, verifyToken, isVerified } from './auth.js'
+import { oauthEnabled, verifyAccessToken, protectedResourceMetadata } from './oauth.js'
 import { magicEnabled, sendMagicLink, verifyMagicToken } from './magic.js'
 import {
   x402PayTo, paymentRequirements, verifyPayment, premiumResource,
@@ -337,7 +338,21 @@ const server = http.createServer(async (req, res) => {
   const authHeader = req.headers.authorization
   const bearer = typeof authHeader === 'string' && authHeader.startsWith('Bearer ') ? authHeader.slice(7) : null
   const cookieToken = parseCookies(req.headers.cookie)[SESSION_COOKIE] ?? null
-  const caller = verifyToken(bearer ?? cookieToken)
+  let caller = verifyToken(bearer ?? cookieToken)
+
+  // An OAuth access token is the second thing a Bearer header can be, and it is how
+  // MCP clients (Claude, Cursor, ChatGPT connectors) sign in to a remote server.
+  // Tried only AFTER our own HMAC token fails, so this is purely additive: existing
+  // sessions take the same path they always did, and with OAUTH_ISSUER unset the
+  // call below returns null immediately. The authorization server verified the
+  // email, so the caller counts as 'email'-verified, the same standing a magic-link
+  // login produces. It grants ownership of that email's agents and nothing more:
+  // spending limits live on-chain and are not a function of how you signed in.
+  if (!caller && bearer && oauthEnabled()) {
+    const claims = await verifyAccessToken(bearer)
+    if (claims?.email) caller = { subject: claims.email.trim().toLowerCase(), method: 'email' }
+  }
+
   // The subject string used for ownership checks (email or wallet address).
   const callerId = caller?.subject
 
@@ -463,6 +478,27 @@ const server = http.createServer(async (req, res) => {
       error:
         'Verified sign-in required. Guest sessions are read-only — sign in with your wallet or an emailed magic link to act.',
     })
+    return
+  }
+
+  // ── OAuth Protected Resource Metadata (RFC 9728) ──────────────────────────────
+  // The first document an MCP client reads when adding this server: it names the
+  // resource and the authorization server that can mint tokens for it. Served from
+  // both paths because clients differ on whether the resource path is appended.
+  if (
+    req.method === 'GET' &&
+    (url.pathname === '/.well-known/oauth-protected-resource' ||
+      url.pathname === '/.well-known/oauth-protected-resource/mcp')
+  ) {
+    if (!oauthEnabled()) {
+      // Better a plain 404 than an empty metadata document: a client can act on
+      // "this resource does not do OAuth", but not on a document with no issuer.
+      sendJson(res, 404, { error: 'OAuth is not configured on this deployment' })
+      return
+    }
+    res.setHeader('Access-Control-Allow-Origin', '*')
+    res.setHeader('Cache-Control', 'public, max-age=3600')
+    sendJson(res, 200, protectedResourceMetadata())
     return
   }
 

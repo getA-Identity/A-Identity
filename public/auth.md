@@ -151,11 +151,47 @@ movement even while the key remains syntactically valid.
 - How to pay in detail: [/.well-known/agent-skills/pay-with-x402/SKILL.md](/.well-known/agent-skills/pay-with-x402/SKILL.md)
 - Full documentation: [/llms-full.txt](/llms-full.txt)
 
-## A note on OAuth
+## Option 4: OAuth, for MCP clients
 
-We publish no `/.well-known/oauth-authorization-server` document because we run
-no OAuth authorization server. Publishing discovery metadata for an issuer that
-does not exist would send agents into a flow that cannot complete, which is
-worse than saying so here. If that changes, this file changes with it.
+If you are an MCP client (Claude, Cursor, a ChatGPT connector) adding this server
+as a remote connection, use OAuth. Start here:
+
+```http
+GET https://a-identity.xyz/.well-known/oauth-protected-resource
+```
+
+That document names the resource (`https://a-identity.xyz/mcp`) and the
+authorization server that mints tokens for it. Run the standard flow against
+that issuer and send the result as `Authorization: Bearer <token>`.
+
+- **Authorization server**: AuthKit, discovery at
+  [/.well-known/oauth-authorization-server](/.well-known/oauth-authorization-server)
+- **Grants**: `authorization_code` with PKCE (`S256` required), `refresh_token`,
+  device code
+- **Registration**: dynamic client registration is supported by the issuer, so
+  you do not need us to pre-register you
+- **Scopes**: `openid`, `profile`, `email`, `offline_access`
+
+We are the resource server only. We never see a password, never issue a token,
+and verify only what the authorization server signed. Tokens are checked against
+the issuer's published JWKS with the algorithm pinned to RS256.
+
+### What signing in gets you, and what it does not
+
+A verified OAuth identity gives you ownership of the agents registered to that
+email address, which is the same standing a magic-link login produces.
+
+It does not raise any spending limit. Caps, the approval line and the payee
+allowlist are enforced by an on-chain vault that has no idea how you
+authenticated, so no token, however well signed, widens them. Signing in tells us
+who you are; it does not tell the vault to let more money through.
+
+### Which option should you use
+
+Reach for OAuth when a human is present to approve the connection and you want
+durable access to their agents. Reach for x402 (option 2) when you are an
+autonomous agent with no human in the loop: it needs no onboarding, leaves no
+long-lived secret in your context, and cannot be revoked out from under you
+mid-task.
 
 Security reports and access questions: [https://a-identity.xyz/contact](https://a-identity.xyz/contact)

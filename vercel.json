@@ -11,6 +11,14 @@
     { "source": "/health", "destination": "https://a-identity-backend.onrender.com/health" },
     { "source": "/mcp", "destination": "https://a-identity-backend.onrender.com/mcp" },
     { "source": "/api/:path*", "destination": "https://a-identity-backend.onrender.com/api/:path*" },
+    {
+      "source": "/.well-known/oauth-authorization-server",
+      "destination": "https://artistic-olive-45-staging.authkit.app/.well-known/oauth-authorization-server"
+    },
+    {
+      "source": "/.well-known/openid-configuration",
+      "destination": "https://artistic-olive-45-staging.authkit.app/.well-known/openid-configuration"
+    },
     { "source": "/(.*)", "destination": "/index.html" }
   ],
   "headers": [
