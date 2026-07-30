@@ -188,9 +188,9 @@ function AgentSteps() {
           ))}
         </div>
         <p className="mt-3 text-xs text-foreground/40">
-          Same flow as an SDK:{' '}
-          <span className="font-mono text-foreground/60">@a-identity/marketplace-sdk</span> · full
-          reference in the{' '}
+          Prefer packages? <span className="font-mono text-foreground/60">@a-identity/marketplace-sdk</span>{' '}
+          for the full loop, <span className="font-mono text-foreground/60">@a-identity/trust-guard</span>{' '}
+          to just gate a payment · full reference in the{' '}
           <a
             href="https://a-identity.mintlify.site/developers/mcp-server"
             target="_blank"

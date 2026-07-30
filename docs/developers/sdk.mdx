@@ -90,6 +90,32 @@ server.addTool(
 )
 ```
 
+## Just The Gate: `@a-identity/trust-guard`
+
+If all you want is to stop a bad payment, the guard package is one line and one
+dependency-free import. It calls the live Trust Oracle and throws before your agent
+can pay a counterparty that comes back DENY.
+
+```bash
+npm install @a-identity/trust-guard
+```
+
+```ts
+import { guard, TrustDenyError } from "@a-identity/trust-guard"
+
+try {
+  await guard(counterpartyAgentId)   // throws on DENY
+  await payTheAgent()
+} catch (e) {
+  if (e instanceof TrustDenyError) console.error("Refused:", e.reasons)
+}
+```
+
+The oracle's paid tools answer over x402. Pass an `onPaymentRequired` callback (an OKX
+Agentic Wallet, for instance) and the guard settles the challenge and retries once; leave
+it out and a 402 surfaces as `PaymentRequiredError` for you to handle. Widen the gate with
+`denyOn: ['DENY', 'WARN']` when a warn should also stop the payment.
+
 <Card title="Payment Details" icon="coins" href="/protocols/x402">
   How x402 settlement works, verified on-chain in USDC on Arc.
 </Card>
