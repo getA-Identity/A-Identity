@@ -49,6 +49,46 @@ export function protectedResourceMetadata(): Record<string, unknown> {
     // who owns an agent. It does not raise that agent's spending limits, which
     // live on-chain and are not a function of who is holding the token.
     resource_policy_uri: 'https://a-identity.xyz/auth.md',
+    // How an agent obtains a credential in the first place, per the auth.md
+    // registration protocol. Three routes because agents arrive in three
+    // situations, and the honest answer differs: a human is present, no human is
+    // present, or value is about to move.
+    agent_auth: {
+      skill: 'https://a-identity.xyz/auth.md',
+      register_uri: 'https://a-identity.xyz/signup',
+      revocation_uri: 'https://a-identity.xyz/app',
+      identity_types_supported: ['identity_assertion'],
+      identity_assertion: {
+        assertion_types_supported: ['verified_email'],
+        credential_types_supported: ['oauth_access_token', 'agent_key'],
+        claim_uri: 'https://a-identity.xyz/signup',
+      },
+      registration_methods: [
+        {
+          method: 'oauth',
+          description:
+            'Authorization code with PKCE against the authorization server named above, then a bearer token. Dynamic client registration is supported by the issuer. Grants ownership of the agents registered to the verified email.',
+          authorization_server: ISSUER,
+          requires_human: true,
+        },
+        {
+          method: 'payment',
+          description:
+            'For autonomous agents with no human present. Paid endpoints authenticate the payment rather than the caller: an unpaid request returns HTTP 402 with a machine-readable challenge and is served on a paid retry.',
+          challenge_endpoint: 'https://a-identity.xyz/api/x402/nano/data',
+          requires_human: false,
+        },
+        {
+          method: 'owner_provisioned_key',
+          description:
+            'Required only for operations that move value. A human registers the agent and sets its limits; the key is issued at the end of that flow. No endpoint mints one on an agent own request, because it authorizes spending from a human wallet.',
+          register_uri: 'https://a-identity.xyz/signup',
+          requires_human: true,
+        },
+      ],
+      notes:
+        'No credential widens a spending limit. Caps, the approval line and the payee allowlist are enforced by an on-chain vault that cannot see how the caller authenticated.',
+    },
   }
 }
 
