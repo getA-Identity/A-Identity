@@ -46,10 +46,15 @@ test('every documented paid tool carries its price', () => {
   }
 })
 
-test('the free tool is documented and carries no price', () => {
+test('the free tool is documented and can never carry a chargeable price', () => {
   const free = spec.paths['/tools/trust_preview']?.post
   assert.ok(free, 'trust_preview should be discoverable even though it is free')
-  assert.equal(free?.['x-price'], undefined)
+  // It may say "free" outright, or say nothing. What it must never do is name an
+  // amount: a buyer agent reads x-price to decide whether to open a wallet, and the
+  // gateway never charges this route, so a dollar figure here would be a lie.
+  const price = free?.['x-price']
+  assert.ok(price === undefined || price === 'free', `trust_preview must not be priced, got ${price}`)
+  assert.equal(PRICES['POST /tools/trust_preview'], undefined, 'the gateway must not charge trust_preview')
 })
 
 test('the spec and the marketplace manifest agree on the service URL', () => {

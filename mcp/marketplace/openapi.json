@@ -1,10 +1,10 @@
 {
   "openapi": "3.1.0",
   "info": {
-    "title": "A-Identity \u2014 Agent Trust Oracle",
-    "version": "1.0.0",
-    "summary": "The identity & reputation oracle for the agent economy.",
-    "description": "Before one AI agent pays another, it calls A-Identity to verify the counterparty. Six x402 tools (five paid, one free) over a live on-chain engine: ERC-8004 identity + KYA (Know-Your-Agent), a deterministic 0-1000 reputation score computed from real on-chain settlements, a pre-transaction ALLOW / WARN / DENY risk verdict, a two-sided counterparty check, and a guardrail policy check. Every number is reproducible and every settlement is on-chain. Paid tools use the x402 protocol (USDC): an unpaid request returns HTTP 402 with payment requirements; after payment the request is replayed and served.",
+    "title": "A-Identity Trust Oracle",
+    "version": "1.1.0",
+    "summary": "The identity and reputation oracle for the agent economy.",
+    "description": "Before one AI agent pays another, it calls A-Identity to verify the counterparty. Seven x402 tools (six paid, one free) over a live on-chain engine: ERC-8004 identity + KYA (Know-Your-Agent), a deterministic 0-1000 reputation score computed from real on-chain settlements, a pre-transaction ALLOW / WARN / DENY risk verdict, a two-sided counterparty check that catches same-operator self-dealing, and a guardrail policy check. Every number is reproducible and every settlement is verifiable on-chain at /proof. Paid tools use the x402 protocol in USDC: an unpaid request returns HTTP 402 with the payment requirements; after payment the request is replayed and served.\n\nTwo settlement rails are live. The tool endpoints settle per call on X Layer (eip155:196). A second rail settles on Circle Arc testnet (eip155:5042002) through Circle Gateway's batched nanopayments, where the buyer signs an EIP-3009 authorization off-chain for zero gas and thousands of sub-cent authorizations net into one on-chain transfer. On Arc the gas token is USDC itself, so an agent needs no second asset to transact.",
     "contact": {
       "name": "A-Identity",
       "url": "https://a-identity.xyz"
@@ -13,10 +13,40 @@
       "name": "MIT"
     }
   },
+  "x-x402": {
+    "version": 2,
+    "rails": [
+      {
+        "name": "per-call",
+        "network": "eip155:196",
+        "networkName": "X Layer mainnet",
+        "scheme": "exact",
+        "asset": "USD\u20ae0",
+        "paths": "/tools/*",
+        "note": "Every paid tool call settles as its own on-chain transfer. The full settlement list is public at /proof."
+      },
+      {
+        "name": "nanopayment",
+        "network": "eip155:5042002",
+        "networkName": "Circle Arc testnet",
+        "scheme": "exact",
+        "asset": "USDC",
+        "assetAddress": "0x3600000000000000000000000000000000000000",
+        "facilitator": "Circle Gateway (GatewayWalletBatched)",
+        "verifyingContract": "0x0077777d7eba4688bdef3e311b846f25870a19b9",
+        "paths": "/api/x402/nano/data",
+        "note": "Gasless for the buyer: an EIP-3009 authorization is signed off-chain and Circle Gateway batches the on-chain settlement."
+      }
+    ]
+  },
   "servers": [
     {
       "url": "https://a-identity-asp.onrender.com",
-      "description": "A-Identity Trust Oracle (production)"
+      "description": "Trust Oracle tools (x402 per-call, X Layer)"
+    },
+    {
+      "url": "https://a-identity-backend.onrender.com",
+      "description": "Arc rail (x402 nanopayments over Circle Gateway, Arc testnet)"
     }
   ],
   "tags": [
@@ -343,14 +373,15 @@
           "tools"
         ],
         "summary": "Free coarse trust band (rate limited)",
-        "description": "A free, coarse trust band plus revoked and Sybil flags. No payment and no key; rate limited per IP. The on-ramp before a paid call.",
-        "x-payment": "x402",
+        "description": "A free, coarse trust band plus revoked and Sybil flags. No payment and no key; rate limited to 20 calls per hour per IP. The on-ramp before a paid call.",
+        "x-price": "free",
+        "x-payment": "none",
         "requestBody": {
           "required": true,
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/VerifyAgentRequest"
+                "$ref": "#/components/schemas/AgentIdRequest"
               }
             }
           }
@@ -368,6 +399,50 @@
           },
           "400": {
             "$ref": "#/components/responses/BadRequest"
+          }
+        }
+      }
+    },
+    "/api/x402/nano/data": {
+      "servers": [
+        {
+          "url": "https://a-identity-backend.onrender.com",
+          "description": "Arc rail (Circle Gateway nanopayments)"
+        }
+      ],
+      "get": {
+        "tags": [
+          "tools"
+        ],
+        "summary": "Live Arc chain data, paid by gasless USDC nanopayment on Arc",
+        "description": "The Arc settlement rail. An unpaid GET returns an x402 v2 challenge whose accepts[] names Circle Arc testnet (eip155:5042002), native USDC, and Circle Gateway's GatewayWalletBatched domain. The buyer signs an EIP-3009 authorization off-chain, so the call costs the buyer no gas, and Gateway batches the on-chain settlement. Price: $0.001 (1000 USDC units).",
+        "x-price": "$0.001",
+        "x-payment": "x402-nanopayment",
+        "x-network": "eip155:5042002",
+        "parameters": [
+          {
+            "name": "PAYMENT-SIGNATURE",
+            "in": "header",
+            "required": false,
+            "description": "Base64 x402 payment payload. Omit it to receive the 402 challenge first.",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The paid resource, plus the Gateway settlement in the PAYMENT-RESPONSE header",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "402": {
+            "$ref": "#/components/responses/PaymentRequired"
           }
         }
       }
