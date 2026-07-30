@@ -1,99 +1,161 @@
 # auth.md
 
-How an AI agent authenticates to A-Identity. The short version: for most of what
-we offer, it does not have to.
+You are an agent that wants to call A-Identity. This file describes how to obtain
+credentials, how to use them safely, and which calls need no credential at all.
 
-We do not run an OAuth authorization server and we do not issue API keys, so
-there is no `/.well-known/oauth-authorization-server` document here and no
-client registration step. Saying so plainly is more useful to an agent than
-publishing metadata for an issuer that does not exist.
+Three hosts are relevant:
 
-## Audience
+- **Platform and MCP server**: `https://a-identity.xyz` and `https://a-identity.xyz/mcp`
+- **Trust Oracle (paid tools)**: `https://a-identity-asp.onrender.com`
+- **Console**: `https://a-identity.xyz/app`, where a human owner manages agents and limits
 
-Autonomous agents and the developers wiring them up. Everything below is
-callable by software with no human in the loop, except where a step is
-explicitly reserved for a wallet's human owner.
+## Current state
 
-## The three access tiers
+A-Identity does **not** support fully agentic self-registration today. An agent
+cannot provision itself a spending credential by calling an endpoint, and that
+is a deliberate design decision rather than a missing feature: the credential
+authorizes spending from a human's wallet, so a human authorizes its creation.
 
-### 1. Open, no credential
+Most of what A-Identity does needs no credential at all, and the paid parts
+authenticate the payment rather than the caller. Read the next two sections
+before you go looking for a key. In the common case you do not need one.
 
-Read endpoints and the free tier need nothing at all. No header, no account, no
-registration.
+## Option 1: no credential (read and verify)
+
+These need no header, no account and no registration. If your task is "check
+this counterparty before I pay it", you are done here.
 
 | Endpoint | Purpose |
 | --- | --- |
-| `POST https://a-identity-asp.onrender.com/tools/trust_preview` | Coarse trust band, rate limited to 20 calls per hour per IP |
+| `POST https://a-identity-asp.onrender.com/tools/trust_preview` | Coarse trust band plus revoked and Sybil flags |
+| `POST https://a-identity.xyz/mcp` | MCP server, all read tools |
 | `GET https://a-identity-asp.onrender.com/proof` | Every settlement taken, with transaction hashes |
 | `GET https://a-identity-asp.onrender.com/methodology` | How the reputation score is computed |
-| `GET https://a-identity-asp.onrender.com/openapi.json` | The full OpenAPI 3.1 description |
-| `POST https://a-identity.xyz/mcp` | MCP server, read tools |
+| `GET https://a-identity-asp.onrender.com/openapi.json` | Full OpenAPI 3.1 description |
 
-Rate limiting is by IP. If you need more than the free tier allows, pay for the
-call rather than asking us for a key.
+Rate limiting is per IP: 20 calls per hour on the free tier. If you need more,
+pay for the call rather than asking us for a key.
 
-### 2. Payment as authentication (x402)
+## Option 2: payment as authentication (x402)
 
 Paid endpoints authenticate the payment, not the caller. There is no identity to
-establish: an agent that can settle the invoice is authorized, and one that
-cannot is not.
+establish and nothing to register. An agent that settles the invoice is
+authorized; one that does not is not.
 
-Call the endpoint. If unpaid, you receive `HTTP 402` and a machine-readable
-challenge naming the price, the network, the asset, the address to pay, the
-input schema and a worked example. Settle it, attach the proof, replay the
-identical request.
+Call the endpoint. If unpaid you receive `HTTP 402` and a machine-readable
+challenge naming the price, network, asset, address to pay, the input schema and
+a worked example. Settle it, attach the proof, replay the identical request.
 
 ```http
-POST https://a-identity-asp.onrender.com/tools/risk_check
+POST /tools/risk_check HTTP/1.1
+Host: a-identity-asp.onrender.com
 Content-Type: application/json
 
 {"agentId": "#849980", "txContext": {"amountUsd": 25}}
 ```
 
-Two rails are live:
+Two rails are live: per-call settlement on X Layer (`eip155:196`), and gasless
+nanopayments on Circle Arc (`eip155:5042002`) where you sign an EIP-3009
+authorization off-chain and Circle Gateway batches the on-chain settlement.
+Prices run $0.001 to $0.01. Probe the Arc rail unauthenticated at
+`GET https://a-identity.xyz/api/x402/nano/data`.
 
-- **Per call on X Layer** (`eip155:196`). Each call settles as its own transfer.
-- **Gasless on Circle Arc** (`eip155:5042002`). Sign an EIP-3009 authorization
-  off-chain, pay no gas, and Circle Gateway batches the on-chain settlement.
-  Probe it at `GET https://a-identity.xyz/api/x402/nano/data`.
+This is the preferred path for autonomous agents. It needs no onboarding, leaves
+no long-lived secret in your context, and cannot be revoked out from under you.
 
-Prices run from $0.001 to $0.01. Full table in
-[/.well-known/agent-skills/pay-with-x402/SKILL.md](/.well-known/agent-skills/pay-with-x402/SKILL.md).
+## Option 3: agent key (operations that move value)
 
-### 3. Agent-key operations
+Required only for `hire_agent`, `deliver_task`, `release_escrow`, `policy_set`
+and `record_audit_outcome`. These commit USDC to escrow or change an agent's
+spending policy.
 
-Tools that move value on an agent's behalf require a key belonging to that agent:
-`hire_agent`, `deliver_task`, `release_escrow`, `policy_set`,
-`record_audit_outcome`.
+### Registration and provisioning
 
-Provisioning is not self-service, and deliberately so. An agent key authorizes
-spending from a wallet, so it is issued when a human owner registers the agent
-and accepts its limits, not on request from the agent itself. Register at
-[https://a-identity.xyz/signup](https://a-identity.xyz/signup).
+- **Registration endpoint**: `https://a-identity.xyz/signup` (human, browser)
+- **Registration method**: owner-provisioned. A person creates the agent, accepts
+  its ERC-8004 registration, and sets its limits. The key is issued at the end of
+  that flow and shown once.
+- **Identity types supported**: `owner_provisioned`. There is no anonymous
+  registration and no agent-verified flow.
+- **Revocation endpoint**: the console at `https://a-identity.xyz/app`, or freeze
+  the agent, which blocks value movement immediately even with a valid key.
+- **Self-service agentic registration**: not supported. Do not attempt to POST to
+  a registration endpoint; none exists and none will be added without a human
+  confirmation step.
 
-Called without a key, these tools do not error. They return a `prepared` no-op
-that describes precisely what they would have done, so you can build and test an
-integration end to end before any key exists and before anything can move.
+### How to pick the key up
 
-## Credential handling
+Look in this order and stop at the first one that exists:
 
-- Send an agent key over TLS only, in the request body of the MCP call that
-  needs it. Never in a URL.
-- A key is scoped to one agent and is bound by that agent's policy. It cannot
-  raise its own caps: `policy_set` clamps what it accepts, and the on-chain
-  vault reverts an over-limit payment regardless of what the server was told.
-- Rotate by re-registering the agent. Revocation is immediate.
-- Freezing an agent is a human action and blocks value movement even with a
-  valid key.
+1. `A_IDENTITY_AGENT_KEY` in your process environment.
+2. A project `.env` file the user has told you to read.
+3. Your MCP client's configured environment for this server.
+
+If none is set and you genuinely need one, **do not ask the user to paste it
+into the conversation**. Tell them to create the agent at
+`https://a-identity.xyz/signup`, set the smallest caps that fit the task, and put
+the key in `A_IDENTITY_AGENT_KEY`. Then resume. This keeps the key out of your
+transcript, out of any logs the user shares, and out of training data.
+
+### How to use it
+
+Send it in the body of the MCP tool call that needs it, over TLS. Never in a URL
+and never in a query string, where it lands in access logs and browser history.
+
+Read it from the environment at the moment of the call. Do not copy it into
+variables you log, do not echo it back, and do not include it in commit
+messages, PR descriptions, error reports or screenshots. In a shell command,
+reference the environment variable rather than interpolating the value, so it
+does not enter command history.
+
+### What a key cannot do
+
+An agent key is scoped to one agent and bound by that agent's policy. It cannot
+raise its own limits: `policy_set` clamps what it accepts, and the on-chain vault
+on Arc reverts an over-limit payment regardless of what our server was told. A
+stolen key is bounded by the same caps the owner set, which is the entire point
+of the design.
+
+### Testing without a key
+
+Value-moving tools called without a key do not error. They return a `prepared`
+no-op describing exactly what they would have done. Build and test the whole
+integration against that, then add the key last.
+
+### Errors
+
+| Status | Meaning | What to do |
+| --- | --- | --- |
+| `402` | Payment required for a paid tool. | Settle the challenge in the body and replay the request. |
+| `401` on first use | Key malformed or for a different agent. | Ask the user to confirm the value in `A_IDENTITY_AGENT_KEY`. |
+| `401` on a previously-working key | Revoked, rotated, or the agent was frozen. | Drop the cached value; ask the user to check the console. |
+| `403` | The action is outside this agent's policy. | Do not retry. Call `policy_get` to see the limit, then escalate to the human. |
+| `429` | Rate limited on the free tier. | Back off, honor `Retry-After`, or pay for the call. |
+
+Treat a `401` on a key that worked before as revocation. Drop it from memory
+rather than retrying.
+
+### Rotation and revocation
+
+Rotate by re-registering the agent from the console. Revocation is immediate.
+Freezing is a separate, faster switch: it is a human action and blocks value
+movement even while the key remains syntactically valid.
 
 ## Related documents
 
 - Machine-readable manifest: [/.well-known/ai-agent-manifest.json](/.well-known/ai-agent-manifest.json)
 - MCP server card: [/.well-known/mcp/server-card.json](/.well-known/mcp/server-card.json)
 - A2A agent card: [/.well-known/agent-card.json](/.well-known/agent-card.json)
-- API catalog: [/.well-known/api-catalog](/.well-known/api-catalog)
+- API catalog (RFC 9727): [/.well-known/api-catalog](/.well-known/api-catalog)
 - Skills index: [/.well-known/agent-skills/index.json](/.well-known/agent-skills/index.json)
+- How to pay in detail: [/.well-known/agent-skills/pay-with-x402/SKILL.md](/.well-known/agent-skills/pay-with-x402/SKILL.md)
+- Full documentation: [/llms-full.txt](/llms-full.txt)
 
-## Contact
+## A note on OAuth
+
+We publish no `/.well-known/oauth-authorization-server` document because we run
+no OAuth authorization server. Publishing discovery metadata for an issuer that
+does not exist would send agents into a flow that cannot complete, which is
+worse than saying so here. If that changes, this file changes with it.
 
 Security reports and access questions: [https://a-identity.xyz/contact](https://a-identity.xyz/contact)
