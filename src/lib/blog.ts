@@ -89,6 +89,282 @@ export const AUTHORS = {
 
 export const POSTS: BlogPost[] = [
   {
+    slug: 'what-120-real-agent-payments-look-like',
+    title: 'What 120 real agent-to-agent payments actually look like',
+    excerpt:
+      'Almost everything written about agentic payments is a forecast. This is not. Here is the shape of 120 settlements our trust oracle actually took on mainnet, what the distribution says about how agents buy, and the numbers that surprised us.',
+    chain: 'Data',
+    accent: '#2B4A7E',
+    date: 'Jul 31, 2026',
+    readingTime: '6 min read',
+    seed: 13,
+    author: AUTHORS.protocol,
+    sections: [
+      {
+        heading: 'Why this is worth writing down',
+        body: [
+          'The agentic payments literature is almost entirely forward looking. Market sizing, protocol explainers, diagrams of how it will work. Very little of it describes transactions that happened.',
+          'We run a trust oracle that agents pay per call to check each other. It has taken 120 settlements on X Layer mainnet, in real USD₮0, totalling $0.528. Every one is listed with its transaction hash and anyone can verify the set independently.',
+          'It is a small dataset and we are not going to pretend otherwise. But it is a real one, and there is more to learn from 120 payments that happened than from a projection of a billion that have not.',
+        ],
+      },
+      {
+        heading: 'The shape of demand',
+        body: [
+          'Across 120 calls, five of the seven tools were bought at all. The distribution:',
+          'verify_agent, 32 calls, 27 percent. reputation_score, 29 calls, 24 percent. risk_check, 28 calls, 23 percent. agent_passport, 25 calls, 21 percent. counterparty_check, 6 calls, 5 percent.',
+          'The first thing to notice is how flat the top four are. We expected the cheapest call to dominate, since verify_agent costs a tenth of what agent_passport does. It did not. The four sit within six points of each other, which suggests buyers were choosing by what they needed rather than by price.',
+        ],
+      },
+      {
+        heading: 'The surprise: price barely steered anything',
+        body: [
+          'Our prices span an order of magnitude, from $0.001 to $0.01. If agents were cost-sensitive at this scale, the mix would be heavily weighted to the cheap end. It is not: the $0.01 passport took 21 percent of calls, nearly matching the $0.001 identity check at 27 percent.',
+          'The average settlement was $0.0044, which sits near the middle of the range rather than near the floor.',
+          'The honest reading is that at sub-cent prices, cost is not a decision variable for an agent. A tenth of a cent and one cent are both effectively free relative to the value of the decision being made, so the agent picks the call that answers its question. This has an uncomfortable implication for anyone planning to compete on price in this market: below some threshold, price stops being a lever at all.',
+        ],
+      },
+      {
+        heading: 'The tool nobody bought',
+        body: [
+          'counterparty_check took 6 calls, 5 percent of the total. It is the only tool that examines both sides of a proposed deal, and it is the only one that can detect same-operator self-dealing, where one entity runs both agents and manufactures a settlement history for both.',
+          'We think it is the most interesting check we offer, and it is the least used by a wide margin.',
+          'There is a plausible innocent reason. A buyer already knows who it is, so asking about itself feels redundant, and the value of the two-sided view is not obvious until someone explains what it catches. That is a documentation failure on our side rather than a demand signal.',
+          'There is also a less comfortable reading, and we cannot distinguish them from this data: the agents doing the checking are not yet worried about being on the wrong side of a manufactured reputation, because the ecosystem is small enough that nobody has been burned yet. If that is the reason, it changes as soon as the first person is.',
+        ],
+      },
+      {
+        heading: 'What the data cannot tell you',
+        body: [
+          'We should be clear about the limits of this, because a small dataset presented confidently is how bad analysis starts.',
+          'A meaningful share of these calls are seeded usage rather than organic third-party demand, and the proof page marks which are which. Buyer diversity is low. Nothing here says anything about how the mix changes at a thousand calls a day, or at prices ten times higher, or on a chain with different fee dynamics.',
+          'What it does establish is narrower and still worth having: agents can and do pay per call for a trust check, the plumbing works end to end on mainnet, and the demand mix across check types is flatter than a price-driven model would predict.',
+        ],
+      },
+      {
+        heading: 'The number we are not showing you',
+        body: [
+          'Our public policy counters read zero. Not a small number, zero.',
+          'They count decisions the guardrail engine has made for live third-party agents in production, and no live agent has produced one yet. The engine is real and enforcing, but nothing honest has passed through it, so the counter says nothing.',
+          'We publish that zero on the same page as the 120. It would be easy to fill it with demo traffic, and every incentive points that way. But a number you cannot reproduce is worth less than an absence you can trust, and the whole product is a claim about verifiable trust. Padding our own metrics would be the first thing a careful reader should hold against us.',
+        ],
+      },
+      {
+        heading: 'Check it yourself',
+        body: [
+          'Every settlement in this post is listed at /proof with its transaction hash, and each one resolves on a public explorer. The scoring method behind the tools is published in full at /methodology, and it is deterministic, so you can recompute any score we have ever returned.',
+          'If you find something in that data we got wrong, we would genuinely like to know. Being checked is the point.',
+        ],
+      },
+    ],
+    tr: {
+      title: '120 gerçek ajan-ajana ödeme aslında nasıl görünüyor',
+      excerpt:
+        'Ajan ödemeleri hakkında yazılanların neredeyse tamamı bir öngörü. Bu değil. Güven oracle\'ımızın mainnet üzerinde gerçekten aldığı 120 settlement\'ın şekli, dağılımın ajanların nasıl satın aldığı hakkında söyledikleri ve bizi şaşırtan rakamlar.',
+      chain: 'Veri',
+      readingTime: '6 dakika',
+      sections: [
+        {
+          heading: 'Bunu yazmaya neden değer',
+          body: [
+            'Ajan ödemeleri literatürü neredeyse tamamen ileriye dönük. Pazar büyüklüğü tahminleri, protokol açıklamaları, nasıl çalışacağına dair şemalar. Çok azı gerçekleşmiş işlemleri anlatıyor.',
+            'Biz, ajanların birbirini kontrol etmek için çağrı başına ödeme yaptığı bir güven oracle\'ı işletiyoruz. X Layer mainnet üzerinde, gerçek USD₮0 ile, toplam 0,528 dolar tutarında 120 settlement aldı. Her biri işlem özetiyle listeleniyor ve isteyen herkes bu kümeyi bağımsız olarak doğrulayabilir.',
+            'Küçük bir veri kümesi ve aksini iddia etmeyeceğiz. Ama gerçek bir küme ve gerçekleşmiş 120 ödemeden öğrenilecek şey, gerçekleşmemiş bir milyarın tahmininden fazladır.',
+          ],
+        },
+        {
+          heading: 'Talebin şekli',
+          body: [
+            '120 çağrı boyunca yedi araçtan beşi satın alındı. Dağılım şöyle:',
+            'verify_agent, 32 çağrı, yüzde 27. reputation_score, 29 çağrı, yüzde 24. risk_check, 28 çağrı, yüzde 23. agent_passport, 25 çağrı, yüzde 21. counterparty_check, 6 çağrı, yüzde 5.',
+            'İlk dikkat çeken şey ilk dördünün ne kadar düz olduğu. En ucuz çağrının baskın olmasını bekliyorduk, çünkü verify_agent, agent_passport\'un onda biri fiyatına. Öyle olmadı. Dördü birbirinden altı puan içinde duruyor, bu da alıcıların fiyata göre değil ihtiyaca göre seçtiğini düşündürüyor.',
+          ],
+        },
+        {
+          heading: 'Sürpriz: fiyat neredeyse hiçbir şeyi yönlendirmedi',
+          body: [
+            'Fiyatlarımız 0,001 dolardan 0,01 dolara, on kat aralığa yayılıyor. Ajanlar bu ölçekte maliyete duyarlı olsaydı, dağılım ağırlıklı olarak ucuz uca kayardı. Kaymadı: 0,01 dolarlık pasaport çağrıların yüzde 21\'ini aldı, 0,001 dolarlık kimlik kontrolünün yüzde 27\'sine neredeyse eşit.',
+            'Ortalama settlement 0,0044 dolardı, yani aralığın tabanına değil ortasına yakın.',
+            'Dürüst okuma şu: kuruş altı fiyatlarda maliyet bir ajan için karar değişkeni değil. Kuruşun onda biri de bir kuruş da, verilen kararın değerine kıyasla fiilen bedava, dolayısıyla ajan sorusunu cevaplayan çağrıyı seçiyor. Bu, bu pazarda fiyat üzerinden rekabet etmeyi planlayan herkes için rahatsız edici bir sonuç doğuruyor: belli bir eşiğin altında fiyat bir kaldıraç olmaktan tamamen çıkıyor.',
+          ],
+        },
+        {
+          heading: 'Kimsenin satın almadığı araç',
+          body: [
+            'counterparty_check 6 çağrı aldı, toplamın yüzde 5\'i. Önerilen bir anlaşmanın iki tarafını birden inceleyen tek araç ve tek bir varlığın iki ajanı da işletip ikisi için settlement geçmişi imal ettiği durumu, yani kendi kendine ticareti tespit edebilen tek araç.',
+            'Sunduğumuz en ilginç kontrolün bu olduğunu düşünüyoruz ve açık ara en az kullanılanı.',
+            'Masum bir açıklaması olabilir. Alıcı zaten kim olduğunu biliyor, dolayısıyla kendisi hakkında soru sormak gereksiz hissettiriyor ve iki taraflı bakışın değeri, birisi neyi yakaladığını anlatana kadar aşikâr değil. Bu bir talep sinyali değil, bizim tarafımızda bir dokümantasyon eksikliği.',
+            'Bir de daha rahatsız edici bir okuma var ve bu veriyle ikisini ayırt edemiyoruz: kontrol yapan ajanlar, imal edilmiş bir itibarın yanlış tarafında kalmaktan henüz endişe etmiyor olabilir, çünkü ekosistem henüz kimsenin canının yanmadığı kadar küçük. Sebep buysa, ilk kişinin canı yandığı anda değişecek.',
+          ],
+        },
+        {
+          heading: 'Bu verinin size söyleyemeyeceği şeyler',
+          body: [
+            'Bunun sınırları konusunda açık olmalıyız, çünkü küçük bir veri kümesini kendinden emin sunmak kötü analizin başlangıcıdır.',
+            'Bu çağrıların kayda değer bir kısmı organik üçüncü taraf talebi değil, tohumlanmış kullanım ve kanıt sayfası hangisinin hangisi olduğunu işaretliyor. Alıcı çeşitliliği düşük. Buradaki hiçbir şey, günde bin çağrıda, on kat yüksek fiyatlarda ya da farklı ücret dinamiklerine sahip bir zincirde dağılımın nasıl değişeceği hakkında bir şey söylemiyor.',
+            'Ortaya koyduğu şey daha dar ama yine de değerli: ajanlar bir güven kontrolü için çağrı başına ödeme yapabiliyor ve yapıyor, tesisat mainnet üzerinde uçtan uca çalışıyor ve kontrol türleri arasındaki talep dağılımı, fiyat odaklı bir modelin öngöreceğinden daha düz.',
+          ],
+        },
+        {
+          heading: 'Size göstermediğimiz sayı',
+          body: [
+            'Kamuya açık politika sayaçlarımız sıfır gösteriyor. Küçük bir sayı değil, sıfır.',
+            'Bu sayaçlar, korkuluk motorunun canlı üçüncü taraf ajanlar için üretimde verdiği kararları sayıyor ve henüz hiçbir canlı ajan böyle bir karar üretmedi. Motor gerçek ve uyguluyor, ama içinden dürüstçe sayılabilecek bir şey geçmedi, dolayısıyla sayaç hiçbir şey söylemiyor.',
+            'Bu sıfırı, 120 ile aynı sayfada yayınlıyoruz. Demo trafiğiyle doldurmak kolay olurdu ve bütün teşvikler o yöne işaret ediyor. Ama yeniden üretemediğiniz bir sayı, güvenebildiğiniz bir yokluktan daha değersizdir ve ürünün tamamı doğrulanabilir güven üzerine bir iddia. Kendi metriklerimizi şişirmek, dikkatli bir okuyucunun bize karşı tutması gereken ilk şey olurdu.',
+          ],
+        },
+        {
+          heading: 'Kendiniz kontrol edin',
+          body: [
+            'Bu yazıdaki her settlement /proof adresinde işlem özetiyle listeleniyor ve her biri herkese açık bir gezginde çözümleniyor. Araçların arkasındaki skorlama yöntemi /methodology adresinde tamamıyla yayında ve deterministik, dolayısıyla şimdiye kadar döndürdüğümüz herhangi bir skoru yeniden hesaplayabilirsiniz.',
+            'O veride yanlış yaptığımız bir şey bulursanız gerçekten bilmek isteriz. Kontrol edilmek zaten amacın kendisi.',
+          ],
+        },
+      ],
+    },
+  },
+  {
+    slug: 'two-kinds-of-agent-budget',
+    title: 'Your agent has two budgets, and only one of them is money',
+    excerpt:
+      'Search for how to give an AI agent a budget and you get two completely different answers, both called the same thing. One is about tokens. The other is about your bank balance. Conflating them is how teams end up protected against the cheap failure and exposed to the expensive one.',
+    chain: 'Guardrails',
+    accent: '#8A4A3C',
+    date: 'Jul 31, 2026',
+    readingTime: '6 min read',
+    seed: 12,
+    author: AUTHORS.protocol,
+    sections: [
+      {
+        heading: 'Two questions wearing the same words',
+        body: [
+          'Ask the internet how to stop an AI agent burning through your budget and you get a confident answer. Read a few of them and you notice they are not answering the same question.',
+          'One set is about inference cost: token caps per run, model routing, an auto-pause when a task loops. The failure mode is a bill from your model provider.',
+          'The other is about payments: the agent has a wallet or a card and can move real value to a third party. The failure mode is money leaving your account and not coming back.',
+          'Both get called "agent budget" and "spend controls". They are not the same problem, they do not fail the same way, and the controls for one do almost nothing for the other.',
+        ],
+      },
+      {
+        heading: 'Why the difference is not academic',
+        body: [
+          'Token overspend is bounded, observable and reversible in the ways that matter. The bill arrives at the end of the month, your provider shows you a dashboard, and the worst case is a number you did not plan for. Unpleasant, survivable.',
+          'Payment overspend is none of those things. It is unbounded until something stops it, it is often invisible until reconciliation, and once a stablecoin transfer settles there is no chargeback, no dispute window and no support line. The counterparty has the money.',
+          'So a team that reads the token-cost articles, sets a per-run cap, and concludes it has solved agent spending has protected itself against the recoverable failure while leaving the unrecoverable one wide open.',
+        ],
+      },
+      {
+        heading: 'What a real payment limit has to survive',
+        body: [
+          'A token cap lives in your own orchestration code and that is fine, because the thing it is protecting against is your own code looping. A payment limit has a harder job: it has to hold against an agent that is actively trying to get past it.',
+          'That is not a hypothetical. A language model is a persuasion engine. Put the limit in the prompt and you have written a suggestion. Put it in a wrapper the agent calls and you have written a suggestion with an extra step, because the agent decides whether to call it.',
+          'The test for any payment control is simple: if the agent were adversarial, would this still hold? Most guardrails fail that question immediately.',
+        ],
+      },
+      {
+        heading: 'The four ways a limit leaks',
+        body: [
+          'The first is the obvious one, an agent that simply asks for more than it should. Every control catches this and it is the least interesting case.',
+          'The second is the path nobody instrumented. A team blocks purchases and forgets recurring payments, or blocks transfers and forgets that cancelling a protective position is also a way to lose money. Guardrails that cover the main verb and miss the adjacent ones are the normal failure, not the exception.',
+          'The third is the retry. An agent told no does not always stop; it rephrases and tries again. If refusals are not counted, a limit that says no ninety times and yes once has said yes.',
+          'The fourth is the one that looks like success: the agent stays under every per-transaction cap and makes forty of them. Any control without a time window is not a budget, it is a transaction size limit.',
+        ],
+      },
+      {
+        heading: 'Where the number should actually live',
+        body: [
+          'The useful mental model is to ask what has to be true for the limit to fail, and then make that thing harder.',
+          'A limit in a prompt fails if the agent is persuaded. A limit in your server fails if your server is wrong, compromised, or simply down at the moment it matters. A limit in a contract on-chain fails if the contract is wrong, which is a much smaller and much more auditable surface.',
+          'None of these is sufficient alone, which is why the answer is layers rather than a choice. The server pre-check is the fast path and handles the common case. The on-chain vault reverts an over-limit transfer regardless of what anything upstream believed. Wallet-layer screening at the custody provider catches what neither saw.',
+          'An agent can talk its way past one of those. Talking a contract into ignoring its own require statement is not a thing that happens.',
+        ],
+      },
+      {
+        heading: 'The signal most systems throw away',
+        body: [
+          'Almost every guardrail design has two outcomes: allow and block. Real spending decisions have three.',
+          'The missing one is the case where the payment is permitted but large enough, or unusual enough, that a person should see it before it happens. Collapse that into allow and you have a system that silently approves the payments you most wanted to know about. Collapse it into block and people turn the whole thing off within a week because it keeps stopping legitimate work.',
+          'Naming it explicitly, as WARN, is what makes the difference. It escalates rather than deciding, and the human in the loop is asked a specific question at a specific moment instead of being handed a dashboard to monitor.',
+        ],
+      },
+      {
+        heading: 'Set both, but know which is which',
+        body: [
+          'None of this argues against token budgets. Cap your per-run inference cost, route to cheaper models where you can, and pause a task that loops. That work is real and the articles about it are good.',
+          'Just do not file it under the same heading as payment authority, and do not let a green dashboard on one imply safety on the other. Ask which budget a given control protects, and be honest when the answer is "the cheap one".',
+          'The agent that runs up a large inference bill has cost you money. The agent that pays the wrong counterparty has given your money to someone else. Only one of those is a support ticket.',
+        ],
+      },
+    ],
+    tr: {
+      title: 'Ajanınızın iki bütçesi var ve sadece biri para',
+      excerpt:
+        'Bir AI ajanına nasıl bütçe verilir diye arattığınızda birbirinden tamamen farklı iki cevap alırsınız ve ikisinin de adı aynıdır. Biri token hakkında. Diğeri banka bakiyeniz hakkında. İkisini karıştırmak, ekiplerin ucuz hataya karşı korunup pahalı hataya açık kalmasının yoludur.',
+      chain: 'Korkuluklar',
+      readingTime: '6 dakika',
+      sections: [
+        {
+          heading: 'Aynı kelimeleri giyen iki soru',
+          body: [
+            'İnternete bir AI ajanının bütçenizi tüketmesini nasıl engelleyeceğinizi sorun, kendinden emin bir cevap alırsınız. Birkaç tanesini okuyunca aynı soruyu cevaplamadıklarını fark edersiniz.',
+            'Bir grup çıkarım maliyetinden bahsediyor: çalışma başına token sınırı, model yönlendirme, döngüye giren bir görevi durduran otomatik duraklatma. Buradaki hata modu, model sağlayıcınızdan gelen faturadır.',
+            'Diğer grup ödemelerden bahsediyor: ajanın bir cüzdanı veya kartı var ve üçüncü bir tarafa gerçek değer aktarabiliyor. Buradaki hata modu, paranın hesabınızdan çıkması ve geri gelmemesidir.',
+            'İkisine de "ajan bütçesi" ve "harcama kontrolü" deniyor. Aynı problem değiller, aynı şekilde bozulmuyorlar ve birinin kontrolleri diğeri için neredeyse hiçbir şey yapmıyor.',
+          ],
+        },
+        {
+          heading: 'Fark neden teorik değil',
+          body: [
+            'Token aşımı sınırlı, gözlemlenebilir ve önemli anlamda telafi edilebilir. Fatura ay sonunda gelir, sağlayıcınız size bir gösterge paneli sunar ve en kötü ihtimalle planlamadığınız bir sayıyla karşılaşırsınız. Can sıkıcı ama atlatılır.',
+            'Ödeme aşımı bunların hiçbiri değildir. Bir şey durdurana kadar sınırsızdır, çoğu zaman mutabakat anına kadar görünmezdir ve bir stablecoin transferi bir kez gerçekleştikten sonra ne ters ibraz, ne itiraz süresi, ne de arayacağınız bir destek hattı vardır. Para karşı taraftadır.',
+            'Dolayısıyla token maliyeti yazılarını okuyup çalışma başına bir sınır koyan ve ajan harcamasını çözdüğünü düşünen bir ekip, kendini telafi edilebilir hataya karşı korumuş, telafi edilemez olanı ardına kadar açık bırakmıştır.',
+          ],
+        },
+        {
+          heading: 'Gerçek bir ödeme limitinin dayanması gereken şey',
+          body: [
+            'Token sınırı kendi orkestrasyon kodunuzda yaşar ve bu sorun değildir, çünkü koruduğu şey kendi kodunuzun döngüye girmesidir. Ödeme limitinin işi daha zordur: aktif olarak kendisini aşmaya çalışan bir ajana karşı dayanması gerekir.',
+            'Bu varsayımsal değil. Bir dil modeli ikna makinesidir. Limiti isteme koyarsanız bir öneri yazmış olursunuz. Ajanın çağırdığı bir sarmalayıcıya koyarsanız, araya bir adım eklenmiş bir öneri yazmış olursunuz, çünkü onu çağırıp çağırmamaya ajan karar verir.',
+            'Herhangi bir ödeme kontrolünün testi basittir: ajan düşmanca davransaydı bu yine dayanır mıydı? Çoğu korkuluk bu soruda anında düşer.',
+          ],
+        },
+        {
+          heading: 'Bir limitin sızdırdığı dört yol',
+          body: [
+            'Birincisi bariz olanı, olması gerekenden fazlasını isteyen ajan. Her kontrol bunu yakalar ve bu en az ilginç durumdur.',
+            'İkincisi, kimsenin ölçmediği yol. Ekip satın almaları engeller ama düzenli ödemeleri unutur, ya da transferleri engeller ama koruyucu bir pozisyonu iptal etmenin de para kaybetmenin bir yolu olduğunu gözden kaçırır. Ana fiili kapsayıp yanındakileri atlayan korkuluklar istisna değil, normal hatadır.',
+            'Üçüncüsü tekrar denemedir. Hayır denen bir ajan her zaman durmaz; cümleyi değiştirip yeniden dener. Retler sayılmıyorsa, doksan kez hayır bir kez evet diyen bir limit evet demiştir.',
+            'Dördüncüsü başarı gibi görünendir: ajan işlem başına her sınırın altında kalır ve kırk işlem yapar. Zaman penceresi olmayan bir kontrol bütçe değildir, işlem büyüklüğü sınırıdır.',
+          ],
+        },
+        {
+          heading: 'Sayının gerçekte nerede durması gerekir',
+          body: [
+            'İşe yarayan düşünme biçimi şudur: limitin bozulması için neyin doğru olması gerektiğini sorun, sonra o şeyi zorlaştırın.',
+            'İstemdeki bir limit, ajan ikna edilirse bozulur. Sunucunuzdaki bir limit, sunucunuz yanılırsa, ele geçirilirse ya da tam o anda ayakta değilse bozulur. Zincir üstündeki bir sözleşmedeki limit, sözleşme yanlışsa bozulur ki bu çok daha küçük ve çok daha denetlenebilir bir yüzeydir.',
+            'Bunların hiçbiri tek başına yeterli değil, bu yüzden cevap seçim değil katmanlardır. Sunucu ön kontrolü hızlı yoldur ve sıradan durumu halleder. Zincir üstü kasa, yukarıdaki hiçbir katmanın neye inandığından bağımsız olarak limit aşan transferi geri çevirir. Saklama sağlayıcısındaki cüzdan taraması, ikisinin de görmediğini yakalar.',
+            'Bir ajan bunlardan birini konuşarak aşabilir. Bir sözleşmeyi kendi require satırını görmezden gelmeye ikna etmek diye bir şey yoktur.',
+          ],
+        },
+        {
+          heading: 'Çoğu sistemin çöpe attığı sinyal',
+          body: [
+            'Neredeyse her korkuluk tasarımının iki sonucu vardır: izin ver ve engelle. Gerçek harcama kararlarının üç tane vardır.',
+            'Eksik olan, ödemenin izinli olduğu ama bir insanın gerçekleşmeden önce görmesi gerekecek kadar büyük ya da olağandışı olduğu durumdur. Bunu "izin ver" içine katarsanız, en çok haberdar olmak istediğiniz ödemeleri sessizce onaylayan bir sistem kurmuş olursunuz. "Engelle" içine katarsanız, meşru işi sürekli durdurduğu için insanlar bir hafta içinde her şeyi kapatır.',
+            'Bunu WARN olarak açıkça adlandırmak farkı yaratan şeydir. Karar vermek yerine yukarı taşır ve döngüdeki insana, izlemesi için bir gösterge paneli vermek yerine belirli bir anda belirli bir soru sorulur.',
+          ],
+        },
+        {
+          heading: 'İkisini de koyun, ama hangisinin hangisi olduğunu bilin',
+          body: [
+            'Bunların hiçbiri token bütçelerine karşı bir argüman değil. Çalışma başına çıkarım maliyetinizi sınırlayın, yapabildiğiniz yerde daha ucuz modellere yönlendirin ve döngüye giren görevi duraklatın. Bu iş gerçek ve hakkında yazılanlar iyi.',
+            'Sadece bunu ödeme yetkisiyle aynı başlık altına koymayın ve birinde yeşil yanan bir panelin diğerinde güvenlik anlamına geldiğini düşünmeyin. Belirli bir kontrolün hangi bütçeyi koruduğunu sorun ve cevap "ucuz olanı" olduğunda dürüst olun.',
+            'Büyük bir çıkarım faturası çıkaran ajan size paraya mal olmuştur. Yanlış karşı tarafa ödeme yapan ajan, paranızı başkasına vermiştir. Bunlardan sadece biri bir destek talebidir.',
+          ],
+        },
+      ],
+    },
+  },
+  {
     slug: 'verify-an-agent-before-you-pay-it',
     title: 'How to verify an AI agent before you pay it',
     excerpt:

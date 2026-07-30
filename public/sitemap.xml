@@ -78,6 +78,38 @@
     <priority>0.4</priority>
   </url>
   <url>
+    <loc>https://a-identity.xyz/blog/what-120-real-agent-payments-look-like</loc>
+    <xhtml:link rel="alternate" hreflang="en" href="https://a-identity.xyz/blog/what-120-real-agent-payments-look-like"/>
+    <xhtml:link rel="alternate" hreflang="tr" href="https://a-identity.xyz/tr/blog/what-120-real-agent-payments-look-like"/>
+    <xhtml:link rel="alternate" hreflang="x-default" href="https://a-identity.xyz/blog/what-120-real-agent-payments-look-like"/>
+    <changefreq>monthly</changefreq>
+    <priority>0.6</priority>
+  </url>
+  <url>
+    <loc>https://a-identity.xyz/tr/blog/what-120-real-agent-payments-look-like</loc>
+    <xhtml:link rel="alternate" hreflang="en" href="https://a-identity.xyz/blog/what-120-real-agent-payments-look-like"/>
+    <xhtml:link rel="alternate" hreflang="tr" href="https://a-identity.xyz/tr/blog/what-120-real-agent-payments-look-like"/>
+    <xhtml:link rel="alternate" hreflang="x-default" href="https://a-identity.xyz/blog/what-120-real-agent-payments-look-like"/>
+    <changefreq>monthly</changefreq>
+    <priority>0.6</priority>
+  </url>
+  <url>
+    <loc>https://a-identity.xyz/blog/two-kinds-of-agent-budget</loc>
+    <xhtml:link rel="alternate" hreflang="en" href="https://a-identity.xyz/blog/two-kinds-of-agent-budget"/>
+    <xhtml:link rel="alternate" hreflang="tr" href="https://a-identity.xyz/tr/blog/two-kinds-of-agent-budget"/>
+    <xhtml:link rel="alternate" hreflang="x-default" href="https://a-identity.xyz/blog/two-kinds-of-agent-budget"/>
+    <changefreq>monthly</changefreq>
+    <priority>0.6</priority>
+  </url>
+  <url>
+    <loc>https://a-identity.xyz/tr/blog/two-kinds-of-agent-budget</loc>
+    <xhtml:link rel="alternate" hreflang="en" href="https://a-identity.xyz/blog/two-kinds-of-agent-budget"/>
+    <xhtml:link rel="alternate" hreflang="tr" href="https://a-identity.xyz/tr/blog/two-kinds-of-agent-budget"/>
+    <xhtml:link rel="alternate" hreflang="x-default" href="https://a-identity.xyz/blog/two-kinds-of-agent-budget"/>
+    <changefreq>monthly</changefreq>
+    <priority>0.6</priority>
+  </url>
+  <url>
     <loc>https://a-identity.xyz/blog/verify-an-agent-before-you-pay-it</loc>
     <xhtml:link rel="alternate" hreflang="en" href="https://a-identity.xyz/blog/verify-an-agent-before-you-pay-it"/>
     <xhtml:link rel="alternate" hreflang="tr" href="https://a-identity.xyz/tr/blog/verify-an-agent-before-you-pay-it"/>
