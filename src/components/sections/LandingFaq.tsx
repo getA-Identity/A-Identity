@@ -174,24 +174,38 @@ export default function LandingFaq() {
           Before you let anything move money on your behalf.
         </motion.p>
 
-        <motion.div {...reveal} transition={{ ...reveal.transition, delay: 0.08 }} className="mt-12">
+        <div className="mt-12">
           <Accordion type="single" collapsible className="divide-y divide-border border-y border-border">
             {LANDING_FAQ.map((item, i) => (
-              <AccordionItem key={item.q} value={`q${i}`} className="group">
-                <AccordionTrigger className="justify-between gap-6 py-6 text-left">
-                  <span className="text-base font-semibold leading-snug transition-colors group-hover:text-accent sm:text-lg">
-                    {item.q}
-                  </span>
-                </AccordionTrigger>
-                <AccordionContent forceMount className="data-[state=closed]:hidden">
-                  <p className="max-w-[68ch] pb-7 pr-8 text-[15px] leading-relaxed text-foreground/60">
-                    {item.a}
-                  </p>
-                </AccordionContent>
-              </AccordionItem>
+              <motion.div
+                key={item.q}
+                {...reveal}
+                transition={{ ...reveal.transition, delay: 0.05 * i }}
+              >
+                <AccordionItem value={`q${i}`} className="group">
+                  <AccordionTrigger className="justify-between gap-6 py-6 text-left">
+                    <span className="text-base font-semibold leading-snug transition-all duration-200 group-hover:pl-1 group-hover:text-accent group-data-[state=open]:text-accent sm:text-lg">
+                      {item.q}
+                    </span>
+                  </AccordionTrigger>
+                  {/* forceMount keeps the answer in the DOM for agents/SEO even while
+                      collapsed, so the open/close motion is a grid-rows tween (0fr → 1fr)
+                      rather than Radix's unmount animation, which forceMount defeats. */}
+                  <AccordionContent
+                    forceMount
+                    className="grid animate-none [transition:grid-template-rows_320ms_cubic-bezier(0.16,1,0.3,1)] data-[state=closed]:grid-rows-[0fr] data-[state=open]:grid-rows-[1fr]"
+                  >
+                    <div className="overflow-hidden">
+                      <p className="max-w-[68ch] pb-7 pr-8 text-[15px] leading-relaxed text-foreground/60">
+                        {item.a}
+                      </p>
+                    </div>
+                  </AccordionContent>
+                </AccordionItem>
+              </motion.div>
             ))}
           </Accordion>
-        </motion.div>
+        </div>
 
         {/* Six is the landing cut. The full reference set, categories and all, lives on /faq. */}
         <motion.div {...reveal} transition={{ ...reveal.transition, delay: 0.12 }} className="mt-8">

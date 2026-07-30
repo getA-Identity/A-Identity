@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import { motion, type Variants } from 'framer-motion'
 import { ArrowRight, Sparkles } from 'lucide-react'
 import { CAL_URL, EASE_OUT_EXPO } from '../lib/brand'
+import { useTheme } from './ThemeProvider'
 
 /*
  * Centered hero over the background video (the dashx stance): claim, lede and the
@@ -27,6 +28,7 @@ const fadeUp: Variants = {
 
 export default function Hero() {
   const navigate = useNavigate()
+  const { theme } = useTheme()
   const kbd = isMac ? '⌘K' : 'Ctrl K'
   const openSpotlight = () => window.dispatchEvent(new Event('open-trust-spotlight'))
 
@@ -163,7 +165,9 @@ export default function Hero() {
         style={{ willChange: 'transform, opacity' }}
         className="mt-12 w-full max-w-[1160px]"
       >
-        <div className="overflow-hidden rounded-t-[20px] border border-b-0 border-border/70 bg-card shadow-[0_-12px_80px_-20px_rgba(115,66,226,0.35),0_24px_80px_-24px_rgba(16,24,40,0.5)]">
+        <div className="relative overflow-hidden rounded-t-[20px] border border-b-0 border-border/70 bg-card shadow-[0_-12px_80px_-20px_rgba(115,66,226,0.35),0_24px_80px_-24px_rgba(16,24,40,0.5)]">
+          {/* Both theme stills stay mounted and crossfade with the theme toggle, so the
+              switch reads as the console changing its own theme rather than a reload. */}
           <img
             src="/console-hero.webp"
             alt="The A-Identity agent console: reputation, wallet balance, on-chain settlements and the daily cap for the showcase agent Meridian."
@@ -171,7 +175,17 @@ export default function Hero() {
             height={1360}
             loading="eager"
             decoding="async"
-            className="block w-full"
+            className={`block w-full transition-opacity duration-700 ${theme === 'dark' ? 'opacity-100' : 'opacity-0'}`}
+          />
+          <img
+            src="/console-hero-light.webp"
+            alt=""
+            aria-hidden="true"
+            width={2560}
+            height={1360}
+            loading="eager"
+            decoding="async"
+            className={`absolute inset-0 block w-full transition-opacity duration-700 ${theme === 'dark' ? 'opacity-0' : 'opacity-100'}`}
           />
         </div>
       </motion.div>

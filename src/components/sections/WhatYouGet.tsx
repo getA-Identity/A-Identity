@@ -167,7 +167,7 @@ export default function WhatYouGet() {
     <SectionShell size="lg" surface="card" width="wide">
       <motion.div
         {...reveal}
-        className="relative overflow-hidden rounded-[24px] border border-accent/10 bg-accent/10 shadow-[0_12px_44px_-12px_rgba(115,66,226,0.35)] dark:bg-accent/[0.14]"
+        className="relative overflow-hidden rounded-[24px] border border-border bg-[color-mix(in_srgb,var(--color-accent)_5%,var(--card))] shadow-[0_12px_44px_-16px_rgba(25,40,55,0.25)] dark:bg-[color-mix(in_srgb,var(--color-accent)_8%,var(--card))]"
       >
         <div className="flex flex-col lg:min-h-[min(660px,90vh)] lg:flex-row lg:justify-between">
           {/* Left: eyebrow pinned top; heading, lede and the claim selector anchored
@@ -175,13 +175,10 @@ export default function WhatYouGet() {
           <div className="flex shrink-0 flex-col p-7 sm:p-10 lg:w-[440px] lg:p-12">
             <Eyebrow className="text-foreground/50">What every agent gets</Eyebrow>
             <div className="mt-8 lg:mt-auto lg:pt-10">
-              <DisplayHeading
-                size="section"
-                className="max-w-[16ch] text-accent dark:text-[color-mix(in_srgb,var(--color-accent)_60%,white)]"
-              >
+              <DisplayHeading size="section" className="max-w-[16ch]">
                 What every agent gets.
               </DisplayHeading>
-              <Lede className="mt-5 text-accent/75 dark:text-[color-mix(in_srgb,var(--color-accent)_45%,white)]">
+              <Lede className="mt-5">
                 Two things an agent does not have today, and the one rule that ties them
                 together.
               </Lede>

@@ -255,22 +255,6 @@ export default function VerifyCta() {
           ))}
         </motion.div>
 
-        {/* What comes back, compressed to one quiet line: the terminal on the right
-            already acts the verdict out, so prose here would say it twice. */}
-        <motion.p
-          {...reveal}
-          className="mt-8 flex flex-wrap items-center gap-x-2.5 gap-y-1 font-mono text-xs text-foreground/40"
-        >
-          <span>identity</span>
-          <span aria-hidden="true">·</span>
-          <span>wallet proof</span>
-          <span aria-hidden="true">·</span>
-          <span>reputation 0-1000</span>
-          <span aria-hidden="true">·</span>
-          <span className="font-semibold text-emerald-600 dark:text-emerald-400">allow</span>
-          <span className="font-semibold text-amber-600 dark:text-amber-500">warn</span>
-          <span className="font-semibold text-red-600 dark:text-red-400">deny</span>
-        </motion.p>
         </div>
 
         <motion.div {...reveal} className="hidden lg:block" aria-hidden="true">

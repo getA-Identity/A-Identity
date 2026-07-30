@@ -189,12 +189,20 @@ export default function VerifyPayFlow() {
             <span className="h-2 w-2 rounded-full bg-accent" />
             Cross-chain settle via Circle Gateway + CCTP
           </span>
-          <Link
-            to="/explorer"
-            className="ml-auto inline-flex items-center gap-1.5 font-semibold text-accent transition-opacity hover:opacity-80"
-          >
-            Run one yourself <ArrowRight size={15} />
-          </Link>
+          <span className="ml-auto flex items-center gap-5">
+            <Link
+              to="/explorer"
+              className="inline-flex items-center gap-1.5 font-semibold text-foreground/55 transition-colors hover:text-foreground"
+            >
+              View more
+            </Link>
+            <Link
+              to="/explorer"
+              className="inline-flex items-center gap-1.5 font-semibold text-accent transition-opacity hover:opacity-80"
+            >
+              Run one yourself <ArrowRight size={15} />
+            </Link>
+          </span>
         </div>
       </motion.div>
 

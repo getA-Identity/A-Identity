@@ -20,7 +20,7 @@ import {
 } from 'lucide-react'
 import { Link } from 'react-router-dom'
 import Logo from './Logo'
-import AuthButtons from './AuthButtons'
+import { Button } from './ui/button'
 import MobileMenu from './MobileMenu'
 import ThemeToggle from './ThemeToggle'
 import {
@@ -186,10 +186,13 @@ export default function Navbar() {
               </NavigationMenuList>
             </NavigationMenu>
 
-            {/* Right: theme toggle + auth buttons (desktop only) */}
+            {/* Right: theme toggle + the one CTA (desktop only). Sign In lives inside
+                the app door itself; two buttons here just split the click. */}
             <div className="hidden items-center gap-2 md:flex">
               <ThemeToggle />
-              <AuthButtons />
+              <Button asChild>
+                <Link to="/signup">Start For Free</Link>
+              </Button>
             </div>
 
             {/* Mobile: theme toggle + hamburger */}

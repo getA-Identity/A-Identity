@@ -71,23 +71,21 @@ export default function SiteFooter() {
               <p className="mt-6 flex items-start gap-2.5 text-[13px] leading-relaxed text-foreground/55">
                 <Terminal size={15} className="mt-0.5 shrink-0 text-accent" />
                 <span>
-                  This page is <span className="font-semibold text-foreground/75">LLM-parsable</span>. Agents:
-                  scan{' '}
+                  This site speaks agent, too. Point your AI at our{' '}
                   <a
                     href="/.well-known/ai-agent-manifest.json"
-                    className="font-mono text-accent underline-offset-2 hover:underline"
+                    className="font-semibold text-accent underline-offset-2 hover:underline"
                   >
-                    /.well-known/ai-agent-manifest.json
+                    machine-readable manifest
                   </a>{' '}
-                  for identity, payment and tool endpoints. Live on OKX.AI as an A2MCP ASP
-                  (Agent #6271), with{' '}
+                  and it can verify, pay and get to work, with every settlement{' '}
                   <a
                     href="https://a-identity-asp.onrender.com/proof"
                     target="_blank"
                     rel="noopener noreferrer"
                     className="font-semibold text-accent underline-offset-2 hover:underline"
                   >
-                    on-chain proof
+                    provable on-chain
                   </a>
                   .
                 </span>

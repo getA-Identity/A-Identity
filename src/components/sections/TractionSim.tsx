@@ -31,7 +31,7 @@ type Traction = {
 const SIZE = 420
 const C = SIZE / 2
 const NODE_R = 168
-const STOP_R = 52
+const STOP_R = 62
 const NODES = 8
 /** Which orbit slots misbehave: one warn, one deny. The rest settle clean. */
 const TONE: Record<number, string> = { 3: '#d97706', 6: '#dc2626' }
@@ -124,19 +124,31 @@ export default function TractionSim() {
           </motion.p>
         </div>
 
-        <motion.div {...reveal} className="mx-auto w-full max-w-[460px]">
+        <motion.div {...reveal} className="relative mx-auto w-full max-w-[460px]">
           <svg viewBox={`0 0 ${SIZE} ${SIZE}`} className="w-full text-foreground" aria-hidden="true">
+            <defs>
+              {/* The oracle's halo: a quiet accent bloom the packets settle into. */}
+              <radialGradient id="oracle-halo">
+                <stop offset="0%" stopColor="#7342e2" stopOpacity="0.22" />
+                <stop offset="60%" stopColor="#7342e2" stopOpacity="0.07" />
+                <stop offset="100%" stopColor="#7342e2" stopOpacity="0" />
+              </radialGradient>
+            </defs>
+            <circle cx={C} cy={C} r={120} fill="url(#oracle-halo)" />
+
             {/* Orbit and boundary rings. The inner ring is the policy boundary a denied
                 packet never crosses. */}
-            <circle cx={C} cy={C} r={NODE_R} fill="none" stroke="currentColor" strokeOpacity={0.1} />
-            <circle cx={C} cy={C} r={STOP_R} fill="none" stroke="currentColor" strokeOpacity={0.16} strokeDasharray="3 5" />
+            <circle cx={C} cy={C} r={NODE_R} fill="none" stroke="currentColor" strokeOpacity={0.12} />
+            <circle cx={C} cy={C} r={STOP_R} fill="none" stroke="currentColor" strokeOpacity={0.2} strokeDasharray="3 5" />
             {Array.from({ length: NODES }, (_, i) => {
               const p = pt(i, NODE_R)
               return (
                 <g key={i}>
                   <line x1={p.x} y1={p.y} x2={C} y2={C} stroke="currentColor" strokeOpacity={0.07} />
-                  <circle cx={p.x} cy={p.y} r={7} fill="currentColor" fillOpacity={0.1} />
-                  <circle cx={p.x} cy={p.y} r={3} fill="currentColor" fillOpacity={0.4} />
+                  {/* Satellite agents: small tiles instead of specks, so the ring reads
+                      as counterparties rather than decoration. */}
+                  <rect x={p.x - 11} y={p.y - 11} width={22} height={22} rx={7} fill="var(--card)" stroke="currentColor" strokeOpacity={0.25} />
+                  <circle cx={p.x} cy={p.y} r={3.5} fill={TONE[i] ?? 'currentColor'} fillOpacity={TONE[i] ? 0.9 : 0.45} />
                 </g>
               )
             })}
@@ -144,10 +156,17 @@ export default function TractionSim() {
               <Packet key={i} i={i} reduced={reduced} />
             ))}
           </svg>
-          {/* The oracle at the centre, overlaid so the mark stays crisp DOM rather than SVG. */}
-          <div className="pointer-events-none relative mx-auto -mt-[56%] mb-[44%] flex h-0 items-center justify-center">
-            <div className="grid h-20 w-20 place-items-center rounded-full border border-border bg-background shadow-[0_10px_40px_-12px_rgba(16,24,40,0.35)]">
-              <OwlMark size={44} />
+
+          {/* The oracle at the centre, overlaid so the mark stays crisp DOM rather than
+              SVG, sized to be unmistakably the subject of the picture. */}
+          <div className="pointer-events-none absolute inset-0 grid place-items-center">
+            <div className="flex flex-col items-center gap-2">
+              <div className="grid h-24 w-24 place-items-center rounded-[26px] border border-border bg-card shadow-[0_16px_50px_-16px_rgba(115,66,226,0.4),0_10px_40px_-12px_rgba(16,24,40,0.35)]">
+                <OwlMark size={60} />
+              </div>
+              <span className="rounded-full border border-border bg-card px-2.5 py-1 font-mono text-[9px] font-semibold uppercase tracking-[0.16em] text-foreground/55 shadow-sm">
+                Trust oracle
+              </span>
             </div>
           </div>
         </motion.div>

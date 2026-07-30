@@ -1,5 +1,6 @@
-import { useState, type ReactElement } from 'react'
+import { useCallback, useEffect, useRef, useState, type ReactElement } from 'react'
 import { motion } from 'framer-motion'
+import { ArrowLeft, ArrowRight } from 'lucide-react'
 import { EASE_OUT_EXPO } from '../../lib/brand'
 
 const reveal = {
@@ -9,9 +10,9 @@ const reveal = {
   transition: { duration: 0.6, ease: EASE_OUT_EXPO },
 }
 
-/* Real brand marks (currentColor, so they inherit the monochrome treatment and light up
- * to the brand hue on hover). OKX and Circle are the official marks; Arc is a redrawn
- * arch mark (Circle Arc) in matching monochrome. */
+/* Real brand marks (currentColor, tinted per rail). OKX and Circle are the official
+ * marks; Arc is a redrawn arch mark (Circle Arc) in matching monochrome. Rails whose
+ * marks we do not ship yet get a drawn monogram tile instead of a wrong logo. */
 function OkxMark(props: { className?: string }) {
   return (
     <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden {...props}>
@@ -22,7 +23,7 @@ function OkxMark(props: { className?: string }) {
 function CircleMark(props: { className?: string }) {
   return (
     <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden {...props}>
-      <path d="M20.788 3.832c-.101-.105-.197-.213-.301-.317-.103-.103-.211-.202-.32-.302A11.903 11.903 0 0 0 12 0a11.926 11.926 0 0 0-8.486 3.514C-1.062 8.09-1.16 15.47 3.213 20.168c.099.108.197.214.3.32.104.103.21.2.317.3A11.92 11.92 0 0 0 12 24c3.206 0 6.22-1.247 8.487-3.512 4.576-4.576 4.673-11.956.301-16.656zm-16.655.301A11.057 11.057 0 0 1 12 .874c2.825 0 5.49 1.048 7.55 2.958l-1.001 1.002A9.646 9.646 0 0 0 12 2.292a9.644 9.644 0 0 0-6.865 2.844A9.644 9.644 0 0 0 2.292 12c0 2.448.9 4.753 2.542 6.549L3.831 19.55C-.201 15.191-.101 8.367 4.133 4.133zm13.798 1.318v.002l-1.015 1.014A7.346 7.346 0 0 0 12 4.589 7.357 7.357 0 0 0 6.761 6.76 7.362 7.362 0 0 0 4.589 12a7.34 7.34 0 0 0 1.877 4.913l-1.014 1.016A8.77 8.77 0 0 1 3.167 12a8.77 8.77 0 0 1 2.588-6.245A8.771 8.771 0 0 1 12 3.167c2.213 0 4.301.809 5.931 2.284zM18.537 12c0 1.745-.681 3.387-1.916 4.622S13.746 18.538 12 18.538a6.491 6.491 0 0 1-4.296-1.621l-.001-.004c-.11-.094-.22-.188-.324-.291a6.027 6.027 0 0 1-.293-.326A6.47 6.47 0 0 1 5.466 12c0-1.746.679-3.387 1.914-4.621A6.488 6.488 0 0 1 12 5.465c1.599 0 3.105.576 4.295 1.62.111.096.224.19.326.295.104.104.2.214.295.324A6.482 6.482 0 0 1 18.537 12zM7.084 17.534h.001A7.349 7.349 0 0 0 12 19.413a7.35 7.35 0 0 0 5.239-2.174A7.354 7.354 0 0 0 19.412 12a7.364 7.364 0 0 0-1.876-4.916l1.013-1.012A8.777 8.777 0 0 1 20.834 12a8.765 8.765 0 0 1-2.589 6.246A8.764 8.764 0 0 1 12 20.834a8.782 8.782 0 0 1-5.93-2.285l1.014-1.015zm12.783 2.333A11.046 11.046 0 0 1 12 23.125a11.042 11.042 0 0 1-7.551-2.957l1.004-1.001a9.64 9.64 0 0 0 6.549 2.542 9.639 9.639 0 0 0 6.865-2.846A9.642 9.642 0 0 0 21.71 12a9.64 9.64 0 0 0-2.543-6.548l1.001-1.002c4.031 4.359 3.935 11.182-.301 15.417z" />
+      <path d="M20.788 3.832c-.101-.105-.197-.213-.301-.317-.103-.103-.211-.202-.32-.302A11.903 11.903 0 0 0 12 0a11.926 11.926 0 0 0-8.486 3.514C-1.062 8.09-1.16 15.47 3.213 20.168c.099.108.197.214.3.32.104.103.21.2.317.3A11.92 11.92 0 0 0 12 24c3.206 0 6.22-1.247 8.487-3.512 4.576-4.576 4.673-11.956.301-16.656zm-16.655.301A11.057 11.057 0 0 1 12 .874c2.825 0 5.49 1.048 7.55 2.958l-1.001 1.002A9.646 9.646 0 0 0 12 2.292a9.644 9.644 0 0 0-6.865 2.844A9.644 9.644 0 0 0 2.292 12c0 2.448.9 4.753 2.542 6.549L3.831 19.55C-.201 15.191-.101 8.367 4.133 4.133zm13.798 1.318v.002l-1.015 1.014A7.346 7.346 0 0 0 12 4.589 7.357 7.357 0 0 0 6.761 6.76 7.362 7.362 0 0 0 4.589 12a7.34 7.34 0 0 0 1.877 4.913l-1.014 1.016A8.77 8.77 0 0 1 3.167 12a8.77 8.77 0 0 1 2.588-6.245A8.771 8.771 0 0 1 12 3.167c2.213 0 4.301.809 5.931 2.284zM18.537 12c0 1.745-.681 3.387-1.916 4.622S13.746 18.538 12 18.538a6.491 6.491 0 0 1-4.296-1.621l-.001-.004c-.11-.094-.22-.188-.324-.291a6.027 6.027 0 0 1-.293-.326A6.47 6.47 0 0 1 5.466 12c0-1.746.679-3.387 1.914-4.621A6.488 6.488 0 0 1 12 5.465c1.599 0 3.105.576 4.295 1.62.111.096.224.19.326.295.104.104.2.214.295.324A6.482 6.482 0 0 1 18.537 12zM7.084 17.534h.001A7.349 7.349 0 0 0 12 19.413a7.35 7.35 0 0 0 5.239-2.174A7.354 7.354 0 0 0 19.412 12a7.364 7.364 0 0 0-1.876-4.916l1.013-1.012A8.777 8.777 0 0 1 20.834 12a8.765 8.765 0 0 1-2.589 6.246A8.764 8.764 0 0 1 12 20.834a8.782 8.782 0 0 1-5.93-2.285l1.014-1.015z" />
     </svg>
   )
 }
@@ -34,89 +35,204 @@ function ArcMark(props: { className?: string }) {
     </svg>
   )
 }
+/** A drawn monogram for rails whose official mark we do not ship yet. */
+function Monogram({ letter, className = '' }: { letter: string; className?: string }) {
+  return (
+    <span
+      aria-hidden
+      className={`grid place-items-center rounded-full border-2 border-current font-mono font-bold ${className}`}
+      style={{ fontSize: '55%' }}
+    >
+      {letter}
+    </span>
+  )
+}
 
-type Rail = { id: string; Mark: (p: { className?: string }) => ReactElement; name: string; color: string; role: string }
+type Rail = {
+  id: string
+  Mark: (p: { className?: string }) => ReactElement
+  name: string
+  color: string
+  role: string
+  detail: string
+  status: 'live' | 'next'
+}
+
 const RAILS: Rail[] = [
-  { id: 'circle', Mark: CircleMark, name: 'Circle', color: '#2775CA', role: 'USDC, Gateway and CCTP. The settlement dollar, chain-abstracted.' },
-  { id: 'arc', Mark: ArcMark, name: 'Circle Arc', color: '#5B8DEF', role: 'Where identity and reputation live. Sub-second finality, gas in USDC.' },
-  { id: 'xlayer', Mark: OkxMark, name: 'OKX X Layer', color: 'var(--foreground)', role: 'Where trust checks settle. x402 pay-per-call in USD₮0, on mainnet.' },
-]
-
-/* Each in its own brand hue, so a new chain slots straight into its palette. */
-const NEXT: { name: string; color: string }[] = [
-  { name: 'Base', color: '#0052FF' },
-  { name: 'Arbitrum', color: '#28A0F0' },
-  { name: 'Avalanche', color: '#E84142' },
-  { name: 'Stellar', color: '#7D00FF' },
-  { name: 'Solana', color: '#14F195' },
+  {
+    id: 'circle',
+    Mark: CircleMark,
+    name: 'Circle',
+    color: '#2775CA',
+    role: 'The settlement dollar, chain-abstracted.',
+    detail: 'USDC, Gateway unified balances, gasless Nanopayments and CCTP burn-and-mint, all live on this product today.',
+    status: 'live',
+  },
+  {
+    id: 'arc',
+    Mark: ArcMark,
+    name: 'Circle Arc',
+    color: '#5B8DEF',
+    role: 'Where identity and reputation live.',
+    detail: 'ERC-8004 passports, KYA attestations, spend vaults and escrow settle here, with sub-second finality and gas paid in USDC.',
+    status: 'live',
+  },
+  {
+    id: 'xlayer',
+    Mark: OkxMark,
+    name: 'OKX X Layer',
+    color: 'var(--foreground)',
+    role: 'Where trust checks are sold.',
+    detail: 'The Trust Oracle answers per-call over x402 and settles in USD₮0 on mainnet, 120 settlements and counting.',
+    status: 'live',
+  },
+  {
+    id: 'stellar',
+    Mark: (p) => <Monogram letter="S" {...p} />,
+    name: 'Stellar',
+    color: '#7D00FF',
+    role: 'First stop of the multichain rollout.',
+    detail: 'The same passport and caps over Soroban rails: one chain-agnostic core, one adapter per chain, Stellar is next in line.',
+    status: 'next',
+  },
+  {
+    id: 'robinhood',
+    Mark: (p) => <Monogram letter="R" {...p} />,
+    name: 'Robinhood Chain',
+    color: '#00C805',
+    role: 'Where retail agents will trade.',
+    detail: 'A planned adapter for the chain built around agentic trading, so the guardrails travel with the money there too.',
+    status: 'next',
+  },
 ]
 
 /**
- * Where A-Identity runs. Honest "built on", not "trusted by": the three infrastructures
- * are real and live today (Circle products, Circle Arc, OKX X Layer). Interactive, unified
- * monochrome that lights up to each brand hue on hover, with a clearly-labeled roadmap row.
+ * Where A-Identity runs, one rail at a time. Honest "built on", not "trusted by":
+ * the three live infrastructures are real today, and the two roadmap rails wear a
+ * clearly-labeled NEXT pill instead of pretending. One slide per rail (the carousel
+ * treatment), native snap scroll with arrows and dots, so each rail gets the floor
+ * instead of sharing a cramped grid.
  */
 export default function BuiltOn() {
-  const [active, setActive] = useState<string | null>(null)
+  const trackRef = useRef<HTMLDivElement>(null)
+  const [idx, setIdx] = useState(0)
+
+  const sync = useCallback(() => {
+    const el = trackRef.current
+    if (!el) return
+    setIdx(Math.round(el.scrollLeft / el.clientWidth))
+  }, [])
+
+  useEffect(() => {
+    const el = trackRef.current
+    if (!el) return
+    el.addEventListener('scroll', sync, { passive: true })
+    return () => el.removeEventListener('scroll', sync)
+  }, [sync])
+
+  const goTo = (i: number) => {
+    const el = trackRef.current
+    if (!el) return
+    const clamped = Math.max(0, Math.min(RAILS.length - 1, i))
+    el.scrollTo({ left: clamped * el.clientWidth, behavior: 'smooth' })
+  }
+
   return (
     <section className="w-full bg-background px-5 py-16 text-foreground sm:px-8 sm:py-20">
       <div className="mx-auto max-w-[1080px]">
-        <motion.h2 {...reveal} className="text-3xl font-bold leading-[1.1] tracking-tight sm:text-[2.6rem]" style={{ fontFamily: 'var(--font-heading)' }}>
-          Built on rails that already move money.
-        </motion.h2>
-        <motion.p {...reveal} className="mt-4 max-w-xl text-lg leading-relaxed text-foreground/55">
-          A-Identity does not reinvent settlement. It runs on Circle and OKX, live today.
-        </motion.p>
-
-        <div className="mt-14 grid gap-px overflow-hidden rounded-2xl border border-border bg-border sm:grid-cols-3">
-          {RAILS.map((r, i) => {
-            const on = active === r.id
-            return (
-              <motion.div
-                key={r.id}
-                {...reveal}
-                transition={{ ...reveal.transition, delay: i * 0.08 }}
-                onMouseEnter={() => setActive(r.id)}
-                onMouseLeave={() => setActive((a) => (a === r.id ? null : a))}
-                className="group relative flex flex-col bg-card p-7 transition-colors"
-              >
-                <div className="flex items-center justify-between">
-                  {/* Each mark carries its own brand hue; hover just brings it to full. */}
-                  <motion.span animate={{ opacity: on ? 1 : 0.82 }} style={{ color: r.color }} className="block h-8 w-8">
-                    <r.Mark className="h-8 w-8" />
-                  </motion.span>
-                  <span className="inline-flex items-center gap-1.5 font-mono text-[10px] uppercase tracking-wide text-foreground/35">
-                    <span className="relative flex h-1.5 w-1.5">
-                      <span className="absolute inline-flex h-full w-full animate-ping rounded-full opacity-60" style={{ background: '#10b981' }} />
-                      <span className="relative inline-flex h-1.5 w-1.5 rounded-full" style={{ background: '#10b981' }} />
-                    </span>
-                    live
-                  </span>
-                </div>
-                <h3 className="mt-5 text-lg font-semibold tracking-tight text-foreground">{r.name}</h3>
-                <p className="mt-1.5 text-[13.5px] leading-relaxed text-foreground/55">{r.role}</p>
-                <motion.span
-                  aria-hidden
-                  className="absolute inset-x-0 bottom-0 h-0.5"
-                  initial={{ scaleX: 0 }}
-                  animate={{ scaleX: on ? 1 : 0 }}
-                  transition={{ duration: 0.3, ease: EASE_OUT_EXPO }}
-                  style={{ background: r.color, transformOrigin: 'left' }}
-                />
-              </motion.div>
-            )
-          })}
+        <div className="flex items-end justify-between gap-6">
+          <div>
+            <motion.h2 {...reveal} className="text-3xl font-bold leading-[1.1] tracking-tight sm:text-[2.6rem]" style={{ fontFamily: 'var(--font-heading)' }}>
+              Built on rails that already move money.
+            </motion.h2>
+            <motion.p {...reveal} className="mt-4 max-w-xl text-lg leading-relaxed text-foreground/55">
+              A-Identity does not reinvent settlement. It runs on Circle and OKX, live today.
+            </motion.p>
+          </div>
+          <motion.div {...reveal} className="mb-1 hidden shrink-0 gap-2 sm:flex">
+            <button
+              type="button"
+              aria-label="Previous rail"
+              onClick={() => goTo(idx - 1)}
+              disabled={idx === 0}
+              className="grid h-11 w-11 place-items-center rounded-full border border-border bg-card text-foreground transition enabled:hover:border-accent/50 enabled:hover:text-accent disabled:opacity-30"
+            >
+              <ArrowLeft size={17} />
+            </button>
+            <button
+              type="button"
+              aria-label="Next rail"
+              onClick={() => goTo(idx + 1)}
+              disabled={idx === RAILS.length - 1}
+              className="grid h-11 w-11 place-items-center rounded-full border border-border bg-card text-foreground transition enabled:hover:border-accent/50 enabled:hover:text-accent disabled:opacity-30"
+            >
+              <ArrowRight size={17} />
+            </button>
+          </motion.div>
         </div>
 
-        <motion.div {...reveal} className="mt-6 flex flex-wrap items-center gap-x-3 gap-y-2 text-sm">
-          <span className="font-mono text-[11px] uppercase tracking-wide text-foreground/40">Next</span>
-          {NEXT.map((n) => (
-            <span key={n.name} className="inline-flex items-center gap-1.5 rounded-full border border-dashed border-border px-3 py-1 text-xs text-foreground/55">
-              <span className="h-1.5 w-1.5 rounded-full" style={{ background: n.color }} />
-              {n.name}
-            </span>
-          ))}
-          <span className="text-xs text-foreground/35">one chain-agnostic core, one adapter per chain</span>
+        {/* One rail per view: native snap scroll, arrows and dots drive the same track. */}
+        <motion.div {...reveal}>
+          <div
+            ref={trackRef}
+            className="mt-10 flex snap-x snap-mandatory overflow-x-auto rounded-2xl [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+          >
+            {RAILS.map((r) => (
+              <article
+                key={r.id}
+                className="w-full shrink-0 snap-center"
+                aria-label={`${r.name}: ${r.role}`}
+              >
+                <div className="grid gap-8 rounded-2xl border border-border bg-card p-8 sm:grid-cols-[auto_minmax(0,1fr)] sm:items-center sm:p-12">
+                  <div
+                    className="grid h-24 w-24 place-items-center rounded-3xl border border-border text-[40px]"
+                    style={{ color: r.color, background: `color-mix(in srgb, ${r.color} 8%, var(--card))` }}
+                  >
+                    <r.Mark className="h-12 w-12" />
+                  </div>
+                  <div>
+                    <div className="flex flex-wrap items-center gap-3">
+                      <h3 className="text-2xl font-bold tracking-tight text-foreground">{r.name}</h3>
+                      {r.status === 'live' ? (
+                        <span className="inline-flex items-center gap-1.5 rounded-full border border-emerald-500/30 bg-emerald-500/10 px-2.5 py-0.5 font-mono text-[10px] font-bold uppercase tracking-wider text-emerald-600 dark:text-emerald-400">
+                          <span className="relative flex h-1.5 w-1.5">
+                            <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-500/60" />
+                            <span className="relative inline-flex h-1.5 w-1.5 rounded-full bg-emerald-500" />
+                          </span>
+                          live
+                        </span>
+                      ) : (
+                        <span className="inline-flex items-center rounded-full border border-dashed border-border px-2.5 py-0.5 font-mono text-[10px] font-bold uppercase tracking-wider text-foreground/45">
+                          next
+                        </span>
+                      )}
+                    </div>
+                    <p className="mt-2 text-lg font-medium text-foreground/80">{r.role}</p>
+                    <p className="mt-2 max-w-[56ch] text-[15px] leading-relaxed text-foreground/55">{r.detail}</p>
+                  </div>
+                </div>
+              </article>
+            ))}
+          </div>
+
+          {/* Dots: one per rail, the active one stretched. */}
+          <div className="mt-5 flex items-center justify-center gap-2">
+            {RAILS.map((r, i) => (
+              <button
+                key={r.id}
+                type="button"
+                aria-label={`Go to ${r.name}`}
+                onClick={() => goTo(i)}
+                className={`h-1.5 rounded-full transition-all duration-300 ${
+                  i === idx ? 'w-7 bg-accent' : 'w-1.5 bg-foreground/20 hover:bg-foreground/40'
+                }`}
+              />
+            ))}
+          </div>
+
+          <p className="mt-4 text-center text-xs text-foreground/35">
+            one chain-agnostic core, one adapter per chain
+          </p>
         </motion.div>
       </div>
     </section>

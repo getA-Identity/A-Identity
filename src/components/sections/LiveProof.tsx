@@ -1,5 +1,6 @@
-import { motion } from 'framer-motion'
-import { ArrowUpRight } from 'lucide-react'
+import { useEffect, useRef, useState } from 'react'
+import { animate, motion, useInView } from 'framer-motion'
+import { ArrowUpRight, Radio } from 'lucide-react'
 import { EASE_OUT_EXPO } from '../../lib/brand'
 
 const reveal = {
@@ -10,19 +11,78 @@ const reveal = {
 }
 
 const PROOF_URL = 'https://a-identity-asp.onrender.com/proof'
+const PREVIEW_URL = 'https://a-identity-asp.onrender.com/tools/trust_preview'
 
 const STATS = [
-  { k: '120', v: 'real settlements', sub: 'USD₮0 on X Layer' },
-  { k: '#6271', v: 'live agent', sub: 'listed on OKX.AI' },
-  { k: '163', v: 'tests, green', sub: 'deterministic scores' },
-]
+  { n: 120, k: '120', v: 'real settlements', sub: 'USD₮0 on X Layer' },
+  { n: null, k: '#6271', v: 'live agent', sub: 'listed on OKX.AI' },
+  { n: 163, k: '163', v: 'tests, green', sub: 'deterministic scores' },
+] as const
+
+/** A number that counts itself up the first time it scrolls into view. */
+function CountUp({ to, fallback }: { to: number | null; fallback: string }) {
+  const ref = useRef<HTMLSpanElement>(null)
+  const seen = useInView(ref, { once: true, margin: '-60px' })
+  useEffect(() => {
+    if (!seen || to === null || !ref.current) return
+    const controls = animate(0, to, {
+      duration: 1.2,
+      ease: [0.16, 1, 0.3, 1],
+      onUpdate: (v) => {
+        if (ref.current) ref.current.textContent = String(Math.round(v))
+      },
+    })
+    return () => controls.stop()
+  }, [seen, to])
+  return <span ref={ref}>{to === null ? fallback : '0'}</span>
+}
+
+type Ping = { status: string; ms: number; note: string; ok: boolean }
 
 /**
- * Proof, not promises. The hackathon-grade "it is real and already earning" beat, kept
- * lean: a claim, a subtitle, three verifiable numbers, and one link out to the on-chain
- * proof. The tool-by-tool detail lives in the docs, not here.
+ * Proof, not promises, and now a wire you can touch: the ping button makes a REAL
+ * request to the free trust_preview tool on the live ASP and prints the status,
+ * the latency and the answer. A failed or rate-limited call prints too, because
+ * a proof section that can only succeed is a promise with extra steps.
  */
 export default function LiveProof() {
+  const [pinging, setPinging] = useState(false)
+  const [ping, setPing] = useState<Ping | null>(null)
+
+  const runPing = async () => {
+    setPinging(true)
+    setPing(null)
+    const t0 = performance.now()
+    try {
+      const r = await fetch(PREVIEW_URL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ agentId: '849980' }),
+      })
+      const ms = Math.round(performance.now() - t0)
+      const body = (await r.json().catch(() => null)) as Record<string, unknown> | null
+      const band =
+        (body?.band as string) ??
+        (body?.trustBand as string) ??
+        ((body?.result as Record<string, unknown>)?.band as string) ??
+        undefined
+      setPing({
+        status: `HTTP ${r.status}`,
+        ms,
+        ok: r.ok,
+        note: r.ok ? (band ? `band: ${band}` : 'answered') : 'rate-limited or busy, the tool is still real',
+      })
+    } catch {
+      setPing({
+        status: 'no response',
+        ms: Math.round(performance.now() - t0),
+        ok: false,
+        note: 'network blocked the call, the proof link below still works',
+      })
+    }
+    setPinging(false)
+  }
+
   return (
     <section id="okx-asp" className="w-full bg-card px-5 py-16 text-foreground sm:px-8 sm:py-20">
       <div className="mx-auto max-w-[1080px]">
@@ -34,25 +94,57 @@ export default function LiveProof() {
           real stablecoins on X Layer mainnet. Every number here is on-chain.
         </motion.p>
 
-        <div className="mt-14 grid gap-px overflow-hidden rounded-2xl border border-border bg-border sm:grid-cols-3">
+        <div className="mt-12 grid gap-px overflow-hidden rounded-2xl border border-border bg-border sm:grid-cols-3">
           {STATS.map((s) => (
-            <div key={s.v} className="bg-card p-7">
-              <div className="font-mono text-4xl font-bold tracking-tight text-foreground">{s.k}</div>
+            <motion.div
+              key={s.v}
+              whileHover={{ y: -3 }}
+              transition={{ type: 'spring', stiffness: 400, damping: 28 }}
+              className="bg-card p-7"
+            >
+              <div className="font-mono text-4xl font-bold tracking-tight text-foreground">
+                <CountUp to={s.n} fallback={s.k} />
+              </div>
               <div className="mt-2 text-[15px] font-medium text-foreground/70">{s.v}</div>
               <div className="mt-1 text-sm text-foreground/45">{s.sub}</div>
-            </div>
+            </motion.div>
           ))}
         </div>
 
-        <motion.a
-          {...reveal}
-          href={PROOF_URL}
-          target="_blank"
-          rel="noopener noreferrer"
-          className="mt-8 inline-flex items-center gap-1.5 text-sm font-semibold text-accent hover:underline"
-        >
-          See every settlement on-chain <ArrowUpRight size={15} />
-        </motion.a>
+        {/* The wire you can touch. */}
+        <motion.div {...reveal} className="mt-8 flex flex-wrap items-center gap-x-6 gap-y-3">
+          <button
+            type="button"
+            onClick={runPing}
+            disabled={pinging}
+            className="inline-flex items-center gap-2 rounded-full border border-accent/40 bg-accent/10 px-5 py-2.5 text-sm font-semibold text-accent transition hover:bg-accent/15 disabled:opacity-60"
+          >
+            <Radio size={15} className={pinging ? 'animate-pulse' : ''} />
+            {pinging ? 'Calling the live oracle…' : 'Ping the live oracle'}
+          </button>
+
+          {ping && (
+            <motion.span
+              initial={{ opacity: 0, x: -8 }}
+              animate={{ opacity: 1, x: 0 }}
+              className="font-mono text-xs text-foreground/60"
+            >
+              <span className={ping.ok ? 'font-bold text-emerald-600 dark:text-emerald-400' : 'font-bold text-amber-600 dark:text-amber-500'}>
+                {ping.status}
+              </span>{' '}
+              · {ping.ms}ms · {ping.note}
+            </motion.span>
+          )}
+
+          <a
+            href={PROOF_URL}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="inline-flex items-center gap-1.5 text-sm font-semibold text-accent hover:underline"
+          >
+            See every settlement on-chain <ArrowUpRight size={15} />
+          </a>
+        </motion.div>
       </div>
     </section>
   )
