@@ -1,9 +1,8 @@
-import { useEffect, useState, type FormEvent, type ReactNode } from 'react'
+import { useEffect, useState, type FormEvent } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { AnimatePresence, motion, useReducedMotion } from 'framer-motion'
+import { motion, useReducedMotion } from 'framer-motion'
 import { Search, ArrowRight } from 'lucide-react'
 import { EASE_OUT_EXPO } from '../../lib/brand'
-import OwlMark from '../OwlMark'
 
 const reveal = {
   initial: { opacity: 0, y: 24 },
@@ -20,69 +19,116 @@ const EXAMPLES = [
 ]
 
 /* ------------------------------------------------------------------------- */
-/* The stage: buyer → owl → seller, played on a loop (the ryvo idea, retold   */
-/* as our story). A check chip travels to the oracle, a verdict lands, and    */
-/* only an ALLOW lets the payment chip cross to the seller; every third run   */
-/* is a DENY and the money stays home. Plain DOM + framer, no canvas.        */
+/* The stage: the oracle as a terminal (the base.org agents stance). A pixel- */
+/* block owl banner, then verification transcripts typed line by line: two   */
+/* ALLOW runs for every DENY, counters ticking in the status row. The        */
+/* terminal is dark in both themes, the way terminals are.                   */
 /* ------------------------------------------------------------------------- */
 
-type Phase = 'check' | 'verdict' | 'settle' | 'idle'
+/** The owl as pixel blocks, 17 columns. '#' is a lit cell. */
+const OWL_ROWS = [
+  '..##...........##',
+  '#################',
+  '.#####.....#####.',
+  '.#...#..#..#...#.',
+  '.#.#.#.###.#.#.#.',
+  '.#...#..#..#...#.',
+  '.#####.....#####.',
+  '...##.......##...',
+]
 
-/** Node x positions as percentages of the stage width. */
-const X = { buyer: '13%', owl: '50%', seller: '87%' }
-
-function StageNode({ x, label, children }: { x: string; label: string; children: ReactNode }) {
-  return (
-    <div className="absolute top-1/2 -translate-x-1/2 -translate-y-1/2 text-center" style={{ left: x }}>
-      <div className="mx-auto grid h-16 w-16 place-items-center rounded-2xl border border-border bg-card shadow-sm">
-        {children}
-      </div>
-      <p className="mt-2 font-mono text-[10px] uppercase tracking-[0.14em] text-foreground/45">{label}</p>
-    </div>
-  )
+type LogLine = {
+  /** The bracketed tag, or a bare prompt line when body is absent. */
+  tag: string
+  body?: string
+  /** Right-aligned outcome after a dotted leader. */
+  tail?: string
+  tone?: 'ok' | 'bad' | 'accent'
 }
 
-function Chip({ children, className = '' }: { children: ReactNode; className?: string }) {
+const RUN_ALLOW: LogLine[] = [
+  { tag: '$ risk_check 0x03c4…98c7' },
+  { tag: '[resolve]', body: 'ERC-8004 identity #849980', tail: 'ok', tone: 'ok' },
+  { tag: '[kya]', body: 'wallet-proof attestation', tail: 'ok', tone: 'ok' },
+  { tag: '[score]', body: 'reputation 539 / 1000' },
+  { tag: '[verdict]', body: 'ALLOW', tone: 'ok' },
+  { tag: '[pay]', body: '+$0.005 USDC on Arc', tail: 'settled', tone: 'accent' },
+]
+
+const RUN_DENY: LogLine[] = [
+  { tag: '$ risk_check 0x8f21…c4d9' },
+  { tag: '[resolve]', body: 'ERC-8004 identity', tail: 'none', tone: 'bad' },
+  { tag: '[sybil]', body: 'operator cluster', tail: 'flagged', tone: 'bad' },
+  { tag: '[verdict]', body: 'DENY', tone: 'bad' },
+  { tag: '[pay]', body: 'not funded', tone: 'bad' },
+]
+
+const TAG_COLOR = 'text-[color-mix(in_srgb,var(--color-accent)_55%,white)]'
+const TONE: Record<NonNullable<LogLine['tone']>, string> = {
+  ok: 'text-emerald-400',
+  bad: 'text-red-400',
+  accent: 'text-[color-mix(in_srgb,var(--color-accent)_55%,white)]',
+}
+
+function TerminalLine({ line, active }: { line: LogLine; active: boolean }) {
+  const bare = line.body === undefined
   return (
-    <span
-      className={`inline-block whitespace-nowrap rounded-full border border-border bg-card px-2.5 py-1 font-mono text-[10px] font-semibold shadow-sm ${className}`}
+    <motion.div
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      transition={{ duration: 0.18 }}
+      className="flex items-baseline gap-2 whitespace-nowrap"
     >
-      {children}
-    </span>
+      <span className={bare ? 'text-white/85' : TAG_COLOR}>{line.tag}</span>
+      {line.body && (
+        <span className={line.tone && !line.tail ? `font-semibold ${TONE[line.tone]}` : 'text-white/75'}>
+          {line.body}
+        </span>
+      )}
+      {line.tail && (
+        <>
+          <span className="mx-1 flex-1 border-b border-dotted border-white/20" aria-hidden="true" />
+          <span className={`font-semibold ${TONE[line.tone ?? 'ok']}`}>{line.tail}</span>
+        </>
+      )}
+      {active && <span className="ml-0.5 inline-block h-3.5 w-2 animate-pulse bg-white/70" />}
+    </motion.div>
   )
 }
 
 function VerifyStage() {
   const still = useReducedMotion()
-  const [phase, setPhase] = useState<Phase>('idle')
-  const [deny, setDeny] = useState(false)
+  const [runIdx, setRunIdx] = useState(0)
+  const [visible, setVisible] = useState(0)
   const [counts, setCounts] = useState({ checks: 0, allowed: 0, denied: 0 })
+
+  const deny = !still && runIdx % 3 === 2
+  const lines = still ? RUN_ALLOW : deny ? RUN_DENY : RUN_ALLOW
 
   useEffect(() => {
     if (still) return
     let alive = true
-    let run = 0
     const wait = (ms: number) => new Promise((r) => setTimeout(r, ms))
     ;(async () => {
+      let run = 0
       while (alive) {
         const isDeny = run % 3 === 2
-        setDeny(isDeny)
-        setPhase('check')
-        await wait(1100)
-        if (!alive) break
-        setPhase('verdict')
-        setCounts((c) => ({
-          checks: c.checks + 1,
-          allowed: c.allowed + (isDeny ? 0 : 1),
-          denied: c.denied + (isDeny ? 1 : 0),
-        }))
-        await wait(950)
-        if (!alive) break
-        setPhase('settle')
-        await wait(isDeny ? 900 : 1300)
-        if (!alive) break
-        setPhase('idle')
-        await wait(650)
+        const script = isDeny ? RUN_DENY : RUN_ALLOW
+        setRunIdx(run)
+        setVisible(0)
+        await wait(500)
+        for (let i = 1; i <= script.length && alive; i++) {
+          setVisible(i)
+          if (script[i - 1].tag === '[verdict]') {
+            setCounts((c) => ({
+              checks: c.checks + 1,
+              allowed: c.allowed + (isDeny ? 0 : 1),
+              denied: c.denied + (isDeny ? 1 : 0),
+            }))
+          }
+          await wait(i === 1 ? 620 : 430)
+        }
+        await wait(2100)
         run += 1
       }
     })()
@@ -91,127 +137,65 @@ function VerifyStage() {
     }
   }, [still])
 
-  // Reduced motion: the diagram at its most informative moment, at rest.
-  const verdictVisible = still || phase === 'verdict' || phase === 'settle'
-  const showDeny = still ? false : deny
+  const shown = still ? RUN_ALLOW.length : visible
 
   return (
     <div>
-      <div className="relative h-[380px] overflow-hidden rounded-[20px] border border-border bg-card/50">
-        {/* dot grid floor */}
-        <div
-          aria-hidden="true"
-          className="absolute inset-0 bg-[radial-gradient(circle,rgba(115,66,226,0.14)_1px,transparent_1px)] [background-size:22px_22px]"
-        />
+      <div className="overflow-hidden rounded-2xl border border-accent/25 bg-[#10151d] shadow-[0_0_0_1px_rgba(115,66,226,0.12),0_24px_70px_-24px_rgba(115,66,226,0.45)]">
+        {/* window chrome */}
+        <div className="flex items-center justify-between border-b border-white/10 px-4 py-2.5">
+          <div className="flex items-center gap-1.5">
+            <span className="h-2.5 w-2.5 rounded-full border border-white/25" />
+            <span className="h-2.5 w-2.5 rounded-full border border-white/25" />
+            <span className="h-2.5 w-2.5 rounded-full border border-white/25" />
+          </div>
+          <span className="font-mono text-[10px] tracking-[0.14em] text-white/35">tty · arc</span>
+        </div>
 
-        {/* the rail everything travels on */}
-        <div className="absolute left-[13%] right-[13%] top-1/2 border-t border-dashed border-border" />
+        <div className="p-6 sm:p-7">
+          {/* the owl, as terminal pixels */}
+          <div aria-hidden="true" className="flex flex-col gap-[3px]">
+            {OWL_ROWS.map((row, r) => (
+              <div key={r} className="flex gap-[3px]">
+                {row.split('').map((c, i) => (
+                  <span
+                    key={i}
+                    className={`h-[9px] w-[9px] ${c === '#' ? 'bg-[#e8e6f2]' : 'bg-transparent'}`}
+                  />
+                ))}
+              </div>
+            ))}
+          </div>
 
-        <StageNode x={X.buyer} label="Buyer agent">
-          <span className="font-mono text-lg text-foreground/70">01</span>
-        </StageNode>
-        <StageNode x={X.owl} label="A-Identity">
-          <motion.div
-            animate={phase === 'verdict' && !still ? { scale: [1, 1.14, 1] } : { scale: 1 }}
-            transition={{ duration: 0.5, ease: 'easeOut' }}
-          >
-            <OwlMark size={40} verdict={verdictVisible ? (showDeny ? 'deny' : 'allow') : 'neutral'} />
-          </motion.div>
-        </StageNode>
-        <StageNode x={X.seller} label="Seller agent">
-          <span className="font-mono text-lg text-foreground/70">02</span>
-        </StageNode>
+          <p className={`mt-4 font-mono text-[13px] font-semibold tracking-[0.06em] ${TAG_COLOR}`}>
+            == A-IDENTITY TRUST ORACLE ==
+          </p>
+          <div className="mt-2 border-t border-dashed border-white/15" />
 
-        {/* the check chip: buyer → owl */}
-        <AnimatePresence>
-          {!still && phase === 'check' && (
-            <motion.div
-              key="check"
-              className="absolute top-[38%] -translate-x-1/2"
-              initial={{ left: X.buyer, opacity: 0 }}
-              animate={{ left: X.owl, opacity: 1 }}
-              exit={{ opacity: 0 }}
-              transition={{ duration: 1.0, ease: 'easeInOut', opacity: { duration: 0.25 } }}
-            >
-              <Chip className="text-foreground/70">risk_check</Chip>
-            </motion.div>
-          )}
-        </AnimatePresence>
+          {/* the transcript; fixed height so the loop never reflows the page */}
+          <div className="mt-3 flex h-[150px] flex-col font-mono text-[12.5px] leading-[25px]">
+            {lines.slice(0, shown).map((line, i) => (
+              <TerminalLine key={`${runIdx}-${i}`} line={line} active={!still && i === shown - 1} />
+            ))}
+          </div>
 
-        {/* the verdict, over the owl */}
-        <AnimatePresence>
-          {verdictVisible && (
-            <motion.div
-              key={`verdict-${showDeny}`}
-              className="absolute left-1/2 top-[16%] -translate-x-1/2"
-              initial={{ opacity: 0, y: 8, scale: 0.9 }}
-              animate={{ opacity: 1, y: 0, scale: 1 }}
-              exit={{ opacity: 0, y: -6 }}
-              transition={{ duration: 0.35, ease: EASE_OUT_EXPO }}
-            >
-              <Chip
-                className={
-                  showDeny
-                    ? 'border-red-500/40 text-red-600 dark:text-red-400'
-                    : 'border-emerald-500/40 text-emerald-600 dark:text-emerald-400'
-                }
-              >
-                {showDeny ? 'DENY' : 'ALLOW'}
-              </Chip>
-            </motion.div>
-          )}
-        </AnimatePresence>
-
-        {/* settlement: an ALLOW sends the money across; a DENY keeps it home */}
-        <AnimatePresence>
-          {!still && phase === 'settle' && !deny && (
-            <motion.div
-              key="pay"
-              className="absolute top-[58%] -translate-x-1/2"
-              initial={{ left: X.buyer, opacity: 0 }}
-              /* Stops at the seller node's edge so it never sits on the node label. */
-              animate={{ left: '78%', opacity: 1 }}
-              exit={{ opacity: 0 }}
-              transition={{ duration: 1.15, ease: 'easeInOut', opacity: { duration: 0.25 } }}
-            >
-              <Chip className="border-accent/40 text-accent">+$0.005 USDC</Chip>
-            </motion.div>
-          )}
-          {!still && phase === 'settle' && deny && (
-            <motion.div
-              key="blocked"
-              className="absolute left-[31%] top-[58%] -translate-x-1/2"
-              initial={{ opacity: 0, x: -14 }}
-              animate={{ opacity: 1, x: [0, -5, 4, -2, 0] }}
-              exit={{ opacity: 0 }}
-              transition={{ duration: 0.55 }}
-            >
-              <Chip className="border-red-500/40 text-red-600 dark:text-red-400">✕ not funded</Chip>
-            </motion.div>
-          )}
-        </AnimatePresence>
-
-        {/* counters, the ryvo corner */}
-        <div className="absolute bottom-4 right-4 flex gap-2">
-          {(
-            [
-              ['Checks', counts.checks, 'text-foreground'],
-              ['Allowed', counts.allowed, 'text-emerald-600 dark:text-emerald-400'],
-              ['Denied', counts.denied, 'text-red-600 dark:text-red-400'],
-            ] as const
-          ).map(([label, value, tone]) => (
-            <div
-              key={label}
-              className="min-w-[74px] rounded-lg border border-border bg-card/80 px-3 py-2 backdrop-blur-sm"
-            >
-              <p className="font-mono text-[9px] uppercase tracking-[0.14em] text-foreground/40">{label}</p>
-              <p className={`font-mono text-base font-bold ${tone}`}>{value}</p>
-            </div>
-          ))}
+          {/* status row */}
+          <div className="mt-2 flex gap-4 border-t border-white/10 pt-3 font-mono text-[11px] text-white/40">
+            <span>
+              checks <span className="text-white/75">{counts.checks}</span>
+            </span>
+            <span>
+              allowed <span className="text-emerald-400">{counts.allowed}</span>
+            </span>
+            <span>
+              denied <span className="text-red-400">{counts.denied}</span>
+            </span>
+            <span className="ml-auto hidden sm:inline">live engine · /explorer</span>
+          </div>
         </div>
       </div>
       <p className="mt-3 text-xs text-foreground/40">
-        The loop is illustrative; the verdict engine behind it is live in the explorer.
+        The transcript is illustrative; the verdict engine behind it is live in the explorer.
       </p>
     </div>
   )
@@ -220,9 +204,9 @@ function VerifyStage() {
 /**
  * The live hook: one input that resolves any agent's trust from the chain. Deliberately
  * the first thing after the hero, so the product proves itself before any copy. Submitting
- * (or a chip) opens the step-by-step pipeline in the explorer. On the right, the loop the
- * product enforces, played as a quiet diagram: check, verdict, and money that only moves
- * on an ALLOW. The owl stays, as the checkpoint rather than a poster.
+ * (or a chip) opens the step-by-step pipeline in the explorer. On the right, the oracle
+ * played as a terminal: verification transcripts typed line by line, money that only
+ * settles after an ALLOW.
  */
 export default function VerifyCta() {
   const navigate = useNavigate()
@@ -232,8 +216,8 @@ export default function VerifyCta() {
 
   return (
     <section id="verify" className="w-full bg-background px-5 py-16 text-foreground sm:px-8 sm:py-20">
-      {/* Two columns from lg up: the lookup keeps the reading edge, the stage takes the
-          right half. Below lg the stage drops out entirely rather than stacking, because
+      {/* Two columns from lg up: the lookup keeps the reading edge, the terminal takes the
+          right half. Below lg the terminal drops out entirely rather than stacking, because
           on a phone the input is the only thing that matters. */}
       <div className="mx-auto grid max-w-[1160px] items-center gap-10 lg:grid-cols-[minmax(0,1fr)_500px] lg:gap-14">
         <div>
@@ -271,7 +255,7 @@ export default function VerifyCta() {
           ))}
         </motion.div>
 
-        {/* What comes back, compressed to one quiet line: the stage on the right
+        {/* What comes back, compressed to one quiet line: the terminal on the right
             already acts the verdict out, so prose here would say it twice. */}
         <motion.p
           {...reveal}
