@@ -1,222 +1,160 @@
-import { motion, useReducedMotion } from 'framer-motion'
-import { ArrowRight, Bot, Check, Landmark, ShieldCheck, User } from 'lucide-react'
+import { useEffect, useState } from 'react'
+import { AnimatePresence, motion, useReducedMotion } from 'framer-motion'
+import { ArrowRight, Bot, User } from 'lucide-react'
 import { Link } from 'react-router-dom'
 import { DOCS_URL } from '../../lib/brand'
 import { DisplayHeading, Eyebrow, Lede } from '../ui/display'
-import { SectionShell, SectionIntro, reveal, revealAt } from '../ui/section'
+import { SectionShell, SectionIntro, reveal } from '../ui/section'
 
 /**
- * The two things the product does, running.
- *
- * This replaces the old Web2.5 section, which was removed on purpose: it had the right idea
- * and the wrong execution. Three coins on bezier arcs and a lane of chips scrolling past a
- * gate read as decoration, because nothing in the motion corresponded to anything the system
- * actually does. Motion that does not carry information is noise, and on a trust product it
- * is worse than noise, it undercuts the claim.
- *
- * So the animation here is the state machine. One agent is checked, gets a verdict, and only
- * then does value move. The timeline is a single loop and every beat is a real step: request,
- * check, verdict, settle. The denial is included on purpose. A demo where the answer is
- * always yes is a demo that has not shown you the product.
- *
- * Under `prefers-reduced-motion` the whole thing renders in its settled state rather than
- * being hidden, so the information survives even when the movement does not.
+ * The two things the product does, running, presented as the thing a finance
+ * product actually shows you: a settlement ledger. Rows arrive at the top the
+ * way payments arrive, each one carrying its verdict, its amount and how (or
+ * whether) it settled. The denials are in the feed on purpose, with the amount
+ * struck through: a ledger that only ever says yes has not shown you the
+ * product. Under prefers-reduced-motion the feed holds still, fully populated.
  */
 
-const LOOP = 9
-
-/** The verdict the run lands on. Two of three pass, which is roughly honest. */
 type Verdict = 'ALLOW' | 'DENY'
 
-const RUNS: { id: string; from: string; to: string; amount: string; verdict: Verdict; reason: string; settle?: 'direct' | 'bridge' }[] = [
-  { id: 'a', from: 'Research agent', to: 'Data API', amount: '$0.004', verdict: 'ALLOW', reason: 'KYA attested, reputation 720', settle: 'direct' },
-  { id: 'b', from: 'Unknown agent', to: 'Your agent', amount: '$240.00', verdict: 'DENY', reason: 'No on-chain identity' },
-  { id: 'c', from: 'Your agent', to: 'Compute vendor', amount: '$1.20', verdict: 'ALLOW', reason: 'Inside the daily cap', settle: 'bridge' },
+const LEDGER: {
+  from: string
+  to: string
+  reason: string
+  verdict: Verdict
+  amount: string
+  settle: string
+  bridge?: boolean
+  you?: boolean
+}[] = [
+  { from: 'Research agent', to: 'Data API', reason: 'KYA attested, reputation 720', verdict: 'ALLOW', amount: '$0.004', settle: 'Settled · USDC on Arc' },
+  { from: 'Unknown agent', to: 'Your agent', reason: 'No on-chain identity', verdict: 'DENY', amount: '$240.00', settle: 'Refused · never funded' },
+  { from: 'Your agent', to: 'Compute vendor', reason: 'Inside the daily cap', verdict: 'ALLOW', amount: '$1.20', settle: 'Settled · Gateway + CCTP', bridge: true, you: true },
+  { from: 'Translator #4471', to: 'Verifier agent', reason: 'Escrow release on delivery', verdict: 'ALLOW', amount: '$2.00', settle: 'Settled · USDC on Arc' },
+  { from: 'Scraper bot', to: 'Your agent', reason: 'Sybil cluster flagged', verdict: 'DENY', amount: '$18.40', settle: 'Refused · never funded' },
+  { from: 'Your agent', to: 'Inference API', reason: 'Auto-approved, under $5', verdict: 'ALLOW', amount: '$0.05', settle: 'Settled · USDC on Arc', you: true },
 ]
 
-const VERDICT_COLOR: Record<Verdict, string> = { ALLOW: '#059669', DENY: '#dc2626' }
+const VISIBLE = 5
 
-/**
- * The gate itself. A request enters from the left, is held while it is checked, and either
- * continues or stops dead. The stop is the point: a denied request does not fade out, it
- * hits something.
- */
-function Gate({ run, index, reduced }: { run: (typeof RUNS)[number]; index: number; reduced: boolean }) {
-  const start = index * (LOOP / RUNS.length)
-  const allow = run.verdict === 'ALLOW'
-  const bridge = run.settle === 'bridge'
-  const color = VERDICT_COLOR[run.verdict]
-
-  // Lane geometry. Verification happens at the midpoint; settlement happens at the dock on
-  // the right edge, and a denied request never sees the right half of the lane at all. The
-  // space itself is the claim: money only exists past the check.
-  const ARRIVE = '30%'
-  const DOCK = '66%'
-
+function VerdictPill({ verdict }: { verdict: Verdict }) {
   return (
-    <div className="relative h-[84px] overflow-hidden rounded-2xl border border-border bg-background/60">
-      {/* The track the request runs along. */}
-      <div className="absolute left-6 right-6 top-[58%] h-px bg-border" />
+    <span
+      className={
+        verdict === 'ALLOW'
+          ? 'inline-block rounded-full border border-emerald-500/30 bg-emerald-500/10 px-2.5 py-0.5 font-mono text-[10px] font-bold text-emerald-600 dark:text-emerald-400'
+          : 'inline-block rounded-full border border-red-500/30 bg-red-500/10 px-2.5 py-0.5 font-mono text-[10px] font-bold text-red-600 dark:text-red-400'
+      }
+    >
+      {verdict}
+    </span>
+  )
+}
 
-      {/* The checkpoint. */}
-      <div className="absolute left-1/2 top-0 h-full w-px -translate-x-1/2 bg-border" />
-      <div className="absolute left-1/2 top-[58%] grid h-9 w-9 -translate-x-1/2 -translate-y-1/2 place-items-center rounded-full border border-border bg-card">
-        <ShieldCheck size={15} className="text-foreground/45" />
-        <motion.span
-          className="pointer-events-none absolute inset-[-3px] rounded-full border-2"
-          style={{ borderColor: color }}
-          initial={{ opacity: 0 }}
-          animate={reduced ? { opacity: 0.55 } : { opacity: [0, 0.55, 0.55, 0] }}
-          transition={
-            reduced
-              ? { duration: 0 }
-              : { duration: LOOP, times: [0.26, 0.36, 0.62, 0.68], repeat: Infinity, delay: start }
-          }
-        />
+function LedgerRow({ entry }: { entry: (typeof LEDGER)[number] }) {
+  const denied = entry.verdict === 'DENY'
+  return (
+    <div className="grid grid-cols-[minmax(0,1fr)_auto_auto] items-center gap-x-4 gap-y-1 px-5 py-3.5 sm:grid-cols-[minmax(0,1fr)_76px_88px_minmax(150px,0.6fr)]">
+      <div className="min-w-0">
+        <p className="flex items-center gap-1.5 truncate text-sm font-semibold text-foreground">
+          {entry.you ? (
+            <User size={13} className="shrink-0 text-foreground/40" />
+          ) : (
+            <Bot size={13} className="shrink-0 text-foreground/40" />
+          )}
+          {entry.from}
+          <ArrowRight size={12} className="shrink-0 text-foreground/25" />
+          <span className="truncate font-normal text-foreground/55">{entry.to}</span>
+        </p>
+        <p className="mt-0.5 truncate text-xs text-foreground/40">{entry.reason}</p>
       </div>
-
-      {/* The Gateway/CCTP arch. Only the cross-chain lane has one, and it lights exactly as
-          the settled payment passes under it. */}
-      {bridge && (
-        <div className="pointer-events-none absolute left-[72%] top-[58%] h-8 w-12 -translate-x-1/2 -translate-y-[92%]">
-          <div className="h-full w-full rounded-t-full border-2 border-b-0 border-border" />
-          <motion.div
-            className="absolute inset-0 rounded-t-full border-2 border-b-0"
-            style={{ borderColor: '#7342e2' }}
-            initial={{ opacity: 0 }}
-            animate={reduced ? { opacity: 0.35 } : { opacity: [0, 0, 0.9, 0] }}
-            transition={
-              reduced
-                ? { duration: 0 }
-                : { duration: LOOP, times: [0, 0.46, 0.54, 0.64], repeat: Infinity, delay: start }
-            }
-          />
-        </div>
-      )}
-
-      {/* The dock, where settled money lands. Every lane has one; on the denied lane it
-          stays dark forever, which is the story told without a word. */}
-      <div className="absolute left-[88%] top-[58%] grid h-7 w-7 -translate-x-1/2 -translate-y-1/2 place-items-center rounded-full border border-border bg-card">
-        <Landmark size={12} className="text-foreground/35" />
-        {allow && (
-          <motion.span
-            className="pointer-events-none absolute inset-[-3px] rounded-full border-2"
-            style={{ borderColor: '#059669' }}
-            initial={{ opacity: 0 }}
-            animate={reduced ? { opacity: 0.5 } : { opacity: [0, 0, 0.6, 0.6, 0] }}
-            transition={
-              reduced
-                ? { duration: 0 }
-                : { duration: LOOP, times: [0, 0.54, 0.6, 0.86, 0.94], repeat: Infinity, delay: start }
-            }
-          />
-        )}
+      <div className="justify-self-start sm:justify-self-center">
+        <VerdictPill verdict={entry.verdict} />
       </div>
-
-      {/* The request in flight. An allowed one ends at the dock instead of sliding off the
-          edge, because "left the frame" and "settled" are different claims. */}
-      <motion.div
-        className="absolute top-[58%] -translate-y-1/2"
-        initial={{ left: '-22%', opacity: 0 }}
-        animate={
-          reduced
-            ? allow
-              ? { left: DOCK, opacity: 0 }
-              : { left: ARRIVE, opacity: 1 }
-            : {
-                left: ['-22%', ARRIVE, ARRIVE, allow ? DOCK : ARRIVE, allow ? DOCK : ARRIVE],
-                opacity: [0, 1, 1, 1, 0],
-              }
-        }
-        transition={
-          reduced
-            ? { duration: 0 }
-            : {
-                duration: LOOP,
-                times: [0, 0.2, 0.36, 0.52, allow ? 0.58 : 0.68],
-                repeat: Infinity,
-                delay: start,
-                ease: 'easeInOut',
-              }
-        }
+      <p
+        className={`justify-self-end font-mono text-sm font-semibold ${
+          denied ? 'text-foreground/35 line-through' : 'text-foreground'
+        }`}
       >
-        <span
-          className="flex items-center gap-2 whitespace-nowrap rounded-full border bg-card px-3 py-1.5 font-mono text-xs font-semibold shadow-sm"
-          style={{ borderColor: `${color}55`, color }}
-        >
-          {run.amount}
-        </span>
-      </motion.div>
-
-      {/* The settled chip: the same amount, now as money that arrived. */}
-      {allow && (
-        <motion.div
-          className="absolute top-[58%] -translate-y-1/2"
-          style={{ left: DOCK }}
-          initial={{ opacity: 0, scale: 0.85 }}
-          animate={reduced ? { opacity: 1, scale: 1 } : { opacity: [0, 0, 1, 1, 0], scale: [0.85, 0.85, 1, 1, 1] }}
-          transition={
-            reduced
-              ? { duration: 0 }
-              : { duration: LOOP, times: [0, 0.56, 0.62, 0.88, 0.96], repeat: Infinity, delay: start }
-          }
-        >
-          <span
-            className="flex items-center gap-1 whitespace-nowrap rounded-full px-2.5 py-1 font-mono text-[11px] font-bold text-white shadow-sm"
-            style={{ background: '#059669' }}
-          >
-            <Check size={11} /> {run.amount}
-          </span>
-        </motion.div>
-      )}
-
-      {/* The verdict, stamped above the checkpoint once the check resolves. */}
-      <motion.span
-        className="absolute left-1/2 top-2.5 -translate-x-1/2 rounded-full px-2 py-0.5 font-mono text-[10px] font-bold tracking-[0.1em]"
-        style={{ color, background: `${color}1a` }}
-        initial={{ opacity: 0, y: 4 }}
-        animate={
-          reduced
-            ? { opacity: 1, y: 0 }
-            : { opacity: [0, 0, 1, 1, 0], y: [4, 4, 0, 0, 0] }
-        }
-        transition={
-          reduced
-            ? { duration: 0 }
-            : { duration: LOOP, times: [0, 0.32, 0.38, 0.62, 0.68], repeat: Infinity, delay: start }
-        }
+        {entry.amount}
+      </p>
+      <p
+        className={`col-span-3 truncate font-mono text-[11px] sm:col-span-1 sm:justify-self-end sm:text-right ${
+          denied
+            ? 'text-red-600/80 dark:text-red-400/80'
+            : entry.bridge
+              ? 'text-accent'
+              : 'text-emerald-600/90 dark:text-emerald-400/90'
+        }`}
       >
-        {run.verdict}
-      </motion.span>
-
-      {/* What this lane settles in. Static, because it describes the lane, not the moment. */}
-      <span className="absolute bottom-1.5 right-3 font-mono text-[9px] uppercase tracking-wider text-foreground/30">
-        {allow ? (bridge ? 'USDC · cross-chain' : 'USDC · Arc') : 'never funded'}
-      </span>
+        {entry.settle}
+      </p>
     </div>
   )
 }
 
-function RunRow({ run, index, reduced }: { run: (typeof RUNS)[number]; index: number; reduced: boolean }) {
+function SettlementLedger() {
+  const reduced = useReducedMotion() ?? false
+  const [rows, setRows] = useState<{ seq: number; idx: number }[]>(() =>
+    Array.from({ length: VISIBLE }, (_, i) => ({ seq: VISIBLE - 1 - i, idx: (VISIBLE - 1 - i) % LEDGER.length })),
+  )
+
+  useEffect(() => {
+    if (reduced) return
+    let seq = VISIBLE
+    const t = setInterval(() => {
+      setRows((prev) => [{ seq, idx: seq % LEDGER.length }, ...prev].slice(0, VISIBLE))
+      seq += 1
+    }, 2600)
+    return () => clearInterval(t)
+  }, [reduced])
+
   return (
-    <motion.div {...revealAt(index)} className="grid gap-3 sm:grid-cols-[220px_minmax(0,1fr)] sm:items-center">
-      <div className="min-w-0">
-        <p className="flex items-center gap-1.5 truncate text-sm font-semibold text-foreground">
-          {run.from === 'Your agent' ? <User size={13} className="shrink-0 text-foreground/40" /> : <Bot size={13} className="shrink-0 text-foreground/40" />}
-          {run.from}
-          <ArrowRight size={12} className="shrink-0 text-foreground/25" />
-          <span className="truncate font-normal text-foreground/55">{run.to}</span>
+    <div className="overflow-hidden rounded-2xl border border-border bg-card shadow-[0_24px_60px_-32px_rgba(16,24,40,0.35)]">
+      {/* header */}
+      <div className="flex items-center justify-between border-b border-border px-5 py-3">
+        <p className="flex items-center gap-2 text-sm font-semibold text-foreground">
+          <span className="relative flex h-2 w-2">
+            <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-500/60" />
+            <span className="relative inline-flex h-2 w-2 rounded-full bg-emerald-500" />
+          </span>
+          Settlement ledger
         </p>
-        <p className="mt-1 truncate text-xs text-foreground/40">{run.reason}</p>
+        <p className="font-mono text-[10px] uppercase tracking-[0.14em] text-foreground/35">
+          verify → pay · usdc
+        </p>
       </div>
-      <Gate run={run} index={index} reduced={reduced} />
-    </motion.div>
+
+      {/* column heads (desktop) */}
+      <div className="hidden grid-cols-[minmax(0,1fr)_76px_88px_minmax(150px,0.6fr)] gap-x-4 border-b border-border/60 px-5 py-2 font-mono text-[9px] uppercase tracking-[0.16em] text-foreground/35 sm:grid">
+        <span>Counterparties</span>
+        <span className="justify-self-center">Verdict</span>
+        <span className="justify-self-end">Amount</span>
+        <span className="justify-self-end">Settlement</span>
+      </div>
+
+      {/* the feed */}
+      <div className="divide-y divide-border/60">
+        <AnimatePresence initial={false} mode="popLayout">
+          {rows.map((r) => (
+            <motion.div
+              key={r.seq}
+              layout
+              initial={reduced ? false : { opacity: 0, y: -18 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0 }}
+              transition={{ duration: 0.45, ease: [0.16, 1, 0.3, 1] }}
+            >
+              <LedgerRow entry={LEDGER[r.idx]} />
+            </motion.div>
+          ))}
+        </AnimatePresence>
+      </div>
+    </div>
   )
 }
 
 export default function VerifyPayFlow() {
-  const reduced = useReducedMotion() ?? false
-
   return (
     <SectionShell id="flow" surface="card" size="lg">
       <SectionIntro
@@ -235,28 +173,20 @@ export default function VerifyPayFlow() {
         }
       />
 
-      <motion.div
-        {...reveal}
-        transition={{ ...reveal.transition, delay: 0.16 }}
-        className="mt-14 rounded-3xl border border-border bg-background/40 p-6 sm:p-10"
-      >
-        <div className="flex flex-col gap-7">
-          {RUNS.map((run, i) => (
-            <RunRow key={run.id} run={run} index={i} reduced={reduced} />
-          ))}
-        </div>
+      <motion.div {...reveal} transition={{ ...reveal.transition, delay: 0.16 }} className="mt-12">
+        <SettlementLedger />
 
-        <div className="mt-10 flex flex-wrap items-center gap-x-8 gap-y-3 border-t border-border pt-6 text-sm">
+        <div className="mt-6 flex flex-wrap items-center gap-x-8 gap-y-3 text-sm">
           <span className="flex items-center gap-2 text-foreground/55">
-            <span className="h-2 w-2 rounded-full" style={{ background: VERDICT_COLOR.ALLOW }} />
+            <span className="h-2 w-2 rounded-full bg-emerald-500" />
             Settles in USDC on Arc
           </span>
           <span className="flex items-center gap-2 text-foreground/55">
-            <span className="h-2 w-2 rounded-full" style={{ background: VERDICT_COLOR.DENY }} />
+            <span className="h-2 w-2 rounded-full bg-red-500" />
             Refused before it moves
           </span>
           <span className="flex items-center gap-2 text-foreground/55">
-            <span className="h-2 w-2 rounded-full" style={{ background: '#7342e2' }} />
+            <span className="h-2 w-2 rounded-full bg-accent" />
             Cross-chain settle via Circle Gateway + CCTP
           </span>
           <Link
