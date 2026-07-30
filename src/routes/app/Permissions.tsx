@@ -21,6 +21,7 @@ import PayeeAdder from '../../components/app/permissions/PayeeAdder'
 import { Row } from '../../components/app/permissions/ToggleRow'
 import PolicyTester from '../../components/app/permissions/PolicyTester'
 import VaultPanel from '../../components/app/permissions/VaultPanel'
+import CirclePolicyPanel from '../../components/app/CirclePolicyPanel'
 const short = (a: string) => (a.length > 14 ? `${a.slice(0, 8)}...${a.slice(-4)}` : a)
 
 type Permissions = {
@@ -459,6 +460,7 @@ export default function Permissions() {
 
           {/* Onchain policy vault: deploy this policy as a smart contract on Arc */}
           <VaultPanel agentId={agentId} />
+          <CirclePolicyPanel agentId={agentId} />
 
           {/* Try a payment (live policy tester) */}
           <PolicyTester agentId={agentId} onSpent={() => loadPolicy(agentId)} />

@@ -710,6 +710,37 @@ export async function provisionAgentVault(
 }
 
 /** Read an agent's live on-chain vault policy + balance (no key needed). */
+/** Circle's CLI names chains its own way; Arc Testnet is the one this product runs on. */
+const CIRCLE_CLI_CHAIN = 'ARC-TESTNET'
+
+/**
+ * The agent's limits, compiled into the Circle CLI commands that reproduce them at
+ * Circle's own wallet-policy layer. Read-only and generative: we never run the CLI,
+ * because an Agent Wallet is user-controlled and applying a policy needs the owner's
+ * interactive confirmation. See `circle-cli.ts` for why that matters.
+ */
+export async function getAgentCirclePolicyPlan(agentId: string, email?: string) {
+  const agent = state.agents.find((a) => a.id === agentId)
+  if (!agent) return { error: 'Unknown agent' }
+  const address = agent.walletAddress ?? agent.vaultAddress
+  if (!address) return { error: 'This agent has no wallet address yet.' }
+  const { compilePolicyPlan, bootstrapCommands } = await import('./circle-cli.js')
+  return {
+    bootstrap: bootstrapCommands(email),
+    ...compilePolicyPlan({
+      address,
+      chain: CIRCLE_CLI_CHAIN,
+      permissions: {
+        dailyCapUsd: agent.permissions.dailyCapUsd,
+        autoApproveUnderUsd: agent.permissions.autoApproveUnderUsd,
+        payeeAllowlist: agent.permissions.payeeAllowlist,
+        frozen: agent.permissions.frozen,
+      },
+      email,
+    }),
+  }
+}
+
 export async function getAgentVault(agentId: string) {
   const agent = state.agents.find((a) => a.id === agentId)
   if (!agent) return { error: 'Unknown agent' }

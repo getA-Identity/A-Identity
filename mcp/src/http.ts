@@ -51,6 +51,7 @@ import {
   updateAgentPermissions,
   provisionAgentVault,
   getAgentVault,
+  getAgentCirclePolicyPlan,
   grantAgentSessionKey,
   provisionCircleWallet,
   getAgentCircleWallet,
@@ -1138,6 +1139,15 @@ const server = http.createServer(async (req, res) => {
   }
 
   // Update an agent's permissions (the real policy the engine enforces)
+  // ── The same limits, as Circle Agent Wallet policy commands the owner can run ────
+  if (req.method === 'GET' && url.pathname === '/api/agents/circle-policy') {
+    const agentId = url.searchParams.get('agentId')
+    if (!agentId) { sendJson(res, 400, { error: 'agentId required' }); return }
+    const plan = await getAgentCirclePolicyPlan(agentId, url.searchParams.get('email') ?? undefined)
+    sendJson(res, 'error' in plan && plan.error ? errStatus(plan.error) : 200, plan)
+    return
+  }
+
   if (req.method === 'POST' && url.pathname === '/api/agents/permissions') {
     const body = (await readBody(req).catch(() => null)) as { agentId?: string; permissions?: Record<string, unknown> } | null
     if (!body?.agentId || !body?.permissions) { sendJson(res, 400, { error: 'agentId and permissions required' }); return }
