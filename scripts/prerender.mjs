@@ -77,7 +77,15 @@ await waitForServer()
  */
 let browser
 try {
-  browser = await playwright.chromium.launch()
+  browser = await playwright.chromium.launch({
+    // A CI container runs as root without the user namespaces Chromium's sandbox
+    // needs, so it dies immediately with "Target page, context or browser has
+    // been closed". Dropping the sandbox is safe here in a way it would not be
+    // in a product: this process renders our own build, on a throwaway build
+    // machine, and never loads third-party content. /dev/shm is tiny in most
+    // containers, which crashes tabs, so shared memory moves to /tmp.
+    args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage'],
+  })
 } catch (e) {
   server.kill()
   console.warn(
