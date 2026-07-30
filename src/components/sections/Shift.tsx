@@ -1,4 +1,5 @@
 import { motion } from 'framer-motion'
+import { Eyebrow } from '../ui/display'
 import { EASE_OUT_EXPO } from '../../lib/brand'
 
 const reveal = {
@@ -9,23 +10,32 @@ const reveal = {
 }
 
 /**
- * The one-idea editorial beat: why this layer needs to exist now. No cards, no grid,
- * a single confident statement that earns the rest of the page.
+ * The one-idea editorial beat: why this layer needs to exist now. Restyled to the
+ * globalblaw stance: a small tracked eyebrow, a large heading in the BODY face at
+ * normal weight (the quiet-confidence voice, deliberately not the display bold every
+ * other section uses), and a full-measure paragraph, all on one left edge. No cards,
+ * no grid; the restraint is the design.
  */
 export default function Shift() {
   return (
     <section className="w-full bg-background px-5 py-28 text-foreground sm:px-8 sm:py-36">
       <div className="mx-auto max-w-[1080px]">
+        <motion.div {...reveal}>
+          <Eyebrow className="mb-3">Why now</Eyebrow>
+        </motion.div>
+        <motion.h2
+          {...reveal}
+          className="text-[clamp(1.8rem,3.4vw,2.45rem)] font-normal leading-[1.1] tracking-[-0.015em] text-foreground"
+          style={{ fontFamily: 'var(--font-body)' }}
+        >
+          Agents can already book the flight. They still pay with your card and your
+          password.
+        </motion.h2>
         <motion.p
           {...reveal}
-          className="max-w-3xl text-3xl font-bold leading-[1.2] tracking-tight sm:text-[2.7rem]"
-          style={{ fontFamily: 'var(--font-heading)' }}
+          transition={{ ...reveal.transition, delay: 0.1 }}
+          className="mt-4 max-w-[52rem] text-[1.05rem] leading-[1.75] text-foreground/60"
         >
-          Agents can already book the flight.
-          <br />
-          They still pay with your card and your password.
-        </motion.p>
-        <motion.p {...reveal} transition={{ ...reveal.transition, delay: 0.1 }} className="mt-7 max-w-xl text-lg leading-relaxed text-foreground/55">
           The hard part is no longer making agents capable. It is letting them prove who they
           are and move money on their own, without handing over the keys to everything.
           That is the layer A-Identity builds.
