@@ -48,6 +48,7 @@ for (const f of fresh) byKey.set(key(f), f)
 
 let files = 0
 let rewrites = 0
+let inlined = 0
 const unresolved = new Set()
 
 function applyDir(dir, rel = '') {
@@ -84,6 +85,25 @@ function applyDir(dir, rel = '') {
         rewrites++
       }
     }
+
+    // Inline the stylesheet and drop the <link>.
+    //
+    // The stylesheet is the last render-blocking request on the page: the browser
+    // has the whole document, including the text that becomes LCP, and still
+    // cannot paint until a separate round trip completes. Inlining removes that
+    // trip. It costs a repeat visitor the shared cache entry for the CSS, which
+    // is a real trade and worth making here, because this is a marketing site
+    // where most visits are the first one and first paint is the whole game.
+    html = html.replace(
+      /[ \t]*<link[^>]+rel="stylesheet"[^>]*href="\/(assets\/[^"]+\.css)"[^>]*>\n?/g,
+      (tag, href) => {
+        const file = join(DIST, href)
+        if (!existsSync(file)) return tag
+        const css = readFileSync(file, 'utf8')
+        inlined++
+        return `<style>${css}</style>\n`
+      },
+    )
     const dest = join(DIST, rel, 'index.html')
     writeFileSync(dest, html)
     files++
@@ -103,7 +123,7 @@ for (const f of readdirSync(DIST, { recursive: true })) {
   }
 }
 
-console.log(`[prerender] applied snapshot over dist: ${files} pages, ${rewrites} asset refs rewritten`)
+console.log(`[prerender] applied snapshot over dist: ${files} pages, ${rewrites} asset refs rewritten, ${inlined} stylesheets inlined`)
 if (unresolved.size) {
   console.error(`[prerender] ${unresolved.size} dangling asset reference(s):`)
   for (const u of [...unresolved].slice(0, 5)) console.error(`    ${u}`)
