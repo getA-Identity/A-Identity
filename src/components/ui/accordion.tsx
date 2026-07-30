@@ -6,7 +6,7 @@ import { cn } from '../../lib/utils'
 /**
  * shadcn-style Accordion (Radix). Kept style-minimal so callers (the FAQ) can
  * reproduce the existing card look exactly. The Content forwards `forceMount`,
- * which the FAQ uses to keep answers in the DOM even when collapsed — the page
+ * which the FAQ uses to keep answers in the DOM even when collapsed, the page
  * is deliberately LLM/agent-parsable.
  */
 const Accordion = AccordionPrimitive.Root

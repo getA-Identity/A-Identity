@@ -73,7 +73,7 @@ export function CircleWalletPanel({ agentId }: { agentId: string }) {
       else setErr(null)
       await load()
     } catch {
-      setErr('Provisioning timed out. It runs on Circle + on-chain and can be slow — give it a moment and try again.')
+      setErr('Provisioning timed out. It runs on Circle + on-chain and can be slow, give it a moment and try again.')
     } finally {
       setBusy(false)
     }
@@ -206,7 +206,7 @@ export function TreasuryPanel({ agentId }: { agentId: string }) {
         if (opts?.syncCap && typeof j.capUsd === 'number') setCap(String(j.capUsd))
         setErr(j.error ?? null)
       } catch {
-        setErr('Could not load treasury status. The backend may be waking up — try again in a moment.')
+        setErr('Could not load treasury status. The backend may be waking up, try again in a moment.')
       } finally {
         if (!opts?.quiet) setLoading(false)
       }
@@ -261,7 +261,7 @@ export function TreasuryPanel({ agentId }: { agentId: string }) {
       }
       await load(cap)
     } catch {
-      setErr('Action failed. The backend may be waking up — give it a few seconds and try again.')
+      setErr('Action failed. The backend may be waking up, give it a few seconds and try again.')
     } finally {
       setBusy(false)
     }

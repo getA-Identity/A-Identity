@@ -78,7 +78,7 @@ export default function Wallet() {
       .catch(() => { if (isActive()) setTxs([]) })
       .finally(() => { if (isActive()) setTxsLoaded(true) })
     // Live multi-asset balances (USDC / EURC / USYC) read from Arc, via the treasury
-    // read (which returns all three), so the wallet shows every token it holds — not
+    // read (which returns all three), so the wallet shows every token it holds, not
     // only the native USDC gas balance. Best-effort: the hero USDC below is separate.
     apiFetch(`/api/agents/treasury?agentId=${a.id}`)
       .then((r) => readJson<{ balances?: AssetBalances; error?: string }>(r))
@@ -248,7 +248,7 @@ export default function Wallet() {
                 ))}
               </div>
               <p className="mt-1.5 text-[11px] text-foreground/40">
-                Read live from Arc. USYC is yield-bearing — manage it in Treasury below.
+                Read live from Arc. USYC is yield-bearing, manage it in Treasury below.
               </p>
             </div>
           )}

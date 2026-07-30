@@ -205,7 +205,7 @@ function TrustProfile({ identity, reputation, query }: { identity: AgentIdentity
           {beh && <StatRow label="Completed jobs" value={beh.completedJobs} />}
           {beh && <StatRow label="Contested" value={beh.contestedJobs} tone={beh.contestedJobs > 0 ? '#d97706' : undefined} />}
           {beh && <StatRow label="Dispute rate" value={`${Math.round(beh.disputeRate * 100)}%`} tone={beh.disputeRate >= 0.3 ? '#dc2626' : undefined} />}
-          {beh && <StatRow label="Avg rating" value={beh.avgRating != null ? `${beh.avgRating.toFixed(1)} / 5` : '—'} />}
+          {beh && <StatRow label="Avg rating" value={beh.avgRating != null ? `${beh.avgRating.toFixed(1)} / 5` : '·'} />}
           {typeof reputation.settledOnchain === 'number' && <StatRow label="Settled on-chain" value={`${reputation.settledOnchain}${reputation.settledUsd ? ` · $${reputation.settledUsd}` : ''}`} />}
         </div>
       ) : (

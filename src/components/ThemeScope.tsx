@@ -7,7 +7,7 @@ import { useTheme } from './ThemeProvider'
  * The theme is deliberately NOT a class on `<html>` (see ThemeProvider): it is scoped to a
  * wrapper, which is what let dark mode ship on the landing without touching anything else.
  * The cost of that choice is that a page outside a scoped wrapper is permanently light, no
- * matter how many `text-foreground` classes it uses — the token simply resolves to its
+ * matter how many `text-foreground` classes it uses, the token simply resolves to its
  * `:root` value.
  *
  * That is exactly what happened here: the landing, explorer and app console each wrote the

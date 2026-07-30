@@ -23,7 +23,7 @@ const short = (a?: string) => (a ? `${a.slice(0, 6)}...${a.slice(-4)}` : '-')
  * ERC-4337 session-key smart account (the hero). One click deploys a Kernel smart account,
  * grants a session key scoped to a spend cap + payee allowlist + expiry, and settles a REAL
  * UserOperation within bounds while an out-of-bounds payment is rejected on-chain by the
- * policy validator — bounded authority on the standard AA primitive. POST /api/arc/session-key-demo.
+ * policy validator, bounded authority on the standard AA primitive. POST /api/arc/session-key-demo.
  */
 export default function SessionKeyPanel() {
   const [cap, setCap] = useState('0.05')
@@ -66,7 +66,7 @@ export default function SessionKeyPanel() {
             The owner deploys a <b>Kernel smart account</b> and grants the agent a <b>session key</b> scoped
             to a spend cap, a payee allowlist, and an <b>expiry</b>. The agent then pays entirely on its own
             with a real <b>UserOperation</b>; anything outside the bounds is rejected <b>on-chain</b> by the
-            policy validator — bounded authority on the standard AA primitive (via Pimlico on Arc).
+            policy validator, bounded authority on the standard AA primitive (via Pimlico on Arc).
           </p>
         </div>
       </div>
@@ -129,14 +129,14 @@ export default function SessionKeyPanel() {
                       )}
                     </>
                   ) : (
-                    <>Rejected on-chain — {a.rejectedReason ?? 'outside the session-key policy'}</>
+                    <>Rejected on-chain, {a.rejectedReason ?? 'outside the session-key policy'}</>
                   )}
                 </div>
               </div>
             </div>
           ))}
           <p className="text-[11px] text-foreground/40">
-            The session key acted on its own within bounds and was stopped outside them — enforced by the
+            The session key acted on its own within bounds and was stopped outside them, enforced by the
             account's policy validator, not a server.
           </p>
         </div>

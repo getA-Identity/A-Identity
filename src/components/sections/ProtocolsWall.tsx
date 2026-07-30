@@ -143,7 +143,10 @@ export default function ProtocolsWall() {
           overflow scroll + mandatory snap points; the scrollbar is hidden. */}
       <div
         ref={trackRef}
-        className="mt-12 flex snap-x snap-mandatory gap-5 overflow-x-auto pb-2 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden mx-[calc(50%-50vw)] w-screen px-[max(calc((100vw-1100px)/2),20px)] scroll-px-[max(calc((100vw-1100px)/2),20px)]"
+        /* snap-proximity, not mandatory: mandatory snapping fights diagonal trackpad
+           gestures and makes the page's vertical scroll stutter over the rail.
+           overscroll-x-contain keeps a rail overshoot from chaining into the page. */
+        className="mt-12 flex snap-x snap-proximity gap-5 overflow-x-auto overscroll-x-contain pb-2 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden mx-[calc(50%-50vw)] w-screen px-[max(calc((100vw-1100px)/2),20px)] scroll-px-[max(calc((100vw-1100px)/2),20px)]"
       >
         {PROTOCOLS.map((p, i) => (
           <motion.a

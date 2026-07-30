@@ -61,7 +61,7 @@ const ITEM_ICONS: Record<string, ComponentType<{ size?: number | string }>> = {
  * scroll the outer inset collapses and the bar spreads edge-to-edge as a
  * frosted-glass sheet (translucent background token + heavy blur + hairline
  * border + soft shadow), so it stays legible over any section it covers.
- * Semantic tokens only — both states work in the light and the scoped-dark
+ * Semantic tokens only, both states work in the light and the scoped-dark
  * subtrees (Landing wraps this in its own `.dark`). Holds the mobile-menu
  * open state and renders the slide-in sheet.
  */

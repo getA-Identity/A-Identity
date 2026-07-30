@@ -18,7 +18,7 @@ function readInitialTheme(): Theme {
     const stored = window.localStorage.getItem(STORAGE_KEY)
     if (stored === 'dark' || stored === 'light') return stored
   } catch {
-    /* localStorage can throw in private mode — fall through to default */
+    /* localStorage can throw in private mode, fall through to default */
   }
   return 'light'
 }

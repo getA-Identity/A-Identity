@@ -71,7 +71,7 @@ function GlbViewer({ src }: { src: string }) {
 }
 
 export default function Motion() {
-  usePageMeta({ title: 'Motion Lab — A-Identity', noindex: true })
+  usePageMeta({ title: 'Motion Lab · A-Identity', noindex: true })
   const [ready, setReady] = useState(false)
 
   useEffect(() => {

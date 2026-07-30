@@ -183,7 +183,7 @@ export default function RegisterForm({ onClose, onCreated }: { onClose: () => vo
         setAnchorNote(data.result?.reason ?? data.error ?? 'Could not broadcast. The server needs a funded ARC_SIGNER_KEY.')
       }
     } catch {
-      setAnchorNote('Anchoring timed out. It runs on-chain and can be slow — give it a moment and try again.')
+      setAnchorNote('Anchoring timed out. It runs on-chain and can be slow, give it a moment and try again.')
     } finally {
       setAnchorBusy(false)
     }
@@ -222,7 +222,7 @@ export default function RegisterForm({ onClose, onCreated }: { onClose: () => vo
         setKyaNote(explainError(vRes.status, v.error) ?? 'KYA verification failed.')
       }
     } catch {
-      setKyaNote('KYA timed out. The backend may be waking up — try again in a moment.')
+      setKyaNote('KYA timed out. The backend may be waking up, try again in a moment.')
     } finally {
       setKyaBusy(false)
     }

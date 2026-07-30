@@ -38,7 +38,7 @@ export default function Faq() {
   const total = FAQ_ITEMS.length + LANDING_FAQ.length
 
   usePageMeta({
-    title: 'FAQ — A-Identity',
+    title: 'FAQ · A-Identity',
     description: `${total} questions on agent identity, KYA verification, ERC-8004, x402 payments and the limits an agent runs inside. Answers in full, nothing behind a click.`,
     canonical: CANONICAL,
     // FAQPage covering every question on the page, reference set and objections alike. The

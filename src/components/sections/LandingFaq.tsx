@@ -7,7 +7,7 @@ import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from '..
 
 /**
  * The six questions somebody actually hesitates over before letting an agent near their
- * money. Not "what is ERC-8004" — that is documentation. These are the objections, and
+ * money. Not "what is ERC-8004", that is documentation. These are the objections, and
  * three of them are ones we would rather not be asked.
  *
  * Deliberately separate from FAQ.tsx, which is a twenty-question reference set. This is the
@@ -16,8 +16,8 @@ import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from '..
  * unambiguously named.)
  *
  * The rule for every answer: it must be checkable. Where a claim can be verified by opening
- * a URL, the URL is in the answer. Where the honest answer is unflattering — the public
- * counters read zero, the card surface has a limit we cannot close — it says so, because a
+ * a URL, the URL is in the answer. Where the honest answer is unflattering, the public
+ * counters read zero, the card surface has a limit we cannot close, it says so, because a
  * FAQ containing only good news reads as marketing and gets believed less than one that
  * admits something.
  *
@@ -142,14 +142,14 @@ export const LANDING_FAQ: Item[] = [
   {
     q: 'What does it actually cover today?',
     plain:
-      'Brokerage trading and card spending, both live. The engine does not know which venue is asking, so a new one is an adapter rather than a rewrite. Two honest limits: on a card we can refuse a charge before it happens but we cannot physically stop an agent that already holds the card number, and prediction markets are designed and deliberately not built — a separately regulated venue with no agent surface yet, and we will not write rules against a payload nobody has published.',
+      'Brokerage trading and card spending, both live. The engine does not know which venue is asking, so a new one is an adapter rather than a rewrite. Two honest limits: on a card we can refuse a charge before it happens but we cannot physically stop an agent that already holds the card number, and prediction markets are designed and deliberately not built, a separately regulated venue with no agent surface yet, and we will not write rules against a payload nobody has published.',
     a: (
       <>
         Brokerage trading and card spending, both live. The engine does not know which venue is
         asking, so a new one is an adapter rather than a rewrite. Two honest limits: on a card we can
         refuse a charge before it happens but we cannot physically stop an agent that already holds
         the card number, and prediction markets are{' '}
-        <em>designed and deliberately not built</em> — a separately regulated venue with no agent
+        <em>designed and deliberately not built</em>, a separately regulated venue with no agent
         surface yet, and we will not write rules against a payload nobody has published.
       </>
     ),

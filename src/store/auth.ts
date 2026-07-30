@@ -15,7 +15,7 @@ type AuthState = {
    *  Bearer fallback. The real credential is the HttpOnly cookie. */
   token: string | null
   /** True for a verified (wallet / magic-link) session; false for a browse-only guest.
-   *  Drives "can act" in the UI — decoupled from the in-memory token, which is null after
+   *  Drives "can act" in the UI, decoupled from the in-memory token, which is null after
    *  a cookie-restored reload. */
   verified: boolean
   /** Guest preview: an email-only local session (no token → browse-only). */
@@ -122,7 +122,7 @@ export const useAuth = create<AuthState>()(
       },
       restore: async () => {
         // On load, ask the backend who we are from the HttpOnly cookie. Only a definitive
-        // 401 clears the session — a cold/unreachable backend must NOT log the user out.
+        // 401 clears the session, a cold/unreachable backend must NOT log the user out.
         try {
           // Prefer the cookie; also send an in-memory token if one is still around (e.g. a
           // pre-cookie session rehydrated from old localStorage), so upgrading users aren't
@@ -141,7 +141,7 @@ export const useAuth = create<AuthState>()(
             if (data.user) set({ user: data.user, verified: Boolean(data.verified) })
           }
         } catch {
-          /* backend waking / unreachable — keep the persisted session */
+          /* backend waking / unreachable, keep the persisted session */
         }
       },
       logout: () => {
@@ -155,7 +155,7 @@ export const useAuth = create<AuthState>()(
       },
     }),
     // Persist ONLY the (non-secret) user + verified flag; the session TOKEN is never
-    // written to localStorage — it lives in the HttpOnly cookie (and in memory for this
+    // written to localStorage, it lives in the HttpOnly cookie (and in memory for this
     // tab). `restore()` reconciles `verified` against the cookie on load.
     { name: 'a-identity-auth', partialize: (s) => ({ user: s.user, verified: s.verified }) },
   ),

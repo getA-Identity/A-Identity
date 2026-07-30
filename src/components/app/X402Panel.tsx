@@ -11,7 +11,7 @@ import { Panel } from '../ui/panel'
 /** Arc Testnet chain id as the 0x-hex EIP-155 wallets expect. */
 const ARC_CHAIN_HEX = '0x' + ARC_TESTNET.id.toString(16)
 
-/** Make sure the wallet is on Arc before we send a USDC transfer — otherwise the transfer
+/** Make sure the wallet is on Arc before we send a USDC transfer, otherwise the transfer
  *  would be broadcast to the Arc-USDC address on whatever chain is active (e.g. Ethereum
  *  mainnet), a confusing and potentially fund-losing transaction. Switches (or adds) Arc. */
 async function ensureArcChain(eth: { request: (a: { method: string; params?: unknown[] }) => Promise<unknown> }) {
@@ -117,7 +117,7 @@ export default function X402Panel() {
 
       // 2b. Prove control of the paying wallet by signing the (nonce, payer) challenge.
       //     The server binds the redemption to this signature AND to the on-chain sender,
-      //     so only the wallet that actually paid can unlock it — a front-runner who only
+      //     so only the wallet that actually paid can unlock it, a front-runner who only
       //     scraped the tx hash off the public chain cannot.
       let paySig: string | null = null
       if (nonce) {
@@ -188,7 +188,7 @@ export default function X402Panel() {
         </Button>
       </div>
 
-      {/* The 402 challenge is the whole point of the demo — surface it on-screen so the
+      {/* The 402 challenge is the whole point of the demo, surface it on-screen so the
           expected red "402" the browser logs to the console reads as intentional, not a bug. */}
       {req && phase !== 'done' && (
         <div className="mt-3 rounded-xl border border-amber-300/60 bg-amber-50/70 p-3 dark:border-amber-500/30 dark:bg-amber-500/10">
@@ -196,7 +196,7 @@ export default function X402Panel() {
             <Lock size={13} /> HTTP 402 · Payment Required
           </div>
           <p className="mt-1 text-xs leading-relaxed text-foreground/65">
-            The server answered with a real <b>402 challenge</b> — the paywall working as intended, not
+            The server answered with a real <b>402 challenge</b>, the paywall working as intended, not
             an error. Pay <b>{priceUsdc} USDC</b> on Arc to {req.payTo.slice(0, 8)}...{req.payTo.slice(-4)}{' '}
             and the call unlocks.
           </p>

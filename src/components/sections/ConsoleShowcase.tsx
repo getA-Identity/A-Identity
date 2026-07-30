@@ -88,7 +88,9 @@ export default function ConsoleShowcase() {
           transition={{ ...reveal.transition, delay: 0.12 }}
           className="relative rounded-[2rem] border border-border bg-gradient-to-b from-foreground/[0.05] to-transparent p-2.5 shadow-[0_40px_100px_-40px_rgba(16,24,40,0.35)] sm:p-3"
         >
-          <div className="grid gap-4 rounded-[1.6rem] border border-border bg-background/70 p-4 backdrop-blur-sm sm:p-6 md:grid-cols-2">
+          {/* min-w-0 on the grid items: a grid child's default min-width is auto, so a
+              wide mono value inside a mock could otherwise push past a phone viewport. */}
+          <div className="grid gap-4 rounded-[1.6rem] border border-border bg-background/70 p-4 backdrop-blur-sm sm:p-6 md:grid-cols-2 [&>*]:min-w-0">
             <ProductMock title="Spend Permissions" meta="agent · translator-01 · Arc testnet">
               <PressableRow label="Cycle the daily cap" onClick={() => setCapIdx((i) => (i + 1) % DAILY_CAPS.length)}>
                 <MockRow

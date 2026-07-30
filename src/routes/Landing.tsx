@@ -32,7 +32,10 @@ export default function Landing() {
   const { theme } = useTheme()
   return (
     <div
-      className={`w-full bg-background ${theme === 'dark' ? 'dark' : ''}`}
+      /* overflow-x-clip: the protocols rail is w-screen full-bleed, and 100vw includes
+         the scrollbar gutter on desktop, which otherwise gives the whole page a few px
+         of horizontal scroll that fights the rail's own. */
+      className={`w-full overflow-x-clip bg-background ${theme === 'dark' ? 'dark' : ''}`}
       style={{ fontFamily: 'var(--font-body)', color: 'var(--color-text)' }}
     >
       {/* Hero block. Exactly one viewport tall on desktop with overflow-hidden, so the

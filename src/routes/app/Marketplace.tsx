@@ -133,7 +133,7 @@ export default function Marketplace() {
         }))
       }
     } catch {
-      setAnchorNote((n) => ({ ...n, [agentId]: 'Anchoring timed out. The backend may be waking up — try again in a moment.' }))
+      setAnchorNote((n) => ({ ...n, [agentId]: 'Anchoring timed out. The backend may be waking up, try again in a moment.' }))
     } finally {
       setAnchoringId(null)
     }

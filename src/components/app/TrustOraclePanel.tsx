@@ -75,7 +75,7 @@ export default function TrustOraclePanel() {
           <ShieldCheck size={18} />
         </div>
         <div className="min-w-0 flex-1">
-          <h3 className="font-semibold text-foreground">Trust Oracle — an agent pays an agent (x402)</h3>
+          <h3 className="font-semibold text-foreground">Trust Oracle · an agent pays an agent (x402)</h3>
           <p className="mt-0.5 text-sm text-foreground/55">
             Before it pays a counterparty, a buyer agent <b>buys a risk check</b> from our Trust Oracle over
             x402 (a gasless Arc nanopayment via Circle Gateway) and acts on the <b>ALLOW / WARN / DENY</b> verdict.
@@ -143,7 +143,7 @@ export default function TrustOraclePanel() {
             </div>
           </div>
           <p className="text-[11px] text-foreground/40">
-            The agent paid for the check and can now act on the verdict — {result.riskCheck.decision === 'DENY' ? 'it will not pay this counterparty.' : result.riskCheck.decision === 'WARN' ? 'proceed with caution.' : 'safe to proceed.'}
+            The agent paid for the check and can now act on the verdict, {result.riskCheck.decision === 'DENY' ? 'it will not pay this counterparty.' : result.riskCheck.decision === 'WARN' ? 'proceed with caution.' : 'safe to proceed.'}
           </p>
         </div>
       )}

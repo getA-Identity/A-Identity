@@ -129,7 +129,7 @@ export default function Settlements() {
       setError(null)
       await load(agentId)
     } catch {
-      setError('Could not create the payment. The backend may be waking up — try again in a moment.')
+      setError('Could not create the payment. The backend may be waking up, try again in a moment.')
     } finally {
       setBusy(null)
     }
@@ -155,7 +155,7 @@ export default function Settlements() {
       setError(null)
       await load(agentId)
     } catch {
-      setError(`Could not ${path} the payment. On-chain settlement can be slow — give it a few seconds and try again.`)
+      setError(`Could not ${path} the payment. On-chain settlement can be slow, give it a few seconds and try again.`)
     } finally {
       setBusy(null)
     }

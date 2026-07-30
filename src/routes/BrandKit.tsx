@@ -81,7 +81,7 @@ function AssetLink({ href, label }: { href: string; label: string }) {
 }
 
 export default function BrandKit() {
-  usePageMeta({ title: 'Brand Kit — A-Identity', noindex: true })
+  usePageMeta({ title: 'Brand Kit · A-Identity', noindex: true })
 
   return (
     <ThemeScope as="main" className="min-h-screen">

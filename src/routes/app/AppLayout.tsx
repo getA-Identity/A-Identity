@@ -52,7 +52,7 @@ export default function AppLayout() {
   const isGuest = Boolean(user) && !verified
 
   // Pre-warm the free-tier backend the moment the console opens, so it is already awake
-  // by the time the user clicks Anchor / Execute / Provision — heading off the cold-start
+  // by the time the user clicks Anchor / Execute / Provision, heading off the cold-start
   // 502 instead of hitting it on the first action.
   useEffect(() => {
     wakeBackend()

@@ -11,7 +11,7 @@ type AuthButtonsProps = {
 /**
  * The "Start For Free" + "Sign In" pill pair. Shared between the desktop
  * navbar and the mobile sheet so both stay visually identical. Uses the shadcn
- * Button (accent + secondary variants) — same look, now consistent everywhere.
+ * Button (accent + secondary variants), same look, now consistent everywhere.
  */
 export default function AuthButtons({ stacked = false, onNavigate }: AuthButtonsProps) {
   const navigate = useNavigate()

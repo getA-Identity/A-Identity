@@ -35,16 +35,18 @@ function ArcMark(props: { className?: string }) {
     </svg>
   )
 }
-/** A drawn monogram for rails whose official mark we do not ship yet. */
-function Monogram({ letter, className = '' }: { letter: string; className?: string }) {
+function StellarMark(props: { className?: string }) {
   return (
-    <span
-      aria-hidden
-      className={`grid place-items-center rounded-full border-2 border-current font-mono font-bold ${className}`}
-      style={{ fontSize: '55%' }}
-    >
-      {letter}
-    </span>
+    <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden {...props}>
+      <path d="M12.003 1.716c-1.37 0-2.7.27-3.948.78A10.18 10.18 0 0 0 2.66 7.901a10.136 10.136 0 0 0-.797 3.954c0 .258.01.516.027.775a1.942 1.942 0 0 1-1.055 1.88L0 14.934v1.902l2.463-1.26.072-.032v.005l.77-.39.758-.385.066-.039 14.807-7.56 1.666-.847 3.392-1.732V2.694L17.792 5.86 3.744 13.025l-.104.055-.017-.115a8.286 8.286 0 0 1-.071-1.105c0-2.255.88-4.377 2.474-5.977a8.462 8.462 0 0 1 2.71-1.82 8.513 8.513 0 0 1 3.2-.654h.067a8.41 8.41 0 0 1 4.09 1.055l1.628-.83.126-.066a10.11 10.11 0 0 0-5.845-1.853zM24 7.143 5.047 16.808l-1.666.847L0 19.382v1.902l3.282-1.671 2.91-1.485 14.058-7.153.105-.055.016.115c.05.369.072.743.072 1.11 0 2.255-.88 4.383-2.475 5.978a8.461 8.461 0 0 1-2.71 1.82 8.305 8.305 0 0 1-3.2.654h-.06c-1.441 0-2.86-.369-4.102-1.061l-.066.033-1.683.857c.594.418 1.232.776 1.903 1.062a10.11 10.11 0 0 0 3.947.797 10.09 10.09 0 0 0 7.17-2.975 10.136 10.136 0 0 0 2.969-7.18c0-.259-.005-.523-.027-.781a1.942 1.942 0 0 1 1.055-1.88L24 9.044z" />
+    </svg>
+  )
+}
+function RobinhoodMark(props: { className?: string }) {
+  return (
+    <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden {...props}>
+      <path d="M2.84 24h.53c.096 0 .192-.048.224-.128C7.591 13.696 11.94 8.656 14.67 5.638c.112-.128.064-.225-.096-.225h-4.88a.55.55 0 0 0-.45.225L5.746 9.972c-.514.642-.642 1.236-.642 2.086v4.43c-1.14 3.194-1.862 5.361-2.392 7.32-.032.125.016.192.129.192M20.447.646c-.754-.802-4.157-.834-5.73-.224a3 3 0 0 0-.786.465 41 41 0 0 0-3.323 3.178c-.112.113-.064.225.097.225h5.409c.497 0 .786.289.786.786v6.1c0 .16.128.208.225.064l3.258-4.254c.53-.69.69-.898.835-1.861.192-1.413.08-3.58-.77-4.479m-6.982 16.18 2.231-3.676a.7.7 0 0 0 .064-.29V6.73c0-.16-.112-.225-.224-.097-3.355 3.74-5.971 7.672-8.395 12.407-.06.12.016.225.16.177l5.009-1.54c.565-.174.882-.402 1.155-.852" />
+    </svg>
   )
 }
 
@@ -88,7 +90,7 @@ const RAILS: Rail[] = [
   },
   {
     id: 'stellar',
-    Mark: (p) => <Monogram letter="S" {...p} />,
+    Mark: StellarMark,
     name: 'Stellar',
     color: '#7D00FF',
     role: 'First stop of the multichain rollout.',
@@ -97,7 +99,7 @@ const RAILS: Rail[] = [
   },
   {
     id: 'robinhood',
-    Mark: (p) => <Monogram letter="R" {...p} />,
+    Mark: RobinhoodMark,
     name: 'Robinhood Chain',
     color: '#00C805',
     role: 'Where retail agents will trade.',
@@ -175,7 +177,7 @@ export default function BuiltOn() {
         <motion.div {...reveal}>
           <div
             ref={trackRef}
-            className="mt-10 flex snap-x snap-mandatory overflow-x-auto rounded-2xl [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+            className="mt-10 flex snap-x snap-mandatory overflow-x-auto overscroll-x-contain rounded-2xl [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
           >
             {RAILS.map((r) => (
               <article
@@ -183,14 +185,23 @@ export default function BuiltOn() {
                 className="w-full shrink-0 snap-center"
                 aria-label={`${r.name}: ${r.role}`}
               >
-                <div className="grid gap-8 rounded-2xl border border-border bg-card p-8 sm:grid-cols-[auto_minmax(0,1fr)] sm:items-center sm:p-12">
+                <div className="relative grid gap-8 overflow-hidden rounded-2xl border border-border bg-card p-8 sm:grid-cols-[auto_minmax(0,1fr)] sm:items-center sm:p-12">
+                  {/* The rail's own mark as a translucent watermark, bleeding off the
+                      right edge, so every slide carries its brand without shouting it. */}
                   <div
-                    className="grid h-24 w-24 place-items-center rounded-3xl border border-border text-[40px]"
+                    aria-hidden="true"
+                    className="pointer-events-none absolute -right-16 top-1/2 -translate-y-1/2 opacity-[0.05]"
+                    style={{ color: r.color }}
+                  >
+                    <r.Mark className="h-[340px] w-[340px]" />
+                  </div>
+                  <div
+                    className="relative grid h-24 w-24 place-items-center rounded-3xl border border-border"
                     style={{ color: r.color, background: `color-mix(in srgb, ${r.color} 8%, var(--card))` }}
                   >
                     <r.Mark className="h-12 w-12" />
                   </div>
-                  <div>
+                  <div className="relative">
                     <div className="flex flex-wrap items-center gap-3">
                       <h3 className="text-2xl font-bold tracking-tight text-foreground">{r.name}</h3>
                       {r.status === 'live' ? (

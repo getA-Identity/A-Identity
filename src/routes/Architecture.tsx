@@ -11,7 +11,7 @@ import { useTheme } from '../components/ThemeProvider'
 import { EASE_OUT_EXPO } from '../lib/brand'
 
 /**
- * /architecture — the system, told the way an engineer would read it: monospace
+ * /architecture, the system, told the way an engineer would read it: monospace
  * indices, hairline borders, a blueprint grid, a real request/response terminal, and
  * a bento of the pieces. Restrained palette (one accent), theme-aware, interaction-first.
  * Built for the curious and for developers.
@@ -44,7 +44,7 @@ const STAGES: Stage[] = [
     nodes: [
       { icon: BadgeCheck, name: 'IdentityRegistry', meta: 'ownerOf · tokenURI', desc: 'A live on-chain read. Real token, real owner, no database.' },
       { icon: ShieldCheck, name: 'ValidationRegistry', meta: 'KYA · revocable', desc: 'Wallet control attested on-chain, and revocable on incident.' },
-      { icon: Gauge, name: 'Reputation', meta: '0–1000 · Sybil', desc: 'Deterministic score, decayed by recency, with a Sybil check.' },
+      { icon: Gauge, name: 'Reputation', meta: '0-1000 · Sybil', desc: 'Deterministic score, decayed by recency, with a Sybil check.' },
     ],
   },
   {

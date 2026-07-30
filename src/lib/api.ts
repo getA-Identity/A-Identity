@@ -3,7 +3,7 @@
  *
  * The production backend runs on a free host (Render) that spins down after idle and
  * takes ~50s to wake. The app talks to it through a same-origin Vercel proxy whose
- * gateway times out at ~30s — so during a cold boot the proxy returns 502 BEFORE the
+ * gateway times out at ~30s, so during a cold boot the proxy returns 502 BEFORE the
  * backend is up, and a naive poll can never warm it. That is the "waited 2 minutes,
  * still 502" failure.
  *
@@ -26,7 +26,7 @@ const RETRYABLE = new Set([502, 503, 504])
 let lastWake = 0
 /**
  * Fire-and-forget wake ping. Hits the same-origin proxy (ad-blocker-safe) AND, best
- * effort, the backend origin directly with `no-cors` — the direct hit bypasses the
+ * effort, the backend origin directly with `no-cors`, the direct hit bypasses the
  * proxy's ~30s gateway cap so a cold boot can complete. Throttled so retries don't spam.
  */
 export function wakeBackend(): void {
@@ -58,7 +58,7 @@ export async function ensureAwake(onWaking?: () => void): Promise<boolean> {
       const res = await fetch(`${MCP_BASE}/health`, { cache: 'no-store', signal: AbortSignal.timeout(4000) })
       if (res.ok) return true
     } catch {
-      /* down or slow — wake and retry below */
+      /* down or slow, wake and retry below */
     }
     onWaking?.()
     wakeBackend()
@@ -133,7 +133,7 @@ export async function readJson<T = unknown>(res: Response): Promise<T> {
 /** An honest, human message for a failed request, from its status + any `{error}` body. */
 export function explainError(status: number, bodyError?: string): string {
   if (status === 401)
-    return 'Sign in with your wallet or an email link to do this — guest sessions are read-only.'
+    return 'Sign in with your wallet or an email link to do this, guest sessions are read-only.'
   if (status === 403)
     return bodyError && /owner|forbidden/i.test(bodyError)
       ? 'You can only do this on an agent you own. Register your own agent first, then try again.'

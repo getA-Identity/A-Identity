@@ -88,7 +88,7 @@ export default function Dashboard() {
     }
   }, [])
 
-  const dash = '—'
+  const dash = '·'
   const p = agent?.permissions
   const statusItems = [
     {
@@ -203,7 +203,7 @@ export default function Dashboard() {
                       ? `${agentTotal} live agent${agentTotal === 1 ? '' : 's'}`
                       : !loaded
                         ? <Skeleton className="h-3 w-20" />
-                        : '—'
+                        : '·'
                     : 'no live agents yet'}
                 </div>
                 {c.explorer && (

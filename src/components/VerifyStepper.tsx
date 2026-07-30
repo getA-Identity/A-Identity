@@ -4,16 +4,16 @@ import { Loader2, Check, X, ShieldCheck, ShieldAlert, ShieldX, Fingerprint, Badg
 import type { AgentIdentity, Reputation } from '../lib/mcp-client'
 
 /**
- * VerifyStepper — the step-by-step "verify an agent" walkthrough.
+ * VerifyStepper, the step-by-step "verify an agent" walkthrough.
  *
  * Takes the already-fetched on-chain data for one query and REVEALS the logical
  * verification pipeline one stage at a time, the way an agent (or a human) should
  * reason about a counterparty:
  *
- *   1. Resolve  — does a real ERC-8004 identity exist on-chain?
- *   2. KYA      — is wallet control attested (Know Your Agent), or revoked?
- *   3. Score    — the deterministic 0-1000 reputation from real settlements
- *   4. Verdict  — ALLOW / WARN / DENY, with the reasons that produced it
+ *   1. Resolve , does a real ERC-8004 identity exist on-chain?
+ *   2. KYA     , is wallet control attested (Know Your Agent), or revoked?
+ *   3. Score   , the deterministic 0-1000 reputation from real settlements
+ *   4. Verdict , ALLOW / WARN / DENY, with the reasons that produced it
  *
  * The checks themselves already ran (live reads, no mocks); this component stages
  * the presentation so each signal and the standard behind it is legible.

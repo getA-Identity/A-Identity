@@ -10,7 +10,7 @@
 
 /* Tailwind v4 design tokens that generate utilities like bg-accent, text-ink,
    font-heading. Also emitted as :root CSS variables. These are the FIXED brand
-   colors — they never change between light and dark. */
+   colors, they never change between light and dark. */
 @theme {
   --color-ink: #192837;
   --color-accent: #7342e2;
@@ -73,7 +73,7 @@
  * Theme-aware semantic tokens (shadcn-style). In LIGHT mode they resolve to the
  * exact same colors the landing already used (background=cream, foreground=ink,
  * card=white), so the default look is pixel-identical. The `.dark` scope (applied
- * to the landing wrapper) flips them for dark mode — purely additive.
+ * to the landing wrapper) flips them for dark mode, purely additive.
  */
 :root {
   --background: #f2f2ee;   /* was bg-cream */

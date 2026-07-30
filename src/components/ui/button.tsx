@@ -13,17 +13,17 @@ const buttonVariants = cva(
   {
     variants: {
       variant: {
-        // Primary CTA — brand purple pill, white text (was bg-accent text-white).
+        // Primary CTA, brand purple pill, white text (was bg-accent text-white).
         default: 'bg-accent text-white hover:scale-[1.03] hover:brightness-110',
-        // Secondary — cream/elevated pill (was var(--color-login-bg)).
+        // Secondary, cream/elevated pill (was var(--color-login-bg)).
         secondary: 'bg-secondary text-foreground hover:scale-[1.03]',
-        // Inverse — solid neutral that flips with the theme (was bg-ink text-white).
+        // Inverse, solid neutral that flips with the theme (was bg-ink text-white).
         inverse: 'bg-foreground text-background hover:scale-[1.02]',
-        // Outline — bordered, transparent fill.
+        // Outline, bordered, transparent fill.
         outline: 'border border-border bg-transparent text-foreground hover:bg-foreground/[0.04]',
-        // Ghost — no chrome until hover.
+        // Ghost, no chrome until hover.
         ghost: 'text-foreground hover:bg-foreground/[0.06]',
-        // Link — inline text action.
+        // Link, inline text action.
         link: 'text-accent underline-offset-4 hover:underline',
       },
       size: {

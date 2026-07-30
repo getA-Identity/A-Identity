@@ -30,7 +30,7 @@ const LIFECYCLE: Record<Outcome, string[]> = {
 /**
  * One-click ERC-8183 escrow demo: an agent hires an agent, USDC is escrowed on Arc.
  * The happy path releases it to the provider on delivery (complete); the dispute path
- * rejects the deliverable and refunds the client in the same tx (refund) — buyer
+ * rejects the deliverable and refunds the client in the same tx (refund), buyer
  * protection for trust-minimized agent commerce. Both are real on-chain lifecycles.
  */
 export default function EscrowPanel() {
@@ -77,7 +77,7 @@ export default function EscrowPanel() {
           <h3 className="font-semibold text-foreground">Agent-to-agent escrow (ERC-8183)</h3>
           <p className="mt-0.5 text-sm text-foreground/55">
             One click runs the full on-chain job: an agent hires an agent, USDC is held in escrow on
-            Arc. <span className="font-medium text-foreground/70">Released to the provider on delivery</span> — or,
+            Arc. <span className="font-medium text-foreground/70">Released to the provider on delivery</span>, or,
             if the deliverable is disputed, <span className="font-medium text-foreground/70">refunded to the client</span> in
             the same tx (buyer protection). Both are real lifecycles.
           </p>

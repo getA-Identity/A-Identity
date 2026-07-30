@@ -7,7 +7,7 @@
  *   - in-flight dedup: concurrent callers share ONE request, and
  *   - a short TTL: a navigation within the window reuses the last result.
  * After a mutation that changes the list (create agent, anchor, permissions), call
- * `invalidatePlatformAgents()` so the next read is fresh — and any screen subscribed via
+ * `invalidatePlatformAgents()` so the next read is fresh, and any screen subscribed via
  * `subscribePlatformAgents()` re-fetches immediately, so a newly created agent shows up
  * without navigating away and back.
  *

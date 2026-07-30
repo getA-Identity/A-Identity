@@ -106,7 +106,7 @@ export default function Mascot() {
   const [silhouette, setSilhouette] = useState(false)
   const [surface, setSurface] = useState<'background' | 'card'>('background')
 
-  usePageMeta({ title: 'Mascot — A-Identity', noindex: true })
+  usePageMeta({ title: 'Mascot · A-Identity', noindex: true })
 
   useEffect(() => {
     if (document.querySelector('script[data-model-viewer]')) {

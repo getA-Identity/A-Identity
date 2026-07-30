@@ -10,11 +10,11 @@ import { type OwlVerdict } from './OwlMark'
 import { connectWalletConnect, getInjectedWallets, refreshInjectedWallets, walletConnectEnabled, type WalletOption, type Eip1193 } from '../lib/wallets'
 
 /*
- * TrustSpotlight — the ⌘K / FAB popup, now a self-contained two-tab flow:
+ * TrustSpotlight, the ⌘K / FAB popup, now a self-contained two-tab flow:
  *
- *   Verify   — look up any agent and read its trust INLINE (identity, KYA, score, verdict).
+ *   Verify  , look up any agent and read its trust INLINE (identity, KYA, score, verdict).
  *              Detail lives in the explorer; a gentle nudge offers "is this yours? claim it".
- *   Onboard  — prove you own an agent by connecting its wallet and signing once. This is the
+ *   Onboard , prove you own an agent by connecting its wallet and signing once. This is the
  *              whole quick-onboarding: no gas, no signup; the console handles the details after.
  *
  * Opens on ⌘K, the FAB, or a window 'open-trust-spotlight' event. Status hues match /explorer.
@@ -64,7 +64,7 @@ function ResultCard({ result, q, onOpen, onClaim }: { result: NonNullable<Result
           <div className="min-w-0">
             <div className="truncate text-sm font-bold text-foreground">{name}</div>
             <div className="truncate font-mono text-[11px] text-foreground/45">
-              {identity && !identity.partial ? `#${identity.tokenId}` : shorten(identity?.owner || q)}{identity?.owner ? ` · ${shorten(identity.owner)}` : ''} · KYA {reputation?.kya ?? '—'}
+              {identity && !identity.partial ? `#${identity.tokenId}` : shorten(identity?.owner || q)}{identity?.owner ? ` · ${shorten(identity.owner)}` : ''} · KYA {reputation?.kya ?? '·'}
             </div>
           </div>
         </div>
@@ -306,7 +306,10 @@ export default function TrustSpotlight() {
             onFocus={() => setFabHover(true)} onBlur={() => setFabHover(false)}
             initial={{ scale: 0, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} exit={{ scale: 0, opacity: 0 }}
             whileHover={{ scale: 1.06 }} whileTap={{ scale: 0.94 }}
-            className="group fixed bottom-6 right-6 z-40 flex items-center gap-2 rounded-full py-3 pl-3.5 pr-3.5 text-white shadow-[0_12px_40px_-8px_rgba(115,66,226,0.6)]"
+            /* h-11 + 13px side padding + the 18px icon = a 44px circle when collapsed,
+               the exact size of the back-to-top button above it. The label's own left
+               padding replaces the flex gap so a hidden label adds zero width. */
+            className="group fixed bottom-6 right-6 z-40 flex h-11 items-center justify-center rounded-full px-[13px] text-white shadow-[0_12px_40px_-8px_rgba(115,66,226,0.6)]"
             style={{ background: `linear-gradient(135deg, ${ACCENT}, #4f2bb0)` }}
           >
             {/* The ring introduces the button and then stops. A pulse that never ends is not
@@ -334,7 +337,7 @@ export default function TrustSpotlight() {
               animate={{ maxWidth: fabExpanded ? 200 : 0, opacity: fabExpanded ? 1 : 0 }}
               transition={{ duration: 0.28, ease: EASE_OUT_EXPO }}
             >
-              <span className="pl-0.5 text-sm font-semibold">Verify an agent</span>
+              <span className="pl-2.5 text-sm font-semibold">Verify an agent</span>
               <kbd className="rounded bg-white/20 px-1.5 py-0.5 font-mono text-[10px] font-semibold">{kbd}</kbd>
             </motion.span>
           </motion.button>
