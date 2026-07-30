@@ -14,6 +14,7 @@ const reveal = {
 /* Real brand marks (currentColor, tinted per rail). OKX and Circle are the official
  * marks; Arc is a redrawn arch mark (Circle Arc) in matching monochrome. Rails whose
  * marks we do not ship yet get a drawn monogram tile instead of a wrong logo. */
+/** OKX ships no file in this repo, so its official monochrome mark stays as a path. */
 function OkxMark(props: { className?: string }) {
   return (
     <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden {...props}>
@@ -21,99 +22,87 @@ function OkxMark(props: { className?: string }) {
     </svg>
   )
 }
-function CircleMark(props: { className?: string }) {
-  return (
-    <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden {...props}>
-      <path d="M20.788 3.832c-.101-.105-.197-.213-.301-.317-.103-.103-.211-.202-.32-.302A11.903 11.903 0 0 0 12 0a11.926 11.926 0 0 0-8.486 3.514C-1.062 8.09-1.16 15.47 3.213 20.168c.099.108.197.214.3.32.104.103.21.2.317.3A11.92 11.92 0 0 0 12 24c3.206 0 6.22-1.247 8.487-3.512 4.576-4.576 4.673-11.956.301-16.656zm-16.655.301A11.057 11.057 0 0 1 12 .874c2.825 0 5.49 1.048 7.55 2.958l-1.001 1.002A9.646 9.646 0 0 0 12 2.292a9.644 9.644 0 0 0-6.865 2.844A9.644 9.644 0 0 0 2.292 12c0 2.448.9 4.753 2.542 6.549L3.831 19.55C-.201 15.191-.101 8.367 4.133 4.133zm13.798 1.318v.002l-1.015 1.014A7.346 7.346 0 0 0 12 4.589 7.357 7.357 0 0 0 6.761 6.76 7.362 7.362 0 0 0 4.589 12a7.34 7.34 0 0 0 1.877 4.913l-1.014 1.016A8.77 8.77 0 0 1 3.167 12a8.77 8.77 0 0 1 2.588-6.245A8.771 8.771 0 0 1 12 3.167c2.213 0 4.301.809 5.931 2.284zM18.537 12c0 1.745-.681 3.387-1.916 4.622S13.746 18.538 12 18.538a6.491 6.491 0 0 1-4.296-1.621l-.001-.004c-.11-.094-.22-.188-.324-.291a6.027 6.027 0 0 1-.293-.326A6.47 6.47 0 0 1 5.466 12c0-1.746.679-3.387 1.914-4.621A6.488 6.488 0 0 1 12 5.465c1.599 0 3.105.576 4.295 1.62.111.096.224.19.326.295.104.104.2.214.295.324A6.482 6.482 0 0 1 18.537 12zM7.084 17.534h.001A7.349 7.349 0 0 0 12 19.413a7.35 7.35 0 0 0 5.239-2.174A7.354 7.354 0 0 0 19.412 12a7.364 7.364 0 0 0-1.876-4.916l1.013-1.012A8.777 8.777 0 0 1 20.834 12a8.765 8.765 0 0 1-2.589 6.246A8.764 8.764 0 0 1 12 20.834a8.782 8.782 0 0 1-5.93-2.285l1.014-1.015z" />
-    </svg>
-  )
-}
-function ArcMark(props: { className?: string }) {
-  // The Circle Arc mark: a tall arch whose right leg sweeps into a pointed tail.
-  return (
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.3" strokeLinecap="round" strokeLinejoin="round" aria-hidden {...props}>
-      <path d="M4.8 20.8C4.8 6.8 17.4 6.4 17 18.6c-.12 3.4-3.7 4.2-7 2.2" />
-    </svg>
-  )
-}
-function StellarMark(props: { className?: string }) {
-  return (
-    <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden {...props}>
-      <path d="M12.003 1.716c-1.37 0-2.7.27-3.948.78A10.18 10.18 0 0 0 2.66 7.901a10.136 10.136 0 0 0-.797 3.954c0 .258.01.516.027.775a1.942 1.942 0 0 1-1.055 1.88L0 14.934v1.902l2.463-1.26.072-.032v.005l.77-.39.758-.385.066-.039 14.807-7.56 1.666-.847 3.392-1.732V2.694L17.792 5.86 3.744 13.025l-.104.055-.017-.115a8.286 8.286 0 0 1-.071-1.105c0-2.255.88-4.377 2.474-5.977a8.462 8.462 0 0 1 2.71-1.82 8.513 8.513 0 0 1 3.2-.654h.067a8.41 8.41 0 0 1 4.09 1.055l1.628-.83.126-.066a10.11 10.11 0 0 0-5.845-1.853zM24 7.143 5.047 16.808l-1.666.847L0 19.382v1.902l3.282-1.671 2.91-1.485 14.058-7.153.105-.055.016.115c.05.369.072.743.072 1.11 0 2.255-.88 4.383-2.475 5.978a8.461 8.461 0 0 1-2.71 1.82 8.305 8.305 0 0 1-3.2.654h-.06c-1.441 0-2.86-.369-4.102-1.061l-.066.033-1.683.857c.594.418 1.232.776 1.903 1.062a10.11 10.11 0 0 0 3.947.797 10.09 10.09 0 0 0 7.17-2.975 10.136 10.136 0 0 0 2.969-7.18c0-.259-.005-.523-.027-.781a1.942 1.942 0 0 1 1.055-1.88L24 9.044z" />
-    </svg>
-  )
-}
-function RobinhoodMark(props: { className?: string }) {
-  return (
-    <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden {...props}>
-      <path d="M2.84 24h.53c.096 0 .192-.048.224-.128C7.591 13.696 11.94 8.656 14.67 5.638c.112-.128.064-.225-.096-.225h-4.88a.55.55 0 0 0-.45.225L5.746 9.972c-.514.642-.642 1.236-.642 2.086v4.43c-1.14 3.194-1.862 5.361-2.392 7.32-.032.125.016.192.129.192M20.447.646c-.754-.802-4.157-.834-5.73-.224a3 3 0 0 0-.786.465 41 41 0 0 0-3.323 3.178c-.112.113-.064.225.097.225h5.409c.497 0 .786.289.786.786v6.1c0 .16.128.208.225.064l3.258-4.254c.53-.69.69-.898.835-1.861.192-1.413.08-3.58-.77-4.479m-6.982 16.18 2.231-3.676a.7.7 0 0 0 .064-.29V6.73c0-.16-.112-.225-.224-.097-3.355 3.74-5.971 7.672-8.395 12.407-.06.12.016.225.16.177l5.009-1.54c.565-.174.882-.402 1.155-.852" />
-    </svg>
-  )
-}
-
 type Rail = {
   id: string
-  Mark: (p: { className?: string }) => ReactElement
   name: string
+  /** The rail's own logo, extracted from the brand's artwork into /public/logos. */
+  logo?: string
+  /** Fallback for a brand whose file we do not ship (OKX). */
+  Mark?: (p: { className?: string }) => ReactElement
+  /** The tile behind the mark, in the brand's own presentation. */
+  tileBg: string
+  /** Drives the slide's tint, border and watermark. */
   color: string
   role: string
   detail: string
   status: 'live' | 'next'
-  /** For near-white brand hues (Robin Neon): solid color tile with a dark mark,
-      the way the brand itself presents its logo. */
-  tileDark?: boolean
 }
 
 const RAILS: Rail[] = [
+  /* Every colour and tile below is taken from the brand's own artwork rather than a
+     guess: Circle's gradient mark on its white field, Arc's white arch on the navy to
+     crimson gradient it ships on, Stellar's black glyph on Stellar yellow, Base's blue
+     square, and Robin Neon for Robinhood. OKX is a monochrome brand, so it rides the
+     foreground token and stays correct in both themes. */
   {
-    /* Rail colors are the researched brand hues: Circle keeps the USDC blue, Arc takes
-       Circle's deeper denim blue, OKX and Stellar are black/white monochrome brands (so
-       they ride the foreground token and stay correct in both themes), and Robinhood
-       wears the Robin Neon of its 2025 identity. */
     id: 'circle',
-    Mark: CircleMark,
     name: 'Circle',
-    color: '#2775CA',
+    logo: '/logos/circle-mark.png',
+    tileBg: '#ffffff',
+    color: '#4FBDEA',
     role: 'The settlement dollar, chain-abstracted.',
     detail: 'USDC, Gateway unified balances, gasless Nanopayments and CCTP burn-and-mint, all live on this product today.',
     status: 'live',
   },
   {
     id: 'arc',
-    Mark: ArcMark,
     name: 'Circle Arc',
-    color: '#0B53BF',
+    logo: '/logos/arc-mark.png',
+    tileBg: 'linear-gradient(155deg, #011667 0%, #3B1046 55%, #7B0E25 100%)',
+    color: '#3B1B6E',
     role: 'Where identity and reputation live.',
     detail: 'ERC-8004 passports, KYA attestations, spend vaults and escrow settle here, with sub-second finality and gas paid in USDC.',
     status: 'live',
   },
   {
     id: 'xlayer',
-    Mark: OkxMark,
     name: 'OKX X Layer',
+    Mark: OkxMark,
+    tileBg: 'color-mix(in srgb, var(--foreground) 7%, var(--card))',
     color: 'var(--foreground)',
     role: 'Where trust checks are sold.',
-    detail: 'The Trust Oracle answers per-call over x402 and settles in USD₮0 on mainnet, 120 settlements and counting.',
+    detail: 'The Trust Oracle answers per-call over x402 and settles in USD\u20AE0 on mainnet, 120 settlements and counting.',
     status: 'live',
   },
   {
     id: 'stellar',
-    Mark: StellarMark,
     name: 'Stellar',
-    color: 'var(--foreground)',
+    logo: '/logos/stellar-mark.png',
+    tileBg: '#FFDA00',
+    color: '#FFDA00',
     role: 'First stop of the multichain rollout.',
     detail: 'The same passport and caps over Soroban rails: one chain-agnostic core, one adapter per chain, Stellar is next in line.',
     status: 'next',
   },
   {
+    id: 'base',
+    name: 'Base',
+    logo: '/logos/base-mark.png',
+    tileBg: '#ffffff',
+    color: '#0000FF',
+    role: 'Where the agent economy already trades.',
+    detail: 'A planned adapter for Base, so a passport minted on Arc can be presented, scored and paid against on Base too.',
+    status: 'next',
+  },
+  {
     id: 'robinhood',
-    Mark: RobinhoodMark,
     name: 'Robinhood Chain',
+    logo: '/logos/robinhood-mark.png',
+    tileBg: '#CCFF00',
     color: '#CCFF00',
     role: 'Where retail agents will trade.',
     detail: 'A planned adapter for the chain built around agentic trading, so the guardrails travel with the money there too.',
     status: 'next',
-    tileDark: true,
   },
 ]
 
@@ -209,20 +198,34 @@ export default function BuiltOn() {
                       right edge, so every slide carries its brand without shouting it. */}
                   <div
                     aria-hidden="true"
-                    className="pointer-events-none absolute -right-16 top-1/2 -translate-y-1/2 opacity-[0.05]"
+                    className="pointer-events-none absolute -right-16 top-1/2 grid h-[340px] w-[340px] -translate-y-1/2 place-items-center opacity-[0.06]"
                     style={{ color: r.color }}
                   >
-                    <r.Mark className="h-[340px] w-[340px]" />
+                    {r.logo ? (
+                      <img src={r.logo} alt="" className="max-h-full max-w-full object-contain" />
+                    ) : (
+                      r.Mark && <r.Mark className="h-full w-full" />
+                    )}
                   </div>
+
+                  {/* The tile is the brand's own presentation: Circle's gradient mark on
+                      white, Arc's white arch on its navy-to-crimson field, Stellar black
+                      on Stellar yellow. */}
                   <div
-                    className="relative grid h-24 w-24 place-items-center rounded-3xl border border-border"
-                    style={
-                      r.tileDark
-                        ? { color: '#14150e', background: r.color }
-                        : { color: r.color, background: `color-mix(in srgb, ${r.color} 8%, var(--card))` }
-                    }
+                    className="relative grid h-24 w-24 place-items-center overflow-hidden rounded-3xl border border-border/60 shadow-sm"
+                    style={{ color: r.color, background: r.tileBg }}
                   >
-                    <r.Mark className="h-12 w-12" />
+                    {r.logo ? (
+                      <img
+                        src={r.logo}
+                        alt={`${r.name} logo`}
+                        className="h-12 w-12 object-contain"
+                        loading="lazy"
+                        decoding="async"
+                      />
+                    ) : (
+                      r.Mark && <r.Mark className="h-12 w-12" />
+                    )}
                   </div>
                   <div className="relative">
                     <div className="flex flex-wrap items-center gap-3">
