@@ -86,6 +86,7 @@ import {
 import { nanoPaymentRequirements, settleNano, nanoResource, runNanopayDemo } from './nanopay.js'
 import { runGatewayDemo, gatewayBalance } from './gateway.js'
 import { runCctpDemo } from './cctp.js'
+import { appKitCapabilities, quoteArcSwap, runArcSwapDemo } from './appkit.js'
 import { runAgentRun } from './autopilot.js'
 import { runTrustOracleDogfood } from './trust-oracle.js'
 import { runSessionKeyDemo } from './aa-wallet.js'
@@ -689,6 +690,25 @@ const server = http.createServer(async (req, res) => {
   if (req.method === 'POST' && url.pathname === '/api/arc/nanopay-demo') {
     const body = (await readBody(req).catch(() => null)) as { amountUsd?: number } | null
     sendJson(res, 200, await runNanopayDemo({ amountUsd: cappedDemoUsd(body?.amountUsd) }))
+    return
+  }
+
+  // ── Circle App Kit on Arc ──────────────────────────────────────────────────────
+  //    Read-only: what App Kit can do on Arc, answered from the SDK's own chain table.
+  if (req.method === 'GET' && url.pathname === '/api/arc/appkit') {
+    sendJson(res, 200, await appKitCapabilities())
+    return
+  }
+  //    A real USDC→EURC rate from Circle's service. No key, no write.
+  if (req.method === 'POST' && url.pathname === '/api/arc/appkit-quote') {
+    const body = (await readBody(req).catch(() => null)) as { amountUsd?: number } | null
+    sendJson(res, 200, await quoteArcSwap({ amountUsd: cappedDemoUsd(body?.amountUsd) }))
+    return
+  }
+  //    The write: swap USDC for EURC on Arc, the only testnet App Kit can swap on.
+  if (req.method === 'POST' && url.pathname === '/api/arc/appkit-swap-demo') {
+    const body = (await readBody(req).catch(() => null)) as { amountUsd?: number } | null
+    sendJson(res, 200, await runArcSwapDemo({ amountUsd: cappedDemoUsd(body?.amountUsd) }))
     return
   }
 
