@@ -5,6 +5,7 @@ import { ArrowRight, Bot, Check, Copy, User } from 'lucide-react'
 import { DisplayHeading, Eyebrow, Lede } from '../ui/display'
 import { SectionShell, SectionIntro, reveal } from '../ui/section'
 import { Steps, StepRow } from '../ui/step-row'
+import { OwlMascot } from '../OwlMascot'
 
 /**
  * Onboarding, split by who is reading.
@@ -257,53 +258,80 @@ export default function QuickStart() {
         </div>
       </motion.div>
 
-      <div className="mt-10">
-        <AnimatePresence mode="wait" initial={false}>
-          {mode === 'human' ? (
+      {/* Content on the reading edge; on the right, the mascot plays the doorman and
+          changes face with the door: the soft owl greets a human, the officer sizes up
+          an agent. Decorative, so it drops out below lg. */}
+      <div className="mt-10 lg:grid lg:grid-cols-[minmax(0,1fr)_300px] lg:items-center lg:gap-12">
+        <div>
+          <AnimatePresence mode="wait" initial={false}>
+            {mode === 'human' ? (
+              <motion.div
+                key="human"
+                initial={{ opacity: 0, y: 10 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -8 }}
+                transition={{ duration: 0.28 }}
+              >
+                <Steps columns={3}>
+                  <StepRow index={1} title="Register">
+                    Create your on-chain agent identity via ERC-8004. One signature, no gas, no
+                    signup.
+                  </StepRow>
+                  <StepRow index={2} title="KYA Verify">
+                    Prove the agent controls its wallet. No personal data exposed, attested
+                    on-chain.
+                  </StepRow>
+                  <StepRow index={3} title="Go Live">
+                    Set the limits, assign the wallet. The agent pays and gets paid inside the
+                    line you drew.
+                  </StepRow>
+                </Steps>
+                <div className="mt-10">
+                  <Link
+                    to="/signup"
+                    className="inline-flex items-center gap-2 rounded-full bg-accent px-6 py-3 text-sm font-semibold text-white transition-transform hover:scale-[1.03]"
+                    style={{ boxShadow: '0 10px 34px rgba(115,66,226,0.34)' }}
+                  >
+                    Get your Agent ID <ArrowRight size={16} />
+                  </Link>
+                </div>
+              </motion.div>
+            ) : (
+              <motion.div
+                key="agent"
+                initial={{ opacity: 0, y: 10 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -8 }}
+                transition={{ duration: 0.28 }}
+                className="max-w-[780px]"
+              >
+                <AgentSteps />
+              </motion.div>
+            )}
+          </AnimatePresence>
+        </div>
+
+        <div className="hidden lg:block" aria-hidden="true">
+          <AnimatePresence mode="wait" initial={false}>
             <motion.div
-              key="human"
-              initial={{ opacity: 0, y: 10 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: -8 }}
-              transition={{ duration: 0.28 }}
+              key={mode}
+              initial={{ opacity: 0, y: 18, rotate: mode === 'agent' ? -4 : 4, scale: 0.95 }}
+              animate={{ opacity: 1, y: 0, rotate: 0, scale: 1 }}
+              exit={{ opacity: 0, y: -12, scale: 0.96 }}
+              transition={{ type: 'spring', stiffness: 260, damping: 22 }}
+              className="text-center"
             >
-              <Steps columns={3}>
-                <StepRow index={1} title="Register">
-                  Create your on-chain agent identity via ERC-8004. One signature, no gas, no
-                  signup.
-                </StepRow>
-                <StepRow index={2} title="KYA Verify">
-                  Prove the agent controls its wallet. No personal data exposed, attested
-                  on-chain.
-                </StepRow>
-                <StepRow index={3} title="Go Live">
-                  Set the limits, assign the wallet. The agent pays and gets paid inside the
-                  line you drew.
-                </StepRow>
-              </Steps>
-              <div className="mt-10">
-                <Link
-                  to="/signup"
-                  className="inline-flex items-center gap-2 rounded-full bg-accent px-6 py-3 text-sm font-semibold text-white transition-transform hover:scale-[1.03]"
-                  style={{ boxShadow: '0 10px 34px rgba(115,66,226,0.34)' }}
-                >
-                  Get your Agent ID <ArrowRight size={16} />
-                </Link>
-              </div>
+              <OwlMascot
+                variant={mode === 'human' ? 'soft' : 'officer'}
+                width={300}
+                className="mx-auto w-[280px] max-w-full"
+              />
+              <p className="mt-1 font-mono text-[11px] tracking-[0.12em] text-foreground/35">
+                {mode === 'human' ? 'welcome in' : 'papers, please'}
+              </p>
             </motion.div>
-          ) : (
-            <motion.div
-              key="agent"
-              initial={{ opacity: 0, y: 10 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: -8 }}
-              transition={{ duration: 0.28 }}
-              className="max-w-[780px]"
-            >
-              <AgentSteps />
-            </motion.div>
-          )}
-        </AnimatePresence>
+          </AnimatePresence>
+        </div>
       </div>
     </SectionShell>
   )
