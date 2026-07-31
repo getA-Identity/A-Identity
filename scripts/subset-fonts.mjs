@@ -17,3 +17,15 @@
  * accented vowels) are deliberately absent here: they were never in latin-ext.
  */
 export const LATIN_EXT_GLYPHS = 'ĞğİŞş₮₺'
+
+/**
+ * The heading face gets the same treatment, and it matters more: it is the font
+ * the h1 is set in, the h1 is the LCP element, and a text LCP is recorded when
+ * the final font paints. Every kilobyte of it sits directly on the critical
+ * path. 45,628 bytes to 17,064.
+ *
+ * Its glyph set is every printable character the prerendered pages render, plus
+ * the full Turkish alphabet, rather than a headings-only scrape: headings are
+ * ordinary prose and the next one will contain a character the last one did not.
+ */
+export const HEADING_GLYPHS = 'every printable character on the site, plus ĞğİıŞşÇçÖöÜü'
