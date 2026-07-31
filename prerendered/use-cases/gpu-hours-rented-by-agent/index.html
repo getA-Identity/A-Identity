@@ -219,10 +219,14 @@
     <!-- The console still is the largest element on the landing page, so it is the
       LCP element. Without this the browser cannot discover it until the CSS has
       parsed and layout has run, which puts a round trip between first paint and
-      the thing being measured. Only the light still is preloaded: it is the
-      default theme, and preloading both would spend the budget twice to use half
-      of it. -->
-    <link rel="preload" as="image" href="/console-hero-light.webp" type="image/webp" fetchpriority="high">
+      the thing being measured.
+
+      Both themes are listed, each behind its own media query, so a browser
+      fetches exactly one. Preloading only the light one made the score bimodal:
+      fast when the visitor preferred light, and slow when they preferred dark
+      and the still that was actually on screen had been left to load lazily. -->
+    <link rel="preload" as="image" href="/console-hero-light.webp" type="image/webp" fetchpriority="high" media="(prefers-color-scheme: light)">
+    <link rel="preload" as="image" href="/console-hero.webp" type="image/webp" fetchpriority="high" media="(prefers-color-scheme: dark)">
     <link rel="preload" as="font" type="font/woff2" href="/fonts/helvetica-now-display-bold.woff2" crossorigin="">
     <link rel="preload" as="font" type="font/woff2" href="/fonts/inter-latin.woff2" crossorigin="">
     <script type="module" crossorigin="" src="/assets/index-ClFYk3mr.js"></script>
