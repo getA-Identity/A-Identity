@@ -184,7 +184,7 @@ export default function Hero() {
             width={1280}
             height={484}
             loading={theme === 'dark' ? 'eager' : 'lazy'}
-            fetchPriority={theme === 'dark' ? 'auto' : 'low'}
+            fetchPriority={theme === 'dark' ? 'high' : 'low'}
             decoding="async"
             className={`block w-full transition-opacity duration-700 ${theme === 'dark' ? 'opacity-100' : 'opacity-0'}`}
           />
@@ -195,7 +195,7 @@ export default function Hero() {
             width={1280}
             height={484}
             loading={theme === 'dark' ? 'lazy' : 'eager'}
-            fetchPriority={theme === 'dark' ? 'low' : 'auto'}
+            fetchPriority={theme === 'dark' ? 'low' : 'high'}
             decoding="async"
             className={`absolute inset-0 block w-full transition-opacity duration-700 ${theme === 'dark' ? 'opacity-0' : 'opacity-100'}`}
           />
