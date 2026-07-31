@@ -183,8 +183,8 @@ export default function Hero() {
             alt="The A-Identity agent console: reputation, wallet balance, on-chain settlements and the daily cap for the showcase agent Meridian."
             width={1280}
             height={484}
-            loading={theme === 'dark' ? 'eager' : 'lazy'}
-            fetchPriority={theme === 'dark' ? 'high' : 'low'}
+            loading="lazy"
+            fetchPriority="low"
             decoding="async"
             className={`block w-full transition-opacity duration-700 ${theme === 'dark' ? 'opacity-100' : 'opacity-0'}`}
           />
@@ -194,8 +194,8 @@ export default function Hero() {
             aria-hidden="true"
             width={1280}
             height={484}
-            loading={theme === 'dark' ? 'lazy' : 'eager'}
-            fetchPriority={theme === 'dark' ? 'low' : 'high'}
+            loading="lazy"
+            fetchPriority="low"
             decoding="async"
             className={`absolute inset-0 block w-full transition-opacity duration-700 ${theme === 'dark' ? 'opacity-0' : 'opacity-100'}`}
           />
