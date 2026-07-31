@@ -13,6 +13,8 @@ import { apiFetch, readJson } from '../../lib/api'
 import { fetchPlatformAgents, subscribePlatformAgents } from '../../lib/platformAgents'
 import { pickPrimaryAgent } from '../../lib/pickAgent'
 import { CircleWalletPanel, TreasuryPanel } from '../../components/app/WalletPanels'
+import AgentSelect from '../../components/app/AgentSelect'
+import { useSelectedAgent } from '../../store/agent'
 import { Skeleton } from '../../components/ui/skeleton'
 const FAUCET = 'https://faucet.circle.com'
 
@@ -35,7 +37,8 @@ const short = (a: string) => (a && a.length > 16 ? `${a.slice(0, 10)}...${a.slic
 
 export default function Wallet() {
   const [agents, setAgents] = useState<Agent[]>([])
-  const [agentId, setAgentId] = useState('')
+  const agentId = useSelectedAgent((s) => s.agentId)
+  const syncRoster = useSelectedAgent((s) => s.syncRoster)
   const [balance, setBalance] = useState<Balance | null>(null)
   const [assets, setAssets] = useState<AssetBalances | null>(null)
   const [txs, setTxs] = useState<Instruction[]>([])
@@ -49,14 +52,14 @@ export default function Wallet() {
     try {
       const data = await fetchPlatformAgents<Agent>({ force })
       setAgents(data.agents)
-      if (data.agents.length) setAgentId((cur) => cur || pickPrimaryAgent(data.agents)?.id || data.agents[0].id)
+      syncRoster(data.agents.map((a) => a.id), pickPrimaryAgent(data.agents)?.id)
       setError(null)
     } catch {
       setError(BACKEND_UNREACHABLE)
     } finally {
       setLoaded(true)
     }
-  }, [])
+  }, [syncRoster])
 
   useEffect(() => {
     loadAgents()
@@ -137,22 +140,7 @@ export default function Wallet() {
 
       {agent && (
         <>
-          {agents.length > 1 && (
-            <div className="mt-5">
-              <label className="text-xs font-semibold text-foreground/50">Agent</label>
-              <select
-                value={agentId}
-                onChange={(e) => setAgentId(e.target.value)}
-                className="mt-1 w-full rounded-xl border border-foreground/10 bg-card px-3 py-2.5 text-sm outline-none focus:border-accent"
-              >
-                {agents.map((a) => (
-                  <option key={a.id} value={a.id}>
-                    {a.name}
-                  </option>
-                ))}
-              </select>
-            </div>
-          )}
+          <AgentSelect agents={agents} />
 
           {/* Live balance hero */}
           <div
@@ -333,7 +321,7 @@ export default function Wallet() {
           </ul>
           )}
           {txsLoaded && txs.length === 0 && (
-            <div className="mt-3 rounded-2xl border border-dashed border-foreground/15 bg-white/50 p-8 text-center text-sm text-foreground/50">
+            <div className="mt-3 rounded-2xl border border-dashed border-foreground/15 bg-card p-8 text-center text-sm text-foreground/50">
               No payments yet. Make one in Settlements.
             </div>
           )}

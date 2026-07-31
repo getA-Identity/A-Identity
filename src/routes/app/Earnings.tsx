@@ -6,6 +6,8 @@ import { apiFetch, readJson, explainError } from '../../lib/api'
 import { fetchPlatformAgents } from '../../lib/platformAgents'
 import { pickPrimaryAgent } from '../../lib/pickAgent'
 import { authHeaders } from '../../store/auth'
+import { useSelectedAgent } from '../../store/agent'
+import AgentSelect from '../../components/app/AgentSelect'
 import { Skeleton } from '../../components/ui/skeleton'
 
 /**
@@ -29,7 +31,8 @@ const jsonHeaders = () => ({ 'Content-Type': 'application/json', ...authHeaders(
 
 export default function Earnings() {
   const [agents, setAgents] = useState<Agent[]>([])
-  const [agentId, setAgentId] = useState('')
+  const agentId = useSelectedAgent((s) => s.agentId)
+  const syncRoster = useSelectedAgent((s) => s.syncRoster)
   const [jobs, setJobs] = useState<Task[]>([])
   const [balance, setBalance] = useState<string | null>(null)
   const [gw, setGw] = useState<{ available: number; pending: number } | null>(null)
@@ -44,14 +47,14 @@ export default function Earnings() {
     try {
       const data = await fetchPlatformAgents<Agent>({})
       setAgents(data.agents)
-      if (data.agents.length) setAgentId((cur) => cur || pickPrimaryAgent(data.agents)?.id || data.agents[0].id)
+      syncRoster(data.agents.map((a) => a.id), pickPrimaryAgent(data.agents)?.id)
       setError(null)
     } catch {
       setError(BACKEND_UNREACHABLE)
     } finally {
       setLoaded(true)
     }
-  }, [])
+  }, [syncRoster])
 
   const loadEarnings = useCallback(async (id: string, addr: string | null) => {
     try {
@@ -152,18 +155,7 @@ export default function Earnings() {
         <>
           {/* Agent selector */}
           <div className="mt-6 flex flex-wrap items-center gap-2">
-            <span className="text-xs font-semibold text-foreground/45">Agent</span>
-            <select
-              value={agentId}
-              onChange={(e) => setAgentId(e.target.value)}
-              className="rounded-full border border-foreground/15 bg-background px-3 py-1.5 text-sm text-foreground"
-            >
-              {agents.map((a) => (
-                <option key={a.id} value={a.id}>
-                  {a.name}
-                </option>
-              ))}
-            </select>
+            <AgentSelect agents={agents} inline />
             <button
               type="button"
               onClick={() => agentId && loadEarnings(agentId, agent?.walletAddress ?? null)}

@@ -1,23 +1,53 @@
-import { useCallback, useEffect, useState } from 'react'
+import { lazy, Suspense, useCallback, useEffect, useState } from 'react'
 import { ArrowUpRight, CheckCircle2, Clock, ExternalLink, KeyRound, Link2, Receipt, Send, ShieldQuestion, Wallet } from 'lucide-react'
 import { authHeaders } from '../../store/auth'
-import AutopilotPanel from '../../components/app/AutopilotPanel'
-import TrustOraclePanel from '../../components/app/TrustOraclePanel'
-import SessionKeyPanel from '../../components/app/SessionKeyPanel'
-import BatchPanel from '../../components/app/BatchPanel'
-import X402Panel from '../../components/app/X402Panel'
-import NanopayPanel from '../../components/app/NanopayPanel'
-import EscrowPanel from '../../components/app/EscrowPanel'
-import GatewayPanel from '../../components/app/GatewayPanel'
-import CctpPanel from '../../components/app/CctpPanel'
-import AppKitPanel from '../../components/app/AppKitPanel'
-import GasPanel from '../../components/app/GasPanel'
 
 import { BACKEND_UNREACHABLE } from '../../lib/mcpBase'
 import { apiFetch, readJson, explainError } from '../../lib/api'
 import { fetchPlatformAgents } from '../../lib/platformAgents'
 import { pickPrimaryAgent } from '../../lib/pickAgent'
+import { useSelectedAgent } from '../../store/agent'
+import AgentSelect from '../../components/app/AgentSelect'
 import { Skeleton } from '../../components/ui/skeleton'
+
+/* The rails below the payment queue used to render as one 11-panel column: every panel
+   mounted at once, each firing its own request, and the page you actually came for was
+   buried. They are grouped into tabs and code-split, so only the panels you open load. */
+const AutopilotPanel = lazy(() => import('../../components/app/AutopilotPanel'))
+const SessionKeyPanel = lazy(() => import('../../components/app/SessionKeyPanel'))
+const BatchPanel = lazy(() => import('../../components/app/BatchPanel'))
+const X402Panel = lazy(() => import('../../components/app/X402Panel'))
+const NanopayPanel = lazy(() => import('../../components/app/NanopayPanel'))
+const EscrowPanel = lazy(() => import('../../components/app/EscrowPanel'))
+const TrustOraclePanel = lazy(() => import('../../components/app/TrustOraclePanel'))
+const GatewayPanel = lazy(() => import('../../components/app/GatewayPanel'))
+const CctpPanel = lazy(() => import('../../components/app/CctpPanel'))
+const AppKitPanel = lazy(() => import('../../components/app/AppKitPanel'))
+const GasPanel = lazy(() => import('../../components/app/GasPanel'))
+
+type Tab = 'payments' | 'automation' | 'commerce' | 'rails'
+
+const TABS: { id: Tab; label: string; hint: string }[] = [
+  { id: 'payments', label: 'Payments', hint: 'Create a payment and work the approval queue.' },
+  { id: 'automation', label: 'Automation', hint: 'Let the agent act on its own within the limits you set.' },
+  { id: 'commerce', label: 'Agent commerce', hint: 'Getting paid by other agents, and paying them safely.' },
+  { id: 'rails', label: 'Rails', hint: 'Where the money can move, and what it costs to move it.' },
+]
+
+/** Placeholder while a tab's code-split panels arrive. */
+function PanelFallback() {
+  return (
+    <div className="mt-4 space-y-4">
+      {[0, 1].map((i) => (
+        <div key={i} className="rounded-2xl border border-foreground/10 bg-card p-6">
+          <Skeleton className="h-4 w-40" />
+          <Skeleton className="mt-3 h-3 w-full" />
+          <Skeleton className="mt-2 h-3 w-2/3" />
+        </div>
+      ))}
+    </div>
+  )
+}
 
 type Status =
   | 'auto_approved'
@@ -53,27 +83,29 @@ const short = (a: string) => (a.length > 14 ? `${a.slice(0, 8)}...${a.slice(-4)}
 
 export default function Settlements() {
   const [agents, setAgents] = useState<Agent[]>([])
-  const [agentId, setAgentId] = useState('')
+  const agentId = useSelectedAgent((s) => s.agentId)
+  const syncRoster = useSelectedAgent((s) => s.syncRoster)
   const [items, setItems] = useState<Instruction[]>([])
   const [amount, setAmount] = useState('0.01')
   const [payee, setPayee] = useState('')
   const [busy, setBusy] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
+  const [tab, setTab] = useState<Tab>('payments')
 
   useEffect(() => {
     ;(async () => {
       try {
         const data = await fetchPlatformAgents<Agent>()
         setAgents(data.agents)
-        if (data.agents.length) setAgentId((cur) => cur || pickPrimaryAgent(data.agents)?.id || data.agents[0].id)
-        else setLoading(false)
+        syncRoster(data.agents.map((a) => a.id), pickPrimaryAgent(data.agents)?.id)
+        if (!data.agents.length) setLoading(false)
       } catch {
         setError(BACKEND_UNREACHABLE)
         setLoading(false)
       }
     })()
-  }, [])
+  }, [syncRoster])
 
   // `isActive` guards setState so a late response for a previously-selected agent can't
   // overwrite the settlements now shown for a different one.
@@ -184,25 +216,34 @@ export default function Settlements() {
         </div>
       )}
 
-      {agents.length > 0 && (
+      <AgentSelect agents={agents} />
+
+      {/* Surface tabs. The payment queue is the page; the rails that feed it (automation,
+          agent-to-agent commerce, cross-chain) each get their own tab instead of stacking
+          eleven panels under the list. */}
+      <div className="mt-5 flex flex-wrap gap-1 rounded-xl border border-foreground/10 bg-card p-1">
+        {TABS.map(({ id, label }) => (
+          <button
+            key={id}
+            type="button"
+            onClick={() => setTab(id)}
+            aria-current={tab === id}
+            className={`rounded-lg px-3.5 py-2 text-sm font-semibold transition-colors ${
+              tab === id ? 'bg-accent text-white' : 'text-foreground/55 hover:text-foreground'
+            }`}
+          >
+            {label}
+          </button>
+        ))}
+      </div>
+      <p className="mt-2 text-xs text-foreground/45">{TABS.find((t) => t.id === tab)?.hint}</p>
+
+      {tab === 'payments' && agents.length > 0 && (
         <>
           {/* New payment */}
-          <div className="mt-6 rounded-2xl border border-foreground/10 bg-card p-6">
+          <div className="mt-4 rounded-2xl border border-foreground/10 bg-card p-6">
             <h3 className="font-semibold text-foreground">New payment</h3>
             <div className="mt-4 grid gap-3 sm:grid-cols-[1fr_auto]">
-              {agents.length > 1 && (
-                <select
-                  value={agentId}
-                  onChange={(e) => setAgentId(e.target.value)}
-                  className="rounded-xl border border-foreground/10 bg-background/40 px-3 py-2.5 text-sm outline-none focus:border-accent sm:col-span-2"
-                >
-                  {agents.map((a) => (
-                    <option key={a.id} value={a.id}>
-                      {a.name}
-                    </option>
-                  ))}
-                </select>
-              )}
               <input
                 value={payee}
                 onChange={(e) => setPayee(e.target.value)}
@@ -373,24 +414,40 @@ export default function Settlements() {
           </ul>
 
           {!loading && items.length === 0 && (
-            <div className="mt-4 rounded-2xl border border-dashed border-foreground/15 bg-white/50 p-8 text-center text-sm text-foreground/50">
+            <div className="mt-4 rounded-2xl border border-dashed border-foreground/15 bg-card p-8 text-center text-sm text-foreground/50">
               No payments yet. Create one above to see the policy engine and on-chain settlement.
             </div>
           )}
         </>
       )}
 
-      <AutopilotPanel />
-      <TrustOraclePanel />
-      <SessionKeyPanel />
-      <BatchPanel />
-      <X402Panel />
-      <NanopayPanel />
-      <EscrowPanel />
-      <GatewayPanel />
-      <CctpPanel />
-      <AppKitPanel />
-      <GasPanel />
+      {tab !== 'payments' && (
+        <Suspense fallback={<PanelFallback />}>
+          {tab === 'automation' && (
+            <>
+              <AutopilotPanel />
+              <SessionKeyPanel />
+              <BatchPanel />
+            </>
+          )}
+          {tab === 'commerce' && (
+            <>
+              <X402Panel />
+              <NanopayPanel />
+              <EscrowPanel />
+              <TrustOraclePanel />
+            </>
+          )}
+          {tab === 'rails' && (
+            <>
+              <GatewayPanel />
+              <CctpPanel />
+              <AppKitPanel />
+              <GasPanel />
+            </>
+          )}
+        </Suspense>
+      )}
     </div>
   )
 }

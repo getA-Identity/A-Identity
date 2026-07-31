@@ -14,6 +14,8 @@ import { useAgentReputation, useMcpHealth, useResolveAgent } from '../../hooks/u
 import { pickPrimaryAgent } from '../../lib/pickAgent'
 import { fetchPlatformAgents, subscribePlatformAgents } from '../../lib/platformAgents'
 import { apiFetch } from '../../lib/api'
+import { useSelectedAgent } from '../../store/agent'
+import AgentSelect from '../../components/app/AgentSelect'
 import { Skeleton } from '../../components/ui/skeleton'
 import ReputationCard from '../../components/app/agent/ReputationCard'
 import RegisterForm from '../../components/app/agent/RegisterForm'
@@ -52,7 +54,9 @@ export default function AgentId() {
   // The user's first real agent (from the platform), when available. Drives the
   // identity card below; falls back to the live example agent (#849980) only when there are none.
   const [agents, setAgents] = useState<RealAgent[]>([])
-  const [selectedId, setSelectedId] = useState('')
+  const selectedId = useSelectedAgent((s) => s.agentId)
+  const setSelectedId = useSelectedAgent((s) => s.setAgentId)
+  const syncRoster = useSelectedAgent((s) => s.syncRoster)
   const [realAgent, setRealAgent] = useState<RealAgent | null>(null)
   const [realChecked, setRealChecked] = useState(false)
   const [realRep, setRealRep] = useState<{
@@ -70,15 +74,14 @@ export default function AgentId() {
       if (opts.select && list.agents.some((a) => a.id === opts.select)) {
         setSelectedId(opts.select)
       } else {
-        const first = pickPrimaryAgent(list.agents)
-        if (first) setSelectedId((cur) => cur || first.id)
+        syncRoster(list.agents.map((a) => a.id), pickPrimaryAgent(list.agents)?.id)
       }
     } catch {
       /* keep the fallbacks */
     } finally {
       setRealChecked(true)
     }
-  }, [])
+  }, [setSelectedId, syncRoster])
 
   useEffect(() => {
     loadAgents()
@@ -169,22 +172,7 @@ export default function AgentId() {
         </div>
       </div>
 
-      {agents.length > 1 && (
-        <div className="mt-5">
-          <label className="text-xs font-semibold text-foreground/50">Agent</label>
-          <select
-            value={selectedId}
-            onChange={(e) => setSelectedId(e.target.value)}
-            className="mt-1 w-full rounded-xl border border-foreground/10 bg-card px-3 py-2.5 text-sm outline-none focus:border-accent"
-          >
-            {agents.map((a) => (
-              <option key={a.id} value={a.id}>
-                {a.name}
-              </option>
-            ))}
-          </select>
-        </div>
-      )}
+      <AgentSelect agents={agents} />
 
       {/* Sample notice: no real agent yet → the card below is illustrative, not yours. */}
       {isSample && (

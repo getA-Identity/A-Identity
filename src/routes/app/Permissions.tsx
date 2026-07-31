@@ -16,7 +16,11 @@ import SpendPermissions from '../../components/app/SpendPermissions'
 import { BACKEND_UNREACHABLE } from '../../lib/mcpBase'
 import { apiFetch, readJson, explainError } from '../../lib/api'
 import { fetchPlatformAgents } from '../../lib/platformAgents'
+import { pickPrimaryAgent } from '../../lib/pickAgent'
+import { useSelectedAgent } from '../../store/agent'
+import AgentSelect from '../../components/app/AgentSelect'
 import { Skeleton } from '../../components/ui/skeleton'
+import { NumberField } from '../../components/ui/number-field'
 import PayeeAdder from '../../components/app/permissions/PayeeAdder'
 import { Row } from '../../components/app/permissions/ToggleRow'
 import PolicyTester from '../../components/app/permissions/PolicyTester'
@@ -62,7 +66,8 @@ export default function Permissions() {
 
   const [tab, setTab] = useState<'payments' | 'trading' | 'spend' | 'audit'>('payments')
   const [agents, setAgents] = useState<Agent[]>([])
-  const [agentId, setAgentId] = useState('')
+  const agentId = useSelectedAgent((s) => s.agentId)
+  const syncRoster = useSelectedAgent((s) => s.syncRoster)
   const [policy, setPolicy] = useState<Policy | null>(null)
   const [draft, setDraft] = useState<Permissions | null>(null)
   const [loading, setLoading] = useState(true)
@@ -83,14 +88,14 @@ export default function Permissions() {
       try {
         const data = await fetchPlatformAgents<Agent>()
         setAgents(data.agents)
-        if (data.agents.length) setAgentId((cur) => cur || data.agents[0].id)
-        else setLoading(false)
+        syncRoster(data.agents.map((a) => a.id), pickPrimaryAgent(data.agents)?.id)
+        if (!data.agents.length) setLoading(false)
       } catch {
         setError(BACKEND_UNREACHABLE)
         setLoading(false)
       }
     })()
-  }, [])
+  }, [syncRoster])
 
   // `isActive` guards setState so a late policy response for a previously-selected agent
   // can't overwrite the caps/limits now shown for a different one.
@@ -231,22 +236,7 @@ export default function Permissions() {
       {policy && draft && (
         <>
           {/* Agent selector */}
-          {agents.length > 1 && (
-            <div className="mt-5">
-              <label className="text-xs font-semibold text-foreground/50">Agent</label>
-              <select
-                value={agentId}
-                onChange={(e) => setAgentId(e.target.value)}
-                className="mt-1 w-full rounded-xl border border-foreground/10 bg-card px-3 py-2.5 text-sm outline-none focus:border-accent"
-              >
-                {agents.map((a) => (
-                  <option key={a.id} value={a.id}>
-                    {a.name}
-                  </option>
-                ))}
-              </select>
-            </div>
-          )}
+          <AgentSelect agents={agents} />
 
           {/* Surface tabs. Payments is the USDC policy on Arc; Trading is the brokerage
               action policy. They are separate on purpose: the two govern different
@@ -310,25 +300,22 @@ export default function Permissions() {
             <h3 className="mb-4 font-semibold text-foreground">Spending limits</h3>
             <div className="grid gap-4 sm:grid-cols-2">
               <div>
-                <label className="text-xs font-semibold text-foreground/50">Daily cap (USD)</label>
-                <input
-                  type="number"
-                  min="0"
+                <label htmlFor="daily-cap" className="text-xs font-semibold text-foreground/50">Daily cap (USD)</label>
+                <NumberField
+                  id="daily-cap"
                   value={draft.dailyCapUsd}
-                  onChange={(e) => set('dailyCapUsd', Number(e.target.value) || 0)}
-                  className="mt-1 w-full rounded-xl border border-foreground/10 bg-background/40 px-3 py-2.5 text-sm outline-none focus:border-accent"
+                  onChange={(n) => set('dailyCapUsd', n)}
+                  className="mt-1"
                 />
                 <p className="mt-1 text-[11px] text-foreground/45">Total the agent may commit per day. Resets 00:00 UTC.</p>
               </div>
               <div>
-                <label className="text-xs font-semibold text-foreground/50">Auto-approve under (USD)</label>
-                <input
-                  type="number"
-                  min="0"
-                  step="0.1"
+                <label htmlFor="auto-approve" className="text-xs font-semibold text-foreground/50">Auto-approve under (USD)</label>
+                <NumberField
+                  id="auto-approve"
                   value={draft.autoApproveUnderUsd}
-                  onChange={(e) => set('autoApproveUnderUsd', Number(e.target.value) || 0)}
-                  className="mt-1 w-full rounded-xl border border-foreground/10 bg-background/40 px-3 py-2.5 text-sm outline-none focus:border-accent"
+                  onChange={(n) => set('autoApproveUnderUsd', n)}
+                  className="mt-1"
                 />
                 <p className="mt-1 text-[11px] text-foreground/45">Payments below this settle without asking you.</p>
               </div>

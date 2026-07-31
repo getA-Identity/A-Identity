@@ -15,6 +15,7 @@ import { AlertTriangle, Check, Clock, Save, ShieldCheck, TrendingUp } from 'luci
 import { authHeaders } from '../../store/auth'
 import { apiFetch, readJson, explainError } from '../../lib/api'
 import { Skeleton } from '../ui/skeleton'
+import { NumberField } from '../ui/number-field'
 
 type TradePolicy = {
   allowSymbols: string[]
@@ -200,37 +201,34 @@ export default function TradingPermissions({ agentId }: { agentId: string }) {
         <h3 className="mb-4 font-semibold text-foreground">Limits</h3>
         <div className="grid gap-4 sm:grid-cols-3">
           <div>
-            <label className={label}>Per-action cap (USD)</label>
-            <input
-              type="number"
-              min="0"
+            <label htmlFor="per-action-cap" className={label}>Per-action cap (USD)</label>
+            <NumberField
+              id="per-action-cap"
               value={draft.perActionCapUsd}
-              onChange={(e) => set('perActionCapUsd', Number(e.target.value) || 0)}
-              className={input}
+              onChange={(n) => set('perActionCapUsd', n)}
+              className="mt-1"
             />
             <p className={hint}>The most a single action may be worth.</p>
           </div>
           <div>
-            <label className={label}>Daily cap (USD)</label>
-            <input
-              type="number"
-              min="0"
+            <label htmlFor="trading-daily-cap" className={label}>Daily cap (USD)</label>
+            <NumberField
+              id="trading-daily-cap"
               value={draft.dailyCapUsd}
-              onChange={(e) => set('dailyCapUsd', Number(e.target.value) || 0)}
-              className={input}
+              onChange={(n) => set('dailyCapUsd', n)}
+              className="mt-1"
             />
             <p className={hint}>
               Total across the day. This is what stops many small actions adding up past the per-action cap.
             </p>
           </div>
           <div>
-            <label className={label}>Human approval above (USD)</label>
-            <input
-              type="number"
-              min="0"
+            <label htmlFor="human-approval-above" className={label}>Human approval above (USD)</label>
+            <NumberField
+              id="human-approval-above"
               value={draft.humanApprovalAboveUsd}
-              onChange={(e) => set('humanApprovalAboveUsd', Number(e.target.value) || 0)}
-              className={input}
+              onChange={(n) => set('humanApprovalAboveUsd', n)}
+              className="mt-1"
             />
             <p className={hint}>At or above this, the action waits for you instead of being refused.</p>
           </div>
@@ -306,14 +304,13 @@ export default function TradingPermissions({ agentId }: { agentId: string }) {
         </div>
 
         <div className="py-3">
-          <label className={label}>Max concentration in one symbol (%)</label>
-          <input
-            type="number"
-            min="0"
-            max="100"
+          <label htmlFor="max-concentration" className={label}>Max concentration in one symbol (%)</label>
+          <NumberField
+            id="max-concentration"
+            max={100}
             value={draft.trade.maxConcentrationPct}
-            onChange={(e) => setTrade('maxConcentrationPct', Math.min(100, Math.max(0, Number(e.target.value) || 0)))}
-            className={`${input} sm:max-w-[220px]`}
+            onChange={(n) => setTrade('maxConcentrationPct', n)}
+            className="mt-1 sm:max-w-[220px]"
           />
           <p className={hint}>
             Checked on the position AFTER a buy. 100 means no limit. Sells are never blocked by this, since they

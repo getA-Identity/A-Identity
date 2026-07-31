@@ -23,18 +23,31 @@ export function Row({
         <div className={`text-sm font-medium ${danger ? 'text-red-600' : 'text-foreground'}`}>{label}</div>
         <div className="mt-0.5 text-xs text-foreground/50">{desc}</div>
       </div>
-      <Toggle on={on} danger={danger} onChange={onChange} />
+      <Toggle on={on} danger={danger} onChange={onChange} label={label} />
     </li>
   )
 }
 
-export function Toggle({ on, danger, onChange }: { on: boolean; danger?: boolean; onChange: () => void }) {
+/** `label` is the switch's accessible name: the control is icon-only, so without it a
+ *  screen reader announces "switch, checked" and never says what was switched. */
+export function Toggle({
+  on,
+  danger,
+  onChange,
+  label,
+}: {
+  on: boolean
+  danger?: boolean
+  onChange: () => void
+  label: string
+}) {
   const activeColor = danger ? 'bg-red-500' : 'bg-accent'
   return (
     <button
       type="button"
       role="switch"
       aria-checked={on}
+      aria-label={label}
       onClick={onChange}
       className={`relative h-6 w-11 shrink-0 rounded-full transition-colors ${on ? activeColor : 'bg-foreground/20'}`}
     >

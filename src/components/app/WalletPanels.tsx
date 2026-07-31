@@ -280,7 +280,7 @@ export function TreasuryPanel({ agentId }: { agentId: string }) {
   const money = (n?: number) => `$${(n ?? 0).toFixed(2)}`
 
   return (
-    <section className="mt-4 overflow-hidden rounded-2xl border border-emerald-200 dark:border-emerald-500/25/70 bg-gradient-to-b from-emerald-50/50 to-card p-6 shadow-[0_1px_3px_rgba(16,24,40,0.04)] sm:p-7">
+    <section className="mt-4 overflow-hidden rounded-2xl border border-emerald-200/70 dark:border-emerald-500/25 bg-gradient-to-b from-emerald-50/50 dark:from-emerald-500/[0.06] to-card p-6 shadow-[0_1px_3px_rgba(16,24,40,0.04)] sm:p-7">
       <div className="flex items-start justify-between gap-3">
         <div className="flex items-center gap-3">
           <div className="grid h-9 w-9 place-items-center rounded-xl bg-emerald-600 text-white">
@@ -346,7 +346,7 @@ export function TreasuryPanel({ agentId }: { agentId: string }) {
       ) : (
         <div className="mt-5 space-y-5">
           {/* Plain 3-step explainer, so the panel is self-documenting for a first-time user. */}
-          <ol className="grid gap-2 rounded-2xl border border-emerald-200 dark:border-emerald-500/25/60 bg-white/60 p-3 text-[11px] leading-relaxed text-foreground/60 sm:grid-cols-3">
+          <ol className="grid gap-2 rounded-2xl border border-emerald-200/60 dark:border-emerald-500/25 bg-card/60 p-3 text-[11px] leading-relaxed text-foreground/60 sm:grid-cols-3">
             <li><span className="font-semibold text-foreground/75">1. Set a cap.</span> How much idle USDC/EURC to keep liquid for spending.</li>
             <li><span className="font-semibold text-foreground/75">2. Preview.</span> Anything above the cap is "deployable" and its projected yield is shown.</li>
             <li><span className="font-semibold text-foreground/75">3. Authorize.</span> You approve; the surplus earmarks into USYC. Nothing moves on its own.</li>

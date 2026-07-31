@@ -15,6 +15,7 @@ import { AlertTriangle, Check, CreditCard, Plus, Save, ShieldCheck, X } from 'lu
 import { authHeaders } from '../../store/auth'
 import { apiFetch, readJson, explainError } from '../../lib/api'
 import { Skeleton } from '../ui/skeleton'
+import { NumberField } from '../ui/number-field'
 
 type SpendPolicy = {
   merchantAllow: string[]
@@ -80,17 +81,15 @@ function UsdMapEditor({
             className={`${input} mt-0 flex-1`}
             aria-label={keyLabel}
           />
-          <input
-            type="number"
-            min="0"
+          <NumberField
             value={v}
-            onChange={(e) => {
+            onChange={(n) => {
               const next = [...rows]
-              next[i] = [k, Number(e.target.value) || 0]
+              next[i] = [k, n]
               onChange(next)
             }}
-            className={`${input} mt-0 w-28`}
-            aria-label="Daily ceiling in USD"
+            className="w-28"
+            label="Daily ceiling in USD"
           />
           <button
             type="button"

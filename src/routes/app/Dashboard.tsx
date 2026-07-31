@@ -1,4 +1,4 @@
-import { useEffect, useState, type ReactNode } from 'react'
+import { useCallback, useEffect, useState, type ReactNode } from 'react'
 import { Link } from 'react-router-dom'
 import { motion } from 'framer-motion'
 import { ArrowUpRight, CreditCard, ExternalLink, Fingerprint, SlidersHorizontal } from 'lucide-react'
@@ -7,8 +7,10 @@ import { useMcpHealth } from '../../hooks/useMcp'
 import { CHAINS } from '../../lib/chains'
 
 import { apiFetch } from '../../lib/api'
-import { fetchPlatformAgents } from '../../lib/platformAgents'
+import { BACKEND_UNREACHABLE } from '../../lib/mcpBase'
+import { fetchPlatformAgents, subscribePlatformAgents } from '../../lib/platformAgents'
 import { pickPrimaryAgent } from '../../lib/pickAgent'
+import { useSelectedAgent } from '../../store/agent'
 import { Skeleton } from '../../components/ui/skeleton'
 
 /** Shorten any full 40-hex address inside activity text so it never overflows the card. */
@@ -46,47 +48,71 @@ export default function Dashboard() {
   const mcpLabel =
     mcp === 'online' ? 'MCP live' : mcp === 'waking' ? 'Backend waking up' : mcp === 'checking' ? 'Connecting' : 'MCP offline'
 
-  const [agent, setAgent] = useState<Agent | null>(null)
+  const [agents, setAgents] = useState<Agent[]>([])
   const [rep, setRep] = useState<number | null>(null)
   const [balance, setBalance] = useState<number | null>(null)
   const [settlements, setSettlements] = useState<number | null>(null)
   const [agentTotal, setAgentTotal] = useState<number | null>(null)
   const [loaded, setLoaded] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+
+  const agentId = useSelectedAgent((s) => s.agentId)
+  const syncRoster = useSelectedAgent((s) => s.syncRoster)
+
+  const loadRoster = useCallback(async () => {
+    try {
+      const list = await fetchPlatformAgents<Agent>()
+      const roster = Array.isArray(list.agents) ? list.agents : []
+      setAgents(roster)
+      setAgentTotal(roster.length)
+      syncRoster(roster.map((a) => a.id), pickPrimaryAgent(roster)?.id)
+      setError(null)
+    } catch {
+      // Say the backend is unreachable instead of falling through to "no agent yet":
+      // an offline console claiming the account is empty is the one wrong answer here.
+      setError(BACKEND_UNREACHABLE)
+    } finally {
+      setLoaded(true)
+    }
+  }, [syncRoster])
 
   useEffect(() => {
-    let cancelled = false
+    loadRoster()
+    // Re-read when an agent is created or anchored elsewhere in the console, so the
+    // overview is not the one screen still showing yesterday's roster.
+    return subscribePlatformAgents(loadRoster)
+  }, [loadRoster])
+
+  // Follow the console-wide selection, falling back to the most demo-worthy agent.
+  const agent = agents.find((a) => a.id === agentId) ?? pickPrimaryAgent(agents) ?? null
+
+  useEffect(() => {
+    if (!agent) return
+    let active = true
+    setRep(null)
+    setBalance(null)
+    setSettlements(null)
     ;(async () => {
-      try {
-        const list = await fetchPlatformAgents<Agent>()
-        if (cancelled) return
-        setAgentTotal(Array.isArray(list.agents) ? list.agents.length : 0)
-        const first: Agent | undefined = pickPrimaryAgent(list.agents)
-        if (!first) return
-        setAgent(first)
-        const [repRes, ixRes] = await Promise.all([
-          apiFetch(`/api/agents/reputation?agentId=${first.id}`).then((r) => r.json()).catch(() => null),
-          apiFetch(`/api/instructions?agentId=${first.id}`).then((r) => r.json()).catch(() => null),
-        ])
-        if (cancelled) return
-        if (repRes && !('error' in repRes) && typeof repRes.score === 'number') setRep(repRes.score)
-        if (Array.isArray(ixRes?.instructions))
-          setSettlements(ixRes.instructions.filter((i: { status: string }) => i.status === 'executed_onchain').length)
-        if (first.walletAddress) {
-          const bal = await apiFetch(`/api/wallet-balance?address=${first.walletAddress}`)
-            .then((r) => r.json())
-            .catch(() => null)
-          if (!cancelled && bal?.balance != null) setBalance(Number(bal.balance))
-        }
-      } catch {
-        /* backend unreachable, leave everything empty (no fake numbers) */
-      } finally {
-        if (!cancelled) setLoaded(true)
+      const [repRes, ixRes] = await Promise.all([
+        apiFetch(`/api/agents/reputation?agentId=${agent.id}`).then((r) => r.json()).catch(() => null),
+        apiFetch(`/api/instructions?agentId=${agent.id}`).then((r) => r.json()).catch(() => null),
+      ])
+      if (!active) return
+      if (repRes && !('error' in repRes) && typeof repRes.score === 'number') setRep(repRes.score)
+      if (Array.isArray(ixRes?.instructions))
+        setSettlements(ixRes.instructions.filter((i: { status: string }) => i.status === 'executed_onchain').length)
+      if (agent.walletAddress) {
+        const bal = await apiFetch(`/api/wallet-balance?address=${agent.walletAddress}`)
+          .then((r) => r.json())
+          .catch(() => null)
+        if (active && bal?.balance != null) setBalance(Number(bal.balance))
       }
     })()
     return () => {
-      cancelled = true
+      active = false
     }
-  }, [])
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [agent?.id, agent?.walletAddress])
 
   const dash = '·'
   const p = agent?.permissions
@@ -137,7 +163,13 @@ export default function Dashboard() {
         </div>
       </div>
 
-      {loaded && !agent && (
+      {error && (
+        <div className="mt-6 rounded-xl border border-amber-200 dark:border-amber-500/25 bg-amber-50/60 dark:bg-amber-500/10 p-4 text-sm text-foreground/70">
+          {error}
+        </div>
+      )}
+
+      {loaded && !agent && !error && (
         <div className="mt-6 rounded-xl border border-dashed border-border bg-card p-6 text-sm text-foreground/60">
           No agent registered yet.{' '}
           <Link to="/app/agent-id" className="font-semibold text-accent hover:underline">Claim an Agent ID</Link>{' '}
