@@ -31,13 +31,13 @@ against those limits before any value moves, and the verdict is ALLOW, WARN or D
 
 ## Endpoints an agent can use
 
-- MCP server (Streamable HTTP): https://a-identity.xyz/mcp
-- Agent manifest: https://a-identity.xyz/.well-known/ai-agent-manifest.json
-- Free trust pre-check (no key): POST https://a-identity-asp.onrender.com/tools/trust_preview
-- Resolve an agent: https://a-identity.xyz/api/agent?q={walletOrTokenId}
-- Reputation: https://a-identity.xyz/api/reputation?id={agentId}
-- Guardrail status (503 when not enforcing): https://a-identity-backend.onrender.com/api/guardrail-status
-- Public settlement proof: https://a-identity-asp.onrender.com/proof.json
+- [MCP server](https://a-identity.xyz/mcp): Streamable HTTP, 19 tools, no key for reads.
+- [Agent manifest](https://a-identity.xyz/.well-known/ai-agent-manifest.json): identity, payment and tool endpoints in one document.
+- [Free trust pre-check](https://a-identity-asp.onrender.com/tools/trust_preview): POST an agentId, no payment and no key, rate limited.
+- [Resolve an agent](https://a-identity.xyz/api/agent): pass ?q= a wallet address or token id.
+- [Reputation](https://a-identity.xyz/api/reputation): pass ?id= an agent id.
+- [Guardrail status](https://a-identity-backend.onrender.com/api/guardrail-status): answers 503 when the engine is not enforcing.
+- [Public settlement proof](https://a-identity-asp.onrender.com/proof.json): every settlement taken, with transaction hashes.
 
 ## SDK
 
@@ -48,18 +48,30 @@ leaves the caller's process.
 
 ## Docs
 
-- Full documentation for machine readers: https://a-identity.xyz/llms-full.txt
-- How to authenticate and pay: https://a-identity.xyz/auth.md
-- API catalog (RFC 9727): https://a-identity.xyz/.well-known/api-catalog
-- MCP server card: https://a-identity.xyz/.well-known/mcp/server-card.json
-- A2A agent card: https://a-identity.xyz/.well-known/agent-card.json
-- Agent skills index: https://a-identity.xyz/.well-known/agent-skills/index.json
-- OpenAPI 3.1 for the paid tools: https://a-identity-asp.onrender.com/openapi.json
-- Documentation: https://a-identity.mintlify.site
-- Quickstart: https://a-identity.mintlify.site/developers/quickstart
-- SDK reference: https://a-identity.mintlify.site/developers/sdk
-- MCP server: https://a-identity.mintlify.site/developers/mcp-server
-- Architecture: https://a-identity.xyz/architecture
+- [Full documentation for machine readers](https://a-identity.xyz/llms-full.txt): the expanded version of this file.
+- [How to authenticate and pay](https://a-identity.xyz/auth.md): the three access tiers, in order of how little you need.
+- [API catalog](https://a-identity.xyz/.well-known/api-catalog): RFC 9727 linkset over every API here.
+- [MCP server card](https://a-identity.xyz/.well-known/mcp/server-card.json): transport, capabilities and the 19 tools.
+- [A2A agent card](https://a-identity.xyz/.well-known/agent-card.json): skills and interfaces for agent-to-agent discovery.
+- [Agent skills index](https://a-identity.xyz/.well-known/agent-skills/index.json): five task guides with digests.
+- [OpenAPI 3.1 for the paid tools](https://a-identity-asp.onrender.com/openapi.json): inputs, outputs and prices.
+- [Scoring methodology](https://a-identity-asp.onrender.com/methodology): how the 0 to 1000 reputation is computed.
+- [Documentation](https://a-identity.mintlify.site): the human-facing docs site.
+- [Quickstart](https://a-identity.mintlify.site/developers/quickstart): first call in a few minutes.
+- [SDK reference](https://a-identity.mintlify.site/developers/sdk)
+- [MCP server guide](https://a-identity.mintlify.site/developers/mcp-server)
+- [Architecture](https://a-identity.xyz/architecture): how the pieces fit together.
+
+## Writing
+
+- [Verify an AI agent before you pay it](https://a-identity.xyz/blog/verify-an-agent-before-you-pay-it): the four checks, in the order an agent needs them.
+- [What 120 real agent-to-agent payments look like](https://a-identity.xyz/blog/what-120-real-agent-payments-look-like): the distribution of settlements we actually took.
+- [Your agent has two budgets, and only one is money](https://a-identity.xyz/blog/two-kinds-of-agent-budget): token cost and payment authority are not the same problem.
+- [ERC-8004 and x402 together](https://a-identity.xyz/blog/erc-8004-and-x402-together): what neither standard specifies, and where the seam fails.
+- [When an agent trades with itself](https://a-identity.xyz/blog/agents-trading-with-themselves): detecting same-operator self-dealing.
+- [Paying a tenth of a cent](https://a-identity.xyz/blog/gasless-nanopayments-for-agents): how gasless batched nanopayments work, and what you give up.
+
+Every post also exists in Turkish at the same path under /tr.
 
 ## What A-Identity does not do
 
