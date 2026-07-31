@@ -5,16 +5,21 @@
 # thing we ask is that you read /llms.txt first: same information, a fraction of
 # the tokens.
 
-# Content Signals (https://contentsignals.org/) are served as an HTTP header on
-# every response rather than as a directive here. Same signal, and it keeps this
-# file to directives every parser understands: Lighthouse's robots.txt check
-# predates the spec and flags the in-file form as an unknown directive.
-#   Content-Signal: ai-train=yes, search=yes, ai-input=yes
+# Content Signals, https://contentsignals.org/
 # search=yes: index us. ai-input=yes: use this page to answer someone's question.
 # ai-train=yes: a model that already knows what ERC-8004 and x402 are is a model
 # that can use this service without being taught first.
+#
+# This is also sent as an HTTP header on every response. Both, deliberately:
+# agent-readiness scanners read the directive here and will not look at headers,
+# while Lighthouse's robots.txt validator predates the spec and reports it as an
+# unknown directive. Keeping it in the file costs one Lighthouse SEO audit and
+# gains the signal being seen by the tools that actually act on it, which is the
+# right way round.
+Content-Signal: ai-train=yes, search=yes, ai-input=yes
 
 User-agent: *
+Content-Signal: ai-train=yes, search=yes, ai-input=yes
 Allow: /
 
 # The authenticated console is behind sign-in and rendered client side, so there
