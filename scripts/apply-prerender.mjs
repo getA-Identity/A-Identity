@@ -85,6 +85,21 @@ function applyDir(dir, rel = '') {
       }
     }
 
+    // Let the entry script yield the connection to the things that paint.
+    //
+    // This is only safe because these pages are prerendered: the HTML is already
+    // complete, so nothing a visitor can see is waiting on JavaScript. Left at
+    // the default High priority the 198 KB bundle competes with the stylesheet,
+    // the fonts and the LCP image for the same bandwidth, and wins some of it,
+    // which delays the paint in order to arrive sooner at hydration nobody is
+    // waiting for. Total blocking time has ~900ms of headroom against the
+    // threshold, so trading a little interactivity latency for first paint is
+    // the right way round on a marketing page.
+    html = html.replace(
+      /(<script[^>]*\btype="module"[^>]*\bsrc="\/assets\/[^"]+"[^>]*)(>)/g,
+      (m, head, close) => (head.includes('fetchpriority') ? m : `${head} fetchpriority="low"${close}`),
+    )
+
     const dest = join(DIST, rel, 'index.html')
     writeFileSync(dest, html)
     files++
