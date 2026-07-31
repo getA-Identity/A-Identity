@@ -45,26 +45,11 @@
  * that ask for bold currently get Chrome's synthetic bold on top of this face,
  * so re-declaring it as 700 would silently change how every heading renders.
  */
-/* `optional` on the heading face, `swap` on the body face.
- *
- * The h1 is one of two elements that trade places as LCP depending on which
- * font arrives first, and a text LCP is recorded when the text paints in its
- * FINAL font. With `swap` the h1 paints in the fallback, repaints when the
- * webfont lands, and LCP is the second paint, which is why the score swung
- * between 84 and 94 across identical runs.
- *
- * `optional` gives the font a short window and then commits for that page load
- * with no later swap. It is preloaded and 17 KB, so on an ordinary connection it
- * wins and nothing changes visually; on a slow one the heading renders in the
- * fallback rather than reflowing under the reader.
- *
- * The body face keeps `swap`: body copy stuck in the wrong font for a whole
- * load is a worse deal than a late swap. */
 @font-face {
   font-family: 'Helvetica Now Display Bold';
   font-style: normal;
   font-weight: normal;
-  font-display: optional;
+  font-display: swap;
   src: url('/fonts/helvetica-now-display-bold.woff2') format('woff2');
 }
 
