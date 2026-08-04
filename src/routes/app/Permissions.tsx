@@ -19,6 +19,7 @@ import { fetchPlatformAgents } from '../../lib/platformAgents'
 import { pickPrimaryAgent } from '../../lib/pickAgent'
 import { useSelectedAgent } from '../../store/agent'
 import AgentSelect from '../../components/app/AgentSelect'
+import AppPage from '../../components/app/AppPage'
 import { Skeleton } from '../../components/ui/skeleton'
 import { NumberField } from '../../components/ui/number-field'
 import PayeeAdder from '../../components/app/permissions/PayeeAdder'
@@ -168,13 +169,11 @@ export default function Permissions() {
   }
 
   return (
-    <div className="mx-auto max-w-2xl">
-      <h2 className="text-2xl font-bold tracking-tight">Permissions</h2>
-      <p className="mt-1 text-sm text-foreground/55">
-        You are in control. Set what your agent can do, who it can pay, and how much it
-        can spend per day. The policy engine enforces every rule here for real.
-      </p>
-
+    <AppPage
+      width="form"
+      title="Permissions"
+      description="You are in control. Set what your agent can do, who it can pay, and how much it can spend per day. The policy engine enforces every rule here for real."
+    >
       {error && (
         <div className="mt-5 rounded-2xl border border-amber-200 dark:border-amber-500/25 bg-amber-50/60 dark:bg-amber-500/10 p-4 text-sm text-foreground/70">
           {error}
@@ -485,6 +484,6 @@ export default function Permissions() {
           Log out
         </button>
       </section>
-    </div>
+    </AppPage>
   )
 }

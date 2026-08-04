@@ -16,6 +16,7 @@ import { fetchPlatformAgents, subscribePlatformAgents } from '../../lib/platform
 import { apiFetch } from '../../lib/api'
 import { useSelectedAgent } from '../../store/agent'
 import AgentSelect from '../../components/app/AgentSelect'
+import AppPage from '../../components/app/AppPage'
 import { Skeleton } from '../../components/ui/skeleton'
 import ReputationCard from '../../components/app/agent/ReputationCard'
 import RegisterForm from '../../components/app/agent/RegisterForm'
@@ -148,18 +149,14 @@ export default function AgentId() {
   const isSample = realChecked && !realAgent
 
   return (
-    <div className="mx-auto max-w-3xl">
-      <div className="flex items-center justify-between">
-        <div>
-          <h2 className="text-2xl font-bold tracking-tight">Agent ID</h2>
-          <p className="mt-1 text-sm text-foreground/55">
-            Your agent's on-chain passport. ERC-8004 gives every agent a verifiable identity, so
-            others can trust it before transacting.
-          </p>
-        </div>
-        {/* MCP source badge */}
+    <AppPage
+      width="form"
+      title="Agent ID"
+      description="Your agent's on-chain passport. ERC-8004 gives every agent a verifiable identity, so others can trust it before transacting."
+      actions={
+        /* MCP source badge */
         <div
-          className={`flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded-full px-3 py-1.5 text-xs font-semibold ${
+          className={`mt-1 flex items-center gap-1.5 whitespace-nowrap rounded-full px-3 py-1.5 text-xs font-semibold ${
             !mcpOnline
               ? 'bg-foreground/8 text-foreground/40'
               : realAgent
@@ -170,8 +167,8 @@ export default function AgentId() {
           {mcpOnline ? <Wifi size={12} /> : <WifiOff size={12} />}
           {!mcpOnline ? 'Offline' : realAgent ? 'Live' : 'Sample'}
         </div>
-      </div>
-
+      }
+    >
       <AgentSelect agents={agents} />
 
       {/* Sample notice: no real agent yet → the card below is illustrative, not yours. */}
@@ -402,6 +399,6 @@ export default function AgentId() {
           ))}
         </ul>
       </div>
-    </div>
+    </AppPage>
   )
 }

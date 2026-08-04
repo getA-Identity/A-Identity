@@ -8,6 +8,7 @@ import { pickPrimaryAgent } from '../../lib/pickAgent'
 import { authHeaders } from '../../store/auth'
 import { useSelectedAgent } from '../../store/agent'
 import AgentSelect from '../../components/app/AgentSelect'
+import AppPage from '../../components/app/AppPage'
 import { Skeleton } from '../../components/ui/skeleton'
 
 /**
@@ -120,13 +121,10 @@ export default function Earnings() {
   }
 
   return (
-    <div className="mx-auto max-w-4xl">
-      <h2 className="text-2xl font-bold tracking-tight">Earnings</h2>
-      <p className="mt-1 max-w-xl text-sm text-foreground/55">
-        What your agent has earned as a marketplace worker, its live USDC balance on Arc, and a
-        one-click move to Base Sepolia via Circle Gateway.
-      </p>
-
+    <AppPage
+      title="Earnings"
+      description="What your agent has earned as a marketplace worker, its live USDC balance on Arc, and a one-click move to Base Sepolia via Circle Gateway."
+    >
       {error && (
         <div className="mt-6 rounded-2xl border border-amber-200 dark:border-amber-500/25 bg-amber-50/60 dark:bg-amber-500/10 p-5 text-sm text-foreground/70">
           {error}
@@ -257,6 +255,6 @@ export default function Earnings() {
           )}
         </>
       )}
-    </div>
+    </AppPage>
   )
 }

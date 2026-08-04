@@ -11,6 +11,7 @@ import { BACKEND_UNREACHABLE } from '../../lib/mcpBase'
 import { fetchPlatformAgents, subscribePlatformAgents } from '../../lib/platformAgents'
 import { pickPrimaryAgent } from '../../lib/pickAgent'
 import { useSelectedAgent } from '../../store/agent'
+import AppPage from '../../components/app/AppPage'
 import { Skeleton } from '../../components/ui/skeleton'
 
 /** Shorten any full 40-hex address inside activity text so it never overflows the card. */
@@ -151,18 +152,17 @@ export default function Dashboard() {
   const activity = agent?.activity ? [...agent.activity].slice(-6).reverse() : []
 
   return (
-    <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.3, ease: 'easeOut' }} className="mx-auto max-w-5xl">
-      <div className="flex items-start justify-between gap-4">
-        <div>
-          <h2 className="text-2xl font-bold tracking-tight">Welcome back, {user?.name ?? 'there'}.</h2>
-          <p className="mt-1 text-sm text-foreground/55">Your agent console. Everything your agent needs to act, with you in the tower.</p>
-        </div>
-        <div className="mt-1 inline-flex shrink-0 items-center gap-2 whitespace-nowrap rounded-md border border-border px-2.5 py-1.5 text-xs font-semibold text-foreground/70">
-          <span className={`h-1.5 w-1.5 rounded-full ${mcp === 'waking' || mcp === 'checking' ? 'animate-pulse' : ''}`} style={{ background: mcpColor }} />
-          {mcpLabel}
-        </div>
-      </div>
-
+    <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.3, ease: 'easeOut' }} className="w-full">
+      <AppPage
+        title={`Welcome back, ${user?.name ?? 'there'}.`}
+        description="Your agent console. Everything your agent needs to act, with you in the tower."
+        actions={
+          <div className="mt-1 inline-flex items-center gap-2 whitespace-nowrap rounded-md border border-border px-2.5 py-1.5 text-xs font-semibold text-foreground/70">
+            <span className={`h-1.5 w-1.5 rounded-full ${mcp === 'waking' || mcp === 'checking' ? 'animate-pulse' : ''}`} style={{ background: mcpColor }} />
+            {mcpLabel}
+          </div>
+        }
+      >
       {error && (
         <div className="mt-6 rounded-xl border border-amber-200 dark:border-amber-500/25 bg-amber-50/60 dark:bg-amber-500/10 p-4 text-sm text-foreground/70">
           {error}
@@ -283,6 +283,7 @@ export default function Dashboard() {
           </Link>
         </div>
       </div>
+      </AppPage>
     </motion.div>
   )
 }

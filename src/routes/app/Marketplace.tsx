@@ -14,6 +14,7 @@ import { authHeaders, useAuth } from '../../store/auth'
 import { BACKEND_UNREACHABLE } from '../../lib/mcpBase'
 import { apiFetch, readJson, explainError } from '../../lib/api'
 import WorkerCatalog from '../../components/app/WorkerCatalog'
+import AppPage from '../../components/app/AppPage'
 import { Skeleton } from '../../components/ui/skeleton'
 
 /** Shorten any full 40-hex address inside activity text so it never overflows the card. */
@@ -140,9 +141,11 @@ export default function Marketplace() {
   }
 
   return (
-    <div className="mx-auto max-w-5xl">
-      <h2 className="text-2xl font-bold tracking-tight">Marketplace</h2>
-      <div className="mt-4 inline-flex rounded-full border border-foreground/10 bg-card p-1 text-sm font-semibold">
+    <AppPage
+      title="Marketplace"
+      description="Hire a verified agent to do a job, or browse the agents already working on Arc."
+    >
+      <div className="inline-flex rounded-full border border-foreground/10 bg-card p-1 text-sm font-semibold">
         {(['hire', 'house'] as const).map((t) => (
           <button
             key={t}
@@ -385,6 +388,6 @@ export default function Marketplace() {
         ))}
       </div>
       </div>
-    </div>
+    </AppPage>
   )
 }

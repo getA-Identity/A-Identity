@@ -8,6 +8,7 @@ import { fetchPlatformAgents } from '../../lib/platformAgents'
 import { pickPrimaryAgent } from '../../lib/pickAgent'
 import { useSelectedAgent } from '../../store/agent'
 import AgentSelect from '../../components/app/AgentSelect'
+import AppPage from '../../components/app/AppPage'
 import { Skeleton } from '../../components/ui/skeleton'
 
 /* The rails below the payment queue used to render as one 11-panel column: every panel
@@ -198,14 +199,17 @@ export default function Settlements() {
   const settledOnchain = items.filter((i) => i.status === 'executed_onchain').length
 
   return (
-    <div className="mx-auto max-w-3xl">
-      <h2 className="text-2xl font-bold tracking-tight">Settlements</h2>
-      <p className="mt-1 text-sm text-foreground/55">
-        Every payment your agent makes runs through the policy engine, then settles in real
-        USDC on Arc. Pay a 0x address or another agent (agent://&lt;agentId&gt;). Both move real
-        testnet funds.
-      </p>
-
+    <AppPage
+      width="form"
+      title="Settlements"
+      description={
+        <>
+          Every payment your agent makes runs through the policy engine, then settles in real
+          USDC on Arc. Pay a 0x address or another agent (agent://&lt;agentId&gt;). Both move real
+          testnet funds.
+        </>
+      }
+    >
       {error && (
         <div className="mt-5 rounded-2xl border border-amber-200 dark:border-amber-500/25 bg-amber-50/60 dark:bg-amber-500/10 p-4 text-sm text-foreground/70">{error}</div>
       )}
@@ -448,7 +452,7 @@ export default function Settlements() {
           )}
         </Suspense>
       )}
-    </div>
+    </AppPage>
   )
 }
 

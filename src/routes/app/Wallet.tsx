@@ -14,6 +14,7 @@ import { fetchPlatformAgents, subscribePlatformAgents } from '../../lib/platform
 import { pickPrimaryAgent } from '../../lib/pickAgent'
 import { CircleWalletPanel, TreasuryPanel } from '../../components/app/WalletPanels'
 import AgentSelect from '../../components/app/AgentSelect'
+import AppPage from '../../components/app/AppPage'
 import { useSelectedAgent } from '../../store/agent'
 import { Skeleton } from '../../components/ui/skeleton'
 const FAUCET = 'https://faucet.circle.com'
@@ -121,13 +122,11 @@ export default function Wallet() {
   const bal = balance?.balance != null ? Number(balance.balance) : null
 
   return (
-    <div className="mx-auto max-w-3xl">
-      <h2 className="text-2xl font-bold tracking-tight">Wallet</h2>
-      <p className="mt-1 text-sm text-foreground/55">
-        Your agent's Arc wallet. Balance is read live from the Arc testnet; payments settle in
-        real USDC. You set the limits in Permissions.
-      </p>
-
+    <AppPage
+      width="form"
+      title="Wallet"
+      description="Your agent's Arc wallet. Balance is read live from the Arc testnet; payments settle in real USDC. You set the limits in Permissions."
+    >
       {error && (
         <div className="mt-5 rounded-2xl border border-amber-200 dark:border-amber-500/25 bg-amber-50/60 dark:bg-amber-500/10 p-4 text-sm text-foreground/70">{error}</div>
       )}
@@ -333,6 +332,6 @@ export default function Wallet() {
           <TreasuryPanel agentId={agentId} />
         </>
       )}
-    </div>
+    </AppPage>
   )
 }

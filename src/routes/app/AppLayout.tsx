@@ -30,6 +30,13 @@ const NAV = [
   { to: '/app/permissions', label: 'Permissions', icon: SlidersHorizontal, end: false },
 ] as const
 
+/**
+ * The console canvas. One width, declared once, shared by the topbar, the banners and
+ * every page, so nothing shifts horizontally as you move between screens. Pages choose
+ * how wide their content runs INSIDE this (see AppPage), never how wide the frame is.
+ */
+const CANVAS = 'mx-auto w-full max-w-7xl'
+
 function initials(name: string) {
   return name
     .split(' ')
@@ -157,60 +164,68 @@ export default function AppLayout() {
 
       {/* Main column */}
       <div className="flex min-w-0 flex-1 flex-col">
-        {/* Topbar */}
-        <header className="sticky top-0 z-10 flex items-center justify-between gap-4 border-b border-foreground/10 bg-background/80 px-5 py-4 backdrop-blur-md sm:px-8">
-          <div className="flex items-center gap-2 md:hidden">
-            <Logo size={24} />
-          </div>
-          {/* Breadcrumb (desktop): context without duplicating the page heading. */}
-          <div className="hidden items-center gap-1.5 text-sm md:flex">
-            <span className="text-foreground/40">Agent Console</span>
-            <span className="text-foreground/25">/</span>
-            <span className="font-medium text-foreground/70">{title}</span>
-          </div>
-
-          <div className="flex flex-1 items-center justify-end gap-3">
-            {/* MCP status dot (mobile) */}
-            <div className="flex items-center gap-1.5 md:hidden">
-              <span
-                className={`h-1.5 w-1.5 rounded-full ${
-                  mcp === 'online'
-                    ? 'bg-emerald-400'
-                    : mcp === 'waking'
-                      ? 'animate-pulse bg-amber-400'
-                      : 'bg-foreground/20'
-                }`}
-              />
-              <span className="text-xs text-foreground/40">MCP</span>
+        {/* Topbar. Its contents ride the same canvas as the page below, so the
+            breadcrumb sits directly above the page heading instead of drifting to the
+            far edge on a wide display. */}
+        <header className="sticky top-0 z-10 border-b border-foreground/10 bg-background/80 px-5 py-4 backdrop-blur-md sm:px-8">
+          <div className={`${CANVAS} flex items-center justify-between gap-4`}>
+            <div className="flex items-center gap-2 md:hidden">
+              <Logo size={24} />
             </div>
-            <ThemeToggle />
-            <div className="grid h-9 w-9 place-items-center rounded-full bg-accent text-xs font-bold text-white">
-              {user ? initials(user.name) : 'AI'}
+            {/* Breadcrumb (desktop): context without duplicating the page heading. */}
+            <div className="hidden items-center gap-1.5 text-sm md:flex">
+              <span className="text-foreground/40">Agent Console</span>
+              <span className="text-foreground/25">/</span>
+              <span className="font-medium text-foreground/70">{title}</span>
+            </div>
+
+            <div className="flex flex-1 items-center justify-end gap-3">
+              {/* MCP status dot (mobile) */}
+              <div className="flex items-center gap-1.5 md:hidden">
+                <span
+                  className={`h-1.5 w-1.5 rounded-full ${
+                    mcp === 'online'
+                      ? 'bg-emerald-400'
+                      : mcp === 'waking'
+                        ? 'animate-pulse bg-amber-400'
+                        : 'bg-foreground/20'
+                  }`}
+                />
+                <span className="text-xs text-foreground/40">MCP</span>
+              </div>
+              <ThemeToggle />
+              <div className="grid h-9 w-9 place-items-center rounded-full bg-accent text-xs font-bold text-white">
+                {user ? initials(user.name) : 'AI'}
+              </div>
             </div>
           </div>
         </header>
 
         {/* Guest banner: browse-only session. Writes won't persist until they sign in. */}
         {isGuest && (
-          <div className="flex flex-wrap items-center gap-2 border-b border-amber-200 bg-amber-50 px-5 py-2 text-xs font-medium text-amber-900 dark:border-amber-500/25 dark:bg-amber-500/10 dark:text-amber-200 sm:px-8">
-            <Lock size={13} className="shrink-0" />
-            You're browsing read-only as a guest. Registering, approving, and paying won't save.
-            <Link to="/login" className="font-semibold underline underline-offset-2 hover:text-amber-950">
-              Sign in with your wallet to act
-            </Link>
+          <div className="border-b border-amber-200 bg-amber-50 px-5 py-2 text-xs font-medium text-amber-900 dark:border-amber-500/25 dark:bg-amber-500/10 dark:text-amber-200 sm:px-8">
+            <div className={`${CANVAS} flex flex-wrap items-center gap-2`}>
+              <Lock size={13} className="shrink-0" />
+              You're browsing read-only as a guest. Registering, approving, and paying won't save.
+              <Link to="/login" className="font-semibold underline underline-offset-2 hover:text-amber-950">
+                Sign in with your wallet to act
+              </Link>
+            </div>
           </div>
         )}
 
         {/* Cold-start banner: the backend (free tier) may nap and take ~30s to wake. */}
         {mcp === 'waking' && (
-          <div className="flex items-center gap-2 border-b border-amber-200 bg-amber-50 px-5 py-2 text-xs font-medium text-amber-800 dark:border-amber-500/25 dark:bg-amber-500/10 dark:text-amber-200 sm:px-8">
-            <span className="h-2 w-2 shrink-0 animate-pulse rounded-full bg-amber-400" />
-            Waking up the demo backend (free tier), usually under 30s. Live data will appear shortly.
+          <div className="border-b border-amber-200 bg-amber-50 px-5 py-2 text-xs font-medium text-amber-800 dark:border-amber-500/25 dark:bg-amber-500/10 dark:text-amber-200 sm:px-8">
+            <div className={`${CANVAS} flex items-center gap-2`}>
+              <span className="h-2 w-2 shrink-0 animate-pulse rounded-full bg-amber-400" />
+              Waking up the demo backend (free tier), usually under 30s. Live data will appear shortly.
+            </div>
           </div>
         )}
 
         {/* Mobile nav */}
-        <nav className="flex gap-1 overflow-x-auto border-b border-foreground/10 bg-card px-4 py-2 md:hidden">
+        <nav className="flex gap-1 overflow-x-auto border-b border-foreground/10 bg-card px-4 py-2 md:hidden" aria-label="Console sections">
           {NAV.map(({ to, label, icon: Icon, end }) => (
             <NavLink
               key={to}
@@ -229,7 +244,9 @@ export default function AppLayout() {
         </nav>
 
         <main className="flex-1 px-5 py-6 sm:px-8 sm:py-8">
-          <Outlet />
+          <div className={CANVAS}>
+            <Outlet />
+          </div>
         </main>
       </div>
     </div>
