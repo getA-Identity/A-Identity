@@ -12,6 +12,9 @@ import { fetchPlatformAgents, subscribePlatformAgents } from '../../lib/platform
 import { pickPrimaryAgent } from '../../lib/pickAgent'
 import { useSelectedAgent } from '../../store/agent'
 import AppPage from '../../components/app/AppPage'
+import AgentStatusBar, { type AgentState } from '../../components/app/AgentStatusBar'
+import SetupChecklist, { type Step } from '../../components/app/SetupChecklist'
+import Freshness from '../../components/app/Freshness'
 import { Skeleton } from '../../components/ui/skeleton'
 
 /** Shorten any full 40-hex address inside activity text so it never overflows the card. */
@@ -22,6 +25,8 @@ const gradeOf = (s: number) =>
   s >= 800 ? 'Excellent' : s >= 650 ? 'Strong' : s >= 500 ? 'Good' : s >= 350 ? 'Fair' : s >= 200 ? 'Weak' : 'High risk'
 
 type Perms = { dailyCapUsd: number; autoApproveUnderUsd: number; frozen: boolean }
+/** GET /api/agents/policy: the same permissions plus today's usage against the cap. */
+type Policy = { permissions: Perms; spentTodayUsd: number; remainingTodayUsd: number }
 type Agent = {
   id: string
   name: string
@@ -53,9 +58,14 @@ export default function Dashboard() {
   const [rep, setRep] = useState<number | null>(null)
   const [balance, setBalance] = useState<number | null>(null)
   const [settlements, setSettlements] = useState<number | null>(null)
+  const [pending, setPending] = useState<number | null>(null)
+  const [txTotal, setTxTotal] = useState<number | null>(null)
+  const [policy, setPolicy] = useState<Policy | null>(null)
   const [agentTotal, setAgentTotal] = useState<number | null>(null)
   const [loaded, setLoaded] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  /** Wall-clock ms of the last successful read, so every figure can say how old it is. */
+  const [readAt, setReadAt] = useState<number | null>(null)
 
   const agentId = useSelectedAgent((s) => s.agentId)
   const syncRoster = useSelectedAgent((s) => s.syncRoster)
@@ -93,21 +103,34 @@ export default function Dashboard() {
     setRep(null)
     setBalance(null)
     setSettlements(null)
+    setPending(null)
+    setTxTotal(null)
+    setPolicy(null)
+    setReadAt(null)
     ;(async () => {
-      const [repRes, ixRes] = await Promise.all([
+      const [repRes, ixRes, polRes] = await Promise.all([
         apiFetch(`/api/agents/reputation?agentId=${agent.id}`).then((r) => r.json()).catch(() => null),
         apiFetch(`/api/instructions?agentId=${agent.id}`).then((r) => r.json()).catch(() => null),
+        // Today's spend against the cap. The agent object carries the cap but not the
+        // usage, and a cap without usage is half a sentence.
+        apiFetch(`/api/agents/policy?agentId=${agent.id}`).then((r) => r.json()).catch(() => null),
       ])
       if (!active) return
       if (repRes && !('error' in repRes) && typeof repRes.score === 'number') setRep(repRes.score)
-      if (Array.isArray(ixRes?.instructions))
-        setSettlements(ixRes.instructions.filter((i: { status: string }) => i.status === 'executed_onchain').length)
+      if (Array.isArray(ixRes?.instructions)) {
+        const ix = ixRes.instructions as { status: string }[]
+        setSettlements(ix.filter((i) => i.status === 'executed_onchain').length)
+        setPending(ix.filter((i) => i.status === 'pending_approval').length)
+        setTxTotal(ix.length)
+      }
+      if (polRes && typeof polRes.spentTodayUsd === 'number') setPolicy(polRes as Policy)
       if (agent.walletAddress) {
         const bal = await apiFetch(`/api/wallet-balance?address=${agent.walletAddress}`)
           .then((r) => r.json())
           .catch(() => null)
         if (active && bal?.balance != null) setBalance(Number(bal.balance))
       }
+      if (active) setReadAt(Date.now())
     })()
     return () => {
       active = false
@@ -150,6 +173,78 @@ export default function Dashboard() {
   ]
 
   const activity = agent?.activity ? [...agent.activity].slice(-6).reverse() : []
+  const lastActedAt = agent?.activity?.length ? agent.activity[agent.activity.length - 1].at : null
+
+  // What the agent is doing right now, derived only from state we hold. Order matters:
+  // a frozen agent is frozen even if something is queued, and an agent that cannot pay
+  // yet is in setup no matter how clean its queue looks.
+  const setupDone = Boolean(agent?.walletAddress) && (balance ?? 0) > 0 && Boolean(p)
+  const agentState: AgentState = !setupDone
+    ? 'setup'
+    : p?.frozen
+      ? 'frozen'
+      : (pending ?? 0) > 0
+        ? 'waiting'
+        : 'ready'
+
+  // Only clauses we can prove. A figure we have not read is omitted rather than shown as
+  // zero: "0 settled" and "we do not know yet" are different claims.
+  const clauses: string[] = []
+  if ((pending ?? 0) > 0) clauses.push(`${pending} payment${pending === 1 ? '' : 's'} waiting for your approval`)
+  if ((settlements ?? 0) > 0) clauses.push(`${settlements} settled on-chain`)
+  if (policy) clauses.push(`$${policy.spentTodayUsd.toFixed(2)} of your $${policy.permissions.dailyCapUsd} daily cap used today`)
+  if (agentState === 'ready' && clauses.length === 0) clauses.push('Nothing waiting. The agent can pay within your limits.')
+  if (agentState === 'frozen') clauses.unshift('Every payment is paused until you unfreeze it.')
+
+  const statusAction =
+    agentState === 'waiting'
+      ? { label: 'Review', to: '/app/settlements' }
+      : agentState === 'frozen'
+        ? { label: 'Unfreeze', to: '/app/permissions' }
+        : undefined
+
+  // The onboarding path, with real completion state. Stays until every step is done,
+  // because the stall is usually between "registered" and "paid", not at zero.
+  const steps: Step[] = [
+    {
+      label: 'Claim an Agent ID',
+      detail: 'An ERC-8004 passport on Arc, so others can verify your agent.',
+      done: Boolean(agent),
+      to: '/app/agent-id',
+    },
+    {
+      label: 'Give it a wallet',
+      detail: 'The account your agent pays from.',
+      done: Boolean(agent?.walletAddress),
+      to: '/app/agent-id',
+      blockedBy: agent ? undefined : 'after step 1',
+    },
+    {
+      label: 'Fund it with testnet USDC',
+      detail: 'Free from faucet.circle.com. Nothing can settle from an empty wallet.',
+      done: (balance ?? 0) > 0,
+      to: '/app/wallet',
+      blockedBy: agent?.walletAddress ? undefined : 'after step 2',
+    },
+    {
+      label: 'Set your limits',
+      detail: 'A daily cap and the line below which the agent may act alone.',
+      done: Boolean(p),
+      to: '/app/permissions',
+      blockedBy: agent ? undefined : 'after step 1',
+    },
+    {
+      label: 'Make the first payment',
+      detail: 'Watch the policy engine decide, then settle it on Arc.',
+      done: (txTotal ?? 0) > 0,
+      to: '/app/settlements',
+      blockedBy: (balance ?? 0) > 0 ? undefined : 'after step 3',
+    },
+  ]
+  // Hide the checklist only once it is genuinely finished, and never flash it while the
+  // first read is still in flight.
+  const setupSettled = loaded && !error && (!agent || readAt != null)
+  const showChecklist = setupSettled && steps.some((s) => !s.done)
 
   return (
     <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.3, ease: 'easeOut' }} className="w-full">
@@ -169,17 +264,30 @@ export default function Dashboard() {
         </div>
       )}
 
-      {loaded && !agent && !error && (
-        <div className="mt-6 rounded-xl border border-dashed border-border bg-card p-6 text-sm text-foreground/60">
-          No agent registered yet.{' '}
-          <Link to="/app/agent-id" className="font-semibold text-accent hover:underline">Claim an Agent ID</Link>{' '}
-          to give it a wallet, limits, and an on-chain passport.
+      {/* What the agent is doing right now, before any number. */}
+      {!error && (agent || !loaded) && (
+        <div className="mt-6">
+          <AgentStatusBar
+            state={agentState}
+            agentName={agent?.name ?? ''}
+            clauses={clauses}
+            lastActedAt={lastActedAt}
+            readAt={readAt}
+            action={statusAction}
+            loading={!loaded || (Boolean(agent) && readAt == null)}
+          />
+        </div>
+      )}
+
+      {showChecklist && (
+        <div className="mt-4">
+          <SetupChecklist steps={steps} />
         </div>
       )}
 
       {/* Stat strip: hairline-divided tiles, mono figures, credit-score spectrum on reputation */}
-      <div className="mt-6 grid grid-cols-2 gap-px overflow-hidden rounded-xl border border-border bg-border lg:grid-cols-4">
-        <StatTile to="/app/agent-id" label="Reputation" value={rep != null ? String(rep) : dash} sub={rep != null ? `${gradeOf(rep)} · / 1000` : 'from real activity'} loading={rep == null && !loaded}>
+      <div className="mt-4 grid grid-cols-2 gap-px overflow-hidden rounded-xl border border-border bg-border lg:grid-cols-4">
+        <StatTile to="/app/agent-id" label="Reputation" value={rep != null ? String(rep) : dash} sub={rep != null ? `${gradeOf(rep)} · / 1000` : 'from real activity'} loading={rep == null && !loaded} readAt={rep != null ? readAt : null}>
           {rep != null ? (
             <div className="mt-2 mb-0.5 h-1.5 w-full rounded-full" style={{ background: 'linear-gradient(90deg,#dc2626,#d97706 45%,#059669)' }}>
               <div className="relative h-full">
@@ -190,14 +298,39 @@ export default function Dashboard() {
             <Skeleton className="mt-2 mb-0.5 h-1.5 w-full" />
           ) : null}
         </StatTile>
-        <StatTile to="/app/wallet" label="Wallet balance" value={balance != null ? balance.toFixed(2) : dash} sub="USDC on Arc · live" loading={balance == null && !loaded} />
-        <StatTile to="/app/settlements" label="Settlements" value={settlements != null ? String(settlements) : dash} sub="settled on-chain" loading={settlements == null && !loaded} />
-        <StatTile to="/app/permissions" label="Daily cap" value={p ? `$${p.dailyCapUsd}` : dash} sub={p ? `auto-approve $${p.autoApproveUnderUsd}` : 'set your limits'} loading={!p && !loaded} />
+        <StatTile to="/app/wallet" label="Wallet balance" value={balance != null ? balance.toFixed(2) : dash} sub="USDC on Arc" loading={balance == null && !loaded} readAt={balance != null ? readAt : null} />
+        <StatTile to="/app/settlements" label="Settlements" value={settlements != null ? String(settlements) : dash} sub="settled on-chain" loading={settlements == null && !loaded} readAt={settlements != null ? readAt : null} />
+        <StatTile
+          to="/app/permissions"
+          label="Daily cap"
+          value={p ? `$${p.dailyCapUsd}` : dash}
+          sub={policy ? `$${policy.remainingTodayUsd.toFixed(2)} left today` : p ? `auto-approve $${p.autoApproveUnderUsd}` : 'set your limits'}
+          loading={!p && !loaded}
+          readAt={policy ? readAt : null}
+        >
+          {/* How much of today's cap is gone, so the cap is a state and not a setting. */}
+          {policy && policy.permissions.dailyCapUsd > 0 && (
+            <div className="mt-2 mb-0.5 h-1.5 w-full overflow-hidden rounded-full bg-foreground/10">
+              <div
+                className="h-full rounded-full transition-all"
+                style={{
+                  width: `${Math.min(100, (policy.spentTodayUsd / policy.permissions.dailyCapUsd) * 100)}%`,
+                  background: policy.spentTodayUsd >= policy.permissions.dailyCapUsd ? '#dc2626' : 'var(--color-accent)',
+                }}
+              />
+            </div>
+          )}
+        </StatTile>
       </div>
 
       <div className="mt-4 grid gap-4 lg:grid-cols-3">
         {/* Agent status + network */}
         <div className="rounded-xl border border-border bg-card p-6 lg:col-span-2">
+          {/* While the checklist is up it already says all of this, in order and with the
+              steps that unblock each other. Two copies of the same three facts on one
+              screen is worse than one, so these rows stand down until setup is finished. */}
+          {!showChecklist && (
+            <>
           <h3 className="mb-4 text-xs font-semibold uppercase tracking-wide text-foreground/50">Agent status</h3>
           <ul className="flex flex-col gap-2">
             {statusItems.map(({ label, detail, ok, to, icon: Icon }) => (
@@ -219,8 +352,10 @@ export default function Dashboard() {
               </li>
             ))}
           </ul>
+            </>
+          )}
 
-          <h3 className="mb-3 mt-6 text-xs font-semibold uppercase tracking-wide text-foreground/50">Network</h3>
+          <h3 className={`mb-3 text-xs font-semibold uppercase tracking-wide text-foreground/50 ${showChecklist ? '' : 'mt-6'}`}>Network</h3>
           <div className="grid gap-2 sm:grid-cols-3">
             {CHAINS.map((c) => (
               <div key={c.id} className="rounded-lg border border-border bg-background/40 p-3">
@@ -288,7 +423,7 @@ export default function Dashboard() {
   )
 }
 
-function StatTile({ to, label, value, sub, loading, children }: { to: string; label: string; value: string; sub: string; loading?: boolean; children?: ReactNode }) {
+function StatTile({ to, label, value, sub, loading, readAt, children }: { to: string; label: string; value: string; sub: string; loading?: boolean; readAt?: number | null; children?: ReactNode }) {
   return (
     <Link to={to} className="group flex flex-col bg-card p-5 transition-colors hover:bg-foreground/[0.02]">
       <div className="text-[11px] font-medium uppercase tracking-wide text-foreground/45">{label}</div>
@@ -303,6 +438,8 @@ function StatTile({ to, label, value, sub, loading, children }: { to: string; la
       ) : (
         <div className="mt-1 text-[11px] text-foreground/40">{sub}</div>
       )}
+      {/* When the figure was read. Only rendered for figures we actually hold. */}
+      <Freshness at={readAt ?? null} className="mt-0.5 font-mono text-[10px] text-foreground/30" />
     </Link>
   )
 }
