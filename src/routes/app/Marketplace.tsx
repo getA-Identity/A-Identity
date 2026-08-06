@@ -3,7 +3,6 @@ import { Link } from 'react-router-dom'
 import {
   Activity,
   BadgeCheck,
-  Bot,
   Clock,
   Heart,
   Plus,
@@ -13,6 +12,7 @@ import { authHeaders, useAuth } from '../../store/auth'
 
 import { BACKEND_UNREACHABLE } from '../../lib/mcpBase'
 import { apiFetch, readJson, explainError } from '../../lib/api'
+import AgentAvatar from '../../components/AgentAvatar'
 import WorkerCatalog from '../../components/app/WorkerCatalog'
 import AppPage from '../../components/app/AppPage'
 import { Skeleton } from '../../components/ui/skeleton'
@@ -260,9 +260,12 @@ export default function Marketplace() {
           <div key={a.id} className="flex flex-col rounded-2xl border border-border bg-card p-6">
             <div className="flex items-start justify-between gap-3">
               <div className="flex items-center gap-3">
-                <div className="grid h-11 w-11 place-items-center rounded-xl bg-accent/10 text-accent">
-                  <Bot size={20} />
-                </div>
+                <AgentAvatar
+                  seed={a.onchainAgentId || a.id}
+                  category={a.category}
+                  size={44}
+                  verdict={a.kya === 'verified' ? 'allow' : 'warn'}
+                />
                 <div className="min-w-0">
                   <div className="truncate font-bold text-foreground">{a.name}</div>
                   <div className="truncate text-xs text-foreground/50">{a.category}</div>

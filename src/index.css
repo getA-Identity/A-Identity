@@ -157,6 +157,18 @@
   --accent: #7342e2;
   --accent-deep: #4f2fa8;  /* the darker stop of the identity-card gradient */
 
+  /* Agent category tints. Six fixed hues, all in the violet-blue-slate range on
+     purpose: green, amber and red are spoken for by allow / warn / deny, and a
+     category must never be mistaken for a verdict. Replaces a random `hsl(hash % 360)`
+     that could hand an agent any colour on the wheel, including the three that mean
+     something. */
+  --cat-1: #7c5cf0;
+  --cat-2: #3b82f6;
+  --cat-3: #6366f1;
+  --cat-4: #0891b2;
+  --cat-5: #64748b;
+  --cat-6: #a855f7;
+
   /* Spec-named aliases kept for the landing components that reference them.
      Now theme-aware (were --color-ink / --color-cream). */
   --color-text: var(--foreground);
@@ -181,6 +193,13 @@
   --usdc: #5fa5ec;
   --usdc-deep: #2775ca;
   /* No --accent / --accent-deep here on purpose: see the note in :root. */
+
+  --cat-1: #a78bfa;
+  --cat-2: #60a5fa;
+  --cat-3: #818cf8;
+  --cat-4: #22d3ee;
+  --cat-5: #94a3b8;
+  --cat-6: #c084fc;
 
   /* Re-alias here too: a custom property whose value is `var(--foreground)` is
      substituted where it is DECLARED, so the :root aliases stay pinned to the
