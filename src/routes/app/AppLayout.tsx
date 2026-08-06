@@ -2,7 +2,6 @@ import { useEffect, useState } from 'react'
 import { Link, NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom'
 import {
   ArrowLeftRight,
-  Bot,
   Coins,
   CreditCard,
   Fingerprint,
@@ -22,15 +21,55 @@ import { APP_NAME } from '../../lib/brand'
 import { useMcpHealth } from '../../hooks/useMcp'
 import { wakeBackend } from '../../lib/api'
 
+/**
+ * The sidebar, grouped.
+ *
+ * Seven items in one flat list gave the eye nothing to hold on to, so finding a screen
+ * meant reading all seven every time. Grouped by what the screen is ABOUT, each group
+ * answers a different question: who the agent is and what it may do, where its money is,
+ * and who else is out there. Overview sits above the groups because it is not a category,
+ * it is the way back.
+ */
 const NAV = [
   { to: '/app', label: 'Overview', icon: LayoutDashboard, end: true },
-  { to: '/app/agent-id', label: 'Agent ID', icon: Fingerprint, end: false },
-  { to: '/app/wallet', label: 'Wallet', icon: CreditCard, end: false },
-  { to: '/app/settlements', label: 'Settlements', icon: ArrowLeftRight, end: false },
-  { to: '/app/marketplace', label: 'Marketplace', icon: Store, end: false },
-  { to: '/app/earnings', label: 'Earnings', icon: Coins, end: false },
-  { to: '/app/permissions', label: 'Permissions', icon: SlidersHorizontal, end: false },
 ] as const
+
+const NAV_GROUPS = [
+  {
+    label: 'Agent',
+    items: [
+      { to: '/app/agent-id', label: 'Agent ID', icon: Fingerprint },
+      { to: '/app/permissions', label: 'Permissions', icon: SlidersHorizontal },
+    ],
+  },
+  {
+    label: 'Money',
+    items: [
+      { to: '/app/wallet', label: 'Wallet', icon: CreditCard },
+      { to: '/app/settlements', label: 'Settlements', icon: ArrowLeftRight },
+      { to: '/app/earnings', label: 'Earnings', icon: Coins },
+    ],
+  },
+  {
+    label: 'Network',
+    items: [{ to: '/app/marketplace', label: 'Marketplace', icon: Store }],
+  },
+] as const
+
+/** Flat list of every destination, for the breadcrumb and the mobile bar. */
+const ALL_NAV = [...NAV, ...NAV_GROUPS.flatMap((g) => g.items.map((i) => ({ ...i, end: false as const })))]
+
+/**
+ * One row, in both the grouped desktop rail and the mobile bar.
+ *
+ * The active row used to be a solid accent block with white text, which is the loudest
+ * thing a console can do with its most permanent element: it competed with the page for
+ * attention on every screen. A soft fill plus an accent icon says the same thing quietly.
+ */
+const rowClass = (isActive: boolean) =>
+  `flex items-center gap-3 rounded-lg px-3 py-2 text-sm transition-colors ${
+    isActive ? 'bg-foreground/[0.06] font-semibold text-foreground' : 'font-medium text-foreground/60 hover:bg-foreground/[0.03] hover:text-foreground/85'
+  }`
 
 /**
  * The console canvas. One width, declared once, shared by the topbar, the banners and
@@ -89,7 +128,8 @@ export default function AppLayout() {
     return () => window.removeEventListener('keydown', onKey)
   }, [])
 
-  const current = [...NAV].reverse().find((n) => location.pathname.startsWith(n.to))
+  // Longest match wins: /app matches every console path, so it has to be considered last.
+  const current = [...ALL_NAV].sort((a, b) => b.to.length - a.to.length).find((n) => location.pathname.startsWith(n.to))
   const title = current?.label ?? 'Overview'
 
   const onLogout = () => {
@@ -108,82 +148,84 @@ export default function AppLayout() {
           <span className="text-lg font-bold tracking-tight">{APP_NAME}</span>
         </div>
 
-        <div className="mb-3 px-3">
-          <span className="text-[10px] font-semibold tracking-widest text-foreground/35">
-            Agent Console
-          </span>
-        </div>
-
-        <nav className="flex flex-1 flex-col gap-1">
+        <nav className="flex flex-1 flex-col gap-1 overflow-y-auto" aria-label="Console">
           {NAV.map(({ to, label, icon: Icon, end }) => (
-            <NavLink
-              key={to}
-              to={to}
-              end={end}
-              className={({ isActive }) =>
-                `flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium transition-colors ${
-                  isActive ? 'bg-accent text-white' : 'text-foreground/70 hover:bg-foreground/5'
-                }`
-              }
-            >
-              <Icon size={18} />
-              {label}
+            <NavLink key={to} to={to} end={end} className={({ isActive }) => rowClass(isActive)}>
+              {({ isActive }) => (
+                <>
+                  <Icon size={17} className={isActive ? 'text-accent' : ''} />
+                  {label}
+                </>
+              )}
             </NavLink>
+          ))}
+
+          {NAV_GROUPS.map((group) => (
+            <div key={group.label} className="mt-5 border-t border-border pt-4 first:border-0">
+              <div className="mb-1 px-3 text-[10px] font-semibold uppercase tracking-[0.12em] text-foreground/35">
+                {group.label}
+              </div>
+              <div className="flex flex-col gap-1">
+                {group.items.map(({ to, label, icon: Icon }) => (
+                  <NavLink key={to} to={to} className={({ isActive }) => rowClass(isActive)}>
+                    {({ isActive }) => (
+                      <>
+                        <Icon size={17} className={isActive ? 'text-accent' : ''} />
+                        {label}
+                      </>
+                    )}
+                  </NavLink>
+                ))}
+              </div>
+            </div>
           ))}
         </nav>
 
-        {/* MCP server status */}
-        <div className="mb-2 mt-2 rounded-xl border border-foreground/8 bg-foreground/[0.03] px-3 py-3">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-1.5">
-              <Bot size={13} className="text-accent" />
-              <span className="text-xs font-semibold text-foreground/70">MCP server</span>
-            </div>
-            <div className="flex items-center gap-1.5">
-              <span
-                className={`h-2 w-2 rounded-full ${
-                  mcp === 'checking'
-                    ? 'animate-pulse bg-foreground/25'
-                    : mcp === 'waking'
-                      ? 'animate-pulse bg-amber-400'
-                      : mcp === 'online'
-                        ? 'bg-emerald-400'
-                        : 'bg-red-400'
-                }`}
-              />
-              <span className="text-[11px] text-foreground/40">
-                {mcp === 'checking' ? 'checking' : mcp === 'waking' ? 'waking up' : mcp === 'online' ? 'online' : 'reconnecting'}
-              </span>
-            </div>
-          </div>
-          <p className="mt-1 text-[11px] leading-relaxed text-foreground/40">
+        {/* Backend status, one line. It used to be a card with a heading and a sentence
+            restating the dot, which is a lot of the rail's height for a single bit. */}
+        <div className="mt-4 flex items-center gap-2 px-3 py-2 text-[11px] text-foreground/45">
+          <span
+            className={`h-1.5 w-1.5 shrink-0 rounded-full ${
+              mcp === 'checking'
+                ? 'animate-pulse bg-foreground/25'
+                : mcp === 'waking'
+                  ? 'animate-pulse bg-amber-400'
+                  : mcp === 'online'
+                    ? 'bg-emerald-400'
+                    : 'bg-red-400'
+            }`}
+          />
+          <span className="truncate">
             {mcp === 'online'
               ? 'Live on-chain data'
               : mcp === 'waking'
-                ? 'Backend is cold-starting (~30s)...'
+                ? 'Backend waking up, ~30s'
                 : mcp === 'checking'
                   ? 'Connecting...'
-                  : 'Reconnecting to the backend...'}
-          </p>
+                  : 'Reconnecting...'}
+          </span>
         </div>
 
-        <div className="mb-3 rounded-xl border border-foreground/8 bg-foreground/[0.03] px-3 py-2">
-          <div className="flex items-center gap-1.5">
-            <span className="text-[10px] font-semibold text-foreground/40">Human-on-the-loop</span>
+        {/* Who is signed in. The console knew this and only showed it as an initial in the
+            top-right corner, so the rail ended on a marketing sentence instead of on you. */}
+        <div className="mt-2 flex items-center gap-2.5 rounded-xl border border-border bg-foreground/[0.02] p-2.5">
+          <div className="grid h-8 w-8 shrink-0 place-items-center rounded-full bg-accent text-[11px] font-bold text-white">
+            {user ? initials(user.name) : 'AI'}
           </div>
-          <p className="text-[11px] leading-relaxed text-foreground/40">
-            Keys, contracts, real value require your approval.
-          </p>
+          <div className="min-w-0 flex-1">
+            <div className="truncate text-xs font-semibold text-foreground">{user?.name ?? 'Signed in'}</div>
+            <div className="truncate text-[11px] text-foreground/45">{user?.email ?? ''}</div>
+          </div>
+          <button
+            type="button"
+            onClick={onLogout}
+            aria-label="Log out"
+            title="Log out"
+            className="shrink-0 rounded-lg p-1.5 text-foreground/40 transition-colors hover:bg-foreground/[0.06] hover:text-foreground/70"
+          >
+            <LogOut size={15} />
+          </button>
         </div>
-
-        <button
-          type="button"
-          onClick={onLogout}
-          className="flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium text-foreground/70 transition-colors hover:bg-foreground/5"
-        >
-          <LogOut size={18} />
-          Log out
-        </button>
       </aside>
 
       {/* Main column */}
@@ -270,19 +312,23 @@ export default function AppLayout() {
 
         {/* Mobile nav */}
         <nav className="flex gap-1 overflow-x-auto border-b border-foreground/10 bg-card px-4 py-2 md:hidden" aria-label="Console sections">
-          {NAV.map(({ to, label, icon: Icon, end }) => (
+          {ALL_NAV.map(({ to, label, icon: Icon, end }) => (
             <NavLink
               key={to}
               to={to}
               end={end}
               className={({ isActive }) =>
-                `flex shrink-0 items-center gap-2 rounded-full px-3 py-2 text-sm font-medium transition-colors ${
-                  isActive ? 'bg-accent text-white' : 'text-foreground/70'
+                `flex shrink-0 items-center gap-2 rounded-full px-3 py-2 text-sm transition-colors ${
+                  isActive ? 'bg-foreground/[0.07] font-semibold text-foreground' : 'font-medium text-foreground/60'
                 }`
               }
             >
-              <Icon size={16} />
-              {label}
+              {({ isActive }) => (
+                <>
+                  <Icon size={16} className={isActive ? 'text-accent' : ''} />
+                  {label}
+                </>
+              )}
             </NavLink>
           ))}
         </nav>
