@@ -93,6 +93,9 @@ export default function Settlements() {
   const [error, setError] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
   const [tab, setTab] = useState<Tab>('payments')
+  /** Id of the pending payment being edited, and the values being edited into it. */
+  const [editing, setEditing] = useState<string | null>(null)
+  const [draft, setDraft] = useState<{ amount: string; payee: string } | null>(null)
 
   useEffect(() => {
     ;(async () => {
@@ -165,6 +168,64 @@ export default function Settlements() {
       await load(agentId)
     } catch {
       setError('Could not create the payment. The backend may be waking up, try again in a moment.')
+    } finally {
+      setBusy(null)
+    }
+  }
+
+  /**
+   * Edit a pending payment: reject the original, then create a replacement.
+   *
+   * Nothing is rewritten in place. The queue keeps both the payment that was proposed and
+   * the one that was actually authorised, so an approval always points at the exact terms
+   * a human saw. A pending instruction has not committed against the daily cap, so there
+   * is nothing to unwind when it is rejected.
+   *
+   * Order is deliberate. Rejecting first means a failed create leaves the original
+   * cancelled, and we keep the editor open holding the values so it can be retried. The
+   * other order would risk two live payments for the same thing, and someone approving
+   * both, which is the worse failure by a distance.
+   */
+  const saveEdit = async (id: string) => {
+    if (!draft) return
+    const amountUsd = Math.max(0, Number(draft.amount) || 0)
+    const nextPayee = draft.payee.trim()
+    if (!nextPayee) { setError('Give the replacement a payee.'); return }
+    setBusy(id)
+    setError(null)
+    try {
+      const rej = await apiFetch('/api/instructions/reject', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...authHeaders() },
+        body: JSON.stringify({ id, reason: 'Cancelled by a human, replaced with edited terms.' }),
+        onWaking: () => setError('Waking up the backend (free tier)…'),
+      })
+      if (!rej.ok) {
+        const j = await readJson<{ error?: string }>(rej)
+        setError(explainError(rej.status, j.error))
+        return
+      }
+
+      const made = await apiFetch('/api/instructions', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...authHeaders() },
+        body: JSON.stringify({ agentId, type: 'payment', amountUsd, payee: nextPayee }),
+      })
+      if (!made.ok) {
+        const j = await readJson<{ error?: string }>(made)
+        setError(
+          `The original was cancelled but the replacement did not go through: ${explainError(made.status, j.error)} Your edits are still here, try again.`,
+        )
+        await load(agentId)
+        return
+      }
+
+      setDraft(null)
+      setEditing(null)
+      setError(null)
+      await load(agentId)
+    } catch {
+      setError('Could not save the edit. The backend may be waking up, try again in a moment.')
     } finally {
       setBusy(null)
     }
@@ -372,8 +433,60 @@ export default function Settlements() {
                   </div>
                 </div>
 
+                {/* Editing a pending payment: change the terms, then approve the result.
+                    Approve/Cancel is a false choice when the only thing wrong is a digit. */}
+                {editing === ix.id && draft && (
+                  <div className="mt-3 rounded-xl border border-accent/25 bg-accent/[0.04] p-3">
+                    <div className="text-xs font-semibold text-foreground">Edit before approving</div>
+                    <p className="mt-1 text-[11px] leading-relaxed text-foreground/55">
+                      This cancels the payment below and puts a new one through the policy engine, so
+                      the queue keeps both what was proposed and what you actually authorised.
+                    </p>
+                    <div className="mt-2.5 flex flex-wrap items-center gap-2">
+                      <input
+                        value={draft.payee}
+                        onChange={(e) => setDraft({ ...draft, payee: e.target.value })}
+                        aria-label="Replacement payee"
+                        className="min-w-0 flex-1 rounded-lg border border-foreground/10 bg-background/60 px-3 py-2 font-mono text-xs outline-none focus:border-accent"
+                      />
+                      <input
+                        value={draft.amount}
+                        onChange={(e) => setDraft({ ...draft, amount: e.target.value })}
+                        inputMode="decimal"
+                        aria-label="Replacement amount in USDC"
+                        className="w-24 rounded-lg border border-foreground/10 bg-background/60 px-3 py-2 text-sm tabular-nums outline-none focus:border-accent"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => saveEdit(ix.id)}
+                        disabled={busy === ix.id}
+                        className="rounded-full bg-accent px-3 py-2 text-xs font-semibold text-white disabled:opacity-50"
+                      >
+                        {busy === ix.id ? 'Replacing...' : 'Replace'}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => { setEditing(null); setDraft(null) }}
+                        className="rounded-full border border-foreground/15 px-3 py-2 text-xs font-semibold text-foreground/60 hover:bg-foreground/5"
+                      >
+                        Cancel
+                      </button>
+                    </div>
+                  </div>
+                )}
+
                 {/* Actions */}
                 <div className="mt-3 flex items-center justify-end gap-2 border-t border-foreground/8 pt-3">
+                  {ix.status === 'pending_approval' && editing !== ix.id && (
+                    <button
+                      type="button"
+                      onClick={() => { setEditing(ix.id); setDraft({ amount: String(ix.amountUsd), payee: ix.payee }); setError(null) }}
+                      disabled={busy === ix.id}
+                      className="rounded-full border border-foreground/15 px-3 py-1.5 text-xs font-semibold text-foreground/70 hover:bg-foreground/5 disabled:opacity-50"
+                    >
+                      Edit
+                    </button>
+                  )}
                   {ix.status === 'pending_approval' && (
                     <button
                       type="button"

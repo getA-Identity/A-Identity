@@ -21,6 +21,10 @@
       "destination": "https://a-identity-backend.onrender.com/api/:path*"
     },
     {
+      "source": "/asp/:path*",
+      "destination": "https://a-identity-asp.onrender.com/:path*"
+    },
+    {
       "source": "/(.*)",
       "destination": "/index.html"
     }

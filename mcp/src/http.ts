@@ -35,6 +35,7 @@ import {
   agentReputation,
   anchorAgentOnchain,
   approveInstruction,
+  rejectInstruction,
   assignWallet,
   createAgent,
   createInstruction,
@@ -1233,6 +1234,13 @@ const server = http.createServer(async (req, res) => {
     const body = (await readBody(req).catch(() => null)) as { id?: string } | null
     if (!body?.id) { sendJson(res, 400, { error: 'id required' }); return }
     const ix = approveInstruction(body.id, callerId)
+    sendJson(res, 'error' in ix ? errStatus(ix.error) : 200, ix)
+    return
+  }
+  if (req.method === 'POST' && url.pathname === '/api/instructions/reject') {
+    const body = (await readBody(req).catch(() => null)) as { id?: string; reason?: string } | null
+    if (!body?.id) { sendJson(res, 400, { error: 'id required' }); return }
+    const ix = rejectInstruction(body.id, callerId, body.reason)
     sendJson(res, 'error' in ix ? errStatus(ix.error) : 200, ix)
     return
   }

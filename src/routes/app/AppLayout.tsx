@@ -1,4 +1,4 @@
-import { useEffect } from 'react'
+import { useEffect, useState } from 'react'
 import { Link, NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom'
 import {
   ArrowLeftRight,
@@ -9,9 +9,11 @@ import {
   LayoutDashboard,
   Lock,
   LogOut,
+  Search,
   SlidersHorizontal,
   Store,
 } from 'lucide-react'
+import CommandBar from '../../components/app/CommandBar'
 import Logo from '../../components/Logo'
 import ThemeToggle from '../../components/ThemeToggle'
 import { useTheme } from '../../components/ThemeProvider'
@@ -63,6 +65,28 @@ export default function AppLayout() {
   // 502 instead of hitting it on the first action.
   useEffect(() => {
     wakeBackend()
+  }, [])
+
+  // Command surface. Cmd+K on a Mac, Ctrl+K elsewhere, and "/" when the caret is not
+  // already in a field, which is the shortcut people try first without being told.
+  const [cmdOpen, setCmdOpen] = useState(false)
+  const cmdKeyLabel = typeof navigator !== 'undefined' && /Mac|iPhone|iPad/.test(navigator.platform) ? '⌘K' : 'Ctrl K'
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      const el = document.activeElement
+      const typing = el instanceof HTMLElement && (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA' || el.tagName === 'SELECT' || el.isContentEditable)
+      if ((e.key === 'k' || e.key === 'K') && (e.metaKey || e.ctrlKey)) {
+        e.preventDefault()
+        setCmdOpen((v) => !v)
+        return
+      }
+      if (e.key === '/' && !typing && !e.metaKey && !e.ctrlKey && !e.altKey) {
+        e.preventDefault()
+        setCmdOpen(true)
+      }
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
   }, [])
 
   const current = [...NAV].reverse().find((n) => location.pathname.startsWith(n.to))
@@ -180,6 +204,26 @@ export default function AppLayout() {
             </div>
 
             <div className="flex flex-1 items-center justify-end gap-3">
+              {/* The command surface has to be visible to be discovered: a keyboard
+                  shortcut nobody is told about is a feature only its author uses. */}
+              <button
+                type="button"
+                onClick={() => setCmdOpen(true)}
+                className="hidden items-center gap-2 rounded-lg border border-border px-2.5 py-1.5 text-xs text-foreground/50 transition-colors hover:bg-foreground/[0.04] hover:text-foreground/70 sm:flex"
+              >
+                <Search size={13} />
+                <span>Command</span>
+                <kbd className="rounded border border-border px-1 py-px font-mono text-[10px]">{cmdKeyLabel}</kbd>
+              </button>
+              <button
+                type="button"
+                onClick={() => setCmdOpen(true)}
+                aria-label="Open commands"
+                className="rounded-lg p-1.5 text-foreground/50 hover:bg-foreground/[0.04] sm:hidden"
+              >
+                <Search size={16} />
+              </button>
+
               {/* MCP status dot (mobile) */}
               <div className="flex items-center gap-1.5 md:hidden">
                 <span
@@ -249,6 +293,8 @@ export default function AppLayout() {
           </div>
         </main>
       </div>
+
+      <CommandBar open={cmdOpen} onClose={() => setCmdOpen(false)} />
     </div>
   )
 }

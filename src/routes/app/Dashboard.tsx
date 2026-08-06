@@ -15,6 +15,7 @@ import AppPage from '../../components/app/AppPage'
 import AgentStatusBar, { type AgentState } from '../../components/app/AgentStatusBar'
 import SetupChecklist, { type Step } from '../../components/app/SetupChecklist'
 import Freshness from '../../components/app/Freshness'
+import SpendSummary, { type Ix } from '../../components/app/SpendSummary'
 import { Skeleton } from '../../components/ui/skeleton'
 
 /** Shorten any full 40-hex address inside activity text so it never overflows the card. */
@@ -60,6 +61,7 @@ export default function Dashboard() {
   const [settlements, setSettlements] = useState<number | null>(null)
   const [pending, setPending] = useState<number | null>(null)
   const [txTotal, setTxTotal] = useState<number | null>(null)
+  const [instructions, setInstructions] = useState<Ix[] | null>(null)
   const [policy, setPolicy] = useState<Policy | null>(null)
   const [agentTotal, setAgentTotal] = useState<number | null>(null)
   const [loaded, setLoaded] = useState(false)
@@ -105,6 +107,7 @@ export default function Dashboard() {
     setSettlements(null)
     setPending(null)
     setTxTotal(null)
+    setInstructions(null)
     setPolicy(null)
     setReadAt(null)
     ;(async () => {
@@ -118,7 +121,8 @@ export default function Dashboard() {
       if (!active) return
       if (repRes && !('error' in repRes) && typeof repRes.score === 'number') setRep(repRes.score)
       if (Array.isArray(ixRes?.instructions)) {
-        const ix = ixRes.instructions as { status: string }[]
+        const ix = ixRes.instructions as Ix[]
+        setInstructions(ix)
         setSettlements(ix.filter((i) => i.status === 'executed_onchain').length)
         setPending(ix.filter((i) => i.status === 'pending_approval').length)
         setTxTotal(ix.length)
@@ -383,6 +387,10 @@ export default function Dashboard() {
           </div>
         </div>
 
+        <div className="flex flex-col gap-4">
+        {/* What the money actually did this week, before the individual events. */}
+        {agent && <SpendSummary instructions={instructions} loading={readAt == null} />}
+
         {/* Activity feed */}
         <div className="rounded-xl border border-border bg-card p-6">
           <h3 className="mb-4 text-xs font-semibold uppercase tracking-wide text-foreground/50">Recent activity</h3>
@@ -416,6 +424,7 @@ export default function Dashboard() {
           <Link to="/app/settlements" className="mt-5 inline-flex items-center gap-1 text-sm font-semibold text-accent hover:underline">
             View all <ArrowUpRight size={14} />
           </Link>
+        </div>
         </div>
       </div>
       </AppPage>

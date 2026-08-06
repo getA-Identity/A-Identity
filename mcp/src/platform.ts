@@ -1740,6 +1740,31 @@ export function createInstruction(input: {
   return instruction
 }
 
+/**
+ * Reject a pending instruction.
+ *
+ * This is the cancel half of "edit a payment before approving it". Editing does not mutate
+ * the original: the console rejects it and creates a replacement, so no record is ever
+ * rewritten after the fact and the audit trail keeps both the thing that was proposed and
+ * the thing that was actually authorised.
+ *
+ * Only `pending_approval` can be rejected, which is also why nothing has to be unwound
+ * here: a pending instruction has never committed against the daily cap. Auto-approved and
+ * approved instructions have, so they are deliberately not rejectable through this path.
+ */
+export function rejectInstruction(ixId: string, caller?: string, reason?: string): Instruction | { error: string } {
+  const ix = state.instructions.find((i) => i.id === ixId)
+  if (!ix) return { error: 'Unknown instruction' }
+  const ag = state.agents.find((a) => a.id === ix.agentId)
+  if (ag && !ownsAgent(ag, caller)) return { error: 'Forbidden: not the agent owner' }
+  if (ix.status !== 'pending_approval') return { error: `Cannot reject from status ${ix.status}` }
+  ix.status = 'rejected'
+  ix.policyNote = reason?.trim() ? reason.trim().slice(0, 200) : 'Rejected by a human.'
+  if (ag) pushActivity(ag, `Instruction ${ix.id} rejected by a human`)
+  save(state)
+  return ix
+}
+
 export function approveInstruction(ixId: string, caller?: string): Instruction | { error: string } {
   const ix = state.instructions.find((i) => i.id === ixId)
   if (!ix) return { error: 'Unknown instruction' }

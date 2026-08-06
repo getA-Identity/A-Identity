@@ -362,7 +362,7 @@ export default function Permissions() {
                       <button
                         type="button"
                         onClick={() => set('payeeAllowlist', draft.payeeAllowlist.filter((x) => x !== p))}
-                        className="grid h-4 w-4 place-items-center rounded-full text-sm leading-none text-foreground/40 hover:bg-red-50 hover:text-red-500"
+                        className="grid h-4 w-4 place-items-center rounded-full text-sm leading-none text-foreground/40 hover:bg-red-500/10 hover:text-red-500"
                         aria-label={`Remove ${p}`}
                       >
                         ×
