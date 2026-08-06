@@ -532,6 +532,12 @@ export default function Settlements() {
 
           {!loading && items.length === 0 && (
             <div className="mt-4 rounded-2xl border border-dashed border-foreground/15 bg-card p-8 text-center text-sm text-foreground/50">
+              {/* Calm bird, eyes open, nothing to judge. That is what an empty approval
+                  queue means. This owl has real transparency, so it needs no mask, only a
+                  faint disc to keep its cream body off a bone-coloured card. */}
+              <span className="mx-auto mb-3 grid h-28 w-28 place-items-center rounded-full bg-accent/[0.06]">
+                <img src="/mascots/owl-soft-allow.png" alt="" aria-hidden="true" loading="lazy" decoding="async" className="h-24 w-24 object-contain" />
+              </span>
               No payments yet. Create one above to see the policy engine and on-chain settlement.
             </div>
           )}

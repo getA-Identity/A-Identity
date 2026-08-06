@@ -17,6 +17,8 @@ import { apiFetch } from '../../lib/api'
 import { useSelectedAgent } from '../../store/agent'
 import AgentSelect from '../../components/app/AgentSelect'
 import AppPage from '../../components/app/AppPage'
+import BrandArt from '../../components/app/BrandArt'
+import { categoryArt } from '../../lib/category-art'
 import { Skeleton } from '../../components/ui/skeleton'
 import ReputationCard from '../../components/app/agent/ReputationCard'
 import RegisterForm from '../../components/app/agent/RegisterForm'
@@ -173,14 +175,19 @@ export default function AgentId() {
 
       {/* Sample notice: no real agent yet → the card below is illustrative, not yours. */}
       {isSample && (
-        <div className="mt-6 flex items-start gap-3 rounded-2xl border border-amber-200 dark:border-amber-500/25 bg-amber-50/70 dark:bg-amber-500/10 p-4 text-sm text-amber-900">
-          <ShieldQuestion size={18} className="mt-0.5 shrink-0" />
-          <p>
-            <span className="font-semibold">This is a real example agent</span> (ERC-8004 #849980 on
-            Arc), resolved live on-chain. You haven't created an agent yet. Register one below to get
-            your own on-chain passport.
-          </p>
-        </div>
+        <>
+          {/* A disc of concentric rings with a blank face: a seal that has not been
+              stamped, which is exactly an account with no passport issued yet. */}
+          <BrandArt src="/art/art-seal.webp" className="mx-auto mt-6 h-40 w-48 sm:h-48 sm:w-56" />
+          <div className="mt-2 flex items-start gap-3 rounded-2xl border border-amber-200 dark:border-amber-500/25 bg-amber-50/70 dark:bg-amber-500/10 p-4 text-sm text-amber-900">
+            <ShieldQuestion size={18} className="mt-0.5 shrink-0" />
+            <p>
+              <span className="font-semibold">This is a real example agent</span> (ERC-8004 #849980 on
+              Arc), resolved live on-chain. You haven't created an agent yet. Register one below to get
+              your own on-chain passport.
+            </p>
+          </div>
+        </>
       )}
 
       {/* Identity card */}
@@ -188,6 +195,17 @@ export default function AgentId() {
         className="relative mt-6 overflow-hidden rounded-2xl p-6 text-white"
         style={{ background: 'linear-gradient(135deg, var(--accent) 0%, var(--accent-deep) 100%)' }}
       >
+        {/* The object for this agent's category. It sits here and nowhere else: the card
+            shows exactly one agent, so the image says what THIS agent does rather than
+            decorating a list where every row would then look alike. The card's gradient
+            is already dark, which is what makes an opaque render safe in both themes. */}
+        {!isSample && (
+          <BrandArt
+            src={categoryArt(category)}
+            variant="band"
+            className="absolute -right-8 -top-6 hidden h-52 w-52 opacity-30 mix-blend-luminosity sm:block"
+          />
+        )}
         <div
           className="pointer-events-none absolute inset-0 opacity-10"
           style={{

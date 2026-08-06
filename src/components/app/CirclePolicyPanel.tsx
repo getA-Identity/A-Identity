@@ -87,24 +87,24 @@ export default function CirclePolicyPanel({ agentId }: { agentId?: string }) {
         <p className="font-mono text-[10px] uppercase tracking-[0.16em] text-foreground/40">
           <Terminal size={11} className="mr-1 inline" /> one-time setup
         </p>
-        {plan.bootstrap.map((c) => (
+        {(plan.bootstrap ?? []).map((c) => (
           <Row key={c.command} c={c} />
         ))}
         <p className="mt-4 font-mono text-[10px] uppercase tracking-[0.16em] text-foreground/40">
           your limits, as Circle policies
         </p>
-        {plan.commands.map((c) => (
+        {(plan.commands ?? []).map((c) => (
           <Row key={c.command} c={c} />
         ))}
       </div>
 
-      {plan.notExpressible.length > 0 && (
+      {(plan.notExpressible?.length ?? 0) > 0 && (
         <div className="mt-4 rounded-xl border border-border bg-background/40 p-3">
           <p className="font-mono text-[10px] uppercase tracking-[0.16em] text-foreground/40">
             what Circle's engine cannot express
           </p>
           <ul className="mt-2 space-y-1.5 text-sm leading-relaxed text-foreground/60">
-            {plan.notExpressible.map((n) => (
+            {(plan.notExpressible ?? []).map((n) => (
               <li key={n} className="flex gap-2">
                 <span aria-hidden="true" className="mt-[9px] h-1 w-1 shrink-0 rounded-full bg-accent/60" />
                 {n}

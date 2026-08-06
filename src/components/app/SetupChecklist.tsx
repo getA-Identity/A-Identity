@@ -1,5 +1,6 @@
 import { Link } from 'react-router-dom'
 import { ArrowUpRight, Check } from 'lucide-react'
+import BrandArt from './BrandArt'
 
 /**
  * The zero state, as four steps instead of one sentence.
@@ -26,7 +27,19 @@ export default function SetupChecklist({ steps }: { steps: Step[] }) {
   const next = steps.find((s) => !s.done && !s.blockedBy)
 
   return (
-    <section className="rounded-xl border border-border bg-card p-6">
+    <section className="overflow-hidden rounded-xl border border-border bg-card">
+      {/* A threshold with a coin waiting on the far side, which is what these five steps
+          are: one crossing you make once, before any money can move. The band is its own
+          dark container, so the art's navy ground is deliberate rather than a hole. */}
+      <BrandArt
+        src="/art/art-gateway.webp"
+        variant="band"
+        eager
+        objectPosition="center 46%"
+        className="h-36 w-full sm:h-48"
+      />
+
+      <div className="p-6">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <h3 className="text-sm font-semibold text-foreground">Get your agent running</h3>
         <span className="font-mono text-xs text-foreground/45 tabular-nums">
@@ -90,6 +103,7 @@ export default function SetupChecklist({ steps }: { steps: Step[] }) {
           )
         })}
       </ol>
+      </div>
     </section>
   )
 }

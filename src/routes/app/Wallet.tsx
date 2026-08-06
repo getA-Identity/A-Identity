@@ -15,6 +15,7 @@ import { pickPrimaryAgent } from '../../lib/pickAgent'
 import { CircleWalletPanel, TreasuryPanel } from '../../components/app/WalletPanels'
 import AgentSelect from '../../components/app/AgentSelect'
 import AppPage from '../../components/app/AppPage'
+import BrandArt from '../../components/app/BrandArt'
 import { useSelectedAgent } from '../../store/agent'
 import { Skeleton } from '../../components/ui/skeleton'
 const FAUCET = 'https://faucet.circle.com'
@@ -149,6 +150,14 @@ export default function Wallet() {
             <div
               className="pointer-events-none absolute inset-0 opacity-10"
               style={{ backgroundImage: 'radial-gradient(circle at 80% 20%, white 0%, transparent 50%)' }}
+            />
+            {/* A safe door with a combination dial: where money is held and unlocked. It
+                belongs against the live balance, not against the rules that govern
+                spending. The hero is already dark, so the art needs no medallion mask. */}
+            <BrandArt
+              src="/art/art-vault.webp"
+              variant="band"
+              className="absolute -right-6 top-1/2 hidden h-48 w-48 -translate-y-1/2 opacity-40 sm:block"
             />
             <div className="relative">
               <div className="flex items-center justify-between">

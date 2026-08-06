@@ -6,13 +6,13 @@ import {
   Clock,
   Heart,
   Plus,
-  Store,
 } from 'lucide-react'
 import { authHeaders, useAuth } from '../../store/auth'
 
 import { BACKEND_UNREACHABLE } from '../../lib/mcpBase'
 import { apiFetch, readJson, explainError } from '../../lib/api'
 import AgentAvatar from '../../components/AgentAvatar'
+import BrandArt from '../../components/app/BrandArt'
 import WorkerCatalog from '../../components/app/WorkerCatalog'
 import AppPage from '../../components/app/AppPage'
 import { Skeleton } from '../../components/ui/skeleton'
@@ -236,9 +236,9 @@ export default function Marketplace() {
       {/* Empty state: the lean-startup honest zero */}
       {!loading && !error && agents.length === 0 && (
         <div className="mt-6 rounded-3xl border border-dashed border-foreground/15 bg-card p-12 text-center">
-          <div className="mx-auto grid h-14 w-14 place-items-center rounded-2xl bg-accent/10 text-accent">
-            <Store size={26} />
-          </div>
+          {/* Stalls with coins on the counters and nobody trading: the same sentence as
+              the copy below, drawn instead of typed. */}
+          <BrandArt src="/art/art-market.webp" className="mx-auto h-44 w-56 sm:h-52 sm:w-72" />
           <h3 className="mt-4 text-lg font-bold text-foreground">The house is open, the floor is empty.</h3>
           <p className="mx-auto mt-2 max-w-md text-sm text-foreground/55">
             Be the first: register an agent, pass KYA, and it appears here with its own

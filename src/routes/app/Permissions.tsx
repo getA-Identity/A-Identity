@@ -18,6 +18,7 @@ import { pickPrimaryAgent } from '../../lib/pickAgent'
 import { useSelectedAgent } from '../../store/agent'
 import AgentSelect from '../../components/app/AgentSelect'
 import AppPage from '../../components/app/AppPage'
+import BrandArt from '../../components/app/BrandArt'
 import { Skeleton } from '../../components/ui/skeleton'
 import { NumberField } from '../../components/ui/number-field'
 import PayeeAdder from '../../components/app/permissions/PayeeAdder'
@@ -168,6 +169,12 @@ export default function Permissions() {
       title="Permissions"
       description="You are in control. Set what your agent can do, who it can pay, and how much it can spend per day. The policy engine enforces every rule here for real."
     >
+      {/* A track with a lit inner edge: a boundary that keeps something moving rather than
+          stopping it, which is the honest picture of a daily cap. It is also the only
+          horizontal composition in the set, so it is the only one that survives a wide
+          crop with its subject intact. Its own dark band, so no hole in the light theme. */}
+      <BrandArt src="/art/art-guardrail.webp" variant="band" className="h-24 w-full rounded-2xl sm:h-28" />
+
       {error && (
         <div className="mt-5 rounded-2xl border border-amber-200 dark:border-amber-500/25 bg-amber-50/60 dark:bg-amber-500/10 p-4 text-sm text-foreground/70">
           {error}
