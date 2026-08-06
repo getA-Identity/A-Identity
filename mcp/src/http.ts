@@ -14,6 +14,7 @@ import { URL } from 'node:url'
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js'
 import { buildServer } from './server.js'
 import { CHAIN_CONFIG } from './data.js'
+import { buildStamp } from './build-stamp.js'
 import { renderBadgeSvg } from './policy/index.js'
 import { createIdentityProvider } from './erc8004.js'
 import { getArcStatus } from './arc.js'
@@ -514,6 +515,11 @@ const server = http.createServer(async (req, res) => {
       server: 'a-identity-mcp',
       version: '0.2.0',
       transport: 'streamable-http',
+      // Which build is actually answering. `version` comes from package.json and almost
+      // never moves, so it cannot tell a fresh deploy from a stale one. This can: after a
+      // push, poll /health until `commit` matches the SHA you pushed and you have proof
+      // the new code is serving, rather than assuming the host redeployed.
+      ...buildStamp(),
       chains: CHAIN_CONFIG.map((c) => ({ id: c.id, status: c.status })),
     })
     return
