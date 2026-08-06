@@ -70,7 +70,7 @@ export default function CirclePolicyPanel({ agentId }: { agentId?: string }) {
   return (
     <Panel className="mt-8">
       <div className="flex items-start gap-3">
-        <div className="grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-[#2775CA]/10 text-[#2775CA]">
+        <div className="grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-usdc/10 text-usdc">
           <ShieldCheck size={18} />
         </div>
         <div className="min-w-0 flex-1">

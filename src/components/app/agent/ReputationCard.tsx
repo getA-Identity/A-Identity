@@ -15,7 +15,7 @@ export default function ReputationCard({
 }) {
   const pct = Math.round((value / max) * 100)
   return (
-    <div className="rounded-2xl border border-foreground/10 bg-card p-5">
+    <div className="rounded-2xl border border-border bg-card p-5">
       <div className="text-xs font-semibold text-foreground/50">{label}</div>
       {loading ? (
         <Skeleton className="mt-2 h-6 w-10" />

@@ -38,7 +38,7 @@ export type ActionPolicy = {
 }
 
 const input =
-  'mt-1 w-full rounded-xl border border-foreground/10 bg-background/40 px-3 py-2.5 text-sm outline-none focus:border-accent'
+  'mt-1 w-full rounded-xl border border-border bg-background/40 px-3 py-2.5 text-sm outline-none focus:border-accent'
 const label = 'text-xs font-semibold text-foreground/50'
 const hint = 'mt-1 text-[11px] text-foreground/45'
 
@@ -151,7 +151,7 @@ export default function TradingPermissions({ agentId }: { agentId: string }) {
     return (
       <div className="mt-4 space-y-4">
         {[0, 1, 2].map((i) => (
-          <section key={i} className="rounded-2xl border border-foreground/10 bg-card p-6">
+          <section key={i} className="rounded-2xl border border-border bg-card p-6">
             <Skeleton className="mb-4 h-4 w-40" />
             <div className="grid gap-4 sm:grid-cols-2">
               <Skeleton className="h-11 w-full" />
@@ -165,7 +165,7 @@ export default function TradingPermissions({ agentId }: { agentId: string }) {
 
   if (!draft) {
     return (
-      <section className="mt-4 rounded-2xl border border-foreground/10 bg-card p-6">
+      <section className="mt-4 rounded-2xl border border-border bg-card p-6">
         <p className="text-sm text-foreground/60">{error ?? 'No trading policy available for this agent.'}</p>
       </section>
     )
@@ -197,7 +197,7 @@ export default function TradingPermissions({ agentId }: { agentId: string }) {
       </div>
 
       {/* Caps */}
-      <section className="rounded-2xl border border-foreground/10 bg-card p-6">
+      <section className="rounded-2xl border border-border bg-card p-6">
         <h3 className="mb-4 font-semibold text-foreground">Limits</h3>
         <div className="grid gap-4 sm:grid-cols-3">
           <div>
@@ -236,7 +236,7 @@ export default function TradingPermissions({ agentId }: { agentId: string }) {
       </section>
 
       {/* Symbols */}
-      <section className="mt-4 rounded-2xl border border-foreground/10 bg-card p-6">
+      <section className="mt-4 rounded-2xl border border-border bg-card p-6">
         <h3 className="mb-4 font-semibold text-foreground">Symbols</h3>
         <div className="grid gap-4 sm:grid-cols-2">
           <div>
@@ -265,7 +265,7 @@ export default function TradingPermissions({ agentId }: { agentId: string }) {
       </section>
 
       {/* Risk */}
-      <section className="mt-4 rounded-2xl border border-foreground/10 bg-card p-6">
+      <section className="mt-4 rounded-2xl border border-border bg-card p-6">
         <h3 className="mb-4 font-semibold text-foreground">Risk</h3>
 
         <div className="flex items-center justify-between border-b border-foreground/[0.07] py-3">
@@ -320,7 +320,7 @@ export default function TradingPermissions({ agentId }: { agentId: string }) {
       </section>
 
       {/* Hours */}
-      <section className="mt-4 rounded-2xl border border-foreground/10 bg-card p-6">
+      <section className="mt-4 rounded-2xl border border-border bg-card p-6">
         <div className="mb-4 flex items-center gap-2">
           <Clock size={16} className="text-foreground/40" />
           <h3 className="font-semibold text-foreground">Trading window (UTC)</h3>
@@ -380,7 +380,7 @@ export default function TradingPermissions({ agentId }: { agentId: string }) {
       </section>
 
       {/* Freeze */}
-      <section className="mt-4 rounded-2xl border border-foreground/10 bg-card p-6">
+      <section className="mt-4 rounded-2xl border border-border bg-card p-6">
         <div className="flex items-center justify-between">
           <div>
             <div className="text-sm font-semibold text-foreground">Freeze all agent actions</div>

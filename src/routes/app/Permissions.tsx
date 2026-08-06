@@ -1,14 +1,12 @@
 import { useCallback, useEffect, useState } from 'react'
-import { useNavigate } from 'react-router-dom'
 import {
   Check,
   CreditCard,
-  LogOut,
   Save,
   Shield,
   Snowflake,
 } from 'lucide-react'
-import { useAuth, authHeaders } from '../../store/auth'
+import { authHeaders } from '../../store/auth'
 import TradingPermissions from '../../components/app/TradingPermissions'
 import AuditTrail from '../../components/app/AuditTrail'
 import SpendPermissions from '../../components/app/SpendPermissions'
@@ -61,10 +59,6 @@ type VaultSyncNote = {
 const ARCSCAN_TX = 'https://testnet.arcscan.app/tx/'
 
 export default function Permissions() {
-  const user = useAuth((s) => s.user)
-  const logout = useAuth((s) => s.logout)
-  const navigate = useNavigate()
-
   const [tab, setTab] = useState<'payments' | 'trading' | 'spend' | 'audit'>('payments')
   const [agents, setAgents] = useState<Agent[]>([])
   const agentId = useSelectedAgent((s) => s.agentId)
@@ -183,7 +177,7 @@ export default function Permissions() {
       {loading && !error && (
         <div className="mt-5 space-y-4">
           {/* Daily-spend card */}
-          <div className="rounded-2xl border border-foreground/10 bg-card p-5">
+          <div className="rounded-2xl border border-border bg-card p-5">
             <div className="flex items-center justify-between">
               <Skeleton className="h-4 w-32" />
               <Skeleton className="h-3 w-28" />
@@ -195,7 +189,7 @@ export default function Permissions() {
             <Skeleton className="mt-3 h-2 w-full rounded-full" />
           </div>
           {/* Spending limits (form rows) */}
-          <div className="rounded-2xl border border-foreground/10 bg-card p-6">
+          <div className="rounded-2xl border border-border bg-card p-6">
             <Skeleton className="mb-4 h-4 w-32" />
             <div className="grid gap-4 sm:grid-cols-2">
               <div className="space-y-2">
@@ -209,7 +203,7 @@ export default function Permissions() {
             </div>
           </div>
           {/* Access controls (toggle rows) */}
-          <div className="rounded-2xl border border-foreground/10 bg-card p-6">
+          <div className="rounded-2xl border border-border bg-card p-6">
             <Skeleton className="mb-4 h-4 w-32" />
             <div className="space-y-4">
               {[0, 1].map((i) => (
@@ -240,7 +234,7 @@ export default function Permissions() {
           {/* Surface tabs. Payments is the USDC policy on Arc; Trading is the brokerage
               action policy. They are separate on purpose: the two govern different
               surfaces, and merging them would put payee allowlists next to tickers. */}
-          <div className="mt-5 flex flex-wrap gap-1 rounded-xl border border-foreground/10 bg-card p-1">
+          <div className="mt-5 flex flex-wrap gap-1 rounded-xl border border-border bg-card p-1">
             {([
               ['payments', 'Payments'],
               ['trading', 'Trading'],
@@ -264,10 +258,10 @@ export default function Permissions() {
           {tab === 'payments' && (
           <>
           {/* Daily limit status */}
-          <div className="mt-5 rounded-2xl border border-foreground/10 bg-card p-5">
+          <div className="mt-5 rounded-2xl border border-border bg-card p-5">
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-2 text-sm font-semibold text-foreground">
-                <CreditCard size={16} className="text-[#2775CA]" />
+                <CreditCard size={16} className="text-usdc" />
                 Today's spending
               </div>
               <div className="text-xs text-foreground/45">
@@ -288,14 +282,14 @@ export default function Permissions() {
                 className="h-full rounded-full transition-all"
                 style={{
                   width: `${Math.min(100, (policy.spentTodayUsd / Math.max(1, policy.permissions.dailyCapUsd)) * 100)}%`,
-                  background: policy.spentTodayUsd >= policy.permissions.dailyCapUsd ? '#EF4444' : '#2775CA',
+                  background: policy.spentTodayUsd >= policy.permissions.dailyCapUsd ? 'var(--danger)' : 'var(--usdc)',
                 }}
               />
             </div>
           </div>
 
           {/* Spending limits (editable) */}
-          <section className="mt-4 rounded-2xl border border-foreground/10 bg-card p-6">
+          <section className="mt-4 rounded-2xl border border-border bg-card p-6">
             <h3 className="mb-4 font-semibold text-foreground">Spending limits</h3>
             <div className="grid gap-4 sm:grid-cols-2">
               <div>
@@ -322,9 +316,9 @@ export default function Permissions() {
           </section>
 
           {/* Access controls (toggles) */}
-          <section className="mt-4 rounded-2xl border border-foreground/10 bg-card p-6">
+          <section className="mt-4 rounded-2xl border border-border bg-card p-6">
             <div className="mb-4 flex items-center gap-2">
-              <div className="grid h-8 w-8 place-items-center rounded-lg bg-[#1AAB7A] text-white">
+              <div className="grid h-8 w-8 place-items-center rounded-lg bg-ok text-white">
                 <Shield size={15} />
               </div>
               <h3 className="font-semibold text-foreground">Access controls</h3>
@@ -356,7 +350,7 @@ export default function Permissions() {
                   draft.payeeAllowlist.map((p) => (
                     <span
                       key={p}
-                      className="inline-flex items-center gap-1.5 rounded-full border border-foreground/10 bg-background/70 px-2.5 py-1 font-mono text-[11px] text-foreground/70"
+                      className="inline-flex items-center gap-1.5 rounded-full border border-border bg-background/70 px-2.5 py-1 font-mono text-[11px] text-foreground/70"
                     >
                       {p.length > 14 ? short(p) : p}
                       <button
@@ -380,7 +374,7 @@ export default function Permissions() {
           </section>
 
           {/* Safety */}
-          <section className="mt-4 rounded-2xl border border-foreground/10 bg-card p-6">
+          <section className="mt-4 rounded-2xl border border-border bg-card p-6">
             <div className="mb-4 flex items-center gap-2">
               <div className="grid h-8 w-8 place-items-center rounded-lg bg-red-500 text-white">
                 <Snowflake size={15} />
@@ -417,7 +411,7 @@ export default function Permissions() {
             <div
               className={`mt-3 rounded-xl border px-4 py-3 text-xs ${
                 vaultSync.synced
-                  ? 'border-[#7342E2]/25 bg-[#7342E2]/[0.05] text-foreground/70'
+                  ? 'border-accent/25 bg-accent/[0.05] text-foreground/70'
                   : 'border-amber-400/40 bg-amber-50 text-amber-800 dark:text-amber-300'
               }`}
             >
@@ -431,7 +425,7 @@ export default function Permissions() {
                         href={`${ARCSCAN_TX}${vaultSync.txs.setPolicy}`}
                         target="_blank"
                         rel="noopener noreferrer"
-                        className="font-semibold text-[#7342E2] hover:underline"
+                        className="font-semibold text-accent hover:underline"
                       >
                         View setPolicy tx
                       </a>
@@ -460,30 +454,9 @@ export default function Permissions() {
         </>
       )}
 
-      {/* Profile */}
-      <section className="mt-6 rounded-2xl border border-foreground/10 bg-card p-6">
-        <h3 className="mb-4 font-semibold">Profile</h3>
-        <div className="flex items-center gap-4">
-          <div className="grid h-14 w-14 place-items-center rounded-2xl bg-accent text-lg font-bold text-white">
-            {user?.name?.[0]?.toUpperCase() ?? 'U'}
-          </div>
-          <div className="min-w-0">
-            <div className="truncate font-semibold">{user?.name}</div>
-            <div className="truncate text-sm text-foreground/55">{user?.email}</div>
-          </div>
-        </div>
-        <button
-          type="button"
-          onClick={() => {
-            logout()
-            navigate('/')
-          }}
-          className="mt-4 inline-flex items-center gap-2 rounded-full border border-foreground/15 bg-card px-5 py-3 text-sm font-semibold text-foreground/80 transition-colors hover:bg-foreground/5"
-        >
-          <LogOut size={16} />
-          Log out
-        </button>
-      </section>
+      {/* The account block that used to sit here said the same three things as the
+          sidebar's account card, one scroll below a policy screen it had nothing to do
+          with. Who you are is not a permission, so it lives in the rail now. */}
     </AppPage>
   )
 }

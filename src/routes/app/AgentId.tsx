@@ -186,7 +186,7 @@ export default function AgentId() {
       {/* Identity card */}
       <div
         className="relative mt-6 overflow-hidden rounded-2xl p-6 text-white"
-        style={{ background: 'linear-gradient(135deg, #7342E2 0%, #4F2FA8 100%)' }}
+        style={{ background: 'linear-gradient(135deg, var(--accent) 0%, var(--accent-deep) 100%)' }}
       >
         <div
           className="pointer-events-none absolute inset-0 opacity-10"
@@ -253,7 +253,7 @@ export default function AgentId() {
       </div>
 
       {/* Stage progress */}
-      <div className="mt-6 rounded-2xl border border-foreground/10 bg-card p-6">
+      <div className="mt-6 rounded-2xl border border-border bg-card p-6">
         <h3 className="mb-4 font-semibold">Registration progress</h3>
         <div className="flex items-start">
           {STAGES.map(({ key, label, desc }, i) => {
@@ -298,21 +298,21 @@ export default function AgentId() {
           label="Settlement score"
           value={breakdown.settlement}
           max={600}
-          color="#7342E2"
+          color="var(--accent)"
           loading={repLoading}
         />
         <ReputationCard
           label="Validation score"
           value={breakdown.validation}
           max={240}
-          color="#2775CA"
+          color="var(--usdc)"
           loading={repLoading}
         />
         <ReputationCard
           label="Tenure score"
           value={breakdown.tenure}
           max={160}
-          color="#1AAB7A"
+          color="var(--ok)"
           loading={repLoading}
         />
       </div>
@@ -339,7 +339,7 @@ export default function AgentId() {
       </div>
 
       {/* Register new agent */}
-      <div className="mt-4 rounded-2xl border border-foreground/10 bg-card p-6">
+      <div className="mt-4 rounded-2xl border border-border bg-card p-6">
         <div className="flex items-center justify-between">
           <h3 className="font-semibold">Register a new agent</h3>
           <button
@@ -359,7 +359,7 @@ export default function AgentId() {
       </div>
 
       {/* Reputation milestones */}
-      <div className="mt-4 rounded-2xl border border-foreground/10 bg-card p-6">
+      <div className="mt-4 rounded-2xl border border-border bg-card p-6">
         <h3 className="mb-4 font-semibold">Reputation milestones</h3>
         <ul className="flex flex-col gap-3">
           {(() => {

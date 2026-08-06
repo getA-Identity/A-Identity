@@ -145,7 +145,7 @@ export default function Marketplace() {
       title="Marketplace"
       description="Hire a verified agent to do a job, or browse the agents already working on Arc."
     >
-      <div className="inline-flex rounded-full border border-foreground/10 bg-card p-1 text-sm font-semibold">
+      <div className="inline-flex rounded-full border border-border bg-card p-1 text-sm font-semibold">
         {(['hire', 'house'] as const).map((t) => (
           <button
             key={t}
@@ -209,7 +209,7 @@ export default function Marketplace() {
       {loading && !error && (
         <div className="mt-6 grid items-start gap-4 sm:grid-cols-2">
           {Array.from({ length: 4 }).map((_, i) => (
-            <div key={i} className="flex flex-col rounded-2xl border border-foreground/10 bg-card p-6">
+            <div key={i} className="flex flex-col rounded-2xl border border-border bg-card p-6">
               <div className="flex items-start justify-between gap-3">
                 <div className="flex items-center gap-3">
                   <Skeleton className="h-11 w-11 rounded-xl" />
@@ -257,7 +257,7 @@ export default function Marketplace() {
           instead of stretching its row-mate and shifting the whole layout. */}
       <div className="mt-6 grid items-start gap-4 sm:grid-cols-2">
         {agents.map((a) => (
-          <div key={a.id} className="flex flex-col rounded-2xl border border-foreground/10 bg-card p-6">
+          <div key={a.id} className="flex flex-col rounded-2xl border border-border bg-card p-6">
             <div className="flex items-start justify-between gap-3">
               <div className="flex items-center gap-3">
                 <div className="grid h-11 w-11 place-items-center rounded-xl bg-accent/10 text-accent">
@@ -312,7 +312,7 @@ export default function Marketplace() {
                   KYA unverified
                 </span>
               )}
-              <span className="inline-flex items-center gap-1 rounded-full bg-[#2775CA]/10 px-2.5 py-1 text-[11px] font-bold text-[#2775CA]">
+              <span className="inline-flex items-center gap-1 rounded-full bg-usdc/10 px-2.5 py-1 text-[11px] font-bold text-usdc">
                 Arc testnet
               </span>
               {a.onchain === 'registered' ? (
@@ -320,7 +320,7 @@ export default function Marketplace() {
                   href={a.onchainExplorer ?? '#'}
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="inline-flex items-center gap-1 rounded-full bg-[#2775CA]/10 px-2.5 py-1 text-[11px] font-bold text-[#2775CA] hover:underline"
+                  className="inline-flex items-center gap-1 rounded-full bg-usdc/10 px-2.5 py-1 text-[11px] font-bold text-usdc hover:underline"
                 >
                   <BadgeCheck size={12} /> On-chain #{a.onchainAgentId ?? ''}
                 </a>
@@ -352,7 +352,7 @@ export default function Marketplace() {
                   type="button"
                   onClick={() => anchorAgent(a.id)}
                   disabled={anchoringId === a.id}
-                  className="inline-flex items-center gap-1.5 rounded-full border border-[#2775CA]/30 px-3 py-1.5 text-xs font-semibold text-[#2775CA] transition-colors hover:bg-[#2775CA]/5 disabled:opacity-50"
+                  className="inline-flex items-center gap-1.5 rounded-full border border-usdc/30 px-3 py-1.5 text-xs font-semibold text-usdc transition-colors hover:bg-usdc/5 disabled:opacity-50"
                 >
                   {anchoringId === a.id ? 'Anchoring on Arc...' : 'Anchor on Arc'}
                 </button>

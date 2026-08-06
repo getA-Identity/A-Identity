@@ -135,7 +135,7 @@ export default function AutopilotPanel() {
       {error && <div className="mt-4 rounded-xl border border-amber-200 dark:border-amber-500/25 bg-amber-50/60 dark:bg-amber-500/10 p-3 text-sm text-foreground/70">{error}</div>}
 
       {result && result.executed === false && (
-        <div className="mt-4 rounded-xl border border-foreground/10 bg-background/40 p-3 text-sm text-foreground/70">
+        <div className="mt-4 rounded-xl border border-border bg-background/40 p-3 text-sm text-foreground/70">
           Prepared (no signer configured on the server): {result.reason}
         </div>
       )}
@@ -211,8 +211,8 @@ export default function AutopilotPanel() {
           )}
 
           {allRevealed && (
-            <div className="flex items-center gap-2 rounded-lg border border-[#2775CA]/25 bg-[#2775CA]/[0.05] px-3 py-2 text-foreground/75 motion-safe:animate-[fadeIn_0.4s_ease-out]">
-              <Coins size={14} className="shrink-0 text-[#2775CA]" />
+            <div className="flex items-center gap-2 rounded-lg border border-usdc/25 bg-usdc/[0.05] px-3 py-2 text-foreground/75 motion-safe:animate-[fadeIn_0.4s_ease-out]">
+              <Coins size={14} className="shrink-0 text-usdc" />
               <span>
                 Protocol fee <b>{executed.protocolFee.accruedUsd} USDC</b> ({executed.feeBps} bps) →{' '}
                 {short(executed.treasury)}
@@ -237,7 +237,7 @@ function Field({ label, value, onChange, step }: { label: string; value: string;
   return (
     <div>
       <label className="text-xs font-semibold text-foreground/50">{label}</label>
-      <div className="mt-1 flex items-center gap-1 rounded-xl border border-foreground/10 bg-card px-3 py-2">
+      <div className="mt-1 flex items-center gap-1 rounded-xl border border-border bg-card px-3 py-2">
         <span className="text-sm text-foreground/50">$</span>
         <input
           type="number"

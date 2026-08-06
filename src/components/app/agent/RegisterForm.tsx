@@ -53,7 +53,7 @@ export default function RegisterForm({ onClose, onCreated }: { onClose: () => vo
   const [kyaNote, setKyaNote] = useState<string | null>(null)
 
   const input =
-    'w-full rounded-xl border border-foreground/10 bg-background/40 px-3 py-2.5 text-sm outline-none transition-colors focus:border-accent'
+    'w-full rounded-xl border border-border bg-background/40 px-3 py-2.5 text-sm outline-none transition-colors focus:border-accent'
   const label = 'text-xs font-semibold text-foreground/50'
 
   const toggleCap = (c: string) =>
@@ -254,8 +254,8 @@ export default function RegisterForm({ onClose, onCreated }: { onClose: () => vo
 
         {/* On-chain anchor: real ERC-8004 registration on Arc, human-triggered */}
         {anchored ? (
-          <div className="mt-4 rounded-xl border border-[#2775CA]/25 bg-[#2775CA]/[0.05] p-4">
-            <div className="flex items-center gap-2 text-sm font-semibold text-[#2775CA]">
+          <div className="mt-4 rounded-xl border border-usdc/25 bg-usdc/[0.05] p-4">
+            <div className="flex items-center gap-2 text-sm font-semibold text-usdc">
               <BadgeCheck size={16} /> Anchored on Arc: ERC-8004 id #{anchored.onchainAgentId ?? '?'}
             </div>
             {anchored.onchainExplorer && (
@@ -263,7 +263,7 @@ export default function RegisterForm({ onClose, onCreated }: { onClose: () => vo
                 href={anchored.onchainExplorer}
                 target="_blank"
                 rel="noopener noreferrer"
-                className="mt-1 inline-block break-all text-xs font-semibold text-[#2775CA] hover:underline"
+                className="mt-1 inline-block break-all text-xs font-semibold text-usdc hover:underline"
               >
                 View transaction on arcscan
               </a>
@@ -275,7 +275,7 @@ export default function RegisterForm({ onClose, onCreated }: { onClose: () => vo
               type="button"
               onClick={anchorOnchain}
               disabled={anchorBusy}
-              className="rounded-full border border-[#2775CA]/30 px-4 py-2 text-sm font-semibold text-[#2775CA] transition-colors hover:bg-[#2775CA]/5 disabled:opacity-50"
+              className="rounded-full border border-usdc/30 px-4 py-2 text-sm font-semibold text-usdc transition-colors hover:bg-usdc/5 disabled:opacity-50"
             >
               {anchorBusy ? 'Anchoring on Arc...' : 'Anchor on Arc (register on-chain)'}
             </button>
@@ -395,11 +395,11 @@ export default function RegisterForm({ onClose, onCreated }: { onClose: () => vo
         </div>
         <div className="mt-3 flex flex-wrap gap-4">
           <label className="flex items-center gap-2 text-sm text-foreground/70">
-            <input type="checkbox" checked={a2a} onChange={(e) => setA2a(e.target.checked)} className="accent-[#7342E2]" />
+            <input type="checkbox" checked={a2a} onChange={(e) => setA2a(e.target.checked)} className="accent-accent" />
             Agent-to-agent payments
           </label>
           <label className="flex items-center gap-2 text-sm text-foreground/70">
-            <input type="checkbox" checked={a2h} onChange={(e) => setA2h(e.target.checked)} className="accent-[#7342E2]" />
+            <input type="checkbox" checked={a2h} onChange={(e) => setA2h(e.target.checked)} className="accent-accent" />
             Agent-to-human payments
           </label>
         </div>
@@ -413,15 +413,15 @@ export default function RegisterForm({ onClose, onCreated }: { onClose: () => vo
             type="button"
             onClick={createWallet}
             disabled={walletBusy}
-            className="mt-2 rounded-full border border-[#2775CA]/30 px-4 py-2.5 text-sm font-semibold text-[#2775CA] transition-colors hover:bg-[#2775CA]/5 disabled:opacity-50"
+            className="mt-2 rounded-full border border-usdc/30 px-4 py-2.5 text-sm font-semibold text-usdc transition-colors hover:bg-usdc/5 disabled:opacity-50"
           >
             {walletBusy ? 'Creating...' : 'Create wallet (generated in your browser)'}
           </button>
         ) : (
-          <div className="mt-2 rounded-xl border border-[#2775CA]/25 bg-[#2775CA]/[0.04] p-4">
+          <div className="mt-2 rounded-xl border border-usdc/25 bg-usdc/[0.04] p-4">
             <div className="flex items-center justify-between gap-2">
               <div className="text-[11px] font-bold text-foreground/50">Address</div>
-              <button type="button" onClick={copyAddress} className="text-[11px] font-semibold text-[#2775CA] hover:underline">
+              <button type="button" onClick={copyAddress} className="text-[11px] font-semibold text-usdc hover:underline">
                 {copiedAddr ? 'Copied' : 'Copy'}
               </button>
             </div>
@@ -434,7 +434,7 @@ export default function RegisterForm({ onClose, onCreated }: { onClose: () => vo
                 <button
                   type="button"
                   onClick={() => setShowKey((s) => !s)}
-                  className="text-[11px] font-semibold text-[#2775CA] hover:underline"
+                  className="text-[11px] font-semibold text-usdc hover:underline"
                 >
                   {showKey ? 'Hide' : 'Reveal'}
                 </button>
@@ -449,7 +449,7 @@ export default function RegisterForm({ onClose, onCreated }: { onClose: () => vo
                       setShowKey(true) // clipboard blocked, reveal so it can be copied by hand
                     }
                   }}
-                  className="text-[11px] font-semibold text-[#2775CA] hover:underline"
+                  className="text-[11px] font-semibold text-usdc hover:underline"
                 >
                   {copiedKey ? 'Copied' : 'Copy'}
                 </button>
@@ -466,7 +466,7 @@ export default function RegisterForm({ onClose, onCreated }: { onClose: () => vo
                 type="checkbox"
                 checked={keySaved}
                 onChange={(e) => setKeySaved(e.target.checked)}
-                className="mt-0.5 accent-[#7342E2]"
+                className="mt-0.5 accent-accent"
               />
               I saved this private key somewhere safe. A-Identity never stores it and cannot recover it.
             </label>
@@ -474,7 +474,7 @@ export default function RegisterForm({ onClose, onCreated }: { onClose: () => vo
               href="https://faucet.circle.com"
               target="_blank"
               rel="noopener noreferrer"
-              className="mt-2 inline-block text-xs font-semibold text-[#2775CA] hover:underline"
+              className="mt-2 inline-block text-xs font-semibold text-usdc hover:underline"
             >
               Fund it with testnet USDC at faucet.circle.com
             </a>
@@ -483,7 +483,7 @@ export default function RegisterForm({ onClose, onCreated }: { onClose: () => vo
                 type="button"
                 onClick={checkFunded}
                 disabled={fundBusy}
-                className="rounded-full border border-[#2775CA]/30 px-3 py-1.5 text-[11px] font-semibold text-[#2775CA] transition-colors hover:bg-[#2775CA]/5 disabled:opacity-50"
+                className="rounded-full border border-usdc/30 px-3 py-1.5 text-[11px] font-semibold text-usdc transition-colors hover:bg-usdc/5 disabled:opacity-50"
               >
                 {fundBusy ? 'Checking...' : 'I funded it, check balance'}
               </button>

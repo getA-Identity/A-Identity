@@ -51,7 +51,7 @@ export default function Dashboard() {
   const user = useAuth((s) => s.user)
   const mcp = useMcpHealth() // 'checking' | 'waking' | 'online' | 'offline'
 
-  const mcpColor = mcp === 'online' ? '#059669' : mcp === 'offline' ? '#dc2626' : '#d97706'
+  const mcpColor = mcp === 'online' ? 'var(--ok)' : mcp === 'offline' ? 'var(--danger)' : 'var(--warn)'
   const mcpLabel =
     mcp === 'online' ? 'MCP live' : mcp === 'waking' ? 'Backend waking up' : mcp === 'checking' ? 'Connecting' : 'MCP offline'
 
@@ -293,7 +293,7 @@ export default function Dashboard() {
       <div className="mt-4 grid grid-cols-2 gap-px overflow-hidden rounded-xl border border-border bg-border lg:grid-cols-4">
         <StatTile to="/app/agent-id" label="Reputation" value={rep != null ? String(rep) : dash} sub={rep != null ? `${gradeOf(rep)} · / 1000` : 'from real activity'} loading={rep == null && !loaded} readAt={rep != null ? readAt : null}>
           {rep != null ? (
-            <div className="mt-2 mb-0.5 h-1.5 w-full rounded-full" style={{ background: 'linear-gradient(90deg,#dc2626,#d97706 45%,#059669)' }}>
+            <div className="mt-2 mb-0.5 h-1.5 w-full rounded-full" style={{ background: 'linear-gradient(90deg,var(--danger),var(--warn) 45%,var(--ok))' }}>
               <div className="relative h-full">
                 <span className="absolute -top-0.5 h-2.5 w-[3px] -translate-x-1/2 rounded-full bg-foreground shadow-[0_0_0_2px_var(--color-card)]" style={{ left: `${Math.max(0, Math.min(100, rep / 10))}%` }} />
               </div>
@@ -319,7 +319,7 @@ export default function Dashboard() {
                 className="h-full rounded-full transition-all"
                 style={{
                   width: `${Math.min(100, (policy.spentTodayUsd / policy.permissions.dailyCapUsd) * 100)}%`,
-                  background: policy.spentTodayUsd >= policy.permissions.dailyCapUsd ? '#dc2626' : 'var(--color-accent)',
+                  background: policy.spentTodayUsd >= policy.permissions.dailyCapUsd ? 'var(--danger)' : 'var(--color-accent)',
                 }}
               />
             </div>
@@ -347,8 +347,8 @@ export default function Dashboard() {
                   </div>
                 </div>
                 <div className="flex items-center gap-2">
-                  <span className="inline-flex items-center gap-1 rounded-md px-2 py-0.5 text-[11px] font-semibold" style={{ color: ok ? '#059669' : '#d97706', background: ok ? '#05966914' : '#d9770614' }}>
-                    <span className="h-1.5 w-1.5 rounded-full" style={{ background: ok ? '#059669' : '#d97706' }} />
+                  <span className="inline-flex items-center gap-1 rounded-md px-2 py-0.5 text-[11px] font-semibold" style={{ color: ok ? 'var(--ok)' : 'var(--warn)', background: ok ? 'var(--ok)14' : 'var(--warn)14' }}>
+                    <span className="h-1.5 w-1.5 rounded-full" style={{ background: ok ? 'var(--ok)' : 'var(--warn)' }} />
                     {ok ? 'Ready' : 'Pending'}
                   </span>
                   <Link to={to} className="text-foreground/40 hover:text-accent"><ArrowUpRight size={15} /></Link>

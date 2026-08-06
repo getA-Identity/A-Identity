@@ -142,7 +142,7 @@ export default function AppLayout() {
   return (
     <div className={`flex min-h-screen w-full bg-background text-foreground ${theme === 'dark' ? 'dark' : ''}`}>
       {/* Sidebar (desktop) */}
-      <aside className="sticky top-0 hidden h-screen w-64 shrink-0 flex-col border-r border-foreground/10 bg-card px-4 py-6 md:flex">
+      <aside className="sticky top-0 hidden h-screen w-64 shrink-0 flex-col border-r border-border bg-card px-4 py-6 md:flex">
         <div className="mb-8 flex items-center gap-2 px-2">
           <Logo size={28} />
           <span className="text-lg font-bold tracking-tight">{APP_NAME}</span>
@@ -233,7 +233,7 @@ export default function AppLayout() {
         {/* Topbar. Its contents ride the same canvas as the page below, so the
             breadcrumb sits directly above the page heading instead of drifting to the
             far edge on a wide display. */}
-        <header className="sticky top-0 z-10 border-b border-foreground/10 bg-background/80 px-5 py-4 backdrop-blur-md sm:px-8">
+        <header className="sticky top-0 z-10 border-b border-border bg-background/80 px-5 py-4 backdrop-blur-md sm:px-8">
           <div className={`${CANVAS} flex items-center justify-between gap-4`}>
             <div className="flex items-center gap-2 md:hidden">
               <Logo size={24} />
@@ -311,7 +311,7 @@ export default function AppLayout() {
         )}
 
         {/* Mobile nav */}
-        <nav className="flex gap-1 overflow-x-auto border-b border-foreground/10 bg-card px-4 py-2 md:hidden" aria-label="Console sections">
+        <nav className="flex gap-1 overflow-x-auto border-b border-border bg-card px-4 py-2 md:hidden" aria-label="Console sections">
           {ALL_NAV.map(({ to, label, icon: Icon, end }) => (
             <NavLink
               key={to}

@@ -71,7 +71,7 @@ export default function TrustOraclePanel() {
   return (
 <Panel className="mt-8">
       <div className="flex items-start gap-3">
-        <div className="grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-[#2775CA]/10 text-[#2775CA]">
+        <div className="grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-usdc/10 text-usdc">
           <ShieldCheck size={18} />
         </div>
         <div className="min-w-0 flex-1">
@@ -91,15 +91,15 @@ export default function TrustOraclePanel() {
             value={agentId}
             onChange={(e) => setAgentId(e.target.value)}
             placeholder="#849980 or 0x…"
-            className="w-44 rounded-xl border border-foreground/10 bg-background/40 px-3 py-2 font-mono text-sm outline-none"
+            className="w-44 rounded-xl border border-border bg-background/40 px-3 py-2 font-mono text-sm outline-none"
           />
         </label>
         <label className="flex flex-col gap-1 text-xs font-semibold text-foreground/50">
           About to pay
-          <div className="flex items-center gap-1 rounded-xl border border-foreground/10 bg-background/40 px-3 py-2">
+          <div className="flex items-center gap-1 rounded-xl border border-border bg-background/40 px-3 py-2">
             <span className="text-sm text-foreground/50">$</span>
             <input type="number" min="0" step="1" value={amount} onChange={(e) => setAmount(e.target.value)} className="w-20 bg-transparent text-sm outline-none" />
-            <span className="text-xs font-semibold text-[#2775CA]">USDC</span>
+            <span className="text-xs font-semibold text-usdc">USDC</span>
           </div>
         </label>
         <Button type="button" size="sm" className="text-sm" onClick={run} disabled={busy}>
@@ -111,7 +111,7 @@ export default function TrustOraclePanel() {
       {error && <div className="mt-4 rounded-xl border border-amber-200 dark:border-amber-500/25 bg-amber-50/60 dark:bg-amber-500/10 p-3 text-sm text-foreground/70">{error}</div>}
 
       {result && result.executed === false && (
-        <div className="mt-4 rounded-xl border border-foreground/10 bg-background/40 p-3 text-sm text-foreground/70">
+        <div className="mt-4 rounded-xl border border-border bg-background/40 p-3 text-sm text-foreground/70">
           Prepared (no signer configured on the server): {result.reason}
         </div>
       )}
@@ -119,11 +119,11 @@ export default function TrustOraclePanel() {
       {result && result.executed && v && (
         <div className="mt-4 space-y-2 text-sm">
           <div className="flex flex-wrap items-center gap-2 rounded-lg border border-foreground/8 bg-background/40 px-3 py-2">
-            <Coins size={13} className="shrink-0 text-[#2775CA]" />
+            <Coins size={13} className="shrink-0 text-usdc" />
             <span className="text-foreground/75">
               Paid <b>${result.payment.amountUsd}</b> over x402 (gasless nanopayment) → {short(result.payTo)}
             </span>
-            <span className="ml-auto rounded bg-[#2775CA]/10 px-1.5 py-0.5 text-[10px] font-semibold text-[#2775CA]">Arc · Gateway-batched</span>
+            <span className="ml-auto rounded bg-usdc/10 px-1.5 py-0.5 text-[10px] font-semibold text-usdc">Arc · Gateway-batched</span>
           </div>
 
           <div className={`flex items-start gap-2 rounded-lg border border-foreground/8 bg-background/40 px-3 py-3`}>

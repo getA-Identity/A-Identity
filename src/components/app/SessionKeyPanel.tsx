@@ -57,7 +57,7 @@ export default function SessionKeyPanel() {
   return (
 <Panel className="mt-8">
       <div className="flex items-start gap-3">
-        <div className="grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-[#7342E2]/10 text-[#7342E2]">
+        <div className="grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-accent/10 text-accent">
           <KeyRound size={18} />
         </div>
         <div className="min-w-0 flex-1">
@@ -74,10 +74,10 @@ export default function SessionKeyPanel() {
       <div className="mt-4 flex flex-wrap items-end gap-2">
         <label className="flex flex-col gap-1 text-xs font-semibold text-foreground/50">
           Session cap
-          <div className="flex items-center gap-1 rounded-xl border border-foreground/10 bg-background/40 px-3 py-2">
+          <div className="flex items-center gap-1 rounded-xl border border-border bg-background/40 px-3 py-2">
             <span className="text-sm text-foreground/50">$</span>
             <input type="number" min="0" step="0.01" value={cap} onChange={(e) => setCap(e.target.value)} className="w-20 bg-transparent text-sm outline-none" />
-            <span className="text-xs font-semibold text-[#7342E2]">USDC</span>
+            <span className="text-xs font-semibold text-accent">USDC</span>
           </div>
         </label>
         <Button type="button" size="sm" className="text-sm" onClick={run} disabled={busy}>
@@ -89,7 +89,7 @@ export default function SessionKeyPanel() {
       {error && <div className="mt-4 rounded-xl border border-amber-200 dark:border-amber-500/25 bg-amber-50/60 dark:bg-amber-500/10 p-3 text-sm text-foreground/70">{error}</div>}
 
       {result && result.executed === false && (
-        <div className="mt-4 rounded-xl border border-foreground/10 bg-background/40 p-3 text-sm text-foreground/70">
+        <div className="mt-4 rounded-xl border border-border bg-background/40 p-3 text-sm text-foreground/70">
           Prepared (no bundler key configured on the server): {result.reason}
         </div>
       )}

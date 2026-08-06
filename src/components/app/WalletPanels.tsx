@@ -84,16 +84,16 @@ export function CircleWalletPanel({ agentId }: { agentId: string }) {
   const usdc = wallet?.balances?.find((b) => (b.symbol ?? '').toUpperCase().includes('USDC'))
 
   return (
-    <section className="mt-4 overflow-hidden rounded-2xl border border-[#2775CA]/25 bg-gradient-to-b from-[#2775CA]/[0.06] to-card p-6 shadow-[0_1px_3px_rgba(16,24,40,0.04)] sm:p-7">
+    <section className="mt-4 overflow-hidden rounded-2xl border border-usdc/25 bg-gradient-to-b from-usdc/[0.06] to-card p-6 shadow-[0_1px_3px_rgba(16,24,40,0.04)] sm:p-7">
       <div className="flex items-center gap-3">
-        <div className="grid h-9 w-9 place-items-center rounded-xl bg-[#2775CA] text-white">
+        <div className="grid h-9 w-9 place-items-center rounded-xl bg-usdc text-white">
           <Wallet size={16} />
         </div>
         <div>
           <div className="flex items-center gap-2">
             <h3 className="text-[15px] font-semibold text-foreground">Circle Agent Wallet</h3>
             {has && (
-              <span className="rounded-full bg-[#2775CA]/10 px-2 py-0.5 text-[10px] font-semibold text-[#2775CA]">
+              <span className="rounded-full bg-usdc/10 px-2 py-0.5 text-[10px] font-semibold text-usdc">
                 Live on Arc
               </span>
             )}
@@ -127,7 +127,7 @@ export function CircleWalletPanel({ agentId }: { agentId: string }) {
               href={wallet?.explorer ?? `https://testnet.arcscan.app/address/${addr}`}
               target="_blank"
               rel="noopener noreferrer"
-              className="inline-flex items-center gap-1 font-mono text-xs font-semibold text-[#2775CA] hover:underline"
+              className="inline-flex items-center gap-1 font-mono text-xs font-semibold text-usdc hover:underline"
             >
               {short(addr)} <ExternalLink size={11} />
             </a>
@@ -151,7 +151,7 @@ export function CircleWalletPanel({ agentId }: { agentId: string }) {
           type="button"
           onClick={provision}
           disabled={busy}
-          className="rounded-full bg-[#2775CA] px-4 py-2 text-sm font-semibold text-white transition-transform hover:scale-[1.02] disabled:opacity-50"
+          className="rounded-full bg-usdc px-4 py-2 text-sm font-semibold text-white transition-transform hover:scale-[1.02] disabled:opacity-50"
         >
           {busy ? 'Provisioning on Circle...' : 'Provision Circle Agent Wallet'}
         </button>
@@ -375,14 +375,14 @@ export function TreasuryPanel({ agentId }: { agentId: string }) {
                     type="button"
                     onClick={() => setCapPreset(v)}
                     className={`rounded-full px-3.5 py-1.5 text-xs font-semibold transition ${
-                      active ? 'bg-foreground text-background' : 'border border-foreground/10 bg-card text-foreground/60 hover:border-foreground/25'
+                      active ? 'bg-foreground text-background' : 'border border-border bg-card text-foreground/60 hover:border-foreground/25'
                     }`}
                   >
                     ${v}
                   </button>
                 )
               })}
-              <div className="ml-1 inline-flex items-center rounded-full border border-foreground/10 bg-card pl-3">
+              <div className="ml-1 inline-flex items-center rounded-full border border-border bg-card pl-3">
                 <span className="text-[11px] text-foreground/40">$</span>
                 <input
                   type="number"
@@ -456,7 +456,7 @@ export function TreasuryPanel({ agentId }: { agentId: string }) {
                   type="button"
                   onClick={() => act(false)}
                   disabled={busy}
-                  className="rounded-full border border-foreground/10 px-4 py-2.5 text-sm font-semibold text-foreground/60 transition hover:border-red-300 hover:text-red-600 disabled:opacity-50"
+                  className="rounded-full border border-border px-4 py-2.5 text-sm font-semibold text-foreground/60 transition hover:border-red-300 hover:text-red-600 disabled:opacity-50"
                 >
                   Turn Off
                 </button>

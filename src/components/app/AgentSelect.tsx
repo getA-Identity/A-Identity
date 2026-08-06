@@ -55,7 +55,7 @@ export default function AgentSelect({
         id="agent-select"
         value={agentId}
         onChange={(e) => setAgentId(e.target.value)}
-        className="mt-1 w-full rounded-xl border border-foreground/10 bg-card px-3 py-2.5 text-sm outline-none focus:border-accent"
+        className="mt-1 w-full rounded-xl border border-border bg-card px-3 py-2.5 text-sm outline-none focus:border-accent"
       >
         {options}
       </select>

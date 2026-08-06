@@ -62,7 +62,7 @@ export default function NanopayPanel() {
   return (
 <Panel className="mt-8">
       <div className="flex items-start gap-3">
-        <div className="grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-[#7342E2]/10 text-[#7342E2]">
+        <div className="grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-accent/10 text-accent">
           <Gauge size={18} />
         </div>
         <div className="min-w-0 flex-1">
@@ -77,7 +77,7 @@ export default function NanopayPanel() {
 
       <div className="mt-4 flex flex-wrap items-center gap-2">
         <label className="text-xs font-semibold text-foreground/50">Amount</label>
-        <div className="flex items-center gap-1 rounded-xl border border-foreground/10 bg-background/40 px-3 py-2">
+        <div className="flex items-center gap-1 rounded-xl border border-border bg-background/40 px-3 py-2">
           <span className="text-sm text-foreground/50">$</span>
           <input
             type="number"
@@ -87,7 +87,7 @@ export default function NanopayPanel() {
             onChange={(e) => setAmount(e.target.value)}
             className="w-24 bg-transparent text-sm outline-none"
           />
-          <span className="text-xs font-semibold text-[#7342E2]">USDC</span>
+          <span className="text-xs font-semibold text-accent">USDC</span>
         </div>
         <Button type="button" size="sm" className="text-sm" onClick={run} disabled={busy}>
           {busy ? <Loader2 size={15} className="animate-spin" /> : <Zap size={15} />}
@@ -98,7 +98,7 @@ export default function NanopayPanel() {
       {error && <div className="mt-4 rounded-xl border border-amber-200 dark:border-amber-500/25 bg-amber-50/60 dark:bg-amber-500/10 p-3 text-sm text-foreground/70">{error}</div>}
 
       {result && result.executed === false && (
-        <div className="mt-4 rounded-xl border border-foreground/10 bg-background/40 p-3 text-sm text-foreground/70">
+        <div className="mt-4 rounded-xl border border-border bg-background/40 p-3 text-sm text-foreground/70">
           Prepared (no signer configured on the server): {result.reason}
           {result.verifyingContract && (
             <div className="mt-1 font-mono text-[11px] text-foreground/45">GatewayWalletBatched: {result.verifyingContract}</div>
@@ -114,7 +114,7 @@ export default function NanopayPanel() {
           <DataRow
             label="EIP-3009 authorization signed, 0 gas"
             value={`nonce ${short(result.authorization.nonce)}`}
-            badge={<span className="rounded bg-[#7342E2]/10 px-1.5 py-0.5 text-[10px] font-semibold text-[#7342E2]">offchain</span>}
+            badge={<span className="rounded bg-accent/10 px-1.5 py-0.5 text-[10px] font-semibold text-accent">offchain</span>}
           />
           <DataRow label={`Paid ${result.amountUsd} USDC → ${short(result.payTo)}`} value={`from Gateway balance`} />
           <div

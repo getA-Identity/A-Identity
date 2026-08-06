@@ -25,7 +25,7 @@ export default function PayeeAdder({ onAdd }: { onAdd: (v: string) => void }) {
           }
         }}
         placeholder="Add a 0x address or agent://<id>"
-        className="min-w-0 flex-1 rounded-xl border border-foreground/10 bg-background/40 px-3 py-2 font-mono text-xs outline-none focus:border-accent"
+        className="min-w-0 flex-1 rounded-xl border border-border bg-background/40 px-3 py-2 font-mono text-xs outline-none focus:border-accent"
       />
       <button
         type="button"

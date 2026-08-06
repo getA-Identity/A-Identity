@@ -54,7 +54,7 @@ export default function PolicyTester({ agentId, onSpent }: { agentId: string; on
             min="0"
             value={amount}
             onChange={(e) => setAmount(e.target.value)}
-            className="mt-1 w-28 rounded-xl border border-foreground/10 bg-card px-3 py-2 text-sm outline-none focus:border-accent"
+            className="mt-1 w-28 rounded-xl border border-border bg-card px-3 py-2 text-sm outline-none focus:border-accent"
           />
         </div>
         <div className="flex-1">
@@ -62,7 +62,7 @@ export default function PolicyTester({ agentId, onSpent }: { agentId: string; on
           <input
             value={payee}
             onChange={(e) => setPayee(e.target.value)}
-            className="mt-1 w-full rounded-xl border border-foreground/10 bg-card px-3 py-2 text-sm outline-none focus:border-accent"
+            className="mt-1 w-full rounded-xl border border-border bg-card px-3 py-2 text-sm outline-none focus:border-accent"
           />
         </div>
         <button

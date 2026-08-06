@@ -169,7 +169,7 @@ export default function X402Panel() {
   return (
 <Panel tone="brand" className="mt-8">
       <div className="flex items-center gap-2">
-        <div className="grid h-8 w-8 place-items-center rounded-lg bg-[#7342E2] text-white">
+        <div className="grid h-8 w-8 place-items-center rounded-lg bg-accent text-white">
           <Zap size={15} />
         </div>
         <div>
@@ -225,7 +225,7 @@ export default function X402Panel() {
               href={resource.explorerUrl}
               target="_blank"
               rel="noopener noreferrer"
-              className="inline-flex items-center gap-1 font-semibold text-[#2775CA] hover:underline"
+              className="inline-flex items-center gap-1 font-semibold text-usdc hover:underline"
             >
               View payment on arcscan <ExternalLink size={11} />
             </a>

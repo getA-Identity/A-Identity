@@ -42,7 +42,7 @@ const HIGH_RISK_COPY: Record<string, string> = {
 }
 
 const input =
-  'mt-1 w-full rounded-xl border border-foreground/10 bg-background/40 px-3 py-2.5 text-sm outline-none focus:border-accent'
+  'mt-1 w-full rounded-xl border border-border bg-background/40 px-3 py-2.5 text-sm outline-none focus:border-accent'
 const label = 'text-xs font-semibold text-foreground/50'
 const hint = 'mt-1 text-[11px] text-foreground/45'
 
@@ -104,7 +104,7 @@ function UsdMapEditor({
       <button
         type="button"
         onClick={() => onChange([...rows, ['', 0]])}
-        className="inline-flex items-center gap-1.5 rounded-lg border border-foreground/10 px-3 py-1.5 text-xs font-semibold text-foreground/60 hover:text-foreground"
+        className="inline-flex items-center gap-1.5 rounded-lg border border-border px-3 py-1.5 text-xs font-semibold text-foreground/60 hover:text-foreground"
       >
         <Plus size={12} /> Add
       </button>
@@ -203,7 +203,7 @@ export default function SpendPermissions({ agentId }: { agentId: string }) {
     return (
       <div className="mt-4 space-y-4">
         {[0, 1, 2].map((i) => (
-          <section key={i} className="rounded-2xl border border-foreground/10 bg-card p-6">
+          <section key={i} className="rounded-2xl border border-border bg-card p-6">
             <Skeleton className="mb-4 h-4 w-40" />
             <Skeleton className="h-11 w-full" />
           </section>
@@ -223,7 +223,7 @@ export default function SpendPermissions({ agentId }: { agentId: string }) {
 
       {/* What we add versus what the card already does. Saying this plainly is the honest
           alternative to shipping a second copy of the venue's own limit. */}
-      <section className="rounded-2xl border border-foreground/10 bg-card p-6">
+      <section className="rounded-2xl border border-border bg-card p-6">
         <div className="mb-2 flex items-center gap-2">
           <CreditCard size={16} className="text-foreground/40" />
           <h3 className="font-semibold text-foreground">Card spending</h3>
@@ -252,7 +252,7 @@ export default function SpendPermissions({ agentId }: { agentId: string }) {
       </section>
 
       {/* Merchants */}
-      <section className="mt-4 rounded-2xl border border-foreground/10 bg-card p-6">
+      <section className="mt-4 rounded-2xl border border-border bg-card p-6">
         <h3 className="mb-4 font-semibold text-foreground">Merchants</h3>
         <div className="grid gap-4 sm:grid-cols-2">
           <div>
@@ -285,7 +285,7 @@ export default function SpendPermissions({ agentId }: { agentId: string }) {
       </section>
 
       {/* High-risk categories */}
-      <section className="mt-4 rounded-2xl border border-foreground/10 bg-card p-6">
+      <section className="mt-4 rounded-2xl border border-border bg-card p-6">
         <h3 className="mb-1 font-semibold text-foreground">Never on an agent card</h3>
         <p className="mb-4 text-[11px] text-foreground/45">
           On by default. These turn a spending mistake into one you cannot claw back, so they start refused. Turning one
@@ -313,7 +313,7 @@ export default function SpendPermissions({ agentId }: { agentId: string }) {
       </section>
 
       {/* Category ceilings */}
-      <section className="mt-4 rounded-2xl border border-foreground/10 bg-card p-6">
+      <section className="mt-4 rounded-2xl border border-border bg-card p-6">
         <h3 className="mb-1 font-semibold text-foreground">Daily ceiling per category</h3>
         <p className="mb-4 text-[11px] text-foreground/45">
           Categories come from the card network&apos;s merchant code when one reaches us. Robinhood&apos;s card surface
@@ -330,7 +330,7 @@ export default function SpendPermissions({ agentId }: { agentId: string }) {
       </section>
 
       {/* Card ceilings */}
-      <section className="mt-4 rounded-2xl border border-foreground/10 bg-card p-6">
+      <section className="mt-4 rounded-2xl border border-border bg-card p-6">
         <h3 className="mb-1 font-semibold text-foreground">Daily ceiling per card</h3>
         <p className="mb-4 text-[11px] text-foreground/45">
           Agents get their own virtual card, so this is the ceiling that matches how the cards are actually handed out.

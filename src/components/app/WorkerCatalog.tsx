@@ -47,7 +47,7 @@ type OpenTask = { id: string; service: string; budgetUsd: number; description: s
 const STATUS_STYLES: Record<Task['status'], string> = {
   open: 'bg-foreground/8 text-foreground/60',
   assigned: 'bg-foreground/8 text-foreground/60',
-  funded: 'bg-[#2775CA]/10 text-[#2775CA]',
+  funded: 'bg-usdc/10 text-usdc',
   delivered: 'bg-amber-100 dark:bg-amber-500/15 text-amber-700 dark:text-amber-300',
   released: 'bg-emerald-100 dark:bg-emerald-500/15 text-emerald-700 dark:text-emerald-300',
   disputed: 'bg-amber-100 dark:bg-amber-500/15 text-amber-700 dark:text-amber-300',
@@ -267,7 +267,7 @@ export default function WorkerCatalog() {
       {loading && !error && (
         <div className="mt-6 grid items-start gap-4 sm:grid-cols-2 lg:grid-cols-3">
           {Array.from({ length: 6 }).map((_, i) => (
-            <div key={i} className="flex flex-col rounded-2xl border border-foreground/10 bg-card p-5">
+            <div key={i} className="flex flex-col rounded-2xl border border-border bg-card p-5">
               <div className="flex items-start justify-between gap-2">
                 <div className="min-w-0 space-y-2">
                   <Skeleton className="h-4 w-32" />
@@ -306,7 +306,7 @@ export default function WorkerCatalog() {
           const key = `${svc.agentId}::${svc.service}`
           const open = hiringKey === key
           return (
-            <div key={key} className="flex flex-col rounded-2xl border border-foreground/10 bg-card p-5">
+            <div key={key} className="flex flex-col rounded-2xl border border-border bg-card p-5">
               <div className="flex items-start justify-between gap-2">
                 <div className="min-w-0">
                   <div className="truncate font-bold text-foreground">{svc.service}</div>
@@ -382,7 +382,7 @@ export default function WorkerCatalog() {
         <h3 className="text-lg font-bold tracking-tight">Open tasks</h3>
         <p className="mt-1 text-sm text-foreground/55">Post a task without picking a worker; verified agents bid and you accept the best.</p>
 
-        <div className="mt-4 rounded-2xl border border-foreground/10 bg-card p-4">
+        <div className="mt-4 rounded-2xl border border-border bg-card p-4">
           <div className="grid gap-2 sm:grid-cols-[1fr_8rem_auto]">
             <input value={postSvc} onChange={(e) => setPostSvc(e.target.value)} placeholder="Service (e.g. translation)" className="rounded-full border border-foreground/15 bg-background px-3 py-2 text-sm text-foreground placeholder:text-foreground/40" />
             <input value={postBudget} onChange={(e) => setPostBudget(e.target.value)} inputMode="decimal" placeholder="Budget USDC" className="rounded-full border border-foreground/15 bg-background px-3 py-2 text-sm text-foreground" />
@@ -395,7 +395,7 @@ export default function WorkerCatalog() {
         {loading ? (
           <div className="mt-3 flex flex-col gap-2">
             {Array.from({ length: 2 }).map((_, i) => (
-              <div key={i} className="rounded-2xl border border-foreground/10 bg-card p-4">
+              <div key={i} className="rounded-2xl border border-border bg-card p-4">
                 <div className="flex items-center justify-between gap-2">
                   <Skeleton className="h-4 w-40" />
                   <Skeleton className="h-7 w-14 rounded-full" />
@@ -408,7 +408,7 @@ export default function WorkerCatalog() {
         ) : (
           <div className="mt-3 flex flex-col gap-2">
             {openTasks.map((t) => (
-              <div key={t.id} className="rounded-2xl border border-foreground/10 bg-card p-4">
+              <div key={t.id} className="rounded-2xl border border-border bg-card p-4">
                 <div className="flex flex-wrap items-center justify-between gap-2">
                   <div>
                     <span className="font-semibold text-foreground">{t.service}</span>
@@ -446,7 +446,7 @@ export default function WorkerCatalog() {
               .slice()
               .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
               .map((t) => (
-                <div key={t.id} className="rounded-2xl border border-foreground/10 bg-card p-4">
+                <div key={t.id} className="rounded-2xl border border-border bg-card p-4">
                   <div className="flex flex-wrap items-center justify-between gap-2">
                     <div className="min-w-0">
                       <span className="font-semibold text-foreground">{t.service}</span>
@@ -529,7 +529,7 @@ export default function WorkerCatalog() {
                         href={t.escrowExplorer}
                         target="_blank"
                         rel="noopener noreferrer"
-                        className="inline-flex items-center gap-1 text-xs font-semibold text-[#2775CA] hover:underline"
+                        className="inline-flex items-center gap-1 text-xs font-semibold text-usdc hover:underline"
                       >
                         <ExternalLink size={12} /> ERC-8183 job on arcscan
                       </a>

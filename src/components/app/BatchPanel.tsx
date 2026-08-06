@@ -47,7 +47,7 @@ export default function BatchPanel() {
   return (
 <Panel className="mt-8">
       <div className="flex items-start gap-3">
-        <div className="grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-[#2775CA]/10 text-[#2775CA]">
+        <div className="grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-usdc/10 text-usdc">
           <Layers size={18} />
         </div>
         <div className="min-w-0 flex-1">
@@ -63,14 +63,14 @@ export default function BatchPanel() {
       <div className="mt-4 flex flex-wrap items-end gap-2">
         <label className="flex flex-col gap-1 text-xs font-semibold text-foreground/50">
           Payments
-          <input type="number" min="1" max="5" step="1" value={count} onChange={(e) => setCount(e.target.value)} className="w-20 rounded-xl border border-foreground/10 bg-background/40 px-3 py-2 text-sm outline-none" />
+          <input type="number" min="1" max="5" step="1" value={count} onChange={(e) => setCount(e.target.value)} className="w-20 rounded-xl border border-border bg-background/40 px-3 py-2 text-sm outline-none" />
         </label>
         <label className="flex flex-col gap-1 text-xs font-semibold text-foreground/50">
           Each
-          <div className="flex items-center gap-1 rounded-xl border border-foreground/10 bg-background/40 px-3 py-2">
+          <div className="flex items-center gap-1 rounded-xl border border-border bg-background/40 px-3 py-2">
             <span className="text-sm text-foreground/50">$</span>
             <input type="number" min="0" step="0.01" value={amount} onChange={(e) => setAmount(e.target.value)} className="w-16 bg-transparent text-sm outline-none" />
-            <span className="text-xs font-semibold text-[#2775CA]">USDC</span>
+            <span className="text-xs font-semibold text-usdc">USDC</span>
           </div>
         </label>
         <Button type="button" size="sm" className="text-sm" onClick={run} disabled={busy}>
@@ -82,7 +82,7 @@ export default function BatchPanel() {
       {error && <div className="mt-4 rounded-xl border border-amber-200 dark:border-amber-500/25 bg-amber-50/60 dark:bg-amber-500/10 p-3 text-sm text-foreground/70">{error}</div>}
 
       {result && result.executed === false && (
-        <div className="mt-4 rounded-xl border border-foreground/10 bg-background/40 p-3 text-sm text-foreground/70">
+        <div className="mt-4 rounded-xl border border-border bg-background/40 p-3 text-sm text-foreground/70">
           {result.reverted ? `Batch reverted on-chain: ${result.reason}` : `Prepared (no signer configured on the server): ${result.reason}`}
         </div>
       )}

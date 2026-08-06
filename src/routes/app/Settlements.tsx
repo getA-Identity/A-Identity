@@ -40,7 +40,7 @@ function PanelFallback() {
   return (
     <div className="mt-4 space-y-4">
       {[0, 1].map((i) => (
-        <div key={i} className="rounded-2xl border border-foreground/10 bg-card p-6">
+        <div key={i} className="rounded-2xl border border-border bg-card p-6">
           <Skeleton className="h-4 w-40" />
           <Skeleton className="mt-3 h-3 w-full" />
           <Skeleton className="mt-2 h-3 w-2/3" />
@@ -286,7 +286,7 @@ export default function Settlements() {
       {/* Surface tabs. The payment queue is the page; the rails that feed it (automation,
           agent-to-agent commerce, cross-chain) each get their own tab instead of stacking
           eleven panels under the list. */}
-      <div className="mt-5 flex flex-wrap gap-1 rounded-xl border border-foreground/10 bg-card p-1">
+      <div className="mt-5 flex flex-wrap gap-1 rounded-xl border border-border bg-card p-1">
         {TABS.map(({ id, label }) => (
           <button
             key={id}
@@ -306,14 +306,14 @@ export default function Settlements() {
       {tab === 'payments' && agents.length > 0 && (
         <>
           {/* New payment */}
-          <div className="mt-4 rounded-2xl border border-foreground/10 bg-card p-6">
+          <div className="mt-4 rounded-2xl border border-border bg-card p-6">
             <h3 className="font-semibold text-foreground">New payment</h3>
             <div className="mt-4 grid gap-3 sm:grid-cols-[1fr_auto]">
               <input
                 value={payee}
                 onChange={(e) => setPayee(e.target.value)}
                 placeholder="Payee: 0x address or agent://<agentId> (both settle for real)"
-                className="rounded-xl border border-foreground/10 bg-background/40 px-3 py-2.5 font-mono text-xs outline-none focus:border-accent"
+                className="rounded-xl border border-border bg-background/40 px-3 py-2.5 font-mono text-xs outline-none focus:border-accent"
               />
               <div className="flex gap-2">
                 <input
@@ -322,7 +322,7 @@ export default function Settlements() {
                   step="0.01"
                   value={amount}
                   onChange={(e) => setAmount(e.target.value)}
-                  className="w-24 rounded-xl border border-foreground/10 bg-background/40 px-3 py-2.5 text-sm outline-none focus:border-accent"
+                  className="w-24 rounded-xl border border-border bg-background/40 px-3 py-2.5 text-sm outline-none focus:border-accent"
                 />
                 <button
                   type="button"
@@ -354,7 +354,7 @@ export default function Settlements() {
           <ul className="mt-4 flex flex-col gap-2.5">
             {loading &&
               Array.from({ length: 4 }).map((_, i) => (
-                <li key={`sk-${i}`} className="rounded-2xl border border-foreground/10 bg-card p-4">
+                <li key={`sk-${i}`} className="rounded-2xl border border-border bg-card p-4">
                   <div className="flex items-center gap-4">
                     <Skeleton className="h-9 w-9 shrink-0 rounded-xl" />
                     <div className="min-w-0 flex-1 space-y-2">
@@ -366,9 +366,9 @@ export default function Settlements() {
                 </li>
               ))}
             {items.map((ix) => (
-              <li key={ix.id} className="rounded-2xl border border-foreground/10 bg-card p-4">
+              <li key={ix.id} className="rounded-2xl border border-border bg-card p-4">
                 <div className="flex items-center gap-4">
-                  <div className="grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-[#7342E2] text-white">
+                  <div className="grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-accent text-white">
                     <ArrowUpRight size={16} />
                   </div>
                   <div className="min-w-0 flex-1">
@@ -376,17 +376,17 @@ export default function Settlements() {
                       <span className="truncate font-mono text-xs text-foreground">{short(ix.payee)}</span>
                       <StatusPill status={ix.status} />
                       {ix.enforcedBy === 'onchain-vault' && (
-                        <span className="inline-flex shrink-0 items-center gap-1 rounded-full bg-[#7342E2]/10 px-2 py-0.5 text-[10px] font-bold text-[#7342E2]">
+                        <span className="inline-flex shrink-0 items-center gap-1 rounded-full bg-accent/10 px-2 py-0.5 text-[10px] font-bold text-accent">
                           <Link2 size={10} /> On-chain policy
                         </span>
                       )}
                       {ix.enforcedBy === 'circle-agent-stack' && (
-                        <span className="inline-flex shrink-0 items-center gap-1 rounded-full bg-[#2775CA]/10 px-2 py-0.5 text-[10px] font-bold text-[#2775CA]">
+                        <span className="inline-flex shrink-0 items-center gap-1 rounded-full bg-usdc/10 px-2 py-0.5 text-[10px] font-bold text-usdc">
                           <Wallet size={10} /> Circle Agent Wallet
                         </span>
                       )}
                       {ix.enforcedBy === 'session-key' && (
-                        <span className="inline-flex shrink-0 items-center gap-1 rounded-full bg-[#7342E2]/10 px-2 py-0.5 text-[10px] font-bold text-[#7342E2]">
+                        <span className="inline-flex shrink-0 items-center gap-1 rounded-full bg-accent/10 px-2 py-0.5 text-[10px] font-bold text-accent">
                           <KeyRound size={10} /> Session key
                         </span>
                       )}
@@ -428,7 +428,7 @@ export default function Settlements() {
                   <div className="text-right">
                     <div className="text-sm font-bold text-foreground">
                       {(ix.amountUsd * ix.count).toFixed(ix.amountUsd < 0.01 ? 4 : 2)}{' '}
-                      <span className="text-xs font-semibold text-[#2775CA]">USDC</span>
+                      <span className="text-xs font-semibold text-usdc">USDC</span>
                     </div>
                   </div>
                 </div>
@@ -447,14 +447,14 @@ export default function Settlements() {
                         value={draft.payee}
                         onChange={(e) => setDraft({ ...draft, payee: e.target.value })}
                         aria-label="Replacement payee"
-                        className="min-w-0 flex-1 rounded-lg border border-foreground/10 bg-background/60 px-3 py-2 font-mono text-xs outline-none focus:border-accent"
+                        className="min-w-0 flex-1 rounded-lg border border-border bg-background/60 px-3 py-2 font-mono text-xs outline-none focus:border-accent"
                       />
                       <input
                         value={draft.amount}
                         onChange={(e) => setDraft({ ...draft, amount: e.target.value })}
                         inputMode="decimal"
                         aria-label="Replacement amount in USDC"
-                        className="w-24 rounded-lg border border-foreground/10 bg-background/60 px-3 py-2 text-sm tabular-nums outline-none focus:border-accent"
+                        className="w-24 rounded-lg border border-border bg-background/60 px-3 py-2 text-sm tabular-nums outline-none focus:border-accent"
                       />
                       <button
                         type="button"
@@ -502,7 +502,7 @@ export default function Settlements() {
                       type="button"
                       onClick={() => act('execute', ix.id)}
                       disabled={busy === ix.id}
-                      className="rounded-full bg-[#2775CA] px-3 py-1.5 text-xs font-semibold text-white hover:opacity-90 disabled:opacity-50"
+                      className="rounded-full bg-usdc px-3 py-1.5 text-xs font-semibold text-white hover:opacity-90 disabled:opacity-50"
                     >
                       {busy === ix.id ? 'Settling on Arc...' : 'Execute'}
                     </button>
@@ -512,7 +512,7 @@ export default function Settlements() {
                       href={ix.explorerUrl}
                       target="_blank"
                       rel="noopener noreferrer"
-                      className="inline-flex items-center gap-1 text-xs font-semibold text-[#2775CA] hover:underline"
+                      className="inline-flex items-center gap-1 text-xs font-semibold text-usdc hover:underline"
                     >
                       {ix.memoId ? 'View memo on arcscan' : 'View on arcscan'} <ExternalLink size={11} />
                     </a>
@@ -573,7 +573,7 @@ function StatusPill({ status }: { status: Status }) {
   const map: Record<Status, { label: string; cls: string; icon?: 'ok' | 'wait' }> = {
     auto_approved: { label: 'Auto-approved', cls: 'bg-emerald-100 dark:bg-emerald-500/15 text-emerald-700 dark:text-emerald-300', icon: 'ok' },
     pending_approval: { label: 'Pending approval', cls: 'bg-amber-100 dark:bg-amber-500/15 text-amber-700 dark:text-amber-300', icon: 'wait' },
-    approved: { label: 'Approved', cls: 'bg-[#2775CA]/10 text-[#2775CA]', icon: 'ok' },
+    approved: { label: 'Approved', cls: 'bg-usdc/10 text-usdc', icon: 'ok' },
     executed_onchain: { label: 'Settled on Arc', cls: 'bg-emerald-100 dark:bg-emerald-500/15 text-emerald-700 dark:text-emerald-300', icon: 'ok' },
     executed_simulated: { label: 'Simulated', cls: 'bg-foreground/8 text-foreground/50' },
     rejected: { label: 'Rejected', cls: 'bg-red-100 dark:bg-red-500/15 text-red-700 dark:text-red-300' },

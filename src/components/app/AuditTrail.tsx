@@ -66,9 +66,9 @@ type Badge = { surface: string; level: string; label: string; note: string }
 const usd = (n: number) => `$${n.toLocaleString('en-US', { maximumFractionDigits: 2 })}`
 
 const VERDICT_STYLE: Record<Verdict, { fg: string; bg: string }> = {
-  ALLOW: { fg: '#059669', bg: '#05966914' },
-  WARN: { fg: '#d97706', bg: '#d9770614' },
-  DENY: { fg: '#dc2626', bg: '#dc262614' },
+  ALLOW: { fg: 'var(--ok)', bg: 'var(--ok)14' },
+  WARN: { fg: 'var(--warn)', bg: 'var(--warn)14' },
+  DENY: { fg: 'var(--danger)', bg: 'var(--danger)14' },
 }
 
 const OUTCOME_LABEL: Record<Outcome, string> = {
@@ -205,7 +205,7 @@ export default function AuditTrail({ agentId }: { agentId: string }) {
   if (loading) {
     return (
       <div className="mt-4 space-y-4">
-        <section className="rounded-2xl border border-foreground/10 bg-card p-6">
+        <section className="rounded-2xl border border-border bg-card p-6">
           <Skeleton className="mb-4 h-4 w-32" />
           <div className="grid gap-3 sm:grid-cols-4">
             {[0, 1, 2, 3].map((i) => (
@@ -213,7 +213,7 @@ export default function AuditTrail({ agentId }: { agentId: string }) {
             ))}
           </div>
         </section>
-        <section className="rounded-2xl border border-foreground/10 bg-card p-6">
+        <section className="rounded-2xl border border-border bg-card p-6">
           {[0, 1, 2].map((i) => (
             <Skeleton key={i} className="mb-3 h-12 w-full" />
           ))}
@@ -233,13 +233,13 @@ export default function AuditTrail({ agentId }: { agentId: string }) {
 
       {/* Summary. blockedNotionalUsd is measured, not projected: it is the USD the policy
           actually refused over the rows shown below. */}
-      <section className="rounded-2xl border border-foreground/10 bg-card p-6">
+      <section className="rounded-2xl border border-border bg-card p-6">
         <div className="mb-4 flex items-center justify-between">
           <h3 className="font-semibold text-foreground">Decisions</h3>
           <button
             type="button"
             onClick={() => void load(agentId)}
-            className="inline-flex items-center gap-1.5 rounded-full border border-foreground/10 px-3 py-1.5 text-xs font-semibold text-foreground/60 hover:text-foreground"
+            className="inline-flex items-center gap-1.5 rounded-full border border-border px-3 py-1.5 text-xs font-semibold text-foreground/60 hover:text-foreground"
           >
             <RefreshCw size={12} /> Refresh
           </button>
@@ -249,9 +249,9 @@ export default function AuditTrail({ agentId }: { agentId: string }) {
             <div className="grid gap-3 sm:grid-cols-4">
               {(
                 [
-                  ['Allowed', summary.allow, '#059669'],
-                  ['Needed you', summary.warn, '#d97706'],
-                  ['Stopped', summary.deny, '#dc2626'],
+                  ['Allowed', summary.allow, 'var(--ok)'],
+                  ['Needed you', summary.warn, 'var(--warn)'],
+                  ['Stopped', summary.deny, 'var(--danger)'],
                   ['Value stopped', summary.blockedNotionalUsd, 'var(--foreground)'],
                 ] as const
               ).map(([k, v, color], i) => (
@@ -282,7 +282,7 @@ export default function AuditTrail({ agentId }: { agentId: string }) {
 
       {/* The trail */}
       {audits.length > 0 && (
-        <section className="mt-4 overflow-hidden rounded-2xl border border-foreground/10 bg-card">
+        <section className="mt-4 overflow-hidden rounded-2xl border border-border bg-card">
           <div className="overflow-x-auto">
             <table className="w-full min-w-[680px] text-left text-sm">
               <thead>
@@ -375,9 +375,9 @@ export default function AuditTrail({ agentId }: { agentId: string }) {
                 style={{
                   background:
                     badge.level === 'enforced'
-                      ? '#059669'
+                      ? 'var(--ok)'
                       : badge.level === 'enforced_with_flags'
-                        ? '#d97706'
+                        ? 'var(--warn)'
                         : badge.level === 'configured'
                           ? '#b8860b'
                           : '#8a8f98',

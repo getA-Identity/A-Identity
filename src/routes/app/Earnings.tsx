@@ -165,7 +165,7 @@ export default function Earnings() {
 
           {/* Stat cards */}
           <div className="mt-4 grid gap-4 sm:grid-cols-3">
-            <div className="rounded-2xl border border-foreground/10 bg-card p-5">
+            <div className="rounded-2xl border border-border bg-card p-5">
               <div className="flex items-center gap-2 text-xs font-semibold text-foreground/45">
                 <Coins size={14} className="text-accent" /> Earned (released jobs)
               </div>
@@ -178,7 +178,7 @@ export default function Earnings() {
               </div>
               <div className="mt-1 text-xs text-foreground/45">{released.length} completed job{released.length === 1 ? '' : 's'}</div>
             </div>
-            <div className="rounded-2xl border border-foreground/10 bg-card p-5">
+            <div className="rounded-2xl border border-border bg-card p-5">
               <div className="text-xs font-semibold text-foreground/45">Live wallet balance</div>
               <div className="mt-2 text-2xl font-bold text-foreground">
                 {balance == null && agent?.walletAddress ? (
@@ -199,7 +199,7 @@ export default function Earnings() {
                 </div>
               ) : null}
             </div>
-            <div className="rounded-2xl border border-foreground/10 bg-card p-5">
+            <div className="rounded-2xl border border-border bg-card p-5">
               <div className="text-xs font-semibold text-foreground/45">Redeem cross-chain</div>
               <button
                 type="button"
@@ -219,7 +219,7 @@ export default function Earnings() {
           {!loaded ? (
             <div className="mt-3 flex flex-col gap-2">
               {Array.from({ length: 3 }).map((_, i) => (
-                <div key={i} className="flex items-center justify-between gap-2 rounded-2xl border border-foreground/10 bg-card p-4">
+                <div key={i} className="flex items-center justify-between gap-2 rounded-2xl border border-border bg-card p-4">
                   <Skeleton className="h-4 w-44" />
                   <Skeleton className="h-4 w-24" />
                 </div>
@@ -233,7 +233,7 @@ export default function Earnings() {
                 .slice()
                 .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))
                 .map((j) => (
-                  <div key={j.id} className="flex flex-wrap items-center justify-between gap-2 rounded-2xl border border-foreground/10 bg-card p-4">
+                  <div key={j.id} className="flex flex-wrap items-center justify-between gap-2 rounded-2xl border border-border bg-card p-4">
                     <div>
                       <span className="font-semibold text-foreground">{j.service}</span>
                       <span className="ml-2 text-xs text-foreground/45">
@@ -244,7 +244,7 @@ export default function Earnings() {
                     <div className="flex items-center gap-3">
                       <span className="font-bold text-accent">+{j.priceUsd.toFixed(2)} USDC</span>
                       {j.escrowExplorer && (
-                        <a href={j.escrowExplorer} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 text-xs font-semibold text-[#2775CA] hover:underline">
+                        <a href={j.escrowExplorer} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 text-xs font-semibold text-usdc hover:underline">
                           <ExternalLink size={12} /> arcscan
                         </a>
                       )}

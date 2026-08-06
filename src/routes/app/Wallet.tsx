@@ -144,7 +144,7 @@ export default function Wallet() {
           {/* Live balance hero */}
           <div
             className="relative mt-5 overflow-hidden rounded-2xl p-6 text-white"
-            style={{ background: 'linear-gradient(135deg, #2775CA 0%, #1A4F8C 100%)' }}
+            style={{ background: 'linear-gradient(135deg, var(--usdc) 0%, var(--usdc-deep) 100%)' }}
           >
             <div
               className="pointer-events-none absolute inset-0 opacity-10"
@@ -269,7 +269,7 @@ export default function Wallet() {
           {!txsLoaded && txs.length === 0 ? (
             <ul className="mt-3 flex flex-col gap-2.5">
               {Array.from({ length: 3 }).map((_, i) => (
-                <li key={i} className="flex items-center gap-4 rounded-2xl border border-foreground/10 bg-card p-4">
+                <li key={i} className="flex items-center gap-4 rounded-2xl border border-border bg-card p-4">
                   <Skeleton className="h-9 w-9 shrink-0 rounded-xl" />
                   <div className="min-w-0 flex-1 space-y-1.5">
                     <Skeleton className="h-3 w-32" />
@@ -288,8 +288,8 @@ export default function Wallet() {
               const total = tx.amountUsd * tx.count
               const settled = tx.status === 'executed_onchain'
               return (
-                <li key={tx.id} className="flex items-center gap-4 rounded-2xl border border-foreground/10 bg-card p-4">
-                  <div className="grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-[#7342E2] text-white">
+                <li key={tx.id} className="flex items-center gap-4 rounded-2xl border border-border bg-card p-4">
+                  <div className="grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-accent text-white">
                     <ArrowUpRight size={16} />
                   </div>
                   <div className="min-w-0 flex-1">
@@ -299,7 +299,7 @@ export default function Wallet() {
                   <div className="text-right">
                     <div className="text-sm font-bold text-foreground">
                       -{total < 0.01 ? total.toFixed(4) : total.toFixed(2)}{' '}
-                      <span className="text-xs font-semibold text-[#2775CA]">USDC</span>
+                      <span className="text-xs font-semibold text-usdc">USDC</span>
                     </div>
                     {settled && tx.explorerUrl ? (
                       <a

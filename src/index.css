@@ -137,6 +137,26 @@
   --sheet: #cfc8c5;        /* mobile slide-in menu surface (was sand) */
   --radius: 0.75rem;
 
+  /* Console semantics. These were ~140 hardcoded hex literals scattered through the
+     app screens, which meant a verdict colour could drift between two screens and
+     nobody would notice, and dark mode never got a say. Kept deliberately separate
+     from --accent: allow / warn / deny carry meaning, the accent carries brand, and
+     a reader must never have to work out which one a colour is doing.
+     --usdc is Circle's blue. It is an asset identity, not a second accent, so it is
+     named after the thing it denotes rather than after a role. */
+  --ok: #059669;
+  --warn: #d97706;
+  --danger: #dc2626;
+  --usdc: #2775ca;
+  --usdc-deep: #1a4f8c;    /* the darker stop of the wallet gradient */
+
+  /* The accent is brand, not theme, so it does NOT get a dark override: it has to keep
+     matching the `bg-accent` utility, which @theme pins to one fixed value. Declared
+     here as a raw variable as well so an inline style can reach it the same way a
+     utility class does. */
+  --accent: #7342e2;
+  --accent-deep: #4f2fa8;  /* the darker stop of the identity-card gradient */
+
   /* Spec-named aliases kept for the landing components that reference them.
      Now theme-aware (were --color-ink / --color-cream). */
   --color-text: var(--foreground);
@@ -152,6 +172,15 @@
   --ring: #8b63e8;
   --secondary: #22303c;
   --sheet: #1b2733;
+
+  /* Lifted for a dark ground. The light values are tuned to pass against white and
+     go muddy on #0e161e, so each one moves up rather than being inverted. */
+  --ok: #34d399;
+  --warn: #fbbf24;
+  --danger: #f87171;
+  --usdc: #5fa5ec;
+  --usdc-deep: #2775ca;
+  /* No --accent / --accent-deep here on purpose: see the note in :root. */
 
   /* Re-alias here too: a custom property whose value is `var(--foreground)` is
      substituted where it is DECLARED, so the :root aliases stay pinned to the
@@ -181,6 +210,12 @@
   --color-secondary: var(--secondary);
   --color-border: var(--border);
   --color-ring: var(--ring);
+  --color-ok: var(--ok);
+  --color-warn: var(--warn);
+  --color-danger: var(--danger);
+  --color-usdc: var(--usdc);
+  --color-usdc-deep: var(--usdc-deep);
+  --color-accent-deep: var(--accent-deep);
   --radius-lg: var(--radius);
   --radius-md: calc(var(--radius) - 2px);
   --radius-sm: calc(var(--radius) - 4px);
