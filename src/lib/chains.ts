@@ -10,7 +10,7 @@
  */
 
 /** Short slug of a chain in the registry. */
-export type ChainId = 'arc' | 'base' | 'arbitrum' | 'avalanche' | 'xlayer' | 'rhchain-testnet' | 'rhchain' | 'stellar' | 'solana'
+export type ChainId = 'arc' | 'base' | 'arbitrum' | 'avalanche' | 'xlayer' | 'rhchain-testnet' | 'rhchain' | 'celo' | 'stellar' | 'solana'
 
 export type ChainProtocols = {
   /** x402 HTTP-402 payment support. Settlement is in a stablecoin. */
@@ -256,6 +256,39 @@ export const CHAINS: readonly Chain[] = [
       "payment": {
         "x402": true,
         "note": "x402 needs a settlement token first: no canonical USDC is documented on this chain yet."
+      },
+      "identity": {
+        "standard": "ERC-8004",
+        "erc8004Native": true,
+        "note": "ERC-8004 registry to be deployed."
+      }
+    },
+    "identity": "ERC-8004",
+    "erc8004Native": true,
+    "x402": true
+  },
+  {
+    "id": "celo",
+    "name": "Celo",
+    "shortName": "Celo",
+    "color": "#35D07F",
+    "chainId": 42220,
+    "caip2": "eip155:42220",
+    "evmCompatible": true,
+    "testnet": false,
+    "stablecoins": [
+      "USDC",
+      "USDT",
+      "cUSD"
+    ],
+    "rpcUrl": "https://forno.celo.org",
+    "explorer": "https://celoscan.io",
+    "role": "Mobile-first EVM L2: stablecoin-native payments (cUSD), gas payable in stablecoins.",
+    "status": "planned",
+    "protocols": {
+      "payment": {
+        "x402": true,
+        "note": "x402 over USDC; fee abstraction lets gas be paid in stablecoins."
       },
       "identity": {
         "standard": "ERC-8004",

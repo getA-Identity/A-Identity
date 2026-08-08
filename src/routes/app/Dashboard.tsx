@@ -2,7 +2,6 @@ import { useCallback, useEffect, useState, type ReactNode } from 'react'
 import { Link } from 'react-router-dom'
 import { ArrowUpRight, CreditCard, ExternalLink, Fingerprint, SlidersHorizontal } from 'lucide-react'
 import { useAuth } from '../../store/auth'
-import { useMcpHealth } from '../../hooks/useMcp'
 import { CHAINS } from '../../lib/chains'
 
 import { apiFetch } from '../../lib/api'
@@ -13,9 +12,11 @@ import { humanizeActivity, ago } from '../../lib/format'
 import { useSelectedAgent } from '../../store/agent'
 import AppPage from '../../components/app/AppPage'
 import AgentStatusBar, { type AgentState } from '../../components/app/AgentStatusBar'
+import ChainLogo from '../../components/app/ChainLogo'
 import SetupChecklist, { type Step } from '../../components/app/SetupChecklist'
 import Freshness from '../../components/app/Freshness'
 import SpendSummary, { type Ix } from '../../components/app/SpendSummary'
+import { Badge } from '../../components/ui/badge'
 import { Skeleton } from '../../components/ui/skeleton'
 
 const gradeOf = (s: number) =>
@@ -36,11 +37,6 @@ type Agent = {
 
 export default function Dashboard() {
   const user = useAuth((s) => s.user)
-  const mcp = useMcpHealth() // 'checking' | 'waking' | 'online' | 'offline'
-
-  const mcpColor = mcp === 'online' ? 'var(--ok)' : mcp === 'offline' ? 'var(--danger)' : 'var(--warn)'
-  const mcpLabel =
-    mcp === 'online' ? 'MCP live' : mcp === 'waking' ? 'Backend waking up' : mcp === 'checking' ? 'Connecting' : 'MCP offline'
 
   const [agents, setAgents] = useState<Agent[]>([])
   const [rep, setRep] = useState<number | null>(null)
@@ -242,12 +238,6 @@ export default function Dashboard() {
         ambient
         title={`Welcome back, ${user?.name ?? 'there'}.`}
         description="Your agent console. Everything your agent needs to act, with you in the tower."
-        actions={
-          <div className="mt-1 inline-flex items-center gap-2 whitespace-nowrap rounded-md border border-border px-2.5 py-1.5 text-xs font-semibold text-foreground/70">
-            <span className={`h-1.5 w-1.5 rounded-full ${mcp === 'waking' || mcp === 'checking' ? 'animate-pulse' : ''}`} style={{ background: mcpColor }} />
-            {mcpLabel}
-          </div>
-        }
       >
       {error && (
         <div className="mt-6 rounded-xl border border-amber-200 dark:border-amber-500/25 bg-amber-50/60 dark:bg-amber-500/10 p-4 text-sm text-foreground/70">
@@ -276,9 +266,10 @@ export default function Dashboard() {
         </div>
       )}
 
-      {/* Stat strip: hairline-divided tiles, mono figures, credit-score spectrum on reputation.
-          Hovering one tile dims its neighbours, so the pointer always has a single subject. */}
-      <div className="cn-dim-grid mt-4 grid grid-cols-2 gap-px overflow-hidden rounded-xl border border-border bg-border lg:grid-cols-4">
+      {/* Stat strip: hairline-divided tiles, tabular figures, credit-score spectrum on
+          reputation. Hover is a solid tonal shift only: dimming neighbours here made
+          the numbers unreadable over the ambient field. */}
+      <div className="mt-4 grid grid-cols-2 gap-px overflow-hidden rounded-xl border border-border bg-border lg:grid-cols-4">
         <StatTile to="/app/agent-id" label="Reputation" value={rep != null ? String(rep) : dash} sub={rep != null ? `${gradeOf(rep)} · / 1000` : 'from real activity'} loading={rep == null && !loaded} readAt={rep != null ? readAt : null}>
           {rep != null ? (
             <div className="mt-2 mb-0.5 h-1.5 w-full rounded-full" style={{ background: 'linear-gradient(90deg,var(--danger),var(--warn) 45%,var(--ok))' }}>
@@ -331,7 +322,7 @@ export default function Dashboard() {
                   <div className="grid h-8 w-8 place-items-center rounded-lg bg-foreground/[0.05] text-foreground/60"><Icon size={15} /></div>
                   <div>
                     <div className="text-sm font-semibold text-foreground">{label}</div>
-                    <div className="font-mono text-xs text-foreground/50">{detail}</div>
+                    <div className="text-xs text-foreground/50">{detail}</div>
                   </div>
                 </div>
                 <div className="flex items-center gap-2">
@@ -348,31 +339,50 @@ export default function Dashboard() {
           )}
 
           <h3 className={`mb-3 text-xs font-semibold uppercase tracking-wide text-foreground/50 ${showChecklist ? '' : 'mt-6'}`}>Network</h3>
-          <div className="grid gap-2 sm:grid-cols-3">
+          {/* One row per network: the official mark on a token disc, the name, and a
+              quiet status. The live rail leads with its real agent count; planned
+              rails stay visibly planned instead of wearing nine loud colours. */}
+          <ul className="divide-y divide-border overflow-hidden rounded-xl border border-border bg-background/40">
             {CHAINS.map((c) => (
-              <div key={c.id} className="rounded-lg border border-border bg-background/40 p-3">
-                <div className="flex items-center gap-1.5">
-                  <span className="h-2 w-2 rounded-full" style={{ background: c.color }} />
-                  <span className="text-xs font-semibold text-foreground">{c.shortName}</span>
-                  <span className="ml-auto rounded px-1.5 py-0.5 text-[10px] font-semibold" style={{ background: c.color + '18', color: c.color }}>{c.status}</span>
-                </div>
-                <div className="mt-2 font-mono text-[11px] leading-relaxed text-foreground/45">
-                  {c.id === 'arc'
-                    ? agentTotal != null
-                      ? `${agentTotal} live agent${agentTotal === 1 ? '' : 's'}`
-                      : !loaded
-                        ? <Skeleton className="h-3 w-20" />
-                        : '·'
-                    : 'no live agents yet'}
+              <li key={c.id} className="flex items-center gap-3 px-3.5 py-2.5 transition-colors duration-[120ms] hover:bg-foreground/[0.02]">
+                <ChainLogo id={c.id} size={26} />
+                <div className="min-w-0 flex-1">
+                  <div className="flex items-center gap-2">
+                    <span className="text-sm font-semibold text-foreground">{c.shortName}</span>
+                    {c.status === 'live' ? (
+                      <Badge variant="success" className="px-2 py-0.5 text-[10px]">live</Badge>
+                    ) : (
+                      <Badge variant="neutral" className="px-2 py-0.5 text-[10px]">{c.status}</Badge>
+                    )}
+                  </div>
+                  <div className="mt-0.5 truncate text-[11px] text-foreground/40">
+                    {c.id === 'arc' ? (
+                      agentTotal != null ? (
+                        `${agentTotal} live agent${agentTotal === 1 ? '' : 's'}`
+                      ) : !loaded ? (
+                        <Skeleton className="h-3 w-20" />
+                      ) : (
+                        '·'
+                      )
+                    ) : (
+                      'no live agents yet'
+                    )}
+                  </div>
                 </div>
                 {c.explorer && (
-                  <a href={c.explorer} target="_blank" rel="noopener noreferrer" className="mt-1 inline-flex items-center gap-0.5 text-[11px] font-semibold text-accent hover:underline">
-                    Explorer <ExternalLink size={10} />
+                  <a
+                    href={c.explorer}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    aria-label={`${c.shortName} explorer`}
+                    className="shrink-0 rounded-lg p-1.5 text-foreground/35 transition-colors duration-[120ms] hover:bg-foreground/[0.05] hover:text-accent"
+                  >
+                    <ExternalLink size={13} />
                   </a>
                 )}
-              </div>
+              </li>
             ))}
-          </div>
+          </ul>
         </div>
 
         <div className="flex flex-col gap-4">
@@ -389,7 +399,7 @@ export default function Dashboard() {
                   <span className="mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full bg-accent" />
                   <span className="min-w-0 break-words text-foreground/70">
                     {humanizeActivity(a.text)}
-                    <span className="mt-0.5 block font-mono text-xs text-foreground/40">{ago(a.at)}</span>
+                    <span className="mt-0.5 block text-[11px] text-foreground/35">{ago(a.at)}</span>
                   </span>
                 </li>
               ))}
@@ -420,13 +430,19 @@ export default function Dashboard() {
 }
 
 function StatTile({ to, label, value, sub, loading, readAt, children }: { to: string; label: string; value: string; sub: string; loading?: boolean; readAt?: number | null; children?: ReactNode }) {
+  // Hover stays a SOLID surface (mixed from the card colour): a translucent hover
+  // colour replaced the card background and let the dot field bleed through the
+  // figures, which made the tile unreadable mid-hover.
   return (
-    <Link to={to} className="group flex flex-col bg-card p-5 transition-colors hover:bg-foreground/[0.02]">
+    <Link
+      to={to}
+      className="group flex flex-col bg-card p-5 transition-colors duration-[120ms] hover:bg-[color-mix(in_srgb,var(--card)_94%,var(--foreground))]"
+    >
       <div className="text-[11px] font-medium uppercase tracking-wide text-foreground/45">{label}</div>
       {loading ? (
         <Skeleton className="mt-1.5 h-8 w-16" />
       ) : (
-        <div className="mt-1.5 font-mono text-3xl font-bold tabular-nums tracking-tight text-foreground">{value}</div>
+        <div className="mt-1.5 text-3xl font-bold tabular-nums tracking-tight text-foreground">{value}</div>
       )}
       {children}
       {loading ? (
@@ -435,7 +451,7 @@ function StatTile({ to, label, value, sub, loading, readAt, children }: { to: st
         <div className="mt-1 text-[11px] text-foreground/40">{sub}</div>
       )}
       {/* When the figure was read. Only rendered for figures we actually hold. */}
-      <Freshness at={readAt ?? null} className="mt-0.5 font-mono text-[10px] text-foreground/30" />
+      <Freshness at={readAt ?? null} className="mt-0.5 text-[10px] text-foreground/30" />
     </Link>
   )
 }

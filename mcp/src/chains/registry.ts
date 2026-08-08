@@ -246,6 +246,33 @@ export const CHAINS: ChainDescriptor[] = [
     identity: { standard: 'ERC-8004', erc8004Native: true, note: 'ERC-8004 registry to be deployed.' },
     payment: { x402: true, note: 'x402 needs a settlement token first: no canonical USDC is documented on this chain yet.' },
   },
+  {
+    caip2: 'eip155:42220',
+    id: 'celo',
+    name: 'Celo',
+    shortName: 'Celo',
+    color: '#35D07F',
+    role: 'Mobile-first EVM L2: stablecoin-native payments (cUSD), gas payable in stablecoins.',
+    ecosystem: 'evm',
+    testnet: false,
+    status: 'planned',
+    evmChainId: 42220,
+    cctpDomain: null, // Celo is not a CCTP domain; USDC arrives natively (Circle mint below)
+    nativeCurrency: { name: 'Celo', symbol: 'CELO', decimals: 18 },
+    usdcDecimals: 6,
+    rpcUrls: ['https://forno.celo.org'],
+    explorer: 'https://celoscan.io',
+    contracts: {
+      usdc: '0xcebA9300f2b948710d2653dD7B07f33A8B32118C', // native Circle USDC on Celo
+      create2Factory: CREATE2_FACTORY,
+    },
+    confirmations: 3,
+    stablecoins: ['USDC', 'USDT', 'cUSD'],
+    signerEnvVar: 'CELO_SIGNER_KEY',
+    rpcEnvVar: 'CELO_RPC_URL',
+    identity: { standard: 'ERC-8004', erc8004Native: true, note: 'ERC-8004 registry to be deployed.' },
+    payment: { x402: true, note: 'x402 over USDC; fee abstraction lets gas be paid in stablecoins.' },
+  },
 
   // ── PLANNED: non-EVM (each needs its own adapter + a native contract) ──────────
   {

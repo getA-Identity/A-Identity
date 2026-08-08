@@ -65,7 +65,7 @@ export default function SpendSummary({ instructions, loading }: { instructions: 
       </div>
 
       <div className="mt-3 flex items-baseline gap-2">
-        <span className="font-mono text-2xl font-bold tabular-nums tracking-tight text-foreground">
+        <span className="text-2xl font-bold tabular-nums tracking-tight text-foreground">
           {weekTotal.toFixed(weekTotal > 0 && weekTotal < 1 ? 4 : 2)}
         </span>
         <span className="text-xs font-semibold text-foreground/45">USDC settled</span>
@@ -82,7 +82,7 @@ export default function SpendSummary({ instructions, loading }: { instructions: 
                 title={`${new Date(d.from).toLocaleDateString()} · ${d.total.toFixed(2)} USDC`}
               />
             </div>
-            <span className="font-mono text-[10px] text-foreground/35">{d.label}</span>
+            <span className="text-[10px] text-foreground/35">{d.label}</span>
           </div>
         ))}
       </div>
@@ -95,7 +95,7 @@ export default function SpendSummary({ instructions, loading }: { instructions: 
         ].map(({ k, v, tone }) => (
           <div key={k}>
             <dt className="text-[10px] font-medium uppercase tracking-wide text-foreground/40">{k}</dt>
-            <dd className={`font-mono text-lg font-bold tabular-nums ${tone}`}>{v}</dd>
+            <dd className={`text-lg font-bold tabular-nums ${tone}`}>{v}</dd>
           </div>
         ))}
       </dl>

@@ -84,7 +84,7 @@ export function CircleWalletPanel({ agentId }: { agentId: string }) {
   const usdc = wallet?.balances?.find((b) => (b.symbol ?? '').toUpperCase().includes('USDC'))
 
   return (
-    <section className="mt-4 overflow-hidden rounded-2xl border border-usdc/25 bg-gradient-to-b from-usdc/[0.06] to-card p-6 shadow-[0_1px_3px_rgba(16,24,40,0.04)] sm:p-7">
+    <section className="overflow-hidden rounded-2xl border border-usdc/25 bg-gradient-to-b from-usdc/[0.06] to-card p-6 shadow-[0_1px_3px_rgba(16,24,40,0.04)] sm:p-7">
       <div className="flex items-center gap-3">
         <div className="grid h-9 w-9 place-items-center rounded-xl bg-usdc text-white">
           <Wallet size={16} />
@@ -280,7 +280,7 @@ export function TreasuryPanel({ agentId }: { agentId: string }) {
   const money = (n?: number) => `$${(n ?? 0).toFixed(2)}`
 
   return (
-    <section className="mt-4 overflow-hidden rounded-2xl border border-emerald-200/70 dark:border-emerald-500/25 bg-gradient-to-b from-emerald-50/50 dark:from-emerald-500/[0.06] to-card p-6 shadow-[0_1px_3px_rgba(16,24,40,0.04)] sm:p-7">
+    <section className="overflow-hidden rounded-2xl border border-emerald-200/70 dark:border-emerald-500/25 bg-gradient-to-b from-emerald-50/50 dark:from-emerald-500/[0.06] to-card p-6 shadow-[0_1px_3px_rgba(16,24,40,0.04)] sm:p-7">
       <div className="flex items-start justify-between gap-3">
         <div className="flex items-center gap-3">
           <div className="grid h-9 w-9 place-items-center rounded-xl bg-emerald-600 text-white">

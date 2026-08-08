@@ -111,7 +111,7 @@ export default function AgentStatusBar({
             {clauses.length > 0 && (
               <p className="mt-1 text-sm text-foreground/65">{clauses.join(' · ')}</p>
             )}
-            <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-0.5 font-mono text-[11px] text-foreground/40">
+            <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[11px] text-foreground/40">
               {lastActedAt && <Freshness at={new Date(lastActedAt).getTime()} prefix="last acted" />}
               {lastActedAt && readAt != null && <span aria-hidden="true">·</span>}
               <Freshness at={readAt} />

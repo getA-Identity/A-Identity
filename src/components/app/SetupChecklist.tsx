@@ -44,7 +44,7 @@ export default function SetupChecklist({ steps }: { steps: Step[] }) {
       <div className="p-6">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <h3 className="text-sm font-semibold text-foreground">Get your agent running</h3>
-        <span className="font-mono text-xs text-foreground/45 tabular-nums">
+        <span className="text-xs text-foreground/45 tabular-nums">
           {doneCount} / {steps.length} done
         </span>
       </div>

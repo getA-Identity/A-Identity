@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react'
-import { Coins, RefreshCw, ExternalLink, ArrowUpRight, Loader2, Store } from 'lucide-react'
+import { Coins, RefreshCw, ExternalLink, ArrowUpRight, Loader2 } from 'lucide-react'
 import { Link } from 'react-router-dom'
 import { BACKEND_UNREACHABLE } from '../../lib/mcpBase'
 import { apiFetch, readJson, explainError } from '../../lib/api'
@@ -9,6 +9,7 @@ import { authHeaders } from '../../store/auth'
 import { useSelectedAgent } from '../../store/agent'
 import AgentSelect from '../../components/app/AgentSelect'
 import AppPage from '../../components/app/AppPage'
+import BrandArt from '../../components/app/BrandArt'
 import { Skeleton } from '../../components/ui/skeleton'
 
 /**
@@ -141,9 +142,8 @@ export default function Earnings() {
 
       {loaded && !error && agents.length === 0 && (
         <div className="mt-6 rounded-3xl border border-dashed border-foreground/15 bg-card p-12 text-center">
-          <div className="mx-auto grid h-14 w-14 place-items-center rounded-2xl bg-accent/10 text-accent">
-            <Store size={26} />
-          </div>
+          {/* A stack of ceramic coins with one on edge: earnings waiting to exist. */}
+          <BrandArt src="/art/art-earnings.webp" className="mx-auto h-36 w-48" />
           <h3 className="mt-4 text-lg font-bold text-foreground">No agents yet.</h3>
           <p className="mx-auto mt-2 max-w-md text-sm text-foreground/55">
             Register an agent and list it on the marketplace to start earning.

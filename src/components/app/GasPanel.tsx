@@ -54,7 +54,7 @@ export default function GasPanel() {
       {gas ? (
         <div className="mt-4 grid gap-3 sm:grid-cols-2">
           <div className="rounded-xl border border-emerald-200 bg-emerald-50/60 p-4 dark:border-emerald-500/25 dark:bg-emerald-500/10">
-            <p className="font-mono text-[10px] uppercase tracking-[0.16em] text-foreground/45">
+            <p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-foreground/45">
               {gas.chain} · gas paid in
             </p>
             <p className="mt-1 text-lg font-bold tracking-tight text-foreground">{gas.gasPaidIn}</p>
@@ -62,7 +62,7 @@ export default function GasPanel() {
           </div>
 
           <div className="rounded-xl border border-border bg-background/40 p-4">
-            <p className="flex items-center gap-1.5 font-mono text-[10px] uppercase tracking-[0.16em] text-foreground/45">
+            <p className="flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-[0.16em] text-foreground/45">
               <ShieldQuestion size={12} /> Circle Paymaster
             </p>
             <p className="mt-1 text-sm font-semibold text-foreground">

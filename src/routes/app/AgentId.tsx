@@ -3,7 +3,6 @@ import {
   BadgeCheck,
   CheckCircle2,
   Circle,
-  Fingerprint,
   ShieldQuestion,
   Star,
   Wifi,
@@ -15,10 +14,11 @@ import { pickPrimaryAgent } from '../../lib/pickAgent'
 import { fetchPlatformAgents, subscribePlatformAgents } from '../../lib/platformAgents'
 import { apiFetch } from '../../lib/api'
 import { useSelectedAgent } from '../../store/agent'
+import AgentAvatar from '../../components/AgentAvatar'
 import AgentSelect from '../../components/app/AgentSelect'
 import AppPage from '../../components/app/AppPage'
 import BrandArt from '../../components/app/BrandArt'
-import { categoryArt } from '../../lib/category-art'
+import { Badge } from '../../components/ui/badge'
 import { Skeleton } from '../../components/ui/skeleton'
 import ReputationCard from '../../components/app/agent/ReputationCard'
 import RegisterForm from '../../components/app/agent/RegisterForm'
@@ -156,19 +156,11 @@ export default function AgentId() {
       title="Agent ID"
       description="Your agent's on-chain passport. ERC-8004 gives every agent a verifiable identity, so others can trust it before transacting."
       actions={
-        /* MCP source badge */
-        <div
-          className={`mt-1 flex items-center gap-1.5 whitespace-nowrap rounded-full px-3 py-1.5 text-xs font-semibold ${
-            !mcpOnline
-              ? 'bg-foreground/8 text-foreground/40'
-              : realAgent
-                ? 'bg-emerald-100 dark:bg-emerald-500/15 text-emerald-700 dark:text-emerald-300'
-                : 'bg-amber-100 dark:bg-amber-500/15 text-amber-700 dark:text-amber-300'
-          }`}
-        >
-          {mcpOnline ? <Wifi size={12} /> : <WifiOff size={12} />}
+        /* Data-source badge: quiet, semantic, one word. */
+        <Badge variant={!mcpOnline ? 'neutral' : realAgent ? 'success' : 'warning'} className="mt-1.5">
+          {mcpOnline ? <Wifi size={11} /> : <WifiOff size={11} />}
           {!mcpOnline ? 'Offline' : realAgent ? 'Live' : 'Sample'}
-        </div>
+        </Badge>
       }
     >
       <AgentSelect agents={agents} />
@@ -176,11 +168,11 @@ export default function AgentId() {
       {/* Sample notice: no real agent yet → the card below is illustrative, not yours. */}
       {isSample && (
         <>
-          {/* A disc of concentric rings with a blank face: a seal that has not been
-              stamped, which is exactly an account with no passport issued yet. */}
-          <BrandArt src="/art/art-seal.webp" className="mx-auto mt-6 h-40 w-48 sm:h-48 sm:w-56" />
-          <div className="mt-2 flex items-start gap-3 rounded-2xl border border-amber-200 dark:border-amber-500/25 bg-amber-50/70 dark:bg-amber-500/10 p-4 text-sm text-amber-900">
-            <ShieldQuestion size={18} className="mt-0.5 shrink-0" />
+          {/* A ceramic passport booklet with an unstamped seal: exactly an account with
+              no passport issued yet. */}
+          <BrandArt src="/art/art-passport.webp" className="mx-auto mt-6 h-40 w-52 sm:h-48 sm:w-64" />
+          <div className="mt-2 flex items-start gap-3 rounded-2xl border border-warn/25 bg-warn/10 p-4 text-sm text-foreground/75">
+            <ShieldQuestion size={18} className="mt-0.5 shrink-0 text-warn" />
             <p>
               <span className="font-semibold">This is a real example agent</span> (ERC-8004 #849980 on
               Arc), resolved live on-chain. You haven't created an agent yet. Register one below to get
@@ -190,83 +182,80 @@ export default function AgentId() {
         </>
       )}
 
-      {/* Identity card */}
-      <div
-        className="relative mt-6 overflow-hidden rounded-2xl p-6 text-white"
-        style={{ background: 'linear-gradient(135deg, var(--accent) 0%, var(--accent-deep) 100%)' }}
-      >
-        {/* The object for this agent's category. It sits here and nowhere else: the card
-            shows exactly one agent, so the image says what THIS agent does rather than
-            decorating a list where every row would then look alike. The card's gradient
-            is already dark, which is what makes an opaque render safe in both themes. */}
-        {!isSample && (
-          <BrandArt
-            src={categoryArt(category)}
-            variant="band"
-            className="absolute -right-8 -top-6 hidden h-52 w-52 opacity-30 mix-blend-luminosity sm:block"
-          />
-        )}
-        <div
-          className="pointer-events-none absolute inset-0 opacity-10"
-          style={{
-            backgroundImage:
-              'radial-gradient(circle at 80% 20%, white 0%, transparent 50%), radial-gradient(circle at 20% 80%, white 0%, transparent 50%)',
-          }}
-        />
-        <div className="relative flex items-start justify-between gap-4">
-          <div className="min-w-0">
-            <div className="mb-3 flex items-center gap-2">
-              <Fingerprint size={18} className="opacity-75" />
-              <span className="text-sm font-semibold opacity-75">A-Identity</span>
-            </div>
-            <div className="text-xl font-bold tracking-tight">
-              {agentName}
-            </div>
-            {realChecked ? (
-              <div className="mt-1 break-all font-mono text-sm opacity-60">
-                {agentIdLabel}
+      {/* Identity card. A quiet bordered surface with one accent edge: the passport
+          reads as a document now, not a poster. The category avatar identifies the
+          agent; the reputation figure holds the right edge; the registry facts run
+          along the bottom as a label/value strip. */}
+      <div className="relative mt-6 overflow-hidden rounded-2xl border border-border bg-card">
+        <div className="absolute inset-x-0 top-0 h-0.5 bg-gradient-to-r from-accent via-accent/40 to-transparent" aria-hidden="true" />
+        <div className="p-6">
+          <div className="flex flex-wrap items-start justify-between gap-5">
+            <div className="flex min-w-0 items-start gap-4">
+              <AgentAvatar
+                seed={realAgent?.onchainAgentId || realAgent?.id || 'sample'}
+                category={category}
+                size={52}
+                verdict={kyaVerified ? 'allow' : 'warn'}
+              />
+              <div className="min-w-0">
+                <div className="flex flex-wrap items-center gap-2">
+                  <h3 className="text-xl font-bold tracking-tight text-foreground">{agentName}</h3>
+                  <Badge variant={kyaVerified ? 'success' : 'warning'}>
+                    {kyaVerified ? <BadgeCheck size={12} /> : <ShieldQuestion size={12} />}
+                    {kyaVerified ? 'KYA Verified' : 'KYA Pending'}
+                  </Badge>
+                </div>
+                {realChecked ? (
+                  <div className="mt-1 break-all font-mono text-xs text-foreground/45">{agentIdLabel}</div>
+                ) : (
+                  <Skeleton className="mt-1.5 h-3.5 w-40" />
+                )}
+                <div className="mt-2 text-sm text-foreground/60">{category}</div>
               </div>
-            ) : (
-              <Skeleton className="mt-1 h-4 w-40" />
-            )}
-            <div className="mt-3 text-xs opacity-60">Category</div>
-            <div className="text-sm font-semibold">{category}</div>
-          </div>
-          <div className="text-right">
-            <div className="text-xs opacity-60">ERC-8004</div>
-            <div className="mt-1 flex items-center justify-end gap-1.5">
+            </div>
+
+            <div className="shrink-0 text-right">
+              <div className="text-[10px] font-semibold uppercase tracking-[0.14em] text-foreground/40">
+                Reputation
+              </div>
               {repLoading || !realChecked ? (
-                <Skeleton className="h-10 w-20" />
+                <Skeleton className="ml-auto mt-1.5 h-9 w-20" />
               ) : (
-                <div className="text-3xl font-bold leading-none">{score ?? '-'}</div>
+                <div className="mt-0.5 text-3xl font-bold leading-none tabular-nums text-foreground">
+                  {score ?? '-'}
+                  <span className="ml-1 text-sm font-semibold text-foreground/35">/ 1000</span>
+                </div>
+              )}
+              {score != null && (
+                <div className="ml-auto mt-2 h-1 w-28 overflow-hidden rounded-full bg-foreground/10">
+                  <div
+                    className="h-full rounded-full bg-accent transition-all duration-500"
+                    style={{ width: `${Math.max(0, Math.min(100, score / 10))}%` }}
+                  />
+                </div>
               )}
             </div>
-            <div className="mt-0.5 text-xs opacity-60">Reputation</div>
-            <div className="mt-3 inline-flex items-center gap-1.5 rounded-full bg-white/20 px-3 py-1 text-xs font-semibold">
-              {kyaVerified ? <BadgeCheck size={13} /> : <ShieldQuestion size={13} />}
-              {kyaVerified ? 'KYA Verified' : 'KYA Pending'}
-            </div>
           </div>
-        </div>
-        <div className="relative mt-5 flex items-center justify-between">
-          <div>
-            <div className="text-xs opacity-60">Registered</div>
-            {realChecked ? (
-              <div className="text-sm font-semibold">
-                {registeredLabel}
+
+          <dl className="mt-6 grid grid-cols-2 gap-4 border-t border-border pt-4 sm:grid-cols-4">
+            {(
+              [
+                ['Registered', realChecked ? registeredLabel : null],
+                ['Network', networkLabel],
+                ['Standard', 'ERC-8004'],
+                ['Issuer', 'A-Identity'],
+              ] as const
+            ).map(([label, value]) => (
+              <div key={label}>
+                <dt className="text-[10px] font-semibold uppercase tracking-[0.14em] text-foreground/40">{label}</dt>
+                {value == null ? (
+                  <Skeleton className="mt-1 h-4 w-20" />
+                ) : (
+                  <dd className="mt-0.5 text-sm font-semibold text-foreground">{value}</dd>
+                )}
               </div>
-            ) : (
-              <Skeleton className="h-4 w-24" />
-            )}
-          </div>
-          <div>
-            <div className="text-xs opacity-60">Network</div>
-            <div className="text-sm font-semibold">{networkLabel}</div>
-          </div>
-          <div>
-            <div className="text-xs opacity-60">Standard</div>
-            <div className="text-sm font-semibold">ERC-8004</div>
-          </div>
+            ))}
+          </dl>
         </div>
       </div>
 

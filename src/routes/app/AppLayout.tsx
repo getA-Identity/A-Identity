@@ -20,6 +20,14 @@ import Logo from '../../components/Logo'
 import ThemeToggle from '../../components/ThemeToggle'
 import { useTheme } from '../../components/ThemeProvider'
 import { ConsoleAmbientContext } from '../../components/app/consoleAmbient'
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from '../../components/ui/dropdown-menu'
 import { useAuth } from '../../store/auth'
 import { APP_NAME } from '../../lib/brand'
 import { useMcpHealth } from '../../hooks/useMcp'
@@ -340,19 +348,53 @@ export default function AppLayout() {
                 <Search size={16} />
               </button>
 
-              {/* MCP status dot (mobile; the rail carries it on desktop) */}
-              <div className="flex items-center gap-1.5 md:hidden">
-                <span
-                  className={`h-1.5 w-1.5 rounded-full ${
-                    mcp === 'online' ? 'bg-ok' : mcp === 'waking' ? 'animate-pulse bg-warn' : 'bg-foreground/20'
-                  }`}
-                />
-                <span className="text-xs text-foreground/40">MCP</span>
-              </div>
               <ThemeToggle />
-              <div className="grid h-8 w-8 place-items-center rounded-full bg-accent text-[11px] font-bold text-white">
-                {user ? initials(user.name) : 'AI'}
-              </div>
+
+              {/* Account menu. The avatar is a real control now: who you are, how the
+                  backend is doing, and the way out, one press away on every screen. */}
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <button
+                    type="button"
+                    aria-label="Account menu"
+                    className="grid h-8 w-8 place-items-center rounded-full bg-accent text-[11px] font-bold text-white outline-none transition-transform duration-[120ms] hover:scale-105 data-[state=open]:ring-2 data-[state=open]:ring-ring data-[state=open]:ring-offset-2 data-[state=open]:ring-offset-card"
+                  >
+                    {user ? initials(user.name) : 'AI'}
+                  </button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end">
+                  <DropdownMenuLabel>
+                    <div className="text-sm font-semibold text-foreground">{user?.name ?? 'Signed in'}</div>
+                    <div className="mt-0.5 truncate text-xs text-foreground/45">{user?.email ?? ''}</div>
+                  </DropdownMenuLabel>
+                  <DropdownMenuSeparator />
+                  <div className="flex items-center gap-2.5 px-3 py-2 text-xs text-foreground/55">
+                    <span
+                      className={`h-1.5 w-1.5 shrink-0 rounded-full ${
+                        mcp === 'online' ? 'bg-ok' : mcp === 'waking' || mcp === 'checking' ? 'animate-pulse bg-warn' : 'bg-danger'
+                      }`}
+                    />
+                    {mcp === 'online'
+                      ? 'Live on-chain data'
+                      : mcp === 'waking'
+                        ? 'Backend waking up, ~30s'
+                        : mcp === 'checking'
+                          ? 'Connecting...'
+                          : 'Backend unreachable'}
+                  </div>
+                  {isGuest && (
+                    <DropdownMenuItem onSelect={() => navigate('/login')}>
+                      <Lock size={14} className="text-warn" />
+                      Sign in to act (guest is read-only)
+                    </DropdownMenuItem>
+                  )}
+                  <DropdownMenuSeparator />
+                  <DropdownMenuItem onSelect={onLogout} className="text-danger focus:text-danger">
+                    <LogOut size={14} />
+                    Log out
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
             </div>
           </header>
 

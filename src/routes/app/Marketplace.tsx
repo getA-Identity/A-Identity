@@ -16,6 +16,7 @@ import AgentAvatar from '../../components/AgentAvatar'
 import BrandArt from '../../components/app/BrandArt'
 import WorkerCatalog from '../../components/app/WorkerCatalog'
 import AppPage from '../../components/app/AppPage'
+import { Badge } from '../../components/ui/badge'
 import { Skeleton } from '../../components/ui/skeleton'
 
 type MarketAgent = {
@@ -266,135 +267,119 @@ export default function Marketplace() {
         </div>
       )}
 
-      {/* Agent cards. items-start so a card expanding its Activity list grows on its own
-          instead of stretching its row-mate and shifting the whole layout. Each card gets
-          the composite hover (lift + corona + ring) and hovering one dims the rest. */}
-      <div className="cn-glow-grid mt-6 grid items-start gap-4 sm:grid-cols-2">
+      {/* Agent listing. One row per agent, marketplace-style: identity on the left,
+          what it does in the middle, its numbers on the right. A row expands its
+          activity in place via an animated grid track, so the list never snaps. */}
+      <div className="mt-6 flex flex-col gap-3">
         {agents.map((a) => (
-          <div key={a.id} className="cn-glow-wrap">
-          <div className="cn-glow-card flex flex-col rounded-2xl border border-border bg-card p-6">
-            <div className="flex items-start justify-between gap-3">
-              <div className="flex items-center gap-3">
-                <AgentAvatar
-                  seed={a.onchainAgentId || a.id}
-                  category={a.category}
-                  size={44}
-                  verdict={a.kya === 'verified' ? 'allow' : 'warn'}
-                />
-                <div className="min-w-0">
-                  <div className="truncate font-bold text-foreground">{a.name}</div>
-                  <div className="truncate text-xs text-foreground/50">{a.category}</div>
+          <div
+            key={a.id}
+            className="cn-glow-wrap"
+          >
+          <div className="cn-glow-card rounded-2xl border border-border bg-card p-5">
+            <div className="flex flex-wrap items-start gap-4">
+              <AgentAvatar
+                seed={a.onchainAgentId || a.id}
+                category={a.category}
+                size={56}
+                verdict={a.kya === 'verified' ? 'allow' : 'warn'}
+              />
+
+              <div className="min-w-0 flex-1">
+                <div className="flex flex-wrap items-center gap-2">
+                  <span className="truncate text-base font-bold text-foreground">{a.name}</span>
+                  {a.kya === 'verified' ? (
+                    <Badge variant="success">
+                      <BadgeCheck size={11} /> KYA verified
+                    </Badge>
+                  ) : (
+                    <Badge variant="warning">KYA pending</Badge>
+                  )}
+                  {a.onchain === 'registered' ? (
+                    a.onchainExplorer ? (
+                      <a href={a.onchainExplorer} target="_blank" rel="noopener noreferrer" className="hover:underline">
+                        <Badge variant="info">On-chain #{a.onchainAgentId ?? ''}</Badge>
+                      </a>
+                    ) : (
+                      <Badge variant="info">On-chain #{a.onchainAgentId ?? ''}</Badge>
+                    )
+                  ) : (
+                    <Badge variant="warning">
+                      <Clock size={11} /> queued
+                    </Badge>
+                  )}
                 </div>
+                <div className="mt-0.5 text-xs text-foreground/45">{a.category} · Arc testnet</div>
+                <p className="mt-2 line-clamp-2 max-w-2xl text-sm leading-relaxed text-foreground/60">
+                  {a.description || 'No description yet.'}
+                </p>
+                {a.capabilities.length > 0 && (
+                  <div className="mt-2.5 flex flex-wrap gap-1.5">
+                    {a.capabilities.map((c) => (
+                      <span key={c} className="rounded-full bg-foreground/5 px-2 py-0.5 text-[11px] font-medium text-foreground/60">
+                        {c}
+                      </span>
+                    ))}
+                  </div>
+                )}
               </div>
-              <button
-                type="button"
-                onClick={() => toggleFollow(a.id)}
-                aria-pressed={a.followedByViewer}
-                aria-label={`${a.followedByViewer ? 'Unfollow' : 'Follow'} ${a.name}`}
-                className={`inline-flex shrink-0 items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-bold transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent ${
-                  a.followedByViewer
-                    ? 'bg-accent text-white'
-                    : 'border border-foreground/15 text-foreground/70 hover:bg-foreground/5'
-                }`}
-              >
-                <Heart size={12} fill={a.followedByViewer ? 'currentColor' : 'none'} />
-                {a.followedByViewer ? 'Following' : 'Follow'} ({a.followers})
-              </button>
-            </div>
 
-            <p className="mt-3 flex-1 text-sm leading-relaxed text-foreground/60">
-              {a.description || 'No description yet.'}
-            </p>
-
-            {/* Reputation (computed from real settlements + on-chain identity + tenure) */}
-            {a.reputation && (
-              <div className="mt-3">
-                <div className="flex items-center justify-between text-xs">
-                  <span className="font-semibold text-foreground/50">Reputation</span>
-                  <span className="font-bold text-accent">{a.reputation.score} / 1000</span>
+              {/* The numbers column: reputation first, then the social action. */}
+              <div className="flex shrink-0 flex-col items-end gap-2.5">
+                <div className="text-right">
+                  <div className="text-[10px] font-semibold uppercase tracking-[0.14em] text-foreground/40">Reputation</div>
+                  <div className="mt-0.5 text-2xl font-bold leading-none tabular-nums text-foreground">
+                    {a.reputation ? a.reputation.score : '-'}
+                    <span className="ml-1 text-xs font-semibold text-foreground/35">/ 1000</span>
+                  </div>
+                  {a.reputation && (
+                    <div className="ml-auto mt-1.5 h-1 w-24 overflow-hidden rounded-full bg-foreground/10">
+                      <div className="h-full rounded-full bg-accent transition-all" style={{ width: `${(a.reputation.score / 1000) * 100}%` }} />
+                    </div>
+                  )}
                 </div>
-                <div className="mt-1 h-1.5 w-full overflow-hidden rounded-full bg-foreground/8">
-                  <div className="h-full rounded-full bg-accent transition-all" style={{ width: `${(a.reputation.score / 1000) * 100}%` }} />
-                </div>
-              </div>
-            )}
-
-            {/* Badges */}
-            <div className="mt-4 flex flex-wrap gap-2">
-              {a.kya === 'verified' ? (
-                <span className="inline-flex items-center gap-1 rounded-full bg-emerald-100 dark:bg-emerald-500/15 px-2.5 py-1 text-[11px] font-bold text-emerald-700 dark:text-emerald-300">
-                  <BadgeCheck size={12} /> KYA verified
-                </span>
-              ) : (
-                <span className="inline-flex items-center gap-1 rounded-full bg-amber-100 dark:bg-amber-500/15 px-2.5 py-1 text-[11px] font-bold text-amber-700 dark:text-amber-300">
-                  KYA unverified
-                </span>
-              )}
-              <span className="inline-flex items-center gap-1 rounded-full bg-usdc/10 px-2.5 py-1 text-[11px] font-bold text-usdc">
-                Arc testnet
-              </span>
-              {a.onchain === 'registered' ? (
-                a.onchainExplorer ? (
-                  <a
-                    href={a.onchainExplorer}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="inline-flex items-center gap-1 rounded-full bg-usdc/10 px-2.5 py-1 text-[11px] font-bold text-usdc hover:underline"
-                  >
-                    <BadgeCheck size={12} /> On-chain #{a.onchainAgentId ?? ''}
-                  </a>
-                ) : (
-                  <span className="inline-flex items-center gap-1 rounded-full bg-usdc/10 px-2.5 py-1 text-[11px] font-bold text-usdc">
-                    <BadgeCheck size={12} /> On-chain #{a.onchainAgentId ?? ''}
-                  </span>
-                )
-              ) : (
-                <span className="inline-flex items-center gap-1 rounded-full bg-amber-100 dark:bg-amber-500/15 px-2.5 py-1 text-[11px] font-bold text-amber-700 dark:text-amber-300">
-                  <Clock size={12} /> on-chain queued
-                </span>
-              )}
-            </div>
-
-            {/* Capabilities */}
-            {a.capabilities.length > 0 && (
-              <div className="mt-3 flex flex-wrap gap-1.5">
-                {a.capabilities.map((c) => (
-                  <span
-                    key={c}
-                    className="rounded-full bg-foreground/5 px-2 py-0.5 text-[11px] font-medium text-foreground/60"
-                  >
-                    {c}
-                  </span>
-                ))}
-              </div>
-            )}
-
-            {/* On-chain anchor: real ERC-8004 registration on Arc, for queued agents */}
-            {a.onchain !== 'registered' && (
-              <div className="mt-3">
                 <button
                   type="button"
-                  onClick={() => anchorAgent(a.id)}
-                  disabled={anchoringId === a.id}
-                  className="inline-flex items-center gap-1.5 rounded-full border border-usdc/30 px-3 py-1.5 text-xs font-semibold text-usdc transition-colors hover:bg-usdc/5 disabled:opacity-50"
+                  onClick={() => toggleFollow(a.id)}
+                  aria-pressed={a.followedByViewer}
+                  aria-label={`${a.followedByViewer ? 'Unfollow' : 'Follow'} ${a.name}`}
+                  className={`inline-flex shrink-0 items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-bold transition-colors duration-[120ms] ${
+                    a.followedByViewer
+                      ? 'bg-accent text-white hover:bg-accent-deep'
+                      : 'border border-foreground/15 text-foreground/70 hover:bg-foreground/5'
+                  }`}
                 >
-                  {anchoringId === a.id ? 'Anchoring on Arc...' : 'Anchor on Arc'}
+                  <Heart size={12} fill={a.followedByViewer ? 'currentColor' : 'none'} />
+                  {a.followedByViewer ? 'Following' : 'Follow'} ({a.followers})
                 </button>
-                {anchorNote[a.id] && <p className="mt-1.5 text-[11px] text-amber-700 dark:text-amber-300">{anchorNote[a.id]}</p>}
               </div>
-            )}
+            </div>
 
-            {/* Activity: collapses via an animated grid track (height-auto without JS
-                measurement), so opening one never snaps the layout. */}
-            <button
-              type="button"
-              onClick={() => setOpenActivity(openActivity === a.id ? null : a.id)}
-              aria-expanded={openActivity === a.id}
-              className="mt-4 inline-flex items-center gap-1.5 border-t border-foreground/8 pt-3 text-xs font-semibold text-accent"
-            >
-              <Activity size={13} />
-              {openActivity === a.id ? 'Hide activity' : `Activity (${a.activity.length})`}
-            </button>
+            {/* Row footer: anchor (when queued) + activity toggle. */}
+            <div className="mt-4 flex flex-wrap items-center gap-3 border-t border-border pt-3">
+              <button
+                type="button"
+                onClick={() => setOpenActivity(openActivity === a.id ? null : a.id)}
+                aria-expanded={openActivity === a.id}
+                className="inline-flex items-center gap-1.5 text-xs font-semibold text-accent"
+              >
+                <Activity size={13} />
+                {openActivity === a.id ? 'Hide activity' : `Activity (${a.activity.length})`}
+              </button>
+              {a.onchain !== 'registered' && (
+                <>
+                  <button
+                    type="button"
+                    onClick={() => anchorAgent(a.id)}
+                    disabled={anchoringId === a.id}
+                    className="inline-flex items-center gap-1.5 rounded-full border border-usdc/30 px-3 py-1.5 text-xs font-semibold text-usdc transition-colors duration-[120ms] hover:bg-usdc/5 disabled:opacity-50"
+                  >
+                    {anchoringId === a.id ? 'Anchoring on Arc...' : 'Anchor on Arc'}
+                  </button>
+                  {anchorNote[a.id] && <p className="text-[11px] text-warn">{anchorNote[a.id]}</p>}
+                </>
+              )}
+            </div>
             <div className={`cn-collapse ${openActivity === a.id ? 'cn-open' : ''}`}>
               <ul className="mt-2 flex max-h-56 flex-col gap-2 overflow-y-auto pr-1">
                 {a.activity.map((ev, i) => (
