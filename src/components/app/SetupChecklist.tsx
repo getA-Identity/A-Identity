@@ -29,14 +29,16 @@ export default function SetupChecklist({ steps }: { steps: Step[] }) {
   return (
     <section className="overflow-hidden rounded-xl border border-border bg-card">
       {/* A threshold with a coin waiting on the far side, which is what these five steps
-          are: one crossing you make once, before any money can move. The band is its own
-          dark container, so the art's navy ground is deliberate rather than a hole. */}
+          are: one crossing you make once, before any money can move. Kept to a slim
+          header band: the source is 4:3, so a tall wide crop showed a meaningless
+          close-up. At this height the arch and the coin both survive, and the bottom
+          edge fades into the card instead of cutting. */}
       <BrandArt
         src="/art/art-gateway.webp"
         variant="band"
         eager
-        objectPosition="center 46%"
-        className="h-36 w-full sm:h-48"
+        objectPosition="center 40%"
+        className="h-20 w-full sm:h-24 [mask-image:linear-gradient(to_bottom,black_55%,transparent_100%)] [-webkit-mask-image:linear-gradient(to_bottom,black_55%,transparent_100%)]"
       />
 
       <div className="p-6">

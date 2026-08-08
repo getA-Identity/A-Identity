@@ -15,9 +15,11 @@ import {
   X,
 } from 'lucide-react'
 import CommandBar from '../../components/app/CommandBar'
+import DotField from '../../components/app/DotField'
 import Logo from '../../components/Logo'
 import ThemeToggle from '../../components/ThemeToggle'
 import { useTheme } from '../../components/ThemeProvider'
+import { ConsoleAmbientContext } from '../../components/app/consoleAmbient'
 import { useAuth } from '../../store/auth'
 import { APP_NAME } from '../../lib/brand'
 import { useMcpHealth } from '../../hooks/useMcp'
@@ -172,6 +174,11 @@ export default function AppLayout() {
   // for 200ms, then the new one enters with a row stagger.
   const { node, screenKey, phase } = useScreenTransition()
 
+  // Ambient dot layer: a page opts in (AppPage's `ambient` prop) and the shell
+  // draws it edge to edge behind the whole content pane, where the page itself
+  // could never reach (its column is narrower than the pane).
+  const [ambient, setAmbient] = useState(false)
+
   /** The rail's inner blocks, shared by the desktop aside and the mobile drawer. */
   const railContent = (
     <>
@@ -261,10 +268,10 @@ export default function AppLayout() {
 
   return (
     <div
-      className={`console-shell ${theme === 'dark' ? 'dark' : ''} ${flipping ? 'cn-theme-flip' : ''} grid h-dvh w-full grid-cols-1 overflow-hidden bg-background text-foreground md:grid-cols-[16rem_1fr]`}
+      className={`console-shell ${theme === 'dark' ? 'dark' : ''} ${flipping ? 'cn-theme-flip' : ''} grid h-dvh w-full grid-cols-1 overflow-hidden bg-background text-foreground [grid-template-rows:minmax(0,1fr)] md:grid-cols-[16rem_1fr]`}
     >
       {/* Desktop rail: borderless, on the bare canvas, staggered in on mount. */}
-      <aside className="cn-rail-anim hidden h-dvh min-h-0 flex-col px-4 py-6 md:flex">{railContent}</aside>
+      <aside className="cn-rail-anim hidden h-full min-h-0 flex-col px-4 py-6 md:flex">{railContent}</aside>
 
       {/* Mobile drawer + scrim */}
       {drawerOpen && (
@@ -288,8 +295,9 @@ export default function AppLayout() {
         </>
       )}
 
-      {/* Main pane: the whole console lives on one floating card. */}
-      <div className="min-w-0 p-3 md:pl-0">
+      {/* Main pane: the whole console lives on one floating card. min-h-0 keeps the
+          pane pinned to the viewport row so the scroll happens INSIDE the card. */}
+      <div className="min-h-0 min-w-0 p-3 md:pl-0">
         <div className="cn-boot-anim relative flex h-full min-h-0 flex-col overflow-hidden rounded-xl border border-border bg-card shadow-sm">
           {/* Topbar: breadcrumb + command + status, one quiet 48px row. */}
           <header className="flex h-12 shrink-0 items-center justify-between gap-4 border-b border-border px-4 sm:px-6">
@@ -371,16 +379,24 @@ export default function AppLayout() {
             </div>
           )}
 
-          {/* Content region: canvas-coloured scroll area inside the card. The clip
-              margin lets card coronas bleed without spawning scrollbars. */}
-          <main className="cn-content-scroll relative min-h-0 flex-1 bg-background px-5 py-6 sm:px-8 sm:py-8">
-            <div
-              key={screenKey}
-              className={`console-screen ${phase !== 'idle' ? `phase-${phase}` : ''}`}
-            >
-              <Suspense fallback={<BootPulse />}>{node}</Suspense>
-            </div>
-          </main>
+          {/* Content region. The wrapper owns the canvas colour and hosts the
+              ambient dot layer edge to edge; the transparent scroll area slides
+              the page OVER the dots, so the field never scrolls away and never
+              shows a seam. The clip margin lets card coronas bleed without
+              spawning scrollbars. */}
+          <div className="cn-dots-host relative min-h-0 flex-1 bg-background">
+            {ambient && <DotField className="z-0" />}
+            <main className="cn-content-scroll relative z-10 h-full px-5 py-6 sm:px-8 sm:py-8">
+              <ConsoleAmbientContext.Provider value={setAmbient}>
+                <div
+                  key={screenKey}
+                  className={`console-screen ${phase !== 'idle' ? `phase-${phase}` : ''}`}
+                >
+                  <Suspense fallback={<BootPulse />}>{node}</Suspense>
+                </div>
+              </ConsoleAmbientContext.Provider>
+            </main>
+          </div>
         </div>
       </div>
 

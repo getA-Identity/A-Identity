@@ -1,6 +1,6 @@
 import type { ReactNode } from 'react'
 import { cn } from '../../lib/utils'
-import DotField from './DotField'
+import { useConsoleAmbient } from './consoleAmbient'
 
 /**
  * The console's single page shell.
@@ -14,8 +14,10 @@ import DotField from './DotField'
  * `.console-page-body > *`, so a page gets its entrance choreography for free
  * by keeping its top-level blocks as direct children.
  *
- * `ambient` mounts the cursor-reactive dot field behind the whole page (the
- * hero surfaces only; dense working screens stay quiet).
+ * `ambient` asks the SHELL to draw the cursor-reactive dot field behind the
+ * whole content pane (hero surfaces only; dense working screens stay quiet).
+ * The shell owns the layer because it has to run edge to edge, wider than this
+ * page's column, and stay put while the page scrolls over it.
  */
 export default function AppPage({
   title,
@@ -30,13 +32,13 @@ export default function AppPage({
   /** Right-hand side of the header row: a status pill, a primary action. */
   actions?: ReactNode
   width?: 'full' | 'form'
-  /** Cursor-reactive dot layer behind the page (Overview-style hero surfaces). */
+  /** Cursor-reactive dot layer behind the pane (Overview-style hero surfaces). */
   ambient?: boolean
   children: ReactNode
 }) {
+  useConsoleAmbient(ambient)
   return (
     <div className="relative mx-auto w-full max-w-[920px]">
-      {ambient && <DotField className="-inset-x-8 -top-8 bottom-0" />}
       <header className="console-page-head relative flex flex-wrap items-start justify-between gap-4">
         <div className="min-w-0 max-w-2xl">
           <h1 className="text-2xl font-bold tracking-tight">{title}</h1>

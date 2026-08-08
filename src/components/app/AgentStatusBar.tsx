@@ -93,7 +93,10 @@ export default function AgentStatusBar({
   }
 
   return (
-    <div className={`rounded-xl border ${look.border} ${look.bg} p-4`}>
+    // Solid card base under the state tint: the bar often sits on the ambient dot
+    // field, and a bare translucent tint let the dots bleed through the copy.
+    <div className={`rounded-xl border ${look.border} bg-card`}>
+      <div className={`rounded-[inherit] ${look.bg} p-4`}>
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div className="flex min-w-0 items-start gap-3">
           <div className={`mt-0.5 grid h-8 w-8 shrink-0 place-items-center rounded-lg bg-card ${look.text}`}>
@@ -124,6 +127,7 @@ export default function AgentStatusBar({
             {action.label} <ArrowUpRight size={13} />
           </Link>
         )}
+      </div>
       </div>
     </div>
   )
