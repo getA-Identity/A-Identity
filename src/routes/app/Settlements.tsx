@@ -271,6 +271,7 @@ export default function Settlements() {
 
   return (
     <AppPage
+      ambient
       width="form"
       title="Settlements"
       description={
@@ -282,21 +283,21 @@ export default function Settlements() {
       }
     >
       {error && (
-        <div className="mt-5 rounded-2xl border border-amber-200 dark:border-amber-500/25 bg-amber-50/60 dark:bg-amber-500/10 p-4 text-sm text-foreground/70">{error}</div>
+        <div className="mt-6 rounded-2xl border border-amber-200 dark:border-amber-500/25 bg-amber-50/60 dark:bg-amber-500/10 p-4 text-sm text-foreground/70">{error}</div>
       )}
 
       {!loading && agents.length === 0 && !error && (
-        <div className="mt-5 rounded-2xl border border-dashed border-foreground/15 bg-card p-8 text-center text-sm text-foreground/55">
+        <div className="mt-6 rounded-2xl border border-dashed border-foreground/15 bg-card p-8 text-center text-sm text-foreground/55">
           No agents yet. Register one in Agent ID first.
         </div>
       )}
 
-      <AgentSelect agents={agents} />
+      <AgentSelect agents={agents} className="mt-6" />
 
       {/* Surface tabs. The payment queue is the page; the rails that feed it (automation,
           agent-to-agent commerce, cross-chain) each get their own tab instead of stacking
           eleven panels under the list. Micro-caps labels, the active one in a quiet box. */}
-      <div data-tour="tabs" className="mt-5 flex flex-wrap gap-1.5 border-b border-border pb-3" role="tablist" aria-label="Settlement surfaces">
+      <div data-tour="tabs" className="mt-6 flex flex-wrap gap-1.5 border-b border-border pb-3" role="tablist" aria-label="Settlement surfaces">
         {TABS.map(({ id, label, icon: Icon }) => (
           <button
             key={id}
@@ -394,7 +395,7 @@ export default function Settlements() {
                 className={`inline-flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-xs font-semibold transition-colors duration-[120ms] ${
                   chainScope === id
                     ? 'border-accent/40 bg-accent/10 text-accent'
-                    : 'border-border text-foreground/60 hover:bg-foreground/[0.04]'
+                    : 'border-border bg-card text-foreground/60 hover:bg-foreground/[0.04]'
                 }`}
               >
                 {icon}
@@ -405,7 +406,7 @@ export default function Settlements() {
           </div>
 
           {/* List */}
-          <ul data-tour="queue" className="mt-3 flex flex-col gap-2.5">
+          <ul data-tour="queue" className="mt-4 flex flex-col gap-2.5">
             {loading &&
               Array.from({ length: 4 }).map((_, i) => (
                 <li key={`sk-${i}`} className="rounded-2xl border border-border bg-card p-4">

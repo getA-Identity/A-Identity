@@ -379,30 +379,31 @@ export default function AgentProfile() {
 
   return (
     <AppPage
+      ambient
       title="Agent profile"
       description="The public record of one agent: its certificate, its services, its numbers, and what people say about it."
       actions={
         <Link
           to="/app/marketplace"
-          className="mt-1 inline-flex items-center gap-1.5 rounded-full border border-border px-3.5 py-2 text-xs font-semibold text-foreground/70 transition-colors duration-[120ms] hover:bg-foreground/[0.04]"
+          className="mt-1 inline-flex items-center gap-1.5 rounded-full border border-border bg-card px-3.5 py-2 text-xs font-semibold text-foreground/70 transition-colors duration-[120ms] hover:bg-foreground/[0.04]"
         >
           <ArrowLeft size={13} /> Marketplace
         </Link>
       }
     >
       {error && (
-        <div className="mt-5 rounded-2xl border border-warn/25 bg-warn/10 p-4 text-sm text-foreground/70">{error}</div>
+        <div className="mt-6 rounded-2xl border border-warn/25 bg-warn/10 p-4 text-sm text-foreground/70">{error}</div>
       )}
 
       {!loaded && (
-        <div className="mt-5 space-y-4">
+        <div className="mt-6 space-y-4">
           <Skeleton className="h-64 w-full rounded-3xl" />
           <Skeleton className="h-24 w-full rounded-2xl" />
         </div>
       )}
 
       {loaded && !error && !agent && (
-        <div className="mt-5 rounded-2xl border border-dashed border-foreground/15 bg-card p-10 text-center text-sm text-foreground/60">
+        <div className="mt-6 rounded-2xl border border-dashed border-foreground/15 bg-card p-10 text-center text-sm text-foreground/60">
           This agent does not exist (or is not listed). Back to the
           <Link to="/app/marketplace" className="ml-1 font-semibold text-accent hover:underline">
             marketplace
@@ -644,7 +645,7 @@ export default function AgentProfile() {
           </div>
 
           {/* Tab strip, same language as the rest of the console. */}
-          <div className="mt-5 flex flex-wrap gap-1.5 border-b border-border pb-3" role="tablist" aria-label="Agent profile sections">
+          <div className="mt-6 flex flex-wrap gap-1.5 border-b border-border pb-3" role="tablist" aria-label="Agent profile sections">
             {TAB_META.map(({ id, label, icon: Icon }) => (
               <button
                 key={id}
@@ -1076,7 +1077,7 @@ export default function AgentProfile() {
                     type="button"
                     onClick={() => spinStrip(-1)}
                     aria-label="Previous agents"
-                    className="grid h-8 w-8 place-items-center rounded-full border border-border text-foreground/60 transition-colors duration-[120ms] hover:bg-foreground/[0.04] hover:text-foreground"
+                    className="grid h-8 w-8 place-items-center rounded-full border border-border bg-card text-foreground/60 transition-colors duration-[120ms] hover:bg-foreground/[0.04] hover:text-foreground"
                   >
                     <ChevronLeft size={15} />
                   </button>
@@ -1084,7 +1085,7 @@ export default function AgentProfile() {
                     type="button"
                     onClick={() => spinStrip(1)}
                     aria-label="Next agents"
-                    className="grid h-8 w-8 place-items-center rounded-full border border-border text-foreground/60 transition-colors duration-[120ms] hover:bg-foreground/[0.04] hover:text-foreground"
+                    className="grid h-8 w-8 place-items-center rounded-full border border-border bg-card text-foreground/60 transition-colors duration-[120ms] hover:bg-foreground/[0.04] hover:text-foreground"
                   >
                     <ChevronRight size={15} />
                   </button>

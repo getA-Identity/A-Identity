@@ -182,15 +182,16 @@ export default function Wallet() {
 
   return (
     <AppPage
+      ambient
       title="Wallet"
       description="Your agent's Arc wallet. Balance is read live from the Arc testnet; payments settle in real USDC. You set the limits in Permissions."
     >
       {error && (
-        <div className="mt-5 rounded-2xl border border-warn/25 bg-warn/10 p-4 text-sm text-foreground/70">{error}</div>
+        <div className="mt-6 rounded-2xl border border-warn/25 bg-warn/10 p-4 text-sm text-foreground/70">{error}</div>
       )}
 
       {loaded && agents.length === 0 && !error && (
-        <div className="mt-5 rounded-2xl border border-dashed border-foreground/15 bg-card p-8 text-center text-sm text-foreground/55">
+        <div className="mt-6 rounded-2xl border border-dashed border-foreground/15 bg-card p-8 text-center text-sm text-foreground/55">
           No agents yet. Register one in Agent ID to get a wallet.
         </div>
       )}
@@ -199,7 +200,7 @@ export default function Wallet() {
         <>
           <AgentSelect agents={agents} inline className="mt-0" />
 
-          <div className="mt-5 grid items-start gap-4 lg:grid-cols-3">
+          <div className="mt-4 grid items-start gap-4 lg:grid-cols-3">
             {/* Left: the money itself. */}
             <div className="flex min-w-0 flex-col gap-4 lg:col-span-2">
               {/* Live balance hero: one figure, scoped by chain. */}

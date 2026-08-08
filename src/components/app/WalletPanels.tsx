@@ -208,8 +208,8 @@ export function TreasuryPanel({ agentId }: { agentId: string }) {
   const [previewing, setPreviewing] = useState(false)
   const [savedTick, setSavedTick] = useState(false)
   const [err, setErr] = useState<string | null>(null)
-  // The full explanation folds away: a first visit reads one sentence and three
-  // controls, not three paragraphs.
+  // The full explanation, the three steps and the read-from address all fold away
+  // behind How it works: a first visit reads one subtitle and the controls.
   const [how, setHow] = useState(false)
 
   const load = useCallback(
@@ -238,23 +238,18 @@ export function TreasuryPanel({ agentId }: { agentId: string }) {
     if (agentId) load(undefined, { syncCap: true })
   }, [agentId, load])
 
-  // Auto-preview: a moment after the cap stops changing, recalculate quietly so typing a
-  // number updates the projection without hunting for the Preview button or a loading flash.
+  // Live preview: a moment after the cap stops changing (chip click or typing), recalculate
+  // quietly. The projection is server math, so the fetch is debounced; `previewing` drives a
+  // small "updating" hint on the hero number instead of a separate Preview button.
   useEffect(() => {
     if (!agentId) return
-    const t = setTimeout(() => load(cap, { quiet: true }), 400)
-    return () => clearTimeout(t)
+    const timer = setTimeout(async () => {
+      setPreviewing(true)
+      await load(cap, { quiet: true })
+      setPreviewing(false)
+    }, 400)
+    return () => clearTimeout(timer)
   }, [cap, agentId, load])
-
-  // Manual Preview: same recalculation, but WITH visible feedback (spinner → check), so the
-  // button clearly does something instead of appearing dead.
-  const runPreview = async () => {
-    setPreviewing(true)
-    await load(cap, { quiet: true })
-    setPreviewing(false)
-    setSavedTick(true)
-    setTimeout(() => setSavedTick(false), 1400)
-  }
 
   const act = async (enable: boolean) => {
     setBusy(true)
@@ -286,10 +281,8 @@ export function TreasuryPanel({ agentId }: { agentId: string }) {
     }
   }
 
-  const setCapPreset = (v: number) => {
-    setCap(String(v))
-    load(String(v), { quiet: true })
-  }
+  // Presets go through the same debounced live preview as typing, one fetch per change.
+  const setCapPreset = (v: number) => setCap(String(v))
 
   const b = t?.balances
   const proj = t?.projection
@@ -306,7 +299,7 @@ export function TreasuryPanel({ agentId }: { agentId: string }) {
             <TrendingUp size={16} />
           </div>
           <div>
-            <div className="flex items-center gap-2">
+            <div className="flex flex-wrap items-center gap-2">
               <h3 className="text-[15px] font-semibold text-foreground">Treasury</h3>
               <TooltipProvider delayDuration={150}>
                 <Tooltip>
@@ -323,69 +316,67 @@ export function TreasuryPanel({ agentId }: { agentId: string }) {
                   </TooltipContent>
                 </Tooltip>
               </TooltipProvider>
-              {on && (
-                <span className="rounded-full bg-emerald-100 dark:bg-emerald-500/15 px-2 py-0.5 text-[10px] font-semibold text-emerald-700 dark:text-emerald-300">
-                  Auto Yield On
+              {!loading && t && !t.error && (
+                <span
+                  className={`rounded-full px-2 py-0.5 text-[10px] font-semibold ${
+                    on
+                      ? 'bg-emerald-100 dark:bg-emerald-500/15 text-emerald-700 dark:text-emerald-300'
+                      : 'border border-border bg-card text-foreground/45'
+                  }`}
+                >
+                  {on ? 'Auto Yield On' : 'Auto Yield Off'}
                 </span>
               )}
             </div>
-            <p className="text-xs font-medium text-foreground/60">Idle balance put to work in USYC</p>
+            <p className="text-xs font-medium text-foreground/60">Idle balance earns yield in USYC</p>
           </div>
         </div>
-        {t?.address && (
-          <span className="hidden shrink-0 items-center gap-1.5 rounded-full border border-foreground/[0.07] bg-card px-2.5 py-1 text-[11px] font-medium text-foreground/55 sm:inline-flex">
-            <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
-            Reading {short(t.address)}
-          </span>
-        )}
-      </div>
-
-      <div className="mt-3 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-foreground/55">
-        <span>Idle balance above your cap earns yield in USYC. Nothing moves without your approval.</span>
         <button
           type="button"
           onClick={() => setHow((v) => !v)}
           aria-expanded={how}
-          className="font-semibold text-emerald-700 dark:text-emerald-300 hover:underline"
+          className="shrink-0 text-xs font-semibold text-emerald-700 dark:text-emerald-300 hover:underline"
         >
-          {how ? 'Hide how it works' : 'How it works'}
+          {how ? 'Hide details' : 'How it works'}
         </button>
       </div>
+
       <div className={`cn-collapse ${how ? 'cn-open' : ''}`}>
         <div className="pt-3">
           <p className="text-xs leading-relaxed text-foreground/55">
-            Put the agent's idle stablecoin to work. Anything above your working capital cap earns yield in <b>USYC</b>,
-            Circle's tokenized money market fund on Arc, and redeems back to USDC when the agent needs to spend. You review
-            the projection and authorize. Nothing moves on its own.
+            Anything above your working capital cap earns yield in <b>USYC</b>, Circle's tokenized money
+            market fund on Arc, and redeems back to USDC when the agent needs to spend. Nothing moves
+            without your approval.
           </p>
           <ol className="mt-2 grid gap-2 rounded-2xl border border-emerald-200/60 dark:border-emerald-500/25 bg-card/60 p-3 text-[11px] leading-relaxed text-foreground/60 sm:grid-cols-3">
-            <li><span className="font-semibold text-foreground/75">1. Set a cap.</span> How much idle USDC/EURC to keep liquid for spending.</li>
-            <li><span className="font-semibold text-foreground/75">2. Preview.</span> Anything above the cap is "deployable" and its projected yield is shown.</li>
-            <li><span className="font-semibold text-foreground/75">3. Authorize.</span> You approve; the surplus earmarks into USYC. Nothing moves on its own.</li>
+            <li><span className="font-semibold text-foreground/75">1. Set a cap.</span> Idle balance below it stays liquid for spending.</li>
+            <li><span className="font-semibold text-foreground/75">2. Review.</span> The surplus and its projected yield update live.</li>
+            <li><span className="font-semibold text-foreground/75">3. Authorize.</span> You approve; the surplus earmarks into USYC.</li>
           </ol>
+          {t?.address && (
+            <p className="mt-2 flex items-center gap-1.5 text-[11px] text-foreground/45">
+              <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-emerald-500" />
+              Reading balances from <span className="font-mono" title={t.address}>{short(t.address)}</span>
+            </p>
+          )}
         </div>
       </div>
 
       {loading ? (
-        <div className="mt-5 space-y-5">
-          <div>
-            <div className="mb-2"><Skeleton className="h-3 w-28" /></div>
-            <div className="grid grid-cols-3 gap-2.5">
-              {Array.from({ length: 3 }).map((_, i) => (
-                <div key={i} className="rounded-2xl border border-foreground/[0.06] bg-card px-4 py-3 shadow-[0_1px_2px_rgba(16,24,40,0.04)]">
-                  <Skeleton className="h-3.5 w-12" />
-                  <Skeleton className="mt-1.5 h-5 w-16" />
-                </div>
-              ))}
-            </div>
-          </div>
-          <div className="grid grid-cols-2 gap-2.5 sm:grid-cols-4">
-            {Array.from({ length: 4 }).map((_, i) => (
-              <div key={i} className="rounded-2xl border border-foreground/[0.06] bg-card px-4 py-3">
-                <Skeleton className="h-3 w-16" />
-                <Skeleton className="mt-1.5 h-4 w-14" />
-              </div>
+        <div className="mt-5 space-y-4">
+          <div className="flex flex-wrap gap-2">
+            {Array.from({ length: 3 }).map((_, i) => (
+              <Skeleton key={i} className="h-7 w-24 rounded-full" />
             ))}
+          </div>
+          <div className="flex flex-wrap gap-2">
+            {Array.from({ length: 4 }).map((_, i) => (
+              <Skeleton key={i} className="h-8 w-14 rounded-full" />
+            ))}
+          </div>
+          <div className="rounded-2xl border border-foreground/[0.06] bg-card px-5 py-4">
+            <Skeleton className="h-3 w-28" />
+            <Skeleton className="mt-2 h-7 w-24" />
           </div>
         </div>
       ) : t?.error ? (
@@ -398,20 +389,29 @@ export function TreasuryPanel({ agentId }: { agentId: string }) {
           </p>
         </div>
       ) : (
-        <div className="mt-5 space-y-5">
-          <div>
-            <div className="mb-2 text-[11px] font-medium text-foreground/45">Wallet Balances</div>
-            <div className="grid grid-cols-3 gap-2.5">
-              <Stat raised label="USDC" value={money(b?.usdcUsd)} />
-              <Stat raised label="EURC" value={money(b?.eurcUsd)} />
-              <Stat raised label="USYC" value={money(b?.usycUsd)} badge={<StatBadge>Yielding</StatBadge>} />
-            </div>
+        <div className="mt-5 space-y-4">
+          {/* Balances: one compact chip row instead of three tiles. */}
+          <div className="flex flex-wrap items-center gap-2">
+            {[
+              { label: 'USDC', value: b?.usdcUsd, yielding: false },
+              { label: 'EURC', value: b?.eurcUsd, yielding: false },
+              { label: 'USYC', value: b?.usycUsd, yielding: true },
+            ].map((c) => (
+              <span
+                key={c.label}
+                className="inline-flex items-center gap-1.5 rounded-full border border-foreground/[0.07] bg-card px-2.5 py-1 text-[11px] font-medium text-foreground/55 shadow-[0_1px_2px_rgba(16,24,40,0.04)]"
+              >
+                {c.label}
+                <span className="font-semibold text-foreground tabular-nums">{money(c.value)}</span>
+                {c.yielding && <StatBadge>Yielding</StatBadge>}
+              </span>
+            ))}
           </div>
 
+          {/* Cap picker: presets + custom input; the projection previews live, no button. */}
           <div>
-            <div className="mb-2 flex items-center justify-between">
-              <span className="text-[11px] font-medium text-foreground/45">Working Capital Cap</span>
-              <span className="text-[11px] text-foreground/40">Idle below this stays liquid</span>
+            <div className="mb-2 text-[11px] font-medium text-foreground/45">
+              Working capital cap <span className="text-foreground/35">· stays liquid</span>
             </div>
             <div className="flex flex-wrap items-center gap-2">
               {CAP_PRESETS.map((v) => {
@@ -421,6 +421,7 @@ export function TreasuryPanel({ agentId }: { agentId: string }) {
                     key={v}
                     type="button"
                     onClick={() => setCapPreset(v)}
+                    aria-pressed={active}
                     className={`rounded-full px-3.5 py-1.5 text-xs font-semibold transition ${
                       active ? 'bg-foreground text-background' : 'border border-border bg-card text-foreground/60 hover:border-foreground/25'
                     }`}
@@ -429,62 +430,51 @@ export function TreasuryPanel({ agentId }: { agentId: string }) {
                   </button>
                 )
               })}
-              <div className="ml-1 inline-flex items-center rounded-full border border-border bg-card pl-3">
+              <div className="inline-flex items-center rounded-full border border-border bg-card pl-3">
                 <span className="text-[11px] text-foreground/40">$</span>
                 <input
                   type="number"
                   min="0"
                   value={cap}
                   onChange={(e) => setCap(e.target.value)}
+                  aria-label="Custom working capital cap in dollars"
                   className="w-16 bg-transparent px-1.5 py-1.5 text-xs font-semibold text-foreground outline-none"
                 />
               </div>
-              <button
-                type="button"
-                onClick={runPreview}
-                disabled={previewing}
-                className="inline-flex items-center gap-1.5 rounded-full border border-emerald-300 px-3 py-1.5 text-xs font-semibold text-emerald-700 dark:text-emerald-300 transition hover:bg-emerald-50 disabled:opacity-60"
-              >
-                {previewing ? (
-                  'Calculating…'
-                ) : savedTick ? (
-                  <>
-                    <Check size={12} /> Updated
-                  </>
-                ) : (
-                  'Preview'
-                )}
-              </button>
             </div>
           </div>
 
+          {/* One hero: the deployable amount plus the APY estimate. */}
           <div className="overflow-hidden rounded-2xl border border-emerald-300/60 bg-gradient-to-r from-emerald-400/[0.16] via-emerald-300/[0.08] to-transparent px-5 py-4">
-            <div className="flex flex-wrap items-center justify-between gap-3">
+            <div className="flex flex-wrap items-end justify-between gap-x-3 gap-y-2">
               <div>
-                <div className="text-[11px] font-medium text-foreground/50">Ready To Earn In USYC</div>
+                <div className="text-[11px] font-medium text-foreground/50" aria-live="polite">
+                  Ready to earn in USYC{previewing ? ' · updating…' : ''}
+                </div>
                 <div className="mt-0.5 text-[26px] font-bold leading-none tracking-tight text-emerald-700 dark:text-emerald-300 tabular-nums">
                   {money(deployable)}
                 </div>
               </div>
-              <div className="text-right text-[11px] leading-relaxed text-foreground/50">
-                <div>About {apy}% APY estimate</div>
-                <div className="tabular-nums">
-                  {money(proj?.monthlyUsd)} per month · {money(proj?.weeklyUsd)} per week
-                </div>
-              </div>
+              <span className="rounded-full bg-emerald-100 dark:bg-emerald-500/15 px-2.5 py-1 text-[11px] font-semibold text-emerald-700 dark:text-emerald-300">
+                About {apy}% APY est.
+              </span>
             </div>
           </div>
 
-          <div className="grid grid-cols-2 gap-2.5 sm:grid-cols-4">
-            <Stat label="Idle Now" value={money(b?.idleUsd)} />
-            <Stat label="Deployable" value={money(deployable)} />
-            <Stat label="Est. Monthly" value={money(proj?.monthlyUsd)} />
-            <Stat label="Est. Yearly" value={money(proj?.yearlyUsd)} />
-          </div>
+          {/* Everything secondary in one compact line. */}
+          <p className="flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[11px] text-foreground/50 tabular-nums">
+            <span>Idle now {money(b?.idleUsd)}</span>
+            <span aria-hidden="true">·</span>
+            <span>Est. {money(proj?.monthlyUsd)}/mo</span>
+            <span aria-hidden="true">·</span>
+            <span>{money(proj?.weeklyUsd)}/wk</span>
+            <span aria-hidden="true">·</span>
+            <span>{money(proj?.yearlyUsd)}/yr</span>
+          </p>
 
           {deployable <= 0 && (
             <p className="text-[11px] text-foreground/45">
-              Idle balance is at or below the ${Number(cap) || 0} cap. Lower the cap to put more to work.
+              Idle balance is under the ${Number(cap) || 0} cap. Lower it to earn.
             </p>
           )}
 
@@ -503,13 +493,10 @@ export function TreasuryPanel({ agentId }: { agentId: string }) {
                   type="button"
                   onClick={() => act(false)}
                   disabled={busy}
-                  className="rounded-full border border-border px-4 py-2.5 text-sm font-semibold text-foreground/60 transition hover:border-red-300 hover:text-red-600 disabled:opacity-50"
+                  className="rounded-full px-4 py-2.5 text-sm font-semibold text-foreground/55 transition hover:text-red-600 disabled:opacity-50"
                 >
                   Turn Off
                 </button>
-                <span className="text-xs font-medium text-emerald-700 dark:text-emerald-300">
-                  Authorized{typeof t?.capUsd === 'number' ? ` · cap $${t.capUsd}` : ''}
-                </span>
               </>
             ) : (
               <button
@@ -521,22 +508,33 @@ export function TreasuryPanel({ agentId }: { agentId: string }) {
                 {busy ? 'Authorizing…' : savedTick ? <><Check size={15} /> Authorized</> : 'Authorize Auto Yield'}
               </button>
             )}
-            {t?.usyc?.explorer && (
-              <a
-                href={t.usyc.explorer}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="inline-flex items-center gap-1 text-xs font-semibold text-emerald-700 dark:text-emerald-300 hover:underline"
-              >
-                USYC Contract <ExternalLink size={11} />
-              </a>
-            )}
           </div>
 
-
+          {/* One small meta line: authorization state plus the contract link. */}
+          {(on || t?.usyc?.explorer) && (
+            <p className="flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[11px] text-foreground/45">
+              {on && (
+                <span className="font-medium text-emerald-700 dark:text-emerald-300">
+                  Authorized{typeof t?.capUsd === 'number' ? ` · cap $${t.capUsd}` : ''}
+                </span>
+              )}
+              {on && t?.usyc?.explorer && <span aria-hidden="true">·</span>}
+              {t?.usyc?.explorer && (
+                <a
+                  href={t.usyc.explorer}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex items-center gap-1 font-semibold text-emerald-700 dark:text-emerald-300 hover:underline"
+                >
+                  USYC Contract <ExternalLink size={11} />
+                </a>
+              )}
+            </p>
+          )}
         </div>
       )}
-      {err && <div className="mt-3 text-xs text-red-600">{err}</div>}
+      {/* Mutation errors only; the load-side reason already renders in the card body. */}
+      {err && err !== t?.error && <div className="mt-3 text-xs text-red-600">{err}</div>}
     </section>
   )
 }

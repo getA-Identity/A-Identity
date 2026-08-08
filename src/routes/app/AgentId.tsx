@@ -161,11 +161,12 @@ export default function AgentId() {
 
   return (
     <AppPage
+      ambient
       width="form"
       title="Agent ID"
       description="Your agent's on-chain passport. ERC-8004 gives every agent a verifiable identity, so others can trust it before transacting."
     >
-      <AgentSelect agents={agents} />
+      <AgentSelect agents={agents} className="mt-6" />
 
       {/* Sample notice: no real agent yet → the card below is illustrative, not yours. */}
       {isSample && (
@@ -271,7 +272,7 @@ export default function AgentId() {
       </div>
 
       {/* Stage progress */}
-      <div data-tour="stages" className="mt-6 rounded-2xl border border-border bg-card p-6">
+      <div data-tour="stages" className="mt-4 rounded-2xl border border-border bg-card p-6">
         <h3 className="mb-4 font-semibold">Registration progress</h3>
         <div className="flex items-start">
           {STAGES.map(({ key, label, desc }, i) => {
@@ -348,7 +349,7 @@ export default function AgentId() {
       )}
 
       {/* Human-on-the-loop */}
-      <div className="mt-5 flex items-start gap-3 rounded-2xl border border-accent/20 bg-accent/[0.05] p-5">
+      <div className="mt-4 flex items-start gap-3 rounded-2xl border border-accent/20 bg-accent/[0.05] p-5">
         <ShieldQuestion size={20} className="mt-0.5 shrink-0 text-accent" />
         <div>
           <p className="text-sm font-semibold text-foreground">Human approval required for deployment</p>

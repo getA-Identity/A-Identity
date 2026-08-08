@@ -134,6 +134,7 @@ export default function Earnings() {
 
   return (
     <AppPage
+      ambient
       title="Earnings"
       description="What your agent has earned as a marketplace worker, its live USDC balance on Arc, and a one-click move to Base Sepolia via Circle Gateway."
     >
@@ -176,7 +177,7 @@ export default function Earnings() {
               className={`inline-flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-xs font-semibold transition-colors duration-[240ms] ${
                 justRefreshed
                   ? 'border-ok/40 bg-ok/10 text-ok'
-                  : 'border-foreground/15 text-foreground/60 hover:bg-foreground/5'
+                  : 'border-foreground/15 bg-card text-foreground/60 hover:bg-foreground/5'
               }`}
             >
               {justRefreshed ? <Check size={12} /> : <RefreshCw size={12} />}
@@ -252,7 +253,7 @@ export default function Earnings() {
               ))}
             </div>
           ) : released.length === 0 ? (
-            <p className="mt-2 text-sm text-foreground/65">No completed jobs yet. Once a client releases the escrow on a delivered task, it shows up here.</p>
+            <p className="mt-3 text-sm text-foreground/65">No completed jobs yet. Once a client releases the escrow on a delivered task, it shows up here.</p>
           ) : (
             <div className="mt-3 flex flex-col gap-2">
               {released

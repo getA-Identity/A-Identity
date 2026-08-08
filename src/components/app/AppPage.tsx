@@ -15,7 +15,8 @@ import { useConsoleAmbient } from './consoleAmbient'
  * by keeping its top-level blocks as direct children.
  *
  * `ambient` asks the SHELL to draw the cursor-reactive dot field behind the
- * whole content pane (hero surfaces only; dense working screens stay quiet).
+ * whole content pane. Every console page opts in, so the Overview look carries
+ * through the whole app; dense data always sits on bg-card surfaces above it.
  * The shell owns the layer because it has to run edge to edge, wider than this
  * page's column, and stay put while the page scrolls over it.
  */

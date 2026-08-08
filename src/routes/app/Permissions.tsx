@@ -170,6 +170,7 @@ export default function Permissions() {
 
   return (
     <AppPage
+      ambient
       width="form"
       title="Permissions"
       description="You are in control. Set what your agent can do, who it can pay, and how much it can spend per day. The policy engine enforces every rule here for real."
@@ -181,13 +182,13 @@ export default function Permissions() {
       <BrandArt src="/art/art-guardrail.webp" variant="band" className="h-24 w-full rounded-2xl sm:h-28" />
 
       {error && (
-        <div className="mt-5 rounded-2xl border border-amber-200 dark:border-amber-500/25 bg-amber-50/60 dark:bg-amber-500/10 p-4 text-sm text-foreground/70">
+        <div className="mt-6 rounded-2xl border border-amber-200 dark:border-amber-500/25 bg-amber-50/60 dark:bg-amber-500/10 p-4 text-sm text-foreground/70">
           {error}
         </div>
       )}
 
       {loading && !error && (
-        <div className="mt-5 space-y-4">
+        <div className="mt-4 space-y-4">
           {/* Daily-spend card */}
           <div className="rounded-2xl border border-border bg-card p-5">
             <div className="flex items-center justify-between">
@@ -233,7 +234,7 @@ export default function Permissions() {
       )}
 
       {!loading && !error && agents.length === 0 && (
-        <div className="mt-5 rounded-2xl border border-dashed border-foreground/15 bg-card p-8 text-center text-sm text-foreground/55">
+        <div className="mt-6 rounded-2xl border border-dashed border-foreground/15 bg-card p-8 text-center text-sm text-foreground/55">
           No agents yet. Register one in Agent ID, then set its permissions here.
         </div>
       )}
@@ -241,12 +242,12 @@ export default function Permissions() {
       {policy && draft && (
         <>
           {/* Agent selector */}
-          <AgentSelect agents={agents} />
+          <AgentSelect agents={agents} className="mt-6" />
 
           {/* Surface tabs. Payments is the USDC policy on Arc; Trading is the brokerage
               action policy. They are separate on purpose: the two govern different
               surfaces, and merging them would put payee allowlists next to tickers. */}
-          <div data-tour="tabs" className="mt-5 flex flex-wrap gap-1.5 border-b border-border pb-3" role="tablist" aria-label="Permission surfaces">
+          <div data-tour="tabs" className="mt-6 flex flex-wrap gap-1.5 border-b border-border pb-3" role="tablist" aria-label="Permission surfaces">
             {([
               ['payments', 'Payments'],
               ['trading', 'Trading'],
@@ -275,7 +276,7 @@ export default function Permissions() {
           {shownTab === 'payments' && (
           <>
           {/* Daily limit status */}
-          <div data-tour="today" className="mt-5 rounded-2xl border border-border bg-card p-5">
+          <div data-tour="today" className="mt-4 rounded-2xl border border-border bg-card p-5">
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-2 text-sm font-semibold text-foreground">
                 <CreditCard size={16} className="text-usdc" />
