@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from 'react'
 import {
   Check,
   CreditCard,
+  Loader2,
   Save,
   Shield,
   Snowflake,
@@ -15,7 +16,9 @@ import { BACKEND_UNREACHABLE } from '../../lib/mcpBase'
 import { apiFetch, readJson, explainError } from '../../lib/api'
 import { fetchPlatformAgents } from '../../lib/platformAgents'
 import { pickPrimaryAgent } from '../../lib/pickAgent'
+import { short } from '../../lib/format'
 import { useSelectedAgent } from '../../store/agent'
+import { useTabCarousel } from '../../hooks/useTabCarousel'
 import AgentSelect from '../../components/app/AgentSelect'
 import AppPage from '../../components/app/AppPage'
 import BrandArt from '../../components/app/BrandArt'
@@ -26,7 +29,8 @@ import { Row } from '../../components/app/permissions/ToggleRow'
 import PolicyTester from '../../components/app/permissions/PolicyTester'
 import VaultPanel from '../../components/app/permissions/VaultPanel'
 import CirclePolicyPanel from '../../components/app/CirclePolicyPanel'
-const short = (a: string) => (a.length > 14 ? `${a.slice(0, 8)}...${a.slice(-4)}` : a)
+
+const PERM_TABS = ['payments', 'trading', 'spend', 'audit'] as const
 
 type Permissions = {
   dailyCapUsd: number
@@ -60,7 +64,8 @@ type VaultSyncNote = {
 const ARCSCAN_TX = 'https://testnet.arcscan.app/tx/'
 
 export default function Permissions() {
-  const [tab, setTab] = useState<'payments' | 'trading' | 'spend' | 'audit'>('payments')
+  const [tab, setTab] = useState<(typeof PERM_TABS)[number]>('payments')
+  const { shown: shownTab, className: paneClass } = useTabCarousel(tab, PERM_TABS)
   const [agents, setAgents] = useState<Agent[]>([])
   const agentId = useSelectedAgent((s) => s.agentId)
   const syncRoster = useSelectedAgent((s) => s.syncRoster)
@@ -241,7 +246,7 @@ export default function Permissions() {
           {/* Surface tabs. Payments is the USDC policy on Arc; Trading is the brokerage
               action policy. They are separate on purpose: the two govern different
               surfaces, and merging them would put payee allowlists next to tickers. */}
-          <div className="mt-5 flex flex-wrap gap-1 rounded-xl border border-border bg-card p-1">
+          <div className="mt-5 flex flex-wrap gap-1.5 border-b border-border pb-3" role="tablist" aria-label="Permission surfaces">
             {([
               ['payments', 'Payments'],
               ['trading', 'Trading'],
@@ -251,18 +256,23 @@ export default function Permissions() {
               <button
                 key={id}
                 type="button"
+                role="tab"
                 onClick={() => setTab(id)}
-                className={`rounded-lg px-3.5 py-2 text-sm font-semibold transition-colors ${
-                  tab === id ? 'bg-accent text-white' : 'text-foreground/55 hover:text-foreground'
+                aria-selected={tab === id}
+                className={`rounded-md border px-3 py-2 text-[10px] font-semibold uppercase tracking-[0.14em] transition-colors duration-[120ms] ${
+                  tab === id
+                    ? 'border-foreground/60 text-foreground'
+                    : 'border-transparent text-foreground/50 hover:text-foreground/80'
                 }`}
-                aria-current={tab === id}
               >
                 {labelText}
               </button>
             ))}
           </div>
 
-          {tab === 'payments' && (
+          <div className="cn-tab-clip">
+          <div className={paneClass}>
+          {shownTab === 'payments' && (
           <>
           {/* Daily limit status */}
           <div className="mt-5 rounded-2xl border border-border bg-card p-5">
@@ -399,15 +409,16 @@ export default function Permissions() {
             </ul>
           </section>
 
-          {/* Save */}
+          {/* Save. A confirmed save blooms once (accent glow, see console.css): the
+              moment the rules changed deserves a beat more than a label swap. */}
           <div className="mt-4 flex items-center gap-3">
             <button
               type="button"
               onClick={save}
               disabled={saving}
-              className="inline-flex items-center gap-2 rounded-full bg-accent px-5 py-2.5 text-sm font-semibold text-white transition-transform hover:scale-[1.02] disabled:opacity-50"
+              className={`inline-flex items-center gap-2 rounded-full bg-accent px-5 py-2.5 text-sm font-semibold text-white transition-transform duration-[120ms] hover:bg-accent-deep disabled:opacity-50 ${saved ? 'cn-bloom' : ''}`}
             >
-              {saved ? <Check size={16} /> : <Save size={16} />}
+              {saving ? <Loader2 size={16} className="animate-spin" /> : saved ? <Check size={16} /> : <Save size={16} />}
               {saving ? 'Saving...' : saved ? 'Saved' : 'Save permissions'}
             </button>
             <span className="text-xs text-foreground/45">Applies to every new action immediately.</span>
@@ -454,10 +465,12 @@ export default function Permissions() {
           </>
           )}
 
-          {tab === 'trading' && <TradingPermissions agentId={agentId} />}
-          {tab === 'audit' && <AuditTrail agentId={agentId} />}
+          {shownTab === 'trading' && <TradingPermissions agentId={agentId} />}
+          {shownTab === 'audit' && <AuditTrail agentId={agentId} />}
 
-          {tab === 'spend' && <SpendPermissions agentId={agentId} />}
+          {shownTab === 'spend' && <SpendPermissions agentId={agentId} />}
+          </div>
+          </div>
         </>
       )}
 

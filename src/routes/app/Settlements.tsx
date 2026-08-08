@@ -6,7 +6,9 @@ import { BACKEND_UNREACHABLE } from '../../lib/mcpBase'
 import { apiFetch, readJson, explainError } from '../../lib/api'
 import { fetchPlatformAgents } from '../../lib/platformAgents'
 import { pickPrimaryAgent } from '../../lib/pickAgent'
+import { short } from '../../lib/format'
 import { useSelectedAgent } from '../../store/agent'
+import { useTabCarousel } from '../../hooks/useTabCarousel'
 import AgentSelect from '../../components/app/AgentSelect'
 import AppPage from '../../components/app/AppPage'
 import { Skeleton } from '../../components/ui/skeleton'
@@ -80,7 +82,7 @@ type Instruction = {
 
 type Agent = { id: string; name: string }
 
-const short = (a: string) => (a.length > 14 ? `${a.slice(0, 8)}...${a.slice(-4)}` : a)
+const TAB_ORDER = TABS.map((t) => t.id)
 
 export default function Settlements() {
   const [agents, setAgents] = useState<Agent[]>([])
@@ -93,6 +95,9 @@ export default function Settlements() {
   const [error, setError] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
   const [tab, setTab] = useState<Tab>('payments')
+  // Directional carousel: the pane renders the committed tab; direction follows
+  // the tab order, so clicking rightward always slides forward.
+  const { shown: shownTab, className: paneClass } = useTabCarousel(tab, TAB_ORDER)
   /** Id of the pending payment being edited, and the values being edited into it. */
   const [editing, setEditing] = useState<string | null>(null)
   const [draft, setDraft] = useState<{ amount: string; payee: string } | null>(null)
@@ -285,16 +290,19 @@ export default function Settlements() {
 
       {/* Surface tabs. The payment queue is the page; the rails that feed it (automation,
           agent-to-agent commerce, cross-chain) each get their own tab instead of stacking
-          eleven panels under the list. */}
-      <div className="mt-5 flex flex-wrap gap-1 rounded-xl border border-border bg-card p-1">
+          eleven panels under the list. Micro-caps labels, the active one in a quiet box. */}
+      <div className="mt-5 flex flex-wrap gap-1.5 border-b border-border pb-3" role="tablist" aria-label="Settlement surfaces">
         {TABS.map(({ id, label }) => (
           <button
             key={id}
             type="button"
+            role="tab"
             onClick={() => setTab(id)}
-            aria-current={tab === id}
-            className={`rounded-lg px-3.5 py-2 text-sm font-semibold transition-colors ${
-              tab === id ? 'bg-accent text-white' : 'text-foreground/55 hover:text-foreground'
+            aria-selected={tab === id}
+            className={`rounded-md border px-3 py-2 text-[10px] font-semibold uppercase tracking-[0.14em] transition-colors duration-[120ms] ${
+              tab === id
+                ? 'border-foreground/60 text-foreground'
+                : 'border-transparent text-foreground/50 hover:text-foreground/80'
             }`}
           >
             {label}
@@ -303,7 +311,9 @@ export default function Settlements() {
       </div>
       <p className="mt-2 text-xs text-foreground/45">{TABS.find((t) => t.id === tab)?.hint}</p>
 
-      {tab === 'payments' && agents.length > 0 && (
+      <div className="cn-tab-clip">
+      <div className={paneClass}>
+      {shownTab === 'payments' && agents.length > 0 && (
         <>
           {/* New payment */}
           <div className="mt-4 rounded-2xl border border-border bg-card p-6">
@@ -544,16 +554,16 @@ export default function Settlements() {
         </>
       )}
 
-      {tab !== 'payments' && (
+      {shownTab !== 'payments' && (
         <Suspense fallback={<PanelFallback />}>
-          {tab === 'automation' && (
+          {shownTab === 'automation' && (
             <>
               <AutopilotPanel />
               <SessionKeyPanel />
               <BatchPanel />
             </>
           )}
-          {tab === 'commerce' && (
+          {shownTab === 'commerce' && (
             <>
               <X402Panel />
               <NanopayPanel />
@@ -561,7 +571,7 @@ export default function Settlements() {
               <TrustOraclePanel />
             </>
           )}
-          {tab === 'rails' && (
+          {shownTab === 'rails' && (
             <>
               <GatewayPanel />
               <CctpPanel />
@@ -571,6 +581,8 @@ export default function Settlements() {
           )}
         </Suspense>
       )}
+      </div>
+      </div>
     </AppPage>
   )
 }

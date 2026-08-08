@@ -57,30 +57,34 @@ export default function Earnings() {
     }
   }, [syncRoster])
 
-  const loadEarnings = useCallback(async (id: string, addr: string | null) => {
+  // `isActive` guards every setState so a late response for a previously-selected
+  // agent can't attribute its jobs/balance to the agent now shown. The other money
+  // screens had this guard; this one didn't, and a fast agent switch could leave
+  // the wrong agent's earnings on screen.
+  const loadEarnings = useCallback(async (id: string, addr: string | null, isActive: () => boolean = () => true) => {
     try {
       const res = await apiFetch(`/api/marketplace/tasks?agentId=${encodeURIComponent(id)}`)
       const data = await readJson<{ tasks?: Task[] }>(res)
-      setJobs(Array.isArray(data.tasks) ? data.tasks : [])
+      if (isActive()) setJobs(Array.isArray(data.tasks) ? data.tasks : [])
     } catch {
-      setJobs([])
+      if (isActive()) setJobs([])
     }
     if (addr) {
       try {
         const r = await apiFetch(`/api/wallet-balance?address=${addr}`)
         const b = await readJson<{ balance: string | null }>(r)
-        setBalance(b.balance ?? null)
+        if (isActive()) setBalance(b.balance ?? null)
       } catch {
-        setBalance(null)
+        if (isActive()) setBalance(null)
       }
       try {
         const g = await apiFetch(`/api/arc/gateway-balance?address=${addr}`)
         const gd = await readJson<{ available?: number; pending?: number }>(g)
-        setGw(typeof gd.available === 'number' ? { available: gd.available, pending: gd.pending ?? 0 } : null)
+        if (isActive()) setGw(typeof gd.available === 'number' ? { available: gd.available, pending: gd.pending ?? 0 } : null)
       } catch {
-        setGw(null)
+        if (isActive()) setGw(null)
       }
-    } else {
+    } else if (isActive()) {
       setBalance(null)
       setGw(null)
     }
@@ -91,7 +95,11 @@ export default function Earnings() {
   }, [loadAgents])
 
   useEffect(() => {
-    if (agentId) loadEarnings(agentId, agent?.walletAddress ?? null)
+    let active = true
+    if (agentId) loadEarnings(agentId, agent?.walletAddress ?? null, () => active)
+    return () => {
+      active = false
+    }
   }, [agentId, agent?.walletAddress, loadEarnings])
 
   const released = jobs.filter((j) => j.status === 'released')

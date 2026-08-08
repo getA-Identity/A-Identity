@@ -11,15 +11,12 @@ import { authHeaders, useAuth } from '../../store/auth'
 
 import { BACKEND_UNREACHABLE } from '../../lib/mcpBase'
 import { apiFetch, readJson, explainError } from '../../lib/api'
+import { humanizeActivity } from '../../lib/format'
 import AgentAvatar from '../../components/AgentAvatar'
 import BrandArt from '../../components/app/BrandArt'
 import WorkerCatalog from '../../components/app/WorkerCatalog'
 import AppPage from '../../components/app/AppPage'
 import { Skeleton } from '../../components/ui/skeleton'
-
-/** Shorten any full 40-hex address inside activity text so it never overflows the card. */
-const humanizeActivity = (text: string) =>
-  text.replace(/0x[0-9a-fA-F]{40}/g, (a) => `${a.slice(0, 6)}...${a.slice(-4)}`)
 
 type MarketAgent = {
   id: string
@@ -75,9 +72,14 @@ export default function Marketplace() {
     }
   }, [viewer, showAll])
 
+  // The Agent House roster loads when its tab is first opened (or a filter changes),
+  // not on mount: someone hiring a worker should not pay for a request they never see.
+  const [houseLoadedOnce, setHouseLoadedOnce] = useState(false)
   useEffect(() => {
-    load()
-  }, [load])
+    if (tab !== 'house' && houseLoadedOnce) return
+    if (tab === 'house') setHouseLoadedOnce(true)
+    if (tab === 'house' || houseLoadedOnce) load()
+  }, [load, tab, houseLoadedOnce])
 
   const toggleFollow = async (agentId: string) => {
     // Optimistic flip, then reconcile with the server.
@@ -145,13 +147,24 @@ export default function Marketplace() {
       title="Marketplace"
       description="Hire a verified agent to do a job, or browse the agents already working on Arc."
     >
-      <div className="inline-flex rounded-full border border-border bg-card p-1 text-sm font-semibold">
+      {/* Segmented control with a sliding thumb: the console's one overshoot curve. */}
+      <div className="relative inline-grid grid-cols-2 rounded-full border border-border bg-card p-1 text-sm font-semibold" role="tablist" aria-label="Marketplace views">
+        <span
+          aria-hidden="true"
+          className={`cn-seg-thumb absolute inset-y-1 left-1 w-[calc(50%-0.25rem)] rounded-full bg-accent ${
+            tab === 'house' ? 'translate-x-full' : 'translate-x-0'
+          }`}
+        />
         {(['hire', 'house'] as const).map((t) => (
           <button
             key={t}
             type="button"
+            role="tab"
+            aria-selected={tab === t}
             onClick={() => setTab(t)}
-            className={`rounded-full px-4 py-1.5 transition-colors ${tab === t ? 'bg-accent text-white' : 'text-foreground/60 hover:text-foreground'}`}
+            className={`relative z-10 rounded-full px-4 py-1.5 transition-colors duration-[240ms] ${
+              tab === t ? 'text-white' : 'text-foreground/60 hover:text-foreground'
+            }`}
           >
             {t === 'hire' ? 'Hire a worker' : 'Agent House'}
           </button>
@@ -254,10 +267,12 @@ export default function Marketplace() {
       )}
 
       {/* Agent cards. items-start so a card expanding its Activity list grows on its own
-          instead of stretching its row-mate and shifting the whole layout. */}
-      <div className="mt-6 grid items-start gap-4 sm:grid-cols-2">
+          instead of stretching its row-mate and shifting the whole layout. Each card gets
+          the composite hover (lift + corona + ring) and hovering one dims the rest. */}
+      <div className="cn-glow-grid mt-6 grid items-start gap-4 sm:grid-cols-2">
         {agents.map((a) => (
-          <div key={a.id} className="flex flex-col rounded-2xl border border-border bg-card p-6">
+          <div key={a.id} className="cn-glow-wrap">
+          <div className="cn-glow-card flex flex-col rounded-2xl border border-border bg-card p-6">
             <div className="flex items-start justify-between gap-3">
               <div className="flex items-center gap-3">
                 <AgentAvatar
@@ -319,14 +334,20 @@ export default function Marketplace() {
                 Arc testnet
               </span>
               {a.onchain === 'registered' ? (
-                <a
-                  href={a.onchainExplorer ?? '#'}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="inline-flex items-center gap-1 rounded-full bg-usdc/10 px-2.5 py-1 text-[11px] font-bold text-usdc hover:underline"
-                >
-                  <BadgeCheck size={12} /> On-chain #{a.onchainAgentId ?? ''}
-                </a>
+                a.onchainExplorer ? (
+                  <a
+                    href={a.onchainExplorer}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="inline-flex items-center gap-1 rounded-full bg-usdc/10 px-2.5 py-1 text-[11px] font-bold text-usdc hover:underline"
+                  >
+                    <BadgeCheck size={12} /> On-chain #{a.onchainAgentId ?? ''}
+                  </a>
+                ) : (
+                  <span className="inline-flex items-center gap-1 rounded-full bg-usdc/10 px-2.5 py-1 text-[11px] font-bold text-usdc">
+                    <BadgeCheck size={12} /> On-chain #{a.onchainAgentId ?? ''}
+                  </span>
+                )
               ) : (
                 <span className="inline-flex items-center gap-1 rounded-full bg-amber-100 dark:bg-amber-500/15 px-2.5 py-1 text-[11px] font-bold text-amber-700 dark:text-amber-300">
                   <Clock size={12} /> on-chain queued
@@ -363,16 +384,18 @@ export default function Marketplace() {
               </div>
             )}
 
-            {/* Activity */}
+            {/* Activity: collapses via an animated grid track (height-auto without JS
+                measurement), so opening one never snaps the layout. */}
             <button
               type="button"
               onClick={() => setOpenActivity(openActivity === a.id ? null : a.id)}
+              aria-expanded={openActivity === a.id}
               className="mt-4 inline-flex items-center gap-1.5 border-t border-foreground/8 pt-3 text-xs font-semibold text-accent"
             >
               <Activity size={13} />
               {openActivity === a.id ? 'Hide activity' : `Activity (${a.activity.length})`}
             </button>
-            {openActivity === a.id && (
+            <div className={`cn-collapse ${openActivity === a.id ? 'cn-open' : ''}`}>
               <ul className="mt-2 flex max-h-56 flex-col gap-2 overflow-y-auto pr-1">
                 {a.activity.map((ev, i) => (
                   <li key={i} className="flex items-start gap-2 text-xs text-foreground/60">
@@ -386,7 +409,8 @@ export default function Marketplace() {
                   </li>
                 ))}
               </ul>
-            )}
+            </div>
+          </div>
           </div>
         ))}
       </div>

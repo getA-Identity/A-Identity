@@ -1,0 +1,521 @@
+/*
+ * Console motion system.
+ *
+ * The console's choreography follows one rule: React decides WHEN (phase classes,
+ * direction attributes, index variables), this stylesheet decides WHAT (keyframes,
+ * staggers, easings). There are no JS tweens anywhere; sequencing timers in the
+ * layout are tuned to `animation-duration + max(stagger delay)` so the two sides
+ * stay in sync without animationend listeners, and everything uses `both` fill so
+ * reduced-motion (which crushes durations to 0.01ms) degrades to instant swaps
+ * while the timers still run.
+ *
+ * Grammar, applied everywhere:
+ *   - enters are long and decelerating, exits are short and accelerating (~2:1)
+ *   - enters come from BELOW (+32px rows) or the SIDE (+/-48px rail, tab panes)
+ *   - exits travel FARTHER than enters (+80px rows) but take less time
+ *   - staggers are pure CSS nth-child ladders, never per-element JS math
+ *
+ * Palette note: every colour in here is an A-Identity token (--accent, --border,
+ * --cat-*, --ring); the fonts are the app's own. Only the motion language is
+ * borrowed.
+ */
+
+/* ---------------------------------------------------------------- tokens */
+
+.console-shell {
+  --ease-console: cubic-bezier(0.2, 0, 0, 1);      /* default micro-interaction curve */
+  --ease-enter: cubic-bezier(0.22, 0.61, 0.36, 1); /* rows, rail, tab panes arriving */
+  --ease-exit: cubic-bezier(0.55, 0, 0.85, 0.1);   /* rows, tab panes leaving */
+  --ease-leave: cubic-bezier(0.4, 0, 0.2, 1);      /* soft dismissals */
+  --ease-pop: cubic-bezier(0.16, 1, 0.3, 1);       /* overlays, popovers */
+  --ease-thumb: cubic-bezier(0.3, 1.18, 0.5, 1);   /* the one overshoot: segmented thumb */
+  --dur-fast: 120ms;
+  --dur-base: 240ms;
+}
+
+/* Registered so keyframes and transitions can tween variables that live inside
+   gradients and masks (a plain custom property would snap). */
+@property --cn-dots-angle {
+  syntax: '<angle>';
+  inherits: false;
+  initial-value: 0deg;
+}
+@property --cn-drift-x {
+  syntax: '<length>';
+  inherits: false;
+  initial-value: 0px;
+}
+@property --cn-drift-y {
+  syntax: '<length>';
+  inherits: false;
+  initial-value: 0px;
+}
+@property --cn-ring {
+  syntax: '<length>';
+  inherits: false;
+  initial-value: 0px;
+}
+@property --cn-spot-power {
+  syntax: '<number>';
+  inherits: true;
+  initial-value: 1;
+}
+@property --cn-card-ring {
+  syntax: '<length>';
+  inherits: false;
+  initial-value: 0px;
+}
+
+/* ------------------------------------------------------------- keyframes */
+
+/* Shell fade-in after auth resolves. */
+@keyframes cn-boot {
+  from { opacity: 0; transform: translateY(8px) scale(0.998); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+/* Boot skeleton: a small breathing disc while the console mounts. */
+@keyframes cn-skeleton-pulse {
+  0%, 100% { opacity: 0.4; transform: scale(0.92); }
+  50% { opacity: 1; transform: scale(1.06); }
+}
+
+/* Sidebar blocks slide in from the left on mount. */
+@keyframes cn-rail-in {
+  from { opacity: 0; transform: translateX(-48px); }
+  to { opacity: 1; transform: translateX(0); }
+}
+
+/* Screen rows: enter rises from below, exit accelerates out to the right. */
+@keyframes cn-row-in {
+  from { opacity: 0; transform: translateY(32px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+@keyframes cn-row-out {
+  from { opacity: 1; transform: translateX(0); }
+  to { opacity: 0; transform: translateX(80px); }
+}
+
+/* Tab panes: a directional carousel. Forward = content slides left. */
+@keyframes cn-pane-out-left {
+  from { opacity: 1; transform: translateX(0); }
+  to { opacity: 0; transform: translateX(-48px); }
+}
+@keyframes cn-pane-out-right {
+  from { opacity: 1; transform: translateX(0); }
+  to { opacity: 0; transform: translateX(48px); }
+}
+@keyframes cn-pane-in-from-right {
+  from { opacity: 0; transform: translateX(48px); }
+  to { opacity: 1; transform: translateX(0); }
+}
+@keyframes cn-pane-in-from-left {
+  from { opacity: 0; transform: translateX(-48px); }
+  to { opacity: 1; transform: translateX(0); }
+}
+
+/* Mobile drawer scrim. */
+@keyframes cn-scrim-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+/* Ambient dot layer: the conic wash spins slowly, the cursor spotlight drifts
+   in a small orbit, and a ripple ring expands from the last cursor position. */
+@keyframes cn-dots-spin {
+  to { --cn-dots-angle: 360deg; }
+}
+@keyframes cn-dots-drift {
+  0% { --cn-drift-x: 0px; --cn-drift-y: -22px; }
+  25% { --cn-drift-x: 22px; --cn-drift-y: 0px; }
+  50% { --cn-drift-x: 0px; --cn-drift-y: 22px; }
+  75% { --cn-drift-x: -22px; --cn-drift-y: 0px; }
+  100% { --cn-drift-x: 0px; --cn-drift-y: -22px; }
+}
+@keyframes cn-dots-ripple {
+  0% { --cn-ring: 0px; opacity: var(--cn-spot-power); }
+  55% { --cn-ring: 480px; opacity: 0; }
+  100% { --cn-ring: 480px; opacity: 0; }
+}
+
+/* Hovered card corona ring: an expanding dotted annulus. */
+@keyframes cn-card-ring {
+  0% { --cn-card-ring: 0px; opacity: 1; }
+  66% { opacity: 0.35; }
+  84% { opacity: 0; }
+  100% { --cn-card-ring: 260px; opacity: 0; }
+}
+
+/* Success bloom on a primary action (save / execute settles). Uses the brand
+   accent, holds mid-animation, then the glow decays. */
+@keyframes cn-save-bloom {
+  0% { box-shadow: 0 0 0 0 transparent; }
+  40%, 50% {
+    box-shadow:
+      0 0 7px 0.5px color-mix(in srgb, var(--accent) 50%, transparent),
+      0 0 19px 3.5px color-mix(in srgb, var(--accent) 28%, transparent);
+  }
+  100% { box-shadow: 0 0 0 0 transparent; }
+}
+
+/* ------------------------------------------- boot + rail choreography */
+
+.cn-boot-anim {
+  animation: cn-boot 0.6s ease-out both;
+}
+
+.cn-skeleton {
+  animation: cn-skeleton-pulse 1.4s ease-in-out infinite;
+}
+
+/* Sidebar mount cascade: 80ms steps, account block last. Runs once. */
+.cn-rail-anim > * {
+  animation: cn-rail-in 0.48s var(--ease-enter) both;
+}
+.cn-rail-anim > *:nth-child(2) { animation-delay: 80ms; }
+.cn-rail-anim > *:nth-child(3) { animation-delay: 160ms; }
+.cn-rail-anim > *:nth-child(4) { animation-delay: 240ms; }
+.cn-rail-anim > *:nth-child(n + 5) { animation-delay: 320ms; }
+
+/* --------------------------------------------- screen phase transitions */
+
+/* The page head is row 0; body children continue the ladder from 40ms.
+   Enter: 400ms rows at 40ms steps (capped). Exit: 140ms rows at 15ms steps. */
+.console-screen.phase-entering .console-page-head {
+  animation: cn-row-in 0.4s var(--ease-enter) both;
+}
+.console-screen.phase-entering .console-page-body > * {
+  animation: cn-row-in 0.4s var(--ease-enter) both;
+  animation-delay: 40ms;
+}
+.console-screen.phase-entering .console-page-body > *:nth-child(2) { animation-delay: 80ms; }
+.console-screen.phase-entering .console-page-body > *:nth-child(3) { animation-delay: 120ms; }
+.console-screen.phase-entering .console-page-body > *:nth-child(n + 4) { animation-delay: 160ms; }
+
+.console-screen.phase-exiting .console-page-head {
+  animation: cn-row-out 0.14s var(--ease-exit) both;
+}
+.console-screen.phase-exiting .console-page-body > * {
+  animation: cn-row-out 0.14s var(--ease-exit) both;
+  animation-delay: 15ms;
+}
+.console-screen.phase-exiting .console-page-body > *:nth-child(2) { animation-delay: 30ms; }
+.console-screen.phase-exiting .console-page-body > *:nth-child(3) { animation-delay: 45ms; }
+.console-screen.phase-exiting .console-page-body > *:nth-child(n + 4) { animation-delay: 60ms; }
+
+/* ------------------------------------------------------- tab carousel */
+
+.cn-tab-clip { overflow-x: clip; }
+
+.cn-pane.phase-exiting.dir-fwd { animation: cn-pane-out-left 0.16s var(--ease-exit) both; }
+.cn-pane.phase-exiting.dir-back { animation: cn-pane-out-right 0.16s var(--ease-exit) both; }
+.cn-pane.phase-entering.dir-fwd { animation: cn-pane-in-from-right 0.32s var(--ease-enter) both; }
+.cn-pane.phase-entering.dir-back { animation: cn-pane-in-from-left 0.32s var(--ease-enter) both; }
+
+/* ------------------------------------------------------ ambient dots */
+
+/*
+ * .cn-dots is an absolutely-positioned, pointer-transparent layer.
+ *   ::before  static 7px dot lattice in the border colour, fading down-page
+ *   ::after   a slowly spinning conic wash of the agent-category tints, masked
+ *             INTO the same dot lattice, revealed only around the cursor
+ *             (--cn-x/--cn-y are written by a rAF hook that lerps toward the
+ *             pointer; parked far offscreen when idle)
+ * .cn-dots-ripple is a sibling layer whose annular mask expands every 6s from
+ * the cursor position snapshotted at the start of each cycle (--cn-px/--cn-py).
+ */
+.cn-dots {
+  --cn-x: -9999px;
+  --cn-y: -9999px;
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  transition: --cn-spot-power 0.25s var(--ease-console);
+}
+.cn-dots::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background-image: radial-gradient(circle, var(--border) 1px, transparent 1.5px);
+  background-size: 7px 7px;
+  mask-image: linear-gradient(to bottom, black 0%, black 30%, transparent 70%);
+  -webkit-mask-image: linear-gradient(to bottom, black 0%, black 30%, transparent 70%);
+}
+.cn-dots::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: conic-gradient(
+    from var(--cn-dots-angle) at calc(var(--cn-x) + var(--cn-drift-x)) calc(var(--cn-y) + var(--cn-drift-y)),
+    var(--cat-1),
+    var(--cat-3),
+    var(--cat-2),
+    var(--cat-4),
+    var(--cat-2),
+    var(--cat-3),
+    var(--cat-1)
+  );
+  opacity: var(--cn-spot-power);
+  mask-image:
+    radial-gradient(circle, black 1px, transparent 1.5px),
+    radial-gradient(circle at var(--cn-x) var(--cn-y), black 0px, rgba(0, 0, 0, 0.5) 80px, transparent 180px),
+    linear-gradient(to bottom, black 30%, transparent 70%);
+  mask-size: 7px 7px, auto, auto;
+  mask-composite: intersect;
+  -webkit-mask-image:
+    radial-gradient(circle, black 1px, transparent 1.5px),
+    radial-gradient(circle at var(--cn-x) var(--cn-y), black 0px, rgba(0, 0, 0, 0.5) 80px, transparent 180px),
+    linear-gradient(to bottom, black 30%, transparent 70%);
+  -webkit-mask-size: 7px 7px, auto, auto;
+  -webkit-mask-composite: source-in;
+  animation:
+    cn-dots-spin 12s linear infinite,
+    cn-dots-drift 5s ease-in-out infinite;
+}
+
+.cn-dots-ripple {
+  --cn-px: -9999px;
+  --cn-py: -9999px;
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background: conic-gradient(
+    from var(--cn-dots-angle) at var(--cn-px) var(--cn-py),
+    var(--cat-1),
+    var(--cat-2),
+    var(--cat-3),
+    var(--cat-1)
+  );
+  mask-image:
+    radial-gradient(circle, black 1px, transparent 1.5px),
+    radial-gradient(
+      circle at var(--cn-px) var(--cn-py),
+      transparent var(--cn-ring),
+      black calc(var(--cn-ring) + 10px),
+      black calc(var(--cn-ring) + 40px),
+      transparent calc(var(--cn-ring) + 80px)
+    );
+  mask-size: 7px 7px, auto;
+  mask-composite: intersect;
+  -webkit-mask-image:
+    radial-gradient(circle, black 1px, transparent 1.5px),
+    radial-gradient(
+      circle at var(--cn-px) var(--cn-py),
+      transparent var(--cn-ring),
+      black calc(var(--cn-ring) + 10px),
+      black calc(var(--cn-ring) + 40px),
+      transparent calc(var(--cn-ring) + 80px)
+    );
+  -webkit-mask-size: 7px 7px, auto;
+  -webkit-mask-composite: source-in;
+  animation: cn-dots-ripple 6s linear infinite;
+}
+
+/* When a glow card is hovered, hand the stage to the card: the page spotlight
+   fades out via a transition on the registered --cn-spot-power. */
+.cn-dots-host:has(.cn-glow-wrap:hover) .cn-dots {
+  --cn-spot-power: 0;
+}
+
+/* ------------------------------------------------- composite card hover */
+
+/*
+ * .cn-glow-wrap wraps a card. The wrap owns two decorative layers that bleed
+ * past the card's box (corona + expanding ring); the card itself lifts 2px and
+ * gains a quiet ring shadow. Siblings inside the same .cn-glow-grid dim.
+ */
+.cn-glow-wrap {
+  position: relative;
+}
+.cn-glow-wrap::before,
+.cn-glow-wrap::after {
+  content: '';
+  position: absolute;
+  inset: -56px;
+  z-index: 0;
+  pointer-events: none;
+  background: conic-gradient(
+    from var(--cn-dots-angle),
+    var(--cat-1),
+    var(--cat-2),
+    var(--cat-3),
+    var(--cat-4),
+    var(--cat-1)
+  );
+  opacity: 0;
+}
+.cn-glow-wrap::before {
+  mask-image:
+    radial-gradient(circle, black 1px, transparent 1.5px),
+    radial-gradient(closest-side, black 55%, transparent 100%);
+  mask-size: 7px 7px, auto;
+  mask-composite: intersect;
+  -webkit-mask-image:
+    radial-gradient(circle, black 1px, transparent 1.5px),
+    radial-gradient(closest-side, black 55%, transparent 100%);
+  -webkit-mask-size: 7px 7px, auto;
+  -webkit-mask-composite: source-in;
+  transition: opacity 0.4s var(--ease-console);
+  animation: cn-dots-spin 12s linear infinite;
+}
+.cn-glow-wrap:hover::before {
+  opacity: 0.5;
+}
+.cn-glow-wrap::after {
+  mask-image:
+    radial-gradient(circle, black 1px, transparent 1.5px),
+    radial-gradient(
+      circle,
+      transparent var(--cn-card-ring),
+      black calc(var(--cn-card-ring) + 8px),
+      black calc(var(--cn-card-ring) + 26px),
+      transparent calc(var(--cn-card-ring) + 52px)
+    );
+  mask-size: 7px 7px, auto;
+  mask-composite: intersect;
+  -webkit-mask-image:
+    radial-gradient(circle, black 1px, transparent 1.5px),
+    radial-gradient(
+      circle,
+      transparent var(--cn-card-ring),
+      black calc(var(--cn-card-ring) + 8px),
+      black calc(var(--cn-card-ring) + 26px),
+      transparent calc(var(--cn-card-ring) + 52px)
+    );
+  -webkit-mask-size: 7px 7px, auto;
+  -webkit-mask-composite: source-in;
+}
+.cn-glow-wrap:hover::after {
+  animation: cn-card-ring 4s linear 0.3s infinite;
+}
+.cn-glow-wrap > * {
+  position: relative;
+  z-index: 1;
+}
+
+/* The card surface itself: lift + ring shadow on hover. */
+.cn-glow-card {
+  transition:
+    transform var(--dur-base) var(--ease-console),
+    box-shadow var(--dur-base) var(--ease-console),
+    opacity var(--dur-base) var(--ease-console);
+}
+.cn-glow-wrap:hover .cn-glow-card {
+  transform: translateY(-2px);
+  box-shadow:
+    0 0 0 1px var(--border),
+    0 8px 24px -10px rgba(0, 0, 0, 0.15);
+}
+
+/* Sibling dimming: hovering one card fades the rest of the grid. */
+.cn-glow-grid:has(.cn-glow-wrap:hover) .cn-glow-wrap:not(:hover) .cn-glow-card {
+  opacity: 0.45;
+}
+
+/* Lightweight variant for dense tiles (no corona, just lift + sibling dim). */
+.cn-dim-grid:has(> :hover) > :not(:hover) {
+  opacity: 0.55;
+}
+.cn-dim-grid > * {
+  transition: opacity var(--dur-base) var(--ease-console);
+}
+
+/* ------------------------------------------------- micro-interactions */
+
+/* Segmented control thumb: the console's only overshoot. */
+.cn-seg-thumb {
+  transition: transform 0.35s var(--ease-thumb);
+}
+
+/* Height-auto collapse for expanding lists (activity feeds, error rows). */
+.cn-collapse {
+  display: grid;
+  grid-template-rows: 0fr;
+  transition: grid-template-rows var(--dur-base) var(--ease-console);
+}
+.cn-collapse.cn-open {
+  grid-template-rows: 1fr;
+}
+.cn-collapse > * {
+  overflow: hidden;
+  min-height: 0;
+}
+
+/* Success bloom (armed by JS for one run after a confirmed save/settle). */
+.cn-bloom {
+  animation: cn-save-bloom 1.9s var(--ease-console) both;
+}
+
+/* Mobile drawer scrim. */
+.cn-scrim {
+  animation: cn-scrim-in var(--dur-base) var(--ease-console) both;
+}
+
+/* Theme flip: armed on the shell for ~880ms around a theme change so every
+   painted property cross-fades instead of snapping. */
+.console-shell.cn-theme-flip,
+.console-shell.cn-theme-flip *,
+.console-shell.cn-theme-flip *::before,
+.console-shell.cn-theme-flip *::after {
+  transition:
+    background-color 0.8s ease,
+    color 0.8s ease,
+    border-color 0.8s ease,
+    outline-color 0.8s ease,
+    fill 0.8s ease,
+    stroke 0.8s ease,
+    box-shadow 0.8s ease !important;
+}
+
+/* ------------------------------------------------------------- chrome */
+
+/* Scrollbars disappear inside the console (content regions scroll cleanly
+   inside the floating card); scoped so the landing keeps native bars. */
+.console-shell * {
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+.console-shell *::-webkit-scrollbar {
+  display: none;
+}
+
+/* Focus policy: a visible brand-colour ring, external by default. */
+.console-shell :focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 2px;
+}
+.console-shell input:focus-visible,
+.console-shell select:focus-visible,
+.console-shell textarea:focus-visible {
+  outline-offset: -2px;
+}
+
+/* Let card coronas bleed outside the scroll region without adding bars. */
+.cn-content-scroll {
+  overflow-y: auto;
+  overflow-x: clip;
+  overflow-clip-margin: 240px;
+}
+
+/* ------------------------------------------------------ reduced motion */
+
+@media (prefers-reduced-motion: reduce) {
+  .console-shell *,
+  .console-shell *::before,
+  .console-shell *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+  .cn-dots::after,
+  .cn-dots-ripple,
+  .cn-glow-wrap::before,
+  .cn-glow-wrap::after {
+    display: none;
+  }
+  .console-shell.cn-theme-flip,
+  .console-shell.cn-theme-flip * {
+    transition: none !important;
+  }
+}

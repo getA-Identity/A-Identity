@@ -1,25 +1,28 @@
 import type { ReactNode } from 'react'
 import { cn } from '../../lib/utils'
+import DotField from './DotField'
 
 /**
  * The console's single page shell.
  *
- * Every screen used to set its own width, five different max-widths across seven pages,
- * so the frame jumped on each navigation and the heading landed somewhere new every
- * time. The canvas now lives in AppLayout and never moves. A page only chooses how wide
- * its BODY runs inside that canvas, and because the body column is left-aligned rather
- * than centred, the heading stays anchored to the same edge either way.
+ * The measure lives here: every page runs in one centered column so the frame
+ * never shifts between screens. `width` only chooses how wide the BODY runs
+ * inside it ('full' for dashboards and grids, 'form' for reading and editing).
  *
- * `width`:
- *   'full' (default) for dashboards, card grids and tables, which want the whole canvas
- *   'form'           for reading and editing, where a long measure hurts more than the
- *                    empty space on the right
+ * The head and the body's direct children are the console's animation "rows":
+ * the screen-transition stagger in console.css targets `.console-page-head` and
+ * `.console-page-body > *`, so a page gets its entrance choreography for free
+ * by keeping its top-level blocks as direct children.
+ *
+ * `ambient` mounts the cursor-reactive dot field behind the whole page (the
+ * hero surfaces only; dense working screens stay quiet).
  */
 export default function AppPage({
   title,
   description,
   actions,
   width = 'full',
+  ambient = false,
   children,
 }: {
   title: ReactNode
@@ -27,11 +30,14 @@ export default function AppPage({
   /** Right-hand side of the header row: a status pill, a primary action. */
   actions?: ReactNode
   width?: 'full' | 'form'
+  /** Cursor-reactive dot layer behind the page (Overview-style hero surfaces). */
+  ambient?: boolean
   children: ReactNode
 }) {
   return (
-    <div className="w-full">
-      <header className="flex flex-wrap items-start justify-between gap-4">
+    <div className="relative mx-auto w-full max-w-[920px]">
+      {ambient && <DotField className="-inset-x-8 -top-8 bottom-0" />}
+      <header className="console-page-head relative flex flex-wrap items-start justify-between gap-4">
         <div className="min-w-0 max-w-2xl">
           <h1 className="text-2xl font-bold tracking-tight">{title}</h1>
           {description && <p className="mt-1 text-sm text-foreground/55">{description}</p>}
@@ -40,9 +46,13 @@ export default function AppPage({
       </header>
 
       {/* The shell owns the gap under the header. `first-child:mt-0` lets each page keep
-          its own rhythm between blocks without the first one double-spacing, and it
-          still works when that first block is a conditional banner. */}
-      <div className={cn('mt-6 [&>*:first-child]:mt-0', width === 'form' && 'max-w-3xl')}>
+          its own rhythm between blocks without the first one double-spacing. */}
+      <div
+        className={cn(
+          'console-page-body relative mt-6 [&>*:first-child]:mt-0',
+          width === 'form' && 'max-w-3xl',
+        )}
+      >
         {children}
       </div>
     </div>

@@ -1,6 +1,5 @@
 import { useCallback, useEffect, useState, type ReactNode } from 'react'
 import { Link } from 'react-router-dom'
-import { motion } from 'framer-motion'
 import { ArrowUpRight, CreditCard, ExternalLink, Fingerprint, SlidersHorizontal } from 'lucide-react'
 import { useAuth } from '../../store/auth'
 import { useMcpHealth } from '../../hooks/useMcp'
@@ -10,6 +9,7 @@ import { apiFetch } from '../../lib/api'
 import { BACKEND_UNREACHABLE } from '../../lib/mcpBase'
 import { fetchPlatformAgents, subscribePlatformAgents } from '../../lib/platformAgents'
 import { pickPrimaryAgent } from '../../lib/pickAgent'
+import { humanizeActivity, ago } from '../../lib/format'
 import { useSelectedAgent } from '../../store/agent'
 import AppPage from '../../components/app/AppPage'
 import AgentStatusBar, { type AgentState } from '../../components/app/AgentStatusBar'
@@ -17,10 +17,6 @@ import SetupChecklist, { type Step } from '../../components/app/SetupChecklist'
 import Freshness from '../../components/app/Freshness'
 import SpendSummary, { type Ix } from '../../components/app/SpendSummary'
 import { Skeleton } from '../../components/ui/skeleton'
-
-/** Shorten any full 40-hex address inside activity text so it never overflows the card. */
-const humanizeActivity = (text: string) =>
-  text.replace(/0x[0-9a-fA-F]{40}/g, (a) => `${a.slice(0, 6)}...${a.slice(-4)}`)
 
 const gradeOf = (s: number) =>
   s >= 800 ? 'Excellent' : s >= 650 ? 'Strong' : s >= 500 ? 'Good' : s >= 350 ? 'Fair' : s >= 200 ? 'Weak' : 'High risk'
@@ -36,15 +32,6 @@ type Agent = {
   onchain: 'queued' | 'registered'
   permissions: Perms
   activity: { at: string; text: string }[]
-}
-
-/** Compact "5h ago" style relative time. */
-function ago(iso: string): string {
-  const s = Math.max(0, (Date.now() - new Date(iso).getTime()) / 1000)
-  if (s < 60) return 'just now'
-  if (s < 3600) return `${Math.floor(s / 60)}m ago`
-  if (s < 86400) return `${Math.floor(s / 3600)}h ago`
-  return `${Math.floor(s / 86400)}d ago`
 }
 
 export default function Dashboard() {
@@ -251,8 +238,8 @@ export default function Dashboard() {
   const showChecklist = setupSettled && steps.some((s) => !s.done)
 
   return (
-    <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.3, ease: 'easeOut' }} className="w-full">
       <AppPage
+        ambient
         title={`Welcome back, ${user?.name ?? 'there'}.`}
         description="Your agent console. Everything your agent needs to act, with you in the tower."
         actions={
@@ -289,8 +276,9 @@ export default function Dashboard() {
         </div>
       )}
 
-      {/* Stat strip: hairline-divided tiles, mono figures, credit-score spectrum on reputation */}
-      <div className="mt-4 grid grid-cols-2 gap-px overflow-hidden rounded-xl border border-border bg-border lg:grid-cols-4">
+      {/* Stat strip: hairline-divided tiles, mono figures, credit-score spectrum on reputation.
+          Hovering one tile dims its neighbours, so the pointer always has a single subject. */}
+      <div className="cn-dim-grid mt-4 grid grid-cols-2 gap-px overflow-hidden rounded-xl border border-border bg-border lg:grid-cols-4">
         <StatTile to="/app/agent-id" label="Reputation" value={rep != null ? String(rep) : dash} sub={rep != null ? `${gradeOf(rep)} · / 1000` : 'from real activity'} loading={rep == null && !loaded} readAt={rep != null ? readAt : null}>
           {rep != null ? (
             <div className="mt-2 mb-0.5 h-1.5 w-full rounded-full" style={{ background: 'linear-gradient(90deg,var(--danger),var(--warn) 45%,var(--ok))' }}>
@@ -428,7 +416,6 @@ export default function Dashboard() {
         </div>
       </div>
       </AppPage>
-    </motion.div>
   )
 }
 

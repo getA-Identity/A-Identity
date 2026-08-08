@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from 'react'
+import { Link } from 'react-router-dom'
 import {
   ArrowUpRight,
   Copy,
@@ -215,9 +216,10 @@ export default function Wallet() {
               ) : (
                 <div className="mt-3 text-sm opacity-85">
                   This agent has no wallet yet.
-                  <a href="/app/agent-id" className="ml-1 underline">
+                  {/* Client-side Link: the plain <a> here forced a full page reload. */}
+                  <Link to="/app/agent-id" className="ml-1 underline">
                     Create one in Agent ID
-                  </a>
+                  </Link>
                   .
                 </div>
               )}
