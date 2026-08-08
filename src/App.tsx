@@ -41,6 +41,7 @@ const Wallet = lazy(() => import('./routes/app/Wallet'))
 const Settlements = lazy(() => import('./routes/app/Settlements'))
 const Permissions = lazy(() => import('./routes/app/Permissions'))
 const Marketplace = lazy(() => import('./routes/app/Marketplace'))
+const AgentProfile = lazy(() => import('./routes/app/AgentProfile'))
 const Earnings = lazy(() => import('./routes/app/Earnings'))
 
 export default function App() {
@@ -109,6 +110,7 @@ export default function App() {
             <Route path="settlements" element={<Settlements />} />
             <Route path="permissions" element={<Permissions />} />
             <Route path="marketplace" element={<Marketplace />} />
+            <Route path="marketplace/:agentId" element={<AgentProfile />} />
             <Route path="earnings" element={<Earnings />} />
           </Route>
         </Route>

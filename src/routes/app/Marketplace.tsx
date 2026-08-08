@@ -2,10 +2,16 @@ import { useCallback, useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import {
   Activity,
+  ArrowUpRight,
   BadgeCheck,
+  Bookmark,
   Clock,
   Heart,
+  LayoutGrid,
+  List,
   Plus,
+  Search,
+  X,
 } from 'lucide-react'
 import { authHeaders, useAuth } from '../../store/auth'
 
@@ -57,6 +63,76 @@ export default function Marketplace() {
   const [counts, setCounts] = useState({ total: 0, totalAll: 0 })
   // The pivot hero is the trusted-worker catalog; Agent House is the second tab.
   const [tab, setTab] = useState<'hire' | 'house'>('hire')
+
+  // House toolbar: search, sort, view mode, and saved searches (all client-side,
+  // over the real roster; the view mode and presets persist per browser).
+  const [query, setQuery] = useState('')
+  const [sort, setSort] = useState<'reputation' | 'followers' | 'newest'>('reputation')
+  const [view, setView] = useState<'list' | 'grid'>(() => {
+    try {
+      return localStorage.getItem('aid-mkt-view') === 'grid' ? 'grid' : 'list'
+    } catch {
+      return 'list'
+    }
+  })
+  type SavedSearch = { name: string; query: string; sort: typeof sort; showAll: boolean; view: typeof view }
+  const [savedSearches, setSavedSearches] = useState<SavedSearch[]>(() => {
+    try {
+      return JSON.parse(localStorage.getItem('aid-mkt-saved') ?? '[]') as SavedSearch[]
+    } catch {
+      return []
+    }
+  })
+  const setViewPersist = (v: 'list' | 'grid') => {
+    setView(v)
+    try {
+      localStorage.setItem('aid-mkt-view', v)
+    } catch {
+      /* private mode */
+    }
+  }
+  const saveCurrentSearch = () => {
+    const name = `${query.trim() || 'all agents'} · ${sort}${showAll ? ' · incl. pending' : ''}`
+    const next = [...savedSearches.filter((x) => x.name !== name), { name, query: query.trim(), sort, showAll, view }]
+    setSavedSearches(next)
+    try {
+      localStorage.setItem('aid-mkt-saved', JSON.stringify(next))
+    } catch {
+      /* private mode */
+    }
+  }
+  const applySaved = (sv: SavedSearch) => {
+    setQuery(sv.query)
+    setSort(sv.sort)
+    setShowAll(sv.showAll)
+    setViewPersist(sv.view)
+  }
+  const removeSaved = (name: string) => {
+    const next = savedSearches.filter((x) => x.name !== name)
+    setSavedSearches(next)
+    try {
+      localStorage.setItem('aid-mkt-saved', JSON.stringify(next))
+    } catch {
+      /* private mode */
+    }
+  }
+
+  const shown = agents
+    .filter((a) => {
+      const q = query.trim().toLowerCase()
+      if (!q) return true
+      return (
+        a.name.toLowerCase().includes(q) ||
+        a.category.toLowerCase().includes(q) ||
+        (a.description ?? '').toLowerCase().includes(q) ||
+        a.capabilities.some((c) => c.toLowerCase().includes(q))
+      )
+    })
+    .sort((a, b) => {
+      if (sort === 'reputation') return (b.reputation?.score ?? -1) - (a.reputation?.score ?? -1)
+      if (sort === 'followers') return b.followers - a.followers
+      return b.createdAt.localeCompare(a.createdAt)
+    })
 
   const load = useCallback(async () => {
     try {
@@ -195,22 +271,102 @@ export default function Marketplace() {
         </Link>
       </div>
 
-      {/* KYA showcase vs full roster. Default shows only verified agents (matching the
-          "every agent here passed KYA" promise); the toggle reveals pending ones too. */}
-      {!loading && !error && (counts.totalAll > counts.total || showAll) && (
-        <div className="mt-4 flex flex-wrap items-center gap-2 text-xs">
-          <button
-            type="button"
-            onClick={() => setShowAll((v) => !v)}
-            className="inline-flex items-center gap-1.5 rounded-full border border-foreground/15 px-3 py-1.5 font-semibold text-foreground/70 transition-colors hover:bg-foreground/5"
-          >
-            {showAll ? 'Show verified only' : 'Show all (including pending)'}
-          </button>
-          <span className="text-foreground/45">
-            {showAll
-              ? `Showing all ${counts.totalAll} agents`
-              : `${counts.total} KYA-verified shown, ${counts.totalAll - counts.total} pending hidden`}
-          </span>
+      {/* Toolbar: search, sort, KYA filter, saved presets, and the view switch.
+          Everything operates client-side on the real roster. */}
+      {!loading && !error && agents.length > 0 && (
+        <div className="mt-4 space-y-2.5">
+          <div className="flex flex-wrap items-center gap-2">
+            <div className="relative min-w-[220px] flex-1">
+              <Search size={14} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-foreground/40" />
+              <input
+                value={query}
+                onChange={(e) => setQuery(e.target.value)}
+                placeholder="Search name, category, capability..."
+                aria-label="Search agents"
+                className="w-full rounded-xl border border-border bg-card py-2.5 pl-9 pr-3 text-sm outline-none transition-colors duration-[120ms] focus:border-accent"
+              />
+            </div>
+            <select
+              value={sort}
+              onChange={(e) => setSort(e.target.value as typeof sort)}
+              aria-label="Sort agents"
+              className="rounded-xl border border-border bg-card px-3 py-2.5 text-sm font-semibold text-foreground/75 outline-none"
+            >
+              <option value="reputation">Top reputation</option>
+              <option value="followers">Most followed</option>
+              <option value="newest">Newest</option>
+            </select>
+            <button
+              type="button"
+              onClick={() => setShowAll((v) => !v)}
+              aria-pressed={showAll}
+              className={`rounded-xl border px-3 py-2.5 text-xs font-semibold transition-colors duration-[120ms] ${
+                showAll ? 'border-warn/40 bg-warn/10 text-foreground/80' : 'border-border text-foreground/65 hover:bg-foreground/[0.04]'
+              }`}
+            >
+              {showAll ? 'Incl. pending' : 'Verified only'}
+            </button>
+            <button
+              type="button"
+              onClick={saveCurrentSearch}
+              className="inline-flex items-center gap-1.5 rounded-xl border border-border px-3 py-2.5 text-xs font-semibold text-foreground/65 transition-colors duration-[120ms] hover:bg-foreground/[0.04]"
+            >
+              <Bookmark size={13} /> Save
+            </button>
+            {/* View switch: two ways to read the same roster. */}
+            <div className="ml-auto inline-flex overflow-hidden rounded-xl border border-border" role="tablist" aria-label="Roster view">
+              {(
+                [
+                  ['list', List, 'List view'],
+                  ['grid', LayoutGrid, 'Grid view'],
+                ] as const
+              ).map(([v, Icon, label]) => (
+                <button
+                  key={v}
+                  type="button"
+                  role="tab"
+                  aria-selected={view === v}
+                  aria-label={label}
+                  onClick={() => setViewPersist(v)}
+                  className={`p-2.5 transition-colors duration-[120ms] ${
+                    view === v ? 'bg-accent text-white' : 'bg-card text-foreground/55 hover:text-foreground'
+                  }`}
+                >
+                  <Icon size={15} />
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {savedSearches.length > 0 && (
+            <div className="flex flex-wrap items-center gap-1.5">
+              <span className="text-[11px] font-semibold text-foreground/50">Saved:</span>
+              {savedSearches.map((sv) => (
+                <span key={sv.name} className="inline-flex items-center overflow-hidden rounded-full border border-border bg-card text-[11px] font-semibold">
+                  <button
+                    type="button"
+                    onClick={() => applySaved(sv)}
+                    className="px-2.5 py-1 text-foreground/70 transition-colors duration-[120ms] hover:bg-accent/10 hover:text-accent"
+                  >
+                    {sv.name}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => removeSaved(sv.name)}
+                    aria-label={`Delete saved search ${sv.name}`}
+                    className="px-1.5 py-1 text-foreground/35 hover:bg-danger/10 hover:text-danger"
+                  >
+                    <X size={11} />
+                  </button>
+                </span>
+              ))}
+            </div>
+          )}
+
+          <div className="text-xs font-medium text-foreground/55">
+            {shown.length} of {showAll ? counts.totalAll : counts.total} agents
+            {!showAll && counts.totalAll > counts.total && ` · ${counts.totalAll - counts.total} pending hidden`}
+          </div>
         </div>
       )}
 
@@ -270,24 +426,77 @@ export default function Marketplace() {
       {/* Agent listing. One row per agent, marketplace-style: identity on the left,
           what it does in the middle, its numbers on the right. A row expands its
           activity in place via an animated grid track, so the list never snaps. */}
+      {view === 'grid' ? (
+        /* Grid: compact certificates, two up. The full record lives one click in. */
+        <div className="mt-6 grid items-start gap-4 sm:grid-cols-2">
+          {shown.map((a) => (
+            <div key={a.id} className="cn-glow-wrap">
+              <div className="cn-glow-card flex flex-col rounded-2xl border border-border bg-card p-5">
+                <div className="flex items-start justify-between gap-3">
+                  <Link to={`/app/marketplace/${a.id}`} className="flex min-w-0 items-center gap-3 hover:opacity-90">
+                    <AgentAvatar
+                      seed={a.onchainAgentId || a.id}
+                      category={a.category}
+                      size={44}
+                      verdict={a.kya === 'verified' ? 'allow' : 'warn'}
+                    />
+                    <div className="min-w-0">
+                      <div className="truncate font-bold text-foreground">{a.name}</div>
+                      <div className="truncate text-xs text-foreground/50">{a.category}</div>
+                    </div>
+                  </Link>
+                  {a.kya === 'verified' ? (
+                    <Badge variant="success">
+                      <BadgeCheck size={11} /> KYA
+                    </Badge>
+                  ) : (
+                    <Badge variant="warning">
+                      <Clock size={11} /> pending
+                    </Badge>
+                  )}
+                </div>
+                <p className="mt-3 line-clamp-2 flex-1 text-sm leading-relaxed text-foreground/60">
+                  {a.description || 'No description yet.'}
+                </p>
+                <div className="mt-3 flex items-center justify-between border-t border-border pt-3">
+                  <div className="text-sm font-bold tabular-nums text-foreground">
+                    {a.reputation ? a.reputation.score : '-'}
+                    <span className="ml-1 text-[10px] font-semibold text-foreground/40">/ 1000</span>
+                  </div>
+                  <Link
+                    to={`/app/marketplace/${a.id}`}
+                    className="inline-flex items-center gap-1 text-xs font-semibold text-accent hover:underline"
+                  >
+                    View profile <ArrowUpRight size={12} />
+                  </Link>
+                </div>
+              </div>
+            </div>
+          ))}
+        </div>
+      ) : (
       <div className="mt-6 flex flex-col gap-3">
-        {agents.map((a) => (
+        {shown.map((a) => (
           <div
             key={a.id}
             className="cn-glow-wrap"
           >
           <div className="cn-glow-card rounded-2xl border border-border bg-card p-5">
             <div className="flex flex-wrap items-start gap-4">
-              <AgentAvatar
-                seed={a.onchainAgentId || a.id}
-                category={a.category}
-                size={56}
-                verdict={a.kya === 'verified' ? 'allow' : 'warn'}
-              />
+              <Link to={`/app/marketplace/${a.id}`} className="shrink-0 hover:opacity-90">
+                <AgentAvatar
+                  seed={a.onchainAgentId || a.id}
+                  category={a.category}
+                  size={56}
+                  verdict={a.kya === 'verified' ? 'allow' : 'warn'}
+                />
+              </Link>
 
               <div className="min-w-0 flex-1">
                 <div className="flex flex-wrap items-center gap-2">
-                  <span className="truncate text-base font-bold text-foreground">{a.name}</span>
+                  <Link to={`/app/marketplace/${a.id}`} className="truncate text-base font-bold text-foreground hover:text-accent">
+                    {a.name}
+                  </Link>
                   {a.kya === 'verified' ? (
                     <Badge variant="success">
                       <BadgeCheck size={11} /> KYA verified
@@ -366,6 +575,12 @@ export default function Marketplace() {
                 <Activity size={13} />
                 {openActivity === a.id ? 'Hide activity' : `Activity (${a.activity.length})`}
               </button>
+              <Link
+                to={`/app/marketplace/${a.id}`}
+                className="inline-flex items-center gap-1 text-xs font-semibold text-foreground/60 hover:text-accent"
+              >
+                View profile <ArrowUpRight size={12} />
+              </Link>
               {a.onchain !== 'registered' && (
                 <>
                   <button
@@ -399,6 +614,7 @@ export default function Marketplace() {
           </div>
         ))}
       </div>
+      )}
       </div>
     </AppPage>
   )

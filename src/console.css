@@ -126,6 +126,21 @@
   to { opacity: 1; transform: translateY(0) scale(1); }
 }
 
+/* Agent certificate: the card rises in with a slight perspective settle, then a
+   light sheen sweeps across it on a slow loop. */
+@keyframes cn-cert-in {
+  from { opacity: 0; transform: perspective(1100px) rotateX(10deg) translateY(28px) scale(0.97); }
+  to { opacity: 1; transform: perspective(1100px) rotateX(0deg) translateY(0) scale(1); }
+}
+@keyframes cn-cert-sheen {
+  0% { transform: translateX(-130%) skewX(-18deg); }
+  55%, 100% { transform: translateX(230%) skewX(-18deg); }
+}
+@keyframes cn-caret-blink {
+  0%, 45% { opacity: 1; }
+  50%, 100% { opacity: 0; }
+}
+
 /* Ambient dot layer: the conic wash spins slowly, the cursor spotlight drifts
    in a small orbit, and a ripple ring expands from the last cursor position. */
 @keyframes cn-dots-spin {
@@ -433,7 +448,10 @@
   transition: transform 0.35s var(--ease-thumb);
 }
 
-/* Height-auto collapse for expanding lists (activity feeds, error rows). */
+/* Height-auto collapse for expanding lists (activity feeds, error rows).
+   The 0fr track collapses CONTENT but not the child's own padding/margin (they
+   count toward min-content), so the closed state also folds those and hides the
+   child once the track finishes closing. */
 .cn-collapse {
   display: grid;
   grid-template-rows: 0fr;
@@ -445,6 +463,24 @@
 .cn-collapse > * {
   overflow: hidden;
   min-height: 0;
+  transition:
+    padding var(--dur-base) var(--ease-console),
+    margin var(--dur-base) var(--ease-console),
+    visibility 0s linear var(--dur-base);
+}
+.cn-collapse:not(.cn-open) > * {
+  visibility: hidden;
+  padding-top: 0;
+  padding-bottom: 0;
+  margin-top: 0;
+  margin-bottom: 0;
+}
+.cn-collapse.cn-open > * {
+  visibility: visible;
+  transition:
+    padding var(--dur-base) var(--ease-console),
+    margin var(--dur-base) var(--ease-console),
+    visibility 0s;
 }
 
 /* Success bloom (armed by JS for one run after a confirmed save/settle). */
@@ -461,6 +497,36 @@
    class carries its own easing rather than inheriting the shell tokens). */
 .cn-pop-in {
   animation: cn-pop 0.18s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+/* Agent certificate card: entrance settle + looping sheen sweep. */
+.cn-cert {
+  animation: cn-cert-in 0.7s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+.cn-cert-sheen {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  pointer-events: none;
+  border-radius: inherit;
+}
+.cn-cert-sheen::after {
+  content: '';
+  position: absolute;
+  top: -20%;
+  bottom: -20%;
+  width: 34%;
+  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.14), transparent);
+  animation: cn-cert-sheen 5.5s cubic-bezier(0.4, 0, 0.2, 1) 1.2s infinite;
+}
+.cn-caret {
+  display: inline-block;
+  width: 2px;
+  height: 1em;
+  margin-left: 2px;
+  vertical-align: -0.12em;
+  background: currentColor;
+  animation: cn-caret-blink 1s steps(1) infinite;
 }
 
 /* Theme flip: armed on the shell for ~880ms around a theme change so every

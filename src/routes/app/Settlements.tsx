@@ -1,5 +1,5 @@
 import { lazy, Suspense, useCallback, useEffect, useState } from 'react'
-import { ArrowUpRight, CheckCircle2, Clock, ExternalLink, KeyRound, Link2, Receipt, Send, ShieldQuestion, Wallet } from 'lucide-react'
+import { ArrowUpRight, Bot, CheckCircle2, Clock, ExternalLink, Globe, Info, KeyRound, Layers, Link2, Receipt, Send, ShieldQuestion, Store, Wallet } from 'lucide-react'
 import { authHeaders } from '../../store/auth'
 
 import { BACKEND_UNREACHABLE } from '../../lib/mcpBase'
@@ -11,6 +11,8 @@ import { useSelectedAgent } from '../../store/agent'
 import { useTabCarousel } from '../../hooks/useTabCarousel'
 import AgentSelect from '../../components/app/AgentSelect'
 import AppPage from '../../components/app/AppPage'
+import ChainLogo from '../../components/app/ChainLogo'
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '../../components/ui/tooltip'
 import { Skeleton } from '../../components/ui/skeleton'
 
 /* The rails below the payment queue used to render as one 11-panel column: every panel
@@ -30,11 +32,11 @@ const GasPanel = lazy(() => import('../../components/app/GasPanel'))
 
 type Tab = 'payments' | 'automation' | 'commerce' | 'rails'
 
-const TABS: { id: Tab; label: string; hint: string }[] = [
-  { id: 'payments', label: 'Payments', hint: 'Create a payment and work the approval queue.' },
-  { id: 'automation', label: 'Automation', hint: 'Let the agent act on its own within the limits you set.' },
-  { id: 'commerce', label: 'Agent commerce', hint: 'Getting paid by other agents, and paying them safely.' },
-  { id: 'rails', label: 'Rails', hint: 'Where the money can move, and what it costs to move it.' },
+const TABS: { id: Tab; label: string; hint: string; icon: typeof Send }[] = [
+  { id: 'payments', label: 'Payments', hint: 'Create a payment and work the approval queue.', icon: Send },
+  { id: 'automation', label: 'Automation', hint: 'Let the agent act on its own within the limits you set.', icon: Bot },
+  { id: 'commerce', label: 'Agent commerce', hint: 'Getting paid by other agents, and paying them safely.', icon: Store },
+  { id: 'rails', label: 'Rails', hint: 'Where the money can move, and what it costs to move it.', icon: Globe },
 ]
 
 /** Placeholder while a tab's code-split panels arrive. */
@@ -95,6 +97,9 @@ export default function Settlements() {
   const [error, setError] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
   const [tab, setTab] = useState<Tab>('payments')
+  // Display scope for the queue. Arc is the one live rail, so both chips show the
+  // same real set; the control exists so multichain lands without a redesign.
+  const [chainScope, setChainScope] = useState<'all' | 'arc'>('all')
   // Directional carousel: the pane renders the committed tab; direction follows
   // the tab order, so clicking rightward always slides forward.
   const { shown: shownTab, className: paneClass } = useTabCarousel(tab, TAB_ORDER)
@@ -292,24 +297,25 @@ export default function Settlements() {
           agent-to-agent commerce, cross-chain) each get their own tab instead of stacking
           eleven panels under the list. Micro-caps labels, the active one in a quiet box. */}
       <div data-tour="tabs" className="mt-5 flex flex-wrap gap-1.5 border-b border-border pb-3" role="tablist" aria-label="Settlement surfaces">
-        {TABS.map(({ id, label }) => (
+        {TABS.map(({ id, label, icon: Icon }) => (
           <button
             key={id}
             type="button"
             role="tab"
             onClick={() => setTab(id)}
             aria-selected={tab === id}
-            className={`rounded-md border px-3 py-2 text-[10px] font-semibold uppercase tracking-[0.14em] transition-colors duration-[120ms] ${
+            className={`inline-flex items-center gap-1.5 rounded-md border px-3 py-2 text-[10px] font-semibold uppercase tracking-[0.14em] transition-colors duration-[120ms] ${
               tab === id
                 ? 'border-foreground/60 text-foreground'
-                : 'border-transparent text-foreground/50 hover:text-foreground/80'
+                : 'border-transparent text-foreground/55 hover:text-foreground/85'
             }`}
           >
+            <Icon size={13} className={tab === id ? 'text-accent' : ''} />
             {label}
           </button>
         ))}
       </div>
-      <p className="mt-2 text-xs text-foreground/45">{TABS.find((t) => t.id === tab)?.hint}</p>
+      <p className="mt-2 text-xs font-medium text-foreground/60">{TABS.find((t) => t.id === tab)?.hint}</p>
 
       <div className="cn-tab-clip">
       <div className={paneClass}>
@@ -317,51 +323,89 @@ export default function Settlements() {
         <>
           {/* New payment */}
           <div data-tour="new-payment" className="mt-4 rounded-2xl border border-border bg-card p-6">
-            <h3 className="font-semibold text-foreground">New payment</h3>
-            <div className="mt-4 grid gap-3 sm:grid-cols-[1fr_auto]">
+            <div className="flex items-center gap-2">
+              <h3 className="font-semibold text-foreground">New payment</h3>
+              <TooltipProvider delayDuration={150}>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <button type="button" aria-label="How the policy engine decides" className="text-foreground/40 hover:text-foreground/70">
+                      <Info size={14} />
+                    </button>
+                  </TooltipTrigger>
+                  <TooltipContent>
+                    Paid in USDC. The policy engine decides: auto-approve under your line, or pause for
+                    your approval. Small amounts (e.g. 0.01) keep the demo wallet alive.
+                  </TooltipContent>
+                </Tooltip>
+              </TooltipProvider>
+            </div>
+            <div className="mt-4 flex flex-wrap items-stretch gap-2.5">
               <input
                 value={payee}
                 onChange={(e) => setPayee(e.target.value)}
-                placeholder="Payee: 0x address or agent://<agentId> (both settle for real)"
-                className="rounded-xl border border-border bg-background/40 px-3 py-2.5 font-mono text-xs outline-none focus:border-accent"
+                placeholder="0x address or agent://<agentId>"
+                aria-label="Payee"
+                className="min-w-[220px] flex-1 rounded-xl border border-border bg-background/40 px-3.5 py-3 font-mono text-xs outline-none transition-colors duration-[120ms] focus:border-accent"
               />
-              <div className="flex gap-2">
+              <div className="relative">
+                <img src="/tokens/usdc.svg" alt="" aria-hidden="true" className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2" />
                 <input
                   type="number"
                   min="0"
                   step="0.01"
                   value={amount}
                   onChange={(e) => setAmount(e.target.value)}
-                  className="w-24 rounded-xl border border-border bg-background/40 px-3 py-2.5 text-sm outline-none focus:border-accent"
+                  aria-label="Amount in USDC"
+                  className="w-32 rounded-xl border border-border bg-background/40 py-3 pl-9 pr-3 text-sm font-semibold tabular-nums outline-none transition-colors duration-[120ms] focus:border-accent"
                 />
-                <button
-                  type="button"
-                  onClick={createPayment}
-                  disabled={busy === 'create'}
-                  className="inline-flex items-center gap-1.5 rounded-full bg-accent px-4 py-2.5 text-sm font-semibold text-white transition-transform hover:scale-[1.02] disabled:opacity-50"
-                >
-                  <Send size={14} />
-                  {busy === 'create' ? '...' : 'Pay'}
-                </button>
               </div>
+              <button
+                type="button"
+                onClick={createPayment}
+                disabled={busy === 'create'}
+                className="inline-flex items-center gap-2 rounded-xl bg-accent px-6 py-3 text-sm font-bold text-white transition-colors duration-[120ms] hover:bg-accent-deep disabled:opacity-50"
+              >
+                <Send size={15} />
+                {busy === 'create' ? 'Paying...' : 'Pay'}
+              </button>
             </div>
-            <p className="mt-2 text-[11px] text-foreground/45">
-              USDC. The policy engine decides: auto-approve, or pause for your approval. Small
-              amounts (e.g. 0.01) keep the demo wallet alive.
-            </p>
           </div>
 
           {/* Human-on-the-loop */}
           <div className="mt-4 flex items-start gap-3 rounded-2xl border border-accent/20 bg-accent/[0.05] p-4">
             <ShieldQuestion size={18} className="mt-0.5 shrink-0 text-accent" />
-            <p className="text-sm text-foreground/70">
+            <p className="text-sm text-foreground/80">
               Payments above your limits pause here for approval. Nothing settles on-chain until
               it is approved and executed. {settledOnchain > 0 && <b>{settledOnchain} settled on Arc.</b>}
             </p>
           </div>
 
+          {/* Where these settle. One live rail today; the chips stay honest about it. */}
+          <div className="mt-4 flex flex-wrap items-center gap-1.5">
+            {([
+              ['all', 'All chains', <Layers key="l" size={12} />],
+              ['arc', 'Circle Arc', <ChainLogo key="a" id="arc" size={15} />],
+            ] as const).map(([id, label, icon]) => (
+              <button
+                key={id}
+                type="button"
+                onClick={() => setChainScope(id)}
+                aria-pressed={chainScope === id}
+                className={`inline-flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-xs font-semibold transition-colors duration-[120ms] ${
+                  chainScope === id
+                    ? 'border-accent/40 bg-accent/10 text-accent'
+                    : 'border-border text-foreground/60 hover:bg-foreground/[0.04]'
+                }`}
+              >
+                {icon}
+                {label} ({items.length})
+              </button>
+            ))}
+            <span className="text-[11px] font-medium text-foreground/50">every settlement is on Arc today</span>
+          </div>
+
           {/* List */}
-          <ul data-tour="queue" className="mt-4 flex flex-col gap-2.5">
+          <ul data-tour="queue" className="mt-3 flex flex-col gap-2.5">
             {loading &&
               Array.from({ length: 4 }).map((_, i) => (
                 <li key={`sk-${i}`} className="rounded-2xl border border-border bg-card p-4">
@@ -435,11 +479,19 @@ export default function Settlements() {
                       </div>
                     )}
                   </div>
-                  <div className="text-right">
-                    <div className="text-sm font-bold text-foreground">
+                  <div className="shrink-0 text-right">
+                    <div className="text-sm font-bold tabular-nums text-foreground">
                       {(ix.amountUsd * ix.count).toFixed(ix.amountUsd < 0.01 ? 4 : 2)}{' '}
                       <span className="text-xs font-semibold text-usdc">USDC</span>
                     </div>
+                    <div className="mt-0.5 text-[11px] font-medium text-foreground/55">
+                      {new Date(ix.createdAt).toLocaleString(undefined, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
+                    </div>
+                    {ix.txHash && (
+                      <div className="font-mono text-[10px] text-foreground/45" title={ix.txHash}>
+                        tx {ix.txHash.slice(0, 8)}...{ix.txHash.slice(-4)}
+                      </div>
+                    )}
                   </div>
                 </div>
 
@@ -529,7 +581,7 @@ export default function Settlements() {
                   )}
                   {ix.status === 'executed_simulated' && (
                     <span
-                      className="text-xs text-foreground/40"
+                      className="text-xs font-medium text-foreground/55"
                       title={ix.policyNote || 'Simulated: the payee has no Arc address to settle to.'}
                     >
                       Simulated

@@ -1,12 +1,14 @@
+import { Bot, ChevronDown } from 'lucide-react'
 import { useSelectedAgent } from '../../store/agent'
 import { cn } from '../../lib/utils'
 
 /**
  * The console's one agent picker, bound to the shared selection.
  *
- * Renders nothing for a single-agent account: a dropdown with one option is noise.
- * `inline` is the compact pill form used where the picker sits in a toolbar row rather
- * than above a form.
+ * Renders nothing for a single-agent account: a dropdown with one option is
+ * noise. Visually it is a proper control now (icon, label, roomy hit target,
+ * custom chevron) rather than a bare native select; the native element stays
+ * underneath for keyboard and screen-reader behaviour.
  */
 export default function AgentSelect({
   agents,
@@ -28,37 +30,26 @@ export default function AgentSelect({
     </option>
   ))
 
-  if (inline) {
-    return (
-      <div className={cn('flex items-center gap-2', className)}>
-        <label htmlFor="agent-select" className="text-xs font-semibold text-foreground/45">
-          Agent
-        </label>
+  return (
+    <div className={cn(inline ? 'inline-flex items-center gap-2.5' : 'mt-5 flex items-center gap-2.5', className)}>
+      <span className="flex items-center gap-1.5 text-sm font-bold text-foreground/70">
+        <Bot size={16} className="text-accent" /> Agent
+      </span>
+      <div className="group relative min-w-0">
         <select
           id="agent-select"
+          aria-label="Selected agent"
           value={agentId}
           onChange={(e) => setAgentId(e.target.value)}
-          className="rounded-full border border-foreground/15 bg-background px-3 py-1.5 text-sm text-foreground outline-none focus:border-accent"
+          className="w-full min-w-[220px] cursor-pointer appearance-none rounded-xl border border-border bg-card py-2.5 pl-3.5 pr-10 text-sm font-semibold text-foreground shadow-sm outline-none transition-colors duration-[120ms] hover:border-foreground/25 focus:border-accent [background-image:none]"
         >
           {options}
         </select>
+        <ChevronDown
+          size={15}
+          className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-foreground/45 transition-transform duration-[240ms] group-focus-within:rotate-180"
+        />
       </div>
-    )
-  }
-
-  return (
-    <div className={cn('mt-5', className)}>
-      <label htmlFor="agent-select" className="text-xs font-semibold text-foreground/50">
-        Agent
-      </label>
-      <select
-        id="agent-select"
-        value={agentId}
-        onChange={(e) => setAgentId(e.target.value)}
-        className="mt-1 w-full rounded-xl border border-border bg-card px-3 py-2.5 text-sm outline-none focus:border-accent"
-      >
-        {options}
-      </select>
     </div>
   )
 }

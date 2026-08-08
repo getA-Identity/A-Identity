@@ -1,8 +1,9 @@
 import { useCallback, useEffect, useState } from 'react'
-import { Check, ExternalLink, TrendingUp, Wallet } from 'lucide-react'
+import { Check, ExternalLink, TrendingUp, Wallet, Info } from 'lucide-react'
 import { authHeaders } from '../../store/auth'
 import { apiFetch, readJson, explainError } from '../../lib/api'
 import { Skeleton } from '../ui/skeleton'
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '../ui/tooltip'
 import { Stat, StatBadge } from '../ui/stat'
 
 const short = (a: string) => (a.length > 14 ? `${a.slice(0, 8)}...${a.slice(-4)}` : a)
@@ -31,6 +32,8 @@ type CircleWalletState = {
  * cap stays on our server + the on-chain vault. Credential-gated behind Circle keys.
  */
 export function CircleWalletPanel({ agentId }: { agentId: string }) {
+  // Full explanation folds away; the panel leads with one sentence.
+  const [cwHow, setCwHow] = useState(false)
   const [wallet, setWallet] = useState<CircleWalletState | null>(null)
   const [loading, setLoading] = useState(true)
   const [busy, setBusy] = useState(false)
@@ -98,15 +101,28 @@ export function CircleWalletPanel({ agentId }: { agentId: string }) {
               </span>
             )}
           </div>
-          <p className="text-[11px] text-foreground/50">A Circle managed wallet, screened at the wallet layer</p>
+          <p className="text-xs font-medium text-foreground/60">A Circle-managed wallet, screened at the wallet layer</p>
         </div>
       </div>
-      <p className="mb-4 text-xs text-foreground/55">
-        Give the agent a <b>Circle-managed wallet</b> on Arc. Circle's hosted policy engine screens
-        every transfer at the <b>wallet layer</b> (sanctions, address allow and block, and freeze) and
-        settles real USDC. It complements the onchain vault: the server sets the spend cap, Circle
-        screens at the wallet layer, and the vault enforces it trustlessly onchain.
-      </p>
+      <div className="mb-4 mt-2 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-foreground/65">
+        <span>Circle screens every transfer (sanctions, allow/block, freeze) and settles real USDC.</span>
+        <button
+          type="button"
+          onClick={() => setCwHow((v) => !v)}
+          aria-expanded={cwHow}
+          className="font-semibold text-usdc hover:underline"
+        >
+          {cwHow ? 'Hide details' : 'How it works'}
+        </button>
+      </div>
+      <div className={`cn-collapse ${cwHow ? 'cn-open' : ''}`}>
+        <p className="pb-4 text-xs leading-relaxed text-foreground/65">
+          Give the agent a <b>Circle-managed wallet</b> on Arc. Circle's hosted policy engine screens
+          every transfer at the <b>wallet layer</b> (sanctions, address allow and block, and freeze) and
+          settles real USDC. It complements the onchain vault: the server sets the spend cap, Circle
+          screens at the wallet layer, and the vault enforces it trustlessly onchain.
+        </p>
+      </div>
 
       {loading ? (
         <div className="space-y-3">
@@ -292,13 +308,28 @@ export function TreasuryPanel({ agentId }: { agentId: string }) {
           <div>
             <div className="flex items-center gap-2">
               <h3 className="text-[15px] font-semibold text-foreground">Treasury</h3>
+              <TooltipProvider delayDuration={150}>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <button type="button" aria-label="About USYC treasury" className="text-foreground/40 hover:text-foreground/70">
+                      <Info size={13} />
+                    </button>
+                  </TooltipTrigger>
+                  <TooltipContent>
+                    USYC is an enterprise-gated Circle product. Balances, the cap and the earnings
+                    review are live now; the on-chain USDC to USYC mint activates once this wallet is
+                    USYC-allowlisted (Circle Support, about 24 to 48 hours). APY is an estimate and
+                    floats with short Treasury rates.
+                  </TooltipContent>
+                </Tooltip>
+              </TooltipProvider>
               {on && (
                 <span className="rounded-full bg-emerald-100 dark:bg-emerald-500/15 px-2 py-0.5 text-[10px] font-semibold text-emerald-700 dark:text-emerald-300">
                   Auto Yield On
                 </span>
               )}
             </div>
-            <p className="text-[11px] text-foreground/50">Idle balance put to work in USYC</p>
+            <p className="text-xs font-medium text-foreground/60">Idle balance put to work in USYC</p>
           </div>
         </div>
         {t?.address && (
@@ -502,11 +533,7 @@ export function TreasuryPanel({ agentId }: { agentId: string }) {
             )}
           </div>
 
-          <p className="text-[11px] leading-relaxed text-foreground/40">
-            USYC is an enterprise gated Circle product. Balances, the cap and the earnings review are live now. The
-            onchain USDC to USYC mint goes live once this wallet is USYC allowlisted (Circle Support, about 24 to 48
-            hours). Estimated APY only. USYC yield floats with short Treasury rates.
-          </p>
+
         </div>
       )}
       {err && <div className="mt-3 text-xs text-red-600">{err}</div>}

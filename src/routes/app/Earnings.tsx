@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react'
-import { Coins, RefreshCw, ExternalLink, ArrowUpRight, Loader2 } from 'lucide-react'
+import { ArrowRight, Check, Coins, RefreshCw, ExternalLink, Loader2, Wallet } from 'lucide-react'
 import { Link } from 'react-router-dom'
 import { BACKEND_UNREACHABLE } from '../../lib/mcpBase'
 import { apiFetch, readJson, explainError } from '../../lib/api'
@@ -10,6 +10,7 @@ import { useSelectedAgent } from '../../store/agent'
 import AgentSelect from '../../components/app/AgentSelect'
 import AppPage from '../../components/app/AppPage'
 import BrandArt from '../../components/app/BrandArt'
+import ChainLogo from '../../components/app/ChainLogo'
 import { Skeleton } from '../../components/ui/skeleton'
 
 /**
@@ -41,6 +42,8 @@ export default function Earnings() {
   const [loaded, setLoaded] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [redeeming, setRedeeming] = useState(false)
+  // Brief green tick on the refresh button after a completed re-read.
+  const [justRefreshed, setJustRefreshed] = useState(false)
   const [redeemNote, setRedeemNote] = useState('')
 
   const agent = agents.find((a) => a.id === agentId)
@@ -164,17 +167,27 @@ export default function Earnings() {
             <AgentSelect agents={agents} inline />
             <button
               type="button"
-              onClick={() => agentId && loadEarnings(agentId, agent?.walletAddress ?? null)}
-              className="inline-flex items-center gap-1.5 rounded-full border border-foreground/15 px-3 py-1.5 text-xs font-semibold text-foreground/60 hover:bg-foreground/5"
+              onClick={async () => {
+                if (!agentId) return
+                await loadEarnings(agentId, agent?.walletAddress ?? null)
+                setJustRefreshed(true)
+                setTimeout(() => setJustRefreshed(false), 1600)
+              }}
+              className={`inline-flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-xs font-semibold transition-colors duration-[240ms] ${
+                justRefreshed
+                  ? 'border-ok/40 bg-ok/10 text-ok'
+                  : 'border-foreground/15 text-foreground/60 hover:bg-foreground/5'
+              }`}
             >
-              <RefreshCw size={12} /> Refresh
+              {justRefreshed ? <Check size={12} /> : <RefreshCw size={12} />}
+              {justRefreshed ? 'Up to date' : 'Refresh'}
             </button>
           </div>
 
           {/* Stat cards */}
           <div data-tour="stats" className="mt-4 grid gap-4 sm:grid-cols-3">
             <div className="rounded-2xl border border-border bg-card p-5">
-              <div className="flex items-center gap-2 text-xs font-semibold text-foreground/45">
+              <div className="flex items-center gap-2 text-xs font-semibold text-foreground/60">
                 <Coins size={14} className="text-accent" /> Earned (released jobs)
               </div>
               <div className="mt-2 text-2xl font-bold text-foreground">
@@ -184,18 +197,18 @@ export default function Earnings() {
                   <>{earnedUsd.toFixed(2)} <span className="text-sm font-semibold text-foreground/50">USDC</span></>
                 )}
               </div>
-              <div className="mt-1 text-xs text-foreground/45">{released.length} completed job{released.length === 1 ? '' : 's'}</div>
+              <div className="mt-1 text-xs font-medium text-foreground/55">{released.length} completed job{released.length === 1 ? '' : 's'}</div>
             </div>
             <div className="rounded-2xl border border-border bg-card p-5">
-              <div className="text-xs font-semibold text-foreground/45">Live wallet balance</div>
+              <div className="flex items-center gap-1.5 text-xs font-semibold text-foreground/60"><Wallet size={14} className="text-usdc" /> Live wallet balance</div>
               <div className="mt-2 text-2xl font-bold text-foreground">
                 {balance == null && agent?.walletAddress ? (
                   <Skeleton className="h-8 w-36" />
                 ) : (
-                  <>{balance !== null ? Number(balance).toFixed(4) : '--'} <span className="text-sm font-semibold text-foreground/50">USDC</span></>
+                  <>{balance !== null ? Number(balance).toFixed(2) : '--'} <span className="text-sm font-semibold text-foreground/50">USDC</span></>
                 )}
               </div>
-              <div className="mt-1 text-xs text-foreground/45">on Arc testnet</div>
+              <div className="mt-1 text-xs font-medium text-foreground/55">on Arc testnet</div>
               {gw ? (
                 <div className="mt-2 border-t border-foreground/8 pt-2 text-xs text-foreground/60">
                   Gateway unified: <b className="text-foreground">{gw.available.toFixed(2)} USDC</b>
@@ -208,15 +221,20 @@ export default function Earnings() {
               ) : null}
             </div>
             <div data-tour="redeem" className="rounded-2xl border border-border bg-card p-5">
-              <div className="text-xs font-semibold text-foreground/45">Redeem cross-chain</div>
+              <div className="text-xs font-semibold text-foreground/60">Redeem cross-chain</div>
+              <div className="mt-2 flex items-center gap-2 text-xs font-semibold text-foreground/75">
+                <ChainLogo id="arc" size={20} /> Circle Arc
+                <ArrowRight size={13} className="text-foreground/40" />
+                <ChainLogo id="base" size={20} /> Base Sepolia
+              </div>
               <button
                 type="button"
                 onClick={redeem}
                 disabled={redeeming}
                 className="mt-2 inline-flex items-center gap-1.5 rounded-full bg-accent px-4 py-2 text-sm font-semibold text-white disabled:opacity-50"
               >
-                {redeeming ? <Loader2 size={14} className="animate-spin" /> : <ArrowUpRight size={14} />}
-                Move to Base (Gateway)
+                {redeeming ? <Loader2 size={14} className="animate-spin" /> : <ArrowRight size={14} />}
+                Move via Gateway
               </button>
               {redeemNote && <p className="mt-2 text-[11px] text-foreground/55">{redeemNote}</p>}
             </div>
@@ -234,7 +252,7 @@ export default function Earnings() {
               ))}
             </div>
           ) : released.length === 0 ? (
-            <p className="mt-2 text-sm text-foreground/50">No completed jobs yet. Once a client releases the escrow on a delivered task, it shows up here.</p>
+            <p className="mt-2 text-sm text-foreground/65">No completed jobs yet. Once a client releases the escrow on a delivered task, it shows up here.</p>
           ) : (
             <div className="mt-3 flex flex-col gap-2">
               {released
@@ -244,7 +262,7 @@ export default function Earnings() {
                   <div key={j.id} className="flex flex-wrap items-center justify-between gap-2 rounded-2xl border border-border bg-card p-4">
                     <div>
                       <span className="font-semibold text-foreground">{j.service}</span>
-                      <span className="ml-2 text-xs text-foreground/45">
+                      <span className="ml-2 text-xs font-medium text-foreground/55">
                         {new Date(j.updatedAt).toLocaleDateString()}
                         {j.settlement === 'onchain' ? ' · on-chain' : j.settlement === 'simulated' ? ' · simulated' : ''}
                       </span>

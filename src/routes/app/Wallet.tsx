@@ -3,12 +3,15 @@ import { Link } from 'react-router-dom'
 import {
   ArrowUpRight,
   Check,
+  Coins,
   Copy,
   Droplets,
   ExternalLink,
+  Globe,
+  Hash,
+  Layers,
   RefreshCw,
   ShieldQuestion,
-  Wallet as WalletIcon,
 } from 'lucide-react'
 
 import { BACKEND_UNREACHABLE } from '../../lib/mcpBase'
@@ -20,6 +23,8 @@ import { CircleWalletPanel, TreasuryPanel } from '../../components/app/WalletPan
 import AgentSelect from '../../components/app/AgentSelect'
 import AppPage from '../../components/app/AppPage'
 import BrandArt from '../../components/app/BrandArt'
+import ChainLogo from '../../components/app/ChainLogo'
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '../../components/ui/tooltip'
 import { useSelectedAgent } from '../../store/agent'
 import { Skeleton } from '../../components/ui/skeleton'
 const FAUCET = 'https://faucet.circle.com'
@@ -27,6 +32,7 @@ const FAUCET = 'https://faucet.circle.com'
 type Agent = { id: string; name: string; walletAddress: string | null }
 type Balance = { address: string; balance: string | null; symbol: string; source: string }
 type AssetBalances = { usdcUsd: number; eurcUsd: number; usycUsd: number; idleUsd: number; totalUsd: number }
+type Gateway = { available: number; pending: number }
 type Instruction = {
   id: string
   amountUsd: number
@@ -40,25 +46,48 @@ type Instruction = {
 }
 
 /**
- * Wallet, laid out as a working surface rather than a reading column.
- *
- * The money (balance hero + payment history) runs down the wide left column;
- * everything ABOUT the money (per-token holdings, the policy guarantee, the
- * address utilities) sits in the narrow right rail. The wallet-layer panels
- * (Circle, Treasury) pair up underneath.
+ * Where the money is read from. 'all' is the chain-abstracted view: the Arc
+ * wallet plus the Circle Gateway unified balance (which itself spans chains).
+ * Every figure is a real read; a scope with nothing readable says so.
  */
+type Scope = 'all' | 'arc' | 'gateway'
+
+const TOKEN_ICON: Record<string, string> = {
+  USDC: '/tokens/usdc.svg',
+  EURC: '/tokens/eurc.svg',
+}
+
+function TokenIcon({ symbol, size = 18 }: { symbol: string; size?: number }) {
+  const src = TOKEN_ICON[symbol]
+  if (src) {
+    return <img src={src} alt="" aria-hidden="true" style={{ width: size, height: size }} className="shrink-0 rounded-full" />
+  }
+  // USYC has no public mark in the set: a minimal yield badge in the same shape.
+  return (
+    <span
+      aria-hidden="true"
+      style={{ width: size, height: size, fontSize: size * 0.42 }}
+      className="grid shrink-0 place-items-center rounded-full bg-ok font-bold text-white"
+    >
+      Y
+    </span>
+  )
+}
+
 export default function Wallet() {
   const [agents, setAgents] = useState<Agent[]>([])
   const agentId = useSelectedAgent((s) => s.agentId)
   const syncRoster = useSelectedAgent((s) => s.syncRoster)
   const [balance, setBalance] = useState<Balance | null>(null)
   const [assets, setAssets] = useState<AssetBalances | null>(null)
+  const [gw, setGw] = useState<Gateway | null>(null)
   const [txs, setTxs] = useState<Instruction[]>([])
   const [txsLoaded, setTxsLoaded] = useState(false)
   const [loadingBal, setLoadingBal] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [loaded, setLoaded] = useState(false)
   const [copied, setCopied] = useState(false)
+  const [scope, setScope] = useState<Scope>('all')
 
   const loadAgents = useCallback(async (force = false) => {
     try {
@@ -96,8 +125,16 @@ export default function Wallet() {
       .then((r) => readJson<{ balances?: AssetBalances; error?: string }>(r))
       .then((d) => { if (isActive()) setAssets(d.balances ?? null) })
       .catch(() => { if (isActive()) setAssets(null) })
-    // Live on-chain USDC balance, if the agent has a wallet.
     if (a.walletAddress) {
+      // Circle Gateway unified balance: the chain-abstracted USDC this wallet can
+      // mint on any supported chain. Read live; absent when Gateway has nothing.
+      apiFetch(`/api/arc/gateway-balance?address=${a.walletAddress}`)
+        .then((r) => readJson<{ available?: number; pending?: number }>(r))
+        .then((d) => {
+          if (isActive()) setGw(typeof d.available === 'number' ? { available: d.available, pending: d.pending ?? 0 } : null)
+        })
+        .catch(() => { if (isActive()) setGw(null) })
+      // Live on-chain USDC balance on Arc.
       if (isActive()) setLoadingBal(true)
       try {
         const r = await apiFetch(`/api/wallet-balance?address=${a.walletAddress}`)
@@ -110,6 +147,7 @@ export default function Wallet() {
       }
     } else if (isActive()) {
       setBalance(null)
+      setGw(null)
     }
   }, [])
 
@@ -128,6 +166,19 @@ export default function Wallet() {
   }
 
   const bal = balance?.balance != null ? Number(balance.balance) : null
+
+  // The three real figures behind the scope chips. 'all' only sums what was
+  // actually read; while Arc is still loading it stays a skeleton, never a guess.
+  const gwAvailable = gw?.available ?? 0
+  const scopeValue: number | null =
+    scope === 'arc' ? bal : scope === 'gateway' ? (gw ? gwAvailable : null) : bal == null ? null : bal + gwAvailable
+
+  const SCOPES: { id: Scope; label: string; icon: React.ReactNode; sub: string }[] = [
+    { id: 'all', label: 'All chains', icon: <Layers size={13} />, sub: 'Arc + Gateway unified' },
+    { id: 'arc', label: 'Circle Arc', icon: <ChainLogo id="arc" size={16} />, sub: 'on-chain balance' },
+    { id: 'gateway', label: 'Gateway', icon: <Globe size={13} />, sub: 'chain-abstracted USDC' },
+  ]
+  const activeScope = SCOPES.find((s) => s.id === scope)!
 
   return (
     <AppPage
@@ -151,7 +202,7 @@ export default function Wallet() {
           <div className="mt-5 grid items-start gap-4 lg:grid-cols-3">
             {/* Left: the money itself. */}
             <div className="flex min-w-0 flex-col gap-4 lg:col-span-2">
-              {/* Live balance hero */}
+              {/* Live balance hero: one figure, scoped by chain. */}
               <div
                 data-tour="balance"
                 className="relative overflow-hidden rounded-2xl p-6 text-white"
@@ -161,44 +212,103 @@ export default function Wallet() {
                   className="pointer-events-none absolute inset-0 opacity-10"
                   style={{ backgroundImage: 'radial-gradient(circle at 80% 20%, white 0%, transparent 50%)' }}
                 />
-                {/* A safe door with a combination dial: where money is held and unlocked.
-                    Only rendered once there IS a wallet; the empty state stays clean. */}
+                {/* The vault sits low in the corner as texture, never under the controls. */}
                 {agent.walletAddress && (
                   <BrandArt
                     src="/art/art-vault.webp"
                     variant="band"
-                    className="absolute -right-6 top-1/2 hidden h-44 w-44 -translate-y-1/2 opacity-35 sm:block"
+                    className="pointer-events-none absolute -bottom-10 -right-8 hidden h-40 w-40 opacity-20 lg:block"
                   />
                 )}
                 <div className="relative">
-                  <div className="flex items-center justify-between gap-3">
-                    <div className="flex items-center gap-2 text-sm font-semibold opacity-80">
-                      <WalletIcon size={16} />
-                      Live balance on Arc testnet
+                  <div className="flex flex-wrap items-center justify-between gap-3">
+                    <div className="flex items-center gap-2 text-sm font-semibold">
+                      {activeScope.icon}
+                      Live balance · {activeScope.label}
+                      <span className="hidden text-xs font-medium text-white/60 sm:inline">{activeScope.sub}</span>
                     </div>
                     {agent.walletAddress && (
                       <button
                         type="button"
                         onClick={() => refresh(agent)}
-                        className="inline-flex items-center gap-1 rounded-full bg-white/15 px-2.5 py-1 text-[11px] font-semibold backdrop-blur-sm transition-colors hover:bg-white/25"
+                        className="inline-flex items-center gap-1.5 rounded-full border border-white/25 bg-white/10 px-3 py-1.5 text-xs font-semibold backdrop-blur-sm transition-colors duration-[120ms] hover:bg-white/20"
                       >
-                        <RefreshCw size={11} className={loadingBal ? 'animate-spin' : ''} /> Refresh
+                        <RefreshCw size={12} className={loadingBal ? 'animate-spin' : ''} /> Refresh
                       </button>
                     )}
                   </div>
 
                   {agent.walletAddress ? (
-                    <div className="mt-3 text-4xl font-bold tracking-tight">
-                      {loadingBal || bal == null ? (
-                        <Skeleton className="h-9 w-40" />
-                      ) : (
-                        <>
-                          {bal.toFixed(4)} <span className="text-lg font-semibold opacity-70">USDC</span>
-                        </>
+                    <>
+                      <div className="mt-3 flex items-center gap-3">
+                        <TokenIcon symbol="USDC" size={34} />
+                        {loadingBal || scopeValue == null ? (
+                          <Skeleton className="h-10 w-40" />
+                        ) : (
+                          <div className="text-4xl font-bold tracking-tight">
+                            {scopeValue.toFixed(2)} <span className="text-lg font-semibold text-white/70">USDC</span>
+                          </div>
+                        )}
+                      </div>
+
+                      {/* Chain abstraction: the same wallet, three real reads. */}
+                      <div className="mt-4 flex flex-wrap gap-1.5" role="tablist" aria-label="Balance scope">
+                        {SCOPES.map((s) => (
+                          <button
+                            key={s.id}
+                            type="button"
+                            role="tab"
+                            aria-selected={scope === s.id}
+                            onClick={() => setScope(s.id)}
+                            className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-semibold transition-colors duration-[120ms] ${
+                              scope === s.id
+                                ? 'bg-white text-[var(--usdc-deep)]'
+                                : 'border border-white/25 bg-white/5 text-white/85 hover:bg-white/15'
+                            }`}
+                          >
+                            {s.icon}
+                            {s.label}
+                          </button>
+                        ))}
+                      </div>
+
+                      {/* Every stablecoin the wallet holds, right where the balance is. */}
+                      {assets && (
+                        <div className="mt-4 flex flex-wrap items-center gap-2">
+                          {(
+                            [
+                              ['USDC', assets.usdcUsd],
+                              ['EURC', assets.eurcUsd],
+                              ['USYC', assets.usycUsd],
+                            ] as const
+                          ).map(([sym, v]) => (
+                            <span
+                              key={sym}
+                              className="inline-flex items-center gap-1.5 rounded-full bg-white/10 px-2.5 py-1 text-xs font-semibold text-white/90"
+                            >
+                              <TokenIcon symbol={sym} size={15} />
+                              {sym} ${v.toFixed(2)}
+                            </span>
+                          ))}
+                          {gw && gw.pending > 0 && (
+                            <span className="text-xs font-medium text-white/60">+{gw.pending.toFixed(2)} pending in Gateway</span>
+                          )}
+                        </div>
                       )}
-                    </div>
+
+                      {bal === 0 && (
+                        <a
+                          href={FAUCET}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="mt-3 inline-block rounded-full bg-white/20 px-3 py-1.5 text-xs font-semibold backdrop-blur-sm transition-colors hover:bg-white/30"
+                        >
+                          Fund it with testnet USDC at faucet.circle.com
+                        </a>
+                      )}
+                    </>
                   ) : (
-                    <div className="mt-3 text-sm opacity-90">
+                    <div className="mt-3 text-sm text-white/90">
                       This agent has no wallet yet.
                       <Link to="/app/agent-id" className="ml-1 font-semibold underline underline-offset-2">
                         Create one in Agent ID
@@ -212,7 +322,22 @@ export default function Wallet() {
               {/* Recent payments (real instructions) */}
               <section data-tour="payments" className="rounded-2xl border border-border bg-card">
                 <div className="flex items-center justify-between border-b border-border px-5 py-3.5">
-                  <h3 className="text-sm font-bold text-foreground">Recent Payments</h3>
+                  <div className="flex items-center gap-2">
+                    <h3 className="text-sm font-bold text-foreground">Recent Payments</h3>
+                    <TooltipProvider delayDuration={150}>
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <button type="button" aria-label="How payments are protected" className="text-foreground/40 hover:text-foreground/70">
+                            <ShieldQuestion size={14} />
+                          </button>
+                        </TooltipTrigger>
+                        <TooltipContent>
+                          Payments run through the policy engine first. Above your limits, they pause for
+                          approval; nothing moves real USDC without it.
+                        </TooltipContent>
+                      </Tooltip>
+                    </TooltipProvider>
+                  </div>
                   <Link to="/app/settlements" className="inline-flex items-center gap-1 text-xs font-semibold text-accent hover:underline">
                     Settlements <ArrowUpRight size={12} />
                   </Link>
@@ -242,7 +367,7 @@ export default function Wallet() {
                           </div>
                           <div className="min-w-0 flex-1">
                             <div className="truncate font-mono text-xs font-semibold text-foreground">{short(tx.payee)}</div>
-                            <div className="truncate text-xs text-foreground/45">{tx.policyNote}</div>
+                            <div className="truncate text-xs text-foreground/50">{tx.policyNote}</div>
                           </div>
                           <div className="text-right">
                             <div className="text-sm font-bold tabular-nums text-foreground">
@@ -259,7 +384,7 @@ export default function Wallet() {
                                 settled <ExternalLink size={9} />
                               </a>
                             ) : (
-                              <span className="text-[11px] text-foreground/40">{tx.status.replace(/_/g, ' ')}</span>
+                              <span className="text-[11px] font-medium text-foreground/50">{tx.status.replace(/_/g, ' ')}</span>
                             )}
                           </div>
                         </li>
@@ -267,24 +392,28 @@ export default function Wallet() {
                     })}
                   </ul>
                 ) : (
-                  <div className="px-5 py-10 text-center text-sm text-foreground/50">
+                  <div className="px-5 py-10 text-center text-sm text-foreground/60">
                     No payments yet. Make one in Settlements.
                   </div>
                 )}
               </section>
             </div>
 
-            {/* Right rail: what the money is made of, the guarantee, the utilities. */}
+            {/* Right rail: what the money is made of, and the utilities. */}
             <div className="flex min-w-0 flex-col gap-4">
               {/* Token balances */}
               <section data-tour="tokens" className="rounded-2xl border border-border bg-card p-5">
-                <h3 className="text-sm font-bold text-foreground/80">Token Balances</h3>
+                <h3 className="flex items-center gap-2 text-sm font-bold text-foreground/80">
+                  <Coins size={15} className="text-accent" /> Token Balances
+                </h3>
                 <dl className="mt-3 flex flex-col divide-y divide-border">
                   {(['USDC', 'EURC', 'USYC'] as const).map((t) => {
                     const v = assets ? { USDC: assets.usdcUsd, EURC: assets.eurcUsd, USYC: assets.usycUsd }[t] : null
                     return (
-                      <div key={t} className="flex items-baseline justify-between py-2.5 first:pt-0 last:pb-0">
-                        <dt className="text-sm font-medium text-foreground/70">{t}</dt>
+                      <div key={t} className="flex items-center justify-between py-2.5 first:pt-0 last:pb-0">
+                        <dt className="flex items-center gap-2 text-sm font-semibold text-foreground/80">
+                          <TokenIcon symbol={t} size={18} /> {t}
+                        </dt>
                         {agent.walletAddress && v == null ? (
                           <Skeleton className="h-5 w-16" />
                         ) : (
@@ -294,7 +423,7 @@ export default function Wallet() {
                     )
                   })}
                 </dl>
-                <p className="mt-3 text-[11px] leading-relaxed text-foreground/40">
+                <p className="mt-3 text-xs leading-relaxed text-foreground/60">
                   Read live from Arc. USYC is yield-bearing, manage it in Treasury below.
                 </p>
               </section>
@@ -302,7 +431,9 @@ export default function Wallet() {
               {/* Address utilities */}
               {agent.walletAddress && (
                 <section data-tour="address" className="rounded-2xl border border-border bg-card p-5">
-                  <h3 className="text-sm font-bold text-foreground/80">Address</h3>
+                  <h3 className="flex items-center gap-2 text-sm font-bold text-foreground/80">
+                    <Hash size={15} className="text-accent" /> Address
+                  </h3>
                   <div className="mt-2.5 font-mono text-xs text-foreground/70">{short(agent.walletAddress)}</div>
                   <div className="mt-3 flex flex-col gap-1.5">
                     <button
@@ -332,15 +463,6 @@ export default function Wallet() {
                   </div>
                 </section>
               )}
-
-              {/* Human-on-the-loop */}
-              <div className="flex items-start gap-3 rounded-2xl border border-accent/20 bg-accent/[0.05] p-4">
-                <ShieldQuestion size={18} className="mt-0.5 shrink-0 text-accent" />
-                <p className="text-sm text-foreground/70">
-                  Payments run through the policy engine first. Above your limits, they pause for
-                  approval; nothing moves real USDC without it.
-                </p>
-              </div>
             </div>
           </div>
 
