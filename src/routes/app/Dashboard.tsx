@@ -247,7 +247,7 @@ export default function Dashboard() {
 
       {/* What the agent is doing right now, before any number. */}
       {!error && (agent || !loaded) && (
-        <div className="mt-6">
+        <div className="mt-6" data-tour="status">
           <AgentStatusBar
             state={agentState}
             agentName={agent?.name ?? ''}
@@ -269,7 +269,7 @@ export default function Dashboard() {
       {/* Stat strip: hairline-divided tiles, tabular figures, credit-score spectrum on
           reputation. Hover is a solid tonal shift only: dimming neighbours here made
           the numbers unreadable over the ambient field. */}
-      <div className="mt-4 grid grid-cols-2 gap-px overflow-hidden rounded-xl border border-border bg-border lg:grid-cols-4">
+      <div data-tour="stats" className="mt-4 grid grid-cols-2 gap-px overflow-hidden rounded-xl border border-border bg-border lg:grid-cols-4">
         <StatTile to="/app/agent-id" label="Reputation" value={rep != null ? String(rep) : dash} sub={rep != null ? `${gradeOf(rep)} · / 1000` : 'from real activity'} loading={rep == null && !loaded} readAt={rep != null ? readAt : null}>
           {rep != null ? (
             <div className="mt-2 mb-0.5 h-1.5 w-full rounded-full" style={{ background: 'linear-gradient(90deg,var(--danger),var(--warn) 45%,var(--ok))' }}>
@@ -342,7 +342,7 @@ export default function Dashboard() {
           {/* One row per network: the official mark on a token disc, the name, and a
               quiet status. The live rail leads with its real agent count; planned
               rails stay visibly planned instead of wearing nine loud colours. */}
-          <ul className="divide-y divide-border overflow-hidden rounded-xl border border-border bg-background/40">
+          <ul data-tour="network" className="divide-y divide-border overflow-hidden rounded-xl border border-border bg-background/40">
             {CHAINS.map((c) => (
               <li key={c.id} className="flex items-center gap-3 px-3.5 py-2.5 transition-colors duration-[120ms] hover:bg-foreground/[0.02]">
                 <ChainLogo id={c.id} size={26} />

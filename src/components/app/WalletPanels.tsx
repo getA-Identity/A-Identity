@@ -192,6 +192,9 @@ export function TreasuryPanel({ agentId }: { agentId: string }) {
   const [previewing, setPreviewing] = useState(false)
   const [savedTick, setSavedTick] = useState(false)
   const [err, setErr] = useState<string | null>(null)
+  // The full explanation folds away: a first visit reads one sentence and three
+  // controls, not three paragraphs.
+  const [how, setHow] = useState(false)
 
   const load = useCallback(
     async (capUsd?: string, opts?: { syncCap?: boolean; quiet?: boolean }) => {
@@ -306,11 +309,31 @@ export function TreasuryPanel({ agentId }: { agentId: string }) {
         )}
       </div>
 
-      <p className="mt-3 text-xs leading-relaxed text-foreground/55">
-        Put the agent's idle stablecoin to work. Anything above your working capital cap earns yield in <b>USYC</b>,
-        Circle's tokenized money market fund on Arc, and redeems back to USDC when the agent needs to spend. You review
-        the projection and authorize. Nothing moves on its own.
-      </p>
+      <div className="mt-3 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-foreground/55">
+        <span>Idle balance above your cap earns yield in USYC. Nothing moves without your approval.</span>
+        <button
+          type="button"
+          onClick={() => setHow((v) => !v)}
+          aria-expanded={how}
+          className="font-semibold text-emerald-700 dark:text-emerald-300 hover:underline"
+        >
+          {how ? 'Hide how it works' : 'How it works'}
+        </button>
+      </div>
+      <div className={`cn-collapse ${how ? 'cn-open' : ''}`}>
+        <div className="pt-3">
+          <p className="text-xs leading-relaxed text-foreground/55">
+            Put the agent's idle stablecoin to work. Anything above your working capital cap earns yield in <b>USYC</b>,
+            Circle's tokenized money market fund on Arc, and redeems back to USDC when the agent needs to spend. You review
+            the projection and authorize. Nothing moves on its own.
+          </p>
+          <ol className="mt-2 grid gap-2 rounded-2xl border border-emerald-200/60 dark:border-emerald-500/25 bg-card/60 p-3 text-[11px] leading-relaxed text-foreground/60 sm:grid-cols-3">
+            <li><span className="font-semibold text-foreground/75">1. Set a cap.</span> How much idle USDC/EURC to keep liquid for spending.</li>
+            <li><span className="font-semibold text-foreground/75">2. Preview.</span> Anything above the cap is "deployable" and its projected yield is shown.</li>
+            <li><span className="font-semibold text-foreground/75">3. Authorize.</span> You approve; the surplus earmarks into USYC. Nothing moves on its own.</li>
+          </ol>
+        </div>
+      </div>
 
       {loading ? (
         <div className="mt-5 space-y-5">
@@ -345,13 +368,6 @@ export function TreasuryPanel({ agentId }: { agentId: string }) {
         </div>
       ) : (
         <div className="mt-5 space-y-5">
-          {/* Plain 3-step explainer, so the panel is self-documenting for a first-time user. */}
-          <ol className="grid gap-2 rounded-2xl border border-emerald-200/60 dark:border-emerald-500/25 bg-card/60 p-3 text-[11px] leading-relaxed text-foreground/60 sm:grid-cols-3">
-            <li><span className="font-semibold text-foreground/75">1. Set a cap.</span> How much idle USDC/EURC to keep liquid for spending.</li>
-            <li><span className="font-semibold text-foreground/75">2. Preview.</span> Anything above the cap is "deployable" and its projected yield is shown.</li>
-            <li><span className="font-semibold text-foreground/75">3. Authorize.</span> You approve; the surplus earmarks into USYC. Nothing moves on its own.</li>
-          </ol>
-
           <div>
             <div className="mb-2 text-[11px] font-medium text-foreground/45">Wallet Balances</div>
             <div className="grid grid-cols-3 gap-2.5">

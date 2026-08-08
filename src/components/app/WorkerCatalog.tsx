@@ -265,24 +265,19 @@ export default function WorkerCatalog() {
       )}
 
       {loading && !error && (
-        <div className="mt-6 grid items-start gap-4 sm:grid-cols-2 lg:grid-cols-3">
+        <div className="mt-6 divide-y divide-border overflow-hidden rounded-2xl border border-border bg-card">
           {Array.from({ length: 6 }).map((_, i) => (
-            <div key={i} className="flex flex-col rounded-2xl border border-border bg-card p-5">
-              <div className="flex items-start justify-between gap-2">
-                <div className="min-w-0 space-y-2">
-                  <Skeleton className="h-4 w-32" />
-                  <Skeleton className="h-3 w-24" />
-                </div>
-                <div className="flex shrink-0 flex-col items-end gap-2">
-                  <Skeleton className="h-4 w-16" />
-                  <Skeleton className="h-3 w-10" />
-                </div>
+            <div key={i} className="flex items-center gap-4 px-5 py-4">
+              <div className="min-w-0 flex-1 space-y-2">
+                <Skeleton className="h-4 w-40" />
+                <Skeleton className="h-3 w-56" />
               </div>
-              <div className="mt-3 flex flex-wrap gap-2">
-                <Skeleton className="h-5 w-24 rounded-full" />
-                <Skeleton className="h-5 w-16 rounded-full" />
+              <Skeleton className="hidden h-3 w-24 sm:block" />
+              <div className="flex shrink-0 flex-col items-end gap-1.5">
+                <Skeleton className="h-4 w-20" />
+                <Skeleton className="h-3 w-12" />
               </div>
-              <Skeleton className="mt-4 h-9 w-full rounded-full" />
+              <Skeleton className="h-8 w-16 rounded-full" />
             </div>
           ))}
         </div>
@@ -300,82 +295,95 @@ export default function WorkerCatalog() {
         </div>
       )}
 
-      {/* Catalog grid (the card grid) */}
-      <div className="mt-6 grid items-start gap-4 sm:grid-cols-2 lg:grid-cols-3">
+      {/* Catalog. One row per service in a single container: the wall of identical
+          violet buttons is gone; the PRICE is the strong element on each row and Hire
+          is a quiet outline action that expands the brief inline. Since every worker
+          here passed KYA (the heading already says so), the check is a small quiet
+          mark instead of a shouting pill on every row. */}
+      {!loading && services.length > 0 && (
+      <div className="mt-6 divide-y divide-border overflow-hidden rounded-2xl border border-border bg-card">
         {services.map((svc) => {
           const key = `${svc.agentId}::${svc.service}`
           const open = hiringKey === key
           return (
-            <div key={key} className="flex flex-col rounded-2xl border border-border bg-card p-5">
-              <div className="flex items-start justify-between gap-2">
-                <div className="min-w-0">
-                  <div className="truncate font-bold text-foreground">{svc.service}</div>
-                  <div className="truncate text-xs text-foreground/50">
+            <div key={key} className="px-5 py-4 transition-colors duration-[120ms] hover:bg-foreground/[0.02]">
+              <div className="flex flex-wrap items-center gap-4">
+                <div className="min-w-0 flex-1">
+                  <div className="flex items-center gap-1.5">
+                    <span className="truncate font-semibold capitalize text-foreground">{svc.service}</span>
+                    <BadgeCheck size={14} className="shrink-0 text-ok" aria-label="KYA verified" />
+                  </div>
+                  <div className="mt-0.5 truncate text-xs text-foreground/45">
                     by {svc.agentName} · {svc.category}
                   </div>
                 </div>
-                <div className="shrink-0 text-right">
-                  <div className="font-bold text-accent">{svc.priceUsd.toFixed(2)} USDC</div>
-                  <div className="text-[11px] text-foreground/45">{svc.unit}</div>
+
+                <div className="hidden items-center gap-1.5 text-xs text-foreground/50 sm:flex">
+                  <Star size={12} className="text-warn" fill="currentColor" />
+                  {ratingLabel(svc.rating, svc.reviews)}
+                  <span className="text-foreground/30">·</span>
+                  <span className="tabular-nums">{svc.completed} done</span>
                 </div>
-              </div>
 
-              <div className="mt-3 flex flex-wrap items-center gap-2 text-[11px]">
-                <span className="inline-flex items-center gap-1 rounded-full bg-emerald-100 dark:bg-emerald-500/15 px-2 py-0.5 font-bold text-emerald-700 dark:text-emerald-300">
-                  <BadgeCheck size={11} /> KYA verified
-                </span>
-                <span className="inline-flex items-center gap-1 text-foreground/55">
-                  <Star size={11} className="text-amber-500" fill="currentColor" /> {ratingLabel(svc.rating, svc.reviews)}
-                </span>
-                <span className="text-foreground/40">· {svc.completed} done</span>
-              </div>
+                <div className="shrink-0 text-right">
+                  <div className="text-sm font-bold tabular-nums text-foreground">{svc.priceUsd.toFixed(2)} USDC</div>
+                  <div className="text-[11px] text-foreground/40">{svc.unit}</div>
+                </div>
 
-              {!open ? (
                 <button
                   type="button"
                   onClick={() => {
-                    setHiringKey(key)
-                    setDesc('')
-                    setBusyNote(key, '')
+                    if (open) {
+                      setHiringKey(null)
+                    } else {
+                      setHiringKey(key)
+                      setDesc('')
+                      setBusyNote(key, '')
+                    }
                   }}
-                  className="mt-4 inline-flex items-center justify-center gap-2 rounded-full bg-accent px-4 py-2 text-sm font-semibold text-white transition-transform hover:scale-[1.03]"
+                  aria-expanded={open}
+                  className={`shrink-0 rounded-full border px-4 py-1.5 text-xs font-semibold transition-colors duration-[120ms] ${
+                    open
+                      ? 'border-foreground/15 text-foreground/60 hover:bg-foreground/5'
+                      : 'border-accent/40 text-accent hover:bg-accent/5'
+                  }`}
                 >
-                  Hire
+                  {open ? 'Cancel' : 'Hire'}
                 </button>
-              ) : (
-                <div className="mt-4">
+              </div>
+
+              {/* Inline brief: expands under the row via the animated grid track. */}
+              <div className={`cn-collapse ${open ? 'cn-open' : ''}`}>
+                <div className="pt-3">
                   <textarea
-                    value={desc}
+                    value={open ? desc : ''}
                     onChange={(e) => setDesc(e.target.value)}
                     rows={3}
                     placeholder={`What should ${svc.agentName} do? (e.g. "Translate this paragraph to French")`}
-                    className="w-full resize-none rounded-xl border border-foreground/15 bg-background px-3 py-2 text-sm text-foreground placeholder:text-foreground/40 focus-visible:outline-2 focus-visible:outline-accent"
+                    className="w-full resize-none rounded-xl border border-border bg-background px-3 py-2 text-sm text-foreground placeholder:text-foreground/40"
                   />
                   <div className="mt-2 flex items-center gap-2">
                     <button
                       type="button"
                       onClick={() => hire(svc)}
                       disabled={busy === key}
-                      className="inline-flex items-center gap-1.5 rounded-full bg-accent px-4 py-2 text-sm font-semibold text-white disabled:opacity-50"
+                      className="inline-flex items-center gap-1.5 rounded-full bg-accent px-4 py-2 text-sm font-semibold text-white transition-colors duration-[120ms] hover:bg-accent-deep disabled:opacity-50"
                     >
                       {busy === key ? <Loader2 size={14} className="animate-spin" /> : null}
                       Fund escrow &amp; hire
                     </button>
-                    <button
-                      type="button"
-                      onClick={() => setHiringKey(null)}
-                      className="rounded-full border border-foreground/15 px-3 py-2 text-sm font-semibold text-foreground/60 hover:bg-foreground/5"
-                    >
-                      Cancel
-                    </button>
+                    <span className="text-[11px] text-foreground/40">
+                      {svc.priceUsd.toFixed(2)} USDC locks in escrow, released on delivery.
+                    </span>
                   </div>
                 </div>
-              )}
-              {note[key] && <p className="mt-2 text-[11px] text-amber-700 dark:text-amber-300">{note[key]}</p>}
+              </div>
+              {note[key] && <p className="mt-2 text-[11px] text-warn">{note[key]}</p>}
             </div>
           )
         })}
       </div>
+      )}
 
       {/* Open tasks: post a task, verified agents bid, you accept the best */}
       <div className="mt-10">

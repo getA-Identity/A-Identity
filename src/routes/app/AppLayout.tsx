@@ -2,6 +2,7 @@ import { Suspense, useEffect, useRef, useState } from 'react'
 import { Link, NavLink, useLocation, useNavigate } from 'react-router-dom'
 import {
   ArrowLeftRight,
+  Compass,
   Coins,
   CreditCard,
   Fingerprint,
@@ -15,6 +16,7 @@ import {
   X,
 } from 'lucide-react'
 import CommandBar from '../../components/app/CommandBar'
+import ConsoleTour, { TOUR_STORAGE_KEY } from '../../components/app/ConsoleTour'
 import DotField from '../../components/app/DotField'
 import Logo from '../../components/Logo'
 import ThemeToggle from '../../components/ThemeToggle'
@@ -178,6 +180,29 @@ export default function AppLayout() {
     return () => clearTimeout(t)
   }, [theme])
 
+  // First-run guided tour. Opens once per browser after the boot choreography has
+  // finished (so the spotlight never chases elements that are still animating in),
+  // and can be replayed any time from the account menu. Replays from a non-Overview
+  // screen walk back to Overview first, where every stop of the tour exists.
+  const [tourOpen, setTourOpen] = useState(false)
+  useEffect(() => {
+    try {
+      if (localStorage.getItem(TOUR_STORAGE_KEY)) return
+    } catch {
+      return
+    }
+    const t = setTimeout(() => setTourOpen(true), 1400)
+    return () => clearTimeout(t)
+  }, [])
+  const replayTour = () => {
+    if (location.pathname !== '/app') {
+      navigate('/app')
+      setTimeout(() => setTourOpen(true), 900)
+    } else {
+      setTourOpen(true)
+    }
+  }
+
   // Screen transitions: pages render the committed location; the old screen exits
   // for 200ms, then the new one enters with a row stagger.
   const { node, screenKey, phase } = useScreenTransition()
@@ -279,7 +304,7 @@ export default function AppLayout() {
       className={`console-shell ${theme === 'dark' ? 'dark' : ''} ${flipping ? 'cn-theme-flip' : ''} grid h-dvh w-full grid-cols-1 overflow-hidden bg-background text-foreground [grid-template-rows:minmax(0,1fr)] md:grid-cols-[16rem_1fr]`}
     >
       {/* Desktop rail: borderless, on the bare canvas, staggered in on mount. */}
-      <aside className="cn-rail-anim hidden h-full min-h-0 flex-col px-4 py-6 md:flex">{railContent}</aside>
+      <aside data-tour="rail" className="cn-rail-anim hidden h-full min-h-0 flex-col px-4 py-6 md:flex">{railContent}</aside>
 
       {/* Mobile drawer + scrim */}
       {drawerOpen && (
@@ -332,6 +357,7 @@ export default function AppLayout() {
             <div className="flex shrink-0 items-center gap-2.5">
               <button
                 type="button"
+                data-tour="command"
                 onClick={() => setCmdOpen(true)}
                 className="hidden items-center gap-2 rounded-lg border border-border px-2.5 py-1.5 text-xs text-foreground/50 transition-colors duration-[120ms] hover:bg-foreground/[0.04] hover:text-foreground/70 sm:flex"
               >
@@ -356,6 +382,7 @@ export default function AppLayout() {
                 <DropdownMenuTrigger asChild>
                   <button
                     type="button"
+                    data-tour="account"
                     aria-label="Account menu"
                     className="grid h-8 w-8 place-items-center rounded-full bg-accent text-[11px] font-bold text-white outline-none transition-transform duration-[120ms] hover:scale-105 data-[state=open]:ring-2 data-[state=open]:ring-ring data-[state=open]:ring-offset-2 data-[state=open]:ring-offset-card"
                   >
@@ -388,6 +415,10 @@ export default function AppLayout() {
                       Sign in to act (guest is read-only)
                     </DropdownMenuItem>
                   )}
+                  <DropdownMenuItem onSelect={replayTour}>
+                    <Compass size={14} />
+                    Replay the tour
+                  </DropdownMenuItem>
                   <DropdownMenuSeparator />
                   <DropdownMenuItem onSelect={onLogout} className="text-danger focus:text-danger">
                     <LogOut size={14} />
@@ -443,6 +474,7 @@ export default function AppLayout() {
       </div>
 
       <CommandBar open={cmdOpen} onClose={() => setCmdOpen(false)} />
+      <ConsoleTour open={tourOpen} onClose={() => setTourOpen(false)} />
     </div>
   )
 }
