@@ -52,10 +52,13 @@ test('getChain returns undefined for unknown chain', () => {
   assert.equal(getChain('eip155:999999999'), undefined)
 })
 
-test('Arc is the one live chain and carries all its known contracts', () => {
+test('Arc, X Layer (live) and Base (beta) are the wired chains; Arc carries all its known contracts', () => {
+  // Product decision 2026-08-08: X Layer identity is live (OKX ERC-8004 reads),
+  // Base testnet is active via the Gateway demo, so it is beta.
   const live = liveChains()
-  assert.equal(live.length, 1)
-  assert.equal(live[0].id, 'arc')
+  assert.deepEqual(live.map((c) => c.id).sort(), ['arc', 'base', 'xlayer'])
+  assert.equal(live.find((c) => c.id === 'xlayer')?.status, 'live')
+  assert.equal(live.find((c) => c.id === 'base')?.status, 'beta')
   assert.equal(ARC_CHAIN.id, 'arc')
   // Guard the exact live Arc addresses against silent drift.
   assert.equal(ARC_CHAIN.contracts.identityRegistry, '0x8004A818BFB912233c491871b3d84c89A494BD9e')
@@ -70,8 +73,8 @@ test('Arc is the one live chain and carries all its known contracts', () => {
   assert.equal(ARC_CHAIN.signerEnvVar, 'ARC_SIGNER_KEY')
 })
 
-test('every chain other than Arc is present and planned', () => {
-  for (const id of ['base', 'arbitrum', 'avalanche', 'xlayer', 'rhchain', 'rhchain-testnet', 'stellar', 'solana']) {
+test('every roadmap chain is present and planned', () => {
+  for (const id of ['arbitrum', 'avalanche', 'rhchain', 'rhchain-testnet', 'stellar', 'solana', 'celo']) {
     const c = getChainById(id)
     assert.ok(c, `${id} missing from registry`)
     assert.equal(c.status, 'planned', `${id} should be planned`)
@@ -86,7 +89,7 @@ test('the planned set is mostly EVM, with two non-EVM', () => {
 
 test('evmChains covers Arc and every planned EVM chain', () => {
   const ids = evmChains().map((c) => c.id).sort()
-  assert.deepEqual(ids, ['arbitrum', 'arc', 'avalanche', 'base', 'rhchain', 'rhchain-testnet', 'xlayer'])
+  assert.deepEqual(ids, ['arbitrum', 'arc', 'avalanche', 'base', 'celo', 'rhchain', 'rhchain-testnet', 'xlayer'])
 })
 
 // ── Robinhood Chain (Phase 6.1) ──────────────────────────────────────────────────

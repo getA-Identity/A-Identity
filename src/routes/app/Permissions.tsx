@@ -246,7 +246,7 @@ export default function Permissions() {
           {/* Surface tabs. Payments is the USDC policy on Arc; Trading is the brokerage
               action policy. They are separate on purpose: the two govern different
               surfaces, and merging them would put payee allowlists next to tickers. */}
-          <div className="mt-5 flex flex-wrap gap-1.5 border-b border-border pb-3" role="tablist" aria-label="Permission surfaces">
+          <div data-tour="tabs" className="mt-5 flex flex-wrap gap-1.5 border-b border-border pb-3" role="tablist" aria-label="Permission surfaces">
             {([
               ['payments', 'Payments'],
               ['trading', 'Trading'],
@@ -275,7 +275,7 @@ export default function Permissions() {
           {shownTab === 'payments' && (
           <>
           {/* Daily limit status */}
-          <div className="mt-5 rounded-2xl border border-border bg-card p-5">
+          <div data-tour="today" className="mt-5 rounded-2xl border border-border bg-card p-5">
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-2 text-sm font-semibold text-foreground">
                 <CreditCard size={16} className="text-usdc" />
@@ -306,7 +306,7 @@ export default function Permissions() {
           </div>
 
           {/* Spending limits (editable) */}
-          <section className="mt-4 rounded-2xl border border-border bg-card p-6">
+          <section data-tour="limits" className="mt-4 rounded-2xl border border-border bg-card p-6">
             <h3 className="mb-4 font-semibold text-foreground">Spending limits</h3>
             <div className="grid gap-4 sm:grid-cols-2">
               <div>
@@ -333,7 +333,7 @@ export default function Permissions() {
           </section>
 
           {/* Access controls (toggles) */}
-          <section className="mt-4 rounded-2xl border border-border bg-card p-6">
+          <section data-tour="access" className="mt-4 rounded-2xl border border-border bg-card p-6">
             <div className="mb-4 flex items-center gap-2">
               <div className="grid h-8 w-8 place-items-center rounded-lg bg-ok text-white">
                 <Shield size={15} />
@@ -391,7 +391,7 @@ export default function Permissions() {
           </section>
 
           {/* Safety */}
-          <section className="mt-4 rounded-2xl border border-border bg-card p-6">
+          <section data-tour="safety" className="mt-4 rounded-2xl border border-border bg-card p-6">
             <div className="mb-4 flex items-center gap-2">
               <div className="grid h-8 w-8 place-items-center rounded-lg bg-red-500 text-white">
                 <Snowflake size={15} />
@@ -411,7 +411,7 @@ export default function Permissions() {
 
           {/* Save. A confirmed save blooms once (accent glow, see console.css): the
               moment the rules changed deserves a beat more than a label swap. */}
-          <div className="mt-4 flex items-center gap-3">
+          <div data-tour="save" className="mt-4 flex items-center gap-3">
             <button
               type="button"
               onClick={save}

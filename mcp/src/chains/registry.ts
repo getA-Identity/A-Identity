@@ -24,7 +24,8 @@ import { evmChainIdFromCaip2, isValidCaip2 } from './caip.js'
 const CREATE2_FACTORY = '0x4e59b44847B379578588920cA78FbF26c0B4956C'
 
 export const CHAINS: ChainDescriptor[] = [
-  // ── LIVE ────────────────────────────────────────────────────────────────────
+  // Order is the console's display order (Overview -> Network). Statuses:
+  // live = wired end to end today, beta = testnet active, planned = roadmap.
   {
     caip2: 'eip155:5042002',
     id: 'arc',
@@ -65,18 +66,80 @@ export const CHAINS: ChainDescriptor[] = [
     identity: { standard: 'ERC-8004', erc8004Native: true },
     payment: { x402: true, note: 'Gas in USDC, App Kit (Gateway) unified balance, nanopayments.' },
   },
-
-  // ── PLANNED: EVM (one adapter covers all of these) ────────────────────────────
+  {
+    caip2: 'stellar:testnet',
+    id: 'stellar',
+    name: 'Stellar Testnet',
+    shortName: 'Stellar',
+    color: '#7D00FF',
+    role: 'Fast, low-cost settlement: USDC + EURC native (Circle), Soroban contracts.',
+    ecosystem: 'stellar',
+    testnet: true,
+    status: 'planned',
+    evmChainId: null,
+    cctpDomain: 27,
+    nativeCurrency: { name: 'Lumen', symbol: 'XLM', decimals: 7 },
+    usdcDecimals: 7, // Stellar assets use 7 decimals
+    rpcUrls: ['https://soroban-testnet.stellar.org'],
+    explorer: 'https://stellar.expert/explorer/testnet',
+    faucet: 'https://friendbot.stellar.org',
+    contracts: {
+      // Soroban AgentSpendPolicy (Rust) + a Soroban identity registry, to be deployed.
+      // USDC is a SEP-41 SAC contract (C...) — fill in once integrated.
+    },
+    confirmations: 1, // Stellar has fast, deterministic finality
+    stablecoins: ['USDC', 'EURC'],
+    signerEnvVar: 'STELLAR_SIGNER_SECRET',
+    rpcEnvVar: 'STELLAR_RPC_URL',
+    identity: {
+      standard: 'Soroban registry + SEP-10',
+      erc8004Native: false,
+      note: 'No native ERC-8004 (EVM-only). Identity via Soroban registry / SEP-10; ERC-8004 passport bridged.',
+    },
+    payment: { x402: true, note: 'x402 settlement in USDC via SEP-41 SAC; fee sponsorship for gasless.' },
+  },
+  {
+    caip2: 'eip155:196',
+    id: 'xlayer',
+    name: 'OKX X Layer',
+    shortName: 'X Layer',
+    // OKX's brand is black/white, which is unreadable as chip text in one of the two
+    // themes, so this is a neutral mid-grey rather than a brand claim.
+    color: '#8A8F98',
+    role: 'OKX.AI marketplace rail: identity reads live from OKX ERC-8004; x402 trust tools settle here.',
+    ecosystem: 'evm',
+    testnet: false,
+    status: 'live',
+    evmChainId: 196,
+    cctpDomain: null, // verify CCTP support before integrating
+    nativeCurrency: { name: 'OKB', symbol: 'OKB', decimals: 18 },
+    usdcDecimals: 6,
+    rpcUrls: ['https://rpc.xlayer.tech'],
+    explorer: 'https://www.oklink.com/xlayer',
+    contracts: {
+      // OKX.AI's live ERC-8004 IdentityRegistry (verified: our ASP identities #6271/#8913
+      // resolve via ownerOf; tokenURI serves the OKX CDN agent card). Payments still
+      // pending: verify the canonical USDC address on X Layer before wiring them.
+      identityRegistry: '0x8004a169fb4a3325136eb29fa0ceb6d2e539a432',
+      create2Factory: CREATE2_FACTORY,
+    },
+    confirmations: 5,
+    stablecoins: ['USDC', 'USDT'],
+    signerEnvVar: 'XLAYER_SIGNER_KEY',
+    rpcEnvVar: 'XLAYER_RPC_URL',
+    identity: { standard: 'ERC-8004', erc8004Native: true, note: 'OKX.AI identity registry LIVE (read-side wired); payment rails still planned.' },
+    payment: { x402: true, note: 'x402 over USDC once the USDC address is confirmed.' },
+  },
   {
     caip2: 'eip155:8453',
     id: 'base',
     name: 'Base',
     shortName: 'Base',
     color: '#0052FF',
-    role: 'EVM fallback: ERC-8004 compatible, Coinbase ecosystem, low fees.',
+    role: 'EVM fallback: ERC-8004 compatible, Coinbase ecosystem, low fees. Testnet active (Base Sepolia via Gateway demo).',
     ecosystem: 'evm',
     testnet: false,
-    status: 'planned',
+    status: 'beta',
     evmChainId: 8453,
     cctpDomain: 6,
     nativeCurrency: { name: 'Ether', symbol: 'ETH', decimals: 18 },
@@ -95,31 +158,36 @@ export const CHAINS: ChainDescriptor[] = [
     payment: { x402: true, note: 'x402 reference rail (Coinbase).' },
   },
   {
-    caip2: 'eip155:42161',
-    id: 'arbitrum',
-    name: 'Arbitrum One',
-    shortName: 'Arbitrum',
-    color: '#28A0F0',
-    role: 'DeFi gateway: large protocol ecosystem, USDC via Circle, ERC-8004 compatible.',
-    ecosystem: 'evm',
+    // NOTE: this is the Solana MAINNET CAIP-2 reference (a truncated genesis hash).
+    // Devnet's reference differs; swap it in when integrating devnet first.
+    caip2: 'solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp',
+    id: 'solana',
+    name: 'Solana',
+    shortName: 'Solana',
+    color: '#14F195',
+    role: 'High-throughput settlement: SPL USDC, sub-second confirmation.',
+    ecosystem: 'solana',
     testnet: false,
     status: 'planned',
-    evmChainId: 42161,
-    cctpDomain: 3,
-    nativeCurrency: { name: 'Ether', symbol: 'ETH', decimals: 18 },
-    usdcDecimals: 6,
-    rpcUrls: ['https://arb1.arbitrum.io/rpc'],
-    explorer: 'https://arbiscan.io',
+    evmChainId: null,
+    cctpDomain: 5,
+    nativeCurrency: { name: 'Solana', symbol: 'SOL', decimals: 9 },
+    usdcDecimals: 6, // SPL USDC is 6 decimals
+    rpcUrls: ['https://api.mainnet-beta.solana.com'],
+    explorer: 'https://explorer.solana.com',
     contracts: {
-      usdc: '0xaf88d065e77c8cC2239327C5EDb3A432268e5831', // native Circle USDC on Arbitrum One
-      create2Factory: CREATE2_FACTORY,
+      usdc: 'EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v', // SPL USDC mint
     },
-    confirmations: 3,
+    confirmations: 1, // "finalized" commitment
     stablecoins: ['USDC', 'USDT'],
-    signerEnvVar: 'ARB_SIGNER_KEY',
-    rpcEnvVar: 'ARB_RPC_URL',
-    identity: { standard: 'ERC-8004', erc8004Native: true, note: 'ERC-8004 registry to be deployed.' },
-    payment: { x402: true, note: 'x402 over USDC on Arbitrum One.' },
+    signerEnvVar: 'SOLANA_SIGNER_SECRET',
+    rpcEnvVar: 'SOLANA_RPC_URL',
+    identity: {
+      standard: 'Anchor registry program',
+      erc8004Native: false,
+      note: 'No native ERC-8004 (EVM-only). Identity via an Anchor registry program; ERC-8004 passport bridged.',
+    },
+    payment: { x402: true, note: 'x402 settlement in SPL USDC.' },
   },
   {
     caip2: 'eip155:43114',
@@ -149,44 +217,32 @@ export const CHAINS: ChainDescriptor[] = [
     payment: { x402: true, note: 'x402 over USDC on Avalanche.' },
   },
   {
-    caip2: 'eip155:196',
-    id: 'xlayer',
-    name: 'OKX X Layer',
-    shortName: 'X Layer',
-    // OKX's brand is black/white, which is unreadable as chip text in one of the two
-    // themes, so this is a neutral mid-grey rather than a brand claim.
-    color: '#8A8F98',
-    role: 'OKX.AI marketplace rail: identity reads live from OKX ERC-8004; x402 trust tools settle here.',
+    caip2: 'eip155:42161',
+    id: 'arbitrum',
+    name: 'Arbitrum One',
+    shortName: 'Arbitrum',
+    color: '#28A0F0',
+    role: 'DeFi gateway: large protocol ecosystem, USDC via Circle, ERC-8004 compatible.',
     ecosystem: 'evm',
     testnet: false,
     status: 'planned',
-    evmChainId: 196,
-    cctpDomain: null, // verify CCTP support before integrating
-    nativeCurrency: { name: 'OKB', symbol: 'OKB', decimals: 18 },
+    evmChainId: 42161,
+    cctpDomain: 3,
+    nativeCurrency: { name: 'Ether', symbol: 'ETH', decimals: 18 },
     usdcDecimals: 6,
-    rpcUrls: ['https://rpc.xlayer.tech'],
-    explorer: 'https://www.oklink.com/xlayer',
+    rpcUrls: ['https://arb1.arbitrum.io/rpc'],
+    explorer: 'https://arbiscan.io',
     contracts: {
-      // OKX.AI's live ERC-8004 IdentityRegistry (verified: our ASP identities #6271/#8913
-      // resolve via ownerOf; tokenURI serves the OKX CDN agent card). Payments still
-      // pending: verify the canonical USDC address on X Layer before wiring them.
-      identityRegistry: '0x8004a169fb4a3325136eb29fa0ceb6d2e539a432',
+      usdc: '0xaf88d065e77c8cC2239327C5EDb3A432268e5831', // native Circle USDC on Arbitrum One
       create2Factory: CREATE2_FACTORY,
     },
-    confirmations: 5,
+    confirmations: 3,
     stablecoins: ['USDC', 'USDT'],
-    signerEnvVar: 'XLAYER_SIGNER_KEY',
-    rpcEnvVar: 'XLAYER_RPC_URL',
-    identity: { standard: 'ERC-8004', erc8004Native: true, note: 'OKX.AI identity registry LIVE (read-side wired); payment rails still planned.' },
-    payment: { x402: true, note: 'x402 over USDC once the USDC address is confirmed.' },
+    signerEnvVar: 'ARB_SIGNER_KEY',
+    rpcEnvVar: 'ARB_RPC_URL',
+    identity: { standard: 'ERC-8004', erc8004Native: true, note: 'ERC-8004 registry to be deployed.' },
+    payment: { x402: true, note: 'x402 over USDC on Arbitrum One.' },
   },
-
-  // ── PLANNED: Robinhood Chain (Phase 6.1) ──────────────────────────────────────
-  // Every value below was VERIFIED against the live RPCs, not copied from a doc:
-  //   mainnet eth_chainId -> 0x1237 (4663), testnet -> 0xb626 (46630), both producing blocks.
-  // Robinhood's own words: "a permissionless, Ethereum-compatible, Layer-2 blockchain",
-  // "anyone can interact with the network, build applications, and deploy smart contracts",
-  // an Arbitrum Orbit L2 using Ethereum blobs for data availability with ETH as gas.
   {
     caip2: 'eip155:46630',
     id: 'rhchain-testnet',
@@ -272,72 +328,6 @@ export const CHAINS: ChainDescriptor[] = [
     rpcEnvVar: 'CELO_RPC_URL',
     identity: { standard: 'ERC-8004', erc8004Native: true, note: 'ERC-8004 registry to be deployed.' },
     payment: { x402: true, note: 'x402 over USDC; fee abstraction lets gas be paid in stablecoins.' },
-  },
-
-  // ── PLANNED: non-EVM (each needs its own adapter + a native contract) ──────────
-  {
-    caip2: 'stellar:testnet',
-    id: 'stellar',
-    name: 'Stellar Testnet',
-    shortName: 'Stellar',
-    color: '#7D00FF',
-    role: 'Fast, low-cost settlement: USDC + EURC native (Circle), Soroban contracts.',
-    ecosystem: 'stellar',
-    testnet: true,
-    status: 'planned',
-    evmChainId: null,
-    cctpDomain: 27,
-    nativeCurrency: { name: 'Lumen', symbol: 'XLM', decimals: 7 },
-    usdcDecimals: 7, // Stellar assets use 7 decimals
-    rpcUrls: ['https://soroban-testnet.stellar.org'],
-    explorer: 'https://stellar.expert/explorer/testnet',
-    faucet: 'https://friendbot.stellar.org',
-    contracts: {
-      // Soroban AgentSpendPolicy (Rust) + a Soroban identity registry, to be deployed.
-      // USDC is a SEP-41 SAC contract (C...) — fill in once integrated.
-    },
-    confirmations: 1, // Stellar has fast, deterministic finality
-    stablecoins: ['USDC', 'EURC'],
-    signerEnvVar: 'STELLAR_SIGNER_SECRET',
-    rpcEnvVar: 'STELLAR_RPC_URL',
-    identity: {
-      standard: 'Soroban registry + SEP-10',
-      erc8004Native: false,
-      note: 'No native ERC-8004 (EVM-only). Identity via Soroban registry / SEP-10; ERC-8004 passport bridged.',
-    },
-    payment: { x402: true, note: 'x402 settlement in USDC via SEP-41 SAC; fee sponsorship for gasless.' },
-  },
-  {
-    // NOTE: this is the Solana MAINNET CAIP-2 reference (a truncated genesis hash).
-    // Devnet's reference differs; swap it in when integrating devnet first.
-    caip2: 'solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp',
-    id: 'solana',
-    name: 'Solana',
-    shortName: 'Solana',
-    color: '#14F195',
-    role: 'High-throughput settlement: SPL USDC, sub-second confirmation.',
-    ecosystem: 'solana',
-    testnet: false,
-    status: 'planned',
-    evmChainId: null,
-    cctpDomain: 5,
-    nativeCurrency: { name: 'Solana', symbol: 'SOL', decimals: 9 },
-    usdcDecimals: 6, // SPL USDC is 6 decimals
-    rpcUrls: ['https://api.mainnet-beta.solana.com'],
-    explorer: 'https://explorer.solana.com',
-    contracts: {
-      usdc: 'EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v', // SPL USDC mint
-    },
-    confirmations: 1, // "finalized" commitment
-    stablecoins: ['USDC', 'USDT'],
-    signerEnvVar: 'SOLANA_SIGNER_SECRET',
-    rpcEnvVar: 'SOLANA_RPC_URL',
-    identity: {
-      standard: 'Anchor registry program',
-      erc8004Native: false,
-      note: 'No native ERC-8004 (EVM-only). Identity via an Anchor registry program; ERC-8004 passport bridged.',
-    },
-    payment: { x402: true, note: 'x402 settlement in SPL USDC.' },
   },
 ]
 

@@ -236,7 +236,12 @@ export default function Dashboard() {
   return (
       <AppPage
         ambient
-        title={`Welcome back, ${user?.name ?? 'there'}.`}
+        title={
+          <span className="flex items-center gap-3">
+            <img src="/mascots/owl-soft.png" alt="" aria-hidden="true" className="h-10 w-10 shrink-0 object-contain" />
+            {`Welcome back, ${user?.name ?? 'there'}.`}
+          </span>
+        }
         description="Your agent console. Everything your agent needs to act, with you in the tower."
       >
       {error && (
@@ -261,7 +266,7 @@ export default function Dashboard() {
       )}
 
       {showChecklist && (
-        <div className="mt-4">
+        <div className="mt-4" data-tour="checklist">
           <SetupChecklist steps={steps} />
         </div>
       )}
@@ -281,11 +286,11 @@ export default function Dashboard() {
             <Skeleton className="mt-2 mb-0.5 h-1.5 w-full" />
           ) : null}
         </StatTile>
-        <StatTile to="/app/wallet" label="Wallet balance" value={balance != null ? balance.toFixed(2) : dash} sub="USDC on Arc" loading={balance == null && !loaded} readAt={balance != null ? readAt : null} />
+        <StatTile to="/app/wallet" label="Wallet Balance" value={balance != null ? balance.toFixed(2) : dash} sub="USDC on Arc" loading={balance == null && !loaded} readAt={balance != null ? readAt : null} />
         <StatTile to="/app/settlements" label="Settlements" value={settlements != null ? String(settlements) : dash} sub="settled on-chain" loading={settlements == null && !loaded} readAt={settlements != null ? readAt : null} />
         <StatTile
           to="/app/permissions"
-          label="Daily cap"
+          label="Daily Cap"
           value={p ? `$${p.dailyCapUsd}` : dash}
           sub={policy ? `$${policy.remainingTodayUsd.toFixed(2)} left today` : p ? `auto-approve $${p.autoApproveUnderUsd}` : 'set your limits'}
           loading={!p && !loaded}
@@ -314,7 +319,7 @@ export default function Dashboard() {
               screen is worse than one, so these rows stand down until setup is finished. */}
           {!showChecklist && (
             <>
-          <h3 className="mb-4 text-xs font-semibold uppercase tracking-wide text-foreground/50">Agent status</h3>
+          <h3 className="mb-4 text-sm font-bold text-foreground/80">Agent Status</h3>
           <ul className="flex flex-col gap-2">
             {statusItems.map(({ label, detail, ok, to, icon: Icon }) => (
               <li key={label} className="flex items-center justify-between gap-3 rounded-lg border border-border bg-background/40 px-4 py-3 transition-colors hover:bg-background">
@@ -338,7 +343,7 @@ export default function Dashboard() {
             </>
           )}
 
-          <h3 className={`mb-3 text-xs font-semibold uppercase tracking-wide text-foreground/50 ${showChecklist ? '' : 'mt-6'}`}>Network</h3>
+          <h3 className={`mb-3 text-sm font-bold text-foreground/80 ${showChecklist ? '' : 'mt-6'}`}>Network</h3>
           {/* One row per network: the official mark on a token disc, the name, and a
               quiet status. The live rail leads with its real agent count; planned
               rails stay visibly planned instead of wearing nine loud colours. */}
@@ -348,7 +353,7 @@ export default function Dashboard() {
                 <ChainLogo id={c.id} size={26} />
                 <div className="min-w-0 flex-1">
                   <div className="flex items-center gap-2">
-                    <span className="text-sm font-semibold text-foreground">{c.shortName}</span>
+                    <span className="text-sm font-semibold text-foreground">{c.id === 'arc' ? 'Circle Arc' : c.shortName}</span>
                     {c.status === 'live' ? (
                       <Badge variant="success" className="px-2 py-0.5 text-[10px]">live</Badge>
                     ) : (
@@ -387,11 +392,15 @@ export default function Dashboard() {
 
         <div className="flex flex-col gap-4">
         {/* What the money actually did this week, before the individual events. */}
-        {agent && <SpendSummary instructions={instructions} loading={readAt == null} />}
+        {agent && (
+          <div data-tour="last7">
+            <SpendSummary instructions={instructions} loading={readAt == null} />
+          </div>
+        )}
 
         {/* Activity feed */}
-        <div className="rounded-xl border border-border bg-card p-6">
-          <h3 className="mb-4 text-xs font-semibold uppercase tracking-wide text-foreground/50">Recent activity</h3>
+        <div data-tour="activity" className="rounded-xl border border-border bg-card p-6">
+          <h3 className="mb-4 text-sm font-bold text-foreground/80">Recent Activity</h3>
           {activity.length > 0 ? (
             <ul className="flex flex-col gap-4">
               {activity.map((a, i) => (
@@ -399,7 +408,7 @@ export default function Dashboard() {
                   <span className="mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full bg-accent" />
                   <span className="min-w-0 break-words text-foreground/70">
                     {humanizeActivity(a.text)}
-                    <span className="mt-0.5 block text-[11px] text-foreground/35">{ago(a.at)}</span>
+                    <span className="mt-0.5 block text-[11px] font-semibold text-accent/90">{ago(a.at)}</span>
                   </span>
                 </li>
               ))}
@@ -438,17 +447,17 @@ function StatTile({ to, label, value, sub, loading, readAt, children }: { to: st
       to={to}
       className="group flex flex-col bg-card p-5 transition-colors duration-[120ms] hover:bg-[color-mix(in_srgb,var(--card)_94%,var(--foreground))]"
     >
-      <div className="text-[11px] font-medium uppercase tracking-wide text-foreground/45">{label}</div>
+      <div className="text-sm font-semibold text-foreground/70">{label}</div>
       {loading ? (
         <Skeleton className="mt-1.5 h-8 w-16" />
       ) : (
-        <div className="mt-1.5 text-3xl font-bold tabular-nums tracking-tight text-foreground">{value}</div>
+        <div className="mt-1.5 text-2xl font-bold tabular-nums tracking-tight text-foreground">{value}</div>
       )}
       {children}
       {loading ? (
         <Skeleton className="mt-1 h-3 w-24" />
       ) : (
-        <div className="mt-1 text-[11px] text-foreground/40">{sub}</div>
+        <div className="mt-1 text-[11px] text-foreground/55">{sub}</div>
       )}
       {/* When the figure was read. Only rendered for figures we actually hold. */}
       <Freshness at={readAt ?? null} className="mt-0.5 text-[10px] text-foreground/30" />

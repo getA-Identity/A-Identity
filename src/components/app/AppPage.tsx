@@ -42,7 +42,7 @@ export default function AppPage({
       <header className="console-page-head relative flex flex-wrap items-start justify-between gap-4">
         <div className="min-w-0 max-w-2xl">
           <h1 className="text-2xl font-bold tracking-tight">{title}</h1>
-          {description && <p className="mt-1 text-sm text-foreground/55">{description}</p>}
+          {description && <p className="mt-1 text-sm text-foreground/70">{description}</p>}
         </div>
         {actions && <div className="shrink-0">{actions}</div>}
       </header>

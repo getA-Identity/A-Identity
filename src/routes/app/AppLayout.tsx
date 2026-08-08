@@ -3,6 +3,7 @@ import { Link, NavLink, useLocation, useNavigate } from 'react-router-dom'
 import {
   ArrowLeftRight,
   Compass,
+  HelpCircle,
   Coins,
   CreditCard,
   Fingerprint,
@@ -16,7 +17,8 @@ import {
   X,
 } from 'lucide-react'
 import CommandBar from '../../components/app/CommandBar'
-import ConsoleTour, { TOUR_STORAGE_KEY } from '../../components/app/ConsoleTour'
+import ConsoleTour from '../../components/app/ConsoleTour'
+import { TOURS } from '../../components/app/tours'
 import DotField from '../../components/app/DotField'
 import Logo from '../../components/Logo'
 import ThemeToggle from '../../components/ThemeToggle'
@@ -180,27 +182,24 @@ export default function AppLayout() {
     return () => clearTimeout(t)
   }, [theme])
 
-  // First-run guided tour. Opens once per browser after the boot choreography has
-  // finished (so the spotlight never chases elements that are still animating in),
-  // and can be replayed any time from the account menu. Replays from a non-Overview
-  // screen walk back to Overview first, where every stop of the tour exists.
+  // Guided tours, one per screen. Each auto-opens on the FIRST visit to its
+  // screen (after the enter choreography settles) and can be replayed from the
+  // help button or the account menu. Seen-state is per page, per browser.
   const [tourOpen, setTourOpen] = useState(false)
+  const pageTour = TOURS[location.pathname]
   useEffect(() => {
+    setTourOpen(false)
+    if (!pageTour) return
     try {
-      if (localStorage.getItem(TOUR_STORAGE_KEY)) return
+      if (localStorage.getItem(pageTour.storageKey)) return
     } catch {
       return
     }
-    const t = setTimeout(() => setTourOpen(true), 1400)
+    const t = setTimeout(() => setTourOpen(true), 1300)
     return () => clearTimeout(t)
-  }, [])
+  }, [location.pathname, pageTour])
   const replayTour = () => {
-    if (location.pathname !== '/app') {
-      navigate('/app')
-      setTimeout(() => setTourOpen(true), 900)
-    } else {
-      setTourOpen(true)
-    }
+    if (pageTour) setTourOpen(true)
   }
 
   // Screen transitions: pages render the committed location; the old screen exits
@@ -374,6 +373,19 @@ export default function AppLayout() {
                 <Search size={16} />
               </button>
 
+              {/* Page tour: every screen explains itself on demand. */}
+              {pageTour && (
+                <button
+                  type="button"
+                  onClick={replayTour}
+                  aria-label="Show the page tour"
+                  title="Page tour"
+                  className="rounded-lg p-1.5 text-foreground/50 transition-colors duration-[120ms] hover:bg-foreground/[0.04] hover:text-foreground/75"
+                >
+                  <HelpCircle size={16} />
+                </button>
+              )}
+
               <ThemeToggle />
 
               {/* Account menu. The avatar is a real control now: who you are, how the
@@ -415,10 +427,12 @@ export default function AppLayout() {
                       Sign in to act (guest is read-only)
                     </DropdownMenuItem>
                   )}
-                  <DropdownMenuItem onSelect={replayTour}>
-                    <Compass size={14} />
-                    Replay the tour
-                  </DropdownMenuItem>
+                  {pageTour && (
+                    <DropdownMenuItem onSelect={replayTour}>
+                      <Compass size={14} />
+                      Replay this page's tour
+                    </DropdownMenuItem>
+                  )}
                   <DropdownMenuSeparator />
                   <DropdownMenuItem onSelect={onLogout} className="text-danger focus:text-danger">
                     <LogOut size={14} />
@@ -474,7 +488,14 @@ export default function AppLayout() {
       </div>
 
       <CommandBar open={cmdOpen} onClose={() => setCmdOpen(false)} />
-      <ConsoleTour open={tourOpen} onClose={() => setTourOpen(false)} />
+      {pageTour && (
+        <ConsoleTour
+          open={tourOpen}
+          onClose={() => setTourOpen(false)}
+          steps={pageTour.steps}
+          storageKey={pageTour.storageKey}
+        />
+      )}
     </div>
   )
 }

@@ -149,7 +149,7 @@ export default function Marketplace() {
       description="Hire a verified agent to do a job, or browse the agents already working on Arc."
     >
       {/* Segmented control with a sliding thumb: the console's one overshoot curve. */}
-      <div className="relative inline-grid grid-cols-2 rounded-full border border-border bg-card p-1 text-sm font-semibold" role="tablist" aria-label="Marketplace views">
+      <div data-tour="views" className="relative inline-grid grid-cols-2 rounded-full border border-border bg-card p-1 text-sm font-semibold" role="tablist" aria-label="Marketplace views">
         <span
           aria-hidden="true"
           className={`cn-seg-thumb absolute inset-y-1 left-1 w-[calc(50%-0.25rem)] rounded-full bg-accent ${
@@ -173,7 +173,7 @@ export default function Marketplace() {
       </div>
 
       {tab === 'hire' && (
-        <div className="mt-6">
+        <div className="mt-6" data-tour="catalog">
           <WorkerCatalog />
         </div>
       )}
@@ -387,7 +387,7 @@ export default function Marketplace() {
                     <span className="mt-1.5 h-1 w-1 shrink-0 rounded-full bg-accent" />
                     <span className="min-w-0 break-words">
                       {humanizeActivity(ev.text)}
-                      <span className="ml-1.5 text-foreground/35">
+                      <span className="ml-1.5 font-medium text-accent/80">
                         {new Date(ev.at).toLocaleString()}
                       </span>
                     </span>

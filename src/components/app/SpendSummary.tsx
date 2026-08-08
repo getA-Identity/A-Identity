@@ -58,7 +58,7 @@ export default function SpendSummary({ instructions, loading }: { instructions: 
   return (
     <div className="rounded-xl border border-border bg-card p-6">
       <div className="flex items-start justify-between gap-3">
-        <h3 className="text-xs font-semibold uppercase tracking-wide text-foreground/50">Last 7 days</h3>
+        <h3 className="text-sm font-bold text-foreground/80">Last 7 Days</h3>
         <Link to="/app/settlements" className="inline-flex shrink-0 items-center gap-1 text-xs font-semibold text-accent hover:underline">
           All payments <ArrowUpRight size={12} />
         </Link>
@@ -82,7 +82,7 @@ export default function SpendSummary({ instructions, loading }: { instructions: 
                 title={`${new Date(d.from).toLocaleDateString()} · ${d.total.toFixed(2)} USDC`}
               />
             </div>
-            <span className="text-[10px] text-foreground/35">{d.label}</span>
+            <span className="text-[10px] font-medium text-foreground/55">{d.label}</span>
           </div>
         ))}
       </div>
@@ -94,7 +94,7 @@ export default function SpendSummary({ instructions, loading }: { instructions: 
           { k: 'Refused', v: counts.rejected, tone: counts.rejected > 0 ? 'text-foreground/70' : 'text-foreground/45' },
         ].map(({ k, v, tone }) => (
           <div key={k}>
-            <dt className="text-[10px] font-medium uppercase tracking-wide text-foreground/40">{k}</dt>
+            <dt className="text-[11px] font-semibold text-foreground/65">{k}</dt>
             <dd className={`text-lg font-bold tabular-nums ${tone}`}>{v}</dd>
           </div>
         ))}

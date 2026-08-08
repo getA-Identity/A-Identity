@@ -3,10 +3,9 @@ import {
   BadgeCheck,
   CheckCircle2,
   Circle,
+  Hourglass,
+  Info,
   ShieldQuestion,
-  Star,
-  Wifi,
-  WifiOff,
 } from 'lucide-react'
 import { useAuth } from '../../store/auth'
 import { useAgentReputation, useMcpHealth, useResolveAgent } from '../../hooks/useMcp'
@@ -19,6 +18,7 @@ import AgentSelect from '../../components/app/AgentSelect'
 import AppPage from '../../components/app/AppPage'
 import BrandArt from '../../components/app/BrandArt'
 import { Badge } from '../../components/ui/badge'
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '../../components/ui/tooltip'
 import { Skeleton } from '../../components/ui/skeleton'
 import ReputationCard from '../../components/app/agent/ReputationCard'
 import RegisterForm from '../../components/app/agent/RegisterForm'
@@ -66,6 +66,9 @@ export default function AgentId() {
     score: number
     breakdown: { settlement: number; validation: number; tenure: number }
   } | null>(null)
+  /** True once the reputation read for the SELECTED agent settled (either way), so the
+   *  score cards can stop showing skeletons instead of spinning forever. */
+  const [repSettled, setRepSettled] = useState(false)
 
   // Load the account's agents; default the selection to the primary agent. `select`
   // optionally forces the selection to a specific id (used right after a create so the
@@ -100,6 +103,7 @@ export default function AgentId() {
     const a = agents.find((x) => x.id === selectedId) ?? null
     setRealAgent(a)
     setRealRep(null)
+    setRepSettled(false)
     if (!a) return
     ;(async () => {
       try {
@@ -107,6 +111,8 @@ export default function AgentId() {
         if (!cancelled && rep && !('error' in rep)) setRealRep({ score: rep.score, breakdown: rep.breakdown })
       } catch {
         /* leave reputation null */
+      } finally {
+        if (!cancelled) setRepSettled(true)
       }
     })()
     return () => {
@@ -122,6 +128,9 @@ export default function AgentId() {
   const { reputation: liveRep, loading: repLoading } = useAgentReputation(DEMO_AGENT_ID, useExampleFallback)
 
   // Real reputation when available; no fabricated fallback (show '-' if we have none).
+  // The cards were stuck on skeletons for real agents: `repLoading` belongs to the
+  // sample fallback hook, which never runs when a real agent exists.
+  const scoreLoading = realAgent ? !repSettled : repLoading || !realChecked
   const score = realRep?.score ?? liveRep?.score ?? null
   const breakdown = realRep?.breakdown ?? liveRep?.breakdown ?? { settlement: 0, validation: 0, tenure: 0 }
 
@@ -155,13 +164,6 @@ export default function AgentId() {
       width="form"
       title="Agent ID"
       description="Your agent's on-chain passport. ERC-8004 gives every agent a verifiable identity, so others can trust it before transacting."
-      actions={
-        /* Data-source badge: quiet, semantic, one word. */
-        <Badge variant={!mcpOnline ? 'neutral' : realAgent ? 'success' : 'warning'} className="mt-1.5">
-          {mcpOnline ? <Wifi size={11} /> : <WifiOff size={11} />}
-          {!mcpOnline ? 'Offline' : realAgent ? 'Live' : 'Sample'}
-        </Badge>
-      }
     >
       <AgentSelect agents={agents} />
 
@@ -186,8 +188,19 @@ export default function AgentId() {
           reads as a document now, not a poster. The category avatar identifies the
           agent; the reputation figure holds the right edge; the registry facts run
           along the bottom as a label/value strip. */}
-      <div className="relative mt-6 overflow-hidden rounded-2xl border border-border bg-card">
+      <div data-tour="passport" className="relative mt-6 overflow-hidden rounded-2xl border border-border bg-card">
         <div className="absolute inset-x-0 top-0 h-0.5 bg-gradient-to-r from-accent via-accent/40 to-transparent" aria-hidden="true" />
+        {/* Data source, written on the passport itself: a breathing dot and one word. */}
+        <div className="absolute right-4 top-3 flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-[0.14em]">
+          <span
+            className={`h-1.5 w-1.5 rounded-full ${
+              !mcpOnline ? 'bg-foreground/25' : realAgent ? 'animate-pulse bg-ok' : 'animate-pulse bg-warn'
+            }`}
+          />
+          <span className={!mcpOnline ? 'text-foreground/40' : realAgent ? 'text-ok' : 'text-warn'}>
+            {!mcpOnline ? 'Offline' : realAgent ? 'Live' : 'Sample'}
+          </span>
+        </div>
         <div className="p-6">
           <div className="flex flex-wrap items-start justify-between gap-5">
             <div className="flex min-w-0 items-start gap-4">
@@ -215,10 +228,8 @@ export default function AgentId() {
             </div>
 
             <div className="shrink-0 text-right">
-              <div className="text-[10px] font-semibold uppercase tracking-[0.14em] text-foreground/40">
-                Reputation
-              </div>
-              {repLoading || !realChecked ? (
+              <div className="text-[11px] font-bold text-foreground/60">Reputation</div>
+              {scoreLoading ? (
                 <Skeleton className="ml-auto mt-1.5 h-9 w-20" />
               ) : (
                 <div className="mt-0.5 text-3xl font-bold leading-none tabular-nums text-foreground">
@@ -247,7 +258,7 @@ export default function AgentId() {
               ] as const
             ).map(([label, value]) => (
               <div key={label}>
-                <dt className="text-[10px] font-semibold uppercase tracking-[0.14em] text-foreground/40">{label}</dt>
+                <dt className="text-[11px] font-bold text-foreground/60">{label}</dt>
                 {value == null ? (
                   <Skeleton className="mt-1 h-4 w-20" />
                 ) : (
@@ -260,7 +271,7 @@ export default function AgentId() {
       </div>
 
       {/* Stage progress */}
-      <div className="mt-6 rounded-2xl border border-border bg-card p-6">
+      <div data-tour="stages" className="mt-6 rounded-2xl border border-border bg-card p-6">
         <h3 className="mb-4 font-semibold">Registration progress</h3>
         <div className="flex items-start">
           {STAGES.map(({ key, label, desc }, i) => {
@@ -288,10 +299,10 @@ export default function AgentId() {
                   )}
                 </div>
                 <div className="mt-2 text-center">
-                  <div className={`text-xs font-semibold ${done || active ? 'text-accent' : 'text-foreground/35'}`}>
+                  <div className={`text-xs font-bold ${done || active ? 'text-accent' : 'text-foreground/55'}`}>
                     {label}
                   </div>
-                  <div className="mt-0.5 hidden text-[11px] text-foreground/45 sm:block">{desc}</div>
+                  <div className="mt-0.5 hidden text-xs leading-relaxed text-foreground/65 sm:block">{desc}</div>
                 </div>
               </div>
             )
@@ -300,27 +311,30 @@ export default function AgentId() {
       </div>
 
       {/* Reputation breakdown */}
-      <div className="mt-4 grid gap-4 sm:grid-cols-3">
+      <div data-tour="scores" className="mt-4 grid gap-4 sm:grid-cols-3">
         <ReputationCard
-          label="Settlement score"
+          label="Settlement Score"
           value={breakdown.settlement}
           max={600}
           color="var(--accent)"
-          loading={repLoading}
+          loading={scoreLoading}
+          owl="/mascots/owl-card.png"
         />
         <ReputationCard
-          label="Validation score"
+          label="Validation Score"
           value={breakdown.validation}
           max={240}
           color="var(--usdc)"
-          loading={repLoading}
+          loading={scoreLoading}
+          owl="/mascots/owl-officer.png"
         />
         <ReputationCard
-          label="Tenure score"
+          label="Tenure Score"
           value={breakdown.tenure}
           max={160}
           color="var(--ok)"
-          loading={repLoading}
+          loading={scoreLoading}
+          owl="/mascots/owl-soft.png"
         />
       </div>
 
@@ -345,10 +359,10 @@ export default function AgentId() {
         </div>
       </div>
 
-      {/* Register new agent */}
-      <div className="mt-4 rounded-2xl border border-border bg-card p-6">
+      {/* Register new agent: one slim row; the form expands only when asked for. */}
+      <div data-tour="register" className="mt-4 rounded-2xl border border-border bg-card px-5 py-3.5">
         <div className="flex items-center justify-between">
-          <h3 className="font-semibold">Register a new agent</h3>
+          <h3 className="text-sm font-semibold">Register a new agent</h3>
           <button
             type="button"
             onClick={() => setShowReg((v) => !v)}
@@ -365,47 +379,200 @@ export default function AgentId() {
         )}
       </div>
 
-      {/* Reputation milestones */}
-      <div className="mt-4 rounded-2xl border border-border bg-card p-6">
-        <h3 className="mb-4 font-semibold">Reputation milestones</h3>
-        <ul className="flex flex-col gap-3">
-          {(() => {
-            // `done` reflects the agent's REAL reputation score, not a hardcoded flag:
-            // a milestone is achieved only once score >= its threshold (-/unknown → not done).
-            const has = score != null
-            const s = score ?? 0
-            const base = [
-              { threshold: 100, label: 'First verified agent' },
-              { threshold: 300, label: 'Trusted agent (auto-approve eligible)' },
-              { threshold: 500, label: 'Established agent (raised daily cap)' },
-              { threshold: 900, label: 'Elite agent (full autonomy tier)' },
-            ].map((m) => ({ ...m, done: has && s >= m.threshold, current: false }))
-            const rows = has
-              ? [...base, { threshold: s, label: 'You are here', done: true, current: true }]
-              : base
-            return rows.sort((a, b) => a.threshold - b.threshold)
-          })().map(({ threshold, label, done, current }) => (
-            <li
-              key={label}
-              className={`flex items-center gap-3 rounded-xl px-4 py-3 ${
-                current ? 'border border-accent/25 bg-accent/[0.05]' : 'bg-background/40'
-              }`}
-            >
-              <div
-                className={`grid h-7 w-7 shrink-0 place-items-center rounded-full text-xs font-bold ${
-                  done ? 'bg-accent text-white' : 'bg-foreground/10 text-foreground/40'
+      {/* Reputation level + standing among real agents */}
+      <ReputationStanding score={score} loading={scoreLoading} />
+
+      {/* Reputation milestones: tight rows, real completion, explanations on hover
+          instead of parentheses squeezed into the label. */}
+      <div data-tour="milestones" className="mt-4 rounded-2xl border border-border bg-card p-5">
+        <h3 className="mb-3 text-sm font-bold text-foreground/80">Reputation Milestones</h3>
+        <TooltipProvider delayDuration={150}>
+          <ul className="flex flex-col gap-1.5">
+            {(() => {
+              // `done` reflects the agent's REAL reputation score, not a hardcoded flag:
+              // a milestone is achieved only once score >= its threshold (-/unknown → not done).
+              const has = score != null
+              const s = score ?? 0
+              const base = LEVELS.filter((l) => l.threshold > 0).map((l) => ({
+                threshold: l.threshold,
+                label: l.milestone,
+                info: l.info,
+                done: has && s >= l.threshold,
+                current: false,
+              }))
+              const rows = has
+                ? [...base, { threshold: s, label: 'You are here', info: '', done: true, current: true }]
+                : base
+              return rows.sort((a, b) => a.threshold - b.threshold)
+            })().map(({ threshold, label, info, done, current }) => (
+              <li
+                key={label}
+                className={`flex items-center gap-3 rounded-xl px-3 py-2 ${
+                  current ? 'border border-accent/25 bg-accent/[0.05]' : 'bg-background/40'
                 }`}
               >
-                {done ? <CheckCircle2 size={14} /> : <Star size={14} />}
-              </div>
-              <div className="flex-1">
-                <span className="text-sm font-medium text-foreground">{label}</span>
-              </div>
-              <span className="text-xs font-semibold text-foreground/40">{threshold} pts</span>
-            </li>
-          ))}
-        </ul>
+                <div
+                  className={`grid h-6 w-6 shrink-0 place-items-center rounded-full text-xs font-bold ${
+                    done ? 'bg-accent text-white' : 'bg-foreground/10 text-foreground/50'
+                  }`}
+                >
+                  {done ? <CheckCircle2 size={13} /> : <Hourglass size={12} />}
+                </div>
+                <div className="flex flex-1 items-center gap-1.5">
+                  <span className="text-sm font-semibold text-foreground">{label}</span>
+                  {info && (
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <button type="button" aria-label={`What "${label}" means`} className="text-foreground/40 hover:text-foreground/70">
+                          <Info size={13} />
+                        </button>
+                      </TooltipTrigger>
+                      <TooltipContent>{info}</TooltipContent>
+                    </Tooltip>
+                  )}
+                </div>
+                <span className="text-xs font-bold tabular-nums text-foreground/60">{threshold} pts</span>
+              </li>
+            ))}
+          </ul>
+        </TooltipProvider>
       </div>
     </AppPage>
+  )
+}
+
+/** The reputation ladder: milestone names, level names, and what each unlocks. */
+const LEVELS = [
+  { threshold: 0, name: 'Newcomer', milestone: '', info: '' },
+  {
+    threshold: 100,
+    name: 'Verified',
+    milestone: 'First verified agent',
+    info: 'Reputation 100+. The agent has a verified identity and its first real settlements behind it.',
+  },
+  {
+    threshold: 300,
+    name: 'Trusted',
+    milestone: 'Trusted agent',
+    info: 'Reputation 300+. Counterparties can safely auto-approve small payments from this agent without a manual click.',
+  },
+  {
+    threshold: 500,
+    name: 'Established',
+    milestone: 'Established agent',
+    info: 'Reputation 500+. A settlement track record long enough to justify a raised daily cap.',
+  },
+  {
+    threshold: 900,
+    name: 'Elite',
+    milestone: 'Elite agent',
+    info: 'Reputation 900+. The top autonomy tier: broad limits with minimal supervision.',
+  },
+] as const
+
+/**
+ * Level + percentile card, in the spirit of an "agent readiness" score.
+ *
+ * The level comes from the score ladder above; the standing is computed against
+ * the REAL roster (every marketplace agent's live reputation), so "top X%" is a
+ * measured claim, not a vibe. When the roster cannot be read, the standing row
+ * is omitted rather than invented.
+ */
+function ReputationStanding({ score, loading }: { score: number | null; loading: boolean }) {
+  const [roster, setRoster] = useState<number[] | null>(null)
+
+  useEffect(() => {
+    let cancelled = false
+    ;(async () => {
+      try {
+        const res = await apiFetch('/api/marketplace?all=1')
+        const data = (await res.json()) as { agents?: { reputation?: { score: number } }[] }
+        if (cancelled || !Array.isArray(data.agents)) return
+        setRoster(data.agents.map((a) => a.reputation?.score).filter((v): v is number => typeof v === 'number'))
+      } catch {
+        /* leave standing out rather than fabricate it */
+      }
+    })()
+    return () => {
+      cancelled = true
+    }
+  }, [])
+
+  if (loading) {
+    return (
+      <div className="mt-4 rounded-2xl border border-border bg-card p-5">
+        <Skeleton className="h-4 w-32" />
+        <Skeleton className="mt-3 h-7 w-40" />
+        <Skeleton className="mt-3 h-1.5 w-full rounded-full" />
+      </div>
+    )
+  }
+  if (score == null) return null
+
+  const levelIdx = LEVELS.reduce((acc, l, i) => (score >= l.threshold ? i : acc), 0)
+  const level = LEVELS[levelIdx]
+  const next = LEVELS[levelIdx + 1] ?? null
+
+  // Standing among the real roster (including this agent).
+  const n = roster?.length ?? 0
+  const atOrAbove = roster ? roster.filter((v) => v >= score).length : 0
+  const topPct = n > 0 ? Math.max(1, Math.ceil((atOrAbove / n) * 100)) : null
+  const passCount = next && roster ? roster.filter((v) => v > score && v < next.threshold + 1).length : 0
+  const projectedTop =
+    next && roster && n > 0
+      ? Math.max(1, Math.ceil(((roster.filter((v) => v >= next.threshold).length + 1) / n) * 100))
+      : null
+
+  return (
+    <div data-tour="level" className="mt-4 rounded-2xl border border-border bg-card p-5">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <h3 className="text-sm font-bold text-foreground/80">Reputation Level</h3>
+        {topPct != null && (
+          <Badge variant="default">Top {topPct}% of {n} live agents</Badge>
+        )}
+      </div>
+
+      <div className="mt-3 flex flex-wrap items-center gap-3">
+        <span className="rounded-full bg-accent px-3.5 py-1.5 text-sm font-bold text-white">
+          Level {levelIdx + 1} · {level.name}
+        </span>
+        <span className="text-sm font-semibold tabular-nums text-foreground/70">{score} / 1000</span>
+      </div>
+
+      {/* Progress to the next level, on the same ladder the milestones use. */}
+      {next && (
+        <>
+          <div className="mt-3 h-1.5 w-full overflow-hidden rounded-full bg-foreground/10">
+            <div
+              className="h-full rounded-full bg-accent transition-all duration-700"
+              style={{
+                width: `${Math.min(100, ((score - level.threshold) / (next.threshold - level.threshold)) * 100)}%`,
+              }}
+            />
+          </div>
+          <p className="mt-2.5 text-xs leading-relaxed text-foreground/65">
+            <b className="text-foreground">{next.threshold - score} points</b> to Level {levelIdx + 2} ·{' '}
+            {next.name}
+            {roster && n > 0 && (
+              <>
+                {passCount > 0 && (
+                  <>
+                    {' '}
+                    · that run passes <b className="text-foreground">{passCount}</b> more agent{passCount === 1 ? '' : 's'}
+                  </>
+                )}
+                {projectedTop != null && (
+                  <>
+                    {' '}
+                    and puts this agent in the top <b className="text-foreground">{projectedTop}%</b>
+                  </>
+                )}
+              </>
+            )}
+            . Settle real payments and pass validations to climb.
+          </p>
+        </>
+      )}
+    </div>
   )
 }

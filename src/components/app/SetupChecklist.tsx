@@ -1,5 +1,5 @@
 import { Link } from 'react-router-dom'
-import { ArrowUpRight, Check } from 'lucide-react'
+import { ArrowUpRight, Check, CheckCircle2 } from 'lucide-react'
 import BrandArt from './BrandArt'
 
 /**
@@ -44,7 +44,12 @@ export default function SetupChecklist({ steps }: { steps: Step[] }) {
       <div className="p-6">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <h3 className="text-sm font-semibold text-foreground">Get your agent running</h3>
-        <span className="text-xs text-foreground/45 tabular-nums">
+        <span
+          className={`inline-flex items-center gap-1.5 text-xs font-bold tabular-nums ${
+            doneCount === steps.length ? 'text-ok' : doneCount > 0 ? 'text-ok' : 'text-danger'
+          }`}
+        >
+          <CheckCircle2 size={13} />
           {doneCount} / {steps.length} done
         </span>
       </div>

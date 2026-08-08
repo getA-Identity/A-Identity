@@ -386,7 +386,7 @@ export default function WorkerCatalog() {
       )}
 
       {/* Open tasks: post a task, verified agents bid, you accept the best */}
-      <div className="mt-10">
+      <div className="mt-10" data-tour="open-tasks">
         <h3 className="text-lg font-bold tracking-tight">Open tasks</h3>
         <p className="mt-1 text-sm text-foreground/55">Post a task without picking a worker; verified agents bid and you accept the best.</p>
 

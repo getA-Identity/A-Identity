@@ -19,61 +19,39 @@ export type TourStep = {
   body: string
 }
 
-export const TOUR_STORAGE_KEY = 'aid-console-tour-v1'
-
-const STEPS: TourStep[] = [
-  {
-    target: 'rail',
-    title: 'Your console, grouped',
-    body: 'Everything lives in three groups: who the agent IS (Agent), where its money moves (Money), and who else is out there (Network). Overview is always the way back.',
-  },
-  {
-    target: 'status',
-    title: 'What the agent is doing right now',
-    body: 'One line, always current: setup, paused, waiting for your approval, or ready to act. Every claim on it comes from live data, with a timestamp for when it was read.',
-  },
-  {
-    target: 'stats',
-    title: 'The four numbers that matter',
-    body: 'Reputation, balance, settlements, and the daily cap. Each tile links to its screen, and each figure says how fresh it is.',
-  },
-  {
-    target: 'network',
-    title: 'Where your agent can operate',
-    body: 'Arc is live today; the rest of the rails are planned. Every chain links straight to its explorer.',
-  },
-  {
-    target: 'command',
-    title: 'The fastest way anywhere',
-    body: 'Press ⌘K (or Ctrl K, or just "/") to jump between screens, paste an agent id, or run an action without touching the mouse.',
-  },
-  {
-    target: 'account',
-    title: 'You, the backend, and the exit',
-    body: 'Your session, the live backend status, and log out, all one press away. You can replay this tour from here any time.',
-  },
-]
 
 type Rect = { top: number; left: number; width: number; height: number }
 
 const PAD = 8
 const CARD_W = 330
 
-export default function ConsoleTour({ open, onClose }: { open: boolean; onClose: () => void }) {
+export default function ConsoleTour({
+  open,
+  onClose,
+  steps: allSteps,
+  storageKey,
+}: {
+  open: boolean
+  onClose: () => void
+  /** This page's stops, in order; invisible targets are skipped at runtime. */
+  steps: TourStep[]
+  /** localStorage key marking this page's tour as seen. */
+  storageKey: string
+}) {
   const [idx, setIdx] = useState(0)
   const [rect, setRect] = useState<Rect | null>(null)
   const cardRef = useRef<HTMLDivElement>(null)
 
   // Only steps whose target is actually rendered and visible.
   const steps = useMemo(() => {
-    if (!open) return STEPS
-    return STEPS.filter((s) => {
+    if (!open) return allSteps
+    return allSteps.filter((s) => {
       const el = document.querySelector(`[data-tour="${s.target}"]`)
       if (!el) return false
       const r = el.getBoundingClientRect()
       return r.width > 0 && r.height > 0
     })
-  }, [open])
+  }, [open, allSteps])
 
   const step = steps[idx]
 
@@ -108,12 +86,12 @@ export default function ConsoleTour({ open, onClose }: { open: boolean; onClose:
 
   const finish = useCallback(() => {
     try {
-      localStorage.setItem(TOUR_STORAGE_KEY, 'done')
+      localStorage.setItem(storageKey, 'done')
     } catch {
       /* private mode */
     }
     onClose()
-  }, [onClose])
+  }, [onClose, storageKey])
 
   // Keyboard: arrows advance, Escape leaves.
   useEffect(() => {

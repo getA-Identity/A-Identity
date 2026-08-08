@@ -291,7 +291,7 @@ export default function Settlements() {
       {/* Surface tabs. The payment queue is the page; the rails that feed it (automation,
           agent-to-agent commerce, cross-chain) each get their own tab instead of stacking
           eleven panels under the list. Micro-caps labels, the active one in a quiet box. */}
-      <div className="mt-5 flex flex-wrap gap-1.5 border-b border-border pb-3" role="tablist" aria-label="Settlement surfaces">
+      <div data-tour="tabs" className="mt-5 flex flex-wrap gap-1.5 border-b border-border pb-3" role="tablist" aria-label="Settlement surfaces">
         {TABS.map(({ id, label }) => (
           <button
             key={id}
@@ -316,7 +316,7 @@ export default function Settlements() {
       {shownTab === 'payments' && agents.length > 0 && (
         <>
           {/* New payment */}
-          <div className="mt-4 rounded-2xl border border-border bg-card p-6">
+          <div data-tour="new-payment" className="mt-4 rounded-2xl border border-border bg-card p-6">
             <h3 className="font-semibold text-foreground">New payment</h3>
             <div className="mt-4 grid gap-3 sm:grid-cols-[1fr_auto]">
               <input
@@ -361,7 +361,7 @@ export default function Settlements() {
           </div>
 
           {/* List */}
-          <ul className="mt-4 flex flex-col gap-2.5">
+          <ul data-tour="queue" className="mt-4 flex flex-col gap-2.5">
             {loading &&
               Array.from({ length: 4 }).map((_, i) => (
                 <li key={`sk-${i}`} className="rounded-2xl border border-border bg-card p-4">

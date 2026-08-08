@@ -101,10 +101,15 @@ test('the agent manifest chains_supported matches the registry', () => {
   )
 })
 
-test('Arc is the only chain the public surface reports as live', () => {
+test('the public surface reports exactly the wired chains as live/beta', () => {
+  // Product decision 2026-08-08: Arc + X Layer live, Base beta. Registry order.
   const live = publicChains().filter((c) => c.status === 'live' || c.status === 'beta')
   assert.deepEqual(
-    live.map((c) => c.id),
-    ['arc'],
+    live.map((c) => ({ id: c.id, status: c.status })),
+    [
+      { id: 'arc', status: 'live' },
+      { id: 'xlayer', status: 'live' },
+      { id: 'base', status: 'beta' },
+    ],
   )
 })

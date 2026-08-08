@@ -153,6 +153,7 @@ export default function Wallet() {
             <div className="flex min-w-0 flex-col gap-4 lg:col-span-2">
               {/* Live balance hero */}
               <div
+                data-tour="balance"
                 className="relative overflow-hidden rounded-2xl p-6 text-white"
                 style={{ background: 'linear-gradient(135deg, var(--usdc) 0%, var(--usdc-deep) 100%)' }}
               >
@@ -209,9 +210,9 @@ export default function Wallet() {
               </div>
 
               {/* Recent payments (real instructions) */}
-              <section className="rounded-2xl border border-border bg-card">
+              <section data-tour="payments" className="rounded-2xl border border-border bg-card">
                 <div className="flex items-center justify-between border-b border-border px-5 py-3.5">
-                  <h3 className="text-sm font-semibold text-foreground">Recent payments</h3>
+                  <h3 className="text-sm font-bold text-foreground">Recent Payments</h3>
                   <Link to="/app/settlements" className="inline-flex items-center gap-1 text-xs font-semibold text-accent hover:underline">
                     Settlements <ArrowUpRight size={12} />
                   </Link>
@@ -276,8 +277,8 @@ export default function Wallet() {
             {/* Right rail: what the money is made of, the guarantee, the utilities. */}
             <div className="flex min-w-0 flex-col gap-4">
               {/* Token balances */}
-              <section className="rounded-2xl border border-border bg-card p-5">
-                <h3 className="text-xs font-semibold uppercase tracking-[0.12em] text-foreground/45">Token balances</h3>
+              <section data-tour="tokens" className="rounded-2xl border border-border bg-card p-5">
+                <h3 className="text-sm font-bold text-foreground/80">Token Balances</h3>
                 <dl className="mt-3 flex flex-col divide-y divide-border">
                   {(['USDC', 'EURC', 'USYC'] as const).map((t) => {
                     const v = assets ? { USDC: assets.usdcUsd, EURC: assets.eurcUsd, USYC: assets.usycUsd }[t] : null
@@ -300,8 +301,8 @@ export default function Wallet() {
 
               {/* Address utilities */}
               {agent.walletAddress && (
-                <section className="rounded-2xl border border-border bg-card p-5">
-                  <h3 className="text-xs font-semibold uppercase tracking-[0.12em] text-foreground/45">Address</h3>
+                <section data-tour="address" className="rounded-2xl border border-border bg-card p-5">
+                  <h3 className="text-sm font-bold text-foreground/80">Address</h3>
                   <div className="mt-2.5 font-mono text-xs text-foreground/70">{short(agent.walletAddress)}</div>
                   <div className="mt-3 flex flex-col gap-1.5">
                     <button
@@ -344,7 +345,7 @@ export default function Wallet() {
           </div>
 
           {/* Wallet-layer panels, paired. */}
-          <div className="mt-4 grid items-start gap-4 xl:grid-cols-2">
+          <div data-tour="panels" className="mt-4 grid items-start gap-4 xl:grid-cols-2">
             {/* Circle Agent Wallet: hosted wallet-layer screening */}
             <CircleWalletPanel agentId={agentId} />
 

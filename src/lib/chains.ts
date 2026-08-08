@@ -10,7 +10,7 @@
  */
 
 /** Short slug of a chain in the registry. */
-export type ChainId = 'arc' | 'base' | 'arbitrum' | 'avalanche' | 'xlayer' | 'rhchain-testnet' | 'rhchain' | 'celo' | 'stellar' | 'solana'
+export type ChainId = 'arc' | 'stellar' | 'xlayer' | 'base' | 'solana' | 'avalanche' | 'arbitrum' | 'rhchain-testnet' | 'rhchain' | 'celo'
 
 export type ChainProtocols = {
   /** x402 HTTP-402 payment support. Settlement is in a stablecoin. */
@@ -81,6 +81,70 @@ export const CHAINS: readonly Chain[] = [
     "x402": true
   },
   {
+    "id": "stellar",
+    "name": "Stellar Testnet",
+    "shortName": "Stellar",
+    "color": "#7D00FF",
+    "chainId": null,
+    "caip2": "stellar:testnet",
+    "evmCompatible": false,
+    "testnet": true,
+    "stablecoins": [
+      "USDC",
+      "EURC"
+    ],
+    "rpcUrl": "https://soroban-testnet.stellar.org",
+    "explorer": "https://stellar.expert/explorer/testnet",
+    "role": "Fast, low-cost settlement: USDC + EURC native (Circle), Soroban contracts.",
+    "status": "planned",
+    "protocols": {
+      "payment": {
+        "x402": true,
+        "note": "x402 settlement in USDC via SEP-41 SAC; fee sponsorship for gasless."
+      },
+      "identity": {
+        "standard": "Soroban registry + SEP-10",
+        "erc8004Native": false,
+        "note": "No native ERC-8004 (EVM-only). Identity via Soroban registry / SEP-10; ERC-8004 passport bridged."
+      }
+    },
+    "identity": "Soroban registry + SEP-10",
+    "erc8004Native": false,
+    "x402": true
+  },
+  {
+    "id": "xlayer",
+    "name": "OKX X Layer",
+    "shortName": "X Layer",
+    "color": "#8A8F98",
+    "chainId": 196,
+    "caip2": "eip155:196",
+    "evmCompatible": true,
+    "testnet": false,
+    "stablecoins": [
+      "USDC",
+      "USDT"
+    ],
+    "rpcUrl": "https://rpc.xlayer.tech",
+    "explorer": "https://www.oklink.com/xlayer",
+    "role": "OKX.AI marketplace rail: identity reads live from OKX ERC-8004; x402 trust tools settle here.",
+    "status": "live",
+    "protocols": {
+      "payment": {
+        "x402": true,
+        "note": "x402 over USDC once the USDC address is confirmed."
+      },
+      "identity": {
+        "standard": "ERC-8004",
+        "erc8004Native": true,
+        "note": "OKX.AI identity registry LIVE (read-side wired); payment rails still planned."
+      }
+    },
+    "identity": "ERC-8004",
+    "erc8004Native": true,
+    "x402": true
+  },
+  {
     "id": "base",
     "name": "Base",
     "shortName": "Base",
@@ -96,12 +160,76 @@ export const CHAINS: readonly Chain[] = [
     ],
     "rpcUrl": "https://mainnet.base.org",
     "explorer": "https://basescan.org",
-    "role": "EVM fallback: ERC-8004 compatible, Coinbase ecosystem, low fees.",
-    "status": "planned",
+    "role": "EVM fallback: ERC-8004 compatible, Coinbase ecosystem, low fees. Testnet active (Base Sepolia via Gateway demo).",
+    "status": "beta",
     "protocols": {
       "payment": {
         "x402": true,
         "note": "x402 reference rail (Coinbase)."
+      },
+      "identity": {
+        "standard": "ERC-8004",
+        "erc8004Native": true,
+        "note": "ERC-8004 registry to be deployed."
+      }
+    },
+    "identity": "ERC-8004",
+    "erc8004Native": true,
+    "x402": true
+  },
+  {
+    "id": "solana",
+    "name": "Solana",
+    "shortName": "Solana",
+    "color": "#14F195",
+    "chainId": null,
+    "caip2": "solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp",
+    "evmCompatible": false,
+    "testnet": false,
+    "stablecoins": [
+      "USDC",
+      "USDT"
+    ],
+    "rpcUrl": "https://api.mainnet-beta.solana.com",
+    "explorer": "https://explorer.solana.com",
+    "role": "High-throughput settlement: SPL USDC, sub-second confirmation.",
+    "status": "planned",
+    "protocols": {
+      "payment": {
+        "x402": true,
+        "note": "x402 settlement in SPL USDC."
+      },
+      "identity": {
+        "standard": "Anchor registry program",
+        "erc8004Native": false,
+        "note": "No native ERC-8004 (EVM-only). Identity via an Anchor registry program; ERC-8004 passport bridged."
+      }
+    },
+    "identity": "Anchor registry program",
+    "erc8004Native": false,
+    "x402": true
+  },
+  {
+    "id": "avalanche",
+    "name": "Avalanche C-Chain",
+    "shortName": "Avalanche",
+    "color": "#E84142",
+    "chainId": 43114,
+    "caip2": "eip155:43114",
+    "evmCompatible": true,
+    "testnet": false,
+    "stablecoins": [
+      "USDC",
+      "USDT"
+    ],
+    "rpcUrl": "https://api.avax.network/ext/bc/C/rpc",
+    "explorer": "https://snowtrace.io",
+    "role": "Fast-finality EVM: native Circle USDC, low latency for burst settlement.",
+    "status": "planned",
+    "protocols": {
+      "payment": {
+        "x402": true,
+        "note": "x402 over USDC on Avalanche."
       },
       "identity": {
         "standard": "ERC-8004",
@@ -139,70 +267,6 @@ export const CHAINS: readonly Chain[] = [
         "standard": "ERC-8004",
         "erc8004Native": true,
         "note": "ERC-8004 registry to be deployed."
-      }
-    },
-    "identity": "ERC-8004",
-    "erc8004Native": true,
-    "x402": true
-  },
-  {
-    "id": "avalanche",
-    "name": "Avalanche C-Chain",
-    "shortName": "Avalanche",
-    "color": "#E84142",
-    "chainId": 43114,
-    "caip2": "eip155:43114",
-    "evmCompatible": true,
-    "testnet": false,
-    "stablecoins": [
-      "USDC",
-      "USDT"
-    ],
-    "rpcUrl": "https://api.avax.network/ext/bc/C/rpc",
-    "explorer": "https://snowtrace.io",
-    "role": "Fast-finality EVM: native Circle USDC, low latency for burst settlement.",
-    "status": "planned",
-    "protocols": {
-      "payment": {
-        "x402": true,
-        "note": "x402 over USDC on Avalanche."
-      },
-      "identity": {
-        "standard": "ERC-8004",
-        "erc8004Native": true,
-        "note": "ERC-8004 registry to be deployed."
-      }
-    },
-    "identity": "ERC-8004",
-    "erc8004Native": true,
-    "x402": true
-  },
-  {
-    "id": "xlayer",
-    "name": "OKX X Layer",
-    "shortName": "X Layer",
-    "color": "#8A8F98",
-    "chainId": 196,
-    "caip2": "eip155:196",
-    "evmCompatible": true,
-    "testnet": false,
-    "stablecoins": [
-      "USDC",
-      "USDT"
-    ],
-    "rpcUrl": "https://rpc.xlayer.tech",
-    "explorer": "https://www.oklink.com/xlayer",
-    "role": "OKX.AI marketplace rail: identity reads live from OKX ERC-8004; x402 trust tools settle here.",
-    "status": "planned",
-    "protocols": {
-      "payment": {
-        "x402": true,
-        "note": "x402 over USDC once the USDC address is confirmed."
-      },
-      "identity": {
-        "standard": "ERC-8004",
-        "erc8004Native": true,
-        "note": "OKX.AI identity registry LIVE (read-side wired); payment rails still planned."
       }
     },
     "identity": "ERC-8004",
@@ -298,70 +362,6 @@ export const CHAINS: readonly Chain[] = [
     },
     "identity": "ERC-8004",
     "erc8004Native": true,
-    "x402": true
-  },
-  {
-    "id": "stellar",
-    "name": "Stellar Testnet",
-    "shortName": "Stellar",
-    "color": "#7D00FF",
-    "chainId": null,
-    "caip2": "stellar:testnet",
-    "evmCompatible": false,
-    "testnet": true,
-    "stablecoins": [
-      "USDC",
-      "EURC"
-    ],
-    "rpcUrl": "https://soroban-testnet.stellar.org",
-    "explorer": "https://stellar.expert/explorer/testnet",
-    "role": "Fast, low-cost settlement: USDC + EURC native (Circle), Soroban contracts.",
-    "status": "planned",
-    "protocols": {
-      "payment": {
-        "x402": true,
-        "note": "x402 settlement in USDC via SEP-41 SAC; fee sponsorship for gasless."
-      },
-      "identity": {
-        "standard": "Soroban registry + SEP-10",
-        "erc8004Native": false,
-        "note": "No native ERC-8004 (EVM-only). Identity via Soroban registry / SEP-10; ERC-8004 passport bridged."
-      }
-    },
-    "identity": "Soroban registry + SEP-10",
-    "erc8004Native": false,
-    "x402": true
-  },
-  {
-    "id": "solana",
-    "name": "Solana",
-    "shortName": "Solana",
-    "color": "#14F195",
-    "chainId": null,
-    "caip2": "solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp",
-    "evmCompatible": false,
-    "testnet": false,
-    "stablecoins": [
-      "USDC",
-      "USDT"
-    ],
-    "rpcUrl": "https://api.mainnet-beta.solana.com",
-    "explorer": "https://explorer.solana.com",
-    "role": "High-throughput settlement: SPL USDC, sub-second confirmation.",
-    "status": "planned",
-    "protocols": {
-      "payment": {
-        "x402": true,
-        "note": "x402 settlement in SPL USDC."
-      },
-      "identity": {
-        "standard": "Anchor registry program",
-        "erc8004Native": false,
-        "note": "No native ERC-8004 (EVM-only). Identity via an Anchor registry program; ERC-8004 passport bridged."
-      }
-    },
-    "identity": "Anchor registry program",
-    "erc8004Native": false,
     "x402": true
   },
 ] as const

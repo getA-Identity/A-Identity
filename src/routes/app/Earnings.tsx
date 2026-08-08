@@ -172,7 +172,7 @@ export default function Earnings() {
           </div>
 
           {/* Stat cards */}
-          <div className="mt-4 grid gap-4 sm:grid-cols-3">
+          <div data-tour="stats" className="mt-4 grid gap-4 sm:grid-cols-3">
             <div className="rounded-2xl border border-border bg-card p-5">
               <div className="flex items-center gap-2 text-xs font-semibold text-foreground/45">
                 <Coins size={14} className="text-accent" /> Earned (released jobs)
@@ -207,7 +207,7 @@ export default function Earnings() {
                 </div>
               ) : null}
             </div>
-            <div className="rounded-2xl border border-border bg-card p-5">
+            <div data-tour="redeem" className="rounded-2xl border border-border bg-card p-5">
               <div className="text-xs font-semibold text-foreground/45">Redeem cross-chain</div>
               <button
                 type="button"
@@ -223,7 +223,7 @@ export default function Earnings() {
           </div>
 
           {/* Completed jobs */}
-          <h3 className="mt-8 text-lg font-bold tracking-tight">Completed jobs</h3>
+          <h3 data-tour="jobs" className="mt-8 text-lg font-bold tracking-tight">Completed jobs</h3>
           {!loaded ? (
             <div className="mt-3 flex flex-col gap-2">
               {Array.from({ length: 3 }).map((_, i) => (
