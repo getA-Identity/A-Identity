@@ -89,6 +89,8 @@ export type PlatformAgent = {
   services: Service[]
   /** Where the external agent is reachable (declared at register; shown in its manifest). */
   endpoint?: string
+  /** Optional square logo, stored as a small data: URL (uploaded at registration). */
+  logoUrl?: string
   permissions: Permissions
   walletAddress: string | null
   chain: 'arc'
@@ -208,11 +210,26 @@ type State = {
   /** Monotonic per-agent counters. NOT trimmed, unlike `audits`: traction counted from
    *  capped rows would understate exactly the agents busy enough to matter. */
   meters: Record<string, AgentMeter>
+  /** User ratings per agent (1-10 + comment), one entry per rater per agent. */
+  feedback: Record<string, FeedbackEntry[]>
+  /** Daily free-tier usage of the semantic search, keyed by caller. */
+  semanticQuota: Record<string, { day: string; used: number }>
+}
+
+export type FeedbackEntry = {
+  id: string
+  agentId: string
+  /** The verified session that rated (email/wallet subject). */
+  rater: string
+  /** 1..10, whole numbers. */
+  score: number
+  comment: string
+  at: string
 }
 
 // ── persistence ───────────────────────────────────────────────────────────────
 
-const state: State = { agents: [], wallets: [], instructions: [], tasks: [], audits: {}, meters: {} }
+const state: State = { agents: [], wallets: [], instructions: [], tasks: [], audits: {}, meters: {}, feedback: {}, semanticQuota: {} }
 
 /**
  * Load persisted state (Postgres via DATABASE_URL, else the local JSON file) into
@@ -229,6 +246,9 @@ export async function initState() {
     // letting an undefined map reach the decision path.
     state.audits = loaded.audits ?? {}
     state.meters = loaded.meters ?? {}
+    // Both maps postdate older persisted documents; default rather than crash.
+    state.feedback = loaded.feedback ?? {}
+    state.semanticQuota = loaded.semanticQuota ?? {}
   }
 }
 
@@ -340,6 +360,7 @@ export function createAgent(input: {
   permissions: Partial<Permissions>
   walletAddress?: string
   endpoint?: string
+  logoUrl?: string
   owner?: string
 }): PlatformAgent {
   const permissions: Permissions = {
@@ -375,6 +396,12 @@ export function createAgent(input: {
     capabilities: boundedCaps,
     services,
     endpoint: input.endpoint ? clamp(String(input.endpoint), 500) : undefined,
+    // Only small inline images: a data: URL under ~150KB. Anything else is dropped
+    // rather than ballooning the single persisted state document.
+    logoUrl:
+      typeof input.logoUrl === 'string' && input.logoUrl.startsWith('data:image/') && input.logoUrl.length <= 150_000
+        ? input.logoUrl
+        : undefined,
     permissions,
     walletAddress: input.walletAddress ?? null,
     chain: 'arc',
@@ -2033,6 +2060,158 @@ function feedGuardrails(agent: PlatformAgent): {
  *   badge and have been checked on that surface, so appearing there is something an owner
  *   opted into and earned rather than something we inferred about them.
  */
+// ── agent feedback (1-10 user ratings) ────────────────────────────────────────
+
+const FEEDBACK_PER_AGENT = 200
+
+/** Average + count for a listing row; entries stay behind the detail endpoint. */
+export function feedbackSummary(agentId: string): { avg: number | null; count: number } {
+  const rows = state.feedback[agentId] ?? []
+  if (rows.length === 0) return { avg: null, count: 0 }
+  const avg = rows.reduce((t, r) => t + r.score, 0) / rows.length
+  return { avg: Math.round(avg * 10) / 10, count: rows.length }
+}
+
+export function agentFeedback(agentId: string) {
+  const a = state.agents.find((x) => x.id === agentId)
+  if (!a) return { error: 'Unknown agent' as const }
+  const rows = [...(state.feedback[agentId] ?? [])].sort((x, y) => y.at.localeCompare(x.at))
+  return { agentId, ...feedbackSummary(agentId), entries: rows.slice(0, 50) }
+}
+
+/**
+ * Record a rating. One entry per rater per agent: rating again REPLACES your
+ * previous entry rather than stacking, so a single account cannot pump an
+ * average. Score is a whole 1..10; the comment is optional and bounded.
+ */
+export function addAgentFeedback(agentId: string, rater: string, score: number, comment?: string) {
+  const a = state.agents.find((x) => x.id === agentId)
+  if (!a) return { error: 'Unknown agent' as const }
+  const s = Math.round(Number(score))
+  if (!Number.isFinite(s) || s < 1 || s > 10) return { error: 'Score must be a whole number from 1 to 10' as const }
+  const entry: FeedbackEntry = {
+    id: id('fb'),
+    agentId,
+    rater,
+    score: s,
+    comment: typeof comment === 'string' ? comment.slice(0, 1000) : '',
+    at: new Date().toISOString(),
+  }
+  const rows = (state.feedback[agentId] ?? []).filter((r) => r.rater !== rater)
+  rows.push(entry)
+  state.feedback[agentId] = rows.slice(-FEEDBACK_PER_AGENT)
+  a.activity.push({ at: entry.at, text: `Rated ${s}/10 by a verified user` })
+  void save(state)
+  return { ok: true as const, entry, summary: feedbackSummary(agentId) }
+}
+
+// ── semantic marketplace search (free daily quota, then paid) ─────────────────
+
+const SEMANTIC_FREE_PER_DAY = 5
+
+/** Query-term expansion: the intent behind common asks, not just the letters. */
+const SEMANTIC_SYNONYMS: Record<string, string[]> = {
+  translate: ['translation', 'language', 'lingua'],
+  translation: ['translate', 'language'],
+  research: ['data', 'analysis', 'analytics', 'market'],
+  data: ['research', 'analytics', 'api'],
+  trade: ['trading', 'finance', 'market'],
+  trading: ['trade', 'finance'],
+  code: ['review', 'developer', 'devops', 'engineering'],
+  review: ['code', 'audit'],
+  pay: ['payment', 'payments', 'purchase'],
+  payment: ['payments', 'pay', 'purchase'],
+  content: ['writing', 'creative', 'copy'],
+  cheap: [],
+  best: [],
+  trusted: [],
+}
+
+/**
+ * Natural-language search over the REAL roster. Not an LLM: a transparent
+ * intent engine (term expansion + weighted field matches + quality modifiers
+ * like "cheap"/"best"/"trusted"), which means identical queries always rank
+ * identically and nothing is fabricated.
+ */
+export function semanticSearchAgents(q: string, viewer?: string) {
+  const query = (q ?? '').trim().toLowerCase()
+  if (!query) return { agents: [], total: 0 }
+  const terms = query.split(/[^a-z0-9]+/).filter((t) => t.length > 1)
+  const expanded = new Set(terms)
+  for (const t of terms) for (const syn of SEMANTIC_SYNONYMS[t] ?? []) expanded.add(syn)
+  const wantCheap = terms.includes('cheap') || terms.includes('cheapest')
+  const wantBest = terms.includes('best') || terms.includes('top') || terms.includes('trusted')
+
+  const scored = state.agents
+    .filter((a) => isShowcase(a))
+    .map((a) => {
+      const rep = repOf(a)
+      const hay = {
+        name: a.name.toLowerCase(),
+        category: a.category.toLowerCase(),
+        caps: a.capabilities.join(' ').toLowerCase(),
+        desc: a.description.toLowerCase(),
+        services: a.services.map((sv) => sv.name).join(' ').toLowerCase(),
+      }
+      let score = 0
+      const reasons: string[] = []
+      for (const t of expanded) {
+        if (hay.name.includes(t)) { score += 6; reasons.push(`name matches "${t}"`) }
+        if (hay.caps.includes(t)) { score += 5; reasons.push(`capability "${t}"`) }
+        if (hay.services.includes(t)) { score += 5; reasons.push(`sells "${t}"`) }
+        if (hay.category.includes(t)) { score += 3; reasons.push(`category "${t}"`) }
+        if (hay.desc.includes(t)) { score += 2 }
+      }
+      if (score > 0 && wantBest) score += rep.score / 100
+      if (score > 0 && wantCheap) {
+        const cheapest = Math.min(...a.services.map((sv) => sv.priceUsd), Infinity)
+        if (cheapest <= 1) { score += 4; reasons.push('low price') }
+      }
+      const fb = feedbackSummary(a.id)
+      if (score > 0 && fb.avg != null) score += fb.avg / 5
+      return { a, rep, score, reasons: [...new Set(reasons)].slice(0, 4) }
+    })
+    .filter((x) => x.score > 0)
+    .sort((x, y) => y.score - x.score)
+    .slice(0, 20)
+
+  return {
+    agents: scored.map(({ a, rep, score, reasons }) => ({
+      id: a.id,
+      name: a.name,
+      logoUrl: a.logoUrl,
+      category: a.category,
+      capabilities: a.capabilities,
+      kya: a.kya,
+      reputation: rep,
+      feedback: feedbackSummary(a.id),
+      followedByViewer: viewer ? a.followers.includes(viewer) : false,
+      matchScore: Math.round(score * 10) / 10,
+      matchReasons: reasons,
+    })),
+    total: scored.length,
+  }
+}
+
+/**
+ * Spend one semantic search from the caller's free daily allowance. Real
+ * metering: the counter persists, resets at UTC midnight, and running out is a
+ * hard 402 upstream (premium continues through the x402-paid gateway service).
+ */
+export function consumeSemanticQuota(caller: string): { ok: boolean; remaining: number; resetsAt: string } {
+  const day = new Date().toISOString().slice(0, 10)
+  const row = state.semanticQuota[caller]
+  const used = row && row.day === day ? row.used : 0
+  const resetsAt = `${new Date(Date.now() + 86_400_000).toISOString().slice(0, 10)}T00:00:00Z`
+  if (used >= SEMANTIC_FREE_PER_DAY) return { ok: false, remaining: 0, resetsAt }
+  state.semanticQuota[caller] = { day, used: used + 1 }
+  // Bound the map so one-off callers do not accumulate forever.
+  const keys = Object.keys(state.semanticQuota)
+  if (keys.length > 2000) for (const k of keys.slice(0, keys.length - 2000)) delete state.semanticQuota[k]
+  void save(state)
+  return { ok: true, remaining: SEMANTIC_FREE_PER_DAY - used - 1, resetsAt }
+}
+
 export function marketplace(viewer?: string, includeAll = false, category?: string) {
   const wanted = (category ?? '').trim().toLowerCase()
   const surfaceFilter = wanted === 'trading' ? 'trade' : wanted === 'spend' ? 'spend' : null
@@ -2055,6 +2234,7 @@ export function marketplace(viewer?: string, includeAll = false, category?: stri
     agents: shown.map(({ a, rep }) => ({
       id: a.id,
       name: a.name,
+      logoUrl: a.logoUrl,
       description: a.description,
       category: a.category,
       capabilities: a.capabilities,
@@ -2069,6 +2249,7 @@ export function marketplace(viewer?: string, includeAll = false, category?: stri
       walletAddress: a.walletAddress,
       followers: a.followers.length,
       followedByViewer: viewer ? a.followers.includes(viewer) : false,
+      feedback: feedbackSummary(a.id),
       activity: a.activity.slice(-5).reverse(),
       createdAt: a.createdAt,
     })),

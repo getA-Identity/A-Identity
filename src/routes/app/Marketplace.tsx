@@ -11,6 +11,7 @@ import {
   List,
   Plus,
   Search,
+  Sparkles,
   X,
 } from 'lucide-react'
 import { authHeaders, useAuth } from '../../store/auth'
@@ -28,6 +29,7 @@ import { Skeleton } from '../../components/ui/skeleton'
 type MarketAgent = {
   id: string
   name: string
+  logoUrl?: string
   description: string
   category: string
   capabilities: string[]
@@ -117,10 +119,68 @@ export default function Marketplace() {
     }
   }
 
+  // Semantic mode: a metered natural-language search on the backend (5 free per
+  // day, then a hard 402). Results carry match reasons; the roster rows reorder
+  // to the server's ranking and show why each one matched.
+  const [semantic, setSemantic] = useState(false)
+  const [semBusy, setSemBusy] = useState(false)
+  const [semRemaining, setSemRemaining] = useState<number | null>(null)
+  const [semNote, setSemNote] = useState<string | null>(null)
+  const [semMatches, setSemMatches] = useState<Record<string, { score: number; reasons: string[] }> | null>(null)
+  const [semOrder, setSemOrder] = useState<string[] | null>(null)
+
+  const runSemantic = async () => {
+    const q = query.trim()
+    if (!q || semBusy) return
+    setSemBusy(true)
+    setSemNote(null)
+    try {
+      const res = await apiFetch(
+        `/api/marketplace/semantic-search?q=${encodeURIComponent(q)}&viewer=${encodeURIComponent(viewer)}`,
+      )
+      const data = await readJson<{
+        agents?: { id: string; matchScore: number; matchReasons: string[] }[]
+        remaining?: number
+        resetsAt?: string
+        error?: string
+        premium?: { note?: string; priceUsd?: number }
+      }>(res)
+      if (res.status === 402) {
+        setSemNote(
+          `${data.error ?? 'Free semantic searches used up.'} Resets ${data.resetsAt ? new Date(data.resetsAt).toLocaleString() : 'at UTC midnight'}. ${data.premium?.note ?? ''}`,
+        )
+        setSemRemaining(0)
+        return
+      }
+      if (!res.ok) {
+        setSemNote(explainError(res.status, data.error))
+        return
+      }
+      const rows = data.agents ?? []
+      setSemOrder(rows.map((r) => r.id))
+      setSemMatches(Object.fromEntries(rows.map((r) => [r.id, { score: r.matchScore, reasons: r.matchReasons }])))
+      setSemRemaining(typeof data.remaining === 'number' ? data.remaining : null)
+      if (rows.length === 0) setSemNote('No agents matched that description.')
+    } catch {
+      setSemNote(BACKEND_UNREACHABLE)
+    } finally {
+      setSemBusy(false)
+    }
+  }
+  const clearSemantic = () => {
+    setSemOrder(null)
+    setSemMatches(null)
+    setSemNote(null)
+  }
+
   const shown = agents
     .filter((a) => {
       const q = query.trim().toLowerCase()
       if (!q) return true
+      // With a semantic result in hand, membership belongs to the server's
+      // ranking (applied below); the literal substring test would empty the
+      // list, since nobody's name contains the whole question.
+      if (semantic && semOrder) return true
       return (
         a.name.toLowerCase().includes(q) ||
         a.category.toLowerCase().includes(q) ||
@@ -132,6 +192,12 @@ export default function Marketplace() {
       if (sort === 'reputation') return (b.reputation?.score ?? -1) - (a.reputation?.score ?? -1)
       if (sort === 'followers') return b.followers - a.followers
       return b.createdAt.localeCompare(a.createdAt)
+    })
+    // In semantic mode the server's ranking wins: reorder to it and drop non-matches.
+    .filter((a) => !(semantic && semOrder) || semOrder.includes(a.id))
+    .sort((a, b) => {
+      if (!(semantic && semOrder)) return 0
+      return semOrder.indexOf(a.id) - semOrder.indexOf(b.id)
     })
 
   const load = useCallback(async () => {
@@ -280,11 +346,45 @@ export default function Marketplace() {
               <Search size={14} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-foreground/40" />
               <input
                 value={query}
-                onChange={(e) => setQuery(e.target.value)}
-                placeholder="Search name, category, capability..."
+                onChange={(e) => {
+                  setQuery(e.target.value)
+                  if (semOrder) clearSemantic()
+                }}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' && semantic) runSemantic()
+                }}
+                placeholder={semantic ? 'Describe what kind of agent you need...' : 'Search name, category, capability...'}
                 aria-label="Search agents"
-                className="w-full rounded-xl border border-border bg-card py-2.5 pl-9 pr-3 text-sm outline-none transition-colors duration-[120ms] focus:border-accent"
+                className={`w-full rounded-xl border bg-card py-2.5 pl-9 pr-20 text-sm outline-none transition-colors duration-[120ms] ${
+                  semantic ? 'border-accent/50 focus:border-accent' : 'border-border focus:border-accent'
+                }`}
               />
+              <div className="absolute right-1.5 top-1/2 flex -translate-y-1/2 items-center gap-1">
+                {semantic && (
+                  <button
+                    type="button"
+                    onClick={runSemantic}
+                    disabled={semBusy || !query.trim()}
+                    className="rounded-lg bg-accent px-2.5 py-1.5 text-[11px] font-bold text-white disabled:opacity-40"
+                  >
+                    {semBusy ? '...' : 'Ask'}
+                  </button>
+                )}
+                <button
+                  type="button"
+                  onClick={() => {
+                    setSemantic((v) => !v)
+                    clearSemantic()
+                  }}
+                  aria-pressed={semantic}
+                  title={semantic ? 'Back to standard search' : 'Switch to semantic search (5 free per day)'}
+                  className={`rounded-lg p-1.5 transition-colors duration-[120ms] ${
+                    semantic ? 'bg-accent/15 text-accent' : 'text-foreground/40 hover:bg-foreground/[0.05] hover:text-accent'
+                  }`}
+                >
+                  <Sparkles size={15} />
+                </button>
+              </div>
             </div>
             <select
               value={sort}
@@ -363,10 +463,22 @@ export default function Marketplace() {
             </div>
           )}
 
-          <div className="text-xs font-medium text-foreground/55">
-            {shown.length} of {showAll ? counts.totalAll : counts.total} agents
-            {!showAll && counts.totalAll > counts.total && ` · ${counts.totalAll - counts.total} pending hidden`}
+          <div className="flex flex-wrap items-center gap-2 text-xs font-medium text-foreground/55">
+            <span>
+              {shown.length} of {showAll ? counts.totalAll : counts.total} agents
+              {!showAll && counts.totalAll > counts.total && ` · ${counts.totalAll - counts.total} pending hidden`}
+            </span>
+            {semantic && semRemaining != null && (
+              <Badge variant={semRemaining > 0 ? 'default' : 'warning'}>
+                <Sparkles size={11} /> {semRemaining} free semantic search{semRemaining === 1 ? '' : 'es'} left today
+              </Badge>
+            )}
           </div>
+          {semNote && (
+            <div className="rounded-xl border border-warn/25 bg-warn/10 px-3.5 py-2.5 text-xs font-medium text-foreground/75">
+              {semNote}
+            </div>
+          )}
         </div>
       )}
 
@@ -439,6 +551,7 @@ export default function Marketplace() {
                       category={a.category}
                       size={44}
                       verdict={a.kya === 'verified' ? 'allow' : 'warn'}
+                      src={a.logoUrl}
                     />
                     <div className="min-w-0">
                       <div className="truncate font-bold text-foreground">{a.name}</div>
@@ -489,6 +602,7 @@ export default function Marketplace() {
                   category={a.category}
                   size={56}
                   verdict={a.kya === 'verified' ? 'allow' : 'warn'}
+                  src={a.logoUrl}
                 />
               </Link>
 
@@ -522,6 +636,12 @@ export default function Marketplace() {
                 <p className="mt-2 line-clamp-2 max-w-2xl text-sm leading-relaxed text-foreground/60">
                   {a.description || 'No description yet.'}
                 </p>
+                {semantic && semMatches?.[a.id] && (
+                  <p className="mt-1.5 flex flex-wrap items-center gap-1.5 text-[11px] font-medium text-accent">
+                    <Sparkles size={11} />
+                    {semMatches[a.id].reasons.join(' · ') || 'semantic match'}
+                  </p>
+                )}
                 {a.capabilities.length > 0 && (
                   <div className="mt-2.5 flex flex-wrap gap-1.5">
                     {a.capabilities.map((c) => (

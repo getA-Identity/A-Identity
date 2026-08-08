@@ -79,6 +79,10 @@ import {
   acceptBid,
   listOpenTasks,
   type InstructionType,
+  agentFeedback,
+  addAgentFeedback,
+  semanticSearchAgents,
+  consumeSemanticQuota,
 } from './platform.js'
 import { issueToken, verifyToken, isVerified } from './auth.js'
 import { oauthEnabled, verifyAccessToken, protectedResourceMetadata } from './oauth.js'
@@ -875,6 +879,7 @@ const server = http.createServer(async (req, res) => {
     const body = (await readBody(req).catch(() => null)) as {
       name?: string; description?: string; category?: string
       capabilities?: string[]; permissions?: Record<string, unknown>; walletAddress?: string
+      logoUrl?: string
     } | null
     if (!body?.name) { sendJson(res, 400, { error: 'name required' }); return }
     const agent = createAgent({
@@ -884,6 +889,7 @@ const server = http.createServer(async (req, res) => {
       capabilities: Array.isArray(body.capabilities) ? body.capabilities : [],
       permissions: (body.permissions ?? {}) as never,
       walletAddress: body.walletAddress,
+      logoUrl: body.logoUrl,
       owner: callerId,
     })
     sendJson(res, 201, { agent })
@@ -1275,6 +1281,49 @@ const server = http.createServer(async (req, res) => {
     if (!body?.agentId || !body?.follower) { sendJson(res, 400, { error: 'agentId and follower required' }); return }
     const r = followAgent(body.agentId, body.follower)
     sendJson(res, 'error' in r ? 404 : 200, r)
+    return
+  }
+
+  // ── Agent feedback: 1-10 user ratings, one entry per rater per agent ─────────
+  if (req.method === 'GET' && url.pathname === '/api/marketplace/feedback') {
+    const agentId = url.searchParams.get('agentId')
+    if (!agentId) { sendJson(res, 400, { error: 'agentId required' }); return }
+    const r = agentFeedback(agentId)
+    sendJson(res, 'error' in r ? 404 : 200, r)
+    return
+  }
+  // POST rides the global mutation gate above: guests are already 401/403 here.
+  if (req.method === 'POST' && url.pathname === '/api/marketplace/feedback') {
+    const body = (await readBody(req).catch(() => null)) as { agentId?: string; score?: number; comment?: string } | null
+    if (!body?.agentId || body.score == null) { sendJson(res, 400, { error: 'agentId and score required' }); return }
+    const r = addAgentFeedback(body.agentId, callerId!, body.score, body.comment)
+    sendJson(res, 'error' in r ? ('Unknown agent' === r.error ? 404 : 400) : 200, r)
+    return
+  }
+
+  // ── Semantic marketplace search: free daily quota, then a hard 402 ───────────
+  if (req.method === 'GET' && url.pathname === '/api/marketplace/semantic-search') {
+    const q = url.searchParams.get('q') ?? ''
+    if (!q.trim()) { sendJson(res, 400, { error: 'q required' }); return }
+    // Metered per signed-in caller; anonymous browsers meter by their viewer tag,
+    // falling back to IP so the free tier cannot be reset by clearing a cookie.
+    const meterKey = callerId ?? url.searchParams.get('viewer') ?? (req.socket.remoteAddress || 'anon')
+    const quota = consumeSemanticQuota(meterKey)
+    if (!quota.ok) {
+      sendJson(res, 402, {
+        error: 'Free semantic searches used up for today.',
+        remaining: 0,
+        resetsAt: quota.resetsAt,
+        premium: {
+          via: 'x402',
+          note: 'Metered semantic search is available as a paid x402 service on the A-Identity ASP (OKX.AI agent #6271); standard search stays free here.',
+          priceUsd: 0.01,
+        },
+      })
+      return
+    }
+    const r = semanticSearchAgents(q, url.searchParams.get('viewer') ?? undefined)
+    sendJson(res, 200, { ...r, remaining: quota.remaining, resetsAt: quota.resetsAt })
     return
   }
 

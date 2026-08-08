@@ -27,6 +27,47 @@ const CATEGORIES = [
 export default function RegisterForm({ onClose, onCreated }: { onClose: () => void; onCreated?: (id: string) => void }) {
   const [name, setName] = useState('')
   const [desc, setDesc] = useState('')
+  /** Square logo as a small data: URL (client-side resized to 96px before upload). */
+  const [logoUrl, setLogoUrl] = useState<string | null>(null)
+  const [logoErr, setLogoErr] = useState<string | null>(null)
+
+  const onLogoPick = (file: File | undefined) => {
+    setLogoErr(null)
+    if (!file) return
+    if (!file.type.startsWith('image/')) {
+      setLogoErr('Pick an image file.')
+      return
+    }
+    const url = URL.createObjectURL(file)
+    const img = new Image()
+    img.onload = () => {
+      // Downscale to a 96px square (cover-cropped) so the stored data URL stays tiny.
+      const SIZE = 96
+      const canvas = document.createElement('canvas')
+      canvas.width = SIZE
+      canvas.height = SIZE
+      const ctx = canvas.getContext('2d')
+      if (!ctx) {
+        setLogoErr('Could not read the image.')
+        URL.revokeObjectURL(url)
+        return
+      }
+      const side = Math.min(img.width, img.height)
+      ctx.drawImage(img, (img.width - side) / 2, (img.height - side) / 2, side, side, 0, 0, SIZE, SIZE)
+      const data = canvas.toDataURL('image/png')
+      URL.revokeObjectURL(url)
+      if (data.length > 150_000) {
+        setLogoErr('That image compresses too large; try a simpler one.')
+        return
+      }
+      setLogoUrl(data)
+    }
+    img.onerror = () => {
+      setLogoErr('Could not read the image.')
+      URL.revokeObjectURL(url)
+    }
+    img.src = url
+  }
   const [category, setCategory] = useState(CATEGORIES[0])
   const [caps, setCaps] = useState<string[]>(['Payments'])
   const [dailyCap, setDailyCap] = useState('50')
@@ -128,6 +169,7 @@ export default function RegisterForm({ onClose, onCreated }: { onClose: () => vo
           description: desc.trim(),
           category,
           capabilities: caps,
+          logoUrl: logoUrl ?? undefined,
           permissions: {
             dailyCapUsd: Number(dailyCap) || 50,
             autoApproveUnderUsd: Number(autoApprove) || 1,
@@ -356,6 +398,41 @@ export default function RegisterForm({ onClose, onCreated }: { onClose: () => vo
           <select className={input} value={category} onChange={(e) => setCategory(e.target.value)}>
             {CATEGORIES.map((c) => <option key={c}>{c}</option>)}
           </select>
+
+          {/* Logo: optional, resized in the browser, shown everywhere the agent is. */}
+          <div className="flex items-center gap-3">
+            <div className="grid h-12 w-12 shrink-0 place-items-center overflow-hidden rounded-xl border border-border bg-background/60">
+              {logoUrl ? (
+                <img src={logoUrl} alt="Agent logo preview" className="h-full w-full object-cover" />
+              ) : (
+                <span className="text-[10px] font-semibold text-foreground/35">Logo</span>
+              )}
+            </div>
+            <div className="min-w-0">
+              <label className="inline-flex cursor-pointer items-center gap-2 rounded-full border border-border px-3.5 py-1.5 text-xs font-semibold text-foreground/70 transition-colors duration-[120ms] hover:bg-foreground/[0.04]">
+                {logoUrl ? 'Change logo' : 'Upload logo'}
+                <input
+                  type="file"
+                  accept="image/*"
+                  className="sr-only"
+                  onChange={(e) => onLogoPick(e.target.files?.[0])}
+                />
+              </label>
+              {logoUrl && (
+                <button
+                  type="button"
+                  onClick={() => setLogoUrl(null)}
+                  className="ml-2 text-xs font-semibold text-foreground/45 hover:text-danger"
+                >
+                  Remove
+                </button>
+              )}
+              <p className="mt-1 text-[11px] text-foreground/50">
+                Optional. Square works best; resized to 96px in your browser.
+              </p>
+              {logoErr && <p className="mt-0.5 text-[11px] text-danger">{logoErr}</p>}
+            </div>
+          </div>
         </div>
       </div>
 

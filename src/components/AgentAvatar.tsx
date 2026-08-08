@@ -37,6 +37,7 @@ export default function AgentAvatar({
   category,
   size = 44,
   verdict,
+  src,
   className = '',
 }: {
   /** Address or token id. Only used to pick a tint when there is no category. */
@@ -46,6 +47,9 @@ export default function AgentAvatar({
   size?: number
   /** Omitted when nothing has been decided yet, and then no badge is drawn. */
   verdict?: OwlVerdict
+  /** An uploaded logo (small data: URL). When present it replaces the glyph;
+   *  the verdict owl stays, because a logo must never hide a risk signal. */
+  src?: string | null
   className?: string
 }) {
   const known = category ? CATEGORIES.find((c) => c.match.test(category)) : undefined
@@ -60,16 +64,27 @@ export default function AgentAvatar({
 
   return (
     <div className={`relative shrink-0 ${className}`} style={{ width: size, height: size }}>
-      <div
-        className="grid h-full w-full place-items-center rounded-xl"
-        style={{
-          background: `color-mix(in srgb, ${color} 13%, transparent)`,
-          color,
-        }}
-        aria-hidden="true"
-      >
-        <Icon size={Math.round(size * 0.45)} strokeWidth={2} />
-      </div>
+      {src ? (
+        <img
+          src={src}
+          alt=""
+          aria-hidden="true"
+          loading="lazy"
+          decoding="async"
+          className="h-full w-full rounded-xl border border-border object-cover"
+        />
+      ) : (
+        <div
+          className="grid h-full w-full place-items-center rounded-xl"
+          style={{
+            background: `color-mix(in srgb, ${color} 13%, transparent)`,
+            color,
+          }}
+          aria-hidden="true"
+        >
+          <Icon size={Math.round(size * 0.45)} strokeWidth={2} />
+        </div>
+      )}
 
       {verdict && (
         // The ring is the page surface, not a colour, so the badge reads as lifted off the
