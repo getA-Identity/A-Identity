@@ -99,11 +99,21 @@ check('/health answers 200', health.status === 200, `status ${health.status}`)
 
 const chains = await get('/api/chains')
 const chainIds = (chains.json?.chains ?? []).map((c) => c.id)
-eq('/api/chains serves 9 descriptors', chainIds.length, 9)
-for (const id of ['arc', 'base', 'arbitrum', 'avalanche', 'xlayer', 'rhchain', 'rhchain-testnet', 'stellar', 'solana'])
+eq('/api/chains serves 10 descriptors', chainIds.length, 10)
+for (const id of ['arc', 'base', 'arbitrum', 'avalanche', 'xlayer', 'rhchain', 'rhchain-testnet', 'celo', 'stellar', 'solana'])
   check(`  chain present: ${id}`, chainIds.includes(id))
 check('no retired chain is served', !chainIds.some((id) => /algorand/i.test(id)))
-eq('arc is the only live chain', (chains.json?.chains ?? []).filter((c) => c.status === 'live').length, 1)
+// Product decision 2026-08-08: Arc + X Layer live, Base beta (see chains/registry.ts).
+eq(
+  'the live chains are exactly arc + xlayer',
+  (chains.json?.chains ?? [])
+    .filter((c) => c.status === 'live')
+    .map((c) => c.id)
+    .sort()
+    .join(','),
+  'arc,xlayer',
+)
+eq('base is the one beta chain', (chains.json?.chains ?? []).filter((c) => c.status === 'beta').map((c) => c.id).join(','), 'base')
 
 const status = await get('/api/guardrail-status')
 check('/api/guardrail-status says enforcing', status.json?.enforcing === true, JSON.stringify(status.json).slice(0, 160))

@@ -597,3 +597,51 @@
     transition: none !important;
   }
 }
+
+/* ==================================================== registration wizard (cn-wiz-) */
+
+/* Step dots and connectors: JS flips the state classes, these settle the paint.
+   The active dot swells in on the enter curve; done/undone colour changes fade
+   instead of snapping. Reduced motion is already handled by the global
+   .console-shell rules above. */
+@keyframes cn-wiz-dot-in {
+  from { transform: scale(0.72); }
+  to { transform: scale(1); }
+}
+.cn-wiz-dot {
+  transition:
+    background-color var(--dur-base) var(--ease-console),
+    border-color var(--dur-base) var(--ease-console),
+    color var(--dur-base) var(--ease-console);
+}
+.cn-wiz-dot.cn-wiz-active {
+  animation: cn-wiz-dot-in 0.32s var(--ease-enter) both;
+}
+.cn-wiz-line {
+  transition: background-color var(--dur-base) var(--ease-console);
+}
+
+/* ============================================= marketplace leaderboard (cn-lb-) */
+
+/* Leaderboard rows and featured cards: the standard row entrance on a short
+   nth-child ladder (same stagger idiom as the screen rows above). `both` fill
+   keeps the global reduced-motion override degrading these to instant swaps. */
+.cn-lb-rows > * {
+  animation: cn-row-in 0.4s var(--ease-enter) both;
+}
+.cn-lb-rows > *:nth-child(2) { animation-delay: 40ms; }
+.cn-lb-rows > *:nth-child(3) { animation-delay: 80ms; }
+.cn-lb-rows > *:nth-child(4) { animation-delay: 120ms; }
+.cn-lb-rows > *:nth-child(5) { animation-delay: 160ms; }
+.cn-lb-rows > *:nth-child(n + 6) { animation-delay: 200ms; }
+
+/* Rank-score fill: React sets the proportional width inline; the fill sweeps
+   open once from the left after the rows have landed. */
+@keyframes cn-lb-bar-in {
+  from { transform: scaleX(0); }
+  to { transform: scaleX(1); }
+}
+.cn-lb-bar {
+  transform-origin: left;
+  animation: cn-lb-bar-in 0.55s var(--ease-enter) 0.24s both;
+}

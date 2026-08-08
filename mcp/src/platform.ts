@@ -2244,6 +2244,10 @@ export function marketplace(viewer?: string, includeAll = false, category?: stri
       onchainTx: a.onchainTx,
       onchainExplorer: a.onchainExplorer,
       onchainAgentId: a.onchainAgentId,
+      // The ERC-8004 registration document itself. Public by design: it restates fields
+      // already on this card (name/description/category/capabilities/chain) plus the
+      // registration date — no owner, wallet, or policy data ever lands in it.
+      registration: a.passport.registrationJson,
       guardrails: feedGuardrails(a),
       reputation: rep,
       walletAddress: a.walletAddress,
@@ -2258,6 +2262,54 @@ export function marketplace(viewer?: string, includeAll = false, category?: stri
     // and say how many are hidden from the default (KYA-verified) showcase.
     totalAll: state.agents.length,
     showingAll: includeAll,
+  }
+}
+
+/** Leaderboard depth: past the top 50 a rank stops meaning anything, and every extra row
+ *  costs a repOf() recompute over the full instruction/task history. */
+const LEADERBOARD_MAX = 50
+
+/**
+ * The public leaderboard: showcase agents ranked by ONE composite number, so "who is
+ * winning" has a single answer instead of five sortable columns. The weights are
+ * deliberate: delivered paid work and verified-user feedback move the score far more
+ * than followers, so popularity alone cannot outrank agents that actually finish jobs.
+ * Same showcase filter as the feed — an agent that has not passed KYA cannot place.
+ */
+export function marketplaceLeaderboard() {
+  const ranked = state.agents
+    .filter(isShowcase)
+    .map((a) => {
+      const reputation = repOf(a)
+      const feedback = feedbackSummary(a.id)
+      const followers = a.followers.length
+      const tasksDone = state.tasks.filter((t) => t.agentId === a.id && t.status === 'released').length
+      const rankScore =
+        Math.round(
+          (reputation.score + (feedback.avg ?? 0) * 20 + feedback.count * 10 + followers * 5 + tasksDone * 15) * 10,
+        ) / 10
+      return { a, reputation, feedback, followers, tasksDone, rankScore }
+    })
+    // Ties break toward tenure: on an equal score the newer agent ranks below the one
+    // that has held that score longer.
+    .sort((x, y) => y.rankScore - x.rankScore || x.a.createdAt.localeCompare(y.a.createdAt))
+    .slice(0, LEADERBOARD_MAX)
+  return {
+    agents: ranked.map((r, i) => ({
+      id: r.a.id,
+      name: r.a.name,
+      logoUrl: r.a.logoUrl,
+      category: r.a.category,
+      kya: r.a.kya,
+      onchainAgentId: r.a.onchainAgentId,
+      reputation: r.reputation,
+      feedback: r.feedback,
+      followers: r.followers,
+      tasksDone: r.tasksDone,
+      rankScore: r.rankScore,
+      rank: i + 1,
+    })),
+    computedAt: new Date().toISOString(),
   }
 }
 

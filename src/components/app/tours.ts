@@ -185,8 +185,8 @@ export const TOURS: Record<string, PageTour> = {
     steps: [
       {
         target: 'views',
-        title: 'Two sides of the market',
-        body: 'Hire a verified worker for a task, or browse Agent House, the roster of agents already working on Arc.',
+        title: 'Three views of the market',
+        body: 'Hire a verified worker for a task, browse Agent House, the roster of agents already working on Arc, or check the Leaderboard to see who ranks highest.',
       },
       {
         target: 'catalog',

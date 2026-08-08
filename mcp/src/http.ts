@@ -16,7 +16,7 @@ import { buildServer } from './server.js'
 import { CHAIN_CONFIG } from './data.js'
 import { buildStamp } from './build-stamp.js'
 import { renderBadgeSvg } from './policy/index.js'
-import { createIdentityProvider } from './erc8004.js'
+import { createIdentityProvider, isSafePublicHttpUrl } from './erc8004.js'
 import { getArcStatus } from './arc.js'
 import { getCircleStatus } from './circle.js'
 import { readArcContracts, registerAgentOnchain, createJobOnchain, runEscrowJobDemo, readMemosOnchain, rejectJobOnchain, claimJobRefundOnchain, readJobOnchain, payUsdcBatchOnchain } from './arc-contracts.js'
@@ -50,6 +50,7 @@ import {
   agentAccess,
   listPlatformAgents,
   marketplace,
+  marketplaceLeaderboard,
   updateAgentPermissions,
   provisionAgentVault,
   getAgentVault,
@@ -486,7 +487,7 @@ const server = http.createServer(async (req, res) => {
   if (isMutation && !isVerified(caller)) {
     sendJson(res, 403, {
       error:
-        'Verified sign-in required. Guest sessions are read-only — sign in with your wallet or an emailed magic link to act.',
+        'Verified sign-in required. Guest sessions are read-only. Sign in with your wallet or an emailed magic link to act.',
     })
     return
   }
@@ -1097,6 +1098,38 @@ const server = http.createServer(async (req, res) => {
     sendJson(res, 'error' in r ? errStatus(r.error) : 201, r)
     return
   }
+  // The same registration, by reference: the caller hands us a URL to their manifest
+  // instead of the manifest inline (how an agent framework points at its own hosted
+  // card). We fetch it server-side, which makes the URL an SSRF surface: only http(s)
+  // to a public-looking host (isSafePublicHttpUrl — best-effort literal-host filtering,
+  // acceptable for a demo backend), redirects refused so a public URL can't 30x us into
+  // an internal target, and the response bounded in both time and size.
+  if (req.method === 'POST' && url.pathname === '/api/agents/register-url') {
+    const body = (await readBody(req).catch(() => null)) as { url?: string } | null
+    if (!body?.url || typeof body.url !== 'string') { sendJson(res, 400, { error: 'url required' }); return }
+    const manifestUrl = body.url.trim()
+    if (!isSafePublicHttpUrl(manifestUrl)) {
+      sendJson(res, 400, { error: 'url must be a public http(s) URL; localhost, private ranges, and internal hosts are refused' })
+      return
+    }
+    let manifest: unknown
+    try {
+      const upstream = await fetch(manifestUrl, { signal: AbortSignal.timeout(10_000), redirect: 'error' })
+      if (!upstream.ok) { sendJson(res, 502, { error: `manifest fetch failed: upstream answered HTTP ${upstream.status}` }); return }
+      const text = await upstream.text()
+      // Same reasoning as MAX_BODY_BYTES: a manifest is a small JSON document, and anything
+      // bigger would balloon the single persisted state blob when its fields are stored.
+      if (text.length > 200_000) { sendJson(res, 400, { error: 'manifest too large (200KB max)' }); return }
+      manifest = JSON.parse(text)
+    } catch (e) {
+      const detail = e instanceof SyntaxError ? 'the URL did not return valid JSON' : 'the URL did not answer within 10s (redirects are not followed)'
+      sendJson(res, e instanceof SyntaxError ? 400 : 502, { error: `manifest fetch failed: ${detail}` })
+      return
+    }
+    const r = registerAgentFromManifest(manifest as never, callerId)
+    sendJson(res, 'error' in r ? errStatus(r.error) : 201, r)
+    return
+  }
   // The owner's own registration + badge view.
   if (req.method === 'GET' && url.pathname === '/api/agents/register') {
     const agentId = url.searchParams.get('agentId') ?? ''
@@ -1274,6 +1307,12 @@ const server = http.createServer(async (req, res) => {
       200,
       marketplace(url.searchParams.get('viewer') ?? undefined, includeAll, url.searchParams.get('category') ?? undefined),
     )
+    return
+  }
+  // The ranked view of the same showcase (public read): one composite score per agent, so
+  // the UI never re-derives ranking client-side and drifts from what the server would say.
+  if (req.method === 'GET' && url.pathname === '/api/marketplace/leaderboard') {
+    sendJson(res, 200, marketplaceLeaderboard())
     return
   }
   if (req.method === 'POST' && url.pathname === '/api/follow') {
@@ -1522,6 +1561,7 @@ server.listen(PORT, () => {
   console.error(`  GET  /api/agents/audit-log       decision trail (?since= &limit=)`)
   console.error(`  POST /api/agents/audit-log/outcome  record what happened after a verdict`)
   console.error(`  POST /api/agents/register         register an agent from a manifest (free)`)
+  console.error(`  POST /api/agents/register-url     register from a hosted manifest URL (free)`)
   console.error(`  GET  /api/agents/badge           public guardrail badge (SVG or JSON, opt-in)`)
   console.error(`  GET  /api/traction               aggregate guardrail traction (public)`)
   console.error(`  GET  /api/guardrail-status       live engine self-check (503 if not enforcing)`)

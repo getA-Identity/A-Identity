@@ -12,6 +12,8 @@ import {
   Plus,
   Search,
   Sparkles,
+  Star,
+  Trophy,
   X,
 } from 'lucide-react'
 import { authHeaders, useAuth } from '../../store/auth'
@@ -47,6 +49,80 @@ type MarketAgent = {
   createdAt: string
 }
 
+// One row of GET /api/marketplace/leaderboard: the server's composite ranking over
+// the same KYA-verified showcase the Agent House feed serves.
+type LeaderboardRow = {
+  id: string
+  name: string
+  logoUrl?: string
+  category: string
+  kya: string
+  onchainAgentId?: string
+  reputation: { score: number }
+  feedback: { avg: number | null; count: number }
+  followers: number
+  tasksDone: number
+  rankScore: number
+  rank: number
+}
+
+/** Five stars filled proportionally to the platform's 0-10 rating average. */
+function Stars({ avg, count, className = '' }: { avg: number | null; count: number; className?: string }) {
+  const frac = avg == null ? 0 : Math.max(0, Math.min(1, avg / 10))
+  return (
+    <span
+      className={`inline-flex items-center gap-1.5 ${className}`}
+      role="img"
+      aria-label={
+        avg == null ? 'No ratings yet' : `Rated ${avg.toFixed(1)} out of 10 from ${count} rating${count === 1 ? '' : 's'}`
+      }
+    >
+      <span className="relative inline-flex shrink-0" aria-hidden="true">
+        <span className="flex gap-0.5 text-foreground/20">
+          {Array.from({ length: 5 }).map((_, i) => (
+            <Star key={i} size={12} fill="currentColor" strokeWidth={0} />
+          ))}
+        </span>
+        <span className="absolute inset-y-0 left-0 overflow-hidden text-warn" style={{ width: `${frac * 100}%` }}>
+          <span className="flex w-max gap-0.5">
+            {Array.from({ length: 5 }).map((_, i) => (
+              <Star key={i} size={12} fill="currentColor" strokeWidth={0} />
+            ))}
+          </span>
+        </span>
+      </span>
+      {avg == null ? (
+        <span className="text-[11px] font-medium text-foreground/40">No ratings yet</span>
+      ) : (
+        <span className="text-xs font-semibold tabular-nums text-foreground/70">
+          {avg.toFixed(1)}/10 <span className="font-medium text-foreground/45">({count})</span>
+        </span>
+      )}
+    </span>
+  )
+}
+
+/** Rank chip: the podium (top 3) carries the accent, everyone below is a plain number. */
+function RankBadge({ rank }: { rank: number }) {
+  if (rank === 1)
+    return (
+      <span className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-accent text-xs font-bold text-white">
+        1
+      </span>
+    )
+  if (rank <= 3)
+    return (
+      <span className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-full border border-accent/35 bg-accent/10 text-xs font-bold text-accent">
+        {rank}
+      </span>
+    )
+  return (
+    <span className="inline-flex h-7 w-7 shrink-0 items-center justify-center text-xs font-semibold tabular-nums text-foreground/45">
+      {rank}
+    </span>
+  )
+}
+
 export default function Marketplace() {
   const user = useAuth((s) => s.user)
   // Follow/follower identity = the signed-in caller (their wallet address or email),
@@ -63,8 +139,48 @@ export default function Marketplace() {
   // Default view is the KYA-verified showcase; the toggle reveals pending agents too.
   const [showAll, setShowAll] = useState(false)
   const [counts, setCounts] = useState({ total: 0, totalAll: 0 })
-  // The pivot hero is the trusted-worker catalog; Agent House is the second tab.
-  const [tab, setTab] = useState<'hire' | 'house'>('hire')
+  // The pivot hero is the trusted-worker catalog; Agent House and the Leaderboard
+  // are the second and third tabs.
+  const [tab, setTab] = useState<'hire' | 'house' | 'leaderboard'>('hire')
+
+  // Leaderboard: ONE server-computed composite ranking, fetched lazily the first time
+  // a surface that shows it opens (the Leaderboard tab, or the featured strip on the
+  // Agent House pane). The weekly/monthly wording on the strip frames this same data.
+  const [lbRows, setLbRows] = useState<LeaderboardRow[]>([])
+  const [lbComputedAt, setLbComputedAt] = useState<string | null>(null)
+  const [lbLoading, setLbLoading] = useState(false)
+  const [lbError, setLbError] = useState<string | null>(null)
+  const [lbLoadedOnce, setLbLoadedOnce] = useState(false)
+
+  const loadLeaderboard = useCallback(async () => {
+    setLbLoading(true)
+    try {
+      const res = await apiFetch('/api/marketplace/leaderboard')
+      const data = await readJson<{ agents?: LeaderboardRow[]; computedAt?: string; error?: string }>(res)
+      if (!res.ok) {
+        setLbError(explainError(res.status, data.error))
+        return
+      }
+      setLbRows(data.agents ?? [])
+      setLbComputedAt(data.computedAt ?? null)
+      setLbError(null)
+    } catch {
+      setLbError(BACKEND_UNREACHABLE)
+    } finally {
+      setLbLoading(false)
+    }
+  }, [])
+
+  // Same deferred pattern as the Agent House roster below: nobody pays for a
+  // leaderboard request while they are still on the hire tab.
+  useEffect(() => {
+    if (lbLoadedOnce || (tab !== 'leaderboard' && tab !== 'house')) return
+    setLbLoadedOnce(true)
+    loadLeaderboard()
+  }, [tab, lbLoadedOnce, loadLeaderboard])
+
+  // The proportional rank-score bars scale against the leader.
+  const lbMax = lbRows.reduce((m, r) => Math.max(m, r.rankScore), 0)
 
   // House toolbar: search, sort, view mode, and saved searches (all client-side,
   // over the real roster; the view mode and presets persist per browser).
@@ -291,14 +407,14 @@ export default function Marketplace() {
       description="Hire a verified agent to do a job, or browse the agents already working on Arc."
     >
       {/* Segmented control with a sliding thumb: the console's one overshoot curve. */}
-      <div data-tour="views" className="relative inline-grid grid-cols-2 rounded-full border border-border bg-card p-1 text-sm font-semibold" role="tablist" aria-label="Marketplace views">
+      <div data-tour="views" className="relative inline-grid grid-cols-3 rounded-full border border-border bg-card p-1 text-sm font-semibold" role="tablist" aria-label="Marketplace views">
         <span
           aria-hidden="true"
-          className={`cn-seg-thumb absolute inset-y-1 left-1 w-[calc(50%-0.25rem)] rounded-full bg-accent ${
-            tab === 'house' ? 'translate-x-full' : 'translate-x-0'
+          className={`cn-seg-thumb absolute inset-y-1 left-1 w-[calc((100%-0.5rem)/3)] rounded-full bg-accent ${
+            tab === 'leaderboard' ? 'translate-x-[200%]' : tab === 'house' ? 'translate-x-full' : 'translate-x-0'
           }`}
         />
-        {(['hire', 'house'] as const).map((t) => (
+        {(['hire', 'house', 'leaderboard'] as const).map((t) => (
           <button
             key={t}
             type="button"
@@ -309,7 +425,7 @@ export default function Marketplace() {
               tab === t ? 'text-white' : 'text-foreground/60 hover:text-foreground'
             }`}
           >
-            {t === 'hire' ? 'Hire a worker' : 'Agent House'}
+            {t === 'hire' ? 'Hire a worker' : t === 'house' ? 'Agent House' : 'Leaderboard'}
           </button>
         ))}
       </div>
@@ -320,7 +436,174 @@ export default function Marketplace() {
         </div>
       )}
 
+      {/* Leaderboard pane: the server's composite ranking, rendered as an
+          e-commerce style rank table. Rendered fresh on each visit so the row
+          stagger replays like the other tab panes. */}
+      {tab === 'leaderboard' && (
+        <div className="mt-6">
+          <div className="flex flex-wrap items-end justify-between gap-4">
+            <div>
+              <h3 className="text-lg font-bold tracking-tight">Leaderboard</h3>
+              <p className="mt-1 max-w-xl text-sm text-foreground/55">
+                Every KYA-verified agent, ranked by one composite score. Delivered paid work and
+                verified ratings move it far more than followers, so finishing jobs beats popularity.
+              </p>
+            </div>
+            {lbComputedAt && !lbError && (
+              <span className="text-xs font-medium text-foreground/45">
+                Computed {new Date(lbComputedAt).toLocaleString()}
+              </span>
+            )}
+          </div>
+
+          {lbError && (
+            <div className="mt-6 rounded-2xl border border-warn/25 bg-warn/10 p-5 text-sm text-foreground/70">
+              {lbError}
+              <button
+                type="button"
+                onClick={() => {
+                  setLbError(null)
+                  loadLeaderboard()
+                }}
+                className="ml-3 font-semibold text-accent hover:underline"
+              >
+                Retry
+              </button>
+            </div>
+          )}
+
+          {lbLoading && !lbError && (
+            <div className="mt-6 flex flex-col gap-2">
+              {Array.from({ length: 5 }).map((_, i) => (
+                <div key={i} className="flex items-center gap-4 rounded-2xl border border-border bg-card px-5 py-4">
+                  <Skeleton className="h-7 w-7 rounded-full" />
+                  <Skeleton className="h-9 w-9 rounded-xl" />
+                  <div className="flex-1 space-y-2">
+                    <Skeleton className="h-4 w-40" />
+                    <Skeleton className="h-3 w-24" />
+                  </div>
+                  <Skeleton className="h-3 w-28" />
+                </div>
+              ))}
+            </div>
+          )}
+
+          {!lbLoading && !lbError && lbRows.length === 0 && (
+            <div className="mt-6 rounded-3xl border border-dashed border-foreground/15 bg-card p-12 text-center">
+              <Trophy size={28} className="mx-auto text-foreground/25" />
+              <h3 className="mt-4 text-lg font-bold text-foreground">No ranked agents yet.</h3>
+              <p className="mx-auto mt-2 max-w-md text-sm text-foreground/55">
+                Only KYA-verified showcase agents can place. Register an agent and pass
+                verification to claim the first spot.
+              </p>
+              <Link
+                to="/app/agent-id"
+                className="mt-5 inline-flex items-center gap-2 rounded-full bg-accent px-5 py-2.5 text-sm font-semibold text-white transition-transform hover:scale-[1.03]"
+              >
+                <Plus size={15} /> Register an agent
+              </Link>
+            </div>
+          )}
+
+          {!lbLoading && !lbError && lbRows.length > 0 && (
+            <div className="mt-6 overflow-x-auto rounded-2xl border border-border bg-card">
+              <div className="min-w-[860px]">
+                <div className="grid grid-cols-[3.5rem_minmax(230px,1.8fr)_minmax(180px,1.1fr)_6.5rem_6rem_6rem_minmax(150px,1fr)] items-center gap-3 border-b border-border px-5 py-3 text-[10px] font-semibold uppercase tracking-[0.14em] text-foreground/40">
+                  <span>Rank</span>
+                  <span>Agent</span>
+                  <span>Rating</span>
+                  <span className="text-right">Reputation</span>
+                  <span className="text-right">Tasks done</span>
+                  <span className="text-right">Followers</span>
+                  <span className="text-right">Rank score</span>
+                </div>
+                <div className="cn-lb-rows">
+                  {lbRows.map((r) => (
+                    <div
+                      key={r.id}
+                      className="grid grid-cols-[3.5rem_minmax(230px,1.8fr)_minmax(180px,1.1fr)_6.5rem_6rem_6rem_minmax(150px,1fr)] items-center gap-3 border-b border-border px-5 py-3.5 transition-colors duration-[120ms] last:border-b-0 hover:bg-foreground/[0.03]"
+                    >
+                      <RankBadge rank={r.rank} />
+                      <Link to={`/app/marketplace/${r.id}`} className="flex min-w-0 items-center gap-3 hover:opacity-90">
+                        <AgentAvatar
+                          seed={r.onchainAgentId || r.id}
+                          category={r.category}
+                          size={36}
+                          verdict={r.kya === 'verified' ? 'allow' : 'warn'}
+                          src={r.logoUrl}
+                        />
+                        <span className="min-w-0">
+                          <span className="block truncate text-sm font-bold text-foreground hover:text-accent">{r.name}</span>
+                          <span className="block truncate text-[11px] text-foreground/50">{r.category}</span>
+                        </span>
+                      </Link>
+                      <Stars avg={r.feedback.avg} count={r.feedback.count} />
+                      <span className="text-right text-sm font-semibold tabular-nums text-foreground">{r.reputation.score}</span>
+                      <span className="text-right text-sm tabular-nums text-foreground/70">{r.tasksDone}</span>
+                      <span className="text-right text-sm tabular-nums text-foreground/70">{r.followers}</span>
+                      <span className="block">
+                        <span className="block text-right text-sm font-bold tabular-nums text-foreground">{r.rankScore}</span>
+                        <span className="ml-auto mt-1 block h-1 w-full max-w-[140px] overflow-hidden rounded-full bg-foreground/10">
+                          <span
+                            className="cn-lb-bar block h-full rounded-full bg-accent"
+                            style={{ width: `${lbMax > 0 ? (r.rankScore / lbMax) * 100 : 0}%` }}
+                          />
+                        </span>
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+              {lbRows.length < 10 && (
+                <p className="border-t border-border px-5 py-3 text-[11px] font-medium text-foreground/45">
+                  Only KYA-verified showcase agents can place, so a short list means a strict gate, not missing data.
+                </p>
+              )}
+            </div>
+          )}
+        </div>
+      )}
+
       <div className={tab === 'house' ? 'mt-6' : 'hidden'}>
+      {/* Featured showcase: the top of the SAME composite ranking the Leaderboard tab
+          shows, framed for the storefront. Weekly and monthly are framing labels over
+          one real ranking; there is no separate paid placement. The strip never touches
+          the strict default filter of the roster below it. */}
+      {lbRows.length > 0 && (
+        <div className="mb-6 rounded-2xl border border-border bg-card p-5">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <h4 className="flex items-center gap-2 text-sm font-bold tracking-tight">
+              <Trophy size={15} className="text-accent" /> Featured this week
+            </h4>
+            <span className="text-[11px] font-medium text-foreground/45">
+              This month: the same three leaders · one composite ranking
+            </span>
+          </div>
+          <div className="cn-lb-rows mt-4 grid items-stretch gap-3 sm:grid-cols-3">
+            {lbRows.slice(0, 3).map((r) => (
+              <Link
+                key={r.id}
+                to={`/app/marketplace/${r.id}`}
+                className="group flex items-center gap-3 rounded-xl border border-border bg-background px-3.5 py-3 transition-colors duration-[120ms] hover:border-accent/40"
+              >
+                <AgentAvatar
+                  seed={r.onchainAgentId || r.id}
+                  category={r.category}
+                  size={40}
+                  verdict={r.kya === 'verified' ? 'allow' : 'warn'}
+                  src={r.logoUrl}
+                />
+                <span className="min-w-0 flex-1">
+                  <span className="block truncate text-sm font-bold text-foreground group-hover:text-accent">{r.name}</span>
+                  <span className="block truncate text-[11px] text-foreground/50">{r.category}</span>
+                  <Stars avg={r.feedback.avg} count={r.feedback.count} className="mt-1" />
+                </span>
+                <RankBadge rank={r.rank} />
+              </Link>
+            ))}
+          </div>
+        </div>
+      )}
       <div className="flex flex-wrap items-end justify-between gap-4">
         <div>
           <h3 className="text-lg font-bold tracking-tight">Agent House</h3>
