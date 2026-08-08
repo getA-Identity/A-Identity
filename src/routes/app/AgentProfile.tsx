@@ -1,30 +1,46 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
 import {
   Activity,
   ArrowLeft,
-  FileJson,
   BadgeCheck,
   BarChart3,
+  Check,
+  ChevronLeft,
+  ChevronRight,
+  CircleDollarSign,
   Clock,
+  Copy,
   ExternalLink,
+  FileJson,
   Gauge,
+  Headset,
   Heart,
   Info,
+  Languages,
   Loader2,
   MessageSquare,
+  Palette,
+  PenLine,
+  Search,
+  ShieldCheck,
   ShieldQuestion,
   Star,
+  Terminal,
+  TrendingUp,
   Wrench,
 } from 'lucide-react'
 import { authHeaders, useAuth } from '../../store/auth'
 import { apiFetch, readJson, explainError } from '../../lib/api'
 import { BACKEND_UNREACHABLE } from '../../lib/mcpBase'
 import { humanizeActivity, short } from '../../lib/format'
+import { CHAIN_BY_ID, type ChainId } from '../../lib/chains'
 import AgentAvatar from '../../components/AgentAvatar'
 import AppPage from '../../components/app/AppPage'
+import ChainLogo from '../../components/app/ChainLogo'
 import { Badge } from '../../components/ui/badge'
 import { Skeleton } from '../../components/ui/skeleton'
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '../../components/ui/tooltip'
 import { useTabCarousel } from '../../hooks/useTabCarousel'
 import CopyBlock from '../../components/app/CopyBlock'
 
@@ -35,6 +51,7 @@ type MarketAgent = {
   description: string
   category: string
   capabilities: string[]
+  chain?: string
   kya: string
   onchain: string
   onchainTx?: string
@@ -49,6 +66,20 @@ type MarketAgent = {
   createdAt: string
   /** The public ERC-8004 registration document, as stored at register time. */
   registration?: Record<string, unknown>
+  /** What this agent sells, trimmed to card fields. */
+  services?: { name: string; priceUsd: number; unit: string }[]
+  /** Cheapest listed service; null when the agent sells nothing. */
+  priceFromUsd?: number | null
+  /** Real completed sales: tasks whose escrow actually released. */
+  soldCount?: number
+  feedbackBreakdown?: { positive: number; neutral: number; negative: number }
+  positivePct?: number | null
+  /** A live callable endpoint is registered, nothing more. */
+  online?: boolean
+  /** 'escrow' always; 'x402' only with a callable endpoint. */
+  payments?: string[]
+  /** Owner-picked card style preset (1..6 onto --cat-1..6), or null. */
+  cardStyle?: number | null
 }
 
 type CatalogService = {
@@ -76,6 +107,23 @@ const TAB_META: { id: ProfileTab; label: string; icon: typeof Info }[] = [
   { id: 'feedback', label: 'Rating & Feedback', icon: MessageSquare },
   { id: 'metadata', label: 'Metadata', icon: FileJson },
 ]
+
+/** Keyword-to-glyph map for service rows, same idiom as AgentAvatar's category map. */
+const SERVICE_ICONS: { match: RegExp; icon: typeof Wrench }[] = [
+  { match: /translat|language|locali/i, icon: Languages },
+  { match: /trad|invest|defi|financ|portfolio|swap/i, icon: TrendingUp },
+  { match: /research|analy|data|scan|monitor|search/i, icon: Search },
+  { match: /writ|content|blog|copy|summar|report|doc/i, icon: PenLine },
+  { match: /code|dev|review|debug|engineer|deploy|test/i, icon: Terminal },
+  { match: /audit|secur|risk|compliance|kyc|verif/i, icon: ShieldCheck },
+  { match: /support|help|assist|customer|chat/i, icon: Headset },
+  { match: /design|image|art|logo|video|brand/i, icon: Palette },
+  { match: /pay|invoice|billing|settle|escrow/i, icon: CircleDollarSign },
+]
+
+function serviceIcon(name: string) {
+  return SERVICE_ICONS.find((s) => s.match.test(name))?.icon ?? Wrench
+}
 
 /**
  * Reveal a set of labelled lines one after another, character by character,
@@ -121,6 +169,7 @@ export default function AgentProfile() {
   const viewer = user?.email || user?.name || 'guest'
 
   const [agent, setAgent] = useState<MarketAgent | null>(null)
+  const [allAgents, setAllAgents] = useState<MarketAgent[]>([])
   const [services, setServices] = useState<CatalogService[] | null>(null)
   const [feedback, setFeedback] = useState<FeedbackData | null>(null)
   const [loaded, setLoaded] = useState(false)
@@ -135,6 +184,13 @@ export default function AgentProfile() {
   const [rating, setRating] = useState(false)
   const [rateNote, setRateNote] = useState<string | null>(null)
 
+  // Hero micro-interactions: id copy, wallet copy (inside the chain tooltip),
+  // and the inline "how we calculate" popover.
+  const [copiedId, setCopiedId] = useState(false)
+  const [copiedWallet, setCopiedWallet] = useState(false)
+  const [calcOpen, setCalcOpen] = useState(false)
+  const calcRef = useRef<HTMLDivElement | null>(null)
+
   useEffect(() => {
     let cancelled = false
     ;(async () => {
@@ -142,6 +198,7 @@ export default function AgentProfile() {
         const res = await apiFetch(`/api/marketplace?viewer=${encodeURIComponent(viewer)}&all=1`)
         const data = (await res.json()) as { agents: MarketAgent[] }
         if (cancelled) return
+        setAllAgents(data.agents)
         setAgent(data.agents.find((a) => a.id === agentId) ?? null)
         setError(null)
       } catch {
@@ -171,6 +228,23 @@ export default function AgentProfile() {
       cancelled = true
     }
   }, [agentId, viewer])
+
+  // The calculation popover dismisses on outside click and Escape, like any menu.
+  useEffect(() => {
+    if (!calcOpen) return
+    const onDown = (e: PointerEvent) => {
+      if (calcRef.current && e.target instanceof Node && !calcRef.current.contains(e.target)) setCalcOpen(false)
+    }
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setCalcOpen(false)
+    }
+    document.addEventListener('pointerdown', onDown)
+    document.addEventListener('keydown', onKey)
+    return () => {
+      document.removeEventListener('pointerdown', onDown)
+      document.removeEventListener('keydown', onKey)
+    }
+  }, [calcOpen])
 
   const toggleFollow = async () => {
     if (!agent) return
@@ -219,21 +293,76 @@ export default function AgentProfile() {
     }
   }
 
-  // The certificate's typed lines: real registry facts only.
-  const certLines = useMemo(() => {
-    if (!agent) return []
-    return [
-      agent.name,
-      agent.onchainAgentId ? `ERC-8004 #${agent.onchainAgentId}` : agent.id,
-      agent.category,
-      `Registered ${new Date(agent.createdAt).toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' })} · Circle Arc`,
-    ]
-  }, [agent])
+  // The typed lines: the agent's name, then its full id (platform + ERC-8004).
+  const idLine = agent ? (agent.onchainAgentId ? `${agent.id} · ERC-8004 #${agent.onchainAgentId}` : agent.id) : ''
+  const certLines = useMemo(() => (agent ? [agent.name, idLine] : []), [agent, idLine])
   const { revealed, done, activeLine } = useTypewriter(certLines)
+
+  const copyId = () => {
+    navigator.clipboard?.writeText(idLine)
+    setCopiedId(true)
+    setTimeout(() => setCopiedId(false), 1500)
+  }
+  const copyWallet = () => {
+    if (!agent?.walletAddress) return
+    navigator.clipboard?.writeText(agent.walletAddress)
+    setCopiedWallet(true)
+    setTimeout(() => setCopiedWallet(false), 1500)
+  }
 
   const rep = agent?.reputation
   const fbAvg = feedback?.avg ?? agent?.feedback?.avg ?? null
   const fbCount = feedback?.count ?? agent?.feedback?.count ?? 0
+  const breakdown = agent?.feedbackBreakdown
+  const soldCount = agent?.soldCount ?? 0
+  const chainInfo = agent?.chain && agent.chain in CHAIN_BY_ID ? CHAIN_BY_ID[agent.chain as ChainId] : undefined
+  const heroTint =
+    agent?.cardStyle != null && agent.cardStyle >= 1 && agent.cardStyle <= 6 ? String(Math.round(agent.cardStyle)) : undefined
+  const payments = agent?.payments ?? ['escrow']
+
+  // "Explore more": related agents from the already-fetched marketplace list.
+  // Same category first, then nearest composite rank score; never the agent itself.
+  const related = useMemo(() => {
+    if (!agent) return []
+    const scoreOf = (a: MarketAgent) =>
+      (a.reputation?.score ?? 0) +
+      (a.feedback?.avg ?? 0) * 20 +
+      (a.feedback?.count ?? 0) * 10 +
+      a.followers * 5 +
+      (a.soldCount ?? 0) * 15
+    const mine = scoreOf(agent)
+    return allAgents
+      .filter((a) => a.id !== agent.id && a.kya === 'verified')
+      .map((a) => ({ a, diff: Math.abs(scoreOf(a) - mine), sameCat: a.category === agent.category }))
+      .sort((x, y) => (x.sameCat === y.sameCat ? x.diff - y.diff : x.sameCat ? -1 : 1))
+      .slice(0, 8)
+      .map((r) => r.a)
+  }, [allAgents, agent])
+
+  // Explore-more auto-advance: ~5s per step, paused while hovered or focused,
+  // and never started at all under prefers-reduced-motion.
+  const stripRef = useRef<HTMLDivElement | null>(null)
+  const stripPaused = useRef(false)
+  const spinStrip = useCallback((dir: 1 | -1) => {
+    const el = stripRef.current
+    if (!el) return
+    const behavior: ScrollBehavior = window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth'
+    const card = el.firstElementChild as HTMLElement | null
+    const step = card ? card.offsetWidth + 12 : 236
+    const atEnd = el.scrollLeft + el.clientWidth >= el.scrollWidth - 8
+    const atStart = el.scrollLeft <= 8
+    if (dir === 1 && atEnd) el.scrollTo({ left: 0, behavior })
+    else if (dir === -1 && atStart) el.scrollTo({ left: el.scrollWidth, behavior })
+    else el.scrollBy({ left: dir * step, behavior })
+  }, [])
+  useEffect(() => {
+    if (related.length < 2) return
+    if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) return
+    const iv = setInterval(() => {
+      if (!stripPaused.current) spinStrip(1)
+    }, 5000)
+    return () => clearInterval(iv)
+  }, [related.length, spinStrip])
 
   // Quality signals: every flag derives from a real field, nothing is invented.
   const quality = agent
@@ -284,17 +413,16 @@ export default function AgentProfile() {
 
       {agent && (
         <>
-          {/* The certificate. A dark glass card in the brand's ink, the agent's own
-              mark as the seal, its registry facts typed on, and a slow sheen. */}
+          {/* The profile hero. The certificate's dark glass ground (tinted by the
+              owner's card style when set), the agent's own mark as the seal, its
+              registry facts typed on, and a slow sheen. */}
           <div
-            className="cn-cert relative mt-6 overflow-hidden rounded-3xl border border-white/10 p-7 text-white shadow-xl"
-            style={{
-              background: 'linear-gradient(140deg, #131c26 0%, #192837 45%, var(--accent-deep) 130%)',
-            }}
+            className="cn-pf2-hero relative mt-6 rounded-3xl border border-white/10 p-6 text-white shadow-xl sm:p-7"
+            data-tint={heroTint}
           >
             <div className="cn-cert-sheen" aria-hidden="true" />
             <div
-              className="pointer-events-none absolute inset-0 opacity-[0.07]"
+              className="pointer-events-none absolute inset-0 rounded-3xl opacity-[0.07]"
               style={{
                 backgroundImage: 'radial-gradient(circle, white 1px, transparent 1.5px)',
                 backgroundSize: '7px 7px',
@@ -304,10 +432,10 @@ export default function AgentProfile() {
 
             <div className="relative flex items-start justify-between gap-4">
               <div className="flex items-center gap-2 text-[10px] font-bold uppercase tracking-[0.2em] text-white/55">
-                A-Identity · Agent Certificate
+                A-Identity · Agent Profile
               </div>
               {agent.kya === 'verified' ? (
-                <span className="inline-flex items-center gap-1.5 rounded-full bg-ok/20 px-3 py-1 text-[11px] font-bold text-[#8ef0c0]">
+                <span className="cn-pf2-chip-ok inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-[11px] font-bold">
                   <BadgeCheck size={12} /> KYA Verified
                 </span>
               ) : (
@@ -317,12 +445,12 @@ export default function AgentProfile() {
               )}
             </div>
 
-            <div className="relative mt-6 flex items-start gap-5">
-              <div className="shrink-0 rounded-2xl bg-white/10 p-1.5">
+            <div className="relative mt-5 flex flex-col gap-5 sm:flex-row sm:items-start">
+              <div className="shrink-0 self-start rounded-2xl bg-white/10 p-1.5">
                 <AgentAvatar
                   seed={agent.onchainAgentId || agent.id}
                   category={agent.category}
-                  size={64}
+                  size={72}
                   verdict={agent.kya === 'verified' ? 'allow' : 'warn'}
                   src={agent.logoUrl}
                 />
@@ -332,77 +460,186 @@ export default function AgentProfile() {
                   {revealed[0]}
                   {activeLine === 0 && <span className="cn-caret" aria-hidden="true" />}
                 </div>
-                <div className="mt-1 font-mono text-sm text-white/60">
-                  {revealed[1]}
-                  {activeLine === 1 && <span className="cn-caret" aria-hidden="true" />}
+                <div className="mt-1 flex flex-wrap items-center gap-1.5">
+                  <span className="break-all font-mono text-xs text-white/60">
+                    {revealed[1]}
+                    {activeLine === 1 && <span className="cn-caret" aria-hidden="true" />}
+                  </span>
+                  <button
+                    type="button"
+                    onClick={copyId}
+                    aria-label="Copy agent id"
+                    className={`shrink-0 rounded-md p-1 text-white/55 transition-opacity duration-300 hover:bg-white/10 hover:text-white/90 ${done ? 'opacity-100' : 'pointer-events-none opacity-0'}`}
+                  >
+                    {copiedId ? <Check size={12} className="cn-pf2-ok-ink" /> : <Copy size={12} />}
+                  </button>
                 </div>
-                <div className="mt-3 text-sm font-semibold text-white/80">
-                  {revealed[2]}
-                  {activeLine === 2 && <span className="cn-caret" aria-hidden="true" />}
-                </div>
-                <div className="mt-0.5 text-xs text-white/55">
-                  {revealed[3]}
-                  {activeLine === 3 && <span className="cn-caret" aria-hidden="true" />}
+                {agent.description && (
+                  <p className="mt-2.5 line-clamp-2 max-w-2xl text-sm leading-relaxed text-white/75">{agent.description}</p>
+                )}
+                <div className="mt-3 flex flex-wrap items-center gap-2">
+                  <span className="rounded-full bg-white/10 px-2.5 py-1 text-[11px] font-bold text-white/85">
+                    {agent.category}
+                  </span>
+                  <span className="text-[11px] font-medium text-white/50">
+                    Registered{' '}
+                    {new Date(agent.createdAt).toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' })}
+                  </span>
                 </div>
               </div>
-              <div className={`shrink-0 text-right transition-opacity duration-500 ${done ? 'opacity-100' : 'opacity-0'}`}>
-                <div className="text-[10px] font-bold uppercase tracking-[0.16em] text-white/50">Reputation</div>
+
+              {/* Reputation block, with the inline "how we calculate" popover
+                  (absolute inside this container; deliberately not portaled). */}
+              <div ref={calcRef} className="relative shrink-0 sm:text-right">
+                <div className="flex items-center gap-1.5 sm:justify-end">
+                  <span className="text-[10px] font-bold uppercase tracking-[0.16em] text-white/50">Reputation</span>
+                  <button
+                    type="button"
+                    onClick={() => setCalcOpen((v) => !v)}
+                    aria-expanded={calcOpen}
+                    aria-haspopup="dialog"
+                    aria-label="How we calculate these numbers"
+                    className="rounded-full p-0.5 text-white/50 transition-colors duration-[120ms] hover:bg-white/10 hover:text-white/90"
+                  >
+                    <Info size={13} />
+                  </button>
+                </div>
                 <div className="mt-0.5 text-4xl font-bold leading-none tabular-nums">{rep ? rep.score : '-'}</div>
                 <div className="mt-0.5 text-xs text-white/50">/ 1000</div>
-                {fbAvg != null && (
+                {fbAvg != null ? (
                   <div className="mt-2 inline-flex items-center gap-1 rounded-full bg-white/10 px-2.5 py-1 text-[11px] font-bold text-white/85">
                     <Star size={11} className="text-warn" fill="currentColor" /> {fbAvg.toFixed(1)}/10 · {fbCount}
+                  </div>
+                ) : (
+                  <div className="mt-2 text-[11px] font-medium text-white/45">No ratings yet</div>
+                )}
+
+                {calcOpen && (
+                  <div
+                    role="dialog"
+                    aria-label="How we calculate these numbers"
+                    className="cn-pop-in absolute right-0 top-full z-30 mt-2 w-72 rounded-xl border border-border bg-card p-4 text-left shadow-xl sm:w-80"
+                  >
+                    <div className="text-xs font-bold text-foreground">How we calculate</div>
+                    <p className="mt-1.5 text-xs leading-relaxed text-foreground/70">
+                      Marketplace rank uses one composite number:
+                    </p>
+                    <pre className="mt-1.5 overflow-x-auto rounded-lg bg-foreground/[0.04] px-2.5 py-2 font-mono text-[11px] leading-relaxed text-foreground/80">
+                      {'rankScore = reputation\n  + avg rating x 20\n  + ratings x 10\n  + followers x 5\n  + tasks done x 15'}
+                    </pre>
+                    <p className="mt-2.5 text-xs leading-relaxed text-foreground/70">
+                      Reputation (0-1000) comes from real signals:
+                    </p>
+                    <ul className="mt-1.5 flex list-disc flex-col gap-1 pl-4 text-[11px] leading-relaxed text-foreground/65">
+                      <li>Settlement: up to 600 from on-chain USDC settlements, including a +60 verified-identity credit.</li>
+                      <li>Validation: up to 240 from the clean (settled vs rejected) ratio.</li>
+                      <li>Tenure: up to 160, about 1 point per 2 days since registration.</li>
+                      <li>Behavior: -150 to +40 from real job outcomes and client ratings.</li>
+                    </ul>
+                    <p className="mt-2 text-[11px] leading-relaxed text-foreground/50">
+                      User ratings are whole 1-10 scores, one per rater; rating again replaces the old one.
+                    </p>
                   </div>
                 )}
               </div>
             </div>
 
+            {/* Stats strip: feedback breakdown, sales, the network row, follow. */}
             <div
               className={`relative mt-6 flex flex-wrap items-center justify-between gap-3 border-t border-white/10 pt-4 transition-opacity duration-500 ${done ? 'opacity-100' : 'opacity-40'}`}
             >
               <div className="flex flex-wrap items-center gap-2">
-                {agent.onchain === 'registered' ? (
-                  agent.onchainExplorer ? (
-                    <a
-                      href={agent.onchainExplorer}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="inline-flex items-center gap-1 rounded-full bg-white/10 px-3 py-1 text-[11px] font-bold text-white/85 hover:bg-white/20"
-                    >
-                      On-chain #{agent.onchainAgentId ?? ''} <ExternalLink size={10} />
-                    </a>
-                  ) : (
-                    <span className="inline-flex items-center gap-1 rounded-full bg-white/10 px-3 py-1 text-[11px] font-bold text-white/85">
-                      On-chain #{agent.onchainAgentId ?? ''}
+                {breakdown && (
+                  <>
+                    <span className="cn-pf2-chip-ok rounded-full px-2.5 py-1 text-[11px] font-bold tabular-nums">
+                      {breakdown.positive} positive
                     </span>
-                  )
-                ) : (
-                  <span className="inline-flex items-center gap-1 rounded-full bg-white/10 px-3 py-1 text-[11px] font-bold text-white/70">
-                    <Clock size={11} /> on-chain queued
-                  </span>
+                    <span className="cn-pf2-chip-warn rounded-full px-2.5 py-1 text-[11px] font-bold tabular-nums">
+                      {breakdown.neutral} neutral
+                    </span>
+                    <span className="cn-pf2-chip-danger rounded-full px-2.5 py-1 text-[11px] font-bold tabular-nums">
+                      {breakdown.negative} negative
+                    </span>
+                  </>
                 )}
-                {agent.walletAddress && (
-                  <a
-                    href={`https://testnet.arcscan.app/address/${agent.walletAddress}`}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="inline-flex items-center gap-1 rounded-full bg-white/10 px-3 py-1 font-mono text-[11px] font-semibold text-white/75 hover:bg-white/20"
-                  >
-                    {short(agent.walletAddress)} <ExternalLink size={10} />
-                  </a>
-                )}
+                <span className="rounded-full bg-white/10 px-2.5 py-1 text-[11px] font-bold tabular-nums text-white/85">
+                  {soldCount} sold
+                </span>
               </div>
-              <button
-                type="button"
-                onClick={toggleFollow}
-                aria-pressed={agent.followedByViewer}
-                className={`inline-flex items-center gap-1.5 rounded-full px-4 py-1.5 text-xs font-bold transition-colors duration-[120ms] ${
-                  agent.followedByViewer ? 'bg-white text-[#192837]' : 'border border-white/30 text-white hover:bg-white/10'
-                }`}
-              >
-                <Heart size={12} fill={agent.followedByViewer ? 'currentColor' : 'none'} />
-                {agent.followedByViewer ? 'Following' : 'Follow'} ({agent.followers})
-              </button>
+              <div className="flex flex-wrap items-center gap-2">
+                {chainInfo && (
+                  <TooltipProvider delayDuration={150}>
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <button
+                          type="button"
+                          aria-label={`Network: ${chainInfo.name}`}
+                          className="inline-flex items-center gap-2 rounded-full bg-white/10 py-1 pl-1.5 pr-3 text-[11px] font-bold text-white/85 transition-colors duration-[120ms] hover:bg-white/20"
+                        >
+                          <ChainLogo id={chainInfo.id} size={18} className="border-white/20" />
+                          {chainInfo.shortName}
+                        </button>
+                      </TooltipTrigger>
+                      <TooltipContent side="top" align="end" className="w-64 p-3">
+                        <div className="flex items-center gap-2">
+                          <ChainLogo id={chainInfo.id} size={20} />
+                          <div className="min-w-0">
+                            <div className="text-xs font-bold text-foreground">{chainInfo.name}</div>
+                            <div className="font-mono text-[10px] text-foreground/50">{chainInfo.caip2}</div>
+                          </div>
+                        </div>
+                        <div className="mt-2.5 border-t border-border pt-2.5">
+                          {agent.walletAddress ? (
+                            <>
+                              <div className="text-[10px] font-bold uppercase tracking-[0.08em] text-foreground/50">
+                                Wallet
+                              </div>
+                              <div className="mt-1 flex items-center gap-1.5">
+                                <span className="min-w-0 flex-1 truncate font-mono text-[11px] text-foreground/80">
+                                  {agent.walletAddress}
+                                </span>
+                                <button
+                                  type="button"
+                                  onClick={copyWallet}
+                                  aria-label="Copy wallet address"
+                                  className="shrink-0 rounded-md p-1 text-foreground/55 transition-colors duration-[120ms] hover:bg-foreground/[0.06] hover:text-foreground"
+                                >
+                                  {copiedWallet ? <Check size={12} className="text-ok" /> : <Copy size={12} />}
+                                </button>
+                              </div>
+                              {chainInfo.explorer && (
+                                <a
+                                  href={`${chainInfo.explorer}/address/${agent.walletAddress}`}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  className="mt-1.5 inline-flex items-center gap-1 text-[11px] font-semibold text-accent hover:underline"
+                                >
+                                  View on explorer <ExternalLink size={10} />
+                                </a>
+                              )}
+                            </>
+                          ) : (
+                            <p className="text-[11px] leading-relaxed text-foreground/60">
+                              No wallet declared yet; this agent cannot receive payments.
+                            </p>
+                          )}
+                        </div>
+                      </TooltipContent>
+                    </Tooltip>
+                  </TooltipProvider>
+                )}
+                <button
+                  type="button"
+                  onClick={toggleFollow}
+                  aria-pressed={agent.followedByViewer}
+                  className={`inline-flex items-center gap-1.5 rounded-full px-4 py-1.5 text-xs font-bold transition-colors duration-[120ms] ${
+                    agent.followedByViewer ? 'cn-pf2-btn-on' : 'border border-white/30 text-white hover:bg-white/10'
+                  }`}
+                >
+                  <Heart size={12} fill={agent.followedByViewer ? 'currentColor' : 'none'} />
+                  {agent.followedByViewer ? 'Following' : 'Follow'} ({agent.followers})
+                </button>
+              </div>
             </div>
           </div>
 
@@ -479,7 +716,7 @@ export default function AgentProfile() {
                     [
                       ['Agent ID', agent.id, null],
                       ['ERC-8004', agent.onchainAgentId ? `#${agent.onchainAgentId}` : 'queued', agent.onchainExplorer ?? null],
-                      ['Chain', 'Circle Arc (testnet)', null],
+                      ['Chain', chainInfo ? chainInfo.name : 'Circle Arc (testnet)', null],
                       ['Category', agent.category, null],
                       ['Wallet', agent.walletAddress ? short(agent.walletAddress) : 'none', agent.walletAddress ? `https://testnet.arcscan.app/address/${agent.walletAddress}` : null],
                       ['Registered', new Date(agent.createdAt).toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' }), null],
@@ -516,29 +753,47 @@ export default function AgentProfile() {
                 </div>
               ) : services.length > 0 ? (
                 <ul className="divide-y divide-border">
-                  {services.map((sv) => (
-                    <li key={`${sv.agentId}-${sv.service}`} className="flex flex-wrap items-center gap-4 px-5 py-3.5">
-                      <div className="min-w-0 flex-1">
-                        <div className="font-semibold capitalize text-foreground">{sv.service}</div>
-                        <div className="mt-0.5 flex items-center gap-1.5 text-xs text-foreground/55">
-                          <Star size={11} className="text-warn" fill="currentColor" />
-                          {sv.reviews > 0 ? `${sv.rating.toFixed(1)} (${sv.reviews})` : 'No reviews yet'}
-                          <span className="text-foreground/30">·</span>
-                          <span className="tabular-nums">{sv.completed} done</span>
+                  {services.map((sv) => {
+                    const Icon = serviceIcon(sv.service)
+                    return (
+                      <li key={`${sv.agentId}-${sv.service}`} className="flex flex-wrap items-center gap-4 px-5 py-3.5">
+                        <span className="grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-accent/10 text-accent">
+                          <Icon size={16} />
+                        </span>
+                        <div className="min-w-0 flex-1">
+                          <div className="font-semibold capitalize text-foreground">{sv.service}</div>
+                          <div className="mt-0.5 flex flex-wrap items-center gap-1.5 text-xs text-foreground/55">
+                            <Star size={11} className="text-warn" fill="currentColor" />
+                            {sv.reviews > 0 ? `${sv.rating.toFixed(1)} (${sv.reviews})` : 'No reviews yet'}
+                            <span className="text-foreground/30">·</span>
+                            <span className="tabular-nums">{sv.completed} completed</span>
+                          </div>
                         </div>
-                      </div>
-                      <div className="text-right">
-                        <div className="text-sm font-bold tabular-nums text-foreground">{sv.priceUsd.toFixed(2)} USDC</div>
-                        <div className="text-[11px] text-foreground/45">{sv.unit}</div>
-                      </div>
-                      <Link
-                        to="/app/marketplace"
-                        className="rounded-full border border-accent/40 px-4 py-1.5 text-xs font-semibold text-accent transition-colors duration-[120ms] hover:bg-accent/5"
-                      >
-                        Hire
-                      </Link>
-                    </li>
-                  ))}
+                        <div className="flex shrink-0 items-center gap-1.5">
+                          {payments.map((p) => (
+                            <span
+                              key={p}
+                              className={`rounded-full px-2 py-0.5 text-[10px] font-bold ${
+                                p === 'x402' ? 'bg-usdc/10 text-usdc' : 'bg-accent/10 text-accent'
+                              }`}
+                            >
+                              {p}
+                            </span>
+                          ))}
+                        </div>
+                        <div className="text-right">
+                          <div className="text-sm font-bold tabular-nums text-foreground">{sv.priceUsd.toFixed(2)} USDC</div>
+                          <div className="text-[11px] text-foreground/45">{sv.unit}</div>
+                        </div>
+                        <Link
+                          to="/app/marketplace"
+                          className="rounded-full border border-accent/40 px-4 py-1.5 text-xs font-semibold text-accent transition-colors duration-[120ms] hover:bg-accent/5"
+                        >
+                          Hire
+                        </Link>
+                      </li>
+                    )
+                  })}
                 </ul>
               ) : (
                 <p className="px-5 py-8 text-center text-sm text-foreground/60">No services listed yet.</p>
@@ -793,6 +1048,87 @@ export default function AgentProfile() {
           )}
           </div>
           </div>
+
+          {/* Explore more: related agents from the same fetched list, same
+              category first, then nearest composite score. Auto-advances every
+              ~5s, pauses on hover/focus, and stays still under reduced motion. */}
+          {related.length > 0 && (
+            <section
+              className="mt-8"
+              aria-label="Explore more agents"
+              onPointerEnter={() => {
+                stripPaused.current = true
+              }}
+              onPointerLeave={() => {
+                stripPaused.current = false
+              }}
+              onFocusCapture={() => {
+                stripPaused.current = true
+              }}
+              onBlurCapture={() => {
+                stripPaused.current = false
+              }}
+            >
+              <div className="flex items-center justify-between gap-3">
+                <h3 className="text-sm font-bold text-foreground/80">Explore more agents</h3>
+                <div className="flex gap-1.5">
+                  <button
+                    type="button"
+                    onClick={() => spinStrip(-1)}
+                    aria-label="Previous agents"
+                    className="grid h-8 w-8 place-items-center rounded-full border border-border text-foreground/60 transition-colors duration-[120ms] hover:bg-foreground/[0.04] hover:text-foreground"
+                  >
+                    <ChevronLeft size={15} />
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => spinStrip(1)}
+                    aria-label="Next agents"
+                    className="grid h-8 w-8 place-items-center rounded-full border border-border text-foreground/60 transition-colors duration-[120ms] hover:bg-foreground/[0.04] hover:text-foreground"
+                  >
+                    <ChevronRight size={15} />
+                  </button>
+                </div>
+              </div>
+              <div ref={stripRef} className="cn-pf2-strip mt-3 flex gap-3 overflow-x-auto pb-1">
+                {related.map((r) => (
+                  <Link
+                    key={r.id}
+                    to={`/app/marketplace/${r.id}`}
+                    className="w-56 shrink-0 rounded-2xl border border-border bg-card p-4 transition-colors duration-[120ms] hover:border-accent/40"
+                  >
+                    <div className="flex items-center gap-3">
+                      <AgentAvatar
+                        seed={r.onchainAgentId || r.id}
+                        category={r.category}
+                        size={40}
+                        verdict={r.kya === 'verified' ? 'allow' : 'warn'}
+                        src={r.logoUrl}
+                      />
+                      <div className="min-w-0">
+                        <div className="truncate text-sm font-semibold text-foreground">{r.name}</div>
+                        <div className="truncate text-[11px] text-foreground/55">{r.category}</div>
+                      </div>
+                    </div>
+                    <div className="mt-3 flex items-center justify-between text-xs">
+                      <span className="inline-flex items-center gap-1 font-semibold text-foreground/75">
+                        <Star size={11} className="text-warn" fill="currentColor" />
+                        {r.feedback?.avg != null ? (
+                          <>
+                            {r.feedback.avg.toFixed(1)}
+                            <span className="font-medium text-foreground/45">({r.feedback.count})</span>
+                          </>
+                        ) : (
+                          <span className="font-medium text-foreground/45">No ratings</span>
+                        )}
+                      </span>
+                      <span className="tabular-nums font-medium text-foreground/55">{r.soldCount ?? 0} sold</span>
+                    </div>
+                  </Link>
+                ))}
+              </div>
+            </section>
+          )}
         </>
       )}
     </AppPage>

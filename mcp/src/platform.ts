@@ -15,10 +15,13 @@
  *
  * State persists to mcp/data/platform.json so restarts keep the demo alive.
  */
-import { loadState, saveState as save } from './storage.js'
+import { loadState, saveState } from './storage.js'
 import { ARC_TESTNET } from './arc.js'
+import { CHAINS } from './chains/index.js'
+import { SETTLEMENTS } from './asp/settlements.js'
 import { randomBytes } from 'node:crypto'
 import {
+  CONTRACTS,
   registerAgentOnchain, payUsdcOnchain, payUsdcWithMemoOnchain, ARC_EXPLORER,
   deployPolicyVault, policyPay, policyOwnerPay, readPolicyVault,
   policySetPolicy, policySetFrozen, policySetAllowed, policySetSessionExpiry,
@@ -91,6 +94,9 @@ export type PlatformAgent = {
   endpoint?: string
   /** Optional square logo, stored as a small data: URL (uploaded at registration). */
   logoUrl?: string
+  /** Optional card style preset the owner picked at registration: a whole number 1..6 the
+   *  UI maps onto its six category tokens (--cat-1..--cat-6). Invalid input means unset. */
+  cardStyle?: number
   permissions: Permissions
   walletAddress: string | null
   chain: 'arc'
@@ -199,7 +205,7 @@ export type Instruction = {
   createdAt: string
 }
 
-type State = {
+export type State = {
   agents: PlatformAgent[]
   wallets: Wallet[]
   instructions: Instruction[]
@@ -230,6 +236,34 @@ export type FeedbackEntry = {
 // ── persistence ───────────────────────────────────────────────────────────────
 
 const state: State = { agents: [], wallets: [], instructions: [], tasks: [], audits: {}, meters: {}, feedback: {}, semanticQuota: {} }
+
+// Persistence is routed through this local wrapper so the TEST-ONLY reset below can turn
+// it off: a unit test that seeds in-memory state must never overwrite the real persisted
+// store (mcp/data/platform.json, or Postgres via DATABASE_URL). Production code never
+// flips the flag; every existing call site keeps calling `save(state)` unchanged.
+let persistEnabled = true
+const save = (s: State): void => {
+  if (persistEnabled) saveState(s)
+}
+
+/**
+ * TEST-ONLY: replace the in-memory state with a seed and DISABLE persistence for the rest
+ * of the process, so tests can exercise the real aggregation code paths (marketplace,
+ * platformStats, createAgent, feedback) without ever touching the persisted dev state.
+ * Returns the live state object so a test can push tasks/instructions/feedback directly.
+ */
+export function __resetPlatformStateForTests(seed: Partial<State> = {}): State {
+  persistEnabled = false
+  state.agents = seed.agents ?? []
+  state.wallets = seed.wallets ?? []
+  state.instructions = seed.instructions ?? []
+  state.tasks = seed.tasks ?? []
+  state.audits = seed.audits ?? {}
+  state.meters = seed.meters ?? {}
+  state.feedback = seed.feedback ?? {}
+  state.semanticQuota = seed.semanticQuota ?? {}
+  return state
+}
 
 /**
  * Load persisted state (Postgres via DATABASE_URL, else the local JSON file) into
@@ -351,6 +385,19 @@ export async function getWalletBalance(address: string) {
 
 // ── agents ────────────────────────────────────────────────────────────────────
 
+/** Card style presets the UI maps onto its six category tokens (--cat-1..--cat-6). */
+const CARD_STYLE_MIN = 1
+const CARD_STYLE_MAX = 6
+
+/** A whole number 1..6 passes; anything else (non-integer, out of range, wrong type)
+ *  means UNSET, no clamping, because a clamped value would be a choice the owner
+ *  never made. */
+function sanitizeCardStyle(v: unknown): number | undefined {
+  return typeof v === 'number' && Number.isInteger(v) && v >= CARD_STYLE_MIN && v <= CARD_STYLE_MAX
+    ? v
+    : undefined
+}
+
 export function createAgent(input: {
   name: string
   description: string
@@ -361,6 +408,8 @@ export function createAgent(input: {
   walletAddress?: string
   endpoint?: string
   logoUrl?: string
+  /** Optional card style preset (whole 1..6); invalid input is dropped, not clamped. */
+  cardStyle?: unknown
   owner?: string
 }): PlatformAgent {
   const permissions: Permissions = {
@@ -402,6 +451,7 @@ export function createAgent(input: {
       typeof input.logoUrl === 'string' && input.logoUrl.startsWith('data:image/') && input.logoUrl.length <= 150_000
         ? input.logoUrl
         : undefined,
+    cardStyle: sanitizeCardStyle(input.cardStyle),
     permissions,
     walletAddress: input.walletAddress ?? null,
     chain: 'arc',
@@ -1290,6 +1340,8 @@ export function registerAgentFromManifest(
     services?: Service[]
     endpoint?: string
     walletAddress?: string
+    /** Optional card style preset (whole 1..6); invalid input means unset. */
+    cardStyle?: unknown
     /**
      * Mark this agent as canary/monitoring. Its decisions are still recorded in full, but
      * they are EXCLUDED from every traction headline (see policy/meter.ts). There is no
@@ -1310,6 +1362,7 @@ export function registerAgentFromManifest(
     services: manifest.services,
     endpoint: manifest.endpoint,
     walletAddress: manifest.walletAddress,
+    cardStyle: manifest.cardStyle,
     permissions: {},
     owner: caller,
   })
@@ -2072,6 +2125,35 @@ export function feedbackSummary(agentId: string): { avg: number | null; count: n
   return { avg: Math.round(avg * 10) / 10, count: rows.length }
 }
 
+/**
+ * Sentiment split of an agent's real ratings for a listing row. Bands over the whole
+ * 1..10 scale: positive >= 7, neutral 4..6, negative <= 3. `positivePct` is the rounded
+ * percent of positive entries over the total, and null when there are no ratings at all
+ * (an unrated agent is not "0% positive").
+ */
+function feedbackBreakdown(agentId: string): {
+  positive: number
+  neutral: number
+  negative: number
+  positivePct: number | null
+} {
+  const rows = state.feedback[agentId] ?? []
+  let positive = 0
+  let neutral = 0
+  let negative = 0
+  for (const r of rows) {
+    if (r.score >= 7) positive += 1
+    else if (r.score >= 4) neutral += 1
+    else negative += 1
+  }
+  return {
+    positive,
+    neutral,
+    negative,
+    positivePct: rows.length > 0 ? Math.round((positive / rows.length) * 100) : null,
+  }
+}
+
 export function agentFeedback(agentId: string) {
   const a = state.agents.find((x) => x.id === agentId)
   if (!a) return { error: 'Unknown agent' as const }
@@ -2254,6 +2336,20 @@ export function marketplace(viewer?: string, includeAll = false, category?: stri
       followers: a.followers.length,
       followedByViewer: viewer ? a.followers.includes(viewer) : false,
       feedback: feedbackSummary(a.id),
+      // What this agent sells, trimmed to the card fields (never the full agent record).
+      services: a.services.map((s) => ({ name: s.name, priceUsd: s.priceUsd, unit: s.unit })),
+      // The cheapest listed service, for a "from $x" line. Null with no services: an agent
+      // selling nothing has no starting price, and 0 would be a fake one.
+      priceFromUsd: a.services.length > 0 ? Math.min(...a.services.map((s) => s.priceUsd)) : null,
+      // Real completed sales: tasks for this agent whose escrow actually released.
+      soldCount: state.tasks.filter((t) => t.agentId === a.id && t.status === 'released').length,
+      feedbackBreakdown: feedbackBreakdown(a.id),
+      // Honest meaning: a live callable endpoint is registered, nothing more.
+      online: Boolean(a.endpoint),
+      // Escrow task settlement is platform-wide; per-call x402 only makes sense when the
+      // agent has a callable endpoint registered.
+      payments: a.endpoint ? ['escrow', 'x402'] : ['escrow'],
+      cardStyle: a.cardStyle ?? null,
       activity: a.activity.slice(-5).reverse(),
       createdAt: a.createdAt,
     })),
@@ -2300,6 +2396,7 @@ export function marketplaceLeaderboard() {
       name: r.a.name,
       logoUrl: r.a.logoUrl,
       category: r.a.category,
+      cardStyle: r.a.cardStyle ?? null,
       kya: r.a.kya,
       onchainAgentId: r.a.onchainAgentId,
       reputation: r.reputation,
@@ -2309,6 +2406,109 @@ export function marketplaceLeaderboard() {
       rankScore: r.rankScore,
       rank: i + 1,
     })),
+    computedAt: new Date().toISOString(),
+  }
+}
+
+// ── platform-wide stats (public aggregates, no mocks) ─────────────────────────────
+
+/** Round a USD sum to cents. */
+const round2 = (n: number) => Math.round(n * 100) / 100
+
+/**
+ * The public platform-wide aggregate view (GET /api/stats). Every number is derived from
+ * real state, the static x402 settlement log, the chain registry, or the deployed Arc
+ * contract table; nothing is projected or invented. CI canary agents are excluded from
+ * every agent-derived headline, the same way platformTraction excludes them, so our own
+ * monitoring can never inflate these numbers.
+ */
+export function platformStats() {
+  // Agent-derived numbers count REAL agents only (ci canaries out, like platformTraction).
+  const real = state.agents.filter((a) => a.ci !== true)
+  const ciIds = new Set(state.agents.filter((a) => a.ci === true).map((a) => a.id))
+
+  const byCategoryMap = new Map<string, number>()
+  for (const a of real) {
+    const cat = a.category.trim() || 'Other'
+    byCategoryMap.set(cat, (byCategoryMap.get(cat) ?? 0) + 1)
+  }
+  const byCategory = [...byCategoryMap.entries()]
+    .map(([category, count]) => ({ category, count }))
+    // Desc by count; alphabetical tie-break so the order is deterministic.
+    .sort((x, y) => y.count - x.count || x.category.localeCompare(y.category))
+    .slice(0, 10)
+
+  const released = state.tasks.filter((t) => t.status === 'released')
+
+  // Executed instructions: both real on-chain settlements and simulated executions (no
+  // signer key) count as executed; withTxHash separates the ones with a real Arc tx.
+  const executed = state.instructions.filter(
+    (i) => i.status === 'executed_onchain' || i.status === 'executed_simulated',
+  )
+
+  // Feedback + followers are agent-derived too, so ci canary ids stay out of them.
+  const feedbackRows = Object.entries(state.feedback).filter(
+    ([agentId, rows]) => !ciIds.has(agentId) && rows.length > 0,
+  )
+  const allRatings = feedbackRows.flatMap(([, rows]) => rows)
+
+  const traction = platformTraction()
+
+  // Deployed Arc contract addresses from the single exported table in arc-contracts.ts.
+  const contractEntries = Object.entries(CONTRACTS).filter(
+    ([, addr]) => typeof addr === 'string' && /^0x[0-9a-fA-F]{40}$/.test(addr),
+  )
+
+  return {
+    agents: {
+      total: real.length,
+      showcase: real.filter(isShowcase).length,
+      kyaVerified: real.filter((a) => a.kya === 'verified').length,
+      onchainRegistered: real.filter((a) => a.onchain === 'registered').length,
+      byCategory,
+    },
+    tasks: {
+      total: state.tasks.length,
+      open: state.tasks.filter((t) => t.status === 'open').length,
+      released: released.length,
+      gmvUsd: round2(released.reduce((s, t) => s + t.priceUsd, 0)),
+      onchainSettled: state.tasks.filter((t) => t.settlement === 'onchain').length,
+    },
+    settlements: {
+      instructionsExecuted: executed.length,
+      instructionsUsd: round2(executed.reduce((s, i) => s + i.amountUsd * i.count, 0)),
+      withTxHash: executed.filter((i) => Boolean(i.txHash)).length,
+    },
+    feedback: {
+      totalRatings: allRatings.length,
+      avgScore:
+        allRatings.length > 0
+          ? Math.round((allRatings.reduce((s, r) => s + r.score, 0) / allRatings.length) * 10) / 10
+          : null,
+      ratedAgents: feedbackRows.length,
+    },
+    followersTotal: real.reduce((s, a) => s + a.followers.length, 0),
+    guardrail: {
+      checks: traction.checks,
+      allow: traction.allow,
+      warn: traction.warn,
+      deny: traction.deny,
+      protectedNotionalUsd: traction.protectedNotionalUsd,
+    },
+    chains: {
+      total: CHAINS.length,
+      live: CHAINS.filter((c) => c.status === 'live').length,
+      beta: CHAINS.filter((c) => c.status === 'beta').length,
+    },
+    contracts: {
+      deployed: contractEntries.length,
+      names: contractEntries.map(([name]) => name),
+    },
+    x402: {
+      rounds: new Set(SETTLEMENTS.map((s) => s.round)).size,
+      // Sub-cent amounts: round to 6 decimals to kill float noise without erasing value.
+      totalUsd: Math.round(SETTLEMENTS.reduce((s, r) => s + r.amountUsd, 0) * 1e6) / 1e6,
+    },
     computedAt: new Date().toISOString(),
   }
 }

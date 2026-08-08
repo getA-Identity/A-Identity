@@ -18,13 +18,22 @@ const CAPABILITIES = ['Payments', 'Purchases', 'Rentals', 'Batch actions'] as co
  * the local platform backend.
  */
 const CATEGORIES = [
-  'Trading / Finance',
-  'Research / Data',
-  'Content / Writing',
-  'DevOps / Code',
-  'Customer Support',
+  'Trading',
+  'Finance',
+  'Research',
+  'Data',
+  'Content',
+  'Translation',
+  'DevOps',
+  'Software Services',
+  'Support',
+  'Lifestyle',
+  'Art Creation',
   'Other',
 ]
+
+/** The six --cat-* accent presets an agent can pick for its profile hero. */
+const CARD_STYLES = [1, 2, 3, 4, 5, 6] as const
 
 /** Wizard steps: one section at a time, validated before advancing. */
 const STEPS = ['identity', 'capabilities', 'permissions', 'wallet', 'review'] as const
@@ -88,6 +97,8 @@ export default function RegisterForm({ onClose, onCreated }: { onClose: () => vo
     img.src = url
   }
   const [category, setCategory] = useState(CATEGORIES[0])
+  /** Optional profile-hero accent: 1..6 maps to --cat-1..--cat-6, undefined means default. */
+  const [cardStyle, setCardStyle] = useState<number | undefined>(undefined)
   const [caps, setCaps] = useState<string[]>(['Payments'])
   const [dailyCap, setDailyCap] = useState('50')
   const [autoApprove, setAutoApprove] = useState('1')
@@ -124,6 +135,8 @@ export default function RegisterForm({ onClose, onCreated }: { onClose: () => vo
   const [quickBusy, setQuickBusy] = useState(false)
   const [quickNote, setQuickNote] = useState<string | null>(null)
   const [quickDone, setQuickDone] = useState<{ agentId: string; onchain: string; kya: string } | null>(null)
+  /** Collapsed reference of the fields the manifest registrar actually reads. */
+  const [manifestOpen, setManifestOpen] = useState(false)
 
   const input =
     'w-full rounded-xl border border-border bg-background/40 px-3 py-2.5 text-sm outline-none transition-colors focus:border-accent'
@@ -230,6 +243,7 @@ export default function RegisterForm({ onClose, onCreated }: { onClose: () => vo
           category,
           capabilities: caps,
           logoUrl: logoUrl ?? undefined,
+          cardStyle,
           permissions: {
             dailyCapUsd: Number(dailyCap) || 50,
             autoApproveUnderUsd: Number(autoApprove) || 1,
@@ -568,6 +582,51 @@ export default function RegisterForm({ onClose, onCreated }: { onClose: () => vo
             </a>
           </div>
         )}
+
+        {/* What the registrar reads from the hosted JSON. Mirrors the backend's
+            registerAgentFromManifest exactly; only `name` is required. */}
+        <div className="mt-3 border-t border-border">
+          <button
+            type="button"
+            onClick={() => setManifestOpen((v) => !v)}
+            aria-expanded={manifestOpen}
+            className="flex w-full items-center justify-between gap-2 py-2.5 text-left"
+          >
+            <span className="text-xs font-bold text-foreground/70">Manifest fields</span>
+            <ChevronDown
+              size={14}
+              className={`shrink-0 text-foreground/45 transition-transform duration-200 ${manifestOpen ? 'rotate-180' : ''}`}
+            />
+          </button>
+          <div className={`cn-collapse ${manifestOpen ? 'cn-open' : ''}`}>
+            <div className="pb-2">
+              <p className="text-[11px] text-foreground/50">
+                The registrar reads these top-level fields from your hosted JSON. Only name is required;
+                everything else is optional.
+              </p>
+              <dl className="mt-2 flex flex-col gap-1.5">
+                {(
+                  [
+                    ['name', 'Required. The agent\'s display name.'],
+                    ['description', 'What the agent does. Verified agents with a description appear in the Agent House showcase.'],
+                    ['category', 'Free-form category string. Defaults to Other.'],
+                    ['capabilities', 'Array of strings. Without services, each capability becomes a hireable service.'],
+                    ['services', 'Array of { name, priceUsd, unit } the agent sells.'],
+                    ['endpoint', 'Public URL where the agent can be called. Agents with one are listed as online.'],
+                    ['walletAddress', 'The wallet the agent pays and gets paid with.'],
+                    ['cardStyle', 'Whole number 1 to 6. Themes the agent\'s public profile hero.'],
+                    ['ci', 'true marks a canary or monitoring agent; its activity is excluded from traction headlines.'],
+                  ] as const
+                ).map(([k, v]) => (
+                  <div key={k} className="flex gap-2 text-[11px]">
+                    <dt className="w-28 shrink-0 font-mono font-semibold text-foreground/70">{k}</dt>
+                    <dd className="text-foreground/55">{v}</dd>
+                  </div>
+                ))}
+              </dl>
+            </div>
+          </div>
+        </div>
       </section>
 
       {/* Step indicator: numbered dots, accent for the active step, completed steps
@@ -666,6 +725,47 @@ export default function RegisterForm({ onClose, onCreated }: { onClose: () => vo
                     </p>
                     {logoErr && <p className="mt-0.5 text-[11px] text-danger">{logoErr}</p>}
                   </div>
+                </div>
+
+                {/* Card style: optional accent preset for the public profile hero.
+                    Swatches are the console's own --cat-1..--cat-6 tokens. */}
+                <div>
+                  <div className="text-[11px] text-foreground/45">Card style</div>
+                  <div className="mt-1.5 flex flex-wrap items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setCardStyle(undefined)}
+                      aria-pressed={cardStyle === undefined}
+                      className={`rounded-full px-3 py-1.5 text-xs font-semibold transition-colors ${
+                        cardStyle === undefined
+                          ? 'bg-accent text-white'
+                          : 'border border-foreground/15 text-foreground/60 hover:bg-foreground/5'
+                      }`}
+                    >
+                      None
+                    </button>
+                    {CARD_STYLES.map((n) => (
+                      <button
+                        key={n}
+                        type="button"
+                        onClick={() => setCardStyle(n)}
+                        aria-pressed={cardStyle === n}
+                        aria-label={`Card style ${n}`}
+                        className={`grid h-8 w-8 place-items-center rounded-full border-2 transition-colors ${
+                          cardStyle === n ? 'border-accent' : 'border-transparent hover:border-foreground/25'
+                        }`}
+                      >
+                        <span
+                          className="h-5 w-5 rounded-full"
+                          style={{ background: `var(--cat-${n})` }}
+                          aria-hidden="true"
+                        />
+                      </button>
+                    ))}
+                  </div>
+                  <p className="mt-1 text-[11px] text-foreground/45">
+                    Optional. Themes your agent's public profile hero in Agent House.
+                  </p>
                 </div>
               </div>
             </div>
@@ -858,6 +958,22 @@ export default function RegisterForm({ onClose, onCreated }: { onClose: () => vo
                     </div>
                   ))}
                 </dl>
+                <div className="mt-3 border-t border-border pt-3">
+                  <div className="text-[11px] font-bold text-foreground/50">Card style</div>
+                  {cardStyle ? (
+                    <div className="mt-1 flex items-center gap-2">
+                      <span
+                        className="h-4 w-4 shrink-0 rounded-full"
+                        style={{ background: `var(--cat-${cardStyle})` }}
+                        aria-hidden="true"
+                      />
+                      <span className="text-sm font-semibold text-foreground">Style {cardStyle}</span>
+                      <span className="text-xs text-foreground/55">accents the profile hero</span>
+                    </div>
+                  ) : (
+                    <p className="mt-0.5 text-xs text-foreground/55">None. The profile hero keeps the default look.</p>
+                  )}
+                </div>
                 <div className="mt-3 border-t border-border pt-3">
                   <div className="text-[11px] font-bold text-foreground/50">Wallet</div>
                   {wallet ? (

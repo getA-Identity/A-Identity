@@ -35,6 +35,16 @@ const SOCIAL_LINKS = [
   { key: 'github', href: SOCIALS.github, label: 'A-Identity on GitHub', Icon: Github },
 ] as const
 
+/**
+ * Links the footer adds on top of the brand-config columns: the agent-facing intro and
+ * the public network stats. Keyed by column title and merged at render, so the shared
+ * FOOTER_COLUMNS data stays untouched while the footer still lists every public page.
+ */
+const EXTRA_COLUMN_LINKS: Record<string, readonly FooterLink[]> = {
+  Developers: [{ label: 'For Agents', href: '/intro' }],
+  Company: [{ label: 'Network Stats', href: '/stats' }],
+}
+
 /** Render an internal route link or an external (new-tab) anchor. */
 function FooterItem({ link }: { link: FooterLink }) {
   const className = 'text-sm text-foreground/70 transition-colors hover:text-foreground'
@@ -117,7 +127,7 @@ export default function SiteFooter() {
                 <div key={col.title}>
                   <h3 className="text-sm font-semibold text-foreground">{col.title}</h3>
                   <ul className="mt-3 flex flex-col gap-2">
-                    {col.links.map((l) => (
+                    {[...col.links, ...(EXTRA_COLUMN_LINKS[col.title] ?? [])].map((l) => (
                       <li key={l.label}>
                         <FooterItem link={l} />
                       </li>

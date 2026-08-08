@@ -26,6 +26,7 @@ import {
   updateAgentActionPolicy,
   checkAgentAction,
   platformTraction,
+  platformStats,
   guardrailSelfCheck,
   listAgentAudits,
   recordAuditOutcome,
@@ -880,7 +881,7 @@ const server = http.createServer(async (req, res) => {
     const body = (await readBody(req).catch(() => null)) as {
       name?: string; description?: string; category?: string
       capabilities?: string[]; permissions?: Record<string, unknown>; walletAddress?: string
-      logoUrl?: string
+      logoUrl?: string; cardStyle?: unknown
     } | null
     if (!body?.name) { sendJson(res, 400, { error: 'name required' }); return }
     const agent = createAgent({
@@ -891,6 +892,8 @@ const server = http.createServer(async (req, res) => {
       permissions: (body.permissions ?? {}) as never,
       walletAddress: body.walletAddress,
       logoUrl: body.logoUrl,
+      // Sanitized in createAgent: a whole 1..6 sticks, anything else means unset.
+      cardStyle: body.cardStyle,
       owner: callerId,
     })
     sendJson(res, 201, { agent })
@@ -1076,6 +1079,13 @@ const server = http.createServer(async (req, res) => {
   // nothing here that identifies an agent, an owner, a holding or an individual amount.
   if (req.method === 'GET' && url.pathname === '/api/traction') {
     sendJson(res, 200, platformTraction())
+    return
+  }
+  // Platform-wide aggregates (agents, tasks, settlements, feedback, chains, contracts,
+  // x402). Same publication rule as /api/traction: aggregate only, nothing identifying
+  // an agent owner, a holding, or an individual amount.
+  if (req.method === 'GET' && url.pathname === '/api/stats') {
+    sendJson(res, 200, platformStats())
     return
   }
   // "Is the guardrail enforcing right now?" answered by running canonical vectors through
@@ -1564,6 +1574,7 @@ server.listen(PORT, () => {
   console.error(`  POST /api/agents/register-url     register from a hosted manifest URL (free)`)
   console.error(`  GET  /api/agents/badge           public guardrail badge (SVG or JSON, opt-in)`)
   console.error(`  GET  /api/traction               aggregate guardrail traction (public)`)
+  console.error(`  GET  /api/stats                  platform-wide aggregates (public)`)
   console.error(`  GET  /api/guardrail-status       live engine self-check (503 if not enforcing)`)
 })
 

@@ -22,6 +22,8 @@ const Login = lazy(() => import('./routes/Login'))
 const Signup = lazy(() => import('./routes/Signup'))
 const AuthCallback = lazy(() => import('./routes/AuthCallback'))
 const Manifesto = lazy(() => import('./routes/Manifesto'))
+const Intro = lazy(() => import('./routes/Intro'))
+const Stats = lazy(() => import('./routes/Stats'))
 const Brand = lazy(() => import('./routes/Brand'))
 const Contact = lazy(() => import('./routes/Contact'))
 const Faq = lazy(() => import('./routes/Faq'))
@@ -85,6 +87,8 @@ export default function App() {
         <Route path="/signup" element={<Signup />} />
         <Route path="/auth/callback" element={<AuthCallback />} />
         <Route path="/manifesto" element={<Manifesto />} />
+        <Route path="/intro" element={<Intro />} />
+        <Route path="/stats" element={<Stats />} />
         <Route path="/brand" element={<Brand />} />
         <Route path="/contact" element={<Contact />} />
         <Route path="/faq" element={<Faq />} />

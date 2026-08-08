@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
 import {
   Activity,
@@ -11,22 +11,28 @@ import {
   List,
   Plus,
   Search,
+  ShieldCheck,
   Sparkles,
-  Star,
   Trophy,
   X,
+  Zap,
 } from 'lucide-react'
 import { authHeaders, useAuth } from '../../store/auth'
 
 import { BACKEND_UNREACHABLE } from '../../lib/mcpBase'
 import { apiFetch, readJson, explainError } from '../../lib/api'
 import { humanizeActivity } from '../../lib/format'
+import { CHAIN_BY_ID, type ChainId } from '../../lib/chains'
 import AgentAvatar from '../../components/AgentAvatar'
 import BrandArt from '../../components/app/BrandArt'
+import ChainLogo from '../../components/app/ChainLogo'
+import FeaturedCarousel, { RankBadge, Stars, type FeaturedAgent } from '../../components/app/FeaturedCarousel'
 import WorkerCatalog from '../../components/app/WorkerCatalog'
 import AppPage from '../../components/app/AppPage'
 import { Badge } from '../../components/ui/badge'
 import { Skeleton } from '../../components/ui/skeleton'
+
+type Service = { name: string; priceUsd: number; unit: string }
 
 type MarketAgent = {
   id: string
@@ -47,79 +53,145 @@ type MarketAgent = {
   followedByViewer: boolean
   activity: { at: string; text: string }[]
   createdAt: string
+  // Commerce fields (all real backend state; optional so an older payload degrades
+  // to the plain card instead of crashing the roster).
+  services?: Service[]
+  priceFromUsd?: number | null
+  soldCount?: number
+  feedback?: { avg: number | null; count: number }
+  feedbackBreakdown?: { positive: number; neutral: number; negative: number; positivePct: number | null }
+  online?: boolean
+  payments?: string[]
+  cardStyle?: number | null
 }
 
 // One row of GET /api/marketplace/leaderboard: the server's composite ranking over
 // the same KYA-verified showcase the Agent House feed serves.
-type LeaderboardRow = {
-  id: string
-  name: string
-  logoUrl?: string
-  category: string
-  kya: string
-  onchainAgentId?: string
-  reputation: { score: number }
-  feedback: { avg: number | null; count: number }
-  followers: number
-  tasksDone: number
-  rankScore: number
-  rank: number
+type LeaderboardRow = FeaturedAgent
+
+type SortKey = 'default' | 'reputation' | 'followers' | 'newest' | 'rating' | 'price' | 'selling'
+const SORT_KEYS: SortKey[] = ['default', 'reputation', 'followers', 'newest', 'rating', 'price', 'selling']
+const SORT_LABELS: Record<SortKey, string> = {
+  default: 'Default',
+  reputation: 'Top reputation',
+  followers: 'Most followed',
+  newest: 'Newest',
+  rating: 'Highest rating',
+  price: 'Lowest price',
+  selling: 'Best selling',
 }
 
-/** Five stars filled proportionally to the platform's 0-10 rating average. */
-function Stars({ avg, count, className = '' }: { avg: number | null; count: number; className?: string }) {
-  const frac = avg == null ? 0 : Math.max(0, Math.min(1, avg / 10))
+type PayFilter = 'all' | 'escrow' | 'x402'
+
+/** A saved toolbar preset. Older entries (query/sort/showAll/view only) are
+ *  revived with defaults for the newer filter fields, so nothing saved before
+ *  this redesign is lost or crashes the parse. */
+type SavedSearch = {
+  name: string
+  query: string
+  sort: SortKey
+  showAll: boolean
+  view: 'list' | 'grid'
+  cats: string[]
+  online: boolean
+  pay: PayFilter
+  chain: string
+}
+
+function reviveSavedSearches(raw: string | null): SavedSearch[] {
+  try {
+    const parsed: unknown = JSON.parse(raw ?? '[]')
+    if (!Array.isArray(parsed)) return []
+    return parsed
+      .filter((x): x is Record<string, unknown> => Boolean(x) && typeof x === 'object')
+      .filter((x) => typeof x.name === 'string')
+      .map((x) => ({
+        name: x.name as string,
+        query: typeof x.query === 'string' ? x.query : '',
+        sort: SORT_KEYS.includes(x.sort as SortKey) ? (x.sort as SortKey) : 'default',
+        showAll: Boolean(x.showAll),
+        view: x.view === 'grid' ? 'grid' : 'list',
+        cats: Array.isArray(x.cats) ? (x.cats as unknown[]).filter((c): c is string => typeof c === 'string') : [],
+        online: Boolean(x.online),
+        pay: x.pay === 'escrow' || x.pay === 'x402' ? x.pay : 'all',
+        chain: typeof x.chain === 'string' ? x.chain : 'all',
+      }))
+  } catch {
+    return []
+  }
+}
+
+const fmtUsd = (n: number) => (Number.isInteger(n) ? n.toFixed(0) : n.toFixed(2))
+
+/** The cheapest listed service, for the "from $X per unit" line. Falls back to the
+ *  server's priceFromUsd (without a unit) if the services array is ever absent. */
+function cheapestService(a: MarketAgent): { priceUsd: number; unit: string } | null {
+  if (a.services && a.services.length > 0) {
+    const s = a.services.reduce((min, sv) => (sv.priceUsd < min.priceUsd ? sv : min))
+    return { priceUsd: s.priceUsd, unit: s.unit.replace(/^per\s+/i, '').trim() }
+  }
+  if (typeof a.priceFromUsd === 'number') return { priceUsd: a.priceFromUsd, unit: '' }
+  return null
+}
+
+/** Price lead: real starting price when the agent lists services, honest fallback when not. */
+function PriceLine({ a, className = '' }: { a: MarketAgent; className?: string }) {
+  const c = cheapestService(a)
+  if (!c)
+    return <span className={`text-sm font-semibold text-foreground/55 ${className}`}>Quote per task</span>
   return (
-    <span
-      className={`inline-flex items-center gap-1.5 ${className}`}
-      role="img"
-      aria-label={
-        avg == null ? 'No ratings yet' : `Rated ${avg.toFixed(1)} out of 10 from ${count} rating${count === 1 ? '' : 's'}`
-      }
-    >
-      <span className="relative inline-flex shrink-0" aria-hidden="true">
-        <span className="flex gap-0.5 text-foreground/20">
-          {Array.from({ length: 5 }).map((_, i) => (
-            <Star key={i} size={12} fill="currentColor" strokeWidth={0} />
-          ))}
-        </span>
-        <span className="absolute inset-y-0 left-0 overflow-hidden text-warn" style={{ width: `${frac * 100}%` }}>
-          <span className="flex w-max gap-0.5">
-            {Array.from({ length: 5 }).map((_, i) => (
-              <Star key={i} size={12} fill="currentColor" strokeWidth={0} />
-            ))}
-          </span>
-        </span>
-      </span>
-      {avg == null ? (
-        <span className="text-[11px] font-medium text-foreground/40">No ratings yet</span>
-      ) : (
-        <span className="text-xs font-semibold tabular-nums text-foreground/70">
-          {avg.toFixed(1)}/10 <span className="font-medium text-foreground/45">({count})</span>
-        </span>
-      )}
+    <span className={`text-sm font-bold tabular-nums text-foreground ${className}`}>
+      from ${fmtUsd(c.priceUsd)}
+      {c.unit && <span className="font-medium text-foreground/50"> per {c.unit}</span>}
     </span>
   )
 }
 
-/** Rank chip: the podium (top 3) carries the accent, everyone below is a plain number. */
-function RankBadge({ rank }: { rank: number }) {
-  if (rank === 1)
-    return (
-      <span className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-accent text-xs font-bold text-white">
-        1
-      </span>
-    )
-  if (rank <= 3)
-    return (
-      <span className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-full border border-accent/35 bg-accent/10 text-xs font-bold text-accent">
-        {rank}
-      </span>
-    )
+/** Social proof row: stars, positive share, completed sales. Only claims we hold. */
+function CommerceRow({ a, className = '' }: { a: MarketAgent; className?: string }) {
+  const pct = a.feedbackBreakdown?.positivePct ?? null
+  const sold = a.soldCount ?? 0
   return (
-    <span className="inline-flex h-7 w-7 shrink-0 items-center justify-center text-xs font-semibold tabular-nums text-foreground/45">
-      {rank}
-    </span>
+    <div className={`flex flex-wrap items-center gap-x-3 gap-y-1 ${className}`}>
+      <Stars avg={a.feedback?.avg ?? null} count={a.feedback?.count ?? 0} />
+      {pct != null && <span className="text-[11px] font-semibold text-ok">{pct}% positive</span>}
+      {sold > 0 && (
+        <span className="text-[11px] font-medium tabular-nums text-foreground/55">
+          {sold} sold
+        </span>
+      )}
+    </div>
+  )
+}
+
+/** Trust chips: settlement rails, the chain this agent lives on, and whether a live
+ *  callable endpoint is registered. Every chip maps 1:1 to a backend field. */
+function MetaChips({ a, className = '' }: { a: MarketAgent; className?: string }) {
+  const chain = CHAIN_BY_ID[a.chain as ChainId]
+  const payments = a.payments ?? ['escrow']
+  return (
+    <div className={`flex flex-wrap items-center gap-1.5 ${className}`}>
+      {chain && (
+        <span className="inline-flex items-center gap-1.5 rounded-full border border-border bg-background px-2 py-0.5 text-[11px] font-semibold text-foreground/65">
+          <ChainLogo id={chain.id} size={14} /> {chain.shortName}
+        </span>
+      )}
+      {payments.includes('escrow') && (
+        <span className="inline-flex items-center gap-1 rounded-full bg-foreground/5 px-2 py-0.5 text-[11px] font-semibold text-foreground/60">
+          <ShieldCheck size={11} /> Escrow
+        </span>
+      )}
+      {payments.includes('x402') && (
+        <span className="inline-flex items-center gap-1 rounded-full bg-accent/10 px-2 py-0.5 text-[11px] font-semibold text-accent">
+          <Zap size={11} /> x402
+        </span>
+      )}
+      {a.online && (
+        <span className="inline-flex items-center gap-1.5 rounded-full bg-ok/10 px-2 py-0.5 text-[11px] font-semibold text-ok">
+          <span className="h-1.5 w-1.5 rounded-full bg-ok" aria-hidden="true" /> Live endpoint
+        </span>
+      )}
+    </div>
   )
 }
 
@@ -144,8 +216,8 @@ export default function Marketplace() {
   const [tab, setTab] = useState<'hire' | 'house' | 'leaderboard'>('hire')
 
   // Leaderboard: ONE server-computed composite ranking, fetched lazily the first time
-  // a surface that shows it opens (the Leaderboard tab, or the featured strip on the
-  // Agent House pane). The weekly/monthly wording on the strip frames this same data.
+  // a surface that shows it opens (the Leaderboard tab, or the featured carousel on the
+  // Agent House pane). The weekly wording on the carousel frames this same data.
   const [lbRows, setLbRows] = useState<LeaderboardRow[]>([])
   const [lbComputedAt, setLbComputedAt] = useState<string | null>(null)
   const [lbLoading, setLbLoading] = useState(false)
@@ -182,10 +254,14 @@ export default function Marketplace() {
   // The proportional rank-score bars scale against the leader.
   const lbMax = lbRows.reduce((m, r) => Math.max(m, r.rankScore), 0)
 
-  // House toolbar: search, sort, view mode, and saved searches (all client-side,
-  // over the real roster; the view mode and presets persist per browser).
+  // House toolbar: search, sort, structural filters, view mode, and saved searches
+  // (all client-side, over the real roster; the view mode and presets persist per browser).
   const [query, setQuery] = useState('')
-  const [sort, setSort] = useState<'reputation' | 'followers' | 'newest'>('reputation')
+  const [sort, setSort] = useState<SortKey>('default')
+  const [cats, setCats] = useState<string[]>([])
+  const [onlineOnly, setOnlineOnly] = useState(false)
+  const [pay, setPay] = useState<PayFilter>('all')
+  const [chainF, setChainF] = useState<string>('all')
   const [view, setView] = useState<'list' | 'grid'>(() => {
     try {
       return localStorage.getItem('aid-mkt-view') === 'grid' ? 'grid' : 'list'
@@ -193,10 +269,9 @@ export default function Marketplace() {
       return 'list'
     }
   })
-  type SavedSearch = { name: string; query: string; sort: typeof sort; showAll: boolean; view: typeof view }
   const [savedSearches, setSavedSearches] = useState<SavedSearch[]>(() => {
     try {
-      return JSON.parse(localStorage.getItem('aid-mkt-saved') ?? '[]') as SavedSearch[]
+      return reviveSavedSearches(localStorage.getItem('aid-mkt-saved'))
     } catch {
       return []
     }
@@ -210,8 +285,15 @@ export default function Marketplace() {
     }
   }
   const saveCurrentSearch = () => {
-    const name = `${query.trim() || 'all agents'} · ${sort}${showAll ? ' · incl. pending' : ''}`
-    const next = [...savedSearches.filter((x) => x.name !== name), { name, query: query.trim(), sort, showAll, view }]
+    const parts = [query.trim() || 'all agents', SORT_LABELS[sort]]
+    if (cats.length > 0) parts.push(cats.join('+'))
+    if (onlineOnly) parts.push('online')
+    if (pay !== 'all') parts.push(pay)
+    if (chainF !== 'all') parts.push(CHAIN_BY_ID[chainF as ChainId]?.shortName ?? chainF)
+    if (showAll) parts.push('incl. pending')
+    const name = parts.join(' · ')
+    const entry: SavedSearch = { name, query: query.trim(), sort, showAll, view, cats, online: onlineOnly, pay, chain: chainF }
+    const next = [...savedSearches.filter((x) => x.name !== name), entry]
     setSavedSearches(next)
     try {
       localStorage.setItem('aid-mkt-saved', JSON.stringify(next))
@@ -224,6 +306,10 @@ export default function Marketplace() {
     setSort(sv.sort)
     setShowAll(sv.showAll)
     setViewPersist(sv.view)
+    setCats(sv.cats)
+    setOnlineOnly(sv.online)
+    setPay(sv.pay)
+    setChainF(sv.chain)
   }
   const removeSaved = (name: string) => {
     const next = savedSearches.filter((x) => x.name !== name)
@@ -233,6 +319,29 @@ export default function Marketplace() {
     } catch {
       /* private mode */
     }
+  }
+
+  // Filter options are computed from the loaded roster, never a hardcoded list:
+  // a category or chain appears here only when at least one real agent carries it.
+  const catOptions = useMemo(() => {
+    const m = new Map<string, number>()
+    for (const a of agents) {
+      const c = a.category || 'Uncategorized'
+      m.set(c, (m.get(c) ?? 0) + 1)
+    }
+    return [...m.entries()].sort((x, y) => y[1] - x[1] || x[0].localeCompare(y[0]))
+  }, [agents])
+  const chainOptions = useMemo(() => [...new Set(agents.map((a) => a.chain))], [agents])
+  const anyX402 = useMemo(() => agents.some((a) => (a.payments ?? []).includes('x402')), [agents])
+
+  const toggleCat = (c: string) =>
+    setCats((prev) => (prev.includes(c) ? prev.filter((x) => x !== c) : [...prev, c]))
+  const structuralActive = cats.length > 0 || onlineOnly || pay !== 'all' || chainF !== 'all'
+  const clearFilters = () => {
+    setCats([])
+    setOnlineOnly(false)
+    setPay('all')
+    setChainF('all')
   }
 
   // Semantic mode: a metered natural-language search on the backend (5 free per
@@ -290,6 +399,15 @@ export default function Marketplace() {
   }
 
   const shown = agents
+    // Structural filters ALWAYS apply, semantic mode included: asking for "online
+    // x402 sellers" and then describing a job should intersect the two, not race them.
+    .filter((a) => {
+      if (cats.length > 0 && !cats.includes(a.category || 'Uncategorized')) return false
+      if (onlineOnly && !a.online) return false
+      if (pay !== 'all' && !(a.payments ?? ['escrow']).includes(pay)) return false
+      if (chainF !== 'all' && a.chain !== chainF) return false
+      return true
+    })
     .filter((a) => {
       const q = query.trim().toLowerCase()
       if (!q) return true
@@ -305,9 +423,16 @@ export default function Marketplace() {
       )
     })
     .sort((a, b) => {
+      // 'default' keeps the server's marketRank order (the sort is stable).
+      if (sort === 'default') return 0
       if (sort === 'reputation') return (b.reputation?.score ?? -1) - (a.reputation?.score ?? -1)
       if (sort === 'followers') return b.followers - a.followers
-      return b.createdAt.localeCompare(a.createdAt)
+      if (sort === 'newest') return b.createdAt.localeCompare(a.createdAt)
+      // Ratings on the 1-10 scale: unrated (null) sinks below every rated agent.
+      if (sort === 'rating') return (b.feedback?.avg ?? -1) - (a.feedback?.avg ?? -1)
+      // Cheapest first; agents with no listed price (quote per task) go last.
+      if (sort === 'price') return (a.priceFromUsd ?? Infinity) - (b.priceFromUsd ?? Infinity)
+      return (b.soldCount ?? 0) - (a.soldCount ?? 0) // 'selling'
     })
     // In semantic mode the server's ranking wins: reorder to it and drop non-matches.
     .filter((a) => !(semantic && semOrder) || semOrder.includes(a.id))
@@ -565,44 +690,17 @@ export default function Marketplace() {
       )}
 
       <div className={tab === 'house' ? 'mt-6' : 'hidden'}>
-      {/* Featured showcase: the top of the SAME composite ranking the Leaderboard tab
-          shows, framed for the storefront. Weekly and monthly are framing labels over
-          one real ranking; there is no separate paid placement. The strip never touches
-          the strict default filter of the roster below it. */}
+      {/* Featured carousel: the top of the SAME composite ranking the Leaderboard tab
+          shows, framed for the storefront. Only real leaderboard rows render; there is
+          no separate paid placement. The strip never touches the strict default filter
+          of the roster below it. */}
       {lbRows.length > 0 && (
-        <div className="mb-6 rounded-2xl border border-border bg-card p-5">
-          <div className="flex flex-wrap items-center justify-between gap-2">
-            <h4 className="flex items-center gap-2 text-sm font-bold tracking-tight">
-              <Trophy size={15} className="text-accent" /> Featured this week
-            </h4>
-            <span className="text-[11px] font-medium text-foreground/45">
-              This month: the same three leaders · one composite ranking
-            </span>
-          </div>
-          <div className="cn-lb-rows mt-4 grid items-stretch gap-3 sm:grid-cols-3">
-            {lbRows.slice(0, 3).map((r) => (
-              <Link
-                key={r.id}
-                to={`/app/marketplace/${r.id}`}
-                className="group flex items-center gap-3 rounded-xl border border-border bg-background px-3.5 py-3 transition-colors duration-[120ms] hover:border-accent/40"
-              >
-                <AgentAvatar
-                  seed={r.onchainAgentId || r.id}
-                  category={r.category}
-                  size={40}
-                  verdict={r.kya === 'verified' ? 'allow' : 'warn'}
-                  src={r.logoUrl}
-                />
-                <span className="min-w-0 flex-1">
-                  <span className="block truncate text-sm font-bold text-foreground group-hover:text-accent">{r.name}</span>
-                  <span className="block truncate text-[11px] text-foreground/50">{r.category}</span>
-                  <Stars avg={r.feedback.avg} count={r.feedback.count} className="mt-1" />
-                </span>
-                <RankBadge rank={r.rank} />
-              </Link>
-            ))}
-          </div>
-        </div>
+        <FeaturedCarousel
+          rows={lbRows}
+          title="Featured this week"
+          subnote="Top of the same composite ranking as the Leaderboard tab"
+          className="mb-6"
+        />
       )}
       <div className="flex flex-wrap items-end justify-between gap-4">
         <div>
@@ -620,7 +718,8 @@ export default function Marketplace() {
         </Link>
       </div>
 
-      {/* Toolbar: search, sort, KYA filter, saved presets, and the view switch.
+      {/* Toolbar: search, sort, KYA filter, saved presets, and the view switch, plus
+          the structural filter row (categories, endpoint, payment rail, chain).
           Everything operates client-side on the real roster. */}
       {!loading && !error && agents.length > 0 && (
         <div className="mt-4 space-y-2.5">
@@ -671,13 +770,15 @@ export default function Marketplace() {
             </div>
             <select
               value={sort}
-              onChange={(e) => setSort(e.target.value as typeof sort)}
+              onChange={(e) => setSort(e.target.value as SortKey)}
               aria-label="Sort agents"
               className="rounded-xl border border-border bg-card px-3 py-2.5 text-sm font-semibold text-foreground/75 outline-none"
             >
-              <option value="reputation">Top reputation</option>
-              <option value="followers">Most followed</option>
-              <option value="newest">Newest</option>
+              {SORT_KEYS.map((k) => (
+                <option key={k} value={k}>
+                  {SORT_LABELS[k]}
+                </option>
+              ))}
             </select>
             <button
               type="button"
@@ -719,6 +820,74 @@ export default function Marketplace() {
                 </button>
               ))}
             </div>
+          </div>
+
+          {/* Structural filters, computed from the loaded roster. These compose with the
+              verified-only toggle above AND with semantic mode: a semantic result is
+              still intersected with whatever is toggled here. */}
+          <div className="flex flex-wrap items-center gap-1.5">
+            {catOptions.map(([c, n]) => (
+              <button
+                key={c}
+                type="button"
+                onClick={() => toggleCat(c)}
+                aria-pressed={cats.includes(c)}
+                className={`rounded-full border px-2.5 py-1 text-[11px] font-semibold transition-colors duration-[120ms] ${
+                  cats.includes(c)
+                    ? 'border-accent/40 bg-accent/10 text-accent'
+                    : 'border-border text-foreground/60 hover:bg-foreground/[0.04]'
+                }`}
+              >
+                {c} <span className="tabular-nums opacity-70">({n})</span>
+              </button>
+            ))}
+            <span className="mx-1 h-4 w-px bg-border" aria-hidden="true" />
+            <label className="inline-flex cursor-pointer items-center gap-1.5 rounded-full border border-border px-2.5 py-1 text-[11px] font-semibold text-foreground/65 transition-colors duration-[120ms] hover:bg-foreground/[0.04]">
+              <input
+                type="checkbox"
+                checked={onlineOnly}
+                onChange={(e) => setOnlineOnly(e.target.checked)}
+                className="h-3 w-3"
+                style={{ accentColor: 'var(--color-accent)' }}
+              />
+              Online only
+            </label>
+            {anyX402 && (
+              <select
+                value={pay}
+                onChange={(e) => setPay(e.target.value as PayFilter)}
+                aria-label="Filter by payment rail"
+                className="rounded-full border border-border bg-card px-2.5 py-1 text-[11px] font-semibold text-foreground/65 outline-none"
+              >
+                <option value="all">Any payment</option>
+                <option value="escrow">Escrow</option>
+                <option value="x402">x402</option>
+              </select>
+            )}
+            {chainOptions.length > 0 && (
+              <select
+                value={chainF}
+                onChange={(e) => setChainF(e.target.value)}
+                aria-label="Filter by chain"
+                className="rounded-full border border-border bg-card px-2.5 py-1 text-[11px] font-semibold text-foreground/65 outline-none"
+              >
+                <option value="all">All chains</option>
+                {chainOptions.map((c) => (
+                  <option key={c} value={c}>
+                    {CHAIN_BY_ID[c as ChainId]?.shortName ?? c}
+                  </option>
+                ))}
+              </select>
+            )}
+            {structuralActive && (
+              <button
+                type="button"
+                onClick={clearFilters}
+                className="inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-[11px] font-semibold text-foreground/50 transition-colors duration-[120ms] hover:text-danger"
+              >
+                <X size={11} /> Clear filters
+              </button>
+            )}
           </div>
 
           {savedSearches.length > 0 && (
@@ -818,53 +987,85 @@ export default function Marketplace() {
         </div>
       )}
 
-      {/* Agent listing. One row per agent, marketplace-style: identity on the left,
-          what it does in the middle, its numbers on the right. A row expands its
-          activity in place via an animated grid track, so the list never snaps. */}
+      {/* Filters that matched nobody: a real zero over a loaded roster, with the way out. */}
+      {!loading && !error && agents.length > 0 && shown.length === 0 && (
+        <div className="mt-6 rounded-2xl border border-dashed border-foreground/15 bg-card p-10 text-center">
+          <p className="text-sm font-semibold text-foreground/70">No agents match these filters.</p>
+          <button
+            type="button"
+            onClick={() => {
+              clearFilters()
+              setQuery('')
+              clearSemantic()
+            }}
+            className="mt-3 inline-flex items-center gap-1.5 rounded-full border border-border px-4 py-2 text-xs font-semibold text-foreground/65 transition-colors duration-[120ms] hover:bg-foreground/[0.04]"
+          >
+            <X size={12} /> Clear filters and search
+          </button>
+        </div>
+      )}
+
+      {/* Agent listing. One card or row per agent, product-card grade: identity,
+          rating and social proof, price, and the trust chips (chain, rails, live
+          endpoint), all from real backend state. */}
       {view === 'grid' ? (
-        /* Grid: compact certificates, two up. The full record lives one click in. */
+        /* Grid: product cards, two up. The full record lives one click in. */
         <div className="mt-6 grid items-start gap-4 sm:grid-cols-2">
           {shown.map((a) => (
             <div key={a.id} className="cn-glow-wrap">
-              <div className="cn-glow-card flex flex-col rounded-2xl border border-border bg-card p-5">
-                <div className="flex items-start justify-between gap-3">
-                  <Link to={`/app/marketplace/${a.id}`} className="flex min-w-0 items-center gap-3 hover:opacity-90">
-                    <AgentAvatar
-                      seed={a.onchainAgentId || a.id}
-                      category={a.category}
-                      size={44}
-                      verdict={a.kya === 'verified' ? 'allow' : 'warn'}
-                      src={a.logoUrl}
-                    />
-                    <div className="min-w-0">
-                      <div className="truncate font-bold text-foreground">{a.name}</div>
-                      <div className="truncate text-xs text-foreground/50">{a.category}</div>
-                    </div>
-                  </Link>
-                  {a.kya === 'verified' ? (
-                    <Badge variant="success">
-                      <BadgeCheck size={11} /> KYA
-                    </Badge>
-                  ) : (
-                    <Badge variant="warning">
-                      <Clock size={11} /> pending
-                    </Badge>
-                  )}
-                </div>
-                <p className="mt-3 line-clamp-2 flex-1 text-sm leading-relaxed text-foreground/60">
-                  {a.description || 'No description yet.'}
-                </p>
-                <div className="mt-3 flex items-center justify-between border-t border-border pt-3">
-                  <div className="text-sm font-bold tabular-nums text-foreground">
-                    {a.reputation ? a.reputation.score : '-'}
-                    <span className="ml-1 text-[10px] font-semibold text-foreground/40">/ 1000</span>
+              <div className="cn-glow-card flex flex-col overflow-hidden rounded-2xl border border-border bg-card">
+                {/* Owner-picked card style: a quiet tint strip from the six category tokens. */}
+                {typeof a.cardStyle === 'number' && a.cardStyle >= 1 && a.cardStyle <= 6 && (
+                  <span
+                    className="block h-1 w-full"
+                    style={{ background: `var(--cat-${a.cardStyle})` }}
+                    aria-hidden="true"
+                  />
+                )}
+                <div className="flex flex-1 flex-col p-5">
+                  <div className="flex items-start justify-between gap-3">
+                    <Link to={`/app/marketplace/${a.id}`} className="flex min-w-0 items-center gap-3 hover:opacity-90">
+                      <AgentAvatar
+                        seed={a.onchainAgentId || a.id}
+                        category={a.category}
+                        size={44}
+                        verdict={a.kya === 'verified' ? 'allow' : 'warn'}
+                        src={a.logoUrl}
+                      />
+                      <div className="min-w-0">
+                        <div className="truncate font-bold text-foreground">{a.name}</div>
+                        <div className="truncate text-xs text-foreground/50">{a.category}</div>
+                      </div>
+                    </Link>
+                    {a.kya === 'verified' ? (
+                      <Badge variant="success">
+                        <BadgeCheck size={11} /> KYA
+                      </Badge>
+                    ) : (
+                      <Badge variant="warning">
+                        <Clock size={11} /> pending
+                      </Badge>
+                    )}
                   </div>
-                  <Link
-                    to={`/app/marketplace/${a.id}`}
-                    className="inline-flex items-center gap-1 text-xs font-semibold text-accent hover:underline"
-                  >
-                    View profile <ArrowUpRight size={12} />
-                  </Link>
+                  <p className="mt-3 line-clamp-2 flex-1 text-sm leading-relaxed text-foreground/60">
+                    {a.description || 'No description yet.'}
+                  </p>
+                  <CommerceRow a={a} className="mt-3" />
+                  <MetaChips a={a} className="mt-2.5" />
+                  <div className="mt-3 flex items-end justify-between gap-2 border-t border-border pt-3">
+                    <div className="min-w-0">
+                      <PriceLine a={a} />
+                      <div className="mt-0.5 text-[11px] font-medium tabular-nums text-foreground/45">
+                        Rep {a.reputation ? a.reputation.score : '-'} / 1000
+                      </div>
+                    </div>
+                    <Link
+                      to={`/app/marketplace/${a.id}`}
+                      className="inline-flex shrink-0 items-center gap-1 text-xs font-semibold text-accent hover:underline"
+                    >
+                      View profile <ArrowUpRight size={12} />
+                    </Link>
+                  </div>
                 </div>
               </div>
             </div>
@@ -915,7 +1116,7 @@ export default function Marketplace() {
                     </Badge>
                   )}
                 </div>
-                <div className="mt-0.5 text-xs text-foreground/45">{a.category} · Arc testnet</div>
+                <div className="mt-0.5 text-xs text-foreground/45">{a.category}</div>
                 <p className="mt-2 line-clamp-2 max-w-2xl text-sm leading-relaxed text-foreground/60">
                   {a.description || 'No description yet.'}
                 </p>
@@ -925,6 +1126,11 @@ export default function Marketplace() {
                     {semMatches[a.id].reasons.join(' · ') || 'semantic match'}
                   </p>
                 )}
+                <div className="mt-2.5 flex flex-wrap items-center gap-x-3 gap-y-1">
+                  <CommerceRow a={a} />
+                  <PriceLine a={a} />
+                </div>
+                <MetaChips a={a} className="mt-2" />
                 {a.capabilities.length > 0 && (
                   <div className="mt-2.5 flex flex-wrap gap-1.5">
                     {a.capabilities.map((c) => (

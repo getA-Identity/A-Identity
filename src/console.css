@@ -645,3 +645,120 @@
   transform-origin: left;
   animation: cn-lb-bar-in 0.55s var(--ease-enter) 0.24s both;
 }
+
+/* ================================================= agent profile hero (cn-pf2-) */
+
+/* The profile hero keeps the certificate's fixed dark ground; when the owner
+   picked a card style (1..6) the matching category tint is color-mixed into the
+   base stops so white text keeps its contrast. The entrance reuses cn-cert-in
+   but with a `backwards` fill: once the settle finishes the transform drops
+   away entirely, so the hero never becomes a containing block that would clip
+   or mis-anchor the unportaled chain tooltip. */
+.cn-pf2-hero {
+  --cn-pf2-tint: var(--accent-deep);
+  background: linear-gradient(140deg, #131c26 0%, #192837 45%, var(--accent-deep) 130%);
+  animation: cn-cert-in 0.7s cubic-bezier(0.16, 1, 0.3, 1) backwards;
+}
+.cn-pf2-hero[data-tint] {
+  background: linear-gradient(
+    140deg,
+    #131c26 0%,
+    color-mix(in srgb, var(--cn-pf2-tint) 24%, #192837) 45%,
+    color-mix(in srgb, var(--cn-pf2-tint) 58%, #131c26) 130%
+  );
+}
+.cn-pf2-hero[data-tint='1'] { --cn-pf2-tint: var(--cat-1); }
+.cn-pf2-hero[data-tint='2'] { --cn-pf2-tint: var(--cat-2); }
+.cn-pf2-hero[data-tint='3'] { --cn-pf2-tint: var(--cat-3); }
+.cn-pf2-hero[data-tint='4'] { --cn-pf2-tint: var(--cat-4); }
+.cn-pf2-hero[data-tint='5'] { --cn-pf2-tint: var(--cat-5); }
+.cn-pf2-hero[data-tint='6'] { --cn-pf2-tint: var(--cat-6); }
+
+/* Status colours lifted toward white: the ok/warn/danger tokens are dark in the
+   light theme, and the hero's ground is theme-FIXED dark, so the raw tokens
+   would vanish there. Mixing keeps the semantic token as the single source. */
+.cn-pf2-ok-ink { color: color-mix(in srgb, var(--ok) 50%, white); }
+.cn-pf2-chip-ok {
+  color: color-mix(in srgb, var(--ok) 50%, white);
+  background: color-mix(in srgb, var(--ok) 24%, transparent);
+}
+.cn-pf2-chip-warn {
+  color: color-mix(in srgb, var(--warn) 55%, white);
+  background: color-mix(in srgb, var(--warn) 20%, transparent);
+}
+.cn-pf2-chip-danger {
+  color: color-mix(in srgb, var(--danger) 55%, white);
+  background: color-mix(in srgb, var(--danger) 20%, transparent);
+}
+
+/* The follow button's pressed state on the dark hero: inverse ink on white
+   (kept here so the ink value never lands in TSX). */
+.cn-pf2-btn-on {
+  background: #ffffff;
+  color: #131c26;
+}
+
+/* Explore-more strip: native horizontal scroll (scrollbars are hidden
+   console-wide), soft snap per card, and the standard row entrance on a short
+   ladder. `both` fill keeps the global reduced-motion override degrading these
+   to instant swaps; the auto-advance itself is gated off in JS. */
+.cn-pf2-strip {
+  scroll-snap-type: x proximity;
+}
+.cn-pf2-strip > * {
+  scroll-snap-align: start;
+  animation: cn-row-in 0.4s var(--ease-enter) both;
+}
+.cn-pf2-strip > *:nth-child(2) { animation-delay: 40ms; }
+.cn-pf2-strip > *:nth-child(3) { animation-delay: 80ms; }
+.cn-pf2-strip > *:nth-child(n + 4) { animation-delay: 120ms; }
+
+/* ================================================= guided tour spotlight (cn-tour-) */
+
+/* The spotlight is driven by ConsoleTour's single rAF loop: scroll, resize,
+   and DOM listeners only wake the loop, and one callback per frame measures
+   the target and writes transform plus width/height straight to the element.
+   It therefore carries no movement transition of its own, only the opacity
+   fade that covers the target vanishing (a tab or route swap) and returning.
+   will-change stays cheap here: the element exists only while a tour is open. */
+.cn-tour-spot {
+  will-change: transform;
+  transition: opacity 160ms var(--ease-leave);
+}
+
+/* Armed by JS for step-to-step travel only, matching the loop's GLIDE_MS
+   (300ms). Dropped on the first scroll event, when direct per-frame tracking
+   takes over, or when the glide duration elapses. Reduced motion never arms
+   it in JS, and the global .console-shell override crushes it regardless. */
+.cn-tour-spot.cn-tour-glide {
+  transition:
+    transform 300ms var(--ease-enter),
+    width 300ms var(--ease-enter),
+    height 300ms var(--ease-enter),
+    opacity 160ms var(--ease-leave);
+}
+
+/* ==================================================== marketplace v2 (cn-mk2-) */
+
+/* Featured carousel track: snap-scrolling product cards. The scrollbar is
+   hidden because the arrows and the snap points are the navigation; the track
+   itself stays natively scrollable (touch, wheel, keyboard). JS owns WHEN it
+   moves (the 5s auto-advance timer, pause on hover/focus, reduced-motion
+   checks before every programmatic scroll); this block only paints. */
+.cn-mk2-track {
+  scrollbar-width: none;
+}
+.cn-mk2-track::-webkit-scrollbar {
+  display: none;
+}
+
+/* Cards arrive on the same entrance ladder as the leaderboard rows. The global
+   .console-shell reduced-motion override degrades this to an instant swap. */
+.cn-mk2-track > * {
+  animation: cn-row-in 0.4s var(--ease-enter) both;
+}
+.cn-mk2-track > *:nth-child(2) { animation-delay: 40ms; }
+.cn-mk2-track > *:nth-child(3) { animation-delay: 80ms; }
+.cn-mk2-track > *:nth-child(4) { animation-delay: 120ms; }
+.cn-mk2-track > *:nth-child(5) { animation-delay: 160ms; }
+.cn-mk2-track > *:nth-child(n + 6) { animation-delay: 200ms; }

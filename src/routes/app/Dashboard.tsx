@@ -13,6 +13,7 @@ import { useSelectedAgent } from '../../store/agent'
 import AppPage from '../../components/app/AppPage'
 import AgentStatusBar, { type AgentState } from '../../components/app/AgentStatusBar'
 import ChainLogo from '../../components/app/ChainLogo'
+import FeaturedCarousel from '../../components/app/FeaturedCarousel'
 import SetupChecklist, { type Step } from '../../components/app/SetupChecklist'
 import Freshness from '../../components/app/Freshness'
 import SpendSummary, { type Ix } from '../../components/app/SpendSummary'
@@ -433,6 +434,13 @@ export default function Dashboard() {
           </Link>
         </div>
         </div>
+      </div>
+
+      {/* Marketplace teaser: the top of the real composite leaderboard as a compact
+          carousel. It fetches its own rows and renders nothing when there are none,
+          so this section never shows placeholder agents. */}
+      <div className="mt-4">
+        <FeaturedCarousel compact title="Top agents this week" moreTo="/app/marketplace" />
       </div>
       </AppPage>
   )

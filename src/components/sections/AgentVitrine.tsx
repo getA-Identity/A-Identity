@@ -1,8 +1,9 @@
 import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { motion } from 'framer-motion'
-import { ArrowRight, ArrowUpRight } from 'lucide-react'
+import { ArrowRight, ArrowUpRight, Star } from 'lucide-react'
 import { getLeaderboard, type FeedAgent } from '../../lib/mcp-client'
+import { MCP_BASE } from '../../lib/mcpBase'
 import AgentAvatar from '../AgentAvatar'
 import { type OwlVerdict } from '../OwlMark'
 import { DisplayHeading, Eyebrow, Lede } from '../ui/display'
@@ -11,39 +12,77 @@ import { SectionShell, SectionIntro, reveal, revealAt } from '../ui/section'
 /**
  * The Agent House vitrine: real registrations, surfaced on the landing.
  *
- * Everything here is read live from the same marketplace endpoint the explorer's
- * leaderboard uses, filtered the way the Agent House itself filters: KYA-verified only.
- * Each card links into the explorer so the visitor can run the exact check we show.
+ * Primary source is GET /api/marketplace/leaderboard: the composite ranking where
+ * delivered paid work and verified feedback outweigh followers, so the agents shown here
+ * are the ones actually winning, with their rank, logo and rating on the card and a
+ * direct "Hire now" path into the marketplace profile.
  *
- * The section renders nothing below three agents. A vitrine with two lonely cards reads as
- * an empty shop, and an absent section is better marketing than a sparse one. This is also
- * why seeding verified agents before a demo matters: this surface literally disappears
- * without them.
+ * When that endpoint cannot be read the section falls back to what it showed before this
+ * upgrade: the KYA-verified feed sorted by reputation, linking into the explorer. Both
+ * sources are live backend state; nothing here is ever invented.
+ *
+ * The section renders nothing below three agents. A vitrine with two lonely cards reads
+ * as an empty shop, and an absent section is better marketing than a sparse one. This is
+ * also why seeding verified agents before a demo matters: this surface literally
+ * disappears without them.
  */
+
+/** One leaderboard row, as GET /api/marketplace/leaderboard returns it. */
+type RankedAgent = {
+  id: string
+  name: string
+  logoUrl?: string | null
+  category: string
+  kya?: 'verified' | 'unverified' | 'revoked'
+  onchainAgentId?: string | null
+  reputation?: { score: number }
+  feedback: { avg: number | null; count: number }
+  rankScore: number
+  rank: number
+}
 
 /** Same thresholds the spotlight and explorer use, expressed as the owl's verdict. */
 const verdictOf = (score: number, kya?: string): OwlVerdict =>
   kya === 'revoked' || score < 200 ? 'deny' : score < 500 ? 'warn' : 'allow'
 
 export default function AgentVitrine() {
-  const [agents, setAgents] = useState<FeedAgent[]>([])
+  const [ranked, setRanked] = useState<RankedAgent[]>([])
+  const [fallback, setFallback] = useState<FeedAgent[]>([])
 
   useEffect(() => {
     let alive = true
-    getLeaderboard().then((r) => {
-      if (alive && r.ok) setAgents(r.data)
-    })
+    const load = async () => {
+      try {
+        const res = await fetch(`${MCP_BASE}/api/marketplace/leaderboard`, {
+          signal: AbortSignal.timeout(8000),
+        })
+        if (!res.ok) throw new Error(`HTTP ${res.status}`)
+        const json = (await res.json()) as { agents?: RankedAgent[] }
+        if (alive && json.agents && json.agents.length > 0) {
+          setRanked(json.agents)
+          return
+        }
+      } catch {
+        // Leaderboard unreachable; fall through to the pre-upgrade source below.
+      }
+      const r = await getLeaderboard()
+      if (alive && r.ok) setFallback(r.data)
+    }
+    void load()
     return () => {
       alive = false
     }
   }, [])
 
-  const top = agents
+  const topRanked = ranked.slice(0, 6)
+
+  const topFallback = fallback
     .filter((a) => a.kya === 'verified')
     .sort((x, y) => (y.reputation?.score ?? 0) - (x.reputation?.score ?? 0))
     .slice(0, 6)
 
-  if (top.length < 3) return null
+  const useRanked = topRanked.length >= 3
+  if (!useRanked && topFallback.length < 3) return null
 
   return (
     <SectionShell id="agents" size="lg" surface="card" backdrop="vitrine" backdropPosition="left">
@@ -56,38 +95,97 @@ export default function AgentVitrine() {
         }
         lede={
           <Lede>
-            Every card is a real registration: wallet control proven, reputation computed
-            from on-chain history. Click one and run the check yourself.
+            Every card is a real registration, ranked by delivered work and verified
+            feedback. Hire one straight from here, or open the explorer and run the
+            checks yourself.
           </Lede>
         }
       />
 
       <div className="mt-12 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-        {top.map((a, i) => {
-          const score = a.reputation?.score ?? 0
-          return (
-            <motion.div key={a.id} {...revealAt(i % 3)}>
-              <Link
-                to={`/explorer?q=${encodeURIComponent(a.onchainAgentId || a.id)}`}
-                className="group flex items-center gap-4 rounded-2xl border border-border bg-background/50 p-5 transition-colors hover:border-accent/40"
-              >
-                <AgentAvatar seed={a.onchainAgentId || a.id} size={44} verdict={verdictOf(score, a.kya)} />
-                <div className="min-w-0 flex-1">
-                  <p className="truncate text-sm font-semibold text-foreground">{a.name}</p>
-                  <p className="mt-0.5 truncate font-mono text-xs text-foreground/45">
-                    {a.category}
-                    {a.onchainAgentId ? ` · #${a.onchainAgentId}` : ''}
-                  </p>
-                </div>
-                <span className="font-mono text-sm font-bold tabular-nums text-foreground">{score}</span>
-                <ArrowUpRight
-                  size={14}
-                  className="shrink-0 text-accent opacity-0 transition-opacity group-hover:opacity-100"
-                />
-              </Link>
-            </motion.div>
-          )
-        })}
+        {useRanked
+          ? topRanked.map((a, i) => {
+              const score = a.reputation?.score ?? 0
+              const avg = a.feedback.avg
+              return (
+                <motion.div key={a.id} {...revealAt(i % 3)}>
+                  <Link
+                    to={`/app/marketplace/${a.id}`}
+                    className="group flex flex-col gap-4 rounded-2xl border border-border bg-background/50 p-5 transition-colors hover:border-accent/40"
+                  >
+                    <div className="flex items-center gap-4">
+                      <AgentAvatar
+                        seed={a.onchainAgentId || a.id}
+                        category={a.category}
+                        size={44}
+                        src={a.logoUrl ?? undefined}
+                        verdict={verdictOf(score, a.kya)}
+                      />
+                      <div className="min-w-0 flex-1">
+                        <p className="truncate text-sm font-semibold text-foreground">{a.name}</p>
+                        <p className="mt-0.5 truncate font-mono text-xs text-foreground/45">
+                          {a.category}
+                        </p>
+                      </div>
+                      <span className="shrink-0 rounded-full border border-border bg-card px-2 py-0.5 font-mono text-[11px] font-bold tabular-nums text-foreground/70">
+                        #{a.rank}
+                      </span>
+                    </div>
+                    <div className="flex items-center justify-between gap-3">
+                      <span className="inline-flex min-w-0 items-center gap-1.5 text-xs text-foreground/60">
+                        <Star size={13} className="shrink-0 text-accent" fill="currentColor" />
+                        {avg != null ? (
+                          <span className="tabular-nums">
+                            {avg.toFixed(1)}/10 · {a.feedback.count}{' '}
+                            {a.feedback.count === 1 ? 'rating' : 'ratings'}
+                          </span>
+                        ) : (
+                          'No ratings yet'
+                        )}
+                      </span>
+                      <span className="inline-flex shrink-0 items-center gap-1 text-sm font-semibold text-accent">
+                        Hire now
+                        <ArrowUpRight
+                          size={14}
+                          className="opacity-0 transition-opacity group-hover:opacity-100"
+                        />
+                      </span>
+                    </div>
+                  </Link>
+                </motion.div>
+              )
+            })
+          : topFallback.map((a, i) => {
+              const score = a.reputation?.score ?? 0
+              return (
+                <motion.div key={a.id} {...revealAt(i % 3)}>
+                  <Link
+                    to={`/explorer?q=${encodeURIComponent(a.onchainAgentId || a.id)}`}
+                    className="group flex items-center gap-4 rounded-2xl border border-border bg-background/50 p-5 transition-colors hover:border-accent/40"
+                  >
+                    <AgentAvatar
+                      seed={a.onchainAgentId || a.id}
+                      size={44}
+                      verdict={verdictOf(score, a.kya)}
+                    />
+                    <div className="min-w-0 flex-1">
+                      <p className="truncate text-sm font-semibold text-foreground">{a.name}</p>
+                      <p className="mt-0.5 truncate font-mono text-xs text-foreground/45">
+                        {a.category}
+                        {a.onchainAgentId ? ` · #${a.onchainAgentId}` : ''}
+                      </p>
+                    </div>
+                    <span className="font-mono text-sm font-bold tabular-nums text-foreground">
+                      {score}
+                    </span>
+                    <ArrowUpRight
+                      size={14}
+                      className="shrink-0 text-accent opacity-0 transition-opacity group-hover:opacity-100"
+                    />
+                  </Link>
+                </motion.div>
+              )
+            })}
       </div>
 
       <motion.div {...reveal} className="mt-8">
