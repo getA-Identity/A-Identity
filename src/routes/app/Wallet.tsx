@@ -181,8 +181,13 @@ export default function Wallet() {
   const scopeValue: number | null =
     scope === 'arc' ? bal : scope === 'gateway' ? (gw ? gwAvailable : null) : bal == null ? null : bal + gwAvailable
 
+  // 'all' used to be labeled "All chains", which it is not: it sums the Arc wallet and
+  // the Circle Gateway unified balance. Celo and X Layer are live and settle their own
+  // traffic, and neither is in this figure. The qualifier that admitted this was in the
+  // desktop-only sub-line, so on a phone the overclaim stood alone. The label now says
+  // what it actually reads.
   const SCOPES: { id: Scope; label: string; icon: React.ReactNode; sub: string }[] = [
-    { id: 'all', label: 'All chains', icon: <Layers size={13} />, sub: 'Arc + Gateway unified' },
+    { id: 'all', label: 'Arc + Gateway', icon: <Layers size={13} />, sub: 'unified across both' },
     { id: 'arc', label: 'Circle Arc', icon: <ChainLogo id="arc" size={16} />, sub: 'on-chain balance' },
     { id: 'gateway', label: 'Gateway', icon: <Globe size={13} />, sub: 'chain-abstracted USDC' },
   ]
