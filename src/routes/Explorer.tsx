@@ -10,6 +10,8 @@ import { Input } from '../components/ui/input'
 import VerifyStepper from '../components/VerifyStepper'
 import { useTheme } from '../components/ThemeProvider'
 import { APP_NAME } from '../lib/brand'
+import { short } from '../lib/format'
+import { gradeOf } from '../lib/reputation-bands'
 import {
   resolveAgent, getReputation, getLeaderboard,
   type AgentIdentity, type Reputation, type FeedAgent,
@@ -19,10 +21,12 @@ import AgentAvatar from '../components/AgentAvatar'
 import { track } from '../lib/analytics'
 
 type Verdict = 'ALLOW' | 'WARN' | 'DENY'
+// Semantic tokens, not literal hexes: the light values match the old hexes exactly,
+// and the tokens flip with the theme so the verdict colors survive dark mode.
 const VERDICT: Record<Verdict, { color: string; Icon: typeof ShieldCheck }> = {
-  ALLOW: { color: '#059669', Icon: ShieldCheck },
-  WARN: { color: '#d97706', Icon: ShieldAlert },
-  DENY: { color: '#dc2626', Icon: ShieldX },
+  ALLOW: { color: 'var(--ok)', Icon: ShieldCheck },
+  WARN: { color: 'var(--warn)', Icon: ShieldAlert },
+  DENY: { color: 'var(--danger)', Icon: ShieldX },
 }
 function riskOf(score: number, kya?: string, verified = true, sybil?: string): Verdict {
   if (kya === 'revoked' || !verified || sybil === 'high') return 'DENY'
@@ -30,16 +34,6 @@ function riskOf(score: number, kya?: string, verified = true, sybil?: string): V
   if (score < 500 || sybil === 'medium') return 'WARN'
   return 'ALLOW'
 }
-function grade(score: number): { label: string; tier: string } {
-  if (score >= 800) return { label: 'Excellent', tier: 'AAA' }
-  if (score >= 650) return { label: 'Strong', tier: 'AA' }
-  if (score >= 500) return { label: 'Good', tier: 'A' }
-  if (score >= 350) return { label: 'Fair', tier: 'BBB' }
-  if (score >= 200) return { label: 'Weak', tier: 'B' }
-  return { label: 'High risk', tier: 'C' }
-}
-const short = (a?: string | null) => (a && a.length > 14 ? `${a.slice(0, 8)}…${a.slice(-6)}` : a ?? '')
-
 
 function useCountUp(target: number, duration = 900) {
   const [val, setVal] = useState(0)
@@ -63,7 +57,12 @@ function RiskPill({ verdict }: { verdict: Verdict }) {
   const v = VERDICT[verdict]
   return (
     <span className="inline-flex items-center gap-1.5 rounded-md px-2.5 py-1 text-xs font-semibold"
-      style={{ color: v.color, background: `${v.color}14`, boxShadow: `inset 0 0 0 1px ${v.color}33` }}>
+      style={{
+        color: v.color,
+        // Hex-alpha suffixes do not compose with var() references; mix instead.
+        background: `color-mix(in srgb, ${v.color} 8%, transparent)`,
+        boxShadow: `inset 0 0 0 1px color-mix(in srgb, ${v.color} 20%, transparent)`,
+      }}>
       <v.Icon size={13} /> {verdict}
     </span>
   )
@@ -89,7 +88,7 @@ function CopyAddr({ value, href }: { value: string; href?: string | null }) {
   const [copied, setCopied] = useState(false)
   return (
     <span className="inline-flex items-center gap-1.5 font-mono text-xs text-foreground/55">
-      {short(value)}
+      {short(value, 6, '…')}
       <button type="button" aria-label="Copy address"
         onClick={() => { void navigator.clipboard?.writeText(value); setCopied(true); setTimeout(() => setCopied(false), 1200) }}
         className="text-foreground/35 transition-colors hover:text-foreground">
@@ -134,7 +133,7 @@ function TrustProfile({ identity, reputation, query }: { identity: AgentIdentity
   const owner = identity?.owner
   const seed = owner || identity?.tokenId?.toString() || query
   const arcUrl = owner && /^0x[0-9a-fA-F]{40}$/.test(owner) ? `https://testnet.arcscan.app/address/${owner}` : null
-  const g = grade(score)
+  const g = gradeOf(score)
 
   return (
     <div className="overflow-hidden rounded-xl border border-border bg-card">

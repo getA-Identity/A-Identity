@@ -26,6 +26,12 @@ const CREATE2_FACTORY = '0x4e59b44847B379578588920cA78FbF26c0B4956C'
 export const CHAINS: ChainDescriptor[] = [
   // Order is the console's display order (Overview -> Network). Statuses:
   // live = wired end to end today, beta = testnet active, planned = roadmap.
+  //
+  // Where the roadmap actually stands: arc + xlayer are live, base is beta, and
+  // stellar, solana, avalanche, arbitrum, both Robinhood chains and celo are planned.
+  // Among the planned chains, STELLAR is next: its integration is funded work (the
+  // Instawards SoW), ahead of solana/avalanche/arbitrum, which is why it sits right
+  // after Arc in this display order.
   {
     caip2: 'eip155:5042002',
     id: 'arc',

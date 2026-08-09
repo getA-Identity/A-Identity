@@ -182,7 +182,7 @@ export default function Permissions() {
       <BrandArt src="/art/art-guardrail.webp" variant="band" className="h-24 w-full rounded-2xl sm:h-28" />
 
       {error && (
-        <div className="mt-6 rounded-2xl border border-amber-200 dark:border-amber-500/25 bg-amber-50/60 dark:bg-amber-500/10 p-4 text-sm text-foreground/70">
+        <div className="mt-6 rounded-2xl border border-warn/25 bg-warn/10 p-4 text-sm text-foreground/70">
           {error}
         </div>
       )}
@@ -291,7 +291,7 @@ export default function Permissions() {
                 ${policy.spentTodayUsd.toFixed(2)}
                 <span className="text-sm font-semibold text-foreground/40"> / ${policy.permissions.dailyCapUsd}</span>
               </div>
-              <div className="text-xs font-semibold text-emerald-600">
+              <div className="text-xs font-semibold text-ok">
                 ${policy.remainingTodayUsd.toFixed(2)} left today
               </div>
             </div>
@@ -394,7 +394,7 @@ export default function Permissions() {
           {/* Safety */}
           <section data-tour="safety" className="mt-4 rounded-2xl border border-border bg-card p-6">
             <div className="mb-4 flex items-center gap-2">
-              <div className="grid h-8 w-8 place-items-center rounded-lg bg-red-500 text-white">
+              <div className="grid h-8 w-8 place-items-center rounded-lg bg-danger text-white">
                 <Snowflake size={15} />
               </div>
               <h3 className="font-semibold text-foreground">Safety</h3>

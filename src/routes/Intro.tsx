@@ -10,6 +10,7 @@ import { SectionShell, SectionIntro, reveal, revealAt } from '../components/ui/s
 import { Stat } from '../components/ui/stat'
 import { usePageMeta } from '../lib/head'
 import { MCP_BASE, BACKEND_UNREACHABLE } from '../lib/mcpBase'
+import { REPUTATION_LEVELS } from '../lib/reputation-bands'
 
 /**
  * /intro: the agent-facing front door.
@@ -82,14 +83,13 @@ const skeleton = (
   <span className="inline-block h-5 w-14 animate-pulse rounded bg-foreground/10 align-middle" />
 )
 
-/** The reputation ladder as the console defines it (src/routes/app/AgentId.tsx). */
-const LADDER = [
-  { name: 'Newcomer', at: '0' },
-  { name: 'Verified', at: '100+' },
-  { name: 'Trusted', at: '300+' },
-  { name: 'Established', at: '500+' },
-  { name: 'Elite', at: '900+' },
-]
+/** The reputation ladder, read from the same module the console renders. It used to be a
+ *  hand-synced copy of the console's ladder, which is exactly how a public page ends up
+ *  advertising thresholds the product no longer uses. */
+const LADDER = REPUTATION_LEVELS.map((l) => ({
+  name: l.name,
+  at: l.threshold === 0 ? '0' : `${l.threshold}+`,
+}))
 
 /** The public REST surface, each with a paste-ready call. All live production endpoints. */
 const ENDPOINTS = [

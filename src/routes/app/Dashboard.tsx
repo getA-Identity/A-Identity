@@ -9,6 +9,7 @@ import { BACKEND_UNREACHABLE } from '../../lib/mcpBase'
 import { fetchPlatformAgents, subscribePlatformAgents } from '../../lib/platformAgents'
 import { pickPrimaryAgent } from '../../lib/pickAgent'
 import { humanizeActivity, ago } from '../../lib/format'
+import { gradeOf } from '../../lib/reputation-bands'
 import { useSelectedAgent } from '../../store/agent'
 import AppPage from '../../components/app/AppPage'
 import AgentStatusBar, { type AgentState } from '../../components/app/AgentStatusBar'
@@ -19,9 +20,6 @@ import Freshness from '../../components/app/Freshness'
 import SpendSummary, { type Ix } from '../../components/app/SpendSummary'
 import { Badge } from '../../components/ui/badge'
 import { Skeleton } from '../../components/ui/skeleton'
-
-const gradeOf = (s: number) =>
-  s >= 800 ? 'Excellent' : s >= 650 ? 'Strong' : s >= 500 ? 'Good' : s >= 350 ? 'Fair' : s >= 200 ? 'Weak' : 'High risk'
 
 type Perms = { dailyCapUsd: number; autoApproveUnderUsd: number; frozen: boolean }
 /** GET /api/agents/policy: the same permissions plus today's usage against the cap. */
@@ -246,7 +244,7 @@ export default function Dashboard() {
         description="Your agent console. Everything your agent needs to act, with you in the tower."
       >
       {error && (
-        <div className="mt-6 rounded-xl border border-amber-200 dark:border-amber-500/25 bg-amber-50/60 dark:bg-amber-500/10 p-4 text-sm text-foreground/70">
+        <div className="mt-6 rounded-xl border border-warn/25 bg-warn/10 p-4 text-sm text-foreground/70">
           {error}
         </div>
       )}
@@ -276,7 +274,7 @@ export default function Dashboard() {
           reputation. Hover is a solid tonal shift only: dimming neighbours here made
           the numbers unreadable over the ambient field. */}
       <div data-tour="stats" className="mt-4 grid gap-px overflow-hidden rounded-xl border border-border bg-border sm:grid-cols-2 lg:grid-cols-4">
-        <StatTile to="/app/agent-id" label="Reputation" value={rep != null ? String(rep) : dash} sub={rep != null ? `${gradeOf(rep)} · / 1000` : 'from real activity'} loading={rep == null && !loaded} readAt={rep != null ? readAt : null}>
+        <StatTile to="/app/agent-id" label="Reputation" value={rep != null ? String(rep) : dash} sub={rep != null ? `${gradeOf(rep).label} · / 1000` : 'from real activity'} loading={rep == null && !loaded} readAt={rep != null ? readAt : null}>
           {rep != null ? (
             <div className="mt-2 mb-0.5 h-1.5 w-full rounded-full" style={{ background: 'linear-gradient(90deg,var(--danger),var(--warn) 45%,var(--ok))' }}>
               <div className="relative h-full">
@@ -332,7 +330,7 @@ export default function Dashboard() {
                   </div>
                 </div>
                 <div className="flex items-center gap-2">
-                  <span className="inline-flex items-center gap-1 rounded-md px-2 py-0.5 text-[11px] font-semibold" style={{ color: ok ? 'var(--ok)' : 'var(--warn)', background: ok ? 'var(--ok)14' : 'var(--warn)14' }}>
+                  <span className="inline-flex items-center gap-1 rounded-md px-2 py-0.5 text-[11px] font-semibold" style={{ color: ok ? 'var(--ok)' : 'var(--warn)', background: `color-mix(in srgb, ${ok ? 'var(--ok)' : 'var(--warn)'} 8%, transparent)` }}>
                     <span className="h-1.5 w-1.5 rounded-full" style={{ background: ok ? 'var(--ok)' : 'var(--warn)' }} />
                     {ok ? 'Ready' : 'Pending'}
                   </span>

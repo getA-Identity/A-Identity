@@ -11,6 +11,7 @@ import { useAuth } from '../../store/auth'
 import { useAgentReputation, useMcpHealth, useResolveAgent } from '../../hooks/useMcp'
 import { pickPrimaryAgent } from '../../lib/pickAgent'
 import { fetchPlatformAgents, subscribePlatformAgents } from '../../lib/platformAgents'
+import { REPUTATION_LEVELS, levelIndexOf } from '../../lib/reputation-bands'
 import { apiFetch } from '../../lib/api'
 import { useSelectedAgent } from '../../store/agent'
 import AgentAvatar from '../../components/AgentAvatar'
@@ -394,7 +395,7 @@ export default function AgentId() {
               // a milestone is achieved only once score >= its threshold (-/unknown → not done).
               const has = score != null
               const s = score ?? 0
-              const base = LEVELS.filter((l) => l.threshold > 0).map((l) => ({
+              const base = REPUTATION_LEVELS.filter((l) => l.threshold > 0).map((l) => ({
                 threshold: l.threshold,
                 label: l.milestone,
                 info: l.info,
@@ -442,35 +443,6 @@ export default function AgentId() {
   )
 }
 
-/** The reputation ladder: milestone names, level names, and what each unlocks. */
-const LEVELS = [
-  { threshold: 0, name: 'Newcomer', milestone: '', info: '' },
-  {
-    threshold: 100,
-    name: 'Verified',
-    milestone: 'First verified agent',
-    info: 'Reputation 100+. The agent has a verified identity and its first real settlements behind it.',
-  },
-  {
-    threshold: 300,
-    name: 'Trusted',
-    milestone: 'Trusted agent',
-    info: 'Reputation 300+. Counterparties can safely auto-approve small payments from this agent without a manual click.',
-  },
-  {
-    threshold: 500,
-    name: 'Established',
-    milestone: 'Established agent',
-    info: 'Reputation 500+. A settlement track record long enough to justify a raised daily cap.',
-  },
-  {
-    threshold: 900,
-    name: 'Elite',
-    milestone: 'Elite agent',
-    info: 'Reputation 900+. The top autonomy tier: broad limits with minimal supervision.',
-  },
-] as const
-
 /**
  * Level + percentile card, in the spirit of an "agent readiness" score.
  *
@@ -510,9 +482,9 @@ function ReputationStanding({ score, loading }: { score: number | null; loading:
   }
   if (score == null) return null
 
-  const levelIdx = LEVELS.reduce((acc, l, i) => (score >= l.threshold ? i : acc), 0)
-  const level = LEVELS[levelIdx]
-  const next = LEVELS[levelIdx + 1] ?? null
+  const levelIdx = levelIndexOf(score)
+  const level = REPUTATION_LEVELS[levelIdx]
+  const next = REPUTATION_LEVELS[levelIdx + 1] ?? null
 
   // Standing among the real roster (including this agent).
   const n = roster?.length ?? 0

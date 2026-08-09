@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { motion } from 'framer-motion'
 import { RefreshCw } from 'lucide-react'
 import PageHeader from '../components/PageHeader'
@@ -7,8 +7,9 @@ import ThemeScope from '../components/ThemeScope'
 import { DisplayHeading, Eyebrow, Lede } from '../components/ui/display'
 import { SectionShell, SectionIntro, reveal, revealAt } from '../components/ui/section'
 import { Stat, StatBadge } from '../components/ui/stat'
+import { apiFetch } from '../lib/api'
 import { usePageMeta } from '../lib/head'
-import { MCP_BASE, BACKEND_UNREACHABLE } from '../lib/mcpBase'
+import { BACKEND_UNREACHABLE } from '../lib/mcpBase'
 
 /**
  * /stats: the network, in numbers, for anyone who asks "is this real?"
@@ -18,8 +19,12 @@ import { MCP_BASE, BACKEND_UNREACHABLE } from '../lib/mcpBase'
  * Arc contract table. Nothing is projected, padded or invented, and the backend excludes
  * its own CI canary agents from every headline so monitoring cannot inflate the numbers.
  *
- * While loading the tiles show skeletons; if the free-tier backend is asleep the page
- * says so and keeps retrying. Static framing copy carries the prerender either way.
+ * While loading the tiles show skeletons. The fetch goes through apiFetch, which
+ * retries a sleeping free-tier backend through its cold start with wake pings, so the
+ * first snapshot is usually only delayed; if nothing ever arrives the page says so
+ * instead of inventing numbers. A sequence guard drops late responses from older polls,
+ * so a slow retried fetch can never overwrite a newer snapshot. Static framing copy
+ * carries the prerender either way.
  */
 
 type PlatformStats = {
@@ -83,17 +88,29 @@ export default function Stats() {
 
   const [stats, setStats] = useState<PlatformStats | null>(null)
   const [unreachable, setUnreachable] = useState(false)
+  // Stale-response guard (the usual active/cancelled closure, generalized to overlapping
+  // calls): every load() takes the next ticket and only the newest ticket may touch
+  // state. apiFetch can spend over a minute retrying through a cold start, longer than
+  // the 60s poll, so a slow old fetch must never clobber a newer poll's result; unmount
+  // bumps the ticket so nothing applies after cleanup either.
+  const loadSeq = useRef(0)
 
   const load = useCallback(() => {
-    fetch(`${MCP_BASE}/api/stats`, { signal: AbortSignal.timeout(10_000) })
+    const seq = loadSeq.current + 1
+    loadSeq.current = seq
+    // GET with cold-start retry: apiFetch re-tries 502/503/504 and network failures with
+    // backoff, nudging the backend awake between attempts.
+    apiFetch('/api/stats')
       .then((res) =>
         res.ok ? (res.json() as Promise<PlatformStats>) : Promise.reject(new Error(`HTTP ${res.status}`)),
       )
       .then((data) => {
+        if (seq !== loadSeq.current) return
         setStats(data)
         setUnreachable(false)
       })
       .catch(() => {
+        if (seq !== loadSeq.current) return
         // Keep the last good snapshot if there is one; its "Computed at" caption stays
         // honest about how old it is. Only a page that never loaded shows the note.
         setUnreachable(true)
@@ -103,7 +120,10 @@ export default function Stats() {
   useEffect(() => {
     load()
     const id = window.setInterval(load, REFRESH_MS)
-    return () => window.clearInterval(id)
+    return () => {
+      window.clearInterval(id)
+      loadSeq.current += 1
+    }
   }, [load])
 
   const s = stats

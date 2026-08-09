@@ -51,6 +51,7 @@ import {
   agentAccess,
   listPlatformAgents,
   marketplace,
+  spendPreflight,
   marketplaceLeaderboard,
   updateAgentPermissions,
   provisionAgentVault,
@@ -1200,6 +1201,36 @@ const server = http.createServer(async (req, res) => {
     sendJson(res, 'error' in r ? errStatus(r.error) : 200, r)
     return
   }
+  // D1 spend pre-flight: "if my agent tried this spend right now, what would happen and
+  // why?" Runs the SAME policy ladder POST /api/instructions runs (shared pure function),
+  // against the LIVE state: remaining daily cap, auto-approve ceiling, allowlist, freeze,
+  // and the D3 velocity window. Read-only by contract: no instruction is created, no
+  // audit row, no meter tick, no spend committed. Owner-gated like its neighbors.
+  // Distinct from POST /api/agents/action-check above, which covers the Policy Engine v2
+  // trade/spend-card surfaces; this is the Arc USDC payment path.
+  if (req.method === 'POST' && url.pathname === '/api/agents/spend-preflight') {
+    const body = (await readBody(req).catch(() => null)) as
+      | { agentId?: string; amountUsd?: number; count?: number; payee?: string }
+      | null
+    if (!body?.agentId || !body?.payee) {
+      sendJson(res, 400, { error: 'agentId, amountUsd, payee required' }); return
+    }
+    // Same input rules as POST /api/instructions, so a preview can never pass an amount
+    // the real submission would refuse.
+    if (!validAmount(body.amountUsd)) {
+      sendJson(res, 400, { error: 'amountUsd must be a finite number between 0 and 1000000' }); return
+    }
+    if (body.count !== undefined && !(Number.isFinite(body.count) && body.count! >= 1 && body.count! <= 1000)) {
+      sendJson(res, 400, { error: 'count must be an integer between 1 and 1000' }); return
+    }
+    const r = spendPreflight(
+      body.agentId,
+      { amountUsd: body.amountUsd, count: body.count, payee: body.payee },
+      callerId,
+    )
+    sendJson(res, 'error' in r ? errStatus(r.error) : 200, r)
+    return
+  }
   // The decision trail for one agent (owner-gated, newest first, optional ?since=).
   if (req.method === 'GET' && url.pathname === '/api/agents/audit-log') {
     const agentId = url.searchParams.get('agentId') ?? ''
@@ -1568,6 +1599,7 @@ server.listen(PORT, () => {
   console.error(`  GET  /api/agents/action-policy   owner-gated action policy (free)`)
   console.error(`  POST /api/agents/action-policy   update the action policy (free, versioned)`)
   console.error(`  POST /api/agents/action-check    policy verdict for an intended action`)
+  console.error(`  POST /api/agents/spend-preflight dry-run a USDC spend against the live policy (nothing created)`)
   console.error(`  GET  /api/agents/audit-log       decision trail (?since= &limit=)`)
   console.error(`  POST /api/agents/audit-log/outcome  record what happened after a verdict`)
   console.error(`  POST /api/agents/register         register an agent from a manifest (free)`)

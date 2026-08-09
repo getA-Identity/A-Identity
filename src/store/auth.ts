@@ -1,8 +1,23 @@
+/**
+ * Auth store: guest preview, Sign-In with Ethereum, and email magic-link sessions.
+ *
+ * Credential posture: the real session credential is an HttpOnly cookie set by the
+ * backend; a Bearer token copy lives in memory for this tab only and is NEVER written
+ * to localStorage (persist() stores just the non-secret user + verified flag).
+ *
+ * Network posture: every call goes through apiFetch (lib/api.ts, credentials always
+ * included), so sign-in survives the free-tier backend's ~50s cold start. Mutations
+ * (login, nonce, verify, magic link) wait for the backend to wake and then send
+ * EXACTLY once, so no sign-in step can double-submit. restore() is a retried read
+ * whose failure is NEVER a sign-out: only a definitive 401 or a 200 with
+ * {authenticated:false} clears the session; an unreachable or still-waking backend
+ * keeps the persisted state.
+ */
 import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
 import { setConnectedProvider, type Eip1193 } from '../lib/wallets'
 
-import { MCP_BASE } from '../lib/mcpBase'
+import { apiFetch } from '../lib/api'
 
 export type User = {
   name: string
@@ -18,7 +33,7 @@ type AuthState = {
    *  Drives "can act" in the UI, decoupled from the in-memory token, which is null after
    *  a cookie-restored reload. */
   verified: boolean
-  /** Guest preview: an email-only local session (no token → browse-only). */
+  /** Guest preview: an email-only local session (no token -> browse-only). */
   login: (email: string, name?: string) => Promise<void>
   /** Real auth: Sign-In with Ethereum. Prove wallet ownership by signing a nonce.
    *  Pass the chosen EIP-1193 provider (an injected wallet or WalletConnect). */
@@ -40,10 +55,9 @@ export const useAuth = create<AuthState>()(
       verified: false,
       login: async (email, name) => {
         try {
-          const res = await fetch(`${MCP_BASE}/api/auth/login`, {
+          const res = await apiFetch('/api/auth/login', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            credentials: 'include',
             body: JSON.stringify({ email, name }),
           })
           if (res.ok) {
@@ -52,7 +66,8 @@ export const useAuth = create<AuthState>()(
             return
           }
         } catch {
-          // Backend unreachable, fall through to a local-only session (no token).
+          // Backend unreachable even after apiFetch's wake wait, fall through to a
+          // local-only session (no token).
         }
         set({ user: { email, name: name?.trim() || email.split('@')[0] }, token: null, verified: false })
       },
@@ -69,10 +84,11 @@ export const useAuth = create<AuthState>()(
           throw new Error(walletError(e, 'connect to your wallet'))
         }
         if (!address) throw new Error('No account selected in your wallet.')
-        const nres = await fetch(`${MCP_BASE}/api/auth/nonce`, {
+        // apiFetch wakes a cold backend BEFORE posting and then posts exactly once, so
+        // a free-tier spin-up cannot fail sign-in and the nonce is never issued twice.
+        const nres = await apiFetch('/api/auth/nonce', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          credentials: 'include',
           body: JSON.stringify({ address }),
         }).catch(() => null)
         if (!nres || !nres.ok) throw new Error('Could not reach the server (it may be waking up). Try again in a moment.')
@@ -83,10 +99,9 @@ export const useAuth = create<AuthState>()(
         } catch (e) {
           throw new Error(walletError(e, 'sign the message'))
         }
-        const vres = await fetch(`${MCP_BASE}/api/auth/verify`, {
+        const vres = await apiFetch('/api/auth/verify', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          credentials: 'include',
           body: JSON.stringify({ address, message, signature }),
         })
         if (!vres.ok) {
@@ -97,20 +112,22 @@ export const useAuth = create<AuthState>()(
         set({ user: data.user, token: data.token, verified: true })
       },
       requestMagicLink: async (email) => {
-        const res = await fetch(`${MCP_BASE}/api/auth/magic/request`, {
+        // Exactly-once matters most here: a retried POST would email two sign-in
+        // links. apiFetch wakes the backend first, then sends a single request.
+        const res = await apiFetch('/api/auth/magic/request', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          credentials: 'include',
           body: JSON.stringify({ email }),
         }).catch(() => null)
         const data = (res ? await res.json().catch(() => ({})) : {}) as { sent?: boolean; error?: string }
         if (!res || !res.ok || !data.sent) throw new Error(data.error ?? 'Could not send the sign-in link.')
       },
       loginWithMagicToken: async (token) => {
-        const res = await fetch(`${MCP_BASE}/api/auth/magic/verify`, {
+        // The link token is single-use, so the exactly-once mutation posture also
+        // means a cold-start retry can never burn it before the real attempt.
+        const res = await apiFetch('/api/auth/magic/verify', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          credentials: 'include',
           body: JSON.stringify({ token }),
         })
         if (!res.ok) {
@@ -122,14 +139,17 @@ export const useAuth = create<AuthState>()(
       },
       restore: async () => {
         // On load, ask the backend who we are from the HttpOnly cookie. Only a definitive
-        // 401 clears the session, a cold/unreachable backend must NOT log the user out.
+        // 401 (or 200 {authenticated:false}) clears the session, a cold/unreachable
+        // backend must NOT log the user out. apiFetch retries this read through a cold
+        // start with wake pings; if it still fails it either throws (caught below) or
+        // bottoms out on a 5xx response, which is neither ok nor 401 and so falls
+        // through, keeping the persisted session either way.
         try {
           // Prefer the cookie; also send an in-memory token if one is still around (e.g. a
           // pre-cookie session rehydrated from old localStorage), so upgrading users aren't
           // force-logged-out on first load after this change.
           const t = get().token
-          const res = await fetch(`${MCP_BASE}/api/auth/me`, {
-            credentials: 'include',
+          const res = await apiFetch('/api/auth/me', {
             headers: t ? { Authorization: `Bearer ${t}` } : {},
           })
           // A 401 is still treated as definitive, so this keeps working against a
@@ -150,16 +170,15 @@ export const useAuth = create<AuthState>()(
             if (data.user) set({ user: data.user, verified: Boolean(data.verified) })
           }
         } catch {
-          /* backend waking / unreachable, keep the persisted session */
+          /* still waking / unreachable after retries, keep the persisted session */
         }
       },
       logout: () => {
-        // Clear the server cookie too (best effort), then drop the local session.
-        try {
-          void fetch(`${MCP_BASE}/api/auth/logout`, { method: 'POST', credentials: 'include' })
-        } catch {
-          /* ignore */
-        }
+        // Clear the server cookie too, best effort in the background (apiFetch wakes a
+        // cold backend and sends once), while the local session drops immediately.
+        void apiFetch('/api/auth/logout', { method: 'POST' }).catch(() => {
+          /* ignore: the local logout below already happened */
+        })
         set({ user: null, token: null, verified: false })
       },
     }),

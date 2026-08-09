@@ -1,5 +1,6 @@
 import { clsx, type ClassValue } from 'clsx'
 import { twMerge } from 'tailwind-merge'
+import { short } from './format'
 
 /**
  * Merge Tailwind class strings with correct precedence (clsx for conditionals,
@@ -12,10 +13,10 @@ export function cn(...inputs: ClassValue[]) {
 /**
  * Middle-truncated address, 8 leading and 4 trailing characters.
  *
- * Note the explorer and the spotlight keep their own 8-and-6 variant on purpose: they render
- * in wider columns. Unifying them would change what is on screen, which is not this
- * function's job.
+ * Delegates to lib/format's `short` so exactly one truncation rule exists; kept as a
+ * named export because console surfaces import it under this name. Wider columns
+ * (the explorer, the spotlight) render an 8-and-6 variant via `short`'s params.
  */
 export function shortAddress(a: string): string {
-  return a.length > 14 ? `${a.slice(0, 8)}...${a.slice(-4)}` : a
+  return short(a)
 }

@@ -5,8 +5,6 @@
 
 **[Live demo](https://a-identity.xyz)** | **[Docs](https://a-identity.mintlify.site)** | **[Architecture](ARCHITECTURE.md)**
 
-Built for the **Ignyte Stablecoin Commerce Stack Challenge**, Track 4: Best Agentic Economy Experience on Arc.
-
 **The passport and wallet for the agentic economy.** Give every AI agent a
 verified on-chain identity and a wallet it can pay from. Verify first, then pay,
 with a human in the tower for anything that moves real value.
@@ -17,6 +15,19 @@ per-request payments.
 
 > Status: hackathon MVP. Arc is the live phase-1 network. Stellar is next, then
 > Avalanche, then Solana.
+
+## Recognition: where this runs
+
+One product, one live engine, three venues:
+
+- **Encode x Arc "Programmable Money" hackathon** - A-Identity is built on Arc for this
+  hackathon (final submission Aug 9, 2026; Demo Day Aug 20). The trusted agent marketplace,
+  the on-chain policy vault, and the ERC-8183 escrow work in this repo are the submission.
+- **OKX.AI** - live in production as a paid **Trust Oracle**: Agent **#6271** plus backup
+  **#8913** on X Layer mainnet, with **120 real x402 settlements**. Details in the
+  [OKX.AI section](#live-on-okxai-the-a-identity-trust-oracle-agent-6271) below.
+- **Ignyte Stablecoin Commerce Stack Challenge** - the original entry, Track 4: Best
+  Agentic Economy Experience on Arc.
 
 ---
 
@@ -75,7 +86,7 @@ flowchart TB
 
 ---
 
-## The Trusted Agent Marketplace (Build on Arc)
+## The Trusted Agent Marketplace
 
 A-Identity is now a **trusted agent marketplace on Arc**: anyone registers an autonomous agent as
 a **verified worker**, it takes tasks, and it gets paid in USDC through on-chain escrow. The
@@ -115,7 +126,7 @@ cross-chain).
 
 ---
 
-## 🏆 OKX.AI Genesis Hackathon: A-Identity Trust Oracle (Agent #6271)
+## Live on OKX.AI: the A-Identity Trust Oracle (Agent #6271)
 
 A-Identity is **live on [OKX.AI](https://www.okx.ai/agents)** as an **A2MCP ASP**,
 *the identity and reputation oracle for the agent economy.* Before any agent-to-agent
@@ -167,7 +178,7 @@ listed at `GET /proof`. Four representative ones, each independently verifiable 
 
 **Backed by real data, not an LLM guess:** a live ERC-8004 showcase agent, Meridian
 `#849980`, reputation **~542/1000**, KYA-verified. Scoring is **deterministic and
-unit-tested** (365 tests), reads on-chain live via viem, and is fully documented at
+unit-tested** (462 unit tests as of Aug 2026), reads on-chain live via viem, and is fully documented at
 `GET /methodology`. This is our answer to "surface your rigor": every number is
 reproducible and every settlement is on-chain.
 
@@ -389,7 +400,7 @@ The same system in three views (also drop-in slides for a deck):
 
 ![The app: a React console (Agent ID, Wallet, Settlements, Permissions, Agent House, Overview) where a human stays in control, every screen reading live data from Arc.](docs/images/frontend.png)
 
-![The backend: one Node HTTP server on Render, a REST API for the app and MCP tools for agents, reading the real Arc contracts and settling real USDC. chainId 5042002, contracts reachable, full E2E 39/39.](docs/images/backend.png)
+![The backend: one Node HTTP server on Render, a REST API for the app and MCP tools for agents, reading the real Arc contracts and settling real USDC. chainId 5042002, contracts reachable, full E2E suite green.](docs/images/backend.png)
 
 ```
 a-identity/

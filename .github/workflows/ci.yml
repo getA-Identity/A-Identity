@@ -20,8 +20,8 @@ jobs:
       - name: Install backend deps
         run: npm install --prefix mcp
 
-      - name: Typecheck frontend
-        run: npx tsc --noEmit
+      - name: Lint frontend
+        run: npm run lint
 
       - name: Build backend + unit tests
         run: npm test --prefix mcp
@@ -41,5 +41,9 @@ jobs:
           npm run http-smoke --prefix mcp
           kill $BACKEND 2>/dev/null || true
 
-      - name: Build frontend
-        run: npx vite build
+      # Same pipeline Vercel runs at deploy: repo checks (SEO/structured data,
+      # agent-skills index, oauth mirror, sitemap, prerender staleness), then
+      # tsc --noEmit, vite build, and apply-prerender. Running the raw vite
+      # build here used to let drift pass CI green and fail only at deploy.
+      - name: Build frontend (check + typecheck + vite build + prerender)
+        run: npm run build

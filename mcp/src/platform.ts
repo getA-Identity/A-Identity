@@ -78,7 +78,20 @@ export type Permissions = {
   agentToHuman: boolean
   /** Emergency off switch: when true, every instruction pauses for a human. */
   frozen: boolean
+  /**
+   * D3 velocity circuit-breaker: at most `maxActions` settled/auto-approved actions per
+   * rolling `windowMinutes` window. ABSENT (or null) by default, so existing agents keep
+   * their exact behavior. When set, a burst past the limit is DENIED outright (status
+   * `rejected`, denyCode `velocity_exceeded`) rather than paused: a compromised or looping
+   * agent firing N under-cap payments is the case the daily cap cannot catch, and queueing
+   * the flood for a human would invite approval fatigue. Server-side only; the on-chain
+   * vault does not know this rule.
+   */
+  velocity?: VelocityPolicy | null
 }
+
+/** D3: the velocity circuit-breaker config. Positive integers, bounded (see sanitizeVelocity). */
+export type VelocityPolicy = { maxActions: number; windowMinutes: number }
 
 export type Service = { name: string; priceUsd: number; unit: string }
 
@@ -191,6 +204,9 @@ export type Instruction = {
     | 'executed_onchain'
     | 'rejected'
   policyNote: string
+  /** Machine-readable reason when the policy DENIED this instruction at creation time
+   *  (today only the D3 velocity breaker hard-denies; other rules pause for a human). */
+  denyCode?: 'velocity_exceeded'
   /** Set when the instruction was broadcast for real on Arc testnet. */
   txHash?: string
   explorerUrl?: string
@@ -412,6 +428,9 @@ export function createAgent(input: {
   cardStyle?: unknown
   owner?: string
 }): PlatformAgent {
+  // D3 velocity is optional and OFF by default; a registration may set it, but only a
+  // well-formed config survives (same sanitizer the permissions update path uses).
+  const velocity = sanitizeVelocity(input.permissions.velocity)
   const permissions: Permissions = {
     dailyCapUsd: input.permissions.dailyCapUsd ?? 50,
     autoApproveUnderUsd: input.permissions.autoApproveUnderUsd ?? 1,
@@ -419,6 +438,7 @@ export function createAgent(input: {
     agentToAgent: input.permissions.agentToAgent ?? true,
     agentToHuman: input.permissions.agentToHuman ?? false,
     frozen: input.permissions.frozen ?? false,
+    ...(velocity ? { velocity } : {}),
   }
 
   // Bound stored strings/arrays so a large registration can't balloon the single
@@ -1103,6 +1123,31 @@ function ownsAgent(agent: PlatformAgent, caller?: string): boolean {
   return Boolean(agent.owner) && agent.owner === caller
 }
 
+/** Bounds for the D3 velocity config. A day-long window and a 10k-action ceiling are
+ *  already far past any honest agent burst; anything bigger is a typo or an attack. */
+const VELOCITY_MAX_ACTIONS = 10_000
+const VELOCITY_MAX_WINDOW_MINUTES = 1_440
+
+/**
+ * Validate a client-supplied velocity config (D3). Returns:
+ *  - a normalized `{ maxActions, windowMinutes }` for a well-formed object,
+ *  - `null` for an explicit `null` (the owner clearing the breaker),
+ *  - `undefined` for anything malformed (NaN, zero, negative, fractional, out of
+ *    bounds, wrong type), which the sanitizer treats as "field not supplied" in line
+ *    with its only-well-formed-fields-survive contract.
+ * Exported for unit tests: the rejection rules are part of the feature.
+ */
+export function sanitizeVelocity(v: unknown): VelocityPolicy | null | undefined {
+  if (v === null) return null
+  if (typeof v !== 'object' || Array.isArray(v)) return undefined
+  const { maxActions, windowMinutes } = v as { maxActions?: unknown; windowMinutes?: unknown }
+  const posInt = (x: unknown, max: number): number | undefined =>
+    typeof x === 'number' && Number.isInteger(x) && x >= 1 && x <= max ? x : undefined
+  const a = posInt(maxActions, VELOCITY_MAX_ACTIONS)
+  const w = posInt(windowMinutes, VELOCITY_MAX_WINDOW_MINUTES)
+  return a !== undefined && w !== undefined ? { maxActions: a, windowMinutes: w } : undefined
+}
+
 /** Sanitize a client-supplied permissions patch: clamp numbers into a sane range (a
  *  1e308 auto-approve line would silently disable human approval), coerce booleans, and
  *  bound the allowlist. Only well-formed fields survive to be merged. */
@@ -1119,6 +1164,11 @@ function sanitizePermissions(partial: Partial<Permissions>): Partial<Permissions
       .filter((x): x is string => typeof x === 'string')
       .slice(0, 100)
       .map((x) => x.slice(0, 100))
+  }
+  // D3 velocity: a valid object sets it, an explicit null clears it, garbage is dropped.
+  if (partial.velocity !== undefined) {
+    const v = sanitizeVelocity(partial.velocity)
+    if (v !== undefined) out.velocity = v
   }
   return out
 }
@@ -1741,6 +1791,284 @@ const VAULT_POLICY_ERRORS = new Set([
   'IsFrozen', 'SessionKeyExpired', 'PayeeNotAllowed', 'AboveAutoApprove', 'DailyCapExceeded', 'ZeroAddress', 'TransferFailed',
 ])
 
+// ── D1 spend pre-flight + D3 velocity circuit-breaker (pure decision core) ─────
+//
+// "If my agent tried this spend right now, what would happen and why?" answered by the
+// SAME function the real path runs. createInstruction calls evaluateSpendPreflight for
+// its decision, so the dry-run and reality cannot drift: whatever the preview says is,
+// by construction, what POST /api/instructions would do one second later.
+//
+// Everything here is pure: state in, verdict out, nothing written. The stateful wrapper
+// (spendPreflight below) gathers the live inputs and is read-only by contract.
+
+/** Which rule fired. Stable and machine-readable; ladder order, first is decisive. */
+export type SpendPreflightCode =
+  | 'velocity_exceeded'
+  | 'frozen'
+  | 'payee_type_blocked'
+  | 'payee_not_allowed'
+  | 'daily_cap_exceeded'
+  | 'above_auto_approve'
+  | 'invalid_amount'
+
+/** The on-chain AgentSpendPolicy custom error the decisive rule maps to, when the rule
+ *  also exists on the vault. Server-only rules (velocity, payee type) map to null. */
+export type SpendPreflightVaultError =
+  | 'IsFrozen'
+  | 'PayeeNotAllowed'
+  | 'DailyCapExceeded'
+  | 'AboveAutoApprove'
+
+export type SpendPreflight = {
+  /** ALLOW = would auto-approve; WARN = would pause for a human; DENY = would be refused. */
+  verdict: 'ALLOW' | 'WARN' | 'DENY'
+  /** The exact status POST /api/instructions would record, or null when the request would
+   *  be refused at validation and no instruction would be created at all. */
+  wouldBeStatus: 'auto_approved' | 'pending_approval' | 'rejected' | null
+  /** Every rule that would trigger, in ladder order. The FIRST entry is decisive (it is
+   *  what sets wouldBeStatus and policyNote); the rest are also-true findings so a caller
+   *  can plan past the first blocker. Empty on ALLOW. */
+  codes: SpendPreflightCode[]
+  /** The exact policyNote the created instruction would carry. */
+  policyNote: string
+  /** What the on-chain vault would revert with for the decisive rule, or null. */
+  vaultError: SpendPreflightVaultError | null
+  totalUsd: number
+  count: number
+  frozen: boolean
+  payeeAllowlisted: boolean
+  payeeTypeAllowed: boolean
+  /** True when a human would have to act before this spend executes (WARN or DENY). */
+  needsHumanApproval: boolean
+  headroom: {
+    dailyCapUsd: number
+    spentTodayUsd: number
+    remainingTodayUsd: number
+    autoApproveUnderUsd: number
+  }
+  /** Present when the D3 velocity breaker is configured on this agent; null otherwise. */
+  velocity: {
+    maxActions: number
+    windowMinutes: number
+    recentActions: number
+    /** How many more actions fit in the current window before the breaker trips. */
+    remainingActions: number
+  } | null
+}
+
+/** Instruction statuses the velocity window counts: money that moved or was cleared to
+ *  move. Pending and rejected rows are deliberately excluded, so a denied burst does not
+ *  extend its own lockout and a queue of unapproved requests cannot trip the breaker. */
+export const VELOCITY_COUNTED_STATUSES: ReadonlySet<Instruction['status']> = new Set<Instruction['status']>([
+  'auto_approved', 'approved', 'executed_simulated', 'executed_onchain',
+])
+
+/**
+ * D3: how many actions this agent settled or had approved inside the rolling window.
+ * Batch instructions count as their full `count` (a batch of 500 IS 500 payments; a
+ * velocity guard a single batch could step around would not guard anything). Pure over
+ * the given list; exported for unit tests.
+ */
+export function countRecentActions(
+  instructions: readonly Instruction[],
+  agentId: string,
+  windowMinutes: number,
+  now: number | Date = Date.now(),
+): number {
+  const nowMs = typeof now === 'number' ? now : now.getTime()
+  const cutoff = nowMs - windowMinutes * 60_000
+  let actions = 0
+  for (const ix of instructions) {
+    if (ix.agentId !== agentId) continue
+    if (!VELOCITY_COUNTED_STATUSES.has(ix.status)) continue
+    const at = Date.parse(ix.createdAt)
+    if (!Number.isFinite(at) || at <= cutoff) continue
+    actions += ix.count
+  }
+  return actions
+}
+
+/**
+ * The spend-policy ladder as one pure function: permissions + live numbers in, verdict
+ * out. This is the decision core for BOTH the real path (createInstruction) and the D1
+ * dry-run endpoint, in the order a bank would run the checks:
+ *
+ *   velocity (DENY) -> frozen -> payee type -> allowlist -> daily cap -> auto-approve line
+ *
+ * The velocity breaker is the only hard DENY: everything else pauses for a human, but a
+ * burst past the configured rate is the compromised-agent signature, and queueing a flood
+ * for a human would invite approval fatigue instead of stopping it.
+ */
+export function evaluateSpendPreflight(input: {
+  permissions: Permissions
+  spentTodayUsd: number
+  /** Actions already inside the velocity window (see countRecentActions). Ignored when
+   *  the agent has no velocity policy. */
+  recentActions?: number
+  amountUsd: number
+  count?: number
+  payee: string
+}): SpendPreflight {
+  const p = input.permissions
+  // Identical normalization to the real path, so the preview prices the same action.
+  const count = Math.min(1000, Math.max(1, Math.floor(input.count ?? 1)))
+  const total = input.amountUsd * count
+  const spentToday = input.spentTodayUsd
+  const headroom = {
+    dailyCapUsd: p.dailyCapUsd,
+    spentTodayUsd: spentToday,
+    remainingTodayUsd: Math.max(0, p.dailyCapUsd - spentToday),
+    autoApproveUnderUsd: p.autoApproveUnderUsd,
+  }
+  const vel = p.velocity ?? null
+  const recent = Math.max(0, input.recentActions ?? 0)
+  const velocity = vel
+    ? {
+        maxActions: vel.maxActions,
+        windowMinutes: vel.windowMinutes,
+        recentActions: recent,
+        remainingActions: Math.max(0, vel.maxActions - recent),
+      }
+    : null
+
+  const payeeAllowed = p.payeeAllowlist.length === 0 || p.payeeAllowlist.includes(input.payee)
+  const isHumanPayee = /^0x[0-9a-fA-F]{40}$/.test(input.payee)
+  const payeeTypeAllowed = isHumanPayee ? p.agentToHuman !== false : p.agentToAgent !== false
+
+  const base = {
+    totalUsd: total,
+    count,
+    frozen: p.frozen,
+    payeeAllowlisted: payeeAllowed,
+    payeeTypeAllowed,
+    headroom,
+    velocity,
+  }
+
+  // A non-finite or negative amount never reaches the ladder: the real path refuses to
+  // create anything at all, so the preview says exactly that (wouldBeStatus null).
+  if (!Number.isFinite(input.amountUsd) || input.amountUsd < 0) {
+    return {
+      ...base,
+      verdict: 'DENY',
+      wouldBeStatus: null,
+      codes: ['invalid_amount'],
+      policyNote: 'amountUsd must be a non-negative number',
+      vaultError: null,
+      needsHumanApproval: true,
+    }
+  }
+
+  // Collect EVERY rule that would trigger, in ladder order. The first is decisive.
+  const codes: SpendPreflightCode[] = []
+  if (vel && recent + count > vel.maxActions) codes.push('velocity_exceeded')
+  if (p.frozen) codes.push('frozen')
+  if (!payeeTypeAllowed) codes.push('payee_type_blocked')
+  if (!payeeAllowed) codes.push('payee_not_allowed')
+  if (spentToday + total > p.dailyCapUsd) codes.push('daily_cap_exceeded')
+  // Negated <= so a NaN total (garbage count) lands here, same as the real ladder's else.
+  if (!(total <= p.autoApproveUnderUsd)) codes.push('above_auto_approve')
+
+  if (codes.length === 0) {
+    return {
+      ...base,
+      verdict: 'ALLOW',
+      wouldBeStatus: 'auto_approved',
+      codes,
+      policyNote: `Under the $${p.autoApproveUnderUsd} auto-approve line.`,
+      vaultError: null,
+      needsHumanApproval: false,
+    }
+  }
+
+  const decisive = codes[0]!
+  if (decisive === 'velocity_exceeded' && vel) {
+    return {
+      ...base,
+      verdict: 'DENY',
+      wouldBeStatus: 'rejected',
+      codes,
+      policyNote:
+        `Velocity limit hit: ${recent} action(s) already in the last ${vel.windowMinutes} min ` +
+        `and this would make ${recent + count} of ${vel.maxActions} allowed (velocity_exceeded). ` +
+        'Denied; wait for the window to clear or raise the velocity policy.',
+      vaultError: null,
+      needsHumanApproval: true,
+    }
+  }
+
+  const note =
+    decisive === 'frozen'
+      ? 'Agent is frozen; all activity is paused. A human must unfreeze or approve.'
+      : decisive === 'payee_type_blocked'
+        ? isHumanPayee
+          ? 'Agent-to-human payments are turned off for this agent; a human must approve.'
+          : 'Agent-to-agent payments are turned off for this agent; a human must approve.'
+        : decisive === 'payee_not_allowed'
+          ? 'Payee not on the allowlist; a human must approve.'
+          : decisive === 'daily_cap_exceeded'
+            ? `Would exceed today's cap ($${spentToday.toFixed(2)} spent + $${total.toFixed(2)} > $${p.dailyCapUsd}); a human must approve.`
+            : `Above the auto-approve line ($${p.autoApproveUnderUsd}); waiting for a human.`
+  const vaultError: SpendPreflightVaultError | null =
+    decisive === 'frozen'
+      ? 'IsFrozen'
+      : decisive === 'payee_not_allowed'
+        ? 'PayeeNotAllowed'
+        : decisive === 'daily_cap_exceeded'
+          ? 'DailyCapExceeded'
+          : decisive === 'above_auto_approve'
+            ? 'AboveAutoApprove'
+            : null
+  return {
+    ...base,
+    verdict: 'WARN',
+    wouldBeStatus: 'pending_approval',
+    codes,
+    policyNote: note,
+    vaultError,
+    needsHumanApproval: true,
+  }
+}
+
+/**
+ * D1: the stateful, read-only dry-run. Owner-gated like every other agent-scoped read.
+ * Gathers the LIVE inputs (today's spend, the velocity window count) and hands them to
+ * the pure evaluator. Mutates nothing by contract: no instruction, no audit row, no
+ * meter tick, no daily-spend commit, no activity entry, no save. A preview that changed
+ * state would not be a preview.
+ */
+export function spendPreflight(
+  agentId: string,
+  input: { amountUsd: number; count?: number; payee: string },
+  caller?: string,
+):
+  | ({ agentId: string; preview: true; checkedAt: string; resetsAt: string; note: string } & SpendPreflight)
+  | { error: string } {
+  const agent = state.agents.find((a) => a.id === agentId)
+  if (!agent) return { error: 'Unknown agent' }
+  if (!ownsAgent(agent, caller)) return { error: 'Forbidden: not the agent owner' }
+  if (typeof input.payee !== 'string' || input.payee.length === 0) return { error: 'payee required' }
+  const p = agent.permissions
+  const result = evaluateSpendPreflight({
+    permissions: p,
+    spentTodayUsd: dailySpent(agent),
+    recentActions: p.velocity
+      ? countRecentActions(state.instructions, agent.id, p.velocity.windowMinutes, Date.now())
+      : 0,
+    amountUsd: input.amountUsd,
+    count: input.count,
+    payee: input.payee,
+  })
+  return {
+    agentId: agent.id,
+    preview: true,
+    checkedAt: new Date().toISOString(),
+    resetsAt: nextUtcMidnight(),
+    note: 'Dry-run only: nothing was created and no state changed. POST /api/instructions to submit for real.',
+    ...result,
+  }
+}
+
 export function createInstruction(input: {
   agentId: string
   type: InstructionType
@@ -1757,45 +2085,32 @@ export function createInstruction(input: {
   // reach the daily-cap math, where a negative would subtract from today's spend.
   if (!Number.isFinite(input.amountUsd) || input.amountUsd < 0) return { error: 'amountUsd must be a non-negative number' }
 
-  const count = Math.min(1000, Math.max(1, Math.floor(input.count ?? 1)))
-  const total = input.amountUsd * count
   const p = agent.permissions
 
-  // Policy checks, in the order a bank would run them.
-  let status: Instruction['status']
-  let policyNote: string
+  // Policy checks, in the order a bank would run them: the ladder lives in the pure
+  // evaluateSpendPreflight, shared with the D1 dry-run endpoint so the preview and the
+  // real path can never disagree.
+  const check = evaluateSpendPreflight({
+    permissions: p,
+    spentTodayUsd: dailySpent(agent),
+    recentActions: p.velocity
+      ? countRecentActions(state.instructions, agent.id, p.velocity.windowMinutes, Date.now())
+      : 0,
+    amountUsd: input.amountUsd,
+    count: input.count,
+    payee: input.payee,
+  })
+  // The amount guard above already refused the only wouldBeStatus-null case; this is the
+  // belt to that suspender, kept as an error rather than a throw.
+  if (check.wouldBeStatus === null) return { error: check.policyNote }
 
-  const payeeAllowed = p.payeeAllowlist.length === 0 || p.payeeAllowlist.includes(input.payee)
-  const spentToday = dailySpent(agent)
-  // A 0x… payee is a human wallet; anything else (agent://<id> or a bare agent id/name)
-  // is another agent. The two toggles gate which of those the agent may pay on its own.
-  // Undefined-safe: only an explicit `false` blocks, so older agents stay permissive.
-  const isHumanPayee = /^0x[0-9a-fA-F]{40}$/.test(input.payee)
-  const payeeTypeAllowed = isHumanPayee ? p.agentToHuman !== false : p.agentToAgent !== false
+  const count = check.count
+  const total = check.totalUsd
+  const status: Instruction['status'] = check.wouldBeStatus
+  const policyNote = check.policyNote
 
-  if (p.frozen) {
-    status = 'pending_approval'
-    policyNote = 'Agent is frozen; all activity is paused. A human must unfreeze or approve.'
-  } else if (!payeeTypeAllowed) {
-    status = 'pending_approval'
-    policyNote = isHumanPayee
-      ? 'Agent-to-human payments are turned off for this agent; a human must approve.'
-      : 'Agent-to-agent payments are turned off for this agent; a human must approve.'
-  } else if (!payeeAllowed) {
-    status = 'pending_approval'
-    policyNote = `Payee not on the allowlist; a human must approve.`
-  } else if (spentToday + total > p.dailyCapUsd) {
-    status = 'pending_approval'
-    policyNote = `Would exceed today's cap ($${spentToday.toFixed(2)} spent + $${total.toFixed(2)} > $${p.dailyCapUsd}); a human must approve.`
-  } else if (total <= p.autoApproveUnderUsd) {
-    status = 'auto_approved'
-    policyNote = `Under the $${p.autoApproveUnderUsd} auto-approve line.`
-  } else {
-    status = 'pending_approval'
-    policyNote = `Above the auto-approve line ($${p.autoApproveUnderUsd}); waiting for a human.`
-  }
-
-  // Auto-approved payments commit against today's cap immediately.
+  // Auto-approved payments commit against today's cap immediately. A velocity DENY
+  // commits nothing: rejected rows never count against the cap or the window.
   if (status === 'auto_approved') addSpend(agent, total)
 
   const instruction: Instruction = {
@@ -1808,6 +2123,11 @@ export function createInstruction(input: {
     memo: input.memo ?? '',
     status,
     policyNote,
+    // The D3 breaker is the only rule that hard-denies at creation; carry its typed
+    // reason so clients and the audit trail can match on a code, not on prose.
+    ...(status === 'rejected' && check.codes[0] === 'velocity_exceeded'
+      ? { denyCode: 'velocity_exceeded' as const }
+      : {}),
     createdAt: new Date().toISOString(),
   }
 

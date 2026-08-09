@@ -4,9 +4,14 @@
  * let the truncation rules drift between screens.
  */
 
-/** Shorten a long address/id for display: 0x1234abcd...ef56. */
-export function short(a: string): string {
-  return a && a.length > 14 ? `${a.slice(0, 8)}...${a.slice(-4)}` : a
+/**
+ * Shorten a long address/id for display: 0x1234abcd...ef56.
+ *
+ * Wide-column surfaces (the explorer) pass a longer `tail` and their own ellipsis
+ * glyph, so consolidating on this one rule changed none of their on-screen strings.
+ */
+export function short(a: string, tail = 4, ellipsis = '...'): string {
+  return a && a.length > 14 ? `${a.slice(0, 8)}${ellipsis}${a.slice(-tail)}` : a
 }
 
 /** Shorten any full 40-hex address inside activity text so it never overflows a card. */

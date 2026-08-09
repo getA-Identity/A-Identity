@@ -16,9 +16,12 @@
  * Docs: https://vercel.com/docs/routing-middleware
  */
 export const config = {
-  // Only the routes that have a markdown twin. Everything else skips the
-  // middleware entirely rather than paying for an invocation to do nothing.
-  matcher: ['/', '/manifesto', '/faq'],
+  // The homepage is currently the only route with a markdown twin
+  // (public/index.md), so it is the only route matched. Everything else skips
+  // the middleware entirely rather than paying for an invocation to do nothing.
+  // To add another route: create its twin file under public/ AND list the route
+  // here, otherwise visitors would get homepage prose under a foreign URL.
+  matcher: ['/'],
 }
 
 /** Does this client actually want markdown, rather than merely tolerating it?
