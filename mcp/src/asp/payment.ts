@@ -32,6 +32,59 @@ export const PRICES: Record<string, string> = {
   'POST /tools/guardrail_check': '$0.005',
 }
 
+/**
+ * Copy the spec challenge out of the `PAYMENT-REQUIRED` header and into the 402 body.
+ *
+ * Why this is a decode rather than a second hand-written challenge: the OKX SDK builds
+ * the real requirements (it resolves the settlement asset from the facilitator, which we
+ * never see), and its `unpaidResponseBody` hook is handed only the request context, not
+ * those requirements. Anything we typed out by hand here would be a duplicate free to
+ * drift from the header on price, payTo or asset. Decoding the header cannot drift: the
+ * body IS the header.
+ *
+ * The reason to do it at all: OKX puts the whole challenge in that header ("v1 puts in
+ * body, v2 puts in header", per the SDK), so a generic x402 client that reads the body,
+ * the way the Celo rail serves it, finds no challenge and cannot pay. This opens the ASP
+ * rail to those clients without touching the header, the prices or the tool schemas.
+ *
+ * `amount` is the field name this rail's SDK uses; `maxAmountRequired` is the older
+ * Coinbase name that other clients look for. Both are emitted with the same value rather
+ * than picking a side. Returns the body unchanged on anything unexpected: a malformed
+ * header must not turn a 402 into a 500.
+ */
+export function withSpecChallenge(body: string, header: unknown): string {
+  if (typeof header !== 'string' || !header) return body
+  let challenge: Record<string, unknown>
+  let parsed: Record<string, unknown>
+  try {
+    challenge = JSON.parse(Buffer.from(header, 'base64').toString('utf8'))
+    parsed = JSON.parse(body)
+  } catch {
+    return body
+  }
+  if (!challenge || typeof challenge !== 'object' || Array.isArray(challenge)) return body
+  if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return body
+
+  const accepts = Array.isArray(challenge.accepts)
+    ? challenge.accepts.map((a) => {
+        if (!a || typeof a !== 'object' || Array.isArray(a)) return a
+        const entry = a as Record<string, unknown>
+        return 'amount' in entry && !('maxAmountRequired' in entry)
+          ? { ...entry, maxAmountRequired: entry.amount }
+          : entry
+      })
+    : challenge.accepts
+
+  // Our own keys win: the calling contract below is richer than the header's copy.
+  return JSON.stringify({
+    x402Version: challenge.x402Version,
+    accepts,
+    resource: challenge.resource,
+    ...(challenge.extensions === undefined ? {} : { extensions: challenge.extensions }),
+    ...parsed,
+  })
+}
+
 const AGENT_ID_DOC = 'ERC-8004 token id ("#849980"), CAIP id ("eip155:196:8004/6271"), or 0x owner address'
 const TX_CONTEXT_DOC = 'optional object: { "amountUsd": number, "payee": "0x… address" }'
 
@@ -174,6 +227,30 @@ export async function applyOkxX402(app: Express): Promise<PaymentStatus> {
       }
     }
     const httpServer = new coreServer.x402HTTPResourceServer(resourceServer, routes)
+
+    // Wraps res.send BEFORE the payment middleware installs, so that when the SDK sends a
+    // 402 our wrapper is already in the chain and can fold the header's challenge into the
+    // body. Only 402s are touched; every other response passes through untouched.
+    app.use((_req, res, next) => {
+      const send = res.send.bind(res)
+      res.send = (payload: unknown) => {
+        if (res.statusCode === 402 && typeof payload === 'string') {
+          try {
+            const merged = withSpecChallenge(payload, res.getHeader('PAYMENT-REQUIRED'))
+            if (merged !== payload) {
+              // The body grew, so the length header the SDK may have set is now wrong.
+              res.removeHeader('Content-Length')
+              return send(merged)
+            }
+          } catch {
+            // Never let challenge decoration break a payment challenge.
+          }
+        }
+        return send(payload)
+      }
+      next()
+    })
+
     app.use(expressX402.paymentMiddlewareFromHTTPServer(httpServer))
     await resourceServer.initialize()
 
