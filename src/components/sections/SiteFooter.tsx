@@ -45,7 +45,13 @@ const SOCIAL_LINKS = [
  * FOOTER_COLUMNS data stays untouched while the footer still lists every public page.
  */
 const EXTRA_COLUMN_LINKS: Record<string, readonly FooterLink[]> = {
-  Developers: [{ label: 'For Agents', href: '/intro' }],
+  Developers: [
+    { label: 'For Agents', href: '/intro' },
+    // /celo-proof was reachable only by typing the URL: in the sitemap, in the smoke
+    // test, linked from nowhere. It is the Celo rail's on-chain receipt, so it belongs
+    // next to the OKX proof link above it.
+    { label: 'Celo · Live Proof', href: '/celo-proof' },
+  ],
   Company: [{ label: 'Network Stats', href: '/stats' }],
 }
 

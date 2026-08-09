@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
+import { Link } from 'react-router-dom'
 import { animate, motion, useInView } from 'framer-motion'
 import { ArrowUpRight, Radio } from 'lucide-react'
 import { EASE_OUT_EXPO } from '../../lib/brand'
@@ -15,10 +16,16 @@ const reveal = {
 const PROOF_URL = 'https://a-identity-asp.onrender.com/proof'
 const PREVIEW_URL = 'https://a-identity-asp.onrender.com/tools/trust_preview'
 
+const CELO_PROOF_URL = '/celo-proof'
+
+// Hand-maintained and therefore easy to let rot: the settlement count sat at 120 and the
+// test count at 163 long after both had moved. Numbers here must match what the two proof
+// endpoints report (asp /proof.json and /api/celo/proof), and both are linked below so a
+// reader can check rather than trust.
 const STATS = [
-  { n: 120, k: '120', v: 'real settlements', sub: 'USD₮0 on X Layer' },
+  { n: 546, k: '546', v: 'real settlements', sub: 'X Layer + Celo mainnet' },
   { n: null, k: '#6271', v: 'live agent', sub: 'listed on OKX.AI' },
-  { n: 163, k: '163', v: 'tests, green', sub: 'deterministic scores' },
+  { n: 522, k: '522', v: 'tests, green', sub: 'deterministic scores' },
 ] as const
 
 /** A number that counts itself up the first time it scrolls into view. */
@@ -93,8 +100,10 @@ export default function LiveProof() {
           Not a demo. Live and earning.
         </motion.h2>
         <motion.p {...reveal} className="mt-4 max-w-xl text-lg leading-relaxed text-foreground/55">
-          A-Identity runs as a trust oracle on OKX.AI, selling per-call checks that settle in
-          real stablecoins on X Layer mainnet. Every number here is on-chain.
+          A-Identity runs as a trust oracle on two mainnets: listed on OKX.AI over X Layer, and
+          on Celo through its first-party x402 facilitator. Per-call checks, settled in real
+          stablecoins. Every number here is on-chain, and both counters label which traffic is
+          our own.
         </motion.p>
 
         <div className="mt-12 grid gap-px overflow-hidden rounded-2xl border border-border bg-border sm:grid-cols-3">
@@ -145,8 +154,15 @@ export default function LiveProof() {
             rel="noopener noreferrer"
             className="inline-flex items-center gap-1.5 text-sm font-semibold text-accent hover:underline"
           >
-            See every settlement on-chain <ArrowUpRight size={15} />
+            See every X Layer settlement <ArrowUpRight size={15} />
           </a>
+
+          <Link
+            to={CELO_PROOF_URL}
+            className="inline-flex items-center gap-1.5 text-sm font-semibold text-accent hover:underline"
+          >
+            See every Celo settlement <ArrowUpRight size={15} />
+          </Link>
         </motion.div>
 
         {/* The claim above, made checkable: every settlement as a row that opens on OKLink. */}

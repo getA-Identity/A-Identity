@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState, type ReactElement } from 'rea
 import { motion } from 'framer-motion'
 import { ArrowLeft, ArrowRight } from 'lucide-react'
 import { EASE_OUT_EXPO } from '../../lib/brand'
+import { CHAIN_BY_ID, type ChainId } from '../../lib/chains'
 import { SectionBackdrop } from '../ui/section-backdrop'
 
 const reveal = {
@@ -45,7 +46,33 @@ type Rail = {
   color: string
   role: string
   detail: string
-  status: 'live' | 'next'
+  /**
+   * The registry chain this rail stands for. The pill state is DERIVED from it rather
+   * than written here, because this array used to carry its own hand-typed status and
+   * had already drifted: the registry called Base `beta` while this slide called it
+   * `next`. src/lib/chains.ts is generated from mcp/src/chains/registry.ts and guarded
+   * by a backend test, so deriving removes the possibility instead of policing it.
+   *
+   * Omitted for Circle, which is a product family rather than a chain and so has no
+   * registry row; that one rail states its status directly.
+   */
+  chain?: ChainId
+  status?: RailStatus
+}
+
+type RailStatus = 'live' | 'beta' | 'next'
+
+/**
+ * Registry lifecycle to the three states this section shows. `beta` is surfaced rather
+ * than folded into either neighbour: calling a half-wired chain `live` overclaims, and
+ * calling it `next` hides work that is already done.
+ */
+function railStatus(rail: Rail): RailStatus {
+  if (!rail.chain) return rail.status ?? 'next'
+  const status = CHAIN_BY_ID[rail.chain].status
+  if (status === 'live') return 'live'
+  if (status === 'beta') return 'beta'
+  return 'next'
 }
 
 const RAILS: Rail[] = [
@@ -76,7 +103,7 @@ const RAILS: Rail[] = [
     color: '#3B1B6E',
     role: 'Where identity and reputation live.',
     detail: 'ERC-8004 passports, KYA attestations, spend vaults and escrow settle here, with sub-second finality and gas paid in USDC.',
-    status: 'live',
+    chain: 'arc',
   },
   {
     id: 'xlayer',
@@ -86,7 +113,7 @@ const RAILS: Rail[] = [
     color: 'var(--foreground)',
     role: 'Where trust checks are sold.',
     detail: 'The Trust Oracle answers per-call over x402 and settles in USD\u20AE0 on mainnet, 120 settlements and counting.',
-    status: 'live',
+    chain: 'xlayer',
   },
   {
     id: 'celo',
@@ -98,7 +125,7 @@ const RAILS: Rail[] = [
     color: '#FCFF52',
     role: 'Where agents pay for trust in dollars.',
     detail: 'ERC-8004 agent #9759 lives on mainnet and the four trust tools sell per-call over the first-party x402 facilitator, settled in native USDC.',
-    status: 'live',
+    chain: 'celo',
   },
   {
     id: 'stellar',
@@ -110,7 +137,7 @@ const RAILS: Rail[] = [
     color: '#FFDA00',
     role: 'First stop of the multichain rollout.',
     detail: 'The same passport and caps over Soroban rails: one chain-agnostic core, one adapter per chain, Stellar is next in line.',
-    status: 'next',
+    chain: 'stellar',
   },
   {
     id: 'base',
@@ -121,8 +148,8 @@ const RAILS: Rail[] = [
     tileBg: '#ffffff',
     color: '#0000FF',
     role: 'Where the agent economy already trades.',
-    detail: 'A planned adapter for Base, so a passport minted on Arc can be presented, scored and paid against on Base too.',
-    status: 'next',
+    detail: 'The EVM adapter already runs against Base, which is what proved it was chain-agnostic. The ERC-8004 registry is not deployed there yet, so identity still resolves on Arc.',
+    chain: 'base',
   },
   {
     id: 'robinhood',
@@ -134,7 +161,7 @@ const RAILS: Rail[] = [
     color: '#CCFF00',
     role: 'Where retail agents will trade.',
     detail: 'A planned adapter for the chain built around agentic trading, so the guardrails travel with the money there too.',
-    status: 'next',
+    chain: 'rhchain',
   },
 ]
 
@@ -272,13 +299,18 @@ export default function BuiltOn() {
                   <div className="relative">
                     <div className="flex flex-wrap items-center gap-3">
                       <h3 className="text-2xl font-bold tracking-tight text-foreground">{r.name}</h3>
-                      {r.status === 'live' ? (
+                      {railStatus(r) === 'live' ? (
                         <span className="inline-flex items-center gap-1.5 rounded-full border border-emerald-500/30 bg-emerald-500/10 px-2.5 py-0.5 font-mono text-[10px] font-bold uppercase tracking-wider text-emerald-600 dark:text-emerald-400">
                           <span className="relative flex h-1.5 w-1.5">
                             <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-500/60" />
                             <span className="relative inline-flex h-1.5 w-1.5 rounded-full bg-emerald-500" />
                           </span>
                           live
+                        </span>
+                      ) : railStatus(r) === 'beta' ? (
+                        <span className="inline-flex items-center gap-1.5 rounded-full border border-amber-500/30 bg-amber-500/10 px-2.5 py-0.5 font-mono text-[10px] font-bold uppercase tracking-wider text-amber-600 dark:text-amber-400">
+                          <span className="inline-flex h-1.5 w-1.5 rounded-full bg-amber-500" />
+                          beta
                         </span>
                       ) : (
                         <span className="inline-flex items-center rounded-full border border-dashed border-border px-2.5 py-0.5 font-mono text-[10px] font-bold uppercase tracking-wider text-foreground/45">
