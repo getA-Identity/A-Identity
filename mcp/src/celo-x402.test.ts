@@ -9,6 +9,7 @@ import {
   celoToolRequirements,
   celoServeTool,
   celoProof,
+  celoIdentitySummary,
   type CeloX402Status,
 } from './celo-x402.js'
 import { getChainById, requireChain } from './chains/index.js'
@@ -374,4 +375,85 @@ test('celo-sepolia mirrors the testnet shape: Arc\'s registry pair, testnet USDC
   assert.equal(sepolia.explorer, 'https://celo-sepolia.blockscout.com')
   assert.equal(sepolia.rpcUrls[0], 'https://forno.celo-sepolia.celo-testnet.org')
   assert.equal(sepolia.payment.x402, true)
+})
+
+// ── the Celo-side identity read (celoIdentitySummary) ─────────────────────────────
+// Why this exists at all: the trust body a paid call returns is resolved on the
+// oracle's HOME registry (X Layer), so the same numeric id means a different agent on
+// Celo. Without a Celo-side read, a Celo buyer asking about a Celo agent id would pay a
+// Celo rail for an answer that never touched Celo. These pin that the read is real,
+// scoped, and degrades honestly instead of throwing into a paid call.
+
+/** A configured mainnet status, the same shape celoServeTool resolves. */
+function celoStatus(): CeloX402Status {
+  return celoX402Status(CONFIGURED_ENV)
+}
+
+test('a Celo identity read refuses a non-numeric agent id instead of guessing, and never touches the RPC', async () => {
+  let calls = 0
+  const out = await celoIdentitySummary('alice.eth', celoStatus(), {
+    readContract: async () => { calls++; return '0x' },
+  })
+  assert.equal(out.read, false)
+  assert.equal(calls, 0)
+  assert.match(out.read === false ? out.reason : '', /numeric ERC-8004 agent id/)
+})
+
+test('a Celo identity read returns the owner, the CAIP id and a Celoscan NFT link for a minted agent', async () => {
+  const owner = '0xF43F43D8aee114a71B164e1f6214BC7625a5742D'
+  const seen: string[] = []
+  const out = await celoIdentitySummary('#9759', celoStatus(), {
+    readContract: async (fn) => {
+      seen.push(fn)
+      return fn === 'ownerOf' ? owner : 'https://a-identity.xyz/.well-known/agent-card.json'
+    },
+  })
+  assert.equal(out.read, true)
+  if (out.read !== true) return
+  assert.equal(out.owner, owner)
+  assert.equal(out.network, 'eip155:42220')
+  assert.equal(out.agentId, 'eip155:42220:8004/9759')
+  assert.equal(out.registry, '0x8004A169FB4a3325136EB29fA0ceB6D2e539a432')
+  assert.equal(out.explorer, 'https://celoscan.io/nft/0x8004A169FB4a3325136EB29fA0ceB6D2e539a432/9759')
+  assert.equal(out.tokenURI, 'https://a-identity.xyz/.well-known/agent-card.json')
+  assert.equal(out.tokenUriTruncated, false)
+  assert.deepEqual(seen, ['ownerOf', 'tokenURI'])
+})
+
+test('a multi-kilobyte inline tokenURI is truncated and says so, instead of shipping base64 into every receipt', async () => {
+  // Several live Celo agents pin the whole agent.json as a data: URI (id #1 does).
+  const huge = 'data:application/json;base64,' + 'A'.repeat(5000)
+  const out = await celoIdentitySummary('#1', celoStatus(), {
+    readContract: async (fn) => (fn === 'ownerOf' ? '0x' + '11'.repeat(20) : huge),
+  })
+  assert.equal(out.read, true)
+  if (out.read !== true) return
+  assert.equal(out.tokenUriTruncated, true)
+  assert.ok(out.tokenURI && out.tokenURI.length < 250)
+  assert.ok(out.tokenURI!.startsWith('data:application/json;base64,'))
+})
+
+test('an unminted agent id reads as a named absence, not a raw revert string', async () => {
+  const out = await celoIdentitySummary('#999999', celoStatus(), {
+    readContract: async () => { throw new Error('The contract function "ownerOf" reverted.') },
+  })
+  assert.equal(out.read, false)
+  if (out.read !== false) return
+  assert.match(out.reason, /no agent #999999 in the Celo identity registry/)
+  assert.match(out.reason, /0x8004A169FB4a3325136EB29fA0ceB6D2e539a432/)
+})
+
+test('a tokenURI failure alone still returns the owner: the softer fact degrades, the hard one survives', async () => {
+  const out = await celoIdentitySummary('eip155:42220:8004/42', celoStatus(), {
+    readContract: async (fn) => {
+      if (fn === 'tokenURI') throw new Error('execution reverted')
+      return '0x' + '22'.repeat(20)
+    },
+  })
+  assert.equal(out.read, true)
+  if (out.read !== true) return
+  assert.equal(out.owner, '0x' + '22'.repeat(20))
+  assert.equal(out.tokenURI, null)
+  assert.equal(out.tokenUriTruncated, false)
+  assert.equal(out.agentId, 'eip155:42220:8004/42')
 })

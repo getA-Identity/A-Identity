@@ -262,6 +262,52 @@ const CELO_REPUTATION_ABI = [
   },
 ] as const
 
+/** Minimal ABI for the deployed ERC-8004 IdentityRegistry reads (it exposes the ERC-721
+ *  surface), verified against the live Celo contract on 2026-08-09: ownerOf(9759)
+ *  returned our payTo wallet and tokenURI(9759) our agent card URL. There is no
+ *  totalSupply() on it, so an id is probed by ownerOf reverting for an unminted one. */
+const CELO_IDENTITY_ABI = [
+  {
+    type: 'function',
+    name: 'ownerOf',
+    stateMutability: 'view',
+    inputs: [{ name: 'tokenId', type: 'uint256' }],
+    outputs: [{ type: 'address' }],
+  },
+  {
+    type: 'function',
+    name: 'tokenURI',
+    stateMutability: 'view',
+    inputs: [{ name: 'tokenId', type: 'uint256' }],
+    outputs: [{ type: 'string' }],
+  },
+] as const
+
+/** A tokenURI can be a multi-kilobyte inline data: URI (several live Celo agents pin the
+ *  whole agent.json that way). A paid response quotes the head of it and says so rather
+ *  than shipping kilobytes of base64 into every receipt. */
+const CELO_TOKEN_URI_MAX = 200
+
+export type CeloOnchainIdentity =
+  | {
+      read: true
+      registry: string
+      network: string
+      agentId: string
+      owner: string
+      /** Truncated at CELO_TOKEN_URI_MAX; `tokenUriTruncated` says when that happened. */
+      tokenURI: string | null
+      tokenUriTruncated: boolean
+      explorer: string
+    }
+  | { read: false; reason: string }
+
+/** Injectable read so the identity path unit-tests without an RPC, same convention as
+ *  CeloServeDeps. Defaults to a live viem client for the resolved Celo descriptor. */
+export type CeloIdentityDeps = {
+  readContract?: (functionName: 'ownerOf' | 'tokenURI', tokenId: bigint) => Promise<unknown>
+}
+
 export type CeloOnchainReputation =
   | {
       read: true
@@ -358,6 +404,78 @@ export async function celoReputationSummary(
   }
 }
 
+/**
+ * Best-effort LIVE read of Celo's IdentityRegistry for an agent id, so a paid answer
+ * about a Celo agent carries a CELO-side on-chain fact instead of only the oracle's
+ * home-registry view. This exists because the trust body (identity/kya/reputation) is
+ * resolved on the home registry, which is a different chain: without this field a Celo
+ * buyer asking about a Celo agent id would get an answer that never touched Celo.
+ * Degrades to { read: false, reason } — never throws into a paid call.
+ */
+export async function celoIdentitySummary(
+  agentId: string,
+  status: CeloX402Status = celoX402Status(),
+  deps: CeloIdentityDeps = {},
+): Promise<CeloOnchainIdentity> {
+  const chain = status.chain ? getChainById(status.chain) : getChainById('celo')
+  if (!chain) return { read: false, reason: 'no celo descriptor in the chain registry' }
+  const registry = chain.contracts.identityRegistry
+  if (!registry) return { read: false, reason: `no identityRegistry address for ${chain.id} in the registry` }
+
+  // Same id grammar as the reputation read: a registry lookup needs a NUMERIC id.
+  const m = agentId.trim().match(/^#?(\d{1,78})$/) ?? agentId.trim().match(/:8004\/(\d{1,78})$/)
+  if (!m) {
+    return { read: false, reason: 'a Celo identity read needs a numeric ERC-8004 agent id (e.g. "#9759" or a CAIP …:8004/9759 id)' }
+  }
+  const tokenId = BigInt(m[1])
+
+  try {
+    const read =
+      deps.readContract ??
+      (await (async () => {
+        const client = await evmPublicClient(chain)
+        return (fn: string) =>
+          client.readContract({
+            address: registry as `0x${string}`,
+            abi: CELO_IDENTITY_ABI,
+            functionName: fn as 'ownerOf' | 'tokenURI',
+            args: [tokenId],
+          })
+      })())
+    const owner = (await raceTimeout(read('ownerOf', tokenId), CELO_READ_TIMEOUT_MS)) as `0x${string}`
+
+    // tokenURI is a second call and a softer fact: a missing/reverting URI still leaves a
+    // real owner, so it degrades to null rather than failing the whole read.
+    let tokenURI: string | null = null
+    try {
+      tokenURI = (await raceTimeout(read('tokenURI', tokenId), CELO_READ_TIMEOUT_MS)) as string
+    } catch {
+      /* owner is the fact that matters; the URI stays null */
+    }
+    const truncated = typeof tokenURI === 'string' && tokenURI.length > CELO_TOKEN_URI_MAX
+    return {
+      read: true,
+      registry,
+      network: chain.caip2,
+      agentId: `${chain.caip2}:8004/${tokenId}`,
+      owner,
+      tokenURI: truncated ? `${tokenURI!.slice(0, CELO_TOKEN_URI_MAX)}…` : tokenURI,
+      tokenUriTruncated: truncated,
+      explorer: `${chain.explorer}/nft/${registry}/${tokenId}`,
+    }
+  } catch (e) {
+    const raw = e instanceof Error ? e.message : 'celo rpc read failed'
+    // An unminted id is the common case and is NOT an error: ownerOf reverts for it.
+    const unminted = /revert/i.test(raw)
+    return {
+      read: false,
+      reason: unminted
+        ? `no agent #${tokenId} in the Celo identity registry ${registry} (ownerOf reverted)`
+        : raw,
+    }
+  }
+}
+
 // ── serving a paid call (verify → settle → serve → record) ────────────────────────
 
 export type CeloToolInput = { agentId: string; txContext?: TxContext | null }
@@ -373,8 +491,16 @@ export type CeloServeDeps = {
 
 /** Replace the ASP tool meta's OKX network line with this rail's, so a Celo buyer's
  *  receipt never claims it settled on X Layer. Everything else (methodology, the
- *  deterministic-score note) is the same product and stays. */
+ *  deterministic-score note) is the same product and stays.
+ *
+ *  HONEST SCOPE, and the reason this does more than overwrite one string: `network` is
+ *  where the PAYMENT settled, which is Celo. The identity / KYA / reputation body below
+ *  it is resolved on the oracle's HOME registry, which is a different chain — so the
+ *  same agent id means a different agent there. Overwriting `network` alone read as if
+ *  the whole verdict were a Celo fact. It now says both networks by name, and the
+ *  Celo-side facts travel in the dedicated `celoIdentity` / `celoReputation` fields. */
 function withCeloMeta<T extends { _meta?: Record<string, unknown> }>(result: T, status: CeloX402Status): T {
+  const home = typeof result._meta?.network === 'string' ? result._meta.network : 'the oracle home registry'
   return {
     ...result,
     _meta: {
@@ -382,19 +508,31 @@ function withCeloMeta<T extends { _meta?: Record<string, unknown> }>(result: T, 
       network: `Celo (${status.network})`,
       settlement: 'x402 v2 exact via the first-party Celo facilitator (EIP-3009 USDC)',
       proof: '/api/celo/proof',
+      homeRegistryNetwork: home,
+      scope: `payment settled on Celo (${status.network}); the identity, KYA and reputation body is resolved on ${home}; the celoIdentity and celoReputation fields are read live from Celo's own ERC-8004 registries for this agent id`,
     },
   }
 }
 
 function defaultHandlers(status: CeloX402Status): Record<CeloToolName, (input: CeloToolInput) => Promise<unknown>> {
+  /** Every paid Celo answer carries a Celo-side identity read for the id it was asked
+   *  about — otherwise a Celo buyer could pay a Celo rail and get back nothing that ever
+   *  touched Celo. Runs concurrently with the base tool so it costs no extra latency. */
+  const served = async <T extends { _meta?: Record<string, unknown> }>(base: Promise<T>, agentId: string) => {
+    const [result, celoIdentity] = await Promise.all([base, celoIdentitySummary(agentId, status)])
+    return { ...withCeloMeta(result, status), celoIdentity }
+  }
   return {
-    verify_agent: async (i) => withCeloMeta(await verifyAgent(i.agentId), status),
+    verify_agent: async (i) => served(verifyAgent(i.agentId), i.agentId),
     reputation_score: async (i) => {
-      const [base, celoOnchain] = await Promise.all([reputationScore(i.agentId), celoReputationSummary(i.agentId, status)])
-      return { ...withCeloMeta(base, status), celoReputation: celoOnchain }
+      const [base, celoReputation] = await Promise.all([
+        served(reputationScore(i.agentId), i.agentId),
+        celoReputationSummary(i.agentId, status),
+      ])
+      return { ...base, celoReputation }
     },
-    risk_check: async (i) => withCeloMeta(await riskCheck(i.agentId, i.txContext ?? null), status),
-    agent_passport: async (i) => withCeloMeta(await agentPassport(i.agentId), status),
+    risk_check: async (i) => served(riskCheck(i.agentId, i.txContext ?? null), i.agentId),
+    agent_passport: async (i) => served(agentPassport(i.agentId), i.agentId),
   }
 }
 
