@@ -342,7 +342,7 @@ export default function CeloProof() {
                   label="Settlements"
                   value={p ? nf.format(p.totalSettlements ?? 0) : <Skeleton />}
                 />
-                <Stat label="Volume" value={p ? usd(p.totalUsd ?? 0) : <Skeleton />} />
+                <Stat label="Settled volume" value={p ? usd(p.totalUsd ?? 0) : <Skeleton />} />
                 <Stat label="Tools earning" value={p ? nf.format(byTool.length) : <Skeleton />} />
               </div>
               {p && byTool.length > 0 && (
