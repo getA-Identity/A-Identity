@@ -419,7 +419,8 @@ export default function RegisterForm({ onClose, onCreated }: { onClose: () => vo
       <section className="rounded-2xl border border-border bg-background/40 p-4">
         <h3 className="text-sm font-bold text-foreground/85">Already have a metadata URL? Quick register</h3>
         <p className="mt-0.5 text-xs text-foreground/55">
-          Point the registrar at your hosted agent manifest (public JSON) and skip the wizard.
+          Point the registrar at your hosted agent manifest and skip the wizard. It must be a URL
+          that serves the raw JSON itself, not an explorer or listing page that shows it.
         </p>
         <div className="mt-2.5 flex flex-col gap-2 sm:flex-row">
           <input

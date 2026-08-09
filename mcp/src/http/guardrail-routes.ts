@@ -14,6 +14,53 @@ import { isSafePublicHttpUrl } from '../erc8004.js'
 import { renderBadgeSvg } from '../policy/index.js'
 import { denyRead, errStatus, readBody, sendJson, validAmount, type RouteCtx } from './shared.js'
 
+/**
+ * Explorer and code-host pages people paste when they mean "the metadata URL". Each
+ * serves HTML, so JSON.parse fails and the old message just said the URL was not JSON.
+ * The hint names the one thing that actually works on that host.
+ */
+const MANIFEST_URL_HINTS: { match: RegExp; hint: string }[] = [
+  {
+    match: /(^|\.)8004scan\.io$/i,
+    hint: 'that is an 8004scan explorer page, which serves HTML. Open the agent there, copy the tokenURI / metadata link it shows, and paste that instead',
+  },
+  {
+    match: /(^|\.)(etherscan\.io|basescan\.org|celoscan\.io|arbiscan\.io|oklink\.com|arcscan\.app)$/i,
+    hint: 'that is a block explorer page, which serves HTML. Paste the raw metadata JSON URL the token points at, not the explorer page',
+  },
+  {
+    match: /(^|\.)github\.com$/i,
+    hint: 'that is a GitHub page, which serves HTML. Use the raw.githubusercontent.com URL for the file',
+  },
+  {
+    match: /(^|\.)(aigora\.org|okx\.ai)$/i,
+    hint: 'that is a listing page, which serves HTML. Paste the manifest JSON your own service hosts',
+  },
+]
+
+/**
+ * Say what actually came back, so the caller can fix it without guessing. Returns a
+ * fragment appended after "manifest fetch failed: ".
+ */
+export function describeNonJsonManifest(manifestUrl: string, contentType: string, body: string): string {
+  let host = ''
+  try { host = new URL(manifestUrl).hostname } catch { /* the URL already passed validation; treat as unknown */ }
+
+  const known = MANIFEST_URL_HINTS.find((h) => h.match.test(host))
+  if (known) return known.hint
+
+  const looksHtml = /^\s*(<!doctype html|<html)/i.test(body) || /text\/html/i.test(contentType)
+  if (looksHtml) {
+    return 'that URL returned an HTML page, not JSON. A manifest URL must serve the raw JSON document itself, for example https://your-agent.example.com/.well-known/agent-manifest.json'
+  }
+  if (!body.trim()) return 'the URL returned an empty body'
+
+  const shown = contentType.split(';')[0]?.trim()
+  return shown
+    ? `the URL returned ${shown}, which is not parseable JSON`
+    : 'the URL did not return valid JSON'
+}
+
 export async function handleGuardrailRoutes(ctx: RouteCtx): Promise<boolean> {
   const { req, res, url, callerId } = ctx
 
@@ -88,17 +135,27 @@ export async function handleGuardrailRoutes(ctx: RouteCtx): Promise<boolean> {
       return true
     }
     let manifest: unknown
+    let fetched = ''
+    let contentType = ''
     try {
       const upstream = await fetch(manifestUrl, { signal: AbortSignal.timeout(10_000), redirect: 'error' })
       if (!upstream.ok) { sendJson(res, 502, { error: `manifest fetch failed: upstream answered HTTP ${upstream.status}` }); return true }
-      const text = await upstream.text()
+      contentType = upstream.headers.get('content-type') ?? ''
+      fetched = await upstream.text()
       // Same reasoning as MAX_BODY_BYTES: a manifest is a small JSON document, and anything
       // bigger would balloon the single persisted state blob when its fields are stored.
-      if (text.length > 200_000) { sendJson(res, 400, { error: 'manifest too large (200KB max)' }); return true }
-      manifest = JSON.parse(text)
+      if (fetched.length > 200_000) { sendJson(res, 400, { error: 'manifest too large (200KB max)' }); return true }
+      manifest = JSON.parse(fetched)
     } catch (e) {
-      const detail = e instanceof SyntaxError ? 'the URL did not return valid JSON' : 'the URL did not answer within 10s (redirects are not followed)'
-      sendJson(res, e instanceof SyntaxError ? 400 : 502, { error: `manifest fetch failed: ${detail}` })
+      // "the URL did not return valid JSON" told the caller nothing they could act on.
+      // The overwhelmingly common mistake is pasting an explorer PAGE (8004scan, a block
+      // explorer, a GitHub blob) rather than the raw manifest, and every one of those
+      // answers with HTML. Name what came back and what to paste instead.
+      sendJson(res, e instanceof SyntaxError ? 400 : 502, {
+        error: e instanceof SyntaxError
+          ? `manifest fetch failed: ${describeNonJsonManifest(manifestUrl, contentType, fetched)}`
+          : 'manifest fetch failed: the URL did not answer within 10s (redirects are not followed)',
+      })
       return true
     }
     const r = registerAgentFromManifest(manifest as never, callerId)
