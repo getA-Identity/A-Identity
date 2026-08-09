@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { Loader2, Check, X, ShieldCheck, ShieldAlert, ShieldX, Fingerprint, BadgeCheck, Gauge, Scale } from 'lucide-react'
-import type { AgentIdentity, Reputation } from '../lib/mcp-client'
+import type { AgentIdentity, Reputation } from '../../lib/mcp-client'
 
 /**
  * VerifyStepper, the step-by-step "verify an agent" walkthrough.

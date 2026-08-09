@@ -2,11 +2,11 @@ import { useState } from 'react'
 import { encodeFunctionData, toHex } from 'viem'
 import { CheckCircle2, ExternalLink, Lock, Zap } from 'lucide-react'
 
-import { apiFetch } from '../../lib/api'
-import { Button } from '../ui/button'
-import { getActiveInjectedProvider, getConnectedProvider } from '../../lib/wallets'
-import { ARC_TESTNET } from '../../lib/arc'
-import { Panel } from '../ui/panel'
+import { apiFetch } from '../../../lib/api'
+import { Button } from '../../ui/button'
+import { getActiveInjectedProvider, getConnectedProvider } from '../../../lib/wallets'
+import { ARC_TESTNET } from '../../../lib/arc'
+import { Panel } from '../../ui/panel'
 
 /** Arc Testnet chain id as the 0x-hex EIP-155 wallets expect. */
 const ARC_CHAIN_HEX = '0x' + ARC_TESTNET.id.toString(16)

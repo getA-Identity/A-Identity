@@ -1,9 +1,9 @@
 import { useState } from 'react'
 import { KeyRound, CheckCircle2, XCircle, ExternalLink, Loader2, Cpu } from 'lucide-react'
-import { apiFetch } from '../../lib/api'
-import { authHeaders } from '../../store/auth'
-import { Button } from '../ui/button'
-import { Panel } from '../ui/panel'
+import { apiFetch } from '../../../lib/api'
+import { authHeaders } from '../../../store/auth'
+import { Button } from '../../ui/button'
+import { Panel } from '../../ui/panel'
 
 type Attempt = { label: string; to: string; amountUsd: number; settled: boolean; txHash?: string; explorerUrl?: string; rejectedReason?: string }
 type Result =

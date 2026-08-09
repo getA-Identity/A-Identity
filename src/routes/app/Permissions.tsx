@@ -8,9 +8,9 @@ import {
   Snowflake,
 } from 'lucide-react'
 import { authHeaders } from '../../store/auth'
-import TradingPermissions from '../../components/app/TradingPermissions'
-import AuditTrail from '../../components/app/AuditTrail'
-import SpendPermissions from '../../components/app/SpendPermissions'
+import TradingPermissions from '../../components/app/permissions/TradingPermissions'
+import AuditTrail from '../../components/app/permissions/AuditTrail'
+import SpendPermissions from '../../components/app/permissions/SpendPermissions'
 
 import { BACKEND_UNREACHABLE } from '../../lib/mcpBase'
 import { apiFetch, readJson, explainError } from '../../lib/api'
@@ -28,7 +28,7 @@ import PayeeAdder from '../../components/app/permissions/PayeeAdder'
 import { Row } from '../../components/app/permissions/ToggleRow'
 import PolicyTester from '../../components/app/permissions/PolicyTester'
 import VaultPanel from '../../components/app/permissions/VaultPanel'
-import CirclePolicyPanel from '../../components/app/CirclePolicyPanel'
+import CirclePolicyPanel from '../../components/app/permissions/CirclePolicyPanel'
 
 const PERM_TABS = ['payments', 'trading', 'spend', 'audit'] as const
 

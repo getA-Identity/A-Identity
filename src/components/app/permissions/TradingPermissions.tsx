@@ -12,10 +12,10 @@
  */
 import { useCallback, useEffect, useState } from 'react'
 import { AlertTriangle, Check, Clock, Save, ShieldCheck, TrendingUp } from 'lucide-react'
-import { authHeaders } from '../../store/auth'
-import { apiFetch, readJson, explainError } from '../../lib/api'
-import { Skeleton } from '../ui/skeleton'
-import { NumberField } from '../ui/number-field'
+import { authHeaders } from '../../../store/auth'
+import { apiFetch, readJson, explainError } from '../../../lib/api'
+import { Skeleton } from '../../ui/skeleton'
+import { NumberField } from '../../ui/number-field'
 
 type TradePolicy = {
   allowSymbols: string[]

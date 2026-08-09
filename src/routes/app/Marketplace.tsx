@@ -11,11 +11,9 @@ import {
   List,
   Plus,
   Search,
-  ShieldCheck,
   Sparkles,
   Trophy,
   X,
-  Zap,
 } from 'lucide-react'
 import { authHeaders, useAuth } from '../../store/auth'
 
@@ -25,175 +23,27 @@ import { humanizeActivity } from '../../lib/format'
 import { CHAIN_BY_ID, type ChainId } from '../../lib/chains'
 import AgentAvatar from '../../components/AgentAvatar'
 import BrandArt from '../../components/app/BrandArt'
-import ChainLogo from '../../components/app/ChainLogo'
-import FeaturedCarousel, { RankBadge, Stars, type FeaturedAgent } from '../../components/app/FeaturedCarousel'
-import WorkerCatalog from '../../components/app/WorkerCatalog'
+import FeaturedCarousel, { RankBadge, Stars, type FeaturedAgent } from '../../components/app/marketplace/FeaturedCarousel'
+import WorkerCatalog from '../../components/app/marketplace/WorkerCatalog'
+import { CommerceRow } from '../../components/app/marketplace/CommerceRow'
+import { MetaChips } from '../../components/app/marketplace/MetaChips'
+import { PriceLine } from '../../components/app/marketplace/PriceLine'
+import {
+  reviveSavedSearches,
+  SORT_KEYS,
+  SORT_LABELS,
+  type MarketAgent,
+  type PayFilter,
+  type SavedSearch,
+  type SortKey,
+} from '../../components/app/marketplace/types'
 import AppPage from '../../components/app/AppPage'
 import { Badge } from '../../components/ui/badge'
 import { Skeleton } from '../../components/ui/skeleton'
 
-type Service = { name: string; priceUsd: number; unit: string }
-
-type MarketAgent = {
-  id: string
-  name: string
-  logoUrl?: string
-  description: string
-  category: string
-  capabilities: string[]
-  chain: string
-  kya: string
-  onchain: string
-  onchainTx?: string
-  onchainExplorer?: string
-  onchainAgentId?: string
-  reputation?: { score: number; breakdown: { settlement: number; validation: number; tenure: number } }
-  walletAddress: string | null
-  followers: number
-  followedByViewer: boolean
-  activity: { at: string; text: string }[]
-  createdAt: string
-  // Commerce fields (all real backend state; optional so an older payload degrades
-  // to the plain card instead of crashing the roster).
-  services?: Service[]
-  priceFromUsd?: number | null
-  soldCount?: number
-  feedback?: { avg: number | null; count: number }
-  feedbackBreakdown?: { positive: number; neutral: number; negative: number; positivePct: number | null }
-  online?: boolean
-  payments?: string[]
-  cardStyle?: number | null
-}
-
 // One row of GET /api/marketplace/leaderboard: the server's composite ranking over
 // the same KYA-verified showcase the Agent House feed serves.
 type LeaderboardRow = FeaturedAgent
-
-type SortKey = 'default' | 'reputation' | 'followers' | 'newest' | 'rating' | 'price' | 'selling'
-const SORT_KEYS: SortKey[] = ['default', 'reputation', 'followers', 'newest', 'rating', 'price', 'selling']
-const SORT_LABELS: Record<SortKey, string> = {
-  default: 'Default',
-  reputation: 'Top reputation',
-  followers: 'Most followed',
-  newest: 'Newest',
-  rating: 'Highest rating',
-  price: 'Lowest price',
-  selling: 'Best selling',
-}
-
-type PayFilter = 'all' | 'escrow' | 'x402'
-
-/** A saved toolbar preset. Older entries (query/sort/showAll/view only) are
- *  revived with defaults for the newer filter fields, so nothing saved before
- *  this redesign is lost or crashes the parse. */
-type SavedSearch = {
-  name: string
-  query: string
-  sort: SortKey
-  showAll: boolean
-  view: 'list' | 'grid'
-  cats: string[]
-  online: boolean
-  pay: PayFilter
-  chain: string
-}
-
-function reviveSavedSearches(raw: string | null): SavedSearch[] {
-  try {
-    const parsed: unknown = JSON.parse(raw ?? '[]')
-    if (!Array.isArray(parsed)) return []
-    return parsed
-      .filter((x): x is Record<string, unknown> => Boolean(x) && typeof x === 'object')
-      .filter((x) => typeof x.name === 'string')
-      .map((x) => ({
-        name: x.name as string,
-        query: typeof x.query === 'string' ? x.query : '',
-        sort: SORT_KEYS.includes(x.sort as SortKey) ? (x.sort as SortKey) : 'default',
-        showAll: Boolean(x.showAll),
-        view: x.view === 'grid' ? 'grid' : 'list',
-        cats: Array.isArray(x.cats) ? (x.cats as unknown[]).filter((c): c is string => typeof c === 'string') : [],
-        online: Boolean(x.online),
-        pay: x.pay === 'escrow' || x.pay === 'x402' ? x.pay : 'all',
-        chain: typeof x.chain === 'string' ? x.chain : 'all',
-      }))
-  } catch {
-    return []
-  }
-}
-
-const fmtUsd = (n: number) => (Number.isInteger(n) ? n.toFixed(0) : n.toFixed(2))
-
-/** The cheapest listed service, for the "from $X per unit" line. Falls back to the
- *  server's priceFromUsd (without a unit) if the services array is ever absent. */
-function cheapestService(a: MarketAgent): { priceUsd: number; unit: string } | null {
-  if (a.services && a.services.length > 0) {
-    const s = a.services.reduce((min, sv) => (sv.priceUsd < min.priceUsd ? sv : min))
-    return { priceUsd: s.priceUsd, unit: s.unit.replace(/^per\s+/i, '').trim() }
-  }
-  if (typeof a.priceFromUsd === 'number') return { priceUsd: a.priceFromUsd, unit: '' }
-  return null
-}
-
-/** Price lead: real starting price when the agent lists services, honest fallback when not. */
-function PriceLine({ a, className = '' }: { a: MarketAgent; className?: string }) {
-  const c = cheapestService(a)
-  if (!c)
-    return <span className={`text-sm font-semibold text-foreground/55 ${className}`}>Quote per task</span>
-  return (
-    <span className={`text-sm font-bold tabular-nums text-foreground ${className}`}>
-      from ${fmtUsd(c.priceUsd)}
-      {c.unit && <span className="font-medium text-foreground/50"> per {c.unit}</span>}
-    </span>
-  )
-}
-
-/** Social proof row: stars, positive share, completed sales. Only claims we hold. */
-function CommerceRow({ a, className = '' }: { a: MarketAgent; className?: string }) {
-  const pct = a.feedbackBreakdown?.positivePct ?? null
-  const sold = a.soldCount ?? 0
-  return (
-    <div className={`flex flex-wrap items-center gap-x-3 gap-y-1 ${className}`}>
-      <Stars avg={a.feedback?.avg ?? null} count={a.feedback?.count ?? 0} />
-      {pct != null && <span className="text-[11px] font-semibold text-ok">{pct}% positive</span>}
-      {sold > 0 && (
-        <span className="text-[11px] font-medium tabular-nums text-foreground/55">
-          {sold} sold
-        </span>
-      )}
-    </div>
-  )
-}
-
-/** Trust chips: settlement rails, the chain this agent lives on, and whether a live
- *  callable endpoint is registered. Every chip maps 1:1 to a backend field. */
-function MetaChips({ a, className = '' }: { a: MarketAgent; className?: string }) {
-  const chain = CHAIN_BY_ID[a.chain as ChainId]
-  const payments = a.payments ?? ['escrow']
-  return (
-    <div className={`flex flex-wrap items-center gap-1.5 ${className}`}>
-      {chain && (
-        <span className="inline-flex items-center gap-1.5 rounded-full border border-border bg-background px-2 py-0.5 text-[11px] font-semibold text-foreground/65">
-          <ChainLogo id={chain.id} size={14} /> {chain.shortName}
-        </span>
-      )}
-      {payments.includes('escrow') && (
-        <span className="inline-flex items-center gap-1 rounded-full bg-foreground/5 px-2 py-0.5 text-[11px] font-semibold text-foreground/60">
-          <ShieldCheck size={11} /> Escrow
-        </span>
-      )}
-      {payments.includes('x402') && (
-        <span className="inline-flex items-center gap-1 rounded-full bg-accent/10 px-2 py-0.5 text-[11px] font-semibold text-accent">
-          <Zap size={11} /> x402
-        </span>
-      )}
-      {a.online && (
-        <span className="inline-flex items-center gap-1.5 rounded-full bg-ok/10 px-2 py-0.5 text-[11px] font-semibold text-ok">
-          <span className="h-1.5 w-1.5 rounded-full bg-ok" aria-hidden="true" /> Live endpoint
-        </span>
-      )}
-    </div>
-  )
-}
 
 export default function Marketplace() {
   const user = useAuth((s) => s.user)

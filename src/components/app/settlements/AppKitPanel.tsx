@@ -1,8 +1,8 @@
 import { useEffect, useState } from 'react'
 import { ArrowRightLeft, CheckCircle2, ExternalLink, Loader2, Repeat } from 'lucide-react'
-import { apiFetch } from '../../lib/api'
-import { authHeaders } from '../../store/auth'
-import { Panel } from '../ui/panel'
+import { apiFetch } from '../../../lib/api'
+import { authHeaders } from '../../../store/auth'
+import { Panel } from '../../ui/panel'
 
 type Capability = { name: string; supported: boolean; note?: string }
 type Caps = {

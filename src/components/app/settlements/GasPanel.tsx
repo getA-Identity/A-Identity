@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { Fuel, ShieldQuestion } from 'lucide-react'
-import { apiFetch } from '../../lib/api'
-import { Panel } from '../ui/panel'
+import { apiFetch } from '../../../lib/api'
+import { Panel } from '../../ui/panel'
 
 type GasStory = {
   chain: string

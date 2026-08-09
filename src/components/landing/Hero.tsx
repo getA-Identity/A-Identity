@@ -2,8 +2,8 @@ import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { motion, type Variants } from 'framer-motion'
 import { ArrowRight, Sparkles } from 'lucide-react'
-import { CAL_URL, EASE_OUT_EXPO } from '../lib/brand'
-import { useTheme } from './ThemeProvider'
+import { CAL_URL, EASE_OUT_EXPO } from '../../lib/brand'
+import { useTheme } from '../ThemeProvider'
 
 /*
  * Centered hero over the background video (the dashx stance): claim, lede and the

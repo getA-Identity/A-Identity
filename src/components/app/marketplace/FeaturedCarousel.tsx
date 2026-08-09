@@ -1,8 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { ChevronLeft, ChevronRight, Star, Trophy } from 'lucide-react'
-import { apiFetch } from '../../lib/api'
-import AgentAvatar from '../AgentAvatar'
+import { apiFetch } from '../../../lib/api'
+import AgentAvatar from '../../AgentAvatar'
 
 /**
  * Featured agents carousel: the top of the SAME composite leaderboard the

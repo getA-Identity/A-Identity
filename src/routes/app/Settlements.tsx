@@ -18,17 +18,17 @@ import { Skeleton } from '../../components/ui/skeleton'
 /* The rails below the payment queue used to render as one 11-panel column: every panel
    mounted at once, each firing its own request, and the page you actually came for was
    buried. They are grouped into tabs and code-split, so only the panels you open load. */
-const AutopilotPanel = lazy(() => import('../../components/app/AutopilotPanel'))
-const SessionKeyPanel = lazy(() => import('../../components/app/SessionKeyPanel'))
-const BatchPanel = lazy(() => import('../../components/app/BatchPanel'))
-const X402Panel = lazy(() => import('../../components/app/X402Panel'))
-const NanopayPanel = lazy(() => import('../../components/app/NanopayPanel'))
-const EscrowPanel = lazy(() => import('../../components/app/EscrowPanel'))
-const TrustOraclePanel = lazy(() => import('../../components/app/TrustOraclePanel'))
-const GatewayPanel = lazy(() => import('../../components/app/GatewayPanel'))
-const CctpPanel = lazy(() => import('../../components/app/CctpPanel'))
-const AppKitPanel = lazy(() => import('../../components/app/AppKitPanel'))
-const GasPanel = lazy(() => import('../../components/app/GasPanel'))
+const AutopilotPanel = lazy(() => import('../../components/app/settlements/AutopilotPanel'))
+const SessionKeyPanel = lazy(() => import('../../components/app/settlements/SessionKeyPanel'))
+const BatchPanel = lazy(() => import('../../components/app/settlements/BatchPanel'))
+const X402Panel = lazy(() => import('../../components/app/settlements/X402Panel'))
+const NanopayPanel = lazy(() => import('../../components/app/settlements/NanopayPanel'))
+const EscrowPanel = lazy(() => import('../../components/app/settlements/EscrowPanel'))
+const TrustOraclePanel = lazy(() => import('../../components/app/settlements/TrustOraclePanel'))
+const GatewayPanel = lazy(() => import('../../components/app/settlements/GatewayPanel'))
+const CctpPanel = lazy(() => import('../../components/app/settlements/CctpPanel'))
+const AppKitPanel = lazy(() => import('../../components/app/settlements/AppKitPanel'))
+const GasPanel = lazy(() => import('../../components/app/settlements/GasPanel'))
 
 type Tab = 'payments' | 'automation' | 'commerce' | 'rails'
 

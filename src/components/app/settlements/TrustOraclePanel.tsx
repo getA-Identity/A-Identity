@@ -1,9 +1,9 @@
 import { useState } from 'react'
 import { ShieldCheck, ShieldAlert, ShieldX, Loader2, Coins } from 'lucide-react'
-import { apiFetch } from '../../lib/api'
-import { Button } from '../ui/button'
-import { authHeaders } from '../../store/auth'
-import { Panel } from '../ui/panel'
+import { apiFetch } from '../../../lib/api'
+import { Button } from '../../ui/button'
+import { authHeaders } from '../../../store/auth'
+import { Panel } from '../../ui/panel'
 
 type Decision = 'ALLOW' | 'WARN' | 'DENY'
 type Result =

@@ -15,9 +15,9 @@
  */
 import { useCallback, useEffect, useState } from 'react'
 import { AlertTriangle, Check, Copy, RefreshCw, Share2, ShieldAlert, ShieldCheck } from 'lucide-react'
-import { authHeaders } from '../../store/auth'
-import { apiFetch, readJson, explainError } from '../../lib/api'
-import { Skeleton } from '../ui/skeleton'
+import { authHeaders } from '../../../store/auth'
+import { apiFetch, readJson, explainError } from '../../../lib/api'
+import { Skeleton } from '../../ui/skeleton'
 
 type Verdict = 'ALLOW' | 'WARN' | 'DENY'
 type Outcome = 'executed' | 'blocked' | 'awaiting_human' | 'abandoned'

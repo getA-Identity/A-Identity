@@ -1,8 +1,8 @@
 import { useState } from 'react'
 import { ArrowLeftRight, CheckCircle2, ExternalLink, Loader2, Flame } from 'lucide-react'
-import { apiFetch } from '../../lib/api'
-import { authHeaders } from '../../store/auth'
-import { Panel } from '../ui/panel'
+import { apiFetch } from '../../../lib/api'
+import { authHeaders } from '../../../store/auth'
+import { Panel } from '../../ui/panel'
 
 type Step = { name: string; state: string; txHash?: string; explorerUrl?: string }
 type Result =

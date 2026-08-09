@@ -1,5 +1,5 @@
 import { useEffect, useRef } from 'react'
-import OwlMark from './OwlMark'
+import OwlMark from '../OwlMark'
 
 /**
  * A landing-wide pointer companion: the brand owl (OwlMark, the same vector

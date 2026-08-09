@@ -1,11 +1,11 @@
 import { useState } from 'react'
 import { Globe, ExternalLink, Loader2, ArrowRight, Zap } from 'lucide-react'
-import { apiFetch } from '../../lib/api'
-import { Button } from '../ui/button'
-import { authHeaders } from '../../store/auth'
-import { DataRow } from '../ui/data-row'
-import BrandArt from './BrandArt'
-import { Panel } from '../ui/panel'
+import { apiFetch } from '../../../lib/api'
+import { Button } from '../../ui/button'
+import { authHeaders } from '../../../store/auth'
+import { DataRow } from '../../ui/data-row'
+import BrandArt from '../BrandArt'
+import { Panel } from '../../ui/panel'
 
 type Result =
   | { executed: false; reason: string; gatewayWallet: string }

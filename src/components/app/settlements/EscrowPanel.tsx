@@ -1,10 +1,10 @@
 import { useState } from 'react'
 import { Boxes, CheckCircle2, ExternalLink, Loader2, ArrowRight, RotateCcw } from 'lucide-react'
-import { apiFetch } from '../../lib/api'
-import { authHeaders } from '../../store/auth'
-import { Button } from '../ui/button'
-import { Badge } from '../ui/badge'
-import { Panel } from '../ui/panel'
+import { apiFetch } from '../../../lib/api'
+import { authHeaders } from '../../../store/auth'
+import { Button } from '../../ui/button'
+import { Badge } from '../../ui/badge'
+import { Panel } from '../../ui/panel'
 
 type Outcome = 'complete' | 'refund'
 type Step = { step: string; txHash: string; explorerUrl: string }

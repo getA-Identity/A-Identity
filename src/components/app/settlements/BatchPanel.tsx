@@ -1,9 +1,9 @@
 import { useState } from 'react'
 import { Layers, CheckCircle2, ExternalLink, Loader2, ArrowRight } from 'lucide-react'
-import { apiFetch } from '../../lib/api'
-import { authHeaders } from '../../store/auth'
-import { Button } from '../ui/button'
-import { Panel } from '../ui/panel'
+import { apiFetch } from '../../../lib/api'
+import { authHeaders } from '../../../store/auth'
+import { Button } from '../../ui/button'
+import { Panel } from '../../ui/panel'
 
 type Result =
   | { executed: false; reason: string; reverted?: boolean }

@@ -2,12 +2,12 @@ import { useEffect, useReducer, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { motion, AnimatePresence, useReducedMotion } from 'framer-motion'
 import { Sparkles, Search, X, ArrowUpRight, ArrowRight, ShieldCheck, Wallet, QrCode, Check, Loader2 } from 'lucide-react'
-import { resolveAgent, getReputation, getLeaderboard, type AgentIdentity, type Reputation, type FeedAgent } from '../lib/mcp-client'
-import { useAuth } from '../store/auth'
-import { EASE_OUT_EXPO } from '../lib/brand'
-import AgentAvatar from './AgentAvatar'
-import { type OwlVerdict } from './OwlMark'
-import { connectWalletConnect, getInjectedWallets, refreshInjectedWallets, walletConnectEnabled, type WalletOption, type Eip1193 } from '../lib/wallets'
+import { resolveAgent, getReputation, getLeaderboard, type AgentIdentity, type Reputation, type FeedAgent } from '../../lib/mcp-client'
+import { useAuth } from '../../store/auth'
+import { EASE_OUT_EXPO } from '../../lib/brand'
+import AgentAvatar from '../AgentAvatar'
+import { type OwlVerdict } from '../OwlMark'
+import { connectWalletConnect, getInjectedWallets, refreshInjectedWallets, walletConnectEnabled, type WalletOption, type Eip1193 } from '../../lib/wallets'
 
 /*
  * TrustSpotlight, the ⌘K / FAB popup, now a self-contained two-tab flow:

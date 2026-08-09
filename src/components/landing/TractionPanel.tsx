@@ -16,7 +16,7 @@
  */
 import { useEffect, useState } from 'react'
 import { ShieldCheck, ShieldAlert } from 'lucide-react'
-import { apiFetch } from '../lib/api'
+import { apiFetch } from '../../lib/api'
 
 type Traction = {
   activeAgents: number

@@ -1,10 +1,10 @@
 import { useEffect, useState } from 'react'
 import { Bot, CheckCircle2, Loader2, Hand, Coins } from 'lucide-react'
-import { apiFetch } from '../../lib/api'
-import { Button } from '../ui/button'
-import { authHeaders } from '../../store/auth'
-import BrandArt from './BrandArt'
-import { Panel } from '../ui/panel'
+import { apiFetch } from '../../../lib/api'
+import { Button } from '../../ui/button'
+import { authHeaders } from '../../../store/auth'
+import BrandArt from '../BrandArt'
+import { Panel } from '../../ui/panel'
 
 type Payment = { n: number; amountUsd: number; cumulativeUsd: number; ok: boolean; transaction?: string; reason?: string }
 type Result =

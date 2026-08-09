@@ -1,10 +1,10 @@
 import { useCallback, useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { BadgeCheck, Star, Store, Loader2, ExternalLink, Plus } from 'lucide-react'
-import { authHeaders } from '../../store/auth'
-import { apiFetch, readJson, explainError } from '../../lib/api'
-import { BACKEND_UNREACHABLE } from '../../lib/mcpBase'
-import { Skeleton } from '../ui/skeleton'
+import { authHeaders } from '../../../store/auth'
+import { apiFetch, readJson, explainError } from '../../../lib/api'
+import { BACKEND_UNREACHABLE } from '../../../lib/mcpBase'
+import { Skeleton } from '../../ui/skeleton'
 
 /**
  * The trusted-worker catalog: hire a KYA-verified agent for a service, USDC to an on-chain

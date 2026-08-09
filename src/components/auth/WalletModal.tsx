@@ -1,13 +1,13 @@
 import { useEffect, useState } from 'react'
 import { QrCode, Wallet, X } from 'lucide-react'
-import { useAuth } from '../store/auth'
+import { useAuth } from '../../store/auth'
 import {
   connectWalletConnect,
   getInjectedWallets,
   refreshInjectedWallets,
   walletConnectEnabled,
   type WalletOption,
-} from '../lib/wallets'
+} from '../../lib/wallets'
 
 /**
  * Wallet picker. Lists every installed wallet via EIP-6963 (so several extensions

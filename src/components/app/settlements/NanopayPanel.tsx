@@ -1,10 +1,10 @@
 import { useState } from 'react'
 import { Gauge, ExternalLink, Loader2, Zap } from 'lucide-react'
-import { apiFetch } from '../../lib/api'
-import { Button } from '../ui/button'
-import { authHeaders } from '../../store/auth'
-import { DataRow } from '../ui/data-row'
-import { Panel } from '../ui/panel'
+import { apiFetch } from '../../../lib/api'
+import { Button } from '../../ui/button'
+import { authHeaders } from '../../../store/auth'
+import { DataRow } from '../../ui/data-row'
+import { Panel } from '../../ui/panel'
 
 type Result =
   | { executed: false; reason: string; verifyingContract?: string }

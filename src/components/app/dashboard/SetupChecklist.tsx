@@ -1,6 +1,6 @@
 import { Link } from 'react-router-dom'
 import { ArrowUpRight, Check, CheckCircle2 } from 'lucide-react'
-import BrandArt from './BrandArt'
+import BrandArt from '../BrandArt'
 
 /**
  * The zero state, as four steps instead of one sentence.

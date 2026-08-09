@@ -1,7 +1,7 @@
 import { Link } from 'react-router-dom'
 import { ArrowUpRight, Check, Clock, Snowflake, Wrench } from 'lucide-react'
-import Freshness from './Freshness'
-import { Skeleton } from '../ui/skeleton'
+import Freshness from '../Freshness'
+import { Skeleton } from '../../ui/skeleton'
 
 /**
  * What the agent is doing right now, in one line.

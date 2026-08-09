@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { Check, Copy, ShieldCheck, Terminal } from 'lucide-react'
-import { apiFetch } from '../../lib/api'
-import { Panel } from '../ui/panel'
+import { apiFetch } from '../../../lib/api'
+import { Panel } from '../../ui/panel'
 
 type CliCommand = { purpose: string; command: string; needsOtp: boolean }
 type Plan = {
