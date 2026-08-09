@@ -1,0 +1,12 @@
+<svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+<!--
+  USYC (Circle's tokenized money-market fund). A redrawn mark, not the shipped
+  brand file: the dark navy roundel and the light lowercase y, on the SAME circle
+  geometry as usdc.svg and eurc.svg (r=9 inset in a 24 box) so the three token
+  icons sit at identical optical size in a row. It replaces a green "Y" badge
+  that was the wrong colour, wrong shape and wrong letterform.
+-->
+<path d="M12 21C16.9706 21 21 16.9706 21 12C21 7.02943 16.9706 3 12 3C7.02943 3 3 7.02943 3 12C3 16.9706 7.02943 21 12 21Z" fill="#1B1A38"/>
+<path d="M8.62 8.28C8.9 8.28 9.15 8.45 9.25 8.71L11.36 14.05C11.42 14.2 11.63 14.2 11.69 14.05L13.79 8.71C13.89 8.45 14.14 8.28 14.42 8.28H15.06C15.53 8.28 15.85 8.76 15.67 9.19L12.05 17.9C11.94 18.16 11.69 18.33 11.41 18.33H10.83C10.36 18.33 10.04 17.85 10.22 17.42L11.09 15.36L8 9.19C7.79 8.76 8.11 8.28 8.58 8.28H8.62Z" fill="#F2F2EE"/>
+<path d="M11.09 15.36L8.05 9.24C7.83 8.8 8.15 8.28 8.64 8.28C8.91 8.28 9.16 8.44 9.27 8.69L11.6 13.98" stroke="#F2F2EE" stroke-width="0.2" stroke-linecap="round"/>
+</svg>

@@ -52,25 +52,33 @@ type Instruction = {
  */
 type Scope = 'all' | 'arc' | 'gateway'
 
+/**
+ * All three files share one geometry (a r=9 circle inset in a 24 box), so the marks
+ * line up optically at any size. USYC used to fall through to a green "Y" badge that
+ * was full-bleed while the other two were inset, which is why the row looked uneven:
+ * the odd one out rendered visibly larger and in a colour USYC does not use.
+ */
 const TOKEN_ICON: Record<string, string> = {
   USDC: '/tokens/usdc.svg',
   EURC: '/tokens/eurc.svg',
+  USYC: '/tokens/usyc.svg',
 }
 
-function TokenIcon({ symbol, size = 18 }: { symbol: string; size?: number }) {
+function TokenIcon({ symbol, size = 22 }: { symbol: string; size?: number }) {
   const src = TOKEN_ICON[symbol]
-  if (src) {
-    return <img src={src} alt="" aria-hidden="true" style={{ width: size, height: size }} className="shrink-0 rounded-full" />
-  }
-  // USYC has no public mark in the set: a minimal yield badge in the same shape.
+  // No silent fallback shape: an unknown symbol renders nothing rather than a
+  // made-up mark that would read as this token's real brand.
+  if (!src) return null
   return (
-    <span
+    <img
+      src={src}
+      alt=""
       aria-hidden="true"
-      style={{ width: size, height: size, fontSize: size * 0.42 }}
-      className="grid shrink-0 place-items-center rounded-full bg-ok font-bold text-white"
-    >
-      Y
-    </span>
+      width={size}
+      height={size}
+      style={{ width: size, height: size }}
+      className="shrink-0 rounded-full"
+    />
   )
 }
 
@@ -287,7 +295,7 @@ export default function Wallet() {
                               key={sym}
                               className="inline-flex items-center gap-1.5 rounded-full bg-white/10 px-2.5 py-1 text-xs font-semibold text-white/90"
                             >
-                              <TokenIcon symbol={sym} size={15} />
+                              <TokenIcon symbol={sym} size={18} />
                               {sym} ${v.toFixed(2)}
                             </span>
                           ))}
@@ -413,7 +421,7 @@ export default function Wallet() {
                     return (
                       <div key={t} className="flex items-center justify-between py-2.5 first:pt-0 last:pb-0">
                         <dt className="flex items-center gap-2 text-sm font-semibold text-foreground/80">
-                          <TokenIcon symbol={t} size={18} /> {t}
+                          <TokenIcon symbol={t} size={22} /> {t}
                         </dt>
                         {agent.walletAddress && v == null ? (
                           <Skeleton className="h-5 w-16" />
