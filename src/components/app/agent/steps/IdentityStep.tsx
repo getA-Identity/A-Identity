@@ -52,39 +52,55 @@ export default function IdentityStep({
           {CATEGORIES.map((c) => <option key={c}>{c}</option>)}
         </select>
 
-        {/* Logo: optional, resized in the browser, shown everywhere the agent is. */}
-        <div className="flex items-center gap-3">
-          <div className="grid h-12 w-12 shrink-0 place-items-center overflow-hidden rounded-xl border border-border bg-background/60">
-            {logoUrl ? (
-              <img src={logoUrl} alt="Agent logo preview" className="h-full w-full object-cover" />
-            ) : (
-              <span className="text-[10px] font-semibold text-foreground/35">Logo</span>
-            )}
-          </div>
-          <div className="min-w-0">
-            <label className="inline-flex cursor-pointer items-center gap-2 rounded-full border border-border px-3.5 py-1.5 text-xs font-semibold text-foreground/70 transition-colors duration-[120ms] hover:bg-foreground/[0.04]">
-              {logoUrl ? 'Change logo' : 'Upload logo'}
-              <input
-                type="file"
-                accept="image/*"
-                className="sr-only"
-                onChange={(e) => onLogoPick(e.target.files?.[0])}
-              />
-            </label>
-            {logoUrl && (
-              <button
-                type="button"
-                onClick={() => setLogoUrl(null)}
-                className="ml-2 text-xs font-semibold text-foreground/45 hover:text-danger"
-              >
-                Remove
-              </button>
-            )}
-            <p className="mt-1 text-[11px] text-foreground/50">
-              Optional. Square works best; resized to 96px in your browser.
-            </p>
-            {logoErr && <p className="mt-0.5 text-[11px] text-danger">{logoErr}</p>}
-          </div>
+        {/* Logo: optional, resized in the browser, shown everywhere the agent is.
+            This was a 48px tile next to a small pill and people walked past it. It is
+            now a full-width target the whole area of which is clickable and droppable,
+            with the preview at the size the logo actually gets used at.
+            No local state on purpose: this pane stays a pure props component, so the
+            drag affordance is the dashed border rather than a dragover highlight. */}
+        <div>
+          <div className="text-[11px] text-foreground/45">Logo</div>
+          <label
+            className="mt-1.5 flex cursor-pointer items-center gap-4 rounded-xl border border-dashed border-foreground/20 bg-background/40 p-4 transition-colors duration-[120ms] hover:border-accent/50 hover:bg-foreground/[0.03]"
+            onDragOver={(e) => e.preventDefault()}
+            onDrop={(e) => {
+              e.preventDefault()
+              onLogoPick(e.dataTransfer.files?.[0])
+            }}
+          >
+            <div className="grid h-20 w-20 shrink-0 place-items-center overflow-hidden rounded-xl border border-border bg-card">
+              {logoUrl ? (
+                <img src={logoUrl} alt="Agent logo preview" className="h-full w-full object-cover" />
+              ) : (
+                <span className="text-[11px] font-semibold text-foreground/35">Logo</span>
+              )}
+            </div>
+            <div className="min-w-0">
+              <div className="text-sm font-semibold text-foreground/85">
+                {logoUrl ? 'Change logo' : 'Upload a logo'}
+              </div>
+              <p className="mt-1 text-xs leading-relaxed text-foreground/55">
+                Click anywhere here or drop an image. Optional. Square works best; it is resized
+                to 96px in your browser before anything is sent.
+              </p>
+              {logoErr && <p className="mt-1 text-xs font-semibold text-danger">{logoErr}</p>}
+            </div>
+            <input
+              type="file"
+              accept="image/*"
+              className="sr-only"
+              onChange={(e) => onLogoPick(e.target.files?.[0])}
+            />
+          </label>
+          {logoUrl && (
+            <button
+              type="button"
+              onClick={() => setLogoUrl(null)}
+              className="mt-1.5 text-xs font-semibold text-foreground/45 transition-colors hover:text-danger"
+            >
+              Remove logo
+            </button>
+          )}
         </div>
 
         {/* Card style: optional accent preset for the public profile hero.
