@@ -39,6 +39,7 @@ const STATIC = [
   ['/brand', 'monthly', '0.4'],
   ['/intro', 'monthly', '0.7'],
   ['/stats', 'weekly', '0.6'],
+  ['/celo-proof', 'weekly', '0.6'],
 ]
 
 // Read the posts out of the source rather than importing it: blog.ts is TSX-free

@@ -138,6 +138,77 @@ export async function persistSpentPayment(hash: string): Promise<void> {
   }
 }
 
+// ── durable Celo settlement log (x402 facilitator proof) ─────────────────────────
+//
+// Every settled Celo x402 call is recorded so GET /api/celo/proof can show real,
+// restart-surviving traction instead of an in-memory counter that a redeploy resets.
+// Same dual pattern as spent_payments: Postgres when DATABASE_URL is set, else a local
+// JSON file. Append-only with a hard cap (the newest CELO_SETTLEMENTS_CAP survive), so
+// the log can't grow unbounded; the proof endpoint says its totals cover this window.
+
+export type CeloSettlementRecord = {
+  /** ISO timestamp of the settlement. */
+  ts: string
+  /** Tool that was served (e.g. 'verify_agent'). */
+  tool: string
+  /** Price actually charged, in USD. */
+  amountUsd: number
+  /** Paying wallet (the EIP-3009 authorization's `from`), when known. */
+  payer?: string
+  /** CAIP-2 network the payment settled on (e.g. 'eip155:42220'). */
+  network: string
+  /** Credits figure returned by the facilitator's settle response, when present. */
+  facilitatorCredits?: number
+}
+
+const CELO_SETTLEMENTS_FILE = join(DATA_DIR, 'celo-settlements.json')
+export const CELO_SETTLEMENTS_CAP = 2000
+
+/** Load the retained Celo settlement records, oldest first. */
+export async function loadCeloSettlements(): Promise<CeloSettlementRecord[]> {
+  const p = await getPool()
+  if (p) {
+    await p.query('CREATE TABLE IF NOT EXISTS celo_settlements (id bigserial PRIMARY KEY, data jsonb NOT NULL)')
+    const r = await p.query('SELECT data FROM celo_settlements ORDER BY id ASC')
+    return r.rows.map((row: { data: CeloSettlementRecord }) => row.data)
+  }
+  try {
+    return JSON.parse(readFileSync(CELO_SETTLEMENTS_FILE, 'utf8')) as CeloSettlementRecord[]
+  } catch {
+    return []
+  }
+}
+
+/** Durably record one settled Celo call, trimming past the cap. Never throws: the
+ *  settlement already happened at the facilitator, so a logging hiccup must not turn
+ *  a paid, served call into an error for the buyer. */
+export async function persistCeloSettlement(rec: CeloSettlementRecord): Promise<void> {
+  try {
+    const p = await getPool()
+    if (p) {
+      await p.query('CREATE TABLE IF NOT EXISTS celo_settlements (id bigserial PRIMARY KEY, data jsonb NOT NULL)')
+      await p.query('INSERT INTO celo_settlements (data) VALUES ($1)', [JSON.stringify(rec)])
+      await p.query(
+        'DELETE FROM celo_settlements WHERE id NOT IN (SELECT id FROM celo_settlements ORDER BY id DESC LIMIT $1)',
+        [CELO_SETTLEMENTS_CAP],
+      )
+      return
+    }
+    let arr: CeloSettlementRecord[] = []
+    try {
+      arr = JSON.parse(readFileSync(CELO_SETTLEMENTS_FILE, 'utf8')) as CeloSettlementRecord[]
+    } catch {
+      /* first write */
+    }
+    arr.push(rec)
+    if (arr.length > CELO_SETTLEMENTS_CAP) arr = arr.slice(-CELO_SETTLEMENTS_CAP)
+    mkdirSync(DATA_DIR, { recursive: true })
+    writeFileSync(CELO_SETTLEMENTS_FILE, JSON.stringify(arr))
+  } catch (e) {
+    console.error('[storage] celo settlement persist failed:', e instanceof Error ? e.message : e)
+  }
+}
+
 // Flush pending state on shutdown, then exit (Render sends SIGTERM on redeploy).
 process.on('SIGTERM', () => {
   void flush().finally(() => process.exit(0))

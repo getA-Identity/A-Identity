@@ -9,7 +9,7 @@
  */
 import { publicChains } from './chains/public-view.js'
 
-export type ChainName = 'arc' | 'xlayer' | 'ethereum' | 'base' | 'arbitrum' | 'stellar'
+export type ChainName = 'arc' | 'xlayer' | 'ethereum' | 'base' | 'arbitrum' | 'stellar' | 'celo' | 'celo-sepolia'
 
 export type AgentIdentity = {
   agentId: string

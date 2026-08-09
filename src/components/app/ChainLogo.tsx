@@ -19,12 +19,13 @@ const LOGO: Record<ChainId, string> = {
   'rhchain-testnet': '/chains/rhchain.svg',
   rhchain: '/chains/rhchain.svg',
   celo: '/chains/celo.svg',
+  'celo-sepolia': '/chains/celo.svg',
   stellar: '/chains/stellar.svg',
   solana: '/chains/solana.svg',
 }
 
 /** Marks too light to survive a white disc. */
-const INK_DISC = new Set<ChainId>(['rhchain', 'rhchain-testnet', 'celo'])
+const INK_DISC = new Set<ChainId>(['rhchain', 'rhchain-testnet', 'celo', 'celo-sepolia'])
 
 export default function ChainLogo({
   id,

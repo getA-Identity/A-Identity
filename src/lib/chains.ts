@@ -10,7 +10,7 @@
  */
 
 /** Short slug of a chain in the registry. */
-export type ChainId = 'arc' | 'stellar' | 'xlayer' | 'base' | 'solana' | 'avalanche' | 'arbitrum' | 'rhchain-testnet' | 'rhchain' | 'celo'
+export type ChainId = 'arc' | 'stellar' | 'xlayer' | 'base' | 'solana' | 'avalanche' | 'arbitrum' | 'rhchain-testnet' | 'rhchain' | 'celo' | 'celo-sepolia'
 
 export type ChainProtocols = {
   /** x402 HTTP-402 payment support. Settlement is in a stablecoin. */
@@ -343,21 +343,52 @@ export const CHAINS: readonly Chain[] = [
     "stablecoins": [
       "USDC",
       "USDT",
-      "cUSD"
+      "USDm"
     ],
     "rpcUrl": "https://forno.celo.org",
     "explorer": "https://celoscan.io",
-    "role": "Mobile-first EVM L2: stablecoin-native payments (cUSD), gas payable in stablecoins.",
-    "status": "planned",
+    "role": "Stablecoin-native EVM L2: ERC-8004 identity live, x402 USDC settlement via the first-party Celo facilitator, gas payable in stablecoins.",
+    "status": "beta",
     "protocols": {
       "payment": {
         "x402": true,
-        "note": "x402 over USDC; fee abstraction lets gas be paid in stablecoins."
+        "note": "x402 over USDC via the first-party Celo facilitator (EIP-3009, buyer pays no gas); CIP-64 fee abstraction lets gas be paid in stablecoins."
       },
       "identity": {
         "standard": "ERC-8004",
         "erc8004Native": true,
-        "note": "ERC-8004 registry to be deployed."
+        "note": "Identity + Reputation registries LIVE (read-side wired). No ValidationRegistry on Celo yet, so KYA cannot be anchored on-chain there."
+      }
+    },
+    "identity": "ERC-8004",
+    "erc8004Native": true,
+    "x402": true
+  },
+  {
+    "id": "celo-sepolia",
+    "name": "Celo Sepolia (Testnet)",
+    "shortName": "Celo Sepolia",
+    "color": "#35D07F",
+    "chainId": 11142220,
+    "caip2": "eip155:11142220",
+    "evmCompatible": true,
+    "testnet": true,
+    "stablecoins": [
+      "USDC"
+    ],
+    "rpcUrl": "https://forno.celo-sepolia.celo-testnet.org",
+    "explorer": "https://celo-sepolia.blockscout.com",
+    "role": "Celo testnet rail (Alfajores is deprecated): same ERC-8004 registry pair as Arc, x402 USDC via the Sepolia facilitator.",
+    "status": "beta",
+    "protocols": {
+      "payment": {
+        "x402": true,
+        "note": "x402 over testnet USDC via the Celo Sepolia facilitator (api.x402.sepolia.celo.org)."
+      },
+      "identity": {
+        "standard": "ERC-8004",
+        "erc8004Native": true,
+        "note": "Identity + Reputation registries LIVE (same addresses as Arc). No ValidationRegistry, mirroring mainnet."
       }
     },
     "identity": "ERC-8004",

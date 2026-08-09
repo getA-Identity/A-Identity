@@ -27,8 +27,9 @@ export const CHAINS: ChainDescriptor[] = [
   // Order is the console's display order (Overview -> Network). Statuses:
   // live = wired end to end today, beta = testnet active, planned = roadmap.
   //
-  // Where the roadmap actually stands: arc + xlayer are live, base is beta, and
-  // stellar, solana, avalanche, arbitrum, both Robinhood chains and celo are planned.
+  // Where the roadmap actually stands: arc + xlayer are live; base and the celo pair
+  // (mainnet + Celo Sepolia: identity reads live, x402 facilitator rail wired) are
+  // beta; stellar, solana, avalanche, arbitrum and both Robinhood chains are planned.
   // Among the planned chains, STELLAR is next: its integration is funded work (the
   // Instawards SoW), ahead of solana/avalanche/arbitrum, which is why it sits right
   // after Arc in this display order.
@@ -314,10 +315,10 @@ export const CHAINS: ChainDescriptor[] = [
     name: 'Celo',
     shortName: 'Celo',
     color: '#35D07F',
-    role: 'Mobile-first EVM L2: stablecoin-native payments (cUSD), gas payable in stablecoins.',
+    role: 'Stablecoin-native EVM L2: ERC-8004 identity live, x402 USDC settlement via the first-party Celo facilitator, gas payable in stablecoins.',
     ecosystem: 'evm',
     testnet: false,
-    status: 'planned',
+    status: 'beta',
     evmChainId: 42220,
     cctpDomain: null, // Celo is not a CCTP domain; USDC arrives natively (Circle mint below)
     nativeCurrency: { name: 'Celo', symbol: 'CELO', decimals: 18 },
@@ -325,15 +326,68 @@ export const CHAINS: ChainDescriptor[] = [
     rpcUrls: ['https://forno.celo.org'],
     explorer: 'https://celoscan.io',
     contracts: {
-      usdc: '0xcebA9300f2b948710d2653dD7B07f33A8B32118C', // native Circle USDC on Celo
+      // ERC-8004 pair verified live 2026-08-09: eth_getCode on both (EIP-1967 proxies
+      // sharing one implementation with the Celo Sepolia pair below) plus a REAL read on
+      // each — ownerOf(1) resolved an owner on the IdentityRegistry, and
+      // getClients(1)/getSummary(1, clients) returned real feedback (count 14, avg 88)
+      // from the ReputationRegistry. The IdentityRegistry is the SAME CREATE2 address as
+      // X Layer's entry above. There is NO ValidationRegistry on Celo (ERC-8004 spec
+      // revision pending), so no address is asserted for it and KYA cannot be anchored
+      // on-chain there — the identity note below says so instead of pretending.
+      identityRegistry: '0x8004A169FB4a3325136EB29fA0ceB6D2e539a432',
+      reputationRegistry: '0x8004BAa17C55a88189AE136b182e5fdA19dE9b63',
+      usdc: '0xcebA9300f2b948710d2653dD7B07f33A8B32118C', // native Circle USDC on Celo (EIP-712 domain name "USDC", version "2" — read live)
       create2Factory: CREATE2_FACTORY,
     },
     confirmations: 3,
-    stablecoins: ['USDC', 'USDT', 'cUSD'],
+    // cUSD was rebranded USDm (same contract, 0x765DE816845861e75A25fCA122bb6898B8B1282a).
+    stablecoins: ['USDC', 'USDT', 'USDm'],
     signerEnvVar: 'CELO_SIGNER_KEY',
     rpcEnvVar: 'CELO_RPC_URL',
-    identity: { standard: 'ERC-8004', erc8004Native: true, note: 'ERC-8004 registry to be deployed.' },
-    payment: { x402: true, note: 'x402 over USDC; fee abstraction lets gas be paid in stablecoins.' },
+    identity: {
+      standard: 'ERC-8004',
+      erc8004Native: true,
+      note: 'Identity + Reputation registries LIVE (read-side wired). No ValidationRegistry on Celo yet, so KYA cannot be anchored on-chain there.',
+    },
+    payment: { x402: true, note: 'x402 over USDC via the first-party Celo facilitator (EIP-3009, buyer pays no gas); CIP-64 fee abstraction lets gas be paid in stablecoins.' },
+  },
+  {
+    caip2: 'eip155:11142220',
+    id: 'celo-sepolia',
+    name: 'Celo Sepolia (Testnet)',
+    shortName: 'Celo Sepolia',
+    color: '#35D07F',
+    role: 'Celo testnet rail (Alfajores is deprecated): same ERC-8004 registry pair as Arc, x402 USDC via the Sepolia facilitator.',
+    ecosystem: 'evm',
+    testnet: true,
+    status: 'beta',
+    evmChainId: 11142220,
+    cctpDomain: null,
+    nativeCurrency: { name: 'Celo', symbol: 'CELO', decimals: 18 },
+    usdcDecimals: 6,
+    rpcUrls: ['https://forno.celo-sepolia.celo-testnet.org'],
+    explorer: 'https://celo-sepolia.blockscout.com',
+    faucet: 'https://faucet.celo.org/celo-sepolia',
+    contracts: {
+      // Verified live 2026-08-09 with eth_getCode on every address here: the ERC-8004
+      // pair (the same identity/reputation ADDRESSES as the Arc descriptor, resolving to
+      // the same EIP-1967 implementations as Celo mainnet's pair), testnet USDC, and the
+      // CREATE2 factory. No ValidationRegistry, mirroring mainnet.
+      identityRegistry: '0x8004A818BFB912233c491871b3d84c89A494BD9e',
+      reputationRegistry: '0x8004B663056A597Dffe9eCcC1965A193B7388713',
+      usdc: '0x01C5C0122039549AD1493B8220cABEdD739BC44E',
+      create2Factory: CREATE2_FACTORY,
+    },
+    confirmations: 3,
+    stablecoins: ['USDC'],
+    signerEnvVar: 'CELO_SEPOLIA_SIGNER_KEY',
+    rpcEnvVar: 'CELO_SEPOLIA_RPC_URL',
+    identity: {
+      standard: 'ERC-8004',
+      erc8004Native: true,
+      note: 'Identity + Reputation registries LIVE (same addresses as Arc). No ValidationRegistry, mirroring mainnet.',
+    },
+    payment: { x402: true, note: 'x402 over testnet USDC via the Celo Sepolia facilitator (api.x402.sepolia.celo.org).' },
   },
 ]
 

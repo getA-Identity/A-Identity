@@ -103,6 +103,7 @@ test('no live tool or route named pre_bet_check exists', () => {
     '../http/shared.ts',
     '../http/auth-routes.ts',
     '../http/public-routes.ts',
+    '../http/celo-routes.ts',
     '../http/arc-routes.ts',
     '../http/agent-routes.ts',
     '../http/guardrail-routes.ts',

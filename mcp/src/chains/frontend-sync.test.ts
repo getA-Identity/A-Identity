@@ -102,7 +102,8 @@ test('the agent manifest chains_supported matches the registry', () => {
 })
 
 test('the public surface reports exactly the wired chains as live/beta', () => {
-  // Product decision 2026-08-08: Arc + X Layer live, Base beta. Registry order.
+  // Product decision 2026-08-08: Arc + X Layer live, Base beta. 2026-08-09: the Celo
+  // pair joins as beta (identity reads live, x402 facilitator rail wired). Registry order.
   const live = publicChains().filter((c) => c.status === 'live' || c.status === 'beta')
   assert.deepEqual(
     live.map((c) => ({ id: c.id, status: c.status })),
@@ -110,6 +111,8 @@ test('the public surface reports exactly the wired chains as live/beta', () => {
       { id: 'arc', status: 'live' },
       { id: 'xlayer', status: 'live' },
       { id: 'base', status: 'beta' },
+      { id: 'celo', status: 'beta' },
+      { id: 'celo-sepolia', status: 'beta' },
     ],
   )
 })

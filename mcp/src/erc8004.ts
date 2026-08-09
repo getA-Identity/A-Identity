@@ -327,6 +327,10 @@ export function createIdentityProvider(env: NodeJS.ProcessEnv = process.env): Id
    *    agent is verifiable by token id; owner-address queries degrade to an existence
    *    check, because that public RPC caps getLogs at 100 blocks so token enumeration by
    *    owner is not possible there.
+   *  - Celo mainnet + Celo Sepolia: the ERC-8004 pair in their descriptors (verified live
+   *    2026-08-09: ownerOf(1) resolves a real owner on mainnet). Reads work out of the box
+   *    from the registry addresses; CELO_RPC_URL / CELO_SEPOLIA_RPC_URL override the RPC
+   *    via each descriptor's rpcEnvVar, exactly like every other chain here.
    */
   const clients: ChainClient[] = CHAINS.filter(
     (c) => c.ecosystem === 'evm' && c.evmChainId !== null && c.contracts.identityRegistry,

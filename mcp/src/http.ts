@@ -31,6 +31,7 @@ import { oauthEnabled, verifyAccessToken } from './oauth.js'
 import { SESSION_COOKIE, parseCookies, publicAgents, readBody, sendJson, type RouteCtx } from './http/shared.js'
 import { handleAuthRoutes } from './http/auth-routes.js'
 import { handlePublicRoutes } from './http/public-routes.js'
+import { handleCeloRoutes } from './http/celo-routes.js'
 import { handleArcRoutes } from './http/arc-routes.js'
 import { handleAgentRoutes } from './http/agent-routes.js'
 import { handleGuardrailRoutes } from './http/guardrail-routes.js'
@@ -98,6 +99,8 @@ function rateBudget(method: string, pathname: string): { bucket: string; max: nu
   // Marketplace release/dispute run a real ERC-8183 escrow lifecycle from the shared signer.
   if (pathname === '/api/marketplace/release' || pathname === '/api/marketplace/dispute')
     return { bucket: 'demo', max: 8, windowMs: 60_000 }
+  // Celo x402 tool calls each cost the server two facilitator round-trips (verify+settle).
+  if (pathname.startsWith('/api/celo/tools/')) return { bucket: 'celo', max: 30, windowMs: 60_000 }
   // MCP can also drive a release (release_escrow tool) which spends the shared signer, so cap
   // the whole /mcp endpoint. A backstop against escrow-release spam via MCP (a per-tool limit is
   // the finer follow-up); normal MCP usage stays well under it.
@@ -181,8 +184,13 @@ const server = http.createServer(async (req, res) => {
   // Guard: every other mutating /api endpoint requires a VERIFIED session. No token
   // → 401. A guest (unverified email) token → 403: guests are browse-only, so a
   // token minted for an arbitrary email can never act as an agent's owner.
+  // /api/celo/tools/* is exempt because it is PAYMENT-gated, not session-gated: the
+  // caller is an anonymous buyer agent whose authorization is the settled USDC payment
+  // (402 → pay → facilitator verify+settle). The rail is fail-closed (501) when
+  // unconfigured and serves read-only trust tools, so the exemption never frees a write.
   const isMutation =
-    req.method === 'POST' && url.pathname.startsWith('/api/') && !url.pathname.startsWith('/api/auth/')
+    req.method === 'POST' && url.pathname.startsWith('/api/') && !url.pathname.startsWith('/api/auth/') &&
+    !url.pathname.startsWith('/api/celo/tools/')
   if (isMutation && !caller) {
     sendJson(res, 401, { error: 'Authentication required. Sign in with a wallet or an email link.' })
     return
@@ -196,6 +204,7 @@ const server = http.createServer(async (req, res) => {
   }
 
   if (await handlePublicRoutes(ctx)) return
+  if (await handleCeloRoutes(ctx)) return
   if (await handleArcRoutes(ctx)) return
   if (await handleAgentRoutes(ctx)) return
   if (await handleGuardrailRoutes(ctx)) return

@@ -97,12 +97,21 @@
         },
         {
           "id": "celo",
-          "chainId": 8453,
-          "caip2": "eip155:8453",
+          "chainId": 42220,
+          "caip2": "eip155:42220",
           "identity": "ERC-8004",
           "erc8004Native": true,
-          "note": "Planned rail: stablecoin-native EVM L2, gas payable in stablecoins.",
-          "status": "planned"
+          "note": "Identity + Reputation registries LIVE (read-side wired). No ValidationRegistry on Celo yet, so KYA cannot be anchored on-chain there.",
+          "status": "beta"
+        },
+        {
+          "id": "celo-sepolia",
+          "chainId": 11142220,
+          "caip2": "eip155:11142220",
+          "identity": "ERC-8004",
+          "erc8004Native": true,
+          "note": "Identity + Reputation registries LIVE (same addresses as Arc). No ValidationRegistry, mirroring mainnet.",
+          "status": "beta"
         }
       ],
       "multiChain": true
@@ -191,10 +200,18 @@
         {
           "id": "celo",
           "name": "Celo",
-          "chainId": 8453,
-          "role": "EVM fallback: ERC-8004 compatible, Coinbase ecosystem, low fees.",
+          "chainId": 42220,
+          "role": "Stablecoin-native EVM L2: ERC-8004 identity live, x402 USDC settlement via the first-party Celo facilitator, gas payable in stablecoins.",
           "x402": true,
-          "status": "planned"
+          "status": "beta"
+        },
+        {
+          "id": "celo-sepolia",
+          "name": "Celo Sepolia (Testnet)",
+          "chainId": 11142220,
+          "role": "Celo testnet rail (Alfajores is deprecated): same ERC-8004 registry pair as Arc, x402 USDC via the Sepolia facilitator.",
+          "x402": true,
+          "status": "beta"
         }
       ],
       "wallets": "circle-agent-wallets",
@@ -306,7 +323,7 @@
         "deliver"
       ],
       "trust": "Both agents verify each other via ERC-8004 before value moves. Reputation gate (default: 300+).",
-      "settlement": "x402 in stablecoins on Arc, the live chain today. Base, Arbitrum, Avalanche, OKX X Layer, Stellar and Solana are planned. No shared accounts or API keys.",
+      "settlement": "x402 in stablecoins on Arc, the live chain today; Celo (mainnet + Sepolia) settles via the first-party Celo facilitator in beta. Base is beta; Arbitrum, Avalanche, Stellar and Solana are planned. No shared accounts or API keys.",
       "chains_supported": [
         "arc",
         "stellar",
@@ -317,7 +334,8 @@
         "arbitrum",
         "rhchain-testnet",
         "rhchain",
-        "celo"
+        "celo",
+        "celo-sepolia"
       ]
     },
     "agent_to_human": {

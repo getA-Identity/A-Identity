@@ -31,6 +31,7 @@ const Blog = lazy(() => import('./routes/Blog'))
 const BlogPost = lazy(() => import('./routes/BlogPost'))
 const UseCase = lazy(() => import('./routes/UseCase'))
 const Explorer = lazy(() => import('./routes/Explorer'))
+const CeloProof = lazy(() => import('./routes/CeloProof'))
 const Architecture = lazy(() => import('./routes/Architecture'))
 const Mascot = lazy(() => import('./routes/Mascot'))
 const BrandKit = lazy(() => import('./routes/BrandKit'))
@@ -100,6 +101,7 @@ export default function App() {
         <Route path="/tr/blog/:slug" element={<BlogPost />} />
         <Route path="/use-cases/:slug" element={<UseCase />} />
         <Route path="/explorer" element={<Explorer />} />
+        <Route path="/celo-proof" element={<CeloProof />} />
         <Route path="/architecture" element={<Architecture />} />
         {/* Internal design surfaces. Unlinked and noindex. */}
         <Route path="/mascot" element={<Mascot />} />

@@ -52,13 +52,18 @@ test('getChain returns undefined for unknown chain', () => {
   assert.equal(getChain('eip155:999999999'), undefined)
 })
 
-test('Arc, X Layer (live) and Base (beta) are the wired chains; Arc carries all its known contracts', () => {
+test('Arc, X Layer (live), Base and the Celo pair (beta) are the wired chains; Arc carries all its known contracts', () => {
   // Product decision 2026-08-08: X Layer identity is live (OKX ERC-8004 reads),
   // Base testnet is active via the Gateway demo, so it is beta.
+  // 2026-08-09: Celo mainnet + Celo Sepolia flip to beta — ERC-8004 identity reads
+  // are live from the registry addresses and the x402 facilitator rail is wired
+  // (fail-closed until CELO_PAYTO + CELO_X402_API_KEY are set).
   const live = liveChains()
-  assert.deepEqual(live.map((c) => c.id).sort(), ['arc', 'base', 'xlayer'])
+  assert.deepEqual(live.map((c) => c.id).sort(), ['arc', 'base', 'celo', 'celo-sepolia', 'xlayer'])
   assert.equal(live.find((c) => c.id === 'xlayer')?.status, 'live')
   assert.equal(live.find((c) => c.id === 'base')?.status, 'beta')
+  assert.equal(live.find((c) => c.id === 'celo')?.status, 'beta')
+  assert.equal(live.find((c) => c.id === 'celo-sepolia')?.status, 'beta')
   assert.equal(ARC_CHAIN.id, 'arc')
   // Guard the exact live Arc addresses against silent drift.
   assert.equal(ARC_CHAIN.contracts.identityRegistry, '0x8004A818BFB912233c491871b3d84c89A494BD9e')
@@ -74,7 +79,8 @@ test('Arc, X Layer (live) and Base (beta) are the wired chains; Arc carries all 
 })
 
 test('every roadmap chain is present and planned', () => {
-  for (const id of ['arbitrum', 'avalanche', 'rhchain', 'rhchain-testnet', 'stellar', 'solana', 'celo']) {
+  // celo left this list on 2026-08-09 when its identity reads + x402 rail went beta.
+  for (const id of ['arbitrum', 'avalanche', 'rhchain', 'rhchain-testnet', 'stellar', 'solana']) {
     const c = getChainById(id)
     assert.ok(c, `${id} missing from registry`)
     assert.equal(c.status, 'planned', `${id} should be planned`)
@@ -87,9 +93,9 @@ test('the planned set is mostly EVM, with two non-EVM', () => {
   assert.equal(planned.filter((c) => c.ecosystem === 'evm').length, planned.length - 2)
 })
 
-test('evmChains covers Arc and every planned EVM chain', () => {
+test('evmChains covers Arc and every other EVM chain', () => {
   const ids = evmChains().map((c) => c.id).sort()
-  assert.deepEqual(ids, ['arbitrum', 'arc', 'avalanche', 'base', 'celo', 'rhchain', 'rhchain-testnet', 'xlayer'])
+  assert.deepEqual(ids, ['arbitrum', 'arc', 'avalanche', 'base', 'celo', 'celo-sepolia', 'rhchain', 'rhchain-testnet', 'xlayer'])
 })
 
 // ── Robinhood Chain (Phase 6.1) ──────────────────────────────────────────────────
