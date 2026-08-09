@@ -72,7 +72,7 @@
         {
           "href": "https://a-identity.xyz/.well-known/mcp/server-card.json",
           "type": "application/json",
-          "title": "MCP Server Card: transport, capabilities and the 19 tools"
+          "title": "MCP Server Card: transport, capabilities and the 20 tools"
         }
       ],
       "service-doc": [

@@ -11,6 +11,7 @@ import { getArcStatus } from '../arc.js'
 import { getCircleStatus } from '../circle.js'
 import { oauthEnabled, protectedResourceMetadata } from '../oauth.js'
 import { agentReputation, listPlatformAgents } from '../platform.js'
+import { merchantCheck } from '../commerce.js'
 import {
   x402PayTo, paymentRequirements, verifyPayment, premiumResource,
   issueX402Nonce, x402NonceValid, consumeX402Nonce, verifyPayerBinding,
@@ -84,6 +85,19 @@ export async function handlePublicRoutes(ctx: RouteCtx): Promise<boolean> {
     }
     if ('error' in rep) { sendJson(res, 404, { found: false, agentId: id, reason: 'Unknown agent or no activity yet' }); return true }
     sendJson(res, 200, { found: true, reputation: rep })
+    return true
+  }
+
+  // ── REST /api/commerce/merchant-check — verify a merchant agent pre-checkout ──
+  // The trust step ACP/UCP checkout flows skip: agent-card discovery + live ERC-8004
+  // resolve + the platform's KYA/reputation/Sybil view, composed into ALLOW/WARN/DENY
+  // with every reason. Free, read-only, no state; invalid input is a clean 400.
+  if (req.method === 'GET' && url.pathname === '/api/commerce/merchant-check') {
+    const merchantUrl = url.searchParams.get('url') ?? undefined
+    const merchantAgentId = url.searchParams.get('agentId') ?? undefined
+    const result = await merchantCheck({ url: merchantUrl, agentId: merchantAgentId })
+    if ('error' in result) { sendJson(res, 400, result); return true }
+    sendJson(res, 200, result)
     return true
   }
 

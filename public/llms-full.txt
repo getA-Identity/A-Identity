@@ -285,10 +285,11 @@ Streamable HTTP at `https://a-identity.xyz/mcp`. POST JSON-RPC with
 `Accept: application/json, text/event-stream`. Server name `a-identity-mcp`,
 version `0.2.0`, protocol `2025-06-18`.
 
-19 tools:
+20 tools:
 
 **Identity and discovery**: `resolve_agent`, `get_reputation`, `list_agents`,
-`find_agent`, `get_agent_manifest`, `register_agent`, `list_capabilities`
+`find_agent`, `get_agent_manifest`, `register_agent`, `list_capabilities`,
+`merchant_check`
 
 **Chain and platform status**: `get_chain_status`, `get_arc_status`,
 `get_circle_status`

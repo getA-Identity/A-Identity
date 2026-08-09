@@ -44,10 +44,11 @@ testable without running the daemon.
 
 ## worker (multi-service)
 
-A generalized worker with three presets: `translation`, `data-analysis`, `code-review`. It
-registers, passes KYA, and for each funded task it **buys a helper service over x402** (a gasless
-Circle Nanopayment) while working, then does the work with Claude and delivers. This is the
-"autonomous spending in USDC" beat: the worker pays for a service mid-task, no human.
+A generalized worker with four presets: `translation`, `data-analysis`, `code-review`,
+`grant-coach`. It registers, passes KYA, and for each funded task it **buys a helper service
+over x402** (a gasless Circle Nanopayment) while working, then does the work with Claude and
+delivers. This is the "autonomous spending in USDC" beat: the worker pays for a service
+mid-task, no human.
 
 ```bash
 WORKER_SERVICE=data-analysis BASE=http://localhost:3399 node agents/worker.mjs
@@ -55,6 +56,20 @@ WORKER_SERVICE=data-analysis BASE=http://localhost:3399 node agents/worker.mjs
 
 Real work + real x402 purchase with `ANTHROPIC_API_KEY` and a funded backend signer; honest stubs
 without. `PRESETS`, `doWork()`, `processFundedTasks()`, `registerWorker()` are exported.
+
+### grant-coach preset
+
+A grant & fellowship application coach. Hire it with a program URL in the task description
+(and optionally an applicant profile); it fetches the program page (plain fetch, 8s cap, an
+honest inline note if the page is unreachable), strips it to visible text, and drafts (a) a
+program summary, (b) the likely application questions, (c) answers grounded in the applicant
+profile - with Claude when `ANTHROPIC_API_KEY` is set, else the same clearly-labeled
+deterministic stub the other presets return, so the hire -> deliver -> release loop still runs
+keyless. `stripHtml()` and `prepareGrantCoachTask()` are exported.
+
+```bash
+WORKER_SERVICE=grant-coach BASE=http://localhost:3399 node agents/worker.mjs
+```
 
 ## verifier
 

@@ -140,6 +140,8 @@ export const SOCIALS = {
   // If this ever needs replacing, keep it permanent, a landing-page link with an expiry
   // date is a Join button with a scheduled death that nobody notices for a month.
   x: 'https://x.com/ai_dentity',
+  linkedin: 'https://www.linkedin.com/company/a-identity/',
+  youtube: 'https://www.youtube.com/@A-identity-u9e9z',
   discord: 'https://discord.gg/ak4rC3p7Tz',
   github: 'https://github.com/getA-Identity/A-Identity',
 } as const

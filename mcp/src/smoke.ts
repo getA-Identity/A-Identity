@@ -39,6 +39,7 @@ async function main() {
     'get_reputation',
     'list_agents',
     'list_capabilities',
+    'merchant_check',
     'resolve_agent',
   ]
   for (const name of expected) {
@@ -92,9 +93,19 @@ async function main() {
     throw new Error('resolve_agent chain filter did not reject a cross-chain match')
   }
 
+  // 6) merchant_check refuses a private-range URL with a clean error (the SSRF guard),
+  //    offline and deterministic - no network is touched for a blocked host.
+  const blocked = (await client.callTool({
+    name: 'merchant_check',
+    arguments: { url: 'http://169.254.169.254/latest/meta-data' },
+  })) as TextResult
+  if (!textOf(blocked).includes('error') || textOf(blocked).includes('"verdict"')) {
+    throw new Error('merchant_check did not refuse a private-range URL cleanly')
+  }
+
   await client.close()
   console.log(
-    `\n✅ smoke test passed (live Arc resolve, capabilities, honest reputation pointer, 9 chains, chain filter)`,
+    `\n✅ smoke test passed (live Arc resolve, capabilities, honest reputation pointer, 9 chains, chain filter, merchant_check SSRF guard)`,
   )
 }
 

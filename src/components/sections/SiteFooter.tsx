@@ -3,6 +3,8 @@ import { Link } from 'react-router-dom'
 import Logo from '../Logo'
 import DiscordIcon from '../DiscordIcon'
 import XIcon from '../XIcon'
+import LinkedInIcon from '../LinkedInIcon'
+import YouTubeIcon from '../YouTubeIcon'
 import { ChatGptMark, ClaudeMark, PerplexityMark, GeminiMark, GrokMark } from '../AiMarks'
 import { APP_NAME, ASK_AI_LINKS, FOOTER_COLUMNS, SOCIALS, type FooterLink } from '../../lib/brand'
 import { SectionBackdrop } from '../ui/section-backdrop'
@@ -31,6 +33,8 @@ const AI_MARKS = {
  */
 const SOCIAL_LINKS = [
   { key: 'x', href: SOCIALS.x, label: 'A-Identity on X', Icon: XIcon },
+  { key: 'linkedin', href: SOCIALS.linkedin, label: 'A-Identity on LinkedIn', Icon: LinkedInIcon },
+  { key: 'youtube', href: SOCIALS.youtube, label: 'A-Identity on YouTube', Icon: YouTubeIcon },
   { key: 'discord', href: SOCIALS.discord, label: 'Join the A-Identity Discord', Icon: DiscordIcon },
   { key: 'github', href: SOCIALS.github, label: 'A-Identity on GitHub', Icon: Github },
 ] as const

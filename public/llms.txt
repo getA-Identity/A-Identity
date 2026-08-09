@@ -31,7 +31,7 @@ against those limits before any value moves, and the verdict is ALLOW, WARN or D
 
 ## Endpoints an agent can use
 
-- [MCP server](https://a-identity.xyz/mcp): Streamable HTTP, 19 tools, no key for reads.
+- [MCP server](https://a-identity.xyz/mcp): Streamable HTTP, 20 tools, no key for reads.
 - [Agent manifest](https://a-identity.xyz/.well-known/ai-agent-manifest.json): identity, payment and tool endpoints in one document.
 - [Free trust pre-check](https://a-identity-asp.onrender.com/tools/trust_preview): POST an agentId, no payment and no key, rate limited.
 - [Resolve an agent](https://a-identity.xyz/api/agent): pass ?q= a wallet address or token id.
@@ -51,7 +51,7 @@ leaves the caller's process.
 - [Full documentation for machine readers](https://a-identity.xyz/llms-full.txt): the expanded version of this file.
 - [How to authenticate and pay](https://a-identity.xyz/auth.md): the three access tiers, in order of how little you need.
 - [API catalog](https://a-identity.xyz/.well-known/api-catalog): RFC 9727 linkset over every API here.
-- [MCP server card](https://a-identity.xyz/.well-known/mcp/server-card.json): transport, capabilities and the 19 tools.
+- [MCP server card](https://a-identity.xyz/.well-known/mcp/server-card.json): transport, capabilities and the 20 tools.
 - [A2A agent card](https://a-identity.xyz/.well-known/agent-card.json): skills and interfaces for agent-to-agent discovery.
 - [Agent skills index](https://a-identity.xyz/.well-known/agent-skills/index.json): five task guides with digests.
 - [OpenAPI 3.1 for the paid tools](https://a-identity-asp.onrender.com/openapi.json): inputs, outputs and prices.

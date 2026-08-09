@@ -3,18 +3,47 @@
  * polls for funded tasks, does the real work with Claude, BUYS a helper service over x402 while
  * working (autonomous spending), and delivers.
  *
- * Three presets ship: translation, data-analysis, code-review. Pick one with WORKER_SERVICE.
- * Real work + real x402 purchase with ANTHROPIC_API_KEY / a funded backend signer; honest stubs
- * without, so the loop runs keyless.
+ * Four presets ship: translation, data-analysis, code-review, grant-coach. Pick one with
+ * WORKER_SERVICE. Real work + real x402 purchase with ANTHROPIC_API_KEY / a funded backend
+ * signer; honest stubs without, so the loop runs keyless.
  *
  * Run:  WORKER_SERVICE=data-analysis BASE=http://localhost:3399 node agents/worker.mjs
- * Env:  BASE, WORKER_SERVICE (translation|data-analysis|code-review), WORKER_KEY,
+ * Env:  BASE, WORKER_SERVICE (translation|data-analysis|code-review|grant-coach), WORKER_KEY,
  *       ANTHROPIC_API_KEY, WORKER_POLL_MS, WORKER_MAX_CYCLES, WORKER_ENDPOINT.
  */
 import { generatePrivateKey, privateKeyToAccount } from 'viem/accounts'
 import { MarketplaceClient } from '../sdk/dist/index.js'
 
 const MODEL = 'claude-opus-4-8'
+
+/** Crude visible-text extraction for a fetched program page: drop scripts/styles/tags. */
+export function stripHtml(html) {
+  return String(html)
+    .replace(/<(script|style)[\s\S]*?<\/\1>/gi, ' ')
+    .replace(/<[^>]+>/g, ' ')
+    .replace(/&nbsp;/gi, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+}
+
+/**
+ * grant-coach pre-step: fetch the program URL named in the task (plain fetch, 8s cap) and
+ * inline the page's visible text so the drafted answers are grounded in the REAL program
+ * page. An unreachable page becomes an honest inline note - the coach still drafts from
+ * the applicant profile alone instead of failing the task.
+ */
+export async function prepareGrantCoachTask(instruction, fetchImpl = fetch) {
+  const url = String(instruction).match(/https?:\/\/[^\s"'<>)\]]+/)?.[0]
+  if (!url) return `${instruction}\n\n[no program URL found in the task - coaching from the applicant profile alone]`
+  try {
+    const res = await fetchImpl(url, { signal: AbortSignal.timeout(8000) })
+    if (!res.ok) return `${instruction}\n\n[program page unreachable: HTTP ${res.status} - coaching from the applicant profile alone]`
+    const pageText = stripHtml(await res.text()).slice(0, 6000)
+    return `${instruction}\n\n[program page text from ${url}]\n${pageText || '(the page had no readable text)'}`
+  } catch (e) {
+    return `${instruction}\n\n[program page unreachable: ${e?.message ?? e} - coaching from the applicant profile alone]`
+  }
+}
 
 /** Service presets: what the agent sells and how it does the work. */
 export const PRESETS = {
@@ -42,21 +71,34 @@ export const PRESETS = {
     capabilities: ['code-review'],
     system: 'You are a senior code reviewer. Given a diff or snippet, list concrete issues (bugs, edge cases, security) with a short fix each. If none, say so. Output only the review.',
   },
+  'grant-coach': {
+    name: 'GrantCoach (grant & fellowship coach)',
+    service: 'grant-coach',
+    priceUsd: 4,
+    unit: 'per application',
+    capabilities: ['grant-coach'],
+    system:
+      'You are a grant and fellowship application coach. Given the text of a program page and an optional applicant profile, produce: (a) a short program summary, (b) the likely application questions, (c) drafted answers grounded ONLY in the applicant profile - mark any gap the applicant must fill instead of inventing facts. Output only the coaching document.',
+    prepare: prepareGrantCoachTask,
+  },
 }
 
-/** Do the work for a preset. Claude with ANTHROPIC_API_KEY, else a labeled stub. */
+/** Do the work for a preset. Claude with ANTHROPIC_API_KEY, else a labeled stub. A preset
+ *  may declare a `prepare` step (grant-coach fetches the program page) that runs in BOTH
+ *  paths, so the stub is grounded in the same input the real work would be. */
 export async function doWork(preset, instruction, env = process.env) {
   const text = String(instruction ?? '').slice(0, 6000)
-  if (!env.ANTHROPIC_API_KEY) return `[stub ${preset.service} - set ANTHROPIC_API_KEY for real work] ${text}`
+  const input = preset.prepare ? await preset.prepare(text) : text
+  if (!env.ANTHROPIC_API_KEY) return `[stub ${preset.service} - set ANTHROPIC_API_KEY for real work] ${input}`
   const { default: Anthropic } = await import('@anthropic-ai/sdk')
   const client = new Anthropic()
   const msg = await client.messages.create({
     model: MODEL,
     max_tokens: 4096,
     system: preset.system,
-    messages: [{ role: 'user', content: text }],
+    messages: [{ role: 'user', content: input }],
   })
-  return msg.content.find((b) => b.type === 'text')?.text?.trim() || `[no output] ${text}`
+  return msg.content.find((b) => b.type === 'text')?.text?.trim() || `[no output] ${input}`
 }
 
 /** Register + KYA-verify a worker for a preset (owner and agent wallet are the same key). */

@@ -33,6 +33,16 @@ async function main() {
     if (!props.length) throw new Error(`MCP tool ${name} advertises no input schema`)
   }
 
+  // The commerce merchant check is an always-on read-only tool (like resolve_agent), so a
+  // registration slip would silently drop the pre-checkout trust surface. Assert it is
+  // listed and still advertises the url/agentId schema a client builds a call from.
+  const merchant = tools.find((t) => t.name === 'merchant_check')
+  if (!merchant) throw new Error('MCP is missing merchant_check')
+  const merchantProps = Object.keys((merchant.inputSchema as { properties?: Record<string, unknown> })?.properties ?? {})
+  if (!merchantProps.includes('url') || !merchantProps.includes('agentId')) {
+    throw new Error(`merchant_check schema lost its inputs (got: ${merchantProps.join(',')})`)
+  }
+
   const caps = (await client.callTool({ name: 'list_capabilities', arguments: {} })) as TextResult
   if (!textOf(caps).includes('ERC-8004')) throw new Error('list_capabilities failed over HTTP')
 
@@ -66,6 +76,14 @@ async function main() {
     throw new Error(`REST /api/reputation did not answer cleanly for an unknown agent: ${JSON.stringify(repRes)}`)
   }
 
+  // The merchant-check REST route must be wired AND validate its input: with neither a url
+  // nor an agentId it answers a clean 400 with an error, not the router's 404 fallthrough.
+  const mcRes = await fetch(`http://localhost:${PORT}/api/commerce/merchant-check`)
+  const mcBody = (await mcRes.json().catch(() => ({}))) as { error?: string }
+  if (mcRes.status !== 400 || typeof mcBody.error !== 'string') {
+    throw new Error(`GET /api/commerce/merchant-check not wired or not validating (got ${mcRes.status} ${JSON.stringify(mcBody)})`)
+  }
+
   // The action-policy routes are wired and gated. An unknown agent must come back as
   // "Unknown agent" from the handler, NOT the router's own lowercase "not found": that
   // difference is what proves the route exists rather than falling through. The POST is
@@ -84,7 +102,7 @@ async function main() {
     throw new Error(`POST /api/agents/action-policy should require a verified session (got ${pr.status})`)
   }
 
-  console.log('✅ HTTP smoke test passed (MCP + REST, 9 chains, 6 policy tools over MCP, action-policy wired + gated)')
+  console.log('✅ HTTP smoke test passed (MCP + REST, 9 chains, 6 policy tools + merchant_check over MCP, action-policy wired + gated, merchant-check validated)')
 }
 
 main().catch((err) => {

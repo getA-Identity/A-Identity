@@ -9,6 +9,7 @@ import { createIdentityProvider } from './erc8004.js'
 import { computeAgentReputation } from './reputation.js'
 import { getArcStatus } from './arc.js'
 import { getCircleStatus } from './circle.js'
+import { merchantCheck } from './commerce.js'
 
 const json = (value: unknown) => ({
   content: [{ type: 'text' as const, text: JSON.stringify(value, null, 2) }],
@@ -199,6 +200,26 @@ export function buildServer(data: ServerData = {}): McpServer {
       inputSchema: {},
     },
     async () => json(listCapabilities()),
+  )
+
+  server.registerTool(
+    'merchant_check',
+    {
+      title: 'Verify a commerce merchant agent',
+      description:
+        "Verify a merchant-side agent BEFORE a checkout or payment authorization - the trust step agentic-commerce protocols (ACP/UCP) leave to user approval. Discovers the merchant's /.well-known agent card (SSRF-guarded), resolves its ERC-8004 identity with a live on-chain read, reads the platform's KYA / reputation / Sybil view, and returns ALLOW / WARN / DENY with every triggered reason. Free, read-only, creates no state.",
+      inputSchema: {
+        url: z
+          .string()
+          .optional()
+          .describe("The merchant's site or agent-card URL (its /.well-known/agent.json and agent-card.json are probed)"),
+        agentId: z
+          .string()
+          .optional()
+          .describe('The merchant agent id: CAIP-10, bare token id, owner address, or a platform agent id. At least one of url / agentId is required.'),
+      },
+    },
+    async ({ url, agentId }) => json(await merchantCheck({ url, agentId })),
   )
 
   // ── marketplace tools (only when the HTTP entry injects the hooks) ───────────────

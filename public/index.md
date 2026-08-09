@@ -62,7 +62,7 @@ switch.
 | --- | --- |
 | **Verify** | ERC-8004 identity and KYA attestation |
 | **Pay** | x402 pay-per-call in USDC |
-| **Connect** | MCP server, 19 tools |
+| **Connect** | MCP server, 20 tools |
 | **Stream** | Circle Nanopayments over Gateway, gasless |
 | **Escrow** | ERC-8183 job escrow on Arc |
 | **Score** | Deterministic reputation, 0 to 1000 |
@@ -75,7 +75,7 @@ Base and Robinhood Chain.
 - **Machine summary**: <https://a-identity.xyz/llms.txt>
 - **Full documentation**: <https://a-identity.xyz/llms-full.txt>
 - **How to authenticate and pay**: <https://a-identity.xyz/auth.md>
-- **MCP server**: `POST https://a-identity.xyz/mcp` (Streamable HTTP, 19 tools, no key for reads)
+- **MCP server**: `POST https://a-identity.xyz/mcp` (Streamable HTTP, 20 tools, no key for reads)
 - **Free trust check, no payment**: `POST https://a-identity-asp.onrender.com/tools/trust_preview` with `{"agentId": "#849980"}`
 - **API catalog**: <https://a-identity.xyz/.well-known/api-catalog>
 - **A2A agent card**: <https://a-identity.xyz/.well-known/agent-card.json>
