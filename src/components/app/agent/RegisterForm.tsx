@@ -1,15 +1,19 @@
 import { useState } from 'react'
-import { BadgeCheck, Check, CheckCircle2, ChevronDown, Loader2, Terminal } from 'lucide-react'
+import { Check, CheckCircle2, ChevronDown, Loader2, Terminal } from 'lucide-react'
 import { apiFetch, readJson, explainError } from '../../../lib/api'
 import { authHeaders } from '../../../store/auth'
 import { invalidatePlatformAgents } from '../../../lib/platformAgents'
 import { useTabCarousel } from '../../../hooks/useTabCarousel'
 import { Button } from '../../ui/button'
-import { OwlMascot } from '../../OwlMascot'
 import CopyBlock from '../CopyBlock'
 import { BACKEND_UNREACHABLE } from '../../../lib/mcpBase'
-
-const CAPABILITIES = ['Payments', 'Purchases', 'Rentals', 'Batch actions'] as const
+import { CATEGORIES, MCP_ADD_CMD, REGISTER_CURL, STEP_META, STEPS, type Step } from './register-constants'
+import RegisterSuccess from './RegisterSuccess'
+import IdentityStep from './steps/IdentityStep'
+import CapabilitiesStep from './steps/CapabilitiesStep'
+import PermissionsStep from './steps/PermissionsStep'
+import WalletStep from './steps/WalletStep'
+import ReviewStep from './steps/ReviewStep'
 
 /**
  * Full onboarding: identity details, capabilities, KYA permissions, a real Arc
@@ -17,41 +21,6 @@ const CAPABILITIES = ['Payments', 'Purchases', 'Rentals', 'Batch actions'] as co
  * anchor is queued for human approval; everything else happens for real against
  * the local platform backend.
  */
-const CATEGORIES = [
-  'Trading',
-  'Finance',
-  'Research',
-  'Data',
-  'Content',
-  'Translation',
-  'DevOps',
-  'Software Services',
-  'Support',
-  'Lifestyle',
-  'Art Creation',
-  'Other',
-]
-
-/** The six --cat-* accent presets an agent can pick for its profile hero. */
-const CARD_STYLES = [1, 2, 3, 4, 5, 6] as const
-
-/** Wizard steps: one section at a time, validated before advancing. */
-const STEPS = ['identity', 'capabilities', 'permissions', 'wallet', 'review'] as const
-type Step = (typeof STEPS)[number]
-const STEP_META: { id: Step; label: string }[] = [
-  { id: 'identity', label: 'Identity' },
-  { id: 'capabilities', label: 'Capabilities' },
-  { id: 'permissions', label: 'Permissions' },
-  { id: 'wallet', label: 'Wallet' },
-  { id: 'review', label: 'Review' },
-]
-
-/** Same command texts the agent profile's Metadata tab publishes. */
-const MCP_ADD_CMD = 'claude mcp add a-identity --transport http https://a-identity.xyz/mcp'
-const REGISTER_CURL = `curl -X POST https://a-identity.xyz/api/agents/register \\
-  -H 'Content-Type: application/json' \\
-  -d '{"manifest":{"name":"My Agent","description":"What it does (20+ chars)","category":"Other","capabilities":["translation"]}}'`
-
 export default function RegisterForm({ onClose, onCreated }: { onClose: () => void; onCreated?: (id: string) => void }) {
   const [name, setName] = useState('')
   const [desc, setDesc] = useState('')
@@ -388,113 +357,19 @@ export default function RegisterForm({ onClose, onCreated }: { onClose: () => vo
 
   if (done) {
     return (
-      <div className="relative mt-5 overflow-hidden rounded-2xl border border-emerald-200 dark:border-emerald-500/25 bg-emerald-50/50 p-6">
-        {/* The owl marks the good outcome. Decorative, so it stays out of the a11y tree and
-            never overlaps the text: it sits in the card's empty top-right corner. */}
-        <OwlMascot
-          variant="geometric"
-          width={264}
-          className="pointer-events-none absolute -right-14 -top-16 hidden w-[264px] select-none opacity-90 sm:block"
-        />
-        <div className="flex items-center gap-2 font-bold text-emerald-700 dark:text-emerald-300">
-          <CheckCircle2 size={18} /> {name} is registered.
-        </div>
-        <ul className="mt-3 flex flex-col gap-1.5 text-sm text-foreground/70">
-          <li>Permissions set (daily cap, auto-approve).</li>
-          {kya?.verified ? (
-            <li>KYA verified: wallet control proven.</li>
-          ) : (
-            <li>KYA pending: prove the agent controls its wallet below.</li>
-          )}
-          {wallet && <li>Wallet {wallet.address.slice(0, 10)}... is assigned to it.</li>}
-          {!anchored && <li>On-chain anchor is queued. Anchor it on Arc to mint a real ERC-8004 identity.</li>}
-        </ul>
-
-        {/* On-chain anchor: real ERC-8004 registration on Arc, human-triggered */}
-        {anchored ? (
-          <div className="mt-4 rounded-xl border border-usdc/25 bg-usdc/[0.05] p-4">
-            <div className="flex items-center gap-2 text-sm font-semibold text-usdc">
-              <BadgeCheck size={16} /> Anchored on Arc: ERC-8004 id #{anchored.onchainAgentId ?? '?'}
-            </div>
-            {anchored.onchainExplorer && (
-              <a
-                href={anchored.onchainExplorer}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="mt-1 inline-block break-all text-xs font-semibold text-usdc hover:underline"
-              >
-                View transaction on arcscan
-              </a>
-            )}
-          </div>
-        ) : (
-          <div className="mt-4">
-            <button
-              type="button"
-              onClick={anchorOnchain}
-              disabled={anchorBusy}
-              className="rounded-full border border-usdc/30 px-4 py-2 text-sm font-semibold text-usdc transition-colors hover:bg-usdc/5 disabled:opacity-50"
-            >
-              {anchorBusy ? 'Anchoring on Arc...' : 'Anchor on Arc (register on-chain)'}
-            </button>
-            {anchorNote && <p className="mt-2 text-xs text-amber-700 dark:text-amber-300">{anchorNote}</p>}
-          </div>
-        )}
-
-        {/* KYA: prove the agent controls its wallet (real signature, not a stamp) */}
-        {wallet && (
-          <div className="mt-4">
-            {kya?.verified ? (
-              <div className="rounded-xl border border-emerald-200 dark:border-emerald-500/25 bg-emerald-50/60 dark:bg-emerald-500/10 p-4">
-                <div className="flex items-center gap-2 text-sm font-semibold text-emerald-700 dark:text-emerald-300">
-                  <BadgeCheck size={16} /> KYA verified: wallet control proven
-                </div>
-                {kya.onchainExplorer ? (
-                  <a
-                    href={kya.onchainExplorer}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="mt-1 inline-block break-all text-xs font-semibold text-emerald-700 dark:text-emerald-300 hover:underline"
-                  >
-                    Attested on-chain: ERC-8004 ValidationRegistry (view tx)
-                  </a>
-                ) : (
-                  <p className="mt-1 text-xs text-foreground/45">Anchor on Arc to also record this on the ERC-8004 ValidationRegistry.</p>
-                )}
-              </div>
-            ) : (
-              <>
-                <button
-                  type="button"
-                  onClick={proveKya}
-                  disabled={kyaBusy}
-                  className="rounded-full border border-emerald-300 px-4 py-2 text-sm font-semibold text-emerald-700 dark:text-emerald-300 transition-colors hover:bg-emerald-50 disabled:opacity-50"
-                >
-                  {kyaBusy ? 'Proving wallet control...' : 'Prove wallet control (KYA)'}
-                </button>
-                <p className="mt-2 text-xs text-foreground/45">
-                  Signs a challenge with your agent's wallet key (in your browser)
-                  {anchored ? ' and records it on the ERC-8004 ValidationRegistry.' : '. Anchor first for an on-chain attestation.'}
-                </p>
-                {kyaNote && <p className="mt-2 text-xs text-amber-700 dark:text-amber-300">{kyaNote}</p>}
-              </>
-            )}
-          </div>
-        )}
-
-        <div className="mt-4 flex gap-3">
-          <Button asChild size="sm" className="text-sm">
-            <a href="/app/marketplace">See it in Agent House</a>
-          </Button>
-          <button
-            type="button"
-            onClick={onClose}
-            className="rounded-full border border-foreground/15 px-4 py-2 text-sm font-semibold text-foreground/70"
-          >
-            Close
-          </button>
-        </div>
-      </div>
+      <RegisterSuccess
+        name={name}
+        wallet={wallet}
+        kya={kya}
+        kyaBusy={kyaBusy}
+        kyaNote={kyaNote}
+        anchored={anchored}
+        anchorBusy={anchorBusy}
+        anchorNote={anchorNote}
+        anchorOnchain={anchorOnchain}
+        proveKya={proveKya}
+        onClose={onClose}
+      />
     )
   }
 
@@ -678,318 +553,68 @@ export default function RegisterForm({ onClose, onCreated }: { onClose: () => vo
       <div className="cn-tab-clip">
         <div className={paneClass}>
           {shownStep === 'identity' && (
-            <div>
-              <div className={label}>Identity</div>
-              <div className="mt-2 flex flex-col gap-3">
-                <input className={input} placeholder="Agent name (e.g. My Trading Agent)" value={name} onChange={(e) => setName(e.target.value)} required />
-                <div>
-                  <input className={input} placeholder="What does this agent do? (shown in Agent House)" value={desc} onChange={(e) => setDesc(e.target.value)} required minLength={20} />
-                  <p className="mt-1 text-[11px] text-foreground/45">
-                    At least 20 characters. Verified agents with a description appear in the Agent House showcase.
-                  </p>
-                </div>
-                <select className={input} value={category} onChange={(e) => setCategory(e.target.value)}>
-                  {CATEGORIES.map((c) => <option key={c}>{c}</option>)}
-                </select>
-
-                {/* Logo: optional, resized in the browser, shown everywhere the agent is. */}
-                <div className="flex items-center gap-3">
-                  <div className="grid h-12 w-12 shrink-0 place-items-center overflow-hidden rounded-xl border border-border bg-background/60">
-                    {logoUrl ? (
-                      <img src={logoUrl} alt="Agent logo preview" className="h-full w-full object-cover" />
-                    ) : (
-                      <span className="text-[10px] font-semibold text-foreground/35">Logo</span>
-                    )}
-                  </div>
-                  <div className="min-w-0">
-                    <label className="inline-flex cursor-pointer items-center gap-2 rounded-full border border-border px-3.5 py-1.5 text-xs font-semibold text-foreground/70 transition-colors duration-[120ms] hover:bg-foreground/[0.04]">
-                      {logoUrl ? 'Change logo' : 'Upload logo'}
-                      <input
-                        type="file"
-                        accept="image/*"
-                        className="sr-only"
-                        onChange={(e) => onLogoPick(e.target.files?.[0])}
-                      />
-                    </label>
-                    {logoUrl && (
-                      <button
-                        type="button"
-                        onClick={() => setLogoUrl(null)}
-                        className="ml-2 text-xs font-semibold text-foreground/45 hover:text-danger"
-                      >
-                        Remove
-                      </button>
-                    )}
-                    <p className="mt-1 text-[11px] text-foreground/50">
-                      Optional. Square works best; resized to 96px in your browser.
-                    </p>
-                    {logoErr && <p className="mt-0.5 text-[11px] text-danger">{logoErr}</p>}
-                  </div>
-                </div>
-
-                {/* Card style: optional accent preset for the public profile hero.
-                    Swatches are the console's own --cat-1..--cat-6 tokens. */}
-                <div>
-                  <div className="text-[11px] text-foreground/45">Card style</div>
-                  <div className="mt-1.5 flex flex-wrap items-center gap-2">
-                    <button
-                      type="button"
-                      onClick={() => setCardStyle(undefined)}
-                      aria-pressed={cardStyle === undefined}
-                      className={`rounded-full px-3 py-1.5 text-xs font-semibold transition-colors ${
-                        cardStyle === undefined
-                          ? 'bg-accent text-white'
-                          : 'border border-foreground/15 text-foreground/60 hover:bg-foreground/5'
-                      }`}
-                    >
-                      None
-                    </button>
-                    {CARD_STYLES.map((n) => (
-                      <button
-                        key={n}
-                        type="button"
-                        onClick={() => setCardStyle(n)}
-                        aria-pressed={cardStyle === n}
-                        aria-label={`Card style ${n}`}
-                        className={`grid h-8 w-8 place-items-center rounded-full border-2 transition-colors ${
-                          cardStyle === n ? 'border-accent' : 'border-transparent hover:border-foreground/25'
-                        }`}
-                      >
-                        <span
-                          className="h-5 w-5 rounded-full"
-                          style={{ background: `var(--cat-${n})` }}
-                          aria-hidden="true"
-                        />
-                      </button>
-                    ))}
-                  </div>
-                  <p className="mt-1 text-[11px] text-foreground/45">
-                    Optional. Themes your agent's public profile hero in Agent House.
-                  </p>
-                </div>
-              </div>
-            </div>
+            <IdentityStep
+              name={name}
+              setName={setName}
+              desc={desc}
+              setDesc={setDesc}
+              category={category}
+              setCategory={setCategory}
+              logoUrl={logoUrl}
+              setLogoUrl={setLogoUrl}
+              logoErr={logoErr}
+              onLogoPick={onLogoPick}
+              cardStyle={cardStyle}
+              setCardStyle={setCardStyle}
+              input={input}
+              label={label}
+            />
           )}
 
           {shownStep === 'capabilities' && (
-            <div>
-              <div className={label}>What it is allowed to do</div>
-              <div className="mt-2 flex flex-wrap gap-2">
-                {CAPABILITIES.map((c) => (
-                  <button
-                    key={c}
-                    type="button"
-                    onClick={() => toggleCap(c)}
-                    className={`rounded-full px-3 py-1.5 text-xs font-semibold transition-colors ${
-                      caps.includes(c)
-                        ? 'bg-accent text-white'
-                        : 'border border-foreground/15 text-foreground/60 hover:bg-foreground/5'
-                    }`}
-                  >
-                    {c}
-                  </button>
-                ))}
-              </div>
-              <p className="mt-2 text-[11px] text-foreground/45">Pick at least one. Capabilities become the services this agent can be hired for.</p>
-            </div>
+            <CapabilitiesStep caps={caps} toggleCap={toggleCap} label={label} />
           )}
 
           {shownStep === 'permissions' && (
-            <div>
-              <div className={label}>Permissions (set at KYA, like card limits)</div>
-              <div className="mt-2 grid gap-3 sm:grid-cols-2">
-                <div>
-                  <div className="mb-1 text-[11px] text-foreground/45">Daily cap (USD)</div>
-                  <input className={input} type="number" min="0" value={dailyCap} onChange={(e) => setDailyCap(e.target.value)} />
-                </div>
-                <div>
-                  <div className="mb-1 text-[11px] text-foreground/45">Auto-approve under (USD)</div>
-                  <input className={input} type="number" min="0" step="0.1" value={autoApprove} onChange={(e) => setAutoApprove(e.target.value)} />
-                </div>
-              </div>
-              <div className="mt-3 flex flex-wrap gap-4">
-                <label className="flex items-center gap-2 text-sm text-foreground/70">
-                  <input type="checkbox" checked={a2a} onChange={(e) => setA2a(e.target.checked)} className="accent-accent" />
-                  Agent-to-agent payments
-                </label>
-                <label className="flex items-center gap-2 text-sm text-foreground/70">
-                  <input type="checkbox" checked={a2h} onChange={(e) => setA2h(e.target.checked)} className="accent-accent" />
-                  Agent-to-human payments
-                </label>
-              </div>
-            </div>
+            <PermissionsStep
+              dailyCap={dailyCap}
+              setDailyCap={setDailyCap}
+              autoApprove={autoApprove}
+              setAutoApprove={setAutoApprove}
+              a2a={a2a}
+              setA2a={setA2a}
+              a2h={a2h}
+              setA2h={setA2h}
+              input={input}
+              label={label}
+            />
           )}
 
           {shownStep === 'wallet' && (
-            <div>
-              <div className={label}>Arc testnet wallet</div>
-              {!wallet ? (
-                <>
-                  <button
-                    type="button"
-                    onClick={createWallet}
-                    disabled={walletBusy}
-                    className="mt-2 rounded-full border border-usdc/30 px-4 py-2.5 text-sm font-semibold text-usdc transition-colors hover:bg-usdc/5 disabled:opacity-50"
-                  >
-                    {walletBusy ? 'Creating...' : 'Create wallet (generated in your browser)'}
-                  </button>
-                  <p className="mt-2 text-[11px] text-foreground/45">
-                    Optional. Without a wallet the agent registers fine, but it cannot pay or receive until one is assigned.
-                  </p>
-                </>
-              ) : (
-                <div className="mt-2 rounded-xl border border-usdc/25 bg-usdc/[0.04] p-4">
-                  <div className="flex items-center justify-between gap-2">
-                    <div className="text-[11px] font-bold text-foreground/50">Address</div>
-                    <button type="button" onClick={copyAddress} className="text-[11px] font-semibold text-usdc hover:underline">
-                      {copiedAddr ? 'Copied' : 'Copy'}
-                    </button>
-                  </div>
-                  <div className="break-all font-mono text-xs text-foreground">{wallet.address}</div>
-                  <div className="mt-2 flex items-center justify-between gap-2">
-                    <div className="text-[11px] font-bold text-red-600">
-                      Private key (generated in your browser, the server never sees it)
-                    </div>
-                    <div className="flex shrink-0 items-center gap-2">
-                      <button
-                        type="button"
-                        onClick={() => setShowKey((s) => !s)}
-                        className="text-[11px] font-semibold text-usdc hover:underline"
-                      >
-                        {showKey ? 'Hide' : 'Reveal'}
-                      </button>
-                      <button
-                        type="button"
-                        onClick={async () => {
-                          try {
-                            await navigator.clipboard.writeText(wallet.privateKey)
-                            setCopiedKey(true)
-                            setTimeout(() => setCopiedKey(false), 1500)
-                          } catch {
-                            setShowKey(true) // clipboard blocked, reveal so it can be copied by hand
-                          }
-                        }}
-                        className="text-[11px] font-semibold text-usdc hover:underline"
-                      >
-                        {copiedKey ? 'Copied' : 'Copy'}
-                      </button>
-                    </div>
-                  </div>
-                  <div className="break-all font-mono text-xs text-foreground/70">
-                    {showKey ? wallet.privateKey : '•'.repeat(48)}
-                  </div>
-                  <p className="mt-1 text-[11px] text-foreground/45">
-                    Save it now. It is shown once and never stored. Reveal only somewhere no one can see your screen.
-                  </p>
-                  <label className="mt-2 flex items-start gap-2 text-[11px] font-medium text-foreground/70">
-                    <input
-                      type="checkbox"
-                      checked={keySaved}
-                      onChange={(e) => setKeySaved(e.target.checked)}
-                      className="mt-0.5 accent-accent"
-                    />
-                    I saved this private key somewhere safe. A-Identity never stores it and cannot recover it.
-                  </label>
-                  <a
-                    href="https://faucet.circle.com"
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="mt-2 inline-block text-xs font-semibold text-usdc hover:underline"
-                  >
-                    Fund it with testnet USDC at faucet.circle.com
-                  </a>
-                  <div className="mt-2 flex flex-wrap items-center gap-2">
-                    <button
-                      type="button"
-                      onClick={checkFunded}
-                      disabled={fundBusy}
-                      className="rounded-full border border-usdc/30 px-3 py-1.5 text-[11px] font-semibold text-usdc transition-colors hover:bg-usdc/5 disabled:opacity-50"
-                    >
-                      {fundBusy ? 'Checking...' : 'I funded it, check balance'}
-                    </button>
-                    {fundBal != null && (
-                      <span className={`text-[11px] font-semibold ${fundBal > 0 ? 'text-emerald-600' : 'text-foreground/50'}`}>
-                        {fundBal > 0 ? `Funded: ${fundBal.toFixed(4)} USDC` : 'Still 0 USDC, give the faucet a moment and check again'}
-                      </span>
-                    )}
-                  </div>
-                </div>
-              )}
-            </div>
+            <WalletStep
+              wallet={wallet}
+              walletBusy={walletBusy}
+              createWallet={createWallet}
+              copiedAddr={copiedAddr}
+              copyAddress={copyAddress}
+              showKey={showKey}
+              setShowKey={setShowKey}
+              copiedKey={copiedKey}
+              setCopiedKey={setCopiedKey}
+              keySaved={keySaved}
+              setKeySaved={setKeySaved}
+              fundBusy={fundBusy}
+              fundBal={fundBal}
+              checkFunded={checkFunded}
+              label={label}
+            />
           )}
 
           {shownStep === 'review' && (
-            <div>
-              <div className={label}>Review, then register</div>
-              <div className="mt-2 rounded-xl border border-border bg-background/40 p-4">
-                <div className="flex items-center gap-3">
-                  <div className="grid h-12 w-12 shrink-0 place-items-center overflow-hidden rounded-xl border border-border bg-background/60">
-                    {logoUrl ? (
-                      <img src={logoUrl} alt="Agent logo preview" className="h-full w-full object-cover" />
-                    ) : (
-                      <span className="text-[10px] font-semibold text-foreground/35">Logo</span>
-                    )}
-                  </div>
-                  <div className="min-w-0">
-                    <div className="truncate text-sm font-bold text-foreground">{name.trim() || '-'}</div>
-                    <div className="text-xs text-foreground/55">{category}</div>
-                  </div>
-                </div>
-                <p className="mt-3 text-sm leading-relaxed text-foreground/70">{desc.trim()}</p>
-                <div className="mt-3 flex flex-wrap gap-1.5">
-                  {caps.map((c) => (
-                    <span key={c} className="rounded-full bg-accent/10 px-2.5 py-1 text-[11px] font-semibold text-accent">
-                      {c}
-                    </span>
-                  ))}
-                </div>
-                <dl className="mt-4 grid grid-cols-2 gap-3 border-t border-border pt-3 sm:grid-cols-4">
-                  {(
-                    [
-                      ['Daily cap', `$${Number(dailyCap) || 50}`],
-                      ['Auto-approve under', `$${Number(autoApprove) || 1}`],
-                      ['Agent-to-agent', a2a ? 'Allowed' : 'Off'],
-                      ['Agent-to-human', a2h ? 'Allowed' : 'Off'],
-                    ] as const
-                  ).map(([k, v]) => (
-                    <div key={k}>
-                      <dt className="text-[11px] font-bold text-foreground/50">{k}</dt>
-                      <dd className="mt-0.5 text-sm font-semibold text-foreground">{v}</dd>
-                    </div>
-                  ))}
-                </dl>
-                <div className="mt-3 border-t border-border pt-3">
-                  <div className="text-[11px] font-bold text-foreground/50">Card style</div>
-                  {cardStyle ? (
-                    <div className="mt-1 flex items-center gap-2">
-                      <span
-                        className="h-4 w-4 shrink-0 rounded-full"
-                        style={{ background: `var(--cat-${cardStyle})` }}
-                        aria-hidden="true"
-                      />
-                      <span className="text-sm font-semibold text-foreground">Style {cardStyle}</span>
-                      <span className="text-xs text-foreground/55">accents the profile hero</span>
-                    </div>
-                  ) : (
-                    <p className="mt-0.5 text-xs text-foreground/55">None. The profile hero keeps the default look.</p>
-                  )}
-                </div>
-                <div className="mt-3 border-t border-border pt-3">
-                  <div className="text-[11px] font-bold text-foreground/50">Wallet</div>
-                  {wallet ? (
-                    <div className="mt-0.5 break-all font-mono text-xs text-foreground">{wallet.address}</div>
-                  ) : (
-                    <p className="mt-0.5 text-xs text-foreground/55">
-                      None assigned. Go back to the Wallet step to create one, or attach one later.
-                    </p>
-                  )}
-                </div>
-              </div>
-              <p className="mt-3 text-xs text-foreground/45">
-                Registration writes to the A-Identity registry now; the on-chain anchor is queued and
-                broadcast only after a human approves it.
-              </p>
-            </div>
+            <ReviewStep
+              value={{ name, desc, category, caps, logoUrl, cardStyle, dailyCap, autoApprove, a2a, a2h, wallet }}
+              label={label}
+            />
           )}
         </div>
       </div>

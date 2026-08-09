@@ -97,7 +97,18 @@ test('the engine imports nothing from the bet schema and carries no bet rule', (
 
 test('no live tool or route named pre_bet_check exists', () => {
   // A schema that is reachable is not a schema, it is a feature.
-  for (const f of ['../server.ts', '../http.ts']) {
+  for (const f of [
+    '../server.ts',
+    '../http.ts',
+    '../http/shared.ts',
+    '../http/auth-routes.ts',
+    '../http/public-routes.ts',
+    '../http/arc-routes.ts',
+    '../http/agent-routes.ts',
+    '../http/guardrail-routes.ts',
+    '../http/instruction-routes.ts',
+    '../http/marketplace-routes.ts',
+  ]) {
     const text = readFileSync(new URL(f, new URL('../../src/policy/', import.meta.url)), 'utf8')
     assert.equal(text.includes('pre_bet_check'), false, `${f} registers pre_bet_check`)
     assert.equal(text.includes('bet-schema'), false, `${f} imports the planned schema`)
