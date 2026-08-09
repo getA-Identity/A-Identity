@@ -525,10 +525,11 @@ export async function celoServeTool(
     settle = await facilitatorPost(
       fetchImpl,
       `${status.facilitator}/settle`,
-      // Same v1-slug normalization as /verify: the payment is the base64 of the
-      // normalized payload, not the client's original header, so verify and settle
-      // can never disagree about the shape.
-      { payment: Buffer.from(JSON.stringify(v1Payload)).toString('base64'), network: chain.id },
+      // Same body shape as /verify (proven against the live facilitator on
+      // 2026-08-09: the landing page's {payment, network} example answers
+      // unsupported_scheme; the verify-shaped body settles and returns
+      // {success, payer, transaction, network}).
+      { x402Version: 1, paymentPayload: v1Payload, paymentRequirements: v1Requirements },
       { 'X-API-Key': env.CELO_X402_API_KEY?.trim() ?? '' },
     )
   } catch (e) {
@@ -541,19 +542,27 @@ export async function celoServeTool(
       },
     }
   }
-  if (settle.status !== 200 || settle.json?.settled !== true) {
+  if (
+    settle.status !== 200 ||
+    !settle.json ||
+    (settle.json.success !== true && settle.json.settled !== true)
+  ) {
     return {
       httpStatus: 502,
       body: {
         error: 'celo facilitator settle failed',
         reason:
+          (typeof settle.json?.errorMessage === 'string' && settle.json.errorMessage) ||
           (typeof settle.json?.error === 'string' && settle.json.error) ||
-          `facilitator answered ${settle.status} with settled=${String(settle.json?.settled)}`,
+          `facilitator answered ${settle.status} with success=${String(settle.json?.success)}`,
         note: 'the tool was not served. This payment was not resubmitted; retry with a fresh payment.',
       },
     }
   }
   const credits = typeof settle.json.credits === 'number' ? settle.json.credits : undefined
+  const settleTx = typeof settle.json.transaction === 'string' && settle.json.transaction.startsWith('0x')
+    ? settle.json.transaction
+    : undefined
 
   // 4. Record the settlement durably, then serve. The record happens even if the
   // handler fails: the money moved, and the proof log must say so.
@@ -562,6 +571,7 @@ export async function celoServeTool(
     tool,
     amountUsd: CELO_TOOL_PRICES_USD[tool],
     ...(payer ? { payer } : {}),
+    ...(settleTx ? { tx: settleTx } : {}),
     network: status.network,
     ...(credits !== undefined ? { facilitatorCredits: credits } : {}),
   }
@@ -571,6 +581,7 @@ export async function celoServeTool(
     settled: true,
     network: status.network,
     facilitator: status.facilitator,
+    ...(settleTx ? { tx: settleTx } : {}),
     ...(payer ? { payer } : {}),
     ...(credits !== undefined ? { facilitatorCredits: credits } : {}),
     settledAt: record.ts,

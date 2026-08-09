@@ -155,6 +155,8 @@ export type CeloSettlementRecord = {
   amountUsd: number
   /** Paying wallet (the EIP-3009 authorization's `from`), when known. */
   payer?: string
+  /** On-chain settlement transaction hash, when the facilitator reports it. */
+  tx?: string
   /** CAIP-2 network the payment settled on (e.g. 'eip155:42220'). */
   network: string
   /** Credits figure returned by the facilitator's settle response, when present. */
