@@ -40,8 +40,17 @@ import {
 const FACILITATOR_MAINNET = 'https://api.x402.celo.org'
 const FACILITATOR_TESTNET = 'https://api.x402.sepolia.celo.org'
 
-/** Hard cap on each facilitator round-trip (verify, settle). */
-const FACILITATOR_TIMEOUT_MS = 8000
+/**
+ * Hard caps on the facilitator round-trips, deliberately DIFFERENT. /verify is a pure
+ * signature check and 8s is generous. /settle broadcasts a transaction and waits on the
+ * relayer, so the same 8s produced the one outcome this rail must avoid: a timeout on
+ * our side while the payment lands on-chain anyway. Measured on a 620-call sweep on
+ * 2026-08-09, ~16% of settles tripped the 8s cap and the buyer's USDC left the wallet
+ * for every one of them, unserved and unrecorded. 20s stays inside the buyer script's
+ * own 30s ceiling while giving the relayer room.
+ */
+const FACILITATOR_VERIFY_TIMEOUT_MS = 8000
+const FACILITATOR_SETTLE_TIMEOUT_MS = 20000
 
 /** EIP-712 domain of Celo USDC, read live from BOTH networks' contracts on 2026-08-09
  *  (name() = "USDC", version() = "2"). Part of the challenge so a buyer can sign the
@@ -542,12 +551,13 @@ async function facilitatorPost(
   url: string,
   body: unknown,
   headers: Record<string, string> = {},
+  timeoutMs: number = FACILITATOR_VERIFY_TIMEOUT_MS,
 ): Promise<{ status: number; json: Record<string, unknown> | null }> {
   const res = await fetchImpl(url, {
     method: 'POST',
     headers: { 'content-type': 'application/json', ...headers },
     body: JSON.stringify(body),
-    signal: AbortSignal.timeout(FACILITATOR_TIMEOUT_MS),
+    signal: AbortSignal.timeout(timeoutMs),
   })
   let json: Record<string, unknown> | null = null
   try {
@@ -669,6 +679,7 @@ export async function celoServeTool(
       // {success, payer, transaction, network}).
       { x402Version: 1, paymentPayload: v1Payload, paymentRequirements: v1Requirements },
       { 'X-API-Key': env.CELO_X402_API_KEY?.trim() ?? '' },
+      FACILITATOR_SETTLE_TIMEOUT_MS,
     )
   } catch (e) {
     return {
@@ -676,7 +687,7 @@ export async function celoServeTool(
       body: {
         error: 'celo facilitator settle failed',
         reason: e instanceof Error ? e.message : 'network error',
-        note: 'settlement is AMBIGUOUS: this payment was not resubmitted (that could double-settle). Retry with a fresh payment.',
+        note: 'settlement is AMBIGUOUS and the money may have moved: the facilitator broadcasts before it answers, so a timeout here can still land the transfer on-chain. The tool was NOT served and this payment was NOT resubmitted (that could double-settle). Check the payTo address on the explorer before retrying, and retry only with a FRESH payment.',
       },
     }
   }

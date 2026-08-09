@@ -504,3 +504,30 @@ test('CELO_INTERNAL_PAYERS adds a wallet without a deploy, and ignores anything 
   assert.equal(on.internalPayers.length, 2)
   assert.ok(on.internalPayers.includes(extra))
 })
+
+test('a settle timeout tells the buyer the money may have moved, because the facilitator broadcasts before it answers', async () => {
+  // The real failure this wording exists for: on a 620-call sweep, ~16% of settles
+  // tripped the old 8s cap and the buyer's USDC left the wallet for every one of them.
+  // "settle failed" alone would have sent the buyer looking for a refund that is not
+  // owed; the honest answer is "check the explorer before you retry".
+  const status = celoX402Status(CONFIGURED_ENV)
+  const fac = fakeFacilitator({ settle: 'throw' })
+  const persisted: CeloSettlementRecord[] = []
+  let handlerRan = false
+  const out = await celoServeTool('verify_agent', { agentId: '#9759' }, paymentHeader(status), status, {
+    fetchImpl: fac.fetchImpl,
+    persist: async (r) => { persisted.push(r) },
+    handlers: { verify_agent: async () => { handlerRan = true; return {} } },
+    env: CONFIGURED_ENV,
+  })
+  assert.equal(out.httpStatus, 502)
+  const body = out.body as { error: string; note: string }
+  assert.equal(body.error, 'celo facilitator settle failed')
+  assert.match(body.note, /money may have moved/)
+  assert.match(body.note, /NOT resubmitted/)
+  assert.match(body.note, /explorer/)
+  // Exactly one settle attempt: a retry here is how a buyer gets charged twice.
+  assert.equal(fac.calls.filter((u) => u.endsWith('/settle')).length, 1)
+  assert.equal(handlerRan, false)
+  assert.deepEqual(persisted, [], 'nothing may be recorded as settled when we do not know that it was')
+})
