@@ -25,7 +25,7 @@ export { sanitizeVelocity, updateAgentPermissions, agentPolicy } from './platfor
 export { getAgentActionPolicy, updateAgentActionPolicy, checkAgentAction, recordAuditOutcome, listAgentAudits, registerAgentFromManifest, agentRegistration, setBadgeVisibility, agentBadge, platformTraction, guardrailSelfCheck, agentGuardrailProfile } from './platform/guardrail.js'
 export type { RegistrationResult } from './platform/guardrail.js'
 export { agentReputation } from './platform/reputation.js'
-export { VELOCITY_COUNTED_STATUSES, countRecentActions, evaluateSpendPreflight, spendPreflight, createInstruction, rejectInstruction, approveInstruction, executeInstruction, listInstructions, listInstructionsForOwner, agentAccess } from './platform/instructions.js'
+export { VELOCITY_COUNTED_STATUSES, countRecentActions, evaluateSpendPreflight, spendPreflight, createInstruction, rejectInstruction, approveInstruction, executeInstruction, listInstructions, listInstructionsForOwner, agentAccess, appLayerAudit, batchPaymentPlan, __setSettlementForTests } from './platform/instructions.js'
 export type { SpendPreflightCode, SpendPreflightVaultError, SpendPreflight } from './platform/instructions.js'
 export { followAgent, feedbackSummary, agentFeedback, addAgentFeedback, semanticSearchAgents, consumeSemanticQuota, marketplace, marketplaceLeaderboard, platformStats } from './platform/feed.js'
 export { hireAgent, postOpenTask, bidOnTask, acceptBid, listOpenTasks, deliverTask, releaseTask, disputeTask, getTask, listTasksForClient, listTasksForAgent, marketplaceCatalog } from './platform/tasks.js'

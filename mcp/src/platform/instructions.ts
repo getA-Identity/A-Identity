@@ -7,7 +7,8 @@ import {
   state, save, id, ownsAgent, dailySpent, addSpend, nextUtcMidnight, pushActivity, short, cap,
   type Permissions, type Instruction, type InstructionType,
 } from './core.js'
-import { policyPay, policyOwnerPay, payUsdcWithMemoOnchain } from '../arc-contracts.js'
+import { policyPay, policyOwnerPay, payUsdcWithMemoOnchain, payUsdcBatchOnchain, memoReasonJson } from '../arc-contracts.js'
+import type { MemoInput } from '../arc-contracts.js'
 import { circlePay } from '../circle-agent.js'
 
 // ── instructions ──────────────────────────────────────────────────────────────
@@ -423,14 +424,101 @@ function resolvePayeeAddress(payee: string): string | null {
   return target?.walletAddress && /^0x[0-9a-fA-F]{40}$/.test(target.walletAddress) ? target.walletAddress : null
 }
 
+// ── the audit trail on the paths that cannot emit an on-chain Memo ────────────
+//
+// Only the direct-EOA settlement path can route a transfer through Arc's Memo precompile,
+// because only there is our signer `msg.sender`. The vault settles through the
+// AgentSpendPolicy CONTRACT, Circle broadcasts from its own hosted wallet, and a batch is
+// one Multicall3From contract call: on all three, an on-chain memo is impossible. Losing
+// the "why" on exactly the paths a serious operator uses would be the wrong trade, so the
+// same payload is recorded app-layer and labeled as app-layer.
+
+/**
+ * The app-layer equivalent of an on-chain Memo. Same structured payload the Memo path
+ * commits on-chain, produced by the same encoder, so the two trails cannot drift.
+ *
+ * It never pretends to be a memo: the result lands on `offchainAuditId` /
+ * `offchainAuditReason` (never `memoId` / `memoReason`), and the id is a readable app ref
+ * rather than a bytes32, so nobody can mistake it for something to look up on arcscan.
+ * Pure; exported for unit tests.
+ */
+export function appLayerAudit(input: MemoInput): { offchainAuditId: string; offchainAuditReason: string } {
+  return {
+    offchainAuditId: `a-identity:audit:ix:${input.instructionId}`,
+    offchainAuditReason: memoReasonJson(input),
+  }
+}
+
+/** Stamp the app-layer audit record onto a settled instruction. `policyDecision` is the
+ *  status that AUTHORIZED the spend, captured before the flip to executed_*, matching what
+ *  the Memo path commits on-chain. */
+function stampAppLayerAudit(ix: Instruction, policyDecision: string): void {
+  const record = appLayerAudit({
+    agentId: ix.agentId,
+    instructionId: ix.id,
+    service: ix.type,
+    policyDecision,
+  })
+  ix.offchainAuditId = record.offchainAuditId
+  ix.offchainAuditReason = record.offchainAuditReason
+}
+
+/**
+ * The payments a `batch` instruction really represents: `count` separate transfers of
+ * `amountUsd` to the payee, NOT one transfer of the total. Returns null when the
+ * instruction is not an executable batch (single action, non-positive amount, or another
+ * type), in which case settlement keeps the single Memo-wrapped transfer it always used.
+ * Pure; exported for unit tests.
+ */
+export function batchPaymentPlan(ix: Instruction, to: string): { to: string; amountUsd: number }[] | null {
+  if (ix.type !== 'batch') return null
+  if (!Number.isFinite(ix.count) || ix.count < 2) return null
+  if (!Number.isFinite(ix.amountUsd) || ix.amountUsd <= 0) return null
+  return Array.from({ length: Math.floor(ix.count) }, () => ({ to, amountUsd: ix.amountUsd }))
+}
+
+/**
+ * The chain calls executeInstruction makes, behind one indirection. Production always runs
+ * REAL_SETTLEMENT; the seam exists so a unit test can exercise the executed / reverted
+ * branches, which otherwise only run with a funded signer and a live RPC.
+ */
+type SettlementBackend = {
+  policyPay: typeof policyPay
+  policyOwnerPay: typeof policyOwnerPay
+  circlePay: typeof circlePay
+  payUsdcWithMemo: typeof payUsdcWithMemoOnchain
+  payUsdcBatch: typeof payUsdcBatchOnchain
+}
+
+const REAL_SETTLEMENT: SettlementBackend = {
+  policyPay,
+  policyOwnerPay,
+  circlePay,
+  payUsdcWithMemo: payUsdcWithMemoOnchain,
+  payUsdcBatch: payUsdcBatchOnchain,
+}
+
+let settlement: SettlementBackend = REAL_SETTLEMENT
+
+/** TEST-ONLY: substitute settlement calls with fakes; returns the restore function.
+ *  Production code never calls this. */
+export function __setSettlementForTests(over: Partial<SettlementBackend>): () => void {
+  const previous = settlement
+  settlement = { ...settlement, ...over }
+  return () => {
+    settlement = previous
+  }
+}
+
 /**
  * Execute an approved or auto-approved instruction. When the agent has an
  * on-chain policy vault, address payments settle THROUGH it — the vault enforces
  * the daily cap / auto-approve ceiling / freeze on Arc, so a disallowed payment
  * reverts on-chain (the source of truth). The server engine stays the pre-check;
  * if the vault path hits an infra error (not a policy revert) we fall back to
- * direct settlement so a chain hiccup never blocks the flow. Without a signer
- * key, execution is SIMULATED and labeled as such; the trail stays honest.
+ * direct settlement so a chain hiccup never blocks the flow. A `batch` settles on
+ * the direct path as `count` transfers in one atomic Multicall3From tx. Without a
+ * signer key, execution is SIMULATED and labeled as such; the trail stays honest.
  */
 /** Instruction ids currently mid-execution, so a concurrent double-execute of the same
  *  instruction can't both settle (see the TOCTOU guard below). Process-local by design:
@@ -456,6 +544,10 @@ export async function executeInstruction(ixId: string, caller?: string): Promise
   // Where this actually settles on-chain: a 0x… payee, or an agent:// payee
   // resolved to that agent's wallet. null → nothing to send to → simulated.
   const settleTo = resolvePayeeAddress(ix.payee)
+  // The decision that AUTHORIZED this settlement: 'auto_approved' (within policy) or
+  // 'approved' (a human said yes). Captured before the status flips to executed_*, so
+  // every audit payload records why the money was allowed to move, on-chain memo or not.
+  const policyDecision: string = ix.status
 
   // On-chain policy vault: the chain enforces the policy. Agent-initiated
   // (auto-approved) payments go through pay(); human-approved ones through
@@ -471,14 +563,17 @@ export async function executeInstruction(ixId: string, caller?: string): Promise
   if (settleTo && agent?.vaultAddress && !(ix.status === 'approved' && !serverCanOwnerPay)) {
     const humanApproved = ix.status === 'approved'
     const res = humanApproved
-      ? await policyOwnerPay(agent.vaultAddress, settleTo, total)
-      : await policyPay(agent.vaultAddress, settleTo, total)
+      ? await settlement.policyOwnerPay(agent.vaultAddress, settleTo, total)
+      : await settlement.policyPay(agent.vaultAddress, settleTo, total)
     if (res.executed) {
       ix.status = 'executed_onchain'
       ix.txHash = res.txHash
       ix.explorerUrl = res.explorerUrl
       ix.enforcedBy = 'onchain-vault'
-      ix.policyNote = `Settled ${fmt(total)} USDC through the on-chain policy vault (${humanApproved ? 'human override' : 'agent, within policy'}).`
+      // The vault is a contract, so no on-chain Memo is possible here: keep the same
+      // structured "why", app-layer and labeled as such.
+      stampAppLayerAudit(ix, policyDecision)
+      ix.policyNote = `Settled ${fmt(total)} USDC through the on-chain policy vault (${humanApproved ? 'human override' : 'agent, within policy'}). Reason recorded in the app-layer audit record; the vault contract cannot emit an on-chain Memo.`
       pushActivity(agent, `On-chain vault settled ${fmt(total)} USDC to ${short(settleTo)} (tx ${short(res.txHash)})`)
       save(state)
       return ix
@@ -501,13 +596,16 @@ export async function executeInstruction(ixId: string, caller?: string): Promise
   // Vault-first by design: an agent with a vault settles there; this runs when the
   // agent has a Circle wallet (and, as a resilience bonus, if the vault infra-failed).
   if (settleTo && agent?.circleWalletId) {
-    const res = await circlePay(agent.circleWalletId, settleTo, total)
+    const res = await settlement.circlePay(agent.circleWalletId, settleTo, total)
     if (res.executed) {
       ix.status = 'executed_onchain'
       ix.txHash = res.txHash
       ix.explorerUrl = res.explorerUrl
       ix.enforcedBy = 'circle-agent-stack'
-      ix.policyNote = `Settled ${fmt(total)} USDC through the Circle Agent Wallet (hosted policy screened + approved).`
+      // Circle broadcasts from its own hosted wallet, so we cannot wrap the transfer in a
+      // Memo: same structured "why", recorded app-layer.
+      stampAppLayerAudit(ix, policyDecision)
+      ix.policyNote = `Settled ${fmt(total)} USDC through the Circle Agent Wallet (hosted policy screened + approved). Reason recorded in the app-layer audit record; Circle broadcasts from its own wallet, so there is no on-chain Memo.`
       pushActivity(agent, `Circle Agent Wallet settled ${fmt(total)} USDC to ${short(settleTo)} (tx ${short(res.txHash)})`)
       save(state)
       return ix
@@ -529,11 +627,63 @@ export async function executeInstruction(ixId: string, caller?: string): Promise
   // indexable audit trail of WHY the agent paid. On a chain without a Memo precompile,
   // payUsdcWithMemoOnchain degrades cleanly to a bare transfer.
   if (settleTo) {
-    const res = await payUsdcWithMemoOnchain(settleTo, total, {
+    // A `batch` instruction is `count` payments, not one payment of the total. Settle it
+    // as `count` real USDC transfers in ONE atomic Arc tx (Multicall3From, allowFailure
+    // false), so the chain shows what actually happened and either all of them land or
+    // none do. The policy ladder already ran at creation and counted the batch as its full
+    // `count`; this only changes HOW an already-authorized batch settles.
+    const plan = batchPaymentPlan(ix, settleTo)
+    if (plan) {
+      // Credential-gated and hardened inside the adapter, but a transport blowing up must
+      // not take the whole execute with it: an unavailable adapter degrades to the single
+      // Memo-wrapped transfer below, exactly as before this path existed.
+      let batch: Awaited<ReturnType<typeof payUsdcBatchOnchain>> | null = null
+      try {
+        batch = await settlement.payUsdcBatch(plan)
+      } catch {
+        batch = null
+      }
+      if (batch?.executed) {
+        ix.status = 'executed_onchain'
+        ix.txHash = batch.txHash
+        ix.explorerUrl = batch.explorerUrl
+        ix.enforcedBy = 'server'
+        // Multicall3From is a contract call, so its subcalls cannot go through the Memo
+        // precompile: same structured "why", recorded app-layer.
+        stampAppLayerAudit(ix, policyDecision)
+        // Report what the receipt covered, not what we planned to send.
+        ix.policyNote =
+          `Settled ${batch.count} USDC payments of ${fmt(ix.amountUsd)} (${fmt(batch.totalUsd)} total) atomically in one Arc tx. ` +
+          'Reason recorded in the app-layer audit record; a batched contract call cannot emit an on-chain Memo.'
+        if (agent) {
+          pushActivity(
+            agent,
+            `Batch settled ${batch.count} USDC payments (${fmt(batch.totalUsd)} total) to ${short(settleTo)} in one Arc tx (tx ${short(batch.txHash)})`,
+          )
+        }
+        save(state)
+        return ix
+      }
+      if (batch && 'reverted' in batch && batch.reverted) {
+        // Broadcast but reverted. The batch is all-or-nothing, so nothing moved, and a
+        // reverted broadcast is never reported as executed: back to the human, and NOT
+        // retried as a single transfer (that would be a different settlement).
+        ix.status = 'pending_approval'
+        ix.enforcedBy = 'server'
+        ix.policyNote = `Batch settlement reverted on-chain (${batch.reason}); nothing settled, a human must intervene.`
+        if (agent) pushActivity(agent, `Batch settlement reverted on Arc to ${short(settleTo)}: ${batch.reason}`)
+        save(state)
+        return ix
+      }
+      // Prepared (no signer) or the adapter was unavailable: nothing was broadcast, so
+      // fall through to the single-transfer path and its labeled simulation.
+    }
+
+    const res = await settlement.payUsdcWithMemo(settleTo, total, {
       agentId: ix.agentId,
       instructionId: ix.id,
       service: ix.type,
-      policyDecision: ix.status,
+      policyDecision,
     })
     if (res.executed) {
       ix.status = 'executed_onchain'

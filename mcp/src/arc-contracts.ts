@@ -16,6 +16,11 @@ import { ARC_CHAIN, createEvmAdapter, resolveRpcUrls } from './chains/index.js'
 import type { MemoInput } from './chains/evm/memo.js'
 
 export type { MemoInput } from './chains/evm/memo.js'
+/** The canonical structured "why" payload for a settlement. Re-exported here so the
+ *  platform layer can record it app-layer on the paths that cannot emit an on-chain
+ *  Memo (the vault contract, Circle, batched Multicall3From) without reaching past the
+ *  flat module boundary, and without restating the shape. */
+export { memoReasonJson } from './chains/evm/memo.js'
 
 /** The Arc adapter — the same engine any EVM chain uses, bound to the Arc descriptor. */
 const arc = createEvmAdapter(ARC_CHAIN)

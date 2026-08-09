@@ -160,6 +160,20 @@ export type Instruction = {
    *  payload emitted on-chain. Lets the UI link to an auditable "why" on arcscan. */
   memoId?: string
   memoReason?: string
+  /**
+   * The APP-LAYER audit record, for the settlement paths that cannot carry an on-chain
+   * Memo: the AgentSpendPolicy vault (a contract cannot call Arc's Memo precompile), the
+   * Circle Agent Wallet (Circle broadcasts from its own wallet), and batched
+   * Multicall3From settlement (the batch itself is the contract call).
+   *
+   * Same structured payload as `memoReason`, written by THIS server after the receipt
+   * rather than emitted on-chain, so it is not verifiable on arcscan and must never be
+   * presented as if it were. That is why it is a separate pair of fields: `memoId` and
+   * `memoReason` stay unset on these paths, and `offchainAuditId` is a plain app ref
+   * rather than a bytes32 that would invite a memo lookup returning nothing.
+   */
+  offchainAuditId?: string
+  offchainAuditReason?: string
   createdAt: string
 }
 

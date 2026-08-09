@@ -1,5 +1,5 @@
 import { lazy, Suspense, useCallback, useEffect, useState } from 'react'
-import { ArrowUpRight, Bot, CheckCircle2, Clock, ExternalLink, Globe, Info, KeyRound, Layers, Link2, Receipt, Send, ShieldQuestion, Store, Wallet } from 'lucide-react'
+import { ArrowUpRight, Bot, CheckCircle2, Clock, ExternalLink, FileText, Globe, Info, KeyRound, Layers, Link2, Receipt, Send, ShieldQuestion, Store, Wallet } from 'lucide-react'
 import { authHeaders } from '../../store/auth'
 
 import { BACKEND_UNREACHABLE } from '../../lib/mcpBase'
@@ -79,6 +79,15 @@ type Instruction = {
    *  decoded "why" payload emitted alongside the USDC transfer. */
   memoId?: string
   memoReason?: string
+  /**
+   * The same "why" payload for settlements that CANNOT carry a Memo: the vault and the
+   * Circle wallet are smart contracts and cannot call the precompile. Written by the
+   * server after the receipt, so it is a real audit record but NOT on-chain evidence.
+   * The two never both appear on one instruction, and the UI must not dress this one up
+   * as a chain receipt.
+   */
+  offchainAuditId?: string
+  offchainAuditReason?: string
   createdAt: string
 }
 
@@ -450,6 +459,13 @@ export default function Settlements() {
                           <Receipt size={10} /> Memo audit
                         </span>
                       )}
+                      {/* Deliberately not the emerald of the on-chain badge above: this
+                          record is written by the server, not the chain. */}
+                      {ix.offchainAuditId && !ix.memoId && (
+                        <span className="inline-flex shrink-0 items-center gap-1 rounded-full bg-foreground/[0.06] px-2 py-0.5 text-[10px] font-bold text-foreground/60">
+                          <FileText size={10} /> App-layer audit
+                        </span>
+                      )}
                     </div>
                     {ix.status !== 'executed_simulated' && ix.policyNote && (
                       <div
@@ -475,6 +491,32 @@ export default function Settlements() {
                           )}
                           <div className="truncate font-mono text-[10px] text-foreground/40" title={ix.memoId}>
                             memoId {short(ix.memoId)}
+                          </div>
+                        </div>
+                      </div>
+                    )}
+                    {ix.offchainAuditId && !ix.memoId && (
+                      <div className="mt-1 flex items-start gap-1.5 rounded-lg bg-foreground/[0.04] px-2 py-1 text-[11px]">
+                        <FileText size={12} className="mt-0.5 shrink-0 text-foreground/45" />
+                        <div className="min-w-0">
+                          <span className="font-semibold text-foreground/70">Recorded reason</span>
+                          <span className="text-foreground/50">
+                            {' '}
+                            · why this agent paid. The vault and the Circle wallet are contracts and cannot
+                            call the Memo precompile, so this is kept by the server, not on the chain.
+                          </span>
+                          {ix.offchainAuditReason && (
+                            <div
+                              className="mt-0.5 truncate font-mono text-foreground/70"
+                              title={ix.offchainAuditReason}
+                            >
+                              {ix.offchainAuditReason}
+                            </div>
+                          )}
+                          {/* Shown untruncated and unlinked: there is no explorer page for it,
+                              and shortening it like a hash would imply there was. */}
+                          <div className="truncate font-mono text-[10px] text-foreground/40" title={ix.offchainAuditId}>
+                            {ix.offchainAuditId}
                           </div>
                         </div>
                       </div>

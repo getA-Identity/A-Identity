@@ -29,15 +29,28 @@ export function memoIdFor(instructionId: string): Hex {
   return keccak256(stringToHex(`a-identity:ix:${instructionId}`))
 }
 
-/** Encode a MemoInput into the on-chain `{ memoId, memoData }` pair plus the human
- *  reason string. Keys are single-letter to keep the log payload compact. */
-export function encodeMemo(input: MemoInput): { memoId: Hex; memoBytes: Hex; reason: string } {
-  const reason = JSON.stringify({
+/**
+ * The canonical structured "why" payload, as compact JSON. Keys are single-letter
+ * because it lands in an on-chain event log.
+ *
+ * Shared on purpose: the Memo path writes this on-chain, and the settlement paths that
+ * CANNOT emit a Memo (the AgentSpendPolicy vault contract, the Circle Agent Wallet,
+ * batched Multicall3From) record the very same payload app-layer. One function, so the
+ * on-chain and the app-layer audit trails can never drift into different shapes.
+ */
+export function memoReasonJson(input: MemoInput): string {
+  return JSON.stringify({
     a: input.agentId,
     i: input.instructionId,
     s: input.service,
     d: input.policyDecision,
   })
+}
+
+/** Encode a MemoInput into the on-chain `{ memoId, memoData }` pair plus the human
+ *  reason string. Keys are single-letter to keep the log payload compact. */
+export function encodeMemo(input: MemoInput): { memoId: Hex; memoBytes: Hex; reason: string } {
+  const reason = memoReasonJson(input)
   return { memoId: memoIdFor(input.instructionId), memoBytes: stringToHex(reason), reason }
 }
 
