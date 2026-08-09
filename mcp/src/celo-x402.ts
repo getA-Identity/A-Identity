@@ -753,6 +753,23 @@ export async function celoServeTool(
 
 // ── public status + proof documents ───────────────────────────────────────────────
 
+/**
+ * OUR OWN buyer wallets, published on purpose. /api/celo/proof marks their settlements
+ * internal so nobody can read our own demo traffic as third-party demand — the honest
+ * half of running a proof page at all. This is a public address, not a credential, and
+ * hardcoding it is the point: it cannot be quietly unset the way an env var can.
+ * CELO_INTERNAL_PAYERS (comma-separated) adds more without a deploy.
+ */
+const CELO_INTERNAL_PAYERS = ['0x8c8d9cd12d8896a40cf2115ee731258bb4983349']
+
+function internalPayers(env: NodeJS.ProcessEnv): Set<string> {
+  const extra = (env.CELO_INTERNAL_PAYERS ?? '')
+    .split(',')
+    .map((s) => s.trim().toLowerCase())
+    .filter((s) => /^0x[0-9a-f]{40}$/.test(s))
+  return new Set([...CELO_INTERNAL_PAYERS, ...extra])
+}
+
 /** GET /api/celo/status body: rail config (fail-closed truth), registry facts for both
  *  Celo descriptors, and ERC-8004 resolver readiness. No external calls — this must be
  *  fast and honest even when RPCs are down. */
@@ -797,22 +814,42 @@ export async function celoProof(
 ) {
   const status = celoX402Status(env)
   const all = await load()
+  const ours = internalPayers(env)
+  const isInternal = (r: CeloSettlementRecord) => !!r.payer && ours.has(r.payer.toLowerCase())
+
   const byTool: Record<string, { count: number; usd: number }> = {}
   let totalUsd = 0
+  let internalCount = 0
+  let internalUsd = 0
   for (const r of all) {
     totalUsd += r.amountUsd
     const t = (byTool[r.tool] ??= { count: 0, usd: 0 })
     t.count += 1
     t.usd = Math.round((t.usd + r.amountUsd) * 1e6) / 1e6
+    if (isInternal(r)) {
+      internalCount += 1
+      internalUsd += r.amountUsd
+    }
   }
+  const round = (n: number) => Math.round(n * 1e6) / 1e6
   return {
     network: status.network,
     payTo: status.payTo,
     configured: status.configured,
     totalSettlements: all.length,
-    totalUsd: Math.round(totalUsd * 1e6) / 1e6,
+    totalUsd: round(totalUsd),
+    // The sybil-review deal: our OWN buyer wallets are named in the open and their
+    // settlements are counted separately, so the headline can never be read as demand
+    // it is not. Labeled, never filtered out — the money did move either way.
+    internalSettlements: internalCount,
+    internalUsd: round(internalUsd),
+    externalSettlements: all.length - internalCount,
+    externalUsd: round(totalUsd - internalUsd),
+    internalPayers: [...ours],
     byTool,
-    recent: all.slice(-50).reverse(),
+    recent: all.slice(-50).reverse().map((r) => ({ ...r, internal: isInternal(r) })),
     note: `Real settlements only, recorded at settle time and durable across restarts; totals cover the retained window (last ${CELO_SETTLEMENTS_CAP}). Zeros mean nothing has settled yet, not a mock.`,
+    internalNote:
+      'Settlements from our own buyer wallets are marked internal: they are real on-chain payments used to exercise and demonstrate the rail, not third-party demand. They are labeled rather than hidden.',
   }
 }

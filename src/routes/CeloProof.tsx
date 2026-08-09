@@ -57,6 +57,9 @@ type CeloProofData = {
   configured: boolean
   totalSettlements: number
   totalUsd: number
+  /** Optional: an older backend that predates the split simply omits these. */
+  internalSettlements?: number
+  externalSettlements?: number
   byTool: Record<string, number>
   recent: CeloSettlement[]
 }
@@ -345,6 +348,18 @@ export default function CeloProof() {
                 <Stat label="Settled volume" value={p ? usd(p.totalUsd ?? 0) : <Skeleton />} />
                 <Stat label="Tools earning" value={p ? nf.format(byTool.length) : <Skeleton />} />
               </div>
+              {/* The headline number without this line would read as demand it is not.
+                  The split comes from the backend, which names our own buyer wallets. */}
+              {p && typeof p.internalSettlements === 'number' && (
+                <p className="mt-4 text-xs leading-relaxed text-foreground/50">
+                  Of those, <span className="font-mono font-semibold text-foreground/70">{nf.format(p.internalSettlements)}</span>{' '}
+                  are internal: real on-chain payments from our own buyer wallet, run to
+                  exercise and demonstrate the rail, not third-party demand.{' '}
+                  <span className="font-mono font-semibold text-foreground/70">{nf.format(p.externalSettlements ?? 0)}</span>{' '}
+                  came from a wallet that is not ours. They are labeled, not filtered out:
+                  the money moved either way.
+                </p>
+              )}
               {p && byTool.length > 0 && (
                 <div className="mt-5">
                   <h3 className="text-sm font-bold text-foreground/70">By tool</h3>

@@ -457,3 +457,50 @@ test('a tokenURI failure alone still returns the owner: the softer fact degrades
   assert.equal(out.tokenUriTruncated, false)
   assert.equal(out.agentId, 'eip155:42220:8004/42')
 })
+
+// ── the sybil-review deal: our own traffic is labeled, never filtered ─────────────
+
+const OWN_BUYER = '0x8c8d9cd12d8896a40cf2115ee731258bb4983349'
+
+test('celoProof splits our own buyer wallet out as internal instead of letting it read as demand', async () => {
+  const records: CeloSettlementRecord[] = [
+    { ts: '2026-08-09T00:00:00Z', tool: 'verify_agent', amountUsd: 0.001, network: 'eip155:42220', payer: OWN_BUYER },
+    // Same wallet, checksummed the way a client might send it: the match is case-blind.
+    { ts: '2026-08-09T00:01:00Z', tool: 'agent_passport', amountUsd: 0.01, network: 'eip155:42220', payer: OWN_BUYER.toUpperCase().replace('0X', '0x') },
+    { ts: '2026-08-09T00:02:00Z', tool: 'risk_check', amountUsd: 0.005, network: 'eip155:42220', payer: '0x' + '99'.repeat(20) },
+    // No payer recorded at all is NOT ours to claim: it stays external.
+    { ts: '2026-08-09T00:03:00Z', tool: 'verify_agent', amountUsd: 0.001, network: 'eip155:42220' },
+  ]
+  const proof = await celoProof(CONFIGURED_ENV, async () => records)
+
+  // Nothing is dropped: the totals still cover every settlement, because the money moved.
+  assert.equal(proof.totalSettlements, 4)
+  assert.equal(proof.totalUsd, 0.017)
+  assert.equal(proof.internalSettlements, 2)
+  assert.equal(proof.internalUsd, 0.011)
+  assert.equal(proof.externalSettlements, 2)
+  assert.equal(proof.externalUsd, 0.006)
+  assert.equal(proof.internalSettlements + proof.externalSettlements, proof.totalSettlements)
+  assert.ok(proof.internalPayers.includes(OWN_BUYER))
+
+  // Every recent row carries the flag, so the page can badge it without guessing.
+  assert.deepEqual(proof.recent.map((r) => r.internal), [false, false, true, true])
+})
+
+test('CELO_INTERNAL_PAYERS adds a wallet without a deploy, and ignores anything that is not an address', async () => {
+  const extra = '0x' + 'ab'.repeat(20)
+  const records: CeloSettlementRecord[] = [
+    { ts: '2026-08-09T00:00:00Z', tool: 'verify_agent', amountUsd: 0.001, network: 'eip155:42220', payer: extra },
+  ]
+  const off = await celoProof(CONFIGURED_ENV, async () => records)
+  assert.equal(off.internalSettlements, 0)
+
+  const on = await celoProof(
+    { ...CONFIGURED_ENV, CELO_INTERNAL_PAYERS: ` ${extra.toUpperCase().replace('0X', '0x')} , not-an-address ,0xdead` },
+    async () => records,
+  )
+  assert.equal(on.internalSettlements, 1)
+  // The junk entries never enter the set: only the hardcoded wallet and the valid extra.
+  assert.equal(on.internalPayers.length, 2)
+  assert.ok(on.internalPayers.includes(extra))
+})
