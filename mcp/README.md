@@ -3,9 +3,9 @@
 The A-Identity backend: a single Node HTTP server that is **two things at once**.
 
 1. An **MCP server** (stdio + Streamable HTTP `POST /mcp`) exposing **read-only** tools any
-   MCP-capable agent can call — no keys, no writes on this surface.
+   MCP-capable agent can call - no keys, no writes on this surface.
 2. A **REST companion** (the same process, `http.ts`) that is the **write side** the app uses:
-   it creates agents, runs the policy engine, and — when a funded `ARC_SIGNER_KEY` is present —
+   it creates agents, runs the policy engine, and - when a funded `ARC_SIGNER_KEY` is present -
    **broadcasts real transactions on Arc testnet**: ERC-8004 registration, USDC settlement,
    ERC-8183 escrow, an `AgentSpendPolicy` vault, KYA attestation, Gateway/CCTP/Nanopayments.
 
@@ -13,7 +13,13 @@ Human-on-the-loop by design: nothing that holds a key, deploys a contract, or mo
 runs without an explicit human action, and without a signer key every write returns a labeled
 `prepared` / `simulated` no-op. It is **testnet only** (Arc testnet, test USDC).
 
-## MCP tools (read-only)
+## MCP tools
+
+The server registers **20** tools (`src/server.ts`). Eight are always present; the other
+twelve appear only when the HTTP entry injects the hooks they need, so a bare stdio server
+exposes the read-only set and nothing that can move money.
+
+### Always registered (read-only)
 
 | Tool                | Input                                   | Returns                                             |
 | ------------------- | --------------------------------------- | --------------------------------------------------- |
@@ -24,11 +30,34 @@ runs without an explicit human action, and without a signer key every write retu
 | `get_arc_status`    | -                                       | live Arc testnet chainId + latest block             |
 | `get_circle_status` | -                                       | Circle platform link state (real ping with a key)   |
 | `list_capabilities` | -                                       | the A-Identity protocol surface                     |
+| `merchant_check`    | merchant agent id or URL                | commerce verdict before a checkout (`src/commerce.ts`) |
 
-Identity reads go through a swappable `IdentityProvider` (`src/erc8004.ts`) — Arc's deployed
+### Marketplace group (registered when the HTTP entry injects marketplace hooks)
+
+| Tool                 | Input                        | Returns                                          |
+| -------------------- | ---------------------------- | ------------------------------------------------ |
+| `find_agent`         | capability / natural-language ask | matching KYA-verified worker agents         |
+| `get_agent_manifest` | `agentId`                    | that agent's public manifest (AMP Discover)      |
+| `hire_agent`         | agent + task + budget        | a task, with USDC held in ERC-8183 escrow        |
+| `deliver_task`       | `taskId` + result            | the task moved to delivered                      |
+| `check_task_status`  | `taskId`                     | lifecycle state and any escrow tx                |
+| `release_escrow`     | `taskId`                     | escrow released to the worker on delivery        |
+
+### Policy group (Phase 1.7, ownership-gated)
+
+| Tool                  | Input                       | Returns                                            |
+| --------------------- | --------------------------- | -------------------------------------------------- |
+| `register_agent`      | a manifest                  | the agent registered against its owner             |
+| `policy_get`          | `agentId`                   | the current action policy                          |
+| `policy_set`          | `agentId` + policy          | the stored policy, sanitized and versioned         |
+| `pre_action_check`    | an intended action          | ALLOW / WARN / DENY with the rule that decided     |
+| `audit_log`           | `agentId`                   | the decision trail                                 |
+| `record_audit_outcome`| a verdict id + what happened| the trail updated with the real outcome            |
+
+Identity reads go through a swappable `IdentityProvider` (`src/erc8004.ts`) - Arc's deployed
 ERC-8004 IdentityRegistry is read live out of the box; more EVM chains are added when their RPC
 + registry env vars are set. Reputation is the pure, unit-tested `computeAgentReputation`
-(`src/reputation.ts`) — the same function `platform.ts` uses in production.
+(`src/reputation.ts`) - the same function `platform.ts` uses in production.
 
 ## REST surface (the write side)
 
@@ -87,7 +116,7 @@ npm run start        # MCP server on stdio
 npm run start:http   # the HTTP server (REST + /mcp). Reads config from process.env directly.
 npm run smoke        # spin up the MCP server + exercise every read-only tool
 npm run http-smoke   # exercise the tools over HTTP (server must be running)
-npm test             # tsc + node:test unit tests (506 across 39 files, as of Aug 2026)
+npm test             # tsc + node:test unit tests (522 across 40 files, as of Aug 2026)
 npm run e2e          # full end-to-end flow against a running server (E2E_BASE=...)
 ```
 
@@ -99,7 +128,7 @@ node --env-file=.env dist/http.js     # Node 20.6+
 ARC_SIGNER_KEY=0x<funded-key> node dist/http.js
 ```
 
-Tests: **506 unit tests across 39 colocated `*.test.ts` files** (as of Aug 2026; `npm test`) +
+Tests: **522 unit tests across 40 colocated `*.test.ts` files** (as of Aug 2026; `npm test`) +
 a full **E2E of about 67 checks** (`npm run e2e`) that adapts to signer presence: green with no
 signer key (live Arc reads; on-chain writes reported as prepared), with the real Arc write
 checks activating under a funded `ARC_SIGNER_KEY`. CI runs the no-signer path.
@@ -118,12 +147,12 @@ For Claude Code:
 claude mcp add a-identity -- node ./mcp/dist/index.js
 ```
 
-> stdout is reserved for the MCP wire protocol — the server logs only to stderr.
+> stdout is reserved for the MCP wire protocol - the server logs only to stderr.
 
 ## Deploy
 
 Long-running Node process (not serverless). Root dir `mcp`, build
 `npm install --include=dev && npm run build`, start `npm run start:http`. Binds to `$PORT`.
 Set `AUTH_SECRET`, `ALLOWED_ORIGINS`, optionally `ARC_SIGNER_KEY` / Circle keys / `DATABASE_URL`.
-On a free host it self-pings and a keep-warm cron keeps it awake — see the root README
+On a free host it self-pings and a keep-warm cron keeps it awake - see the root README
 "Reliability" section (and prefer a paid instance for a live demo).

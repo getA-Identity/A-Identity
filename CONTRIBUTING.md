@@ -14,14 +14,14 @@ Keep PRs small and scoped to one track where possible. `main` stays deployable.
 Everything is in `mcp/src`. The two entry points (`index.ts` stdio, `http.ts`
 REST + MCP) share the same modules:
 
-- `arc.ts` — live Arc testnet status (JSON-RPC block reads).
-- `arc-contracts.ts` — the real ERC-8004 and ERC-8183 contracts. Verbatim
+- `arc.ts` - live Arc testnet status (JSON-RPC block reads).
+- `arc-contracts.ts` - the real ERC-8004 and ERC-8183 contracts. Verbatim
   addresses, minimal ABIs, live reads (no key) and env-gated writes
   (`ARC_SIGNER_KEY`). **This is the reference for how a network integrates.**
-- `circle.ts` — Circle developer platform link (env-gated ping, `CIRCLE_API_KEY`).
-- `platform.ts` — the write side: agents, wallets, instructions (policy engine),
+- `circle.ts` - Circle developer platform link (env-gated ping, `CIRCLE_API_KEY`).
+- `platform.ts` - the write side: agents, wallets, instructions (policy engine),
   marketplace. JSON-persisted to `mcp/data/` (gitignored).
-- `erc8004.ts` — multi-chain identity provider interface (mock + rpc).
+- `erc8004.ts` - multi-chain identity provider interface (mock + rpc).
 
 Run `cd mcp && npm run build && npm run smoke` after any change.
 
