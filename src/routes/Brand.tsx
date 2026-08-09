@@ -4,6 +4,7 @@ import PageHeader from '../components/PageHeader'
 import SiteFooter from '../components/sections/SiteFooter'
 import Logo from '../components/Logo'
 import { APP_NAME, EASE_OUT_EXPO } from '../lib/brand'
+import { usePageMeta } from '../lib/head'
 import ThemeScope from '../components/ThemeScope'
 
 const reveal = {
@@ -42,6 +43,13 @@ function Swatch({ name, hex, note }: { name: string; hex: string; note?: string 
 }
 
 export default function Brand() {
+  usePageMeta({
+    title: `Brand · ${APP_NAME}`,
+    description:
+      'Logo, colour and typography rules for A-Identity, with the protocol palette and the things not to do. Everything on this page is free to reuse as specified.',
+    canonical: 'https://a-identity.xyz/brand',
+  })
+
   return (
     <ThemeScope className="w-full" style={{ fontFamily: 'var(--font-body)' }}>
       <PageHeader />

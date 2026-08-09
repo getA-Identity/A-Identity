@@ -313,7 +313,14 @@ export default function AppLayout() {
             onClick={() => setDrawerOpen(false)}
             aria-hidden="true"
           />
-          <aside className="fixed inset-y-0 left-0 z-50 flex w-72 flex-col bg-background px-4 py-6 shadow-xl md:hidden">
+          <aside
+            className="fixed inset-y-0 left-0 z-50 flex w-72 flex-col bg-background px-4 py-6 shadow-xl md:hidden"
+            style={{
+              paddingTop: 'calc(1.5rem + env(safe-area-inset-top))',
+              paddingBottom: 'calc(1.5rem + env(safe-area-inset-bottom))',
+              paddingLeft: 'calc(1rem + env(safe-area-inset-left))',
+            }}
+          >
             <button
               type="button"
               onClick={() => setDrawerOpen(false)}

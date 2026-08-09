@@ -10,6 +10,7 @@ import { Input } from '../components/ui/input'
 import VerifyStepper from '../components/landing/VerifyStepper'
 import { useTheme } from '../components/ThemeProvider'
 import { APP_NAME } from '../lib/brand'
+import { usePageMeta } from '../lib/head'
 import { short } from '../lib/format'
 import { gradeOf } from '../lib/reputation-bands'
 import {
@@ -265,6 +266,14 @@ function LeaderboardSkeleton({ rows = 6 }: { rows?: number }) {
 
 export default function Explorer() {
   const { theme } = useTheme()
+
+  usePageMeta({
+    title: `Trust Explorer · ${APP_NAME}`,
+    description:
+      'Look up any agent by its ERC-8004 id and watch the verification run: on-chain identity, KYA attestation, reputation, and the verdict a payer would act on.',
+    canonical: 'https://a-identity.xyz/explorer',
+  })
+
   const [sp] = useSearchParams()
   const initialQ = sp.get('q') || '849980'
   const [query, setQuery] = useState(initialQ)

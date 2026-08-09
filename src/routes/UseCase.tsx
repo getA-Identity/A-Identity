@@ -6,6 +6,7 @@ import SiteFooter from '../components/sections/SiteFooter'
 import BlogCover from '../components/BlogCover'
 import { getUseCase, USE_CASES, type UseCaseProduct } from '../lib/usecases'
 import { EASE_OUT_EXPO } from '../lib/brand'
+import { usePageMeta } from '../lib/head'
 import ThemeScope from '../components/ThemeScope'
 
 const reveal = {
@@ -34,6 +35,14 @@ function ProductLink({ p }: { p: UseCaseProduct }) {
 export default function UseCase() {
   const { slug } = useParams()
   const uc = slug ? getUseCase(slug) : undefined
+
+  // Runs before the redirect below because a hook cannot be called conditionally. On an
+  // unknown slug the fallback values are never seen: the component redirects on this render.
+  usePageMeta({
+    title: uc ? `${uc.title} · A-Identity` : 'Use cases · A-Identity',
+    description: uc?.teaser,
+    canonical: uc ? `https://a-identity.xyz/use-cases/${uc.slug}` : undefined,
+  })
 
   if (!uc) return <Navigate to="/#use-cases" replace />
 

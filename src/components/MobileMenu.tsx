@@ -42,6 +42,12 @@ export default function MobileMenu({ open, onClose }: MobileMenuProps) {
               height: '100dvh',
               background: 'var(--sheet)',
               boxShadow: '-12px 0 48px rgba(25,40,55,0.18)',
+              // 100dvh already excludes the browser chrome, but not the notch or the
+              // home indicator: without these the close button sits under the status
+              // bar and the last nav item under the gesture bar on an iPhone.
+              paddingTop: 'env(safe-area-inset-top)',
+              paddingBottom: 'env(safe-area-inset-bottom)',
+              paddingRight: 'env(safe-area-inset-right)',
             }}
             initial={{ x: '100%' }}
             animate={{ x: 0 }}

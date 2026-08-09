@@ -4,6 +4,7 @@ import { Bot, Check, Handshake, Mail, Megaphone } from 'lucide-react'
 import PageHeader from '../components/PageHeader'
 import SiteFooter from '../components/sections/SiteFooter'
 import { CAL_URL, CONTACT, DOCS_URL, EASE_OUT_EXPO } from '../lib/brand'
+import { usePageMeta } from '../lib/head'
 import ThemeScope from '../components/ThemeScope'
 
 const reveal = {
@@ -35,6 +36,13 @@ const CHANNELS = [
 ]
 
 export default function Contact() {
+  usePageMeta({
+    title: 'Contact · A-Identity',
+    description:
+      'Reach the team behind A-Identity: integration and SDK questions, partnerships, press, or a call about putting an agent on-chain.',
+    canonical: 'https://a-identity.xyz/contact',
+  })
+
   const [sent, setSent] = useState(false)
   const [topic, setTopic] = useState('Developers')
 

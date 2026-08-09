@@ -12,6 +12,14 @@ import { useEffect } from 'react'
  *
  * JSON-LD is different: a page may legitimately add a graph alongside the site-wide one in
  * index.html, so blocks are appended and tagged with `data-page-jsonld` for cleanup.
+ *
+ * The social card follows the page rather than being passed separately. `index.html` carries
+ * one og:/twitter: set describing the homepage, so before this every route shared the
+ * homepage's card: the right title in the tab, the wrong title in Slack. og:title and
+ * twitter:title mirror `title`, their descriptions mirror `description`, and og:url mirrors
+ * `canonical`, so a caller that already sets those gets a correct card without asking. The
+ * image stays site-wide unless a page passes its own, because a wrong image is worse than a
+ * generic one.
  */
 export function usePageMeta({
   title,
@@ -21,6 +29,8 @@ export function usePageMeta({
   noindex,
   lang,
   alternates,
+  image,
+  imageAlt,
 }: {
   title: string
   description?: string
@@ -30,6 +40,9 @@ export function usePageMeta({
   noindex?: boolean
   /** BCP 47 code for this page's content, written to <html lang>. */
   lang?: string
+  /** Absolute URL of a page-specific social image. Omit to keep the site-wide one. */
+  image?: string
+  imageAlt?: string
   /**
    * Translations of this page, as hreflang alternates. Every version must list
    * every version INCLUDING itself, which is what the spec requires and what
@@ -121,6 +134,42 @@ export function usePageMeta({
       )
     }
 
+    // og: uses the `property` attribute and twitter: uses `name`, which is the one
+    // detail that makes a shared helper worth writing: getting it backwards produces a
+    // tag that validates as HTML and is ignored by every scraper.
+    const setSocial = (attr: 'property' | 'name', key: string, value: string) => {
+      setTag<HTMLMetaElement>(
+        `meta[${attr}="${key}"]`,
+        () => {
+          const m = document.createElement('meta')
+          m.setAttribute(attr, key)
+          return m
+        },
+        (el) => {
+          const prev = el.content
+          el.content = value
+          return prev
+        },
+      )
+    }
+
+    setSocial('property', 'og:title', title)
+    setSocial('name', 'twitter:title', title)
+    if (description) {
+      setSocial('property', 'og:description', description)
+      setSocial('name', 'twitter:description', description)
+    }
+    if (canonical) setSocial('property', 'og:url', canonical)
+    if (image) {
+      setSocial('property', 'og:image', image)
+      setSocial('property', 'og:image:secure_url', image)
+      setSocial('name', 'twitter:image', image)
+      if (imageAlt) {
+        setSocial('property', 'og:image:alt', imageAlt)
+        setSocial('name', 'twitter:image:alt', imageAlt)
+      }
+    }
+
     if (noindex) {
       setTag<HTMLMetaElement>(
         'meta[name="robots"]',
@@ -147,5 +196,5 @@ export function usePageMeta({
     }
 
     return () => restore.forEach((f) => f())
-  }, [title, description, canonical, jsonLd, noindex, lang, alternates])
+  }, [title, description, canonical, jsonLd, noindex, lang, alternates, image, imageAlt])
 }

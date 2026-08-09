@@ -4,6 +4,7 @@ import { ArrowUpRight } from 'lucide-react'
 import PageHeader from '../components/PageHeader'
 import SiteFooter from '../components/sections/SiteFooter'
 import { DOCS_URL, EASE_OUT_EXPO } from '../lib/brand'
+import { usePageMeta } from '../lib/head'
 import ThemeScope from '../components/ThemeScope'
 
 const reveal = {
@@ -41,6 +42,13 @@ const PRINCIPLES = [
 ]
 
 export default function Manifesto() {
+  usePageMeta({
+    title: 'Manifesto · A-Identity',
+    description:
+      'Why agents need a passport before they need a wallet: identity first, bounded spending second, and a receipt for everything in between.',
+    canonical: 'https://a-identity.xyz/manifesto',
+  })
+
   return (
     <ThemeScope surface="background" className="w-full" style={{ fontFamily: 'var(--font-body)' }}>
       <PageHeader />

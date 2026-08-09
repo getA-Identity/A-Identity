@@ -9,6 +9,7 @@ import Navbar from '../components/Navbar'
 import SiteFooter from '../components/sections/SiteFooter'
 import { useTheme } from '../components/ThemeProvider'
 import { EASE_OUT_EXPO } from '../lib/brand'
+import { usePageMeta } from '../lib/head'
 
 /**
  * /architecture, the system, told the way an engineer would read it: monospace
@@ -295,6 +296,14 @@ const STATS = [
 
 export default function Architecture() {
   const { theme } = useTheme()
+
+  usePageMeta({
+    title: 'Architecture · A-Identity',
+    description:
+      'How the system fits together: ERC-8004 identity, three layers of spend enforcement, the payment rails an agent can settle on, and cross-chain USDC underneath.',
+    canonical: 'https://a-identity.xyz/architecture',
+  })
+
   return (
     <div className={theme === 'dark' ? 'dark' : ''}>
       <div className="relative min-h-screen w-full overflow-hidden bg-background text-foreground" style={{ fontFamily: 'var(--font-body)' }}>
