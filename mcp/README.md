@@ -52,7 +52,9 @@ Directories:
   `agents` (L4), `guardrail` (L5), `feed` (L6), `tasks` (L7), `manifest` (L8). A module may
   import only lower layers, so cycles are impossible. Everything outside imports
   `./platform.js` only; internal symbols (state, save, repOf, isShowcase, ...) are never
-  re-exported.
+  re-exported. Test-enforced, not prose: `src/platform/layering.test.ts` encodes the layer
+  graph and fails the build on an upward import, a barrel bypass, or a module missing from
+  the map.
 - `src/http/` - the REST surface as route-group handlers (`auth`, `public`, `arc`, `agent`,
   `guardrail`, `instruction`, `marketplace` + `shared.ts` helpers). `src/http.ts` stays the
   entry: it owns CORS, rate limiting, caller resolution, the mutation gate, the `/mcp`
@@ -85,7 +87,7 @@ npm run start        # MCP server on stdio
 npm run start:http   # the HTTP server (REST + /mcp). Reads config from process.env directly.
 npm run smoke        # spin up the MCP server + exercise every read-only tool
 npm run http-smoke   # exercise the tools over HTTP (server must be running)
-npm test             # tsc + node:test unit tests (462 across 36 files, as of Aug 2026)
+npm test             # tsc + node:test unit tests (465 across 37 files, as of Aug 2026)
 npm run e2e          # full end-to-end flow against a running server (E2E_BASE=...)
 ```
 
@@ -97,7 +99,7 @@ node --env-file=.env dist/http.js     # Node 20.6+
 ARC_SIGNER_KEY=0x<funded-key> node dist/http.js
 ```
 
-Tests: **462 unit tests across 36 colocated `*.test.ts` files** (as of Aug 2026; `npm test`) +
+Tests: **465 unit tests across 37 colocated `*.test.ts` files** (as of Aug 2026; `npm test`) +
 a full **E2E of about 67 checks** (`npm run e2e`) that adapts to signer presence: green with no
 signer key (live Arc reads; on-chain writes reported as prepared), with the real Arc write
 checks activating under a funded `ARC_SIGNER_KEY`. CI runs the no-signer path.

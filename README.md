@@ -178,7 +178,7 @@ listed at `GET /proof`. Four representative ones, each independently verifiable 
 
 **Backed by real data, not an LLM guess:** a live ERC-8004 showcase agent, Meridian
 `#849980`, reputation **~542/1000**, KYA-verified. Scoring is **deterministic and
-unit-tested** (462 unit tests as of Aug 2026), reads on-chain live via viem, and is fully documented at
+unit-tested** (465 unit tests as of Aug 2026), reads on-chain live via viem, and is fully documented at
 `GET /methodology`. This is our answer to "surface your rigor": every number is
 reproducible and every settlement is on-chain.
 
