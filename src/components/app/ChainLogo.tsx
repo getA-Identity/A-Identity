@@ -25,7 +25,7 @@ const LOGO: Record<ChainId, string> = {
 }
 
 /** Marks too light to survive a white disc. */
-const INK_DISC = new Set<ChainId>(['rhchain', 'rhchain-testnet', 'celo', 'celo-sepolia'])
+const INK_DISC = new Set<ChainId>(['rhchain', 'rhchain-testnet'])
 
 export default function ChainLogo({
   id,

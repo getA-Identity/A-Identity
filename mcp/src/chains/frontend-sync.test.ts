@@ -44,17 +44,20 @@ test('the public projection keeps the legacy /api/chains keys', () => {
 })
 
 test('the projection agrees with each descriptor it came from', () => {
+  // The projection is DISPLAY-ordered (live > beta > planned, stable), so match by id
+  // rather than registry index; every descriptor must appear exactly once.
   const pub = publicChains()
   assert.equal(pub.length, CHAINS.length)
-  for (const [i, c] of CHAINS.entries()) {
-    assert.equal(pub[i].id, c.id)
-    assert.equal(pub[i].caip2, c.caip2)
-    assert.equal(pub[i].chainId, c.evmChainId)
-    assert.equal(pub[i].status, c.status)
-    assert.equal(pub[i].evmCompatible, c.ecosystem === 'evm')
-    assert.equal(pub[i].rpcUrl, c.rpcUrls[0])
-    assert.equal(pub[i].identity, c.identity.standard)
-    assert.equal(pub[i].x402, c.payment.x402)
+  for (const c of CHAINS) {
+    const p = pub.find((x) => x.id === c.id)
+    assert.ok(p, `projection missing ${c.id}`)
+    assert.equal(p.caip2, c.caip2)
+    assert.equal(p.chainId, c.evmChainId)
+    assert.equal(p.status, c.status)
+    assert.equal(p.evmCompatible, c.ecosystem === 'evm')
+    assert.equal(p.rpcUrl, c.rpcUrls[0])
+    assert.equal(p.identity, c.identity.standard)
+    assert.equal(p.x402, c.payment.x402)
   }
 })
 
@@ -102,16 +105,16 @@ test('the agent manifest chains_supported matches the registry', () => {
 })
 
 test('the public surface reports exactly the wired chains as live/beta', () => {
-  // Product decision 2026-08-08: Arc + X Layer live, Base beta. 2026-08-09: the Celo
-  // pair joins as beta (identity reads live, x402 facilitator rail wired). Registry order.
+  // 2026-08-09 evening: Celo mainnet is LIVE (agent #9759 minted, x402 rail settling
+  // real USDC). Display order puts live chains first; Base and Celo Sepolia stay beta.
   const live = publicChains().filter((c) => c.status === 'live' || c.status === 'beta')
   assert.deepEqual(
     live.map((c) => ({ id: c.id, status: c.status })),
     [
       { id: 'arc', status: 'live' },
       { id: 'xlayer', status: 'live' },
+      { id: 'celo', status: 'live' },
       { id: 'base', status: 'beta' },
-      { id: 'celo', status: 'beta' },
       { id: 'celo-sepolia', status: 'beta' },
     ],
   )

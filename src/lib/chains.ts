@@ -10,7 +10,7 @@
  */
 
 /** Short slug of a chain in the registry. */
-export type ChainId = 'arc' | 'stellar' | 'xlayer' | 'base' | 'solana' | 'avalanche' | 'arbitrum' | 'rhchain-testnet' | 'rhchain' | 'celo' | 'celo-sepolia'
+export type ChainId = 'arc' | 'xlayer' | 'celo' | 'base' | 'celo-sepolia' | 'stellar' | 'solana' | 'avalanche' | 'arbitrum' | 'rhchain-testnet' | 'rhchain'
 
 export type ChainProtocols = {
   /** x402 HTTP-402 payment support. Settlement is in a stablecoin. */
@@ -81,38 +81,6 @@ export const CHAINS: readonly Chain[] = [
     "x402": true
   },
   {
-    "id": "stellar",
-    "name": "Stellar Testnet",
-    "shortName": "Stellar",
-    "color": "#7D00FF",
-    "chainId": null,
-    "caip2": "stellar:testnet",
-    "evmCompatible": false,
-    "testnet": true,
-    "stablecoins": [
-      "USDC",
-      "EURC"
-    ],
-    "rpcUrl": "https://soroban-testnet.stellar.org",
-    "explorer": "https://stellar.expert/explorer/testnet",
-    "role": "Fast, low-cost settlement: USDC + EURC native (Circle), Soroban contracts.",
-    "status": "planned",
-    "protocols": {
-      "payment": {
-        "x402": true,
-        "note": "x402 settlement in USDC via SEP-41 SAC; fee sponsorship for gasless."
-      },
-      "identity": {
-        "standard": "Soroban registry + SEP-10",
-        "erc8004Native": false,
-        "note": "No native ERC-8004 (EVM-only). Identity via Soroban registry / SEP-10; ERC-8004 passport bridged."
-      }
-    },
-    "identity": "Soroban registry + SEP-10",
-    "erc8004Native": false,
-    "x402": true
-  },
-  {
     "id": "xlayer",
     "name": "OKX X Layer",
     "shortName": "X Layer",
@@ -138,6 +106,39 @@ export const CHAINS: readonly Chain[] = [
         "standard": "ERC-8004",
         "erc8004Native": true,
         "note": "OKX.AI identity registry LIVE (read-side wired); payment rails still planned."
+      }
+    },
+    "identity": "ERC-8004",
+    "erc8004Native": true,
+    "x402": true
+  },
+  {
+    "id": "celo",
+    "name": "Celo",
+    "shortName": "Celo",
+    "color": "#FCFF52",
+    "chainId": 42220,
+    "caip2": "eip155:42220",
+    "evmCompatible": true,
+    "testnet": false,
+    "stablecoins": [
+      "USDC",
+      "USDT",
+      "USDm"
+    ],
+    "rpcUrl": "https://forno.celo.org",
+    "explorer": "https://celoscan.io",
+    "role": "Stablecoin-native EVM L2: ERC-8004 identity live, x402 USDC settlement via the first-party Celo facilitator, gas payable in stablecoins.",
+    "status": "live",
+    "protocols": {
+      "payment": {
+        "x402": true,
+        "note": "x402 over USDC via the first-party Celo facilitator (EIP-3009, buyer pays no gas); CIP-64 fee abstraction lets gas be paid in stablecoins."
+      },
+      "identity": {
+        "standard": "ERC-8004",
+        "erc8004Native": true,
+        "note": "Identity + Reputation registries LIVE (read-side wired). No ValidationRegistry on Celo yet, so KYA cannot be anchored on-chain there."
       }
     },
     "identity": "ERC-8004",
@@ -175,6 +176,69 @@ export const CHAINS: readonly Chain[] = [
     },
     "identity": "ERC-8004",
     "erc8004Native": true,
+    "x402": true
+  },
+  {
+    "id": "celo-sepolia",
+    "name": "Celo Sepolia (Testnet)",
+    "shortName": "Celo Sepolia",
+    "color": "#FCFF52",
+    "chainId": 11142220,
+    "caip2": "eip155:11142220",
+    "evmCompatible": true,
+    "testnet": true,
+    "stablecoins": [
+      "USDC"
+    ],
+    "rpcUrl": "https://forno.celo-sepolia.celo-testnet.org",
+    "explorer": "https://celo-sepolia.blockscout.com",
+    "role": "Celo testnet rail (Alfajores is deprecated): same ERC-8004 registry pair as Arc, x402 USDC via the Sepolia facilitator.",
+    "status": "beta",
+    "protocols": {
+      "payment": {
+        "x402": true,
+        "note": "x402 over testnet USDC via the Celo Sepolia facilitator (api.x402.sepolia.celo.org)."
+      },
+      "identity": {
+        "standard": "ERC-8004",
+        "erc8004Native": true,
+        "note": "Identity + Reputation registries LIVE (same addresses as Arc). No ValidationRegistry, mirroring mainnet."
+      }
+    },
+    "identity": "ERC-8004",
+    "erc8004Native": true,
+    "x402": true
+  },
+  {
+    "id": "stellar",
+    "name": "Stellar Testnet",
+    "shortName": "Stellar",
+    "color": "#7D00FF",
+    "chainId": null,
+    "caip2": "stellar:testnet",
+    "evmCompatible": false,
+    "testnet": true,
+    "stablecoins": [
+      "USDC",
+      "EURC"
+    ],
+    "rpcUrl": "https://soroban-testnet.stellar.org",
+    "explorer": "https://stellar.expert/explorer/testnet",
+    "role": "Fast, low-cost settlement: USDC + EURC native (Circle), Soroban contracts.",
+    "status": "planned",
+    "protocols": {
+      "payment": {
+        "x402": true,
+        "note": "x402 settlement in USDC via SEP-41 SAC; fee sponsorship for gasless."
+      },
+      "identity": {
+        "standard": "Soroban registry + SEP-10",
+        "erc8004Native": false,
+        "note": "No native ERC-8004 (EVM-only). Identity via Soroban registry / SEP-10; ERC-8004 passport bridged."
+      }
+    },
+    "identity": "Soroban registry + SEP-10",
+    "erc8004Native": false,
     "x402": true
   },
   {
@@ -325,70 +389,6 @@ export const CHAINS: readonly Chain[] = [
         "standard": "ERC-8004",
         "erc8004Native": true,
         "note": "ERC-8004 registry to be deployed."
-      }
-    },
-    "identity": "ERC-8004",
-    "erc8004Native": true,
-    "x402": true
-  },
-  {
-    "id": "celo",
-    "name": "Celo",
-    "shortName": "Celo",
-    "color": "#35D07F",
-    "chainId": 42220,
-    "caip2": "eip155:42220",
-    "evmCompatible": true,
-    "testnet": false,
-    "stablecoins": [
-      "USDC",
-      "USDT",
-      "USDm"
-    ],
-    "rpcUrl": "https://forno.celo.org",
-    "explorer": "https://celoscan.io",
-    "role": "Stablecoin-native EVM L2: ERC-8004 identity live, x402 USDC settlement via the first-party Celo facilitator, gas payable in stablecoins.",
-    "status": "beta",
-    "protocols": {
-      "payment": {
-        "x402": true,
-        "note": "x402 over USDC via the first-party Celo facilitator (EIP-3009, buyer pays no gas); CIP-64 fee abstraction lets gas be paid in stablecoins."
-      },
-      "identity": {
-        "standard": "ERC-8004",
-        "erc8004Native": true,
-        "note": "Identity + Reputation registries LIVE (read-side wired). No ValidationRegistry on Celo yet, so KYA cannot be anchored on-chain there."
-      }
-    },
-    "identity": "ERC-8004",
-    "erc8004Native": true,
-    "x402": true
-  },
-  {
-    "id": "celo-sepolia",
-    "name": "Celo Sepolia (Testnet)",
-    "shortName": "Celo Sepolia",
-    "color": "#35D07F",
-    "chainId": 11142220,
-    "caip2": "eip155:11142220",
-    "evmCompatible": true,
-    "testnet": true,
-    "stablecoins": [
-      "USDC"
-    ],
-    "rpcUrl": "https://forno.celo-sepolia.celo-testnet.org",
-    "explorer": "https://celo-sepolia.blockscout.com",
-    "role": "Celo testnet rail (Alfajores is deprecated): same ERC-8004 registry pair as Arc, x402 USDC via the Sepolia facilitator.",
-    "status": "beta",
-    "protocols": {
-      "payment": {
-        "x402": true,
-        "note": "x402 over testnet USDC via the Celo Sepolia facilitator (api.x402.sepolia.celo.org)."
-      },
-      "identity": {
-        "standard": "ERC-8004",
-        "erc8004Native": true,
-        "note": "Identity + Reputation registries LIVE (same addresses as Arc). No ValidationRegistry, mirroring mainnet."
       }
     },
     "identity": "ERC-8004",

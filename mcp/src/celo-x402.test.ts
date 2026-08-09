@@ -336,7 +336,7 @@ test('celoProof aggregates the injected store honestly, zeros included', async (
 test('the celo descriptor asserts exactly what was verified on-chain, and no ValidationRegistry', () => {
   const celo = getChainById('celo')
   assert.ok(celo)
-  assert.equal(celo.status, 'beta')
+  assert.equal(celo.status, 'live')
   assert.equal(celo.testnet, false)
   assert.equal(celo.caip2, 'eip155:42220')
   assert.equal(celo.usdcDecimals, 6)

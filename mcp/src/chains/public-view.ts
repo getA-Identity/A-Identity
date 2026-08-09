@@ -87,7 +87,13 @@ export function toPublicChain(c: ChainDescriptor): PublicChain {
 
 /** Every chain in the registry, in registry order, as public metadata. */
 export function publicChains(): PublicChain[] {
-  return CHAINS.map(toPublicChain)
+  // Frontend display order: live first, then beta, then planned; stable inside each
+  // group so the registry's own order still decides ties. The registry array itself
+  // stays in its documented order (tests pin it); only the generated view is sorted.
+  const rank: Record<string, number> = { live: 0, beta: 1, planned: 2, deprecated: 3 }
+  return [...CHAINS]
+    .sort((a, b) => (rank[a.status] ?? 3) - (rank[b.status] ?? 3))
+    .map(toPublicChain)
 }
 
 const GENERATED_HEADER = `/**

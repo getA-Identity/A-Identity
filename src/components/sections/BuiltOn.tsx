@@ -89,6 +89,18 @@ const RAILS: Rail[] = [
     status: 'live',
   },
   {
+    id: 'celo',
+    name: 'Celo',
+    logo: '/chains/celo.svg',
+    logoW: 512,
+    logoH: 512,
+    tileBg: '#FCFF52',
+    color: '#FCFF52',
+    role: 'Where agents pay for trust in dollars.',
+    detail: 'ERC-8004 agent #9759 lives on mainnet and the four trust tools sell per-call over the first-party x402 facilitator, settled in native USDC.',
+    status: 'live',
+  },
+  {
     id: 'stellar',
     name: 'Stellar',
     logo: '/logos/stellar-mark.webp',

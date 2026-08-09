@@ -1,3 +1,13 @@
-<svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-<path d="M3 3H21V9.429H17.889C17.2983 8.07519 16.2595 6.96607 14.9472 6.28815C13.6348 5.61023 12.1291 5.40484 10.6833 5.70654C9.2373 6.00825 7.93942 6.79863 7.00775 7.94478C6.07607 9.0909 5.56746 10.5229 5.56746 12C5.56746 13.4771 6.07607 14.9091 7.00775 16.0552C7.93942 17.2014 9.2373 17.9918 10.6833 18.2934C12.1291 18.5952 13.6348 18.3898 14.9472 17.7118C16.2595 17.034 17.2983 15.9247 17.889 14.571H21V21H3V3Z" fill="#FCFE52"/>
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns:xodm="http://www.corel.com/coreldraw/odm/2003" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" version="1.1" id="Layer_1" x="0px" y="0px" viewBox="0 0 2500 2500" style="enable-background:new 0 0 2500 2500;" xml:space="preserve">
+<style type="text/css">
+	.st0{fill-rule:evenodd;clip-rule:evenodd;fill:#FCFF52;}
+	.st1{fill-rule:evenodd;clip-rule:evenodd;}
+</style>
+<g id="Layer_x0020_1">
+	<g id="_1942792544736">
+		<circle class="st0" cx="1250" cy="1250" r="1250"></circle>
+		<path class="st1" d="M1949.3,546.2H550.7v1407.7h1398.7v-491.4h-232.1c-80,179.3-260.1,304.1-466.2,304.1    c-284.1,0-514.2-233.6-514.2-517.5c0-284,230.1-515.6,514.2-515.6c210.1,0,390.2,128.9,470.2,312.1h228.1V546.2z"></path>
+	</g>
+</g>
 </svg>

@@ -52,17 +52,17 @@ test('getChain returns undefined for unknown chain', () => {
   assert.equal(getChain('eip155:999999999'), undefined)
 })
 
-test('Arc, X Layer (live), Base and the Celo pair (beta) are the wired chains; Arc carries all its known contracts', () => {
+test('Arc, X Layer, Celo (live), Base and Celo Sepolia (beta) are the wired chains; Arc carries all its known contracts', () => {
   // Product decision 2026-08-08: X Layer identity is live (OKX ERC-8004 reads),
   // Base testnet is active via the Gateway demo, so it is beta.
-  // 2026-08-09: Celo mainnet + Celo Sepolia flip to beta — ERC-8004 identity reads
-  // are live from the registry addresses and the x402 facilitator rail is wired
-  // (fail-closed until CELO_PAYTO + CELO_X402_API_KEY are set).
+  // 2026-08-09 (evening): Celo mainnet flips to LIVE — agent #9759 is minted on the
+  // mainnet ERC-8004 registry and the x402 facilitator rail has real settlements
+  // recorded in the durable proof log. Celo Sepolia stays beta.
   const live = liveChains()
   assert.deepEqual(live.map((c) => c.id).sort(), ['arc', 'base', 'celo', 'celo-sepolia', 'xlayer'])
   assert.equal(live.find((c) => c.id === 'xlayer')?.status, 'live')
   assert.equal(live.find((c) => c.id === 'base')?.status, 'beta')
-  assert.equal(live.find((c) => c.id === 'celo')?.status, 'beta')
+  assert.equal(live.find((c) => c.id === 'celo')?.status, 'live')
   assert.equal(live.find((c) => c.id === 'celo-sepolia')?.status, 'beta')
   assert.equal(ARC_CHAIN.id, 'arc')
   // Guard the exact live Arc addresses against silent drift.

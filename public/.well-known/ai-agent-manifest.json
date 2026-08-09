@@ -102,7 +102,7 @@
           "identity": "ERC-8004",
           "erc8004Native": true,
           "note": "Identity + Reputation registries LIVE (read-side wired). No ValidationRegistry on Celo yet, so KYA cannot be anchored on-chain there.",
-          "status": "beta"
+          "status": "live"
         },
         {
           "id": "celo-sepolia",
@@ -203,7 +203,7 @@
           "chainId": 42220,
           "role": "Stablecoin-native EVM L2: ERC-8004 identity live, x402 USDC settlement via the first-party Celo facilitator, gas payable in stablecoins.",
           "x402": true,
-          "status": "beta"
+          "status": "live"
         },
         {
           "id": "celo-sepolia",
