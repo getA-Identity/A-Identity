@@ -473,11 +473,20 @@ export async function celoServeTool(
   const requirements = celoToolRequirements(tool, status)
 
   // 2. /verify — the facilitator checks the signature, asset, amount and recipient.
+  // Wire-shape note (verified against the live facilitator on 2026-08-09): /supported
+  // advertises an x402Version 2 kind under the CAIP-2 network id, but /verify only
+  // accepts the v1 shape with the slug network label; the v2/CAIP-2 body answers
+  // "unsupported_scheme". So we normalize OUR client-facing v2 payload to the v1 slug
+  // shape here, at the facilitator boundary, and nowhere else: the public 402
+  // challenge stays v2/CAIP-2.
+  const v1Payload = { ...paymentPayload, x402Version: 1, network: chain.id }
+  const v1Requirements = { ...requirements, network: chain.id }
   let verify: { status: number; json: Record<string, unknown> | null }
   try {
     verify = await facilitatorPost(fetchImpl, `${status.facilitator}/verify`, {
-      paymentPayload,
-      paymentRequirements: requirements,
+      x402Version: 1,
+      paymentPayload: v1Payload,
+      paymentRequirements: v1Requirements,
     })
   } catch (e) {
     return {
@@ -516,7 +525,10 @@ export async function celoServeTool(
     settle = await facilitatorPost(
       fetchImpl,
       `${status.facilitator}/settle`,
-      { payment: paymentHeader, network: chain.id },
+      // Same v1-slug normalization as /verify: the payment is the base64 of the
+      // normalized payload, not the client's original header, so verify and settle
+      // can never disagree about the shape.
+      { payment: Buffer.from(JSON.stringify(v1Payload)).toString('base64'), network: chain.id },
       { 'X-API-Key': env.CELO_X402_API_KEY?.trim() ?? '' },
     )
   } catch (e) {
