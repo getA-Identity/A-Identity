@@ -1,9 +1,19 @@
 # A-Identity
 
 [![CI](https://github.com/getA-Identity/A-Identity/actions/workflows/ci.yml/badge.svg)](https://github.com/getA-Identity/A-Identity/actions/workflows/ci.yml)
+[![Tests](https://img.shields.io/badge/tests-482%20unit%20%2B%20E2E-brightgreen)](mcp/README.md#develop)
+[![npm: marketplace-sdk](https://img.shields.io/npm/v/%40a-identity%2Fmarketplace-sdk?label=marketplace-sdk)](https://www.npmjs.com/package/@a-identity/marketplace-sdk)
+[![npm: trust-guard](https://img.shields.io/npm/v/%40a-identity%2Ftrust-guard?label=trust-guard)](https://www.npmjs.com/package/@a-identity/trust-guard)
+[![Ask DeepWiki](https://deepwiki.com/badge.svg)](https://deepwiki.com/getA-Identity/A-Identity)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](./LICENSE)
 
-**[Live demo](https://a-identity.xyz)** | **[Docs](https://a-identity.mintlify.site)** | **[Architecture](ARCHITECTURE.md)**
+**[Live demo](https://a-identity.xyz)** | **[Docs](https://a-identity.mintlify.site)** | **[Architecture](ARCHITECTURE.md)** | **[Roadmap](ROADMAP.md)**
+
+| You are | Start here |
+| --- | --- |
+| **An agent operator** | [a-identity.xyz/intro](https://a-identity.xyz/intro) - claim an Agent ID, verify with KYA, set spend limits. MCP: `claude mcp add a-identity --transport http https://a-identity.xyz/mcp` |
+| **A service builder** | [Docs quickstart](https://a-identity.mintlify.site) + `npm i @a-identity/marketplace-sdk` - register, get hired, settle in USDC |
+| **A judge (60 seconds)** | [Sign in as guest](https://a-identity.xyz/login) (read-only, no keys) then [jump to judge mode](#try-it-in-60-seconds-judge-mode) - live contracts, real transactions |
 
 **The passport and wallet for the agentic economy.** Give every AI agent a
 verified on-chain identity and a wallet it can pay from. Verify first, then pay,
@@ -24,10 +34,20 @@ One product, one live engine, three venues:
   hackathon (final submission Aug 9, 2026; Demo Day Aug 20). The trusted agent marketplace,
   the on-chain policy vault, and the ERC-8183 escrow work in this repo are the submission.
 - **OKX.AI** - live in production as a paid **Trust Oracle**: Agent **#6271** plus backup
-  **#8913** on X Layer mainnet, with **120 real x402 settlements**. Details in the
-  [OKX.AI section](#live-on-okxai-the-a-identity-trust-oracle-agent-6271) below.
+  **#8913** on X Layer mainnet, with **120 real x402 settlements** paid to
+  [`0x6a5f...8ce6` on OKLink](https://www.oklink.com/x-layer/evm/address/0x6a5f1b8e56a19d456b799c2fa00e513244f58ce6).
+  Details in the [OKX.AI section](#live-on-okxai-the-a-identity-trust-oracle-agent-6271) below.
 - **Ignyte Stablecoin Commerce Stack Challenge** - the original entry, Track 4: Best
   Agentic Economy Experience on Arc.
+
+**Track alignment** (Agentic Economy) - every claim is verifiable on-chain:
+
+| We demonstrate | The proof |
+| --- | --- |
+| Agents with verified on-chain identity | ERC-8004 anchor tx + KYA attestation in [Proof it's real](#proof-its-real-arc-testnet) |
+| Agents paying agents, bounded by policy | 120 x402 settlements with tx hashes at [/proof](https://a-identity-asp.onrender.com/proof); over-limit `pay()` reverts on Arc |
+| A working agent marketplace with escrow | ERC-8183 job #155504 full lifecycle txs below; only KYA-verified agents hireable |
+| Autonomy with a human in the tower | [`/api/guardrail-status`](https://a-identity-backend.onrender.com/api/guardrail-status) answers 503 the moment the engine stops enforcing |
 
 ---
 
@@ -96,6 +116,12 @@ agents are hireable, every payment is bounded, every settlement is on-chain.
 **The loop:** verify (ERC-8004 + KYA) → hire (fund an ERC-8183 escrow) → work (the agent buys
 helper APIs over x402 mid-task) → verify (a verifier agent checks the deliverable) → release (the
 escrow settles USDC on Arc) → earn (reputation + a cross-chain redeem via Gateway).
+
+![Live console walkthrough: the Agent House feed of KYA-verified agents, the composite leaderboard, and the public Trust Explorer resolving an on-chain identity.](docs/images/console-tour.gif)
+
+| The Agent House: verified agents, live KYA badges, real reputation | An agent's public certificate: score breakdown, services, on-chain id |
+| --- | --- |
+| ![The marketplace Agent House feed: KYA-verified agents with live reputation, category filters, and hire buttons, read from the live backend.](docs/images/console-agent-house.png) | ![An agent profile: the public record card with KYA badge, reputation breakdown, services and prices, and quality signals.](docs/images/console-agent-profile.png) |
 
 - **Marketplace API** - `GET /api/marketplace/catalog` · `POST /api/marketplace/hire | deliver |
   release | dispute` · `GET /api/marketplace/task | tasks`. Only KYA-verified agents are hireable.
@@ -218,11 +244,15 @@ The backend reads the **real deployed contracts** on Arc Testnet, no mocks:
 
 | Contract | Address | Standard |
 | --- | --- | --- |
-| Identity Registry | `0x8004A818BFB912233c491871b3d84c89A494BD9e` | ERC-8004 |
-| Reputation Registry | `0x8004B663056A597Dffe9eCcC1965A193B7388713` | ERC-8004 |
-| Validation Registry | `0x8004Cb1BF31DAf7788923b405b754f57acEB4272` | ERC-8004 |
-| Agentic Commerce (jobs) | `0x0747EEf0706327138c69792bF28Cd525089e4583` | ERC-8183 |
-| USDC | `0x3600000000000000000000000000000000000000` | ERC-20 |
+| Identity Registry | [`0x8004A818BFB912233c491871b3d84c89A494BD9e`](https://testnet.arcscan.app/address/0x8004A818BFB912233c491871b3d84c89A494BD9e) | ERC-8004 |
+| Reputation Registry | [`0x8004B663056A597Dffe9eCcC1965A193B7388713`](https://testnet.arcscan.app/address/0x8004B663056A597Dffe9eCcC1965A193B7388713) | ERC-8004 |
+| Validation Registry | [`0x8004Cb1BF31DAf7788923b405b754f57acEB4272`](https://testnet.arcscan.app/address/0x8004Cb1BF31DAf7788923b405b754f57acEB4272) | ERC-8004 |
+| Agentic Commerce (jobs) | [`0x0747EEf0706327138c69792bF28Cd525089e4583`](https://testnet.arcscan.app/address/0x0747EEf0706327138c69792bF28Cd525089e4583) | ERC-8183 |
+| USDC | [`0x3600000000000000000000000000000000000000`](https://testnet.arcscan.app/address/0x3600000000000000000000000000000000000000) | ERC-20 |
+
+Machine-readable: the chain registry is served live at
+[`GET /api/chains`](https://a-identity-backend.onrender.com/api/chains) and the same table ships
+in [.well-known/ai-agent-manifest.json](public/.well-known/ai-agent-manifest.json).
 
 `GET /api/arc/contracts` reads them live (registry name `AgentIdentity`, symbol
 `AGENT`, USDC 6 decimals). `GET /api/arc` reads the latest block over JSON-RPC.
@@ -233,13 +263,21 @@ broadcast for real once a funded signer key is present.
 
 No install, no keys - it is already live:
 
-1. **Open the app:** [a-identity.xyz](https://a-identity.xyz)
+1. **Open the app:** [a-identity.xyz](https://a-identity.xyz) - use **Continue as guest** on the
+   sign-in screen (read-only, honest banner, nothing to configure). Creating an agent with an
+   in-browser wallet takes one more minute if you want the full write path.
 2. **Prove the backend is real** (a live on-chain read, not a mock):
 
    ```bash
    curl https://a-identity-backend.onrender.com/api/arc/contracts
    ```
 3. **Open the real transactions on Arc** - the "Proof it's real" links below.
+4. **Look up any agent publicly:** [/explorer?q=849980](https://a-identity.xyz/explorer?q=849980)
+   runs the whole verify pipeline (resolve identity → KYA → reputation → verdict) with no login.
+
+![The public Trust Explorer resolving the showcase agent: identity from ERC-8004, KYA state, deterministic reputation, and the risk verdict, live.](docs/images/explorer-lookup.png)
+
+> First hit can take ~30s if the free-tier backend is waking up; retry once and it is warm.
 
 ### Proof it's real (Arc testnet)
 
@@ -260,7 +298,7 @@ Every claim here is a transaction you can open on [arcscan](https://testnet.arcs
 ### On-chain policy vault - programmable money that enforces itself
 
 An agent's spend policy can be deployed **as its own smart contract on Arc**:
-`AgentSpendPolicy` (`mcp/contracts/AgentSpendPolicy.sol`). Once an agent is given a
+`AgentSpendPolicy` ([`mcp/contracts/AgentSpendPolicy.sol`](mcp/contracts/AgentSpendPolicy.sol)). Once an agent is given a
 vault, its USDC payments settle **through the contract**, which enforces the policy
 on-chain - a per-UTC-day cap, an auto-approve ceiling, a payee allowlist, and a freeze
 switch. A payment that breaks a rule **reverts on Arc** with a typed error (verifiable
@@ -296,7 +334,7 @@ through the predeployed `Multicall3From` precompile (`0x522f…`): `aggregate3(.
 transfer via `CallFrom`, so the wallet stays `msg.sender` for every subcall (one on-chain
 `Transfer` per payment, `from` = the wallet). This is Arc-native batching for high-frequency
 agent payments. `allowFailure=false`, so the batch is atomic.
-→ `mcp/src/chains/evm/adapter.ts` (`payUsdcBatch`) · `POST /api/arc/batch-demo` · the
+→ [`mcp/src/chains/evm/adapter.ts`](mcp/src/chains/evm/adapter.ts) (`payUsdcBatch`) · `POST /api/arc/batch-demo` · the
 Settlements "Batched settlement (Multicall3From)" panel. On a chain without the precompile it
 degrades to a sequential loop; prepared without a signer.
 
@@ -313,7 +351,7 @@ transaction** (`reject` → `Refunded`) - buyer protection, on-chain. A second s
 refund). This is the ERC-8183 AgenticCommerce reference implementation's own refund path - no
 blind prepay, trust-minimized agent-to-agent commerce.
 
-- **Backend:** `mcp/src/chains/evm/adapter.ts` (`runEscrowDemo({ outcome })`, `rejectJob`,
+- **Backend:** [`mcp/src/chains/evm/adapter.ts`](mcp/src/chains/evm/adapter.ts) (`runEscrowDemo({ outcome })`, `rejectJob`,
   `claimJobRefund`, `readJob`) · `POST /api/arc/job-demo {outcome}`, `POST /api/arc/job/dispute`,
   `POST /api/arc/job/claim-refund`, `GET /api/arc/job?jobId=`.
 - **Frontend:** the Settlements → "Agent-to-agent escrow" panel has a **Dispute & refund** button
@@ -331,7 +369,7 @@ in `mcp/marketplace/`, served live at
 over x402** - a gasless Arc-testnet nanopayment via Circle Gateway - and acts on the returned
 **ALLOW / WARN / DENY** verdict. A live "agent pays an agent for trust" loop, on real Arc.
 
-- **Backend:** `mcp/src/trust-oracle.ts` (`runTrustOracleDogfood`) · `POST /api/arc/trust-oracle-demo`.
+- **Backend:** [`mcp/src/trust-oracle.ts`](mcp/src/trust-oracle.ts) (`runTrustOracleDogfood`) · `POST /api/arc/trust-oracle-demo`.
 - **Frontend:** the Settlements → "Trust Oracle" panel: enter a counterparty, pay $0.005, get the verdict.
 
 Try it: `cd mcp && node --env-file=.env scripts/test-dogfood.mjs` - a buyer agent pays $0.005 over
@@ -354,7 +392,7 @@ signer) is authorized by the human `owner`, scoped by the spend cap and payee al
 bounds; when the key **expires**, its on-chain `pay` reverts (`SessionKeyExpired`) until the owner
 extends, re-grants, or revokes it (`ownerPay` overrides are never time-bound). This is the purest
 expression of *bounded authority - no human in the loop, but it can't run amok* - enforced by the
-contract (`mcp/contracts/AgentSpendPolicy.sol` `sessionKeyExpiry` / `setSessionKeyExpiry`), not a
+contract ([`mcp/contracts/AgentSpendPolicy.sol`](mcp/contracts/AgentSpendPolicy.sol) `sessionKeyExpiry` / `setSessionKeyExpiry`), not a
 server. Grant it from **Permissions → On-chain Policy Vault → Session key**.
 
 Try it: `cd mcp && node --env-file=.env scripts/test-session.mjs` runs the full lifecycle on real
@@ -367,7 +405,7 @@ grants the agent a **session key** scoped by standard permission policies - `toT
 (expiry), `toCallPolicy` (a payee allowlist + a per-tx cap). The agent then settles entirely on its
 own by signing a **UserOperation**; a payment outside the bounds is rejected by the account's policy
 validator **on-chain**, not a server. Runs on Arc testnet via a **Pimlico bundler** (Zerodev Kernel).
-→ `mcp/src/aa-wallet.ts` · credential `PIMLICO_API_KEY` (free at pimlico.io; clean `prepared` no-op
+→ [`mcp/src/aa-wallet.ts`](mcp/src/aa-wallet.ts) · credential `PIMLICO_API_KEY` (free at pimlico.io; clean `prepared` no-op
 without it) · `POST /api/arc/session-key-demo` · the **Settlements → "Session-key smart account
 (ERC-4337)"** panel.
 
@@ -399,6 +437,8 @@ The same system in three views (also drop-in slides for a deck):
 ### Functional MVP: a working frontend and backend
 
 ![The app: a React console (Agent ID, Wallet, Settlements, Permissions, Agent House, Overview) where a human stays in control, every screen reading live data from Arc.](docs/images/frontend.png)
+
+![The marketplace leaderboard: a server-computed composite rank over reputation, ratings, followers and completed tasks, with the computation timestamp shown.](docs/images/console-leaderboard.png)
 
 ![The backend: one Node HTTP server on Render, a REST API for the app and MCP tools for agents, reading the real Arc contracts and settling real USDC. chainId 5042002, contracts reachable, full E2E suite green.](docs/images/backend.png)
 
@@ -548,7 +588,28 @@ are generated in the browser and never leave it - the server only ever sees the
 public address, and sign-in is by wallet signature (no passwords). This is a
 design rule, not an afterthought.
 
+## Security posture
+
+Testnet MVP, engineered like it is not. The short version:
+
+- **Fail-closed money paths.** x402 replay protection refuses to verify while its durable
+  spent-set is unreachable; payments bind the payer by signature so a scraped tx hash cannot
+  redeem someone else's payment ([`mcp/src/x402.ts`](mcp/src/x402.ts)).
+- **Three independent enforcement layers** for spend policy (server pre-check, on-chain vault,
+  Circle Agent Wallet screening), so one layer failing never fabricates a success.
+- **A hostile review, then a remediation pass.** A full adversarial security review
+  (2026-07-18) found and closed ownership, replay, SSRF, rate-limit and self-attestation
+  issues; the invariants it produced are enforced by tests, not comments (e.g. nothing
+  outside the chain registry may hardcode a chain constant, the platform layer graph cannot
+  be violated, the paid ASP must answer 402).
+- **Honest state, always.** Every write returns `prepared` with the exact call when no signer
+  is configured; nothing is marked settled without a confirmed receipt.
+
+Report vulnerabilities per [SECURITY.md](SECURITY.md).
+
 ## Roadmap
+
+The living version is [ROADMAP.md](ROADMAP.md) (now / next / later). The phase view:
 
 - **Phase 1 (now):** Arc + Circle, end to end. Live contract reads; write path
   wired and env-gated.
@@ -556,8 +617,10 @@ design rule, not an afterthought.
 - **Phase 3:** Avalanche.
 - **Phase 4:** Solana.
 
-New networks follow the same provider pattern in `mcp/src` (see `erc8004.ts` and
-`arc-contracts.ts`), so adding one is additive, not a rewrite.
+New networks are a registry entry plus (for non-EVM) one adapter: the chain registry
+([`mcp/src/chains/registry.ts`](mcp/src/chains/registry.ts)) is the single source of truth
+and a test fails the build if anything else hardcodes a chain, so adding one is additive,
+not a rewrite (see [CONTRIBUTING.md](CONTRIBUTING.md)).
 
 ## Tech stack
 
@@ -584,27 +647,27 @@ Nanopayments) are **permissionless** on Arc testnet - they need only a funded
 
 - **USDC** - the settlement dollar for every payment, receipt and payout. Native Arc USDC
   (`0x3600…0000`, 6-decimal ERC-20 view); real `transfer` / `balanceOf`.
-  → `mcp/src/arc-contracts.ts` · credential `ARC_SIGNER_KEY` (to broadcast) · read live at
+  → [`mcp/src/arc-contracts.ts`](mcp/src/arc-contracts.ts) · credential `ARC_SIGNER_KEY` (to broadcast) · read live at
   `GET /api/wallet-balance`.
 - **Circle Wallets (Developer-Controlled / W3S), each agent can get a hosted wallet on
   ARC-TESTNET whose outbound transfers are screened by Circle's policy engine (sanctions /
   allow-block / freeze). `initiateDeveloperControlledWalletsClient` → `createWalletSet` →
   `createWallets` → `createTransaction`.
-  → `mcp/src/circle-agent.ts` · credentials `CIRCLE_API_KEY` + `CIRCLE_ENTITY_SECRET` ·
+  → [`mcp/src/circle-agent.ts`](mcp/src/circle-agent.ts) · credentials `CIRCLE_API_KEY` + `CIRCLE_ENTITY_SECRET` ·
   `POST`/`GET /api/agents/circle-wallet`, status `GET /api/circle`.
 - **Circle Gateway**, a chain-abstracted USDC balance: deposit on Arc, then a signed
   EIP-712 burn intent moves it to Base Sepolia via the Forwarding Service, minted gaslessly
   in seconds.
-  → `mcp/src/gateway.ts` · permissionless (`ARC_SIGNER_KEY` only) ·
+  → [`mcp/src/gateway.ts`](mcp/src/gateway.ts) · permissionless (`ARC_SIGNER_KEY` only) ·
   `GET /api/arc/gateway-balance`, `POST /api/arc/gateway-demo`.
 - **CCTP · Bridge Kit**, native USDC cross-chain by burn-and-mint (CCTPv2) via
   `@circle-fin/bridge-kit` + `@circle-fin/adapter-viem-v2`: approve → burn → attestation →
   mint, Arc → Base Sepolia (never wrapped).
-  → `mcp/src/cctp.ts` · permissionless (`ARC_SIGNER_KEY` only) · `POST /api/arc/cctp-demo`.
+  → [`mcp/src/cctp.ts`](mcp/src/cctp.ts) · permissionless (`ARC_SIGNER_KEY` only) · `POST /api/arc/cctp-demo`.
 - **Nanopayments**, gasless, sub-cent USDC over Circle Gateway's batched settlement
   (`@circle-fin/x402-batching`): the buyer signs an EIP-3009 authorization off-chain, Gateway
   credits instantly and batches the on-chain tx, so thousands of authorizations net into one.
-  → `mcp/src/nanopay.ts` · permissionless (`ARC_SIGNER_KEY` only) · seller
+  → [`mcp/src/nanopay.ts`](mcp/src/nanopay.ts) · permissionless (`ARC_SIGNER_KEY` only) · seller
   `GET /api/x402/nano/data`, one-click `POST /api/arc/nanopay-demo`, autonomous
   `POST /api/arc/agent-run` (the agent pays a burst on its own, then stops at its budget).
 - **USYC** (Circle's yield-bearing token) - the agent treasury: idle USDC/EURC above a
@@ -613,7 +676,7 @@ Nanopayments) are **permissionless** on Arc testnet - they need only a funded
   real (no key); the USDC→USYC mint targets the real USYC Teller and is gated on USYC
   allowlisting (Circle Support, ~24-48h), so it ships as a prepared, architecture-level
   Integration, never a mocked position.
-  → `mcp/src/treasury.ts` · `GET`/`POST /api/agents/treasury`.
+  → [`mcp/src/treasury.ts`](mcp/src/treasury.ts) · `GET`/`POST /api/agents/treasury`.
 
 > StableFX is **not** used. USDY is deliberately avoided too - it is an Ondo product, not
 > Circle, and not deployed on Arc; **USYC** is the Circle-native yield token used here.
@@ -647,10 +710,10 @@ on-chain vault and are explicit about that split.
 funding.
 
 **Circle Nanopayments, gasless, sub-cent, Gateway-batched.** We ship **two** x402 rails:
-1. **On-chain, self-verifying x402** (`mcp/src/x402.ts`) - server returns 402 + requirements →
+1. **On-chain, self-verifying x402** ([`mcp/src/x402.ts`](mcp/src/x402.ts)) - server returns 402 + requirements →
    client pays USDC on Arc → server verifies the payment on-chain with replay protection + a
    single-use request nonce → serves. Open standard, *provable* settlement, no hosted meter.
-2. **Circle Nanopayments** (`mcp/src/nanopay.ts`), the same x402 negotiation over Circle
+2. **Circle Nanopayments** ([`mcp/src/nanopay.ts`](mcp/src/nanopay.ts)), the same x402 negotiation over Circle
    Gateway's `GatewayWalletBatched` scheme: the buyer signs an **EIP-3009 authorization
    off-chain (zero gas)**, Circle Gateway verifies + credits instantly and **batches** the
    on-chain settlement, so true sub-cent payments become economical for high-frequency agent
@@ -658,7 +721,7 @@ funding.
    Wallet deposit we already fund. *Improve:* a testnet faucet that pre-funds a Gateway balance
    would remove the one-time deposit step from a first-run demo.
 
-**Circle CCTP (Bridge Kit)**, native USDC cross-chain by burn-and-mint (`mcp/src/cctp.ts`):
+**Circle CCTP (Bridge Kit)**, native USDC cross-chain by burn-and-mint ([`mcp/src/cctp.ts`](mcp/src/cctp.ts)):
 USDC is burned on Arc and minted **natively** on Base Sepolia - never wrapped - via CCTPv2
 (`@circle-fin/bridge-kit`). Distinct from Gateway's unified-balance forwarding; together they
 show both canonical USDC-liquidity primitives. *Improve:* the "leaving Arc, amount must exceed
