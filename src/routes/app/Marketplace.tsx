@@ -25,10 +25,15 @@ import AgentAvatar from '../../components/AgentAvatar'
 import BrandArt from '../../components/app/BrandArt'
 import FeaturedCarousel, { RankBadge, Stars, type FeaturedAgent } from '../../components/app/marketplace/FeaturedCarousel'
 import WorkerCatalog from '../../components/app/marketplace/WorkerCatalog'
+import AgentCard from '../../components/app/marketplace/AgentCard'
+import { OwnerLine, TagRow } from '../../components/app/marketplace/AgentCardChrome'
 import { CommerceRow } from '../../components/app/marketplace/CommerceRow'
 import { MetaChips } from '../../components/app/marketplace/MetaChips'
 import { PriceLine } from '../../components/app/marketplace/PriceLine'
 import {
+  bannerStyle,
+  cardTint,
+  CIRCLE_MARK,
   reviveSavedSearches,
   SORT_KEYS,
   SORT_LABELS,
@@ -860,66 +865,15 @@ export default function Marketplace() {
           rating and social proof, price, and the trust chips (chain, rails, live
           endpoint), all from real backend state. */}
       {view === 'grid' ? (
-        /* Grid: product cards, two up. The full record lives one click in. */
-        <div className="mt-4 grid items-start gap-4 sm:grid-cols-2">
+        /* Grid: storefront product cards, two up. The full record lives one click in. */
+        <div className="mt-4 grid items-stretch gap-4 sm:grid-cols-2">
           {shown.map((a) => (
-            <div key={a.id} className="cn-glow-wrap">
-              <div className="cn-glow-card flex flex-col overflow-hidden rounded-2xl border border-border bg-card">
-                {/* Owner-picked card style: a quiet tint strip from the six category tokens. */}
-                {typeof a.cardStyle === 'number' && a.cardStyle >= 1 && a.cardStyle <= 6 && (
-                  <span
-                    className="block h-1 w-full"
-                    style={{ background: `var(--cat-${a.cardStyle})` }}
-                    aria-hidden="true"
-                  />
-                )}
-                <div className="flex flex-1 flex-col p-5">
-                  <div className="flex items-start justify-between gap-3">
-                    <Link to={`/app/marketplace/${a.id}`} className="flex min-w-0 items-center gap-3 hover:opacity-90">
-                      <AgentAvatar
-                        seed={a.onchainAgentId || a.id}
-                        category={a.category}
-                        size={44}
-                        verdict={a.kya === 'verified' ? 'allow' : 'warn'}
-                        src={a.logoUrl}
-                      />
-                      <div className="min-w-0">
-                        <div className="truncate font-bold text-foreground">{a.name}</div>
-                        <div className="truncate text-xs text-foreground/50">{a.category}</div>
-                      </div>
-                    </Link>
-                    {a.kya === 'verified' ? (
-                      <Badge variant="success">
-                        <BadgeCheck size={11} /> KYA
-                      </Badge>
-                    ) : (
-                      <Badge variant="warning">
-                        <Clock size={11} /> pending
-                      </Badge>
-                    )}
-                  </div>
-                  <p className="mt-3 line-clamp-2 flex-1 text-sm leading-relaxed text-foreground/60">
-                    {a.description || 'No description yet.'}
-                  </p>
-                  <CommerceRow a={a} className="mt-3" />
-                  <MetaChips a={a} className="mt-2.5" />
-                  <div className="mt-3 flex items-end justify-between gap-2 border-t border-border pt-3">
-                    <div className="min-w-0">
-                      <PriceLine a={a} />
-                      <div className="mt-0.5 text-[11px] font-medium tabular-nums text-foreground/45">
-                        Rep {a.reputation ? a.reputation.score : '-'} / 1000
-                      </div>
-                    </div>
-                    <Link
-                      to={`/app/marketplace/${a.id}`}
-                      className="inline-flex shrink-0 items-center gap-1 text-xs font-semibold text-accent hover:underline"
-                    >
-                      View profile <ArrowUpRight size={12} />
-                    </Link>
-                  </div>
-                </div>
-              </div>
-            </div>
+            <AgentCard
+              key={a.id}
+              a={a}
+              matchReasons={semantic ? semMatches?.[a.id]?.reasons : undefined}
+              onToggleFollow={toggleFollow}
+            />
           ))}
         </div>
       ) : (
@@ -929,15 +883,23 @@ export default function Marketplace() {
             key={a.id}
             className="cn-glow-wrap"
           >
-          <div className="cn-glow-card rounded-2xl border border-border bg-card p-5">
+          <div className="cn-glow-card relative overflow-hidden rounded-2xl border border-border bg-card p-5 pl-6">
+            {/* The grid card's banner, turned on its side: the same tint rail so a
+                roster reads as one storefront in either view. */}
+            <span className="absolute inset-y-0 left-0 w-1.5" style={bannerStyle(cardTint(a))} aria-hidden="true" />
             <div className="flex flex-wrap items-start gap-4">
-              <Link to={`/app/marketplace/${a.id}`} className="shrink-0 hover:opacity-90">
+              <Link
+                to={`/app/marketplace/${a.id}`}
+                aria-label={`${a.name} profile`}
+                className="shrink-0 rounded-full ring-4 ring-card transition-transform duration-[120ms] hover:scale-[1.04]"
+              >
                 <AgentAvatar
                   seed={a.onchainAgentId || a.id}
                   category={a.category}
                   size={56}
                   verdict={a.kya === 'verified' ? 'allow' : 'warn'}
                   src={a.logoUrl}
+                  className={CIRCLE_MARK}
                 />
               </Link>
 
@@ -982,18 +944,12 @@ export default function Marketplace() {
                   <PriceLine a={a} />
                 </div>
                 <MetaChips a={a} className="mt-2" />
-                {a.capabilities.length > 0 && (
-                  <div className="mt-2.5 flex flex-wrap gap-1.5">
-                    {a.capabilities.map((c) => (
-                      <span key={c} className="rounded-full bg-foreground/5 px-2 py-0.5 text-[11px] font-medium text-foreground/60">
-                        {c}
-                      </span>
-                    ))}
-                  </div>
-                )}
+                {/* Agent tags: the full declared list, this row has the width for it. */}
+                <TagRow tags={a.capabilities} max={Number.POSITIVE_INFINITY} className="mt-2.5" />
+                <OwnerLine walletAddress={a.walletAddress} chainId={a.chain} className="mt-2.5" />
               </div>
 
-              {/* The numbers column: reputation first, then the social action. */}
+              {/* The numbers column: reputation, the one primary action, then the social one. */}
               <div className="flex shrink-0 flex-col items-end gap-2.5">
                 <div className="text-right">
                   <div className="text-[10px] font-semibold uppercase tracking-[0.14em] text-foreground/40">Reputation</div>
@@ -1007,6 +963,12 @@ export default function Marketplace() {
                     </div>
                   )}
                 </div>
+                <Link
+                  to={`/app/marketplace/${a.id}`}
+                  className="inline-flex items-center justify-center gap-1.5 rounded-xl bg-accent px-4 py-2.5 text-sm font-semibold text-white transition-colors duration-[120ms] hover:bg-accent-deep"
+                >
+                  View profile <ArrowUpRight size={14} />
+                </Link>
                 <button
                   type="button"
                   onClick={() => toggleFollow(a.id)}
@@ -1035,12 +997,6 @@ export default function Marketplace() {
                 <Activity size={13} />
                 {openActivity === a.id ? 'Hide activity' : `Activity (${a.activity.length})`}
               </button>
-              <Link
-                to={`/app/marketplace/${a.id}`}
-                className="inline-flex items-center gap-1 text-xs font-semibold text-foreground/60 hover:text-accent"
-              >
-                View profile <ArrowUpRight size={12} />
-              </Link>
               {a.onchain !== 'registered' && (
                 <>
                   <button

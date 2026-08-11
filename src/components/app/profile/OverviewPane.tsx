@@ -7,6 +7,7 @@
 import { Activity, ExternalLink } from 'lucide-react'
 import { humanizeActivity, short } from '../../../lib/format'
 import type { Chain } from '../../../lib/chains'
+import { TagRow } from '../marketplace/AgentCardChrome'
 import type { MarketAgent } from './types'
 
 type Props = {
@@ -23,15 +24,6 @@ export default function OverviewPane({ agent, chainInfo }: Props) {
           <p className="mt-2 text-sm leading-relaxed text-foreground/70">
             {agent.description || 'No description yet.'}
           </p>
-          {agent.capabilities.length > 0 && (
-            <div className="mt-3 flex flex-wrap gap-1.5">
-              {agent.capabilities.map((c) => (
-                <span key={c} className="rounded-full bg-foreground/5 px-2.5 py-1 text-[11px] font-medium text-foreground/65">
-                  {c}
-                </span>
-              ))}
-            </div>
-          )}
         </section>
 
         <section className="rounded-2xl border border-border bg-card p-5">
@@ -58,7 +50,17 @@ export default function OverviewPane({ agent, chainInfo }: Props) {
         </section>
       </div>
 
-      {/* Basic Information: the registry facts, label/value, links out. */}
+      {/* Sidebar: the tags this agent declares, then the registry facts. */}
+      <div className="flex flex-col gap-4">
+      <section className="rounded-2xl border border-border bg-card p-5">
+        <h3 className="text-sm font-bold text-foreground/80">Agent Tags</h3>
+        {agent.capabilities.length > 0 ? (
+          <TagRow tags={agent.capabilities} max={Number.POSITIVE_INFINITY} className="mt-3" />
+        ) : (
+          <p className="mt-2 text-sm text-foreground/60">No capabilities declared yet.</p>
+        )}
+      </section>
+
       <section className="rounded-2xl border border-border bg-card p-5">
         <h3 className="text-sm font-bold text-foreground/80">Basic Information</h3>
         <dl className="mt-3 flex flex-col divide-y divide-border text-sm">
@@ -86,6 +88,7 @@ export default function OverviewPane({ agent, chainInfo }: Props) {
           ))}
         </dl>
       </section>
+      </div>
     </div>
   )
 }

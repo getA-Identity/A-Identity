@@ -12,6 +12,8 @@ import { useCallback, useEffect, useRef } from 'react'
 import { Link } from 'react-router-dom'
 import { ChevronLeft, ChevronRight, Star } from 'lucide-react'
 import AgentAvatar from '../../AgentAvatar'
+import { AgentBanner } from '../marketplace/AgentCardChrome'
+import { cardTint, CIRCLE_MARK } from '../marketplace/types'
 import type { MarketAgent } from './types'
 
 type Props = {
@@ -88,22 +90,26 @@ export default function RelatedStrip({ related }: Props) {
           <Link
             key={r.id}
             to={`/app/marketplace/${r.id}`}
-            className="w-56 shrink-0 rounded-2xl border border-border bg-card p-4 transition-colors duration-[120ms] hover:border-accent/40"
+            className="w-56 shrink-0 overflow-hidden rounded-2xl border border-border bg-card transition-colors duration-[120ms] hover:border-accent/40"
           >
-            <div className="flex items-center gap-3">
-              <AgentAvatar
-                seed={r.onchainAgentId || r.id}
-                category={r.category}
-                size={40}
-                verdict={r.kya === 'verified' ? 'allow' : 'warn'}
-                src={r.logoUrl}
-              />
-              <div className="min-w-0">
+            {/* Same banner-and-mark language as the marketplace cards, at strip scale. */}
+            <AgentBanner tint={cardTint(r)} className="h-11" />
+            <div className="px-4 pb-4">
+              <div className="-mt-5 w-fit rounded-full ring-4 ring-card">
+                <AgentAvatar
+                  seed={r.onchainAgentId || r.id}
+                  category={r.category}
+                  size={40}
+                  verdict={r.kya === 'verified' ? 'allow' : 'warn'}
+                  src={r.logoUrl}
+                  className={CIRCLE_MARK}
+                />
+              </div>
+              <div className="mt-2 min-w-0">
                 <div className="truncate text-sm font-semibold text-foreground">{r.name}</div>
                 <div className="truncate text-[11px] text-foreground/55">{r.category}</div>
               </div>
-            </div>
-            <div className="mt-3 flex items-center justify-between text-xs">
+              <div className="mt-3 flex items-center justify-between text-xs">
               <span className="inline-flex items-center gap-1 font-semibold text-foreground/75">
                 <Star size={11} className="text-warn" fill="currentColor" />
                 {r.feedback?.avg != null ? (
@@ -116,6 +122,7 @@ export default function RelatedStrip({ related }: Props) {
                 )}
               </span>
               <span className="tabular-nums font-medium text-foreground/55">{r.soldCount ?? 0} sold</span>
+              </div>
             </div>
           </Link>
         ))}

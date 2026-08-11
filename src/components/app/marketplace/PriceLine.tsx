@@ -6,8 +6,16 @@
  */
 import { cheapestService, fmtUsd, type MarketAgent } from './types'
 
-/** Price lead: real starting price when the agent lists services, honest fallback when not. */
-export function PriceLine({ a, className = '' }: { a: MarketAgent; className?: string }) {
+/** Price lead: real starting price when the agent lists services, honest fallback when not.
+ *  Typed to the two price fields only, so the agent profile (whose MarketAgent twin
+ *  makes `chain` optional) can render the same line. */
+export function PriceLine({
+  a,
+  className = '',
+}: {
+  a: Pick<MarketAgent, 'services' | 'priceFromUsd'>
+  className?: string
+}) {
   const c = cheapestService(a)
   if (!c)
     return <span className={`text-sm font-semibold text-foreground/55 ${className}`}>Quote per task</span>

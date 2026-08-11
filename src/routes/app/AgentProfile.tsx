@@ -42,6 +42,17 @@ export default function AgentProfile() {
   const [tab, setTab] = useState<ProfileTab>('overview')
   const { shown: shownTab, className: paneClass } = useTabCarousel(tab, PROFILE_TABS)
 
+  // The hero's primary CTA opens the Services pane, which is where hiring actually
+  // starts, and brings it into view rather than silently switching a tab offscreen.
+  const tabsRef = useRef<HTMLDivElement | null>(null)
+  const openServices = () => {
+    setTab('services')
+    tabsRef.current?.scrollIntoView({
+      behavior: window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth',
+      block: 'start',
+    })
+  }
+
   // Rating form (verified users only; guests see why they can't).
   const [myScore, setMyScore] = useState<number | null>(null)
   const [myComment, setMyComment] = useState('')
@@ -273,10 +284,11 @@ export default function AgentProfile() {
             copiedWallet={copiedWallet}
             copyWallet={copyWallet}
             toggleFollow={toggleFollow}
+            onHire={openServices}
           />
 
           {/* Tab strip, same language as the rest of the console. */}
-          <div className="mt-6 flex flex-wrap gap-1.5 border-b border-border pb-3" role="tablist" aria-label="Agent profile sections">
+          <div ref={tabsRef} className="mt-6 flex flex-wrap gap-1.5 border-b border-border pb-3" role="tablist" aria-label="Agent profile sections">
             {TAB_META.map(({ id, label, icon: Icon }) => (
               <button
                 key={id}
