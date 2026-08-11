@@ -1,4 +1,5 @@
 import { motion } from 'framer-motion'
+import { Clock } from 'lucide-react'
 import { Eyebrow } from '../ui/display'
 import { EASE_OUT_EXPO } from '../../lib/brand'
 
@@ -9,35 +10,67 @@ const reveal = {
   transition: { duration: 0.7, ease: EASE_OUT_EXPO },
 }
 
+/** Staggered version, so the block arrives top to bottom rather than all at once. */
+const revealAt = (i: number) => ({
+  ...reveal,
+  transition: { ...reveal.transition, delay: i * 0.07 },
+})
+
 /**
- * The one-idea editorial beat: why this layer needs to exist now. Restyled to the
- * globalblaw stance: a small tracked eyebrow, a large heading in the BODY face at
- * normal weight (the quiet-confidence voice, deliberately not the display bold every
- * other section uses), and a full-measure paragraph, all on one left edge. No cards,
- * no grid; the restraint is the design.
+ * The one-idea editorial beat: why this layer needs to exist now.
+ *
+ * Centered rather than left-aligned, because this section makes a single claim and a
+ * single claim wants a stage, not a column. The heading stays in the BODY face at normal
+ * weight (the quiet-confidence voice, deliberately not the display bold every other
+ * section uses) but it is bigger now, and so is the room around it: this is the argument
+ * the rest of the page is built on, and it was sized like a footnote.
+ *
+ * The subtitle is the part that changed most. It carried the actual argument while
+ * rendering at body size in 60% foreground, which is the styling of fine print. It is now
+ * a real second line: larger, medium weight, 75% foreground, on a measure short enough to
+ * read in one pass, with the conclusion split onto its own full-contrast line.
+ *
+ * A small mark above the eyebrow gives the block a top edge to sit under. Small on
+ * purpose: it is punctuation for the section, not an illustration of it.
  */
 export default function Shift() {
   return (
-    <section className="w-full bg-background px-5 py-16 text-foreground sm:px-8 sm:py-24">
-      <div className="mx-auto max-w-[1080px]">
-        <motion.div {...reveal}>
-          <Eyebrow className="mb-3">Why now</Eyebrow>
+    <section className="w-full bg-background px-5 py-24 text-foreground sm:px-8 sm:py-32">
+      <div className="mx-auto flex max-w-[960px] flex-col items-center text-center">
+        <motion.span
+          {...revealAt(0)}
+          aria-hidden="true"
+          className="grid h-12 w-12 place-items-center rounded-2xl border border-border bg-card text-accent"
+        >
+          <Clock size={20} strokeWidth={1.75} />
+        </motion.span>
+
+        <motion.div {...revealAt(1)}>
+          <Eyebrow className="mt-6">Why now</Eyebrow>
         </motion.div>
+
         <motion.h2
-          {...reveal}
-          className="text-[clamp(1.8rem,3.4vw,2.45rem)] font-normal leading-[1.1] tracking-[-0.015em] text-foreground"
-          style={{ fontFamily: 'var(--font-body)' }}
+          {...revealAt(2)}
+          className="mt-4 max-w-[26ch] text-[clamp(2.1rem,4.8vw,3.4rem)] font-normal leading-[1.06] tracking-[-0.02em] text-foreground"
+          style={{ fontFamily: 'var(--font-body)', textWrap: 'balance' }}
         >
           Agents can already book the flight. They still pay with your card and your
           password.
         </motion.h2>
+
         <motion.p
-          {...reveal}
-          transition={{ ...reveal.transition, delay: 0.1 }}
-          className="mt-4 max-w-[52rem] text-[1.05rem] leading-[1.75] text-foreground/60"
+          {...revealAt(3)}
+          className="mt-7 max-w-[52ch] text-[clamp(1.15rem,2vw,1.45rem)] font-medium leading-[1.55] text-foreground/75"
+          style={{ textWrap: 'pretty' }}
         >
           The hard part is no longer making agents capable. It is letting them prove who they
           are and move money on their own, without handing over the keys to everything.
+        </motion.p>
+
+        <motion.p
+          {...revealAt(4)}
+          className="mt-5 text-[clamp(1.05rem,1.7vw,1.25rem)] font-semibold tracking-[-0.01em] text-foreground"
+        >
           That is the layer A-Identity builds.
         </motion.p>
       </div>

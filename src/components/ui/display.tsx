@@ -69,12 +69,19 @@ export function Eyebrow({ children, className = '' }: { children: ReactNode; cla
 /**
  * The paragraph under a heading. Capped at a readable measure rather than the container
  * width, because a lede that runs the full 1100px is a lede nobody finishes.
+ *
+ * It carries weight on purpose. At text-foreground/55 and a normal weight this read as
+ * fine print under every heading on the landing, so the second line of each argument was
+ * being skipped. /70 and medium make it a line you actually read, while staying clearly
+ * subordinate to the heading above it, which is full contrast. The measure widened with
+ * the weight so the heavier text does not break into more lines than it did before.
+ * Fourteen sections share this, which is why it is fixed here rather than per section.
  */
 export function Lede({ children, className = '' }: { children: ReactNode; className?: string }) {
   return (
     <p
       className={cn(
-        'max-w-[54ch] text-lg leading-relaxed text-foreground/55 sm:text-xl',
+        'max-w-[56ch] text-lg font-medium leading-relaxed text-foreground/70 sm:text-xl',
         className,
       )}
     >

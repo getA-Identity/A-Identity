@@ -34,9 +34,10 @@ export default function Landing() {
   const { theme } = useTheme()
   return (
     <div
-      /* overflow-x-clip: the protocols rail is w-screen full-bleed, and 100vw includes
-         the scrollbar gutter on desktop, which otherwise gives the whole page a few px
-         of horizontal scroll that fights the rail's own. */
+      /* overflow-x-clip: several sections go full-bleed with w-screen, and 100vw includes
+         the scrollbar gutter on desktop, which otherwise gives the whole page a few px of
+         horizontal scroll. The protocols rail that originally forced this is now a grid,
+         but the rails carousel and the section backdrops still need it. */
       className={`w-full overflow-x-clip bg-background ${theme === 'dark' ? 'dark' : ''}`}
       style={{ fontFamily: 'var(--font-body)', color: 'var(--color-text)' }}
     >
