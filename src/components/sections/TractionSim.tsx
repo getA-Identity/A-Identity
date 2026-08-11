@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useState, type ReactNode } from 'react'
 import { motion, useReducedMotion } from 'framer-motion'
 import { apiFetch, readJson } from '../../lib/api'
 import { DisplayHeading, Eyebrow, Lede } from '../ui/display'
@@ -10,15 +10,23 @@ import OwlMark from '../OwlMark'
  * The oracle as a network: requests flow in from the ring, verdicts come back.
  *
  * The ryvo pattern, with this product's one non-negotiable applied: the NUMBERS are live
- * from /api/traction and shown as counted, zeros included, while the MOTION is openly
- * synthetic and captioned as such. A packet animation that implied each dot was a real
- * transaction would be exactly the kind of fake this product exists to refuse.
+ * from three counters the backend already publishes and shown as counted, zeros included,
+ * while the MOTION is openly synthetic and captioned as such. A packet animation that
+ * implied each dot was a real transaction would be exactly the kind of fake this product
+ * exists to refuse.
  *
  * The choreography still carries the real semantics: most packets reach the centre and
  * settle green, one arrives amber, and one is stopped at the boundary ring and never gets
  * in. That boundary is the product.
+ *
+ * Two engines, two rows, never mixed. The policy engine (/api/traction) is genuinely at
+ * zero and stays visibly at zero; the x402 settlement engines on X Layer and Celo are
+ * not, and this section used to ignore them, which made a working product look dead. Each
+ * row says which endpoint it came from and links to it, so every figure on the page can be
+ * re-read by the person reading it.
  */
 
+/** GET /api/traction: the policy engine's own aggregate counters. */
 type Traction = {
   checks: number
   allow: number
@@ -27,6 +35,29 @@ type Traction = {
   registeredAgents: number
   protectedNotionalUsd: number
 }
+
+/** GET https://a-identity-asp.onrender.com/proof.json: the X Layer ASP's settlement ledger. */
+type XLayerProof = {
+  realOnchainRevenue?: { totalSettlements?: number; totalUsd?: number }
+}
+
+/** GET /api/celo/proof: the Celo facilitator's ledger, with our own traffic labeled. */
+type CeloProof = {
+  totalSettlements: number
+  totalUsd: number
+  /** An older backend that predates the split simply omits these. */
+  internalSettlements?: number
+  externalSettlements?: number
+}
+
+/** One feed: read, still reading, or asked and did not answer. Never silently zero. */
+type Feed<T> = { value: T | null; failed: boolean }
+const READING = { value: null, failed: false }
+
+const XLAYER_PROOF_JSON = 'https://a-identity-asp.onrender.com/proof.json'
+const XLAYER_PROOF_PAGE = 'https://a-identity-asp.onrender.com/proof'
+const TRACTION_API = 'https://a-identity-backend.onrender.com/api/traction'
+const CELO_PROOF_API = 'https://a-identity-backend.onrender.com/api/celo/proof'
 
 const SIZE = 420
 const C = SIZE / 2
@@ -41,7 +72,54 @@ const pt = (i: number, r: number) => {
   return { x: C + r * Math.cos(a), y: C + r * Math.sin(a) }
 }
 
-const usd = (n: number) => `$${n.toLocaleString('en-US', { maximumFractionDigits: 0 })}`
+const count = (n: number) => n.toLocaleString('en-US')
+/**
+ * A settlement is a fraction of a cent, so it needs three decimals to exist at all, while
+ * the protected notional is whole dollars. Rounding a real $0.528 to $1 would be a made-up
+ * number, and rounding it to $0 would be a worse one.
+ */
+const usd = (n: number, maxFrac = 0) =>
+  `$${n.toLocaleString('en-US', { maximumFractionDigits: maxFrac })}`
+
+/**
+ * A number that has actually been read, or an honest placeholder.
+ *
+ * A feed that has not answered yet must never render as 0. This section's entire claim is
+ * that its zeros are counted zeros, so an unread value painted as 0 would be the one lie
+ * it exists to refuse: pending shows a pulse, a failed read says it did not answer.
+ */
+function Value<T>({ feed, of }: { feed: Feed<T>; of: (v: T) => string }) {
+  if (feed.value) return <>{of(feed.value)}</>
+  if (feed.failed) return <span className="text-sm font-medium text-foreground/35">no answer</span>
+  return (
+    <span
+      className="inline-block h-4 w-12 animate-pulse rounded bg-foreground/10 align-middle"
+      aria-label="reading"
+    />
+  )
+}
+
+/** The caption above a row of numbers, naming the engine that counted them. */
+function RowLabel({ children }: { children: ReactNode }) {
+  return (
+    <p className="font-mono text-[10px] font-semibold uppercase tracking-[0.16em] text-foreground/40">
+      {children}
+    </p>
+  )
+}
+
+function Source({ href, children }: { href: string; children: ReactNode }) {
+  return (
+    <a
+      href={href}
+      target="_blank"
+      rel="noopener noreferrer"
+      className="font-semibold text-accent hover:underline"
+    >
+      {children}
+    </a>
+  )
+}
 
 function Packet({ i, reduced }: { i: number; reduced: boolean }) {
   const from = pt(i, NODE_R)
@@ -69,27 +147,82 @@ function Packet({ i, reduced }: { i: number; reduced: boolean }) {
 
 export default function TractionSim() {
   const reduced = useReducedMotion() ?? false
-  const [t, setT] = useState<Traction | null>(null)
+  const [policy, setPolicy] = useState<Feed<Traction>>(READING)
+  const [xlayer, setXlayer] = useState<Feed<{ settlements: number; usd: number }>>(READING)
+  const [celo, setCelo] = useState<Feed<CeloProof>>(READING)
 
   useEffect(() => {
     let alive = true
-    apiFetch('/api/traction')
-      .then((r) => readJson<Traction>(r))
-      .then((d) => {
-        if (alive && d && typeof d.checks === 'number') setT(d)
-      })
-      .catch(() => {})
+
+    const load = () => {
+      if (!alive) return
+
+      apiFetch('/api/traction')
+        .then((r) => (r.ok ? readJson<Traction>(r) : Promise.reject(new Error(String(r.status)))))
+        .then((d) => {
+          if (!alive) return
+          if (d && typeof d.checks === 'number') setPolicy({ value: d, failed: false })
+          else setPolicy({ value: null, failed: true })
+        })
+        .catch(() => alive && setPolicy({ value: null, failed: true }))
+
+      // The ASP is a separate origin from the backend, so this one goes direct. It serves
+      // Access-Control-Allow-Origin: *, and the same file already feeds the settlement
+      // ticker further up the page.
+      fetch(XLAYER_PROOF_JSON)
+        .then((r) => (r.ok ? r.json() : Promise.reject(new Error(String(r.status)))))
+        .then((d: XLayerProof) => {
+          if (!alive) return
+          const rev = d?.realOnchainRevenue
+          if (rev && typeof rev.totalSettlements === 'number')
+            setXlayer({
+              value: { settlements: rev.totalSettlements, usd: Number(rev.totalUsd ?? 0) },
+              failed: false,
+            })
+          else setXlayer({ value: null, failed: true })
+        })
+        .catch(() => alive && setXlayer({ value: null, failed: true }))
+
+      apiFetch('/api/celo/proof')
+        .then((r) => (r.ok ? readJson<CeloProof>(r) : Promise.reject(new Error(String(r.status)))))
+        .then((d) => {
+          if (!alive) return
+          if (d && typeof d.totalSettlements === 'number') setCelo({ value: d, failed: false })
+          else setCelo({ value: null, failed: true })
+        })
+        .catch(() => alive && setCelo({ value: null, failed: true }))
+    }
+
+    // Three reads from a section that is well below the fold, against a backend that may
+    // be cold: deferred to idle so they are not competing with the hero for a phone's
+    // bandwidth. The counters are proof, not the first thing anyone reads.
+    const idle = window.requestIdleCallback?.(load, { timeout: 3000 })
+    const timer = idle === undefined ? window.setTimeout(load, 1200) : undefined
+
     return () => {
       alive = false
+      if (idle !== undefined) window.cancelIdleCallback?.(idle)
+      if (timer !== undefined) window.clearTimeout(timer)
     }
   }, [])
+
+  const celoSplit = celo.value
+  const hasSplit = celoSplit && typeof celoSplit.internalSettlements === 'number'
 
   return (
     <SectionShell id="traction" size="lg" surface="card" backdrop="traction" backdropPosition="left">
       <div className="grid items-center gap-12 lg:grid-cols-[minmax(0,1fr)_460px]">
         <div>
           <SectionIntro
-            eyebrow={<Eyebrow>Traction</Eyebrow>}
+            eyebrow={
+              <Eyebrow className="inline-flex items-center gap-2 text-foreground/70">
+                <span className="relative flex h-1.5 w-1.5" aria-hidden="true">
+                  <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-500/60" />
+                  <span className="relative inline-flex h-1.5 w-1.5 rounded-full bg-emerald-500" />
+                </span>
+                Traction, live
+              </Eyebrow>
+            }
             heading={
               <DisplayHeading size="section" className="max-w-[14ch]">
                 Every check flows through here.
@@ -98,29 +231,52 @@ export default function TractionSim() {
             lede={
               <Lede>
                 Agents ask, the oracle answers, and the counters below are exactly what the
-                engine has counted so far. Zeros included, because a number you cannot
+                engines have counted so far. Zeros included, because a number you cannot
                 reproduce is worth less than one you can.
               </Lede>
             }
           />
 
-          <motion.div {...reveal} className="mt-10 grid grid-cols-2 gap-3 sm:grid-cols-4">
-            <Stat label="Policy checks" value={(t?.checks ?? 0).toLocaleString('en-US')} />
-            <Stat label="Allowed" value={(t?.allow ?? 0).toLocaleString('en-US')} />
-            <Stat label="Denied" value={(t?.deny ?? 0).toLocaleString('en-US')} />
-            <Stat label="Protected" value={usd(t?.protectedNotionalUsd ?? 0)} />
+          <motion.div {...reveal} className="mt-10">
+            <RowLabel>Policy engine</RowLabel>
+            <div className="mt-3 grid grid-cols-2 gap-3 sm:grid-cols-4">
+              <Stat label="Policy checks" value={<Value feed={policy} of={(d) => count(d.checks)} />} />
+              <Stat label="Allowed" value={<Value feed={policy} of={(d) => count(d.allow)} />} />
+              <Stat label="Denied" value={<Value feed={policy} of={(d) => count(d.deny)} />} />
+              <Stat
+                label="Protected"
+                value={<Value feed={policy} of={(d) => usd(d.protectedNotionalUsd)} />}
+              />
+            </div>
+            <p className="mt-3 text-xs text-foreground/40">
+              Live from <Source href={TRACTION_API}>/api/traction</Source>
+              {policy.value
+                ? `. ${count(policy.value.registeredAgents)} agents registered so far, and a registered agent that was never checked is not counted as a check.`
+                : '.'}
+            </p>
           </motion.div>
+
+          <motion.div {...reveal} className="mt-8">
+            <RowLabel>x402 settlements, two mainnets</RowLabel>
+            <div className="mt-3 grid grid-cols-2 gap-3 sm:grid-cols-4">
+              <Stat label="X Layer settled" value={<Value feed={xlayer} of={(d) => count(d.settlements)} />} />
+              <Stat label="X Layer taken" value={<Value feed={xlayer} of={(d) => usd(d.usd, 3)} />} />
+              <Stat label="Celo settled" value={<Value feed={celo} of={(d) => count(d.totalSettlements)} />} />
+              <Stat label="Celo taken" value={<Value feed={celo} of={(d) => usd(d.totalUsd, 3)} />} />
+            </div>
+            <p className="mt-3 text-xs text-foreground/40">
+              Live from <Source href={XLAYER_PROOF_JSON}>/proof.json</Source> on X Layer mainnet and{' '}
+              <Source href={CELO_PROOF_API}>/api/celo/proof</Source> on Celo mainnet. Every row behind
+              these two counters is a real stablecoin transfer, listed one by one on the{' '}
+              <Source href={XLAYER_PROOF_PAGE}>proof page</Source>.
+              {hasSplit
+                ? ` Celo labels whose traffic it is: ${count(celoSplit.internalSettlements ?? 0)} of ${count(celoSplit.totalSettlements)} came from our own payer rather than an outside one.`
+                : ''}
+            </p>
+          </motion.div>
+
           <motion.p {...reveal} className="mt-4 text-xs text-foreground/40">
-            Counters live from{' '}
-            <a
-              href="https://a-identity-backend.onrender.com/api/traction"
-              target="_blank"
-              rel="noopener noreferrer"
-              className="font-semibold text-accent hover:underline"
-            >
-              /api/traction
-            </a>
-            . The motion is illustrative; the boundary is not.
+            The motion is illustrative; the boundary is not.
           </motion.p>
         </div>
 

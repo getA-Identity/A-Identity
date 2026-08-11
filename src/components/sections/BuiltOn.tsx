@@ -13,8 +13,10 @@ const reveal = {
 }
 
 /* Real brand marks (currentColor, tinted per rail). OKX and Circle are the official
- * marks; Arc is a redrawn arch mark (Circle Arc) in matching monochrome. Rails whose
- * marks we do not ship yet get a drawn monogram tile instead of a wrong logo. */
+ * marks; Arc is a redrawn arch mark (Circle Arc) in matching monochrome. Avalanche and
+ * Solana reuse the official marks the app already ships in /public/chains for its chain
+ * badges, rather than a second, drifting copy of the same logo. Rails whose marks we do
+ * not ship yet get a drawn monogram tile instead of a wrong logo. */
 /** OKX ships no file in this repo, so its official monochrome mark stays as a path. */
 function OkxMark(props: { className?: string }) {
   return (
@@ -35,9 +37,25 @@ type Rail = {
    * the artwork; only Circle's gradient is lossy, where nothing else was under 60 KB.
    */
   logo?: string
-  /** Intrinsic size of that file. Both <img> below declare it, so neither reflows on decode. */
+  /**
+   * Intrinsic size of that file. Both <img> below declare it, so neither reflows on
+   * decode. A vector rail (Celo, Avalanche, Solana) has no fixed intrinsic size, so for
+   * those this is simply the box the mark is drawn into before `object-contain` and the
+   * container caps it.
+   */
   logoW?: number
   logoH?: number
+  /**
+   * True when `logo` is white on transparent, which is how a brand that presents its mark
+   * on a dark field ships it: Arc's tile is its own navy-to-crimson gradient, so the file
+   * is a white arch. As a 12% watermark on the near-white card that is nothing at all,
+   * which is why the Arc slide read as empty in the light theme while every other rail
+   * (whose artwork is dark or mid-tone) read fine. On the light ground the mark is
+   * inverted to a dark silhouette, matching what Stellar and Robinhood already show
+   * there; the dark ground keeps it white. The tile is untouched either way, because
+   * there the brand's own field is behind it.
+   */
+  whiteMark?: boolean
   /** Fallback for a brand whose file we do not ship (OKX). */
   Mark?: (p: { className?: string }) => ReactElement
   /** The tile behind the mark, in the brand's own presentation. */
@@ -79,8 +97,9 @@ const RAILS: Rail[] = [
   /* Every colour and tile below is taken from the brand's own artwork rather than a
      guess: Circle's gradient mark on its white field, Arc's white arch on the navy to
      crimson gradient it ships on, Stellar's black glyph on Stellar yellow, Base's blue
-     square, and Robin Neon for Robinhood. OKX is a monochrome brand, so it rides the
-     foreground token and stays correct in both themes. */
+     square, Avalanche red, Solana's purple-to-green gradient bars, and Robin Neon for
+     Robinhood. OKX is a monochrome brand, so it rides the foreground token and stays
+     correct in both themes. */
   {
     id: 'circle',
     name: 'Circle',
@@ -101,6 +120,7 @@ const RAILS: Rail[] = [
     logoH: 478,
     tileBg: 'linear-gradient(155deg, #011667 0%, #3B1046 55%, #7B0E25 100%)',
     color: '#3B1B6E',
+    whiteMark: true,
     role: 'Where identity and reputation live.',
     detail: 'ERC-8004 passports, KYA attestations, spend vaults and escrow settle here, with sub-second finality and gas paid in USDC.',
     chain: 'arc',
@@ -152,6 +172,30 @@ const RAILS: Rail[] = [
     chain: 'base',
   },
   {
+    id: 'avalanche',
+    name: 'Avalanche',
+    logo: '/chains/avalanche.svg',
+    logoW: 512,
+    logoH: 512,
+    tileBg: '#ffffff',
+    color: '#E84142',
+    role: 'Where finality arrives before the agent asks again.',
+    detail: 'A planned C-Chain adapter: native Circle USDC and sub-second finality for burst settlement, with the same ERC-8004 passport and spend caps. The registry is not deployed there yet.',
+    chain: 'avalanche',
+  },
+  {
+    id: 'solana',
+    name: 'Solana',
+    logo: '/chains/solana.svg',
+    logoW: 512,
+    logoH: 512,
+    tileBg: '#ffffff',
+    color: '#9945FF',
+    role: 'Where throughput is the whole point.',
+    detail: 'A planned non-EVM adapter: settlement in SPL USDC, with an Anchor registry program standing in for ERC-8004, which is EVM-only, and the passport bridged across.',
+    chain: 'solana',
+  },
+  {
     id: 'robinhood',
     name: 'Robinhood Chain',
     logo: '/logos/robinhood-mark.webp',
@@ -167,8 +211,8 @@ const RAILS: Rail[] = [
 
 /**
  * Where A-Identity runs, one rail at a time. Honest "built on", not "trusted by":
- * the three live infrastructures are real today, and the two roadmap rails wear a
- * clearly-labeled NEXT pill instead of pretending. One slide per rail (the carousel
+ * the live infrastructures are real today, and every roadmap rail wears a clearly-labeled
+ * NEXT pill instead of pretending. One slide per rail (the carousel
  * treatment), native snap scroll with arrows and dots, so each rail gets the floor
  * instead of sharing a cramped grid.
  */
@@ -268,7 +312,11 @@ export default function BuiltOn() {
                         height={r.logoH}
                         loading="lazy"
                         decoding="async"
-                        className="max-h-full max-w-full object-contain"
+                        className={`max-h-full max-w-full object-contain${
+                          /* See `whiteMark`: a white-on-transparent mark is invisible on
+                             the light card, so there it paints as a dark silhouette. */
+                          r.whiteMark ? ' invert dark:invert-0' : ''
+                        }`}
                       />
                     ) : (
                       r.Mark && <r.Mark className="h-full w-full" />

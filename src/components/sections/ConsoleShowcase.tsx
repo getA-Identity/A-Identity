@@ -152,7 +152,7 @@ export default function ConsoleShowcase() {
                     label="Meridian"
                     sub="#849980 · KYA verified"
                     value={
-                      <span className="inline-flex items-center gap-1.5 rounded-md px-2.5 py-1 font-mono text-xs font-bold" style={{ color: '#059669', background: '#05966914' }}>
+                      <span className="inline-flex items-center gap-1.5 rounded-md px-2.5 py-1 font-mono text-xs font-bold" style={{ color: 'var(--ok)', background: 'color-mix(in srgb, var(--ok) 8%, transparent)' }}>
                         ALLOW
                       </span>
                     }
@@ -168,7 +168,7 @@ export default function ConsoleShowcase() {
                     label="Unknown counterparty"
                     sub="no on-chain identity"
                     value={
-                      <span className="inline-flex items-center gap-1.5 rounded-md px-2.5 py-1 font-mono text-xs font-bold" style={{ color: '#dc2626', background: '#dc262614' }}>
+                      <span className="inline-flex items-center gap-1.5 rounded-md px-2.5 py-1 font-mono text-xs font-bold" style={{ color: 'var(--danger)', background: 'color-mix(in srgb, var(--danger) 8%, transparent)' }}>
                         DENY
                       </span>
                     }
