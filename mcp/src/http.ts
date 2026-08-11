@@ -280,6 +280,7 @@ server.listen(PORT, () => {
   console.error(`  POST /api/agents/spend-preflight dry-run a USDC spend against the live policy (nothing created)`)
   console.error(`  GET  /api/agents/audit-log       decision trail (?since= &limit=)`)
   console.error(`  POST /api/agents/audit-log/outcome  record what happened after a verdict`)
+  console.error(`  POST /api/agents/logo            set/replace/remove the profile image (owner-only)`)
   console.error(`  POST /api/agents/register         register an agent from a manifest (free)`)
   console.error(`  POST /api/agents/register-url     register from a hosted manifest URL (free)`)
   console.error(`  GET  /api/agents/badge           public guardrail badge (SVG or JSON, opt-in)`)

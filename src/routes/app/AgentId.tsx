@@ -23,6 +23,7 @@ import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '../../
 import { Skeleton } from '../../components/ui/skeleton'
 import ReputationCard from '../../components/app/agent/ReputationCard'
 import RegisterForm from '../../components/app/agent/RegisterForm'
+import AvatarCard from '../../components/app/agent/AvatarCard'
 
 type Stage = 'register' | 'verify' | 'live'
 
@@ -47,6 +48,8 @@ type RealAgent = {
   onchainAgentId?: string
   walletAddress: string | null
   createdAt: string
+  /** The uploaded profile image, when the owner set one (a small data: URL). */
+  logoUrl?: string
 }
 
 export default function AgentId() {
@@ -211,6 +214,7 @@ export default function AgentId() {
                 category={category}
                 size={52}
                 verdict={kyaVerified ? 'allow' : 'warn'}
+                src={realAgent?.logoUrl}
               />
               <div className="min-w-0">
                 <div className="flex flex-wrap items-center gap-2">
@@ -271,6 +275,18 @@ export default function AgentId() {
           </dl>
         </div>
       </div>
+
+      {/* Profile image: only for an agent you actually own. The illustrative sample has
+          no owner here, so there is nothing to change and no control to offer. */}
+      {realAgent && (
+        <AvatarCard
+          agentId={realAgent.id}
+          category={realAgent.category}
+          logoUrl={realAgent.logoUrl}
+          verdict={kyaVerified ? 'allow' : 'warn'}
+          onChanged={() => loadAgents({ force: true, select: realAgent.id })}
+        />
+      )}
 
       {/* Stage progress */}
       <div data-tour="stages" className="mt-4 rounded-2xl border border-border bg-card p-6">

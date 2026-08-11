@@ -1,3 +1,4 @@
+import { useCallback, useState } from 'react'
 import { Bot, Headset, PenLine, Search, Terminal, TrendingUp } from 'lucide-react'
 import OwlMark, { type OwlVerdict } from './OwlMark'
 
@@ -14,9 +15,22 @@ import OwlMark, { type OwlVerdict } from './OwlMark'
  * Identity is carried where it is actually legible: the name and the mono address beside
  * it, which every caller already renders.
  *
- * The owl badge stays. It is the reason a list of agents can be scanned for risk without
- * reading a single pill.
+ * Three sources, in order:
+ *   1. the owner's uploaded logo, when there is one,
+ *   2. otherwise the shared default portrait every agent wears until it has its own,
+ *   3. otherwise the generated category mark, which needs no file to exist.
+ *
+ * Step 2 is a file on disk, and a file can be absent (it is added outside this component).
+ * A missing default is therefore not a broken tile: the image reports its own failure and
+ * the generated mark takes the slot back. The check runs on the ref as well as on `error`
+ * because a prerendered page can finish failing before React attaches the handler.
+ *
+ * The owl badge stays, on top, whatever the picture is. It is the reason a list of agents
+ * can be scanned for risk without reading a single pill, and a logo must never hide it.
  */
+
+/** The one shared portrait for agents that have not uploaded one. */
+const DEFAULT_AVATAR = '/agents/default-agent.png'
 
 const CATEGORIES: { match: RegExp; icon: typeof Bot; tint: number }[] = [
   { match: /trad|financ|defi|invest/i, icon: TrendingUp, tint: 1 },
@@ -47,8 +61,9 @@ export default function AgentAvatar({
   size?: number
   /** Omitted when nothing has been decided yet, and then no badge is drawn. */
   verdict?: OwlVerdict
-  /** An uploaded logo (small data: URL). When present it replaces the glyph;
-   *  the verdict owl stays, because a logo must never hide a risk signal. */
+  /** An uploaded logo (small data: URL). When present it wins over the shared default
+   *  portrait; the verdict owl stays either way, because a picture must never hide a
+   *  risk signal. */
   src?: string | null
   className?: string
 }) {
@@ -62,11 +77,34 @@ export default function AgentAvatar({
 
   const badge = Math.max(16, Math.round(size * 0.52))
 
+  // Which sources have already failed, tracked by URL rather than by a boolean: uploading
+  // a new logo must get a fresh attempt instead of inheriting the previous picture's fate.
+  const [failed, setFailed] = useState<string[]>([])
+  const markFailed = useCallback((url: string | null | undefined) => {
+    if (!url) return
+    setFailed((prev) => (prev.includes(url) ? prev : [...prev, url]))
+  }, [])
+
+  // Uploaded logo first, then the shared default, then nothing (the generated mark below).
+  const candidate = (src ? [src, DEFAULT_AVATAR] : [DEFAULT_AVATAR]).find((s) => !failed.includes(s))
+
+  const noteIfBroken = useCallback(
+    (node: HTMLImageElement | null) => {
+      // A hydrated snapshot can finish loading (or 404ing) before React wires up onError,
+      // so re-ask the element itself the moment the ref lands.
+      if (node && node.complete && node.naturalWidth === 0) markFailed(node.getAttribute('src'))
+    },
+    [markFailed],
+  )
+
   return (
     <div className={`relative shrink-0 ${className}`} style={{ width: size, height: size }}>
-      {src ? (
+      {candidate ? (
         <img
-          src={src}
+          key={candidate}
+          src={candidate}
+          ref={noteIfBroken}
+          onError={() => markFailed(candidate)}
           alt=""
           aria-hidden="true"
           loading="lazy"

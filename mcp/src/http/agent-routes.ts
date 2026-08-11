@@ -6,7 +6,7 @@
  */
 import {
   recordWallet, assignWallet, getWalletBalance, createAgent, listPlatformAgents,
-  anchorAgentOnchain, provisionAgentVault, grantAgentSessionKey, getAgentVault,
+  updateAgentLogo, anchorAgentOnchain, provisionAgentVault, grantAgentSessionKey, getAgentVault,
   provisionCircleWallet, getAgentCircleWallet, getAgentTreasury, startAgentAutoYield,
   stopAgentAutoYield, startKyaChallenge, verifyKya, revokeAgentKya, getAgentKya,
   agentReputation, agentPolicy,
@@ -79,6 +79,26 @@ export async function handleAgentRoutes(ctx: RouteCtx): Promise<boolean> {
     // or a guest with none, gets an empty list (public discovery is /api/marketplace).
     const owned = callerId ? listPlatformAgents().filter((a) => a.owner === callerId) : []
     sendJson(res, 200, { agents: owned })
+    return true
+  }
+  // Set / replace / remove an agent's profile image after registration (owner-only).
+  // Registration can already carry a logo; this is the same picture, changeable later.
+  // The image travels as the same small inline data: URL the wizard produces (resized to
+  // a 96px square in the browser), which fits comfortably inside MAX_BODY_BYTES.
+  if (req.method === 'POST' && url.pathname === '/api/agents/logo') {
+    const body = (await readBody(req).catch(() => null)) as { agentId?: string; logoUrl?: string | null } | null
+    if (!body?.agentId) { sendJson(res, 400, { error: 'agentId required' }); return true }
+    // A missing field is NOT a removal. Only an explicit null removes the image, so a
+    // client that forgot to send it can never wipe an agent's avatar by accident.
+    if (!('logoUrl' in body)) {
+      sendJson(res, 400, { error: 'logoUrl required: an inline data:image/... URL to set it, or null to remove it' })
+      return true
+    }
+    // Ownership + the size bound both live in the platform function, which is the same
+    // sanitizer registration uses, so the two paths cannot drift.
+    const r = updateAgentLogo(body.agentId, body.logoUrl ?? null, callerId)
+    if ('error' in r) { sendJson(res, errStatus(r.error), r); return true }
+    sendJson(res, 200, r)
     return true
   }
   // Anchor an existing platform agent on-chain (real ERC-8004 register, env-gated)

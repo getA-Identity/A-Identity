@@ -8,6 +8,7 @@ import { Button } from '../../ui/button'
 import CopyBlock from '../CopyBlock'
 import { BACKEND_UNREACHABLE } from '../../../lib/mcpBase'
 import { CATEGORIES, MCP_ADD_CMD, REGISTER_CURL, STEP_META, STEPS, type Step } from './register-constants'
+import { logoErrorText, resizeLogoToDataUrl } from './logo-image'
 import RegisterSuccess from './RegisterSuccess'
 import IdentityStep from './steps/IdentityStep'
 import CapabilitiesStep from './steps/CapabilitiesStep'
@@ -28,42 +29,14 @@ export default function RegisterForm({ onClose, onCreated }: { onClose: () => vo
   const [logoUrl, setLogoUrl] = useState<string | null>(null)
   const [logoErr, setLogoErr] = useState<string | null>(null)
 
+  // Resized in the browser (shared with the dashboard's avatar editor, so both agree on
+  // the square size, the size bound and the wording of a failure).
   const onLogoPick = (file: File | undefined) => {
     setLogoErr(null)
     if (!file) return
-    if (!file.type.startsWith('image/')) {
-      setLogoErr('Pick an image file.')
-      return
-    }
-    const url = URL.createObjectURL(file)
-    const img = new Image()
-    img.onload = () => {
-      // Downscale to a 96px square (cover-cropped) so the stored data URL stays tiny.
-      const SIZE = 96
-      const canvas = document.createElement('canvas')
-      canvas.width = SIZE
-      canvas.height = SIZE
-      const ctx = canvas.getContext('2d')
-      if (!ctx) {
-        setLogoErr('Could not read the image.')
-        URL.revokeObjectURL(url)
-        return
-      }
-      const side = Math.min(img.width, img.height)
-      ctx.drawImage(img, (img.width - side) / 2, (img.height - side) / 2, side, side, 0, 0, SIZE, SIZE)
-      const data = canvas.toDataURL('image/png')
-      URL.revokeObjectURL(url)
-      if (data.length > 150_000) {
-        setLogoErr('That image compresses too large; try a simpler one.')
-        return
-      }
-      setLogoUrl(data)
-    }
-    img.onerror = () => {
-      setLogoErr('Could not read the image.')
-      URL.revokeObjectURL(url)
-    }
-    img.src = url
+    resizeLogoToDataUrl(file)
+      .then(setLogoUrl)
+      .catch((err) => setLogoErr(logoErrorText(err)))
   }
   const [category, setCategory] = useState(CATEGORIES[0])
   /** Optional profile-hero accent: 1..6 maps to --cat-1..--cat-6, undefined means default. */

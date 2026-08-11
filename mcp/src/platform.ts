@@ -17,7 +17,7 @@
  */
 export type { Permissions, VelocityPolicy, Service, PlatformAgent, Wallet, InstructionType, Instruction, State, FeedbackEntry } from './platform/core.js'
 export { __resetPlatformStateForTests, initState, refreshPlatformState } from './platform/core.js'
-export { createWallet, recordWallet, assignWallet, getWalletBalance, createAgent, listPlatformAgents, anchorAgentOnchain } from './platform/agents.js'
+export { createWallet, recordWallet, assignWallet, getWalletBalance, createAgent, listPlatformAgents, updateAgentLogo, anchorAgentOnchain, sanitizeLogoUrl, MAX_LOGO_DATA_URL_CHARS } from './platform/agents.js'
 export { startKyaChallenge, verifyKya, getAgentKya, revokeAgentKya } from './platform/kya.js'
 export { provisionAgentVault, getAgentCirclePolicyPlan, getAgentVault, grantAgentSessionKey, provisionCircleWallet, getAgentCircleWallet, getAgentTreasury, startAgentAutoYield, stopAgentAutoYield } from './platform/vault.js'
 export type { VaultSyncResult } from './platform/vault.js'

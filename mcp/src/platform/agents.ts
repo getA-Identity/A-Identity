@@ -121,6 +121,27 @@ function sanitizeCardStyle(v: unknown): number | undefined {
     : undefined
 }
 
+/**
+ * The one size bound on a stored logo. Only small INLINE images are kept: a data: URL
+ * under ~150KB. Anything larger would balloon the single persisted state document, which
+ * is serialized in full on every save.
+ *
+ * Exported because registration is no longer the only writer: the dashboard can set or
+ * replace the image after the fact, and two copies of "150_000" in two files is a drift
+ * waiting to happen. One constant, one predicate, both paths.
+ */
+export const MAX_LOGO_DATA_URL_CHARS = 150_000
+
+/** A small inline `data:image/...` URL passes; anything else (remote URL, wrong type,
+ *  oversized) means UNSET. Dropped rather than rejected on the registration path, which
+ *  is why this returns undefined instead of throwing; the update path turns the same
+ *  undefined into a 400 so an owner is never told "saved" about a logo we discarded. */
+export function sanitizeLogoUrl(v: unknown): string | undefined {
+  return typeof v === 'string' && v.startsWith('data:image/') && v.length <= MAX_LOGO_DATA_URL_CHARS
+    ? v
+    : undefined
+}
+
 export function createAgent(input: {
   name: string
   description: string
@@ -172,12 +193,9 @@ export function createAgent(input: {
     capabilities: boundedCaps,
     services,
     endpoint: input.endpoint ? clamp(String(input.endpoint), 500) : undefined,
-    // Only small inline images: a data: URL under ~150KB. Anything else is dropped
-    // rather than ballooning the single persisted state document.
-    logoUrl:
-      typeof input.logoUrl === 'string' && input.logoUrl.startsWith('data:image/') && input.logoUrl.length <= 150_000
-        ? input.logoUrl
-        : undefined,
+    // Only small inline images (see sanitizeLogoUrl); anything else is dropped rather
+    // than ballooning the single persisted state document.
+    logoUrl: sanitizeLogoUrl(input.logoUrl),
     cardStyle: sanitizeCardStyle(input.cardStyle),
     permissions,
     walletAddress: input.walletAddress ?? null,
@@ -216,6 +234,55 @@ export function createAgent(input: {
 
 export function listPlatformAgents(): PlatformAgent[] {
   return state.agents
+}
+
+/**
+ * Set, replace or remove an agent's profile image AFTER registration.
+ *
+ * Owner-only, the same `ownsAgent` gate every other agent-scoped mutation enforces, and
+ * the same `sanitizeLogoUrl` bound registration applies, so the two write paths cannot
+ * drift apart on what counts as an acceptable image.
+ *
+ * `null` is the remove signal and is deliberately distinct from "no field sent": the
+ * caller has to say it wants the image gone. Removing an image that was never there is a
+ * clean no-op rather than an error, so a double-click cannot fail.
+ */
+export function updateAgentLogo(
+  agentId: string,
+  logoUrl: string | null,
+  caller?: string,
+):
+  | { agent: { id: string; logoUrl?: string }; logo: 'set' | 'removed' | 'unchanged'; note: string }
+  | { error: string } {
+  const agent = state.agents.find((a) => a.id === agentId)
+  if (!agent) return { error: 'Unknown agent' }
+  if (!ownsAgent(agent, caller)) return { error: 'Forbidden: not the agent owner' }
+
+  if (logoUrl === null) {
+    if (!agent.logoUrl) {
+      return { agent: { id: agent.id }, logo: 'unchanged', note: 'This agent had no profile image; nothing to remove.' }
+    }
+    agent.logoUrl = undefined
+    pushActivity(agent, 'Profile image removed')
+    save(state)
+    return { agent: { id: agent.id }, logo: 'removed', note: 'Profile image removed. The agent falls back to the default mark.' }
+  }
+
+  const clean = sanitizeLogoUrl(logoUrl)
+  if (!clean) {
+    return {
+      error: `logoUrl must be an inline data:image/... URL of at most ${MAX_LOGO_DATA_URL_CHARS} characters, or null to remove it`,
+    }
+  }
+  const replaced = Boolean(agent.logoUrl)
+  agent.logoUrl = clean
+  pushActivity(agent, replaced ? 'Profile image replaced' : 'Profile image set')
+  save(state)
+  return {
+    agent: { id: agent.id, logoUrl: clean },
+    logo: 'set',
+    note: replaced ? 'Profile image replaced.' : 'Profile image set.',
+  }
 }
 
 /**
