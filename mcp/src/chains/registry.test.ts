@@ -91,8 +91,9 @@ test('the planned set is mostly EVM, with one non-EVM', () => {
   const planned = CHAINS.filter((c) => c.status === 'planned')
   const nonEvm = planned.filter((c) => c.ecosystem !== 'evm')
   assert.deepEqual(nonEvm.map((c) => c.id), ['stellar'])
-  // Derived rather than `planned.length - N`: the hardcoded N is what went stale when
-  // Solana was dropped, and it failed as an off-by-one somewhere unrelated to the change.
+  // Derived rather than `planned.length - N`: a hardcoded N goes stale the moment a chain
+  // enters or leaves the registry, and it fails as an off-by-one somewhere unrelated to
+  // the edit that caused it, which is exactly how this line broke once already.
   assert.equal(planned.filter((c) => c.ecosystem === 'evm').length, planned.length - nonEvm.length)
 })
 
