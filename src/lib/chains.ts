@@ -10,7 +10,7 @@
  */
 
 /** Short slug of a chain in the registry. */
-export type ChainId = 'arc' | 'xlayer' | 'celo' | 'base' | 'celo-sepolia' | 'stellar' | 'avalanche' | 'arbitrum' | 'rhchain-testnet' | 'rhchain'
+export type ChainId = 'arc' | 'xlayer' | 'celo' | 'base' | 'rhchain-testnet' | 'celo-sepolia' | 'stellar' | 'avalanche' | 'arbitrum' | 'rhchain'
 
 export type ChainProtocols = {
   /** x402 HTTP-402 payment support. Settlement is in a stablecoin. */
@@ -179,6 +179,35 @@ export const CHAINS: readonly Chain[] = [
     "x402": true
   },
   {
+    "id": "rhchain-testnet",
+    "name": "Robinhood Chain Testnet",
+    "shortName": "RH Chain test",
+    "color": "#0F9D30",
+    "chainId": 46630,
+    "caip2": "eip155:46630",
+    "evmCompatible": true,
+    "testnet": true,
+    "stablecoins": [],
+    "rpcUrl": "https://rpc.testnet.chain.robinhood.com",
+    "explorer": "https://explorer.testnet.chain.robinhood.com",
+    "role": "Robinhood Chain rehearsal rail: the canonical ERC-8004 registry set is live here; mainnet waits on a human-funded signer.",
+    "status": "beta",
+    "protocols": {
+      "payment": {
+        "x402": true,
+        "note": "x402 needs a settlement token first: no canonical USDC is documented on this chain yet."
+      },
+      "identity": {
+        "standard": "ERC-8004",
+        "erc8004Native": true,
+        "note": "Identity + Reputation + Validation registries LIVE at the canonical cross-chain addresses."
+      }
+    },
+    "identity": "ERC-8004",
+    "erc8004Native": true,
+    "x402": true
+  },
+  {
     "id": "celo-sepolia",
     "name": "Celo Sepolia (Testnet)",
     "shortName": "Celo Sepolia",
@@ -294,35 +323,6 @@ export const CHAINS: readonly Chain[] = [
       "payment": {
         "x402": true,
         "note": "x402 over USDC on Arbitrum One."
-      },
-      "identity": {
-        "standard": "ERC-8004",
-        "erc8004Native": true,
-        "note": "ERC-8004 registry to be deployed."
-      }
-    },
-    "identity": "ERC-8004",
-    "erc8004Native": true,
-    "x402": true
-  },
-  {
-    "id": "rhchain-testnet",
-    "name": "Robinhood Chain Testnet",
-    "shortName": "RH Chain test",
-    "color": "#0F9D30",
-    "chainId": 46630,
-    "caip2": "eip155:46630",
-    "evmCompatible": true,
-    "testnet": true,
-    "stablecoins": [],
-    "rpcUrl": "https://rpc.testnet.chain.robinhood.com",
-    "explorer": "https://explorer.testnet.chain.robinhood.com",
-    "role": "Where a Robinhood Chain deployment would actually happen: the project does not deploy contracts autonomously to any mainnet.",
-    "status": "planned",
-    "protocols": {
-      "payment": {
-        "x402": true,
-        "note": "x402 needs a settlement token first: no canonical USDC is documented on this chain yet."
       },
       "identity": {
         "standard": "ERC-8004",

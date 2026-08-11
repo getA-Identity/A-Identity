@@ -192,8 +192,10 @@ const RAILS: Rail[] = [
     tileBg: '#CCFF00',
     color: '#CCFF00',
     role: 'Where retail agents will trade.',
-    detail: 'A planned adapter for the chain built around agentic trading, so the guardrails travel with the money there too.',
-    chain: 'rhchain',
+    detail: 'The canonical ERC-8004 registries are live on the testnet at their cross-chain addresses, agent #0 is minted and the spend-vault deploy is rehearsed there; mainnet waits on a funded signer, payments on a published settlement token.',
+    // The testnet descriptor, deliberately: that is where the work actually is, so the
+    // pill reads BETA from the registry instead of NEXT from the untouched mainnet row.
+    chain: 'rhchain-testnet',
   },
 ]
 

@@ -52,14 +52,16 @@ test('getChain returns undefined for unknown chain', () => {
   assert.equal(getChain('eip155:999999999'), undefined)
 })
 
-test('Arc, X Layer, Celo (live), Base and Celo Sepolia (beta) are the wired chains; Arc carries all its known contracts', () => {
+test('Arc, X Layer, Celo (live), Base, Celo Sepolia and RH Chain Testnet (beta) are the wired chains; Arc carries all its known contracts', () => {
   // Product decision 2026-08-08: X Layer identity is live (OKX ERC-8004 reads),
   // Base testnet is active via the Gateway demo, so it is beta.
   // 2026-08-09 (evening): Celo mainnet flips to LIVE — agent #9759 is minted on the
   // mainnet ERC-8004 registry and the x402 facilitator rail has real settlements
   // recorded in the durable proof log. Celo Sepolia stays beta.
+  // 2026-08-11: rhchain-testnet flips to beta — the canonical ERC-8004 registry set
+  // is live there at the cross-chain addresses (see the Robinhood tests below).
   const live = liveChains()
-  assert.deepEqual(live.map((c) => c.id).sort(), ['arc', 'base', 'celo', 'celo-sepolia', 'xlayer'])
+  assert.deepEqual(live.map((c) => c.id).sort(), ['arc', 'base', 'celo', 'celo-sepolia', 'rhchain-testnet', 'xlayer'])
   assert.equal(live.find((c) => c.id === 'xlayer')?.status, 'live')
   assert.equal(live.find((c) => c.id === 'base')?.status, 'beta')
   assert.equal(live.find((c) => c.id === 'celo')?.status, 'live')
@@ -79,8 +81,9 @@ test('Arc, X Layer, Celo (live), Base and Celo Sepolia (beta) are the wired chai
 })
 
 test('every roadmap chain is present and planned', () => {
-  // celo left this list on 2026-08-09 when its identity reads + x402 rail went beta.
-  for (const id of ['arbitrum', 'avalanche', 'rhchain', 'rhchain-testnet', 'stellar']) {
+  // celo left this list on 2026-08-09 when its identity reads + x402 rail went beta;
+  // rhchain-testnet left on 2026-08-11 when the canonical ERC-8004 set went live there.
+  for (const id of ['arbitrum', 'avalanche', 'rhchain', 'stellar']) {
     const c = getChainById(id)
     assert.ok(c, `${id} missing from registry`)
     assert.equal(c.status, 'planned', `${id} should be planned`)
@@ -122,6 +125,20 @@ test('Robinhood Chain carries the values verified against its live RPCs', () => 
   assert.equal(test_.caip2, 'eip155:46630')
   assert.equal(test_.testnet, true)
   assert.equal(test_.rpcUrls[0], 'https://rpc.testnet.chain.robinhood.com')
+})
+
+test('Robinhood Chain Testnet is beta with the canonical ERC-8004 registry set', () => {
+  // Deployed/completed 2026-08-11 by replaying the canonical Safe-Singleton-Factory
+  // calldata (scripts/rh-testnet-deploy-8004.mjs). Verified with eth_getCode plus a
+  // real read on each proxy, so these pins are observations, not intentions. The
+  // addresses are the SAME as Arc/Celo Sepolia — that is the cross-chain promise.
+  const c = getChainById('rhchain-testnet')
+  assert.ok(c)
+  assert.equal(c.status, 'beta')
+  assert.equal(c.contracts.identityRegistry, '0x8004A818BFB912233c491871b3d84c89A494BD9e')
+  assert.equal(c.contracts.reputationRegistry, '0x8004B663056A597Dffe9eCcC1965A193B7388713')
+  assert.equal(c.contracts.validationRegistry, '0x8004Cb1BF31DAf7788923b405b754f57acEB4272')
+  assert.equal(c.faucet, 'https://faucets.chain.link/robinhood-testnet')
 })
 
 test('Robinhood Chain asserts no USDC and no CCTP domain it cannot back up', () => {

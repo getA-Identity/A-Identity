@@ -20,6 +20,12 @@ import { evmChainIdFromCaip2, isValidCaip2 } from './caip.js'
  *
  * CreateX (0xba5Ed099...) is NOT present on Robinhood Chain, either network, so CREATE3
  * (address independent of constructor args) would need CreateX deployed there first.
+ *
+ * The canonical ERC-8004 registries were deployed by their authors through a DIFFERENT
+ * deterministic deployer, the Safe Singleton Factory (0x914d7Fec6aaC8cd542e72Bca78B3
+ * 0650d45643d7), which is ALSO present on both Robinhood chains (eth_getCode verified
+ * 2026-08-11). That is what makes the 0x8004... registry addresses reproducible there:
+ * scripts/rh-testnet-deploy-8004.mjs replays the canonical creation calldata through it.
  */
 const CREATE2_FACTORY = '0x4e59b44847B379578588920cA78FbF26c0B4956C'
 
@@ -27,11 +33,12 @@ export const CHAINS: ChainDescriptor[] = [
   // Order is the console's display order (Overview -> Network). Statuses:
   // live = wired end to end today, beta = testnet active, planned = roadmap.
   //
-  // Where the roadmap actually stands: arc + xlayer are live; base and the celo pair
-  // (mainnet + Celo Sepolia: identity reads live, x402 facilitator rail wired) are
-  // beta; stellar, avalanche, arbitrum and both Robinhood chains are planned.
-  // Among the planned chains, STELLAR is next: its integration is funded work (the
-  // Instawards SoW), ahead of avalanche/arbitrum, which is why it sits right
+  // Where the roadmap actually stands: arc + xlayer are live; base, the celo pair
+  // (mainnet + Celo Sepolia: identity reads live, x402 facilitator rail wired) and
+  // rhchain-testnet (the full ERC-8004 registry set live at the canonical addresses
+  // since 2026-08-11) are beta; stellar, avalanche, arbitrum and Robinhood mainnet
+  // are planned. Among the planned chains, STELLAR is next: its integration is funded
+  // work (the Instawards SoW), ahead of avalanche/arbitrum, which is why it sits right
   // after Arc in this display order.
   {
     caip2: 'eip155:5042002',
@@ -226,10 +233,10 @@ export const CHAINS: ChainDescriptor[] = [
     // Robinhood's brand green is #00C805, which is too light to read as chip text on its own
     // tint in a light theme. This is a darkened variant of it, not a different brand.
     color: '#0F9D30',
-    role: 'Where a Robinhood Chain deployment would actually happen: the project does not deploy contracts autonomously to any mainnet.',
+    role: 'Robinhood Chain rehearsal rail: the canonical ERC-8004 registry set is live here; mainnet waits on a human-funded signer.',
     ecosystem: 'evm',
     testnet: true,
-    status: 'planned',
+    status: 'beta',
     evmChainId: 46630,
     // Not documented for this chain. Verify with Circle before wiring any CCTP path.
     cctpDomain: null,
@@ -237,17 +244,30 @@ export const CHAINS: ChainDescriptor[] = [
     usdcDecimals: 6,
     rpcUrls: ['https://rpc.testnet.chain.robinhood.com'],
     explorer: 'https://explorer.testnet.chain.robinhood.com',
+    faucet: 'https://faucets.chain.link/robinhood-testnet',
     contracts: {
-      // No canonical USDC is documented on Robinhood Chain, so none is asserted here.
-      // AgentSpendPolicy + an ERC-8004 registry would be deployed with the same salt the
-      // other EVM chains use, which is why this stays a data edit rather than new code.
+      // The canonical ERC-8004 set, SAME addresses as Arc/Celo Sepolia. Identity and
+      // reputation (proxies + impls) were already on this chain; the missing
+      // ValidationRegistry implementation was deployed 2026-08-11 by replaying the
+      // canonical Safe-Singleton-Factory calldata (scripts/rh-testnet-deploy-8004.mjs).
+      // Verified with eth_getCode plus REAL reads on each proxy: name()/symbol()
+      // answered AgentIdentity/AGENT, getClients(1) and getAgentValidations(1)
+      // returned clean empties. Still NO usdc on purpose: no canonical stablecoin is
+      // documented for Robinhood Chain, and inventing one would poison a payment path.
+      identityRegistry: '0x8004A818BFB912233c491871b3d84c89A494BD9e',
+      reputationRegistry: '0x8004B663056A597Dffe9eCcC1965A193B7388713',
+      validationRegistry: '0x8004Cb1BF31DAf7788923b405b754f57acEB4272',
       create2Factory: CREATE2_FACTORY,
     },
     confirmations: 3, // same Orbit stack as Arbitrum, so the same soft-finality assumption
     stablecoins: [],
     signerEnvVar: 'RHCHAIN_TESTNET_SIGNER_KEY',
     rpcEnvVar: 'RHCHAIN_TESTNET_RPC_URL',
-    identity: { standard: 'ERC-8004', erc8004Native: true, note: 'ERC-8004 registry to be deployed.' },
+    identity: {
+      standard: 'ERC-8004',
+      erc8004Native: true,
+      note: 'Identity + Reputation + Validation registries LIVE at the canonical cross-chain addresses.',
+    },
     payment: { x402: true, note: 'x402 needs a settlement token first: no canonical USDC is documented on this chain yet.' },
   },
   {

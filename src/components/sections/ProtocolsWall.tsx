@@ -88,14 +88,17 @@ const PROTOCOLS = [
 ]
 
 /**
- * The two testnet mirrors say nothing their mainnet twin does not, so the status line
- * drops them; everything else is read from src/lib/chains.ts, which is generated from
+ * A testnet mirror that says nothing its mainnet twin does not is dropped from the
+ * status line; everything else is read from src/lib/chains.ts, which is generated from
  * mcp/src/chains/registry.ts. A promotion in the registry moves this sentence with it.
+ * rhchain-testnet LEFT this set on 2026-08-11: with the canonical ERC-8004 registries
+ * live there while mainnet stays planned, the testnet now says MORE than its twin.
  */
-const MIRRORS = new Set<ChainId>(['celo-sepolia', 'rhchain-testnet'])
+const MIRRORS = new Set<ChainId>(['celo-sepolia'])
 
-/** "RH Chain" is the console's column-width name; in prose it gets its real one. */
-const nameOf = (id: ChainId, shortName: string) => (id === 'rhchain' ? 'Robinhood Chain' : shortName)
+/** Console column-width names get their real ones in prose. */
+const nameOf = (id: ChainId, shortName: string) =>
+  id === 'rhchain' ? 'Robinhood Chain' : id === 'rhchain-testnet' ? 'Robinhood Chain Testnet' : shortName
 
 const chainsWith = (status: ChainStatus) =>
   CHAINS.filter((c) => c.status === status && !MIRRORS.has(c.id)).map((c) => nameOf(c.id, c.shortName))

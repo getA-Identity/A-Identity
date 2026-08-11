@@ -75,8 +75,8 @@
           "caip2": "eip155:46630",
           "identity": "ERC-8004",
           "erc8004Native": true,
-          "note": "ERC-8004 registry to be deployed.",
-          "status": "planned"
+          "note": "Identity + Reputation + Validation registries LIVE at the canonical cross-chain addresses.",
+          "status": "beta"
         },
         {
           "id": "rhchain",
@@ -169,9 +169,9 @@
           "id": "rhchain-testnet",
           "name": "Robinhood Chain Testnet",
           "chainId": 46630,
-          "role": "Where a Robinhood Chain deployment would actually happen: the project does not deploy contracts autonomously to any mainnet.",
+          "role": "Robinhood Chain rehearsal rail: the canonical ERC-8004 registry set is live here; mainnet waits on a human-funded signer.",
           "x402": true,
-          "status": "planned"
+          "status": "beta"
         },
         {
           "id": "rhchain",
