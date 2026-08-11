@@ -173,10 +173,10 @@
             "mainEntity": [
               {
                 "@type": "Question",
-                "name": "Does A-Identity touch my money or hold my keys?",
+                "name": "Do you hold my keys, move my money, or see my portfolio?",
                 "acceptedAnswer": {
                   "@type": "Answer",
-                  "text": "No. We never hold a key, never move a dollar, and never place the order. Your agent asks whether an action is inside the limits you set, we answer allow, ask a human or no, and the account stays exactly where it was. That is not a promise we are asking you to trust, it is the shape of the product: there is no endpoint that accepts your brokerage credentials, because we never want to be the reason someone loses them."
+                  "text": "No to all three. There is no endpoint that accepts your brokerage credentials: we never hold a key, never move a dollar, and never place the order. Your agent asks whether an action is inside the limits you set, we answer allow, ask a human or no, and the account stays exactly where it was. Account state arrives with the question and is never stored. The decision log keeps a hash of it instead, so a refusal stays auditable and your positions stay yours."
                 }
               },
               {
@@ -184,7 +184,7 @@
                 "name": "Can the agent talk its way past the limits?",
                 "acceptedAnswer": {
                   "@type": "Answer",
-                  "text": "The limits are not a prompt, so there is nothing to argue with. They are checked outside the model, and on every path that moves money rather than only on orders: a recurring buy, an account setting, money wired out, a cancelled protective position. That last part is where naive guardrails leak, because an agent blocked from buying can simply schedule the buy instead. A refusal cannot be overwritten, and attempts to overwrite one are counted rather than quietly rejected. Trading on borrowed money is not a setting we offer at all."
+                  "text": "No, because the limits are not a prompt: they are checked outside the model, on every path that moves money rather than only on orders. A recurring buy, an account setting, money wired out, a cancelled protective position: that last one is where naive guardrails leak, because an agent blocked from buying can simply schedule the buy instead. A refusal cannot be overwritten, and attempts to overwrite one are counted rather than quietly rejected."
                 }
               },
               {
@@ -192,31 +192,15 @@
                 "name": "What happens if you go down while my agent is running?",
                 "acceptedAnswer": {
                   "@type": "Answer",
-                  "text": "Nothing of ours can break a trade, because we are not in the execution path. When our own package cannot get a verdict it refuses to act rather than guessing, which is the safe direction to fail in. And you do not have to take our word for whether the engine is up: this endpoint (https://a-identity-backend.onrender.com/api/guardrail-status) runs the real engine on request and answers 503 if it is not enforcing. A monitor checks it every hour."
+                  "text": "Nothing of ours can break a trade, because we are not in the execution path. When our own package cannot get a verdict it refuses to act rather than guessing, which is the safe direction to fail in. You do not have to take our word for whether the engine is up: this endpoint (https://a-identity-backend.onrender.com/api/guardrail-status) runs the real engine on request and answers 503 if it is not enforcing, and a monitor checks it every hour."
                 }
               },
               {
                 "@type": "Question",
-                "name": "Do you see my portfolio?",
+                "name": "Is this live, and what does it cover today?",
                 "acceptedAnswer": {
                   "@type": "Answer",
-                  "text": "Only for the length of one question. The account state arrives with each check and is never stored. The decision log keeps a hash of it instead, which proves which state a verdict was computed against without keeping the contents, so a refusal stays auditable and your positions stay yours. The public numbers are aggregate only: nothing in them identifies an agent, an owner, a holding or a single amount."
-                }
-              },
-              {
-                "@type": "Question",
-                "name": "Is this live, or a demo?",
-                "acceptedAnswer": {
-                  "@type": "Answer",
-                  "text": "Live, and here is the part most products would hide: the public counters currently read zero. The engine is real and enforcing, but no live agent has produced a decision yet, so there is nothing honest to count. We would rather show a zero you can verify than a number you cannot reproduce. When that changes it changes on the same public endpoint (https://a-identity-backend.onrender.com/api/traction), measured rather than projected."
-                }
-              },
-              {
-                "@type": "Question",
-                "name": "What does it actually cover today?",
-                "acceptedAnswer": {
-                  "@type": "Answer",
-                  "text": "Brokerage trading and card spending, both live. The engine does not know which venue is asking, so a new one is an adapter rather than a rewrite. Two honest limits: on a card we can refuse a charge before it happens but we cannot physically stop an agent that already holds the card number, and prediction markets are designed and deliberately not built, a separately regulated venue with no agent surface yet, and we will not write rules against a payload nobody has published."
+                  "text": "Live, on brokerage trading and card spending. Here is the part most products would hide: the public counters read zero, because the engine is enforcing but no live agent has produced a decision yet, and we would rather show a zero you can verify on the public endpoint (https://a-identity-backend.onrender.com/api/traction) than a number you cannot reproduce. Two honest limits: on a card we can refuse a charge before it happens but we cannot stop an agent that already holds the card number, and prediction markets are designed and deliberately not built."
                 }
               }
             ]

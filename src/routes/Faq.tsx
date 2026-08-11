@@ -21,14 +21,14 @@ import { LANDING_FAQ } from '../components/sections/LandingFaq'
  * data, answer engines get the answers as plain rendered text, and neither has to simulate a
  * click to find them.
  *
- * The content is not authored here. The four reference categories come from lib/faq, the
+ * The content is not authored here. The reference categories come from lib/faq, the
  * closing set comes from the landing component, and both render from the same source the
  * landing uses so the two can never disagree.
  */
 
 const CANONICAL = 'https://a-identity.xyz/faq'
 
-/** The landing's six, presented as a fifth category rather than dropped. */
+/** The landing's four objections, presented as a closing category rather than dropped. */
 const OBJECTIONS = {
   category: 'Before You Connect an Agent',
   blurb: 'The questions worth asking before anything moves money on your behalf.',
@@ -81,8 +81,8 @@ export default function Faq() {
           payments. Identity comes first. Payment comes after trust.
         </p>
 
-        {/* Jump nav. Five categories is enough that a reader should not have to scroll to find
-            out what is here. */}
+        {/* Jump nav. Long enough a set that a reader should not have to scroll to find out
+            what is here. Built from the category list, so it cannot fall behind it. */}
         <nav aria-label="Categories" className="mt-9 flex flex-wrap gap-2">
           {sections.map((c) => (
             <a

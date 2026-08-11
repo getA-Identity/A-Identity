@@ -4,8 +4,10 @@
  * The reference set below is the 2026-07-30 rewrite (authored by the team): short, lean,
  * plain sentences, grouped by what a reader is actually worried about. Answers that are
  * really lists carry a `bullets` array so /faq can render them as lists instead of prose
- * pretending to be one. The landing's six objection questions live in LandingFaq (they
- * carry links and markup) and /faq appends them as a closing category.
+ * pretending to be one. The landing's objection questions live in LandingFaq (they carry
+ * links and markup) and /faq appends them as a closing category. Their count is not
+ * restated here, because it has already gone stale once: read it off LANDING_FAQ.length,
+ * which is what the heading, the meta description and the schema all derive from.
  *
  * This file is the single source. The landing renders a cut of it, /faq renders all of it,
  * and neither can drift from the other.
