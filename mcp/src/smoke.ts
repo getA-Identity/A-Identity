@@ -80,7 +80,7 @@ async function main() {
   // 4) Every registry chain is reported by get_chain_status.
   const chainStatus = (await client.callTool({ name: 'get_chain_status', arguments: {} })) as TextResult
   const chainIds = JSON.parse(textOf(chainStatus)).chains.map((c: { id: string }) => c.id)
-  for (const id of ['arc', 'base', 'arbitrum', 'avalanche', 'xlayer', 'rhchain', 'rhchain-testnet', 'stellar', 'solana']) {
+  for (const id of ['arc', 'base', 'arbitrum', 'avalanche', 'xlayer', 'rhchain', 'rhchain-testnet', 'stellar']) {
     if (!chainIds.includes(id)) throw new Error(`get_chain_status missing chain: ${id}`)
   }
 

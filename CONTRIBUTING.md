@@ -50,12 +50,12 @@ logic is chain-agnostic. The single source of truth is
 If adding an EVM chain requires touching anything other than the registry plus a deploy,
 the abstraction is leaking. Fix the leak instead of special-casing the chain.
 
-**Adding a non-EVM chain (Stellar, Solana) additionally needs one adapter:**
+**Adding a non-EVM chain (Stellar) additionally needs one adapter:**
 
-1. Descriptor with `ecosystem: 'stellar' | 'solana'`, the correct CAIP-2 reference
-   (Stellar = network label, Solana = truncated genesis hash) and `evmChainId: null`.
+1. Descriptor with `ecosystem: 'stellar'`, the correct CAIP-2 reference (Stellar = a
+   network label) and `evmChainId: null`.
 2. A new adapter under `mcp/src/chains/<ecosystem>/` behind the same interface, using
-   the native SDK (`@stellar/stellar-sdk`, `@solana/kit`), never viem. It owns exactly
+   the native SDK (`@stellar/stellar-sdk`), never viem. It owns exactly
    three things: address resolution/validation, balance + account reads, and
    transaction build/sign/submit.
 3. Reimplement the contract in the native language (Soroban Rust / Anchor Rust) against

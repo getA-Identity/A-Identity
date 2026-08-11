@@ -80,17 +80,20 @@ test('Arc, X Layer, Celo (live), Base and Celo Sepolia (beta) are the wired chai
 
 test('every roadmap chain is present and planned', () => {
   // celo left this list on 2026-08-09 when its identity reads + x402 rail went beta.
-  for (const id of ['arbitrum', 'avalanche', 'rhchain', 'rhchain-testnet', 'stellar', 'solana']) {
+  for (const id of ['arbitrum', 'avalanche', 'rhchain', 'rhchain-testnet', 'stellar']) {
     const c = getChainById(id)
     assert.ok(c, `${id} missing from registry`)
     assert.equal(c.status, 'planned', `${id} should be planned`)
   }
 })
 
-test('the planned set is mostly EVM, with two non-EVM', () => {
+test('the planned set is mostly EVM, with one non-EVM', () => {
   const planned = CHAINS.filter((c) => c.status === 'planned')
-  assert.equal(planned.filter((c) => c.ecosystem !== 'evm').length, 2, 'stellar and solana')
-  assert.equal(planned.filter((c) => c.ecosystem === 'evm').length, planned.length - 2)
+  const nonEvm = planned.filter((c) => c.ecosystem !== 'evm')
+  assert.deepEqual(nonEvm.map((c) => c.id), ['stellar'])
+  // Derived rather than `planned.length - N`: the hardcoded N is what went stale when
+  // Solana was dropped, and it failed as an off-by-one somewhere unrelated to the change.
+  assert.equal(planned.filter((c) => c.ecosystem === 'evm').length, planned.length - nonEvm.length)
 })
 
 test('evmChains covers Arc and every other EVM chain', () => {

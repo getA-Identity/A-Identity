@@ -100,7 +100,7 @@ check('/health answers 200', health.status === 200, `status ${health.status}`)
 const chains = await get('/api/chains')
 const chainIds = (chains.json?.chains ?? []).map((c) => c.id)
 eq('/api/chains serves 10 descriptors', chainIds.length, 10)
-for (const id of ['arc', 'base', 'arbitrum', 'avalanche', 'xlayer', 'rhchain', 'rhchain-testnet', 'celo', 'stellar', 'solana'])
+for (const id of ['arc', 'base', 'arbitrum', 'avalanche', 'xlayer', 'rhchain', 'rhchain-testnet', 'celo', 'stellar'])
   check(`  chain present: ${id}`, chainIds.includes(id))
 check('no retired chain is served', !chainIds.some((id) => /algorand/i.test(id)))
 // Product decision 2026-08-08: Arc + X Layer live, Base beta (see chains/registry.ts).

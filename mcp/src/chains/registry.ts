@@ -29,9 +29,9 @@ export const CHAINS: ChainDescriptor[] = [
   //
   // Where the roadmap actually stands: arc + xlayer are live; base and the celo pair
   // (mainnet + Celo Sepolia: identity reads live, x402 facilitator rail wired) are
-  // beta; stellar, solana, avalanche, arbitrum and both Robinhood chains are planned.
+  // beta; stellar, avalanche, arbitrum and both Robinhood chains are planned.
   // Among the planned chains, STELLAR is next: its integration is funded work (the
-  // Instawards SoW), ahead of solana/avalanche/arbitrum, which is why it sits right
+  // Instawards SoW), ahead of avalanche/arbitrum, which is why it sits right
   // after Arc in this display order.
   {
     caip2: 'eip155:5042002',
@@ -163,38 +163,6 @@ export const CHAINS: ChainDescriptor[] = [
     rpcEnvVar: 'BASE_RPC_URL',
     identity: { standard: 'ERC-8004', erc8004Native: true, note: 'ERC-8004 registry to be deployed.' },
     payment: { x402: true, note: 'x402 reference rail (Coinbase).' },
-  },
-  {
-    // NOTE: this is the Solana MAINNET CAIP-2 reference (a truncated genesis hash).
-    // Devnet's reference differs; swap it in when integrating devnet first.
-    caip2: 'solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp',
-    id: 'solana',
-    name: 'Solana',
-    shortName: 'Solana',
-    color: '#14F195',
-    role: 'High-throughput settlement: SPL USDC, sub-second confirmation.',
-    ecosystem: 'solana',
-    testnet: false,
-    status: 'planned',
-    evmChainId: null,
-    cctpDomain: 5,
-    nativeCurrency: { name: 'Solana', symbol: 'SOL', decimals: 9 },
-    usdcDecimals: 6, // SPL USDC is 6 decimals
-    rpcUrls: ['https://api.mainnet-beta.solana.com'],
-    explorer: 'https://explorer.solana.com',
-    contracts: {
-      usdc: 'EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v', // SPL USDC mint
-    },
-    confirmations: 1, // "finalized" commitment
-    stablecoins: ['USDC', 'USDT'],
-    signerEnvVar: 'SOLANA_SIGNER_SECRET',
-    rpcEnvVar: 'SOLANA_RPC_URL',
-    identity: {
-      standard: 'Anchor registry program',
-      erc8004Native: false,
-      note: 'No native ERC-8004 (EVM-only). Identity via an Anchor registry program; ERC-8004 passport bridged.',
-    },
-    payment: { x402: true, note: 'x402 settlement in SPL USDC.' },
   },
   {
     caip2: 'eip155:43114',

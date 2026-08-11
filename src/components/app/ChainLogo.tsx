@@ -21,7 +21,6 @@ const LOGO: Record<ChainId, string> = {
   celo: '/chains/celo.svg',
   'celo-sepolia': '/chains/celo.svg',
   stellar: '/chains/stellar.svg',
-  solana: '/chains/solana.svg',
 }
 
 /** Marks too light to survive a white disc. */

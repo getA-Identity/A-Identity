@@ -319,7 +319,7 @@ Live today:
 - **OKX X Layer mainnet** (`eip155:196`). The Trust Oracle sells here as agent
   #6271 and settles in real USD₮0.
 
-Adapted but not yet deployed: Base, Arbitrum, Avalanche, Stellar, Solana,
+Adapted but not yet deployed: Base, Arbitrum, Avalanche, Stellar,
 Robinhood Chain. Chains are added through an adapter with a registry entry, not
 by hardcoding, and a repository test fails the build if a chain id, RPC or
 explorer URL is hardcoded outside the registry.

@@ -47,8 +47,8 @@ roadmap stays honest about velocity. Updated 2026-08-09.
 
 - **Cross-protocol settlement router**: one quote layer answering 402s with the union
   of rails we accept (x402 exact, Nanopayments, MPP session) and routing settlement.
-- **Avalanche, then Solana** (phase 3/4): registry entries for EVM; one adapter plus a
-  contract reimplementation for SVM.
+- **Avalanche** (phase 3): a registry entry, since it is EVM and the adapter already
+  covers it.
 - **Cross-operator Sybil detection** (funder-graph provenance, beyond same-operator
   wash detection).
 - **Per-party escrow signing** in the marketplace (today the platform signer is the

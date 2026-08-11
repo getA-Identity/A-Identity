@@ -284,7 +284,7 @@ export const roadmapEmbed = {
       value:
         '**More surfaces.** The engine is caller-agnostic on purpose: crypto trading is written and ' +
         'unit-tested ahead of the venue, and new callers plug in without touching the core.\n' +
-        '**More chains.** Base, Arbitrum, Avalanche, X Layer, Stellar and Solana are declared in the ' +
+        '**More chains.** Base, Arbitrum, Avalanche, X Layer and Stellar are declared in the ' +
         'registry with honest status flags. Nothing claims to be live before it is.',
     },
     {

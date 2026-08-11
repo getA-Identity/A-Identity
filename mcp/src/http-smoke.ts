@@ -61,7 +61,7 @@ async function main() {
   // REST companion endpoints (used by the frontend)
   const chainsRes = await fetch(`http://localhost:${PORT}/api/chains`).then((r) => r.json())
   const ids = (chainsRes.chains as { id: string }[]).map((c) => c.id)
-  for (const id of ['arc', 'base', 'arbitrum', 'avalanche', 'xlayer', 'rhchain', 'rhchain-testnet', 'stellar', 'solana']) {
+  for (const id of ['arc', 'base', 'arbitrum', 'avalanche', 'xlayer', 'rhchain', 'rhchain-testnet', 'stellar']) {
     if (!ids.includes(id)) throw new Error(`REST /api/chains missing ${id}`)
   }
   // /api/reputation must ANSWER correctly, which for an agent that does not exist means a

@@ -1,7 +1,7 @@
 {
   "$schema": "https://a-identity.xyz/schemas/agent-manifest-0.2.json",
   "name": "A-Identity",
-  "description": "The passport and wallet for the agentic economy. On-chain agent identity (ERC-8004), x402 micro-payments, MCP-native tool access, and USDC settlement, live today on Circle Arc, with multi-chain identity planned across Base, Arbitrum, Avalanche, OKX X Layer, Stellar and Solana.",
+  "description": "The passport and wallet for the agentic economy. On-chain agent identity (ERC-8004), x402 micro-payments, MCP-native tool access, and USDC settlement, live today on Circle Arc, with multi-chain identity planned across Base, Arbitrum, Avalanche, OKX X Layerand Stellar.",
   "version": "0.2.0",
   "audience": [
     "ai-agent",
@@ -50,14 +50,6 @@
           "erc8004Native": true,
           "note": "ERC-8004 registry to be deployed.",
           "status": "beta"
-        },
-        {
-          "id": "solana",
-          "caip2": "solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp",
-          "identity": "Anchor registry program",
-          "erc8004Native": false,
-          "note": "No native ERC-8004 (EVM-only). Identity via an Anchor registry program; ERC-8004 passport bridged.",
-          "status": "planned"
         },
         {
           "id": "avalanche",
@@ -156,14 +148,6 @@
           "role": "EVM fallback: ERC-8004 compatible, Coinbase ecosystem, low fees.",
           "x402": true,
           "status": "beta"
-        },
-        {
-          "id": "solana",
-          "name": "Solana",
-          "caip2": "solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp",
-          "role": "High-throughput settlement: SPL USDC, sub-second confirmation.",
-          "x402": true,
-          "status": "planned"
         },
         {
           "id": "avalanche",
@@ -323,13 +307,12 @@
         "deliver"
       ],
       "trust": "Both agents verify each other via ERC-8004 before value moves. Reputation gate (default: 300+).",
-      "settlement": "x402 in stablecoins on Arc, the live chain today; Celo (mainnet + Sepolia) settles via the first-party Celo facilitator in beta. Base is beta; Arbitrum, Avalanche, Stellar and Solana are planned. No shared accounts or API keys.",
+      "settlement": "x402 in stablecoins on Arc, the live chain today; Celo (mainnet + Sepolia) settles via the first-party Celo facilitator in beta. Base is beta; Arbitrum, Avalancheand Stellar are planned. No shared accounts or API keys.",
       "chains_supported": [
         "arc",
         "stellar",
         "xlayer",
         "base",
-        "solana",
         "avalanche",
         "arbitrum",
         "rhchain-testnet",

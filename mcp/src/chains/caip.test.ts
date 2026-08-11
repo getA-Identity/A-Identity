@@ -15,11 +15,14 @@ test('parseCaip2 splits a valid EVM chain id', () => {
   assert.deepEqual(parseCaip2('eip155:5042002'), { namespace: 'eip155', reference: '5042002' })
 })
 
-test('parseCaip2 handles non-EVM references (Stellar label, Solana genesis hash)', () => {
+// The parser is namespace-agnostic on purpose, so it is exercised with a namespace we
+// do NOT ship a descriptor for. bip122 is a real CAIP-2 namespace and stands in for any
+// future non-EVM chain: the parser must not need to know a chain to read its id.
+test('parseCaip2 handles non-EVM references (Stellar label, unknown namespace)', () => {
   assert.deepEqual(parseCaip2('stellar:testnet'), { namespace: 'stellar', reference: 'testnet' })
-  assert.deepEqual(parseCaip2('solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp'), {
-    namespace: 'solana',
-    reference: '5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp',
+  assert.deepEqual(parseCaip2('bip122:000000000019d6689c085ae165831e93'), {
+    namespace: 'bip122',
+    reference: '000000000019d6689c085ae165831e93',
   })
 })
 
@@ -38,7 +41,7 @@ test('isValidCaip2 matches parseCaip2', () => {
 test('isEvmCaip2 only true for eip155', () => {
   assert.equal(isEvmCaip2('eip155:8453'), true)
   assert.equal(isEvmCaip2('stellar:testnet'), false)
-  assert.equal(isEvmCaip2('solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp'), false)
+  assert.equal(isEvmCaip2('bip122:000000000019d6689c085ae165831e93'), false)
 })
 
 test('evmChainIdFromCaip2 extracts the numeric id, null for non-EVM', () => {

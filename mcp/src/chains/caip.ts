@@ -1,13 +1,13 @@
 /**
  * CAIP helpers — Chain Agnostic Improvement Proposals. One data model across EVM,
- * Stellar, and Solana so a new chain is a new row, not a new special case.
+ * and Stellar so a new chain is a new row, not a new special case.
  *
  *   CAIP-2  chain:   namespace:reference          e.g. eip155:5042002, stellar:testnet
  *   CAIP-10 account: chain_id:address             e.g. eip155:5042002:0xabc...
  *   CAIP-19 asset:   chain_id/ns:reference        e.g. eip155:5042002/erc20:0x3600...
  *
  * References are NOT all numeric: EVM uses an integer, Stellar a network label,
- * Solana a (truncated) genesis hash. Store the raw reference; never assume it parses
+ * Bitcoin a genesis-hash prefix. Store the raw reference; never assume it parses
  * as a number. See ../../../MULTICHAIN-STRATEGY.md.
  */
 
@@ -52,7 +52,7 @@ export function evmCaip2(evmChainId: number): string {
 }
 
 /** Build a CAIP-10 account id: `<caip2>:<address>`. Address is left encoded as-is
- *  (hex for EVM, StrKey for Stellar, base58 for Solana). */
+ *  (hex for EVM, StrKey for Stellar). */
 export function buildCaip10(chainId: string, address: string): string {
   return `${chainId}:${address}`
 }

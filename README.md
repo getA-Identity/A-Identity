@@ -24,7 +24,7 @@ Built on **Circle Arc** (gas paid in USDC, sub-second finality), using
 per-request payments.
 
 > Status: hackathon MVP. Arc is the live phase-1 network. Stellar is next, then
-> Avalanche, then Solana.
+> Avalanche.
 
 ## Recognition: where this runs
 
@@ -615,7 +615,6 @@ The living version is [ROADMAP.md](ROADMAP.md) (now / next / later). The phase v
   wired and env-gated.
 - **Phase 2:** Stellar (USDC + EURC native, Soroban), end-to-end.
 - **Phase 3:** Avalanche.
-- **Phase 4:** Solana.
 
 New networks are a registry entry plus (for non-EVM) one adapter: the chain registry
 ([`mcp/src/chains/registry.ts`](mcp/src/chains/registry.ts)) is the single source of truth

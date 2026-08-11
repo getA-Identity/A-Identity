@@ -7,7 +7,7 @@
  */
 
 /** Which virtual machine family a chain belongs to. Selects the adapter. */
-export type Ecosystem = 'evm' | 'stellar' | 'solana'
+export type Ecosystem = 'evm' | 'stellar'
 
 /** Lifecycle status. Only `live` chains are fully wired end to end. */
 export type ChainStatus = 'live' | 'beta' | 'planned' | 'deprecated'

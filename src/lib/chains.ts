@@ -10,7 +10,7 @@
  */
 
 /** Short slug of a chain in the registry. */
-export type ChainId = 'arc' | 'xlayer' | 'celo' | 'base' | 'celo-sepolia' | 'stellar' | 'solana' | 'avalanche' | 'arbitrum' | 'rhchain-testnet' | 'rhchain'
+export type ChainId = 'arc' | 'xlayer' | 'celo' | 'base' | 'celo-sepolia' | 'stellar' | 'avalanche' | 'arbitrum' | 'rhchain-testnet' | 'rhchain'
 
 export type ChainProtocols = {
   /** x402 HTTP-402 payment support. Settlement is in a stablecoin. */
@@ -238,38 +238,6 @@ export const CHAINS: readonly Chain[] = [
       }
     },
     "identity": "Soroban registry + SEP-10",
-    "erc8004Native": false,
-    "x402": true
-  },
-  {
-    "id": "solana",
-    "name": "Solana",
-    "shortName": "Solana",
-    "color": "#14F195",
-    "chainId": null,
-    "caip2": "solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp",
-    "evmCompatible": false,
-    "testnet": false,
-    "stablecoins": [
-      "USDC",
-      "USDT"
-    ],
-    "rpcUrl": "https://api.mainnet-beta.solana.com",
-    "explorer": "https://explorer.solana.com",
-    "role": "High-throughput settlement: SPL USDC, sub-second confirmation.",
-    "status": "planned",
-    "protocols": {
-      "payment": {
-        "x402": true,
-        "note": "x402 settlement in SPL USDC."
-      },
-      "identity": {
-        "standard": "Anchor registry program",
-        "erc8004Native": false,
-        "note": "No native ERC-8004 (EVM-only). Identity via an Anchor registry program; ERC-8004 passport bridged."
-      }
-    },
-    "identity": "Anchor registry program",
     "erc8004Native": false,
     "x402": true
   },

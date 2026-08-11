@@ -13,8 +13,8 @@ const reveal = {
 }
 
 /* Real brand marks (currentColor, tinted per rail). OKX and Circle are the official
- * marks; Arc is a redrawn arch mark (Circle Arc) in matching monochrome. Avalanche and
- * Solana reuse the official marks the app already ships in /public/chains for its chain
+ * marks; Arc is a redrawn arch mark (Circle Arc) in matching monochrome. Avalanche
+ * reuses the official mark the app already ships in /public/chains for its chain
  * badges, rather than a second, drifting copy of the same logo. Rails whose marks we do
  * not ship yet get a drawn monogram tile instead of a wrong logo. */
 /** OKX ships no file in this repo, so its official monochrome mark stays as a path. */
@@ -39,7 +39,7 @@ type Rail = {
   logo?: string
   /**
    * Intrinsic size of that file. Both <img> below declare it, so neither reflows on
-   * decode. A vector rail (Celo, Avalanche, Solana) has no fixed intrinsic size, so for
+   * decode. A vector rail (Celo, Avalanche) has no fixed intrinsic size, so for
    * those this is simply the box the mark is drawn into before `object-contain` and the
    * container caps it.
    */
@@ -97,7 +97,7 @@ const RAILS: Rail[] = [
   /* Every colour and tile below is taken from the brand's own artwork rather than a
      guess: Circle's gradient mark on its white field, Arc's white arch on the navy to
      crimson gradient it ships on, Stellar's black glyph on Stellar yellow, Base's blue
-     square, Avalanche red, Solana's purple-to-green gradient bars, and Robin Neon for
+     square, Avalanche red, and Robin Neon for
      Robinhood. OKX is a monochrome brand, so it rides the foreground token and stays
      correct in both themes. */
   {
@@ -182,18 +182,6 @@ const RAILS: Rail[] = [
     role: 'Where finality arrives before the agent asks again.',
     detail: 'A planned C-Chain adapter: native Circle USDC and sub-second finality for burst settlement, with the same ERC-8004 passport and spend caps. The registry is not deployed there yet.',
     chain: 'avalanche',
-  },
-  {
-    id: 'solana',
-    name: 'Solana',
-    logo: '/chains/solana.svg',
-    logoW: 512,
-    logoH: 512,
-    tileBg: '#ffffff',
-    color: '#9945FF',
-    role: 'Where throughput is the whole point.',
-    detail: 'A planned non-EVM adapter: settlement in SPL USDC, with an Anchor registry program standing in for ERC-8004, which is EVM-only, and the passport bridged across.',
-    chain: 'solana',
   },
   {
     id: 'robinhood',
