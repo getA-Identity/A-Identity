@@ -52,6 +52,11 @@
     <meta name="twitter:image" content="https://a-identity.xyz/og-image.png" />
     <meta name="twitter:image:alt" content="A-Identity · the passport and wallet for the agentic economy." />
 
+    <!-- Base app ownership. Base reads this tag off the homepage to confirm we control
+         the domain, so it has to survive prerendering: the snapshot is generated from
+         this file's head, which is why it lives here and not in a per-route hook. -->
+    <meta name="base:app_id" content="6a7ad82c89d920176739d2d4" />
+
     <!-- Agent-native discovery -->
     <link rel="agent-manifest" href="/.well-known/ai-agent-manifest.json" />
 
