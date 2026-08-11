@@ -6,7 +6,10 @@ import { chromium } from 'playwright'
  * component introduced while moving code between files.
  */
 const BASE = 'http://localhost:4173'
-const PUBLIC = ['/', '/explorer?q=849980', '/celo-proof', '/mascot', '/brand-kit', '/motion', '/manifesto', '/brand', '/contact', '/faq', '/blog', '/architecture', '/login', '/bozuk-link']
+// /stats and /intro were missing, which is how a redesign of /stats reached a build
+// without this catching anything. /brand-kit stays listed even though it now redirects
+// to /brand: the redirect itself is worth a check.
+const PUBLIC = ['/', '/explorer?q=849980', '/celo-proof', '/stats', '/intro', '/mascot', '/brand-kit', '/motion', '/manifesto', '/brand', '/contact', '/faq', '/blog', '/architecture', '/login', '/bozuk-link']
 const CONSOLE = ['/app', '/app/agent-id', '/app/wallet', '/app/settlements', '/app/permissions', '/app/marketplace', '/app/earnings']
 
 const IGNORE = [/favicon/i, /net::ERR/i, /Failed to load resource/i, /model-viewer/i, /unpkg\.com/i]
