@@ -22,8 +22,10 @@ const EXAMPLES = [
 /* ------------------------------------------------------------------------- */
 /* The stage: the oracle as a terminal (the base.org agents stance). A pixel- */
 /* block owl banner, then verification transcripts typed line by line: two   */
-/* ALLOW runs for every DENY, counters ticking in the status row. The        */
-/* terminal is dark in both themes, the way terminals are.                   */
+/* ALLOW runs for every DENY, counters ticking in the status row. It paints  */
+/* from the shared terminal tokens (index.css), so the tty follows the theme */
+/* instead of punching a dark hole in a light page: the window chrome and    */
+/* the mono type carry the terminal, not the ground.                         */
 /* ------------------------------------------------------------------------- */
 
 /** The owl as pixel blocks, 17 columns. '#' is a lit cell. */
@@ -64,11 +66,11 @@ const RUN_DENY: LogLine[] = [
   { tag: '[pay]', body: 'not funded', tone: 'bad' },
 ]
 
-const TAG_COLOR = 'text-[color-mix(in_srgb,var(--color-accent)_55%,white)]'
+const TAG_COLOR = 'text-term-prompt'
 const TONE: Record<NonNullable<LogLine['tone']>, string> = {
-  ok: 'text-emerald-400',
-  bad: 'text-red-400',
-  accent: 'text-[color-mix(in_srgb,var(--color-accent)_55%,white)]',
+  ok: 'text-term-ok',
+  bad: 'text-term-bad',
+  accent: 'text-term-prompt',
 }
 
 function TerminalLine({ line, active }: { line: LogLine; active: boolean }) {
@@ -80,19 +82,19 @@ function TerminalLine({ line, active }: { line: LogLine; active: boolean }) {
       transition={{ duration: 0.18 }}
       className="flex items-baseline gap-2 whitespace-nowrap"
     >
-      <span className={bare ? 'text-white/85' : TAG_COLOR}>{line.tag}</span>
+      <span className={bare ? 'text-term-fg' : TAG_COLOR}>{line.tag}</span>
       {line.body && (
-        <span className={line.tone && !line.tail ? `font-semibold ${TONE[line.tone]}` : 'text-white/75'}>
+        <span className={line.tone && !line.tail ? `font-semibold ${TONE[line.tone]}` : 'text-term-dim'}>
           {line.body}
         </span>
       )}
       {line.tail && (
         <>
-          <span className="mx-1 flex-1 border-b border-dotted border-white/20" aria-hidden="true" />
+          <span className="mx-1 flex-1 border-b border-dotted border-term-dot" aria-hidden="true" />
           <span className={`font-semibold ${TONE[line.tone ?? 'ok']}`}>{line.tail}</span>
         </>
       )}
-      {active && <span className="ml-0.5 inline-block h-3.5 w-2 animate-pulse bg-white/70" />}
+      {active && <span className="ml-0.5 inline-block h-3.5 w-2 animate-pulse bg-term-caret" />}
     </motion.div>
   )
 }
@@ -142,15 +144,15 @@ function VerifyStage() {
 
   return (
     <div>
-      <div className="overflow-hidden rounded-2xl border border-accent/25 bg-[#10151d] shadow-[0_0_0_1px_rgba(115,66,226,0.12),0_24px_70px_-24px_rgba(115,66,226,0.45)]">
+      <div className="overflow-hidden rounded-2xl border border-accent/25 bg-term shadow-[0_0_0_1px_var(--term-ring),0_24px_70px_-24px_var(--term-glow)]">
         {/* window chrome */}
-        <div className="flex items-center justify-between border-b border-white/10 px-4 py-2.5">
+        <div className="flex items-center justify-between border-b border-term-border bg-term-chrome px-4 py-2.5">
           <div className="flex items-center gap-1.5">
-            <span className="h-2.5 w-2.5 rounded-full border border-white/25" />
-            <span className="h-2.5 w-2.5 rounded-full border border-white/25" />
-            <span className="h-2.5 w-2.5 rounded-full border border-white/25" />
+            <span className="h-2.5 w-2.5 rounded-full border border-term-dot" />
+            <span className="h-2.5 w-2.5 rounded-full border border-term-dot" />
+            <span className="h-2.5 w-2.5 rounded-full border border-term-dot" />
           </div>
-          <span className="font-mono text-[10px] tracking-[0.14em] text-white/35">tty · arc</span>
+          <span className="font-mono text-[10px] tracking-[0.14em] text-term-faint">tty · arc</span>
         </div>
 
         <div className="p-6 sm:p-7">
@@ -161,7 +163,7 @@ function VerifyStage() {
                 {row.split('').map((c, i) => (
                   <span
                     key={i}
-                    className={`h-[9px] w-[9px] ${c === '#' ? 'bg-[#e8e6f2]' : 'bg-transparent'}`}
+                    className={`h-[9px] w-[9px] ${c === '#' ? 'bg-term-pixel' : 'bg-transparent'}`}
                   />
                 ))}
               </div>
@@ -171,7 +173,7 @@ function VerifyStage() {
           <p className={`mt-4 font-mono text-[13px] font-semibold tracking-[0.06em] ${TAG_COLOR}`}>
             == A-IDENTITY TRUST ORACLE ==
           </p>
-          <div className="mt-2 border-t border-dashed border-white/15" />
+          <div className="mt-2 border-t border-dashed border-term-border" />
 
           {/* the transcript; fixed height so the loop never reflows the page */}
           <div className="mt-3 flex h-[150px] flex-col font-mono text-[12.5px] leading-[25px]">
@@ -181,15 +183,15 @@ function VerifyStage() {
           </div>
 
           {/* status row */}
-          <div className="mt-2 flex gap-4 border-t border-white/10 pt-3 font-mono text-[11px] text-white/40">
+          <div className="mt-2 flex gap-4 border-t border-term-border pt-3 font-mono text-[11px] text-term-faint">
             <span>
-              checks <span className="text-white/75">{counts.checks}</span>
+              checks <span className="text-term-dim">{counts.checks}</span>
             </span>
             <span>
-              allowed <span className="text-emerald-400">{counts.allowed}</span>
+              allowed <span className="text-term-ok">{counts.allowed}</span>
             </span>
             <span>
-              denied <span className="text-red-400">{counts.denied}</span>
+              denied <span className="text-term-bad">{counts.denied}</span>
             </span>
             <span className="ml-auto hidden sm:inline">live engine · /explorer</span>
           </div>

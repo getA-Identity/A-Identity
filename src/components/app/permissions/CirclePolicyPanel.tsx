@@ -47,22 +47,25 @@ export default function CirclePolicyPanel({ agentId }: { agentId?: string }) {
     setTimeout(() => setCopied(null), 1400)
   }
 
+  /* One CLI command, in the product's shared terminal skin (index.css terminal
+     tokens), so a snippet inside the console follows the console's own theme
+     instead of being the single dark card on a light screen. */
   const Row = ({ c }: { c: CliCommand }) => (
-    <div className="group relative rounded-xl border border-white/10 bg-[#10151d] p-3 pr-11">
-      <p className="font-mono text-[10px] uppercase tracking-[0.14em] text-white/35">
+    <div className="group relative rounded-xl border border-term-border bg-term p-3 pr-11">
+      <p className="font-mono text-[10px] uppercase tracking-[0.14em] text-term-faint">
         {c.purpose}
-        {c.needsOtp && <span className="ml-2 text-amber-400/80">needs your confirmation</span>}
+        {c.needsOtp && <span className="ml-2 text-term-warn">needs your confirmation</span>}
       </p>
-      <pre className="mt-1.5 overflow-x-auto whitespace-pre-wrap break-all font-mono text-[12px] leading-relaxed text-white/85">
+      <pre className="mt-1.5 overflow-x-auto whitespace-pre-wrap break-all font-mono text-[12px] leading-relaxed text-term-fg">
         {c.command}
       </pre>
       <button
         type="button"
         aria-label={`Copy: ${c.purpose}`}
         onClick={() => copy(c.command)}
-        className="absolute right-2 top-2 rounded-lg border border-transparent p-2 text-white/35 transition-colors hover:border-white/15 hover:text-white"
+        className="absolute right-2 top-2 rounded-lg border border-transparent p-2 text-term-faint transition-colors hover:border-term-border hover:text-term-fg"
       >
-        {copied === c.command ? <Check size={13} className="text-emerald-400" /> : <Copy size={13} />}
+        {copied === c.command ? <Check size={13} className="text-term-ok" /> : <Copy size={13} />}
       </button>
     </div>
   )

@@ -205,7 +205,14 @@ function System() {
   )
 }
 
-/** A real request/response, revealed line by line like a terminal. Replayable. */
+/**
+ * A real request/response, revealed line by line like a terminal. Replayable.
+ *
+ * Painted from the shared terminal tokens (index.css), so it follows the page theme
+ * rather than staying a dark slab on a light architecture page. The macOS traffic
+ * lights keep their fixed red/amber/green: those three are a quotation of a window
+ * title bar, not status, and they read the same on either ground.
+ */
 type TLine = { kind: 'cmd' | 'in' | 'out'; text: string; tone?: 'deny' | 'ok' }
 const CALL: TLine[] = [
   { kind: 'cmd', text: 'POST /tools/risk_check  { "agentId": "0xc60e…1b69" }' },
@@ -237,18 +244,18 @@ function Terminal() {
 
   const done = n >= CALL.length
   return (
-    <div ref={ref} className="overflow-hidden rounded-xl border border-border" style={{ background: '#0c0a12' }}>
-      <div className="flex items-center justify-between border-b border-white/10 px-4 py-2.5">
+    <div ref={ref} className="overflow-hidden rounded-xl border border-border bg-term">
+      <div className="flex items-center justify-between border-b border-term-border bg-term-chrome px-4 py-2.5">
         <div className="flex items-center gap-2">
           <span className="h-2.5 w-2.5 rounded-full" style={{ background: '#ff5f57' }} />
           <span className="h-2.5 w-2.5 rounded-full" style={{ background: '#febc2e' }} />
           <span className="h-2.5 w-2.5 rounded-full" style={{ background: '#28c840' }} />
-          <span className="ml-2 font-mono text-[11px] text-white/40">agent verifies a counterparty, then pays</span>
+          <span className="ml-2 font-mono text-[11px] text-term-faint">agent verifies a counterparty, then pays</span>
         </div>
         <button
           type="button"
           onClick={() => setRunKey((k) => k + 1)}
-          className="inline-flex items-center gap-1.5 rounded-md px-2 py-1 font-mono text-[11px] text-white/50 transition-colors hover:bg-white/10 hover:text-white/80"
+          className="inline-flex items-center gap-1.5 rounded-md px-2 py-1 font-mono text-[11px] text-term-faint transition-colors hover:bg-term-hover hover:text-term-fg"
         >
           <RotateCw size={12} /> replay
         </button>
@@ -261,27 +268,27 @@ function Terminal() {
             animate={{ opacity: 1, x: 0 }}
             className="flex gap-2.5"
           >
-            <span className="select-none text-white/25">
+            <span className="select-none text-term-dot">
               {l.kind === 'cmd' ? '›' : l.kind === 'in' ? ' ·' : '←'}
             </span>
             <span
               className={
                 l.tone === 'deny'
-                  ? 'font-semibold text-red-400'
+                  ? 'font-semibold text-term-bad'
                   : l.tone === 'ok'
-                  ? 'text-emerald-400'
+                  ? 'text-term-ok'
                   : l.kind === 'cmd'
-                  ? 'text-white/90'
+                  ? 'text-term-fg'
                   : l.kind === 'out'
-                  ? 'text-white/70'
-                  : 'text-white/45'
+                  ? 'text-term-dim'
+                  : 'text-term-faint'
               }
             >
               {l.text}
             </span>
           </motion.div>
         ))}
-        {!done && <span className="ml-4 inline-block h-3.5 w-2 animate-pulse bg-white/60 align-middle" />}
+        {!done && <span className="ml-4 inline-block h-3.5 w-2 animate-pulse bg-term-caret align-middle" />}
       </div>
     </div>
   )

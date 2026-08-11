@@ -110,16 +110,16 @@ export default function ForAgents() {
             It connects our MCP server and runs one real verification, so the first thing your
             agent does with us is check somebody.
           </p>
-          <div className="relative mt-5 overflow-hidden rounded-xl border border-accent/25 bg-[#10151d]">
-            <div className="flex items-center justify-between border-b border-white/10 px-4 py-2">
+          <div className="relative mt-5 overflow-hidden rounded-xl border border-accent/25 bg-term">
+            <div className="flex items-center justify-between border-b border-term-border bg-term-chrome px-4 py-2">
               <div className="flex items-center gap-1.5">
-                <span className="h-2 w-2 rounded-full border border-white/25" />
-                <span className="h-2 w-2 rounded-full border border-white/25" />
-                <span className="h-2 w-2 rounded-full border border-white/25" />
+                <span className="h-2 w-2 rounded-full border border-term-dot" />
+                <span className="h-2 w-2 rounded-full border border-term-dot" />
+                <span className="h-2 w-2 rounded-full border border-term-dot" />
               </div>
-              <span className="font-mono text-[10px] tracking-[0.14em] text-white/35">prompt</span>
+              <span className="font-mono text-[10px] tracking-[0.14em] text-term-faint">prompt</span>
             </div>
-            <p className="p-4 pr-12 font-mono text-[12px] leading-[1.75] text-white/80">
+            <p className="p-4 pr-12 font-mono text-[12px] leading-[1.75] text-term-dim">
               {AGENT_PROMPT}
             </p>
             <button
@@ -130,9 +130,9 @@ export default function ForAgents() {
                 setCopied(true)
                 setTimeout(() => setCopied(false), 1400)
               }}
-              className="absolute right-3 top-11 rounded-lg border border-transparent p-2 text-white/35 transition-colors hover:border-white/15 hover:text-white"
+              className="absolute right-3 top-11 rounded-lg border border-transparent p-2 text-term-faint transition-colors hover:border-term-border hover:text-term-fg"
             >
-              {copied ? <Check size={14} className="text-emerald-400" /> : <Copy size={14} />}
+              {copied ? <Check size={14} className="text-term-ok" /> : <Copy size={14} />}
             </button>
           </div>
         </motion.div>

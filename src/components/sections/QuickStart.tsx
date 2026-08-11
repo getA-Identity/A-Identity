@@ -19,14 +19,13 @@ import { OwlMascot } from '../OwlMascot'
  * proxies, and the curl hits the free preview tool on the live ASP; nothing is aspirational,
  * which is the only reason a copy button is honest.
  *
- * The agent pane speaks the same tty the verify section established: a terminal that is
- * dark in BOTH themes (the old card used bg-foreground, which flipped light in dark mode
- * and washed the code out to grey-on-grey). The human steps reuse the console's own stage
- * labels (Register, KYA Verify, Go Live), so what this section promises is exactly what
- * /app/agent-id walks you through.
+ * The agent pane speaks the same tty the verify section established, painted from the
+ * shared terminal tokens in index.css (bg-term, text-term-fg, text-term-faint, ...), so
+ * it flips with the scoped .dark class instead of staying a dark hole in a light page.
+ * The window chrome and the mono type are what say "terminal" now, not the ground. The
+ * human steps reuse the console's own stage labels (Register, KYA Verify, Go Live), so
+ * what this section promises is exactly what /app/agent-id walks you through.
  */
-
-const PROMPT_COLOR = 'text-[color-mix(in_srgb,var(--color-accent)_55%,white)]'
 
 /** Step 1's choices: each runtime gets the exact line it actually needs. All four
     endpoints are the live production surfaces; nothing here is aspirational. */
@@ -70,9 +69,9 @@ function CommandBlock({ comment, cmd }: { comment: string; cmd: string }) {
   return (
     <div className="group relative">
       <pre className="overflow-x-auto whitespace-pre pr-12 font-mono text-[12.5px] leading-[1.9]">
-        <span className="text-white/35">{comment}</span>
+        <span className="text-term-faint">{comment}</span>
         {'\n'}
-        <span className={PROMPT_COLOR}>$</span> <span className="text-white/85">{cmd}</span>
+        <span className="text-term-prompt">$</span> <span className="text-term-fg">{cmd}</span>
       </pre>
       <button
         type="button"
@@ -82,9 +81,9 @@ function CommandBlock({ comment, cmd }: { comment: string; cmd: string }) {
           setCopied(true)
           setTimeout(() => setCopied(false), 1400)
         }}
-        className="absolute right-0 top-0 rounded-lg border border-transparent p-2 text-white/35 transition-colors hover:border-white/15 hover:text-white"
+        className="absolute right-0 top-0 rounded-lg border border-transparent p-2 text-term-faint transition-colors hover:border-term-border hover:text-term-fg"
       >
-        {copied ? <Check size={14} className="text-emerald-400" /> : <Copy size={14} />}
+        {copied ? <Check size={14} className="text-term-ok" /> : <Copy size={14} />}
       </button>
     </div>
   )
@@ -147,14 +146,14 @@ function AgentSteps() {
       </Step>
 
       <Step index={2} title="Connect the MCP" sub="The endpoint is the live production server.">
-        <div className="overflow-hidden rounded-xl border border-accent/25 bg-[#10151d] shadow-[0_0_0_1px_rgba(115,66,226,0.12),0_18px_50px_-24px_rgba(115,66,226,0.45)]">
-          <div className="flex items-center justify-between border-b border-white/10 px-4 py-2">
+        <div className="overflow-hidden rounded-xl border border-accent/25 bg-term shadow-[0_0_0_1px_var(--term-ring),0_18px_50px_-24px_var(--term-glow)]">
+          <div className="flex items-center justify-between border-b border-term-border bg-term-chrome px-4 py-2">
             <div className="flex items-center gap-1.5">
-              <span className="h-2 w-2 rounded-full border border-white/25" />
-              <span className="h-2 w-2 rounded-full border border-white/25" />
-              <span className="h-2 w-2 rounded-full border border-white/25" />
+              <span className="h-2 w-2 rounded-full border border-term-dot" />
+              <span className="h-2 w-2 rounded-full border border-term-dot" />
+              <span className="h-2 w-2 rounded-full border border-term-dot" />
             </div>
-            <span className="font-mono text-[10px] tracking-[0.14em] text-white/35">tty · mcp + x402</span>
+            <span className="font-mono text-[10px] tracking-[0.14em] text-term-faint">tty · mcp + x402</span>
           </div>
           <div className="p-4">
             <CommandBlock key={active.key} comment={active.comment} cmd={active.cmd} />
@@ -180,7 +179,7 @@ function AgentSteps() {
               </span>
               <span className="min-w-0 flex-1 truncate text-sm text-foreground/70">{p.text}</span>
               {copiedPrompt === p.tag ? (
-                <Check size={13} className="shrink-0 text-emerald-500" />
+                <Check size={13} className="shrink-0 text-ok" />
               ) : (
                 <Copy size={13} className="shrink-0 text-foreground/25 transition-colors group-hover:text-foreground/60" />
               )}

@@ -169,6 +169,42 @@
   --cat-5: #64748b;
   --cat-6: #a855f7;
 
+  /* Terminal semantics. Every tty, prompt card, CLI snippet and replayable
+     transcript in the product (landing AND the /app console) paints from these,
+     so a code block can never be the one panel that stays dark when the theme
+     flips. The roles are named after what a terminal does, not after a colour:
+     fg is the command you typed, dim is the machine's answer, faint is chrome
+     and comments, prompt is the glyph and the bracketed tags.
+     LIGHT is a cool grey slab, not white: a terminal has to read as a recessed
+     surface both on the warm cream landing AND on the console's white card, and
+     white-on-white would have separated on neither. DARK is the #10151d these
+     blocks always used. Every text role is tuned to clear 4.5:1 against its own
+     ground in BOTH themes, which is also why the dark `faint` sits at 0.45
+     rather than the 0.35 it used to be. */
+  --term-bg: #eaedf3;
+  --term-chrome: rgba(25, 40, 55, 0.035);
+  --term-border: rgba(25, 40, 55, 0.12);
+  --term-dot: rgba(25, 40, 55, 0.22);
+  --term-hover: rgba(25, 40, 55, 0.06);
+  --term-fg: rgba(25, 40, 55, 0.95);
+  --term-dim: rgba(25, 40, 55, 0.76);
+  --term-faint: rgba(25, 40, 55, 0.66);
+  --term-caret: rgba(25, 40, 55, 0.55);
+  /* The verdict colours inside a terminal are NOT the --ok / --danger tokens:
+     those are tuned against the card surface, and a terminal has its own
+     ground. Deepened here, lifted in .dark, same meaning either way. */
+  --term-ok: #047857;
+  --term-warn: #92400e;
+  --term-bad: #b91c1c;
+  /* On a light ground the brand accent already clears 5.7:1, so the prompt
+     keeps the exact brand hue; the dark side has to mix toward white. */
+  --term-prompt: var(--accent);
+  /* The pixel-block owl painted inside the verify transcript. */
+  --term-pixel: #2f2748;
+  /* The terminal card's own hairline and lift, both accent-tinted. */
+  --term-ring: rgba(115, 66, 226, 0.14);
+  --term-glow: rgba(115, 66, 226, 0.22);
+
   /* Spec-named aliases kept for the landing components that reference them.
      Now theme-aware (were --color-ink / --color-cream). */
   --color-text: var(--foreground);
@@ -200,6 +236,25 @@
   --cat-4: #22d3ee;
   --cat-5: #94a3b8;
   --cat-6: #c084fc;
+
+  /* The terminal on a dark ground: the #10151d these blocks always used, with
+     every ink role inverted. See the :root block for what each role means. */
+  --term-bg: #10151d;
+  --term-chrome: rgba(255, 255, 255, 0.02);
+  --term-border: rgba(255, 255, 255, 0.1);
+  --term-dot: rgba(255, 255, 255, 0.25);
+  --term-hover: rgba(255, 255, 255, 0.08);
+  --term-fg: rgba(255, 255, 255, 0.88);
+  --term-dim: rgba(255, 255, 255, 0.74);
+  --term-faint: rgba(255, 255, 255, 0.45);
+  --term-caret: rgba(255, 255, 255, 0.7);
+  --term-ok: #34d399;
+  --term-warn: #fbbf24;
+  --term-bad: #f87171;
+  --term-prompt: color-mix(in srgb, var(--accent) 55%, white);
+  --term-pixel: #e8e6f2;
+  --term-ring: rgba(115, 66, 226, 0.12);
+  --term-glow: rgba(115, 66, 226, 0.45);
 
   /* Re-alias here too: a custom property whose value is `var(--foreground)` is
      substituted where it is DECLARED, so the :root aliases stay pinned to the
@@ -235,6 +290,23 @@
   --color-usdc: var(--usdc);
   --color-usdc-deep: var(--usdc-deep);
   --color-accent-deep: var(--accent-deep);
+  /* Terminal roles as utilities: bg-term, text-term-fg, border-term-border,
+     bg-term-caret, and so on. --term-ring / --term-glow stay raw variables
+     because they are only ever read from inside a box-shadow. */
+  --color-term: var(--term-bg);
+  --color-term-chrome: var(--term-chrome);
+  --color-term-border: var(--term-border);
+  --color-term-dot: var(--term-dot);
+  --color-term-hover: var(--term-hover);
+  --color-term-fg: var(--term-fg);
+  --color-term-dim: var(--term-dim);
+  --color-term-faint: var(--term-faint);
+  --color-term-caret: var(--term-caret);
+  --color-term-ok: var(--term-ok);
+  --color-term-warn: var(--term-warn);
+  --color-term-bad: var(--term-bad);
+  --color-term-prompt: var(--term-prompt);
+  --color-term-pixel: var(--term-pixel);
   --radius-lg: var(--radius);
   --radius-md: calc(var(--radius) - 2px);
   --radius-sm: calc(var(--radius) - 4px);
