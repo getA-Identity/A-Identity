@@ -19,9 +19,23 @@ import { ARC_CHAIN } from '../chains/index.js'
 const OKLINK_TX = 'https://www.oklink.com/x-layer/evm/tx/'
 const OKLINK_ADDR = 'https://www.oklink.com/x-layer/evm/address/'
 
-/** payer = the buyer Agentic Wallet; payTo = where per-call revenue settles. */
+/** payer = the buyer Agentic Wallet. */
 const PAYER = '0x169ead25d35c146f3f3a7d2936ae37eab2e256d1'
-const PAY_TO = '0x6a5f1b8e56a19d456b799c2fa00e513244f58ce6'
+
+/**
+ * Two different facts, and conflating them is how this page started lying.
+ *
+ * SETTLED_TO is where the settlements listed below actually landed. It is history, so it is
+ * hardcoded on purpose: a reviewer checking those transaction hashes must find the recipient
+ * they name, and changing the recipient later must never rewrite what already happened.
+ *
+ * PAY_TO is where revenue settles TODAY, read from the same env var the payment middleware
+ * uses so the two cannot disagree. When the recipient changed on 2026-08-11 this file kept
+ * claiming the old one, because it was hardcoded with no env at all, so /proof advertised a
+ * wallet that no longer receives anything while /health already showed the new one.
+ */
+const SETTLED_TO = '0x6a5f1b8e56a19d456b799c2fa00e513244f58ce6'
+const PAY_TO = process.env.PAY_TO_ADDRESS ?? SETTLED_TO
 
 // All real settlements (round 0 = live demo, rounds 1-29 = seeding incl. campaign 2), each + an OKLink link.
 const WITH_URLS = SETTLEMENTS.map((s) => ({ ...s, txUrl: `${OKLINK_TX}${s.txHash}` }))
@@ -44,13 +58,19 @@ export const PROOF = {
   },
   // REAL x402 pay-per-call settlements on X Layer mainnet - round 0 = the live demo,
   // rounds 1-29 = seeding (campaign 2 adds counterparty_check). Every row is a real
-  // USD₮0 transfer to payTo.
+  // USD₮0 transfer to settledTo.
   realOnchainRevenue: {
     network: 'X Layer mainnet (eip155:196)',
     asset: 'USD₮0 (0x779Ded0c9e1022225f8E0630b35a9b54bE713736)',
     payer: PAYER,
+    // Where these settlements landed, which is what their tx hashes prove.
+    settledTo: SETTLED_TO,
+    settledToUrl: `${OKLINK_ADDR}${SETTLED_TO}`,
+    // Where a call made right now settles. The two differ once the recipient changes, and
+    // saying so is cheaper than a reviewer finding the mismatch themselves.
     payTo: PAY_TO,
     payToUrl: `${OKLINK_ADDR}${PAY_TO}`,
+    recipientChanged: PAY_TO.toLowerCase() !== SETTLED_TO.toLowerCase(),
     totalSettlements: WITH_URLS.length,
     totalUsd: TOTAL_USD,
     byTool: BY_TOOL,
@@ -100,8 +120,11 @@ export const PROOF = {
   },
   howToVerify: [
     'Call any tool endpoint (POST /tools/*) - it returns HTTP 402 with an x402 challenge on X Layer mainnet (eip155:196).',
-    'Open any settlement txUrl on OKLink - each is a real USD₮0 transfer to payTo on X Layer mainnet.',
-    `Check the payTo balance (${PAY_TO}) - it received every one of these settlements in USD₮0.`,
+    'Open any settlement txUrl on OKLink - each is a real USD₮0 transfer to settledTo on X Layer mainnet.',
+    `Check the settledTo balance (${SETTLED_TO}) - it received every one of these settlements in USD₮0.`,
+    ...(PAY_TO.toLowerCase() !== SETTLED_TO.toLowerCase()
+      ? [`Revenue now settles to ${PAY_TO} instead. The settlements above predate that change and are unaffected by it.`]
+      : []),
     'Open the showcase agent onchainReputationAttestation tx on Arcscan - the reputation is anchored on the ERC-8004 ReputationRegistry, not just asserted here.',
     'GET /methodology for the exact, reproducible reputation and risk formulas.',
   ],

@@ -8,7 +8,11 @@ const RPC = process.env.XLAYER_RPC_URL ?? 'https://rpc.xlayer.tech'
 const USDT0 = '0x779Ded0c9e1022225f8E0630b35a9b54bE713736'
 // Read the balance of the address the OKX middleware actually settles to (PAY_TO_ADDRESS),
 // so "live revenue" can never point at a stale hardcoded wallet on a different deploy.
-const PAY_TO = (process.env.PAY_TO_ADDRESS ?? '0x6a5f1b8e56a19d456b799c2fa00e513244f58ce6').toLowerCase()
+//
+// There is deliberately NO fallback address. The previous default became unspendable when its
+// key was lost, so a missing env var would have silently reported a balance nobody can reach.
+// An empty string reads as unconfigured, which is the honest answer to a missing recipient.
+const PAY_TO = (process.env.PAY_TO_ADDRESS ?? '').toLowerCase()
 
 export type LiveStats = {
   network: string
@@ -33,6 +37,14 @@ export async function getLiveStats(): Promise<LiveStats> {
     payTo: PAY_TO,
     asset: 'USD₮0',
     checkedAt: new Date().toISOString(),
+  }
+  // No recipient configured: say so instead of building a malformed balanceOf call and
+  // letting the RPC error fall into the catch below, which would report the same null for
+  // "not configured" and "the read failed". Those are different facts.
+  if (!PAY_TO) {
+    const value = { ...base, payToReceivedUsdt0: null }
+    cache = { at: Date.now(), value }
+    return value
   }
   try {
     // balanceOf(payTo): selector 0x70a08231 + 32-byte left-padded address.
