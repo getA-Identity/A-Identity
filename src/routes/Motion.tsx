@@ -187,7 +187,7 @@ export default function Motion() {
           </DisplayHeading>
           <p className="mt-2 max-w-[62ch] text-sm leading-relaxed text-foreground/55">
             The raw material the film cuts from. Drag to inspect; all live in /public/mascots
-            and on /brand-kit.
+            and on /brand.
           </p>
           {!ready && <p className="mt-6 text-sm text-foreground/45">Loading the 3D viewer…</p>}
           <div className="mt-6 grid grid-cols-2 gap-4 lg:grid-cols-5">

@@ -88,8 +88,18 @@ export type FooterLink = { label: string; href: string; external?: boolean }
 export type FooterColumn = { title: string; links: FooterLink[] }
 
 /**
- * Footer navigation. Protocol and Developers point into the docs site (open
- * externally); Company items are standalone pages on this site.
+ * Footer navigation, and the whole of it: what is listed here is what the footer
+ * renders, so a destination is added in one place rather than merged in at render.
+ *
+ * Trimmed deliberately. The footer used to repeat the entire top nav, eighteen links
+ * over three columns, which is how a footer stops being read. What went: the docs
+ * deep links a reader reaches from Docs itself (CLI, Reputation, Agent Manifest),
+ * each of which is still one hover away in the navbar dropdowns. What stayed: every
+ * page that only exists here, and both live-proof surfaces, because an honest-status
+ * claim that is hard to find is not much of a claim.
+ *
+ * Protocol points into the docs site (external); Developers and Company are mostly
+ * pages on this site.
  */
 export const FOOTER_COLUMNS: readonly FooterColumn[] = [
   {
@@ -98,27 +108,29 @@ export const FOOTER_COLUMNS: readonly FooterColumn[] = [
       { label: 'Verify (ERC-8004)', href: `${DOCS_URL}/protocols/erc-8004`, external: true },
       { label: 'Pay (x402)', href: `${DOCS_URL}/protocols/x402`, external: true },
       { label: 'Connect (MCP)', href: `${DOCS_URL}/protocols/mcp`, external: true },
-      { label: 'Reputation', href: `${DOCS_URL}/concepts/reputation`, external: true },
     ],
   },
   {
     title: 'Developers',
     links: [
-      { label: 'Trust Explorer', href: '/explorer' },
-      { label: 'OKX.AI ASP · Live Proof', href: 'https://a-identity-asp.onrender.com/proof', external: true },
-      { label: 'SDK', href: `${DOCS_URL}/developers/sdk`, external: true },
-      { label: 'CLI', href: `${DOCS_URL}/developers/cli`, external: true },
-      { label: 'Agent Manifest', href: `${DOCS_URL}/developers/agent-manifest`, external: true },
       { label: 'Docs', href: DOCS_URL, external: true },
+      { label: 'SDK', href: `${DOCS_URL}/developers/sdk`, external: true },
+      { label: 'Trust Explorer', href: '/explorer' },
+      { label: 'For agents', href: '/intro' },
+      { label: 'Live proof (OKX)', href: 'https://a-identity-asp.onrender.com/proof', external: true },
+      // Reachable only by typing the URL before it was listed here: it is the Celo
+      // rail's on-chain receipt, so it belongs next to the OKX proof above it.
+      { label: 'Live proof (Celo)', href: '/celo-proof' },
     ],
   },
   {
     title: 'Company',
     links: [
       { label: 'Manifesto', href: '/manifesto' },
-      { label: 'FAQ', href: '/faq' },
       { label: 'Blog', href: '/blog' },
+      { label: 'FAQ', href: '/faq' },
       { label: 'Brand', href: '/brand' },
+      { label: 'Network stats', href: '/stats' },
       { label: 'Contact', href: '/contact' },
     ],
   },
@@ -165,8 +177,8 @@ export const ASK_AI_PROMPT = 'What is A-Identity (https://a-identity.xyz) and wh
 
 const q = encodeURIComponent(ASK_AI_PROMPT)
 
-/** `label` is not rendered: the footer shows the brand mark and uses this for the
- *  accessible name and the hover tooltip, so the row stays readable to a screen reader. */
+/** `label` is the visible name in the footer's one-line row, and the accessible name
+ *  wherever a surface renders the brand mark instead (see the for-agents section). */
 export const ASK_AI_LINKS = [
   { key: 'chatgpt', label: 'ChatGPT', href: `https://chatgpt.com/?prompt=${q}` },
   { key: 'claude', label: 'Claude', href: `https://claude.ai/new?q=${q}` },

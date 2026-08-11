@@ -1,5 +1,5 @@
 import { lazy, Suspense, useEffect } from 'react'
-import { BrowserRouter, Route, Routes } from 'react-router-dom'
+import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom'
 import ScrollToTop from './components/ScrollToTop'
 import PageViews from './components/PageViews'
 import { initAnalytics } from './lib/analytics'
@@ -24,7 +24,6 @@ const AuthCallback = lazy(() => import('./routes/AuthCallback'))
 const Manifesto = lazy(() => import('./routes/Manifesto'))
 const Intro = lazy(() => import('./routes/Intro'))
 const Stats = lazy(() => import('./routes/Stats'))
-const Brand = lazy(() => import('./routes/Brand'))
 const Contact = lazy(() => import('./routes/Contact'))
 const Faq = lazy(() => import('./routes/Faq'))
 const Blog = lazy(() => import('./routes/Blog'))
@@ -90,7 +89,12 @@ export default function App() {
         <Route path="/manifesto" element={<Manifesto />} />
         <Route path="/intro" element={<Intro />} />
         <Route path="/stats" element={<Stats />} />
-        <Route path="/brand" element={<Brand />} />
+        {/* The brand kit is the brand page. There were two of them for a while: a thin
+            press page on the public URL and the real kit hidden at /brand-kit, which is
+            the wrong way round. One page, one indexable URL, and the old path redirects
+            so anything already pointing at it still lands. */}
+        <Route path="/brand" element={<BrandKit />} />
+        <Route path="/brand-kit" element={<Navigate to="/brand" replace />} />
         <Route path="/contact" element={<Contact />} />
         <Route path="/faq" element={<Faq />} />
         <Route path="/blog" element={<Blog />} />
@@ -105,7 +109,6 @@ export default function App() {
         <Route path="/architecture" element={<Architecture />} />
         {/* Internal design surfaces. Unlinked and noindex. */}
         <Route path="/mascot" element={<Mascot />} />
-        <Route path="/brand-kit" element={<BrandKit />} />
         <Route path="/motion" element={<Motion />} />
 
         <Route element={<ProtectedRoute />}>

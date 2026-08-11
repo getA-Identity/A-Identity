@@ -1,31 +1,25 @@
-import { ArrowUp, Terminal, Github } from 'lucide-react'
+import { ArrowUp, Github } from 'lucide-react'
 import { Link } from 'react-router-dom'
 import Logo from '../Logo'
 import DiscordIcon from '../DiscordIcon'
 import XIcon from '../XIcon'
 import LinkedInIcon from '../LinkedInIcon'
 import YouTubeIcon from '../YouTubeIcon'
-import { ChatGptMark, ClaudeMark, PerplexityMark, GeminiMark, GrokMark } from '../AiMarks'
 import { APP_NAME, ASK_AI_LINKS, FOOTER_COLUMNS, SOCIALS, type FooterLink } from '../../lib/brand'
 import { SectionBackdrop } from '../ui/section-backdrop'
 
 /**
- * The footer, hybrid revision: the dashx composition carrying every piece the old footer
- * carried. One rounded sheet holds the brand block and the link columns, the machine-facing
- * and AI rows sit inside it, and a slim bar underneath holds the copyright and a back-to-top.
+ * The footer, leaned out.
  *
- * The rule for this rewrite was subtraction-free: manifest link, on-chain proof, all three
- * link columns, the socials and the ask-an-AI row all survive, only the arrangement changed.
+ * The previous one carried a raised card, ten bordered icon tiles, an accent-coloured
+ * paragraph and eighteen links, and the weight of all that is what made the bottom of
+ * every page feel like a second homepage. Nothing here is a new destination and almost
+ * nothing was dropped: the card became plain background, the tiles became plain marks,
+ * and the two machine-facing rows moved into one quiet block above the legal line.
+ *
+ * The manifest link survives on purpose. It is the one line on the page written for a
+ * crawler rather than a reader, so it stays reachable and stops shouting.
  */
-
-/** Marks keyed to match ASK_AI_LINKS, so the link list stays the single source of order. */
-const AI_MARKS = {
-  chatgpt: ChatGptMark,
-  claude: ClaudeMark,
-  perplexity: PerplexityMark,
-  gemini: GeminiMark,
-  grok: GrokMark,
-} as const
 
 /**
  * The social row, in reading order: broadest reach first, then community, then code.
@@ -39,25 +33,9 @@ const SOCIAL_LINKS = [
   { key: 'github', href: SOCIALS.github, label: 'A-Identity on GitHub', Icon: Github },
 ] as const
 
-/**
- * Links the footer adds on top of the brand-config columns: the agent-facing intro and
- * the public network stats. Keyed by column title and merged at render, so the shared
- * FOOTER_COLUMNS data stays untouched while the footer still lists every public page.
- */
-const EXTRA_COLUMN_LINKS: Record<string, readonly FooterLink[]> = {
-  Developers: [
-    { label: 'For Agents', href: '/intro' },
-    // /celo-proof was reachable only by typing the URL: in the sitemap, in the smoke
-    // test, linked from nowhere. It is the Celo rail's on-chain receipt, so it belongs
-    // next to the OKX proof link above it.
-    { label: 'Celo · Live Proof', href: '/celo-proof' },
-  ],
-  Company: [{ label: 'Network Stats', href: '/stats' }],
-}
-
 /** Render an internal route link or an external (new-tab) anchor. */
 function FooterItem({ link }: { link: FooterLink }) {
-  const className = 'text-sm text-foreground/70 transition-colors hover:text-foreground'
+  const className = 'text-[13px] text-foreground/60 transition-colors hover:text-foreground'
   if (link.external) {
     return (
       <a href={link.href} target="_blank" rel="noopener noreferrer" className={className}>
@@ -74,119 +52,103 @@ function FooterItem({ link }: { link: FooterLink }) {
 
 export default function SiteFooter() {
   return (
-    <footer className="relative w-full overflow-hidden border-t border-border bg-background px-5 pb-8 pt-16 text-foreground/80 sm:px-8">
+    <footer className="relative w-full overflow-hidden border-t border-border bg-background px-5 pb-8 pt-14 text-foreground/70 sm:px-8">
       <SectionBackdrop name="footer" position="right" />
-      <div className="mx-auto max-w-[1100px]">
-        {/* The sheet: everything except the legal line lives on one raised surface. */}
-        <div className="rounded-[2rem] border border-border bg-card p-7 sm:p-10">
-          <div className="grid gap-10 lg:grid-cols-[1.1fr_1.6fr] lg:gap-14">
-            {/* Brand block: who this is, and the two links a machine should read first. */}
-            <div>
-              <div className="flex items-center gap-2">
-                <Logo size={26} />
-                <span className="text-lg font-bold tracking-tight text-foreground">{APP_NAME}</span>
-              </div>
-              <p className="mt-3 max-w-xs text-sm leading-relaxed text-foreground/70">
-                The passport &amp; wallet for the agentic economy.
-              </p>
-
-              <p className="mt-6 flex items-start gap-2.5 text-[13px] leading-relaxed text-foreground/70">
-                <Terminal size={15} className="mt-0.5 shrink-0 text-accent" />
-                <span>
-                  This site speaks agent, too. Point your AI at our{' '}
-                  <a
-                    href="/.well-known/ai-agent-manifest.json"
-                    className="font-semibold text-accent underline-offset-2 hover:underline"
-                  >
-                    machine-readable manifest
-                  </a>{' '}
-                  and it can verify, pay and get to work, with every settlement{' '}
-                  <a
-                    href="https://a-identity-asp.onrender.com/proof"
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="font-semibold text-accent underline-offset-2 hover:underline"
-                  >
-                    provable on-chain
-                  </a>
-                  .
-                </span>
-              </p>
-
-              {/* Socials. Each renders only when its link is set, so an unpublished channel
-                  is simply absent rather than a button that goes nowhere. */}
-              <div className="mt-6 flex items-center gap-3">
-                {SOCIAL_LINKS.filter((s) => s.href).map(({ key, href, label, Icon }) => (
-                  <a
-                    key={key}
-                    href={href}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    aria-label={label}
-                    title={label}
-                    className="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-border bg-foreground/[0.04] text-foreground/60 transition-colors hover:border-accent/40 hover:bg-accent/10 hover:text-accent"
-                  >
-                    <Icon size={17} />
-                  </a>
-                ))}
-              </div>
+      <div className="relative mx-auto max-w-[1100px]">
+        <div className="grid gap-10 lg:grid-cols-[1fr_1.7fr] lg:gap-16">
+          {/* Brand block: who this is, and where else to find it. */}
+          <div>
+            <div className="flex items-center gap-2">
+              <Logo size={22} />
+              <span className="text-base font-bold tracking-tight text-foreground">{APP_NAME}</span>
             </div>
+            <p className="mt-2.5 max-w-[28ch] text-[13px] leading-relaxed text-foreground/55">
+              The passport and wallet for the agentic economy.
+            </p>
 
-            <div className="grid gap-8 sm:grid-cols-3">
-              {FOOTER_COLUMNS.map((col) => (
-                <div key={col.title}>
-                  <h3 className="text-sm font-semibold text-foreground">{col.title}</h3>
-                  <ul className="mt-3 flex flex-col gap-2">
-                    {[...col.links, ...(EXTRA_COLUMN_LINKS[col.title] ?? [])].map((l) => (
-                      <li key={l.label}>
-                        <FooterItem link={l} />
-                      </li>
-                    ))}
-                  </ul>
-                </div>
-              ))}
-            </div>
-          </div>
-
-          {/* Ask an AI about us: the LLM-parsable claim above, aimed at a human. Each link
-              carries the question AND the URL, so the answer is built from the page rather
-              than from whatever the model half-remembers. */}
-          <div className="mt-10 flex flex-wrap items-center gap-x-3 gap-y-3 border-t border-border pt-7">
-            <span className="font-mono text-xs tracking-tight text-accent">
-              Ask AI about {APP_NAME}
-            </span>
-            {ASK_AI_LINKS.map(({ key, label, href }) => {
-              const Mark = AI_MARKS[key]
-              return (
+            {/* Socials. Each renders only when its link is set, so an unpublished channel
+                is simply absent rather than a button that goes nowhere. */}
+            <div className="mt-5 flex items-center gap-4">
+              {SOCIAL_LINKS.filter((s) => s.href).map(({ key, href, label, Icon }) => (
                 <a
                   key={key}
                   href={href}
                   target="_blank"
                   rel="noopener noreferrer"
-                  aria-label={`Ask ${label} about ${APP_NAME}`}
-                  title={`Ask ${label} about ${APP_NAME}`}
-                  className="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-border text-foreground/55 transition-colors hover:border-accent/40 hover:bg-accent/[0.07] hover:text-accent"
+                  aria-label={label}
+                  title={label}
+                  className="text-foreground/45 transition-colors hover:text-foreground"
                 >
-                  <Mark size={17} />
+                  <Icon size={16} />
                 </a>
-              )
-            })}
+              ))}
+            </div>
           </div>
+
+          <nav aria-label="Footer" className="grid grid-cols-2 gap-8 sm:grid-cols-3">
+            {FOOTER_COLUMNS.map((col) => (
+              <div key={col.title}>
+                <h3 className="text-[11px] font-semibold uppercase tracking-[0.14em] text-foreground/40">
+                  {col.title}
+                </h3>
+                <ul className="mt-3 flex flex-col gap-2">
+                  {col.links.map((l) => (
+                    <li key={l.label}>
+                      <FooterItem link={l} />
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            ))}
+          </nav>
         </div>
 
-        {/* The slim bar: legal on the left, the way back up on the right. */}
-        <div className="mt-6 flex flex-wrap items-center justify-between gap-3 px-1 text-xs text-foreground/70">
-          <span>
-            © {new Date().getFullYear()} {APP_NAME}. Built for autonomous agents and the humans who
-            supervise them.
-          </span>
-          <button
-            type="button"
-            onClick={() => window.scrollTo({ top: 0, behavior: 'smooth' })}
-            className="inline-flex items-center gap-1.5 font-semibold text-foreground/70 transition-colors hover:text-foreground"
-          >
-            Go all the way up <ArrowUp size={13} />
-          </button>
+        {/* The quiet block: the machine-facing line, the ask-an-AI row and the legal
+            line, all at one small size so none of them competes with the links above. */}
+        <div className="mt-12 flex flex-col gap-2.5 border-t border-border pt-5 text-xs text-foreground/45">
+          <p>
+            This site speaks agent too:{' '}
+            <a
+              href="/.well-known/ai-agent-manifest.json"
+              className="underline-offset-2 transition-colors hover:text-foreground hover:underline"
+            >
+              machine-readable manifest
+            </a>
+            .
+          </p>
+
+          {/* Each link carries the question AND the URL, so the answer is built from the
+              page rather than from whatever the model half-remembers. */}
+          <p className="flex flex-wrap items-center gap-x-3 gap-y-1">
+            <span>Ask an AI about {APP_NAME}:</span>
+            {ASK_AI_LINKS.map(({ key, label, href }) => (
+              <a
+                key={key}
+                href={href}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="underline-offset-2 transition-colors hover:text-foreground hover:underline"
+              >
+                {label}
+              </a>
+            ))}
+          </p>
+
+          <div className="mt-1 flex items-center justify-between gap-4">
+            <span>
+              © {new Date().getFullYear()} {APP_NAME}. Built for autonomous agents and the humans
+              who supervise them.
+            </span>
+            <button
+              type="button"
+              onClick={() => window.scrollTo({ top: 0, behavior: 'smooth' })}
+              aria-label="Back to top"
+              title="Back to top"
+              className="grid h-8 w-8 shrink-0 place-items-center rounded-full border border-border text-foreground/50 transition-colors hover:border-accent/40 hover:text-foreground"
+            >
+              <ArrowUp size={14} />
+            </button>
+          </div>
         </div>
       </div>
     </footer>

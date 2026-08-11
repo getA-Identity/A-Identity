@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { QrCode, Wallet, X } from 'lucide-react'
+import { ArrowLeft, QrCode, Wallet, X } from 'lucide-react'
 import { useAuth } from '../../store/auth'
 import {
   connectWalletConnect,
@@ -37,6 +37,22 @@ export default function WalletModal({
     return () => clearTimeout(t)
   }, [open])
 
+  // Escape closes the picker. This is one step deep, so backing out of it lands on
+  // the sign-in card that opened it, which is exactly what the Back control does.
+  useEffect(() => {
+    if (!open) return
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        // The card underneath listens for Escape too; without this, one press
+        // would close the picker AND walk off the page behind it.
+        e.stopPropagation()
+        onClose()
+      }
+    }
+    window.addEventListener('keydown', onKey, true)
+    return () => window.removeEventListener('keydown', onKey, true)
+  }, [open, onClose])
+
   if (!open) return null
 
   const connectInjected = async (w: WalletOption) => {
@@ -73,14 +89,42 @@ export default function WalletModal({
   return (
     <div className="fixed inset-0 z-50 grid place-items-center bg-foreground/40 p-4" onClick={onClose}>
       <div
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="wallet-modal-title"
         className="w-full max-w-sm rounded-3xl bg-card p-6 shadow-[0_24px_64px_rgba(25,40,55,0.18)]"
         onClick={(e) => e.stopPropagation()}
       >
-        <div className="mb-4 flex items-center justify-between">
-          <h3 className="text-lg font-bold tracking-tight text-foreground">Connect a wallet</h3>
-          <button type="button" onClick={onClose} className="text-foreground/40 transition-colors hover:text-foreground">
-            <X size={18} />
-          </button>
+        <div className="mb-4">
+          {/* Two ways out, because they mean different things to different people:
+              the labelled Back for someone who opened this by mistake, the X for
+              anyone who reads a dialog corner before they read anything else. */}
+          <div className="flex items-center justify-between">
+            <button
+              type="button"
+              onClick={onClose}
+              aria-label="Back to the sign-in options"
+              title="Back (Esc)"
+              className="-ml-1.5 inline-flex items-center gap-1.5 rounded-full px-2 py-1 text-xs font-semibold text-foreground/55 transition-colors hover:text-foreground"
+            >
+              <ArrowLeft size={14} />
+              Back
+            </button>
+            <button
+              type="button"
+              onClick={onClose}
+              aria-label="Close"
+              className="text-foreground/40 transition-colors hover:text-foreground"
+            >
+              <X size={18} />
+            </button>
+          </div>
+          <h3
+            id="wallet-modal-title"
+            className="mt-2 text-lg font-bold tracking-tight text-foreground"
+          >
+            Connect a wallet
+          </h3>
         </div>
 
         {nothing ? (

@@ -186,10 +186,15 @@ export default function Navbar() {
               </NavigationMenuList>
             </NavigationMenu>
 
-            {/* Right: theme toggle + the one CTA (desktop only). Sign In lives inside
-                the app door itself; two buttons here just split the click. */}
+            {/* Right: theme toggle + the two doors (desktop only). Returning users had
+                to guess that "Start For Free" also signs them in, so the quiet cream
+                pill now says so out loud, with the primary CTA still last on the row.
+                Same pair, same variants, as the mobile sheet renders via AuthButtons. */}
             <div className="hidden items-center gap-2 md:flex">
               <ThemeToggle />
+              <Button asChild variant="secondary">
+                <Link to="/login">Sign in</Link>
+              </Button>
               <Button asChild>
                 <Link to="/signup">Start For Free</Link>
               </Button>

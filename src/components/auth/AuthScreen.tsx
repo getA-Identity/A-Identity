@@ -1,6 +1,6 @@
-import { useState, type FormEvent, type ReactNode } from 'react'
+import { useCallback, useEffect, useState, type FormEvent, type ReactNode } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
-import { ArrowRight, Mail, User, Wallet } from 'lucide-react'
+import { ArrowLeft, ArrowRight, Mail, User, Wallet } from 'lucide-react'
 import { motion } from 'framer-motion'
 import Logo from '../Logo'
 import WalletModal from './WalletModal'
@@ -70,6 +70,37 @@ export default function AuthScreen({ mode }: AuthScreenProps) {
     navigate('/app')
   }
 
+  /**
+   * The way out. This card is the only surface with no navigation of its own, so
+   * before this the only exit was the browser's own back button.
+   *
+   * One step at a time: the "check your inbox" confirmation returns to the form
+   * (a mistyped address is one click from being fixed) and only then does back
+   * leave the page. Leaving means the previous entry when there is one, and the
+   * homepage when there is not: react-router stamps its position on
+   * history.state.idx, and idx 0 means this URL was opened cold, so navigate(-1)
+   * would walk out of the site entirely.
+   */
+  const goBack = useCallback(() => {
+    if (magicSent) {
+      setMagicSent(false)
+      return
+    }
+    const idx = (window.history.state as { idx?: number } | null)?.idx ?? 0
+    if (idx > 0) navigate(-1)
+    else navigate('/')
+  }, [magicSent, navigate])
+
+  // Escape does what the back control does. The wallet picker is on top when it is
+  // open, so it gets the key first and this stays out of the way.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape' && !walletOpen) goBack()
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [goBack, walletOpen])
+
   return (
     <ThemeScope as="main" className="grid min-h-screen w-full place-items-center px-5 py-10">
       <WalletModal
@@ -87,10 +118,22 @@ export default function AuthScreen({ mode }: AuthScreenProps) {
         transition={{ duration: 0.5, ease: EASE_OUT_EXPO }}
         className="w-full max-w-[420px] rounded-3xl bg-card p-8 shadow-[0_24px_64px_rgba(25,40,55,0.10)]"
       >
-        <Link to="/" className="mb-8 inline-flex items-center gap-2">
-          <Logo size={28} />
-          <span className="text-lg font-bold tracking-tight text-foreground">{APP_NAME}</span>
-        </Link>
+        <div className="mb-8 flex items-center justify-between gap-3">
+          <Link to="/" className="inline-flex items-center gap-2">
+            <Logo size={28} />
+            <span className="text-lg font-bold tracking-tight text-foreground">{APP_NAME}</span>
+          </Link>
+          <button
+            type="button"
+            onClick={goBack}
+            aria-label={magicSent ? 'Back to the sign-in form' : 'Go back'}
+            title="Back (Esc)"
+            className="inline-flex items-center gap-1.5 rounded-full border border-border px-3 py-1.5 text-xs font-semibold text-foreground/60 transition-colors hover:border-accent/40 hover:text-foreground"
+          >
+            <ArrowLeft size={14} />
+            Back
+          </button>
+        </div>
 
         <h1 className="mb-1.5 text-2xl font-bold tracking-tight text-foreground">{copy.title}</h1>
         <p className="mb-7 text-sm text-foreground/60">{copy.subtitle}</p>

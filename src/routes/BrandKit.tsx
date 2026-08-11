@@ -1,29 +1,43 @@
-import { Download } from 'lucide-react'
+import { Check, Download, X } from 'lucide-react'
 import PageHeader from '../components/PageHeader'
+import SiteFooter from '../components/sections/SiteFooter'
 import ThemeScope from '../components/ThemeScope'
 import Logo from '../components/Logo'
 import OwlMark, { type OwlVerdict } from '../components/OwlMark'
 import { OwlMascot3D, type OwlVariant } from '../components/OwlMascot'
 import { DisplayHeading, Eyebrow, Lede } from '../components/ui/display'
+import { APP_NAME } from '../lib/brand'
 import { usePageMeta } from '../lib/head'
 
 /**
- * The brand kit: every visual asset the product owns, on one internal page.
+ * The brand kit: every visual asset the product owns, on one page.
  *
  * This exists so that "which owl do I use, at what size, in which colour" is answered by
- * looking rather than by asking, and so the design overhaul about to land has one place to
- * put what it produces. Everything shown here ships with the site; the competitor reference
- * material deliberately does not (it lives in _design-refs/, git-ignored, other people's
- * work kept only as local working material).
+ * looking rather than by asking. Everything shown here ships with the site; the competitor
+ * reference material deliberately does not (it lives in _design-refs/, git-ignored, other
+ * people's work kept only as local working material).
  *
- * Unlinked and noindex, like /mascot. It is a working surface, not a marketing page.
+ * This IS /brand. It used to be an internal, noindex surface at /brand-kit while a thinner
+ * press page held the public URL, which meant the good page was unreachable and the public
+ * one was out of date. /brand-kit now redirects here, so there is one page and one
+ * indexable URL, and the press-kit rules the old page carried live in the Usage section
+ * below rather than in a second copy of the palette.
  */
 
 const BRAND = [
-  { name: 'ink', hex: '#192837', note: 'Body text in light, surfaces in dark. The brand’s weight.' },
-  { name: 'accent', hex: '#7342e2', note: 'One job: the action, and the neutral state of the owl’s eyes.' },
+  { name: 'ink', hex: '#192837', note: "Body text in light, surfaces in dark. The brand's weight." },
+  { name: 'accent', hex: '#7342e2', note: "One job: the action, and the neutral state of the owl's eyes." },
   { name: 'cream', hex: '#f2f2ee', note: 'The page in light mode, the mark on dark chrome.' },
   { name: 'sand', hex: '#cfc8c5', note: 'Muted structure: sheets, beaks, talons.' },
+]
+
+/** The protocol and token colours, for anyone naming one of them next to our mark. */
+const PROTOCOL_COLORS = [
+  { name: 'ERC-8004', hex: '#7342E2' },
+  { name: 'x402 / USDC', hex: '#2775CA' },
+  { name: 'MCP', hex: '#1AAB7A' },
+  { name: 'USDT', hex: '#26A17B' },
+  { name: 'PYUSD', hex: '#0E2A8C' },
 ]
 
 const VERDICTS: { v: OwlVerdict; label: string }[] = [
@@ -52,7 +66,7 @@ const MASCOTS: { variant: OwlVariant; name: string; role: string }[] = [
   { variant: 'officer', name: 'Officer', role: 'Negative states: 404, render errors.' },
 ]
 
-function Swatch({ name, hex, note }: { name: string; hex: string; note: string }) {
+function Swatch({ name, hex, note }: { name: string; hex: string; note?: string }) {
   return (
     <div className="overflow-hidden rounded-2xl border border-border bg-card">
       <div className="h-24 w-full border-b border-border" style={{ backgroundColor: hex }} />
@@ -61,7 +75,7 @@ function Swatch({ name, hex, note }: { name: string; hex: string; note: string }
           <span className="text-sm font-bold text-foreground">{name}</span>
           <span className="font-mono text-xs text-foreground/45">{hex}</span>
         </div>
-        <p className="mt-1.5 text-xs leading-relaxed text-foreground/55">{note}</p>
+        {note && <p className="mt-1.5 text-xs leading-relaxed text-foreground/55">{note}</p>}
       </div>
     </div>
   )
@@ -81,14 +95,19 @@ function AssetLink({ href, label }: { href: string; label: string }) {
 }
 
 export default function BrandKit() {
-  usePageMeta({ title: 'Brand Kit · A-Identity', noindex: true })
+  usePageMeta({
+    title: `Brand · ${APP_NAME}`,
+    description:
+      'The A-Identity brand kit: palette, type scale, marks, mascots, section art and motion rules, with the source files and the usage rules. Everything here is free to reuse as specified.',
+    canonical: 'https://a-identity.xyz/brand',
+  })
 
   return (
-    <ThemeScope as="main" className="min-h-screen">
+    <ThemeScope className="min-h-screen">
       <PageHeader />
 
-      <div className="mx-auto w-full max-w-[1100px] px-5 py-14 sm:px-8">
-        <Eyebrow>Internal · brand kit</Eyebrow>
+      <main className="mx-auto w-full max-w-[1100px] px-5 py-14 sm:px-8">
+        <Eyebrow>Brand kit</Eyebrow>
         <DisplayHeading size="display" className="mt-3">
           Everything the brand owns.
         </DisplayHeading>
@@ -109,6 +128,17 @@ export default function BrandKit() {
           </p>
           <div className="mt-6 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
             {BRAND.map((c) => (
+              <Swatch key={c.name} {...c} />
+            ))}
+          </div>
+
+          <p className="mt-10 max-w-[62ch] text-sm leading-relaxed text-foreground/55">
+            When a protocol or a stablecoin is named next to our mark, it wears its own
+            colour rather than ours. Borrowing the accent for someone else&apos;s standard
+            implies we own it.
+          </p>
+          <div className="mt-6 grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-5">
+            {PROTOCOL_COLORS.map((c) => (
               <Swatch key={c.name} {...c} />
             ))}
           </div>
@@ -292,6 +322,69 @@ export default function BrandKit() {
           </div>
         </section>
 
+        {/* --------------------------------------------------------------- usage --- */}
+        <section className="mt-20">
+          <DisplayHeading size="sub" as="h2">
+            Usage
+          </DisplayHeading>
+          <p className="mt-2 max-w-[62ch] text-sm leading-relaxed text-foreground/55">
+            The rules for writing about {APP_NAME} or placing the mark. The name is one word,
+            hyphenated, with a capital A and a capital I: A-Identity.
+          </p>
+
+          {/* Both panels pass an explicit fill: unlike every other placement, these two
+              demonstrate the mark on a FIXED light and a FIXED dark background, so they
+              must not inherit the surrounding text colour. */}
+          <div className="mt-6 grid gap-4 sm:grid-cols-2">
+            <div className="flex items-center justify-center rounded-2xl border border-[#192837]/10 bg-white p-12">
+              <div className="flex items-center gap-3">
+                <Logo size={40} fill="#192837" />
+                <span className="text-2xl font-bold tracking-tight text-[#192837]">{APP_NAME}</span>
+              </div>
+            </div>
+            <div
+              className="flex items-center justify-center rounded-2xl border border-white/10 p-12"
+              style={{ background: '#192837' }}
+            >
+              <div className="flex items-center gap-3">
+                <Logo size={40} fill="#ffffff" />
+                <span className="text-2xl font-bold tracking-tight text-white">{APP_NAME}</span>
+              </div>
+            </div>
+          </div>
+
+          <div className="mt-4 grid gap-4 sm:grid-cols-2">
+            <div className="rounded-2xl border border-emerald-500/25 bg-emerald-500/10 p-6">
+              <div className="mb-3 flex items-center gap-2 text-sm font-semibold text-emerald-700 dark:text-emerald-400">
+                <Check size={16} /> Do
+              </div>
+              <ul className="flex flex-col gap-2 text-sm text-foreground/70">
+                <li>Write the name as A-Identity, one word, hyphenated.</li>
+                <li>Give the mark clear space on cream or ink backgrounds.</li>
+                <li>Use the accent purple for the action, and only the action.</li>
+              </ul>
+            </div>
+            <div className="rounded-2xl border border-red-500/25 bg-red-500/10 p-6">
+              <div className="mb-3 flex items-center gap-2 text-sm font-semibold text-red-600 dark:text-red-400">
+                <X size={16} /> Do not
+              </div>
+              <ul className="flex flex-col gap-2 text-sm text-foreground/70">
+                <li>Do not recolour or stretch the logo.</li>
+                <li>Do not write it as Aidentity, A Identity, or AIdentity.</li>
+                <li>Do not place the mark on a busy photo without a panel.</li>
+              </ul>
+            </div>
+          </div>
+
+          <p className="mt-6 text-sm text-foreground/50">
+            Need an asset that is not here? Reach us on the{' '}
+            <a href="/contact" className="font-semibold text-accent hover:underline">
+              contact page
+            </a>
+            .
+          </p>
+        </section>
+
         {/* -------------------------------------------------------------- motion --- */}
         <section className="mt-20 rounded-3xl border border-border bg-card p-8 sm:p-10">
           <DisplayHeading size="sub" as="h2">
@@ -319,7 +412,9 @@ export default function BrandKit() {
             </div>
           </div>
         </section>
-      </div>
+      </main>
+
+      <SiteFooter />
     </ThemeScope>
   )
 }
