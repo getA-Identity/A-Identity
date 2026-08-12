@@ -192,7 +192,7 @@ const RAILS: Rail[] = [
     tileBg: '#CCFF00',
     color: '#CCFF00',
     role: 'Where retail agents will trade.',
-    detail: 'The canonical ERC-8004 identity and reputation registries are live on mainnet and this product reads them today; on the testnet the full set runs, agent #0 is minted and the spend vault is rehearsed. Writes wait on a funded signer, payments on a published settlement token.',
+    detail: 'Agent #0 on the mainnet ERC-8004 registry is this product: the canonical identity and reputation registries are live and both read and written today, with the full set plus the spend vault rehearsed on testnet. Payments wait on a published settlement token.',
     chain: 'rhchain',
   },
 ]

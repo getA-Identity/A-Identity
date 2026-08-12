@@ -219,7 +219,7 @@ export const CHAINS: readonly Chain[] = [
     "stablecoins": [],
     "rpcUrl": "https://rpc.mainnet.chain.robinhood.com",
     "explorer": "https://robinhoodchain.blockscout.com",
-    "role": "Robinhood's own L2 for tokenized real-world assets: canonical ERC-8004 identity + reputation live, read-side wired; writes wait on a human-funded signer.",
+    "role": "Robinhood's own L2 for tokenized real-world assets: canonical ERC-8004 identity + reputation live, agent #0 minted; payments wait on a published settlement token.",
     "status": "beta",
     "protocols": {
       "payment": {
@@ -229,7 +229,7 @@ export const CHAINS: readonly Chain[] = [
       "identity": {
         "standard": "ERC-8004",
         "erc8004Native": true,
-        "note": "Identity + Reputation registries LIVE (read-side wired, same canonical addresses as X Layer/Celo). No ValidationRegistry in the mainnet family yet."
+        "note": "Identity + Reputation registries LIVE (same canonical addresses as X Layer/Celo); agent #0, the registry's first mint, is ours (2026-08-12). No ValidationRegistry in the mainnet family yet."
       }
     },
     "identity": "ERC-8004",

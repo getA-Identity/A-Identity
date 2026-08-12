@@ -277,7 +277,7 @@ export const CHAINS: ChainDescriptor[] = [
     name: 'Robinhood Chain',
     shortName: 'RH Chain',
     color: '#0F9D30',
-    role: 'Robinhood\'s own L2 for tokenized real-world assets: canonical ERC-8004 identity + reputation live, read-side wired; writes wait on a human-funded signer.',
+    role: 'Robinhood\'s own L2 for tokenized real-world assets: canonical ERC-8004 identity + reputation live, agent #0 minted; payments wait on a published settlement token.',
     ecosystem: 'evm',
     testnet: false,
     status: 'beta',
@@ -309,7 +309,7 @@ export const CHAINS: ChainDescriptor[] = [
     identity: {
       standard: 'ERC-8004',
       erc8004Native: true,
-      note: 'Identity + Reputation registries LIVE (read-side wired, same canonical addresses as X Layer/Celo). No ValidationRegistry in the mainnet family yet.',
+      note: 'Identity + Reputation registries LIVE (same canonical addresses as X Layer/Celo); agent #0, the registry\'s first mint, is ours (2026-08-12). No ValidationRegistry in the mainnet family yet.',
     },
     payment: { x402: true, note: 'x402 needs a settlement token first: no canonical USDC is documented on this chain yet.' },
   },
