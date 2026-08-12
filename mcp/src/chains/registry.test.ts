@@ -60,8 +60,10 @@ test('Arc, X Layer, Celo (live), Base, Celo Sepolia and RH Chain Testnet (beta) 
   // recorded in the durable proof log. Celo Sepolia stays beta.
   // 2026-08-11: rhchain-testnet flips to beta — the canonical ERC-8004 registry set
   // is live there at the cross-chain addresses (see the Robinhood tests below).
+  // 2026-08-12: rhchain flips to beta — the canonical MAINNET identity + reputation
+  // registries were verified live there (read-side wired; writes wait on a signer).
   const live = liveChains()
-  assert.deepEqual(live.map((c) => c.id).sort(), ['arc', 'base', 'celo', 'celo-sepolia', 'rhchain-testnet', 'xlayer'])
+  assert.deepEqual(live.map((c) => c.id).sort(), ['arc', 'base', 'celo', 'celo-sepolia', 'rhchain', 'rhchain-testnet', 'xlayer'])
   assert.equal(live.find((c) => c.id === 'xlayer')?.status, 'live')
   assert.equal(live.find((c) => c.id === 'base')?.status, 'beta')
   assert.equal(live.find((c) => c.id === 'celo')?.status, 'live')
@@ -82,8 +84,9 @@ test('Arc, X Layer, Celo (live), Base, Celo Sepolia and RH Chain Testnet (beta) 
 
 test('every roadmap chain is present and planned', () => {
   // celo left this list on 2026-08-09 when its identity reads + x402 rail went beta;
-  // rhchain-testnet left on 2026-08-11 when the canonical ERC-8004 set went live there.
-  for (const id of ['arbitrum', 'avalanche', 'rhchain', 'stellar']) {
+  // rhchain-testnet left on 2026-08-11 when the canonical ERC-8004 set went live there;
+  // rhchain left on 2026-08-12 when its canonical registries were verified live.
+  for (const id of ['arbitrum', 'avalanche', 'stellar']) {
     const c = getChainById(id)
     assert.ok(c, `${id} missing from registry`)
     assert.equal(c.status, 'planned', `${id} should be planned`)
@@ -127,18 +130,29 @@ test('Robinhood Chain carries the values verified against its live RPCs', () => 
   assert.equal(test_.rpcUrls[0], 'https://rpc.testnet.chain.robinhood.com')
 })
 
-test('Robinhood Chain Testnet is beta with the canonical ERC-8004 registry set', () => {
-  // Deployed/completed 2026-08-11 by replaying the canonical Safe-Singleton-Factory
-  // calldata (scripts/rh-testnet-deploy-8004.mjs). Verified with eth_getCode plus a
-  // real read on each proxy, so these pins are observations, not intentions. The
-  // addresses are the SAME as Arc/Celo Sepolia — that is the cross-chain promise.
-  const c = getChainById('rhchain-testnet')
-  assert.ok(c)
-  assert.equal(c.status, 'beta')
-  assert.equal(c.contracts.identityRegistry, '0x8004A818BFB912233c491871b3d84c89A494BD9e')
-  assert.equal(c.contracts.reputationRegistry, '0x8004B663056A597Dffe9eCcC1965A193B7388713')
-  assert.equal(c.contracts.validationRegistry, '0x8004Cb1BF31DAf7788923b405b754f57acEB4272')
-  assert.equal(c.faucet, 'https://faucets.chain.link/robinhood-testnet')
+test('the Robinhood pair is beta with the canonical registries it was actually verified to carry', () => {
+  // Testnet, 2026-08-11: deployed/completed by replaying the canonical
+  // Safe-Singleton-Factory calldata (scripts/rh-testnet-deploy-8004.mjs), the SAME
+  // addresses as Arc/Celo Sepolia. Mainnet, 2026-08-12: the canonical MAINNET family
+  // (same addresses as X Layer/Celo) was found ALREADY live — nobody deployed it for
+  // us. Every pin below was verified with eth_getCode plus a real read on the proxy
+  // (name/symbol/getClients), so these are observations, not intentions.
+  const t = getChainById('rhchain-testnet')
+  assert.ok(t)
+  assert.equal(t.status, 'beta')
+  assert.equal(t.contracts.identityRegistry, '0x8004A818BFB912233c491871b3d84c89A494BD9e')
+  assert.equal(t.contracts.reputationRegistry, '0x8004B663056A597Dffe9eCcC1965A193B7388713')
+  assert.equal(t.contracts.validationRegistry, '0x8004Cb1BF31DAf7788923b405b754f57acEB4272')
+  assert.equal(t.faucet, 'https://faucets.chain.link/robinhood-testnet')
+
+  const m = getChainById('rhchain')
+  assert.ok(m)
+  assert.equal(m.status, 'beta')
+  assert.equal(m.contracts.identityRegistry, '0x8004a169fb4a3325136eb29fa0ceb6d2e539a432')
+  assert.equal(m.contracts.reputationRegistry, '0x8004BAa17C55a88189AE136b182e5fdA19dE9b63')
+  // No ValidationRegistry in the mainnet family (mirroring Celo/X Layer): KYA cannot
+  // be anchored on-chain there, so the registry must not pretend otherwise.
+  assert.equal(m.contracts.validationRegistry, undefined)
 })
 
 test('Robinhood Chain asserts no USDC and no CCTP domain it cannot back up', () => {

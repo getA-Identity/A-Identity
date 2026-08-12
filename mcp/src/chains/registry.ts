@@ -35,11 +35,12 @@ export const CHAINS: ChainDescriptor[] = [
   //
   // Where the roadmap actually stands: arc + xlayer are live; base, the celo pair
   // (mainnet + Celo Sepolia: identity reads live, x402 facilitator rail wired) and
-  // rhchain-testnet (the full ERC-8004 registry set live at the canonical addresses
-  // since 2026-08-11) are beta; stellar, avalanche, arbitrum and Robinhood mainnet
-  // are planned. Among the planned chains, STELLAR is next: its integration is funded
-  // work (the Instawards SoW), ahead of avalanche/arbitrum, which is why it sits right
-  // after Arc in this display order.
+  // the Robinhood pair (testnet: full ERC-8004 set live since 2026-08-11 with agent #0
+  // minted; mainnet: canonical identity + reputation registries verified live
+  // 2026-08-12, read-side wired, writes wait on a funded signer) are beta; stellar,
+  // avalanche and arbitrum are planned. Among the planned chains, STELLAR is next: its
+  // integration is funded work (the Instawards SoW), ahead of avalanche/arbitrum,
+  // which is why it sits right after Arc in this display order.
   {
     caip2: 'eip155:5042002',
     id: 'arc',
@@ -276,10 +277,10 @@ export const CHAINS: ChainDescriptor[] = [
     name: 'Robinhood Chain',
     shortName: 'RH Chain',
     color: '#0F9D30',
-    role: 'Robinhood\'s own L2 for tokenized real-world assets, stock tokens and ETFs. Day-one identity and policy positioning for agents that trade there.',
+    role: 'Robinhood\'s own L2 for tokenized real-world assets: canonical ERC-8004 identity + reputation live, read-side wired; writes wait on a human-funded signer.',
     ecosystem: 'evm',
     testnet: false,
-    status: 'planned',
+    status: 'beta',
     evmChainId: 4663,
     cctpDomain: null,
     nativeCurrency: { name: 'Ether', symbol: 'ETH', decimals: 18 },
@@ -289,12 +290,27 @@ export const CHAINS: ChainDescriptor[] = [
     // (an Alchemy or QuickNode key).
     rpcUrls: ['https://rpc.mainnet.chain.robinhood.com'],
     explorer: 'https://robinhoodchain.blockscout.com',
-    contracts: { create2Factory: CREATE2_FACTORY },
+    contracts: {
+      // The canonical MAINNET ERC-8004 family, the same addresses as X Layer (identity)
+      // and Celo (identity + reputation). Nobody had to deploy these for us: verified
+      // live 2026-08-12 with eth_getCode (both are ERC1967 proxies) plus a REAL read on
+      // each - name()/symbol() answered AgentIdentity/AGENT, getClients(1) returned a
+      // clean empty. No ValidationRegistry exists in this mainnet family (mirroring
+      // Celo/X Layer), so none is asserted and KYA cannot be anchored on-chain here.
+      // Still NO usdc on purpose: no canonical stablecoin is documented for this chain.
+      identityRegistry: '0x8004a169fb4a3325136eb29fa0ceb6d2e539a432',
+      reputationRegistry: '0x8004BAa17C55a88189AE136b182e5fdA19dE9b63',
+      create2Factory: CREATE2_FACTORY,
+    },
     confirmations: 3,
     stablecoins: [],
     signerEnvVar: 'RHCHAIN_SIGNER_KEY',
     rpcEnvVar: 'RHCHAIN_RPC_URL',
-    identity: { standard: 'ERC-8004', erc8004Native: true, note: 'ERC-8004 registry to be deployed.' },
+    identity: {
+      standard: 'ERC-8004',
+      erc8004Native: true,
+      note: 'Identity + Reputation registries LIVE (read-side wired, same canonical addresses as X Layer/Celo). No ValidationRegistry in the mainnet family yet.',
+    },
     payment: { x402: true, note: 'x402 needs a settlement token first: no canonical USDC is documented on this chain yet.' },
   },
   {

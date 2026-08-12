@@ -91,10 +91,11 @@ const PROTOCOLS = [
  * A testnet mirror that says nothing its mainnet twin does not is dropped from the
  * status line; everything else is read from src/lib/chains.ts, which is generated from
  * mcp/src/chains/registry.ts. A promotion in the registry moves this sentence with it.
- * rhchain-testnet LEFT this set on 2026-08-11: with the canonical ERC-8004 registries
- * live there while mainnet stays planned, the testnet now says MORE than its twin.
+ * rhchain-testnet left this set on 2026-08-11 (registries live there while mainnet was
+ * still planned) and RETURNED on 2026-08-12 when rhchain itself went beta: the mainnet
+ * twin now carries the headline, so the mirror adds a name without adding information.
  */
-const MIRRORS = new Set<ChainId>(['celo-sepolia'])
+const MIRRORS = new Set<ChainId>(['celo-sepolia', 'rhchain-testnet'])
 
 /** Console column-width names get their real ones in prose. */
 const nameOf = (id: ChainId, shortName: string) =>

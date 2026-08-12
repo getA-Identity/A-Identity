@@ -108,6 +108,7 @@ test('the public surface reports exactly the wired chains as live/beta', () => {
   // 2026-08-09 evening: Celo mainnet is LIVE (agent #9759 minted, x402 rail settling
   // real USDC). Display order puts live chains first; Base and Celo Sepolia stay beta.
   // 2026-08-11: rhchain-testnet joins the beta set (canonical ERC-8004 registries live).
+  // 2026-08-12: rhchain joins too (mainnet canonical registries verified, reads wired).
   const live = publicChains().filter((c) => c.status === 'live' || c.status === 'beta')
   assert.deepEqual(
     live.map((c) => ({ id: c.id, status: c.status })),
@@ -117,6 +118,7 @@ test('the public surface reports exactly the wired chains as live/beta', () => {
       { id: 'celo', status: 'live' },
       { id: 'base', status: 'beta' },
       { id: 'rhchain-testnet', status: 'beta' },
+      { id: 'rhchain', status: 'beta' },
       { id: 'celo-sepolia', status: 'beta' },
     ],
   )

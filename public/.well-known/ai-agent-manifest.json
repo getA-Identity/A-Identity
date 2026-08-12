@@ -84,8 +84,8 @@
           "caip2": "eip155:4663",
           "identity": "ERC-8004",
           "erc8004Native": true,
-          "note": "ERC-8004 registry to be deployed.",
-          "status": "planned"
+          "note": "Identity + Reputation registries LIVE (read-side wired, same canonical addresses as X Layer/Celo). No ValidationRegistry in the mainnet family yet.",
+          "status": "beta"
         },
         {
           "id": "celo",
@@ -177,9 +177,9 @@
           "id": "rhchain",
           "name": "Robinhood Chain",
           "chainId": 4663,
-          "role": "Robinhood's own L2 for tokenized real-world assets, stock tokens and ETFs. Day-one identity and policy positioning for agents that trade there.",
+          "role": "Robinhood's own L2 for tokenized real-world assets: canonical ERC-8004 identity + reputation live, read-side wired; writes wait on a human-funded signer.",
           "x402": true,
-          "status": "planned"
+          "status": "beta"
         },
         {
           "id": "celo",
