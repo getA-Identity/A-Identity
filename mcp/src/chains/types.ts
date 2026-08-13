@@ -3,7 +3,7 @@
  * plus the shared write-result shapes every chain adapter returns.
  *
  * Config is DATA (a ChainDescriptor), logic is chain-agnostic. Adding a chain is a
- * new descriptor, not a new code path. See ../../../MULTICHAIN-STRATEGY.md.
+ * new descriptor, not a new code path. See ./README.md.
  */
 
 /** Which virtual machine family a chain belongs to. Selects the adapter. */
@@ -33,7 +33,7 @@ export interface ChainContracts {
   multicall3From?: string
   /**
    * Deterministic CREATE2 factory, the thing that makes one contract ADDRESS possible on
-   * every EVM chain (see MULTICHAIN-STRATEGY 1.5). Only set where its presence was actually
+   * every EVM chain (see the chains README (one address, many chains)). Only set where its presence was actually
    * verified with an eth_getCode call, never assumed from the fact that it is "usually
    * there": deploying against an absent factory fails in a confusing way.
    */

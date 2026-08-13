@@ -2,7 +2,7 @@
  * Policy Engine v2 type foundation (Phase 1.1).
  *
  * Built on the same principles the multichain work established (see
- * ../../../MULTICHAIN-STRATEGY.md), because the problem is the same shape: many callers,
+ * ../chains/README.md), because the problem is the same shape: many callers,
  * one core, and no per-caller branching allowed to leak inward.
  *
  *   config is DATA          -> an ActionPolicy is a plain object the user owns

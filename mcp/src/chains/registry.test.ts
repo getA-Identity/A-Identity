@@ -210,7 +210,7 @@ test('every settlement token is well formed and agrees with its chain', () => {
 })
 
 test('every EVM chain records a verified CREATE2 factory, and no non-EVM chain does', () => {
-  // The same-address promise in MULTICHAIN-STRATEGY 1.5 only holds where the factory is
+  // The same-address promise in the chains README (one address, many chains) only holds where the factory is
   // actually deployed, so this is data gathered by eth_getCode, not an assumption.
   for (const c of CHAINS) {
     if (c.ecosystem === 'evm') {

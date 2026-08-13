@@ -14,7 +14,7 @@
  * The frontend cannot import from `mcp/` (separate package, separate deploy), so it
  * gets a GENERATED file instead of a runtime fetch: the landing and console render
  * chains without a network round-trip, and `frontend-sync.test.ts` fails the build if
- * the generated file drifts from the registry. See ../../../MULTICHAIN-STRATEGY.md.
+ * the generated file drifts from the registry. See ./README.md.
  */
 import type { ChainDescriptor, ChainStatus } from './types.js'
 import { CHAINS } from './registry.js'

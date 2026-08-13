@@ -8,7 +8,7 @@
  * This is the faithful, parameterized extraction of the original Arc integration:
  * reads run keyless; writes are gated behind the chain's signer env var and stay
  * human-on-the-loop (prepared-or-executed). Behavior for the Arc descriptor is
- * identical to the original arc-contracts.ts. See ../../../MULTICHAIN-STRATEGY.md.
+ * identical to the original arc-contracts.ts. See ./README.md.
  */
 import type { ChainDescriptor } from '../types.js'
 import type {

@@ -2,7 +2,7 @@
  * The chain registry — the single source of truth for every chain this backend
  * knows about. Adding a chain = adding one descriptor here (plus, for a new VM,
  * an adapter under ./<ecosystem>/). Nothing else hardcodes a chain id, RPC, or
- * address. See ../../../MULTICHAIN-STRATEGY.md.
+ * address. See ./README.md.
  *
  * Status is honest: only `live` chains are wired end to end. `planned` chains carry
  * their public metadata (CAIP-2, chain id, canonical USDC, CCTP domain) so onboarding
@@ -15,7 +15,7 @@ import { evmChainIdFromCaip2, isValidCaip2 } from './caip.js'
 /**
  * The Arachnid deterministic CREATE2 factory. Verified present with a live eth_getCode call
  * on EVERY EVM chain in this registry on 2026-07-29 (arc, base, arbitrum, avalanche, xlayer,
- * rhchain, rhchain-testnet), which is what makes MULTICHAIN-STRATEGY's same-address promise
+ * rhchain, rhchain-testnet), which is what makes the chains README's same-address promise
  * actually achievable rather than merely intended.
  *
  * CreateX (0xba5Ed099...) is NOT present on Robinhood Chain, either network, so CREATE3

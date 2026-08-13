@@ -8,7 +8,7 @@
  *
  * References are NOT all numeric: EVM uses an integer, Stellar a network label,
  * Bitcoin a genesis-hash prefix. Store the raw reference; never assume it parses
- * as a number. See ../../../MULTICHAIN-STRATEGY.md.
+ * as a number. See ./README.md.
  */
 
 /** CAIP-2 namespace: 3-8 chars of [-a-z0-9]. */

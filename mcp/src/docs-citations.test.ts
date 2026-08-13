@@ -46,8 +46,10 @@ const SELF = 'docs-citations.test.ts'
  * Keyed by the basename of the cited document.
  */
 const KNOWN_DANGLING: Record<string, string> = {
-  'MULTICHAIN-STRATEGY.md':
-    'Cited by ten tracked sources, seven of them under chains/, and gitignored (.gitignore:53). Same defect class as the robinhood docs and a bigger one by count, but the fix is a tracked rewrite of the strategy document plus edits across the chain module, which belongs to that workstream rather than to a drive-by. Listed so it is a scheduled debt rather than a silent one.',
+  // Empty on purpose. MULTICHAIN-STRATEGY.md used to live here: ten tracked sources cited
+  // it while it was gitignored, which CI caught the moment this test existed, because a
+  // fresh clone genuinely does not have the file. The fix was the same one the policy
+  // module got: a tracked README next to the code, carrying what the code actually cites.
 }
 
 function tsFiles(dir: string, prefix = ''): string[] {

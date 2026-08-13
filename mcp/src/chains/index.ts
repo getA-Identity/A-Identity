@@ -3,7 +3,7 @@
  *
  *   import { getChain, requireChain, ARC_CHAIN, createEvmAdapter } from './chains/index.js'
  *
- * See ../../../MULTICHAIN-STRATEGY.md for the full design.
+ * See ./README.md for the full design.
  */
 export * from './types.js'
 export * from './caip.js'

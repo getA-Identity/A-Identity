@@ -7,7 +7,7 @@
  * Status is honest, exactly as chain status is. A `planned` surface has a fixed schema so
  * callers can be written against it, but it can never produce an ALLOW. `bet` is planned
  * deliberately: prediction markets sit behind a much higher regulatory bar, so Phase 7 is
- * schema only, no execution path. See ../../../MULTICHAIN-STRATEGY.md section 1.10.
+ * schema only, no execution path. See ./README.md section 1.10.
  */
 import type { Surface, SurfaceStatus, ActionKind } from './types.js'
 

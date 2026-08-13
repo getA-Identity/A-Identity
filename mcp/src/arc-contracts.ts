@@ -6,7 +6,7 @@
  * KYA attestation) lives in `chains/evm/adapter.ts` and is driven by the Arc descriptor
  * in `chains/registry.ts`. This file keeps the exact same public API every other module
  * imports, so nothing downstream changed; adding another EVM chain is now a registry
- * entry, not a copy of this file. See ../../MULTICHAIN-STRATEGY.md.
+ * entry, not a copy of this file. See ./chains/README.md.
  *
  * Reads run live with no key. Writes stay env-gated behind ARC_SIGNER_KEY and
  * human-on-the-loop: nothing broadcasts unless a key is present and the caller
