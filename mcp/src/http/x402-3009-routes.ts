@@ -27,9 +27,31 @@ import {
 } from '../x402-3009/rail.js'
 import { supported, verify, settle } from '../x402-3009/facilitator.js'
 import { provenDomainCached } from '../x402-3009/domain.js'
-import { getChainById } from '../chains/index.js'
+import { getChainById, evmWalletClientFromKey, type ChainDescriptor } from '../chains/index.js'
 import type { TxContext } from '../asp/tools.js'
 import { readBody, sendJson, type RouteCtx } from './shared.js'
+
+/**
+ * Is there a usable key to broadcast settlements with, and if not, which variable is at
+ * fault? Reports the public address only; a key that fails the shape check never reaches
+ * this output, and neither does any key material.
+ */
+async function settlementSigner(chain: ChainDescriptor): Promise<Record<string, unknown>> {
+  const dedicated = process.env.X402_3009_SIGNER_KEY
+  const chainVar = chain.signerEnvVar
+  const usingVar = dedicated ? 'X402_3009_SIGNER_KEY' : (chainVar ?? '(none)')
+  const wallet = await evmWalletClientFromKey(chain, dedicated || (chainVar ? process.env[chainVar] : undefined)).catch(() => null)
+  if (wallet) return { configured: true, address: wallet.account.address, from: usingVar }
+  const present = Boolean((dedicated ?? (chainVar ? process.env[chainVar] : undefined))?.trim())
+  return {
+    configured: false,
+    from: usingVar,
+    reason: present
+      ? `${usingVar} is set but is not a 32-byte hex private key, so it was treated as unset. Settlement is refused until it is a real key.`
+      : `Neither X402_3009_SIGNER_KEY nor ${chainVar ?? 'a chain signer variable'} is set, so there is nothing to broadcast with.`,
+    effect: 'Everything except POST /api/facilitator/settle and the paid tools works; those refuse with no_signer rather than pretending.',
+  }
+}
 
 export async function handleX402ThreeKRoutes(ctx: RouteCtx): Promise<boolean> {
   const { req, res, url } = ctx
@@ -43,6 +65,12 @@ export async function handleX402ThreeKRoutes(ctx: RouteCtx): Promise<boolean> {
   if (req.method === 'GET' && url.pathname === '/api/facilitator/status') {
     const chain = status.chain ? getChainById(status.chain) : undefined
     const domain = chain && status.token ? await provenDomainCached(chain, status.token) : null
+    // Whether a USABLE settlement signer exists, and which variable to fix if not. This
+    // exists because a deployment once had a signer variable set to a placeholder, and
+    // the only symptom was every settlement failing with "no signer" while /status
+    // cheerfully reported configured: true. The address is public; no key material is
+    // exposed, and the check is the same one the settlement path runs.
+    const signer = chain ? await settlementSigner(chain) : null
     sendJson(res, 200, {
       rail: 'x402-3009',
       configured: status.configured,
@@ -68,6 +96,7 @@ export async function handleX402ThreeKRoutes(ctx: RouteCtx): Promise<boolean> {
               'The signing domain is PROVEN, not pasted: we rebuild EIP712Domain(name, version, chainId, verifyingContract) from the token\'s own name() plus each candidate version, and accept only the one that reproduces the live DOMAIN_SEPARATOR. No match means no challenge is served at all.',
           }
         : { proven: false, ...(domain ? { reason: domain.reason } : {}) },
+      settlementSigner: signer,
       registries: chain ? chain.contracts : null,
     })
     return true
