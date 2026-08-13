@@ -10,7 +10,7 @@
  */
 
 /** Short slug of a chain in the registry. */
-export type ChainId = 'arc' | 'xlayer' | 'rhchain' | 'celo' | 'base' | 'arbitrum' | 'rhchain-testnet' | 'celo-sepolia' | 'stellar' | 'avalanche'
+export type ChainId = 'arc' | 'xlayer' | 'arbitrum' | 'rhchain' | 'celo' | 'base' | 'rhchain-testnet' | 'celo-sepolia' | 'stellar' | 'avalanche'
 
 export type ChainProtocols = {
   /** x402 HTTP-402 payment support. Settlement is in a stablecoin. */
@@ -128,6 +128,43 @@ export const CHAINS: readonly Chain[] = [
     "identityLive": true
   },
   {
+    "id": "arbitrum",
+    "name": "Arbitrum One",
+    "shortName": "Arbitrum",
+    "color": "#28A0F0",
+    "chainId": 42161,
+    "caip2": "eip155:42161",
+    "evmCompatible": true,
+    "testnet": false,
+    "stablecoins": [
+      "USDC",
+      "USDT"
+    ],
+    "rpcUrl": "https://arb1.arbitrum.io/rpc",
+    "explorer": "https://arbiscan.io",
+    "role": "DeFi gateway: large protocol ecosystem, our ERC-8004 agent #1259, and x402 settling in native Circle USDC through our own EIP-3009 facilitator.",
+    "status": "live",
+    "protocols": {
+      "payment": {
+        "x402": true,
+        "note": "x402 settling in native Circle USDC through our own first-party EIP-3009 facilitator: the buyer signs, we broadcast and pay the gas. The fee is lower here than on Robinhood Chain because the gas measurably is."
+      },
+      "identity": {
+        "standard": "ERC-8004",
+        "erc8004Native": true,
+        "note": "Canonical ERC-8004 identity + reputation registries are live here (deployed by their authors, not by us); agent #1259 is ours. No ValidationRegistry in this family, so KYA cannot be anchored here."
+      }
+    },
+    "identity": "ERC-8004",
+    "erc8004Native": true,
+    "x402": true,
+    "registries": {
+      "identity": "0x8004a169fb4a3325136eb29fa0ceb6d2e539a432",
+      "reputation": "0x8004BAa17C55a88189AE136b182e5fdA19dE9b63"
+    },
+    "identityLive": true
+  },
+  {
     "id": "rhchain",
     "name": "Robinhood Chain",
     "shortName": "RH Chain",
@@ -235,43 +272,6 @@ export const CHAINS: readonly Chain[] = [
     "x402": true,
     "registries": {},
     "identityLive": false
-  },
-  {
-    "id": "arbitrum",
-    "name": "Arbitrum One",
-    "shortName": "Arbitrum",
-    "color": "#28A0F0",
-    "chainId": 42161,
-    "caip2": "eip155:42161",
-    "evmCompatible": true,
-    "testnet": false,
-    "stablecoins": [
-      "USDC",
-      "USDT"
-    ],
-    "rpcUrl": "https://arb1.arbitrum.io/rpc",
-    "explorer": "https://arbiscan.io",
-    "role": "DeFi gateway: large protocol ecosystem, native Circle USDC, and our ERC-8004 agent #1259 on the canonical registry.",
-    "status": "beta",
-    "protocols": {
-      "payment": {
-        "x402": true,
-        "note": "No rail of ours settles here yet. Native Circle USDC is present, so x402 is a descriptor edit plus a funded signer away."
-      },
-      "identity": {
-        "standard": "ERC-8004",
-        "erc8004Native": true,
-        "note": "Canonical ERC-8004 identity + reputation registries are live here (deployed by their authors, not by us); agent #1259 is ours. No ValidationRegistry in this family, so KYA cannot be anchored here."
-      }
-    },
-    "identity": "ERC-8004",
-    "erc8004Native": true,
-    "x402": true,
-    "registries": {
-      "identity": "0x8004a169fb4a3325136eb29fa0ceb6d2e539a432",
-      "reputation": "0x8004BAa17C55a88189AE136b182e5fdA19dE9b63"
-    },
-    "identityLive": true
   },
   {
     "id": "rhchain-testnet",

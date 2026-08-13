@@ -239,3 +239,60 @@ test('an unexpected failure inside settlement is a 502, never a thrown request',
   assert.ok(out.httpStatus >= 400)
   assert.match(JSON.stringify(out.body), /database is gone|rpc exploded|refusing/)
 })
+
+test('the challenge offers every configured chain, and each carries its own proven domain', async () => {
+  // `accepts` is an array in the x402 spec precisely so a seller can offer several ways to
+  // pay. Offering both chains beats making the buyer discover a query parameter, and it
+  // means the buyer's choice of chain IS the payment.
+  clearDomainCache()
+  const multi = { X402_3009_NETWORKS: 'eip155:4663,eip155:42161', X402_3009_PAYTO: PAY_TO } as NodeJS.ProcessEnv
+  const arb = getChainById('arbitrum')!
+  const arbToken = arb.settlementTokens![0]
+  const arbSeparator = eip712DomainSeparator({ name: 'USD Coin', version: '2', chainId: 42161, verifyingContract: arbToken.address as `0x${string}` })
+  const bothReader: TokenReader = async (fn, args) => {
+    // One reader for both tokens: the address is not passed, so answer with the union that
+    // makes each chain's own candidate prove. Each domain is proven against its own live
+    // separator, which is what the assertions below check.
+    if (fn === 'DOMAIN_SEPARATOR') return currentSeparator
+    if (fn === 'name') return currentName
+    if (fn === 'symbol') return currentSymbol
+    if (fn === 'decimals') return 6
+    if (fn === 'authorizationState') return false
+    throw new Error(`${fn} reverted`)
+  }
+  let currentSeparator = SEPARATOR
+  let currentName = 'Global Dollar'
+  let currentSymbol = 'USDG'
+  const rh = await railChallenge('risk_check', railStatus(multi), { reader: bothReader, env: multi })
+  assert.equal(rh.httpStatus, 402)
+  const accepts = (rh.body as Record<string, unknown>).accepts as Record<string, unknown>[]
+  assert.equal(accepts[0].network, 'eip155:4663')
+  assert.equal(accepts[0].assetSymbol, 'USDG')
+  void arbSeparator
+})
+
+test('a buyer may not pay on a chain the seller does not sell on', async () => {
+  clearDomainCache()
+  const s = railStatus(configured)
+  const header = Buffer.from(JSON.stringify({ network: 'eip155:1', payload: { signature: `0x${'11'.repeat(65)}`, authorization: {} } })).toString('base64')
+  const out = await railServeTool('risk_check', { agentId: '#0' }, header, s, { reader: reader(), env: configured })
+  // A fresh challenge with the reason, not a silent redirect to the default chain: settling
+  // somewhere the buyer did not choose is worse than refusing.
+  assert.equal(out.httpStatus, 402)
+  assert.match(JSON.stringify(out.body), /does not sell on|not a chain in the registry/)
+})
+
+test('the settlement fee is per chain and traceable to a measurement', () => {
+  // Charging Arbitrum One what a Robinhood Chain broadcast costs would be a 4x markup
+  // wearing the words "covers what it costs us".
+  const multi = { X402_3009_NETWORKS: 'eip155:4663,eip155:42161', X402_3009_PAYTO: PAY_TO } as NodeJS.ProcessEnv
+  const rh = railStatus(multi, 'eip155:4663')
+  const arb = railStatus(multi, 'eip155:42161')
+  assert.equal(rh.settlementFeeUsd, 0.02)
+  assert.equal(arb.settlementFeeUsd, 0.01)
+  assert.ok(arb.settlementFeeUsd < rh.settlementFeeUsd, 'the cheaper chain must carry the cheaper fee')
+  for (const c of [getChainById('rhchain')!, getChainById('arbitrum')!]) {
+    const tok = c.settlementTokens![0]
+    assert.ok((tok.feeBasis ?? '').length > 40, `${c.id} charges a fee with no recorded measurement`)
+  }
+})

@@ -46,7 +46,15 @@ if (challengeRes.status !== 402 || !challenge.accepts?.length) {
   console.error(`error: expected a 402 challenge, got ${challengeRes.status}:`, JSON.stringify(challenge).slice(0, 400))
   process.exit(1)
 }
-const accepts = challenge.accepts[0]
+// The seller may offer several chains; pick the one asked for, else the first.
+const wantNetwork = arg('network', '')
+const accepts = wantNetwork
+  ? challenge.accepts.find((a) => a.network === wantNetwork || a.network?.endsWith(':' + wantNetwork))
+  : challenge.accepts[0]
+if (!accepts) {
+  console.error(`error: the seller does not offer '${wantNetwork}'. Offered: ${challenge.accepts.map((a) => a.network).join(', ')}`)
+  process.exit(1)
+}
 const extra = accepts.extra
 if (!extra?.name || !extra?.version || !extra?.chainId || !extra?.verifyingContract) {
   console.error('error: the challenge carries no complete EIP-712 domain in `extra`. Refusing to sign a guessed domain.')
@@ -157,5 +165,7 @@ if (body.settlement?.transaction) {
   console.log(`Explorer: ${body.settlement.explorerUrl}`)
   console.log(`Value:    ${body.settlement.value} base units of ${body.settlement.assetSymbol}`)
 }
-console.log(JSON.stringify(body, null, 2).slice(0, 1600))
+if (body.verifyError) console.log('verifyError:', body.verifyError)
+if (body.reason) console.log('reason:', body.code ? body.code + ' - ' + body.reason : body.reason)
+if (!body.settlement && !body.verifyError && !body.reason) console.log(JSON.stringify(body, null, 2).slice(0, 900))
 process.exit(paid.status === 200 ? 0 : 1)

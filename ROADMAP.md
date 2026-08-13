@@ -4,7 +4,11 @@ Now / next / later, in the open. "Now" means work is underway or committed for t
 current cycle; dates are targets, not promises. Recently shipped is listed so the
 roadmap stays honest about velocity. Updated 2026-08-13.
 
-## Recently shipped (July-August 2026)
+## Recently shipped
+
+- **Arbitrum One went live** (2026-08-13): agent #1259 on the canonical ERC-8004 registry,
+  and x402 settling in native Circle USDC through our own EIP-3009 facilitator. The rail
+  now sells on two chains at once, with a per-chain fee derived from measured gas. (July-August 2026)
 
 - Celo mainnet live (2026-08-09): ERC-8004 identity + reputation reads wired, agent #9759,
   and the trust tools selling over our own first-party x402 facilitator in native USDC.
@@ -27,7 +31,7 @@ roadmap stays honest about velocity. Updated 2026-08-13.
 - merchant_check: commerce-grade counterparty verification for agentic checkouts
   (MCP tool + REST).
 - Structural hardening: the backend split into a layered platform/ + http/ module
-  system with the layer graph enforced by tests; 665 unit tests + full E2E suite.
+  system with the layer graph enforced by tests; 668 unit tests + full E2E suite.
 
 ## Now
 

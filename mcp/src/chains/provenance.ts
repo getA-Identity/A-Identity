@@ -180,7 +180,7 @@ export const PROVENANCE: ChainProvenance[] = [
   {
     chain: 'arbitrum',
     summary:
-      'Agent #1259 on Arbitrum One is ours. The canonical ERC-8004 registries were already deployed here by their authors, so registering was permissionless and cost about a cent; nothing else of ours runs on this chain yet.',
+      'Agent #1259 on Arbitrum One is ours, and paid trust calls settle here in native Circle USDC through the same first-party EIP-3009 facilitator we run on Robinhood Chain. The canonical ERC-8004 registries were already deployed by their authors, so registering was permissionless and cost about a cent.',
     agent: { tokenId: '1259', caip: 'eip155:42161:8004/1259', owner: OWNER, tokenUri: AGENT_CARD },
     contracts: [
       {
@@ -189,6 +189,11 @@ export const PROVENANCE: ChainProvenance[] = [
         note: 'The same canonical address X Layer, Celo and Robinhood Chain carry. Deployed by the ERC-8004 authors, not by us.',
       },
       { name: 'ReputationRegistry', address: '0x8004BAa17C55a88189AE136b182e5fdA19dE9b63' },
+      {
+        name: 'USDC (native Circle)',
+        address: '0xaf88d065e77c8cC2239327C5EDb3A432268e5831',
+        note: 'The settlement token. Unlike Robinhood Chain this IS canonical Circle USDC, so it is also the descriptor\'s contracts.usdc. EIP-3009 confirmed, and its EIP-712 domain proven against the live DOMAIN_SEPARATOR before any challenge is served.',
+      },
     ],
     artifacts: [
       {
@@ -199,12 +204,27 @@ export const PROVENANCE: ChainProvenance[] = [
         blockNumber: 494146529,
         note: '178365 gas, about 0.0000036 ETH. Verified after the fact: ownerOf(1259) and tokenURI(1259) read back to the values recorded here.',
       },
+      {
+        kind: 'funding',
+        label: 'Buyer wallet funded with USDC through a Relay same-chain swap',
+        txHash: '0xc0a5bc5f9980b75f0ae176d7ba75865fd5338cd3b92d7e443b7f5c4a090735f9',
+        onChain: 'arbitrum',
+        note: 'Permissionless: no exchange, no KYC step. The buyer holds USDC and zero native ETH, so it cannot broadcast anything itself.',
+      },
+      {
+        kind: 'settlement',
+        label: 'First x402 settlement in USDC (risk_check, 0.015 USDC)',
+        txHash: '0x69abb8a9aacf57fa0c3d2d4cd711d4f631e3f90c97222441f9f3ecee06834744',
+        onChain: 'arbitrum',
+        blockNumber: 494160024,
+        note: '103569 gas, 0.00000207 ETH. The buyer signed and paid no gas; we broadcast, and the receipt carries the matching USDC Transfer. Cheaper than the same settlement on Robinhood Chain, which is why the disclosed fee here is lower.',
+      },
     ],
     caveats: [
-      'Identity only. No rail of ours settles money on Arbitrum One, which is why this chain is beta and not live: it has cleared half the bar the others cleared.',
-      'We deployed nothing here. The registries were already live, and registering on them is permissionless.',
-      'There is no ValidationRegistry in this family, so a KYA result cannot be anchored on Arbitrum One.',
-      'Robinhood Chain is an Arbitrum L2, and that is where our Arbitrum-stack work actually runs. Being live there is not the same as being live on Arbitrum One, and neither claim substitutes for the other.',
+      'We deployed nothing here. The registries were already live, and registering on them is permissionless; what is ours is agent #1259 and the rail.',
+      'There is no ValidationRegistry in this family, so a KYA result cannot be anchored on Arbitrum One. It is still verified off-chain and recorded.',
+      'Robinhood Chain is an Arbitrum L2, and being live there is a different statement from being live on Arbitrum One. Both are true today; neither substitutes for the other.',
+      'This is an L2 that settles to Ethereum. We wait the descriptor\'s confirmations and record the block, but soft finality is not L1 finality and this page does not claim otherwise.',
     ],
   },
 ]
@@ -225,7 +245,7 @@ export const PROOF_RAILS: ProofRail[] = [
     slug: 'arbitrum',
     title: 'Arbitrum One',
     lede:
-      'Agent #1259 on the canonical ERC-8004 registry. Identity only, deliberately: no rail of ours settles money here, and the page says so rather than borrowing credit from the Arbitrum L2 where our payments actually run.',
+      'Agent #1259 on the canonical ERC-8004 registry, and paid calls settling in native Circle USDC through the facilitator we run ourselves. The same engine as Robinhood Chain, on a chain whose gas is an order of magnitude cheaper, at a disclosed fee that reflects it.',
     chains: ['arbitrum'],
   },
 ]

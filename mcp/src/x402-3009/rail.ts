@@ -95,7 +95,6 @@ export type RailStatus = {
 
 const DEFAULTS = {
   settlementFeeUsd: 0.02,
-  minValueUsd: 0.021,
   maxValueUsd: 1,
   expiryHeadroomSec: 60,
   /** ~0.0004 ETH at 0.05 gwei is far above one settlement and far below a wallet. */
@@ -133,18 +132,54 @@ export function railToken(chain: ChainDescriptor, env: NodeJS.ProcessEnv = proce
 }
 
 /**
- * Rail configuration. `configured` is true only when the network resolves to a registry
- * descriptor that declares an EIP-3009 settlement token AND an explicit payTo is set.
- * There is deliberately no fallback from payTo to a signer key: the receiving address
- * must be a decision, never an accident of which key happens to be present.
+ * Every settlement network this rail is configured to sell on, in configured order.
+ *
+ * X402_3009_NETWORKS (comma-separated) is the multi-chain form; X402_3009_NETWORK stays
+ * accepted as the single-chain form so an existing deployment keeps working untouched.
+ * The first entry is the default when a request does not name one.
  */
-export function railStatus(env: NodeJS.ProcessEnv = process.env): RailStatus {
-  const requested = env.X402_3009_NETWORK?.trim() ?? ''
+export function railNetworks(env: NodeJS.ProcessEnv = process.env): string[] {
+  const raw = env.X402_3009_NETWORKS?.trim() || env.X402_3009_NETWORK?.trim() || ''
+  return [...new Set(raw.split(',').map((s) => s.trim()).filter(Boolean))]
+}
+
+/**
+ * Resolve the rail's configuration for one network.
+ *
+ * `network` picks among the configured ones and accepts either spelling a buyer might
+ * send, the CAIP-2 id or the registry slug. An unconfigured network resolves to nothing
+ * rather than silently falling back, because settling on a chain the seller did not
+ * choose would be worse than refusing.
+ */
+export function railStatus(env: NodeJS.ProcessEnv = process.env, network?: string): RailStatus {
+  const configuredIds = railNetworks(env)
+  const wanted = network?.trim()
+  let requested = configuredIds[0] ?? ''
+  if (wanted) {
+    const match = configuredIds.find((id) => {
+      const c = getChain(id) ?? getChainById(id)
+      return id === wanted || c?.caip2 === wanted || c?.id === wanted
+    })
+    requested = match ?? wanted
+  }
   const chain = requested ? (getChain(requested) ?? getChainById(requested) ?? null) : null
+  const configuredHere = !wanted || configuredIds.some((id) => {
+    const c = getChain(id) ?? getChainById(id)
+    return c && chain && c.caip2 === chain.caip2
+  })
   const payToRaw = env.X402_3009_PAYTO?.trim() ?? ''
   const payTo = /^0x[0-9a-fA-F]{40}$/.test(payToRaw) ? payToRaw.toLowerCase() : null
-  const settlementFeeUsd = num(env, 'X402_3009_SETTLEMENT_FEE_USD', DEFAULTS.settlementFeeUsd)
-  const minValueUsd = num(env, 'X402_3009_MIN_VALUE_USD', DEFAULTS.minValueUsd)
+  // The measured fee travels with the token in the registry, so it cannot drift from
+  // the chain it was measured on.
+  const measured = chain ? railToken(chain, env)?.settlementFeeUsd : undefined
+  const settlementFeeUsd = num(env, 'X402_3009_SETTLEMENT_FEE_USD', measured ?? DEFAULTS.settlementFeeUsd)
+  // The floor exists so every accepted settlement covers the gas we spend on it, and the
+  // fee is what covers that gas. Deriving it from the cheapest thing we sell on THIS chain
+  // means it cannot drift when a fee changes, and it cannot accidentally price out a chain
+  // whose gas is cheaper - which is exactly what a hardcoded floor did the first time a
+  // second chain was added.
+  const cheapest = Math.min(...Object.values(RAIL_BASE_PRICES_USD))
+  const minValueUsd = num(env, 'X402_3009_MIN_VALUE_USD', Number((cheapest + settlementFeeUsd).toFixed(6)))
   const maxValueUsd = num(env, 'X402_3009_MAX_VALUE_USD', DEFAULTS.maxValueUsd)
   const publicSettle = env.X402_3009_PUBLIC_SETTLE === 'true'
   const allowedPayTo = (env.X402_3009_ALLOWED_PAYTO ?? '')
@@ -154,10 +189,13 @@ export function railStatus(env: NodeJS.ProcessEnv = process.env): RailStatus {
   const base = { network: requested, chain: chain?.id ?? null, token: null, payTo, settlementFeeUsd, minValueUsd, maxValueUsd, publicSettle, allowedPayTo }
 
   if (!requested) {
-    return { ...base, configured: false, reason: 'x402-3009 rail not configured: set X402_3009_NETWORK to a CAIP-2 id of a chain that declares an EIP-3009 settlement token' }
+    return { ...base, configured: false, reason: 'x402-3009 rail not configured: set X402_3009_NETWORKS to one or more CAIP-2 ids of chains that declare an EIP-3009 settlement token' }
+  }
+  if (!configuredHere) {
+    return { ...base, configured: false, reason: `this rail does not sell on '${requested}'. Configured networks: ${configuredIds.join(', ') || 'none'}` }
   }
   if (!chain) {
-    return { ...base, configured: false, reason: `X402_3009_NETWORK '${requested}' is not a chain in the registry` }
+    return { ...base, configured: false, reason: `'${requested}' is not a chain in the registry` }
   }
   const token = railToken(chain, env)
   if (!token) {
@@ -222,6 +260,14 @@ export async function railChallenge(
   deps: EngineDeps = {},
   verifyError?: string,
 ): Promise<RailChallengeResult> {
+  // One entry per configured chain. `accepts` is an ARRAY in the x402 spec precisely so a
+  // seller can offer several ways to pay and the buyer picks by paying one of them, which
+  // is better than making the buyer guess a query parameter. A chain whose domain cannot
+  // be proven right now is simply absent from the list rather than offered and unpayable.
+  const others = railNetworks(deps.env ?? process.env).filter((n) => {
+    const s = railStatus(deps.env ?? process.env, n)
+    return s.configured && s.chain !== status.chain
+  })
   const gate = railPaywallGate(status)
   if (!gate.ok) return { httpStatus: gate.httpStatus, body: gate.body }
   const chain = status.chain ? getChainById(status.chain) : undefined
@@ -236,6 +282,35 @@ export async function railChallenge(
     }
   }
   const price = railPriceUsd(tool, status)
+  const extraAccepts: Record<string, unknown>[] = []
+  for (const n of others) {
+    const alt = railStatus(deps.env ?? process.env, n)
+    const altChain = alt.chain ? getChainById(alt.chain) : undefined
+    if (!altChain || !alt.token || !alt.payTo) continue
+    const altDomain = await provenDomainCached(altChain, alt.token, deps)
+    if (!altDomain.ok) continue
+    const altPrice = railPriceUsd(tool, alt)
+    extraAccepts.push({
+      scheme: 'exact',
+      network: altChain.caip2,
+      asset: alt.token.address,
+      assetSymbol: altDomain.proven.symbol,
+      decimals: altDomain.proven.decimals,
+      payTo: alt.payTo,
+      maxAmountRequired: tokenUnits(altDomain.proven.decimals, altPrice.totalUsd).toString(),
+      resource: railResource(tool),
+      description: `${RAIL_TOOL_CARDS[tool].description} Settled in ${altDomain.proven.symbol} on ${altChain.name}; you sign, we broadcast.`,
+      mimeType: 'application/json',
+      maxTimeoutSeconds: 600,
+      extra: {
+        ...altDomain.proven.domain,
+        domainSeparator: altDomain.proven.domainSeparator,
+        domainVerified: true,
+        versionSource: altDomain.proven.versionSource,
+        provenAt: altDomain.proven.provenAt,
+      },
+    })
+  }
   const requirements = {
     scheme: 'exact' as const,
     network: chain.caip2,
@@ -263,7 +338,7 @@ export async function railChallenge(
     body: {
       x402Version: 2,
       error: 'payment required',
-      accepts: [requirements],
+      accepts: [requirements, ...extraAccepts],
       tool: {
         name: tool,
         price: { baseUsd: price.baseUsd, settlementFeeUsd: price.settlementFeeUsd, totalUsd: price.totalUsd },
@@ -361,6 +436,43 @@ export async function railServeTool(
     return { httpStatus: challenge.httpStatus, body: challenge.body }
   }
 
+  // The buyer chose which of the offered chains to pay on, so settle on THAT one. The
+  // challenge is the menu; the payload names the dish. A network we do not sell on
+  // resolves to an unconfigured status and is refused rather than quietly redirected.
+  const paidNetwork = (payload as { network?: unknown })?.network
+  if (typeof paidNetwork === 'string' && paidNetwork.trim()) {
+    const chosen = railStatus(deps.env ?? process.env, paidNetwork)
+    if (!chosen.configured) {
+      const challenge = await railChallenge(tool, status, deps, chosen.reason ?? `this rail does not settle on '${paidNetwork}'`)
+      return { httpStatus: challenge.httpStatus, body: challenge.body }
+    }
+    if (chosen.chain !== status.chain) {
+      return railServeToolOn(tool, input, payload, chosen, deps)
+    }
+  }
+
+  return railServeToolOn(tool, input, payload, status, deps)
+}
+
+/**
+ * Settle and serve on ONE already-resolved chain. Split out of railServeTool so a buyer
+ * who paid on a chain other than the default is handled by the same code path rather than
+ * a parallel one, which is the only way two chains stay honest about the same rules.
+ */
+export async function railServeToolOn(
+  tool: RailToolName,
+  input: RailToolInput,
+  payload: unknown,
+  status: RailStatus,
+  deps: RailServeDeps = {},
+): Promise<{ httpStatus: number; body: unknown }> {
+  const chain = status.chain ? getChainById(status.chain) : undefined
+  if (!chain || !status.token) {
+    return { httpStatus: 501, body: { error: 'x402-3009 rail not configured', reason: 'network descriptor missing from the registry' } }
+  }
+  const domain = await provenDomainCached(chain, status.token, deps)
+  if (!domain.ok) return { httpStatus: 503, body: { error: 'settlement token domain unproven', reason: domain.reason } }
+
   const price = railPriceUsd(tool, status)
   const requirements = railRequirements(tool, status, domain.proven.decimals)
   // Settlement touches an RPC, a signer and durable storage, so it has more ways to fail
@@ -451,6 +563,8 @@ export type RailProof = {
   ambiguous: number
   gas: { totalWei: string; settles: number; note: string }
   byTool: Record<string, { count: number; usd: number }>
+  /** Per-chain breakdown. Two chains summed into one figure is a number about nothing. */
+  byNetwork: Record<string, { count: number; usd: number; assetSymbol: string }>
   recent: X402SettlementRecord[]
   note: string
 }
@@ -486,6 +600,7 @@ export async function railProof(
   const mine = new Set(internalPayers(env))
   const settled = rows.filter((r) => r.outcome === 'settled')
   const byTool: Record<string, { count: number; usd: number }> = {}
+  const byNetwork: Record<string, { count: number; usd: number; assetSymbol: string }> = {}
   let totalUsd = 0
   let internalSettlements = 0
   let internalUsd = 0
@@ -504,6 +619,9 @@ export async function railProof(
     const t = (byTool[r.tool] ??= { count: 0, usd: 0 })
     t.count += 1
     t.usd = Number((t.usd + r.amountUsd).toFixed(6))
+    const n = (byNetwork[r.network] ??= { count: 0, usd: 0, assetSymbol: r.assetSymbol })
+    n.count += 1
+    n.usd = Number((n.usd + r.amountUsd).toFixed(6))
     if (mine.has(r.payer.toLowerCase())) {
       internalSettlements += 1
       internalUsd += r.amountUsd
@@ -532,6 +650,7 @@ export async function railProof(
       note: 'Native units only. This chain has no price feed we verify, so no USD gas figure is asserted.',
     },
     byTool,
+    byNetwork,
     recent: rows.slice(-50).reverse(),
     note: `Real settlements only, each recorded from an on-chain receipt plus a matching Transfer log. Payments from our own buyer wallets are labeled internal, never hidden. Totals cover the retained window (last ${X402_SETTLEMENTS_CAP}).`,
   }

@@ -206,6 +206,15 @@ test('every settlement token is well formed and agrees with its chain', () => {
           `${c.id}: an eip3009 token needs at least one domain version candidate to prove`,
         )
       }
+      // A disclosed fee that cannot be traced to a measurement is an assertion, and this
+      // rail charges it on the claim that it covers what a broadcast costs us.
+      if (t.settlementFeeUsd !== undefined) {
+        assert.ok(t.settlementFeeUsd > 0, `${c.id}: a settlement fee must be positive`)
+        assert.ok(
+          (t.feeBasis ?? '').length > 40,
+          `${c.id}: settlementFeeUsd needs a feeBasis recording the measurement behind it`,
+        )
+      }
     }
   }
 })

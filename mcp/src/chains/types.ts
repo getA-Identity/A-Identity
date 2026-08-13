@@ -78,6 +78,16 @@ export interface SettlementToken {
   domainVersionCandidates?: string[]
   /** How and when the facts above were established. Prose, for the audit trail. */
   verified: string
+  /**
+   * The disclosed settlement fee for a rail that broadcasts on the buyer's behalf, in USD,
+   * derived from a MEASUREMENT of what a settlement costs on this chain. It lives here
+   * rather than in the rail because gas is a property of the chain, and one global fee
+   * across chains whose gas differs by an order of magnitude would be a markup wearing the
+   * words "covers what it costs us". `feeBasis` records the measurement so the number is
+   * traceable rather than asserted.
+   */
+  settlementFeeUsd?: number
+  feeBasis?: string
 }
 
 /**

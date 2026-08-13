@@ -219,14 +219,14 @@ export const CHAINS: ChainDescriptor[] = [
     name: 'Arbitrum One',
     shortName: 'Arbitrum',
     color: '#28A0F0',
-    role: 'DeFi gateway: large protocol ecosystem, native Circle USDC, and our ERC-8004 agent #1259 on the canonical registry.',
+    role: 'DeFi gateway: large protocol ecosystem, our ERC-8004 agent #1259, and x402 settling in native Circle USDC through our own EIP-3009 facilitator.',
     ecosystem: 'evm',
     testnet: false,
-    // BETA, not live, and the distinction is the same one every other chain here had to
-    // clear: identity is real on Arbitrum One (agent #1259, minted 2026-08-13), but no
-    // rail of ours settles money here, so it has cleared half the bar. Robinhood Chain is
-    // an Arbitrum L2, which is where the Arbitrum-stack work actually runs today.
-    status: 'beta',
+    // LIVE since 2026-08-13, and it cleared the same bar as the others rather than a
+    // softer one: agent #1259 is minted here AND money moves here (first settlement
+    // 0x69abb8a9, block 494160024, a real USDC transfer proven by its receipt). It was
+    // beta for a few hours in between, when identity was real and no rail settled yet.
+    status: 'live',
     evmChainId: 42161,
     cctpDomain: 3,
     nativeCurrency: { name: 'Ether', symbol: 'ETH', decimals: 18 },
@@ -246,6 +246,20 @@ export const CHAINS: ChainDescriptor[] = [
     },
     confirmations: 3,
     stablecoins: ['USDC', 'USDT'],
+    settlementTokens: [
+      {
+        symbol: 'USDC',
+        address: '0xaf88d065e77c8cC2239327C5EDb3A432268e5831',
+        decimals: 6,
+        authorization: 'eip3009',
+        domainVersionCandidates: ['2'],
+        settlementFeeUsd: 0.01,
+        feeBasis:
+          'A real settlement measured 103569 gas at 0.02 gwei on 2026-08-13 (tx 0x69abb8a9), costing 0.00000207 ETH. Charging the Robinhood Chain fee here would have been roughly a 5x markup on a chain whose gas is an order of magnitude cheaper.',
+        verified:
+          'Native Circle USDC on Arbitrum One, the same address the descriptor already carried for contracts.usdc. Read live 2026-08-13: name() "USD Coin", symbol() "USDC", version() "2", decimals() 6, DOMAIN_SEPARATOR 0x08d11903f8419e68b1b8721bcbe2e9fc68569122a77ef18c216f10b3b5112c78, which those four fields reproduce exactly. EIP-3009 confirmed by a read-only authorizationState call. Unlike Robinhood Chain this IS canonical Circle USDC, so it is the one settlement token that legitimately shares the contracts.usdc slot.',
+      },
+    ],
     signerEnvVar: 'ARB_SIGNER_KEY',
     rpcEnvVar: 'ARB_RPC_URL',
     identity: {
@@ -256,7 +270,10 @@ export const CHAINS: ChainDescriptor[] = [
       // authors. What is missing is ours, not theirs, so the note says which.
       note: 'Canonical ERC-8004 identity + reputation registries are live here (deployed by their authors, not by us); agent #1259 is ours. No ValidationRegistry in this family, so KYA cannot be anchored here.',
     },
-    payment: { x402: true, note: 'No rail of ours settles here yet. Native Circle USDC is present, so x402 is a descriptor edit plus a funded signer away.' },
+    payment: {
+      x402: true,
+      note: 'x402 settling in native Circle USDC through our own first-party EIP-3009 facilitator: the buyer signs, we broadcast and pay the gas. The fee is lower here than on Robinhood Chain because the gas measurably is.',
+    },
   },
   {
     caip2: 'eip155:46630',
@@ -364,6 +381,9 @@ export const CHAINS: ChainDescriptor[] = [
         // version cannot be read from the chain. '1' is the candidate that reproduces the
         // live DOMAIN_SEPARATOR; it is proven at runtime, never trusted from here.
         domainVersionCandidates: ['1'],
+        settlementFeeUsd: 0.02,
+        feeBasis:
+          'A settlement measured 102495 gas at 0.0506 gwei on 2026-08-13, about 0.0000046 ETH. The fee carries headroom for gas and ETH price moves; we have no price feed we verify and will not invent one.',
         verified:
           'Paxos Global Dollar at the address Paxos documents for chain 4663 (docs.paxos.com/guides/stablecoin/usdg/mainnet); Robinhood is a Global Dollar Network founding member and uses USDG in its Earn product. Read live 2026-08-12: name() "Global Dollar", decimals() 6, supply ~353M, DOMAIN_SEPARATOR 0x7a3d7400b27830f4f91c2c16a082486d67c1befecaec2f53b33f1f35d5b62036. EIP-3009 confirmed by selector probe: transferWithAuthorization (0xe3ee160e) reverts with a signature-validation error while an unknown selector reverts 0x800ab12c. EIP-2612 permit is present too. NOT placed in contracts.usdc: it is not Circle USDC, and that slot is what every generic USDC path reads.',
       },

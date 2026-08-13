@@ -67,7 +67,7 @@
           "identity": "ERC-8004",
           "erc8004Native": true,
           "note": "Canonical ERC-8004 identity + reputation registries are live here (deployed by their authors, not by us); agent #1259 is ours. No ValidationRegistry in this family, so KYA cannot be anchored here.",
-          "status": "beta"
+          "status": "live"
         },
         {
           "id": "rhchain-testnet",
@@ -161,9 +161,9 @@
           "id": "arbitrum",
           "name": "Arbitrum One",
           "chainId": 42161,
-          "role": "DeFi gateway: large protocol ecosystem, native Circle USDC, and our ERC-8004 agent #1259 on the canonical registry.",
+          "role": "DeFi gateway: large protocol ecosystem, our ERC-8004 agent #1259, and x402 settling in native Circle USDC through our own EIP-3009 facilitator.",
           "x402": true,
-          "status": "beta"
+          "status": "live"
         },
         {
           "id": "rhchain-testnet",

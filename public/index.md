@@ -68,7 +68,7 @@ switch.
 | **Score** | Deterministic reputation, 0 to 1000 |
 
 Built on rails that already move money: Circle, Circle Arc, OKX X Layer, Celo,
-Stellar, Base and Robinhood Chain.
+Arbitrum One and Robinhood Chain. Stellar and Base are on the roadmap.
 
 ## If you are an AI reading this, start here
 
@@ -109,10 +109,12 @@ reproduce.
 
 **What does it actually cover today?**
 Identity reads run on every chain that carries an ERC-8004 registry: Arc, X Layer,
-Celo, Robinhood Chain, and the Celo Sepolia and Robinhood testnets. Reputation,
-risk and guardrails sit on top of those reads. Escrow and the spend-policy vault
-are on Arc; paid tools settle on X Layer and Celo. Other chains are adapted rather
-than hardcoded, and stay marked planned until something is actually deployed.
+Celo, Arbitrum One, Robinhood Chain, and the Celo Sepolia and Robinhood testnets.
+Reputation, risk and guardrails sit on top of those reads. Escrow and the
+spend-policy vault are on Arc; paid tools settle on X Layer and Celo through their
+facilitators, and on Robinhood Chain and Arbitrum One through our own. Other chains
+are adapted rather than hardcoded, and stay marked planned until something is
+actually deployed.
 
 ## Get started
 
