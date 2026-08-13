@@ -15,6 +15,7 @@
  * so the exemption can never free-serve anything.
  */
 import {
+  railNetworks,
   RAIL_TOOLS,
   RAIL_TOOL_CARDS,
   railChallenge,
@@ -99,6 +100,27 @@ export async function handleX402ThreeKRoutes(ctx: RouteCtx): Promise<boolean> {
           }
         : { proven: false, ...(domain ? { reason: domain.reason } : {}) },
       settlementSigner: signer,
+      // What this deployment actually READ, per chain, and whether each can settle. The
+      // single-chain fields above describe the default only, which is misleading the
+      // moment a rail sells on more than one: an operator who set a variable needs to see
+      // that it took effect, not infer it from a challenge.
+      networks: await Promise.all(
+        railNetworks().map(async (n) => {
+          const s = railStatus(process.env, n)
+          const c = s.chain ? getChainById(s.chain) : undefined
+          return {
+            network: s.network,
+            chain: s.chain,
+            configured: s.configured,
+            ...(s.reason ? { reason: s.reason } : {}),
+            assetSymbol: s.token?.symbol ?? null,
+            settlementFeeUsd: s.settlementFeeUsd,
+            signer: c ? await settlementSigner(c) : null,
+          }
+        }),
+      ),
+      configuredNetworksNote:
+        'Set X402_3009_NETWORKS to a comma-separated list of CAIP-2 ids to sell on several chains. X402_3009_NETWORK still works for one.',
       registries: chain ? chain.contracts : null,
     })
     return true
