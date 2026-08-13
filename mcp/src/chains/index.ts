@@ -10,12 +10,16 @@ export * from './caip.js'
 export * from './registry.js'
 export * from './public-view.js'
 export { createEvmAdapter, type EvmAdapter } from './evm/adapter.js'
+export { EIP3009_ABI } from './evm/abis.js'
 export {
   resolveRpcUrls,
   evmPublicClient,
   evmWalletClient,
+  evmWalletClientFromKey,
   usdcUnits,
   fromUsdcUnits,
+  tokenUnits,
+  fromTokenUnits,
   txUrl,
   addressUrl,
 } from './evm/client.js'

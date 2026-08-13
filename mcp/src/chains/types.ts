@@ -38,6 +38,46 @@ export interface ChainContracts {
    * there": deploying against an absent factory fails in a confusing way.
    */
   create2Factory?: string
+  /**
+   * ONE per-agent AgentSpendPolicy vault we deployed on this chain, kept for
+   * verification. Deliberately NOT `spendVault`: that field means a factory or template
+   * a caller may read, and pointing it at a single instance would invite exactly that
+   * misuse. This is evidence, not infrastructure.
+   */
+  spendVaultExample?: string
+}
+
+/**
+ * A token this chain can SETTLE x402 payments in, and what was actually PROVEN about it.
+ *
+ * Deliberately NOT `contracts.usdc`. That slot is what every generic USDC path reads
+ * (payUsdc, the ERC-8183 escrow approve, the AgentSpendPolicy vault constructor at
+ * evm/adapter.ts:51), so only a canonical Circle USDC belongs there. A chain can have a
+ * real settlement token and still have no USDC, which is exactly Robinhood Chain: Paxos
+ * USDG is live on 4663 and no canonical USDC is documented. Putting USDG in `usdc` would
+ * silently repoint escrow and vault deployments at a token they were never tested with.
+ */
+export interface SettlementToken {
+  /** `symbol()` as the contract reports it. NOT the EIP-712 domain name: the bridged
+   *  testnet token reports symbol "USDC.e" while its domain name is "USDC". */
+  symbol: string
+  address: string
+  /** `decimals()` as read from the contract. Cross-checked live before any challenge,
+   *  because a typo here is a 1000x mispricing. */
+  decimals: number
+  /** The signed-transfer standard OBSERVED on this contract, never assumed.
+   *  'eip3009' = transferWithAuthorization: the payer signs, the seller broadcasts. */
+  authorization: 'eip3009' | 'eip2612' | 'none'
+  /**
+   * EIP-712 `version` candidates. Some tokens expose no `version()` at all (USDG reverts
+   * for it), so the signing domain cannot simply be read: it is PROVEN at runtime by
+   * rebuilding each candidate and matching the live DOMAIN_SEPARATOR. Nothing here is
+   * trusted. A candidate that does not reproduce the on-chain separator is discarded,
+   * and a token with no matching candidate is refused rather than guessed at.
+   */
+  domainVersionCandidates?: string[]
+  /** How and when the facts above were established. Prose, for the audit trail. */
+  verified: string
 }
 
 /**
@@ -84,6 +124,10 @@ export interface ChainDescriptor {
   /** Required confirmations before a payment is treated as settled. */
   confirmations: number
   stablecoins: string[]
+  /** Tokens this chain can settle x402 payments in. Absent or empty means no paid rail
+   *  is possible here yet. Every symbol listed here must also appear in `stablecoins`
+   *  (registry.test.ts enforces both directions). */
+  settlementTokens?: SettlementToken[]
 
   /** Env var holding the signer key for writes on this chain (writes are gated on it). */
   signerEnvVar?: string

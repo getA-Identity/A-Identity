@@ -67,8 +67,8 @@ switch.
 | **Escrow** | ERC-8183 job escrow on Arc |
 | **Score** | Deterministic reputation, 0 to 1000 |
 
-Built on rails that already move money: Circle, Circle Arc, OKX X Layer, Stellar,
-Base and Robinhood Chain.
+Built on rails that already move money: Circle, Circle Arc, OKX X Layer, Celo,
+Stellar, Base and Robinhood Chain.
 
 ## If you are an AI reading this, start here
 
@@ -108,8 +108,11 @@ production decision yet, and we publish the zero rather than a number nobody can
 reproduce.
 
 **What does it actually cover today?**
-Identity, reputation, risk, guardrails, escrow and payments, on Arc and X Layer,
-with other chains adapted rather than hardcoded.
+Identity reads run on every chain that carries an ERC-8004 registry: Arc, X Layer,
+Celo, Robinhood Chain, and the Celo Sepolia and Robinhood testnets. Reputation,
+risk and guardrails sit on top of those reads. Escrow and the spend-policy vault
+are on Arc; paid tools settle on X Layer and Celo. Other chains are adapted rather
+than hardcoded, and stay marked planned until something is actually deployed.
 
 ## Get started
 

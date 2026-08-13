@@ -82,6 +82,18 @@ export function fromUsdcUnits(chain: ChainDescriptor, v: bigint): number {
   return Number(v) / 10 ** chain.usdcDecimals
 }
 
+/** Base units for a token whose decimals come from the token itself rather than from the
+ *  chain's USDC convention. A settlement token is not always USDC, so its decimals are
+ *  read from the contract and cross-checked before any price is quoted. */
+export function tokenUnits(decimals: number, amountUsd: number): bigint {
+  return BigInt(Math.round(amountUsd * 10 ** decimals))
+}
+
+/** Inverse of tokenUnits. */
+export function fromTokenUnits(decimals: number, v: bigint): number {
+  return Number(v) / 10 ** decimals
+}
+
 /** Explorer link for a tx hash. */
 export function txUrl(chain: ChainDescriptor, hash: string): string {
   return `${chain.explorer}/tx/${hash}`

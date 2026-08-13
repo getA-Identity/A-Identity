@@ -32,6 +32,7 @@ import { SESSION_COOKIE, parseCookies, publicAgents, readBody, sendJson, type Ro
 import { handleAuthRoutes } from './http/auth-routes.js'
 import { handlePublicRoutes } from './http/public-routes.js'
 import { handleCeloRoutes } from './http/celo-routes.js'
+import { handleX402ThreeKRoutes } from './http/x402-3009-routes.js'
 import { handleArcRoutes } from './http/arc-routes.js'
 import { handleAgentRoutes } from './http/agent-routes.js'
 import { handleGuardrailRoutes } from './http/guardrail-routes.js'
@@ -101,6 +102,12 @@ function rateBudget(method: string, pathname: string): { bucket: string; max: nu
     return { bucket: 'demo', max: 8, windowMs: 60_000 }
   // Celo x402 tool calls each cost the server two facilitator round-trips (verify+settle).
   if (pathname.startsWith('/api/celo/tools/')) return { bucket: 'celo', max: 30, windowMs: 60_000 }
+  // On the self-facilitated rail WE broadcast, so each settle spends real gas from our
+  // own wallet. That makes these the most abusable POSTs on the server: limit settle
+  // hardest, tools next, and leave verify generous because it is read-only.
+  if (pathname === '/api/facilitator/settle') return { bucket: 'settle', max: 6, windowMs: 60_000 }
+  if (pathname === '/api/facilitator/verify') return { bucket: 'verify', max: 60, windowMs: 60_000 }
+  if (pathname.startsWith('/api/x402/tools/')) return { bucket: 'x402tools', max: 20, windowMs: 60_000 }
   // MCP can also drive a release (release_escrow tool) which spends the shared signer, so cap
   // the whole /mcp endpoint. A backstop against escrow-release spam via MCP (a per-tool limit is
   // the finer follow-up); normal MCP usage stays well under it.
@@ -188,9 +195,14 @@ const server = http.createServer(async (req, res) => {
   // caller is an anonymous buyer agent whose authorization is the settled USDC payment
   // (402 → pay → facilitator verify+settle). The rail is fail-closed (501) when
   // unconfigured and serves read-only trust tools, so the exemption never frees a write.
+  // /api/x402/tools/* and /api/facilitator/* are exempt for the same reason: the caller's
+  // authorization is a signed payment, not a session. Both are fail-closed (501) when the
+  // rail is unconfigured, and /api/facilitator/settle is additionally payTo-allowlisted
+  // because we pay the gas there.
   const isMutation =
     req.method === 'POST' && url.pathname.startsWith('/api/') && !url.pathname.startsWith('/api/auth/') &&
-    !url.pathname.startsWith('/api/celo/tools/')
+    !url.pathname.startsWith('/api/celo/tools/') &&
+    !url.pathname.startsWith('/api/x402/tools/') && !url.pathname.startsWith('/api/facilitator/')
   if (isMutation && !caller) {
     sendJson(res, 401, { error: 'Authentication required. Sign in with a wallet or an email link.' })
     return
@@ -205,6 +217,7 @@ const server = http.createServer(async (req, res) => {
 
   if (await handlePublicRoutes(ctx)) return
   if (await handleCeloRoutes(ctx)) return
+  if (await handleX402ThreeKRoutes(ctx)) return
   if (await handleArcRoutes(ctx)) return
   if (await handleAgentRoutes(ctx)) return
   if (await handleGuardrailRoutes(ctx)) return
@@ -273,7 +286,7 @@ server.listen(PORT, () => {
   console.error(`  GET  /api/chains        supported chains`)
   console.error(`  GET  /api/arc           live Circle Arc testnet status`)
   console.error(`  GET  /api/circle        Circle platform link (wallets, gateway, USDC)`)
-  console.error(`  GET  /api/agents        list agents (?chain=base|arbitrum|ethereum)`)
+  console.error(`  GET  /api/agents        list agents`)
   console.error(`  GET  /api/agents/action-policy   owner-gated action policy (free)`)
   console.error(`  POST /api/agents/action-policy   update the action policy (free, versioned)`)
   console.error(`  POST /api/agents/action-check    policy verdict for an intended action`)
@@ -287,6 +300,11 @@ server.listen(PORT, () => {
   console.error(`  GET  /api/traction               aggregate guardrail traction (public)`)
   console.error(`  GET  /api/stats                  platform-wide aggregates (public)`)
   console.error(`  GET  /api/guardrail-status       live engine self-check (503 if not enforcing)`)
+  console.error(`  GET  /api/facilitator/supported  x402 discovery: what this facilitator settles`)
+  console.error(`  POST /api/facilitator/verify     check a signed EIP-3009 payment (open, read-only)`)
+  console.error(`  POST /api/facilitator/settle     broadcast it and pay the gas (allowlisted payTo)`)
+  console.error(`  GET  /api/facilitator/proof      settlements, with the proven signing domain`)
+  console.error(`  GET  /api/x402/tools/:name       price + calling contract; POST to pay and call`)
 })
 
 // Keep-alive: free-tier hosts (e.g. Render) idle-sleep after ~15 min without inbound

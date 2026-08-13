@@ -53,6 +53,17 @@ export type PublicChain = {
   identity: string
   erc8004Native: boolean
   x402: boolean
+  /**
+   * The canonical ERC-8004 addresses this chain actually carries. An absent key is an
+   * absent deployment: nothing is listed that eth_getCode did not confirm.
+   *
+   * This exists because the frontend had no way to know which chains carry a registry,
+   * so it guessed - and the console told every non-Arc chain it had "no live agents yet"
+   * while three of them carried real ones. Deriving it here means the UI can stop guessing.
+   */
+  registries: { identity?: string; reputation?: string; validation?: string }
+  /** True when a live identity read works on this chain today. Derived, never restated. */
+  identityLive: boolean
 }
 
 /** Project one descriptor into its public shape. */
@@ -82,6 +93,12 @@ export function toPublicChain(c: ChainDescriptor): PublicChain {
     identity: c.identity.standard,
     erc8004Native: c.identity.erc8004Native,
     x402: c.payment.x402,
+    registries: {
+      ...(c.contracts.identityRegistry ? { identity: c.contracts.identityRegistry } : {}),
+      ...(c.contracts.reputationRegistry ? { reputation: c.contracts.reputationRegistry } : {}),
+      ...(c.contracts.validationRegistry ? { validation: c.contracts.validationRegistry } : {}),
+    },
+    identityLive: Boolean(c.contracts.identityRegistry),
   }
 }
 
@@ -156,6 +173,11 @@ export type Chain = {
   identity: string
   erc8004Native: boolean
   x402: boolean
+  /** Canonical ERC-8004 addresses this chain carries. An absent key is an absent
+   *  deployment: the UI must never infer one. */
+  registries: { identity?: string; reputation?: string; validation?: string }
+  /** True when a live identity read works on this chain today. */
+  identityLive: boolean
 }
 
 export const CHAINS: readonly Chain[] = [

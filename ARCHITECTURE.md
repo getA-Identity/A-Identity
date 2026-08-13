@@ -107,7 +107,9 @@ payment would breach the budget - bounded authority, demonstrated live, no human
 Each run routes a **protocol fee** (basis points of volume) to an A-Identity treasury as one
 real settlement - the on-chain proof of the "fee per settlement" model.
 
-## Verifiable on-chain proof (Arc testnet)
+## Verifiable on-chain proof
+
+### Arc testnet
 
 - **Showcase agent "Meridian"** - ERC-8004 id **#849980**, KYA attested on-chain, policy vault,
   reputation **539** from 3 real settlements. Anchor tx:
@@ -119,6 +121,41 @@ real settlement - the on-chain proof of the "fee per settlement" model.
 - **Circle Gateway** - USDC deposited on Arc, then moved to **Base Sepolia gaslessly** via the
   Forwarding Service and minted there in ~6s (verified live on prod). Recipient balance on Base:
   [signer on Basescan](https://sepolia.basescan.org/address/0xd305607510E0Db2c95807173c7A05BEA53c1ed36).
+
+### Robinhood Chain (mainnet + testnet)
+
+The ERC-8004 registries on Robinhood Chain were **not deployed by us** - the ERC-8004 authors
+put them at their canonical cross-chain addresses. What is ours is the identity minted in them.
+
+- **Mainnet agent #0** (`eip155:4663`) - the registry's **first mint**. Mint tx:
+  [`0x602ce85a…`](https://robinhoodchain.blockscout.com/tx/0x602ce85ad044836b39918311a3031dcd689e4be0d23aed9ed0ac9227d46ec79e)
+  in block 34617892, owner `0xd305607510E0Db2c95807173c7A05BEA53c1ed36`, tokenURI
+  [`agent-card.json`](https://a-identity.xyz/.well-known/agent-card.json) - so the card and the
+  token point at each other. Identity registry
+  [`0x8004a169…`](https://robinhoodchain.blockscout.com/address/0x8004a169fb4a3325136eb29fa0ceb6d2e539a432),
+  reputation
+  [`0x8004BAa1…`](https://robinhoodchain.blockscout.com/address/0x8004BAa17C55a88189AE136b182e5fdA19dE9b63).
+  There is no ValidationRegistry in the mainnet family, so KYA is not anchorable there.
+- **Testnet agent #0** (`eip155:46630`) - mint tx:
+  [`0x20918ec6…`](https://explorer.testnet.chain.robinhood.com/tx/0x20918ec68186bd4aaee7c36d33d0383f1bc6a2bc921e72e3b812d034da5212fd).
+  This network carries the **full canonical set** (identity + reputation + validation) at the same
+  addresses as Arc; the missing ValidationRegistry implementation was deployed on 2026-08-11 by
+  replaying the canonical Safe Singleton Factory calldata (`mcp/scripts/rh-testnet-deploy-8004.mjs`).
+- **No payment claim.** Neither network publishes a canonical stablecoin, so both stay `beta`:
+  reads are wired, and no settlement rail is advertised until one settles with a receipt.
+
+### Celo mainnet
+
+- **Agent [#9759](https://celoscan.io/nft/0x8004A169FB4a3325136EB29fA0ceB6D2e539a432/9759)** in the
+  ERC-8004 IdentityRegistry
+  [`0x8004A169…`](https://celoscan.io/address/0x8004A169FB4a3325136EB29fA0ceB6D2e539a432); reputation
+  [`0x8004BAa1…`](https://celoscan.io/address/0x8004BAa17C55a88189AE136b182e5fdA19dE9b63). Verified
+  live on 2026-08-09 with `eth_getCode` plus real reads on both.
+- **x402 in native USDC** through our own first-party Celo facilitator (EIP-3009, so the buyer pays
+  no gas). Every settlement it takes is published verbatim at
+  [/celo-proof](https://a-identity.xyz/celo-proof), internal traffic labeled rather than hidden.
+- Celo has **no ValidationRegistry**, so KYA cannot be anchored on-chain there. We say so instead
+  of implying the Arc feature set travels.
 
 ## Stack
 

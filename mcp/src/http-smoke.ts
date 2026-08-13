@@ -6,6 +6,7 @@
  */
 import { Client } from '@modelcontextprotocol/sdk/client/index.js'
 import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js'
+import { CHAIN_IDS } from './chains/index.js'
 
 const PORT = Number(process.env.A_IDENTITY_HTTP_PORT ?? 3399)
 const url = new URL(`http://localhost:${PORT}/mcp`)
@@ -61,7 +62,9 @@ async function main() {
   // REST companion endpoints (used by the frontend)
   const chainsRes = await fetch(`http://localhost:${PORT}/api/chains`).then((r) => r.json())
   const ids = (chainsRes.chains as { id: string }[]).map((c) => c.id)
-  for (const id of ['arc', 'base', 'arbitrum', 'avalanche', 'xlayer', 'rhchain', 'rhchain-testnet', 'stellar']) {
+  // Expect the registry, not a copy of it: the hand-typed list here omitted the two Celo
+  // chains, so the REST surface could have dropped them without this failing.
+  for (const id of CHAIN_IDS) {
     if (!ids.includes(id)) throw new Error(`REST /api/chains missing ${id}`)
   }
   // /api/reputation must ANSWER correctly, which for an agent that does not exist means a
@@ -102,7 +105,7 @@ async function main() {
     throw new Error(`POST /api/agents/action-policy should require a verified session (got ${pr.status})`)
   }
 
-  console.log('✅ HTTP smoke test passed (MCP + REST, 9 chains, 6 policy tools + merchant_check over MCP, action-policy wired + gated, merchant-check validated)')
+  console.log(`✅ HTTP smoke test passed (MCP + REST, ${CHAIN_IDS.length} chains, 6 policy tools + merchant_check over MCP, action-policy wired + gated, merchant-check validated)`)
 }
 
 main().catch((err) => {

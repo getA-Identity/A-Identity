@@ -1,23 +1,20 @@
 /**
  * ERC-8004 identity resolution — REAL on-chain reads via viem, no mocks.
  *
- * The default provider reads Circle Arc's deployed ERC-8004 IdentityRegistry
- * (0x8004A818…, the same contract the rest of the app writes to). Resolving an
- * agent id or token id does a live `ownerOf` + `tokenURI` read. Extra EVM chains
- * (Ethereum / Base / Arbitrum) are added when their RPC + registry env vars are set.
- * Read-only — no keys, no funds, no writes.
- *
- * Optional env vars to add more chains:
- *   A_IDENTITY_RPC_URL / ERC8004_IDENTITY_REGISTRY   (Ethereum mainnet)
- *   BASE_RPC_URL / BASE_ERC8004_REGISTRY             (Base)
- *   ARB_RPC_URL / ARB_ERC8004_REGISTRY               (Arbitrum One)
+ * The chains it dials are exactly `identityChains()` from the registry: every EVM
+ * descriptor carrying a known `contracts.identityRegistry`. Resolving an agent id or
+ * token id does a live `ownerOf` + `tokenURI` read. Read-only: no keys, no funds,
+ * no writes.
  */
 import type { AgentIdentity } from './data.js'
-import { CHAINS, resolveRpcUrls } from './chains/index.js'
+import { identityChains, resolveRpcUrls } from './chains/index.js'
 
 export interface IdentityProvider {
   resolve(query: string): Promise<AgentIdentity | null>
   readonly kind: 'rpc'
+  /** The chain slugs this provider actually dials, so coverage can be asserted rather
+   *  than assumed (a silently empty client list would just resolve nothing). */
+  readonly chains: readonly string[]
 }
 
 // ── Minimal ERC-721 ABI for on-chain reads ────────────────────────────────────
@@ -71,6 +68,10 @@ export class RpcIdentityProvider implements IdentityProvider {
 
   constructor(clients: ChainClient[]) {
     this.clients = clients
+  }
+
+  get chains(): readonly string[] {
+    return this.clients.map((c) => c.chainName)
   }
 
   async resolve(query: string): Promise<AgentIdentity | null> {
@@ -278,11 +279,6 @@ export class RpcIdentityProvider implements IdentityProvider {
   }
 }
 
-function toAddress(val: string): `0x${string}` {
-  if (!/^0x[0-9a-fA-F]{40}$/.test(val)) throw new Error(`Invalid address: ${val}`)
-  return val as `0x${string}`
-}
-
 /**
  * SSRF guard for the agent-controlled tokenURI. The URI is set by whoever registered the
  * agent, and we fetch it server-side — so it must not be allowed to point at loopback, a
@@ -313,64 +309,22 @@ export function isSafePublicHttpUrl(raw: string): boolean {
 
 export function createIdentityProvider(env: NodeJS.ProcessEnv = process.env): IdentityProvider {
   /**
-   * Every EVM chain in the registry that has a known ERC-8004 IdentityRegistry, derived
-   * rather than restated. Before this, Arc's chain id and RPC and X Layer's registry
-   * ADDRESS were hardcoded here as a second copy of what chains/registry.ts already
-   * knows, which is exactly the drift the registry exists to prevent. Adding an identity
-   * chain is now a descriptor with an `identityRegistry` address.
+   * The client list IS `identityChains()`, so adding an identity chain is a descriptor
+   * edit and nothing else. This used to be that filter PLUS three env-gated ad-hoc
+   * clients (A_IDENTITY_RPC_URL, BASE_ERC8004_REGISTRY, ARB_ERC8004_REGISTRY, referenced
+   * nowhere else in the repo): a second way to add a chain that no test, no manifest and
+   * no public surface could see, which is the drift the registry exists to prevent.
    *
-   * Chains included today:
-   *  - Arc: always on, its registry is deployed and known, so identity resolution is real
-   *    out of the box with no env vars.
-   *  - X Layer: OKX.AI's own registry (verified live: our ASP identities #6271/#8913
-   *    resolve via ownerOf and tokenURI points at the OKX CDN agent card). Any OKX.AI
-   *    agent is verifiable by token id; owner-address queries degrade to an existence
-   *    check, because that public RPC caps getLogs at 100 blocks so token enumeration by
-   *    owner is not possible there.
-   *  - Celo mainnet + Celo Sepolia: the ERC-8004 pair in their descriptors (verified live
-   *    2026-08-09: ownerOf(1) resolves a real owner on mainnet). Reads work out of the box
-   *    from the registry addresses; CELO_RPC_URL / CELO_SEPOLIA_RPC_URL override the RPC
-   *    via each descriptor's rpcEnvVar, exactly like every other chain here.
+   * Each descriptor's `rpcEnvVar` still overrides its RPC through `resolveRpcUrls`, which
+   * is the supported way to point a chain at a private endpoint.
    */
-  const clients: ChainClient[] = CHAINS.filter(
-    (c) => c.ecosystem === 'evm' && c.evmChainId !== null && c.contracts.identityRegistry,
-  ).map((c) => ({
+  const clients: ChainClient[] = identityChains().map((c) => ({
     chainId: c.evmChainId as number,
     chainName: c.id,
     rpcUrl: resolveRpcUrls(c, env)[0],
     registry: c.contracts.identityRegistry as `0x${string}`,
     caipPrefix: c.caip2,
   }))
-
-  if (env.A_IDENTITY_RPC_URL && env.ERC8004_IDENTITY_REGISTRY) {
-    clients.push({
-      chainId: 1,
-      chainName: 'ethereum',
-      rpcUrl: env.A_IDENTITY_RPC_URL,
-      registry: toAddress(env.ERC8004_IDENTITY_REGISTRY),
-      caipPrefix: 'eip155:1',
-    })
-  }
-
-  if (env.BASE_RPC_URL && env.BASE_ERC8004_REGISTRY) {
-    clients.push({
-      chainId: 8453,
-      chainName: 'base',
-      rpcUrl: env.BASE_RPC_URL,
-      registry: toAddress(env.BASE_ERC8004_REGISTRY),
-      caipPrefix: 'eip155:8453',
-    })
-  }
-
-  if (env.ARB_RPC_URL && env.ARB_ERC8004_REGISTRY) {
-    clients.push({
-      chainId: 42161,
-      chainName: 'arbitrum',
-      rpcUrl: env.ARB_RPC_URL,
-      registry: toAddress(env.ARB_ERC8004_REGISTRY),
-      caipPrefix: 'eip155:42161',
-    })
-  }
 
   return new RpcIdentityProvider(clients)
 }

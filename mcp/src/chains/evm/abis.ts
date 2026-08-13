@@ -26,6 +26,52 @@ export const ERC20_ABI = [
   { type: 'function', name: 'transfer', stateMutability: 'nonpayable', inputs: [{ name: 'to', type: 'address' }, { name: 'amount', type: 'uint256' }], outputs: [{ type: 'bool' }] },
 ] as const
 
+/**
+ * EIP-3009 (transferWithAuthorization) plus the EIP-712 discovery surface and the
+ * Transfer event a settlement is proven against.
+ *
+ * Chain-generic on purpose, exactly like ERC20_ABI: the signed-transfer rail this feeds
+ * works on any token that implements the standard, and the registry decides which tokens
+ * those are. `version()` is included even though some tokens do not expose it (USDG
+ * reverts for it) because a read that reverts is itself information: it tells the domain
+ * prover that the version has to be proven from candidates instead of read.
+ *
+ * The v/r/s overload is the one used. Circle's FiatTokenV2 always exposes it, so it is
+ * the shape both of our settlement tokens accept; the `bytes signature` overload is
+ * optional in the wild and depending on it would narrow the rail for no gain.
+ */
+export const EIP3009_ABI = [
+  { type: 'function', name: 'name', stateMutability: 'view', inputs: [], outputs: [{ type: 'string' }] },
+  { type: 'function', name: 'symbol', stateMutability: 'view', inputs: [], outputs: [{ type: 'string' }] },
+  { type: 'function', name: 'decimals', stateMutability: 'view', inputs: [], outputs: [{ type: 'uint8' }] },
+  { type: 'function', name: 'version', stateMutability: 'view', inputs: [], outputs: [{ type: 'string' }] },
+  { type: 'function', name: 'DOMAIN_SEPARATOR', stateMutability: 'view', inputs: [], outputs: [{ type: 'bytes32' }] },
+  { type: 'function', name: 'balanceOf', stateMutability: 'view', inputs: [{ name: 'owner', type: 'address' }], outputs: [{ type: 'uint256' }] },
+  {
+    type: 'function', name: 'authorizationState', stateMutability: 'view',
+    inputs: [{ name: 'authorizer', type: 'address' }, { name: 'nonce', type: 'bytes32' }],
+    outputs: [{ type: 'bool' }],
+  },
+  {
+    type: 'function', name: 'transferWithAuthorization', stateMutability: 'nonpayable',
+    inputs: [
+      { name: 'from', type: 'address' }, { name: 'to', type: 'address' }, { name: 'value', type: 'uint256' },
+      { name: 'validAfter', type: 'uint256' }, { name: 'validBefore', type: 'uint256' },
+      { name: 'nonce', type: 'bytes32' },
+      { name: 'v', type: 'uint8' }, { name: 'r', type: 'bytes32' }, { name: 's', type: 'bytes32' },
+    ],
+    outputs: [],
+  },
+  {
+    type: 'event', name: 'Transfer',
+    inputs: [
+      { name: 'from', type: 'address', indexed: true },
+      { name: 'to', type: 'address', indexed: true },
+      { name: 'value', type: 'uint256', indexed: false },
+    ],
+  },
+] as const
+
 export const COMMERCE_ABI = [
   { type: 'function', name: 'createJob', stateMutability: 'nonpayable', inputs: [
     { name: 'provider', type: 'address' },

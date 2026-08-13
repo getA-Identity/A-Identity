@@ -238,9 +238,14 @@ it -> set permissions -> give it instructions (pay / purchase / rent / batch) ->
 watch it in Agent House.** Anything above the limits you set pauses for your
 approval.
 
-## Live on Arc testnet, today
+## Live contracts, chain by chain
 
-The backend reads the **real deployed contracts** on Arc Testnet, no mocks:
+The backend reads **real deployed contracts**, no mocks. Every address below is the
+one in the chain registry (`mcp/src/chains/registry.ts`), in registry order, and an
+address that is missing here is missing on-chain: nothing is listed that a live
+`eth_getCode` plus a real read did not confirm.
+
+### Circle Arc testnet, `eip155:5042002` - live
 
 | Contract | Address | Standard |
 | --- | --- | --- |
@@ -249,6 +254,68 @@ The backend reads the **real deployed contracts** on Arc Testnet, no mocks:
 | Validation Registry | [`0x8004Cb1BF31DAf7788923b405b754f57acEB4272`](https://testnet.arcscan.app/address/0x8004Cb1BF31DAf7788923b405b754f57acEB4272) | ERC-8004 |
 | Agentic Commerce (jobs) | [`0x0747EEf0706327138c69792bF28Cd525089e4583`](https://testnet.arcscan.app/address/0x0747EEf0706327138c69792bF28Cd525089e4583) | ERC-8183 |
 | USDC | [`0x3600000000000000000000000000000000000000`](https://testnet.arcscan.app/address/0x3600000000000000000000000000000000000000) | ERC-20 |
+
+Our showcase agent **#849980** lives here, and so do the escrow, the spend-policy
+vault and the Gateway nanopayment rail.
+
+### OKX X Layer mainnet, `eip155:196` - live
+
+| Contract | Address | Standard |
+| --- | --- | --- |
+| Identity Registry | [`0x8004a169fb4a3325136eb29fa0ceb6d2e539a432`](https://www.oklink.com/xlayer/address/0x8004a169fb4a3325136eb29fa0ceb6d2e539a432) | ERC-8004 |
+
+OKX.AI's own registry, not ours. Our paid Trust Oracle is agent **#6271** in it
+(with **#8913** as the backup listing), and its x402 calls settle in real USD₮0.
+
+### Robinhood Chain testnet, `eip155:46630` - beta
+
+| Contract | Address | Standard |
+| --- | --- | --- |
+| Identity Registry | [`0x8004A818BFB912233c491871b3d84c89A494BD9e`](https://explorer.testnet.chain.robinhood.com/address/0x8004A818BFB912233c491871b3d84c89A494BD9e) | ERC-8004 |
+| Reputation Registry | [`0x8004B663056A597Dffe9eCcC1965A193B7388713`](https://explorer.testnet.chain.robinhood.com/address/0x8004B663056A597Dffe9eCcC1965A193B7388713) | ERC-8004 |
+| Validation Registry | [`0x8004Cb1BF31DAf7788923b405b754f57acEB4272`](https://explorer.testnet.chain.robinhood.com/address/0x8004Cb1BF31DAf7788923b405b754f57acEB4272) | ERC-8004 |
+
+The full canonical ERC-8004 set, at the same addresses as Arc. Agent **#0** is ours:
+[mint tx](https://explorer.testnet.chain.robinhood.com/tx/0x20918ec68186bd4aaee7c36d33d0383f1bc6a2bc921e72e3b812d034da5212fd).
+No canonical stablecoin is documented for this chain, so no payment rail is claimed.
+
+### Robinhood Chain mainnet, `eip155:4663` - beta
+
+| Contract | Address | Standard |
+| --- | --- | --- |
+| Identity Registry | [`0x8004a169fb4a3325136eb29fa0ceb6d2e539a432`](https://robinhoodchain.blockscout.com/address/0x8004a169fb4a3325136eb29fa0ceb6d2e539a432) | ERC-8004 |
+| Reputation Registry | [`0x8004BAa17C55a88189AE136b182e5fdA19dE9b63`](https://robinhoodchain.blockscout.com/address/0x8004BAa17C55a88189AE136b182e5fdA19dE9b63) | ERC-8004 |
+
+**We did not deploy these registries. The ERC-8004 authors did.** What is ours is
+agent **#0**, the registry's first mint:
+[tx `0x602ce85a…`](https://robinhoodchain.blockscout.com/tx/0x602ce85ad044836b39918311a3031dcd689e4be0d23aed9ed0ac9227d46ec79e)
+in block 34617892, owner `0xd305607510E0Db2c95807173c7A05BEA53c1ed36`, tokenURI
+[`agent-card.json`](https://a-identity.xyz/.well-known/agent-card.json). There is no
+ValidationRegistry in this mainnet family, so KYA cannot be anchored on-chain here.
+
+### Celo mainnet, `eip155:42220` - live
+
+| Contract | Address | Standard |
+| --- | --- | --- |
+| Identity Registry | [`0x8004A169FB4a3325136EB29fA0ceB6D2e539a432`](https://celoscan.io/address/0x8004A169FB4a3325136EB29fA0ceB6D2e539a432) | ERC-8004 |
+| Reputation Registry | [`0x8004BAa17C55a88189AE136b182e5fdA19dE9b63`](https://celoscan.io/address/0x8004BAa17C55a88189AE136b182e5fdA19dE9b63) | ERC-8004 |
+| USDC | [`0xcebA9300f2b948710d2653dD7B07f33A8B32118C`](https://celoscan.io/address/0xcebA9300f2b948710d2653dD7B07f33A8B32118C) | ERC-20 |
+
+Our agent is [**#9759**](https://celoscan.io/nft/0x8004A169FB4a3325136EB29fA0ceB6D2e539a432/9759),
+and the four trust tools sell here over our own first-party x402 facilitator. Celo
+has no ValidationRegistry, so KYA cannot be anchored on-chain there either.
+
+### Celo Sepolia, `eip155:11142220` - beta
+
+| Contract | Address | Standard |
+| --- | --- | --- |
+| Identity Registry | [`0x8004A818BFB912233c491871b3d84c89A494BD9e`](https://celo-sepolia.blockscout.com/address/0x8004A818BFB912233c491871b3d84c89A494BD9e) | ERC-8004 |
+| Reputation Registry | [`0x8004B663056A597Dffe9eCcC1965A193B7388713`](https://celo-sepolia.blockscout.com/address/0x8004B663056A597Dffe9eCcC1965A193B7388713) | ERC-8004 |
+| USDC | [`0x01C5C0122039549AD1493B8220cABEdD739BC44E`](https://celo-sepolia.blockscout.com/address/0x01C5C0122039549AD1493B8220cABEdD739BC44E) | ERC-20 |
+
+The remaining registry chains (Base, Avalanche, Arbitrum, Stellar) carry a
+descriptor and public metadata only. Nothing is deployed for them, and they stay
+labeled `beta` or `planned` until something is.
 
 Machine-readable: the chain registry is served live at
 [`GET /api/chains`](https://a-identity-backend.onrender.com/api/chains) and the same table ships

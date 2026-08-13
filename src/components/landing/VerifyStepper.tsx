@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { Loader2, Check, X, ShieldCheck, ShieldAlert, ShieldX, Fingerprint, BadgeCheck, Gauge, Scale } from 'lucide-react'
+import { CHAIN_BY_ID, type ChainId } from '../../lib/chains'
 import type { AgentIdentity, Reputation } from '../../lib/mcp-client'
 
 /**
@@ -118,6 +119,10 @@ export default function VerifyStepper({ identity, reputation, query, onComplete 
   const reasons = verdictReasons(score, kya, verified, sybil)
   const { color, Icon: VIcon } = VERDICT_UI[verdict]
   const bd = reputation?.breakdown
+  // Name the chain the read actually happened on. The old copy named X Layer or Circle Arc
+  // and nothing else, so an identity resolved on Celo or Robinhood was reported as Arc.
+  const chain = identity?.chain ? CHAIN_BY_ID[identity.chain as ChainId] : undefined
+  const chainName = chain?.name ?? identity?.chain ?? 'chain'
 
   return (
     <div className="overflow-hidden rounded-xl border border-border bg-card">
@@ -128,9 +133,9 @@ export default function VerifyStepper({ identity, reputation, query, onComplete 
       <div className="divide-y divide-border/60">
         <StepRow state={state(1)} ok={verified} Icon={Fingerprint} title="Resolve identity" standard="ERC-8004">
           {verified && identity?.partial ? (
-            <>Live read from the OKX.AI IdentityRegistry on X Layer: this wallet <b className="text-foreground">holds an ERC-8004 identity token</b>. The public RPC cannot enumerate the token id; search by agent id for the full record.</>
+            <>Live read from the ERC-8004 IdentityRegistry on {chainName}: this wallet <b className="text-foreground">holds an ERC-8004 identity token</b>. The public RPC cannot enumerate the token id; search by agent id for the full record.</>
           ) : verified && identity ? (
-            <>Live read from the IdentityRegistry on {identity.chain === 'xlayer' ? 'X Layer (OKX.AI)' : 'Circle Arc'}: token <b className="font-mono text-foreground">#{identity.tokenId}</b>, owner <b className="font-mono text-foreground">{identity.owner.slice(0, 6)}…{identity.owner.slice(-4)}</b>. The identity exists on-chain.</>
+            <>Live read from the IdentityRegistry on {chainName}: token <b className="font-mono text-foreground">#{identity.tokenId}</b>, owner <b className="font-mono text-foreground">{identity.owner.slice(0, 6)}…{identity.owner.slice(-4)}</b>. The identity exists on-chain.</>
           ) : verified ? (
             <>Registered on the platform with a verified on-chain anchor.</>
           ) : (

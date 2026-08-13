@@ -2,10 +2,19 @@
 
 Now / next / later, in the open. "Now" means work is underway or committed for the
 current cycle; dates are targets, not promises. Recently shipped is listed so the
-roadmap stays honest about velocity. Updated 2026-08-09.
+roadmap stays honest about velocity. Updated 2026-08-13.
 
 ## Recently shipped (July-August 2026)
 
+- Celo mainnet live (2026-08-09): ERC-8004 identity + reputation reads wired, agent #9759,
+  and the trust tools selling over our own first-party x402 facilitator in native USDC.
+- ERC-8004 identity on Robinhood Chain testnet (2026-08-11): the full canonical registry
+  set is live there, with the missing ValidationRegistry implementation deployed by
+  replaying the canonical Safe Singleton Factory calldata, and agent #0 minted.
+- ERC-8004 identity on Robinhood Chain mainnet (2026-08-12): the canonical identity and
+  reputation registries (deployed by the ERC-8004 authors, not by us) verified live, and
+  agent **#0**, the registry's first mint, is ours. Reads are wired; both networks stay
+  beta because neither publishes a canonical stablecoin to settle in.
 - Trusted agent marketplace on Arc: verify -> hire (ERC-8183 escrow) -> work -> release,
   with a composite leaderboard and public agent certificates.
 - Paid Trust Oracle live on OKX.AI (X Layer mainnet): six x402 services, 120 real
@@ -41,7 +50,9 @@ roadmap stays honest about velocity. Updated 2026-08-09.
   batched settlement) bundled into one deliberate listing update.
 - **Spend-preflight in the console UI** (the API is live; the Permissions screen gets
   a "would this pass?" panel).
-- **Base as the second proven EVM chain** for the adapter (descriptor is in beta).
+- **Base**: the one beta EVM chain still carrying no ERC-8004 registry. X Layer, Celo and
+  both Robinhood networks already prove the adapter, so what Base needs is a deployment
+  and a reason, not a first proof.
 
 ## Later
 

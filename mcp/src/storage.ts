@@ -95,9 +95,17 @@ async function doFlush() {
 // it and a previously-used payment could be replayed. So we persist spent hashes:
 // Postgres when DATABASE_URL is set, else a local JSON file alongside the state.
 
+// Two rails share this one table, and they never collide because their keys live in
+// disjoint namespaces by construction: the Arc rail writes a 66-character tx hash
+// (0x + 64 hex), while the EIP-3009 rail writes a structured key that starts with its
+// CAIP-2 chain id ("eip155:4663/erc20:0x.../3009/0x.../0x..."). Namespacing was chosen
+// over adding a `network` column deliberately: this table gates replay protection, and a
+// schema migration on it is the one failure mode we cannot accept, since a half-applied
+// migration fails OPEN. See x402-3009/engine.ts paymentKey().
+
 const SPENT_FILE = join(DATA_DIR, 'spent-payments.json')
 
-/** Load every spent payment hash (lowercase) recorded so far. */
+/** Load every spent payment key (lowercase) recorded so far. */
 export async function loadSpentPayments(): Promise<string[]> {
   const p = await getPool()
   if (p) {
@@ -209,6 +217,122 @@ export async function persistCeloSettlement(rec: CeloSettlementRecord): Promise<
   } catch (e) {
     console.error('[storage] celo settlement persist failed:', e instanceof Error ? e.message : e)
   }
+}
+
+/**
+ * One settlement on the self-facilitated EIP-3009 rail (see x402-3009/).
+ *
+ * A separate type from CeloSettlementRecord on purpose, because the two record different
+ * KINDS of evidence. The Celo record is a facilitator receipt: its distinguishing field
+ * is `facilitatorCredits`, a third party's assertion that the money moved. This one is a
+ * CHAIN receipt: we broadcast the transfer ourselves, so we hold the tx, the block, the
+ * gas and the matching Transfer log. Merging them into one union would leave every field
+ * optional and let a weaker provenance be displayed as if it were a stronger one.
+ */
+export type X402SettlementRecord = {
+  ts: string
+  /** 'settled' = receipt status success AND a matching Transfer log. 'reverted' = mined
+   *  and failed. 'ambiguous' = broadcast, no receipt inside the timeout. Only 'settled'
+   *  is revenue; the other two are shown rather than hidden, and all three cost gas. */
+  outcome: 'settled' | 'reverted' | 'ambiguous'
+  tool: string
+  resource: string
+  /** CAIP-2 network the payment settled on. */
+  network: string
+  /** The ERC-20 that actually moved. Mandatory here: without it a proof page cannot say
+   *  WHAT was paid, which is the gap in the Celo record. */
+  asset: string
+  assetSymbol: string
+  assetDecimals: number
+  /** Base units, exactly as the Transfer log reported them. */
+  value: string
+  amountUsd: number
+  baseUsd: number
+  feeUsd: number
+  payer: string
+  payTo: string
+  /** The EIP-3009 nonce, so an ambiguous settlement can later be resolved exactly. */
+  authNonce: string
+  tx?: string
+  blockNumber?: string
+  explorerUrl?: string
+  /** What the settlement cost US, in native units only. This chain has no price feed we
+   *  verify, so a USD gas figure would be a fabricated number. */
+  gasUsed?: string
+  gasWei?: string
+  /** Present when we facilitated for a third-party payTo rather than for ourselves. */
+  facilitatedFor?: string
+}
+
+const X402_SETTLEMENTS_FILE = join(DATA_DIR, 'x402-settlements.json')
+export const X402_SETTLEMENTS_CAP = 2000
+
+/** Load the retained x402-3009 settlement records, oldest first. */
+export async function loadX402Settlements(): Promise<X402SettlementRecord[]> {
+  const p = await getPool()
+  if (p) {
+    await p.query('CREATE TABLE IF NOT EXISTS x402_settlements (id bigserial PRIMARY KEY, data jsonb NOT NULL)')
+    const r = await p.query('SELECT data FROM x402_settlements ORDER BY id ASC')
+    return r.rows.map((row: { data: X402SettlementRecord }) => row.data)
+  }
+  try {
+    return JSON.parse(readFileSync(X402_SETTLEMENTS_FILE, 'utf8')) as X402SettlementRecord[]
+  } catch {
+    return []
+  }
+}
+
+/** Durably record one settlement attempt, trimming past the cap. Never throws: on this
+ *  rail the money has already moved on-chain by the time we get here, so a logging
+ *  hiccup must not turn a paid call into an error for the buyer. */
+export async function persistX402Settlement(rec: X402SettlementRecord): Promise<void> {
+  try {
+    const p = await getPool()
+    if (p) {
+      await p.query('CREATE TABLE IF NOT EXISTS x402_settlements (id bigserial PRIMARY KEY, data jsonb NOT NULL)')
+      await p.query('INSERT INTO x402_settlements (data) VALUES ($1)', [JSON.stringify(rec)])
+      await p.query(
+        'DELETE FROM x402_settlements WHERE id NOT IN (SELECT id FROM x402_settlements ORDER BY id DESC LIMIT $1)',
+        [X402_SETTLEMENTS_CAP],
+      )
+      return
+    }
+    let arr: X402SettlementRecord[] = []
+    try {
+      arr = JSON.parse(readFileSync(X402_SETTLEMENTS_FILE, 'utf8')) as X402SettlementRecord[]
+    } catch {
+      /* first write */
+    }
+    arr.push(rec)
+    if (arr.length > X402_SETTLEMENTS_CAP) arr = arr.slice(-X402_SETTLEMENTS_CAP)
+    mkdirSync(DATA_DIR, { recursive: true })
+    writeFileSync(X402_SETTLEMENTS_FILE, JSON.stringify(arr))
+  } catch (e) {
+    console.error('[storage] x402 settlement persist failed:', e instanceof Error ? e.message : e)
+  }
+}
+
+/**
+ * Native-unit gas spent on a given UTC day across every settlement attempt.
+ *
+ * The settlement log IS the gas ledger: no second table, and the daily budget the rail
+ * enforces is therefore auditable from the same rows a reviewer can already see.
+ */
+export async function gasSpentOnDay(
+  dayIso: string,
+  load: () => Promise<X402SettlementRecord[]> = loadX402Settlements,
+): Promise<bigint> {
+  const rows = await load()
+  let total = 0n
+  for (const r of rows) {
+    if (!r.gasWei || !r.ts.startsWith(dayIso)) continue
+    try {
+      total += BigInt(r.gasWei)
+    } catch {
+      /* a malformed row must not break the budget read */
+    }
+  }
+  return total
 }
 
 // Flush pending state on shutdown, then exit (Render sends SIGTERM on redeploy).

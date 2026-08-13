@@ -62,7 +62,9 @@ leaves the caller's process.
 - [MCP server guide](https://a-identity.mintlify.site/developers/mcp-server)
 - [Architecture](https://a-identity.xyz/architecture): how the pieces fit together.
 
-## Writing
+## Selected writing
+
+Full index: https://a-identity.xyz/blog
 
 - [Verify an AI agent before you pay it](https://a-identity.xyz/blog/verify-an-agent-before-you-pay-it): the four checks, in the order an agent needs them.
 - [What 120 real agent-to-agent payments look like](https://a-identity.xyz/blog/what-120-real-agent-payments-look-like): the distribution of settlements we actually took.

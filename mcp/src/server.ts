@@ -5,6 +5,7 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
 import { z } from 'zod'
 import { listCapabilities, CHAIN_CONFIG } from './data.js'
+import { CHAINS, CHAIN_IDS, identityChains } from './chains/index.js'
 import { createIdentityProvider } from './erc8004.js'
 import { computeAgentReputation } from './reputation.js'
 import { getArcStatus } from './arc.js'
@@ -16,9 +17,19 @@ const json = (value: unknown) => ({
 })
 
 /**
+ * Tool descriptions are INTERPOLATED from the registry rather than typed out, because
+ * the typed-out ones went stale silently: `resolve_agent` still said "Circle Arc's
+ * registry" and `get_chain_status` still said "Arc is the live chain today" long after
+ * five more chains carried a live ERC-8004 registry. A description an MCP client reads
+ * is a claim, so it has to come from the same place the behaviour does.
+ */
+const IDENTITY_CHAINS = identityChains()
+const CHAIN_COUNT = (status: string) => CHAINS.filter((c) => c.status === status).length
+
+/**
  * Real-data hooks the HTTP entry (http.ts) injects so the discovery tools return
  * live platform state instead of nothing. The stdio entry passes none - there,
- * `list_agents` is empty (the Arc registry isn't enumerable) and `get_reputation`
+ * `list_agents` is empty (ERC-8004 registries aren't enumerable) and `get_reputation`
  * says reputation lives on the platform. No mocks in either path.
  */
 export type ServerData = {
@@ -65,7 +76,7 @@ export function buildServer(data: ServerData = {}): McpServer {
     {
       title: 'Resolve agent identity',
       description:
-        "Resolve an agent's identity with a LIVE on-chain read of Circle Arc's ERC-8004 IdentityRegistry (ownerOf + tokenURI). Query by agent id (CAIP-10), token id, or owner address. Extra EVM chains are read when configured. Read-only, no mocks.",
+        `Resolve an agent's identity with a LIVE on-chain read of the ERC-8004 IdentityRegistry (ownerOf + tokenURI) on any of the ${IDENTITY_CHAINS.length} chains that carry one (${IDENTITY_CHAINS.map((c) => c.shortName).join(', ')}). Query by agent id (CAIP-10), token id, or owner address. Read-only, no mocks.`,
       inputSchema: {
         query: z
           .string()
@@ -73,9 +84,9 @@ export function buildServer(data: ServerData = {}): McpServer {
             'Agent id (e.g. "eip155:5042002:8004/849980"), token id ("#849980"), or owner address (0x…)',
           ),
         chain: z
-          .enum(['arc', 'ethereum', 'base', 'arbitrum'])
+          .enum(CHAIN_IDS)
           .optional()
-          .describe('Optional chain filter. Omit to search all configured chains (Arc by default).'),
+          .describe(`Optional filter by registry chain slug (${CHAIN_IDS.join(', ')}). Omit to search every chain that carries an identity registry.`),
       },
     },
     async ({ query, chain }) => {
@@ -143,7 +154,7 @@ export function buildServer(data: ServerData = {}): McpServer {
     {
       title: 'List registered agents',
       description:
-        'List the real agents registered on this A-Identity platform (name, chain, KYA + on-chain status). The Arc ERC-8004 registry is not enumerable, so this lists agents this instance knows - not every token ever minted.',
+        'List the real agents registered on this A-Identity platform (name, chain, KYA + on-chain status). ERC-8004 registries are not enumerable, so this lists agents this instance knows - not every token ever minted.',
       inputSchema: {},
     },
     async () => {
@@ -161,7 +172,7 @@ export function buildServer(data: ServerData = {}): McpServer {
     {
       title: 'Get supported chain status',
       description:
-        'List every chain in the A-Identity chain registry, with its identity standard, x402 support, lifecycle status (live | beta | planned | deprecated) and registered agent counts. Arc is the live chain today; the rest are planned.',
+        `List every chain in the A-Identity chain registry, with its identity standard, x402 support, the ERC-8004 registries it carries and its lifecycle status: ${CHAIN_COUNT('live')} live, ${CHAIN_COUNT('beta')} beta, ${CHAIN_COUNT('planned')} planned.`,
       inputSchema: {},
     },
     async () => {

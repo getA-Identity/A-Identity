@@ -13,7 +13,7 @@
 import { fileURLToPath } from 'node:url'
 import { Client } from '@modelcontextprotocol/sdk/client/index.js'
 import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js'
-import { ARC_CHAIN } from './chains/index.js'
+import { ARC_CHAIN, CHAIN_IDS } from './chains/index.js'
 
 const serverPath = fileURLToPath(new URL('./index.js', import.meta.url))
 
@@ -77,10 +77,12 @@ async function main() {
     throw new Error('get_reputation score out of range')
   }
 
-  // 4) Every registry chain is reported by get_chain_status.
+  // 4) Every registry chain is reported by get_chain_status. The expected list is the
+  //    registry itself, so a newly added chain is covered the moment it lands (the
+  //    hand-typed list here had already gone two chains stale).
   const chainStatus = (await client.callTool({ name: 'get_chain_status', arguments: {} })) as TextResult
   const chainIds = JSON.parse(textOf(chainStatus)).chains.map((c: { id: string }) => c.id)
-  for (const id of ['arc', 'base', 'arbitrum', 'avalanche', 'xlayer', 'rhchain', 'rhchain-testnet', 'stellar']) {
+  for (const id of CHAIN_IDS) {
     if (!chainIds.includes(id)) throw new Error(`get_chain_status missing chain: ${id}`)
   }
 
@@ -105,7 +107,7 @@ async function main() {
 
   await client.close()
   console.log(
-    `\n✅ smoke test passed (live Arc resolve, capabilities, honest reputation pointer, 9 chains, chain filter, merchant_check SSRF guard)`,
+    `\n✅ smoke test passed (live Arc resolve, capabilities, honest reputation pointer, ${CHAIN_IDS.length} chains, chain filter, merchant_check SSRF guard)`,
   )
 }
 

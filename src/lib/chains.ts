@@ -10,7 +10,7 @@
  */
 
 /** Short slug of a chain in the registry. */
-export type ChainId = 'arc' | 'xlayer' | 'celo' | 'base' | 'rhchain-testnet' | 'rhchain' | 'celo-sepolia' | 'stellar' | 'avalanche' | 'arbitrum'
+export type ChainId = 'arc' | 'xlayer' | 'rhchain' | 'celo' | 'base' | 'rhchain-testnet' | 'celo-sepolia' | 'stellar' | 'avalanche' | 'arbitrum'
 
 export type ChainProtocols = {
   /** x402 HTTP-402 payment support. Settlement is in a stablecoin. */
@@ -45,6 +45,11 @@ export type Chain = {
   identity: string
   erc8004Native: boolean
   x402: boolean
+  /** Canonical ERC-8004 addresses this chain carries. An absent key is an absent
+   *  deployment: the UI must never infer one. */
+  registries: { identity?: string; reputation?: string; validation?: string }
+  /** True when a live identity read works on this chain today. */
+  identityLive: boolean
 }
 
 export const CHAINS: readonly Chain[] = [
@@ -78,7 +83,13 @@ export const CHAINS: readonly Chain[] = [
     },
     "identity": "ERC-8004",
     "erc8004Native": true,
-    "x402": true
+    "x402": true,
+    "registries": {
+      "identity": "0x8004A818BFB912233c491871b3d84c89A494BD9e",
+      "reputation": "0x8004B663056A597Dffe9eCcC1965A193B7388713",
+      "validation": "0x8004Cb1BF31DAf7788923b405b754f57acEB4272"
+    },
+    "identityLive": true
   },
   {
     "id": "xlayer",
@@ -110,7 +121,47 @@ export const CHAINS: readonly Chain[] = [
     },
     "identity": "ERC-8004",
     "erc8004Native": true,
-    "x402": true
+    "x402": true,
+    "registries": {
+      "identity": "0x8004a169fb4a3325136eb29fa0ceb6d2e539a432"
+    },
+    "identityLive": true
+  },
+  {
+    "id": "rhchain",
+    "name": "Robinhood Chain",
+    "shortName": "RH Chain",
+    "color": "#0F9D30",
+    "chainId": 4663,
+    "caip2": "eip155:4663",
+    "evmCompatible": true,
+    "testnet": false,
+    "stablecoins": [
+      "USDG"
+    ],
+    "rpcUrl": "https://rpc.mainnet.chain.robinhood.com",
+    "explorer": "https://robinhoodchain.blockscout.com",
+    "role": "Robinhood's own L2 for tokenized real-world assets: canonical ERC-8004 identity + reputation live, agent #0 minted, and paid trust calls settling in USDG through our own first-party x402 facilitator.",
+    "status": "live",
+    "protocols": {
+      "payment": {
+        "x402": true,
+        "note": "x402 settling in USDG (Paxos Global Dollar) through our own first-party EIP-3009 facilitator: the buyer signs, we broadcast and pay the gas. No third-party facilitator exists for this chain."
+      },
+      "identity": {
+        "standard": "ERC-8004",
+        "erc8004Native": true,
+        "note": "Identity + Reputation registries LIVE (same canonical addresses as X Layer/Celo); agent #0, the registry's first mint, is ours (2026-08-12). No ValidationRegistry in the mainnet family yet."
+      }
+    },
+    "identity": "ERC-8004",
+    "erc8004Native": true,
+    "x402": true,
+    "registries": {
+      "identity": "0x8004a169fb4a3325136eb29fa0ceb6d2e539a432",
+      "reputation": "0x8004BAa17C55a88189AE136b182e5fdA19dE9b63"
+    },
+    "identityLive": true
   },
   {
     "id": "celo",
@@ -143,7 +194,12 @@ export const CHAINS: readonly Chain[] = [
     },
     "identity": "ERC-8004",
     "erc8004Native": true,
-    "x402": true
+    "x402": true,
+    "registries": {
+      "identity": "0x8004A169FB4a3325136EB29fA0ceB6D2e539a432",
+      "reputation": "0x8004BAa17C55a88189AE136b182e5fdA19dE9b63"
+    },
+    "identityLive": true
   },
   {
     "id": "base",
@@ -176,7 +232,9 @@ export const CHAINS: readonly Chain[] = [
     },
     "identity": "ERC-8004",
     "erc8004Native": true,
-    "x402": true
+    "x402": true,
+    "registries": {},
+    "identityLive": false
   },
   {
     "id": "rhchain-testnet",
@@ -187,7 +245,9 @@ export const CHAINS: readonly Chain[] = [
     "caip2": "eip155:46630",
     "evmCompatible": true,
     "testnet": true,
-    "stablecoins": [],
+    "stablecoins": [
+      "USDC.e"
+    ],
     "rpcUrl": "https://rpc.testnet.chain.robinhood.com",
     "explorer": "https://explorer.testnet.chain.robinhood.com",
     "role": "Robinhood Chain rehearsal rail: the canonical ERC-8004 registry set is live here; mainnet waits on a human-funded signer.",
@@ -195,7 +255,7 @@ export const CHAINS: readonly Chain[] = [
     "protocols": {
       "payment": {
         "x402": true,
-        "note": "x402 needs a settlement token first: no canonical USDC is documented on this chain yet."
+        "note": "Rehearsal of the mainnet USDG rail on the same EIP-3009 code path, settling in bridged USDC.e. No canonical USDC exists here, so contracts.usdc stays empty."
       },
       "identity": {
         "standard": "ERC-8004",
@@ -205,36 +265,13 @@ export const CHAINS: readonly Chain[] = [
     },
     "identity": "ERC-8004",
     "erc8004Native": true,
-    "x402": true
-  },
-  {
-    "id": "rhchain",
-    "name": "Robinhood Chain",
-    "shortName": "RH Chain",
-    "color": "#0F9D30",
-    "chainId": 4663,
-    "caip2": "eip155:4663",
-    "evmCompatible": true,
-    "testnet": false,
-    "stablecoins": [],
-    "rpcUrl": "https://rpc.mainnet.chain.robinhood.com",
-    "explorer": "https://robinhoodchain.blockscout.com",
-    "role": "Robinhood's own L2 for tokenized real-world assets: canonical ERC-8004 identity + reputation live, agent #0 minted; payments wait on a published settlement token.",
-    "status": "beta",
-    "protocols": {
-      "payment": {
-        "x402": true,
-        "note": "x402 needs a settlement token first: no canonical USDC is documented on this chain yet."
-      },
-      "identity": {
-        "standard": "ERC-8004",
-        "erc8004Native": true,
-        "note": "Identity + Reputation registries LIVE (same canonical addresses as X Layer/Celo); agent #0, the registry's first mint, is ours (2026-08-12). No ValidationRegistry in the mainnet family yet."
-      }
+    "x402": true,
+    "registries": {
+      "identity": "0x8004A818BFB912233c491871b3d84c89A494BD9e",
+      "reputation": "0x8004B663056A597Dffe9eCcC1965A193B7388713",
+      "validation": "0x8004Cb1BF31DAf7788923b405b754f57acEB4272"
     },
-    "identity": "ERC-8004",
-    "erc8004Native": true,
-    "x402": true
+    "identityLive": true
   },
   {
     "id": "celo-sepolia",
@@ -265,7 +302,12 @@ export const CHAINS: readonly Chain[] = [
     },
     "identity": "ERC-8004",
     "erc8004Native": true,
-    "x402": true
+    "x402": true,
+    "registries": {
+      "identity": "0x8004A818BFB912233c491871b3d84c89A494BD9e",
+      "reputation": "0x8004B663056A597Dffe9eCcC1965A193B7388713"
+    },
+    "identityLive": true
   },
   {
     "id": "stellar",
@@ -297,7 +339,9 @@ export const CHAINS: readonly Chain[] = [
     },
     "identity": "Soroban registry + SEP-10",
     "erc8004Native": false,
-    "x402": true
+    "x402": true,
+    "registries": {},
+    "identityLive": false
   },
   {
     "id": "avalanche",
@@ -329,7 +373,9 @@ export const CHAINS: readonly Chain[] = [
     },
     "identity": "ERC-8004",
     "erc8004Native": true,
-    "x402": true
+    "x402": true,
+    "registries": {},
+    "identityLive": false
   },
   {
     "id": "arbitrum",
@@ -361,7 +407,9 @@ export const CHAINS: readonly Chain[] = [
     },
     "identity": "ERC-8004",
     "erc8004Native": true,
-    "x402": true
+    "x402": true,
+    "registries": {},
+    "identityLive": false
   },
 ] as const
 

@@ -2,14 +2,39 @@
  * Static, read-only reference data for the A-Identity MCP server.
  *
  * No fabricated agents: identity resolution is REAL on-chain (see erc8004.ts, which
- * reads Circle Arc's deployed ERC-8004 registry), and the agent list / reputation
+ * reads every deployed ERC-8004 registry in the chain registry), and the agent list / reputation
  * come from real platform state (see http.ts / platform.ts). What remains here is
  * the public chain projection (CHAIN_CONFIG, derived from chains/registry.ts) and the
  * capability manifest (listCapabilities).
  */
 import { publicChains } from './chains/public-view.js'
 
-export type ChainName = 'arc' | 'xlayer' | 'ethereum' | 'base' | 'arbitrum' | 'stellar' | 'celo' | 'celo-sepolia'
+/**
+ * Every chain slug an identity can carry, in registry order.
+ *
+ * It is a runtime tuple, not a bare type union, because `chains/registry.ts` types its
+ * descriptor ids as `string`: deriving the union from `CHAIN_IDS` would collapse it to
+ * `string` and stop catching typos. So this is the one restatement of the registry, and
+ * it is a tuple so a drift test can compare it to `CHAIN_IDS` element by element.
+ *
+ * The previous hand-written union offered `ethereum`, which is not a registry chain, and
+ * omitted six that are, which is how an identity resolved on Celo or Robinhood ended up
+ * with a chain slug the type system said could not exist.
+ */
+export const CHAIN_NAMES = [
+  'arc',
+  'stellar',
+  'xlayer',
+  'base',
+  'avalanche',
+  'arbitrum',
+  'rhchain-testnet',
+  'rhchain',
+  'celo',
+  'celo-sepolia',
+] as const
+
+export type ChainName = (typeof CHAIN_NAMES)[number]
 
 export type AgentIdentity = {
   agentId: string

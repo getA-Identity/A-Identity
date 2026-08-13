@@ -10,6 +10,7 @@ import { Input } from '../components/ui/input'
 import VerifyStepper from '../components/landing/VerifyStepper'
 import { useTheme } from '../components/ThemeProvider'
 import { APP_NAME } from '../lib/brand'
+import { CHAINS, CHAIN_BY_ID, type ChainId } from '../lib/chains'
 import { usePageMeta } from '../lib/head'
 import { short } from '../lib/format'
 import { gradeOf } from '../lib/reputation-bands'
@@ -22,6 +23,9 @@ import AgentAvatar from '../components/AgentAvatar'
 import { track } from '../lib/analytics'
 
 type Verdict = 'ALLOW' | 'WARN' | 'DENY'
+/** How many chains a lookup actually dials, counted from the generated registry rather
+ *  than written down: the copy said "on Circle Arc" while five more chains were live. */
+const IDENTITY_CHAIN_COUNT = CHAINS.filter((c) => c.identityLive).length
 // Semantic tokens, not literal hexes: the light values match the old hexes exactly,
 // and the tokens flip with the theme so the verdict colors survive dark mode.
 const VERDICT: Record<Verdict, { color: string; Icon: typeof ShieldCheck }> = {
@@ -128,12 +132,25 @@ function TrustProfile({ identity, reputation, query }: { identity: AgentIdentity
   const score = reputation?.score ?? 0
   const shownScore = useCountUp(score)
   const verdict = riskOf(score, reputation?.kya, verified, reputation?.sybil?.level)
-  const name = reputation?.name || (identity && !identity.partial ? `Agent #${identity.tokenId}` : identity?.partial ? 'OKX.AI agent' : query)
   const bd = reputation?.breakdown
   const beh = reputation?.behavioral
   const owner = identity?.owner
   const seed = owner || identity?.tokenId?.toString() || query
-  const arcUrl = owner && /^0x[0-9a-fA-F]{40}$/.test(owner) ? `https://testnet.arcscan.app/address/${owner}` : null
+  // The chain the identity was actually READ on decides the label, the fallback name and
+  // the explorer link. This used to be a two-way ternary that sent every non-X-Layer agent
+  // to Arcscan and called it "Arc testnet", so a Celo or Robinhood agent got the wrong name
+  // and a dead link. An unknown slug shows itself and links nowhere rather than claiming a chain.
+  const chain = identity?.chain ? CHAIN_BY_ID[identity.chain as ChainId] : undefined
+  const chainLabel = chain ? `${chain.shortName} ${chain.testnet ? 'testnet' : 'mainnet'}` : identity?.chain
+  const ownerUrl =
+    owner && /^0x[0-9a-fA-F]{40}$/.test(owner) && chain?.explorer ? `${chain.explorer}/address/${owner}` : null
+  const name =
+    reputation?.name ||
+    (identity && !identity.partial
+      ? `Agent #${identity.tokenId}`
+      : identity?.partial
+      ? `${chain?.shortName ?? 'On-chain'} agent`
+      : query)
   const g = gradeOf(score)
 
   return (
@@ -163,10 +180,12 @@ function TrustProfile({ identity, reputation, query }: { identity: AgentIdentity
           </div>
           <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 font-mono text-xs text-foreground/45">
             {identity && !identity.partial && <span>#{identity.tokenId}</span>}
-            {owner && <CopyAddr value={owner} href={arcUrl} />}
-            <span className="rounded bg-foreground/[0.06] px-1.5 py-0.5 text-[10px] uppercase tracking-wide">
-              {identity?.chain === 'xlayer' ? 'X Layer mainnet' : 'Arc testnet'}
-            </span>
+            {owner && <CopyAddr value={owner} href={ownerUrl} />}
+            {chainLabel && (
+              <span className="rounded bg-foreground/[0.06] px-1.5 py-0.5 text-[10px] uppercase tracking-wide">
+                {chainLabel}
+              </span>
+            )}
             {identity?.partial && <span className="text-[11px] normal-case">identity held on-chain; search by token id for the full record</span>}
           </div>
         </div>
@@ -191,7 +210,7 @@ function TrustProfile({ identity, reputation, query }: { identity: AgentIdentity
             <a href={reputation.onchainAttestation.txUrl} target="_blank" rel="noopener noreferrer" className="font-medium text-accent hover:underline">
               Anchored on-chain · ERC-8004 ReputationRegistry ↗
             </a>
-            <span className="text-foreground/40"> verify the score on Arc, not just here</span>
+            <span className="text-foreground/40"> verify the score on-chain, not just here</span>
           </div>
         )}
       </div>
@@ -339,7 +358,7 @@ export default function Explorer() {
           {/* title */}
           <div className="max-w-2xl">
             <h1 className="text-2xl font-bold tracking-tight sm:text-3xl" style={{ fontFamily: 'var(--font-heading)' }}>Agent Trust Explorer</h1>
-            <p className="mt-2 text-sm text-foreground/55">Resolve any agent&apos;s on-chain identity, reputation and risk on Circle Arc. No login, no mocks.</p>
+            <p className="mt-2 text-sm text-foreground/55">Resolve any agent&apos;s on-chain identity, reputation and risk across the {IDENTITY_CHAIN_COUNT} chains that carry an ERC-8004 registry. No login, no mocks.</p>
           </div>
 
           {/* search */}

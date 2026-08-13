@@ -62,8 +62,11 @@ test('Arc, X Layer, Celo (live), Base, Celo Sepolia and RH Chain Testnet (beta) 
   // is live there at the cross-chain addresses (see the Robinhood tests below).
   // 2026-08-12: rhchain flips to beta — the canonical MAINNET identity + reputation
   // registries were verified live there (read-side wired; writes wait on a signer).
+  // 2026-08-13: rhchain flips from beta to LIVE - money moves there now (four real USDG
+  // settlements through our own first-party EIP-3009 facilitator, receipts recorded).
   const live = liveChains()
   assert.deepEqual(live.map((c) => c.id).sort(), ['arc', 'base', 'celo', 'celo-sepolia', 'rhchain', 'rhchain-testnet', 'xlayer'])
+  assert.equal(live.find((c) => c.id === 'rhchain')?.status, 'live')
   assert.equal(live.find((c) => c.id === 'xlayer')?.status, 'live')
   assert.equal(live.find((c) => c.id === 'base')?.status, 'beta')
   assert.equal(live.find((c) => c.id === 'celo')?.status, 'live')
@@ -130,7 +133,7 @@ test('Robinhood Chain carries the values verified against its live RPCs', () => 
   assert.equal(test_.rpcUrls[0], 'https://rpc.testnet.chain.robinhood.com')
 })
 
-test('the Robinhood pair is beta with the canonical registries it was actually verified to carry', () => {
+test('the Robinhood pair carries the canonical registries it was actually verified to carry', () => {
   // Testnet, 2026-08-11: deployed/completed by replaying the canonical
   // Safe-Singleton-Factory calldata (scripts/rh-testnet-deploy-8004.mjs), the SAME
   // addresses as Arc/Celo Sepolia. Mainnet, 2026-08-12: the canonical MAINNET family
@@ -147,7 +150,7 @@ test('the Robinhood pair is beta with the canonical registries it was actually v
 
   const m = getChainById('rhchain')
   assert.ok(m)
-  assert.equal(m.status, 'beta')
+  assert.equal(m.status, 'live')
   assert.equal(m.contracts.identityRegistry, '0x8004a169fb4a3325136eb29fa0ceb6d2e539a432')
   assert.equal(m.contracts.reputationRegistry, '0x8004BAa17C55a88189AE136b182e5fdA19dE9b63')
   // No ValidationRegistry in the mainnet family (mirroring Celo/X Layer): KYA cannot
@@ -155,14 +158,54 @@ test('the Robinhood pair is beta with the canonical registries it was actually v
   assert.equal(m.contracts.validationRegistry, undefined)
 })
 
-test('Robinhood Chain asserts no USDC and no CCTP domain it cannot back up', () => {
-  // Neither is documented for this chain. Inventing either would put a wrong address or a
-  // wrong bridge domain into a payment path.
+test('Robinhood Chain names its settlement token explicitly and STILL asserts no USDC', () => {
+  // The original decision stands and is the point of this test: no canonical Circle USDC
+  // is documented for either Robinhood network, and `contracts.usdc` is the slot every
+  // generic USDC path reads (payUsdc, the ERC-8183 approve, the vault constructor). What
+  // changed on 2026-08-12 is that a REAL settlement token was found on each chain, so the
+  // truth now has somewhere to live: `settlementTokens`, which no escrow or vault path
+  // touches. Neither chain has a documented CCTP domain either.
   for (const id of ['rhchain', 'rhchain-testnet']) {
     const c = getChainById(id)
     assert.equal(c?.contracts.usdc, undefined, id)
     assert.equal(c?.cctpDomain, null, id)
-    assert.deepEqual(c?.stablecoins, [], id)
+  }
+
+  const usdg = getChainById('rhchain')?.settlementTokens?.[0]
+  assert.equal(usdg?.symbol, 'USDG')
+  assert.equal(usdg?.address, '0x5fc5360D0400a0Fd4f2af552ADD042D716F1d168')
+  assert.equal(usdg?.decimals, 6)
+  assert.equal(usdg?.authorization, 'eip3009')
+  // USDG exposes no version(), so the domain version is a PROVEN candidate, not a read.
+  assert.deepEqual(usdg?.domainVersionCandidates, ['1'])
+
+  const bridged = getChainById('rhchain-testnet')?.settlementTokens?.[0]
+  assert.equal(bridged?.symbol, 'USDC.e')
+  assert.equal(bridged?.address, '0x71c6e1c209A4e3d4bd9911B2d53c98023A56C32F')
+  assert.deepEqual(bridged?.domainVersionCandidates, ['2'])
+})
+
+test('every settlement token is well formed and agrees with its chain', () => {
+  // A settlement token is the only place in the registry where a wrong number moves real
+  // money (decimals) or sends it to the wrong contract (address), so the invariants are
+  // asserted for every chain rather than only the ones that have one today.
+  for (const c of CHAINS) {
+    for (const t of c.settlementTokens ?? []) {
+      assert.match(t.address, /^0x[0-9a-fA-F]{40}$/, `${c.id}: bad settlement token address`)
+      assert.ok(t.decimals >= 1 && t.decimals <= 18, `${c.id}: implausible decimals`)
+      assert.ok(t.verified.length > 40, `${c.id}: settlement token needs a provenance note`)
+      assert.ok(c.stablecoins.includes(t.symbol), `${c.id}: ${t.symbol} missing from stablecoins`)
+      // Only a canonical Circle USDC may share the `usdc` slot's identity.
+      if (c.contracts.usdc && t.address.toLowerCase() === c.contracts.usdc.toLowerCase()) {
+        assert.equal(t.symbol, 'USDC', `${c.id}: contracts.usdc must be the USDC entry`)
+      }
+      if (t.authorization === 'eip3009') {
+        assert.ok(
+          (t.domainVersionCandidates ?? []).length > 0,
+          `${c.id}: an eip3009 token needs at least one domain version candidate to prove`,
+        )
+      }
+    }
   }
 })
 

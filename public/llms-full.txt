@@ -34,9 +34,10 @@ a spending policy enforced in places the agent cannot argue with.
 
 ### The passport
 
-Each agent is registered in an ERC-8004 IdentityRegistry deployed on Circle Arc
-testnet at `0x8004B663056A597Dffe9eCcC1965A193B7388713`. Registration produces a
-token id, which is the agent's durable identifier. It can be referenced three
+Each agent is registered in an ERC-8004 IdentityRegistry. On Circle Arc testnet
+that registry is at `0x8004A818BFB912233c491871b3d84c89A494BD9e`; section 8 lists
+the address on every other chain that carries one. Registration produces a token
+id, which is the agent's durable identifier. It can be referenced three
 equivalent ways:
 
 - token id: `#849980`
@@ -312,17 +313,52 @@ https://a-identity.xyz/.well-known/mcp/server-card.json
 
 ## 8. Chains
 
+Ten chains sit in the registry, in three buckets. The bucket a chain is in comes
+from its descriptor, so this list and the running server cannot disagree.
+
 Live today:
 
-- **Circle Arc testnet** (`eip155:5042002`). ERC-8004 identity, ERC-8183 escrow,
-  the spend-policy vault, Gateway nanopayments. Gas is USDC.
-- **OKX X Layer mainnet** (`eip155:196`). The Trust Oracle sells here as agent
-  #6271 and settles in real USD₮0.
+- **Circle Arc testnet** (`eip155:5042002`). ERC-8004 identity
+  `0x8004A818BFB912233c491871b3d84c89A494BD9e`, reputation
+  `0x8004B663056A597Dffe9eCcC1965A193B7388713`, validation
+  `0x8004Cb1BF31DAf7788923b405b754f57acEB4272`, plus ERC-8183 escrow, the
+  spend-policy vault and Gateway nanopayments. Gas is USDC.
+- **OKX X Layer mainnet** (`eip155:196`). ERC-8004 identity
+  `0x8004a169fb4a3325136eb29fa0ceb6d2e539a432`, OKX.AI's own registry. The Trust
+  Oracle sells here as agent #6271 and settles in real USD₮0.
+- **Celo mainnet** (`eip155:42220`). ERC-8004 identity
+  `0x8004A169FB4a3325136EB29fA0ceB6D2e539a432` and reputation
+  `0x8004BAa17C55a88189AE136b182e5fdA19dE9b63`; our agent is #9759. x402 settles
+  in native USDC through our own first-party facilitator. Celo has no
+  ValidationRegistry, so KYA cannot be anchored on-chain there.
 
-Adapted but not yet deployed: Base, Arbitrum, Avalanche, Stellar,
-Robinhood Chain. Chains are added through an adapter with a registry entry, not
-by hardcoding, and a repository test fails the build if a chain id, RPC or
-explorer URL is hardcoded outside the registry.
+Beta, wired and readable:
+
+- **Robinhood Chain mainnet** (`eip155:4663`). ERC-8004 identity
+  `0x8004a169fb4a3325136eb29fa0ceb6d2e539a432` and reputation
+  `0x8004BAa17C55a88189AE136b182e5fdA19dE9b63`. We did not deploy these; the
+  ERC-8004 authors did. What is ours is agent **#0**, the registry's first mint.
+  Reads are wired. No canonical stablecoin is published for this chain, so no
+  payment rail is claimed here.
+- **Robinhood Chain testnet** (`eip155:46630`). The full canonical set: identity
+  `0x8004A818BFB912233c491871b3d84c89A494BD9e`, reputation
+  `0x8004B663056A597Dffe9eCcC1965A193B7388713`, validation
+  `0x8004Cb1BF31DAf7788923b405b754f57acEB4272`. Agent #0 is ours here too.
+- **Celo Sepolia** (`eip155:11142220`). The same identity and reputation addresses
+  as Arc, plus testnet USDC and the Celo Sepolia x402 facilitator.
+- **Base mainnet** (`eip155:8453`). Native Circle USDC; the proven work here is the
+  gasless Circle Gateway hop that mints on Base Sepolia. No ERC-8004 registry is
+  deployed on Base, so no identity read is offered there.
+
+Planned, descriptor only:
+
+- **Stellar testnet** (`stellar:testnet`), **Avalanche C-Chain** (`eip155:43114`)
+  and **Arbitrum One** (`eip155:42161`) carry public metadata only: CAIP-2, chain
+  id, canonical USDC, CCTP domain. Nothing is deployed and nothing is wired.
+
+Chains are added through an adapter with a registry entry, not by hardcoding, and
+a repository test fails the build if a chain id, RPC or explorer URL is hardcoded
+outside the registry.
 
 Full list with live status: `get_chain_status` over MCP, or
 https://a-identity.xyz/.well-known/ai-agent-manifest.json

@@ -85,7 +85,7 @@
           "identity": "ERC-8004",
           "erc8004Native": true,
           "note": "Identity + Reputation registries LIVE (same canonical addresses as X Layer/Celo); agent #0, the registry's first mint, is ours (2026-08-12). No ValidationRegistry in the mainnet family yet.",
-          "status": "beta"
+          "status": "live"
         },
         {
           "id": "celo",
@@ -177,9 +177,9 @@
           "id": "rhchain",
           "name": "Robinhood Chain",
           "chainId": 4663,
-          "role": "Robinhood's own L2 for tokenized real-world assets: canonical ERC-8004 identity + reputation live, agent #0 minted; payments wait on a published settlement token.",
+          "role": "Robinhood's own L2 for tokenized real-world assets: canonical ERC-8004 identity + reputation live, agent #0 minted, and paid trust calls settling in USDG through our own first-party x402 facilitator.",
           "x402": true,
-          "status": "beta"
+          "status": "live"
         },
         {
           "id": "celo",

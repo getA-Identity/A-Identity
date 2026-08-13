@@ -250,7 +250,7 @@ export const CHAINS: ChainDescriptor[] = [
       // The canonical ERC-8004 set, SAME addresses as Arc/Celo Sepolia. Identity and
       // reputation (proxies + impls) were already on this chain; the missing
       // ValidationRegistry implementation was deployed 2026-08-11 by replaying the
-      // canonical Safe-Singleton-Factory calldata (scripts/rh-testnet-deploy-8004.mjs).
+      // canonical Safe-Singleton-Factory calldata (mcp/scripts/rh-testnet-deploy-8004.mjs).
       // Verified with eth_getCode plus REAL reads on each proxy: name()/symbol()
       // answered AgentIdentity/AGENT, getClients(1) and getAgentValidations(1)
       // returned clean empties. Still NO usdc on purpose: no canonical stablecoin is
@@ -261,7 +261,18 @@ export const CHAINS: ChainDescriptor[] = [
       create2Factory: CREATE2_FACTORY,
     },
     confirmations: 3, // same Orbit stack as Arbitrum, so the same soft-finality assumption
-    stablecoins: [],
+    stablecoins: ['USDC.e'],
+    settlementTokens: [
+      {
+        symbol: 'USDC.e',
+        address: '0x71c6e1c209A4e3d4bd9911B2d53c98023A56C32F',
+        decimals: 6,
+        authorization: 'eip3009',
+        domainVersionCandidates: ['2'],
+        verified:
+          'The canonical-bridge representation of Circle\'s Ethereum Sepolia USDC, derived live from this chain\'s own L2 gateway router (calculateL2TokenAddress) rather than typed in. Read live 2026-08-12: a Circle FiatTokenV2 reporting name() "USDC", symbol() "USDC.e", version() "2", decimals() 6, DOMAIN_SEPARATOR 0x192d8b03ad93f320f0da829eee0e1caf8b61842c2a226fe9977c0f209e09f712, which the four fields reproduce exactly. Kept OUT of contracts.usdc because it is a bridged twin, not canonical Circle USDC, and that slot is what every generic USDC path reads.',
+      },
+    ],
     signerEnvVar: 'RHCHAIN_TESTNET_SIGNER_KEY',
     rpcEnvVar: 'RHCHAIN_TESTNET_RPC_URL',
     identity: {
@@ -269,7 +280,10 @@ export const CHAINS: ChainDescriptor[] = [
       erc8004Native: true,
       note: 'Identity + Reputation + Validation registries LIVE at the canonical cross-chain addresses.',
     },
-    payment: { x402: true, note: 'x402 needs a settlement token first: no canonical USDC is documented on this chain yet.' },
+    payment: {
+      x402: true,
+      note: 'Rehearsal of the mainnet USDG rail on the same EIP-3009 code path, settling in bridged USDC.e. No canonical USDC exists here, so contracts.usdc stays empty.',
+    },
   },
   {
     caip2: 'eip155:4663',
@@ -277,10 +291,14 @@ export const CHAINS: ChainDescriptor[] = [
     name: 'Robinhood Chain',
     shortName: 'RH Chain',
     color: '#0F9D30',
-    role: 'Robinhood\'s own L2 for tokenized real-world assets: canonical ERC-8004 identity + reputation live, agent #0 minted; payments wait on a published settlement token.',
+    role: 'Robinhood\'s own L2 for tokenized real-world assets: canonical ERC-8004 identity + reputation live, agent #0 minted, and paid trust calls settling in USDG through our own first-party x402 facilitator.',
     ecosystem: 'evm',
+    // LIVE since 2026-08-13: identity is minted here AND money moves here. Four real
+    // settlements, one per sellable tool, each proven by a receipt plus a matching USDG
+    // Transfer log (first: 0xbb41c7aa..., block 35439881). The buyer paid no gas; we
+    // broadcast. That is the same bar X Layer and Celo had to clear.
+    status: 'live',
     testnet: false,
-    status: 'beta',
     evmChainId: 4663,
     cctpDomain: null,
     nativeCurrency: { name: 'Ether', symbol: 'ETH', decimals: 18 },
@@ -303,7 +321,21 @@ export const CHAINS: ChainDescriptor[] = [
       create2Factory: CREATE2_FACTORY,
     },
     confirmations: 3,
-    stablecoins: [],
+    stablecoins: ['USDG'],
+    settlementTokens: [
+      {
+        symbol: 'USDG',
+        address: '0x5fc5360D0400a0Fd4f2af552ADD042D716F1d168',
+        decimals: 6,
+        authorization: 'eip3009',
+        // USDG exposes neither version() nor eip712Domain() (both revert), so the domain
+        // version cannot be read from the chain. '1' is the candidate that reproduces the
+        // live DOMAIN_SEPARATOR; it is proven at runtime, never trusted from here.
+        domainVersionCandidates: ['1'],
+        verified:
+          'Paxos Global Dollar at the address Paxos documents for chain 4663 (docs.paxos.com/guides/stablecoin/usdg/mainnet); Robinhood is a Global Dollar Network founding member and uses USDG in its Earn product. Read live 2026-08-12: name() "Global Dollar", decimals() 6, supply ~353M, DOMAIN_SEPARATOR 0x7a3d7400b27830f4f91c2c16a082486d67c1befecaec2f53b33f1f35d5b62036. EIP-3009 confirmed by selector probe: transferWithAuthorization (0xe3ee160e) reverts with a signature-validation error while an unknown selector reverts 0x800ab12c. EIP-2612 permit is present too. NOT placed in contracts.usdc: it is not Circle USDC, and that slot is what every generic USDC path reads.',
+      },
+    ],
     signerEnvVar: 'RHCHAIN_SIGNER_KEY',
     rpcEnvVar: 'RHCHAIN_RPC_URL',
     identity: {
@@ -311,7 +343,10 @@ export const CHAINS: ChainDescriptor[] = [
       erc8004Native: true,
       note: 'Identity + Reputation registries LIVE (same canonical addresses as X Layer/Celo); agent #0, the registry\'s first mint, is ours (2026-08-12). No ValidationRegistry in the mainnet family yet.',
     },
-    payment: { x402: true, note: 'x402 needs a settlement token first: no canonical USDC is documented on this chain yet.' },
+    payment: {
+      x402: true,
+      note: 'x402 settling in USDG (Paxos Global Dollar) through our own first-party EIP-3009 facilitator: the buyer signs, we broadcast and pay the gas. No third-party facilitator exists for this chain.',
+    },
   },
   {
     caip2: 'eip155:42220',
@@ -396,6 +431,30 @@ export const CHAINS: ChainDescriptor[] = [
 ]
 
 // ── lookups (derive everything from the registry) ────────────────────────────────
+
+/**
+ * Every chain id, in registry order. The ONE list a schema, union or enum may enumerate.
+ *
+ * It exists because three of them had already drifted: `resolve_agent`'s zod enum offered
+ * a chain that is not in the registry and rejected six that are, and `data.ts`'s
+ * `ChainName` union did the same. Anything that needs "the set of chains" imports this,
+ * and `chains/surface-truth.test.ts` fails the build if a copy reappears.
+ *
+ * Flipping a chain's STATUS is deliberately not automated: it should touch this file and
+ * exactly two test expectation lists (registry.test.ts and frontend-sync.test.ts), so a
+ * human confirms the promotion. Any THIRD file that needs editing is restating the
+ * registry and belongs behind one of the drift tests instead.
+ */
+export const CHAIN_IDS = CHAINS.map((c) => c.id) as [string, ...string[]]
+
+/**
+ * Chains that carry a known ERC-8004 IdentityRegistry, i.e. the ones identity reads
+ * actually dial. Extracted from the inline filter that used to live in erc8004.ts so a
+ * test can assert the provider covers exactly this set instead of trusting a comment.
+ */
+export function identityChains(): ChainDescriptor[] {
+  return CHAINS.filter((c) => c.ecosystem === 'evm' && c.evmChainId !== null && c.contracts.identityRegistry)
+}
 
 const BY_CAIP2 = new Map(CHAINS.map((c) => [c.caip2, c]))
 const BY_ID = new Map(CHAINS.map((c) => [c.id, c]))

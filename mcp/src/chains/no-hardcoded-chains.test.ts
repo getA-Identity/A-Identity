@@ -60,6 +60,15 @@ const FORBIDDEN: { pattern: RegExp; what: string }[] = [
   { pattern: /rpc(\.[a-z]+)?\.testnet\.arc\.network/g, what: "an Arc RPC host" },
   { pattern: /testnet\.arcscan\.app/g, what: "Arc's explorer host" },
   { pattern: /0x3600000000000000000000000000000000000000/g, what: "Arc's USDC address" },
+  // Robinhood Chain arrived with a settlement rail, which is the moment a second chain's
+  // constants start leaking into payment code. The word boundaries matter: 46630 contains
+  // 4663, so a naive pattern would report the testnet id as a mainnet violation.
+  { pattern: /(?<![\w.])4663(?![\w.])/g, what: "Robinhood Chain's numeric chain id" },
+  { pattern: /(?<![\w.])46630(?![\w.])/g, what: "Robinhood Chain Testnet's numeric chain id" },
+  { pattern: /(rpc|explorer)\.(mainnet|testnet)\.chain\.robinhood\.com/g, what: 'a Robinhood Chain RPC or explorer host' },
+  { pattern: /robinhoodchain\.blockscout\.com/g, what: "Robinhood Chain's explorer host" },
+  { pattern: /0x5fc5360D0400a0Fd4f2af552ADD042D716F1d168/gi, what: "the USDG token address" },
+  { pattern: /0x71c6e1c209A4e3d4bd9911B2d53c98023A56C32F/gi, what: "the bridged USDC.e token address" },
 ]
 
 test('no module outside chains/ hardcodes an Arc chain constant', () => {

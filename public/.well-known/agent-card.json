@@ -205,6 +205,24 @@
       "caip": "eip155:196:0x8004a169fb4a3325136eb29fa0ceb6d2e539a432/6271",
       "registry": "0x8004a169fb4a3325136eb29fa0ceb6d2e539a432",
       "note": "OKX.AI ERC-8004 IdentityRegistry on X Layer mainnet; the live paid Trust Oracle listing."
+    },
+    {
+      "chain": "eip155:4663",
+      "agentId": "0",
+      "caip": "eip155:4663:0x8004a169fb4a3325136eb29fa0ceb6d2e539a432/0",
+      "registry": "0x8004a169fb4a3325136eb29fa0ceb6d2e539a432",
+      "owner": "0xd305607510E0Db2c95807173c7A05BEA53c1ed36",
+      "tx": "0x602ce85ad044836b39918311a3031dcd689e4be0d23aed9ed0ac9227d46ec79e",
+      "explorer": "https://robinhoodchain.blockscout.com/tx/0x602ce85ad044836b39918311a3031dcd689e4be0d23aed9ed0ac9227d46ec79e",
+      "note": "ERC-8004 IdentityRegistry on Robinhood Chain mainnet, deployed by the ERC-8004 authors rather than by us. Token #0 is the registry's first mint and it is ours; its tokenURI points back at this card."
+    },
+    {
+      "chain": "eip155:42220",
+      "agentId": "9759",
+      "caip": "eip155:42220:0x8004A169FB4a3325136EB29fA0ceB6D2e539a432/9759",
+      "registry": "0x8004A169FB4a3325136EB29fA0ceB6D2e539a432",
+      "explorer": "https://celoscan.io/nft/0x8004A169FB4a3325136EB29fA0ceB6D2e539a432/9759",
+      "note": "ERC-8004 IdentityRegistry on Celo mainnet; the identity behind the first-party Celo x402 rail."
     }
   ]
 }
