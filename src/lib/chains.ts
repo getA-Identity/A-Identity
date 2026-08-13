@@ -50,6 +50,8 @@ export type Chain = {
   registries: { identity?: string; reputation?: string; validation?: string }
   /** True when a live identity read works on this chain today. */
   identityLive: boolean
+  /** Symbol our x402 rail settles in here, or null when we run no rail on this chain. */
+  settlementSymbol: string | null
 }
 
 export const CHAINS: readonly Chain[] = [
@@ -89,7 +91,8 @@ export const CHAINS: readonly Chain[] = [
       "reputation": "0x8004B663056A597Dffe9eCcC1965A193B7388713",
       "validation": "0x8004Cb1BF31DAf7788923b405b754f57acEB4272"
     },
-    "identityLive": true
+    "identityLive": true,
+    "settlementSymbol": null
   },
   {
     "id": "xlayer",
@@ -125,7 +128,8 @@ export const CHAINS: readonly Chain[] = [
     "registries": {
       "identity": "0x8004a169fb4a3325136eb29fa0ceb6d2e539a432"
     },
-    "identityLive": true
+    "identityLive": true,
+    "settlementSymbol": null
   },
   {
     "id": "arbitrum",
@@ -162,7 +166,8 @@ export const CHAINS: readonly Chain[] = [
       "identity": "0x8004a169fb4a3325136eb29fa0ceb6d2e539a432",
       "reputation": "0x8004BAa17C55a88189AE136b182e5fdA19dE9b63"
     },
-    "identityLive": true
+    "identityLive": true,
+    "settlementSymbol": "USDC"
   },
   {
     "id": "rhchain",
@@ -198,7 +203,8 @@ export const CHAINS: readonly Chain[] = [
       "identity": "0x8004a169fb4a3325136eb29fa0ceb6d2e539a432",
       "reputation": "0x8004BAa17C55a88189AE136b182e5fdA19dE9b63"
     },
-    "identityLive": true
+    "identityLive": true,
+    "settlementSymbol": "USDG"
   },
   {
     "id": "celo",
@@ -236,7 +242,8 @@ export const CHAINS: readonly Chain[] = [
       "identity": "0x8004A169FB4a3325136EB29fA0ceB6D2e539a432",
       "reputation": "0x8004BAa17C55a88189AE136b182e5fdA19dE9b63"
     },
-    "identityLive": true
+    "identityLive": true,
+    "settlementSymbol": null
   },
   {
     "id": "base",
@@ -271,7 +278,8 @@ export const CHAINS: readonly Chain[] = [
     "erc8004Native": true,
     "x402": true,
     "registries": {},
-    "identityLive": false
+    "identityLive": false,
+    "settlementSymbol": null
   },
   {
     "id": "rhchain-testnet",
@@ -308,7 +316,8 @@ export const CHAINS: readonly Chain[] = [
       "reputation": "0x8004B663056A597Dffe9eCcC1965A193B7388713",
       "validation": "0x8004Cb1BF31DAf7788923b405b754f57acEB4272"
     },
-    "identityLive": true
+    "identityLive": true,
+    "settlementSymbol": "USDC.e"
   },
   {
     "id": "celo-sepolia",
@@ -344,7 +353,8 @@ export const CHAINS: readonly Chain[] = [
       "identity": "0x8004A818BFB912233c491871b3d84c89A494BD9e",
       "reputation": "0x8004B663056A597Dffe9eCcC1965A193B7388713"
     },
-    "identityLive": true
+    "identityLive": true,
+    "settlementSymbol": null
   },
   {
     "id": "stellar",
@@ -378,7 +388,8 @@ export const CHAINS: readonly Chain[] = [
     "erc8004Native": false,
     "x402": true,
     "registries": {},
-    "identityLive": false
+    "identityLive": false,
+    "settlementSymbol": null
   },
   {
     "id": "avalanche",
@@ -412,7 +423,8 @@ export const CHAINS: readonly Chain[] = [
     "erc8004Native": true,
     "x402": true,
     "registries": {},
-    "identityLive": false
+    "identityLive": false,
+    "settlementSymbol": null
   },
 ] as const
 

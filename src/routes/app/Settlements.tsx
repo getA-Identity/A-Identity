@@ -390,7 +390,10 @@ export default function Settlements() {
             </p>
           </div>
 
-          {/* Where these settle. One live rail today; the chips stay honest about it. */}
+          {/* Where these settle. An agent's own spend settles through its Arc vault; the
+              trust tools we SELL settle elsewhere (Robinhood Chain, Arbitrum One, Celo,
+              X Layer) and are a different ledger entirely. The chip stays honest about
+              which of the two this page is showing. */}
           <div className="mt-4 flex flex-wrap items-center gap-1.5">
             {([
               ['all', 'All chains', <Layers key="l" size={12} />],
@@ -411,7 +414,7 @@ export default function Settlements() {
                 {label} ({items.length})
               </button>
             ))}
-            <span className="text-[11px] font-medium text-foreground/50">every settlement is on Arc today</span>
+            <span className="text-[11px] font-medium text-foreground/50">an agent's own spend settles on Arc; the paid trust tools settle on their own rails</span>
           </div>
 
           {/* List */}

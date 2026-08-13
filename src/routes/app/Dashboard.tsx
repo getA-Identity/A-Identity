@@ -49,9 +49,13 @@ function registryLine(c: Chain): string {
     c.registries.reputation && 'reputation',
     c.registries.validation && 'validation',
   ].filter((p): p is string => Boolean(p))
-  if (parts.length === 0) return 'no identity registry deployed yet'
+  // Money is the more interesting fact where it is true, so it leads. Both halves are
+  // derived from the registry: a chain says what it carries, this line does not guess.
+  const settles = c.settlementSymbol ? `settles in ${c.settlementSymbol}` : ''
+  if (parts.length === 0) return settles || 'no identity registry deployed yet'
   const list = parts.length === 1 ? parts[0] : `${parts.slice(0, -1).join(', ')} and ${parts[parts.length - 1]}`
-  return `${list} registr${parts.length === 1 ? 'y' : 'ies'} live`
+  const registries = `${list} registr${parts.length === 1 ? 'y' : 'ies'} live`
+  return settles ? `${registries}, ${settles}` : registries
 }
 
 export default function Dashboard() {

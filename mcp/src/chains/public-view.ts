@@ -64,6 +64,10 @@ export type PublicChain = {
   registries: { identity?: string; reputation?: string; validation?: string }
   /** True when a live identity read works on this chain today. Derived, never restated. */
   identityLive: boolean
+  /** Symbol of the token our own x402 rail settles in on this chain, or null when we run
+   *  no rail here. Derived from the descriptor's settlement tokens, so a surface can say
+   *  which chains actually take money without keeping its own list. */
+  settlementSymbol: string | null
 }
 
 /** Project one descriptor into its public shape. */
@@ -99,6 +103,7 @@ export function toPublicChain(c: ChainDescriptor): PublicChain {
       ...(c.contracts.validationRegistry ? { validation: c.contracts.validationRegistry } : {}),
     },
     identityLive: Boolean(c.contracts.identityRegistry),
+    settlementSymbol: (c.settlementTokens ?? []).find((t) => t.authorization === 'eip3009')?.symbol ?? null,
   }
 }
 
@@ -178,6 +183,8 @@ export type Chain = {
   registries: { identity?: string; reputation?: string; validation?: string }
   /** True when a live identity read works on this chain today. */
   identityLive: boolean
+  /** Symbol our x402 rail settles in here, or null when we run no rail on this chain. */
+  settlementSymbol: string | null
 }
 
 export const CHAINS: readonly Chain[] = [

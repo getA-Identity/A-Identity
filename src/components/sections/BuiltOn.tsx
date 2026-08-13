@@ -192,8 +192,20 @@ const RAILS: Rail[] = [
     tileBg: '#CCFF00',
     color: '#CCFF00',
     role: 'Where retail agents will trade.',
-    detail: 'Agent #0 on the mainnet ERC-8004 registry is this product: the canonical identity and reputation registries are live and both read and written today, with the full set plus the spend vault rehearsed on testnet. Payments wait on a published settlement token.',
+    detail: 'Agent #0 on the mainnet ERC-8004 registry is this product, and paid calls settle here in USDG through an x402 facilitator we run ourselves, because no published one serves this chain. The buyer signs and pays no gas; we broadcast.',
     chain: 'rhchain',
+  },
+  {
+    id: 'arbitrum',
+    name: 'Arbitrum One',
+    logo: '/chains/arbitrum.svg',
+    logoW: 512,
+    logoH: 512,
+    tileBg: '#ffffff',
+    color: '#28A0F0',
+    role: 'Where the rail can be compared.',
+    detail: 'The same engine, settling in native Circle USDC. Other facilitators already serve this chain, which is the point: here you can check our receipts against a baseline. The fee is lower than on Robinhood Chain because a settlement measurably costs less.',
+    chain: 'arbitrum',
   },
 ]
 

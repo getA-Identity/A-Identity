@@ -90,7 +90,13 @@ type CeloProof = {
 
 /** GET /api/facilitator/proof: our own EIP-3009 rail on Robinhood Chain. Same shape as
  *  the Celo proof plus the asset, because on this rail we know exactly what moved. */
-type FacilitatorProof = CeloProof & { assetSymbol?: string | null; reverted?: number; ambiguous?: number }
+type FacilitatorProof = CeloProof & {
+  assetSymbol?: string | null
+  reverted?: number
+  ambiguous?: number
+  /** Per-chain breakdown; the rail sells on more than one chain. */
+  byNetwork?: Record<string, { count: number; usd: number; assetSymbol: string }>
+}
 
 /** The ASP's public proof document, served from its own origin with open CORS. */
 type AspProof = {
@@ -253,8 +259,15 @@ export default function Stats() {
   const xlayerUsd = typeof rev?.totalUsd === 'number' ? rev.totalUsd : null
   const celoCount = celo ? celo.totalSettlements : null
   const celoUsd = celo ? celo.totalUsd : null
-  const rhCount = rh ? rh.totalSettlements : null
-  const rhUsd = rh ? rh.totalUsd : null
+  // Split by chain rather than shown as one total: the rail settles in a different token
+  // on each, and summing them would be a number about nothing.
+  const net = (caip2: string) => rh?.byNetwork?.[caip2] ?? null
+  const rhNet = net('eip155:4663')
+  const arbNet = net('eip155:42161')
+  const rhCount = rh ? (rhNet?.count ?? 0) : null
+  const rhUsd = rh ? (rhNet?.usd ?? 0) : null
+  const arbCount = rh ? (arbNet?.count ?? 0) : null
+  const arbUsd = rh ? (arbNet?.usd ?? 0) : null
 
   // The headline is a sum of two independent live reads, so it only exists once BOTH have
   // answered. A "total" that silently drops a rail because its fetch was slow is a lie
@@ -356,7 +369,7 @@ export default function Stats() {
             </div>
           </motion.div>
 
-          {/* The three rails, given equal weight, each with the breakdown behind its total. */}
+          {/* The four rails, given equal weight, each with the breakdown behind its total. */}
           <div className="mt-8 grid gap-5 lg:grid-cols-3">
             <RailCard
               index={0}
@@ -431,6 +444,27 @@ export default function Stats() {
               sourceHref="https://a-identity.xyz/api/facilitator/proof"
               to="/proof/robinhood"
               linkLabel="See the Robinhood Chain proof"
+            />
+            <RailCard
+              index={3}
+              chain="arbitrum"
+              name="Arbitrum One"
+              network="eip155:42161"
+              settlements={arbCount}
+              volumeUsd={arbUsd}
+              tools={[]}
+              caveat={
+                <>
+                  The same facilitator and the same engine, settling in native Circle USDC. Other
+                  facilitators already serve this chain, which is the point: here our receipts can be
+                  compared against a baseline. Every settlement so far is internal, from our own buyer
+                  wallet, and labelled as such.
+                </>
+              }
+              source="GET /api/facilitator/proof"
+              sourceHref="https://a-identity.xyz/api/facilitator/proof"
+              to="/proof/arbitrum"
+              linkLabel="See the Arbitrum One proof"
             />
           </div>
         </SectionShell>

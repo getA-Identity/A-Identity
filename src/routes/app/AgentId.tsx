@@ -10,6 +10,7 @@ import {
 import { useAuth } from '../../store/auth'
 import { useAgentReputation, useMcpHealth, useResolveAgent } from '../../hooks/useMcp'
 import { pickPrimaryAgent } from '../../lib/pickAgent'
+import { CHAIN_BY_ID } from '../../lib/chains'
 import { fetchPlatformAgents, subscribePlatformAgents } from '../../lib/platformAgents'
 import { REPUTATION_LEVELS, levelIndexOf } from '../../lib/reputation-bands'
 import { apiFetch } from '../../lib/api'
@@ -148,7 +149,10 @@ export default function AgentId() {
   const registeredLabel = realAgent?.createdAt
     ? new Date(realAgent.createdAt).toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' })
     : liveAgent?.registeredAt ?? '-'
-  const networkLabel = 'Arc testnet'
+  // Platform agents are minted on Arc, but the label is derived rather than typed: the
+  // registry is what knows a chain's name, and a hand-typed one is how a page ends up
+  // calling some other chain's agent an Arc agent.
+  const networkLabel = `${CHAIN_BY_ID.arc.shortName} ${CHAIN_BY_ID.arc.testnet ? 'testnet' : 'mainnet'}`
   // Honest progress: only a REAL agent advances the stepper. The illustrative sample
   // (shown when the account has no agent yet) sits at stage 0: the user hasn't
   // registered anything, so nothing is "done".
