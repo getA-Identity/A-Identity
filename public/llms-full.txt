@@ -377,7 +377,7 @@ Live today:
   ERC-8004 authors did. What is ours is agent **#0**, the registry's first mint.
   Payments settle here in USDG (`0x5fc5360D0400a0Fd4f2af552ADD042D716F1d168`,
   Paxos Global Dollar) through our own first-party x402 facilitator, because the
-  chain had none: the buyer signs an EIP-3009 authorization and pays no gas, we
+  chain has no published one: the buyer signs an EIP-3009 authorization and pays no gas, we
   broadcast it, and nothing counts as settled without a receipt carrying the
   matching Transfer log. No canonical Circle USDC is published for this chain, so
   the registry asserts none.

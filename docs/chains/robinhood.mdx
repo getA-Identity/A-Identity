@@ -1,6 +1,6 @@
 ---
 title: "Build on Robinhood Chain"
-description: "Robinhood Chain network config for both networks, the canonical ERC-8004 registries already deployed there, and the first x402 facilitator the chain has."
+description: "Robinhood Chain network config for both networks, the canonical ERC-8004 registries already deployed there, and the x402 facilitator we run for it."
 ---
 
 Robinhood Chain is Robinhood's own Arbitrum Orbit L2, built for tokenized real-world
@@ -116,9 +116,14 @@ recorded; we simply do not claim an anchor that does not exist.
 
 ## The x402 facilitator
 
-An x402 facilitator is the service a seller calls to verify a payment and settle it. This
-chain had none from anyone, which meant a seller here could not accept a gasless x402
-payment at all. We run one, and it is open:
+An x402 facilitator is the service a seller calls to verify a payment and settle it. No
+published facilitator serves this chain, so a seller here has nothing to point an x402
+client at. We run one, and it is open:
+
+To be precise about what that does and does not claim: gasless EIP-3009 relaying on USDG
+predates us on this chain by weeks, and an x402 settlement is indistinguishable on-chain
+from any other relayed authorization. What we could not find, and therefore built, is a
+facilitator serving the x402 HTTP protocol here.
 
 | Endpoint | Access |
 | --- | --- |

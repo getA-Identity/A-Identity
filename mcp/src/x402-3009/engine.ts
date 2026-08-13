@@ -10,7 +10,8 @@
  *   - celo-x402.ts delegates to a third-party facilitator, so the buyer pays no gas, but
  *     "settled" is that facilitator's word: nothing reads the chain to confirm it.
  *
- * Robinhood Chain has no third-party facilitator at all, so we became one. The buyer
+ * Robinhood Chain publishes no facilitator we could point a seller at, so we run our
+ * own rather than waiting for one. The buyer
  * signs a transferWithAuthorization (no gas, no broadcast), we submit it from our own
  * signer, and we only call it settled when the receipt succeeded AND that receipt
  * contains a Transfer log of the right value, on the right asset, to the right payee.

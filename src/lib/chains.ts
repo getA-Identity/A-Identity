@@ -146,7 +146,7 @@ export const CHAINS: readonly Chain[] = [
     "protocols": {
       "payment": {
         "x402": true,
-        "note": "x402 settling in USDG (Paxos Global Dollar) through our own first-party EIP-3009 facilitator: the buyer signs, we broadcast and pay the gas. No third-party facilitator exists for this chain."
+        "note": "x402 settling in USDG (Paxos Global Dollar) through our own first-party EIP-3009 facilitator: the buyer signs, we broadcast and pay the gas. We run it because no published facilitator serves this chain, not because nobody else relays here."
       },
       "identity": {
         "standard": "ERC-8004",
@@ -227,7 +227,7 @@ export const CHAINS: readonly Chain[] = [
       "identity": {
         "standard": "ERC-8004",
         "erc8004Native": true,
-        "note": "ERC-8004 registry to be deployed."
+        "note": "Canonical ERC-8004 identity + reputation registries are live here; we hold no agent on them yet and no rail of ours is wired."
       }
     },
     "identity": "ERC-8004",
@@ -368,7 +368,7 @@ export const CHAINS: readonly Chain[] = [
       "identity": {
         "standard": "ERC-8004",
         "erc8004Native": true,
-        "note": "ERC-8004 registry to be deployed."
+        "note": "Canonical ERC-8004 identity + reputation registries are live here; we hold no agent on them yet and no rail of ours is wired."
       }
     },
     "identity": "ERC-8004",
@@ -402,7 +402,7 @@ export const CHAINS: readonly Chain[] = [
       "identity": {
         "standard": "ERC-8004",
         "erc8004Native": true,
-        "note": "ERC-8004 registry to be deployed."
+        "note": "Canonical ERC-8004 identity + reputation registries are live here; we hold no agent on them yet and no rail of ours is wired."
       }
     },
     "identity": "ERC-8004",

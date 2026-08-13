@@ -169,7 +169,14 @@ export const CHAINS: ChainDescriptor[] = [
     stablecoins: ['USDC', 'USDT', 'PYUSD'],
     signerEnvVar: 'BASE_SIGNER_KEY',
     rpcEnvVar: 'BASE_RPC_URL',
-    identity: { standard: 'ERC-8004', erc8004Native: true, note: 'ERC-8004 registry to be deployed.' },
+    identity: {
+      standard: 'ERC-8004',
+      erc8004Native: true,
+      // Verified 2026-08-13 with eth_getCode on three independent RPCs: the canonical
+      // identity and reputation registries ARE already live here, deployed by the ERC-8004
+      // authors. What is missing is ours, not theirs, so the note says which.
+      note: 'Canonical ERC-8004 identity + reputation registries are live here; we hold no agent on them yet and no rail of ours is wired.',
+    },
     payment: { x402: true, note: 'x402 reference rail (Coinbase).' },
   },
   {
@@ -196,7 +203,14 @@ export const CHAINS: ChainDescriptor[] = [
     stablecoins: ['USDC', 'USDT'],
     signerEnvVar: 'AVAX_SIGNER_KEY',
     rpcEnvVar: 'AVAX_RPC_URL',
-    identity: { standard: 'ERC-8004', erc8004Native: true, note: 'ERC-8004 registry to be deployed.' },
+    identity: {
+      standard: 'ERC-8004',
+      erc8004Native: true,
+      // Verified 2026-08-13 with eth_getCode on three independent RPCs: the canonical
+      // identity and reputation registries ARE already live here, deployed by the ERC-8004
+      // authors. What is missing is ours, not theirs, so the note says which.
+      note: 'Canonical ERC-8004 identity + reputation registries are live here; we hold no agent on them yet and no rail of ours is wired.',
+    },
     payment: { x402: true, note: 'x402 over USDC on Avalanche.' },
   },
   {
@@ -223,7 +237,14 @@ export const CHAINS: ChainDescriptor[] = [
     stablecoins: ['USDC', 'USDT'],
     signerEnvVar: 'ARB_SIGNER_KEY',
     rpcEnvVar: 'ARB_RPC_URL',
-    identity: { standard: 'ERC-8004', erc8004Native: true, note: 'ERC-8004 registry to be deployed.' },
+    identity: {
+      standard: 'ERC-8004',
+      erc8004Native: true,
+      // Verified 2026-08-13 with eth_getCode on three independent RPCs: the canonical
+      // identity and reputation registries ARE already live here, deployed by the ERC-8004
+      // authors. What is missing is ours, not theirs, so the note says which.
+      note: 'Canonical ERC-8004 identity + reputation registries are live here; we hold no agent on them yet and no rail of ours is wired.',
+    },
     payment: { x402: true, note: 'x402 over USDC on Arbitrum One.' },
   },
   {
@@ -345,7 +366,7 @@ export const CHAINS: ChainDescriptor[] = [
     },
     payment: {
       x402: true,
-      note: 'x402 settling in USDG (Paxos Global Dollar) through our own first-party EIP-3009 facilitator: the buyer signs, we broadcast and pay the gas. No third-party facilitator exists for this chain.',
+      note: 'x402 settling in USDG (Paxos Global Dollar) through our own first-party EIP-3009 facilitator: the buyer signs, we broadcast and pay the gas. We run it because no published facilitator serves this chain, not because nobody else relays here.',
     },
   },
   {
