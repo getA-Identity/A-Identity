@@ -155,3 +155,23 @@ test('the adapter constructs for a planned EVM chain (Base)', () => {
   const adapter = createEvmAdapter(base)
   assert.equal(adapter.chain.id, 'base')
 })
+
+test('a signer key is trimmed, and an unusable one is a clean no-op rather than a throw', async () => {
+  // A key pasted into a hosting dashboard arrives with a trailing newline often enough
+  // that this is the difference between a working rail and a 502 quoting viem's
+  // "invalid private key" at someone who cannot act on it. That exact failure reached
+  // production once. Garbage still yields null, which every write path already reports as
+  // a labeled "no signer" rather than a crash.
+  const { evmWalletClientFromKey } = await import('./client.js')
+  const chain = getChainById('rhchain')!
+  const key = '0x59c6995e998f97a5a0044966f0945389dc9e86dae88c7a8412f4603b6b78690d'
+  const expected = '0x70997970C51812dc3A010C7d01b50e0d17dc79C8'
+
+  assert.equal((await evmWalletClientFromKey(chain, key))?.account.address, expected)
+  assert.equal((await evmWalletClientFromKey(chain, `${key}\n`))?.account.address, expected, 'a trailing newline must not break a signer')
+  assert.equal((await evmWalletClientFromKey(chain, ` ${key} `))?.account.address, expected)
+  assert.equal((await evmWalletClientFromKey(chain, key.slice(2)))?.account.address, expected, 'a missing 0x prefix is not an error')
+  assert.equal(await evmWalletClientFromKey(chain, 'not-a-key'), null)
+  assert.equal(await evmWalletClientFromKey(chain, '0xdeadbeef'), null)
+  assert.equal(await evmWalletClientFromKey(chain, '   '), null)
+})

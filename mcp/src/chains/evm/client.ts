@@ -35,11 +35,28 @@ export async function evmPublicClient(chain: ChainDescriptor, env: NodeJS.Proces
   return createPublicClient({ transport: await evmTransport(chain, env) })
 }
 
-/** Build a wallet client from an EXPLICIT private key (used when the signer is not the
- *  chain's default signer, e.g. a distinct reputation-validator wallet that, per ERC-8004,
- *  must differ from the agent owner). Returns null if the key is empty. */
+/**
+ * Build a wallet client from an EXPLICIT private key (used when the signer is not the
+ * chain's default signer, e.g. a distinct reputation-validator wallet that, per ERC-8004,
+ * must differ from the agent owner). Returns null when there is no usable key.
+ *
+ * A malformed key is treated as no key rather than as an exception, because that is what
+ * the honesty rule requires of a missing credential: a clean, labeled no-op. It matters in
+ * practice - a key pasted into a hosting dashboard arrives with a trailing newline often
+ * enough that the trim below is the difference between a working rail and a 502 quoting
+ * viem at a user who cannot act on it. Anything still unusable after trimming is logged
+ * loudly, because a silently absent signer is a configuration error nobody would find.
+ */
 export async function evmWalletClientFromKey(chain: ChainDescriptor, key: string | undefined, env: NodeJS.ProcessEnv = process.env) {
-  if (!key) return null
+  const raw = key?.trim()
+  if (!raw) return null
+  const hex = (raw.startsWith('0x') ? raw : `0x${raw}`).toLowerCase()
+  if (!/^0x[0-9a-f]{64}$/.test(hex)) {
+    console.error(
+      `[chains] the signer key for ${chain.id} is not a 32-byte hex private key (got ${hex.length - 2} hex chars). Treating it as unset; writes on this chain will report no signer.`,
+    )
+    return null
+  }
   if (chain.evmChainId == null) throw new Error(`Chain ${chain.id} has no EVM chain id`)
   const { createWalletClient, defineChain } = await import('viem')
   const { privateKeyToAccount } = await import('viem/accounts')
@@ -49,7 +66,7 @@ export async function evmWalletClientFromKey(chain: ChainDescriptor, key: string
     nativeCurrency: chain.nativeCurrency,
     rpcUrls: { default: { http: resolveRpcUrls(chain, env) } },
   })
-  const account = privateKeyToAccount((key.startsWith('0x') ? key : `0x${key}`) as `0x${string}`)
+  const account = privateKeyToAccount(hex as `0x${string}`)
   return { client: createWalletClient({ account, chain: viemChain, transport: await evmTransport(chain, env) }), account }
 }
 
