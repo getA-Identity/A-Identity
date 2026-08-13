@@ -455,14 +455,26 @@ export type RailProof = {
   note: string
 }
 
-/** Buyer wallets that are ours. Labeled, never filtered out: hiding our own traffic
- *  would overstate external demand, and removing it would understate that the rail
- *  actually works. Same decision the Celo rail records. */
+/**
+ * OUR OWN buyer wallets, hardcoded on purpose.
+ *
+ * The proof page labels these settlements internal so nobody can read our own traffic as
+ * third-party demand. Hardcoding is the whole point: this list being an env var alone is
+ * how a deployment ends up reporting its own demo payments as external demand, which is
+ * exactly what happened the first time the deployed rail settled. A public address is not
+ * a credential, and it cannot be quietly unset the way a variable can. Same decision the
+ * Celo rail already records. X402_3009_INTERNAL_PAYERS adds more without a deploy.
+ */
+const KNOWN_INTERNAL_PAYERS = ['0x8c8d9cd12d8896a40cf2115ee731258bb4983349']
+
+/** Buyer wallets that are ours. Labeled, never filtered out: hiding our own traffic would
+ *  overstate external demand, and removing it would understate that the rail works. */
 export function internalPayers(env: NodeJS.ProcessEnv = process.env): string[] {
-  return (env.X402_3009_INTERNAL_PAYERS ?? '')
+  const extra = (env.X402_3009_INTERNAL_PAYERS ?? '')
     .split(',')
     .map((s) => s.trim().toLowerCase())
     .filter((s) => /^0x[0-9a-fA-F]{40}$/.test(s))
+  return [...new Set([...KNOWN_INTERNAL_PAYERS, ...extra])]
 }
 
 export async function railProof(

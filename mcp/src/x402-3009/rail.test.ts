@@ -177,9 +177,15 @@ test('proof counts only settled rows, labels internal payers, and never hides fa
   assert.match(p.gas.note, /Native units only/)
 })
 
-test('internal payers are read from the environment and normalized', () => {
+test('our own buyer wallet is internal even with no environment at all', () => {
+  // The deployed rail's first settlement was reported as EXTERNAL demand because the env
+  // var listing our buyer wallet was not set there. Traction that overstates itself when a
+  // variable is missing is worse than no traction page, so the address is compiled in and
+  // the env var can only ADD to it.
+  assert.ok(internalPayers({} as NodeJS.ProcessEnv).includes('0x8c8d9cd12d8896a40cf2115ee731258bb4983349'))
   const set = internalPayers({ X402_3009_INTERNAL_PAYERS: ' 0xAAA0000000000000000000000000000000000001 ,nonsense' } as NodeJS.ProcessEnv)
-  assert.deepEqual(set, ['0xaaa0000000000000000000000000000000000001'])
+  assert.ok(set.includes('0xaaa0000000000000000000000000000000000001'))
+  assert.ok(set.includes('0x8c8d9cd12d8896a40cf2115ee731258bb4983349'), 'the env var must not be able to unset a known internal wallet')
 })
 
 function row(outcome: X402SettlementRecord['outcome'], payer: string, amountUsd: number, tool: string): X402SettlementRecord {
