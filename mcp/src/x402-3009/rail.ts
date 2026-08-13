@@ -172,7 +172,14 @@ export function railStatus(env: NodeJS.ProcessEnv = process.env, network?: strin
   // The measured fee travels with the token in the registry, so it cannot drift from
   // the chain it was measured on.
   const measured = chain ? railToken(chain, env)?.settlementFeeUsd : undefined
-  const settlementFeeUsd = num(env, 'X402_3009_SETTLEMENT_FEE_USD', measured ?? DEFAULTS.settlementFeeUsd)
+  // A single global fee across chains whose gas differs by an order of magnitude would
+  // charge one chain's measured cost on another, which is precisely what the per-chain
+  // measurement exists to prevent. The override is therefore honored only when this rail
+  // sells on exactly one chain, where it cannot be applied to a chain it was not meant for.
+  const singleChain = configuredIds.length <= 1
+  const settlementFeeUsd = singleChain
+    ? num(env, 'X402_3009_SETTLEMENT_FEE_USD', measured ?? DEFAULTS.settlementFeeUsd)
+    : (measured ?? DEFAULTS.settlementFeeUsd)
   // The floor exists so every accepted settlement covers the gas we spend on it, and the
   // fee is what covers that gas. Deriving it from the cheapest thing we sell on THIS chain
   // means it cannot drift when a fee changes, and it cannot accidentally price out a chain
@@ -343,7 +350,7 @@ export async function railChallenge(
         name: tool,
         price: { baseUsd: price.baseUsd, settlementFeeUsd: price.settlementFeeUsd, totalUsd: price.totalUsd },
         priceNote:
-          'This rail is gasless for the buyer: you sign an EIP-3009 authorization and we broadcast it, paying the chain gas ourselves. The settlement fee covers that broadcast, measured at 102495 gas (about 0.0000046 ETH) on 2026-08-13, with headroom for gas and ETH price moves. The base price is identical on every rail we sell on.',
+          `This rail is gasless for the buyer: you sign an EIP-3009 authorization and we broadcast it, paying the chain gas ourselves. The settlement fee covers that broadcast on THIS chain: ${status.token.feeBasis ?? 'measurement pending'} The base price is identical on every rail we sell on.`,
         ...RAIL_TOOL_CARDS[tool],
         method: `POST ${railResource(tool)}`,
         payment:

@@ -1,0 +1,117 @@
+---
+title: "Build on Arbitrum One"
+description: "Arbitrum One network config, the canonical ERC-8004 registries already deployed there, and our x402 rail settling in native Circle USDC."
+---
+
+Arbitrum One is the largest Ethereum L2 by usage, and the chain whose stack Robinhood
+Chain is built on. A-Identity holds an ERC-8004 agent identity here and settles paid
+trust calls in native Circle USDC.
+
+## Why Arbitrum One
+
+<CardGroup cols={3}>
+  <Card title="Native Circle USDC" icon="dollar-sign">
+    Real USDC, not a bridged twin, and it implements EIP-3009, so a buyer can sign a transfer and never touch gas.
+  </Card>
+  <Card title="ERC-8004 already live" icon="fingerprint">
+    The canonical identity and reputation registries were deployed here by their authors, at the same addresses X Layer, Celo and Robinhood Chain carry.
+  </Card>
+  <Card title="A well-served baseline" icon="scale-balanced">
+    Other x402 facilitators already serve this chain. Ours runs beside them on purpose: it is where you can check our rail against something you can compare it to.
+  </Card>
+</CardGroup>
+
+<Note>
+  Arbitrum One is **live** for us: agent #1259 is ours on the canonical registry, and a
+  real settlement in USDC has gone through our own facilitator. Everything on this page is
+  checkable at [/proof/arbitrum](https://a-identity.xyz/proof/arbitrum).
+</Note>
+
+## Network config
+
+| Field | Value |
+| --- | --- |
+| Chain ID | `42161` |
+| CAIP-2 | `eip155:42161` |
+| Native currency | ETH (18 decimals) |
+| RPC (HTTP) | `https://arb1.arbitrum.io/rpc` |
+| Block explorer | [arbiscan.io](https://arbiscan.io) |
+| USDC | `0xaf88d065e77c8cC2239327C5EDb3A432268e5831` |
+| CCTP domain | `3` |
+
+<Warning>
+  Two things worth stating plainly about this chain.
+
+  **We are not first here, and do not claim to be.** Coinbase's x402 facilitator and
+  others already serve Arbitrum One, and gasless EIP-3009 relaying on this USDC contract
+  predates us by years. We run our own facilitator so that one code path and one receipt
+  standard cover every chain we sell on, including chains nobody else serves.
+
+  **"Settled" has layers on an L2.** We wait the descriptor's confirmations, which is the
+  sequencer's ordering commitment, and we record the block. That is not Ethereum finality,
+  and USDC cannot leave for Ethereum until the fraud-proof window passes.
+</Warning>
+
+## Connect with viem
+
+<CodeGroup>
+```ts chain.ts
+import { arbitrum } from 'viem/chains'
+import { createPublicClient, http } from 'viem'
+
+export const client = createPublicClient({ chain: arbitrum, transport: http() })
+```
+
+```ts read.ts
+import { client } from './chain'
+
+// Agent #1259 is ours on the canonical registry.
+const owner = await client.readContract({
+  address: '0x8004a169fb4a3325136eb29fa0ceb6d2e539a432',
+  abi: [{ type: 'function', name: 'ownerOf', stateMutability: 'view', inputs: [{ type: 'uint256' }], outputs: [{ type: 'address' }] }],
+  functionName: 'ownerOf',
+  args: [1259n],
+})
+```
+</CodeGroup>
+
+## What is deployed
+
+| Contract | Address |
+| --- | --- |
+| IdentityRegistry | [`0x8004a169fb4a3325136eb29fa0ceb6d2e539a432`](https://arbiscan.io/address/0x8004a169fb4a3325136eb29fa0ceb6d2e539a432) |
+| ReputationRegistry | [`0x8004BAa17C55a88189AE136b182e5fdA19dE9b63`](https://arbiscan.io/address/0x8004BAa17C55a88189AE136b182e5fdA19dE9b63) |
+| USDC (settlement) | [`0xaf88d065e77c8cC2239327C5EDb3A432268e5831`](https://arbiscan.io/address/0xaf88d065e77c8cC2239327C5EDb3A432268e5831) |
+
+We deployed none of these. The registries were already live and registering on them is
+permissionless; what is ours is agent #1259 and the rail on top. There is no
+ValidationRegistry in this family, so a KYA result cannot be anchored on-chain here.
+
+## The price, and where it comes from
+
+The base price of a tool is identical on every chain we sell on. The only difference is a
+disclosed settlement fee, because we broadcast on the buyer's behalf and that costs gas.
+On Arbitrum One a real settlement measured **103569 gas at 0.02 gwei**, about
+**0.00000207 ETH**, so the fee here is **$0.005** rather than the $0.02 charged on
+Robinhood Chain, where the same settlement costs measurably more. The measurement lives in
+the chain registry beside the token, so the number is traceable rather than asserted.
+
+## Verify it yourself
+
+```bash
+# The signing domain, straight from the token.
+curl -sX POST https://arb1.arbitrum.io/rpc -H 'content-type: application/json' \
+  -d '{"jsonrpc":"2.0","id":1,"method":"eth_call","params":[{"to":"0xaf88d065e77c8cC2239327C5EDb3A432268e5831","data":"0x3644e515"},"latest"]}'
+# -> 0x08d11903f8419e68b1b8721bcbe2e9fc68569122a77ef18c216f10b3b5112c78
+
+# Our provenance ledger, with a live re-read of ownerOf(1259) on every request.
+curl -s https://a-identity-backend.onrender.com/api/proof/arbitrum
+```
+
+## Where Arbitrum One fits
+
+It is the chain where our rail can be compared. [Robinhood Chain](/chains/robinhood) is an
+Arbitrum L2 and is where the same engine runs on a chain with no published facilitator;
+[Arc](/chains/arc) holds escrow and the spend vault; [Celo](/chains/celo) settles through
+someone else's facilitator. Being live on Robinhood Chain and being live on Arbitrum One
+are two different statements, and both are true.

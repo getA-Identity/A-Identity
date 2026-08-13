@@ -117,6 +117,7 @@ export const PROVENANCE: ChainProvenance[] = [
       'No canonical Circle USDC is documented for this chain, so the registry asserts none. USDG is named as what it is, in its own field.',
       'We run our own x402 facilitator here because no published one serves this chain, not because nobody else relays. Gasless EIP-3009 relaying on USDG predates us by weeks, and on-chain an x402 settlement is indistinguishable from any other relayed authorization.',
       'This is an Arbitrum L2: we wait the descriptor\'s confirmations and record the block, but soft finality is not L1 finality, and the proof page does not claim otherwise.',
+      'The settlements recorded here are self-funded tests. The buyer wallet and the receiving address are both ours, and the receiving address is the same account that broadcasts. Labeled internal, always: evidence the rail works, not evidence of demand.',
     ],
   },
   {
@@ -217,14 +218,17 @@ export const PROVENANCE: ChainProvenance[] = [
         txHash: '0x69abb8a9aacf57fa0c3d2d4cd711d4f631e3f90c97222441f9f3ecee06834744',
         onChain: 'arbitrum',
         blockNumber: 494160024,
-        note: '103569 gas, 0.00000207 ETH. The buyer signed and paid no gas; we broadcast, and the receipt carries the matching USDC Transfer. Cheaper than the same settlement on Robinhood Chain, which is why the disclosed fee here is lower.',
+        note: '103569 gas, 0.00000207 ETH. The buyer signed and paid no gas; we broadcast, and the receipt carries the matching USDC Transfer. It was priced at a launch fee of 0.01, which this measurement then cut to 0.005; the transaction is left as it happened rather than re-run for cosmetics.',
       },
     ],
     caveats: [
       'We deployed nothing here. The registries were already live, and registering on them is permissionless; what is ours is agent #1259 and the rail.',
+      'This chain is ALREADY served by other x402 facilitators, Coinbase\'s among them. We run ours anyway so that one code path and one receipt standard cover every chain we sell on, including the ones nobody else serves. Arbitrum One is where you can check our rail against a well-served baseline, which is more useful to you than being first would have been.',
+      'Gasless EIP-3009 relaying on this USDC contract predates us by years and runs constantly. We did not bring gasless USDC to Arbitrum and do not claim to; on-chain an x402 settlement is indistinguishable from any other relayed authorization.',
+      'The settlements recorded here are self-funded tests. The buyer wallet and the receiving address are both ours, and the receiving address is the same account that broadcasts. They are labeled internal and always will be: this is evidence the rail works, not evidence of demand.',
       'There is no ValidationRegistry in this family, so a KYA result cannot be anchored on Arbitrum One. It is still verified off-chain and recorded.',
       'Robinhood Chain is an Arbitrum L2, and being live there is a different statement from being live on Arbitrum One. Both are true today; neither substitutes for the other.',
-      'This is an L2 that settles to Ethereum. We wait the descriptor\'s confirmations and record the block, but soft finality is not L1 finality and this page does not claim otherwise.',
+      'This is an L2 that settles to Ethereum, so "settled" has layers and we name them: we wait the descriptor\'s confirmations, which is the sequencer\'s ordering commitment, and we record the block. That is not Ethereum finality, and these USDC cannot leave for Ethereum until the fraud-proof window passes.',
     ],
   },
 ]
@@ -245,7 +249,7 @@ export const PROOF_RAILS: ProofRail[] = [
     slug: 'arbitrum',
     title: 'Arbitrum One',
     lede:
-      'Agent #1259 on the canonical ERC-8004 registry, and paid calls settling in native Circle USDC through the facilitator we run ourselves. The same engine as Robinhood Chain, on a chain whose gas is an order of magnitude cheaper, at a disclosed fee that reflects it.',
+      'Agent #1259 on the canonical ERC-8004 registry, and paid calls settling in native Circle USDC through the facilitator we run ourselves. Other facilitators already serve this chain, which is the point: Arbitrum One is where you can check our rail against a well-served baseline.',
     chains: ['arbitrum'],
   },
 ]

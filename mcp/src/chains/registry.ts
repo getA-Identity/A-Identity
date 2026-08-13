@@ -253,9 +253,9 @@ export const CHAINS: ChainDescriptor[] = [
         decimals: 6,
         authorization: 'eip3009',
         domainVersionCandidates: ['2'],
-        settlementFeeUsd: 0.01,
+        settlementFeeUsd: 0.005,
         feeBasis:
-          'A real settlement measured 103569 gas at 0.02 gwei on 2026-08-13 (tx 0x69abb8a9), costing 0.00000207 ETH. Charging the Robinhood Chain fee here would have been roughly a 5x markup on a chain whose gas is an order of magnitude cheaper.',
+          'A real settlement measured 103569 gas at an effective 0.02 gwei on 2026-08-13 (tx 0x69abb8a9), costing 0.00000207 ETH, roughly $0.004. The fee is 1.28x that, and the headroom is deliberately thinner than Robinhood Chain\'s because this chain\'s base fee has sat at its 0.02 gwei floor rather than moving: buying 2x headroom against a pinned floor buys nothing. It stops covering cost if ETH roughly doubles or gas passes about 133000, at which point we re-measure and edit this line.',
         verified:
           'Native Circle USDC on Arbitrum One, the same address the descriptor already carried for contracts.usdc. Read live 2026-08-13: name() "USD Coin", symbol() "USDC", version() "2", decimals() 6, DOMAIN_SEPARATOR 0x08d11903f8419e68b1b8721bcbe2e9fc68569122a77ef18c216f10b3b5112c78, which those four fields reproduce exactly. EIP-3009 confirmed by a read-only authorizationState call. Unlike Robinhood Chain this IS canonical Circle USDC, so it is the one settlement token that legitimately shares the contracts.usdc slot.',
       },
@@ -383,7 +383,7 @@ export const CHAINS: ChainDescriptor[] = [
         domainVersionCandidates: ['1'],
         settlementFeeUsd: 0.02,
         feeBasis:
-          'A settlement measured 102495 gas at 0.0506 gwei on 2026-08-13, about 0.0000046 ETH. The fee carries headroom for gas and ETH price moves; we have no price feed we verify and will not invent one.',
+          'A real settlement measured 102495 gas at an effective 0.044746 gwei on 2026-08-13 (tx 0xbb41c7aa), costing 0.0000046 ETH, roughly $0.009. The fee carries headroom for gas and ETH price moves; we have no price feed we verify and will not invent one.',
         verified:
           'Paxos Global Dollar at the address Paxos documents for chain 4663 (docs.paxos.com/guides/stablecoin/usdg/mainnet); Robinhood is a Global Dollar Network founding member and uses USDG in its Earn product. Read live 2026-08-12: name() "Global Dollar", decimals() 6, supply ~353M, DOMAIN_SEPARATOR 0x7a3d7400b27830f4f91c2c16a082486d67c1befecaec2f53b33f1f35d5b62036. EIP-3009 confirmed by selector probe: transferWithAuthorization (0xe3ee160e) reverts with a signature-validation error while an unknown selector reverts 0x800ab12c. EIP-2612 permit is present too. NOT placed in contracts.usdc: it is not Circle USDC, and that slot is what every generic USDC path reads.',
       },

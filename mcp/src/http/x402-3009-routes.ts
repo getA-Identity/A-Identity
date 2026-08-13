@@ -84,7 +84,9 @@ export async function handleX402ThreeKRoutes(ctx: RouteCtx): Promise<boolean> {
         settlementFeeUsd: status.settlementFeeUsd,
         minValueUsd: status.minValueUsd,
         maxValueUsd: status.maxValueUsd,
-        note: 'The buyer pays no gas: we broadcast the signed authorization, and the settlement fee covers that broadcast (measured at 102495 gas on 2026-08-13) with headroom for gas and ETH price moves.',
+        note: status.token?.feeBasis
+          ? `The buyer pays no gas: we broadcast the signed authorization, and the settlement fee covers that broadcast on this chain. ${status.token.feeBasis}`
+          : 'The buyer pays no gas: we broadcast the signed authorization, and the settlement fee covers that broadcast.',
       },
       domain: domain?.ok
         ? {

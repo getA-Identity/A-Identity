@@ -70,6 +70,7 @@
               "chains/celo",
               "chains/xlayer",
               "chains/robinhood",
+              "chains/arbitrum",
               "chains/gateway",
               "chains/cctp"
             ]

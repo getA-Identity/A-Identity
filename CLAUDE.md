@@ -43,7 +43,7 @@ public/llms-full.txt, public/.well-known/ (agent card, MCP server card, agent sk
 
 ## Verification
 
-- Backend: cd mcp && npm test (tsc + 668 unit tests; new test files must be added to the
+- Backend: cd mcp && npm test (tsc + 669 unit tests; new test files must be added to the
   test script in mcp/package.json, and the count literal in mcp/src/asp/proof.ts must
   match the number of test() declarations).
 - E2E: boot node mcp/dist/http.js, then npm run e2e, e2e:guardrail, http-smoke.

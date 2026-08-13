@@ -282,6 +282,16 @@ test('a buyer may not pay on a chain the seller does not sell on', async () => {
   assert.match(JSON.stringify(out.body), /does not sell on|not a chain in the registry/)
 })
 
+test('a global fee override cannot leak one chain\'s cost onto another', () => {
+  // The override existed before the rail sold on two chains, and honoring it with two
+  // configured would charge Robinhood Chain's measured cost on Arbitrum One while every
+  // test passed on a clean environment. It is accepted only where it cannot be misapplied.
+  const multi = { X402_3009_NETWORKS: 'eip155:4663,eip155:42161', X402_3009_PAYTO: PAY_TO, X402_3009_SETTLEMENT_FEE_USD: '0.09' } as NodeJS.ProcessEnv
+  assert.equal(railStatus(multi, 'eip155:42161').settlementFeeUsd, 0.005, 'the registry measurement must win when several chains are configured')
+  const single = { X402_3009_NETWORK: 'eip155:42161', X402_3009_PAYTO: PAY_TO, X402_3009_SETTLEMENT_FEE_USD: '0.09' } as NodeJS.ProcessEnv
+  assert.equal(railStatus(single).settlementFeeUsd, 0.09, 'a single-chain deployment may still set its own fee')
+})
+
 test('the settlement fee is per chain and traceable to a measurement', () => {
   // Charging Arbitrum One what a Robinhood Chain broadcast costs would be a 4x markup
   // wearing the words "covers what it costs us".
@@ -289,7 +299,7 @@ test('the settlement fee is per chain and traceable to a measurement', () => {
   const rh = railStatus(multi, 'eip155:4663')
   const arb = railStatus(multi, 'eip155:42161')
   assert.equal(rh.settlementFeeUsd, 0.02)
-  assert.equal(arb.settlementFeeUsd, 0.01)
+  assert.equal(arb.settlementFeeUsd, 0.005)
   assert.ok(arb.settlementFeeUsd < rh.settlementFeeUsd, 'the cheaper chain must carry the cheaper fee')
   for (const c of [getChainById('rhchain')!, getChainById('arbitrum')!]) {
     const tok = c.settlementTokens![0]
