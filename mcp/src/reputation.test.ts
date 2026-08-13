@@ -250,7 +250,7 @@ test('the discipline term is deterministic', () => {
 
 test('P&L is not a reputation input, by construction', () => {
   // Scoring an agent on returns would be a performance claim, which is exactly the line
-  // docs/compliance-robinhood.md says we do not cross. This asserts the shape of the
+  // ./policy/README.md ("Red lines") says we do not cross. This asserts the shape of the
   // signals rather than trusting a comment.
   const forbidden = ['pnl', 'profit', 'return', 'gain', 'loss', 'performance', 'yield']
   // Compiled to dist/, so mcp/src is one level up.

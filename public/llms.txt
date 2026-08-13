@@ -53,7 +53,7 @@ leaves the caller's process.
 - [API catalog](https://a-identity.xyz/.well-known/api-catalog): RFC 9727 linkset over every API here.
 - [MCP server card](https://a-identity.xyz/.well-known/mcp/server-card.json): transport, capabilities and the 20 tools.
 - [A2A agent card](https://a-identity.xyz/.well-known/agent-card.json): skills and interfaces for agent-to-agent discovery.
-- [Agent skills index](https://a-identity.xyz/.well-known/agent-skills/index.json): five task guides with digests.
+- [Agent skills index](https://a-identity.xyz/.well-known/agent-skills/index.json): six task guides with digests.
 - [OpenAPI 3.1 for the paid tools](https://a-identity-asp.onrender.com/openapi.json): inputs, outputs and prices.
 - [Scoring methodology](https://a-identity-asp.onrender.com/methodology): how the 0 to 1000 reputation is computed.
 - [Documentation](https://a-identity.mintlify.site): the human-facing docs site.

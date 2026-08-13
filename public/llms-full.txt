@@ -185,19 +185,30 @@ Set once, by a human, in the console.
 
 ### Where each limit is enforced
 
-The same number is enforced in four independent places:
+Two policies live here and they are not enforced in the same number of places.
+
+The **USDC payment policy** (daily cap, auto-approve line, payee allowlist,
+freeze) is enforced in two independent places:
 
 1. **The server pre-check.** Fast, and the one an agent interacts with.
-2. **An on-chain vault on Arc.** Reverts an over-limit payment even if the
-   server is wrong, compromised, or talked into something.
-3. **Circle's wallet-layer screening.**
-4. **Circle's own policy engine**, when the owner mirrors the caps there using
-   the generated `circle wallet limit set` commands.
+2. **An on-chain AgentSpendPolicy vault on Arc.** Reverts an over-limit `pay()`
+   even if the server is wrong, compromised, or talked into something.
 
-This redundancy is the design, not defensive engineering. An agent is a
-persuasion machine; the only durable defence is putting the limit somewhere
-persuasion does not reach. If our servers vanish, the on-chain vault still
-reverts the over-limit payment.
+The **action policy** (symbols, options, trading hours, concentration,
+merchants, MCCs, per-card ceilings) is enforced in exactly one place: the server
+pre-check. There is no on-chain rail for it, because we have no execution path
+to a brokerage or a card network. Saying otherwise would imply a contract is
+watching a ticker list, and none is.
+
+Circle's wallet-layer screening and Circle's own policy engine can mirror the
+USDC caps, but only once the owner runs the generated `circle wallet limit set`
+commands from their own wallet. We generate them and never apply them, so they
+are not a place we can claim the limit is already enforced.
+
+The redundancy that does exist is the design, not defensive engineering. An
+agent is a persuasion machine; the only durable defence is putting the limit
+somewhere persuasion does not reach. If our servers vanish, the on-chain vault
+still reverts the over-limit payment.
 
 We never hold user keys. Policy commands for Circle wallets are generated and
 displayed, never executed, because applying them requires the owner's own
@@ -211,16 +222,44 @@ Over MCP:
 ```json
 {"method": "tools/call", "params": {
   "name": "pre_action_check",
-  "arguments": {"kind": "payment", "amountUsd": 25, "payee": "0x..."}
+  "arguments": {
+    "agentId": "agent_m4x2k9p1",
+    "surface": "trade",
+    "intent": {
+      "kind": "order",
+      "side": "buy",
+      "symbol": "AAPL",
+      "assetClass": "equity",
+      "notionalUsd": 25
+    },
+    "snapshot": {
+      "todayNotionalUsd": 0,
+      "positions": [],
+      "portfolioValueUsd": 10000,
+      "cashAvailableUsd": 4000,
+      "marginUsedUsd": 0,
+      "accountType": "cash"
+    }
+  }
 }}
 ```
 
-Returns `ALLOW`, `WARN` or `DENY` plus the rule that decided it. `WARN` means
-permitted but above the approval line: escalate, do not execute.
+Returns `ALLOW`, `WARN` or `DENY` plus every rule that decided it, the audit id,
+and where the numbers came from. `WARN` means permitted but above the approval
+line: escalate, do not execute.
+
+`surface` is one of `trade`, `spend` or `bet`, and `bet` is `planned`, so it can
+never return `ALLOW`. `snapshot` is gathered by the caller, never authored by the
+agent being checked, and a rule whose input is missing fails closed to `DENY`.
+
+A caller that speaks a venue's own payload shape can send `callerId` and `action`
+instead of a pre-normalized `intent`; `GET /api/callers` lists the registered
+callers and how strong each one's enforcement actually is.
 
 Afterwards, `record_audit_outcome` records what actually happened (`executed`,
-`blocked`, `awaiting_human`, `abandoned`) and `audit_log` returns the history
-newest first. Prevention and review are different problems and both are needed.
+`blocked`, `awaiting_human`, `abandoned`, with the `agentId` and the `auditId`
+the check returned) and `audit_log` returns the history newest first. Prevention
+and review are different problems and both are needed.
 
 ---
 
@@ -332,14 +371,19 @@ Live today:
   in native USDC through our own first-party facilitator. Celo has no
   ValidationRegistry, so KYA cannot be anchored on-chain there.
 
-Beta, wired and readable:
-
 - **Robinhood Chain mainnet** (`eip155:4663`). ERC-8004 identity
   `0x8004a169fb4a3325136eb29fa0ceb6d2e539a432` and reputation
-  `0x8004BAa17C55a88189AE136b182e5fdA19dE9b63`. We did not deploy these; the
+  `0x8004BAa17C55a88189AE136b182e5fdA19dE9b63`. We did not deploy those; the
   ERC-8004 authors did. What is ours is agent **#0**, the registry's first mint.
-  Reads are wired. No canonical stablecoin is published for this chain, so no
-  payment rail is claimed here.
+  Payments settle here in USDG (`0x5fc5360D0400a0Fd4f2af552ADD042D716F1d168`,
+  Paxos Global Dollar) through our own first-party x402 facilitator, because the
+  chain had none: the buyer signs an EIP-3009 authorization and pays no gas, we
+  broadcast it, and nothing counts as settled without a receipt carrying the
+  matching Transfer log. No canonical Circle USDC is published for this chain, so
+  the registry asserts none.
+
+Beta, wired and readable:
+
 - **Robinhood Chain testnet** (`eip155:46630`). The full canonical set: identity
   `0x8004A818BFB912233c491871b3d84c89A494BD9e`, reputation
   `0x8004B663056A597Dffe9eCcC1965A193B7388713`, validation

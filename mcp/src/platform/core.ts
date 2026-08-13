@@ -7,6 +7,7 @@
  * must never be re-exported.
  */
 import { loadState, saveState } from '../storage.js'
+import { ARC_CHAIN } from '../chains/index.js'
 import type { ActionPolicy, AuditEntry, AgentMeter } from '../policy/index.js'
 import type { Task } from '../marketplace.js'
 
@@ -36,6 +37,31 @@ export type Permissions = {
 export type VelocityPolicy = { maxActions: number; windowMinutes: number }
 
 export type Service = { name: string; priceUsd: number; unit: string }
+
+/**
+ * One on-chain AgentSpendPolicy vault, on one chain.
+ *
+ * The flat `vaultAddress` fields stay the primary and are not going anywhere; this is the
+ * additive half that lets an agent hold a vault on more than one chain without a second
+ * naming scheme (`vaultAddressArc`, `vaultAddressBase`, ...) appearing field by field.
+ */
+export type AgentVault = {
+  /** CAIP-2 id of the chain. The primary key, alongside the address. */
+  chainCaip2: string
+  address: string
+  explorer?: string
+  owner?: string
+  operator?: string
+  /**
+   * How this entry came to exist.
+   *   deployed  we broadcast the deployment and hold the receipt
+   *   migrated  derived from the flat fields by `migrateAgentVaults`
+   * Kept because a migrated row is an INFERENCE (a sound one: vault provisioning was
+   * unconditionally Arc-bound), and an inference should not be indistinguishable from an
+   * observation in a record people audit.
+   */
+  source: 'deployed' | 'migrated'
+}
 
 export type PlatformAgent = {
   id: string
@@ -74,7 +100,12 @@ export type PlatformAgent = {
   onchainTx?: string
   onchainExplorer?: string
   onchainAgentId?: string
-  /** On-chain AgentSpendPolicy vault: enforces this agent's spend policy on Arc. */
+  /**
+   * The PRIMARY on-chain AgentSpendPolicy vault: the one this agent's payments settle
+   * through. Flat by history, and it stays flat: every read path, every sync, and the
+   * live persisted document all name these fields, so moving them would be a rewrite of
+   * production data for no behavioural gain.
+   */
   vaultAddress?: string
   vaultExplorer?: string
   /** The human owner the vault was deployed with (freeze/override/withdraw). Distinct
@@ -82,6 +113,18 @@ export type PlatformAgent = {
   vaultOwner?: string
   /** The operator (agent signer) that calls pay(); the server signer in this demo. */
   vaultOperator?: string
+  /**
+   * CAIP-2 of the chain the primary vault lives on. Added when vault deployment stopped
+   * being implicitly single-chain. Absent on rows written before that, which is what
+   * `migrateAgentVaults` fills in, and it can only ever be filled in with Arc because
+   * `provisionAgentVault` bound the Arc adapter unconditionally.
+   */
+  vaultChainCaip2?: string
+  /**
+   * Every vault this agent has, including the primary one. Additive on purpose: an older
+   * build ignores this array and still reads the flat fields, so a rollback is safe.
+   */
+  vaults?: AgentVault[]
   /** Circle Agent Wallet (Developer-Controlled, ARC-TESTNET): Circle's hosted
    *  policy engine screens this wallet's transfers at the wallet layer. */
   circleWalletId?: string
@@ -241,6 +284,58 @@ export function __resetPlatformStateForTests(seed: Partial<State> = {}): State {
  * Load persisted state (Postgres via DATABASE_URL, else the local JSON file) into
  * memory. Call once before serving requests.
  */
+/**
+ * Fill in the multichain vault fields from the flat ones. PURE and IDEMPOTENT: it takes
+ * the agents and the chain to attribute to, mutates only the two new fields, and returns
+ * how many rows it touched.
+ *
+ * ── why a backfill is honest here, when backfills usually are not ────────────────────
+ *
+ * Attributing existing vaults to Arc is not a guess. `provisionAgentVault` bound the Arc
+ * adapter unconditionally and there was no other deployment path, so every vault that
+ * exists IS an Arc vault. That is the bar a backfill has to clear: the old code could not
+ * have produced anything else. (Compare the audit trail's provenance field, which is left
+ * absent on old rows precisely because the old code COULD have had any provenance.)
+ *
+ * An agent with no `vaultAddress` gets nothing. Inventing a vault entry for an agent that
+ * never deployed one would be the one failure mode worth caring about here.
+ *
+ * State is a single JSONB document, so there is no DDL and no migration table. The
+ * discipline that replaces them: only ADD fields, never move or drop one, so a rollback to
+ * an older build still reads the same blob.
+ */
+export function migrateAgentVaults(agents: PlatformAgent[], chainCaip2: string): number {
+  let touched = 0
+  for (const agent of agents) {
+    if (!agent.vaultAddress) continue
+    let changed = false
+    if (!agent.vaultChainCaip2) {
+      agent.vaultChainCaip2 = chainCaip2
+      changed = true
+    }
+    const existing = agent.vaults ?? []
+    const already = existing.some(
+      (v) => v.chainCaip2 === agent.vaultChainCaip2 && v.address.toLowerCase() === agent.vaultAddress!.toLowerCase(),
+    )
+    if (!already) {
+      agent.vaults = [
+        ...existing,
+        {
+          chainCaip2: agent.vaultChainCaip2!,
+          address: agent.vaultAddress,
+          ...(agent.vaultExplorer ? { explorer: agent.vaultExplorer } : {}),
+          ...(agent.vaultOwner ? { owner: agent.vaultOwner } : {}),
+          ...(agent.vaultOperator ? { operator: agent.vaultOperator } : {}),
+          source: 'migrated',
+        },
+      ]
+      changed = true
+    }
+    if (changed) touched++
+  }
+  return touched
+}
+
 export async function initState() {
   const loaded = await loadState<State>()
   if (loaded) {
@@ -255,6 +350,14 @@ export async function initState() {
     // Both maps postdate older persisted documents; default rather than crash.
     state.feedback = loaded.feedback ?? {}
     state.semanticQuota = loaded.semanticQuota ?? {}
+  }
+  // Run once per boot, after load and before serving. Idempotent, so a restart that
+  // already migrated logs zero rather than doing it again. The count is logged because a
+  // silent migration over live data is a migration nobody can confirm ran.
+  const migrated = migrateAgentVaults(state.agents, ARC_CHAIN.caip2)
+  if (migrated > 0) {
+    console.log(`[a-identity] vault migration: attributed ${migrated} vault(s) to ${ARC_CHAIN.caip2}`)
+    save(state)
   }
 }
 

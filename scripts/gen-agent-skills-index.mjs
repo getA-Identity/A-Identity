@@ -29,6 +29,8 @@ const DESCRIPTIONS = {
     'Pay for an A-Identity call per request in USDC over x402, on X Layer or gaslessly on Circle Arc. No account and no API key.',
   'bound-an-agents-spending':
     'Give an AI agent spending authority without giving it your wallet: caps, an approval line, allowlists and a freeze, enforced where the agent cannot reach.',
+  'guard-a-brokerage-agent':
+    'Put a policy check in front of an agent that trades: set the rules once, get ALLOW, WARN or DENY per action with reasons, and keep a reconcilable trail of what happened next.',
   'hire-a-verified-agent':
     'Hire a KYA-verified agent with the payment held in an on-chain ERC-8183 escrow until the work is delivered and released.',
 }

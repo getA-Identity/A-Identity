@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import {
   Check,
   CreditCard,
@@ -28,9 +28,34 @@ import PayeeAdder from '../../components/app/permissions/PayeeAdder'
 import { Row } from '../../components/app/permissions/ToggleRow'
 import PolicyTester from '../../components/app/permissions/PolicyTester'
 import VaultPanel from '../../components/app/permissions/VaultPanel'
+import VenuePanel from '../../components/app/permissions/VenuePanel'
 import CirclePolicyPanel from '../../components/app/permissions/CirclePolicyPanel'
 
-const PERM_TABS = ['payments', 'trading', 'spend', 'audit'] as const
+/**
+ * One action surface as the backend registry describes it.
+ *
+ * The tab row used to be a literal list, which meant a `planned` surface was simply
+ * invisible: `bet` shipped as a reviewed schema and nobody using the console could tell it
+ * existed, let alone that it is deliberately not live. A surface the product has decided
+ * NOT to run is information, and hiding it reads as a gap rather than as a decision.
+ */
+type Surface = { id: string; name: string; status: 'live' | 'planned'; note: string }
+
+/** Payments is not a policy-engine surface: it is the Arc USDC payment policy, governed by
+ *  `permissions` and enforced by the on-chain vault. It stays a literal because deriving it
+ *  from /api/surfaces would claim it is something it is not. */
+const PAYMENTS_TAB = {
+  id: 'payments',
+  label: 'Payments',
+  status: 'live' as const,
+  note: 'The USDC payment policy on Arc. Enforced by this server and by the on-chain vault.',
+}
+const AUDIT_TAB = {
+  id: 'audit',
+  label: 'Audit',
+  status: 'live' as const,
+  note: 'Every decision, why it went that way, and what happened next.',
+}
 
 type Permissions = {
   dailyCapUsd: number
@@ -64,8 +89,22 @@ type VaultSyncNote = {
 const ARCSCAN_TX = 'https://testnet.arcscan.app/tx/'
 
 export default function Permissions() {
-  const [tab, setTab] = useState<(typeof PERM_TABS)[number]>('payments')
-  const { shown: shownTab, className: paneClass } = useTabCarousel(tab, PERM_TABS)
+  const [tab, setTab] = useState('payments')
+  const [surfaces, setSurfaces] = useState<Surface[] | null>(null)
+  const [surfacesFailed, setSurfacesFailed] = useState(false)
+
+  // The tab row, derived. A planned surface renders disabled and carries its own reason,
+  // so "not live" is a visible decision rather than an absence.
+  const tabs = useMemo(
+    () => [
+      PAYMENTS_TAB,
+      ...(surfaces ?? []).map((s) => ({ id: s.id, label: s.name, status: s.status, note: s.note })),
+      AUDIT_TAB,
+    ],
+    [surfaces],
+  )
+  const tabOrder = useMemo(() => tabs.map((t) => t.id), [tabs])
+  const { shown: shownTab, className: paneClass } = useTabCarousel(tab, tabOrder)
   const [agents, setAgents] = useState<Agent[]>([])
   const agentId = useSelectedAgent((s) => s.agentId)
   const syncRoster = useSelectedAgent((s) => s.syncRoster)
@@ -82,6 +121,23 @@ export default function Permissions() {
   useEffect(() => {
     const t = setInterval(() => setNow(new Date().getTime()), 30_000)
     return () => clearInterval(t)
+  }, [])
+
+  // Static registry data, so it is fetched once and never refetched per agent.
+  useEffect(() => {
+    let active = true
+    ;(async () => {
+      try {
+        const res = await apiFetch('/api/surfaces')
+        const j = (await res.json()) as { surfaces?: Surface[] }
+        if (active) setSurfaces(j.surfaces ?? [])
+      } catch {
+        // Fail visibly rather than falling back to a hardcoded list: a stale literal is
+        // exactly the drift this replaced.
+        if (active) { setSurfaces([]); setSurfacesFailed(true) }
+      }
+    })()
+    return () => { active = false }
   }, [])
 
   useEffect(() => {
@@ -244,32 +300,50 @@ export default function Permissions() {
           {/* Agent selector */}
           <AgentSelect agents={agents} className="mt-6" />
 
-          {/* Surface tabs. Payments is the USDC policy on Arc; Trading is the brokerage
-              action policy. They are separate on purpose: the two govern different
-              surfaces, and merging them would put payee allowlists next to tickers. */}
+          {/* Surface tabs, derived from the backend surface registry. Payments is the USDC
+              policy on Arc and stays a literal; the rest are the policy-engine surfaces.
+              They are separate on purpose: the two govern different surfaces, and merging
+              them would put payee allowlists next to tickers. */}
           <div data-tour="tabs" className="mt-6 flex flex-wrap gap-1.5 border-b border-border pb-3" role="tablist" aria-label="Permission surfaces">
-            {([
-              ['payments', 'Payments'],
-              ['trading', 'Trading'],
-              ['spend', 'Spend'],
-              ['audit', 'Audit'],
-            ] as const).map(([id, labelText]) => (
-              <button
-                key={id}
-                type="button"
-                role="tab"
-                onClick={() => setTab(id)}
-                aria-selected={tab === id}
-                className={`rounded-md border px-3 py-2 text-[10px] font-semibold uppercase tracking-[0.14em] transition-colors duration-[120ms] ${
-                  tab === id
-                    ? 'border-foreground/60 text-foreground'
-                    : 'border-transparent text-foreground/50 hover:text-foreground/80'
-                }`}
-              >
-                {labelText}
-              </button>
-            ))}
+            {tabs.map((t) => {
+              const planned = t.status !== 'live'
+              return (
+                <button
+                  key={t.id}
+                  type="button"
+                  role="tab"
+                  disabled={planned}
+                  title={planned ? `Not live. ${t.note}` : t.note}
+                  onClick={() => { if (!planned) setTab(t.id) }}
+                  aria-selected={tab === t.id}
+                  className={`inline-flex items-center gap-1.5 rounded-md border px-3 py-2 text-[10px] font-semibold uppercase tracking-[0.14em] transition-colors duration-[120ms] ${
+                    planned
+                      ? 'cursor-not-allowed border-transparent text-foreground/30'
+                      : tab === t.id
+                        ? 'border-foreground/60 text-foreground'
+                        : 'border-transparent text-foreground/50 hover:text-foreground/80'
+                  }`}
+                >
+                  {t.label}
+                  {planned && (
+                    <span className="rounded-sm bg-warn/15 px-1 py-px text-[9px] tracking-normal text-warn">planned</span>
+                  )}
+                </button>
+              )
+            })}
           </div>
+          {/* A planned surface says why, in the open. It is a schema that shipped and a
+              decision not to run it, and both halves are worth reading. */}
+          {tabs.filter((t) => t.status !== 'live').map((t) => (
+            <p key={t.id} className="mt-2 text-[11px] text-foreground/45">
+              <span className="font-semibold text-foreground/60">{t.label}</span> is planned, not live: {t.note}
+            </p>
+          ))}
+          {surfacesFailed && (
+            <p className="mt-2 text-[11px] text-warn">
+              Could not read the action surfaces, so only the payment policy and the audit trail are shown here.
+            </p>
+          )}
 
           <div className="cn-tab-clip">
           <div className={paneClass}>
@@ -374,7 +448,7 @@ export default function Permissions() {
                       <button
                         type="button"
                         onClick={() => set('payeeAllowlist', draft.payeeAllowlist.filter((x) => x !== p))}
-                        className="grid h-4 w-4 place-items-center rounded-full text-sm leading-none text-foreground/40 hover:bg-red-500/10 hover:text-red-500"
+                        className="grid h-4 w-4 place-items-center rounded-full text-sm leading-none text-foreground/40 hover:bg-danger/10 hover:text-danger"
                         aria-label={`Remove ${p}`}
                       >
                         ×
@@ -431,7 +505,7 @@ export default function Permissions() {
               className={`mt-3 rounded-xl border px-4 py-3 text-xs ${
                 vaultSync.synced
                   ? 'border-accent/25 bg-accent/[0.05] text-foreground/70'
-                  : 'border-amber-400/40 bg-amber-50 text-amber-800 dark:text-amber-300'
+                  : 'border-warn/40 bg-warn/10 text-warn'
               }`}
             >
               {vaultSync.synced ? (
@@ -466,10 +540,16 @@ export default function Permissions() {
           </>
           )}
 
-          {shownTab === 'trading' && <TradingPermissions agentId={agentId} />}
-          {shownTab === 'audit' && <AuditTrail agentId={agentId} />}
-
+          {/* Keyed off the registry's surface ids, so a rename in the registry shows up
+              here as a missing pane rather than as a pane wired to a stale string. */}
+          {shownTab === 'trade' && <TradingPermissions agentId={agentId} />}
           {shownTab === 'spend' && <SpendPermissions agentId={agentId} />}
+          {shownTab === 'audit' && (
+            <>
+              <AuditTrail agentId={agentId} />
+              <VenuePanel />
+            </>
+          )}
           </div>
           </div>
         </>

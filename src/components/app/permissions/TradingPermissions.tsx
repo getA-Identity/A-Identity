@@ -174,8 +174,8 @@ export default function TradingPermissions({ agentId }: { agentId: string }) {
   return (
     <div className="mt-4">
       {error && (
-        <div className="mb-4 flex items-start gap-2 rounded-xl border border-amber-500/30 bg-amber-500/[0.06] p-3 text-xs text-foreground/70">
-          <AlertTriangle size={14} className="mt-0.5 shrink-0 text-amber-500" />
+        <div className="mb-4 flex items-start gap-2 rounded-xl border border-warn/30 bg-warn/[0.06] p-3 text-xs text-foreground/70">
+          <AlertTriangle size={14} className="mt-0.5 shrink-0 text-warn" />
           <span>{error}</span>
         </div>
       )}
@@ -391,7 +391,7 @@ export default function TradingPermissions({ agentId }: { agentId: string }) {
           <button
             type="button"
             onClick={() => set('frozen', !draft.frozen)}
-            className={`h-6 w-11 shrink-0 rounded-full transition-colors ${draft.frozen ? 'bg-red-500' : 'bg-foreground/15'}`}
+            className={`h-6 w-11 shrink-0 rounded-full transition-colors ${draft.frozen ? 'bg-danger' : 'bg-foreground/15'}`}
             aria-pressed={draft.frozen}
             aria-label="Freeze agent"
           >

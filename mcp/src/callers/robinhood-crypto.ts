@@ -9,6 +9,15 @@
  *
  * ── Provenance, because it decides how much to trust each field ──────────────────────
  *
+ * READ 2026-07-29. NOT RECHECKED SINCE, as of 2026-08-13.
+ *
+ * That line is the point of this block: everything below is a claim with a date on it, and
+ * a dated claim that is never revisited becomes a stale claim that still reads as current.
+ * A venue can ship an agent surface, rename a field or change a fee tier without telling
+ * us. Recheck before this adapter's status moves past `beta` in callers/registry.ts, and
+ * treat a normalization failure in the meantime as a shape we have not seen rather than as
+ * a bad order.
+ *
  * OFFICIAL (robinhood.com support + newsroom, read 2026-07-29):
  *  - Separate from the agentic MCP: credentials come from the "Robinhood API Credentials
  *    Portal", desktop web only, and only customers with an active Robinhood Crypto account

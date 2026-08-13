@@ -5,7 +5,7 @@
  * capping live here; the state and its persistence live in platform.ts, so the decision
  * path stays a function and only one place touches storage.
  *
- * Two rules from docs/compliance-robinhood.md section 5 are structural here, not
+ * Two rules from ./README.md ("Snapshot minimization") are structural here, not
  * conventions someone has to remember:
  *
  *  1. The snapshot is NOT stored, only a hash of it. An account snapshot is holdings and
@@ -46,6 +46,33 @@ export type AuditIntent = {
   cardId?: string
 }
 
+/**
+ * Where the numbers in one decision came from.
+ *
+ * The shape lives HERE, in the pure module, and is filled in by whatever translated the
+ * request (see ../callers/). That split is the point: an audit row has to be able to say
+ * "this intent was produced by adapter X against venue Y", and it must be able to say it
+ * without the decision core ever learning that venues exist. So this module owns the
+ * FIELDS and nothing here knows a single venue name.
+ *
+ * `enforcement` is the honest part. It records what the mediating caller could actually
+ * do if the verdict were DENY:
+ *   process  the caller holds a real veto over the venue call (it starts the process)
+ *   wrapper  the caller can only decline to make the call it was asked to make
+ *   none     nothing we know of stood between the agent and the venue
+ * Recording `none` is not a failure. Recording `process` when it was `none` would be.
+ */
+export type AuditProvenance = {
+  /** The registered caller id, or null when the request arrived pre-normalized. */
+  callerId: string | null
+  /** The venue as that caller names it, or null on the pre-normalized path. */
+  venue: string | null
+  enforcement: 'process' | 'wrapper' | 'none'
+  /** `direct` = the request already spoke NormalizedIntent. */
+  intentSource: 'direct' | 'caller-adapter'
+  snapshotSource: 'direct' | 'caller-adapter' | 'absent'
+}
+
 export type AuditEntry = {
   id: string
   /** ISO timestamp of the decision. */
@@ -77,6 +104,13 @@ export type AuditEntry = {
    * exists if we count the attempt instead of silently rejecting it.
    */
   overrideAttempts?: number
+  /**
+   * Where this decision's numbers came from. ABSENT on every row written before the
+   * caller seam existed, and it stays absent: backfilling `direct` onto history would
+   * invent a provenance nobody recorded, which is the one thing an audit trail may
+   * never do. A reader must render a missing value as "not recorded", not as "direct".
+   */
+  caller?: AuditProvenance
 }
 
 const MAX_STR = 120
@@ -118,6 +152,8 @@ export function buildAuditEntry(input: {
   intent: NormalizedIntent
   snapshot?: AccountSnapshot
   decision: Decision
+  /** Optional, and optional forever: rows predating the caller seam carry none. */
+  caller?: AuditProvenance
 }): AuditEntry {
   const { intent, decision } = input
   const recorded: AuditIntent = { kind: intent.kind, notionalUsd: intent.notionalUsd }
@@ -155,6 +191,21 @@ export function buildAuditEntry(input: {
     snapshotHash: hashSnapshot(input.snapshot),
     unverifiable: decision.unverifiable,
     outcome: initialOutcome(decision.verdict),
+    // Spread rather than assigned, so an entry written without provenance has no `caller`
+    // KEY at all. `caller: undefined` would serialize away anyway, but the difference
+    // matters when reading: absent means nobody recorded it.
+    ...(input.caller ? { caller: sanitizeProvenance(input.caller) } : {}),
+  }
+}
+
+/** Bound the free-text fields, same as every other caller-supplied string in an entry. */
+function sanitizeProvenance(p: AuditProvenance): AuditProvenance {
+  return {
+    callerId: trunc(p.callerId ?? undefined, 60) ?? null,
+    venue: trunc(p.venue ?? undefined, 60) ?? null,
+    enforcement: p.enforcement,
+    intentSource: p.intentSource,
+    snapshotSource: p.snapshotSource,
   }
 }
 

@@ -10,9 +10,10 @@ import {
   resolveActionPolicy, summarizeAudits, guardrailProfile, unobservableProfile,
   notRegisteredProfile, deriveBadges, badgeFor, SURFACES, meterDecision,
   meterOverrideAttempt, aggregateTraction, defaultActionPolicy,
-  type AgentMeter, type Traction, type Badge, type AccountSnapshot, type ActionPolicy,
-  type AuditEntry, type AuditOutcome, type Decision, type GuardrailProfile, type NormalizedIntent,
+  type AgentMeter, type Traction, type Badge, type ActionPolicy,
+  type AuditEntry, type AuditOutcome, type AuditProvenance, type Decision, type GuardrailProfile,
 } from '../policy/index.js'
+import { resolveCallerInput, type CallerInput } from '../callers/normalize.js'
 
 // ── Policy Engine v2 store (Phase 1.3) ───────────────────────────────────────────
 //
@@ -74,30 +75,39 @@ export function updateAgentActionPolicy(
  * We never execute anything. The caller acts on the verdict, which keeps the same
  * prepared-or-executed separation the chain writes use.
  *
- * The snapshot comes from the CALLER, and per docs/robinhood-intent-capture.md bypass 8
- * that caller must be the skill rather than the agent being policed: an agent that can
- * author its own snapshot can buy an ALLOW by lying about buying power. We cannot verify
- * that from here, so the audit entry records a hash of exactly what was used, which makes
- * a falsified snapshot detectable after the fact instead of invisible.
+ * The snapshot comes from the CALLER, and per ../policy/README.md ("An agent that writes
+ * its own snapshot") that caller must be the skill rather than the agent being policed: an
+ * agent that can author its own snapshot can buy an ALLOW by lying about buying power. We
+ * cannot verify that from here, so the audit entry records a hash of exactly what was used,
+ * which makes a falsified snapshot detectable after the fact instead of invisible.
+ *
+ * Two request shapes are accepted (see ../callers/normalize.ts): a pre-normalized
+ * `{intent, snapshot}` or a registered `{callerId, action, account}`. The returned
+ * `provenance` says which one produced this verdict, and it is recorded on the audit row.
  */
 export function checkAgentAction(
   agentId: string,
-  input: { surface: string; intent: NormalizedIntent; snapshot?: AccountSnapshot },
+  input: CallerInput,
   caller?: string,
-): { decision: Decision; auditId: string; policyConfigured: boolean } | { error: string } {
+): { decision: Decision; auditId: string; policyConfigured: boolean; provenance: AuditProvenance } | { error: string } {
   const agent = state.agents.find((a) => a.id === agentId)
   if (!agent) return { error: 'Unknown agent' }
   if (!ownsAgent(agent, caller)) return { error: 'Forbidden: not the agent owner' }
-  if (!input?.intent || typeof input.intent !== 'object') return { error: 'intent required' }
-  if (!input.surface) return { error: 'surface required' }
+  if (!input?.surface) return { error: 'surface required' }
+
+  // Translation failures are refused BEFORE a decision exists, and deliberately write no
+  // audit row: there is no action to record. That is the opposite of a malformed intent,
+  // which does reach the engine and does leave a recorded DENY.
+  const resolved = resolveCallerInput(input)
+  if (!resolved.ok) return { error: `${resolved.code}: ${resolved.reason}` }
 
   const now = new Date().toISOString()
   const { policy, configured } = resolveActionPolicy(agent.actionPolicy, id('pol'), now)
   const decision = evaluateAction({
     surface: input.surface,
     policy,
-    intent: input.intent,
-    snapshot: input.snapshot,
+    intent: resolved.intent,
+    snapshot: resolved.snapshot,
     now: new Date(now),
   })
 
@@ -105,15 +115,19 @@ export function checkAgentAction(
     id: id('aud'),
     ts: now,
     agentId: agent.id,
-    intent: input.intent,
-    snapshot: input.snapshot,
+    intent: resolved.intent,
+    snapshot: resolved.snapshot,
     decision,
+    caller: resolved.provenance,
   })
   state.audits[agent.id] = capAudits([...(state.audits[agent.id] ?? []), entry])
   // Monotonic counters alongside the capped rows, so traction survives the audit cap.
   state.meters[agent.id] = meterDecision(state.meters[agent.id], {
     decision,
-    notionalUsd: input.intent.notionalUsd,
+    // From the RECORDED intent, not the raw request: the entry's number is already
+    // bounded and is the one the verdict was computed against, so the meter and the
+    // audit row can never disagree about how much was at stake.
+    notionalUsd: entry.intent.notionalUsd,
     at: now,
   })
   // Only surface it on the agent's activity feed when the policy actually intervened;
@@ -123,7 +137,7 @@ export function checkAgentAction(
   }
   save(state)
 
-  return { decision, auditId: entry.id, policyConfigured: configured }
+  return { decision, auditId: entry.id, policyConfigured: configured, provenance: resolved.provenance }
 }
 
 /**

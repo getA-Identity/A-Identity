@@ -20,7 +20,7 @@ export function Row({
   return (
     <li className="flex items-center justify-between gap-4 py-4">
       <div className="min-w-0">
-        <div className={`text-sm font-medium ${danger ? 'text-red-600' : 'text-foreground'}`}>{label}</div>
+        <div className={`text-sm font-medium ${danger ? 'text-danger' : 'text-foreground'}`}>{label}</div>
         <div className="mt-0.5 text-xs text-foreground/50">{desc}</div>
       </div>
       <Toggle on={on} danger={danger} onChange={onChange} label={label} />
@@ -41,7 +41,7 @@ export function Toggle({
   onChange: () => void
   label: string
 }) {
-  const activeColor = danger ? 'bg-red-500' : 'bg-accent'
+  const activeColor = danger ? 'bg-danger' : 'bg-accent'
   return (
     <button
       type="button"

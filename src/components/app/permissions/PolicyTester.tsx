@@ -79,10 +79,10 @@ export default function PolicyTester({ agentId, onSpent }: { agentId: string; on
         <div
           className={`mt-4 rounded-xl border p-3 text-sm ${
             approved
-              ? 'border-emerald-200 dark:border-emerald-500/25 bg-emerald-50/60 dark:bg-emerald-500/10 text-emerald-800'
+              ? 'border-ok/25 bg-ok/10 text-ok'
               : pending
-                ? 'border-amber-200 dark:border-amber-500/25 bg-amber-50/60 dark:bg-amber-500/10 text-amber-800 dark:text-amber-300'
-                : 'border-red-200 dark:border-red-500/25 bg-red-50/60 dark:bg-red-500/10 text-red-700 dark:text-red-300'
+                ? 'border-warn/25 bg-warn/10 text-warn'
+                : 'border-danger/25 bg-danger/10 text-danger'
           }`}
         >
           <div className="flex items-center gap-1.5 font-bold">

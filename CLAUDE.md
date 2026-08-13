@@ -25,6 +25,14 @@ public/llms-full.txt, public/.well-known/ (agent card, MCP server card, agent sk
   mcp/src/platform/layering.test.ts.
 - mcp/src/http/ holds route-group handlers; mcp/src/http.ts stays the entry (dist path
   is pinned by scripts, CI, and Render).
+- mcp/src/x402-3009/ is the self-facilitated EIP-3009 payment rail: the buyer signs and
+  pays no gas, we broadcast, and nothing counts as settled without a receipt carrying a
+  matching Transfer log. Chain-generic on purpose, so a chain gets it by declaring a
+  settlementTokens entry. Its signing domain is PROVEN against the token's live
+  DOMAIN_SEPARATOR, never pasted; if it cannot be proven, no challenge is served.
+- mcp/src/chains/provenance.ts is the artifact ledger behind /proof/:rail: every tx we
+  claim, plus caveats a test forces to be non-empty. Explorer links are derived, never
+  typed.
 - mcp/src/chains/registry.ts is the single source of truth for chains; a test fails the
   build if any other file hardcodes a chain id, RPC host, or USDC address.
 - Generated files, never hand-edit: src/lib/chains.ts (run cd mcp && npm run gen:chains)
@@ -35,7 +43,7 @@ public/llms-full.txt, public/.well-known/ (agent card, MCP server card, agent sk
 
 ## Verification
 
-- Backend: cd mcp && npm test (tsc + 522 unit tests; new test files must be added to the
+- Backend: cd mcp && npm test (tsc + 663 unit tests; new test files must be added to the
   test script in mcp/package.json, and the count literal in mcp/src/asp/proof.ts must
   match the number of test() declarations).
 - E2E: boot node mcp/dist/http.js, then npm run e2e, e2e:guardrail, http-smoke.

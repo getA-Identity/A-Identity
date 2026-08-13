@@ -103,17 +103,19 @@ eq('/api/chains serves 10 descriptors', chainIds.length, 10)
 for (const id of ['arc', 'base', 'arbitrum', 'avalanche', 'xlayer', 'rhchain', 'rhchain-testnet', 'celo', 'stellar'])
   check(`  chain present: ${id}`, chainIds.includes(id))
 check('no retired chain is served', !chainIds.some((id) => /algorand/i.test(id)))
-// Product decision 2026-08-08: Arc + X Layer live, Base beta (see chains/registry.ts).
-eq(
-  'the live chains are exactly arc + xlayer',
-  (chains.json?.chains ?? [])
-    .filter((c) => c.status === 'live')
-    .map((c) => c.id)
-    .sort()
-    .join(','),
-  'arc,xlayer',
+// Which chains are live is a product decision that moves, so this asserts the SHAPE that
+// must always hold rather than a list that goes stale every promotion: a live chain has
+// to carry an identity registry, and nothing may be served with a status the registry
+// does not use. The exact membership is pinned in mcp/src/chains/registry.test.ts, where a
+// promotion is meant to be a deliberate two-line edit.
+const served = chains.json?.chains ?? []
+check('every served chain has a known status', served.every((c) => ['live', 'beta', 'planned', 'deprecated'].includes(c.status)))
+check(
+  'every live chain carries an identity registry',
+  served.filter((c) => c.status === 'live').every((c) => Boolean(c.registries?.identity)),
+  JSON.stringify(served.filter((c) => c.status === 'live' && !c.registries?.identity).map((c) => c.id)),
 )
-eq('base is the one beta chain', (chains.json?.chains ?? []).filter((c) => c.status === 'beta').map((c) => c.id).join(','), 'base')
+check('arc and xlayer are still live', ['arc', 'xlayer'].every((id) => served.some((c) => c.id === id && c.status === 'live')))
 
 const status = await get('/api/guardrail-status')
 check('/api/guardrail-status says enforcing', status.json?.enforcing === true, JSON.stringify(status.json).slice(0, 160))

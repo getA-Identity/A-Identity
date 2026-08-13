@@ -1,0 +1,161 @@
+---
+title: "Build on Robinhood Chain"
+description: "Robinhood Chain network config for both networks, the canonical ERC-8004 registries already deployed there, and the first x402 facilitator the chain has."
+---
+
+Robinhood Chain is Robinhood's own Arbitrum Orbit L2, built for tokenized real-world
+assets, with ETH as the gas token and Ethereum for data availability. A-Identity runs
+agent identity there, and settles paid trust calls there in USDG.
+
+## Why this chain
+
+<CardGroup cols={3}>
+  <Card title="Agents will trade here" icon="chart-line">
+    It is the chain built around tokenized stocks and ETFs, and Robinhood has opened its surfaces to AI agents while stating plainly that it does not supervise them. That gap is the product.
+  </Card>
+  <Card title="ERC-8004 is already live" icon="fingerprint">
+    The canonical identity and reputation registries were deployed here by their authors, at the same addresses they carry on X Layer and Celo. Nothing had to be forked.
+  </Card>
+  <Card title="Gasless payments work" icon="bolt">
+    USDG implements EIP-3009, so a buyer can sign a transfer and never touch gas. Our facilitator broadcasts it.
+  </Card>
+</CardGroup>
+
+<Note>
+  Mainnet (`4663`) is **live** for us: agent #0 on the canonical registry is ours, and
+  paid trust calls settle here in USDG. Testnet (`46630`) is **beta**, and carries the
+  full canonical ERC-8004 trio plus a deployed AgentSpendPolicy vault. Every claim on
+  this page is checkable at [/proof/robinhood](https://a-identity.xyz/proof/robinhood).
+</Note>
+
+## Network config
+
+| Field | Mainnet | Testnet |
+| --- | --- | --- |
+| Chain ID | `4663` | `46630` |
+| CAIP-2 | `eip155:4663` | `eip155:46630` |
+| Native currency | ETH (18 decimals) | ETH (18 decimals) |
+| RPC (HTTP) | `https://rpc.mainnet.chain.robinhood.com` | `https://rpc.testnet.chain.robinhood.com` |
+| Block explorer | [robinhoodchain.blockscout.com](https://robinhoodchain.blockscout.com) | [explorer.testnet.chain.robinhood.com](https://explorer.testnet.chain.robinhood.com) |
+| Faucet | n/a (bridge real ETH) | [faucets.chain.link/robinhood-testnet](https://faucets.chain.link/robinhood-testnet) |
+
+<Warning>
+  Two things will bite you here.
+
+  **There is no canonical Circle USDC on either network.** Do not copy a USDC address
+  from another chain: it will not be the same token. The settlement token we use on
+  mainnet is Paxos USDG at `0x5fc5360D0400a0Fd4f2af552ADD042D716F1d168`, which is the
+  address Paxos documents for this chain. Our registry deliberately leaves the USDC slot
+  empty and names USDG as its own thing.
+
+  **CreateX is not deployed here**, on either network, so CREATE3 is unavailable. The
+  deterministic deployer that IS present is the Safe Singleton Factory
+  (`0x914d7Fec6aaC8cd542e72Bca78B30650d45643d7`), alongside the Arachnid CREATE2 factory.
+  That is what makes the canonical ERC-8004 addresses reproducible here.
+</Warning>
+
+## Connect with viem
+
+<CodeGroup>
+```ts chain.ts
+import { defineChain } from 'viem'
+
+export const robinhoodChain = defineChain({
+  id: 4663,
+  name: 'Robinhood Chain',
+  nativeCurrency: { name: 'Ether', symbol: 'ETH', decimals: 18 },
+  rpcUrls: { default: { http: ['https://rpc.mainnet.chain.robinhood.com'] } },
+  blockExplorers: { default: { name: 'Blockscout', url: 'https://robinhoodchain.blockscout.com' } },
+})
+
+export const robinhoodTestnet = defineChain({
+  id: 46630,
+  name: 'Robinhood Chain Testnet',
+  nativeCurrency: { name: 'Ether', symbol: 'ETH', decimals: 18 },
+  rpcUrls: { default: { http: ['https://rpc.testnet.chain.robinhood.com'] } },
+  blockExplorers: { default: { name: 'Blockscout', url: 'https://explorer.testnet.chain.robinhood.com' } },
+})
+```
+
+```ts read.ts
+import { createPublicClient, http } from 'viem'
+import { robinhoodChain } from './chain'
+
+const client = createPublicClient({ chain: robinhoodChain, transport: http() })
+
+// Agent #0 is the first agent ever registered on this chain.
+const owner = await client.readContract({
+  address: '0x8004a169fb4a3325136eb29fa0ceb6d2e539a432',
+  abi: [{ type: 'function', name: 'ownerOf', stateMutability: 'view', inputs: [{ type: 'uint256' }], outputs: [{ type: 'address' }] }],
+  functionName: 'ownerOf',
+  args: [0n],
+})
+```
+</CodeGroup>
+
+## What is deployed
+
+| Contract | Network | Address |
+| --- | --- | --- |
+| IdentityRegistry | mainnet | [`0x8004a169fb4a3325136eb29fa0ceb6d2e539a432`](https://robinhoodchain.blockscout.com/address/0x8004a169fb4a3325136eb29fa0ceb6d2e539a432) |
+| ReputationRegistry | mainnet | [`0x8004BAa17C55a88189AE136b182e5fdA19dE9b63`](https://robinhoodchain.blockscout.com/address/0x8004BAa17C55a88189AE136b182e5fdA19dE9b63) |
+| USDG (settlement) | mainnet | [`0x5fc5360D0400a0Fd4f2af552ADD042D716F1d168`](https://robinhoodchain.blockscout.com/address/0x5fc5360D0400a0Fd4f2af552ADD042D716F1d168) |
+| IdentityRegistry | testnet | [`0x8004A818BFB912233c491871b3d84c89A494BD9e`](https://explorer.testnet.chain.robinhood.com/address/0x8004A818BFB912233c491871b3d84c89A494BD9e) |
+| ReputationRegistry | testnet | [`0x8004B663056A597Dffe9eCcC1965A193B7388713`](https://explorer.testnet.chain.robinhood.com/address/0x8004B663056A597Dffe9eCcC1965A193B7388713) |
+| ValidationRegistry | testnet | [`0x8004Cb1BF31DAf7788923b405b754f57acEB4272`](https://explorer.testnet.chain.robinhood.com/address/0x8004Cb1BF31DAf7788923b405b754f57acEB4272) |
+
+We did not deploy the mainnet registries. They were already live at their canonical
+cross-chain addresses when we arrived; what is ours is **agent #0**, the first token that
+registry ever minted. On testnet the ValidationRegistry implementation was the one piece
+missing, and we deployed it by replaying the canonical Safe-Singleton-Factory calldata,
+which reproduces the same address rather than forking a new one.
+
+There is **no ValidationRegistry in the mainnet family**, mirroring Celo and X Layer, so
+a KYA result cannot be anchored on-chain there. It is still verified off-chain and
+recorded; we simply do not claim an anchor that does not exist.
+
+## The x402 facilitator
+
+An x402 facilitator is the service a seller calls to verify a payment and settle it. This
+chain had none from anyone, which meant a seller here could not accept a gasless x402
+payment at all. We run one, and it is open:
+
+| Endpoint | Access |
+| --- | --- |
+| `GET /api/facilitator/supported` | open |
+| `POST /api/facilitator/verify` | open, read-only |
+| `POST /api/facilitator/settle` | allowlisted by payTo, because we pay the gas |
+| `GET /api/facilitator/proof` | open |
+
+Base URL: `https://a-identity-backend.onrender.com/api/facilitator`. Both x402 wire
+spellings are accepted for `network`: the v1 slug (`rhchain`) and the v2 CAIP-2 id
+(`eip155:4663`).
+
+The signing domain is **proven, not pasted**. USDG exposes neither `version()` nor
+`eip712Domain()`, so the EIP-712 domain cannot be read from the contract. We rebuild each
+candidate domain and accept only the one that reproduces the live `DOMAIN_SEPARATOR`. If
+none matches, no payment challenge is served at all, because inviting a buyer to sign
+against a guessed domain produces an authorization nobody can settle.
+
+## Verify it yourself
+
+```bash
+# The signing domain, straight from the token. Compare it to what /supported publishes.
+curl -sX POST https://rpc.mainnet.chain.robinhood.com -H 'content-type: application/json' \
+  -d '{"jsonrpc":"2.0","id":1,"method":"eth_call","params":[{"to":"0x5fc5360D0400a0Fd4f2af552ADD042D716F1d168","data":"0x3644e515"},"latest"]}'
+# -> 0x7a3d7400b27830f4f91c2c16a082486d67c1befecaec2f53b33f1f35d5b62036
+
+# Our provenance ledger, with a live re-read of ownerOf(0) on every request.
+curl -s https://a-identity-backend.onrender.com/api/proof/robinhood
+
+# Every settlement, with the transaction that proves it.
+curl -s https://a-identity-backend.onrender.com/api/facilitator/proof
+```
+
+## Where this chain fits
+
+Arc is where escrow and the spend vault live. X Layer is where the trust oracle is
+listed. Celo is where x402 settles through a first-party facilitator someone else runs.
+Robinhood Chain is the one where we had to build the rail ourselves, and it is the chain
+whose users are agents trading real-world assets, which is exactly the population that
+needs a policy layer in front of it.

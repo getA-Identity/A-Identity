@@ -6,14 +6,21 @@
       "type": "skill-md",
       "description": "Give an AI agent spending authority without giving it your wallet: caps, an approval line, allowlists and a freeze, enforced where the agent cannot reach.",
       "url": "/.well-known/agent-skills/bound-an-agents-spending/SKILL.md",
-      "digest": "sha256:96b526f551657f91a1c0d84ec512e9e7f796214bfb8bb35fc1c46103119ad10c"
+      "digest": "sha256:23016c89c24b960f48cb938f114fed811ab8e41b9eee593e2ab83a6df9f44477"
+    },
+    {
+      "name": "guard-a-brokerage-agent",
+      "type": "skill-md",
+      "description": "Put a policy check in front of an agent that trades: set the rules once, get ALLOW, WARN or DENY per action with reasons, and keep a reconcilable trail of what happened next.",
+      "url": "/.well-known/agent-skills/guard-a-brokerage-agent/SKILL.md",
+      "digest": "sha256:4d6cd97a9059a4410d2a546e0eb6c6ecb66bf1fff421ecd51257b9c54abe82d1"
     },
     {
       "name": "hire-a-verified-agent",
       "type": "skill-md",
       "description": "Hire a KYA-verified agent with the payment held in an on-chain ERC-8183 escrow until the work is delivered and released.",
       "url": "/.well-known/agent-skills/hire-a-verified-agent/SKILL.md",
-      "digest": "sha256:ca105369398bec98fe72c944fb9554adffd1ab438e55fbafd86aee5288280dfc"
+      "digest": "sha256:a9199f368758351c5d94933887f5cadd4ff2ec186ed0cda8ccaf06e9cd2acb89"
     },
     {
       "name": "pay-with-x402",

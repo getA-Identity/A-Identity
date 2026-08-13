@@ -14,7 +14,8 @@
  * then fall back to a live on-chain read, and cross-link the two when both exist.
  */
 import { createIdentityProvider, isSafePublicHttpUrl } from '../erc8004.js'
-import { readValidation } from '../arc-contracts.js'
+import { ARC_CHAIN } from '../chains/index.js'
+import { readValidationOn } from '../validation-registry.js'
 import { computeAgentReputation, type ReputationResult } from '../reputation.js'
 import {
   listPlatformAgents,
@@ -38,7 +39,7 @@ type Bundle = {
   /** ERC-8004 token id (bigint) if we know one, for on-chain KYA / reputation anchoring. */
   tokenId: bigint | null
   /** On-chain KYA validation summary (from the ValidationRegistry), if a token id is known. */
-  validation: Awaited<ReturnType<typeof readValidation>> | null
+  validation: Awaited<ReturnType<typeof readValidationOn>> | null
   reputation: ReputationResult & { basis: string; behavioral: BehavioralSummary | null; sybil: SybilSummary | null }
   onchainVerified: boolean
   kyaVerified: boolean
@@ -98,20 +99,25 @@ async function gather(agentId: string): Promise<Bundle> {
   const provider = createIdentityProvider()
   const identity: Bundle['identity'] = await withTimeout(provider.resolve(onchainQuery), RPC_TIMEOUT_MS, null)
 
-  // Bundle.tokenId feeds ARC-scoped reads (ValidationRegistry KYA, reputation
-  // attestation), so it must only be set for Arc identities. An X Layer (OKX.AI)
-  // token id must never be looked up in Arc's registries: the same numeric id can
-  // belong to a different agent there. Partial identities carry no usable id.
-  const chainIsArc = !identity || identity.chain === 'arc'
-  const tokenId = chainIsArc
-    ? ((platform?.onchainAgentId ? asTokenId(platform.onchainAgentId) : null) ??
-       (identity && !identity.partial ? BigInt(identity.tokenId) : asTokenId(q)))
-    : null
+  // An ERC-8004 token id is only meaningful on the chain that minted it: the same numeric
+  // id on X Layer (OKX.AI) belongs to a different agent, so a read must be scoped to the
+  // right chain rather than defaulted to one. This used to be `identity.chain === 'arc'`,
+  // which silently dropped every other chain's attestations; now the chain comes from
+  // whatever anchored the id, and the registry decides whether that chain can answer.
+  // Partial identities carry no usable id.
+  const anchorChain = platform?.onchainAgentId
+    ? platform.chain
+    : (identity?.chain ?? platform?.chain ?? ARC_CHAIN.id)
+  const tokenId =
+    (platform?.onchainAgentId ? asTokenId(platform.onchainAgentId) : null) ??
+    (identity && !identity.partial ? BigInt(identity.tokenId) : asTokenId(q))
 
   // On-chain KYA validation summary (real ValidationRegistry read), when a token id is
-  // known. Also timeout-guarded.
+  // known. Timeout-guarded. A chain with no ValidationRegistry answers `supported: false`
+  // with a reason rather than `kyaCount: 0`, because "not anchorable here" and "anchored
+  // zero times" are different facts and a buyer must not read one as the other.
   const validation: Bundle['validation'] =
-    tokenId !== null ? await withTimeout(readValidation(tokenId), RPC_TIMEOUT_MS, null) : null
+    tokenId !== null ? await withTimeout(readValidationOn(anchorChain, tokenId), RPC_TIMEOUT_MS, null) : null
 
   const onchainVerified = Boolean(identity) || platform?.onchain === 'registered'
 

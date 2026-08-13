@@ -93,6 +93,11 @@
     <priority>0.6</priority>
   </url>
   <url>
+    <loc>https://a-identity.xyz/proof/robinhood</loc>
+    <changefreq>weekly</changefreq>
+    <priority>0.7</priority>
+  </url>
+  <url>
     <loc>https://a-identity.xyz/blog/gasless-nanopayments-for-agents</loc>
     <xhtml:link rel="alternate" hreflang="en" href="https://a-identity.xyz/blog/gasless-nanopayments-for-agents"/>
     <xhtml:link rel="alternate" hreflang="tr" href="https://a-identity.xyz/tr/blog/gasless-nanopayments-for-agents"/>

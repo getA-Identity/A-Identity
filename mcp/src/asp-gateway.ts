@@ -266,7 +266,7 @@ async function main() {
   }))
   // Policy discipline about a THIRD party. The engine's own pre_action_check stays free
   // and owner-gated on the main backend: payment cannot prove ownership, so it must never
-  // be the gate for owner-scoped data. See docs/compliance-robinhood.md section 2.
+  // be the gate for owner-scoped data. See ./policy/README.md, "Why the owner surface is free".
   app.all('/tools/guardrail_check', handle(async (req) => {
     const v = requireAgentId(req); if ('error' in v) return v
     return guardrailCheck(v.agentId)

@@ -13,6 +13,7 @@
  * explicitly asks to execute. Gas is paid in USDC (~0.006 USDC per tx).
  */
 import { ARC_CHAIN, createEvmAdapter, resolveRpcUrls } from './chains/index.js'
+import { readValidationOn } from './validation-registry.js'
 import type { MemoInput } from './chains/evm/memo.js'
 
 export type { MemoInput } from './chains/evm/memo.js'
@@ -173,9 +174,16 @@ export const readPolicyVault = (vault: string) => arc.readVault(vault)
 export const recordValidationOnchain = (agentId: bigint, requestUri: string, env: NodeJS.ProcessEnv = process.env, opts?: { response?: number; tag?: string }) =>
   arc.recordValidation(agentId, requestUri, env, opts)
 
-/** Read an agent's on-chain KYA validation summary (no key needed). */
+/**
+ * Read an agent's on-chain KYA validation summary on ARC (no key needed).
+ *
+ * Delegates to the registry-driven module so there is one implementation and one honest
+ * shape, rather than an Arc path and a "other chains" path that could answer differently.
+ * The result gains `supported` and `chain`; every existing caller reads `kyaCount` and is
+ * unaffected. To read another chain's registry, call `readValidationOn` directly.
+ */
 export const readValidation = (agentId: bigint, env: NodeJS.ProcessEnv = process.env) =>
-  arc.readValidation(agentId, env)
+  readValidationOn(ARC_CHAIN.id, agentId, env)
 
 /**
  * Anchor an agent's deterministic 0-1000 reputation on the ERC-8004 ReputationRegistry as a

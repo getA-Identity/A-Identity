@@ -215,8 +215,8 @@ export default function SpendPermissions({ agentId }: { agentId: string }) {
   return (
     <div className="mt-4">
       {error && (
-        <div className="mb-4 flex items-start gap-2 rounded-xl border border-amber-500/30 bg-amber-500/[0.06] p-3 text-xs text-foreground/70">
-          <AlertTriangle size={14} className="mt-0.5 shrink-0 text-amber-500" />
+        <div className="mb-4 flex items-start gap-2 rounded-xl border border-warn/30 bg-warn/[0.06] p-3 text-xs text-foreground/70">
+          <AlertTriangle size={14} className="mt-0.5 shrink-0 text-warn" />
           <span>{error}</span>
         </div>
       )}
@@ -240,8 +240,8 @@ export default function SpendPermissions({ agentId }: { agentId: string }) {
           The caps and the approval line on the Trading tab are shared: they apply to card purchases too, since they sit
           on the same policy.
         </p>
-        <p className="mt-3 flex items-start gap-2 rounded-xl border border-amber-500/25 bg-amber-500/[0.05] p-3 text-[11px] text-foreground/60">
-          <AlertTriangle size={13} className="mt-0.5 shrink-0 text-amber-500" />
+        <p className="mt-3 flex items-start gap-2 rounded-xl border border-warn/25 bg-warn/[0.05] p-3 text-[11px] text-foreground/60">
+          <AlertTriangle size={13} className="mt-0.5 shrink-0 text-warn" />
           <span>
             Worth knowing on this surface: a card agent is given the virtual card details, and a purchase happens at the
             merchant, not through an API we sit in front of. These limits are load-bearing when your agent asks us

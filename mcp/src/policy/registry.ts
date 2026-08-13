@@ -58,6 +58,13 @@ export const SURFACES: SurfaceDescriptor[] = [
   },
 ]
 
+/**
+ * The surface ids as a runtime tuple, so the MCP wire enum and the console tabs derive
+ * from the registry instead of restating it. `bet` disappearing from here must change the
+ * schema and the UI, not just this file.
+ */
+export const SURFACE_IDS = SURFACES.map((s) => s.id) as [Surface, ...Surface[]]
+
 const BY_ID = new Map(SURFACES.map((s) => [s.id, s]))
 
 /** Look up a surface. Returns undefined for an unknown id. */

@@ -88,6 +88,10 @@ type CeloProof = {
   byTool: Record<string, { count: number; usd: number } | number>
 }
 
+/** GET /api/facilitator/proof: our own EIP-3009 rail on Robinhood Chain. Same shape as
+ *  the Celo proof plus the asset, because on this rail we know exactly what moved. */
+type FacilitatorProof = CeloProof & { assetSymbol?: string | null; reverted?: number; ambiguous?: number }
+
 /** The ASP's public proof document, served from its own origin with open CORS. */
 type AspProof = {
   asp?: { name?: string; agentId?: string; network?: string; registrationTxUrl?: string }
@@ -163,6 +167,7 @@ export default function Stats() {
 
   const [stats, setStats] = useState<PlatformStats | null>(null)
   const [celo, setCelo] = useState<CeloProof | null>(null)
+  const [rh, setRh] = useState<FacilitatorProof | null>(null)
   const [asp, setAsp] = useState<AspProof | null>(null)
   const [traction, setTraction] = useState<Traction | null>(null)
   const [chains, setChains] = useState<ChainRow[] | null>(null)
@@ -200,6 +205,10 @@ export default function Stats() {
 
     json<CeloProof>('/api/celo/proof')
       .then((data) => fresh() && setCelo(data))
+      .catch(() => {})
+
+    json<FacilitatorProof>('/api/facilitator/proof')
+      .then((data) => fresh() && setRh(data))
       .catch(() => {})
 
     json<Traction>('/api/traction')
@@ -244,6 +253,8 @@ export default function Stats() {
   const xlayerUsd = typeof rev?.totalUsd === 'number' ? rev.totalUsd : null
   const celoCount = celo ? celo.totalSettlements : null
   const celoUsd = celo ? celo.totalUsd : null
+  const rhCount = rh ? rh.totalSettlements : null
+  const rhUsd = rh ? rh.totalUsd : null
 
   // The headline is a sum of two independent live reads, so it only exists once BOTH have
   // answered. A "total" that silently drops a rail because its fetch was slow is a lie
@@ -332,7 +343,7 @@ export default function Stats() {
                 label="Settled value"
                 value={totalUsd}
                 format={(n) => usdFixed(n, 3)}
-                note="Both rails combined, in real stablecoin. Small because the prices are per call and start at a tenth of a cent."
+                note="All three settlement rails combined, in real stablecoin. Small because the prices are per call and start at a tenth of a cent."
               />
               <MetricTile
                 icon={Users}
@@ -345,8 +356,8 @@ export default function Stats() {
             </div>
           </motion.div>
 
-          {/* The two rails, given equal weight, each with the breakdown behind its total. */}
-          <div className="mt-8 grid gap-5 lg:grid-cols-2">
+          {/* The three rails, given equal weight, each with the breakdown behind its total. */}
+          <div className="mt-8 grid gap-5 lg:grid-cols-3">
             <RailCard
               index={0}
               chain="xlayer"
@@ -394,6 +405,32 @@ export default function Stats() {
               sourceHref="https://a-identity.xyz/api/celo/proof"
               to="/celo-proof"
               linkLabel="See every Celo settlement"
+            />
+            <RailCard
+              index={2}
+              chain="rhchain"
+              name="Robinhood Chain"
+              network={rh?.network ?? 'eip155:4663'}
+              settlements={rhCount}
+              volumeUsd={rhUsd}
+              tools={toolRows(rh?.byTool)}
+              caveat={
+                rh && typeof rh.internalSettlements === 'number' ? (
+                  <>
+                    This chain had no x402 facilitator from anyone, so we run our own: the buyer signs
+                    and pays no gas, we broadcast, and a settlement only counts once the receipt carries
+                    the matching {rh.assetSymbol ?? 'token'} transfer.{' '}
+                    <span className="font-semibold text-foreground/75">{int(rh.internalSettlements)}</span> of
+                    these are internal, from our own buyer wallet;{' '}
+                    <span className="font-semibold text-foreground/75">{int(rh.externalSettlements ?? 0)}</span>{' '}
+                    came from a wallet that is not ours.
+                  </>
+                ) : undefined
+              }
+              source="GET /api/facilitator/proof"
+              sourceHref="https://a-identity.xyz/api/facilitator/proof"
+              to="/proof/robinhood"
+              linkLabel="See the Robinhood Chain proof"
             />
           </div>
         </SectionShell>

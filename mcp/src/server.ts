@@ -3,9 +3,15 @@
  * Shared by the stdio entry (index.ts) and the HTTP entry (http.ts).
  */
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
-import { z } from 'zod'
 import { listCapabilities, CHAIN_CONFIG } from './data.js'
-import { CHAINS, CHAIN_IDS, identityChains } from './chains/index.js'
+import { CHAINS, identityChains } from './chains/index.js'
+import {
+  resolveAgentInput, getReputationInput, listAgentsInput, getChainStatusInput,
+  getArcStatusInput, getCircleStatusInput, listCapabilitiesInput, merchantCheckInput,
+  findAgentInput, getAgentManifestInput, hireAgentInput, deliverTaskInput,
+  checkTaskStatusInput, releaseEscrowInput, registerAgentInput, policyGetInput,
+  policySetInput, preActionCheckInput, auditLogInput, recordAuditOutcomeInput,
+} from './mcp-tool-schemas.js'
 import { createIdentityProvider } from './erc8004.js'
 import { computeAgentReputation } from './reputation.js'
 import { getArcStatus } from './arc.js'
@@ -55,12 +61,25 @@ export type ServerData = {
    *
    * These are the OWNER surface and they are free. The paid counterparty signal
    * (guardrail_check) lives on the ASP behind x402 instead, because payment proves
-   * someone paid, not that they own the agent: see docs/compliance-robinhood.md 2.5.
+   * someone paid, not that they own the agent: see ./policy/README.md, "Why the owner
+   * surface is free".
    */
   policy?: {
     getPolicy: (agentId: string) => unknown
     setPolicy: (agentId: string, policy: unknown) => unknown
-    check: (agentId: string, input: { surface: string; intent: unknown; snapshot?: unknown }) => unknown
+    /** Two accepted shapes, resolved server-side: `{surface, intent, snapshot?}` or
+     *  `{surface, callerId, action, account?}`. See mcp-tool-schemas.ts. */
+    check: (
+      agentId: string,
+      input: {
+        surface: string
+        intent?: unknown
+        snapshot?: unknown
+        callerId?: string
+        action?: unknown
+        account?: unknown
+      },
+    ) => unknown
     auditLog: (agentId: string, opts: { since?: string; limit?: number }) => unknown
     recordOutcome: (agentId: string, auditId: string, outcome: string, evidenceRef?: string) => unknown
     register: (manifest: Record<string, unknown>) => unknown
@@ -77,17 +96,7 @@ export function buildServer(data: ServerData = {}): McpServer {
       title: 'Resolve agent identity',
       description:
         `Resolve an agent's identity with a LIVE on-chain read of the ERC-8004 IdentityRegistry (ownerOf + tokenURI) on any of the ${IDENTITY_CHAINS.length} chains that carry one (${IDENTITY_CHAINS.map((c) => c.shortName).join(', ')}). Query by agent id (CAIP-10), token id, or owner address. Read-only, no mocks.`,
-      inputSchema: {
-        query: z
-          .string()
-          .describe(
-            'Agent id (e.g. "eip155:5042002:8004/849980"), token id ("#849980"), or owner address (0x…)',
-          ),
-        chain: z
-          .enum(CHAIN_IDS)
-          .optional()
-          .describe(`Optional filter by registry chain slug (${CHAIN_IDS.join(', ')}). Omit to search every chain that carries an identity registry.`),
-      },
+      inputSchema: resolveAgentInput,
     },
     async ({ query, chain }) => {
       const agent = await identity.resolve(query)
@@ -109,11 +118,7 @@ export function buildServer(data: ServerData = {}): McpServer {
       title: 'Get agent reputation',
       description:
         "An agent's deterministic reputation (0-1000) computed from REAL activity: on-chain USDC settlements, verified ERC-8004 identity, clean ratio, and tenure. Read-only.",
-      inputSchema: {
-        agentId: z
-          .string()
-          .describe('The platform agent id (e.g. "agent_…") or an on-chain agent id'),
-      },
+      inputSchema: getReputationInput,
     },
     async ({ agentId }) => {
       const rep = data.getReputation?.(agentId)
@@ -155,7 +160,7 @@ export function buildServer(data: ServerData = {}): McpServer {
       title: 'List registered agents',
       description:
         'List the real agents registered on this A-Identity platform (name, chain, KYA + on-chain status). ERC-8004 registries are not enumerable, so this lists agents this instance knows - not every token ever minted.',
-      inputSchema: {},
+      inputSchema: listAgentsInput,
     },
     async () => {
       const agents = data.listAgents ? data.listAgents() : []
@@ -173,7 +178,7 @@ export function buildServer(data: ServerData = {}): McpServer {
       title: 'Get supported chain status',
       description:
         `List every chain in the A-Identity chain registry, with its identity standard, x402 support, the ERC-8004 registries it carries and its lifecycle status: ${CHAIN_COUNT('live')} live, ${CHAIN_COUNT('beta')} beta, ${CHAIN_COUNT('planned')} planned.`,
-      inputSchema: {},
+      inputSchema: getChainStatusInput,
     },
     async () => {
       return json({ chains: CHAIN_CONFIG })
@@ -186,7 +191,7 @@ export function buildServer(data: ServerData = {}): McpServer {
       title: 'Get live Circle Arc status',
       description:
         'Connect to the Circle Arc testnet over JSON-RPC and read live chain state (chainId, latest block). Arc pays gas in USDC with sub-second finality. Read-only, no keys.',
-      inputSchema: {},
+      inputSchema: getArcStatusInput,
     },
     async () => json(await getArcStatus()),
   )
@@ -197,7 +202,7 @@ export function buildServer(data: ServerData = {}): McpServer {
       title: 'Get Circle platform status',
       description:
         'Report the Circle developer platform link: wallets (W3S), Gateway (unified balance), USDC. Performs a real authenticated ping when CIRCLE_API_KEY is set; otherwise explains what to configure. Read-only.',
-      inputSchema: {},
+      inputSchema: getCircleStatusInput,
     },
     async () => json(await getCircleStatus()),
   )
@@ -208,7 +213,7 @@ export function buildServer(data: ServerData = {}): McpServer {
       title: 'List A-Identity capabilities',
       description:
         'Describe the full A-Identity protocol surface: identity, payments, connectivity, reputation, and supported chains.',
-      inputSchema: {},
+      inputSchema: listCapabilitiesInput,
     },
     async () => json(listCapabilities()),
   )
@@ -219,16 +224,7 @@ export function buildServer(data: ServerData = {}): McpServer {
       title: 'Verify a commerce merchant agent',
       description:
         "Verify a merchant-side agent BEFORE a checkout or payment authorization - the trust step agentic-commerce protocols (ACP/UCP) leave to user approval. Discovers the merchant's /.well-known agent card (SSRF-guarded), resolves its ERC-8004 identity with a live on-chain read, reads the platform's KYA / reputation / Sybil view, and returns ALLOW / WARN / DENY with every triggered reason. Free, read-only, creates no state.",
-      inputSchema: {
-        url: z
-          .string()
-          .optional()
-          .describe("The merchant's site or agent-card URL (its /.well-known/agent.json and agent-card.json are probed)"),
-        agentId: z
-          .string()
-          .optional()
-          .describe('The merchant agent id: CAIP-10, bare token id, owner address, or a platform agent id. At least one of url / agentId is required.'),
-      },
+      inputSchema: merchantCheckInput,
     },
     async ({ url, agentId }) => json(await merchantCheck({ url, agentId })),
   )
@@ -247,9 +243,7 @@ export function buildServer(data: ServerData = {}): McpServer {
         title: 'Find a verified worker agent',
         description:
           'Search the marketplace catalog of KYA-verified worker agents and their services (name, price in USDC, rating, completed jobs). Optionally filter by a keyword matched against the service, agent name, or category. Read-only.',
-        inputSchema: {
-          query: z.string().optional().describe('Optional keyword to match against service / agent name / category'),
-        },
+        inputSchema: findAgentInput,
       },
       async ({ query }) => {
         const cat = mp.catalog() as { services: Array<Record<string, unknown>>; total: number }
@@ -269,7 +263,7 @@ export function buildServer(data: ServerData = {}): McpServer {
         title: 'Get an agent manifest (AMP Discover)',
         description:
           "Read an agent's public manifest: its ERC-8004 identity, services, reputation, and how to hire it. Only a KYA-verified agent is hireable. Read-only.",
-        inputSchema: { agentId: z.string().describe('The platform agent id (agent_…)') },
+        inputSchema: getAgentManifestInput,
       },
       async ({ agentId }) => json(mp.manifest(agentId)),
     )
@@ -280,12 +274,7 @@ export function buildServer(data: ServerData = {}): McpServer {
         title: 'Hire a verified worker agent',
         description:
           'Hire a KYA-verified agent for a service; USDC is committed to an ERC-8183 escrow on Arc. Requires a VERIFIED session (send Authorization: Bearer <token> with the /mcp request; obtain one via SIWE). Returns the created task.',
-        inputSchema: {
-          agentId: z.string(),
-          service: z.string(),
-          priceUsd: z.number().positive().max(1000),
-          description: z.string().optional(),
-        },
+        inputSchema: hireAgentInput,
       },
       async ({ agentId, service, priceUsd, description }) => json(await mp.hire({ agentId, service, priceUsd, description })),
     )
@@ -296,7 +285,7 @@ export function buildServer(data: ServerData = {}): McpServer {
         title: 'Deliver a task result',
         description:
           "Submit a deliverable for a task your agent was hired for (the hired agent's owner). Requires a verified session. Returns the updated task.",
-        inputSchema: { taskId: z.string(), deliverable: z.string() },
+        inputSchema: deliverTaskInput,
       },
       async ({ taskId, deliverable }) => json(mp.deliver(taskId, deliverable)),
     )
@@ -307,7 +296,7 @@ export function buildServer(data: ServerData = {}): McpServer {
         title: 'Check a task status',
         description:
           'Read a task you are a party to (the client or the hired agent owner): status, deliverable, escrow settlement, and on-chain tx. Requires a verified session.',
-        inputSchema: { taskId: z.string() },
+        inputSchema: checkTaskStatusInput,
       },
       async ({ taskId }) => json(mp.checkTask(taskId)),
     )
@@ -318,11 +307,7 @@ export function buildServer(data: ServerData = {}): McpServer {
         title: 'Release task escrow',
         description:
           'Approve and release a task (the hiring client): settles the ERC-8183 escrow to the worker in USDC on Arc, with an optional review. Requires a verified session. Returns the settled task.',
-        inputSchema: {
-          taskId: z.string(),
-          rating: z.number().min(1).max(5).optional(),
-          review: z.string().optional(),
-        },
+        inputSchema: releaseEscrowInput,
       },
       async ({ taskId, rating, review }) => json(await mp.release(taskId, { rating, review })),
     )
@@ -341,14 +326,7 @@ export function buildServer(data: ServerData = {}): McpServer {
         title: 'Register an agent from a manifest',
         description:
           'Register an agent from a manifest and get back its id, its honest ERC-8004 status (queued until a registration tx is broadcast) and its guardrail badge set. Free. Requires a verified session.',
-        inputSchema: {
-          name: z.string().describe('Agent name'),
-          description: z.string().optional(),
-          category: z.string().optional(),
-          capabilities: z.array(z.string()).optional(),
-          endpoint: z.string().optional().describe('Where the agent is reachable'),
-          walletAddress: z.string().optional(),
-        },
+        inputSchema: registerAgentInput,
       },
       async (manifest) => json(p.register(manifest as Record<string, unknown>)),
     )
@@ -359,7 +337,7 @@ export function buildServer(data: ServerData = {}): McpServer {
         title: 'Read the action policy',
         description:
           "Read this agent's action policy: per-action and daily caps, the human-approval line, symbol allow/deny lists, options and margin switches, trading hours and concentration limit, plus its version. Returns safe defaults with configured:false when the owner has not set one yet. Owner only.",
-        inputSchema: { agentId: z.string() },
+        inputSchema: policyGetInput,
       },
       async ({ agentId }) => json(p.getPolicy(agentId)),
     )
@@ -370,12 +348,7 @@ export function buildServer(data: ServerData = {}): McpServer {
         title: 'Update the action policy',
         description:
           "Update this agent's action policy. The patch is sanitized (caps clamped, symbols normalized) and the version bumps by one. Margin cannot be enabled: it is off by construction. Owner only, and a mutating call, so it requires a verified session.",
-        inputSchema: {
-          agentId: z.string(),
-          policy: z
-            .record(z.unknown())
-            .describe('Partial policy: perActionCapUsd, dailyCapUsd, humanApprovalAboveUsd, frozen, trade{allowSymbols,denySymbols,allowOptions,tradingHoursUtc,maxConcentrationPct}'),
-        },
+        inputSchema: policySetInput,
       },
       async ({ agentId, policy }) => json(p.setPolicy(agentId, policy)),
     )
@@ -385,20 +358,13 @@ export function buildServer(data: ServerData = {}): McpServer {
       {
         title: 'Check an intended action against the policy',
         description:
-          'Ask whether an action the agent intends to take is allowed: returns ALLOW, WARN or DENY with every reason, plus the audit id. It NEVER executes anything, so the caller acts on the verdict. Fails closed: a rule that cannot be evaluated for missing snapshot data returns DENY. The snapshot must be gathered by the caller, not authored by the agent being checked. Free. Owner only.',
-        inputSchema: {
-          agentId: z.string(),
-          surface: z.enum(['trade', 'spend', 'bet']).describe('Which action surface; only trade is live'),
-          intent: z
-            .record(z.unknown())
-            .describe('{ kind: order|cancel|recurring|settings|transfer|document, notionalUsd, side?, symbol?, assetClass?, protective?, settingKey?, settingValue?, cadence? }'),
-          snapshot: z
-            .record(z.unknown())
-            .optional()
-            .describe('{ todayNotionalUsd, positions[], portfolioValueUsd?, cashAvailableUsd?, marginUsedUsd?, accountType? } gathered by the caller'),
-        },
+          'Ask whether an action the agent intends to take is allowed: returns ALLOW, WARN or DENY with every reason, plus the audit id and where the numbers came from. It NEVER executes anything, so the caller acts on the verdict. Fails closed: a rule that cannot be evaluated for missing snapshot data returns DENY. Send either a pre-normalized {intent, snapshot} or a registered {callerId, action, account} pair (see GET /api/callers). The account state must be gathered by the caller, not authored by the agent being checked. Free. Owner only.',
+        inputSchema: preActionCheckInput,
       },
-      async ({ agentId, surface, intent, snapshot }) => json(p.check(agentId, { surface, intent, snapshot })),
+      // Passed through as one object rather than field by field: the two accepted call
+      // shapes are resolved in one place (platform/guardrail.ts), so the wire cannot
+      // develop its own opinion about which one won.
+      async (input) => json(p.check(input.agentId, input)),
     )
 
     server.registerTool(
@@ -407,11 +373,7 @@ export function buildServer(data: ServerData = {}): McpServer {
         title: 'Read the decision trail',
         description:
           "This agent's recorded decisions, newest first, with a summary including the USD value the policy actually refused. Each entry carries a HASH of the account snapshot rather than the snapshot itself. Free. Owner only.",
-        inputSchema: {
-          agentId: z.string(),
-          since: z.string().optional().describe('ISO timestamp; ignored if unparseable'),
-          limit: z.number().optional().describe('1-500, default 100'),
-        },
+        inputSchema: auditLogInput,
       },
       async ({ agentId, since, limit }) => json(p.auditLog(agentId, { since, limit })),
     )
@@ -422,12 +384,7 @@ export function buildServer(data: ServerData = {}): McpServer {
         title: 'Record what happened after a verdict',
         description:
           'Record the outcome of a decision: executed, blocked, awaiting_human or abandoned, with an optional evidence reference (e.g. a venue order id) so the entry can be reconciled rather than believed. A DENY can never be recorded as executed. Owner only.',
-        inputSchema: {
-          agentId: z.string(),
-          auditId: z.string(),
-          outcome: z.enum(['executed', 'blocked', 'awaiting_human', 'abandoned']),
-          evidenceRef: z.string().optional(),
-        },
+        inputSchema: recordAuditOutcomeInput,
       },
       async ({ agentId, auditId, outcome, evidenceRef }) => json(p.recordOutcome(agentId, auditId, outcome, evidenceRef)),
     )

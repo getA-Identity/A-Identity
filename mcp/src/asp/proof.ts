@@ -109,7 +109,7 @@ export const PROOF = {
   },
   // The rigor behind the numbers - deterministic and unit-tested, not an LLM guess.
   engineering: {
-    tests: 610,
+    tests: 663,
     deterministicReputation: true,
     liveOnchainReads: 'ERC-8004 IdentityRegistry + ValidationRegistry (KYA) on Circle Arc, plus the OKX.AI IdentityRegistry on X Layer mainnet (any OKX.AI agent resolves by token id or owner address), read live via viem',
     onchainReputationWrites: 'ERC-8004 ReputationRegistry on Circle Arc: the score is anchored on-chain as a signed observer attestation (A1)',

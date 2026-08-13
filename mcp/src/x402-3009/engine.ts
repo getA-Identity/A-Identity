@@ -352,12 +352,15 @@ export async function settlePayment(input: {
   }
   inFlight.add(key)
   try {
-    const wallet =
-      deps.walletClient ??
-      ((await evmWalletClientFromKey(chain, signerKey(chain, env), env)) as unknown as { client: WalletClientLike; account: { address: Hex } } | null)?.client
-    const signerAddress =
-      deps.signerAddress ??
-      ((await evmWalletClientFromKey(chain, signerKey(chain, env), env)) as unknown as { account?: { address: Hex } } | null)?.account?.address
+    // Resolved once: building a wallet client derives an account from the key, and doing
+    // it twice would do that work twice for the same answer.
+    const signer = deps.walletClient
+      ? null
+      : ((await evmWalletClientFromKey(chain, signerKey(chain, env), env)) as unknown as
+          | { client: WalletClientLike; account: { address: Hex } }
+          | null)
+    const wallet = deps.walletClient ?? signer?.client
+    const signerAddress = deps.signerAddress ?? signer?.account?.address
     if (!wallet) {
       return {
         success: false,

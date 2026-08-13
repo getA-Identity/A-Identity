@@ -5,7 +5,7 @@
  * I/O, no network, no clock reads unless injected, no knowledge of who is asking. Identical
  * inputs always produce an identical verdict, which is what lets us say honestly that a
  * verdict is a comparison against the user's own rules rather than an opinion about a
- * trade (docs/compliance-robinhood.md section 3).
+ * trade (./README.md, "Why a verdict is a comparison, not advice").
  *
  * Shape follows the chain adapter seam: a list of rules is DATA, the pipeline that runs
  * them is generic, and a new surface adds rules rather than editing the pipeline. Every
@@ -63,7 +63,7 @@ const perActionCap: Rule = ({ policy, intent }) =>
 /**
  * The daily cap is what actually stops structuring: an agent that splits one over-cap
  * order into many under-cap ones passes the per-action rule and fails here
- * (docs/robinhood-intent-capture.md, bypass 6).
+ * (./README.md, "Splitting one large action into many small ones").
  */
 const dailyCap: Rule = ({ policy, intent, snapshot }) => {
   if (!snapshot) {

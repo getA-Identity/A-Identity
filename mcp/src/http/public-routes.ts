@@ -5,6 +5,8 @@
  * original http.ts order.
  */
 import { CHAIN_CONFIG } from '../data.js'
+import { SURFACES } from '../policy/index.js'
+import { publicCallers } from '../callers/registry.js'
 import { buildStamp } from '../build-stamp.js'
 import { createIdentityProvider } from '../erc8004.js'
 import { getArcStatus } from '../arc.js'
@@ -104,6 +106,48 @@ export async function handlePublicRoutes(ctx: RouteCtx): Promise<boolean> {
   // ── REST /api/chains ──────────────────────────────────────────────────────────
   if (req.method === 'GET' && url.pathname === '/api/chains') {
     sendJson(res, 200, { chains: CHAIN_CONFIG })
+    return true
+  }
+
+  // ── REST /api/surfaces + /api/callers ─────────────────────────────────────────
+  //
+  // Static registry data, so they are plain GETs and sit outside the mutation gate. They
+  // live here rather than behind the owner gate because neither says anything about an
+  // agent: one is the list of action surfaces and their honest lifecycle status, the other
+  // is which callers we can translate and how strong each one's enforcement actually is.
+  //
+  // The console derives its tabs from /api/surfaces so a `planned` surface renders as
+  // deliberately-not-live instead of quietly disappearing, which is the drift that made
+  // `bet` invisible even though its schema shipped.
+  if (req.method === 'GET' && url.pathname === '/api/surfaces') {
+    res.setHeader('Cache-Control', 'public, max-age=300')
+    sendJson(res, 200, {
+      surfaces: SURFACES.map((s) => ({
+        id: s.id,
+        name: s.name,
+        status: s.status,
+        policyBlock: s.policyBlock,
+        kinds: s.kinds,
+        note: s.note,
+      })),
+    })
+    return true
+  }
+
+  if (req.method === 'GET' && url.pathname === '/api/callers') {
+    res.setHeader('Cache-Control', 'public, max-age=300')
+    sendJson(res, 200, {
+      callers: publicCallers(),
+      // Stated rather than implied: the original call shape still works and carries no
+      // venue, so a reader does not conclude a callerId is now mandatory.
+      direct:
+        'A pre-normalized { intent, snapshot } is still accepted and needs no callerId. Its audit row records enforcement "none", because nothing we can name stood between the agent and the venue.',
+      enforcement: {
+        process: 'The caller starts the venue process and gates its writes, so a DENY is a real veto.',
+        wrapper: 'The caller can only decline to make the call it was asked to make. An agent with another route to the same account is not contained.',
+        none: 'Nothing we know of stands between the agent and the venue: the verdict is advice plus a record.',
+      },
+    })
     return true
   }
 

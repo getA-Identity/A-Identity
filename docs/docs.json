@@ -2,7 +2,7 @@
   "$schema": "https://mintlify.com/docs.json",
   "theme": "mint",
   "name": "A-Identity",
-  "description": "Documentation for A-Identity — the passport and wallet for the agentic economy: verified ERC-8004 agent identity, x402 and Circle Nanopayments micro-payments, Gateway and CCTP, on Circle Arc.",
+  "description": "Documentation for A-Identity, the passport and wallet for the agentic economy: verified ERC-8004 agent identity, x402 and Circle Nanopayments micro-payments, Gateway and CCTP, on Circle Arc, Celo, X Layer and Robinhood Chain.",
   "colors": {
     "primary": "#7342E2",
     "light": "#8B5CF6",
@@ -13,8 +13,8 @@
     "indexing": "all",
     "metatags": {
       "og:site_name": "A-Identity Docs",
-      "og:title": "A-Identity Docs — Passport & Wallet for the Agentic Economy",
-      "og:description": "ERC-8004 identity, x402 + Circle Nanopayments, Gateway, and CCTP on Circle Arc. Verified agents, bounded USDC payments, human-on-the-loop.",
+      "og:title": "A-Identity Docs : Passport & Wallet for the Agentic Economy",
+      "og:description": "ERC-8004 identity, x402 + Circle Nanopayments, Gateway, and CCTP on Circle Arc, Celo, X Layer and Robinhood Chain. Verified agents, bounded USDC payments, human-on-the-loop.",
       "og:image": "https://a-identity.xyz/og-image.png",
       "twitter:card": "summary_large_image",
       "twitter:image": "https://a-identity.xyz/og-image.png",
@@ -32,11 +32,16 @@
         "groups": [
           {
             "group": "Get Started",
-            "pages": ["introduction", "quickstart"]
+            "pages": [
+              "introduction",
+              "quickstart"
+            ]
           },
           {
             "group": "Live on OKX.AI",
-            "pages": ["okx-ai-asp"]
+            "pages": [
+              "okx-ai-asp"
+            ]
           },
           {
             "group": "Concepts",
@@ -49,15 +54,31 @@
           },
           {
             "group": "Protocols",
-            "pages": ["protocols/erc-8004", "protocols/x402", "protocols/nanopayments", "protocols/escrow", "protocols/mcp"]
+            "pages": [
+              "protocols/erc-8004",
+              "protocols/x402",
+              "protocols/nanopayments",
+              "protocols/escrow",
+              "protocols/mcp"
+            ]
           },
           {
-            "group": "Build on Arc",
-            "pages": ["chains/arc", "chains/gateway", "chains/cctp"]
+            "group": "Chains",
+            "pages": [
+              "chains/overview",
+              "chains/arc",
+              "chains/celo",
+              "chains/xlayer",
+              "chains/robinhood",
+              "chains/gateway",
+              "chains/cctp"
+            ]
           },
           {
             "group": "The App",
-            "pages": ["app/account-lifecycle"]
+            "pages": [
+              "app/account-lifecycle"
+            ]
           }
         ]
       },

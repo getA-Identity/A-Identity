@@ -692,7 +692,19 @@ export function createEvmAdapter(chain: ChainDescriptor) {
   }
 
   // ── KYA attestation: ERC-8004 ValidationRegistry ────────────────────────────────
-  async function recordValidation(agentId: bigint, requestUri: string, env: NodeJS.ProcessEnv = process.env, opts?: { response?: number; tag?: string }): Promise<Prepared | ValidationExecuted> {
+  async function recordValidation(agentId: bigint, requestUri: string, env: NodeJS.ProcessEnv = process.env, opts?: { response?: number; tag?: string }): Promise<Prepared | ValidationExecuted | { executed: false; reverted: true; reason: string }> {
+    // Most chains in this registry carry no ValidationRegistry, so the address above is
+    // `undefined` cast to an address. Without this guard viem is handed undefined and the
+    // caller gets a generic read error, which is a THIRD state on top of the two that
+    // matter: "cannot be anchored here" and "anchored zero times". Refuse first and say
+    // which one it is. recordReputation already does this for its own registry.
+    if (!validationRegistry) {
+      return {
+        executed: false,
+        reverted: true,
+        reason: `Chain ${chain.id} has no ValidationRegistry in its descriptor, so a KYA result cannot be anchored on-chain here.`,
+      }
+    }
     const response = opts?.response ?? 100
     const tag = opts?.tag ?? 'kya'
     const { keccak256, toHex } = await import('viem')
@@ -781,6 +793,15 @@ export function createEvmAdapter(chain: ChainDescriptor) {
   }
 
   async function readValidation(agentId: bigint, env: NodeJS.ProcessEnv = process.env) {
+    if (!validationRegistry) {
+      // Same distinction as recordValidation: not anchorable is not the same fact as
+      // anchored zero times, and a count of 0 would read like the second.
+      return {
+        agentId: agentId.toString(),
+        supported: false as const,
+        reason: `Chain ${chain.id} has no ValidationRegistry in its descriptor, so KYA cannot be anchored on-chain here.`,
+      }
+    }
     const client = await publicClient(env)
     try {
       const validator = (await walletClient(env))?.account.address

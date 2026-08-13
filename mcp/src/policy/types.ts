@@ -12,7 +12,8 @@
  *   honest results          -> a verdict carries every reason, never a bare boolean
  *
  * Nothing in this module may import a caller-specific module (Robinhood or otherwise).
- * That is a hard rule recorded in docs/compliance-robinhood.md: the engine carries no
+ * That is a hard rule recorded in ./README.md ("The rule that keeps this module a core"):
+ * the engine carries no
  * dependency on any particular brokerage, official or unofficial.
  */
 
@@ -50,7 +51,7 @@ export type AssetClass = 'equity' | 'option' | 'crypto'
  * The caller-neutral intent. A caller adapter produces this; the engine consumes only
  * this. `notionalUsd` must come from the caller's own dry-run/preview of the action, not
  * from a model's arithmetic, so the engine checks the action the venue would actually
- * receive (see docs/robinhood-intent-capture.md, layer 3).
+ * receive (see ./README.md, "An agent that writes its own snapshot").
  */
 export type NormalizedIntent = {
   kind: ActionKind
@@ -82,7 +83,7 @@ export type NormalizedIntent = {
  * Account state the engine needs to decide. Supplied by the CALLER adapter, which reads
  * it itself immediately before the check. It is never supplied by the agent being
  * policed: an agent that can author its own snapshot can buy an ALLOW by lying about
- * buying power (docs/robinhood-intent-capture.md, bypass 8).
+ * buying power (./README.md, "An agent that writes its own snapshot").
  *
  * Optional fields are optional because not every caller can produce them. A rule that
  * needs a field it does not have FAILS CLOSED rather than passing.

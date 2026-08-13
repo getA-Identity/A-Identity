@@ -1,0 +1,100 @@
+---
+title: "Build on Celo"
+description: "Celo network config for mainnet and Celo Sepolia, the ERC-8004 registries live there, and the first-party x402 facilitator that settles in USDC."
+---
+
+Celo is a stablecoin-native EVM L2 where gas can be paid in a stablecoin via CIP-64, and
+where a first-party x402 facilitator already exists. A-Identity runs agent identity there
+and sells its trust tools over that facilitator, settled in native USDC.
+
+## Why Celo
+
+<CardGroup cols={3}>
+  <Card title="A facilitator already exists" icon="handshake">
+    Celo runs its own x402 facilitator, so a buyer signs an EIP-3009 authorization and pays no gas. We did not have to build the rail.
+  </Card>
+  <Card title="Native Circle USDC" icon="dollar-sign">
+    Real USDC, not a bridged twin, with an EIP-712 domain we read off the contract before signing anything.
+  </Card>
+  <Card title="Gas in stablecoins" icon="gas-pump">
+    CIP-64 fee abstraction lets a transaction pay its own fee in USDC, which removes the "hold a second token" problem for an agent.
+  </Card>
+</CardGroup>
+
+<Note>
+  Celo mainnet is **live**: agent #9759 is ours on the canonical registry, and the x402
+  rail has real settlements recorded in a durable log you can read at
+  [/celo-proof](https://a-identity.xyz/celo-proof). Celo Sepolia is **beta**.
+</Note>
+
+## Network config
+
+| Field | Mainnet | Celo Sepolia |
+| --- | --- | --- |
+| Chain ID | `42220` | `11142220` |
+| CAIP-2 | `eip155:42220` | `eip155:11142220` |
+| Native currency | CELO (18 decimals) | CELO (18 decimals) |
+| RPC (HTTP) | `https://forno.celo.org` | `https://forno.celo-sepolia.celo-testnet.org` |
+| Block explorer | [celoscan.io](https://celoscan.io) | [celo-sepolia.blockscout.com](https://celo-sepolia.blockscout.com) |
+| USDC | `0xcebA9300f2b948710d2653dD7B07f33A8B32118C` | `0x01C5C0122039549AD1493B8220cABEdD739BC44E` |
+| Faucet | n/a | [faucet.celo.org/celo-sepolia](https://faucet.celo.org/celo-sepolia) |
+
+<Warning>
+  Alfajores is deprecated; **Celo Sepolia** is the current testnet. Also note there is no
+  ValidationRegistry in the Celo ERC-8004 family on either network, so a KYA result
+  cannot be anchored on-chain here. We verify and record it off-chain and say so, rather
+  than reporting an anchor count of zero that would read like a real measurement.
+</Warning>
+
+## Connect with viem
+
+<CodeGroup>
+```ts chain.ts
+import { celo, celoSepolia } from 'viem/chains'
+import { createPublicClient, http } from 'viem'
+
+// viem ships both, including the CIP-64 serializers, so fee abstraction works.
+export const client = createPublicClient({ chain: celo, transport: http('https://forno.celo.org') })
+export const testnet = createPublicClient({ chain: celoSepolia, transport: http() })
+```
+
+```ts read.ts
+import { client } from './chain'
+
+const owner = await client.readContract({
+  address: '0x8004A169FB4a3325136EB29fA0ceB6D2e539a432',
+  abi: [{ type: 'function', name: 'ownerOf', stateMutability: 'view', inputs: [{ type: 'uint256' }], outputs: [{ type: 'address' }] }],
+  functionName: 'ownerOf',
+  args: [9759n],
+})
+```
+</CodeGroup>
+
+## What is deployed
+
+| Contract | Network | Address |
+| --- | --- | --- |
+| IdentityRegistry | mainnet | [`0x8004A169FB4a3325136EB29fA0ceB6D2e539a432`](https://celoscan.io/address/0x8004A169FB4a3325136EB29fA0ceB6D2e539a432) |
+| ReputationRegistry | mainnet | [`0x8004BAa17C55a88189AE136b182e5fdA19dE9b63`](https://celoscan.io/address/0x8004BAa17C55a88189AE136b182e5fdA19dE9b63) |
+| IdentityRegistry | Celo Sepolia | [`0x8004A818BFB912233c491871b3d84c89A494BD9e`](https://celo-sepolia.blockscout.com/address/0x8004A818BFB912233c491871b3d84c89A494BD9e) |
+| ReputationRegistry | Celo Sepolia | [`0x8004B663056A597Dffe9eCcC1965A193B7388713`](https://celo-sepolia.blockscout.com/address/0x8004B663056A597Dffe9eCcC1965A193B7388713) |
+
+The mainnet identity registry is the same address X Layer and Robinhood Chain carry, and
+the Celo Sepolia pair matches Arc's. That is the point of a deterministic deployment: one
+agent id means the same thing wherever you resolve it.
+
+## Verify it yourself
+
+```bash
+# The settlement log for this rail, honest zeros included.
+curl -s https://a-identity-backend.onrender.com/api/celo/proof
+
+# What the rail is actually configured with, including the facilitator it calls.
+curl -s https://a-identity-backend.onrender.com/api/celo/status
+```
+
+## Where Celo fits
+
+Celo is the rail that proved the product works against someone else's facilitator, which
+is what made it obvious what to do on a chain that has none. See
+[Robinhood Chain](/chains/robinhood), where we built the facilitator ourselves.

@@ -1,0 +1,99 @@
+---
+title: "Build on OKX X Layer"
+description: "X Layer network config, the OKX.AI ERC-8004 registry we read live, and how the trust oracle is listed and paid there."
+---
+
+X Layer is OKX's zkEVM L2, and it is where the OKX.AI agent marketplace lives. A-Identity
+is a listed Agent Service Provider there: the trust oracle answers per call and is paid
+over x402 through the OKX facilitator.
+
+## Why X Layer
+
+<CardGroup cols={3}>
+  <Card title="A marketplace, not just a chain" icon="store">
+    OKX.AI is a registry of agents that hire each other. Being listed means the product is discoverable by the agents that need it, not just by humans reading a website.
+  </Card>
+  <Card title="Canonical ERC-8004" icon="fingerprint">
+    OKX runs the canonical identity registry, at the same address Celo and Robinhood Chain carry. Any OKX.AI agent resolves by token id or owner address.
+  </Card>
+  <Card title="Paid per call" icon="credit-card">
+    The four trust tools are priced individually and settle through the OKX facilitator, so an agent pays for exactly what it asked.
+  </Card>
+</CardGroup>
+
+<Note>
+  X Layer is **live**. Our two listings are agent **#6271** and **#8913**. A registered
+  listing means the tool names, schemas and prices are pinned: changing one resets the
+  review clock, so they are treated as frozen.
+</Note>
+
+## Network config
+
+| Field | Value |
+| --- | --- |
+| Chain ID | `196` |
+| CAIP-2 | `eip155:196` |
+| Native currency | OKB (18 decimals) |
+| RPC (HTTP) | `https://rpc.xlayer.tech` |
+| Block explorer | [oklink.com/xlayer](https://www.oklink.com/xlayer) |
+
+<Warning>
+  We deliberately assert **no USDC address** for X Layer in the registry. Payments here
+  go through the OKX facilitator, which resolves the settlement token itself, so we never
+  see it and must not guess at it. Confirm the canonical address with OKX before wiring a
+  direct transfer path of your own.
+</Warning>
+
+## Connect with viem
+
+<CodeGroup>
+```ts chain.ts
+import { defineChain } from 'viem'
+
+export const xLayer = defineChain({
+  id: 196,
+  name: 'OKX X Layer',
+  nativeCurrency: { name: 'OKB', symbol: 'OKB', decimals: 18 },
+  rpcUrls: { default: { http: ['https://rpc.xlayer.tech'] } },
+  blockExplorers: { default: { name: 'OKLink', url: 'https://www.oklink.com/xlayer' } },
+})
+```
+
+```ts read.ts
+import { createPublicClient, http } from 'viem'
+import { xLayer } from './chain'
+
+const client = createPublicClient({ chain: xLayer, transport: http() })
+
+// Any OKX.AI agent resolves through the canonical registry.
+const owner = await client.readContract({
+  address: '0x8004a169fb4a3325136eb29fa0ceb6d2e539a432',
+  abi: [{ type: 'function', name: 'ownerOf', stateMutability: 'view', inputs: [{ type: 'uint256' }], outputs: [{ type: 'address' }] }],
+  functionName: 'ownerOf',
+  args: [6271n],
+})
+```
+</CodeGroup>
+
+## What is deployed
+
+| Contract | Address |
+| --- | --- |
+| IdentityRegistry (OKX.AI) | [`0x8004a169fb4a3325136eb29fa0ceb6d2e539a432`](https://www.oklink.com/xlayer/address/0x8004a169fb4a3325136eb29fa0ceb6d2e539a432) |
+
+Read-side only, and that is the honest description: we resolve identities here, and
+payments run through OKX's own rail rather than a contract of ours.
+
+## Verify it yourself
+
+```bash
+# The ASP's own proof document, served from its origin, not from this website.
+curl -s https://a-identity-asp.onrender.com/proof.json
+```
+
+## Where X Layer fits
+
+X Layer is distribution: it is where other agents find the trust oracle and pay for it.
+[Arc](/chains/arc) is where identity and escrow live, [Celo](/chains/celo) is the
+first-party facilitator rail, and [Robinhood Chain](/chains/robinhood) is where we run
+the facilitator ourselves.

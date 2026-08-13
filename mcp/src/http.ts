@@ -33,6 +33,7 @@ import { handleAuthRoutes } from './http/auth-routes.js'
 import { handlePublicRoutes } from './http/public-routes.js'
 import { handleCeloRoutes } from './http/celo-routes.js'
 import { handleX402ThreeKRoutes } from './http/x402-3009-routes.js'
+import { handleChainRoutes } from './http/chain-routes.js'
 import { handleArcRoutes } from './http/arc-routes.js'
 import { handleAgentRoutes } from './http/agent-routes.js'
 import { handleGuardrailRoutes } from './http/guardrail-routes.js'
@@ -218,6 +219,7 @@ const server = http.createServer(async (req, res) => {
   if (await handlePublicRoutes(ctx)) return
   if (await handleCeloRoutes(ctx)) return
   if (await handleX402ThreeKRoutes(ctx)) return
+  if (await handleChainRoutes(ctx)) return
   if (await handleArcRoutes(ctx)) return
   if (await handleAgentRoutes(ctx)) return
   if (await handleGuardrailRoutes(ctx)) return
@@ -305,6 +307,7 @@ server.listen(PORT, () => {
   console.error(`  POST /api/facilitator/settle     broadcast it and pay the gas (allowlisted payTo)`)
   console.error(`  GET  /api/facilitator/proof      settlements, with the proven signing domain`)
   console.error(`  GET  /api/x402/tools/:name       price + calling contract; POST to pay and call`)
+  console.error(`  GET  /api/proof/:rail            provenance ledger + a live re-read (see /api/proof/rails)`)
 })
 
 // Keep-alive: free-tier hosts (e.g. Render) idle-sleep after ~15 min without inbound

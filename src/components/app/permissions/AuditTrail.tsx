@@ -21,6 +21,21 @@ import { Skeleton } from '../../ui/skeleton'
 
 type Verdict = 'ALLOW' | 'WARN' | 'DENY'
 type Outcome = 'executed' | 'blocked' | 'awaiting_human' | 'abandoned'
+type Enforcement = 'process' | 'wrapper' | 'none'
+
+/**
+ * Where a decision's numbers came from. OPTIONAL, and optional forever: rows written
+ * before the caller seam existed carry none, and the backend deliberately does not
+ * backfill them. So an absent value renders as "not recorded" and never as "direct":
+ * inventing a provenance is the one thing an audit view must not do.
+ */
+type Provenance = {
+  callerId: string | null
+  venue: string | null
+  enforcement: Enforcement
+  intentSource: 'direct' | 'caller-adapter'
+  snapshotSource: 'direct' | 'caller-adapter' | 'absent'
+}
 
 type AuditEntry = {
   id: string
@@ -50,6 +65,7 @@ type AuditEntry = {
   outcomeAt?: string
   evidenceRef?: string
   overrideAttempts?: number
+  caller?: Provenance
 }
 
 type Summary = {
@@ -76,6 +92,23 @@ const OUTCOME_LABEL: Record<Outcome, string> = {
   blocked: 'stopped by policy',
   awaiting_human: 'waiting on you',
   abandoned: 'never confirmed',
+}
+
+/**
+ * What the caller could have done about a DENY. Ordered, so the token carries the ordering
+ * rather than decorating it: a real veto reads as ok, a wrapper as a caveat, and nothing
+ * standing in between as neutral rather than as a failure.
+ */
+const ENFORCEMENT_TOKEN: Record<Enforcement, string> = {
+  process: 'bg-ok/15 text-ok',
+  wrapper: 'bg-warn/15 text-warn',
+  none: 'bg-foreground/10 text-foreground/45',
+}
+
+const ENFORCEMENT_TITLE: Record<Enforcement, string> = {
+  process: 'The caller starts the venue process and gates its writes, so a DENY is a real veto.',
+  wrapper: 'The caller can only decline to make the call it was handed. An agent with another route to the same account is not contained.',
+  none: 'Nothing we can name stood between the agent and the venue: the verdict is advice plus a record.',
 }
 
 /** A one-line, human description of the action, built from the recorded intent. */
@@ -225,8 +258,8 @@ export default function AuditTrail({ agentId }: { agentId: string }) {
   return (
     <div className="mt-4">
       {error && (
-        <div className="mb-4 flex items-start gap-2 rounded-xl border border-amber-500/30 bg-amber-500/[0.06] p-3 text-xs text-foreground/70">
-          <AlertTriangle size={14} className="mt-0.5 shrink-0 text-amber-500" />
+        <div className="mb-4 flex items-start gap-2 rounded-xl border border-warn/30 bg-warn/[0.06] p-3 text-xs text-foreground/70">
+          <AlertTriangle size={14} className="mt-0.5 shrink-0 text-warn" />
           <span>{error}</span>
         </div>
       )}
@@ -265,7 +298,7 @@ export default function AuditTrail({ agentId }: { agentId: string }) {
             </div>
             {summary.unverifiable > 0 && (
               <p className="mt-3 flex items-start gap-2 text-[11px] text-foreground/50">
-                <ShieldAlert size={13} className="mt-0.5 shrink-0 text-amber-500" />
+                <ShieldAlert size={13} className="mt-0.5 shrink-0 text-warn" />
                 <span>
                   {summary.unverifiable} decision{summary.unverifiable === 1 ? '' : 's'} could not be fully checked for
                   missing account data and failed closed. That is a refusal for lack of evidence, not a rule breach.
@@ -284,11 +317,12 @@ export default function AuditTrail({ agentId }: { agentId: string }) {
       {audits.length > 0 && (
         <section className="mt-4 overflow-hidden rounded-2xl border border-border bg-card">
           <div className="overflow-x-auto">
-            <table className="w-full min-w-[680px] text-left text-sm">
+            <table className="w-full min-w-[820px] text-left text-sm">
               <thead>
                 <tr className="border-b border-foreground/[0.07] text-[11px] uppercase tracking-wide text-foreground/45">
                   <th className="px-5 py-3 font-semibold">When</th>
                   <th className="px-5 py-3 font-semibold">Action</th>
+                  <th className="px-5 py-3 font-semibold">Venue</th>
                   <th className="px-5 py-3 font-semibold">Verdict</th>
                   <th className="px-5 py-3 font-semibold">Why</th>
                   <th className="px-5 py-3 font-semibold">Then</th>
@@ -309,6 +343,33 @@ export default function AuditTrail({ agentId }: { agentId: string }) {
                           {a.policyVersion}
                         </div>
                       </td>
+                      {/* Provenance. A row with none predates the caller seam, and it says
+                          so: "not recorded" is a fact, "direct" would be a fabrication. */}
+                      <td className="px-5 py-3">
+                        {a.caller ? (
+                          <>
+                            <div className="text-[12px] text-foreground/70">{a.caller.venue ?? 'no venue named'}</div>
+                            <div className="mt-1 flex flex-wrap items-center gap-1">
+                              <span
+                                className={`rounded-sm px-1.5 py-px text-[10px] font-semibold uppercase tracking-wide ${ENFORCEMENT_TOKEN[a.caller.enforcement]}`}
+                                title={ENFORCEMENT_TITLE[a.caller.enforcement]}
+                              >
+                                {a.caller.enforcement}
+                              </span>
+                              {a.caller.callerId && (
+                                <span className="font-mono text-[10px] text-foreground/40">{a.caller.callerId}</span>
+                              )}
+                            </div>
+                            {a.caller.snapshotSource === 'absent' && (
+                              <div className="mt-1 text-[10px] text-foreground/40">no account state supplied</div>
+                            )}
+                          </>
+                        ) : (
+                          <span className="text-[12px] text-foreground/35" title="This decision predates provenance recording. It was not backfilled, because inventing one would be worse than admitting the gap.">
+                            not recorded
+                          </span>
+                        )}
+                      </td>
                       <td className="whitespace-nowrap px-5 py-3">
                         <span
                           className="inline-flex items-center rounded-md px-2 py-0.5 text-[11px] font-semibold"
@@ -317,10 +378,10 @@ export default function AuditTrail({ agentId }: { agentId: string }) {
                           {a.verdict}
                         </span>
                         {a.unverifiable && (
-                          <div className="mt-1 text-[10px] font-semibold text-amber-500">unverifiable</div>
+                          <div className="mt-1 text-[10px] font-semibold text-warn">unverifiable</div>
                         )}
                         {(a.overrideAttempts ?? 0) > 0 && (
-                          <div className="mt-1 text-[10px] font-semibold text-red-500">
+                          <div className="mt-1 text-[10px] font-semibold text-danger">
                             {a.overrideAttempts} override attempt{a.overrideAttempts === 1 ? '' : 's'} refused
                           </div>
                         )}
@@ -350,7 +411,9 @@ export default function AuditTrail({ agentId }: { agentId: string }) {
           </div>
           <div className="border-t border-foreground/[0.07] px-5 py-3 text-[11px] text-foreground/40">
             The account snapshot behind each verdict is stored as a hash, never as your holdings, so a decision can be
-            reconciled without keeping a record of your positions.
+            reconciled without keeping a record of your positions. Venue and enforcement are recorded from the caller
+            that asked; rows written before that existed read &quot;not recorded&quot; rather than being filled in after
+            the fact.
           </div>
         </section>
       )}

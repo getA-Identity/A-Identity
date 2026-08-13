@@ -15,7 +15,7 @@ import type { AccountSnapshot, ActionPolicy, NormalizedIntent } from './types.js
 
 // Deterministic vectors only. No mock account data enters the product: these fixtures
 // exist solely to pin the pure decision function, and at runtime the snapshot always
-// comes from a real caller (see docs/robinhood-mcp-tools.md, Limits).
+// comes from a real caller (see ./README.md, "Red lines").
 
 const AT = new Date('2026-07-29T15:00:00Z') // inside a 13:30-20:00 UTC window
 
@@ -480,7 +480,7 @@ test('a round trip through storage is stable', () => {
 // ── the caller-agnostic invariant, enforced rather than documented ────────────────
 
 test('no file in the policy module is caller-specific', () => {
-  // docs/compliance-robinhood.md section 4 decided the engine carries zero dependency on
+  // ./README.md ("The rule that keeps this module a core") decided the engine carries zero dependency on
   // any particular brokerage, official or unofficial. That is the whole reason we can
   // proceed while the public skill release is on hold, so it is checked, not trusted.
   // Compiled to dist/policy/, so the sources are two levels up.

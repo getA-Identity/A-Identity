@@ -1,0 +1,57 @@
+---
+title: "Chains"
+description: "Every chain A-Identity knows about, what is actually deployed on each, and which ones are wired end to end today."
+---
+
+A-Identity is chain-agnostic by construction: one registry describes every chain, and one
+adapter per virtual machine does the work. Adding a chain is a data edit, not a new code
+path. The table below is the honest state of that registry.
+
+The vocabulary is exact. **Live** means wired end to end and carrying real traffic.
+**Beta** means real and reachable, but not the whole loop. **Planned** means the
+descriptor exists so onboarding is a data edit, and nothing is deployed yet.
+
+| Chain | CAIP-2 | Status | What is deployed |
+| --- | --- | --- | --- |
+| [Circle Arc](/chains/arc) (testnet) | `eip155:5042002` | live | ERC-8004 identity, reputation and validation, ERC-8183 escrow, AgentSpendPolicy vaults, USDC |
+| [OKX X Layer](/chains/xlayer) | `eip155:196` | live | Canonical ERC-8004 identity; the trust oracle is listed here and sells over x402 |
+| [Robinhood Chain](/chains/robinhood) | `eip155:4663` | live | Canonical ERC-8004 identity and reputation, agent #0, and our own x402 facilitator settling in USDG |
+| [Celo](/chains/celo) | `eip155:42220` | live | Canonical ERC-8004 identity and reputation, agent #9759, x402 over USDC via the first-party Celo facilitator |
+| Base | `eip155:8453` | beta | Payment path only. No ERC-8004 registry is deployed on Base mainnet, and we do not assert one |
+| [Robinhood Chain Testnet](/chains/robinhood) | `eip155:46630` | beta | The full canonical ERC-8004 trio plus a deployed AgentSpendPolicy vault |
+| [Celo Sepolia](/chains/celo) | `eip155:11142220` | beta | Same ERC-8004 pair as Arc, x402 over testnet USDC |
+| Stellar (testnet) | `stellar:testnet` | planned | Descriptor only. Identity would be a Soroban registry plus SEP-10, not ERC-8004 |
+| Avalanche C-Chain | `eip155:43114` | planned | Descriptor only |
+| Arbitrum One | `eip155:42161` | planned | Descriptor only |
+
+<Note>
+  This table is maintained against the registry itself, and a test in the backend fails
+  the build if a chain here disagrees with it. The machine-readable version is
+  `GET /api/chains`, which is generated from the same source.
+</Note>
+
+## What "deployed" means for identity
+
+The ERC-8004 registries are not ours. Their authors deployed them deterministically, so
+the same addresses appear on chain after chain, and where they were already present we
+simply read them. Where a piece was missing we reproduced it by replaying the canonical
+deployment calldata rather than forking a new contract, which is why the addresses still
+match everywhere.
+
+Two consequences worth stating plainly, because they are easy to get wrong:
+
+- A chain can carry an IdentityRegistry and no ValidationRegistry. On those chains a KYA
+  result cannot be anchored on-chain. It is still verified and recorded, and we say so
+  rather than reporting a zero that reads like a real count.
+- A chain can have a real settlement token and no canonical Circle USDC. Robinhood Chain
+  is exactly that: the registry's USDC slot stays empty on purpose, and USDG is named as
+  its own thing, because every generic USDC code path reads that slot.
+
+## Settlement, chain by chain
+
+| Rail | How a payment settles |
+| --- | --- |
+| Arc | The buyer broadcasts an ERC-20 transfer; we verify the receipt ourselves. Also gasless Circle Nanopayments. |
+| X Layer | Through the OKX facilitator, as a listed ASP service. |
+| Celo | Through Celo's own first-party x402 facilitator, EIP-3009, buyer pays no gas. |
+| Robinhood Chain | Through **our** facilitator, because the chain had none: EIP-3009, buyer pays no gas, and settlement is proven by a receipt carrying the matching Transfer log. |

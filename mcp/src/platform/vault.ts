@@ -5,9 +5,10 @@
  */
 import { state, save, ownsAgent, pushActivity, short, inFlightAgentOps, type PlatformAgent } from './core.js'
 import {
-  deployPolicyVault, payUsdcOnchain, ARC_EXPLORER, readPolicyVault,
+  deployPolicyVault, payUsdcOnchain, readPolicyVault,
   policySetPolicy, policySetFrozen, policySetAllowed, policySetSessionExpiry,
 } from '../arc-contracts.js'
+import { ARC_CHAIN, addressUrl } from '../chains/index.js'
 import { createAgentWallet, readCircleWallet } from '../circle-agent.js'
 import { previewTreasury, startAutoYield, type TreasuryPreview, type TreasuryExecution } from '../treasury.js'
 
@@ -66,10 +67,29 @@ export async function provisionAgentVault(
   })
   if (!dep.executed) return { error: dep.reason }
 
+  // The chain is recorded EXPLICITLY now, rather than being implied by the fact that this
+  // function imports the Arc adapter. It is still Arc and only Arc: `deployPolicyVault`
+  // binds the Arc descriptor, so recording anything else here would be a lie. What changes
+  // is that a second chain becomes an added descriptor and an added row, not a hunt for
+  // every place that assumed one.
   agent.vaultAddress = dep.vault
-  agent.vaultExplorer = `${ARC_EXPLORER}/address/${dep.vault}`
+  agent.vaultChainCaip2 = ARC_CHAIN.caip2
+  agent.vaultExplorer = addressUrl(ARC_CHAIN, dep.vault)
   agent.vaultOwner = dep.owner
   agent.vaultOperator = dep.operator
+  agent.vaults = [
+    ...(agent.vaults ?? []),
+    {
+      chainCaip2: ARC_CHAIN.caip2,
+      address: dep.vault,
+      explorer: agent.vaultExplorer,
+      owner: dep.owner,
+      operator: dep.operator,
+      // We hold the deploy receipt for this one, so it is an observation rather than the
+      // inference `migrateAgentVaults` writes.
+      source: 'deployed',
+    },
+  ]
   const separated = dep.owner.toLowerCase() !== dep.operator.toLowerCase()
   pushActivity(
     agent,

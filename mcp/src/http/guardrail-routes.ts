@@ -209,14 +209,32 @@ export async function handleGuardrailRoutes(ctx: RouteCtx): Promise<boolean> {
   // never executes anything, so the caller stays the one that acts.
   if (req.method === 'POST' && url.pathname === '/api/agents/action-check') {
     const body = (await readBody(req).catch(() => null)) as
-      | { agentId?: string; surface?: string; intent?: unknown; snapshot?: unknown }
+      | {
+          agentId?: string
+          surface?: string
+          intent?: unknown
+          snapshot?: unknown
+          callerId?: string
+          action?: unknown
+          account?: unknown
+        }
       | null
-    if (!body?.agentId || !body?.surface || !body?.intent) {
-      sendJson(res, 400, { error: 'agentId, surface and intent required' }); return true
+    // Either shape is enough. The precondition is only "there is something to check";
+    // which of the two shapes it is, and whether it can be translated, is decided in one
+    // place (callers/normalize.ts) so this route cannot develop a second opinion.
+    if (!body?.agentId || !body?.surface || (!body.intent && !body.callerId)) {
+      sendJson(res, 400, { error: 'agentId, surface and either intent or callerId + action required' }); return true
     }
     const r = checkAgentAction(
       body.agentId,
-      { surface: body.surface, intent: body.intent as never, snapshot: body.snapshot as never },
+      {
+        surface: body.surface,
+        intent: body.intent,
+        snapshot: body.snapshot,
+        callerId: body.callerId,
+        action: body.action,
+        account: body.account,
+      },
       callerId,
     )
     sendJson(res, 'error' in r ? errStatus(r.error) : 200, r)
