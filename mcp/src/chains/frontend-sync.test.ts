@@ -109,7 +109,8 @@ test('the public surface reports exactly the wired chains as live/beta', () => {
   // real USDC). Display order puts live chains first; Base and Celo Sepolia stay beta.
   // 2026-08-11: rhchain-testnet joins the beta set (canonical ERC-8004 registries live).
   // 2026-08-12: rhchain joins as beta (mainnet canonical registries verified).
-  // 2026-08-13: rhchain goes LIVE - four real USDG settlements through our own facilitator.
+  // 2026-08-13: rhchain goes LIVE - four real USDG settlements through our own facilitator,
+  // and arbitrum joins beta with agent #1259 on the canonical registry (identity only).
   const live = publicChains().filter((c) => c.status === 'live' || c.status === 'beta')
   assert.deepEqual(
     live.map((c) => ({ id: c.id, status: c.status })),
@@ -119,6 +120,7 @@ test('the public surface reports exactly the wired chains as live/beta', () => {
       { id: 'rhchain', status: 'live' },
       { id: 'celo', status: 'live' },
       { id: 'base', status: 'beta' },
+      { id: 'arbitrum', status: 'beta' },
       { id: 'rhchain-testnet', status: 'beta' },
       { id: 'celo-sepolia', status: 'beta' },
     ],

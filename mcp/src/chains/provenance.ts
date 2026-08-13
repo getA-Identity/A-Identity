@@ -177,6 +177,36 @@ export const PROVENANCE: ChainProvenance[] = [
       'Settlement is proven on mainnet, not here: this network is where the code is rehearsed.',
     ],
   },
+  {
+    chain: 'arbitrum',
+    summary:
+      'Agent #1259 on Arbitrum One is ours. The canonical ERC-8004 registries were already deployed here by their authors, so registering was permissionless and cost about a cent; nothing else of ours runs on this chain yet.',
+    agent: { tokenId: '1259', caip: 'eip155:42161:8004/1259', owner: OWNER, tokenUri: AGENT_CARD },
+    contracts: [
+      {
+        name: 'IdentityRegistry',
+        address: '0x8004a169fb4a3325136eb29fa0ceb6d2e539a432',
+        note: 'The same canonical address X Layer, Celo and Robinhood Chain carry. Deployed by the ERC-8004 authors, not by us.',
+      },
+      { name: 'ReputationRegistry', address: '0x8004BAa17C55a88189AE136b182e5fdA19dE9b63' },
+    ],
+    artifacts: [
+      {
+        kind: 'mint',
+        label: 'Agent #1259 minted through the production adapter',
+        txHash: '0x23275840eb9a8b85a752769c113109a753f39b592236c85093cf94f6a517b2f3',
+        onChain: 'arbitrum',
+        blockNumber: 494146529,
+        note: '178365 gas, about 0.0000036 ETH. Verified after the fact: ownerOf(1259) and tokenURI(1259) read back to the values recorded here.',
+      },
+    ],
+    caveats: [
+      'Identity only. No rail of ours settles money on Arbitrum One, which is why this chain is beta and not live: it has cleared half the bar the others cleared.',
+      'We deployed nothing here. The registries were already live, and registering on them is permissionless.',
+      'There is no ValidationRegistry in this family, so a KYA result cannot be anchored on Arbitrum One.',
+      'Robinhood Chain is an Arbitrum L2, and that is where our Arbitrum-stack work actually runs. Being live there is not the same as being live on Arbitrum One, and neither claim substitutes for the other.',
+    ],
+  },
 ]
 
 /** A judge-facing grouping. A rail can span more than one network, because splitting
@@ -190,6 +220,13 @@ export const PROOF_RAILS: ProofRail[] = [
     lede:
       'Agent #0 on the mainnet registry, paid calls settling in USDG through the x402 facilitator we run ourselves, and the full canonical ERC-8004 set rehearsed on testnet.',
     chains: ['rhchain', 'rhchain-testnet'],
+  },
+  {
+    slug: 'arbitrum',
+    title: 'Arbitrum One',
+    lede:
+      'Agent #1259 on the canonical ERC-8004 registry. Identity only, deliberately: no rail of ours settles money here, and the page says so rather than borrowing credit from the Arbitrum L2 where our payments actually run.',
+    chains: ['arbitrum'],
   },
 ]
 

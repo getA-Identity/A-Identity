@@ -207,6 +207,16 @@
       "note": "OKX.AI ERC-8004 IdentityRegistry on X Layer mainnet; the live paid Trust Oracle listing."
     },
     {
+      "chain": "eip155:42161",
+      "agentId": "1259",
+      "caip": "eip155:42161:0x8004a169fb4a3325136eb29fa0ceb6d2e539a432/1259",
+      "registry": "0x8004a169fb4a3325136eb29fa0ceb6d2e539a432",
+      "owner": "0xd305607510E0Db2c95807173c7A05BEA53c1ed36",
+      "tx": "0x23275840eb9a8b85a752769c113109a753f39b592236c85093cf94f6a517b2f3",
+      "explorer": "https://arbiscan.io/tx/0x23275840eb9a8b85a752769c113109a753f39b592236c85093cf94f6a517b2f3",
+      "note": "ERC-8004 IdentityRegistry on Arbitrum One, the same canonical address X Layer and Robinhood Chain carry. Identity only: no rail of ours settles on Arbitrum One."
+    },
+    {
       "chain": "eip155:4663",
       "agentId": "0",
       "caip": "eip155:4663:0x8004a169fb4a3325136eb29fa0ceb6d2e539a432/0",

@@ -219,10 +219,14 @@ export const CHAINS: ChainDescriptor[] = [
     name: 'Arbitrum One',
     shortName: 'Arbitrum',
     color: '#28A0F0',
-    role: 'DeFi gateway: large protocol ecosystem, USDC via Circle, ERC-8004 compatible.',
+    role: 'DeFi gateway: large protocol ecosystem, native Circle USDC, and our ERC-8004 agent #1259 on the canonical registry.',
     ecosystem: 'evm',
     testnet: false,
-    status: 'planned',
+    // BETA, not live, and the distinction is the same one every other chain here had to
+    // clear: identity is real on Arbitrum One (agent #1259, minted 2026-08-13), but no
+    // rail of ours settles money here, so it has cleared half the bar. Robinhood Chain is
+    // an Arbitrum L2, which is where the Arbitrum-stack work actually runs today.
+    status: 'beta',
     evmChainId: 42161,
     cctpDomain: 3,
     nativeCurrency: { name: 'Ether', symbol: 'ETH', decimals: 18 },
@@ -230,6 +234,13 @@ export const CHAINS: ChainDescriptor[] = [
     rpcUrls: ['https://arb1.arbitrum.io/rpc'],
     explorer: 'https://arbiscan.io',
     contracts: {
+      // The canonical ERC-8004 pair, verified live 2026-08-13 with eth_getCode on three
+      // independent RPCs plus a real read (name() "AgentIdentity", symbol() "AGENT",
+      // getClients(1) empty). Same addresses as X Layer, Celo and Robinhood Chain: the
+      // deterministic deployment is the whole point, so one agent id means one thing.
+      // We deployed none of it; registration here is permissionless.
+      identityRegistry: '0x8004a169fb4a3325136eb29fa0ceb6d2e539a432',
+      reputationRegistry: '0x8004BAa17C55a88189AE136b182e5fdA19dE9b63',
       usdc: '0xaf88d065e77c8cC2239327C5EDb3A432268e5831', // native Circle USDC on Arbitrum One
       create2Factory: CREATE2_FACTORY,
     },
@@ -243,9 +254,9 @@ export const CHAINS: ChainDescriptor[] = [
       // Verified 2026-08-13 with eth_getCode on three independent RPCs: the canonical
       // identity and reputation registries ARE already live here, deployed by the ERC-8004
       // authors. What is missing is ours, not theirs, so the note says which.
-      note: 'Canonical ERC-8004 identity + reputation registries are live here; we hold no agent on them yet and no rail of ours is wired.',
+      note: 'Canonical ERC-8004 identity + reputation registries are live here (deployed by their authors, not by us); agent #1259 is ours. No ValidationRegistry in this family, so KYA cannot be anchored here.',
     },
-    payment: { x402: true, note: 'x402 over USDC on Arbitrum One.' },
+    payment: { x402: true, note: 'No rail of ours settles here yet. Native Circle USDC is present, so x402 is a descriptor edit plus a funded signer away.' },
   },
   {
     caip2: 'eip155:46630',

@@ -65,7 +65,7 @@ test('Arc, X Layer, Celo (live), Base, Celo Sepolia and RH Chain Testnet (beta) 
   // 2026-08-13: rhchain flips from beta to LIVE - money moves there now (four real USDG
   // settlements through our own first-party EIP-3009 facilitator, receipts recorded).
   const live = liveChains()
-  assert.deepEqual(live.map((c) => c.id).sort(), ['arc', 'base', 'celo', 'celo-sepolia', 'rhchain', 'rhchain-testnet', 'xlayer'])
+  assert.deepEqual(live.map((c) => c.id).sort(), ['arbitrum', 'arc', 'base', 'celo', 'celo-sepolia', 'rhchain', 'rhchain-testnet', 'xlayer'])
   assert.equal(live.find((c) => c.id === 'rhchain')?.status, 'live')
   assert.equal(live.find((c) => c.id === 'xlayer')?.status, 'live')
   assert.equal(live.find((c) => c.id === 'base')?.status, 'beta')
@@ -88,8 +88,9 @@ test('Arc, X Layer, Celo (live), Base, Celo Sepolia and RH Chain Testnet (beta) 
 test('every roadmap chain is present and planned', () => {
   // celo left this list on 2026-08-09 when its identity reads + x402 rail went beta;
   // rhchain-testnet left on 2026-08-11 when the canonical ERC-8004 set went live there;
-  // rhchain left on 2026-08-12 when its canonical registries were verified live.
-  for (const id of ['arbitrum', 'avalanche', 'stellar']) {
+  // rhchain left on 2026-08-12 when its canonical registries were verified live;
+  // arbitrum left on 2026-08-13 when agent #1259 was minted on its canonical registry.
+  for (const id of ['avalanche', 'stellar']) {
     const c = getChainById(id)
     assert.ok(c, `${id} missing from registry`)
     assert.equal(c.status, 'planned', `${id} should be planned`)
