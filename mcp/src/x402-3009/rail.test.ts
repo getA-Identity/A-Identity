@@ -202,3 +202,34 @@ function row(outcome: X402SettlementRecord['outcome'], payer: string, amountUsd:
     gasWei: '4300000000000',
   }
 }
+
+test('an unexpected failure inside settlement is a 502, never a thrown request', async () => {
+  // This is a regression test with a scar behind it. A throw on the settlement path used
+  // to escape the route handler, become an unhandled rejection, and EXIT THE PROCESS: one
+  // bad request took the whole backend down and the caller saw the host's HTML error page.
+  // A failed payment must cost that request and nothing else.
+  clearDomainCache()
+  const s = railStatus(configured)
+  const header = Buffer.from(JSON.stringify({
+    payload: {
+      signature: `0x${'11'.repeat(65)}`,
+      authorization: {
+        from: '0x8C8D9cd12d8896A40cf2115Ee731258Bb4983349', to: PAY_TO, value: '25000',
+        validAfter: '0', validBefore: String(Math.floor(Date.now() / 1000) + 600), nonce: `0x${'ee'.repeat(32)}`,
+      },
+    },
+  })).toString('base64')
+  const out = await railServeTool('risk_check', { agentId: '#0' }, header, s, {
+    reader: reader(),
+    publicClient: {
+      readContract: async () => { throw new Error('rpc exploded') },
+      simulateContract: async () => ({ request: {} }),
+      getGasPrice: async () => 1n,
+      waitForTransactionReceipt: async () => ({ status: 'success', blockNumber: 1n, gasUsed: 1n, logs: [] }),
+    },
+    loadSpent: async () => { throw new Error('database is gone') },
+  })
+  // A failure the caller can act on, with the reason, and no exception in sight.
+  assert.ok(out.httpStatus >= 400)
+  assert.match(JSON.stringify(out.body), /database is gone|rpc exploded|refusing/)
+})

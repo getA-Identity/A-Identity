@@ -260,7 +260,14 @@ export async function verifyPayment(input: {
   if (!domain.ok) return { isValid: false, code: 'domain_unproven', invalidReason: domain.reason }
 
   const key = paymentKey(chain.caip2, token.address, a.from, a.nonce)
-  const spent = await (deps.loadSpent ?? loadSpentPayments)()
+  let spent: string[]
+  try {
+    spent = await (deps.loadSpent ?? loadSpentPayments)()
+  } catch (e) {
+    // The spent set is the replay guard, so an unreadable one is a refusal rather than a
+    // pass. Fail CLOSED: the alternative is redeeming a payment twice.
+    return { isValid: false, code: 'rpc_error', invalidReason: `could not read the replay guard, refusing rather than risking a replay: ${msg(e)}` }
+  }
   if (spent.includes(key)) {
     return { isValid: false, code: 'already_redeemed', invalidReason: 'this authorization has already been redeemed here' }
   }

@@ -105,7 +105,11 @@ async function doFlush() {
 
 const SPENT_FILE = join(DATA_DIR, 'spent-payments.json')
 
-/** Load every spent payment key (lowercase) recorded so far. */
+/** Load every spent payment key (lowercase) recorded so far.
+ *
+ *  Rethrows on a database failure, deliberately and unlike the settlement log: this set IS
+ *  the replay guard, and continuing with an empty one would let a previously redeemed
+ *  payment through. Callers must treat a failure as a refusal. */
 export async function loadSpentPayments(): Promise<string[]> {
   const p = await getPool()
   if (p) {
@@ -267,13 +271,24 @@ export type X402SettlementRecord = {
 const X402_SETTLEMENTS_FILE = join(DATA_DIR, 'x402-settlements.json')
 export const X402_SETTLEMENTS_CAP = 2000
 
-/** Load the retained x402-3009 settlement records, oldest first. */
+/** Load the retained x402-3009 settlement records, oldest first.
+ *
+ *  Never throws. This is read on the settlement path, and an exception there used to be
+ *  fatal in the most literal sense: it propagated out of the route handler as an unhandled
+ *  rejection and took the whole process down. A database hiccup must cost a report its
+ *  history, not the service its life. The caller is told, so a gas budget computed from an
+ *  empty read is not mistaken for a budget that is genuinely unspent. */
 export async function loadX402Settlements(): Promise<X402SettlementRecord[]> {
-  const p = await getPool()
-  if (p) {
-    await p.query('CREATE TABLE IF NOT EXISTS x402_settlements (id bigserial PRIMARY KEY, data jsonb NOT NULL)')
-    const r = await p.query('SELECT data FROM x402_settlements ORDER BY id ASC')
-    return r.rows.map((row: { data: X402SettlementRecord }) => row.data)
+  try {
+    const p = await getPool()
+    if (p) {
+      await p.query('CREATE TABLE IF NOT EXISTS x402_settlements (id bigserial PRIMARY KEY, data jsonb NOT NULL)')
+      const r = await p.query('SELECT data FROM x402_settlements ORDER BY id ASC')
+      return r.rows.map((row: { data: X402SettlementRecord }) => row.data)
+    }
+  } catch (e) {
+    console.error('[storage] x402 settlement read failed:', e instanceof Error ? e.message : e)
+    return []
   }
   try {
     return JSON.parse(readFileSync(X402_SETTLEMENTS_FILE, 'utf8')) as X402SettlementRecord[]

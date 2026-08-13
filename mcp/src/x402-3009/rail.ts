@@ -363,14 +363,31 @@ export async function railServeTool(
 
   const price = railPriceUsd(tool, status)
   const requirements = railRequirements(tool, status, domain.proven.decimals)
-  const settled = await settlePayment({
-    chain,
-    token: status.token,
-    requirements,
-    payload,
-    limits: railLimits(status, deps.env ?? process.env),
-    deps: { ...deps, meta: { tool, baseUsd: price.baseUsd, feeUsd: price.settlementFeeUsd } },
-  })
+  // Settlement touches an RPC, a signer and durable storage, so it has more ways to fail
+  // than it has branches. Anything unexpected becomes a 502 that names the cause: the one
+  // outcome that must never happen is an exception escaping into the request handler,
+  // where it would be an unhandled rejection rather than a failed payment.
+  let settled: Awaited<ReturnType<typeof settlePayment>>
+  try {
+    settled = await settlePayment({
+      chain,
+      token: status.token,
+      requirements,
+      payload,
+      limits: railLimits(status, deps.env ?? process.env),
+      deps: { ...deps, meta: { tool, baseUsd: price.baseUsd, feeUsd: price.settlementFeeUsd } },
+    })
+  } catch (e) {
+    return {
+      httpStatus: 502,
+      body: {
+        error: 'settlement failed',
+        code: 'unexpected',
+        reason: e instanceof Error ? e.message : String(e),
+        note: 'Nothing was served. If a transaction was broadcast before this failure it will appear in GET /api/facilitator/proof.',
+      },
+    }
+  }
 
   if (!settled.success) {
     // A payment that is merely invalid gets a fresh challenge so the buyer can fix it.

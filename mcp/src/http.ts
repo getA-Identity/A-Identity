@@ -216,15 +216,34 @@ const server = http.createServer(async (req, res) => {
     return
   }
 
-  if (await handlePublicRoutes(ctx)) return
-  if (await handleCeloRoutes(ctx)) return
-  if (await handleX402ThreeKRoutes(ctx)) return
-  if (await handleChainRoutes(ctx)) return
-  if (await handleArcRoutes(ctx)) return
-  if (await handleAgentRoutes(ctx)) return
-  if (await handleGuardrailRoutes(ctx)) return
-  if (await handleInstructionRoutes(ctx)) return
-  if (await handleMarketplaceRoutes(ctx)) return
+  // Every route group runs inside this guard for one blunt reason: without it, a throw
+  // anywhere in a handler becomes an unhandled rejection and Node EXITS THE PROCESS. One
+  // bad request would take the whole backend down for everyone, and the caller would see
+  // the platform's HTML error page rather than anything actionable. A route that fails
+  // should cost that request, not the service.
+  try {
+    if (await handlePublicRoutes(ctx)) return
+    if (await handleCeloRoutes(ctx)) return
+    if (await handleX402ThreeKRoutes(ctx)) return
+    if (await handleChainRoutes(ctx)) return
+    if (await handleArcRoutes(ctx)) return
+    if (await handleAgentRoutes(ctx)) return
+    if (await handleGuardrailRoutes(ctx)) return
+    if (await handleInstructionRoutes(ctx)) return
+    if (await handleMarketplaceRoutes(ctx)) return
+  } catch (err) {
+    const reason = err instanceof Error ? err.message : String(err)
+    console.error(`[http] ${req.method} ${url.pathname} failed:`, err)
+    if (!res.headersSent) {
+      // The reason is included on purpose: this is our own API, the caller is usually an
+      // agent, and "something went wrong" gives it nothing to act on. Nothing secret is in
+      // these messages, and a stack trace is not sent.
+      sendJson(res, 500, { error: 'request failed', reason })
+    } else {
+      res.end()
+    }
+    return
+  }
 
   // ── POST /mcp (MCP Streamable HTTP) ──────────────────────────────────────────
   if (req.method === 'POST' && url.pathname === '/mcp') {
