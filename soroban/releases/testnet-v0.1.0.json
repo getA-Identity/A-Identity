@@ -1,0 +1,77 @@
+{
+  "note": "The deploy receipt for AgentSpendPolicy on Stellar testnet. Written because the wasm itself is deliberately not committed: Rust wasm builds are not bit-reproducible across machines by default, so a committed binary would invite a reproducibility claim we cannot honor. This records the hash instead, next to the contract that carries it, and anyone can pull the deployed bytes with `stellar contract fetch --id C... --out-file` and compare.",
+  "version": "v0.1.0",
+  "network": "stellar:testnet",
+  "networkPassphrase": "Test SDF Network ; September 2015",
+  "protocolVersion": 27,
+  "deployedAt": "2026-08-15T02:05:46Z",
+  "toolchain": {
+    "rustc": "1.96.0",
+    "sorobanSdk": "=27.0.6",
+    "stellarCli": "27.1.0",
+    "target": "wasm32v1-none"
+  },
+  "wasm": {
+    "sha256": "155eb31c1867254eacbf1b7a4755164d15cc6b6f939644705ab6b8df61579239",
+    "bytes": 11625,
+    "limitBytes": 131072
+  },
+  "contractId": "CAIL6ECRAB5FUURQ54R7OTZPXRRCDO2S353YT6N6UZUWIBDG2ZOEB4UI",
+  "constructor": {
+    "owner": "GBLHNAL57WLA5GKTIGPBHCJTQDNEZFX2CVH53EDUOGWIERNKECRENHQ5",
+    "operator": "GDZXSO4AOKPSHMQZMBNEEBQNYOIF7TWDPD7K2U5VAPKFN3QIAIELTAN6",
+    "token": "CBIELTK6YBZJU5UP2WWQEUCYKLPU6AUNZ2BQ4WWFEIE3USCIHMXQDAMA",
+    "dailyCap": "100000000",
+    "autoApproveMax": "20000000",
+    "note": "Amounts are 7-decimal base units, so the cap is 10 USDC and the per-payment ceiling is 2 USDC. `decimals` was not passed in: the constructor reads it from the token, which also proves at deploy time that the address really implements SEP-41."
+  },
+  "settlementToken": {
+    "symbol": "USDC",
+    "sac": "CBIELTK6YBZJU5UP2WWQEUCYKLPU6AUNZ2BQ4WWFEIE3USCIHMXQDAMA",
+    "classicAsset": "USDC:GBBD47IF6LWK7P7MDEVSCWR7DPUWV3NY3DTQEVFL4NAT4AQH3ZLLFLA5",
+    "decimals": 7,
+    "verified": "Derived with `stellar contract id asset --asset USDC:GBBD47IF... --network testnet` rather than pasted, and the derivation matched the constant that @x402/stellar exports. Then read live through the SAC: decimals() 7, symbol() USDC. Three independent agreements before anything was deployed against it."
+  },
+  "artifacts": [
+    {
+      "kind": "deploy",
+      "label": "AgentSpendPolicy uploaded and instantiated",
+      "txHash": "718f050b962b6e645d8cca5cc053d9f1c11a7264d3ddc266f7e36661bd82c68c",
+      "ledger": 4147602,
+      "successful": true
+    },
+    {
+      "kind": "funding",
+      "label": "15 USDC moved into the vault through the SAC",
+      "txHash": "bec1b68be5861fdf7cc71b50ce7c8a5b5cb311326a240ca8e1f6a6af99e2a400",
+      "ledger": 4147942,
+      "successful": true
+    },
+    {
+      "kind": "settlement",
+      "label": "SoW evidence 1 of 2: an under-limit agent payment settles in USDC",
+      "txHash": "3da7463422c7d122202b009bb27442199ffc3b6da87da12a7112963bf4bcc999",
+      "ledger": 4147945,
+      "successful": true,
+      "detail": "The operator paid 1 USDC inside a 2 USDC per-payment ceiling and a 10 USDC daily cap. The payee's classic balance went to 1.0000000 USDC, the vault went from 15 to 14, and spent_today went to 1 USDC."
+    },
+    {
+      "kind": "settlement",
+      "label": "SoW evidence 2 of 2: an over-limit payment is refused on chain with a typed policy error",
+      "txHash": "12df418f21d329f606f412b1aee498714f1178d68fd0db0a97c64f0de6f209d3",
+      "ledger": 4147972,
+      "successful": false,
+      "contractErrorCode": 5,
+      "contractError": "DailyCapExceeded",
+      "detail": "Included in the ledger and refused by the contract: invokeHostFunctionTrapped, with a diagnostic event carrying Error(Contract, #5). Code 5 is DailyCapExceeded in the frozen table in src/error.rs."
+    }
+  ],
+  "howEvidence2WasObtained": "Not the way an EVM engineer would expect, and the difference is worth recording. On Soroban every normal client simulates before submitting, so a payment the contract refuses fails in simulation and no transaction is ever created. `stellar contract invoke` will not send it even with --send=yes; --build-only emits a transaction with no Soroban resource footprint, which the network rejects as TxMalformed; and the hash the CLI prints in that case resolves to 404 on Horizon, because it is a local computation of something that never entered the ledger. A refused payment therefore normally leaves NO on-chain evidence at all. To get a real transaction, the payment has to fail at APPLY time rather than at simulation, which happens when the policy tightens between the moment the agent builds its payment and the moment the ledger includes it. That is not a contrivance: it is exactly the race a real agent hits when a human moves the limit mid-flight. See mcp/scripts/stellar-prove-revert.mjs.",
+  "caveats": [
+    "Testnet. Nothing here is money, and Stellar testnet is reset periodically, so a contract here is a rehearsal and never a record.",
+    "There is no ERC-8004 registry on Stellar, so the agent passport is bridged from an EVM chain rather than anchored here, and KYA cannot be attested on this network.",
+    "No x402 rail settles on Stellar yet. What is proven here is the on-ledger spend policy, not a paid API call through it.",
+    "The owner, operator and payee are all throwaway testnet keys generated for this deploy. No mainnet key has touched this network.",
+    "The vault holds the token in contract storage rather than a trustline, so the vault needs none. Both classic accounts do, and opening theirs was a prerequisite that is easy to discover the hard way: a payment to an account without a USDC trustline fails with op_no_trust, which a buyer reads as our bug."
+  ]
+}
