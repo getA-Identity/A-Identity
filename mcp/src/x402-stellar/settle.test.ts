@@ -316,8 +316,26 @@ test('an unreadable replay guard refuses rather than passing', async () => {
 
 test('the replay key is namespaced so it cannot collide with the EVM rails', () => {
   const key = stellarPaymentKey('stellar:testnet', SAC, BUYER, NONCE)
-  assert.equal(key, `stellar:testnet/sep41:${SAC}/soroban-auth/${BUYER}/${NONCE}`)
+  assert.equal(key, `stellar:testnet/sep41:${SAC}/soroban-auth/${BUYER}/${NONCE}`.toLowerCase())
   assert.doesNotMatch(key, /erc20|3009|^0x/)
+})
+
+/**
+ * The bug this test exists for, which a unit suite could not have found: persistSpentPayment
+ * lowercases what it stores, having been written for EVM hashes where that is free. A
+ * StrKey is case-significant, so a key written through that normaliser came back different
+ * from the one we compare against, and our own replay guard never fired on Stellar at all.
+ * It surfaced only by replaying a real payment against the live rail.
+ *
+ * The property, stated so it cannot regress: a key must survive the store's normalisation
+ * unchanged. Anything else means writing one string and reading for another.
+ */
+test('the replay key survives the durable store normalisation unchanged', () => {
+  const key = stellarPaymentKey('stellar:testnet', SAC, BUYER, NONCE)
+  assert.equal(key, key.toLowerCase(), 'persistSpentPayment lowercases; a key that changes there is never found again')
+  // And still unique: base32 A-Z2-7 maps one-to-one onto lowercase, so nothing collides.
+  const other = stellarPaymentKey('stellar:testnet', SAC, SELLER, NONCE)
+  assert.notEqual(key, other)
 })
 
 // ── settle, and what "settled" is allowed to mean ────────────────────────────────────

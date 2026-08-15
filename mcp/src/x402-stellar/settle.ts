@@ -172,9 +172,22 @@ export type StellarSettleResult =
  * Namespaced with `soroban-auth` so it can never collide with the EIP-3009 rail's keys or
  * the Arc rail's bare tx hashes in the shared spent_payments table, which is the same
  * decision `x402-3009/engine.ts` documents for its own.
+ *
+ * LOWERCASED, and that is not cosmetic. `persistSpentPayment` normalises what it stores
+ * with .toLowerCase(), because it was written for EVM hashes and 0x addresses where that is
+ * free. A StrKey is case-significant uppercase base32, so the first version of this function
+ * wrote a lowercased key and then compared against an uppercase one: our own replay guard
+ * never fired on Stellar, silently, in every code path. It was found by replaying a real
+ * payment against the live rail, where the NETWORK caught it instead
+ * (Error(Auth, ExistingValue), testnet ledger 4149204). That is a genuine defence and it is
+ * not this one: Soroban forgets a nonce when the signature expires, and ours must not.
+ *
+ * Lowercasing here is safe because base32's A-Z2-7 maps one-to-one onto lowercase, so the
+ * key stays unique. It is a storage identity, never displayed and never parsed back into an
+ * address. paymentKeyIsStorageStable() below is the test that keeps this true.
  */
 export function stellarPaymentKey(caip2: string, asset: string, from: string, nonce: string): string {
-  return `${caip2}/sep41:${asset}/soroban-auth/${from}/${nonce}`
+  return `${caip2}/sep41:${asset}/soroban-auth/${from}/${nonce}`.toLowerCase()
 }
 
 const msg = (e: unknown) => (e instanceof Error ? e.message : String(e))

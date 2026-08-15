@@ -33,6 +33,7 @@ import { handleAuthRoutes } from './http/auth-routes.js'
 import { handlePublicRoutes } from './http/public-routes.js'
 import { handleCeloRoutes } from './http/celo-routes.js'
 import { handleX402ThreeKRoutes } from './http/x402-3009-routes.js'
+import { handleX402StellarRoutes } from './http/x402-stellar-routes.js'
 import { handleChainRoutes } from './http/chain-routes.js'
 import { handleArcRoutes } from './http/arc-routes.js'
 import { handleAgentRoutes } from './http/agent-routes.js'
@@ -108,6 +109,12 @@ function rateBudget(method: string, pathname: string): { bucket: string; max: nu
   // hardest, tools next, and leave verify generous because it is read-only.
   if (pathname === '/api/facilitator/settle') return { bucket: 'settle', max: 6, windowMs: 60_000 }
   if (pathname === '/api/facilitator/verify') return { bucket: 'verify', max: 60, windowMs: 60_000 }
+  // The Stellar rail spends OUR XLM per settle in exactly the same way, so it gets the
+  // same shape of limit. Separate buckets, not shared ones: a burst on one chain must not
+  // be able to lock a buyer out of the other.
+  if (pathname === '/api/x402/stellar/facilitator/settle') return { bucket: 'stellar-settle', max: 6, windowMs: 60_000 }
+  if (pathname === '/api/x402/stellar/facilitator/verify') return { bucket: 'stellar-verify', max: 60, windowMs: 60_000 }
+  if (pathname.startsWith('/api/x402/stellar/tools/')) return { bucket: 'stellar-tools', max: 20, windowMs: 60_000 }
   if (pathname.startsWith('/api/x402/tools/')) return { bucket: 'x402tools', max: 20, windowMs: 60_000 }
   // MCP can also drive a release (release_escrow tool) which spends the shared signer, so cap
   // the whole /mcp endpoint. A backstop against escrow-release spam via MCP (a per-tool limit is
@@ -200,9 +207,13 @@ const server = http.createServer(async (req, res) => {
   // authorization is a signed payment, not a session. Both are fail-closed (501) when the
   // rail is unconfigured, and /api/facilitator/settle is additionally payTo-allowlisted
   // because we pay the gas there.
+  // /api/x402/stellar/* is exempt on identical terms: a signed Soroban authorization
+  // entry is the credential, the rail answers 501 when unconfigured, and its settle
+  // endpoint is payTo-allowlisted because we pay the network fee.
   const isMutation =
     req.method === 'POST' && url.pathname.startsWith('/api/') && !url.pathname.startsWith('/api/auth/') &&
     !url.pathname.startsWith('/api/celo/tools/') &&
+    !url.pathname.startsWith('/api/x402/stellar/') &&
     !url.pathname.startsWith('/api/x402/tools/') && !url.pathname.startsWith('/api/facilitator/')
   if (isMutation && !caller) {
     sendJson(res, 401, { error: 'Authentication required. Sign in with a wallet or an email link.' })
@@ -224,6 +235,9 @@ const server = http.createServer(async (req, res) => {
   try {
     if (await handlePublicRoutes(ctx)) return
     if (await handleCeloRoutes(ctx)) return
+    // Before the EIP-3009 group on purpose: /api/x402/stellar/* sits under /api/x402/,
+    // and that group's tool regex would otherwise swallow a Stellar path.
+    if (await handleX402StellarRoutes(ctx)) return
     if (await handleX402ThreeKRoutes(ctx)) return
     if (await handleChainRoutes(ctx)) return
     if (await handleArcRoutes(ctx)) return
@@ -326,6 +340,10 @@ server.listen(PORT, () => {
   console.error(`  POST /api/facilitator/settle     broadcast it and pay the gas (allowlisted payTo)`)
   console.error(`  GET  /api/facilitator/proof      settlements, with the proven signing domain`)
   console.error(`  GET  /api/x402/tools/:name       price + calling contract; POST to pay and call`)
+  console.error(`  GET  /api/x402/stellar/status    the Soroban rail: config, broadcaster, readiness`)
+  console.error(`  GET  /api/x402/stellar/proof     Stellar settlements, with who broadcast each one`)
+  console.error(`  GET  /api/x402/stellar/facilitator/supported   what this facilitator settles on Stellar`)
+  console.error(`  GET  /api/x402/stellar/tools/:name             price + what to sign; POST to pay and call`)
   console.error(`  GET  /api/proof/:rail            provenance ledger + a live re-read (see /api/proof/rails)`)
 })
 

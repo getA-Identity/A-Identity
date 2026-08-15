@@ -51,11 +51,15 @@
  * copy would be a fourth thing that must agree.
  */
 import { getChain, getChainById, tokenUnits, type ChainDescriptor, type SettlementToken } from '../chains/index.js'
+import type { StellarLimits, StellarRequirements, StellarSettleDeps } from './settle.js'
+import { settleStellarPayment } from './settle.js'
+import { loadStellarSettlements, type StellarSettlementRecord } from '../storage.js'
+import { agentPassport, reputationScore, riskCheck, verifyAgent, type TxContext } from '../asp/tools.js'
 import { feePayerEnvVar, stellarFeePayer } from '../chains/stellar/client.js'
 import { isAccountId, isContractId } from '../chains/stellar/strkey.js'
-import { RAIL_BASE_PRICES_USD, RAIL_TOOL_CARDS, type RailToolName } from '../x402-3009/rail.js'
+import { RAIL_BASE_PRICES_USD, RAIL_TOOLS, RAIL_TOOL_CARDS, type RailToolName } from '../x402-3009/rail.js'
 
-export { RAIL_BASE_PRICES_USD, RAIL_TOOL_CARDS }
+export { RAIL_BASE_PRICES_USD, RAIL_TOOL_CARDS, RAIL_TOOLS }
 export type { RailToolName }
 
 /** Which party assembles the transaction, pays the network fee, and submits it. */
@@ -73,6 +77,11 @@ export type StellarRailStatus = {
   broadcaster: Broadcaster
   /** True when the chosen broadcaster actually has what it needs to broadcast. */
   broadcasterReady: boolean
+  /** When true, /settle accepts any payTo. Off by default: settling costs us the fee. */
+  publicSettle: boolean
+  /** G... accounts we will settle for besides our own. Lowercasing would corrupt a
+   *  StrKey, so unlike the EVM allowlist these are compared exactly as written. */
+  allowedPayTo: string[]
   reason?: string
 }
 
@@ -194,6 +203,14 @@ export function stellarRailStatus(
     payTo,
     broadcaster: b.broadcaster,
     broadcasterReady: b.ready,
+    publicSettle: env.X402_STELLAR_PUBLIC_SETTLE === 'true',
+    // Split and trimmed, never lowercased. A StrKey is case-significant base32 and
+    // .toLowerCase() would turn every allowlisted account into a string that matches
+    // nothing, which is the kind of guard that looks present and does nothing.
+    allowedPayTo: (env.X402_STELLAR_ALLOWED_PAYTO ?? '')
+      .split(',')
+      .map((a) => a.trim())
+      .filter((a) => isAccountId(a)),
   }
 
   if (!requested) {
@@ -267,6 +284,62 @@ export function stellarRailPaywallGate(
     ok: false,
     httpStatus: 501,
     body: { error: 'Stellar x402 rail not configured', ...(status.reason ? { reason: status.reason } : {}) },
+  }
+}
+
+/**
+ * The economic guards, in the units Stellar actually uses.
+ *
+ * Stroops, not wei, and LEDGERS, not seconds. A Soroban fee is quoted by the simulation
+ * itself, so unlike the EVM rail there is no gas price to multiply and no estimate to be
+ * wrong about: the ceiling compares a real number against a real number.
+ *
+ * The defaults are sized against a measurement rather than a guess. One settlement on
+ * stellar:testnet cost 22,973 stroops, so a 1,000,000 stroop ceiling (0.1 XLM) is about
+ * 43 times a normal settlement, high enough that ordinary variation never trips it and low
+ * enough that a runaway costs a tenth of an XLM. The daily budget is 100 of those.
+ */
+export function stellarRailLimits(
+  status: StellarRailStatus,
+  env: NodeJS.ProcessEnv = process.env,
+): StellarLimits {
+  const decimals = status.token?.decimals ?? 7
+  return {
+    minValue: tokenUnits(decimals, num(env, 'X402_STELLAR_MIN_VALUE_USD', STELLAR_DEFAULTS.minValueUsd)),
+    maxValue: tokenUnits(decimals, num(env, 'X402_STELLAR_MAX_VALUE_USD', STELLAR_DEFAULTS.maxValueUsd)),
+    expiryHeadroomLedgers: Math.round(
+      num(env, 'X402_STELLAR_EXPIRY_HEADROOM_LEDGERS', STELLAR_DEFAULTS.expiryHeadroomLedgers),
+    ),
+    maxFeeStroops: big(env, 'X402_STELLAR_MAX_FEE_STROOPS', STELLAR_DEFAULTS.maxFeeStroops),
+    dailyFeeStroops: big(env, 'X402_STELLAR_DAILY_FEE_STROOPS', STELLAR_DEFAULTS.dailyFeeStroops),
+  }
+}
+
+const STELLAR_DEFAULTS = {
+  /** Base units, so a payment cannot be smaller than the fee it costs us to settle. */
+  minValueUsd: 0.0001,
+  maxValueUsd: 1,
+  /** About a minute of ledgers. In ledgers because the field is a ledger number. */
+  expiryHeadroomLedgers: 12,
+  maxFeeStroops: 1_000_000n,
+  dailyFeeStroops: 100_000_000n,
+} as const
+
+function num(env: NodeJS.ProcessEnv, key: string, fallback: number): number {
+  const raw = env[key]?.trim()
+  if (!raw) return fallback
+  const n = Number(raw)
+  return Number.isFinite(n) && n >= 0 ? n : fallback
+}
+
+function big(env: NodeJS.ProcessEnv, key: string, fallback: bigint): bigint {
+  const raw = env[key]?.trim()
+  if (!raw) return fallback
+  try {
+    const v = BigInt(raw)
+    return v >= 0n ? v : fallback
+  } catch {
+    return fallback
   }
 }
 
@@ -358,5 +431,287 @@ export function stellarRailChallenge(
           'Sign a Soroban authorization entry for the `transfer` call described in `extra`, then POST with header X-PAYMENT: base64(JSON of {x402Version:2, scheme:"exact", network, payload:{authEntryXdr}}).',
       },
     },
+  }
+}
+
+// ── serving a paid tool ───────────────────────────────────────────────────────────
+
+export type StellarRailToolInput = { agentId: string; txContext?: TxContext | null }
+
+export type StellarRailServeDeps = StellarSettleDeps & {
+  handlers?: Record<RailToolName, (input: StellarRailToolInput) => Promise<unknown>>
+}
+
+/**
+ * The four trust tools, answered identically to every other rail.
+ *
+ * Identical is the point: what a buyer gets for $0.25 must not depend on which chain they
+ * paid on. Only `_meta.settlement` differs, and it differs by telling the truth about how
+ * the payment was made.
+ */
+function stellarHandlers(
+  status: StellarRailStatus,
+): Record<RailToolName, (input: StellarRailToolInput) => Promise<unknown>> {
+  const meta = <T extends Record<string, unknown>>(result: T) => ({
+    ...result,
+    _meta: {
+      ...((result._meta as Record<string, unknown>) ?? {}),
+      settlement: {
+        network: status.network,
+        asset: status.token?.address,
+        assetSymbol: status.token?.symbol,
+        facilitator:
+          status.broadcaster === 'self'
+            ? 'first-party (we assemble and pay the network fee; the buyer pays none)'
+            : 'OpenZeppelin Channels broadcast it; we confirmed the transfer ourselves',
+      },
+    },
+  })
+  return {
+    verify_agent: async (i) => meta(await verifyAgent(i.agentId)),
+    reputation_score: async (i) => meta(await reputationScore(i.agentId)),
+    risk_check: async (i) => meta(await riskCheck(i.agentId, i.txContext ?? null)),
+    agent_passport: async (i) => meta(await agentPassport(i.agentId)),
+  }
+}
+
+/**
+ * The full paid-call path for one tool.
+ *
+ *   501  the rail is not configured. Never a free serve.
+ *   402  malformed X-PAYMENT, or an authorization the buyer can fix. A fresh challenge.
+ *   502  settlement failed on our side or the chain's. Nothing served.
+ *   202  broadcast but unconfirmed. Nothing served, nothing marked spent, and explicitly
+ *        not a failure: the transaction may still land.
+ *   200  the money moved, we read it, and here is the answer.
+ *
+ * The 202 is the branch the EVM rail does not have, because there it collapses into 502
+ * with an `ambiguous` flag. Here it gets its own status, since the distinction between
+ * "your payment failed" and "we cannot see your payment yet" is the whole posture.
+ */
+export async function stellarRailServeTool(
+  tool: RailToolName,
+  input: StellarRailToolInput,
+  paymentHeader: string,
+  status: StellarRailStatus,
+  deps: StellarRailServeDeps = {},
+): Promise<{ httpStatus: number; body: unknown }> {
+  const env = deps.env ?? process.env
+  const gate = stellarRailPaywallGate(status)
+  if (!gate.ok) return { httpStatus: gate.httpStatus, body: gate.body }
+
+  let payload: unknown
+  try {
+    payload = JSON.parse(Buffer.from(paymentHeader, 'base64').toString('utf8'))
+  } catch {
+    const challenge = stellarRailChallenge(tool, status, env)
+    return { httpStatus: challenge.httpStatus, body: { ...challenge.body, reason: 'X-PAYMENT is not base64-encoded JSON' } }
+  }
+
+  // The challenge is the menu and the payload names the dish. A buyer who paid on one of
+  // the offered networks gets settled on THAT one, and a network we do not sell on is
+  // refused rather than quietly redirected to the default.
+  const paidNetwork = (payload as { network?: unknown })?.network
+  let chosen = status
+  if (typeof paidNetwork === 'string' && paidNetwork.trim()) {
+    const s = stellarRailStatus(env, paidNetwork)
+    if (!s.configured) {
+      const challenge = stellarRailChallenge(tool, status, env)
+      return {
+        httpStatus: challenge.httpStatus,
+        body: { ...challenge.body, reason: s.reason ?? `this rail does not settle on '${paidNetwork}'` },
+      }
+    }
+    chosen = s
+  }
+  return stellarRailServeToolOn(tool, input, payload, chosen, deps)
+}
+
+/**
+ * Settle and serve on one already-resolved network.
+ *
+ * Split out for the same reason the EIP-3009 rail splits it: a buyer who paid on a network
+ * other than the default must go through the SAME code, not a parallel path. Two paths is
+ * how two networks stop agreeing about the rules.
+ */
+export async function stellarRailServeToolOn(
+  tool: RailToolName,
+  input: StellarRailToolInput,
+  payload: unknown,
+  status: StellarRailStatus,
+  deps: StellarRailServeDeps = {},
+): Promise<{ httpStatus: number; body: unknown }> {
+  const env = deps.env ?? process.env
+  const chain = status.chain ? getChainById(status.chain) : undefined
+  if (!chain || !status.token || !status.payTo) {
+    return { httpStatus: 501, body: { error: 'Stellar x402 rail not configured', reason: 'network descriptor missing from the registry' } }
+  }
+
+  const price = stellarRailPriceUsd(tool)
+  const requirements: StellarRequirements = {
+    network: chain.caip2,
+    asset: status.token.address,
+    payTo: status.payTo,
+    maxAmountRequired: stellarAmountRaw(tool, status.token).toString(),
+    resource: stellarRailResource(tool),
+  }
+
+  // Settlement touches an RPC, a signer and durable storage, so it has more ways to fail
+  // than branches. Anything unexpected becomes a named 502 rather than an exception
+  // escaping into the request handler as an unhandled rejection.
+  let settled: Awaited<ReturnType<typeof settleStellarPayment>>
+  try {
+    settled = await settleStellarPayment({
+      chain,
+      token: status.token,
+      requirements,
+      payload: (payload as { payload?: unknown })?.payload ?? payload,
+      limits: stellarRailLimits(status, env),
+      deps: { ...deps, meta: { tool, baseUsd: price.baseUsd } },
+    })
+  } catch (e) {
+    return {
+      httpStatus: 502,
+      body: {
+        error: 'settlement failed',
+        code: 'unexpected',
+        reason: e instanceof Error ? e.message : String(e),
+        note: 'Nothing was served. If a transaction was broadcast before this failure it will appear in GET /api/x402/stellar/proof.',
+      },
+    }
+  }
+
+  if (!settled.success) {
+    // A payment the buyer can fix gets a fresh challenge. Anything else is us or the
+    // chain, and must not be retried blindly.
+    const retryable: string[] = [
+      'malformed_payload', 'unsupported_network', 'unsupported_asset', 'wrong_invocation', 'wrong_recipient',
+      'wrong_amount', 'below_minimum', 'above_maximum', 'source_account_credentials', 'expired',
+      'expiring_too_soon', 'bad_signature', 'already_redeemed',
+    ]
+    if (retryable.includes(settled.code)) {
+      const challenge = stellarRailChallenge(tool, status, env)
+      return { httpStatus: challenge.httpStatus, body: { ...challenge.body, reason: settled.errorReason } }
+    }
+    return {
+      httpStatus: settled.ambiguous ? 202 : 502,
+      body: {
+        error: settled.ambiguous ? 'settlement not confirmed' : 'settlement failed',
+        code: settled.code,
+        reason: settled.errorReason,
+        ...(settled.transaction ? { transaction: settled.transaction } : {}),
+        ...(settled.ambiguous
+          ? {
+              ambiguous: true,
+              note: 'The transaction may still land. Nothing was served, and the authorization was NOT marked spent, so a retry once it confirms is safe. This is not a statement that your payment failed.',
+            }
+          : {}),
+      },
+    }
+  }
+
+  const handlers = deps.handlers ?? stellarHandlers(status)
+  try {
+    const body = await handlers[tool](input)
+    return { httpStatus: 200, body: { ...(body as Record<string, unknown>), settlement: settled } }
+  } catch (e) {
+    return {
+      httpStatus: 500,
+      body: {
+        error: 'tool failed after settlement',
+        reason: e instanceof Error ? e.message : String(e),
+        settlement: settled,
+        note: 'Your payment settled on-chain and is recorded. This failure is on our side.',
+      },
+    }
+  }
+}
+
+// ── proof ─────────────────────────────────────────────────────────────────────────
+
+export type StellarRailProof = {
+  rail: 'x402-stellar'
+  configured: boolean
+  network: string
+  chain: string | null
+  asset: string | null
+  assetSymbol: string | null
+  payTo: string | null
+  totalSettlements: number
+  totalUsd: number
+  reverted: number
+  /** Broadcast but never confirmed by us. Counted apart from both, because it is both. */
+  ambiguous: number
+  byTool: Record<string, { count: number; usd: number }>
+  byNetwork: Record<string, { count: number; usd: number; assetSymbol: string }>
+  /** Who actually moved each settled payment. The number that makes the claim checkable. */
+  byBroadcaster: Record<Broadcaster, number>
+  fees: { totalStroops: string; settles: number; note: string }
+  recent: StellarSettlementRecord[]
+  note: string
+}
+
+/**
+ * The durable settlement log, aggregated.
+ *
+ * `byBroadcaster` is here because it is the only number that makes the product claim
+ * checkable. Saying "we run our own facilitator" while OZ moved every payment would be
+ * true about the code and false about the deployment, and this is the field that would
+ * show it.
+ */
+export async function stellarRailProof(
+  status: StellarRailStatus,
+  deps: { load?: () => Promise<StellarSettlementRecord[]> } = {},
+): Promise<StellarRailProof> {
+  const rows = await (deps.load ?? loadStellarSettlements)()
+  const settled = rows.filter((r) => r.outcome === 'settled')
+  const byTool: Record<string, { count: number; usd: number }> = {}
+  const byNetwork: Record<string, { count: number; usd: number; assetSymbol: string }> = {}
+  const byBroadcaster: Record<Broadcaster, number> = { self: 0, oz: 0 }
+  let totalUsd = 0
+  let feeTotal = 0n
+  for (const r of rows) {
+    if (r.feeStroops) {
+      try {
+        feeTotal += BigInt(r.feeStroops)
+      } catch {
+        /* a malformed row must not break the report */
+      }
+    }
+  }
+  for (const r of settled) {
+    totalUsd += r.amountUsd
+    const t = (byTool[r.tool] ??= { count: 0, usd: 0 })
+    t.count += 1
+    t.usd = Number((t.usd + r.amountUsd).toFixed(6))
+    const n = (byNetwork[r.network] ??= { count: 0, usd: 0, assetSymbol: r.assetSymbol })
+    n.count += 1
+    n.usd = Number((n.usd + r.amountUsd).toFixed(6))
+    byBroadcaster[r.broadcaster] += 1
+  }
+  return {
+    rail: 'x402-stellar',
+    configured: status.configured,
+    network: status.network,
+    chain: status.chain,
+    asset: status.token?.address ?? null,
+    assetSymbol: status.token?.symbol ?? null,
+    payTo: status.payTo,
+    totalSettlements: settled.length,
+    totalUsd: Number(totalUsd.toFixed(6)),
+    reverted: rows.filter((r) => r.outcome === 'reverted').length,
+    ambiguous: rows.filter((r) => r.outcome === 'ambiguous').length,
+    byTool,
+    byNetwork,
+    byBroadcaster,
+    fees: {
+      totalStroops: feeTotal.toString(),
+      settles: rows.filter((r) => Boolean(r.feeStroops)).length,
+      note: 'What WE paid in network fees so the buyer paid none. Stroops, not USD: the XLM price moves after a row is written, and the order book to price it with is on the ledger these settled on.',
+    },
+    recent: rows.slice(-25).reverse(),
+    note:
+      'Every row here was confirmed by our own read of the SEP-41 transfer event, matched to the ' +
+      'authorization nonce, whoever broadcast it. byBroadcaster says who actually moved each one.',
   }
 }
