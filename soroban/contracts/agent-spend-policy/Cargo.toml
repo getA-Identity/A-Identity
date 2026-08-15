@@ -1,0 +1,17 @@
+[package]
+name = "agent-spend-policy"
+version = "0.1.0"
+edition = "2021"
+publish = false
+license = "MIT"
+description = "An on-chain spend policy for an AI agent's USDC wallet on Stellar. The ledger enforces the limit, not a server."
+
+[lib]
+crate-type = ["lib", "cdylib"]
+doctest = false
+
+[dependencies]
+soroban-sdk = { workspace = true }
+
+[dev-dependencies]
+soroban-sdk = { workspace = true, features = ["testutils"] }

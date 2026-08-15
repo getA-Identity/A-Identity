@@ -1,0 +1,28 @@
+[workspace]
+resolver = "2"
+members = ["contracts/*"]
+
+[workspace.dependencies]
+# Pinned EXACTLY, not with a caret. The SDK major tracks the protocol version, and a
+# silent minor bump is the kind of change an auditor flags on its own (a stale or
+# drifting soroban-sdk pin is a published Soroban audit finding class). Both pubnet and
+# testnet were probed on 2026-08-15 and both run protocol 27: see
+# releases/protocol-verification-2026-08-15.json for the raw getVersionInfo response.
+soroban-sdk = "=27.0.6"
+
+[profile.release]
+# overflow-checks turns an integer overflow into a runtime panic instead of a silent
+# wrap. The policy code still uses checked_add explicitly, because a profile setting is
+# a thing a future edit can lose and a typed error is a thing a client can read.
+opt-level = "z"
+overflow-checks = true
+debug = 0
+strip = "symbols"
+debug-assertions = false
+panic = "abort"
+codegen-units = 1
+lto = true
+
+[profile.release-with-logs]
+inherits = "release"
+debug-assertions = true

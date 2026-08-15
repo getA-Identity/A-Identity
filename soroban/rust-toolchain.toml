@@ -1,0 +1,7 @@
+[toolchain]
+# Pinned so a contract built here is built the same way everywhere. The wasm target is
+# wasm32v1-none, which is the only target the Stellar runtime supports; the older
+# wasm32-unknown-unknown appears in some documentation and is wrong for this platform.
+channel = "1.96.0"
+targets = ["wasm32v1-none"]
+components = ["rustfmt", "clippy"]

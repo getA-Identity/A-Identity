@@ -1,0 +1,24 @@
+{
+  "probedAt": "2026-08-15T00:51:13.548Z",
+  "tool": "soroban-rpc JSON-RPC, direct",
+  "networks": {
+    "pubnet": {
+      "rpcUrl": "https://mainnet.sorobanrpc.com",
+      "passphrase": "Public Global Stellar Network ; September 2015",
+      "protocolVersion": 27,
+      "rpcVersion": "27.1.1-7e712815319140618b9be8cf0846701a6f9a2cbe",
+      "captiveCoreVersion": "stellar-core 27.1.0 (3589a696b0d4ef5a2cf2124e349c671d71886d9c)",
+      "ledgerSequence": 63956927,
+      "ledgerCloseTime": "1786755071"
+    },
+    "testnet": {
+      "rpcUrl": "https://soroban-testnet.stellar.org",
+      "passphrase": "Test SDF Network ; September 2015",
+      "protocolVersion": 27,
+      "rpcVersion": "27.1.1-7e712815319140618b9be8cf0846701a6f9a2cbe",
+      "captiveCoreVersion": "stellar-core 27.1.0 (3589a696b0d4ef5a2cf2124e349c671d71886d9c)",
+      "ledgerSequence": 4146709,
+      "ledgerCloseTime": "1786755074"
+    }
+  }
+}
