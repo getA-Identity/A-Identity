@@ -91,6 +91,17 @@ impl Setup {
     pub fn set_time(&self, unix_seconds: u64) {
         self.env.ledger().set_timestamp(unix_seconds);
     }
+
+    /// Advance the ledger SEQUENCE without touching the clock.
+    ///
+    /// These are two different axes and conflating them is how a TTL test comes to test
+    /// nothing. TTL is counted in ledgers; the UTC day index is derived from the
+    /// timestamp. Moving the clock forward changes which day bucket is READ, so the test
+    /// looks at a key that was never written and finds zero for the wrong reason. Moving
+    /// the sequence forward inside the same day is what actually expires an entry.
+    pub fn advance_ledgers(&self, count: u32) {
+        self.env.ledger().with_mut(|l| l.sequence_number += count);
+    }
 }
 
 pub fn setup(daily_cap: i128, auto_approve_max: i128) -> Setup {

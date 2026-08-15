@@ -62,7 +62,7 @@ const CONTROLS = [
     find: '    if amount <= 0 {\n        return Err(Error::InvalidAmount);\n    }\n',
     replace: '',
     breaks:
-      'A negative amount is ADDED to the day accumulator, taking the running total down and handing the agent its cap back. A silent cap bypass, not merely a bad transfer.',
+      'The refusal comes from the token as an untyped host trap instead of a typed InvalidAmount the client can name, and the vault starts depending on whichever SEP-41 token it was pointed at validating its own inputs. The SAC does check the sign, so there is no persistent cap bypass; the original claim that there was one was wrong.',
     caughtBy: 'test::amounts::pay_with_a_negative_amount_returns_invalid_amount',
   },
   {

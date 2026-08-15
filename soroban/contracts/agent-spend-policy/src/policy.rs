@@ -34,11 +34,24 @@ pub struct Snapshot {
 
 /// Reject an amount that is zero or negative.
 ///
-/// This gate is the reason the port is not a translation. In Solidity the amount was a
-/// `uint256` and this case could not be expressed. Here it is an `i128`, and a negative
-/// amount passed through to a SEP-41 `transfer` moves value the wrong way. It would also
-/// DECREMENT the day accumulator, which resets the cap, so an unguarded negative amount
-/// is a silent cap bypass rather than merely a bad transfer.
+/// A correction, because the original justification for this guard was wrong and an
+/// adversarial review caught it. It said an unguarded negative amount would decrement the
+/// day accumulator and hand the agent its cap back. It would not: the Stellar Asset
+/// Contract validates the sign itself (`check_nonnegative_amount`, called by `transfer`),
+/// the resulting panic aborts the whole invocation, and Soroban rolls back every state
+/// change including the accumulator write. There was never a persistent bypass.
+///
+/// The guard is still right, for two reasons that are actually true:
+///
+/// 1. Without it the refusal comes from the TOKEN as an untyped host trap, and the client
+///    cannot name it. With it, the refusal is `InvalidAmount`, which the human-in-the-loop
+///    path can act on. That is the product claim, not a nicety.
+/// 2. It does not depend on the token being well behaved. The SAC checks the sign; a
+///    SEP-41 token that did not would make the bypass real, and a vault whose safety rests
+///    on a property of whatever token it was pointed at is not a vault.
+///
+/// The class is genuinely new against the Solidity original, where `uint256` made a
+/// negative amount unrepresentable. Only the mechanism was misdescribed.
 pub fn check_amount(amount: i128) -> Result<(), Error> {
     if amount <= 0 {
         return Err(Error::InvalidAmount);

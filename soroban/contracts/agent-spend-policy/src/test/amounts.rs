@@ -1,10 +1,13 @@
 //! The class with no Solidity counterpart.
 //!
 //! The original stored amounts as `uint256`, so a negative amount could not be expressed
-//! and no guard was needed. Here they are `i128`, and the danger is not merely that a
-//! negative transfer moves value the wrong way. It is that a negative amount would be
-//! ADDED to the day accumulator, taking the running total DOWN, which resets the cap.
-//! That is a silent cap bypass rather than a bad transfer, and the cap is the product.
+//! and no guard was needed. Here they are `i128`.
+//!
+//! What the guard actually buys, after a review corrected the original claim: the SAC
+//! rejects a negative transfer itself and the invocation rolls back, so there was never a
+//! persistent cap bypass. The guard turns an untyped host trap out of the token into
+//! `InvalidAmount`, which the client can name and route on, and it keeps the vault's
+//! safety from depending on whichever SEP-41 token it was pointed at.
 //!
 //! Zero is refused for a smaller reason: it moves nothing, emits a `Paid` event that says
 //! a payment happened, and pollutes the audit trail the vault's honesty rests on.

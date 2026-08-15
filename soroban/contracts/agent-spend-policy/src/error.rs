@@ -8,11 +8,12 @@
 //! Two things in this enum have no analogue in the Solidity original
 //! (`mcp/contracts/AgentSpendPolicy.sol`), because the port is not a translation:
 //!
-//! * `InvalidAmount`. Solidity's `uint256` made a negative amount unrepresentable. Here
-//!   the amount is an `i128`, and a SEP-41 `transfer(from, to, -1000)` is a withdrawal
-//!   *from* `to` if it is not guarded. Worse than a panic: a negative amount would
-//!   decrement the day counter, which resets the cap. That is a silent cap bypass, and
-//!   the cap is the entire product.
+//! * `InvalidAmount`. Solidity's `uint256` made a negative amount unrepresentable; an
+//!   `i128` does not. The SAC does reject a negative transfer itself, and the rollback
+//!   means there was never a persistent cap bypass, contrary to what this comment claimed
+//!   before a review corrected it. What the guard buys is the difference between an
+//!   untyped host trap out of the token and a typed reason the client can name, and
+//!   independence from whether the token happens to validate its own inputs.
 //! * `InvalidPayee`. Paying the vault itself, or the token contract, moves nothing but
 //!   still consumes the day's budget. A compromised operator could burn the whole cap at
 //!   zero cost and deny the legitimate agent every day, forever.

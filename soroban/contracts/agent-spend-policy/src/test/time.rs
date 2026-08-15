@@ -43,6 +43,17 @@ fn the_cap_resets_at_utc_midnight_not_24h_after_the_first_spend() {
     );
 }
 
+/// The central claim behind putting the day bucket in temporary storage: when it goes, it
+/// must read as zero rather than abort.
+///
+/// The first version of this test proved nothing, and a review caught it. It advanced the
+/// TIMESTAMP by 400 days, which changes the UTC day index, so `spent_today()` looked up a
+/// key that had never been written and found zero for a reason that has nothing to do with
+/// expiry. The bucket it claimed to expire still had its full TTL.
+///
+/// TTL is counted in LEDGERS. So this advances the sequence past the two-day floor while
+/// holding the clock inside the same UTC day, which reads the SAME key with the entry
+/// genuinely gone.
 #[test]
 fn an_expired_day_bucket_reads_as_zero_rather_than_erroring() {
     let s = setup(10 * UNIT, 100 * UNIT);
@@ -51,12 +62,20 @@ fn an_expired_day_bucket_reads_as_zero_rather_than_erroring() {
 
     s.set_time(NOON);
     s.client().pay(&s.payee, &(10 * UNIT));
+    let day = s.client().today();
+    assert_eq!(s.client().spent_today(), 10 * UNIT);
 
-    // Far in the future, well past any bucket's TTL. Temporary storage means "expired is
-    // gone", and gone must read as zero. If it read as an error instead, a vault that sat
-    // idle would refuse its first payment back with an opaque host abort rather than a
-    // typed reason, which is the failure mode temporary storage was chosen to avoid.
-    s.set_time(NOON + 400 * DAY);
+    // Same day, far past the bucket's TTL.
+    s.advance_ledgers(5 * crate::storage::LEDGERS_PER_DAY);
+    assert_eq!(
+        s.client().today(),
+        day,
+        "the clock must not move, or this reads another key"
+    );
+
+    // Gone, and gone reads as zero. If it aborted instead, a vault that sat idle would
+    // refuse its first payment back with an opaque host archival error rather than a typed
+    // reason, which is the failure mode temporary storage was chosen to avoid.
     assert_eq!(s.client().spent_today(), 0);
     s.client().pay(&s.payee, &(10 * UNIT));
 }

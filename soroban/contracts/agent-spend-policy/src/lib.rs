@@ -28,9 +28,9 @@
 //! policy would still be enforced; it just would not be enforced against anybody in
 //! particular.
 //!
-//! That is why `soroban/audit/negative-controls/` exists: a patch that deletes exactly
-//! that line, and a runner that fails the build if the test suite still passes without
-//! it. Unit tests alone cannot be trusted here, because the usual test harness
+//! That is why `soroban/audit/run-negative-controls.mjs` exists: it deletes exactly that
+//! line, runs the suite, requires it to go RED, and restores the file unconditionally.
+//! Unit tests alone cannot be trusted here, because the usual test harness
 //! (`mock_all_auths`) is precisely the thing that hides a missing `require_auth`.
 //!
 //! ## What is not here, on purpose

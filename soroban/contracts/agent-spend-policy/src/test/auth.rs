@@ -13,8 +13,8 @@
 //!    call returned. A contract that authorized the owner instead of the operator, or
 //!    authorized nobody at all, would also "work".
 //!
-//! `soroban/audit/negative-controls/` proves mechanically that this file does its job:
-//! it deletes the guard and requires the suite to go red.
+//! `soroban/audit/run-negative-controls.mjs` proves mechanically that this file does its
+//! job: it deletes each guard in turn and requires the suite to go red.
 
 use super::{setup, UNIT};
 use soroban_sdk::testutils::{
