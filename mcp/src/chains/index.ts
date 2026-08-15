@@ -20,6 +20,9 @@ export {
   fromUsdcUnits,
   tokenUnits,
   fromTokenUnits,
-  txUrl,
-  addressUrl,
 } from './evm/client.js'
+// Explorer links come from the ecosystem-aware module, NOT from evm/client.js. Every
+// caller already passes a ChainDescriptor, so the EVM behaviour is byte-identical and the
+// non-EVM chains stop getting a route their explorer does not have. See ./explorer.ts.
+export { txUrl, addressUrl } from './explorer.js'
+export * from './stellar/strkey.js'

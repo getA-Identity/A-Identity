@@ -17,7 +17,10 @@
  *     a chain someone forgot to be honest about.
  */
 import { getChainById } from './registry.js'
-import { txUrl, addressUrl } from './evm/client.js'
+// Ecosystem-aware on purpose. Importing these from evm/client.js rendered
+// `<explorer>/address/<addr>` for every chain, which is a dead route on Stellar Expert
+// (their API answers 404 for it). See ./explorer.ts for the verification.
+import { txUrl, addressUrl } from './explorer.js'
 
 export type ChainArtifact = {
   kind: 'mint' | 'deploy' | 'session-key' | 'bridge' | 'settlement' | 'funding'
