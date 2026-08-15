@@ -16,6 +16,11 @@
  * touches a real session token.
  */
 import { privateKeyToAccount, generatePrivateKey } from 'viem/accounts'
+// The registry is the single source of truth for chains, so this file reads it rather
+// than restating it. A count or a membership list written out here goes stale on the next
+// chain edit and fails in CI as something unrelated to the change that caused it, which is
+// exactly what a hardcoded "10 descriptors" did when the Stellar pair was split.
+import { CHAINS } from '../dist/chains/registry.js'
 
 const BASE = process.env.BASE ?? `http://localhost:${process.env.A_IDENTITY_HTTP_PORT ?? 3399}`
 const isLocal = /^https?:\/\/(localhost|127\.0\.0\.1)/.test(BASE)
@@ -99,9 +104,12 @@ check('/health answers 200', health.status === 200, `status ${health.status}`)
 
 const chains = await get('/api/chains')
 const chainIds = (chains.json?.chains ?? []).map((c) => c.id)
-eq('/api/chains serves 10 descriptors', chainIds.length, 10)
-for (const id of ['arc', 'base', 'arbitrum', 'avalanche', 'xlayer', 'rhchain', 'rhchain-testnet', 'celo', 'stellar'])
-  check(`  chain present: ${id}`, chainIds.includes(id))
+// What this proves is that the HTTP surface serves exactly what the registry holds, which
+// is the wiring claim worth making here. The membership itself is pinned in
+// chains/registry.test.ts, where adding or promoting a chain is meant to be a deliberate
+// edit rather than a number someone bumps to make CI stop complaining.
+eq('/api/chains serves every registry descriptor', chainIds.length, CHAINS.length)
+for (const c of CHAINS) check(`  chain present: ${c.id}`, chainIds.includes(c.id))
 check('no retired chain is served', !chainIds.some((id) => /algorand/i.test(id)))
 // Which chains are live is a product decision that moves, so this asserts the SHAPE that
 // must always hold rather than a list that goes stale every promotion: a live chain has
