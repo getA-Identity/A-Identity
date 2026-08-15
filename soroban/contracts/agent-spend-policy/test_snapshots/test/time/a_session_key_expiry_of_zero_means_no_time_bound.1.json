@@ -48,6 +48,7 @@
         }
       ]
     ],
+    [],
     [
       [
         "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAFCT4",
@@ -74,7 +75,7 @@
   "ledger": {
     "protocol_version": 27,
     "sequence_number": 0,
-    "timestamp": 0,
+    "timestamp": 2650795200,
     "network_id": "0000000000000000000000000000000000000000000000000000000000000000",
     "base_reserve": 0,
     "min_persistent_entry_ttl": 4096,
@@ -175,7 +176,7 @@
                     "symbol": "SpentOnDay"
                   },
                   {
-                    "u64": "0"
+                    "u64": "30680"
                   }
                 ]
               },
@@ -225,7 +226,7 @@
                         ]
                       },
                       "val": {
-                        "i128": "1000000000"
+                        "i128": "0"
                       }
                     },
                     {
@@ -237,7 +238,7 @@
                         ]
                       },
                       "val": {
-                        "i128": "1000000000"
+                        "i128": "0"
                       }
                     },
                     {
@@ -589,7 +590,7 @@
                 "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAHK3M"
               },
               {
-                "u64": "0"
+                "u64": "30680"
               }
             ],
             "data": {

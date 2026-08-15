@@ -73,7 +73,7 @@
   ],
   "ledger": {
     "protocol_version": 27,
-    "sequence_number": 0,
+    "sequence_number": 100000,
     "timestamp": 0,
     "network_id": "0000000000000000000000000000000000000000000000000000000000000000",
     "base_reserve": 0,
@@ -140,7 +140,7 @@
           },
           "ext": "v0"
         },
-        "live_until": 6311999
+        "live_until": 6411999
       },
       {
         "entry": {
@@ -187,7 +187,7 @@
           },
           "ext": "v0"
         },
-        "live_until": 15
+        "live_until": 100015
       },
       {
         "entry": {
@@ -225,7 +225,7 @@
                         ]
                       },
                       "val": {
-                        "i128": "1000000000"
+                        "i128": "0"
                       }
                     },
                     {
@@ -237,7 +237,7 @@
                         ]
                       },
                       "val": {
-                        "i128": "1000000000"
+                        "i128": "0"
                       }
                     },
                     {
@@ -371,7 +371,7 @@
           },
           "ext": "v0"
         },
-        "live_until": 518400
+        "live_until": 618400
       },
       {
         "entry": {
@@ -423,7 +423,7 @@
           },
           "ext": "v0"
         },
-        "live_until": 518400
+        "live_until": 618400
       },
       {
         "entry": {
@@ -526,7 +526,7 @@
           },
           "ext": "v0"
         },
-        "live_until": 120960
+        "live_until": 220960
       },
       {
         "entry": {

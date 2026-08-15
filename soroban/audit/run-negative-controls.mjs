@@ -56,6 +56,46 @@ const CONTROLS = [
       'Anyone can freeze the vault forever, retarget the operator, lift the caps, or withdraw the entire balance.',
     caughtBy: 'test::auth::every_owner_setter_without_auth_fails, and three others',
   },
+  {
+    name: 'negative-amount-guard',
+    file: 'policy.rs',
+    find: '    if amount <= 0 {\n        return Err(Error::InvalidAmount);\n    }\n',
+    replace: '',
+    breaks:
+      'A negative amount is ADDED to the day accumulator, taking the running total down and handing the agent its cap back. A silent cap bypass, not merely a bad transfer.',
+    caughtBy: 'test::amounts::pay_with_a_negative_amount_returns_invalid_amount',
+  },
+  {
+    name: 'checked-add',
+    file: 'policy.rs',
+    find: '    spent.checked_add(amount).ok_or(Error::MathOverflow)',
+    replace: '    Ok(spent + amount)',
+    breaks:
+      'The day accumulator wraps instead of returning a typed error, which is the other way to reset a cap. The release profile would turn it into a bare panic, which is an untyped abort the client cannot name.',
+    caughtBy: 'test::amounts::the_day_accumulator_uses_checked_add_and_returns_math_overflow',
+  },
+  {
+    name: 'self-payee-guard',
+    file: 'lib.rs',
+    find:
+      '        if *to == env.current_contract_address() || *to == store::get_token(env) {\n' +
+      '            return Err(Error::InvalidPayee);\n        }\n',
+    replace: '',
+    breaks:
+      "A compromised operator burns the whole day's cap at zero cost by paying the vault itself, every day, denying the legitimate agent indefinitely.",
+    caughtBy: 'test::errors::paying_the_vault_or_the_token_returns_invalid_payee',
+  },
+  {
+    name: 'day-bucket-ttl-extension',
+    file: 'storage.rs',
+    find:
+      '    env.storage()\n        .temporary()\n' +
+      '        .extend_ttl(&key, DAY_BUCKET_TTL_THRESHOLD, DAY_BUCKET_TTL_EXTEND);\n',
+    replace: '',
+    breaks:
+      "The day bucket can expire while its own day is still running, which resets the cap mid-day and lets the agent spend twice its limit. The network's minimum temporary TTL covers a day only just.",
+    caughtBy: 'test::storage_shape::the_day_bucket_survives_the_rest_of_its_own_day',
+  },
 ]
 
 const read = (f) => readFileSync(join(SRC, f), 'utf8')

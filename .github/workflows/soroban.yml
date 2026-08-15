@@ -1,0 +1,76 @@
+name: Soroban
+
+# Scoped to soroban/**, so installing a Rust toolchain does not tax every frontend
+# commit. ci.yml stays node-only and knows nothing about Rust.
+#
+# The last step is the one worth protecting. It deletes the contract's authorization
+# guard and requires the test suite to go RED. Everything above it proves the contract
+# passes its tests; only that step proves the tests would notice if the contract stopped
+# being safe, which is a different claim and the one that matters here: `pay` moves the
+# vault's own balance, so the authorization surface collapses onto a single line, and the
+# standard Soroban test harness (mock_all_auths) is precisely what hides its absence.
+
+on:
+  push:
+    paths:
+      - 'soroban/**'
+      - '.github/workflows/soroban.yml'
+  pull_request:
+    paths:
+      - 'soroban/**'
+      - '.github/workflows/soroban.yml'
+
+defaults:
+  run:
+    working-directory: soroban
+
+jobs:
+  contract:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # rust-toolchain.toml pins the channel, the wasm32v1-none target and the
+      # components, so there is nothing to restate here. A version named in two places is
+      # a version that will disagree with itself.
+      - name: Show the pinned toolchain
+        run: rustc --version && cargo --version
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: soroban
+
+      - name: Format
+        run: cargo fmt --check
+
+      - name: Clippy
+        run: cargo clippy --all-targets -- -D warnings
+
+      - name: Unit tests
+        run: cargo test
+
+      # A stale or vulnerable dependency is itself a published Soroban audit finding, so
+      # it is caught mechanically rather than left to whoever remembers to look.
+      - name: Advisory audit
+        run: |
+          cargo install cargo-audit --locked || true
+          cargo audit
+
+      - name: Build the wasm
+        run: cargo build --release --target wasm32v1-none
+
+      # The network rejects a contract over 128KB. Catching that here beats catching it
+      # at deploy, when the fix is a rebuild rather than a redeploy.
+      - name: Contract size gate
+        run: |
+          WASM=$(find target/wasm32v1-none/release -name '*.wasm' | head -1)
+          SIZE=$(stat -c%s "$WASM")
+          echo "$WASM is $SIZE bytes"
+          test "$SIZE" -lt 131072 || { echo "over the 128KB network limit"; exit 1; }
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Negative controls (the suite must go red without each guard)
+        run: node audit/run-negative-controls.mjs

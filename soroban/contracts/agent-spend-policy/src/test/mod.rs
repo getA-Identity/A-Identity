@@ -8,12 +8,36 @@
 //! and a test that wants payments to succeed asks for the mock explicitly by calling
 //! `s.mock_auths()`.
 
+mod amounts;
 mod auth;
+mod behaviour;
+mod errors;
+mod storage_shape;
+mod time;
 
 use soroban_sdk::testutils::{Address as _, Ledger as _};
-use soroban_sdk::{token, Address, Env};
+use soroban_sdk::{token, Address, Env, InvokeError};
 
-use crate::{AgentSpendPolicy, AgentSpendPolicyClient};
+use crate::{AgentSpendPolicy, AgentSpendPolicyClient, Error};
+
+/// Assert that a `try_*` call came back as the named TYPED error.
+///
+/// The nesting matters and is easy to get wrong in a way that makes a test vacuous.
+/// `Err(Ok(e))` is the contract returning its own error, which is what every policy gate
+/// must produce. `Err(Err(_))` is a host-level trap, which is what a failed
+/// `require_auth` or an unexpected panic produces. A test that only checked `is_err()`
+/// would pass for either, so a gate that had degenerated into an untyped panic would look
+/// exactly like a gate that worked.
+#[track_caller]
+pub fn assert_error<T>(result: Result<T, Result<Error, InvokeError>>, expected: Error) {
+    match result {
+        Err(Ok(actual)) => assert_eq!(actual, expected, "wrong typed error"),
+        Err(Err(host)) => {
+            panic!("expected the typed error {expected:?}, got a host trap: {host:?}")
+        }
+        Ok(_) => panic!("expected the typed error {expected:?}, but the call succeeded"),
+    }
+}
 
 /// A round number of token base units, so the tests read as amounts rather than digits.
 /// Stellar's USDC SAC is 7 decimals; the harness mints a 7-decimal token to match.
@@ -64,7 +88,6 @@ impl Setup {
     }
 
     /// Advance the ledger clock. Used by the day-bucketing and session-key tests.
-    #[allow(dead_code)] // first used by the time tests in the next phase
     pub fn set_time(&self, unix_seconds: u64) {
         self.env.ledger().set_timestamp(unix_seconds);
     }
