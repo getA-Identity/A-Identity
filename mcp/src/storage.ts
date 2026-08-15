@@ -328,6 +328,117 @@ export async function persistX402Settlement(rec: X402SettlementRecord): Promise<
 }
 
 /**
+ * One settlement on the Stellar rail (see x402-stellar/).
+ *
+ * A THIRD record type, and the reason is the same reason the first two are separate: they
+ * record different kinds of evidence, and a union with everything optional would let the
+ * weakest provenance render as if it were the strongest.
+ *
+ *   CeloSettlementRecord    a facilitator receipt. A third party asserts the money moved.
+ *   X402SettlementRecord    a chain receipt. We broadcast it, so we hold the log ourselves.
+ *   StellarSettlementRecord someone broadcast it, and we read the ledger to confirm.
+ *
+ * The third is genuinely its own thing. On this rail the broadcaster may be us or it may be
+ * OpenZeppelin Channels, and the record says which. What does NOT vary is who decided it
+ * settled: `confirmedBy` is always our own read of the transfer event, never the
+ * broadcaster's word. That is the field a proof page should show, because it is the one
+ * that makes "settled" mean something when a third party moved the money.
+ */
+export type StellarSettlementRecord = {
+  ts: string
+  /** 'settled' = we found the transfer event ourselves. 'reverted' = it landed and failed.
+   *  'ambiguous' = broadcast but not in the ledger inside the window, which may still land
+   *  and so is neither a sale nor a refusal. Only 'settled' is a sale. */
+  outcome: 'settled' | 'reverted' | 'ambiguous'
+  tool: string
+  resource: string
+  /** CAIP-2, so stellar:testnet and stellar:pubnet can never be summed into one figure. */
+  network: string
+  /** The SEP-41 contract that actually moved. A C... StrKey, never a 0x address. */
+  asset: string
+  assetSymbol: string
+  /** 7 on Stellar, not the 6 every EVM USDC uses. Recorded per row so a decimals change
+   *  cannot silently reprice history. */
+  assetDecimals: number
+  /** Base units, exactly as the transfer event reported them. */
+  value: string
+  amountUsd: number
+  baseUsd: number
+  payer: string
+  payTo: string
+  tx?: string
+  /** Ledger sequence, the Stellar analogue of a block number. */
+  ledger?: number
+  explorerUrl?: string
+  /** Who assembled the transaction and paid the network fee. */
+  broadcaster: 'self' | 'oz'
+  /** Always our own ledger read. Present as a field rather than assumed, so a future path
+   *  that trusted a facilitator's word would have to write something else here and would
+   *  be visible on the proof page for doing it. */
+  confirmedBy: 'soroban-rpc'
+  /** What the settlement cost US, in stroops. No USD figure: there is no price feed we
+   *  verify, and inventing one to make a number look tidy is the thing we do not do. */
+  feeStroops?: string
+  /** Present when we broadcast for a third-party payTo rather than for ourselves. */
+  facilitatedFor?: string
+}
+
+const STELLAR_SETTLEMENTS_FILE = join(DATA_DIR, 'stellar-settlements.json')
+export const STELLAR_SETTLEMENTS_CAP = 2000
+
+/** Load the retained Stellar settlement records, oldest first. Never throws, for the same
+ *  reason loadX402Settlements does not: this is read on the settlement path, and an
+ *  exception there is an unhandled rejection that takes the process down. */
+export async function loadStellarSettlements(): Promise<StellarSettlementRecord[]> {
+  try {
+    const p = await getPool()
+    if (p) {
+      await p.query('CREATE TABLE IF NOT EXISTS stellar_settlements (id bigserial PRIMARY KEY, data jsonb NOT NULL)')
+      const r = await p.query('SELECT data FROM stellar_settlements ORDER BY id ASC')
+      return r.rows.map((row: { data: StellarSettlementRecord }) => row.data)
+    }
+  } catch (e) {
+    console.error('[storage] stellar settlement read failed:', e instanceof Error ? e.message : e)
+    return []
+  }
+  try {
+    return JSON.parse(readFileSync(STELLAR_SETTLEMENTS_FILE, 'utf8')) as StellarSettlementRecord[]
+  } catch {
+    return []
+  }
+}
+
+/** Durably record one settlement attempt, trimming past the cap. Never throws: by the time
+ *  we get here the money has already moved, so a logging hiccup must not turn a paid call
+ *  into an error for the buyer. */
+export async function persistStellarSettlement(rec: StellarSettlementRecord): Promise<void> {
+  try {
+    const p = await getPool()
+    if (p) {
+      await p.query('CREATE TABLE IF NOT EXISTS stellar_settlements (id bigserial PRIMARY KEY, data jsonb NOT NULL)')
+      await p.query('INSERT INTO stellar_settlements (data) VALUES ($1)', [JSON.stringify(rec)])
+      await p.query(
+        'DELETE FROM stellar_settlements WHERE id NOT IN (SELECT id FROM stellar_settlements ORDER BY id DESC LIMIT $1)',
+        [STELLAR_SETTLEMENTS_CAP],
+      )
+      return
+    }
+    let arr: StellarSettlementRecord[] = []
+    try {
+      arr = JSON.parse(readFileSync(STELLAR_SETTLEMENTS_FILE, 'utf8')) as StellarSettlementRecord[]
+    } catch {
+      /* first write */
+    }
+    arr.push(rec)
+    if (arr.length > STELLAR_SETTLEMENTS_CAP) arr = arr.slice(-STELLAR_SETTLEMENTS_CAP)
+    mkdirSync(DATA_DIR, { recursive: true })
+    writeFileSync(STELLAR_SETTLEMENTS_FILE, JSON.stringify(arr))
+  } catch (e) {
+    console.error('[storage] stellar settlement persist failed:', e instanceof Error ? e.message : e)
+  }
+}
+
+/**
  * Native-unit gas spent on a given UTC day across every settlement attempt.
  *
  * The settlement log IS the gas ledger: no second table, and the daily budget the rail
