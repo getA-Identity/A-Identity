@@ -1,0 +1,311 @@
+/**
+ * The Stellar adapter.
+ *
+ * Deliberately much smaller than the EVM one, and the omissions are information rather
+ * than gaps to fill in later:
+ *
+ * - No `registerAgent`, `recordValidation` or `recordReputation`. ERC-8004 is EVM-only and
+ *   no Soroban identity registry is deployed, so an agent id resolved here would be a
+ *   claim about a different chain. Stubbing these would turn a missing capability into a
+ *   silent wrong answer.
+ * - No ERC-8183 escrow, no Arc precompiles. Those are other chains' contracts.
+ *
+ * What it does cover is the vault: read it, and prepare or execute the calls that move it.
+ *
+ * Prepared-or-executed, the same rule every chain here follows. Without a signer, a write
+ * returns the exact invocation it WOULD submit and touches nothing. With one, it submits
+ * and returns the receipt. Nothing is reported as settled without a transaction that
+ * landed.
+ */
+import {
+  Account,
+  Address,
+  BASE_FEE,
+  Contract,
+  Networks,
+  TransactionBuilder,
+  nativeToScVal,
+  rpc,
+  scValToNative,
+} from '@stellar/stellar-sdk'
+
+import type { ChainDescriptor } from '../types.js'
+import { sorobanServer, stellarKeypair, stellarSignerAddress } from './client.js'
+import { isContractId } from './strkey.js'
+
+/**
+ * The stand-in source account for reads when no signer is configured.
+ *
+ * All-zero ed25519 key in StrKey form, the conventional Stellar "null account". It does
+ * not exist on any network and cannot sign, which is exactly what makes it the honest
+ * choice here: a read must not depend on holding a key, and hardcoding somebody's real
+ * funded account would quietly couple our reads to their balance.
+ */
+const READ_ONLY_SOURCE = 'GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAWHF'
+
+/** Testnet and pubnet differ only by this string, and getting it wrong signs for the
+ *  wrong network, so it is derived from the descriptor rather than passed around. */
+function passphrase(chain: ChainDescriptor): string {
+  if (chain.caip2 === 'stellar:pubnet') return Networks.PUBLIC
+  if (chain.caip2 === 'stellar:testnet') return Networks.TESTNET
+  throw new Error(`${chain.id}: no known network passphrase for ${chain.caip2}`)
+}
+
+export type PreparedCall = {
+  executed: false
+  prepared: {
+    contract: string
+    method: string
+    args: unknown[]
+    network: string
+    /** Why nothing was submitted, in the words the operator needs to act on. */
+    reason: string
+  }
+}
+
+export type ExecutedCall = {
+  executed: true
+  txHash: string
+  ledger: number | undefined
+  explorerUrl: string
+  successful: boolean
+  /** Present when the contract refused it: the code from the frozen error table. */
+  contractErrorCode?: number
+}
+
+export type VaultState = {
+  owner: string
+  operator: string
+  token: string
+  decimals: number
+  dailyCapRaw: string
+  autoApproveMaxRaw: string
+  frozen: boolean
+  allowlistEnabled: boolean
+  sessionKeyExpiry: string
+  day: string
+  spentTodayRaw: string
+  balanceRaw: string
+}
+
+export function createStellarAdapter(chain: ChainDescriptor) {
+  if (chain.ecosystem !== 'stellar') {
+    throw new Error(`createStellarAdapter: ${chain.id} is not a Stellar chain (${chain.ecosystem})`)
+  }
+
+  const net = passphrase(chain)
+  const i128 = (v: bigint | string) => nativeToScVal(BigInt(v), { type: 'i128' })
+  const u64 = (v: bigint | string) => nativeToScVal(BigInt(v), { type: 'u64' })
+  const addr = (g: string) => new Address(g).toScVal()
+
+  /** A read, done as a simulation. Costs nothing, touches nothing, signs nothing. */
+  async function view(vault: string, method: string, env: NodeJS.ProcessEnv): Promise<unknown> {
+    const server = sorobanServer(chain, env)
+    const c = new Contract(vault)
+    // A transaction needs a source account even to be simulated, but the simulator never
+    // checks that the account exists or that its sequence is real: it is building a
+    // footprint, not authorizing anything. So a read works with no signer, no funded
+    // account, and no network round trip to fetch one. It must still be a CLASSIC account
+    // id; passing the vault's own C... address fails, because a contract is not an account.
+    const source = stellarSignerAddress(chain, env) ?? READ_ONLY_SOURCE
+    const account = new Account(source, '0')
+    const tx = new TransactionBuilder(account, { fee: BASE_FEE, networkPassphrase: net })
+      .addOperation(c.call(method))
+      .setTimeout(30)
+      .build()
+    const sim = await server.simulateTransaction(tx)
+    if (rpc.Api.isSimulationError(sim)) throw new Error(`${method}: ${sim.error}`)
+    if (!sim.result) throw new Error(`${method}: simulation returned no result`)
+    return scValToNative(sim.result.retval)
+  }
+
+  /**
+   * Build, simulate, sign, submit, and wait. Returns `prepared` untouched when there is no
+   * signer.
+   *
+   * A refused call is reported rather than thrown: on Soroban the contract's typed error
+   * arrives as a simulation failure, and "the vault said no" is an answer the caller wants,
+   * not an exception. Note the consequence, which is genuinely surprising coming from EVM
+   * and is written up in mcp/scripts/stellar-prove-revert.mjs: a refused payment produces
+   * NO transaction at all, so there is no hash to show for it.
+   */
+  async function write(
+    vault: string,
+    method: string,
+    args: ReturnType<typeof nativeToScVal>[],
+    display: unknown[],
+    env: NodeJS.ProcessEnv,
+  ): Promise<PreparedCall | ExecutedCall> {
+    const kp = stellarKeypair(chain, env)
+    if (!kp) {
+      return {
+        executed: false,
+        prepared: {
+          contract: vault,
+          method,
+          args: display,
+          network: chain.caip2,
+          reason: `${chain.signerEnvVar ?? 'the chain signer'} is not set, so nothing was submitted. This is the exact call it would make.`,
+        },
+      }
+    }
+
+    const server = sorobanServer(chain, env)
+    const c = new Contract(vault)
+    const account = await server.getAccount(kp.publicKey())
+    const tx = new TransactionBuilder(account, { fee: BASE_FEE, networkPassphrase: net })
+      .addOperation(c.call(method, ...args))
+      .setTimeout(180)
+      .build()
+
+    const sim = await server.simulateTransaction(tx)
+    if (rpc.Api.isSimulationError(sim)) {
+      return {
+        executed: false,
+        prepared: {
+          contract: vault,
+          method,
+          args: display,
+          network: chain.caip2,
+          reason: `the contract refused it before it could be submitted: ${sim.error}`,
+        },
+      }
+    }
+
+    const assembled = rpc.assembleTransaction(tx, sim).build()
+    assembled.sign(kp)
+    const sent = await server.sendTransaction(assembled)
+    if (sent.status === 'ERROR') {
+      return {
+        executed: false,
+        prepared: {
+          contract: vault,
+          method,
+          args: display,
+          network: chain.caip2,
+          reason: `the network rejected the transaction before the ledger (${sent.status})`,
+        },
+      }
+    }
+
+    let got = await server.getTransaction(sent.hash)
+    for (let i = 0; i < 30 && got.status === 'NOT_FOUND'; i += 1) {
+      await new Promise((r) => setTimeout(r, 1000))
+      got = await server.getTransaction(sent.hash)
+    }
+    return {
+      executed: true,
+      txHash: sent.hash,
+      ledger: 'ledger' in got ? got.ledger : undefined,
+      explorerUrl: `${chain.explorer}/tx/${sent.hash}`,
+      successful: got.status === 'SUCCESS',
+    }
+  }
+
+  return {
+    chain,
+
+    /** Live proof the chain is reachable and the settlement token is what we think. */
+    async readContracts(env: NodeJS.ProcessEnv = process.env) {
+      const server = sorobanServer(chain, env)
+      const latest = await server.getLatestLedger()
+      const token = (chain.settlementTokens ?? [])[0]
+      return {
+        chain: chain.id,
+        caip2: chain.caip2,
+        protocolVersion: latest.protocolVersion,
+        ledger: latest.sequence,
+        reachable: true,
+        settlementToken: token
+          ? { symbol: token.symbol, sac: token.address, decimals: token.decimals }
+          : null,
+        signer: stellarSignerAddress(chain, env),
+        checkedAt: new Date().toISOString(),
+      }
+    },
+
+    /** The whole vault state in one round of simulations. */
+    async readVault(vault: string, env: NodeJS.ProcessEnv = process.env): Promise<VaultState> {
+      if (!isContractId(vault)) throw new Error(`${vault} is not a Soroban contract id`)
+      const s = (v: unknown) => String(v)
+      const [
+        owner,
+        operator,
+        token,
+        decimals,
+        dailyCap,
+        autoApproveMax,
+        frozen,
+        allowlistEnabled,
+        sessionKeyExpiry,
+        day,
+        spentToday,
+        balance,
+      ] = await Promise.all([
+        view(vault, 'owner', env),
+        view(vault, 'operator', env),
+        view(vault, 'token', env),
+        view(vault, 'decimals', env),
+        view(vault, 'daily_cap', env),
+        view(vault, 'auto_approve_max', env),
+        view(vault, 'frozen', env),
+        view(vault, 'allowlist_enabled', env),
+        view(vault, 'session_key_expiry', env),
+        view(vault, 'today', env),
+        view(vault, 'spent_today', env),
+        view(vault, 'balance', env),
+      ])
+      return {
+        owner: s(owner),
+        operator: s(operator),
+        token: s(token),
+        decimals: Number(decimals),
+        dailyCapRaw: s(dailyCap),
+        autoApproveMaxRaw: s(autoApproveMax),
+        frozen: Boolean(frozen),
+        allowlistEnabled: Boolean(allowlistEnabled),
+        sessionKeyExpiry: s(sessionKeyExpiry),
+        day: s(day),
+        spentTodayRaw: s(spentToday),
+        balanceRaw: s(balance),
+      }
+    },
+
+    /** The agent's bounded payment. Amount is in the token's own base units. */
+    policyPay: (vault: string, to: string, amountRaw: bigint | string, env = process.env) =>
+      write(vault, 'pay', [addr(to), i128(amountRaw)], [to, String(amountRaw)], env),
+
+    /** The human override: skips ceiling, allowlist and freeze, still counted by the cap. */
+    policyOwnerPay: (vault: string, to: string, amountRaw: bigint | string, env = process.env) =>
+      write(vault, 'owner_pay', [addr(to), i128(amountRaw)], [to, String(amountRaw)], env),
+
+    policyWithdraw: (vault: string, to: string, amountRaw: bigint | string, env = process.env) =>
+      write(vault, 'withdraw', [addr(to), i128(amountRaw)], [to, String(amountRaw)], env),
+
+    policySetPolicy: (
+      vault: string,
+      dailyCapRaw: bigint | string,
+      autoApproveMaxRaw: bigint | string,
+      allowlistEnabled: boolean,
+      env = process.env,
+    ) =>
+      write(
+        vault,
+        'set_policy',
+        [i128(dailyCapRaw), i128(autoApproveMaxRaw), nativeToScVal(allowlistEnabled)],
+        [String(dailyCapRaw), String(autoApproveMaxRaw), allowlistEnabled],
+        env,
+      ),
+
+    policySetFrozen: (vault: string, frozen: boolean, env = process.env) =>
+      write(vault, 'set_frozen', [nativeToScVal(frozen)], [frozen], env),
+
+    policySetAllowed: (vault: string, payee: string, allowed: boolean, env = process.env) =>
+      write(vault, 'set_allowed', [addr(payee), nativeToScVal(allowed)], [payee, allowed], env),
+
+    policySetSessionExpiry: (vault: string, expiry: bigint | string, env = process.env) =>
+      write(vault, 'set_session_key_expiry', [u64(expiry)], [String(expiry)], env),
+  }
+}
+
+export type StellarAdapter = ReturnType<typeof createStellarAdapter>
