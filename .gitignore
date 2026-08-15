@@ -102,3 +102,7 @@ docs/robinhood-outreach.md
 # Local design reference screenshots (never deployed, never committed)
 _design-refs/
 dashboard-examples/
+
+# Third-party toolkit checked out locally for the Stellar work (kaankacar/stellar-build).
+# It carries its own .git, so committing it would embed a foreign repo in ours.
+stellar-build/
