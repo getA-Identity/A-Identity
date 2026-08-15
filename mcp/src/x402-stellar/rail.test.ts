@@ -16,9 +16,13 @@ import {
 } from './rail.js'
 import { RAIL_BASE_PRICES_USD as EIP3009_PRICES } from '../x402-3009/rail.js'
 import { getChainById } from '../chains/registry.js'
+import { Keypair } from '@stellar/stellar-sdk'
 
 const PAYTO = 'GBMRWLL7FTWNQZFVWXTC3PCHHU4LJASDGWADDU4UXYCK2WF6SEJAN6TI'
-const SEED = 'SABCDEFGHIJKLMNOPQRSTUVWXYZ234567ABCDEFGHIJKLMNOPQRST'.padEnd(56, 'A')
+// A REAL seed. The previous placeholder was a padded string that passed an
+// alphabet-and-length check and would now fail the checksum, which is exactly the class of
+// value the checksum was added to reject.
+const SEED = Keypair.random().secret()
 const READY = {
   X402_STELLAR_NETWORKS: 'stellar:testnet',
   X402_STELLAR_PAYTO: PAYTO,
@@ -140,6 +144,43 @@ test('an explicit broadcaster choice is honored, and its missing credential is n
   })
   assert.equal(forcedSelf.broadcaster, 'self')
   assert.equal(forcedSelf.ready, false)
+})
+
+test('a present but malformed key is not "ready", because readiness and signing agree now', () => {
+  const chain = getChainById('stellar-testnet')!
+  const errors: string[] = []
+  const original = console.error
+  console.error = (m: unknown) => void errors.push(String(m))
+  try {
+    // The realistic mistake: an EVM hex key in the Stellar variable. This used to report
+    // ready: true, so the rail sold and then failed to settle every sale.
+    const r = stellarBroadcaster(chain, { STELLAR_TESTNET_SIGNER_SECRET: '0x' + 'a'.repeat(64) })
+    assert.equal(r.ready, false)
+    assert.match(r.reason ?? '', /nothing can broadcast/)
+    // A one-character typo in a real seed is the other one, and the checksum catches it.
+    const good = Keypair.random().secret()
+    const typo = good.slice(0, 20) + (good[20] === 'A' ? 'B' : 'A') + good.slice(21)
+    assert.equal(stellarBroadcaster(chain, { STELLAR_TESTNET_SIGNER_SECRET: typo }).ready, false)
+  } finally {
+    console.error = original
+  }
+})
+
+test('the dedicated fee payer is network-scoped and wins over the chain signer', () => {
+  const testnet = getChainById('stellar-testnet')!
+  const pubnet = getChainById('stellar')!
+  const fee = Keypair.random().secret()
+  assert.equal(stellarBroadcaster(testnet, { X402_STELLAR_TESTNET_FEE_PAYER: fee }).ready, true)
+  // The testnet fee payer must not make pubnet look ready. One variable plus a network
+  // flag is the shape that signs a pubnet transaction with a testnet key.
+  assert.equal(stellarBroadcaster(pubnet, { X402_STELLAR_TESTNET_FEE_PAYER: fee }).ready, false)
+  assert.equal(stellarBroadcaster(pubnet, { X402_STELLAR_PUBNET_FEE_PAYER: fee }).ready, true)
+})
+
+test('the retired variable does not make anything look ready', () => {
+  // X402_STELLAR_SIGNER_SECRET was read by the readiness check and by nothing that signs.
+  const chain = getChainById('stellar-testnet')!
+  assert.equal(stellarBroadcaster(chain, { X402_STELLAR_SIGNER_SECRET: Keypair.random().secret() }).ready, false)
 })
 
 test('the two networks never share an OZ credential or an endpoint', () => {

@@ -46,6 +46,7 @@
  * copy would be a fourth thing that must agree.
  */
 import { getChain, getChainById, tokenUnits, type ChainDescriptor, type SettlementToken } from '../chains/index.js'
+import { feePayerEnvVar, stellarFeePayer } from '../chains/stellar/client.js'
 import { isAccountId, isContractId } from '../chains/stellar/strkey.js'
 import { RAIL_BASE_PRICES_USD, RAIL_TOOL_CARDS, type RailToolName } from '../x402-3009/rail.js'
 
@@ -98,7 +99,12 @@ export function stellarBroadcaster(
   env: NodeJS.ProcessEnv = process.env,
 ): { broadcaster: Broadcaster; ready: boolean; reason?: string } {
   const asked = env.X402_STELLAR_FACILITATOR?.trim().toLowerCase()
-  const feePayer = env.X402_STELLAR_SIGNER_SECRET?.trim() || (chain?.signerEnvVar ? env[chain.signerEnvVar]?.trim() : '')
+  // Resolved through the SAME function the signing path uses, not by testing a string for
+  // emptiness. The previous version reported ready:true for any non-empty value, so an
+  // EVM hex key in the Stellar variable made the rail sell and then fail to settle every
+  // sale: readiness and signing were answering different questions.
+  const feePayer = chain ? stellarFeePayer(chain, env) : null
+  const feePayerVar = chain ? feePayerEnvVar(chain) : 'the fee payer'
   const ozKey = chain ? ozApiKey(chain, env) : null
 
   if (asked === 'oz') {
@@ -112,7 +118,7 @@ export function stellarBroadcaster(
       : {
           broadcaster: 'self',
           ready: false,
-          reason: `X402_STELLAR_FACILITATOR=self but no fee payer is configured (set X402_STELLAR_SIGNER_SECRET or ${chain?.signerEnvVar ?? 'the chain signer'})`,
+          reason: `X402_STELLAR_FACILITATOR=self but no usable fee payer is configured. Set ${feePayerVar} or ${chain?.signerEnvVar ?? 'the chain signer'} to a Stellar S... secret seed; a value that is present but malformed counts as absent.`,
         }
   }
 

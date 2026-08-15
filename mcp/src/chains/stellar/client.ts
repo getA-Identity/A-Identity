@@ -80,6 +80,48 @@ export function stellarKeypair(
   }
 }
 
+/**
+ * Which variable holds the rail's dedicated fee payer for this network.
+ *
+ * Network-scoped for the same reason the signers and the OZ keys are: one variable plus a
+ * network flag is the shape that signs a pubnet transaction with a testnet key.
+ *
+ * This replaces X402_STELLAR_SIGNER_SECRET, which was worse than useless. It was read by
+ * the rail's readiness check and by NOTHING that signs, so setting it made the rail report
+ * itself configured and ready while the signing path, which only ever read the chain's own
+ * signerEnvVar, still had no key. An adversarial review found it; the variable never worked
+ * and is retired rather than fixed in place, since a name that once meant "ready" and now
+ * means something else is its own hazard.
+ */
+export function feePayerEnvVar(chain: ChainDescriptor): string {
+  return chain.caip2 === 'stellar:pubnet'
+    ? 'X402_STELLAR_PUBNET_FEE_PAYER'
+    : 'X402_STELLAR_TESTNET_FEE_PAYER'
+}
+
+/**
+ * The account that pays network fees when we broadcast for a buyer.
+ *
+ * Tries the rail's dedicated fee payer first so it can be a thin wallet holding only XLM,
+ * separate from the chain's general signer, then falls back to that signer. Validation is
+ * the same in both cases, which is the point: readiness and signing must never be able to
+ * disagree about whether a key exists.
+ */
+export function stellarFeePayer(
+  chain: ChainDescriptor,
+  env: NodeJS.ProcessEnv = process.env,
+): Keypair | null {
+  const dedicated = env[feePayerEnvVar(chain)]?.trim()
+  if (dedicated) {
+    if (isSecretSeed(dedicated)) return Keypair.fromSecret(dedicated)
+    console.error(
+      `[chains/stellar] ${feePayerEnvVar(chain)} is set but is not a Stellar secret seed. ` +
+        `Falling back to ${chain.signerEnvVar ?? 'the chain signer'}.`,
+    )
+  }
+  return stellarKeypair(chain, env)
+}
+
 /** The public account the signer would act as, without exposing the key. */
 export function stellarSignerAddress(
   chain: ChainDescriptor,

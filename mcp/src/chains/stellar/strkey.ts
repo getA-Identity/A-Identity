@@ -11,10 +11,17 @@
  * account are different kinds of thing that live at different explorer routes and behave
  * differently, so a check that accepts either is not a check.
  *
- * We validate the alphabet and the length, not the checksum. A checksum test would need
- * base32 decoding and would be validating a value we already got from a derivation or a
- * live read; the failure this guards against is a `G...` issuer pasted where a `C...`
- * contract belongs, and the first letter catches that.
+ * We validate the alphabet, the length AND the CRC16 checksum that StrKey carries for
+ * exactly this purpose. An earlier version skipped the checksum, reasoning that these
+ * values come from a derivation or a live read rather than from a keyboard. An adversarial
+ * review pointed out where that reasoning fails: X402_STELLAR_PAYTO is typed by a human,
+ * and a single wrong character produces a string that passes an alphabet-and-length test,
+ * makes the rail report itself configured, and sells to an account nobody can pay. The
+ * checksum is fifteen lines and it catches that.
+ *
+ * Implemented here rather than imported so this file stays dependency-free and the drift
+ * tests that use it stay offline and instant. strkey.test.ts checks our answer against the
+ * SDK's on real and corrupted values, so the two cannot disagree.
  */
 import type { Ecosystem } from '../types.js'
 
@@ -34,9 +41,60 @@ export const STELLAR_SECRET_RE = new RegExp(`^S${STRKEY_BODY}$`)
  */
 export const STELLAR_TX_HASH_RE = /^[0-9a-f]{64}$/
 
-export const isContractId = (s: string): boolean => STELLAR_CONTRACT_RE.test(s)
-export const isAccountId = (s: string): boolean => STELLAR_ACCOUNT_RE.test(s)
-export const isSecretSeed = (s: string): boolean => STELLAR_SECRET_RE.test(s)
+const B32 = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ234567'
+
+/** RFC 4648 base32 with no padding, which is what StrKey uses. Null on any bad character. */
+function b32decode(input: string): Uint8Array | null {
+  let bits = 0
+  let value = 0
+  const out: number[] = []
+  for (const ch of input) {
+    const idx = B32.indexOf(ch)
+    if (idx < 0) return null
+    value = (value << 5) | idx
+    bits += 5
+    if (bits >= 8) {
+      bits -= 8
+      out.push((value >>> bits) & 0xff)
+    }
+  }
+  return new Uint8Array(out)
+}
+
+/** CRC16-XModem: polynomial 0x1021, initial value 0. Stellar stores it little-endian. */
+function crc16(bytes: Uint8Array): number {
+  let crc = 0x0000
+  for (const b of bytes) {
+    crc ^= b << 8
+    for (let i = 0; i < 8; i += 1) {
+      crc = crc & 0x8000 ? ((crc << 1) ^ 0x1021) & 0xffff : (crc << 1) & 0xffff
+    }
+  }
+  return crc & 0xffff
+}
+
+/** StrKey version bytes, which are what make the leading letter what it is. */
+const VERSION = { account: 6 << 3, seed: 18 << 3, contract: 2 << 3 } as const
+
+/**
+ * Shape, version byte and checksum. All three, because each catches something the others
+ * do not: the regex catches a wrong alphabet, the version byte catches a C... where a G...
+ * belongs, and the CRC catches a transcription error that looks perfect.
+ */
+function validStrKey(input: string, re: RegExp, version: number): boolean {
+  if (!re.test(input)) return false
+  const raw = b32decode(input)
+  // 1 version byte + 32 payload + 2 checksum
+  if (!raw || raw.length !== 35) return false
+  if (raw[0] !== version) return false
+  const expected = crc16(raw.subarray(0, 33))
+  const actual = raw[33] | (raw[34] << 8)
+  return expected === actual
+}
+
+export const isContractId = (s: string): boolean => validStrKey(s, STELLAR_CONTRACT_RE, VERSION.contract)
+export const isAccountId = (s: string): boolean => validStrKey(s, STELLAR_ACCOUNT_RE, VERSION.account)
+export const isSecretSeed = (s: string): boolean => validStrKey(s, STELLAR_SECRET_RE, VERSION.seed)
 export const isStellarTxHash = (s: string): boolean => STELLAR_TX_HASH_RE.test(s)
 
 // ── the shape maps the drift tests share ─────────────────────────────────────────────

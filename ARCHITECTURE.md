@@ -74,7 +74,7 @@ fallback, so one layer failing never fabricates a success.
 
 | Standard | Where | What it does |
 |---|---|---|
-| **ERC-8004** Identity | `0x8004A818…BD9e` | On-chain agent passport (ERC-721). Real `register` tx per agent. |
+| **ERC-8004** Identity | `0x8004A818…BD9e` | On-chain agent passport (ERC-724). Real `register` tx per agent. |
 | **ERC-8004** Validation | `0x8004Cb1B…4272` | **KYA**: the agent signs a challenge (viem `verifyMessage`); the result is attested on the ValidationRegistry (`validationRequest` + `validationResponse=100`, tag `"kya"`). |
 | **ERC-8183** Commerce | `0x0747EEf0…4583` | Agent-to-agent job escrow: create → setBudget → approve → fund → submit → complete; USDC held in escrow, released on delivery. |
 | **x402** | `mcp/src/x402.ts` | HTTP-402 pay-per-call: server returns 402 + requirements, client pays USDC on Arc, server verifies on-chain (with replay protection) and serves the resource. |
@@ -165,7 +165,7 @@ put them at their canonical cross-chain addresses. What is ours is the identity 
   `/mcp` JSON-RPC for agents. Durable state via Postgres (`DATABASE_URL`), JSON-file fallback for dev.
 - **Auth** - Sign-In with Ethereum (wallet) + email magic link (Resend) are *verified*; a plain guest
   session is read-only. Agent ownership is bound to a verified identity.
-- **Tests / CI** - `node:test` unit suite: **721 tests across 60 colocated `*.test.ts` files**
+- **Tests / CI** - `node:test` unit suite: **724 tests across 60 colocated `*.test.ts` files**
   (as of Aug 2026; `npm test` in `mcp/`) + a full E2E (`mcp/e2e.mjs`) of about **67 checks** that
   adapts to signer presence: live reads always run, and the on-chain write checks (x402, ERC-8183
   escrow, Gateway, **Nanopayments settle**, **CCTP burn-and-mint**) activate with a funded
