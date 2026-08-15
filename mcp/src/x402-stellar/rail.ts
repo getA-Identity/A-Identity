@@ -26,15 +26,20 @@
  * sale. XLM has traded above the break-even before, so this is a price move rather than a
  * hypothetical. "Several orders of magnitude" would need XLM near $0.0004.
  *
- * We still charge nothing, for a reason that survives being stated plainly: the absolute
- * amount is a fraction of a cent, we are absorbing it deliberately, and a per-call line
- * item on a sub-cent sale costs more in explanation than it recovers. What we may not do
- * is tell a buyer it is negligible. If XLM approaches the break-even, this decision gets
- * revisited rather than discovered.
+ * And a second correction on top of the first. The original said "we have no price feed we
+ * verify and will not invent one", two lines before asserting a USD ratio, which is the
+ * same claim in disguise. Worse, the premise was wrong: there IS a price feed we can
+ * verify, and it is on the very ledger this rail settles on. The Stellar DEX order book for
+ * XLM against Circle's USDC, read from pubnet Horizon on 2026-08-15, had a best bid of
+ * 0.1587048 USDC per XLM. That makes one settlement $0.000365, which is 36 percent of a
+ * $0.001 sale. Same order of magnitude, not several.
  *
- * Note also what the original sentence did wrong beyond the arithmetic: it refused to
- * publish a USD figure two lines earlier, then asserted a USD RATIO, which is the same
- * claim wearing a disguise.
+ * We still charge nothing, for a reason that survives being stated plainly: the absolute
+ * amount is a third of a cent, we are absorbing it deliberately, and a per-call line item
+ * on a sub-cent sale costs more in explanation than it recovers. What we may not do is tell
+ * a buyer it is negligible, and what we may not do now that we know the feed exists is
+ * claim we cannot price it. If XLM approaches $0.4353 this decision gets revisited rather
+ * than discovered.
  *
  * **No minimum value floor.** The floor on the other rails exists so a settlement covers
  * the gas it costs. With no fee to cover, a floor would only price out small payments.
@@ -344,9 +349,9 @@ export function stellarRailChallenge(
           'The buyer pays no network fee on this rail: you sign a Soroban authorization entry ' +
           'and we assemble, pay the fee and submit. Unlike our EVM rails we add no settlement ' +
           'fee on top of the base price. That is us absorbing a real cost rather than there ' +
-          'being none: a settlement here measured 22,973 stroops (0.0022973 XLM) on ' +
-          'stellar:testnet. We publish no USD figure for it, having no price feed we verify. ' +
-          'The base price is identical on every rail we sell on.',
+          'being none: a settlement measured 22,973 stroops (0.0022973 XLM) on stellar:testnet, ' +
+          'about $0.000365 at the XLM/USDC price on Stellar\'s own order book. The base price is ' +
+          'identical on every rail we sell on.',
         ...RAIL_TOOL_CARDS[tool],
         method: `POST ${stellarRailResource(tool)}`,
         payment:

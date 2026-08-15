@@ -45,9 +45,10 @@ test('the base prices are the SAME OBJECT the EIP-3009 rail sells at', () => {
 test('nothing is added to the base price on this chain', () => {
   // The EIP-3009 rails add a disclosed settlement fee because gas is material there. Here
   // we absorb it instead. Note the honest framing, which an adversarial review had to
-  // correct: 0.0022973 XLM is NOT negligible against a $0.001 tool. The break-even is XLM
-  // at $0.4353, and at $0.30 a settlement already costs 69 percent of the cheapest sale.
-  // Charging nothing is a decision to revisit, not a fact about the chain.
+  // correct twice: 0.0022973 XLM is NOT negligible against a $0.001 tool. Priced off the
+  // Stellar DEX order book, the feed on the very ledger we settle on, it is $0.000365, or
+  // 36 percent of the cheapest sale, with break-even at XLM $0.4353. Charging nothing is a
+  // decision to revisit, not a fact about the chain.
   for (const tool of Object.keys(RAIL_BASE_PRICES_USD) as (keyof typeof RAIL_BASE_PRICES_USD)[]) {
     const p = stellarRailPriceUsd(tool)
     assert.equal(p.totalUsd, p.baseUsd, `${tool} must cost its base price and no more`)
@@ -220,9 +221,11 @@ test('the challenge tells the buyer it pays no fee, and does not invent a USD ga
   const body = (stellarRailChallenge('verify_agent', s, READY) as { body: Record<string, any> }).body
   assert.match(body.tool.priceNote, /pays no network fee/)
   assert.match(body.tool.priceNote, /stroops/, 'the measurement belongs in the note')
-  assert.match(body.tool.priceNote, /no price feed we verify/)
-  // The buyer must be told we are absorbing a real cost, not that there is none.
+  // The buyer must be told we are absorbing a real cost, not that there is none, and the
+  // note must NOT claim we cannot price it: the order book is on the chain we settle on.
   assert.match(body.tool.priceNote, /absorbing a real cost/)
+  assert.doesNotMatch(body.tool.priceNote, /no price feed we verify/)
+  assert.match(body.tool.priceNote, /order book/)
   assert.equal(body.tool.price.totalUsd, RAIL_BASE_PRICES_USD.verify_agent)
 })
 

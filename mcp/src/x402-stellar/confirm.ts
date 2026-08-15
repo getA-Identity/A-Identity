@@ -75,6 +75,13 @@ export type ConfirmFailureCode =
   | 'tx_failed'
   /** Landed and succeeded, but carries no transfer matching what we asked for. */
   | 'no_matching_transfer'
+  /**
+   * The response carried no event data at all, which is a statement about the RPC and not
+   * about the transaction. Kept apart from no_matching_transfer, which means "we looked
+   * and it is not there": an RPC that omits the field would otherwise turn every real
+   * settlement into a confident refusal.
+   */
+  | 'no_event_data'
   /** The transfer is there, but it settles a different authorization than ours. */
   | 'wrong_authorization'
   /** The RPC could not be reached or answered something unusable. */
@@ -136,8 +143,17 @@ function amountOf(data: xdr.ScVal): { amount: bigint; muxedId?: string } | null 
   return null
 }
 
-/** Every SEP-41 transfer event on a transaction. One bad event never loses the others. */
-function transfersIn(tx: rpc.Api.GetSuccessfulTransactionResponse): SeenTransfer[] {
+/**
+ * Every SEP-41 transfer event on a transaction, or null when the response carried no event
+ * data to look at.
+ *
+ * The distinction is the finding: `events` is optional in the raw RPC response and the SDK
+ * normalises its absence to an empty array, so "this RPC does not send events" and "this
+ * transaction has no transfers" arrived here as the same value. One is a refusal and the
+ * other is our own blindness.
+ */
+function transfersIn(tx: rpc.Api.GetSuccessfulTransactionResponse): SeenTransfer[] | null {
+  if (!tx.events) return null
   const out: SeenTransfer[] = []
   const groups = (tx.events?.contractEventsXdr ?? []) as unknown[]
   for (const group of groups) {
@@ -311,6 +327,18 @@ export async function confirmStellarTransfer(
   }
 
   const seen = transfersIn(success)
+  if (seen === null) {
+    return {
+      confirmed: false,
+      txHash,
+      code: 'no_event_data',
+      reason:
+        'the RPC returned this transaction with no event data, so we cannot see whether the ' +
+        'transfer happened. This says nothing about the payment: it is our blindness, not a ' +
+        'refusal, and it must not be recorded as one. Point at an RPC that returns events.',
+      ledger: success.ledger,
+    }
+  }
   const match = seen.find(
     (t) =>
       t.sac === expect.sac &&

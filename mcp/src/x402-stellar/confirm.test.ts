@@ -287,3 +287,46 @@ test('an envelope we cannot read fails closed rather than skipping the binding',
   assert.equal(r.confirmed, false)
   if (!r.confirmed) assert.equal(r.code, 'wrong_authorization')
 })
+
+/**
+ * The finding this test exists for: `events` is optional in the RPC response, and an RPC
+ * that omits it made every real settlement look like a transaction carrying no payment.
+ * The two answers must not share a code, because one is a verdict about the buyer and the
+ * other is a verdict about our infrastructure.
+ */
+test('an RPC that sends no event data says so rather than refusing the payment', async () => {
+  const r = await confirmStellarTransfer(CHAIN, HASH, OURS, {
+    server: serverFor({
+      [HASH]: { status: rpc.Api.GetTransactionStatus.SUCCESS, ledger: 4148274, envelopeXdr: xdr.TransactionEnvelope.fromXDR(GASLESS_ENVELOPE, 'base64') },
+    }),
+    timeoutMs: 50,
+    pollMs: 1,
+    sleep: async () => {},
+  })
+  assert.equal(r.confirmed, false)
+  if (!r.confirmed) {
+    assert.equal(r.code, 'no_event_data')
+    assert.notEqual(r.code, 'no_matching_transfer')
+    assert.match(r.reason, /our blindness, not a refusal/)
+  }
+})
+
+test('an empty event list is still a real answer about the transaction', async () => {
+  // The other side of the same line. Events present and empty means we looked and there is
+  // nothing there, which IS a refusal, and it must not be softened into no_event_data.
+  const r = await confirmStellarTransfer(CHAIN, HASH, OURS, {
+    server: serverFor({
+      [HASH]: {
+        status: rpc.Api.GetTransactionStatus.SUCCESS,
+        ledger: 4148274,
+        envelopeXdr: xdr.TransactionEnvelope.fromXDR(GASLESS_ENVELOPE, 'base64'),
+        events: { contractEventsXdr: [] },
+      },
+    }),
+    timeoutMs: 50,
+    pollMs: 1,
+    sleep: async () => {},
+  })
+  assert.equal(r.confirmed, false)
+  if (!r.confirmed) assert.equal(r.code, 'no_matching_transfer')
+})

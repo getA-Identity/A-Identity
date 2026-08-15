@@ -289,11 +289,42 @@ export function createStellarAdapter(chain: ChainDescriptor) {
   return {
     chain,
 
-    /** Live proof the chain is reachable and the settlement token is what we think. */
+    /**
+     * Live proof the chain is reachable AND that the settlement token is what the registry
+     * says it is.
+     *
+     * The second half used to be a lie of omission: the token block was copied straight out
+     * of the descriptor and returned next to a live ledger number and a checkedAt stamp,
+     * which reads as observation. Now symbol() and decimals() are read off the SAC through
+     * the same simulation the vault reads use, and a disagreement with the registry is
+     * reported rather than smoothed over. A mismatch means the descriptor is wrong, which is
+     * exactly the thing a live check exists to catch.
+     */
     async readContracts(env: NodeJS.ProcessEnv = process.env) {
       const server = sorobanServer(chain, env)
       const latest = await server.getLatestLedger()
       const token = (chain.settlementTokens ?? [])[0]
+
+      let observed: { symbol: string; decimals: number } | null = null
+      let tokenError: string | null = null
+      if (token) {
+        try {
+          const [symbol, decimals] = await Promise.all([
+            view(token.address, 'symbol', env),
+            view(token.address, 'decimals', env),
+          ])
+          observed = { symbol: String(symbol), decimals: Number(decimals) }
+        } catch (e) {
+          tokenError = e instanceof Error ? e.message : String(e)
+        }
+      }
+
+      const mismatch =
+        token && observed && (observed.symbol !== token.symbol || observed.decimals !== token.decimals)
+          ? `the registry declares ${token.symbol}/${token.decimals} but the contract reports ` +
+            `${observed.symbol}/${observed.decimals}. One of them is wrong and it is not the chain.`
+          : null
+
       return {
         chain: chain.id,
         caip2: chain.caip2,
@@ -301,7 +332,13 @@ export function createStellarAdapter(chain: ChainDescriptor) {
         ledger: latest.sequence,
         reachable: true,
         settlementToken: token
-          ? { symbol: token.symbol, sac: token.address, decimals: token.decimals }
+          ? {
+              sac: token.address,
+              declared: { symbol: token.symbol, decimals: token.decimals },
+              observed,
+              ...(tokenError ? { unreadable: tokenError } : {}),
+              ...(mismatch ? { mismatch } : {}),
+            }
           : null,
         signer: stellarSignerAddress(chain, env),
         checkedAt: new Date().toISOString(),
