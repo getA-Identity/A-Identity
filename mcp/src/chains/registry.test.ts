@@ -10,6 +10,7 @@ import {
   liveChains,
   ARC_CHAIN,
 } from './registry.js'
+import { SETTLEMENT_ADDRESS_RE, SHAPE_NAME } from './stellar/strkey.js'
 import { isValidCaip2, evmChainIdFromCaip2 } from './caip.js'
 
 test('every descriptor has a valid, unique CAIP-2 id', () => {
@@ -197,7 +198,17 @@ test('every settlement token is well formed and agrees with its chain', () => {
   // asserted for every chain rather than only the ones that have one today.
   for (const c of CHAINS) {
     for (const t of c.settlementTokens ?? []) {
-      assert.match(t.address, /^0x[0-9a-fA-F]{40}$/, `${c.id}: bad settlement token address`)
+      // Address shape is a property of the VM, so it branches on ecosystem rather than
+      // loosening into one pattern that accepts both and therefore checks neither. The
+      // Stellar branch is STRICTER than "not 0x": it rejects a G... issuer where a C...
+      // contract belongs, which is the exact confusion that would put a settlement
+      // transfer on the wrong contract. Shared with provenance.test.ts through
+      // stellar/strkey.ts so the two cannot drift apart on what an address looks like.
+      assert.match(
+        t.address,
+        SETTLEMENT_ADDRESS_RE[c.ecosystem],
+        `${c.id}: settlement token address is not a ${SHAPE_NAME[c.ecosystem].address}`,
+      )
       assert.ok(t.decimals >= 1 && t.decimals <= 18, `${c.id}: implausible decimals`)
       assert.ok(t.verified.length > 40, `${c.id}: settlement token needs a provenance note`)
       assert.ok(c.stablecoins.includes(t.symbol), `${c.id}: ${t.symbol} missing from stablecoins`)
@@ -209,6 +220,24 @@ test('every settlement token is well formed and agrees with its chain', () => {
         assert.ok(
           (t.domainVersionCandidates ?? []).length > 0,
           `${c.id}: an eip3009 token needs at least one domain version candidate to prove`,
+        )
+      }
+      // The mirror invariant, and the reason it is the mirror rather than a copy: an
+      // EIP-3009 token needs a version candidate because its EIP-712 domain is per-token
+      // and has to be PROVEN against the live separator. Soroban has no such thing. The
+      // authorization preimage is fixed by the protocol, so a version candidate here
+      // would assert the existence of something that does not exist.
+      if (t.authorization === 'soroban-auth') {
+        assert.equal(t.decimals, 7, `${c.id}: a Stellar SAC settles in 7 decimals, not 6`)
+        assert.equal(
+          t.domainVersionCandidates,
+          undefined,
+          `${c.id}: soroban-auth has no signing domain, so it must claim no version candidate`,
+        )
+        assert.match(
+          t.verified,
+          /stellar contract id asset|contractId\(/i,
+          `${c.id}: a SAC id must record the derivation that produced it, never a pasted string`,
         )
       }
       // A disclosed fee that cannot be traced to a measurement is an assertion, and this

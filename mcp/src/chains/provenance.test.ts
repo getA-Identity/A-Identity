@@ -4,6 +4,7 @@ import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { PROVENANCE, PROOF_RAILS, artifactUrl, contractUrl, provenanceFor } from './provenance.js'
 import { getChainById } from './registry.js'
+import { OWNER_ADDRESS_RE, SETTLEMENT_ADDRESS_RE, SHAPE_NAME, TX_HASH_RE } from './stellar/strkey.js'
 import { proofRailIndex } from './proof.js'
 
 /**
@@ -27,14 +28,28 @@ test('every provenance entry names a chain the registry actually has', () => {
 test('every hash and address is well formed, and every artifact lands on a known chain', () => {
   for (const p of PROVENANCE) {
     for (const a of p.artifacts) {
-      assert.match(a.txHash, /^0x[0-9a-f]{64}$/, `${p.chain}: ${a.label} has a malformed tx hash`)
+      // Resolve the chain FIRST: hash shape follows the chain a transaction actually
+      // landed on, which is the whole reason ChainArtifact carries `onChain` separately
+      // from the entry's own chain. A Stellar hash is the same 32 bytes an EVM hash
+      // carries, rendered WITHOUT the 0x prefix, and neither branch accepts the other's
+      // rendering.
       const on = getChainById(a.onChain)
       assert.ok(on, `${p.chain}: ${a.label} lands on unknown chain ${a.onChain}`)
+      assert.match(
+        a.txHash,
+        TX_HASH_RE[on.ecosystem],
+        `${p.chain}: ${a.label} is not a ${SHAPE_NAME[on.ecosystem].tx}`,
+      )
       assert.ok(on.explorer, `${a.onChain} has no explorer, so this artifact could not be linked`)
       assert.ok(artifactUrl(a)?.includes(a.txHash))
     }
+    const chain = getChainById(p.chain)!
     for (const c of p.contracts) {
-      assert.match(c.address, /^0x[0-9a-fA-F]{40}$/, `${p.chain}: ${c.name} has a malformed address`)
+      assert.match(
+        c.address,
+        SETTLEMENT_ADDRESS_RE[chain.ecosystem],
+        `${p.chain}: ${c.name} is not a ${SHAPE_NAME[chain.ecosystem].address}`,
+      )
       assert.ok(contractUrl(p.chain, c.address)?.includes(c.address))
     }
   }
@@ -59,7 +74,10 @@ test('an agent entry parses to its own chain and token id', () => {
     if (!p.agent) continue
     const chain = getChainById(p.chain)!
     assert.equal(p.agent.caip, `${chain.caip2}:8004/${p.agent.tokenId}`, `${p.chain}: caip id disagrees with the descriptor`)
-    assert.match(p.agent.owner, /^0x[0-9a-fA-F]{40}$/)
+    // Widened in the same pass as the two above rather than later. It cannot fire today,
+    // because ERC-8004 is EVM-only and no Stellar entry records an agent, but leaving one
+    // hardcoded 0x here would be a landmine for whoever deploys a Soroban registry.
+    assert.match(p.agent.owner, OWNER_ADDRESS_RE[chain.ecosystem])
     assert.ok(chain.contracts.identityRegistry, `${p.chain} records an agent but the descriptor has no identity registry`)
   }
 })
