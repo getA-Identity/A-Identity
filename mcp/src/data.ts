@@ -24,6 +24,7 @@ import { publicChains } from './chains/public-view.js'
 export const CHAIN_NAMES = [
   'arc',
   'stellar',
+  'stellar-testnet',
   'xlayer',
   'base',
   'avalanche',

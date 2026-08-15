@@ -65,9 +65,20 @@ export interface SettlementToken {
   /** `decimals()` as read from the contract. Cross-checked live before any challenge,
    *  because a typo here is a 1000x mispricing. */
   decimals: number
-  /** The signed-transfer standard OBSERVED on this contract, never assumed.
-   *  'eip3009' = transferWithAuthorization: the payer signs, the seller broadcasts. */
-  authorization: 'eip3009' | 'eip2612' | 'none'
+  /**
+   * The signed-transfer standard OBSERVED on this contract, never assumed.
+   *
+   *  'eip3009'      transferWithAuthorization: the payer signs typed data, someone else
+   *                 broadcasts. Per-token, because the token contract must implement it.
+   *  'soroban-auth' The payer signs a Soroban authorization ENTRY for `transfer` on a
+   *                 SEP-41 contract, and whoever assembles the transaction pays the fee.
+   *                 Not per-token: the host provides it for any `require_auth` call, and
+   *                 replay protection is the host's rather than the token's. Which is why
+   *                 a Soroban token carries no `domainVersionCandidates` and never will:
+   *                 there is no per-token EIP-712 domain to prove, because the
+   *                 authorization preimage is fixed by the protocol.
+   */
+  authorization: 'eip3009' | 'eip2612' | 'soroban-auth' | 'none'
   /**
    * EIP-712 `version` candidates. Some tokens expose no `version()` at all (USDG reverts
    * for it), so the signing domain cannot simply be read: it is PROVEN at runtime by

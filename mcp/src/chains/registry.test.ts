@@ -90,17 +90,22 @@ test('every roadmap chain is present and planned', () => {
   // rhchain-testnet left on 2026-08-11 when the canonical ERC-8004 set went live there;
   // rhchain left on 2026-08-12 when its canonical registries were verified live;
   // arbitrum left on 2026-08-13 when agent #1259 was minted on its canonical registry.
-  for (const id of ['avalanche', 'stellar']) {
+  for (const id of ['avalanche', 'stellar', 'stellar-testnet']) {
     const c = getChainById(id)
     assert.ok(c, `${id} missing from registry`)
     assert.equal(c.status, 'planned', `${id} should be planned`)
   }
 })
 
-test('the planned set is mostly EVM, with one non-EVM', () => {
+test('the non-EVM planned set is exactly the Stellar pair', () => {
   const planned = CHAINS.filter((c) => c.status === 'planned')
   const nonEvm = planned.filter((c) => c.ecosystem !== 'evm')
-  assert.deepEqual(nonEvm.map((c) => c.id), ['stellar'])
+  // Both Stellar networks, because the single `stellar` descriptor was split on
+  // 2026-08-15: one entry could not carry two SAC addresses, two signers and two sets of
+  // provenance, and splitting after an id had been referenced would have been a
+  // migration rather than a data edit. They promote independently, so testnet is
+  // expected to leave this list first.
+  assert.deepEqual(nonEvm.map((c) => c.id).sort(), ['stellar', 'stellar-testnet'])
   // Derived rather than `planned.length - N`: a hardcoded N goes stale the moment a chain
   // enters or leaves the registry, and it fails as an off-by-one somewhere unrelated to
   // the edit that caused it, which is exactly how this line broke once already.

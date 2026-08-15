@@ -402,7 +402,7 @@ Beta, wired and readable:
 
 Planned, descriptor only:
 
-- **Stellar testnet** (`stellar:testnet`) and **Avalanche C-Chain** (`eip155:43114`)
+- **Stellar** (`stellar:pubnet`), **Stellar testnet** (`stellar:testnet`) and **Avalanche C-Chain** (`eip155:43114`)
   carry public metadata only: CAIP-2, chain id, canonical USDC, CCTP domain. Nothing is
   deployed and nothing is wired.
 

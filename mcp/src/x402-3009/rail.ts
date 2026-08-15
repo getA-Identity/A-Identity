@@ -121,8 +121,18 @@ function big(env: NodeJS.ProcessEnv, key: string, fallback: bigint): bigint {
   }
 }
 
-/** The settlement token this rail uses on a chain: the one the env names, else the first
- *  EIP-3009 token the descriptor declares. A chain with none cannot host this rail. */
+/**
+ * The settlement token this rail uses on a chain: the one the env names, else the first
+ * EIP-3009 token the descriptor declares. A chain with none cannot host this rail.
+ *
+ * DO NOT loosen the `=== 'eip3009'` filter. It looks like an oversight now that
+ * `authorization` also admits `'soroban-auth'`, and it is not: this whole module is
+ * viem, EIP-712 typed data, secp256k1 recovery and ERC-20 `Transfer` log parsing. A
+ * Soroban token reaching it would be signed against a domain that does not exist and
+ * settled through a function the SEP-41 contract does not have. Being structurally
+ * invisible here is what lets the Stellar rail land next door without any blast radius.
+ * The Soroban equivalent lives in x402-stellar/ and filters for its own kind.
+ */
 export function railToken(chain: ChainDescriptor, env: NodeJS.ProcessEnv = process.env): SettlementToken | null {
   const wanted = env.X402_3009_ASSET_SYMBOL?.trim()
   const usable = (chain.settlementTokens ?? []).filter((t) => t.authorization === 'eip3009')

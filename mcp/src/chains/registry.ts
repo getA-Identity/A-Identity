@@ -81,37 +81,96 @@ export const CHAINS: ChainDescriptor[] = [
     identity: { standard: 'ERC-8004', erc8004Native: true },
     payment: { x402: true, note: 'Gas in USDC, App Kit (Gateway) unified balance, nanopayments.' },
   },
+  // The Stellar pair, split the same way celo/celo-sepolia and rhchain/rhchain-testnet
+  // are: one descriptor per network, because a single entry cannot carry two SAC
+  // addresses, two signers and two sets of provenance. Split while both were still
+  // `planned`, deliberately: once a settlement row or a provenance artifact points at an
+  // id, renaming that id is a migration rather than a data edit.
+  //
+  // The env var names do NOT follow the bare-name-means-mainnet convention the EVM chains
+  // use. `STELLAR_SIGNER_SECRET` already existed and already meant testnet, so handing
+  // that name to pubnet would have turned an existing testnet key into a mainnet signing
+  // key the next time anyone pulled, with no error and no prompt. Both networks therefore
+  // name themselves. "pubnet" and "testnet" are also Stellar's own words for them.
+  //
+  // Both are protocol 27, verified by direct RPC probe on 2026-08-15 against each
+  // network's own getVersionInfo. See soroban/releases/protocol-verification-2026-08-15.json.
   {
-    caip2: 'stellar:testnet',
+    caip2: 'stellar:pubnet',
     id: 'stellar',
-    name: 'Stellar Testnet',
+    name: 'Stellar',
     shortName: 'Stellar',
     color: '#7D00FF',
-    role: 'Fast, low-cost settlement: USDC + EURC native (Circle), Soroban contracts.',
+    role: 'Fast, low-cost settlement: native Circle USDC, Soroban contracts, fee sponsorship so an agent needs no XLM.',
     ecosystem: 'stellar',
-    testnet: true,
+    testnet: false,
     status: 'planned',
     evmChainId: null,
     cctpDomain: 27,
     nativeCurrency: { name: 'Lumen', symbol: 'XLM', decimals: 7 },
-    usdcDecimals: 7, // Stellar assets use 7 decimals
-    rpcUrls: ['https://soroban-testnet.stellar.org'],
-    explorer: 'https://stellar.expert/explorer/testnet',
-    faucet: 'https://friendbot.stellar.org',
+    usdcDecimals: 7, // Stellar assets use 7 decimals, not the 6 every EVM USDC uses
+    rpcUrls: ['https://mainnet.sorobanrpc.com'],
+    explorer: 'https://stellar.expert/explorer/public',
     contracts: {
-      // Soroban AgentSpendPolicy (Rust) + a Soroban identity registry, to be deployed.
-      // USDC is a SEP-41 SAC contract (C...) — fill in once integrated.
+      // The Soroban AgentSpendPolicy vault goes here once it is deployed and its wasm
+      // hash is recorded in soroban/releases/. Nothing is asserted before that.
+      //
+      // No `usdc` either, and that is not an oversight. On Stellar USDC is a SEP-41
+      // Stellar Asset Contract, whose id is DERIVED per network from the classic asset
+      // plus the network passphrase. Every consumer of `contracts.usdc` in this codebase
+      // is an EVM path that would treat a C... StrKey as a 0x address. When the rail
+      // lands, the SAC belongs in `settlementTokens` with the derivation recorded, the
+      // same way USDG does on Robinhood Chain.
     },
-    confirmations: 1, // Stellar has fast, deterministic finality
+    confirmations: 1, // deterministic finality once a ledger closes
     stablecoins: ['USDC', 'EURC'],
-    signerEnvVar: 'STELLAR_SIGNER_SECRET',
-    rpcEnvVar: 'STELLAR_RPC_URL',
+    signerEnvVar: 'STELLAR_PUBNET_SIGNER_SECRET',
+    rpcEnvVar: 'STELLAR_PUBNET_RPC_URL',
     identity: {
       standard: 'Soroban registry + SEP-10',
       erc8004Native: false,
-      note: 'No native ERC-8004 (EVM-only). Identity via Soroban registry / SEP-10; ERC-8004 passport bridged.',
+      note: 'No native ERC-8004: that standard is EVM-only and nothing bridges it here. An agent id resolved on Stellar is a claim about a different chain until a Soroban registry is deployed.',
     },
-    payment: { x402: true, note: 'x402 settlement in USDC via SEP-41 SAC; fee sponsorship for gasless.' },
+    payment: {
+      x402: true,
+      note: 'x402 in USDC over the SEP-41 SAC. The buyer signs a Soroban authorization entry rather than a whole transaction, so whoever assembles it pays the fee and the buyer needs no XLM.',
+    },
+  },
+  {
+    caip2: 'stellar:testnet',
+    id: 'stellar-testnet',
+    name: 'Stellar Testnet',
+    shortName: 'Stellar test',
+    color: '#7D00FF',
+    role: 'Stellar rehearsal rail: the same Soroban vault and the same x402 code path as pubnet, in test money.',
+    ecosystem: 'stellar',
+    testnet: true,
+    status: 'planned',
+    evmChainId: null,
+    // Circle documents CCTP domain 27 for Stellar. Kept on both entries because the
+    // domain identifies the chain, not the network, but note that a Stellar CCTP
+    // recipient MUST be routed through Circle's CctpForwarder: the message format has no
+    // room for a StrKey type marker, so a direct mint to a G... account is unrecoverable.
+    cctpDomain: 27,
+    nativeCurrency: { name: 'Lumen', symbol: 'XLM', decimals: 7 },
+    usdcDecimals: 7,
+    rpcUrls: ['https://soroban-testnet.stellar.org'],
+    explorer: 'https://stellar.expert/explorer/testnet',
+    faucet: 'https://friendbot.stellar.org',
+    contracts: {},
+    confirmations: 1,
+    stablecoins: ['USDC'],
+    signerEnvVar: 'STELLAR_TESTNET_SIGNER_SECRET',
+    rpcEnvVar: 'STELLAR_TESTNET_RPC_URL',
+    identity: {
+      standard: 'Soroban registry + SEP-10',
+      erc8004Native: false,
+      note: 'Same as pubnet: no ERC-8004 here, so KYA cannot be anchored and the passport is bridged rather than native.',
+    },
+    payment: {
+      x402: true,
+      note: 'Where every x402 change is rehearsed before pubnet sees it. Testnet resets periodically, so a contract here is a rehearsal, never a record.',
+    },
   },
   {
     caip2: 'eip155:196',

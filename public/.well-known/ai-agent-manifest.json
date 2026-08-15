@@ -27,10 +27,18 @@
         },
         {
           "id": "stellar",
+          "caip2": "stellar:pubnet",
+          "identity": "Soroban registry + SEP-10",
+          "erc8004Native": false,
+          "note": "No native ERC-8004: that standard is EVM-only and nothing bridges it here. An agent id resolved on Stellar is a claim about a different chain until a Soroban registry is deployed.",
+          "status": "planned"
+        },
+        {
+          "id": "stellar-testnet",
           "caip2": "stellar:testnet",
           "identity": "Soroban registry + SEP-10",
           "erc8004Native": false,
-          "note": "No native ERC-8004 (EVM-only). Identity via Soroban registry / SEP-10; ERC-8004 passport bridged.",
+          "note": "Same as pubnet: no ERC-8004 here, so KYA cannot be anchored and the passport is bridged rather than native.",
           "status": "planned"
         },
         {
@@ -127,9 +135,17 @@
         },
         {
           "id": "stellar",
+          "name": "Stellar",
+          "caip2": "stellar:pubnet",
+          "role": "Fast, low-cost settlement: native Circle USDC, Soroban contracts, fee sponsorship so an agent needs no XLM.",
+          "x402": true,
+          "status": "planned"
+        },
+        {
+          "id": "stellar-testnet",
           "name": "Stellar Testnet",
           "caip2": "stellar:testnet",
-          "role": "Fast, low-cost settlement: USDC + EURC native (Circle), Soroban contracts.",
+          "role": "Stellar rehearsal rail: the same Soroban vault and the same x402 code path as pubnet, in test money.",
           "x402": true,
           "status": "planned"
         },
@@ -228,7 +244,7 @@
     "type": "A2MCP",
     "agentId": "#6271",
     "network": "X Layer mainnet (eip155:196)",
-    "settlement": "x402 pay-per-call in USD₮0",
+    "settlement": "x402 pay-per-call in USD\u20ae0",
     "positioning": "the identity & reputation oracle for the agent economy",
     "endpoint": "https://a-identity-asp.onrender.com",
     "proof": "https://a-identity-asp.onrender.com/proof",
@@ -262,7 +278,7 @@
     "realOnchainRevenue": {
       "settlements": 83,
       "network": "X Layer mainnet (eip155:196)",
-      "asset": "USD₮0"
+      "asset": "USD\u20ae0"
     }
   },
   "tools": [
@@ -311,6 +327,7 @@
       "chains_supported": [
         "arc",
         "stellar",
+        "stellar-testnet",
         "xlayer",
         "base",
         "avalanche",

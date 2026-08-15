@@ -10,7 +10,7 @@
  */
 
 /** Short slug of a chain in the registry. */
-export type ChainId = 'arc' | 'xlayer' | 'arbitrum' | 'rhchain' | 'celo' | 'base' | 'rhchain-testnet' | 'celo-sepolia' | 'stellar' | 'avalanche'
+export type ChainId = 'arc' | 'xlayer' | 'arbitrum' | 'rhchain' | 'celo' | 'base' | 'rhchain-testnet' | 'celo-sepolia' | 'stellar' | 'stellar-testnet' | 'avalanche'
 
 export type ChainProtocols = {
   /** x402 HTTP-402 payment support. Settlement is in a stablecoin. */
@@ -358,30 +358,64 @@ export const CHAINS: readonly Chain[] = [
   },
   {
     "id": "stellar",
-    "name": "Stellar Testnet",
+    "name": "Stellar",
     "shortName": "Stellar",
+    "color": "#7D00FF",
+    "chainId": null,
+    "caip2": "stellar:pubnet",
+    "evmCompatible": false,
+    "testnet": false,
+    "stablecoins": [
+      "USDC",
+      "EURC"
+    ],
+    "rpcUrl": "https://mainnet.sorobanrpc.com",
+    "explorer": "https://stellar.expert/explorer/public",
+    "role": "Fast, low-cost settlement: native Circle USDC, Soroban contracts, fee sponsorship so an agent needs no XLM.",
+    "status": "planned",
+    "protocols": {
+      "payment": {
+        "x402": true,
+        "note": "x402 in USDC over the SEP-41 SAC. The buyer signs a Soroban authorization entry rather than a whole transaction, so whoever assembles it pays the fee and the buyer needs no XLM."
+      },
+      "identity": {
+        "standard": "Soroban registry + SEP-10",
+        "erc8004Native": false,
+        "note": "No native ERC-8004: that standard is EVM-only and nothing bridges it here. An agent id resolved on Stellar is a claim about a different chain until a Soroban registry is deployed."
+      }
+    },
+    "identity": "Soroban registry + SEP-10",
+    "erc8004Native": false,
+    "x402": true,
+    "registries": {},
+    "identityLive": false,
+    "settlementSymbol": null
+  },
+  {
+    "id": "stellar-testnet",
+    "name": "Stellar Testnet",
+    "shortName": "Stellar test",
     "color": "#7D00FF",
     "chainId": null,
     "caip2": "stellar:testnet",
     "evmCompatible": false,
     "testnet": true,
     "stablecoins": [
-      "USDC",
-      "EURC"
+      "USDC"
     ],
     "rpcUrl": "https://soroban-testnet.stellar.org",
     "explorer": "https://stellar.expert/explorer/testnet",
-    "role": "Fast, low-cost settlement: USDC + EURC native (Circle), Soroban contracts.",
+    "role": "Stellar rehearsal rail: the same Soroban vault and the same x402 code path as pubnet, in test money.",
     "status": "planned",
     "protocols": {
       "payment": {
         "x402": true,
-        "note": "x402 settlement in USDC via SEP-41 SAC; fee sponsorship for gasless."
+        "note": "Where every x402 change is rehearsed before pubnet sees it. Testnet resets periodically, so a contract here is a rehearsal, never a record."
       },
       "identity": {
         "standard": "Soroban registry + SEP-10",
         "erc8004Native": false,
-        "note": "No native ERC-8004 (EVM-only). Identity via Soroban registry / SEP-10; ERC-8004 passport bridged."
+        "note": "Same as pubnet: no ERC-8004 here, so KYA cannot be anchored and the passport is bridged rather than native."
       }
     },
     "identity": "Soroban registry + SEP-10",
