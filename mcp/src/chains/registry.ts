@@ -157,9 +157,39 @@ export const CHAINS: ChainDescriptor[] = [
     rpcUrls: ['https://soroban-testnet.stellar.org'],
     explorer: 'https://stellar.expert/explorer/testnet',
     faucet: 'https://friendbot.stellar.org',
-    contracts: {},
+    contracts: {
+      // The AgentSpendPolicy vault, deployed 2026-08-15. wasm sha256
+      // 155eb31c1867254eacbf1b7a4755164d15cc6b6f939644705ab6b8df61579239, recorded next to
+      // its deploy transaction in soroban/releases/testnet-v0.1.0.json. Under the vault's
+      // own policy an under-limit payment settled (3da74634...) and an over-limit one was
+      // refused on chain with the contract's typed DailyCapExceeded (12df418f...).
+      spendVault: 'CAIL6ECRAB5FUURQ54R7OTZPXRRCDO2S353YT6N6UZUWIBDG2ZOEB4UI',
+    },
     confirmations: 1,
     stablecoins: ['USDC'],
+    settlementTokens: [
+      {
+        symbol: 'USDC',
+        address: 'CBIELTK6YBZJU5UP2WWQEUCYKLPU6AUNZ2BQ4WWFEIE3USCIHMXQDAMA',
+        decimals: 7,
+        authorization: 'soroban-auth',
+        // No domainVersionCandidates, and that absence is asserted by registry.test.ts
+        // rather than merely omitted. An EIP-3009 token needs one because its EIP-712
+        // domain is per-token and has to be proven against the live separator; Soroban
+        // fixes the authorization preimage at the protocol level, so a version candidate
+        // here would assert the existence of something that does not exist.
+        verified:
+          'Not pasted. Derived on 2026-08-15 with `stellar contract id asset --asset ' +
+          'USDC:GBBD47IF6LWK7P7MDEVSCWR7DPUWV3NY3DTQEVFL4NAT4AQH3ZLLFLA5 --network testnet`, ' +
+          'which is how a SAC id is meant to be obtained: it is a deterministic function of ' +
+          'the classic asset plus the network passphrase, so the same asset maps to a ' +
+          'different contract on pubnet. The derivation matched the constant @x402/stellar ' +
+          'exports, and the contract was then read live for decimals() 7 and symbol() USDC. ' +
+          'Three independent agreements before a single unit moved through it. Kept OUT of ' +
+          'contracts.usdc because every consumer of that slot is an EVM path that would read ' +
+          'a C... StrKey as a 0x address.',
+      },
+    ],
     signerEnvVar: 'STELLAR_TESTNET_SIGNER_SECRET',
     rpcEnvVar: 'STELLAR_TESTNET_RPC_URL',
     identity: {
