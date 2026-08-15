@@ -150,7 +150,10 @@ export const CHAINS: ChainDescriptor[] = [
     role: 'Stellar rehearsal rail: the same Soroban vault and the same x402 code path as pubnet, in test money.',
     ecosystem: 'stellar',
     testnet: true,
-    status: 'planned',
+    // beta, not live. In this repo live means wired end to end AND carrying real traffic;
+    // this rail settles real transactions in test money, which is the whole point of the
+    // word beta. The pubnet entry stays planned until money that matters moves on it.
+    status: 'beta',
     evmChainId: null,
     // Circle documents CCTP domain 27 for Stellar. Kept on both entries because the
     // domain identifies the chain, not the network, but note that a Stellar CCTP

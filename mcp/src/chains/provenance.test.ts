@@ -109,3 +109,47 @@ test('every rail is published, routable and covered by the site checks', () => {
   }
   assert.deepEqual(proofRailIndex().map((r) => r.slug), slugs)
 })
+
+/**
+ * Every Stellar hash we publish must be one the deploy record already vouches for.
+ *
+ * This exists because a hash in this file was WRONG when it shipped to a live page: it was
+ * transcribed rather than copied, and it 404'd on Stellar Expert while every existing test
+ * passed, because they check shape and containment, not existence. Nothing offline can ask
+ * the ledger whether a transaction is real. What it CAN do is refuse to let provenance and
+ * the release record disagree, which is the failure that actually happened.
+ */
+test('every deploy-era Stellar artifact matches the release record byte for byte', () => {
+  const release = JSON.parse(
+    readFileSync(repoFile('soroban/releases/testnet-v0.1.0.json'), 'utf8'),
+  ) as { contractId: string; artifacts: { txHash: string; ledger: number; label: string }[] }
+  const entry = PROVENANCE.find((p) => p.chain === 'stellar-testnet')
+  assert.ok(entry, 'stellar-testnet must have a provenance entry')
+
+  const recorded = new Map(release.artifacts.map((a) => [a.txHash, a.ledger]))
+  const published = entry.artifacts.filter((a) => recorded.has(a.txHash))
+  // Every artifact the release cut is published. A release hash that quietly stopped being
+  // shown is evidence we chose not to display, which is the other direction of the same rot.
+  assert.equal(
+    published.length,
+    release.artifacts.length,
+    `the release records ${release.artifacts.length} artifacts and provenance publishes ${published.length} of them`,
+  )
+  for (const a of published) {
+    assert.equal(a.blockNumber, recorded.get(a.txHash), `${a.label}: ledger disagrees with the release record`)
+  }
+  // And the contract the page points at is the contract that was deployed.
+  assert.ok(
+    entry.contracts.some((c) => c.address === release.contractId),
+    'the provenance entry does not name the contract the release deployed',
+  )
+})
+
+/** A caveat that stopped being true is worse than one that was never written. */
+test('the Stellar release record does not still say the x402 rail is unbuilt', () => {
+  const release = JSON.parse(
+    readFileSync(repoFile('soroban/releases/testnet-v0.1.0.json'), 'utf8'),
+  ) as { caveats: string[] }
+  const stale = release.caveats.find((c) => /^No x402 rail settles on Stellar yet/.test(c))
+  assert.equal(stale, undefined, 'that caveat was superseded on 2026-08-15; it must read as history, not as current')
+})

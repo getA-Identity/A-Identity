@@ -94,6 +94,28 @@ export type StellarLimits = {
   dailyFeeStroops: bigint
 }
 
+/**
+ * The second payment shape, and why it exists.
+ *
+ * `soroban-auth` is the default: the buyer signs, we broadcast, the buyer pays no fee. It
+ * cannot express an agent whose spending is bounded ON CHAIN, because our vault
+ * (soroban/contracts/agent-spend-policy) has no __check_auth and therefore cannot sign an
+ * authorization entry. That was a deliberate choice: custom account auth is where Soroban
+ * audits find criticals, and we were not going to add that class in the month we go to
+ * mainnet unaudited.
+ *
+ * So `settled` exists for exactly that case. The agent calls vault.pay(payTo, amount), the
+ * policy gates run on chain (freeze, session expiry, allowlist, ceiling, daily cap), and
+ * the resulting transaction hash IS the payment. We confirm it the same way we confirm our
+ * own broadcasts: by reading the transfer event ourselves.
+ *
+ * The trade is real and is not hidden. On this scheme the buyer pays the network fee, and
+ * the binding is the hash rather than an authorization nonce (see WEAKER_BINDING in
+ * confirm.ts). What it buys is the thing the other scheme cannot do: a payment that was
+ * already refused or allowed by a contract before it existed.
+ */
+export type PaymentScheme = 'soroban-auth' | 'settled'
+
 export type StellarVerifyCode =
   | 'malformed_payload'
   | 'unsupported_network'
@@ -109,6 +131,8 @@ export type StellarVerifyCode =
   | 'bad_signature'
   | 'already_redeemed'
   | 'rpc_error'
+  /** `settled` only: the hash is well formed but nothing at it matches this purchase. */
+  | 'payment_not_found'
 
 export type StellarSettleCode =
   | StellarVerifyCode
@@ -191,6 +215,147 @@ export function stellarPaymentKey(caip2: string, asset: string, from: string, no
 }
 
 const msg = (e: unknown) => (e instanceof Error ? e.message : String(e))
+
+/** The replay key for a hash-bound payment. One hash, one redemption, forever. */
+export function stellarTxKey(caip2: string, txHash: string): string {
+  return `${caip2}/settled/${txHash}`.toLowerCase()
+}
+
+/**
+ * Which scheme a payload is using, decided by what it carries rather than by what it says.
+ *
+ * A payload declaring scheme:"settled" while carrying an authorization entry is a payload
+ * we should not guess about, so the presence of the field decides and a payload carrying
+ * both is refused rather than silently resolved in someone's favour.
+ */
+export function schemeOf(payload: unknown): { ok: true; scheme: PaymentScheme } | { ok: false; reason: string } {
+  const p = (payload ?? {}) as Record<string, unknown>
+  const hasEntry = typeof p.authEntryXdr === 'string' && p.authEntryXdr.trim() !== ''
+  const hasHash = typeof p.txHash === 'string' && p.txHash.trim() !== ''
+  if (hasEntry && hasHash) {
+    return { ok: false, reason: 'the payload carries both authEntryXdr and txHash; send one, so it is clear what you are paying with' }
+  }
+  if (hasEntry) return { ok: true, scheme: 'soroban-auth' }
+  if (hasHash) return { ok: true, scheme: 'settled' }
+  return { ok: false, reason: 'the payload carries neither authEntryXdr (sign and we broadcast) nor txHash (you already paid)' }
+}
+
+/**
+ * Redeem a payment the buyer already made, typically through the on-chain spend policy.
+ *
+ * Deliberately NOT folded into settleStellarPayment: nothing here broadcasts, there is no
+ * fee for us to pay, no signature for us to check and no authorization for us to bind to.
+ * Sharing a function with the path that does all four would mean four guards that quietly
+ * do not apply, which is how a weaker check ends up looking like the stronger one.
+ */
+export async function redeemStellarPayment(input: {
+  chain: ChainDescriptor
+  token: SettlementToken
+  requirements: StellarRequirements
+  txHash: string
+  /** The account or contract the transfer must come from. The vault, on the policy path. */
+  from: string
+  deps?: StellarSettleDeps
+}): Promise<StellarSettleResult> {
+  const { chain, token, requirements, txHash, from } = input
+  const deps = input.deps ?? {}
+  const env = deps.env ?? process.env
+  const now = deps.now ?? (() => new Date())
+  const persist = deps.persist ?? persistStellarSettlement
+  const confirm = deps.confirm ?? confirmStellarTransfer
+
+  if (!/^[0-9a-f]{64}$/.test(txHash)) {
+    return { success: false, code: 'malformed_payload', errorReason: 'txHash must be 64 lowercase hex characters, with no 0x prefix' }
+  }
+  let required: bigint
+  try {
+    required = BigInt(requirements.maxAmountRequired)
+  } catch {
+    return { success: false, code: 'malformed_payload', errorReason: 'maxAmountRequired is not an integer' }
+  }
+
+  const key = stellarTxKey(chain.caip2, txHash)
+  let spent: string[]
+  try {
+    spent = await (deps.loadSpent ?? loadSpentPayments)()
+  } catch (e) {
+    return { success: false, code: 'rpc_error', errorReason: `could not read the replay guard, refusing rather than risking a replay: ${msg(e)}` }
+  }
+  if (spent.includes(key)) {
+    return { success: false, code: 'already_redeemed', errorReason: 'this transaction has already been redeemed here' }
+  }
+  if (inFlight.has(key)) {
+    return { success: false, code: 'in_flight', errorReason: 'this transaction is already being redeemed' }
+  }
+  inFlight.add(key)
+  try {
+    const confirmed = await confirm(
+      chain,
+      txHash,
+      { sac: token.address, to: requirements.payTo, from, amountRaw: required, authNonce: null },
+      { env, ...(deps.confirmDeps ?? {}) },
+    )
+    if (!confirmed.confirmed) {
+      return {
+        success: false,
+        // Nothing was broadcast by us, so an unconfirmed hash is the buyer's claim failing
+        // to check out, not our blindness about our own transaction. tx_failed keeps its
+        // own code because "you paid and it reverted" is worth saying separately.
+        code: confirmed.code === 'tx_failed' ? 'settlement_failed' : 'payment_not_found',
+        transaction: txHash,
+        errorReason: confirmed.reason,
+      }
+    }
+
+    await safePersist(persist, {
+      ts: now().toISOString(),
+      outcome: 'settled',
+      tool: deps.meta?.tool ?? 'unknown',
+      resource: requirements.resource,
+      network: chain.caip2,
+      asset: token.address,
+      assetSymbol: token.symbol,
+      assetDecimals: token.decimals,
+      value: required.toString(),
+      amountUsd: deps.meta?.baseUsd ?? 0,
+      baseUsd: deps.meta?.baseUsd ?? 0,
+      payer: from,
+      payTo: requirements.payTo,
+      tx: txHash,
+      ledger: confirmed.ledger,
+      explorerUrl: txUrl(chain, txHash) ?? undefined,
+      // The buyer broadcast this one and paid its fee. Recording 'self' would credit us
+      // with a fee we did not pay, in the very field that exists to say who did.
+      broadcaster: 'buyer',
+      confirmedBy: 'soroban-rpc',
+      ...(deps.meta?.facilitatedFor ? { facilitatedFor: deps.meta.facilitatedFor } : {}),
+    })
+    try {
+      await (deps.persistSpent ?? persistSpentPayment)(key)
+    } catch (e) {
+      console.error('[x402-stellar] could not persist the redemption key, a replay would not be caught:', msg(e))
+    }
+
+    return {
+      success: true,
+      transaction: txHash,
+      ledger: confirmed.ledger,
+      payer: from,
+      network: chain.caip2,
+      asset: token.address,
+      assetSymbol: token.symbol,
+      value: required.toString(),
+      // Zero because we paid none. The buyer did, which is the cost of paying from a vault
+      // whose authority is bounded on chain rather than by a signature we broadcast.
+      feeStroops: '0',
+      broadcaster: 'buyer',
+      explorerUrl: txUrl(chain, txHash) ?? '',
+      settledAt: now().toISOString(),
+    }
+  } finally {
+    inFlight.delete(key)
+  }
+}
 
 /**
  * Decode X-PAYMENT into an authorization entry.

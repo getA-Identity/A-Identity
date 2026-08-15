@@ -52,7 +52,7 @@
  */
 import { getChain, getChainById, tokenUnits, type ChainDescriptor, type SettlementToken } from '../chains/index.js'
 import type { StellarLimits, StellarRequirements, StellarSettleDeps } from './settle.js'
-import { settleStellarPayment } from './settle.js'
+import { redeemStellarPayment, schemeOf, settleStellarPayment } from './settle.js'
 import { loadStellarSettlements, type StellarSettlementRecord } from '../storage.js'
 import { agentPassport, reputationScore, riskCheck, verifyAgent, type TxContext } from '../asp/tools.js'
 import { feePayerEnvVar, stellarFeePayer } from '../chains/stellar/client.js'
@@ -62,8 +62,17 @@ import { RAIL_BASE_PRICES_USD, RAIL_TOOLS, RAIL_TOOL_CARDS, type RailToolName } 
 export { RAIL_BASE_PRICES_USD, RAIL_TOOL_CARDS, RAIL_TOOLS }
 export type { RailToolName }
 
-/** Which party assembles the transaction, pays the network fee, and submits it. */
-export type Broadcaster = 'self' | 'oz'
+/**
+ * Which party assembles the transaction, pays the network fee, and submits it.
+ *
+ * `buyer` is not a configurable choice like the other two: it is what a settlement records
+ * when the payment arrived already made, from a vault or a wallet that broadcast it itself.
+ * It lives in the same union so the proof page cannot report a fee we did not pay.
+ */
+export type Broadcaster = 'self' | 'oz' | 'buyer'
+
+/** The two a rail can be CONFIGURED to use. `buyer` is observed, never chosen. */
+export type ConfigurableBroadcaster = 'self' | 'oz'
 
 export type StellarRailStatus = {
   configured: boolean
@@ -429,6 +438,18 @@ export function stellarRailChallenge(
         method: `POST ${stellarRailResource(tool)}`,
         payment:
           'Sign a Soroban authorization entry for the `transfer` call described in `extra`, then POST with header X-PAYMENT: base64(JSON of {x402Version:2, scheme:"exact", network, payload:{authEntryXdr}}).',
+        // The second shape exists for agents whose spending is bounded on chain. Our own
+        // Soroban spend policy cannot sign an authorization entry (it has no __check_auth,
+        // deliberately), so without this there would be no way to pay for a tool through a
+        // vault at all. Published in the challenge rather than left as private knowledge.
+        alsoAccepted: {
+          scheme: 'settled',
+          when: 'You already paid, typically by calling pay() on an on-chain spend policy that gated the payment before it existed.',
+          payload: '{txHash, from} where from is the account or contract the transfer came from',
+          youPayTheFee: true,
+          binding:
+            'The transaction hash, not an authorization nonce. We can prove the payment happened and that nobody has redeemed it here before, but not that it was made for this particular purchase rather than another of the same price. That is why it is the second shape and not the default.',
+        },
       },
     },
   }
@@ -559,16 +580,36 @@ export async function stellarRailServeToolOn(
   // Settlement touches an RPC, a signer and durable storage, so it has more ways to fail
   // than branches. Anything unexpected becomes a named 502 rather than an exception
   // escaping into the request handler as an unhandled rejection.
+  const inner = ((payload as { payload?: unknown })?.payload ?? payload) as Record<string, unknown>
+  const scheme = schemeOf(inner)
+  if (!scheme.ok) {
+    const challenge = stellarRailChallenge(tool, status, env)
+    return { httpStatus: challenge.httpStatus, body: { ...challenge.body, reason: scheme.reason } }
+  }
+
   let settled: Awaited<ReturnType<typeof settleStellarPayment>>
   try {
-    settled = await settleStellarPayment({
-      chain,
-      token: status.token,
-      requirements,
-      payload: (payload as { payload?: unknown })?.payload ?? payload,
-      limits: stellarRailLimits(status, env),
-      deps: { ...deps, meta: { tool, baseUsd: price.baseUsd } },
-    })
+    settled =
+      scheme.scheme === 'settled'
+        ? await redeemStellarPayment({
+            chain,
+            token: status.token,
+            requirements,
+            txHash: String(inner.txHash ?? '').trim().toLowerCase(),
+            // Who the transfer must come from. Declared by the buyer because on this scheme
+            // it is a vault or wallet WE do not own, and then checked against the ledger:
+            // a `from` that did not actually send this transfer fails confirmation.
+            from: String(inner.from ?? '').trim(),
+            deps: { ...deps, meta: { tool, baseUsd: price.baseUsd } },
+          })
+        : await settleStellarPayment({
+            chain,
+            token: status.token,
+            requirements,
+            payload: inner,
+            limits: stellarRailLimits(status, env),
+            deps: { ...deps, meta: { tool, baseUsd: price.baseUsd } },
+          })
   } catch (e) {
     return {
       httpStatus: 502,
@@ -587,7 +628,7 @@ export async function stellarRailServeToolOn(
     const retryable: string[] = [
       'malformed_payload', 'unsupported_network', 'unsupported_asset', 'wrong_invocation', 'wrong_recipient',
       'wrong_amount', 'below_minimum', 'above_maximum', 'source_account_credentials', 'expired',
-      'expiring_too_soon', 'bad_signature', 'already_redeemed',
+      'expiring_too_soon', 'bad_signature', 'already_redeemed', 'payment_not_found',
     ]
     if (retryable.includes(settled.code)) {
       const challenge = stellarRailChallenge(tool, status, env)
@@ -667,7 +708,7 @@ export async function stellarRailProof(
   const settled = rows.filter((r) => r.outcome === 'settled')
   const byTool: Record<string, { count: number; usd: number }> = {}
   const byNetwork: Record<string, { count: number; usd: number; assetSymbol: string }> = {}
-  const byBroadcaster: Record<Broadcaster, number> = { self: 0, oz: 0 }
+  const byBroadcaster: Record<Broadcaster, number> = { self: 0, oz: 0, buyer: 0 }
   let totalUsd = 0
   let feeTotal = 0n
   for (const r of rows) {

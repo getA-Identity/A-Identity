@@ -65,8 +65,16 @@ test('Arc, X Layer, Celo (live), Base, Celo Sepolia and RH Chain Testnet (beta) 
   // registries were verified live there (read-side wired; writes wait on a signer).
   // 2026-08-13: rhchain flips from beta to LIVE - money moves there now (four real USDG
   // settlements through our own first-party EIP-3009 facilitator, receipts recorded).
+  // 2026-08-15: stellar-testnet flips to beta - the first non-EVM chain here. A Soroban
+  // spend policy gates the payment on chain, our own Soroban facilitator broadcasts, and
+  // every settlement is confirmed by reading the transfer event ourselves. Beta and not
+  // live because it settles test money; stellar (pubnet) stays planned.
   const live = liveChains()
-  assert.deepEqual(live.map((c) => c.id).sort(), ['arbitrum', 'arc', 'base', 'celo', 'celo-sepolia', 'rhchain', 'rhchain-testnet', 'xlayer'])
+  assert.deepEqual(live.map((c) => c.id).sort(), ['arbitrum', 'arc', 'base', 'celo', 'celo-sepolia', 'rhchain', 'rhchain-testnet', 'stellar-testnet', 'xlayer'])
+  assert.equal(live.find((c) => c.id === 'stellar-testnet')?.status, 'beta')
+  // The first wired chain that is not EVM. If this ever reads 'evm' the descriptor was
+  // edited into the wrong ecosystem and every Stellar code path would silently be skipped.
+  assert.equal(live.find((c) => c.id === 'stellar-testnet')?.ecosystem, 'stellar')
   assert.equal(live.find((c) => c.id === 'rhchain')?.status, 'live')
   assert.equal(live.find((c) => c.id === 'xlayer')?.status, 'live')
   assert.equal(live.find((c) => c.id === 'base')?.status, 'beta')
@@ -90,23 +98,28 @@ test('every roadmap chain is present and planned', () => {
   // celo left this list on 2026-08-09 when its identity reads + x402 rail went beta;
   // rhchain-testnet left on 2026-08-11 when the canonical ERC-8004 set went live there;
   // rhchain left on 2026-08-12 when its canonical registries were verified live;
-  // arbitrum left on 2026-08-13 when agent #1259 was minted on its canonical registry.
-  for (const id of ['avalanche', 'stellar', 'stellar-testnet']) {
+  // arbitrum left on 2026-08-13 when agent #1259 was minted on its canonical registry;
+  // stellar-testnet left on 2026-08-15 when the Soroban vault, our own Soroban x402
+  // facilitator and confirmed settlements went end to end on it.
+  for (const id of ['avalanche', 'stellar']) {
     const c = getChainById(id)
     assert.ok(c, `${id} missing from registry`)
     assert.equal(c.status, 'planned', `${id} should be planned`)
   }
 })
 
-test('the non-EVM planned set is exactly the Stellar pair', () => {
+test('pubnet is the only Stellar network still planned', () => {
   const planned = CHAINS.filter((c) => c.status === 'planned')
   const nonEvm = planned.filter((c) => c.ecosystem !== 'evm')
-  // Both Stellar networks, because the single `stellar` descriptor was split on
-  // 2026-08-15: one entry could not carry two SAC addresses, two signers and two sets of
-  // provenance, and splitting after an id had been referenced would have been a
-  // migration rather than a data edit. They promote independently, so testnet is
-  // expected to leave this list first.
-  assert.deepEqual(nonEvm.map((c) => c.id).sort(), ['stellar', 'stellar-testnet'])
+  // The single `stellar` descriptor was split on 2026-08-15 because one entry could not
+  // carry two SAC addresses, two signers and two sets of provenance. They promote
+  // independently, and testnet left this list the same day, which is why the split was
+  // worth doing before either of them had been referenced anywhere.
+  assert.deepEqual(nonEvm.map((c) => c.id).sort(), ['stellar'])
+  // The one that remains, and the reason: pubnet is real money. It stays planned until a
+  // capped vault is deployed and money that matters has moved through it.
+  assert.equal(getChainById('stellar')?.testnet, false)
+  assert.equal(getChainById('stellar-testnet')?.status, 'beta')
   // Derived rather than `planned.length - N`: a hardcoded N goes stale the moment a chain
   // enters or leaves the registry, and it fails as an off-by-one somewhere unrelated to
   // the edit that caused it, which is exactly how this line broke once already.

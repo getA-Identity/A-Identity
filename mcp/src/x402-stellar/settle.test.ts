@@ -23,6 +23,9 @@ import type { SettlementToken } from '../chains/types.js'
 import {
   decodeAuthEntry,
   parseStellarPayload,
+  redeemStellarPayment,
+  schemeOf,
+  stellarTxKey,
   settleStellarPayment,
   stellarPaymentKey,
   verifyAuthSignature,
@@ -517,4 +520,122 @@ test('a failed replay-guard write is loud but does not undo a completed sale', a
     }),
   })
   assert.equal(r.success, true, 'the money moved; a bookkeeping failure must not report otherwise')
+})
+
+// ── the `settled` scheme: a payment the buyer already made ───────────────────────────
+
+test('the scheme is decided by what the payload carries, not by what it claims', () => {
+  assert.deepEqual(schemeOf({ authEntryXdr: ENTRY }), { ok: true, scheme: 'soroban-auth' })
+  assert.deepEqual(schemeOf({ txHash: TX }), { ok: true, scheme: 'settled' })
+  // Both is refused rather than resolved in someone's favour: there is no reading of that
+  // payload where guessing is better than asking.
+  const both = schemeOf({ authEntryXdr: ENTRY, txHash: TX })
+  assert.equal(both.ok, false)
+  if (!both.ok) assert.match(both.reason, /send one/)
+  assert.equal(schemeOf({}).ok, false)
+  assert.equal(schemeOf(null).ok, false)
+})
+
+const VAULT = 'CAIL6ECRAB5FUURQ54R7OTZPXRRCDO2S353YT6N6UZUWIBDG2ZOEB4UI'
+
+const redeemDeps = (over: Partial<StellarSettleDeps> = {}): StellarSettleDeps =>
+  baseDeps({
+    confirm: (async () => ({
+      confirmed: true, txHash: TX, ledger: 4_149_294, from: VAULT,
+      amountRaw: PAID.toString(), asset: SAC, authNonce: '', binding: 'tx-hash',
+    })) as never,
+    meta: { tool: 'risk_check', baseUsd: 0.005 },
+    ...over,
+  })
+
+test('a payment made through the vault is redeemed and recorded as the buyer having paid', async () => {
+  const rows: Record<string, unknown>[] = []
+  const r = await redeemStellarPayment({
+    chain: CHAIN, token: TOKEN, requirements: REQ, txHash: TX, from: VAULT,
+    deps: redeemDeps({ persist: async (rec) => { rows.push(rec as unknown as Record<string, unknown>) } }),
+  })
+  assert.equal(r.success, true, r.success ? '' : r.errorReason)
+  if (r.success) {
+    assert.equal(r.payer, VAULT)
+    // Zero, and it must be: we broadcast nothing here. Recording 'self' with a fee would
+    // credit us with a cost the agent actually paid, in the field that exists to say who did.
+    assert.equal(r.feeStroops, '0')
+    assert.equal(r.broadcaster, 'buyer')
+  }
+  assert.equal(rows[0].outcome, 'settled')
+  assert.equal(rows[0].broadcaster, 'buyer')
+  assert.equal(rows[0].payer, VAULT)
+  assert.equal(rows[0].confirmedBy, 'soroban-rpc', 'whoever paid, we still read it ourselves')
+})
+
+test('the same hash cannot be redeemed twice', async () => {
+  const key = stellarTxKey('stellar:testnet', TX)
+  const r = await redeemStellarPayment({
+    chain: CHAIN, token: TOKEN, requirements: REQ, txHash: TX, from: VAULT,
+    deps: redeemDeps({ loadSpent: async () => [key] }),
+  })
+  assert.equal(r.success, false)
+  if (!r.success) assert.equal(r.code, 'already_redeemed')
+})
+
+test('the redemption key survives the store normalisation, like its sibling', () => {
+  const key = stellarTxKey('stellar:testnet', TX)
+  assert.equal(key, key.toLowerCase())
+  assert.notEqual(key, stellarPaymentKey('stellar:testnet', SAC, BUYER, NONCE))
+})
+
+test('a hash that is not a Stellar hash is refused before any network call', async () => {
+  let looked = false
+  for (const bad of [`0x${TX}`, TX.toUpperCase(), 'nope', '']) {
+    const r = await redeemStellarPayment({
+      chain: CHAIN, token: TOKEN, requirements: REQ, txHash: bad, from: VAULT,
+      deps: redeemDeps({ confirm: (async () => { looked = true; return {} }) as never }),
+    })
+    assert.equal(r.success, false, `${bad} must not be accepted`)
+  }
+  assert.equal(looked, false, 'a malformed hash must not cost an RPC call')
+})
+
+/**
+ * The weaker binding is bounded, not absent. A hash whose transfer does not match this
+ * purchase buys nothing, and the code says the claim failed rather than that WE could not
+ * see it: nothing was broadcast by us here, so there is no blindness of ours to report.
+ */
+test('a hash that does not carry this payment buys nothing', async () => {
+  for (const code of ['no_matching_transfer', 'not_found', 'wrong_authorization']) {
+    const r = await redeemStellarPayment({
+      chain: CHAIN, token: TOKEN, requirements: REQ, txHash: TX, from: VAULT,
+      deps: redeemDeps({ confirm: (async () => ({ confirmed: false, txHash: TX, code, reason: code })) as never }),
+    })
+    assert.equal(r.success, false)
+    if (!r.success) assert.equal(r.code, 'payment_not_found')
+  }
+})
+
+test('a transaction the buyer sent that reverted is named as such', async () => {
+  const r = await redeemStellarPayment({
+    chain: CHAIN, token: TOKEN, requirements: REQ, txHash: TX, from: VAULT,
+    deps: redeemDeps({ confirm: (async () => ({ confirmed: false, txHash: TX, code: 'tx_failed', reason: 'landed and failed' })) as never }),
+  })
+  assert.equal(r.success, false)
+  if (!r.success) assert.equal(r.code, 'settlement_failed')
+})
+
+/**
+ * The `from` the buyer declares is checked against the ledger, not trusted. This is what
+ * stops one agent redeeming a payment another agent's vault made.
+ */
+test('the declared payer is passed to the confirmation, not taken on trust', async () => {
+  let sawFrom = ''
+  await redeemStellarPayment({
+    chain: CHAIN, token: TOKEN, requirements: REQ, txHash: TX, from: VAULT,
+    deps: redeemDeps({
+      confirm: (async (_c: unknown, _h: unknown, expect: { from: string; authNonce: string | null }) => {
+        sawFrom = expect.from
+        assert.equal(expect.authNonce, null, 'the hash-bound path passes null explicitly, never a made-up nonce')
+        return { confirmed: false, txHash: TX, code: 'not_found', reason: 'x' }
+      }) as never,
+    }),
+  })
+  assert.equal(sawFrom, VAULT)
 })

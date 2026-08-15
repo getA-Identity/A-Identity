@@ -70,7 +70,7 @@
   "caveats": [
     "Testnet. Nothing here is money, and Stellar testnet is reset periodically, so a contract here is a rehearsal and never a record.",
     "There is no ERC-8004 registry on Stellar, so the agent passport is bridged from an EVM chain rather than anchored here, and KYA cannot be attested on this network.",
-    "No x402 rail settles on Stellar yet. What is proven here is the on-ledger spend policy, not a paid API call through it.",
+    "At the time of this deploy no x402 rail settled on Stellar; what this release proved was the on-ledger spend policy alone. Superseded on 2026-08-15, when the Soroban x402 rail went end to end on this contract: see the stellar-testnet entry in mcp/src/chains/provenance.ts. Left here rather than deleted, because a release record is what was true when it was cut.",
     "The owner, operator and payee are all throwaway testnet keys generated for this deploy. No mainnet key has touched this network.",
     "The vault holds the token in contract storage rather than a trustline, so the vault needs none. Both classic accounts do, and opening theirs was a prerequisite that is easy to discover the hard way: a payment to an account without a USDC trustline fails with op_no_trust, which a buyer reads as our bug."
   ]

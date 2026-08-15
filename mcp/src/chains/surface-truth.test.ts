@@ -57,6 +57,8 @@ test('every live or beta chain carries an identity registry, or is a listed exce
   // no-hardcoded-chains.test.ts uses for its allowlist.
   const NO_REGISTRY_YET: Record<string, string> = {
     base: 'beta on the strength of the payment path (Base Sepolia via the Gateway demo), NOT identity. No ERC-8004 registry is deployed on Base mainnet and none is asserted. Delete this entry the day one lands, or demote base to planned.',
+    'stellar-testnet':
+      'beta on the strength of the PAYMENT path only: a Soroban spend policy, our own x402 facilitator, and settlements we confirm by reading the transfer ourselves. Identity is not wired and is not claimed. ERC-8004 is EVM-only, no Soroban identity registry exists to point at, and the passport a Stellar agent carries is bridged from an EVM chain rather than anchored here. Delete this entry the day a Soroban registry lands, or demote the chain.',
   }
   for (const c of CHAINS) {
     if (c.status !== 'live' && c.status !== 'beta') continue

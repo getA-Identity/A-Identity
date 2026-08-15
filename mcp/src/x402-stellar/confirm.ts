@@ -59,12 +59,35 @@ export type TransferExpectation = {
   /**
    * The nonce from the buyer's signed authorization entry, as a decimal string.
    *
-   * Required, and the reason is the whole point of the file. This is what ties a
-   * transaction on the ledger to the specific purchase it paid for. Callers always have
-   * it: it is inside the X-PAYMENT the buyer sent, before anything is broadcast.
+   * Required on the `soroban-auth` scheme, and the reason is the whole point of the file:
+   * this is what ties a transaction on the ledger to the specific purchase it paid for.
+   * Callers on that path always have it, because it is inside the X-PAYMENT the buyer sent
+   * before anything is broadcast.
+   *
+   * Null ONLY on the `settled` scheme, where the buyer paid from a bounded-authority vault
+   * and hands us the resulting hash instead of an authorization. There the binding is the
+   * hash itself: one hash, one redemption, enforced by the durable spent set. See
+   * WEAKER_BINDING below for exactly what that gives up. It is null rather than optional so
+   * a caller cannot reach the weaker check by forgetting a field.
    */
-  authNonce: string
+  authNonce: string | null
 }
+
+/**
+ * What the hash-bound scheme gives up, written once so both callers and reviewers see the
+ * same sentence.
+ *
+ * With an authorization nonce we can say "this transaction paid for THIS purchase". With a
+ * hash alone we can only say "this transaction really moved this amount to us, and nobody
+ * has redeemed it here before". The gap is that whoever holds the hash can choose which
+ * purchase to spend it on, among purchases of the same price. That is acceptable on the
+ * vault path, where the payer is a contract whose spending we already bound on-chain and
+ * every payment is one we authorized, and it would NOT be acceptable as the default.
+ */
+export const WEAKER_BINDING =
+  'Bound to the transaction hash, not to an authorization nonce: we can prove this payment ' +
+  'happened and that it has not been redeemed here before, but not that it was made for ' +
+  'this particular purchase rather than another of the same price.'
 
 export type ConfirmFailureCode =
   /** Not in the ledger within the window. It may still land, so nothing is decided. */
@@ -98,6 +121,9 @@ export type ConfirmResult =
       authNonce: string
       /** Present when the payment carried a CAP-67 muxed destination. */
       muxedId?: string
+      /** Present only on the hash-bound scheme, so a caller cannot mistake it for the other. */
+      binding?: 'tx-hash'
+      bindingNote?: string
     }
   | {
       confirmed: false
@@ -312,7 +338,11 @@ export async function confirmStellarTransfer(
   // different authorization is not our sale, and checking it first means a replay attempt
   // is reported as what it is rather than as a near miss on the amount.
   const nonces = noncesIn(success)
-  const boundToUs = nonces.some((n) => n.nonce === expect.authNonce && n.address === expect.from)
+  // Skipped only when the caller explicitly passed null, which is the `settled` scheme
+  // saying it has a hash and no nonce. Every other path still fails closed on a mismatch.
+  const boundToUs =
+    expect.authNonce === null ||
+    nonces.some((n) => n.nonce === expect.authNonce && n.address === expect.from)
   if (!boundToUs) {
     return {
       confirmed: false,
@@ -368,7 +398,8 @@ export async function confirmStellarTransfer(
     from: match.from,
     amountRaw: match.amountRaw,
     asset: match.asset,
-    authNonce: expect.authNonce,
+    authNonce: expect.authNonce ?? '',
+    ...(expect.authNonce === null ? { binding: 'tx-hash' as const, bindingNote: WEAKER_BINDING } : {}),
     ...(match.muxedId ? { muxedId: match.muxedId } : {}),
   }
 }

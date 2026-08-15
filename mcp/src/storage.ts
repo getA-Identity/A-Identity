@@ -370,8 +370,9 @@ export type StellarSettlementRecord = {
   /** Ledger sequence, the Stellar analogue of a block number. */
   ledger?: number
   explorerUrl?: string
-  /** Who assembled the transaction and paid the network fee. */
-  broadcaster: 'self' | 'oz'
+  /** Who assembled the transaction and paid the network fee. 'buyer' means it arrived
+   *  already made, which is the vault path: the agent broadcast it and paid for it. */
+  broadcaster: 'self' | 'oz' | 'buyer'
   /** Always our own ledger read. Present as a field rather than assumed, so a future path
    *  that trusted a facilitator's word would have to write something else here and would
    *  be visible on the proof page for doing it. */
