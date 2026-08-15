@@ -15,7 +15,7 @@
  *   502").
  * - The RPC comes from the descriptor with an env override, never from a constant here.
  */
-import { Keypair, rpc } from '@stellar/stellar-sdk'
+import { Keypair, Networks, rpc } from '@stellar/stellar-sdk'
 
 import type { ChainDescriptor } from '../types.js'
 import { resolveRpcUrls } from '../evm/client.js'
@@ -31,6 +31,20 @@ export function stellarRpcUrl(chain: ChainDescriptor, env: NodeJS.ProcessEnv = p
   const [first] = resolveRpcUrls(chain, env)
   if (!first) throw new Error(`${chain.id} declares no RPC url`)
   return first
+}
+
+/**
+ * The network passphrase, which on Stellar is what a signature is actually bound to.
+ *
+ * It lives here rather than in the adapter because the signing paths need it too, and two
+ * copies of this mapping is how a testnet signature ends up presented to pubnet. Throwing
+ * on an unknown caip2 is deliberate: there is no safe default, and guessing here would mean
+ * signing for a network nobody chose.
+ */
+export function networkPassphrase(chain: ChainDescriptor): string {
+  if (chain.caip2 === 'stellar:pubnet') return Networks.PUBLIC
+  if (chain.caip2 === 'stellar:testnet') return Networks.TESTNET
+  throw new Error(`${chain.id}: no known network passphrase for ${chain.caip2}`)
 }
 
 /** A Soroban RPC handle for this chain. */

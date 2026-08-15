@@ -22,7 +22,6 @@ import {
   Address,
   BASE_FEE,
   Contract,
-  Networks,
   TransactionBuilder,
   nativeToScVal,
   rpc,
@@ -30,7 +29,7 @@ import {
 } from '@stellar/stellar-sdk'
 
 import type { ChainDescriptor } from '../types.js'
-import { sorobanServer, stellarKeypair, stellarSignerAddress } from './client.js'
+import { networkPassphrase, sorobanServer, stellarKeypair, stellarSignerAddress } from './client.js'
 import { isContractId } from './strkey.js'
 
 /**
@@ -45,12 +44,6 @@ const READ_ONLY_SOURCE = 'GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAW
 
 /** Testnet and pubnet differ only by this string, and getting it wrong signs for the
  *  wrong network, so it is derived from the descriptor rather than passed around. */
-function passphrase(chain: ChainDescriptor): string {
-  if (chain.caip2 === 'stellar:pubnet') return Networks.PUBLIC
-  if (chain.caip2 === 'stellar:testnet') return Networks.TESTNET
-  throw new Error(`${chain.id}: no known network passphrase for ${chain.caip2}`)
-}
-
 /**
  * Four outcomes, and no boolean.
  *
@@ -163,7 +156,7 @@ export function createStellarAdapter(chain: ChainDescriptor) {
     throw new Error(`createStellarAdapter: ${chain.id} is not a Stellar chain (${chain.ecosystem})`)
   }
 
-  const net = passphrase(chain)
+  const net = networkPassphrase(chain)
   const i128 = (v: bigint | string) => nativeToScVal(BigInt(v), { type: 'i128' })
   const u64 = (v: bigint | string) => nativeToScVal(BigInt(v), { type: 'u64' })
   const addr = (g: string) => new Address(g).toScVal()

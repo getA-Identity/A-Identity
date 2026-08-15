@@ -376,8 +376,11 @@ export type StellarSettlementRecord = {
    *  that trusted a facilitator's word would have to write something else here and would
    *  be visible on the proof page for doing it. */
   confirmedBy: 'soroban-rpc'
-  /** What the settlement cost US, in stroops. No USD figure: there is no price feed we
-   *  verify, and inventing one to make a number look tidy is the thing we do not do. */
+  /** What the settlement cost US, in stroops. Stroops and not USD, because a row is a
+   *  record of what happened and the USD value of an XLM fee is a thing that keeps
+   *  changing after the row is written. It IS priceable: the XLM/USDC order book is on the
+   *  ledger we settle on. Pricing belongs to whoever reads the row, at the time they read
+   *  it, not baked in here. */
   feeStroops?: string
   /** Present when we broadcast for a third-party payTo rather than for ourselves. */
   facilitatedFor?: string
