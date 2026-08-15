@@ -101,7 +101,7 @@ export const CHAINS: ChainDescriptor[] = [
     name: 'Stellar',
     shortName: 'Stellar',
     color: '#7D00FF',
-    role: 'Fast, low-cost settlement: native Circle USDC, Soroban contracts, fee sponsorship so an agent needs no XLM.',
+    role: 'Fast, low-cost settlement: native Circle USDC, Soroban contracts, and an x402 rail where the buyer signs and pays no transaction fee.',
     ecosystem: 'stellar',
     testnet: false,
     status: 'planned',
@@ -133,7 +133,12 @@ export const CHAINS: ChainDescriptor[] = [
     },
     payment: {
       x402: true,
-      note: 'x402 in USDC over the SEP-41 SAC. The buyer signs a Soroban authorization entry rather than a whole transaction, so whoever assembles it pays the fee and the buyer needs no XLM.',
+      note:
+        'x402 in USDC over the SEP-41 SAC. The buyer signs a Soroban authorization entry rather ' +
+        'than a whole transaction, so whoever assembles it pays the network fee. Note the exact ' +
+        'claim: the buyer pays no FEE. It still needs XLM to exist at all, 1 for the account ' +
+        'reserve and 0.5 more per trustline, which is a Stellar property no rail can remove. ' +
+        'An operator who funds an agent with USDC alone will find the account was never created.',
     },
   },
   {

@@ -1,30 +1,48 @@
 /**
  * What "settled" means on Stellar.
  *
- * This is the load-bearing honesty primitive of the whole rail, and it exists because of a
- * weakness this repo already wrote down about itself. `x402-3009/engine.ts` says it in the
- * header: celo-x402.ts delegates to a third-party facilitator, "so the buyer pays no gas,
- * but 'settled' is that facilitator's word: nothing reads the chain to confirm it."
+ * This is the load-bearing honesty primitive of the rail. It exists because of a weakness
+ * this repo already wrote down about itself: x402-3009/engine.ts says the Celo rail
+ * "delegates to a third-party facilitator, so the buyer pays no gas, but 'settled' is that
+ * facilitator's word: nothing reads the chain to confirm it." Here the answer to "did the
+ * money move" comes from this function and nowhere else, whether we broadcast or OZ did.
  *
- * On Stellar we can broadcast ourselves, and we also support OpenZeppelin Channels as a
- * fallback. Either way the answer to "did the money move" comes from here, and from
- * nowhere else: we fetch the transaction and look for the token's own transfer event with
- * our payee and our exact amount. A facilitator reporting success is an INPUT to this
- * check, never a substitute for it.
+ * ## It is not enough to find A payment. It has to be THIS payment.
  *
- * The event shape below is not guessed. It was read off a real settlement on testnet
- * (3da74634..., ledger 4147945), where the SAC emitted:
+ * The first version of this file checked only {sac, to, amount}, and an adversarial review
+ * broke it immediately: any transaction that had EVER paid that amount to our payee
+ * confirmed, forever, for anyone. The reviewer found a real unrelated testnet transaction
+ * (713e0828..., ledger 4140858) that moved exactly 10000000 base units and would have
+ * bought a tool for free. The EIP-3009 rail never had that hole because it keys on the
+ * authorization nonce (x402-3009/engine.ts paymentKey); this one was written without the
+ * equivalent.
  *
- *   contract  CBIELTK6...            the USDC Stellar Asset Contract
- *   topics    ["transfer", from, to, "USDC:GBBD47IF..."]
- *   data      "10000000"             i128 base units, 7 decimals
+ * So the expectation now binds to the specific authorization. `from` and `authNonce` are
+ * REQUIRED, not optional conveniences. We always have both: the buyer hands us its signed
+ * Soroban authorization entry in X-PAYMENT, and the nonce is inside it, before anything is
+ * broadcast. A transaction that does not carry that exact nonce for that exact payer is
+ * somebody else's transaction, however much it looks like ours.
  *
- * Three failure modes are distinguished on purpose, because they need different responses:
- * a transaction that never landed may still land, one that landed and failed never will,
- * and one that succeeded without a matching transfer means we were told about the wrong
- * transaction entirely.
+ * Note what this deliberately gives up: there is no way to ask "did this hash pay us" in
+ * general. That question is the hole.
+ *
+ * ## The event data is not always an i128
+ *
+ * Under CAP-67 a SAC transfer event carries a MAP when the payment has a muxed destination
+ * or memo, and a bare i128 otherwise. Both shapes were read off the live network rather
+ * than assumed, which is the correction to how the first version was written: it sampled
+ * ONE real transaction and generalised from it, which is better than guessing and still
+ * not the shape space.
+ *
+ *   plain   scvI128  ->  10000000n
+ *           (our settlement 3da74634..., ledger 4147945)
+ *   memo    scvMap   ->  { amount: 10000000n, to_muxed_id: 'AT-ORDER-OYO1' }
+ *           (a real classic payment 9c7042f4..., ledger 4140857)
+ *
+ * Reading the second with String() produced "[object Object]", so every memo-bearing
+ * payment was refused as not a payment to us.
  */
-import { StrKey, rpc, scValToNative, xdr } from '@stellar/stellar-sdk'
+import { Address, StrKey, rpc, scValToNative, xdr } from '@stellar/stellar-sdk'
 
 import type { ChainDescriptor } from '../chains/types.js'
 import { sorobanServer } from '../chains/stellar/client.js'
@@ -34,17 +52,31 @@ export type TransferExpectation = {
   sac: string
   /** Our receiving account. A transfer to anyone else is not our settlement. */
   to: string
+  /** The payer. Required: without it, anyone's payment of the right size counts as ours. */
+  from: string
   /** Exact base units. Not a minimum: an amount we did not ask for is a different deal. */
   amountRaw: bigint
+  /**
+   * The nonce from the buyer's signed authorization entry, as a decimal string.
+   *
+   * Required, and the reason is the whole point of the file. This is what ties a
+   * transaction on the ledger to the specific purchase it paid for. Callers always have
+   * it: it is inside the X-PAYMENT the buyer sent, before anything is broadcast.
+   */
+  authNonce: string
 }
 
 export type ConfirmFailureCode =
   /** Not in the ledger within the window. It may still land, so nothing is decided. */
   | 'not_found'
+  /** Older than the RPC's retention window, so absence here proves nothing either. */
+  | 'beyond_retention'
   /** Landed and failed. Decided, and decided against. */
   | 'tx_failed'
   /** Landed and succeeded, but carries no transfer matching what we asked for. */
   | 'no_matching_transfer'
+  /** The transfer is there, but it settles a different authorization than ours. */
+  | 'wrong_authorization'
   /** The RPC could not be reached or answered something unusable. */
   | 'unreachable'
 
@@ -53,10 +85,12 @@ export type ConfirmResult =
       confirmed: true
       txHash: string
       ledger: number
-      /** Whoever actually paid, read from the event rather than from the request. */
       from: string
       amountRaw: string
       asset: string
+      authNonce: string
+      /** Present when the payment carried a CAP-67 muxed destination. */
+      muxedId?: string
     }
   | {
       confirmed: false
@@ -64,18 +98,45 @@ export type ConfirmResult =
       code: ConfirmFailureCode
       reason: string
       ledger?: number
-      /** Every transfer we DID see on that transaction, so a mismatch is debuggable. */
+      /** Every transfer we DID see, so a mismatch is debuggable rather than a mystery. */
       sawTransfers?: { sac: string; from: string; to: string; amountRaw: string }[]
+      /** Every authorization nonce the transaction actually carried. */
+      sawNonces?: string[]
     }
 
-type SeenTransfer = { sac: string; from: string; to: string; amountRaw: string; asset: string }
+type SeenTransfer = {
+  sac: string
+  from: string
+  to: string
+  amountRaw: string
+  asset: string
+  muxedId?: string
+}
 
 /**
- * Pull every SEP-41 transfer event out of a transaction response.
+ * The amount out of a transfer event's data, in either shape CAP-67 permits.
  *
- * Defensive by construction: a single undecodable event must not lose the others, because
- * the one we need might be the one after it.
+ * Returns null rather than a wrong number when the shape is neither, because a settlement
+ * decided from a misparsed amount is worse than one that refuses and says why.
  */
+function amountOf(data: xdr.ScVal): { amount: bigint; muxedId?: string } | null {
+  let native: unknown
+  try {
+    native = scValToNative(data)
+  } catch {
+    return null
+  }
+  if (typeof native === 'bigint') return { amount: native }
+  if (native && typeof native === 'object' && 'amount' in native) {
+    const raw = (native as { amount: unknown; to_muxed_id?: unknown }).amount
+    if (typeof raw !== 'bigint') return null
+    const muxed = (native as { to_muxed_id?: unknown }).to_muxed_id
+    return { amount: raw, muxedId: muxed === undefined ? undefined : String(muxed) }
+  }
+  return null
+}
+
+/** Every SEP-41 transfer event on a transaction. One bad event never loses the others. */
 function transfersIn(tx: rpc.Api.GetSuccessfulTransactionResponse): SeenTransfer[] {
   const out: SeenTransfer[] = []
   const groups = (tx.events?.contractEventsXdr ?? []) as unknown[]
@@ -95,15 +156,16 @@ function transfersIn(tx: rpc.Api.GetSuccessfulTransactionResponse): SeenTransfer
           }
         })
         if (topics[0] !== 'transfer' || topics.length < 3) continue
-        const amount = scValToNative(body.data())
+        const value = amountOf(body.data())
+        if (!value) continue
         out.push({
-          // `contractId()` is an xdr.Hash, which is a Buffer at runtime but not in the
-          // type, and StrKey wants the bytes.
+          // contractId() is an xdr.Hash, a Buffer at runtime but not in the type.
           sac: StrKey.encodeContract(Buffer.from(contractId as unknown as Uint8Array)),
           from: String(topics[1]),
           to: String(topics[2]),
-          amountRaw: String(amount),
+          amountRaw: value.amount.toString(),
           asset: topics.length > 3 ? String(topics[3]) : '',
+          muxedId: value.muxedId,
         })
       } catch {
         // A malformed event is not evidence either way. Keep going.
@@ -113,21 +175,47 @@ function transfersIn(tx: rpc.Api.GetSuccessfulTransactionResponse): SeenTransfer
   return out
 }
 
+/** Every authorization nonce the transaction's operations carried, with its payer. */
+function noncesIn(tx: rpc.Api.GetSuccessfulTransactionResponse): { address: string; nonce: string }[] {
+  const out: { address: string; nonce: string }[] = []
+  try {
+    const env = tx.envelopeXdr
+    const inner = env.switch().name === 'envelopeTypeTxV0' ? env.v0().tx() : env.v1().tx()
+    for (const op of inner.operations()) {
+      if (op.body().switch().name !== 'invokeHostFunction') continue
+      for (const entry of op.body().invokeHostFunctionOp().auth()) {
+        const creds = entry.credentials()
+        if (creds.switch().name !== 'sorobanCredentialsAddress') continue
+        const ca = creds.address()
+        out.push({
+          address: Address.fromScAddress(ca.address()).toString(),
+          nonce: ca.nonce().toString(),
+        })
+      }
+    }
+  } catch {
+    // An envelope we cannot decode yields no nonces, which fails closed below.
+  }
+  return out
+}
+
 export type ConfirmDeps = {
   env?: NodeJS.ProcessEnv
   /** Injected in tests so the honesty check itself can be tested without a network. */
-  server?: Pick<rpc.Server, 'getTransaction'>
-  /** How long to wait for inclusion before reporting not_found. */
+  server?: Pick<rpc.Server, 'getTransaction'> & Partial<Pick<rpc.Server, 'getLatestLedger'>>
   timeoutMs?: number
   pollMs?: number
   sleep?: (ms: number) => Promise<void>
+  /** The oldest ledger this RPC still holds, for telling "gone" from "not yet". */
+  oldestLedger?: number
 }
 
 /**
- * Did this transaction actually move what we required, to us?
+ * Did THIS authorization actually move what we required, to us?
  *
- * Returns rather than throws for every outcome a caller must act on differently. The only
- * thing that throws is a bug in this function.
+ * Returns rather than throws for every outcome a caller must act on differently. Building
+ * the RPC handle is inside the guard too, because a misconfigured chain used to throw out
+ * of here rather than reporting `unreachable` as the type promises.
  */
 export async function confirmStellarTransfer(
   chain: ChainDescriptor,
@@ -136,10 +224,21 @@ export async function confirmStellarTransfer(
   deps: ConfirmDeps = {},
 ): Promise<ConfirmResult> {
   const env = deps.env ?? process.env
-  const server = deps.server ?? sorobanServer(chain, env)
   const timeoutMs = deps.timeoutMs ?? 30_000
   const pollMs = deps.pollMs ?? 1_000
   const sleep = deps.sleep ?? ((ms: number) => new Promise((r) => setTimeout(r, ms)))
+
+  let server: Pick<rpc.Server, 'getTransaction'> & Partial<Pick<rpc.Server, 'getLatestLedger'>>
+  try {
+    server = deps.server ?? sorobanServer(chain, env)
+  } catch (e) {
+    return {
+      confirmed: false,
+      txHash,
+      code: 'unreachable',
+      reason: `could not build an RPC client for ${chain.id}: ${e instanceof Error ? e.message : String(e)}`,
+    }
+  }
 
   const deadline = Date.now() + timeoutMs
   let got: rpc.Api.GetTransactionResponse
@@ -156,13 +255,26 @@ export async function confirmStellarTransfer(
     }
     if (got.status !== rpc.Api.GetTransactionStatus.NOT_FOUND) break
     if (Date.now() >= deadline) {
+      // Soroban RPC keeps only a short window, currently about a week on testnet. Outside
+      // it, NOT_FOUND means "we cannot see it", which is a different claim from "it has
+      // not landed", and telling an operator to keep waiting for a transaction the RPC
+      // will never show again would be a lie of omission.
+      const oldest =
+        deps.oldestLedger ??
+        (typeof got.oldestLedger === 'number' ? got.oldestLedger : undefined)
+      const latest = typeof got.latestLedger === 'number' ? got.latestLedger : undefined
+      const windowNote =
+        oldest !== undefined && latest !== undefined
+          ? ` This RPC retains ledgers ${oldest} to ${latest}; anything older is invisible to it, not absent from the chain.`
+          : ''
       return {
         confirmed: false,
         txHash,
-        code: 'not_found',
+        code: oldest !== undefined ? 'beyond_retention' : 'not_found',
         reason:
-          `not in the ledger after ${Math.round(timeoutMs / 1000)}s. This is NOT a refusal: it ` +
-          `may still land, so nothing may be recorded as settled and nothing may be retried blindly.`,
+          `not visible after ${Math.round(timeoutMs / 1000)}s. This is NOT a refusal: it may still ` +
+          `land, or it may have landed before this RPC's retention window. Nothing may be recorded ` +
+          `as settled and nothing may be retried blindly.${windowNote}`,
       }
     }
     await sleep(pollMs)
@@ -179,9 +291,32 @@ export async function confirmStellarTransfer(
   }
 
   const success = got as rpc.Api.GetSuccessfulTransactionResponse
+
+  // The authorization first. A transfer that matches every visible detail but settles a
+  // different authorization is not our sale, and checking it first means a replay attempt
+  // is reported as what it is rather than as a near miss on the amount.
+  const nonces = noncesIn(success)
+  const boundToUs = nonces.some((n) => n.nonce === expect.authNonce && n.address === expect.from)
+  if (!boundToUs) {
+    return {
+      confirmed: false,
+      txHash,
+      code: 'wrong_authorization',
+      reason:
+        `this transaction does not carry authorization nonce ${expect.authNonce} for ${expect.from}. ` +
+        `It may well be a real payment; it is not the one this purchase authorized.`,
+      ledger: success.ledger,
+      sawNonces: nonces.map((n) => `${n.address}:${n.nonce}`),
+    }
+  }
+
   const seen = transfersIn(success)
   const match = seen.find(
-    (t) => t.sac === expect.sac && t.to === expect.to && t.amountRaw === expect.amountRaw.toString(),
+    (t) =>
+      t.sac === expect.sac &&
+      t.to === expect.to &&
+      t.from === expect.from &&
+      t.amountRaw === expect.amountRaw.toString(),
   )
   if (!match) {
     return {
@@ -189,10 +324,12 @@ export async function confirmStellarTransfer(
       txHash,
       code: 'no_matching_transfer',
       reason:
-        `the transaction succeeded but carries no transfer of ${expect.amountRaw} on ${expect.sac} ` +
-        `to ${expect.to}. A successful transaction is not a payment to us.`,
+        `the transaction succeeded and carries our authorization, but no transfer of ` +
+        `${expect.amountRaw} on ${expect.sac} from ${expect.from} to ${expect.to}. A successful ` +
+        `transaction is not a payment to us.`,
       ledger: success.ledger,
       sawTransfers: seen.map(({ sac, from, to, amountRaw }) => ({ sac, from, to, amountRaw })),
+      sawNonces: nonces.map((n) => `${n.address}:${n.nonce}`),
     }
   }
 
@@ -203,5 +340,7 @@ export async function confirmStellarTransfer(
     from: match.from,
     amountRaw: match.amountRaw,
     asset: match.asset,
+    authNonce: expect.authNonce,
+    ...(match.muxedId ? { muxedId: match.muxedId } : {}),
   }
 }

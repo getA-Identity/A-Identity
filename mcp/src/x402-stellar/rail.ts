@@ -14,13 +14,27 @@
  * rather than by the token, so there is nothing per-token to prove and no 503 branch for
  * an unprovable domain. Its absence is a property of the chain, not an unfinished job.
  *
- * **No settlement fee.** The EIP-3009 rails charge a disclosed fee because broadcasting
- * costs real gas: measured at 0.0000046 ETH on Robinhood Chain and 0.00000207 ETH on
- * Arbitrum One, which is material against a $0.001 tool. A Stellar settlement measured
- * 22,973 stroops, or 0.0023 XLM (tx 37d52f31..., testnet). We do not publish a USD figure
- * for that because we have no price feed we verify and will not invent one, but it is
- * several orders of magnitude under the cheapest thing we sell, so charging a line item to
- * cover it would be a markup wearing an explanation. The base prices stand alone.
+ * **No settlement fee, and this is a CHOICE rather than a free lunch.** The EIP-3009 rails
+ * charge a disclosed fee because broadcasting costs real gas: 0.0000046 ETH on Robinhood
+ * Chain, 0.00000207 on Arbitrum One. A Stellar settlement measured 22,973 stroops, or
+ * 0.0022973 XLM (tx 37d52f31..., testnet).
+ *
+ * An earlier version of this comment called that "several orders of magnitude under the
+ * cheapest thing we sell" and an adversarial review took it apart, correctly. Do the
+ * arithmetic instead of the adjective: the cheapest tool is verify_agent at $0.001, so the
+ * BREAK-EVEN is XLM at $0.4353. At $0.30 a settlement already costs 69 percent of that
+ * sale. XLM has traded above the break-even before, so this is a price move rather than a
+ * hypothetical. "Several orders of magnitude" would need XLM near $0.0004.
+ *
+ * We still charge nothing, for a reason that survives being stated plainly: the absolute
+ * amount is a fraction of a cent, we are absorbing it deliberately, and a per-call line
+ * item on a sub-cent sale costs more in explanation than it recovers. What we may not do
+ * is tell a buyer it is negligible. If XLM approaches the break-even, this decision gets
+ * revisited rather than discovered.
+ *
+ * Note also what the original sentence did wrong beyond the arithmetic: it refused to
+ * publish a USD figure two lines earlier, then asserted a USD RATIO, which is the same
+ * claim wearing a disguise.
  *
  * **No minimum value floor.** The floor on the other rails exists so a settlement covers
  * the gas it costs. With no fee to cover, a floor would only price out small payments.
@@ -321,11 +335,12 @@ export function stellarRailChallenge(
         name: tool,
         price: { baseUsd: stellarRailPriceUsd(tool).baseUsd, totalUsd: stellarRailPriceUsd(tool).totalUsd },
         priceNote:
-          'This rail is gasless for the buyer: you sign a Soroban authorization entry and we ' +
-          'assemble, pay the network fee and submit. Unlike our EVM rails there is no ' +
-          'settlement fee added, because there is nothing meaningful to cover: a settlement ' +
-          'here measured 22,973 stroops (0.0023 XLM). We publish no USD figure for that, ' +
-          'having no price feed we verify. The base price is identical on every rail we sell on.',
+          'The buyer pays no network fee on this rail: you sign a Soroban authorization entry ' +
+          'and we assemble, pay the fee and submit. Unlike our EVM rails we add no settlement ' +
+          'fee on top of the base price. That is us absorbing a real cost rather than there ' +
+          'being none: a settlement here measured 22,973 stroops (0.0022973 XLM) on ' +
+          'stellar:testnet. We publish no USD figure for it, having no price feed we verify. ' +
+          'The base price is identical on every rail we sell on.',
         ...RAIL_TOOL_CARDS[tool],
         method: `POST ${stellarRailResource(tool)}`,
         payment:

@@ -35,15 +35,40 @@ test('both Stellar networks build, and they do not share a passphrase', () => {
 test('an unsigned write returns the exact call it would have made', async () => {
   const a = createStellarAdapter(testnet())
   const r = await a.policyPay(VAULT, PAYEE, 10_000_000n, {})
-  assert.equal(r.executed, false)
-  if (r.executed) return
-  assert.equal(r.prepared.contract, VAULT)
-  assert.equal(r.prepared.method, 'pay')
-  assert.deepEqual(r.prepared.args, [PAYEE, '10000000'])
-  assert.equal(r.prepared.network, 'stellar:testnet')
+  assert.equal(r.outcome, 'prepared')
+  if (r.outcome !== 'prepared') return
+  assert.equal(r.contract, VAULT)
+  assert.equal(r.method, 'pay')
+  assert.deepEqual(r.args, [PAYEE, '10000000'])
+  assert.equal(r.network, 'stellar:testnet')
   // The reason has to name the variable, because "not configured" sends an operator
   // hunting through five chains' worth of env to find which one.
-  assert.match(r.prepared.reason, /STELLAR_TESTNET_SIGNER_SECRET/)
+  assert.match(r.reason, /STELLAR_TESTNET_SIGNER_SECRET/)
+})
+
+/**
+ * The outcome is a union with no boolean, and that is deliberate. It used to be
+ * `{ executed: boolean, successful: boolean }`, and a landed-and-FAILED transaction came
+ * back as executed: true, which is this repo's signal for "it worked". The repo's own
+ * proven failure read as a success. A union forces every caller to handle the four cases
+ * rather than reading one flag and moving on.
+ */
+test('there is no boolean anyone can misread as success', async () => {
+  const a = createStellarAdapter(testnet())
+  const r = await a.policyPay(VAULT, PAYEE, 1n, {})
+  assert.equal('executed' in r, false, 'a boolean here is what caused the bug')
+  assert.equal('successful' in r, false)
+  assert.ok(['prepared', 'refused', 'settled', 'failed', 'pending'].includes(r.outcome))
+})
+
+/**
+ * prepared and refused both mean nothing was submitted, and they mean opposite things to
+ * an operator: one says "set the key and this will run", the other says "the vault said no
+ * and will keep saying no". They used to be the same shape.
+ */
+test('a refusal is a different outcome from a missing signer', () => {
+  const outcomes: string[] = ['prepared', 'refused']
+  assert.notEqual(outcomes[0], outcomes[1])
 })
 
 test('every owner control has a prepared path too, not just pay', async () => {
@@ -58,8 +83,8 @@ test('every owner control has a prepared path too, not just pay', async () => {
   ] as const
   for (const [method, call] of calls) {
     const r = await call()
-    assert.equal(r.executed, false, `${method} broadcast without a signer`)
-    if (!r.executed) assert.equal(r.prepared.method, method)
+    assert.equal(r.outcome, 'prepared', `${method} broadcast without a signer`)
+    if (r.outcome === 'prepared') assert.equal(r.method, method)
   }
 })
 

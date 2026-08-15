@@ -51,27 +51,71 @@ function passphrase(chain: ChainDescriptor): string {
   throw new Error(`${chain.id}: no known network passphrase for ${chain.caip2}`)
 }
 
-export type PreparedCall = {
-  executed: false
-  prepared: {
-    contract: string
-    method: string
-    args: unknown[]
-    network: string
-    /** Why nothing was submitted, in the words the operator needs to act on. */
-    reason: string
-  }
-}
-
-export type ExecutedCall = {
-  executed: true
-  txHash: string
-  ledger: number | undefined
-  explorerUrl: string
-  successful: boolean
-  /** Present when the contract refused it: the code from the frozen error table. */
-  contractErrorCode?: number
-}
+/**
+ * Four outcomes, and no boolean.
+ *
+ * This was `{ executed: boolean }` with a `successful` flag beside it, and an adversarial
+ * review broke it in one line: a transaction that LANDED AND FAILED came back as
+ * `executed: true`, which is this repo's signal for "it worked". The repo's own proven
+ * failure (12df418f..., over-limit pay refused with typed error 5) read as a success.
+ *
+ * A discriminated union with no boolean is the fix, because it makes the failure case
+ * unignorable rather than merely reported. A caller that only handles 'settled' now fails
+ * to compile against the others instead of silently treating them as success.
+ *
+ * 'refused' and 'prepared' are also kept apart, though both mean nothing was submitted.
+ * They read identically to a human and mean opposite things to an operator: prepared says
+ * "set the key and this will run", refused says "the vault said no and it will keep saying
+ * no".
+ */
+export type CallOutcome =
+  /** No signer, so nothing was submitted. This is the exact call it would have made. */
+  | {
+      outcome: 'prepared'
+      contract: string
+      method: string
+      args: unknown[]
+      network: string
+      reason: string
+    }
+  /** The contract refused it in simulation, so it never reached the ledger and cost nothing. */
+  | {
+      outcome: 'refused'
+      contract: string
+      method: string
+      args: unknown[]
+      network: string
+      reason: string
+      /** The code from the frozen table in error.rs, when it could be read. */
+      contractErrorCode?: number
+    }
+  /** In the ledger and successful. */
+  | {
+      outcome: 'settled'
+      txHash: string
+      ledger: number | undefined
+      explorerUrl: string
+    }
+  /** In the ledger and failed. It consumed a fee and moved nothing. */
+  | {
+      outcome: 'failed'
+      txHash: string
+      ledger: number | undefined
+      explorerUrl: string
+      contractErrorCode?: number
+      reason: string
+    }
+  /**
+   * Submitted, and not in the ledger before we stopped waiting. NOT a failure: the
+   * transaction stays valid for its full timeout, so it may still land. Reporting this as
+   * failed would be a lie in the direction that loses money.
+   */
+  | {
+      outcome: 'pending'
+      txHash: string
+      explorerUrl: string
+      reason: string
+    }
 
 export type VaultState = {
   owner: string
@@ -86,6 +130,32 @@ export type VaultState = {
   day: string
   spentTodayRaw: string
   balanceRaw: string
+}
+
+/** The contract error code out of a simulation error string, when it names one. */
+function errorCodeIn(message: string): number | undefined {
+  const m = /Error\(Contract, #(\d+)\)/.exec(message)
+  return m ? Number(m[1]) : undefined
+}
+
+/**
+ * The contract error code out of a failed transaction's diagnostic events.
+ *
+ * This field was previously declared and never assigned, so a caller branching on it had a
+ * branch that could never be taken. Reading it is what makes a typed revert usable by the
+ * client, which is the product claim: the revert reason is why the human path takes over.
+ */
+function failureCodeIn(tx: rpc.Api.GetTransactionResponse): number | undefined {
+  try {
+    for (const raw of (tx as { diagnosticEventsXdr?: unknown[] }).diagnosticEventsXdr ?? []) {
+      const s = JSON.stringify(raw)
+      const m = /"contractCode":(\d+)/.exec(s)
+      if (m) return Number(m[1])
+    }
+  } catch {
+    /* a code we cannot read is simply absent */
+  }
+  return undefined
 }
 
 export function createStellarAdapter(chain: ChainDescriptor) {
@@ -135,18 +205,14 @@ export function createStellarAdapter(chain: ChainDescriptor) {
     args: ReturnType<typeof nativeToScVal>[],
     display: unknown[],
     env: NodeJS.ProcessEnv,
-  ): Promise<PreparedCall | ExecutedCall> {
+  ): Promise<CallOutcome> {
+    const shape = { contract: vault, method, args: display, network: chain.caip2 }
     const kp = stellarKeypair(chain, env)
     if (!kp) {
       return {
-        executed: false,
-        prepared: {
-          contract: vault,
-          method,
-          args: display,
-          network: chain.caip2,
-          reason: `${chain.signerEnvVar ?? 'the chain signer'} is not set, so nothing was submitted. This is the exact call it would make.`,
-        },
+        outcome: 'prepared',
+        ...shape,
+        reason: `${chain.signerEnvVar ?? 'the chain signer'} is not set, so nothing was submitted. This is the exact call it would make.`,
       }
     }
 
@@ -161,30 +227,34 @@ export function createStellarAdapter(chain: ChainDescriptor) {
     const sim = await server.simulateTransaction(tx)
     if (rpc.Api.isSimulationError(sim)) {
       return {
-        executed: false,
-        prepared: {
-          contract: vault,
-          method,
-          args: display,
-          network: chain.caip2,
-          reason: `the contract refused it before it could be submitted: ${sim.error}`,
-        },
+        outcome: 'refused',
+        ...shape,
+        reason: `the contract refused it before it could be submitted: ${sim.error}`,
+        ...(errorCodeIn(sim.error) !== undefined ? { contractErrorCode: errorCodeIn(sim.error) } : {}),
+      }
+    }
+    // An archived entry is not an error, it is a restore preamble, and submitting anyway
+    // burns a fee on a transaction that cannot succeed. Soroban archives entries as a
+    // matter of course, so this is an expected state rather than an edge case.
+    if (rpc.Api.isSimulationRestore(sim)) {
+      return {
+        outcome: 'refused',
+        ...shape,
+        reason:
+          'this call reads state that has been archived, so it needs a restore before it can run. ' +
+          'Nothing was submitted, because submitting would have paid a fee to fail.',
       }
     }
 
     const assembled = rpc.assembleTransaction(tx, sim).build()
     assembled.sign(kp)
     const sent = await server.sendTransaction(assembled)
+    const explorerUrl = `${chain.explorer}/tx/${sent.hash}`
     if (sent.status === 'ERROR') {
       return {
-        executed: false,
-        prepared: {
-          contract: vault,
-          method,
-          args: display,
-          network: chain.caip2,
-          reason: `the network rejected the transaction before the ledger (${sent.status})`,
-        },
+        outcome: 'refused',
+        ...shape,
+        reason: `the network rejected the transaction before the ledger (${sent.status})`,
       }
     }
 
@@ -193,13 +263,27 @@ export function createStellarAdapter(chain: ChainDescriptor) {
       await new Promise((r) => setTimeout(r, 1000))
       got = await server.getTransaction(sent.hash)
     }
-    return {
-      executed: true,
-      txHash: sent.hash,
-      ledger: 'ledger' in got ? got.ledger : undefined,
-      explorerUrl: `${chain.explorer}/tx/${sent.hash}`,
-      successful: got.status === 'SUCCESS',
+    if (got.status === 'NOT_FOUND') {
+      return {
+        outcome: 'pending',
+        txHash: sent.hash,
+        explorerUrl,
+        reason:
+          'submitted and not in the ledger yet. The transaction stays valid for its full timeout, ' +
+          'so it may still land: do not retry it and do not record it as failed.',
+      }
     }
+    if (got.status === 'FAILED') {
+      return {
+        outcome: 'failed',
+        txHash: sent.hash,
+        ledger: got.ledger,
+        explorerUrl,
+        ...(failureCodeIn(got) !== undefined ? { contractErrorCode: failureCodeIn(got) } : {}),
+        reason: 'the transaction landed and failed. It consumed a fee and moved nothing.',
+      }
+    }
+    return { outcome: 'settled', txHash: sent.hash, ledger: got.ledger, explorerUrl }
   }
 
   return {

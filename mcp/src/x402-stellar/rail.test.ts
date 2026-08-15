@@ -39,16 +39,18 @@ test('the base prices are the SAME OBJECT the EIP-3009 rail sells at', () => {
 })
 
 test('nothing is added to the base price on this chain', () => {
-  // The EIP-3009 rails add a disclosed settlement fee because gas is material there. A
-  // settlement here measured 0.0023 XLM, several orders of magnitude under the cheapest
-  // tool, so a line item to cover it would be a markup with an explanation attached.
+  // The EIP-3009 rails add a disclosed settlement fee because gas is material there. Here
+  // we absorb it instead. Note the honest framing, which an adversarial review had to
+  // correct: 0.0022973 XLM is NOT negligible against a $0.001 tool. The break-even is XLM
+  // at $0.4353, and at $0.30 a settlement already costs 69 percent of the cheapest sale.
+  // Charging nothing is a decision to revisit, not a fact about the chain.
   for (const tool of Object.keys(RAIL_BASE_PRICES_USD) as (keyof typeof RAIL_BASE_PRICES_USD)[]) {
     const p = stellarRailPriceUsd(tool)
     assert.equal(p.totalUsd, p.baseUsd, `${tool} must cost its base price and no more`)
   }
 })
 
-test('the amount is in the token’s own base units, at 7 decimals not 6', () => {
+test('the amount is in base units of the token itself, at 7 decimals not 6', () => {
   const token = stellarRailToken(getChainById('stellar-testnet')!, {})!
   assert.equal(token.decimals, 7)
   // 0.005 USDC. At six decimals this would be 5000 and the buyer would be charged a tenth
@@ -175,9 +177,11 @@ test('the challenge offers a payable Soroban authorization, not an EIP-712 domai
 test('the challenge tells the buyer it pays no fee, and does not invent a USD gas figure', () => {
   const s = stellarRailStatus(READY)
   const body = (stellarRailChallenge('verify_agent', s, READY) as { body: Record<string, any> }).body
-  assert.match(body.tool.priceNote, /gasless/)
+  assert.match(body.tool.priceNote, /pays no network fee/)
   assert.match(body.tool.priceNote, /stroops/, 'the measurement belongs in the note')
   assert.match(body.tool.priceNote, /no price feed we verify/)
+  // The buyer must be told we are absorbing a real cost, not that there is none.
+  assert.match(body.tool.priceNote, /absorbing a real cost/)
   assert.equal(body.tool.price.totalUsd, RAIL_BASE_PRICES_USD.verify_agent)
 })
 
