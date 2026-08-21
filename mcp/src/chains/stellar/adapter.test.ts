@@ -2,7 +2,7 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 import { Keypair } from '@stellar/stellar-sdk'
 
-import { createStellarAdapter } from './adapter.js'
+import { createStellarAdapter, errorIn } from './adapter.js'
 import { stellarKeypair, stellarRpcUrl, stellarSignerAddress } from './client.js'
 import { getChainById, requireChain } from '../registry.js'
 
@@ -150,4 +150,57 @@ test('readVault refuses anything that is not a contract id before touching the n
   // exists for, and catching it here means it never becomes a confusing RPC error.
   await assert.rejects(() => a.readVault(PAYEE, {}), /not a Soroban contract id/)
   await assert.rejects(() => a.readVault('nonsense', {}), /not a Soroban contract id/)
+})
+
+/**
+ * A propagated error is not our error, and saying so is the whole point of the field.
+ *
+ * When our vault calls the token and the token fails, the vault re-raises the token's code
+ * as its own, so the message carries `Error(Contract, #13)` against the vault even though
+ * our frozen table in error.rs stops at 10. Reporting the bare number told a client to look
+ * up a code we do not define. The message below is the real one, captured from an owner_pay
+ * to an account with no USDC trustline on stellar:testnet.
+ */
+test('an error raised by the token is attributed to the token, not to us', () => {
+  const VAULT = 'CAIL6ECRAB5FUURQ54R7OTZPXRRCDO2S353YT6N6UZUWIBDG2ZOEB4UI'
+  const SAC = 'CBIELTK6YBZJU5UP2WWQEUCYKLPU6AUNZ2BQ4WWFEIE3USCIHMXQDAMA'
+  const real =
+    'HostError: Error(Contract, #13)\n\nEvent log (newest first):\n' +
+    `   0: [Diagnostic Event] contract:${VAULT}, topics:[error, Error(Contract, #13)], data:"escalating error to VM trap from failed host function call: call"\n` +
+    `   1: [Diagnostic Event] contract:${VAULT}, topics:[error, Error(Contract, #13)], data:["contract call failed", transfer, []]\n` +
+    `   2: [Failed Diagnostic Event (not emitted)] contract:${SAC}, topics:[error, Error(Contract, #13)], data:["trustline entry is missing for account", GDBRJKD5EA62OUWHI6S66BJTVYUTJSAYPQWZDMQTYICUKC5TLCST6TXS]\n`
+
+  const e = errorIn(real, VAULT)
+  assert.ok(e)
+  assert.equal(e.code, 13)
+  // The log runs NEWEST FIRST, so the origin is the LAST matching line. Taking the first
+  // would name the vault, which is exactly the wrong answer.
+  assert.equal(e.from, SAC, 'the deepest frame is the one that knows what the code means')
+  assert.equal(e.ours, false, '13 is not in our frozen table and must not read as if it were')
+})
+
+test('an error our own contract raised is attributed to us', () => {
+  const VAULT = 'CAIL6ECRAB5FUURQ54R7OTZPXRRCDO2S353YT6N6UZUWIBDG2ZOEB4UI'
+  const mine =
+    'HostError: Error(Contract, #3)\n\nEvent log (newest first):\n' +
+    `   0: [Diagnostic Event] contract:${VAULT}, topics:[error, Error(Contract, #3)], data:"payee not allowed"\n`
+  const e = errorIn(mine, VAULT)
+  assert.ok(e)
+  assert.equal(e.code, 3)
+  assert.equal(e.from, VAULT)
+  assert.equal(e.ours, true)
+})
+
+test('a bare code with no event log is assumed ours rather than silently dropped', () => {
+  // Fail toward saying something. An unattributed code from a call we made is far more
+  // likely to be ours than not, and a client can still see there is no `contractErrorFrom`.
+  const e = errorIn('HostError: Error(Contract, #5)', 'CAIL6ECRAB5FUURQ54R7OTZPXRRCDO2S353YT6N6UZUWIBDG2ZOEB4UI')
+  assert.ok(e)
+  assert.equal(e.code, 5)
+  assert.equal(e.from, undefined)
+  assert.equal(e.ours, true)
+})
+
+test('a message with no contract error at all yields nothing', () => {
+  assert.equal(errorIn('HostError: Error(Storage, MissingValue)', 'CAIL6ECRAB5FUURQ54R7OTZPXRRCDO2S353YT6N6UZUWIBDG2ZOEB4UI'), undefined)
 })

@@ -79,8 +79,16 @@ export type CallOutcome =
       args: unknown[]
       network: string
       reason: string
-      /** The code from the frozen table in error.rs, when it could be read. */
+      /** The numeric code. Only OURS when `contractErrorIsOurs` is true; see errorIn(). */
       contractErrorCode?: number
+      /** The contract that actually raised it, which is not always the one we called. */
+      contractErrorFrom?: string
+      /**
+       * True when the code can be looked up in our frozen table in error.rs. False means it
+       * came from the token or another callee and propagated outward, so our table does not
+       * define it and a client must not read it as if it did.
+       */
+      contractErrorIsOurs?: boolean
     }
   /** In the ledger and successful. */
   | {
@@ -126,9 +134,44 @@ export type VaultState = {
 }
 
 /** The contract error code out of a simulation error string, when it names one. */
-function errorCodeIn(message: string): number | undefined {
+/**
+ * The contract error code, AND which contract actually raised it.
+ *
+ * The code alone is not enough, and reporting it alone was wrong. A Soroban error propagates
+ * outward: when our vault calls the token and the token fails, the vault re-raises the
+ * token's code as its own, so `Error(Contract, #13)` appears against the vault in the
+ * message even though our frozen table in error.rs stops at 10. A client that looked up 13
+ * in our documented table would find nothing and conclude we return garbage.
+ *
+ * Real example, an owner_pay to an account with no USDC trustline:
+ *
+ *   0: contract:CAIL6ECR...(the vault)  error, Error(Contract, #13)  "escalating error to VM trap"
+ *   1: contract:CAIL6ECR...(the vault)  error, Error(Contract, #13)  "contract call failed", transfer
+ *   2: contract:CBIELTK6...(the SAC)    error, Error(Contract, #13)  "trustline entry is missing"
+ *
+ * The event log runs newest first, so the ORIGIN is the last matching line, not the first.
+ * That is the one that says what the code means.
+ */
+export function errorIn(message: string, calledContract: string): { code: number; from?: string; ours: boolean } | undefined {
   const m = /Error\(Contract, #(\d+)\)/.exec(message)
-  return m ? Number(m[1]) : undefined
+  if (!m) return undefined
+  const code = Number(m[1])
+  // Every diagnostic line that carries an error, in log order. The deepest frame is last.
+  const raisers = [...message.matchAll(/contract:(C[A-Z2-7]{55}),\s*topics:\[error,\s*Error\(Contract, #(\d+)\)/g)]
+    .filter((r) => Number(r[2]) === code)
+    .map((r) => r[1])
+  const from = raisers.length ? raisers[raisers.length - 1] : undefined
+  return { code, from, ours: from === undefined ? true : from === calledContract }
+}
+
+/** Spread into a result, so the three fields cannot drift apart at a call site. */
+function errorFields(e: ReturnType<typeof errorIn>): Record<string, unknown> {
+  if (!e) return {}
+  return {
+    contractErrorCode: e.code,
+    ...(e.from ? { contractErrorFrom: e.from } : {}),
+    contractErrorIsOurs: e.ours,
+  }
 }
 
 /**
@@ -223,7 +266,7 @@ export function createStellarAdapter(chain: ChainDescriptor) {
         outcome: 'refused',
         ...shape,
         reason: `the contract refused it before it could be submitted: ${sim.error}`,
-        ...(errorCodeIn(sim.error) !== undefined ? { contractErrorCode: errorCodeIn(sim.error) } : {}),
+        ...errorFields(errorIn(sim.error, vault)),
       }
     }
     // An archived entry is not an error, it is a restore preamble, and submitting anyway

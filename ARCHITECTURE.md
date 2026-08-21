@@ -129,7 +129,7 @@ put them at their canonical cross-chain addresses. What is ours is the identity 
 
 - **Mainnet agent #0** (`eip155:4663`) - the registry's **first mint**. Mint tx:
   [`0x602ce85a…`](https://robinhoodchain.blockscout.com/tx/0x602ce85ad044836b39918311a3031dcd689e4be0d23aed9ed0ac9227d46ec79e)
-  in block 34618012, owner `0xd305607510E0Db2c95807173c7A05BEA53c1ed36`, tokenURI
+  in block 34618052, owner `0xd305607510E0Db2c95807173c7A05BEA53c1ed36`, tokenURI
   [`agent-card.json`](https://a-identity.xyz/.well-known/agent-card.json) - so the card and the
   token point at each other. Identity registry
   [`0x8004a169…`](https://robinhoodchain.blockscout.com/address/0x8004a169fb4a3325136eb29fa0ceb6d2e539a432),
@@ -165,7 +165,7 @@ put them at their canonical cross-chain addresses. What is ours is the identity 
   `/mcp` JSON-RPC for agents. Durable state via Postgres (`DATABASE_URL`), JSON-file fallback for dev.
 - **Auth** - Sign-In with Ethereum (wallet) + email magic link (Resend) are *verified*; a plain guest
   session is read-only. Agent ownership is bound to a verified identity.
-- **Tests / CI** - `node:test` unit suite: **801 tests across 63 colocated `*.test.ts` files**
+- **Tests / CI** - `node:test` unit suite: **805 tests across 63 colocated `*.test.ts` files**
   (as of Aug 2026; `npm test` in `mcp/`) + a full E2E (`mcp/e2e.mjs`) of about **67 checks** that
   adapts to signer presence: live reads always run, and the on-chain write checks (x402, ERC-8183
   escrow, Gateway, **Nanopayments settle**, **CCTP burn-and-mint**) activate with a funded

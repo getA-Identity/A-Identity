@@ -293,6 +293,27 @@ export const PROVENANCE: ChainProvenance[] = [
       },
       {
         kind: 'settlement',
+        label: 'The owner freezes the vault, and the agent stops',
+        txHash: 'fd0fb958923c5e5e70bedae6451cc9a492b250d3cec3750313814b7e4ccdf117',
+        onChain: 'stellar-testnet',
+        note: 'The kill switch, exercised rather than described. With the vault frozen the operator\'s next payment was refused with error #1, Frozen. That refusal has no hash of its own, for the reason every Soroban refusal here has none: the contract answers during simulation and nothing is submitted.',
+      },
+      {
+        kind: 'settlement',
+        label: 'The owner overrides: a payment past the freeze AND past the allowlist',
+        txHash: 'f05c2f5be029d7403c6241c85f894160fe83f5866f1993de6ba1c3be7911b3eb',
+        onChain: 'stellar-testnet',
+        note: 'owner_pay to an account that is NOT on the allowlist while the vault is frozen. It settles, because the human path is meant to work exactly when the agent path does not. It still counted against the daily cap, which is the Solidity original\'s behaviour ported deliberately: the override bypasses the gates, not the budget.',
+      },
+      {
+        kind: 'settlement',
+        label: 'The owner unfreezes, and the agent spends again',
+        txHash: 'e92fcd5ff1c02b812419891da8a8c915d1d67e5f6d97d1d4da12f516bb227115',
+        onChain: 'stellar-testnet',
+        note: 'The other half of a kill switch is that it turns back off. A freeze you cannot lift is a loss, not a control.',
+      },
+      {
+        kind: 'settlement',
         label: 'The same purchase through the on-chain policy',
         txHash: 'fab5c864939da4165c21384afb24d690662c58ec17d46e36f7bc35ddf60b321f',
         onChain: 'stellar-testnet',
