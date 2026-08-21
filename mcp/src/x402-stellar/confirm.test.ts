@@ -209,25 +209,43 @@ test('a hash the RPC has never seen is undecided, not refused', async () => {
  * it", which is a different claim from "it has not landed", and telling an operator to
  * keep waiting for something the RPC will never show again is a lie of omission.
  */
-test('beyond the retention window says so, instead of "it may still land"', async () => {
-  const r = await confirmStellarTransfer(
-    CHAIN,
-    'b'.repeat(64),
-    OURS,
-    deps({
-      ['b'.repeat(64)]: {
-        status: rpc.Api.GetTransactionStatus.NOT_FOUND,
-        oldestLedger: 4027488,
-        latestLedger: 4148482,
-      },
-    }),
-  )
-  assert.equal(r.confirmed, false)
-  if (!r.confirmed) {
-    assert.equal(r.code, 'beyond_retention')
-    assert.match(r.reason, /retains ledgers 4027488 to 4148482/)
-    assert.match(r.reason, /not absent from the chain/)
+/**
+ * beyond_retention is a COMPARISON, and the first version of this test did not make one.
+ * It asserted the code came back whenever oldestLedger was present, and oldestLedger is a
+ * mandatory field in the RPC response, so every miss was reported as "older than we can
+ * see" including a transaction broadcast a second ago. That tells an operator to stop
+ * waiting for a payment that is simply still in flight.
+ */
+test('beyond the retention window says so, but only when we can place the transaction outside it', async () => {
+  const window = {
+    status: rpc.Api.GetTransactionStatus.NOT_FOUND,
+    oldestLedger: 4027488,
+    latestLedger: 4148482,
   }
+  // Known to have been in a ledger the RPC no longer holds. Decided: it is gone from view.
+  const gone = await confirmStellarTransfer(CHAIN, 'b'.repeat(64), OURS, {
+    ...deps({ ['b'.repeat(64)]: window }),
+    knownLedger: 4000000,
+  })
+  assert.equal(gone.confirmed, false)
+  if (!gone.confirmed) {
+    assert.equal(gone.code, 'beyond_retention')
+    assert.match(gone.reason, /retains ledgers 4027488 to 4148482/)
+    assert.match(gone.reason, /not absent from the chain/)
+  }
+
+  // Same window, no ledger to place it in. Still open, so still not_found.
+  const unknown = await confirmStellarTransfer(CHAIN, 'b'.repeat(64), OURS, deps({ ['b'.repeat(64)]: window }))
+  assert.equal(unknown.confirmed, false)
+  if (!unknown.confirmed) assert.equal(unknown.code, 'not_found', 'without a ledger to compare, the question is open')
+
+  // Inside the window. Never beyond_retention, whatever the fields say.
+  const recent = await confirmStellarTransfer(CHAIN, 'b'.repeat(64), OURS, {
+    ...deps({ ['b'.repeat(64)]: window }),
+    knownLedger: 4148480,
+  })
+  assert.equal(recent.confirmed, false)
+  if (!recent.confirmed) assert.equal(recent.code, 'not_found')
 })
 
 test('an unreachable RPC is its own outcome, never a silent refusal', async () => {
@@ -294,7 +312,9 @@ test('an envelope we cannot read fails closed rather than skipping the binding',
  * The two answers must not share a code, because one is a verdict about the buyer and the
  * other is a verdict about our infrastructure.
  */
-test('an RPC that sends no event data says so rather than refusing the payment', async () => {
+test('an absent events field is handled the same way as an empty one', async () => {
+  // Kept because a hand-rolled or future client could omit it even though the SDK does not,
+  // and because the two must not diverge: both mean "look at the meta instead".
   const r = await confirmStellarTransfer(CHAIN, HASH, OURS, {
     server: serverFor({
       [HASH]: { status: rpc.Api.GetTransactionStatus.SUCCESS, ledger: 4148274, envelopeXdr: xdr.TransactionEnvelope.fromXDR(GASLESS_ENVELOPE, 'base64') },
@@ -304,16 +324,49 @@ test('an RPC that sends no event data says so rather than refusing the payment',
     sleep: async () => {},
   })
   assert.equal(r.confirmed, false)
-  if (!r.confirmed) {
-    assert.equal(r.code, 'no_event_data')
-    assert.notEqual(r.code, 'no_matching_transfer')
-    assert.match(r.reason, /our blindness, not a refusal/)
-  }
+  if (!r.confirmed) assert.equal(r.code, 'no_event_data')
 })
 
-test('an empty event list is still a real answer about the transaction', async () => {
-  // The other side of the same line. Events present and empty means we looked and there is
-  // nothing there, which IS a refusal, and it must not be softened into no_event_data.
+/**
+ * The other side of the line, and harder to state than it looks.
+ *
+ * The SDK builds `events` unconditionally from `raw.events?.contractEventsXdr ?? []`, so an
+ * RPC that omits the field and a transaction with no transfers BOTH arrive as an empty
+ * array. The only thing that separates them is `resultMetaXdr`, which is mandatory. So:
+ * empty array plus a meta that parses and holds no events is a real answer about the
+ * transaction, and must be a refusal rather than an admission of blindness.
+ */
+test('an empty event list plus readable meta is a real answer about the transaction', async () => {
+  const r = await confirmStellarTransfer(CHAIN, HASH, OURS, {
+    server: serverFor({
+      [HASH]: {
+        status: rpc.Api.GetTransactionStatus.SUCCESS,
+        ledger: 4148274,
+        envelopeXdr: xdr.TransactionEnvelope.fromXDR(GASLESS_ENVELOPE, 'base64'),
+        events: { contractEventsXdr: [] },
+        // A meta that parses as v4 and carries one operation with no events at all.
+        resultMetaXdr: {
+          switch: () => ({ name: 'transactionMetaV4' }),
+          v4: () => ({ operations: () => [{ events: () => [] }] }),
+        },
+      },
+    }),
+    timeoutMs: 50,
+    pollMs: 1,
+    sleep: async () => {},
+  })
+  assert.equal(r.confirmed, false)
+  if (!r.confirmed) assert.equal(r.code, 'no_matching_transfer')
+})
+
+/**
+ * And the reverse: the convenience field is empty and the meta is unreadable, so we have
+ * nothing to look at from either source. That is our blindness and it must not be recorded
+ * as a refusal. Note this is now the ONLY way to reach no_event_data, which is the point:
+ * the previous guard (`if (!tx.events)`) was unreachable in production, because the SDK
+ * never leaves that field undefined.
+ */
+test('no events from either source is our blindness, not a refusal', async () => {
   const r = await confirmStellarTransfer(CHAIN, HASH, OURS, {
     server: serverFor({
       [HASH]: {
@@ -328,5 +381,35 @@ test('an empty event list is still a real answer about the transaction', async (
     sleep: async () => {},
   })
   assert.equal(r.confirmed, false)
-  if (!r.confirmed) assert.equal(r.code, 'no_matching_transfer')
+  if (!r.confirmed) {
+    assert.equal(r.code, 'no_event_data')
+    assert.match(r.reason, /our blindness, not a refusal/)
+  }
+})
+
+/**
+ * The fallback doing its job: the RPC dropped the convenience field, and the transfer is
+ * still found, because resultMetaXdr cannot be dropped. Read off our real settlement
+ * 3da74634 rather than a hand-built shape.
+ */
+test('a transfer only present in the meta is still found', async () => {
+  const events = xdr.ContractEvent.fromXDR(GASLESS_TRANSFER, 'base64')
+  const r = await confirmStellarTransfer(CHAIN, HASH, OURS, {
+    server: serverFor({
+      [HASH]: {
+        status: rpc.Api.GetTransactionStatus.SUCCESS,
+        ledger: 4148274,
+        envelopeXdr: xdr.TransactionEnvelope.fromXDR(GASLESS_ENVELOPE, 'base64'),
+        events: { contractEventsXdr: [] },
+        resultMetaXdr: {
+          switch: () => ({ name: 'transactionMetaV4' }),
+          v4: () => ({ operations: () => [{ events: () => [events] }] }),
+        },
+      },
+    }),
+    timeoutMs: 50,
+    pollMs: 1,
+    sleep: async () => {},
+  })
+  assert.equal(r.confirmed, true, 'the meta is the source that cannot be omitted')
 })

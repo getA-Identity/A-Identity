@@ -277,7 +277,7 @@ export const CHAINS: readonly Chain[] = [
     "x402": true,
     "registries": {},
     "identityLive": false,
-    "settlementSymbol": null
+    "settlementSymbol": "USDC"
   },
   {
     "id": "base",

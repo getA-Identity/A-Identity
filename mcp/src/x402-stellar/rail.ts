@@ -41,8 +41,13 @@
  * claim we cannot price it. If XLM approaches $0.4353 this decision gets revisited rather
  * than discovered.
  *
- * **No minimum value floor.** The floor on the other rails exists so a settlement covers
- * the gas it costs. With no fee to cover, a floor would only price out small payments.
+ * **A minimum value floor, and a smaller one than the EVM rails carry.** This paragraph
+ * used to say there was none, on the reasoning that a floor exists to cover gas and there is
+ * no fee to cover here. Both halves were wrong. There IS a fee, we simply absorb it, as the
+ * paragraph above now says; and a floor is configured, enforced, and published. It defaults
+ * to 0.0001 USD, refuses with `below_minimum`, and appears in the facilitator's /supported
+ * body as minAmountRequired. What is true is that it sits far below the cheapest thing we
+ * sell rather than at the settlement cost, which is a decision about dust and not about gas.
  *
  * ## What is shared
  *
@@ -444,11 +449,13 @@ export function stellarRailChallenge(
         // vault at all. Published in the challenge rather than left as private knowledge.
         alsoAccepted: {
           scheme: 'settled',
-          when: 'You already paid, typically by calling pay() on an on-chain spend policy that gated the payment before it existed.',
-          payload: '{txHash, from} where from is the account or contract the transfer came from',
+          when: 'You already paid by calling pay() on an on-chain spend policy that gated the payment before it existed.',
+          payload: '{txHash, from} where from is the CONTRACT the transfer came from',
+          contractPayersOnly:
+            'from must be a Soroban contract id. An account can sign an authorization entry and should: that path costs you no network fee and binds to this exact purchase. This one exists only for agents whose spending a contract already bounds, because such a contract cannot sign.',
           youPayTheFee: true,
           binding:
-            'The transaction hash, not an authorization nonce. We can prove the payment happened and that nobody has redeemed it here before, but not that it was made for this particular purchase rather than another of the same price. That is why it is the second shape and not the default.',
+            'The transaction hash, not an authorization nonce. We can prove the payment happened and that nobody has redeemed it here before. We cannot prove it was made for this particular purchase rather than another of the same price, and we cannot prove you are the party that made it: a landed transaction is public, so present your hash promptly. That is why this is the second shape and not the default.',
         },
       },
     },
@@ -472,7 +479,22 @@ export type StellarRailServeDeps = StellarSettleDeps & {
  */
 function stellarHandlers(
   status: StellarRailStatus,
+  /**
+   * Who ACTUALLY broadcast the settlement that just paid for this call.
+   *
+   * Passed in rather than read off the status, which is the fix: the first version derived
+   * this sentence from the CONFIGURED broadcaster, so a payment made through the on-chain
+   * vault (where the agent broadcast it and paid the fee itself) was answered with "we
+   * assemble and pay the network fee; the buyer pays none". That is a false statement about
+   * a transaction the buyer can look up, in the response to that very transaction.
+   */
+  broadcaster: Broadcaster,
 ): Record<RailToolName, (input: StellarRailToolInput) => Promise<unknown>> {
+  const FACILITATOR: Record<Broadcaster, string> = {
+    self: 'first-party (we assembled it and paid the network fee; you paid none)',
+    oz: 'OpenZeppelin Channels broadcast it; we confirmed the transfer ourselves',
+    buyer: 'you broadcast it and paid its network fee; we confirmed the transfer ourselves',
+  }
   const meta = <T extends Record<string, unknown>>(result: T) => ({
     ...result,
     _meta: {
@@ -481,10 +503,7 @@ function stellarHandlers(
         network: status.network,
         asset: status.token?.address,
         assetSymbol: status.token?.symbol,
-        facilitator:
-          status.broadcaster === 'self'
-            ? 'first-party (we assemble and pay the network fee; the buyer pays none)'
-            : 'OpenZeppelin Channels broadcast it; we confirmed the transfer ourselves',
+        facilitator: FACILITATOR[broadcaster],
       },
     },
   })
@@ -651,7 +670,8 @@ export async function stellarRailServeToolOn(
     }
   }
 
-  const handlers = deps.handlers ?? stellarHandlers(status)
+  // Derived from the settlement that happened, never from configuration.
+  const handlers = deps.handlers ?? stellarHandlers(status, settled.broadcaster)
   try {
     const body = await handlers[tool](input)
     return { httpStatus: 200, body: { ...(body as Record<string, unknown>), settlement: settled } }
@@ -752,7 +772,13 @@ export async function stellarRailProof(
     },
     recent: rows.slice(-25).reverse(),
     note:
-      'Every row here was confirmed by our own read of the SEP-41 transfer event, matched to the ' +
-      'authorization nonce, whoever broadcast it. byBroadcaster says who actually moved each one.',
+      'Rows counted as settled were confirmed by our own read of the SEP-41 transfer event, ' +
+      'whoever broadcast it. HOW each was bound differs and the difference matters: a row with ' +
+      'broadcaster self or oz was matched to the buyer\'s authorization nonce, so it can only ' +
+      'have paid for this purchase. A row with broadcaster buyer arrived on the settled scheme ' +
+      'and is bound to the transaction hash alone, which proves the payment happened and was ' +
+      'not redeemed here before, not that it was made for this purchase rather than another of ' +
+      'the same price. `recent` also carries reverted and ambiguous rows, which were NOT ' +
+      'confirmed and are not counted in totalSettlements; read outcome, not the array length.',
   }
 }

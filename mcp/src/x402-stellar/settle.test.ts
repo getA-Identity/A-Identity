@@ -508,7 +508,51 @@ test('the replay key is written only after the money is confirmed', async () => 
     chain: CHAIN, token: TOKEN, requirements: REQ, payload: payload(), limits: LIMITS,
     deps: settleDeps({ confirm: confirmed(), persistSpent: async (k: string) => { written.push(k) } }),
   })
-  assert.deepEqual(written, [stellarPaymentKey('stellar:testnet', SAC, BUYER, NONCE)])
+  // TWO keys, and the second is the fix for a real hole found by an adversarial review and
+  // then reproduced live: the authorization namespace and the hash namespace were disjoint,
+  // so a transaction we broadcast and were paid for could be re-presented on the `settled`
+  // scheme and sell the tool again. Burning both is what makes one payment one sale.
+  assert.deepEqual(written.sort(), [
+    stellarPaymentKey('stellar:testnet', SAC, BUYER, NONCE),
+    stellarTxKey('stellar:testnet', TX),
+  ].sort())
+})
+
+/**
+ * The hole itself, as a test. Settle through soroban-auth, then try the same hash on the
+ * settled scheme against the spent set the first path actually wrote.
+ */
+test('a payment we already settled cannot be re-sold through the settled scheme', async () => {
+  const spent: string[] = []
+  const VAULT_ISH = 'CAIL6ECRAB5FUURQ54R7OTZPXRRCDO2S353YT6N6UZUWIBDG2ZOEB4UI'
+  await settleStellarPayment({
+    chain: CHAIN, token: TOKEN, requirements: REQ, payload: payload(), limits: LIMITS,
+    deps: settleDeps({ confirm: confirmed(), persistSpent: async (k: string) => { spent.push(k) } }),
+  })
+  const again = await redeemStellarPayment({
+    chain: CHAIN, token: TOKEN, requirements: REQ, txHash: TX, from: VAULT_ISH,
+    deps: baseDeps({ loadSpent: async () => spent, confirm: confirmed() }),
+  })
+  assert.equal(again.success, false, 'one payment, one sale')
+  if (!again.success) assert.equal(again.code, 'already_redeemed')
+})
+
+/**
+ * The restriction that closes the hole at its source rather than after the fact. A plain
+ * account can sign an authorization entry, so it never needs the weaker binding; letting one
+ * in is what made a gasless purchase re-presentable at all.
+ */
+test('the settled scheme refuses an account payer and points at the better path', async () => {
+  const r = await redeemStellarPayment({
+    chain: CHAIN, token: TOKEN, requirements: REQ, txHash: TX, from: BUYER,
+    deps: redeemDeps(),
+  })
+  assert.equal(r.success, false)
+  if (!r.success) {
+    assert.equal(r.code, 'malformed_payload')
+    assert.match(r.errorReason, /not a Soroban contract id/)
+    assert.match(r.errorReason, /send authEntryXdr instead/)
+  }
 })
 
 test('a failed replay-guard write is loud but does not undo a completed sale', async () => {
@@ -602,13 +646,42 @@ test('a hash that is not a Stellar hash is refused before any network call', asy
  * see it: nothing was broadcast by us here, so there is no blindness of ours to report.
  */
 test('a hash that does not carry this payment buys nothing', async () => {
-  for (const code of ['no_matching_transfer', 'not_found', 'wrong_authorization']) {
+  // A VERDICT about the hash: we looked and it is not what was claimed.
+  for (const code of ['no_matching_transfer', 'wrong_authorization']) {
     const r = await redeemStellarPayment({
       chain: CHAIN, token: TOKEN, requirements: REQ, txHash: TX, from: VAULT,
       deps: redeemDeps({ confirm: (async () => ({ confirmed: false, txHash: TX, code, reason: code })) as never }),
     })
     assert.equal(r.success, false)
     if (!r.success) assert.equal(r.code, 'payment_not_found')
+  }
+})
+
+/**
+ * And the codes that are NOT a verdict. The first version folded these into
+ * payment_not_found, which rail.ts treats as retryable and answers with a fresh 402: an
+ * agent whose vault had already paid would be told the payment does not exist and, following
+ * the spec, would pay again. Our RPC being unreachable, charged to the buyer.
+ */
+test('a hash we merely cannot see is unconfirmed, and the buyer is told to come back', async () => {
+  for (const code of ['unreachable', 'no_event_data', 'not_found', 'beyond_retention']) {
+    const rows: Record<string, unknown>[] = []
+    const r = await redeemStellarPayment({
+      chain: CHAIN, token: TOKEN, requirements: REQ, txHash: TX, from: VAULT,
+      deps: redeemDeps({
+        confirm: (async () => ({ confirmed: false, txHash: TX, code, reason: `${code}.` })) as never,
+        persist: async (rec) => { rows.push(rec as unknown as Record<string, unknown>) },
+      }),
+    })
+    assert.equal(r.success, false)
+    if (!r.success) {
+      assert.equal(r.code, 'unconfirmed', `${code} must not read as a refusal`)
+      assert.equal(r.ambiguous, true)
+      assert.match(r.errorReason, /not disputed/)
+    }
+    // And it is written down, so an operator can find the orphaned payment later.
+    assert.equal(rows[0]?.outcome, 'ambiguous', `${code} must leave a record`)
+    assert.equal(rows[0]?.broadcaster, 'buyer')
   }
 })
 
@@ -622,8 +695,13 @@ test('a transaction the buyer sent that reverted is named as such', async () => 
 })
 
 /**
- * The `from` the buyer declares is checked against the ledger, not trusted. This is what
- * stops one agent redeeming a payment another agent's vault made.
+ * The `from` the buyer declares is checked against the ledger, not trusted, so a hash that
+ * carries no transfer from that address buys nothing.
+ *
+ * It is NOT an entitlement check, and the first version of this comment said it was. `from`
+ * is buyer-declared and every field of a landed transaction is public, so whoever presents
+ * the hash first is served. What bounds this path is one-hash-one-redemption plus the
+ * contract-payer restriction, not the identity of the caller. See WEAKER_BINDING.
  */
 test('the declared payer is passed to the confirmation, not taken on trust', async () => {
   let sawFrom = ''

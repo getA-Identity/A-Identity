@@ -207,9 +207,13 @@ const server = http.createServer(async (req, res) => {
   // authorization is a signed payment, not a session. Both are fail-closed (501) when the
   // rail is unconfigured, and /api/facilitator/settle is additionally payTo-allowlisted
   // because we pay the gas there.
-  // /api/x402/stellar/* is exempt on identical terms: a signed Soroban authorization
-  // entry is the credential, the rail answers 501 when unconfigured, and its settle
-  // endpoint is payTo-allowlisted because we pay the network fee.
+  // /api/x402/stellar/* is exempt on similar but not identical terms, and the difference is
+  // worth stating rather than glossing. On the soroban-auth scheme the credential is a signed
+  // authorization entry, exactly like the EVM rails. On the `settled` scheme the credential is
+  // a transaction hash the buyer already paid for, which is public once it lands: whoever
+  // presents it first is served, and that path is restricted to CONTRACT payers so it is only
+  // reachable by agents whose spending a contract already bounded. Both are fail-closed (501)
+  // when the rail is unconfigured, and settle is payTo-allowlisted because we pay the fee.
   const isMutation =
     req.method === 'POST' && url.pathname.startsWith('/api/') && !url.pathname.startsWith('/api/auth/') &&
     !url.pathname.startsWith('/api/celo/tools/') &&

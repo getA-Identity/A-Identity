@@ -103,7 +103,13 @@ export function toPublicChain(c: ChainDescriptor): PublicChain {
       ...(c.contracts.validationRegistry ? { validation: c.contracts.validationRegistry } : {}),
     },
     identityLive: Boolean(c.contracts.identityRegistry),
-    settlementSymbol: (c.settlementTokens ?? []).find((t) => t.authorization === 'eip3009')?.symbol ?? null,
+    // Any authorization scheme we can actually settle with, not just EIP-3009. Filtering on
+    // that one string was written when every rail was EVM, and it made Stellar's SEP-41 token
+    // invisible: the field reads null, which its own docstring defines as "no settlement rail
+    // here", on a chain that settles. 'none' stays excluded because a token we cannot get a
+    // signed authorization for is not a rail.
+    settlementSymbol:
+      (c.settlementTokens ?? []).find((t) => t.authorization !== 'none')?.symbol ?? null,
   }
 }
 

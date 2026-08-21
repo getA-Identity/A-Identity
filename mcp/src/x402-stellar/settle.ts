@@ -56,7 +56,8 @@ import { Address, Keypair, Operation, TransactionBuilder, hash, rpc, scValToNati
 import type { ChainDescriptor, SettlementToken } from '../chains/types.js'
 import { networkPassphrase, sorobanServer, stellarFeePayer, feePayerEnvVar } from '../chains/stellar/client.js'
 import { txUrl } from '../chains/explorer.js'
-import { loadSpentPayments, persistSpentPayment, persistStellarSettlement } from '../storage.js'
+import { isContractId } from '../chains/stellar/strkey.js'
+import { loadSpentPayments, loadStellarSettlements, persistSpentPayment, persistStellarSettlement } from '../storage.js'
 import type { StellarSettlementRecord } from '../storage.js'
 import { confirmStellarTransfer } from './confirm.js'
 import type { ConfirmDeps } from './confirm.js'
@@ -104,15 +105,24 @@ export type StellarLimits = {
  * audits find criticals, and we were not going to add that class in the month we go to
  * mainnet unaudited.
  *
- * So `settled` exists for exactly that case. The agent calls vault.pay(payTo, amount), the
- * policy gates run on chain (freeze, session expiry, allowlist, ceiling, daily cap), and
- * the resulting transaction hash IS the payment. We confirm it the same way we confirm our
- * own broadcasts: by reading the transfer event ourselves.
+ * So `settled` exists for exactly that case, and ONLY that case: the payer must be a
+ * contract. The agent calls vault.pay(payTo, amount), the policy gates run on chain (freeze,
+ * session expiry, allowlist, ceiling, daily cap), and the resulting transaction hash IS the
+ * payment. We confirm it the same way we confirm our own broadcasts: by reading the transfer
+ * event ourselves.
  *
- * The trade is real and is not hidden. On this scheme the buyer pays the network fee, and
- * the binding is the hash rather than an authorization nonce (see WEAKER_BINDING in
- * confirm.ts). What it buys is the thing the other scheme cannot do: a payment that was
- * already refused or allowed by a contract before it existed.
+ * The contract-only restriction is a fix, not a design flourish. The first version said
+ * "typically through the on-chain spend policy" and accepted any payer, which meant a buyer
+ * could take a gasless purchase WE had already broadcast, served and been paid for, re-present
+ * its hash here, and be served the tool a second time for free. Proven live on
+ * stellar:testnet against e1b0097a: HTTP 200, a second revenue row, broadcaster recorded as
+ * 'buyer' and feeStroops 0 for a transaction we broadcast and paid 33,153 stroops for. A
+ * plain account can always sign an authorization entry and therefore never needs the weaker
+ * path; a contract cannot, and that is the entire justification for the path existing.
+ *
+ * The trade is still real and still not hidden. On this scheme the buyer pays the network
+ * fee, and the binding is the hash rather than an authorization nonce (see WEAKER_BINDING in
+ * confirm.ts, which also names who can appropriate such a payment and why we accept that).
  */
 export type PaymentScheme = 'soroban-auth' | 'settled'
 
@@ -216,6 +226,15 @@ export function stellarPaymentKey(caip2: string, asset: string, from: string, no
 
 const msg = (e: unknown) => (e instanceof Error ? e.message : String(e))
 
+/**
+ * Confirmation codes that describe OUR inability to see, not a verdict about the payment.
+ *
+ * Named once and shared, because both settle paths have to treat them the same way and the
+ * redeem path originally did not: it folded them into a refusal, which tells a buyer whose
+ * money already moved that it did not.
+ */
+const BLIND_CODES = new Set(['unreachable', 'no_event_data', 'not_found', 'beyond_retention'])
+
 /** The replay key for a hash-bound payment. One hash, one redemption, forever. */
 export function stellarTxKey(caip2: string, txHash: string): string {
   return `${caip2}/settled/${txHash}`.toLowerCase()
@@ -267,6 +286,19 @@ export async function redeemStellarPayment(input: {
   if (!/^[0-9a-f]{64}$/.test(txHash)) {
     return { success: false, code: 'malformed_payload', errorReason: 'txHash must be 64 lowercase hex characters, with no 0x prefix' }
   }
+  // Contract payers only. A G... account can sign an authorization entry and therefore has no
+  // need of the weaker binding; letting one in here is what allowed an already-sold gasless
+  // purchase to be re-presented and served again. See the module docstring for the live proof.
+  if (!isContractId(from)) {
+    return {
+      success: false,
+      code: 'malformed_payload',
+      errorReason:
+        `the settled scheme is for payments made by a contract, and ${from || '(nothing)'} is not a ` +
+        `Soroban contract id. If you are paying from an account, sign an authorization entry and ` +
+        `send authEntryXdr instead: it costs you no network fee and binds to this exact purchase.`,
+    }
+  }
   let required: bigint
   try {
     required = BigInt(requirements.maxAmountRequired)
@@ -288,6 +320,30 @@ export async function redeemStellarPayment(input: {
     return { success: false, code: 'in_flight', errorReason: 'this transaction is already being redeemed' }
   }
   inFlight.add(key)
+  const row = (outcome: StellarSettlementRecord['outcome'], ledger?: number): StellarSettlementRecord => ({
+    ts: now().toISOString(),
+    outcome,
+    tool: deps.meta?.tool ?? 'unknown',
+    resource: requirements.resource,
+    network: chain.caip2,
+    asset: token.address,
+    assetSymbol: token.symbol,
+    assetDecimals: token.decimals,
+    value: required.toString(),
+    amountUsd: deps.meta?.baseUsd ?? 0,
+    baseUsd: deps.meta?.baseUsd ?? 0,
+    payer: from,
+    payTo: requirements.payTo,
+    tx: txHash,
+    ...(ledger !== undefined ? { ledger } : {}),
+    explorerUrl: txUrl(chain, txHash) ?? undefined,
+    // The buyer broadcast this one and paid its fee. Recording 'self' would credit us with a
+    // cost the agent actually paid, in the field that exists to say who did.
+    broadcaster: 'buyer',
+    confirmedBy: 'soroban-rpc',
+    ...(deps.meta?.facilitatedFor ? { facilitatedFor: deps.meta.facilitatedFor } : {}),
+  })
+  const ambiguousRow = () => row('ambiguous')
   try {
     const confirmed = await confirm(
       chain,
@@ -296,40 +352,32 @@ export async function redeemStellarPayment(input: {
       { env, ...(deps.confirmDeps ?? {}) },
     )
     if (!confirmed.confirmed) {
+      // Three outcomes, not two. The first version collapsed everything except tx_failed into
+      // payment_not_found, which rail.ts then treats as retryable and answers with a fresh
+      // 402: an agent whose vault had ALREADY paid would be told the payment does not exist
+      // and, following the spec, would pay again. That is our RPC being unreachable charged
+      // to the buyer.
+      if (BLIND_CODES.has(confirmed.code)) {
+        await safePersist(persist, ambiguousRow())
+        return {
+          success: false,
+          code: 'unconfirmed',
+          ambiguous: true,
+          transaction: txHash,
+          errorReason:
+            `${confirmed.reason} Your payment is not disputed and nothing was marked spent: ` +
+            `present the same hash again once we can see the ledger.`,
+        }
+      }
       return {
         success: false,
-        // Nothing was broadcast by us, so an unconfirmed hash is the buyer's claim failing
-        // to check out, not our blindness about our own transaction. tx_failed keeps its
-        // own code because "you paid and it reverted" is worth saying separately.
         code: confirmed.code === 'tx_failed' ? 'settlement_failed' : 'payment_not_found',
         transaction: txHash,
         errorReason: confirmed.reason,
       }
     }
 
-    await safePersist(persist, {
-      ts: now().toISOString(),
-      outcome: 'settled',
-      tool: deps.meta?.tool ?? 'unknown',
-      resource: requirements.resource,
-      network: chain.caip2,
-      asset: token.address,
-      assetSymbol: token.symbol,
-      assetDecimals: token.decimals,
-      value: required.toString(),
-      amountUsd: deps.meta?.baseUsd ?? 0,
-      baseUsd: deps.meta?.baseUsd ?? 0,
-      payer: from,
-      payTo: requirements.payTo,
-      tx: txHash,
-      ledger: confirmed.ledger,
-      explorerUrl: txUrl(chain, txHash) ?? undefined,
-      // The buyer broadcast this one and paid its fee. Recording 'self' would credit us
-      // with a fee we did not pay, in the very field that exists to say who did.
-      broadcaster: 'buyer',
-      confirmedBy: 'soroban-rpc',
-      ...(deps.meta?.facilitatedFor ? { facilitatedFor: deps.meta.facilitatedFor } : {}),
-    })
+    await safePersist(persist, row('settled', confirmed.ledger))
     try {
       await (deps.persistSpent ?? persistSpentPayment)(key)
     } catch (e) {
@@ -743,6 +791,15 @@ export async function settleStellarPayment(input: {
         ? await broadcastViaOz(chain, auth, requirements, deps)
         : await broadcastOurselves(chain, auth, limits, deps)
     if (!broadcast.ok) {
+      if (broadcast.ambiguous) {
+        return {
+          success: false,
+          code: 'unconfirmed',
+          ambiguous: true,
+          ...(broadcast.txHash ? { transaction: broadcast.txHash } : {}),
+          errorReason: broadcast.reason,
+        }
+      }
       return { success: false, code: broadcast.code, errorReason: broadcast.reason }
     }
 
@@ -794,7 +851,14 @@ export async function settleStellarPayment(input: {
     // Only here. The money moved, we read it, and it carried our nonce.
     await safePersist(persist, { ...base, outcome: 'settled', ledger: confirmed.ledger })
     try {
-      await (deps.persistSpent ?? persistSpentPayment)(key)
+      const spend = deps.persistSpent ?? persistSpentPayment
+      await spend(key)
+      // BOTH namespaces, and the second one is the fix for a real hole. The two schemes key
+      // their replay guards differently on purpose (an authorization has a nonce, a hash does
+      // not), which made them disjoint: a transaction we broadcast here was unspent as far as
+      // the `settled` scheme was concerned, so the same payment could be sold twice. Burning
+      // the hash here is what makes one payment one sale, whichever door it comes back through.
+      await spend(stellarTxKey(chain.caip2, broadcast.txHash))
     } catch (e) {
       // The sale already happened and is recorded. A failed replay-guard write is loud
       // rather than fatal: turning a completed settlement into an error would be worse.
@@ -835,7 +899,15 @@ function resolveBroadcaster(chain: ChainDescriptor, env: NodeJS.ProcessEnv): Bro
 
 type BroadcastResult =
   | { ok: true; txHash: string; feeStroops?: bigint }
-  | { ok: false; code: StellarSettleCode; reason: string }
+  | {
+      ok: false
+      code: StellarSettleCode
+      reason: string
+      /** True when money may have moved and we cannot say. Never reported as a failure. */
+      ambiguous?: boolean
+      /** Present with `ambiguous`, so an operator has something to follow up. */
+      txHash?: string
+    }
 
 /**
  * The self path: we assemble, we pay the fee, the buyer pays nothing.
@@ -847,6 +919,29 @@ type BroadcastResult =
  * simulates fine, and fails on-chain because the authorization is gone (c51c4778 on
  * testnet, the proof of it).
  */
+/**
+ * One submission at a time per fee-payer account.
+ *
+ * Stellar transactions carry a sequence number that must increment by exactly one, and
+ * broadcastOurselves reads it fresh from the network on every settlement. Two settlements
+ * starting inside the same round trip therefore read the SAME sequence, and the second is
+ * rejected with tx_bad_seq: a paying buyer gets broadcast_failed because another buyer was
+ * quick. Serialising per account is the small correct fix; the alternative is a sequence
+ * cache that goes wrong in a much worse way when it drifts from the network.
+ *
+ * Keyed by account rather than by chain, so a deployment with a different fee payer per
+ * network does not needlessly serialise across them.
+ */
+const submitQueue = new Map<string, Promise<unknown>>()
+
+function serializePerAccount<T>(account: string, work: () => Promise<T>): Promise<T> {
+  const prior = submitQueue.get(account) ?? Promise.resolve()
+  const next = prior.catch(() => {}).then(work)
+  // Store a settled-either-way link so one failure does not poison the queue for everyone.
+  submitQueue.set(account, next.catch(() => {}))
+  return next
+}
+
 async function broadcastOurselves(
   chain: ChainDescriptor,
   auth: DecodedAuth,
@@ -870,6 +965,19 @@ async function broadcastOurselves(
     return { ok: false, code: 'rpc_error', reason: `could not build an RPC client: ${msg(e)}` }
   }
 
+  // Everything above is cheap and can run concurrently. Only the build-sign-send sequence
+  // touches the fee payer's sequence number, so only that is serialised.
+  return serializePerAccount(kp.publicKey(), () => buildSignAndSend(chain, auth, limits, deps, server, kp))
+}
+
+async function buildSignAndSend(
+  chain: ChainDescriptor,
+  auth: DecodedAuth,
+  limits: StellarLimits,
+  deps: StellarSettleDeps,
+  server: Pick<rpc.Server, 'getLatestLedger' | 'getAccount' | 'simulateTransaction' | 'sendTransaction'>,
+  kp: Keypair,
+): Promise<BroadcastResult> {
   const call = auth.entry.rootInvocation().function().contractFn()
   const func = xdr.HostFunction.hostFunctionTypeInvokeContract(
     new xdr.InvokeContractArgs({
@@ -881,6 +989,9 @@ async function broadcastOurselves(
 
   let tx
   try {
+    // Read INSIDE the serialised section. Reading it outside is the whole bug: two
+    // settlements would fetch the same sequence number and the second would be rejected as
+    // tx_bad_seq, which a paying buyer would see as broadcast_failed.
     const account = await server.getAccount(kp.publicKey())
     tx = new TransactionBuilder(account, { fee: '100', networkPassphrase: networkPassphrase(chain) })
       .addOperation(Operation.invokeHostFunction({ func, auth: [auth.entry] }))
@@ -912,7 +1023,11 @@ async function broadcastOurselves(
       reason: `this settlement would cost ${feeStroops} stroops, above this rail's ceiling of ${limits.maxFeeStroops}. Nothing was broadcast.`,
     }
   }
-  const spentToday = await (deps.feeSpentTodayStroops ?? (async () => 0n))()
+  // Was `async () => 0n`, which meant the daily budget could never be exceeded and the
+  // fee_budget_exhausted branch was unreachable in production while four tests and an env
+  // variable described it as a live guard. Now it reads the same durable log the proof page
+  // reads, so the number it compares against is the number we actually spent.
+  const spentToday = await (deps.feeSpentTodayStroops ?? (() => feeSpentOnDay(chain.caip2, (deps.now ?? (() => new Date()))())))()
   if (spentToday + feeStroops > limits.dailyFeeStroops) {
     return {
       ok: false,
@@ -925,11 +1040,33 @@ async function broadcastOurselves(
     prepared.sign(kp)
     const sent = await server.sendTransaction(prepared)
     if (sent.status === 'ERROR') {
+      // Decided: the network looked at it and said no, so nothing was submitted to consensus.
       return { ok: false, code: 'broadcast_failed', reason: `the network rejected the settlement: ${JSON.stringify(sent.errorResult ?? sent.status)}` }
     }
     return { ok: true, txHash: sent.hash, feeStroops }
   } catch (e) {
-    return { ok: false, code: 'broadcast_failed', reason: `could not broadcast the settlement: ${msg(e)}` }
+    // NOT decided. A throw here can mean the request never left, or that it arrived and the
+    // response did not come back, and we cannot tell those apart from this side. Reporting
+    // broadcast_failed would have the caller answer 502, telling a buyer their payment failed
+    // when the transaction may be in the ledger. We know the hash without the network's help,
+    // so hand it back and let confirmStellarTransfer decide by reading.
+    let txHash = ''
+    try {
+      txHash = prepared.hash().toString('hex')
+    } catch {
+      /* if even the local hash fails there is nothing to follow up, and the message says so */
+    }
+    return {
+      ok: false,
+      code: 'broadcast_failed',
+      ambiguous: Boolean(txHash),
+      txHash: txHash || undefined,
+      reason:
+        `the submission threw and we cannot tell whether it landed: ${msg(e)}. ` +
+        (txHash
+          ? `The transaction hash is ${txHash}; nothing has been marked spent, and it is safe to check that hash or retry.`
+          : 'No hash could be computed, so there is nothing to follow up.'),
+    }
   }
 }
 
@@ -1003,6 +1140,38 @@ async function defaultOzSubmit(
   const txHash = typeof body.transaction === 'string' ? body.transaction : typeof body.txHash === 'string' ? body.txHash : ''
   if (!txHash) return { ok: false, reason: `no transaction hash in the response: ${text.slice(0, 300)}` }
   return { ok: true, txHash }
+}
+
+/**
+ * What we have paid in network fees on this network today, in stroops.
+ *
+ * Summed from the durable settlement log rather than a counter, for the reason the EVM rail
+ * gives for the same choice: a counter and a log can disagree, and the log is the one a
+ * reviewer can check. Scoped by network, because a pubnet fee and a testnet fee are not
+ * comparable quantities and summing them would make the budget mean nothing.
+ *
+ * A read failure returns the budget as fully spent. That is the fail-closed direction: an
+ * unreadable log means we do not know what we have spent, and the safe answer to that is to
+ * stop broadcasting rather than to assume zero.
+ */
+async function feeSpentOnDay(caip2: string, at: Date): Promise<bigint> {
+  const day = at.toISOString().slice(0, 10)
+  try {
+    const rows = await loadStellarSettlements()
+    let total = 0n
+    for (const r of rows) {
+      if (r.network !== caip2 || !r.feeStroops || !r.ts.startsWith(day)) continue
+      try {
+        total += BigInt(r.feeStroops)
+      } catch {
+        /* a malformed row must not break the guard it feeds */
+      }
+    }
+    return total
+  } catch (e) {
+    console.error('[x402-stellar] could not read the fee log; treating the daily budget as spent:', msg(e))
+    return BigInt(Number.MAX_SAFE_INTEGER)
+  }
 }
 
 /** A durable-write failure must never turn a decided settlement into a crash. */

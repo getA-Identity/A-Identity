@@ -148,7 +148,12 @@ export function stellarSupported(env: NodeJS.ProcessEnv = process.env): Handled 
         // reads as a claim to be first unless the sentence is there.
         priorArt: {
           note: 'OpenZeppelin Channels is an existing Stellar x402 facilitator and predates this one. We run our own so our settlement does not depend on a third party, and Channels stays available here as a fallback broadcaster.',
-          fallbackUrl: ozFacilitatorUrl(getChainById('stellar') ?? CHAINS[0], env),
+          // Per network, because the endpoint differs per network. Hardcoding the pubnet
+          // chain here published the mainnet Channels URL to a rail that only runs on
+          // testnet, which is a working link to the wrong place: worse than no link.
+          fallbackUrl: Object.fromEntries(
+            stellarFacilitatorChains(env).map((c) => [c.caip2, ozFacilitatorUrl(c, env)]),
+          ),
         },
         confirmation:
           'Whoever broadcasts, settled means we read the transfer event ourselves and matched it to the authorization nonce. A broadcaster reporting success is an input to that check, never a substitute.',

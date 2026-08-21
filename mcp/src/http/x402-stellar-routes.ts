@@ -19,7 +19,10 @@
  * for a Stellar tool would be matched by a regex meant for the other rail.
  */
 import { getChainById } from '../chains/index.js'
+import { Keypair } from '@stellar/stellar-sdk'
+
 import { feePayerEnvVar, stellarSignerAddress } from '../chains/stellar/client.js'
+import { isSecretSeed } from '../chains/stellar/strkey.js'
 import { stellarFeePayer } from '../chains/stellar/client.js'
 import { stellarSettle, stellarSupported, stellarVerify } from '../x402-stellar/facilitator.js'
 import {
@@ -54,8 +57,21 @@ function broadcastReadiness(networkId: string): Record<string, unknown> {
   const feeVar = feePayerEnvVar(chain)
   const chainVar = chain.signerEnvVar ?? '(none)'
   if (kp) {
-    const dedicated = Boolean(process.env[feeVar]?.trim())
-    return { configured: true, account: kp.publicKey(), from: dedicated ? feeVar : chainVar }
+    // Which variable the key CAME FROM, decided by comparing the resolved account against
+    // the dedicated variable's own key. Testing the variable for non-emptiness reported
+    // `from: X402_STELLAR_..._FEE_PAYER` when that variable held a malformed value and the
+    // chain signer was the one actually doing the signing, which sends an operator to fix a
+    // variable that is not in use.
+    const dedicated = process.env[feeVar]?.trim()
+    const fromDedicated = Boolean(dedicated && isSecretSeed(dedicated) && Keypair.fromSecret(dedicated).publicKey() === kp.publicKey())
+    return {
+      configured: true,
+      account: kp.publicKey(),
+      from: fromDedicated ? feeVar : chainVar,
+      ...(dedicated && !fromDedicated
+        ? { note: `${feeVar} is set but was not usable, so ${chainVar} is signing. Fix or unset it.` }
+        : {}),
+    }
   }
   const present = Boolean((process.env[feeVar] ?? (chain.signerEnvVar ? process.env[chain.signerEnvVar] : '') ?? '').trim())
   return {

@@ -1,7 +1,7 @@
 # A-Identity
 
 [![CI](https://github.com/getA-Identity/A-Identity/actions/workflows/ci.yml/badge.svg)](https://github.com/getA-Identity/A-Identity/actions/workflows/ci.yml)
-[![Tests](https://img.shields.io/badge/tests-789%20unit%20%2B%20E2E-brightgreen)](mcp/README.md#develop)
+[![Tests](https://img.shields.io/badge/tests-801%20unit%20%2B%20E2E-brightgreen)](mcp/README.md#develop)
 [![npm: marketplace-sdk](https://img.shields.io/npm/v/%40a-identity%2Fmarketplace-sdk?label=marketplace-sdk)](https://www.npmjs.com/package/@a-identity/marketplace-sdk)
 [![npm: trust-guard](https://img.shields.io/npm/v/%40a-identity%2Ftrust-guard?label=trust-guard)](https://www.npmjs.com/package/@a-identity/trust-guard)
 [![Ask DeepWiki](https://deepwiki.com/badge.svg)](https://deepwiki.com/getA-Identity/A-Identity)
@@ -199,12 +199,12 @@ listed at `GET /proof`. Four representative ones, each independently verifiable 
 |---|---|
 | `verify_agent` | [`0x8174a4b2…c5e7a27a`](https://www.oklink.com/x-layer/evm/tx/0x8174a4b29a3bc20d421531d2966d7091ee6d75f994a774aad5886870c5e7a27a) |
 | `reputation_score` | [`0x2ede816a…977fc9af`](https://www.oklink.com/x-layer/evm/tx/0x2ede816a12acc7b1ae62d02b610e56079d619a1feeaa6cd61370bbbb977fc9af) |
-| `risk_check` | [`0x36978927…fa8557c1`](https://www.oklink.com/x-layer/evm/tx/0x36978927f1449ea84df341df6fd6c94288f70fd9f4e6c1b57bbe7ba7fa8557c1) |
+| `risk_check` | [`0x36980127…fa8557c1`](https://www.oklink.com/x-layer/evm/tx/0x36980127f1449ea84df341df6fd6c94288f70fd9f4e6c1b57bbe7ba7fa8557c1) |
 | `agent_passport` | [`0xc7f9342b…c302a0cb`](https://www.oklink.com/x-layer/evm/tx/0xc7f9342bde496f21be725f72f5555fa685aeffcc901b54d47bd75e51c302a0cb) |
 
 **Backed by real data, not an LLM guess:** a live ERC-8004 showcase agent, Meridian
 `#849980`, reputation **~542/1000**, KYA-verified. Scoring is **deterministic and
-unit-tested** (789 unit tests as of Aug 2026), reads on-chain live via viem, and is fully documented at
+unit-tested** (801 unit tests as of Aug 2026), reads on-chain live via viem, and is fully documented at
 `GET /methodology`. This is our answer to "surface your rigor": every number is
 reproducible and every settlement is on-chain.
 
@@ -251,7 +251,7 @@ address that is missing here is missing on-chain: nothing is listed that a live
 | --- | --- | --- |
 | Identity Registry | [`0x8004A818BFB912233c491871b3d84c89A494BD9e`](https://testnet.arcscan.app/address/0x8004A818BFB912233c491871b3d84c89A494BD9e) | ERC-8004 |
 | Reputation Registry | [`0x8004B663056A597Dffe9eCcC1965A193B7388713`](https://testnet.arcscan.app/address/0x8004B663056A597Dffe9eCcC1965A193B7388713) | ERC-8004 |
-| Validation Registry | [`0x8004Cb1BF31DAf7898923b405b754f57acEB4272`](https://testnet.arcscan.app/address/0x8004Cb1BF31DAf7898923b405b754f57acEB4272) | ERC-8004 |
+| Validation Registry | [`0x8004Cb1BF31DAf8018923b405b754f57acEB4272`](https://testnet.arcscan.app/address/0x8004Cb1BF31DAf8018923b405b754f57acEB4272) | ERC-8004 |
 | Agentic Commerce (jobs) | [`0x0747EEf0706327138c69792bF28Cd525089e4583`](https://testnet.arcscan.app/address/0x0747EEf0706327138c69792bF28Cd525089e4583) | ERC-8183 |
 | USDC | [`0x3600000000000000000000000000000000000000`](https://testnet.arcscan.app/address/0x3600000000000000000000000000000000000000) | ERC-20 |
 
@@ -273,7 +273,7 @@ OKX.AI's own registry, not ours. Our paid Trust Oracle is agent **#6271** in it
 | --- | --- | --- |
 | Identity Registry | [`0x8004A818BFB912233c491871b3d84c89A494BD9e`](https://explorer.testnet.chain.robinhood.com/address/0x8004A818BFB912233c491871b3d84c89A494BD9e) | ERC-8004 |
 | Reputation Registry | [`0x8004B663056A597Dffe9eCcC1965A193B7388713`](https://explorer.testnet.chain.robinhood.com/address/0x8004B663056A597Dffe9eCcC1965A193B7388713) | ERC-8004 |
-| Validation Registry | [`0x8004Cb1BF31DAf7898923b405b754f57acEB4272`](https://explorer.testnet.chain.robinhood.com/address/0x8004Cb1BF31DAf7898923b405b754f57acEB4272) | ERC-8004 |
+| Validation Registry | [`0x8004Cb1BF31DAf8018923b405b754f57acEB4272`](https://explorer.testnet.chain.robinhood.com/address/0x8004Cb1BF31DAf8018923b405b754f57acEB4272) | ERC-8004 |
 
 The full canonical ERC-8004 set, at the same addresses as Arc. Agent **#0** is ours:
 [mint tx](https://explorer.testnet.chain.robinhood.com/tx/0x20918ec68186bd4aaee7c36d33d0383f1bc6a2bc921e72e3b812d034da5212fd).
@@ -289,7 +289,7 @@ No canonical stablecoin is documented for this chain, so no payment rail is clai
 **We did not deploy these registries. The ERC-8004 authors did.** What is ours is
 agent **#0**, the registry's first mint:
 [tx `0x602ce85a…`](https://robinhoodchain.blockscout.com/tx/0x602ce85ad044836b39918311a3031dcd689e4be0d23aed9ed0ac9227d46ec79e)
-in block 34617892, owner `0xd305607510E0Db2c95807173c7A05BEA53c1ed36`, tokenURI
+in block 34618012, owner `0xd305607510E0Db2c95807173c7A05BEA53c1ed36`, tokenURI
 [`agent-card.json`](https://a-identity.xyz/.well-known/agent-card.json). There is no
 ValidationRegistry in this mainnet family, so KYA cannot be anchored on-chain here.
 

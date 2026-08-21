@@ -85,9 +85,15 @@ export type TransferExpectation = {
  * every payment is one we authorized, and it would NOT be acceptable as the default.
  */
 export const WEAKER_BINDING =
-  'Bound to the transaction hash, not to an authorization nonce: we can prove this payment ' +
-  'happened and that it has not been redeemed here before, but not that it was made for ' +
-  'this particular purchase rather than another of the same price.'
+  'Bound to the transaction hash, not to an authorization nonce. We can prove this payment ' +
+  'happened and that it has not been redeemed here before; we cannot prove it was made for ' +
+  'this particular purchase rather than another of the same price, and we cannot prove the ' +
+  'party presenting it is the party that made it. Every field of a landed transaction is ' +
+  'public, so whoever presents a hash first is served and the payer loses the payment if ' +
+  'somebody beat them to it. This is inherent to redeeming a hash rather than an ' +
+  'authorization, it is the same property this repo\'s Arc rail has, and it is the reason ' +
+  'the scheme is restricted to contract payers: a plain account can sign an authorization ' +
+  'entry and should, because that binding has none of these gaps.'
 
 export type ConfirmFailureCode =
   /** Not in the ledger within the window. It may still land, so nothing is decided. */
@@ -147,6 +153,32 @@ type SeenTransfer = {
 }
 
 /**
+ * Contract events read out of the transaction meta, the source that cannot be omitted.
+ *
+ * Returns null when the meta itself gives us nothing to look at, which is the only honest
+ * `no_event_data`. Returns an empty array when the meta parses and genuinely holds no events,
+ * because that IS an answer about the transaction.
+ *
+ * Only meta v4 is handled, and deliberately not by guessing at older shapes: both networks
+ * run Protocol 27, the SDK is pinned, and a silent fallback that quietly reads nothing from
+ * an unexpected version is exactly the failure this function exists to prevent. An
+ * unrecognised version returns null, which reads as "we cannot see" rather than "there is
+ * nothing".
+ */
+function eventsFromMeta(tx: rpc.Api.GetSuccessfulTransactionResponse): unknown[] | null {
+  const meta = tx.resultMetaXdr as unknown as { switch?: () => { name?: string }; v4?: () => unknown }
+  try {
+    if (meta?.switch?.().name !== 'transactionMetaV4') return null
+    const v4 = meta.v4?.() as { operations?: () => { events?: () => unknown[] }[] } | undefined
+    const ops = v4?.operations?.()
+    if (!ops) return null
+    return ops.map((op) => op.events?.() ?? [])
+  } catch {
+    return null
+  }
+}
+
+/**
  * The amount out of a transfer event's data, in either shape CAP-67 permits.
  *
  * Returns null rather than a wrong number when the shape is neither, because a settlement
@@ -170,18 +202,28 @@ function amountOf(data: xdr.ScVal): { amount: bigint; muxedId?: string } | null 
 }
 
 /**
- * Every SEP-41 transfer event on a transaction, or null when the response carried no event
- * data to look at.
+ * Every SEP-41 transfer event on a transaction, or null when nothing we can read carried
+ * event data at all.
  *
- * The distinction is the finding: `events` is optional in the raw RPC response and the SDK
- * normalises its absence to an empty array, so "this RPC does not send events" and "this
- * transaction has no transfers" arrived here as the same value. One is a refusal and the
- * other is our own blindness.
+ * TWO sources, and the second one is the correction. The first version guarded on
+ * `if (!tx.events) return null`, reasoning that an RPC which omits the field would otherwise
+ * look like a transaction with no transfers. A review pointed out that the guard is
+ * unreachable: the SDK's parseTransactionInfo builds
+ * `events: { contractEventsXdr: (raw.events?.contractEventsXdr ?? []).map(...) }`
+ * unconditionally, so a missing field arrives here as an EMPTY ARRAY and the distinction the
+ * guard existed for was lost anyway. The comment described a defence the code did not have.
+ *
+ * The real second source is `resultMetaXdr`, which is a required field the SDK always parses.
+ * Under Protocol 23's meta v4 the contract events live at
+ * `resultMetaXdr.v4().operations()[i].events()`, verified against our own settlement
+ * e1b0097a on stellar:testnet. So an RPC that drops the convenience field still cannot hide
+ * the events from us, and `no_event_data` now means what it says: neither source had any.
  */
 function transfersIn(tx: rpc.Api.GetSuccessfulTransactionResponse): SeenTransfer[] | null {
-  if (!tx.events) return null
+  const primary = (tx.events?.contractEventsXdr ?? []) as unknown[]
+  const groups = primary.length ? primary : eventsFromMeta(tx)
+  if (groups === null) return null
   const out: SeenTransfer[] = []
-  const groups = (tx.events?.contractEventsXdr ?? []) as unknown[]
   for (const group of groups) {
     for (const raw of Array.isArray(group) ? group : [group]) {
       try {
@@ -250,6 +292,14 @@ export type ConfirmDeps = {
   sleep?: (ms: number) => Promise<void>
   /** The oldest ledger this RPC still holds, for telling "gone" from "not yet". */
   oldestLedger?: number
+  /**
+   * The ledger this transaction is known to have been in, when a caller knows it.
+   *
+   * Required to claim `beyond_retention`, because that claim is a comparison and not a
+   * vibe: without a ledger to place the transaction in, "we cannot see it" is `not_found`,
+   * which leaves the question open instead of closing it wrongly.
+   */
+  knownLedger?: number
 }
 
 /**
@@ -309,10 +359,17 @@ export async function confirmStellarTransfer(
         oldest !== undefined && latest !== undefined
           ? ` This RPC retains ledgers ${oldest} to ${latest}; anything older is invisible to it, not absent from the chain.`
           : ''
+      // beyond_retention needs a LEDGER TO COMPARE, not merely the presence of the window.
+      // The first version returned it whenever oldestLedger was set, and that field is
+      // mandatory in the RPC response, so every miss was reported as "older than we can see"
+      // including a transaction broadcast one second ago. That reads as "stop waiting" for a
+      // payment that is simply still in flight.
+      const known = deps.knownLedger
+      const provablyGone = oldest !== undefined && known !== undefined && known < oldest
       return {
         confirmed: false,
         txHash,
-        code: oldest !== undefined ? 'beyond_retention' : 'not_found',
+        code: provablyGone ? 'beyond_retention' : 'not_found',
         reason:
           `not visible after ${Math.round(timeoutMs / 1000)}s. This is NOT a refusal: it may still ` +
           `land, or it may have landed before this RPC's retention window. Nothing may be recorded ` +
