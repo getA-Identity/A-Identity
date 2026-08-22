@@ -35,7 +35,7 @@ published document cannot quietly go stale after the listing is approved.
 > Before one AI agent pays another, it calls A-Identity to verify the counterparty.
 > ERC-8004 on-chain identity plus a KYA wallet-control attestation, a deterministic
 > 0-1000 reputation score computed from real on-chain settlements, and a
-> pre-transaction ALLOW / WARN / DENY verdict. Five paid tools and one free preview,
+> pre-transaction ALLOW / WARN / DENY verdict. Six paid tools and one free preview,
 > all over x402. Every number is reproducible and every settlement is on-chain.
 
 ## The tools a reviewer will see

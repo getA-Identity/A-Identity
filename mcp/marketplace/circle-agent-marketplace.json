@@ -3,7 +3,7 @@
   "name": "A-Identity — Agent Trust Oracle",
   "slug": "a-identity-trust-oracle",
   "positioning": "The identity & reputation oracle for the agent economy.",
-  "description": "Before one AI agent pays another, it calls A-Identity to verify the counterparty. Four pay-per-call x402 tools over a live on-chain engine: ERC-8004 identity + KYA, a deterministic 0-1000 reputation score from real on-chain settlements, and a pre-transaction ALLOW / WARN / DENY risk verdict. Every number is reproducible and every settlement is on-chain.",
+  "description": "Before one AI agent pays another, it calls A-Identity to verify the counterparty. Six pay-per-call x402 tools over a live on-chain engine: ERC-8004 identity + KYA, a deterministic 0-1000 reputation score from real on-chain settlements, a pre-transaction ALLOW / WARN / DENY risk verdict, a deal-specific counterparty check with same-operator self-deal detection, and an enforced-policy guardrail check. Every number is reproducible and every settlement is on-chain.",
   "type": "x402",
   "url": "https://a-identity-asp.onrender.com",
   "provider": {
@@ -49,7 +49,7 @@
       "endpoint": "/tools/risk_check",
       "price": "$0.005",
       "description": "Pre-transaction counterparty risk: a single ALLOW / WARN / DENY decision with reasons, before you pay.",
-      "input": { "agentId": "string", "txContext": "optional { amountUsd?, kind? }" }
+      "input": { "agentId": "string", "txContext": "optional { amountUsd?, payee? }" }
     },
     {
       "name": "agent_passport",
@@ -57,6 +57,22 @@
       "endpoint": "/tools/agent_passport",
       "price": "$0.01",
       "description": "Full agent passport: identity + KYA + reputation + risk, in one call.",
+      "input": { "agentId": "string" }
+    },
+    {
+      "name": "counterparty_check",
+      "method": "POST",
+      "endpoint": "/tools/counterparty_check",
+      "price": "$0.008",
+      "description": "Deal-specific verdict between two agents: counterparty risk + same-operator self-deal detection.",
+      "input": { "from": "the paying agent id (platform id, ERC-8004 token id, or 0x owner address)", "to": "the counterparty id (same formats)", "txContext": "optional { amountUsd?, payee? }" }
+    },
+    {
+      "name": "guardrail_check",
+      "method": "POST",
+      "endpoint": "/tools/guardrail_check",
+      "price": "$0.005",
+      "description": "Enforced spend/trade policy check: does this agent operate under a policy and respect its verdicts? Bands only, no caps/allowlists/amounts disclosed.",
       "input": { "agentId": "string" }
     }
   ],
