@@ -61,7 +61,7 @@ export const PROOF = {
   // USD₮0 transfer to settledTo.
   realOnchainRevenue: {
     network: 'X Layer mainnet (eip155:196)',
-    asset: 'USD₮0 (0x805Ded0c9e1022225f8E0630b35a9b54bE713736)',
+    asset: 'USD₮0 (0x779Ded0c9e1022225f8E0630b35a9b54bE713736)',
     payer: PAYER,
     // Where these settlements landed, which is what their tx hashes prove.
     settledTo: SETTLED_TO,
