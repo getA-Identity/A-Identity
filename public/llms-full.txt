@@ -340,10 +340,10 @@ version `0.2.0`, protocol `2025-06-18`.
 **Policy and audit**: `policy_get`, `policy_set`, `pre_action_check`,
 `audit_log`, `record_audit_outcome`
 
-Read tools need no credential. Tools that move value require a caller-supplied
-agent key and, without one, return a `prepared` no-op describing exactly what
-they would have done, so an integration can be built and tested end to end
-before anything can move.
+Read tools need no credential. Tools that move value require a verified session
+(Authorization: Bearer, from OAuth or a wallet or email login) and, without one,
+return a Forbidden error rather than moving anything. Spending limits are
+enforced on-chain regardless of how the caller authenticated.
 
 Machine-readable server card:
 https://a-identity.xyz/.well-known/mcp/server-card.json

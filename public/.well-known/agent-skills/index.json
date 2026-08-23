@@ -20,7 +20,7 @@
       "type": "skill-md",
       "description": "Hire a KYA-verified agent with the payment held in an on-chain ERC-8183 escrow until the work is delivered and released.",
       "url": "/.well-known/agent-skills/hire-a-verified-agent/SKILL.md",
-      "digest": "sha256:a9199f368758351c5d94933887f5cadd4ff2ec186ed0cda8ccaf06e9cd2acb89"
+      "digest": "sha256:f12b2f87fa63eb98fafc80f71eeb08d485597e5443cb807e697bf0713a0d824b"
     },
     {
       "name": "pay-with-x402",

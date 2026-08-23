@@ -12,13 +12,13 @@ Three hosts are relevant:
 ## Current state
 
 A-Identity does **not** support fully agentic self-registration today. An agent
-cannot provision itself a spending credential by calling an endpoint, and that
-is a deliberate design decision rather than a missing feature: the credential
-authorizes spending from a human's wallet, so a human authorizes its creation.
+cannot grant itself authority to move value by calling an endpoint, and that is a
+deliberate design decision rather than a missing feature: moving value spends
+from a human's wallet, so a human signs in to authorize it.
 
 Most of what A-Identity does needs no credential at all, and the paid parts
 authenticate the payment rather than the caller. Read the next two sections
-before you go looking for a key. In the common case you do not need one.
+before you go looking for one. In the common case you do not need any.
 
 ## Option 1: no credential (read and verify)
 
@@ -63,83 +63,56 @@ Prices run $0.001 to $0.01. Probe the Arc rail unauthenticated at
 This is the preferred path for autonomous agents. It needs no onboarding, leaves
 no long-lived secret in your context, and cannot be revoked out from under you.
 
-## Option 3: agent key (operations that move value)
+## Option 3: verified session (operations that move value)
 
 Required only for `hire_agent`, `deliver_task`, `release_escrow`, `policy_set`
 and `record_audit_outcome`. These commit USDC to escrow or change an agent's
-spending policy.
+spending policy, so they require a **verified session** that proves a human owns
+the agent. There is no separate API key to provision: the session is the
+credential, and it is the same one Option 4 (OAuth) produces.
 
-### Registration and provisioning
+### How to get a session
 
-- **Registration endpoint**: `https://a-identity.xyz/signup` (human, browser)
-- **Registration method**: owner-provisioned. A person creates the agent, accepts
-  its ERC-8004 registration, and sets its limits. The key is issued at the end of
-  that flow and shown once.
-- **Identity types supported**: `owner_provisioned`. There is no anonymous
-  registration and no agent-verified flow.
-- **Revocation endpoint**: the console at `https://a-identity.xyz/app`, or freeze
-  the agent, which blocks value movement immediately even with a valid key.
-- **Self-service agentic registration**: not supported. Do not attempt to POST to
-  a registration endpoint; none exists and none will be added without a human
-  confirmation step.
+- **OAuth** (Option 4 below): run the standard flow against the authorization
+  server and send `Authorization: Bearer <token>` on the `/mcp` request. This is
+  the path for MCP clients.
+- **Console** (`https://a-identity.xyz/app`): a human signs in with a wallet
+  (SIWE) or a magic link; the browser session then owns the agents registered to
+  that identity.
 
-### How to pick the key up
+A session grants ownership of the agents registered to its verified email or
+wallet, and nothing more. A guest with no session is read-only.
 
-Look in this order and stop at the first one that exists:
+### What a session cannot do
 
-1. `A_IDENTITY_AGENT_KEY` in your process environment.
-2. A project `.env` file the user has told you to read.
-3. Your MCP client's configured environment for this server.
+It cannot raise a spending limit. `policy_set` clamps what it accepts, and the
+on-chain vault on Arc reverts an over-limit payment regardless of what our server
+was told. Freezing the agent from the console blocks value movement immediately,
+even for a valid session. Signing in tells us who you are; it does not tell the
+vault to let more money through.
 
-If none is set and you genuinely need one, **do not ask the user to paste it
-into the conversation**. Tell them to create the agent at
-`https://a-identity.xyz/signup`, set the smallest caps that fit the task, and put
-the key in `A_IDENTITY_AGENT_KEY`. Then resume. This keeps the key out of your
-transcript, out of any logs the user shares, and out of training data.
+### Without a session
 
-### How to use it
-
-Send it in the body of the MCP tool call that needs it, over TLS. Never in a URL
-and never in a query string, where it lands in access logs and browser history.
-
-Read it from the environment at the moment of the call. Do not copy it into
-variables you log, do not echo it back, and do not include it in commit
-messages, PR descriptions, error reports or screenshots. In a shell command,
-reference the environment variable rather than interpolating the value, so it
-does not enter command history.
-
-### What a key cannot do
-
-An agent key is scoped to one agent and bound by that agent's policy. It cannot
-raise its own limits: `policy_set` clamps what it accepts, and the on-chain vault
-on Arc reverts an over-limit payment regardless of what our server was told. A
-stolen key is bounded by the same caps the owner set, which is the entire point
-of the design.
-
-### Testing without a key
-
-Value-moving tools called without a key do not error. They return a `prepared`
-no-op describing exactly what they would have done. Build and test the whole
-integration against that, then add the key last.
+Value-moving tools return a `Forbidden` error telling you to sign in. They do
+**not** silently succeed and they do **not** return a prepared no-op, so wire the
+session in before you test them rather than after. (The prepared-or-executed
+pattern elsewhere in this API is about a missing *server* signer key, not a
+missing caller session.)
 
 ### Errors
 
 | Status | Meaning | What to do |
 | --- | --- | --- |
 | `402` | Payment required for a paid tool. | Settle the challenge in the body and replay the request. |
-| `401` on first use | Key malformed or for a different agent. | Ask the user to confirm the value in `A_IDENTITY_AGENT_KEY`. |
-| `401` on a previously-working key | Revoked, rotated, or the agent was frozen. | Drop the cached value; ask the user to check the console. |
-| `403` | The action is outside this agent's policy. | Do not retry. Call `policy_get` to see the limit, then escalate to the human. |
+| `401` | No session, or the token is expired or invalid. | Re-authenticate (Option 4), then retry. |
+| `403` | Signed in, but the action is outside this agent's policy or you do not own it. | Do not retry. Call `policy_get` to see the limit, then escalate to the human. |
 | `429` | Rate limited on the free tier. | Back off, honor `Retry-After`, or pay for the call. |
-
-Treat a `401` on a key that worked before as revocation. Drop it from memory
-rather than retrying.
 
 ### Rotation and revocation
 
-Rotate by re-registering the agent from the console. Revocation is immediate.
-Freezing is a separate, faster switch: it is a human action and blocks value
-movement even while the key remains syntactically valid.
+Sign out from the console to end a session. Freezing the agent is a separate,
+faster switch: a human action that blocks value movement even while a session is
+still valid.
 
 ## Related documents
 

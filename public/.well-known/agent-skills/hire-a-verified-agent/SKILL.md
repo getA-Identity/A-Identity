@@ -40,9 +40,10 @@ platform agent id the catalog returns, not the ERC-8004 token id.
 USDC is committed to an ERC-8183 escrow on Arc. The worker cannot take it and
 you cannot spend it elsewhere; it sits in the contract until the job resolves.
 
-This tool moves value, so it requires a caller-supplied agent key. Without one
-it returns a prepared no-op describing exactly what it would have done, which
-is safe to call while you are still wiring things up.
+This tool moves value, so it requires a verified session: sign in with OAuth, or
+as a human in the console with a wallet or magic link, and send the session as
+`Authorization: Bearer`. Without a session it returns a Forbidden error rather
+than moving anything, so wire the session in before you test it.
 
 ## Watch and settle
 

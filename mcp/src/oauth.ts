@@ -60,7 +60,7 @@ export function protectedResourceMetadata(): Record<string, unknown> {
       identity_types_supported: ['identity_assertion'],
       identity_assertion: {
         assertion_types_supported: ['verified_email'],
-        credential_types_supported: ['oauth_access_token', 'agent_key'],
+        credential_types_supported: ['oauth_access_token'],
         claim_uri: 'https://a-identity.xyz/signup',
       },
       registration_methods: [
@@ -78,16 +78,9 @@ export function protectedResourceMetadata(): Record<string, unknown> {
           challenge_endpoint: 'https://a-identity.xyz/api/x402/nano/data',
           requires_human: false,
         },
-        {
-          method: 'owner_provisioned_key',
-          description:
-            'Required only for operations that move value. A human registers the agent and sets its limits; the key is issued at the end of that flow. No endpoint mints one on an agent own request, because it authorizes spending from a human wallet.',
-          register_uri: 'https://a-identity.xyz/signup',
-          requires_human: true,
-        },
       ],
       notes:
-        'No credential widens a spending limit. Caps, the approval line and the payee allowlist are enforced by an on-chain vault that cannot see how the caller authenticated.',
+        'No credential widens a spending limit. Caps, the approval line and the payee allowlist are enforced by an on-chain vault that cannot see how the caller authenticated. Value-moving tools (hire_agent, deliver_task, release_escrow, policy_set, record_audit_outcome) require a verified session from the oauth method above, or a wallet or email login in the console, and are refused without one; there is no separate provisioned key.',
     },
   }
 }

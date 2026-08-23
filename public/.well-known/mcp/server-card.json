@@ -20,7 +20,7 @@
   },
   "authentication": {
     "type": "none",
-    "note": "Read tools are open and need no key. Tools that move value (hire_agent, deliver_task, release_escrow) require a caller-supplied agent key and return an honest prepared no-op without one.",
+    "note": "Read tools are open and need no session. Tools that move value (hire_agent, deliver_task, release_escrow) require a verified session (Authorization: Bearer, via OAuth or a wallet or email login) and return a Forbidden error without one. Spending limits are enforced on-chain regardless of the caller.",
     "documentation": "https://a-identity.xyz/auth.md"
   },
   "tools": [
