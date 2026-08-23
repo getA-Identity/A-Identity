@@ -7,6 +7,7 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { generateKeyPairSync, createSign, randomBytes } from 'node:crypto'
+import { readFileSync } from 'node:fs'
 
 // Configure before importing: the module reads env once at load.
 process.env.OAUTH_ISSUER = 'https://test-issuer.example'
@@ -154,4 +155,29 @@ test('the 401 challenge points a client at the metadata document', () => {
   const h = wwwAuthenticate()
   assert.match(h, /^Bearer /)
   assert.match(h, /resource_metadata="https:\/\/a-identity\.xyz\/\.well-known\/oauth-protected-resource"/)
+})
+
+test('no phantom agent_key credential survives on any published auth surface', () => {
+  // An "agent_key" / A_IDENTITY_AGENT_KEY credential was once advertised across the
+  // OAuth metadata, auth.md, the server card, a skill and llms-full, but the code
+  // implements no such thing: the real gate for value-moving tools is a verified
+  // SIWE/OAuth session. This pins the fiction as removed so it cannot creep back.
+  const surfaces = [
+    new URL('../src/oauth.ts', import.meta.url),
+    new URL('../../scripts/gen-oauth-mirror.mjs', import.meta.url),
+    new URL('../../public/auth.md', import.meta.url),
+    new URL('../../public/.well-known/oauth-protected-resource', import.meta.url),
+    new URL('../../public/.well-known/oauth-authorization-server', import.meta.url),
+    new URL('../../public/.well-known/mcp/server-card.json', import.meta.url),
+    new URL('../../public/.well-known/agent-skills/hire-a-verified-agent/SKILL.md', import.meta.url),
+    new URL('../../public/llms-full.txt', import.meta.url),
+  ]
+  for (const url of surfaces) {
+    const text = readFileSync(url, 'utf8')
+    assert.doesNotMatch(
+      text,
+      /agent_key|A_IDENTITY_AGENT_KEY/,
+      `${url.pathname.split('/').pop()} still advertises a phantom agent_key credential; the code implements no such thing.`,
+    )
+  }
 })
