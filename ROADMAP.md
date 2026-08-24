@@ -40,7 +40,7 @@ roadmap stays honest about velocity. Updated 2026-08-24.
 - merchant_check: commerce-grade counterparty verification for agentic checkouts
   (MCP tool + REST).
 - Structural hardening: the backend split into a layered platform/ + http/ module
-  system with the layer graph enforced by tests; 812 unit tests + full E2E suite.
+  system with the layer graph enforced by tests; 815 unit tests + full E2E suite.
 
 ## Now
 

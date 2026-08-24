@@ -133,3 +133,87 @@ test('the docs chain overview lists every chain in the registry', () => {
     )
   }
 })
+
+/*
+ * The "testnet only" class, which is the one that shipped for months.
+ *
+ * SECURITY.md opened with "A-Identity is a testnet application. It runs on Arc testnet"
+ * and listed exactly one chain signer, described as test funds, while the registry
+ * carried four LIVE mainnets whose signers broadcast real-value settlements without a
+ * human. mcp/README.md said "testnet only" on the same day its own rails settled in real
+ * USDC. A reader deciding how carefully to treat a key was being told the wrong blast
+ * radius, which is the most expensive direction for this particular lie to point.
+ *
+ * Prose cannot be asserted equal to data. What can be asserted is that a document does
+ * not make a whole-product claim the registry contradicts, and that every key capable of
+ * spending real money is at least NAMED where the keys are documented.
+ */
+
+/**
+ * A blanket claim about the PRODUCT, as opposed to a true statement about one chain.
+ *
+ * The distinction is the whole design of this check, and the first draft got it wrong: a
+ * bare /testnet[- ]only/ also fired on ROADMAP's "Testnet only; pubnet is still `planned`",
+ * which is an accurate scoping note about the Stellar rail. A guard that flags honest
+ * sentences gets deleted, so the subject has to be there: something has to BE testnet-only,
+ * and that something has to be the product.
+ *
+ * Both historical offenders are covered: SECURITY.md's "A-Identity is a **testnet**
+ * application" and mcp/README's "It is **testnet only**". The `\*{0,2}` allow for the
+ * markdown bold they were written in.
+ */
+const TESTNET_ONLY_CLAIM =
+  /\b(?:A-Identity|the product|this project|the platform|the backend|it|this)\s+is\s+(?:an?\s+)?\*{0,2}testnet\*{0,2}[\s-]*(?:only|app|application|project)\b/i
+
+test('no document calls the whole product testnet-only while a mainnet is live', () => {
+  const liveMainnets = CHAINS.filter((c) => !c.testnet && c.status === 'live')
+  if (!liveMainnets.length) return // nothing to contradict
+  for (const file of ['SECURITY.md', 'README.md', 'mcp/README.md', 'ROADMAP.md']) {
+    const text = repo(file)
+    // A line may quote the claim in order to correct it, so only lines that ASSERT it count:
+    // any line that also says it is not true is the correction, not the claim.
+    const offenders = text
+      .split('\n')
+      .filter((l) => TESTNET_ONLY_CLAIM.test(l) && !/\bnot\b|\bused to\b|\bstopped\b|\bno longer\b/i.test(l))
+    assert.equal(
+      offenders.length,
+      0,
+      `${file} still calls the product testnet-only, but ${liveMainnets
+        .map((c) => c.name)
+        .join(', ')} ${liveMainnets.length === 1 ? 'is' : 'are'} live mainnet in the registry.\n` +
+        offenders.map((l) => `  > ${l.trim()}`).join('\n'),
+    )
+  }
+})
+
+test('SECURITY.md names every signer that can spend real money', () => {
+  const text = repo('SECURITY.md')
+  // Mainnet first: those are the keys whose absence understates the risk. Testnet signers
+  // are listed too, because "which keys exist" is the question this document answers.
+  for (const c of CHAINS) {
+    if (!c.signerEnvVar) continue
+    assert.ok(
+      text.includes(c.signerEnvVar),
+      `SECURITY.md never mentions ${c.signerEnvVar} (${c.name}, ${c.testnet ? 'testnet' : 'MAINNET'}). ` +
+        `Every signer in the registry is a hot wallet this product signs with; one missing from the ` +
+        `key inventory is a key nobody rotates.`,
+    )
+  }
+})
+
+test('SECURITY.md marks every live mainnet signer as spending real value', () => {
+  const text = repo('SECURITY.md')
+  for (const c of CHAINS) {
+    if (c.testnet || c.status !== 'live' || !c.signerEnvVar) continue
+    // The row for this signer, whatever table it lives in.
+    const row = text.split('\n').find((l) => l.includes(c.signerEnvVar!))
+    assert.ok(row, `no line in SECURITY.md carries ${c.signerEnvVar}`)
+    assert.match(
+      row!,
+      /real value/i,
+      `SECURITY.md lists ${c.signerEnvVar} but does not say it spends real value, and ${c.name} is a ` +
+        `live mainnet. This is the exact shape of the claim that was wrong before: a mainnet hot ` +
+        `wallet documented as though it were a testnet key.`,
+    )
+  }
+})

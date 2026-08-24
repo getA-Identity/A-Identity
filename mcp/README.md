@@ -5,13 +5,21 @@ The A-Identity backend: a single Node HTTP server that is **two things at once**
 1. An **MCP server** (stdio + Streamable HTTP `POST /mcp`) exposing **read-only** tools any
    MCP-capable agent can call - no keys, no writes on this surface.
 2. A **REST companion** (the same process, `http.ts`) that is the **write side** the app uses:
-   it creates agents, runs the policy engine, and - when a funded `ARC_SIGNER_KEY` is present -
-   **broadcasts real transactions on Arc testnet**: ERC-8004 registration, USDC settlement,
-   ERC-8183 escrow, an `AgentSpendPolicy` vault, KYA attestation, Gateway/CCTP/Nanopayments.
+   it creates agents, runs the policy engine, and - when a funded signer is present -
+   **broadcasts real transactions**: ERC-8004 registration, USDC settlement, ERC-8183
+   escrow, an `AgentSpendPolicy` vault, KYA attestation, Gateway/CCTP/Nanopayments.
 
 Human-on-the-loop by design: nothing that holds a key, deploys a contract, or moves value
 runs without an explicit human action, and without a signer key every write returns a labeled
-`prepared` / `simulated` no-op. It is **testnet only** (Arc testnet, test USDC).
+`prepared` / `simulated` no-op.
+
+**Not testnet only.** This line used to say it was, which was true of Arc and never true of
+the registry. Arc is testnet and is the `live` phase-1 network, but four mainnets carry our
+own traffic and real value: OKX X Layer, Celo, Robinhood Chain and Arbitrum One. Two payment
+rails sell there - `x402-3009/` (self-facilitated EIP-3009) and `x402-stellar/` (Soroban) -
+and each chain has its own signer env var. [`src/chains/registry.ts`](src/chains/registry.ts)
+is the source of truth for which is which, and [`../SECURITY.md`](../SECURITY.md) lists every
+key and what it can spend.
 
 ## MCP tools
 
@@ -91,6 +99,16 @@ Directories:
   handled the request.
 - `src/chains/` - the chain registry (single source of truth for ids/RPCs/addresses) + the
   generic EVM adapter. Nothing outside may hardcode a chain constant (test-enforced).
+- `src/x402-3009/` - the self-facilitated EIP-3009 rail: the buyer signs a transfer
+  authorization and pays no gas, we broadcast, and nothing counts as settled without a
+  receipt carrying a matching `Transfer` log. Chain-generic, so a chain joins by declaring a
+  `settlementTokens` entry. Its EIP-712 signing domain is PROVEN against the token's live
+  `DOMAIN_SEPARATOR` rather than pasted; if it cannot be proven, no challenge is served.
+  Sells on Robinhood Chain (USDG) and Arbitrum One (native Circle USDC).
+- `src/x402-stellar/` - the same contract on Soroban, a sibling rather than a fork. The buyer
+  signs an authorization ENTRY, so there is no per-token domain to prove, and settled means
+  we read the transfer event ourselves and match it to the buyer's authorization nonce. Ships
+  its own facilitator; OpenZeppelin Channels is available as a fallback broadcaster.
 - `src/policy/` - Policy Engine v2 (pure evaluate + audit + compliance + badges + meters).
 - `src/asp/` - the OKX.AI paid Trust Oracle (tools, x402 payment, proof, settlements).
   Registered listing: do not change tool schemas or prices casually.
@@ -116,7 +134,7 @@ npm run start        # MCP server on stdio
 npm run start:http   # the HTTP server (REST + /mcp). Reads config from process.env directly.
 npm run smoke        # spin up the MCP server + exercise every read-only tool
 npm run http-smoke   # exercise the tools over HTTP (server must be running)
-npm test             # tsc + node:test unit tests (812 across 63 files, as of Aug 2026)
+npm test             # tsc + node:test unit tests (815 across 63 files, as of Aug 2026)
 npm run e2e          # full end-to-end flow against a running server (E2E_BASE=...)
 ```
 
@@ -128,7 +146,7 @@ node --env-file=.env dist/http.js     # Node 20.6+
 ARC_SIGNER_KEY=0x<funded-key> node dist/http.js
 ```
 
-Tests: **812 unit tests across 63 colocated `*.test.ts` files** (as of Aug 2026; `npm test`) +
+Tests: **815 unit tests across 63 colocated `*.test.ts` files** (as of Aug 2026; `npm test`) +
 a full **E2E of about 67 checks** (`npm run e2e`) that adapts to signer presence: green with no
 signer key (live Arc reads; on-chain writes reported as prepared), with the real Arc write
 checks activating under a funded `ARC_SIGNER_KEY`. CI runs the no-signer path.

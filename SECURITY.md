@@ -1,45 +1,135 @@
 # Security
 
-A-Identity is a **testnet** application. It runs on Arc testnet with test USDC, generates
-wallet keys **in the browser** (the server only ever sees public addresses), and keeps a
-human on the loop for anything that holds a key, deploys a contract, or moves value.
+A-Identity settles **real money on public mainnets**. This file used to open by calling it
+a testnet application, which was true when it was written and has not been true for months.
+The correction matters more here than in a marketing page: a reader deciding how carefully
+to treat these credentials was being told the blast radius was test funds.
 
-## Secrets and where they live
+What is accurate today, and what the registry
+([`mcp/src/chains/registry.ts`](mcp/src/chains/registry.ts)) will confirm, because it is the
+single source of truth and a test fails the build if any other file disagrees:
+
+- **11 chains, 7 of them mainnet.** Four mainnets are `live` and carry our own traffic:
+  OKX X Layer, Celo, Robinhood Chain and Arbitrum One. Base is `beta` on mainnet, Avalanche
+  and Stellar pubnet are `planned`.
+- **Circle Arc is testnet and is still the `live` phase-1 network.** Both statements hold;
+  Arc being test money is not a statement about the other six.
+- **Money moves.** x402 calls settle in real USD₮0 on X Layer, real Circle USDC on Celo and
+  Arbitrum One, and USDG on Robinhood Chain. The Stellar rail settles SEP-41 USDC on
+  testnet.
+- **We hold no user keys.** Agent wallet keys are generated in the browser
+  ([`src/components/app/agent/RegisterForm.tsx`](src/components/app/agent/RegisterForm.tsx));
+  the server only ever sees public addresses. That part of the old text was and remains
+  true, and it is the reason the key risk below is ours rather than our users'.
+- **A human stays on the loop** for anything that deploys a contract or moves value above a
+  policy ceiling.
+
+## The keys that actually matter
+
+Our facilitators run a "the buyer signs, we broadcast and pay the gas" model. That means
+**every signer below is a hot wallet**: it sits in the host environment, it is used without
+human interaction on each request, and on four of these chains it spends real money. The
+previous version of this file listed exactly one of them and described it as test funds.
 
 No secret is committed to git. Runtime credentials live in the host env (Render) and, for
-local development, in `mcp/.env` (git-ignored). The frontend build only bakes in *public*
-values (e.g. the WalletConnect project id).
+local development, in `mcp/.env` (git-ignored). The frontend build bakes in only *public*
+values, such as the WalletConnect project id.
+
+### Chain signers, one per registry entry
+
+| Env var | Chain | Network | Spends |
+| --- | --- | --- | --- |
+| `XLAYER_SIGNER_KEY` | OKX X Layer | mainnet | **real value** |
+| `CELO_SIGNER_KEY` | Celo | mainnet | **real value** |
+| `RHCHAIN_SIGNER_KEY` | Robinhood Chain | mainnet | **real value** |
+| `ARB_SIGNER_KEY` | Arbitrum One | mainnet | **real value** |
+| `BASE_SIGNER_KEY` | Base | mainnet (`beta`) | real value if funded |
+| `AVAX_SIGNER_KEY` | Avalanche C-Chain | mainnet (`planned`) | real value if funded |
+| `STELLAR_PUBNET_SIGNER_SECRET` | Stellar pubnet | mainnet (`planned`) | real value if funded |
+| `ARC_SIGNER_KEY` | Circle Arc | testnet | test funds |
+| `CELO_SEPOLIA_SIGNER_KEY` | Celo Sepolia | testnet | test funds |
+| `RHCHAIN_TESTNET_SIGNER_KEY` | Robinhood Chain Testnet | testnet | test funds |
+| `STELLAR_TESTNET_SIGNER_SECRET` | Stellar Testnet | testnet | test funds |
+
+The four `planned` / `beta` rows are not dormant by nature, only by funding. A key set on
+one of them is a mainnet key the moment somebody sends it gas.
+
+### Payment-rail keys, on top of the chain signers
+
+| Env var | What it is |
+| --- | --- |
+| `X402_3009_SIGNER_KEY` | Broadcaster for the EIP-3009 rail. Overrides the chain signer when set, so it can be the wallet paying gas on Robinhood Chain and Arbitrum One mainnet ([`x402-3009/engine.ts:528`](mcp/src/x402-3009/engine.ts#L528)). |
+| `X402_STELLAR_TESTNET_FEE_PAYER` | Pays the network fee for every Stellar settlement we broadcast. **Live in production since 2026-08-24.** |
+| `X402_STELLAR_PUBNET_FEE_PAYER` | The same role on pubnet. Unset today. |
+| `X402_STELLAR_TESTNET_OZ_KEY` / `X402_STELLAR_PUBNET_OZ_KEY` | OpenZeppelin Channels API keys, the fallback broadcaster. |
+| `CELO_X402_API_KEY` | Gates the Celo paid rail; without it that rail is fail-closed. |
+| `X402_PAY_TO` / `X402_STELLAR_PAYTO` | Receiving addresses. Not secrets, but a wrong value sells to an account nobody controls, so treat edits as privileged. |
+
+### Service credentials
 
 | Secret | Scope | Notes |
 | --- | --- | --- |
-| `ARC_SIGNER_KEY` | Arc **testnet** signer | Broadcasts real testnet writes. Test funds only, but a live key on disk. |
-| `CIRCLE_API_KEY` / `CIRCLE_ENTITY_SECRET` | Circle **sandbox** | `CIRCLE_ENTITY_SECRET` is the master credential for the developer-controlled wallets. **Re-registering a new entity secret orphans existing wallets** — coordinate before rotating. |
-| `RESEND_API_KEY` | **Production** email (Resend) | Not testnet-scoped: it can send real email from the verified domain. Treat as production-grade. |
-| `AUTH_SECRET` | Session-token signing | Rotating it invalidates all live sessions (users re-sign-in). |
-| `DATABASE_URL` | Postgres (Neon) | Durable platform state. |
+| `OKX_API_KEY` / `OKX_SECRET_KEY` / `OKX_PASSPHRASE` | OKX exchange API | A full API credential triple, used by [`asp/payment.ts`](mcp/src/asp/payment.ts). Absent from every previous version of this file. |
+| `CIRCLE_API_KEY` / `CIRCLE_ENTITY_SECRET` | Circle | `CIRCLE_ENTITY_SECRET` is the master credential for the developer-controlled wallets. **Re-registering a new entity secret orphans existing wallets** — coordinate before rotating. |
+| `PIMLICO_API_KEY` | Arc bundler | With `ARC_SIGNER_KEY`, enables the account-abstraction path. |
+| `RESEND_API_KEY` | Production email | Can send real email from the verified domain. |
+| `AUTH_SECRET` | Session-token signing | Rotating it invalidates all live sessions. |
+| `DATABASE_URL` | Postgres (Neon) | Durable platform state, settlement logs and replay guards. |
 
 ## Rotation guidance
 
-Any credential that has ever been shared in a chat or paste should be rotated:
+Priority is by blast radius, and the mainnet signers now sit above everything that used to
+be at the top of this list.
 
-1. **`RESEND_API_KEY` — rotate first (priority).** It is a production email credential, not
-   scoped to testnet. Issue a new key in the Resend dashboard, update it in the Render env,
-   and redeploy.
-2. **`ARC_SIGNER_KEY`** — rotate after the event. Move testnet funds to a fresh key, set it
-   in the Render env. Low value (test funds), but good hygiene.
-3. **`CIRCLE_ENTITY_SECRET` / `CIRCLE_API_KEY`** — rotate after the event, but note that a new
-   entity secret orphans the existing Circle wallets; provision fresh wallets afterward.
-4. **`AUTH_SECRET`** — rotate if you suspect exposure; users simply sign in again.
+1. **The four live mainnet signers** (`XLAYER_SIGNER_KEY`, `CELO_SIGNER_KEY`,
+   `RHCHAIN_SIGNER_KEY`, `ARB_SIGNER_KEY`) and `X402_3009_SIGNER_KEY`. These hold real
+   value and sign without a human. Sweep the balance to a fresh key, set the new key in the
+   Render env, redeploy, then confirm a settlement lands before considering it done.
+2. **`OKX_API_KEY` / `OKX_SECRET_KEY` / `OKX_PASSPHRASE`.** Exchange credentials. Rotate in
+   the OKX console; check the key's permission scope while you are there.
+3. **`X402_STELLAR_TESTNET_FEE_PAYER`.** Test funds, but it is now spending on every
+   Stellar settlement, so treat it as an active operational key rather than a spare.
+4. **`RESEND_API_KEY`.** A production email credential; a leak is a phishing vector from our
+   own domain.
+5. **`CIRCLE_ENTITY_SECRET` / `CIRCLE_API_KEY`.** Note that a new entity secret orphans the
+   existing Circle wallets; provision fresh wallets afterward.
+6. **`AUTH_SECRET`.** Rotate on any suspicion; users simply sign in again.
+7. **The testnet signers.** Low value, good hygiene.
 
-## Known limitations (by design, for a testnet MVP)
+Any credential that has ever been pasted into a chat, a screenshot or a shared document
+should be treated as exposed regardless of where it sits in this list.
 
-- **Single-instance state.** Nonce / KYA-challenge / x402-spent stores, the double-settle
-  guard, and rate-limit buckets are in-memory and process-local. Correct for the single
-  backend instance deployed today; a horizontally-scaled deploy must move them to shared
-  storage (Postgres/Redis) so replay protection, the double-settle guard, and rate limiting
-  hold across instances.
-- **Rate limiting** is a basic per-IP fixed window on auth challenges, the magic-link email,
-  and the on-chain demo endpoints — enough to stop casual abuse, not a full WAF.
+## Known limitations
+
+Stated as they are, not as they were. Each one is a thing to fix or accept knowingly, and
+the first two are tracked as open audit findings rather than settled decisions.
+
+- **Durable state, with one exception.** The platform blob, the x402 spent-payment set, and
+  the Celo and Stellar settlement logs are all in Postgres
+  ([`mcp/src/storage.ts`](mcp/src/storage.ts)), so replay protection and the double-settle
+  guard survive a restart and would survive a second instance. This file previously said
+  they were in-memory; that stopped being true when Neon was wired in.
+  **Rate-limit buckets are still process-local** ([`mcp/src/http.ts:71`](mcp/src/http.ts#L71)),
+  so a horizontally-scaled deploy would multiply every limit by the instance count.
+- **The Stellar daily fee budget can fail open.** `feeSpentOnDay` treats an unreadable
+  settlement log as fail-closed, but `loadStellarSettlements` returns `[]` on a read error
+  instead of throwing, so an unreachable database reads as "nothing spent today" and the
+  budget gate passes. This became reachable in production on 2026-08-24, when the Stellar
+  rail was switched on. Tracked as audit finding F-05.
+- **The Stellar self-broadcast path has no unit test.** The suite exercises the OpenZeppelin
+  and buyer-paid paths; the path that spends our own XLM is covered only end to end.
+  Tracked as F-04.
+- **Postgres TLS does not verify the server certificate.**
+  [`storage.ts:29`](mcp/src/storage.ts#L29) sets `rejectUnauthorized: false`, which is the
+  common workaround for managed-Postgres chains and does leave the connection open to an
+  active man-in-the-middle.
+- **Rate limiting** is a per-IP fixed window on auth challenges, the magic-link email and the
+  on-chain demo endpoints. Enough to stop casual abuse, not a WAF, and the client IP is taken
+  from a proxy header (`TRUSTED_PROXY_COUNT` bounds how far it is trusted).
+- **No external audit.** The Soroban contract has been through free tooling we can run and
+  re-run, plus an adversarial review that found and fixed real defects. That is not an audit
+  and this project does not call it one. The EVM `AgentSpendPolicy` has not had the Soroban
+  port's payee-validity gate backported (audit finding G-1).
 
 ## Reporting
 
