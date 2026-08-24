@@ -322,7 +322,7 @@ export const PROVENANCE: ChainProvenance[] = [
       },
     ],
     caveats: [
-      'Test money. This is the rehearsal rail, and the pubnet descriptor is still planned: nothing of value has moved on Stellar mainnet.',
+      'Test money. This is the rehearsal rail: every number on this network is test USDC and none of it is worth anything. It used to add that nothing of value had moved on Stellar mainnet, which stopped being true on 2026-08-24 when the same vault was deployed to pubnet and a real USDC budget was spent through it. That network has its own section on this page, with its own caveats.',
       'No identity. ERC-8004 is EVM-only and no Soroban identity registry exists to point at, so a Stellar agent\'s passport is bridged from an EVM chain rather than anchored here. KYA cannot be verified on this chain.',
       'Not audited. The contract has been reviewed with the free tooling we could actually run, named, with output committed, plus an adversarial review that found and fixed real defects. That is not an audit and we will not call it one.',
       'The owner key is a single key, not a multisig. Losing it makes the vault balance unrecoverable, which is a deliberate trade against a capped balance and is written up in soroban/README.md rather than discovered.',

@@ -3,7 +3,7 @@ import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { PROVENANCE, PROOF_RAILS, artifactUrl, contractUrl, provenanceFor } from './provenance.js'
-import { getChainById } from './registry.js'
+import { CHAINS, getChainById } from './registry.js'
 import { OWNER_ADDRESS_RE, SETTLEMENT_ADDRESS_RE, SHAPE_NAME, TX_HASH_RE } from './stellar/strkey.js'
 import { proofRailIndex } from './proof.js'
 
@@ -170,4 +170,49 @@ test('the Stellar release record does not still say the x402 rail is unbuilt', (
   ) as { caveats: string[] }
   const stale = release.caveats.find((c) => /^No x402 rail settles on Stellar yet/.test(c))
   assert.equal(stale, undefined, 'that caveat was superseded on 2026-08-15; it must read as history, not as current')
+})
+
+/**
+ * A caveat may not call a chain `planned` when the registry says it is live or beta.
+ *
+ * This exists because it happened. The stellar-testnet caveat opened with "the pubnet
+ * descriptor is still planned: nothing of value has moved on Stellar mainnet", which was
+ * true when written and became false the moment the vault was deployed to pubnet. Worse,
+ * both statements then rendered on the SAME /proof/stellar page: a mainnet section listing
+ * real settlements, and underneath it a box saying nothing had moved on mainnet.
+ *
+ * `every published chain admits what it cannot do` only checks that caveats EXIST. Nothing
+ * checked whether one had quietly become a lie, which is the direction that costs trust:
+ * a missing caveat looks careless, a false one looks like a cover-up.
+ */
+test('no caveat calls a chain planned that the registry has already promoted', () => {
+  // Match the CLAIM SHAPE, then ask what it is about. An earlier version tried to capture
+  // the subject with an alternation and, under the `i` flag, the generic branch swallowed
+  // "and the pubnet" as the subject and the lookup silently missed. Reading the matched
+  // clause is both simpler and harder to get wrong.
+  const CLAIM = /[^.]*\b(?:is|stays|remains)\s+(?:still\s+)?`?planned`?/gi
+  const promoted = CHAINS.filter((c) => c.status === 'live' || c.status === 'beta')
+  const stellarMainnetPromoted = promoted.some((c) => c.ecosystem === 'stellar' && !c.testnet)
+
+  for (const entry of PROVENANCE) {
+    for (const caveat of entry.caveats) {
+      for (const m of caveat.matchAll(CLAIM)) {
+        const clause = m[0]
+        // "pubnet" and "mainnet" inside a Stellar caveat name the `stellar` descriptor.
+        const aboutStellarMainnet =
+          /\b(pubnet|mainnet)\b/i.test(clause) &&
+          (entry.chain.startsWith('stellar') || /stellar/i.test(caveat))
+        const named = promoted.find(
+          (c) => clause.toLowerCase().includes(c.name.toLowerCase()) || clause.includes(c.id),
+        )
+        assert.ok(
+          !(aboutStellarMainnet && stellarMainnetPromoted) && !named,
+          `${entry.chain} publishes a caveat asserting "${clause.trim()}", but the registry has ` +
+            `already promoted that network. A caveat that stopped being true is worse than one ` +
+            `never written: this exact sentence once rendered on /proof/stellar directly beneath ` +
+            `a mainnet section listing real settlements.\n  ${caveat}`,
+        )
+      }
+    }
+  }
 })
