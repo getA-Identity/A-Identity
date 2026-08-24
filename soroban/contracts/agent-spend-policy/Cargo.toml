@@ -14,9 +14,14 @@ doctest = false
 # Opt-in ONLY, and deliberately absent from any `default` list. `cargo fuzz` builds the
 # contract as a library and needs the SDK's test harness to construct an `Env`, so without
 # a named feature there is no way to reach it from a fuzz target. Keeping it out of
-# `default` is what stops it reaching the release artifact: `stellar contract build` does
-# not pass `--features`, so the deployed wasm never sees it. audit/tool-output/ records the
-# check that the built wasm is unchanged by this edit.
+# `default` is the first line of defence, but it is NOT the reason this is safe, and the
+# original wording here was wrong. It said `stellar contract build` does not pass
+# `--features`. It does accept them, `--all-features` included. What actually protects the
+# release artifact is that soroban-sdk's testutils CANNOT COMPILE for `wasm32v1-none`:
+# asking for it fails the build with about 180 errors rather than quietly producing a wasm
+# with test hooks in it. Fail-closed by construction instead of by convention. Corrected
+# 2026-08-24 by an audit agent, which also confirmed the built wasm hash is unchanged by
+# this edit (155eb31c...).
 testutils = ["soroban-sdk/testutils"]
 
 [dependencies]
