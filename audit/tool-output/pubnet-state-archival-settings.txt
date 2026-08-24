@@ -1,0 +1,8 @@
+=== pubnet StateArchivalSettings (ConfigSettingID 10) via RPC getLedgerEntries ===
+LedgerKey b64: AAAACAAAAAo=
+{"jsonrpc": "2.0", "id": 1, "result": {"entries": [{"key": "AAAACAAAAAo=", "xdr": "AAAACAAAAAoAL3YAAABDgAAfpAAAAAAAAAAEvwAAAAAAAAl+AAAD6AAAAB4AAABAAAehIAAAAAc=", "lastModifiedLedgerSeq": 59516381, "extXdr": "AAAAAA=="}], "latestLedger": 64104190}}
+{"config_setting":{"state_archival":{"max_entry_ttl":3110400,"min_temporary_ttl":17280,"min_persistent_ttl":2073600,"persistent_rent_rate_denominator":"1215","temp_rent_rate_denominator":"2430","max_entries_to_archive":1000,"live_soroban_state_size_window_sample_size":30,"live_soroban_state_size_window_sample_period":64,"eviction_scan_size":500000,"starting_eviction_scan_level":7}}}
+
+=== testnet StateArchivalSettings ===
+{"config_setting":{"state_archival":{"max_entry_ttl":3110400,"min_temporary_ttl":720,"min_persistent_ttl":120960,"persistent_rent_rate_denominator":"1215","temp_rent_rate_denominator":"2430","max_entries_to_archive":1000,"live_soroban_state_size_window_sample_size":30,"live_soroban_state_size_window_sample_period":64,"eviction_scan_size":500000,"starting_eviction_scan_level":7}}}
+

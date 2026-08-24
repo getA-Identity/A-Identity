@@ -1,0 +1,158 @@
+agent-spend-policy v0.1.0 (/Users/mericcintosun/A-Identity/soroban/contracts/agent-spend-policy)
+└── soroban-sdk v27.0.6
+    ├── bytes-lit v0.0.6 (proc-macro)
+    │   ├── num-bigint v0.4.8
+    │   │   ├── num-integer v0.1.47
+    │   │   │   └── num-traits v0.2.19
+    │   │   └── num-traits v0.2.19
+    │   ├── proc-macro2 v1.0.107
+    │   │   └── unicode-ident v1.0.24
+    │   ├── quote v1.0.47
+    │   │   └── proc-macro2 v1.0.107 (*)
+    │   └── syn v2.0.119
+    │       ├── proc-macro2 v1.0.107 (*)
+    │       ├── quote v1.0.47 (*)
+    │       └── unicode-ident v1.0.24
+    ├── soroban-env-guest v27.0.1
+    │   ├── soroban-env-common v27.0.1
+    │   │   ├── ethnum v1.5.3
+    │   │   ├── num-derive v0.4.2 (proc-macro)
+    │   │   │   ├── proc-macro2 v1.0.107 (*)
+    │   │   │   ├── quote v1.0.47 (*)
+    │   │   │   └── syn v2.0.119 (*)
+    │   │   ├── num-traits v0.2.19
+    │   │   ├── soroban-env-macros v27.0.1 (proc-macro)
+    │   │   │   ├── itertools v0.13.0
+    │   │   │   │   └── either v1.17.0
+    │   │   │   ├── proc-macro2 v1.0.107 (*)
+    │   │   │   ├── quote v1.0.47 (*)
+    │   │   │   ├── serde v1.0.229
+    │   │   │   │   ├── serde_core v1.0.229
+    │   │   │   │   └── serde_derive v1.0.229 (proc-macro)
+    │   │   │   │       ├── proc-macro2 v1.0.107 (*)
+    │   │   │   │       ├── quote v1.0.47 (*)
+    │   │   │   │       └── syn v3.0.3
+    │   │   │   │           ├── proc-macro2 v1.0.107 (*)
+    │   │   │   │           ├── quote v1.0.47 (*)
+    │   │   │   │           └── unicode-ident v1.0.24
+    │   │   │   ├── serde_json v1.0.151
+    │   │   │   │   ├── itoa v1.0.18
+    │   │   │   │   ├── memchr v2.8.3
+    │   │   │   │   ├── serde_core v1.0.229
+    │   │   │   │   └── zmij v1.0.23
+    │   │   │   ├── stellar-xdr v27.0.0
+    │   │   │   │   ├── cfg_eval v0.1.2 (proc-macro)
+    │   │   │   │   │   ├── proc-macro2 v1.0.107 (*)
+    │   │   │   │   │   ├── quote v1.0.47 (*)
+    │   │   │   │   │   └── syn v2.0.119 (*)
+    │   │   │   │   ├── escape-bytes v0.1.1
+    │   │   │   │   ├── ethnum v1.5.3
+    │   │   │   │   ├── hex v0.4.3
+    │   │   │   │   │   └── serde v1.0.229 (*)
+    │   │   │   │   ├── serde v1.0.229 (*)
+    │   │   │   │   ├── serde_with v3.22.0
+    │   │   │   │   │   ├── schemars v0.8.22
+    │   │   │   │   │   │   ├── dyn-clone v1.0.20
+    │   │   │   │   │   │   ├── serde v1.0.229 (*)
+    │   │   │   │   │   │   └── serde_json v1.0.151 (*)
+    │   │   │   │   │   ├── serde_core v1.0.229
+    │   │   │   │   │   ├── serde_json v1.0.151 (*)
+    │   │   │   │   │   └── serde_with_macros v3.22.0 (proc-macro)
+    │   │   │   │   │       ├── darling v0.23.0
+    │   │   │   │   │       │   ├── darling_core v0.23.0
+    │   │   │   │   │       │   │   ├── ident_case v1.0.1
+    │   │   │   │   │       │   │   ├── proc-macro2 v1.0.107 (*)
+    │   │   │   │   │       │   │   ├── quote v1.0.47 (*)
+    │   │   │   │   │       │   │   ├── strsim v0.11.1
+    │   │   │   │   │       │   │   └── syn v2.0.119 (*)
+    │   │   │   │   │       │   └── darling_macro v0.23.0 (proc-macro)
+    │   │   │   │   │       │       ├── darling_core v0.23.0 (*)
+    │   │   │   │   │       │       ├── quote v1.0.47 (*)
+    │   │   │   │   │       │       └── syn v2.0.119 (*)
+    │   │   │   │   │       ├── proc-macro2 v1.0.107 (*)
+    │   │   │   │   │       ├── quote v1.0.47 (*)
+    │   │   │   │   │       └── syn v2.0.119 (*)
+    │   │   │   │   ├── sha2 v0.10.9
+    │   │   │   │   │   ├── cfg-if v1.0.4
+    │   │   │   │   │   ├── cpufeatures v0.2.17
+    │   │   │   │   │   │   └── libc v0.2.189
+    │   │   │   │   │   └── digest v0.10.7
+    │   │   │   │   │       ├── block-buffer v0.10.4
+    │   │   │   │   │       │   └── generic-array v0.14.9
+    │   │   │   │   │       │       └── typenum v1.20.1
+    │   │   │   │   │       └── crypto-common v0.1.6
+    │   │   │   │   │           ├── generic-array v0.14.9 (*)
+    │   │   │   │   │           └── typenum v1.20.1
+    │   │   │   │   └── stellar-strkey v0.0.13
+    │   │   │   │       └── data-encoding v2.11.1
+    │   │   │   └── syn v2.0.119 (*)
+    │   │   ├── static_assertions v1.1.0
+    │   │   └── stellar-xdr v27.0.0
+    │   │       └── escape-bytes v0.1.1
+    │   └── static_assertions v1.1.0
+    ├── soroban-sdk-macros v27.0.6 (proc-macro)
+    │   ├── darling v0.20.11
+    │   │   ├── darling_core v0.20.11
+    │   │   │   ├── fnv v1.0.7
+    │   │   │   ├── ident_case v1.0.1
+    │   │   │   ├── proc-macro2 v1.0.107 (*)
+    │   │   │   ├── quote v1.0.47 (*)
+    │   │   │   ├── strsim v0.11.1
+    │   │   │   └── syn v2.0.119 (*)
+    │   │   └── darling_macro v0.20.11 (proc-macro)
+    │   │       ├── darling_core v0.20.11 (*)
+    │   │       ├── quote v1.0.47 (*)
+    │   │       └── syn v2.0.119 (*)
+    │   ├── heck v0.5.0
+    │   ├── itertools v0.13.0 (*)
+    │   ├── macro-string v0.1.4
+    │   │   ├── proc-macro2 v1.0.107 (*)
+    │   │   ├── quote v1.0.47 (*)
+    │   │   └── syn v2.0.119 (*)
+    │   ├── proc-macro2 v1.0.107 (*)
+    │   ├── quote v1.0.47 (*)
+    │   ├── sha2 v0.10.9 (*)
+    │   ├── soroban-env-common v27.0.1
+    │   │   ├── ethnum v1.5.3
+    │   │   ├── num-derive v0.4.2 (proc-macro) (*)
+    │   │   ├── num-traits v0.2.19
+    │   │   ├── soroban-env-macros v27.0.1 (proc-macro) (*)
+    │   │   ├── static_assertions v1.1.0
+    │   │   └── stellar-xdr v27.0.0 (*)
+    │   ├── soroban-spec v27.0.6
+    │   │   ├── base64 v0.22.1
+    │   │   ├── sha2 v0.10.9 (*)
+    │   │   ├── stellar-xdr v27.0.0 (*)
+    │   │   ├── thiserror v1.0.69
+    │   │   │   └── thiserror-impl v1.0.69 (proc-macro)
+    │   │   │       ├── proc-macro2 v1.0.107 (*)
+    │   │   │       ├── quote v1.0.47 (*)
+    │   │   │       └── syn v2.0.119 (*)
+    │   │   └── wasmparser v0.116.1
+    │   │       ├── indexmap v2.14.0
+    │   │       │   ├── equivalent v1.0.2
+    │   │       │   └── hashbrown v0.17.1
+    │   │       └── semver v1.0.28
+    │   ├── soroban-spec-rust v27.0.6
+    │   │   ├── prettyplease v0.2.37
+    │   │   │   ├── proc-macro2 v1.0.107 (*)
+    │   │   │   └── syn v2.0.119 (*)
+    │   │   ├── proc-macro2 v1.0.107 (*)
+    │   │   ├── quote v1.0.47 (*)
+    │   │   ├── sha2 v0.10.9 (*)
+    │   │   ├── soroban-spec v27.0.6 (*)
+    │   │   ├── stellar-xdr v27.0.0 (*)
+    │   │   ├── syn v2.0.119 (*)
+    │   │   └── thiserror v1.0.69 (*)
+    │   ├── stellar-xdr v27.0.0 (*)
+    │   └── syn v2.0.119 (*)
+    ├── stellar-strkey v0.0.16
+    │   ├── data-encoding v2.11.1
+    │   └── heapless v0.8.0
+    │       ├── hash32 v0.3.1
+    │       │   └── byteorder v1.5.0
+    │       └── stable_deref_trait v1.2.1
+    └── visibility v0.1.1 (proc-macro)
+        ├── proc-macro2 v1.0.107 (*)
+        ├── quote v1.0.47 (*)
+        └── syn v2.0.119 (*)

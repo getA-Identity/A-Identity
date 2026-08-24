@@ -1,0 +1,7 @@
+=== measured pubnet ledger close interval (Horizon) ===
+ledger 64086913 2026-08-23T11:53:15Z
+ledger 64104193 2026-08-24T14:58:35Z
+elapsed seconds over 17280 ledgers: 97520.0
+mean close interval: 5.644 s
+17280 ledgers spans 27.089 hours
+over 172800 ledgers: mean 5.625 s -> 17280 ledgers ~= 27.000 hours

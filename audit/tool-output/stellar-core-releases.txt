@@ -1,0 +1,105 @@
+=== stellar-core releases (latest 8) ===
+---
+TAG: v28.0.0 | published: 2026-08-13T20:05:30Z | prerelease: False
+URL: https://github.com/stellar/stellar-core/releases/tag/v28.0.0
+## Protocol 28
+
+This release bumps the protocol to version 28, which includes CAP-0083, CAP-0085, and CAP-0086.
+
+## Stability improvements
+
+- Add GHA to invoke RPC integration tests on commits to master by @Shaptic in https://github.com/stellar/stellar-core/pull/5161
+- Parallelize in-memory state update with bucket list operations. by @dmkozh in https://github.com/stellar/stellar-core/pull/5284
+- Change flood de-duplication to be by NodeID (not address) by @drebelsky in https://github.com/stellar/stellar-core/pull/5341
+- Update stellar-quorum-analyzer to master and handle NoQuorum status by @jayz22 in https://github.com/stellar/stellar-core/pull/5342
+- Fix unified build by @graydon in https://github.com/stellar/stellar-core/pull/5345
+- Fix race condition in rebuildInMemorySorobanStateForTesting by @SirTyson in https://github.com/stellar/stellar-core/pull/5351
+- Bump medida and batch by @graydon in https://github.com/stellar/stellar-core/pull/5338
+- Fix replay over empty-tx-set ledgers by @bboston7 in https://github.com/stellar/stellar-core/pull/5355
+- Don't take a global lock per hash in ShortHash. by @dmkozh in https://github.com/stellar/stellar-core/pull/5360
+- Mak
+---
+TAG: v27.1.0 | published: 2026-06-25T19:16:20Z | prerelease: False
+URL: https://github.com/stellar/stellar-core/releases/tag/v27.1.0
+## What's Changed
+* Delete .github/workflows/claude-review.yml by @leighmcculloch in https://github.com/stellar/stellar-core/pull/5314
+* apply-load: use the operator-configured NETWORK_PASSPHRASE by @tamirms in https://github.com/stellar/stellar-core/pull/5319
+* Bump min overlay version to v26 by @marta-lokhova in https://github.com/stellar/stellar-core/pull/5320
+* Split test-lcm data into current/next tiers by @sisuresh in https://github.com/stellar/stellar-core/pull/5313
+* Cleanup historical ledger query by @SirTyson in https://github.com/stellar/stellar-core/pull/5221
+* Parallelize InMemoryIndex construction with bucket put loop. by @dmkozh in https://github.com/stellar/stellar-core/pull/5288
+* Add random memo to apply-load transactions by @Shaptic in https://github.com/stellar/stellar-core/pull/5322
+* Bucket query asserts and perf fix by @SirTyson in https://github.com/stellar/stellar-core/pull/5323
+* Initialize Bucket directory after the database by @marta-lokhova in https://github.com/stellar/stellar-core/pull/5325
+* Add new tests to purge scp slots by @marta-lokhova in https://github.com/stellar/stellar-core/pull/5324
+* Cleanup herder repeated out of sync flow and
+---
+TAG: v27.0.0 | published: 2026-06-05T19:51:25Z | prerelease: False
+URL: https://github.com/stellar/stellar-core/releases/tag/v27.0.0
+ ## Protocol 27
+
+  This release bumps the protocol to version 27, which includes CAP-0071: Authentication delegation and address-bound Soroban credentials.
+
+  - Adapt to CAP-0071 xdr by @sisuresh in https://github.com/stellar/stellar-core/pull/5233
+  - Add Core support for CAP-71. by @dmkozh in https://github.com/stellar/stellar-core/pull/5272
+  - Bump to p27 by @sisuresh in https://github.com/stellar/stellar-core/pull/5305
+
+ ## New features
+
+  - Allow secrets to be provided from a file or environment variable by @sisuresh in https://github.com/stellar/stellar-core/pull/5177
+  - Allow DATABASE config in file by @sisuresh in https://github.com/stellar/stellar-core/pull/5219
+  - Enable downloading of transaction sets in parallel with early SCP stages by @bboston7 in https://github.com/stellar/stellar-core/pull/5209
+  - Module cache rebuild logic by @graydon in https://github.com/stellar/stellar-core/pull/5175
+  - Skip building invariant delta when no invariants are enabled. by @dmkozh in https://github.com/stellar/stellar-core/pull/5289
+  - Relax invariants in recordStorageChanges for optimization. by @dmkozh in https://github.com/stellar/stellar-core/pull/5290
+  - So
+---
+TAG: v26.1.0 | published: 2026-05-15T18:03:49Z | prerelease: False
+URL: https://github.com/stellar/stellar-core/releases/tag/v26.1.0
+What's Changed
+
+-  Replace block on transactions using `ed25519SignedPayload` signatures with an overall cap on signature verifications stellar-core will perform per transaction + Fix a crash during validation of malformed legacy transaction sets. by @bboston7 and @dmkozh in https://github.com/stellar/stellar-core/commit/427aa39784d731daf86dea822f17af45c3875b15
+
+**Full Changelog**: https://github.com/stellar/stellar-core/compare/v26.0.1...v26.1.0
+---
+TAG: v26.0.1 | published: 2026-04-13T19:13:45Z | prerelease: False
+URL: https://github.com/stellar/stellar-core/releases/tag/v26.0.1
+### Stability Fixes
+- Block transactions using ed25519SignedPayload signatures 9e5838e
+- Full hash-of-hash for Overlay adverts to prevent hash prefix collision b261e19
+- Fix an edge case bug by which validators containing any LOW quality validators in their quorum set could get stuck in an infinite loop 437988f
+
+**Full Changelog**: https://github.com/stellar/stellar-core/compare/v26.0.0...v26.0.1
+---
+TAG: v26.0.0 | published: 2026-03-31T23:35:24Z | prerelease: False
+URL: https://github.com/stellar/stellar-core/releases/tag/v26.0.0
+## What's Changed
+* Fix build.yml by @sisuresh in https://github.com/stellar/stellar-core/pull/5139
+* Fix backtrace test on some linux versions by @SirTyson in https://github.com/stellar/stellar-core/pull/5142
+* Cleanup DB dead code by @marta-lokhova in https://github.com/stellar/stellar-core/pull/5143
+* Bump p26 env to fced8a1241038f7b944f5e75bffda7023d55ddbf by @sisuresh in https://github.com/stellar/stellar-core/pull/5145
+* Add subsystem-summary skills by @graydon in https://github.com/stellar/stellar-core/pull/5132
+* survey: use Radar instead of Stellarbeat by @Copilot in https://github.com/stellar/stellar-core/pull/5118
+* Remove deprecated in-memory flags by @SirTyson in https://github.com/stellar/stellar-core/pull/5150
+* Fix core for CAP-0073 by @sisuresh in https://github.com/stellar/stellar-core/pull/5153
+* Harden multi-threaded http server by @SirTyson in https://github.com/stellar/stellar-core/pull/5149
+* Make parallel apply compatible with RUN_STANDALONE by @SirTyson in https://github.com/stellar/stellar-core/pull/5146
+* Cleanup how restoredKeys are tracked in LedgerTxn by @sisuresh in https://github.com/stellar/stellar-core/pull/5134
+* Improve binary search 
+---
+TAG: v25.2.2-external | published: 2026-03-24T23:28:54Z | prerelease: False
+URL: https://github.com/stellar/stellar-core/releases/tag/v25.2.2-external
+## What's Changed
+Stability fixes
+Update soroban-env submodule
+
+**Full Changelog**: https://github.com/stellar/stellar-core/compare/v25.2.1-external...v25.2.2-external
+---
+TAG: v25.2.1-external | published: 2026-03-19T22:06:29Z | prerelease: False
+URL: https://github.com/stellar/stellar-core/releases/tag/v25.2.1-external
+## What's Changed
+
+* Stability fixes
+* Update soroban-env submodule
+
+**Full Changelog**: https://github.com/stellar/stellar-core/compare/v25.2.0...v25.2.1-external

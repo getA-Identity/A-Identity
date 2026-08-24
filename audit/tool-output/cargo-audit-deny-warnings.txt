@@ -1,0 +1,24 @@
+=== advisory-db freshness ===
+851b9c93dc25a711144b70a007b5f3a4bd50e2e9 2026-08-24T10:08:07+02:00 Synchronize IDs (2026-08-22) (#3159)
+
+=== cargo audit --deny warnings (all kinds surfaced) ===
+    Fetching advisory database from `https://github.com/RustSec/advisory-db.git`
+      Loaded 1225 security advisories (from /Users/mericcintosun/.cargo/advisory-db)
+    Updating crates.io index
+    Scanning Cargo.lock for vulnerabilities (215 crate dependencies)
+Crate:     paste
+Version:   1.0.15
+Warning:   unmaintained
+Title:     paste - no longer maintained
+Date:      2024-10-07
+ID:        RUSTSEC-2024-0436
+URL:       https://rustsec.org/advisories/RUSTSEC-2024-0436
+
+error: 1 denied warning found!
+EXIT=1
+
+=== cargo audit --json (summary counts) ===
+database advisory count: 1225
+lockfile deps: 215
+vulnerabilities.found: False count: 0
+warning kinds: {'unmaintained': 1}

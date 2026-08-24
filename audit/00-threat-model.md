@@ -63,11 +63,25 @@ Both run the same wasm, sha256 `155eb31c1867254eacbf1b7a4755164d15cc6b6f93964470
 | --- | --- | --- |
 | `soroban-sdk` | `=27.0.6`, exact pin, no caret | `soroban/Cargo.toml` |
 | Latest stable on crates.io | `27.0.6`, published 2026-08-13, not yanked | crates.io API, 2026-08-24 |
-| RustSec advisories | none for `soroban-sdk`, `soroban-env-host`, `stellar-xdr` | `raw.githubusercontent.com/rustsec/advisory-db/main/crates/<crate>/` returns 404 for each |
+| RustSec advisories | **the 404 means nothing, see below** | corrected 2026-08-24 after R3 |
 | Rust toolchain | pinned `1.96.0`, target `wasm32v1-none` | `rust-toolchain.toml` |
 | Release profile | `overflow-checks = true`, `panic = "abort"`, `lto`, `strip` | `soroban/Cargo.toml` |
 | `unsafe` blocks | none | grep over `src/` |
 | Upgrade entrypoint | none (`update_current_contract_wasm` absent) | grep over `contracts/` |
+
+**Correction, 2026-08-24.** The first version of this table reported "no RustSec advisory
+for soroban-sdk, soroban-env-host or stellar-xdr" as a reassuring result. It is not a
+result at all. Phase 1 research (R3) established, and the lead auditor confirmed against
+the local advisory database, that **RustSec has never carried a single Stellar advisory**:
+909 crate directories, zero mentioning `soroban` or `stellar`. A 404 there is what you get
+for an ecosystem the database does not cover, not evidence that the ecosystem is clean.
+
+That matters beyond wording, because it makes a CI step decorative.
+`.github/workflows/soroban.yml` runs `cargo audit` under the name "Advisory audit", and
+`cargo audit` reads exactly that database. GitHub, meanwhile, does carry advisories for
+these crates, including a high-severity one against rs-soroban-sdk. So the project's only
+mechanical advisory channel is structurally incapable of reporting the advisories that
+would actually apply to it. That is a Phase 3 finding for A8, not a note.
 
 The SDK pin being *exactly* the current latest is worth stating plainly, because the
 common finding here is the opposite. Phase 2 will still run `cargo audit` and

@@ -1,0 +1,14 @@
+=== RustSec local clone (synced 2026-08-24) directory check ===
+ABSENT : crates/soroban-sdk
+ABSENT : crates/soroban-sdk-macros
+ABSENT : crates/soroban-env-host
+ABSENT : crates/soroban-env-common
+ABSENT : crates/soroban-env-guest
+ABSENT : crates/stellar-xdr
+ABSENT : crates/stellar-strkey
+ABSENT : crates/soroban-wasmi
+ABSENT : crates/soroban-spec
+
+=== any advisory file mentioning soroban/stellar anywhere in db ===
+(grep soroban done)
+(grep stellar done)

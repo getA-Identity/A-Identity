@@ -1,0 +1,9 @@
+=== probed Mon Aug 24 14:55:16 UTC 2026 ===
+--- pubnet https://mainnet.sorobanrpc.com getVersionInfo ---
+{"jsonrpc":"2.0","id":1,"result":{"version":"27.1.1-7e712815319140618b9be8cf0846701a6f9a2cbe","commitHash":"7e712815319140618b9be8cf0846701a6f9a2cbe","buildTimestamp":"2026-07-07T21:12:19","captiveCoreVersion":"stellar-core 27.1.0 (3589a696b0d4ef5a2cf2124e349c671d71886d9c)","protocolVersion":27}}
+--- testnet https://soroban-testnet.stellar.org getVersionInfo ---
+{"jsonrpc":"2.0","id":1,"result":{"version":"28.0.0-e29c911f2a720e2bf05028014c00492450547ccc","commitHash":"e29c911f2a720e2bf05028014c00492450547ccc","buildTimestamp":"2026-08-14T23:53:44","captiveCoreVersion":"stellar-core 28.0.0 (a9b8613218e141ddb89d621e5f04d4c75a149d36)","protocolVersion":27}}
+--- pubnet getLatestLedger (protocolVersion + sequence only) ---
+{'protocolVersion': 27, 'sequence': 64104157, 'closeTime': '1787583315'}
+--- testnet getLatestLedger ---
+{'protocolVersion': 27, 'sequence': 4312054, 'closeTime': '1787583314'}

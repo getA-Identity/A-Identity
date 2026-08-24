@@ -1,0 +1,36 @@
+=== crates.io soroban-sdk versions (27.x) ===
+max_version: 27.0.6 | max_stable_version: 27.0.6 | updated_at: 2026-08-13T02:26:11.343769Z
+  27.0.6 | created: 2026-08-13T02:26:11.343769Z | yanked: False | rust_version: 1.91.0 | dl: 5511
+  27.0.5 | created: 2026-08-03T21:02:52.438469Z | yanked: False | rust_version: 1.91.0 | dl: 5935
+  27.0.4 | created: 2026-07-31T09:25:49.503615Z | yanked: False | rust_version: 1.91.0 | dl: 1694
+  27.0.3 | created: 2026-07-28T07:49:36.390404Z | yanked: False | rust_version: 1.91.0 | dl: 3241
+  27.0.2 | created: 2026-07-23T04:29:43.465802Z | yanked: False | rust_version: 1.91.0 | dl: 37122
+  27.0.1 | created: 2026-07-21T07:30:15.947138Z | yanked: False | rust_version: 1.91.0 | dl: 1675
+  26.1.1 | created: 2026-07-21T05:59:01.989134Z | yanked: False | rust_version: 1.91.0 | dl: 7567
+  25.3.2 | created: 2026-07-21T05:48:27.075070Z | yanked: False | rust_version: 1.91.0 | dl: 3630
+  27.0.0 | created: 2026-07-08T19:57:10.102573Z | yanked: False | rust_version: 1.91.0 | dl: 34386
+  27.0.0-rc.1 | created: 2026-06-17T14:58:20.531873Z | yanked: False | rust_version: 1.91.0 | dl: 15465
+  26.1.0 | created: 2026-06-08T13:58:26.942155Z | yanked: False | rust_version: 1.91.0 | dl: 52662
+  26.0.1 | created: 2026-05-26T20:09:12.720803Z | yanked: False | rust_version: 1.91.0 | dl: 17002
+
+=== rs-soroban-sdk open issues (most recently updated 25) ===
+#2003 [feature request] Change Address arbitrary implementation to support accounts (G) too
+   updated: 2026-08-24T02:33:01Z | https://github.com/stellar/rs-soroban-sdk/issues/2003
+#1736 [bug] `Persistent::all()` and `Temporary::all()` return data from all contracts, not just the current contract (testutils)
+   updated: 2026-08-23T21:34:56Z | https://github.com/stellar/rs-soroban-sdk/issues/1736
+#1975 [-] Test wasm builds (e.g. test_spec_shaking_v2) are not byte-reproducible, causing expand-test-wasms CI to require repeated regeneration
+   updated: 2026-08-23T03:32:17Z | https://github.com/stellar/rs-soroban-sdk/issues/1975
+#1866 [-] Supply chain security
+   updated: 2026-08-23T03:32:16Z | https://github.com/stellar/rs-soroban-sdk/issues/1866
+#2013 [feature request] Block all test-only fns inside contract functions
+   updated: 2026-08-23T03:32:14Z | https://github.com/stellar/rs-soroban-sdk/issues/2013
+#1748 [bug] The PRNG docs should emphasize potential risks from blind-rerunning
+   updated: 2026-08-23T03:32:13Z | https://github.com/stellar/rs-soroban-sdk/issues/1748
+#1945 [feature request] Add a way to install a native contract for later deployment
+   updated: 2026-08-04T18:50:39Z | https://github.com/stellar/rs-soroban-sdk/issues/1945
+#1983 [feature request] Add primitives to support ERC165-like interface detection and other similar protocols
+   updated: 2026-08-03T15:44:23Z | https://github.com/stellar/rs-soroban-sdk/issues/1983
+#1978 [-] Optimise spec shaking v2 with the use of a graph
+   updated: 2026-07-31T12:47:53Z | https://github.com/stellar/rs-soroban-sdk/issues/1978
+#1857 [bug] Type alias for function signatures produces invalid specs
+   updated: 2026-07-31T12:27:20Z | https://github.com/stellar/rs-soroban-sdk/issues/1857

@@ -1,0 +1,12 @@
+=== measured testnet ledger close interval (Horizon testnet) ===
+ledger 4294821 2026-08-23T14:56:23Z
+ledger 4312101 2026-08-24T14:59:09Z
+mean close interval: 5.010 s
+min_temporary_ttl=720 ledgers spans 1.002 hours
+min_persistent_ttl=120960 ledgers spans 7.01 days
+
+=== pubnet derived spans at measured 5.625 s/ledger ===
+min_temporary_ttl 17280 ledgers  = 27.00 hours
+min_persistent_ttl 2073600       = 135.0 days
+max_entry_ttl 3110400            = 202.5 days
+break-even close time for 17280 ledgers == 24h: 5.0000 s

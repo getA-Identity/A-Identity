@@ -1,0 +1,120 @@
+======================================================================
+TAG: v27.0.0 | published: 2026-07-08T19:48:45Z
+URL: https://github.com/stellar/rs-soroban-sdk/releases/tag/v27.0.0
+----------------------------------------------------------------------
+## What's Changed
+
+### New Features
+
+- **CAP-71 — Auth delegation for custom accounts** — Adds support for delegating a custom account's `__check_auth` to another address. `CustomAccount::delegate_auth` hands authorization to a G- or C-address that performs the actual authentication logic, and `CustomAccount::get_delegated_signers` returns the delegated signers supplied in the transaction's authorization payload for verification. (#1896)
+
+### Improvements
+
+- **Zero-copy `BytesN::from` for `[u8; N]`** — `BytesN::from` now uses `BytesN::to_array` instead of allocating, avoiding extra memory allocation and significantly reducing CPU cost on conversions (up to ~80% on larger arrays in end-to-end benchmarks). (#1888)
+
+## What's Changed
+* Update bytes-lit to 0.0.6 by @leighmcculloch in https://github.com/stellar/rs-soroban-sdk/pull/1882
+* Delete .github/workflows/claude-review.yml by @leighmcculloch in https://github.com/stellar/rs-soroban-sdk/pull/1887
+* Test BytesN into [u8; N] conversions by @leighmcculloch in https://github.com/stellar/rs-soroban-sdk/pull/1889
+* Zero Copy improvement: `BytesN::from` to use `BytesN::to_array` by @dkcumming in https://github.com/stellar/rs-soroban-sdk/pull/1888
+* Pin transitive sdk crates to local version in CI by @mootz12 in https://github.com/stellar/rs-soroban-sdk/pull/1902
+* Document wasm32v1-none as supported target by @leighmcculloch in https://github.com/stellar/rs-soroban-sdk/pull/1900
+* Update crate-git-revision to 0.0.9 by @leighmcculloch in https://github.com/stellar/rs-soroban-sdk/pull/1909
+* Update SDK to p27 and add CAP-71 auth delegation support. by @dmkozh in https://github.com/stellar/rs-soroban-sdk/pull/1896
+* Add migration docs for functional changes to cfg attributes and export args by @mootz12 in https://github.com/stellar/rs-soroban-sdk/pull/1886
+* Bump version to 27.0.0-rc.1 by @github-actions[bot] in https://github.com/stellar/rs-soroban-sdk/pull/1912
+* Add a delegated auth rustdoc example by @leighmcculloch in https://github.com/stellar/rs-soroban-sdk/pull/1915
+* Bump version to 27.0.0 by @github-actions[bot] in https://github.com/stellar/rs-soroban-sdk/pull/1925
+
+
+**Full Changelog**: https://github.com/stellar/rs-soroban-sdk/compare/v26.1.0...v27.0.0
+
+======================================================================
+TAG: v27.0.1 | published: 2026-07-21T07:20:46Z
+URL: https://github.com/stellar/rs-soroban-sdk/releases/tag/v27.0.1
+----------------------------------------------------------------------
+## What's Changed
+* Rename allowance expiration argument to live_until_ledger by @fnando in https://github.com/stellar/rs-soroban-sdk/pull/1932
+* Update the version of stellar-env-* crates to fix a dependent version constraint by @leighmcculloch ef0f7e9737e45d5a189592c755941ca50b6dcd0d
+* Bump version to 27.0.1 by @github-actions[bot] in https://github.com/stellar/rs-soroban-sdk/pull/1942
+
+## New Contributors
+* @fnando made their first contribution in https://github.com/stellar/rs-soroban-sdk/pull/1932
+
+**Full Changelog**: https://github.com/stellar/rs-soroban-sdk/compare/v27.0.0...v27.0.1
+
+======================================================================
+TAG: v27.0.2 | published: 2026-07-23T04:20:14Z
+URL: https://github.com/stellar/rs-soroban-sdk/releases/tag/v27.0.2
+----------------------------------------------------------------------
+## What's Changed
+* Fix register_at to switch to recording auth for constructors by @leighmcculloch in https://github.com/stellar/rs-soroban-sdk/pull/1933
+* Switch to recording auth for native constructors by @leighmcculloch in https://github.com/stellar/rs-soroban-sdk/pull/1943
+* Bump version to 27.0.2 by @github-actions[bot] in https://github.com/stellar/rs-soroban-sdk/pull/1947
+
+
+**Full Changelog**: https://github.com/stellar/rs-soroban-sdk/compare/v27.0.1...v27.0.2
+
+======================================================================
+TAG: v27.0.3 | published: 2026-07-28T07:39:46Z
+URL: https://github.com/stellar/rs-soroban-sdk/releases/tag/v27.0.3
+----------------------------------------------------------------------
+## What's Changed
+* Clarify purpose of migration guides by @leighmcculloch in https://github.com/stellar/rs-soroban-sdk/pull/1916
+* Refresh mainnet() resource limits and fees by @leighmcculloch in https://github.com/stellar/rs-soroban-sdk/pull/1946
+* `BytesIter` to read by index instead of re-slicing per byte (the `VecTryIter` approach) by @dkcumming in https://github.com/stellar/rs-soroban-sdk/pull/1935
+* Support unit structs as contract events by @leighmcculloch in https://github.com/stellar/rs-soroban-sdk/pull/1917
+* Document constructor auth mocking on register by @leighmcculloch in https://github.com/stellar/rs-soroban-sdk/pull/1950
+* Update SAC event doc-comments to CAP-67 shapes by @leighmcculloch in https://github.com/stellar/rs-soroban-sdk/pull/1956
+* Bump version to 27.0.3 by @github-actions[bot] in https://github.com/stellar/rs-soroban-sdk/pull/1957
+
+
+**Full Changelog**: https://github.com/stellar/rs-soroban-sdk/compare/v27.0.2...v27.0.3
+
+======================================================================
+TAG: v27.0.4 | published: 2026-07-31T09:15:55Z
+URL: https://github.com/stellar/rs-soroban-sdk/releases/tag/v27.0.4
+----------------------------------------------------------------------
+## What's Changed
+* Add CI workflow classifying PR semver impact by @leighmcculloch in https://github.com/stellar/rs-soroban-sdk/pull/1960
+* Reference mainnet limits instead of listing them by @leighmcculloch in https://github.com/stellar/rs-soroban-sdk/pull/1962
+* Add Semver guidance to pull request template by @leighmcculloch in https://github.com/stellar/rs-soroban-sdk/pull/1958
+* Remove semver-checks job from rust workflow by @leighmcculloch in https://github.com/stellar/rs-soroban-sdk/pull/1969
+* Add test for Bytes::append by @leighmcculloch in https://github.com/stellar/rs-soroban-sdk/pull/1967
+* Bump version to 27.0.4 by @github-actions[bot] in https://github.com/stellar/rs-soroban-sdk/pull/1973
+
+
+**Full Changelog**: https://github.com/stellar/rs-soroban-sdk/compare/v27.0.3...v27.0.4
+
+======================================================================
+TAG: v27.0.5 | published: 2026-08-03T20:52:03Z
+URL: https://github.com/stellar/rs-soroban-sdk/releases/tag/v27.0.5
+----------------------------------------------------------------------
+## What's Changed
+* Skip semver workflow on draft pull requests by @leighmcculloch in https://github.com/stellar/rs-soroban-sdk/pull/1976
+* Fix pr template markdown rendering by @leighmcculloch in https://github.com/stellar/rs-soroban-sdk/pull/1972
+* Filter empty wasm hash from snapshot lookups by @leighmcculloch in https://github.com/stellar/rs-soroban-sdk/pull/1905
+* Add tests for contracttype with aliased imports by @leighmcculloch in https://github.com/stellar/rs-soroban-sdk/pull/1971
+* Remove dead TOPIC_BYTES_LENGTH_LIMIT constant by @leighmcculloch in https://github.com/stellar/rs-soroban-sdk/pull/1977
+* Update SAC set_admin event doc-comments to CAP-67 shape by @pedro-pelicioni in https://github.com/stellar/rs-soroban-sdk/pull/1980
+* Update SAC set_admin event doc-comments to CAP-67 shape by @namdamdoi68-oss in https://github.com/stellar/rs-soroban-sdk/pull/1981
+* Fix StellarAssetInterface shared-function event docs by @leighmcculloch in https://github.com/stellar/rs-soroban-sdk/pull/1984
+* Bump version to 27.0.5 by @github-actions[bot] in https://github.com/stellar/rs-soroban-sdk/pull/1987
+
+## New Contributors
+* @pedro-pelicioni made their first contribution in https://github.com/stellar/rs-soroban-sdk/pull/1980
+* @namdamdoi68-oss made their first contribution in https://github.com/stellar/rs-soroban-sdk/pull/1981
+
+**Full Changelog**: https://github.com/stellar/rs-soroban-sdk/compare/v27.0.4...v27.0.5
+
+======================================================================
+TAG: v27.0.6 | published: 2026-08-13T02:15:09Z
+URL: https://github.com/stellar/rs-soroban-sdk/releases/tag/v27.0.6
+----------------------------------------------------------------------
+## What's Changed
+
+- Error on contracttrait without a trait impl (#1992)
+- Show a constructor and event publishing in the front page docs example (#2001)
+
+**Full Changelog**: https://github.com/stellar/rs-soroban-sdk/compare/v27.0.5...v27.0.6
+

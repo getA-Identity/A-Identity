@@ -1,0 +1,428 @@
+=== cargo tree (full, all features, host target) ===
+agent-spend-policy v0.1.0 (/Users/mericcintosun/A-Identity/soroban/contracts/agent-spend-policy)
+└── soroban-sdk v27.0.6
+    ├── arbitrary v1.3.2
+    │   └── derive_arbitrary v1.3.2 (proc-macro)
+    │       ├── proc-macro2 v1.0.107
+    │       │   └── unicode-ident v1.0.24
+    │       ├── quote v1.0.47
+    │       │   └── proc-macro2 v1.0.107 (*)
+    │       └── syn v2.0.119
+    │           ├── proc-macro2 v1.0.107 (*)
+    │           ├── quote v1.0.47 (*)
+    │           └── unicode-ident v1.0.24
+    ├── bytes-lit v0.0.6 (proc-macro)
+    │   ├── num-bigint v0.4.8
+    │   │   ├── num-integer v0.1.47
+    │   │   │   └── num-traits v0.2.19
+    │   │   │       [build-dependencies]
+    │   │   │       └── autocfg v1.5.1
+    │   │   └── num-traits v0.2.19 (*)
+    │   ├── proc-macro2 v1.0.107 (*)
+    │   ├── quote v1.0.47 (*)
+    │   └── syn v2.0.119 (*)
+    ├── ctor v0.5.0
+    │   ├── ctor-proc-macro v0.0.6 (proc-macro)
+    │   └── dtor v0.1.1
+    │       └── dtor-proc-macro v0.0.6 (proc-macro)
+    ├── derive_arbitrary v1.3.2 (proc-macro) (*)
+    ├── ed25519-dalek v2.2.0
+    │   ├── curve25519-dalek v4.1.3
+    │   │   ├── cfg-if v1.0.4
+    │   │   ├── digest v0.10.7
+    │   │   │   ├── block-buffer v0.10.4
+    │   │   │   │   └── generic-array v0.14.9
+    │   │   │   │       ├── typenum v1.20.1
+    │   │   │   │       └── zeroize v1.9.0
+    │   │   │   │           └── zeroize_derive v1.5.0 (proc-macro)
+    │   │   │   │               ├── proc-macro2 v1.0.107 (*)
+    │   │   │   │               ├── quote v1.0.47 (*)
+    │   │   │   │               └── syn v2.0.119 (*)
+    │   │   │   │       [build-dependencies]
+    │   │   │   │       └── version_check v0.9.5
+    │   │   │   ├── const-oid v0.9.6
+    │   │   │   ├── crypto-common v0.1.6
+    │   │   │   │   ├── generic-array v0.14.9 (*)
+    │   │   │   │   └── typenum v1.20.1
+    │   │   │   └── subtle v2.6.1
+    │   │   ├── subtle v2.6.1
+    │   │   └── zeroize v1.9.0 (*)
+    │   │   [build-dependencies]
+    │   │   └── rustc_version v0.4.1
+    │   │       └── semver v1.0.28
+    │   ├── ed25519 v2.2.3
+    │   │   └── signature v2.2.0
+    │   │       ├── digest v0.10.7 (*)
+    │   │       └── rand_core v0.6.4
+    │   │           └── getrandom v0.2.17
+    │   │               ├── cfg-if v1.0.4
+    │   │               └── libc v0.2.189
+    │   ├── rand_core v0.6.4 (*)
+    │   ├── sha2 v0.10.9
+    │   │   ├── cfg-if v1.0.4
+    │   │   ├── cpufeatures v0.2.17
+    │   │   │   └── libc v0.2.189
+    │   │   └── digest v0.10.7 (*)
+    │   ├── subtle v2.6.1
+    │   └── zeroize v1.9.0 (*)
+    ├── rand v0.8.7
+    │   ├── libc v0.2.189
+    │   ├── rand_chacha v0.3.1
+    │   │   ├── ppv-lite86 v0.2.21
+    │   │   │   └── zerocopy v0.8.56
+    │   │   └── rand_core v0.6.4 (*)
+    │   └── rand_core v0.6.4 (*)
+    ├── serde v1.0.229
+    │   ├── serde_core v1.0.229
+    │   └── serde_derive v1.0.229 (proc-macro)
+    │       ├── proc-macro2 v1.0.107 (*)
+    │       ├── quote v1.0.47 (*)
+    │       └── syn v3.0.3
+    │           ├── proc-macro2 v1.0.107 (*)
+    │           ├── quote v1.0.47 (*)
+    │           └── unicode-ident v1.0.24
+    ├── serde_json v1.0.151
+    │   ├── itoa v1.0.18
+    │   ├── memchr v2.8.3
+    │   ├── serde_core v1.0.229
+    │   └── zmij v1.0.23
+    ├── soroban-env-host v27.0.1
+    │   ├── ark-bls12-381 v0.5.0
+    │   │   ├── ark-ec v0.5.0
+    │   │   │   ├── ahash v0.8.12
+    │   │   │   │   ├── cfg-if v1.0.4
+    │   │   │   │   ├── once_cell v1.21.4
+    │   │   │   │   └── zerocopy v0.8.56
+    │   │   │   │   [build-dependencies]
+    │   │   │   │   └── version_check v0.9.5
+    │   │   │   ├── ark-ff v0.5.0
+    │   │   │   │   ├── ark-ff-asm v0.5.0 (proc-macro)
+    │   │   │   │   │   ├── quote v1.0.47 (*)
+    │   │   │   │   │   └── syn v2.0.119 (*)
+    │   │   │   │   ├── ark-ff-macros v0.5.0 (proc-macro)
+    │   │   │   │   │   ├── num-bigint v0.4.8 (*)
+    │   │   │   │   │   ├── num-traits v0.2.19 (*)
+    │   │   │   │   │   ├── proc-macro2 v1.0.107 (*)
+    │   │   │   │   │   ├── quote v1.0.47 (*)
+    │   │   │   │   │   └── syn v2.0.119 (*)
+    │   │   │   │   ├── ark-serialize v0.5.0
+    │   │   │   │   │   ├── ark-serialize-derive v0.5.0 (proc-macro)
+    │   │   │   │   │   │   ├── proc-macro2 v1.0.107 (*)
+    │   │   │   │   │   │   ├── quote v1.0.47 (*)
+    │   │   │   │   │   │   └── syn v2.0.119 (*)
+    │   │   │   │   │   ├── ark-std v0.5.0
+    │   │   │   │   │   │   ├── num-traits v0.2.19
+    │   │   │   │   │   │   │   [build-dependencies]
+    │   │   │   │   │   │   │   └── autocfg v1.5.1
+    │   │   │   │   │   │   └── rand v0.8.7 (*)
+    │   │   │   │   │   ├── arrayvec v0.7.8
+    │   │   │   │   │   ├── digest v0.10.7 (*)
+    │   │   │   │   │   └── num-bigint v0.4.8
+    │   │   │   │   │       ├── num-integer v0.1.47
+    │   │   │   │   │       │   └── num-traits v0.2.19 (*)
+    │   │   │   │   │       └── num-traits v0.2.19 (*)
+    │   │   │   │   ├── ark-std v0.5.0 (*)
+    │   │   │   │   ├── arrayvec v0.7.8
+    │   │   │   │   ├── digest v0.10.7 (*)
+    │   │   │   │   ├── educe v0.6.0 (proc-macro)
+    │   │   │   │   │   ├── enum-ordinalize v4.4.2
+    │   │   │   │   │   │   └── enum-ordinalize-derive v4.4.2 (proc-macro)
+    │   │   │   │   │   │       ├── proc-macro2 v1.0.107 (*)
+    │   │   │   │   │   │       ├── quote v1.0.47 (*)
+    │   │   │   │   │   │       └── syn v3.0.3 (*)
+    │   │   │   │   │   ├── proc-macro2 v1.0.107 (*)
+    │   │   │   │   │   ├── quote v1.0.47 (*)
+    │   │   │   │   │   └── syn v2.0.119 (*)
+    │   │   │   │   ├── itertools v0.13.0
+    │   │   │   │   │   └── either v1.17.0
+    │   │   │   │   ├── num-bigint v0.4.8 (*)
+    │   │   │   │   ├── num-traits v0.2.19 (*)
+    │   │   │   │   ├── paste v1.0.15 (proc-macro)
+    │   │   │   │   └── zeroize v1.9.0 (*)
+    │   │   │   ├── ark-poly v0.5.0
+    │   │   │   │   ├── ahash v0.8.12 (*)
+    │   │   │   │   ├── ark-ff v0.5.0 (*)
+    │   │   │   │   ├── ark-serialize v0.5.0 (*)
+    │   │   │   │   ├── ark-std v0.5.0 (*)
+    │   │   │   │   ├── educe v0.6.0 (proc-macro) (*)
+    │   │   │   │   └── hashbrown v0.15.5
+    │   │   │   │       └── allocator-api2 v0.2.21
+    │   │   │   ├── ark-serialize v0.5.0 (*)
+    │   │   │   ├── ark-std v0.5.0 (*)
+    │   │   │   ├── educe v0.6.0 (proc-macro) (*)
+    │   │   │   ├── hashbrown v0.15.5 (*)
+    │   │   │   ├── itertools v0.13.0 (*)
+    │   │   │   ├── num-bigint v0.4.8 (*)
+    │   │   │   ├── num-integer v0.1.47 (*)
+    │   │   │   ├── num-traits v0.2.19 (*)
+    │   │   │   └── zeroize v1.9.0 (*)
+    │   │   ├── ark-ff v0.5.0 (*)
+    │   │   ├── ark-serialize v0.5.0 (*)
+    │   │   └── ark-std v0.5.0 (*)
+    │   ├── ark-bn254 v0.5.0
+    │   │   ├── ark-ec v0.5.0 (*)
+    │   │   ├── ark-ff v0.5.0 (*)
+    │   │   └── ark-std v0.5.0 (*)
+    │   ├── ark-ec v0.5.0 (*)
+    │   ├── ark-ff v0.5.0 (*)
+    │   ├── ark-serialize v0.5.0 (*)
+    │   ├── curve25519-dalek v5.0.0
+    │   │   ├── cfg-if v1.0.4
+    │   │   ├── digest v0.11.3
+    │   │   │   ├── block-buffer v0.12.1
+    │   │   │   │   └── hybrid-array v0.4.14
+    │   │   │   │       └── typenum v1.20.1
+    │   │   │   └── crypto-common v0.2.2
+    │   │   │       └── hybrid-array v0.4.14 (*)
+    │   │   └── subtle v2.6.1
+    │   │   [build-dependencies]
+    │   │   └── rustc_version v0.4.1 (*)
+    │   ├── ecdsa v0.16.9
+    │   │   ├── der v0.7.10
+    │   │   │   ├── const-oid v0.9.6
+    │   │   │   └── zeroize v1.9.0 (*)
+    │   │   ├── digest v0.10.7 (*)
+    │   │   ├── elliptic-curve v0.13.8
+    │   │   │   ├── base16ct v0.2.0
+    │   │   │   ├── crypto-bigint v0.5.5
+    │   │   │   │   ├── generic-array v0.14.9 (*)
+    │   │   │   │   ├── rand_core v0.6.4 (*)
+    │   │   │   │   ├── subtle v2.6.1
+    │   │   │   │   └── zeroize v1.9.0 (*)
+    │   │   │   ├── digest v0.10.7 (*)
+    │   │   │   ├── ff v0.13.1
+    │   │   │   │   ├── rand_core v0.6.4 (*)
+    │   │   │   │   └── subtle v2.6.1
+    │   │   │   ├── generic-array v0.14.9 (*)
+    │   │   │   ├── group v0.13.0
+    │   │   │   │   ├── ff v0.13.1 (*)
+    │   │   │   │   ├── rand_core v0.6.4 (*)
+    │   │   │   │   └── subtle v2.6.1
+    │   │   │   ├── rand_core v0.6.4 (*)
+    │   │   │   ├── sec1 v0.7.3
+    │   │   │   │   ├── base16ct v0.2.0
+    │   │   │   │   ├── der v0.7.10 (*)
+    │   │   │   │   ├── generic-array v0.14.9 (*)
+    │   │   │   │   ├── subtle v2.6.1
+    │   │   │   │   └── zeroize v1.9.0 (*)
+    │   │   │   ├── subtle v2.6.1
+    │   │   │   └── zeroize v1.9.0 (*)
+    │   │   ├── rfc6979 v0.4.0
+    │   │   │   ├── hmac v0.12.1
+    │   │   │   │   └── digest v0.10.7 (*)
+    │   │   │   └── subtle v2.6.1
+    │   │   └── signature v2.2.0 (*)
+    │   ├── ed25519-dalek v2.2.0 (*)
+    │   ├── elliptic-curve v0.13.8 (*)
+    │   ├── generic-array v0.14.9 (*)
+    │   ├── getrandom v0.2.17 (*)
+    │   ├── hex-literal v0.4.1
+    │   ├── hmac v0.12.1 (*)
+    │   ├── k256 v0.13.4
+    │   │   ├── cfg-if v1.0.4
+    │   │   ├── ecdsa v0.16.9 (*)
+    │   │   ├── elliptic-curve v0.13.8 (*)
+    │   │   └── sha2 v0.10.9 (*)
+    │   ├── num-derive v0.4.2 (proc-macro)
+    │   │   ├── proc-macro2 v1.0.107 (*)
+    │   │   ├── quote v1.0.47 (*)
+    │   │   └── syn v2.0.119 (*)
+    │   ├── num-integer v0.1.47 (*)
+    │   ├── num-traits v0.2.19 (*)
+    │   ├── p256 v0.13.2
+    │   │   ├── ecdsa v0.16.9 (*)
+    │   │   ├── elliptic-curve v0.13.8 (*)
+    │   │   ├── primeorder v0.13.6
+    │   │   │   └── elliptic-curve v0.13.8 (*)
+    │   │   └── sha2 v0.10.9 (*)
+    │   ├── rand v0.8.7 (*)
+    │   ├── rand_chacha v0.3.1 (*)
+    │   ├── sec1 v0.7.3 (*)
+    │   ├── sha2 v0.10.9 (*)
+    │   ├── sha3 v0.10.9
+    │   │   ├── digest v0.10.7 (*)
+    │   │   └── keccak v0.1.6
+    │   │       └── cpufeatures v0.2.17 (*)
+    │   ├── soroban-builtin-sdk-macros v27.0.1 (proc-macro)
+    │   │   ├── itertools v0.13.0
+    │   │   │   └── either v1.17.0
+    │   │   ├── proc-macro2 v1.0.107 (*)
+    │   │   ├── quote v1.0.47 (*)
+    │   │   └── syn v2.0.119 (*)
+    │   ├── soroban-env-common v27.0.1
+    │   │   ├── arbitrary v1.3.2 (*)
+    │   │   ├── ethnum v1.5.3
+    │   │   ├── num-derive v0.4.2 (proc-macro) (*)
+    │   │   ├── num-traits v0.2.19 (*)
+    │   │   ├── serde v1.0.229 (*)
+    │   │   ├── soroban-env-macros v27.0.1 (proc-macro)
+    │   │   │   ├── itertools v0.13.0 (*)
+    │   │   │   ├── proc-macro2 v1.0.107 (*)
+    │   │   │   ├── quote v1.0.47 (*)
+    │   │   │   ├── serde v1.0.229 (*)
+    │   │   │   ├── serde_json v1.0.151 (*)
+    │   │   │   ├── stellar-xdr v27.0.0
+    │   │   │   │   ├── cfg_eval v0.1.2 (proc-macro)
+    │   │   │   │   │   ├── proc-macro2 v1.0.107 (*)
+    │   │   │   │   │   ├── quote v1.0.47 (*)
+    │   │   │   │   │   └── syn v2.0.119 (*)
+    │   │   │   │   ├── escape-bytes v0.1.1
+    │   │   │   │   ├── ethnum v1.5.3
+    │   │   │   │   ├── hex v0.4.3
+    │   │   │   │   │   └── serde v1.0.229 (*)
+    │   │   │   │   ├── serde v1.0.229 (*)
+    │   │   │   │   ├── serde_with v3.22.0
+    │   │   │   │   │   ├── schemars v0.8.22
+    │   │   │   │   │   │   ├── dyn-clone v1.0.20
+    │   │   │   │   │   │   ├── serde v1.0.229 (*)
+    │   │   │   │   │   │   └── serde_json v1.0.151 (*)
+    │   │   │   │   │   ├── serde_core v1.0.229
+    │   │   │   │   │   ├── serde_json v1.0.151 (*)
+    │   │   │   │   │   └── serde_with_macros v3.22.0 (proc-macro)
+    │   │   │   │   │       ├── darling v0.23.0
+    │   │   │   │   │       │   ├── darling_core v0.23.0
+    │   │   │   │   │       │   │   ├── ident_case v1.0.1
+    │   │   │   │   │       │   │   ├── proc-macro2 v1.0.107 (*)
+    │   │   │   │   │       │   │   ├── quote v1.0.47 (*)
+    │   │   │   │   │       │   │   ├── strsim v0.11.1
+    │   │   │   │   │       │   │   └── syn v2.0.119 (*)
+    │   │   │   │   │       │   └── darling_macro v0.23.0 (proc-macro)
+    │   │   │   │   │       │       ├── darling_core v0.23.0 (*)
+    │   │   │   │   │       │       ├── quote v1.0.47 (*)
+    │   │   │   │   │       │       └── syn v2.0.119 (*)
+    │   │   │   │   │       ├── proc-macro2 v1.0.107 (*)
+    │   │   │   │   │       ├── quote v1.0.47 (*)
+    │   │   │   │   │       └── syn v2.0.119 (*)
+    │   │   │   │   ├── sha2 v0.10.9 (*)
+    │   │   │   │   └── stellar-strkey v0.0.13
+    │   │   │   │       └── data-encoding v2.11.1
+    │   │   │   │       [build-dependencies]
+    │   │   │   │       └── crate-git-revision v0.0.6
+    │   │   │   │           ├── serde v1.0.229 (*)
+    │   │   │   │           ├── serde_derive v1.0.229 (proc-macro) (*)
+    │   │   │   │           └── serde_json v1.0.151 (*)
+    │   │   │   │   [build-dependencies]
+    │   │   │   │   └── crate-git-revision v0.0.6 (*)
+    │   │   │   └── syn v2.0.119 (*)
+    │   │   ├── soroban-wasmi v0.31.1-soroban.20.0.1
+    │   │   │   ├── smallvec v1.15.2
+    │   │   │   ├── spin v0.9.9
+    │   │   │   ├── wasmi_arena v0.4.1
+    │   │   │   ├── wasmi_core v0.13.0
+    │   │   │   │   ├── downcast-rs v1.2.1
+    │   │   │   │   ├── libm v0.2.16
+    │   │   │   │   ├── num-traits v0.2.19 (*)
+    │   │   │   │   └── paste v1.0.15 (proc-macro)
+    │   │   │   └── wasmparser-nostd v0.100.2
+    │   │   │       └── indexmap-nostd v0.4.0
+    │   │   ├── static_assertions v1.1.0
+    │   │   ├── stellar-xdr v27.0.0
+    │   │   │   ├── arbitrary v1.3.2 (*)
+    │   │   │   ├── base64 v0.22.1
+    │   │   │   ├── cfg_eval v0.1.2 (proc-macro) (*)
+    │   │   │   ├── escape-bytes v0.1.1
+    │   │   │   ├── ethnum v1.5.3
+    │   │   │   ├── hex v0.4.3 (*)
+    │   │   │   ├── serde v1.0.229 (*)
+    │   │   │   ├── serde_with v3.22.0
+    │   │   │   │   ├── hex v0.4.3 (*)
+    │   │   │   │   ├── schemars v0.8.22 (*)
+    │   │   │   │   ├── serde_core v1.0.229
+    │   │   │   │   ├── serde_json v1.0.151 (*)
+    │   │   │   │   └── serde_with_macros v3.22.0 (proc-macro) (*)
+    │   │   │   ├── sha2 v0.10.9 (*)
+    │   │   │   └── stellar-strkey v0.0.13 (*)
+    │   │   │   [build-dependencies]
+    │   │   │   └── crate-git-revision v0.0.6 (*)
+    │   │   └── wasmparser v0.116.1
+    │   │       ├── indexmap v2.14.0
+    │   │       │   ├── equivalent v1.0.2
+    │   │       │   └── hashbrown v0.17.1
+    │   │       └── semver v1.0.28
+    │   │   [build-dependencies]
+    │   │   └── crate-git-revision v0.0.6 (*)
+    │   ├── soroban-wasmi v0.31.1-soroban.20.0.1 (*)
+    │   ├── static_assertions v1.1.0
+    │   ├── stellar-strkey v0.0.13 (*)
+    │   └── wasmparser v0.116.1 (*)
+    ├── soroban-ledger-snapshot v27.0.6
+    │   ├── serde v1.0.229 (*)
+    │   ├── serde_json v1.0.151 (*)
+    │   ├── serde_with v3.22.0 (*)
+    │   ├── soroban-env-common v27.0.1 (*)
+    │   ├── soroban-env-host v27.0.1 (*)
+    │   └── thiserror v1.0.69
+    │       └── thiserror-impl v1.0.69 (proc-macro)
+    │           ├── proc-macro2 v1.0.107 (*)
+    │           ├── quote v1.0.47 (*)
+    │           └── syn v2.0.119 (*)
+    ├── soroban-sdk-macros v27.0.6 (proc-macro)
+    │   ├── darling v0.20.11
+    │   │   ├── darling_core v0.20.11
+    │   │   │   ├── fnv v1.0.7
+    │   │   │   ├── ident_case v1.0.1
+    │   │   │   ├── proc-macro2 v1.0.107 (*)
+    │   │   │   ├── quote v1.0.47 (*)
+    │   │   │   ├── strsim v0.11.1
+    │   │   │   └── syn v2.0.119 (*)
+    │   │   └── darling_macro v0.20.11 (proc-macro)
+    │   │       ├── darling_core v0.20.11 (*)
+    │   │       ├── quote v1.0.47 (*)
+    │   │       └── syn v2.0.119 (*)
+    │   ├── heck v0.5.0
+    │   ├── itertools v0.13.0 (*)
+    │   ├── macro-string v0.1.4
+    │   │   ├── proc-macro2 v1.0.107 (*)
+    │   │   ├── quote v1.0.47 (*)
+    │   │   └── syn v2.0.119 (*)
+    │   ├── proc-macro2 v1.0.107 (*)
+    │   ├── quote v1.0.47 (*)
+    │   ├── sha2 v0.10.9 (*)
+    │   ├── soroban-env-common v27.0.1
+    │   │   ├── ethnum v1.5.3
+    │   │   ├── num-derive v0.4.2 (proc-macro) (*)
+    │   │   ├── num-traits v0.2.19 (*)
+    │   │   ├── soroban-env-macros v27.0.1 (proc-macro) (*)
+    │   │   ├── static_assertions v1.1.0
+    │   │   └── stellar-xdr v27.0.0 (*)
+    │   │   [build-dependencies]
+    │   │   └── crate-git-revision v0.0.6 (*)
+    │   ├── soroban-spec v27.0.6
+    │   │   ├── base64 v0.22.1
+    │   │   ├── sha2 v0.10.9 (*)
+    │   │   ├── stellar-xdr v27.0.0 (*)
+    │   │   ├── thiserror v1.0.69 (*)
+    │   │   └── wasmparser v0.116.1 (*)
+    │   ├── soroban-spec-rust v27.0.6
+    │   │   ├── prettyplease v0.2.37
+    │   │   │   ├── proc-macro2 v1.0.107 (*)
+    │   │   │   └── syn v2.0.119 (*)
+    │   │   ├── proc-macro2 v1.0.107 (*)
+    │   │   ├── quote v1.0.47 (*)
+    │   │   ├── sha2 v0.10.9 (*)
+    │   │   ├── soroban-spec v27.0.6 (*)
+    │   │   ├── stellar-xdr v27.0.0 (*)
+    │   │   ├── syn v2.0.119 (*)
+    │   │   └── thiserror v1.0.69 (*)
+    │   ├── stellar-xdr v27.0.0 (*)
+    │   └── syn v2.0.119 (*)
+    ├── stellar-strkey v0.0.16
+    │   ├── data-encoding v2.11.1
+    │   └── heapless v0.8.0
+    │       ├── hash32 v0.3.1
+    │       │   └── byteorder v1.5.0
+    │       └── stable_deref_trait v1.2.1
+    │   [build-dependencies]
+    │   └── crate-git-revision v0.0.6 (*)
+    └── visibility v0.1.1 (proc-macro)
+        ├── proc-macro2 v1.0.107 (*)
+        ├── quote v1.0.47 (*)
+        └── syn v2.0.119 (*)
+    [build-dependencies]
+    ├── crate-git-revision v0.0.9
+    │   ├── serde v1.0.229 (*)
+    │   ├── serde_derive v1.0.229 (proc-macro) (*)
+    │   └── serde_json v1.0.151 (*)
+    └── rustc_version v0.4.1 (*)
+[dev-dependencies]
+└── soroban-sdk v27.0.6 (*)

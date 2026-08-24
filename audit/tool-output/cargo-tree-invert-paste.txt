@@ -1,0 +1,25 @@
+paste v1.0.15 (proc-macro)
+├── ark-ff v0.5.0
+│   ├── ark-bls12-381 v0.5.0
+│   │   └── soroban-env-host v27.0.1
+│   │       ├── soroban-ledger-snapshot v27.0.6
+│   │       │   └── soroban-sdk v27.0.6
+│   │       │       └── agent-spend-policy v0.1.0 (/Users/mericcintosun/A-Identity/soroban/contracts/agent-spend-policy)
+│   │       │       [dev-dependencies]
+│   │       │       └── agent-spend-policy v0.1.0 (/Users/mericcintosun/A-Identity/soroban/contracts/agent-spend-policy)
+│   │       └── soroban-sdk v27.0.6 (*)
+│   ├── ark-bn254 v0.5.0
+│   │   └── soroban-env-host v27.0.1 (*)
+│   ├── ark-ec v0.5.0
+│   │   ├── ark-bls12-381 v0.5.0 (*)
+│   │   ├── ark-bn254 v0.5.0 (*)
+│   │   └── soroban-env-host v27.0.1 (*)
+│   ├── ark-poly v0.5.0
+│   │   └── ark-ec v0.5.0 (*)
+│   └── soroban-env-host v27.0.1 (*)
+└── wasmi_core v0.13.0
+    └── soroban-wasmi v0.31.1-soroban.20.0.1
+        ├── soroban-env-common v27.0.1
+        │   ├── soroban-env-host v27.0.1 (*)
+        │   └── soroban-ledger-snapshot v27.0.6 (*)
+        └── soroban-env-host v27.0.1 (*)

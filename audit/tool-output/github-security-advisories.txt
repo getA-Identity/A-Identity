@@ -1,0 +1,56 @@
+########## stellar/rs-soroban-sdk ##########
+count: 3
+---
+ghsa: GHSA-x2hw-px52-wp4m | cve: CVE-2026-32322 | severity: medium | state: published
+published: 2026-03-12T13:48:41Z | updated: 2026-03-12T15:26:49Z
+summary: `Fr` scalar field equality comparison bypasses modular reduction
+  pkg: rust soroban-sdk | vulnerable: >= 25.0.0, < 25.3.0 | patched: 25.3.0
+  pkg: rust soroban-sdk | vulnerable: >= 23.0.0, < 23.5.3 | patched: 23.5.3
+  pkg: rust soroban-sdk | vulnerable: < 22.0.11 | patched: 22.0.11
+  url: https://github.com/stellar/rs-soroban-sdk/security/advisories/GHSA-x2hw-px52-wp4m
+---
+ghsa: GHSA-4chv-4c6w-w254 | cve: CVE-2026-26267 | severity: high | state: published
+published: 2026-02-13T23:32:04Z | updated: 2026-02-13T23:32:04Z
+summary: `#[contractimpl]` macro calls inherent function instead of trait function when names collide
+  pkg: rust soroban-sdk-macros | vulnerable: >= 25.0.0, <= 25.1.0 | patched: 25.1.1
+  pkg: rust soroban-sdk-macros | vulnerable: >= 23.0.0, <= 23.5.1 | patched: 23.5.2
+  pkg: rust soroban-sdk-macros | vulnerable: <= 22.0.9 | patched: 22.0.10
+  url: https://github.com/stellar/rs-soroban-sdk/security/advisories/GHSA-4chv-4c6w-w254
+---
+ghsa: GHSA-96xm-fv9w-pf3f | cve: CVE-2026-24889 | severity: medium | state: published
+published: 2026-01-28T06:38:43Z | updated: 2026-01-28T14:57:09Z
+summary: Overflow in Bytes::slice, Vec::slice, GenRange::gen_range for u64
+  pkg: rust soroban-sdk | vulnerable: >= 25.0.0, <= 25.0.1 | patched: 25.0.2
+  pkg: rust soroban-sdk | vulnerable: >= 23.0.0, <= 23.5.0 | patched: 23.5.1
+  pkg: rust soroban-sdk | vulnerable: <= 22.0.8 | patched: 22.0.9
+  url: https://github.com/stellar/rs-soroban-sdk/security/advisories/GHSA-96xm-fv9w-pf3f
+########## stellar/rs-soroban-env ##########
+count: 1
+---
+ghsa: GHSA-pm4j-7r4q-ccg8 | cve: None | severity: low | state: published
+published: 2026-03-06T21:50:59Z | updated: 2026-03-06T21:50:59Z
+summary: Muxed address<->ScVal conversions may break after a conversion failure
+  pkg: rust soroban-env-host | vulnerable: <26.0.0 | patched: 26.0.0
+  url: https://github.com/stellar/rs-soroban-env/security/advisories/GHSA-pm4j-7r4q-ccg8
+########## stellar/rs-stellar-xdr ##########
+count: 1
+---
+ghsa: GHSA-x57h-xx53-v53w | cve: CVE-2026-29795 | severity: medium | state: published
+published: 2026-03-04T23:03:30Z | updated: 2026-03-05T21:06:44Z
+summary: StringM::from_str bypasses max length validation
+  pkg: rust stellar-xdr | vulnerable: <= 25.0.0 | patched: 25.0.1
+  url: https://github.com/stellar/rs-stellar-xdr/security/advisories/GHSA-x57h-xx53-v53w
+########## stellar/stellar-core ##########
+count: 2
+---
+ghsa: GHSA-3p8h-7v82-ffvq | cve: None | severity: low | state: published
+published: 2025-01-29T19:54:51Z | updated: 2025-01-29T19:54:51Z
+summary: Memo Mutability With Soroban Auth Signatures
+  pkg: c++ Stellar-Core | vulnerable: < 22.0.0 | patched: 22.0.0
+  url: https://github.com/stellar/stellar-core/security/advisories/GHSA-3p8h-7v82-ffvq
+---
+ghsa: GHSA-mgx8-frjx-x33m | cve: CVE-2024-32985 | severity: medium | state: published
+published: 2024-05-09T20:41:01Z | updated: 2024-05-09T20:41:01Z
+summary: Remote P2P Crash Vulnerability
+  pkg: c++ stellar-core | vulnerable: < v20.4.0 | patched: v20.4.0
+  url: https://github.com/stellar/stellar-core/security/advisories/GHSA-mgx8-frjx-x33m

@@ -1,0 +1,134 @@
+################ rs-soroban-sdk issue #1866 ################
+title: Supply chain security
+state: open | created: 2026-05-08T15:01:38Z | updated: 2026-08-23T03:32:16Z
+labels: []
+url: https://github.com/stellar/rs-soroban-sdk/issues/1866
+---
+<!-- Please answer these questions before submitting your issue. Thanks! -->
+
+### What problem does your feature solve?
+
+Linked to some discussions about supply chain https://github.com/orgs/stellar/discussions/1923. Compliance with SLSA Level 4 on source, build, provenance and distribution should be a target for all major repos distributing software. Unless I missed something, I think there are some things to do here.
+
+### What would you like to see?
+
+Some easy lifts outlined below.
+
+Source & build:
+- GitHub workflow auditing https://github.com/zizmorcore/zizmor
+- Enforce 2 approvals on releases using a dedicated env which must not have any caching, must pin using hashes, etc.
+
+Provenance:
+- https://github.com/actions/attest-build-provenance
+- https://github.com/slsa-framework/slsa-github-generator
+
+Distribution:
+- https://crates.io/docs/trusted-publishing
+- https://github.com/rust-lang/crates-io-auth-action
+
+SBOM:
+- https://github.com/aquasecurity/trivy generate both cycloneDX and spdx formats
+- https://github.com/anchore/grype for automated analysis which can use the SBOMs
+
+### What alternatives are there?
+
+Not an option IMO.
+
+
+################ rs-soroban-sdk issue #2013 ################
+title: Block all test-only fns inside contract functions
+state: open | created: 2026-08-18T01:38:52Z | updated: 2026-08-23T03:32:14Z
+labels: ['feature request']
+url: https://github.com/stellar/rs-soroban-sdk/issues/2013
+---
+<!-- Please answer these questions before submitting your issue. Thanks! -->
+
+### What problem does your feature solve?
+
+It can be easy to use a test only function inside a contract function during dev and testing before getting to a production build.
+
+### What would you like to see?
+
+Expansion of what we added in https://github.com/stellar/rs-soroban-sdk/pull/2010 to other functions that are only appropriate to use inside tests.
+
+### What alternatives are there?
+
+Doing nothing.
+
+################ rs-soroban-sdk issue #1736 ################
+title: `Persistent::all()` and `Temporary::all()` return data from all contracts, not just the current contract (testutils)
+state: open | created: 2026-02-17T12:31:33Z | updated: 2026-08-23T21:34:56Z
+labels: ['bug']
+url: https://github.com/stellar/rs-soroban-sdk/issues/1736
+---
+### What version are you using?
+
+Latest (the bug exists on `main`).
+
+### What did you do?
+
+Called `persistent().all()` or `temporary().all()` in a multi-contract test scenario.
+
+The `all()` helper in `soroban-sdk/src/storage.rs` (lines 663-695) iterates all stored ledger entries and filters only by durability type, but never checks the `contract` field:
+
+```rust
+fn all(env: &Env, d: xdr::ContractDataDurability) -> Map<Val, Val> {
+    let storage = env.host().get_stored_entries().unwrap();
+    let mut map = Map::<Val, Val>::new(env);
+    for entry in storage {
+        let (_, Some((v, _))) = entry else { continue; };
+        let xdr::LedgerEntry {
+            data: xdr::LedgerEntryData::ContractData(xdr::ContractDataEntry {
+                ref key, ref val, durability,
+                .. // <-- `contract` field destructured away, never checked
+            }),
+            ..
+        } = *v else { continue; };
+        if d != durability { continue; }
+        // Missing: filter by current contract address
+        let Ok(key) = Val::try_from_val(env, key) else { continue; };
+        let Ok(val) = Val::try_from_val(env, val) else { continue; };
+        map.set(key, val);
+    }
+    map
+}
+```
+
+In contrast, `Instance::all()` (line 592) correctly filters by contract address:
+
+```rust
+if contract != &address { continue; }
+```
+
+### What did you expect to see?
+
+`persistent().all()` and `temporary().all()` should return entries belonging only to the current contract, consistent with `instance().all()` and consistent with what the doc comments state.
+
+### What did you see instead?
+
+Entries from all contracts are returned. In multi-contract test scenarios this means:
+
+- Tests may pass when they should fail, or return incorrect data silently.
+- Duplicate keys across contracts overwrite each other via last-write-wins in the returned map.
+
+Additionally, the doc comments for `Persistent::all()` and `Temporary::all()` state the data is for the contract, which does not match the actual behavior.
+
+### Options for addressing
+
+1. **Fix the behavior** — Add a contract address filter to the `all()` helper (matching what `Instance::all()` already does), so `persistent().all()` and `temporary().all()` return only the current contract's data.
+2. **Update the docs** — Change the doc comments to reflect that data from all contracts is returned, and keep the current behavior.
+
+################ rs-soroban-sdk issue #1748 ################
+title: The PRNG docs should emphasize potential risks from blind-rerunning
+state: open | created: 2026-03-05T23:47:56Z | updated: 2026-08-23T03:32:13Z
+labels: ['bug']
+url: https://github.com/stellar/rs-soroban-sdk/issues/1748
+---
+The existing PRNG module docs https://docs.rs/soroban-sdk/latest/soroban_sdk/prng/index.html could use a little more emphasis on one of the remaining ways the PRNG can be misused: if you write a victim contract C that makes a single economically-valuable pseudorandom choice, an attacker contract A can try_call a helper contract B that repeatedly calls C, checks if C's choice was favorable to the attacker, and fails with a recoverable error if not. A then loops try_calling B until it gets a good result (or runs out of gas or whatever). B's PRNG (and C's derived PRNG) is not rolled back on try_call's general rollback of state, it continues to advance.
+
+This risk was known and baked-in to the design of the PRNG intentionally -- there's documentation about it [here](https://github.com/stellar/rs-soroban-env/blob/main/soroban-env-host/src/host/prng.rs#L44-L66) -- because the alternative option of rolling back any PRNG state on a failed try_call enables even worse attacks where the attacker knows a PRNG choice before it gets made and can guide its attack selectively.
+
+To mitigate the residual "blind-rerun" risk, we recommended that users implement a commit/reveal scheme wherever necessary. But we didn't do an amazing job of publicizing this recommendation. It's in a comment (linked above) and a [testcase](https://github.com/stellar/rs-soroban-env/blob/main/soroban-env-host/src/test/prng.rs#L453-L501) and is mentioned somewhat in-passing in the SDK module's docs ("can be manually re-seeded by contracts, in order to support commit/reveal schemes"). We also [never got around to writing an example](https://github.com/stellar/soroban-examples/issues/255) contract in the examples repo that shows it. 
+
+We should make the docs clearer on this risk and its mitigation (and finish the example).
+
