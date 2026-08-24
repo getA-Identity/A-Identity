@@ -2,9 +2,18 @@
 
 Now / next / later, in the open. "Now" means work is underway or committed for the
 current cycle; dates are targets, not promises. Recently shipped is listed so the
-roadmap stays honest about velocity. Updated 2026-08-13.
+roadmap stays honest about velocity. Updated 2026-08-24.
 
 ## Recently shipped
+
+- **Stellar testnet rail went end to end** (2026-08-15): `AgentSpendPolicy` in Rust on
+  Soroban (daily cap + auto-approve ceiling + allowlist + freeze + session key, typed
+  errors, no upgrade entrypoint), plus our own Soroban x402 facilitator settling in SEP-41
+  USDC with the buyer signing an authorization entry and paying no network fee. Both halves
+  are on the ledger: an under-limit payment settled, an over-limit one was refused on chain
+  with `DailyCapExceeded`. The first non-EVM rail here, and the only one where the spend
+  limit is enforced by a contract before the payment exists. Testnet only; pubnet is still
+  `planned`. Artifacts at `/api/proof/stellar`.
 
 - **Arbitrum One went live** (2026-08-13): agent #1259 on the canonical ERC-8004 registry,
   and x402 settling in native Circle USDC through our own EIP-3009 facilitator. The rail
@@ -36,10 +45,15 @@ roadmap stays honest about velocity. Updated 2026-08-13.
 ## Now
 
 - **Encode x Arc "Programmable Money"**: final submitted; Demo Day Aug 20.
-- **Stellar port (phase 2 start)**: Soroban AgentSpendPolicy in Rust (SEP-41 USDC,
-  daily cap + auto-approve + allowlist + freeze, owner/operator roles, typed-error
-  reverts), an end-to-end bounded payment on testnet, and an agent paying a live x402
-  API through policy. The chain registry already carries the Stellar descriptor.
+- **Turn the Stellar rail on in production**: the code shipped (see above) but the hosted
+  backend has no `X402_STELLAR_NETWORKS`, so `/api/x402/stellar/status` reports
+  `configured: false` and the tool endpoints answer 501. That is the fail-closed path
+  working as designed, not a bug, and it is also the reason nobody can buy over this rail
+  yet. It needs a payTo account holding a USDC trustline and a funded fee payer, both
+  operator-held keys.
+- **Stellar pubnet (phase 2, second half)**: after the above, mainnet. A pubnet deploy of
+  the vault, its own payTo and fee payer, and a first settlement that matters. Until those
+  exist the pubnet descriptor stays `planned` and nothing claims otherwise.
 - **Ops hardening**: post-event secret rotation; upgrade the backend off the free tier
   for demo reliability.
 

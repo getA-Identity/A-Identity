@@ -23,8 +23,10 @@ Built on **Circle Arc** (gas paid in USDC, sub-second finality), using
 **ERC-8004** for identity, **ERC-8183** for job escrow, and **x402** for
 per-request payments.
 
-> Status: hackathon MVP. Arc is the live phase-1 network. Stellar is next, then
-> Avalanche.
+> Status: hackathon MVP. Arc is the live phase-1 network. Stellar is phase 2 and
+> half shipped: the Soroban spend vault and the x402 rail both settle on testnet
+> (`beta`), while pubnet stays `planned` until real money moves on it. Avalanche
+> is after that.
 
 ## Recognition: where this runs
 
@@ -313,9 +315,50 @@ has no ValidationRegistry, so KYA cannot be anchored on-chain there either.
 | Reputation Registry | [`0x8004B663056A597Dffe9eCcC1965A193B7388713`](https://celo-sepolia.blockscout.com/address/0x8004B663056A597Dffe9eCcC1965A193B7388713) | ERC-8004 |
 | USDC | [`0x01C5C0122039549AD1493B8220cABEdD739BC44E`](https://celo-sepolia.blockscout.com/address/0x01C5C0122039549AD1493B8220cABEdD739BC44E) | ERC-20 |
 
-The remaining registry chains (Base, Avalanche, Arbitrum, Stellar) carry a
-descriptor and public metadata only. Nothing is deployed for them, and they stay
-labeled `beta` or `planned` until something is.
+### Arbitrum One, `eip155:42161` - live
+
+| Contract | Address | Standard |
+| --- | --- | --- |
+| Identity Registry | [`0x8004a169fb4a3325136eb29fa0ceb6d2e539a432`](https://arbiscan.io/address/0x8004a169fb4a3325136eb29fa0ceb6d2e539a432) | ERC-8004 |
+| Reputation Registry | [`0x8004BAa17C55a88189AE136b182e5fdA19dE9b63`](https://arbiscan.io/address/0x8004BAa17C55a88189AE136b182e5fdA19dE9b63) | ERC-8004 |
+| USDC | [`0xaf88d065e77c8cC2239327C5EDb3A432268e5831`](https://arbiscan.io/address/0xaf88d065e77c8cC2239327C5EDb3A432268e5831) | ERC-20 |
+
+The canonical registries again, deployed by their authors rather than by us. Ours is
+agent **#1259** ([mint tx](https://arbiscan.io/tx/0x23275840eb9a8b85a752769c113109a753f39b592236c85093cf94f6a517b2f3)),
+and paid calls settle in native Circle USDC through our own EIP-3009 facilitator
+([first settlement](https://arbiscan.io/tx/0x69abb8a9aacf57fa0c3d2d4cd711d4f631e3f90c97222441f9f3ecee06834744),
+0.015 USDC, block 494160024). No ValidationRegistry in this family, so KYA cannot be
+anchored here.
+
+### Stellar testnet, `stellar:testnet` - beta
+
+| Contract | Address | Standard |
+| --- | --- | --- |
+| AgentSpendPolicy | [`CAIL6ECR...G2ZOEB4UI`](https://stellar.expert/explorer/testnet/contract/CAIL6ECRAB5FUURQ54R7OTZPXRRCDO2S353YT6N6UZUWIBDG2ZOEB4UI) | Soroban, ours |
+| USDC | [`CBIELTK6...IHMXQDAMA`](https://stellar.expert/explorer/testnet/contract/CBIELTK6YBZJU5UP2WWQEUCYKLPU6AUNZ2BQ4WWFEIE3USCIHMXQDAMA) | SEP-41 |
+
+The only chain here where the spending limit is enforced by a contract before the
+payment exists. `AgentSpendPolicy` is ours, written in Rust for this chain rather than
+translated: Soroban has no `msg.sender`, so the whole authorization surface collapses
+onto one `require_auth` line, and the suite proves it would notice if that line went
+missing ([soroban/README.md](soroban/README.md)). Both halves are on the ledger: an
+under-limit payment
+[settled](https://stellar.expert/explorer/testnet/tx/3da7463422c7d122202b009bb27442199ffc3b6da87da12a7112963bf4bcc999),
+and an over-limit one was
+[refused on chain](https://stellar.expert/explorer/testnet/tx/12df418f21d329f606f412b1aee498714f1178d68fd0db0a97c64f0de6f209d3)
+with the contract's typed `DailyCapExceeded`. x402 settles here in SEP-41 USDC through a
+Soroban facilitator we wrote for this chain, with the buyer signing an authorization
+entry and [paying no network fee](https://stellar.expert/explorer/testnet/tx/6d87799242b9fb36a26ac6f2d2fb11c5e7fb8bdd52bc6cf0471dcc8a8caba09c).
+The full artifact ledger is at
+[`/api/proof/stellar`](https://a-identity-backend.onrender.com/api/proof/stellar).
+
+Test money, and it stays labeled that way: Stellar pubnet is still `planned`, and there
+is no ERC-8004 on Stellar, so an agent's passport is bridged from an EVM chain rather
+than anchored here.
+
+The remaining registry chains (Base, Avalanche) carry a descriptor and public metadata
+only. Nothing of ours is deployed on them, and they stay labeled `beta` or `planned`
+until something is.
 
 Machine-readable: the chain registry is served live at
 [`GET /api/chains`](https://a-identity-backend.onrender.com/api/chains) and the same table ships
@@ -680,7 +723,9 @@ The living version is [ROADMAP.md](ROADMAP.md) (now / next / later). The phase v
 
 - **Phase 1 (now):** Arc + Circle, end to end. Live contract reads; write path
   wired and env-gated.
-- **Phase 2:** Stellar (USDC + EURC native, Soroban), end-to-end.
+- **Phase 2 (in progress):** Stellar. The Soroban spend vault, the x402 rail and the
+  facilitator all run end to end on testnet; pubnet (USDC + EURC native) is the
+  remaining half.
 - **Phase 3:** Avalanche.
 
 New networks are a registry entry plus (for non-EVM) one adapter: the chain registry
