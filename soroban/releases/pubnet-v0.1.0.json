@@ -104,7 +104,7 @@
       "txHash": "58c118ee659b65875efe5e916f7bb332bc896b62537fa8dd030e2c225defa1cf",
       "ledger": 64103531,
       "successful": true,
-      "detail": "owner_pay while the vault was frozen. It settles, because the human path is meant to work exactly when the agent path does not, and its `Paid` event carries by_owner:true. It still counted against the daily cap: the override bypasses the gates, not the budget."
+      "detail": "owner_pay while the vault was frozen. It settles, because the human path is meant to work exactly when the agent path does not, and its `Paid` event carries by_owner:true. It was CHARGED to the daily cap and is not LIMITED by it: check_owner_pay applies the amount, arithmetic and balance guards and no cap comparison, so the override bypasses the budget as well as the gates. It does not bypass the accounting. Corrected on 2026-08-24 after an audit agent proved the original wording false; the payment itself was 0.04 USDC against a 0.95 running total and a 1 USDC cap, so it would have been allowed either way and the transaction shown here is unaffected."
     },
     {
       "kind": "deploy",

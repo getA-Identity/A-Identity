@@ -1,0 +1,57 @@
+# cargo-deny configuration for the Soroban workspace.
+#
+# Written during the 2026-08-24 security audit. Without this file `cargo deny check` reports
+# 168 license "errors", which are not findings: they are the default deny-by-default policy
+# firing on every crate because no allowlist exists. A check whose output is 168 lines of
+# noise is a check nobody reads, which is the same as no check at all.
+#
+# The advisories section is the one that matters here, and it is deliberately strict.
+
+[advisories]
+# Fail the build on any security advisory in the RustSec database.
+#
+# Read the limit of this honestly: RustSec has never carried a Stellar advisory. A full-text
+# search of the database for "soroban" or "stellar" returns zero hits across 909 crate
+# directories. So this section protects the general Rust dependency tree and is structurally
+# incapable of reporting anything about soroban-sdk itself. GitHub Security Advisories do
+# cover those crates, which is why the CI workflow needs a second, GitHub-sourced check
+# rather than treating a green `cargo deny` as full coverage.
+yanked = "deny"
+ignore = [
+  # paste 1.0.15, unmaintained. Reaches the tree only through soroban-env-host and
+  # soroban-wasmi, both of which are host-side test dependencies:
+  # `cargo tree --target wasm32v1-none -e normal -i paste` prints "nothing to print",
+  # so it is not in the deployed wasm. Revisit if it ever becomes reachable.
+  "RUSTSEC-2024-0436",
+]
+
+[licenses]
+# Permissive licenses only. The contract itself is MIT.
+allow = [
+  "MIT",
+  "Apache-2.0",
+  "Apache-2.0 WITH LLVM-exception",
+  "BSD-2-Clause",
+  "BSD-3-Clause",
+  "ISC",
+  "Unicode-3.0",
+  "Unicode-DFS-2016",
+  "Zlib",
+  "CC0-1.0",
+  "MPL-2.0",
+  "Unlicense",
+  "BSL-1.0",
+  "OpenSSL",
+]
+confidence-threshold = 0.8
+
+[bans]
+# A duplicate version of a crypto or SDK crate is worth knowing about: two copies of a
+# signature library can mean two different verification behaviours in one binary.
+multiple-versions = "warn"
+wildcards = "deny"
+
+[sources]
+unknown-registry = "deny"
+unknown-git = "deny"
+allow-registry = ["https://github.com/rust-lang/crates.io-index"]

@@ -1,0 +1,54 @@
+=== A2 live read-only TTL probe, pubnet, 2026-08-24 (getLedgerEntries only, no transaction) ===
+contract CB5LYXFKKTKDDSCM6JO6C4GNRQUFBGSLYDET6Q56JNFJQSMBKH6KWSYP  latestLedger ~64,104,666
+
+entry                        lastModified   liveUntil     TTL now      note
+contract code (wasm)          64,103,416   66,177,015   2,072,349   min_persistent_ttl, never bumped
+contract instance             64,103,532   66,177,017   2,072,351   min_persistent_ttl, never bumped
+USDC SAC balance(vault)       64,103,531   66,177,068   2,072,402   min_persistent_ttl, SAC bump is a no-op
+temporary SpentOnDay(20689)   64,103,531   64,138,038      33,372   created 64,103,478 + 34,560 = the code's 2-day floor
+
+instance map, decoded: 9 keys exactly
+  AllowlistEnabled=false AutoApproveMax=2500000 DailyCap=10000000 Decimals=7 Frozen=false
+  Operator=GDLAJM25YQRTIZOVZPVEM2GJ6L2I4OTZGY3HAWX3HGMPV7SM3QZONO4S
+  Owner=GARC7OFBBQCZJ5N3LCI7HTTYJ2MMPDAFDNGIHSQMZ7EPJ5EAWQJ5R6I5
+  SessionKeyExpiry=0 Token=CCW67TSZV3SSS2HXMBQ5JFGCKJNXKZM7UQUWUZPUTHXSTZLEO7SJMI75
+
+CONFIG_SETTING_FROZEN_LEDGER_KEYS (ConfigSettingId 17, CAP-0077), pubnet, 3 keys, all ACCOUNT entries:
+  GATDQL767ZM2JQTBEG4BQ5WKOQNGAGWZDUN4GYT2UINPEU3RT2UAMVZH
+  GBO7VUL2TOKPWFAWKATIW7K3QYA7WQ63VDY5CAE6AFUUX6BHZBOC2WXC
+  GCJOPSQNJDUYMWVJ3U7LYWWHM4N7NPWNF3RTOHB76PA67NH6DLWODES4
+  -> no contract_data and no contract_code key is frozen; none of these is the vault,
+     the owner, the operator or the USDC SAC.
+
+=== A2 storage/TTL probe suite, run in a scratch copy (/tmp/a2-scratch) ===
+date: 2026-08-24   sdk: soroban-sdk =27.0.6   toolchain: 1.96.0
+
+--- full suite: 52 existing + 22 A2 probes ---
+
+test result: ok. 74 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.86s
+
+
+--- MUTATION EXPERIMENT 1: storage.rs:57  DAY_BUCKET_TTL_EXTEND = 2 * -> 2 + (cargo-mutants P2 survivor) ---
+existing suite:
+test result: ok. 52 passed; 0 failed; 0 ignored; 0 measured; 22 filtered out; finished in 0.95s
+
+A2 probes:
+test test::a2_ttl::the_day_bucket_floor_tolerates_a_close_time_down_to_2_5_seconds ... FAILED
+test test::a2_ttl::the_day_bucket_outlives_its_own_day_and_then_expires ... FAILED
+test test::a2_ttl::the_first_write_of_a_day_reaches_the_two_day_floor_on_both_networks ... FAILED
+test result: FAILED. 19 passed; 3 failed; 0 ignored; 0 measured; 52 filtered out; finished in 0.98s
+
+--- MUTATION EXPERIMENT 2: storage.rs:62  LONG_TTL_THRESHOLD = 60 * -> 60 / (=0) (cargo-mutants P2 survivor) ---
+existing suite:
+test result: ok. 52 passed; 0 failed; 0 ignored; 0 measured; 22 filtered out; finished in 0.78s
+
+A2 probes:
+test test::a2_ttl::no_view_extends_the_instance_ttl_but_every_writer_does ... FAILED
+test test::a2_ttl::the_instance_bump_clamps_instead_of_trapping ... FAILED
+test test::a2_ttl::the_instance_entry_gets_the_code_floor_on_testnet ... FAILED
+test test::a2_ttl::an_allowlist_entry_lives_on_the_network_minimum_on_pubnet_and_the_code_floor_on_testnet ... FAILED
+test test::a2_ttl::the_is_allowed_view_writes_a_ttl_extension_and_the_caller_pays_for_it ... FAILED
+test test::a2_ttl::the_instance_entry_gets_its_life_from_the_network_on_pubnet ... FAILED
+test result: FAILED. 16 passed; 6 failed; 0 ignored; 0 measured; 52 filtered out; finished in 1.35s
+test result: ok. 74 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.36s
+

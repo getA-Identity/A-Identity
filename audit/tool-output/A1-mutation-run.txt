@@ -1,0 +1,43 @@
+A1 authorization: mutation and negative-control runs, 2026-08-24
+
+== existing runner: node soroban/audit/run-negative-controls.mjs (pristine copy /tmp/a1-pristine) ==
+baseline: green
+operator-require-auth: caught
+owner-require-auth: caught
+negative-amount-guard: caught
+checked-add: caught
+self-payee-guard: caught
+day-bucket-ttl-extension: caught
+
+restoring test snapshots: done
+
+All 6 negative controls were caught.
+
+== four extra A1 mutations the runner does not cover (/tmp/a1-mut) ==
+M1 constructor owner==operator guard deleted: caught
+M2 set_operator owner==operator guard deleted: caught
+M3 pay authorizes the OWNER instead of the operator: caught
+M4 require_owner authorizes the OPERATOR instead of the owner: caught
+
+== suite composition (52 tests) ==
+mock_all_auths: 39 | assert env.auths(): 3 | blanket-and-unasserted: 36 | enforcing: 8 | no auth path: 5
+
+== built wasm export section (local build, sha256 0061cc9f..., 28728 bytes) ==
+__constructor pay owner_pay withdraw set_policy set_allowed set_operator set_session_key_expiry set_frozen
+owner operator token decimals daily_cap auto_approve_max frozen allowlist_enabled session_key_expiry is_allowed today spent_today balance
+(22 contract exports; no upgrade entrypoint, no __check_auth, no hidden function)
+
+== A1 probe test results (52 existing + 9 A1 probes, all green) ==
+poc_a_contract_operator_lets_anyone_spend_with_no_signature_at_all ... ok   <- drain succeeds, 0 auth entries
+poc_a_contract_owner_lets_anyone_withdraw_the_entire_balance ... ok        <- full drain, 0 auth entries
+poc_control_a_shim_that_is_not_the_operator_still_fails ... ok             <- control
+poc_the_constructor_requires_no_authorization_from_the_owner ... ok
+poc_the_is_allowed_view_extends_a_ttl_with_no_authorization ... ok
+coverage_operator_auth_for_one_payee_cannot_be_reused_for_another ... ok
+coverage_a_stranger_cannot_call_any_owner_function ... ok
+coverage_the_operator_cannot_call_set_allowed ... ok
+coverage_all_thirteen_views_need_no_auth_and_mutate_no_policy_state ... ok
+
+constructor auth tree, real wasm via Env::deployer under recording auth:
+  authorizer: <the deployer, and only the deployer>
+  invocation: CreateContractV2HostFn(CreateContractArgsV2 { constructor_args: [owner, operator, token, i128, i128] })

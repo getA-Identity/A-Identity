@@ -1,0 +1,10 @@
+contracts/agent-spend-policy/src/lib.rs:229:9: replace AgentSpendPolicy::decimals -> u32 with 0
+contracts/agent-spend-policy/src/lib.rs:229:9: replace AgentSpendPolicy::decimals -> u32 with 1
+contracts/agent-spend-policy/src/lib.rs:241:9: replace AgentSpendPolicy::frozen -> bool with true
+contracts/agent-spend-policy/src/lib.rs:241:9: replace AgentSpendPolicy::frozen -> bool with false
+contracts/agent-spend-policy/src/lib.rs:245:9: replace AgentSpendPolicy::allowlist_enabled -> bool with false
+contracts/agent-spend-policy/src/lib.rs:249:9: replace AgentSpendPolicy::session_key_expiry -> u64 with 0
+contracts/agent-spend-policy/src/lib.rs:253:9: replace AgentSpendPolicy::is_allowed -> bool with false
+contracts/agent-spend-policy/src/storage.rs:123:5: replace get_decimals -> u32 with 0
+contracts/agent-spend-policy/src/storage.rs:123:5: replace get_decimals -> u32 with 1
+contracts/agent-spend-policy/src/storage.rs:127:5: replace set_decimals with ()

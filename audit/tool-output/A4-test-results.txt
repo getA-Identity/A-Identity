@@ -1,0 +1,23 @@
+a_contract_address_cannot_be_multiplexed - should panic ... ok
+a_deauthorized_balance_bricks_withdraw_with_an_untyped_error ... ok
+a_full_payee_trustline_is_reported_to_the_caller_as_owner_is_operator ... ok
+a_missing_payee_trustline_escapes_as_a_raw_token_error_code ... ok
+a_rebasing_token_desynchronises_the_day_counter_from_the_balance ... ok
+a_revoked_authorization_freezes_every_outflow_path_including_withdraw ... ok
+a_silently_noop_transfer_still_emits_paid_and_burns_the_daily_cap ... ok
+a_token_error_code_is_indistinguishable_from_a_policy_error_code ... ok
+a_token_that_calls_back_into_pay_is_refused_by_the_host ... ok
+a_trapping_transfer_rolls_back_the_day_counter ... ok
+address_to_muxed_conversion_is_the_identity_and_carries_no_id ... ok
+an_overstating_balance_turns_a_typed_refusal_into_a_token_trap ... ok
+decimals_is_inert_in_every_gate ... ok
+fee_on_transfer_makes_the_paid_record_overstate_what_the_payee_got ... ok
+muxed_payee_cannot_be_passed_to_pay_at_all ... ok
+muxed_variant_cannot_bypass_a_denying_allowlist ... ok
+muxed_variant_cannot_evade_require_valid_payee ... ok
+plain_address_through_the_same_raw_path_succeeds ... ok
+the_constructor_accepts_any_contract_that_answers_decimals ... ok
+the_constructor_rejects_an_address_with_no_decimals_function - should panic ... ok
+the_vault_ignores_a_transfer_return_value_that_says_it_failed ... ok
+the_vaults_own_sign_guard_holds_against_a_permissive_token ... ok
+withdraw_refuses_the_vault_and_the_token_but_not_the_owner ... ok

@@ -1,0 +1,5 @@
+Found 32 mutants to test
+ok       Unmutated baseline in 28s build + 1s test
+MISSED   contracts/agent-spend-policy/src/policy.rs:120:16: replace < with <= in check_balance in 0s build + 1s test
+32 mutants tested in 86s: 1 missed, 31 caught
+EXIT=2

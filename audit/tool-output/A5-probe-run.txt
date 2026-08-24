@@ -1,0 +1,56 @@
+=== A5 economic-logic probes ===
+scratch copy: /tmp/a5-scratch (rsync of soroban/; the audited tree was not modified)
+toolchain: cargo 1.96.0 (30a34c682 2026-05-25)
+probe file: audit/tool-output/A5-probe-tests.rs (added as src/test/a5_probe.rs in the scratch copy)
+
+--- cargo test -p agent-spend-policy a5_ -- --nocapture ---
+     Running unittests src/lib.rs (target/debug/deps/agent_spend_policy-21fc602e2d621356)
+
+running 23 tests
+A5: day-bucket TTL after first write = 34560 ledgers
+A5: DAY_BUCKET_TTL_EXTEND = 34560
+
+thread 'test::a5_probe::a5_inv05_sum_of_pay_and_owner_pay_stays_within_daily_cap' (33959488) panicked at contracts/agent-spend-policy/src/test/a5_probe.rs:36:5:
+INV-05 broken: 5100000000 moved on day 20680 against a daily_cap of 100000000
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+test test::a5_probe::a5_inv13_freeze_blocks_pay_and_leaves_both_owner_paths_working ... ok
+test test::a5_probe::a5_allowlist_can_be_enabled_over_an_empty_set_and_locks_the_agent_out ... ok
+test test::a5_probe::a5_accumulator_alone_does_not_reconcile_with_outflow ... ok
+test test::a5_probe::a5_inv07_withdraw_never_touches_the_day_accumulator ... ok
+test test::a5_probe::a5_grief_burn_the_cap_at_zero_net_cost_via_a_refunding_payee ... ok
+test test::a5_probe::a5_day_bucket_ttl_under_pubnet_parameters ... ok
+test test::a5_probe::a5_an_early_bucket_expiry_hands_back_a_second_full_cap_on_the_same_day ... ok
+test test::a5_probe::a5_inv05_sum_of_pay_and_owner_pay_stays_within_daily_cap ... FAILED
+A5: min_temp_entry_ttl=17280 -> ttl_after_set=17279 ttl_after_extend=34560
+A5: min_temp_entry_ttl=17281 -> ttl_after_set=17280 ttl_after_extend=34560
+A5: min_temp_entry_ttl=34559 -> ttl_after_set=34558 ttl_after_extend=34558
+A5: min_temp_entry_ttl=34560 -> ttl_after_set=34559 ttl_after_extend=34559
+A5: min_temp_entry_ttl=34561 -> ttl_after_set=34560 ttl_after_extend=34560
+test test::a5_probe::a5_parity_owner_is_operator_has_no_solidity_analogue_either ... ok
+test test::a5_probe::a5_inv14_expiry_blocks_pay_and_leaves_both_owner_paths_working ... ok
+test test::a5_probe::a5_no_op_transitions_still_emit_change_events ... ok
+test test::a5_probe::a5_parity_zero_amount_is_refused_here_but_accepted_by_solidity ... ok
+test test::a5_probe::a5_probe_raw_temporary_ttl_semantics ... ok
+test test::a5_probe::a5_operator_cannot_reach_withdraw ... ok
+test test::a5_probe::a5_the_refusal_ladder_orders_payee_and_amount_differently_per_entrypoint ... ok
+test test::a5_probe::a5_inv16_every_zero_means_no_bound ... ok
+test test::a5_probe::a5_inv15_allowlist_blocks_pay_and_leaves_both_owner_paths_working ... ok
+test test::a5_probe::a5_session_key_is_the_ledger_clock_not_storage_expiry ... ok
+test test::a5_probe::a5_set_policy_is_a_whole_struct_overwrite_with_no_compare_and_swap ... ok
+test test::a5_probe::a5_set_policy_midday_cap_moves_are_not_exploitable ... ok
+test test::a5_probe::a5_owner_pay_drives_the_accumulator_past_the_cap ... ok
+test test::a5_probe::a5_two_full_caps_move_across_the_midnight_boundary_in_two_seconds ... ok
+test test::a5_probe::a5_dust_repetition_costs_the_full_cap ... ok
+
+failures:
+
+failures:
+    test::a5_probe::a5_inv05_sum_of_pay_and_owner_pay_stays_within_daily_cap
+
+test result: FAILED. 22 passed; 1 failed; 0 ignored; 0 measured; 52 filtered out; finished in 1.91s
+
+error: test failed, to rerun pass `-p agent-spend-policy --lib`
+
+--- full suite: 52 shipped tests + 23 A5 probes ---
+test result: FAILED. 74 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 3.42s
+error: test failed, to rerun pass `-p agent-spend-policy --lib`

@@ -1,0 +1,50 @@
+=== A4 diagnostics, soroban-sdk 27.0.6, soroban-env-host 27.0.1, 2026-08-24 ===
+
+--- 1. muxed `to` passed to pay(to: Address) ---
+MUXED RESULT: Err(Err(Abort))
+LOG: [Failed Diagnostic Event (not emitted)] contract:CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAK3IM, topics:[log], data:["caught panic 'called `Result::unwrap()` on an `Err` value: ConversionError' from contract function 'Symbol(pay)'", MAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAMAAAAAAAAAAAFLNFY, 100]
+
+--- 2. token re-entering pay() ---
+HostError: Error(Context, InvalidAction)
+   0: [Diagnostic Event] topics:[error, Error(Context, InvalidAction)], data:"escalating error to panic"
+   1: [Diagnostic Event] topics:[error, Error(Context, InvalidAction)], data:["contract call failed", pay, [CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAHK3M, 100]]
+
+--- 3. token whose transfer returns bool instead of void ---
+(captured before the test was corrected to expect the abort)
+HostError: Error(WasmVm, InvalidAction)
+   4: [Failed Diagnostic Event] contract:...ITA4, topics:[fn_return, transfer], data:false
+   3: [Failed Diagnostic Event] contract:...K3IM, topics:[log], data:["caught panic 'called `Result::unwrap()` on an `Err` value: ConversionError' from contract function 'Symbol(pay)'", ...]
+   -> the generated SEP-41 client converts the return Val to (); a non-void return aborts
+      the whole invocation. The vault does NOT proceed on a token that reports failure.
+
+--- 4. Circle USDC issuer flags, pubnet, Horizon, 2026-08-24 ---
+GET https://horizon.stellar.org/accounts/GA5ZSEJYB37JRC5AVCIA5MOP4RHTM335X2KGX3IHOJAPP5RE34K4KZVN
+home_domain: circle.com
+flags: {"auth_required": false, "auth_revocable": true, "auth_immutable": false, "auth_clawback_enabled": false}
+last_modified_ledger: 63423649
+
+--- 5. the live pubnet vault's own USDC balance entry ---
+POST https://mainnet.sorobanrpc.com getLedgerEntries
+  contract CCW67TSZV3SSS2HXMBQ5JFGCKJNXKZM7UQUWUZPUTHXSTZLEO7SJMI75 (USDC SAC)
+  key      ScVec[Symbol("Balance"), Address(CB5LYXFK...KWSYP)]  persistent
+decoded: {"amount": "0", "authorized": true, "clawback": false}
+lastModifiedLedgerSeq 64103531, liveUntilLedgerSeq 66177068, latestLedger 64104539
+
+--- 6. host source, verified locally ---
+soroban-env-host-27.0.1/src/host/frame.rs:108-114
+  fn default_external_call() -> Self { reentry_mode: ContractReentryMode::Prohibited, ... }
+soroban-env-host-27.0.1/src/host/frame.rs:946-953
+  (ContractReentryMode::SelfAllowed, Some(_)) | (ContractReentryMode::Prohibited, Some(_)) =>
+    return Err(self.err(ScErrorType::Context, ScErrorCode::InvalidAction,
+                        "Contract re-entry is not allowed", &[]));
+soroban-env-host-27.0.1/src/builtin_contracts/stellar_asset_contract/balance.rs:220-231
+  spend_balance -> if !is_authorized(..) { ContractError::BalanceDeauthorizedError,
+                                           "balance is deauthorized" }
+soroban-env-host-27.0.1/src/builtin_contracts/stellar_asset_contract/balance.rs:44-70
+  read_balance for a Contract address returns balance.amount with no `authorized` check.
+soroban-sdk-27.0.6/src/token.rs:154
+  fn transfer(env: Env, from: Address, to: MuxedAddress, amount: i128);
+soroban-sdk-27.0.6/src/address.rs:110-118
+  impl TryFromVal<Env, Val> for Address -> AddressObject::try_from_val(..)?  (tag-checked)
+soroban-sdk-27.0.6/src/muxed_address.rs:403
+  MuxedAddress::new panics "contract addresses can not be multiplexed"

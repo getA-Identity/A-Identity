@@ -1,0 +1,95 @@
+{
+  "name": "Sorocopy",
+  "date": "2026-08-24",
+  "summary": {
+    "executed_on": [
+      {
+        "name": "agent-spend-policy",
+        "id": "path+file:///private/tmp/claude-501/-Users-mericcintosun-A-Identity/c141a955-81ba-4195-a9f0-51349884486d/scratchpad/sorocopy/contracts/agent-spend-policy#0.1.0",
+        "relative_path": "contracts/agent-spend-policy/Cargo.toml",
+        "absolute_path": "/private/tmp/claude-501/-Users-mericcintosun-A-Identity/c141a955-81ba-4195-a9f0-51349884486d/scratchpad/sorocopy/contracts/agent-spend-policy/Cargo.toml"
+      }
+    ],
+    "total_vulnerabilities": 0,
+    "by_severity": {
+      "critical": 0,
+      "medium": 0,
+      "minor": 0,
+      "enhancement": 0
+    },
+    "table": {
+      "header": {
+        "cells": [
+          {
+            "content": "Crate",
+            "color": {
+              "Importance": "Header"
+            }
+          },
+          {
+            "content": "Status",
+            "color": {
+              "Importance": "Header"
+            }
+          },
+          {
+            "content": "Critical",
+            "color": {
+              "Importance": "Header"
+            }
+          },
+          {
+            "content": "Medium",
+            "color": {
+              "Importance": "Header"
+            }
+          },
+          {
+            "content": "Minor",
+            "color": {
+              "Importance": "Header"
+            }
+          },
+          {
+            "content": "Enhancement",
+            "color": {
+              "Importance": "Header"
+            }
+          }
+        ]
+      },
+      "rows": [
+        {
+          "cells": [
+            {
+              "content": "agent_spend_policy",
+              "color": "Default"
+            },
+            {
+              "content": "Analyzed",
+              "color": "Default"
+            },
+            {
+              "content": "0",
+              "color": "Default"
+            },
+            {
+              "content": "0",
+              "color": "Default"
+            },
+            {
+              "content": "0",
+              "color": "Default"
+            },
+            {
+              "content": "0",
+              "color": "Default"
+            }
+          ]
+        }
+      ]
+    }
+  },
+  "categories": [],
+  "findings": []
+}

@@ -1,0 +1,101 @@
+
+    ○
+    │╲
+    │ ○
+    ○ ░
+    ░    gitleaks
+
+Finding:     "token": "[1;3;mREDACTED[0m"
+Secret:      [1;3;mREDACTED[0m
+RuleID:      generic-api-key
+Entropy:     4.498708
+File:        soroban/releases/pubnet-v0.1.0.json
+Line:        24
+Commit:      500a4d6c86935006e196abffa39a7415877984ae
+Author:      Meric
+Email:       mericcintosunn@gmail.com
+Date:        2026-08-24T14:13:12Z
+Fingerprint: 500a4d6c86935006e196abffa39a7415877984ae:soroban/releases/pubnet-v0.1.0.json:generic-api-key:24
+Link:        https://github.com/getA-Identity/A-Identity/blob/500a4d6c86935006e196abffa39a7415877984ae/soroban/releases/pubnet-v0.1.0.json#L24
+
+Finding:     "token": "[1;3;mREDACTED[0m"
+Secret:      [1;3;mREDACTED[0m
+RuleID:      generic-api-key
+Entropy:     4.534422
+File:        soroban/releases/testnet-v0.1.0.json
+Line:        23
+Commit:      67cab41f669c7deaeafec94723bdffe1267f48db
+Author:      Meric
+Email:       mericcintosunn@gmail.com
+Date:        2026-08-15T02:45:06Z
+Fingerprint: 67cab41f669c7deaeafec94723bdffe1267f48db:soroban/releases/testnet-v0.1.0.json:generic-api-key:23
+Link:        https://github.com/getA-Identity/A-Identity/blob/67cab41f669c7deaeafec94723bdffe1267f48db/soroban/releases/testnet-v0.1.0.json#L23
+
+Finding:     const key = '[1;3;mREDACTED[0m'
+Secret:      [1;3;mREDACTED[0m
+RuleID:      generic-api-key
+Entropy:     3.798173
+File:        mcp/src/chains/evm/adapter.test.ts
+Line:        167
+Commit:      3e9644de67d9de949c7f4a2e012367930e9a8157
+Author:      Meric
+Email:       mericcintosunn@gmail.com
+Date:        2026-08-13T14:47:38Z
+Fingerprint: 3e9644de67d9de949c7f4a2e012367930e9a8157:mcp/src/chains/evm/adapter.test.ts:generic-api-key:167
+Link:        https://github.com/getA-Identity/A-Identity/blob/3e9644de67d9de949c7f4a2e012367930e9a8157/mcp/src/chains/evm/adapter.test.ts#L167
+
+Finding:     const KEY = '[1;3;mREDACTED[0m' as const
+Secret:      [1;3;mREDACTED[0m
+RuleID:      generic-api-key
+Entropy:     3.798173
+File:        mcp/src/x402-3009/engine.test.ts
+Line:        19
+Commit:      ed654cd40f0ec008eae84284c966cd54881b6847
+Author:      Meric
+Email:       mericcintosunn@gmail.com
+Date:        2026-08-13T13:55:53Z
+Fingerprint: ed654cd40f0ec008eae84284c966cd54881b6847:mcp/src/x402-3009/engine.test.ts:generic-api-key:19
+Link:        https://github.com/getA-Identity/A-Identity/blob/ed654cd40f0ec008eae84284c966cd54881b6847/mcp/src/x402-3009/engine.test.ts#L19
+
+Finding:     ...CELO_PAYTO: PAY_TO, CELO_X402_API_KEY: '[1;3;mREDACTED[0m' } as NodeJS.Process...
+Secret:      [1;3;mREDACTED[0m
+RuleID:      generic-api-key
+Entropy:     3.572469
+File:        mcp/src/celo-x402.test.ts
+Line:        32
+Commit:      6c711a89be2171cf23573f66f087b2c5aa9db4e6
+Author:      Meric
+Email:       mericcintosunn@gmail.com
+Date:        2026-08-09T12:02:08Z
+Fingerprint: 6c711a89be2171cf23573f66f087b2c5aa9db4e6:mcp/src/celo-x402.test.ts:generic-api-key:32
+Link:        https://github.com/getA-Identity/A-Identity/blob/6c711a89be2171cf23573f66f087b2c5aa9db4e6/mcp/src/celo-x402.test.ts#L32
+
+Finding:     const payerKey = '[1;3;mREDACTED[0m'
+Secret:      [1;3;mREDACTED[0m
+RuleID:      generic-api-key
+Entropy:     3.798173
+File:        mcp/src/x402.test.ts
+Line:        20
+Commit:      c5fa4e4973c46f692baae665323287a0c2bb1cfc
+Author:      Meric
+Email:       mericcintosunn@gmail.com
+Date:        2026-07-18T17:54:22Z
+Fingerprint: c5fa4e4973c46f692baae665323287a0c2bb1cfc:mcp/src/x402.test.ts:generic-api-key:20
+Link:        https://github.com/getA-Identity/A-Identity/blob/c5fa4e4973c46f692baae665323287a0c2bb1cfc/mcp/src/x402.test.ts#L20
+
+Finding:     const attackerKey = '[1;3;mREDACTED[0m'
+Secret:      [1;3;mREDACTED[0m
+RuleID:      generic-api-key
+Entropy:     3.865263
+File:        mcp/src/x402.test.ts
+Line:        21
+Commit:      c5fa4e4973c46f692baae665323287a0c2bb1cfc
+Author:      Meric
+Email:       mericcintosunn@gmail.com
+Date:        2026-07-18T17:54:22Z
+Fingerprint: c5fa4e4973c46f692baae665323287a0c2bb1cfc:mcp/src/x402.test.ts:generic-api-key:21
+Link:        https://github.com/getA-Identity/A-Identity/blob/c5fa4e4973c46f692baae665323287a0c2bb1cfc/mcp/src/x402.test.ts#L21
+
+[90m6:21PM[0m [32mINF[0m [1m411 commits scanned.[0m
+[90m6:21PM[0m [32mINF[0m [1mscanned ~45843324 bytes (45.84 MB) in 9.5s[0m
+[90m6:21PM[0m [33mWRN[0m [1mleaks found: 7[0m

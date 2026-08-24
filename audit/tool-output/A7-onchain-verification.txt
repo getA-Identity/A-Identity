@@ -1,0 +1,143 @@
+A7 upgradeability / initialization / deployment: raw on-chain verification
+Run 2026-08-24. Read-only. No transaction was signed, submitted or simulated for apply.
+stellar CLI: stellar 27.1.0 (8e402ea28202950b272fbabc34caad4d2f64fe87)
+
+=== 1. stellar contract fetch, both networks ===
+pubnet  CB5LYXFKKTKDDSCM6JO6C4GNRQUFBGSLYDET6Q56JNFJQSMBKH6KWSYP
+testnet CAIL6ECRAB5FUURQ54R7OTZPXRRCDO2S353YT6N6UZUWIBDG2ZOEB4UI
+155eb31c1867254eacbf1b7a4755164d15cc6b6f939644705ab6b8df61579239  pubnet.wasm
+155eb31c1867254eacbf1b7a4755164d15cc6b6f939644705ab6b8df61579239  testnet.wasm
+11625 pubnet.wasm
+11625 testnet.wasm
+recorded in both release JSONs: 155eb31c1867254eacbf1b7a4755164d15cc6b6f939644705ab6b8df61579239 / 11625 bytes
+cmp: the two fetched files are byte-identical
+
+=== 2. deployed wasm export section (what entrypoints actually exist on chain) ===
+exported contract functions (22):
+  __constructor
+  allowlist_enabled
+  auto_approve_max
+  balance
+  daily_cap
+  decimals
+  frozen
+  is_allowed
+  operator
+  owner
+  owner_pay
+  pay
+  session_key_expiry
+  set_allowed
+  set_frozen
+  set_operator
+  set_policy
+  set_session_key_expiry
+  spent_today
+  today
+  token
+  withdraw
+
+=== 3. host functions imported by the deployed wasm, resolved against
+    soroban-env-common 27.0.1 env.json (the pinned env) ===
+  i._   -> int::obj_from_u64
+  i.0   -> int::obj_to_u64
+  d._   -> call::call
+  l.7   -> ledger::extend_contract_data_ttl
+  l._   -> ledger::put_contract_data
+  l.1   -> ledger::get_contract_data
+  a.0   -> address::require_auth
+  x.7   -> context::get_current_contract_address
+  x.1   -> context::contract_event
+  l.8   -> ledger::extend_current_contract_instance_and_code_ttl
+  v._   -> vec::vec_new
+  l.2   -> ledger::del_contract_data
+  v.g   -> vec::vec_new_from_linear_memory
+  i.8   -> int::obj_to_i128_hi64
+  i.7   -> int::obj_to_i128_lo64
+  b.j   -> buf::symbol_new_from_linear_memory
+  x.4   -> context::get_ledger_timestamp
+  l.0   -> ledger::has_contract_data
+  i.6   -> int::obj_from_i128_pieces
+  x.0   -> context::obj_cmp
+  x.5   -> context::fail_with_error
+  m.9   -> map::map_new_from_linear_memory
+
+  the upgrade / deploy host functions, and whether this wasm imports them:
+    l.3   ledger::create_contract                          imported = False
+    l.5   ledger::upload_wasm                              imported = False
+    l.6   ledger::update_current_contract_wasm             imported = False
+    l.e   ledger::create_contract_with_constructor         imported = False
+
+=== 4. contract id derivation, recomputed from the signed deploy preimage ===
+HashIDPreimage(ENVELOPE_TYPE_CONTRACT_ID=8) = sha256( networkID || FROM_ADDRESS || SCAddress(deployer) || salt )
+deployer GARC7OFBBQCZJ5N3LCI7HTTYJ2MMPDAFDNGIHSQMZ7EPJ5EAWQJ5R6I5
+salt     4adffd6ec91f8609539d04fa0b97d30254d74ad4987d127af0900634ca83eede
+derived  CB5LYXFKKTKDDSCM6JO6C4GNRQUFBGSLYDET6Q56JNFJQSMBKH6KWSYP   MATCH
+counterfactuals:
+  same salt, attacker key      -> CBRJSH5VVTPENQRE3SKFPR64OSMARV5EMPVTAH3OOQRDA7OV74TTLVGO
+  same deployer+salt, testnet  -> CATSYLYNJWCJLEQUBXOXLGZUMQHTUONN5VOCKESP5XJPQTLXD7QMOQHO
+  same deployer, salt+1        -> CB6CZKHP56TNPM6QHDNH3TO7PG54CL6MVAHPABVC65CVCFCOAKDBPUP5
+
+=== 5. the pubnet instantiate transaction, decoded ===
+tx 847dc7e99e73f6c0062e5aed29599f41226998053fe7b6c35e48e9cf64a6ee2d ledger 64103418
+created_at 2026-08-24T13:46:04Z   fee_charged 0.0992122 XLM   successful true
+host_function: create_contract_v2
+  executable.wasm 155eb31c1867254eacbf1b7a4755164d15cc6b6f939644705ab6b8df61579239
+  constructor_args [ GARC7OFB..(owner), GDLAJM25..(operator), CCW67TSZ..(token), i128 10000000, i128 2500000 ]
+auth: EXACTLY ONE entry
+  credentials      = source_account
+  root_invocation  = create_contract_v2_host_fn (carries the same args)
+  sub_invocations  = []        <-- no constructor-body authorization was required
+signatures: 1
+
+pubnet upload tx 4230a328bf063cc005e8fea00c45a9d38af57968b8ee166cbb5a11fb92b51fba
+  ledger 64103416  created_at 2026-08-24T13:45:53Z  fee_charged 12.2319214 XLM
+
+testnet deploy tx 718f050b962b6e645d8cca5cc053d9f1c11a7264d3ddc266f7e36661bd82c68c
+  created_at 2026-08-15T02:05:46Z  ledger 4147602
+  salt 6dc6f8bb868b1eaf80f69664b39f737a458ce4707318af338f97f04d312c1e9f  (different, high entropy)
+  auth: one entry, credentials source_account, sub_invocations []
+
+=== 6. live view functions, --send=no, no transaction ===
+pubnet CB5LYXFK...
+  owner              GARC7OFBBQCZJ5N3LCI7HTTYJ2MMPDAFDNGIHSQMZ7EPJ5EAWQJ5R6I5
+  operator           GDLAJM25YQRTIZOVZPVEM2GJ6L2I4OTZGY3HAWX3HGMPV7SM3QZONO4S
+  token              CCW67TSZV3SSS2HXMBQ5JFGCKJNXKZM7UQUWUZPUTHXSTZLEO7SJMI75
+  decimals           7
+  daily_cap          10000000
+  auto_approve_max   2500000
+  frozen             false
+  allowlist_enabled  false
+  session_key_expiry 0
+  today              20689
+  spent_today        10000000
+  balance            0
+testnet CAIL6ECR...
+  owner              GBLHNAL57WLA5GKTIGPBHCJTQDNEZFX2CVH53EDUOGWIERNKECRENHQ5
+  operator           GDZXSO4AOKPSHMQZMBNEEBQNYOIF7TWDPD7K2U5VAPKFN3QIAIELTAN6
+  token              CBIELTK6YBZJU5UP2WWQEUCYKLPU6AUNZ2BQ4WWFEIE3USCIHMXQDAMA
+  decimals           7
+  daily_cap          100000000
+  auto_approve_max   20000000
+  frozen             false
+  allowlist_enabled  TRUE   <-- diverged from the constructor default (false) by a later set_policy
+  session_key_expiry 0
+  today              20689
+  spent_today        0
+  balance            139880000
+
+=== 7. TTL of the code and instance entries, pubnet, getLedgerEntries ===
+latestLedger 64104554
+  contract_code  155eb31c...  liveUntilLedgerSeq 66177015  lastModified 64103416
+  contract_data  CB5LYXFK.. instance  liveUntilLedgerSeq 66177017  lastModified 64103532
+  2072461 ledgers ahead at the measured 5.625 s close = about 134.9 days, i.e. around 2027-01-06
+
+=== 8. deployed wasm metadata ===
+rsver    1.96.0
+rssdkver 27.0.6#60926a20d1f9f0a669d5fe551636f42a1302f0c0
+cliver   27.1.0#8e402ea28202950b272fbabc34caad4d2f64fe87
+env-meta Protocol v27
+
+=== 9. RPC event retention, pubnet ===
+getEvents startLedger=1 -> "startLedger must be within the ledger range: 63983637 - 64104596"
+  120959 ledgers of retention, about 7.9 days at the measured close time

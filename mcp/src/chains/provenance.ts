@@ -303,7 +303,7 @@ export const PROVENANCE: ChainProvenance[] = [
         label: 'The owner overrides: a payment past the freeze AND past the allowlist',
         txHash: 'f05c2f5be029d7403c6241c85f894160fe83f5866f1993de6ba1c3be7911b3eb',
         onChain: 'stellar-testnet',
-        note: 'owner_pay to an account that is NOT on the allowlist while the vault is frozen. It settles, because the human path is meant to work exactly when the agent path does not. It still counted against the daily cap, which is the Solidity original\'s behaviour ported deliberately: the override bypasses the gates, not the budget.',
+        note: 'owner_pay to an account that is NOT on the allowlist while the vault is frozen. It settles, because the human path is meant to work exactly when the agent path does not. It was still CHARGED to the daily cap, which is the Solidity original\'s behaviour ported deliberately. Note the exact claim, because an earlier version of this note overstated it: owner_pay increments the day accumulator, but it is not LIMITED by the cap. `check_owner_pay` in policy.rs runs the amount, arithmetic and balance guards and no cap comparison, so the override bypasses the budget as well as the gates. What it does not bypass is the accounting: the outflow is recorded.',
       },
       {
         kind: 'settlement',
@@ -418,7 +418,7 @@ export const PROVENANCE: ChainProvenance[] = [
         txHash: '58c118ee659b65875efe5e916f7bb332bc896b62537fa8dd030e2c225defa1cf',
         onChain: 'stellar',
         blockNumber: 64103531,
-        note: 'owner_pay while the vault was frozen. It settles, because the human path is meant to work exactly when the agent path does not, and its Paid event carries by_owner:true. It still counted against the daily cap: the override bypasses the gates, not the budget. The freeze went on at ledger 64103526 (c003e3fed6d39d820da51ea281b6d17fc910961bee88163ef8fb6fa084e059cf) and came off at 64103532 (8bccb734a624cb6165cdd74da5c2d196c3b67dd8a0ed92e3435df1ffd2ae9f9a), because a freeze you cannot lift is a loss rather than a control.',
+        note: 'owner_pay while the vault was frozen. It settles, because the human path is meant to work exactly when the agent path does not, and its Paid event carries by_owner:true. It was still CHARGED to the daily cap, but note what that does and does not mean: owner_pay increments the day accumulator and is NOT limited by it. `check_owner_pay` in policy.rs has no cap comparison. The override bypasses the budget as well as the gates; what it does not bypass is the accounting. An earlier version of this note said the budget still bound it, which was wrong. The freeze went on at ledger 64103526 (c003e3fed6d39d820da51ea281b6d17fc910961bee88163ef8fb6fa084e059cf) and came off at 64103532 (8bccb734a624cb6165cdd74da5c2d196c3b67dd8a0ed92e3435df1ffd2ae9f9a), because a freeze you cannot lift is a loss rather than a control.',
       },
     ],
     caveats: [

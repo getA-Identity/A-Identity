@@ -1,0 +1,105 @@
+    Checking agent-spend-policy v0.1.0 (/Users/mericcintosun/A-Identity/soroban/contracts/agent-spend-policy)
+error: used `unwrap()` on an `Option` value
+  --> contracts/agent-spend-policy/src/storage.rs:99:5
+   |
+99 |     env.storage().instance().get(&DataKey::Owner).unwrap()
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+   |
+   = note: if this value is `None`, it will panic
+   = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.96.0/index.html#unwrap_used
+   = note: `-D clippy::unwrap-used` implied by `-D warnings`
+   = help: to override `-D warnings` add `#[allow(clippy::unwrap_used)]`
+
+error: used `unwrap()` on an `Option` value
+   --> contracts/agent-spend-policy/src/storage.rs:107:5
+    |
+107 |     env.storage().instance().get(&DataKey::Operator).unwrap()
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    |
+    = note: if this value is `None`, it will panic
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.96.0/index.html#unwrap_used
+
+error: used `unwrap()` on an `Option` value
+   --> contracts/agent-spend-policy/src/storage.rs:115:5
+    |
+115 |     env.storage().instance().get(&DataKey::Token).unwrap()
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    |
+    = note: if this value is `None`, it will panic
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.96.0/index.html#unwrap_used
+
+error: used `unwrap()` on an `Option` value
+   --> contracts/agent-spend-policy/src/storage.rs:123:5
+    |
+123 |     env.storage().instance().get(&DataKey::Decimals).unwrap()
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    |
+    = note: if this value is `None`, it will panic
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.96.0/index.html#unwrap_used
+
+error: used `unwrap()` on an `Option` value
+   --> contracts/agent-spend-policy/src/test/auth.rs:172:29
+    |
+172 |     let (who, invocation) = auths.first().unwrap().clone();
+    |                             ^^^^^^^^^^^^^^^^^^^^^^
+    |
+    = note: if this value is `None`, it will panic
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.96.0/index.html#unwrap_used
+
+error: `panic` should not be present in production code
+   --> contracts/agent-spend-policy/src/test/auth.rs:188:18
+    |
+188 |         other => panic!("expected a contract invocation, got {other:?}"),
+    |                  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.96.0/index.html#panic
+    = note: `-D clippy::panic` implied by `-D warnings`
+    = help: to override `-D warnings` add `#[allow(clippy::panic)]`
+
+error: used `unwrap()` on an `Option` value
+   --> contracts/agent-spend-policy/src/test/auth.rs:206:27
+    |
+206 |     let (_, invocation) = s.env.auths().first().unwrap().clone();
+    |                           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    |
+    = note: if this value is `None`, it will panic
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.96.0/index.html#unwrap_used
+
+error: used `unwrap()` on an `Option` value
+   --> contracts/agent-spend-policy/src/test/auth.rs:223:16
+    |
+223 |     assert_eq!(auths.first().unwrap().0, s.owner);
+    |                ^^^^^^^^^^^^^^^^^^^^^^
+    |
+    = note: if this value is `None`, it will panic
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.96.0/index.html#unwrap_used
+
+error: `panic` should not be present in production code
+  --> contracts/agent-spend-policy/src/test/mod.rs:36:13
+   |
+36 |             panic!("expected the typed error {expected:?}, got a host trap: {host:?}")
+   |             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+   |
+   = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.96.0/index.html#panic
+
+error: `panic` should not be present in production code
+  --> contracts/agent-spend-policy/src/test/mod.rs:38:18
+   |
+38 |         Ok(_) => panic!("expected the typed error {expected:?}, but the call succeeded"),
+   |                  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+   |
+   = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.96.0/index.html#panic
+
+error: arithmetic operation that can potentially result in unexpected side-effects
+   --> contracts/agent-spend-policy/src/test/mod.rs:103:40
+    |
+103 |         self.env.ledger().with_mut(|l| l.sequence_number += count);
+    |                                        ^^^^^^^^^^^^^^^^^^^^^^^^^^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.96.0/index.html#arithmetic_side_effects
+    = note: `-D clippy::arithmetic-side-effects` implied by `-D warnings`
+    = help: to override `-D warnings` add `#[allow(clippy::arithmetic_side_effects)]`
+
+error: could not compile `agent-spend-policy` (lib) due to 4 previous errors
+warning: build failed, waiting for other jobs to finish...
+error: could not compile `agent-spend-policy` (lib test) due to 11 previous errors

@@ -1,0 +1,1 @@
+contracts/agent-spend-policy/src/policy.rs:120:16: replace < with <= in check_balance

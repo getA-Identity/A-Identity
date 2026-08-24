@@ -1,0 +1,14 @@
+Found 137 mutants to test
+ok       Unmutated baseline in 32s build + 1s test
+ INFO Auto-set test timeout to 20s
+MISSED   contracts/agent-spend-policy/src/lib.rs:229:9: replace AgentSpendPolicy::decimals -> u32 with 0 in 1s build + 1s test
+MISSED   contracts/agent-spend-policy/src/lib.rs:229:9: replace AgentSpendPolicy::decimals -> u32 with 1 in 1s build + 1s test
+MISSED   contracts/agent-spend-policy/src/lib.rs:241:9: replace AgentSpendPolicy::frozen -> bool with true in 0s build + 1s test
+MISSED   contracts/agent-spend-policy/src/lib.rs:241:9: replace AgentSpendPolicy::frozen -> bool with false in 0s build + 1s test
+MISSED   contracts/agent-spend-policy/src/lib.rs:245:9: replace AgentSpendPolicy::allowlist_enabled -> bool with false in 0s build + 1s test
+MISSED   contracts/agent-spend-policy/src/lib.rs:249:9: replace AgentSpendPolicy::session_key_expiry -> u64 with 0 in 0s build + 1s test
+MISSED   contracts/agent-spend-policy/src/lib.rs:253:9: replace AgentSpendPolicy::is_allowed -> bool with false in 0s build + 1s test
+MISSED   contracts/agent-spend-policy/src/storage.rs:123:5: replace get_decimals -> u32 with 0 in 0s build + 1s test
+MISSED   contracts/agent-spend-policy/src/storage.rs:123:5: replace get_decimals -> u32 with 1 in 0s build + 1s test
+MISSED   contracts/agent-spend-policy/src/storage.rs:127:5: replace set_decimals with () in 0s build + 1s test
+137 mutants tested in 5m: 10 missed, 121 caught, 6 unviable

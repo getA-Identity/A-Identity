@@ -1,0 +1,11 @@
+baseline: green
+operator-require-auth: caught
+owner-require-auth: caught
+negative-amount-guard: caught
+checked-add: caught
+self-payee-guard: caught
+day-bucket-ttl-extension: caught
+
+restoring test snapshots: done
+
+All 6 negative controls were caught.

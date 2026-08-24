@@ -1,0 +1,121 @@
+[INFO] Validating CLI arguments...
+[INFO] Getting detector names...
+[INFO] Compiling detectors...
+[INFO] Running scout...
+Warning: `--pipe-stdout` is experimental
+Checking with toolchain `nightly-2025-08-07-aarch64-apple-darwin`
+   Compiling proc-macro2 v1.0.107
+   Compiling unicode-ident v1.0.24
+   Compiling quote v1.0.47
+   Compiling compiler_builtins v0.1.160 (/Users/mericcintosun/.rustup/toolchains/nightly-2025-08-07-aarch64-apple-darwin/lib/rustlib/src/rust/library/compiler-builtins/compiler-builtins)
+   Compiling core v0.0.0 (/Users/mericcintosun/.rustup/toolchains/nightly-2025-08-07-aarch64-apple-darwin/lib/rustlib/src/rust/library/core)
+   Compiling serde_core v1.0.229
+   Compiling zmij v1.0.23
+   Compiling serde v1.0.229
+   Compiling serde_json v1.0.151
+   Compiling memchr v2.8.3
+   Compiling itoa v1.0.18
+   Compiling libc v0.2.174
+   Compiling object v0.37.2
+   Compiling std v0.0.0 (/Users/mericcintosun/.rustup/toolchains/nightly-2025-08-07-aarch64-apple-darwin/lib/rustlib/src/rust/library/std)
+   Compiling ident_case v1.0.1
+   Compiling strsim v0.11.1
+   Compiling version_check v0.9.5
+   Compiling generic-array v0.14.9
+   Compiling syn v3.0.3
+   Compiling syn v2.0.119
+   Compiling autocfg v1.5.1
+   Compiling typenum v1.20.1
+   Compiling libc v0.2.189
+   Compiling serde_derive v1.0.229
+   Compiling schemars v0.8.22
+   Compiling dyn-clone v1.0.20
+   Compiling cfg-if v1.0.4
+   Compiling data-encoding v2.11.1
+   Compiling darling_core v0.23.0
+   Compiling ethnum v1.5.3
+   Compiling escape-bytes v0.1.1
+   Compiling num-traits v0.2.19
+   Compiling semver v1.0.28
+   Compiling either v1.17.0
+   Compiling cfg_eval v0.1.2
+   Compiling itertools v0.13.0
+   Compiling block-buffer v0.10.4
+   Compiling crypto-common v0.1.6
+   Compiling equivalent v1.0.2
+   Compiling digest v0.10.7
+   Compiling hashbrown v0.17.1
+   Compiling thiserror v1.0.69
+   Compiling thiserror-impl v1.0.69
+   Compiling cpufeatures v0.2.17
+   Compiling sha2 v0.10.9
+   Compiling rustc-std-workspace-core v1.99.0 (/Users/mericcintosun/.rustup/toolchains/nightly-2025-08-07-aarch64-apple-darwin/lib/rustlib/src/rust/library/rustc-std-workspace-core)
+   Compiling alloc v0.0.0 (/Users/mericcintosun/.rustup/toolchains/nightly-2025-08-07-aarch64-apple-darwin/lib/rustlib/src/rust/library/alloc)
+   Compiling cfg-if v1.0.1
+   Compiling memchr v2.7.5
+   Compiling unwind v0.0.0 (/Users/mericcintosun/.rustup/toolchains/nightly-2025-08-07-aarch64-apple-darwin/lib/rustlib/src/rust/library/unwind)
+   Compiling adler2 v2.0.1
+   Compiling dlmalloc v0.2.10
+   Compiling rustc-demangle v0.1.26
+   Compiling panic_abort v0.0.0 (/Users/mericcintosun/.rustup/toolchains/nightly-2025-08-07-aarch64-apple-darwin/lib/rustlib/src/rust/library/panic_abort)
+   Compiling darling_macro v0.23.0
+   Compiling indexmap v2.14.0
+   Compiling darling v0.23.0
+   Compiling num-derive v0.4.2
+   Compiling crate-git-revision v0.0.6
+   Compiling hex v0.4.3
+   Compiling fnv v1.0.7
+   Compiling prettyplease v0.2.37
+   Compiling darling_core v0.20.11
+   Compiling stellar-strkey v0.0.13
+   Compiling stellar-xdr v27.0.0
+   Compiling soroban-env-common v27.0.1
+   Compiling serde_with_macros v3.22.0
+   Compiling wasmparser v0.116.1
+   Compiling serde_with v3.22.0
+   Compiling rustc-std-workspace-alloc v1.99.0 (/Users/mericcintosun/.rustup/toolchains/nightly-2025-08-07-aarch64-apple-darwin/lib/rustlib/src/rust/library/rustc-std-workspace-alloc)
+   Compiling std_detect v0.1.5 (/Users/mericcintosun/.rustup/toolchains/nightly-2025-08-07-aarch64-apple-darwin/lib/rustlib/src/rust/library/std_detect)
+   Compiling gimli v0.32.0
+   Compiling miniz_oxide v0.8.9
+   Compiling hashbrown v0.15.4
+   Compiling panic_unwind v0.0.0 (/Users/mericcintosun/.rustup/toolchains/nightly-2025-08-07-aarch64-apple-darwin/lib/rustlib/src/rust/library/panic_unwind)
+   Compiling heapless v0.8.0
+   Compiling base64 v0.22.1
+   Compiling darling_macro v0.20.11
+   Compiling stellar-strkey v0.0.16
+   Compiling addr2line v0.25.0
+   Compiling num-integer v0.1.47
+   Compiling crate-git-revision v0.0.9
+   Compiling rustc_version v0.4.1
+   Compiling static_assertions v1.1.0
+   Compiling num-bigint v0.4.8
+   Compiling soroban-sdk v27.0.6
+   Compiling darling v0.20.11
+   Compiling macro-string v0.1.4
+   Compiling heck v0.5.0
+   Compiling bytes-lit v0.0.6
+   Compiling visibility v0.1.1
+   Compiling rustc-std-workspace-std v1.99.0 (/Users/mericcintosun/.rustup/toolchains/nightly-2025-08-07-aarch64-apple-darwin/lib/rustlib/src/rust/library/rustc-std-workspace-std)
+   Compiling rustc-literal-escaper v0.0.5
+   Compiling proc_macro v0.0.0 (/Users/mericcintosun/.rustup/toolchains/nightly-2025-08-07-aarch64-apple-darwin/lib/rustlib/src/rust/library/proc_macro)
+error: failed to run custom build command for `soroban-sdk v27.0.6`
+
+Caused by:
+  process didn't exit successfully: `/private/tmp/claude-501/-Users-mericcintosun-A-Identity/c141a955-81ba-4195-a9f0-51349884486d/scratchpad/sorocopy/target/dylint/target/nightly-2025-08-07-aarch64-apple-darwin/release/build/soroban-sdk-d321f330ee29b584/build-script-build` (exit status: 101)
+  --- stdout
+  cargo::rustc-check-cfg=cfg(soroban_sdk_internal_no_rssdkver_meta)
+
+  --- stderr
+
+  thread 'main' panicked at /Users/mericcintosun/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/soroban-sdk-27.0.6/build.rs:14:17:
+  Rust compiler 1.82+ with target 'wasm32-unknown-unknown' is unsupported by the Soroban Environment, use 'wasm32v1-none' available with Rust 1.84+. The 'wasm32-unknown-unknown' target in Rust 1.82+ has features enabled that are not yet supported and not easily disabled: reference-types, multi-value. If you must build for the 'wasm32-unknown-unknown' use Rust 1.81 or earlier.
+  note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+warning: build failed, waiting for other jobs to finish...
+Summary:
++--------------------+----------+----------+--------+-------+-------------+
+| [32mCrate             [39;49m | [32mStatus  [39;49m | [32mCritical[39;49m | [32mMedium[39;49m | [32mMinor[39;49m | [32mEnhancement[39;49m | 
++--------------------+----------+----------+--------+-------+-------------+
+| [magent_spend_policy[39;49m | [mAnalyzed[39;49m | [m0       [39;49m | [m0     [39;49m | [m0    [39;49m | [m0          [39;49m | 
++--------------------+----------+----------+--------+-------+-------------+
+[32m/private/tmp/claude-501/-Users-mericcintosun-A-Identity/c141a955-81ba-4195-a9f0-51349884486d/scratchpad/scout-report.json successfully generated.[39;49m
+EXIT=0

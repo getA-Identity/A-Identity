@@ -10,6 +10,15 @@ description = "An on-chain spend policy for an AI agent's USDC wallet on Stellar
 crate-type = ["lib", "cdylib"]
 doctest = false
 
+[features]
+# Opt-in ONLY, and deliberately absent from any `default` list. `cargo fuzz` builds the
+# contract as a library and needs the SDK's test harness to construct an `Env`, so without
+# a named feature there is no way to reach it from a fuzz target. Keeping it out of
+# `default` is what stops it reaching the release artifact: `stellar contract build` does
+# not pass `--features`, so the deployed wasm never sees it. audit/tool-output/ records the
+# check that the built wasm is unchanged by this edit.
+testutils = ["soroban-sdk/testutils"]
+
 [dependencies]
 soroban-sdk = { workspace = true }
 
