@@ -153,6 +153,20 @@ for (const c of CONTROLS) {
   }
 }
 
+// Restoring the source is not the whole cleanup. `cargo test` rewrites
+// contracts/*/test_snapshots/**.json on every run, so the snapshots on disk right now are
+// the ones a mutated contract produced: the ledger entries a vault with a guard deleted
+// wrote, committed under the names of tests describing a vault that has it. Left alone
+// they show up as an unexplained diff after every audit run, and the one thing worse than
+// a stale snapshot is a snapshot that quietly documents the broken build. One clean run
+// puts them back.
+process.stdout.write('\nrestoring test snapshots: ')
+if (!suitePasses()) {
+  console.error('FAIL\n  The suite is red after restoring every guard. The tree is not back to where it started.')
+  process.exit(1)
+}
+console.log('done')
+
 if (failures > 0) {
   console.error(`\n${failures} control(s) were not caught. The suite does not prove what it claims.`)
   process.exit(1)

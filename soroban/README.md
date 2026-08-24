@@ -90,6 +90,14 @@ node audit/run-negative-controls.mjs         # each guard deleted, suite must go
 `.github/workflows/soroban.yml` runs all of it plus `cargo audit` and a 128KB size gate,
 scoped to `soroban/**` so a frontend commit does not pay for a Rust toolchain.
 
+The Instawards SoW asks for a tests-passed screenshot, and a picture of green text is both
+trivial to fake and impossible to re-check, so we do not take one. `node
+scripts/gen-stellar-tests-image.mjs` (from the repo root) runs the suites above plus the
+Stellar rail tests, refuses to write anything if one of them is not green, and renders
+`docs/images/stellar-tests-passed.png` out of their own stdout, with the commit, the
+toolchain versions and the contract id read from the repo. Rename a test and the picture
+says the new name.
+
 **The Rust count lives here and nowhere else.** `mcp/src/doc-counts.test.ts` matches the
 phrase `N unit tests` across five repo documents and counts `test()` declarations under
 `mcp/src/**/*.test.ts`. Writing "N unit tests" about this suite in any of those files would

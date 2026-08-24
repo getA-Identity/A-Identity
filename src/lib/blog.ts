@@ -89,6 +89,157 @@ export const AUTHORS = {
 
 export const POSTS: BlogPost[] = [
   {
+    slug: 'a-budget-an-agent-cannot-exceed',
+    title: 'Giving an AI agent a budget it cannot exceed',
+    excerpt:
+      'An agent that holds a key can spend everything behind it, and a limit that lives on your server is only a limit until something goes around it. Here is the same limit enforced by the Stellar ledger instead, and the testnet transactions where it refuses.',
+    chain: 'Stellar',
+    accent: '#E0B23C',
+    date: 'Aug 24, 2026',
+    readingTime: '6 min read',
+    seed: 17,
+    author: AUTHORS.protocol,
+    sections: [
+      {
+        heading: 'The problem with handing an agent a key',
+        body: [
+          'Once software holds a key that can move money, every bad prompt, every bug and every compromise is a payment. This is not a hypothetical failure mode, it is the default one.',
+          'The usual answer is a check in the application: before sending, ask the server whether this payment is allowed. That works right up to the moment something goes around it. A compromised agent, a second code path, a direct call to the token, and the limit turns out never to have been a limit. It was a suggestion, running on a machine you were trusting.',
+          'Stellar already has the pieces an agent needs to pay for things: native USDC, fees small enough that per-call pricing is not absurd, and x402 for buying an API without an account or a card. What it did not have was a way to cap what that agent may spend, enforced by the ledger rather than by a server.',
+        ],
+      },
+      {
+        heading: 'The vault, in one paragraph',
+        body: [
+          'We deployed a Soroban contract on Stellar testnet that holds the agent\'s USDC. The agent no longer holds the money. It holds permission to ask the vault to pay.',
+          'The vault knows two parties. A human owner, who sets the rules, can freeze everything and can withdraw, and an agent operator, which may only call pay and only inside those rules. The contract refuses to let one address be both, so a single stolen key cannot both spend past the policy and rewrite the policy.',
+          'Four rules run on every payment: a cap for the day, a ceiling on any single payment, a list of who may be paid at all, and a freeze switch. A payment that breaks one of them does not get flagged for review. It does not happen.',
+        ],
+      },
+      {
+        heading: 'Why the ledger and not the server',
+        body: [
+          'The distinction sounds academic and is not. A check on your server is enforced by whoever is running that server. A check in the contract is enforced by the network, including against the person who wrote the agent.',
+          'Concretely, the vault moves its own balance. There is no allowance the agent can quietly raise, no admin endpoint that skips the gate, and no upgrade entrypoint on the deployed contract to add one later. It was deployed immutable on purpose: the rules it shipped with are the only rules it will ever have.',
+          'That cost is real and worth stating. A bug in it cannot be patched, only replaced by a new vault the owner moves the funds into. We took the trade, because a guardrail with an upgrade button is a guardrail with a back door.',
+        ],
+      },
+      {
+        heading: 'What actually happened on testnet',
+        body: [
+          'The vault was funded with 15 USDC and given a 10 USDC cap for the day and a 2 USDC ceiling on any single payment.',
+          'A 1 USDC payment from the agent settled and is in the ledger, transaction 3da74634. A payment past the day\'s cap was refused with a typed error, Error(Contract, #5), which is the vault saying DailyCapExceeded, transaction 12df418f.',
+          'The owner then froze the vault, paid an address that was not on the allowlist through the owner path while it was still frozen, and unfroze it again. All three are on the ledger. That override is deliberate rather than a hole: the human path is meant to work exactly when the agent path does not. It still counted against the day\'s cap, so the owner bypasses the gates and not the budget.',
+        ],
+      },
+      {
+        heading: 'The honest bit about refusals',
+        body: [
+          'Most of the refusals have no transaction hash at all, and that is worth explaining before anyone counts it as a gap in the evidence.',
+          'On Soroban a call is simulated before it is submitted. When the vault says no, the answer comes back during simulation and nothing is ever sent to the network. A refused payment normally leaves no trace, which is good engineering and inconvenient evidence.',
+          'To produce one refusal a reviewer can actually open, the limit was tightened while a payment was in flight, so it failed at apply time instead of during simulation. That is not a stunt for the demo. It is precisely the race a real agent hits when a human lowers a limit while the agent is mid-purchase.',
+        ],
+      },
+      {
+        heading: 'How it meets x402, the payment rail',
+        body: [
+          'x402 is the part where an agent buys an API call without a subscription. It requests a resource, gets HTTP 402 back with a price and an address, pays, and asks again with the payment attached.',
+          'Wiring the two together means the purchase money leaves the vault rather than the agent\'s own wallet. The seller has to be on the allowlist, the price has to sit under the ceiling, and the day has to have room left. All of that runs before any transaction exists.',
+          'One such purchase is on the ledger, transaction fab5c864. The same call aimed at a seller who was not on the allowlist was refused with Error(Contract, #3), PayeeNotAllowed, and produced no transaction, for the reason in the previous section.',
+          'The buyer also paid no network fee. Horizon records the 22,973 stroop fee against our operator account rather than the buyer\'s, which is what gasless means when you can look it up instead of taking our word for it.',
+        ],
+      },
+      {
+        heading: 'What we are not claiming',
+        body: [
+          'Testnet only. We have no contract and no account on Stellar mainnet, and our proof page states that outright rather than leaving it as a silence for someone to misread.',
+          'Not audited. There are 52 unit tests, and separately a runner that deletes each safety check in turn and requires the suite to go red. That second part carries more weight than the count: a green suite proves the contract passes its tests, and only the deletion runner proves the tests would notice if the contract stopped being safe. It is still not an audit and we will not call it one.',
+          'No agent identity on Stellar yet. The agent\'s passport lives on an EVM chain and is referenced from here, because there is no Soroban registry to anchor it in. The spending guardrail shipped before the identity layer, which is the opposite of the order we expected and is fine: a cap the ledger enforces is useful even against an agent nobody has vouched for.',
+        ],
+      },
+      {
+        heading: 'Where to look',
+        body: [
+          'Every transaction named here is on stellar.expert on testnet, and the full list, with what each one is supposed to prove, is on our Stellar proof page. That page re-reads the chain when you load it and checks the contract is still there, rather than replaying an answer we saved earlier.',
+          'The contract source is in the public repo under soroban/contracts/agent-spend-policy, together with the tests and the runner that deletes the guards.',
+        ],
+      },
+    ],
+    tr: {
+      title: 'Bir yapay zeka ajanına aşamayacağı bir bütçe vermek',
+      excerpt:
+        'Anahtarı elinde tutan bir ajan, arkasındaki her şeyi harcayabilir; sunucunuzda duran bir limit ise, bir şey onun etrafından dolaşana kadar limittir. Aynı limitin Stellar defterinde uygulanmış hali ve reddettiği anların testnet işlemleri.',
+      chain: 'Stellar',
+      readingTime: '6 dakika',
+      sections: [
+        {
+          heading: 'Ajana anahtar vermenin problemi',
+          body: [
+            'Bir yazılım para hareket ettirebilen bir anahtarı eline aldığı anda, her kötü prompt, her hata ve her ele geçirilme bir ödemedir. Bu varsayımsal bir hata biçimi değil, varsayılan olanıdır.',
+            'Alışılmış cevap uygulamanın içine bir kontrol koymaktır: göndermeden önce sunucuya bu ödemenin serbest olup olmadığını sor. Bu, bir şey onun etrafından dolaşana kadar işe yarar. Ele geçirilmiş bir ajan, ikinci bir kod yolu, token\'a doğrudan bir çağrı ve limitin aslında hiç limit olmadığı ortaya çıkar. Güvendiğiniz bir makinede çalışan bir öneriydi.',
+            'Stellar\'da bir ajanın ödeme yapmak için ihtiyaç duyduğu parçalar zaten var: yerel USDC, çağrı başına fiyatlandırmayı saçma olmaktan çıkaracak kadar küçük ücretler ve hesapsız, kartsız API satın almak için x402. Olmayan şey, bu ajanın ne kadar harcayabileceğini sunucunun değil defterin sınırlamasıydı.',
+          ],
+        },
+        {
+          heading: 'Kasa, tek paragrafta',
+          body: [
+            'Stellar testnet\'e, ajanın USDC\'sini tutan bir Soroban kontratı kurduk. Para artık ajanda değil. Ajanda olan şey, kasadan ödeme yapmasını isteme izni.',
+            'Kasa iki tarafı tanıyor. Kuralları koyan, her şeyi dondurabilen ve parayı çekebilen insan bir owner; yalnızca pay çağırabilen ve bunu yalnızca kuralların içinde yapabilen bir agent operator. Kontrat tek bir adresin ikisi birden olmasını reddediyor, yani çalınan tek bir anahtar hem politikanın ötesinde harcayıp hem politikayı yeniden yazamıyor.',
+            'Her ödemede dört kural çalışıyor: günlük bir tavan, tek bir ödeme için bir tavan, kime ödeme yapılabileceğinin listesi ve bir dondurma anahtarı. Bunlardan birini çiğneyen ödeme incelemeye takılmıyor. Hiç gerçekleşmiyor.',
+          ],
+        },
+        {
+          heading: 'Neden defter, neden sunucu değil',
+          body: [
+            'Bu ayrım kulağa akademik geliyor ama değil. Sunucunuzdaki bir kontrolü, o sunucuyu kim çalıştırıyorsa o uygular. Kontrattaki bir kontrolü ağ uygular, ajanı yazan kişiye karşı da dahil.',
+            'Somut olarak, kasa kendi bakiyesini hareket ettiriyor. Ajanın sessizce yükseltebileceği bir allowance, kapıyı atlayan bir yönetici ucu ve sonradan böyle bir şey eklemeye yarayacak bir yükseltme girişi yok. Kontrat bilerek değiştirilemez kuruldu: yayına çıktığı kurallar, sahip olacağı tek kurallar.',
+            'Bunun bedeli gerçek ve söylenmeye değer. İçindeki bir hata yamalanamaz, ancak owner\'ın parayı taşıyacağı yeni bir kasayla değiştirilebilir. Bu takası kabul ettik, çünkü yükseltme düğmesi olan bir korkuluk, arka kapısı olan bir korkuluktur.',
+          ],
+        },
+        {
+          heading: 'Testnet\'te gerçekte ne oldu',
+          body: [
+            'Kasaya 15 USDC kondu, günlük tavan 10 USDC ve tek ödeme tavanı 2 USDC olarak ayarlandı.',
+            'Ajanın 1 USDC\'lik ödemesi gerçekleşti ve defterde duruyor, 3da74634 numaralı işlem. Günlük tavanı aşan bir ödeme ise tipli bir hatayla reddedildi: Error(Contract, #5), yani kasanın DailyCapExceeded demesi, 12df418f numaralı işlem.',
+            'Ardından owner kasayı dondurdu, kasa hala donmuşken owner yolundan allowlist\'te olmayan bir adrese ödeme yaptı ve sonra dondurmayı kaldırdı. Üçü de defterde. Bu geçersiz kılma bir açık değil, kasıtlı: insan yolunun tam olarak ajan yolunun çalışmadığı anda çalışması gerekiyor. Yine de günlük tavandan düştü, yani owner kapıları atlıyor, bütçeyi değil.',
+          ],
+        },
+        {
+          heading: 'Retler hakkında dürüst kısım',
+          body: [
+            'Retlerin çoğunun hiç işlem hash\'i yok ve bunu, biri kanıttaki bir boşluk sanmadan önce açıklamak gerekiyor.',
+            'Soroban\'da bir çağrı gönderilmeden önce simüle edilir. Kasa hayır dediğinde cevap simülasyon sırasında döner ve ağa hiçbir şey gönderilmez. Reddedilen bir ödeme normalde hiç iz bırakmaz; bu iyi mühendislik ve zahmetli bir kanıt durumu.',
+            'Bir denetçinin gerçekten açabileceği tek bir ret üretmek için, bir ödeme yoldayken limit sıkıldı ve ödeme simülasyonda değil uygulama anında düştü. Bu demo için bir numara değil. Bir insan, ajan alışverişin ortasındayken limiti düşürdüğünde gerçek bir ajanın karşılaştığı yarışın ta kendisi.',
+          ],
+        },
+        {
+          heading: 'Ödeme rayı x402 ile nasıl buluşuyor',
+          body: [
+            'x402, bir ajanın abonelik olmadan API çağrısı satın aldığı kısım. Kaynağı istiyor, karşılığında fiyat ve adres taşıyan bir HTTP 402 alıyor, ödüyor ve ödemeyi ekleyerek tekrar soruyor.',
+            'İkisini birbirine bağlamak, satın alma parasının ajanın kendi cüzdanından değil kasadan çıkması demek. Satıcının allowlist\'te olması, fiyatın tavanın altında kalması ve günün yerinin kalmış olması gerekiyor. Bunların hepsi, ortada bir işlem oluşmadan önce çalışıyor.',
+            'Böyle bir satın alma defterde duruyor, fab5c864 numaralı işlem. Aynı çağrı allowlist\'te olmayan bir satıcıya yöneltildiğinde Error(Contract, #3), PayeeNotAllowed ile reddedildi ve bir önceki bölümdeki sebeple hiç işlem üretmedi.',
+            'Alıcı ayrıca ağ ücreti de ödemedi. Horizon, 22.973 stroop\'luk ücreti alıcının değil bizim operator hesabımızın üzerine yazıyor; gassız derken kastedilen şey, bizim sözümüze güvenmek yerine bakıp doğrulayabildiğiniz bu.',
+          ],
+        },
+        {
+          heading: 'İddia etmediklerimiz',
+          body: [
+            'Yalnızca testnet. Stellar mainnet\'te ne kontratımız ne hesabımız var ve proof sayfamız bunu, biri yanlış okusun diye sessizlikte bırakmak yerine açıkça yazıyor.',
+            'Denetlenmedi. 52 birim testi var, ayrıca her güvenlik kontrolünü sırayla silip test paketinin kırmızıya dönmesini zorunlu kılan bir koşucu. İkinci kısım sayıdan daha ağır basıyor: yeşil bir paket kontratın testlerini geçtiğini kanıtlar, testlerin kontrat güvenli olmaktan çıktığında bunu fark edeceğini ise yalnızca o silme koşucusu kanıtlar. Yine de bu bir denetim değil ve öyle demeyeceğiz.',
+            'Stellar\'da henüz ajan kimliği yok. Ajanın pasaportu bir EVM zincirinde duruyor ve buradan referansla gösteriliyor, çünkü onu tutturacak bir Soroban kaydı yok. Harcama korkuluğu kimlik katmanından önce yayına girdi; beklediğimizin tam tersi bir sıra ve sorun değil: defterin uyguladığı bir tavan, kimsenin kefil olmadığı bir ajana karşı da işe yarar.',
+          ],
+        },
+        {
+          heading: 'Nereye bakmalı',
+          body: [
+            'Burada anılan her işlem testnet üzerinde stellar.expert\'te duruyor; tam liste ve her birinin neyi kanıtlaması gerektiği Stellar proof sayfamızda. O sayfa, daha önce kaydettiğimiz bir cevabı tekrar oynatmak yerine, siz açtığınızda zinciri yeniden okuyor ve kontratın hala orada olduğunu kontrol ediyor.',
+            'Kontratın kaynağı public repoda soroban/contracts/agent-spend-policy altında; testler ve kapıları silen koşucu da orada.',
+          ],
+        },
+      ],
+    },
+  },
+  {
     slug: 'gasless-nanopayments-for-agents',
     title: 'Paying a tenth of a cent: how gasless nanopayments actually work',
     excerpt:
@@ -1152,11 +1303,11 @@ export const POSTS: BlogPost[] = [
     slug: 'bridging-agent-identity-to-stellar',
     title: 'Bridging agent identity to Stellar',
     excerpt:
-      'Stellar moves dollars cheaply and fast, but it is not EVM. Here is how an agent passport reaches it anyway.',
+      'Stellar moves dollars cheaply and fast, but it is not EVM and it has no registry to hold an agent passport. Here is what crosses over today and what honestly does not.',
     chain: 'Stellar',
     accent: '#E0B23C',
     date: 'May 30, 2026',
-    readingTime: '3 min read',
+    readingTime: '4 min read',
     seed: 4,
     author: AUTHORS.protocol,
     sections: [
@@ -1175,17 +1326,24 @@ export const POSTS: BlogPost[] = [
         ],
       },
       {
-        heading: 'Bridged, not faked',
+        heading: 'Referenced, not re-anchored',
         body: [
-          'The agent carries one ERC-8004 passport on an EVM chain. On Stellar we anchor it through a Soroban registry and SEP-10 auth, so the same identity holds.',
-          'It is the real passport, recognized in a new country, not a fresh fake one.',
+          'The agent carries one ERC-8004 passport on an EVM chain. Stellar has no equivalent registry to re-anchor it in, and we are not going to invent one and call it a standard, so the passport is read from the chain that holds it and referenced from Stellar rather than copied onto it.',
+          'That is a real limit and worth saying plainly. SEP-10 would prove control of a Stellar account, which is not the same thing as proving the passport, and no Soroban identity registry exists to point at yet. A registry on Stellar is planned, and until it is deployed we will keep calling it planned.',
+        ],
+      },
+      {
+        heading: 'What is on Stellar today',
+        body: [
+          'The money side, not the identity side. An on-chain spend policy is deployed on Stellar testnet: a vault that holds USDC for an agent and enforces a daily cap, a per-payment ceiling, a payee allowlist and a freeze switch on the ledger itself.',
+          'So an agent on Stellar can be bounded before it can be identified, which is the opposite order from what we expected and is fine. A cap that the ledger enforces is useful even against an agent nobody has vouched for.',
         ],
       },
       {
         heading: 'One agent, many homes',
         body: [
-          'The goal is a single reputation that travels, whether the agent settles on Arc, Base, or Stellar.',
-          'Your track record should follow you, not reset at every border.',
+          'The goal is still a single reputation that travels, whether the agent settles on Arc, Base, or Stellar.',
+          'Your track record should follow you, not reset at every border. Today it follows you as a reference across a chain boundary rather than as a native record on both sides, and that gap is the next piece of work rather than a detail to paper over.',
         ],
       },
     ],
