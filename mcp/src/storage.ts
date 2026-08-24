@@ -390,26 +390,69 @@ export type StellarSettlementRecord = {
 const STELLAR_SETTLEMENTS_FILE = join(DATA_DIR, 'stellar-settlements.json')
 export const STELLAR_SETTLEMENTS_CAP = 2000
 
-/** Load the retained Stellar settlement records, oldest first. Never throws, for the same
- *  reason loadX402Settlements does not: this is read on the settlement path, and an
- *  exception there is an unhandled rejection that takes the process down. */
-export async function loadStellarSettlements(): Promise<StellarSettlementRecord[]> {
+/**
+ * The settlement log, with "empty" and "unreadable" told apart.
+ *
+ * They used to be the same value, and that was a real fail-open. `feeSpentOnDay` in
+ * x402-stellar/settle.ts guards the daily fee budget and documents itself as fail-closed:
+ * an unreadable log means we do not know what we have spent, so stop broadcasting. It
+ * implemented that by catching a throw. Nothing ever threw, because this function caught
+ * its own read error and returned `[]`, which the caller could only read as "nothing spent
+ * today". An unreachable Postgres therefore turned the fee ceiling off completely.
+ *
+ * A missing FILE is still genuinely empty: that is a first run, not a failure. A file that
+ * exists and will not parse is unreadable, and says so.
+ */
+export type StellarSettlementsRead =
+  | { ok: true; rows: StellarSettlementRecord[] }
+  | { ok: false; reason: string }
+
+/**
+ * `getPool` is injectable ONLY so the failure branch below can be tested against the real
+ * function rather than a reimplementation of it. Without a seam here the only way to
+ * exercise "the database is unreachable" is to have a database that is unreachable, and a
+ * guard that spends real money should not be covered by a test nobody runs.
+ *
+ * The seam is external I/O, not logic: everything that decides `ok` stays under test.
+ */
+export async function loadStellarSettlementsResult(
+  getPoolFn: () => Promise<unknown> = getPool,
+): Promise<StellarSettlementsRead> {
   try {
-    const p = await getPool()
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const p = (await getPoolFn()) as any
     if (p) {
       await p.query('CREATE TABLE IF NOT EXISTS stellar_settlements (id bigserial PRIMARY KEY, data jsonb NOT NULL)')
       const r = await p.query('SELECT data FROM stellar_settlements ORDER BY id ASC')
-      return r.rows.map((row: { data: StellarSettlementRecord }) => row.data)
+      return { ok: true, rows: r.rows.map((row: { data: StellarSettlementRecord }) => row.data) }
     }
   } catch (e) {
-    console.error('[storage] stellar settlement read failed:', e instanceof Error ? e.message : e)
-    return []
+    const reason = e instanceof Error ? e.message : String(e)
+    console.error('[storage] stellar settlement read failed:', reason)
+    return { ok: false, reason }
   }
   try {
-    return JSON.parse(readFileSync(STELLAR_SETTLEMENTS_FILE, 'utf8')) as StellarSettlementRecord[]
-  } catch {
-    return []
+    return { ok: true, rows: JSON.parse(readFileSync(STELLAR_SETTLEMENTS_FILE, 'utf8')) as StellarSettlementRecord[] }
+  } catch (e) {
+    // ENOENT is a first run and is genuinely empty. Anything else is a file we cannot read.
+    if ((e as NodeJS.ErrnoException)?.code === 'ENOENT') return { ok: true, rows: [] }
+    const reason = e instanceof Error ? e.message : String(e)
+    console.error('[storage] stellar settlement file unreadable:', reason)
+    return { ok: false, reason }
   }
+}
+
+/** Load the retained Stellar settlement records, oldest first. Never throws, for the same
+ *  reason loadX402Settlements does not: this is read on the settlement path, and an
+ *  exception there is an unhandled rejection that takes the process down.
+ *
+ *  Lenient by design: an unreadable log reads as empty here. That is correct for display
+ *  surfaces such as /api/x402/stellar/proof, where showing nothing beats a 500. It is NOT
+ *  correct for a spending guard, and any caller deciding whether to spend money must use
+ *  `loadStellarSettlementsResult` instead. */
+export async function loadStellarSettlements(): Promise<StellarSettlementRecord[]> {
+  const r = await loadStellarSettlementsResult()
+  return r.ok ? r.rows : []
 }
 
 /** Durably record one settlement attempt, trimming past the cap. Never throws: by the time

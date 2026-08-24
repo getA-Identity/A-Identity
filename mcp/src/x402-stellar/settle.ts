@@ -57,7 +57,8 @@ import type { ChainDescriptor, SettlementToken } from '../chains/types.js'
 import { networkPassphrase, sorobanServer, stellarFeePayer, feePayerEnvVar } from '../chains/stellar/client.js'
 import { txUrl } from '../chains/explorer.js'
 import { isContractId } from '../chains/stellar/strkey.js'
-import { loadSpentPayments, loadStellarSettlements, persistSpentPayment, persistStellarSettlement } from '../storage.js'
+import { loadSpentPayments, loadStellarSettlementsResult, persistSpentPayment, persistStellarSettlement } from '../storage.js'
+import type { StellarSettlementsRead } from '../storage.js'
 import type { StellarSettlementRecord } from '../storage.js'
 import { confirmStellarTransfer } from './confirm.js'
 import type { ConfirmDeps } from './confirm.js'
@@ -1154,24 +1155,40 @@ async function defaultOzSubmit(
  * unreadable log means we do not know what we have spent, and the safe answer to that is to
  * stop broadcasting rather than to assume zero.
  */
-async function feeSpentOnDay(caip2: string, at: Date): Promise<bigint> {
+export const FEE_BUDGET_UNKNOWN = BigInt(Number.MAX_SAFE_INTEGER)
+
+export async function feeSpentOnDay(
+  caip2: string,
+  at: Date,
+  load: () => Promise<StellarSettlementsRead> = loadStellarSettlementsResult,
+): Promise<bigint> {
   const day = at.toISOString().slice(0, 10)
+  let read: StellarSettlementsRead
   try {
-    const rows = await loadStellarSettlements()
-    let total = 0n
-    for (const r of rows) {
-      if (r.network !== caip2 || !r.feeStroops || !r.ts.startsWith(day)) continue
-      try {
-        total += BigInt(r.feeStroops)
-      } catch {
-        /* a malformed row must not break the guard it feeds */
-      }
-    }
-    return total
+    read = await load()
   } catch (e) {
-    console.error('[x402-stellar] could not read the fee log; treating the daily budget as spent:', msg(e))
-    return BigInt(Number.MAX_SAFE_INTEGER)
+    // The loader is documented not to throw, but a guard that spends money may not rely on
+    // a docstring. If it ever does, that is still "we cannot read the log".
+    console.error('[x402-stellar] fee log read threw; treating the daily budget as spent:', msg(e))
+    return FEE_BUDGET_UNKNOWN
   }
+  if (!read.ok) {
+    // The branch that used to be unreachable. It was written as a try/catch around a
+    // function that swallows its own errors, so an unreachable database read as zero spend
+    // and the daily ceiling stopped applying. Now the loader says so and this fires.
+    console.error('[x402-stellar] could not read the fee log; treating the daily budget as spent:', read.reason)
+    return FEE_BUDGET_UNKNOWN
+  }
+  let total = 0n
+  for (const r of read.rows) {
+    if (r.network !== caip2 || !r.feeStroops || !r.ts.startsWith(day)) continue
+    try {
+      total += BigInt(r.feeStroops)
+    } catch {
+      /* a malformed row must not break the guard it feeds */
+    }
+  }
+  return total
 }
 
 /** A durable-write failure must never turn a decided settlement into a crash. */

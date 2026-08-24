@@ -19,6 +19,8 @@ import test from 'node:test'
 import { Keypair, Networks, hash, xdr } from '@stellar/stellar-sdk'
 
 import { getChainById } from '../chains/registry.js'
+import { loadStellarSettlementsResult } from '../storage.js'
+import type { StellarSettlementRecord } from '../storage.js'
 import type { SettlementToken } from '../chains/types.js'
 import {
   decodeAuthEntry,
@@ -28,6 +30,8 @@ import {
   stellarTxKey,
   settleStellarPayment,
   stellarPaymentKey,
+  feeSpentOnDay,
+  FEE_BUDGET_UNKNOWN,
   verifyAuthSignature,
   verifyStellarPayment,
 } from './settle.js'
@@ -716,4 +720,94 @@ test('the declared payer is passed to the confirmation, not taken on trust', asy
     }),
   })
   assert.equal(sawFrom, VAULT)
+})
+
+/**
+ * F-05. The daily fee budget was documented as fail-closed and was not.
+ *
+ * `feeSpentOnDay` wraps its work in a try/catch and returns MAX_SAFE_INTEGER on a throw,
+ * with a comment saying an unreadable log means we stop broadcasting rather than assume
+ * zero. But `loadStellarSettlements` catches its own read error and returns `[]`, so the
+ * throw never happens: an unreachable database read as "nothing spent today" and the
+ * budget gate passed.
+ *
+ * On testnet that spends test XLM. On pubnet it spends the operator's real XLM, without a
+ * ceiling, for as long as the database stays unreachable. Render's free tier makes that a
+ * routine condition rather than a hypothetical.
+ *
+ * These tests inject the loader, so they exercise the real `feeSpentOnDay` rather than a
+ * reimplementation of it.
+ */
+test('F-05: an unreadable settlement log spends the fee budget, it does not zero it', async () => {
+  const at = new Date('2026-08-24T12:00:00Z')
+  const unreadable = async () => ({ ok: false as const, reason: 'ECONNREFUSED 10.0.0.1:5432' })
+  const spent = await feeSpentOnDay('stellar:pubnet', at, unreadable)
+  assert.equal(
+    spent,
+    FEE_BUDGET_UNKNOWN,
+    'a log we cannot read must report the budget as spent. Returning 0 here is what let an ' +
+      'unreachable database turn the daily fee ceiling off entirely.',
+  )
+})
+
+test('F-05: an empty log is genuinely zero, and is not confused with an unreadable one', async () => {
+  const at = new Date('2026-08-24T12:00:00Z')
+  const empty = async () => ({ ok: true as const, rows: [] })
+  assert.equal(await feeSpentOnDay('stellar:pubnet', at, empty), 0n)
+})
+
+test('F-05: fees are summed for this network and this day only', async () => {
+  const at = new Date('2026-08-24T12:00:00Z')
+  const rows = [
+    { network: 'stellar:pubnet', ts: '2026-08-24T01:00:00Z', feeStroops: '100' },
+    { network: 'stellar:pubnet', ts: '2026-08-24T23:00:00Z', feeStroops: '250' },
+    // another network: a pubnet fee and a testnet fee are not comparable quantities
+    { network: 'stellar:testnet', ts: '2026-08-24T02:00:00Z', feeStroops: '9999' },
+    // yesterday
+    { network: 'stellar:pubnet', ts: '2026-08-23T23:59:59Z', feeStroops: '8888' },
+    // a malformed row must not break the guard it feeds
+    { network: 'stellar:pubnet', ts: '2026-08-24T03:00:00Z', feeStroops: 'not-a-number' },
+  ] as unknown as StellarSettlementRecord[]
+  const spent = await feeSpentOnDay('stellar:pubnet', at, async () => ({ ok: true as const, rows }))
+  assert.equal(spent, 350n)
+})
+
+/**
+ * The producer half of F-05, and the reason it exists is a mistake worth recording.
+ *
+ * The three tests above inject the loader, so they prove `feeSpentOnDay` handles an
+ * `ok: false` correctly. They do NOT prove anything emits one. A negative control caught
+ * that: reverting `loadStellarSettlementsResult` to swallow its read error and return
+ * `{ ok: true, rows: [] }` left all three of them green, which is exactly the shape of the
+ * original bug. A test that mocks the thing that was broken cannot detect that it broke.
+ *
+ * These call the real function with a failing pool, so the classification under test is
+ * the one that runs in production.
+ */
+test('F-05 (producer): a database that will not answer is reported unreadable, not empty', async () => {
+  const boom = async () => {
+    throw Object.assign(new Error('connect ECONNREFUSED 127.0.0.1:5432'), { code: 'ECONNREFUSED' })
+  }
+  const r = await loadStellarSettlementsResult(boom)
+  assert.equal(r.ok, false, 'an unreachable database must not read as an empty settlement log')
+  if (!r.ok) assert.match(r.reason, /ECONNREFUSED/)
+})
+
+test('F-05 (producer): an unreadable log makes the real fee guard report the budget spent', async () => {
+  // The two halves wired together, with no stub between them: this is the end-to-end
+  // statement the daily fee ceiling actually depends on.
+  const boom = async () => {
+    throw new Error('connect ETIMEDOUT')
+  }
+  const spent = await feeSpentOnDay('stellar:pubnet', new Date('2026-08-24T12:00:00Z'), () =>
+    loadStellarSettlementsResult(boom),
+  )
+  assert.equal(spent, FEE_BUDGET_UNKNOWN)
+})
+
+test('F-05 (producer): no configured database is empty, not unreadable', async () => {
+  // A first run with no DATABASE_URL and no settlements file is genuinely zero spend.
+  // Conflating that with a read failure would fail closed forever on a fresh deploy.
+  const r = await loadStellarSettlementsResult(async () => null)
+  assert.equal(r.ok, true, 'an unconfigured database with no file is a first run, not a failure')
 })
