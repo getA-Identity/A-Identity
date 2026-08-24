@@ -96,7 +96,7 @@ the three named crates.
 | --- | --- | --- | --- |
 | **owner** | every policy setter, `owner_pay`, `withdraw` | everything; total authority over the balance | nothing is enforced against the owner except arithmetic, balance and payee validity |
 | **operator** (agent) | `pay` only | initiating payments | amount, payee, or frequency — all are gated |
-| **anyone** | 12 view functions, TTL extension | nothing | — |
+| **anyone** | 13 view functions, TTL extension | nothing | — |
 | **the token contract** | is called for `balance` and `transfer` | returning honest balances and moving the right amount | it is an external contract chosen at deploy time; if it misbehaves, vault accounting is wrong |
 | **the network** | ledger timestamp, ledger sequence | the UTC day boundary and the session-key clock | — |
 
@@ -146,7 +146,7 @@ against a contract with the guard removed.
 | `set_session_key_expiry(expiry)` | `owner` | 0 means unbounded |
 | `set_frozen(frozen)` | `owner` | kill switch |
 
-**View entrypoints (12)** — `owner`, `operator`, `token`, `decimals`, `daily_cap`,
+**View entrypoints (13)** — `owner`, `operator`, `token`, `decimals`, `daily_cap`,
 `auto_approve_max`, `frozen`, `allowlist_enabled`, `session_key_expiry`, `is_allowed`,
 `today`, `spent_today`, `balance`. No auth, no writes. `balance` makes a cross-contract
 call; `is_allowed` extends a TTL as a side effect of a read.
@@ -230,7 +230,15 @@ Every finding in Phase 3 must reference one of these, or state `n/a` and justify
 ### Money
 
 - **INV-05** — For any UTC day `d` with `daily_cap != 0`, the sum of all amounts
-  successfully moved by `pay` and `owner_pay` on day `d` is `<= daily_cap`.
+  successfully moved by **`pay`** on day `d` is `<= daily_cap`.
+  **Corrected 2026-08-24.** This originally said "by `pay` and `owner_pay`", which two
+  Phase 3 agents independently proved false. `check_owner_pay` in policy.rs applies the
+  amount guard, the checked arithmetic and the balance guard, and NO cap comparison; the
+  operator ladder has one at policy.rs:89 and the owner ladder does not. So `owner_pay`
+  is CHARGED to the day accumulator and is not LIMITED by it, and A5 demonstrated moving
+  51 times the cap in one UTC day through it. The contract's own comment was accurate
+  ("counts toward the daily cap ... so on-chain accounting stays honest about total
+  outflow" describes the record, not a limit); the invariant text was the defect.
 - **INV-06** — Every amount successfully moved by `pay` is `<= auto_approve_max` when
   `auto_approve_max != 0`.
 - **INV-07** — `withdraw` never changes `SpentOnDay`.

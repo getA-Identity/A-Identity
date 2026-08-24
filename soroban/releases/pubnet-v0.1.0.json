@@ -4,7 +4,8 @@
   "network": "stellar:pubnet",
   "networkPassphrase": "Public Global Stellar Network ; September 2015",
   "protocolVersion": 27,
-  "deployedAt": "2026-08-24T14:05:00Z",
+  "deployedAtNote": "Taken from the instantiate transaction 847dc7e9 on Horizon, not from the wall clock when this file was written. The first version said 14:05:00Z, which was when the record was authored rather than when the contract was created; an audit agent caught the 19-minute gap by reading the ledger.",
+  "deployedAt": "2026-08-24T13:46:04Z",
   "toolchain": {
     "rustc": "1.96.0",
     "sorobanSdk": "=27.0.6",
