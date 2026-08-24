@@ -202,20 +202,27 @@ export default function VerifyPayFlow() {
       <motion.div {...reveal} transition={{ ...reveal.transition, delay: 0.16 }} className="mt-12">
         <SettlementLedger />
 
-        <div className="mt-6 flex flex-wrap items-center gap-x-8 gap-y-3 text-sm">
-          <span className="flex items-center gap-2 text-foreground/55">
-            <span className="h-2 w-2 rounded-full bg-emerald-500" />
+        {/* Legend and actions. On a phone this was one wrapping row: the three legend items
+            stacked 12px apart with no room to breathe, and then `ml-auto` shoved the two
+            links to the right edge on a line of their own, reading as though they belonged
+            to nothing. Below `sm` it is now an explicit column with real spacing, and the
+            links are their own block behind a rule instead of a stray right-aligned tail.
+            The dots are `shrink-0` and top-aligned so the long Gateway line wraps under its
+            own text rather than under its bullet. */}
+        <div className="mt-6 flex flex-col gap-3.5 text-sm sm:flex-row sm:flex-wrap sm:items-center sm:gap-x-8 sm:gap-y-3">
+          <span className="flex items-start gap-2 text-foreground/55 sm:items-center">
+            <span className="mt-1.5 h-2 w-2 shrink-0 rounded-full bg-emerald-500 sm:mt-0" />
             Settles in USDC on Arc
           </span>
-          <span className="flex items-center gap-2 text-foreground/55">
-            <span className="h-2 w-2 rounded-full bg-red-500" />
+          <span className="flex items-start gap-2 text-foreground/55 sm:items-center">
+            <span className="mt-1.5 h-2 w-2 shrink-0 rounded-full bg-red-500 sm:mt-0" />
             Refused before it moves
           </span>
-          <span className="flex items-center gap-2 text-foreground/55">
-            <span className="h-2 w-2 rounded-full bg-accent" />
+          <span className="flex items-start gap-2 text-foreground/55 sm:items-center">
+            <span className="mt-1.5 h-2 w-2 shrink-0 rounded-full bg-accent sm:mt-0" />
             Cross-chain settle via Circle Gateway + CCTP
           </span>
-          <span className="ml-auto flex items-center gap-5">
+          <span className="mt-1 flex items-center gap-5 border-t border-border/60 pt-4 sm:mt-0 sm:ml-auto sm:border-0 sm:pt-0">
             <Link
               to="/explorer"
               className="inline-flex items-center gap-1.5 font-semibold text-foreground/55 transition-colors hover:text-foreground"

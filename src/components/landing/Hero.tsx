@@ -167,6 +167,15 @@ export default function Hero() {
         style={{ willChange: 'transform, opacity' }}
         className="mt-12 w-full max-w-[1160px]"
       >
+        {/* On mobile this frame stops SHRINKING the still and starts CROPPING it.
+            The capture is 1280x484, so at a 340px viewport it renders at 26 percent
+            scale: every label inside it turns to a smudge and the product shot reads
+            as a grey strip. Below `sm` the image therefore keeps a legible intrinsic
+            width and the frame scrolls sideways over it, with the scrollbar hidden and
+            a fade on the right edge to say there is more. `overscroll-x-contain` keeps
+            a horizontal swipe from turning into a page-level one. From `sm` up nothing
+            changes: the child is `w-full` again and the container stops scrolling, so
+            the desktop crop-at-the-fold behaviour is untouched. */}
         <div className="relative overflow-hidden rounded-t-[20px] border border-b-0 border-border/70 bg-card shadow-[0_-12px_80px_-20px_rgba(115,66,226,0.35),0_24px_80px_-24px_rgba(16,24,40,0.5)]">
           {/* Both theme stills stay mounted and crossfade with the theme toggle, so the
               switch reads as the console changing its own theme rather than a reload.
@@ -178,26 +187,36 @@ export default function Hero() {
               made cheap: 1280px stills at ~25 KB each (down from 2560px/~54 KB), and the
               still the current theme is not showing is demoted to lazy + low priority so
               it queues behind everything the first screen actually needs. */}
-          <img
-            src="/console-hero.webp"
-            alt="The A-Identity agent console: reputation, wallet balance, on-chain settlements and the daily cap for the showcase agent Meridian."
-            width={1280}
-            height={484}
-            loading="lazy"
-            fetchPriority="low"
-            decoding="async"
-            className={`block w-full transition-opacity duration-700 ${theme === 'dark' ? 'opacity-100' : 'opacity-0'}`}
-          />
-          <img
-            src="/console-hero-light.webp"
-            alt=""
+          <div className="overflow-x-auto overscroll-x-contain [-ms-overflow-style:none] [scrollbar-width:none] sm:overflow-x-visible [&::-webkit-scrollbar]:hidden">
+            <div className="relative w-[760px] sm:w-full">
+              <img
+                src="/console-hero.webp"
+                alt="The A-Identity agent console: reputation, wallet balance, on-chain settlements and the daily cap for the showcase agent Meridian."
+                width={1280}
+                height={484}
+                loading="lazy"
+                fetchPriority="low"
+                decoding="async"
+                className={`block w-full transition-opacity duration-700 ${theme === 'dark' ? 'opacity-100' : 'opacity-0'}`}
+              />
+              <img
+                src="/console-hero-light.webp"
+                alt=""
+                aria-hidden="true"
+                width={1280}
+                height={484}
+                loading="lazy"
+                fetchPriority="low"
+                decoding="async"
+                className={`absolute inset-0 block w-full transition-opacity duration-700 ${theme === 'dark' ? 'opacity-0' : 'opacity-100'}`}
+              />
+            </div>
+          </div>
+          {/* The "there is more to the right" cue, mobile only. Pointer-events-none so it
+              never eats the swipe it is advertising. */}
+          <div
             aria-hidden="true"
-            width={1280}
-            height={484}
-            loading="lazy"
-            fetchPriority="low"
-            decoding="async"
-            className={`absolute inset-0 block w-full transition-opacity duration-700 ${theme === 'dark' ? 'opacity-0' : 'opacity-100'}`}
+            className="pointer-events-none absolute inset-y-0 right-0 w-12 bg-gradient-to-l from-card to-transparent sm:hidden"
           />
         </div>
       </motion.div>

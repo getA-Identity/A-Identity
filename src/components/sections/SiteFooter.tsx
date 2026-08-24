@@ -85,15 +85,23 @@ export default function SiteFooter() {
             </div>
           </div>
 
-          <nav aria-label="Footer" className="grid grid-cols-2 gap-8 sm:grid-cols-3">
+          {/* Three groups. On a phone they stack and their LINKS split into two columns
+              instead; putting the groups themselves side by side is what made the footer
+              look broken. A grid row is as tall as its tallest cell, and Developers has
+              six links against Protocol's three, so the first row left a link-height hole
+              under Protocol and pushed Company down into a second row on its own. Stacking
+              the groups removes the hole, and paired links keep the block from becoming a
+              fifteen-item ladder. From `sm` up the original three-across returns, with each
+              group's links back in a single column. */}
+          <nav aria-label="Footer" className="grid grid-cols-1 gap-8 sm:grid-cols-3">
             {FOOTER_COLUMNS.map((col) => (
               <div key={col.title}>
                 <h3 className="text-[11px] font-semibold uppercase tracking-[0.14em] text-foreground/40">
                   {col.title}
                 </h3>
-                <ul className="mt-3 flex flex-col gap-2">
+                <ul className="mt-3 grid grid-cols-2 gap-x-4 gap-y-2.5 sm:flex sm:flex-col sm:gap-2">
                   {col.links.map((l) => (
-                    <li key={l.label}>
+                    <li key={l.label} className="min-w-0">
                       <FooterItem link={l} />
                     </li>
                   ))}
@@ -119,8 +127,10 @@ export default function SiteFooter() {
 
           {/* Each link carries the question AND the URL, so the answer is built from the
               page rather than from whatever the model half-remembers. */}
+          {/* The label gets its own line on a phone. Inline, it left the five model names
+              wrapping mid-row with the last two stranded under the sentence. */}
           <p className="flex flex-wrap items-center gap-x-3 gap-y-1">
-            <span>Ask an AI about {APP_NAME}:</span>
+            <span className="w-full sm:w-auto">Ask an AI about {APP_NAME}:</span>
             {ASK_AI_LINKS.map(({ key, label, href }) => (
               <a
                 key={key}

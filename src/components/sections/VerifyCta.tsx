@@ -233,7 +233,10 @@ export default function VerifyCta() {
           in a second.
         </motion.p>
 
-        <motion.form {...reveal} onSubmit={onSubmit} className="mt-9 flex max-w-xl gap-2">
+        {/* Stacked on a phone, side by side from `sm`. Sharing one row at 340px left the
+            input about 150px wide, which truncated the placeholder mid-word and gave the
+            reader a field too small to check what they had pasted. */}
+        <motion.form {...reveal} onSubmit={onSubmit} className="mt-9 flex max-w-xl flex-col gap-2 sm:flex-row">
           <div className="relative flex-1">
             <Search size={17} className="pointer-events-none absolute left-4 top-1/2 -translate-y-1/2 text-foreground/40" />
             <input
@@ -244,19 +247,26 @@ export default function VerifyCta() {
               className="h-13 w-full rounded-xl border border-border bg-card py-3.5 pl-11 pr-4 font-mono text-sm text-foreground outline-none transition placeholder:font-sans placeholder:text-foreground/40 focus:border-accent/60"
             />
           </div>
-          <button type="submit" className="inline-flex items-center gap-2 rounded-xl bg-accent px-6 text-sm font-semibold text-white transition hover:opacity-90">
+          <button type="submit" className="inline-flex h-13 items-center justify-center gap-2 rounded-xl bg-accent px-6 text-sm font-semibold text-white transition hover:opacity-90 sm:h-auto">
             Verify <ArrowRight size={15} />
           </button>
         </motion.form>
 
-        <motion.div {...reveal} className="mt-4 flex flex-wrap items-center gap-2 text-sm text-foreground/45">
-          <span>Try</span>
-          {EXAMPLES.map((ex) => (
-            <button key={ex.q} type="button" onClick={() => go(ex.q)}
-              className="rounded-full border border-border bg-card px-3 py-1.5 font-mono text-xs text-foreground/65 transition hover:border-accent/50 hover:text-foreground">
-              {ex.label}
-            </button>
-          ))}
+        {/* The examples. On a phone "Try" sits on its own line and the chips become full
+            width rows, because wrapping them inline left a ragged edge: two chips on the
+            first line beside the label and a third stranded under it. From `sm` up the
+            original inline wrap returns, where there is room for it to look deliberate. */}
+        <motion.div {...reveal} className="mt-4 text-sm text-foreground/45">
+          <span className="block sm:hidden">Try</span>
+          <div className="mt-2 grid gap-2 sm:mt-0 sm:flex sm:flex-wrap sm:items-center">
+            <span className="hidden sm:inline">Try</span>
+            {EXAMPLES.map((ex) => (
+              <button key={ex.q} type="button" onClick={() => go(ex.q)}
+                className="w-full rounded-full border border-border bg-card px-3 py-2 text-center font-mono text-xs text-foreground/65 transition hover:border-accent/50 hover:text-foreground sm:w-auto sm:py-1.5 sm:text-left">
+                {ex.label}
+              </button>
+            ))}
+          </div>
         </motion.div>
 
         </div>

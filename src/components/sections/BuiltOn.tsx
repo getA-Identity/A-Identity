@@ -282,16 +282,23 @@ export default function BuiltOn() {
             className="mt-10 flex snap-x snap-mandatory overflow-x-auto overscroll-x-contain rounded-2xl [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
           >
             {RAILS.map((r) => (
+              /* The slide stays exactly one `clientWidth` wide, because both `goTo` and
+                 `sync` above do their arithmetic in whole track widths and a flex `gap`
+                 here would put every slide half a gutter out of step with that maths,
+                 which is what left a half-card showing after a swipe. The gutter is
+                 therefore INSIDE the slide as padding: the visible cards get air between
+                 them and the scroll positions stay exact. `snap-always` stops a fast
+                 flick from sailing past a slide and landing between two. */
               <article
                 key={r.id}
-                className="w-full shrink-0 snap-center"
+                className="w-full shrink-0 snap-center snap-always px-2 sm:px-0"
                 aria-label={`${r.name}: ${r.role}`}
               >
                 <div
                   /* The rail's own hue leads the slide: a tinted surface and a border in
                      its brand color, so each slide reads as that chain rather than as a
                      generic card wearing a small logo. */
-                  className="relative grid gap-8 overflow-hidden rounded-2xl border p-8 sm:grid-cols-[auto_minmax(0,1fr)] sm:items-center sm:p-12"
+                  className="relative grid gap-8 overflow-hidden rounded-2xl border p-6 sm:grid-cols-[auto_minmax(0,1fr)] sm:items-center sm:p-12"
                   style={{
                     borderColor: `color-mix(in srgb, ${r.color} 24%, var(--border))`,
                     background: `linear-gradient(135deg, color-mix(in srgb, ${r.color} 10%, var(--card)) 0%, var(--card) 55%)`,
