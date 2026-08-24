@@ -45,7 +45,7 @@ gitleaks hits".
 **Impact:** High. A published vulnerability in the single dependency that constitutes the
 contract's entire trusted computing base would reach this project only if a human happened
 to read a GitHub page. The contract has no upgrade entrypoint (threat model P-1), so the
-remediation for an SDK advisory that does apply is `withdraw` -> redeploy -> repoint, with
+remediation for an SDK advisory that does apply is `withdraw`, redeploy, repoint, with
 a new contract id and a provenance update. Time-to-detect is therefore the dominant term in
 time-to-remediate, and time-to-detect is currently unbounded.
 **Likelihood:** Medium. Five advisories have already been published against this stack, one
@@ -348,7 +348,7 @@ updates:
       interval: "weekly"
 ```
 
-Then, in repository Settings -> Code security, on **both** remotes:
+Then, in repository Settings, under Code security, on **both** remotes:
 
 - enable **Dependabot alerts** (this is the one that reads GHSA, and it is the actual fix)
 - enable **Dependabot security updates**
@@ -757,7 +757,7 @@ directory entirely would cost nothing and remove the class.
 
 ### Recommended fix
 
-**1. Turn on the three free settings, on both remotes.** Settings -> Code security:
+**1. Turn on the three free settings, on both remotes.** Settings, under Code security:
 
 - Secret scanning: **on**
 - Push protection: **on** (this is the one that prevents the loss rather than reporting it)
