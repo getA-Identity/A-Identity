@@ -102,7 +102,20 @@ export default function AgentVitrine() {
         }
       />
 
-      <div className="mt-12 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+      {/* `grid-cols-1` is the fix for a real overflow, not a tidy-up. Without an explicit
+          base column the single mobile track is `auto`, which is sized to the widest
+          card's MIN-CONTENT. One registered agent is called "Google Pay Subscription Auto
+          Payment", and its name sits in a `truncate` paragraph, so `white-space: nowrap`
+          makes that name's min-content 265px however narrow the phone is. The track went
+          to 414px on a 390px viewport and every card in the row went with it, because a
+          one-column grid sizes one track for all of them: the rank pill and "Hire now"
+          were clipped off the right edge on live.
+          `min-w-0` on the inner div does not prevent this. It lets the div shrink once the
+          track has a width, but it does not lower what the div CONTRIBUTES while the track
+          is being measured. Tailwind's `grid-cols-1` expands to `minmax(0, 1fr)`, and the
+          zero floor is what finally lets the track be narrower than its content, which is
+          the same reason `sm:grid-cols-2` was never affected. */}
+      <div className="mt-12 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
         {useRanked
           ? topRanked.map((a, i) => {
               const score = a.reputation?.score ?? 0

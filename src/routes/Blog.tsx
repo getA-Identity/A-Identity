@@ -82,14 +82,23 @@ export default function Blog() {
         </motion.div>
 
         <div className="mt-12 grid gap-10 lg:grid-cols-[200px_1fr]">
-          {/* Browse by type (left rail, sticky on desktop) */}
-          <aside>
+          {/* Browse by type (left rail, sticky on desktop).
+              `min-w-0` is load-bearing, not decoration. A grid item defaults to
+              `min-width: auto`, which means the track can never be narrower than the
+              item's min-content, and this item's min-content is the whole unwrapped chip
+              row: about 980px. So on a 390px phone the single-column track was sized to
+              980px and the ENTIRE page scrolled sideways, every section with it. The post
+              column beside it already carried `min-w-0`; this one was missed, and one
+              missing item is enough because both share the same track. */}
+          <aside className="min-w-0">
             <div className="lg:sticky lg:top-24">
               <div className="text-[11px] font-bold uppercase tracking-widest text-foreground/45">
                 {lang === 'tr' ? 'Konuya göre' : 'Browse by type'}
               </div>
-              {/* Horizontal chips on mobile, vertical list on desktop */}
-              <div className="mt-4 flex gap-2 overflow-x-auto pb-1 lg:flex-col lg:gap-0 lg:overflow-visible lg:pb-0">
+              {/* Horizontal chips on mobile, vertical list on desktop. The scrollbar is
+                  hidden because this row is swiped, not dragged, and a permanent bar under
+                  five chips reads as a broken layout on a phone. */}
+              <div className="mt-4 flex gap-2 overflow-x-auto overscroll-x-contain pb-1 [-ms-overflow-style:none] [scrollbar-width:none] lg:flex-col lg:gap-0 lg:overflow-visible lg:pb-0 [&::-webkit-scrollbar]:hidden">
                 {TYPES.map((t) => {
                   const active = filter === t
                   return (
