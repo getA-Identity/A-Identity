@@ -104,7 +104,13 @@ export const CHAINS: ChainDescriptor[] = [
     role: 'Fast, low-cost settlement: native Circle USDC, Soroban contracts, and an x402 rail where the buyer signs and pays no transaction fee.',
     ecosystem: 'stellar',
     testnet: false,
-    status: 'planned',
+    // beta, not live, and the distinction is doing work. The vault is deployed on pubnet
+    // and real USDC has moved through it under the policy (2026-08-24, contract
+    // CB5LYXFK..., see soroban/releases/pubnet-v0.1.0.json). What has NOT happened is a
+    // paid call settling here: the Soroban x402 rail runs on stellar-testnet and pointing
+    // it at pubnet is a separate change with its own fee payer. In this repo live means
+    // wired end to end AND carrying real traffic, so this stays beta until it sells.
+    status: 'beta',
     evmChainId: null,
     cctpDomain: 27,
     nativeCurrency: { name: 'Lumen', symbol: 'XLM', decimals: 7 },
@@ -112,8 +118,12 @@ export const CHAINS: ChainDescriptor[] = [
     rpcUrls: ['https://mainnet.sorobanrpc.com'],
     explorer: 'https://stellar.expert/explorer/public',
     contracts: {
-      // The Soroban AgentSpendPolicy vault goes here once it is deployed and its wasm
-      // hash is recorded in soroban/releases/. Nothing is asserted before that.
+      // The AgentSpendPolicy vault, deployed 2026-08-24. wasm sha256
+      // 155eb31c1867254eacbf1b7a4755164d15cc6b6f939644705ab6b8df61579239, which is byte
+      // for byte the hash the testnet vault carries: same source, same pinned toolchain,
+      // same target. Its deploy pair and the payments made under its policy are recorded
+      // in soroban/releases/pubnet-v0.1.0.json.
+      spendVault: 'CB5LYXFKKTKDDSCM6JO6C4GNRQUFBGSLYDET6Q56JNFJQSMBKH6KWSYP',
       //
       // No `usdc` either, and that is not an oversight. On Stellar USDC is a SEP-41
       // Stellar Asset Contract, whose id is DERIVED per network from the classic asset
@@ -124,6 +134,29 @@ export const CHAINS: ChainDescriptor[] = [
     },
     confirmations: 1, // deterministic finality once a ledger closes
     stablecoins: ['USDC', 'EURC'],
+    settlementTokens: [
+      {
+        symbol: 'USDC',
+        address: 'CCW67TSZV3SSS2HXMBQ5JFGCKJNXKZM7UQUWUZPUTHXSTZLEO7SJMI75',
+        decimals: 7,
+        authorization: 'soroban-auth',
+        // No domainVersionCandidates here either, for the reason the testnet entry gives:
+        // Soroban fixes the authorization preimage at the protocol level, so a version
+        // candidate would assert the existence of something that does not exist.
+        verified:
+          'Not pasted, and the ISSUER was verified before the derivation, which matters more ' +
+          'on pubnet than on testnet: Horizon lists dozens of assets with the code USDC because ' +
+          'anyone may issue one. The issuer account GA5ZSEJYB37JRC5AVCIA5MOP4RHTM335X2KGX3IHOJAPP5RE34K4KZVN ' +
+          'was read live and its home_domain is circle.com, which is the SEP-1 binding between ' +
+          'an issuer and a company. The SAC id was then DERIVED with `stellar contract id asset ' +
+          '--asset USDC:GA5ZSEJ... --network-passphrase \'Public Global Stellar Network ; September 2015\'` ' +
+          'rather than pasted, which is why it differs from testnet\'s CBIELTK6... even though the asset ' +
+          'code is the same, and the derived contract was read back live: symbol() USDC, ' +
+          'decimals() 7, name() the full canonical asset string naming that same issuer. Kept OUT ' +
+          'of contracts.usdc because every consumer of that slot is an EVM path that would read a ' +
+          'C... StrKey as a 0x address.',
+      },
+    ],
     signerEnvVar: 'STELLAR_PUBNET_SIGNER_SECRET',
     rpcEnvVar: 'STELLAR_PUBNET_RPC_URL',
     identity: {

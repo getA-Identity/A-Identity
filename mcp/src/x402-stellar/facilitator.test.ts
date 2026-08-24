@@ -200,8 +200,19 @@ test('a network with no broadcaster is reported unavailable, not advertised', ()
   const kinds = r.body.kinds as unknown[]
   const unavailable = r.body.unavailable as { network: string; reason: string }[]
   assert.equal(kinds.length, 0, 'nothing may be advertised')
-  assert.equal(unavailable[0].network, 'stellar:testnet')
-  assert.match(unavailable[0].reason, /no fee payer|cannot broadcast|OpenZeppelin/i)
+  // Looked up by network rather than by position. This asserted `unavailable[0]` until
+  // pubnet declared a USDC SAC of its own on 2026-08-24 and took that slot, which is the
+  // facilitator being MORE honest rather than less: it now says out loud that it knows
+  // about pubnet and does not sell there. An index made a true report look like a failure.
+  const testnet = unavailable.find((u) => u.network === 'stellar:testnet')
+  assert.ok(testnet, `stellar:testnet must be reported unavailable; got ${unavailable.map((u) => u.network).join(', ')}`)
+  assert.match(testnet.reason, /no fee payer|cannot broadcast|OpenZeppelin/i)
+  // And every Stellar network carrying a settlement token has to be accounted for one way
+  // or the other. A chain that is neither advertised nor explained is one a buyer has to
+  // guess about.
+  const pubnet = unavailable.find((u) => u.network === 'stellar:pubnet')
+  assert.ok(pubnet, 'stellar:pubnet declares a SAC, so it must be advertised or explained, never silently dropped')
+  assert.ok(pubnet.reason.length > 0)
 })
 
 /**

@@ -70,7 +70,12 @@ test('Arc, X Layer, Celo (live), Base, Celo Sepolia and RH Chain Testnet (beta) 
   // every settlement is confirmed by reading the transfer event ourselves. Beta and not
   // live because it settles test money; stellar (pubnet) stays planned.
   const live = liveChains()
-  assert.deepEqual(live.map((c) => c.id).sort(), ['arbitrum', 'arc', 'base', 'celo', 'celo-sepolia', 'rhchain', 'rhchain-testnet', 'stellar-testnet', 'xlayer'])
+  assert.deepEqual(live.map((c) => c.id).sort(), ['arbitrum', 'arc', 'base', 'celo', 'celo-sepolia', 'rhchain', 'rhchain-testnet', 'stellar', 'stellar-testnet', 'xlayer'])
+  // pubnet joined on 2026-08-24 with the vault deploy. beta rather than live, and the
+  // reason is the distinction this repo keeps: the policy is enforced on mainnet and real
+  // USDC moved under it, but no paid call SELLS there yet, so it is not carrying traffic.
+  assert.equal(live.find((c) => c.id === 'stellar')?.status, 'beta')
+  assert.equal(live.find((c) => c.id === 'stellar')?.testnet, false)
   assert.equal(live.find((c) => c.id === 'stellar-testnet')?.status, 'beta')
   // The first wired chain that is not EVM. If this ever reads 'evm' the descriptor was
   // edited into the wrong ecosystem and every Stellar code path would silently be skipped.
@@ -101,25 +106,35 @@ test('every roadmap chain is present and planned', () => {
   // arbitrum left on 2026-08-13 when agent #1259 was minted on its canonical registry;
   // stellar-testnet left on 2026-08-15 when the Soroban vault, our own Soroban x402
   // facilitator and confirmed settlements went end to end on it.
-  for (const id of ['avalanche', 'stellar']) {
+  // stellar (pubnet) left on 2026-08-24 when AgentSpendPolicy was deployed there and an
+  // agent spent a real USDC budget under it. avalanche is the last one standing.
+  for (const id of ['avalanche']) {
     const c = getChainById(id)
     assert.ok(c, `${id} missing from registry`)
     assert.equal(c.status, 'planned', `${id} should be planned`)
   }
 })
 
-test('pubnet is the only Stellar network still planned', () => {
+test('no Stellar network is still planned, and the split that allowed it is intact', () => {
   const planned = CHAINS.filter((c) => c.status === 'planned')
   const nonEvm = planned.filter((c) => c.ecosystem !== 'evm')
   // The single `stellar` descriptor was split on 2026-08-15 because one entry could not
   // carry two SAC addresses, two signers and two sets of provenance. They promote
   // independently, and testnet left this list the same day, which is why the split was
   // worth doing before either of them had been referenced anywhere.
-  assert.deepEqual(nonEvm.map((c) => c.id).sort(), ['stellar'])
-  // The one that remains, and the reason: pubnet is real money. It stays planned until a
-  // capped vault is deployed and money that matters has moved through it.
+  // Both promoted, so no non-EVM chain is planned any more. This used to read
+  // `['stellar']` with the note "it stays planned until a capped vault is deployed and
+  // money that matters has moved through it". That happened on 2026-08-24, and the
+  // condition was written to be met rather than to be permanent.
+  assert.deepEqual(nonEvm.map((c) => c.id).sort(), [])
   assert.equal(getChainById('stellar')?.testnet, false)
+  assert.equal(getChainById('stellar')?.status, 'beta')
   assert.equal(getChainById('stellar-testnet')?.status, 'beta')
+  // The split still earns its keep: one descriptor could not carry two SAC addresses, and
+  // these two genuinely differ, because a SAC id is derived from the network passphrase.
+  const sac = (id: string) => getChainById(id)?.settlementTokens?.[0]?.address
+  assert.ok(sac('stellar') && sac('stellar-testnet') && sac('stellar') !== sac('stellar-testnet'),
+    'the two Stellar networks must carry different USDC SAC ids; the same id on both means one was pasted')
   // Derived rather than `planned.length - N`: a hardcoded N goes stale the moment a chain
   // enters or leaves the registry, and it fails as an off-by-one somewhere unrelated to
   // the edit that caused it, which is exactly how this line broke once already.

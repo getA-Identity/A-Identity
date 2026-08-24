@@ -98,10 +98,17 @@ export async function railProofReport(slug: string, env: NodeJS.ProcessEnv = pro
 function howToVerify(networks: ChainProofReport[]): string[] {
   const shared = 'Open any transaction link below: each is a real transaction in the ledger named, on the chain named.'
   if (networks.length && networks.every((n) => n.ecosystem === 'stellar')) {
+    // The fetch command has to name the network the contract is actually ON. This line
+    // said `--network testnet` unconditionally, which was true while this rail was one
+    // network and became a wrong instruction the moment pubnet joined it: run it against
+    // testnet for a pubnet contract and you get "contract not found", which reads as our
+    // evidence being fake rather than as a typo in our own docs.
+    const nets = [...new Set(networks.map((n) => (n.caip2 === 'stellar:pubnet' ? 'pubnet' : 'testnet')))]
+    const fetchNet = nets.length === 1 ? `--network ${nets[0]}` : `--network <${nets.join('|')}, whichever the contract is on>`
     return [
       shared,
-      'A refused payment usually has NO transaction to open, and that is Soroban rather than evasion: the contract answers during simulation and nothing is ever submitted. The one refusal linked here exists because the limit moved while the payment was in flight, so it failed at apply time and the ledger recorded the typed error.',
-      'The contract is unverified on Stellar Expert by design, because Rust wasm is not bit-reproducible across machines. Check it the direct way instead: `stellar contract fetch --id <contract> --network testnet` and sha256 the bytes against the hash in soroban/releases/.',
+      'A refused payment usually has NO transaction to open, and that is Soroban rather than evasion: the contract answers during simulation and nothing is ever submitted. Where a refusal IS linked here, it exists because the limit moved while the payment was in flight, so it failed at apply time and the ledger recorded the typed error. Everywhere else the typed error code is the artifact, and you can reproduce it against the live contract for free precisely because it is refused.',
+      `The contract is unverified on Stellar Expert by design, because Rust wasm is not bit-reproducible across machines. Check it the direct way instead: \`stellar contract fetch --id <contract> ${fetchNet}\` and sha256 the bytes against the hash in soroban/releases/.`,
       'Settlements are proven by our own read of the SEP-41 transfer event, matched to the authorization that paid for them, never by a broadcaster reporting success. See GET /api/x402/stellar/proof, whose byBroadcaster field says who actually moved each one.',
     ]
   }

@@ -31,7 +31,7 @@
           "identity": "Soroban registry + SEP-10",
           "erc8004Native": false,
           "note": "No native ERC-8004: that standard is EVM-only and nothing bridges it here. An agent id resolved on Stellar is a claim about a different chain until a Soroban registry is deployed.",
-          "status": "planned"
+          "status": "beta"
         },
         {
           "id": "stellar-testnet",
@@ -139,7 +139,7 @@
           "caip2": "stellar:pubnet",
           "role": "Fast, low-cost settlement: native Circle USDC, Soroban contracts, fee sponsorship so an agent needs no XLM.",
           "x402": true,
-          "status": "planned"
+          "status": "beta"
         },
         {
           "id": "stellar-testnet",
@@ -244,7 +244,7 @@
     "type": "A2MCP",
     "agentId": "#6271",
     "network": "X Layer mainnet (eip155:196)",
-    "settlement": "x402 pay-per-call in USD\u20ae0",
+    "settlement": "x402 pay-per-call in USD₮0",
     "positioning": "the identity & reputation oracle for the agent economy",
     "endpoint": "https://a-identity-asp.onrender.com",
     "proof": "https://a-identity-asp.onrender.com/proof",
@@ -278,7 +278,7 @@
     "realOnchainRevenue": {
       "settlements": 83,
       "network": "X Layer mainnet (eip155:196)",
-      "asset": "USD\u20ae0"
+      "asset": "USD₮0"
     }
   },
   "tools": [

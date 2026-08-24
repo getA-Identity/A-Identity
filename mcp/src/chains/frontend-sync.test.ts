@@ -115,6 +115,10 @@ test('the public surface reports exactly the wired chains as live/beta', () => {
   // 2026-08-15: stellar-testnet joins as beta, the first non-EVM chain on this surface.
   // Its display position is decided by the same ordering rule as every other chain, not
   // by an exception, which is the thing worth checking here.
+  // 2026-08-24: stellar (pubnet) joins as beta, with the vault deployed on mainnet and a
+  // real USDC budget spent under it. It sorts AHEAD of its own testnet, which is the
+  // ordering rule doing its job rather than a hand-placed exception: mainnet before
+  // testnet within the same status.
   const live = publicChains().filter((c) => c.status === 'live' || c.status === 'beta')
   assert.deepEqual(
     live.map((c) => ({ id: c.id, status: c.status })),
@@ -124,6 +128,7 @@ test('the public surface reports exactly the wired chains as live/beta', () => {
       { id: 'arbitrum', status: 'live' },
       { id: 'rhchain', status: 'live' },
       { id: 'celo', status: 'live' },
+      { id: 'stellar', status: 'beta' },
       { id: 'stellar-testnet', status: 'beta' },
       { id: 'base', status: 'beta' },
       { id: 'rhchain-testnet', status: 'beta' },

@@ -15,7 +15,9 @@ runs without an explicit human action, and without a signer key every write retu
 
 **Not testnet only.** This line used to say it was, which was true of Arc and never true of
 the registry. Arc is testnet and is the `live` phase-1 network, but four mainnets carry our
-own traffic and real value: OKX X Layer, Celo, Robinhood Chain and Arbitrum One. Two payment
+own traffic and real value: OKX X Layer, Celo, Robinhood Chain and Arbitrum One. Stellar
+pubnet is a fifth mainnet, `beta`, where the Soroban spend vault is deployed and real USDC
+has moved under its policy without a paid call selling there yet. Two payment
 rails sell there - `x402-3009/` (self-facilitated EIP-3009) and `x402-stellar/` (Soroban) -
 and each chain has its own signer env var. [`src/chains/registry.ts`](src/chains/registry.ts)
 is the source of truth for which is which, and [`../SECURITY.md`](../SECURITY.md) lists every
@@ -134,7 +136,7 @@ npm run start        # MCP server on stdio
 npm run start:http   # the HTTP server (REST + /mcp). Reads config from process.env directly.
 npm run smoke        # spin up the MCP server + exercise every read-only tool
 npm run http-smoke   # exercise the tools over HTTP (server must be running)
-npm test             # tsc + node:test unit tests (815 across 63 files, as of Aug 2026)
+npm test             # tsc + node:test unit tests (816 across 63 files, as of Aug 2026)
 npm run e2e          # full end-to-end flow against a running server (E2E_BASE=...)
 ```
 
@@ -146,7 +148,7 @@ node --env-file=.env dist/http.js     # Node 20.6+
 ARC_SIGNER_KEY=0x<funded-key> node dist/http.js
 ```
 
-Tests: **815 unit tests across 63 colocated `*.test.ts` files** (as of Aug 2026; `npm test`) +
+Tests: **816 unit tests across 63 colocated `*.test.ts` files** (as of Aug 2026; `npm test`) +
 a full **E2E of about 67 checks** (`npm run e2e`) that adapts to signer presence: green with no
 signer key (live Arc reads; on-chain writes reported as prepared), with the real Arc write
 checks activating under a funded `ARC_SIGNER_KEY`. CI runs the no-signer path.

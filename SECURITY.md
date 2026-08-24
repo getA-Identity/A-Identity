@@ -10,8 +10,10 @@ What is accurate today, and what the registry
 single source of truth and a test fails the build if any other file disagrees:
 
 - **11 chains, 7 of them mainnet.** Four mainnets are `live` and carry our own traffic:
-  OKX X Layer, Celo, Robinhood Chain and Arbitrum One. Base is `beta` on mainnet, Avalanche
-  and Stellar pubnet are `planned`.
+  OKX X Layer, Celo, Robinhood Chain and Arbitrum One. Base and **Stellar pubnet** are
+  `beta` on mainnet, and Avalanche is `planned`. Stellar pubnet is beta rather than live on
+  purpose: a spend vault is deployed there and real USDC has moved under its policy, but no
+  paid call sells there yet.
 - **Circle Arc is testnet and is still the `live` phase-1 network.** Both statements hold;
   Arc being test money is not a statement about the other six.
 - **Money moves.** x402 calls settle in real USD₮0 on X Layer, real Circle USDC on Celo and
@@ -45,14 +47,17 @@ values, such as the WalletConnect project id.
 | `ARB_SIGNER_KEY` | Arbitrum One | mainnet | **real value** |
 | `BASE_SIGNER_KEY` | Base | mainnet (`beta`) | real value if funded |
 | `AVAX_SIGNER_KEY` | Avalanche C-Chain | mainnet (`planned`) | real value if funded |
-| `STELLAR_PUBNET_SIGNER_SECRET` | Stellar pubnet | mainnet (`planned`) | real value if funded |
+| `STELLAR_PUBNET_SIGNER_SECRET` | Stellar pubnet | mainnet (`beta`) | **real value** |
 | `ARC_SIGNER_KEY` | Circle Arc | testnet | test funds |
 | `CELO_SEPOLIA_SIGNER_KEY` | Celo Sepolia | testnet | test funds |
 | `RHCHAIN_TESTNET_SIGNER_KEY` | Robinhood Chain Testnet | testnet | test funds |
 | `STELLAR_TESTNET_SIGNER_SECRET` | Stellar Testnet | testnet | test funds |
 
-The four `planned` / `beta` rows are not dormant by nature, only by funding. A key set on
-one of them is a mainnet key the moment somebody sends it gas.
+The remaining `planned` / `beta` rows are not dormant by nature, only by funding. A key set
+on one of them is a mainnet key the moment somebody sends it gas. Stellar pubnet stopped
+being hypothetical on 2026-08-24: burner keys were funded there, a contract was deployed,
+and 1 USDC moved through it. Those burners are separate from `STELLAR_PUBNET_SIGNER_SECRET`
+and are named in `soroban/releases/pubnet-v0.1.0.json`.
 
 ### Payment-rail keys, on top of the chain signers
 

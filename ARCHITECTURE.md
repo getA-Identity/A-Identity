@@ -7,8 +7,9 @@ human sets, and can then pay other agents.
 Live: **https://a-identity.xyz** · backend **https://a-identity-backend.onrender.com**.
 Circle Arc (5042002) is the phase-1 network and is testnet, so value moving there is test
 value. It is not the only network: four mainnets carry our own traffic and real money -
-**OKX X Layer**, **Celo**, **Robinhood Chain** and **Arbitrum One** - across eleven registry
-entries in total. The header used to name Arc alone while the sections below already
+**OKX X Layer**, **Celo**, **Robinhood Chain** and **Arbitrum One** - and a fifth,
+**Stellar pubnet**, holds a deployed spend vault that a real USDC budget has been spent
+through, across eleven registry entries in total. The header used to name Arc alone while the sections below already
 described the rest, which is how a reader ended up with the wrong idea of the blast radius.
 [`mcp/src/chains/registry.ts`](mcp/src/chains/registry.ts) is the source of truth for which
 chain is which, and [SECURITY.md](SECURITY.md) lists every signer and what it can spend.
@@ -173,7 +174,7 @@ put them at their canonical cross-chain addresses. What is ours is the identity 
   `/mcp` JSON-RPC for agents. Durable state via Postgres (`DATABASE_URL`), JSON-file fallback for dev.
 - **Auth** - Sign-In with Ethereum (wallet) + email magic link (Resend) are *verified*; a plain guest
   session is read-only. Agent ownership is bound to a verified identity.
-- **Tests / CI** - `node:test` unit suite: **815 tests across 63 colocated `*.test.ts` files**
+- **Tests / CI** - `node:test` unit suite: **816 tests across 63 colocated `*.test.ts` files**
   (as of Aug 2026; `npm test` in `mcp/`) + a full E2E (`mcp/e2e.mjs`) of about **67 checks** that
   adapts to signer presence: live reads always run, and the on-chain write checks (x402, ERC-8183
   escrow, Gateway, **Nanopayments settle**, **CCTP burn-and-mint**) activate with a funded

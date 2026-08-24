@@ -1,0 +1,162 @@
+{
+  "note": "The deploy receipt for AgentSpendPolicy on Stellar PUBNET. Same shape as testnet-v0.1.0.json and for the same reason: the wasm is deliberately not committed, because Rust wasm is not bit-reproducible across machines by default and a committed binary would invite a reproducibility claim we cannot honour. This records the hash instead. Pull the deployed bytes with `stellar contract fetch --id C... --network pubnet --out-file` and sha256 them against `wasm.sha256` below.",
+  "version": "v0.1.0",
+  "network": "stellar:pubnet",
+  "networkPassphrase": "Public Global Stellar Network ; September 2015",
+  "protocolVersion": 27,
+  "deployedAt": "2026-08-24T14:05:00Z",
+  "toolchain": {
+    "rustc": "1.96.0",
+    "sorobanSdk": "=27.0.6",
+    "stellarCli": "27.1.0",
+    "target": "wasm32v1-none"
+  },
+  "wasm": {
+    "sha256": "155eb31c1867254eacbf1b7a4755164d15cc6b6f939644705ab6b8df61579239",
+    "bytes": 11625,
+    "limitBytes": 131072,
+    "note": "Byte-identical to the testnet release. The same source, the same pinned toolchain and the same target produced the same hash on the same machine, so mainnet is running the code that has been under test since 2026-08-15 rather than a rebuild of it. That is a reproducibility observation on one machine, not a claim that the build is reproducible everywhere."
+  },
+  "contractId": "CB5LYXFKKTKDDSCM6JO6C4GNRQUFBGSLYDET6Q56JNFJQSMBKH6KWSYP",
+  "constructor": {
+    "owner": "GARC7OFBBQCZJ5N3LCI7HTTYJ2MMPDAFDNGIHSQMZ7EPJ5EAWQJ5R6I5",
+    "operator": "GDLAJM25YQRTIZOVZPVEM2GJ6L2I4OTZGY3HAWX3HGMPV7SM3QZONO4S",
+    "token": "CCW67TSZV3SSS2HXMBQ5JFGCKJNXKZM7UQUWUZPUTHXSTZLEO7SJMI75",
+    "dailyCap": "10000000",
+    "autoApproveMax": "2500000",
+    "note": "7-decimal base units, so the cap is 1 USDC per UTC day and the per-payment auto-approve ceiling is 0.25 USDC. Deliberately an order of magnitude under the testnet vault's 10/2, because this one holds real money and the loss ceiling is the point. `decimals` was not passed in: the constructor reads it from the token, which is also how the deploy proves the address really implements SEP-41. It read 7."
+  },
+  "settlementToken": {
+    "symbol": "USDC",
+    "sac": "CCW67TSZV3SSS2HXMBQ5JFGCKJNXKZM7UQUWUZPUTHXSTZLEO7SJMI75",
+    "classicAsset": "USDC:GA5ZSEJYB37JRC5AVCIA5MOP4RHTM335X2KGX3IHOJAPP5RE34K4KZVN",
+    "decimals": 7,
+    "verified": "Three independent agreements before anything was deployed against it, the same discipline the testnet SAC went through. (1) The ISSUER was verified rather than assumed: Horizon lists dozens of assets with the code USDC, because anyone may issue one, so the issuer account was read and its `home_domain` is `circle.com`. That is the SEP-1 binding between an issuer and a company, and it is what separates Circle's USDC from a lookalike. (2) The SAC id was DERIVED with `stellar contract id asset --asset USDC:GA5ZSEJ... --network-passphrase 'Public Global...'` rather than pasted, which matters because a SAC id is a deterministic function of the classic asset AND the network passphrase, so pubnet's differs from testnet's (CBIELTK6... there, CCW67TSZ... here). (3) The derived contract was then read live: symbol() USDC, decimals() 7, name() the full canonical asset string naming that same circle.com issuer."
+  },
+  "funding": {
+    "note": "Self-funded from two burner keys generated for this deploy. 21 XLM went in; 12.3812765 XLM was spent on network fees, 5.1 XLM was swapped to 1 USDC on Stellar's own DEX (no bridge, no exchange), and the remainder plus the USDC is still held. No key that touches any other network was used.",
+    "xlmIn": "21.0000000",
+    "feesPaid": "12.3812765",
+    "note2": "The upload alone was 12.2319214 XLM, which is almost all of it: a Soroban wasm entry pays rent for its size, and this one is 11,625 bytes. Instantiating on top of an already-uploaded hash cost 0.0992122, and every subsequent contract call cost between 0.0007 and 0.004."
+  },
+  "artifacts": [
+    {
+      "kind": "funding",
+      "label": "USDC trustline opened on the owner account",
+      "txHash": "f10c27d98a07c386c975bfeb3168947acab5e13e63536bc14093eb700a97c662",
+      "ledger": 64103407,
+      "successful": true,
+      "detail": "A prerequisite that is easy to learn the hard way: paying an account with no USDC trustline fails with op_no_trust, which a buyer reads as our bug. The vault itself needs none, because it holds the token in contract storage rather than through a trustline."
+    },
+    {
+      "kind": "deploy",
+      "label": "AgentSpendPolicy wasm uploaded",
+      "txHash": "4230a328bf063cc005e8fea00c45a9d38af57968b8ee166cbb5a11fb92b51fba",
+      "ledger": 64103416,
+      "successful": true,
+      "feeXlm": "12.2319214",
+      "detail": "Uploading the code entry, hash 155eb31c1867254eacbf1b7a4755164d15cc6b6f939644705ab6b8df61579239. Unlike the testnet deploy, which the CLI did in one transaction, pubnet split upload and instantiate into two."
+    },
+    {
+      "kind": "deploy",
+      "label": "AgentSpendPolicy instantiated with its permanent policy",
+      "txHash": "847dc7e99e73f6c0062e5aed29599f41226998053fe7b6c35e48e9cf64a6ee2d",
+      "ledger": 64103418,
+      "successful": true,
+      "feeXlm": "0.0992122",
+      "detail": "`__constructor` runs atomically at deploy, so the front-run-the-initializer class is structurally absent. It is also the only chance this contract gets: there is no `initialize` and no `upgrade`, so these five arguments are permanent and the escape hatch is `withdraw`, redeploy, repoint."
+    },
+    {
+      "kind": "funding",
+      "label": "1 USDC bought on Stellar's own DEX",
+      "txHash": "b3ad997d83f578edf7583ef8c59dc5ec5db4091955b603e77aca1b939f5e9b41",
+      "ledger": 64103437,
+      "successful": true,
+      "detail": "A strict-receive path payment, XLM in and exactly 1.0000000 USDC out, filled at 0.1949500 USDC per XLM off the order book. Recorded because it is also where the USD figures in this repo come from: the price is read from the same ledger the rail settles on rather than from an API we cannot show you."
+    },
+    {
+      "kind": "funding",
+      "label": "1 USDC moved into the vault through the SAC",
+      "txHash": "e558baf97bb8dde87cc585245df430e72667e21bd2cb78fee62418cd04692344",
+      "ledger": 64103469,
+      "successful": true,
+      "detail": "Submitted twice. The first attempt returned a submission timeout from the RPC, which is NOT a failure: a Stellar transaction stays valid for its whole timeout window. Horizon was checked before retrying and showed the hash absent and no fee charged, so the retry was a clean resubmission of the same envelope rather than a second payment. It landed under the same hash."
+    },
+    {
+      "kind": "settlement",
+      "label": "Evidence 1 of 4: an under-limit agent payment settles in real USDC",
+      "txHash": "c4a884c306ee0cd76b7fb4fa245176618897687ad7fee724e2d43b72d20f3733",
+      "ledger": 64103478,
+      "successful": true,
+      "detail": "The operator paid 0.20 USDC, inside both the 0.25 per-payment ceiling and the 1 USDC daily cap. Two events fired: the SAC's transfer from the vault to the payee, and the vault's own `Paid` event carrying day 20689, amount 2000000 and by_owner:false, which is what marks it as the AGENT path rather than the human one."
+    },
+    {
+      "kind": "settlement",
+      "label": "Three more payments, each exactly at the ceiling",
+      "txHash": "d2386d419a2d546627b4b7247bb152e70b314e5f84a9d76a60f752cc81f95c80",
+      "ledger": 64103495,
+      "successful": true,
+      "detail": "0.25 USDC, the largest single payment the policy auto-approves. Two more followed: f514ac178bd4aba60d53cc3980f5517bb1bd93d53d7f69d227a798632251aefb (ledger 64103499) and ebf3cb627c18ec226be9e2790054c4de43d0da2b524f27fb499ab0af6a477d80 (ledger 64103501). After them spent_today stood at 0.95 USDC against a 1 USDC cap, which is what set up the refusal below."
+    },
+    {
+      "kind": "settlement",
+      "label": "Evidence 4 of 4: the owner overrides a freeze and pays anyway",
+      "txHash": "58c118ee659b65875efe5e916f7bb332bc896b62537fa8dd030e2c225defa1cf",
+      "ledger": 64103531,
+      "successful": true,
+      "detail": "owner_pay while the vault was frozen. It settles, because the human path is meant to work exactly when the agent path does not, and its `Paid` event carries by_owner:true. It still counted against the daily cap: the override bypasses the gates, not the budget."
+    },
+    {
+      "kind": "deploy",
+      "label": "The kill switch, on and then off",
+      "txHash": "c003e3fed6d39d820da51ea281b6d17fc910961bee88163ef8fb6fa084e059cf",
+      "ledger": 64103526,
+      "successful": true,
+      "detail": "set_frozen(true), event FrozenSet. Lifted again at ledger 64103532 by 8bccb734a624cb6165cdd74da5c2d196c3b67dd8a0ed92e3435df1ffd2ae9f9a. The other half of a kill switch is that it turns back off; a freeze you cannot lift is a loss, not a control."
+    }
+  ],
+  "refusals": [
+    {
+      "label": "Evidence 2 of 4: a payment above the per-payment ceiling",
+      "attempt": "pay(owner, 5000000) = 0.50 USDC against a 0.25 USDC ceiling",
+      "contractErrorCode": 4,
+      "contractError": "AboveAutoApprove",
+      "txHash": null,
+      "detail": "Refused during simulation, so no transaction exists and nothing was charged."
+    },
+    {
+      "label": "Evidence 3 of 4: a payment over the daily cap",
+      "attempt": "pay(owner, 2500000) with spent_today already at 9500000, against a 10000000 cap",
+      "contractErrorCode": 5,
+      "contractError": "DailyCapExceeded",
+      "txHash": null,
+      "detail": "Worth reading closely, because the vault held only 0.05 USDC at this point and so an InsufficientBalance refusal was also available. It returned DailyCapExceeded, because the cap gate fires at policy.rs:89 and the balance gate at policy.rs:121. The ORDER is what makes the answer useful: the agent is told the budget is spent, not that the account is short, and those call for different human responses."
+    },
+    {
+      "label": "The freeze, exercised against the agent",
+      "attempt": "pay(owner, 100000) while frozen",
+      "contractErrorCode": 1,
+      "contractError": "Frozen",
+      "txHash": null,
+      "detail": "Refused during simulation, like every other refusal here."
+    }
+  ],
+  "howRefusalsHaveNoHash": "On Soroban every normal client simulates before submitting, so a payment the contract refuses fails in simulation and no transaction is ever created. `stellar contract invoke` will not send it even with --send=yes. A refused payment therefore leaves NO on-chain evidence at all, and the typed error code IS the artifact. The testnet release worked around this once to produce a hash a reviewer could open, by tightening the policy while a payment was in flight so it failed at apply time instead (see mcp/scripts/stellar-prove-revert.mjs and testnet tx 12df418f). That was done to satisfy a success metric that assumed EVM semantics; it is not repeated here, because the honest statement is that Soroban refusals are cheap and invisible, and pretending otherwise costs real money on pubnet.",
+  "finalState": {
+    "dailyCap": "10000000",
+    "autoApproveMax": "2500000",
+    "spentToday": "10000000",
+    "balance": "0",
+    "frozen": false,
+    "note": "spent_today came to rest at exactly the daily cap. The vault spent its whole budget for the UTC day and refused the next payment, which is the shape of the claim this contract exists to make. The balance is zero because every payment went back to the owner account, which also holds the 1 USDC: this is a self-funded test and the money never left our own control."
+  },
+  "caveats": [
+    "Mainnet, and real money, but small money. The cap is 1 USDC per day and the vault was funded with 1 USDC. Nothing here demonstrates behaviour at a size anyone would care about losing.",
+    "Not audited. The contract has been reviewed with the free tooling we could actually run, with output committed, plus an adversarial review that found and fixed real defects, plus a negative-control runner that deletes each guard in turn and requires the suite to go red. That is not an audit and we will not call it one.",
+    "The owner and operator are burner keys generated for this deploy and held in a local CLI keystore, not a multisig and not an HSM. Losing the owner key makes the vault balance unrecoverable. That is a deliberate trade against a capped balance, and it is the same trade written up in soroban/README.md.",
+    "Payer and payee are both ours. The owner account funded the vault and also received every payment, so this is evidence that the rail works, not evidence of demand.",
+    "There is no ERC-8004 registry on Stellar, so the agent passport is bridged from an EVM chain rather than anchored here, and KYA cannot be attested on this network.",
+    "No x402 rail settles on pubnet yet. What this release proves is the on-ledger spend policy alone. The Soroban x402 rail runs on stellar-testnet and is configured there in production; pointing it at pubnet is a separate change with its own fee payer and its own risk.",
+    "Two of the four pieces of evidence are typed error codes rather than transaction hashes, because Soroban refusals never reach the ledger. See howRefusalsHaveNoHash above. Anyone can reproduce them in seconds against the live contract with `stellar contract invoke --id CB5LYXFK... --network pubnet -- pay --to G... --amount 5000000`, which costs nothing precisely because it is refused."
+  ]
+}
