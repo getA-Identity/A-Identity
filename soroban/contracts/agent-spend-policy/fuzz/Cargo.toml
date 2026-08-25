@@ -1,0 +1,33 @@
+# Kept out of the workspace on purpose: `cargo fuzz` builds with a nightly toolchain and a
+# sanitizer, and pulling that into the workspace would drag both into every ordinary build.
+# The `[workspace]` table below is what detaches it; without it cargo tries to inherit the
+# parent workspace and refuses.
+[package]
+name = "agent-spend-policy-fuzz"
+version = "0.0.0"
+publish = false
+edition = "2021"
+
+[package.metadata]
+cargo-fuzz = true
+
+[dependencies]
+libfuzzer-sys = "0.4"
+# Needed DIRECTLY, not transitively. soroban-sdk re-exports the `Arbitrary` derive, but the
+# code that derive expands to refers to `arbitrary::` at the crate root, so without this the
+# target fails with E0433 "cannot find module or crate `arbitrary`".
+arbitrary = { version = "1", features = ["derive"] }
+soroban-sdk = { version = "=27.0.6", features = ["testutils"] }
+
+[dependencies.agent-spend-policy]
+path = ".."
+features = ["testutils"]
+
+[[bin]]
+name = "policy_ladder"
+path = "fuzz_targets/policy_ladder.rs"
+test = false
+doc = false
+bench = false
+
+[workspace]

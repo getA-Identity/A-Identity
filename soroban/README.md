@@ -88,15 +88,22 @@ wrong for this platform.
 
 ## Build and test
 
+Coverage is 99.70% of lines and 98.18% of functions with the test files excluded, measured
+with `cargo llvm-cov --ignore-filename-regex 'src/test'`. The single uncovered line is the
+`#[contracttype]` macro on `DataKey`. `cargo mutants` leaves **zero** survivors out of 137.
+Both numbers are worth stating together, because the first one alone is the one that lies:
+the suite was at 93% lines while 22 mutants still survived, including two that disabled the
+TTL guards outright.
+
 ```bash
-cargo test                                   # 103 contract tests (2 ignored, see below)
+cargo test                                   # 106 contract tests (2 ignored, see below)
 cargo clippy --all-targets -- -D warnings
 cargo fmt --check
 stellar contract build                       # -> target/wasm32v1-none/release/*.wasm
 node audit/run-negative-controls.mjs         # each guard deleted, suite must go red
 ```
 
-Two of the 103 are `#[ignore]`d on purpose, and the reason is in the attribute rather than
+Two of the 106 are `#[ignore]`d on purpose, and the reason is in the attribute rather than
 in a comment somewhere else. They encode findings A3-02 and A3-07 from the 2026-08-25 audit:
 the refusal ladder's first rung differs between `settle` and `withdraw`, and `owner_pay` is
 charged to the daily cap without being limited by it. Both are live in the deployed wasm and

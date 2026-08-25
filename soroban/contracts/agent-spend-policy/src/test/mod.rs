@@ -11,6 +11,7 @@
 mod amounts;
 mod arithmetic;
 mod auth;
+mod availability;
 mod behaviour;
 mod durability;
 mod errors;
