@@ -4,7 +4,7 @@ import { privateKeyToAccount } from 'viem/accounts'
 import { paymentKey, parseAuthorizationPayload, verifyPayment, settlePayment, type Limits } from './engine.js'
 import { eip712DomainSeparator, clearDomainCache, type TokenReader } from './domain.js'
 import { getChainById } from '../chains/index.js'
-import type { X402SettlementRecord } from '../storage.js'
+import { gasSpentOnDay, loadX402SettlementsResult, GAS_BUDGET_UNKNOWN, type X402SettlementRecord } from '../storage.js'
 
 /**
  * The engine decides whether real money moves, so the cases that matter most here are
@@ -437,4 +437,93 @@ test('settling with no signer is a clean labeled refusal, not a crash', async ()
   })
   assert.equal(r.success, false)
   if (!r.success) assert.equal(r.code, 'no_signer')
+})
+
+// ── the gas ledger the daily budget is computed from ─────────────────────────────────
+//
+// The EVM twin of the F-05 tests in x402-stellar/settle.test.ts, and it is here for the
+// reason that finding gave: `gasSpentOnDay` used to read an unreachable database as
+// "nothing spent today", which turned the daily gas ceiling off completely. The Stellar
+// side was fixed first and got a negative control; this side was fixed with none, so the
+// exact regression the control exists to catch was undefended here.
+//
+// Note the split, which is the lesson from F-05: the injected-loader tests prove the
+// CONSUMER handles an `ok: false`, and prove nothing about whether anything emits one.
+// The producer tests call the real loader with a failing pool, so the classification under
+// test is the one that runs in production.
+
+test('an unreadable gas ledger spends the daily budget, it does not zero it', async () => {
+  const unreadable = async () => ({ ok: false as const, reason: 'ECONNREFUSED 10.0.0.1:5432' })
+  assert.equal(
+    await gasSpentOnDay('2026-08-25', unreadable),
+    GAS_BUDGET_UNKNOWN,
+    'a ledger we cannot read must report the budget as spent. Returning 0 here is what let ' +
+      'an unreachable database turn the daily gas ceiling off entirely.',
+  )
+})
+
+test('a gas ledger loader that throws is still "we cannot read it"', async () => {
+  const boom = async () => { throw new Error('socket hang up') }
+  assert.equal(await gasSpentOnDay('2026-08-25', boom), GAS_BUDGET_UNKNOWN)
+})
+
+test('an empty gas ledger is genuinely zero, and is not confused with an unreadable one', async () => {
+  assert.equal(await gasSpentOnDay('2026-08-25', async () => ({ ok: true as const, rows: [] })), 0n)
+})
+
+test('gas is summed for this day only, and one malformed row does not break the guard', async () => {
+  const rows = [
+    { ts: '2026-08-25T01:00:00Z', gasWei: '100' },
+    { ts: '2026-08-25T23:00:00Z', gasWei: '250' },
+    { ts: '2026-08-24T23:59:59Z', gasWei: '8888' },
+    { ts: '2026-08-25T03:00:00Z', gasWei: 'not-a-number' },
+  ] as unknown as X402SettlementRecord[]
+  assert.equal(await gasSpentOnDay('2026-08-25', async () => ({ ok: true as const, rows })), 350n)
+})
+
+test('(producer) a database that will not answer is reported unreadable, not empty', async () => {
+  const boom = async () => {
+    throw Object.assign(new Error('connect ECONNREFUSED 127.0.0.1:5432'), { code: 'ECONNREFUSED' })
+  }
+  const r = await loadX402SettlementsResult(boom)
+  assert.equal(r.ok, false, 'an unreachable database must not read as an empty gas ledger')
+  if (!r.ok) assert.match(r.reason, /ECONNREFUSED/)
+})
+
+test('(producer) an unreadable ledger makes the real gas guard report the budget spent', async () => {
+  const boom = async () => { throw new Error('connect ETIMEDOUT') }
+  assert.equal(await gasSpentOnDay('2026-08-25', () => loadX402SettlementsResult(boom)), GAS_BUDGET_UNKNOWN)
+})
+
+test('(producer) no configured database is empty, not unreadable', async () => {
+  // A first run with no DATABASE_URL and no settlements file is genuinely zero spend.
+  // Conflating that with a read failure would fail closed forever on a fresh deploy.
+  const r = await loadX402SettlementsResult(async () => null)
+  assert.equal(r.ok, true, 'an unconfigured database with no file is a first run, not a failure')
+})
+
+test('an unreadable gas ledger refuses the settlement and broadcasts nothing', async () => {
+  // The end-to-end statement the ceiling actually depends on. The refusal carries its own
+  // reason rather than rendering the sentinel as a spent figure, so an operator can tell a
+  // database outage from a budget that is genuinely gone.
+  clearDomainCache()
+  let broadcasts = 0
+  const { payload } = await signed({ nonce: `0x${'0a'.repeat(32)}` })
+  const r = await settlePayment({
+    chain, token, requirements: REQUIREMENTS, payload, limits: LIMITS,
+    deps: deps({
+      publicClient: publicClient({}),
+      walletClient: { writeContract: async () => { broadcasts += 1; return `0x${'ff'.repeat(32)}` } },
+      signerAddress: PAY_TO,
+      persist: async () => {},
+      persistSpent: async () => {},
+      gasSpentTodayWei: async () => GAS_BUDGET_UNKNOWN,
+    }),
+  })
+  assert.equal(r.success, false)
+  if (!r.success) {
+    assert.equal(r.code, 'gas_budget_exhausted')
+    assert.match(r.errorReason ?? '', /could not be read/, 'an outage must not read as a spent budget')
+  }
+  assert.equal(broadcasts, 0, 'nothing may be broadcast against a ceiling we cannot measure')
 })
