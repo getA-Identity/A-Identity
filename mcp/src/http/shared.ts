@@ -89,6 +89,31 @@ export function errStatus(msg: string): number {
   return msg.startsWith('Forbidden') ? 403 : msg.startsWith('Unknown') ? 404 : 400
 }
 
+/**
+ * Send an x402 challenge, in BOTH transports.
+ *
+ * The body is where our own buyers read it and where a v1 client looks. The
+ * `PAYMENT-REQUIRED` header is where the x402 v2 spec puts it, and a stock client is not
+ * lenient about that: @x402/core's `getPaymentRequiredResponse` reads the header, and
+ * falls back to the body ONLY when `x402Version === 1`. Anything else throws
+ * "Invalid payment required response" before the buyer ever sees the price.
+ *
+ * Our EIP-3009 and Stellar rails served `x402Version: 2` in the body with no header, which
+ * is v1 transport under a v2 number, so no off-the-shelf v2 buyer of any origin could pay
+ * them. It went unnoticed because our own buyer scripts parse the body directly: we tested
+ * the rails with the one client that did not need the header. The nano rail and the ASP
+ * both got this right, so the pattern already existed in the repo and was simply not
+ * carried across.
+ *
+ * Sending both costs one header and keeps every existing caller working.
+ */
+export function sendChallenge(res: http.ServerResponse, status: number, body: unknown): void {
+  if (status === 402) {
+    res.setHeader('PAYMENT-REQUIRED', Buffer.from(JSON.stringify(body)).toString('base64'))
+  }
+  sendJson(res, status, body)
+}
+
 /** Guard an agent-scoped private read (policy / vault / treasury / Circle wallet / payment
  *  history): only the owner may read it. Returns true (and sends the response) when access
  *  is denied, so a handler can `if (denyRead(...)) return`. Public reads (identity resolve,

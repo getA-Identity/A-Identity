@@ -403,6 +403,7 @@ export function stellarRailChallenge(
       decimals: s.token.decimals,
       payTo: s.payTo,
       maxAmountRequired: stellarAmountRaw(tool, s.token).toString(),
+      amount: stellarAmountRaw(tool, s.token).toString(),
       resource: stellarRailResource(tool),
       description: `${RAIL_TOOL_CARDS[tool].description} Settled in ${s.token.symbol} on ${chain?.name ?? s.chain}; you sign an authorization entry, we broadcast.`,
       mimeType: 'application/json',
@@ -428,6 +429,9 @@ export function stellarRailChallenge(
     body: {
       x402Version: 2,
       error: 'payment required',
+      // v2 hoists the resource out of each accepts entry into one object on the challenge.
+      // The per-entry string stays for v1 clients; it is the same field in both places.
+      resource: { url: stellarRailResource(tool), description: RAIL_TOOL_CARDS[tool].description, mimeType: 'application/json' },
       accepts,
       tool: {
         name: tool,

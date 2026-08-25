@@ -315,6 +315,7 @@ export async function railChallenge(
       decimals: altDomain.proven.decimals,
       payTo: alt.payTo,
       maxAmountRequired: tokenUnits(altDomain.proven.decimals, altPrice.totalUsd).toString(),
+      amount: tokenUnits(altDomain.proven.decimals, altPrice.totalUsd).toString(),
       resource: railResource(tool),
       description: `${RAIL_TOOL_CARDS[tool].description} Settled in ${altDomain.proven.symbol} on ${altChain.name}; you sign, we broadcast.`,
       mimeType: 'application/json',
@@ -336,6 +337,7 @@ export async function railChallenge(
     decimals: domain.proven.decimals,
     payTo: status.payTo,
     maxAmountRequired: tokenUnits(domain.proven.decimals, price.totalUsd).toString(),
+    amount: tokenUnits(domain.proven.decimals, price.totalUsd).toString(),
     resource: railResource(tool),
     description: `${RAIL_TOOL_CARDS[tool].description} Settled in ${domain.proven.symbol} on ${chain.name}; you sign, we broadcast.`,
     mimeType: 'application/json' as const,
@@ -355,6 +357,9 @@ export async function railChallenge(
     body: {
       x402Version: 2,
       error: 'payment required',
+      // v2 hoists the resource out of each accepts entry into one object on the challenge.
+      // The per-entry string stays for v1 clients; this is the same field in both places.
+      resource: { url: railResource(tool), description: RAIL_TOOL_CARDS[tool].description, mimeType: 'application/json' },
       accepts: [requirements, ...extraAccepts],
       tool: {
         name: tool,

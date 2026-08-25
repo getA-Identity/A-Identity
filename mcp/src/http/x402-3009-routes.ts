@@ -30,7 +30,7 @@ import { supported, verify, settle } from '../x402-3009/facilitator.js'
 import { provenDomainCached } from '../x402-3009/domain.js'
 import { getChainById, evmWalletClientFromKey, type ChainDescriptor } from '../chains/index.js'
 import type { TxContext } from '../asp/tools.js'
-import { readBody, sendJson, type RouteCtx } from './shared.js'
+import { readBody, sendJson, type RouteCtx, sendChallenge } from './shared.js'
 
 /**
  * Is there a usable key to broadcast settlements with, and if not, which variable is at
@@ -180,7 +180,7 @@ export async function handleX402ThreeKRoutes(ctx: RouteCtx): Promise<boolean> {
   // buyer agent can decide and sign without a round trip through a human.
   if (req.method === 'GET') {
     const challenge = await railChallenge(tool, status)
-    sendJson(res, challenge.httpStatus, challenge.body)
+    sendChallenge(res, challenge.httpStatus, challenge.body)
     return true
   }
 
@@ -192,7 +192,7 @@ export async function handleX402ThreeKRoutes(ctx: RouteCtx): Promise<boolean> {
   const header = String(req.headers['x-payment'] ?? '')
   if (!header) {
     const challenge = await railChallenge(tool, status)
-    sendJson(res, challenge.httpStatus, challenge.body)
+    sendChallenge(res, challenge.httpStatus, challenge.body)
     return true
   }
 
@@ -202,7 +202,9 @@ export async function handleX402ThreeKRoutes(ctx: RouteCtx): Promise<boolean> {
     sendJson(res, 400, { error: 'agentId is required', input: RAIL_TOOL_CARDS[tool].input, example: RAIL_TOOL_CARDS[tool].example })
     return true
   }
+  // railServeTool answers 402 with a FRESH challenge for a buyer-fixable code, so that
+  // path needs the header too.
   const out = await railServeTool(tool, { agentId, txContext: (body?.txContext ?? null) as TxContext | null }, header, status)
-  sendJson(res, out.httpStatus, out.body)
+  sendChallenge(res, out.httpStatus, out.body)
   return true
 }

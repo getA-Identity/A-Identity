@@ -39,7 +39,7 @@ import {
   type RailToolName,
 } from '../x402-stellar/rail.js'
 import type { TxContext } from '../asp/tools.js'
-import { readBody, sendJson, type RouteCtx } from './shared.js'
+import { readBody, sendJson, type RouteCtx, sendChallenge } from './shared.js'
 
 /**
  * Can this network actually broadcast, and if not, which variable is at fault?
@@ -206,7 +206,7 @@ export async function handleX402StellarRoutes(ctx: RouteCtx): Promise<boolean> {
   // without a round trip through a human.
   if (req.method === 'GET') {
     const challenge = stellarRailChallenge(tool, status)
-    sendJson(res, challenge.httpStatus, challenge.body)
+    sendChallenge(res, challenge.httpStatus, challenge.body)
     return true
   }
 
@@ -218,7 +218,7 @@ export async function handleX402StellarRoutes(ctx: RouteCtx): Promise<boolean> {
   const header = String(req.headers['x-payment'] ?? '')
   if (!header) {
     const challenge = stellarRailChallenge(tool, status)
-    sendJson(res, challenge.httpStatus, challenge.body)
+    sendChallenge(res, challenge.httpStatus, challenge.body)
     return true
   }
 
@@ -234,6 +234,6 @@ export async function handleX402StellarRoutes(ctx: RouteCtx): Promise<boolean> {
     header,
     status,
   )
-  sendJson(res, out.httpStatus, out.body)
+  sendChallenge(res, out.httpStatus, out.body)
   return true
 }
