@@ -105,20 +105,40 @@ jobs:
           echo "$WASM is $SIZE bytes"
           test "$SIZE" -lt 131072 || { echo "over the 128KB network limit"; exit 1; }
 
-      # The deployed hash, asserted rather than assumed. Both live networks run
-      # 155eb31c...79239 (verified on-chain with `stellar contract fetch`), so a source
-      # change that alters the artifact should be a deliberate, visible act rather than
-      # something noticed later. Update this literal in the same commit that redeploys.
-      - name: Deployed wasm hash gate
+      # Artifact drift, gated against the hash for THIS platform.
+      #
+      # The first version of this step compared against 155eb31c...79239, the hash deployed
+      # on pubnet and testnet, and it could never pass here. That artifact was built on
+      # macOS arm64; this runner is Linux x86_64, and the same rustc 1.96.0 over the same
+      # source produces a different wasm. That is not a surprise, it is the reason
+      # soroban/releases/*.json give for not committing the binary in the first place:
+      # "Rust wasm builds are not bit-reproducible across machines by default, so a
+      # committed binary would invite a reproducibility claim we cannot honor". The gate
+      # was making exactly that claim.
+      #
+      # So it asserts the thing it can actually prove. LINUX_X64 is the hash this runner
+      # produces, and a change to it means the SOURCE changed the artifact, which is what
+      # the gate was for. DEPLOYED stays here unasserted, printed beside it, because the
+      # two are different numbers for good reasons and a reader who sees only one of them
+      # will assume the wrong thing. What binds DEPLOYED to the chain is
+      # `stellar contract fetch`, recorded in the release files, not this step.
+      #
+      # If this ever goes red without a source change, the Linux build is not deterministic
+      # either and the honest response is to drop to the size gate above rather than to
+      # keep re-recording the number.
+      - name: Wasm drift gate
         run: |
           WASM=$(find target/wasm32v1-none/release -name '*.wasm' | head -1)
           ACTUAL=$(sha256sum "$WASM" | cut -d' ' -f1)
-          EXPECTED=155eb31c1867254eacbf1b7a4755164d15cc6b6f939644705ab6b8df61579239
-          echo "built $ACTUAL"
-          if [ "$ACTUAL" != "$EXPECTED" ]; then
-            echo "The built wasm no longer matches the hash deployed on pubnet and testnet."
-            echo "expected $EXPECTED"
-            echo "If this change is intended, redeploy and update this literal together."
+          LINUX_X64=51ba7c9b97b16fd17f4ce8140cf9fa59a689f42aca4cdab4f0fca07a1bdb7b51
+          DEPLOYED=155eb31c1867254eacbf1b7a4755164d15cc6b6f939644705ab6b8df61579239
+          echo "built on this runner : $ACTUAL"
+          echo "deployed on pubnet   : $DEPLOYED (built elsewhere, not comparable here)"
+          if [ "$ACTUAL" != "$LINUX_X64" ]; then
+            echo "The wasm this runner builds has changed."
+            echo "expected $LINUX_X64"
+            echo "If a source change caused it, update this literal in the same commit."
+            echo "If nothing changed, the Linux build is not deterministic and this gate should go."
             exit 1
           fi
 
