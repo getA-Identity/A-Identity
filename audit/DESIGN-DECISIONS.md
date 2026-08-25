@@ -9,6 +9,21 @@ item below costs a redeploy, and a redeploy costs a new contract id.
 The audit protocol says not to improvise an architectural change. These are written up with
 their trade-offs and stop here.
 
+## Status board
+
+Two of the five are settled. **Three are not, and nobody has decided them**, which is a
+different state from "recommended". A recommendation is the audit's opinion; a decision is
+the maintainer's, and until one is recorded the underlying findings stay OPEN in
+`REMEDIATION_LOG.md`.
+
+| | Finding(s) | Status |
+| --- | --- | --- |
+| D-1 | A7-02 High, A1-01 Medium | **DONE 2026-08-25**, option B, `cf35b33`. One residual left open, named in D-1 |
+| D-2 | A7-01 Medium | **AWAITING A MAINTAINER DECISION.** Recommendation on file, not adopted |
+| D-3 | A3-02 Low (live defect), carries A4-01 Medium | **AWAITING A MAINTAINER DECISION.** Recommendation on file, not adopted |
+| D-4 | A5-01 Low, A3-07 Info | **AWAITING A MAINTAINER DECISION.** Recommendation on file, not adopted. The documentation half is already done |
+| D-5 | A4-02 Medium | **DECLINED 2026-08-25**, option A not taken, `51978c5`. Option C is in force |
+
 ---
 
 ## What a redeploy actually costs
@@ -110,9 +125,20 @@ re-open the policy.
 | **C. Take the allowlist as a constructor argument** | Redeploy carries it forward atomically | Needs a redeploy; bounds the constructor's input size |
 | **D. Accept** | Document that a redeploy resets the policy and that re-arming is manual | Free, but the failure mode is silent, which is what makes it Medium |
 
-**Recommendation: A now, and C bundled into any redeploy that happens for another reason.**
-A is a runbook change and costs nothing. B contradicts a deliberate storage decision and
-should not be adopted just to make C unnecessary.
+### AWAITING A MAINTAINER DECISION
+
+Not decided. The choice is between **A**, a free runbook step that records the allowlist
+off-chain before any redeploy and works only inside the 7.9-day event window; **B**, an
+enumerating view, which needs a redeploy and reintroduces the unbounded read INV-19
+deliberately avoids; **C**, taking the allowlist as a constructor argument, which needs a
+redeploy but carries the policy forward atomically; and **D**, accepting it and documenting
+that a redeploy resets the policy. A and C are not exclusive.
+
+Until this is recorded, A7-01 stays OPEN.
+
+**Recommendation, not a decision: A now, and C bundled into any redeploy that happens for
+another reason.** A is a runbook change and costs nothing. B contradicts a deliberate
+storage decision and should not be adopted just to make C unnecessary.
 
 ---
 
@@ -136,8 +162,18 @@ so `cargo test` prints it on every run.
 | **B. Redeploy for this alone** | Not worth a new contract id for a Low |
 | **C. Document the divergence** | Honest, cheap, leaves a wrong answer in production |
 
-**Recommendation: A.** Hold it until a redeploy is happening for another reason, then take
-it. It is genuinely two lines.
+### AWAITING A MAINTAINER DECISION
+
+Not decided. The choice is between **A**, fixing it in the next redeploy that happens for
+another reason (two lines reordered in `withdraw`, free if a redeploy is happening anyway);
+**B**, redeploying for this alone, which spends a new contract id on a Low; and **C**,
+documenting the divergence and leaving a wrong answer in production.
+
+This is the decision A4-01 is waiting on too: A4-01 is Medium, needs a redeploy, and has no
+cheaper carrier. Until this is recorded, A3-02 and A4-01 both stay OPEN.
+
+**Recommendation, not a decision: A.** Hold it until a redeploy is happening for another
+reason, then take it. It is genuinely two lines.
 
 ---
 
@@ -164,8 +200,25 @@ and had to retract.
 | **B. Add a cap gate to `owner_pay` in a future redeploy** | Makes the simpler sentence true again, but removes the override's usefulness in exactly the case it exists for: settling something out of band after the day's budget is spent |
 | **C. Add a separate, higher owner ceiling** | More faithful to intent, more surface, more to explain |
 
-**Recommendation: A.** B would break the override's purpose. The honest sentence is short:
-the daily cap bounds the agent; the owner is bounded by the balance and by nothing else.
+### AWAITING A MAINTAINER DECISION
+
+Not decided, and note what is and is not still open. The **documentation** half is done: the
+published claim was corrected in `1466845` and INV-05 was rewritten in `3ccb10d`, which is
+what finding A3-07 asked for and why A3-07 is FIXED. What is undecided is the **contract**
+half, finding A5-01.
+
+The choice is between **A**, leaving the contract as it is and keeping the corrected wording,
+so the claim is "the cap binds the agent, not the human"; **B**, adding a cap gate to
+`owner_pay` in a future redeploy, which makes the simpler sentence true again but removes the
+override's usefulness in exactly the case it exists for, settling something out of band after
+the day's budget is spent; and **C**, a separate, higher owner ceiling, which is more
+faithful to the intent and more surface to explain.
+
+Until this is recorded, A5-01 stays OPEN.
+
+**Recommendation, not a decision: A.** B would break the override's purpose. The honest
+sentence is short: the daily cap bounds the agent; the owner is bounded by the balance and by
+nothing else.
 
 ---
 
@@ -214,13 +267,17 @@ policy and is not told the issuer can freeze it.
 
 ## Summary
 
-| | Decision | Recommended | Needs redeploy |
-| --- | --- | --- | --- |
-| D-1 | Permanent owner | **B**, `SetOptions` to a 2-of-3, ~free | no |
-| D-2 | Redeploy drops the allowlist | **A** now, **C** if redeploying anyway | partly |
-| D-3 | Ladder order differs by path | **A**, bundle into the next redeploy | yes |
-| D-4 | `owner_pay` not capped | **A**, keep the corrected wording | no |
-| D-5 | Circle can freeze | **A + C**, disclose and stay small | no |
+| | Decision | Status | Recommended | Needs redeploy |
+| --- | --- | --- | --- | --- |
+| D-1 | Permanent owner | **DONE**, `cf35b33`, one residual open | **B**, `SetOptions` to a 2-of-3 | no |
+| D-2 | Redeploy drops the allowlist | **awaiting a maintainer decision** | **A** now, **C** if redeploying anyway | partly |
+| D-3 | Ladder order differs by path | **awaiting a maintainer decision** | **A**, bundle into the next redeploy | yes |
+| D-4 | `owner_pay` not capped | **awaiting a maintainer decision** | **A**, keep the corrected wording | no |
+| D-5 | Circle can freeze | **DECLINED**, `51978c5`, option C in force | **A + C**, disclose and stay small | no |
 
 Three of the five need no redeploy at all. If a redeploy is ever done for another reason,
-D-3 and D-2's constructor change are the two to carry with it.
+D-3 and D-2's constructor change are the two to carry with it, and A4-01 goes with them.
+
+The recommendation column is the audit's opinion and nothing more. Three of these rows have
+carried a recommendation and no decision since 2026-08-25; that is the gap this board exists
+to make visible rather than to close.

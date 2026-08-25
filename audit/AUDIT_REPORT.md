@@ -44,6 +44,14 @@ operational, not code:
 3. **Disclose that Circle can freeze it.** The pubnet USDC issuer has `auth_revocable` set.
    No contract change prevents that, and `/proof/stellar` currently does not say so.
 
+**Where those three conditions stand, as of 2026-08-25.** Condition 1 is **done**: the owner
+account is a 2-of-3 multisig (D-1, `cf35b33`), with the residual that all three signers are
+still in one keystore. Condition 2 is **in force**: the vault holds 0 USDC and the cap is 1
+USDC per day. Condition 3 was **declined**: the maintainer chose not to publish the Circle
+freeze disclosure and removed the caveats box from `/proof/:rail` (`51978c5`), so the
+statement below that `/proof/stellar` does not say so remains true and is now a decision
+rather than an oversight. D-5 records it.
+
 **NO-GO for anything larger.** This audit does not clear the contract for balances anyone
 would mind losing. Two of the reasons are structural and cannot be fixed by testing: there
 is no upgrade path, so any future Critical is unpatchable in place, and there is no owner
@@ -71,12 +79,13 @@ rotation, so a compromised owner key is total and irreversible loss.
 | Mutation score | **137 mutants, 0 survivors**, 126 caught, 11 unviable |
 | Line coverage | **99.70%** (the one uncovered line is a `#[contracttype]` macro) |
 | Function coverage | **98.18%** |
-| Fuzzing | 51,218 + 20,136 executions, no panic reached |
+| Fuzzing | **20,136** executions, no panic reached, re-runnable from the committed target. A further **51,218 is reported but unverified**: that run's target lived in a scratch copy and its artifacts were not preserved, so nothing in this repository can confirm it (see `findings/A6-panics-dos.md`) |
 | Negative controls | **6/6** guards deleted, suite goes red each time |
 | `cargo audit` | 0 vulnerabilities over 215 crates |
 | `cargo deny` | advisories, bans, licenses, sources all ok |
 | GHSA check | 0 of 215 locked crates in a published vulnerable range |
-| clippy `-D warnings` | clean, with `unwrap_used`, `panic`, `indexing_slicing`, `arithmetic_side_effects` |
+| clippy `-D warnings` | clean, and enforced in CI (`soroban.yml:47`) |
+| clippy security lint set | **NOT enforced, and it does not pass.** `unwrap_used`, `expect_used`, `panic`, `indexing_slicing` and `arithmetic_side_effects` are enabled by no `clippy.toml`, no `[lints]` table and no crate attribute, and plain `-D warnings` enables none of them. Turned on by hand, the library alone fails with 4 errors: `unwrap()` at `storage.rs:144,152,160,168`. See A8-04 and A6-03 |
 | Deployed wasm | `155eb31c...79239` on both networks, byte-identical, verified by `stellar contract fetch` |
 
 ---
@@ -88,7 +97,7 @@ rotation, so a compromised owner key is total and irreversible loss.
 | Id | Title | Status |
 | --- | --- | --- |
 | A8-01 | No channel could surface a soroban-sdk advisory | **Fixed** |
-| A7-02 | The owner is permanent, singular and un-timelocked | **Decision needed** (D-1) |
+| A7-02 | The owner is permanent, singular and un-timelocked | **Accepted**: D-1 decided, `cf35b33`, owner is now a 2-of-3 multisig. One residual open |
 
 ### Medium
 
@@ -97,23 +106,25 @@ rotation, so a compromised owner key is total and irreversible loss.
 | A8-02 | CI measured a binary nobody deploys | **Fixed** |
 | A8-03 | Secret scanning and push protection off on a public repo | **Fixed** (one setting left) |
 | A2-04 | The live vaults archive on a known date | **Fixed** (made checkable) |
-| A1-01 | Owner over-privilege, formalising P-2 | **Decision needed** (D-1) |
-| A7-01 | A redeploy silently drops the allowlist | **Decision needed** (D-2) |
+| A1-01 | Owner over-privilege, formalising P-2 | **Accepted**: same as A7-02, D-1, `cf35b33` |
+| A7-01 | A redeploy silently drops the allowlist | Open, awaiting D-2 (**undecided**) |
 | A4-01 | Token error codes collide with this contract's | Open, needs redeploy |
-| A4-02 | Circle can freeze the vault permanently | **Decision needed** (D-5) |
+| A4-02 | Circle can freeze the vault permanently | **Accepted**: D-5 declined the disclosure, `51978c5`; option C, small balances, is in force |
 
 ### Notable Low
 
 | Id | Title | Status |
 | --- | --- | --- |
 | A3-02 | The refusal ladder's first rung differs by path | Open, live defect, needs redeploy (D-3) |
-| A5-01 / A3-07 | `owner_pay` is charged to the cap but not limited by it | **Decision made** (D-4, keep) |
+| A5-01 / A3-07 | `owner_pay` is charged to the cap but not limited by it | A3-07 (the invariant text) **Fixed**, `3ccb10d`. A5-01 (the contract) Open, awaiting D-4, which is **undecided** |
 | A2-01, A2-02 | TTL guards could be disabled without failing a test | **Fixed** |
 | A3-01 | Paying exactly the vault balance was untested | **Fixed** |
 | A5-03 | A compromised operator can burn the cap at net-zero cost | Accepted, mitigated by the allowlist |
 | A5-06 | `set_policy` is a whole-struct overwrite with no compare-and-swap | Open |
 
-Full detail, with proof-of-concept tests, in `findings/`.
+Full detail, with proof-of-concept tests, in `findings/`. **Every finding id, with exactly one
+of FIXED / ACCEPTED / OPEN against it, is in `REMEDIATION_LOG.md`.** The tables above are the
+notable ones, not all of them.
 
 ---
 
@@ -158,8 +169,11 @@ Two specific reasons to be sceptical of the coverage, stated rather than buried:
    `soroban-scanner` panics on every input including a two-line file. So static coverage in
    this audit is clippy plus manual reading, and the load-bearing tools were mutation
    testing and fuzzing.
-2. **The fuzzing campaign is shallow.** About 71,000 executions total at roughly 11 per
-   second. It found nothing new, but absence over that budget is weak evidence.
+2. **The fuzzing campaign is shallow, and most of it cannot be checked.** About 71,000
+   executions total at roughly 11 per second, of which only the 20,136 from the committed
+   target are re-runnable; the other 51,218 were reported by an audit agent whose artifacts
+   were not preserved. It found nothing new, but absence over that budget is weak evidence,
+   and weaker still for the part nobody can repeat.
 
 Unproven items are listed as such in each agent's report, and in `UNCONFIRMED.md`.
 
@@ -194,9 +208,10 @@ function.
 
 | | Where |
 | --- | --- |
-| Five findings needing a decision | `DESIGN-DECISIONS.md` |
-| One repo setting (non-provider secret patterns) | maintainer, both remotes |
-| 15 npm advisories, 2 high, all out of scope | tracked by Dependabot |
+| **31 open findings**, each with what would close it | `REMEDIATION_LOG.md` |
+| **Three decisions still undecided**: D-2, D-3, D-4. D-1 and D-5 are settled | `DESIGN-DECISIONS.md` |
+| One repo setting (non-provider secret patterns), a paid feature; the gitleaks step in `ci.yml` is what covers it meanwhile | maintainer, both remotes |
+| npm advisories: both HIGHs closed 2026-08-25 (`259db02`); `mcp/` keeps 22 (15 moderate, 7 low) deliberately | `SECURITY.md`, and the daily gate in `.github/workflows/security.yml` |
 | A longer fuzz campaign with a committed corpus | unfinished |
 | Items that need a redeploy: A3-02, A4-01, D-2's constructor change | bundle if a redeploy happens |
 

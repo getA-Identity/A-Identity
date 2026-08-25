@@ -1,12 +1,24 @@
 # A6 - Panics, errors, DoS and resource limits
 
 Domain owner: the lead auditor. Two subagent runs of A6 were killed mid-flight by a
-machine sleep, the second after it had completed its fuzzing but before it wrote up. Its
-fuzz artifacts survived and are archived here; the remaining questions were answered
-directly rather than by launching a third agent that would have redone the same work.
+machine sleep, the second after it had completed its fuzzing but before it wrote up. The
+remaining questions were answered directly rather than by launching a third agent that
+would have redone the same work.
 
-Artifacts: `audit/tool-output/A6-probe-tests.rs` (3 probes, all green),
-`audit/tool-output/A6-fuzz-run3.log`, `audit/tool-output/A6-fuzz-crash-1-inv05.bin`.
+Artifacts: `audit/tool-output/A6-probe-tests.rs` (3 probes, all green).
+
+**The fuzz artifacts were NOT preserved.** An earlier version of this document said they
+"survived and are archived here" and named `audit/tool-output/A6-fuzz-run3.log` and
+`audit/tool-output/A6-fuzz-crash-1-inv05.bin`. Neither file has ever existed in this
+repository, on any branch. The fuzz target ran from a scratch copy that was not kept, as
+commit `4bc0a78` states: "A6 ran 51,218 executions during the audit but the target lived in
+a scratch copy, so it could not be re-run." Every fuzzing figure below is therefore a
+report of a run that happened during the audit and **cannot be verified from this
+repository**. It is labelled as unverified wherever it appears rather than removed, because
+the run did happen and deleting it would misrepresent the record in the other direction.
+
+What IS re-runnable is the committed successor: `soroban/contracts/agent-spend-policy/fuzz/`
+(commit `4bc0a78`), 20,136 executions in 61 seconds with no panic reached.
 
 **Result: 0 Critical, 0 High, 0 Medium, 1 Low, 3 Informational.** No panic, no
 resource-exhaustion path, and no unreachable-withdraw state was found.
@@ -21,7 +33,7 @@ resource-exhaustion path, and no unreachable-withdraw state was found.
 | Does a refusal write anything? | **No**, the whole invocation rolls back | probe 2 |
 | Worst-case CPU | **485,587** of 400,000,000 = 0.121%, 824x headroom | probe 3 |
 | Worst-case memory | **158,346** of 41,943,040 = 0.378%, 265x headroom | probe 3 |
-| Fuzzing | 51,218 runs, no new defect | A6-fuzz-run3.log |
+| Fuzzing | 51,218 runs, no new defect | **unverified**: the run log was not preserved |
 | Are error codes pinned? | **Yes**, already | `test/errors.rs:34` |
 
 ---
@@ -124,10 +136,18 @@ reports a real regression instead of silently re-baselining on every SDK bump.
 
 ---
 
-## Fuzzing: 51,218 runs, no new defect
+## Fuzzing: 51,218 runs, no new defect (reported, not verifiable here)
 
-The surviving A6 run built a fuzz target over the entrypoints taking untrusted input and
-completed 51,218 executions. Two earlier runs crashed, both on the same assertion:
+**Evidence status.** This whole section rests on a run whose artifacts were not preserved.
+The log is not in the repository, the crash input is not in the repository, and the target
+that produced them lived in a scratch copy that is gone. The figure and the crash strings
+below are reproduced from the run as it was reported at the time; nothing in this repository
+can confirm them. Treat them as a record of what was done, not as evidence. The verifiable
+fuzzing result for this contract is the committed target in
+`soroban/contracts/agent-spend-policy/fuzz/`, 20,136 executions, no panic reached.
+
+The A6 run built a fuzz target over the entrypoints taking untrusted input and
+reported 51,218 executions. Two earlier runs crashed, both on the same assertion:
 
 ```
 INV-05 violated: spent 18446743094943547164 > cap 18446743094540894209
@@ -143,7 +163,10 @@ Once the assertion was corrected to the true invariant, the third run finished c
 `panic!` was reached. The Soroban fuzzing rule is that any `panic!` is a bug, so a clean
 run over this input space is a meaningful result and not merely an absence of one.
 
-The crash input is archived at `audit/tool-output/A6-fuzz-crash-1-inv05.bin`.
+The crash input was **not** archived. An earlier version of this document said it was, at
+`audit/tool-output/A6-fuzz-crash-1-inv05.bin`; that file does not exist and never did. The
+crash is not lost as a finding, only as an artifact: the same defect is A5-01 and A3-07,
+both of which carry committed tests, and INV-05 has been corrected in the threat model.
 
 **Status: no new finding.**
 
@@ -165,8 +188,14 @@ shows the question was asked and answered, not skipped.
 
 With `unwrap_used`, `expect_used`, `panic`, `indexing_slicing` and
 `arithmetic_side_effects` all enabled, production code produces exactly four hits, all
-`unwrap()` in `storage.rs` (lines 99, 107, 115, 123). Zero panics, zero indexing, zero
-unchecked arithmetic. Every other hit is in `src/test/`.
+`unwrap()` in `storage.rs`. Zero panics, zero indexing, zero unchecked arithmetic. Every
+other hit is in `src/test/`.
+
+The four were at `storage.rs:99,107,115,123` when A6 ran and are at
+`storage.rs:144,152,160,168` today, moved down by the `const _: () = assert!(...)` block
+that commit `0d9bd70` added above them. Re-verified 2026-08-25: the library alone still
+fails with exactly 4 errors under that lint set. None of these lints is enabled anywhere in
+the build, so this is a hand-run measurement, not a gate. See A8-04.
 
 A2 proved those four are unreachable by archival, since an archived instance entry is
 restored with its value rather than returning `None`. They are therefore not a latent
@@ -186,9 +215,12 @@ cannot be made to produce a large read either.
 
 ## Unconfirmed
 
-1. **Fuzz coverage depth.** 51,218 runs at roughly 11 executions per second is a shallow
-   campaign by fuzzing standards. It found nothing new, but absence over that budget is
-   weak evidence. A longer run with a committed seed corpus belongs in Phase 5.
+1. **Fuzz coverage depth, and the campaign is unverifiable from here.** 51,218 runs at
+   roughly 11 executions per second is a shallow campaign by fuzzing standards, and its
+   artifacts were not preserved, so the figure cannot be checked against anything in this
+   repository. It found nothing new, but absence over an unverifiable budget is weaker
+   evidence still. Phase 5 committed a re-runnable target (20,136 executions); a longer run
+   with a committed seed corpus is still outstanding.
 2. **CAP-0077 entry freezing.** Protocol 26 lets validators freeze ledger entries by
    settings upgrade, and pubnet currently lists 3 frozen keys. If this contract's entries
    were ever frozen, `withdraw` would be unreachable and no contract code could prevent

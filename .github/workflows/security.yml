@@ -1,0 +1,169 @@
+name: Security
+
+# The JavaScript/TypeScript dependency surface. Nothing else in this repository gates it.
+#
+# WHY THIS FILE EXISTS
+#
+# There are three workflows that touch security and until now they left a hole between
+# them:
+#
+#   soroban.yml  Rust only, and path-filtered to `soroban/**`. It runs fmt, clippy
+#                `-D warnings`, the contract tests, `cargo audit` (RustSec), the GHSA
+#                query that A8-01 added because RustSec carries no Stellar advisories,
+#                the `stellar contract build` size and drift gates, and the negative
+#                controls. All of it is about the contract. None of it runs on a commit
+#                that does not touch `soroban/`.
+#   ci.yml       Node, unfiltered, but it is a BUILD pipeline: gitleaks, lint, unit
+#                tests, the three e2e suites, and the frontend build. It never asks
+#                whether the dependencies it just installed have advisories against
+#                them.
+#   this file    `npm audit` over every committed lockfile, failing on HIGH or CRITICAL,
+#                on a schedule as well as on a push.
+#
+# So the split is by ECOSYSTEM, not by importance. Rust dependency advisories are gated
+# in soroban.yml, next to the Rust toolchain that is already installed there; JavaScript
+# ones are gated here, where no toolchain beyond node is needed. Neither file has to
+# carry the other's setup cost, and a frontend or `mcp/` commit is no longer outside
+# every advisory gate the project owns.
+#
+# WHY A SCHEDULE
+#
+# This is the half a push trigger cannot cover. `npm audit` compares a lockfile that
+# has not changed against an advisory database that changes daily, so the interesting
+# failure is the one that arrives with no commit at all. Dependabot opens a PR when a
+# fix EXISTS; this fails the default branch whether one exists or not, which is the
+# difference between "somebody should look" and "this is now known".
+#
+# WHY THE PUSH TRIGGER IS PATH-FILTERED
+#
+# The answer `npm audit` gives changes for exactly two reasons: a lockfile changed, or
+# the advisory database changed. The paths below cover the first and the cron covers the
+# second, so filtering costs no coverage and keeps this off every unrelated commit.
+# Dependabot's own branches are pushed to this repository, so its PRs hit this gate too.
+#
+# WHAT IS DELIBERATELY NOT GATED HERE
+#
+# The threshold is HIGH, not MODERATE, and that is a decision with a paper trail rather
+# than a default. `mcp/` carries 22 open advisories (15 moderate, 7 low), every one of
+# them arriving through `@circle-fin/*` -> `@coral-xyz/anchor` -> `@solana/web3.js`, two
+# of the leaves with no published fix at all. SECURITY.md says why they are accepted and
+# what bounds the exposure. Gating on moderate would fail this workflow on day one for
+# reasons already written down, and a gate that is red for a known reason is a gate
+# people learn to ignore.
+
+on:
+  workflow_dispatch:
+  schedule:
+    # Daily, 05:23 UTC. Off the hour on purpose: scheduled jobs queue heavily at :00.
+    - cron: '23 5 * * *'
+  push:
+    paths:
+      - 'package.json'
+      - 'package-lock.json'
+      - 'mcp/package.json'
+      - 'mcp/package-lock.json'
+      - 'sdk/package.json'
+      - 'sdk/package-lock.json'
+      - 'tools/discord/package.json'
+      - 'tools/discord/package-lock.json'
+      - 'trust-guard/package.json'
+      - 'trust-guard/package-lock.json'
+      - '.github/workflows/security.yml'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: security-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  npm-advisories:
+    name: npm advisories (HIGH or above fails)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      # Node 20, the same version ci.yml and soroban.yml use. The npm that ships with it
+      # is what resolves the lockfiles in this repository, so the audit reads the tree
+      # the project actually installs.
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      # No `npm install` anywhere in this job, deliberately. `npm audit` resolves from
+      # the committed lockfile and queries the registry directly, so the whole gate runs
+      # in seconds without a node_modules tree. That is also what makes it honest: it
+      # audits what is COMMITTED, not what a fresh install happened to hoist.
+      #
+      # `/` and `/mcp` are the two trees that ship. The other three carry committed
+      # lockfiles, are clean today, and are covered by neither `.github/dependabot.yml`
+      # (which lists npm for `/` and `/mcp` only) nor any other gate, so they are
+      # included here rather than left to nobody.
+      - name: npm audit, every committed lockfile
+        shell: bash
+        run: |
+          set -uo pipefail
+
+          audit_tree() {
+            local dir="$1" label="$2" attempt out status counts
+
+            for attempt in 1 2 3; do
+              out=$(npm audit --prefix "$dir" --audit-level=high --json 2>/dev/null) && status=0 || status=$?
+
+              # npm exits 1 both when it found a HIGH and when it could not reach the
+              # registry, so the exit code alone cannot tell a security result from an
+              # outage. A parseable report is what separates them: if the counts come
+              # back, npm answered the question, whatever it exited with.
+              counts=$(printf '%s' "$out" | node -e '
+                let s = "";
+                process.stdin.on("data", d => s += d).on("end", () => {
+                  try {
+                    const v = JSON.parse(s).metadata.vulnerabilities;
+                    process.stdout.write(`${v.critical} ${v.high} ${v.moderate} ${v.low}`);
+                  } catch (e) { process.exit(1); }
+                });') || counts=""
+
+              if [ -n "$counts" ]; then
+                set -- $counts
+                echo "$label: critical=$1 high=$2 moderate=$3 low=$4"
+
+                if [ "$1" -gt 0 ] || [ "$2" -gt 0 ]; then
+                  echo "::error::$label has $1 critical and $2 high advisories"
+                  printf '%s' "$out" | node -e '
+                    let s = "";
+                    process.stdin.on("data", d => s += d).on("end", () => {
+                      const a = JSON.parse(s).vulnerabilities || {};
+                      for (const name of Object.keys(a)) {
+                        const v = a[name];
+                        if (v.severity !== "high" && v.severity !== "critical") continue;
+                        const urls = (v.via || []).map(x => typeof x === "string" ? x : x.url).join(" ");
+                        console.log(`  ${v.severity.padEnd(8)} ${name}  ${urls}`);
+                      }
+                    });'
+                  return 1
+                fi
+
+                return 0
+              fi
+
+              echo "$label: npm audit returned no readable report (attempt $attempt of 3, exit $status)"
+              sleep $((attempt * 10))
+            done
+
+            # Three failed attempts is a tooling or registry problem, and it is reported
+            # as one. A gate that cannot run must not report the tree as clean.
+            echo "::error::$label: npm audit produced no readable report after 3 attempts. That is a tooling or registry failure, not a clean tree."
+            return 1
+          }
+
+          # Every tree is audited before the job fails, so one red tree does not hide
+          # another. rc is collected rather than short-circuited for that reason.
+          rc=0
+          audit_tree "."             "frontend (/)"         || rc=1
+          audit_tree "mcp"           "backend (/mcp)"       || rc=1
+          audit_tree "sdk"           "sdk (/sdk)"           || rc=1
+          audit_tree "tools/discord" "tools/discord"        || rc=1
+          audit_tree "trust-guard"   "trust-guard"          || rc=1
+          exit $rc
