@@ -28,7 +28,7 @@ jobs:
   contract:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       # rust-toolchain.toml pins the channel, the wasm32v1-none target and the
       # components, so there is nothing to restate here. A version named in two places is
