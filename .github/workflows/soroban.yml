@@ -79,8 +79,19 @@ jobs:
       # `stellar contract build`, which additionally passes --remap-path-prefix and shakes
       # the spec. The size gate below was therefore measuring a binary nobody ships, and
       # nothing anywhere asserted the hash of the one we do.
+      # The published binary, not `cargo install`. Building the CLI from source pulls
+      # libdbus-sys, whose build script panics on a runner without libdbus-1-dev, so this
+      # step failed for nine minutes and took the whole workflow with it. The release
+      # tarball is the same official artifact at the same pinned version, and it installs in
+      # seconds. Pinned deliberately: `stellar contract build` output is hashed two steps
+      # below, so the tool that produces it may not float.
       - name: Install the Stellar CLI
-        run: cargo install --locked stellar-cli --version 27.1.0
+        env:
+          STELLAR_CLI_VERSION: 27.1.0
+        run: |
+          curl -sSfL "https://github.com/stellar/stellar-cli/releases/download/v${STELLAR_CLI_VERSION}/stellar-cli-${STELLAR_CLI_VERSION}-x86_64-unknown-linux-gnu.tar.gz" \
+            | sudo tar -xz -C /usr/local/bin stellar
+          stellar --version
 
       - name: Build the wasm the way it is deployed
         run: stellar contract build
