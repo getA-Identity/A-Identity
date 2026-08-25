@@ -23,7 +23,7 @@
   "dependencies": {
     "@celo/attribution-tags": "0.3.0",
     "@circle-fin/adapter-viem-v2": "^1.13.0",
-    "@circle-fin/app-kit": "^1.11.0",
+    "@circle-fin/app-kit": "^1.12.1",
     "@circle-fin/bridge-kit": "^1.12.0",
     "@circle-fin/developer-controlled-wallets": "^9.2.0",
     "@circle-fin/x402-batching": "^3.2.0",
