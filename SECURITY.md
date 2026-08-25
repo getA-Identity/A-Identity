@@ -107,7 +107,7 @@ should be treated as exposed regardless of where it sits in this list.
 ## Known limitations
 
 Stated as they are, not as they were. Each one is a thing to fix or accept knowingly, and
-the first two are tracked as open audit findings rather than settled decisions.
+the first one is tracked as an open audit finding rather than a settled decision.
 
 - **Durable state, with one exception.** The platform blob, the x402 spent-payment set, and
   the Celo and Stellar settlement logs are all in Postgres
