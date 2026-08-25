@@ -36,7 +36,7 @@
     "@zerodev/sdk": "^5.5.10",
     "express": "^5.2.1",
     "pg": "^8.22.0",
-    "viem": "^2.52.2",
+    "viem": "^2.55.19",
     "zod": "^3.25.76"
   },
   "optionalDependencies": {
