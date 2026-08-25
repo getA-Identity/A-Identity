@@ -11,6 +11,7 @@
 mod amounts;
 mod auth;
 mod behaviour;
+mod durability;
 mod errors;
 mod storage_shape;
 mod time;

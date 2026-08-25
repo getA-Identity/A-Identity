@@ -62,6 +62,51 @@ pub const DAY_BUCKET_TTL_EXTEND: u32 = 2 * LEDGERS_PER_DAY;
 pub const LONG_TTL_THRESHOLD: u32 = 60 * LEDGERS_PER_DAY;
 pub const LONG_TTL_EXTEND: u32 = 150 * LEDGERS_PER_DAY;
 
+// ── the requirements above, as things the compiler checks ─────────────────────────────
+//
+// Findings A2-01 and A2-02. `cargo mutants` showed that halving DAY_BUCKET_TTL_EXTEND, and
+// separately setting LONG_TTL_THRESHOLD to 0 to disable every instance bump, each left all
+// 52 tests green. The reason is worth naming, because it is a trap any TTL suite can fall
+// into: every assertion was written in terms of the constant under test, so the tests moved
+// with the sabotage instead of catching it.
+//
+// The tests are fixed too, in test/durability.rs, which asserts absolute ledger counts
+// against both networks' measured settings. These const assertions are the cheaper half:
+// they fail the BUILD rather than a test run, and they cannot be satisfied by an edit that
+// changes what the assertion is measured against.
+
+/// The day bucket must outlive the remainder of its own UTC day.
+///
+/// At DAY_BUCKET_TTL_EXTEND ledgers that holds while the mean close time stays above
+/// 86400 / DAY_BUCKET_TTL_EXTEND seconds. At 34,560 that is 2.5 s. The network's own
+/// minimum of 17,280 would break even at exactly 5.0000 s, which is also the network's
+/// target close time, so relying on it would leave no margin at all. Pubnet measured
+/// 5.625 s on 2026-08-24.
+const _: () = assert!(
+    DAY_BUCKET_TTL_EXTEND >= 2 * 17_280,
+    "the day bucket must be extended to at least two pubnet days, or a slow ledger can \
+     expire it inside its own UTC day and silently reset the spend cap"
+);
+
+/// A threshold above the value it is compared against is a bump that never fires.
+const _: () = assert!(
+    DAY_BUCKET_TTL_THRESHOLD <= DAY_BUCKET_TTL_EXTEND,
+    "the day bucket threshold must not exceed what the bump extends to"
+);
+
+/// A zero threshold disables the bump entirely, which is exactly the mutant that survived.
+const _: () = assert!(
+    LONG_TTL_THRESHOLD > 0 && LONG_TTL_EXTEND > LONG_TTL_THRESHOLD,
+    "the instance bump must actually fire, and must extend past the threshold that triggers it"
+);
+
+/// Both floors must stay under pubnet's max_entry_ttl of 3,110,400, because extending a
+/// TEMPORARY entry past that traps rather than clamping. Measured on both networks.
+const _: () = assert!(
+    DAY_BUCKET_TTL_EXTEND < 3_110_400 && LONG_TTL_EXTEND < 3_110_400,
+    "an extension past max_entry_ttl traps for temporary entries"
+);
+
 #[contracttype]
 #[derive(Clone)]
 pub enum DataKey {

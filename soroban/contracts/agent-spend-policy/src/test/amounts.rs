@@ -27,8 +27,10 @@ fn pay_with_a_negative_amount_returns_invalid_amount() {
         Error::InvalidAmount,
     );
 
-    // The point of the guard, stated as an assertion: without it the line above would
-    // have driven the day total down to 4 and handed the agent its cap back.
+    // A refused amount must not credit the day. The guard is not what makes that true:
+    // without `check_amount` the SAC's own sign check panics and Soroban rolls the
+    // accumulator write back with it, so the total would still read 9. What the guard
+    // buys is a typed `InvalidAmount` instead of an untyped trap out of the token.
     assert_eq!(
         s.client().spent_today(),
         9 * UNIT,

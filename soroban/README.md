@@ -40,9 +40,18 @@ says the tests would notice if the contract stopped being safe.
 
 ## Two bug classes with no Solidity counterpart
 
-- **Negative amounts.** `uint256` made them unrepresentable; `i128` does not. An unguarded
-  negative amount is not merely a bad transfer, it is *added* to the day accumulator,
-  taking the running total down and handing the agent its cap back. A silent cap bypass.
+- **Negative amounts.** `uint256` made them unrepresentable; `i128` does not. An earlier
+  version of this note said an unguarded negative amount would be *added* to the day
+  accumulator, taking the running total down and handing the agent its cap back, a silent
+  cap bypass. That was wrong, and an adversarial review caught it: the SAC validates the
+  sign itself in `check_nonnegative_amount`, the panic aborts the invocation, and Soroban
+  rolls back every state change including the accumulator write. There was never a
+  persistent bypass. The guard still earns its place, for two reasons that hold. Without
+  it the refusal arrives as an untyped host trap out of the token and the client cannot
+  name it, where `InvalidAmount` is a reason the human-in-the-loop path can act on. And it
+  does not rest on the token validating its own inputs, which is not a property a vault's
+  safety should depend on. The class is genuinely new against Solidity; only the mechanism
+  was misdescribed. See `src/policy.rs`.
 - **Self-payment.** Paying the vault or the token contract moves nothing while still
   consuming the day's budget, so a compromised operator could burn the whole cap at zero
   cost every day and deny the legitimate agent indefinitely.
