@@ -1,0 +1,35 @@
+# cargo +nightly fuzz run policy_ladder --sanitizer=thread --build-std -- -runs=20136
+# run 2026-08-25T20:08:33Z on Darwin/arm64, cargo-fuzz 0.13.2
+# A re-run of the COMMITTED target, to check the claim that it is re-runnable.
+
+#15967	NEW    cov: 5319 ft: 8303 corp: 113/13602b lim: 142 exec/s: 120 rss: 97Mb L: 126/142 MS: 2 EraseBytes-InsertRepeatedBytes-
+#16098	NEW    cov: 5319 ft: 8306 corp: 114/13732b lim: 142 exec/s: 121 rss: 97Mb L: 130/142 MS: 1 ChangeBinInt-
+#16127	NEW    cov: 5319 ft: 8310 corp: 115/13854b lim: 142 exec/s: 121 rss: 97Mb L: 122/142 MS: 4 ShuffleBytes-ChangeBit-ChangeByte-PersAutoDict- DE: "\006\000"-
+#16348	REDUCE cov: 5319 ft: 8310 corp: 115/13853b lim: 142 exec/s: 121 rss: 97Mb L: 130/142 MS: 1 EraseBytes-
+#16384	pulse  cov: 5319 ft: 8310 corp: 115/13853b lim: 142 exec/s: 120 rss: 97Mb
+#16511	REDUCE cov: 5319 ft: 8310 corp: 115/13852b lim: 142 exec/s: 120 rss: 97Mb L: 126/142 MS: 3 ChangeByte-InsertByte-CrossOver-
+#16802	NEW    cov: 5319 ft: 8315 corp: 116/13979b lim: 142 exec/s: 120 rss: 97Mb L: 127/142 MS: 1 CopyPart-
+#17303	NEW    cov: 5319 ft: 8318 corp: 117/14114b lim: 142 exec/s: 121 rss: 97Mb L: 135/142 MS: 1 CopyPart-
+#17396	NEW    cov: 5319 ft: 8322 corp: 118/14232b lim: 142 exec/s: 120 rss: 97Mb L: 118/142 MS: 3 ChangeBit-ShuffleBytes-EraseBytes-
+#17764	REDUCE cov: 5319 ft: 8322 corp: 118/14230b lim: 142 exec/s: 120 rss: 97Mb L: 113/142 MS: 3 EraseBytes-PersAutoDict-InsertByte- DE: "\006\000"-
+#17911	REDUCE cov: 5319 ft: 8322 corp: 118/14228b lim: 142 exec/s: 120 rss: 97Mb L: 130/142 MS: 2 ChangeASCIIInt-EraseBytes-
+#18070	REDUCE cov: 5319 ft: 8323 corp: 119/14368b lim: 142 exec/s: 120 rss: 97Mb L: 140/142 MS: 4 ChangeBinInt-EraseBytes-EraseBytes-CopyPart-
+#18141	NEW    cov: 5319 ft: 8324 corp: 120/14486b lim: 142 exec/s: 120 rss: 97Mb L: 118/142 MS: 1 CrossOver-
+#18187	NEW    cov: 5319 ft: 8327 corp: 121/14608b lim: 142 exec/s: 120 rss: 97Mb L: 122/142 MS: 1 CopyPart-
+#18327	NEW    cov: 5319 ft: 8331 corp: 122/14734b lim: 142 exec/s: 120 rss: 97Mb L: 126/142 MS: 5 ChangeASCIIInt-InsertByte-EraseBytes-ChangeASCIIInt-PersAutoDict- DE: "\027\000\000\000\000\000\000\000"-
+#18670	NEW    cov: 5320 ft: 8332 corp: 123/14857b lim: 142 exec/s: 120 rss: 97Mb L: 123/142 MS: 3 ShuffleBytes-ShuffleBytes-CopyPart-
+#18855	REDUCE cov: 5320 ft: 8332 corp: 123/14846b lim: 142 exec/s: 120 rss: 97Mb L: 113/142 MS: 5 ChangeASCIIInt-InsertRepeatedBytes-ChangeBinInt-ChangeASCIIInt-EraseBytes-
+#19328	REDUCE cov: 5320 ft: 8332 corp: 123/14834b lim: 142 exec/s: 120 rss: 97Mb L: 119/142 MS: 3 CrossOver-InsertRepeatedBytes-InsertByte-
+#19334	NEW    cov: 5320 ft: 8334 corp: 124/14957b lim: 142 exec/s: 120 rss: 97Mb L: 123/142 MS: 1 CopyPart-
+#20136	DONE   cov: 5320 ft: 8334 corp: 124/14957b lim: 149 exec/s: 119 rss: 97Mb
+###### Recommended dictionary. ######
+"\352\001\000\000" # Uses: 403
+"\011\000\000\000\000\000\000\000" # Uses: 355
+"\027\000\000\000\000\000\000\000" # Uses: 328
+"\022\000\000\000\000\000\000\000" # Uses: 208
+"\000\360" # Uses: 175
+"\376\377\377\377\377\377\377\177" # Uses: 61
+"\006\000" # Uses: 65
+###### End of recommended dictionary. ######
+Done 20136 runs in 168 second(s)
+FUZZ_EXIT=0

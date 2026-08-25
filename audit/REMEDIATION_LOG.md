@@ -189,3 +189,6 @@ D-1 (A7-02, A1-01) and D-5 (A4-02) are decided and their findings are dispositio
 | A6 claimed its fuzz artifacts were archived in `tool-output/`; they were never in the repository, and the 51,218-run figure is unverifiable from here | this commit, in `findings/A6-panics-dos.md` and `AUDIT_REPORT.md` |
 | The gate table said clippy was clean "with `unwrap_used`, `panic`, `indexing_slicing`, `arithmetic_side_effects`". That lint set is enabled nowhere and does not pass | this commit, in `AUDIT_REPORT.md` |
 | Coverage of 99.70% was asserted in `AUDIT_REPORT.md` and `soroban/README.md` and archived in neither. Re-measured and archived; the numbers were right | `audit/tool-output/P5-llvm-cov.txt` |
+| "137 mutants, 0 survivors" had the same shape: `mutants.out/` is gitignored, so the newest ARCHIVED run said "10 missed" and contradicted the headline. Re-run and archived; the headline was right | `audit/tool-output/P5-cargo-mutants.txt` |
+| "re-runnable from the committed target" was asserted about the fuzz target and never demonstrated. Re-run and archived; it is true | `audit/tool-output/P5-fuzz-rerun.txt` |
+| The fuzz README carried a THIRD copy of the "crash input is archived" claim, missed when the other two were corrected | this commit, in `soroban/contracts/agent-spend-policy/fuzz/README.md` |

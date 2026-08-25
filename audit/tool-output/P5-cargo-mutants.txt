@@ -1,0 +1,8 @@
+# cargo mutants
+# run 2026-08-25T20:00:26Z on Darwin/arm64, rustc 1.96.0, cargo-mutants 27.1.0
+
+Found 137 mutants to test
+ok       Unmutated baseline in 27s build + 2s test
+ INFO Auto-set test timeout to 20s
+137 mutants tested in 7m: 126 caught, 11 unviable
+MUTANTS_DONE exit=0

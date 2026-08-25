@@ -76,10 +76,10 @@ rotation, so a compromised owner key is total and irreversible loss.
 | Gate | Result |
 | --- | --- |
 | Contract tests | **106**, 2 ignored (both encode known-open findings) |
-| Mutation score | **137 mutants, 0 survivors**, 126 caught, 11 unviable |
+| Mutation score | **137 mutants, 0 survivors**, 126 caught, 11 unviable. Re-measured 2026-08-25 and archived at `audit/tool-output/P5-cargo-mutants.txt`; `mutants.out/` is gitignored, so until now the newest ARCHIVED run said "10 missed" and contradicted this row |
 | Line coverage | **99.70%** lines, **98.18%** functions, **99.82%** regions. The one uncovered line is `storage.rs:110`, the `#[contracttype]` macro on `DataKey`. Re-measured 2026-08-25 and archived at `audit/tool-output/P5-llvm-cov.txt`; it had been asserted in two places and archived in none |
 | Function coverage | **98.18%** |
-| Fuzzing | **20,136** executions, no panic reached, re-runnable from the committed target. A further **51,218 is reported but unverified**: that run's target lived in a scratch copy and its artifacts were not preserved, so nothing in this repository can confirm it (see `findings/A6-panics-dos.md`) |
+| Fuzzing | **20,136** executions, no panic reached, and re-runnable is verified rather than asserted: re-run 2026-08-25 from the committed target, 20,136 executions, exit 0, archived at `audit/tool-output/P5-fuzz-rerun.txt`. A further **51,218 is reported but unverified**: that run's target lived in a scratch copy and its artifacts were not preserved, so nothing in this repository can confirm it (see `findings/A6-panics-dos.md`) |
 | Negative controls | **6/6** guards deleted, suite goes red each time |
 | `cargo audit` | 0 vulnerabilities over 215 crates |
 | `cargo deny` | advisories, bans, licenses, sources all ok |

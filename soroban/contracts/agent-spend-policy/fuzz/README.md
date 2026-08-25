@@ -35,6 +35,13 @@ than the ones that ought to.
 
 2026-08-25, this committed target: **20,136 executions in 61 s, no panic reached.**
 
+2026-08-25, re-run of that same committed target to check that "re-runnable" is true
+rather than asserted: **20,136 executions, no panic reached, exit 0**, archived at
+`audit/tool-output/P5-fuzz-rerun.txt`. It took 168 s rather than 61 s on the same machine.
+The run COUNT is fixed by `-runs=`, so it is the wall clock that varies and neither number
+is a property of the contract; the point of the re-run is that the target still builds and
+still finds nothing, not that it finds it at a particular speed.
+
 Two earlier runs crashed, both on the same assertion, and the story is worth keeping. The
 target asserted the invariant as it was written in the threat model at the time: that the
 sum of `pay` and `owner_pay` in a UTC day stays under `daily_cap`. It does not.
@@ -46,8 +53,14 @@ INV-05 violated: spent 18446743094943547164 > cap 18446743094540894209
 
 That is finding A3-07 / A5-01, reached independently by three methods: reading the ladder,
 differential comparison against the Solidity original, and random input. The invariant text
-was the defect, not the contract. The crash input is archived at
-`audit/tool-output/A6-fuzz-crash-1-inv05.bin`.
+was the defect, not the contract.
+
+The crash input was NOT preserved. This file used to say it was archived at
+`audit/tool-output/A6-fuzz-crash-1-inv05.bin`; that file has never existed on any branch,
+and the same claim was corrected in `findings/A6-panics-dos.md` and `AUDIT_REPORT.md`
+without this third copy being noticed. The finding does not depend on it: A3-07 and A5-01
+were each reached by reading the ladder and by differential comparison, and both carry
+committed tests.
 
 The corpus is not committed. 51k executions at about 11 per second is a shallow campaign by
 fuzzing standards, and it found nothing new; a longer run with a committed seed corpus is
