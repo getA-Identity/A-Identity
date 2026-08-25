@@ -105,9 +105,24 @@ export function sanitizeTradePolicy(partial: unknown): Partial<TradePolicy> {
   return out
 }
 
+/**
+ * A sanitized patch, with the `trade` and `spend` blocks left PARTIAL on purpose.
+ *
+ * A patch says what the owner just changed, not what the whole policy is. Completing a
+ * block here from the defaults would make every partial edit a full overwrite of the
+ * stored block, so a second edit that only flips `allowOptions` would drop the symbol
+ * allowlist and the trading window set by the first one. That failure runs the wrong way:
+ * an empty `allowSymbols` means NO restriction, so the allowlist would silently open.
+ * Both consumers below merge this over a complete policy, which is where defaults belong.
+ */
+export type SanitizedPolicyPatch = Partial<Omit<ActionPolicy, 'policyId' | 'version' | 'updatedAt' | 'trade' | 'spend'>> & {
+  trade?: Partial<TradePolicy>
+  spend?: Partial<SpendPolicy>
+}
+
 /** Sanitize a client-supplied policy patch. Version and timestamp are server-owned. */
-export function sanitizeActionPolicy(partial: unknown): Partial<Omit<ActionPolicy, 'policyId' | 'version' | 'updatedAt'>> {
-  const out: Partial<Omit<ActionPolicy, 'policyId' | 'version' | 'updatedAt'>> = {}
+export function sanitizeActionPolicy(partial: unknown): SanitizedPolicyPatch {
+  const out: SanitizedPolicyPatch = {}
   if (typeof partial !== 'object' || partial === null) return out
   const p = partial as Record<string, unknown>
 
@@ -119,13 +134,15 @@ export function sanitizeActionPolicy(partial: unknown): Partial<Omit<ActionPolic
   if (approval !== undefined) out.humanApprovalAboveUsd = approval
   if (p.frozen !== undefined) out.frozen = Boolean(p.frozen)
 
+  // Only the fields the patch actually named survive. The block is NOT completed from the
+  // defaults: see SanitizedPolicyPatch above.
   if (p.trade !== undefined) {
     const trade = sanitizeTradePolicy(p.trade)
-    if (Object.keys(trade).length) out.trade = { ...DEFAULT_TRADE_POLICY, ...trade }
+    if (Object.keys(trade).length) out.trade = trade
   }
   if (p.spend !== undefined) {
     const spend = sanitizeSpendPolicy(p.spend)
-    if (Object.keys(spend).length) out.spend = { ...DEFAULT_SPEND_POLICY, ...spend }
+    if (Object.keys(spend).length) out.spend = spend
   }
   return out
 }
@@ -214,6 +231,10 @@ export function resolveActionPolicy(
 /**
  * Merge a sanitized patch onto an existing policy, bumping the version. Kept here so the
  * version can never be bumped without going through the sanitizer.
+ *
+ * The trade and spend blocks merge FIELD BY FIELD onto what the owner already had, so an
+ * edit that touches one switch leaves the rest of an earlier edit standing. That only
+ * holds because the sanitizer hands back a partial block; see SanitizedPolicyPatch.
  */
 export function applyPolicyPatch(current: ActionPolicy, patch: unknown, updatedAt: string): ActionPolicy {
   const clean = sanitizeActionPolicy(patch)

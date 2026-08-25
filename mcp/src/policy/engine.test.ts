@@ -519,3 +519,80 @@ test('the default policy is safe before the user configures anything', () => {
   assert.ok(p.perActionCapUsd <= 100)
   assert.equal(p.frozen, false)
 })
+
+// ── a partial patch is a PATCH, not a replacement (F-02) ─────────────────────────
+
+test('a second partial trade patch keeps the fields the first one set', () => {
+  // The regression: completing the block from the defaults inside the sanitizer made every
+  // edit a full overwrite, so flipping one switch dropped the allowlist and the window the
+  // owner had already set. An empty allowSymbols means NO restriction, so that failure
+  // OPENED the allowlist rather than closing it.
+  const { policy: p } = resolveActionPolicy(undefined, 'pol_patch', NOW)
+  const first = applyPolicyPatch(
+    p,
+    { trade: { allowSymbols: ['aapl'], tradingHoursUtc: { start: '13:30', end: '20:00' }, maxConcentrationPct: 25 } },
+    '2026-07-30T00:00:00Z',
+  )
+  const second = applyPolicyPatch(first, { trade: { allowOptions: true } }, '2026-07-31T00:00:00Z')
+
+  assert.deepEqual(second.trade.allowSymbols, ['AAPL'], 'the allowlist survives an unrelated edit')
+  assert.deepEqual(second.trade.tradingHoursUtc, { start: '13:30', end: '20:00' })
+  assert.equal(second.trade.maxConcentrationPct, 25)
+  assert.equal(second.trade.allowOptions, true, 'and the field the patch named is applied')
+  assert.equal(second.version, 3)
+})
+
+test('a preserved allowlist still DENYs a symbol the owner never allowed', () => {
+  // The field surviving is only worth testing because the engine acts on it.
+  const { policy: p } = resolveActionPolicy(undefined, 'pol_patch_enf', NOW)
+  const first = applyPolicyPatch(p, { trade: { allowSymbols: ['AAPL'] } }, '2026-07-30T00:00:00Z')
+  const second = applyPolicyPatch(first, { trade: { allowOptions: true } }, '2026-07-31T00:00:00Z')
+  const d = evaluateAction({
+    surface: 'trade',
+    policy: second,
+    intent: buy({ symbol: 'TSLA', notionalUsd: 10 }),
+    snapshot: snap(),
+    now: AT,
+  })
+  assert.equal(d.verdict, 'DENY')
+  assert.ok(d.codes.includes('SYMBOL_NOT_ALLOWED'))
+})
+
+test('a second partial spend patch keeps the fields the first one set', () => {
+  const { policy: p } = resolveActionPolicy(undefined, 'pol_spend_patch', NOW)
+  const first = applyPolicyPatch(
+    p,
+    { spend: { merchantAllow: ['Whole Foods'], cardCaps: { card_1: 250 }, categoryLimits: { groceries: 400 } } },
+    '2026-07-30T00:00:00Z',
+  )
+  const second = applyPolicyPatch(first, { spend: { merchantDeny: ['casino'] } }, '2026-07-31T00:00:00Z')
+
+  assert.deepEqual(second.spend?.merchantAllow, ['Whole Foods'], 'the merchant allowlist survives')
+  assert.deepEqual(second.spend?.cardCaps, { card_1: 250 })
+  assert.deepEqual(second.spend?.categoryLimits, { groceries: 400 })
+  assert.deepEqual(second.spend?.merchantDeny, ['casino'])
+})
+
+test('a partial patch leaves the block it does not name alone', () => {
+  const { policy: p } = resolveActionPolicy(undefined, 'pol_untouched', NOW)
+  const first = applyPolicyPatch(p, { trade: { allowSymbols: ['MSFT'] } }, '2026-07-30T00:00:00Z')
+  const second = applyPolicyPatch(first, { dailyCapUsd: 300 }, '2026-07-31T00:00:00Z')
+  assert.deepEqual(second.trade.allowSymbols, ['MSFT'])
+  assert.equal(second.dailyCapUsd, 300)
+})
+
+test('margin stays off across a partial patch that tries to turn it on', () => {
+  // The forced literal has to survive the field-level merge too, not just a full overwrite.
+  const { policy: p } = resolveActionPolicy(undefined, 'pol_margin', NOW)
+  const first = applyPolicyPatch(p, { trade: { allowSymbols: ['AAPL'] } }, '2026-07-30T00:00:00Z')
+  const second = applyPolicyPatch(first, { trade: { allowMargin: true } }, '2026-07-31T00:00:00Z')
+  assert.equal(second.trade.allowMargin, false)
+  assert.deepEqual(second.trade.allowSymbols, ['AAPL'], 'and the earlier edit is still there')
+})
+
+test('the sanitizer returns a partial block, so clamping and junk-dropping still apply', () => {
+  // Partial must not mean unchecked: the caps still clamp and unknown keys still vanish.
+  const clean = sanitizeActionPolicy({ trade: { allowOptions: true, maxConcentrationPct: 5000, bogus: 1 } })
+  assert.deepEqual(clean.trade, { allowOptions: true, maxConcentrationPct: 100 })
+  assert.equal(clean.spend, undefined, 'a block the patch never named is absent, not defaulted')
+})
