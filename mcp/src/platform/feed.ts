@@ -85,11 +85,81 @@ function feedGuardrails(agent: PlatformAgent): {
 const FEEDBACK_PER_AGENT = 200
 
 /** Average + count for a listing row; entries stay behind the detail endpoint. */
-export function feedbackSummary(agentId: string): { avg: number | null; count: number } {
+/**
+ * Did this rater and this agent actually transact? A task between them that reached a
+ * terminal state is the evidence, and it is the whole of it: an open or funded job is a
+ * job in progress, not a completed dealing anyone can rate.
+ *
+ * `refunded` and `disputed` count as well as `released`. A client who was refunded has
+ * every right to say so, and a scheme that only lets satisfied buyers speak is a scheme
+ * that reports satisfaction.
+ */
+function hasTransacted(agentId: string, rater: string): boolean {
+  return state.tasks.some(
+    (t) => t.agentId === agentId && t.client === rater && TERMINAL_FOR_RATING.has(t.status),
+  )
+}
+const TERMINAL_FOR_RATING = new Set(['released', 'refunded', 'disputed'])
+
+/**
+ * A rater's own average, over every agent they have rated.
+ *
+ * The other half of REC 3b. Two ratings are only comparable if they are on the same
+ * scale, and a raw 1..10 is not: a rater who gives 9 to everyone and one who reserves 9
+ * are saying different things with the same number, and averaging them mixes the two.
+ *
+ * Correction only applies once a rater has rated MIN_RATINGS_FOR_BIAS different agents.
+ * Below that their "average" is one or two data points, and adjusting against it would
+ * manufacture precision out of noise. Under the threshold the raw score is used and the
+ * output says so.
+ */
+const MIN_RATINGS_FOR_BIAS = 3
+const SCALE_MID = 5.5 // the midpoint of a whole 1..10 scale
+
+function raterMean(rater: string): { mean: number; rated: number } {
+  let total = 0
+  let rated = 0
+  for (const rows of Object.values(state.feedback)) {
+    for (const r of rows) {
+      if (r.rater !== rater) continue
+      total += r.score
+      rated += 1
+    }
+  }
+  return { mean: rated ? total / rated : SCALE_MID, rated }
+}
+
+/** One rating, put on the shared scale. Clamped back into 1..10 so a corrected score is
+ *  still a score on the scale it is published as. */
+function commensurate(entry: FeedbackEntry): number {
+  const { mean, rated } = raterMean(entry.rater)
+  if (rated < MIN_RATINGS_FOR_BIAS) return entry.score
+  return Math.min(10, Math.max(1, entry.score - mean + SCALE_MID))
+}
+
+/**
+ * The scored view of an agent's ratings.
+ *
+ * `avg` is grounded ratings only, put on the shared scale. `count` counts the same set,
+ * so a caller cannot read a big count next to an average computed from a smaller one.
+ * The ungrounded rows are still returned by `agentFeedback` for a human to read; they
+ * simply do not move a number that ranks anybody.
+ */
+export function feedbackSummary(agentId: string): {
+  avg: number | null
+  count: number
+  ungroundedCount: number
+  basis: string
+} {
   const rows = state.feedback[agentId] ?? []
-  if (rows.length === 0) return { avg: null, count: 0 }
-  const avg = rows.reduce((t, r) => t + r.score, 0) / rows.length
-  return { avg: Math.round(avg * 10) / 10, count: rows.length }
+  const grounded = rows.filter((r) => r.grounded === true)
+  const ungroundedCount = rows.length - grounded.length
+  const basis =
+    'grounded ratings only (the rater had a terminal task with this agent), each corrected ' +
+    `for that rater's own mean once they have rated ${MIN_RATINGS_FOR_BIAS} or more agents`
+  if (grounded.length === 0) return { avg: null, count: 0, ungroundedCount, basis }
+  const avg = grounded.reduce((t, r) => t + commensurate(r), 0) / grounded.length
+  return { avg: Math.round(avg * 10) / 10, count: grounded.length, ungroundedCount, basis }
 }
 
 /**
@@ -145,11 +215,17 @@ export function addAgentFeedback(agentId: string, rater: string, score: number, 
     score: s,
     comment: typeof comment === 'string' ? comment.slice(0, 1000) : '',
     at: new Date().toISOString(),
+    grounded: hasTransacted(agentId, rater),
   }
   const rows = (state.feedback[agentId] ?? []).filter((r) => r.rater !== rater)
   rows.push(entry)
   state.feedback[agentId] = rows.slice(-FEEDBACK_PER_AGENT)
-  a.activity.push({ at: entry.at, text: `Rated ${s}/10 by a verified user` })
+  a.activity.push({
+    at: entry.at,
+    text: entry.grounded
+      ? `Rated ${s}/10 by a client it worked for`
+      : `Rated ${s}/10 by a verified user who has not hired it (not scored)`,
+  })
   void save(state)
   return { ok: true as const, entry, summary: feedbackSummary(agentId) }
 }

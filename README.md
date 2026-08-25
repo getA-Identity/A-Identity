@@ -1,7 +1,7 @@
 # A-Identity
 
 [![CI](https://github.com/getA-Identity/A-Identity/actions/workflows/ci.yml/badge.svg)](https://github.com/getA-Identity/A-Identity/actions/workflows/ci.yml)
-[![Tests](https://img.shields.io/badge/tests-853%20unit%20%2B%20E2E-brightgreen)](mcp/README.md#develop)
+[![Tests](https://img.shields.io/badge/tests-860%20unit%20%2B%20E2E-brightgreen)](mcp/README.md#develop)
 [![npm: marketplace-sdk](https://img.shields.io/npm/v/%40a-identity%2Fmarketplace-sdk?label=marketplace-sdk)](https://www.npmjs.com/package/@a-identity/marketplace-sdk)
 [![npm: trust-guard](https://img.shields.io/npm/v/%40a-identity%2Ftrust-guard?label=trust-guard)](https://www.npmjs.com/package/@a-identity/trust-guard)
 [![Ask DeepWiki](https://deepwiki.com/badge.svg)](https://deepwiki.com/getA-Identity/A-Identity)
@@ -208,7 +208,7 @@ listed at `GET /proof`. Four representative ones, each independently verifiable 
 
 **Backed by real data, not an LLM guess:** a live ERC-8004 showcase agent, Meridian
 `#849980`, reputation **~542/1000**, KYA-verified. Scoring is **deterministic and
-unit-tested** (853 unit tests as of Aug 2026), reads on-chain live via viem, and is fully documented at
+unit-tested** (860 unit tests as of Aug 2026), reads on-chain live via viem, and is fully documented at
 `GET /methodology`. This is our answer to "surface your rigor": every number is
 reproducible and every settlement is on-chain.
 

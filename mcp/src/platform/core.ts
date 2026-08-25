@@ -256,6 +256,22 @@ export type FeedbackEntry = {
   score: number
   comment: string
   at: string
+  /**
+   * Whether this rater had actually transacted with this agent when the rating was
+   * written: a task between the two that had reached a terminal state.
+   *
+   * The weakness ERC-8004's ReputationRegistry is criticised for is feedback that is
+   * UNGROUNDED, meaning anybody may write it about anybody without having bought
+   * anything. Ours had the same hole. Stamped at write time rather than derived later,
+   * because "was there a settled job between these two on the day the rating was given"
+   * stops being answerable once tasks age out or are trimmed.
+   *
+   * Absent on rows written before this field existed. Absent is NOT false: those rows
+   * were written when nothing recorded the answer, and treating unknown as ungrounded
+   * would retroactively accuse them. `groundedOnly` filters on `=== true`, so they are
+   * excluded from the scored set either way, but the record does not claim to know.
+   */
+  grounded?: boolean
 }
 
 // ── persistence ───────────────────────────────────────────────────────────────

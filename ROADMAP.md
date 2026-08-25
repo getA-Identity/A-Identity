@@ -49,7 +49,7 @@ roadmap stays honest about velocity. Updated 2026-08-24.
 - merchant_check: commerce-grade counterparty verification for agentic checkouts
   (MCP tool + REST).
 - Structural hardening: the backend split into a layered platform/ + http/ module
-  system with the layer graph enforced by tests; 853 unit tests + full E2E suite.
+  system with the layer graph enforced by tests; 860 unit tests + full E2E suite.
 
 ## Now
 
@@ -72,7 +72,9 @@ roadmap stays honest about velocity. Updated 2026-08-24.
   batched settlement) bundled into one deliberate listing update.
 - **Spend-preflight in the console UI** (the API is live; the Permissions screen gets
   a "would this pass?" panel).
-- **Base**: the one beta EVM chain still carrying no ERC-8004 registry. X Layer, Celo and
+- **Base**: the one beta EVM chain we have not wired. The canonical ERC-8004 identity and
+  reputation registries ARE live there, deployed by their authors; what is missing is ours,
+  which is an agent on them and a rail pointed at them. X Layer, Celo and
   both Robinhood networks already prove the adapter, so what Base needs is a deployment
   and a reason, not a first proof.
 

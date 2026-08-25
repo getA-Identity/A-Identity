@@ -6,6 +6,7 @@ import {
   registerAgentFromManifest,
   listPlatformAgents,
   addAgentFeedback,
+  feedbackSummary,
   marketplace,
   platformStats,
   type Instruction,
@@ -47,11 +48,11 @@ function seedAgent(over: {
 }
 
 let taskSeq = 0
-function mkTask(agentId: string, status: TaskStatus, priceUsd: number, settlement?: 'onchain' | 'simulated'): Task {
+function mkTask(agentId: string, status: TaskStatus, priceUsd: number, settlement?: 'onchain' | 'simulated', client = 'client@test'): Task {
   taskSeq += 1
   return {
     id: `task_test_${taskSeq}`,
-    client: 'client@test',
+    client,
     agentId,
     service: 'Seeded service',
     priceUsd,
@@ -303,4 +304,87 @@ test('platformStats byCategory sorts by count desc and caps at 10', () => {
   for (let i = 1; i < byCategory.length; i++) {
     assert.ok(byCategory[i - 1].count >= byCategory[i].count, 'counts must be non-increasing')
   }
+})
+
+// ── REC 3b: feedback that is grounded in a transaction, on a shared scale ─────────────
+//
+// The weakness ERC-8004's ReputationRegistry is criticised for is feedback that is
+// non-commensurable and ungrounded. Ours was both. Anybody with a verified session could
+// rate any agent without having bought anything, and that rating fed the leaderboard's
+// rankScore at avg*20 + count*10, so one account could move a public ranking without ever
+// transacting. And a raw 1..10 from two raters was averaged as though the two numbers
+// meant the same thing.
+
+test('a rating from someone who never hired the agent does not score', () => {
+  __resetPlatformStateForTests()
+  const a = seedAgent({ name: 'Ungrounded' })
+  addAgentFeedback(a.id, 'stranger@test', 10)
+
+  const s = feedbackSummary(a.id)
+  assert.equal(s.avg, null, "an unearned 10 must not become this agent's average")
+  assert.equal(s.count, 0)
+  assert.equal(s.ungroundedCount, 1, 'the rating is still recorded, it just does not count')
+})
+
+test('a rating from a client with a released task does score', () => {
+  const state = __resetPlatformStateForTests()
+  const a = seedAgent({ name: 'Grounded' })
+  state.tasks.push(mkTask(a.id, 'released', 5, 'onchain', 'buyer@test'))
+  addAgentFeedback(a.id, 'buyer@test', 8)
+
+  const s = feedbackSummary(a.id)
+  assert.equal(s.avg, 8)
+  assert.equal(s.count, 1)
+  assert.equal(s.ungroundedCount, 0)
+})
+
+test('a refunded client may still rate, because only letting happy buyers speak reports happiness', () => {
+  const state = __resetPlatformStateForTests()
+  const a = seedAgent({ name: 'Refunded' })
+  state.tasks.push(mkTask(a.id, 'refunded', 5, undefined, 'unhappy@test'))
+  addAgentFeedback(a.id, 'unhappy@test', 2)
+
+  const s = feedbackSummary(a.id)
+  assert.equal(s.avg, 2, 'a grounded low score counts exactly as much as a grounded high one')
+  assert.equal(s.count, 1)
+})
+
+test('an in-progress job is not a transaction yet', () => {
+  const state = __resetPlatformStateForTests()
+  const a = seedAgent({ name: 'InFlight' })
+  state.tasks.push(mkTask(a.id, 'funded', 5, undefined, 'early@test'))
+  addAgentFeedback(a.id, 'early@test', 10)
+  assert.equal(feedbackSummary(a.id).count, 0, 'funded is work in progress, not a completed dealing')
+})
+
+test('a rater who scores everything high is corrected against their own mean', () => {
+  const state = __resetPlatformStateForTests()
+  const target = seedAgent({ name: 'Target' })
+  const others = [seedAgent({ name: 'Other A' }), seedAgent({ name: 'Other B' })]
+  for (const a of [target, ...others]) {
+    state.tasks.push(mkTask(a.id, 'released', 5, 'onchain', 'generous@test'))
+    addAgentFeedback(a.id, 'generous@test', 10)
+  }
+  // Their mean is 10, so a 10 from them says nothing and lands back at the scale midpoint.
+  assert.equal(feedbackSummary(target.id).avg, 5.5)
+})
+
+test('correction waits for enough ratings, because two data points are not a mean', () => {
+  const state = __resetPlatformStateForTests()
+  const target = seedAgent({ name: 'Target' })
+  const other = seedAgent({ name: 'Other' })
+  for (const a of [target, other]) {
+    state.tasks.push(mkTask(a.id, 'released', 5, 'onchain', 'sparse@test'))
+    addAgentFeedback(a.id, 'sparse@test', 10)
+  }
+  // Under the threshold, so the raw score stands rather than a manufactured one.
+  assert.equal(feedbackSummary(target.id).avg, 10)
+})
+
+test('the summary publishes the basis it was computed on', () => {
+  __resetPlatformStateForTests()
+  const a = seedAgent({ name: 'Basis' })
+  const s = feedbackSummary(a.id)
+  assert.match(s.basis, /grounded ratings only/)
+  assert.match(s.basis, /rater's own mean/)
 })
