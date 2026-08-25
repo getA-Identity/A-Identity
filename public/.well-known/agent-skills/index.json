@@ -27,7 +27,7 @@
       "type": "skill-md",
       "description": "Pay for an A-Identity call per request in USDC over x402, on X Layer or gaslessly on Circle Arc. No account and no API key.",
       "url": "/.well-known/agent-skills/pay-with-x402/SKILL.md",
-      "digest": "sha256:a9bac4c6bdcf544e11353dff0d5f9f4679484adc36eef67bca2e1c6044b60bac"
+      "digest": "sha256:e8e2b55a6487458c26aa87a84fcc57965b761aad7100bc41eb408f9132903038"
     },
     {
       "name": "reproduce-a-reputation-score",

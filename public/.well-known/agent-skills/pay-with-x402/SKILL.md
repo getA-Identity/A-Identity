@@ -22,7 +22,7 @@ correctly before spending anything.
 Settle the payment, attach the proof, and replay the identical request. The
 resource is served on the retry.
 
-## Two rails, pick by what you have
+## Three rails, pick by what you have
 
 **Per call on X Layer.** Each call settles as its own on-chain transfer. Prices
 run from $0.001 to $0.01 depending on the tool.
@@ -39,6 +39,30 @@ GET https://a-identity.xyz/api/x402/nano/data
 Unpaid, it answers 402 with an `accepts` block naming `eip155:5042002` and
 Arc's native USDC. On Arc the gas token is USDC itself, so an agent needs no
 second asset to transact.
+
+**Soroban on Stellar.** The one where you sign no transaction at all. Instead of a
+transfer you sign a Soroban AUTHORIZATION ENTRY for one specific `transfer` call,
+and the seller assembles it, pays the network fee and submits. You need a USDC
+trustline and a balance, and nothing else: no XLM for fees, no sequence number, no
+broadcast.
+
+```http
+GET https://a-identity.xyz/api/x402/stellar/tools/risk_check
+```
+
+Unpaid, it answers 402 with an `accepts` block naming `stellar:testnet`, the USDC
+SAC contract id, and `extra.networkPassphrase`. Read the passphrase from the
+challenge rather than assuming one: it is inside the signed preimage, so a testnet
+signature is worthless on pubnet. Then POST with
+`X-PAYMENT: base64(JSON of {x402Version:2, scheme:"exact", network, payload:{authEntryXdr}})`.
+
+Two things to know before building against it. Amounts are SEVEN decimals here, not
+six, so $0.005 is 50000 base units and not 5000. And a `202` is not a failure: it
+means the payment was broadcast and could not be confirmed in time, nothing was
+marked spent, and paying again would pay twice.
+
+A worked client is in the repository at `mcp/scripts/x402-stellar-buyer.mjs`, and
+`--quote-only` prints what it would sign without needing a key.
 
 ## Prices
 
