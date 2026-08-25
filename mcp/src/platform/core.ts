@@ -121,6 +121,16 @@ export type PlatformAgent = {
    */
   vaultChainCaip2?: string
   /**
+   * The raw-address payees we have actually pushed onto the vault's allowlist.
+   *
+   * Neither the Solidity mapping nor the Soroban `Allowed(Address)` key is enumerable, so
+   * "what does the chain currently allow" cannot be read back. Without a record of what we
+   * wrote, the mirror could only ever ADD: a payee removed off-chain stayed permanently
+   * allowed on-chain, which is the opposite of what removing it means. Additive field, so
+   * an older build ignores it and an absent value simply means nothing was mirrored yet.
+   */
+  vaultMirroredPayees?: string[]
+  /**
    * Every vault this agent has, including the primary one. Additive on purpose: an older
    * build ignores this array and still reads the flat fields, so a rollback is safe.
    */

@@ -274,10 +274,27 @@ export async function syncVaultPolicy(agent: PlatformAgent): Promise<VaultSyncRe
       const sf = await policySetFrozen(vault, want.frozen)
       if (sf.executed) txs.setFrozen = sf.txHash
     }
-    // Mirror raw-address allowlist entries onto the vault (adds only; best-effort).
-    for (const addr of p.payeeAllowlist.filter((x) => /^0x[0-9a-fA-F]{40}$/.test(x))) {
-      await policySetAllowed(vault, addr, true).catch(() => {})
+    // Mirror raw-address allowlist entries onto the vault, in BOTH directions. The chain's
+    // allowed set is not enumerable, so `vaultMirroredPayees` is our record of what we
+    // wrote; a payee dropped from the off-chain list is revoked on-chain rather than left
+    // allowed forever. Best-effort per entry, and the record only advances for the writes
+    // that actually landed, so a failed revoke is retried on the next sync instead of being
+    // forgotten. `agent://` payees are not mirrored: the vault only understands addresses.
+    const wantPayees = p.payeeAllowlist.filter((x) => /^0x[0-9a-fA-F]{40}$/.test(x))
+    const mirrored = agent.vaultMirroredPayees ?? []
+    const key = (x: string) => x.toLowerCase()
+    const wantKeys = new Set(wantPayees.map(key))
+    const stillMirrored = mirrored.filter((addr) => wantKeys.has(key(addr)))
+    for (const addr of mirrored.filter((addr) => !wantKeys.has(key(addr)))) {
+      const ok = await policySetAllowed(vault, addr, false).then(() => true).catch(() => false)
+      if (!ok) stillMirrored.push(addr) // could not revoke: keep it on the books and retry
     }
+    const mirroredKeys = new Set(mirrored.map(key))
+    for (const addr of wantPayees.filter((addr) => !mirroredKeys.has(key(addr)))) {
+      const ok = await policySetAllowed(vault, addr, true).then(() => true).catch(() => false)
+      if (ok) stillMirrored.push(addr)
+    }
+    agent.vaultMirroredPayees = stillMirrored
     pushActivity(
       agent,
       `On-chain vault policy synced (cap $${want.dailyCapUsd}, ceiling $${want.autoApproveUsd}${want.frozen ? ', frozen' : ''})`,

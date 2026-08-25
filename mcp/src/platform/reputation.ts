@@ -26,14 +26,21 @@ import { getReputationAttestation } from '../asp/attestations.js'
  */
 function behavioralSignals(agent: PlatformAgent) {
   const hired = state.tasks.filter((t) => t.agentId === agent.id)
-  const completedTasks = hired.filter((t) => t.status === 'released').length
+  const released = hired.filter((t) => t.status === 'released')
+  const completedTasks = released.length
+  // A release whose escrow settled on chain and one that settled in simulation are counted
+  // the same here, deliberately. The behaviour term measures the DISPUTE RATE, so dropping
+  // simulated releases from the numerator would raise every such agent's dispute rate and
+  // make the score worse, not more honest. What honesty requires is that the caller can see
+  // the split, so it is published in the echo below rather than folded away.
+  const completedOnchain = released.filter((t) => t.settlement === 'onchain').length
   const disputedTasks = hired.filter((t) => t.status === 'refunded' || t.status === 'disputed').length
   const ratings = hired
     .map((t) => t.review?.rating)
     .filter((r): r is number => typeof r === 'number' && Number.isFinite(r))
   const ratedCount = ratings.length
   const avgRating = ratedCount ? ratings.reduce((a, r) => a + r, 0) / ratedCount : undefined
-  return { completedTasks, disputedTasks, ratedCount, avgRating }
+  return { completedTasks, completedOnchain, disputedTasks, ratedCount, avgRating }
 }
 
 /**
@@ -112,6 +119,10 @@ export function agentReputation(agentId: string) {
   const terminalHired = b.completedTasks + b.disputedTasks
   const behavioral = {
     completedJobs: b.completedTasks,
+    // Of those completed jobs, how many settled on chain. The remainder ran without a
+    // signer: real work, released by a real client, but no receipt behind the money.
+    completedJobsOnchain: b.completedOnchain,
+    completedJobsSimulated: b.completedTasks - b.completedOnchain,
     contestedJobs: b.disputedTasks,
     disputeRate: terminalHired > 0 ? Math.round((b.disputedTasks / terminalHired) * 100) / 100 : 0,
     avgRating: b.avgRating != null ? Math.round(b.avgRating * 100) / 100 : null,

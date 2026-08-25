@@ -14,9 +14,22 @@ import { circlePay } from '../circle-agent.js'
 // ── instructions ──────────────────────────────────────────────────────────────
 
 /** AgentSpendPolicy error names that are authoritative policy rejections (vs an
- *  infra error, which we fall back on rather than treat as a "no"). */
+ *  infra error, which we fall back on rather than treat as a "no").
+ *
+ *  Both dialects, because there are two implementations of this contract and they do not
+ *  spell their errors the same way. The Solidity original says `IsFrozen`; the Soroban port
+ *  says `Frozen` and adds five refusals with no Solidity analogue. Listing only the
+ *  Solidity names meant a genuine Soroban policy refusal was not recognised as one, and the
+ *  settlement fell through to a path with no vault enforcement at all: a "no" from the
+ *  chain read as an infrastructure hiccup. Names, not codes, because the adapters surface
+ *  the name. */
 const VAULT_POLICY_ERRORS = new Set([
-  'IsFrozen', 'SessionKeyExpired', 'PayeeNotAllowed', 'AboveAutoApprove', 'DailyCapExceeded', 'ZeroAddress', 'TransferFailed',
+  // Solidity (mcp/contracts/AgentSpendPolicy.sol)
+  'IsFrozen', 'ZeroAddress', 'TransferFailed',
+  // Shared by both implementations
+  'SessionKeyExpired', 'PayeeNotAllowed', 'AboveAutoApprove', 'DailyCapExceeded',
+  // Soroban (soroban/contracts/agent-spend-policy/src/error.rs)
+  'Frozen', 'InvalidAmount', 'InvalidPayee', 'MathOverflow', 'InsufficientBalance', 'OwnerIsOperator',
 ])
 
 // ── D1 spend pre-flight + D3 velocity circuit-breaker (pure decision core) ─────
