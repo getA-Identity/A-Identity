@@ -1,0 +1,129 @@
+# cargo llvm-cov --ignore-filename-regex 'src/test'
+# run 2026-08-25T19:53:08Z on Darwin/arm64, rustc 1.96.0
+# cargo-llvm-cov 0.8.7
+
+info: cargo-llvm-cov currently setting cfg(coverage); you can opt-out it by passing --no-cfg-coverage
+   Compiling agent-spend-policy v0.1.0 (/Users/mericcintosun/A-Identity/soroban/contracts/agent-spend-policy)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 2.46s
+     Running unittests src/lib.rs (target/llvm-cov-target/debug/deps/agent_spend_policy-21fc602e2d621356)
+
+running 108 tests
+test test::amounts::the_constructor_refuses_a_negative_auto_approve_ceiling - should panic ... ok
+test test::arithmetic::a_doubly_invalid_input_names_the_same_first_reason_on_every_money_path ... ignored, A3-02: KNOWN OPEN. settle checks the payee first, withdraw checks the amount first, so pay(vault, 0) returns InvalidPayee and withdraw(vault, 0) returns InvalidAmount for the same pair of violations. This is a live defect in the deployed wasm and the fix is a contract change, which this contract cannot take without a redeploy. Tracked in audit/DESIGN-DECISIONS.md. Un-ignore in the commit that redeploys.
+test test::amounts::the_constructor_refuses_an_owner_that_is_also_the_operator - should panic ... ok
+test test::amounts::the_constructor_refuses_a_negative_daily_cap - should panic ... ok
+test test::amounts::set_policy_refuses_a_negative_policy ... ok
+test test::amounts::pay_with_zero_returns_invalid_amount ... ok
+test test::amounts::pay_with_i128_min_returns_invalid_amount ... ok
+test test::amounts::owner_pay_and_withdraw_reject_negative_amounts_too ... ok
+test test::arithmetic::inv_05_as_written_the_sum_of_pay_and_owner_pay_stays_under_the_cap ... ignored, A3-07 / A5-01: KNOWN OPEN, and the invariant is what was wrong rather than the contract. owner_pay increments the day accumulator and is not compared against daily_cap, so this assertion is false by design. Kept, failing and ignored, because it is the cheapest statement of a decision that has not been made: either owner_pay gets a cap gate (a redeploy) or the product stops claiming a per-day ceiling binds the human path. See audit/DESIGN-DECISIONS.md.
+test test::arithmetic::math_overflow_is_reported_before_the_daily_cap_and_the_balance ... ok
+test test::arithmetic::a_daily_cap_of_i128_max_still_admits_a_payment ... ok
+test test::amounts::pay_with_a_negative_amount_returns_invalid_amount ... ok
+test test::amounts::the_day_accumulator_uses_checked_add_and_returns_math_overflow ... ok
+test test::arithmetic::a_payment_of_the_last_remaining_unit_succeeds ... ok
+test test::arithmetic::a_payment_leaves_the_instance_entry_above_a_literal_floor ... ok
+test test::arithmetic::one_unit_over_the_balance_is_refused_on_every_money_path ... ok
+test test::arithmetic::a_zero_ceiling_alone_means_unbounded_while_the_cap_still_binds ... ok
+test test::arithmetic::the_exact_overflow_boundary_is_off_by_nothing ... ok
+test test::arithmetic::a_zero_cap_alone_means_unbounded_while_the_ceiling_still_binds ... ok
+test test::arithmetic::a_zero_session_key_expiry_means_unbounded_after_a_real_one_was_set ... ok
+test test::arithmetic::owner_pay_of_exactly_the_vault_balance_succeeds ... ok
+test test::arithmetic::the_pure_ladder_never_accepts_a_non_positive_amount ... ok
+test test::arithmetic::the_pure_ladder_treats_each_zero_as_no_bound_at_extreme_inputs ... ok
+test test::arithmetic::the_ttl_constants_are_the_numbers_the_safety_argument_rests_on ... ok
+test test::arithmetic::paying_exactly_the_vault_balance_succeeds ... ok
+test test::arithmetic::set_policy_accepts_a_zero_cap_and_a_zero_ceiling ... ok
+test test::arithmetic::the_daily_cap_is_reported_before_the_balance ... ok
+test test::arithmetic::the_day_index_is_safe_at_both_ends_of_u64 ... ok
+test test::arithmetic::every_money_path_refuses_every_negative_amount ... ok
+test test::arithmetic::the_day_bucket_outlives_its_own_day_with_a_full_day_to_spare ... ok
+test test::auth::every_owner_setter_without_auth_fails ... ok
+test test::auth::a_funded_stranger_signing_for_itself_cannot_pay ... ok
+test test::arithmetic::the_owner_ladder_overflows_by_name_rather_than_panicking ... ok
+test test::arithmetic::withdrawing_exactly_the_vault_balance_succeeds ... ok
+test test::auth::owner_pay_without_any_auth_fails ... ok
+test test::arithmetic::the_operator_ladder_holds_its_money_invariants_over_a_boundary_sweep ... ok
+test test::arithmetic::two_full_daily_caps_can_move_across_a_utc_midnight_two_seconds_apart ... ok
+test test::auth::owner_pay_is_authorized_by_the_owner_not_the_operator ... ok
+test test::arithmetic::the_owner_ladder_holds_its_money_invariants_over_a_boundary_sweep ... ok
+test test::arithmetic::the_whole_operator_ladder_fires_in_order_including_the_last_two_rungs ... ok
+test test::auth::pay_without_any_auth_fails ... ok
+test test::auth::the_operator_is_read_from_storage_not_from_an_argument ... ok
+test test::auth::the_operator_cannot_call_any_owner_function ... ok
+test test::auth::pay_requires_exactly_the_operator_and_nothing_else ... ok
+test test::auth::the_owner_cannot_call_pay ... ok
+test test::auth::withdraw_without_any_auth_fails ... ok
+test test::auth::the_operator_never_authorizes_the_token_transfer ... ok
+test test::availability::a_refused_payment_writes_nothing ... ok
+test test::behaviour::a_zero_cap_and_a_zero_ceiling_both_mean_unbounded ... ok
+test test::availability::worst_case_pay_fits_the_pubnet_budget ... ok
+test test::behaviour::happy_path_operator_pay_moves_the_token_and_charges_the_day ... ok
+test test::behaviour::owner_pay_is_counted_by_the_daily_cap_without_being_limited_by_it ... ok
+test test::behaviour::pay_above_the_auto_approve_ceiling_returns_above_auto_approve ... ok
+test test::behaviour::owner_pay_bypasses_the_ceiling_the_allowlist_and_the_freeze ... ok
+test test::behaviour::pay_above_the_daily_cap_returns_daily_cap_exceeded ... ok
+test test::behaviour::owner_withdraw_moves_the_balance_and_does_not_touch_the_day ... ok
+test test::behaviour::paying_more_than_the_vault_holds_returns_insufficient_balance ... ok
+test test::behaviour::pay_to_an_unallowlisted_payee_returns_payee_not_allowed ... ok
+test test::behaviour::set_operator_rotates_who_may_spend ... ok
+test test::behaviour::the_owner_and_the_operator_may_never_be_the_same_address ... ok
+test test::behaviour::pay_while_frozen_returns_frozen ... ok
+test test::durability::a_revoked_payee_leaves_no_residue_in_any_durability ... ok
+test test::durability::a_later_payment_the_same_day_re_arms_the_floor ... ok
+test test::durability::the_bucket_threshold_is_never_above_the_created_ttl_on_either_network ... ok
+test test::durability::the_day_bucket_floor_tolerates_a_close_time_down_to_2_5_seconds ... ok
+test test::durability::an_archived_allowlist_entry_comes_back_still_allowed ... ok
+test test::durability::an_archived_instance_entry_is_restored_not_lost ... ok
+test test::durability::an_allowlist_entry_lives_on_the_network_minimum_on_pubnet_and_the_code_floor_on_testnet ... ok
+test test::durability::revoking_a_payee_that_was_never_allowed_is_a_no_op ... ok
+test test::durability::every_datakey_variant_is_a_distinct_storage_key ... ok
+test test::behaviour::the_cap_is_cumulative_across_several_payments_in_one_day ... ok
+test test::durability::no_view_extends_the_instance_ttl_but_every_writer_does ... ok
+test test::durability::pay_traps_untyped_if_the_network_lowers_max_entry_ttl_to_the_day_bucket_floor ... ok
+test test::durability::the_day_bucket_outlives_its_own_day_and_then_expires ... ok
+test test::durability::the_instance_entry_gets_the_code_floor_on_testnet ... ok
+test test::durability::the_is_allowed_view_writes_a_ttl_extension_and_the_caller_pays_for_it ... ok
+test test::errors::error_discriminants_are_frozen ... ok
+test test::durability::the_same_key_in_three_durabilities_is_three_entries ... ok
+test test::durability::the_instance_bump_clamps_instead_of_trapping ... ok
+test test::durability::the_instance_entry_gets_its_life_from_the_network_on_pubnet ... ok
+test test::durability::the_vault_balance_entry_has_its_own_shorter_clock_inside_the_token ... ok
+test test::errors::every_gate_returns_a_typed_error_rather_than_trapping ... ok
+test test::durability::two_payments_straddling_utc_midnight_each_get_a_full_cap_and_no_more ... ok
+test test::errors::paying_the_vault_or_the_token_returns_invalid_payee ... ok
+test test::durability::the_first_write_of_a_day_reaches_the_two_day_floor_on_both_networks ... ok
+test test::durability::withdraw_still_works_after_every_other_entry_has_lapsed ... ok
+test test::storage_shape::allowlist_entries_are_independent_persistent_entries ... ok
+test test::storage_shape::removing_an_allowlist_entry_deletes_it_rather_than_storing_false ... ok
+test test::errors::the_gate_order_matches_the_solidity_original ... ok
+test test::errors::every_policy_error_is_reachable_through_the_public_abi ... ok
+test test::storage_shape::a_bucket_from_a_past_day_is_gone_and_reads_as_zero ... ok
+test test::storage_shape::the_day_accumulator_is_temporary_and_never_instance ... ok
+test test::storage_shape::the_day_bucket_survives_the_rest_of_its_own_day ... ok
+test test::storage_shape::the_instance_ttl_is_extended_by_a_payment ... ok
+test test::time::a_payment_at_exactly_the_expiry_second_still_goes_through ... ok
+test test::time::a_session_key_expiry_of_zero_means_no_time_bound ... ok
+test test::availability::withdraw_is_reachable_in_every_reachable_state ... ok
+test test::time::the_day_index_is_the_timestamp_divided_by_86400 ... ok
+test test::time::an_expired_day_bucket_reads_as_zero_rather_than_erroring ... ok
+test test::time::pay_after_the_session_key_expires_returns_session_key_expired ... ok
+test test::time::the_cap_resets_at_utc_midnight_not_24h_after_the_first_spend ... ok
+test test::views::allowlist_enabled_reports_both_states_and_follows_set_policy ... ok
+test test::time::the_owner_revokes_the_session_key_by_setting_it_into_the_past ... ok
+test test::views::frozen_reports_both_states_and_follows_the_setter ... ok
+test test::views::session_key_expiry_reports_the_stored_deadline_and_zero_means_unbounded ... ok
+test test::views::every_view_agrees_with_the_state_the_ladder_uses ... ok
+test test::storage_shape::two_hundred_allowlist_entries_do_not_grow_the_instance_entry ... ok
+test test::durability::the_instance_map_stays_nine_keys_under_untrusted_input ... ok
+
+test result: ok. 106 passed; 0 failed; 2 ignored; 0 measured; 0 filtered out; finished in 2.02s
+
+Filename                      Regions    Missed Regions     Cover   Functions  Missed Functions  Executed       Lines      Missed Lines     Cover    Branches   Missed Branches     Cover
+-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+lib.rs                            316                 0   100.00%          25                 0   100.00%         180                 0   100.00%           0                 0         -
+policy.rs                          68                 0   100.00%           5                 0   100.00%          42                 0   100.00%           0                 0         -
+storage.rs                        161                 1    99.38%          25                 1    96.00%         114                 1    99.12%           0                 0         -
+-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+TOTAL                             545                 1    99.82%          55                 1    98.18%         336                 1    99.70%           0                 0         -
+COV_DONE exit=0

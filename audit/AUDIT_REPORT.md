@@ -77,7 +77,7 @@ rotation, so a compromised owner key is total and irreversible loss.
 | --- | --- |
 | Contract tests | **106**, 2 ignored (both encode known-open findings) |
 | Mutation score | **137 mutants, 0 survivors**, 126 caught, 11 unviable |
-| Line coverage | **99.70%** (the one uncovered line is a `#[contracttype]` macro) |
+| Line coverage | **99.70%** lines, **98.18%** functions, **99.82%** regions. The one uncovered line is `storage.rs:110`, the `#[contracttype]` macro on `DataKey`. Re-measured 2026-08-25 and archived at `audit/tool-output/P5-llvm-cov.txt`; it had been asserted in two places and archived in none |
 | Function coverage | **98.18%** |
 | Fuzzing | **20,136** executions, no panic reached, re-runnable from the committed target. A further **51,218 is reported but unverified**: that run's target lived in a scratch copy and its artifacts were not preserved, so nothing in this repository can confirm it (see `findings/A6-panics-dos.md`) |
 | Negative controls | **6/6** guards deleted, suite goes red each time |

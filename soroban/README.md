@@ -89,8 +89,9 @@ wrong for this platform.
 ## Build and test
 
 Coverage is 99.70% of lines and 98.18% of functions with the test files excluded, measured
-with `cargo llvm-cov --ignore-filename-regex 'src/test'`. The single uncovered line is the
-`#[contracttype]` macro on `DataKey`. `cargo mutants` leaves **zero** survivors out of 137.
+with `cargo llvm-cov --ignore-filename-regex 'src/test'` and archived at
+`audit/tool-output/P5-llvm-cov.txt` rather than only asserted here. The single uncovered
+line is `storage.rs:110`, the `#[contracttype]` macro on `DataKey`. `cargo mutants` leaves **zero** survivors out of 137.
 Both numbers are worth stating together, because the first one alone is the one that lies:
 the suite was at 93% lines while 22 mutants still survived, including two that disabled the
 TTL guards outright.

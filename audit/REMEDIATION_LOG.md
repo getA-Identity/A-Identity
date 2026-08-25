@@ -188,3 +188,4 @@ D-1 (A7-02, A1-01) and D-5 (A4-02) are decided and their findings are dispositio
 | The first F-05 tests mocked the thing they were testing | `dc14389` |
 | A6 claimed its fuzz artifacts were archived in `tool-output/`; they were never in the repository, and the 51,218-run figure is unverifiable from here | this commit, in `findings/A6-panics-dos.md` and `AUDIT_REPORT.md` |
 | The gate table said clippy was clean "with `unwrap_used`, `panic`, `indexing_slicing`, `arithmetic_side_effects`". That lint set is enabled nowhere and does not pass | this commit, in `AUDIT_REPORT.md` |
+| Coverage of 99.70% was asserted in `AUDIT_REPORT.md` and `soroban/README.md` and archived in neither. Re-measured and archived; the numbers were right | `audit/tool-output/P5-llvm-cov.txt` |
