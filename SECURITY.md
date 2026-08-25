@@ -127,9 +127,24 @@ the first one is tracked as an open audit finding rather than a settled decision
   ([`x402-stellar/settle.ts`](mcp/src/x402-stellar/settle.ts)), which spends nothing.
   Recorded here rather than deleted, because a guard that once said one thing and did
   another is worth remembering.
-- **The Stellar self-broadcast path has no unit test.** The suite exercises the OpenZeppelin
-  and buyer-paid paths; the path that spends our own XLM is covered only end to end.
-  Tracked as F-04.
+- **The Stellar self-broadcast path used to have no unit test (F-04, closed 2026-08-25).**
+  The suite exercised the OpenZeppelin and buyer-paid paths only, so the path that spends
+  our own XLM, and which the rail picks by default, ran in production untested. Twelve
+  tests now drive it, including one that asserts the guard ORDER by recording the seam call
+  sequence. Writing them surfaced a real defect, since fixed: a submission that threw
+  returned before the settlement record was built, so a transaction that may have been in
+  the ledger left no trace and its fee never reached the daily budget.
+- **Transitive dependency advisories we cannot close.** Both HIGH advisories are gone: the
+  frontend's axios (through WalletConnect) and `tmp` (through the `solc` devDependency) are
+  pinned forward with npm `overrides`, and `bn.js` with them. The frontend tree is clean.
+  The backend still carries 22 (15 moderate, 7 low), and every one of them arrives through
+  `@circle-fin/*` -> `@coral-xyz/anchor` -> `@solana/web3.js`. They are left open
+  deliberately, for two reasons rather than one. The fix npm proposes is a downgrade of
+  `@circle-fin/app-kit` to 1.0.0, which is a breaking change to a rail that settles real
+  money. And two of the leaves have no fix at all: `elliptic` has published nothing above
+  the vulnerable 6.6.1, and `uuid` would need a major bump that breaks `jayson`. None of it
+  is on a path we call, because we run no Solana adapter; that bounds the exposure without
+  removing it. Re-check whenever Circle ships a new app-kit.
 - **Postgres TLS does not verify the server certificate.**
   [`storage.ts:29`](mcp/src/storage.ts#L29) sets `rejectUnauthorized: false`, which is the
   common workaround for managed-Postgres chains and does leave the connection open to an
