@@ -20,8 +20,12 @@
  * TEMPORARY entry, which is what the day bucket is, is deleted permanently rather than
  * archived. Only persistent and instance entries come back.
  *
- * Any write resets the clock. `set_frozen(false)` on an unfrozen vault is a no-op that
- * costs a fee and buys 150 days, which is the cheapest way to touch it deliberately.
+ * A write extends the clock only ONCE THE REMAINING LIFE IS BELOW the 60-day threshold.
+ * `bump_instance` calls `extend_ttl(threshold, extend_to)`, which does nothing while the
+ * current TTL is still above it. Verified on 2026-08-25: a real `set_frozen(false)` landed
+ * on the pubnet vault and `live until` did not move, because 134 days remained.
+ *
+ * So this cannot be topped up early. Run it, and act when it warns.
  *
  *   node mcp/scripts/stellar-vault-archival.mjs            # both networks
  *   node mcp/scripts/stellar-vault-archival.mjs --warn-days 30   # exit 1 when closer
@@ -94,8 +98,9 @@ for (const { chain, vault, rpcUrl } of targets) {
     console.log(`  remaining       ${remaining} ledgers, about ${days.toFixed(1)} days at ${CLOSE_SECONDS}s`)
     console.log(`  archives around ${when.toISOString().slice(0, 10)}`)
     if (days < WARN_DAYS) {
-      console.log(`  WARNING: under the ${WARN_DAYS}-day threshold. Any write resets it; the cheapest`)
-      console.log('  deliberate touch is set_frozen(false) on an unfrozen vault.')
+      console.log(`  WARNING: under the ${WARN_DAYS}-day threshold. A write extends it only once`)
+      console.log('  the remaining life is below the 60-day mark, so acting early buys nothing.')
+      console.log('  The cheapest deliberate touch is set_frozen(false) on an unfrozen vault.')
     }
   }
 }

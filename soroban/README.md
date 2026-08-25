@@ -158,9 +158,22 @@ restoring footprint on the next call, and an operator who did not know it was co
 The asymmetry worth remembering: a TEMPORARY entry, which is what the day bucket is, is
 deleted permanently rather than archived. Only persistent and instance entries come back.
 
-Any write resets the clock to the 150-day floor. `set_frozen(false)` on a vault that is
-already unfrozen is a no-op that costs a fee and buys the time back, which is the cheapest
-way to touch a vault deliberately.
+A write extends the clock, but ONLY once the remaining life has fallen below the 60-day
+threshold, and that catch is worth knowing before you rely on it. `bump_instance` calls
+`extend_ttl(LONG_TTL_THRESHOLD, LONG_TTL_EXTEND)`, which is a no-op while the current TTL is
+still above the threshold. Demonstrated on 2026-08-25: a real `set_frozen(false)` landed on
+the pubnet vault at ledger 64,120,302 and `live until` did not move, because 134 days
+remained against a 60-day threshold.
+
+So you cannot top this up early. Touching the vault in month two buys nothing; touching it
+inside the last 60 days sets it to the 150-day floor. Finding A2-03 explains the related
+oddity that the entry never receives that 150-day floor in the first place on pubnet: it is
+created with the network's own `min_persistent_ttl` of 2,073,600 ledgers, about 135 days,
+which is already above the threshold, so the code's floor does not apply until the entry has
+aged into range.
+
+When the time does come, `set_frozen(false)` on a vault that is already unfrozen is the
+cheapest deliberate touch: it changes nothing and costs a fee.
 
 ## What is deliberately absent
 

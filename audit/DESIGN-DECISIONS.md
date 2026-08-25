@@ -52,7 +52,34 @@ The catch: it only works while the key is still held. It is a thing to do now or
 | **C. Redeploy with a multisig owner from the start** | New vault, owner is an already-multisig account | ~12.34 XLM + new id + policy rebuild | Cleanest story, highest disruption |
 | **D. Accept, and cap the exposure** | Keep the burner, keep the balance at or near zero between demos | 0 | Honest, and matches what the vault holds today (0 USDC) |
 
-**Recommendation: B, and it is close to free.** It removes the single point of failure
+### DONE, 2026-08-25: option B was taken
+
+The owner account is now a **2-of-3 multisig**. Same account, same address, contract not
+redeployed, wasm hash unchanged.
+
+| | |
+| --- | --- |
+| Signers | the original owner key, plus `GCLZKYSS...K3DIFS` and `GDZQN2S2...QGDD75Q` |
+| Thresholds | low 2, med 2, high 2 |
+| Verified | one signature is now rejected with `txBadAuth`; two signatures calling `set_frozen(false)` on the vault landed at ledger 64,120,302 |
+
+High threshold is 2 as well, deliberately: removing a signer needs two signatures, so one
+stolen key cannot strip the others.
+
+**One correction to what is written below.** This section said "close to free", which counted
+the transaction fees and missed the reserve. Each extra signer raises the account's minimum
+balance by 0.5 XLM, so 1 XLM is now locked that was previously spendable. The fees really
+were negligible; the reserve was not, and the account had to be topped up before the change
+would go through at all.
+
+**Residual risk, and it is the maintainer's to close.** Three signers means losing any two
+locks the account permanently. And all three keys are currently in the same local keystore,
+which makes this change worth nothing against the threat it was made for: a laptop
+compromise still takes all three. At least one key has to move somewhere else.
+
+---
+
+**Original recommendation, kept for the record: B, and it is close to free.** It removes the single point of failure
 without a new address, without rebuilding the policy, and without touching the artifact
 whose hash is published everywhere. D is a reasonable companion to B, not a substitute.
 

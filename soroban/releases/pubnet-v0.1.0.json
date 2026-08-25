@@ -151,6 +151,20 @@
     "frozen": false,
     "note": "spent_today came to rest at exactly the daily cap. The vault spent its whole budget for the UTC day and refused the next payment, which is the shape of the claim this contract exists to make. The balance is zero because every payment went back to the owner account, which also holds the 1 USDC: this is a self-funded test and the money never left our own control."
   },
+  "ownerHardening": {
+    "date": "2026-08-25",
+    "what": "The owner account was made a 2-of-3 multisig, in response to audit findings A7-02 (High) and A1-01. It is the same account and the same address; the contract was NOT redeployed and its wasm hash is unchanged.",
+    "why": "There is no set_owner and no upgrade path, so the owner chosen at construction is permanent. That made a single key a single point of total, irreversible loss. A classic Stellar account satisfies require_auth through classic multisig to its medium threshold (soroban-env-host 27.0.1, auth.rs:106-109), so this was reachable without touching the contract at all.",
+    "signers": [
+      "GARC7OFBBQCZJ5N3LCI7HTTYJ2MMPDAFDNGIHSQMZ7EPJ5EAWQJ5R6I5",
+      "GCLZKYSSBHOSGVL5WHFHPYIPPDQ3ZWEQVL3ZOD2Z7GTIKM5ND5K3DIFS",
+      "GDZQN2S2JCSI6FTF7BZ2PW7DHTJAY6CSTIC57T7SK3NY2MIBPQGDD75Q"
+    ],
+    "thresholds": { "low": 2, "med": 2, "high": 2 },
+    "cost": "1 XLM sent in, of which 1.0 is locked as reserve: each extra signer raises the account's minimum balance by 0.5 XLM. The transaction fees themselves were negligible. An earlier estimate of \"almost free\" counted the fees and missed the reserve.",
+    "verified": "Proven in both directions rather than assumed. A single-signature transaction is now rejected with txBadAuth. A two-signature transaction calling set_frozen(false) on the vault landed successfully at ledger 64120302, which is the check that matters: the owner can still operate the vault. High threshold is also 2, so removing a signer needs two signatures too, and one stolen key cannot strip the others.",
+    "residualRisk": "Three signers means losing any two locks the account permanently. It is only a real improvement if the keys are not all in one place; keeping all three in the same local keystore would leave a laptop compromise as fatal as before."
+  },
   "caveats": [
     "Mainnet, and real money, but small money. The cap is 1 USDC per day and the vault was funded with 1 USDC. Nothing here demonstrates behaviour at a size anyone would care about losing.",
     "Not audited. The contract has been reviewed with the free tooling we could actually run, with output committed, plus an adversarial review that found and fixed real defects, plus a negative-control runner that deletes each guard in turn and requires the suite to go red. That is not an audit and we will not call it one.",
