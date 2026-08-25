@@ -210,3 +210,37 @@ test('an empty trail summarizes to zeroes, not to nothing', () => {
     blockedNotionalUsd: 0,
   })
 })
+
+// ── the spend counters a spend verdict is computed against ───────────────────────
+
+test('the hash changes when the category counter a spend verdict depended on changes', () => {
+  // `categoryOverLimit` decides on this number. If it did not reach the hash, a snapshot
+  // claiming nothing was spent today and one claiming a fortune was would be
+  // indistinguishable after the fact, which is exactly what the hash exists to prevent.
+  const a = hashSnapshot(snap({ categorySpentTodayUsd: { dining: 0 } }))
+  const b = hashSnapshot(snap({ categorySpentTodayUsd: { dining: 999_999 } }))
+  assert.notEqual(a, b)
+})
+
+test('the hash changes when the per-card counter a spend verdict depended on changes', () => {
+  const a = hashSnapshot(snap({ cardSpentTodayUsd: { card_1: 0 } }))
+  const b = hashSnapshot(snap({ cardSpentTodayUsd: { card_1: 999_999 } }))
+  assert.notEqual(a, b)
+})
+
+test('the spend counters hash the same whatever order their keys were inserted in', () => {
+  const a = hashSnapshot(
+    snap({ categorySpentTodayUsd: { dining: 10, travel: 20 }, cardSpentTodayUsd: { card_1: 5, card_2: 7 } }),
+  )
+  const b = hashSnapshot(
+    snap({ categorySpentTodayUsd: { travel: 20, dining: 10 }, cardSpentTodayUsd: { card_2: 7, card_1: 5 } }),
+  )
+  assert.equal(a, b, 'the same counters in a different insertion order are the same state')
+})
+
+test('an absent counter does not hash like an empty one', () => {
+  // Absent is what makes `categoryOverLimit` and `cardOverCap` fail closed, so it is a
+  // different state from "supplied, and nothing spent yet" and must hash differently.
+  assert.notEqual(hashSnapshot(snap()), hashSnapshot(snap({ categorySpentTodayUsd: {} })))
+  assert.notEqual(hashSnapshot(snap()), hashSnapshot(snap({ cardSpentTodayUsd: {} })))
+})

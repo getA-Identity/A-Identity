@@ -118,8 +118,25 @@ const trunc = (v: string | undefined, n = MAX_STR): string | undefined =>
   typeof v === 'string' && v.length ? v.slice(0, n) : undefined
 
 /**
+ * Sort a spend counter into key order, so an equivalent state built in a different
+ * insertion order still hashes the same. Keys are kept verbatim: the engine looks up
+ * `cardSpentTodayUsd[intent.cardId]` and `categorySpentTodayUsd[category]` exactly, so two
+ * records differing only in key case really are two different states to a verdict.
+ * `undefined` stays null rather than becoming `[]`, because "no counter supplied" is what
+ * makes a spend rule fail closed and is not the same state as "counter supplied, empty".
+ */
+const canonicalCounters = (rec: Record<string, number> | undefined): [string, number][] | null =>
+  rec === undefined ? null : Object.entries(rec).sort((a, b) => (a[0] < b[0] ? -1 : a[0] > b[0] ? 1 : 0))
+
+/**
  * Hash a snapshot canonically: key order must not change the hash, or the same state
  * would produce two different hashes and reconciliation would be meaningless.
+ *
+ * The two spend counters were added after the first rows were written. Entries stored
+ * before that carry a hash computed without them and CANNOT be re-verified against this
+ * function: re-hashing their snapshot here yields a different digest even when the state
+ * is untouched. Old rows keep their old hash and are not migrated or invalidated, so a
+ * mismatch on a pre-existing row proves nothing about that row.
  */
 export function hashSnapshot(snapshot: AccountSnapshot | undefined): string | null {
   if (!snapshot) return null
@@ -135,6 +152,13 @@ export function hashSnapshot(snapshot: AccountSnapshot | undefined): string | nu
     positions: [...snapshot.positions]
       .map((p) => ({ symbol: (p.symbol ?? '').toUpperCase(), shares: p.shares ?? null, valueUsd: p.valueUsd }))
       .sort((a, b) => (a.symbol < b.symbol ? -1 : a.symbol > b.symbol ? 1 : 0)),
+    // The spend surface decides on these two: `cardOverCap` reads cardSpentTodayUsd and
+    // `categoryOverLimit` reads categorySpentTodayUsd (see ./engine.ts). Leaving them out
+    // meant a snapshot claiming $0 spent today and one claiming $999,999 hashed
+    // identically, so the hash proved nothing about any spend verdict. Sorted by key for
+    // the same reason positions are.
+    cardSpentTodayUsd: canonicalCounters(snapshot.cardSpentTodayUsd),
+    categorySpentTodayUsd: canonicalCounters(snapshot.categorySpentTodayUsd),
   })
   return `sha256:${createHash('sha256').update(canonical).digest('hex')}`
 }
