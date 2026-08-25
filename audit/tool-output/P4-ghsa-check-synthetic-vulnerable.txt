@@ -1,0 +1,11 @@
+GHSA check: 2 locked crates, 2 distinct, 2 carrying at least one published advisory range.
+  soroban-sdk 22.0.0: 6 published range(s), 2 matching
+  stellar-strkey 0.0.7: 1 published range(s), 1 matching
+
+3 locked crate(s) fall in a published GHSA vulnerable range:
+  GHSA-x2hw-px52-wp4m MODERATE soroban-sdk 22.0.0 (vulnerable: < 22.0.11, first patched: 22.0.11)
+    rs-soroban-sdk: `Fr` scalar field equality comparison bypasses modular reduction
+  GHSA-96xm-fv9w-pf3f MODERATE soroban-sdk 22.0.0 (vulnerable: < 22.0.9, first patched: 22.0.9)
+    soroban-sdk has overflow in Bytes::slice, Vec::slice, GenRange::gen_range for u64
+  GHSA-5873-6fwq-463f MODERATE stellar-strkey 0.0.7 (vulnerable: < 0.0.8, first patched: 0.0.8)
+    stellar-strkey vulnerable to panic in SignedPayload::from_payload

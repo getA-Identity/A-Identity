@@ -1,0 +1,33 @@
+GHSA check: 215 locked crates, 196 distinct, 30 carrying at least one published advisory range.
+  base64 0.22.1: 1 published range(s), 0 matching
+  bumpalo 3.20.3: 2 published range(s), 0 matching
+  chrono 0.4.45: 1 published range(s), 0 matching
+  curve25519-dalek 4.1.3, 5.0.0: 2 published range(s), 0 matching
+  ed25519-dalek 2.2.0: 2 published range(s), 0 matching
+  futures-task 0.3.34: 2 published range(s), 0 matching
+  futures-util 0.3.34: 2 published range(s), 0 matching
+  generic-array 0.14.9: 5 published range(s), 0 matching
+  hashbrown 0.12.3, 0.15.5, 0.17.1: 1 published range(s), 0 matching
+  heapless 0.8.0: 1 published range(s), 0 matching
+  iana-time-zone 0.1.65: 1 published range(s), 0 matching
+  keccak 0.1.6: 1 published range(s), 0 matching
+  num-bigint 0.4.8: 1 published range(s), 0 matching
+  once_cell 1.21.4: 1 published range(s), 0 matching
+  rand 0.8.7: 3 published range(s), 0 matching
+  rand_core 0.6.4: 3 published range(s), 0 matching
+  serde_with 3.22.0: 1 published range(s), 0 matching
+  sha2 0.10.9: 2 published range(s), 0 matching
+  shlex 2.0.1: 2 published range(s), 0 matching
+  slab 0.4.12: 1 published range(s), 0 matching
+  smallvec 1.15.2: 7 published range(s), 0 matching
+  soroban-env-host 27.0.1: 1 published range(s), 0 matching
+  soroban-sdk 27.0.6: 6 published range(s), 0 matching
+  soroban-sdk-macros 27.0.6: 3 published range(s), 0 matching
+  spin 0.9.9: 2 published range(s), 0 matching
+  stellar-strkey 0.0.13, 0.0.16: 1 published range(s), 0 matching
+  stellar-xdr 27.0.0: 1 published range(s), 0 matching
+  time 0.3.55: 3 published range(s), 0 matching
+  zerocopy 0.8.56: 12 published range(s), 0 matching
+  zeroize_derive 1.5.0: 2 published range(s), 0 matching
+
+No locked crate falls in a published GHSA vulnerable range.

@@ -1,0 +1,33 @@
+# Dependabot was disabled on both remotes, which is half of finding A8-01: the project had
+# no channel at all that would surface a soroban-sdk advisory. The other half, a CI step
+# that queries GitHub Security Advisories directly, is in soroban.yml.
+#
+# Both are needed. The CI step fails a build that already has a vulnerable lock; Dependabot
+# opens a PR when an advisory lands against a lock that was clean when it was written.
+version: 2
+updates:
+  - package-ecosystem: cargo
+    directory: /soroban
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+    # soroban-sdk is pinned EXACTLY on purpose (a drifting SDK pin is itself a published
+    # Soroban audit finding). Security updates still come through; routine version bumps
+    # are a deliberate human act, because the SDK major tracks the protocol version.
+    ignore:
+      - dependency-name: soroban-sdk
+        update-types: [version-update:semver-major, version-update:semver-minor]
+  - package-ecosystem: npm
+    directory: /mcp
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+  - package-ecosystem: npm
+    directory: /
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: monthly

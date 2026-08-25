@@ -51,13 +51,39 @@ jobs:
 
       # A stale or vulnerable dependency is itself a published Soroban audit finding, so
       # it is caught mechanically rather than left to whoever remembers to look.
-      - name: Advisory audit
+      #
+      # This step alone is NOT enough, and believing it was is finding A8-01. `cargo audit`
+      # reads RustSec, and RustSec has never carried a single Stellar advisory: on
+      # 2026-08-24 it held 1226 advisories across 909 crate directories with zero
+      # occurrences of "soroban" or "stellar". A green run here says nothing whatsoever
+      # about soroban-sdk. Demonstrated: pointed at a lock pinning soroban-sdk 22.0.0 and
+      # stellar-strkey 0.0.7, both of which carry published advisories, this step reports
+      # nothing. Keep it anyway, it still covers the other 209 crates.
+      - name: Advisory audit (RustSec)
         run: |
           cargo install cargo-audit --locked || true
           cargo audit
 
-      - name: Build the wasm
-        run: cargo build --release --target wasm32v1-none
+      # The half RustSec cannot see. GitHub carries six advisories against crates in this
+      # lock, one of them HIGH (CVE-2026-26267, in the #[contractimpl] macro itself), and
+      # one against stellar-strkey which is inside the deployed wasm. On the same synthetic
+      # lock that the step above passes, this one exits 1 and names all three.
+      - name: Advisory audit (GitHub Security Advisories)
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: node audit/ghsa-check.mjs
+
+      # `stellar contract build`, NOT `cargo build`. Finding A8-02: this step used to run
+      # `cargo build --release --target wasm32v1-none`, which produces a 28,728-byte
+      # artifact. The thing that actually gets deployed is the 11,625-byte output of
+      # `stellar contract build`, which additionally passes --remap-path-prefix and shakes
+      # the spec. The size gate below was therefore measuring a binary nobody ships, and
+      # nothing anywhere asserted the hash of the one we do.
+      - name: Install the Stellar CLI
+        run: cargo install --locked stellar-cli --version 27.1.0
+
+      - name: Build the wasm the way it is deployed
+        run: stellar contract build
 
       # The network rejects a contract over 128KB. Catching that here beats catching it
       # at deploy, when the fix is a rebuild rather than a redeploy.
@@ -67,6 +93,23 @@ jobs:
           SIZE=$(stat -c%s "$WASM")
           echo "$WASM is $SIZE bytes"
           test "$SIZE" -lt 131072 || { echo "over the 128KB network limit"; exit 1; }
+
+      # The deployed hash, asserted rather than assumed. Both live networks run
+      # 155eb31c...79239 (verified on-chain with `stellar contract fetch`), so a source
+      # change that alters the artifact should be a deliberate, visible act rather than
+      # something noticed later. Update this literal in the same commit that redeploys.
+      - name: Deployed wasm hash gate
+        run: |
+          WASM=$(find target/wasm32v1-none/release -name '*.wasm' | head -1)
+          ACTUAL=$(sha256sum "$WASM" | cut -d' ' -f1)
+          EXPECTED=155eb31c1867254eacbf1b7a4755164d15cc6b6f939644705ab6b8df61579239
+          echo "built $ACTUAL"
+          if [ "$ACTUAL" != "$EXPECTED" ]; then
+            echo "The built wasm no longer matches the hash deployed on pubnet and testnet."
+            echo "expected $EXPECTED"
+            echo "If this change is intended, redeploy and update this literal together."
+            exit 1
+          fi
 
       - uses: actions/setup-node@v4
         with:
