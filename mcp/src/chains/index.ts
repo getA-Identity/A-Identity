@@ -10,6 +10,7 @@ export * from './caip.js'
 export * from './registry.js'
 export * from './public-view.js'
 export { createEvmAdapter, type EvmAdapter } from './evm/adapter.js'
+export { createStellarAdapter, type StellarAdapter, type CallOutcome, type VaultState } from './stellar/adapter.js'
 export { EIP3009_ABI } from './evm/abis.js'
 export {
   resolveRpcUrls,

@@ -23,16 +23,19 @@ const PLATFORM = SRC + 'platform/'
  */
 const LAYERS: Record<string, number> = {
   'core.ts': 1,
-  'kya.ts': 2,
-  'vault.ts': 2,
-  'reputation.ts': 2,
-  'instructions.ts': 2,
-  'permissions.ts': 3,
-  'agents.ts': 4,
-  'guardrail.ts': 5,
-  'feed.ts': 6,
-  'tasks.ts': 7,
-  'manifest.ts': 8,
+  // Which adapter speaks to a given agent's vault. Sits between core and vault because
+  // vault.ts asks it the question and it asks core only for the agent's shape.
+  'vault-adapter.ts': 2,
+  'kya.ts': 3,
+  'vault.ts': 3,
+  'reputation.ts': 3,
+  'instructions.ts': 3,
+  'permissions.ts': 4,
+  'agents.ts': 5,
+  'guardrail.ts': 6,
+  'feed.ts': 7,
+  'tasks.ts': 8,
+  'manifest.ts': 9,
 }
 
 /** Strip block comments and line comments so only real code is inspected. */

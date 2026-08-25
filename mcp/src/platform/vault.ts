@@ -4,10 +4,11 @@
  * Layering: L2 domain module; imports ./core.js and flat ../ modules only.
  */
 import { state, save, ownsAgent, pushActivity, short, inFlightAgentOps, type PlatformAgent } from './core.js'
+import { deployPolicyVault, payUsdcOnchain, policySetSessionExpiry } from '../arc-contracts.js'
 import {
-  deployPolicyVault, payUsdcOnchain, readPolicyVault,
-  policySetPolicy, policySetFrozen, policySetAllowed, policySetSessionExpiry,
-} from '../arc-contracts.js'
+  vaultChainFor, readVaultPolicy, writeVaultPolicy, writeVaultFrozen, writeVaultAllowed,
+  allowlistEntriesFor,
+} from './vault-adapter.js'
 import { ARC_CHAIN, addressUrl } from '../chains/index.js'
 import { createAgentWallet, readCircleWallet } from '../circle-agent.js'
 import { previewTreasury, startAutoYield, type TreasuryPreview, type TreasuryExecution } from '../treasury.js'
@@ -157,8 +158,10 @@ export async function getAgentVault(agentId: string) {
   const agent = state.agents.find((a) => a.id === agentId)
   if (!agent) return { error: 'Unknown agent' }
   if (!agent.vaultAddress) return { vaultAddress: null }
-  const live = await readPolicyVault(agent.vaultAddress)
-  return { vaultAddress: agent.vaultAddress, ...live }
+  // Through the dispatcher, so an owner reading a Soroban vault's limits gets the vault's
+  // real numbers rather than an EVM adapter's error about an address.
+  const live = await readVaultPolicy(agent, agent.vaultAddress)
+  return { vaultAddress: agent.vaultAddress, chain: agent.vaultChainCaip2 ?? null, ...(live ?? {}) }
 }
 
 /**
@@ -226,25 +229,12 @@ const micro = (n: number) => Math.round(n * 1e6)
 export async function syncVaultPolicy(agent: PlatformAgent): Promise<VaultSyncResult> {
   const vault = agent.vaultAddress
   if (!vault) return { synced: false, reason: 'Agent has no on-chain vault' }
-  // Everything below this line speaks to `arc-contracts.js`, which is the EVM adapter bound
-  // to the Arc descriptor. The agent record can already describe a vault on another
-  // ecosystem (`vaultChainCaip2`, and the `vaults[]` array beside it), and an
-  // AgentSpendPolicy is deployed and holding real USDC on Stellar pubnet, so this is a
-  // reachable shape rather than a hypothetical. Sent through anyway, an EVM adapter would
-  // be handed a C... contract id and would fail somewhere further down with an error about
-  // an address, which reads as a bug in the chain rather than a gap in this function.
-  //
-  // Refused by name instead. `chains/stellar/adapter.ts` already implements the policy
-  // writes this would need; what does not exist yet is the dispatcher that picks an
-  // adapter from the vault's own chain. Until it does, saying so is the honest answer.
-  if (agent.vaultChainCaip2 && !agent.vaultChainCaip2.startsWith('eip155:')) {
-    return {
-      synced: false,
-      reason:
-        `This agent's vault is on ${agent.vaultChainCaip2}, and on-chain policy sync is wired ` +
-        'for EVM chains only. The off-chain policy is updated; the on-chain limits are not, ' +
-        'so treat them as unchanged until a signer for that chain pushes them.',
-    }
+  // Which adapter speaks to THIS vault is decided in vault-adapter.ts, from the vault's own
+  // chain, because an AgentSpendPolicy now exists on Soroban as well as on Arc and handing
+  // a C... contract id to an EVM adapter fails with a message about an address.
+  const vaultChain = vaultChainFor(agent)
+  if (!vaultChain) {
+    return { synced: false, reason: `This agent's vault names chain ${agent.vaultChainCaip2}, which is not in the registry.` }
   }
   const p = agent.permissions
   const want = {
@@ -255,8 +245,8 @@ export async function syncVaultPolicy(agent: PlatformAgent): Promise<VaultSyncRe
   }
 
   // Only write what actually changed on-chain. A read never needs a key.
-  let live: Awaited<ReturnType<typeof readPolicyVault>> | null = null
-  try { live = await readPolicyVault(vault) } catch { live = null }
+  let live: Awaited<ReturnType<typeof readVaultPolicy>> = null
+  try { live = await readVaultPolicy(agent, vault) } catch { live = null }
   const policyDrift =
     !live ||
     micro(live.dailyCapUsd) !== micro(want.dailyCapUsd) ||
@@ -284,15 +274,15 @@ export async function syncVaultPolicy(agent: PlatformAgent): Promise<VaultSyncRe
   try {
     const txs: { setPolicy?: string; setFrozen?: string } = {}
     if (policyDrift) {
-      const sp = await policySetPolicy(vault, {
+      const sp = await writeVaultPolicy(agent, vault, {
         dailyCapUsd: want.dailyCapUsd, autoApproveUsd: want.autoApproveUsd, allowlistEnabled: want.allowlistEnabled,
       })
-      if (!sp.executed) return { synced: false, reason: `Vault setPolicy failed: ${sp.reason}` }
+      if (!sp.ok) return { synced: false, ...(sp.ownerGated ? { ownerGated: true, want } : {}), reason: `Vault setPolicy failed: ${sp.reason}` }
       txs.setPolicy = sp.txHash
     }
     if (frozenDrift) {
-      const sf = await policySetFrozen(vault, want.frozen)
-      if (sf.executed) txs.setFrozen = sf.txHash
+      const sf = await writeVaultFrozen(agent, vault, want.frozen)
+      if (sf.ok) txs.setFrozen = sf.txHash
     }
     // Mirror raw-address allowlist entries onto the vault, in BOTH directions. The chain's
     // allowed set is not enumerable, so `vaultMirroredPayees` is our record of what we
@@ -300,18 +290,18 @@ export async function syncVaultPolicy(agent: PlatformAgent): Promise<VaultSyncRe
     // allowed forever. Best-effort per entry, and the record only advances for the writes
     // that actually landed, so a failed revoke is retried on the next sync instead of being
     // forgotten. `agent://` payees are not mirrored: the vault only understands addresses.
-    const wantPayees = p.payeeAllowlist.filter((x) => /^0x[0-9a-fA-F]{40}$/.test(x))
+    const wantPayees = allowlistEntriesFor(vaultChain, p.payeeAllowlist)
     const mirrored = agent.vaultMirroredPayees ?? []
     const key = (x: string) => x.toLowerCase()
     const wantKeys = new Set(wantPayees.map(key))
     const stillMirrored = mirrored.filter((addr) => wantKeys.has(key(addr)))
     for (const addr of mirrored.filter((addr) => !wantKeys.has(key(addr)))) {
-      const ok = await policySetAllowed(vault, addr, false).then(() => true).catch(() => false)
+      const ok = await writeVaultAllowed(agent, vault, addr, false).then((r) => r.ok).catch(() => false)
       if (!ok) stillMirrored.push(addr) // could not revoke: keep it on the books and retry
     }
     const mirroredKeys = new Set(mirrored.map(key))
     for (const addr of wantPayees.filter((addr) => !mirroredKeys.has(key(addr)))) {
-      const ok = await policySetAllowed(vault, addr, true).then(() => true).catch(() => false)
+      const ok = await writeVaultAllowed(agent, vault, addr, true).then((r) => r.ok).catch(() => false)
       if (ok) stillMirrored.push(addr)
     }
     agent.vaultMirroredPayees = stillMirrored
