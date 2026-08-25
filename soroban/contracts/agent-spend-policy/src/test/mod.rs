@@ -9,12 +9,14 @@
 //! `s.mock_auths()`.
 
 mod amounts;
+mod arithmetic;
 mod auth;
 mod behaviour;
 mod durability;
 mod errors;
 mod storage_shape;
 mod time;
+mod views;
 
 use soroban_sdk::testutils::{Address as _, Ledger as _};
 use soroban_sdk::{token, Address, Env, InvokeError};

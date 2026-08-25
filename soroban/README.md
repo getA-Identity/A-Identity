@@ -89,15 +89,25 @@ wrong for this platform.
 ## Build and test
 
 ```bash
-cargo test                                   # 52 contract tests
+cargo test                                   # 103 contract tests (2 ignored, see below)
 cargo clippy --all-targets -- -D warnings
 cargo fmt --check
 stellar contract build                       # -> target/wasm32v1-none/release/*.wasm
 node audit/run-negative-controls.mjs         # each guard deleted, suite must go red
 ```
 
-`.github/workflows/soroban.yml` runs all of it plus `cargo audit` and a 128KB size gate,
-scoped to `soroban/**` so a frontend commit does not pay for a Rust toolchain.
+Two of the 103 are `#[ignore]`d on purpose, and the reason is in the attribute rather than
+in a comment somewhere else. They encode findings A3-02 and A3-07 from the 2026-08-25 audit:
+the refusal ladder's first rung differs between `settle` and `withdraw`, and `owner_pay` is
+charged to the daily cap without being limited by it. Both are live in the deployed wasm and
+both need a contract change, which this contract cannot take without a redeploy. They are
+kept failing-and-ignored rather than deleted, because a deleted test is a decision nobody
+can see. Un-ignore them in the commit that redeploys.
+
+`.github/workflows/soroban.yml` runs all of it plus two advisory checks and a 128KB size
+gate, scoped to `soroban/**` so a frontend commit does not pay for a Rust toolchain. The
+second advisory check exists because the first one is blind to this ecosystem: `cargo audit`
+reads RustSec, and RustSec has never carried a single Stellar advisory.
 
 The Instawards SoW asks for a tests-passed screenshot, and a picture of green text is both
 trivial to fake and impossible to re-check, so we do not take one. `node
