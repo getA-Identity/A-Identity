@@ -787,12 +787,47 @@ export async function settleStellarPayment(input: {
       }
     }
 
+    // Built before the broadcast so BOTH the confirmed path and the ambiguous one can write
+    // a row. They used to be asymmetric: an unconfirmed-after-broadcast attempt persisted an
+    // `ambiguous` row, but a submission that THREW returned before this record existed, so
+    // the only trace of a transaction that may be in the ledger, and whose fee we may have
+    // paid, was a reason string handed to the caller. That also kept the fee out of
+    // `feeSpentOnDay`, so an RPC that flaps after submitting spends real XLM the daily
+    // budget never sees.
+    const recordFor = (txHash: string, feeStroops?: bigint): Omit<StellarSettlementRecord, 'outcome'> => ({
+      ts: now().toISOString(),
+      tool: deps.meta?.tool ?? 'unknown',
+      resource: requirements.resource,
+      network: chain.caip2,
+      asset: token.address,
+      assetSymbol: token.symbol,
+      assetDecimals: token.decimals,
+      value: auth.amount.toString(),
+      amountUsd: deps.meta?.baseUsd ?? 0,
+      baseUsd: deps.meta?.baseUsd ?? 0,
+      payer: auth.payer,
+      payTo: requirements.payTo,
+      tx: txHash,
+      explorerUrl: txUrl(chain, txHash) ?? undefined,
+      broadcaster: chosen,
+      confirmedBy: 'soroban-rpc',
+      ...(feeStroops !== undefined ? { feeStroops: feeStroops.toString() } : {}),
+      ...(deps.meta?.facilitatedFor ? { facilitatedFor: deps.meta.facilitatedFor } : {}),
+    })
+
     const broadcast =
       chosen === 'oz'
         ? await broadcastViaOz(chain, auth, requirements, deps)
         : await broadcastOurselves(chain, auth, limits, deps)
     if (!broadcast.ok) {
       if (broadcast.ambiguous) {
+        // Nothing is marked spent and no sale is claimed. The row exists so an operator can
+        // find the transaction, and so the fee counts against the day. With no hash there is
+        // nothing to follow up and nothing to write: a row keyed on an empty tx would be a
+        // record nobody could act on.
+        if (broadcast.txHash) {
+          await safePersist(persist, { ...recordFor(broadcast.txHash, broadcast.feeStroops), outcome: 'ambiguous' })
+        }
         return {
           success: false,
           code: 'unconfirmed',
@@ -811,26 +846,7 @@ export async function settleStellarPayment(input: {
       { env, ...(deps.confirmDeps ?? {}) },
     )
 
-    const base: Omit<StellarSettlementRecord, 'outcome'> = {
-      ts: now().toISOString(),
-      tool: deps.meta?.tool ?? 'unknown',
-      resource: requirements.resource,
-      network: chain.caip2,
-      asset: token.address,
-      assetSymbol: token.symbol,
-      assetDecimals: token.decimals,
-      value: auth.amount.toString(),
-      amountUsd: deps.meta?.baseUsd ?? 0,
-      baseUsd: deps.meta?.baseUsd ?? 0,
-      payer: auth.payer,
-      payTo: requirements.payTo,
-      tx: broadcast.txHash,
-      explorerUrl: txUrl(chain, broadcast.txHash) ?? undefined,
-      broadcaster: chosen,
-      confirmedBy: 'soroban-rpc',
-      ...(broadcast.feeStroops !== undefined ? { feeStroops: broadcast.feeStroops.toString() } : {}),
-      ...(deps.meta?.facilitatedFor ? { facilitatedFor: deps.meta.facilitatedFor } : {}),
-    }
+    const base = recordFor(broadcast.txHash, broadcast.feeStroops)
 
     if (!confirmed.confirmed) {
       // Two very different situations share this branch, and the CODE is what separates
@@ -908,6 +924,9 @@ type BroadcastResult =
       ambiguous?: boolean
       /** Present with `ambiguous`, so an operator has something to follow up. */
       txHash?: string
+      /** Also present with `ambiguous`. The fee is what WE may have paid, so it has to
+       *  reach the settlement log or the daily budget never sees it. */
+      feeStroops?: bigint
     }
 
 /**
@@ -1062,6 +1081,9 @@ async function buildSignAndSend(
       code: 'broadcast_failed',
       ambiguous: Boolean(txHash),
       txHash: txHash || undefined,
+      // The fee is known: it was quoted by simulation and the envelope carries it. If the
+      // transaction did land, we paid it, so it belongs in the log the daily budget sums.
+      feeStroops,
       reason:
         `the submission threw and we cannot tell whether it landed: ${msg(e)}. ` +
         (txHash

@@ -16,7 +16,7 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 
-import { Keypair, Networks, hash, xdr } from '@stellar/stellar-sdk'
+import { Account, Keypair, Networks, SorobanDataBuilder, hash, xdr } from '@stellar/stellar-sdk'
 
 import { getChainById } from '../chains/registry.js'
 import { loadStellarSettlementsResult } from '../storage.js'
@@ -810,4 +810,356 @@ test('F-05 (producer): no configured database is empty, not unreadable', async (
   // Conflating that with a read failure would fail closed forever on a fresh deploy.
   const r = await loadStellarSettlementsResult(async () => null)
   assert.equal(r.ok, true, 'an unconfigured database with no file is a first run, not a failure')
+})
+
+// ── F-04: the self path, the one that spends OUR XLM ─────────────────────────────────
+//
+// Everything above this line either injects `broadcaster: 'oz'` or exercises the `settled`
+// scheme, where the buyer already paid and we spend nothing. The `self` path was covered by
+// none of it, and `rail.ts` makes `self` the DEFAULT whenever a fee payer exists, so the
+// untested path was the shipped one. A regression in the stroop arithmetic, or a reordering
+// that broadcast before the budget check, would have passed the whole suite.
+//
+// These tests drive `broadcastOurselves` through the same seams the rest of the file uses:
+// a fake RPC object for `deps.server`, a fake fee log for `deps.feeSpentTodayStroops`, and a
+// fee payer supplied through `deps.env`. `sendTransaction` is the seam that decides whether
+// this test file can tell "refused" from "broadcast and then refused": every guard test
+// below asserts it was never called, because that is the finding.
+//
+// Negative controls, run against a compiled copy so nothing in the repo was touched. Each
+// mutation was reverted afterwards, and each failed exactly the tests it should:
+//   - remove the ceiling guard, and the two fee_ceiling tests fail
+//   - remove the daily budget guard, and the fee_budget_exhausted and F-05 tests fail
+//   - force feeStroops to 0, and the happy path plus all three guard tests fail
+//   - move the submit BEFORE both guards, and all four guard tests fail
+// The last one is the regression this section exists for: a reordering that broadcasts
+// first and checks afterwards. Before these tests, all four mutations passed the suite.
+
+/**
+ * A throwaway fee payer, derived rather than pasted so no secret literal lives in the repo.
+ * It has never held anything and never will; nothing here reaches a network.
+ */
+const FEE_PAYER = Keypair.fromRawEd25519Seed(Buffer.alloc(32, 9))
+const FEE_PAYER_ENV = { X402_STELLAR_TESTNET_FEE_PAYER: FEE_PAYER.secret() }
+
+/**
+ * A simulation response in the shape the RPC actually returns, so `rpc.assembleTransaction`
+ * runs for real rather than against a hand-shaped object it would never see.
+ *
+ * The fee the settle path reads is the ASSEMBLED transaction's fee, which is the inclusion
+ * fee the builder starts from (100 stroops) plus the resource fee simulation quotes. Both
+ * halves are real arithmetic done by the SDK, which is the point: a test that asserted
+ * `feeStroops === resourceFee` would agree with a bug that dropped the inclusion fee.
+ */
+const INCLUSION_FEE = 100n
+const simSuccess = (resourceFeeStroops: number) => ({
+  latestLedger: EXPIRES_AT - 100,
+  minResourceFee: String(resourceFeeStroops),
+  transactionData: new SorobanDataBuilder().setResourceFee(resourceFeeStroops).build().toXDR('base64'),
+  results: [{ xdr: xdr.ScVal.scvVoid().toXDR('base64'), auth: [] }],
+  events: [],
+})
+
+/** What a self broadcast touches, with every touch recorded so ORDER can be asserted. */
+type SelfRpc = {
+  server: StellarSettleDeps['server']
+  calls: string[]
+  sent: number
+}
+
+const selfRpc = (over: {
+  simulate?: () => Promise<unknown>
+  send?: () => Promise<unknown>
+} = {}): SelfRpc => {
+  const calls: string[] = []
+  const state = {
+    calls,
+    sent: 0,
+    server: {
+      getLatestLedger: async () => {
+        calls.push('getLatestLedger')
+        return { sequence: EXPIRES_AT - 100 } as never
+      },
+      getAccount: async () => {
+        calls.push('getAccount')
+        // A real Account, so the builder increments a real sequence number.
+        return new Account(FEE_PAYER.publicKey(), '1') as never
+      },
+      simulateTransaction: async () => {
+        calls.push('simulateTransaction')
+        return (await (over.simulate ?? (async () => simSuccess(33_053)))()) as never
+      },
+      sendTransaction: async () => {
+        calls.push('sendTransaction')
+        state.sent += 1
+        return (await (over.send ?? (async () => ({ status: 'PENDING', hash: TX })))()) as never
+      },
+    },
+  }
+  return state as SelfRpc
+}
+
+const selfDeps = (rpcSeam: SelfRpc, over: Partial<StellarSettleDeps> = {}): StellarSettleDeps =>
+  baseDeps({
+    broadcaster: 'self',
+    env: FEE_PAYER_ENV,
+    server: rpcSeam.server,
+    feeSpentTodayStroops: async () => 0n,
+    meta: { tool: 'find_agent', baseUsd: 0.25 },
+    ...over,
+  })
+
+test('a self broadcast records that we broadcast it and what the fee actually cost us', async () => {
+  const seam = selfRpc()
+  const rows: Record<string, unknown>[] = []
+  const r = await settleStellarPayment({
+    chain: CHAIN, token: TOKEN, requirements: REQ, payload: payload(), limits: LIMITS,
+    deps: selfDeps(seam, { confirm: confirmed(), persist: async (rec) => { rows.push(rec as unknown as Record<string, unknown>) } }),
+  })
+  assert.equal(r.success, true, r.success ? '' : r.errorReason)
+  if (r.success) {
+    assert.equal(r.broadcaster, 'self')
+    assert.equal(r.transaction, TX)
+    assert.equal(r.feeStroops, (INCLUSION_FEE + 33_053n).toString())
+  }
+  assert.equal(seam.sent, 1, 'the happy path is the one case that is supposed to submit')
+  assert.equal(rows.length, 1)
+  assert.equal(rows[0].outcome, 'settled')
+  assert.equal(rows[0].broadcaster, 'self')
+  // Non-zero and exact. A row that says 'self' with feeStroops '0' is the shape of the bug
+  // the module docstring records from testnet, where a settlement we paid 33,153 stroops for
+  // was written down as having cost us nothing.
+  assert.equal(rows[0].feeStroops, (INCLUSION_FEE + 33_053n).toString())
+  assert.notEqual(rows[0].feeStroops, '0')
+})
+
+test('a simulated fee above the rail ceiling is refused and nothing is submitted', async () => {
+  const seam = selfRpc({ simulate: async () => simSuccess(2_000_000) })
+  const rows: unknown[] = []
+  const r = await settleStellarPayment({
+    chain: CHAIN, token: TOKEN, requirements: REQ, payload: payload(), limits: LIMITS,
+    deps: selfDeps(seam, { confirm: confirmed(), persist: async (rec) => { rows.push(rec) } }),
+  })
+  assert.equal(r.success, false)
+  if (!r.success) {
+    assert.equal(r.code, 'fee_ceiling')
+    assert.match(r.errorReason, /above this rail's ceiling of 1000000/)
+    assert.match(r.errorReason, /Nothing was broadcast/)
+    assert.equal(r.ambiguous, undefined, 'a refusal before submission is not ambiguous')
+  }
+  // The finding, stated as an assertion: the guard runs BEFORE the submit, not after it.
+  assert.equal(seam.sent, 0, 'a fee above the ceiling must be refused without spending it')
+  assert.equal(seam.calls.includes('sendTransaction'), false)
+  assert.equal(rows.length, 0, 'nothing was broadcast, so there is nothing to record')
+})
+
+test('a fee ceiling refusal does not even read the daily fee log', async () => {
+  // Ordering, stated the other way round: the ceiling is cheaper than the log read, so it
+  // comes first. Asserting it keeps a future edit from reordering the two and making every
+  // over-ceiling settlement pay for a database round trip.
+  const seam = selfRpc({ simulate: async () => simSuccess(2_000_000) })
+  let readTheLog = false
+  const r = await settleStellarPayment({
+    chain: CHAIN, token: TOKEN, requirements: REQ, payload: payload(), limits: LIMITS,
+    deps: selfDeps(seam, {
+      confirm: confirmed(),
+      feeSpentTodayStroops: async () => { readTheLog = true; return 0n },
+    }),
+  })
+  assert.equal(r.success, false)
+  if (!r.success) assert.equal(r.code, 'fee_ceiling')
+  assert.equal(readTheLog, false)
+  assert.equal(seam.sent, 0)
+})
+
+test('a day whose fee budget is already spent refuses before anything is submitted', async () => {
+  const seam = selfRpc()
+  const rows: unknown[] = []
+  const r = await settleStellarPayment({
+    chain: CHAIN, token: TOKEN, requirements: REQ, payload: payload(), limits: LIMITS,
+    deps: selfDeps(seam, {
+      // One stroop short of the budget, so the fee this settlement quotes tips it over.
+      feeSpentTodayStroops: async () => LIMITS.dailyFeeStroops - 1n,
+      confirm: confirmed(),
+      persist: async (rec) => { rows.push(rec) },
+    }),
+  })
+  assert.equal(r.success, false)
+  if (!r.success) {
+    assert.equal(r.code, 'fee_budget_exhausted')
+    assert.match(r.errorReason, /today's settlement fee budget is spent/)
+    assert.match(r.errorReason, /Nothing was broadcast and nothing was charged/)
+  }
+  assert.equal(seam.sent, 0, 'the daily budget is a guard only if it fires before the submit')
+  assert.equal(seam.calls.includes('sendTransaction'), false)
+  assert.equal(rows.length, 0)
+})
+
+test('the guards run in the order simulate, ceiling, budget, and only then submit', async () => {
+  // The whole sequence in one assertion, so a reordering is visible rather than inferred.
+  // A settlement that fits both ceilings walks the full path exactly once.
+  const seam = selfRpc()
+  const order: string[] = []
+  const r = await settleStellarPayment({
+    chain: CHAIN, token: TOKEN, requirements: REQ, payload: payload(), limits: LIMITS,
+    deps: selfDeps(seam, {
+      feeSpentTodayStroops: async () => { order.push('feeLog'); return 0n },
+      confirm: confirmed(),
+    }),
+  })
+  assert.equal(r.success, true, r.success ? '' : r.errorReason)
+  const simulated = seam.calls.indexOf('simulateTransaction')
+  const submitted = seam.calls.indexOf('sendTransaction')
+  assert.ok(simulated >= 0 && submitted > simulated, 'the fee is read from simulation, before submission')
+  assert.deepEqual(order, ['feeLog'], 'the daily budget is read exactly once, and it is read')
+  // The fee log is consulted between the simulation and the submission, never after it.
+  assert.equal(seam.calls.slice(submitted).includes('simulateTransaction'), false)
+})
+
+test('a simulation that fails costs nothing and says so', async () => {
+  // A replay and an insufficient balance both land here, which is why simulation runs before
+  // the ceiling checks rather than after them: it is the cheapest refusal we have.
+  const seam = selfRpc({ simulate: async () => ({ id: '1', latestLedger: 1, error: 'HostError: Error(Auth, ExistingValue)', events: [] }) })
+  const rows: unknown[] = []
+  const r = await settleStellarPayment({
+    chain: CHAIN, token: TOKEN, requirements: REQ, payload: payload(), limits: LIMITS,
+    deps: selfDeps(seam, { confirm: confirmed(), persist: async (rec) => { rows.push(rec) } }),
+  })
+  assert.equal(r.success, false)
+  if (!r.success) {
+    assert.equal(r.code, 'simulation_failed')
+    assert.match(r.errorReason, /the settlement would fail: HostError: Error\(Auth, ExistingValue\)/)
+  }
+  assert.equal(seam.sent, 0)
+  assert.equal(rows.length, 0)
+})
+
+test('a simulation call that throws is a simulation failure, not a broadcast failure', async () => {
+  const seam = selfRpc({ simulate: async () => { throw new Error('RPC 502') } })
+  const r = await settleStellarPayment({
+    chain: CHAIN, token: TOKEN, requirements: REQ, payload: payload(), limits: LIMITS,
+    deps: selfDeps(seam, { confirm: confirmed() }),
+  })
+  assert.equal(r.success, false)
+  if (!r.success) {
+    assert.equal(r.code, 'simulation_failed')
+    assert.match(r.errorReason, /could not simulate the settlement: RPC 502/)
+  }
+  assert.equal(seam.sent, 0, 'a settlement we could not simulate must not be broadcast blind')
+})
+
+/**
+ * F-05, proven on the path that spends the money.
+ *
+ * The F-05 tests above call `feeSpentOnDay` directly. This one drives the SAME function
+ * through the settle path with an unreadable log behind it, which is the statement the
+ * operator's XLM actually depends on: when we cannot say what we have spent today, we stop
+ * broadcasting instead of assuming zero.
+ */
+test('F-05 on the self path: an unreadable fee log stops the broadcast rather than assuming zero', async () => {
+  const seam = selfRpc()
+  const unreadable = async () => ({ ok: false as const, reason: 'ECONNREFUSED 10.0.0.1:5432' })
+  const r = await settleStellarPayment({
+    chain: CHAIN, token: TOKEN, requirements: REQ, payload: payload(), limits: LIMITS,
+    deps: selfDeps(seam, {
+      // The real guard, reading a log that will not answer. Not a stub returning the
+      // sentinel: a stub would agree with a version of feeSpentOnDay that had the bug.
+      feeSpentTodayStroops: () => feeSpentOnDay(CHAIN.caip2, new Date('2026-08-24T12:00:00Z'), unreadable),
+      confirm: confirmed(),
+    }),
+  })
+  assert.equal(r.success, false)
+  if (!r.success) assert.equal(r.code, 'fee_budget_exhausted')
+  assert.equal(
+    seam.sent,
+    0,
+    'an unreadable fee log must fail closed. Broadcasting here is how an unreachable database ' +
+      'turns the daily ceiling off and spends the operator XLM without a limit.',
+  )
+})
+
+test('the sentinel a broken fee log returns is larger than any budget a rail could set', () => {
+  // Why the test above refuses rather than passing: FEE_BUDGET_UNKNOWN is compared against
+  // the configured budget, so it only fails closed while it stays above it.
+  assert.ok(FEE_BUDGET_UNKNOWN > LIMITS.dailyFeeStroops)
+  assert.ok(FEE_BUDGET_UNKNOWN > 1_000_000_000n, 'a rail-sized daily budget must not exceed the sentinel')
+})
+
+test('a network that rejects the submission is a decided failure and records nothing', async () => {
+  const seam = selfRpc({ send: async () => ({ status: 'ERROR', errorResult: 'tx_insufficient_fee', hash: TX }) })
+  const rows: unknown[] = []
+  const r = await settleStellarPayment({
+    chain: CHAIN, token: TOKEN, requirements: REQ, payload: payload(), limits: LIMITS,
+    deps: selfDeps(seam, { confirm: confirmed(), persist: async (rec) => { rows.push(rec) } }),
+  })
+  assert.equal(r.success, false)
+  if (!r.success) {
+    assert.equal(r.code, 'broadcast_failed')
+    assert.match(r.errorReason, /the network rejected the settlement/)
+    assert.equal(r.ambiguous, undefined, 'the network looked at it and said no, which is a decision')
+  }
+  assert.equal(rows.length, 0)
+})
+
+/**
+ * The branch that decides whether a buyer whose money may have moved is told it failed.
+ *
+ * A throw out of `sendTransaction` cannot distinguish "the request never left" from "it
+ * arrived and the reply did not come back". Reporting broadcast_failed would answer 502 to
+ * someone whose transaction may be in the ledger, so the path hands back the locally
+ * computed hash and calls it unconfirmed instead.
+ */
+test('a submission that throws is unconfirmed and carries the hash to follow up', async () => {
+  const seam = selfRpc({ send: async () => { throw new Error('socket hang up') } })
+  const rows: unknown[] = []
+  const r = await settleStellarPayment({
+    chain: CHAIN, token: TOKEN, requirements: REQ, payload: payload(), limits: LIMITS,
+    deps: selfDeps(seam, { confirm: confirmed(), persist: async (rec) => { rows.push(rec) } }),
+  })
+  assert.equal(r.success, false)
+  if (!r.success) {
+    assert.equal(r.code, 'unconfirmed', 'a throw we cannot classify must never read as a failed payment')
+    assert.equal(r.ambiguous, true)
+    assert.match(r.transaction ?? '', /^[0-9a-f]{64}$/, 'the hash is computed locally, without the network')
+    assert.match(r.errorReason, /we cannot tell whether it landed: socket hang up/)
+    assert.match(r.errorReason, /nothing has been marked spent/)
+  }
+  // The row is the point. A transaction that may be in the ledger, whose fee we may have
+  // paid, has to be findable afterwards, and its fee has to reach the log `feeSpentOnDay`
+  // sums or the daily budget never sees what an unstable RPC cost us.
+  assert.equal(rows.length, 1, 'an ambiguous broadcast must leave a record an operator can find')
+  const rec = rows[0] as { outcome: string; tx: string; feeStroops?: string }
+  assert.equal(rec.outcome, 'ambiguous', 'not settled and not reverted: we do not know')
+  assert.equal(rec.tx, (r as { transaction?: string }).transaction)
+  assert.ok(BigInt(rec.feeStroops ?? '0') > 0n, 'the fee we may have paid is recorded, not dropped')
+})
+
+test('self is chosen with no facilitator set, and refuses cleanly when it has no fee payer', async () => {
+  // `self` is the default whenever a fee payer exists, which is the reason this whole
+  // section had to exist. With the variable unset and a real fee payer present, the rail
+  // picks self without being told to.
+  const chosen = selfRpc()
+  const picked = await settleStellarPayment({
+    chain: CHAIN, token: TOKEN, requirements: REQ, payload: payload(), limits: LIMITS,
+    deps: baseDeps({
+      env: FEE_PAYER_ENV, server: chosen.server, feeSpentTodayStroops: async () => 0n,
+      meta: { tool: 'find_agent', baseUsd: 0.25 }, confirm: confirmed(),
+    }),
+  })
+  assert.equal(picked.success, true, picked.success ? '' : picked.errorReason)
+  if (picked.success) assert.equal(picked.broadcaster, 'self')
+
+  // And the mirror: told to broadcast ourselves with nothing to pay the fee, we name the
+  // variable to set rather than crashing or falling back to someone else's rail.
+  const seam = selfRpc()
+  const r = await settleStellarPayment({
+    chain: CHAIN, token: TOKEN, requirements: REQ, payload: payload(), limits: LIMITS,
+    deps: baseDeps({ broadcaster: 'self', env: {}, server: seam.server, confirm: confirmed() }),
+  })
+  assert.equal(r.success, false)
+  if (!r.success) {
+    assert.equal(r.code, 'no_broadcaster')
+    assert.match(r.errorReason, /X402_STELLAR_TESTNET_FEE_PAYER/)
+  }
+  assert.equal(seam.sent, 0)
 })
