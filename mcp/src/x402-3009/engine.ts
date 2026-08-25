@@ -28,6 +28,7 @@ import {
   loadSpentPayments,
   persistSpentPayment,
   gasSpentOnDay,
+  GAS_BUDGET_UNKNOWN,
   type X402SettlementRecord,
 } from '../storage.js'
 import { provenDomainCached, type ProvenDomain, type DomainDeps } from './domain.js'
@@ -413,6 +414,16 @@ export async function settlePayment(input: {
       }
     }
     const spentToday = await (deps.gasSpentTodayWei ?? (() => gasSpentOnDay(now().toISOString().slice(0, 10))))()
+    // An unreadable gas ledger is not zero spend. It is reported as its own reason so an
+    // operator reading the logs can tell a real exhausted budget from a database outage,
+    // and so this never reads to a buyer as "you spent our budget".
+    if (spentToday === GAS_BUDGET_UNKNOWN) {
+      return {
+        success: false,
+        code: 'gas_budget_exhausted',
+        errorReason: `the settlement gas ledger could not be read, so today's spend is unknown and the daily budget is treated as spent. Nothing was broadcast and nothing was charged.`,
+      }
+    }
     if (spentToday + projected > limits.dailyGasWei) {
       return {
         success: false,

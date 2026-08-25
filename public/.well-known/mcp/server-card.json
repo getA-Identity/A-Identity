@@ -31,6 +31,7 @@
     { "name": "get_arc_status", "description": "Live Circle Arc testnet state read over JSON-RPC: chain id, latest block, contracts." },
     { "name": "get_circle_status", "description": "The Circle developer platform link: wallets, Gateway unified balance, USDC." },
     { "name": "list_capabilities", "description": "The full A-Identity protocol surface: identity, payments, connectivity, reputation." },
+    { "name": "merchant_check", "description": "Verify a merchant-side agent before a checkout: discovers its agent card, resolves its ERC-8004 identity on-chain, returns ALLOW / WARN / DENY. Free and read-only." },
     { "name": "find_agent", "description": "Search the marketplace of KYA-verified worker agents and their services, priced in USDC." },
     { "name": "get_agent_manifest", "description": "An agent's public manifest: ERC-8004 identity, services, reputation, and how to hire it." },
     { "name": "hire_agent", "description": "Hire a KYA-verified agent. USDC is committed to an ERC-8183 escrow on Arc." },

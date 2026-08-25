@@ -187,7 +187,26 @@ are about disclosure and asset choice, not code.
 | **B. Use a non-revocable asset** | Would mean not using Circle USDC, which is the whole point of the rail |
 | **C. Keep balances small** | Already the policy: 1 USDC daily cap, and the vault holds 0 today |
 
-**Recommendation: A plus C.** B is not a real option. A is a gap that should close regardless
+### DECLINED, 2026-08-25: option A was not taken
+
+The maintainer decided not to publish the Circle freeze disclosure, and removed the
+"What is not true here" box from `/proof/:rail` entirely at the same time.
+
+Recorded here rather than dropped, because an accepted risk that nobody wrote down is
+indistinguishable from one nobody noticed. The facts are unchanged: the pubnet USDC issuer
+sets `auth_revocable`, Circle can deauthorize the vault's balance, and if it does then
+`withdraw` stops working while `balance()` keeps reporting the funds. Option **C**, keeping
+balances small, is in force and is what bounds the exposure.
+
+The caveat data itself is not gone. `provenance.ts` still carries every caveat, every
+response from `GET /api/proof/:rail` still includes them, and
+`chains/provenance.test.ts` still fails the build if a chain publishes an empty or
+throwaway caveat list. The limitations remain machine-readable and remain enforced; they
+are no longer rendered on the page.
+
+---
+
+**Original recommendation, kept for the record: A plus C.** B is not a real option. A is a gap that should close regardless
 of what is decided here: a reader of `/proof/stellar` is told the vault is bounded by its
 policy and is not told the issuer can freeze it.
 

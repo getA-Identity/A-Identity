@@ -12,8 +12,16 @@ roadmap stays honest about velocity. Updated 2026-08-24.
   USDC with the buyer signing an authorization entry and paying no network fee. Both halves
   are on the ledger: an under-limit payment settled, an over-limit one was refused on chain
   with `DailyCapExceeded`. The first non-EVM rail here, and the only one where the spend
-  limit is enforced by a contract before the payment exists. Testnet only; pubnet is still
-  `planned`. Artifacts at `/api/proof/stellar`.
+  limit is enforced by a contract before the payment exists. Artifacts at
+  `/api/proof/stellar`.
+
+- **Stellar pubnet vault deployed** (2026-08-24): the same wasm as testnet, byte for byte,
+  at `CB5LYXFKKTKDDSCM6JO6C4GNRQUFBGSLYDET6Q56JNFJQSMBKH6KWSYP`, holding real Circle USDC
+  under a 1 USDC daily cap and a 0.25 USDC auto-approve ceiling, deliberately an order of
+  magnitude under the testnet vault because this one holds real money. Four settlements, a
+  freeze and unfreeze pair, and an owner override are on the ledger, with `spent_today`
+  coming to rest exactly at the cap. The chain is `beta`, not live, because no x402 rail
+  sells on pubnet: what it proves is the spend policy alone.
 
 - **Arbitrum One went live** (2026-08-13): agent #1259 on the canonical ERC-8004 registry,
   and x402 settling in native Circle USDC through our own EIP-3009 facilitator. The rail
@@ -26,12 +34,13 @@ roadmap stays honest about velocity. Updated 2026-08-24.
   replaying the canonical Safe Singleton Factory calldata, and agent #0 minted.
 - ERC-8004 identity on Robinhood Chain mainnet (2026-08-12): the canonical identity and
   reputation registries (deployed by the ERC-8004 authors, not by us) verified live, and
-  agent **#0**, the registry's first mint, is ours. Reads are wired; both networks stay
-  beta because neither publishes a canonical stablecoin to settle in.
+  agent **#0**, the registry's first mint, is ours. Mainnet went live on 2026-08-13 once
+  the x402 rail settled there in USDG (Paxos Global Dollar), the chain publishing no
+  canonical Circle USDC; the testnet stays beta as the rehearsal rail.
 - Trusted agent marketplace on Arc: verify -> hire (ERC-8183 escrow) -> work -> release,
   with a composite leaderboard and public agent certificates.
-- Paid Trust Oracle live on OKX.AI (X Layer mainnet): six x402 services, 120 real
-  settlements published with tx hashes at /proof.
+- Paid Trust Oracle live on OKX.AI (X Layer mainnet): six paid x402 tools plus a free
+  preview, 120 real settlements published with tx hashes at /proof.
 - On-chain AgentSpendPolicy vault per agent, session keys (both vault-native and real
   ERC-4337 via a Kernel smart account), Arc Memo audit trail, Multicall3From batch
   settlement.
@@ -44,16 +53,11 @@ roadmap stays honest about velocity. Updated 2026-08-24.
 
 ## Now
 
-- **Encode x Arc "Programmable Money"**: final submitted; Demo Day Aug 20.
-- **Turn the Stellar rail on in production**: the code shipped (see above) but the hosted
-  backend has no `X402_STELLAR_NETWORKS`, so `/api/x402/stellar/status` reports
-  `configured: false` and the tool endpoints answer 501. That is the fail-closed path
-  working as designed, not a bug, and it is also the reason nobody can buy over this rail
-  yet. It needs a payTo account holding a USDC trustline and a funded fee payer, both
-  operator-held keys.
-- **Stellar pubnet (phase 2, second half)**: after the above, mainnet. A pubnet deploy of
-  the vault, its own payTo and fee payer, and a first settlement that matters. Until those
-  exist the pubnet descriptor stays `planned` and nothing claims otherwise.
+- **Sell over the Stellar rail on pubnet**: the testnet rail is switched on in production
+  and the pubnet vault is deployed, but no x402 rail sells on pubnet. It needs its own
+  payTo account holding a USDC trustline and its own funded fee payer, both operator-held
+  keys, and a first settlement that matters. Until that exists the chain is `beta` and the
+  copy says so.
 - **Ops hardening**: post-event secret rotation; upgrade the backend off the free tier
   for demo reliability.
 

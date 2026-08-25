@@ -116,11 +116,17 @@ the first two are tracked as open audit findings rather than settled decisions.
   they were in-memory; that stopped being true when Neon was wired in.
   **Rate-limit buckets are still process-local** ([`mcp/src/http.ts:71`](mcp/src/http.ts#L71)),
   so a horizontally-scaled deploy would multiply every limit by the instance count.
-- **The Stellar daily fee budget can fail open.** `feeSpentOnDay` treats an unreadable
-  settlement log as fail-closed, but `loadStellarSettlements` returns `[]` on a read error
-  instead of throwing, so an unreachable database reads as "nothing spent today" and the
-  budget gate passes. This became reachable in production on 2026-08-24, when the Stellar
-  rail was switched on. Tracked as audit finding F-05.
+- **The Stellar daily fee budget used to fail open, and no longer does (F-05, fixed
+  2026-08-24).** `feeSpentOnDay` was written fail-closed, but the loader it called returned
+  `[]` on a read error instead of saying so, so an unreachable database read as "nothing
+  spent today" and the ceiling silently stopped applying. It became reachable in production
+  the day the Stellar rail was switched on. The loader now returns a result that
+  distinguishes *empty* from *unreadable*
+  ([`storage.ts`](mcp/src/storage.ts)), and an unreadable log is charged as
+  `FEE_BUDGET_UNKNOWN`
+  ([`x402-stellar/settle.ts`](mcp/src/x402-stellar/settle.ts)), which spends nothing.
+  Recorded here rather than deleted, because a guard that once said one thing and did
+  another is worth remembering.
 - **The Stellar self-broadcast path has no unit test.** The suite exercises the OpenZeppelin
   and buyer-paid paths; the path that spends our own XLM is covered only end to end.
   Tracked as F-04.

@@ -14,30 +14,11 @@ import { normalizePriceUsd } from '../marketplace.js'
 
 // ── wallets ───────────────────────────────────────────────────────────────────
 
-/**
- * Create a real Arc-testnet keypair. The private key is returned to the caller
- * exactly once and NOT stored anywhere on the server.
- */
-export async function createWallet(): Promise<{ wallet: Wallet; privateKey: string; note: string }> {
-  const { generatePrivateKey, privateKeyToAccount } = await import('viem/accounts')
-  const privateKey = generatePrivateKey()
-  const account = privateKeyToAccount(privateKey)
-  const wallet: Wallet = {
-    address: account.address,
-    agentId: null,
-    chain: 'arc-testnet',
-    createdAt: new Date().toISOString(),
-  }
-  state.wallets.push(wallet)
-  save(state)
-  return {
-    wallet,
-    privateKey,
-    note:
-      'Save this private key now. It is shown once and never stored by A-Identity. ' +
-      `Fund the address with testnet USDC at ${ARC_TESTNET.faucet}.`,
-  }
-}
+// There is deliberately no server-side `createWallet` here. It used to generate a keypair
+// and return the private key over HTTP; `POST /api/wallets` stopped calling it, but an
+// exported function is one call site away from re-opening a custody path the project
+// forbids. The keypair is generated in the browser and the server only ever sees the
+// address: see `recordWallet` below.
 
 /**
  * Record a wallet whose keypair was generated CLIENT-SIDE. The server only ever

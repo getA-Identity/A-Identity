@@ -19,22 +19,17 @@ import OwlMark from '../OwlMark'
  * settle green, one arrives amber, and one is stopped at the boundary ring and never gets
  * in. That boundary is the product.
  *
- * Two engines, two rows, never mixed. The policy engine (/api/traction) is genuinely at
- * zero and stays visibly at zero; the x402 settlement engines on X Layer and Celo are
- * not, and this section used to ignore them, which made a working product look dead. Each
- * row says which endpoint it came from and links to it, so every figure on the page can be
- * re-read by the person reading it.
+ * This section used to carry two rows, one per engine, never mixed. The policy-engine row
+ * (/api/traction) was removed on 2026-08-25: its counters are genuinely at zero and the
+ * maintainer decided a row of zeros does not belong on a landing page. The endpoint and the
+ * FAQ entry that names the zeros are both unchanged, so nothing here contradicts anything
+ * there; the figure is simply no longer rendered. Restore it when the engine has decided
+ * something.
+ *
+ * What remains is the x402 settlement engines on X Layer and Celo, which are not at zero.
+ * Each row says which endpoint it came from and links to it, so every figure on the page
+ * can be re-read by the person reading it.
  */
-
-/** GET /api/traction: the policy engine's own aggregate counters. */
-type Traction = {
-  checks: number
-  allow: number
-  warn: number
-  deny: number
-  registeredAgents: number
-  protectedNotionalUsd: number
-}
 
 /** GET https://a-identity-asp.onrender.com/proof.json: the X Layer ASP's settlement ledger. */
 type XLayerProof = {
@@ -56,7 +51,6 @@ const READING = { value: null, failed: false }
 
 const XLAYER_PROOF_JSON = 'https://a-identity-asp.onrender.com/proof.json'
 const XLAYER_PROOF_PAGE = 'https://a-identity-asp.onrender.com/proof'
-const TRACTION_API = 'https://a-identity-backend.onrender.com/api/traction'
 const CELO_PROOF_API = 'https://a-identity-backend.onrender.com/api/celo/proof'
 
 const SIZE = 420
@@ -147,7 +141,6 @@ function Packet({ i, reduced }: { i: number; reduced: boolean }) {
 
 export default function TractionSim() {
   const reduced = useReducedMotion() ?? false
-  const [policy, setPolicy] = useState<Feed<Traction>>(READING)
   const [xlayer, setXlayer] = useState<Feed<{ settlements: number; usd: number }>>(READING)
   const [celo, setCelo] = useState<Feed<CeloProof>>(READING)
 
@@ -157,14 +150,8 @@ export default function TractionSim() {
     const load = () => {
       if (!alive) return
 
-      apiFetch('/api/traction')
-        .then((r) => (r.ok ? readJson<Traction>(r) : Promise.reject(new Error(String(r.status)))))
-        .then((d) => {
-          if (!alive) return
-          if (d && typeof d.checks === 'number') setPolicy({ value: d, failed: false })
-          else setPolicy({ value: null, failed: true })
-        })
-        .catch(() => alive && setPolicy({ value: null, failed: true }))
+      // The /api/traction fetch that stood here went with the policy-engine row. Leaving it
+      // would have meant a request on every landing-page load for a figure nobody renders.
 
       // The ASP is a separate origin from the backend, so this one goes direct. It serves
       // Access-Control-Allow-Origin: *, and the same file already feeds the settlement
@@ -231,32 +218,23 @@ export default function TractionSim() {
             lede={
               <Lede>
                 Agents ask, the oracle answers, and the counters below are exactly what the
-                engines have counted so far. Zeros included, because a number you cannot
-                reproduce is worth less than one you can.
+                settlement engines have counted so far. Every figure links to the endpoint it
+                came from, because a number you cannot reproduce is worth less than one you
+                can.
               </Lede>
             }
           />
 
-          <motion.div {...reveal} className="mt-10">
-            <RowLabel>Policy engine</RowLabel>
-            <div className="mt-3 grid grid-cols-2 gap-3 sm:grid-cols-4">
-              <Stat label="Policy checks" value={<Value feed={policy} of={(d) => count(d.checks)} />} />
-              <Stat label="Allowed" value={<Value feed={policy} of={(d) => count(d.allow)} />} />
-              <Stat label="Denied" value={<Value feed={policy} of={(d) => count(d.deny)} />} />
-              <Stat
-                label="Protected"
-                value={<Value feed={policy} of={(d) => usd(d.protectedNotionalUsd)} />}
-              />
-            </div>
-            <p className="mt-3 text-xs text-foreground/40">
-              Live from <Source href={TRACTION_API}>/api/traction</Source>
-              {policy.value
-                ? `. ${count(policy.value.registeredAgents)} agents registered so far, and a registered agent that was never checked is not counted as a check.`
-                : '.'}
-            </p>
-          </motion.div>
+          {/* The policy-engine row rendered here: checks, allowed, denied, protected, read
+              live from /api/traction. Removed from this page on the maintainer's
+              instruction, 2026-08-25, because every one of those counters is still zero and
+              a row of zeros is not what a landing page is for.
 
-          <motion.div {...reveal} className="mt-8">
+              Nothing about it was inaccurate and the endpoint is unchanged: /api/traction
+              still serves the same figures, and the FAQ entry on the policy engine still
+              says the counters read zero and links to it. Restore this block the day the
+              engine has produced a decision. */}
+          <motion.div {...reveal} className="mt-10">
             <RowLabel>x402 settlements, two mainnets</RowLabel>
             <div className="mt-3 grid grid-cols-2 gap-3 sm:grid-cols-4">
               <Stat label="X Layer settled" value={<Value feed={xlayer} of={(d) => count(d.settlements)} />} />

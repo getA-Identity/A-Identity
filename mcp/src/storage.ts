@@ -271,13 +271,57 @@ export type X402SettlementRecord = {
 const X402_SETTLEMENTS_FILE = join(DATA_DIR, 'x402-settlements.json')
 export const X402_SETTLEMENTS_CAP = 2000
 
+/**
+ * The x402-3009 settlement log, with "empty" and "unreadable" told apart.
+ *
+ * The EVM twin of `loadStellarSettlementsResult`, and it exists for the same reason: the
+ * daily gas budget in x402-3009/engine.ts is a guard on money we spend, and a guard that
+ * cannot read its own ledger must stop rather than assume zero. `loadX402Settlements`
+ * below returns `[]` on a read error, which a budget can only read as "nothing spent
+ * today", so an unreachable Postgres turned the gas ceiling off completely. That is the
+ * same fail-open the Stellar rail fixed; this is the fix arriving on this side.
+ *
+ * A missing FILE is genuinely empty: that is a first run, not a failure.
+ *
+ * `getPool` is injectable only so the failure branch can be tested against the real
+ * function rather than a reimplementation of it.
+ */
+export type X402SettlementsRead =
+  | { ok: true; rows: X402SettlementRecord[] }
+  | { ok: false; reason: string }
+
+export async function loadX402SettlementsResult(
+  getPoolFn: () => Promise<unknown> = getPool,
+): Promise<X402SettlementsRead> {
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const p = (await getPoolFn()) as any
+    if (p) {
+      await p.query('CREATE TABLE IF NOT EXISTS x402_settlements (id bigserial PRIMARY KEY, data jsonb NOT NULL)')
+      const r = await p.query('SELECT data FROM x402_settlements ORDER BY id ASC')
+      return { ok: true, rows: r.rows.map((row: { data: X402SettlementRecord }) => row.data) }
+    }
+  } catch (e) {
+    const reason = e instanceof Error ? e.message : String(e)
+    console.error('[storage] x402 settlement read failed:', reason)
+    return { ok: false, reason }
+  }
+  try {
+    return { ok: true, rows: JSON.parse(readFileSync(X402_SETTLEMENTS_FILE, 'utf8')) as X402SettlementRecord[] }
+  } catch (e) {
+    if ((e as NodeJS.ErrnoException)?.code === 'ENOENT') return { ok: true, rows: [] }
+    const reason = e instanceof Error ? e.message : String(e)
+    console.error('[storage] x402 settlement file unreadable:', reason)
+    return { ok: false, reason }
+  }
+}
+
 /** Load the retained x402-3009 settlement records, oldest first.
  *
- *  Never throws. This is read on the settlement path, and an exception there used to be
- *  fatal in the most literal sense: it propagated out of the route handler as an unhandled
- *  rejection and took the whole process down. A database hiccup must cost a report its
- *  history, not the service its life. The caller is told, so a gas budget computed from an
- *  empty read is not mistaken for a budget that is genuinely unspent. */
+ *  Never throws, and never says why. This is the REPORTING loader: a database hiccup must
+ *  cost a proof page its history, not the service its life. Do NOT use it to feed a spend
+ *  guard, because an unreadable log is indistinguishable here from an empty one. Use
+ *  `loadX402SettlementsResult` for that. */
 export async function loadX402Settlements(): Promise<X402SettlementRecord[]> {
   try {
     const p = await getPool()
@@ -490,14 +534,31 @@ export async function persistStellarSettlement(rec: StellarSettlementRecord): Pr
  *
  * The settlement log IS the gas ledger: no second table, and the daily budget the rail
  * enforces is therefore auditable from the same rows a reviewer can already see.
+ *
+ * Fail-closed: an unreadable log returns GAS_BUDGET_UNKNOWN rather than zero, so the rail
+ * stops broadcasting instead of spending against a ceiling it cannot measure.
  */
+export const GAS_BUDGET_UNKNOWN = BigInt(Number.MAX_SAFE_INTEGER)
+
 export async function gasSpentOnDay(
   dayIso: string,
-  load: () => Promise<X402SettlementRecord[]> = loadX402Settlements,
+  load: () => Promise<X402SettlementsRead> = loadX402SettlementsResult,
 ): Promise<bigint> {
-  const rows = await load()
+  let read: X402SettlementsRead
+  try {
+    read = await load()
+  } catch (e) {
+    // The loader is documented not to throw, but a guard that spends money may not rely on
+    // a docstring. If it ever does, that is still "we cannot read the log".
+    console.error('[storage] gas log read threw; treating the daily budget as spent:', e instanceof Error ? e.message : e)
+    return GAS_BUDGET_UNKNOWN
+  }
+  if (!read.ok) {
+    console.error('[storage] could not read the gas log; treating the daily budget as spent:', read.reason)
+    return GAS_BUDGET_UNKNOWN
+  }
   let total = 0n
-  for (const r of rows) {
+  for (const r of read.rows) {
     if (!r.gasWei || !r.ts.startsWith(dayIso)) continue
     try {
       total += BigInt(r.gasWei)

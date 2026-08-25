@@ -309,6 +309,11 @@ export async function handleGuardrailRoutes(ctx: RouteCtx): Promise<boolean> {
   if (req.method === 'GET' && url.pathname === '/api/agents/circle-policy') {
     const agentId = url.searchParams.get('agentId')
     if (!agentId) { sendJson(res, 400, { error: 'agentId required' }); return true }
+    // Owner-gated like every other agent-scoped private read in this file. The plan spells
+    // out the vault address, the per-tx and daily limits and the full payee allowlist as
+    // ready-to-run CLI commands, which is exactly the shape of the policy a stranger must
+    // not be able to read off an agent.
+    if (denyRead(res, agentId, callerId)) return true
     const plan = await getAgentCirclePolicyPlan(agentId, url.searchParams.get('email') ?? undefined)
     sendJson(res, 'error' in plan && plan.error ? errStatus(plan.error) : 200, plan)
     return true

@@ -408,10 +408,14 @@ export function platformStats() {
   const released = state.tasks.filter((t) => t.status === 'released')
 
   // Executed instructions: both real on-chain settlements and simulated executions (no
-  // signer key) count as executed; withTxHash separates the ones with a real Arc tx.
-  const executed = state.instructions.filter(
-    (i) => i.status === 'executed_onchain' || i.status === 'executed_simulated',
-  )
+  // signer key) count as executed. "Executed" is NOT a synonym for "settled" here, and the
+  // split is published rather than left to be inferred from withTxHash: a blended headline
+  // is a number in which a run with no signer is indistinguishable from a run that moved
+  // money, which is exactly what this project says it does not do.
+  const onchainIx = state.instructions.filter((i) => i.status === 'executed_onchain')
+  const simulatedIx = state.instructions.filter((i) => i.status === 'executed_simulated')
+  const executed = [...onchainIx, ...simulatedIx]
+  const ixUsd = (rows: typeof state.instructions) => round2(rows.reduce((s, i) => s + i.amountUsd * i.count, 0))
 
   // Feedback + followers are agent-derived too, so ci canary ids stay out of them.
   const feedbackRows = Object.entries(state.feedback).filter(
@@ -439,12 +443,17 @@ export function platformStats() {
       open: state.tasks.filter((t) => t.status === 'open').length,
       released: released.length,
       gmvUsd: round2(released.reduce((s, t) => s + t.priceUsd, 0)),
+      // gmvUsd counts every released task, including those whose escrow was simulated.
+      // gmvOnchainUsd is the part backed by a real settlement, so the two can be read apart.
+      gmvOnchainUsd: round2(released.filter((t) => t.settlement === 'onchain').reduce((s, t) => s + t.priceUsd, 0)),
       onchainSettled: state.tasks.filter((t) => t.settlement === 'onchain').length,
     },
     settlements: {
       instructionsExecuted: executed.length,
-      instructionsUsd: round2(executed.reduce((s, i) => s + i.amountUsd * i.count, 0)),
+      instructionsUsd: ixUsd(executed),
       withTxHash: executed.filter((i) => Boolean(i.txHash)).length,
+      onchainUsd: ixUsd(onchainIx),
+      simulatedUsd: ixUsd(simulatedIx),
     },
     feedback: {
       totalRatings: allRatings.length,

@@ -352,7 +352,7 @@ https://a-identity.xyz/.well-known/mcp/server-card.json
 
 ## 8. Chains
 
-Ten chains sit in the registry, in three buckets. The bucket a chain is in comes
+11 chains sit in the registry, in three buckets. The bucket a chain is in comes
 from its descriptor, so this list and the running server cannot disagree.
 
 Live today:
@@ -399,12 +399,25 @@ Beta, wired and readable:
 - **Base mainnet** (`eip155:8453`). Native Circle USDC; the proven work here is the
   gasless Circle Gateway hop that mints on Base Sepolia. No ERC-8004 registry is
   deployed on Base, so no identity read is offered there.
+- **Stellar testnet** (`stellar:testnet`). An `AgentSpendPolicy` Soroban vault at
+  `CAIL6ECRAB5FUURQ54R7OTZPXRRCDO2S353YT6N6UZUWIBDG2ZOEB4UI`, and the Soroban x402
+  rail running end to end against it: the buyer signs a Soroban authorization entry
+  and pays no transaction fee, we broadcast, and a sale counts only once we read the
+  SEP-41 transfer event bound to that authorization's nonce. Settlement is in testnet
+  USDC through the SAC, at 7 decimals.
+- **Stellar pubnet** (`stellar:pubnet`). The same vault wasm, byte for byte, at
+  `CB5LYXFKKTKDDSCM6JO6C4GNRQUFBGSLYDET6Q56JNFJQSMBKH6KWSYP`, holding real Circle USDC
+  under a 1 USDC daily cap. Real money has moved under the on-ledger policy, including a
+  refusal that returned a typed `DailyCapExceeded`. It stays beta rather than live for one
+  reason we state rather than bury: no x402 rail sells here yet, so what is proven on
+  pubnet is the spend policy alone. There is no ERC-8004 registry on either Stellar
+  network, because that standard is EVM-only; a passport is bridged, never anchored here.
 
 Planned, descriptor only:
 
-- **Stellar** (`stellar:pubnet`), **Stellar testnet** (`stellar:testnet`) and **Avalanche C-Chain** (`eip155:43114`)
-  carry public metadata only: CAIP-2, chain id, canonical USDC, CCTP domain. Nothing is
-  deployed and nothing is wired.
+- **Avalanche C-Chain** (`eip155:43114`) carries public metadata only: CAIP-2, chain id,
+  canonical USDC, CCTP domain. The canonical ERC-8004 registries are live there, deployed
+  by their authors, but we hold no agent on them and no rail of ours is wired.
 
 Chains are added through an adapter with a registry entry, not by hardcoding, and
 a repository test fails the build if a chain id, RPC or explorer URL is hardcoded
@@ -476,4 +489,4 @@ settlement service, used here for gasless nanopayments.
 between chains.
 
 **MCP (Model Context Protocol)**: the protocol by which an AI model calls
-external tools. A-Identity exposes 19.
+external tools. A-Identity exposes 20.

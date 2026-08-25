@@ -23,10 +23,11 @@ Built on **Circle Arc** (gas paid in USDC, sub-second finality), using
 **ERC-8004** for identity, **ERC-8183** for job escrow, and **x402** for
 per-request payments.
 
-> Status: hackathon MVP. Arc is the live phase-1 network. Stellar is phase 2 and
-> half shipped: the Soroban spend vault and the x402 rail both settle on testnet
-> (`beta`), while pubnet stays `planned` until real money moves on it. Avalanche
-> is after that.
+> Status: hackathon MVP. Arc is the live phase-1 network. Stellar is phase 2 and mostly
+> shipped: the Soroban spend vault and the x402 rail both settle on testnet, and the same
+> vault wasm now holds real Circle USDC on pubnet under a 1 USDC daily cap. Both Stellar
+> networks stay `beta` rather than live, because no x402 rail sells on pubnet yet.
+> Avalanche is after that.
 
 ## Recognition: where this runs
 
@@ -159,7 +160,7 @@ cross-chain).
 A-Identity is **live on [OKX.AI](https://www.okx.ai/agents)** as an **A2MCP ASP**,
 *the identity and reputation oracle for the agent economy.* Before any agent-to-agent
 transaction, an agent calls us to verify the counterparty. Same live engine as the
-Arc product below; six services (one free) sold pay-per-call via **x402 on X Layer mainnet**
+Arc product below; seven services, six of them paid, sold pay-per-call via **x402 on X Layer mainnet**
 (`eip155:196`).
 
 **How a paid call settles** (real USD₮0 on X Layer mainnet, gas sponsored by the OKX facilitator):
@@ -188,6 +189,7 @@ sequenceDiagram
 | `verify_agent` | $0.001 | ERC-8004 on-chain identity + KYA status |
 | `reputation_score` | $0.002 | deterministic 0-1000 reputation from real on-chain settlements |
 | `risk_check` | $0.005 | pre-transaction **ALLOW / WARN / DENY** with reasons |
+| `guardrail_check` | $0.005 | whether the agent runs under an enforced policy, reported in bands, never raw limits |
 | `counterparty_check` | $0.008 | deal-specific two-agent verdict + same-operator self-deal detection |
 | `agent_passport` | $0.01 | full passport: identity + KYA + reputation + risk |
 
@@ -281,7 +283,7 @@ The full canonical ERC-8004 set, at the same addresses as Arc. Agent **#0** is o
 [mint tx](https://explorer.testnet.chain.robinhood.com/tx/0x20918ec68186bd4aaee7c36d33d0383f1bc6a2bc921e72e3b812d034da5212fd).
 No canonical stablecoin is documented for this chain, so no payment rail is claimed.
 
-### Robinhood Chain mainnet, `eip155:4663` - beta
+### Robinhood Chain mainnet, `eip155:4663` - live
 
 | Contract | Address | Standard |
 | --- | --- | --- |
@@ -352,13 +354,17 @@ entry and [paying no network fee](https://stellar.expert/explorer/testnet/tx/6d8
 The full artifact ledger is at
 [`/api/proof/stellar`](https://a-identity-backend.onrender.com/api/proof/stellar).
 
-Test money, and it stays labeled that way: Stellar pubnet is still `planned`, and there
-is no ERC-8004 on Stellar, so an agent's passport is bridged from an EVM chain rather
-than anchored here.
+Test money, and it stays labeled that way. Pubnet is a separate record: the same vault
+wasm, byte for byte, at
+[`CB5LYXFK...WSYP`](https://stellar.expert/explorer/public/contract/CB5LYXFKKTKDDSCM6JO6C4GNRQUFBGSLYDET6Q56JNFJQSMBKH6KWSYP),
+holding real Circle USDC under a 1 USDC daily cap, with four settlements, a freeze and an
+owner override on the ledger. Both Stellar networks stay `beta` rather than live for a
+reason worth stating rather than burying: no x402 rail sells on pubnet, so what pubnet
+proves is the spend policy alone. There is no ERC-8004 on Stellar either, so an agent's
+passport is bridged from an EVM chain rather than anchored here.
 
-The remaining registry chains (Base, Avalanche) carry a descriptor and public metadata
-only. Nothing of ours is deployed on them, and they stay labeled `beta` or `planned`
-until something is.
+Base and Avalanche carry a descriptor and public metadata only. Nothing of ours is
+deployed on them, and they stay labeled `beta` or `planned` until something is.
 
 Machine-readable: the chain registry is served live at
 [`GET /api/chains`](https://a-identity-backend.onrender.com/api/chains) and the same table ships

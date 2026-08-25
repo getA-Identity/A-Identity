@@ -302,7 +302,7 @@
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/RiskCheckRequest"
+                "$ref": "#/components/schemas/CounterpartyCheckRequest"
               }
             }
           }
@@ -333,26 +333,26 @@
         "tags": [
           "tools"
         ],
-        "summary": "Policy guardrail check for a proposed action",
-        "description": "Runs the live policy engine over a proposed action and answers allow / ask a human / block, with the rule that decided it. Price: $0.005 (x402, USDC).",
+        "summary": "Does this agent run under an enforced policy?",
+        "description": "Does this agent operate under an enforced spend/trade policy, and does it respect the verdicts? Returns bands only: no caps, allowlists, symbols, amounts or holdings are ever disclosed. \"Not registered\" and \"we cannot see the roster\" are reported as different answers. Price: $0.005 (x402, USDC).",
         "x-payment": "x402",
         "requestBody": {
           "required": true,
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/RiskCheckRequest"
+                "$ref": "#/components/schemas/AgentIdRequest"
               }
             }
           }
         },
         "responses": {
           "200": {
-            "description": "Guardrail decision",
+            "description": "Guardrail profile, in bands",
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/RiskResult"
+                  "$ref": "#/components/schemas/GuardrailResult"
                 }
               }
             }
@@ -510,9 +510,9 @@
                     "type": "number",
                     "description": "The USD amount about to be paid."
                   },
-                  "kind": {
+                  "payee": {
                     "type": "string",
-                    "description": "The kind of action (e.g. payment, purchase)."
+                    "description": "The payee about to be paid, as an agent id or address. Optional."
                   }
                 }
               }
@@ -579,6 +579,52 @@
         "properties": {
           "error": {
             "type": "string"
+          }
+        }
+      },
+      "CounterpartyCheckRequest": {
+        "type": "object",
+        "required": [
+          "from",
+          "to"
+        ],
+        "properties": {
+          "from": {
+            "type": "string",
+            "description": "The paying agent: ERC-8004 token id (\"#849980\"), CAIP id (\"eip155:196:8004/6271\"), or 0x owner address. Alias: \"payer\"."
+          },
+          "to": {
+            "type": "string",
+            "description": "The counterparty agent, same accepted forms. Aliases: \"counterparty\", \"agentId\"."
+          },
+          "txContext": {
+            "$ref": "#/components/schemas/RiskCheckRequest/allOf/1/properties/txContext"
+          }
+        }
+      },
+      "GuardrailResult": {
+        "type": "object",
+        "properties": {
+          "tool": {
+            "type": "string"
+          },
+          "agentId": {
+            "type": "string"
+          },
+          "found": {
+            "type": "boolean",
+            "description": "Whether this agent is on the platform roster."
+          },
+          "guardrails": {
+            "type": "object",
+            "description": "Banded profile: observability (observed / not_registered / unavailable), whether a policy is enforced, and volume/rate/count bands. Never raw values."
+          },
+          "note": {
+            "type": "string"
+          },
+          "checkedAt": {
+            "type": "string",
+            "format": "date-time"
           }
         }
       }

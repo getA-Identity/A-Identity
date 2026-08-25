@@ -20,15 +20,16 @@ descriptor exists so onboarding is a data edit, and nothing is deployed yet.
 | Base | `eip155:8453` | beta | Payment path only. No ERC-8004 registry is deployed on Base mainnet, and we do not assert one |
 | [Robinhood Chain Testnet](/chains/robinhood) | `eip155:46630` | beta | The full canonical ERC-8004 trio plus a deployed AgentSpendPolicy vault |
 | [Celo Sepolia](/chains/celo) | `eip155:11142220` | beta | Same ERC-8004 pair as Arc, x402 over testnet USDC |
-| Stellar | `stellar:pubnet` | planned | Descriptor only. Identity would be a Soroban registry plus SEP-10, not ERC-8004 |
-| Stellar (testnet) | `stellar:testnet` | planned | Where the Soroban vault and the x402 path are rehearsed before pubnet |
+| Stellar | `stellar:pubnet` | beta | An `AgentSpendPolicy` Soroban vault holding real Circle USDC under a 1 USDC daily cap. No x402 rail sells here yet, and no ERC-8004: identity would be a Soroban registry plus SEP-10 |
+| Stellar (testnet) | `stellar:testnet` | beta | The same vault wasm plus the Soroban x402 rail end to end, in test money: the buyer signs an authorization entry and pays no fee |
 | Avalanche C-Chain | `eip155:43114` | planned | Descriptor only |
 | [Arbitrum One](/chains/arbitrum) | `eip155:42161` | live | Canonical ERC-8004 identity and reputation, agent #1259, and x402 settling in native Circle USDC through our own facilitator |
 
 <Note>
-  This table is maintained against the registry itself, and a test in the backend fails
-  the build if a chain here disagrees with it. The machine-readable version is
-  `GET /api/chains`, which is generated from the same source.
+  A backend test asserts that every CAIP-2 id in the registry appears on this page, so a
+  chain cannot silently go missing here. It does not read the status column, which is
+  maintained by hand. The machine-readable status is `GET /api/chains`, generated from the
+  registry itself, and that is the copy to trust if the two ever disagree.
 </Note>
 
 ## What "deployed" means for identity

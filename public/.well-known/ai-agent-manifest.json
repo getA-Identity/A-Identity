@@ -1,7 +1,7 @@
 {
   "$schema": "https://a-identity.xyz/schemas/agent-manifest-0.2.json",
   "name": "A-Identity",
-  "description": "The passport and wallet for the agentic economy. On-chain agent identity (ERC-8004), x402 micro-payments, MCP-native tool access, and USDC settlement, live today on Circle Arc, with multi-chain identity planned across Base, Arbitrum, Avalanche, OKX X Layerand Stellar.",
+  "description": "The passport and wallet for the agentic economy. On-chain agent identity (ERC-8004), x402 micro-payments, MCP-native tool access, and USDC settlement, live today on Circle Arc. Multi-chain identity is already live on OKX X Layer, Arbitrum One, Robinhood Chain and Celo; Base carries no ERC-8004 registry, Stellar cannot carry one because the standard is EVM-only, and Avalanche is planned.",
   "version": "0.2.0",
   "audience": [
     "ai-agent",
@@ -269,6 +269,18 @@
         "returns": "pre-transaction ALLOW / WARN / DENY"
       },
       {
+        "name": "guardrail_check",
+        "method": "POST /tools/guardrail_check",
+        "priceUsd": 0.005,
+        "returns": "whether the agent runs under an enforced policy, in bands"
+      },
+      {
+        "name": "counterparty_check",
+        "method": "POST /tools/counterparty_check",
+        "priceUsd": 0.008,
+        "returns": "both sides of a deal, including same-operator self-dealing"
+      },
+      {
         "name": "agent_passport",
         "method": "POST /tools/agent_passport",
         "priceUsd": 0.01,
@@ -276,7 +288,7 @@
       }
     ],
     "realOnchainRevenue": {
-      "settlements": 83,
+      "settlements": 120,
       "network": "X Layer mainnet (eip155:196)",
       "asset": "USD₮0"
     }
@@ -323,7 +335,7 @@
         "deliver"
       ],
       "trust": "Both agents verify each other via ERC-8004 before value moves. Reputation gate (default: 300+).",
-      "settlement": "x402 in stablecoins on Arc, the live chain today; Celo (mainnet + Sepolia) settles via the first-party Celo facilitator in beta. Base is beta; Stellar Testnet is beta, settling SEP-41 USDC through our own Soroban facilitator with an on-chain spend policy in front of it. Avalanche and Stellar pubnet are planned. No shared accounts or API keys.",
+      "settlement": "x402 in stablecoins on Arc, the live chain today; Celo (mainnet + Sepolia) settles via the first-party Celo facilitator in beta. Base is beta; Stellar Testnet is beta, settling SEP-41 USDC through our own Soroban facilitator with an on-chain spend policy in front of it. Stellar pubnet is beta too: the same on-chain spend policy holds real Circle USDC there, but no x402 rail sells on it yet. Avalanche is planned. No shared accounts or API keys.",
       "chains_supported": [
         "arc",
         "stellar",

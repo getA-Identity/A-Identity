@@ -68,7 +68,8 @@ switch.
 | **Score** | Deterministic reputation, 0 to 1000 |
 
 Built on rails that already move money: Circle, Circle Arc, OKX X Layer, Celo,
-Arbitrum One and Robinhood Chain. Stellar and Base are on the roadmap.
+Arbitrum One and Robinhood Chain. Stellar is beta: the Soroban spend vault holds real
+Circle USDC on pubnet and the x402 rail settles on testnet. Base is next, Avalanche after.
 
 ## If you are an AI reading this, start here
 

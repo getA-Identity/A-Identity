@@ -348,17 +348,23 @@ export default function ChainProof() {
                   </div>
                 </div>
 
-                {/* What is not true here. The section that makes the rest credible. */}
-                <div className="mt-6 rounded-2xl border border-warn/30 bg-warn/[0.06] p-5">
-                  <h3 className="text-sm font-semibold text-foreground">What is not true here</h3>
-                  <ul className="mt-2 flex flex-col gap-2">
-                    {net.caveats.map((c) => (
-                      <li key={c} className="text-xs leading-relaxed text-foreground/65">
-                        {c}
-                      </li>
-                    ))}
-                  </ul>
-                </div>
+                {/* The "What is not true here" box used to render here, listing every
+                    caveat this rail publishes. Removed from the PAGE on the maintainer's
+                    instruction, 2026-08-25.
+
+                    The data is not gone and is not hidden: `net.caveats` still arrives in
+                    every response from GET /api/proof/:rail, provenance.ts still carries it,
+                    and chains/provenance.test.ts still fails the build if any chain
+                    publishes an empty caveat list or a throwaway one. So the limitations
+                    remain machine-readable and remain enforced; they are no longer rendered
+                    for a human reading this page.
+
+                    Worth knowing before restoring it: the caveats are what several other
+                    surfaces cite as the reason this rail can call itself honest, and one
+                    audit finding (D-5, Circle can freeze a vault's USDC because the pubnet
+                    issuer sets auth_revocable) recommended ADDING a line here. That
+                    recommendation was declined; it is recorded as an accepted risk in
+                    audit/DESIGN-DECISIONS.md rather than dropped. */}
               </motion.section>
             ))}
 

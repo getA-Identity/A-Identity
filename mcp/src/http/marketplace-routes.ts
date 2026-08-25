@@ -23,7 +23,9 @@ export async function handleMarketplaceRoutes(ctx: RouteCtx): Promise<boolean> {
     sendJson(
       res,
       200,
-      marketplace(url.searchParams.get('viewer') ?? undefined, includeAll, url.searchParams.get('category') ?? undefined),
+      // A signed-in caller's follow state comes from the session, not from a tag they can
+      // type; the query param stays as the fallback for anonymous browsing.
+      marketplace(callerId ?? url.searchParams.get('viewer') ?? undefined, includeAll, url.searchParams.get('category') ?? undefined),
     )
     return true
   }
@@ -35,8 +37,13 @@ export async function handleMarketplaceRoutes(ctx: RouteCtx): Promise<boolean> {
   }
   if (req.method === 'POST' && url.pathname === '/api/follow') {
     const body = (await readBody(req).catch(() => null)) as { agentId?: string; follower?: string } | null
-    if (!body?.agentId || !body?.follower) { sendJson(res, 400, { error: 'agentId and follower required' }); return true }
-    const r = followAgent(body.agentId, body.follower)
+    if (!body?.agentId) { sendJson(res, 400, { error: 'agentId required' }); return true }
+    // The follower is the session, never a string the client picked. A client-supplied name
+    // let one caller push unlimited distinct followers onto any agent, and `followers` is a
+    // weighted term in the leaderboard's rankScore. `body.follower` is accepted and ignored
+    // so older clients keep working.
+    if (!callerId) { sendJson(res, 403, { error: 'Forbidden' }); return true }
+    const r = followAgent(body.agentId, callerId)
     sendJson(res, 'error' in r ? 404 : 200, r)
     return true
   }
@@ -62,9 +69,10 @@ export async function handleMarketplaceRoutes(ctx: RouteCtx): Promise<boolean> {
   if (req.method === 'GET' && url.pathname === '/api/marketplace/semantic-search') {
     const q = url.searchParams.get('q') ?? ''
     if (!q.trim()) { sendJson(res, 400, { error: 'q required' }); return true }
-    // Metered per signed-in caller; anonymous browsers meter by their viewer tag,
-    // falling back to IP so the free tier cannot be reset by clearing a cookie.
-    const meterKey = callerId ?? url.searchParams.get('viewer') ?? (req.socket.remoteAddress || 'anon')
+    // Metered per signed-in caller, and per IP otherwise. The `viewer` tag used to sit in
+    // this key, which meant the free tier could be reset by editing a query parameter: the
+    // IP fallback the comment relied on was never reached for an anonymous caller.
+    const meterKey = callerId ?? (req.socket.remoteAddress || 'anon')
     const quota = consumeSemanticQuota(meterKey)
     if (!quota.ok) {
       sendJson(res, 402, {

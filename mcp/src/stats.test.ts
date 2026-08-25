@@ -244,10 +244,14 @@ test('platformStats aggregates real state honestly and excludes ci canaries', ()
     byCategory: [{ category: 'Research', count: 2 }],
   })
 
-  assert.deepEqual(s.tasks, { total: 4, open: 1, released: 2, gmvUsd: 3.75, onchainSettled: 1 })
+  assert.deepEqual(s.tasks, { total: 4, open: 1, released: 2, gmvUsd: 3.75, gmvOnchainUsd: 2.5, onchainSettled: 1 })
 
   // Executed = executed_onchain + executed_simulated; batch count multiplies the amount.
-  assert.deepEqual(s.settlements, { instructionsExecuted: 2, instructionsUsd: 5, withTxHash: 1 })
+  // The blended total stays, and the split is published beside it so a reader can tell a
+  // settlement that moved money from one that ran without a signer.
+  assert.deepEqual(s.settlements, {
+    instructionsExecuted: 2, instructionsUsd: 5, withTxHash: 1, onchainUsd: 2, simulatedUsd: 3,
+  })
 
   assert.deepEqual(s.feedback, { totalRatings: 2, avgScore: 7.5, ratedAgents: 1 })
 
@@ -281,8 +285,8 @@ test('platformStats on an empty state: zero counts and null averages, never fake
   __resetPlatformStateForTests()
   const s = platformStats()
   assert.deepEqual(s.agents, { total: 0, showcase: 0, kyaVerified: 0, onchainRegistered: 0, byCategory: [] })
-  assert.deepEqual(s.tasks, { total: 0, open: 0, released: 0, gmvUsd: 0, onchainSettled: 0 })
-  assert.deepEqual(s.settlements, { instructionsExecuted: 0, instructionsUsd: 0, withTxHash: 0 })
+  assert.deepEqual(s.tasks, { total: 0, open: 0, released: 0, gmvUsd: 0, gmvOnchainUsd: 0, onchainSettled: 0 })
+  assert.deepEqual(s.settlements, { instructionsExecuted: 0, instructionsUsd: 0, withTxHash: 0, onchainUsd: 0, simulatedUsd: 0 })
   assert.deepEqual(s.feedback, { totalRatings: 0, avgScore: null, ratedAgents: 0 })
   assert.equal(s.followersTotal, 0)
 })
