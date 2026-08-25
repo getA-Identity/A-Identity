@@ -6,12 +6,18 @@
 //! the interesting logic has no I/O to mock.
 //!
 //! The order of the gates is deliberate and matches the Solidity original
-//! (`mcp/contracts/AgentSpendPolicy.sol`) so that the same rejected payment produces the
-//! same reason on both chains. Order is observable behaviour, not an implementation
-//! detail: an agent that gets `Frozen` back when it expected `DailyCapExceeded` will
-//! route to the wrong recovery path.
+//! (`mcp/contracts/AgentSpendPolicy.sol`). Order is observable behaviour, not an
+//! implementation detail: an agent that gets `Frozen` back when it expected
+//! `DailyCapExceeded` will route to the wrong recovery path.
 //!
-//! Two gates at the top have no Solidity counterpart. See `error.rs` for why.
+//! What matches is the order of the SHARED gates. This comment used to say "the same
+//! rejected payment produces the same reason on both chains", which is false for at least
+//! four input classes (finding A5-05d): `amount == 0` is accepted on EVM and refused here,
+//! a negative amount is unrepresentable there, `to == vault` is accepted there and burns
+//! the cap (open item G-1), and an underfunded vault answers `TransferFailed` from the
+//! ERC-20 bool there against `InsufficientBalance` one gate earlier here.
+//!
+//! Four gates here have no Solidity counterpart. See `error.rs` for each.
 
 use crate::error::Error;
 

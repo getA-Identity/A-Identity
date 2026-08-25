@@ -9,9 +9,15 @@
 //! policy. Anything outside it reverts with a typed error, on chain, verifiably.
 //!
 //! Ported from `mcp/contracts/AgentSpendPolicy.sol`, which is the same product on EVM.
-//! The behaviour is deliberately identical, down to the order the gates fire and the
-//! meaning of a zero (0 cap, 0 ceiling and 0 expiry all mean "no bound"), because the
-//! console and the spend-preflight API already assume it.
+//! What is deliberately identical is narrower than this comment used to claim (finding
+//! A5-05c): the ORDER the shared gates fire in, and the meaning of a zero (0 cap, 0 ceiling
+//! and 0 expiry all mean "no bound"), because the console and the spend-preflight API
+//! already assume both.
+//!
+//! The BEHAVIOUR is not identical, and the differences all run one way, toward this
+//! contract refusing more: it adds `InvalidPayee`, `OwnerIsOperator` and a refusal of
+//! `amount == 0`, and it checks the vault balance inside the ladder and inside `withdraw`
+//! where the Solidity original checks neither. See `error.rs` for each.
 //!
 //! ## The one line this whole contract rests on
 //!

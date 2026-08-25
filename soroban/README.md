@@ -122,6 +122,39 @@ phrase `N unit tests` across five repo documents and counts `test()` declaration
 `mcp/src/**/*.test.ts`. Writing "N unit tests" about this suite in any of those files would
 make the two disagree permanently. Say "contract tests" and keep the number here.
 
+## The vaults archive on a date, and it is checkable
+
+Audit finding A2-04. A contract's instance entry carries every field this vault reads on
+every call, and it has a TTL. `bump_instance` extends it, but only on writing entrypoints
+and on none of the thirteen views. So a vault that is deployed, funded and then left alone
+drifts toward archival on a timer, and the pubnet vault is in exactly that state today: the
+x402 rail still sells on testnet, so nothing writes to it.
+
+Read on chain 2026-08-25:
+
+| Network | Live until ledger | Remaining | Archives around |
+| --- | --- | --- | --- |
+| pubnet | 66,177,017 | about 134 days | 2027-01-06 |
+| testnet | 6,739,602 | about 157 days | 2027-01-29 |
+
+```bash
+node ../mcp/scripts/stellar-vault-archival.mjs                  # both networks
+node ../mcp/scripts/stellar-vault-archival.mjs --warn-days 30   # exits 1 when closer
+```
+
+Archival is not a brick, and the distinction is the whole reason this is a note rather than
+a Critical. An archived Persistent or Instance entry is restored WITH ITS VALUE: proven by
+test in `src/test/durability.rs`, and done on chain by CAP-0066 since protocol 23. The four
+`unwrap()`s in `storage.rs` are unreachable this way. What archival costs is rent plus a
+restoring footprint on the next call, and an operator who did not know it was coming.
+
+The asymmetry worth remembering: a TEMPORARY entry, which is what the day bucket is, is
+deleted permanently rather than archived. Only persistent and instance entries come back.
+
+Any write resets the clock to the 150-day floor. `set_frozen(false)` on a vault that is
+already unfrozen is a no-op that costs a fee and buys the time back, which is the cheapest
+way to touch a vault deliberately.
+
 ## What is deliberately absent
 
 - **No `upgrade` entrypoint.** It is a second total-authority door and it makes the

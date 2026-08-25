@@ -5,8 +5,10 @@
 //! say. This list is append-only. To retire a meaning, stop returning the code and leave
 //! the variant in place with a comment; never reuse the number.
 //!
-//! Two things in this enum have no analogue in the Solidity original
-//! (`mcp/contracts/AgentSpendPolicy.sol`), because the port is not a translation:
+//! FOUR things in this enum have no analogue in the Solidity original
+//! (`mcp/contracts/AgentSpendPolicy.sol`), because the port is not a translation. This
+//! said "two" until the 2026-08-25 audit counted them (finding A5-05a), and the two it
+//! omitted are not the harmless ones:
 //!
 //! * `InvalidAmount`. Solidity's `uint256` made a negative amount unrepresentable; an
 //!   `i128` does not. The SAC does reject a negative transfer itself, and the rollback
@@ -14,9 +16,25 @@
 //!   before a review corrected it. What the guard buys is the difference between an
 //!   untyped host trap out of the token and a typed reason the client can name, and
 //!   independence from whether the token happens to validate its own inputs.
+//!
+//!   It also covers a case the negative-amount story does not: `amount == 0`. Solidity's
+//!   `pay(to, 0)` passes every gate, transfers nothing and still emits `Paid(to, 0, d,
+//!   false)`. Here it is refused. That is a real behavioural divergence and a benign one,
+//!   but anyone reconciling the two chains' event streams will find EVM `Paid` events with
+//!   no Soroban counterpart, and this is the note that explains why.
 //! * `InvalidPayee`. Paying the vault itself, or the token contract, moves nothing but
 //!   still consumes the day's budget. A compromised operator could burn the whole cap at
-//!   zero cost and deny the legitimate agent every day, forever.
+//!   zero cost and deny the legitimate agent every day, forever. The EVM sibling still
+//!   lacks this gate; it is tracked as open item G-1 rather than fixed here.
+//! * `MathOverflow`. Solidity 0.8 raises `Panic(0x11)` on overflow, which is not a named
+//!   error a client can branch on. `checked_add` plus a typed code is.
+//! * `OwnerIsOperator`, and this is the one that matters, because it is a security check
+//!   rather than an ergonomic one. The Solidity constructor rejects only a zero owner and
+//!   a zero USDC address; it accepts `_owner == _operator`, and `setOperator` has no check
+//!   at all. So the EVM contract can be put into a state where one key both spends past
+//!   the policy and lifts the policy. This contract refuses that at construction and on
+//!   `set_operator`. Soroban is strictly safer here, which is worth saying out loud rather
+//!   than leaving as an unexplained extra variant.
 //!
 //! Two failures deliberately have NO code here, and clients must expect a host trap
 //! rather than a numbered error:
