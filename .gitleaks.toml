@@ -1,0 +1,55 @@
+# Secret scanning we control, because the half GitHub gives us free does not cover Stellar.
+#
+# GitHub's secret scanning is enabled on both remotes and catches PROVIDER patterns: AWS
+# keys, Stripe tokens, GitHub tokens. Stellar's secret seed format is not on that list. The
+# setting that would catch it, "non-provider patterns", is a paid Secret Protection feature:
+# the API exposes the field, refuses to flip it, and the UI does not render it at all. So on
+# the free tier a Stellar seed committed by accident is invisible to GitHub.
+#
+# This file closes that gap in CI instead. Verified against a real generated seed.
+
+[extend]
+useDefault = true
+
+[[rules]]
+id = "stellar-secret-seed"
+description = "Stellar ed25519 secret seed (S + 55 base32 characters)"
+# StrKey is RFC 4648 base32: A-Z and 2-7 only, so no 0, 1, 8 or 9. The version byte makes
+# a secret seed start with S, and the whole thing is exactly 56 characters. Anchored on
+# both sides so a longer base32 blob does not match a substring of itself.
+regex = '''\bS[A-Z2-7]{55}\b'''
+keywords = ["S"]
+entropy = 3.5
+
+# There is deliberately NO rule for EVM private keys, and the reason is worth writing down
+# so nobody adds one back. An EVM private key is 0x plus 64 hex characters. So is a
+# transaction hash. So is a block hash. They are indistinguishable by shape, and this
+# repository is full of transaction hashes: every provenance artifact, every release
+# receipt, every proof link. A rule for that shape found 7,749 "leaks" on the first run.
+# A scanner that cries wolf 7,749 times is worse than no scanner, because the one real hit
+# is then invisible. EVM keys have to be caught by review and by never putting one in a
+# config file, which is the discipline this repo already follows: the only ones present are
+# Hardhat's published defaults, in tests, as assertions.
+
+[allowlist]
+description = "Known-safe values, each justified rather than blanket-ignored"
+paths = [
+  # Test fixtures only. Verified during the 2026-08-25 audit: these four derive to Hardhat's
+  # published default accounts #1 and #5, whose private keys appear in Hardhat's own manual.
+  # They are used as `expected` assertions, never as configuration, and appear nowhere
+  # outside a *.test.ts file. Balance is deliberately NOT the test here: a key published in
+  # a manual is unsafe whatever its balance.
+  '''mcp/src/x402\.test\.ts''',
+  '''mcp/src/x402-3009/engine\.test\.ts''',
+  '''mcp/src/x402-3009/facilitator\.test\.ts''',
+  '''mcp/src/chains/evm/adapter\.test\.ts''',
+  '''mcp/src/celo-x402\.test\.ts''',
+  # The audit's own evidence files quote scanner output and finding text verbatim.
+  '''audit/''',
+]
+regexes = [
+  # Public Stellar addresses and contract ids are not secrets. G is an account, C is a
+  # contract; only S is a seed, and it is deliberately NOT listed here.
+  '''\bG[A-Z2-7]{55}\b''',
+  '''\bC[A-Z2-7]{55}\b''',
+]

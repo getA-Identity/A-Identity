@@ -9,10 +9,27 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          # Full history, or the secret scan below only sees the tip commit and a seed
+          # committed last month stays invisible.
+          fetch-depth: 0
 
       - uses: actions/setup-node@v4
         with:
           node-version: 20
+
+      # Secret scanning we control. GitHub's own is enabled on both remotes and catches
+      # PROVIDER patterns; Stellar's seed format is not one of them, and the setting that
+      # would catch it, "non-provider patterns", is a paid Secret Protection feature: the
+      # API exposes the field, silently refuses to flip it, and the UI does not render it.
+      # So on the free tier a committed Stellar seed is invisible to GitHub. This is not.
+      #
+      # fetch-depth 0 above is what lets it scan history rather than just the tip.
+      - name: Secret scan (Stellar seeds included)
+        uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITLEAKS_CONFIG: .gitleaks.toml
 
       - name: Install frontend deps
         run: npm install
