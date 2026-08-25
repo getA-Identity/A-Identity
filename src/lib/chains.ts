@@ -340,7 +340,7 @@ export const CHAINS: readonly Chain[] = [
       "identity": {
         "standard": "ERC-8004",
         "erc8004Native": true,
-        "note": "Canonical ERC-8004 identity + reputation registries are live here; we hold no agent on them yet and no rail of ours is wired."
+        "note": "Canonical ERC-8004 identity + reputation registries are live here; we hold no agent on them yet and no rail of ours is wired. TRAP BEFORE PASTING ADDRESSES: Arc's three registry addresses all have code on Base mainnet, 130 bytes each, which is minimal-proxy sized and delegates to a NON-canonical implementation. Same address, different contract. An eth_getCode check therefore answers yes here and means nothing, so a Base registry entry has to be verified by reading the implementation rather than by observing that something is deployed. Read live 2026-08-25."
       }
     },
     "identity": "ERC-8004",

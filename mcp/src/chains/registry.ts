@@ -305,7 +305,14 @@ export const CHAINS: ChainDescriptor[] = [
       // Verified 2026-08-13 with eth_getCode on three independent RPCs: the canonical
       // identity and reputation registries ARE already live here, deployed by the ERC-8004
       // authors. What is missing is ours, not theirs, so the note says which.
-      note: 'Canonical ERC-8004 identity + reputation registries are live here; we hold no agent on them yet and no rail of ours is wired.',
+      note:
+        'Canonical ERC-8004 identity + reputation registries are live here; we hold no agent ' +
+        'on them yet and no rail of ours is wired. TRAP BEFORE PASTING ADDRESSES: Arc\'s three ' +
+        'registry addresses all have code on Base mainnet, 130 bytes each, which is ' +
+        'minimal-proxy sized and delegates to a NON-canonical implementation. Same address, ' +
+        'different contract. An eth_getCode check therefore answers yes here and means nothing, ' +
+        'so a Base registry entry has to be verified by reading the implementation rather than ' +
+        'by observing that something is deployed. Read live 2026-08-25.',
     },
     payment: { x402: true, note: 'x402 reference rail (Coinbase).' },
   },
