@@ -155,8 +155,12 @@ export function parseAgentManifest(data: unknown): ParsedManifest | null {
   // Everything else (endpoints, urls, interfaces, capability extensions, security schemes)
   // yields CANONICAL labels only, so an unrelated extension URI - e.g. the ERC-8004 spec
   // link many cards carry - is not presented as a payment rail.
+  // `services` alongside `endpoints`: ERC-8004 renamed that field on 2026-01-25, and a
+  // card written against the current spec declares its rails under the new name. Reading
+  // only the old one meant a spec-current merchant looked like it offered no rail at all.
+  // Both are read because cards in the wild carry either.
   const railText = JSON.stringify([
-    root.endpoints ?? null, root.url ?? null, agent?.endpoint ?? null,
+    root.endpoints ?? null, root.services ?? null, root.url ?? null, agent?.endpoint ?? null,
     root.supportedInterfaces ?? null, root.interfaces ?? null,
     asRecord(root.capabilities)?.extensions ?? null, root.securitySchemes ?? null,
   ])

@@ -226,6 +226,26 @@ const micro = (n: number) => Math.round(n * 1e6)
 export async function syncVaultPolicy(agent: PlatformAgent): Promise<VaultSyncResult> {
   const vault = agent.vaultAddress
   if (!vault) return { synced: false, reason: 'Agent has no on-chain vault' }
+  // Everything below this line speaks to `arc-contracts.js`, which is the EVM adapter bound
+  // to the Arc descriptor. The agent record can already describe a vault on another
+  // ecosystem (`vaultChainCaip2`, and the `vaults[]` array beside it), and an
+  // AgentSpendPolicy is deployed and holding real USDC on Stellar pubnet, so this is a
+  // reachable shape rather than a hypothetical. Sent through anyway, an EVM adapter would
+  // be handed a C... contract id and would fail somewhere further down with an error about
+  // an address, which reads as a bug in the chain rather than a gap in this function.
+  //
+  // Refused by name instead. `chains/stellar/adapter.ts` already implements the policy
+  // writes this would need; what does not exist yet is the dispatcher that picks an
+  // adapter from the vault's own chain. Until it does, saying so is the honest answer.
+  if (agent.vaultChainCaip2 && !agent.vaultChainCaip2.startsWith('eip155:')) {
+    return {
+      synced: false,
+      reason:
+        `This agent's vault is on ${agent.vaultChainCaip2}, and on-chain policy sync is wired ` +
+        'for EVM chains only. The off-chain policy is updated; the on-chain limits are not, ' +
+        'so treat them as unchanged until a signer for that chain pushes them.',
+    }
+  }
   const p = agent.permissions
   const want = {
     dailyCapUsd: p.dailyCapUsd,
