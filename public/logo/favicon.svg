@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" fill="none">
+  <!-- A-Identity ribbon monogram, favicon cut: two flat colours, three shapes. -->
+  <path d="M 22.6 29 L 23.4 5.4 Q 23.45 4.4 24.45 4.4 L 26.55 4.4 Q 27.55 4.4 27.5 5.4 L 26.8 29 Z" fill="#081B4E"/>
+  <path d="M 3 29 L 11 4.2 Q 12.5 2.6 14 4.2 L 21.2 29 L 17.6 29 L 12.5 12 L 6.6 29 Z" fill="#081B4E"/>
+  <path d="M 6 17.8 L 29.6 19.4 L 29.6 22.8 L 6 21.2 Z" fill="#6E54F6"/>
+</svg>

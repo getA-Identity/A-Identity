@@ -2,7 +2,7 @@ import { Check, Download, X } from 'lucide-react'
 import PageHeader from '../components/PageHeader'
 import SiteFooter from '../components/sections/SiteFooter'
 import ThemeScope from '../components/ThemeScope'
-import Logo from '../components/Logo'
+import LogoV2 from '../components/LogoV2'
 import OwlMark, { type OwlVerdict } from '../components/OwlMark'
 import { OwlMascot3D, type OwlVariant } from '../components/OwlMascot'
 import { DisplayHeading, Eyebrow, Lede } from '../components/ui/display'
@@ -30,6 +30,27 @@ const BRAND = [
   { name: 'cream', hex: '#f2f2ee', note: 'The page in light mode, the mark on dark chrome.' },
   { name: 'sand', hex: '#cfc8c5', note: 'Muted structure: sheets, beaks, talons.' },
 ]
+
+/** The logo's own five colours. They live inside the mark and nowhere else. */
+const LOGO_COLORS = [
+  { name: 'navy', hex: '#081B4E' },
+  { name: 'indigo', hex: '#24398E' },
+  { name: 'violet', hex: '#6E54F6' },
+  { name: 'lavender', hex: '#B9A6FF' },
+  { name: 'ivory', hex: '#F5F3F1' },
+]
+
+/** Small fixed-background wordmark, the hyphen in the logo violet. */
+function Wordmark({ dark = false, className = '' }: { dark?: boolean; className?: string }) {
+  return (
+    <span
+      className={`font-bold tracking-tight ${className}`}
+      style={{ color: dark ? '#F5F3F1' : '#081B4E' }}
+    >
+      A<span style={{ color: '#6E54F6' }}>-</span>Identity
+    </span>
+  )
+}
 
 /** The protocol and token colours, for anyone naming one of them next to our mark. */
 const PROTOCOL_COLORS = [
@@ -116,6 +137,169 @@ export default function BrandKit() {
           needs an asset that is not on this page, the asset does not exist yet.
         </Lede>
 
+        {/* ---------------------------------------------------------------- logo --- */}
+        <section className="mt-20">
+          <DisplayHeading size="sub" as="h2">
+            The logo
+          </DisplayHeading>
+          <p className="mt-2 max-w-[62ch] text-sm leading-relaxed text-foreground/55">
+            The ribbon monogram: an A and an I bound by a single ribbon. The A is the agent,
+            the I is the identity, and the ribbon is the verification that ties them
+            together. One stroke serves as both the crossbar of the A and the wrap on the I,
+            because that is the product in one motion: verify first, then pay. Read quickly
+            it also says AI, which is the audience.
+          </p>
+
+          {/* Fixed backgrounds throughout this section: these panels demonstrate the mark
+              on the logo's own ivory and navy, so they must not follow the page theme. */}
+          <div className="mt-6 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+            <figure className="overflow-hidden rounded-2xl border border-border">
+              <div
+                className="flex aspect-square flex-col items-center justify-center gap-4"
+                style={{ background: '#F5F3F1' }}
+              >
+                <LogoV2 size={110} />
+                <Wordmark className="text-xl" />
+              </div>
+              <figcaption className="border-t border-border bg-card px-4 py-3">
+                <span className="text-sm font-semibold text-foreground">Primary</span>
+                <p className="mt-1 text-xs leading-relaxed text-foreground/50">
+                  The stacked lockup, first choice everywhere the height exists.
+                </p>
+              </figcaption>
+            </figure>
+
+            <figure className="overflow-hidden rounded-2xl border border-border">
+              <div
+                className="flex aspect-square flex-col items-center justify-center gap-5"
+                style={{ background: '#F5F3F1' }}
+              >
+                <LogoV2 size={110} />
+                <div className="flex items-end gap-3">
+                  <LogoV2 size={48} />
+                  <LogoV2 size={32} />
+                  <LogoV2 size={20} />
+                </div>
+              </div>
+              <figcaption className="border-t border-border bg-card px-4 py-3">
+                <span className="text-sm font-semibold text-foreground">Icon</span>
+                <p className="mt-1 text-xs leading-relaxed text-foreground/50">
+                  The mark alone: favicons, app tiles, avatars, tight chrome.
+                </p>
+              </figcaption>
+            </figure>
+
+            <figure className="overflow-hidden rounded-2xl border border-border">
+              <div
+                className="flex aspect-square items-center justify-center gap-3"
+                style={{ background: '#F5F3F1' }}
+              >
+                <LogoV2 size={44} />
+                <Wordmark className="text-2xl" />
+              </div>
+              <figcaption className="border-t border-border bg-card px-4 py-3">
+                <span className="text-sm font-semibold text-foreground">Horizontal</span>
+                <p className="mt-1 text-xs leading-relaxed text-foreground/50">
+                  For headers and rows where the stacked lockup is too tall.
+                </p>
+              </figcaption>
+            </figure>
+
+            <figure className="overflow-hidden rounded-2xl border border-border">
+              <div className="grid aspect-square grid-rows-2">
+                <div className="flex items-center justify-center" style={{ background: '#FFFFFF' }}>
+                  <LogoV2 variant="mono" size={84} fill="#081B4E" />
+                </div>
+                <div className="flex items-center justify-center" style={{ background: '#081B4E' }}>
+                  <LogoV2 variant="mono" size={84} fill="#F5F3F1" />
+                </div>
+              </div>
+              <figcaption className="border-t border-border bg-card px-4 py-3">
+                <span className="text-sm font-semibold text-foreground">Single colour</span>
+                <p className="mt-1 text-xs leading-relaxed text-foreground/50">
+                  Stamps, engraving, low-colour print. The gaps keep the weave readable.
+                </p>
+              </figcaption>
+            </figure>
+          </div>
+
+          {/* Clear space and minimum size, the two rules that keep the mark legible. */}
+          <div className="mt-4 grid gap-4 sm:grid-cols-2">
+            <div className="rounded-2xl border border-border bg-card p-6">
+              <span className="text-sm font-semibold text-foreground">Clear space</span>
+              <div className="mt-4 flex items-center justify-center">
+                <div
+                  className="rounded-xl border border-dashed p-7"
+                  style={{ borderColor: '#6E54F6', background: '#F5F3F1' }}
+                >
+                  <LogoV2 size={72} />
+                </div>
+              </div>
+              <p className="mt-4 text-xs leading-relaxed text-foreground/50">
+                Keep a margin equal to the width of the A stroke on every side. Nothing
+                enters it: not text, not another mark, not a panel edge.
+              </p>
+            </div>
+            <div className="rounded-2xl border border-border bg-card p-6">
+              <span className="text-sm font-semibold text-foreground">Minimum size</span>
+              <div className="mt-4 flex items-end justify-center gap-8">
+                <div className="flex flex-col items-center gap-2">
+                  <div className="rounded-lg p-2" style={{ background: '#F5F3F1' }}>
+                    <LogoV2 size={32} />
+                  </div>
+                  <span className="font-mono text-[11px] text-foreground/45">32 px digital</span>
+                </div>
+                <div className="flex flex-col items-center gap-2">
+                  <div className="rounded-lg p-2" style={{ background: '#F5F3F1' }}>
+                    <LogoV2 size={38} />
+                  </div>
+                  <span className="font-mono text-[11px] text-foreground/45">10 mm print</span>
+                </div>
+              </div>
+              <p className="mt-4 text-xs leading-relaxed text-foreground/50">
+                Below these the ribbon weave closes up and the monogram reads as a wedge.
+                Use the favicon cut instead of shrinking the full mark.
+              </p>
+            </div>
+          </div>
+
+          {/* The logo's own colours, kept apart from the site tokens on purpose. */}
+          <p className="mt-10 max-w-[62ch] text-sm leading-relaxed text-foreground/55">
+            Five colours belong to the logo itself. Site surfaces keep the four site tokens
+            in the palette below; the mark carries its own gradient wherever it goes and is
+            never recoloured into a surface&apos;s palette.
+          </p>
+          <div className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-5">
+            {LOGO_COLORS.map((c) => (
+              <div key={c.name} className="overflow-hidden rounded-xl border border-border bg-card">
+                <div className="h-12 w-full border-b border-border" style={{ backgroundColor: c.hex }} />
+                <div className="flex items-baseline justify-between gap-2 px-3 py-2">
+                  <span className="text-xs font-bold text-foreground">{c.name}</span>
+                  <span className="font-mono text-[10px] text-foreground/45">{c.hex}</span>
+                </div>
+              </div>
+            ))}
+          </div>
+          <div
+            className="mt-3 flex h-10 items-center justify-between rounded-xl px-4 font-mono text-[11px] text-white"
+            style={{ background: 'linear-gradient(90deg, #081B4E 0%, #6E54F6 100%)' }}
+          >
+            <span>#081B4E</span>
+            <span>#6E54F6</span>
+          </div>
+
+          <div className="mt-6 flex flex-wrap gap-2">
+            <AssetLink href="/logo/mark.svg" label="SVG, gradient" />
+            <AssetLink href="/logo/mark-mono-ink.svg" label="SVG, mono navy" />
+            <AssetLink href="/logo/mark-mono-cream.svg" label="SVG, mono ivory" />
+            <AssetLink href="/logo/favicon.svg" label="Favicon" />
+          </div>
+          <p className="mt-4 text-xs text-foreground/40">
+            The angular interlock this replaces stays in the repo history. App chrome and
+            the favicon migrate to the ribbon monogram behind this review.
+          </p>
+        </section>
+
         {/* ------------------------------------------------------------- palette --- */}
         <section className="mt-20">
           <DisplayHeading size="sub" as="h2">
@@ -189,8 +373,8 @@ export default function BrandKit() {
           </p>
           <div className="mt-6 grid gap-4 sm:grid-cols-2">
             <div className="flex items-center justify-center gap-8 rounded-2xl border border-border bg-card p-8">
-              <Logo />
-              <Logo className="scale-150" />
+              <LogoV2 size={40} />
+              <LogoV2 size={64} />
             </div>
             <div className="grid grid-cols-4 gap-2 rounded-2xl border border-border bg-card p-6">
               {VERDICTS.map(({ v, label }) => (
@@ -332,23 +516,22 @@ export default function BrandKit() {
             hyphenated, with a capital A and a capital I: A-Identity.
           </p>
 
-          {/* Both panels pass an explicit fill: unlike every other placement, these two
-              demonstrate the mark on a FIXED light and a FIXED dark background, so they
-              must not inherit the surrounding text colour. */}
+          {/* Fixed light and dark panels: the gradient mark is the one cut used on both,
+              which is the point of the demo, so neither panel follows the page theme. */}
           <div className="mt-6 grid gap-4 sm:grid-cols-2">
-            <div className="flex items-center justify-center rounded-2xl border border-[#192837]/10 bg-white p-12">
+            <div className="flex items-center justify-center rounded-2xl border border-[#081B4E]/10 bg-white p-12">
               <div className="flex items-center gap-3">
-                <Logo size={40} fill="#192837" />
-                <span className="text-2xl font-bold tracking-tight text-[#192837]">{APP_NAME}</span>
+                <LogoV2 size={40} />
+                <Wordmark className="text-2xl" />
               </div>
             </div>
             <div
               className="flex items-center justify-center rounded-2xl border border-white/10 p-12"
-              style={{ background: '#192837' }}
+              style={{ background: '#081B4E' }}
             >
               <div className="flex items-center gap-3">
-                <Logo size={40} fill="#ffffff" />
-                <span className="text-2xl font-bold tracking-tight text-white">{APP_NAME}</span>
+                <LogoV2 size={40} />
+                <Wordmark dark className="text-2xl" />
               </div>
             </div>
           </div>
@@ -360,7 +543,8 @@ export default function BrandKit() {
               </div>
               <ul className="flex flex-col gap-2 text-sm text-foreground/70">
                 <li>Write the name as A-Identity, one word, hyphenated.</li>
-                <li>Give the mark clear space on cream or ink backgrounds.</li>
+                <li>Use the original SVG files above; the mark ships as a file, never redrawn.</li>
+                <li>Give the mark its clear space, on ivory, cream or navy grounds.</li>
                 <li>Use the accent purple for the action, and only the action.</li>
               </ul>
             </div>
@@ -369,7 +553,9 @@ export default function BrandKit() {
                 <X size={16} /> Do not
               </div>
               <ul className="flex flex-col gap-2 text-sm text-foreground/70">
-                <li>Do not recolour or stretch the logo.</li>
+                <li>Do not stretch, squeeze or rotate the mark, and add no shadows, glows or outlines.</li>
+                <li>Do not recolour it outside the logo&apos;s own five colours.</li>
+                <li>Do not run the full mark below 32 px digital or 10 mm print.</li>
                 <li>Do not write it as Aidentity, A Identity, or AIdentity.</li>
                 <li>Do not place the mark on a busy photo without a panel.</li>
               </ul>
