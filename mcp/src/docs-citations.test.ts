@@ -181,3 +181,38 @@ test('the policy README is tracked, not gitignored', () => {
   if (ignored === null) return
   assert.equal(ignored.size, 0, 'mcp/src/policy/README.md is gitignored, which defeats the point of writing it')
 })
+
+/**
+ * .gitignore listed itself, on line 81, for most of this repository's life.
+ *
+ * The rule matched and did nothing: git ignores nothing it already tracks, and this file
+ * has been tracked since the first commit. What it did do was state an intent the
+ * repository contradicts, since .gitignore is public on origin/main with every "local-only,
+ * never pushed" filename in it. And it made `git rm --cached .gitignore` a silent
+ * operation on the one file that keeps .env, .env.* and mcp/data/ out of a public repo.
+ *
+ * A rule that has no effect is not harmless when it is also a claim.
+ */
+test('.gitignore does not list itself', () => {
+  const lines = readFileSync(join(ROOT, '.gitignore'), 'utf8').split('\n')
+  const offenders = lines
+    .map((l, i) => ({ line: i + 1, text: l.trim() }))
+    .filter(({ text }) => text === '.gitignore' || text === '/.gitignore')
+  assert.deepEqual(
+    offenders, [],
+    'ignoring .gitignore does nothing (it is tracked) and claims something false (it is published): ' +
+      offenders.map((o) => `line ${o.line}`).join(', '),
+  )
+})
+
+test('.gitignore still protects the secrets it is here to protect', () => {
+  // The point of the test above is that this file must not be able to vanish quietly.
+  // That is only worth guarding because of what is in it.
+  const body = readFileSync(join(ROOT, '.gitignore'), 'utf8')
+  for (const rule of ['.env', '.env.*', 'mcp/data/']) {
+    assert.ok(
+      body.split('\n').some((l) => l.trim() === rule),
+      `.gitignore no longer carries "${rule}", which is what keeps secrets and live platform state out of a public repo`,
+    )
+  }
+})

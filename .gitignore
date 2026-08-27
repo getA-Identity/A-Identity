@@ -11,7 +11,7 @@ dist
 dist-ssr
 *.local
 
-# Runtime platform state (agent/wallet metadata, instructions) — never commit
+# Runtime platform state (agent/wallet metadata, instructions) - never commit
 mcp/data/
 
 # Scratchpad / recordings
@@ -28,7 +28,7 @@ scratchpad/
 *.sln
 *.sw?
 
-# Env / secrets (blockchain keys, RPC urls, API keys — never commit)
+# Env / secrets (blockchain keys, RPC urls, API keys - never commit)
 .env
 .env.*
 !.env.example
@@ -37,13 +37,13 @@ scratchpad/
 .claude/settings.local.json
 .vercel
 
-# Internal partner brief (not for the repo — hand to Aybars directly)
+# Internal partner brief (not for the repo - hand to Aybars directly)
 AYBARS-BRIEF.md
 
 # Internal session handoff for the next agent (not for the repo)
 SESSION-HANDOFF.md
 
-# Internal security working doc — enumerates live/unpatched gaps; never publish
+# Internal security working doc - enumerates live/unpatched gaps; never publish
 CRITICAL-GAPS.md
 
 # Local UI-drive screenshots (Playwright); never commit
@@ -78,7 +78,11 @@ skills-lock.json
 A-Identity-Architecture.pdf
 aidentity-review-video.mp4
 A-Identity_Robinhood_Full_Runbook.md
-.gitignore
+# .gitignore used to list ITSELF here. The rule matched and did nothing, because the file
+# has been tracked since the first commit and git ignores nothing it already tracks. What it
+# did do was state an intent the repository contradicts: this file is public on origin/main,
+# names and all. Worse, it made `git rm --cached .gitignore` a silent operation, and this is
+# the file that keeps .env, .env.* and mcp/data/ out of a public repo. Do not add it back.
 A-Identity_Robinhood_Runbook_Site.html
 
 # Checkpoint screenshots (local only, for HackQuest submission)

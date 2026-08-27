@@ -1,0 +1,10 @@
+target/
+mutants.out*/
+*.wasm
+
+# Deliberately NOT committed. Rust wasm builds are not bit-reproducible across machines
+# by default, so committing one would invite a reproducibility claim we cannot honor.
+# What is committed instead is a receipt: releases/*.json records the wasm sha256 next
+# to the deployed contract id, and a test asserts that hash against what the network
+# reports for the deployed contract. Anyone can pull the deployed bytes themselves with
+# `stellar contract fetch --id C... --out-file`, which is a better source than our tree.
