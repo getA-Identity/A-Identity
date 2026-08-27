@@ -74,6 +74,13 @@ contract AgentSpendPolicy {
     error AboveAutoApprove();
     error DailyCapExceeded();
     error ZeroAddress();
+    /// @notice Paying the vault itself, or the token contract, moves nothing while still
+    /// consuming the day's budget. Left open, a compromised operator could burn the whole
+    /// cap at zero cost every day and deny the legitimate agent indefinitely. Backported
+    /// from the Soroban port, where it is InvalidPayee (finding G-1); this contract had
+    /// only the address(0) check, so the "behaviour-identical port" claim was not true of
+    /// this gate.
+    error InvalidPayee();
     error TransferFailed();
 
     modifier onlyOwner() {
@@ -120,6 +127,7 @@ contract AgentSpendPolicy {
     /// exactly why the human-in-the-loop path should take over.
     function pay(address to, uint256 amount) external onlyOperator {
         if (to == address(0)) revert ZeroAddress();
+        if (to == address(this) || to == address(usdc)) revert InvalidPayee();
         if (frozen) revert IsFrozen();
         if (sessionKeyExpiry != 0 && block.timestamp > sessionKeyExpiry) revert SessionKeyExpired();
         if (allowlistEnabled && !allowed[to]) revert PayeeNotAllowed();
@@ -136,6 +144,7 @@ contract AgentSpendPolicy {
     /// still counts toward the daily cap so on-chain accounting stays honest.
     function ownerPay(address to, uint256 amount) external onlyOwner {
         if (to == address(0)) revert ZeroAddress();
+        if (to == address(this) || to == address(usdc)) revert InvalidPayee();
         uint256 d = today();
         spentOnDay[d] += amount;
         if (!usdc.transfer(to, amount)) revert TransferFailed();
@@ -177,6 +186,10 @@ contract AgentSpendPolicy {
     /// @notice Withdraw USDC from the vault back to the owner (or anywhere).
     function withdraw(address to, uint256 amount) external onlyOwner {
         if (to == address(0)) revert ZeroAddress();
+        // Same gate as pay/ownerPay, and here it is the owner it protects: a withdrawal to
+        // the token contract is a real loss, not a no-op. The Soroban port guards all three
+        // the same way.
+        if (to == address(this) || to == address(usdc)) revert InvalidPayee();
         if (!usdc.transfer(to, amount)) revert TransferFailed();
         emit Withdrawn(to, amount);
     }
