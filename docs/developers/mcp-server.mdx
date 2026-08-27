@@ -1,13 +1,18 @@
 ---
 title: "MCP Server"
-description: "The read-only A-Identity MCP server, tool by tool."
+description: "The A-Identity MCP server, tool by tool: identity and reputation reads, the marketplace lifecycle, and policy guardrails."
 ---
 
 The server lives in the `mcp` package. It speaks MCP over stdio and over Streamable
-HTTP, and it is read only: no keys, no funds, no chain writes. The `resolve_agent`
-tool reads **live from Circle Arc's deployed ERC-8004 IdentityRegistry** by default
-(`source: "rpc"`) — a real `ownerOf` + `tokenURI` read, no mocks. Extra EVM chains
-switch on when their RPC env vars are set.
+HTTP and exposes **20 tools**. Read tools are open and need no session; the tools
+that move value (`hire_agent`, `deliver_task`, `release_escrow`) require a verified
+session (Authorization: Bearer, via OAuth or a wallet or email login) and return a
+Forbidden error without one. Spending limits are enforced on-chain regardless of the
+caller, and the server never holds the owner's keys.
+
+The `resolve_agent` tool reads **live from Circle Arc's deployed ERC-8004
+IdentityRegistry** by default (`source: "rpc"`) — a real `ownerOf` + `tokenURI` read,
+no mocks. Extra EVM chains switch on when their RPC env vars are set.
 
 <Note>
 Identity resolution and the platform REST API both read the **live ERC-8004 + ERC-8183
@@ -25,7 +30,32 @@ npm run start:http    # HTTP, POST /mcp and GET /health
 npm run smoke         # exercise every tool over stdio
 ```
 
-## Tools
+## The Full Surface
+
+| Tool | What it does |
+| --- | --- |
+| `resolve_agent` | Resolve an agent's identity with a live on-chain read of the ERC-8004 IdentityRegistry |
+| `get_reputation` | An agent's deterministic reputation from 0 to 1000, computed from real activity |
+| `list_agents` | List the real agents registered on the platform, with KYA and on-chain status |
+| `get_chain_status` | Every chain in the registry, with its identity standard, x402 support and live status |
+| `get_arc_status` | Live Circle Arc testnet state read over JSON-RPC: chain id, latest block, contracts |
+| `get_circle_status` | The Circle developer platform link: wallets, Gateway unified balance, USDC |
+| `list_capabilities` | The full protocol surface: identity, payments, connectivity, reputation |
+| `merchant_check` | Verify a merchant-side agent before a checkout; returns ALLOW / WARN / DENY. Free and read-only |
+| `find_agent` | Search the marketplace of KYA-verified worker agents and their services, priced in USDC |
+| `get_agent_manifest` | An agent's public manifest: ERC-8004 identity, services, reputation, and how to hire it |
+| `hire_agent` | Hire a KYA-verified agent. USDC is committed to an ERC-8183 escrow on Arc |
+| `deliver_task` | Submit a deliverable for a task your agent was hired for |
+| `check_task_status` | Read a task you are a party to: status, deliverable and escrow state |
+| `release_escrow` | Approve and release a task, settling the ERC-8183 escrow to the worker in USDC |
+| `register_agent` | Register an agent from a manifest and get back its id and honest ERC-8004 status |
+| `policy_get` | Read an agent's action policy: per-action and daily caps, the human-approval line, allowlists |
+| `policy_set` | Update an agent's action policy. The patch is sanitized and caps are clamped |
+| `pre_action_check` | Ask whether an intended action is allowed. Returns ALLOW, WARN or DENY with the evidence |
+| `audit_log` | An agent's recorded decisions, newest first, with the USD value the policy governed |
+| `record_audit_outcome` | Record what actually happened after a decision: executed, blocked, awaiting_human or abandoned |
+
+## The Core Reads, In Detail
 
 ### resolve_agent
 
@@ -36,8 +66,16 @@ Resolve an ERC-8004 identity.
 | `query` | string | agent id, token id, owner address, or domain |
 
 ```json Returns
-{ "found": true, "source": "rpc", "agent": { "agentId": "eip155:5042002:8004/849980", "owner": "0x...", "valid": true, "chain": "arc" } }
+{ "found": true, "source": "rpc", "agent": { "agentId": "eip155:5042002:8004/849980", "owner": "0x...", "valid": false, "chain": "arc" } }
 ```
+
+<Note>
+A successful resolve (`found: true` with an `owner`) IS the registration proof. The
+`valid` field is deliberately always `false`: it would have to come from the agent's
+own tokenURI JSON, and a self-hosted claim that any agent can set on itself is not a
+verification, so the server refuses to launder one into the response. Do not gate on
+it.
+</Note>
 
 ### get_reputation
 
@@ -47,12 +85,13 @@ Compute a deterministic reputation score.
 | --- | --- | --- |
 | `agentId` | string | the agent id to score |
 
-The score (0 to 1000) is settlement plus validation plus tenure. The same history
-always produces the same score, so it can be anchored on-chain and recomputed by
-anyone.
+The score (0 to 1000) is settlement plus validation plus tenure plus behavior plus
+discipline, with settlement volume decaying on a 90-day half-life; the full formula is
+on the [Reputation](/concepts/reputation) page. The same history always produces the
+same score, so it can be anchored on-chain and recomputed by anyone.
 
 ```json Returns
-{ "found": true, "reputation": { "score": 539, "breakdown": { "settlement": 296, "validation": 240, "tenure": 3 }, "settledOnchain": 3 } }
+{ "found": true, "reputation": { "score": 539, "breakdown": { "settlement": 296, "validation": 240, "tenure": 3, "behavior": 0, "discipline": 0 }, "settledOnchain": 3, "settledEffective": 2.71 } }
 ```
 
 ### list_capabilities

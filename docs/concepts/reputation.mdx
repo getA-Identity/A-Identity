@@ -4,27 +4,75 @@ description: "How A-Identity scores an agent's track record, deterministically."
 ---
 
 Reputation turns an agent's **real** track record into one number from 0 to 1000. Same
-inputs in, same score out — a pure function, so it can be recomputed by anyone and
-anchored on-chain. Every input is real and verifiable: settlements carry on-chain tx
-hashes, identity is a real ERC-8004 anchor. No mock history.
+inputs in, same score out: a pure function, so anyone can recompute it from the same
+signals, and the number can be anchored on-chain. Every input is real and verifiable:
+settlements carry on-chain tx hashes, identity is a real ERC-8004 anchor, job outcomes
+and guardrail decisions come from the platform's own record. No mock history.
+
+The scorer is one module, `mcp/src/reputation.ts`, and it is the same function in
+production and in the tests. This page states the whole formula, because a published
+formula that omits a term is a score nobody can actually reproduce.
 
 ## The Formula
 
-Score = settlement + validation + tenure.
+Score = settlement + validation + tenure + behavior + discipline, clamped to 0 to 1000.
 
 | Component | Range | What it measures |
 | --- | --- | --- |
-| Settlement | 0 to 600 | Real on-chain USDC settlements (diminishing returns), plus a credit for holding a verified on-chain ERC-8004 identity |
-| Validation | 0 to 240 | Share of clean (settled vs rejected) actions |
-| Tenure | 0 to 160 | Days registered on the platform |
+| Settlement | 0 to 600 | Recency-weighted on-chain USDC settlements with diminishing returns, plus a +60 credit for holding a verified on-chain ERC-8004 identity |
+| Validation | 0 to 240 | Share of clean (settled vs rejected) actions, as a ratio of raw counts |
+| Tenure | 0 to 160 | Days registered on the platform, about one point per two days |
+| Behavior | -150 to +40 | Real marketplace job outcomes: the share of concluded jobs that ended contested is a penalty; the mean client rating (two or more reviews, so one cannot dominate) is a bounded bonus or penalty around a 4-star neutral |
+| Discipline | -200 to +60 | The agent's guardrail record: a +60 credit for operating under a configured policy with decisions to show; steep penalties for attempts to record a blocked action as executed, for decisions that failed closed on missing data, and for human approvals nobody ever closed |
+
+Settlement volume decays with a **90-day half-life**: each settlement's weight halves
+every 90 days, so the score is dominated by recent verified activity and an agent cannot
+coast on ancient history. Only the volume curve decays. The validation share stays a
+ratio of raw counts, because a rejection does not become clean by aging.
 
 ```ts
-const idBonus = onchainRegistered ? 60 : 0
-settlement = min(600, round(600 * (1 - exp(-settledOnchain / 6))) + idBonus)
-validation = total === 0 ? 0 : round(240 * (settledOnchain / total)) // total = settled + rejected
-tenure     = min(160, round(daysRegistered / 2))
-score      = clamp(settlement + validation + tenure, 0, 1000)
+// Settlement: recency-weighted volume, diminishing returns, identity credit. Without
+// per-settlement timestamps every settlement weighs 1 (the pre-decay behavior).
+effectiveSettled = sum over settlements of 0.5 ** (ageDays / 90)
+idBonus    = onchainRegistered ? 60 : 0
+settlement = min(600, round(600 * (1 - exp(-effectiveSettled / 6))) + idBonus)
+
+// Validation: share of clean actions. total = settled + rejected, raw counts.
+validation = total === 0 ? 0 : round(240 * (settledOnchain / total))
+
+// Tenure: ~1 point per 2 days registered.
+tenure = min(160, round(daysRegistered / 2))
+
+// Behavior (-150..+40): applied only when history exists, neutral otherwise.
+//   concluded jobs:   -round(150 * disputed / (completed + disputed))
+//   client ratings:   +clamp(round((avgRating - 4) * 40), -40, 40)  // needs >= 2 reviews
+behavior = clamp(reliability + satisfaction, -150, 40)
+
+// Discipline (-200..+60): neutral with no guardrail history at all.
+//   configured policy with decisions recorded:  +60
+//   override attempts (n > 0):                  -min(200, 60 + 30 * n)
+//   unverifiable decisions (>= 5 decisions):    -round(60 * unverifiable / decisions)
+//   dangling human approvals (>= 2 warns):      -round(50 * dangling / warns)
+discipline = clamp(sum of the above, -200, 60)
+
+score = clamp(settlement + validation + tenure + behavior + discipline, 0, 1000)
 ```
+
+Behavior and discipline default to zero when there is no history behind them, so an
+agent that has never been hired and has no guardrail record scores exactly on the first
+three components. They sharpen the score; they never dominate it.
+
+## What Is Deliberately Not an Input
+
+- **P&L. Never.** Scoring an agent on returns would be a performance claim, which is
+  regulated territory. The discipline term measures whether an agent stays inside the
+  limits its owner set, never whether those trades made money. A test asserts the
+  signal type carries no profit field.
+- **The block rate.** A high share of refusals is not evidence of a bad agent: a tight
+  policy doing its job looks exactly the same from outside, and penalizing it would
+  push owners toward loose policies to protect their score. What does count is
+  unambiguous: an attempt to record a blocked action as executed cannot be explained
+  by a strict policy, so each one is penalized steeply.
 
 ## Why Deterministic
 
@@ -40,6 +88,10 @@ Query the score through the MCP server's `get_reputation` tool or the REST endpo
 ```bash
 curl "http://localhost:3399/api/reputation?id=eip155:5042002:8004/849980"
 ```
+
+The response's `breakdown` carries all five components, and `settledEffective` reports
+the recency-weighted settlement mass that was actually scored, so the decay itself is
+auditable: when no per-settlement timestamps exist it equals the raw count.
 
 Reputation gates are how agents stay safe in the open: a payer can require, say, a
 score of 300 or more before it transacts with a stranger.
