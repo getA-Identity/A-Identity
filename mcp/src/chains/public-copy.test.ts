@@ -217,3 +217,42 @@ test('SECURITY.md marks every live mainnet signer as spending real value', () =>
     )
   }
 })
+
+/**
+ * No testnet mirror is named in the landing page's public chain sentence.
+ *
+ * ProtocolsWall drops a testnet whose mainnet twin already carries the headline, because
+ * the mirror adds a name without adding information. That rule was a hand-written set of
+ * two ids and it was missing the third, so the sentence read "Stellar, Stellar test and
+ * Base are in beta": a testnet, in a marketing line, immediately after its own twin.
+ *
+ * The rule is derived now, which removes the possibility rather than policing it. This
+ * pins the outcome, because the derivation has one judgement call in it and that call is
+ * worth stating out loud: Arc STAYS. Arc is a testnet with no mainnet twin, it is the chain
+ * identity and escrow actually settle on, and the sentence goes on to say so.
+ */
+test('the landing chain sentence names no testnet mirror, and still names Arc', () => {
+  const isMirror = (c: (typeof CHAINS)[number]) =>
+    c.testnet && CHAINS.some((o) => !o.testnet && o.id !== c.id && c.id.startsWith(`${o.id}-`))
+
+  const named = CHAINS.filter((c) => !isMirror(c))
+  const mirrors = CHAINS.filter(isMirror).map((c) => c.id)
+
+  // Every testnet that HAS a mainnet twin must be dropped. Naming them is the assertion:
+  // a fourth pair added to the registry lands here rather than in the marketing copy.
+  assert.deepEqual(mirrors.sort(), ['celo-sepolia', 'rhchain-testnet', 'stellar-testnet'])
+
+  assert.ok(named.some((c) => c.id === 'arc'), 'Arc has no mainnet twin and must stay in the sentence')
+  assert.equal(
+    named.filter((c) => c.testnet).map((c) => c.id).join(','), 'arc',
+    'Arc is the only testnet the public sentence may name',
+  )
+
+  // And the component must actually use the derived rule rather than growing a new list.
+  const src = readFileSync(
+    fileURLToPath(new URL('../../../src/components/sections/ProtocolsWall.tsx', import.meta.url)),
+    'utf8',
+  )
+  assert.match(src, /const isMirror = /, 'ProtocolsWall must derive its mirror set')
+  assert.doesNotMatch(src, /MIRRORS = new Set/, 'a hand-written mirror list is what missed stellar-testnet')
+})

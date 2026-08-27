@@ -88,21 +88,31 @@ const PROTOCOLS = [
 ]
 
 /**
- * A testnet mirror that says nothing its mainnet twin does not is dropped from the
- * status line; everything else is read from src/lib/chains.ts, which is generated from
+ * A testnet mirror that says nothing its mainnet twin does not is dropped from the status
+ * line; everything else is read from src/lib/chains.ts, which is generated from
  * mcp/src/chains/registry.ts. A promotion in the registry moves this sentence with it.
- * rhchain-testnet left this set on 2026-08-11 (registries live there while mainnet was
- * still planned) and RETURNED on 2026-08-12 when rhchain itself went beta: the mainnet
- * twin now carries the headline, so the mirror adds a name without adding information.
+ *
+ * This was a hand-written set of two, and it was missing the third. `stellar-testnet` sat
+ * outside it, so the public sentence read "Stellar, Stellar test and Base are in beta":
+ * a testnet named in a marketing line, immediately after its own mainnet twin, adding a
+ * name without adding information. That is the exact case this rule exists to remove, and
+ * a list you have to remember to extend is how it got missed.
+ *
+ * Derived instead. A chain is a mirror when it is a testnet AND some mainnet chain here
+ * shares its name root, which is what "mirror" means: Stellar Testnet mirrors Stellar,
+ * Celo Sepolia mirrors Celo, Robinhood Chain Testnet mirrors Robinhood Chain. Arc has no
+ * mainnet twin, so it stays in the sentence, which is correct: Arc is the one testnet this
+ * product genuinely runs on and the line goes on to say so in as many words.
  */
-const MIRRORS = new Set<ChainId>(['celo-sepolia', 'rhchain-testnet'])
+const isMirror = (c: { id: ChainId; testnet: boolean }) =>
+  c.testnet && CHAINS.some((o) => !o.testnet && o.id !== c.id && c.id.startsWith(`${o.id}-`))
 
 /** Console column-width names get their real ones in prose. */
 const nameOf = (id: ChainId, shortName: string) =>
   id === 'rhchain' ? 'Robinhood Chain' : id === 'rhchain-testnet' ? 'Robinhood Chain Testnet' : shortName
 
 const chainsWith = (status: ChainStatus) =>
-  CHAINS.filter((c) => c.status === status && !MIRRORS.has(c.id)).map((c) => nameOf(c.id, c.shortName))
+  CHAINS.filter((c) => c.status === status && !isMirror(c)).map((c) => nameOf(c.id, c.shortName))
 
 /** "a, b and c". */
 function listOf(names: string[]) {
