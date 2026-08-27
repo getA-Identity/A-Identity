@@ -51,8 +51,28 @@ export function assignWallet(address: string, agentId: string, caller?: string):
   if (!wallet) return { error: 'Unknown wallet' }
   if (!agent) return { error: 'Unknown agent' }
   if (!ownsAgent(agent, caller)) return { error: 'Forbidden: not the agent owner' }
+  // KYA proves control of ONE wallet, and this changes which wallet that is. Leaving the
+  // flag alone meant an agent verified against wallet A kept reading `kya: 'verified'`
+  // after being pointed at wallet B, which nobody had proved anything about. That is not a
+  // stale field, it is the product's central claim being false: verify_agent sells exactly
+  // this answer, and the KYA proof it cites named the old address.
+  //
+  // Reset rather than revoked. `revoked` is an incident, written by an owner who is saying
+  // something went wrong, and it carries a reason into the ValidationRegistry. Changing
+  // wallets is routine, so it drops back to `unverified`: re-sign the challenge with the
+  // new key and it verifies again. The old proof goes with it, because a proof about an
+  // address this agent no longer uses is worse than no proof.
+  const hadProof = agent.kya === 'verified' && agent.walletAddress?.toLowerCase() !== wallet.address.toLowerCase()
   wallet.agentId = agentId
   agent.walletAddress = wallet.address
+  if (hadProof) {
+    agent.kya = 'unverified'
+    delete agent.kyaProof
+    delete agent.kyaOnchainTx
+    delete agent.kyaOnchainExplorer
+    delete agent.kyaRequestHash
+    pushActivity(agent, 'KYA reset to unverified: the wallet it proved control of was replaced')
+  }
   pushActivity(agent, `Wallet ${short(wallet.address)} assigned`)
   save(state)
   return wallet
