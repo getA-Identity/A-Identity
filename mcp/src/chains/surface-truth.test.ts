@@ -56,7 +56,9 @@ test('every live or beta chain carries an identity registry, or is a listed exce
   // decisions here means the mistakes stand out, which is the same discipline
   // no-hardcoded-chains.test.ts uses for its allowlist.
   const NO_REGISTRY_YET: Record<string, string> = {
-    base: 'beta on the strength of the payment path (Base Sepolia via the Gateway demo), NOT identity. No ERC-8004 registry is deployed on Base mainnet and none is asserted. Delete this entry the day one lands, or demote base to planned.',
+    // base left this list on 2026-08-28: the canonical identity + reputation registries
+    // were verified live there (EIP-1967 implementation slots read on Base and Arbitrum
+    // One, implementations byte-identical), so the descriptor now carries them.
     stellar:
       'beta on the strength of the on-ledger SPEND POLICY only: a vault deployed on pubnet ' +
       'holding real USDC, an agent that spent exactly its daily budget, and a refusal carrying ' +

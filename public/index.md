@@ -68,8 +68,11 @@ switch.
 | **Score** | Deterministic reputation, 0 to 1000 |
 
 Built on rails that already move money: Circle, Circle Arc, OKX X Layer, Celo,
-Arbitrum One and Robinhood Chain. Stellar is beta: the Soroban spend vault holds real
-Circle USDC on pubnet and the x402 rail settles on testnet. Base is next, Avalanche after.
+Arbitrum One, Robinhood Chain, Stellar and Base. Stellar's Soroban spend vault holds
+real Circle USDC on pubnet while its x402 rail settles on testnet. Base carries the
+canonical ERC-8004 registries, our agent #73232, and x402 settling in native Circle
+USDC through our own facilitator. Avalanche stays planned until something of ours runs
+there.
 
 ## If you are an AI reading this, start here
 

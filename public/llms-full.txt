@@ -395,10 +395,18 @@ Live today:
   on pubnet yet, and we state that here rather than leaving it to be discovered. There is
   no ERC-8004 registry on either Stellar network, because that standard is EVM-only; a
   passport is bridged, never anchored here.
-- **Base mainnet** (`eip155:8453`). Native Circle USDC; the proven work here is the
-  gasless Circle Gateway hop that mints on Base Sepolia. No ERC-8004 registry is
-  deployed on Base, so no identity read is offered there, and no rail of ours settles
-  on Base itself.
+- **Base mainnet** (`eip155:8453`). The canonical ERC-8004 identity and reputation
+  registries are live on Base, deployed by their authors as EIP-1967 proxies whose
+  implementations match Arbitrum One byte for byte (verified 2026-08-28 by reading the
+  implementation slot on both chains); agent **#73232** is ours, minted 2026-08-28
+  through the production adapter. x402 settles here in native Circle USDC
+  (`0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913`) through the same first-party EIP-3009
+  facilitator as Robinhood Chain and Arbitrum One, the signing domain proven against
+  the token's live DOMAIN_SEPARATOR; the first settlement landed 2026-08-28 with the
+  receipt carrying the matching Transfer log. The full trail, including the Stellar
+  pubnet funding hop behind the operating wallets, is at
+  https://a-identity.xyz/proof/base. The gasless Circle Gateway hop that mints on Base
+  Sepolia is proven too.
 
 Beta, wired and readable (test networks):
 

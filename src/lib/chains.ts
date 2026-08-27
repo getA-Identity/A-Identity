@@ -182,25 +182,28 @@ export const CHAINS: readonly Chain[] = [
     ],
     "rpcUrl": "https://mainnet.base.org",
     "explorer": "https://basescan.org",
-    "role": "EVM fallback: ERC-8004 compatible, Coinbase ecosystem, low fees. Testnet active (Base Sepolia via Gateway demo).",
+    "role": "Coinbase-ecosystem EVM rail: canonical ERC-8004 registries live, our agent #73232, and x402 settling in native Circle USDC through our own EIP-3009 facilitator.",
     "status": "live",
     "protocols": {
       "payment": {
         "x402": true,
-        "note": "x402 reference rail (Coinbase)."
+        "note": "x402 settling in native Circle USDC through our own first-party EIP-3009 facilitator: the buyer signs, we broadcast and pay the gas. The signing domain is proven against the live DOMAIN_SEPARATOR, and the first settlement landed 2026-08-28 (tx 0xb59ae67c) with the receipt carrying the matching Transfer log."
       },
       "identity": {
         "standard": "ERC-8004",
         "erc8004Native": true,
-        "note": "Canonical ERC-8004 identity + reputation registries are live here; we hold no agent on them yet and no rail of ours is wired. TRAP BEFORE PASTING ADDRESSES: Arc's three registry addresses all have code on Base mainnet, 130 bytes each, which is minimal-proxy sized and delegates to a NON-canonical implementation. Same address, different contract. An eth_getCode check therefore answers yes here and means nothing, so a Base registry entry has to be verified by reading the implementation rather than by observing that something is deployed. Read live 2026-08-25."
+        "note": "Canonical ERC-8004 identity + reputation registries are live here, deployed by their authors; agent #73232 is ours (minted 2026-08-28, tx 0xb428bf8e, and ownerOf/tokenURI read back live). TRAP BEFORE PASTING ADDRESSES: Arc's three registry addresses all have code on Base mainnet, 130 bytes each, which is minimal-proxy sized and delegates to a NON-canonical implementation. Same address, different contract. An eth_getCode check therefore answers yes here and means nothing; the canonical pair above was verified by reading each proxy's EIP-1967 implementation slot and matching the implementation code byte for byte against Arbitrum One (2026-08-28), not by observing that something is deployed."
       }
     },
     "identity": "ERC-8004",
     "erc8004Native": true,
     "x402": true,
-    "registries": {},
-    "identityLive": false,
-    "settlementSymbol": null
+    "registries": {
+      "identity": "0x8004a169fb4a3325136eb29fa0ceb6d2e539a432",
+      "reputation": "0x8004BAa17C55a88189AE136b182e5fdA19dE9b63"
+    },
+    "identityLive": true,
+    "settlementSymbol": "USDC"
   },
   {
     "id": "arbitrum",

@@ -7,9 +7,12 @@ A-Identity is chain-agnostic by construction: one registry describes every chain
 adapter per virtual machine does the work. Adding a chain is a data edit, not a new code
 path. The table below is the honest state of that registry.
 
-The vocabulary is exact. **Live** means wired end to end and carrying real traffic.
-**Beta** means real and reachable, but not the whole loop. **Planned** means the
-descriptor exists so onboarding is a data edit, and nothing is deployed yet.
+The vocabulary is exact. **Live** is the registry's status for the chains that carry
+the product today, and it has never meant "no caveats": Arc is live and is a public
+testnet, and each row states exactly what runs where, including what does not run
+there yet. **Beta** marks the testnet mirrors of live chains: wired and readable, test
+money. **Planned** means the descriptor exists so onboarding is a data edit, and
+nothing is deployed yet.
 
 | Chain | CAIP-2 | Status | What is deployed |
 | --- | --- | --- | --- |
@@ -17,10 +20,10 @@ descriptor exists so onboarding is a data edit, and nothing is deployed yet.
 | [OKX X Layer](/chains/xlayer) | `eip155:196` | live | Canonical ERC-8004 identity; the trust oracle is listed here and sells over x402 |
 | [Robinhood Chain](/chains/robinhood) | `eip155:4663` | live | Canonical ERC-8004 identity and reputation, agent #0, and our own x402 facilitator settling in USDG |
 | [Celo](/chains/celo) | `eip155:42220` | live | Canonical ERC-8004 identity and reputation, agent #9759, x402 over USDC via the first-party Celo facilitator |
-| Base | `eip155:8453` | beta | Payment path only. No ERC-8004 registry is deployed on Base mainnet, and we do not assert one |
+| [Base](/chains/base) | `eip155:8453` | live | Canonical ERC-8004 identity and reputation registries, deployed by their authors and read live; agent #73232 is ours; x402 settles in native Circle USDC through our own EIP-3009 facilitator (first settlement 2026-08-28); plus the Gateway hop that mints on Base Sepolia |
 | [Robinhood Chain Testnet](/chains/robinhood) | `eip155:46630` | beta | The full canonical ERC-8004 trio plus a deployed AgentSpendPolicy vault |
 | [Celo Sepolia](/chains/celo) | `eip155:11142220` | beta | Same ERC-8004 pair as Arc, x402 over testnet USDC |
-| Stellar | `stellar:pubnet` | beta | An `AgentSpendPolicy` Soroban vault holding real Circle USDC under a 1 USDC daily cap. No x402 rail sells here yet, and no ERC-8004: identity would be a Soroban registry plus SEP-10 |
+| Stellar | `stellar:pubnet` | live | An `AgentSpendPolicy` Soroban vault holding real Circle USDC under a 1 USDC daily cap; real money has moved under the on-ledger policy, including a typed `DailyCapExceeded` refusal. The x402 rail is configured for `stellar:testnet`, so no paid call sells on pubnet yet. No ERC-8004 on either Stellar network: that standard is EVM-only |
 | Stellar (testnet) | `stellar:testnet` | beta | The same vault wasm plus the Soroban x402 rail end to end, in test money: the buyer signs an authorization entry and pays no fee |
 | Avalanche C-Chain | `eip155:43114` | planned | Descriptor only |
 | [Arbitrum One](/chains/arbitrum) | `eip155:42161` | live | Canonical ERC-8004 identity and reputation, agent #1259, and x402 settling in native Circle USDC through our own facilitator |
@@ -58,3 +61,4 @@ Two consequences worth stating plainly, because they are easy to get wrong:
 | Celo | Through Celo's own first-party x402 facilitator, EIP-3009, buyer pays no gas. |
 | Robinhood Chain | Through **our own** facilitator, run because no published one serves this chain: EIP-3009, buyer pays no gas, and settlement is proven by a receipt carrying the matching Transfer log. |
 | Arbitrum One | The same facilitator and the same engine, settling in native Circle USDC. Other facilitators already serve this chain, so here you can compare ours against a baseline. The disclosed fee is lower because a settlement measurably costs less: 103569 gas at 0.02 gwei. |
+| Base | The same facilitator and the same engine again, settling in native Circle USDC with the signing domain proven against the live DOMAIN_SEPARATOR. The first settlement's receipt (102828 gas at 0.006 gwei) is what set the disclosed fee. |

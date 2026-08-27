@@ -30,7 +30,7 @@ import { RailCard } from '../components/stats/RailCard'
 import { apiFetch } from '../lib/api'
 import { CHAINS, type ChainId, type ChainStatus } from '../lib/chains'
 import { usePageMeta } from '../lib/head'
-import { BACKEND_UNREACHABLE } from '../lib/mcpBase'
+import { ASP_BASE, BACKEND_UNREACHABLE } from '../lib/mcpBase'
 
 /**
  * /stats: the network, in numbers, for anyone who asks "is this real?"
@@ -223,7 +223,9 @@ export default function Stats() {
 
     // Different origin, open CORS, no proxy in front of it: a plain fetch is the honest
     // call here and a failure only costs this one card its numbers.
-    fetch(ASP_PROOF_JSON)
+    // Same-origin /asp proxy in prod; ASP_PROOF_JSON stays the provenance href because
+    // the source tag must name the real origin the numbers come from.
+    fetch(`${ASP_BASE}/proof.json`)
       .then((r) => (r.ok ? (r.json() as Promise<AspProof>) : Promise.reject(new Error(String(r.status)))))
       .then((data) => fresh() && setAsp(data))
       .catch(() => {})
@@ -260,14 +262,21 @@ export default function Stats() {
   const celoCount = celo ? celo.totalSettlements : null
   const celoUsd = celo ? celo.totalUsd : null
   // Split by chain rather than shown as one total: the rail settles in a different token
-  // on each, and summing them would be a number about nothing.
+  // on each, and summing them would be a number about nothing. The CAIP-2 literals are
+  // shared with the cards below so the lookup key and the printed network cannot drift.
+  const RH_CAIP = 'eip155:4663'
+  const ARB_CAIP = 'eip155:42161'
+  const BASE_CAIP = 'eip155:8453'
   const net = (caip2: string) => rh?.byNetwork?.[caip2] ?? null
-  const rhNet = net('eip155:4663')
-  const arbNet = net('eip155:42161')
+  const rhNet = net(RH_CAIP)
+  const arbNet = net(ARB_CAIP)
+  const baseNet = net(BASE_CAIP)
   const rhCount = rh ? (rhNet?.count ?? 0) : null
   const rhUsd = rh ? (rhNet?.usd ?? 0) : null
   const arbCount = rh ? (arbNet?.count ?? 0) : null
   const arbUsd = rh ? (arbNet?.usd ?? 0) : null
+  const baseCount = rh ? (baseNet?.count ?? 0) : null
+  const baseUsd = rh ? (baseNet?.usd ?? 0) : null
 
   // The headline is a sum of two independent live reads, so it only exists once BOTH have
   // answered. A "total" that silently drops a rail because its fetch was slow is a lie
@@ -356,7 +365,7 @@ export default function Stats() {
                 label="Settled value"
                 value={totalUsd}
                 format={(n) => usdFixed(n, 3)}
-                note="All three settlement rails combined, in real stablecoin. Small because the prices are per call and start at a tenth of a cent."
+                note="X Layer and Celo combined, in real stablecoin; Robinhood Chain, Arbitrum One and Base settle in their own tokens and are counted on their own cards below. Small because the prices are per call and start at a tenth of a cent."
               />
               <MetricTile
                 icon={Users}
@@ -423,10 +432,15 @@ export default function Stats() {
               index={2}
               chain="rhchain"
               name="Robinhood Chain"
-              network={rh?.network ?? 'eip155:4663'}
+              network={rh?.network ?? RH_CAIP}
               settlements={rhCount}
               volumeUsd={rhUsd}
               tools={toolRows(rh?.byTool)}
+              toolsQualifier={
+                rh
+                  ? `Across the whole facilitator rail, not this chain alone: the log breaks tools down rail-wide (${int(rhCount ?? 0)} rows here, ${int(arbCount ?? 0)} on Arbitrum One).`
+                  : undefined
+              }
               caveat={
                 rh && typeof rh.internalSettlements === 'number' ? (
                   <>
@@ -449,10 +463,11 @@ export default function Stats() {
               index={3}
               chain="arbitrum"
               name="Arbitrum One"
-              network="eip155:42161"
+              network={ARB_CAIP}
               settlements={arbCount}
               volumeUsd={arbUsd}
               tools={[]}
+              toolsEmptyNote="The facilitator log breaks paid calls down per tool for the rail as a whole, not per chain, so this card asserts no per-chain tool bars. Every Arbitrum One row is on the proof page."
               caveat={
                 <>
                   The same facilitator and the same engine, settling in native Circle USDC. Other
@@ -465,6 +480,29 @@ export default function Stats() {
               sourceHref="https://a-identity.xyz/api/facilitator/proof"
               to="/proof/arbitrum"
               linkLabel="See the Arbitrum One proof"
+            />
+            <RailCard
+              index={4}
+              chain="base"
+              name="Base"
+              network={BASE_CAIP}
+              settlements={baseCount}
+              volumeUsd={baseUsd}
+              tools={[]}
+              toolsEmptyNote="The facilitator log breaks paid calls down per tool for the rail as a whole, not per chain, so this card asserts no per-chain tool bars. Every Base row is on the proof page."
+              caveat={
+                <>
+                  The same facilitator and the same engine, settling in native Circle USDC. Agent
+                  #73232 is ours on the canonical registry. The rail's first settlement was
+                  broadcast from an operator machine and lives on the proof page; this card counts
+                  what the production facilitator has settled on Base, so a zero here is a real
+                  zero, not a missing read.
+                </>
+              }
+              source="GET /api/facilitator/proof"
+              sourceHref="https://a-identity.xyz/api/facilitator/proof"
+              to="/proof/base"
+              linkLabel="See the Base proof"
             />
           </div>
         </SectionShell>

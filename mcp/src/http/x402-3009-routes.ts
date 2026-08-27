@@ -60,7 +60,15 @@ export async function handleX402ThreeKRoutes(ctx: RouteCtx): Promise<boolean> {
   const isTool = url.pathname.startsWith('/api/x402/tools/')
   if (!isFacilitator && !isTool) return false
 
-  const status = railStatus()
+  // ?network= picks among the configured chains for the PRIMARY view of a challenge.
+  // Without this the top-level tool.price and the first accepts entry always described
+  // the DEFAULT chain, so a buyer who asked for eip155:8453 was shown the default
+  // chain's settlement fee in the headline while paying the (correct) per-chain amount
+  // from the accepts array. Settlement itself was never affected: the paid amount comes
+  // from the accepts entry the buyer signs. An unknown ?network still resolves to
+  // configured: false and refuses, never falls back silently.
+  const wantedNetwork = url.searchParams.get('network')?.trim() || undefined
+  const status = railStatus(process.env, wantedNetwork)
 
   // ── GET /api/facilitator/status - configuration, honestly ──
   if (req.method === 'GET' && url.pathname === '/api/facilitator/status') {

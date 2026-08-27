@@ -365,9 +365,16 @@ on pubnet yet, since the rail is configured for `stellar:testnet`. There is no E
 Stellar either, so an agent's passport is bridged from an EVM chain rather than anchored
 here.
 
-Base carries a descriptor, native Circle USDC and the Gateway hop; Avalanche carries public
-metadata only. No rail of ours settles on Base itself, and Avalanche stays `planned` until
-something of ours is deployed on it.
+Base carries the canonical ERC-8004 identity and reputation registries (verified
+2026-08-28 by reading each proxy's EIP-1967 implementation slot and matching the
+implementation code byte for byte against Arbitrum One), our agent #73232 (minted
+2026-08-28, tx `0xb428bf8e`), native Circle USDC, the Gateway hop, and the same
+first-party x402 facilitator that serves Robinhood Chain and Arbitrum One, settling in
+native USDC: the first settlement landed 2026-08-28 (tx `0xb59ae67c`, 102828 gas, the
+receipt carrying the matching Transfer log). The whole trail, including the Stellar
+funding hop behind the wallets, is on [/proof/base](https://a-identity.xyz/proof/base).
+Avalanche carries public metadata only and stays `planned` until something of ours is
+deployed on it.
 
 Machine-readable: the chain registry is served live at
 [`GET /api/chains`](https://a-identity-backend.onrender.com/api/chains) and the same table ships

@@ -253,6 +253,65 @@ export const PROVENANCE: ChainProvenance[] = [
     ],
   },
   {
+    chain: 'base',
+    summary:
+      'Agent #73232 on Base is ours, and paid trust calls settle here in native Circle USDC through the same first-party EIP-3009 facilitator that serves Robinhood Chain and Arbitrum One. The canonical ERC-8004 registries were already deployed by their authors; registering was permissionless and cost well under a cent. The operating wallets were funded from Stellar pubnet USDC through a NEAR Intents market-maker swap, recorded below, because a chain claim without its funding trail is a claim with a hole in it.',
+    agent: { tokenId: '73232', caip: 'eip155:8453:8004/73232', owner: OWNER, tokenUri: AGENT_CARD },
+    contracts: [
+      {
+        name: 'IdentityRegistry',
+        address: '0x8004a169fb4a3325136eb29fa0ceb6d2e539a432',
+        note: 'The same canonical address X Layer, Celo, Robinhood Chain and Arbitrum One carry. Deployed by the ERC-8004 authors as an EIP-1967 proxy; verified 2026-08-28 by reading the implementation slot on Base and on Arbitrum One and matching the implementation code byte for byte, because eth_getCode alone is not proof on this chain (Arc\'s testnet-era addresses hold NON-canonical minimal proxies here at the same addresses).',
+      },
+      { name: 'ReputationRegistry', address: '0x8004BAa17C55a88189AE136b182e5fdA19dE9b63' },
+      {
+        name: 'USDC (native Circle)',
+        address: '0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913',
+        note: 'The settlement token, canonical Circle USDC, so it is also the descriptor\'s contracts.usdc. EIP-3009 confirmed by a read-only authorizationState call, and its EIP-712 domain (version "2", read from version() itself) reproduces the live DOMAIN_SEPARATOR exactly.',
+      },
+    ],
+    artifacts: [
+      {
+        kind: 'funding',
+        label: 'Gas wallet funded from Stellar pubnet USDC via a NEAR Intents swap',
+        txHash: 'a945bc92b62adf0c01d900ccffd2d7d024abd3c6551672260a67424239d2e198',
+        onChain: 'stellar',
+        note: '1.4 USDC left a pubnet burner into the market-maker deposit with a routing memo, and 0.000555 ETH arrived on Base for the operator wallet about 30 seconds later. The market maker\'s Base-side delivery transaction is theirs, not ours, so it is not claimed here.',
+      },
+      {
+        kind: 'funding',
+        label: 'Buyer wallet funded with USDC through the same NEAR Intents hop',
+        txHash: '90a52cacf353f416c3a35c81a1c9a77d34d1206004d2dfd1a61b1bf471b692c7',
+        onChain: 'stellar',
+        note: '1.1 Stellar USDC became 1.096 native Base USDC at the buyer address. The buyer holds zero native ETH on purpose, so it cannot broadcast anything itself.',
+      },
+      {
+        kind: 'mint',
+        label: 'Agent #73232 minted through the production adapter',
+        txHash: '0xb428bf8e79df3c44157c134df1858eb75fe3758b74868445c1dcd07948705bf0',
+        onChain: 'base',
+        blockNumber: 50540749,
+        note: '177816 gas at an effective 0.006 gwei, about 0.0000016 ETH including the L1 data fee. Verified after the fact: ownerOf(73232) and tokenURI(73232) read back to the values recorded here.',
+      },
+      {
+        kind: 'settlement',
+        label: 'First x402 settlement in USDC (verify_agent, 0.006 USDC)',
+        txHash: '0xb59ae67ced56426bdc1d85a71adadb35b0db59bcffeb3ff637eba23fe49a1450',
+        onChain: 'base',
+        blockNumber: 50540810,
+        note: '102828 gas at an effective 0.006 gwei, about 0.00000062 ETH including the L1 fee. The buyer signed and paid no gas; we broadcast, and the receipt carries the matching 6000-unit USDC Transfer from the buyer to the receiving address plus the token\'s own AuthorizationUsed event binding it to the signed authorization. This measurement set the disclosed fee\'s basis.',
+      },
+    ],
+    caveats: [
+      'We deployed nothing here. The registries were already live and registering on them is permissionless; what is ours is agent #73232 and the rail.',
+      'The settlement recorded here is a self-funded test: the buyer wallet and the receiving address are both ours, and the receiving address is the same account that broadcasts. It is labeled internal and always will be; this is evidence the rail works, not evidence of demand.',
+      'This chain is ALREADY served by other x402 facilitators, Coinbase\'s among them. We run ours anyway so that one code path and one receipt standard cover every chain we sell on.',
+      'The operating wallets were funded through a NEAR Intents market-maker swap from Stellar pubnet USDC: a custodial hop that took under a minute. The Stellar-side transactions are recorded above; the market maker\'s Base-side delivery transactions are not ours to claim.',
+      'There is no ValidationRegistry in this family, so a KYA result cannot be anchored on Base. It is still verified off-chain and recorded.',
+      'This is an L2 that settles to Ethereum, so "settled" has layers and we name them: we wait the descriptor\'s confirmations, which is the sequencer\'s ordering commitment, and we record the block. That is not Ethereum finality.',
+    ],
+  },
+  {
     chain: 'stellar-testnet',
     summary:
       'The first non-EVM rail here, and the only one where the spending limit is enforced by a contract before the payment exists. A Soroban spend policy holds the money, the agent asks it to pay, and the policy answers with a typed error or a transfer. Paid calls settle in SEP-41 USDC through the Soroban x402 facilitator we run ourselves, and every settlement is confirmed by reading the transfer event, whoever broadcast it.',
@@ -477,6 +536,13 @@ export const PROOF_RAILS: ProofRail[] = [
     lede:
       'Agent #1259 on the canonical ERC-8004 registry, and paid calls settling in native Circle USDC through the facilitator we run ourselves. Other facilitators already serve this chain, which is the point: Arbitrum One is where you can check our rail against a well-served baseline.',
     chains: ['arbitrum'],
+  },
+  {
+    slug: 'base',
+    title: 'Base',
+    lede:
+      'Agent #73232 on the canonical ERC-8004 registry, and paid calls settling in native Circle USDC through the facilitator we run ourselves. The operating wallets were funded from Stellar pubnet USDC through a NEAR Intents swap, and that funding trail is part of the record.',
+    chains: ['base'],
   },
 ]
 

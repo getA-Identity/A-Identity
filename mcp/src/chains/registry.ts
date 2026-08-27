@@ -104,12 +104,13 @@ export const CHAINS: ChainDescriptor[] = [
     role: 'Fast, low-cost settlement: native Circle USDC, Soroban contracts, and an x402 rail where the buyer signs and pays no transaction fee.',
     ecosystem: 'stellar',
     testnet: false,
-    // beta, not live, and the distinction is doing work. The vault is deployed on pubnet
-    // and real USDC has moved through it under the policy (2026-08-24, contract
-    // CB5LYXFK..., see soroban/releases/pubnet-v0.1.0.json). What has NOT happened is a
-    // paid call settling here: the Soroban x402 rail runs on stellar-testnet and pointing
-    // it at pubnet is a separate change with its own fee payer. In this repo live means
-    // wired end to end AND carrying real traffic, so this stays beta until it sells.
+    // Listed live by a maintainer's call, 2026-08-27 (commit 050073d): the vault is
+    // deployed on pubnet and real USDC has moved through it under the on-ledger policy
+    // (2026-08-24, contract CB5LYXFK..., see soroban/releases/pubnet-v0.1.0.json). The
+    // caveat that used to justify beta still holds and is still published everywhere the
+    // chain is described: the Soroban x402 rail is configured for stellar-testnet, so no
+    // paid call sells on pubnet yet. 'live' in this registry has never meant no caveats
+    // (Arc is live and is a public testnet); the prose carries the substance.
     status: 'live',
     evmChainId: null,
     cctpDomain: 27,
@@ -297,7 +298,7 @@ export const CHAINS: ChainDescriptor[] = [
     name: 'Base',
     shortName: 'Base',
     color: '#0052FF',
-    role: 'EVM fallback: ERC-8004 compatible, Coinbase ecosystem, low fees. Testnet active (Base Sepolia via Gateway demo).',
+    role: 'Coinbase-ecosystem EVM rail: canonical ERC-8004 registries live, our agent #73232, and x402 settling in native Circle USDC through our own EIP-3009 facilitator.',
     ecosystem: 'evm',
     testnet: false,
     status: 'live',
@@ -305,32 +306,64 @@ export const CHAINS: ChainDescriptor[] = [
     cctpDomain: 6,
     nativeCurrency: { name: 'Ether', symbol: 'ETH', decimals: 18 },
     usdcDecimals: 6,
-    rpcUrls: ['https://mainnet.base.org'],
+    // publicnode second: the default host rate-limited a handful of read-only calls
+    // during the 2026-08-28 verification pass, and the fallback transport is built
+    // over the whole list.
+    rpcUrls: ['https://mainnet.base.org', 'https://base-rpc.publicnode.com'],
     explorer: 'https://basescan.org',
     contracts: {
+      // The canonical ERC-8004 pair, deployed by the ERC-8004 authors as EIP-1967
+      // proxies. Verified 2026-08-28 the hard way this chain demands (see the identity
+      // note's trap): each proxy's implementation SLOT was read on Base and on Arbitrum
+      // One, both point at the same implementation addresses (0x7274e874...9c02 for
+      // identity, 0x16e0fa7f...da34 for reputation), and the implementation code is
+      // byte-identical on both chains (14474 and 10491 bytes, matching hashes).
+      // Registration here is permissionless; we deployed none of it.
+      identityRegistry: '0x8004a169fb4a3325136eb29fa0ceb6d2e539a432',
+      reputationRegistry: '0x8004BAa17C55a88189AE136b182e5fdA19dE9b63',
       usdc: '0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913', // native Circle USDC on Base
       create2Factory: CREATE2_FACTORY,
     },
     confirmations: 3,
     stablecoins: ['USDC', 'USDT', 'PYUSD'],
+    settlementTokens: [
+      {
+        symbol: 'USDC',
+        address: '0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913',
+        decimals: 6,
+        authorization: 'eip3009',
+        domainVersionCandidates: ['2'],
+        settlementFeeUsd: 0.005,
+        feeBasis:
+          'A real settlement measured 102828 gas at an effective 0.006 gwei on 2026-08-28 (tx 0xb59ae67c, block 50540810), costing 0.000000617 ETH L2 plus a 0.00000000094 ETH L1 data fee, roughly $0.0025. The fee is 2x that, the same headroom logic as Arbitrum One: Base\'s base fee sits near a floor rather than moving, so buying more headroom against it buys nothing. It stops covering cost if ETH roughly doubles AND gas doubles, at which point we re-measure and edit this line.',
+        verified:
+          'Native Circle USDC on Base mainnet, the same address the descriptor already carried for contracts.usdc. Read live 2026-08-28: name() "USD Coin", symbol() "USDC", version() "2", decimals() 6, DOMAIN_SEPARATOR 0x02fa7265e7c5d81118673727957699e4d68f74cd74b7db77da710fe8a2c7834f, which those four fields reproduce exactly. EIP-3009 confirmed by a read-only authorizationState call. Canonical Circle USDC, so it legitimately shares the contracts.usdc slot.',
+      },
+    ],
     signerEnvVar: 'BASE_SIGNER_KEY',
     rpcEnvVar: 'BASE_RPC_URL',
     identity: {
       standard: 'ERC-8004',
       erc8004Native: true,
-      // Verified 2026-08-13 with eth_getCode on three independent RPCs: the canonical
-      // identity and reputation registries ARE already live here, deployed by the ERC-8004
-      // authors. What is missing is ours, not theirs, so the note says which.
       note:
-        'Canonical ERC-8004 identity + reputation registries are live here; we hold no agent ' +
-        'on them yet and no rail of ours is wired. TRAP BEFORE PASTING ADDRESSES: Arc\'s three ' +
-        'registry addresses all have code on Base mainnet, 130 bytes each, which is ' +
-        'minimal-proxy sized and delegates to a NON-canonical implementation. Same address, ' +
-        'different contract. An eth_getCode check therefore answers yes here and means nothing, ' +
-        'so a Base registry entry has to be verified by reading the implementation rather than ' +
-        'by observing that something is deployed. Read live 2026-08-25.',
+        'Canonical ERC-8004 identity + reputation registries are live here, deployed by ' +
+        'their authors; agent #73232 is ours (minted 2026-08-28, tx 0xb428bf8e, and ' +
+        'ownerOf/tokenURI read back live). TRAP BEFORE PASTING ADDRESSES: Arc\'s three registry ' +
+        'addresses all have code on Base mainnet, 130 bytes each, which is minimal-proxy ' +
+        'sized and delegates to a NON-canonical implementation. Same address, different ' +
+        'contract. An eth_getCode check therefore answers yes here and means nothing; the ' +
+        'canonical pair above was verified by reading each proxy\'s EIP-1967 implementation ' +
+        'slot and matching the implementation code byte for byte against Arbitrum One ' +
+        '(2026-08-28), not by observing that something is deployed.',
     },
-    payment: { x402: true, note: 'x402 reference rail (Coinbase).' },
+    payment: {
+      x402: true,
+      note:
+        'x402 settling in native Circle USDC through our own first-party EIP-3009 ' +
+        'facilitator: the buyer signs, we broadcast and pay the gas. The signing domain is ' +
+        'proven against the live DOMAIN_SEPARATOR, and the first settlement landed ' +
+        '2026-08-28 (tx 0xb59ae67c) with the receipt carrying the matching Transfer log.',
+    },
   },
   {
     caip2: 'eip155:43114',

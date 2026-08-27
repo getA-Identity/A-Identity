@@ -83,7 +83,7 @@ test('the facilitator serves exactly the chains that declare an EIP-3009 token',
   // Derived, never listed: a chain joins this set by declaring a settlement token whose
   // signed-transfer support was observed, which is the only gate that should exist.
   const ids = facilitatorChains({} as NodeJS.ProcessEnv).map((c) => c.id).sort()
-  assert.deepEqual(ids, ['arbitrum', 'rhchain', 'rhchain-testnet'])
+  assert.deepEqual(ids, ['arbitrum', 'base', 'rhchain', 'rhchain-testnet'])
 })
 
 test('/supported publishes both wire versions with the proven domain', async () => {

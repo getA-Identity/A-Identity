@@ -71,6 +71,7 @@
               "chains/xlayer",
               "chains/robinhood",
               "chains/arbitrum",
+              "chains/base",
               "chains/gateway",
               "chains/cctp"
             ]

@@ -1,0 +1,122 @@
+---
+title: "Build on Base"
+description: "Base network config, the canonical ERC-8004 registries verified live there, and our x402 rail wired to settle in native Circle USDC."
+---
+
+Base is Coinbase's Ethereum L2 and one of the busiest agent ecosystems on any chain.
+A-Identity holds ERC-8004 agent **#73232** on the canonical registry here and settles
+paid trust calls in native Circle USDC through its own EIP-3009 facilitator.
+
+## Why Base
+
+<CardGroup cols={3}>
+  <Card title="Native Circle USDC" icon="dollar-sign">
+    Real USDC, not a bridged twin, and it implements EIP-3009, so a buyer can sign a transfer and never touch gas.
+  </Card>
+  <Card title="ERC-8004 already live" icon="fingerprint">
+    The canonical identity and reputation registries were deployed here by their authors, at the same addresses X Layer, Celo, Robinhood Chain and Arbitrum One carry.
+  </Card>
+  <Card title="Where the agents are" icon="bot">
+    The x402 standard grew up around this ecosystem. Running our rail here puts the same code path and receipt standard next to the crowd it was designed for.
+  </Card>
+</CardGroup>
+
+<Note>
+  Base is **live** for us: agent #73232 is ours on the canonical registry (minted
+  2026-08-28), and a real settlement in USDC has gone through our own facilitator with
+  the receipt carrying the matching Transfer log. Everything on this page, including
+  the Stellar funding hop behind the operating wallets, is checkable at
+  [/proof/base](https://a-identity.xyz/proof/base).
+</Note>
+
+## Network config
+
+| Field | Value |
+| --- | --- |
+| Chain ID | `8453` |
+| CAIP-2 | `eip155:8453` |
+| Native currency | ETH (18 decimals) |
+| RPC (HTTP) | `https://mainnet.base.org` (fallback `https://base-rpc.publicnode.com`) |
+| Block explorer | [basescan.org](https://basescan.org) |
+| USDC | `0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913` |
+| CCTP domain | `6` |
+
+<Warning>
+  A verification trap specific to this chain, recorded so nobody falls into it twice:
+  Arc's three testnet-era registry addresses **also have code on Base**, 130 bytes each,
+  minimal-proxy sized, delegating to a NON-canonical implementation. Same address,
+  different contract. `eth_getCode` answering "yes" therefore means nothing here. The
+  canonical pair below was verified by reading each proxy's EIP-1967 implementation
+  slot and matching the implementation bytecode byte for byte against Arbitrum One
+  (2026-08-28).
+</Warning>
+
+## Connect with viem
+
+<CodeGroup>
+```ts chain.ts
+import { base } from 'viem/chains'
+import { createPublicClient, http } from 'viem'
+
+export const client = createPublicClient({ chain: base, transport: http() })
+```
+
+```ts read.ts
+import { client } from './chain'
+
+// The canonical registry answers live: name() is "AgentIdentity" and minted
+// tokens resolve. Registration on it is permissionless.
+const name = await client.readContract({
+  address: '0x8004a169fb4a3325136eb29fa0ceb6d2e539a432',
+  abi: [{ type: 'function', name: 'name', stateMutability: 'view', inputs: [], outputs: [{ type: 'string' }] }],
+  functionName: 'name',
+})
+```
+</CodeGroup>
+
+## What is deployed
+
+| Contract | Address |
+| --- | --- |
+| IdentityRegistry | [`0x8004a169fb4a3325136eb29fa0ceb6d2e539a432`](https://basescan.org/address/0x8004a169fb4a3325136eb29fa0ceb6d2e539a432) |
+| ReputationRegistry | [`0x8004BAa17C55a88189AE136b182e5fdA19dE9b63`](https://basescan.org/address/0x8004BAa17C55a88189AE136b182e5fdA19dE9b63) |
+| USDC (settlement) | [`0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913`](https://basescan.org/address/0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913) |
+
+We deployed none of these. The registries were already live and registering on them is
+permissionless; what is ours is agent #73232 and the rail on top. There is no
+ValidationRegistry in this family, so a KYA result cannot be anchored on-chain here.
+
+## The price, and where it comes from
+
+The base price of a tool is identical on every chain we sell on; the only difference is
+the disclosed settlement fee, because we broadcast on the buyer's behalf and that costs
+gas. On Base a real settlement measured **102828 gas at an effective 0.006 gwei**
+(2026-08-28), about **0.00000062 ETH** including the L1 data fee, roughly $0.0025, so
+the fee here is **$0.005**: the same 2x-headroom logic as Arbitrum One, against a base
+fee that sits near its floor rather than moving. The measurement lives in the chain
+registry beside the token, so the number is traceable rather than asserted.
+
+## Verify it yourself
+
+```bash
+# The signing domain, straight from the token.
+curl -sX POST https://mainnet.base.org -H 'content-type: application/json' \
+  -d '{"jsonrpc":"2.0","id":1,"method":"eth_call","params":[{"to":"0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913","data":"0x3644e515"},"latest"]}'
+# -> 0x02fa7265e7c5d81118673727957699e4d68f74cd74b7db77da710fe8a2c7834f
+
+# Our agent on the canonical registry, answering live: ownerOf(73232).
+curl -sX POST https://mainnet.base.org -H 'content-type: application/json' \
+  -d '{"jsonrpc":"2.0","id":2,"method":"eth_call","params":[{"to":"0x8004a169fb4a3325136eb29fa0ceb6d2e539a432","data":"0x6352211e0000000000000000000000000000000000000000000000000000000000011e10"},"latest"]}'
+# -> 0x...d305607510e0db2c95807173c7a05bea53c1ed36
+
+# Our provenance ledger for this rail, re-read live on every request.
+curl -s https://a-identity-backend.onrender.com/api/proof/base
+```
+
+## Where Base fits
+
+[Arbitrum One](/chains/arbitrum) is where the same rail runs against a well-served
+baseline; [Robinhood Chain](/chains/robinhood) is where it runs on a chain with no
+published facilitator; [Arc](/chains/arc) holds escrow and the spend vault. Base is
+where the agent ecosystem itself lives, and the [Gateway](/chains/gateway) hop already
+proves USDC minted on Base Sepolia from an Arc deposit.

@@ -301,7 +301,7 @@ const STATS = [
   { k: '120', v: 'real x402 settlements', mono: 'X Layer mainnet' },
   { k: '922', v: 'unit tests, green', mono: 'deterministic' },
   { k: '7', v: 'services, one free', mono: '$0 to $0.01' },
-  { k: '7', v: 'chains read live', mono: 'ERC-8004 registries' },
+  { k: '8', v: 'chains read live', mono: 'ERC-8004 registries' },
 ]
 
 export default function Architecture() {
