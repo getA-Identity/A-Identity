@@ -145,13 +145,30 @@ the first one is tracked as an open audit finding rather than a settled decision
   the vulnerable 6.6.1, and `uuid` would need a major bump that breaks `jayson`. None of it
   is on a path we call, because we run no Solana adapter; that bounds the exposure without
   removing it. Re-check whenever Circle ships a new app-kit.
-- **Postgres TLS does not verify the server certificate.**
-  [`storage.ts:29`](mcp/src/storage.ts#L29) sets `rejectUnauthorized: false`, which is the
-  common workaround for managed-Postgres chains and does leave the connection open to an
-  active man-in-the-middle.
-- **Rate limiting** is a per-IP fixed window on auth challenges, the magic-link email and the
-  on-chain demo endpoints. Enough to stop casual abuse, not a WAF, and the client IP is taken
-  from a proxy header (`TRUSTED_PROXY_COUNT` bounds how far it is trusted).
+- **Postgres TLS verifies the server certificate** as of 2026-08-27. It did not before:
+  `storage.ts` set `rejectUnauthorized: false` unconditionally, which keeps the encryption
+  and discards the identity check, leaving the connection open to an active
+  man-in-the-middle. `PGSSLROOTCERT` names a private CA and keeps the check;
+  `PGSSL_ALLOW_UNVERIFIED=true` restores the old behaviour and warns on every boot.
+  `node mcp/scripts/check-db-tls.mjs` reports whether a given `DATABASE_URL` verifies
+  without printing it. Confirmed live against Neon on 2026-08-27.
+- **Rate limiting** is a per-IP fixed window on auth challenges, the magic-link email, the
+  on-chain demo endpoints and every POST that broadcasts from the shared signer. Enough to
+  stop casual abuse, not a WAF.
+
+  It was inert in production until 2026-08-27, on every endpoint, since it was written. The
+  client IP comes from `X-Forwarded-For`, counted `TRUSTED_PROXY_COUNT` entries from the
+  trusted end, and that default was 1 while **Render appends two hops**. So the rule picked
+  Render's own inner hop, which rotates across their fleet, and a rotating key means a fresh
+  bucket every few requests. It passed locally the whole time. The count is now 2, measured
+  from the running service rather than assumed, and a host with a single proxy in front must
+  set `TRUSTED_PROXY_COUNT=1`.
+
+  Getting that number too HIGH used to be the dangerous direction: the lookup clamped to
+  index 0, and index 0 is the entry the caller wrote, so a misconfiguration handed the
+  rate-limit key to whoever was asking. A header shorter than the configured depth now falls
+  back to the socket address instead. One shared bucket over-limits and is loud; a spoofable
+  key is silent and unlimited.
 - **No external audit.** The Soroban contract has been through free tooling we can run and
   re-run, plus an adversarial review that found and fixed real defects. That is not an audit
   and this project does not call it one. The EVM `AgentSpendPolicy` has not had the Soroban

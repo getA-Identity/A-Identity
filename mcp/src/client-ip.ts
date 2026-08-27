@@ -24,19 +24,37 @@
 
 import { createHash } from 'node:crypto'
 
-/** Trusted reverse proxies in front of us. Render and Vercel each terminate as one hop. */
-export const TRUSTED_PROXY_COUNT = Math.max(1, Number(process.env.TRUSTED_PROXY_COUNT ?? 1))
+/**
+ * Trusted reverse proxies in front of us.
+ *
+ * This said "Render and Vercel each terminate as one hop" and defaulted to 1. Render
+ * appends TWO, which was measured from the running service rather than assumed: with no
+ * X-Forwarded-For from the client the app sees 2 entries, sending 1 makes it 3, sending 2
+ * makes it 4. So the rule picked index `len - 1`, which is Render's own inner hop, and that
+ * address rotates across their fleet. Every few requests landed on a different edge node,
+ * got a different key, and started a fresh bucket. Both rate limiters were therefore inert
+ * in production while passing locally, on every endpoint, since the day they were written.
+ *
+ * The default is 2 because that is where this code actually runs. A host with a single
+ * proxy in front must set TRUSTED_PROXY_COUNT=1; getting that wrong now costs availability
+ * rather than security, see the fallback in clientIpFromXff.
+ */
+export const TRUSTED_PROXY_COUNT = Math.max(1, Number(process.env.TRUSTED_PROXY_COUNT ?? 2))
 
 /** The client address from an XFF list, counted from the trusted end. */
 export function clientIpFromXff(xff: string | string[] | undefined, socketAddress?: string): string {
   const raw = Array.isArray(xff) ? xff.join(',') : xff
   if (typeof raw === 'string' && raw.length > 0) {
     const parts = raw.split(',').map((s) => s.trim()).filter(Boolean)
-    // Clamp, so a list SHORTER than the expected proxy depth falls back to its first entry
-    // rather than reading past the start. That case means fewer hops than configured, which
-    // is a misconfiguration rather than an attack, and it must not throw.
-    const idx = Math.max(0, parts.length - TRUSTED_PROXY_COUNT)
-    if (parts[idx]) return parts[idx]
+    const idx = parts.length - TRUSTED_PROXY_COUNT
+    // A list SHORTER than the configured proxy depth used to clamp to index 0, and index 0
+    // is the entry the CALLER wrote. So a wrong proxy count did not just misidentify the
+    // client, it handed the key to whoever was asking, which is the precise failure this
+    // module exists to prevent. Fewer hops than configured is a misconfiguration, and the
+    // safe answer to a misconfiguration is the socket: one shared bucket over-limits and is
+    // loud, where a spoofable key is silent and unlimited.
+    if (idx >= 0 && parts[idx]) return parts[idx]
+    return socketAddress || 'unknown'
   }
   return socketAddress || 'unknown'
 }
