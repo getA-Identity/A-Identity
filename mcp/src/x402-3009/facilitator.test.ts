@@ -193,3 +193,107 @@ test('an exhausted daily gas budget answers 503 and broadcasts nothing', async (
   assert.equal(out.body.code, 'gas_budget_exhausted')
   assert.equal(broadcasts, 0)
 })
+
+// -- the value floor belongs to the chain being paid on ---------------------------
+
+/**
+ * railStatus() with no network answers for the FIRST configured chain, and the limits it
+ * carries are chain-specific: minValueUsd is `cheapest tool + settlementFeeUsd`, and that
+ * fee is the gas cost MEASURED ON THAT CHAIN. verify() and settle() were both calling it
+ * that way, so a payment on Arbitrum was judged against Robinhood Chain's floor.
+ *
+ * The numbers are not close. Robinhood Chain measured $0.02 a settlement and Arbitrum One
+ * $0.005, a 4x gap, which puts the two floors at $0.021 and $0.006. So every Arbitrum
+ * payment between those two numbers was refused as below_minimum for a gas cost that
+ * chain does not have, and had the order of X402_3009_NETWORKS been the other way round we
+ * would instead have accepted Robinhood Chain payments that do not cover the gas we spend
+ * broadcasting them.
+ *
+ * railStatus already refuses to make exactly this mistake with the fee override, and says
+ * so in a comment: "a single global fee across chains whose gas differs by an order of
+ * magnitude would charge one chain's measured cost on another". The facilitator was doing
+ * the thing that comment describes.
+ */
+const arb = getChainById('arbitrum')!
+const arbToken = arb.settlementTokens![0]
+const ARB_DOMAIN = { name: 'USD Coin', version: '2', chainId: 42161, verifyingContract: arbToken.address as `0x${string}` }
+const ARB_SEPARATOR = eip712DomainSeparator(ARB_DOMAIN)
+
+/** Both chains configured, Robinhood Chain FIRST. That order is what made the bug visible:
+ *  the default answer is the expensive chain's, and the payment below is on the cheap one. */
+const bothChains = {
+  X402_3009_NETWORKS: `${chain.caip2},${arb.caip2}`,
+  X402_3009_PAYTO: PAY_TO,
+} as NodeJS.ProcessEnv
+
+function arbReader(): TokenReader {
+  const answers: Record<string, unknown> = {
+    DOMAIN_SEPARATOR: ARB_SEPARATOR, name: 'USD Coin', symbol: 'USDC', decimals: 6, version: '2', authorizationState: false,
+  }
+  return async (fn) => {
+    if (!(fn in answers)) throw new Error(`${fn} reverted`)
+    return answers[fn]
+  }
+}
+
+/** 0.010 USDC: comfortably above Arbitrum's own floor of $0.006, and below Robinhood
+ *  Chain's $0.021. The whole test lives in that gap. */
+async function arbBody(value = 10_000n) {
+  const authorization = {
+    from: buyer.address, to: PAY_TO as `0x${string}`, value,
+    validAfter: 0n, validBefore: BigInt(Math.floor(NOW.getTime() / 1000) + 600),
+    nonce: `0x${'cd'.repeat(32)}` as `0x${string}`,
+  }
+  const signature = await buyer.signTypedData({ domain: ARB_DOMAIN, types: TYPES, primaryType: 'TransferWithAuthorization', message: authorization })
+  return {
+    x402Version: 2,
+    paymentRequirements: {
+      scheme: 'exact', network: arb.caip2, asset: arbToken.address, payTo: PAY_TO,
+      maxAmountRequired: value.toString(), resource: '/api/facilitator/settle',
+    },
+    paymentPayload: {
+      x402Version: 2, scheme: 'exact', network: arb.caip2,
+      payload: {
+        signature,
+        authorization: {
+          from: authorization.from, to: authorization.to, value: authorization.value.toString(),
+          validAfter: authorization.validAfter.toString(), validBefore: authorization.validBefore.toString(),
+          nonce: authorization.nonce,
+        },
+      },
+    },
+  }
+}
+
+test('the two chains really do carry different floors, or this test proves nothing', () => {
+  const first = railStatus(bothChains)
+  const onArb = railStatus(bothChains, arb.caip2)
+  assert.equal(first.chain, 'rhchain', 'the default answer must be the FIRST configured chain')
+  assert.equal(onArb.chain, 'arbitrum')
+  assert.ok(
+    onArb.minValueUsd < first.minValueUsd,
+    `the floors must differ for this to be a real test: ${onArb.minValueUsd} vs ${first.minValueUsd}`,
+  )
+})
+
+test('verify judges an Arbitrum payment against Arbitrum, not against the first chain', async () => {
+  clearDomainCache()
+  const out = await verify(await arbBody(), {
+    reader: arbReader(), publicClient: publicClient({ count: 0 }), now: () => NOW,
+    loadSpent: async () => [], env: bothChains,
+  })
+  assert.equal(out.httpStatus, 200)
+  assert.equal(out.body.isValid, true, `refused: ${String(out.body.code)} ${String(out.body.invalidReason)}`)
+})
+
+test('a payment below the paying chain OWN floor is still refused', async () => {
+  clearDomainCache()
+  // 0.001 USDC, under Arbitrum's own $0.006. The floor did not go away, it moved to the
+  // right chain.
+  const out = await verify(await arbBody(1_000n), {
+    reader: arbReader(), publicClient: publicClient({ count: 0 }), now: () => NOW,
+    loadSpent: async () => [], env: bothChains,
+  })
+  assert.equal(out.body.isValid, false)
+  assert.equal(out.body.code, 'below_minimum')
+})

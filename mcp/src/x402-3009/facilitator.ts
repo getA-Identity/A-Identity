@@ -165,7 +165,13 @@ export async function verify(body: unknown, deps: EngineDeps = {}): Promise<Hand
   if (!token) {
     return { httpStatus: 400, body: { isValid: false, code: 'unsupported_network', invalidReason: `${parsed.chain.id} declares no EIP-3009 settlement token` } }
   }
-  const status = railStatus(env)
+  // railStatus() with no network answers for the FIRST configured chain, and the limits it
+  // carries are chain-specific: minValueUsd derives from settlementFeeUsd, which is the gas
+  // cost MEASURED ON THAT CHAIN. Applied to a payment on another one it is simply the wrong
+  // number, in whichever direction the two chains' gas differs. This is the same mistake
+  // railStatus already refuses to make with the fee override, for the same stated reason,
+  // one layer up. So the status is derived from the chain the payment names.
+  const status = railStatus(env, parsed.chain.caip2)
   const result = await verifyPayment({
     chain: parsed.chain,
     token,
@@ -214,12 +220,20 @@ export async function settle(body: unknown, deps: EngineDeps = {}): Promise<Hand
     return { httpStatus: 400, body: { success: false, code: 'unsupported_network', errorReason: `${parsed.chain.id} declares no EIP-3009 settlement token` } }
   }
 
+  // Per-chain, for the reason spelled out in verify() above. `status` stays the global
+  // answer, because the gate it opened and the payTo allowlist it carries are env-wide;
+  // only the value bounds are a property of the chain being settled on.
+  const chainStatus = railStatus(env, parsed.chain.caip2)
+  if (!chainStatus.configured) {
+    return { httpStatus: 400, body: { success: false, code: 'unsupported_network', errorReason: chainStatus.reason ?? `this rail does not sell on ${parsed.chain.id}` } }
+  }
+
   const result = await settlePayment({
     chain: parsed.chain,
     token,
     requirements: parsed.requirements,
     payload: parsed.payload,
-    limits: railLimits({ ...status, token }, env),
+    limits: railLimits({ ...chainStatus, token }, env),
     deps: {
       ...deps,
       meta: {
