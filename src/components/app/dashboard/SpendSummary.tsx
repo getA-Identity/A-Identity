@@ -30,22 +30,34 @@ export default function SpendSummary({ instructions, loading }: { instructions: 
 
   // Only money that actually moved counts as spend. Pending and rejected are intent, not
   // outcome, and folding them in would overstate what the agent has done.
-  const settledStatuses = new Set(['executed_onchain', 'executed_simulated'])
+  //
+  // `executed_simulated` used to be in this set, which made the comment above false about
+  // the headline it guards: a run with no signer moved nothing and was still totalled as
+  // "USDC settled". It is counted separately now and shown as its own line, because
+  // dropping it silently would understate what the agent DID, and mixing it in overstates
+  // what it SPENT. Those are two different numbers and the panel now says both.
+  const onchainOnly = (status: string) => status === 'executed_onchain'
+  const simulatedOnly = (status: string) => status === 'executed_simulated'
   const now = Date.now()
   const startOfToday = new Date(new Date(now).setHours(0, 0, 0, 0)).getTime()
 
   const days = Array.from({ length: 7 }, (_, i) => {
     const from = startOfToday - (6 - i) * DAY
     const to = from + DAY
-    const total = instructions
-      .filter((ix) => settledStatuses.has(ix.status))
-      .filter((ix) => {
-        const t = new Date(ix.createdAt).getTime()
-        return t >= from && t < to
-      })
-      .reduce((s, ix) => s + ix.amountUsd * ix.count, 0)
+    const inWindow = (ix: { createdAt: string }) => {
+      const t = new Date(ix.createdAt).getTime()
+      return t >= from && t < to
+    }
+    const sum = (rows: typeof instructions) => rows.reduce((s, ix) => s + ix.amountUsd * ix.count, 0)
+    const total = sum(instructions.filter((ix) => onchainOnly(ix.status)).filter(inWindow))
     return { from, total, label: new Date(from).toLocaleDateString(undefined, { weekday: 'narrow' }) }
   })
+
+  const weekFrom = startOfToday - 6 * DAY
+  const simulatedWeek = instructions
+    .filter((ix) => simulatedOnly(ix.status))
+    .filter((ix) => new Date(ix.createdAt).getTime() >= weekFrom)
+    .reduce((s, ix) => s + ix.amountUsd * ix.count, 0)
 
   const peak = Math.max(...days.map((d) => d.total))
   const weekTotal = days.reduce((s, d) => s + d.total, 0)
@@ -70,6 +82,14 @@ export default function SpendSummary({ instructions, loading }: { instructions: 
         </span>
         <span className="text-xs font-semibold text-foreground/45">USDC settled</span>
       </div>
+
+      {/* Simulated runs are real activity and did not move money. Shown rather than folded
+          in, so the number above stays the one a receipt could back. */}
+      {simulatedWeek > 0 && (
+        <p className="mt-1 text-[11px] font-medium text-foreground/45">
+          Plus {simulatedWeek.toFixed(simulatedWeek < 1 ? 4 : 2)} USDC executed in simulation, which moved no money.
+        </p>
+      )}
 
       {/* Seven real days. An empty column is a day with no settlement, not missing data. */}
       <div className="mt-4 flex h-20 items-end gap-1.5" role="img" aria-label={`Settled per day over the last seven days, ${weekTotal.toFixed(2)} USDC in total`}>

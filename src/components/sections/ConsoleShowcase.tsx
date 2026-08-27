@@ -146,7 +146,7 @@ export default function ConsoleShowcase() {
                 means: verdicts keep computing, money stops moving. */}
             <div className="relative">
               <div className={`transition-all duration-500 ${frozen ? 'opacity-40 blur-[1px] saturate-50' : ''}`}>
-                <ProductMock title="Trust check" meta="explorer · live from the chain">
+                <ProductMock title="Trust check" meta="explorer · illustration, not a live read">
                   <MockRow
                     leading={<OwlMark verdict="allow" size={30} />}
                     label="Meridian"

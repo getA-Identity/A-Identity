@@ -142,15 +142,13 @@ function SettlementLedger() {
     <div className="overflow-hidden rounded-2xl border border-border bg-card shadow-[0_24px_60px_-32px_rgba(16,24,40,0.35)]">
       {/* header */}
       <div className="flex items-center justify-between border-b border-border px-5 py-3">
-        <p className="flex items-center gap-2 text-sm font-semibold text-foreground">
-          <span className="relative flex h-2 w-2">
-            <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-500/60" />
-            <span className="relative inline-flex h-2 w-2 rounded-full bg-emerald-500" />
-          </span>
-          Settlement ledger
-        </p>
+        {/* No live-pulse dot here. The rows below are a scripted illustration of the
+            verify-then-pay order, not a feed, and a pinging green dot is the one visual
+            convention every reader takes as "this is happening now". The real ledgers are
+            one click away and are labelled as such. */}
+        <p className="text-sm font-semibold text-foreground">Settlement ledger, illustrated</p>
         <p className="font-mono text-[10px] uppercase tracking-[0.14em] text-foreground/35">
-          verify → pay · usdc
+          verify then pay · usdc
         </p>
       </div>
 

@@ -69,6 +69,15 @@ export default function WorkerCatalog() {
   const [busy, setBusy] = useState<string | null>(null)
   const [note, setNote] = useState<Record<string, string>>({})
   const [deliverText, setDeliverText] = useState<Record<string, string>>({})
+  // The client's own words. Release used to post `{rating: 5, review: 'Great work'}` and
+  // dispute `{reason: 'Not satisfactory'}` without asking anybody, which meant the console
+  // manufactured the very data the product sells: a rating feeds behavioralSignals and
+  // therefore the reputation score, so a one-click release invented a five-star review from
+  // a client who never wrote one. Undefined until the client types something, and the
+  // release endpoint treats both fields as optional, so an unrated release is a real
+  // outcome rather than a default one.
+  const [reviewDraft, setReviewDraft] = useState<Record<string, { rating?: number; review?: string }>>({})
+  const [disputeReason, setDisputeReason] = useState<Record<string, string>>({})
   const [openTasks, setOpenTasks] = useState<OpenTask[]>([])
   const [postSvc, setPostSvc] = useState('')
   const [postBudget, setPostBudget] = useState('2')
@@ -513,18 +522,59 @@ export default function WorkerCatalog() {
                     {/* Client side: approve/release or dispute a delivered task */}
                     {t.status === 'delivered' && (
                       <>
+                        <select
+                          value={reviewDraft[t.id]?.rating ?? ''}
+                          onChange={(e) =>
+                            setReviewDraft((d) => ({
+                              ...d,
+                              [t.id]: { ...d[t.id], rating: e.target.value ? Number(e.target.value) : undefined },
+                            }))
+                          }
+                          aria-label="Rating, optional"
+                          className="rounded-full border border-foreground/15 bg-background px-3 py-1.5 text-xs text-foreground"
+                        >
+                          <option value="">No rating</option>
+                          {[1, 2, 3, 4, 5].map((n) => (
+                            <option key={n} value={n}>{n} / 5</option>
+                          ))}
+                        </select>
+                        <input
+                          value={reviewDraft[t.id]?.review ?? ''}
+                          onChange={(e) =>
+                            setReviewDraft((d) => ({ ...d, [t.id]: { ...d[t.id], review: e.target.value } }))
+                          }
+                          placeholder="Review (optional)"
+                          className="min-w-0 flex-1 rounded-full border border-foreground/15 bg-background px-3 py-1.5 text-xs text-foreground placeholder:text-foreground/40"
+                        />
                         <button
                           type="button"
-                          onClick={() => taskAction(t.id, '/api/marketplace/release', { rating: 5, review: 'Great work' })}
+                          onClick={() =>
+                            taskAction(t.id, '/api/marketplace/release', {
+                              // Sent only when the client actually supplied them. An absent
+                              // rating is not a bad rating, and it is not a five.
+                              ...(reviewDraft[t.id]?.rating ? { rating: reviewDraft[t.id]?.rating } : {}),
+                              ...(reviewDraft[t.id]?.review?.trim() ? { review: reviewDraft[t.id]?.review?.trim() } : {}),
+                            })
+                          }
                           disabled={busy === t.id}
                           className="inline-flex items-center gap-1.5 rounded-full bg-accent px-4 py-1.5 text-xs font-semibold text-white disabled:opacity-50"
                         >
                           {busy === t.id ? <Loader2 size={12} className="animate-spin" /> : null}
                           Release escrow
                         </button>
+                        <input
+                          value={disputeReason[t.id] ?? ''}
+                          onChange={(e) => setDisputeReason((d) => ({ ...d, [t.id]: e.target.value }))}
+                          placeholder="Reason (optional)"
+                          className="min-w-0 flex-1 rounded-full border border-foreground/15 bg-background px-3 py-1.5 text-xs text-foreground placeholder:text-foreground/40"
+                        />
                         <button
                           type="button"
-                          onClick={() => taskAction(t.id, '/api/marketplace/dispute', { reason: 'Not satisfactory' })}
+                          onClick={() =>
+                            taskAction(t.id, '/api/marketplace/dispute', {
+                              reason: disputeReason[t.id]?.trim() || 'No reason given',
+                            })
+                          }
                           disabled={busy === t.id}
                           className="rounded-full border border-amber-300/50 px-3 py-1.5 text-xs font-semibold text-amber-700 dark:text-amber-300 hover:bg-amber-50/50 dark:hover:bg-amber-500/10 disabled:opacity-50"
                         >

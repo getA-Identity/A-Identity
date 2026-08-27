@@ -269,7 +269,7 @@ function Terminal() {
             className="flex gap-2.5"
           >
             <span className="select-none text-term-dot">
-              {l.kind === 'cmd' ? '›' : l.kind === 'in' ? ' ·' : '←'}
+              {l.kind === 'cmd' ? '›' : l.kind === 'in' ? ' ·' : '<-'}
             </span>
             <span
               className={
@@ -294,11 +294,14 @@ function Terminal() {
   )
 }
 
+// Pinned by mcp/src/frontend-stats.test.ts. The test count read 163 and the chain count 2
+// while the registry carried seven identity chains, which is the drift class this page is
+// otherwise about.
 const STATS = [
   { k: '120', v: 'real x402 settlements', mono: 'X Layer mainnet' },
-  { k: '163', v: 'unit tests, green', mono: 'deterministic' },
-  { k: '6', v: 'tools, one free', mono: '$0 → $0.01' },
-  { k: '2', v: 'chains read live', mono: 'Arc · X Layer' },
+  { k: '879', v: 'unit tests, green', mono: 'deterministic' },
+  { k: '7', v: 'services, one free', mono: '$0 to $0.01' },
+  { k: '7', v: 'chains read live', mono: 'ERC-8004 registries' },
 ]
 
 export default function Architecture() {
@@ -342,7 +345,7 @@ export default function Architecture() {
           {/* the system */}
           <section className="mt-20">
             <div className="mb-5 flex items-baseline justify-between">
-              <Index n="↓" label="the request path" />
+              <Index n="v" label="the request path" />
               <span className="hidden font-mono text-[11px] text-foreground/35 sm:inline">hover a stage</span>
             </div>
             <System />
