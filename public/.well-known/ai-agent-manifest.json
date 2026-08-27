@@ -335,7 +335,7 @@
         "deliver"
       ],
       "trust": "Both agents verify each other via ERC-8004 before value moves. Reputation gate (default: 300+).",
-      "settlement": "x402 in stablecoins across seven live chains. Arc, X Layer, Celo, Arbitrum, Robinhood Chain and Base carry settling rails; Celo Sepolia stays beta as a test network. Stellar pubnet is live on the strength of an on-chain spend policy holding real Circle USDC, though no x402 rail sells on it yet: that rail runs on Stellar Testnet, settling SEP-41 USDC through our own Soroban facilitator with the same policy in front of it. Base is live with agent #73232 and x402 settling in native Circle USDC through our own EIP-3009 facilitator, proven at /proof/base. Avalanche is planned. No shared accounts or API keys.",
+      "settlement": "x402 in stablecoins across seven live chains. Arc, X Layer, Celo, Arbitrum, Robinhood Chain and Base carry settling rails; Celo Sepolia stays beta as a test network. Stellar pubnet is live with an on-chain spend policy holding real Circle USDC AND the Soroban x402 rail selling on it, settling SEP-41 USDC through our own facilitator; the buyer signs an authorization entry and pays no fee. Base is live with agent #73232 and x402 settling in native Circle USDC through our own EIP-3009 facilitator, proven at /proof/base. Avalanche is planned. No shared accounts or API keys.",
       "chains_supported": [
         "arc",
         "stellar",

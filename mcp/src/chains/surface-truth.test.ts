@@ -60,13 +60,13 @@ test('every live or beta chain carries an identity registry, or is a listed exce
     // were verified live there (EIP-1967 implementation slots read on Base and Arbitrum
     // One, implementations byte-identical), so the descriptor now carries them.
     stellar:
-      'beta on the strength of the on-ledger SPEND POLICY only: a vault deployed on pubnet ' +
-      'holding real USDC, an agent that spent exactly its daily budget, and a refusal carrying ' +
-      'the contract\'s own typed error. Identity is not wired and is not claimed. ERC-8004 is ' +
-      'EVM-only, no Soroban identity registry exists to point at, and a Stellar agent\'s passport ' +
-      'is bridged from an EVM chain rather than anchored here. Note this chain is beta rather than ' +
-      'live for a second reason too: no x402 rail sells on pubnet yet. Delete this entry the day a ' +
-      'Soroban registry lands, or demote the chain.',
+      'live on the strength of the PAYMENT side: the on-ledger spend policy holds real USDC on ' +
+      'pubnet, and since 2026-08-28 the Soroban x402 rail sells there too (first sale tx ' +
+      'f213371c, settled by our own broadcaster). Identity is not wired and is not claimed, ' +
+      'which is the whole reason for this exception: ERC-8004 is EVM-only, no Soroban identity ' +
+      'registry we trust exists to point at, and a Stellar agent\'s passport is bridged from an ' +
+      'EVM chain rather than anchored here. Delete this entry the day a Soroban registry lands, ' +
+      'or demote the chain.',
     'stellar-testnet':
       'beta on the strength of the PAYMENT path only: a Soroban spend policy, our own x402 facilitator, and settlements we confirm by reading the transfer ourselves. Identity is not wired and is not claimed. ERC-8004 is EVM-only, no Soroban identity registry exists to point at, and the passport a Stellar agent carries is bridged from an EVM chain rather than anchored here. Delete this entry the day a Soroban registry lands, or demote the chain.',
   }

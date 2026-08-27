@@ -77,12 +77,11 @@ test('Arc, X Layer, Celo (live), Base, Celo Sepolia and RH Chain Testnet (beta) 
   // live and is a public testnet, and the landing page says so in the same sentence.
   const live = liveChains()
   assert.deepEqual(live.map((c) => c.id).sort(), ['arbitrum', 'arc', 'base', 'celo', 'celo-sepolia', 'rhchain', 'rhchain-testnet', 'stellar', 'stellar-testnet', 'xlayer'])
-  // pubnet joined on 2026-08-24 with the vault deploy and was called live on 2026-08-27.
-  // The substance is unchanged and is worth restating here rather than in a commit nobody
-  // rereads: AgentSpendPolicy is deployed on pubnet and holds real Circle USDC, and no
-  // paid call SELLS there yet, because the x402 rail is configured for stellar:testnet.
-  // That second half stays published as a caveat on /proof; this assertion only pins that
-  // the two halves have not been quietly merged into one claim.
+  // pubnet joined on 2026-08-24 with the vault deploy, was called live on 2026-08-27,
+  // and the x402 rail started SELLING there on 2026-08-28 (first sale tx f213371c,
+  // settled by our own broadcaster at the network's market-rate inclusion fee). The
+  // remaining published caveat is identity: ERC-8004 is EVM-only and nothing bridges it
+  // here. This assertion only pins the status values.
   assert.equal(live.find((c) => c.id === 'stellar')?.status, 'live')
   assert.equal(live.find((c) => c.id === 'stellar')?.testnet, false)
   assert.equal(live.find((c) => c.id === 'stellar-testnet')?.status, 'beta')

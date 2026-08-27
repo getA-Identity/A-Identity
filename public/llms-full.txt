@@ -390,9 +390,11 @@ Live today:
 - **Stellar pubnet** (`stellar:pubnet`). The same vault wasm, byte for byte, at
   `CB5LYXFKKTKDDSCM6JO6C4GNRQUFBGSLYDET6Q56JNFJQSMBKH6KWSYP`, holding real Circle USDC
   under a 1 USDC daily cap. Real money has moved under the on-ledger policy, including a
-  refusal that returned a typed `DailyCapExceeded`. What is proven on pubnet is the spend
-  policy itself: the x402 rail is configured for `stellar:testnet`, so no paid call sells
-  on pubnet yet, and we state that here rather than leaving it to be discovered. There is
+  refusal that returned a typed `DailyCapExceeded`. The Soroban x402 rail sells here
+  too: the first mainnet sale settled 2026-08-28 (tx f213371c..., 0.001 USDC), the
+  buyer signing a Soroban authorization entry and paying no fee, our broadcaster paying
+  the network fee at the fee market's own rate, and the sale counting only once the
+  SEP-41 transfer event bound to the authorization's nonce was read back. There is
   no ERC-8004 registry on either Stellar network, because that standard is EVM-only; a
   passport is bridged, never anchored here.
 - **Base mainnet** (`eip155:8453`). The canonical ERC-8004 identity and reputation

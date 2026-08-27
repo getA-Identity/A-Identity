@@ -104,13 +104,17 @@ export const CHAINS: ChainDescriptor[] = [
     role: 'Fast, low-cost settlement: native Circle USDC, Soroban contracts, and an x402 rail where the buyer signs and pays no transaction fee.',
     ecosystem: 'stellar',
     testnet: false,
-    // Listed live by a maintainer's call, 2026-08-27 (commit 050073d): the vault is
-    // deployed on pubnet and real USDC has moved through it under the on-ledger policy
-    // (2026-08-24, contract CB5LYXFK..., see soroban/releases/pubnet-v0.1.0.json). The
-    // caveat that used to justify beta still holds and is still published everywhere the
-    // chain is described: the Soroban x402 rail is configured for stellar-testnet, so no
-    // paid call sells on pubnet yet. 'live' in this registry has never meant no caveats
-    // (Arc is live and is a public testnet); the prose carries the substance.
+    // Listed live by a maintainer's call, 2026-08-27 (commit 050073d), and the caveat
+    // that used to temper the label closed on 2026-08-28: the Soroban x402 rail now
+    // SELLS on pubnet. First sale tx f213371c... (ledger 64155370), 0.001 USDC through
+    // our own facilitator, the buyer signing a Soroban authorization entry and paying
+    // no fee, our fee payer bidding the network's own market rate (the 100-stroop
+    // minimum that testnet always accepts loses pubnet's inclusion auction, which is
+    // why the first two attempts sat invisible until they expired). The vault story
+    // stands: deployed on pubnet, real USDC moved under the on-ledger policy
+    // (2026-08-24, contract CB5LYXFK..., see soroban/releases/pubnet-v0.1.0.json).
+    // 'live' has never meant no caveats; the remaining one is identity, because
+    // ERC-8004 is EVM-only and nothing bridges it here.
     status: 'live',
     evmChainId: null,
     cctpDomain: 27,

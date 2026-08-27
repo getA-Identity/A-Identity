@@ -411,7 +411,7 @@ export const PROVENANCE: ChainProvenance[] = [
   {
     chain: 'stellar',
     summary:
-      'The same Soroban spend policy as the testnet rail, deployed to Stellar mainnet and funded with real USDC. An agent spent exactly its daily budget and not one unit more: four payments settled inside the policy, the fifth was refused with the contract\'s own DailyCapExceeded, and the human override paid through a freeze that had already stopped the agent. Small money on purpose, and the cap is the reason.',
+      'The same Soroban spend policy as the testnet rail, deployed to Stellar mainnet and funded with real USDC. An agent spent exactly its daily budget and not one unit more: four payments settled inside the policy, the fifth was refused with the contract\'s own DailyCapExceeded, and the human override paid through a freeze that had already stopped the agent. Small money on purpose, and the cap is the reason. Since 2026-08-28 the Soroban x402 rail also SELLS here: the first mainnet sale settled through our own facilitator, the buyer signing an authorization entry and paying no fee, and the sale counted only once we read the SEP-41 transfer event bound to its nonce.',
     contracts: [
       {
         name: 'AgentSpendPolicy (Soroban, pubnet)',
@@ -497,15 +497,30 @@ export const PROVENANCE: ChainProvenance[] = [
         blockNumber: 64103531,
         note: 'owner_pay while the vault was frozen. It settles, because the human path is meant to work exactly when the agent path does not, and its Paid event carries by_owner:true. It was still CHARGED to the daily cap, but note what that does and does not mean: owner_pay increments the day accumulator and is NOT limited by it. `check_owner_pay` in policy.rs has no cap comparison. The override bypasses the budget as well as the gates; what it does not bypass is the accounting. An earlier version of this note said the budget still bound it, which was wrong. The freeze went on at ledger 64103526 (c003e3fed6d39d820da51ea281b6d17fc910961bee88163ef8fb6fa084e059cf) and came off at 64103532 (8bccb734a624cb6165cdd74da5c2d196c3b67dd8a0ed92e3435df1ffd2ae9f9a), because a freeze you cannot lift is a loss rather than a control.',
       },
+      {
+        kind: 'funding',
+        label: 'A buyer wallet funded with 0.05 USDC for the first x402 sale',
+        txHash: '2f47f4fe2f003e8cf65f13d9c8ce62eb2c56319bda2812d93564f5c083d3a12e',
+        onChain: 'stellar',
+        note: 'The owner account (now 2-of-3 multisig, so the payment carries two signatures) moved 0.05 USDC to a burner that already held a USDC trustline. The buyer needs USDC and a trustline and nothing else: it signs authorization entries and never pays a network fee.',
+      },
+      {
+        kind: 'settlement',
+        label: 'First x402 sale on Stellar mainnet (verify_agent, 0.001 USDC)',
+        txHash: 'f213371c1241968ee78170923d8c5a3bd9b32950e73bb9c563d800ab2c70ec9e',
+        onChain: 'stellar',
+        blockNumber: 64155370,
+        note: 'The buyer signed a Soroban authorization entry for transfer on the USDC SAC and paid nothing; we assembled, paid 34035 stroops and submitted, and the sale counted only once the SEP-41 transfer event bound to the authorization\'s nonce was read back. Recorded honestly: the first two attempts never landed, because the transaction bid the 100-stroop minimum inclusion fee that testnet always accepts while pubnet\'s auction was clearing at 200 across every percentile. The fix bids the fee market\'s own p90 with headroom, and this settlement is the measurement.',
+      },
     ],
     caveats: [
       'Real money, but small money. The cap is 1 USDC per UTC day and the vault was funded with 1 USDC. Nothing here shows behaviour at a size anyone would mind losing, and that is the deliberate trade for an unaudited contract holding value.',
       'The two refusals have no transaction to link, and that is Soroban rather than evasion. A payment the contract refuses fails in SIMULATION, so nothing is submitted and no hash exists. The 0.50 USDC attempt returned AboveAutoApprove (error 4) and the over-cap attempt returned DailyCapExceeded (error 5). Anyone can reproduce both against the live contract in seconds, and it costs nothing precisely because they are refused.',
       'The over-cap refusal is worth reading closely. The vault held only 0.05 USDC at that moment, so an InsufficientBalance refusal was also available, and the contract returned DailyCapExceeded instead because the cap gate fires before the balance gate. The ORDER is the product: the agent is told its budget is spent, not that the account is short, and those call for different human responses.',
       'Not audited. Free tooling we can re-run, an adversarial review that found and fixed real defects, and a negative-control runner that deletes each guard in turn and requires the suite to go red. That is not an audit and we will not call it one.',
-      'The owner and operator are burner keys generated for this deploy, held in a local CLI keystore. Not a multisig, not an HSM. Losing the owner key makes the balance unrecoverable, which is the trade a capped vault is meant to make survivable.',
-      'Payer and payee are both ours: the owner account funded the vault and received every payment. Evidence the rail works, not evidence of demand.',
-      'No x402 rail settles here yet. This entry proves the on-ledger spend policy alone. The Soroban x402 rail runs on stellar-testnet and is configured there in production; pointing it at pubnet is a separate change with its own fee payer and its own risk, which is why this chain is beta rather than live.',
+      'The operator is a single burner key in a local CLI keystore, not an HSM. The owner account has since been raised to 2-of-3 multisig (thresholds 2/2/2, read live 2026-08-28), which an earlier version of this caveat predated; losing two of its three keys still makes the balance unrecoverable, which is the trade a capped vault is meant to make survivable.',
+      'Payer and payee are both ours: the owner account funded the vault and received every payment, including the first x402 sale. Evidence the rail works, not evidence of demand.',
+      'The x402 sale recorded here is one sale, settled from an operator machine. The production deployment sells on pubnet only once its environment names the network, a pubnet payTo and a funded fee payer; until then production serves testnet and says so.',
       'No identity. ERC-8004 is EVM-only and no Soroban identity registry exists to point at, so a Stellar agent\'s passport is bridged from an EVM chain rather than anchored here. KYA cannot be verified on this chain.',
     ],
   },
@@ -527,7 +542,7 @@ export const PROOF_RAILS: ProofRail[] = [
     slug: 'stellar',
     title: 'Stellar',
     lede:
-      'A Soroban spend policy that refuses an over-limit payment with a typed error, now deployed on MAINNET as well as testnet and holding real USDC: an agent spent exactly its 1 USDC daily budget there and the next payment was refused by the contract. On testnet the same vault backs an x402 facilitator we wrote for this chain, because our settlement should not depend on somebody else\'s service. OpenZeppelin Channels got to a Stellar facilitator first and is kept as a fallback; what is ours is that no payment counts until we have read the transfer ourselves.',
+      'A Soroban spend policy that refuses an over-limit payment with a typed error, deployed on MAINNET as well as testnet and holding real USDC: an agent spent exactly its 1 USDC daily budget there and the next payment was refused by the contract. The x402 facilitator we wrote for this chain now sells on BOTH networks: the first mainnet sale settled 2026-08-28 through our own broadcaster, at the fee market\'s own rate. OpenZeppelin Channels got to a Stellar facilitator first and is kept as a fallback; what is ours is that no payment counts until we have read the transfer ourselves.',
     chains: ['stellar', 'stellar-testnet'],
   },
   {

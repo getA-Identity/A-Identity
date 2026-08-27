@@ -23,11 +23,11 @@ Built on **Circle Arc** (gas paid in USDC, sub-second finality), using
 **ERC-8004** for identity, **ERC-8183** for job escrow, and **x402** for
 per-request payments.
 
-> Status: hackathon MVP. Arc is the live phase-1 network. Stellar is phase 2 and mostly
-> shipped: the Soroban spend vault and the x402 rail both settle on testnet, and the same
-> vault wasm now holds real Circle USDC on pubnet under a 1 USDC daily cap. Both Stellar
-> networks stay `beta` rather than live, because no x402 rail sells on pubnet yet.
-> Avalanche is after that.
+> Status: hackathon MVP. Arc is the live phase-1 network. Stellar is phase 2 and
+> shipped: the Soroban spend vault holds real Circle USDC on pubnet under a 1 USDC daily
+> cap, and the Soroban x402 rail sells on BOTH Stellar networks, the first mainnet sale
+> settled 2026-08-28 by our own broadcaster. Pubnet is `live`; the testnet mirror stays
+> `beta`, because test money is not live money. Avalanche is after that.
 
 ## Recognition: where this runs
 
@@ -359,11 +359,12 @@ wasm, byte for byte, at
 [`CB5LYXFK...WSYP`](https://stellar.expert/explorer/public/contract/CB5LYXFKKTKDDSCM6JO6C4GNRQUFBGSLYDET6Q56JNFJQSMBKH6KWSYP),
 holding real Circle USDC under a 1 USDC daily cap, with four settlements, a freeze and an
 owner override on the ledger. Pubnet is `live`; the testnet mirror stays `beta`, because
-test money is not live money. What pubnet proves is worth stating precisely rather than
-burying: the spend policy itself, enforced on mainnet with real USDC. No x402 rail sells
-on pubnet yet, since the rail is configured for `stellar:testnet`. There is no ERC-8004 on
-Stellar either, so an agent's passport is bridged from an EVM chain rather than anchored
-here.
+test money is not live money. Since 2026-08-28 the Soroban x402 rail sells on pubnet
+too: the first mainnet sale (tx `f213371c`, 0.001 USDC) settled through our own
+broadcaster, the buyer signing an authorization entry and paying no fee, the sale
+counted only once the SEP-41 transfer event bound to its nonce was read back. There is
+no ERC-8004 on Stellar, so an agent's passport is bridged from an EVM chain rather than
+anchored here.
 
 Base carries the canonical ERC-8004 identity and reputation registries (verified
 2026-08-28 by reading each proxy's EIP-1967 implementation slot and matching the
