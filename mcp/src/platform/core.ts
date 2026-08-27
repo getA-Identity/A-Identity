@@ -421,6 +421,27 @@ export function addSpend(agent: PlatformAgent, amount: number) {
   agent.spentTodayUsd = (agent.spentTodayUsd ?? 0) + amount
 }
 
+/**
+ * Give back cap that a settlement consumed and then did not spend.
+ *
+ * An instruction commits against the daily cap when it is auto-approved or approved, which
+ * is correct: the cap is an authorization budget, not a record of what cleared. But four
+ * paths in instructions.ts push an instruction back to `pending_approval` when the
+ * settlement was BROADCAST AND FAILED, and nothing gave the cap back. So a payment that
+ * moved nothing still ate the day's budget, and re-approving it called addSpend a second
+ * time and counted it twice.
+ *
+ * Only for reversals of a spend this process actually added. It refuses to go below zero
+ * and refuses to touch a spend recorded on an earlier UTC day: yesterday's counter is
+ * already gone, and reversing into today's would hand back budget that was never taken
+ * from it.
+ */
+export function reverseSpend(agent: PlatformAgent, amount: number) {
+  if (!(amount > 0)) return
+  if (agent.spendDate !== todayUTC()) return
+  agent.spentTodayUsd = Math.max(0, (agent.spentTodayUsd ?? 0) - amount)
+}
+
 /** Next 00:00 UTC, for the UI "resets at" display. */
 export function nextUtcMidnight(): string {
   const now = new Date()

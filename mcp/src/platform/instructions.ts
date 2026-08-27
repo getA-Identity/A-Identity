@@ -4,8 +4,8 @@
  * Layering: L2 domain module; imports ./core.js and flat ../ modules only.
  */
 import {
-  state, save, id, ownsAgent, dailySpent, addSpend, nextUtcMidnight, pushActivity, short, cap,
-  type Permissions, type Instruction, type InstructionType,
+  state, save, id, ownsAgent, dailySpent, addSpend, reverseSpend, nextUtcMidnight, pushActivity, short, cap,
+  type Permissions, type Instruction, type InstructionType, type PlatformAgent,
 } from './core.js'
 import { policyPay, policyOwnerPay, payUsdcWithMemoOnchain, payUsdcBatchOnchain, memoReasonJson } from '../arc-contracts.js'
 import type { MemoInput } from '../arc-contracts.js'
@@ -382,6 +382,30 @@ export function createInstruction(input: {
 }
 
 /**
+ * Hand an instruction back to the human after a settlement that moved nothing.
+ *
+ * The four callers all reach the same state from different rails: the vault refused it,
+ * Circle's hosted policy refused it, the batch reverted, the single transfer reverted.
+ * In every one of them the instruction had ALREADY committed against the daily cap, when
+ * it was auto-approved or approved, and none of them gave that back.
+ *
+ * Two things were wrong with that. The cap is meant to bound authorized spending, and a
+ * payment that reverted spent nothing, so the day's budget was being eaten by transactions
+ * that never moved money. And `approveInstruction` calls addSpend unconditionally, so
+ * re-approving the returned instruction counted the same payment a second time.
+ *
+ * Reversing here also makes rejectInstruction's premise true again: a `pending_approval`
+ * instruction holds no claim on the cap, which is exactly why that path can refuse without
+ * unwinding anything.
+ */
+function returnToHuman(ix: Instruction, agent: PlatformAgent | undefined, amount: number, note: string, enforcedBy: Instruction['enforcedBy']) {
+  if (agent) reverseSpend(agent, amount)
+  ix.status = 'pending_approval'
+  ix.enforcedBy = enforcedBy
+  ix.policyNote = note
+}
+
+/**
  * Reject a pending instruction.
  *
  * This is the cancel half of "edit a payment before approving it". Editing does not mutate
@@ -390,8 +414,14 @@ export function createInstruction(input: {
  * the thing that was actually authorised.
  *
  * Only `pending_approval` can be rejected, which is also why nothing has to be unwound
- * here: a pending instruction has never committed against the daily cap. Auto-approved and
- * approved instructions have, so they are deliberately not rejectable through this path.
+ * here: a `pending_approval` instruction holds no claim on the daily cap. That was written
+ * as "has never committed against the daily cap", which was not the same sentence and was
+ * not true: an instruction that was approved, settled and REVERTED comes back here through
+ * returnToHuman, having committed once. It holds no claim because returnToHuman gives the
+ * cap back on the way, not because it never took any.
+ *
+ * Auto-approved and approved instructions do hold a claim, so they are deliberately not
+ * rejectable through this path.
  */
 export function rejectInstruction(ixId: string, caller?: string, reason?: string): Instruction | { error: string } {
   const ix = state.instructions.find((i) => i.id === ixId)
@@ -592,9 +622,7 @@ export async function executeInstruction(ixId: string, caller?: string): Promise
       return ix
     }
     if (res.reverted && VAULT_POLICY_ERRORS.has(res.reason)) {
-      ix.status = 'pending_approval'
-      ix.enforcedBy = 'onchain-vault'
-      ix.policyNote = `On-chain policy vault rejected this (${res.reason}); a human must intervene.`
+      returnToHuman(ix, agent, total, `On-chain policy vault rejected this (${res.reason}); a human must intervene.`, 'onchain-vault')
       pushActivity(agent, `On-chain vault rejected ${fmt(total)} USDC to ${short(settleTo)}: ${res.reason}`)
       save(state)
       return ix
@@ -624,9 +652,7 @@ export async function executeInstruction(ixId: string, caller?: string): Promise
       return ix
     }
     if (res.rejected) {
-      ix.status = 'pending_approval'
-      ix.enforcedBy = 'circle-agent-stack'
-      ix.policyNote = `Circle's hosted policy rejected this (${res.reason}); a human must intervene.`
+      returnToHuman(ix, agent, total, `Circle's hosted policy rejected this (${res.reason}); a human must intervene.`, 'circle-agent-stack')
       pushActivity(agent, `Circle Agent Wallet rejected ${fmt(total)} USDC to ${short(settleTo)}: ${res.reason}`)
       save(state)
       return ix
@@ -681,9 +707,7 @@ export async function executeInstruction(ixId: string, caller?: string): Promise
         // Broadcast but reverted. The batch is all-or-nothing, so nothing moved, and a
         // reverted broadcast is never reported as executed: back to the human, and NOT
         // retried as a single transfer (that would be a different settlement).
-        ix.status = 'pending_approval'
-        ix.enforcedBy = 'server'
-        ix.policyNote = `Batch settlement reverted on-chain (${batch.reason}); nothing settled, a human must intervene.`
+        returnToHuman(ix, agent, total, `Batch settlement reverted on-chain (${batch.reason}); nothing settled, a human must intervene.`, 'server')
         if (agent) pushActivity(agent, `Batch settlement reverted on Arc to ${short(settleTo)}: ${batch.reason}`)
         save(state)
         return ix
@@ -715,9 +739,7 @@ export async function executeInstruction(ixId: string, caller?: string): Promise
     // The settlement was BROADCAST but reverted on-chain (e.g. insufficient balance) - never
     // mark it executed. Kick it back to the human, exactly like an on-chain policy rejection.
     if ('reverted' in res && res.reverted) {
-      ix.status = 'pending_approval'
-      ix.enforcedBy = 'server'
-      ix.policyNote = `On-chain settlement reverted (${res.reason}); a human must intervene.`
+      returnToHuman(ix, agent, total, `On-chain settlement reverted (${res.reason}); a human must intervene.`, 'server')
       if (agent) pushActivity(agent, `Settlement reverted on Arc to ${short(settleTo)}: ${res.reason}`)
       save(state)
       return ix

@@ -7,8 +7,10 @@ import {
   batchPaymentPlan,
   countRecentActions,
   createAgent,
+  approveInstruction,
   createInstruction,
   executeInstruction,
+  rejectInstruction,
   type Instruction,
   type Permissions,
   type PlatformAgent,
@@ -326,6 +328,74 @@ test('a reverted batch is never reported as executed and is not retried as one t
       assert.match(done.policyNote, /reverted on-chain/)
     },
   )
+})
+
+// -- the daily cap after a settlement that moved nothing --------------------------
+
+/**
+ * The cap bounds AUTHORIZED spending, so an instruction commits against it when it is
+ * auto-approved. That is correct. What was not correct is what happened next when the
+ * settlement broadcast and FAILED: four paths pushed the instruction back to
+ * `pending_approval` and none of them gave the cap back.
+ *
+ * Two consequences, both visible to an owner. A day's budget was consumed by payments that
+ * moved nothing. And `approveInstruction` calls addSpend unconditionally, so re-approving
+ * the returned instruction charged the same payment twice.
+ */
+test('a settlement that reverts gives the daily cap back', async () => {
+  __resetPlatformStateForTests()
+  const agent = seedAgent()
+  const ix = seedInstruction(agent, { type: 'batch', amountUsd: 0.5, count: 3 })
+  // Auto-approved on creation, so the cap is already committed before we settle.
+  assert.equal(agent.spentTodayUsd, 1.5)
+
+  await withSettlement(
+    { payUsdcBatch: async () => ({ executed: false, reverted: true, reason: 'transfer amount exceeds balance' }),
+      payUsdcWithMemo: neverCalled('payUsdcWithMemo') },
+    async () => {
+      const done = await executeInstruction(ix.id, OWNER)
+      assert.ok(!('error' in done))
+      assert.equal(done.status, 'pending_approval')
+      assert.equal(agent.spentTodayUsd, 0, 'nothing moved on-chain, so nothing should be charged to the day')
+    },
+  )
+})
+
+test('re-approving a reverted settlement charges it once, not twice', async () => {
+  __resetPlatformStateForTests()
+  const agent = seedAgent()
+  const ix = seedInstruction(agent, { type: 'batch', amountUsd: 0.5, count: 3 })
+
+  await withSettlement(
+    { payUsdcBatch: async () => ({ executed: false, reverted: true, reason: 'insufficient balance' }),
+      payUsdcWithMemo: neverCalled('payUsdcWithMemo') },
+    async () => { await executeInstruction(ix.id, OWNER) },
+  )
+  // The human looks at it and approves it again. Before the fix this reached 3.0: the same
+  // 1.5 charged on creation and never returned, plus 1.5 charged again here.
+  const again = approveInstruction(ix.id, OWNER)
+  assert.ok(!('error' in again), JSON.stringify(again))
+  assert.equal(agent.spentTodayUsd, 1.5)
+})
+
+test('rejecting a reverted settlement leaves no claim on the cap', async () => {
+  __resetPlatformStateForTests()
+  const agent = seedAgent()
+  // count must be >= 2 or executeInstruction takes the single-transfer path, not the batch.
+  const ix = seedInstruction(agent, { type: 'batch', amountUsd: 1, count: 2 })
+
+  await withSettlement(
+    { payUsdcBatch: async () => ({ executed: false, reverted: true, reason: 'reverted' }),
+      payUsdcWithMemo: neverCalled('payUsdcWithMemo') },
+    async () => { await executeInstruction(ix.id, OWNER) },
+  )
+  // rejectInstruction unwinds nothing, on the stated premise that a pending instruction
+  // holds no claim on the cap. That premise is only true because the revert path gave it
+  // back; without that this agent would carry 2 USD it never spent until UTC midnight.
+  const rejected = rejectInstruction(ix.id, OWNER, 'not paying this')
+  assert.ok(!('error' in rejected))
+  assert.equal(rejected.status, 'rejected')
+  assert.equal(agent.spentTodayUsd, 0)
 })
 
 test('without a signer a batch degrades to the labeled simulation, as before', async () => {
