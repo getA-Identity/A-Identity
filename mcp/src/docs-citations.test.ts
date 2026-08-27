@@ -183,15 +183,17 @@ test('the policy README is tracked, not gitignored', () => {
 })
 
 /**
- * .gitignore listed itself, on line 81, for most of this repository's life.
+ * A bare `.gitignore` sat on line 81 for most of this repository's life, and the damage was
+ * not where it looked.
  *
- * The rule matched and did nothing: git ignores nothing it already tracks, and this file
- * has been tracked since the first commit. What it did do was state an intent the
- * repository contradicts, since .gitignore is public on origin/main with every "local-only,
- * never pushed" filename in it. And it made `git rm --cached .gitignore` a silent
- * operation on the one file that keeps .env, .env.* and mcp/data/ out of a public repo.
+ * On the root file the rule was inert: git ignores nothing it already tracks. But a bare
+ * pattern carries no leading slash, so it matches at EVERY depth. soroban/.gitignore,
+ * trust-guard/.gitignore and the fuzz one were invisible: not tracked, and not listed as
+ * untracked either, so nothing ever prompted anyone to add them. A fresh clone had no rule
+ * for the Rust target directory, wasm artifacts, mutation-test output or dist-test.
  *
- * A rule that has no effect is not harmless when it is also a claim.
+ * That is what makes the second test below the important one. The first stops the pattern
+ * coming back; the second notices if any ignore file goes missing again for any reason.
  */
 test('.gitignore does not list itself', () => {
   const lines = readFileSync(join(ROOT, '.gitignore'), 'utf8').split('\n')
@@ -215,4 +217,39 @@ test('.gitignore still protects the secrets it is here to protect', () => {
       `.gitignore no longer carries "${rule}", which is what keeps secrets and live platform state out of a public repo`,
     )
   }
+})
+
+test('every .gitignore in the tree is tracked', () => {
+  // A bare `.gitignore` pattern hid three of these at once, and the failure mode is silent
+  // by construction: an ignored file is not reported as untracked, so `git status` stays
+  // clean while a fresh clone loses the rules. Compare disk against the index directly.
+  let tracked: Set<string>
+  try {
+    tracked = new Set(
+      execFileSync('git', ['ls-files', '*.gitignore'], { cwd: ROOT, encoding: 'utf8' })
+        .split('\n').filter(Boolean),
+    )
+  } catch {
+    console.log('[docs-citations] git is unavailable here; the tracked-gitignore test was skipped')
+    return
+  }
+
+  const found: string[] = []
+  const walk = (dir: string) => {
+    for (const e of readdirSync(dir, { withFileTypes: true })) {
+      if (e.name === 'node_modules' || e.name === '.git' || e.name === 'stellar-build' || e.name === 'dist') continue
+      const full = join(dir, e.name)
+      if (e.isDirectory()) walk(full)
+      else if (e.name === '.gitignore') found.push(relative(ROOT, full))
+    }
+  }
+  walk(ROOT)
+
+  assert.ok(found.length >= 4, `expected several .gitignore files in the tree, found ${found.length}`)
+  const missing = found.filter((f) => !tracked.has(f))
+  assert.deepEqual(
+    missing, [],
+    'these .gitignore files exist on disk but are not tracked, so a fresh clone does not get ' +
+      'their rules: ' + missing.join(', '),
+  )
 })
