@@ -22,6 +22,8 @@
  * This module exists so the two servers cannot answer this question differently again.
  */
 
+import { createHash } from 'node:crypto'
+
 /** Trusted reverse proxies in front of us. Render and Vercel each terminate as one hop. */
 export const TRUSTED_PROXY_COUNT = Math.max(1, Number(process.env.TRUSTED_PROXY_COUNT ?? 1))
 
@@ -37,4 +39,37 @@ export function clientIpFromXff(xff: string | string[] | undefined, socketAddres
     if (parts[idx]) return parts[idx]
   }
   return socketAddress || 'unknown'
+}
+
+/**
+ * What this process computed as the caller's key, in a form that is safe to serve.
+ *
+ * Both rate limiters are keyed on the client address and NEITHER fires in production, on
+ * two different derivation algorithms, while both fire locally. That means the key varies
+ * per request, and the only thing that can tell us why is the server: the X-Forwarded-For
+ * a request actually carries at the app is not visible from outside.
+ *
+ * So this reports the SHAPE rather than the contents: how many entries the header had,
+ * which index the rule picked, and a short fingerprint of the value. A fingerprint that
+ * changes between two requests from the same client IS the bug, and a stable one rules the
+ * key out and points at something else. Nothing here reveals an address: the caller's own
+ * is already theirs, and the proxy hops stay behind a one-way hash.
+ */
+export function clientIpDiagnostic(
+  xff: string | string[] | undefined,
+  socketAddress: string | undefined,
+): { entries: number; chosenIndex: number; source: 'xff' | 'socket' | 'none'; fingerprint: string; trustedProxyCount: number } {
+  const raw = Array.isArray(xff) ? xff.join(',') : xff
+  const parts = typeof raw === 'string' && raw.length > 0
+    ? raw.split(',').map((s) => s.trim()).filter(Boolean)
+    : []
+  const chosenIndex = parts.length ? Math.max(0, parts.length - TRUSTED_PROXY_COUNT) : -1
+  const value = clientIpFromXff(xff, socketAddress)
+  return {
+    entries: parts.length,
+    chosenIndex,
+    source: parts.length ? 'xff' : socketAddress ? 'socket' : 'none',
+    fingerprint: createHash('sha256').update(value).digest('hex').slice(0, 12),
+    trustedProxyCount: TRUSTED_PROXY_COUNT,
+  }
 }

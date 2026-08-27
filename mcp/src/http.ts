@@ -27,7 +27,7 @@ import {
   updateAgentActionPolicy,
 } from './platform.js'
 import { verifyToken, isVerified } from './auth.js'
-import { clientIpFromXff } from './client-ip.js'
+import { clientIpFromXff, clientIpDiagnostic } from './client-ip.js'
 import { rateBudget } from './rate-budget.js'
 import { oauthEnabled, verifyAccessToken } from './oauth.js'
 import { SESSION_COOKIE, parseCookies, publicAgents, readBody, sendJson, type RouteCtx } from './http/shared.js'
@@ -125,6 +125,14 @@ const server = http.createServer(async (req, res) => {
   if (budget && rateLimited(`${clientIpOf(req)}:${budget.bucket}`, budget.max, budget.windowMs)) {
     res.setHeader('Retry-After', String(Math.ceil(budget.windowMs / 1000)))
     sendJson(res, 429, { error: 'Too many requests. Slow down and try again in a minute.' })
+    return
+  }
+
+  // Why the rate limiter above does not fire in production, answered by the only party who
+  // can see it. Serves the SHAPE of this request's X-Forwarded-For and a hash of the value
+  // the rule picked, never an address. See clientIpDiagnostic.
+  if (req.method === 'GET' && url.pathname === '/api/diag/client-ip') {
+    sendJson(res, 200, clientIpDiagnostic(req.headers['x-forwarded-for'], req.socket.remoteAddress))
     return
   }
 
