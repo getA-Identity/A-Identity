@@ -33,8 +33,35 @@ test('every hash and address is well formed, and every artifact lands on a known
       // from the entry's own chain. A Stellar hash is the same 32 bytes an EVM hash
       // carries, rendered WITHOUT the 0x prefix, and neither branch accepts the other's
       // rendering.
-      const on = getChainById(a.onChain)
+      // An artifact on a chain the registry does not model names it in words and gets no
+      // link. Exactly one of the two must be set: without this a typo in `onChain` would
+      // silently become "external chain", and an artifact with neither would render as
+      // having landed on the entry's own chain, which is the mislabelling this replaced.
+      assert.notEqual(
+        Boolean(a.onChain), Boolean(a.externalChain),
+        `${p.chain}: ${a.label} must set exactly one of onChain / externalChain`,
+      )
+      if (a.externalChain) {
+        assert.ok(a.note, `${p.chain}: ${a.label} is on ${a.externalChain}, which the registry does not model, so it must say where to look`)
+        assert.equal(artifactUrl(a), null, `${p.chain}: ${a.label} is off-registry, so no link may be derived for it`)
+        continue
+      }
+      const on = getChainById(a.onChain!)
       assert.ok(on, `${p.chain}: ${a.label} lands on unknown chain ${a.onChain}`)
+      // An artifact that ADMITS IN PROSE it was sent somewhere else must say so in the
+      // field, because the field is what renders and what derives the link. This is the
+      // exact shape of the bug that added externalChain: a Sepolia hash carried
+      // `onChain: 'arbitrum'` and a note explaining it was really Sepolia, so the page
+      // printed the wrong chain and offered a link no explorer could resolve. The note was
+      // honest and the field was not, and nothing made them agree.
+      const claimed = a.note?.match(/\bSent on ([A-Z][A-Za-z0-9 ]+?)(?:,|\.|$)/)?.[1]
+      if (claimed) {
+        assert.equal(
+          claimed.toLowerCase(), on.name.toLowerCase(),
+          `${p.chain}: ${a.label} says it was sent on ${claimed} but names ${on.name}. ` +
+            'If the registry does not model that chain, use externalChain and take the link away.',
+        )
+      }
       assert.match(
         a.txHash,
         TX_HASH_RE[on.ecosystem],

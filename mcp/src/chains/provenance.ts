@@ -27,8 +27,26 @@ export type ChainArtifact = {
   label: string
   txHash: string
   /** Registry id of the chain this transaction lives on. Usually the entry's own chain;
-   *  a funding hop names another, which is exactly why the link derives from THIS. */
-  onChain: string
+   *  a funding hop names another, which is exactly why the link derives from THIS.
+   *
+   *  Absent only when the transaction landed on a chain the registry does not model, in
+   *  which case `externalChain` names it and the artifact carries no explorer link. */
+  onChain?: string
+  /**
+   * A chain we transacted on but do not wire, in plain words rather than a registry id.
+   *
+   * The Sepolia funding hop below used to set `onChain: 'arbitrum'` and explain in a note
+   * that it was really Sepolia. The note was honest and the field was not, and it is the
+   * field that renders: the proof page printed "on arbitrum" and derived an Arbitrum One
+   * explorer link for a hash that Arbitrum One has never seen, so the one thing a reader
+   * could click to check us was guaranteed to come back empty.
+   *
+   * The alternative was adding Ethereum Sepolia to the registry, which would claim it as a
+   * chain we support and move every chain count on the site. We do not support it; we sent
+   * one funding transaction through it. So it is named here, and it gets no link, because
+   * the registry is the only thing allowed to produce one.
+   */
+  externalChain?: string
   blockNumber?: number
   note?: string
 }
@@ -171,8 +189,8 @@ export const PROVENANCE: ChainProvenance[] = [
         kind: 'bridge',
         label: 'Funding hop: Sepolia deposit through the native bridge inbox',
         txHash: '0x65a5ad3166da6652462dc9f7025c84fcf52e411838886bd30c74859f8ccda96a',
-        onChain: 'arbitrum',
-        note: 'Sent on Ethereum Sepolia, which is this chain\'s parent. Linked through the Arbitrum descriptor because the registry has no Sepolia entry; the hash is the authority, not the link.',
+        externalChain: 'Ethereum Sepolia',
+        note: 'Sent on Ethereum Sepolia, this chain\'s parent, which the registry does not model. No link, because a derived one would point at a chain that has never seen this hash. Paste it into sepolia.etherscan.io.',
       },
     ],
     caveats: [
@@ -470,8 +488,15 @@ export function railBySlug(slug: string): ProofRail | undefined {
   return PROOF_RAILS.find((r) => r.slug === slug)
 }
 
-/** Explorer link for an artifact, derived from the chain it actually landed on. */
+/**
+ * Explorer link for an artifact, derived from the chain it actually landed on.
+ *
+ * Null for an artifact on a chain the registry does not model. No link beats a link that
+ * resolves to nothing: a reader who clicks and gets an empty page learns that we are wrong
+ * about our own transaction, which is worse than being told there is nowhere to click.
+ */
 export function artifactUrl(a: ChainArtifact): string | null {
+  if (!a.onChain) return null
   const chain = getChainById(a.onChain)
   return chain ? txUrl(chain, a.txHash) : null
 }

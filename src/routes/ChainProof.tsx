@@ -30,7 +30,10 @@ type Artifact = {
   kind: string
   label: string
   txHash: string
-  onChain: string
+  onChain?: string
+  /** Set instead of onChain when the transaction landed on a chain the registry does not
+   *  model. Such an artifact carries no explorer link, on purpose. */
+  externalChain?: string
   blockNumber?: number
   note?: string
   explorerUrl: string | null
@@ -340,7 +343,11 @@ export default function ChainProof() {
                         <p className="mt-1 text-[11px] text-foreground/45">
                           {a.kind}
                           {a.blockNumber ? ` - block ${a.blockNumber}` : ''}
-                          {a.onChain !== net.chain ? ` - on ${a.onChain}` : ''}
+                          {a.externalChain
+                            ? ` - on ${a.externalChain}, which we do not wire, so there is no link to derive`
+                            : a.onChain !== net.chain
+                              ? ` - on ${a.onChain}`
+                              : ''}
                           {a.note ? ` - ${a.note}` : ''}
                         </p>
                       </div>
