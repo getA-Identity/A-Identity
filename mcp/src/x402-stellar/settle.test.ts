@@ -486,6 +486,48 @@ test('an OZ refusal is reported as a broadcast failure and records nothing', asy
   assert.equal(rows.length, 0, 'nothing was broadcast, so there is nothing to record')
 })
 
+/**
+ * An OZ REFUSAL and an OZ THROW are different things and must not share an answer.
+ *
+ * A refusal is decided: they looked at it and said no, so nothing was submitted. A throw is
+ * not: the request may never have left, or it may have arrived and the response not come
+ * back, and nothing on this side can tell those apart. broadcastOurselves has said exactly
+ * that in a comment since it was written and returns `ambiguous`. The OZ path returned a
+ * plain broadcast_failed, so the caller answered 502 and told a buyer their payment had
+ * failed when OZ may well have submitted it.
+ */
+test('an OZ throw is undecided, not a failure', async () => {
+  const rows: { outcome?: string }[] = []
+  const r = await settleStellarPayment({
+    chain: CHAIN, token: TOKEN, requirements: REQ, payload: payload(), limits: LIMITS,
+    deps: settleDeps({
+      ozSubmit: async () => { throw new Error('socket hang up') },
+      persist: async (rec) => { rows.push(rec as { outcome?: string }) },
+    }),
+  })
+  assert.equal(r.success, false)
+  if (!r.success) {
+    assert.equal(r.ambiguous, true, 'a throw cannot be reported as a decided failure')
+    assert.equal(r.code, 'unconfirmed')
+    assert.match(r.errorReason, /cannot tell whether it submitted/)
+    assert.equal(r.transaction, undefined, 'OZ assembles the envelope, so there is no hash to hand back')
+  }
+  // No hash means no row anyone could act on, which is the same rule the native path uses.
+  assert.equal(rows.length, 0)
+})
+
+test('an OZ refusal is still decided, so the two do not collapse into one answer', async () => {
+  const r = await settleStellarPayment({
+    chain: CHAIN, token: TOKEN, requirements: REQ, payload: payload(), limits: LIMITS,
+    deps: settleDeps({ ozSubmit: async () => ({ ok: false, reason: 'channel out of funds' }) }),
+  })
+  assert.equal(r.success, false)
+  if (!r.success) {
+    assert.equal(r.code, 'broadcast_failed')
+    assert.notEqual(r.ambiguous, true, 'OZ answered, so this is a verdict and not an unknown')
+  }
+})
+
 test('a verify failure never reaches a broadcaster', async () => {
   let called = false
   const r = await settleStellarPayment({

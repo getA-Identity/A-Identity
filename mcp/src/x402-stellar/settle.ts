@@ -1127,10 +1127,29 @@ async function broadcastViaOz(
       payTo: requirements.payTo,
       amount: auth.amount.toString(),
     })
+    // DECIDED. OZ answered, and the answer was no. defaultOzSubmit turns any non-2xx and
+    // any unreadable body into this, so reaching here means they looked at it and refused.
     if (!r.ok) return { ok: false, code: 'broadcast_failed', reason: `OpenZeppelin Channels refused: ${r.reason}` }
     return { ok: true, txHash: r.txHash }
   } catch (e) {
-    return { ok: false, code: 'broadcast_failed', reason: `OpenZeppelin Channels call failed: ${msg(e)}` }
+    // NOT decided, for exactly the reason broadcastOurselves gives twenty lines down: a
+    // throw here can mean the request never left, or that it arrived and the response did
+    // not come back, and we cannot tell those apart from this side. This branch was
+    // returning a plain broadcast_failed, so the caller answered 502 and told a buyer their
+    // payment had failed when OZ may well have submitted it.
+    //
+    // Unlike the native path there is no hash to hand back: OZ assembles and signs the
+    // envelope, so we never see one unless they answer. An operator's only handle is the
+    // authorization nonce, which is in the record, so the reason names it.
+    return {
+      ok: false,
+      code: 'broadcast_failed',
+      ambiguous: true,
+      reason:
+        `the OpenZeppelin Channels call threw and we cannot tell whether it submitted: ${msg(e)}. ` +
+        `Nothing was marked spent and no service was rendered. There is no transaction hash, because ` +
+        `OZ assembles the envelope; the authorization nonce ${auth.nonce} is the handle for finding it.`,
+    }
   }
 }
 

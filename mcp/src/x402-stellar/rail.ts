@@ -671,7 +671,22 @@ export async function stellarRailServeToolOn(
         ...(settled.ambiguous
           ? {
               ambiguous: true,
-              note: 'The transaction may still land. Nothing was served, and the authorization was NOT marked spent, so a retry once it confirms is safe. This is not a statement that your payment failed.',
+              // The old wording ended "so a retry once it confirms is safe", which was true
+              // about double-charging and misleading about everything else. Safe is not the
+              // same as useful: a Soroban authorization nonce is single-use, so if the
+              // transaction DID land, replaying this entry cannot settle and cannot serve
+              // you. Being served requires a fresh challenge and a new signature, which
+              // means paying again. Saying "retry is safe" to someone who is out of pocket
+              // and reads it as "retry and you will get your result" is the one thing this
+              // rail must not do.
+              note:
+                'The transaction may still land. Nothing was served here, and the authorization was NOT ' +
+                'marked spent, so this server will not charge you twice. Note what that does not mean: a ' +
+                'Soroban authorization nonce is single-use, so if the payment did land, replaying this ' +
+                'same entry cannot settle and cannot serve you. Check the payment first. If it landed and ' +
+                'you still need the result, you will have to take a fresh challenge and sign a new ' +
+                'authorization, which is a second payment. If it did not land, replaying this entry is safe ' +
+                'until it expires.',
             }
           : {}),
       },

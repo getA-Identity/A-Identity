@@ -1,6 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { rpc, xdr } from '@stellar/stellar-sdk'
+import { rpc, xdr, TransactionBuilder, Networks, Keypair } from '@stellar/stellar-sdk'
 
 import { confirmStellarTransfer } from './confirm.js'
 import { getChainById } from '../chains/registry.js'
@@ -412,4 +412,49 @@ test('a transfer only present in the meta is still found', async () => {
     sleep: async () => {},
   })
   assert.equal(r.confirmed, true, 'the meta is the source that cannot be omitted')
+})
+
+/**
+ * A fee-bumped settlement must confirm exactly like a plain one.
+ *
+ * noncesIn() decoded two of the three envelope kinds. A FEE-BUMP envelope wraps another
+ * envelope rather than carrying operations itself, so `env.v1()` threw on one, the catch
+ * swallowed it, and the function returned no nonces at all. That fails closed: the money
+ * moved, the Transfer event was there, and the confirmation could not bind it to this
+ * authorization, so the buyer paid and was not served.
+ *
+ * This is not hypothetical on the path we do not control. We do not fee-bump our own
+ * submissions, but relaying for a fee is exactly what the OZ Channels fallback is, and
+ * bumping the fee is what a relayer does when the network gets busy.
+ *
+ * The envelope here is DERIVED from the real captured one rather than pasted, so it wraps
+ * the same operations, the same auth entry and the same nonce the other tests assert on.
+ */
+const feeBumped = () => {
+  const inner = TransactionBuilder.fromXDR(GASLESS_ENVELOPE, Networks.TESTNET)
+  const payer = Keypair.fromRawEd25519Seed(Buffer.alloc(32, 7))
+  return TransactionBuilder.buildFeeBumpTransaction(payer, '2000', inner as never, Networks.TESTNET).toXDR()
+}
+
+test('the envelope this test builds really is a fee bump, or it proves nothing', () => {
+  assert.equal(xdr.TransactionEnvelope.fromXDR(feeBumped(), 'base64').switch().name, 'envelopeTypeTxFeeBump')
+  assert.equal(xdr.TransactionEnvelope.fromXDR(GASLESS_ENVELOPE, 'base64').switch().name, 'envelopeTypeTx')
+})
+
+test('a fee-bumped settlement still binds to its authorization nonce', async () => {
+  const r = await confirmStellarTransfer(CHAIN, HASH, OURS, deps({
+    [HASH]: success([GASLESS_TRANSFER], feeBumped()),
+  }))
+  assert.equal(r.confirmed, true, r.confirmed ? '' : `refused: ${r.reason ?? r.code}`)
+  if (r.confirmed) assert.equal(r.authNonce, NONCE)
+})
+
+test('a fee-bumped envelope carrying someone else nonce is still refused', async () => {
+  const r = await confirmStellarTransfer(
+    CHAIN, HASH, { ...OURS, authNonce: '1' },
+    deps({ [HASH]: success([GASLESS_TRANSFER], feeBumped()) }),
+  )
+  // Unwrapping must not become "accept anything": the nonce is still the binding, and a
+  // fee bump does not change which authorization the inner transaction carried.
+  assert.equal(r.confirmed, false)
 })

@@ -259,12 +259,37 @@ function transfersIn(tx: rpc.Api.GetSuccessfulTransactionResponse): SeenTransfer
   return out
 }
 
+/**
+ * The transaction inside an envelope, whatever kind of envelope it is.
+ *
+ * There are three, and this used to handle two. A FEE-BUMP envelope wraps another envelope
+ * rather than carrying operations itself, so `env.v1()` throws on one and the caller's
+ * catch turned that into "no nonces", which fails closed: the money moved, we could not
+ * bind it to this authorization, and the buyer was not served.
+ *
+ * That matters most on the path we do not control. We do not fee-bump our own submissions,
+ * but a relayer is exactly the kind of service that does, and the OZ Channels fallback
+ * exists so that someone else broadcasts for us. A settlement broadcast that way could
+ * never confirm.
+ */
+function innerTx(env: xdr.TransactionEnvelope): xdr.Transaction | xdr.TransactionV0 {
+  switch (env.switch().name) {
+    case 'envelopeTypeTxV0':
+      return env.v0().tx()
+    case 'envelopeTypeTxFeeBump':
+      // The fee-bump's own "operations" are the wrapped transaction. Only v1 can be
+      // fee-bumped, so there is no second level of unwrapping to do here.
+      return env.feeBump().tx().innerTx().v1().tx()
+    default:
+      return env.v1().tx()
+  }
+}
+
 /** Every authorization nonce the transaction's operations carried, with its payer. */
 function noncesIn(tx: rpc.Api.GetSuccessfulTransactionResponse): { address: string; nonce: string }[] {
   const out: { address: string; nonce: string }[] = []
   try {
-    const env = tx.envelopeXdr
-    const inner = env.switch().name === 'envelopeTypeTxV0' ? env.v0().tx() : env.v1().tx()
+    const inner = innerTx(tx.envelopeXdr)
     for (const op of inner.operations()) {
       if (op.body().switch().name !== 'invokeHostFunction') continue
       for (const entry of op.body().invokeHostFunctionOp().auth()) {
