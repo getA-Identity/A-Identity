@@ -196,6 +196,110 @@ test('every refusal reports its own code', async () => {
   }
 })
 
+/** A contract wallet: the payer is a contract address, and the signature over the
+ *  authorization is made by a key that does NOT recover to it. Only an ERC-1271
+ *  `isValidSignature` call can accept this, which is the whole point. */
+const CONTRACT_WALLET = '0x00000000000000000000000000000000c0117ac7' as `0x${string}`
+
+async function signedByContractWallet() {
+  const authorization = {
+    from: CONTRACT_WALLET,
+    to: PAY_TO as `0x${string}`,
+    value: 21_000n,
+    validAfter: 0n,
+    validBefore: BigInt(nowSec + 600),
+    nonce: `0x${'cd'.repeat(32)}` as `0x${string}`,
+  }
+  // Signed by the buyer EOA, on behalf of the contract. Recover-and-compare cannot accept
+  // this, because it recovers the buyer and the payer is the contract.
+  const signature = await buyer.signTypedData({
+    domain: DOMAIN, types: TYPES, primaryType: 'TransferWithAuthorization', message: authorization,
+  })
+  return {
+    payload: {
+      x402Version: 2, scheme: 'exact', network: chain.caip2,
+      payload: {
+        signature,
+        authorization: {
+          from: authorization.from, to: authorization.to,
+          value: authorization.value.toString(),
+          validAfter: authorization.validAfter.toString(),
+          validBefore: authorization.validBefore.toString(),
+          nonce: authorization.nonce,
+        },
+      },
+    },
+  }
+}
+
+/**
+ * A client that can make calls, unlike the stub above, plus an ERC-1271 answer.
+ *
+ * `getChainId` is what hasPublicActions probes for: the plain stub does not have it, which
+ * is exactly why every other test in this file still goes down the recover-only path and
+ * why none of them noticed that contract wallets were being refused.
+ */
+function contractWalletClient(accepts: boolean) {
+  const base = publicClient({})
+  return {
+    ...base,
+    getChainId: async () => 4663,
+    getCode: async () => '0x60006000' as `0x${string}`,
+    // viem does not call isValidSignature directly. It deploys the ERC-6492 universal
+    // validator through an eth_call and reads a BOOL back, which is why the answer here is
+    // an abi-encoded true/false rather than the 0x1626ba7e magic value the account returns
+    // one layer further in.
+    call: async () => ({
+      data: (accepts
+        ? `0x${'0'.repeat(63)}1`
+        : `0x${'0'.repeat(64)}`) as `0x${string}`,
+    }),
+  }
+}
+
+/**
+ * The claim this file makes about contract wallets, held in place.
+ *
+ * verifyPayment used to call viem's TOP-LEVEL `verifyTypedData` and pass `publicClient`
+ * into it, with a comment saying that was how an EIP-1271 contract wallet verified too.
+ * That function destructures exactly { address, domain, message, primaryType, signature,
+ * types } and does a plain recover-and-compare; the extra property was dropped on the
+ * floor, and the `as never` cast on the call is what stopped the compiler objecting. So
+ * every smart-contract wallet was refused with `bad_signature` while the code documented
+ * support for it.
+ */
+test('a contract wallet verifies through ERC-1271 when the client can make calls', async () => {
+  clearDomainCache()
+  const { payload } = await signedByContractWallet()
+  const r = await verifyPayment({
+    chain, token, requirements: REQUIREMENTS, payload, limits: LIMITS,
+    deps: deps({ publicClient: contractWalletClient(true) }),
+  })
+  assert.equal(r.isValid, true, r.isValid ? '' : `refused: ${r.code} ${r.invalidReason}`)
+  if (r.isValid) assert.equal(r.payer.toLowerCase(), CONTRACT_WALLET.toLowerCase())
+})
+
+test('a contract wallet that rejects the signature is still refused', async () => {
+  clearDomainCache()
+  const { payload } = await signedByContractWallet()
+  const r = await verifyPayment({
+    chain, token, requirements: REQUIREMENTS, payload, limits: LIMITS,
+    deps: deps({ publicClient: contractWalletClient(false) }),
+  })
+  assert.equal(r.isValid, false)
+  if (!r.isValid) assert.equal(r.code, 'bad_signature')
+})
+
+test('without a call-capable client an EOA still verifies, so the fallback is not a regression', async () => {
+  clearDomainCache()
+  const { payload } = await signed()
+  const r = await verifyPayment({
+    chain, token, requirements: REQUIREMENTS, payload, limits: LIMITS,
+    deps: deps({ publicClient: publicClient({}) }),
+  })
+  assert.equal(r.isValid, true)
+})
+
 test('a value outside the rail limits is refused', async () => {
   clearDomainCache()
   const { payload } = await signed({ value: 21_000n })

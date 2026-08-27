@@ -21,6 +21,11 @@
  * SettlementToken, so any registry chain with an EIP-3009 token inherits the rail.
  */
 import { parseSignature, parseEventLogs, verifyTypedData, isAddress } from 'viem'
+// The ACTION, not the util of the same name. viem exports both: the top-level one only
+// recovers a signer address and compares it, while this one goes through verifyHash and so
+// falls back to an ERC-1271 `isValidSignature` call when the address holds code. The two
+// have different signatures, which is the only reason the wrong one type-checked here.
+import { verifyTypedData as verifyTypedDataOnChain } from 'viem/actions'
 import type { ChainDescriptor, SettlementToken } from '../chains/index.js'
 import { EIP3009_ABI, evmPublicClient, evmWalletClientFromKey, txUrl } from '../chains/index.js'
 import {
@@ -287,24 +292,37 @@ export async function verifyPayment(input: {
     return { isValid: false, code: 'rpc_error', invalidReason: `could not read authorizationState: ${msg(e)}` }
   }
 
-  // Signature check against the PROVEN domain, through a public client so an EIP-1271
-  // contract wallet verifies too.
+  // Signature check against the PROVEN domain.
+  //
+  // This used to call viem's top-level `verifyTypedData` and pass `publicClient` into it,
+  // with a comment saying that was how an EIP-1271 contract wallet verified too. It was
+  // not. That function destructures exactly { address, domain, message, primaryType,
+  // signature, types } and does a plain recover-and-compare; `publicClient` was silently
+  // dropped, and the `as never` cast on the call is what let an unknown property through
+  // without the compiler objecting. So a Safe or any other smart-contract wallet was
+  // refused with `bad_signature`, while the code documented support for it.
+  //
+  // The ACTION form is the one that reaches the chain: it hashes the typed data and goes
+  // through verifyHash, which calls the account's ERC-1271 `isValidSignature` when the
+  // address holds code. It needs a real client, so when we do not have one we fall back to
+  // the recover-only util. That fallback is honest for an EOA, which is the overwhelming
+  // majority of payers, and it is why a missing client must not fail a valid signature.
+  const params = {
+    address: a.from,
+    domain: domain.proven.domain,
+    types: TRANSFER_WITH_AUTHORIZATION_TYPES,
+    primaryType: 'TransferWithAuthorization' as const,
+    message: {
+      from: a.from, to: a.to, value: a.value,
+      validAfter: a.validAfter, validBefore: a.validBefore, nonce: a.nonce,
+    },
+    signature,
+  }
   let signatureValid = false
   try {
-    signatureValid = await verifyTypedData({
-      address: a.from,
-      domain: domain.proven.domain,
-      types: TRANSFER_WITH_AUTHORIZATION_TYPES,
-      primaryType: 'TransferWithAuthorization',
-      message: {
-        from: a.from, to: a.to, value: a.value,
-        validAfter: a.validAfter, validBefore: a.validBefore, nonce: a.nonce,
-      },
-      signature,
-      // viem needs a client only for the ERC-1271 path; a plain EOA signature verifies
-      // without one, so a missing client must not fail an otherwise valid signature.
-      ...(hasPublicActions(client) ? { publicClient: client } : {}),
-    } as never)
+    signatureValid = hasPublicActions(client)
+      ? await verifyTypedDataOnChain(client as never, params as never)
+      : await verifyTypedData(params as never)
   } catch (e) {
     return { isValid: false, code: 'bad_signature', invalidReason: `signature did not verify: ${msg(e)}` }
   }
@@ -539,6 +557,9 @@ function signerKey(chain: ChainDescriptor, env: NodeJS.ProcessEnv): string | und
   return env.X402_3009_SIGNER_KEY || (chain.signerEnvVar ? env[chain.signerEnvVar] : undefined)
 }
 
+/** Whether this client can actually make a call, which is what ERC-1271 verification needs.
+ *  `getChainId` is the cheapest public action to probe for, and a stub injected by a test
+ *  that only implements readContract correctly reports false here. */
 function hasPublicActions(c: unknown): boolean {
   return Boolean(c && typeof (c as { getChainId?: unknown }).getChainId === 'function')
 }

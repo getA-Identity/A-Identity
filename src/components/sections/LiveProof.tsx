@@ -24,14 +24,14 @@ const CELO_PROOF_URL = '/celo-proof'
 // reader can check rather than trust.
 const STATS = [
   // Every number here is pinned by mcp/src/frontend-stats.test.ts against the code that
-  // produces it. They were 546 and 522 and had drifted from 120 and 887, which is the
+  // produces it. They were 546 and 522 and had drifted from 120 and 890, which is the
   // exact failure this section exists to argue against: a figure a reader cannot check.
   // The settlement count is the X Layer ledger alone. It used to say "X Layer + Celo",
   // and Celo's count comes from a live endpoint, so the sum was a number nothing in the
   // repository could reproduce.
   { n: 120, k: '120', v: 'real settlements', sub: 'X Layer mainnet' },
   { n: null, k: '#6271', v: 'live agent', sub: 'listed on OKX.AI' },
-  { n: 887, k: '887', v: 'tests, green', sub: 'deterministic scores' },
+  { n: 890, k: '890', v: 'tests, green', sub: 'deterministic scores' },
 ] as const
 
 /** A number that counts itself up the first time it scrolls into view. */
