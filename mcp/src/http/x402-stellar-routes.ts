@@ -90,7 +90,12 @@ export async function handleX402StellarRoutes(ctx: RouteCtx): Promise<boolean> {
   const { req, res, url } = ctx
   if (!url.pathname.startsWith('/api/x402/stellar')) return false
 
-  const status = stellarRailStatus()
+  // ?network= picks among the configured chains for the primary view, exactly as the
+  // EVM 3009 routes do (and for the same reason: a buyer who asked for pubnet must not
+  // be shown testnet's config in the headline). An unknown ?network resolves to
+  // configured: false and refuses rather than silently falling back.
+  const wantedNetwork = url.searchParams.get('network')?.trim() || undefined
+  const status = stellarRailStatus(process.env, wantedNetwork)
 
   // ── GET /api/x402/stellar/status - configuration, honestly ──
   if (req.method === 'GET' && url.pathname === '/api/x402/stellar/status') {

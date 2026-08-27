@@ -166,6 +166,19 @@ export function ozKeyVar(chain: ChainDescriptor | null): string {
   return chain?.caip2 === 'stellar:pubnet' ? 'X402_STELLAR_PUBNET_OZ_KEY' : 'X402_STELLAR_TESTNET_OZ_KEY'
 }
 
+/**
+ * Which variable holds the receiving account for this network, mirroring ozKeyVar and
+ * feePayerEnvVar. A G... address is per-NETWORK state, not a universal identifier the
+ * way an EVM 0x address is: the testnet payTo exists with a USDC trustline on testnet
+ * and simply does not exist on pubnet, so one global variable cannot serve two networks
+ * unless someone funds the same account on both. The per-network variable wins when
+ * set; X402_STELLAR_PAYTO stays the shared fallback so a single-network deployment
+ * keeps working untouched.
+ */
+export function payToEnvVar(chain: ChainDescriptor | null): string {
+  return chain?.caip2 === 'stellar:pubnet' ? 'X402_STELLAR_PUBNET_PAYTO' : 'X402_STELLAR_TESTNET_PAYTO'
+}
+
 export function ozApiKey(chain: ChainDescriptor, env: NodeJS.ProcessEnv = process.env): string | null {
   return env[ozKeyVar(chain)]?.trim() || null
 }
@@ -207,7 +220,7 @@ export function stellarRailStatus(
       return c && chain && c.caip2 === chain.caip2
     })
 
-  const payToRaw = env.X402_STELLAR_PAYTO?.trim() ?? ''
+  const payToRaw = (chain ? env[payToEnvVar(chain)]?.trim() : undefined) || env.X402_STELLAR_PAYTO?.trim() || ''
   const payTo = isAccountId(payToRaw) ? payToRaw : null
   const b = stellarBroadcaster(chain, env)
   const base = {
@@ -280,7 +293,7 @@ export function stellarRailStatus(
       network: chain.caip2,
       token,
       configured: false,
-      reason: 'Stellar x402 rail not configured: set X402_STELLAR_PAYTO to a G... account that already holds a trustline for the settlement asset',
+      reason: `Stellar x402 rail not configured: set ${payToEnvVar(chain)} (or the shared X402_STELLAR_PAYTO fallback) to a G... account that exists on THIS network and already holds a trustline for the settlement asset`,
     }
   }
   if (!b.ready) {

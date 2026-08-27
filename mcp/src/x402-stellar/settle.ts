@@ -593,7 +593,7 @@ export function verifyAuthSignature(
 
 export type StellarSettleDeps = {
   env?: NodeJS.ProcessEnv
-  server?: Pick<rpc.Server, 'getLatestLedger' | 'getAccount' | 'simulateTransaction' | 'sendTransaction'>
+  server?: Pick<rpc.Server, 'getLatestLedger' | 'getAccount' | 'simulateTransaction' | 'sendTransaction'> & Partial<Pick<rpc.Server, 'getFeeStats'>>
   /** Injected so a settlement can be tested without a network. */
   confirm?: typeof confirmStellarTransfer
   confirmDeps?: ConfirmDeps
@@ -978,7 +978,7 @@ async function broadcastOurselves(
     }
   }
 
-  let server: Pick<rpc.Server, 'getLatestLedger' | 'getAccount' | 'simulateTransaction' | 'sendTransaction'>
+  let server: Pick<rpc.Server, 'getLatestLedger' | 'getAccount' | 'simulateTransaction' | 'sendTransaction'> & Partial<Pick<rpc.Server, 'getFeeStats'>>
   try {
     server = deps.server ?? sorobanServer(chain, env)
   } catch (e) {
@@ -995,7 +995,7 @@ async function buildSignAndSend(
   auth: DecodedAuth,
   limits: StellarLimits,
   deps: StellarSettleDeps,
-  server: Pick<rpc.Server, 'getLatestLedger' | 'getAccount' | 'simulateTransaction' | 'sendTransaction'>,
+  server: Pick<rpc.Server, 'getLatestLedger' | 'getAccount' | 'simulateTransaction' | 'sendTransaction'> & Partial<Pick<rpc.Server, 'getFeeStats'>>,
   kp: Keypair,
 ): Promise<BroadcastResult> {
   const call = auth.entry.rootInvocation().function().contractFn()
@@ -1007,13 +1007,30 @@ async function buildSignAndSend(
     }),
   )
 
+  // Bid the inclusion fee from the network's own fee market, never the protocol minimum.
+  // Testnet accepts a 100-stroop bid forever, which is exactly why this bug could not be
+  // seen there: pubnet's soroban inclusion fee sat at 200 across every percentile on
+  // 2026-08-28, so a minimum bid lost the auction on every ledger and the transaction
+  // sat invisible until it expired - the first two pubnet settlement attempts died this
+  // way. The bid is a MAXIMUM, not a price: the network charges the clearing fee, so
+  // headroom costs nothing when the market is calm, and the assembled total (inclusion
+  // plus resources) still answers to the maxFeeStroops ceiling below.
+  let inclusionBid = 200n
+  try {
+    const stats = await server.getFeeStats?.()
+    const p90 = BigInt(stats?.sorobanInclusionFee?.p90 ?? '0')
+    if (p90 * 2n > inclusionBid) inclusionBid = p90 * 2n
+  } catch {
+    /* fee stats are an optimization; the 200 floor already beats the old minimum bid */
+  }
+
   let tx
   try {
     // Read INSIDE the serialised section. Reading it outside is the whole bug: two
     // settlements would fetch the same sequence number and the second would be rejected as
     // tx_bad_seq, which a paying buyer would see as broadcast_failed.
     const account = await server.getAccount(kp.publicKey())
-    tx = new TransactionBuilder(account, { fee: '100', networkPassphrase: networkPassphrase(chain) })
+    tx = new TransactionBuilder(account, { fee: inclusionBid.toString(), networkPassphrase: networkPassphrase(chain) })
       .addOperation(Operation.invokeHostFunction({ func, auth: [auth.entry] }))
       .setTimeout(180)
       .build()
@@ -1062,6 +1079,16 @@ async function buildSignAndSend(
     if (sent.status === 'ERROR') {
       // Decided: the network looked at it and said no, so nothing was submitted to consensus.
       return { ok: false, code: 'broadcast_failed', reason: `the network rejected the settlement: ${JSON.stringify(sent.errorResult ?? sent.status)}` }
+    }
+    if (sent.status === 'TRY_AGAIN_LATER') {
+      // Also decided: the RPC did not enqueue it, so it is NOT in flight and cannot land.
+      // Treating this as submitted (which the old ERROR-only check did) turned a polite
+      // refusal into a 30-second wait for a transaction that was never anywhere.
+      return {
+        ok: false,
+        code: 'broadcast_failed',
+        reason: 'the RPC did not accept the settlement into its queue (TRY_AGAIN_LATER). Nothing is in flight; retrying the same entry is safe until it expires.',
+      }
     }
     return { ok: true, txHash: sent.hash, feeStroops }
   } catch (e) {
