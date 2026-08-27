@@ -31,7 +31,7 @@
           "identity": "Soroban registry + SEP-10",
           "erc8004Native": false,
           "note": "No native ERC-8004: that standard is EVM-only and nothing bridges it here. An agent id resolved on Stellar is a claim about a different chain until a Soroban registry is deployed.",
-          "status": "beta"
+          "status": "live"
         },
         {
           "id": "stellar-testnet",
@@ -57,7 +57,7 @@
           "identity": "ERC-8004",
           "erc8004Native": true,
           "note": "ERC-8004 registry to be deployed.",
-          "status": "beta"
+          "status": "live"
         },
         {
           "id": "avalanche",
@@ -139,7 +139,7 @@
           "caip2": "stellar:pubnet",
           "role": "Fast, low-cost settlement: native Circle USDC, Soroban contracts, fee sponsorship so an agent needs no XLM.",
           "x402": true,
-          "status": "beta"
+          "status": "live"
         },
         {
           "id": "stellar-testnet",
@@ -163,7 +163,7 @@
           "chainId": 8453,
           "role": "EVM fallback: ERC-8004 compatible, Coinbase ecosystem, low fees.",
           "x402": true,
-          "status": "beta"
+          "status": "live"
         },
         {
           "id": "avalanche",
@@ -335,7 +335,7 @@
         "deliver"
       ],
       "trust": "Both agents verify each other via ERC-8004 before value moves. Reputation gate (default: 300+).",
-      "settlement": "x402 in stablecoins on Arc, the live chain today; Celo (mainnet + Sepolia) settles via the first-party Celo facilitator in beta. Base is beta; Stellar Testnet is beta, settling SEP-41 USDC through our own Soroban facilitator with an on-chain spend policy in front of it. Stellar pubnet is beta too: the same on-chain spend policy holds real Circle USDC there, but no x402 rail sells on it yet. Avalanche is planned. No shared accounts or API keys.",
+      "settlement": "x402 in stablecoins across seven live chains. Arc, X Layer, Celo, Arbitrum and Robinhood Chain carry settling rails; Celo Sepolia stays beta as a test network. Stellar pubnet is live on the strength of an on-chain spend policy holding real Circle USDC, though no x402 rail sells on it yet: that rail runs on Stellar Testnet, settling SEP-41 USDC through our own Soroban facilitator with the same policy in front of it. Base is live on native Circle USDC and the Gateway hop, with no rail of ours settling on Base itself. Avalanche is planned. No shared accounts or API keys.",
       "chains_supported": [
         "arc",
         "stellar",

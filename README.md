@@ -358,13 +358,16 @@ Test money, and it stays labeled that way. Pubnet is a separate record: the same
 wasm, byte for byte, at
 [`CB5LYXFK...WSYP`](https://stellar.expert/explorer/public/contract/CB5LYXFKKTKDDSCM6JO6C4GNRQUFBGSLYDET6Q56JNFJQSMBKH6KWSYP),
 holding real Circle USDC under a 1 USDC daily cap, with four settlements, a freeze and an
-owner override on the ledger. Both Stellar networks stay `beta` rather than live for a
-reason worth stating rather than burying: no x402 rail sells on pubnet, so what pubnet
-proves is the spend policy alone. There is no ERC-8004 on Stellar either, so an agent's
-passport is bridged from an EVM chain rather than anchored here.
+owner override on the ledger. Pubnet is `live`; the testnet mirror stays `beta`, because
+test money is not live money. What pubnet proves is worth stating precisely rather than
+burying: the spend policy itself, enforced on mainnet with real USDC. No x402 rail sells
+on pubnet yet, since the rail is configured for `stellar:testnet`. There is no ERC-8004 on
+Stellar either, so an agent's passport is bridged from an EVM chain rather than anchored
+here.
 
-Base and Avalanche carry a descriptor and public metadata only. Nothing of ours is
-deployed on them, and they stay labeled `beta` or `planned` until something is.
+Base carries a descriptor, native Circle USDC and the Gateway hop; Avalanche carries public
+metadata only. No rail of ours settles on Base itself, and Avalanche stays `planned` until
+something of ours is deployed on it.
 
 Machine-readable: the chain registry is served live at
 [`GET /api/chains`](https://a-identity-backend.onrender.com/api/chains) and the same table ships

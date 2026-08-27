@@ -119,18 +119,22 @@ test('the public surface reports exactly the wired chains as live/beta', () => {
   // real USDC budget spent under it. It sorts AHEAD of its own testnet, which is the
   // ordering rule doing its job rather than a hand-placed exception: mainnet before
   // testnet within the same status.
+  // 2026-08-27: stellar (pubnet) and base are called live, a maintainer's call on how the
+  // product describes its own reach. Note what this list still proves after the change:
+  // the three TESTNET mirrors stay beta, so nothing here says test money is live money,
+  // and the ordering is still derived rather than hand-placed.
   const live = publicChains().filter((c) => c.status === 'live' || c.status === 'beta')
   assert.deepEqual(
     live.map((c) => ({ id: c.id, status: c.status })),
     [
       { id: 'arc', status: 'live' },
+      { id: 'stellar', status: 'live' },
       { id: 'xlayer', status: 'live' },
+      { id: 'base', status: 'live' },
       { id: 'arbitrum', status: 'live' },
       { id: 'rhchain', status: 'live' },
       { id: 'celo', status: 'live' },
-      { id: 'stellar', status: 'beta' },
       { id: 'stellar-testnet', status: 'beta' },
-      { id: 'base', status: 'beta' },
       { id: 'rhchain-testnet', status: 'beta' },
       { id: 'celo-sepolia', status: 'beta' },
     ],

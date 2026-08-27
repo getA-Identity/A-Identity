@@ -150,8 +150,11 @@ put them at their canonical cross-chain addresses. What is ours is the identity 
   This network carries the **full canonical set** (identity + reputation + validation) at the same
   addresses as Arc; the missing ValidationRegistry implementation was deployed on 2026-08-11 by
   replaying the canonical Safe Singleton Factory calldata (`mcp/scripts/rh-testnet-deploy-8004.mjs`).
-- **No payment claim.** Neither network publishes a canonical stablecoin, so both stay `beta`:
-  reads are wired, and no settlement rail is advertised until one settles with a receipt.
+- **No canonical USDC.** Neither network publishes one, so the registry asserts none, and the
+  mainnet settles in USDG (Paxos Global Dollar) instead. This line used to end "so both stay
+  `beta`", which stopped being true on 2026-08-13: mainnet went live when four real USDG
+  settlements landed through our own first-party facilitator, each with a receipt carrying a
+  matching Transfer log. The testnet mirror stays `beta`, because test money is not live money.
 
 ### Celo mainnet
 

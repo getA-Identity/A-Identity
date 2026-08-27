@@ -10,7 +10,7 @@
  */
 
 /** Short slug of a chain in the registry. */
-export type ChainId = 'arc' | 'xlayer' | 'arbitrum' | 'rhchain' | 'celo' | 'stellar' | 'stellar-testnet' | 'base' | 'rhchain-testnet' | 'celo-sepolia' | 'avalanche'
+export type ChainId = 'arc' | 'stellar' | 'xlayer' | 'base' | 'arbitrum' | 'rhchain' | 'celo' | 'stellar-testnet' | 'rhchain-testnet' | 'celo-sepolia' | 'avalanche'
 
 export type ChainProtocols = {
   /** x402 HTTP-402 payment support. Settlement is in a stablecoin. */
@@ -95,6 +95,41 @@ export const CHAINS: readonly Chain[] = [
     "settlementSymbol": null
   },
   {
+    "id": "stellar",
+    "name": "Stellar",
+    "shortName": "Stellar",
+    "color": "#7D00FF",
+    "chainId": null,
+    "caip2": "stellar:pubnet",
+    "evmCompatible": false,
+    "testnet": false,
+    "stablecoins": [
+      "USDC",
+      "EURC"
+    ],
+    "rpcUrl": "https://mainnet.sorobanrpc.com",
+    "explorer": "https://stellar.expert/explorer/public",
+    "role": "Fast, low-cost settlement: native Circle USDC, Soroban contracts, and an x402 rail where the buyer signs and pays no transaction fee.",
+    "status": "live",
+    "protocols": {
+      "payment": {
+        "x402": true,
+        "note": "x402 in USDC over the SEP-41 SAC. The buyer signs a Soroban authorization entry rather than a whole transaction, so whoever assembles it pays the network fee. Note the exact claim: the buyer pays no FEE. It still needs XLM to exist at all, 1 for the account reserve and 0.5 more per trustline, which is a Stellar property no rail can remove. An operator who funds an agent with USDC alone will find the account was never created."
+      },
+      "identity": {
+        "standard": "Soroban registry + SEP-10",
+        "erc8004Native": false,
+        "note": "No native ERC-8004: that standard is EVM-only and nothing bridges it here. A Soroban agent registry DOES exist on pubnet, TrionLabs Stellar-8004 (MIT), Identity CBGPDCJIHQ32G42BE7F2CIT3YW6XRN5ED6GQJHCRZSNAYH6TGMCL6X35, read live 2026-08-26: name \"Agent Registry\", symbol AGENT, version 0.1.0, total_agents 68. It is NOT a bridge and we do not resolve against it. Its exported interface contains no function binding an agent to a foreign-chain identity, no CAIP-10 and no chain id; the only places a cross-chain reference could live are the free-form agent_uri and set_metadata, which are assertions by whoever holds the key and are checked by nothing. It mints its own ids in its own space starting at 0 (owner_of(0) resolves), so an id there and an ERC-8004 token id are different identities that happen to be integers. Two further differences worth knowing before wiring anything: it is UPGRADEABLE behind a 51,840-ledger timelock, which ours deliberately is not, and stellar.expert reports its source as unverified."
+      }
+    },
+    "identity": "Soroban registry + SEP-10",
+    "erc8004Native": false,
+    "x402": true,
+    "registries": {},
+    "identityLive": false,
+    "settlementSymbol": "USDC"
+  },
+  {
     "id": "xlayer",
     "name": "OKX X Layer",
     "shortName": "X Layer",
@@ -129,6 +164,42 @@ export const CHAINS: readonly Chain[] = [
       "identity": "0x8004a169fb4a3325136eb29fa0ceb6d2e539a432"
     },
     "identityLive": true,
+    "settlementSymbol": null
+  },
+  {
+    "id": "base",
+    "name": "Base",
+    "shortName": "Base",
+    "color": "#0052FF",
+    "chainId": 8453,
+    "caip2": "eip155:8453",
+    "evmCompatible": true,
+    "testnet": false,
+    "stablecoins": [
+      "USDC",
+      "USDT",
+      "PYUSD"
+    ],
+    "rpcUrl": "https://mainnet.base.org",
+    "explorer": "https://basescan.org",
+    "role": "EVM fallback: ERC-8004 compatible, Coinbase ecosystem, low fees. Testnet active (Base Sepolia via Gateway demo).",
+    "status": "live",
+    "protocols": {
+      "payment": {
+        "x402": true,
+        "note": "x402 reference rail (Coinbase)."
+      },
+      "identity": {
+        "standard": "ERC-8004",
+        "erc8004Native": true,
+        "note": "Canonical ERC-8004 identity + reputation registries are live here; we hold no agent on them yet and no rail of ours is wired. TRAP BEFORE PASTING ADDRESSES: Arc's three registry addresses all have code on Base mainnet, 130 bytes each, which is minimal-proxy sized and delegates to a NON-canonical implementation. Same address, different contract. An eth_getCode check therefore answers yes here and means nothing, so a Base registry entry has to be verified by reading the implementation rather than by observing that something is deployed. Read live 2026-08-25."
+      }
+    },
+    "identity": "ERC-8004",
+    "erc8004Native": true,
+    "x402": true,
+    "registries": {},
+    "identityLive": false,
     "settlementSymbol": null
   },
   {
@@ -246,41 +317,6 @@ export const CHAINS: readonly Chain[] = [
     "settlementSymbol": null
   },
   {
-    "id": "stellar",
-    "name": "Stellar",
-    "shortName": "Stellar",
-    "color": "#7D00FF",
-    "chainId": null,
-    "caip2": "stellar:pubnet",
-    "evmCompatible": false,
-    "testnet": false,
-    "stablecoins": [
-      "USDC",
-      "EURC"
-    ],
-    "rpcUrl": "https://mainnet.sorobanrpc.com",
-    "explorer": "https://stellar.expert/explorer/public",
-    "role": "Fast, low-cost settlement: native Circle USDC, Soroban contracts, and an x402 rail where the buyer signs and pays no transaction fee.",
-    "status": "beta",
-    "protocols": {
-      "payment": {
-        "x402": true,
-        "note": "x402 in USDC over the SEP-41 SAC. The buyer signs a Soroban authorization entry rather than a whole transaction, so whoever assembles it pays the network fee. Note the exact claim: the buyer pays no FEE. It still needs XLM to exist at all, 1 for the account reserve and 0.5 more per trustline, which is a Stellar property no rail can remove. An operator who funds an agent with USDC alone will find the account was never created."
-      },
-      "identity": {
-        "standard": "Soroban registry + SEP-10",
-        "erc8004Native": false,
-        "note": "No native ERC-8004: that standard is EVM-only and nothing bridges it here. A Soroban agent registry DOES exist on pubnet, TrionLabs Stellar-8004 (MIT), Identity CBGPDCJIHQ32G42BE7F2CIT3YW6XRN5ED6GQJHCRZSNAYH6TGMCL6X35, read live 2026-08-26: name \"Agent Registry\", symbol AGENT, version 0.1.0, total_agents 68. It is NOT a bridge and we do not resolve against it. Its exported interface contains no function binding an agent to a foreign-chain identity, no CAIP-10 and no chain id; the only places a cross-chain reference could live are the free-form agent_uri and set_metadata, which are assertions by whoever holds the key and are checked by nothing. It mints its own ids in its own space starting at 0 (owner_of(0) resolves), so an id there and an ERC-8004 token id are different identities that happen to be integers. Two further differences worth knowing before wiring anything: it is UPGRADEABLE behind a 51,840-ledger timelock, which ours deliberately is not, and stellar.expert reports its source as unverified."
-      }
-    },
-    "identity": "Soroban registry + SEP-10",
-    "erc8004Native": false,
-    "x402": true,
-    "registries": {},
-    "identityLive": false,
-    "settlementSymbol": "USDC"
-  },
-  {
     "id": "stellar-testnet",
     "name": "Stellar Testnet",
     "shortName": "Stellar test",
@@ -313,42 +349,6 @@ export const CHAINS: readonly Chain[] = [
     "registries": {},
     "identityLive": false,
     "settlementSymbol": "USDC"
-  },
-  {
-    "id": "base",
-    "name": "Base",
-    "shortName": "Base",
-    "color": "#0052FF",
-    "chainId": 8453,
-    "caip2": "eip155:8453",
-    "evmCompatible": true,
-    "testnet": false,
-    "stablecoins": [
-      "USDC",
-      "USDT",
-      "PYUSD"
-    ],
-    "rpcUrl": "https://mainnet.base.org",
-    "explorer": "https://basescan.org",
-    "role": "EVM fallback: ERC-8004 compatible, Coinbase ecosystem, low fees. Testnet active (Base Sepolia via Gateway demo).",
-    "status": "beta",
-    "protocols": {
-      "payment": {
-        "x402": true,
-        "note": "x402 reference rail (Coinbase)."
-      },
-      "identity": {
-        "standard": "ERC-8004",
-        "erc8004Native": true,
-        "note": "Canonical ERC-8004 identity + reputation registries are live here; we hold no agent on them yet and no rail of ours is wired. TRAP BEFORE PASTING ADDRESSES: Arc's three registry addresses all have code on Base mainnet, 130 bytes each, which is minimal-proxy sized and delegates to a NON-canonical implementation. Same address, different contract. An eth_getCode check therefore answers yes here and means nothing, so a Base registry entry has to be verified by reading the implementation rather than by observing that something is deployed. Read live 2026-08-25."
-      }
-    },
-    "identity": "ERC-8004",
-    "erc8004Native": true,
-    "x402": true,
-    "registries": {},
-    "identityLive": false,
-    "settlementSymbol": null
   },
   {
     "id": "rhchain-testnet",

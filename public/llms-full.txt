@@ -387,8 +387,20 @@ Live today:
   **#1259** is ours. x402 settles here in native Circle USDC
   (`0xaf88d065e77c8cC2239327C5EDb3A432268e5831`) through the same first-party EIP-3009
   facilitator, at a lower disclosed fee because the gas measurably is lower.
+- **Stellar pubnet** (`stellar:pubnet`). The same vault wasm, byte for byte, at
+  `CB5LYXFKKTKDDSCM6JO6C4GNRQUFBGSLYDET6Q56JNFJQSMBKH6KWSYP`, holding real Circle USDC
+  under a 1 USDC daily cap. Real money has moved under the on-ledger policy, including a
+  refusal that returned a typed `DailyCapExceeded`. What is proven on pubnet is the spend
+  policy itself: the x402 rail is configured for `stellar:testnet`, so no paid call sells
+  on pubnet yet, and we state that here rather than leaving it to be discovered. There is
+  no ERC-8004 registry on either Stellar network, because that standard is EVM-only; a
+  passport is bridged, never anchored here.
+- **Base mainnet** (`eip155:8453`). Native Circle USDC; the proven work here is the
+  gasless Circle Gateway hop that mints on Base Sepolia. No ERC-8004 registry is
+  deployed on Base, so no identity read is offered there, and no rail of ours settles
+  on Base itself.
 
-Beta, wired and readable:
+Beta, wired and readable (test networks):
 
 - **Robinhood Chain testnet** (`eip155:46630`). The full canonical set: identity
   `0x8004A818BFB912233c491871b3d84c89A494BD9e`, reputation
@@ -396,22 +408,12 @@ Beta, wired and readable:
   `0x8004Cb1BF31DAf7788923b405b754f57acEB4272`. Agent #0 is ours here too.
 - **Celo Sepolia** (`eip155:11142220`). The same identity and reputation addresses
   as Arc, plus testnet USDC and the Celo Sepolia x402 facilitator.
-- **Base mainnet** (`eip155:8453`). Native Circle USDC; the proven work here is the
-  gasless Circle Gateway hop that mints on Base Sepolia. No ERC-8004 registry is
-  deployed on Base, so no identity read is offered there.
 - **Stellar testnet** (`stellar:testnet`). An `AgentSpendPolicy` Soroban vault at
   `CAIL6ECRAB5FUURQ54R7OTZPXRRCDO2S353YT6N6UZUWIBDG2ZOEB4UI`, and the Soroban x402
   rail running end to end against it: the buyer signs a Soroban authorization entry
   and pays no transaction fee, we broadcast, and a sale counts only once we read the
   SEP-41 transfer event bound to that authorization's nonce. Settlement is in testnet
   USDC through the SAC, at 7 decimals.
-- **Stellar pubnet** (`stellar:pubnet`). The same vault wasm, byte for byte, at
-  `CB5LYXFKKTKDDSCM6JO6C4GNRQUFBGSLYDET6Q56JNFJQSMBKH6KWSYP`, holding real Circle USDC
-  under a 1 USDC daily cap. Real money has moved under the on-ledger policy, including a
-  refusal that returned a typed `DailyCapExceeded`. It stays beta rather than live for one
-  reason we state rather than bury: no x402 rail sells here yet, so what is proven on
-  pubnet is the spend policy alone. There is no ERC-8004 registry on either Stellar
-  network, because that standard is EVM-only; a passport is bridged, never anchored here.
 
 Planned, descriptor only:
 

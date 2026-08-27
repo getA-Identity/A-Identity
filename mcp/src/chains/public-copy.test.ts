@@ -61,7 +61,11 @@ test('the llms-full status buckets hold the right chains', () => {
   // The three markers are load-bearing: restructuring the file fails this test instead of
   // silently disabling the check.
   const text = repo('public/llms-full.txt')
-  const markers = ['Live today:', 'Beta, wired and readable:', 'Planned, descriptor only:']
+  // The middle marker gained "(test networks)" on 2026-08-27, when stellar pubnet and base
+  // moved to the live bucket and the only chains left in it were the three testnet mirrors.
+  // The rename failing this test is the mechanism working: the marker is load-bearing, so a
+  // restructure has to be deliberate rather than silently disabling the check below.
+  const markers = ['Live today:', 'Beta, wired and readable (test networks):', 'Planned, descriptor only:']
   for (const m of markers) assert.ok(text.includes(m), `public/llms-full.txt lost its "${m}" bucket marker`)
   const slice = (start: string) => {
     const from = text.indexOf(start) + start.length

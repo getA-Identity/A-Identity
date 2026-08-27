@@ -110,7 +110,7 @@ export const CHAINS: ChainDescriptor[] = [
     // paid call settling here: the Soroban x402 rail runs on stellar-testnet and pointing
     // it at pubnet is a separate change with its own fee payer. In this repo live means
     // wired end to end AND carrying real traffic, so this stays beta until it sells.
-    status: 'beta',
+    status: 'live',
     evmChainId: null,
     cctpDomain: 27,
     nativeCurrency: { name: 'Lumen', symbol: 'XLM', decimals: 7 },
@@ -300,7 +300,7 @@ export const CHAINS: ChainDescriptor[] = [
     role: 'EVM fallback: ERC-8004 compatible, Coinbase ecosystem, low fees. Testnet active (Base Sepolia via Gateway demo).',
     ecosystem: 'evm',
     testnet: false,
-    status: 'beta',
+    status: 'live',
     evmChainId: 8453,
     cctpDomain: 6,
     nativeCurrency: { name: 'Ether', symbol: 'ETH', decimals: 18 },

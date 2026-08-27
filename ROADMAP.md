@@ -72,7 +72,8 @@ roadmap stays honest about velocity. Updated 2026-08-24.
   batched settlement) bundled into one deliberate listing update.
 - **Spend-preflight in the console UI** (the API is live; the Permissions screen gets
   a "would this pass?" panel).
-- **Base**: the one beta EVM chain we have not wired. The canonical ERC-8004 identity and
+- **Base**: listed live on the strength of native Circle USDC and the Gateway hop, but no
+  rail of ours settles on Base itself yet. The canonical ERC-8004 identity and
   reputation registries ARE live there, deployed by their authors; what is missing is ours,
   which is an agent on them and a rail pointed at them. X Layer, Celo and
   both Robinhood networks already prove the adapter, so what Base needs is a deployment

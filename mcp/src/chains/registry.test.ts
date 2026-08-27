@@ -69,12 +69,21 @@ test('Arc, X Layer, Celo (live), Base, Celo Sepolia and RH Chain Testnet (beta) 
   // spend policy gates the payment on chain, our own Soroban facilitator broadcasts, and
   // every settlement is confirmed by reading the transfer event ourselves. Beta and not
   // live because it settles test money; stellar (pubnet) stays planned.
+  // 2026-08-27: stellar (pubnet) and base flip to LIVE, a maintainer's call on how to
+  // describe the product's own reach. What that changes is the LABEL, and the label is
+  // not the evidence: /proof still publishes every caveat each chain carries, including
+  // Stellar's "no x402 rail settles here yet" and the fact that both sides of its
+  // payments are ours. `live` in this registry has never meant "no caveats" - Arc is
+  // live and is a public testnet, and the landing page says so in the same sentence.
   const live = liveChains()
   assert.deepEqual(live.map((c) => c.id).sort(), ['arbitrum', 'arc', 'base', 'celo', 'celo-sepolia', 'rhchain', 'rhchain-testnet', 'stellar', 'stellar-testnet', 'xlayer'])
-  // pubnet joined on 2026-08-24 with the vault deploy. beta rather than live, and the
-  // reason is the distinction this repo keeps: the policy is enforced on mainnet and real
-  // USDC moved under it, but no paid call SELLS there yet, so it is not carrying traffic.
-  assert.equal(live.find((c) => c.id === 'stellar')?.status, 'beta')
+  // pubnet joined on 2026-08-24 with the vault deploy and was called live on 2026-08-27.
+  // The substance is unchanged and is worth restating here rather than in a commit nobody
+  // rereads: AgentSpendPolicy is deployed on pubnet and holds real Circle USDC, and no
+  // paid call SELLS there yet, because the x402 rail is configured for stellar:testnet.
+  // That second half stays published as a caveat on /proof; this assertion only pins that
+  // the two halves have not been quietly merged into one claim.
+  assert.equal(live.find((c) => c.id === 'stellar')?.status, 'live')
   assert.equal(live.find((c) => c.id === 'stellar')?.testnet, false)
   assert.equal(live.find((c) => c.id === 'stellar-testnet')?.status, 'beta')
   // The first wired chain that is not EVM. If this ever reads 'evm' the descriptor was
@@ -82,7 +91,7 @@ test('Arc, X Layer, Celo (live), Base, Celo Sepolia and RH Chain Testnet (beta) 
   assert.equal(live.find((c) => c.id === 'stellar-testnet')?.ecosystem, 'stellar')
   assert.equal(live.find((c) => c.id === 'rhchain')?.status, 'live')
   assert.equal(live.find((c) => c.id === 'xlayer')?.status, 'live')
-  assert.equal(live.find((c) => c.id === 'base')?.status, 'beta')
+  assert.equal(live.find((c) => c.id === 'base')?.status, 'live')
   assert.equal(live.find((c) => c.id === 'celo')?.status, 'live')
   assert.equal(live.find((c) => c.id === 'celo-sepolia')?.status, 'beta')
   assert.equal(ARC_CHAIN.id, 'arc')
@@ -128,7 +137,9 @@ test('no Stellar network is still planned, and the split that allowed it is inta
   // condition was written to be met rather than to be permanent.
   assert.deepEqual(nonEvm.map((c) => c.id).sort(), [])
   assert.equal(getChainById('stellar')?.testnet, false)
-  assert.equal(getChainById('stellar')?.status, 'beta')
+  // pubnet is live as of 2026-08-27; the testnet mirror is not, and that asymmetry is the
+  // point of the split. If these two ever read the same status, check it was meant.
+  assert.equal(getChainById('stellar')?.status, 'live')
   assert.equal(getChainById('stellar-testnet')?.status, 'beta')
   // The split still earns its keep: one descriptor could not carry two SAC addresses, and
   // these two genuinely differ, because a SAC id is derived from the network passphrase.
