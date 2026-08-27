@@ -33,8 +33,13 @@ public/llms-full.txt, public/.well-known/ (agent card, MCP server card, agent sk
 - mcp/src/chains/provenance.ts is the artifact ledger behind /proof/:rail: every tx we
   claim, plus caveats a test forces to be non-empty. Explorer links are derived, never
   typed.
-- mcp/src/chains/registry.ts is the single source of truth for chains; a test fails the
-  build if any other file hardcodes a chain id, RPC host, or USDC address.
+- mcp/src/chains/registry.ts is the single source of truth for chains. A test fails the
+  build if any file under mcp/src outside chains/ hardcodes a chain id, an RPC or
+  explorer host, or a token address, for ANY chain in the registry: the forbidden list
+  is generated from the registry rather than hand-written, so a new chain is guarded the
+  day it lands. Two limits stated rather than implied: the scan does not reach src/ or
+  scripts/ yet, and CAIP-2 ids are not banned because they legitimately appear in prose
+  and published copy. Exceptions are named with reasons in the test.
 - Generated files, never hand-edit: src/lib/chains.ts (run cd mcp && npm run gen:chains)
   and mcp/src/contracts/*.ts (run cd mcp && npm run compile).
 - Regex-locked files, edit with care: src/lib/blog.ts and
@@ -43,7 +48,7 @@ public/llms-full.txt, public/.well-known/ (agent card, MCP server card, agent sk
 
 ## Verification
 
-- Backend: cd mcp && npm test (tsc + 874 unit tests; new test files must be added to the
+- Backend: cd mcp && npm test (tsc + 879 unit tests; new test files must be added to the
   test script in mcp/package.json, and the count literal in mcp/src/asp/proof.ts must
   match the number of test() declarations).
 - E2E: boot node mcp/dist/http.js, then npm run e2e, e2e:guardrail, http-smoke.
