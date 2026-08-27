@@ -17,6 +17,40 @@ const DB_URL = process.env.DATABASE_URL
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 let pool: any = null
 
+/**
+ * TLS options for a remote Postgres.
+ *
+ * This was `{ rejectUnauthorized: false }`, unconditionally. That does not turn TLS off, it
+ * turns off the part of TLS that tells you WHO you are talking to: the connection is still
+ * encrypted, and encrypted to whoever answered. Anything that can answer for the database
+ * host can present a self-signed certificate and read and rewrite everything that crosses,
+ * which for this process is the entire platform state blob: agents, wallets, instructions,
+ * spend policy.
+ *
+ * Verification is now the default. Neon, which is what this deploys against, serves a
+ * publicly-trusted certificate, so Node's own CA bundle is enough and no bundled root is
+ * needed here.
+ *
+ * The escape hatch is deliberately explicit and deliberately awkward to set by accident. It
+ * exists for a self-hosted Postgres with a private CA, where the honest answer is to point
+ * PGSSLROOTCERT at that CA rather than to stop checking. Turning verification off is logged
+ * loudly every boot, because a security property nobody is reminded of is one nobody
+ * revisits: this file already carried the unsafe setting for months without comment.
+ */
+export function sslOptions(env: NodeJS.ProcessEnv = process.env): Record<string, unknown> {
+  const ca = env.PGSSLROOTCERT?.trim()
+  if (ca) return { rejectUnauthorized: true, ca: readFileSync(ca, 'utf8') }
+  if (env.PGSSL_ALLOW_UNVERIFIED === 'true') {
+    console.warn(
+      '[storage] PGSSL_ALLOW_UNVERIFIED=true: the database certificate is NOT being checked. ' +
+        'The connection is encrypted to whoever answered, which is not the same as encrypted to the database. ' +
+        'Point PGSSLROOTCERT at your CA instead, or unset this on any host you did not deliberately choose it for.',
+    )
+    return { rejectUnauthorized: false }
+  }
+  return { rejectUnauthorized: true }
+}
+
 async function getPool() {
   if (!DB_URL) return null
   if (pool) return pool
@@ -26,7 +60,7 @@ async function getPool() {
   const pgMod: any = await import(spec)
   const Pool = pgMod.default?.Pool ?? pgMod.Pool
   const local = DB_URL.includes('localhost') || DB_URL.includes('127.0.0.1')
-  pool = new Pool({ connectionString: DB_URL, ssl: local ? false : { rejectUnauthorized: false } })
+  pool = new Pool({ connectionString: DB_URL, ssl: local ? false : sslOptions() })
   await pool.query('CREATE TABLE IF NOT EXISTS app_state (id text PRIMARY KEY, data jsonb NOT NULL)')
   return pool
 }

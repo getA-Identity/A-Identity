@@ -29,7 +29,54 @@ export function makeMagicToken(email: string): string {
   return `${payload}.${sign(payload)}`
 }
 
-/** Verify a magic token; returns the email or null if tampered/expired. */
+/**
+ * Magic tokens already redeemed, keyed on their signature, held until they expire anyway.
+ *
+ * The token is signed and time-boxed and was otherwise stateless, so nothing consumed it.
+ * The email says in so many words that "the link works once", and it did not: anyone
+ * holding the URL could exchange it for a session repeatedly for a full fifteen minutes.
+ * That is the window that matters for an emailed link, because the ways these leak are
+ * ordinary rather than exotic: a forwarded message, a shared or group inbox, a corporate
+ * link scanner that follows every URL, browser history on a shared machine.
+ *
+ * Keyed on the SIGNATURE rather than the whole token, because the signature is already a
+ * unique fixed-length HMAC over the payload and storing the payload again would put the
+ * user's email address in a second place for no gain.
+ *
+ * Process-local, which is a real limit and is stated rather than glossed: a restart inside
+ * a token's fifteen minutes forgets that it was used. That matches how this service is
+ * deployed (single instance, the same assumption core.ts writes down for inFlightAgentOps)
+ * and it strictly improves on never consuming at all. A second instance, or a requirement
+ * to survive restarts, means moving this into the state blob.
+ */
+const redeemed = new Map<string, number>()
+
+function alreadyRedeemed(sig: string, exp: number): boolean {
+  const now = Date.now()
+  // Sweep first, so the map cannot outgrow the tokens that are actually live. Every entry
+  // is dead the moment its own expiry passes, because an expired token is refused above
+  // this check anyway.
+  if (redeemed.size > 1000) {
+    for (const [k, until] of redeemed) if (until <= now) redeemed.delete(k)
+  }
+  const until = redeemed.get(sig)
+  if (until !== undefined && until > now) return true
+  redeemed.set(sig, exp)
+  return false
+}
+
+/** Forget every redemption. Tests only: the register is otherwise write-and-expire. */
+export function __resetRedeemedForTests(): void {
+  redeemed.clear()
+}
+
+/**
+ * Verify a magic token; returns the email or null if tampered, expired, or already used.
+ *
+ * Consuming happens HERE rather than in the route, because a token that has been verified
+ * has been handed a session, and there is exactly one caller. Splitting the two would
+ * create a window between checking and consuming that nothing else in this file needs.
+ */
 export function verifyMagicToken(token: string | undefined): string | null {
   const [payload, sig] = (token ?? '').split('.')
   if (!payload || !sig) return null
@@ -43,6 +90,9 @@ export function verifyMagicToken(token: string | undefined): string | null {
       exp?: number
     }
     if (!email || !exp || Date.now() > exp) return null
+    // Last, so a tampered or expired token never consumes anything: an attacker must not be
+    // able to burn a link they cannot use by replaying it with a mangled expiry.
+    if (alreadyRedeemed(sig, exp)) return null
     return email
   } catch {
     return null

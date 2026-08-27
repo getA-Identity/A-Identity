@@ -27,6 +27,8 @@ import {
   updateAgentActionPolicy,
 } from './platform.js'
 import { verifyToken, isVerified } from './auth.js'
+import { clientIpFromXff } from './client-ip.js'
+import { rateBudget } from './rate-budget.js'
 import { oauthEnabled, verifyAccessToken } from './oauth.js'
 import { SESSION_COOKIE, parseCookies, publicAgents, readBody, sendJson, type RouteCtx } from './http/shared.js'
 import { handleAuthRoutes } from './http/auth-routes.js'
@@ -88,56 +90,12 @@ setInterval(() => {
   for (const [k, v] of rlBuckets) if (v.resetAt <= now) rlBuckets.delete(k)
 }, 5 * 60 * 1000).unref()
 
-/** Per-path rate budget, or null when the path isn't limited. */
-function rateBudget(method: string, pathname: string): { bucket: string; max: number; windowMs: number } | null {
-  if (method !== 'POST') return null
-  // Auth challenges + guest login: cheap to abuse, keep them tight.
-  if (pathname === '/api/auth/nonce' || pathname === '/api/auth/verify' || pathname === '/api/auth/login')
-    return { bucket: 'auth', max: 20, windowMs: 60_000 }
-  // Passwordless email: sends a real email, so limit hardest.
-  if (pathname === '/api/auth/magic/request') return { bucket: 'magic', max: 5, windowMs: 60_000 }
-  // Expensive on-chain demo runs (each spends gas / moves real testnet value).
-  if (pathname === '/api/arc/agent-run' || (pathname.startsWith('/api/arc/') && pathname.endsWith('-demo')))
-    return { bucket: 'demo', max: 8, windowMs: 60_000 }
-  // Marketplace release/dispute run a real ERC-8183 escrow lifecycle from the shared signer.
-  if (pathname === '/api/marketplace/release' || pathname === '/api/marketplace/dispute')
-    return { bucket: 'demo', max: 8, windowMs: 60_000 }
-  // Celo x402 tool calls each cost the server two facilitator round-trips (verify+settle).
-  if (pathname.startsWith('/api/celo/tools/')) return { bucket: 'celo', max: 30, windowMs: 60_000 }
-  // On the self-facilitated rail WE broadcast, so each settle spends real gas from our
-  // own wallet. That makes these the most abusable POSTs on the server: limit settle
-  // hardest, tools next, and leave verify generous because it is read-only.
-  if (pathname === '/api/facilitator/settle') return { bucket: 'settle', max: 6, windowMs: 60_000 }
-  if (pathname === '/api/facilitator/verify') return { bucket: 'verify', max: 60, windowMs: 60_000 }
-  // The Stellar rail spends OUR XLM per settle in exactly the same way, so it gets the
-  // same shape of limit. Separate buckets, not shared ones: a burst on one chain must not
-  // be able to lock a buyer out of the other.
-  if (pathname === '/api/x402/stellar/facilitator/settle') return { bucket: 'stellar-settle', max: 6, windowMs: 60_000 }
-  if (pathname === '/api/x402/stellar/facilitator/verify') return { bucket: 'stellar-verify', max: 60, windowMs: 60_000 }
-  if (pathname.startsWith('/api/x402/stellar/tools/')) return { bucket: 'stellar-tools', max: 20, windowMs: 60_000 }
-  if (pathname.startsWith('/api/x402/tools/')) return { bucket: 'x402tools', max: 20, windowMs: 60_000 }
-  // MCP can also drive a release (release_escrow tool) which spends the shared signer, so cap
-  // the whole /mcp endpoint. A backstop against escrow-release spam via MCP (a per-tool limit is
-  // the finer follow-up); normal MCP usage stays well under it.
-  if (pathname === '/mcp') return { bucket: 'mcp', max: 40, windowMs: 60_000 }
-  return null
-}
 
-// Number of trusted reverse proxies in front of us (Render/Vercel terminate as 1 hop).
-// The real client IP is the XFF entry `TRUSTED_PROXY_COUNT` from the END - NOT the first
-// entry, which is fully attacker-controlled (a spoofed X-Forwarded-For would otherwise give
-// each request a fresh rate-limit bucket and defeat the limiter entirely).
-const TRUSTED_PROXY_COUNT = Math.max(1, Number(process.env.TRUSTED_PROXY_COUNT ?? 1))
-
+// The reasoning, and the proxy count, now live in client-ip.ts so the ASP gateway cannot
+// answer this question differently. It did: `trust proxy: true` there handed back the
+// leftmost, attacker-supplied entry.
 function clientIpOf(req: http.IncomingMessage): string {
-  const xff = req.headers['x-forwarded-for']
-  if (typeof xff === 'string' && xff.length > 0) {
-    const parts = xff.split(',').map((s) => s.trim()).filter(Boolean)
-    // Take the hop just before our trusted proxy layer; clamp if fewer entries than expected.
-    const idx = Math.max(0, parts.length - TRUSTED_PROXY_COUNT)
-    if (parts[idx]) return parts[idx]
-  }
-  return req.socket.remoteAddress || 'unknown'
+  return clientIpFromXff(req.headers['x-forwarded-for'], req.socket.remoteAddress)
 }
 
 const server = http.createServer(async (req, res) => {

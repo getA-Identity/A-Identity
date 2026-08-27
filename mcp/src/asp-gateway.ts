@@ -21,6 +21,7 @@ import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { dirname, join } from 'node:path'
 import { initState } from './platform.js'
+import { TRUSTED_PROXY_COUNT } from './client-ip.js'
 import { verifyAgent, reputationScore, riskCheck, agentPassport, counterpartyCheck, trustPreview, guardrailCheck, type TxContext } from './asp/tools.js'
 import { applyOkxX402, type PaymentStatus } from './asp/payment.js'
 import { PROOF, METHODOLOGY } from './asp/proof.js'
@@ -178,7 +179,17 @@ async function main() {
   // requires a public HTTPS resource - an `http://` URL can fail the ASP review / a strict
   // buyer client. Trusting the proxy makes `req.protocol` read `X-Forwarded-Proto` ('https'),
   // so the advertised resource URL is correctly `https://`.
-  app.set('trust proxy', true)
+  //
+  // A COUNT, not `true`. `true` trusts every hop, which makes express hand back the
+  // LEFTMOST X-Forwarded-For entry, and that entry is whatever the caller typed. The free
+  // preview limiter below is keyed on req.ip, so a caller varying one header got a fresh
+  // bucket per request and the limit stopped existing. Measured with
+  // `X-Forwarded-For: 9.9.9.9, 203.0.113.7`: `true` gives 9.9.9.9, `1` gives 203.0.113.7.
+  // req.protocol reads 'https' under both, so the reason above still holds.
+  //
+  // http.ts has counted from the trusted end since it was written and explains why in a
+  // comment. This server never got the lesson; client-ip.ts now holds it for both.
+  app.set('trust proxy', TRUSTED_PROXY_COUNT)
   app.use(express.json({ limit: '16kb' }))
 
   // CORS: agent-to-agent callers are servers, but browser-based agent clients (and the
