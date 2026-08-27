@@ -40,7 +40,10 @@ test('without a signer, registerAgent returns the exact prepared ERC-8004 call',
   const arc = createEvmAdapter(ARC_CHAIN)
   const res = await arc.registerAgent('https://example/agent.json', NO_SIGNER)
   assert.equal(res.executed, false)
-  if (res.executed === false) {
+  // Assert it is PREPARED and not REVERTED. Both are `executed: false`, and without this
+  // line a reverted result would skip the body below and the test would pass on nothing.
+  assert.notEqual(res.reverted, true, 'with no signer nothing was broadcast, so it cannot have reverted')
+  if (res.executed === false && res.reverted !== true) {
     assert.equal(res.contract, '0x8004A818BFB912233c491871b3d84c89A494BD9e')
     assert.equal(res.function, 'register(string metadataURI)')
     assert.deepEqual(res.args, ['https://example/agent.json'])
@@ -51,7 +54,10 @@ test('without a signer, payUsdc returns the exact prepared USDC transfer (6 deci
   const arc = createEvmAdapter(ARC_CHAIN)
   const res = await arc.payUsdc('0x1111111111111111111111111111111111111111', 2.5, NO_SIGNER)
   assert.equal(res.executed, false)
-  if (res.executed === false) {
+  // Assert it is PREPARED and not REVERTED. Both are `executed: false`, and without this
+  // line a reverted result would skip the body below and the test would pass on nothing.
+  assert.notEqual(res.reverted, true, 'with no signer nothing was broadcast, so it cannot have reverted')
+  if (res.executed === false && res.reverted !== true) {
     assert.equal(res.contract, '0x3600000000000000000000000000000000000000')
     assert.equal(res.function, 'transfer(address to, uint256 amount)')
     assert.deepEqual(res.args, ['0x1111111111111111111111111111111111111111', '2500000'])

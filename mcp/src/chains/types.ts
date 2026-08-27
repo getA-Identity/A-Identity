@@ -167,9 +167,32 @@ export interface ChainDescriptor {
 
 export type Prepared = {
   executed: false
+  /** Present so `executed: false` narrows: `reverted` discriminates "we never asked the
+   *  chain" from "the chain said no". Without it both arms are just `executed: false` and
+   *  a caller reading `.contract` gets no help from the compiler. */
+  reverted?: false
   contract: string
   function: string
   args: unknown[]
+  reason: string
+}
+
+/**
+ * The third thing that can happen, which this union did not model.
+ *
+ * `Prepared | Executed` says a write either was not broadcast or succeeded. A transaction
+ * that broadcasts and REVERTS is neither, and with nowhere to put it, nine writes in the
+ * EVM adapter awaited the receipt, threw it away and returned `executed: true`. A reverted
+ * transaction has a hash and an explorer link, so each one looked exactly like a success.
+ *
+ * `reverted: true` is what separates this from `Prepared`: both are `executed: false`, but
+ * one means we never asked the chain and the other means the chain said no. The Soroban
+ * adapter reached the same conclusion first and grew a five-arm `CallOutcome`; this is the
+ * same fix at the width the EVM side actually needs.
+ */
+export type Reverted = {
+  executed: false
+  reverted: true
   reason: string
 }
 
@@ -194,7 +217,8 @@ export type VaultDeployed = {
   explorerUrl: string
 }
 export type VaultTx = { executed: true; txHash: string; explorerUrl: string }
-export type VaultReverted = { executed: false; reverted: true; reason: string }
+/** The vault-flavoured name for the same thing. One shape, so one definition. */
+export type VaultReverted = Reverted
 export type VaultNoKey = { executed: false; reverted: false; reason: string }
 export type VaultResult = VaultTx | VaultReverted | VaultNoKey
 

@@ -14,8 +14,10 @@ import type { ChainDescriptor } from '../types.js'
 import type {
   Prepared,
   Executed,
+  Reverted,
   VaultDeployed,
   VaultNoKey,
+  VaultReverted,
   VaultResult,
   ValidationExecuted,
 } from '../types.js'
@@ -105,7 +107,7 @@ export function createEvmAdapter(chain: ChainDescriptor) {
   }
 
   // ── writes (env-gated, human-on-the-loop) ──────────────────────────────────────
-  async function registerAgent(metadataUri: string, env: NodeJS.ProcessEnv = process.env): Promise<Prepared | Executed> {
+  async function registerAgent(metadataUri: string, env: NodeJS.ProcessEnv = process.env): Promise<Prepared | Executed | Reverted> {
     const signer = await walletClient(env)
     if (!signer) {
       return {
@@ -126,6 +128,9 @@ export function createEvmAdapter(chain: ChainDescriptor) {
       args: [metadataUri],
     })
     const receipt = await client.waitForTransactionReceipt({ hash })
+    if (receipt.status !== 'success') {
+      return { executed: false, reverted: true, reason: `register reverted on-chain (tx ${hash})` }
+    }
     const logs = parseEventLogs({ abi: IDENTITY_ABI, eventName: 'Transfer', logs: receipt.logs })
     const agentId = logs[0] ? (logs[0].args as { tokenId: bigint }).tokenId.toString() : undefined
     return { executed: true, txHash: hash, explorerUrl: tx(hash), agentId }
@@ -134,7 +139,7 @@ export function createEvmAdapter(chain: ChainDescriptor) {
   async function createJob(
     input: { provider: string; evaluator: string; description: string; expiresInHours?: number },
     env: NodeJS.ProcessEnv = process.env,
-  ): Promise<Prepared | Executed> {
+  ): Promise<Prepared | Executed | Reverted> {
     const expiredAt = BigInt(Math.floor(Date.now() / 1000) + (input.expiresInHours ?? 24) * 3600)
     const args = [input.provider, input.evaluator, expiredAt, input.description, ZERO_ADDRESS]
     const signer = await walletClient(env)
@@ -155,7 +160,8 @@ export function createEvmAdapter(chain: ChainDescriptor) {
       functionName: 'createJob',
       args: args as never,
     })
-    await client.waitForTransactionReceipt({ hash })
+    const landing = await landed(client, hash, 'createJob')
+    if (!landing.ok) return { executed: false, reverted: true, reason: landing.reason }
     return { executed: true, txHash: hash, explorerUrl: tx(hash) }
   }
 
@@ -217,6 +223,11 @@ export function createEvmAdapter(chain: ChainDescriptor) {
         args: [me, me, expiredAt, description, zero],
       })
       const receipt = await client.waitForTransactionReceipt({ hash: createHash })
+      // Every other step in this demo goes through record(), which throws on a revert. This
+      // one does not, because it also needs the receipt's logs for the jobId. Skipping the
+      // check meant a reverted createJob was pushed as a completed step and then reported as
+      // `executed: true, status: 'Unknown'` when no JobCreated log turned up to parse.
+      if (receipt.status !== 'success') throw new Error('createJob reverted on-chain')
       steps.push({ step: 'createJob', txHash: createHash, explorerUrl: tx(createHash) })
       const logs = parseEventLogs({ abi: COMMERCE_ABI, eventName: 'JobCreated', logs: receipt.logs })
       const jobId = (logs[0]?.args as { jobId?: bigint })?.jobId
@@ -250,7 +261,7 @@ export function createEvmAdapter(chain: ChainDescriptor) {
   }
 
   // ── ERC-8183 dispute / refund helpers (granular, per-job) ───────────────────────
-  type RefundResult = Prepared | (Executed & { refundedUsd?: number }) | { executed: false; reverted: true; reason: string }
+  type RefundResult = Prepared | (Executed & { refundedUsd?: number }) | Reverted
 
   /** Parse the Refunded amount (client-refund) from a receipt's logs, in USD. */
   async function refundedUsdFrom(logs: unknown[]): Promise<number | undefined> {
@@ -282,6 +293,9 @@ export function createEvmAdapter(chain: ChainDescriptor) {
       const { request } = await client.simulateContract({ address: agenticCommerce, abi: COMMERCE_ABI, functionName: 'reject', args: [jobId, reasonHash, '0x'], account: signer.account })
       const hash = await signer.client.writeContract(request as never)
       const receipt = await client.waitForTransactionReceipt({ hash })
+      if (receipt.status !== 'success') {
+        return { executed: false, reverted: true, reason: `reject reverted on-chain (tx ${hash})` }
+      }
       return { executed: true, txHash: hash, explorerUrl: tx(hash), refundedUsd: await refundedUsdFrom(receipt.logs) }
     } catch (err) {
       return { executed: false, reverted: true, reason: await revertReason(err) }
@@ -307,6 +321,9 @@ export function createEvmAdapter(chain: ChainDescriptor) {
       const { request } = await client.simulateContract({ address: agenticCommerce, abi: COMMERCE_ABI, functionName: 'claimRefund', args: [jobId], account: signer.account })
       const hash = await signer.client.writeContract(request as never)
       const receipt = await client.waitForTransactionReceipt({ hash })
+      if (receipt.status !== 'success') {
+        return { executed: false, reverted: true, reason: `claimRefund reverted on-chain (tx ${hash})` }
+      }
       return { executed: true, txHash: hash, explorerUrl: tx(hash), refundedUsd: await refundedUsdFrom(receipt.logs) }
     } catch (err) {
       return { executed: false, reverted: true, reason: await revertReason(err) }
@@ -395,7 +412,7 @@ export function createEvmAdapter(chain: ChainDescriptor) {
     env: NodeJS.ProcessEnv = process.env,
   ): Promise<
     | { executed: false; reason: string }
-    | { executed: false; reverted: true; reason: string }
+    | Reverted
     | { executed: true; steps: EscStep[]; status: string }
   > {
     const signer = await walletClient(env)
@@ -419,7 +436,7 @@ export function createEvmAdapter(chain: ChainDescriptor) {
     }
   }
 
-  async function payUsdc(to: string, amountUsd: number, env: NodeJS.ProcessEnv = process.env): Promise<Prepared | Executed> {
+  async function payUsdc(to: string, amountUsd: number, env: NodeJS.ProcessEnv = process.env): Promise<Prepared | Executed | Reverted> {
     const amount = usdcUnits(chain, amountUsd)
     const signer = await walletClient(env)
     if (!signer) {
@@ -438,7 +455,8 @@ export function createEvmAdapter(chain: ChainDescriptor) {
       functionName: 'transfer',
       args: [to as Hex, amount],
     })
-    await client.waitForTransactionReceipt({ hash })
+    const landing = await landed(client, hash, 'USDC transfer')
+    if (!landing.ok) return { executed: false, reverted: true, reason: landing.reason }
     return { executed: true, txHash: hash, explorerUrl: tx(hash) }
   }
 
@@ -459,7 +477,7 @@ export function createEvmAdapter(chain: ChainDescriptor) {
     amountUsd: number,
     memoInput: MemoInput,
     env: NodeJS.ProcessEnv = process.env,
-  ): Promise<Prepared | Executed | { executed: false; reverted: true; reason: string }> {
+  ): Promise<Prepared | Executed | Reverted> {
     if (!memoContract) return payUsdc(to, amountUsd, env)
     const amount = usdcUnits(chain, amountUsd)
     const { memoId, memoBytes, reason } = encodeMemo(memoInput)
@@ -561,7 +579,7 @@ export function createEvmAdapter(chain: ChainDescriptor) {
   async function payUsdcBatch(
     payments: { to: string; amountUsd: number }[],
     env: NodeJS.ProcessEnv = process.env,
-  ): Promise<Prepared | (Executed & { count: number; totalUsd: number }) | { executed: false; reverted: true; reason: string }> {
+  ): Promise<Prepared | (Executed & { count: number; totalUsd: number }) | Reverted> {
     const clean = payments.filter((p) => p && typeof p.to === 'string' && Number.isFinite(p.amountUsd) && p.amountUsd > 0)
     const totalUsd = clean.reduce((s, p) => s + p.amountUsd, 0)
     const { encodeFunctionData } = await import('viem')
@@ -606,7 +624,7 @@ export function createEvmAdapter(chain: ChainDescriptor) {
   async function deployVault(
     input: { owner?: string; operator?: string; dailyCapUsd: number; autoApproveUsd: number },
     env: NodeJS.ProcessEnv = process.env,
-  ): Promise<VaultDeployed | VaultNoKey> {
+  ): Promise<VaultDeployed | VaultNoKey | VaultReverted> {
     const signer = await walletClient(env)
     if (!signer) return { executed: false, reverted: false, reason: NO_KEY }
     const owner = (input.owner ?? signer.account.address) as Hex
@@ -618,7 +636,12 @@ export function createEvmAdapter(chain: ChainDescriptor) {
       args: [owner, operator, usdc, usdcUnits(chain, input.dailyCapUsd), usdcUnits(chain, input.autoApproveUsd)],
     })
     const receipt = await client.waitForTransactionReceipt({ hash })
-    return { executed: true, vault: receipt.contractAddress as string, owner, operator, txHash: hash, explorerUrl: tx(hash) }
+    // A reverted deploy has no contractAddress, so this used to hand back `vault: null` cast
+    // to a string and call it executed. Everything downstream then wrote policy to nothing.
+    if (receipt.status !== 'success' || !receipt.contractAddress) {
+      return { executed: false, reverted: true, reason: `Vault deploy reverted on-chain (tx ${hash}), so no vault exists.` }
+    }
+    return { executed: true, vault: receipt.contractAddress, owner, operator, txHash: hash, explorerUrl: tx(hash) }
   }
 
   async function vaultWrite(vault: string, functionName: string, args: readonly unknown[], env: NodeJS.ProcessEnv): Promise<VaultResult> {
@@ -634,7 +657,8 @@ export function createEvmAdapter(chain: ChainDescriptor) {
         account: signer.account,
       })
       const hash = await signer.client.writeContract(request as never)
-      await client.waitForTransactionReceipt({ hash })
+      const landing = await landed(client, hash, `vault ${functionName}`)
+      if (!landing.ok) return { executed: false, reverted: true, reason: landing.reason }
       return { executed: true, txHash: hash, explorerUrl: tx(hash) }
     } catch (err) {
       return { executed: false, reverted: true, reason: await revertReason(err) }
@@ -660,6 +684,27 @@ export function createEvmAdapter(chain: ChainDescriptor) {
     vaultWrite(vault, 'setAllowed', [payee as Hex, ok], env)
   const policyWithdraw = (vault: string, to: string, amountUsd: number, env: NodeJS.ProcessEnv = process.env) =>
     vaultWrite(vault, 'withdraw', [to as Hex, usdcUnits(chain, amountUsd)], env)
+
+  /**
+   * Wait for a receipt and refuse to call a reverted transaction executed.
+   *
+   * Six writes in this file awaited the receipt and threw it away, then returned
+   * `executed: true`. A reverted transaction has a receipt, a hash and an explorer link, so
+   * every one of those looked exactly like a success and the caller recorded it as one.
+   * This is the same defect the Soroban adapter grew its five-arm outcome to prevent, in
+   * the sibling that never got the fix. Ten other writes here already checked; these are
+   * the ones that did not.
+   */
+  async function landed(
+    client: { waitForTransactionReceipt: (a: { hash: Hex }) => Promise<{ status: string }> },
+    hash: Hex,
+    what: string,
+  ): Promise<{ ok: true } | { ok: false; reason: string }> {
+    const receipt = await client.waitForTransactionReceipt({ hash })
+    return receipt.status === 'success'
+      ? { ok: true }
+      : { ok: false, reason: `${what} reverted on-chain (tx ${hash})` }
+  }
 
   async function readVault(vault: string) {
     const client = await publicClient(process.env)
@@ -692,7 +737,7 @@ export function createEvmAdapter(chain: ChainDescriptor) {
   }
 
   // ── KYA attestation: ERC-8004 ValidationRegistry ────────────────────────────────
-  async function recordValidation(agentId: bigint, requestUri: string, env: NodeJS.ProcessEnv = process.env, opts?: { response?: number; tag?: string }): Promise<Prepared | ValidationExecuted | { executed: false; reverted: true; reason: string }> {
+  async function recordValidation(agentId: bigint, requestUri: string, env: NodeJS.ProcessEnv = process.env, opts?: { response?: number; tag?: string }): Promise<Prepared | ValidationExecuted | Reverted> {
     // Most chains in this registry carry no ValidationRegistry, so the address above is
     // `undefined` cast to an address. Without this guard viem is handed undefined and the
     // caller gets a generic read error, which is a THIRD state on top of the two that
@@ -725,12 +770,18 @@ export function createEvmAdapter(chain: ChainDescriptor) {
       address: validationRegistry, abi: VALIDATION_ABI, functionName: 'validationRequest',
       args: [validator, agentId, requestUri, requestHash],
     })
-    await client.waitForTransactionReceipt({ hash: reqTx })
+    const reqLanding = await landed(client, reqTx, 'validationRequest')
+    if (!reqLanding.ok) return { executed: false, reverted: true, reason: reqLanding.reason }
     const respTx = await signer.client.writeContract({
       address: validationRegistry, abi: VALIDATION_ABI, functionName: 'validationResponse',
       args: [requestHash, response, requestUri, ZERO_HASH, tag],
     })
-    await client.waitForTransactionReceipt({ hash: respTx })
+    const respLanding = await landed(client, respTx, 'validationResponse')
+    // The request leg landed and this one did not, so the registry holds a request with no
+    // response. Saying so beats a bare failure: the caller must not re-request, only respond.
+    if (!respLanding.ok) {
+      return { executed: false, reverted: true, reason: `${respLanding.reason}. The validationRequest (tx ${reqTx}) DID land, so the request is open on-chain and only the response needs retrying.` }
+    }
     return { executed: true, txHash: respTx, explorerUrl: tx(respTx), requestHash }
   }
 
@@ -739,7 +790,7 @@ export function createEvmAdapter(chain: ChainDescriptor) {
     executed: true; txHash: Hex; explorerUrl: string; validator: string
     agentId: string; score: number; score100: number; tag: string; feedbackHash: Hex
   }
-  type ReputationBlocked = { executed: false; reverted: true; reason: string }
+  type ReputationBlocked = Reverted
   /**
    * Anchor an agent's deterministic 0-1000 reputation on-chain as an ERC-8004 feedback
    * attestation, so the score is independently verifiable, not just DB-asserted. The score
@@ -788,7 +839,8 @@ export function createEvmAdapter(chain: ChainDescriptor) {
       // ownerOf may revert for an unknown id; let the write itself surface any real error.
     }
     const hash = await signer.client.writeContract({ address: reputationRegistry, abi: REPUTATION_ABI, functionName: 'giveFeedback', args })
-    await client.waitForTransactionReceipt({ hash })
+    const landing = await landed(client, hash, 'giveFeedback')
+    if (!landing.ok) return { executed: false, reverted: true, reason: landing.reason }
     return { executed: true, txHash: hash, explorerUrl: tx(hash), validator: signer.account.address, agentId: agentId.toString(), score, score100, tag, feedbackHash }
   }
 
