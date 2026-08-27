@@ -1,5 +1,5 @@
 /**
- * Arc on-chain binding — now a THIN layer over the generic multichain engine.
+ * Arc on-chain binding - now a THIN layer over the generic multichain engine.
  *
  * Arc is just "the first descriptor the adapter serves": the real logic (identity
  * register, ERC-8183 escrow, USDC settlement, the AgentSpendPolicy vault, ERC-8004
@@ -23,7 +23,7 @@ export type { MemoInput } from './chains/evm/memo.js'
  *  flat module boundary, and without restating the shape. */
 export { memoReasonJson } from './chains/evm/memo.js'
 
-/** The Arc adapter — the same engine any EVM chain uses, bound to the Arc descriptor. */
+/** The Arc adapter - the same engine any EVM chain uses, bound to the Arc descriptor. */
 const arc = createEvmAdapter(ARC_CHAIN)
 
 // ── config (derived from the single source of truth in chains/registry.ts) ────────

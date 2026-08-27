@@ -15,7 +15,7 @@ import { getReputationAttestation } from '../asp/attestations.js'
  * Reputation (0-1000) computed from the agent's REAL signals: on-chain USDC settlements,
  * a credit for holding a verified on-chain ERC-8004 identity, the clean (settled vs
  * rejected) ratio, and tenure. Every input is real and verifiable (settlements carry tx
- * hashes) — no mock history. The math lives in the pure, unit-tested `computeAgentReputation`
+ * hashes) - no mock history. The math lives in the pure, unit-tested `computeAgentReputation`
  * (reputation.ts), so the tested scorer and the production scorer are the same code.
  */
 /**
@@ -129,7 +129,7 @@ export function agentReputation(agentId: string) {
     ratedJobs: b.ratedCount,
   }
   // A transparent Sybil echo (level + the real signals behind it) so risk_check's DENY/WARN is
-  // explainable — every field is computed from state.agents + state.tasks, no fabrication.
+  // explainable - every field is computed from state.agents + state.tasks, no fabrication.
   const sig = sybilSignals(agent)
   const sybil = {
     level: classifySybil(sig),

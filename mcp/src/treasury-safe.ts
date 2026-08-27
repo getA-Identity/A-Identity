@@ -1,14 +1,14 @@
 /**
- * Shared 2/2 Gnosis Safe treasury — the funder for the Merkle airdrop (airdrop.ts).
+ * Shared 2/2 Gnosis Safe treasury - the funder for the Merkle airdrop (airdrop.ts).
  *
  * Honesty first: a Gnosis Safe is created and operated with Safe's OWN audited contracts
- * via the official Safe app / Protocol Kit. We do NOT reimplement a multisig — that would
+ * via the official Safe app / Protocol Kit. We do NOT reimplement a multisig - that would
  * be both wrong and unsafe. This module (a) defines the canonical 2/2 config, (b) reads a
  * live Safe's real on-chain state (owners, threshold, USDC balance), and (c) documents the
- * fund → airdrop → sweep flow that connects the treasury to the claim contract.
+ * fund -> airdrop -> sweep flow that connects the treasury to the claim contract.
  *
  * Reads need no key. The Safe's own transactions (fund the airdrop, sweep the remainder)
- * are signed by its 2 owners in the Safe app — human-on-the-loop, by design.
+ * are signed by its 2 owners in the Safe app - human-on-the-loop, by design.
  */
 import { createPublicClient, http, defineChain, type Hex } from 'viem'
 import { ARC_CHAIN } from './chains/index.js'
@@ -45,9 +45,9 @@ export function safeTreasuryPlan(owners: SafeOwners) {
     chain: ARC_CHAIN.name,
     fundsAsset: { symbol: 'USDC', address: CONTRACTS.usdc },
     setup: [
-      'Create the Safe with these 2 owners and threshold 2 via the official Safe app or the Safe Protocol Kit SDK (@safe-global/protocol-kit). Safe\'s audited contracts are the standard — we do not reimplement a multisig.',
+      'Create the Safe with these 2 owners and threshold 2 via the official Safe app or the Safe Protocol Kit SDK (@safe-global/protocol-kit). Safe\'s audited contracts are the standard - we do not reimplement a multisig.',
       'Fund the Safe with USDC (the shared treasury balance).',
-      'Deploy the airdrop with airdrop.ts deployAirdrop(recipients) — it commits to the Merkle root of the allocation list.',
+      'Deploy the airdrop with airdrop.ts deployAirdrop(recipients) - it commits to the Merkle root of the allocation list.',
       'From the Safe (2/2 approval), transfer USDC into the deployed MerkleAirdrop contract so recipients can claim their allocation once each.',
       'After the campaign, the Safe (as the airdrop owner) calls sweep(safe) to reclaim the unclaimed remainder back to the treasury.',
     ],

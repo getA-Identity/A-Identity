@@ -1,5 +1,5 @@
 /**
- * Circle CLI — the same limits, expressed as Circle Agent Wallet policies.
+ * Circle CLI - the same limits, expressed as Circle Agent Wallet policies.
  *
  * Circle's Agent Stack enforces spend policy at the wallet layer: per-transaction and
  * time-window transfer limits, plus recipient allowlists, checked before a transfer is

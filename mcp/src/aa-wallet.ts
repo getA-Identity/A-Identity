@@ -1,15 +1,15 @@
 /**
- * ERC-4337 session-key smart account (idea C, phase C2) — the REAL account-abstraction
+ * ERC-4337 session-key smart account (idea C, phase C2) - the REAL account-abstraction
  * expression of bounded authority, on Arc testnet.
  *
  * The human owner deploys a Kernel (ERC-4337 v0.7) smart account and grants the agent a
  * SESSION KEY scoped by three standard permission policies:
- *   - `toTimestampPolicy(validUntil)` — the key EXPIRES at a UNIX time (bounded authority in time)
- *   - `toCallPolicy(... transfer(to == allowlisted, amount <= cap) ...)` — a per-tx CAP + a payee ALLOWLIST
+ *   - `toTimestampPolicy(validUntil)` - the key EXPIRES at a UNIX time (bounded authority in time)
+ *   - `toCallPolicy(... transfer(to == allowlisted, amount <= cap) ...)` - a per-tx CAP + a payee ALLOWLIST
  * The agent then settles USDC entirely on its own by signing a UserOperation with the session
  * key; a payment outside the bounds is rejected by the on-chain validator (not a server). When
  * the key expires it simply stops. This maps our AgentSpendPolicy vault onto the *standard* AA
- * session-key primitive — the same idea, expressed as a real UserOp through a bundler.
+ * session-key primitive - the same idea, expressed as a real UserOp through a bundler.
  *
  * Additive + credential-gated exactly like circle-agent.ts: a clean `prepared` no-op unless
  * PIMLICO_API_KEY (the Arc bundler) + ARC_SIGNER_KEY (the funding/owner signer) are set. The
@@ -17,7 +17,7 @@
  *
  * NOTE on the RPC: Kernel's counterfactual-address step (`getSenderAddress`) needs an RPC that
  * returns eth_call revert data in viem's expected shape. Arc's primary `rpc.testnet.arc.network`
- * does NOT; `rpc.blockdaemon.testnet.arc.network` does — so the AA reads route through it.
+ * does NOT; `rpc.blockdaemon.testnet.arc.network` does - so the AA reads route through it.
  */
 import { ARC_EXPLORER, CONTRACTS } from './arc-contracts.js'
 import { ARC_CHAIN } from './chains/index.js'
@@ -79,7 +79,7 @@ async function buildSessionAccount(
   const owner = privateKeyToAccount(env.ARC_SIGNER_KEY as `0x${string}`)
   const sudoValidator = await signerToEcdsaValidator(publicClient, { signer: owner, entryPoint, kernelVersion })
 
-  // The session key — a fresh scoped signer the owner authorizes.
+  // The session key - a fresh scoped signer the owner authorizes.
   const sessionKey = privateKeyToAccount(generatePrivateKey())
   const sessionSigner = await toECDSASigner({ signer: sessionKey })
   const permission = await toPermissionValidator(publicClient, {
@@ -110,7 +110,7 @@ async function buildSessionAccount(
     plugins: { sudo: sudoValidator, regular: permission },
   })
   // Paymaster (Gas Station / gas sponsorship): when `sponsor`, route the UserOp's gas through
-  // Pimlico's ERC-7677 paymaster (viem's createPaymasterClient — no `permissionless` dependency),
+  // Pimlico's ERC-7677 paymaster (viem's createPaymasterClient - no `permissionless` dependency),
   // so the agent's session key pays ZERO gas. Requires a Pimlico sponsorship policy on the
   // account; without one, use the self-funded path instead (see runSessionKeyDemo).
   let paymaster: unknown
@@ -152,7 +152,7 @@ export async function runSessionKeyDemo(
   if (!aaEnabled(env)) {
     return {
       executed: false,
-      reason: 'No PIMLICO_API_KEY (+ ARC_SIGNER_KEY) set. With them, this deploys a Kernel ERC-4337 smart account, grants a session key scoped to a spend cap + payee allowlist + expiry, and settles a real UserOp within bounds (rejecting anything outside) — bounded authority on the standard AA primitive.',
+      reason: 'No PIMLICO_API_KEY (+ ARC_SIGNER_KEY) set. With them, this deploys a Kernel ERC-4337 smart account, grants a session key scoped to a spend cap + payee allowlist + expiry, and settles a real UserOp within bounds (rejecting anything outside) - bounded authority on the standard AA primitive.',
     }
   }
   const capUsd = Math.min(Math.max(input.capUsd ?? 0.05, 0.001), 1)
@@ -189,7 +189,7 @@ export async function runSessionKeyDemo(
 
   const attempts: Attempt[] = []
 
-  // 1) WITHIN bounds: pay the allowlisted payee, under the cap → the session key settles it.
+  // 1) WITHIN bounds: pay the allowlisted payee, under the cap -> the session key settles it.
   try {
     const callData = await transferCall(allowlistTo, Math.min(0.01, capUsd))
     const uo = await kernelClient.sendUserOperation({ callData })
@@ -200,7 +200,7 @@ export async function runSessionKeyDemo(
     attempts.push({ label: 'in-bounds: allowlisted payee, under cap', to: allowlistTo, amountUsd: Math.min(0.01, capUsd), settled: false, rejectedReason: e instanceof Error ? e.message.slice(0, 160) : String(e) })
   }
 
-  // 2) OUTSIDE bounds: a NON-allowlisted payee → the on-chain call policy rejects the UserOp.
+  // 2) OUTSIDE bounds: a NON-allowlisted payee -> the on-chain call policy rejects the UserOp.
   const stranger = '0x000000000000000000000000000000000000dEaD' as const
   try {
     const callData = await transferCall(stranger, Math.min(0.01, capUsd))

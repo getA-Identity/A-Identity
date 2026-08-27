@@ -28,7 +28,7 @@ export default function ThemeScope({
   /** Extra classes for the wrapper, e.g. layout. */
   className?: string
   /**
-   * Which base surface this page sits on. `background` is the page tint (cream → near
+   * Which base surface this page sits on. `background` is the page tint (cream -> near
    * black); `card` is the raised white sheet the long-form pages use, which stays a step
    * lighter than the page in dark mode too.
    */

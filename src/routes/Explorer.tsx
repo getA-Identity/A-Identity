@@ -73,7 +73,7 @@ function RiskPill({ verdict }: { verdict: Verdict }) {
   )
 }
 
-/** FICO-style spectrum: a red→amber→green gradient bar with a precise pointer at the score. */
+/** FICO-style spectrum: a red->amber->green gradient bar with a precise pointer at the score. */
 function Spectrum({ score }: { score: number }) {
   const pct = Math.max(0, Math.min(100, score / 10))
   return (

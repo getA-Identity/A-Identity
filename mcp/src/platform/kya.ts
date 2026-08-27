@@ -72,7 +72,7 @@ export async function verifyKya(
   agent.kyaProof = { address: agent.walletAddress, at: new Date().toISOString(), method: 'wallet-signature' }
   pushActivity(agent, `KYA passed: wallet control proven (${short(agent.walletAddress)})`)
 
-  // Layer B — anchor the KYA result on the ERC-8004 ValidationRegistry (best-effort).
+  // Layer B - anchor the KYA result on the ERC-8004 ValidationRegistry (best-effort).
   let onchain: unknown = null
   if (agent.onchainAgentId) {
     const requestUri =
@@ -111,10 +111,10 @@ export async function getAgentKya(agentId: string) {
 }
 
 /**
- * Revoke an agent's KYA — flag it as an incident (compromised key, repeated disputes, an owner
+ * Revoke an agent's KYA - flag it as an incident (compromised key, repeated disputes, an owner
  * kill-switch). Owner-gated. Sets kya='revoked' (so it is no longer hireable AND risk_check
  * DENYs it), records the incident, and best-effort writes a NEGATIVE attestation (response=0,
- * tag "revoked") to the real ERC-8004 ValidationRegistry — the honest counterpart to the
+ * tag "revoked") to the real ERC-8004 ValidationRegistry - the honest counterpart to the
  * verify-time attestation. Re-proving wallet control (verifyKya) clears the flag to 'verified'.
  */
 export async function revokeAgentKya(

@@ -214,7 +214,7 @@
       "owner": "0xd305607510E0Db2c95807173c7A05BEA53c1ed36",
       "tx": "0x23275840eb9a8b85a752769c113109a753f39b592236c85093cf94f6a517b2f3",
       "explorer": "https://arbiscan.io/tx/0x23275840eb9a8b85a752769c113109a753f39b592236c85093cf94f6a517b2f3",
-      "note": "ERC-8004 IdentityRegistry on Arbitrum One, the same canonical address X Layer and Robinhood Chain carry. Identity only: no rail of ours settles on Arbitrum One."
+      "note": "ERC-8004 IdentityRegistry on Arbitrum One, the same canonical address X Layer and Robinhood Chain carry. Our x402 rail settles here too, in native Circle USDC through our own EIP-3009 facilitator; the line here used to say no rail of ours did."
     },
     {
       "chain": "eip155:4663",

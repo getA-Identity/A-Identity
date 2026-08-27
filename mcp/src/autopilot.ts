@@ -1,14 +1,14 @@
 /**
- * Autonomous agent run — the "autonomous economic experience" the Arc track asks for.
+ * Autonomous agent run - the "autonomous economic experience" the Arc track asks for.
  *
  * A human sets a budget once; then the agent runs ON ITS OWN: it makes a sequence of
  * real gasless nanopayments to a service (pay-per-inference / streaming), deciding
  * before each one whether it stays within the budget you set. When the next payment
- * would breach the budget it STOPS ITSELF and pauses for a human — bounded authority,
+ * would breach the budget it STOPS ITSELF and pauses for a human - bounded authority,
  * demonstrated live, no human clicking each payment.
  *
  * Programmable payment logic: each settled payment also accrues a **protocol fee**
- * (basis points of volume) routed to an A-Identity treasury — the on-chain proof of
+ * (basis points of volume) routed to an A-Identity treasury - the on-chain proof of
  * the "take a fee per settlement" model. The fee settles as one real nanopayment at
  * the end (aggregated so it clears the rail's sub-cent minimum).
  *
@@ -17,11 +17,11 @@
  */
 import { nanopayOnce, ensureGatewayBalance, buyerAddress } from './nanopay.js'
 
-/** The demo service the agent pays (distinct from the buyer — Gateway rejects self-pay). */
+/** The demo service the agent pays (distinct from the buyer - Gateway rejects self-pay). */
 const SERVICE = '0x000000000000000000000000000000000000bEEF'
 /** The A-Identity treasury that collects the protocol fee (distinct demo address). */
 const TREASURY_DEFAULT = '0x000000000000000000000000000000000000CAFE'
-/** Default protocol fee: 500 bps (5%) of volume — configurable via env. */
+/** Default protocol fee: 500 bps (5%) of volume - configurable via env. */
 const DEFAULT_FEE_BPS = 500
 
 type Payment = { n: number; amountUsd: number; cumulativeUsd: number; ok: boolean; transaction?: string; reason?: string }
@@ -77,7 +77,7 @@ export async function runAgentRun(
   for (let n = 1; n <= maxCalls; n++) {
     // The agent's own decision: would this payment breach the human-set budget? The budget
     // bounds TOTAL outflow, so we include the protocol fee (bps of volume) that this payment
-    // would accrue — otherwise volume + fee could exceed the budget the human set.
+    // would accrue - otherwise volume + fee could exceed the budget the human set.
     const prospectiveTotal = (volumeUsd + amountUsd) * (1 + feeBps / 10_000)
     if (prospectiveTotal > budgetUsd + 1e-9) {
       stoppedReason = 'budget-reached'

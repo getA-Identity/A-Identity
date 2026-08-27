@@ -1,5 +1,5 @@
 /**
- * Unit tests for the x402 payer-binding + nonce lifecycle — pure, offline, no chain.
+ * Unit tests for the x402 payer-binding + nonce lifecycle - pure, offline, no chain.
  *
  * These cover the fix for the payment-not-bound-to-payer gap: a redemption must carry a
  * signature the actual paying wallet produced over the (nonce, payer) challenge. A
@@ -30,15 +30,15 @@ test('x402BindingMessage is deterministic and lower-cases the payer', () => {
   assert.match(a, new RegExp(`Payer: ${payer.address.toLowerCase()}`))
 })
 
-test('verifyPayerBinding: the paying wallet’s signature is accepted', async () => {
+test('verifyPayerBinding: the paying wallet\'s signature is accepted', async () => {
   const nonce = 'a'.repeat(32)
   const signature = await payer.signMessage({ message: x402BindingMessage(nonce, payer.address) })
   assert.equal(await verifyPayerBinding(nonce, payer.address, signature), true)
 })
 
-test('verifyPayerBinding: a front-runner’s signature for the payer address is rejected', async () => {
+test('verifyPayerBinding: a front-runner\'s signature for the payer address is rejected', async () => {
   const nonce = 'b'.repeat(32)
-  // Attacker signs the same message but claims to be `payer` — signature won't recover to payer.
+  // Attacker signs the same message but claims to be `payer` - signature won't recover to payer.
   const forged = await attacker.signMessage({ message: x402BindingMessage(nonce, payer.address) })
   assert.equal(await verifyPayerBinding(nonce, payer.address, forged), false)
 })

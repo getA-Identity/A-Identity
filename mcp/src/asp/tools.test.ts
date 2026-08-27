@@ -1,5 +1,5 @@
 /**
- * Unit tests for the ASP agent-id resolution helpers — pure, offline, deterministic.
+ * Unit tests for the ASP agent-id resolution helpers - pure, offline, deterministic.
  * These parse the `agentId` a caller passes into the four paid tools.
  */
 import { test } from 'node:test'

@@ -1,5 +1,5 @@
 /**
- * Unit tests for the ASP risk engine (assessRisk) — pure, offline, deterministic.
+ * Unit tests for the ASP risk engine (assessRisk) - pure, offline, deterministic.
  */
 import { test } from 'node:test'
 import assert from 'node:assert/strict'

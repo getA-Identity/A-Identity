@@ -25,7 +25,7 @@ export interface ChainContracts {
   spendVault?: string
   /** Arc's predeployed `Memo` precompile: wraps a contract call, preserves the EOA
    *  as `msg.sender` via `CallFrom`, and emits an on-chain audit-trail event. Present
-   *  only on chains that ship it (Arc). Absent → settlements fall back to a bare
+   *  only on chains that ship it (Arc). Absent -> settlements fall back to a bare
    *  USDC transfer with no memo. */
   memo?: string
   /** Arc's predeployed `Multicall3From` precompile: batches many contract calls into
@@ -108,7 +108,7 @@ export interface SettlementToken {
  * chain id, RPC, or address.
  */
 export interface ChainDescriptor {
-  /** CAIP-2 id — the PRIMARY KEY. e.g. 'eip155:5042002', 'stellar:testnet'. */
+  /** CAIP-2 id - the PRIMARY KEY. e.g. 'eip155:5042002', 'stellar:testnet'. */
   caip2: string
   /** Short slug for UI / logs. e.g. 'arc', 'base'. */
   id: string
@@ -132,7 +132,7 @@ export interface ChainDescriptor {
 
   nativeCurrency: { name: string; symbol: string; decimals: number }
   /** Decimals of the ERC-20 (or SEP-41 / SPL) USDC interface. Arc's native USDC is
-   *  18 decimals but its ERC-20 interface is 6 — this is the 6. */
+   *  18 decimals but its ERC-20 interface is 6 - this is the 6. */
   usdcDecimals: number
 
   /** RPC endpoints, primary first. A fallback transport is built over all of them. */

@@ -1,7 +1,7 @@
 # A-Identity
 
 [![CI](https://github.com/getA-Identity/A-Identity/actions/workflows/ci.yml/badge.svg)](https://github.com/getA-Identity/A-Identity/actions/workflows/ci.yml)
-[![Tests](https://img.shields.io/badge/tests-874%20unit%20%2B%20E2E-brightgreen)](mcp/README.md#develop)
+[![Tests](https://img.shields.io/badge/tests-879%20unit%20%2B%20E2E-brightgreen)](mcp/README.md#develop)
 [![npm: marketplace-sdk](https://img.shields.io/npm/v/%40a-identity%2Fmarketplace-sdk?label=marketplace-sdk)](https://www.npmjs.com/package/@a-identity/marketplace-sdk)
 [![npm: trust-guard](https://img.shields.io/npm/v/%40a-identity%2Ftrust-guard?label=trust-guard)](https://www.npmjs.com/package/@a-identity/trust-guard)
 [![Ask DeepWiki](https://deepwiki.com/badge.svg)](https://deepwiki.com/getA-Identity/A-Identity)
@@ -208,7 +208,7 @@ listed at `GET /proof`. Four representative ones, each independently verifiable 
 
 **Backed by real data, not an LLM guess:** a live ERC-8004 showcase agent, Meridian
 `#849980`, reputation **~542/1000**, KYA-verified. Scoring is **deterministic and
-unit-tested** (874 unit tests as of Aug 2026), reads on-chain live via viem, and is fully documented at
+unit-tested** (879 unit tests as of Aug 2026), reads on-chain live via viem, and is fully documented at
 `GET /methodology`. This is our answer to "surface your rigor": every number is
 reproducible and every settlement is on-chain.
 
@@ -350,7 +350,7 @@ and an over-limit one was
 [refused on chain](https://stellar.expert/explorer/testnet/tx/12df418f21d329f606f412b1aee498714f1178d68fd0db0a97c64f0de6f209d3)
 with the contract's typed `DailyCapExceeded`. x402 settles here in SEP-41 USDC through a
 Soroban facilitator we wrote for this chain, with the buyer signing an authorization
-entry and [paying no network fee](https://stellar.expert/explorer/testnet/tx/6d87799242b9fb36a26ac6f2d2fb11c5e7fb8bdd52bc6cf0471dcc8a8caba09c).
+entry and [paying no network fee](https://stellar.expert/explorer/testnet/tx/6d87999242b9fb36a26ac6f2d2fb11c5e7fb8bdd52bc6cf0471dcc8a8caba09c).
 The full artifact ledger is at
 [`/api/proof/stellar`](https://a-identity-backend.onrender.com/api/proof/stellar).
 

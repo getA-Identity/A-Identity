@@ -84,7 +84,7 @@ function fakeFacilitator(opts: {
 
 test('the four Celo tools carry exactly the trust-suite prices', () => {
   assert.deepEqual([...CELO_TOOLS], ['verify_agent', 'reputation_score', 'risk_check', 'agent_passport'])
-  // The same numbers asp/payment.ts PRICES charges on OKX — one product, two rails.
+  // The same numbers asp/payment.ts PRICES charges on OKX - one product, two rails.
   assert.deepEqual(CELO_TOOL_PRICES_USD, {
     verify_agent: 0.001,
     reputation_score: 0.002,
@@ -177,7 +177,7 @@ test('the 402 challenge quotes the registry asset, payTo, network and exact 6-de
   assert.equal(celoToolRequirements('agent_passport', status).maxAmountRequired, '10000')
 })
 
-// ── verify → settle → serve → record ──────────────────────────────────────────────
+// ── verify -> settle -> serve -> record ──────────────────────────────────────────────
 
 test('a settled facilitator flow serves the tool and durably records the settlement', async () => {
   const status = celoX402Status(CONFIGURED_ENV)
@@ -347,7 +347,7 @@ test('the celo descriptor asserts exactly what was verified on-chain, and no Val
   assert.equal(celo.contracts.usdc, '0xcebA9300f2b948710d2653dD7B07f33A8B32118C')
   // The IdentityRegistry is the SAME CREATE2 address as X Layer's entry.
   assert.equal(celo.contracts.identityRegistry.toLowerCase(), getChainById('xlayer')?.contracts.identityRegistry?.toLowerCase())
-  // No ValidationRegistry exists on Celo — asserting one would be an invented address.
+  // No ValidationRegistry exists on Celo - asserting one would be an invented address.
   assert.equal(celo.contracts.validationRegistry, undefined)
   assert.ok(celo.identity.note?.includes('No ValidationRegistry'))
   // cUSD is rebranded USDm; the descriptor uses the current name.

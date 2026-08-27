@@ -25,7 +25,7 @@ export const X402_RESOURCE = '/api/x402/data'
 // request: a client could present an unrelated transfer. We bind the redemption to
 // a server-issued, single-use, short-lived `nonce` for a named `resource`. The
 // client must first GET the 402 (which mints the nonce), then pay, then redeem with
-// that nonce — so a stockpiled/unrelated payment can't blind-unlock the resource.
+// that nonce - so a stockpiled/unrelated payment can't blind-unlock the resource.
 // In-memory + TTL: correct for the single backend instance we deploy; a horizontally
 // scaled deploy would move this to shared storage (see the SIWE/KYA nonce note).
 const NONCE_TTL_MS = 15 * 60 * 1000
@@ -61,7 +61,7 @@ export function consumeX402Nonce(nonce: string): void {
 
 /**
  * The message the PAYER signs to bind a redemption to themselves. Without this, redemption
- * is bound only to a server nonce anyone can mint via a bare GET — so a front-runner who
+ * is bound only to a server nonce anyone can mint via a bare GET - so a front-runner who
  * reads the payment tx hash off the public chain (or any unrelated transfer to payTo) could
  * redeem someone else's payment. Requiring a signature over (nonce, payer) that must match
  * the on-chain `from` of the payment closes that: only the wallet that actually paid can
@@ -90,12 +90,12 @@ export async function verifyPayerBinding(
   }
 }
 
-/** Spent payment tx hashes — a payment can unlock the resource exactly once. Backed
+/** Spent payment tx hashes - a payment can unlock the resource exactly once. Backed
  *  by durable storage (Postgres/JSON) so a restart can't reset replay protection. */
 const spent = new Set<string>()
 
 /** Hydrate the in-memory set from durable storage before the first check. A FAILED load is
- *  not cached — we reset so the next verify retries, and we rethrow so this verify fails
+ *  not cached - we reset so the next verify retries, and we rethrow so this verify fails
  *  CLOSED (a payment isn't accepted while the spent set is unknown, which would otherwise
  *  let a pre-restart payment be replayed). */
 let hydrated: Promise<void> | null = null
@@ -107,7 +107,7 @@ function ensureHydrated(): Promise<void> {
         hashes.forEach((h) => spent.add(h.toLowerCase()))
       } catch (e) {
         console.error('[x402] hydrate spent set failed:', e instanceof Error ? e.message : e)
-        hydrated = null // don't cache the failure — retry on the next call
+        hydrated = null // don't cache the failure - retry on the next call
         throw e
       }
     })()
@@ -172,7 +172,7 @@ export function paymentRequirements(payTo: string, nonce?: string) {
 /**
  * Verify a payment tx: a real USDC Transfer to payTo of >= PRICE, not already spent.
  * When `from` is given (the payer we've cryptographically bound the redemption to), the
- * matching Transfer must also originate from that address — so a stranger can't redeem a
+ * matching Transfer must also originate from that address - so a stranger can't redeem a
  * payment someone else made.
  */
 export async function verifyPayment(
@@ -226,7 +226,7 @@ export async function premiumResource(txHash: string) {
   try {
     arcBlock = (await (await publicClient()).getBlockNumber()).toString()
   } catch {
-    /* RPC hiccup — still return the paid receipt */
+    /* RPC hiccup - still return the paid receipt */
   }
   return {
     paid: true,

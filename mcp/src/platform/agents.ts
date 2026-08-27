@@ -22,7 +22,7 @@ import { normalizePriceUsd } from '../marketplace.js'
 
 /**
  * Record a wallet whose keypair was generated CLIENT-SIDE. The server only ever
- * sees the public address — the private key never leaves the browser. This is the
+ * sees the public address - the private key never leaves the browser. This is the
  * no-custody path, preferred over server-side key generation.
  */
 export function recordWallet(address: string): { wallet: Wallet } {
@@ -41,7 +41,7 @@ export function recordWallet(address: string): { wallet: Wallet } {
 
 /**
  * Bind a recorded wallet to an agent. Owner-only: only the agent's recorded owner may
- * (re)point its wallet address — otherwise any verified caller could overwrite another
+ * (re)point its wallet address - otherwise any verified caller could overwrite another
  * owner's agent walletAddress and redirect its agent-to-agent settlements. Mirrors the
  * `ownsAgent` gate every other agent-scoped mutation already enforces.
  */
@@ -277,7 +277,7 @@ export async function anchorAgentOnchain(agentId: string, caller?: string) {
   const agent = state.agents.find((a) => a.id === agentId)
   if (!agent) return { error: 'Unknown agent' }
   if (!ownsAgent(agent, caller)) return { error: 'Forbidden: not the agent owner' }
-  // Idempotent: an already-anchored agent holds its ERC-8004 id — never register a duplicate.
+  // Idempotent: an already-anchored agent holds its ERC-8004 id - never register a duplicate.
   if (agent.onchain === 'registered' && agent.onchainTx) {
     return {
       agent: {

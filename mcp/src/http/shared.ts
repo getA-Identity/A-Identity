@@ -12,7 +12,7 @@ export type RouteCtx = { req: http.IncomingMessage; res: http.ServerResponse; ur
 
 // ── HttpOnly session cookie (closes the JS-readable-token exposure) ────────────────
 // The session token also rides in an HttpOnly cookie, so the SPA never has to keep it in
-// localStorage. In prod the app is same-origin (Vercel proxy → Render), so the cookie is
+// localStorage. In prod the app is same-origin (Vercel proxy -> Render), so the cookie is
 // first-party; SameSite=Lax + Secure. Requests may still present a Bearer token (the
 // in-memory fallback), so both paths are accepted.
 export const IS_PROD = process.env.NODE_ENV === 'production' || !!process.env.RENDER || !!process.env.RENDER_EXTERNAL_URL
@@ -61,12 +61,12 @@ export function readBody(req: http.IncomingMessage): Promise<unknown> {
   })
 }
 
-// ── small input validators (finite, bounded — no NaN/Infinity/negative slips through) ──
+// ── small input validators (finite, bounded - no NaN/Infinity/negative slips through) ──
 /** A finite, non-negative number no larger than `max` (USD amounts on a testnet demo). */
 export function validAmount(v: unknown, max = 1_000_000): v is number {
   return typeof v === 'number' && Number.isFinite(v) && v >= 0 && v <= max
 }
-/** Clamp a client-supplied USD amount into [0, max]; non-numbers → `fallback`. */
+/** Clamp a client-supplied USD amount into [0, max]; non-numbers -> `fallback`. */
 export function clampUsd(v: unknown, max: number, fallback: number): number {
   return typeof v === 'number' && Number.isFinite(v) ? Math.min(max, Math.max(0, v)) : fallback
 }

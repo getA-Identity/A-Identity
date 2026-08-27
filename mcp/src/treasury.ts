@@ -1,9 +1,9 @@
 /**
- * Agent treasury — idle-balance auto-yield into USYC, Circle's yield-bearing token.
+ * Agent treasury - idle-balance auto-yield into USYC, Circle's yield-bearing token.
  *
  * When an agent's idle stablecoin balance (USDC + EURC) sits above a working-capital
- * cap the human owner sets, the excess can be put to work in USYC — Circle's tokenized
- * money-market fund on Arc (short-duration U.S. Treasuries) — to earn onchain yield,
+ * cap the human owner sets, the excess can be put to work in USYC - Circle's tokenized
+ * money-market fund on Arc (short-duration U.S. Treasuries) - to earn onchain yield,
  * then redeemed to USDC when the agent needs to spend. Every step is authorization-
  * gated: the owner sees a projected-earnings review (weekly / monthly) and must
  * explicitly turn it on. Nothing moves without that, and the cap is never touched.
@@ -119,7 +119,7 @@ export type TreasuryPreview = {
   note: string
 }
 
-/** Read-only: what auto-yield WOULD do at this cap — idle above cap, projected earnings. */
+/** Read-only: what auto-yield WOULD do at this cap - idle above cap, projected earnings. */
 export async function previewTreasury(address: string, capUsd: number, env: NodeJS.ProcessEnv = process.env): Promise<TreasuryPreview> {
   const cap = Math.max(0, capUsd)
   const balances = await readTreasuryBalances(address)
@@ -137,7 +137,7 @@ export async function previewTreasury(address: string, capUsd: number, env: Node
     note:
       deployableUsd > 0
         ? `$${deployableUsd} of idle USDC/EURC above your $${cap} working-capital cap can earn yield in USYC.`
-        : `Idle balance is at or below the $${cap} cap — nothing to put to work right now.`,
+        : `Idle balance is at or below the $${cap} cap - nothing to put to work right now.`,
   }
 }
 
@@ -155,7 +155,7 @@ export type TreasuryExecution = {
  * Authorize + start auto-yield: earmark idle balance above the cap for USYC. The actual
  * USDC -> USYC mint runs through the real Teller only when the wallet is USYC-allowlisted;
  * without that it returns a `prepared` plan against the real contracts and names the one
- * step to go live. Same gating discipline as the on-chain vault / Circle wallet paths —
+ * step to go live. Same gating discipline as the on-chain vault / Circle wallet paths -
  * it never fabricates a yield position. Persisting the owner's auto-yield authorization
  * (cap, enabled) is handled by the caller in platform.ts; this returns the onchain plan.
  */

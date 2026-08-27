@@ -218,7 +218,7 @@ export default function AutopilotPanel() {
             <div className="flex items-center gap-2 rounded-lg border border-usdc/25 bg-usdc/[0.05] px-3 py-2 text-foreground/75 motion-safe:animate-[fadeIn_0.4s_ease-out]">
               <Coins size={14} className="shrink-0 text-usdc" />
               <span>
-                Protocol fee <b>{executed.protocolFee.accruedUsd} USDC</b> ({executed.feeBps} bps) →{' '}
+                Protocol fee <b>{executed.protocolFee.accruedUsd} USDC</b> ({executed.feeBps} bps) paid to{' '}
                 {short(executed.treasury)}
                 {executed.protocolFee.settled
                   ? ', settled'

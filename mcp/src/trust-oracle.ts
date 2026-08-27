@@ -1,9 +1,9 @@
 /**
- * Trust Oracle dogfood — an agent BUYS a `risk_check` over x402 before it transacts.
+ * Trust Oracle dogfood - an agent BUYS a `risk_check` over x402 before it transacts.
  *
  * This is the consumer side of the same Trust Oracle we list on Circle's Agent Marketplace
  * (see ./asp/* + ../marketplace/): one of our own agents pays ~$0.005 over x402 (a gasless
- * Arc-testnet nanopayment via Circle Gateway — the SAME rail as nanopay.ts), and the payment
+ * Arc-testnet nanopayment via Circle Gateway - the SAME rail as nanopay.ts), and the payment
  * unlocks a pre-transaction ALLOW / WARN / DENY verdict on the counterparty. A live
  * "agent pays an agent for trust" loop, on real Arc testnet.
  *
@@ -81,7 +81,7 @@ export async function runTrustOracleDogfood(
     return { executed: false, tool: 'risk_check', priceUsd: amountUsd, reason: `x402 payment failed: ${pay.reason}` }
   }
 
-  // 3) payment settled → the resource is unlocked: serve the risk verdict.
+  // 3) payment settled -> the resource is unlocked: serve the risk verdict.
   const verdict = await riskCheck(agentId, input.txContext ?? null)
 
   return {

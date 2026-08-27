@@ -153,7 +153,7 @@ export default function AppKitPanel() {
           className="inline-flex items-center gap-1.5 rounded-full bg-usdc px-4 py-2 text-sm font-semibold text-white transition-transform hover:scale-[1.02] disabled:opacity-50"
         >
           {busy ? <Loader2 size={15} className="animate-spin" /> : <Repeat size={15} />}
-          {busy ? 'Swapping' : 'Swap USDC → EURC on Arc'}
+          {busy ? 'Swapping' : 'Swap USDC -> EURC on Arc'}
         </button>
       </div>
 

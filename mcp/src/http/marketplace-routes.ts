@@ -98,7 +98,7 @@ export async function handleMarketplaceRoutes(ctx: RouteCtx): Promise<boolean> {
     sendJson(res, 200, marketplaceCatalog())
     return true
   }
-  // Hire a verified agent for a service → creates a task (escrow committed). Verified-only.
+  // Hire a verified agent for a service -> creates a task (escrow committed). Verified-only.
   if (req.method === 'POST' && url.pathname === '/api/marketplace/hire') {
     const body = (await readBody(req).catch(() => null)) as
       | { agentId?: string; service?: string; priceUsd?: number; description?: string; deadlineHours?: number }
@@ -112,7 +112,7 @@ export async function handleMarketplaceRoutes(ctx: RouteCtx): Promise<boolean> {
     sendJson(res, 'error' in t ? errStatus(t.error) : 201, t)
     return true
   }
-  // The hired worker delivers a result. funded → delivered.
+  // The hired worker delivers a result. funded -> delivered.
   if (req.method === 'POST' && url.pathname === '/api/marketplace/deliver') {
     const body = (await readBody(req).catch(() => null)) as { taskId?: string; deliverable?: string } | null
     if (!body?.taskId) { sendJson(res, 400, { error: 'taskId required' }); return true }
@@ -128,7 +128,7 @@ export async function handleMarketplaceRoutes(ctx: RouteCtx): Promise<boolean> {
     sendJson(res, 'error' in t ? errStatus(t.error) : 200, t)
     return true
   }
-  // The client disputes → real ERC-8183 refund to the client.
+  // The client disputes -> real ERC-8183 refund to the client.
   if (req.method === 'POST' && url.pathname === '/api/marketplace/dispute') {
     const body = (await readBody(req).catch(() => null)) as { taskId?: string; reason?: string } | null
     if (!body?.taskId) { sendJson(res, 400, { error: 'taskId required' }); return true }
@@ -144,7 +144,7 @@ export async function handleMarketplaceRoutes(ctx: RouteCtx): Promise<boolean> {
     sendJson(res, 'error' in t ? errStatus(t.error) : 200, t)
     return true
   }
-  // Open tasks (post → bid → accept). Public list of open tasks awaiting bids.
+  // Open tasks (post -> bid -> accept). Public list of open tasks awaiting bids.
   if (req.method === 'GET' && url.pathname === '/api/marketplace/open-tasks') {
     sendJson(res, 200, listOpenTasks())
     return true
@@ -167,7 +167,7 @@ export async function handleMarketplaceRoutes(ctx: RouteCtx): Promise<boolean> {
     sendJson(res, 'error' in t ? errStatus(t.error) : 200, t)
     return true
   }
-  // The client accepts a bid → task assigned + escrow committed.
+  // The client accepts a bid -> task assigned + escrow committed.
   if (req.method === 'POST' && url.pathname === '/api/marketplace/accept-bid') {
     const body = (await readBody(req).catch(() => null)) as { taskId?: string; agentId?: string } | null
     if (!body?.taskId || !body?.agentId) { sendJson(res, 400, { error: 'taskId and agentId required' }); return true }

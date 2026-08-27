@@ -1,5 +1,5 @@
 /**
- * Deterministic reputation engine — the SINGLE scorer, used in production.
+ * Deterministic reputation engine - the SINGLE scorer, used in production.
  *
  * `platform.ts` `repOf` gathers an agent's real signals (on-chain settlements, rejections,
  * on-chain identity, tenure) and calls `computeAgentReputation` here. This module holds the
@@ -8,7 +8,7 @@
  * ERC-8004 Reputation Registry).
  *
  * Historical note: an earlier version of this file scored from a mock `AgentActionHistory`
- * with different constants and was never wired into the running backend — so the tested
+ * with different constants and was never wired into the running backend - so the tested
  * scorer and the production scorer had drifted apart. They are now the same function.
  *
  * Score (0-1000) = settlement(0-600, incl. a +60 on-chain-identity credit) + validation(0-240)
@@ -191,7 +191,7 @@ export function computeAgentReputation(s: ReputationSignals, asOf: Date = new Da
   // Validation: share of clean (settled vs rejected) actions. Capped at 240.
   const validation = total === 0 ? 0 : Math.round(240 * (s.settledCount / total))
   // Tenure: ~1 point per 2 days since creation. Capped at 160. An unparseable/absent
-  // createdAt contributes 0 tenure (never NaN) — a NaN score would otherwise slip past
+  // createdAt contributes 0 tenure (never NaN) - a NaN score would otherwise slip past
   // every downstream risk comparison (`NaN < threshold` is always false).
   const createdMs = new Date(s.createdAt).getTime()
   const days = Number.isFinite(createdMs) ? Math.max(0, Math.floor((asOf.getTime() - createdMs) / DAY_MS)) : 0

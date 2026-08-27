@@ -1,21 +1,21 @@
 /**
- * Circle Agent Wallets — the hosted, wallet-layer enforcement layer (Phase 3).
+ * Circle Agent Wallets - the hosted, wallet-layer enforcement layer (Phase 3).
  *
  * This is the SECOND of A-Identity's three spend-policy layers, and it is entirely
  * ADDITIVE + credential-gated, mirroring how `arc-contracts.ts` gates the on-chain
  * vault behind ARC_SIGNER_KEY:
  *
- *   1. server pre-check          — our engine (platform.ts createInstruction)
- *   2. Circle Agent Wallet       — THIS module: a real Developer-Controlled Wallet
+ *   1. server pre-check          - our engine (platform.ts createInstruction)
+ *   2. Circle Agent Wallet       - THIS module: a real Developer-Controlled Wallet
  *                                  on ARC-TESTNET whose outbound USDC transfers are
  *                                  screened by Circle's hosted policy engine at the
  *                                  wallet layer (sanctions / allow-block / freeze).
- *   3. on-chain policy vault     — the trustless source of truth (arc-contracts.ts)
+ *   3. on-chain policy vault     - the trustless source of truth (arc-contracts.ts)
  *
  * Be precise about what Circle enforces: its wallet-layer control is TRANSACTION
  * SCREENING (address allow/blocklist + sanctions + wallet freeze), surfaced as a
  * `transactionScreeningEvaluation` and a DENIED transaction state. Circle does NOT
- * expose a per-wallet daily-USD *transfer* cap as an API primitive — that cap stays
+ * expose a per-wallet daily-USD *transfer* cap as an API primitive - that cap stays
  * enforced by our server pre-check and, when present, the on-chain vault. We never
  * overclaim Circle as on-chain enforcement; that is the vault's job.
  *
@@ -40,7 +40,7 @@ import { ARC_CHAIN } from './chains/index.js'
 
 /** Arc Testnet, in Circle's blockchain vocabulary. */
 const ARC_BLOCKCHAIN = 'ARC-TESTNET'
-/** Native USDC on Arc testnet — the same dollar our vault settles in (6 display decimals). */
+/** Native USDC on Arc testnet - the same dollar our vault settles in (6 display decimals). */
 const ARC_USDC = ARC_CHAIN.contracts.usdc as string
 /** Default USDC to seed a new Circle wallet with, from our Arc signer. */
 const DEFAULT_FUND_USD = 0.5
@@ -165,9 +165,9 @@ async function fundFromSigner(
 
 /** Real on-chain settlement executed by Circle from the agent's wallet. */
 export type CirclePayTx = { executed: true; txHash: string; explorerUrl: string }
-/** Circle's hosted policy DENIED the transfer — an authoritative "no" (like a vault revert). */
+/** Circle's hosted policy DENIED the transfer - an authoritative "no" (like a vault revert). */
 export type CirclePayRejected = { executed: false; rejected: true; reason: string }
-/** No creds / infra error / timeout — NOT a policy rejection; caller may fall back. */
+/** No creds / infra error / timeout - NOT a policy rejection; caller may fall back. */
 export type CirclePayUnavailable = { executed: false; rejected: false; reason: string }
 export type CirclePayResult = CirclePayTx | CirclePayRejected | CirclePayUnavailable
 
@@ -178,7 +178,7 @@ const TERMINAL = new Set(['COMPLETE', 'FAILED', 'CANCELLED', 'DENIED'])
  * the transfer at the wallet layer; a screening DENY comes back as a rejection (the
  * caller treats it like a vault policy revert). COMPLETE returns the real tx hash.
  * Anything else (no creds, FAILED, timeout) is reported as "unavailable" so the caller
- * can fall back to another settlement path — never a silent success.
+ * can fall back to another settlement path - never a silent success.
  */
 export async function circlePay(
   walletId: string,

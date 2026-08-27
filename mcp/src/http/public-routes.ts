@@ -62,7 +62,7 @@ export async function handlePublicRoutes(ctx: RouteCtx): Promise<boolean> {
     return true
   }
 
-  // ── REST /api/agent — LIVE on-chain ERC-8004 resolve (Arc), no mocks ──────────
+  // ── REST /api/agent - LIVE on-chain ERC-8004 resolve (Arc), no mocks ──────────
   if (req.method === 'GET' && url.pathname === '/api/agent') {
     const q = url.searchParams.get('q') ?? ''
     if (!q) { sendJson(res, 400, { error: 'Missing ?q= parameter' }); return true }
@@ -73,7 +73,7 @@ export async function handlePublicRoutes(ctx: RouteCtx): Promise<boolean> {
     return true
   }
 
-  // ── REST /api/reputation — real, from platform settlements + on-chain identity ──
+  // ── REST /api/reputation - real, from platform settlements + on-chain identity ──
   if (req.method === 'GET' && url.pathname === '/api/reputation') {
     const id = url.searchParams.get('id') ?? ''
     if (!id) { sendJson(res, 400, { error: 'Missing ?id= parameter' }); return true }
@@ -90,7 +90,7 @@ export async function handlePublicRoutes(ctx: RouteCtx): Promise<boolean> {
     return true
   }
 
-  // ── REST /api/commerce/merchant-check — verify a merchant agent pre-checkout ──
+  // ── REST /api/commerce/merchant-check - verify a merchant agent pre-checkout ──
   // The trust step ACP/UCP checkout flows skip: agent-card discovery + live ERC-8004
   // resolve + the platform's KYA/reputation/Sybil view, composed into ALLOW/WARN/DENY
   // with every reason. Free, read-only, no state; invalid input is a clean 400.
@@ -175,7 +175,7 @@ export async function handlePublicRoutes(ctx: RouteCtx): Promise<boolean> {
       sendJson(res, 402, paymentRequirements(payTo, issueX402Nonce()))
       return true
     }
-    // Redeem: the payment must answer THIS challenge — a live nonce we issued, bound to
+    // Redeem: the payment must answer THIS challenge - a live nonce we issued, bound to
     // this resource. Without it, an unrelated USDC transfer can't blind-unlock the data.
     const nonce = typeof req.headers['x-payment-nonce'] === 'string' ? req.headers['x-payment-nonce'] : undefined
     if (!x402NonceValid(nonce)) {
@@ -211,8 +211,8 @@ export async function handlePublicRoutes(ctx: RouteCtx): Promise<boolean> {
   }
 
   // ── x402 Nanopayments seller: gasless, Gateway-batched USDC (x402 v2) ─────────
-  // Second x402 rail. No PAYMENT-SIGNATURE → 402 v2 with the GatewayWalletBatched
-  // requirements; with one → settle through Circle Gateway and serve immediately.
+  // Second x402 rail. No PAYMENT-SIGNATURE -> 402 v2 with the GatewayWalletBatched
+  // requirements; with one -> settle through Circle Gateway and serve immediately.
   if (req.method === 'GET' && url.pathname === '/api/x402/nano/data') {
     const requirements = await nanoPaymentRequirements()
     if (!requirements) { sendJson(res, 501, { error: 'nanopayments not configured (no payTo / Gateway rail)' }); return true }

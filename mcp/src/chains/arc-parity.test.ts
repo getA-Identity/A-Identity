@@ -5,7 +5,7 @@ import { ARC_TESTNET } from '../arc.js'
 import { ARC_RPC, ARC_EXPLORER, ARC_RPCS, CONTRACTS } from '../arc-contracts.js'
 
 // After routing Arc through the generic adapter, these guard that the legacy Arc
-// config (arc.ts, arc-contracts.ts) still agrees EXACTLY with the registry descriptor —
+// config (arc.ts, arc-contracts.ts) still agrees EXACTLY with the registry descriptor -
 // so the rebind changed no on-chain behavior and the two config sources can't drift.
 
 test('arc.ts ARC_TESTNET agrees with the registry descriptor', () => {

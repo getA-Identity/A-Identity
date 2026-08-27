@@ -1,5 +1,5 @@
 /**
- * Pure encode/decode helpers for Arc transaction memos. No chain I/O — every function
+ * Pure encode/decode helpers for Arc transaction memos. No chain I/O - every function
  * here is deterministic and unit-testable, so the "why" payload attached to an on-chain
  * settlement has one canonical, tested shape. The adapter (adapter.ts) does the actual
  * `Memo.memo(...)` broadcast; this module only shapes the bytes.
@@ -11,12 +11,12 @@ import { keccak256, stringToHex, hexToString } from 'viem'
 type Hex = `0x${string}`
 
 /** The structured reason attached to every memo-wrapped settlement. Deliberately
- *  small — it lands in an on-chain event log — but complete enough to reconstruct
+ *  small - it lands in an on-chain event log - but complete enough to reconstruct
  *  WHY an agent paid: which agent, which instruction, for what, under which decision. */
 export type MemoInput = {
   agentId: string
   instructionId: string
-  /** What was paid for — the payee ref or instruction type. */
+  /** What was paid for - the payee ref or instruction type. */
   service: string
   /** The policy decision that authorized it, e.g. 'auto_approved' | 'approved'. */
   policyDecision: string

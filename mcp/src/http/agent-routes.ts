@@ -16,7 +16,7 @@ import { cappedDemoUsd, denyRead, errStatus, publicAgents, readBody, sendJson, t
 export async function handleAgentRoutes(ctx: RouteCtx): Promise<boolean> {
   const { req, res, url, callerId } = ctx
 
-  // ── REST /api/agents — real agents this platform knows (no mocks) ─────────────
+  // ── REST /api/agents - real agents this platform knows (no mocks) ─────────────
   if (req.method === 'GET' && url.pathname === '/api/agents') {
     const agents = publicAgents()
     sendJson(res, 200, { total: agents.length, source: 'platform', agents })
@@ -28,7 +28,7 @@ export async function handleAgentRoutes(ctx: RouteCtx): Promise<boolean> {
     const body = (await readBody(req).catch(() => null)) as { address?: string } | null
     // No-custody by construction: the client generates the keypair in the browser and only
     // ever sends the public address. The server never generates or returns a private key
-    // (the old server-side fallback returned a raw key over HTTP — removed).
+    // (the old server-side fallback returned a raw key over HTTP - removed).
     if (!body?.address || !/^0x[0-9a-fA-F]{40}$/.test(body.address)) {
       sendJson(res, 400, { error: 'a client-generated wallet address (0x…) is required; the server never creates or holds private keys' })
       return true
@@ -114,7 +114,7 @@ export async function handleAgentRoutes(ctx: RouteCtx): Promise<boolean> {
   if (req.method === 'POST' && url.pathname === '/api/agents/vault') {
     const body = (await readBody(req).catch(() => null)) as { agentId?: string; fundUsd?: number; ownerAddress?: string } | null
     if (!body?.agentId) { sendJson(res, 400, { error: 'agentId required' }); return true }
-    // fundUsd is deposited from the shared server signer — cap it like the other demo spends.
+    // fundUsd is deposited from the shared server signer - cap it like the other demo spends.
     const r = await provisionAgentVault(body.agentId, { fundUsd: cappedDemoUsd(body.fundUsd), caller: callerId, ownerAddress: body.ownerAddress })
     if ('error' in r && typeof r.error === 'string') { sendJson(res, errStatus(r.error), r); return true }
     sendJson(res, 200, r)

@@ -2,12 +2,12 @@
  * The A-Identity ASP tools sold on OKX.AI, each a THIN wrapper over logic the
  * backend already runs live - no new trust claims, no mocks:
  *
- *   verify_agent       → on-chain ERC-8004 resolve (erc8004.ts) + KYA (readValidation)
- *   reputation_score   → the deterministic 0-1000 scorer (reputation.ts / platform repOf)
- *   risk_check         → ALLOW/WARN/DENY composition over those signals (./risk.ts)
- *   counterparty_check → deal-specific verdict between two agents (+ same-operator signal)
- *   agent_passport     → aggregation of all of the above into one passport JSON
- *   trust_preview      → FREE tier: coarse band + flags only (the adoption on-ramp)
+ *   verify_agent       -> on-chain ERC-8004 resolve (erc8004.ts) + KYA (readValidation)
+ *   reputation_score   -> the deterministic 0-1000 scorer (reputation.ts / platform repOf)
+ *   risk_check         -> ALLOW/WARN/DENY composition over those signals (./risk.ts)
+ *   counterparty_check -> deal-specific verdict between two agents (+ same-operator signal)
+ *   agent_passport     -> aggregation of all of the above into one passport JSON
+ *   trust_preview      -> FREE tier: coarse band + flags only (the adoption on-ramp)
  *
  * An `agentId` may be a platform agent id, an ERC-8004 token id ("#849980" / "849980"),
  * an owner address, or a CAIP-10 id. We resolve platform state first (richest signals),
@@ -131,7 +131,7 @@ async function gather(agentId: string): Promise<Bundle> {
   // Tenure only from a timestamp WE can vouch for (platform-tracked creation). We do NOT
   // trust `identity.registeredAt`, which is read from the agent's own tokenURI JSON - a
   // counterparty could self-attest an ancient date to inflate tenure (worth up to 160
-  // reputation points) and flip a DENY into a WARN. Unknown tenure → 0, not self-reported.
+  // reputation points) and flip a DENY into a WARN. Unknown tenure -> 0, not self-reported.
   const createdAt = platform?.createdAt ?? null
   const createdMs = createdAt ? new Date(createdAt).getTime() : NaN
   const tenureDays = Number.isFinite(createdMs)

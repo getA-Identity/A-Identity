@@ -1,5 +1,5 @@
 /**
- * Unit tests for the Merkle airdrop tree/proof — pure, offline, deterministic.
+ * Unit tests for the Merkle airdrop tree/proof - pure, offline, deterministic.
  * Verifies the backend computes the same root/proofs the contract checks against.
  */
 import { test } from 'node:test'
@@ -35,7 +35,7 @@ test('root is a 32-byte hex', () => {
 })
 
 test('every recipient proof verifies against the root (odd count)', () => {
-  const { root, recipients } = buildAirdrop(five) // 5 = odd → exercises node promotion
+  const { root, recipients } = buildAirdrop(five) // 5 = odd -> exercises node promotion
   for (const r of recipients) {
     assert.equal(verifyProof(r.index, r.account, r.amount, r.proof, root), true, `index ${r.index}`)
   }

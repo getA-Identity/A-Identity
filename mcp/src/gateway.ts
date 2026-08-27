@@ -1,10 +1,10 @@
 /**
- * Circle Gateway — a unified, chain-abstracted USDC balance.
+ * Circle Gateway - a unified, chain-abstracted USDC balance.
  *
  * Permissionless (no Circle API key). We deposit USDC into the Gateway Wallet on Arc
  * to establish a unified balance, then move it cross-chain with the Forwarding Service:
  * a signed EIP-712 "burn intent" is submitted to the Gateway API, which mints USDC on
- * the destination chain (Base Sepolia) in <500 ms — no wallet or gas needed there.
+ * the destination chain (Base Sepolia) in <500 ms - no wallet or gas needed there.
  *
  * All writes are env-gated behind ARC_SIGNER_KEY (the same funded testnet signer used
  * elsewhere). USDC uses the 6-decimal ERC-20 interface on both chains.
@@ -102,7 +102,7 @@ export async function gatewayDeposit(amountUsd: number, env: NodeJS.ProcessEnv =
 
 /**
  * Move `amountUsd` of the unified balance from Arc to Base Sepolia via the Forwarding
- * Service: estimate → sign an EIP-712 burn intent → submit. Circle mints on Base
+ * Service: estimate -> sign an EIP-712 burn intent -> submit. Circle mints on Base
  * automatically (gasless there). Returns the transferId (recipient = the signer).
  */
 export async function gatewayTransfer(amountUsd: number, env: NodeJS.ProcessEnv = process.env) {
@@ -119,7 +119,7 @@ export async function gatewayTransfer(amountUsd: number, env: NodeJS.ProcessEnv 
     sourceSigner: b32(s.account.address), destinationCaller: b32(zeroAddress),
     value, salt: ('0x' + randomBytes(32).toString('hex')) as `0x${string}`, hookData: '0x' as `0x${string}`,
   }
-  // 1) estimate (forwarder) → maxFee + maxBlockHeight
+  // 1) estimate (forwarder) -> maxFee + maxBlockHeight
   const est = await fetch(`${GATEWAY_API}/estimate?enableForwarder=true`, {
     method: 'POST', headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify([{ spec: specBytes32 }], bigintJson),
@@ -158,12 +158,12 @@ export async function gatewayTransfer(amountUsd: number, env: NodeJS.ProcessEnv 
 export async function runGatewayDemo(input: { amountUsd?: number } = {}, env: NodeJS.ProcessEnv = process.env) {
   const s = await arcSigner(env)
   if (!s) {
-    return { executed: false as const, reason: 'No ARC_SIGNER_KEY set. With a funded key this deposits to Gateway and moves USDC Arc → Base Sepolia (gasless).', gatewayWallet: GATEWAY_WALLET }
+    return { executed: false as const, reason: 'No ARC_SIGNER_KEY set. With a funded key this deposits to Gateway and moves USDC Arc -> Base Sepolia (gasless).', gatewayWallet: GATEWAY_WALLET }
   }
   const me = s.account.address
   const amountUsd = input.amountUsd ?? 0.1
 
-  // 1) ensure a unified balance (deposit tops up when low — deposits are available instantly on Arc)
+  // 1) ensure a unified balance (deposit tops up when low - deposits are available instantly on Arc)
   let bal = await gatewayBalance(me)
   let available = 'error' in bal ? 0 : bal.available
   let deposit: { amountUsd: number; depositTx?: string; explorerUrl?: string } | null = null
@@ -176,7 +176,7 @@ export async function runGatewayDemo(input: { amountUsd?: number } = {}, env: No
     }
   }
 
-  // 2) move it cross-chain (Arc → Base Sepolia) via the Forwarding Service
+  // 2) move it cross-chain (Arc -> Base Sepolia) via the Forwarding Service
   const before = await baseSepoliaUsdc(me)
   const tr = await gatewayTransfer(amountUsd, env)
   if (!tr.executed) {

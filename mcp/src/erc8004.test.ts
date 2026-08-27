@@ -1,4 +1,4 @@
-/** Unit tests for the tokenURI SSRF guard — pure, offline. */
+/** Unit tests for the tokenURI SSRF guard - pure, offline. */
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { isSafePublicHttpUrl } from './erc8004.js'

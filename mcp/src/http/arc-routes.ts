@@ -84,7 +84,7 @@ export async function handleArcRoutes(ctx: RouteCtx): Promise<boolean> {
     return true
   }
 
-  // ── Dispute a job: the evaluator rejects the deliverable → client refunded on-chain ─
+  // ── Dispute a job: the evaluator rejects the deliverable -> client refunded on-chain ─
   if (req.method === 'POST' && url.pathname === '/api/arc/job/dispute') {
     const body = (await readBody(req).catch(() => null)) as { jobId?: string | number; reason?: string } | null
     const jobId = jobIdFromInput(body?.jobId)
@@ -102,7 +102,7 @@ export async function handleArcRoutes(ctx: RouteCtx): Promise<boolean> {
     return true
   }
 
-  // ── Live on-chain job state (status, parties, budget) — public read ──────────
+  // ── Live on-chain job state (status, parties, budget) - public read ──────────
   if (req.method === 'GET' && url.pathname === '/api/arc/job') {
     const jobId = jobIdFromInput(url.searchParams.get('jobId'))
     if (jobId === null) { sendJson(res, 400, { error: 'jobId (non-negative integer) required' }); return true }
@@ -118,7 +118,7 @@ export async function handleArcRoutes(ctx: RouteCtx): Promise<boolean> {
     return true
   }
 
-  // ── Circle Gateway: one-click deposit + gasless cross-chain transfer (Arc→Base) ──
+  // ── Circle Gateway: one-click deposit + gasless cross-chain transfer (Arc->Base) ──
   if (req.method === 'POST' && url.pathname === '/api/arc/gateway-demo') {
     const body = (await readBody(req).catch(() => null)) as { amountUsd?: number } | null
     sendJson(res, 200, await runGatewayDemo({ amountUsd: cappedDemoUsd(body?.amountUsd) }))
@@ -145,7 +145,7 @@ export async function handleArcRoutes(ctx: RouteCtx): Promise<boolean> {
     sendJson(res, 200, await appKitCapabilities())
     return true
   }
-  //    A real USDC→EURC rate from Circle's service. No key, no write.
+  //    A real USDC->EURC rate from Circle's service. No key, no write.
   if (req.method === 'POST' && url.pathname === '/api/arc/appkit-quote') {
     const body = (await readBody(req).catch(() => null)) as { amountUsd?: number } | null
     sendJson(res, 200, await quoteArcSwap({ amountUsd: cappedDemoUsd(body?.amountUsd) }))
@@ -158,7 +158,7 @@ export async function handleArcRoutes(ctx: RouteCtx): Promise<boolean> {
     return true
   }
 
-  // ── Circle CCTP: one-click native USDC bridge (burn-and-mint) Arc → Base Sepolia ──
+  // ── Circle CCTP: one-click native USDC bridge (burn-and-mint) Arc -> Base Sepolia ──
   if (req.method === 'POST' && url.pathname === '/api/arc/cctp-demo') {
     const body = (await readBody(req).catch(() => null)) as { amountUsd?: number } | null
     sendJson(res, 200, await runCctpDemo({ amountUsd: cappedDemoUsd(body?.amountUsd) }))

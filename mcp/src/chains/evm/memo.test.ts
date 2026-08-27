@@ -5,7 +5,7 @@ import { memoIdFor, encodeMemo, decodeMemo, type MemoInput } from './memo.js'
 import { createEvmAdapter } from './adapter.js'
 import { ARC_CHAIN, getChainById } from '../registry.js'
 
-// No signer → forces the prepared/no-key path deterministically.
+// No signer -> forces the prepared/no-key path deterministically.
 const NO_SIGNER: NodeJS.ProcessEnv = {}
 
 const SAMPLE: MemoInput = {
@@ -63,7 +63,7 @@ test('on a chain without a Memo precompile, payUsdcWithMemo degrades to a bare t
   assert.equal(res.executed, false)
   assert.ok('contract' in res) // prepared fallback (not a revert) without a signer
   if (res.executed === false && 'contract' in res) {
-    // Falls back to payUsdc's prepared USDC transfer — no memo wrapper.
+    // Falls back to payUsdc's prepared USDC transfer - no memo wrapper.
     assert.equal((res.contract as string).toLowerCase(), base.contracts.usdc!.toLowerCase())
     assert.equal(res.function, 'transfer(address to, uint256 amount)')
   }

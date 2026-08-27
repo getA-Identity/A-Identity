@@ -1,5 +1,5 @@
 /**
- * Pre-transaction counterparty risk assessment — the logic behind the ASP
+ * Pre-transaction counterparty risk assessment - the logic behind the ASP
  * `risk_check` tool. Deterministic ALLOW / WARN / DENY over an agent's real
  * trust signals (on-chain ERC-8004 identity, KYA attestation, 0-1000 reputation,
  * tenure), optionally sharpened by the transaction context (amount, payee).
@@ -18,7 +18,7 @@ export type SybilLevel = 'none' | 'low' | 'medium' | 'high'
 export type RiskSignals = {
   /** A resolvable on-chain ERC-8004 identity was found for this agent. */
   onchainVerified: boolean
-  /** KYA (wallet-control) attested — on the ValidationRegistry or platform-side. */
+  /** KYA (wallet-control) attested - on the ValidationRegistry or platform-side. */
   kyaVerified: boolean
   /** 0-1000 reputation from real on-chain settlements + tenure. */
   reputationScore: number
@@ -30,7 +30,7 @@ export type RiskSignals = {
   sybil?: SybilLevel
 }
 
-/** Optional transaction context — makes the decision amount-aware. */
+/** Optional transaction context - makes the decision amount-aware. */
 export type TxContext = {
   amountUsd?: number
   payee?: string
@@ -49,7 +49,7 @@ const REP_DENY_BELOW = 200 // reputation under this is untrustworthy on its own
 const REP_WARN_BELOW = 500 // reputation under this warrants caution
 const REP_HIGHVALUE_MIN = 400 // below this, high-value txs are denied
 const HIGH_VALUE_USD = 100 // "high value" relative to a low-rep counterparty
-const LARGE_TX_USD = 1000 // large absolute amount → always at least a warning
+const LARGE_TX_USD = 1000 // large absolute amount -> always at least a warning
 const NEW_AGENT_DAYS = 7 // younger than this is a "new agent" caution
 
 /** Real Sybil / wash-reputation signals from platform state (same-operator hiring + cluster size). */
@@ -92,10 +92,10 @@ export function assessRisk(signals: RiskSignals, txContext: TxContext | null = n
 
   // ── DENY rules ────────────────────────────────────────────────────────────
   if (signals.revoked) {
-    denyReasons.push('KYA has been REVOKED — this agent is flagged as an incident (compromised key or repeated disputes)')
+    denyReasons.push('KYA has been REVOKED - this agent is flagged as an incident (compromised key or repeated disputes)')
   }
   if (signals.sybil === 'high') {
-    denyReasons.push('Reputation appears Sybil / wash-traded — most of its jobs were hired by its own operator, not independent counterparties')
+    denyReasons.push('Reputation appears Sybil / wash-traded - most of its jobs were hired by its own operator, not independent counterparties')
   }
   if (!signals.onchainVerified) {
     denyReasons.push('No verifiable on-chain identity (ERC-8004) found for this agent')

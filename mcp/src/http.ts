@@ -45,7 +45,7 @@ import { handleMarketplaceRoutes } from './http/marketplace-routes.js'
 const PORT = Number(process.env.PORT ?? process.env.A_IDENTITY_HTTP_PORT ?? 3399)
 
 // CORS: an explicit allowlist (comma-separated origins in ALLOWED_ORIGINS) locks the
-// API to known frontends in production; unset → '*' for local Vite dev. Prod uses a
+// API to known frontends in production; unset -> '*' for local Vite dev. Prod uses a
 // same-origin Vercel proxy, so setting ALLOWED_ORIGINS to the site's origin(s) means
 // only the real app can call the API cross-origin.
 const ALLOWED_ORIGINS = (process.env.ALLOWED_ORIGINS ?? '')
@@ -55,7 +55,7 @@ const ALLOWED_ORIGINS = (process.env.ALLOWED_ORIGINS ?? '')
 
 /** Resolve the Access-Control-Allow-Origin value for a request's Origin header. Echoes the
  *  caller's origin so credentialed (cookie) requests are allowed. With no allowlist (dev) it
- *  echoes whatever origin called — safe because the session cookie is SameSite=Lax, so it is
+ *  echoes whatever origin called - safe because the session cookie is SameSite=Lax, so it is
  *  never sent on a cross-site fetch from another origin. */
 function resolveCorsOrigin(origin: string | undefined): string {
   if (ALLOWED_ORIGINS.length === 0) return origin ?? '*'
@@ -124,7 +124,7 @@ function rateBudget(method: string, pathname: string): { bucket: string; max: nu
 }
 
 // Number of trusted reverse proxies in front of us (Render/Vercel terminate as 1 hop).
-// The real client IP is the XFF entry `TRUSTED_PROXY_COUNT` from the END — NOT the first
+// The real client IP is the XFF entry `TRUSTED_PROXY_COUNT` from the END - NOT the first
 // entry, which is fully attacker-controlled (a spoofed X-Forwarded-For would otherwise give
 // each request a fresh rate-limit bucket and defeat the limiter entirely).
 const TRUSTED_PROXY_COUNT = Math.max(1, Number(process.env.TRUSTED_PROXY_COUNT ?? 1))
@@ -197,11 +197,11 @@ const server = http.createServer(async (req, res) => {
   if (await handleAuthRoutes(ctx)) return
 
   // Guard: every other mutating /api endpoint requires a VERIFIED session. No token
-  // → 401. A guest (unverified email) token → 403: guests are browse-only, so a
+  // -> 401. A guest (unverified email) token -> 403: guests are browse-only, so a
   // token minted for an arbitrary email can never act as an agent's owner.
   // /api/celo/tools/* is exempt because it is PAYMENT-gated, not session-gated: the
   // caller is an anonymous buyer agent whose authorization is the settled USDC payment
-  // (402 → pay → facilitator verify+settle). The rail is fail-closed (501) when
+  // (402 -> pay -> facilitator verify+settle). The rail is fail-closed (501) when
   // unconfigured and serves read-only trust tools, so the exemption never frees a write.
   // /api/x402/tools/* and /api/facilitator/* are exempt for the same reason: the caller's
   // authorization is a signed payment, not a session. Both are fail-closed (501) when the
@@ -267,9 +267,9 @@ const server = http.createServer(async (req, res) => {
   if (req.method === 'POST' && url.pathname === '/mcp') {
     try {
       const body = await readBody(req)
-      // Bake the request's VERIFIED caller into the marketplace hooks. A guest / no token →
+      // Bake the request's VERIFIED caller into the marketplace hooks. A guest / no token ->
       // mcpCaller is undefined, so the ownership gate in platform.ts rejects the mutating tools
-      // (hire/deliver/release) with a Forbidden error — MCP never bypasses the verified-session gate.
+      // (hire/deliver/release) with a Forbidden error - MCP never bypasses the verified-session gate.
       const mcpCaller = isVerified(caller) ? callerId : undefined
       const mcp = buildServer({
         listAgents: publicAgents,

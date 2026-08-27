@@ -1,5 +1,5 @@
 /**
- * The chain registry — the single source of truth for every chain this backend
+ * The chain registry - the single source of truth for every chain this backend
  * knows about. Adding a chain = adding one descriptor here (plus, for a new VM,
  * an adapter under ./<ecosystem>/). Nothing else hardcodes a chain id, RPC, or
  * address. See ./README.md.
@@ -572,15 +572,15 @@ export const CHAINS: ChainDescriptor[] = [
     contracts: {
       // ERC-8004 pair verified live 2026-08-09: eth_getCode on both (EIP-1967 proxies
       // sharing one implementation with the Celo Sepolia pair below) plus a REAL read on
-      // each — ownerOf(1) resolved an owner on the IdentityRegistry, and
+      // each - ownerOf(1) resolved an owner on the IdentityRegistry, and
       // getClients(1)/getSummary(1, clients) returned real feedback (count 14, avg 88)
       // from the ReputationRegistry. The IdentityRegistry is the SAME CREATE2 address as
       // X Layer's entry above. There is NO ValidationRegistry on Celo (ERC-8004 spec
       // revision pending), so no address is asserted for it and KYA cannot be anchored
-      // on-chain there — the identity note below says so instead of pretending.
+      // on-chain there - the identity note below says so instead of pretending.
       identityRegistry: '0x8004A169FB4a3325136EB29fA0ceB6D2e539a432',
       reputationRegistry: '0x8004BAa17C55a88189AE136b182e5fdA19dE9b63',
-      usdc: '0xcebA9300f2b948710d2653dD7B07f33A8B32118C', // native Circle USDC on Celo (EIP-712 domain name "USDC", version "2" — read live)
+      usdc: '0xcebA9300f2b948710d2653dD7B07f33A8B32118C', // native Circle USDC on Celo (EIP-712 domain name "USDC", version "2" - read live)
       create2Factory: CREATE2_FACTORY,
     },
     confirmations: 3,
@@ -700,7 +700,7 @@ export function liveChains(): ChainDescriptor[] {
 /** The canonical live Arc chain the app is currently built on. */
 export const ARC_CHAIN = requireChain('eip155:5042002')
 
-// Fail fast at import time if a descriptor is malformed — cheaper to catch here than
+// Fail fast at import time if a descriptor is malformed - cheaper to catch here than
 // at request time. (Pure validation, no I/O.)
 for (const c of CHAINS) {
   if (!isValidCaip2(c.caip2)) throw new Error(`Invalid CAIP-2 in registry: ${c.caip2}`)

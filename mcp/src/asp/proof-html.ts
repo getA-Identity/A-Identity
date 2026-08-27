@@ -19,7 +19,7 @@ export function renderProofHtml(): string {
   const rev = p.realOnchainRevenue
   const byTool = rev.byTool as Record<string, number>
 
-  // Showcase agent reputation → a credit-score spectrum (parse the leading number).
+  // Showcase agent reputation -> a credit-score spectrum (parse the leading number).
   const repStr = String(p.showcaseAgent.reputation)
   const scoreNum = parseInt(repStr, 10) || 0
   const scorePct = Math.max(0, Math.min(100, scoreNum / 10))

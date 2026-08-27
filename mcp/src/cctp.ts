@@ -1,11 +1,11 @@
 /**
- * Circle CCTP — native USDC cross-chain via burn-and-mint (Bridge Kit).
+ * Circle CCTP - native USDC cross-chain via burn-and-mint (Bridge Kit).
  *
  * A second cross-chain rail alongside Gateway (`gateway.ts`). Where Gateway moves a
  * unified balance via the Forwarding Service, CCTP is the canonical burn-and-mint:
- * USDC is burned on Arc and minted natively on the destination — never wrapped. We
- * drive it with Circle's Bridge Kit (CCTPv2 under the hood): approve → burn →
- * fetchAttestation → mint, each a real tx with an explorer link.
+ * USDC is burned on Arc and minted natively on the destination - never wrapped. We
+ * drive it with Circle's Bridge Kit (CCTPv2 under the hood): approve -> burn ->
+ * fetchAttestation -> mint, each a real tx with an explorer link.
  *
  * Env-gated behind ARC_SIGNER_KEY like every write path; a clean `prepared` no-op
  * without it. Note: leaving Arc, the amount must exceed the CCTPv2 max fee, so the
@@ -29,16 +29,16 @@ export async function runCctpDemo(
   | { executed: false; reason: string; route: string }
   | { executed: true; amountUsd: number; route: string; state: string; steps: BridgeStep[]; reason?: string }
 > {
-  const route = 'Arc Testnet → Base Sepolia'
+  const route = 'Arc Testnet -> Base Sepolia'
   const key = env.ARC_SIGNER_KEY
   if (!key) {
     return {
       executed: false,
       route,
-      reason: 'No ARC_SIGNER_KEY set. With a funded key this bridges native USDC Arc → Base Sepolia via CCTP burn-and-mint (approve → burn → attestation → mint).',
+      reason: 'No ARC_SIGNER_KEY set. With a funded key this bridges native USDC Arc -> Base Sepolia via CCTP burn-and-mint (approve -> burn -> attestation -> mint).',
     }
   }
-  // Leaving Arc, the amount must clear the CCTPv2 max fee — default to 1.0 USDC.
+  // Leaving Arc, the amount must clear the CCTPv2 max fee - default to 1.0 USDC.
   const amountUsd = Math.max(1, input.amountUsd ?? 1)
 
   try {

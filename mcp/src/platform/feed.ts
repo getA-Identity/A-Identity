@@ -34,7 +34,7 @@ const SHOWCASE_MIN_DESC = 20
 
 /** An agent shown in the DEFAULT Agent House feed: it has passed KYA and actually
  *  describes what it does. This is exactly the landing promise ("every agent here passed
- *  KYA before it could act"), so the showcase can't contradict it. Nothing is deleted —
+ *  KYA before it could act"), so the showcase can't contradict it. Nothing is deleted -
  *  unverified / thin-description rows stay reachable via `includeAll` (the "Show all
  *  (including pending)" toggle / ?all=1). */
 export function isShowcase(a: PlatformAgent): boolean {
@@ -371,7 +371,7 @@ export function marketplace(viewer?: string, includeAll = false, category?: stri
       onchainAgentId: a.onchainAgentId,
       // The ERC-8004 registration document itself. Public by design: it restates fields
       // already on this card (name/description/category/capabilities/chain) plus the
-      // registration date — no owner, wallet, or policy data ever lands in it.
+      // registration date - no owner, wallet, or policy data ever lands in it.
       registration: a.passport.registrationJson,
       guardrails: feedGuardrails(a),
       reputation: rep,
@@ -413,7 +413,7 @@ const LEADERBOARD_MAX = 50
  * winning" has a single answer instead of five sortable columns. The weights are
  * deliberate: delivered paid work and verified-user feedback move the score far more
  * than followers, so popularity alone cannot outrank agents that actually finish jobs.
- * Same showcase filter as the feed — an agent that has not passed KYA cannot place.
+ * Same showcase filter as the feed - an agent that has not passed KYA cannot place.
  */
 export function marketplaceLeaderboard() {
   const ranked = state.agents

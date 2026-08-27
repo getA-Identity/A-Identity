@@ -59,7 +59,7 @@ test('a freshly issued token verifies (carries a future exp)', () => {
 })
 
 test('a validly-signed but EXPIRED token is rejected', async () => {
-  // Forge a correctly-signed token whose exp is in the past — must not verify.
+  // Forge a correctly-signed token whose exp is in the past - must not verify.
   const { createHmac } = await import('node:crypto')
   const payload = Buffer.from(
     JSON.stringify({ sub: '0xabc', method: 'wallet', iat: 0, exp: Date.now() - 1000 }),

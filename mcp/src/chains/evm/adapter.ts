@@ -1,7 +1,7 @@
 /**
  * Generic EVM chain adapter. `createEvmAdapter(descriptor)` returns the full set of
- * on-chain operations — identity register, ERC-8183 escrow, USDC settlement, the
- * AgentSpendPolicy vault, and ERC-8004 KYA attestation — parameterized entirely by the
+ * on-chain operations - identity register, ERC-8183 escrow, USDC settlement, the
+ * AgentSpendPolicy vault, and ERC-8004 KYA attestation - parameterized entirely by the
  * chain descriptor. A new EVM chain gets ALL of this by adding one descriptor to the
  * registry; there is no per-chain logic to copy.
  *
@@ -74,7 +74,7 @@ export function createEvmAdapter(chain: ChainDescriptor) {
       const client = await publicClient(process.env)
       // This registry is not enumerable (totalSupply reverts) and token ids are
       // non-sequential, so we don't report a registered-agents count from the
-      // contract — better to omit it than to surface a silently-null field.
+      // contract - better to omit it than to surface a silently-null field.
       if (identityRegistry) {
         const [name, symbol] = await Promise.allSettled([
           client.readContract({ address: identityRegistry, abi: IDENTITY_ABI, functionName: 'name' }),
@@ -260,9 +260,9 @@ export function createEvmAdapter(chain: ChainDescriptor) {
     return refunded !== undefined ? fromUsdcUnits(chain, refunded) : undefined
   }
 
-  /** Evaluator rejects a Funded/Submitted deliverable → the escrowed USDC is refunded to
+  /** Evaluator rejects a Funded/Submitted deliverable -> the escrowed USDC is refunded to
    *  the client in the SAME tx (buyer protection). Prepared without a key. Simulates first
-   *  (like the vault) so an unauthorized / wrong-status dispute reverts OFF-chain — a clean
+   *  (like the vault) so an unauthorized / wrong-status dispute reverts OFF-chain - a clean
    *  reason, no gas burned from the shared signer. */
   async function rejectJob(jobId: bigint, reason: string, env: NodeJS.ProcessEnv = process.env): Promise<RefundResult> {
     const { keccak256, toHex } = await import('viem')
@@ -288,7 +288,7 @@ export function createEvmAdapter(chain: ChainDescriptor) {
     }
   }
 
-  /** After the deadline, anyone reclaims the escrow for the client (Funded/Submitted →
+  /** After the deadline, anyone reclaims the escrow for the client (Funded/Submitted ->
    *  Expired). Prepared without a key. Simulates first so a not-yet-expired / wrong-status
    *  claim reverts OFF-chain (no gas burned). */
   async function claimJobRefund(jobId: bigint, env: NodeJS.ProcessEnv = process.env): Promise<RefundResult> {
@@ -447,10 +447,10 @@ export function createEvmAdapter(chain: ChainDescriptor) {
    * Settle USDC through the Memo precompile so the payment carries an on-chain,
    * indexable audit trail of WHY it happened (agent, instruction, service, decision).
    * `Memo.memo(usdc, transferCalldata, memoId, memoBytes)` routes the inner transfer via
-   * `CallFrom`, preserving our EOA signer as `msg.sender` — the USDC still moves from the
+   * `CallFrom`, preserving our EOA signer as `msg.sender` - the USDC still moves from the
    * signer exactly like `payUsdc`, plus a `Memo` event. Additive + credential-gated:
-   *   - no `contracts.memo` on this chain → clean fallback to a bare `payUsdc`.
-   *   - no signer → the exact prepared Memo call (same honesty contract as every write).
+   *   - no `contracts.memo` on this chain -> clean fallback to a bare `payUsdc`.
+   *   - no signer -> the exact prepared Memo call (same honesty contract as every write).
    * Result keeps the `{ executed, txHash, explorerUrl }` shape (+ memoId/memo) so
    * `executeInstruction` stays uniform.
    */
@@ -476,7 +476,7 @@ export function createEvmAdapter(chain: ChainDescriptor) {
       }
     }
     // NOTE: we deliberately do NOT simulateContract here. The Memo precompile rejects
-    // STATICCALL (eth_call) — "static execution is rejected" — so a normal simulate would
+    // STATICCALL (eth_call) - "static execution is rejected" - so a normal simulate would
     // falsely revert. writeContract's own gas estimation still catches an insufficient
     // balance / bad call BEFORE broadcast (caught below); we then verify receipt.status so a
     // mined-but-reverted tx is never reported as settled (honesty: no false executed_onchain).
@@ -555,7 +555,7 @@ export function createEvmAdapter(chain: ChainDescriptor) {
    * each subcall routed through `CallFrom` so our EOA stays `msg.sender` (one USDC
    * `Transfer` per payment, `from` = the signer). `allowFailure=false`, so a batch is
    * all-or-nothing. Additive + credential-gated: no `contracts.multicall3From` on this
-   * chain → falls back to a sequential loop of bare transfers; no signer → prepared. Hardened
+   * chain -> falls back to a sequential loop of bare transfers; no signer -> prepared. Hardened
    * like payUsdcWithMemo (try/catch + receipt.status, never a false "settled").
    */
   async function payUsdcBatch(
@@ -583,7 +583,7 @@ export function createEvmAdapter(chain: ChainDescriptor) {
     if (clean.length === 0) return { executed: false, reverted: true, reason: 'no valid payments in the batch' }
     const client = await publicClient(env)
     try {
-      // No Multicall3From on this chain → fall back to a sequential loop of transfers.
+      // No Multicall3From on this chain -> fall back to a sequential loop of transfers.
       if (!multicall3From) {
         let last: Hex = '0x' as Hex
         for (const p of clean) {

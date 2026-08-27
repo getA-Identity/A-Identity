@@ -4,7 +4,7 @@ import { createEvmAdapter } from './adapter.js'
 import { resolveRpcUrls, usdcUnits, fromUsdcUnits, txUrl, addressUrl } from './client.js'
 import { ARC_CHAIN, getChainById } from '../registry.js'
 
-// An env with no signer key — forces the prepared/no-key path deterministically,
+// An env with no signer key - forces the prepared/no-key path deterministically,
 // independent of whatever is in the real process env.
 const NO_SIGNER: NodeJS.ProcessEnv = {}
 

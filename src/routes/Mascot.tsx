@@ -13,7 +13,7 @@ import OwlMark, { type OwlVerdict } from '../components/OwlMark'
  *
  * The page is unlinked and noindex. It is a working surface, not a marketing page.
  *
- * Pipeline note for whoever picks this up: the drafts went text → image → 3D rather than
+ * Pipeline note for whoever picks this up: the drafts went text -> image -> 3D rather than
  * straight to text-to-3d, because direct text-to-3d gives almost no colour control and the
  * first eight came back grey. The 2D reference is kept next to each model for that reason,
  * it is the actual source of truth for the palette.

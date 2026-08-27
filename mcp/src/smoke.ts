@@ -5,7 +5,7 @@
  * This server is the READ-ONLY agent-facing surface: it resolves identity with a live
  * on-chain read (Arc ERC-8004) and describes capabilities/chains. Reputation and the
  * agent roster live on the PLATFORM (the HTTP server + its store), so `get_reputation`
- * and `list_agents` here return honest pointers to the platform, not fabricated data —
+ * and `list_agents` here return honest pointers to the platform, not fabricated data -
  * the assertions below reflect that (no mock scores, no mock agents).
  *
  * Run with: npm run build && npm run smoke
@@ -65,8 +65,8 @@ async function main() {
   if (!textOf(caps).includes('ERC-8004')) throw new Error('list_capabilities missing identity standard')
 
   // 3) get_reputation is a read-only pointer here: reputation is computed on the platform
-  //    (REST /api/agents/reputation), so the tool returns a well-formed response — a real
-  //    score when it has one, otherwise an honest note — never a fabricated number.
+  //    (REST /api/agents/reputation), so the tool returns a well-formed response - a real
+  //    score when it has one, otherwise an honest note - never a fabricated number.
   const rep = (await client.callTool({ name: 'get_reputation', arguments: { agentId: SHOWCASE } })) as TextResult
   console.log('\nget_reputation(showcase):')
   console.log(textOf(rep))

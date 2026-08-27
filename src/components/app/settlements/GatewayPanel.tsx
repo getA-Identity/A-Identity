@@ -116,7 +116,7 @@ export default function GatewayPanel() {
             </div>
           ) : (
             <DataRow
-              label={`Forwarded ${result.amountUsd} USDC → ${result.transfer.destination}`}
+              label={`Forwarded ${result.amountUsd} USDC -> ${result.transfer.destination}`}
               value={result.transfer.forwardingFee ? `fee ~$${result.transfer.forwardingFee}` : undefined}
               badge={<span className="font-mono text-[10px] text-foreground/40">{result.transfer.transferId?.slice(0, 8)}...</span>}
             />
@@ -131,7 +131,7 @@ export default function GatewayPanel() {
               <span className="text-foreground/75">
                 {minted ? (
                   <>
-                    Minted on Base Sepolia: balance {result.baseMint.beforeUsd} → <b>{result.baseMint.afterUsd}</b> USDC,
+                    Minted on Base Sepolia: balance {result.baseMint.beforeUsd} then <b>{result.baseMint.afterUsd}</b> USDC,
                     gasless
                   </>
                 ) : (

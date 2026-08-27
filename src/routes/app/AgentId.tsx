@@ -176,7 +176,7 @@ export default function AgentId() {
     >
       <AgentSelect agents={agents} className="mt-6" />
 
-      {/* Sample notice: no real agent yet → the card below is illustrative, not yours. */}
+      {/* Sample notice: no real agent yet -> the card below is illustrative, not yours. */}
       {isSample && (
         <>
           {/* A ceramic passport booklet with an unstamped seal: exactly an account with
@@ -412,7 +412,7 @@ export default function AgentId() {
           <ul className="flex flex-col gap-1.5">
             {(() => {
               // `done` reflects the agent's REAL reputation score, not a hardcoded flag:
-              // a milestone is achieved only once score >= its threshold (-/unknown → not done).
+              // a milestone is achieved only once score >= its threshold (-/unknown -> not done).
               const has = score != null
               const s = score ?? 0
               const base = REPUTATION_LEVELS.filter((l) => l.threshold > 0).map((l) => ({

@@ -4,7 +4,7 @@
  * When DATABASE_URL is set (production / ephemeral hosts like Render free tier)
  * the whole state is persisted to Postgres as a single JSONB blob. Otherwise it
  * falls back to a local JSON file (dev). Writes are debounced; there is no mock
- * data — an empty store simply starts empty.
+ * data - an empty store simply starts empty.
  */
 import { readFileSync, writeFileSync, mkdirSync } from 'node:fs'
 import { dirname, join } from 'node:path'

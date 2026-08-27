@@ -121,7 +121,7 @@ export default function TrustOraclePanel() {
           <div className="flex flex-wrap items-center gap-2 rounded-lg border border-foreground/8 bg-background/40 px-3 py-2">
             <Coins size={13} className="shrink-0 text-usdc" />
             <span className="text-foreground/75">
-              Paid <b>${result.payment.amountUsd}</b> over x402 (gasless nanopayment) → {short(result.payTo)}
+              Paid <b>${result.payment.amountUsd}</b> over x402 (gasless nanopayment) to {short(result.payTo)}
             </span>
             <span className="ml-auto rounded bg-usdc/10 px-1.5 py-0.5 text-[10px] font-semibold text-usdc">Arc · Gateway-batched</span>
           </div>

@@ -123,7 +123,7 @@ export async function handleGuardrailRoutes(ctx: RouteCtx): Promise<boolean> {
   // The same registration, by reference: the caller hands us a URL to their manifest
   // instead of the manifest inline (how an agent framework points at its own hosted
   // card). We fetch it server-side, which makes the URL an SSRF surface: only http(s)
-  // to a public-looking host (isSafePublicHttpUrl — best-effort literal-host filtering,
+  // to a public-looking host (isSafePublicHttpUrl - best-effort literal-host filtering,
   // acceptable for a demo backend), redirects refused so a public URL can't 30x us into
   // an internal target, and the response bounded in both time and size.
   if (req.method === 'POST' && url.pathname === '/api/agents/register-url') {

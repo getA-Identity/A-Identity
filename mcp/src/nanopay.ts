@@ -1,5 +1,5 @@
 /**
- * Circle Nanopayments — gas-free, sub-cent USDC via Gateway batched settlement.
+ * Circle Nanopayments - gas-free, sub-cent USDC via Gateway batched settlement.
  *
  * This is the SECOND x402 rail alongside our on-chain self-verifying one (`x402.ts`).
  * Where that settles each call as a real USDC Transfer on Arc, Nanopayments is the
@@ -21,17 +21,17 @@ import { gatewayBalance, gatewayDeposit } from './gateway.js'
 import { x402PayTo } from './x402.js'
 import { ARC_CHAIN } from './chains/index.js'
 
-/** Circle's public testnet Gateway (permissionless — no API key). */
+/** Circle's public testnet Gateway (permissionless - no API key). */
 const GATEWAY_TESTNET = 'https://gateway-api-testnet.circle.com'
 /** Arc testnet as an x402 network id (CAIP-2), from the chain registry. */
 const ARC_NETWORK = ARC_CHAIN.caip2
 /** Price per call: 0.001 USDC (6-decimal units). A true sub-cent nanopayment. */
 const PRICE_UNITS = '1000'
 
-/** The resource a payment buys — required by Gateway's settle endpoint. */
+/** The resource a payment buys - required by Gateway's settle endpoint. */
 const RESOURCE = {
   url: 'https://a-identity.xyz/api/x402/nano/data',
-  description: 'A-Identity — live Arc chain data (nanopayment)',
+  description: 'A-Identity - live Arc chain data (nanopayment)',
   mimeType: 'application/json',
 }
 
@@ -177,7 +177,7 @@ export async function ensureGatewayBalance(
 
 /**
  * Sign + settle ONE gasless nanopayment to `payTo` (assumes a Gateway balance already
- * exists — call ensureGatewayBalance first). The reusable unit an autonomous agent
+ * exists - call ensureGatewayBalance first). The reusable unit an autonomous agent
  * loops over: an EIP-3009 authorization signed off-chain, settled through Circle Gateway.
  */
 export async function nanopayOnce(
@@ -217,7 +217,7 @@ export async function nanopayOnce(
 
 /**
  * One-click Nanopayment demo, fully server-side (the server signer plays the buyer):
- *  1) ensure a Gateway balance on Arc (top-up deposit if low — reuses gateway.ts),
+ *  1) ensure a Gateway balance on Arc (top-up deposit if low - reuses gateway.ts),
  *  2) sign an EIP-3009 authorization OFFCHAIN (zero gas) via BatchEvmScheme,
  *  3) settle it through Circle Gateway (verified + credited, batched on-chain),
  *  4) return the trail (authorization + settlement + before/after Gateway balance).

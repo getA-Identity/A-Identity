@@ -1,5 +1,5 @@
 /**
- * Multichain module — public surface. Import chains and the EVM adapter from here.
+ * Multichain module - public surface. Import chains and the EVM adapter from here.
  *
  *   import { getChain, requireChain, ARC_CHAIN, createEvmAdapter } from './chains/index.js'
  *

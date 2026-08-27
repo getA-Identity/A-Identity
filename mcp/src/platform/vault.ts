@@ -33,7 +33,7 @@ export async function provisionAgentVault(
 
   // Human owner of the vault = a REAL wallet distinct from the server signer/operator,
   // so freeze/override/withdraw are owner-gated on-chain. Prefer an explicit address,
-  // then the caller when they signed in with a wallet (SIWE → subject is a 0x addr),
+  // then the caller when they signed in with a wallet (SIWE -> subject is a 0x addr),
   // then the agent's own (browser-held) wallet. Falls back to the signer only if none.
   const isAddr = (s?: string): s is string => !!s && /^0x[0-9a-fA-F]{40}$/.test(s)
   const ownerAddress = isAddr(opts.ownerAddress)
@@ -95,7 +95,7 @@ export async function provisionAgentVault(
   pushActivity(
     agent,
     `On-chain policy vault deployed at ${short(dep.vault)} (tx ${short(dep.txHash)})` +
-      (separated ? ` — human owner ${short(dep.owner)}, agent operator ${short(dep.operator)}` : ''),
+      (separated ? ` - human owner ${short(dep.owner)}, agent operator ${short(dep.operator)}` : ''),
   )
 
   let funding: unknown = null
@@ -167,7 +167,7 @@ export async function getAgentVault(agentId: string) {
 /**
  * Grant / extend / revoke the agent's on-chain SESSION KEY: set the UNIX time after which
  * the agent's `pay` reverts (SessionKeyExpired). Owner-only on-chain; the server can sign it
- * only when it is the vault owner (owner==operator) — otherwise it's ownerGated (the human
+ * only when it is the vault owner (owner==operator) - otherwise it's ownerGated (the human
  * signs from their own wallet), mirroring syncVaultPolicy. Revoke sets the expiry to now.
  */
 export async function grantAgentSessionKey(
@@ -217,7 +217,7 @@ const micro = (n: number) => Math.round(n * 1e6)
 
 /**
  * Push an agent's off-chain permissions onto its on-chain AgentSpendPolicy vault, so a
- * limit changed in the UI actually re-enforces on Arc — not only in the server pre-check.
+ * limit changed in the UI actually re-enforces on Arc - not only in the server pre-check.
  * setPolicy / setFrozen / setAllowed are owner-only; the server signer can sign them ONLY
  * when it is the vault owner (owner==operator). With the intended owner≠operator separation
  * the human owner must sign the change from their own wallet, so we say that plainly (and
@@ -319,7 +319,7 @@ export async function syncVaultPolicy(agent: PlatformAgent): Promise<VaultSyncRe
 
 /**
  * Provision a Circle Agent Wallet (Developer-Controlled EOA on ARC-TESTNET) for an
- * agent — the second, hosted enforcement layer alongside the on-chain vault. Once set,
+ * agent - the second, hosted enforcement layer alongside the on-chain vault. Once set,
  * this agent's address payments can settle THROUGH Circle, whose hosted policy engine
  * screens each transfer at the wallet layer (sanctions / allow-block / freeze). Owner-
  * only; credential-gated behind CIRCLE_API_KEY + CIRCLE_ENTITY_SECRET (no-op without).

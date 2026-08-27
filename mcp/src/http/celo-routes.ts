@@ -1,7 +1,7 @@
 /**
  * Celo route group: the facilitator-settled x402 rail + its public proof surface.
  * Same convention as every group here: handleCeloRoutes(ctx) returns true when the
- * request was handled. Thin adapters only — the decisions (fail-closed gate, challenge,
+ * request was handled. Thin adapters only - the decisions (fail-closed gate, challenge,
  * verify/settle/serve, proof aggregation) live in ../celo-x402.ts where they are
  * unit-tested without a network.
  *
@@ -29,19 +29,19 @@ export async function handleCeloRoutes(ctx: RouteCtx): Promise<boolean> {
   const { req, res, url } = ctx
   if (!url.pathname.startsWith('/api/celo/')) return false
 
-  // ── GET /api/celo/status — rail config + registry facts + resolver readiness ──
+  // ── GET /api/celo/status - rail config + registry facts + resolver readiness ──
   if (req.method === 'GET' && url.pathname === '/api/celo/status') {
     sendJson(res, 200, celoStatusReport())
     return true
   }
 
-  // ── GET /api/celo/proof — the durable settlement log, honest zeros included ──
+  // ── GET /api/celo/proof - the durable settlement log, honest zeros included ──
   if (req.method === 'GET' && url.pathname === '/api/celo/proof') {
     sendJson(res, 200, await celoProof())
     return true
   }
 
-  // ── GET+POST /api/celo/tools/:name — the four paid trust tools ──
+  // ── GET+POST /api/celo/tools/:name - the four paid trust tools ──
   const toolMatch = url.pathname.match(/^\/api\/celo\/tools\/([a-z_]+)$/)
   if (toolMatch && (req.method === 'GET' || req.method === 'POST')) {
     const status = celoX402Status()

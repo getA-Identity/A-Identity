@@ -26,7 +26,7 @@ export async function handleAuthRoutes(ctx: RouteCtx): Promise<boolean> {
     if (!body?.email) { sendJson(res, 400, { error: 'email required' }); return true }
     const email = String(body.email).trim().toLowerCase()
     // Unverified, browse-only session: the email is NOT proven. This token is a
-    // 'guest' — it cannot own agents or mutate. To act, sign in with a wallet or a
+    // 'guest' - it cannot own agents or mutate. To act, sign in with a wallet or a
     // magic link (both verified). This is what closes the email-impersonation hole.
     const token = issueToken(email, 'guest')
     res.setHeader('Set-Cookie', sessionCookie(token))
@@ -37,7 +37,7 @@ export async function handleAuthRoutes(ctx: RouteCtx): Promise<boolean> {
     return true
   }
 
-  // ── auth: wallet nonce (public) — start Sign-In with Ethereum ─────────────────
+  // ── auth: wallet nonce (public) - start Sign-In with Ethereum ─────────────────
   if (req.method === 'POST' && url.pathname === '/api/auth/nonce') {
     const body = (await readBody(req).catch(() => null)) as { address?: string } | null
     if (!body?.address || !/^0x[0-9a-fA-F]{40}$/.test(body.address)) {
@@ -51,7 +51,7 @@ export async function handleAuthRoutes(ctx: RouteCtx): Promise<boolean> {
     return true
   }
 
-  // ── auth: wallet verify (public) — finish SIWE, issue a session token ─────────
+  // ── auth: wallet verify (public) - finish SIWE, issue a session token ─────────
   if (req.method === 'POST' && url.pathname === '/api/auth/verify') {
     const body = (await readBody(req).catch(() => null)) as
       | { address?: string; message?: string; signature?: string }
@@ -78,7 +78,7 @@ export async function handleAuthRoutes(ctx: RouteCtx): Promise<boolean> {
       sendJson(res, 401, { error: 'signature verification failed' }); return true
     }
     nonces.delete(addr)
-    // Wallet ownership proven by signature → a verified session.
+    // Wallet ownership proven by signature -> a verified session.
     const token = issueToken(addr, 'wallet')
     res.setHeader('Set-Cookie', sessionCookie(token))
     sendJson(res, 200, {
@@ -104,7 +104,7 @@ export async function handleAuthRoutes(ctx: RouteCtx): Promise<boolean> {
     const body = (await readBody(req).catch(() => null)) as { token?: string } | null
     const email = verifyMagicToken(body?.token)
     if (!email) { sendJson(res, 401, { error: 'This sign-in link is invalid or expired.' }); return true }
-    // Email ownership proven by the one-time link → a verified session.
+    // Email ownership proven by the one-time link -> a verified session.
     const token = issueToken(email, 'email')
     res.setHeader('Set-Cookie', sessionCookie(token))
     sendJson(res, 200, { token, user: { email, name: email.split('@')[0] } })

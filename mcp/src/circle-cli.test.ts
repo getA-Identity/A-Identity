@@ -11,7 +11,7 @@ const PAYEE = '0x000000000000000000000000000000000000bEEF'
  * the one failure this product cannot have.
  */
 
-test('the owner’s numbers survive compilation exactly', () => {
+test('the owner\'s numbers survive compilation exactly', () => {
   const plan = compilePolicyPlan({
     address: ADDR,
     chain: 'ARC-TESTNET',

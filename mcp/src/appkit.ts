@@ -1,10 +1,10 @@
 /**
- * Circle App Kit — the Send / Swap / Unified Balance surface on Arc.
+ * Circle App Kit - the Send / Swap / Unified Balance surface on Arc.
  *
  * We already drove Bridge Kit directly for CCTP (`cctp.ts`). App Kit is the umbrella
  * over the same family, and it unlocks the one capability that makes the Arc argument
  * concrete rather than rhetorical: **Arc Testnet is the only testnet where Swap works**,
- * and it is the only one that publishes an EURC address, so a USDC→EURC swap is
+ * and it is the only one that publishes an EURC address, so a USDC->EURC swap is
  * something this product can demonstrate on Arc and nowhere else in testing.
  *
  * Three entry points, in rising order of privilege:
@@ -92,7 +92,7 @@ export async function appKitCapabilities(): Promise<{
   }
 }
 
-/** A real USDC→EURC rate from Circle's service. No key, no write, safe to call cold. */
+/** A real USDC->EURC rate from Circle's service. No key, no write, safe to call cold. */
 export async function quoteArcSwap(
   input: { amountUsd?: number } = {},
 ): Promise<{ ok: boolean; amountUsd: number; tokenIn: string; tokenOut: string; rate?: unknown; reason?: string }> {
@@ -137,7 +137,7 @@ export async function runArcSwapDemo(
   state?: string
   reason?: string
 }> {
-  const route = 'USDC → EURC on Arc Testnet'
+  const route = 'USDC -> EURC on Arc Testnet'
   const amountUsd = Math.max(0.01, input.amountUsd ?? 1)
   const key = env.ARC_SIGNER_KEY
   if (!key) {

@@ -4,9 +4,9 @@
  * This is a SESSION layer, not identity verification (that's KYA). Login issues an
  * HMAC-signed token carrying the caller's subject (email or wallet address) AND the
  * method used to establish it. Ownership of an agent is bound to a VERIFIED identity:
- *  - 'wallet' — proven by a Sign-In-with-Ethereum signature
- *  - 'email'  — proven by clicking a one-time magic link (Resend)
- *  - 'guest'  — an unverified, browse-only session (plain /api/auth/login)
+ *  - 'wallet' - proven by a Sign-In-with-Ethereum signature
+ *  - 'email'  - proven by clicking a one-time magic link (Resend)
+ *  - 'guest'  - an unverified, browse-only session (plain /api/auth/login)
  * Mutating endpoints require a verified caller; guest sessions are read-only. This is
  * what stops someone from minting a token for an arbitrary email and acting as its
  * owner. The signing secret comes from AUTH_SECRET; set a strong one in production.
@@ -22,11 +22,11 @@ function isProdLike(env: NodeJS.ProcessEnv = process.env): boolean {
 
 /**
  * Resolve the token-signing secret ONCE, safely:
- *  - AUTH_SECRET set        → use it (the correct path; stable across restarts).
- *  - unset, prod-like host  → generate a strong RANDOM per-process secret and warn
+ *  - AUTH_SECRET set        -> use it (the correct path; stable across restarts).
+ *  - unset, prod-like host  -> generate a strong RANDOM per-process secret and warn
  *    loudly. This closes the forgeable-default-secret hole WITHOUT taking the deploy
  *    down; the only cost is that existing sessions don't survive a restart.
- *  - unset, local dev       → the fixed dev secret, for convenience.
+ *  - unset, local dev       -> the fixed dev secret, for convenience.
  * Shared by the session-token layer (this file) and the magic-link layer (magic.ts).
  */
 function resolveSecret(env: NodeJS.ProcessEnv = process.env): string {
@@ -34,7 +34,7 @@ function resolveSecret(env: NodeJS.ProcessEnv = process.env): string {
   if (isProdLike(env)) {
     console.error(
       '[auth] WARNING: AUTH_SECRET is unset (or too short) on a production-like host. ' +
-        'Using a random per-process secret so tokens cannot be forged — but sessions will ' +
+        'Using a random per-process secret so tokens cannot be forged - but sessions will ' +
         'NOT survive a restart. Set a strong AUTH_SECRET (>=16 chars) in the host env.',
     )
     return randomBytes(32).toString('hex')
@@ -58,7 +58,7 @@ function sign(data: string): string {
 }
 
 /** Session lifetime. A bearer token is the write-side credential, so it must not be valid
- *  forever if it leaks — it carries an `exp` and expires. Override with AUTH_TOKEN_TTL_MS. */
+ *  forever if it leaks - it carries an `exp` and expires. Override with AUTH_TOKEN_TTL_MS. */
 const TOKEN_TTL_MS = Math.max(60_000, Number(process.env.AUTH_TOKEN_TTL_MS ?? 7 * 24 * 60 * 60 * 1000))
 
 /** Issue an opaque session token for a subject established via `method`. */
@@ -91,7 +91,7 @@ export function verifyToken(token: string | undefined | null): Caller | null {
     // Enforce expiry when present (all tokens issued now carry one). A tampered exp can't
     // help an attacker: the HMAC over the payload was already verified above.
     if (typeof obj.exp === 'number' && Date.now() > obj.exp) return null
-    // Legacy tokens (no method) fail closed → treated as unverified guests.
+    // Legacy tokens (no method) fail closed -> treated as unverified guests.
     const method: AuthMethod = obj.method === 'wallet' || obj.method === 'email' ? obj.method : 'guest'
     return { subject, method }
   } catch {

@@ -1,5 +1,5 @@
 /**
- * CAIP helpers — Chain Agnostic Improvement Proposals. One data model across EVM,
+ * CAIP helpers - Chain Agnostic Improvement Proposals. One data model across EVM,
  * and Stellar so a new chain is a new row, not a new special case.
  *
  *   CAIP-2  chain:   namespace:reference          e.g. eip155:5042002, stellar:testnet

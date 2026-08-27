@@ -52,7 +52,7 @@ async function tryOnchainFund(task: Task, agent?: PlatformAgent): Promise<void> 
       if (agent) pushActivity(agent, `Escrow locked on-chain at hire (ERC-8183 job ${esc.jobId}, tx ${short(task.escrowTx ?? '')})`)
     }
   } catch {
-    /* off-chain funded fallback — never blocks the hire */
+    /* off-chain funded fallback - never blocks the hire */
   }
 }
 
@@ -231,7 +231,7 @@ export async function releaseTask(
   if (task.jobId) {
     const done = await completeEscrowOnchain(BigInt(task.jobId))
     if (!done.executed) {
-      return { error: `On-chain escrow release failed (${done.reason}); the funds remain in escrow — retry, or dispute to refund.` }
+      return { error: `On-chain escrow release failed (${done.reason}); the funds remain in escrow - retry, or dispute to refund.` }
     }
     const c = done.steps.find((s) => s.step === 'complete') ?? done.steps[done.steps.length - 1]
     task.releaseTx = c?.txHash

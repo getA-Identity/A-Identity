@@ -425,8 +425,8 @@ export function approveInstruction(ixId: string, caller?: string): Instruction |
 
 /**
  * Resolve an instruction payee to a real Arc address to settle to, or null.
- *  - a 0x… address → itself
- *  - `agent://<idOrName>` (or a bare agent id/name) → THAT agent's wallet address,
+ *  - a 0x… address -> itself
+ *  - `agent://<idOrName>` (or a bare agent id/name) -> THAT agent's wallet address,
  *    so agent-to-agent payments settle on-chain instead of falling back to simulated.
  */
 function resolvePayeeAddress(payee: string): string | null {
@@ -525,7 +525,7 @@ export function __setSettlementForTests(over: Partial<SettlementBackend>): () =>
 
 /**
  * Execute an approved or auto-approved instruction. When the agent has an
- * on-chain policy vault, address payments settle THROUGH it — the vault enforces
+ * on-chain policy vault, address payments settle THROUGH it - the vault enforces
  * the daily cap / auto-approve ceiling / freeze on Arc, so a disallowed payment
  * reverts on-chain (the source of truth). The server engine stays the pre-check;
  * if the vault path hits an infra error (not a policy revert) we fall back to
@@ -555,7 +555,7 @@ export async function executeInstruction(ixId: string, caller?: string): Promise
   const total = ix.amountUsd * ix.count
   const fmt = (n: number) => (n < 0.01 ? n.toFixed(4) : n.toFixed(2))
   // Where this actually settles on-chain: a 0x… payee, or an agent:// payee
-  // resolved to that agent's wallet. null → nothing to send to → simulated.
+  // resolved to that agent's wallet. null -> nothing to send to -> simulated.
   const settleTo = resolvePayeeAddress(ix.payee)
   // The decision that AUTHORIZED this settlement: 'auto_approved' (within policy) or
   // 'approved' (a human said yes). Captured before the status flips to executed_*, so
@@ -569,7 +569,7 @@ export async function executeInstruction(ixId: string, caller?: string): Promise
   // A human override uses the owner-only ownerPay(), which the SERVER can only sign
   // when the vault owner is the server signer (== operator). When owner is the human's
   // own wallet (the intended separation), the server can't sign as owner, so a human
-  // override can't settle through the vault here — it falls through to direct settlement
+  // override can't settle through the vault here - it falls through to direct settlement
   // below (an owner-signed ownerPay would come from the human's wallet client-side).
   const serverCanOwnerPay =
     !agent?.vaultOwner || !agent?.vaultOperator || agent.vaultOwner.toLowerCase() === agent.vaultOperator.toLowerCase()
@@ -599,7 +599,7 @@ export async function executeInstruction(ixId: string, caller?: string): Promise
       save(state)
       return ix
     }
-    // Not a policy revert (no key / infra error) — fall through to direct settlement.
+    // Not a policy revert (no key / infra error) - fall through to direct settlement.
   }
 
   // Circle Agent Wallet: the agent's USDC lives in a Circle-managed wallet whose
@@ -631,12 +631,12 @@ export async function executeInstruction(ixId: string, caller?: string): Promise
       save(state)
       return ix
     }
-    // Not a policy rejection (no creds / infra) — fall through to direct settlement.
+    // Not a policy rejection (no creds / infra) - fall through to direct settlement.
   }
 
   // Direct settlement when we have a resolved Arc address and a signer is configured.
   // The server signer is an EOA, so this path (unlike the vault, a smart contract) can
-  // route the transfer through Arc's `Memo` precompile — attaching an on-chain,
+  // route the transfer through Arc's `Memo` precompile - attaching an on-chain,
   // indexable audit trail of WHY the agent paid. On a chain without a Memo precompile,
   // payUsdcWithMemoOnchain degrades cleanly to a bare transfer.
   if (settleTo) {
@@ -712,7 +712,7 @@ export async function executeInstruction(ixId: string, caller?: string): Promise
       save(state)
       return ix
     }
-    // The settlement was BROADCAST but reverted on-chain (e.g. insufficient balance) — never
+    // The settlement was BROADCAST but reverted on-chain (e.g. insufficient balance) - never
     // mark it executed. Kick it back to the human, exactly like an on-chain policy rejection.
     if ('reverted' in res && res.reverted) {
       ix.status = 'pending_approval'

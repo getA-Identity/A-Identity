@@ -39,7 +39,7 @@ const TOOLS = [
   {
     key: 'claude-ai',
     label: 'Claude.ai',
-    comment: '# Settings → Connectors → Add custom connector, paste:',
+    comment: '# Settings -> Connectors -> Add custom connector, paste:',
     cmd: 'https://a-identity.xyz/mcp',
   },
   {

@@ -1,5 +1,5 @@
 /**
- * Circle Paymaster — who pays the agent's gas, answered honestly per chain.
+ * Circle Paymaster - who pays the agent's gas, answered honestly per chain.
  *
  * Circle Paymaster is an ERC-4337 token paymaster: a smart account signs an EIP-2612
  * permit over its own USDC, the paymaster fronts the gas, and the user is charged in

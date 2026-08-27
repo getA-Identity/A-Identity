@@ -56,12 +56,12 @@ test('getChain returns undefined for unknown chain', () => {
 test('Arc, X Layer, Celo (live), Base, Celo Sepolia and RH Chain Testnet (beta) are the wired chains; Arc carries all its known contracts', () => {
   // Product decision 2026-08-08: X Layer identity is live (OKX ERC-8004 reads),
   // Base testnet is active via the Gateway demo, so it is beta.
-  // 2026-08-09 (evening): Celo mainnet flips to LIVE — agent #9759 is minted on the
+  // 2026-08-09 (evening): Celo mainnet flips to LIVE - agent #9759 is minted on the
   // mainnet ERC-8004 registry and the x402 facilitator rail has real settlements
   // recorded in the durable proof log. Celo Sepolia stays beta.
-  // 2026-08-11: rhchain-testnet flips to beta — the canonical ERC-8004 registry set
+  // 2026-08-11: rhchain-testnet flips to beta - the canonical ERC-8004 registry set
   // is live there at the cross-chain addresses (see the Robinhood tests below).
-  // 2026-08-12: rhchain flips to beta — the canonical MAINNET identity + reputation
+  // 2026-08-12: rhchain flips to beta - the canonical MAINNET identity + reputation
   // registries were verified live there (read-side wired; writes wait on a signer).
   // 2026-08-13: rhchain flips from beta to LIVE - money moves there now (four real USDG
   // settlements through our own first-party EIP-3009 facilitator, receipts recorded).
@@ -172,7 +172,7 @@ test('the Robinhood pair carries the canonical registries it was actually verifi
   // Testnet, 2026-08-11: deployed/completed by replaying the canonical
   // Safe-Singleton-Factory calldata (scripts/rh-testnet-deploy-8004.mjs), the SAME
   // addresses as Arc/Celo Sepolia. Mainnet, 2026-08-12: the canonical MAINNET family
-  // (same addresses as X Layer/Celo) was found ALREADY live — nobody deployed it for
+  // (same addresses as X Layer/Celo) was found ALREADY live - nobody deployed it for
   // us. Every pin below was verified with eth_getCode plus a real read on the proxy
   // (name/symbol/getClients), so these are observations, not intentions.
   const t = getChainById('rhchain-testnet')

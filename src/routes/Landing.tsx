@@ -71,7 +71,7 @@ export default function Landing() {
         {/* Dark-mode only: the hero video is a bright/light scene tuned for dark text,
             so in dark mode we lay a vertical scrim over it (heavier at the top and the
             floor, where the centered copy and the console frame sit) to keep the now
-            light heading readable. Hidden in light mode → the original look is untouched. */}
+            light heading readable. Hidden in light mode -> the original look is untouched. */}
         <div
           className="pointer-events-none absolute inset-0 hidden bg-gradient-to-b from-background/85 via-background/40 to-background/80 dark:block"
           aria-hidden="true"

@@ -98,7 +98,7 @@ export const COMMERCE_ABI = [
     { name: 'jobId', type: 'uint256' }, { name: 'reason', type: 'bytes32' }, { name: 'optParams', type: 'bytes' },
   ], outputs: [] },
   // Expiry reclaim: after the deadline passes on a Funded/Submitted job, the escrow is
-  // returned to the client (callable by anyone — the provider never delivered).
+  // returned to the client (callable by anyone - the provider never delivered).
   { type: 'function', name: 'claimRefund', stateMutability: 'nonpayable', inputs: [
     { name: 'jobId', type: 'uint256' },
   ], outputs: [] },
@@ -120,7 +120,7 @@ export const COMMERCE_ABI = [
   { type: 'event', name: 'Refunded', inputs: [
     { name: 'jobId', type: 'uint256', indexed: true }, { name: 'client', type: 'address', indexed: true }, { name: 'amount', type: 'uint256', indexed: false },
   ] },
-  // Typed errors — so a reverted dispute/claim decodes to a name (WrongStatus,
+  // Typed errors - so a reverted dispute/claim decodes to a name (WrongStatus,
   // Unauthorized, …) instead of a raw 4-byte selector.
   { type: 'error', name: 'InvalidJob', inputs: [] },
   { type: 'error', name: 'Unauthorized', inputs: [] },
@@ -128,7 +128,7 @@ export const COMMERCE_ABI = [
   { type: 'error', name: 'ProviderNotSet', inputs: [] },
 ] as const
 
-/** ERC-8183 job status enum → label. */
+/** ERC-8183 job status enum -> label. */
 export const JOB_STATUS = ['Open', 'Funded', 'Submitted', 'Completed', 'Rejected', 'Expired'] as const
 
 export const VALIDATION_ABI = [

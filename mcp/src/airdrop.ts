@@ -1,15 +1,15 @@
 /**
- * Merkle USDC airdrop / claim on Arc — the backend for contracts/MerkleAirdrop.sol.
+ * Merkle USDC airdrop / claim on Arc - the backend for contracts/MerkleAirdrop.sol.
  *
  * The infrastructure the "Treasury & Airdrop" milestone asks for: build a Merkle tree
  * over a recipient list, deploy the claim contract committing to its root, and let each
  * recipient claim exactly their allocation once with a proof. The shared 2/2 Gnosis Safe
- * treasury (see treasury-safe.ts) is the funder — it deposits USDC into the deployed
+ * treasury (see treasury-safe.ts) is the funder - it deposits USDC into the deployed
  * contract, and can sweep the unclaimed remainder afterwards.
  *
  * Honesty, same as every write path in this repo: reads and tree/proof construction are
  * REAL and need no key; the actual deploy + claim broadcasts are env-gated behind
- * ARC_SIGNER_KEY (no key → the exact prepared call is returned, nothing is sent). The
+ * ARC_SIGNER_KEY (no key -> the exact prepared call is returned, nothing is sent). The
  * tree is keccak256 sorted-pair (OpenZeppelin / Uniswap convention), so the root the
  * backend computes is byte-identical to the one the contract verifies against.
  */
@@ -29,7 +29,7 @@ import { MerkleAirdropAbi, MerkleAirdropBytecode } from './contracts/MerkleAirdr
 
 const USDC_DECIMALS = 6
 
-/** USD → USDC 6-decimal units ($1.00 → 1_000_000). Rejects negative / non-finite amounts. */
+/** USD -> USDC 6-decimal units ($1.00 -> 1_000_000). Rejects negative / non-finite amounts. */
 export const toUsdcUnits = (usd: number): bigint => {
   if (!Number.isFinite(usd) || usd < 0) throw new Error(`Invalid airdrop amount: ${usd}`)
   return BigInt(Math.round(usd * 10 ** USDC_DECIMALS))
@@ -51,7 +51,7 @@ function leafOf(index: number, account: `0x${string}`, amount: bigint): Hex {
   return keccak256(encodePacked(['uint256', 'address', 'uint256'], [BigInt(index), account, amount]))
 }
 
-/** Hash a sorted pair — matches the contract's `computed <= p ? h(computed,p) : h(p,computed)`.
+/** Hash a sorted pair - matches the contract's `computed <= p ? h(computed,p) : h(p,computed)`.
  *  keccak256 output is lowercase 0x+64hex, so a plain string compare == the uint256 compare. */
 function hashPair(a: Hex, b: Hex): Hex {
   return a <= b
@@ -110,7 +110,7 @@ export function buildAirdrop(entries: AirdropEntry[]): BuiltAirdrop {
 
 // ── on-chain (env-gated behind ARC_SIGNER_KEY) ────────────────────────────────────
 
-const NO_KEY = 'No ARC_SIGNER_KEY — prepared only (nothing broadcast). Set the key to deploy/claim.'
+const NO_KEY = 'No ARC_SIGNER_KEY - prepared only (nothing broadcast). Set the key to deploy/claim.'
 
 const arcChain = defineChain({
   id: ARC_CHAIN.evmChainId as number,
@@ -130,7 +130,7 @@ const txUrl = (h: string) => `${ARC_EXPLORER}/tx/${h}`
 
 /**
  * Deploy the airdrop contract committing to the recipient list's Merkle root. `owner` MUST
- * be the shared 2/2 Gnosis Safe treasury — it becomes the on-chain owner (sweep authority),
+ * be the shared 2/2 Gnosis Safe treasury - it becomes the on-chain owner (sweep authority),
  * so the funded pool stays under 2/2 control, NOT under the single hot deployer key.
  * Without a signer key, returns the exact prepared deploy (token, root, owner, args); with a
  * key, broadcasts and returns the deployed address.
@@ -142,7 +142,7 @@ export async function deployAirdrop(
   env: NodeJS.ProcessEnv = process.env,
 ) {
   if (!/^0x[0-9a-fA-F]{40}$/.test(owner)) {
-    throw new Error('deployAirdrop: owner must be an address — pass the 2/2 Safe treasury, not the deployer key')
+    throw new Error('deployAirdrop: owner must be an address - pass the 2/2 Safe treasury, not the deployer key')
   }
   // Sweep is disabled until this time, so recipients get a guaranteed claim window.
   // Default: 30 days out.
@@ -175,7 +175,7 @@ export async function deployAirdrop(
 /**
  * Claim one recipient's allocation. Recomputes the proof from the same recipient list so
  * the caller only needs the index. Anyone may submit (funds always go to `account`), so a
- * relayer can pay gas. Env-gated: no key → prepared claim args only.
+ * relayer can pay gas. Env-gated: no key -> prepared claim args only.
  */
 export async function claimAirdrop(
   airdrop: `0x${string}`,

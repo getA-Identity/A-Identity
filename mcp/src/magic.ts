@@ -3,7 +3,7 @@
  *
  * A stateless, HMAC-signed token (email + expiry) is emailed as a one-time link via
  * Resend; clicking it hits /auth/callback, which posts the token back to verify and
- * receive a real session token. No email provider configured → the whole feature
+ * receive a real session token. No email provider configured -> the whole feature
  * cleanly reports "not configured" and the UI falls back to wallet / guest.
  */
 import { createHmac, timingSafeEqual } from 'node:crypto'

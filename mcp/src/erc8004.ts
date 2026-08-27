@@ -1,5 +1,5 @@
 /**
- * ERC-8004 identity resolution — REAL on-chain reads via viem, no mocks.
+ * ERC-8004 identity resolution - REAL on-chain reads via viem, no mocks.
  *
  * The chains it dials are exactly `identityChains()` from the registry: every EVM
  * descriptor carrying a known `contracts.identityRegistry`. Resolving an agent id or
@@ -133,7 +133,7 @@ export class RpcIdentityProvider implements IdentityProvider {
     }
 
     // Domain lookups aren't resolvable on-chain in ERC-8004 v0.1 (no reverse index),
-    // so we don't fabricate one — resolve by agent id, token id, or owner address.
+    // so we don't fabricate one - resolve by agent id, token id, or owner address.
     return null
   }
 
@@ -164,7 +164,7 @@ export class RpcIdentityProvider implements IdentityProvider {
           args: [tokenId],
         })) as string
       } catch {
-        /* tokenURI unavailable — resolve from on-chain ownership alone */
+        /* tokenURI unavailable - resolve from on-chain ownership alone */
       }
 
       // Fetch registration JSON from tokenURI (display metadata only).
@@ -221,7 +221,7 @@ export class RpcIdentityProvider implements IdentityProvider {
       if (balance === 0n) return null
       // The registry isn't enumerable on Arc (totalSupply reverts), and token ids are large
       // (e.g. #849980), so a 1..N scan can't find them. Instead read the Transfer(to=address)
-      // logs — `to` is indexed, so this is a cheap filter — and return the newest token this
+      // logs - `to` is indexed, so this is a cheap filter - and return the newest token this
       // address still owns (it may have transferred some out since).
       let logs: Array<{ args?: unknown }> = []
       try {
@@ -243,7 +243,7 @@ export class RpcIdentityProvider implements IdentityProvider {
       } catch {
         // Some public RPCs (X Layer caps getLogs at 100 blocks) can't enumerate the
         // owner's tokens. balanceOf > 0 is still a REAL on-chain proof that this address
-        // holds an identity in the registry — return a partial identity rather than
+        // holds an identity in the registry - return a partial identity rather than
         // pretending the agent doesn't exist. Callers surface "resolve by token id for
         // the full record".
         return {
@@ -281,7 +281,7 @@ export class RpcIdentityProvider implements IdentityProvider {
 
 /**
  * SSRF guard for the agent-controlled tokenURI. The URI is set by whoever registered the
- * agent, and we fetch it server-side — so it must not be allowed to point at loopback, a
+ * agent, and we fetch it server-side - so it must not be allowed to point at loopback, a
  * private range, or cloud metadata (169.254.169.254). Best-effort literal-host filtering
  * (no DNS): blocks the obvious internal targets; callers also fetch with redirect:'error'.
  */

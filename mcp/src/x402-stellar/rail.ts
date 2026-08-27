@@ -60,7 +60,7 @@ import type { StellarLimits, StellarRequirements, StellarSettleDeps } from './se
 import { redeemStellarPayment, schemeOf, settleStellarPayment } from './settle.js'
 import { loadStellarSettlements, type StellarSettlementRecord } from '../storage.js'
 import { agentPassport, reputationScore, riskCheck, verifyAgent, type TxContext } from '../asp/tools.js'
-import { feePayerEnvVar, stellarFeePayer } from '../chains/stellar/client.js'
+import { feePayerEnvVar, stellarFeePayer, networkPassphrase } from '../chains/stellar/client.js'
 import { isAccountId, isContractId } from '../chains/stellar/strkey.js'
 import { RAIL_BASE_PRICES_USD, RAIL_TOOLS, RAIL_TOOL_CARDS, type RailToolName } from '../x402-3009/rail.js'
 
@@ -415,10 +415,14 @@ export function stellarRailChallenge(
         contract: s.token.address,
         function: 'transfer',
         args: ['from (your G... account)', `to (${s.payTo})`, 'amount (i128 base units)'],
-        networkPassphrase:
-          s.network === 'stellar:pubnet'
-            ? 'Public Global Stellar Network ; September 2015'
-            : 'Test SDF Network ; September 2015',
+        // Derived, not inlined. This was a `pubnet ? A : B` ternary, which means an
+        // unrecognised network silently got the TESTNET passphrase handed to a buyer, and
+        // the passphrase is inside the signed preimage: a signature made against the wrong
+        // one is a payment nobody can spend. `networkPassphrase` throws instead, which is
+        // the behaviour `chains/stellar/client.ts` was written to guarantee and which the
+        // facilitator already used. Latent today because only two Stellar descriptors
+        // exist; latent is not the same as absent.
+        networkPassphrase: networkPassphrase(chain!),
         broadcaster: s.broadcaster,
       },
     })

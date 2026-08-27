@@ -1,5 +1,5 @@
 /**
- * Celo x402 rail — facilitator-settled pay-per-call trust tools.
+ * Celo x402 rail - facilitator-settled pay-per-call trust tools.
  *
  * A DIFFERENT settlement model than the Arc rail (x402.ts). Arc is self-verifying:
  * the client broadcasts a USDC transfer itself and this server reads the chain to
@@ -12,15 +12,15 @@
  * FAIL-CLOSED by construction: without CELO_PAYTO + CELO_X402_API_KEY the paid
  * endpoints answer 501 and nothing is ever served free (mirrors the Arc rail's
  * x402PayTo()/501 behavior, and is the opposite of the monitored ASP fail-open).
- * A facilitator error is a 502 — also never a free serve, and never a resubmit:
+ * A facilitator error is a 502 - also never a free serve, and never a resubmit:
  * settle is not idempotent from our side, so an ambiguous failure returns 502 and
  * the client retries with a FRESH payment rather than us double-settling this one.
  *
  * Tools and prices are the same trust suite the OKX ASP sells (asp/payment.ts):
- * the handlers are the pure exports of asp/tools.ts (imported read-only — no ASP
+ * the handlers are the pure exports of asp/tools.ts (imported read-only - no ASP
  * route/gateway code), so a Celo buyer gets byte-for-byte the same trust product.
  * Chain constants (USDC address, decimals, CAIP-2 ids, RPCs) come from the chain
- * registry — nothing here restates them.
+ * registry - nothing here restates them.
  */
 import { getChainById, usdcUnits, evmPublicClient, type ChainDescriptor } from './chains/index.js'
 import { verifyAgent, reputationScore, riskCheck, agentPassport, type TxContext } from './asp/tools.js'
@@ -62,7 +62,7 @@ const USDC_EIP712_DOMAIN = { name: 'USDC', version: '2' }
 export const CELO_TOOLS = ['verify_agent', 'reputation_score', 'risk_check', 'agent_passport'] as const
 export type CeloToolName = (typeof CELO_TOOLS)[number]
 
-/** Per-call USD prices — the SAME numbers the OKX trust suite charges (asp/payment.ts
+/** Per-call USD prices - the SAME numbers the OKX trust suite charges (asp/payment.ts
  *  PRICES). Pinned by celo-x402.test.ts so the two rails cannot drift apart silently. */
 export const CELO_TOOL_PRICES_USD: Record<CeloToolName, number> = {
   verify_agent: 0.001,
@@ -117,7 +117,7 @@ export type CeloX402Status = {
 }
 
 /** Resolve which Celo-family descriptor the rail settles on. CELO_X402_NETWORK (a CAIP-2
- *  id) selects it; unset means mainnet. Only descriptors in the registry qualify — an
+ *  id) selects it; unset means mainnet. Only descriptors in the registry qualify - an
  *  unknown network is a configuration error, not a guess. */
 function resolveCeloChain(env: NodeJS.ProcessEnv): { chain: ChainDescriptor | null; requested: string } {
   const mainnet = getChainById('celo')
@@ -197,7 +197,7 @@ export type CeloPaymentRequirements = {
   extra: { name: string; version: string }
 }
 
-/** The x402 v2 paymentRequirements for one tool — the exact object we also hand the
+/** The x402 v2 paymentRequirements for one tool - the exact object we also hand the
  *  facilitator's /verify, so challenge and verification can never disagree. */
 export function celoToolRequirements(tool: CeloToolName, status: CeloX402Status): CeloPaymentRequirements {
   const chain = status.chain ? getChainById(status.chain) : undefined
@@ -348,7 +348,7 @@ function raceTimeout<T>(p: Promise<T>, ms: number): Promise<T> {
 /**
  * Best-effort LIVE read of Celo's ReputationRegistry summary for an agent, so a paid
  * reputation_score answer carries real on-chain Celo data next to our deterministic
- * score. Degrades to { read: false, reason } — never throws into a paid call.
+ * score. Degrades to { read: false, reason } - never throws into a paid call.
  */
 export async function celoReputationSummary(
   agentId: string,
@@ -419,7 +419,7 @@ export async function celoReputationSummary(
  * home-registry view. This exists because the trust body (identity/kya/reputation) is
  * resolved on the home registry, which is a different chain: without this field a Celo
  * buyer asking about a Celo agent id would get an answer that never touched Celo.
- * Degrades to { read: false, reason } — never throws into a paid call.
+ * Degrades to { read: false, reason } - never throws into a paid call.
  */
 export async function celoIdentitySummary(
   agentId: string,
@@ -485,7 +485,7 @@ export async function celoIdentitySummary(
   }
 }
 
-// ── serving a paid call (verify → settle → serve → record) ────────────────────────
+// ── serving a paid call (verify -> settle -> serve -> record) ────────────────────────
 
 export type CeloToolInput = { agentId: string; txContext?: TxContext | null }
 
@@ -504,7 +504,7 @@ export type CeloServeDeps = {
  *
  *  HONEST SCOPE, and the reason this does more than overwrite one string: `network` is
  *  where the PAYMENT settled, which is Celo. The identity / KYA / reputation body below
- *  it is resolved on the oracle's HOME registry, which is a different chain — so the
+ *  it is resolved on the oracle's HOME registry, which is a different chain - so the
  *  same agent id means a different agent there. Overwriting `network` alone read as if
  *  the whole verdict were a Celo fact. It now says both networks by name, and the
  *  Celo-side facts travel in the dedicated `celoIdentity` / `celoReputation` fields. */
@@ -525,7 +525,7 @@ function withCeloMeta<T extends { _meta?: Record<string, unknown> }>(result: T, 
 
 function defaultHandlers(status: CeloX402Status): Record<CeloToolName, (input: CeloToolInput) => Promise<unknown>> {
   /** Every paid Celo answer carries a Celo-side identity read for the id it was asked
-   *  about — otherwise a Celo buyer could pay a Celo rail and get back nothing that ever
+   *  about - otherwise a Celo buyer could pay a Celo rail and get back nothing that ever
    *  touched Celo. Runs concurrently with the base tool so it costs no extra latency. */
   const served = async <T extends { _meta?: Record<string, unknown> }>(base: Promise<T>, agentId: string) => {
     const [result, celoIdentity] = await Promise.all([base, celoIdentitySummary(agentId, status)])
@@ -571,14 +571,14 @@ async function facilitatorPost(
 /**
  * The full paid-call path for one tool. Returns { httpStatus, body } so the route stays
  * a thin adapter. Outcomes, in order:
- *   402 — malformed X-PAYMENT, or the facilitator says the payment is invalid
+ *   402 - malformed X-PAYMENT, or the facilitator says the payment is invalid
  *         (fresh challenge + verifyError; the client fixes its payment and retries)
- *   502 — the facilitator failed or answered ambiguously (verify OR settle). The tool
+ *   502 - the facilitator failed or answered ambiguously (verify OR settle). The tool
  *         is NOT served and the payment is NOT resubmitted: a repeated settle could
  *         double-spend the buyer's authorization, so the client retries with a fresh one.
- *   500 — settle succeeded but the tool handler itself failed. The settlement is still
+ *   500 - settle succeeded but the tool handler itself failed. The settlement is still
  *         recorded (it happened) and the body says exactly that.
- *   200 — settled and served; the settlement is durably recorded for /api/celo/proof.
+ *   200 - settled and served; the settlement is durably recorded for /api/celo/proof.
  */
 export async function celoServeTool(
   tool: CeloToolName,
@@ -620,7 +620,7 @@ export async function celoServeTool(
 
   const requirements = celoToolRequirements(tool, status)
 
-  // 2. /verify — the facilitator checks the signature, asset, amount and recipient.
+  // 2. /verify - the facilitator checks the signature, asset, amount and recipient.
   // Wire-shape note (verified against the live facilitator on 2026-08-09): /supported
   // advertises an x402Version 2 kind under the CAIP-2 network id, but /verify only
   // accepts the v1 shape with the slug network label; the v2/CAIP-2 body answers
@@ -665,7 +665,7 @@ export async function celoServeTool(
     return { httpStatus: 402, body: celoChallenge(tool, status, reason) }
   }
 
-  // 3. /settle — the facilitator broadcasts the EIP-3009 transfer. X-API-Key is OUR
+  // 3. /settle - the facilitator broadcasts the EIP-3009 transfer. X-API-Key is OUR
   // seller credential; `network` uses the facilitator's v1 label, which its /supported
   // lists as exactly our registry slug ('celo' / 'celo-sepolia').
   let settle: { status: number; json: Record<string, unknown> | null }
@@ -766,7 +766,7 @@ export async function celoServeTool(
 
 /**
  * OUR OWN buyer wallets, published on purpose. /api/celo/proof marks their settlements
- * internal so nobody can read our own demo traffic as third-party demand — the honest
+ * internal so nobody can read our own demo traffic as third-party demand - the honest
  * half of running a proof page at all. This is a public address, not a credential, and
  * hardcoding it is the point: it cannot be quietly unset the way an env var can.
  * CELO_INTERNAL_PAYERS (comma-separated) adds more without a deploy.
@@ -782,7 +782,7 @@ function internalPayers(env: NodeJS.ProcessEnv): Set<string> {
 }
 
 /** GET /api/celo/status body: rail config (fail-closed truth), registry facts for both
- *  Celo descriptors, and ERC-8004 resolver readiness. No external calls — this must be
+ *  Celo descriptors, and ERC-8004 resolver readiness. No external calls - this must be
  *  fast and honest even when RPCs are down. */
 export function celoStatusReport(env: NodeJS.ProcessEnv = process.env) {
   const status = celoX402Status(env)
@@ -851,7 +851,7 @@ export async function celoProof(
     totalUsd: round(totalUsd),
     // The sybil-review deal: our OWN buyer wallets are named in the open and their
     // settlements are counted separately, so the headline can never be read as demand
-    // it is not. Labeled, never filtered out — the money did move either way.
+    // it is not. Labeled, never filtered out - the money did move either way.
     internalSettlements: internalCount,
     internalUsd: round(internalUsd),
     externalSettlements: all.length - internalCount,
