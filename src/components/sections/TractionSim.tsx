@@ -1,6 +1,7 @@
 import { useEffect, useState, type ReactNode } from 'react'
 import { motion, useReducedMotion } from 'framer-motion'
 import { apiFetch, readJson } from '../../lib/api'
+import { ASP_BASE } from '../../lib/mcpBase'
 import { DisplayHeading, Eyebrow, Lede } from '../ui/display'
 import { SectionShell, SectionIntro, reveal } from '../ui/section'
 import { Stat } from '../ui/stat'
@@ -153,10 +154,10 @@ export default function TractionSim() {
       // The /api/traction fetch that stood here went with the policy-engine row. Leaving it
       // would have meant a request on every landing-page load for a figure nobody renders.
 
-      // The ASP is a separate origin from the backend, so this one goes direct. It serves
-      // Access-Control-Allow-Origin: *, and the same file already feeds the settlement
-      // ticker further up the page.
-      fetch(XLAYER_PROOF_JSON)
+      // Fetched through ASP_BASE: the same-origin /asp proxy in prod (ad blockers that
+      // list *.onrender.com would otherwise fake an outage), the live ASP directly in
+      // dev. The provenance link below still names the real origin.
+      fetch(`${ASP_BASE}/proof.json`)
         .then((r) => (r.ok ? r.json() : Promise.reject(new Error(String(r.status)))))
         .then((d: XLayerProof) => {
           if (!alive) return

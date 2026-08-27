@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom'
 import { animate, motion, useInView } from 'framer-motion'
 import { ArrowUpRight, Radio } from 'lucide-react'
 import { EASE_OUT_EXPO } from '../../lib/brand'
+import { ASP_BASE } from '../../lib/mcpBase'
 import { SectionBackdrop } from '../ui/section-backdrop'
 import SettlementTicker from './SettlementTicker'
 
@@ -14,7 +15,6 @@ const reveal = {
 }
 
 const PROOF_URL = 'https://a-identity-asp.onrender.com/proof'
-const PREVIEW_URL = 'https://a-identity-asp.onrender.com/tools/trust_preview'
 
 const CELO_PROOF_URL = '/celo-proof'
 
@@ -69,7 +69,9 @@ export default function LiveProof() {
     setPing(null)
     const t0 = performance.now()
     try {
-      const r = await fetch(PREVIEW_URL, {
+      // Same-origin /asp proxy in prod: the ping must measure the ASP, not whether the
+      // visitor's ad blocker lists *.onrender.com.
+      const r = await fetch(`${ASP_BASE}/tools/trust_preview`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ agentId: '849980' }),

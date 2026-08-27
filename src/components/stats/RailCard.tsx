@@ -28,6 +28,8 @@ export function RailCard({
   volumeUsd,
   volumeDigits = 3,
   tools,
+  toolsQualifier,
+  toolsEmptyNote,
   caveat,
   source,
   sourceHref,
@@ -44,6 +46,13 @@ export function RailCard({
   volumeUsd: number | null
   volumeDigits?: number
   tools: BarRow[]
+  /** Small print under the tool-list heading, for when the rows need a scope qualifier
+   *  (e.g. a facilitator log that breaks tools down rail-wide rather than per chain). */
+  toolsQualifier?: ReactNode
+  /** Override for the no-rows note. The default says "no paid calls yet", which is a
+   *  FALSE statement on a card whose settlement count is nonzero but whose source simply
+   *  does not break tools down for this chain; such a card must say that instead. */
+  toolsEmptyNote?: string
   /** The honest qualifier on this rail's headline, e.g. whose wallet paid. */
   caveat?: ReactNode
   source: string
@@ -106,10 +115,11 @@ export function RailCard({
 
       <div className="mt-6">
         <h4 className="text-[11px] font-semibold uppercase tracking-[0.14em] text-foreground/40">Paid calls by tool</h4>
+        {toolsQualifier && <p className="mt-1.5 text-[11px] leading-relaxed text-foreground/40">{toolsQualifier}</p>}
         <BarList
           className="mt-3.5"
           rows={tools}
-          emptyNote="No paid calls on this rail yet. The first settlement draws the first bar."
+          emptyNote={toolsEmptyNote ?? 'No paid calls on this rail yet. The first settlement draws the first bar.'}
         />
       </div>
 

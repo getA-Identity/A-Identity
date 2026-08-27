@@ -3,6 +3,7 @@ import { ArrowLeft, Search } from 'lucide-react'
 import PageHeader from '../components/PageHeader'
 import ThemeScope from '../components/ThemeScope'
 import { OwlMascot3D } from '../components/OwlMascot'
+import { usePageMeta } from '../lib/head'
 
 /**
  * 404.
@@ -19,6 +20,12 @@ import { OwlMascot3D } from '../components/OwlMascot'
  * boundary, so a failure still looks like the product.
  */
 export default function NotFound() {
+  // Without this, a dead URL inherits the homepage title, description and canonical
+  // from index.html, which tells both the tab bar and any crawler that the page is
+  // fine. A 404 in an SPA cannot send a status code, so noindex is the next best
+  // signal, and the title should say what actually happened.
+  usePageMeta({ title: 'Page not found | A-Identity', noindex: true })
+
   return (
     <ThemeScope as="main" className="flex min-h-screen flex-col">
       <PageHeader />

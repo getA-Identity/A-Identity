@@ -38,6 +38,27 @@ export default function BlogPost() {
     canonical: post ? `https://a-identity.xyz${postPath(post.slug, lang)}` : undefined,
     lang,
     alternates: post ? alternatesFor(post) : undefined,
+    // BlogPosting structured data, per rendered language. The publisher is an @id
+    // reference into the site-wide @graph that index.html ships on every page, so the
+    // Organization node is defined once rather than duplicated here. Dates in blog.ts
+    // are human-formatted; schema.org wants ISO 8601, hence the conversion, and an
+    // unparseable date yields no datePublished rather than an invalid one.
+    jsonLd: post
+      ? {
+          '@context': 'https://schema.org',
+          '@type': 'BlogPosting',
+          headline: localized(post, lang).title,
+          description: localized(post, lang).excerpt,
+          inLanguage: lang,
+          ...(Number.isFinite(new Date(post.date).getTime())
+            ? { datePublished: new Date(post.date).toISOString().slice(0, 10) }
+            : {}),
+          author: { '@type': 'Person', name: post.author.name, jobTitle: post.author.role },
+          publisher: { '@id': 'https://a-identity.xyz/#organization' },
+          mainEntityOfPage: `https://a-identity.xyz${postPath(post.slug, lang)}`,
+          url: `https://a-identity.xyz${postPath(post.slug, lang)}`,
+        }
+      : undefined,
   })
 
   if (!post) return <Navigate to={lang === 'tr' ? '/tr/blog' : '/blog'} replace />

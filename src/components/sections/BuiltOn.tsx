@@ -237,7 +237,10 @@ export default function BuiltOn() {
     const el = trackRef.current
     if (!el) return
     const clamped = Math.max(0, Math.min(RAILS.length - 1, i))
-    el.scrollTo({ left: clamped * el.clientWidth, behavior: 'smooth' })
+    // Native scrollTo does not go through framer, so MotionConfig cannot crush it:
+    // honor prefers-reduced-motion here by jumping instead of gliding.
+    const still = window.matchMedia('(prefers-reduced-motion: reduce)').matches
+    el.scrollTo({ left: clamped * el.clientWidth, behavior: still ? 'auto' : 'smooth' })
   }
 
   return (

@@ -42,9 +42,11 @@ public/llms-full.txt, public/.well-known/ (agent card, MCP server card, agent sk
   and published copy. Exceptions are named with reasons in the test.
 - Generated files, never hand-edit: src/lib/chains.ts (run cd mcp && npm run gen:chains)
   and mcp/src/contracts/*.ts (run cd mcp && npm run compile).
-- Regex-locked files, edit with care: src/lib/blog.ts and
-  src/components/sections/LandingFaq.tsx are scraped by scripts/gen-sitemap.mjs and
-  scripts/check-structured-data.mjs; changing their shape breaks npm run build.
+- Regex-locked files, edit with care: src/lib/blog.ts is scraped by
+  scripts/gen-sitemap.mjs (slug and tr keys at exact indents), and
+  src/components/sections/LandingFaq.tsx by scripts/check-structured-data.mjs
+  (q/plain pairs at exact indents, matched against index.html's FAQPage JSON-LD);
+  changing their shape breaks npm run build.
 
 ## Verification
 

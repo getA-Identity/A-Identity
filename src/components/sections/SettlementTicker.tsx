@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { motion } from 'framer-motion'
 import { ArrowUpRight } from 'lucide-react'
+import { ASP_BASE } from '../../lib/mcpBase'
 
 /**
  * Every settlement we have ever taken, as clickable rows.
@@ -15,7 +16,9 @@ import { ArrowUpRight } from 'lucide-react'
  * to the full proof page rather than inventing rows.
  */
 
-const PROOF_JSON = 'https://a-identity-asp.onrender.com/proof.json'
+// Fetched through ASP_BASE (same-origin /asp proxy in prod, so ad blockers that list
+// *.onrender.com cannot fake an outage); the human-facing proof page stays on the ASP's
+// real origin because it is the ASP's own document, not ours.
 const PROOF_PAGE = 'https://a-identity-asp.onrender.com/proof'
 
 type Settlement = { round: number; tool: string; amountUsd: number; txHash: string; txUrl: string }
@@ -38,7 +41,7 @@ export default function SettlementTicker() {
       window.setTimeout(() => alive && load(), 1200)
 
     function load() {
-    fetch(PROOF_JSON)
+    fetch(`${ASP_BASE}/proof.json`)
       .then((r) => (r.ok ? r.json() : Promise.reject(new Error(String(r.status)))))
       .then((d: { realOnchainRevenue?: Record<string, unknown> }) => {
         const rev = d.realOnchainRevenue

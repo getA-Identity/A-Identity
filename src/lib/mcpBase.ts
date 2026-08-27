@@ -29,6 +29,18 @@ export const BACKEND_DIRECT_URL = import.meta.env.PROD
   : ((import.meta.env.VITE_MCP_URL as string | undefined) ?? 'http://localhost:3399')
 
 /**
+ * Fetch base for the OKX ASP gateway, a separate Render service with open CORS.
+ * Production: '/asp', so reads ride the same-origin Vercel rewrite (/asp/:path* in
+ * vercel.json) instead of hitting *.onrender.com directly, for exactly the ad-blocker
+ * reason MCP_BASE is same-origin. Dev: the live ASP directly, since there is no local
+ * ASP and no dev proxy. Use this for FETCHES only: human-facing links to the ASP's own
+ * pages, provenance hrefs that name the real source, and URLs handed to agents (webmcp,
+ * copy blocks) stay on the real origin, because those are opened or fetched from
+ * outside this app.
+ */
+export const ASP_BASE = import.meta.env.PROD ? '/asp' : 'https://a-identity-asp.onrender.com'
+
+/**
  * User-facing copy when a backend request fails. Honest and plain: on prod the app
  * uses a same-origin proxy, so "run the server / npm run dev" is wrong and confusing
  * to a judge. The free-tier backend usually just needs a few seconds to wake.

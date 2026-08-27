@@ -33,6 +33,11 @@ type AuthState = {
    *  Drives "can act" in the UI, decoupled from the in-memory token, which is null after
    *  a cookie-restored reload. */
   verified: boolean
+  /** True once restore() has settled (with any outcome). Never persisted. ProtectedRoute
+   *  waits for this before treating an empty `user` as "signed out": a hard reload of
+   *  /app with a valid HttpOnly cookie but empty localStorage would otherwise bounce to
+   *  /login before the cookie check resolves. */
+  restored: boolean
   /** Guest preview: an email-only local session (no token -> browse-only). */
   login: (email: string, name?: string) => Promise<void>
   /** Real auth: Sign-In with Ethereum. Prove wallet ownership by signing a nonce.
@@ -53,6 +58,7 @@ export const useAuth = create<AuthState>()(
       user: null,
       token: null,
       verified: false,
+      restored: false,
       login: async (email, name) => {
         try {
           const res = await apiFetch('/api/auth/login', {
@@ -171,6 +177,9 @@ export const useAuth = create<AuthState>()(
           }
         } catch {
           /* still waking / unreachable after retries, keep the persisted session */
+        } finally {
+          // Whatever happened, the check has now settled: ProtectedRoute may decide.
+          set({ restored: true })
         }
       },
       logout: () => {

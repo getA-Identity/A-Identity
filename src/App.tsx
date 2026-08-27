@@ -1,5 +1,6 @@
 import { lazy, Suspense, useEffect } from 'react'
 import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom'
+import { MotionConfig } from 'framer-motion'
 import ScrollToTop from './components/ScrollToTop'
 import PageViews from './components/PageViews'
 import { initAnalytics } from './lib/analytics'
@@ -81,6 +82,13 @@ export default function App() {
     <BrowserRouter>
       <ScrollToTop />
       <PageViews />
+      {/* One switch honors prefers-reduced-motion for EVERY framer-driven animation
+          (transforms and layout stop, opacity still fades), instead of each component
+          opting in by hand: before this, Hero, WhatYouGet, ConsoleShowcase, QuickStart
+          and every shared `reveal` ran full motion for users who asked for stillness.
+          Bespoke rAF/interval loops still carry their own checks; the console's CSS
+          animations are crushed by its own media rule in console.css. */}
+      <MotionConfig reducedMotion="user">
       <Suspense fallback={null}>
       <Routes>
         <Route path="/" element={<Landing />} />
@@ -130,6 +138,7 @@ export default function App() {
         <Route path="*" element={<NotFound />} />
       </Routes>
       </Suspense>
+      </MotionConfig>
     </BrowserRouter>
   )
 }

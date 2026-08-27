@@ -12,6 +12,8 @@
  * store treats them uniformly.
  */
 
+import { CHAIN_BY_ID } from './chains'
+
 export type Eip1193 = {
   request: (a: { method: string; params?: unknown[] }) => Promise<unknown>
   isMetaMask?: boolean
@@ -96,8 +98,11 @@ export function getConnectedProvider(): Eip1193 | null {
 export const WC_PROJECT_ID = (import.meta.env.VITE_WALLETCONNECT_PROJECT_ID as string | undefined) ?? ''
 export const walletConnectEnabled = (): boolean => WC_PROJECT_ID.length > 0
 
-const ARC_CHAIN_ID = 5042002
-const ARC_RPC = 'https://rpc.testnet.arc.network'
+// From the generated registry mirror, not typed here: a third hand-copied Arc
+// config is exactly the drift the chains generator exists to prevent. Non-null by
+// construction for Arc (an EVM chain with a public RPC).
+const ARC_CHAIN_ID = CHAIN_BY_ID.arc.chainId as number
+const ARC_RPC = CHAIN_BY_ID.arc.rpcUrl as string
 
 /** Open the WalletConnect QR modal and return the connected EIP-1193 provider. */
 export async function connectWalletConnect(): Promise<Eip1193> {

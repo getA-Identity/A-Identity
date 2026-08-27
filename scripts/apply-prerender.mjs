@@ -107,7 +107,12 @@ function applyDir(dir, rel = '') {
 }
 
 // Copy first so directories and any non-HTML files land, then rewrite in place.
-cpSync(SRC, DIST, { recursive: true, filter: (s) => !s.endsWith('.sources.json') })
+// .sources.json is the snapshot's build-time manifest, .DS_Store is Finder junk a
+// macOS checkout accumulates; neither belongs in the deployed tree.
+cpSync(SRC, DIST, {
+  recursive: true,
+  filter: (s) => !s.endsWith('.sources.json') && !s.endsWith('.DS_Store'),
+})
 applyDir(SRC)
 
 // Report the property that actually matters: a reference that resolves to no

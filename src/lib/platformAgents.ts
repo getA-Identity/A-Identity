@@ -29,19 +29,28 @@ const listeners = new Set<() => void>()
  */
 export async function fetchPlatformAgents<T = unknown>(opts: { force?: boolean } = {}): Promise<{ agents: T[] }> {
   if (!opts.force && cache && Date.now() - cache.at < TTL_MS) return cache.data as { agents: T[] }
-  if (inflight) return inflight as Promise<{ agents: T[] }>
-  inflight = (async () => {
-    try {
-      const res = await apiFetch('/api/platform-agents')
-      const data = await readJson<{ agents: unknown[] }>(res)
-      cache = { at: Date.now(), data: { agents: data.agents ?? [] } }
-      return cache.data
-    } finally {
-      inflight = null
-    }
+  // A forced read must NOT be served by a request that was already in flight when the
+  // caller forced: a post-mutation refetch riding a pre-mutation request would return
+  // the pre-mutation list. Only unforced callers join the shared in-flight request.
+  if (inflight && !opts.force) return inflight as Promise<{ agents: T[] }>
+  const p = (async () => {
+    const res = await apiFetch('/api/platform-agents')
+    const data = await readJson<{ agents: unknown[] }>(res)
+    cache = { at: Date.now(), data: { agents: data.agents ?? [] } }
+    return cache.data
   })()
-  return inflight as Promise<{ agents: T[] }>
+  // Clear only our own registration: an older overlapping request finishing late must
+  // not null out the newer in-flight promise later callers are sharing. Attached on
+  // both branches so a failed fetch also unregisters; the rejection itself still
+  // reaches the caller through the returned promise.
+  const cleanup = () => {
+    if (inflight === p) inflight = null
+  }
+  p.then(cleanup, cleanup)
+  inflight = p
+  return p as Promise<{ agents: T[] }>
 }
+
 
 /** Drop the cache so the next fetch hits the backend, and notify subscribed screens so
  *  they re-fetch now (call after list-changing mutations: create / anchor / KYA). */

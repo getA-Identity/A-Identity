@@ -5,21 +5,33 @@
  * token), with deterministic sub-second finality. Mainnet is not public yet, so we
  * target Arc Testnet. Source: https://docs.arc.io/arc-chain and /references/rpc-endpoints
  *
+ * Chain id, RPC host and explorer come from the GENERATED registry mirror
+ * (src/lib/chains.ts), never typed here: three hand-copied Arc configs had already
+ * drifted apart once, which is exactly the class of bug the registry generator exists
+ * to prevent. Only the facts the registry mirror does not carry (the dual-decimals
+ * native token, the websocket endpoint, finality) are stated locally.
+ *
  * Dual USDC interface: the native balance uses 18 decimals while the ERC-20
  * interface uses 6 decimals; both share the same underlying balance.
  */
 
+import { CHAIN_BY_ID } from './chains'
+
+// Non-null by construction for Arc, an EVM chain with a public RPC; the registry
+// types allow null only because non-EVM entries exist.
+const ARC = CHAIN_BY_ID.arc
+
 export const ARC_TESTNET = {
-  id: 5042002,
-  caip2: 'eip155:5042002',
+  id: ARC.chainId as number,
+  caip2: ARC.caip2,
   name: 'Arc Testnet',
   network: 'arc-testnet',
   nativeCurrency: { name: 'USD Coin', symbol: 'USDC', decimals: 18 },
   rpc: {
-    http: 'https://rpc.testnet.arc.network',
-    ws: 'wss://rpc.testnet.arc.network',
+    http: ARC.rpcUrl as string,
+    ws: (ARC.rpcUrl as string).replace(/^https:/, 'wss:'),
   },
-  blockExplorer: 'https://testnet.arcscan.app',
+  blockExplorer: ARC.explorer as string,
   /** Native USDC uses 18 decimals; the ERC-20 interface uses 6. Same balance. */
   nativeDecimals: 18,
   erc20Decimals: 6,
@@ -27,32 +39,3 @@ export const ARC_TESTNET = {
   gasToken: 'USDC',
   testnet: true,
 } as const
-
-/**
- * Lazily build a viem Chain object for Arc Testnet. Lazy so the chain config can
- * be imported without pulling viem into modules that do not need it.
- */
-// eslint-disable-next-line @typescript-eslint/no-explicit-any -- viem's Chain type isn't available without importing viem here (deliberately lazy).
-export async function getArcViemChain(): Promise<any> {
-  // Variable specifier so typecheck does not require viem to be installed.
-  const viemPkg = 'viem'
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- dynamic import, types intentionally not pulled in.
-  const { defineChain } = (await import(/* @vite-ignore */ viemPkg)) as any
-  return defineChain({
-    id: ARC_TESTNET.id,
-    name: ARC_TESTNET.name,
-    nativeCurrency: ARC_TESTNET.nativeCurrency,
-    rpcUrls: {
-      default: { http: [ARC_TESTNET.rpc.http], webSocket: [ARC_TESTNET.rpc.ws] },
-    },
-    blockExplorers: {
-      default: { name: 'Arcscan', url: ARC_TESTNET.blockExplorer },
-    },
-    testnet: true,
-  })
-}
-
-/** Explorer link for an address on Arc Testnet. */
-export function arcAddressUrl(address: string): string {
-  return `${ARC_TESTNET.blockExplorer}/address/${address}`
-}

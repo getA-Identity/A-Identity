@@ -5,15 +5,48 @@
  */
 
 import { MCP_BASE as BASE } from './mcpBase'
+import { wakeBackend } from './api'
 
 let _reqId = 1
+
+/**
+ * Cold-start-resilient fetch for this module's READ-ONLY calls (the tools called here
+ * never mutate, so retrying the POST is safe). Mirrors the GET posture in lib/api.ts:
+ * a 502/503/504 from the Vercel proxy or a network throw during Render's ~50s free-tier
+ * wake is retried with a wake ping between attempts, instead of surfacing a false
+ * "MCP server offline" on the public Explorer / TrustSpotlight / AgentVitrine surfaces.
+ * Credentials ride along like every other backend call (harmless on public reads).
+ */
+const RETRY_STATUS = new Set([502, 503, 504])
+
+async function fetchWithWake(url: string, init: RequestInit, timeoutMs: number, retries = 4): Promise<Response> {
+  let lastErr: unknown = null
+  for (let attempt = 0; attempt <= retries; attempt++) {
+    if (attempt > 0) {
+      void wakeBackend()
+      await new Promise((r) => setTimeout(r, Math.min(2500 * attempt, 9000)))
+    }
+    try {
+      const res = await fetch(url, {
+        ...init,
+        credentials: 'include',
+        signal: AbortSignal.timeout(timeoutMs),
+      })
+      if (RETRY_STATUS.has(res.status) && attempt < retries) continue
+      return res
+    } catch (err) {
+      lastErr = err
+    }
+  }
+  throw lastErr ?? new Error('Backend unreachable')
+}
 
 async function callTool<T>(
   name: string,
   args: Record<string, unknown>,
 ): Promise<{ ok: true; data: T } | { ok: false; error: string }> {
   try {
-    const res = await fetch(`${BASE}/mcp`, {
+    const res = await fetchWithWake(`${BASE}/mcp`, {
       method: 'POST',
       // Streamable HTTP requires both accept types; enableJsonResponse=true returns plain JSON.
       headers: {
@@ -26,8 +59,7 @@ async function callTool<T>(
         method: 'tools/call',
         params: { name, arguments: args },
       }),
-      signal: AbortSignal.timeout(8000),
-    })
+    }, 8000)
     if (!res.ok) return { ok: false, error: `HTTP ${res.status}` }
     const json = (await res.json()) as {
       result?: { content?: { type: string; text: string }[] }
@@ -105,7 +137,10 @@ export type Reputation = {
   computedAt: string
 }
 
-export type ChainStatus = {
+/** One chain's row from the get_chain_status tool. Named -Report because the generated
+ *  src/lib/chains.ts already exports a DIFFERENT `ChainStatus` (the lifecycle union
+ *  'live' | 'beta' | ...); a file importing both used to collide on the name. */
+export type ChainStatusReport = {
   id: string
   name: string
   shortName: string
@@ -131,7 +166,7 @@ export async function getReputation(
 }
 
 export async function getChainStatus(): Promise<
-  { ok: true; data: { chains: ChainStatus[] } } | { ok: false; error: string }
+  { ok: true; data: { chains: ChainStatusReport[] } } | { ok: false; error: string }
 > {
   return callTool('get_chain_status', {})
 }
@@ -155,8 +190,11 @@ export async function getArcStatus(): Promise<
   { ok: true; data: ArcStatus } | { ok: false; error: string }
 > {
   try {
-    const res = await fetch(`${BASE}/api/arc`, { signal: AbortSignal.timeout(8000) })
-    // The endpoint returns 200 when online, 503 when the RPC is unreachable; both carry the body.
+    // The endpoint returns 200 when online, 503 when the Arc RPC is unreachable; both
+    // carry the body. A 503 here is therefore ambiguous during a cold start, and the
+    // retry loop treats it as retryable: a genuinely offline Arc RPC re-answers 503 on
+    // the last attempt and still lands in the `online: false` payload below.
+    const res = await fetchWithWake(`${BASE}/api/arc`, {}, 8000)
     const data = (await res.json()) as ArcStatus
     return { ok: true, data }
   } catch (err) {
@@ -183,7 +221,7 @@ export type FeedAgent = {
 /** The public Agent House feed: KYA-verified agents ranked by trust. Backs the leaderboard. */
 export async function getLeaderboard(): Promise<{ ok: true; data: FeedAgent[] } | { ok: false; error: string }> {
   try {
-    const res = await fetch(`${BASE}/api/marketplace`, { signal: AbortSignal.timeout(8000) })
+    const res = await fetchWithWake(`${BASE}/api/marketplace`, {}, 8000)
     if (!res.ok) return { ok: false, error: `HTTP ${res.status}` }
     const json = (await res.json()) as { agents?: FeedAgent[] }
     return { ok: true, data: json.agents ?? [] }

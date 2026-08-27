@@ -7,7 +7,7 @@ import {
   resolveAgent,
   type AgentIdentity,
   type ArcStatus,
-  type ChainStatus,
+  type ChainStatusReport,
   type Reputation,
 } from '../lib/mcp-client'
 import { wakeBackend } from '../lib/api'
@@ -135,7 +135,7 @@ export function useAgentReputation(agentId: string | null, enabled = true) {
 
 type ChainsState = {
   loading: boolean
-  chains: ChainStatus[]
+  chains: ChainStatusReport[]
   error: string | null
 }
 

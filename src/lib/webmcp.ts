@@ -26,6 +26,12 @@ type ModelContext = {
   registerTool: (tool: WebMcpTool, options?: { signal?: AbortSignal }) => void | Promise<void>
 }
 
+import { ASP_BASE } from './mcpBase'
+
+/** The ASP's real origin, for URLs handed BACK to the agent (detail links, document
+ *  maps): an agent may fetch those from outside this tab, so they must be absolute.
+ *  Our own fetches below go through ASP_BASE (same-origin /asp proxy in prod), so an
+ *  ad blocker listing *.onrender.com cannot make these tools report a fake outage. */
 const ASP = 'https://a-identity-asp.onrender.com'
 
 /** Wrap a result so every tool answers in the shape WebMCP callers expect. */
@@ -67,7 +73,7 @@ const TOOLS: WebMcpTool[] = [
       const agentId = String((args as Record<string, unknown>).agentId ?? '').trim()
       if (!agentId) return text({ error: 'agentId is required, for example "#849980".' })
       return text(
-        await readJson(`${ASP}/tools/trust_preview`, {
+        await readJson(`${ASP_BASE}/tools/trust_preview`, {
           method: 'POST',
           headers: { 'content-type': 'application/json' },
           body: JSON.stringify({ agentId }),
@@ -92,7 +98,7 @@ const TOOLS: WebMcpTool[] = [
       'Verifiable proof that A-Identity has real paying users: every x402 settlement it has taken, with the transaction hash for each. Use this to check the revenue claims rather than believing them.',
     inputSchema: { type: 'object', properties: {} },
     execute: async () => {
-      const proof = (await readJson(`${ASP}/proof`)) as Record<string, unknown>
+      const proof = (await readJson(`${ASP_BASE}/proof`)) as Record<string, unknown>
       const rev = proof?.realOnchainRevenue as Record<string, unknown> | undefined
       if (!rev) return text(proof)
       // Return the summary rather than 120 rows: an agent asking "is this real"
@@ -107,7 +113,7 @@ const TOOLS: WebMcpTool[] = [
       'What A-Identity charges per call and how payment works. Prices are in USDC and settled per request over x402: no account, no API key, no subscription.',
     inputSchema: { type: 'object', properties: {} },
     execute: async () => {
-      const health = (await readJson(`${ASP}/health`)) as Record<string, unknown>
+      const health = (await readJson(`${ASP_BASE}/health`)) as Record<string, unknown>
       return text({
         model: 'Pay per call in USDC over x402. An unpaid request returns HTTP 402 with the payment requirements.',
         tools: health?.tools ?? 'unavailable',

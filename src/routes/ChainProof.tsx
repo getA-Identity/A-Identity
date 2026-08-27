@@ -78,6 +78,8 @@ type RailProof = {
 type Settlement = {
   outcome: string
   tool: string
+  /** CAIP-2 network the payment settled on; the facilitator rail sells on more than one. */
+  network?: string
   assetSymbol: string
   value: string
   assetDecimals: number
@@ -97,6 +99,9 @@ type FacilitatorProof = {
   reverted: number
   ambiguous: number
   internalPayers: string[]
+  /** Per-chain breakdown. This page is per-rail, so it MUST read this rather than
+   *  present the facilitator-wide totals as if they belonged to the rail in the URL. */
+  byNetwork?: Record<string, { count: number; usd: number; assetSymbol: string }>
   recent: Settlement[]
 }
 
@@ -375,65 +380,98 @@ export default function ChainProof() {
               </motion.section>
             ))}
 
-            {/* Settlements: absent until a rail has any, and honest about internal traffic. */}
-            {proof && (
-              <motion.section {...revealAt(2)} className="rounded-3xl border border-border bg-card p-6 sm:p-8">
-                <div className="flex flex-wrap items-center justify-between gap-3">
-                  <h2 className="text-lg font-bold tracking-tight text-foreground">Settlement rail</h2>
-                  {settlements?.configured ? (
-                    <Chip tone="ok">{settlements.assetSymbol ?? 'configured'}</Chip>
-                  ) : (
-                    <Chip tone="muted">not configured</Chip>
-                  )}
-                </div>
-                {!settlements || !settlements.configured ? (
-                  <p className="mt-2 text-sm leading-relaxed text-foreground/55">
-                    No settlement rail is configured on this backend right now. This section fills
-                    itself in from GET /api/facilitator/proof the moment one is, and shows real
-                    zeros until then.
-                  </p>
-                ) : (
-                  <>
-                    <p className="mt-2 text-sm leading-relaxed text-foreground/55">
-                      Read verbatim from GET /api/facilitator/proof. The buyer signs and pays no
-                      gas; we broadcast, and a settlement only counts once a receipt carries the
-                      matching Transfer log. Payments from our own wallets are labeled, not hidden.
-                    </p>
-                    <div className="mt-4">
-                      <Row label="Settled">{settlements.totalSettlements}</Row>
-                      <Row label="Total">${settlements.totalUsd}</Row>
-                      <Row label="Internal / external">
-                        {settlements.internalSettlements} / {settlements.externalSettlements}
-                      </Row>
-                      <Row label="Reverted / ambiguous">
-                        {settlements.reverted} / {settlements.ambiguous}
-                      </Row>
+            {/* Settlements: absent until a rail has any, and honest about internal traffic.
+                The facilitator log covers EVERY chain the rail sells on, while this page is
+                about ONE rail, so the figures are filtered to this ledger's networks and the
+                counters the log does not split per chain are labeled "all chains" instead of
+                being presented as this rail's own. */}
+            {proof &&
+              (() => {
+                const railNets = new Set(proof.networks.map((n) => n.caip2))
+                const perNet = settlements?.byNetwork
+                  ? Object.entries(settlements.byNetwork).filter(([caip]) => railNets.has(caip))
+                  : null
+                const hereCount = perNet ? perNet.reduce((sum, [, v]) => sum + v.count, 0) : null
+                const hereUsd = perNet
+                  ? Number(perNet.reduce((sum, [, v]) => sum + v.usd, 0).toFixed(6))
+                  : null
+                const recentHere = settlements
+                  ? settlements.recent.filter((s) => s.network != null && railNets.has(s.network))
+                  : []
+                return (
+                  <motion.section {...revealAt(2)} className="rounded-3xl border border-border bg-card p-6 sm:p-8">
+                    <div className="flex flex-wrap items-center justify-between gap-3">
+                      <h2 className="text-lg font-bold tracking-tight text-foreground">Settlement rail</h2>
+                      {settlements?.configured ? (
+                        <Chip tone="ok">{settlements.assetSymbol ?? 'configured'}</Chip>
+                      ) : (
+                        <Chip tone="muted">not configured</Chip>
+                      )}
                     </div>
-                    <div className="mt-4">
-                      {settlements.recent.slice(0, 8).map((s) => (
-                        <div
-                          key={s.tx ?? `${s.tool}-${s.value}`}
-                          className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1 border-b border-border/60 py-2.5 last:border-0"
-                        >
-                          <span className="text-xs text-foreground/75">
-                            {s.tool}{' '}
-                            <span className="text-foreground/45">
-                              {Number(s.value) / 10 ** s.assetDecimals} {s.assetSymbol}
-                            </span>
-                            {settlements.internalPayers.includes(s.payer.toLowerCase()) && (
-                              <span className="ml-2 rounded-md bg-warn/10 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-warn">
-                                internal
-                              </span>
-                            )}
-                          </span>
-                          <ExplorerLink href={s.explorerUrl}>{s.tx ?? ''}</ExplorerLink>
+                    {!settlements || !settlements.configured ? (
+                      <p className="mt-2 text-sm leading-relaxed text-foreground/55">
+                        No settlement rail is configured on this backend right now. This section fills
+                        itself in from GET /api/facilitator/proof the moment one is, and shows real
+                        zeros until then.
+                      </p>
+                    ) : (
+                      <>
+                        <p className="mt-2 text-sm leading-relaxed text-foreground/55">
+                          Read from GET /api/facilitator/proof, filtered to this ledger's networks.
+                          The buyer signs and pays no gas; we broadcast, and a settlement only counts
+                          once a receipt carries the matching Transfer log. Payments from our own
+                          wallets are labeled, not hidden. Counters the log keeps only rail-wide are
+                          labeled all chains.
+                        </p>
+                        <div className="mt-4">
+                          {hereCount != null ? (
+                            <>
+                              <Row label="Settled on this ledger's networks">{hereCount}</Row>
+                              <Row label="Total on this ledger's networks">${hereUsd}</Row>
+                            </>
+                          ) : (
+                            <Row label="Settled (facilitator, all chains)">{settlements.totalSettlements}</Row>
+                          )}
+                          <Row label="Internal / external (all chains)">
+                            {settlements.internalSettlements} / {settlements.externalSettlements}
+                          </Row>
+                          <Row label="Reverted / ambiguous (all chains)">
+                            {settlements.reverted} / {settlements.ambiguous}
+                          </Row>
                         </div>
-                      ))}
-                    </div>
-                  </>
-                )}
-              </motion.section>
-            )}
+                        <div className="mt-4">
+                          {recentHere.length === 0 ? (
+                            <p className="text-xs leading-relaxed text-foreground/45">
+                              None of the facilitator's recent settlements landed on this ledger's
+                              networks. The rail's other chains hold those rows.
+                            </p>
+                          ) : (
+                            recentHere.slice(0, 8).map((s) => (
+                              <div
+                                key={s.tx ?? `${s.tool}-${s.value}`}
+                                className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1 border-b border-border/60 py-2.5 last:border-0"
+                              >
+                                <span className="text-xs text-foreground/75">
+                                  {s.tool}{' '}
+                                  <span className="text-foreground/45">
+                                    {Number(s.value) / 10 ** s.assetDecimals} {s.assetSymbol}
+                                  </span>
+                                  {settlements.internalPayers.includes(s.payer.toLowerCase()) && (
+                                    <span className="ml-2 rounded-md bg-warn/10 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-warn">
+                                      internal
+                                    </span>
+                                  )}
+                                </span>
+                                <ExplorerLink href={s.explorerUrl}>{s.tx ?? ''}</ExplorerLink>
+                              </div>
+                            ))
+                          )}
+                        </div>
+                      </>
+                    )}
+                  </motion.section>
+                )
+              })()}
 
             {proof && (
               <motion.section {...revealAt(3)} className="rounded-3xl border border-border bg-card p-6 sm:p-8">

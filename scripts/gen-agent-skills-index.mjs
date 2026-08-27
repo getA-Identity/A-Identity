@@ -43,7 +43,16 @@ const skills = dirs.map((name) => {
   const file = join(SKILLS_DIR, name, 'SKILL.md')
   const body = readFileSync(file)
   const description = DESCRIPTIONS[name]
-  if (!description) throw new Error(`no description registered for skill "${name}"`)
+  if (!description) {
+    // A message, not a bare stack trace: the fix is an edit in THIS file, and the
+    // person who just added a skill directory should be told so directly.
+    console.error(
+      `gen-agent-skills-index: no description registered for skill "${name}".\n` +
+        `Add a one-line entry for it to DESCRIPTIONS in scripts/gen-agent-skills-index.mjs, ` +
+        `then re-run: node scripts/gen-agent-skills-index.mjs`,
+    )
+    process.exit(1)
+  }
   return {
     name,
     type: 'skill-md',

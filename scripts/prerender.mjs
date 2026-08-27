@@ -168,14 +168,19 @@ if (!existsSync(join(DIST, 'index.html'))) {
   process.exit(1)
 }
 
-// Record what this snapshot was made from, so the build can tell when it is stale.
-writeFileSync(join(DIST, '.sources.json'), JSON.stringify({ hash: sourceHash(ROOT) }, null, 2) + '\n')
-
 console.log(`\nprerendered ${written} routes`)
 if (problems.length) {
   console.error('\nprerender problems:')
   for (const p of problems) console.error(`  - ${p}`)
   // A route that rendered nothing is the exact failure this script exists to
   // prevent, so it fails the build rather than shipping a blank page quietly.
+  // Exit BEFORE stamping .sources.json: a failed run used to stamp first and
+  // report after, so a snapshot this script itself rejected would pass the next
+  // check:prerender on the strength of a fresh hash. The stale hash left behind
+  // now keeps the build failing until a clean run replaces it.
   process.exit(1)
 }
+
+// Record what this snapshot was made from, so the build can tell when it is stale.
+// Stamped only once the run is known good (see above).
+writeFileSync(join(DIST, '.sources.json'), JSON.stringify({ hash: sourceHash(ROOT) }, null, 2) + '\n')
