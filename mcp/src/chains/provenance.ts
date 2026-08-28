@@ -23,7 +23,7 @@ import { getChainById } from './registry.js'
 import { txUrl, addressUrl } from './explorer.js'
 
 export type ChainArtifact = {
-  kind: 'mint' | 'deploy' | 'session-key' | 'bridge' | 'settlement' | 'funding'
+  kind: 'mint' | 'deploy' | 'session-key' | 'bridge' | 'settlement' | 'funding' | 'attestation'
   label: string
   txHash: string
   /** Registry id of the chain this transaction lives on. Usually the entry's own chain;
@@ -129,6 +129,28 @@ export const PROVENANCE: ChainProvenance[] = [
         txHash: '0xc8daa2954c243e4326b0b3adac3429cd5eca8cdd78d42a082c86289fe95ce941',
         onChain: 'arbitrum',
         note: 'The signer was funded from an exchange withdrawal that landed on Arbitrum One, then bridged. Recorded because the money trail should be followable.',
+      },
+      {
+        kind: 'deploy',
+        label: 'An AgentSpendPolicy vault, live on mainnet with USDG under dust caps',
+        txHash: '0xe48d38b9188038afeb4fc1873fa05357408b976d76b7e6c1f468bcf58d2753d8',
+        onChain: 'rhchain',
+        note: 'The same contract that runs on Arc and (in Rust) on Stellar, holding the chain\'s real settlement token: dailyCap 1 USDG, autoApproveMax 0.25, a 7-day session key (tx 0xda4a3d7c). Deployed 2026-08-28 at 0x05a6aad7124c2f1c7b82b03e0bbe3867bc500073, funded with 0.03 USDG (tx 0x2bbb6077). Dust on purpose: the caps are the product, not the balance.',
+      },
+      {
+        kind: 'settlement',
+        label: 'An in-policy vault payment, and a typed refusal beside it',
+        txHash: '0x0306446b13f7bdf3ca69824e41a311913e618bf95d5a0a647c8e2655234d6386',
+        onChain: 'rhchain',
+        blockNumber: 47888765,
+        note: '0.01 USDG paid through pay() inside the policy. A 0.50 USDG attempt simulates to the contract\'s own typed AboveAutoApprove error and is refused before anything broadcasts, which is why the refusal has no hash: a payment the contract refuses fails in simulation, exactly as on the Soroban vault.',
+      },
+      {
+        kind: 'attestation',
+        label: 'Agent #0\'s reputation anchored on the canonical ReputationRegistry',
+        txHash: '0xe11d5d0f46a9b08b8fe6c623ad0f35e898a3c2db67937377083253fe6b260979',
+        onChain: 'rhchain',
+        note: 'giveFeedback from our oracle validator (0xee602A16..., the same identity that attests on Arc; ERC-8004 forbids the owner attesting itself and the script refuses it). Score 60 of 1000, and the tag says WHY it is 60: an onchain-identity-basis score, the +60 identity credit with no platform settlement history bound to this agent. The raw score and basis are committed in the feedback hash.',
       },
     ],
     caveats: [
@@ -241,6 +263,29 @@ export const PROVENANCE: ChainProvenance[] = [
         blockNumber: 494160024,
         note: '103569 gas, 0.00000207 ETH. The buyer signed and paid no gas; we broadcast, and the receipt carries the matching USDC Transfer. It was priced at a launch fee of 0.01, which this measurement then cut to 0.005; the transaction is left as it happened rather than re-run for cosmetics.',
       },
+      {
+        kind: 'deploy',
+        label: 'An AgentSpendPolicy vault, live on mainnet with native USDC under dust caps',
+        txHash: '0x7ab3cba29361ad7fa2c1cd686eb057ed586cbcced75f2204b012e322eeb24d52',
+        onChain: 'arbitrum',
+        blockNumber: 499096816,
+        note: 'The same contract that runs on Arc, Robinhood Chain and (in Rust) on Stellar: dailyCap 1 USDC, autoApproveMax 0.25, a 7-day session key (tx 0x1b516ce5). Deployed 2026-08-28 at 0xac6c5c9af62bc482ffeef882a6ac4678513be6db, 940641 gas, funded with 0.02 USDC (tx 0xc4f4e3bf). Dust on purpose: the caps are the product, not the balance.',
+      },
+      {
+        kind: 'settlement',
+        label: 'An in-policy vault payment, and a typed refusal beside it',
+        txHash: '0x2f8008792c7f635c87f4a17f42c9181eb3051395efa26b41121fa1a54a318f45',
+        onChain: 'arbitrum',
+        blockNumber: 499096841,
+        note: '0.01 USDC paid through pay() inside the policy. A 0.50 USDC attempt simulates to the contract\'s own typed AboveAutoApprove error and is refused before anything broadcasts, which is why the refusal has no hash.',
+      },
+      {
+        kind: 'attestation',
+        label: 'Agent #1259\'s reputation anchored on the canonical ReputationRegistry',
+        txHash: '0x435a5c62bda28db23505812b9deb93dfce7aff3831e8449a5274fd0e7ecc376a',
+        onChain: 'arbitrum',
+        note: 'giveFeedback from our oracle validator (0xee602A16..., the same identity that attests on Arc). Score 60 of 1000, tagged onchain-identity-basis: the +60 identity credit with no platform settlement history bound to this agent, committed with the raw score in the feedback hash. The mainnet registry family\'s giveFeedback selector was located in its implementation bytecode before the first write, never assumed from Arc\'s.',
+      },
     ],
     caveats: [
       'We deployed nothing here. The registries were already live, and registering on them is permissionless; what is ours is agent #1259 and the rail.',
@@ -300,6 +345,14 @@ export const PROVENANCE: ChainProvenance[] = [
         onChain: 'base',
         blockNumber: 50540810,
         note: '102828 gas at an effective 0.006 gwei, about 0.00000062 ETH including the L1 fee. The buyer signed and paid no gas; we broadcast, and the receipt carries the matching 6000-unit USDC Transfer from the buyer to the receiving address plus the token\'s own AuthorizationUsed event binding it to the signed authorization. This measurement set the disclosed fee\'s basis.',
+      },
+      {
+        kind: 'attestation',
+        label: 'Agent #73232\'s reputation anchored on the canonical ReputationRegistry',
+        txHash: '0x4f0295d12dcdc356cc7ac12b8317f1ff07289e4584725895f9b482a2223b2aa6',
+        onChain: 'base',
+        blockNumber: 50544732,
+        note: 'giveFeedback from our oracle validator (0xee602A16..., the same identity that attests on Arc and, since today, on Robinhood Chain and Arbitrum One). Score 60 of 1000, tagged onchain-identity-basis: the +60 identity credit with no platform settlement history bound to this agent, committed with the raw score in the feedback hash.',
       },
     ],
     caveats: [

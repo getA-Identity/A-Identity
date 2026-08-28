@@ -380,13 +380,19 @@ Live today:
   chain has no published one: the buyer signs an EIP-3009 authorization and pays no gas, we
   broadcast it, and nothing counts as settled without a receipt carrying the
   matching Transfer log. No canonical Circle USDC is published for this chain, so
-  the registry asserts none.
+  the registry asserts none. Since 2026-08-28 an AgentSpendPolicy vault is live here
+  too, holding USDG under dust caps with a typed AboveAutoApprove refusal proven, and
+  agent #0's reputation is anchored on the canonical ReputationRegistry by our oracle
+  validator (tagged with its identity-only basis).
 - **Arbitrum One** (`eip155:42161`). ERC-8004 identity
   `0x8004a169fb4a3325136eb29fa0ceb6d2e539a432` and reputation
   `0x8004BAa17C55a88189AE136b182e5fdA19dE9b63`, deployed by the ERC-8004 authors; agent
   **#1259** is ours. x402 settles here in native Circle USDC
   (`0xaf88d065e77c8cC2239327C5EDb3A432268e5831`) through the same first-party EIP-3009
-  facilitator, at a lower disclosed fee because the gas measurably is lower.
+  facilitator, at a lower disclosed fee because the gas measurably is lower. Since
+  2026-08-28 an AgentSpendPolicy vault is live here too, holding native USDC under dust
+  caps with a typed AboveAutoApprove refusal proven, and agent #1259's reputation is
+  anchored on the canonical ReputationRegistry by our oracle validator.
 - **Stellar pubnet** (`stellar:pubnet`). The same vault wasm, byte for byte, at
   `CB5LYXFKKTKDDSCM6JO6C4GNRQUFBGSLYDET6Q56JNFJQSMBKH6KWSYP`, holding real Circle USDC
   under a 1 USDC daily cap. Real money has moved under the on-ledger policy, including a
@@ -405,8 +411,9 @@ Live today:
   (`0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913`) through the same first-party EIP-3009
   facilitator as Robinhood Chain and Arbitrum One, the signing domain proven against
   the token's live DOMAIN_SEPARATOR; the first settlement landed 2026-08-28 with the
-  receipt carrying the matching Transfer log. The full trail, including the Stellar
-  pubnet funding hop behind the operating wallets, is at
+  receipt carrying the matching Transfer log, and agent #73232's reputation is anchored
+  on the canonical ReputationRegistry by our oracle validator. The full trail,
+  including the Stellar pubnet funding hop behind the operating wallets, is at
   https://a-identity.xyz/proof/base. The gasless Circle Gateway hop that mints on Base
   Sepolia is proven too.
 
