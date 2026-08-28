@@ -177,12 +177,6 @@ sequenceDiagram
     T-->>A: HTTP 200 + ALLOW / WARN / DENY + on-chain proof
 ```
 
-**Demo (88s, silent):** the full product in one take: the OKX.AI section on the landing, the guided "verify an agent right now" entry, the step-by-step verification pipeline (ERC-8004 resolve, KYA, deterministic score, ALLOW/WARN/DENY verdict), the agent console (marketplace + ERC-8004 identity), the 120 real x402 settlements at `/proof`, one settlement confirmed on OKLink, and both OKX.AI listings (#6271 Trust Oracle, #8913 Risk Copilot).
-
-<video src="https://github.com/getA-Identity/A-Identity/raw/main/okx-demo-trust-oracle.mp4" controls muted width="720"></video>
-
-▶️ [okx-demo-trust-oracle.mp4](./okx-demo-trust-oracle.mp4) · 15s risk_check + 402 clip: [okx-demo-risk-402.mp4](./okx-demo-risk-402.mp4)
-
 | Tool | Price | What it returns |
 |---|---|---|
 | `trust_preview` | free | coarse trust band + revoked/Sybil flags (rate-limited adoption on-ramp) |
