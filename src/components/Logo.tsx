@@ -1,3 +1,5 @@
+import { useId } from 'react'
+
 type LogoProps = {
   /** Square edge length in px. Defaults to 32. */
   size?: number
@@ -20,11 +22,61 @@ type LogoProps = {
 }
 
 /**
- * The A-Identity mark, a geometric angular interlock on a 256 grid. Pure path geometry, so
- * it stays crisp at any `size`.
+ * The A-Identity mark (2026-08 rebrand): the A-I ribbon monogram. An A and an I
+ * letterform crossed by a ribbon, drawn on a 512 grid. The geometry comes from the
+ * brand kit's mark-mono SVGs and is the single canonical copy in this codebase; the
+ * static favicon and the docs logo duplicate it only because static files cannot
+ * import TypeScript, and each says so in a comment.
+ *
+ * Unlike the previous angular mark this is NOT a single path: the ribbon cuts a gap
+ * through the letterforms (a luminance mask, color-independent), then draws itself on
+ * top. `LogoGlyph` is the whole drawing as an embeddable group, so consumers that
+ * compose the mark into their own SVG (BlogCover's watermark) reuse the exact
+ * geometry rather than keeping a drifting copy.
  */
-export const MARK_PATH =
-  'M 64 128 L 64.5 128 L 32 95 L 0 64 L 0 0 L 64 0 L 128 64 L 128 64.5 L 161 32 L 192 0 L 256 0 L 256 64 L 192 128 L 128 128 L 128 192 L 96 223 L 63.5 256 L 0 256 L 0 192 Z M 256 192 L 224 223 L 191.5 256 L 128 256 L 128 192 L 192 128 L 256 128 Z'
+export const MARK_VIEWBOX = '0 0 512 512'
+
+/** The ribbon, and the short tail it folds into. Also used, stroked, as the mask cutout. */
+const RIBBON_PATHS = [
+  'M 108 290 C 240 276 340 282 466 306 L 440 362 C 330 340 240 336 108 352 Z',
+  'M 440 362 L 466 352 L 458 430 Q 446 441 436 428 Z',
+]
+
+/** The letterforms: the A's legs, then the I stroke. */
+const BODY_PATHS = [
+  'M 40 472 L 168 48 Q 200 20 232 48 L 344 472 L 282 472 L 200 190 L 102 472 Z',
+  'M 368 472 L 381 70 Q 383 56 397 56 L 429 56 Q 443 56 442 70 L 430 472 Z',
+]
+
+/**
+ * The mark as an embeddable `<g>`, for callers composing it into a larger SVG. The mask
+ * id comes from useId because the mark renders several times per page (navbar, footer,
+ * mobile sheet, one watermark per blog card): a fixed id would make every instance
+ * resolve to whichever mask happened to mount first.
+ */
+export function LogoGlyph({ fill = 'currentColor' }: { fill?: string }) {
+  const maskId = useId()
+  return (
+    <g>
+      <defs>
+        <mask id={maskId} maskUnits="userSpaceOnUse" x="0" y="0" width="512" height="512">
+          <rect width="512" height="512" fill="#fff" />
+          {RIBBON_PATHS.map((d) => (
+            <path key={d} d={d} fill="#000" stroke="#000" strokeWidth="16" />
+          ))}
+        </mask>
+      </defs>
+      <g mask={`url(#${maskId})`}>
+        {BODY_PATHS.map((d) => (
+          <path key={d} d={d} fill={fill} />
+        ))}
+      </g>
+      {RIBBON_PATHS.map((d) => (
+        <path key={d} d={d} fill={fill} />
+      ))}
+    </g>
+  )
+}
 
 export default function Logo({ size = 32, fill = 'currentColor', className }: LogoProps) {
   return (
@@ -34,11 +86,11 @@ export default function Logo({ size = 32, fill = 'currentColor', className }: Lo
       height={size}
       fill="none"
       overflow="visible"
-      viewBox="0 0 256 256"
+      viewBox={MARK_VIEWBOX}
       className={className}
       aria-hidden="true"
     >
-      <path d={MARK_PATH} fill={fill} />
+      <LogoGlyph fill={fill} />
     </svg>
   )
 }

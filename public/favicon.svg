@@ -1,4 +1,4 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" fill="none" viewBox="0 0 256 256">
+<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" fill="none" viewBox="0 0 512 512">
   <!--
     Tab icon: the mark in cream, always.
 
@@ -7,8 +7,21 @@
     consistency wins here over adaptation. The cost is real and worth naming: against a light
     tab strip it has very little contrast.
 
-    The path geometry is duplicated from src/components/Logo.tsx (MARK_PATH) because a static
-    file cannot import from TypeScript. If the mark ever changes, change it in both places.
+    The geometry (the A-I ribbon monogram, 2026-08 rebrand) is duplicated from
+    src/components/Logo.tsx because a static file cannot import from TypeScript. If the mark
+    ever changes, change it in both places.
   -->
-  <path fill="#f2f2ee" d="M 64 128 L 64.5 128 L 32 95 L 0 64 L 0 0 L 64 0 L 128 64 L 128 64.5 L 161 32 L 192 0 L 256 0 L 256 64 L 192 128 L 128 128 L 128 192 L 96 223 L 63.5 256 L 0 256 L 0 192 Z M 256 192 L 224 223 L 191.5 256 L 128 256 L 128 192 L 192 128 L 256 128 Z"/>
+  <defs>
+    <mask id="gap" maskUnits="userSpaceOnUse" x="0" y="0" width="512" height="512">
+      <rect width="512" height="512" fill="#fff"/>
+      <path d="M 108 290 C 240 276 340 282 466 306 L 440 362 C 330 340 240 336 108 352 Z" fill="#000" stroke="#000" stroke-width="16"/>
+      <path d="M 440 362 L 466 352 L 458 430 Q 446 441 436 428 Z" fill="#000" stroke="#000" stroke-width="16"/>
+    </mask>
+  </defs>
+  <g mask="url(#gap)">
+    <path d="M 40 472 L 168 48 Q 200 20 232 48 L 344 472 L 282 472 L 200 190 L 102 472 Z" fill="#f2f2ee"/>
+    <path d="M 368 472 L 381 70 Q 383 56 397 56 L 429 56 Q 443 56 442 70 L 430 472 Z" fill="#f2f2ee"/>
+  </g>
+  <path d="M 108 290 C 240 276 340 282 466 306 L 440 362 C 330 340 240 336 108 352 Z" fill="#f2f2ee"/>
+  <path d="M 440 362 L 466 352 L 458 430 Q 446 441 436 428 Z" fill="#f2f2ee"/>
 </svg>

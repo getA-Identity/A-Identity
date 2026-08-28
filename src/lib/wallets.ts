@@ -117,8 +117,10 @@ export async function connectWalletConnect(): Promise<Eip1193> {
     metadata: {
       name: 'A-Identity',
       description: 'Passport + wallet for AI agents on Arc',
-      url: 'https://a-identity.vercel.app',
-      icons: ['https://a-identity.vercel.app/favicon.svg'],
+      // The canonical domain, not the Vercel alias: every other self-reference in the
+      // repo uses a-identity.xyz, and wallet UIs show this URL to the person signing.
+      url: 'https://a-identity.xyz',
+      icons: ['https://a-identity.xyz/favicon.svg'],
     },
   })
   await provider.connect()

@@ -7,8 +7,9 @@
 
 /* The mark, used below as a faint watermark. Imported rather than pasted: this file used to
  * carry its own copy of the path geometry, which is a third place for it to drift out of
- * step with the Logo component and the favicon. */
-import { MARK_PATH } from './Logo'
+ * step with the Logo component and the favicon. The ribbon monogram is multi-path with a
+ * mask, so the import is the whole glyph as a group rather than one path string. */
+import { LogoGlyph } from './Logo'
 
 const INK_DARK = '#141f2b'
 const INK_LITE = '#1d2e3e'
@@ -100,9 +101,10 @@ export default function BlogCover({ accent, seed = 0, className }: BlogCoverProp
         ))}
       </g>
 
-      {/* Faint A-Identity watermark, bottom-right */}
-      <g transform="translate(560 250) scale(0.86)" opacity="0.1">
-        <path d={MARK_PATH} fill={accent} />
+      {/* Faint A-Identity watermark, bottom-right. The 512-grid glyph at 0.43 keeps the
+          same ~220px footprint the old 256-grid mark had at 0.86. */}
+      <g transform="translate(560 250) scale(0.43)" opacity="0.1">
+        <LogoGlyph fill={accent} />
       </g>
     </svg>
   )

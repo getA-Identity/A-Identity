@@ -188,9 +188,19 @@ export default function BrandKit() {
             that are not reporting an outcome.
           </p>
           <div className="mt-6 grid gap-4 sm:grid-cols-2">
-            <div className="flex items-center justify-center gap-8 rounded-2xl border border-border bg-card p-8">
-              <Logo />
-              <Logo className="scale-150" />
+            <div className="flex flex-col items-center justify-center gap-6 rounded-2xl border border-border bg-card p-8">
+              <div className="flex items-center gap-8">
+                <Logo />
+                <Logo className="scale-150" />
+              </div>
+              {/* The page's own contract (see the intro copy: an asset not on this page
+                  does not exist) used to be false for the mark itself, which had no
+                  download here while every owl shipped three. */}
+              <div className="flex flex-wrap justify-center gap-2">
+                <AssetLink href="/logo/mark-mono-ink.svg" label="mark ink svg" />
+                <AssetLink href="/logo/mark-mono-cream.svg" label="mark cream svg" />
+                <AssetLink href="/logo/mark-1024.png" label="mark 1024 png" />
+              </div>
             </div>
             <div className="grid grid-cols-4 gap-2 rounded-2xl border border-border bg-card p-6">
               {VERDICTS.map(({ v, label }) => (
