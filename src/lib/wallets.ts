@@ -120,7 +120,7 @@ export async function connectWalletConnect(): Promise<Eip1193> {
       // The canonical domain, not the Vercel alias: every other self-reference in the
       // repo uses a-identity.xyz, and wallet UIs show this URL to the person signing.
       url: 'https://a-identity.xyz',
-      icons: ['https://a-identity.xyz/favicon.svg'],
+      icons: ['https://a-identity.xyz/favicon.png'],
     },
   })
   await provider.connect()

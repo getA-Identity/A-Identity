@@ -5,7 +5,7 @@
   "version": "1.1.0",
   "url": "https://a-identity.xyz",
   "documentationUrl": "https://a-identity.xyz/llms-full.txt",
-  "iconUrl": "https://a-identity.xyz/favicon.svg",
+  "iconUrl": "https://a-identity.xyz/favicon.png",
   "preferredTransport": "JSONRPC",
   "supportedInterfaces": [
     {

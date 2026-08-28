@@ -1,96 +1,37 @@
-import { useId } from 'react'
-
 type LogoProps = {
   /** Square edge length in px. Defaults to 32. */
   size?: number
   /**
-   * Fill for the mark. Defaults to `currentColor`, so the logo inherits whatever text
-   * color surrounds it and is therefore correct in both themes without the caller having
-   * to think about it.
+   * Ignored since the 2026-08 rebrand, kept so existing call sites compile.
    *
-   * This used to default to the ink hex, and that was the bug: a shared component that
-   * hardcodes a color makes every call site wrong-by-default on a dark surface, and the
-   * only way to be right was to remember to pass `fill="currentColor"`. Three call sites
-   * remembered and three did not, which is exactly the distribution you get from a default
-   * that has to be overridden to be correct.
-   *
-   * Pass an explicit color only where the background is fixed regardless of theme (the
-   * brand-page swatches), so the intent is visible instead of inherited.
+   * The mark is now a RASTER: the gradient A-I monogram from the brand kit's
+   * main_logo.png (background removed, served from /logo/mark.png). A raster cannot be
+   * recoloured with currentColor the way the old vector mark was, so `fill` has nothing
+   * to act on. The gradient indigo-violet reads on both light and dark surfaces, which
+   * is the trade the rebrand made explicitly: one authentic logo everywhere instead of
+   * a theme-adaptive redrawing of it.
    */
   fill?: string
   className?: string
 }
 
 /**
- * The A-Identity mark (2026-08 rebrand): the A-I ribbon monogram. An A and an I
- * letterform crossed by a ribbon, drawn on a 512 grid. The geometry comes from the
- * brand kit's mark-mono SVGs and is the single canonical copy in this codebase; the
- * static favicon and the docs logo duplicate it only because static files cannot
- * import TypeScript, and each says so in a comment.
- *
- * Unlike the previous angular mark this is NOT a single path: the ribbon cuts a gap
- * through the letterforms (a luminance mask, color-independent), then draws itself on
- * top. `LogoGlyph` is the whole drawing as an embeddable group, so consumers that
- * compose the mark into their own SVG (BlogCover's watermark) reuse the exact
- * geometry rather than keeping a drifting copy.
+ * The A-Identity mark (2026-08 rebrand): the gradient A-I monogram, crossed by a
+ * ribbon. Source of truth is the brand kit's main_logo.png; /logo/mark.png is the
+ * background-removed square crop of its mark, and /logo/logo-full.png is the full
+ * lockup with the wordmark. All derived assets (favicon.png, apple-touch-icon.png,
+ * docs/logo.png, the OG card) are cut from the same source, never redrawn.
  */
-export const MARK_VIEWBOX = '0 0 512 512'
-
-/** The ribbon, and the short tail it folds into. Also used, stroked, as the mask cutout. */
-const RIBBON_PATHS = [
-  'M 108 290 C 240 276 340 282 466 306 L 440 362 C 330 340 240 336 108 352 Z',
-  'M 440 362 L 466 352 L 458 430 Q 446 441 436 428 Z',
-]
-
-/** The letterforms: the A's legs, then the I stroke. */
-const BODY_PATHS = [
-  'M 40 472 L 168 48 Q 200 20 232 48 L 344 472 L 282 472 L 200 190 L 102 472 Z',
-  'M 368 472 L 381 70 Q 383 56 397 56 L 429 56 Q 443 56 442 70 L 430 472 Z',
-]
-
-/**
- * The mark as an embeddable `<g>`, for callers composing it into a larger SVG. The mask
- * id comes from useId because the mark renders several times per page (navbar, footer,
- * mobile sheet, one watermark per blog card): a fixed id would make every instance
- * resolve to whichever mask happened to mount first.
- */
-export function LogoGlyph({ fill = 'currentColor' }: { fill?: string }) {
-  const maskId = useId()
+export default function Logo({ size = 32, className }: LogoProps) {
   return (
-    <g>
-      <defs>
-        <mask id={maskId} maskUnits="userSpaceOnUse" x="0" y="0" width="512" height="512">
-          <rect width="512" height="512" fill="#fff" />
-          {RIBBON_PATHS.map((d) => (
-            <path key={d} d={d} fill="#000" stroke="#000" strokeWidth="16" />
-          ))}
-        </mask>
-      </defs>
-      <g mask={`url(#${maskId})`}>
-        {BODY_PATHS.map((d) => (
-          <path key={d} d={d} fill={fill} />
-        ))}
-      </g>
-      {RIBBON_PATHS.map((d) => (
-        <path key={d} d={d} fill={fill} />
-      ))}
-    </g>
-  )
-}
-
-export default function Logo({ size = 32, fill = 'currentColor', className }: LogoProps) {
-  return (
-    <svg
-      xmlns="http://www.w3.org/2000/svg"
+    <img
+      src="/logo/mark.png"
       width={size}
       height={size}
-      fill="none"
-      overflow="visible"
-      viewBox={MARK_VIEWBOX}
       className={className}
+      alt=""
       aria-hidden="true"
-    >
-      <LogoGlyph fill={fill} />
-    </svg>
+      draggable={false}
+    />
   )
 }

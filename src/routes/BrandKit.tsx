@@ -197,9 +197,9 @@ export default function BrandKit() {
                   does not exist) used to be false for the mark itself, which had no
                   download here while every owl shipped three. */}
               <div className="flex flex-wrap justify-center gap-2">
-                <AssetLink href="/logo/mark-mono-ink.svg" label="mark ink svg" />
-                <AssetLink href="/logo/mark-mono-cream.svg" label="mark cream svg" />
+                <AssetLink href="/logo/mark.png" label="mark png" />
                 <AssetLink href="/logo/mark-1024.png" label="mark 1024 png" />
+                <AssetLink href="/logo/logo-full.png" label="full lockup png" />
               </div>
             </div>
             <div className="grid grid-cols-4 gap-2 rounded-2xl border border-border bg-card p-6">

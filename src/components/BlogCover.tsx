@@ -5,11 +5,10 @@
  * A-Identity watermark keep every cover on-brand while the accent makes it distinct.
  */
 
-/* The mark, used below as a faint watermark. Imported rather than pasted: this file used to
- * carry its own copy of the path geometry, which is a third place for it to drift out of
- * step with the Logo component and the favicon. The ribbon monogram is multi-path with a
- * mask, so the import is the whole glyph as a group rather than one path string. */
-import { LogoGlyph } from './Logo'
+/* The watermark below is the real raster mark (/logo/mark.png), the same file the Logo
+ * component renders. A raster cannot take the per-post accent tint the old vector
+ * watermark had; a faint opacity of the authentic mark replaces an accent-tinted
+ * redrawing of it, which is the rebrand's trade everywhere. */
 
 const INK_DARK = '#141f2b'
 const INK_LITE = '#1d2e3e'
@@ -101,11 +100,8 @@ export default function BlogCover({ accent, seed = 0, className }: BlogCoverProp
         ))}
       </g>
 
-      {/* Faint A-Identity watermark, bottom-right. The 512-grid glyph at 0.43 keeps the
-          same ~220px footprint the old 256-grid mark had at 0.86. */}
-      <g transform="translate(560 250) scale(0.43)" opacity="0.1">
-        <LogoGlyph fill={accent} />
-      </g>
+      {/* Faint A-Identity watermark, bottom-right, same ~220px footprint as before. */}
+      <image href="/logo/mark.png" x="560" y="230" width="220" height="220" opacity="0.12" />
     </svg>
   )
 }
