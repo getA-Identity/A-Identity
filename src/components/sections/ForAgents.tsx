@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { motion } from 'framer-motion'
-import { ArrowUpRight, Check, Copy, FileJson, FileText, Plug } from 'lucide-react'
+import { ArrowUpRight, Bot, Check, Copy, FileJson, FileText, Plug } from 'lucide-react'
 import { ChatGptMark, ClaudeMark, PerplexityMark, GeminiMark, GrokMark } from '../AiMarks'
 import { APP_NAME, ASK_AI_LINKS } from '../../lib/brand'
 import { DisplayHeading, Eyebrow, Lede } from '../ui/display'
@@ -57,7 +57,7 @@ export default function ForAgents() {
   return (
     <SectionShell id="for-agents" size="lg" surface="card" backdrop="door" backdropPosition="right">
       <SectionIntro
-        eyebrow={<Eyebrow>For agents</Eyebrow>}
+        eyebrow={<Eyebrow icon={Bot}>For agents</Eyebrow>}
         heading={
           <DisplayHeading size="section" className="max-w-[18ch]">
             If you are an AI reading this, start here.

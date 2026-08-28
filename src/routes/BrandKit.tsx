@@ -7,6 +7,7 @@ import OwlMark, { type OwlVerdict } from '../components/OwlMark'
 import { OwlMascot3D, type OwlVariant } from '../components/OwlMascot'
 import { DisplayHeading, Eyebrow, Lede } from '../components/ui/display'
 import { APP_NAME } from '../lib/brand'
+import { CHAINS } from '../lib/chains'
 import { usePageMeta } from '../lib/head'
 
 /**
@@ -30,6 +31,27 @@ const BRAND = [
   { name: 'cream', hex: '#f2f2ee', note: 'The page in light mode, the mark on dark chrome.' },
   { name: 'sand', hex: '#cfc8c5', note: 'Muted structure: sheets, beaks, talons.' },
 ]
+
+/**
+ * The downloadable logo tints: the brand palette (sand is structure, not a logo colour),
+ * then every live chain in its registry colour. The PNGs under /brand are rendered by
+ * scripts/gen-brand-logos.mjs with this exact filter, so the grid and the files can only
+ * drift if someone edits one without re-running the other; a new live chain gets its
+ * variants by re-running the script, not by editing this page.
+ */
+const LOGO_TINTS = [
+  ...['ink', 'accent', 'cream'].map((name) => {
+    const c = BRAND.find((b) => b.name === name)!
+    return { key: c.name, name: c.name, hex: c.hex }
+  }),
+  ...CHAINS.filter((c) => c.status === 'live').map((c) => ({ key: c.id, name: c.shortName, hex: c.color })),
+]
+
+/** Perceived-luminance cut: light tints preview on ink, dark tints on white. */
+const isLightHex = (hex: string) => {
+  const n = parseInt(hex.slice(1), 16)
+  return 0.299 * (n >> 16) + 0.587 * ((n >> 8) & 255) + 0.114 * (n & 255) > 150
+}
 
 /** The protocol and token colours, for anyone naming one of them next to our mark. */
 const PROTOCOL_COLORS = [
@@ -176,31 +198,124 @@ export default function BrandKit() {
           </div>
         </section>
 
+        {/* ---------------------------------------------------------------- logo --- */}
+        <section className="mt-20">
+          <DisplayHeading size="sub" as="h2">
+            Logo
+          </DisplayHeading>
+          <p className="mt-2 max-w-[62ch] text-sm leading-relaxed text-foreground/55">
+            One mark, three forms: the mark alone, the horizontal lockup, and the stacked
+            lockup with the wordmark underneath. The full-colour ribbon monogram is the
+            primary logo; every file here is rendered from that one raster and the site&apos;s
+            own heading face, never redrawn by hand.
+          </p>
+
+          <div className="mt-6 grid gap-4 lg:grid-cols-3">
+            {[
+              {
+                name: 'Mark only',
+                img: '/logo/mark.png',
+                imgClass: 'h-24 w-24',
+                links: [
+                  { href: '/logo/mark.png', label: 'png 581' },
+                  { href: '/logo/mark-1024.png', label: 'png 1024' },
+                ],
+              },
+              {
+                name: 'Horizontal',
+                img: '/brand/lockup-horizontal-full-ink.png',
+                imgClass: 'max-h-14 w-auto',
+                links: [
+                  { href: '/brand/lockup-horizontal-full-ink.png', label: 'ink wordmark' },
+                  { href: '/brand/lockup-horizontal-full-cream.png', label: 'cream wordmark' },
+                ],
+              },
+              {
+                name: 'Vertical',
+                img: '/brand/lockup-vertical-full-ink.png',
+                imgClass: 'max-h-28 w-auto',
+                links: [
+                  { href: '/brand/lockup-vertical-full-ink.png', label: 'ink wordmark' },
+                  { href: '/brand/lockup-vertical-full-cream.png', label: 'cream wordmark' },
+                ],
+              },
+            ].map((f) => (
+              <div key={f.name} className="overflow-hidden rounded-2xl border border-border bg-card">
+                <div className="flex h-44 items-center justify-center border-b border-border bg-white p-6">
+                  <img src={f.img} alt={`A-Identity logo, ${f.name.toLowerCase()}`} loading="lazy" className={f.imgClass} />
+                </div>
+                <div className="p-4">
+                  <span className="text-sm font-bold text-foreground">{f.name}</span>
+                  <div className="mt-3 flex flex-wrap gap-2">
+                    {f.links.map((l) => (
+                      <AssetLink key={l.href} {...l} />
+                    ))}
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+
+          <p className="mt-10 max-w-[62ch] text-sm leading-relaxed text-foreground/55">
+            One-colour silhouettes, for chrome that cannot carry the gradient: the brand
+            palette first, then every live chain in its own colour for co-branded
+            placements. Each tint ships all three forms; the silhouette is the mark&apos;s
+            own alpha channel, flat-filled.
+          </p>
+          <div className="mt-6 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+            {LOGO_TINTS.map((t) => (
+              <div key={t.key} className="overflow-hidden rounded-2xl border border-border bg-card">
+                <div
+                  className="flex h-28 items-center justify-center border-b border-border p-6"
+                  style={{ backgroundColor: isLightHex(t.hex) ? '#192837' : '#ffffff' }}
+                >
+                  <img
+                    src={`/brand/lockup-horizontal-${t.key}.png`}
+                    alt={`A-Identity lockup in ${t.name}`}
+                    loading="lazy"
+                    className="max-h-10 w-auto"
+                  />
+                </div>
+                <div className="p-4">
+                  <div className="flex items-baseline justify-between gap-2">
+                    <span className="text-sm font-bold text-foreground">{t.name}</span>
+                    <span className="font-mono text-xs text-foreground/45">{t.hex}</span>
+                  </div>
+                  <div className="mt-3 flex flex-wrap gap-2">
+                    <AssetLink href={`/brand/mark-${t.key}.png`} label="mark" />
+                    <AssetLink href={`/brand/lockup-horizontal-${t.key}.png`} label="horizontal" />
+                    <AssetLink href={`/brand/lockup-vertical-${t.key}.png`} label="vertical" />
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+
+          <a
+            href="/brand/a-identity-logo-kit.zip"
+            download
+            className="mt-8 inline-flex items-center gap-2 rounded-full bg-accent px-5 py-2.5 text-sm font-semibold text-white transition-opacity hover:opacity-90"
+          >
+            <Download size={15} />
+            Download the full kit (zip)
+          </a>
+        </section>
+
         {/* --------------------------------------------------------------- marks --- */}
         <section className="mt-20">
           <DisplayHeading size="sub" as="h2">
-            Marks
+            Verdict marks
           </DisplayHeading>
           <p className="mt-2 max-w-[62ch] text-sm leading-relaxed text-foreground/55">
-            The logo mark carries the company; the owl mark carries a decision. The owl&apos;s
+            The logo carries the company; the owl mark carries a decision. The owl&apos;s
             eyes take the verdict colour, the exact values the explorer&apos;s risk pill uses,
             so a mark and a pill can never disagree on screen. Neutral accent is for surfaces
             that are not reporting an outcome.
           </p>
           <div className="mt-6 grid gap-4 sm:grid-cols-2">
-            <div className="flex flex-col items-center justify-center gap-6 rounded-2xl border border-border bg-card p-8">
-              <div className="flex items-center gap-8">
-                <Logo />
-                <Logo className="scale-150" />
-              </div>
-              {/* The page's own contract (see the intro copy: an asset not on this page
-                  does not exist) used to be false for the mark itself, which had no
-                  download here while every owl shipped three. */}
-              <div className="flex flex-wrap justify-center gap-2">
-                <AssetLink href="/logo/mark.png" label="mark png" />
-                <AssetLink href="/logo/mark-1024.png" label="mark 1024 png" />
-                <AssetLink href="/logo/logo-full.png" label="full lockup png" />
-              </div>
+            <div className="flex items-center justify-center gap-10 rounded-2xl border border-border bg-card p-8">
+              <Logo />
+              <Logo className="scale-150" />
             </div>
             <div className="grid grid-cols-4 gap-2 rounded-2xl border border-border bg-card p-6">
               {VERDICTS.map(({ v, label }) => (
@@ -342,24 +457,17 @@ export default function BrandKit() {
             hyphenated, with a capital A and a capital I: A-Identity.
           </p>
 
-          {/* Both panels pass an explicit fill: unlike every other placement, these two
-              demonstrate the mark on a FIXED light and a FIXED dark background, so they
-              must not inherit the surrounding text colour. */}
+          {/* The shipped lockup files themselves, on a FIXED light and a FIXED dark
+              panel: the demo and the download can never disagree. */}
           <div className="mt-6 grid gap-4 sm:grid-cols-2">
             <div className="flex items-center justify-center rounded-2xl border border-[#192837]/10 bg-white p-12">
-              <div className="flex items-center gap-3">
-                <Logo size={40} fill="#192837" />
-                <span className="text-2xl font-bold tracking-tight text-[#192837]">{APP_NAME}</span>
-              </div>
+              <img src="/brand/lockup-horizontal-full-ink.png" alt={`${APP_NAME} lockup on light`} loading="lazy" className="max-h-10 w-auto" />
             </div>
             <div
               className="flex items-center justify-center rounded-2xl border border-white/10 p-12"
               style={{ background: '#192837' }}
             >
-              <div className="flex items-center gap-3">
-                <Logo size={40} fill="#ffffff" />
-                <span className="text-2xl font-bold tracking-tight text-white">{APP_NAME}</span>
-              </div>
+              <img src="/brand/lockup-horizontal-full-cream.png" alt={`${APP_NAME} lockup on dark`} loading="lazy" className="max-h-10 w-auto" />
             </div>
           </div>
 
@@ -379,7 +487,7 @@ export default function BrandKit() {
                 <X size={16} /> Do not
               </div>
               <ul className="flex flex-col gap-2 text-sm text-foreground/70">
-                <li>Do not recolour or stretch the logo.</li>
+                <li>Do not stretch the logo, or tint it yourself: recolouring is shipped, as the one-colour set above.</li>
                 <li>Do not write it as Aidentity, A Identity, or AIdentity.</li>
                 <li>Do not place the mark on a busy photo without a panel.</li>
               </ul>

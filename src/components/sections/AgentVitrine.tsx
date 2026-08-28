@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { motion } from 'framer-motion'
-import { ArrowRight, ArrowUpRight, Star } from 'lucide-react'
+import { ArrowRight, ArrowUpRight, Star, Store } from 'lucide-react'
 import { getLeaderboard, type FeedAgent } from '../../lib/mcp-client'
 import { MCP_BASE } from '../../lib/mcpBase'
 import AgentAvatar from '../AgentAvatar'
@@ -87,7 +87,7 @@ export default function AgentVitrine() {
   return (
     <SectionShell id="agents" size="lg" surface="card" backdrop="vitrine" backdropPosition="left">
       <SectionIntro
-        eyebrow={<Eyebrow>Agent House</Eyebrow>}
+        eyebrow={<Eyebrow icon={Store}>Agent House</Eyebrow>}
         heading={
           <DisplayHeading size="section" className="max-w-[16ch]">
             Verified agents, open for work.

@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { motion } from 'framer-motion'
+import { Wallet } from 'lucide-react'
 import { DisplayHeading, Eyebrow, Lede } from '../ui/display'
 import { SectionShell, reveal } from '../ui/section'
 import { cn } from '../../lib/utils'
@@ -173,7 +174,7 @@ export default function WhatYouGet() {
           {/* Left: eyebrow pinned top; heading, lede and the claim selector anchored
               bottom (dashx stance). */}
           <div className="flex shrink-0 flex-col p-7 sm:p-10 lg:w-[440px] lg:p-12">
-            <Eyebrow className="text-foreground/50">What every agent gets</Eyebrow>
+            <Eyebrow icon={Wallet}>What every agent gets</Eyebrow>
             <div className="mt-8 lg:mt-auto lg:pt-10">
               <DisplayHeading size="section" className="max-w-[16ch]">
                 What every agent gets.

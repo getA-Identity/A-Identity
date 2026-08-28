@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { motion, useReducedMotion } from 'framer-motion'
-import { ArrowRight, Bot, User } from 'lucide-react'
+import { ArrowRight, Bot, ShieldCheck, User } from 'lucide-react'
 import { Link } from 'react-router-dom'
 import { DOCS_URL } from '../../lib/brand'
 import { DisplayHeading, Eyebrow, Lede } from '../ui/display'
@@ -182,7 +182,7 @@ export default function VerifyPayFlow() {
   return (
     <SectionShell id="flow" surface="card" size="lg" backdrop="ledger" backdropPosition="left">
       <SectionIntro
-        eyebrow={<Eyebrow>Verify, then pay</Eyebrow>}
+        eyebrow={<Eyebrow icon={ShieldCheck}>Verify, then pay</Eyebrow>}
         heading={
           <DisplayHeading size="section" className="max-w-[16ch]">
             Every payment goes through the check first.

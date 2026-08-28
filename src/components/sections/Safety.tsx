@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { motion } from 'framer-motion'
-import { ArrowUpRight, KeyRound, Layers, Radio, UserCheck } from 'lucide-react'
+import { ArrowUpRight, KeyRound, Layers, Lock, Radio, UserCheck } from 'lucide-react'
 import { DisplayHeading, Eyebrow, Lede } from '../ui/display'
 import { SectionShell, SectionIntro, reveal, revealAt } from '../ui/section'
 
@@ -61,7 +61,7 @@ export default function Safety() {
   return (
     <SectionShell id="safety" size="lg" backdrop="console" backdropPosition="right">
       <SectionIntro
-        eyebrow={<Eyebrow>Designed for safety</Eyebrow>}
+        eyebrow={<Eyebrow icon={Lock}>Designed for safety</Eyebrow>}
         heading={
           <DisplayHeading size="section" className="max-w-[16ch]">
             The limits are the product.

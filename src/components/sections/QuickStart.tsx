@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { Link } from 'react-router-dom'
 import { AnimatePresence, motion } from 'framer-motion'
-import { ArrowRight, Bot, Check, Copy, User } from 'lucide-react'
+import { ArrowRight, Bot, Check, Copy, Rocket, User } from 'lucide-react'
 import { DisplayHeading, Eyebrow, Lede } from '../ui/display'
 import { SectionShell, SectionIntro, reveal } from '../ui/section'
 import { Steps, StepRow } from '../ui/step-row'
@@ -211,7 +211,7 @@ export default function QuickStart() {
   return (
     <SectionShell id="quickstart" size="lg" backdrop="door">
       <SectionIntro
-        eyebrow={<Eyebrow>Getting started</Eyebrow>}
+        eyebrow={<Eyebrow icon={Rocket}>Getting started</Eyebrow>}
         heading={
           <DisplayHeading size="section" className="max-w-[16ch]">
             Two audiences, one door.

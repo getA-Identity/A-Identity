@@ -50,17 +50,33 @@ export function DisplayHeading({
 }
 
 /**
- * The small tracked label above a heading. Carries the section's category, never a sentence:
+ * The tracked label above a heading. Carries the section's category, never a sentence:
  * if it needs a verb it belongs in the heading.
+ *
+ * A badge rather than bare text. The old version was 40% foreground at text-xs, and the
+ * sections that wanted an icon floated a separate tile above it; together they read as
+ * two unrelated whispers. One accent chip that holds both the icon and the label gives
+ * every section the same visible entry point, and the icon stops being decoration with
+ * nowhere to live.
  */
-export function Eyebrow({ children, className = '' }: { children: ReactNode; className?: string }) {
+export function Eyebrow({
+  icon: Icon,
+  children,
+  className = '',
+}: {
+  /** A lucide icon component. Optional: a chip with no natural icon stays text-only. */
+  icon?: ElementType
+  children: ReactNode
+  className?: string
+}) {
   return (
     <p
       className={cn(
-        'text-xs font-semibold uppercase tracking-[0.18em] text-foreground/40',
+        'inline-flex w-fit items-center gap-2 rounded-full border border-accent/25 bg-accent/[0.08] px-4 py-2 text-[13px] font-bold uppercase tracking-[0.15em] text-accent',
         className,
       )}
     >
+      {Icon && <Icon size={15} strokeWidth={2.5} aria-hidden="true" />}
       {children}
     </p>
   )

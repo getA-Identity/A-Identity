@@ -136,7 +136,7 @@ export default function ProtocolsWall() {
   return (
     <SectionShell id="protocols" size="lg" backdrop="protocols">
       <SectionIntro
-        eyebrow={<Eyebrow>The stack</Eyebrow>}
+        eyebrow={<Eyebrow icon={Boxes}>The stack</Eyebrow>}
         heading={
           <DisplayHeading size="section" className="max-w-[18ch]">
             Six protocols, and what each one lets you do.

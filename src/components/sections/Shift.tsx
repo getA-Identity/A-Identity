@@ -30,28 +30,20 @@ const revealAt = (i: number) => ({
  * a real second line: larger, medium weight, 75% foreground, on a measure short enough to
  * read in one pass, with the conclusion split onto its own full-contrast line.
  *
- * A small mark above the eyebrow gives the block a top edge to sit under. Small on
- * purpose: it is punctuation for the section, not an illustration of it.
+ * The eyebrow badge carries the clock itself: a detached icon tile above a whisper of a
+ * label read as two unrelated ornaments, and this block opens the page's argument.
  */
 export default function Shift() {
   return (
     <section className="w-full bg-background px-5 py-24 text-foreground sm:px-8 sm:py-32">
       <div className="mx-auto flex max-w-[960px] flex-col items-center text-center">
-        <motion.span
-          {...revealAt(0)}
-          aria-hidden="true"
-          className="grid h-12 w-12 place-items-center rounded-2xl border border-border bg-card text-accent"
-        >
-          <Clock size={20} strokeWidth={1.75} />
-        </motion.span>
-
-        <motion.div {...revealAt(1)}>
-          <Eyebrow className="mt-6">Why now</Eyebrow>
+        <motion.div {...revealAt(0)}>
+          <Eyebrow icon={Clock}>Why now</Eyebrow>
         </motion.div>
 
         <motion.h2
-          {...revealAt(2)}
-          className="mt-4 max-w-[26ch] text-[clamp(2.1rem,4.8vw,3.4rem)] font-normal leading-[1.06] tracking-[-0.02em] text-foreground"
+          {...revealAt(1)}
+          className="mt-6 max-w-[26ch] text-[clamp(2.1rem,4.8vw,3.4rem)] font-normal leading-[1.06] tracking-[-0.02em] text-foreground"
           style={{ fontFamily: 'var(--font-body)', textWrap: 'balance' }}
         >
           Agents can already book the flight. They still pay with your card and your
@@ -59,7 +51,7 @@ export default function Shift() {
         </motion.h2>
 
         <motion.p
-          {...revealAt(3)}
+          {...revealAt(2)}
           className="mt-7 max-w-[52ch] text-[clamp(1.15rem,2vw,1.45rem)] font-medium leading-[1.55] text-foreground/75"
           style={{ textWrap: 'pretty' }}
         >
@@ -68,7 +60,7 @@ export default function Shift() {
         </motion.p>
 
         <motion.p
-          {...revealAt(4)}
+          {...revealAt(3)}
           className="mt-5 text-[clamp(1.05rem,1.7vw,1.25rem)] font-semibold tracking-[-0.01em] text-foreground"
         >
           That is the layer A-Identity builds.

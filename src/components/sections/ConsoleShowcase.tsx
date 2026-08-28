@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { AnimatePresence, motion } from 'framer-motion'
-import { ArrowRight, BadgeCheck, Snowflake } from 'lucide-react'
+import { ArrowRight, BadgeCheck, LayoutDashboard, Snowflake } from 'lucide-react'
 import { Link } from 'react-router-dom'
 import { DisplayHeading, Eyebrow, Lede } from '../ui/display'
 import { SectionShell, SectionIntro, reveal } from '../ui/section'
@@ -56,7 +56,7 @@ export default function ConsoleShowcase() {
   return (
     <SectionShell size="lg" surface="card" backdrop="console">
       <SectionIntro
-        eyebrow={<Eyebrow>The console</Eyebrow>}
+        eyebrow={<Eyebrow icon={LayoutDashboard}>The console</Eyebrow>}
         heading={
           <DisplayHeading size="section" className="max-w-[18ch]">
             Your rules, in one place the agent cannot edit.

@@ -1,4 +1,4 @@
-import { ArrowUp, Github } from 'lucide-react'
+import { Github } from 'lucide-react'
 import { Link } from 'react-router-dom'
 import Logo from '../Logo'
 import DiscordIcon from '../DiscordIcon'
@@ -144,21 +144,12 @@ export default function SiteFooter() {
             ))}
           </p>
 
-          <div className="mt-1 flex items-center justify-between gap-4">
-            <span>
-              © {new Date().getFullYear()} {APP_NAME}. Built for autonomous agents and the humans
-              who supervise them.
-            </span>
-            <button
-              type="button"
-              onClick={() => window.scrollTo({ top: 0, behavior: 'smooth' })}
-              aria-label="Back to top"
-              title="Back to top"
-              className="grid h-8 w-8 shrink-0 place-items-center rounded-full border border-border text-foreground/50 transition-colors hover:border-accent/40 hover:text-foreground"
-            >
-              <ArrowUp size={14} />
-            </button>
-          </div>
+          {/* No back-to-top button here: the floating ScrollTopButton already covers it,
+              and two arrows in the same viewport read as a bug. */}
+          <p className="mt-1">
+            © {new Date().getFullYear()} {APP_NAME}. Built for autonomous agents and the humans
+            who supervise them.
+          </p>
         </div>
       </div>
     </footer>
