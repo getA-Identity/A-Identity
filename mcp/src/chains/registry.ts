@@ -264,6 +264,135 @@ export const CHAINS: ChainDescriptor[] = [
       note: 'Where every x402 change is rehearsed before pubnet sees it. Testnet resets periodically, so a contract here is a rehearsal, never a record.',
     },
   },
+  // ── Algorand ─────────────────────────────────────────────────────────────────────────
+  // The second non-EVM ecosystem. CAIP-2 references are the REGISTERED 32-char truncated
+  // base64 genesis-hash prefixes from the chain-agnostic namespace registry, not the full
+  // padded base64 the GoPlausible facilitator uses as its network string: '=' and '/' are
+  // not legal CAIP-2 reference characters, so the rail maps between the two forms and the
+  // registry stays standards-clean.
+  {
+    caip2: 'algorand:wGHE2Pwdvd7S12BL5FaOP20EGYesN73k',
+    id: 'algorand',
+    name: 'Algorand',
+    shortName: 'Algorand',
+    // The brand mark is monochrome black; a grey chip color is chosen for legibility on
+    // both themes, the same call X Layer's black mark already made.
+    color: '#8C929C',
+    role: 'Agentic-commerce settlement: native Circle USDC, deterministic ~2.8s finality, and an x402 rail where the buyer signs a fee-zero transfer and the group fee is pooled.',
+    ecosystem: 'algorand',
+    testnet: false,
+    // beta, not live: the x402 rail code ships wired end to end but credential-gated, and
+    // nothing has settled on this network yet. In this repo live means carrying real
+    // traffic; this entry is promoted the day a real mainnet payment is recorded, the
+    // same bar every other chain met.
+    status: 'beta',
+    evmChainId: null,
+    // Circle's CCTP supported-domains table has no Algorand entry (checked 2026-08-30):
+    // USDC here is Circle-issued natively but moves in and out via Circle Mint and
+    // exchanges, not CCTP. Any unified-balance story must exclude this chain.
+    cctpDomain: null,
+    nativeCurrency: { name: 'Algo', symbol: 'ALGO', decimals: 6 },
+    usdcDecimals: 6,
+    rpcUrls: ['https://mainnet-api.4160.nodely.dev'],
+    explorer: 'https://allo.info',
+    contracts: {
+      // No `usdc` here on purpose, for the Stellar reason in a new costume: on Algorand
+      // USDC is an ASA addressed by a uint64 id, not a contract address, and every
+      // consumer of `contracts.usdc` is an EVM path that would read it as 0x hex. The
+      // ASA id lives in settlementTokens[].address as a decimal string instead.
+    },
+    confirmations: 1, // a transaction included in a block is final; no reorgs by design
+    stablecoins: ['USDC'],
+    settlementTokens: [
+      {
+        symbol: 'USDC',
+        address: '31566704',
+        decimals: 6,
+        authorization: 'algorand-group',
+        // No domainVersionCandidates: like soroban-auth, the authorization is the
+        // chain's, not the token's - a fee-zero signed transfer inside a pooled-fee
+        // atomic group - so there is no per-token signing domain to prove.
+        verified:
+          'Read live 2026-08-30 from the public indexer (/v2/assets/31566704): name USDC, ' +
+          'unit-name USDC, decimals 6, creator 2UEQTE5QDNXPI7M3TU44G6SYKLFWLPQO7EBZM7K7MHMQQMFI4QJPLHQFHM, ' +
+          'and cross-checked against Circle\'s own USDC-on-Algorand page documenting ASA 31566704. ' +
+          'Kept OUT of contracts.usdc because an ASA id is a uint64, not an address, and every ' +
+          'consumer of that slot expects 0x hex.',
+      },
+    ],
+    signerEnvVar: 'ALGORAND_MAINNET_SIGNER_MNEMONIC',
+    rpcEnvVar: 'ALGORAND_MAINNET_RPC_URL',
+    identity: {
+      standard: 'did:algo',
+      erc8004Native: false,
+      note:
+        'No ERC-8004 registry was found on Algorand as of 2026-08-30, and no ARC defines an ' +
+        'agent identity registry; the Foundation maintains the did:algo DID method and the ' +
+        'ecosystem identity work (GoPlausible DIDs, NFDomains) targets people and services, ' +
+        'not agent registration. An agent\'s passport is therefore bridged from an EVM chain ' +
+        'rather than anchored here, KYA included, and this note changes only when a registry ' +
+        'we can verify exists.',
+    },
+    payment: {
+      x402: true,
+      note:
+        'x402 v2 "exact" scheme in USDC. The buyer signs an ASA transfer with fee ZERO and a ' +
+        'fee-paying transaction joins it in one atomic group, so the buyer needs no ALGO for ' +
+        'fees. The exact claim ends there: receiving USDC at all requires the account to be ' +
+        'opted in to the ASA (0.1 ALGO minimum-balance step), which is Algorand\'s trustline ' +
+        'equivalent and no rail can remove it. Settlement runs through the GoPlausible ' +
+        'facilitator (the Foundation-backed rail this ecosystem standardized on), and no ' +
+        'payment counts as settled until we have read the transfer back from the indexer ' +
+        'ourselves.',
+    },
+  },
+  {
+    caip2: 'algorand:SGO1GKSzyE7IEPItTxCByw9x8FmnrCDe',
+    id: 'algorand-testnet',
+    name: 'Algorand Testnet',
+    shortName: 'Algorand test',
+    color: '#8C929C',
+    role: 'Algorand rehearsal rail: the same x402 code path as mainnet, in test money.',
+    ecosystem: 'algorand',
+    testnet: true,
+    status: 'beta',
+    evmChainId: null,
+    cctpDomain: null,
+    nativeCurrency: { name: 'Algo', symbol: 'ALGO', decimals: 6 },
+    usdcDecimals: 6,
+    rpcUrls: ['https://testnet-api.4160.nodely.dev'],
+    explorer: 'https://lora.algokit.io/testnet',
+    faucet: 'https://lora.algokit.io/testnet/fund',
+    contracts: {},
+    confirmations: 1,
+    stablecoins: ['USDC'],
+    settlementTokens: [
+      {
+        symbol: 'USDC',
+        address: '10458941',
+        decimals: 6,
+        authorization: 'algorand-group',
+        verified:
+          'Read live 2026-08-30 from the public testnet indexer (/v2/assets/10458941): name ' +
+          'USDC, unit-name USDC, decimals 6, creator VETIGP3I6RCUVLVYNDW5UA2OJMXB5WP6L6HJ3RWO2R37GP4AVETICXC55I, ' +
+          'matching the testnet ASA Circle documents for its faucet. Same rule as mainnet: an ' +
+          'ASA id is a uint64, so it stays out of contracts.usdc.',
+      },
+    ],
+    signerEnvVar: 'ALGORAND_TESTNET_SIGNER_MNEMONIC',
+    rpcEnvVar: 'ALGORAND_TESTNET_RPC_URL',
+    identity: {
+      standard: 'did:algo',
+      erc8004Native: false,
+      note:
+        'Same as mainnet: no agent registry found here, no KYA anchoring, passport bridged ' +
+        'from an EVM chain. Testnet exists for the payment rail rehearsal, not identity.',
+    },
+    payment: {
+      x402: true,
+      note: 'Where the Algorand x402 path is rehearsed before mainnet sees it, against the facilitator\'s own testnet network.',
+    },
+  },
   {
     caip2: 'eip155:196',
     id: 'xlayer',

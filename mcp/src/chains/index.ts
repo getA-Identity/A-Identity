@@ -27,3 +27,4 @@ export {
 // non-EVM chains stop getting a route their explorer does not have. See ./explorer.ts.
 export { txUrl, addressUrl } from './explorer.js'
 export * from './stellar/strkey.js'
+export * from './algorand/ids.js'

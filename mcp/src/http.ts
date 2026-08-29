@@ -36,6 +36,7 @@ import { handlePublicRoutes } from './http/public-routes.js'
 import { handleCeloRoutes } from './http/celo-routes.js'
 import { handleX402ThreeKRoutes } from './http/x402-3009-routes.js'
 import { handleX402StellarRoutes } from './http/x402-stellar-routes.js'
+import { handleX402AlgorandRoutes } from './http/x402-algorand-routes.js'
 import { handleChainRoutes } from './http/chain-routes.js'
 import { handleArcRoutes } from './http/arc-routes.js'
 import { handleAgentRoutes } from './http/agent-routes.js'
@@ -184,6 +185,7 @@ const server = http.createServer(async (req, res) => {
     req.method === 'POST' && url.pathname.startsWith('/api/') && !url.pathname.startsWith('/api/auth/') &&
     !url.pathname.startsWith('/api/celo/tools/') &&
     !url.pathname.startsWith('/api/x402/stellar/') &&
+    !url.pathname.startsWith('/api/x402/algorand/') &&
     !url.pathname.startsWith('/api/x402/tools/') && !url.pathname.startsWith('/api/facilitator/')
   if (isMutation && !caller) {
     sendJson(res, 401, { error: 'Authentication required. Sign in with a wallet or an email link.' })
@@ -208,6 +210,8 @@ const server = http.createServer(async (req, res) => {
     // Before the EIP-3009 group on purpose: /api/x402/stellar/* sits under /api/x402/,
     // and that group's tool regex would otherwise swallow a Stellar path.
     if (await handleX402StellarRoutes(ctx)) return
+    // Same precedence reason as Stellar: /api/x402/algorand/* sits under /api/x402/.
+    if (await handleX402AlgorandRoutes(ctx)) return
     if (await handleX402ThreeKRoutes(ctx)) return
     if (await handleChainRoutes(ctx)) return
     if (await handleArcRoutes(ctx)) return
@@ -314,6 +318,8 @@ server.listen(PORT, () => {
   console.error(`  GET  /api/x402/stellar/proof     Stellar settlements, with who broadcast each one`)
   console.error(`  GET  /api/x402/stellar/facilitator/supported   what this facilitator settles on Stellar`)
   console.error(`  GET  /api/x402/stellar/tools/:name             price + what to sign; POST to pay and call`)
+  console.error(`  GET  /api/x402/algorand/status   the AVM rail: config, facilitator, payTo opt-in`)
+  console.error(`  GET  /api/x402/algorand/tools/:name            price + what to sign; POST to pay and call`)
   console.error(`  GET  /api/proof/:rail            provenance ledger + a live re-read (see /api/proof/rails)`)
 })
 

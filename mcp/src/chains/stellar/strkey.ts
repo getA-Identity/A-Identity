@@ -24,6 +24,7 @@
  * SDK's on real and corrupted values, so the two cannot disagree.
  */
 import type { Ecosystem } from '../types.js'
+import { ALGORAND_ADDRESS_RE, ALGORAND_TX_ID_RE } from '../algorand/ids.js'
 
 const STRKEY_BODY = '[A-Z2-7]{55}'
 
@@ -105,22 +106,26 @@ export const isStellarTxHash = (s: string): boolean => STELLAR_TX_HASH_RE.test(s
 // therefore checks neither. The EVM entries are byte-identical to what those tests
 // asserted before Stellar existed.
 
-/** A token or contract address, per ecosystem. */
+/** A token or contract address, per ecosystem. On Algorand a settlement token is an
+ *  ASA, addressed by a uint64 id rather than an account: digits, not base32. */
 export const SETTLEMENT_ADDRESS_RE: Record<Ecosystem, RegExp> = {
   evm: /^0x[0-9a-fA-F]{40}$/,
   stellar: STELLAR_CONTRACT_RE,
+  algorand: /^[0-9]{1,20}$/,
 }
 
 /** An account that can own something, per ecosystem. */
 export const OWNER_ADDRESS_RE: Record<Ecosystem, RegExp> = {
   evm: /^0x[0-9a-fA-F]{40}$/,
   stellar: STELLAR_ACCOUNT_RE,
+  algorand: ALGORAND_ADDRESS_RE,
 }
 
 /** A transaction hash, per ecosystem. Neither branch accepts the other's rendering. */
 export const TX_HASH_RE: Record<Ecosystem, RegExp> = {
   evm: /^0x[0-9a-f]{64}$/,
   stellar: STELLAR_TX_HASH_RE,
+  algorand: ALGORAND_TX_ID_RE,
 }
 
 /** Human-readable names for the shapes above, for assertion messages. */
@@ -129,5 +134,9 @@ export const SHAPE_NAME: Record<Ecosystem, { address: string; tx: string }> = {
   stellar: {
     address: 'Soroban contract id (C... StrKey, base32 without 0 1 8 9)',
     tx: '32-byte hex hash with NO 0x prefix',
+  },
+  algorand: {
+    address: 'ASA id (decimal uint64) for tokens; 58-char base32 for accounts',
+    tx: '52-char base32 transaction id, no prefix',
   },
 }

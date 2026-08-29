@@ -63,9 +63,11 @@ test('the llms-full status buckets hold the right chains', () => {
   const text = repo('public/llms-full.txt')
   // The middle marker gained "(test networks)" on 2026-08-27, when stellar pubnet and base
   // moved to the live bucket and the only chains left in it were the three testnet mirrors.
-  // The rename failing this test is the mechanism working: the marker is load-bearing, so a
+  // It DROPPED the parenthetical on 2026-08-30, when Algorand mainnet entered at beta:
+  // wired and credential-gated but a mainnet, so the old title had become false. The
+  // rename failing this test is the mechanism working: the marker is load-bearing, so a
   // restructure has to be deliberate rather than silently disabling the check below.
-  const markers = ['Live today:', 'Beta, wired and readable (test networks):', 'Planned, descriptor only:']
+  const markers = ['Live today:', 'Beta, wired and readable:', 'Planned, descriptor only:']
   for (const m of markers) assert.ok(text.includes(m), `public/llms-full.txt lost its "${m}" bucket marker`)
   const slice = (start: string) => {
     const from = text.indexOf(start) + start.length
@@ -244,7 +246,7 @@ test('the landing chain sentence names no testnet mirror, and still names Arc', 
 
   // Every testnet that HAS a mainnet twin must be dropped. Naming them is the assertion:
   // a fourth pair added to the registry lands here rather than in the marketing copy.
-  assert.deepEqual(mirrors.sort(), ['celo-sepolia', 'rhchain-testnet', 'stellar-testnet'])
+  assert.deepEqual(mirrors.sort(), ['algorand-testnet', 'celo-sepolia', 'rhchain-testnet', 'stellar-testnet'])
 
   assert.ok(named.some((c) => c.id === 'arc'), 'Arc has no mainnet twin and must stay in the sentence')
   assert.equal(

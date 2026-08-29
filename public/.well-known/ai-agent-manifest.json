@@ -42,6 +42,22 @@
           "status": "beta"
         },
         {
+          "id": "algorand",
+          "caip2": "algorand:wGHE2Pwdvd7S12BL5FaOP20EGYesN73k",
+          "identity": "did:algo",
+          "erc8004Native": false,
+          "note": "No ERC-8004 registry or agent-identity ARC found on Algorand as of 2026-08-30; the passport is bridged from an EVM chain rather than anchored here.",
+          "status": "beta"
+        },
+        {
+          "id": "algorand-testnet",
+          "caip2": "algorand:SGO1GKSzyE7IEPItTxCByw9x8FmnrCDe",
+          "identity": "did:algo",
+          "erc8004Native": false,
+          "note": "Same as mainnet: no agent registry here, no KYA anchoring; the testnet exists for the payment rehearsal.",
+          "status": "beta"
+        },
+        {
           "id": "xlayer",
           "chainId": 196,
           "caip2": "eip155:196",
@@ -146,6 +162,22 @@
           "name": "Stellar Testnet",
           "caip2": "stellar:testnet",
           "role": "Stellar rehearsal rail: the same Soroban vault and the same x402 code path as pubnet, in test money.",
+          "x402": true,
+          "status": "beta"
+        },
+        {
+          "id": "algorand",
+          "name": "Algorand",
+          "caip2": "algorand:wGHE2Pwdvd7S12BL5FaOP20EGYesN73k",
+          "role": "Agentic-commerce settlement: native Circle USDC, deterministic finality, x402 v2 through the GoPlausible facilitator with pooled-fee gasless payments.",
+          "x402": true,
+          "status": "beta"
+        },
+        {
+          "id": "algorand-testnet",
+          "name": "Algorand Testnet",
+          "caip2": "algorand:SGO1GKSzyE7IEPItTxCByw9x8FmnrCDe",
+          "role": "Algorand rehearsal rail: the same x402 code path as mainnet, in test money.",
           "x402": true,
           "status": "beta"
         },
@@ -340,6 +372,8 @@
         "arc",
         "stellar",
         "stellar-testnet",
+        "algorand",
+        "algorand-testnet",
         "xlayer",
         "base",
         "avalanche",

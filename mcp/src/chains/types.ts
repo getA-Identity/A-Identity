@@ -7,7 +7,7 @@
  */
 
 /** Which virtual machine family a chain belongs to. Selects the adapter. */
-export type Ecosystem = 'evm' | 'stellar'
+export type Ecosystem = 'evm' | 'stellar' | 'algorand'
 
 /** Lifecycle status. Only `live` chains are fully wired end to end. */
 export type ChainStatus = 'live' | 'beta' | 'planned' | 'deprecated'
@@ -77,8 +77,14 @@ export interface SettlementToken {
    *                 a Soroban token carries no `domainVersionCandidates` and never will:
    *                 there is no per-token EIP-712 domain to prove, because the
    *                 authorization preimage is fixed by the protocol.
+   *  'algorand-group' The payer signs an ASA transfer with fee ZERO and someone else adds
+   *                 a fee-paying transaction to the same atomic group and broadcasts:
+   *                 Algorand's protocol only checks the group's POOLED fee. Like
+   *                 soroban-auth this is a property of the chain, not the token, so no
+   *                 `domainVersionCandidates` exist; replay is the protocol's own txid
+   *                 dedup plus firstValid/lastValid rounds on the signed transfer.
    */
-  authorization: 'eip3009' | 'eip2612' | 'soroban-auth' | 'none'
+  authorization: 'eip3009' | 'eip2612' | 'soroban-auth' | 'algorand-group' | 'none'
   /**
    * EIP-712 `version` candidates. Some tokens expose no `version()` at all (USDG reverts
    * for it), so the signing domain cannot simply be read: it is PROVEN at runtime by

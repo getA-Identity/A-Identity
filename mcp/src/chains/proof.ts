@@ -180,6 +180,25 @@ async function liveCheck(chain: ChainDescriptor, entry: ChainProvenance, env: No
   // resulting "method not found" as reachable: false. That is a lie in the honest direction
   // but a lie: the chain was reachable, we were speaking the wrong protocol at it.
   if (chain.ecosystem === 'stellar') return stellarLiveCheck(chain, entry, env, checkedAt)
+  if (chain.ecosystem === 'algorand') {
+    // Reachability by the chain's own protocol: algod /v2/status. No provenance entry
+    // exists for Algorand yet, so this arm is defensive; without it a future entry
+    // would be probed with eth_blockNumber and report a reachable chain as down.
+    try {
+      const rpc = env[chain.rpcEnvVar ?? ''] || chain.rpcUrls[0]
+      const res = await fetch(`${rpc}/v2/status`, { signal: AbortSignal.timeout(10_000) })
+      if (!res.ok) return { reachable: false, checkedAt, reason: `algod status HTTP ${res.status}` }
+      const body = (await res.json()) as { 'last-round'?: number }
+      return {
+        reachable: true,
+        checkedAt,
+        blockNumber: String(body['last-round'] ?? ''),
+        contracts: entry.contracts.map((c) => ({ name: c.name, address: c.address, deployed: false })),
+      }
+    } catch (e) {
+      return { reachable: false, checkedAt, reason: e instanceof Error ? e.message : String(e) }
+    }
+  }
   try {
     const client = await evmPublicClient(chain, env)
     const blockNumber = await client.getBlockNumber()

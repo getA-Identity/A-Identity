@@ -107,11 +107,23 @@ async function stellar(chain: ChainDescriptor) {
   return createStellarAdapter(chain)
 }
 
+/** The one refusal every vault write shares on a chain with no vault port yet. The
+ *  AgentSpendPolicy exists in Solidity and Rust; the Algorand (AVM) port is planned and
+ *  routing its calls into the Soroban adapter would produce StrKey errors wearing the
+ *  wrong chain's name. */
+function noVaultPortYet(chain: ChainDescriptor): VaultWriteResult {
+  return {
+    ok: false,
+    reason: `No AgentSpendPolicy vault is deployed on ${chain.name} yet; the ${chain.ecosystem} port is planned and nothing was submitted.`,
+  }
+}
+
 // ── the surface platform/vault.ts uses ───────────────────────────────────────────
 
 export async function readVaultPolicy(agent: PlatformAgent, vault: string): Promise<VaultPolicyView | null> {
   const chain = vaultChainFor(agent)
   if (!chain) return null
+  if (chain.ecosystem === 'algorand') return null
   if (chain.ecosystem === 'evm') {
     const { readPolicyVault } = await import('../arc-contracts.js')
     const v = await readPolicyVault(vault)
@@ -139,6 +151,7 @@ export async function writeVaultPolicy(
 ): Promise<VaultWriteResult> {
   const chain = vaultChainFor(agent)
   if (!chain) return { ok: false, reason: `Unknown vault chain ${agent.vaultChainCaip2}` }
+  if (chain.ecosystem === 'algorand') return noVaultPortYet(chain)
   if (chain.ecosystem === 'evm') {
     const { policySetPolicy } = await import('../arc-contracts.js')
     const r = await policySetPolicy(vault, want)
@@ -153,6 +166,7 @@ export async function writeVaultPolicy(
 export async function writeVaultFrozen(agent: PlatformAgent, vault: string, frozen: boolean): Promise<VaultWriteResult> {
   const chain = vaultChainFor(agent)
   if (!chain) return { ok: false, reason: `Unknown vault chain ${agent.vaultChainCaip2}` }
+  if (chain.ecosystem === 'algorand') return noVaultPortYet(chain)
   if (chain.ecosystem === 'evm') {
     const { policySetFrozen } = await import('../arc-contracts.js')
     const r = await policySetFrozen(vault, frozen)
@@ -170,6 +184,7 @@ export async function writeVaultAllowed(
 ): Promise<VaultWriteResult> {
   const chain = vaultChainFor(agent)
   if (!chain) return { ok: false, reason: `Unknown vault chain ${agent.vaultChainCaip2}` }
+  if (chain.ecosystem === 'algorand') return noVaultPortYet(chain)
   if (chain.ecosystem === 'evm') {
     const { policySetAllowed } = await import('../arc-contracts.js')
     const r = await policySetAllowed(vault, payee, allowed)
@@ -183,9 +198,14 @@ export async function writeVaultAllowed(
  *  addresses; a Soroban one takes StrKey, and mirroring one onto the other silently
  *  writes an entry that can never match a payee. */
 export function allowlistEntriesFor(chain: ChainDescriptor, entries: string[]): string[] {
-  return chain.ecosystem === 'evm'
-    ? entries.filter((x) => /^0x[0-9a-fA-F]{40}$/.test(x))
-    : entries.filter((x) => /^[GC][A-Z2-7]{55}$/.test(x))
+  switch (chain.ecosystem) {
+    case 'evm':
+      return entries.filter((x) => /^0x[0-9a-fA-F]{40}$/.test(x))
+    case 'algorand':
+      return entries.filter((x) => /^[A-Z2-7]{58}$/.test(x))
+    default:
+      return entries.filter((x) => /^[GC][A-Z2-7]{55}$/.test(x))
+  }
 }
 
 export { getChainById }

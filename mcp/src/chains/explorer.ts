@@ -69,5 +69,11 @@ export function addressUrl(chain: ChainDescriptor, address: string): string {
     if (isAccountId(address)) return `${base}/account/${address}`
     return `${base}/account/${address}`
   }
+  if (chain.ecosystem === 'algorand') {
+    // A settlement "address" on Algorand may be a uint64 ASA id rather than an
+    // account; explorers route the two differently and /address/ exists on neither.
+    if (/^[0-9]+$/.test(address)) return `${base}/asset/${address}`
+    return `${base}/account/${address}`
+  }
   return `${base}/address/${address}`
 }

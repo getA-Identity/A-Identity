@@ -15,6 +15,8 @@ const LOGO: Record<ChainId, string> = {
   base: '/chains/base.svg',
   arbitrum: '/chains/arbitrum.svg',
   avalanche: '/chains/avalanche.svg',
+  algorand: '/chains/algorand.svg',
+  'algorand-testnet': '/chains/algorand.svg',
   xlayer: '/chains/xlayer.svg',
   'rhchain-testnet': '/chains/rhchain.svg',
   rhchain: '/chains/rhchain.svg',

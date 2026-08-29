@@ -10,7 +10,7 @@
  */
 
 /** Short slug of a chain in the registry. */
-export type ChainId = 'arc' | 'stellar' | 'xlayer' | 'base' | 'arbitrum' | 'rhchain' | 'celo' | 'stellar-testnet' | 'rhchain-testnet' | 'celo-sepolia' | 'avalanche'
+export type ChainId = 'arc' | 'stellar' | 'xlayer' | 'base' | 'arbitrum' | 'rhchain' | 'celo' | 'stellar-testnet' | 'algorand' | 'algorand-testnet' | 'rhchain-testnet' | 'celo-sepolia' | 'avalanche'
 
 export type ChainProtocols = {
   /** x402 HTTP-402 payment support. Settlement is in a stablecoin. */
@@ -347,6 +347,74 @@ export const CHAINS: readonly Chain[] = [
       }
     },
     "identity": "Soroban registry + SEP-10",
+    "erc8004Native": false,
+    "x402": true,
+    "registries": {},
+    "identityLive": false,
+    "settlementSymbol": "USDC"
+  },
+  {
+    "id": "algorand",
+    "name": "Algorand",
+    "shortName": "Algorand",
+    "color": "#8C929C",
+    "chainId": null,
+    "caip2": "algorand:wGHE2Pwdvd7S12BL5FaOP20EGYesN73k",
+    "evmCompatible": false,
+    "testnet": false,
+    "stablecoins": [
+      "USDC"
+    ],
+    "rpcUrl": "https://mainnet-api.4160.nodely.dev",
+    "explorer": "https://allo.info",
+    "role": "Agentic-commerce settlement: native Circle USDC, deterministic ~2.8s finality, and an x402 rail where the buyer signs a fee-zero transfer and the group fee is pooled.",
+    "status": "beta",
+    "protocols": {
+      "payment": {
+        "x402": true,
+        "note": "x402 v2 \"exact\" scheme in USDC. The buyer signs an ASA transfer with fee ZERO and a fee-paying transaction joins it in one atomic group, so the buyer needs no ALGO for fees. The exact claim ends there: receiving USDC at all requires the account to be opted in to the ASA (0.1 ALGO minimum-balance step), which is Algorand's trustline equivalent and no rail can remove it. Settlement runs through the GoPlausible facilitator (the Foundation-backed rail this ecosystem standardized on), and no payment counts as settled until we have read the transfer back from the indexer ourselves."
+      },
+      "identity": {
+        "standard": "did:algo",
+        "erc8004Native": false,
+        "note": "No ERC-8004 registry was found on Algorand as of 2026-08-30, and no ARC defines an agent identity registry; the Foundation maintains the did:algo DID method and the ecosystem identity work (GoPlausible DIDs, NFDomains) targets people and services, not agent registration. An agent's passport is therefore bridged from an EVM chain rather than anchored here, KYA included, and this note changes only when a registry we can verify exists."
+      }
+    },
+    "identity": "did:algo",
+    "erc8004Native": false,
+    "x402": true,
+    "registries": {},
+    "identityLive": false,
+    "settlementSymbol": "USDC"
+  },
+  {
+    "id": "algorand-testnet",
+    "name": "Algorand Testnet",
+    "shortName": "Algorand test",
+    "color": "#8C929C",
+    "chainId": null,
+    "caip2": "algorand:SGO1GKSzyE7IEPItTxCByw9x8FmnrCDe",
+    "evmCompatible": false,
+    "testnet": true,
+    "stablecoins": [
+      "USDC"
+    ],
+    "rpcUrl": "https://testnet-api.4160.nodely.dev",
+    "explorer": "https://lora.algokit.io/testnet",
+    "role": "Algorand rehearsal rail: the same x402 code path as mainnet, in test money.",
+    "status": "beta",
+    "protocols": {
+      "payment": {
+        "x402": true,
+        "note": "Where the Algorand x402 path is rehearsed before mainnet sees it, against the facilitator's own testnet network."
+      },
+      "identity": {
+        "standard": "did:algo",
+        "erc8004Native": false,
+        "note": "Same as mainnet: no agent registry found here, no KYA anchoring, passport bridged from an EVM chain. Testnet exists for the payment rail rehearsal, not identity."
+      }
+    },
+    "identity": "did:algo",
     "erc8004Native": false,
     "x402": true,
     "registries": {},

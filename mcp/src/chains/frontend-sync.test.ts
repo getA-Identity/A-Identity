@@ -135,6 +135,11 @@ test('the public surface reports exactly the wired chains as live/beta', () => {
       { id: 'rhchain', status: 'live' },
       { id: 'celo', status: 'live' },
       { id: 'stellar-testnet', status: 'beta' },
+      // 2026-08-30: the algorand pair joins as beta, the second non-EVM ecosystem. The
+      // mainnet entry is a mainnet in beta (rail wired, credential-gated, nothing
+      // settled yet) and sorts by the same derived rule as everything else.
+      { id: 'algorand', status: 'beta' },
+      { id: 'algorand-testnet', status: 'beta' },
       { id: 'rhchain-testnet', status: 'beta' },
       { id: 'celo-sepolia', status: 'beta' },
     ],

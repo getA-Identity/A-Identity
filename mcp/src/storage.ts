@@ -6,7 +6,7 @@
  * falls back to a local JSON file (dev). Writes are debounced; there is no mock
  * data - an empty store simply starts empty.
  */
-import { readFileSync, writeFileSync, mkdirSync } from 'node:fs'
+import { existsSync, readFileSync, writeFileSync, mkdirSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
@@ -560,6 +560,104 @@ export async function persistStellarSettlement(rec: StellarSettlementRecord): Pr
     writeFileSync(STELLAR_SETTLEMENTS_FILE, JSON.stringify(arr))
   } catch (e) {
     console.error('[storage] stellar settlement persist failed:', e instanceof Error ? e.message : e)
+  }
+}
+
+// ── Algorand settlements ─────────────────────────────────────────────────────────────
+
+/** One Algorand x402 settlement attempt. The sibling of StellarSettlementRecord with the
+ *  fields that chain actually has: rounds instead of ledgers, an ASA id instead of a
+ *  contract address, and a facilitator instead of a broadcaster, because on this rail we
+ *  never broadcast - GoPlausible signs the fee payer and submits, and `confirmedBy`
+ *  records whether WE read the transfer back before counting it. */
+export type AlgorandSettlementRecord = {
+  ts: string
+  /** 'settled' = our indexer read found the matching transfer. 'ambiguous' = the
+   *  facilitator reported submission but we could not read it back inside the window. */
+  outcome: 'settled' | 'ambiguous'
+  tool: string
+  resource: string
+  /** Registry CAIP-2 id, so mainnet and testnet can never be summed into one figure. */
+  network: string
+  /** ASA id as a decimal string, never a 0x address. */
+  asset: string
+  assetSymbol: string
+  /** 6 for Algorand USDC. Recorded per row so a decimals change cannot reprice history. */
+  assetDecimals: number
+  value: string
+  amountUsd: number
+  baseUsd: number
+  payer: string
+  payTo: string
+  tx?: string
+  /** Confirmed round, the Algorand analogue of a block number. */
+  round?: number
+  explorerUrl?: string
+  /** The facilitator URL that settled the group. */
+  facilitator: string
+  /** 'algod-indexer' = our own read. 'none' = recorded without confirmation (ambiguous
+   *  rows only); a settled row must never carry it. */
+  confirmedBy: 'algod-indexer' | 'none'
+}
+
+const ALGORAND_SETTLEMENTS_FILE = join(DATA_DIR, 'algorand-settlements.json')
+export const ALGORAND_SETTLEMENTS_CAP = 2000
+
+export type AlgorandSettlementsResult =
+  | { ok: true; rows: AlgorandSettlementRecord[] }
+  | { ok: false; reason: string }
+
+/** Fail-closed loader for the replay guard: an unreadable log must stop a serving, not
+ *  read as empty and give one away. */
+export async function loadAlgorandSettlementsResult(): Promise<AlgorandSettlementsResult> {
+  try {
+    const p = await getPool()
+    if (p) {
+      await p.query('CREATE TABLE IF NOT EXISTS algorand_settlements (id bigserial PRIMARY KEY, data jsonb NOT NULL)')
+      const r = await p.query('SELECT data FROM algorand_settlements ORDER BY id ASC')
+      return { ok: true, rows: r.rows.map((row: { data: AlgorandSettlementRecord }) => row.data) }
+    }
+    if (!existsSync(ALGORAND_SETTLEMENTS_FILE)) return { ok: true, rows: [] }
+    return { ok: true, rows: JSON.parse(readFileSync(ALGORAND_SETTLEMENTS_FILE, 'utf8')) as AlgorandSettlementRecord[] }
+  } catch (e) {
+    return { ok: false, reason: e instanceof Error ? e.message : String(e) }
+  }
+}
+
+/** Lenient loader for display surfaces (the proof route): an unreadable log reads as
+ *  empty there, where showing nothing beats a 500. Spending decisions must use
+ *  loadAlgorandSettlementsResult instead. */
+export async function loadAlgorandSettlements(): Promise<AlgorandSettlementRecord[]> {
+  const r = await loadAlgorandSettlementsResult()
+  return r.ok ? r.rows : []
+}
+
+/** Durably record one settlement attempt, trimming past the cap. Never throws: by the
+ *  time we get here the money has already moved. */
+export async function persistAlgorandSettlement(rec: AlgorandSettlementRecord): Promise<void> {
+  try {
+    const p = await getPool()
+    if (p) {
+      await p.query('CREATE TABLE IF NOT EXISTS algorand_settlements (id bigserial PRIMARY KEY, data jsonb NOT NULL)')
+      await p.query('INSERT INTO algorand_settlements (data) VALUES ($1)', [JSON.stringify(rec)])
+      await p.query(
+        'DELETE FROM algorand_settlements WHERE id NOT IN (SELECT id FROM algorand_settlements ORDER BY id DESC LIMIT $1)',
+        [ALGORAND_SETTLEMENTS_CAP],
+      )
+      return
+    }
+    let arr: AlgorandSettlementRecord[] = []
+    try {
+      arr = JSON.parse(readFileSync(ALGORAND_SETTLEMENTS_FILE, 'utf8')) as AlgorandSettlementRecord[]
+    } catch {
+      /* first write */
+    }
+    arr.push(rec)
+    if (arr.length > ALGORAND_SETTLEMENTS_CAP) arr = arr.slice(-ALGORAND_SETTLEMENTS_CAP)
+    mkdirSync(DATA_DIR, { recursive: true })
+    writeFileSync(ALGORAND_SETTLEMENTS_FILE, JSON.stringify(arr))
+  } catch (e) {
+    console.error('[storage] algorand settlement persist failed:', e instanceof Error ? e.message : e)
   }
 }
 

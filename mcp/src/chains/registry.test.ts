@@ -76,7 +76,11 @@ test('Arc, X Layer, Celo (live), Base, Celo Sepolia and RH Chain Testnet (beta) 
   // payments are ours. `live` in this registry has never meant "no caveats" - Arc is
   // live and is a public testnet, and the landing page says so in the same sentence.
   const live = liveChains()
-  assert.deepEqual(live.map((c) => c.id).sort(), ['arbitrum', 'arc', 'base', 'celo', 'celo-sepolia', 'rhchain', 'rhchain-testnet', 'stellar', 'stellar-testnet', 'xlayer'])
+  // 2026-08-30: the algorand pair enters at beta - the second non-EVM ecosystem. The
+  // x402 rail code ships wired end to end but credential-gated, and the descriptors
+  // promote to live the day a real mainnet payment is recorded, the bar every other
+  // chain met.
+  assert.deepEqual(live.map((c) => c.id).sort(), ['algorand', 'algorand-testnet', 'arbitrum', 'arc', 'base', 'celo', 'celo-sepolia', 'rhchain', 'rhchain-testnet', 'stellar', 'stellar-testnet', 'xlayer'])
   // pubnet joined on 2026-08-24 with the vault deploy, was called live on 2026-08-27,
   // and the x402 rail started SELLING there on 2026-08-28 (first sale tx f213371c,
   // settled by our own broadcaster at the network's market-rate inclusion fee). The
@@ -88,6 +92,9 @@ test('Arc, X Layer, Celo (live), Base, Celo Sepolia and RH Chain Testnet (beta) 
   // The first wired chain that is not EVM. If this ever reads 'evm' the descriptor was
   // edited into the wrong ecosystem and every Stellar code path would silently be skipped.
   assert.equal(live.find((c) => c.id === 'stellar-testnet')?.ecosystem, 'stellar')
+  assert.equal(live.find((c) => c.id === 'algorand')?.status, 'beta')
+  assert.equal(live.find((c) => c.id === 'algorand-testnet')?.status, 'beta')
+  assert.equal(live.find((c) => c.id === 'algorand')?.ecosystem, 'algorand')
   assert.equal(live.find((c) => c.id === 'rhchain')?.status, 'live')
   assert.equal(live.find((c) => c.id === 'xlayer')?.status, 'live')
   assert.equal(live.find((c) => c.id === 'base')?.status, 'live')
@@ -276,6 +283,22 @@ test('every settlement token is well formed and agrees with its chain', () => {
           t.verified,
           /stellar contract id asset|contractId\(/i,
           `${c.id}: a SAC id must record the derivation that produced it, never a pasted string`,
+        )
+      }
+      // Same mirror on Algorand: the authorization is the chain's pooled-fee atomic
+      // group, not a per-token signing domain, so a version candidate would again claim
+      // something that does not exist. ASA USDC settles in 6 decimals on both networks.
+      if (t.authorization === 'algorand-group') {
+        assert.equal(t.decimals, 6, `${c.id}: Algorand USDC is a 6-decimal ASA`)
+        assert.equal(
+          t.domainVersionCandidates,
+          undefined,
+          `${c.id}: algorand-group has no signing domain, so it must claim no version candidate`,
+        )
+        assert.match(
+          t.verified,
+          /v2\/assets|indexer/i,
+          `${c.id}: an ASA id must record the live indexer read that verified it, never a pasted string`,
         )
       }
       // A disclosed fee that cannot be traced to a measurement is an assertion, and this

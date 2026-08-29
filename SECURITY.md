@@ -48,9 +48,11 @@ values, such as the WalletConnect project id.
 | `BASE_SIGNER_KEY` | Base | mainnet (`beta`) | real value if funded |
 | `AVAX_SIGNER_KEY` | Avalanche C-Chain | mainnet (`planned`) | real value if funded |
 | `STELLAR_PUBNET_SIGNER_SECRET` | Stellar pubnet | mainnet (`beta`) | **real value** |
+| `ALGORAND_MAINNET_SIGNER_MNEMONIC` | Algorand | mainnet (`beta`) | real value if funded |
 | `ARC_SIGNER_KEY` | Circle Arc | testnet | test funds |
 | `CELO_SEPOLIA_SIGNER_KEY` | Celo Sepolia | testnet | test funds |
 | `RHCHAIN_TESTNET_SIGNER_KEY` | Robinhood Chain Testnet | testnet | test funds |
+| `ALGORAND_TESTNET_SIGNER_MNEMONIC` | Algorand Testnet | testnet | test funds |
 | `STELLAR_TESTNET_SIGNER_SECRET` | Stellar Testnet | testnet | test funds |
 
 The remaining `planned` / `beta` rows are not dormant by nature, only by funding. A key set

@@ -25,6 +25,8 @@ export const CHAIN_NAMES = [
   'arc',
   'stellar',
   'stellar-testnet',
+  'algorand',
+  'algorand-testnet',
   'xlayer',
   'base',
   'avalanche',
