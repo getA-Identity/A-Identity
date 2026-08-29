@@ -277,9 +277,11 @@ const STAGE_H = 430
 function Ring({
   flippedKey,
   onToggle,
+  onClear,
 }: {
   flippedKey: string | null
   onToggle: (key: string) => void
+  onClear: () => void
 }) {
   const measureRef = useRef<HTMLDivElement>(null)
   const ref = useRef<HTMLDivElement>(null)
@@ -299,15 +301,17 @@ function Ring({
   useEffect(() => () => { if (touchTimer.current) clearTimeout(touchTimer.current) }, [])
   useAnimationFrame((_, delta) => {
     if (paused || flippedKey !== null || !ref.current) return
-    // Negative rotateY so the front row of cards travels left to right:
-    // clockwise when the ring is viewed from above.
+    // Negative rotateY so the front row of cards travels right to left.
     angle.current = (angle.current - delta * (360 / 46000)) % 360
     ref.current.style.transform = `rotateY(${angle.current}deg)`
   })
   const pauseForTouch = () => {
     setPaused(true)
     if (touchTimer.current) clearTimeout(touchTimer.current)
-    touchTimer.current = setTimeout(() => setPaused(false), 3500)
+    touchTimer.current = setTimeout(() => {
+      setPaused(false)
+      onClear()
+    }, 3500)
   }
   const step = 360 / AGENTS.length
   const glow = `linear-gradient(100deg, ${AGENTS.map((a) => CHAIN_BY_ID[a.chain].color).join(', ')})`
@@ -323,7 +327,12 @@ function Ring({
           perspective: '1500px',
         }}
         onMouseEnter={() => setPaused(true)}
-        onMouseLeave={() => setPaused(false)}
+        onMouseLeave={() => {
+          // Walking away closes an open card and the ring picks back up; a
+          // turned card must never leave the carousel frozen forever.
+          setPaused(false)
+          onClear()
+        }}
         onTouchStart={pauseForTouch}
       >
         {/* Iridescent stage glow behind the carousel */}
@@ -370,7 +379,7 @@ export default function AgentRing() {
       </div>
       {reduced ? null : (
         <div className="mt-4 hidden md:block">
-          <Ring flippedKey={flippedKey} onToggle={toggle} />
+          <Ring flippedKey={flippedKey} onToggle={toggle} onClear={() => setFlippedKey(null)} />
         </div>
       )}
       <div
