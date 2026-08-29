@@ -665,6 +665,78 @@ export const PROVENANCE: ChainProvenance[] = [
       'The x402 rail here is Celo\'s own first-party facilitator, not our EIP-3009 rail, so settlement receipts follow their format rather than ours.',
     ],
   },
+  {
+    chain: 'algorand',
+    summary:
+      'The second non-EVM rail, and the fastest promotion in this ledger: the descriptor entered at beta and flipped to live the same day, 2026-08-30, on a real mainnet sale. The operating accounts were funded from a Stellar XLM treasury through an instant exchange, both accounts opted in to the USDC ASA (the trustline of this chain), and the first x402 sale settled through the GoPlausible facilitator with the buyer paying no network fee. No payment counted until our own indexer read of the transfer.',
+    contracts: [],
+    artifacts: [
+      {
+        kind: 'bridge',
+        label: 'The first funding leg leaves the Stellar treasury',
+        txHash: '2c9357153d2b3e3dccb0258f648b2ca037e458d8bab934c6e638f3c5c1d7d2b9',
+        onChain: 'stellar',
+        note: '17.5 XLM to an instant-exchange deposit address, memo-tagged. NEAR Intents, the route Base used, lists no Algorand assets, so this crossing runs through SideShift; the trade-off is named rather than hidden: a custodial hop of a few dollars, refundable to the treasury, chosen over standing up a DEX integration for one funding event.',
+      },
+      {
+        kind: 'bridge',
+        label: 'ALGO arrives in the payTo account',
+        txHash: 'TCIUMHTFNTSYEVFWSFXM3J54PUPGINNBNYS2OEVYZYXFLV3IFERA',
+        onChain: 'algorand',
+        note: 'About 34.7 ALGO, far more than the half-ALGO the go-live needs, because the exchange minimum per crossing (16.7 XLM) decides the size, not us. The surplus is future minimum-balance steps and years of fees.',
+      },
+      {
+        kind: 'funding',
+        label: 'The payTo account opts in to the USDC ASA',
+        txHash: '4SNAUL6MQRMFA5HX3BU3ZZOELRGI33NRBOXRQHZFJ4NL34Z3WOAQ',
+        onChain: 'algorand',
+        note: 'The Algorand prerequisite with no EVM analogue and a Stellar twin (the trustline): an account that has not opted in cannot receive the asset at all, at a 0.1 ALGO minimum-balance step. The rail\'s status route checks this live because forgetting it produces failures that read as our bug.',
+      },
+      {
+        kind: 'funding',
+        label: 'The buyer account is funded with 0.4 ALGO for its own reserve',
+        txHash: '2FD4KUYKLRGYLKKJDAC536WWLDMJT3APK4MSUPL2HUKVSGLD5XTQ',
+        onChain: 'algorand',
+        note: 'Reserve and opt-in only. The buyer needs no ALGO to PAY: its transfer is signed with fee zero and the facilitator\'s fee payer covers the pooled group fee.',
+      },
+      {
+        kind: 'funding',
+        label: 'The buyer opts in to the USDC ASA',
+        txHash: 'SYPITYXNJIDPYKBE2AFRDFBQL2NYHM73SFOULYYKABQBBSDVFKPA',
+        onChain: 'algorand',
+        note: 'Sequenced before the USDC crossing on purpose: an exchange cannot settle an ASA into an account that has not opted in, and learning that after sending would have meant a refund round-trip.',
+      },
+      {
+        kind: 'bridge',
+        label: 'The second funding leg leaves the Stellar treasury',
+        txHash: 'eab46931587b7fadbaffa71fd96233954315bfd4a900dd7ba906de219d1912cf',
+        onChain: 'stellar',
+        note: 'Another 17.5 XLM, this one crossing into USDC on the algorand network for the buyer.',
+      },
+      {
+        kind: 'bridge',
+        label: 'About 3.09 USDC arrives in the buyer account',
+        txHash: 'E7YTOLPN6TZZDPXLPK3HPRKBXWFABXHPZ2OUK6JMY7Y2UX7ZZY6Q',
+        onChain: 'algorand',
+        note: 'The war chest for real paid calls: at 0.001 USDC per verify_agent this is three thousand of them.',
+      },
+      {
+        kind: 'settlement',
+        label: 'First x402 sale on Algorand mainnet (verify_agent, 0.001 USDC)',
+        txHash: 'YNNA54CXZGWBGL5ILYBV4K5RI26KTALIGWGXX6MJOORDAEEUPCWQ',
+        onChain: 'algorand',
+        blockNumber: 64547231,
+        note: 'The buyer signed a fee-zero ASA transfer inside a pooled-fee atomic group; the GoPlausible facilitator signed the fee payer and broadcast; and the sale counted only once our own indexer read returned the transfer with a confirmed round, matching asset, recipient, amount and sender. The x402 v2 exact scheme, exactly as the challenge advertised it.',
+      },
+    ],
+    caveats: [
+      'Payer and payee are both ours: the buyer account and the payTo account were funded from the same treasury, and the first sale is evidence the rail works, not evidence of demand.',
+      'Settlement runs through an external facilitator (GoPlausible, the rail this ecosystem standardized on), not a broadcaster of ours. What stays ours is that the payment group is verified locally before the facilitator sees it and that nothing counts as settled until we read the transfer back from an indexer ourselves.',
+      'The funding crossed chains through a custodial instant exchange, because no non-custodial route we use elsewhere lists Algorand. A few dollars rode that trust for a few minutes, and the transaction pair on each side is linked above so the crossing is checkable.',
+      'No identity. No ERC-8004 registry or agent-identity ARC was found on Algorand as of 2026-08-30, so KYA cannot be anchored and an agent\'s passport is bridged from an EVM chain rather than anchored here.',
+      'The production deployment sells here only once its environment names the network and the payTo credentials; until then production refuses with a labeled 501, and the first sale above was settled from an operator machine against the same code path production runs.',
+    ],
+  },
 ]
 
 /** A judge-facing grouping. A rail can span more than one network, because splitting
@@ -699,6 +771,13 @@ export const PROOF_RAILS: ProofRail[] = [
     lede:
       'Agent #73232 on the canonical ERC-8004 registry, and paid calls settling in native Circle USDC through the facilitator we run ourselves. The operating wallets were funded from Stellar pubnet USDC through a NEAR Intents swap, and that funding trail is part of the record.',
     chains: ['base'],
+  },
+  {
+    slug: 'algorand',
+    title: 'Algorand',
+    lede:
+      'The second non-EVM rail, live the same day it shipped: x402 v2 in native Circle USDC, the buyer signing a fee-zero transfer inside a pooled-fee atomic group, the GoPlausible facilitator broadcasting, and no sale counted until our own indexer read of the transfer. First mainnet sale 2026-08-30, funded end to end from a Stellar XLM treasury, and every hop of that funding is linked here.',
+    chains: ['algorand'],
   },
 ]
 

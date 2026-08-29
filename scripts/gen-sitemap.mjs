@@ -44,6 +44,7 @@ const STATIC = [
   ['/proof/arbitrum', 'weekly', '0.6'],
   ['/proof/base', 'weekly', '0.6'],
   ['/proof/stellar', 'weekly', '0.6'],
+  ['/proof/algorand', 'weekly', '0.6'],
 ]
 
 // Read the posts out of the source rather than importing it: blog.ts is TSX-free

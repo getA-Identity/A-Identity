@@ -281,11 +281,14 @@ export const CHAINS: ChainDescriptor[] = [
     role: 'Agentic-commerce settlement: native Circle USDC, deterministic ~2.8s finality, and an x402 rail where the buyer signs a fee-zero transfer and the group fee is pooled.',
     ecosystem: 'algorand',
     testnet: false,
-    // beta, not live: the x402 rail code ships wired end to end but credential-gated, and
-    // nothing has settled on this network yet. In this repo live means carrying real
-    // traffic; this entry is promoted the day a real mainnet payment is recorded, the
-    // same bar every other chain met.
-    status: 'beta',
+    // live as of 2026-08-30: the bar this entry was told to meet was "a real mainnet
+    // payment recorded", and it was, the same day the rail shipped. First sale tx
+    // YNNA54CXZGWBGL5ILYBV4K5RI26KTALIGWGXX6MJOORDAEEUPCWQ (round 64547231): 0.001 USDC
+    // for verify_agent, the buyer signing a fee-zero transfer, the GoPlausible
+    // facilitator broadcasting the pooled-fee group, and the sale counted only after our
+    // own indexer read of the transfer. Both sides of that payment are ours, and the
+    // provenance entry says so; live has never meant no caveats.
+    status: 'live',
     evmChainId: null,
     // Circle's CCTP supported-domains table has no Algorand entry (checked 2026-08-30):
     // USDC here is Circle-issued natively but moves in and out via Circle Mint and

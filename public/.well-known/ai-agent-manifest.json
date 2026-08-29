@@ -47,7 +47,7 @@
           "identity": "did:algo",
           "erc8004Native": false,
           "note": "No ERC-8004 registry or agent-identity ARC found on Algorand as of 2026-08-30; the passport is bridged from an EVM chain rather than anchored here.",
-          "status": "beta"
+          "status": "live"
         },
         {
           "id": "algorand-testnet",
@@ -169,9 +169,9 @@
           "id": "algorand",
           "name": "Algorand",
           "caip2": "algorand:wGHE2Pwdvd7S12BL5FaOP20EGYesN73k",
-          "role": "Agentic-commerce settlement: native Circle USDC, deterministic finality, x402 v2 through the GoPlausible facilitator with pooled-fee gasless payments.",
+          "role": "Agentic-commerce settlement: native Circle USDC, deterministic finality, x402 v2 through the GoPlausible facilitator with pooled-fee gasless payments; first mainnet sale settled 2026-08-30.",
           "x402": true,
-          "status": "beta"
+          "status": "live"
         },
         {
           "id": "algorand-testnet",

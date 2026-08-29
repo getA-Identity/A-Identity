@@ -89,14 +89,29 @@ async function xlmBalance(server, pub) {
 
 async function createShift(settle, settleAddress, refundAddress, affiliateId) {
   const [settleCoin, settleNetwork] = settle
-  return jfetch(`${SIDESHIFT}/shifts/variable`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      depositCoin: 'XLM', depositNetwork: 'stellar',
-      settleCoin, settleNetwork, settleAddress, refundAddress, affiliateId,
-    }),
-  })
+  const body = {
+    depositCoin: 'XLM', depositNetwork: 'stellar',
+    settleCoin, settleNetwork, settleAddress, refundAddress, affiliateId,
+  }
+  const post = (b) =>
+    jfetch(`${SIDESHIFT}/shifts/variable`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(b),
+    })
+  try {
+    return await post(body)
+  } catch (e) {
+    // A Stellar refund address is only valid once the account exists on-ledger;
+    // if SideShift still rejects it, a shift without one beats no shift, because
+    // a variable shift refunds are the edge case and the deposit itself is small.
+    if (String(e).includes('Invalid refund address')) {
+      log('refund address rejected; creating the shift without one')
+      const { refundAddress: _drop, ...rest } = body
+      return post(rest)
+    }
+    throw e
+  }
 }
 
 async function sendXlm(server, kp, dest, memoText, amountXlm) {

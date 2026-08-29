@@ -129,16 +129,16 @@ test('the public surface reports exactly the wired chains as live/beta', () => {
     [
       { id: 'arc', status: 'live' },
       { id: 'stellar', status: 'live' },
+      // 2026-08-30: algorand joins the live group the same day it entered at beta, on a
+      // real mainnet sale; its position is the derived rule again (registry order within
+      // the same status), not a hand placement.
+      { id: 'algorand', status: 'live' },
       { id: 'xlayer', status: 'live' },
       { id: 'base', status: 'live' },
       { id: 'arbitrum', status: 'live' },
       { id: 'rhchain', status: 'live' },
       { id: 'celo', status: 'live' },
       { id: 'stellar-testnet', status: 'beta' },
-      // 2026-08-30: the algorand pair joins as beta, the second non-EVM ecosystem. The
-      // mainnet entry is a mainnet in beta (rail wired, credential-gated, nothing
-      // settled yet) and sorts by the same derived rule as everything else.
-      { id: 'algorand', status: 'beta' },
       { id: 'algorand-testnet', status: 'beta' },
       { id: 'rhchain-testnet', status: 'beta' },
       { id: 'celo-sepolia', status: 'beta' },

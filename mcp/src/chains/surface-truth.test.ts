@@ -70,7 +70,7 @@ test('every live or beta chain carries an identity registry, or is a listed exce
     'stellar-testnet':
       'beta on the strength of the PAYMENT path only: a Soroban spend policy, our own x402 facilitator, and settlements we confirm by reading the transfer ourselves. Identity is not wired and is not claimed. ERC-8004 is EVM-only, no Soroban identity registry exists to point at, and the passport a Stellar agent carries is bridged from an EVM chain rather than anchored here. Delete this entry the day a Soroban registry lands, or demote the chain.',
     algorand:
-      'beta on the strength of the PAYMENT path only: the x402 v2 rail through the GoPlausible facilitator, credential-gated until a payTo and its USDC opt-in exist. Identity is not wired and is not claimed: no ERC-8004 registry or agent-identity ARC was found on Algorand as of 2026-08-30, and the passport is bridged from an EVM chain. Delete this entry the day a registry we can verify lands, or demote the chain.',
+      'live on the strength of the PAYMENT side: the x402 v2 rail through the GoPlausible facilitator settled its first real mainnet sale on 2026-08-30 (tx YNNA54CX..., confirmed by our own indexer read). Identity is not wired and is not claimed: no ERC-8004 registry or agent-identity ARC was found on Algorand as of 2026-08-30, and the passport is bridged from an EVM chain. Delete this entry the day a registry we can verify lands, or demote the chain.',
     'algorand-testnet':
       'beta for the same reason as its mainnet twin and with the same identity caveat: the payment rehearsal path only. No agent registry exists here to point at, so nothing identity-shaped is claimed.',
   }

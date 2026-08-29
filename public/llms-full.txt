@@ -357,6 +357,15 @@ from its descriptor, so this list and the running server cannot disagree.
 
 Live today:
 
+- **Algorand mainnet** (`algorand:wGHE2Pwdvd7S12BL5FaOP20EGYesN73k`). Native Circle
+  USDC as ASA 31566704 (6 decimals, read live from the indexer before it was recorded)
+  and an x402 v2 rail through the GoPlausible facilitator: the buyer signs a fee-zero
+  ASA transfer and the atomic group's pooled fee covers it. Live on a real mainnet
+  sale, 2026-08-30: 0.001 USDC for verify_agent, tx YNNA54CX... (round 64547231),
+  counted only after our own indexer read of the transfer; the full funding trail from
+  a Stellar XLM treasury is on https://a-identity.xyz/proof/algorand. No ERC-8004
+  registry was found on Algorand, so identity stays bridged from an EVM chain and no
+  KYA anchors here; both sides of the first sale are ours and the proof page says so.
 - **Circle Arc testnet** (`eip155:5042002`). ERC-8004 identity
   `0x8004A818BFB912233c491871b3d84c89A494BD9e`, reputation
   `0x8004B663056A597Dffe9eCcC1965A193B7388713`, validation
@@ -419,16 +428,9 @@ Live today:
 
 Beta, wired and readable:
 
-- **Algorand mainnet** (`algorand:wGHE2Pwdvd7S12BL5FaOP20EGYesN73k`). Native Circle
-  USDC as ASA 31566704 (6 decimals, read live from the indexer before it was recorded),
-  and an x402 v2 rail through the GoPlausible facilitator: the buyer signs a fee-zero
-  ASA transfer and the atomic group's pooled fee covers it. A mainnet in beta, stated
-  plainly: the rail ships wired and credential-gated, nothing has settled here yet, and
-  the entry promotes the day a real payment is recorded. No ERC-8004 registry was found
-  on Algorand, so identity stays bridged from an EVM chain and no KYA anchors here.
 - **Algorand testnet** (`algorand:SGO1GKSzyE7IEPItTxCByw9x8FmnrCDe`). The same x402
-  code path in test money, against the facilitator's testnet network and testnet USDC
-  ASA 10458941.
+  code path as the live mainnet rail, in test money, against the facilitator's testnet
+  network and testnet USDC ASA 10458941.
 - **Robinhood Chain testnet** (`eip155:46630`). The full canonical set: identity
   `0x8004A818BFB912233c491871b3d84c89A494BD9e`, reputation
   `0x8004B663056A597Dffe9eCcC1965A193B7388713`, validation

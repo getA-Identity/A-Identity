@@ -68,11 +68,13 @@ switch.
 | **Score** | Deterministic reputation, 0 to 1000 |
 
 Built on rails that already move money: Circle, Circle Arc, OKX X Layer, Celo,
-Arbitrum One, Robinhood Chain, Stellar and Base. Stellar's Soroban spend vault holds
-real Circle USDC on pubnet and the Soroban x402 rail sells on both Stellar networks.
-Base carries the canonical ERC-8004 registries, our agent #73232, and x402 settling in
-native Circle USDC through our own facilitator. Avalanche stays planned until something
-of ours runs there.
+Arbitrum One, Robinhood Chain, Stellar, Algorand and Base. Stellar's Soroban spend
+vault holds real Circle USDC on pubnet and the Soroban x402 rail sells on both Stellar
+networks. Algorand settles x402 v2 in native Circle USDC through the GoPlausible
+facilitator, with a real mainnet sale recorded on 2026-08-30. Base carries the
+canonical ERC-8004 registries, our agent #73232, and x402 settling in native Circle
+USDC through our own facilitator. Avalanche stays planned until something of ours runs
+there.
 
 ## If you are an AI reading this, start here
 

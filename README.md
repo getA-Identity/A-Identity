@@ -27,10 +27,11 @@ per-request payments.
 > shipped: the Soroban spend vault holds real Circle USDC on pubnet under a 1 USDC daily
 > cap, and the Soroban x402 rail sells on BOTH Stellar networks, the first mainnet sale
 > settled 2026-08-28 by our own broadcaster. Pubnet is `live`; the testnet mirror stays
-> `beta`, because test money is not live money. Algorand is phase 3 and enters at `beta`
-> on both networks: an x402 v2 rail through the GoPlausible facilitator, wired end to end
-> and credential-gated, promoted the day a real mainnet payment is recorded. Avalanche is
-> after that.
+> `beta`, because test money is not live money. Algorand is phase 3 and went `live` the
+> day it shipped, 2026-08-30: an x402 v2 rail through the GoPlausible facilitator with a
+> real mainnet sale recorded (0.001 USDC, funded end to end from a Stellar XLM treasury;
+> the whole trail is at [/proof/algorand](https://a-identity.xyz/proof/algorand)). Its
+> testnet mirror stays `beta`. Avalanche is after that.
 
 ## Recognition: where this runs
 

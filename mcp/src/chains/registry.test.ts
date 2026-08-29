@@ -92,7 +92,10 @@ test('Arc, X Layer, Celo (live), Base, Celo Sepolia and RH Chain Testnet (beta) 
   // The first wired chain that is not EVM. If this ever reads 'evm' the descriptor was
   // edited into the wrong ecosystem and every Stellar code path would silently be skipped.
   assert.equal(live.find((c) => c.id === 'stellar-testnet')?.ecosystem, 'stellar')
-  assert.equal(live.find((c) => c.id === 'algorand')?.status, 'beta')
+  // 2026-08-30, hours after entering at beta: algorand flips to LIVE on the strength of
+  // a real mainnet sale (0.001 USDC verify_agent, tx YNNA54CX..., round 64547231,
+  // confirmed by our own indexer read). The testnet mirror stays beta.
+  assert.equal(live.find((c) => c.id === 'algorand')?.status, 'live')
   assert.equal(live.find((c) => c.id === 'algorand-testnet')?.status, 'beta')
   assert.equal(live.find((c) => c.id === 'algorand')?.ecosystem, 'algorand')
   assert.equal(live.find((c) => c.id === 'rhchain')?.status, 'live')
