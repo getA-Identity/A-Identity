@@ -88,34 +88,43 @@ function agentHref(a: OnchainAgent): string | null {
   return registry ? `${chain.explorer}/address/${registry}` : null
 }
 
-/** White type washes out on the two near-white brand colors (Celo yellow,
- *  Robinhood lime); everything else carries white on its own gradient. */
-function inkOn(hex: string): string {
-  const n = parseInt(hex.replace('#', ''), 16)
-  const lum = (0.299 * ((n >> 16) & 255) + 0.587 * ((n >> 8) & 255) + 0.114 * (n & 255)) / 255
-  return lum > 0.62 ? 'rgba(15,23,42,0.88)' : 'rgba(255,255,255,0.94)'
+/** The official network mark, big, as the card's artwork. Mirrors the LOGO map
+ *  in components/app/ChainLogo.tsx (testnets share their mainnet's mark). */
+const MARK: Partial<Record<ChainId, string>> = {
+  arc: '/chains/arc.svg',
+  base: '/chains/base.svg',
+  arbitrum: '/chains/arbitrum.svg',
+  xlayer: '/chains/xlayer.svg',
+  rhchain: '/chains/rhchain.svg',
+  'rhchain-testnet': '/chains/rhchain.svg',
+  celo: '/chains/celo.svg',
 }
 
-/** Portrait poster card: gradient artwork on top, paper footer below, like the
- *  reference deck. The artwork is layered radial washes of the chain's color. */
+/** Marks too light to survive a white ground, same rule as ChainLogo's disc. */
+const INK_GROUND = new Set<ChainId>(['rhchain', 'rhchain-testnet'])
+
+/** Portrait poster card like the reference deck: the chain's own logo as the
+ *  artwork on a flat ground, a paper footer below. No gradients. */
 function AgentCard({ agent, index, className }: { agent: OnchainAgent; index: number; className?: string }) {
   const chain = CHAIN_BY_ID[agent.chain]
   const href = agentHref(agent)
-  const ink = inkOn(chain.color)
+  const dark = INK_GROUND.has(agent.chain)
+  const ink = dark ? 'rgba(255,255,255,0.94)' : 'rgba(15,23,42,0.88)'
   const body = (
     <>
-      {/* Artwork */}
+      {/* Artwork: the network mark, big and crisp on its own ground */}
       <div
-        className="relative h-[62%] w-full overflow-hidden"
-        style={{
-          background: [
-            `radial-gradient(110% 90% at 78% 12%, ${chain.color}f2, transparent 62%)`,
-            `radial-gradient(120% 110% at 12% 95%, ${chain.color}59, transparent 58%)`,
-            `radial-gradient(70% 55% at 30% 35%, #ffffff3d, transparent 70%)`,
-            `linear-gradient(155deg, ${chain.color}30 0%, ${chain.color}c9 100%)`,
-          ].join(', '),
-        }}
+        className="relative h-[62%] w-full overflow-hidden border-b border-border"
+        style={{ background: dark ? '#192837' : '#ffffff' }}
       >
+        <img
+          src={MARK[agent.chain]}
+          alt=""
+          loading="lazy"
+          decoding="async"
+          aria-hidden="true"
+          className="pointer-events-none absolute left-1/2 top-[44%] h-[110px] w-[110px] -translate-x-1/2 -translate-y-1/2 object-contain"
+        />
         <div className="flex items-start justify-between p-4" style={{ color: ink }}>
           <div className="text-[11px] font-semibold uppercase leading-tight tracking-[0.08em]">
             A-Identity
