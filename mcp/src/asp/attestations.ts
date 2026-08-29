@@ -9,7 +9,7 @@
  * The tools surface the LATEST attestation per agent; the score itself is always recomputed
  * live, so an attestation is a verifiable snapshot, never the source of truth.
  */
-import { ARC_CHAIN, getChainById } from '../chains/index.js'
+import { getChainById } from '../chains/index.js'
 
 /** Explorer link derived from the registry, never typed: the same rule provenance.ts
  *  follows, enforced by no-hardcoded-chains.test.ts. */
@@ -44,11 +44,11 @@ export const ATTESTATIONS: ReputationAttestation[] = [
     score: 542,
     score100: 54,
     tag: 'a-identity:reputation:v1',
-    chain: 'arc-testnet',
+    chain: 'arc',
     registry: '0x8004B663056A597Dffe9eCcC1965A193B7388713',
     validator: '0xee602A161232Aac1436E812676b6626382FC84a9',
     txHash: '0x3f5429819347fb0f75e66ee1416fc2c9ad3dade8fb1bf8dac1b9d2606de92a8c',
-    txUrl: `${ARC_CHAIN.explorer}/tx/0x3f5429819347fb0f75e66ee1416fc2c9ad3dade8fb1bf8dac1b9d2606de92a8c`,
+    txUrl: txUrlOn('arc', '0x3f5429819347fb0f75e66ee1416fc2c9ad3dade8fb1bf8dac1b9d2606de92a8c'),
     feedbackHash: '0x135f58dd7871de3e006be5611a62050ca7b60d80863455c14ae2543df7e8e813',
     attestedAt: '2026-07-22T01:15:34.932Z',
   },

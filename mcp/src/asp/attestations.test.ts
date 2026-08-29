@@ -4,7 +4,7 @@ import { ATTESTATIONS, getReputationAttestation, type ReputationAttestation } fr
 
 const row = (over: Partial<ReputationAttestation>): ReputationAttestation => ({
   tokenId: '849980', score: 541, score100: 54, tag: 'a-identity:reputation:v1',
-  chain: 'arc-testnet', registry: '0x8004B663056A597Dffe9eCcC1965A193B7388713',
+  chain: 'arc', registry: '0x8004B663056A597Dffe9eCcC1965A193B7388713',
   validator: '0xValidator', txHash: '0xhash', txUrl: 'https://x/tx/0xhash',
   feedbackHash: '0xfeed', attestedAt: '2026-07-22T00:00:00.000Z', ...over,
 })

@@ -405,7 +405,7 @@ No install, no keys - it is already live:
 Every claim here is a transaction you can open on [arcscan](https://testnet.arcscan.app):
 
 - **Showcase agent "Meridian"** - ERC-8004 id **#849980**, KYA attested on-chain, reputation
-  from real settlements. Anchor tx:
+  from real settlements. Registration (mint) tx:
   [`0x506b125f…`](https://testnet.arcscan.app/tx/0x506b125f3a0481667e3a00dcb86f48cbcaa35c643af963365e9389b06a8f8e54) ·
   KYA attestation:
   [`0x758ddbfa…`](https://testnet.arcscan.app/tx/0x758ddbfad38daeb772a37deb07e65339f13aeb393899fc7e1d2689c95adf0dad)

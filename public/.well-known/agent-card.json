@@ -241,8 +241,20 @@
       "agentId": "9759",
       "caip": "eip155:42220:0x8004A169FB4a3325136EB29fA0ceB6D2e539a432/9759",
       "registry": "0x8004A169FB4a3325136EB29fA0ceB6D2e539a432",
+      "owner": "0xF43F43D8aee114a71B164e1f6214BC7625a5742D",
+      "tx": "0x0a821026621e5b35ff5602f81348b276b0d0f1b61a3892365658295fc5bcb22e",
       "explorer": "https://celoscan.io/nft/0x8004A169FB4a3325136EB29fA0ceB6D2e539a432/9759",
-      "note": "ERC-8004 IdentityRegistry on Celo mainnet; the identity behind the first-party Celo x402 rail."
+      "note": "ERC-8004 IdentityRegistry on Celo mainnet; the identity behind the first-party Celo x402 rail. Registered 2026-08-09 by the Celo payTo wallet, which is deliberately not the wallet that owns our other EVM agents."
+    },
+    {
+      "chain": "eip155:5042002",
+      "agentId": "849980",
+      "caip": "eip155:5042002:0x8004A818BFB912233c491871b3d84c89A494BD9e/849980",
+      "registry": "0x8004A818BFB912233c491871b3d84c89A494BD9e",
+      "owner": "0xd305607510E0Db2c95807173c7A05BEA53c1ed36",
+      "tx": "0x506b125f3a0481667e3a00dcb86f48cbcaa35c643af963365e9389b06a8f8e54",
+      "explorer": "https://testnet.arcscan.app/tx/0x506b125f3a0481667e3a00dcb86f48cbcaa35c643af963365e9389b06a8f8e54",
+      "note": "ERC-8004 IdentityRegistry on Circle Arc testnet, the Arc registry family rather than the canonical mainnet address. Agent #849980 (Meridian) is the phase-1 showcase agent, KYA-attested through Arc's ValidationRegistry. Testnet: no real money."
     }
   ]
 }

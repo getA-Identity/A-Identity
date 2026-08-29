@@ -577,6 +577,94 @@ export const PROVENANCE: ChainProvenance[] = [
       'No identity. ERC-8004 is EVM-only and no Soroban identity registry exists to point at, so a Stellar agent\'s passport is bridged from an EVM chain rather than anchored here. KYA cannot be verified on this chain.',
     ],
   },
+  {
+    chain: 'arc',
+    summary:
+      'The phase-1 chain and the only one where all three registries of the ERC-8004 testnet family run together. Agent #849980 (Meridian) is ours: registered 2026-07-10, KYA-attested through the ValidationRegistry, and carrying the first reputation anchor our oracle validator ever wrote. This entry was added 2026-08-30, when an inventory found the flagship agent absent from the ledger that exists to record such things.',
+    agent: {
+      tokenId: '849980',
+      caip: 'eip155:5042002:8004/849980',
+      owner: OWNER,
+      tokenUri:
+        'data:application/json,%7B%22name%22%3A%22Meridian%22%2C%22category%22%3A%22Research%20%2F%20Data%22%2C%22standard%22%3A%22ERC-8004%22%2C%22app%22%3A%22A-Identity%22%7D',
+    },
+    contracts: [
+      {
+        name: 'IdentityRegistry',
+        address: '0x8004A818BFB912233c491871b3d84c89A494BD9e',
+        note: 'The Arc testnet family address, not the canonical mainnet one that Arbitrum, Base, Celo and Robinhood Chain share.',
+      },
+      { name: 'ReputationRegistry', address: '0x8004B663056A597Dffe9eCcC1965A193B7388713' },
+      {
+        name: 'ValidationRegistry',
+        address: '0x8004Cb1BF31DAf7788923b405b754f57acEB4272',
+        note: 'The registry KYA attests through. Only the Arc and Robinhood testnet families carry one; on every mainnet we sell on, KYA stays off-chain.',
+      },
+    ],
+    artifacts: [
+      {
+        kind: 'mint',
+        label: 'Agent #849980 registered, the mint the public copy long mislabeled an anchor',
+        txHash: '0x506b125f3a0481667e3a00dcb86f48cbcaa35c643af963365e9389b06a8f8e54',
+        onChain: 'arc',
+        blockNumber: 51174931,
+        note: 'register(uri) on 2026-07-10, minting straight to the owner wallet. Re-verified 2026-08-30: ownerOf(849980) reads back the owner recorded here and tokenURI carries the inline Meridian metadata.',
+      },
+      {
+        kind: 'attestation',
+        label: 'KYA attested on-chain through the ValidationRegistry',
+        txHash: '0x758ddbfad38daeb772a37deb07e65339f13aeb393899fc7e1d2689c95adf0dad',
+        onChain: 'arc',
+        note: 'Wallet-control proof committed on-chain. It shows the agent controls its wallet and nothing more; it is not an audit and the KYA docs say so.',
+      },
+      {
+        kind: 'attestation',
+        label: 'The first reputation anchor our oracle validator wrote anywhere',
+        txHash: '0x3f5429819347fb0f75e66ee1416fc2c9ad3dade8fb1bf8dac1b9d2606de92a8c',
+        onChain: 'arc',
+        note: 'giveFeedback from the oracle validator (0xee602A16..., never the owner: ERC-8004 forbids self-attestation). Score 542 of 1000 on 2026-07-22, computed from real platform settlement history rather than the flat identity credit the mainnet wave carries.',
+      },
+    ],
+    caveats: [
+      'Testnet. Nothing on Arc moves real money, and the settlement history behind the 542 score is testnet activity on our own platform.',
+      'The KYA attestation proves wallet control at attestation time, not code quality, custody practice, or anything else the word verified might be hoped to stretch to.',
+      'The mint transaction was cited in public copy as an anchor tx for weeks. Same hash, wrong noun: it is the registration itself, and the copy now says so.',
+    ],
+  },
+  {
+    chain: 'celo',
+    summary:
+      'Agent #9759 on the canonical ERC-8004 IdentityRegistry, registered 2026-08-09 by the same wallet that receives Celo x402 payments. Payments here settle through the first-party facilitator Celo runs rather than a rail of ours, and this entry was added 2026-08-30, when an inventory found the registration recorded nowhere in the repo.',
+    agent: {
+      tokenId: '9759',
+      caip: 'eip155:42220:8004/9759',
+      owner: '0xF43F43D8aee114a71B164e1f6214BC7625a5742D',
+      tokenUri: AGENT_CARD,
+    },
+    contracts: [
+      {
+        name: 'IdentityRegistry',
+        address: '0x8004A169FB4a3325136EB29fA0ceB6D2e539a432',
+        note: 'The canonical mainnet address Arbitrum, Base, X Layer and Robinhood Chain share. Deployed by the ERC-8004 authors, not by us.',
+      },
+      { name: 'ReputationRegistry', address: '0x8004BAa17C55a88189AE136b182e5fdA19dE9b63' },
+    ],
+    artifacts: [
+      {
+        kind: 'mint',
+        label: 'Agent #9759 registered on the canonical registry',
+        txHash: '0x0a821026621e5b35ff5602f81348b276b0d0f1b61a3892365658295fc5bcb22e',
+        onChain: 'celo',
+        blockNumber: 74379462,
+        note: 'register on 2026-08-09 from the Celo payTo wallet. The hash was recovered from the explorer on 2026-08-30, because nothing in the repo had recorded it; ownerOf(9759) and tokenURI(9759) were re-read live the same day and match this entry.',
+      },
+    ],
+    caveats: [
+      'The owner is the Celo payTo wallet, not the wallet that owns every other EVM agent of ours. Deliberate at registration time, but it means this identity and the payment recipient are the same key.',
+      'No reputation anchor exists for #9759 yet; the oracle validator has never written on this chain.',
+      'The x402 rail here is Celo\'s own first-party facilitator, not our EIP-3009 rail, so settlement receipts follow their format rather than ours.',
+    ],
+  },
 ]
 
 /** A judge-facing grouping. A rail can span more than one network, because splitting
