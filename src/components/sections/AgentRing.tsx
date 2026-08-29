@@ -6,16 +6,22 @@ import ChainLogo from '../app/ChainLogo'
 import { EASE_OUT_EXPO } from '../../lib/brand'
 
 /**
- * Every ERC-8004 identity we hold, as a slowly turning ring of cards: one card
- * per agent, eight agents across seven networks. Avalanche is absent because we
- * hold no agent there, and the ring must never imply one.
+ * Every ERC-8004 identity we hold, as a slowly turning ring of poster cards:
+ * one card per agent, eight agents across seven networks. Avalanche is absent
+ * because we hold no agent there, and the ring must never imply one.
+ *
+ * The look follows the reference recording (agents-movie.mov): portrait cards
+ * with a large gradient artwork over a paper footer, the front card reading
+ * big through perspective, cards passing the back of the ring mirrored, and an
+ * iridescent glow behind the whole carousel. The artwork gradient is built
+ * from each chain's own brand color out of the generated registry.
  *
  * The agent list is a hand-typed mirror of public/.well-known/agent-card.json
- * `registrations` plus mcp/src/chains/provenance.ts. Explorer links derive from
- * the generated chain registry (`CHAIN_BY_ID`), never typed by hand; the tx
- * hashes are the registration mints those two files record.
+ * `registrations` plus mcp/src/chains/provenance.ts. Explorer links derive
+ * from `CHAIN_BY_ID`, never typed by hand; the tx hashes are the registration
+ * mints those two files record.
  *
- * Motion: the ring spins via useAnimationFrame so hover pauses it exactly, and
+ * Motion: useAnimationFrame so hover pauses the spin exactly, and
  * prefers-reduced-motion (or a small screen) gets the same cards as a flat
  * snap-scroll row instead of a 3D carousel.
  */
@@ -27,50 +33,50 @@ const AGENTS: OnchainAgent[] = [
     chain: 'xlayer',
     tokenId: '6271',
     tx: '0x03a614a902ed742526047dffa165378cb16350a81bf083d4672f6d7a9ecfb078',
-    note: 'listed on OKX.AI',
+    note: 'Listed on OKX.AI. The live paid Trust Oracle.',
   },
   {
     chain: 'rhchain',
     tokenId: '0',
     tx: '0x602ce85ad044836b39918311a3031dcd689e4be0d23aed9ed0ac9227d46ec79e',
-    note: "the registry's first mint",
+    note: "The registry's first mint, and it is ours.",
   },
   {
     chain: 'arbitrum',
     tokenId: '1259',
     tx: '0x23275840eb9a8b85a752769c113109a753f39b592236c85093cf94f6a517b2f3',
-    note: 'reputation anchored on-chain',
+    note: 'Reputation anchored by our oracle validator.',
   },
   {
     chain: 'base',
     tokenId: '73232',
     tx: '0xb428bf8e79df3c44157c134df1858eb75fe3758b74868445c1dcd07948705bf0',
-    note: 'reputation anchored on-chain',
+    note: 'Reputation anchored by our oracle validator.',
   },
   {
     chain: 'celo',
     tokenId: '9759',
     tx: '0x0a821026621e5b35ff5602f81348b276b0d0f1b61a3892365658295fc5bcb22e',
-    note: 'behind the Celo x402 rail',
+    note: 'The identity behind the Celo x402 rail.',
   },
   {
     chain: 'arc',
     tokenId: '849980',
     tx: '0x506b125f3a0481667e3a00dcb86f48cbcaa35c643af963365e9389b06a8f8e54',
-    note: 'KYA attested, phase-1 showcase',
+    note: 'Meridian. KYA attested on-chain.',
   },
   {
     chain: 'xlayer',
     tokenId: '8913',
     // No mint tx is recorded for this one, so the card opens the registry it
     // resolves on (ownerOf works there) rather than pretending to a receipt.
-    note: 'second listing, same registry',
+    note: 'Second listing on the same registry.',
   },
   {
     chain: 'rhchain-testnet',
     tokenId: '0',
     tx: '0x20918ec68186bd4aaee7c36d33d0383f1bc6a2bc921e72e3b812d034da5212fd',
-    note: 'full registry family rehearsal',
+    note: 'Full registry family, rehearsed first.',
   },
 ]
 
@@ -82,39 +88,70 @@ function agentHref(a: OnchainAgent): string | null {
   return registry ? `${chain.explorer}/address/${registry}` : null
 }
 
-function AgentCard({ agent, className }: { agent: OnchainAgent; className?: string }) {
+/** White type washes out on the two near-white brand colors (Celo yellow,
+ *  Robinhood lime); everything else carries white on its own gradient. */
+function inkOn(hex: string): string {
+  const n = parseInt(hex.replace('#', ''), 16)
+  const lum = (0.299 * ((n >> 16) & 255) + 0.587 * ((n >> 8) & 255) + 0.114 * (n & 255)) / 255
+  return lum > 0.62 ? 'rgba(15,23,42,0.88)' : 'rgba(255,255,255,0.94)'
+}
+
+/** Portrait poster card: gradient artwork on top, paper footer below, like the
+ *  reference deck. The artwork is layered radial washes of the chain's color. */
+function AgentCard({ agent, index, className }: { agent: OnchainAgent; index: number; className?: string }) {
   const chain = CHAIN_BY_ID[agent.chain]
   const href = agentHref(agent)
+  const ink = inkOn(chain.color)
   const body = (
     <>
+      {/* Artwork */}
       <div
-        aria-hidden="true"
-        className="pointer-events-none absolute inset-0 rounded-2xl"
-        style={{ background: `radial-gradient(130% 85% at 50% 0%, ${chain.color}2e, transparent 70%)` }}
-      />
-      <div className="relative flex items-center justify-between">
-        <ChainLogo id={agent.chain} size={34} />
-        <span
-          className="rounded-full border border-border px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide"
-          style={{ color: chain.color }}
-        >
-          {chain.testnet ? 'testnet' : 'mainnet'}
-        </span>
-      </div>
-      <div className="relative mt-5 font-mono text-3xl font-bold tracking-tight text-foreground">
-        #{agent.tokenId}
-      </div>
-      <div className="relative mt-1 text-sm font-semibold text-foreground/80">{chain.shortName}</div>
-      <div className="relative mt-0.5 text-xs leading-snug text-foreground/55">{agent.note}</div>
-      {href && (
-        <div className="relative mt-auto inline-flex items-center gap-1 text-xs font-semibold text-accent">
-          proof <ArrowUpRight size={12} />
+        className="relative h-[62%] w-full overflow-hidden"
+        style={{
+          background: [
+            `radial-gradient(110% 90% at 78% 12%, ${chain.color}f2, transparent 62%)`,
+            `radial-gradient(120% 110% at 12% 95%, ${chain.color}59, transparent 58%)`,
+            `radial-gradient(70% 55% at 30% 35%, #ffffff3d, transparent 70%)`,
+            `linear-gradient(155deg, ${chain.color}30 0%, ${chain.color}c9 100%)`,
+          ].join(', '),
+        }}
+      >
+        <div className="flex items-start justify-between p-4" style={{ color: ink }}>
+          <div className="text-[11px] font-semibold uppercase leading-tight tracking-[0.08em]">
+            A-Identity
+            <br />
+            Agents &copy;
+          </div>
+          <div className="text-[10px] font-semibold uppercase tracking-[0.14em]">
+            {chain.testnet ? 'testnet' : 'mainnet'}
+          </div>
         </div>
-      )}
+        <div className="absolute bottom-3 left-4 right-4" style={{ color: ink }}>
+          <div className="font-mono text-[30px] font-bold leading-none tracking-tight">#{agent.tokenId}</div>
+          <div className="mt-1 text-[13px] font-semibold">{chain.shortName}</div>
+        </div>
+      </div>
+      {/* Paper footer */}
+      <div className="flex h-[38%] w-full flex-col justify-between bg-card p-4">
+        <div className="flex items-start justify-between gap-2">
+          <p className="text-[11px] leading-snug text-foreground/65">{agent.note}</p>
+          <span className="shrink-0 font-mono text-[10px] text-foreground/45">
+            [{index + 1}/{AGENTS.length}]
+          </span>
+        </div>
+        <div className="flex items-end justify-between">
+          <ChainLogo id={agent.chain} size={22} />
+          {href && (
+            <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-accent">
+              proof <ArrowUpRight size={11} />
+            </span>
+          )}
+        </div>
+      </div>
     </>
   )
   const cardClass =
-    'relative flex h-[220px] w-[190px] shrink-0 flex-col rounded-2xl border border-border bg-card p-5 shadow-sm ' +
+    'relative flex h-[330px] w-[235px] shrink-0 flex-col overflow-hidden rounded-[20px] border border-border bg-card shadow-xl ' +
     (className ?? '')
   if (!href) return <div className={cardClass}>{body}</div>
   return (
@@ -124,37 +161,40 @@ function AgentCard({ agent, className }: { agent: OnchainAgent; className?: stri
   )
 }
 
-/** The 3D ring. Cards sit on a circle and the whole circle turns; back faces are
- *  hidden, so at any moment the front half of the ring reads like the reference
- *  carousel instead of mirrored text. */
+/** The 3D ring. Cards sit on a circle and the whole circle turns. Back faces
+ *  stay visible and pass by mirrored, exactly like the reference recording. */
 function Ring() {
   const ref = useRef<HTMLDivElement>(null)
   const angle = useRef(0)
   const [paused, setPaused] = useState(false)
   useAnimationFrame((_, delta) => {
     if (paused || !ref.current) return
-    angle.current = (angle.current + delta * (360 / 42000)) % 360
+    angle.current = (angle.current + delta * (360 / 46000)) % 360
     ref.current.style.transform = `rotateY(${angle.current}deg)`
   })
   const step = 360 / AGENTS.length
+  const glow = `linear-gradient(100deg, ${AGENTS.map((a) => CHAIN_BY_ID[a.chain].color).join(', ')})`
   return (
     <div
-      className="relative mx-auto h-[300px] w-full max-w-[760px] overflow-visible"
-      style={{ perspective: '1300px' }}
+      className="relative mx-auto h-[430px] w-full max-w-[860px]"
+      style={{ perspective: '1500px' }}
       onMouseEnter={() => setPaused(true)}
       onMouseLeave={() => setPaused(false)}
     >
+      {/* Iridescent stage glow behind the carousel */}
+      <div
+        aria-hidden="true"
+        className="pointer-events-none absolute left-1/2 top-1/2 h-[300px] w-[86%] -translate-x-1/2 -translate-y-1/2 rounded-[50%] opacity-25 blur-3xl"
+        style={{ background: glow }}
+      />
       <div ref={ref} className="absolute inset-0" style={{ transformStyle: 'preserve-3d' }}>
         {AGENTS.map((a, i) => (
           <div
             key={`${a.chain}-${a.tokenId}`}
             className="absolute left-1/2 top-1/2"
-            style={{
-              transform: `translate(-50%, -50%) rotateY(${i * step}deg) translateZ(310px)`,
-              backfaceVisibility: 'hidden',
-            }}
+            style={{ transform: `translate(-50%, -50%) rotateY(${i * step}deg) translateZ(400px)` }}
           >
-            <AgentCard agent={a} />
+            <AgentCard agent={a} index={i} />
           </div>
         ))}
       </div>
@@ -181,13 +221,13 @@ export default function AgentRing() {
         </span>
       </div>
       {reduced ? null : (
-        <div className="mt-6 hidden md:block">
+        <div className="mt-4 hidden md:block">
           <Ring />
         </div>
       )}
       <div className={`mt-6 flex snap-x gap-4 overflow-x-auto pb-2 ${reduced ? '' : 'md:hidden'}`}>
-        {AGENTS.map((a) => (
-          <AgentCard key={`${a.chain}-${a.tokenId}`} agent={a} className="snap-start" />
+        {AGENTS.map((a, i) => (
+          <AgentCard key={`${a.chain}-${a.tokenId}`} agent={a} index={i} className="snap-start" />
         ))}
       </div>
     </motion.div>
