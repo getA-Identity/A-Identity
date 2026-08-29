@@ -1,4 +1,4 @@
-import { useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { motion, useAnimationFrame, useReducedMotion } from 'framer-motion'
 import { ArrowUpRight } from 'lucide-react'
 import { CHAIN_BY_ID, type ChainId } from '../../lib/chains'
@@ -170,42 +170,77 @@ function AgentCard({ agent, index, className }: { agent: OnchainAgent; index: nu
   )
 }
 
+/** The ring is authored at one fixed stage size and scaled down as a whole to
+ *  fit narrower screens, so the 3D geometry never distorts: 860px of width is
+ *  scale 1, anything narrower shrinks proportionally. */
+const STAGE_W = 860
+const STAGE_H = 430
+
 /** The 3D ring. Cards sit on a circle and the whole circle turns. Back faces
- *  stay visible and pass by mirrored, exactly like the reference recording. */
+ *  stay visible and pass by mirrored, exactly like the reference recording.
+ *  Hover pauses the spin; on touch, a tap pauses it briefly so a card can be
+ *  read and its proof link actually hit. */
 function Ring() {
+  const measureRef = useRef<HTMLDivElement>(null)
   const ref = useRef<HTMLDivElement>(null)
   const angle = useRef(0)
+  const touchTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const [paused, setPaused] = useState(false)
+  const [scale, setScale] = useState(1)
+  useEffect(() => {
+    const el = measureRef.current
+    if (!el || typeof ResizeObserver === 'undefined') return
+    const measure = () => setScale(Math.min(1, el.clientWidth / STAGE_W))
+    measure()
+    const ro = new ResizeObserver(measure)
+    ro.observe(el)
+    return () => ro.disconnect()
+  }, [])
+  useEffect(() => () => { if (touchTimer.current) clearTimeout(touchTimer.current) }, [])
   useAnimationFrame((_, delta) => {
     if (paused || !ref.current) return
     angle.current = (angle.current + delta * (360 / 46000)) % 360
     ref.current.style.transform = `rotateY(${angle.current}deg)`
   })
+  const pauseForTouch = () => {
+    setPaused(true)
+    if (touchTimer.current) clearTimeout(touchTimer.current)
+    touchTimer.current = setTimeout(() => setPaused(false), 3500)
+  }
   const step = 360 / AGENTS.length
   const glow = `linear-gradient(100deg, ${AGENTS.map((a) => CHAIN_BY_ID[a.chain].color).join(', ')})`
   return (
-    <div
-      className="relative mx-auto h-[430px] w-full max-w-[860px]"
-      style={{ perspective: '1500px' }}
-      onMouseEnter={() => setPaused(true)}
-      onMouseLeave={() => setPaused(false)}
-    >
-      {/* Iridescent stage glow behind the carousel */}
+    <div ref={measureRef} className="relative w-full" style={{ height: STAGE_H * scale }}>
       <div
-        aria-hidden="true"
-        className="pointer-events-none absolute left-1/2 top-1/2 h-[300px] w-[86%] -translate-x-1/2 -translate-y-1/2 rounded-[50%] opacity-25 blur-3xl"
-        style={{ background: glow }}
-      />
-      <div ref={ref} className="absolute inset-0" style={{ transformStyle: 'preserve-3d' }}>
-        {AGENTS.map((a, i) => (
-          <div
-            key={`${a.chain}-${a.tokenId}`}
-            className="absolute left-1/2 top-1/2"
-            style={{ transform: `translate(-50%, -50%) rotateY(${i * step}deg) translateZ(400px)` }}
-          >
-            <AgentCard agent={a} index={i} />
-          </div>
-        ))}
+        className="absolute left-1/2 top-0"
+        style={{
+          width: STAGE_W,
+          height: STAGE_H,
+          transform: `translateX(-50%) scale(${scale})`,
+          transformOrigin: 'top center',
+          perspective: '1500px',
+        }}
+        onMouseEnter={() => setPaused(true)}
+        onMouseLeave={() => setPaused(false)}
+        onTouchStart={pauseForTouch}
+      >
+        {/* Iridescent stage glow behind the carousel */}
+        <div
+          aria-hidden="true"
+          className="pointer-events-none absolute left-1/2 top-1/2 h-[300px] w-[86%] -translate-x-1/2 -translate-y-1/2 rounded-[50%] opacity-25 blur-3xl"
+          style={{ background: glow }}
+        />
+        <div ref={ref} className="absolute inset-0" style={{ transformStyle: 'preserve-3d' }}>
+          {AGENTS.map((a, i) => (
+            <div
+              key={`${a.chain}-${a.tokenId}`}
+              className="absolute left-1/2 top-1/2"
+              style={{ transform: `translate(-50%, -50%) rotateY(${i * step}deg) translateZ(400px)` }}
+            >
+              <AgentCard agent={a} index={i} />
+            </div>
+          ))}
+        </div>
       </div>
     </div>
   )
@@ -234,7 +269,11 @@ export default function AgentRing() {
           <Ring />
         </div>
       )}
-      <div className={`mt-6 flex snap-x gap-4 overflow-x-auto pb-2 ${reduced ? '' : 'md:hidden'}`}>
+      <div
+        className={`-mx-5 mt-6 flex snap-x snap-mandatory gap-4 overflow-x-auto px-5 pb-3 sm:-mx-8 sm:px-8 ${
+          reduced ? 'md:mx-0 md:px-0' : 'md:hidden'
+        }`}
+      >
         {AGENTS.map((a, i) => (
           <AgentCard key={`${a.chain}-${a.tokenId}`} agent={a} index={i} className="snap-start" />
         ))}
