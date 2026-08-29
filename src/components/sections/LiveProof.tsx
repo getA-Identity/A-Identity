@@ -5,6 +5,7 @@ import { ArrowUpRight, Radio } from 'lucide-react'
 import { EASE_OUT_EXPO } from '../../lib/brand'
 import { ASP_BASE } from '../../lib/mcpBase'
 import { SectionBackdrop } from '../ui/section-backdrop'
+import AgentRing from './AgentRing'
 import SettlementTicker from './SettlementTicker'
 
 const reveal = {
@@ -130,6 +131,9 @@ export default function LiveProof() {
             </motion.div>
           ))}
         </div>
+
+        {/* The #6271 card above is one of eight: the full identity inventory, as a ring. */}
+        <AgentRing />
 
         {/* The wire you can touch. */}
         <motion.div {...reveal} className="mt-8 flex flex-wrap items-center gap-x-6 gap-y-3">
