@@ -180,6 +180,32 @@ export type Wallet = {
   createdAt: string
 }
 
+/**
+ * A PERSON with a session here, as opposed to an agent.
+ *
+ * Until this record existed, a user was only ever a STRING: the verified session subject
+ * (an email or a wallet address) that `owner` on an agent, `rater` on a feedback entry and
+ * the semantic-quota key all already point at. Nothing was stored ABOUT that subject, so
+ * there was nowhere to keep a profile photo.
+ *
+ * This is the smallest record that changes: keyed by the same subject string those fields
+ * already carry, so no existing reference has to be rewritten and there is nothing to
+ * migrate. Rows are created LAZILY (the first time someone stores a photo) and dropped
+ * again when nothing is left in them. That is deliberate and it is the bound: the whole
+ * state is one document serialized in full on every save, so this map has to be the size
+ * of the people who uploaded something, not the size of everyone who ever signed in.
+ */
+export type PlatformUser = {
+  /** The verified session subject: a lowercased email or wallet address. The key. */
+  subject: string
+  /** Optional profile photo, stored as a small inline data: URL under exactly the bound an
+   *  agent logo has (sanitizeLogoUrl / MAX_LOGO_DATA_URL_CHARS in agents.ts). Absent means
+   *  the console falls back to the initials disc. */
+  avatarUrl?: string
+  createdAt: string
+  updatedAt: string
+}
+
 export type InstructionType = 'payment' | 'purchase' | 'rental' | 'batch'
 
 export type Instruction = {
@@ -245,6 +271,9 @@ export type State = {
   feedback: Record<string, FeedbackEntry[]>
   /** Daily free-tier usage of the semantic search, keyed by caller. */
   semanticQuota: Record<string, { day: string; used: number }>
+  /** People, keyed by session subject. A key exists only while that person has stored
+   *  something (today: a profile photo); see PlatformUser. */
+  users: Record<string, PlatformUser>
 }
 
 export type FeedbackEntry = {
@@ -276,7 +305,7 @@ export type FeedbackEntry = {
 
 // ── persistence ───────────────────────────────────────────────────────────────
 
-export const state: State = { agents: [], wallets: [], instructions: [], tasks: [], audits: {}, meters: {}, feedback: {}, semanticQuota: {} }
+export const state: State = { agents: [], wallets: [], instructions: [], tasks: [], audits: {}, meters: {}, feedback: {}, semanticQuota: {}, users: {} }
 
 // Persistence is routed through this local wrapper so the TEST-ONLY reset below can turn
 // it off: a unit test that seeds in-memory state must never overwrite the real persisted
@@ -303,6 +332,7 @@ export function __resetPlatformStateForTests(seed: Partial<State> = {}): State {
   state.meters = seed.meters ?? {}
   state.feedback = seed.feedback ?? {}
   state.semanticQuota = seed.semanticQuota ?? {}
+  state.users = seed.users ?? {}
   return state
 }
 
@@ -376,6 +406,9 @@ export async function initState() {
     // Both maps postdate older persisted documents; default rather than crash.
     state.feedback = loaded.feedback ?? {}
     state.semanticQuota = loaded.semanticQuota ?? {}
+    // Postdates every document written before profile photos existed; default rather
+    // than let an undefined map reach the profile read path.
+    state.users = loaded.users ?? {}
   }
   // Run once per boot, after load and before serving. Idempotent, so a restart that
   // already migrated logs zero rather than doing it again. The count is logged because a
@@ -456,6 +489,21 @@ export function nextUtcMidnight(): string {
  *  just closes the latent authorization gap without affecting real agents. */
 export function ownsAgent(agent: PlatformAgent, caller?: string): boolean {
   return Boolean(agent.owner) && agent.owner === caller
+}
+
+/** Canonical form of a session subject. Tokens are issued with the subject already
+ *  lowercased (email and wallet alike), so this mostly guards a subject that arrived from
+ *  a request body. It is deliberately dull: two spellings of one subject would be two
+ *  accounts, and a clever normalizer would be a way to land on someone else's. */
+export function normalizeSubject(v: unknown): string {
+  return typeof v === 'string' ? v.trim().toLowerCase() : ''
+}
+
+/** True only if the caller IS this user: the user-scoped twin of `ownsAgent`, fail-closed
+ *  in the same way. No caller owns nothing, and an empty subject is owned by no one. */
+export function ownsUser(subject: string, caller?: string): boolean {
+  const s = normalizeSubject(subject)
+  return s.length > 0 && s === normalizeSubject(caller)
 }
 
 // ── helpers ───────────────────────────────────────────────────────────────────

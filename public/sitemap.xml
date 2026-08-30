@@ -53,6 +53,31 @@
     <priority>0.7</priority>
   </url>
   <url>
+    <loc>https://a-identity.xyz/use-cases/know-your-agent</loc>
+    <changefreq>monthly</changefreq>
+    <priority>0.7</priority>
+  </url>
+  <url>
+    <loc>https://a-identity.xyz/use-cases/agent-to-agent-settlement</loc>
+    <changefreq>monthly</changefreq>
+    <priority>0.7</priority>
+  </url>
+  <url>
+    <loc>https://a-identity.xyz/use-cases/pay-per-inference</loc>
+    <changefreq>monthly</changefreq>
+    <priority>0.7</priority>
+  </url>
+  <url>
+    <loc>https://a-identity.xyz/use-cases/usdc-across-chains</loc>
+    <changefreq>monthly</changefreq>
+    <priority>0.7</priority>
+  </url>
+  <url>
+    <loc>https://a-identity.xyz/use-cases/wallet-without-seed-phrase</loc>
+    <changefreq>monthly</changefreq>
+    <priority>0.7</priority>
+  </url>
+  <url>
     <loc>https://a-identity.xyz/contact</loc>
     <changefreq>monthly</changefreq>
     <priority>0.6</priority>

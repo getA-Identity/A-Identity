@@ -6,6 +6,8 @@ import {
   listPlatformAgents,
   updateAgentLogo,
   sanitizeLogoUrl,
+  getUserProfile,
+  updateUserAvatar,
   MAX_LOGO_DATA_URL_CHARS,
   type PlatformAgent,
 } from './platform.js'
@@ -160,4 +162,91 @@ test('a set and a remove are both written to the agent activity trail', () => {
   const trail = stored(agent.id).activity.map((e) => e.text)
   assert.ok(trail.some((t) => /Profile image set/.test(t)), 'the set is missing from the trail')
   assert.ok(trail.some((t) => /Profile image removed/.test(t)), 'the removal is missing from the trail')
+})
+
+/**
+ * The same picture, on a PERSON.
+ *
+ * A user profile photo is a second avatar write path, and the failure it could reproduce
+ * is the one the block above exists to prevent: a file the account screen accepts and the
+ * agent screen refuses. So these tests live next to those and assert the shared sanitizer
+ * is genuinely shared, plus the one thing an agent logo has no equivalent of - an owner
+ * gate keyed on a session subject rather than on an agent row.
+ */
+
+const ME = 'me@test'
+const OTHER = 'other@test'
+
+test('a person can set their own profile photo, and it is stored on their account', () => {
+  const r = updateUserAvatar(ME, PNG, ME)
+  assert.ok(!('error' in r), 'the account holder was refused')
+  assert.equal(r.avatar, 'set')
+  assert.equal(r.user.avatarUrl, PNG)
+  assert.equal(getUserProfile(ME)?.avatarUrl, PNG)
+})
+
+test('a second upload replaces the photo instead of adding one', () => {
+  updateUserAvatar(ME, PNG, ME)
+  const r = updateUserAvatar(ME, JPEG, ME)
+  assert.ok(!('error' in r))
+  assert.equal(r.avatar, 'set')
+  assert.match(r.note, /replaced/i)
+  assert.equal(getUserProfile(ME)?.avatarUrl, JPEG)
+})
+
+test('null removes a profile photo and leaves no empty account row behind', () => {
+  updateUserAvatar(ME, PNG, ME)
+  const r = updateUserAvatar(ME, null, ME)
+  assert.ok(!('error' in r))
+  assert.equal(r.avatar, 'removed')
+  assert.equal('avatarUrl' in r.user, false, 'a removed photo must not be echoed back')
+  // The row held nothing else, so it is gone rather than sitting in the persisted
+  // document as a key and two timestamps.
+  assert.equal(getUserProfile(ME), null)
+})
+
+test('removing a profile photo nobody set is a clean no-op, not an error', () => {
+  const r = updateUserAvatar('never-uploaded@test', null, 'never-uploaded@test')
+  assert.ok(!('error' in r), 'a double remove must not fail')
+  assert.equal(r.avatar, 'unchanged')
+  assert.equal(getUserProfile('never-uploaded@test'), null)
+})
+
+test('nobody but the account holder can change a profile photo', () => {
+  updateUserAvatar(OTHER, PNG, OTHER)
+
+  // Another signed-in person, naming someone else's account.
+  const stranger = updateUserAvatar(OTHER, JPEG, ME)
+  assert.ok('error' in stranger)
+  assert.match(stranger.error, /^Forbidden/, 'the ownership refusal must map to 403')
+
+  // No session at all.
+  const anon = updateUserAvatar(OTHER, JPEG, undefined)
+  assert.ok('error' in anon)
+  assert.match(anon.error, /^Forbidden/)
+
+  assert.equal(getUserProfile(OTHER)?.avatarUrl, PNG, 'the photo changed despite the refusal')
+})
+
+test('a profile photo passes the same sanitizer and the same bound as an agent logo', () => {
+  const oversized = updateUserAvatar(ME, TOO_BIG, ME)
+  assert.ok('error' in oversized)
+  assert.match(oversized.error, new RegExp(String(MAX_LOGO_DATA_URL_CHARS)))
+
+  const remote = updateUserAvatar(ME, 'https://example.com/me.png', ME)
+  assert.ok('error' in remote, 'a remote URL was accepted as an inline photo')
+
+  const notAnImage = updateUserAvatar(ME, 'data:text/html,<script>alert(1)</script>', ME)
+  assert.ok('error' in notAnImage)
+
+  assert.equal(getUserProfile(ME)?.avatarUrl, undefined, 'a refused photo was stored anyway')
+})
+
+test('a subject differing only in case or spacing is the same account, not a way past the gate', () => {
+  const r = updateUserAvatar('  ME@Test  ', PNG, ME)
+  assert.ok(!('error' in r), 'the account holder was refused their own row under another spelling')
+  assert.equal(r.user.subject, ME, 'the row was keyed by an unnormalized subject')
+  assert.equal(getUserProfile('Me@TEST')?.avatarUrl, PNG)
+
+  updateUserAvatar(ME, null, ME)
 })

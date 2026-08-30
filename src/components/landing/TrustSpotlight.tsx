@@ -63,7 +63,7 @@ function ResultCard({ result, q, onOpen, onClaim }: { result: NonNullable<Result
           <AgentAvatar seed={seed} size={54} verdict={v.toLowerCase() as OwlVerdict} />
           <div className="min-w-0">
             <div className="truncate text-sm font-bold text-foreground">{name}</div>
-            <div className="truncate font-mono text-[11px] text-foreground/45">
+            <div className="truncate font-mono text-[11px] text-foreground/60">
               {identity && !identity.partial ? `#${identity.tokenId}` : shorten(identity?.owner || q)}{identity?.owner ? ` · ${shorten(identity.owner)}` : ''} · KYA {reputation?.kya ?? '·'}
             </div>
           </div>
@@ -76,7 +76,7 @@ function ResultCard({ result, q, onOpen, onClaim }: { result: NonNullable<Result
         <div>
           <div className="flex items-baseline gap-2">
             <span className="font-mono text-3xl font-bold tabular-nums tracking-tight text-foreground">{shown}</span>
-            <span className="font-mono text-xs text-foreground/35">/ 1000</span>
+            <span className="font-mono text-xs text-foreground/60">/ 1000</span>
             <span className="ml-auto text-xs font-semibold" style={{ color: RISK[v] }}>{gradeOf(score)}</span>
           </div>
           <div className="mt-2.5 h-2 w-full rounded-full" style={{ background: 'linear-gradient(90deg,#dc2626,#d97706 45%,#059669)' }}>
@@ -92,7 +92,7 @@ function ResultCard({ result, q, onOpen, onClaim }: { result: NonNullable<Result
         <button onClick={onClaim} className="inline-flex items-center gap-1.5 rounded-lg bg-accent/10 px-3 py-2 text-xs font-semibold text-accent transition-colors hover:bg-accent/15">
           <ShieldCheck size={14} /> Is this yours? Claim it
         </button>
-        <button onClick={onOpen} className="ml-auto inline-flex items-center gap-1 text-xs font-semibold text-foreground/50 transition-colors hover:text-foreground">
+        <button onClick={onOpen} className="ml-auto inline-flex items-center gap-1 text-xs font-semibold text-foreground/70 transition-colors hover:text-foreground">
           Full profile <ArrowUpRight size={13} />
         </button>
       </div>
@@ -151,7 +151,7 @@ function OnboardPanel({ onClose, claimAddress }: { onClose: () => void; claimAdd
           <Check size={24} />
         </span>
         <h3 className="mt-4 text-lg font-bold text-foreground">You are verified.</h3>
-        <p className="mx-auto mt-1.5 max-w-xs text-sm leading-relaxed text-foreground/55">
+        <p className="mx-auto mt-1.5 max-w-xs text-sm leading-relaxed text-foreground/70">
           Wallet control proven. Your agent identity is ready. Finish the details, register, set spend limits, in your console.
         </p>
         {mismatch && (
@@ -171,13 +171,13 @@ function OnboardPanel({ onClose, claimAddress }: { onClose: () => void; claimAdd
   return (
     <div className="p-4">
       {/* three-step hint */}
-      <div className="mb-4 flex items-center gap-2 px-1 font-mono text-[11px] text-foreground/40">
+      <div className="mb-4 flex items-center gap-2 px-1 font-mono text-[11px] text-foreground/60">
         <span className="text-accent">connect</span>
         <ArrowRight size={11} />
         <span>sign once</span>
         <ArrowRight size={11} />
         <span>verified</span>
-        <span className="ml-auto normal-case tracking-normal text-foreground/35">no gas · no signup</span>
+        <span className="ml-auto normal-case tracking-normal text-foreground/60">no gas · no signup</span>
       </div>
 
       {claiming && (
@@ -185,7 +185,7 @@ function OnboardPanel({ onClose, claimAddress }: { onClose: () => void; claimAdd
           <AgentAvatar seed={claimAddress!} size={32} />
           <div className="min-w-0">
             <div className="text-xs font-semibold text-foreground">Claiming this agent</div>
-            <div className="truncate font-mono text-[11px] text-foreground/45">{shorten(claimAddress)}</div>
+            <div className="truncate font-mono text-[11px] text-foreground/60">{shorten(claimAddress)}</div>
           </div>
         </div>
       )}
@@ -197,7 +197,7 @@ function OnboardPanel({ onClose, claimAddress }: { onClose: () => void; claimAdd
       </p>
 
       {nothing ? (
-        <p className="px-1 py-4 text-sm text-foreground/55">
+        <p className="px-1 py-4 text-sm text-foreground/70">
           No wallet detected. Install{' '}
           <a className="font-semibold text-accent hover:underline" href="https://metamask.io/download" target="_blank" rel="noreferrer">MetaMask</a>{' '}
           and reopen this.
@@ -207,17 +207,17 @@ function OnboardPanel({ onClose, claimAddress }: { onClose: () => void; claimAdd
           {wallets.map((w) => (
             <button key={w.id} onClick={() => w.provider && connect(() => w.provider!, w.id)} disabled={!!busy}
               className="flex items-center gap-3 rounded-xl border border-border bg-background px-4 py-3 text-left transition-colors hover:border-accent/50 disabled:opacity-50">
-              {w.icon ? <img src={w.icon} alt="" className="h-7 w-7 rounded-lg" /> : <Wallet size={20} className="text-foreground/50" />}
+              {w.icon ? <img src={w.icon} alt="" className="h-7 w-7 rounded-lg" /> : <Wallet size={20} className="text-foreground/70" />}
               <span className="flex-1 text-sm font-semibold text-foreground">{w.name}</span>
-              {busy === w.id ? <Loader2 size={15} className="animate-spin text-foreground/45" /> : <ArrowRight size={15} className="text-foreground/30" />}
+              {busy === w.id ? <Loader2 size={15} className="animate-spin text-foreground/60" /> : <ArrowRight size={15} className="text-foreground/60" />}
             </button>
           ))}
           {wcOn && (
             <button onClick={() => connect(() => connectWalletConnect(), 'wc')} disabled={!!busy}
               className="flex items-center gap-3 rounded-xl border border-border bg-background px-4 py-3 text-left transition-colors hover:border-accent/50 disabled:opacity-50">
               <QrCode size={20} className="text-[#3b99fc]" />
-              <span className="flex-1 text-sm font-semibold text-foreground">WalletConnect <span className="text-foreground/40">(mobile)</span></span>
-              {busy === 'wc' ? <Loader2 size={15} className="animate-spin text-foreground/45" /> : <ArrowRight size={15} className="text-foreground/30" />}
+              <span className="flex-1 text-sm font-semibold text-foreground">WalletConnect <span className="text-foreground/60">(mobile)</span></span>
+              {busy === 'wc' ? <Loader2 size={15} className="animate-spin text-foreground/60" /> : <ArrowRight size={15} className="text-foreground/60" />}
             </button>
           )}
         </div>
@@ -373,38 +373,38 @@ export default function TrustSpotlight() {
               <div className="flex items-center gap-5 border-b border-border px-4 pt-3">
                 <TabBtn id="verify" label="Verify an agent" />
                 <TabBtn id="onboard" label="Claim yours" />
-                <button onClick={() => toggle(false)} aria-label="Close" className="ml-auto mb-2 rounded-md p-1 text-foreground/40 hover:bg-foreground/5 hover:text-foreground"><X size={16} /></button>
+                <button onClick={() => toggle(false)} aria-label="Close" className="ml-auto mb-2 rounded-md p-1 text-foreground/60 hover:bg-foreground/5 hover:text-foreground"><X size={16} /></button>
               </div>
 
               {tab === 'verify' ? (
                 <>
                   <div className="flex items-center gap-3 border-b border-border px-4 py-3.5">
-                    <Search size={18} className="shrink-0 text-foreground/40" />
+                    <Search size={18} className="shrink-0 text-foreground/60" />
                     <input ref={inputRef} value={q} onChange={(e) => setQ(e.target.value)}
                       onKeyDown={(e) => { if (e.key === 'Enter') e.preventDefault() }}
                       placeholder="Verify an agent by token id or 0x address"
-                      className="w-full bg-transparent font-mono text-sm text-foreground outline-none placeholder:font-sans placeholder:text-foreground/40" />
+                      className="w-full bg-transparent font-mono text-sm text-foreground outline-none placeholder:font-sans placeholder:text-foreground/60" />
                   </div>
                   <div className="max-h-[52vh] overflow-y-auto p-4">
-                    {loading && <div className="flex items-center gap-2 px-1 py-6 text-sm text-foreground/45"><span className="h-3 w-3 animate-spin rounded-full border-2 border-foreground/20 border-t-accent" /> Reading the chain…</div>}
+                    {loading && <div className="flex items-center gap-2 px-1 py-6 text-sm text-foreground/60"><span className="h-3 w-3 animate-spin rounded-full border-2 border-foreground/20 border-t-accent" /> Reading the chain…</div>}
                     {!loading && result && <ResultCard result={result} q={q.trim()} onOpen={() => goExplorer(q.trim())} onClaim={() => startClaim(result.identity?.owner || q.trim())} />}
                     {!loading && !result && q.trim() && (
                       <div className="flex flex-col gap-3 px-1 py-4">
-                        <p className="text-sm text-foreground/55">
+                        <p className="text-sm text-foreground/70">
                           No verified agent found for <span className="font-mono text-foreground/70">{shorten(q.trim())}</span>. It may not be registered on A-Identity yet.
                         </p>
                         <button onClick={() => startClaim(q.trim())}
                           className="inline-flex items-center gap-2 self-start rounded-lg bg-accent px-4 py-2.5 text-sm font-semibold text-white transition hover:opacity-90">
                           <ShieldCheck size={15} /> Are you the owner? Claim this agent
                         </button>
-                        <p className="text-xs text-foreground/40">
+                        <p className="text-xs text-foreground/60">
                           Or try a demo token id like <button onClick={() => setQ('849980')} className="font-mono text-accent hover:underline">849980</button>.
                         </p>
                       </div>
                     )}
                     {!loading && !q.trim() && (
                       <div>
-                        <div className="px-1 pb-2 text-[11px] font-semibold uppercase tracking-wide text-foreground/40">Featured agents</div>
+                        <div className="px-1 pb-2 text-[11px] font-semibold uppercase tracking-wide text-foreground/60">Featured agents</div>
                         <div className="flex flex-col">
                           {(featured.length ? featured : []).map((a) => {
                             const s = a.reputation?.score ?? 0, v = riskOf(s, a.kya)
@@ -414,7 +414,7 @@ export default function TrustSpotlight() {
                                 <AgentAvatar seed={a.onchainAgentId || a.id} size={34} verdict={v.toLowerCase() as OwlVerdict} />
                                 <div className="min-w-0 flex-1">
                                   <div className="truncate text-sm font-medium text-foreground">{a.name}</div>
-                                  <div className="truncate font-mono text-[11px] text-foreground/40">{a.category}{a.onchainAgentId ? ` · #${a.onchainAgentId}` : ''}</div>
+                                  <div className="truncate font-mono text-[11px] text-foreground/60">{a.category}{a.onchainAgentId ? ` · #${a.onchainAgentId}` : ''}</div>
                                 </div>
                                 <span className="font-mono text-xs font-semibold tabular-nums text-foreground/70">{s}</span>
                                 <span className="h-1.5 w-1.5 rounded-full" style={{ background: RISK[v] }} />
@@ -431,7 +431,7 @@ export default function TrustSpotlight() {
                       </div>
                     )}
                   </div>
-                  <div className="flex items-center justify-between gap-3 border-t border-border px-4 py-2.5 text-[11px] text-foreground/45">
+                  <div className="flex items-center justify-between gap-3 border-t border-border px-4 py-2.5 text-[11px] text-foreground/60">
                     <span>Results are live on-chain reads. No login to look up.</span>
                     <span className="inline-flex items-center gap-1.5"><kbd className="rounded border border-border px-1.5 py-0.5 font-mono">Esc</kbd> close</span>
                   </div>

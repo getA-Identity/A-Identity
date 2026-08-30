@@ -23,7 +23,19 @@ export type MarketAgent = {
   description: string
   category: string
   capabilities: string[]
+  /** The chain this agent's identity and payable wallet live on. Stays the primary one:
+   *  the wallet line and every settlement claim are about THIS chain. */
   chain: string
+  /**
+   * Every network the agent is really registered on, identity chain first, as registry
+   * chain slugs. The backend rolls it up from the agent's identity chain plus the chains
+   * we have deployed its spend vaults on (see agentChainIds in mcp/src/marketplace.ts),
+   * so it is never padded with a chain we merely support.
+   *
+   * Optional so a payload that has not started sending it degrades to the single `chain`
+   * instead of emptying the card. Absent means "we were not told", not "one chain".
+   */
+  chains?: string[]
   kya: string
   onchain: string
   onchainTx?: string

@@ -1,6 +1,8 @@
 /**
  * Agent route group (split from http.ts): agent listing/creation, wallets, anchor,
- * vault, session key, Circle wallet, treasury, KYA, reputation, payment policy.
+ * vault, session key, Circle wallet, treasury, KYA, reputation, payment policy, plus
+ * the signed-in person's own account profile (/api/user/*), which sits here because it
+ * is the same avatar write path the agent logo uses.
  * Handlers return true when the request was handled; order within this file mirrors
  * the original http.ts order.
  */
@@ -9,7 +11,7 @@ import {
   updateAgentLogo, anchorAgentOnchain, provisionAgentVault, grantAgentSessionKey, getAgentVault,
   provisionCircleWallet, getAgentCircleWallet, getAgentTreasury, startAgentAutoYield,
   stopAgentAutoYield, startKyaChallenge, verifyKya, revokeAgentKya, getAgentKya,
-  agentReputation, agentPolicy,
+  agentReputation, agentPolicy, getUserProfile, updateUserAvatar,
 } from '../platform.js'
 import { cappedDemoUsd, denyRead, errStatus, publicAgents, readBody, sendJson, type RouteCtx } from './shared.js'
 
@@ -97,6 +99,44 @@ export async function handleAgentRoutes(ctx: RouteCtx): Promise<boolean> {
     // Ownership + the size bound both live in the platform function, which is the same
     // sanitizer registration uses, so the two paths cannot drift.
     const r = updateAgentLogo(body.agentId, body.logoUrl ?? null, callerId)
+    if ('error' in r) { sendJson(res, errStatus(r.error), r); return true }
+    sendJson(res, 200, r)
+    return true
+  }
+  // ── The person signed in: their own account, not the agents they own ──────────
+  // Read your own profile. Caller-scoped by construction: the subject comes from the
+  // session and there is no query parameter to point this at anyone else. Being signed
+  // out is a normal answer here (profile: null), the same posture /api/auth/me takes,
+  // rather than a 401 every anonymous page load would log as an error.
+  if (req.method === 'GET' && url.pathname === '/api/user/profile') {
+    const profile = getUserProfile(callerId)
+    sendJson(res, 200, {
+      profile: profile
+        ? { subject: profile.subject, avatarUrl: profile.avatarUrl, updatedAt: profile.updatedAt }
+        : null,
+      // Which half of "signed in" this is: a session exists. The write below additionally
+      // needs a VERIFIED one (the global mutation gate in http.ts), so a guest reads their
+      // own empty profile here and is refused there.
+      signedIn: Boolean(callerId),
+    })
+    return true
+  }
+  // Set / replace / remove your own profile photo. Same sanitizer and same size bound as
+  // an agent logo (both are sanitizeLogoUrl in platform/agents.ts), and the same explicit
+  // null-to-remove contract. Behind the verified-session gate every POST /api/* mutation
+  // runs through in http.ts, and behind `ownsUser` inside the platform function on top.
+  if (req.method === 'POST' && url.pathname === '/api/user/avatar') {
+    const body = (await readBody(req).catch(() => null)) as { subject?: string; avatarUrl?: string | null } | null
+    // A missing field is NOT a removal, exactly as on the agent path: only an explicit
+    // null removes the photo, so a client that forgot to send it cannot wipe one.
+    if (!body || !('avatarUrl' in body)) {
+      sendJson(res, 400, { error: 'avatarUrl required: an inline data:image/... URL to set it, or null to remove it' })
+      return true
+    }
+    // A body MAY name the account, and if it does it has to be the caller's own. Quietly
+    // defaulting to the session subject instead would answer a request aimed at someone
+    // else with 200 while changing the sender's own photo, which is worse than a 403.
+    const r = updateUserAvatar(body.subject ?? callerId, body.avatarUrl ?? null, callerId)
     if ('error' in r) { sendJson(res, errStatus(r.error), r); return true }
     sendJson(res, 200, r)
     return true

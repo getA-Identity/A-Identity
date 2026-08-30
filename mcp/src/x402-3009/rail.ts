@@ -28,7 +28,7 @@ import {
 import { verifyAgent, reputationScore, riskCheck, agentPassport, type TxContext } from '../asp/tools.js'
 import { loadX402Settlements, X402_SETTLEMENTS_CAP, type X402SettlementRecord } from '../storage.js'
 import { provenDomainCached } from './domain.js'
-import { settlePayment, type Limits, type Requirements, type EngineDeps } from './engine.js'
+import { settlePayment, type Limits, type Requirements, type EngineDeps, type SettleSuccess } from './engine.js'
 
 type Hex = `0x${string}`
 
@@ -321,6 +321,7 @@ export async function railChallenge(
       mimeType: 'application/json',
       maxTimeoutSeconds: 600,
       extra: {
+        assetTransferMethod: 'eip3009',
         ...altDomain.proven.domain,
         domainSeparator: altDomain.proven.domainSeparator,
         domainVerified: true,
@@ -345,6 +346,12 @@ export async function railChallenge(
     // The whole domain, plus the live separator it was proven against, so the buyer can
     // check our arithmetic without trusting us.
     extra: {
+      // x402 v2 reserves `extra.assetTransferMethod` for how the asset actually moves, and
+      // `eip3009` is the truth here: the buyer signs a TransferWithAuthorization and we
+      // broadcast it. @x402/evm falls back to `eip3009` when the key is absent, so this
+      // changes nothing for a stock buyer today; it stops the buyer having to rely on a
+      // default to know what it is signing.
+      assetTransferMethod: 'eip3009',
       ...domain.proven.domain,
       domainSeparator: domain.proven.domainSeparator,
       domainVerified: true,
@@ -398,6 +405,62 @@ export function railRequirements(tool: RailToolName, status: RailStatus, decimal
 
 export type RailToolInput = { agentId: string; txContext?: TxContext | null }
 
+/**
+ * The buyer's credential, under either name.
+ *
+ * x402 v1 carried it in `X-PAYMENT`; v2 renamed the request header to `PAYMENT-SIGNATURE`,
+ * and that is the only name a stock v2 client sends. Reading both makes one endpoint serve
+ * both generations of client at the cost of a second lookup. node:http lower-cases incoming
+ * header names, which is why only the lower-case keys are read.
+ */
+export function railPaymentHeader(headers: Record<string, string | string[] | undefined>): string {
+  const one = (v: string | string[] | undefined) => (Array.isArray(v) ? v[0] : v) ?? ''
+  return (one(headers['x-payment']) || one(headers['payment-signature'])).trim()
+}
+
+/**
+ * Which network the buyer says they paid on, in EITHER payload shape.
+ *
+ * v1 put `network` at the top level of the payment payload. v2 moved it into `accepted`:
+ * the entry the buyer picked out of our `accepts` array and signed against. A stock v2
+ * client sends only the second, so reading only the first would settle that buyer on our
+ * DEFAULT chain rather than the one they signed for, which is an authorization that cannot
+ * verify. Top level is read first, so nothing that worked before changes.
+ */
+export function railPaidNetwork(payload: unknown): string | undefined {
+  const p = payload as { network?: unknown; accepted?: { network?: unknown } | null } | null
+  const top = typeof p?.network === 'string' ? p.network.trim() : ''
+  if (top) return top
+  const accepted = typeof p?.accepted?.network === 'string' ? p.accepted.network.trim() : ''
+  return accepted || undefined
+}
+
+/**
+ * The settlement receipt in the v2 `PAYMENT-RESPONSE` header.
+ *
+ * Only the fields the reference SettleResponse type defines, base64 of the same JSON the
+ * body already carries: a v2 client reads its receipt from the header without parsing a
+ * body shaped for humans. Our fuller settlement record (gas, block, explorer link) stays
+ * in the body, where nothing has to fit someone else's type.
+ */
+export function railPaymentResponseHeader(settled: SettleSuccess): string {
+  return Buffer.from(
+    JSON.stringify({
+      success: true,
+      transaction: settled.transaction,
+      network: settled.network,
+      payer: settled.payer,
+      amount: settled.value,
+    }),
+  ).toString('base64')
+}
+
+/**
+ * What a served call returns. `headers` carries the transport-level headers the route
+ * adapter sets on the response, which today is the v2 `PAYMENT-RESPONSE` receipt on a 200.
+ */
+export type RailServeResult = { httpStatus: number; body: unknown; headers?: Record<string, string> }
+
 export type RailServeDeps = EngineDeps & {
   handlers?: Record<RailToolName, (input: RailToolInput) => Promise<unknown>>
 }
@@ -439,7 +502,7 @@ export async function railServeTool(
   paymentHeader: string,
   status: RailStatus,
   deps: RailServeDeps = {},
-): Promise<{ httpStatus: number; body: unknown }> {
+): Promise<RailServeResult> {
   const gate = railPaywallGate(status)
   if (!gate.ok) return { httpStatus: gate.httpStatus, body: gate.body }
   const chain = status.chain ? getChainById(status.chain) : undefined
@@ -461,8 +524,8 @@ export async function railServeTool(
   // The buyer chose which of the offered chains to pay on, so settle on THAT one. The
   // challenge is the menu; the payload names the dish. A network we do not sell on
   // resolves to an unconfigured status and is refused rather than quietly redirected.
-  const paidNetwork = (payload as { network?: unknown })?.network
-  if (typeof paidNetwork === 'string' && paidNetwork.trim()) {
+  const paidNetwork = railPaidNetwork(payload)
+  if (paidNetwork) {
     const chosen = railStatus(deps.env ?? process.env, paidNetwork)
     if (!chosen.configured) {
       const challenge = await railChallenge(tool, status, deps, chosen.reason ?? `this rail does not settle on '${paidNetwork}'`)
@@ -487,7 +550,7 @@ export async function railServeToolOn(
   payload: unknown,
   status: RailStatus,
   deps: RailServeDeps = {},
-): Promise<{ httpStatus: number; body: unknown }> {
+): Promise<RailServeResult> {
   const chain = status.chain ? getChainById(status.chain) : undefined
   if (!chain || !status.token) {
     return { httpStatus: 501, body: { error: 'x402-3009 rail not configured', reason: 'network descriptor missing from the registry' } }
@@ -550,7 +613,11 @@ export async function railServeToolOn(
   const handlers = deps.handlers ?? defaultHandlers(status)
   try {
     const body = await handlers[tool](input)
-    return { httpStatus: 200, body: { ...(body as Record<string, unknown>), settlement: settled } }
+    return {
+      httpStatus: 200,
+      body: { ...(body as Record<string, unknown>), settlement: settled },
+      headers: { 'PAYMENT-RESPONSE': railPaymentResponseHeader(settled) },
+    }
   } catch (e) {
     return {
       httpStatus: 500,

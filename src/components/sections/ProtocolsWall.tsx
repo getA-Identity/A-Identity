@@ -124,8 +124,16 @@ const LIVE = chainsWith('live')
 const BETA = chainsWith('beta')
 const PLANNED = chainsWith('planned')
 
-const CHAIN_LINE = [
-  LIVE.length > 0 ? `Live on ${listOf(LIVE)} today.` : '',
+/**
+ * The live line is the strongest single fact this section has, and it used to be set at
+ * 14px in 50% foreground next to the beta and planned clauses, in one grey sentence that
+ * gave a shipped mainnet the same weight as a chain nobody has started. It is split out
+ * now: the live clause carries the emphasis, the rest stays quiet beside it. Both are
+ * still derived from the generated registry, so neither can drift.
+ */
+const LIVE_LINE = LIVE.length > 0 ? `Live on ${listOf(LIVE)} today.` : ''
+
+const PIPELINE_LINE = [
   BETA.length > 0 ? `${listOf(BETA)} ${BETA.length === 1 ? 'is' : 'are'} in beta.` : '',
   PLANNED.length > 0 ? `${listOf(PLANNED)} ${PLANNED.length === 1 ? 'is' : 'are'} planned.` : '',
 ]
@@ -171,7 +179,7 @@ export default function ProtocolsWall() {
               <span className="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-[color-mix(in_srgb,var(--pc)_12%,var(--card))] text-[color:var(--pc)] dark:bg-[color-mix(in_srgb,var(--pc)_20%,var(--card))] dark:text-[color-mix(in_srgb,var(--pc)_55%,white)]">
                 <p.Icon size={18} aria-hidden="true" />
               </span>
-              <span className="font-mono text-[10px] font-semibold uppercase tracking-[0.14em] text-foreground/45">
+              <span className="font-mono text-[10px] font-semibold uppercase tracking-[0.14em] text-foreground/60">
                 {p.tag}
               </span>
             </div>
@@ -182,13 +190,13 @@ export default function ProtocolsWall() {
             <p className="mt-2 text-[15px] leading-relaxed text-foreground/60">{p.body}</p>
 
             <div className="mt-auto flex flex-wrap items-center justify-between gap-x-4 gap-y-2 pt-5">
-              <span className="text-xs text-foreground/45">
+              <span className="text-xs text-foreground/60">
                 <span className="font-semibold text-foreground/65">{p.whereLabel}</span> · {p.where}
               </span>
               {/* ml-auto, not just justify-between: when the console line is long enough
                   to wrap, this keeps the docs link on the right edge instead of stranding
                   it under the start of the row. */}
-              <span className="ml-auto inline-flex items-center gap-1 text-xs font-semibold text-foreground/45 transition-colors group-hover:text-accent">
+              <span className="ml-auto inline-flex items-center gap-1 text-xs font-semibold text-foreground/60 transition-colors group-hover:text-accent">
                 Docs <ArrowUpRight size={12} />
               </span>
             </div>
@@ -196,14 +204,22 @@ export default function ProtocolsWall() {
         ))}
       </div>
 
-      <motion.p
+      <motion.div
         {...reveal}
         transition={{ ...reveal.transition, delay: 0.12 }}
-        className="mt-6 max-w-[70ch] text-sm leading-relaxed text-foreground/50"
+        className="mt-8 flex flex-col gap-3 rounded-2xl border border-border bg-card px-5 py-4 sm:flex-row sm:items-center sm:gap-6"
       >
-        {CHAIN_LINE} Identity and escrow settle on Arc, which is a public testnet: real
-        contracts, real transactions, test money.
-      </motion.p>
+        {LIVE_LINE && (
+          <p className="flex items-center gap-2.5 text-base font-bold tracking-tight text-foreground">
+            <span className="h-2.5 w-2.5 shrink-0 rounded-full bg-ok" aria-hidden="true" />
+            {LIVE_LINE}
+          </p>
+        )}
+        <p className="text-sm leading-relaxed text-foreground/70 sm:ml-auto sm:max-w-[44ch] sm:text-right">
+          {PIPELINE_LINE} Identity and escrow settle on Arc, a public testnet: real
+          contracts, test money.
+        </p>
+      </motion.div>
     </SectionShell>
   )
 }

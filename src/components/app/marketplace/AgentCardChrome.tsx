@@ -1,7 +1,7 @@
 /**
  * Shared storefront chrome for the marketplace and the agent profile: the tinted
  * banner an agent's mark straddles, the tier badge slot, the payable-wallet line,
- * and the capability tag row.
+ * the chain row, and the capability tag row.
  *
  * The layout language is the one every agent storefront converged on (agent.ai,
  * kore.ai): a colored banner, a circular mark overlapping its lower edge, a badge
@@ -91,6 +91,67 @@ export function OwnerLine({
     >
       {chain ? <ChainLogo id={chain.id} size={15} /> : <Wallet size={12} />}
       <span className="truncate font-mono">{short(walletAddress)}</span>
+    </span>
+  )
+}
+
+/**
+ * The networks an agent is on, as one chip of round chain logos.
+ *
+ * A card used to name one chain and stop there, which stopped being the whole truth the
+ * day an agent could hold a spend vault on a second network. This shows the real set and
+ * NOTHING else: ids the registry does not know are dropped rather than drawn, the list is
+ * never padded with a chain we merely support, and the overflow reads "+N more chains"
+ * rather than hiding the count (same pattern as TagRow above).
+ *
+ * The wording stays at "networks", not "anchored" or "settling": the caller decides which
+ * of those a chain in the list has earned, and the on-chain / queued badge next to this
+ * chip is what says whether an identity is broadcast yet.
+ *
+ * One chain reads as the plain named chip it always was, so an Arc-only agent looks
+ * exactly like it did before.
+ */
+export function ChainRow({
+  chains,
+  max = 4,
+  tone = 'surface',
+  className = '',
+}: {
+  chains: string[]
+  /** How many logos fit before the row rolls the rest into "+N more chains". */
+  max?: number
+  tone?: 'surface' | 'inverse'
+  className?: string
+}) {
+  // De-duplicated defensively: the server already rolls the list up, and a repeated slug
+  // would otherwise draw the same logo twice under a colliding React key.
+  const known = [...new Set(chains)]
+    .map((id) => (id in CHAIN_BY_ID ? CHAIN_BY_ID[id as ChainId] : undefined))
+    .filter((c): c is (typeof CHAIN_BY_ID)[ChainId] => Boolean(c))
+  if (known.length === 0) return null
+  const head = known.slice(0, max)
+  const rest = known.length - head.length
+  const label =
+    known.length === 1
+      ? known[0].shortName
+      : rest > 0
+        ? `+${rest} more chain${rest === 1 ? '' : 's'}`
+        : `${known.length} chains`
+  const chip =
+    tone === 'inverse'
+      ? 'border-white/20 bg-white/10 text-white/85'
+      : 'border-border bg-background text-foreground/65'
+  return (
+    <span
+      className={`inline-flex items-center gap-1.5 rounded-full border px-2 py-0.5 text-[11px] font-semibold ${chip} ${className}`}
+      title={`Networks: ${known.map((c) => c.name).join(', ')}`}
+    >
+      <span className="flex items-center gap-1">
+        {head.map((c) => (
+          <ChainLogo key={c.id} id={c.id} size={14} />
+        ))}
+      </span>
+      {label}
     </span>
   )
 }

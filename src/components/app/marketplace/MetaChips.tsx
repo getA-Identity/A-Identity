@@ -1,26 +1,23 @@
 /**
- * Trust chips for marketplace cards and rows: settlement rails, the chain the
- * agent lives on, and whether a live callable endpoint is registered.
- * Extracted verbatim from Marketplace.tsx; pure props component, every chip
- * must keep mapping 1:1 to a backend field.
+ * Trust chips for marketplace cards and rows: the networks the agent is registered
+ * on, settlement rails, and whether a live callable endpoint is registered.
+ * Pure props component, every chip must keep mapping 1:1 to a backend field.
+ *
+ * The chain chip used to name one chain from `a.chain`. It now renders the whole
+ * registered set through ChainRow, falling back to that single chain when the payload
+ * does not carry the list, so it can only ever say less than the truth, never more.
  */
 import { ShieldCheck, Zap } from 'lucide-react'
-import { CHAIN_BY_ID, type ChainId } from '../../../lib/chains'
-import ChainLogo from '../ChainLogo'
+import { ChainRow } from './AgentCardChrome'
 import type { MarketAgent } from './types'
 
-/** Trust chips: settlement rails, the chain this agent lives on, and whether a live
+/** Trust chips: the chains this agent lives on, its settlement rails, and whether a live
  *  callable endpoint is registered. Every chip maps 1:1 to a backend field. */
 export function MetaChips({ a, className = '' }: { a: MarketAgent; className?: string }) {
-  const chain = CHAIN_BY_ID[a.chain as ChainId]
   const payments = a.payments ?? ['escrow']
   return (
     <div className={`flex flex-wrap items-center gap-1.5 ${className}`}>
-      {chain && (
-        <span className="inline-flex items-center gap-1.5 rounded-full border border-border bg-background px-2 py-0.5 text-[11px] font-semibold text-foreground/65">
-          <ChainLogo id={chain.id} size={14} /> {chain.shortName}
-        </span>
-      )}
+      <ChainRow chains={a.chains ?? [a.chain]} />
       {payments.includes('escrow') && (
         <span className="inline-flex items-center gap-1 rounded-full bg-foreground/5 px-2 py-0.5 text-[11px] font-semibold text-foreground/60">
           <ShieldCheck size={11} /> Escrow

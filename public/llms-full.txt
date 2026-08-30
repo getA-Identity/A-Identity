@@ -271,12 +271,16 @@ No account, no API key, no subscription. Call the endpoint; if unpaid you get
 HTTP 402 with a machine-readable challenge naming the price, network, asset,
 address, input schema and a worked example. Settle, attach proof, replay.
 
-Two rails are live:
+Two rails are documented here in full. They are not the only ones: section 8
+lists every chain that has settled, and each carries its own proof page. No
+count below is summed across rails, because one figure covering several chains
+is a figure about none of them.
 
 **Per call on X Layer** (`eip155:196`). Each call settles as its own on-chain
 transfer in USD₮0 to
-`0x6a5f1b8e56a19d456b799c2fa00e513244f58ce6`. 120 settlements to date, every one
-listed with its transaction hash at https://a-identity-asp.onrender.com/proof.
+`0x6a5f1b8e56a19d456b799c2fa00e513244f58ce6`. 120 x402 settlements on X Layer
+mainnet to date, every one listed with its transaction hash at
+https://a-identity-asp.onrender.com/proof.
 
 **Gasless nanopayments on Circle Arc** (`eip155:5042002`). The x402 `exact`
 scheme over Circle Gateway's `GatewayWalletBatched` domain, verifying contract
@@ -467,8 +471,11 @@ https://a-identity.xyz/.well-known/ai-agent-manifest.json
 
 - Circle Arc is a public **testnet**. Real contracts and real transactions, test
   money.
-- The Trust Oracle is **live on OKX.AI as agent #6271** with real revenue on X
-  Layer mainnet. 120 settlements, each verifiable.
+- The Trust Oracle is **live on OKX.AI as agent #6271** with real revenue: 120
+  x402 settlements on X Layer mainnet, each verifiable.
+- Five more mainnets carry settlements of their own: Robinhood Chain, Arbitrum
+  One, Base, Stellar pubnet and Algorand. Section 8 describes each, and every
+  rail is counted on its own proof page rather than summed with the others.
 - Public policy counters currently read **zero**, because no live third-party
   agent has produced a production decision yet. We publish the zero rather than a
   number nobody can reproduce.

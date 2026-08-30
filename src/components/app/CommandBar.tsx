@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import {
   ArrowLeftRight, Coins, CornerDownLeft, CreditCard, Fingerprint,
-  LayoutDashboard, Search, Send, SlidersHorizontal, Snowflake, Store,
+  LayoutDashboard, Search, Send, SlidersHorizontal, Snowflake, Store, UserRound,
 } from 'lucide-react'
 
 /**
@@ -37,6 +37,7 @@ const COMMANDS: Cmd[] = [
   { id: 'identity', label: 'Agent ID', hint: 'Console', icon: Fingerprint, to: '/app/agent-id', keywords: 'identity passport erc-8004 kya register verify reputation' },
   { id: 'wallet', label: 'Wallet', hint: 'Console', icon: CreditCard, to: '/app/wallet', keywords: 'wallet balance usdc fund faucet treasury' },
   { id: 'market', label: 'Marketplace', hint: 'Console', icon: Store, to: '/app/marketplace', keywords: 'marketplace hire agent house worker' },
+  { id: 'profile', label: 'Your profile', hint: 'Console', icon: UserRound, to: '/app/profile', keywords: 'profile account photo avatar picture me you' },
   { id: 'earnings', label: 'Earnings', hint: 'Console', icon: Coins, to: '/app/earnings', keywords: 'earnings revenue paid jobs gateway' },
 ]
 

@@ -5,6 +5,7 @@ import { Link } from 'react-router-dom'
 import { DisplayHeading, Eyebrow, Lede } from '../ui/display'
 import { SectionShell, SectionIntro, reveal } from '../ui/section'
 import { ProductMock, MockRow, MockValue, MockToggle } from '../ui/product-mock'
+import { Button } from '../ui/button'
 import OwlMark from '../OwlMark'
 
 /**
@@ -65,23 +66,12 @@ export default function ConsoleShowcase() {
         lede={
           <Lede>
             Caps, allowlists, session keys and a freeze switch, enforced outside the model
-            and mirrored on-chain. This is the actual surface, not a mockup of one. Go on,
-            pull the levers.
+            and mirrored on-chain. Go on, pull the levers.
           </Lede>
         }
       />
 
       <div className="relative mt-14">
-        {/* The horizon: brand art far behind the frame, at whisper opacity. */}
-        <img
-          src="/art/art-vault.webp"
-          alt=""
-          aria-hidden="true"
-          loading="lazy"
-          decoding="async"
-          className="pointer-events-none absolute -right-10 -top-24 hidden w-[420px] rotate-6 opacity-[0.08] lg:block"
-        />
-
         {/* The frame: a soft gradient mat around an inner card, dashx-style. */}
         <motion.div
           {...reveal}
@@ -196,13 +186,15 @@ export default function ConsoleShowcase() {
         </motion.div>
       </div>
 
-      <motion.div {...reveal} className="mt-8">
-        <Link
-          to="/explorer"
-          className="inline-flex items-center gap-1.5 text-sm font-semibold text-accent transition-opacity hover:opacity-80"
-        >
-          Open the live explorer <ArrowRight size={15} />
-        </Link>
+      {/* A section this large should not end on a text link. The pill is the same one
+          QuickStart closes with, so the two "go do it" moments on the page look like the
+          same offer rather than one button and one afterthought. */}
+      <motion.div {...reveal} className="mt-10">
+        <Button asChild size="lg">
+          <Link to="/explorer">
+            Open the live explorer <ArrowRight size={16} />
+          </Link>
+        </Button>
       </motion.div>
     </SectionShell>
   )

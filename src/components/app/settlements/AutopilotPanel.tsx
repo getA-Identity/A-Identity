@@ -3,7 +3,6 @@ import { Bot, CheckCircle2, Loader2, Hand, Coins } from 'lucide-react'
 import { apiFetch } from '../../../lib/api'
 import { Button } from '../../ui/button'
 import { authHeaders } from '../../../store/auth'
-import BrandArt from '../BrandArt'
 import { Panel } from '../../ui/panel'
 
 type Payment = { n: number; amountUsd: number; cumulativeUsd: number; ok: boolean; transaction?: string; reason?: string }
@@ -115,9 +114,6 @@ export default function AutopilotPanel() {
             next payment would breach your budget. A protocol fee is routed to the treasury on each run.
           </p>
         </div>
-        {/* A ceramic autopilot dial: the budget is the one control you set before
-            letting go. Medallion mask keeps the navy render soft on both themes. */}
-        <BrandArt src="/art/art-autopilot.webp" className="hidden h-20 w-24 shrink-0 sm:block" />
       </div>
 
       <div className="mt-4 flex flex-wrap items-end gap-3">

@@ -264,7 +264,7 @@ export default function BuiltOn() {
             <motion.h2 {...reveal} className="text-3xl font-bold leading-[1.1] tracking-tight sm:text-[2.6rem]" style={{ fontFamily: 'var(--font-heading)' }}>
               Built on rails that already move money.
             </motion.h2>
-            <motion.p {...reveal} className="mt-4 max-w-xl text-lg leading-relaxed text-foreground/55">
+            <motion.p {...reveal} className="mt-4 max-w-xl text-lg leading-relaxed text-foreground/70">
               A-Identity does not reinvent settlement. It runs on Circle and OKX, live today.
             </motion.p>
           </div>
@@ -383,13 +383,13 @@ export default function BuiltOn() {
                           beta
                         </span>
                       ) : (
-                        <span className="inline-flex items-center rounded-full border border-dashed border-border px-2.5 py-0.5 font-mono text-[10px] font-bold uppercase tracking-wider text-foreground/45">
+                        <span className="inline-flex items-center rounded-full border border-dashed border-border px-2.5 py-0.5 font-mono text-[10px] font-bold uppercase tracking-wider text-foreground/60">
                           next
                         </span>
                       )}
                     </div>
                     <p className="mt-2 text-lg font-medium text-foreground/80">{r.role}</p>
-                    <p className="mt-2 max-w-[56ch] text-[15px] leading-relaxed text-foreground/55">{r.detail}</p>
+                    <p className="mt-2 max-w-[56ch] text-[15px] leading-relaxed text-foreground/70">{r.detail}</p>
                   </div>
                 </div>
               </article>
@@ -411,7 +411,7 @@ export default function BuiltOn() {
             ))}
           </div>
 
-          <p className="mt-4 text-center text-xs text-foreground/35">
+          <p className="mt-4 text-center text-xs text-foreground/60">
             one chain-agnostic core, one adapter per chain
           </p>
         </motion.div>

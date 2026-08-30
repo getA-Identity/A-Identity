@@ -1,6 +1,6 @@
 import { Github } from 'lucide-react'
 import { Link } from 'react-router-dom'
-import Logo from '../Logo'
+import { Lockup } from '../Logo'
 import DiscordIcon from '../DiscordIcon'
 import XIcon from '../XIcon'
 import LinkedInIcon from '../LinkedInIcon'
@@ -35,7 +35,10 @@ const SOCIAL_LINKS = [
 
 /** Render an internal route link or an external (new-tab) anchor. */
 function FooterItem({ link }: { link: FooterLink }) {
-  const className = 'text-[13px] text-foreground/60 transition-colors hover:text-foreground'
+  /* 14px at 75% rather than 13px at 60%. The footer did not read as empty because it was
+     missing content, it read as empty because fifteen links were set below the size the
+     rest of the page treats as its smallest readable step. */
+  const className = 'text-sm text-foreground/75 transition-colors hover:text-foreground'
   if (link.external) {
     return (
       <a href={link.href} target="_blank" rel="noopener noreferrer" className={className}>
@@ -56,19 +59,20 @@ export default function SiteFooter() {
       <SectionBackdrop name="footer" position="right" />
       <div className="relative mx-auto max-w-[1100px]">
         <div className="grid gap-10 lg:grid-cols-[1fr_1.7fr] lg:gap-16">
-          {/* Brand block: who this is, and where else to find it. */}
+          {/* Brand block: who this is, and where else to find it. The lockup replaced a
+              22px mark beside 16px text, which is roughly half the size the same brand
+              gets in the navbar; a footer signature smaller than the header's is a
+              footer that looks like it gave up. */}
           <div>
-            <div className="flex items-center gap-2">
-              <Logo size={22} />
-              <span className="text-base font-bold tracking-tight text-foreground">{APP_NAME}</span>
-            </div>
-            <p className="mt-2.5 max-w-[28ch] text-[13px] leading-relaxed text-foreground/55">
+            <Lockup height={48} />
+            <p className="mt-3.5 max-w-[30ch] text-[15px] leading-relaxed text-foreground/75">
               The passport and wallet for the agentic economy.
             </p>
 
             {/* Socials. Each renders only when its link is set, so an unpublished channel
-                is simply absent rather than a button that goes nowhere. */}
-            <div className="mt-5 flex items-center gap-4">
+                is simply absent rather than a button that goes nowhere. Bigger and darker
+                than they were: at 16px and 45% these were five grey smudges. */}
+            <div className="mt-6 flex items-center gap-5">
               {SOCIAL_LINKS.filter((s) => s.href).map(({ key, href, label, Icon }) => (
                 <a
                   key={key}
@@ -77,9 +81,9 @@ export default function SiteFooter() {
                   rel="noopener noreferrer"
                   aria-label={label}
                   title={label}
-                  className="text-foreground/45 transition-colors hover:text-foreground"
+                  className="text-foreground/70 transition-colors hover:text-accent"
                 >
-                  <Icon size={16} />
+                  <Icon size={21} />
                 </a>
               ))}
             </div>
@@ -96,10 +100,14 @@ export default function SiteFooter() {
           <nav aria-label="Footer" className="grid grid-cols-1 gap-8 sm:grid-cols-3">
             {FOOTER_COLUMNS.map((col) => (
               <div key={col.title}>
-                <h3 className="text-[11px] font-semibold uppercase tracking-[0.14em] text-foreground/40">
+                {/* The hairline is the structure. Three headings floating at 11px and 40%
+                    over three ragged link stacks read as one undifferentiated block; a
+                    rule under each heading makes the columns visibly columns without
+                    adding a border box around them. */}
+                <h3 className="border-b border-border pb-2.5 text-xs font-bold uppercase tracking-[0.14em] text-foreground/70">
                   {col.title}
                 </h3>
-                <ul className="mt-3 grid grid-cols-2 gap-x-4 gap-y-2.5 sm:flex sm:flex-col sm:gap-2">
+                <ul className="mt-4 grid grid-cols-2 gap-x-4 gap-y-2.5 sm:flex sm:flex-col sm:gap-2.5">
                   {col.links.map((l) => (
                     <li key={l.label} className="min-w-0">
                       <FooterItem link={l} />
@@ -113,7 +121,7 @@ export default function SiteFooter() {
 
         {/* The quiet block: the machine-facing line, the ask-an-AI row and the legal
             line, all at one small size so none of them competes with the links above. */}
-        <div className="mt-12 flex flex-col gap-2.5 border-t border-border pt-5 text-xs text-foreground/45">
+        <div className="mt-14 flex flex-col gap-3 border-t border-border pt-6 text-[13px] text-foreground/60">
           <p>
             This site speaks agent too:{' '}
             <a

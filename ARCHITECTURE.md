@@ -5,14 +5,23 @@ An agent gets a verifiable identity, proves it controls its wallet, is given spe
 human sets, and can then pay other agents.
 
 Live: **https://a-identity.xyz** · backend **https://a-identity-backend.onrender.com**.
-Circle Arc (5042002) is the phase-1 network and is testnet, so value moving there is test
-value. It is not the only network: four mainnets carry our own traffic and real money -
-**OKX X Layer**, **Celo**, **Robinhood Chain** and **Arbitrum One** - and a fifth,
-**Stellar pubnet**, holds a deployed spend vault that a real USDC budget has been spent
-through, across eleven registry entries in total. The header used to name Arc alone while the sections below already
-described the rest, which is how a reader ended up with the wrong idea of the blast radius.
+
+The registry holds **13 chains**. Eight are `live`, and seven of those are mainnets carrying
+our own traffic and real money: **OKX X Layer**, **Celo**, **Robinhood Chain**,
+**Arbitrum One**, **Base**, **Stellar** (pubnet) and **Algorand**. The eighth live chain is
+**Circle Arc** (5042002), which is a testnet, so value moving there is test value; Arc is
+where phase 1 started and it still carries all three ERC-8004 registries (identity +
+reputation + validation), which is what makes KYA anchorable there. No mainnet in the
+registry publishes a ValidationRegistry, so KYA cannot be anchored on any of them. The four
+testnet mirrors (Stellar, Algorand, Robinhood Chain, Celo Sepolia) are `beta`, and Avalanche
+is the only `planned` entry. This header said "eleven registry entries" and described Stellar
+pubnet as merely holding a vault until 2026-08-30; both had gone stale, and understating the
+blast radius is the expensive direction for that kind of error to point.
+
 [`mcp/src/chains/registry.ts`](mcp/src/chains/registry.ts) is the source of truth for which
-chain is which, and [SECURITY.md](SECURITY.md) lists every signer and what it can spend.
+chain is which, [`mcp/src/chains/provenance.ts`](mcp/src/chains/provenance.ts) is the ledger
+of transactions behind each claim (served at `/proof/:rail`), and [SECURITY.md](SECURITY.md)
+lists every signer and what it can spend.
 
 Everything below is real code broadcasting real transactions - no mocks in the core flow.
 
@@ -169,6 +178,64 @@ put them at their canonical cross-chain addresses. What is ours is the identity 
 - Celo has **no ValidationRegistry**, so KYA cannot be anchored on-chain there. We say so instead
   of implying the Arc feature set travels.
 
+### Stellar pubnet
+
+Not a vault sitting idle: the spend policy holds real Circle USDC *and* the Soroban x402 rail
+sells on this network.
+
+- **`AgentSpendPolicy` on pubnet** - [`CB5LYXFK…`](https://stellar.expert/explorer/public/contract/CB5LYXFKKTKDDSCM6JO6C4GNRQUFBGSLYDET6Q56JNFJQSMBKH6KWSYP),
+  deployed 2026-08-24, wasm sha256 `155eb31c…9239`, byte for byte the hash the testnet vault
+  carries. No upgrade entrypoint and no `initialize`: the constructor ran atomically at deploy
+  and its arguments are permanent. Policy: **1 USDC per UTC day, 0.25 USDC per payment** -
+  deliberately an order of magnitude under the testnet vault, because this one holds real money.
+  Owner hardened to a **2-of-3 multisig** on 2026-08-25.
+- **The budget was spent to its edge and then refused.** Four payments settled inside the policy
+  (first [`c4a884c3…`](https://stellar.expert/explorer/public/tx/c4a884c306ee0cd76b7fb4fa245176618897687ad7fee724e2d43b72d20f3733)),
+  the next was refused with the contract's own `DailyCapExceeded`, and `spent_today` came to rest
+  at exactly the 1 USDC cap. A Soroban refusal fails in simulation and never reaches the ledger,
+  so the typed error code is the artifact and there is no hash to link.
+- **First x402 sale on mainnet** (2026-08-28):
+  [`f213371c…`](https://stellar.expert/explorer/public/tx/f213371c1241968ee78170923d8c5a3bd9b32950e73bb9c563d800ab2c70ec9e),
+  ledger 64155370, 0.001 USDC for `verify_agent`. The buyer signed a Soroban authorization entry
+  and paid no fee; we assembled, bid the fee market's own rate and submitted, and the sale counted
+  only once the SEP-41 transfer event bound to that authorization's nonce was read back.
+- Full record with every hash and caveat: [`soroban/releases/pubnet-v0.1.0.json`](soroban/releases/pubnet-v0.1.0.json)
+  and the `stellar` entry in [`provenance.ts`](mcp/src/chains/provenance.ts).
+
+### Base and Arbitrum One
+
+Both are mainnets where the canonical ERC-8004 registries were already deployed **by their
+authors**; registering is permissionless, so what is ours is the agent and the rail.
+
+- **Base agent [#73232](https://basescan.org/tx/0xb428bf8e79df3c44157c134df1858eb75fe3758b74868445c1dcd07948705bf0)**
+  (2026-08-28) and the first x402 settlement in native Circle USDC,
+  [`0xb59ae67c…`](https://basescan.org/tx/0xb59ae67ced56426bdc1d85a71adadb35b0db59bcffeb3ff637eba23fe49a1450) -
+  the receipt carries the matching USDC `Transfer` plus the token's `AuthorizationUsed` event.
+  That measurement is what the disclosed settlement fee is derived from, not a guess.
+- **Arbitrum One agent #1259** and the first settlement `0x69abb8a9…` (2026-08-13), same
+  first-party EIP-3009 facilitator, buyer signs and pays no gas.
+- Neither family publishes a ValidationRegistry, so KYA is verified off-chain here and recorded
+  rather than anchored.
+
+### Algorand mainnet
+
+The second non-EVM rail, live on its first mainnet sale the day it shipped (2026-08-30).
+
+- **First x402 sale** [`YNNA54CX…`](https://allo.info/tx/YNNA54CXZGWBGL5ILYBV4K5RI26KTALIGWGXX6MJOORDAEEUPCWQ),
+  round 64547231, 0.001 USDC for `verify_agent`. The buyer signs an ASA transfer with **fee zero**
+  inside a pooled-fee atomic group, the GoPlausible facilitator broadcasts, and nothing counts as
+  settled until our own indexer read returns the transfer. Three more sales followed the same day,
+  one per remaining tool, so every tool this rail sells has a mainnet receipt.
+- **`AgentSpendPolicy` application `3688854723`** (created by
+  [`NFDZMQYV…`](https://allo.info/tx/NFDZMQYVEFXBNKHAWIGUODMYCRONPX655VOALPR6AAZHOMK5I5ZA)) - the
+  policy's *third* implementation (Solidity, Rust/Soroban, now Algorand Python), compiled with
+  puyapy 5.10.1, approval program sha256 `665c8f7e…3850`, TEAL committed next to the source. No
+  update, delete or owner-transfer handler exists, so the rules cannot change after the fact. Same
+  1 USDC / 0.25 USDC policy, walked through the same settle-refuse-freeze-override ladder.
+- USDC here is **ASA 31566704**, a uint64 id rather than a contract address, and receiving it at
+  all needs an opt-in (0.1 ALGO minimum-balance step) - Algorand's trustline equivalent, which no
+  rail can remove.
+
 ## Stack
 
 - **Frontend** - React + Vite (Vercel). Talks to its own origin; `vercel.json` proxies `/api`, `/mcp`,
@@ -177,7 +244,7 @@ put them at their canonical cross-chain addresses. What is ours is the identity 
   `/mcp` JSON-RPC for agents. Durable state via Postgres (`DATABASE_URL`), JSON-file fallback for dev.
 - **Auth** - Sign-In with Ethereum (wallet) + email magic link (Resend) are *verified*; a plain guest
   session is read-only. Agent ownership is bound to a verified identity.
-- **Tests / CI** - `node:test` unit suite: **955 tests across 76 colocated `*.test.ts` files**
+- **Tests / CI** - `node:test` unit suite: **993 tests across 77 colocated `*.test.ts` files**
   (as of Aug 2026; `npm test` in `mcp/`) + a full E2E (`mcp/e2e.mjs`) of about **67 checks** that
   adapts to signer presence: live reads always run, and the on-chain write checks (x402, ERC-8183
   escrow, Gateway, **Nanopayments settle**, **CCTP burn-and-mint**) activate with a funded
@@ -193,4 +260,9 @@ put them at their canonical cross-chain addresses. What is ours is the identity 
   agent's behalf (a delegated action); the human `owner` is the user's own wallet. The *limit* is
   trustless regardless (the contract reverts), but the agent does not yet sign its own payments -
   that's the roadmap (agent-held key / Circle programmable wallet). We say this plainly.
-- **Testnet**: Arc testnet, test USDC. Real tech, test money.
+- **Which money is real**: Arc is a testnet, so everything in the "Arc testnet" section above is
+  real tech and test money. The seven live mainnets above are not: X Layer, Celo, Robinhood
+  Chain, Arbitrum One, Base, Stellar pubnet and Algorand settle real value, in small deliberate
+  amounts, and [SECURITY.md](SECURITY.md) says which key spends where. This line used to read
+  "Testnet: Arc testnet, test USDC" and nothing else, which was true of Arc and wrong about the
+  product.

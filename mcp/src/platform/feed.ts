@@ -11,6 +11,7 @@ import { resolveActionPolicy, deriveBadges, badgeFor, SURFACES } from '../policy
 import { CHAINS } from '../chains/index.js'
 import { SETTLEMENTS } from '../asp/settlements.js'
 import { CONTRACTS } from '../arc-contracts.js'
+import { agentChainIds } from '../marketplace.js'
 
 // ── marketplace ───────────────────────────────────────────────────────────────
 
@@ -364,6 +365,11 @@ export function marketplace(viewer?: string, includeAll = false, category?: stri
       category: a.category,
       capabilities: a.capabilities,
       chain: a.chain,
+      // Every network this agent is actually registered on: its identity chain plus one
+      // entry per deployed vault. Derived through the registry, so an id we have no
+      // descriptor for is dropped rather than handed to a card with no logo for it. A
+      // chain we merely support never appears here.
+      chains: agentChainIds(a),
       kya: a.kya,
       onchain: a.onchain,
       onchainTx: a.onchainTx,

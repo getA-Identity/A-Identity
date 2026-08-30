@@ -32,7 +32,7 @@ const STATS = [
   // repository could reproduce.
   { n: 120, k: '120', v: 'real settlements', sub: 'X Layer mainnet' },
   { n: null, k: '#6271', v: 'live agent', sub: 'listed on OKX.AI' },
-  { n: 955, k: '955', v: 'tests, green', sub: 'deterministic scores' },
+  { n: 993, k: '993', v: 'tests, green', sub: 'deterministic scores' },
 ] as const
 
 /** A number that counts itself up the first time it scrolls into view. */
@@ -108,7 +108,7 @@ export default function LiveProof() {
         <motion.h2 {...reveal} className="text-3xl font-bold leading-[1.1] tracking-tight sm:text-[2.6rem]" style={{ fontFamily: 'var(--font-heading)' }}>
           Not a demo. Live and earning.
         </motion.h2>
-        <motion.p {...reveal} className="mt-4 max-w-xl text-lg leading-relaxed text-foreground/55">
+        <motion.p {...reveal} className="mt-4 max-w-xl text-lg leading-relaxed text-foreground/70">
           A-Identity runs as a trust oracle on three mainnets: listed on OKX.AI over X Layer, on
           Celo through its first-party x402 facilitator, and on Algorand over x402 v2, where the
           buyer signs a fee-zero transfer and pays no gas at all. Per-call checks, settled in

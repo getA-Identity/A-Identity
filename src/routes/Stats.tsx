@@ -19,7 +19,6 @@ import {
 import PageHeader from '../components/PageHeader'
 import SiteFooter from '../components/sections/SiteFooter'
 import ThemeScope from '../components/ThemeScope'
-import BrandArt from '../components/app/BrandArt'
 import ChainLogo from '../components/app/ChainLogo'
 import { DisplayHeading, Eyebrow, Lede } from '../components/ui/display'
 import { SectionShell, SectionIntro, reveal, revealAt } from '../components/ui/section'
@@ -516,7 +515,6 @@ export default function Stats() {
             title="The roster"
             caption="Real registrations only. The backend excludes its own CI canary agents from every count here, so our monitoring cannot inflate the roster."
             source={<SourceTag label="GET /api/stats" href="https://a-identity.xyz/api/stats" />}
-            art={<BrandArt src="/art/art-seal.webp" className="h-20 w-24 lg:h-24 lg:w-28" />}
           >
             <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
               <MetricTile
@@ -596,7 +594,6 @@ export default function Stats() {
               title="Marketplace"
               caption="Escrow-settled work. GMV counts only tasks whose escrow actually released."
               source={<SourceTag label="GET /api/stats" href="https://a-identity.xyz/api/stats" />}
-              art={<BrandArt src="/art/art-market.webp" className="h-20 w-24" />}
             >
               <div className="grid grid-cols-2 gap-3">
                 <MetricTile icon={Boxes} label="Tasks" value={s?.tasks.total ?? null} format={int} note="Posted to the marketplace." />
@@ -644,7 +641,6 @@ export default function Stats() {
               title="Settlement instructions"
               caption="Executed settlement instructions, and the share carrying a real Arc transaction hash rather than a simulated run."
               source={<SourceTag label="GET /api/stats" href="https://a-identity.xyz/api/stats" />}
-              art={<BrandArt src="/art/art-gate.webp" className="h-20 w-24" />}
             >
               <div className="grid grid-cols-2 gap-3">
                 <MetricTile
@@ -751,14 +747,7 @@ export default function Stats() {
               </div>
             }
           >
-            <BrandArt
-              src="/art/art-guardrail.webp"
-              variant="band"
-              className="h-24 w-full rounded-2xl sm:h-28"
-              objectPosition="center 40%"
-            />
-
-            <div className="mt-6 grid grid-cols-2 gap-3 lg:grid-cols-5">
+            <div className="grid grid-cols-2 gap-3 lg:grid-cols-5">
               <MetricTile
                 icon={Gauge}
                 label="Checks"
@@ -871,7 +860,6 @@ export default function Stats() {
                 <SourceTag label="GET /api/chains" href="https://a-identity.xyz/api/chains" />
               </div>
             }
-            art={<BrandArt src="/art/art-grid.webp" className="h-20 w-24" />}
           >
             <div className="grid gap-6 lg:grid-cols-[minmax(0,340px)_minmax(0,1fr)] lg:gap-10">
               <div>

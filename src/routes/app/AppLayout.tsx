@@ -14,6 +14,7 @@ import {
   Search,
   SlidersHorizontal,
   Store,
+  User,
   X,
 } from 'lucide-react'
 import CommandBar from '../../components/app/CommandBar'
@@ -36,7 +37,7 @@ import { useAuth } from '../../store/auth'
 import { APP_NAME } from '../../lib/brand'
 import { useMcpHealth } from '../../hooks/useMcp'
 import { useScreenTransition } from '../../hooks/useScreenTransition'
-import { wakeBackend } from '../../lib/api'
+import { apiFetch, wakeBackend } from '../../lib/api'
 import '../../console.css'
 
 /**
@@ -72,8 +73,30 @@ const NAV_GROUPS = [
   },
 ] as const
 
+/**
+ * Destinations that are reachable but deliberately absent from the rail. The account
+ * profile is opened from the avatar, where people look for it; the rail stays about the
+ * agent. The breadcrumb still has to be able to name it, which is what this is for.
+ */
+const OFF_RAIL = [{ to: '/app/profile', label: 'Profile', icon: User }] as const
+
 /** Flat list of every destination, for the breadcrumb. */
-const ALL_NAV = [...NAV, ...NAV_GROUPS.flatMap((g) => g.items.map((i) => ({ ...i, end: false as const })))]
+const ALL_NAV = [
+  ...NAV,
+  ...NAV_GROUPS.flatMap((g) => g.items.map((i) => ({ ...i, end: false as const }))),
+  ...OFF_RAIL.map((i) => ({ ...i, end: false as const })),
+]
+
+/**
+ * Broadcast that the signed-in person's photo changed, so the shell's disc updates the
+ * moment the server confirms it instead of on the next reload. A window event rather than
+ * a store because there is exactly one publisher (the profile screen) and one listener
+ * (this shell), and a store would outlive both.
+ */
+export const USER_AVATAR_CHANGED = 'a-identity:user-avatar-changed'
+export function publishUserAvatarChanged(avatarUrl: string | null) {
+  window.dispatchEvent(new CustomEvent<string | null>(USER_AVATAR_CHANGED, { detail: avatarUrl }))
+}
 
 /**
  * One row, in both the desktop rail and the mobile drawer. Hover is purely tonal
@@ -92,6 +115,17 @@ function initials(name: string) {
     .slice(0, 2)
     .join('')
     .toUpperCase()
+}
+
+/**
+ * The signed-in person as a disc: their photo when they set one, their initials when they
+ * did not. One definition, so the rail and the topbar can never show different things
+ * about the same account.
+ */
+function UserDisc({ src, name }: { src: string | null; name: string }) {
+  if (!src) return <>{name ? initials(name) : 'AI'}</>
+  // Decorative: every disc sits inside a control that is already labelled.
+  return <img src={src} alt="" className="h-full w-full rounded-full object-cover" />
 }
 
 /** Boot skeleton shown while a page chunk loads: one small breathing disc. */
@@ -118,6 +152,35 @@ export default function AppLayout() {
   // by the time the user clicks Anchor / Execute / Provision.
   useEffect(() => {
     wakeBackend()
+  }, [])
+
+  // The signed-in person's photo, if they set one. Read once from their own account
+  // profile and then kept live by the event the profile screen publishes, so the disc
+  // changes the moment the server confirms it. A failed or unreachable read leaves it
+  // null, which is the initials disc: this is decoration and must never block the shell.
+  const [avatar, setAvatar] = useState<string | null>(null)
+  useEffect(() => {
+    if (!user) {
+      setAvatar(null)
+      return
+    }
+    let alive = true
+    apiFetch('/api/user/profile')
+      .then((res) => (res.ok ? (res.json() as Promise<{ profile?: { avatarUrl?: string } | null }>) : null))
+      .then((data) => {
+        if (alive) setAvatar(data?.profile?.avatarUrl ?? null)
+      })
+      .catch(() => {
+        /* backend cold or unreachable: keep the initials */
+      })
+    return () => {
+      alive = false
+    }
+  }, [user])
+  useEffect(() => {
+    const onAvatar = (e: Event) => setAvatar((e as CustomEvent<string | null>).detail ?? null)
+    window.addEventListener(USER_AVATAR_CHANGED, onAvatar)
+    return () => window.removeEventListener(USER_AVATAR_CHANGED, onAvatar)
   }, [])
 
   // Command surface. Cmd+K on a Mac, Ctrl+K elsewhere, and "/" when the caret is not
@@ -276,15 +339,23 @@ export default function AppLayout() {
         </span>
       </div>
 
-      {/* Who is signed in. */}
+      {/* Who is signed in, and the way into your own account. The photo and the name are
+          one link; the log out button stays a sibling so a control is never nested in a
+          link. */}
       <div className="mt-2 flex items-center gap-2.5 rounded-xl border border-border bg-foreground/[0.02] p-2.5">
-        <div className="grid h-8 w-8 shrink-0 place-items-center rounded-full bg-accent text-[11px] font-bold text-white">
-          {user ? initials(user.name) : 'AI'}
-        </div>
-        <div className="min-w-0 flex-1">
-          <div className="truncate text-xs font-semibold text-foreground">{user?.name ?? 'Signed in'}</div>
-          <div className="truncate text-[11px] text-foreground/45">{user?.email ?? ''}</div>
-        </div>
+        <Link
+          to="/app/profile"
+          className="flex min-w-0 flex-1 items-center gap-2.5 rounded-lg transition-opacity duration-[120ms] hover:opacity-80"
+          title="Your profile"
+        >
+          <div className="grid h-8 w-8 shrink-0 place-items-center overflow-hidden rounded-full bg-accent text-[11px] font-bold text-white">
+            <UserDisc src={avatar} name={user?.name ?? ''} />
+          </div>
+          <div className="min-w-0 flex-1">
+            <div className="truncate text-xs font-semibold text-foreground">{user?.name ?? 'Signed in'}</div>
+            <div className="truncate text-[11px] text-foreground/45">{user?.email ?? ''}</div>
+          </div>
+        </Link>
         <button
           type="button"
           onClick={onLogout}
@@ -403,9 +474,9 @@ export default function AppLayout() {
                     type="button"
                     data-tour="account"
                     aria-label="Account menu"
-                    className="grid h-8 w-8 place-items-center rounded-full bg-accent text-[11px] font-bold text-white outline-none transition-transform duration-[120ms] hover:scale-105 data-[state=open]:ring-2 data-[state=open]:ring-ring data-[state=open]:ring-offset-2 data-[state=open]:ring-offset-card"
+                    className="grid h-8 w-8 place-items-center overflow-hidden rounded-full bg-accent text-[11px] font-bold text-white outline-none transition-transform duration-[120ms] hover:scale-105 data-[state=open]:ring-2 data-[state=open]:ring-ring data-[state=open]:ring-offset-2 data-[state=open]:ring-offset-card"
                   >
-                    {user ? initials(user.name) : 'AI'}
+                    <UserDisc src={avatar} name={user?.name ?? ''} />
                   </button>
                 </DropdownMenuTrigger>
                 <DropdownMenuContent align="end">
@@ -428,6 +499,10 @@ export default function AppLayout() {
                           ? 'Connecting...'
                           : 'Backend unreachable'}
                   </div>
+                  <DropdownMenuItem onSelect={() => navigate('/app/profile')}>
+                    <User size={14} />
+                    Your profile
+                  </DropdownMenuItem>
                   {isGuest && (
                     <DropdownMenuItem onSelect={() => navigate('/login')}>
                       <Lock size={14} className="text-warn" />

@@ -85,7 +85,7 @@ const usd = (n: number, maxFrac = 0) =>
  */
 function Value<T>({ feed, of }: { feed: Feed<T>; of: (v: T) => string }) {
   if (feed.value) return <>{of(feed.value)}</>
-  if (feed.failed) return <span className="text-sm font-medium text-foreground/35">no answer</span>
+  if (feed.failed) return <span className="text-sm font-medium text-foreground/60">no answer</span>
   return (
     <span
       className="inline-block h-4 w-12 animate-pulse rounded bg-foreground/10 align-middle"
@@ -97,7 +97,7 @@ function Value<T>({ feed, of }: { feed: Feed<T>; of: (v: T) => string }) {
 /** The caption above a row of numbers, naming the engine that counted them. */
 function RowLabel({ children }: { children: ReactNode }) {
   return (
-    <p className="font-mono text-[10px] font-semibold uppercase tracking-[0.16em] text-foreground/40">
+    <p className="font-mono text-[10px] font-semibold uppercase tracking-[0.16em] text-foreground/60">
       {children}
     </p>
   )
@@ -243,7 +243,7 @@ export default function TractionSim() {
               <Stat label="Celo settled" value={<Value feed={celo} of={(d) => count(d.totalSettlements)} />} />
               <Stat label="Celo taken" value={<Value feed={celo} of={(d) => usd(d.totalUsd, 3)} />} />
             </div>
-            <p className="mt-3 text-xs text-foreground/40">
+            <p className="mt-3 text-xs text-foreground/60">
               Live from <Source href={XLAYER_PROOF_JSON}>/proof.json</Source> on X Layer mainnet and{' '}
               <Source href={CELO_PROOF_API}>/api/celo/proof</Source> on Celo mainnet. Every row behind
               these two counters is a real stablecoin transfer, listed one by one on the{' '}
@@ -254,7 +254,7 @@ export default function TractionSim() {
             </p>
           </motion.div>
 
-          <motion.p {...reveal} className="mt-4 text-xs text-foreground/40">
+          <motion.p {...reveal} className="mt-4 text-xs text-foreground/60">
             The motion is illustrative; the boundary is not.
           </motion.p>
         </div>
@@ -299,7 +299,7 @@ export default function TractionSim() {
               <div className="grid h-24 w-24 place-items-center rounded-[26px] border border-border bg-card shadow-[0_16px_50px_-16px_rgba(115,66,226,0.4),0_10px_40px_-12px_rgba(16,24,40,0.35)]">
                 <OwlMark size={60} />
               </div>
-              <span className="rounded-full border border-border bg-card px-2.5 py-1 font-mono text-[9px] font-semibold uppercase tracking-[0.16em] text-foreground/55 shadow-sm">
+              <span className="rounded-full border border-border bg-card px-2.5 py-1 font-mono text-[9px] font-semibold uppercase tracking-[0.16em] text-foreground/70 shadow-sm">
                 Trust oracle
               </span>
             </div>

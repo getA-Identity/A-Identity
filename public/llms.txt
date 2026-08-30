@@ -24,8 +24,13 @@ against those limits before any value moves, and the verdict is ALLOW, WARN or D
 ## Status, stated plainly
 
 - Circle Arc is a public **testnet**. Real contracts and real transactions, test money.
-- The Trust Oracle is **live on OKX.AI as agent #6271**, selling per-call checks that
-  settle in real USD₮0 on X Layer mainnet. 120 settlements to date, each verifiable.
+- The Trust Oracle is **live on OKX.AI as agent #6271**, selling per-call checks in real
+  USD₮0: 120 x402 settlements on X Layer mainnet to date, each one a transaction hash
+  anyone can check.
+- Five more mainnets carry settlements of their own: Robinhood Chain, Arbitrum One, Base,
+  Stellar pubnet and Algorand. Every rail is counted on its own proof page at
+  https://a-identity.xyz/proof/:rail and never summed with the others, because one
+  figure covering several rails is a figure about none of them.
 - Public policy counters currently read zero, because no live agent has produced a
   production decision yet. We publish the zero rather than a number nobody can reproduce.
 

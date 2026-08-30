@@ -1,20 +1,7 @@
 import { motion } from 'framer-motion'
 import { Clock } from 'lucide-react'
 import { Eyebrow } from '../ui/display'
-import { EASE_OUT_EXPO } from '../../lib/brand'
-
-const reveal = {
-  initial: { opacity: 0, y: 24 },
-  whileInView: { opacity: 1, y: 0 },
-  viewport: { once: true, margin: '-80px' },
-  transition: { duration: 0.7, ease: EASE_OUT_EXPO },
-}
-
-/** Staggered version, so the block arrives top to bottom rather than all at once. */
-const revealAt = (i: number) => ({
-  ...reveal,
-  transition: { ...reveal.transition, delay: i * 0.07 },
-})
+import { SectionShell, revealAt } from '../ui/section'
 
 /**
  * The one-idea editorial beat: why this layer needs to exist now.
@@ -27,22 +14,28 @@ const revealAt = (i: number) => ({
  *
  * The subtitle is the part that changed most. It carried the actual argument while
  * rendering at body size in 60% foreground, which is the styling of fine print. It is now
- * a real second line: larger, medium weight, 75% foreground, on a measure short enough to
- * read in one pass, with the conclusion split onto its own full-contrast line.
+ * a real second line: larger, medium weight, on a measure short enough to read in one
+ * pass, with the conclusion split onto its own full-contrast line.
  *
- * The eyebrow badge carries the clock itself: a detached icon tile above a whisper of a
- * label read as two unrelated ornaments, and this block opens the page's argument.
+ * It also has pictures now, and that is a structural change rather than a decorative one.
+ * This was the only landing section written as a bare <section>, so it could not take a
+ * backdrop at all: fourteen sections had a horizon and the one carrying the argument had
+ * a blank wall. Moving it onto SectionShell buys the `rails` still (a coin travelling on
+ * a rail, which is exactly the sentence underneath it) and the autopilot dial sits above
+ * the eyebrow as the section's own mark. Both are existing brand assets, and both are
+ * decoration over copy that already says the same thing, so neither is announced to
+ * assistive tech.
  */
 export default function Shift() {
   return (
-    <section className="w-full bg-background px-5 py-24 text-foreground sm:px-8 sm:py-32">
+    <SectionShell size="lg" backdrop="rails" backdropPosition="center">
       <div className="mx-auto flex max-w-[960px] flex-col items-center text-center">
-        <motion.div {...revealAt(0)}>
+        <motion.div {...revealAt(1)}>
           <Eyebrow icon={Clock}>Why now</Eyebrow>
         </motion.div>
 
         <motion.h2
-          {...revealAt(1)}
+          {...revealAt(2)}
           className="mt-6 max-w-[26ch] text-[clamp(2.1rem,4.8vw,3.4rem)] font-normal leading-[1.06] tracking-[-0.02em] text-foreground"
           style={{ fontFamily: 'var(--font-body)', textWrap: 'balance' }}
         >
@@ -51,21 +44,21 @@ export default function Shift() {
         </motion.h2>
 
         <motion.p
-          {...revealAt(2)}
-          className="mt-7 max-w-[52ch] text-[clamp(1.15rem,2vw,1.45rem)] font-medium leading-[1.55] text-foreground/75"
+          {...revealAt(3)}
+          className="mt-7 max-w-[46ch] text-[clamp(1.15rem,2vw,1.45rem)] font-medium leading-[1.55] text-foreground/80"
           style={{ textWrap: 'pretty' }}
         >
-          The hard part is no longer making agents capable. It is letting them prove who they
-          are and move money on their own, without handing over the keys to everything.
+          Making agents capable is done. Letting them prove who they are and pay for
+          themselves, without your keys, is not.
         </motion.p>
 
         <motion.p
-          {...revealAt(3)}
+          {...revealAt(4)}
           className="mt-5 text-[clamp(1.05rem,1.7vw,1.25rem)] font-semibold tracking-[-0.01em] text-foreground"
         >
           That is the layer A-Identity builds.
         </motion.p>
       </div>
-    </section>
+    </SectionShell>
   )
 }

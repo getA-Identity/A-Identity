@@ -22,7 +22,6 @@ import { apiFetch, readJson, explainError } from '../../lib/api'
 import { humanizeActivity } from '../../lib/format'
 import { CHAIN_BY_ID, type ChainId } from '../../lib/chains'
 import AgentAvatar from '../../components/AgentAvatar'
-import BrandArt from '../../components/app/BrandArt'
 import FeaturedCarousel, { RankBadge, Stars, type FeaturedAgent } from '../../components/app/marketplace/FeaturedCarousel'
 import WorkerCatalog from '../../components/app/marketplace/WorkerCatalog'
 import AgentCard from '../../components/app/marketplace/AgentCard'
@@ -42,6 +41,7 @@ import {
   type SavedSearch,
   type SortKey,
 } from '../../components/app/marketplace/types'
+import { categoryDescription } from '../../components/app/agent/register-constants'
 import AppPage from '../../components/app/AppPage'
 import { Badge } from '../../components/ui/badge'
 import { Skeleton } from '../../components/ui/skeleton'
@@ -66,9 +66,10 @@ export default function Marketplace() {
   // Default view is the KYA-verified showcase; the toggle reveals pending agents too.
   const [showAll, setShowAll] = useState(false)
   const [counts, setCounts] = useState({ total: 0, totalAll: 0 })
-  // The pivot hero is the trusted-worker catalog; Agent House and the Leaderboard
-  // are the second and third tabs.
-  const [tab, setTab] = useState<'hire' | 'house' | 'leaderboard'>('hire')
+  // Agent House opens first: the storefront cards carry the identity, chains, rails,
+  // rating and price of every worker, so they answer "who can do this" far better than
+  // the plain service table did. The hire table and the Leaderboard stay one tap away.
+  const [tab, setTab] = useState<'hire' | 'house' | 'leaderboard'>('house')
 
   // Leaderboard: ONE server-computed composite ranking, fetched lazily the first time
   // a surface that shows it opens (the Leaderboard tab, or the featured carousel on the
@@ -117,11 +118,14 @@ export default function Marketplace() {
   const [onlineOnly, setOnlineOnly] = useState(false)
   const [pay, setPay] = useState<PayFilter>('all')
   const [chainF, setChainF] = useState<string>('all')
+  // Cards are the primary view and the list is the secondary toggle, so a first visit
+  // lands on the rich storefront. An explicit stored choice still wins in BOTH
+  // directions: someone who picked the list keeps the list.
   const [view, setView] = useState<'list' | 'grid'>(() => {
     try {
-      return localStorage.getItem('aid-mkt-view') === 'grid' ? 'grid' : 'list'
+      return localStorage.getItem('aid-mkt-view') === 'list' ? 'list' : 'grid'
     } catch {
-      return 'list'
+      return 'grid'
     }
   })
   const [savedSearches, setSavedSearches] = useState<SavedSearch[]>(() => {
@@ -545,7 +549,7 @@ export default function Marketplace() {
         </div>
       )}
 
-      <div className={tab === 'house' ? 'mt-6' : 'hidden'}>
+      <div data-tour="roster" className={tab === 'house' ? 'mt-6' : 'hidden'}>
       {/* Featured carousel: the top of the SAME composite ranking the Leaderboard tab
           shows, framed for the storefront. Only real leaderboard rows render; there is
           no separate paid placement. The strip never touches the strict default filter
@@ -688,6 +692,9 @@ export default function Marketplace() {
                 type="button"
                 onClick={() => toggleCat(c)}
                 aria-pressed={cats.includes(c)}
+                // What this category sells, for a category we have copy for. Undefined
+                // (no tooltip at all) for one we do not, rather than a guess.
+                title={categoryDescription(c) ?? undefined}
                 className={`rounded-full border px-2.5 py-1 text-[11px] font-semibold transition-colors duration-[120ms] ${
                   cats.includes(c)
                     ? 'border-accent/40 bg-accent/10 text-accent'
@@ -826,10 +833,7 @@ export default function Marketplace() {
       {/* Empty state: the lean-startup honest zero */}
       {!loading && !error && agents.length === 0 && (
         <div className="mt-6 rounded-3xl border border-dashed border-foreground/15 bg-card p-12 text-center">
-          {/* Stalls with coins on the counters and nobody trading: the same sentence as
-              the copy below, drawn instead of typed. */}
-          <BrandArt src="/art/art-market.webp" className="mx-auto h-44 w-56 sm:h-52 sm:w-72" />
-          <h3 className="mt-4 text-lg font-bold text-foreground">The house is open, the floor is empty.</h3>
+          <h3 className="text-lg font-bold text-foreground">The house is open, the floor is empty.</h3>
           <p className="mx-auto mt-2 max-w-md text-sm text-foreground/55">
             Be the first: register an agent, pass KYA, and it appears here with its own
             follower count and activity feed.

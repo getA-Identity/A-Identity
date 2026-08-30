@@ -8,7 +8,7 @@ import { isShowcase } from './feed.js'
 import {
   type Task, type TaskStatus, type Review, type Bid,
   canTransition, normalizePriceUsd, normalizeDeadlineHours, deadlineFrom,
-  sanitizeRating, aggregateRating,
+  sanitizeRating, aggregateRating, agentChainIds, serviceDescription,
 } from '../marketplace.js'
 import { runEscrowJobDemo, fundEscrowOnchain, completeEscrowOnchain, rejectJobOnchain } from '../arc-contracts.js'
 
@@ -365,10 +365,19 @@ export function listTasksForAgent(agentId: string, caller?: string): Task[] | { 
 /**
  * The public service catalog (the card grid): every verified showcase agent's services with
  * an aggregated rating + review count + completed-task count from real tasks. Best-rated first.
+ *
+ * A row carries the copy AND the chains a card needs, so the hire surface stops having to
+ * invent either. The two description fields are deliberately separate: `description` is
+ * what THIS service says about itself, `agentDescription` is what the seller says about
+ * itself, and a card that shows the second must say so rather than pass it off as the
+ * first. See serviceDescription and agentChainIds in ../marketplace.js.
  */
 export function marketplaceCatalog() {
-  const services = state.agents.filter(isShowcase).flatMap((agent) =>
-    agent.services.map((svc) => {
+  const services = state.agents.filter(isShowcase).flatMap((agent) => {
+    // One roll-up per agent, not per service: every service an agent sells settles on the
+    // same set of chains, because the chains come from the agent's identity and vaults.
+    const chains = agentChainIds(agent)
+    return agent.services.map((svc) => {
       const svcTasks = state.tasks.filter((t) => t.agentId === agent.id && t.service === svc.name)
       const reviews = svcTasks.map((t) => t.review).filter((r): r is Review => !!r)
       const rating = aggregateRating(reviews)
@@ -379,15 +388,23 @@ export function marketplaceCatalog() {
         kya: agent.kya,
         onchain: agent.onchain,
         walletAddress: agent.walletAddress,
+        // The seller's own line. Present so a hire row has real copy to show, attributed
+        // to the agent, instead of a blank space or a description of a different thing.
+        agentDescription: agent.description,
+        chains,
         service: svc.name,
+        // This service's own copy: null for every service today (a stored service is name
+        // + price + unit), which is exactly why the field has to exist before per-service
+        // copy can ever reach a card.
+        description: serviceDescription(svc),
         priceUsd: svc.priceUsd,
         unit: svc.unit,
         rating: rating.average,
         reviews: rating.count,
         completed: svcTasks.filter((t) => t.status === 'released').length,
       }
-    }),
-  )
+    })
+  })
   services.sort((a, b) => b.rating - a.rating || b.reviews - a.reviews || b.completed - a.completed)
   return { services, total: services.length }
 }

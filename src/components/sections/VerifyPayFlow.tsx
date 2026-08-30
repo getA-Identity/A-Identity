@@ -59,22 +59,22 @@ function LedgerRow({ entry }: { entry: (typeof LEDGER)[number] }) {
       <div className="min-w-0">
         <p className="flex items-center gap-1.5 truncate text-sm font-semibold text-foreground">
           {entry.you ? (
-            <User size={13} className="shrink-0 text-foreground/40" />
+            <User size={13} className="shrink-0 text-foreground/60" />
           ) : (
-            <Bot size={13} className="shrink-0 text-foreground/40" />
+            <Bot size={13} className="shrink-0 text-foreground/60" />
           )}
           {entry.from}
-          <ArrowRight size={12} className="shrink-0 text-foreground/25" />
-          <span className="truncate font-normal text-foreground/55">{entry.to}</span>
+          <ArrowRight size={12} className="shrink-0 text-foreground/60" />
+          <span className="truncate font-normal text-foreground/70">{entry.to}</span>
         </p>
-        <p className="mt-0.5 truncate text-xs text-foreground/40">{entry.reason}</p>
+        <p className="mt-0.5 truncate text-xs text-foreground/60">{entry.reason}</p>
       </div>
       <div className="justify-self-start sm:justify-self-center">
         <VerdictPill verdict={entry.verdict} />
       </div>
       <p
         className={`justify-self-end font-mono text-sm font-semibold ${
-          denied ? 'text-foreground/35 line-through' : 'text-foreground'
+          denied ? 'text-foreground/60 line-through' : 'text-foreground'
         }`}
       >
         {entry.amount}
@@ -147,13 +147,13 @@ function SettlementLedger() {
             convention every reader takes as "this is happening now". The real ledgers are
             one click away and are labelled as such. */}
         <p className="text-sm font-semibold text-foreground">Settlement ledger, illustrated</p>
-        <p className="font-mono text-[10px] uppercase tracking-[0.14em] text-foreground/35">
+        <p className="font-mono text-[10px] uppercase tracking-[0.14em] text-foreground/60">
           verify then pay · usdc
         </p>
       </div>
 
       {/* column heads (desktop) */}
-      <div className="hidden grid-cols-[minmax(0,1fr)_76px_88px_minmax(150px,0.6fr)] gap-x-4 border-b border-border/60 px-5 py-2 font-mono text-[9px] uppercase tracking-[0.16em] text-foreground/35 sm:grid">
+      <div className="hidden grid-cols-[minmax(0,1fr)_76px_88px_minmax(150px,0.6fr)] gap-x-4 border-b border-border/60 px-5 py-2 font-mono text-[9px] uppercase tracking-[0.16em] text-foreground/60 sm:grid">
         <span>Counterparties</span>
         <span className="justify-self-center">Verdict</span>
         <span className="justify-self-end">Amount</span>
@@ -208,22 +208,22 @@ export default function VerifyPayFlow() {
             The dots are `shrink-0` and top-aligned so the long Gateway line wraps under its
             own text rather than under its bullet. */}
         <div className="mt-6 flex flex-col gap-3.5 text-sm sm:flex-row sm:flex-wrap sm:items-center sm:gap-x-8 sm:gap-y-3">
-          <span className="flex items-start gap-2 text-foreground/55 sm:items-center">
+          <span className="flex items-start gap-2 text-foreground/70 sm:items-center">
             <span className="mt-1.5 h-2 w-2 shrink-0 rounded-full bg-emerald-500 sm:mt-0" />
             Settles in USDC on Arc
           </span>
-          <span className="flex items-start gap-2 text-foreground/55 sm:items-center">
+          <span className="flex items-start gap-2 text-foreground/70 sm:items-center">
             <span className="mt-1.5 h-2 w-2 shrink-0 rounded-full bg-red-500 sm:mt-0" />
             Refused before it moves
           </span>
-          <span className="flex items-start gap-2 text-foreground/55 sm:items-center">
+          <span className="flex items-start gap-2 text-foreground/70 sm:items-center">
             <span className="mt-1.5 h-2 w-2 shrink-0 rounded-full bg-accent sm:mt-0" />
             Cross-chain settle via Circle Gateway + CCTP
           </span>
           <span className="mt-1 flex items-center gap-5 border-t border-border/60 pt-4 sm:mt-0 sm:ml-auto sm:border-0 sm:pt-0">
             <Link
               to="/explorer"
-              className="inline-flex items-center gap-1.5 font-semibold text-foreground/55 transition-colors hover:text-foreground"
+              className="inline-flex items-center gap-1.5 font-semibold text-foreground/70 transition-colors hover:text-foreground"
             >
               View more
             </Link>
@@ -237,7 +237,7 @@ export default function VerifyPayFlow() {
         </div>
       </motion.div>
 
-      <motion.p {...reveal} transition={{ ...reveal.transition, delay: 0.24 }} className="mt-6 text-sm text-foreground/40">
+      <motion.p {...reveal} transition={{ ...reveal.transition, delay: 0.24 }} className="mt-6 text-sm text-foreground/60">
         The same verify-then-pay flow is available as an SDK and an MCP server.{' '}
         <a
           href={`${DOCS_URL}/developers/sdk`}

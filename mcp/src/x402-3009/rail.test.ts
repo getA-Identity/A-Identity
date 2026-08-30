@@ -10,11 +10,16 @@ import {
   railRequirements,
   railServeTool,
   railProof,
+  railPaidNetwork,
+  railPaymentHeader,
+  railPaymentResponseHeader,
   internalPayers,
   RAIL_BASE_PRICES_USD,
   RAIL_TOOLS,
 } from './rail.js'
 import { eip712DomainSeparator, clearDomainCache, type TokenReader } from './domain.js'
+import { privateKeyToAccount } from 'viem/accounts'
+import { sendChallenge } from '../http/shared.js'
 import { getChainById } from '../chains/index.js'
 import { PRICES } from '../asp/payment.js'
 import { CELO_TOOL_PRICES_USD } from '../celo-x402.js'
@@ -305,4 +310,209 @@ test('the settlement fee is per chain and traceable to a measurement', () => {
     const tok = c.settlementTokens![0]
     assert.ok((tok.feeBasis ?? '').length > 40, `${c.id} charges a fee with no recorded measurement`)
   }
+})
+
+// ── the x402 v2 HTTP transport ────────────────────────────────────────────────────
+
+/**
+ * A v2 challenge has to travel in the PAYMENT-REQUIRED header, and the oracle for that is
+ * the reference implementation rather than our reading of the spec. These tests run what
+ * this rail actually emits through the same helper the route uses, then decode and PARSE it
+ * with @x402/core's own code, so a shape that satisfies us and not a real buyer fails here.
+ *
+ * The defect behind them: this rail served `x402Version: 2` in the body with no header,
+ * which is v1 transport under a v2 number. @x402/core reads the header and falls back to
+ * the body ONLY when `x402Version === 1`, so a stock v2 buyer threw before it ever saw the
+ * price. It survived because our own buyer script reads the body directly: the rail was
+ * only ever exercised by the one client that did not need the header.
+ */
+function fakeRes() {
+  const headers: Record<string, unknown> = {}
+  let status = 0
+  let payload = ''
+  return {
+    headers,
+    get status() { return status },
+    get payload() { return payload },
+    res: {
+      setHeader: (k: string, v: unknown) => { headers[k] = v },
+      writeHead: (st: number) => { status = st },
+      end: (b?: string) => { payload = b ?? '' },
+    } as unknown as import('node:http').ServerResponse,
+  }
+}
+
+test('every offer names eip3009 as the way the asset actually moves', async () => {
+  // v2 reserves extra.assetTransferMethod for this. @x402/evm defaults to eip3009 when it
+  // is absent, which is the right guess about this rail and still only a guess: a buyer
+  // should be told what it is signing rather than infer it from a library default.
+  clearDomainCache()
+  const c = await railChallenge('risk_check', railStatus(configured), { reader: reader() })
+  assert.equal(c.httpStatus, 402)
+  const accepts = (c.body as Record<string, unknown>).accepts as Record<string, unknown>[]
+  assert.ok(accepts.length > 0)
+  for (const a of accepts) {
+    assert.equal((a.extra as Record<string, unknown>).assetTransferMethod, 'eip3009', `${String(a.network)} does not say how the asset moves`)
+  }
+})
+
+test('what this rail emits parses as x402 v2 with the reference schema, not just with ours', async () => {
+  const { decodePaymentRequiredHeader } = await import('@x402/core/http')
+  const { parsePaymentRequired } = await import('@x402/core/schemas')
+  clearDomainCache()
+  const s = railStatus({ ...configured, X402_3009_SETTLEMENT_FEE_USD: '0.02' })
+  const c = await railChallenge('risk_check', s, { reader: reader() })
+  const f = fakeRes()
+  // Through the SAME helper the route uses, so the test cannot pass on a shape the wire
+  // never carries.
+  sendChallenge(f.res, c.httpStatus, c.body)
+  const header = f.headers['PAYMENT-REQUIRED']
+  assert.ok(header, 'a v2 challenge with no header is unreadable to a stock client')
+  const decoded = decodePaymentRequiredHeader(String(header))
+  const parsed = parsePaymentRequired(decoded)
+  assert.ok(parsed.success, `the reference schema rejects our challenge: ${JSON.stringify(parsed.success ? [] : parsed.error.issues)}`)
+  if (!parsed.success) return
+  const req = parsed.data
+  assert.equal(req.x402Version, 2)
+  assert.equal(req.accepts[0].network, chain.caip2)
+  assert.equal(req.accepts[0].asset, token.address)
+  // 0.005 base + 0.02 fee at 6 decimals. v2 spells it `amount`; the price is the same
+  // number the body has always carried under `maxAmountRequired`.
+  assert.equal(req.accepts[0].amount, '25000')
+  assert.equal((req.accepts[0].extra as Record<string, unknown>).assetTransferMethod, 'eip3009')
+  assert.equal(req.resource.url, '/api/x402/tools/risk_check')
+  // The header is a re-encoding of the body, never a second hand-written challenge, so the
+  // two cannot drift.
+  assert.deepEqual(JSON.parse(f.payload), c.body)
+})
+
+test('the reference client rejects this rail\'s body when the header is missing', async () => {
+  // The negative control, run against the REAL challenge rather than a fixture. If this
+  // ever stops throwing the fallback widened; until then it is the reason the header exists.
+  const { x402HTTPClient } = await import('@x402/core/client')
+  clearDomainCache()
+  const c = await railChallenge('risk_check', railStatus(configured), { reader: reader() })
+  const parse = (hdr?: string) =>
+    (x402HTTPClient.prototype as unknown as {
+      getPaymentRequiredResponse: (g: (k: string) => string | undefined, b: unknown) => unknown
+    }).getPaymentRequiredResponse.call({}, () => hdr, c.body)
+  assert.throws(() => parse(undefined), /Invalid payment required response/)
+  assert.doesNotThrow(() => parse(Buffer.from(JSON.stringify(c.body)).toString('base64')))
+})
+
+test('PAYMENT-SIGNATURE is read as an alias for X-PAYMENT', () => {
+  // v2 renamed the request header. Reading both serves both generations of client; reading
+  // only the old name makes a stock v2 buyer look like a buyer who sent no payment at all.
+  assert.equal(railPaymentHeader({ 'x-payment': 'abc' }), 'abc')
+  assert.equal(railPaymentHeader({ 'payment-signature': 'def' }), 'def')
+  assert.equal(railPaymentHeader({ 'x-payment': 'abc', 'payment-signature': 'def' }), 'abc')
+  assert.equal(railPaymentHeader({ 'payment-signature': [' xyz ', 'other'] }), 'xyz')
+  assert.equal(railPaymentHeader({}), '')
+})
+
+test('a v2 buyer names its network under accepted, and the rail settles on THAT one', async () => {
+  assert.equal(railPaidNetwork({ network: 'eip155:4663' }), 'eip155:4663')
+  assert.equal(railPaidNetwork({ accepted: { network: 'eip155:42161' } }), 'eip155:42161')
+  assert.equal(railPaidNetwork({ network: '   ', accepted: { network: 'eip155:42161' } }), 'eip155:42161')
+  assert.equal(railPaidNetwork({}), undefined)
+  assert.equal(railPaidNetwork(null), undefined)
+  // End to end: a v2 payload for a chain we do not sell on must be refused by NAME, not
+  // quietly settled on the default chain. Before the fix this payload read as "no network
+  // given" and fell through to the default.
+  clearDomainCache()
+  const header = Buffer.from(JSON.stringify({
+    x402Version: 2,
+    accepted: { scheme: 'exact', network: 'eip155:1', asset: token.address, amount: '25000', payTo: PAY_TO, maxTimeoutSeconds: 600 },
+    payload: { signature: `0x${'11'.repeat(65)}`, authorization: {} },
+  })).toString('base64')
+  const out = await railServeTool('risk_check', { agentId: '#0' }, header, railStatus(configured), { reader: reader(), env: configured })
+  assert.equal(out.httpStatus, 402)
+  assert.match(String((out.body as Record<string, unknown>).verifyError), /eip155:1/)
+})
+
+test('a settled call hands the buyer its receipt in PAYMENT-RESPONSE', async () => {
+  const { decodePaymentResponseHeader } = await import('@x402/core/http')
+  clearDomainCache()
+  const KEY = '0x59c6995e998f97a5a0044966f0945389dc9e86dae88c7a8412f4603b6b78690d' as const
+  const buyer = privateKeyToAccount(KEY)
+  const authorization = {
+    from: buyer.address,
+    to: PAY_TO as `0x${string}`,
+    value: 25_000n,
+    validAfter: 0n,
+    validBefore: BigInt(Math.floor(Date.now() / 1000) + 600),
+    nonce: `0x${'7d'.repeat(32)}` as `0x${string}`,
+  }
+  const signature = await buyer.signTypedData({
+    domain: DOMAIN,
+    types: {
+      TransferWithAuthorization: [
+        { name: 'from', type: 'address' }, { name: 'to', type: 'address' }, { name: 'value', type: 'uint256' },
+        { name: 'validAfter', type: 'uint256' }, { name: 'validBefore', type: 'uint256' }, { name: 'nonce', type: 'bytes32' },
+      ],
+    },
+    primaryType: 'TransferWithAuthorization',
+    message: authorization,
+  })
+  // A v2 payment payload: the credential under `payload`, the chosen offer under `accepted`.
+  const header = Buffer.from(JSON.stringify({
+    x402Version: 2,
+    accepted: { scheme: 'exact', network: chain.caip2, asset: token.address, amount: '25000', payTo: PAY_TO, maxTimeoutSeconds: 600 },
+    payload: {
+      signature,
+      authorization: {
+        from: authorization.from, to: authorization.to, value: '25000',
+        validAfter: '0', validBefore: authorization.validBefore.toString(), nonce: authorization.nonce,
+      },
+    },
+  })).toString('base64')
+  const pad = (a: string) => `0x${a.slice(2).toLowerCase().padStart(64, '0')}`
+  const txHash = `0x${'cc'.repeat(32)}`
+  const out = await railServeTool('risk_check', { agentId: '#0' }, header, railStatus({ ...configured, X402_3009_SETTLEMENT_FEE_USD: '0.02' }), {
+    reader: reader(),
+    env: configured,
+    publicClient: {
+      readContract: async (args: Record<string, unknown>) =>
+        args.functionName === 'authorizationState' ? false : 10_000_000n,
+      simulateContract: async () => ({ request: {} }),
+      estimateContractGas: async () => 85_000n,
+      getGasPrice: async () => 50_578_000n,
+      waitForTransactionReceipt: async () => ({
+        status: 'success', blockNumber: 9n, gasUsed: 85_000n, effectiveGasPrice: 50_578_000n,
+        logs: [{
+          address: token.address.toLowerCase(),
+          topics: [
+            '0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef',
+            pad(buyer.address),
+            pad(PAY_TO),
+          ],
+          data: `0x${(25_000n).toString(16).padStart(64, '0')}`,
+        }],
+      }),
+    },
+    walletClient: { writeContract: async () => txHash as `0x${string}` },
+    signerAddress: PAY_TO,
+    persist: async () => {},
+    persistSpent: async () => {},
+    loadSpent: async () => [],
+    gasSpentTodayWei: async () => 0n,
+    // Stubbed so the assertion is about the transport, not about a live registry read.
+    handlers: {
+      verify_agent: async () => ({ ok: true }),
+      reputation_score: async () => ({ ok: true }),
+      risk_check: async () => ({ verdict: 'ALLOW' }),
+      agent_passport: async () => ({ ok: true }),
+    },
+  })
+  assert.equal(out.httpStatus, 200, JSON.stringify(out.body).slice(0, 300))
+  const receipt = out.headers?.['PAYMENT-RESPONSE']
+  assert.ok(receipt, 'a v2 client reads its receipt from the header, not from our body shape')
+  const decoded = decodePaymentResponseHeader(String(receipt))
+  assert.equal(decoded.success, true)
+  assert.equal(decoded.transaction, txHash)
+  assert.equal(decoded.network, chain.caip2)
+  assert.equal(decoded.payer?.toLowerCase(), buyer.address.toLowerCase())
+  assert.equal(decoded.amount, '25000')
+  // Nothing is claimed settled that the body does not also carry.
+  assert.equal((out.body as Record<string, Record<string, unknown>>).settlement.transaction, txHash)
 })

@@ -43,7 +43,7 @@ export default function CloseCta() {
           whileInView={{ opacity: 1, y: 0 }}
           viewport={{ once: true }}
           transition={{ duration: 0.6, ease: EASE_OUT_EXPO, delay: 0.08 }}
-          className="mx-auto mt-5 max-w-md text-lg leading-relaxed text-foreground/55"
+          className="mx-auto mt-5 max-w-md text-lg leading-relaxed text-foreground/70"
         >
           It takes one signature. No gas, no signup.
         </motion.p>

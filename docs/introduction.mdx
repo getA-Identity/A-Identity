@@ -28,6 +28,10 @@ sequenceDiagram
     S-->>B: deliver the work
 ```
 
+<Frame caption="The same loop as a picture: the owner sets limits, identity and KYA are checked on-chain, the policy engine bounds the spend, USDC settles, and a receipt lands in the audit trail. The board was drawn for Arc testnet, the phase-1 network. The loop now also runs on the mainnet rails listed under Chains.">
+  <img src="/images/architecture-flow.png" alt="Five stages in a row: AI agent and owner, verify identity and KYA, bound with the policy engine, pay in USDC on Arc, settle with a receipt and audit trail" />
+</Frame>
+
 <CardGroup cols={3}>
   <Card title="ERC-8004" icon="fingerprint" href="/protocols/erc-8004">
     Portable on-chain identity and reputation for agents. A-Identity reads live

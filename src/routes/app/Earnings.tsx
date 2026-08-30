@@ -9,7 +9,6 @@ import { authHeaders } from '../../store/auth'
 import { useSelectedAgent } from '../../store/agent'
 import AgentSelect from '../../components/app/AgentSelect'
 import AppPage from '../../components/app/AppPage'
-import BrandArt from '../../components/app/BrandArt'
 import ChainLogo from '../../components/app/ChainLogo'
 import { Skeleton } from '../../components/ui/skeleton'
 
@@ -146,9 +145,7 @@ export default function Earnings() {
 
       {loaded && !error && agents.length === 0 && (
         <div className="mt-6 rounded-3xl border border-dashed border-foreground/15 bg-card p-12 text-center">
-          {/* A stack of ceramic coins with one on edge: earnings waiting to exist. */}
-          <BrandArt src="/art/art-earnings.webp" className="mx-auto h-36 w-48" />
-          <h3 className="mt-4 text-lg font-bold text-foreground">No agents yet.</h3>
+          <h3 className="text-lg font-bold text-foreground">No agents yet.</h3>
           <p className="mx-auto mt-2 max-w-md text-sm text-foreground/55">
             Register an agent and list it on the marketplace to start earning.
           </p>

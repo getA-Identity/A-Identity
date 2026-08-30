@@ -22,7 +22,6 @@ import { short } from '../../lib/format'
 import { CircleWalletPanel, TreasuryPanel } from '../../components/app/WalletPanels'
 import AgentSelect from '../../components/app/AgentSelect'
 import AppPage from '../../components/app/AppPage'
-import BrandArt from '../../components/app/BrandArt'
 import ChainLogo from '../../components/app/ChainLogo'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '../../components/ui/tooltip'
 import { useSelectedAgent } from '../../store/agent'
@@ -226,14 +225,6 @@ export default function Wallet() {
                   className="pointer-events-none absolute inset-0 opacity-10"
                   style={{ backgroundImage: 'radial-gradient(circle at 80% 20%, white 0%, transparent 50%)' }}
                 />
-                {/* The vault sits low in the corner as texture, never under the controls. */}
-                {agent.walletAddress && (
-                  <BrandArt
-                    src="/art/art-vault.webp"
-                    variant="band"
-                    className="pointer-events-none absolute -bottom-10 -right-8 hidden h-40 w-40 opacity-20 lg:block"
-                  />
-                )}
                 <div className="relative">
                   <div className="flex flex-wrap items-center justify-between gap-3">
                     <div className="flex items-center gap-2 text-sm font-semibold">

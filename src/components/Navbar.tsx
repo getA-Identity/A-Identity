@@ -19,7 +19,7 @@ import {
   Zap,
 } from 'lucide-react'
 import { Link } from 'react-router-dom'
-import Logo from './Logo'
+import { Lockup } from './Logo'
 import { Button } from './ui/button'
 import MobileMenu from './MobileMenu'
 import ThemeToggle from './ThemeToggle'
@@ -91,14 +91,12 @@ export default function Navbar() {
           }`}
         >
           <nav className="relative mx-auto flex w-full max-w-[1280px] items-center justify-between">
-            {/* Left: logo + wordmark */}
-            <Link
-              to="/"
-              aria-label={`${APP_NAME} home`}
-              className="flex items-center gap-2 text-foreground"
-            >
-              <Logo fill="currentColor" />
-              <span className="text-lg font-bold tracking-tight">{APP_NAME}</span>
+            {/* Left: the brand lockup. The wordmark used to be live text, which meant it
+                was set in the UI face rather than the brand one; the lockup is the real
+                artwork and it follows the theme (ink on light, cream on dark). The link
+                carries the accessible name, so the image itself is decorative. */}
+            <Link to="/" aria-label={`${APP_NAME} home`} className="flex items-center">
+              <Lockup height={40} eager alt="" />
             </Link>
 
             {/* Center: truly centered (absolute, so uneven logo/auth widths cannot

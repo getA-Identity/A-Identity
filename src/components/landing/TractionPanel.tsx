@@ -71,7 +71,7 @@ export default function TractionPanel() {
     <div className="mt-12">
       <div className="mb-2 flex items-baseline justify-between">
         <h2 className="text-sm font-bold uppercase tracking-wide text-foreground/70">Guardrails at work</h2>
-        <span className="font-mono text-[11px] text-foreground/40">measured, not projected</span>
+        <span className="font-mono text-[11px] text-foreground/60">measured, not projected</span>
       </div>
 
       <div className="overflow-hidden rounded-xl border border-border bg-card">
@@ -84,9 +84,9 @@ export default function TractionPanel() {
               ['Stopped', `${pct(t.deny, t.checks)}%`, `${t.deny.toLocaleString('en-US')} refused`],
             ].map(([k, v, sub]) => (
               <div key={k} className="bg-card p-4">
-                <div className="text-[11px] font-semibold uppercase tracking-wide text-foreground/45">{k}</div>
+                <div className="text-[11px] font-semibold uppercase tracking-wide text-foreground/60">{k}</div>
                 <div className="mt-1 font-mono text-xl tabular-nums text-foreground">{v}</div>
-                <div className="mt-0.5 text-[11px] text-foreground/40">{sub}</div>
+                <div className="mt-0.5 text-[11px] text-foreground/60">{sub}</div>
               </div>
             ))}
           </div>
@@ -95,14 +95,14 @@ export default function TractionPanel() {
             <div className="text-sm text-foreground/70">
               The engine is live and answering, and no policy decisions have been recorded yet.
             </div>
-            <div className="mt-1 text-[11px] text-foreground/40">
+            <div className="mt-1 text-[11px] text-foreground/60">
               Numbers appear here once agents start asking for verdicts. We would rather show none than invent any.
               {t ? ` ${t.registeredAgents} agent${t.registeredAgents === 1 ? '' : 's'} registered so far, which is not the same as traction.` : ''}
             </div>
           </div>
         )}
 
-        <div className="flex flex-wrap items-center gap-x-4 gap-y-2 border-t border-border px-4 py-3 text-[11px] text-foreground/45">
+        <div className="flex flex-wrap items-center gap-x-4 gap-y-2 border-t border-border px-4 py-3 text-[11px] text-foreground/60">
           {status && (
             <span className="inline-flex items-center gap-1.5 font-semibold">
               {status.enforcing ? (
@@ -116,7 +116,7 @@ export default function TractionPanel() {
                   <span className="text-red-500">not enforcing</span>
                 </>
               )}
-              <span className="font-normal text-foreground/35">
+              <span className="font-normal text-foreground/60">
                 ({status.vectors.filter((v) => v.pass).length}/{status.vectors.length} live checks)
               </span>
             </span>
@@ -139,7 +139,7 @@ export default function TractionPanel() {
           )}
         </div>
 
-        <div className="border-t border-border px-4 py-3 text-[11px] leading-relaxed text-foreground/35">
+        <div className="border-t border-border px-4 py-3 text-[11px] leading-relaxed text-foreground/60">
           Value stopped is USD of intended action the policy refused. It is protected value, not revenue. Aggregate
           only: nothing here identifies an agent, an owner, a holding or an individual amount.
           {(t?.ci.checks ?? 0) > 0 && ` Monitoring activity (${t?.ci.checks} canary checks) is excluded from every number above.`}

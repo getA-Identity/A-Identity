@@ -1,11 +1,14 @@
 /**
  * Agent and wallet lifecycle: create/record/assign wallets, agent registration and
- * the on-chain ERC-8004 anchor.
+ * the on-chain ERC-8004 anchor. Also the profile photo of the PERSON signed in, which
+ * lives here for one reason: the image sanitizer and its size bound are in this file, and
+ * a second definition of "an acceptable image" is how one surface starts accepting what
+ * another refuses.
  * Layering: L4 domain module; imports ./core.js, ./permissions.js and flat ../ modules only.
  */
 import {
-  state, save, id, ownsAgent, pushActivity, short, inFlightAgentOps,
-  type PlatformAgent, type Wallet, type Permissions, type Service,
+  state, save, id, ownsAgent, ownsUser, normalizeSubject, pushActivity, short, inFlightAgentOps,
+  type PlatformAgent, type PlatformUser, type Wallet, type Permissions, type Service,
 } from './core.js'
 import { sanitizeVelocity } from './permissions.js'
 import { ARC_TESTNET } from '../arc.js'
@@ -341,5 +344,91 @@ export async function anchorAgentOnchain(agentId: string, caller?: string) {
     }
   } finally {
     inFlightAgentOps.delete(opKey)
+  }
+}
+
+// ── users (the PERSON signed in, not the agents they own) ─────────────────────
+
+/**
+ * A row with nothing in it is not worth persisting: it would be a key and two timestamps
+ * inside a document that is serialized in full on every save. Grows as PlatformUser grows.
+ */
+function userIsEmpty(u: PlatformUser): boolean {
+  return u.avatarUrl === undefined
+}
+
+/**
+ * Read one person's own profile row, or null when they have never stored anything.
+ *
+ * Takes the subject the caller already resolved from their session, so there is no lookup
+ * by anyone else's key: a route hands this `callerId` and gets back that person and only
+ * that person. Signed out (no subject) is a normal answer, not an error.
+ */
+export function getUserProfile(subject: string | undefined): PlatformUser | null {
+  const key = normalizeSubject(subject)
+  return key ? state.users[key] ?? null : null
+}
+
+/**
+ * Set, replace or remove the profile photo of the person signed in.
+ *
+ * Deliberately the same shape as `updateAgentLogo` and deliberately the same sanitizer:
+ * `sanitizeLogoUrl` and `MAX_LOGO_DATA_URL_CHARS` are the single definition of an
+ * acceptable inline image on this platform, and an avatar the agent path accepts and the
+ * account path refuses (or the other way round) is drift nobody notices until a user
+ * reports it. That shared bound is also what keeps a photo from ballooning the persisted
+ * state document.
+ *
+ * Ownership is `ownsUser`, the user-scoped twin of the `ownsAgent` gate every agent-scoped
+ * mutation enforces: a caller may only ever write their OWN row, and there is no admin
+ * path that says otherwise. The HTTP surface additionally sits behind the verified-session
+ * gate in http.ts, so a guest token cannot reach this at all.
+ *
+ * `null` is the remove signal and, exactly as on the agent path, is distinct from "no
+ * field sent": the caller has to say it wants the photo gone. Removing a photo nobody set
+ * is a clean no-op rather than an error, so a double-click cannot fail. A removal that
+ * empties the row deletes it outright rather than leaving a husk behind.
+ */
+export function updateUserAvatar(
+  subject: string | undefined,
+  avatarUrl: string | null,
+  caller?: string,
+):
+  | { user: { subject: string; avatarUrl?: string }; avatar: 'set' | 'removed' | 'unchanged'; note: string }
+  | { error: string } {
+  const key = normalizeSubject(subject)
+  if (!key) return { error: 'Unknown account: no subject was given and the session carried none' }
+  if (!ownsUser(key, caller)) return { error: 'Forbidden: you may only change your own profile photo' }
+
+  const existing = state.users[key]
+  const now = new Date().toISOString()
+
+  if (avatarUrl === null) {
+    if (!existing?.avatarUrl) {
+      return { user: { subject: key }, avatar: 'unchanged', note: 'You had no profile photo; nothing to remove.' }
+    }
+    delete existing.avatarUrl
+    existing.updatedAt = now
+    if (userIsEmpty(existing)) delete state.users[key]
+    save(state)
+    return { user: { subject: key }, avatar: 'removed', note: 'Profile photo removed. Your initials are shown instead.' }
+  }
+
+  const clean = sanitizeLogoUrl(avatarUrl)
+  if (!clean) {
+    return {
+      error: `avatarUrl must be an inline data:image/... URL of at most ${MAX_LOGO_DATA_URL_CHARS} characters, or null to remove it`,
+    }
+  }
+  const replaced = Boolean(existing?.avatarUrl)
+  const row: PlatformUser = existing ?? { subject: key, createdAt: now, updatedAt: now }
+  row.avatarUrl = clean
+  row.updatedAt = now
+  state.users[key] = row
+  save(state)
+  return {
+    user: { subject: key, avatarUrl: clean },
+    avatar: 'set',
+    note: replaced ? 'Profile photo replaced.' : 'Profile photo set.',
   }
 }

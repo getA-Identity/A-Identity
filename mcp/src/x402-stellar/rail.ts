@@ -56,7 +56,7 @@
  * copy would be a fourth thing that must agree.
  */
 import { getChain, getChainById, tokenUnits, type ChainDescriptor, type SettlementToken } from '../chains/index.js'
-import type { StellarLimits, StellarRequirements, StellarSettleDeps } from './settle.js'
+import type { StellarLimits, StellarRequirements, StellarSettleDeps, StellarSettleSuccess } from './settle.js'
 import { redeemStellarPayment, schemeOf, settleStellarPayment } from './settle.js'
 import { loadStellarSettlements, type StellarSettlementRecord } from '../storage.js'
 import { agentPassport, reputationScore, riskCheck, verifyAgent, type TxContext } from '../asp/tools.js'
@@ -425,6 +425,12 @@ export function stellarRailChallenge(
         // What the buyer actually signs. Not an EIP-712 domain: a Soroban authorization
         // entry for one specific call, whose preimage the protocol fixes.
         authorization: 'soroban-auth',
+        // x402 v2 reserves `extra.assetTransferMethod` for how the asset actually moves.
+        // The values the spec DEFINES are EVM ones (`eip3009`, `permit2`), and neither is
+        // what happens here, so publishing one would be a lie a buyer could act on. This
+        // names what this rail really does, in the same word settle.ts already uses for the
+        // scheme, so the challenge and the verifier cannot disagree about it.
+        assetTransferMethod: 'soroban-auth',
         contract: s.token.address,
         function: 'transfer',
         args: ['from (your G... account)', `to (${s.payTo})`, 'amount (i128 base units)'],
@@ -486,6 +492,62 @@ export function stellarRailChallenge(
 // ── serving a paid tool ───────────────────────────────────────────────────────────
 
 export type StellarRailToolInput = { agentId: string; txContext?: TxContext | null }
+
+/**
+ * The buyer's credential, under either name.
+ *
+ * x402 v1 carried it in `X-PAYMENT`; v2 renamed the request header to `PAYMENT-SIGNATURE`,
+ * and that is the only name a stock v2 client sends. Reading both makes one endpoint serve
+ * both generations of client at the cost of a second lookup. node:http lower-cases incoming
+ * header names, which is why only the lower-case keys are read.
+ */
+export function stellarRailPaymentHeader(headers: Record<string, string | string[] | undefined>): string {
+  const one = (v: string | string[] | undefined) => (Array.isArray(v) ? v[0] : v) ?? ''
+  return (one(headers['x-payment']) || one(headers['payment-signature'])).trim()
+}
+
+/**
+ * Which network the buyer says they paid on, in EITHER payload shape.
+ *
+ * v1 put `network` at the top level of the payment payload. v2 moved it into `accepted`:
+ * the entry the buyer picked out of our `accepts` array and signed against. A stock v2
+ * client sends only the second, so reading only the first would settle a pubnet payment
+ * against the testnet passphrase, or the reverse. Top level is read first, so nothing that
+ * worked before changes.
+ */
+export function stellarRailPaidNetwork(payload: unknown): string | undefined {
+  const p = payload as { network?: unknown; accepted?: { network?: unknown } | null } | null
+  const top = typeof p?.network === 'string' ? p.network.trim() : ''
+  if (top) return top
+  const accepted = typeof p?.accepted?.network === 'string' ? p.accepted.network.trim() : ''
+  return accepted || undefined
+}
+
+/**
+ * The settlement receipt in the v2 `PAYMENT-RESPONSE` header.
+ *
+ * Only the fields the reference SettleResponse type defines, base64 of the same JSON the
+ * body already carries: a v2 client reads its receipt from the header without parsing a
+ * body shaped for humans. The fuller record (ledger, fee, broadcaster, explorer link)
+ * stays in the body, where nothing has to fit someone else's type.
+ */
+export function stellarRailPaymentResponseHeader(settled: StellarSettleSuccess): string {
+  return Buffer.from(
+    JSON.stringify({
+      success: true,
+      transaction: settled.transaction,
+      network: settled.network,
+      payer: settled.payer,
+      amount: settled.value,
+    }),
+  ).toString('base64')
+}
+
+/**
+ * What a served call returns. `headers` carries the transport-level headers the route
+ * adapter sets on the response, which today is the v2 `PAYMENT-RESPONSE` receipt on a 200.
+ */
+export type StellarRailServeResult = { httpStatus: number; body: unknown; headers?: Record<string, string> }
 
 export type StellarRailServeDeps = StellarSettleDeps & {
   handlers?: Record<RailToolName, (input: StellarRailToolInput) => Promise<unknown>>
@@ -556,7 +618,7 @@ export async function stellarRailServeTool(
   paymentHeader: string,
   status: StellarRailStatus,
   deps: StellarRailServeDeps = {},
-): Promise<{ httpStatus: number; body: unknown }> {
+): Promise<StellarRailServeResult> {
   const env = deps.env ?? process.env
   const gate = stellarRailPaywallGate(status)
   if (!gate.ok) return { httpStatus: gate.httpStatus, body: gate.body }
@@ -572,9 +634,9 @@ export async function stellarRailServeTool(
   // The challenge is the menu and the payload names the dish. A buyer who paid on one of
   // the offered networks gets settled on THAT one, and a network we do not sell on is
   // refused rather than quietly redirected to the default.
-  const paidNetwork = (payload as { network?: unknown })?.network
+  const paidNetwork = stellarRailPaidNetwork(payload)
   let chosen = status
-  if (typeof paidNetwork === 'string' && paidNetwork.trim()) {
+  if (paidNetwork) {
     const s = stellarRailStatus(env, paidNetwork)
     if (!s.configured) {
       const challenge = stellarRailChallenge(tool, status, env)
@@ -601,7 +663,7 @@ export async function stellarRailServeToolOn(
   payload: unknown,
   status: StellarRailStatus,
   deps: StellarRailServeDeps = {},
-): Promise<{ httpStatus: number; body: unknown }> {
+): Promise<StellarRailServeResult> {
   const env = deps.env ?? process.env
   const chain = status.chain ? getChainById(status.chain) : undefined
   if (!chain || !status.token || !status.payTo) {
@@ -710,7 +772,11 @@ export async function stellarRailServeToolOn(
   const handlers = deps.handlers ?? stellarHandlers(status, settled.broadcaster)
   try {
     const body = await handlers[tool](input)
-    return { httpStatus: 200, body: { ...(body as Record<string, unknown>), settlement: settled } }
+    return {
+      httpStatus: 200,
+      body: { ...(body as Record<string, unknown>), settlement: settled },
+      headers: { 'PAYMENT-RESPONSE': stellarRailPaymentResponseHeader(settled) },
+    }
   } catch (e) {
     return {
       httpStatus: 500,

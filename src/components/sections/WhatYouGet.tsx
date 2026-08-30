@@ -108,14 +108,14 @@ function WindowCard({ doc, term, rows, note }: (typeof CARDS)[number]) {
     <div className="rounded-2xl border border-border/70 bg-card/75 shadow-[0_24px_60px_-24px_rgba(16,24,40,0.35)] backdrop-blur-xl">
       <WindowChrome />
       <div className="p-5">
-        <p className="font-mono text-[10px] font-semibold uppercase tracking-[0.14em] text-foreground/40">
+        <p className="font-mono text-[10px] font-semibold uppercase tracking-[0.14em] text-foreground/60">
           {doc}
         </p>
         <p className="mt-1 text-lg font-bold tracking-tight text-foreground">{term}</p>
         <dl className="mt-4 flex flex-col gap-2">
           {rows.map((r) => (
             <div key={r.label} className="flex items-baseline justify-between gap-4 text-sm">
-              <dt className="text-foreground/45">{r.label}</dt>
+              <dt className="text-foreground/60">{r.label}</dt>
               <dd
                 className={cn(
                   'text-right font-semibold',
@@ -129,7 +129,7 @@ function WindowCard({ doc, term, rows, note }: (typeof CARDS)[number]) {
             </div>
           ))}
         </dl>
-        <p className="mt-4 border-t border-border/60 pt-4 text-sm leading-relaxed text-foreground/55">
+        <p className="mt-4 border-t border-border/60 pt-4 text-sm leading-relaxed text-foreground/70">
           {note}
         </p>
       </div>
@@ -197,7 +197,7 @@ export default function WhatYouGet() {
                       'flex items-baseline gap-3 rounded-xl border px-4 py-3 text-left text-sm font-semibold transition-colors duration-200',
                       active === i
                         ? 'border-accent/40 bg-accent/15 text-accent dark:text-[color-mix(in_srgb,var(--color-accent)_50%,white)]'
-                        : 'border-transparent text-foreground/55 hover:bg-accent/10 hover:text-foreground/80',
+                        : 'border-transparent text-foreground/70 hover:bg-accent/10 hover:text-foreground/80',
                     )}
                   >
                     <span className="font-mono text-xs opacity-60">{i + 1}</span>

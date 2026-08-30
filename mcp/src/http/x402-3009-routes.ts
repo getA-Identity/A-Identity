@@ -25,6 +25,7 @@ import {
   railStatus,
   railPriceUsd,
   type RailToolName,
+  railPaymentHeader,
 } from '../x402-3009/rail.js'
 import { supported, verify, settle } from '../x402-3009/facilitator.js'
 import { provenDomainCached } from '../x402-3009/domain.js'
@@ -197,7 +198,9 @@ export async function handleX402ThreeKRoutes(ctx: RouteCtx): Promise<boolean> {
     return true
   }
 
-  const header = String(req.headers['x-payment'] ?? '')
+  // A v2 buyer sends PAYMENT-SIGNATURE, a v1 buyer sends X-PAYMENT. The rail owns that
+  // aliasing so the two transports cannot drift apart here and there.
+  const header = railPaymentHeader(req.headers)
   if (!header) {
     const challenge = await railChallenge(tool, status)
     sendChallenge(res, challenge.httpStatus, challenge.body)
@@ -213,6 +216,9 @@ export async function handleX402ThreeKRoutes(ctx: RouteCtx): Promise<boolean> {
   // railServeTool answers 402 with a FRESH challenge for a buyer-fixable code, so that
   // path needs the header too.
   const out = await railServeTool(tool, { agentId, txContext: (body?.txContext ?? null) as TxContext | null }, header, status)
+  // A settled call carries its receipt in PAYMENT-RESPONSE, which is where a reference
+  // client looks for it. sendChallenge owns the 402 body and header pair, nothing else.
+  for (const [k, v] of Object.entries(out.headers ?? {})) res.setHeader(k, v)
   sendChallenge(res, out.httpStatus, out.body)
   return true
 }

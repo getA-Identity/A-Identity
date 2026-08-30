@@ -197,7 +197,7 @@ function VerifyStage() {
           </div>
         </div>
       </div>
-      <p className="mt-3 text-xs text-foreground/40">
+      <p className="mt-3 text-xs text-foreground/60">
         The transcript is illustrative; the verdict engine behind it is live in the explorer.
       </p>
     </div>
@@ -228,7 +228,7 @@ export default function VerifyCta() {
         <motion.h2 {...reveal} className="text-3xl font-bold leading-[1.1] tracking-tight sm:text-[2.6rem]" style={{ fontFamily: 'var(--font-heading)' }}>
           Trust an agent in one lookup.
         </motion.h2>
-        <motion.p {...reveal} className="mt-4 max-w-xl text-lg leading-relaxed text-foreground/55">
+        <motion.p {...reveal} className="mt-4 max-w-xl text-lg leading-relaxed text-foreground/70">
           Paste a wallet address or token id. We read the chain, not a database, and answer
           in a second.
         </motion.p>
@@ -238,13 +238,13 @@ export default function VerifyCta() {
             reader a field too small to check what they had pasted. */}
         <motion.form {...reveal} onSubmit={onSubmit} className="mt-9 flex max-w-xl flex-col gap-2 sm:flex-row">
           <div className="relative flex-1">
-            <Search size={17} className="pointer-events-none absolute left-4 top-1/2 -translate-y-1/2 text-foreground/40" />
+            <Search size={17} className="pointer-events-none absolute left-4 top-1/2 -translate-y-1/2 text-foreground/60" />
             <input
               value={q}
               onChange={(e) => setQ(e.target.value)}
               aria-label="Agent wallet address or token id"
               placeholder="0x wallet address or token id"
-              className="h-13 w-full rounded-xl border border-border bg-card py-3.5 pl-11 pr-4 font-mono text-sm text-foreground outline-none transition placeholder:font-sans placeholder:text-foreground/40 focus:border-accent/60"
+              className="h-13 w-full rounded-xl border border-border bg-card py-3.5 pl-11 pr-4 font-mono text-sm text-foreground outline-none transition placeholder:font-sans placeholder:text-foreground/60 focus:border-accent/60"
             />
           </div>
           <button type="submit" className="inline-flex h-13 items-center justify-center gap-2 rounded-xl bg-accent px-6 text-sm font-semibold text-white transition hover:opacity-90 sm:h-auto">
@@ -256,7 +256,7 @@ export default function VerifyCta() {
             width rows, because wrapping them inline left a ragged edge: two chips on the
             first line beside the label and a third stranded under it. From `sm` up the
             original inline wrap returns, where there is room for it to look deliberate. */}
-        <motion.div {...reveal} className="mt-4 text-sm text-foreground/45">
+        <motion.div {...reveal} className="mt-4 text-sm text-foreground/60">
           <span className="block sm:hidden">Try</span>
           <div className="mt-2 grid gap-2 sm:mt-0 sm:flex sm:flex-wrap sm:items-center">
             <span className="hidden sm:inline">Try</span>

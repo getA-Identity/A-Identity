@@ -12,6 +12,8 @@ import {
   aggregateRating,
   statusLabel,
   buildAgentManifest,
+  agentChainIds,
+  serviceDescription,
   MAX_TASK_PRICE_USD,
   DEFAULT_DEADLINE_HOURS,
   MAX_DEADLINE_HOURS,
@@ -192,4 +194,45 @@ test('a manifest lists the agent services', () => {
   assert.equal(m.services.length, 1)
   assert.equal(m.services[0].name, 'translation')
   assert.equal(m.services[0].priceUsd, 2)
+})
+
+// ── what a card may honestly say about an agent ─────────────────────────────────
+//
+// Both helpers exist to stop a marketplace card claiming more than the record does.
+// agentChainIds answers "which networks is this agent actually on", and the only
+// acceptable wrong answer is a short one: a chain we merely support, or an id the
+// registry has no descriptor for, must never reach a card that would then draw a
+// logo for it.
+
+test('an agent claims its identity chain and every chain it has a vault on, once each', () => {
+  const ids = agentChainIds({
+    chain: 'arc',
+    vaultChainCaip2: 'eip155:8453',
+    vaults: [{ chainCaip2: 'eip155:42161' }, { chainCaip2: 'eip155:8453' }],
+  })
+  assert.deepEqual(ids, ['arc', 'base', 'arbitrum'])
+  assert.equal(new Set(ids).size, ids.length, 'the same chain twice is one badge, not two')
+})
+
+test('a chain the registry does not describe is dropped, never handed to a card', () => {
+  // A card draws a logo per id. An id with no descriptor has no logo and no name,
+  // so passing it through would render a hole that looks like a broken agent.
+  assert.deepEqual(agentChainIds({ chain: 'dogecoin' }), [])
+  assert.deepEqual(
+    agentChainIds({ chain: 'arc', vaultChainCaip2: 'eip155:999999' }),
+    ['arc'],
+    'one unknown vault chain must not cost the agent its real identity chain',
+  )
+})
+
+test('an agent with no chain and no vault claims nothing', () => {
+  assert.deepEqual(agentChainIds({}), [])
+  assert.deepEqual(agentChainIds({ chain: '', vaults: [] }), [])
+})
+
+test('a service without its own copy says so, rather than borrowing someone else\'s', () => {
+  assert.equal(serviceDescription({ name: 'Translate a page', description: 'Translates a page into French.' }), 'Translates a page into French.')
+  assert.equal(serviceDescription({ name: 'Translate a page', description: '   ' }), null, 'blank is not copy')
+  assert.equal(serviceDescription({ name: 'Translate a page', description: '' }), null)
+  assert.equal(serviceDescription({ name: 'Translate a page' }), null)
 })

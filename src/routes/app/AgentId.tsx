@@ -18,7 +18,6 @@ import { useSelectedAgent } from '../../store/agent'
 import AgentAvatar from '../../components/AgentAvatar'
 import AgentSelect from '../../components/app/AgentSelect'
 import AppPage from '../../components/app/AppPage'
-import BrandArt from '../../components/app/BrandArt'
 import { Badge } from '../../components/ui/badge'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '../../components/ui/tooltip'
 import { Skeleton } from '../../components/ui/skeleton'
@@ -179,10 +178,7 @@ export default function AgentId() {
       {/* Sample notice: no real agent yet -> the card below is illustrative, not yours. */}
       {isSample && (
         <>
-          {/* A ceramic passport booklet with an unstamped seal: exactly an account with
-              no passport issued yet. */}
-          <BrandArt src="/art/art-passport.webp" className="mx-auto mt-6 h-40 w-52 sm:h-48 sm:w-64" />
-          <div className="mt-2 flex items-start gap-3 rounded-2xl border border-warn/25 bg-warn/10 p-4 text-sm text-foreground/75">
+          <div className="mt-6 flex items-start gap-3 rounded-2xl border border-warn/25 bg-warn/10 p-4 text-sm text-foreground/75">
             <ShieldQuestion size={18} className="mt-0.5 shrink-0 text-warn" />
             <p>
               <span className="font-semibold">This is a real example agent</span> (ERC-8004 #849980 on

@@ -9,9 +9,14 @@
  * bound to an on-chain job id.
  *
  * This module holds NO state and does NO I/O: only the state machine, input
- * normalization, and review aggregation, so it is unit-testable in isolation and the
- * tested logic is the same logic platform.ts runs (mirrors the reputation.ts pattern).
+ * normalization, review aggregation, and the two card-payload roll-ups (chain footprint,
+ * service copy), so it is unit-testable in isolation and the tested logic is the same
+ * logic platform.ts runs (mirrors the reputation.ts pattern). Its one import is the chain
+ * registry, which is pure data: chain slugs are RESOLVED through it rather than restated
+ * here, per the single-source-of-truth rule in CLAUDE.md.
  */
+
+import { getChain, getChainById, getChainByEvmId } from './chains/registry.js'
 
 // ── types ─────────────────────────────────────────────────────────────────────
 
@@ -193,6 +198,58 @@ export function statusLabel(status: TaskStatus): string {
   return labels[status]
 }
 
+// ── what a marketplace card can honestly say ────────────────────────────────────────
+//
+// Two payload fields a card needs and could not get: which networks an agent is really
+// on, and what a single service says about itself. Both live here rather than in the
+// callers so the catalog, the manifest and the roster can never answer them differently.
+
+/** The slice of an agent the chain roll-up reads. */
+export type ChainFootprintAgent = {
+  /** Registry slug of the chain this agent's identity lives on (e.g. 'arc'). */
+  chain?: string
+  /** CAIP-2 of the primary on-chain spend vault, when one is deployed. */
+  vaultChainCaip2?: string
+  /** Every vault this agent holds, the primary one included. */
+  vaults?: readonly { chainCaip2: string }[]
+}
+
+/**
+ * Every network an agent is ACTUALLY registered on, as registry chain slugs: its identity
+ * chain first, then a chain for each vault we have deployed for it, in deployment order.
+ *
+ * Honest by construction. Nothing is padded with a chain we merely support: a card built
+ * from this shows one logo for an Arc-only agent and grows only when that agent really
+ * gains a vault somewhere else. Every id is resolved through the registry, so a slug or a
+ * CAIP-2 the registry does not know is DROPPED rather than handed to a UI that would have
+ * no logo for it. Pure: same agent in, same list out.
+ */
+export function agentChainIds(agent: ChainFootprintAgent): string[] {
+  const out: string[] = []
+  const add = (id: string | undefined) => {
+    if (id && !out.includes(id)) out.push(id)
+  }
+  if (agent.chain) add(getChainById(agent.chain)?.id)
+  if (agent.vaultChainCaip2) add(getChain(agent.vaultChainCaip2)?.id)
+  for (const v of agent.vaults ?? []) add(getChain(v.chainCaip2)?.id)
+  return out
+}
+
+/**
+ * A single service's own public copy, or null when it declares none.
+ *
+ * A stored service is name + price + unit today (createAgent drops anything else a
+ * registration sends), so this is null for every service we serve right now. It is READ
+ * rather than assumed absent because the field is what lets per-service copy travel at
+ * all: without it a catalog row has no place to put a description, and the surfaces above
+ * are stuck showing one sentence about the whole agent. An empty or blank string is null,
+ * so a service can never publish whitespace as its pitch.
+ */
+export function serviceDescription(service: { name: string; description?: string | null }): string | null {
+  const text = typeof service.description === 'string' ? service.description.trim() : ''
+  return text.length > 0 ? text : null
+}
+
 // ── AMP "Discover": per-agent manifest ────────────────────────────────────────────
 //
 // The discovery primitive of the AMP layer (Discover -> Authorize -> Execute -> Settle):
@@ -212,7 +269,13 @@ export type ManifestAgent = {
   kya: 'verified' | 'unverified' | 'revoked'
   onchain: 'queued' | 'registered'
   endpoint?: string
-  services: { name: string; priceUsd: number; unit: string }[]
+  services: { name: string; priceUsd: number; unit: string; description?: string | null }[]
+  /**
+   * Every vault this agent holds, so the manifest can name the chains it is really on.
+   * Optional: a caller that does not pass it gets the identity chain alone, which is the
+   * truth for an agent with no second vault anyway.
+   */
+  vaults?: readonly { chainCaip2: string }[]
 }
 
 /**
@@ -238,9 +301,18 @@ export function buildAgentManifest(agent: ManifestAgent, reputationScore: number
       onchain: agent.onchain,
       reputation: reputationScore,
       endpoint: agent.endpoint ?? null,
+      // The networks this agent is really on, identity chain first. Derived, never typed:
+      // an unknown chain is dropped rather than named.
+      chains: agentChainIds({ chain: getChainByEvmId(agent.chainId)?.id, vaults: agent.vaults }),
       hireable,
     },
-    services: agent.services.map((s) => ({ name: s.name, priceUsd: s.priceUsd, unit: s.unit })),
+    services: agent.services.map((s) => ({
+      name: s.name,
+      priceUsd: s.priceUsd,
+      unit: s.unit,
+      // The service's own copy, or null when it declares none. See serviceDescription.
+      description: serviceDescription(s),
+    })),
     amp: {
       discover: `${baseUrl}/api/v1/agents/manifest?agentId=${agent.id}`,
       authorize: 'permissions: daily cap + auto-approve line + human-on-the-loop for large payments',

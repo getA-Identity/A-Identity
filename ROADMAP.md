@@ -1,10 +1,37 @@
 # A-Identity roadmap
 
 Now / next / later, in the open. "Now" means work is underway or committed for the
-current cycle; dates are targets, not promises. Recently shipped is listed so the
-roadmap stays honest about velocity. Updated 2026-08-24.
+current cycle. Nothing below carries a target date, deliberately: a date we cannot keep
+is worth less than an honest ordering, and the dates that do appear are on things that
+already happened. Recently shipped is listed so the roadmap stays honest about velocity.
+Updated 2026-08-30.
 
 ## Recently shipped
+
+- **Algorand went live on its first mainnet sale** (2026-08-30): the second non-EVM
+  ecosystem, entered as a registry descriptor and promoted the same day on a real
+  payment rather than on a plan. x402 v2 `exact` in native Circle USDC (ASA 31566704),
+  the buyer signing a fee-zero transfer inside a pooled-fee atomic group through the
+  GoPlausible facilitator, so the buyer needs no ALGO for fees. Each of the four
+  sellable tools has its own mainnet receipt, and no sale counts until our own indexer
+  read returns the transfer. The `AgentSpendPolicy` vault landed with it as the policy's
+  third implementation (Solidity, then Rust/Soroban, now Algorand Python): application
+  `3688854723`, no update or delete handler, real USDC under a 1 USDC daily cap, walked
+  through the same settle-refuse-freeze-override ladder as the Stellar releases.
+
+- **The Stellar x402 rail sells on pubnet** (2026-08-28): first mainnet sale
+  `f213371c...` at ledger 64155370, 0.001 USDC through our own facilitator, the buyer
+  signing a Soroban authorization entry and paying no fee. Recorded with the part that
+  did not work: two earlier attempts bid the 100-stroop minimum that testnet always
+  accepts, lost pubnet's inclusion auction and sat invisible until they expired. The
+  rail now bids the fee market's own rate with headroom. This is what turned `stellar`
+  from a vault-only story into a selling rail.
+
+- **Base went live** (2026-08-28): agent #73232 on the canonical ERC-8004 registries
+  (deployed by their authors, not by us) and x402 settling in native Circle USDC through
+  the same first-party EIP-3009 facilitator that serves Robinhood Chain and Arbitrum
+  One. The operating wallets were funded from Stellar pubnet USDC through a NEAR Intents
+  swap, and that funding trail is published rather than left as a gap.
 
 - **Stellar testnet rail went end to end** (2026-08-15): `AgentSpendPolicy` in Rust on
   Soroban (daily cap + auto-approve ceiling + allowlist + freeze + session key, typed
@@ -20,12 +47,15 @@ roadmap stays honest about velocity. Updated 2026-08-24.
   under a 1 USDC daily cap and a 0.25 USDC auto-approve ceiling, deliberately an order of
   magnitude under the testnet vault because this one holds real money. Four settlements, a
   freeze and unfreeze pair, and an owner override are on the ledger, with `spent_today`
-  coming to rest exactly at the cap. The chain is `beta`, not live, because no x402 rail
-  sells on pubnet: what it proves is the spend policy alone.
+  coming to rest exactly at the cap. What this release proved on its own day was the
+  spend policy alone; the x402 rail followed on 2026-08-28 and the chain is `live`. The
+  owner account was raised to a 2-of-3 multisig on 2026-08-25, after an audit finding
+  pointed out that a permanent owner behind a single key is a single point of total loss.
 
 - **Arbitrum One went live** (2026-08-13): agent #1259 on the canonical ERC-8004 registry,
-  and x402 settling in native Circle USDC through our own EIP-3009 facilitator. The rail
-  now sells on two chains at once, with a per-chain fee derived from measured gas. (July-August 2026)
+  and x402 settling in native Circle USDC through our own EIP-3009 facilitator. That took
+  the rail to two chains at once, with a per-chain fee derived from measured gas rather
+  than guessed; Base became the third on 2026-08-28.
 
 - Celo mainnet live (2026-08-09): ERC-8004 identity + reputation reads wired, agent #9759,
   and the trust tools selling over our own first-party x402 facilitator in native USDC.
@@ -49,17 +79,25 @@ roadmap stays honest about velocity. Updated 2026-08-24.
 - merchant_check: commerce-grade counterparty verification for agentic checkouts
   (MCP tool + REST).
 - Structural hardening: the backend split into a layered platform/ + http/ module
-  system with the layer graph enforced by tests; 955 unit tests + full E2E suite.
+  system with the layer graph enforced by tests; 993 unit tests + full E2E suite.
 
 ## Now
 
-- **Sell over the Stellar rail on pubnet**: the testnet rail is switched on in production
-  and the pubnet vault is deployed, but no x402 rail sells on pubnet. It needs its own
-  payTo account holding a USDC trustline and its own funded fee payer, both operator-held
-  keys, and a first settlement that matters. Until that exists the chain is `beta` and the
-  copy says so.
-- **Ops hardening**: post-event secret rotation; upgrade the backend off the free tier
-  for demo reliability.
+- **Turn the two newest rails on in the hosted deployment.** Both mainnet firsts above
+  were settled from an operator machine, against the same code path production runs.
+  Production sells on Stellar pubnet only once its environment names that network, a
+  pubnet payTo holding a USDC trustline, and a funded fee payer; on Algorand it needs the
+  network named and a payTo opted in to the USDC ASA. Until each is set, that rail is
+  fail-closed and says so at its own status route. Fail-closed is the behaviour we want,
+  but a fail-closed rail is not a shipped one.
+- **Backport the payee-validity gate to the EVM `AgentSpendPolicy`** (audit finding G-1,
+  still open). The Soroban and Algorand ports refuse a payee equal to the vault itself;
+  the Solidity original accepts it and burns the cap against a payment that goes nowhere.
+  Three implementations of one policy model are a strength only while they agree.
+- **Ops hardening**: post-event secret rotation; the backend off the free tier for demo
+  reliability; and the rate-limit buckets off process-local state, which is the one piece
+  of runtime state Postgres did not absorb, so a horizontally scaled deploy would still
+  multiply every limit by the instance count.
 
 ## Next
 
@@ -72,19 +110,22 @@ roadmap stays honest about velocity. Updated 2026-08-24.
   batched settlement) bundled into one deliberate listing update.
 - **Spend-preflight in the console UI** (the API is live; the Permissions screen gets
   a "would this pass?" panel).
-- **Base**: listed live on the strength of native Circle USDC and the Gateway hop, but no
-  rail of ours settles on Base itself yet. The canonical ERC-8004 identity and
-  reputation registries ARE live there, deployed by their authors; what is missing is ours,
-  which is an agent on them and a rail pointed at them. X Layer, Celo and
-  both Robinhood networks already prove the adapter, so what Base needs is a deployment
-  and a reason, not a first proof.
+- **A readable identity story for the non-EVM rails**. ERC-8004 is EVM-only, and neither
+  Stellar nor Algorand has an agent registry we are willing to resolve against, so a
+  passport on those chains is bridged from an EVM chain rather than anchored. Today that
+  bridge is a sentence in the docs. Making it a pointer a buyer can check, and saying at
+  the point of sale that KYA cannot be anchored there, is the next honest step rather
+  than deploying a registry of our own and calling it a standard.
 
 ## Later
 
 - **Cross-protocol settlement router**: one quote layer answering 402s with the union
   of rails we accept (x402 exact, Nanopayments, MPP session) and routing settlement.
-- **Avalanche** (phase 3): a registry entry, since it is EVM and the adapter already
-  covers it.
+- **Avalanche**, the only `planned` entry left in the registry. The descriptor is already
+  there and the canonical ERC-8004 identity and reputation registries are already live on
+  the chain, deployed by their authors. What is missing is ours: an agent on them and a
+  rail pointed at them. It stays `planned` until both exist, because a descriptor is not
+  an integration.
 - **Cross-operator Sybil detection** (funder-graph provenance, beyond same-operator
   wash detection).
 - **Per-party escrow signing** in the marketplace (today the platform signer is the

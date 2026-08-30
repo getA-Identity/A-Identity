@@ -46,6 +46,8 @@ const Settlements = lazy(() => import('./routes/app/Settlements'))
 const Permissions = lazy(() => import('./routes/app/Permissions'))
 const Marketplace = lazy(() => import('./routes/app/Marketplace'))
 const AgentProfile = lazy(() => import('./routes/app/AgentProfile'))
+// The account profile (the person), distinct from AgentProfile above (an agent).
+const Profile = lazy(() => import('./routes/app/Profile'))
 const Earnings = lazy(() => import('./routes/app/Earnings'))
 
 export default function App() {
@@ -131,6 +133,7 @@ export default function App() {
             <Route path="marketplace" element={<Marketplace />} />
             <Route path="marketplace/:agentId" element={<AgentProfile />} />
             <Route path="earnings" element={<Earnings />} />
+            <Route path="profile" element={<Profile />} />
           </Route>
         </Route>
 

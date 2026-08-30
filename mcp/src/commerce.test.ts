@@ -132,6 +132,76 @@ test('parseAgentManifest reads the A-Identity AMP manifest shape; a non-object i
   assert.equal(parseAgentManifest(null), null)
 })
 
+/**
+ * ERC-8004 renamed the agent card's `endpoints` field to `services` on 2026-01-25, and
+ * cards in the wild carry either. Reading only the old name meant a merchant serving a
+ * spec-current card looked like it declared no payment rail at all, so merchant_check
+ * answered "no x402 here" about a merchant that does accept x402. Both names are read,
+ * and a card carrying both must not report a rail twice.
+ */
+test('a card declaring its rails under the renamed `services` field is read, and so is the pre-spec `endpoints`', () => {
+  // Spec-current: `services` only, no `endpoints` anywhere in the card.
+  const current = parseAgentManifest({
+    name: 'Spec-Current Storefront',
+    registrations: [{ agentId: 7, agentAddress: 'eip155:99999:8004/7' }],
+    services: [
+      { name: 'checkout', endpoint: 'https://shop.example/x402/quote' },
+      { name: 'tools', endpoint: 'https://shop.example/mcp' },
+    ],
+  })
+  assert.ok(current)
+  assert.deepEqual(current.rails, ['mcp', 'x402'], 'a `services` card must not read as offering no rail')
+
+  // Pre-spec: `endpoints` only. Still in circulation, so it still has to work.
+  const legacy = parseAgentManifest({
+    name: 'Pre-Spec Storefront',
+    endpoints: { mcp: 'https://legacy.example/mcp', pay: 'https://legacy.example/x402/quote' },
+  })
+  assert.ok(legacy)
+  assert.deepEqual(legacy.rails, ['mcp', 'x402'])
+
+  // Both names, same rails: the merge is a set, so nothing is listed twice.
+  const both = parseAgentManifest({
+    name: 'Transitional Storefront',
+    services: [{ name: 'checkout', endpoint: 'https://shop.example/x402/quote' }],
+    endpoints: { mcp: 'https://shop.example/mcp' },
+  })
+  assert.ok(both)
+  assert.deepEqual(both.rails, ['mcp', 'x402'])
+})
+
+test('merchantCheck reports the rails of a spec-current card, so a paying agent is not told there is no x402', async () => {
+  const card = {
+    name: 'Spec-Current Storefront',
+    registrations: [{ agentId: 7, agentAddress: 'eip155:99999:8004/7' }],
+    services: [{ name: 'checkout', endpoint: 'https://shop.example/x402/quote' }],
+  }
+  const fakeFetch = (async () => ({ ok: true, status: 200, json: async () => card })) as unknown as typeof fetch
+  const r = await merchantCheck(
+    { url: 'https://shop.example' },
+    {
+      fetchImpl: fakeFetch,
+      resolveIdentity: async (q) =>
+        q === 'eip155:99999:8004/7'
+          ? { agentId: q, tokenId: 7, owner: '0x' + 'c'.repeat(40), registrationUri: '', domain: 'shop.example', valid: false, registeredAt: '2026-01-01', chain: 'arc' }
+          : null,
+      platformView: async () => ({
+        agentId: 'agent_shop',
+        name: 'Spec-Current Storefront',
+        kya: 'verified',
+        score: 760,
+        settledOnchain: 4,
+        sybil: { level: 'none' },
+      }),
+    },
+  )
+  assert.ok(!('error' in r), 'expected a verdict result')
+  const v = r as Exclude<typeof r, { error: string }>
+  assert.equal(v.manifest?.found, true)
+  assert.deepEqual(v.manifest?.rails, ['x402'], 'the rail the card declares has to reach the answer, not just the parser')
+  assert.equal(v.verdict, 'ALLOW')
+})
+
 test('merchantCheck requires a url or an agentId - a clean error, not a verdict', async () => {
   const r = await merchantCheck({})
   assert.ok('error' in r, 'expected an error result')

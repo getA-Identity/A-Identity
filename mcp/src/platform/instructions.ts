@@ -7,9 +7,10 @@ import {
   state, save, id, ownsAgent, dailySpent, addSpend, reverseSpend, nextUtcMidnight, pushActivity, short, cap,
   type Permissions, type Instruction, type InstructionType, type PlatformAgent,
 } from './core.js'
-import { policyPay, policyOwnerPay, payUsdcWithMemoOnchain, payUsdcBatchOnchain, memoReasonJson } from '../arc-contracts.js'
+import { policyPay, policyOwnerPay, payUsdcWithMemoOnchain, payUsdcBatchOnchain, memoReasonJson, readPolicyVault } from '../arc-contracts.js'
 import type { MemoInput } from '../arc-contracts.js'
 import { circlePay } from '../circle-agent.js'
+import { vaultChainFor } from './vault-adapter.js'
 
 // ── instructions ──────────────────────────────────────────────────────────────
 
@@ -520,6 +521,66 @@ export function batchPaymentPlan(ix: Instruction, to: string): { to: string; amo
   return Array.from({ length: Math.floor(ix.count) }, () => ({ to, amountUsd: ix.amountUsd }))
 }
 
+// ── session keys: the half that is safe, and the half this project refuses to build ──
+//
+// The ask was "route session-key settlements through executeInstruction with
+// enforcedBy: 'session-key', backed by a persisted smart contract account per agent".
+// One half of that is honest and is implemented below. The other half is not, and the
+// reason is the rule at the top of this project, not a shortage of time.
+//
+// WHAT IS IMPLEMENTED. The AgentSpendPolicy vault already carries a session key. The human
+// owner grants the agent's operator a UNIX expiry (`setSessionKeyExpiry`); `pay` reverts
+// `SessionKeyExpired` past it, and `ownerPay` is deliberately exempt from that gate. So an
+// AGENT-initiated vault settlement that lands while the vault carries a live expiry was
+// authorised by a time-bounded session key, and saying so costs no new key: the operator
+// is the same env-gated signer this path already uses. The claim is grounded on a read of
+// the vault, never inferred from configuration, and it is never made about `ownerPay`.
+//
+// WHAT IS NOT IMPLEMENTED, AND WHY. The ERC-4337 flavour in `aa-wallet.ts` mints a fresh
+// session-key private key per run and throws it away; it is never persisted anywhere. For
+// this server to settle an instruction by SIGNING a UserOperation with such a key, the key
+// would have to survive the request: in the database, in an env var, or in process memory
+// across calls. That is autonomous key custody, which this project does not do, so it is
+// not done here. The same rule blocks the "persisted smart contract account per agent": a
+// Kernel account is only per-agent if its owner is the agent owner's own wallet, and then
+// the session-key grant and the UserOperation are theirs to sign, not ours. The honest
+// shape of that feature is client-side signing, and it does not live in this function.
+//
+// The vault IS the per-agent, persisted, on-chain bounded-authority account we actually
+// have: `agent.vaultAddress` with `agent.vaultOperator` as its session key, both public,
+// both already stored, neither of them a secret at rest.
+
+/** What a vault read says about the session-key time bound. `live` is the ONLY thing that
+ *  licenses an `enforcedBy: 'session-key'` claim on a settlement. */
+export type SessionKeyBound =
+  | { live: true; expiry: number }
+  | { live: false; why: 'unsupported-chain' | 'no-read' | 'no-bound' | 'expired'; expiry?: number }
+
+/**
+ * Reduce a vault read to the one bit settlement labeling needs. Pure, so the boundaries are
+ * tested rather than argued about.
+ *
+ * The contract's rule is that `pay` reverts when `sessionKeyExpiry != 0 && block.timestamp >
+ * sessionKeyExpiry`. Two consequences are load-bearing and neither is obvious: 0 means NO
+ * time bound at all (an operator whose authority never lapses, which is the opposite of a
+ * session key, so it must not be labeled as one), and the expiry second itself is still
+ * inside the window. A missing, malformed or unreadable value is `no-read` and never a
+ * bound: a label is not upgraded on a guess.
+ */
+export function sessionKeyBound(
+  view: { sessionKeyExpiry?: unknown; sessionKeyExpired?: unknown } | null | undefined,
+  atUnix: number = Math.floor(Date.now() / 1000),
+): SessionKeyBound {
+  if (!view) return { live: false, why: 'no-read' }
+  const expiry = view.sessionKeyExpiry
+  if (typeof expiry !== 'number' || !Number.isFinite(expiry) || expiry < 0) return { live: false, why: 'no-read' }
+  if (expiry === 0) return { live: false, why: 'no-bound', expiry: 0 }
+  // The adapter also computes `sessionKeyExpired` against its own clock. If either clock
+  // says the window has closed, it has closed: the two never get to disagree in our favour.
+  if (view.sessionKeyExpired === true || atUnix > expiry) return { live: false, why: 'expired', expiry }
+  return { live: true, expiry }
+}
+
 /**
  * The chain calls executeInstruction makes, behind one indirection. Production always runs
  * REAL_SETTLEMENT; the seam exists so a unit test can exercise the executed / reverted
@@ -531,6 +592,7 @@ type SettlementBackend = {
   circlePay: typeof circlePay
   payUsdcWithMemo: typeof payUsdcWithMemoOnchain
   payUsdcBatch: typeof payUsdcBatchOnchain
+  readVault: typeof readPolicyVault
 }
 
 const REAL_SETTLEMENT: SettlementBackend = {
@@ -539,9 +601,50 @@ const REAL_SETTLEMENT: SettlementBackend = {
   circlePay,
   payUsdcWithMemo: payUsdcWithMemoOnchain,
   payUsdcBatch: payUsdcBatchOnchain,
+  readVault: readPolicyVault,
 }
 
 let settlement: SettlementBackend = REAL_SETTLEMENT
+
+/**
+ * The session-key bound on THIS agent's vault, or a labeled reason there is none to claim.
+ *
+ * Never throws and never blocks a settlement. An RPC that will not answer means the
+ * settlement is labeled `onchain-vault`, which is what it was labeled before this existed:
+ * an infrastructure hiccup must not invent a session key, and it must not lose a payment
+ * either. Only called once a settlement actually has a receipt, so the round trip is spent
+ * on money that moved rather than on every attempt.
+ *
+ * Two gates, both with reasons rather than convenience behind them:
+ *
+ *  - EVM only. The Soroban AgentSpendPolicy has the same `SessionKeyExpired` refusal, but
+ *    `platform/vault-adapter.ts` does not surface an expiry for it yet, so a Stellar vault
+ *    settles here labeled `onchain-vault`. That is a stated gap, not a claim. The REFUSAL
+ *    side is unaffected: a `SessionKeyExpired` revert is recognised whatever the chain.
+ *  - The chain's signer key must be configured. Without it `policyPay` returns prepared and
+ *    this path never settles for real, so there is nothing to ground a label on.
+ *
+ * And a deadline, because of WHERE this sits. By the time it runs the payment has already
+ * moved on-chain, but the instruction has not yet been flipped to executed_onchain and the
+ * TOCTOU guard still holds its id, so a read that hangs would strand a settled payment as
+ * unrecorded and un-retryable. A label is worth a few seconds and not one second more.
+ */
+const SESSION_KEY_READ_MS = 4_000
+
+async function readSessionKeyBound(agent: PlatformAgent, vault: string): Promise<SessionKeyBound> {
+  const chain = vaultChainFor(agent)
+  if (!chain || chain.ecosystem !== 'evm') return { live: false, why: 'unsupported-chain' }
+  if (!chain.signerEnvVar || !process.env[chain.signerEnvVar]) return { live: false, why: 'no-read' }
+  const giveUp = new Promise<null>((resolve) => {
+    // Unref'd so a pending deadline cannot hold the process open on its own.
+    setTimeout(() => resolve(null), SESSION_KEY_READ_MS).unref?.()
+  })
+  try {
+    return sessionKeyBound(await Promise.race([settlement.readVault(vault), giveUp]))
+  } catch {
+    return { live: false, why: 'no-read' }
+  }
+}
 
 /** TEST-ONLY: substitute settlement calls with fakes; returns the restore function.
  *  Production code never calls this. */
@@ -562,6 +665,12 @@ export function __setSettlementForTests(over: Partial<SettlementBackend>): () =>
  * direct settlement so a chain hiccup never blocks the flow. A `batch` settles on
  * the direct path as `count` transfers in one atomic Multicall3From tx. Without a
  * signer key, execution is SIMULATED and labeled as such; the trail stays honest.
+ *
+ * When the vault also carries a live SESSION KEY (a time bound the human owner granted
+ * the agent's operator), an agent-initiated settlement is labeled `session-key` rather
+ * than the broader `onchain-vault`, and a `SessionKeyExpired` revert is recorded as the
+ * session key refusing rather than as a generic vault rejection. Both are read from the
+ * chain; see the session-key block above for what this deliberately does NOT do.
  */
 /** Instruction ids currently mid-execution, so a concurrent double-execute of the same
  *  instruction can't both settle (see the TOCTOU guard below). Process-local by design:
@@ -609,20 +718,50 @@ export async function executeInstruction(ixId: string, caller?: string): Promise
       ? await settlement.policyOwnerPay(agent.vaultAddress, settleTo, total)
       : await settlement.policyPay(agent.vaultAddress, settleTo, total)
     if (res.executed) {
+      // Which authority let this through. Asked ONLY now, with a receipt in hand, and only
+      // on the agent path: `ownerPay` is owner-only and the contract exempts it from the
+      // session-key gate on purpose, so a human override is never labeled session-key no
+      // matter what expiry the vault happens to carry.
+      const bound = humanApproved ? null : await readSessionKeyBound(agent, agent.vaultAddress)
+      const live = bound?.live === true ? bound : null
       ix.status = 'executed_onchain'
       ix.txHash = res.txHash
       ix.explorerUrl = res.explorerUrl
-      ix.enforcedBy = 'onchain-vault'
+      // `session-key` is the narrower, truer claim when the vault proved a live time bound;
+      // `onchain-vault` otherwise, including every case where we could not read one. It is
+      // never widened on an assumption.
+      ix.enforcedBy = live ? 'session-key' : 'onchain-vault'
       // The vault is a contract, so no on-chain Memo is possible here: keep the same
       // structured "why", app-layer and labeled as such.
       stampAppLayerAudit(ix, policyDecision)
-      ix.policyNote = `Settled ${fmt(total)} USDC through the on-chain policy vault (${humanApproved ? 'human override' : 'agent, within policy'}). Reason recorded in the app-layer audit record; the vault contract cannot emit an on-chain Memo.`
-      pushActivity(agent, `On-chain vault settled ${fmt(total)} USDC to ${short(settleTo)} (tx ${short(res.txHash)})`)
+      ix.policyNote = live
+        ? `Settled ${fmt(total)} USDC through the on-chain policy vault under a live session key (agent, within policy). ` +
+          `The vault carried a session-key expiry of ${new Date(live.expiry * 1000).toISOString()} when this settled, and pay() reverts SessionKeyExpired past it. ` +
+          'Reason recorded in the app-layer audit record; the vault contract cannot emit an on-chain Memo.'
+        : `Settled ${fmt(total)} USDC through the on-chain policy vault (${humanApproved ? 'human override' : 'agent, within policy'}). Reason recorded in the app-layer audit record; the vault contract cannot emit an on-chain Memo.`
+      pushActivity(
+        agent,
+        `On-chain vault settled ${fmt(total)} USDC to ${short(settleTo)} (tx ${short(res.txHash)})` +
+          (live ? ' under a live session key' : ''),
+      )
       save(state)
       return ix
     }
     if (res.reverted && VAULT_POLICY_ERRORS.has(res.reason)) {
-      returnToHuman(ix, agent, total, `On-chain policy vault rejected this (${res.reason}); a human must intervene.`, 'onchain-vault')
+      // A SessionKeyExpired revert is the session-key gate itself saying no: the agent's
+      // authority lapsed, which is a different fact from the cap or the allowlist refusing
+      // and needs a different human action. Recorded from the revert alone, so it does not
+      // depend on the read above having worked.
+      const bySessionKey = res.reason === 'SessionKeyExpired'
+      returnToHuman(
+        ix,
+        agent,
+        total,
+        bySessionKey
+          ? 'The agent session key has expired on-chain (SessionKeyExpired); nothing settled. A human must extend or revoke the session key, or approve this payment as an owner override.'
+          : `On-chain policy vault rejected this (${res.reason}); a human must intervene.`,
+        bySessionKey ? 'session-key' : 'onchain-vault',
+      )
       pushActivity(agent, `On-chain vault rejected ${fmt(total)} USDC to ${short(settleTo)}: ${res.reason}`)
       save(state)
       return ix

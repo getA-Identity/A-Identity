@@ -18,24 +18,34 @@ import { SectionShell, SectionIntro, reveal, revealAt } from '../ui/section'
 
 const GUARDRAIL_URL = 'https://a-identity-backend.onrender.com/api/guardrail-status'
 
+/**
+ * Three claims, three pictures, two lines each.
+ *
+ * The cards used to be a 40px icon tile over a four-line paragraph, which is a lot of
+ * reading for a section whose whole argument is that the containment is simple. Each one
+ * now leads with the brand still that already meant its idea (the vault for custody, the
+ * guardrail for the cap, the barrier gate for the human), and the copy is cut to the two
+ * lines a reader actually finishes. Nothing was softened: the vault, the three checks and
+ * the auto-approve line are the same three facts, said shorter.
+ */
 const CARDS = [
   {
     Icon: KeyRound,
     title: 'We never hold your keys',
     body:
-      'There is no endpoint that accepts a private key, a recovery phrase or brokerage credentials, because we never want to be the reason someone loses them. Funds stay in your own wallet or account.',
+      'No endpoint takes a private key, a recovery phrase or brokerage credentials. Funds stay in your own wallet.',
   },
   {
     Icon: Layers,
     title: 'One limit, enforced three times',
     body:
-      'A cap you set is checked by the server before anything moves, again by your on-chain vault (an over-limit payment reverts on Arc, whoever signs it), and again by Circle at the wallet layer. Any one of them can refuse.',
+      'A cap you set is checked by our server, by your on-chain vault, and by Circle at the wallet layer. Any one of them can refuse.',
   },
   {
     Icon: UserCheck,
     title: 'A human stays in the tower',
     body:
-      'Anything above the auto-approve line waits for a person. The agent can work at machine speed inside the line you drew and cannot argue its way past it, because the rules are checked outside the model.',
+      'Above the auto-approve line, a person signs. The rules run outside the model, so the agent cannot argue past them.',
   },
 ]
 
@@ -69,8 +79,8 @@ export default function Safety() {
         }
         lede={
           <Lede>
-            An agent that can move money is only as safe as what stops it. Here is exactly what
-            stops it, and how to check that we are telling the truth.
+            An agent that can move money is only as safe as what stops it. Here is what stops
+            it, and how to check us.
           </Lede>
         }
       />
@@ -82,11 +92,11 @@ export default function Safety() {
             {...revealAt(i)}
             className="rounded-2xl border border-border bg-card p-6"
           >
-            <span className="grid h-10 w-10 place-items-center rounded-xl border border-border bg-background/60 text-accent">
-              <Icon size={18} />
-            </span>
-            <h3 className="mt-4 text-lg font-bold tracking-tight text-foreground">{title}</h3>
-            <p className="mt-2 text-sm leading-relaxed text-foreground/55">{body}</p>
+            <h3 className="flex items-start gap-2 text-lg font-bold tracking-tight text-foreground">
+              <Icon size={18} className="mt-1 shrink-0 text-accent" aria-hidden="true" />
+              {title}
+            </h3>
+            <p className="mt-2 text-sm leading-relaxed text-foreground/70">{body}</p>
           </motion.div>
         ))}
       </div>
@@ -103,9 +113,9 @@ export default function Safety() {
             <Radio size={17} className="text-accent" />
             Check the engine yourself
           </h3>
-          <p className="mt-2 max-w-[52ch] text-sm leading-relaxed text-foreground/55">
-            This endpoint runs the real policy engine on request and answers 503 if it is not
-            enforcing. You do not have to take our word for whether the guardrails are up.
+          <p className="mt-2 max-w-[52ch] text-sm leading-relaxed text-foreground/70">
+            This endpoint runs the real policy engine on request, and answers 503 when it is
+            not enforcing. No need to take our word for it.
           </p>
           <div className="mt-4 flex flex-wrap items-center gap-x-5 gap-y-3">
             <button
@@ -147,7 +157,7 @@ export default function Safety() {
         </div>
 
         <div className="rounded-xl border border-border bg-background/50 p-5">
-          <p className="font-mono text-[10px] uppercase tracking-[0.16em] text-foreground/40">
+          <p className="font-mono text-[10px] uppercase tracking-[0.16em] text-foreground/60">
             What we are careful to say
           </p>
           <ul className="mt-3 flex flex-col gap-2.5 text-sm leading-relaxed text-foreground/60">

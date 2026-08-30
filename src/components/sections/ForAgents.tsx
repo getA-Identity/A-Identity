@@ -78,7 +78,7 @@ export default function ForAgents() {
           <h3 className="text-lg font-bold tracking-tight text-foreground">
             Ask an AI about {APP_NAME}
           </h3>
-          <p className="mt-2 text-sm leading-relaxed text-foreground/55">
+          <p className="mt-2 text-sm leading-relaxed text-foreground/70">
             Each link opens the assistant with the question and this site's URL already in the
             box, so the answer comes from our own words.
           </p>
@@ -106,7 +106,7 @@ export default function ForAgents() {
           <h3 className="text-lg font-bold tracking-tight text-foreground">
             Paste this into your agent
           </h3>
-          <p className="mt-2 text-sm leading-relaxed text-foreground/55">
+          <p className="mt-2 text-sm leading-relaxed text-foreground/70">
             It connects our MCP server and runs one real verification, so the first thing your
             agent does with us is check somebody.
           </p>
@@ -155,11 +155,11 @@ export default function ForAgents() {
                 {name}
                 <ArrowUpRight
                   size={12}
-                  className="text-foreground/35 transition-transform group-hover:-translate-y-px group-hover:translate-x-px"
+                  className="text-foreground/60 transition-transform group-hover:-translate-y-px group-hover:translate-x-px"
                 />
               </span>
             </span>
-            <p className="mt-3 text-sm leading-relaxed text-foreground/55">{body}</p>
+            <p className="mt-3 text-sm leading-relaxed text-foreground/70">{body}</p>
           </a>
         ))}
       </motion.div>

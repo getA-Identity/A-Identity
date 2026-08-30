@@ -1,12 +1,13 @@
 /**
  * Services tab pane of the agent profile: what the agent sells, with per-row
- * glyphs from serviceIcon, payment-rail chips, and the Hire link. Extracted
- * verbatim from AgentProfile.tsx; must keep the null-services skeleton state
- * and the exact section root element (rendered inside the cn-pane div).
+ * glyphs from serviceIcon, payment-rail chips, the USDC mark on the price, and the
+ * Hire link. Extracted from AgentProfile.tsx; must keep the null-services skeleton
+ * state and the exact section root element (rendered inside the cn-pane div).
  */
 import { Link } from 'react-router-dom'
 import { Star } from 'lucide-react'
 import { Skeleton } from '../../ui/skeleton'
+import TokenLogo from '../marketplace/TokenLogo'
 import { serviceIcon, type CatalogService } from './types'
 
 type Props = {
@@ -58,7 +59,13 @@ export default function ServicesPane({ services, payments }: Props) {
                   ))}
                 </div>
                 <div className="text-right">
-                  <div className="text-sm font-bold tabular-nums text-foreground">{sv.priceUsd.toFixed(2)} USDC</div>
+                  {/* The escrow locks USDC, so the coin beside the amount is the real
+                      settlement asset. The symbol stays in text for anyone who cannot
+                      see the mark. */}
+                  <div className="flex items-center justify-end gap-1.5 text-sm font-bold tabular-nums text-foreground">
+                    <TokenLogo symbol="USDC" size={15} />
+                    {sv.priceUsd.toFixed(2)} USDC
+                  </div>
                   <div className="text-[11px] text-foreground/45">{sv.unit}</div>
                 </div>
                 <Link

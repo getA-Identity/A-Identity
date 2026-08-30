@@ -1,6 +1,6 @@
 import { AnimatePresence, motion } from 'framer-motion'
 import { X } from 'lucide-react'
-import Logo from './Logo'
+import { Lockup } from './Logo'
 import AuthButtons from './AuthButtons'
 import { EASE_OUT_EXPO, NAV_LINKS } from '../lib/brand'
 
@@ -56,7 +56,10 @@ export default function MobileMenu({ open, onClose }: MobileMenuProps) {
           >
             {/* Header: logo + close */}
             <div className="flex items-center justify-between px-6 py-5 text-foreground">
-              <Logo fill="currentColor" />
+              {/* The sheet used to open on a bare mark, which is the one place the brand
+                  never got to say its own name. The lockup does, in the cut that matches
+                  the theme. */}
+              <Lockup height={38} />
               <button
                 type="button"
                 onClick={onClose}

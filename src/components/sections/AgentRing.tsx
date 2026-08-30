@@ -25,9 +25,22 @@ import { EASE_OUT_EXPO } from '../../lib/brand'
  * faking a receipt.
  */
 
-type OnchainAgent = {
+export type OnchainAgent = {
   chain: ChainId
   tokenId: string
+  /**
+   * Which of OUR agents this registration belongs to, taken from what the registration
+   * itself carries rather than from how we would like to group them.
+   *
+   * Robinhood Chain, Arbitrum One, Base, Celo and the Robinhood Chain rehearsal all point
+   * their tokenURI at https://a-identity.xyz/.well-known/agent-card.json, so they are one
+   * identity registered in several places, and the two X Layer entries are that same
+   * oracle's OKX.AI listings. Arc #849980 points at its own inline Meridian metadata, so
+   * it is a different agent here even though the agent card lists it among the oracle's
+   * registrations; where the two disagree the token wins. Grouping on this field is what
+   * lets the vitrine name the networks an agent is on without inventing the claim.
+   */
+  identity: string
   owner: string
   tx?: string
   note: string
@@ -35,14 +48,18 @@ type OnchainAgent = {
   anchor?: { score: number; tx: string }
 }
 
+/** The agent whose tokenURI is the A-Identity agent card: one identity, many registries. */
+const ORACLE = 'A-Identity Trust Oracle'
+
 const OWNER_EVM = '0xd305607510E0Db2c95807173c7A05BEA53c1ed36'
 const OWNER_OKX = '0x169ead25d35c146f3f3a7d2936ae37eab2e256d1'
 const OWNER_CELO = '0xF43F43D8aee114a71B164e1f6214BC7625a5742D'
 
-const AGENTS: OnchainAgent[] = [
+export const OUR_AGENTS: OnchainAgent[] = [
   {
     chain: 'arc',
     tokenId: '849980',
+    identity: 'Meridian',
     owner: OWNER_EVM,
     tx: '0x506b125f3a0481667e3a00dcb86f48cbcaa35c643af963365e9389b06a8f8e54',
     note: 'Meridian. KYA attested on-chain.',
@@ -53,6 +70,7 @@ const AGENTS: OnchainAgent[] = [
   {
     chain: 'base',
     tokenId: '73232',
+    identity: ORACLE,
     owner: OWNER_EVM,
     tx: '0xb428bf8e79df3c44157c134df1858eb75fe3758b74868445c1dcd07948705bf0',
     note: 'Reputation anchored by our oracle validator.',
@@ -63,6 +81,7 @@ const AGENTS: OnchainAgent[] = [
   {
     chain: 'rhchain',
     tokenId: '0',
+    identity: ORACLE,
     owner: OWNER_EVM,
     tx: '0x602ce85ad044836b39918311a3031dcd689e4be0d23aed9ed0ac9227d46ec79e',
     note: "The registry's first mint, and it is ours.",
@@ -73,6 +92,7 @@ const AGENTS: OnchainAgent[] = [
   {
     chain: 'arbitrum',
     tokenId: '1259',
+    identity: ORACLE,
     owner: OWNER_EVM,
     tx: '0x23275840eb9a8b85a752769c113109a753f39b592236c85093cf94f6a517b2f3',
     note: 'Reputation anchored by our oracle validator.',
@@ -83,6 +103,7 @@ const AGENTS: OnchainAgent[] = [
   {
     chain: 'xlayer',
     tokenId: '6271',
+    identity: ORACLE,
     owner: OWNER_OKX,
     tx: '0x03a614a902ed742526047dffa165378cb16350a81bf083d4672f6d7a9ecfb078',
     note: 'Listed on OKX.AI. The live paid Trust Oracle.',
@@ -92,6 +113,7 @@ const AGENTS: OnchainAgent[] = [
   {
     chain: 'xlayer',
     tokenId: '8913',
+    identity: ORACLE,
     owner: OWNER_OKX,
     note: 'Second listing on the same registry.',
     mission:
@@ -100,6 +122,7 @@ const AGENTS: OnchainAgent[] = [
   {
     chain: 'celo',
     tokenId: '9759',
+    identity: ORACLE,
     owner: OWNER_CELO,
     tx: '0x0a821026621e5b35ff5602f81348b276b0d0f1b61a3892365658295fc5bcb22e',
     note: 'The identity behind the Celo x402 rail.',
@@ -109,6 +132,7 @@ const AGENTS: OnchainAgent[] = [
   {
     chain: 'rhchain-testnet',
     tokenId: '0',
+    identity: ORACLE,
     owner: OWNER_EVM,
     tx: '0x20918ec68186bd4aaee7c36d33d0383f1bc6a2bc921e72e3b812d034da5212fd',
     note: 'Full registry family, rehearsed first.',
@@ -131,7 +155,7 @@ const short = (addr: string) => `${addr.slice(0, 6)}...${addr.slice(-4)}`
 function FactRow({ label, value, href }: { label: string; value: string; href?: string }) {
   return (
     <div className="flex items-center justify-between gap-2 py-1.5">
-      <span className="text-[10px] text-foreground/55">{label}</span>
+      <span className="text-[10px] text-foreground/70">{label}</span>
       {href ? (
         <a
           href={href}
@@ -211,8 +235,8 @@ function AgentCard({
           <div className="flex h-[38%] w-full flex-col justify-between bg-card p-4">
             <div className="flex items-start justify-between gap-2">
               <p className="text-[11px] leading-snug text-foreground/65">{agent.note}</p>
-              <span className="shrink-0 font-mono text-[10px] text-foreground/45">
-                [{index + 1}/{AGENTS.length}]
+              <span className="shrink-0 font-mono text-[10px] text-foreground/60">
+                [{index + 1}/{OUR_AGENTS.length}]
               </span>
             </div>
             <div className="flex items-end justify-between">
@@ -313,8 +337,8 @@ function Ring({
       onClear()
     }, 3500)
   }
-  const step = 360 / AGENTS.length
-  const glow = `linear-gradient(100deg, ${AGENTS.map((a) => CHAIN_BY_ID[a.chain].color).join(', ')})`
+  const step = 360 / OUR_AGENTS.length
+  const glow = `linear-gradient(100deg, ${OUR_AGENTS.map((a) => CHAIN_BY_ID[a.chain].color).join(', ')})`
   return (
     <div ref={measureRef} className="relative w-full" style={{ height: STAGE_H * scale }}>
       <div
@@ -342,7 +366,7 @@ function Ring({
           style={{ background: glow }}
         />
         <div ref={ref} className="absolute inset-0" style={{ transformStyle: 'preserve-3d' }}>
-          {AGENTS.map((a, i) => (
+          {OUR_AGENTS.map((a, i) => (
             <div
               key={keyOf(a)}
               className="absolute left-1/2 top-1/2"
@@ -373,7 +397,7 @@ export default function AgentRing() {
         <h3 className="text-xl font-bold tracking-tight" style={{ fontFamily: 'var(--font-heading)' }}>
           Every identity we hold
         </h3>
-        <span className="font-mono text-xs text-foreground/55">
+        <span className="font-mono text-xs text-foreground/70">
           8 agents · 7 networks · turn a card over for its story
         </span>
       </div>
@@ -387,7 +411,7 @@ export default function AgentRing() {
           reduced ? 'md:mx-0 md:px-0' : 'md:hidden'
         }`}
       >
-        {AGENTS.map((a, i) => (
+        {OUR_AGENTS.map((a, i) => (
           <AgentCard
             key={keyOf(a)}
             agent={a}

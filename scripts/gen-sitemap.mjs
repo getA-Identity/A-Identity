@@ -7,8 +7,13 @@
  * for the whole site rather than having to render every page to find a link tag
  * in a client-side head.
  *
- * Static routes are listed here; blog posts are read from src/lib/blog.ts so a
- * new post cannot be published and then quietly left out of the sitemap.
+ * Only routes with no data behind them are listed by hand. Blog posts come from
+ * src/lib/blog.ts and use cases from src/lib/usecases.ts, so a new post or a new
+ * use case cannot be published and then quietly left out. That is not a
+ * hypothetical: five of the eight use cases rendered, were linked, and were in
+ * neither this file nor the prerender snapshot (scripts/prerender.mjs reads its
+ * route list back out of the sitemap), so a crawler that does not run JavaScript
+ * saw an empty shell on every one of them.
  *
  * Run:   node scripts/gen-sitemap.mjs
  * Check: node scripts/gen-sitemap.mjs --check
@@ -21,6 +26,37 @@ const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..')
 const OUT = join(ROOT, 'public/sitemap.xml')
 const BASE = 'https://a-identity.xyz'
 
+const read = (rel) => readFileSync(join(ROOT, rel), 'utf8')
+
+/**
+ * The `slug:` values out of one of the src/lib data modules.
+ *
+ * Reading the source rather than importing it: these files are TSX-free but still
+ * TypeScript, and a build step just to list slugs would be worse than a regex over
+ * a file whose shape we control. The four-space indent is part of that contract, so
+ * a refactor that changes it fails loudly here instead of silently dropping pages
+ * out of the sitemap and out of the prerender that reads it.
+ */
+function slugsIn(rel, source) {
+  const slugs = [...source.matchAll(/^\s{4}slug: '([a-z0-9-]+)',/gm)].map((m) => m[1])
+  if (slugs.length === 0) {
+    throw new Error(`found no slugs in ${rel}; the parser in scripts/gen-sitemap.mjs needs updating`)
+  }
+  return slugs
+}
+
+const blog = read('src/lib/blog.ts')
+const slugs = slugsIn('src/lib/blog.ts', blog)
+const useCases = slugsIn('src/lib/usecases.ts', read('src/lib/usecases.ts'))
+
+/** Does this post have a Turkish rendering? Detected by a `tr:` key inside its object. */
+const objects = blog.split(/^\s{2}\{$/m)
+const translated = new Set()
+for (const chunk of objects) {
+  const m = chunk.match(/^\s{4}slug: '([a-z0-9-]+)',/m)
+  if (m && /^\s{4}tr: \{/m.test(chunk)) translated.add(m[1])
+}
+
 /** path, changefreq, priority. Ordered by how much we want them crawled. */
 const STATIC = [
   ['/', 'weekly', '1.0'],
@@ -29,9 +65,7 @@ const STATIC = [
   ['/tr/blog', 'weekly', '0.8'],
   ['/manifesto', 'monthly', '0.7'],
   ['/architecture', 'monthly', '0.7'],
-  ['/use-cases/pay-per-data-call', 'monthly', '0.7'],
-  ['/use-cases/gpu-hours-rented-by-agent', 'monthly', '0.7'],
-  ['/use-cases/idle-usdc-parked-in-usyc', 'monthly', '0.7'],
+  ...useCases.map((slug) => [`/use-cases/${slug}`, 'monthly', '0.7']),
   ['/contact', 'monthly', '0.6'],
   ['/explorer', 'weekly', '0.6'],
   ['/signup', 'yearly', '0.5'],
@@ -46,21 +80,6 @@ const STATIC = [
   ['/proof/stellar', 'weekly', '0.6'],
   ['/proof/algorand', 'weekly', '0.6'],
 ]
-
-// Read the posts out of the source rather than importing it: blog.ts is TSX-free
-// but still TypeScript, and a build step just to list slugs would be worse than
-// a regex over a file whose shape we control.
-const blog = readFileSync(join(ROOT, 'src/lib/blog.ts'), 'utf8')
-const slugs = [...blog.matchAll(/^\s{4}slug: '([a-z0-9-]+)',/gm)].map((m) => m[1])
-if (slugs.length === 0) throw new Error('found no post slugs in src/lib/blog.ts; the parser needs updating')
-
-/** Does this post have a Turkish rendering? Detected by a `tr:` key inside its object. */
-const objects = blog.split(/^\s{2}\{$/m)
-const translated = new Set()
-for (const chunk of objects) {
-  const m = chunk.match(/^\s{4}slug: '([a-z0-9-]+)',/m)
-  if (m && /^\s{4}tr: \{/m.test(chunk)) translated.add(m[1])
-}
 
 const esc = (s) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;')
 
@@ -124,9 +143,13 @@ if (process.argv.includes('--check')) {
     console.error('sitemap.xml is stale. Run: node scripts/gen-sitemap.mjs')
     process.exit(1)
   }
-  console.log(`sitemap is current (${entries.length} urls, ${translated.size} translated posts)`)
+  console.log(
+    `sitemap is current (${entries.length} urls, ${useCases.length} use cases, ${translated.size} translated posts)`,
+  )
 } else {
   writeFileSync(OUT, xml)
   console.log(`wrote ${OUT}`)
-  console.log(`  ${entries.length} urls, ${slugs.length} posts, ${translated.size} with a Turkish version`)
+  console.log(
+    `  ${entries.length} urls, ${slugs.length} posts, ${translated.size} with a Turkish version, ${useCases.length} use cases`,
+  )
 }

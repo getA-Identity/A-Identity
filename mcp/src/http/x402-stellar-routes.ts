@@ -37,6 +37,7 @@ import {
   stellarRailServeTool,
   stellarRailStatus,
   type RailToolName,
+  stellarRailPaymentHeader,
 } from '../x402-stellar/rail.js'
 import type { TxContext } from '../asp/tools.js'
 import { readBody, sendJson, type RouteCtx, sendChallenge } from './shared.js'
@@ -220,7 +221,9 @@ export async function handleX402StellarRoutes(ctx: RouteCtx): Promise<boolean> {
     return true
   }
 
-  const header = String(req.headers['x-payment'] ?? '')
+  // A v2 buyer sends PAYMENT-SIGNATURE, a v1 buyer sends X-PAYMENT. The rail owns that
+  // aliasing so the two transports cannot drift apart here and there.
+  const header = stellarRailPaymentHeader(req.headers)
   if (!header) {
     const challenge = stellarRailChallenge(tool, status)
     sendChallenge(res, challenge.httpStatus, challenge.body)
@@ -239,6 +242,9 @@ export async function handleX402StellarRoutes(ctx: RouteCtx): Promise<boolean> {
     header,
     status,
   )
+  // A settled call carries its receipt in PAYMENT-RESPONSE, which is where a reference
+  // client looks for it. sendChallenge owns the 402 body and header pair, nothing else.
+  for (const [k, v] of Object.entries(out.headers ?? {})) res.setHeader(k, v)
   sendChallenge(res, out.httpStatus, out.body)
   return true
 }

@@ -47,10 +47,14 @@ switch.
 ## Not a demo. Live and earning.
 
 - The Trust Oracle is live on OKX.AI as agent **#6271**, selling per-call checks
-  that settle in real USD₮0 on X Layer mainnet. **120 settlements to date**, each
-  one listed with its transaction hash at
+  in real USD₮0: **120 x402 settlements on X Layer mainnet** to date, each one
+  listed with its transaction hash at
   <https://a-identity-asp.onrender.com/proof>.
-- A second rail settles on **Circle Arc testnet** through Circle Gateway's
+- Five more mainnets carry settlements of their own: Robinhood Chain, Arbitrum
+  One, Base, Stellar pubnet and Algorand. Every rail is counted on its own proof
+  page at `https://a-identity.xyz/proof/:rail` and never summed with the others,
+  because one figure covering several rails is a figure about none of them.
+- A gasless rail settles on **Circle Arc testnet** through Circle Gateway's
   batched nanopayments: the buyer signs an EIP-3009 authorization off-chain and
   pays no gas. On Arc the gas token is USDC itself.
 - Circle Arc is a public **testnet**. Real contracts, real transactions, test
@@ -90,37 +94,50 @@ there.
 
 ## The questions worth asking first
 
-**Does A-Identity touch my money or hold my keys?**
-No. The wallet is yours and stays yours. We generate the policy, you hold the
-key that signs.
+**Do you hold my keys, move my money, or see my portfolio?**
+No to all three. There is no endpoint that accepts your brokerage
+credentials: we never hold a key, never move a dollar, and never place the
+order. Your agent asks whether an action is inside the limits you set, we
+answer allow, ask a human or no, and the account stays exactly where it was.
+Account state arrives with the question and is never stored. The decision
+log keeps a hash of it instead, so a refusal stays auditable and your
+positions stay yours.
 
 **Can the agent talk its way past the limits?**
-No, because the limit is not enforced in the place the agent is talking to. The
-on-chain vault reverts an over-limit payment regardless of what our server was
-persuaded of.
+No, because the limits are not a prompt: they are checked outside the model,
+on every path that moves money rather than only on orders. A recurring buy,
+an account setting, money wired out, a cancelled protective position: that
+last one is where naive guardrails leak, because an agent blocked from
+buying can simply schedule the buy instead. A refusal cannot be overwritten,
+and attempts to overwrite one are counted rather than quietly rejected.
 
 **What happens if you go down while my agent is running?**
-The on-chain limits keep holding, because they do not depend on us being up. The
-convenience layer degrades; the safety layer does not.
+Nothing of ours can break a trade, because we are not in the execution path.
+When our own package cannot get a verdict it refuses to act rather than
+guessing, which is the safe direction to fail in. You do not have to take
+our word for whether the engine is up: this endpoint
+(https://a-identity-backend.onrender.com/api/guardrail-status) runs the real
+engine on request and answers 503 if it is not enforcing, and a monitor
+checks it every hour.
 
-**Do you see my portfolio?**
-No. The guardrail check reports bands only. Caps, allowlists, symbols, amounts
-and holdings are never disclosed.
+**Is this live, and what does it cover today?**
+Live, on brokerage trading and card spending. Here is the part most products
+would hide: the public counters read zero, because the engine is enforcing
+but no live agent has produced a decision yet, and we would rather show a
+zero you can verify on the public endpoint
+(https://a-identity-backend.onrender.com/api/traction) than a number you
+cannot reproduce. Two honest limits: on a card we can refuse a charge before
+it happens but we cannot stop an agent that already holds the card number,
+and prediction markets are designed and deliberately not built.
 
-**Is this live, or a demo?**
-Both, honestly. Real revenue on X Layer mainnet, real contracts on Arc testnet.
-Public policy counters currently read zero because no live agent has produced a
-production decision yet, and we publish the zero rather than a number nobody can
-reproduce.
-
-**What does it actually cover today?**
-Identity reads run on every chain that carries an ERC-8004 registry: Arc, X Layer,
-Celo, Arbitrum One, Robinhood Chain, and the Celo Sepolia and Robinhood testnets.
-Reputation, risk and guardrails sit on top of those reads. Escrow and the
-spend-policy vault are on Arc; paid tools settle on X Layer and Celo through their
-facilitators, and on Robinhood Chain and Arbitrum One through our own. Other chains
-are adapted rather than hardcoded, and stay marked planned until something is
-actually deployed.
+**Which chains can my agent pay on today?**
+Seven networks settle real money today: OKX X Layer, Robinhood Chain,
+Arbitrum One, Base, Celo, Stellar and, newest, Algorand, where x402 v2
+payments are gasless for the buyer: it signs a fee-zero USDC transfer and
+the pooled group fee covers it. Two testnet mirrors rehearse every change
+first. Every chain publishes a proof page with real transactions
+(https://a-identity.xyz/proof/algorand is the newest), and a chain is only
+called live here after a real payment has been recorded on it.
 
 ## Get started
 

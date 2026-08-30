@@ -5,6 +5,9 @@ import { authHeaders } from '../../../store/auth'
 import { apiFetch, readJson, explainError } from '../../../lib/api'
 import { BACKEND_UNREACHABLE } from '../../../lib/mcpBase'
 import { Skeleton } from '../../ui/skeleton'
+import { categoryDescription, hireBriefPlaceholder } from '../agent/register-constants'
+import { ChainRow } from './AgentCardChrome'
+import TokenLogo from './TokenLogo'
 
 /**
  * The trusted-worker catalog: hire a KYA-verified agent for a service, USDC to an on-chain
@@ -16,6 +19,15 @@ type CatalogService = {
   agentName: string
   category: string
   service: string
+  /** This service's own copy. Null when the service declares none, which is every service
+   *  today: a stored service is name + price + unit, so the row falls back to the seller's
+   *  description below and says whose words those are. */
+  description: string | null
+  /** The seller agent's own description. Empty when the owner wrote none. */
+  agentDescription: string
+  /** Every network the seller is registered on, as chain slugs, identity chain first.
+   *  Optional so an older backend degrades to no chip rather than an empty one. */
+  chains?: string[]
   priceUsd: number
   unit: string
   rating: number
@@ -280,6 +292,7 @@ export default function WorkerCatalog() {
               <div className="min-w-0 flex-1 space-y-2">
                 <Skeleton className="h-4 w-40" />
                 <Skeleton className="h-3 w-56" />
+                <Skeleton className="h-3 w-44" />
               </div>
               <Skeleton className="hidden h-3 w-24 sm:block" />
               <div className="flex shrink-0 flex-col items-end gap-1.5">
@@ -325,6 +338,20 @@ export default function WorkerCatalog() {
                   <div className="mt-0.5 truncate text-xs text-foreground/45">
                     by {svc.agentName} · {svc.category}
                   </div>
+                  {/* The row's copy. The service's own words when it has any; otherwise
+                      the seller's, attributed so nobody reads a description of the AGENT
+                      as a description of this one service. Neither exists: say so. */}
+                  {svc.description ? (
+                    <p className="mt-1 line-clamp-2 text-xs leading-relaxed text-foreground/55">{svc.description}</p>
+                  ) : svc.agentDescription ? (
+                    <p className="mt-1 line-clamp-2 text-xs leading-relaxed text-foreground/55">
+                      <span className="font-semibold text-foreground/45">About {svc.agentName}:</span>{' '}
+                      {svc.agentDescription}
+                    </p>
+                  ) : (
+                    <p className="mt-1 text-xs text-foreground/40">No description yet.</p>
+                  )}
+                  {svc.chains && svc.chains.length > 0 && <ChainRow chains={svc.chains} className="mt-1.5" />}
                 </div>
 
                 <div className="hidden items-center gap-1.5 text-xs text-foreground/50 sm:flex">
@@ -335,7 +362,13 @@ export default function WorkerCatalog() {
                 </div>
 
                 <div className="shrink-0 text-right">
-                  <div className="text-sm font-bold tabular-nums text-foreground">{svc.priceUsd.toFixed(2)} USDC</div>
+                  {/* The escrow locks USDC, so the coin beside the amount is the real
+                      settlement asset, not decoration. The symbol stays in text for
+                      anyone who cannot see the mark. */}
+                  <div className="flex items-center justify-end gap-1.5 text-sm font-bold tabular-nums text-foreground">
+                    <TokenLogo symbol="USDC" size={15} />
+                    {svc.priceUsd.toFixed(2)} USDC
+                  </div>
                   <div className="text-[11px] text-foreground/40">{svc.unit}</div>
                 </div>
 
@@ -368,9 +401,17 @@ export default function WorkerCatalog() {
                     value={open ? desc : ''}
                     onChange={(e) => setDesc(e.target.value)}
                     rows={3}
-                    placeholder={`What should ${svc.agentName} do? (e.g. "Translate this paragraph to French")`}
+                    placeholder={hireBriefPlaceholder(svc.agentName, svc.category)}
                     className="w-full resize-none rounded-xl border border-border bg-background px-3 py-2 text-sm text-foreground placeholder:text-foreground/40"
                   />
+                  {/* What this category of worker does, so the brief above is written for
+                      the right kind of job. Nothing is shown for a category we have no
+                      copy for, rather than a guess at what it sells. */}
+                  {categoryDescription(svc.category) && (
+                    <p className="mt-1.5 text-[11px] text-foreground/45">
+                      {svc.category}: {categoryDescription(svc.category)}
+                    </p>
+                  )}
                   <div className="mt-2 flex items-center gap-2">
                     <button
                       type="button"
@@ -381,7 +422,8 @@ export default function WorkerCatalog() {
                       {busy === key ? <Loader2 size={14} className="animate-spin" /> : null}
                       Fund escrow &amp; hire
                     </button>
-                    <span className="text-[11px] text-foreground/40">
+                    <span className="inline-flex items-center gap-1 text-[11px] text-foreground/40">
+                      <TokenLogo symbol="USDC" size={12} />
                       {svc.priceUsd.toFixed(2)} USDC locks in escrow, released on delivery.
                     </span>
                   </div>

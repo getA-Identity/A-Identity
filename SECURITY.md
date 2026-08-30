@@ -9,16 +9,19 @@ What is accurate today, and what the registry
 ([`mcp/src/chains/registry.ts`](mcp/src/chains/registry.ts)) will confirm, because it is the
 single source of truth and a test fails the build if any other file disagrees:
 
-- **11 chains, 7 of them mainnet.** Four mainnets are `live` and carry our own traffic:
-  OKX X Layer, Celo, Robinhood Chain and Arbitrum One. Base and **Stellar pubnet** are
-  `beta` on mainnet, and Avalanche is `planned`. Stellar pubnet is beta rather than live on
-  purpose: a spend vault is deployed there and real USDC has moved under its policy, but no
-  paid call sells there yet.
-- **Circle Arc is testnet and is still the `live` phase-1 network.** Both statements hold;
-  Arc being test money is not a statement about the other six.
-- **Money moves.** x402 calls settle in real USD₮0 on X Layer, real Circle USDC on Celo and
-  Arbitrum One, and USDG on Robinhood Chain. The Stellar rail settles SEP-41 USDC on
-  testnet.
+- **13 chains, 8 of them mainnet.** Seven of those mainnets are `live` and carry our own
+  traffic: OKX X Layer, Celo, Robinhood Chain, Arbitrum One, **Base**, **Stellar pubnet**
+  and **Algorand**. Avalanche is the only `planned` entry, and every `beta` entry is a
+  testnet mirror (Stellar, Algorand, Robinhood Chain, Celo Sepolia). Base and Stellar pubnet
+  were listed here as "mainnet (`beta`)" until 2026-08-30, days after both went live and
+  both started settling real value. That understated the blast radius of two keys, which is
+  the only direction this document must never be wrong in.
+- **Circle Arc is testnet and is still `live`.** Both statements hold; Arc being test money
+  is not a statement about the seven mainnets.
+- **Money moves.** x402 calls settle in real USD₮0 on X Layer, real Circle USDC on Celo,
+  Arbitrum One and Base, USDG (Paxos Global Dollar) on Robinhood Chain, SEP-41 USDC on
+  Stellar (pubnet since 2026-08-28, and testnet), and the Circle USDC ASA on Algorand
+  mainnet (since 2026-08-30).
 - **We hold no user keys.** Agent wallet keys are generated in the browser
   ([`src/components/app/agent/RegisterForm.tsx`](src/components/app/agent/RegisterForm.tsx));
   the server only ever sees public addresses. That part of the old text was and remains
@@ -30,7 +33,7 @@ single source of truth and a test fails the build if any other file disagrees:
 
 Our facilitators run a "the buyer signs, we broadcast and pay the gas" model. That means
 **every signer below is a hot wallet**: it sits in the host environment, it is used without
-human interaction on each request, and on four of these chains it spends real money. The
+human interaction on each request, and on seven of these chains it spends real money. The
 previous version of this file listed exactly one of them and described it as test funds.
 
 No secret is committed to git. Runtime credentials live in the host env (Render) and, for
@@ -45,9 +48,9 @@ values, such as the WalletConnect project id.
 | `CELO_SIGNER_KEY` | Celo | mainnet | **real value** |
 | `RHCHAIN_SIGNER_KEY` | Robinhood Chain | mainnet | **real value** |
 | `ARB_SIGNER_KEY` | Arbitrum One | mainnet | **real value** |
-| `BASE_SIGNER_KEY` | Base | mainnet (`beta`) | real value if funded |
+| `BASE_SIGNER_KEY` | Base | mainnet | **real value** |
 | `AVAX_SIGNER_KEY` | Avalanche C-Chain | mainnet (`planned`) | real value if funded |
-| `STELLAR_PUBNET_SIGNER_SECRET` | Stellar pubnet | mainnet (`beta`) | **real value** |
+| `STELLAR_PUBNET_SIGNER_SECRET` | Stellar pubnet | mainnet | **real value** |
 | `ALGORAND_MAINNET_SIGNER_MNEMONIC` | Algorand | mainnet | **real value** |
 | `ARC_SIGNER_KEY` | Circle Arc | testnet | test funds |
 | `CELO_SEPOLIA_SIGNER_KEY` | Celo Sepolia | testnet | test funds |
@@ -55,11 +58,15 @@ values, such as the WalletConnect project id.
 | `ALGORAND_TESTNET_SIGNER_MNEMONIC` | Algorand Testnet | testnet | test funds |
 | `STELLAR_TESTNET_SIGNER_SECRET` | Stellar Testnet | testnet | test funds |
 
-The remaining `planned` / `beta` rows are not dormant by nature, only by funding. A key set
-on one of them is a mainnet key the moment somebody sends it gas. Stellar pubnet stopped
-being hypothetical on 2026-08-24: burner keys were funded there, a contract was deployed,
-and 1 USDC moved through it. Those burners are separate from `STELLAR_PUBNET_SIGNER_SECRET`
-and are named in `soroban/releases/pubnet-v0.1.0.json`.
+`AVAX_SIGNER_KEY` is the only row left that is dormant, and it is dormant by funding rather
+than by nature: a key set on it is a mainnet key the moment somebody sends it gas. Stellar
+pubnet stopped being hypothetical on 2026-08-24, when burner keys were funded there, a
+contract was deployed and 1 USDC moved through it, and it stopped being a vault-only story
+on 2026-08-28, when the first x402 sale settled on that network. Those pubnet burners are
+separate from `STELLAR_PUBNET_SIGNER_SECRET` and are named in
+`soroban/releases/pubnet-v0.1.0.json`; the owner account among them was raised to a 2-of-3
+multisig on 2026-08-25, so it is the one key in this document that a single compromise does
+not spend.
 
 ### Payment-rail keys, on top of the chain signers
 
@@ -67,17 +74,18 @@ and are named in `soroban/releases/pubnet-v0.1.0.json`.
 | --- | --- |
 | `X402_3009_SIGNER_KEY` | Broadcaster for the EIP-3009 rail. Overrides the chain signer when set, so it can be the wallet paying gas on Robinhood Chain and Arbitrum One mainnet ([`x402-3009/engine.ts:528`](mcp/src/x402-3009/engine.ts#L528)). |
 | `X402_STELLAR_TESTNET_FEE_PAYER` | Pays the network fee for every Stellar settlement we broadcast. **Live in production since 2026-08-24.** |
-| `X402_STELLAR_PUBNET_FEE_PAYER` | The same role on pubnet. Unset today. |
+| `X402_STELLAR_PUBNET_FEE_PAYER` | The same role on pubnet, and no longer hypothetical: the first mainnet Stellar sale (2026-08-28) was broadcast with it. Whether the hosted deployment carries it is an env question the rail answers itself at `/api/x402/stellar/status`; without it the pubnet rail is fail-closed. |
 | `X402_STELLAR_TESTNET_OZ_KEY` / `X402_STELLAR_PUBNET_OZ_KEY` | OpenZeppelin Channels API keys, the fallback broadcaster. |
 | `CELO_X402_API_KEY` | Gates the Celo paid rail; without it that rail is fail-closed. |
-| `X402_PAY_TO` / `X402_STELLAR_PAYTO` | Receiving addresses. Not secrets, but a wrong value sells to an account nobody controls, so treat edits as privileged. |
+| `X402_PAY_TO` / `X402_STELLAR_PAYTO` / `X402_ALGORAND_PAYTO` (plus the per-network `*_MAINNET_PAYTO` / `*_TESTNET_PAYTO` overrides) | Receiving addresses. Not secrets, but a wrong value sells to an account nobody controls, so treat edits as privileged. |
+| `X402_ALGORAND_FACILITATOR` | Not a key at all, and worth saying so: the Algorand rail has no broadcaster of ours. It settles through the GoPlausible facilitator, which signs the fee payer, so `ALGORAND_MAINNET_SIGNER_MNEMONIC` above covers only our own writes (vault calls, funding). Pointing this at a different host changes who assembles a payment group, which makes it privileged even though it is public. |
 
 ### Service credentials
 
 | Secret | Scope | Notes |
 | --- | --- | --- |
 | `OKX_API_KEY` / `OKX_SECRET_KEY` / `OKX_PASSPHRASE` | OKX exchange API | A full API credential triple, used by [`asp/payment.ts`](mcp/src/asp/payment.ts). Absent from every previous version of this file. |
-| `CIRCLE_API_KEY` / `CIRCLE_ENTITY_SECRET` | Circle | `CIRCLE_ENTITY_SECRET` is the master credential for the developer-controlled wallets. **Re-registering a new entity secret orphans existing wallets** — coordinate before rotating. |
+| `CIRCLE_API_KEY` / `CIRCLE_ENTITY_SECRET` | Circle | `CIRCLE_ENTITY_SECRET` is the master credential for the developer-controlled wallets. **Re-registering a new entity secret orphans existing wallets** - coordinate before rotating. |
 | `PIMLICO_API_KEY` | Arc bundler | With `ARC_SIGNER_KEY`, enables the account-abstraction path. |
 | `RESEND_API_KEY` | Production email | Can send real email from the verified domain. |
 | `AUTH_SECRET` | Session-token signing | Rotating it invalidates all live sessions. |
@@ -88,10 +96,15 @@ and are named in `soroban/releases/pubnet-v0.1.0.json`.
 Priority is by blast radius, and the mainnet signers now sit above everything that used to
 be at the top of this list.
 
-1. **The four live mainnet signers** (`XLAYER_SIGNER_KEY`, `CELO_SIGNER_KEY`,
-   `RHCHAIN_SIGNER_KEY`, `ARB_SIGNER_KEY`) and `X402_3009_SIGNER_KEY`. These hold real
-   value and sign without a human. Sweep the balance to a fresh key, set the new key in the
-   Render env, redeploy, then confirm a settlement lands before considering it done.
+1. **The seven live mainnet signers** (`XLAYER_SIGNER_KEY`, `CELO_SIGNER_KEY`,
+   `RHCHAIN_SIGNER_KEY`, `ARB_SIGNER_KEY`, `BASE_SIGNER_KEY`,
+   `STELLAR_PUBNET_SIGNER_SECRET`, `ALGORAND_MAINNET_SIGNER_MNEMONIC`) and
+   `X402_3009_SIGNER_KEY`. These hold real value and sign without a human. Sweep the balance
+   to a fresh key, set the new key in the Render env, redeploy, then confirm a settlement
+   lands before considering it done. Two of them need a step the EVM keys do not: a fresh
+   Stellar account has to open its USDC trustline and a fresh Algorand account has to opt in
+   to the USDC ASA before either can receive anything, so a rotation that skips it produces
+   failures that read as a product bug.
 2. **`OKX_API_KEY` / `OKX_SECRET_KEY` / `OKX_PASSPHRASE`.** Exchange credentials. Rotate in
    the OKX console; check the key's permission scope while you are there.
 3. **`X402_STELLAR_TESTNET_FEE_PAYER`.** Test funds, but it is now spending on every

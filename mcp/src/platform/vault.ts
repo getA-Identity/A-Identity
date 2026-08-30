@@ -169,12 +169,39 @@ export async function getAgentVault(agentId: string) {
  * the agent's `pay` reverts (SessionKeyExpired). Owner-only on-chain; the server can sign it
  * only when it is the vault owner (owner==operator) - otherwise it's ownerGated (the human
  * signs from their own wallet), mirroring syncVaultPolicy. Revoke sets the expiry to now.
+ *
+ * WHICH key this grants, said plainly because the word "session key" invites the wrong
+ * picture: it is the vault's existing `operator` address, and this call gives that address
+ * a deadline. No key material is created, transmitted or stored by this function, here or
+ * anywhere downstream. That is the whole reason a session key can exist in this product at
+ * all: the private half was never ours to hold, so a time bound is the only thing there is
+ * to grant. The ERC-4337 variant in `aa-wallet.ts`, where the session key is a fresh signer
+ * with its own private key, is deliberately a demo that mints and discards that key inside
+ * one request; persisting it so the server could settle with it later would be secret-at-
+ * rest and autonomous key custody, which this project does not do.
+ *
+ * The returned `sessionKey` is the operator ADDRESS, which is public and already stored on
+ * the agent record. `platform/instructions.ts` reads the resulting expiry back off the
+ * chain and labels settlements it authorised `enforcedBy: 'session-key'`.
  */
 export async function grantAgentSessionKey(
   agentId: string,
   input: { durationHours?: number; expiryUnix?: number; revoke?: boolean },
   caller?: string,
-): Promise<{ granted: boolean; reason?: string; ownerGated?: boolean; sessionKeyExpiry?: number; expiresInSeconds?: number; txHash?: string; explorerUrl?: string }> {
+): Promise<{
+  granted: boolean
+  reason?: string
+  ownerGated?: boolean
+  /** The vault this bound applies to, and the operator address it bounds. Public data. */
+  vaultAddress?: string
+  sessionKey?: string
+  /** Stated on every answer so nobody has to infer it from silence. */
+  custody?: string
+  sessionKeyExpiry?: number
+  expiresInSeconds?: number
+  txHash?: string
+  explorerUrl?: string
+}> {
   const agent = state.agents.find((a) => a.id === agentId)
   if (!agent) return { granted: false, reason: 'Unknown agent' }
   if (!ownsAgent(agent, caller)) return { granted: false, reason: 'Forbidden: not the agent owner' }
@@ -187,18 +214,28 @@ export async function grantAgentSessionKey(
   else if (typeof input.durationHours === 'number' && input.durationHours > 0) expiry = now + Math.floor(input.durationHours * 3600)
   else return { granted: false, reason: 'Provide durationHours (>0), an expiryUnix, or revoke:true.' }
 
+  // Carried on every arm below, including the refusals: the one question an operator is
+  // entitled to have answered without reading the source.
+  const identity = {
+    vaultAddress: agent.vaultAddress,
+    ...(agent.vaultOperator ? { sessionKey: agent.vaultOperator } : {}),
+    custody:
+      'This grants a time bound to the vault operator address. No session-key private key is created, ' +
+      'transmitted or stored by this server.',
+  }
+
   const res = await policySetSessionExpiry(agent.vaultAddress, expiry)
   if (res.executed) {
     pushActivity(agent, input.revoke
       ? `Session key revoked on-chain (tx ${short(res.txHash)})`
       : `Session key granted, expires ${new Date(expiry * 1000).toISOString()} (tx ${short(res.txHash)})`)
     save(state)
-    return { granted: true, sessionKeyExpiry: expiry, expiresInSeconds: input.revoke ? 0 : Math.max(0, expiry - now), txHash: res.txHash, explorerUrl: res.explorerUrl }
+    return { granted: true, ...identity, sessionKeyExpiry: expiry, expiresInSeconds: input.revoke ? 0 : Math.max(0, expiry - now), txHash: res.txHash, explorerUrl: res.explorerUrl }
   }
   if (res.reverted && res.reason === 'NotOwner') {
-    return { granted: false, ownerGated: true, sessionKeyExpiry: expiry, reason: 'The vault owner must sign this from their own wallet (owner ≠ operator).' }
+    return { granted: false, ownerGated: true, ...identity, sessionKeyExpiry: expiry, reason: 'The vault owner must sign this from their own wallet (owner is not the operator).' }
   }
-  return { granted: false, reason: res.reverted ? res.reason : (res.reason ?? 'no signer configured') }
+  return { granted: false, ...identity, reason: res.reverted ? res.reason : (res.reason ?? 'no signer configured') }
 }
 
 export type VaultSyncResult = {

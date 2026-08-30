@@ -1,12 +1,16 @@
 ---
 title: "Bounded Authority"
-description: "A spend limit you set, enforced three independent ways — including an on-chain revert."
+description: "A spend limit you set, enforced three independent ways, including an on-chain revert."
 ---
 
 Identity answers *who* an agent is. **Bounded authority** answers *what it may do
-with money*. In A-Identity, a limit you set on an agent is not a suggestion — it is
+with money*. In A-Identity, a limit you set on an agent is not a suggestion. It is
 enforced in **three independent ways**, so no single layer failing can move value it
 shouldn't. A human in the tower sets the policy and approves anything above it.
+
+<Frame caption="The three layers side by side, with the module each one lives in. Layer 2 is the source of truth because the USDC sits inside the contract, so the cap is enforced by code rather than by a server that could be bypassed. Layers 1 and 3 are a pre-check and a hosted screen around it.">
+  <img src="/images/architecture-enforcement.png" alt="Three cards: server pre-check labelled advisory, on-chain policy vault labelled source of truth, and Circle Agent Wallet labelled hosted screening" />
+</Frame>
 
 ## Three independent enforcement layers
 
@@ -14,12 +18,12 @@ shouldn't. A human in the tower sets the policy and approves anything above it.
   <Step title="Server policy engine (pre-check)">
     The fast first gate: daily cap, auto-approve ceiling, payee allowlist, freeze, and
     the human-approval requirement. Resets at 00:00 UTC. This is a check, not the
-    source of truth — it's the fallback, not the guarantee.
+    source of truth: it is the fallback, not the guarantee.
   </Step>
   <Step title="On-chain policy vault (the source of truth)">
     Each agent can get its own `AgentSpendPolicy` contract on Arc that **holds the USDC
     and enforces the same policy on-chain**. An over-limit `pay()` **reverts on Arc**
-    with a typed error you can read on the explorer — not a server "no". The human
+    with a typed error you can read on the explorer, not a server "no". The human
     owner can override an approved payment, adjust limits, freeze, or withdraw.
   </Step>
   <Step title="Circle Agent Wallet (hosted screening)">
@@ -29,8 +33,8 @@ shouldn't. A human in the tower sets the policy and approves anything above it.
   </Step>
 </Steps>
 
-At settlement, `executeInstruction` routes a payment **vault → Circle → direct**, each
-additive with a fallback — so one layer hitting an infra error never fabricates a
+At settlement, `executeInstruction` routes a payment **vault, then Circle, then direct**, each
+additive with a fallback, so one layer hitting an infra error never fabricates a
 success, and a real policy rejection always stops the payment.
 
 ## The money shot: an on-chain revert
@@ -51,13 +55,13 @@ function pay(address to, uint256 amount) external onlyOperator {
 }
 ```
 
-An agent that tries to overspend doesn't get a server error page — its transaction
+An agent that tries to overspend doesn't get a server error page. Its transaction
 **reverts on Arc**, verifiably, for anyone to check.
 
 <Note>
 **Owner vs operator.** The vault's `owner` is a human wallet (sets policy, overrides,
 freezes, withdraws). The `operator` is the agent's signer (may only `pay` within
-policy). They are genuinely separate keys — the agent can never change its own limits.
+policy). They are genuinely separate keys, and the agent can never change its own limits.
 </Note>
 
 ## What each layer actually enforces
@@ -65,7 +69,7 @@ policy). They are genuinely separate keys — the agent can never change its own
 | Layer | Enforces | Trust model |
 | --- | --- | --- |
 | Server policy engine | Cap, ceiling, allowlist, freeze, approval gate | Fast pre-check / fallback |
-| On-chain vault | The same policy, on Arc — over-limit `pay()` reverts | Trustless source of truth |
+| On-chain vault | The same policy, on Arc, where an over-limit `pay()` reverts | Trustless source of truth |
 | Circle Agent Wallet | Transaction screening (sanctions / allow-block / freeze) | Hosted wallet-layer control |
 
 <Card title="See it on the explorer" icon="link" href="/chains/arc">

@@ -186,7 +186,16 @@ export const TOURS: Record<string, PageTour> = {
       {
         target: 'views',
         title: 'Three views of the market',
-        body: 'Hire a verified worker for a task, browse Agent House, the roster of agents already working on Arc, or check the Leaderboard to see who ranks highest.',
+        body: 'Agent House is the roster of agents already working, across every network we settle on. Hire a worker to put a task out for one, or check the Leaderboard to see who ranks highest.',
+      },
+      {
+        // Agent House is the view the market opens on, so this is the only step
+        // besides the switch itself that a first visit is guaranteed to see. The
+        // two below live on the Hire tab and ConsoleTour drops a step whose
+        // target is not on screen.
+        target: 'roster',
+        title: 'Who is already here',
+        body: 'Every card is a real registered agent: the networks it is registered on, what it charges, and whether its identity is anchored on-chain or still queued.',
       },
       {
         target: 'catalog',

@@ -110,7 +110,7 @@ function Step({
         {index}
       </span>
       <p className="pt-0.5 text-[15px] font-semibold leading-7 text-foreground">{title}</p>
-      <p className="mt-0.5 text-sm text-foreground/50">{sub}</p>
+      <p className="mt-0.5 text-sm text-foreground/70">{sub}</p>
       {children && <div className="mt-3">{children}</div>}
     </div>
   )
@@ -174,19 +174,19 @@ function AgentSteps() {
               }}
               className="group flex w-full items-center gap-4 px-4 py-2.5 text-left transition-colors hover:bg-foreground/[0.03]"
             >
-              <span className="w-12 shrink-0 font-mono text-[10px] font-semibold uppercase tracking-wider text-foreground/40">
+              <span className="w-12 shrink-0 font-mono text-[10px] font-semibold uppercase tracking-wider text-foreground/60">
                 {p.tag}
               </span>
               <span className="min-w-0 flex-1 truncate text-sm text-foreground/70">{p.text}</span>
               {copiedPrompt === p.tag ? (
                 <Check size={13} className="shrink-0 text-ok" />
               ) : (
-                <Copy size={13} className="shrink-0 text-foreground/25 transition-colors group-hover:text-foreground/60" />
+                <Copy size={13} className="shrink-0 text-foreground/60 transition-colors group-hover:text-accent" />
               )}
             </button>
           ))}
         </div>
-        <p className="mt-3 text-xs text-foreground/40">
+        <p className="mt-3 text-xs text-foreground/60">
           Prefer packages? <span className="font-mono text-foreground/60">@a-identity/marketplace-sdk</span>{' '}
           for the full loop, <span className="font-mono text-foreground/60">@a-identity/trust-guard</span>{' '}
           to just gate a payment · full reference in the{' '}
@@ -240,7 +240,7 @@ export default function QuickStart() {
               onClick={() => setMode(key)}
               aria-pressed={mode === key}
               className={`relative inline-flex items-center gap-2 rounded-full px-5 py-2.5 text-sm font-semibold transition-colors duration-200 ${
-                mode === key ? 'text-background' : 'text-foreground/55 hover:text-foreground'
+                mode === key ? 'text-background' : 'text-foreground/70 hover:text-foreground'
               }`}
             >
               {mode === key && (

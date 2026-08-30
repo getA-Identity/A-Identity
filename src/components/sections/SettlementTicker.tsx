@@ -78,12 +78,12 @@ export default function SettlementTicker() {
           </span>
           Every settlement, on-chain
         </p>
-        <p className="font-mono text-[10px] uppercase tracking-[0.14em] text-foreground/35">
+        <p className="font-mono text-[10px] uppercase tracking-[0.14em] text-foreground/60">
           USD₮0 · X Layer mainnet
         </p>
       </div>
 
-      <div className="hidden grid-cols-[minmax(0,1fr)_88px_minmax(0,1.1fr)_18px] gap-x-4 border-b border-border/60 px-5 py-2 font-mono text-[9px] uppercase tracking-[0.16em] text-foreground/35 sm:grid">
+      <div className="hidden grid-cols-[minmax(0,1fr)_88px_minmax(0,1.1fr)_18px] gap-x-4 border-b border-border/60 px-5 py-2 font-mono text-[9px] uppercase tracking-[0.16em] text-foreground/60 sm:grid">
         <span>Tool paid for</span>
         <span className="justify-self-end">Amount</span>
         <span className="justify-self-end">Transaction</span>
@@ -109,25 +109,25 @@ export default function SettlementTicker() {
             <span className="justify-self-end font-mono text-[13px] font-semibold text-emerald-600 dark:text-emerald-400">
               ${s.amountUsd.toFixed(3)}
             </span>
-            <span className="col-span-2 truncate font-mono text-[11px] text-foreground/45 sm:col-span-1 sm:justify-self-end">
+            <span className="col-span-2 truncate font-mono text-[11px] text-foreground/60 sm:col-span-1 sm:justify-self-end">
               {short(s.txHash)}
             </span>
             <ArrowUpRight
               size={13}
-              className="hidden text-foreground/25 transition-colors group-hover:text-accent sm:block"
+              className="hidden text-foreground/60 transition-colors group-hover:text-accent sm:block"
             />
           </motion.a>
         ))}
 
         {!feed && !failed && (
-          <div className="flex h-full items-center justify-center font-mono text-xs text-foreground/40">
+          <div className="flex h-full items-center justify-center font-mono text-xs text-foreground/60">
             reading the chain…
           </div>
         )}
 
         {failed && (
           <div className="flex h-full flex-col items-center justify-center gap-2 px-6 text-center">
-            <p className="text-sm text-foreground/55">
+            <p className="text-sm text-foreground/70">
               The live feed did not answer just now. The record is still on-chain.
             </p>
             <a
@@ -142,7 +142,7 @@ export default function SettlementTicker() {
         )}
       </div>
 
-      <div className="flex flex-wrap items-center justify-between gap-3 border-t border-border px-5 py-3 text-xs text-foreground/45">
+      <div className="flex flex-wrap items-center justify-between gap-3 border-t border-border px-5 py-3 text-xs text-foreground/60">
         <span>
           {feed ? (
             <>
