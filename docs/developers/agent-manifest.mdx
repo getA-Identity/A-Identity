@@ -30,6 +30,28 @@ control. The `interaction` block spells out the agent-to-agent path (verify, the
 settle over x402) and the agent-to-human path (the agent proposes, a person
 approves, then it settles).
 
+## What We Deliberately Do Not Declare
+
+The A2A agent card at `/.well-known/agent-card.json` tracks A2A 1.0 and lists only
+capabilities that have an implementation behind them. Two absences are choices rather
+than gaps, and they are written down here so nobody has to guess:
+
+**AP2, the Agent Payments Protocol.** The card declares no AP2 extension. AP2 answers
+"did the human authorise this, and within what limits", which is a real question and one
+adjacent to ours. But we do not accept an AP2 Payment Mandate as an input today, and
+declaring an extension we do not implement is the same species of claim this project
+refuses everywhere else. When a mandate can actually be handed to `risk_check` and come
+back with a verdict bounded by it, the extension goes in the card on the same day.
+
+**A payment handler for someone else's checkout.** We publish paid endpoints and we sell
+over x402, but the card does not advertise A-Identity as a drop-in payment handler for a
+third-party commerce flow. That would imply an integration surface that does not exist.
+
+The rule behind both: a capability appears in the card when a caller can exercise it, not
+when we intend to build it. The same rule governs
+`/.well-known/http-message-signatures-directory`, where the published signing key has a
+test asserting the signer it advertises is actually reached from our outbound requests.
+
 <Note>
 Keep the page source LLM-parsable. Plain structure, clear labels, and the manifest
 link in the page head let an agent navigate without guessing.

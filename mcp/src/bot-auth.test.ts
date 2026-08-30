@@ -7,8 +7,9 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { generateKeyPairSync, verify as cryptoVerify, createPublicKey } from 'node:crypto'
-import { readFileSync } from 'node:fs'
+import { readFileSync, readdirSync } from 'node:fs'
 import { join } from 'node:path'
+import { fileURLToPath } from 'node:url'
 
 const { publicKey, privateKey } = generateKeyPairSync('ed25519')
 process.env.BOT_SIGNING_KEY = privateKey.export({ type: 'pkcs8', format: 'pem' }).toString()
@@ -104,4 +105,54 @@ test('with no key configured, signing is a no-op rather than an error', async ()
   assert.equal(fresh.botAuthEnabled(), false)
   assert.equal(fresh.signRequest('GET', 'https://example.com/a'), null)
   process.env.BOT_SIGNING_KEY = saved
+})
+
+// ── the directory must have a caller ────────────────────────────────────────────
+//
+// This module publishes an Ed25519 public key at
+// /.well-known/http-message-signatures-directory and tells the world that requests from
+// a-identity.xyz carry a signature it can check. For a while that was not true: the
+// signer compiled, the directory was served, and `signedFetch` had zero call sites in the
+// whole tree. Nothing was broken and nothing failed, which is exactly why it survived.
+//
+// A published capability with no caller is a claim, and this repo does not ship claims.
+// The two tests below are the guard: one that the signer is actually reached from
+// somewhere, and one that names the leg it was written for, so removing that wiring is a
+// red test rather than a quiet regression.
+
+test('the published signer is reached from somewhere, so the directory is not decoration', () => {
+  const src = fileURLToPath(new URL('../../', import.meta.url)) + 'mcp/src/'
+  const callers: string[] = []
+  const walk = (dir: string) => {
+    for (const e of readdirSync(dir, { withFileTypes: true })) {
+      const full = join(dir, e.name)
+      if (e.isDirectory()) { walk(full); continue }
+      if (!e.name.endsWith('.ts') || e.name.endsWith('.test.ts')) continue
+      if (e.name === 'bot-auth.ts') continue // defining it is not using it
+      if (readFileSync(full, 'utf8').includes('signedFetch')) callers.push(full.slice(src.length))
+    }
+  }
+  walk(src)
+  assert.ok(
+    callers.length > 0,
+    'signedFetch has no call site under src/. The key at /.well-known/http-message-signatures-directory ' +
+      'is then advertising a signature nothing sends. Either wire it into an outbound request or stop publishing it.',
+  )
+})
+
+test('the counterparty manifest fetch is one of those callers', () => {
+  const src = fileURLToPath(new URL('../../', import.meta.url)) + 'mcp/src/'
+  const commerce = readFileSync(join(src, 'commerce.ts'), 'utf8')
+  assert.match(
+    commerce,
+    /signedFetch/,
+    'commerce.ts stopped using signedFetch. Discovering a stranger\'s agent card is a request we make on ' +
+      'our own behalf to a third party, which is the exact leg Web Bot Auth exists for.',
+  )
+  assert.doesNotMatch(
+    commerce,
+    /deps\.fetchImpl \?\? fetch\b/,
+    'merchantCheck fell back to bare fetch. The default has to be the signer; a test injecting its own ' +
+      'fetchImpl still overrides it, which is what the tests in commerce.test.ts do.',
+  )
 })

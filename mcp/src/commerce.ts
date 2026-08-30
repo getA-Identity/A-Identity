@@ -17,6 +17,7 @@
  * The thresholds are pinned by commerce.test.ts instead.
  */
 import type { AgentIdentity } from './data.js'
+import { signedFetch } from './bot-auth.js'
 import { createIdentityProvider, isSafePublicHttpUrl } from './erc8004.js'
 
 // ── verdict ladder ────────────────────────────────────────────────────────────
@@ -214,7 +215,7 @@ export function normalizeMerchantUrl(raw: string): string {
  * are tolerated as "no card", never as errors; `unreachable` is true only when NO
  * candidate produced an http answer at all.
  */
-export async function discoverManifest(rawUrl: string, fetchImpl: typeof fetch = fetch): Promise<DiscoveryResult> {
+export async function discoverManifest(rawUrl: string, fetchImpl: typeof fetch = signedFetch): Promise<DiscoveryResult> {
   const base = new URL(normalizeMerchantUrl(rawUrl))
   const candidates: string[] = []
   if (base.pathname.endsWith('.json')) candidates.push(base.toString())
@@ -350,7 +351,7 @@ export async function merchantCheck(
     if (!isSafePublicHttpUrl(normalized)) {
       return { error: 'Refusing to fetch that url: only public http(s) hosts are checked (no loopback, private ranges, or metadata endpoints)' }
     }
-    discovery = await discoverManifest(normalized, deps.fetchImpl ?? fetch)
+    discovery = await discoverManifest(normalized, deps.fetchImpl ?? signedFetch)
   }
 
   // ── 2. identity: the given id first, else the card's declared registrations ──

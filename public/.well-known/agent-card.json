@@ -1,5 +1,5 @@
 {
-  "protocolVersion": "0.3.0",
+  "protocolVersion": "1.0",
   "name": "A-Identity Trust Oracle",
   "description": "Before one AI agent pays another, it calls A-Identity to verify the counterparty. Returns the counterparty's on-chain ERC-8004 identity and KYA status, a deterministic reputation score from 0 to 1000 computed from real settlements, and a single ALLOW, WARN or DENY verdict for the specific payment being considered. Every score is reproducible and every settlement it has taken is published with its transaction hash.",
   "version": "1.1.0",

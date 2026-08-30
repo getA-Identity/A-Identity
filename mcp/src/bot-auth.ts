@@ -9,9 +9,12 @@
  * half is published at /.well-known/http-message-signatures-directory, so a site
  * we call can verify the request came from whoever controls a-identity.xyz.
  *
- * Publishing the directory without ever signing anything would be decoration,
- * which is why the signer exists and is used rather than the key just sitting
- * there looking standards-compliant.
+ * Publishing the directory without ever signing anything would be decoration.
+ * That is not a hypothetical: this module shipped its directory and its signer with
+ * NO call site at all, so for a while the claim in this very comment was false. The
+ * signer is now wired into the outbound leg it was written for, the counterparty
+ * manifest fetch in commerce.ts, and bot-auth.test.ts fails if that call site
+ * disappears again.
  *
  * Credential-gated like everything else here: with BOT_SIGNING_KEY unset,
  * `signedFetch` is an ordinary fetch. The private key never appears in the repo.
@@ -118,10 +121,18 @@ export function signRequest(
  * Use this for every outbound request made on the platform's own behalf. It is
  * deliberately a drop-in: an unconfigured deployment behaves exactly like plain
  * fetch, so nothing depends on the key existing.
+ *
+ * The signature is `typeof fetch` rather than `(url: string, ...)` on purpose. A signer
+ * that cannot be passed where a `fetch` is expected is a signer nobody wires in, which is
+ * how the published directory ended up with no caller in the first place. The signature
+ * base needs a string URL, so the three shapes `fetch` accepts are narrowed to one here
+ * rather than at every call site.
  */
-export async function signedFetch(url: string, init: RequestInit = {}): Promise<Response> {
-  const method = (init.method ?? 'GET').toUpperCase()
+export async function signedFetch(input: URL | RequestInfo, init: RequestInit = {}): Promise<Response> {
+  const url = typeof input === 'string' ? input : input instanceof URL ? input.toString() : input.url
+  // A Request carries its own method; an explicit init.method still wins, as it does in fetch.
+  const method = (init.method ?? (typeof input === 'object' && 'method' in input ? input.method : 'GET')).toUpperCase()
   const signed = signRequest(method, url)
-  if (!signed) return fetch(url, init)
-  return fetch(url, { ...init, headers: { ...(init.headers as Record<string, string>), ...signed } })
+  if (!signed) return fetch(input, init)
+  return fetch(input, { ...init, headers: { ...(init.headers as Record<string, string>), ...signed } })
 }
