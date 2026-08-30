@@ -109,10 +109,11 @@ export default function LiveProof() {
           Not a demo. Live and earning.
         </motion.h2>
         <motion.p {...reveal} className="mt-4 max-w-xl text-lg leading-relaxed text-foreground/55">
-          A-Identity runs as a trust oracle on two mainnets: listed on OKX.AI over X Layer, and
-          on Celo through its first-party x402 facilitator. Per-call checks, settled in real
-          stablecoins. Every number here is on-chain, and both counters label which traffic is
-          our own.
+          A-Identity runs as a trust oracle on three mainnets: listed on OKX.AI over X Layer, on
+          Celo through its first-party x402 facilitator, and on Algorand over x402 v2, where the
+          buyer signs a fee-zero transfer and pays no gas at all. Per-call checks, settled in
+          real stablecoins. Every number here is on-chain, and every counter labels which
+          traffic is our own.
         </motion.p>
 
         <div className="mt-12 grid gap-px overflow-hidden rounded-2xl border border-border bg-border sm:grid-cols-3">
@@ -174,6 +175,13 @@ export default function LiveProof() {
             className="inline-flex items-center gap-1.5 text-sm font-semibold text-accent hover:underline"
           >
             See every Celo settlement <ArrowUpRight size={15} />
+          </Link>
+
+          <Link
+            to="/proof/algorand"
+            className="inline-flex items-center gap-1.5 text-sm font-semibold text-accent hover:underline"
+          >
+            See the Algorand rail, live <ArrowUpRight size={15} />
           </Link>
         </motion.div>
 

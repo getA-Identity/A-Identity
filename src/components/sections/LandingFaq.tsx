@@ -138,6 +138,25 @@ export const LANDING_FAQ: Item[] = [
       </>
     ),
   },
+  {
+    q: 'Which chains can my agent pay on today?',
+    plain:
+      'Seven networks settle real money today: OKX X Layer, Robinhood Chain, Arbitrum One, Base, Celo, Stellar and, newest, Algorand, where x402 v2 payments are gasless for the buyer: it signs a fee-zero USDC transfer and the pooled group fee covers it. Two testnet mirrors rehearse every change first. Every chain publishes a proof page with real transactions (https://a-identity.xyz/proof/algorand is the newest), and a chain is only called live here after a real payment has been recorded on it.',
+    a: (
+      <>
+        Seven networks settle real money today: OKX X Layer, Robinhood Chain, Arbitrum One, Base,
+        Celo, Stellar and, newest, <strong>Algorand</strong>, where x402 v2 payments are gasless
+        for the buyer: it signs a fee-zero USDC transfer and the pooled group fee covers it. Two
+        testnet mirrors rehearse every change first. Every chain publishes a proof page with real
+        transactions (
+        <a href="/proof/algorand" className={linkClass}>
+          /proof/algorand
+        </a>{' '}
+        is the newest), and a chain is only called <em>live</em> here after a real payment has
+        been recorded on it.
+      </>
+    ),
+  },
 ]
 
 /** Landing four plus the reference set, so the link never advertises a stale number. */

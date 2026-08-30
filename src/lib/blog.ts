@@ -89,6 +89,103 @@ export const AUTHORS = {
 
 export const POSTS: BlogPost[] = [
   {
+    slug: 'x402-on-algorand-gasless-agent-payments',
+    title: 'x402 on Algorand: gasless checkout for AI agents',
+    excerpt:
+      'An AI agent on Algorand can now buy a trust check with a signature alone: fee zero, no ALGO in its wallet, settled in real USDC. Here is how the pooled-fee trick works, and the mainnet receipts from the day we turned it on.',
+    chain: 'Algorand',
+    accent: '#3B4149',
+    date: 'Aug 30, 2026',
+    readingTime: '6 min read',
+    seed: 18,
+    author: AUTHORS.protocol,
+    sections: [
+      {
+        heading: 'The Buyer Pays Nothing, and That Is the Whole Point',
+        body: [
+          'Every payment rail we run starts from the same requirement: the agent doing the buying should sign, and someone else should carry the transaction. On the EVM chains that takes EIP-3009, a per-token standard the token contract has to implement. On Stellar it takes a Soroban authorization entry. Algorand turned out to have the cleanest answer of the three, because it is built into the protocol itself: transactions travel in atomic groups, and the network only checks that the fees of the WHOLE group cover its cost.',
+          'So the agent signs a USDC transfer with a fee of exactly zero, a fee-payer transaction joins it in the same group, and the group either lands together or not at all. The buyer needs USDC and nothing else: no ALGO for gas, no wrapped anything, no approval dance. When the x402 challenge comes back with a price, the whole checkout is one signature.',
+          'That is what x402 v2 calls the exact scheme on AVM, and it is live on this product today: GET any tool under /api/x402/algorand/tools and the 402 that answers carries the price, the asset and exactly what to sign.',
+        ],
+      },
+      {
+        heading: 'Four Tools, Four Mainnet Receipts',
+        body: [
+          'We turned the rail on and bought from ourselves the same day, once per tool, because a price list is a claim and a receipt is a fact. verify_agent settled for 0.001 USDC in transaction YNNA54CX, round 64547231. reputation_score followed at 0.002, risk_check at 0.005, agent_passport at 0.01. Four tools, four transactions on Algorand mainnet, each one a fee-zero transfer signed by the buyer and carried by the facilitator.',
+          'The production deployment sells the same way: its first durable settlement is already in the log, and the whole trail, from the Stellar treasury that funded the operating accounts to the sale itself, is published at a-identity.xyz/proof/algorand with every transaction linked.',
+          'Both sides of those first payments are ours, and the proof page says so in its own caveats. They are evidence the rail works end to end, not evidence of demand; demand is what the receipts make it possible to earn.',
+        ],
+      },
+      {
+        heading: 'No Payment Counts Until We Read It Ourselves',
+        body: [
+          'Settlement on this rail runs through the GoPlausible facilitator, the one the Algorand ecosystem standardized on. We still refuse to outsource the truth. Before the facilitator sees a payment group, we decode every transaction in it locally: the right asset, the right recipient, the right amount, nothing rekeying an account, nothing closing one out. And after the facilitator reports success, nothing is served until our own indexer read returns the transfer with a confirmed round and matching fields.',
+          'A facilitator saying settled is a claim about their process. The indexer read is a fact about the ledger. The gap between those two sentences is where paid services quietly become trust-me services, and this rail was built to never cross it.',
+        ],
+      },
+      {
+        heading: 'The Same Budget, in a Third Language',
+        body: [
+          'The AgentSpendPolicy vault, the contract that gives an agent a budget it cannot exceed, now exists in Solidity, in Rust for Soroban, and in Algorand Python. Application 3688854723 holds real USDC on Algorand mainnet under the same rules as its siblings: one USDC per UTC day, 0.25 per payment, an allowlist, a freeze switch, and no update, delete or owner-transfer path. The constructor ran once and the rules are permanent.',
+          'We walked it through the same ladder the Stellar releases record. An under-limit payment of 0.05 USDC settled. A 0.50 attempt was refused with the contract\'s own ABOVE_AUTO_APPROVE. Frozen, the operator was refused with FROZEN while the owner paid through, and the day counter read back exactly 0.06 spent. On Algorand a refusal fails in simulation and never reaches the ledger, so refusals have no transaction hash; what makes them typed is the committed ARC-56 source map, which resolves the failing program counter to the assert label, reproducible by anyone against the live app for free.',
+        ],
+      },
+      {
+        heading: 'What This Unlocks',
+        body: [
+          'Algorand named 2026 the year of agentic commerce, and the pieces fit ours with almost no translation: their facilitator moves the money, our oracle answers whether the counterparty deserves it, and the vault enforces what the answer is allowed to cost. An agent on Algorand can now check an identity, read a reputation, screen a risk and fetch a passport, each for less than a cent, each gasless, each settled in the dollar it already holds.',
+          'The registry entry, the code, the receipts and every caveat are public. Start at a-identity.xyz/proof/algorand and click anything; that is what it is for.',
+        ],
+      },
+    ],
+    tr: {
+      title: 'Algorand\'da x402: yapay zeka ajanlari icin gazsiz odeme',
+      excerpt:
+        'Algorand\'daki bir yapay zeka ajani artik yalnizca bir imzayla guven sorgusu satin alabiliyor: ucret sifir, cuzdaninda ALGO yok, odeme gercek USDC ile. Iste havuzlanmis ucret numarasinin calisma sekli ve rayi actigimiz gunun mainnet makbuzlari.',
+      chain: 'Algorand',
+      readingTime: '6 dk okuma',
+      sections: [
+        {
+          heading: 'Alici Hicbir Sey Odemiyor ve Mesele Tam Olarak Bu',
+          body: [
+            'Calistirdigimiz her odeme rayi ayni gereksinimle baslar: satin alan ajan imzalamali, islemi baskasi tasimali. EVM zincirlerinde bu, token kontratinin uygulamasi gereken EIP-3009 standardini gerektirir. Stellar\'da bir Soroban yetki girdisi gerekir. Algorand ucunun icinde en temiz cevaba sahip cikti, cunku bu ozellik protokolun kendisinde: islemler atomik gruplar halinde yolculuk eder ve ag yalnizca TUM grubun ucretlerinin maliyeti karsilayip karsilamadigina bakar.',
+            'Yani ajan, ucreti tam olarak sifir olan bir USDC transferi imzalar; ayni gruba bir ucret odeyici islem katilir ve grup ya birlikte yerlesir ya da hic yerlesmez. Alicinin USDC\'den baska hicbir seye ihtiyaci yoktur: gaz icin ALGO yok, sarilmis hicbir sey yok, onay dansi yok. x402 sorgusu fiyatla dondugunde tum odeme tek bir imzadir.',
+            'x402 v2\'nin AVM uzerindeki exact semasi budur ve bugun bu urunde canlidir: /api/x402/algorand/tools altindaki herhangi bir araca GET atin; donen 402, fiyati, varligi ve tam olarak neyin imzalanacagini tasir.',
+          ],
+        },
+        {
+          heading: 'Dort Arac, Dort Mainnet Makbuzu',
+          body: [
+            'Rayi actik ve ayni gun kendimizden satin aldik, her arac icin bir kez; cunku fiyat listesi bir iddiadir, makbuz bir gercektir. verify_agent 0.001 USDC\'ye YNNA54CX islemiyle 64547231 numarali turda yerlesti. reputation_score 0.002 ile, risk_check 0.005 ile, agent_passport 0.01 ile onu izledi. Dort arac, Algorand mainnet\'inde dort islem; her biri alicinin imzaladigi, facilitator\'in tasidigi ucret-sifir bir transfer.',
+            'Uretim dagitimi da ayni sekilde satiyor: ilk kalici settlement kaydi cotan logda ve Stellar hazinesinden satisin kendisine kadar tum iz, her islem linklenmis halde a-identity.xyz/proof/algorand adresinde yayinda.',
+            'O ilk odemelerin iki tarafi da bizim ve kanit sayfasi bunu kendi cekince satirlarinda soyluyor. Bunlar rayin uctan uca calistiginin kaniti, talebin kaniti degil; talep, makbuzlarin kazanilmasini mumkun kildigi seydir.',
+          ],
+        },
+        {
+          heading: 'Biz Kendimiz Okumadan Hicbir Odeme Sayilmaz',
+          body: [
+            'Bu rayda settlement, Algorand ekosisteminin standardi haline gelen GoPlausible facilitator uzerinden akar. Yine de gercegi disariya emanet etmeyi reddediyoruz. Facilitator bir odeme grubunu gormeden once icindeki her islemi yerel olarak cozeriz: dogru varlik, dogru alici, dogru tutar, hicbir islemin bir hesabi yeniden anahtarlamamasi, hicbirinin bir hesabi kapatmamasi. Ve facilitator basari bildirdikten sonra bile, kendi indexer okumamiz transferi onaylanmis bir turla ve eslesen alanlarla dondurmeden hicbir sey servis edilmez.',
+            'Facilitator\'in yerlesti demesi kendi sureci hakkinda bir iddiadir. Indexer okumasi defter hakkinda bir gercektir. Bu iki cumle arasindaki bosluk, ucretli servislerin sessizce bana-guven servislerine donustugu yerdir ve bu ray o cizgiyi asla gecmemek icin insa edildi.',
+          ],
+        },
+        {
+          heading: 'Ayni Butce, Ucuncu Dilde',
+          body: [
+            'Bir ajana asamayacagi bir butce veren kontrat olan AgentSpendPolicy kasasi artik Solidity\'de, Soroban icin Rust\'ta ve Algorand Python\'da yasiyor. 3688854723 numarali uygulama, Algorand mainnet\'inde kardesleriyle ayni kurallar altinda gercek USDC tutuyor: UTC gunu basina bir USDC, odeme basina 0.25, bir izin listesi, bir dondurma anahtari; guncelleme, silme ya da sahip devri yolu yok. Kurucu bir kez calisti ve kurallar kalici.',
+            'Onu Stellar surumlerinin kaydettigi merdivenin aynisindan gecirdik. 0.05 USDC\'lik limit alti odeme yerlesti. 0.50\'lik deneme kontratin kendi ABOVE_AUTO_APPROVE hatasiyla reddedildi. Donmusken operator FROZEN ile reddedilirken sahip odemeyi gecirdi ve gun sayaci tam olarak 0.06 harcanmis okundu. Algorand\'da bir ret simulasyonda gerceklesir ve deftere hic ulasmaz; retleri tipli yapan sey, basarisiz program sayacini assert etiketine cozen ve herkesin canli uygulamaya karsi bedavaya yeniden uretebilecegi commit\'lenmis ARC-56 kaynak haritasidir.',
+          ],
+        },
+        {
+          heading: 'Bunun Actigi Kapi',
+          body: [
+            'Algorand 2026\'yi agentic commerce yili ilan etti ve parcalar bizimkilerle neredeyse cevirisiz oturuyor: onlarin facilitator\'i parayi tasiyor, bizim oracle karsi tarafin bunu hak edip etmedigini soyluyor ve kasa cevabin neye mal olabilecegini zincirde zorluyor. Algorand\'daki bir ajan artik bir kimligi dogrulayabilir, bir itibari okuyabilir, bir riski tarayabilir ve bir pasaport cekebilir; her biri bir sentten ucuza, her biri gazsiz, her biri zaten elinde tuttugu dolarla.',
+            'Registry girdisi, kod, makbuzlar ve her cekince kamuya acik. a-identity.xyz/proof/algorand adresinden baslayin ve herhangi bir seye tiklayin; varlik sebebi bu.',
+          ],
+        },
+      ],
+    },
+  },
+  {
     slug: 'a-budget-an-agent-cannot-exceed',
     title: 'Giving an AI agent a budget it cannot exceed',
     excerpt:
