@@ -87,7 +87,7 @@ export default function CctpPanel() {
         <span className="text-[11px] text-foreground/40">min 1 USDC (CCTPv2 fee)</span>
       </div>
 
-      {error && <div className="mt-4 rounded-xl border border-amber-200 dark:border-amber-500/25 bg-amber-50/60 dark:bg-amber-500/10 p-3 text-sm text-foreground/70">{error}</div>}
+      {error && <div className="mt-4 rounded-xl border border-warn/35 bg-warn/[0.08] p-3 text-sm text-foreground/70">{error}</div>}
 
       {result && result.executed === false && (
         <div className="mt-4 rounded-xl border border-border bg-background/40 p-3 text-sm text-foreground/70">
@@ -109,11 +109,11 @@ export default function CctpPanel() {
             <div
               key={`${s.name}-${i}`}
               className={`flex items-center gap-2 rounded-lg border px-3 py-2 ${
-                s.state === 'success' ? 'border-emerald-200 dark:border-emerald-500/25 bg-emerald-50/60 dark:bg-emerald-500/10' : 'border-foreground/8 bg-background/40'
+                s.state === 'success' ? 'border-ok/30 bg-ok/[0.08]' : 'border-foreground/8 bg-background/40'
               }`}
             >
               {s.state === 'success' ? (
-                <CheckCircle2 size={13} className="shrink-0 text-emerald-500" />
+                <CheckCircle2 size={13} className="shrink-0 text-ok" />
               ) : (
                 <Loader2 size={13} className="shrink-0 animate-spin text-foreground/40" />
               )}
@@ -132,7 +132,7 @@ export default function CctpPanel() {
             </div>
           ))}
           {minted && (
-            <div className="flex items-center gap-2 rounded-lg border border-emerald-200 dark:border-emerald-500/25 bg-emerald-50/60 dark:bg-emerald-500/10 px-3 py-2 text-emerald-700 dark:text-emerald-300">
+            <div className="flex items-center gap-2 rounded-lg border border-ok/30 bg-ok/[0.08] px-3 py-2 text-ok">
               <Flame size={14} /> <span>Minted natively on Base Sepolia, burn-and-mint complete.</span>
             </div>
           )}

@@ -109,7 +109,7 @@ export default function EscrowPanel() {
       </div>
 
       {error && (
-        <div className="mt-4 rounded-xl border border-amber-200 bg-amber-50/60 p-3 text-sm text-foreground/70 dark:border-amber-500/25 dark:bg-amber-500/10">{error}</div>
+        <div className="mt-4 rounded-xl border border-warn/35 bg-warn/[0.08] p-3 text-sm text-foreground/80">{error}</div>
       )}
 
       {result && result.executed === false && (
@@ -129,7 +129,7 @@ export default function EscrowPanel() {
               {result.status}
             </Badge>
             {refunded && okOutcome && (
-              <span className="inline-flex items-center gap-1 rounded-full bg-emerald-500/10 px-2 py-0.5 text-[11px] font-bold text-emerald-700 dark:text-emerald-300">
+              <span className="inline-flex items-center gap-1 rounded-full bg-ok/10 px-2 py-0.5 text-[11px] font-bold text-ok">
                 <RotateCcw size={11} /> Refunded ${result.refundedUsd ?? result.budgetUsd} to client
               </span>
             )}
@@ -147,7 +147,7 @@ export default function EscrowPanel() {
                 >
                   <span
                     className={`h-1.5 w-1.5 shrink-0 rounded-full ${
-                      s ? (isDispute ? 'bg-amber-500' : 'bg-emerald-500') : failedHere ? 'bg-red-500' : 'bg-foreground/20'
+                      s ? (isDispute ? 'bg-warn' : 'bg-ok') : failedHere ? 'bg-danger' : 'bg-foreground/20'
                     }`}
                   />
                   <span className="font-mono text-xs text-foreground/70">{name}</span>
@@ -162,7 +162,7 @@ export default function EscrowPanel() {
                         tx <ExternalLink size={9} />
                       </a>
                     ) : failedHere ? (
-                      <span className="text-[11px] font-semibold text-red-500">reverted</span>
+                      <span className="text-[11px] font-semibold text-danger">reverted</span>
                     ) : (
                       <span className="text-[11px] text-foreground/30">-</span>
                     )}
@@ -172,7 +172,7 @@ export default function EscrowPanel() {
             })}
           </ol>
           {result.failedAt && (
-            <p className="mt-2 text-xs text-red-600">Reverted at {result.failedAt}: {result.reason}</p>
+            <p className="mt-2 text-xs text-danger">Reverted at {result.failedAt}: {result.reason}</p>
           )}
         </div>
       )}

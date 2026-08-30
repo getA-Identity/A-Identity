@@ -9,7 +9,9 @@ import {
   consumeSemanticQuota, semanticSearchAgents, marketplaceCatalog, hireAgent, deliverTask,
   releaseTask, disputeTask, getTask, listOpenTasks, postOpenTask, bidOnTask, acceptBid,
   listTasksForAgent, listTasksForClient, agentManifest, registerExternalAgent,
+  listPlatformAgents,
 } from '../platform.js'
+import { agentQuotaComplaint } from '../marketplace.js'
 import { errStatus, readBody, sendJson, validAmount, type RouteCtx } from './shared.js'
 
 export async function handleMarketplaceRoutes(ctx: RouteCtx): Promise<boolean> {
@@ -209,6 +211,11 @@ export async function handleMarketplaceRoutes(ctx: RouteCtx): Promise<boolean> {
     if (body.walletAddress && !/^0x[0-9a-fA-F]{40}$/.test(body.walletAddress)) {
       sendJson(res, 400, { error: 'walletAddress must be a 0x address' }); return true
     }
+    // The same per-owner ceiling POST /api/agents enforces, from the same pure rule, because
+    // this is the same row through a second door. One limit stated once (agentQuotaComplaint
+    // in ../marketplace.js) so the two registration paths cannot drift apart.
+    const quota = callerId ? agentQuotaComplaint(listPlatformAgents().filter((a) => a.owner === callerId).length) : null
+    if (quota) { sendJson(res, 400, { error: quota }); return true }
     const r = await registerExternalAgent({
       name: body.name, description: body.description, category: body.category,
       capabilities: body.capabilities, services: body.services,

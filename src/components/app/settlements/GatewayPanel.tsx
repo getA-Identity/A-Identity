@@ -89,7 +89,7 @@ export default function GatewayPanel() {
         </Button>
       </div>
 
-      {error && <div className="mt-4 rounded-xl border border-amber-200 dark:border-amber-500/25 bg-amber-50/60 dark:bg-amber-500/10 p-3 text-sm text-foreground/70">{error}</div>}
+      {error && <div className="mt-4 rounded-xl border border-warn/35 bg-warn/[0.08] p-3 text-sm text-foreground/70">{error}</div>}
 
       {result && result.executed === false && (
         <div className="mt-4 rounded-xl border border-border bg-background/40 p-3 text-sm text-foreground/70">
@@ -108,7 +108,7 @@ export default function GatewayPanel() {
             />
           )}
           {result.transfer.error ? (
-            <div className="rounded-lg border border-red-200 dark:border-red-500/25 bg-red-50/60 dark:bg-red-500/10 px-3 py-2 text-red-700 dark:text-red-300">
+            <div className="rounded-lg border border-danger/30 bg-danger/[0.08] px-3 py-2 text-danger">
               Transfer failed: {result.transfer.error}
             </div>
           ) : (
@@ -121,10 +121,10 @@ export default function GatewayPanel() {
           {result.baseMint && (
             <div
               className={`flex items-center gap-2 rounded-lg border px-3 py-2 ${
-                minted ? 'border-emerald-200 dark:border-emerald-500/25 bg-emerald-50/60 dark:bg-emerald-500/10' : 'border-amber-200 dark:border-amber-500/25 bg-amber-50/60 dark:bg-amber-500/10'
+                minted ? 'border-ok/30 bg-ok/[0.08]' : 'border-warn/35 bg-warn/[0.08]'
               }`}
             >
-              {minted ? <Zap size={14} className="text-emerald-600" /> : <Loader2 size={14} className="animate-spin text-amber-600" />}
+              {minted ? <Zap size={14} className="text-ok" /> : <Loader2 size={14} className="animate-spin text-warn" />}
               <span className="text-foreground/75">
                 {minted ? (
                   <>

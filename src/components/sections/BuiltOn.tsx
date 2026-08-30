@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState, type ReactElement } from 'react'
-import { motion } from 'framer-motion'
+import { motion, useReducedMotion } from 'framer-motion'
 import { ArrowLeft, ArrowRight } from 'lucide-react'
 import { EASE_OUT_EXPO } from '../../lib/brand'
 import { CHAIN_BY_ID, type ChainId } from '../../lib/chains'
@@ -228,9 +228,26 @@ const RAILS: Rail[] = [
  * treatment), native snap scroll with arrows and dots, so each rail gets the floor
  * instead of sharing a cramped grid.
  */
+/** How long a rail holds the floor before autoplay moves on. */
+const AUTOPLAY_MS = 6500
+
 export default function BuiltOn() {
   const trackRef = useRef<HTMLDivElement>(null)
   const [idx, setIdx] = useState(0)
+  const still = useReducedMotion() ?? false
+
+  /**
+   * Autoplay exists to show that there are ten rails, not to drive the section. It is
+   * true only until the reader does anything at all: pressing an arrow or a dot, dragging
+   * or flicking the track, spinning a wheel over it, or moving focus into the carousel
+   * with a keyboard. After any of those this stays false for the rest of the visit, so
+   * the manual controls are never fighting a timer that keeps waking up.
+   */
+  const [autoplay, setAutoplay] = useState(true)
+  const takeOver = useCallback(() => setAutoplay(false), [])
+  /** Refs, not state: a pointer moving over the track must not re-render the carousel. */
+  const hovered = useRef(false)
+  const dir = useRef(1)
 
   const sync = useCallback(() => {
     const el = trackRef.current
@@ -245,20 +262,68 @@ export default function BuiltOn() {
     return () => el.removeEventListener('scroll', sync)
   }, [sync])
 
+  useEffect(() => {
+    // A carousel that advances on its own is exactly what a reader who asked for reduced
+    // motion asked not to have, so there it never starts.
+    if (!autoplay || still) return
+    const el = trackRef.current
+    if (!el) return
+
+    /* Off-screen it does nothing. Otherwise the section spends a visit walking through ten
+       rails behind the reader's back and they come back to a slide they never chose. */
+    let onScreen = false
+    const io =
+      typeof IntersectionObserver === 'undefined'
+        ? null
+        : new IntersectionObserver(([e]) => (onScreen = e.isIntersecting), { threshold: 0.35 })
+    io?.observe(el)
+
+    const tick = () => {
+      if (!onScreen || hovered.current || document.hidden) return
+      const w = el.clientWidth
+      if (!w) return
+      const at = Math.round(el.scrollLeft / w)
+      // Ping-pong rather than wrap: rewinding ten slides at once reads as a glitch, and
+      // turning around at the end reads as the carousel simply going back.
+      let next = at + dir.current
+      if (next > RAILS.length - 1) {
+        dir.current = -1
+        next = at - 1
+      } else if (next < 0) {
+        dir.current = 1
+        next = at + 1
+      }
+      el.scrollTo({ left: next * w, behavior: 'smooth' })
+    }
+
+    const id = window.setInterval(tick, AUTOPLAY_MS)
+    return () => {
+      window.clearInterval(id)
+      io?.disconnect()
+    }
+  }, [autoplay, still])
+
   const goTo = (i: number) => {
     const el = trackRef.current
     if (!el) return
     const clamped = Math.max(0, Math.min(RAILS.length - 1, i))
     // Native scrollTo does not go through framer, so MotionConfig cannot crush it:
     // honor prefers-reduced-motion here by jumping instead of gliding.
-    const still = window.matchMedia('(prefers-reduced-motion: reduce)').matches
     el.scrollTo({ left: clamped * el.clientWidth, behavior: still ? 'auto' : 'smooth' })
+  }
+
+  /** Every manual entry point goes through here, so none of them can forget to take over. */
+  const drive = (i: number) => {
+    takeOver()
+    goTo(i)
   }
 
   return (
     <section className="relative w-full overflow-hidden bg-background px-5 py-16 text-foreground sm:px-8 sm:py-20">
       <SectionBackdrop name="rails" position="right" />
-      <div className="mx-auto max-w-[1080px]">
+      {/* Focus landing anywhere in here is a reader taking the wheel: nothing should move
+          under a keyboard user who is reading a slide. */}
+      <div className="mx-auto max-w-[1080px]" onFocusCapture={takeOver}>
         <div className="flex items-end justify-between gap-6">
           <div>
             <motion.h2 {...reveal} className="text-3xl font-bold leading-[1.1] tracking-tight sm:text-[2.6rem]" style={{ fontFamily: 'var(--font-heading)' }}>
@@ -272,7 +337,7 @@ export default function BuiltOn() {
             <button
               type="button"
               aria-label="Previous rail"
-              onClick={() => goTo(idx - 1)}
+              onClick={() => drive(idx - 1)}
               disabled={idx === 0}
               className="grid h-11 w-11 place-items-center rounded-full border border-border bg-card text-foreground transition enabled:hover:border-accent/50 enabled:hover:text-accent disabled:opacity-30"
             >
@@ -281,7 +346,7 @@ export default function BuiltOn() {
             <button
               type="button"
               aria-label="Next rail"
-              onClick={() => goTo(idx + 1)}
+              onClick={() => drive(idx + 1)}
               disabled={idx === RAILS.length - 1}
               className="grid h-11 w-11 place-items-center rounded-full border border-border bg-card text-foreground transition enabled:hover:border-accent/50 enabled:hover:text-accent disabled:opacity-30"
             >
@@ -294,6 +359,19 @@ export default function BuiltOn() {
         <motion.div {...reveal}>
           <div
             ref={trackRef}
+            /* Hover only pauses; a drag, a flick or a wheel is the reader steering, and
+               that ends autoplay for good. */
+            onMouseEnter={() => (hovered.current = true)}
+            onMouseLeave={() => (hovered.current = false)}
+            onPointerDown={takeOver}
+            onTouchStart={takeOver}
+            /* Only a SIDEWAYS wheel counts. A vertical one is somebody scrolling the page
+               who happens to have the pointer over this card, and taking the carousel away
+               from them for that would end autoplay for nearly every visitor. */
+            onWheel={(e) => {
+              if (Math.abs(e.deltaX) > Math.abs(e.deltaY)) takeOver()
+            }}
+            onKeyDown={takeOver}
             className="mt-10 flex snap-x snap-mandatory overflow-x-auto overscroll-x-contain rounded-2xl [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
           >
             {RAILS.map((r) => (
@@ -403,7 +481,7 @@ export default function BuiltOn() {
                 key={r.id}
                 type="button"
                 aria-label={`Go to ${r.name}`}
-                onClick={() => goTo(i)}
+                onClick={() => drive(i)}
                 className={`h-1.5 rounded-full transition-all duration-300 ${
                   i === idx ? 'w-7 bg-accent' : 'w-1.5 bg-foreground/20 hover:bg-foreground/40'
                 }`}

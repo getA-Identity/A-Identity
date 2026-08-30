@@ -1,7 +1,8 @@
 import { useEffect, useRef, useState } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
-import { Loader2, Check, X, ShieldCheck, ShieldAlert, ShieldX, Fingerprint, BadgeCheck, Gauge, Scale } from 'lucide-react'
+import { Loader2, Check, X, AlertTriangle, Fingerprint, BadgeCheck, Gauge, Scale, ListChecks } from 'lucide-react'
 import { CHAIN_BY_ID, type ChainId } from '../../lib/chains'
+import { Badge, VerdictBadge } from '../ui/badge'
 import type { AgentIdentity, Reputation } from '../../lib/mcp-client'
 
 /**
@@ -45,41 +46,50 @@ function verdictReasons(score: number, kya: string | undefined, verified: boolea
   return r
 }
 
-const VERDICT_UI: Record<Verdict, { color: string; Icon: typeof ShieldCheck }> = {
-  ALLOW: { color: '#059669', Icon: ShieldCheck },
-  WARN: { color: '#d97706', Icon: ShieldAlert },
-  DENY: { color: '#dc2626', Icon: ShieldX },
+/**
+ * How a finished step turned out. Three outcomes, not two, because the Decide step can end
+ * in WARN: rendering that as the same red cross a DENY gets said "refused" in the gutter
+ * while the pill beside it said "caution", and the gutter is read first.
+ */
+type Outcome = 'pass' | 'caution' | 'fail'
+
+const OUTCOME: Record<Outcome, { ring: string; glyph: React.ReactNode }> = {
+  pass: { ring: 'bg-ok/10 ring-ok/30', glyph: <Check size={15} strokeWidth={2.6} className="text-ok" /> },
+  caution: { ring: 'bg-warn/10 ring-warn/40', glyph: <AlertTriangle size={14} strokeWidth={2.6} className="text-warn" /> },
+  fail: { ring: 'bg-danger/10 ring-danger/35', glyph: <X size={15} strokeWidth={2.6} className="text-danger" /> },
 }
 
-function StepRow({ state, ok, Icon, title, standard, children }: {
+function StepRow({ state, outcome, Icon, title, standard, children }: {
   state: StepState
-  /** Whether the completed step passed (check) or surfaced a problem (x). */
-  ok: boolean
+  /** How the completed step turned out: passed, passed with a caution, or refused. */
+  outcome: Outcome
   Icon: typeof Fingerprint
   title: string
   standard: string
   children?: React.ReactNode
 }) {
   return (
-    <div className={`flex gap-3.5 px-5 py-4 transition-opacity ${state === 'idle' ? 'opacity-35' : 'opacity-100'}`}>
-      <div className="mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-full border border-border bg-background">
+    <div className={`flex gap-3.5 px-5 py-4 transition-opacity ${state === 'idle' ? 'opacity-40' : 'opacity-100'}`}>
+      <div className={`mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-full ring-1 ring-inset ${
+        state === 'done' ? OUTCOME[outcome].ring : 'bg-background ring-border'
+      }`}>
         {state === 'running' ? (
-          <Loader2 size={14} className="animate-spin text-accent" />
+          <Loader2 size={15} className="animate-spin text-accent" />
         ) : state === 'done' ? (
-          ok ? <Check size={14} className="text-emerald-600" /> : <X size={14} className="text-red-600" />
+          OUTCOME[outcome].glyph
         ) : (
-          <Icon size={13} className="text-foreground/40" />
+          <Icon size={14} className="text-foreground/45" />
         )}
       </div>
       <div className="min-w-0 flex-1">
-        <div className="flex flex-wrap items-baseline gap-x-2">
-          <span className="text-sm font-semibold text-foreground">{title}</span>
-          <span className="rounded bg-foreground/[0.06] px-1.5 py-0.5 font-mono text-[10px] uppercase tracking-wide text-foreground/50">{standard}</span>
+        <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+          <span className="text-[15px] font-bold tracking-tight text-foreground">{title}</span>
+          <Badge variant="neutral" className="font-mono text-[10px] uppercase tracking-[0.08em]">{standard}</Badge>
         </div>
         <AnimatePresence>
           {state === 'done' && (
             <motion.div initial={{ opacity: 0, y: 4 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.25 }}
-              className="mt-1 text-sm text-foreground/60">
+              className="mt-1.5 text-sm leading-relaxed text-foreground/70">
               {children}
             </motion.div>
           )}
@@ -117,7 +127,6 @@ export default function VerifyStepper({ identity, reputation, query, onComplete 
   const sybil = reputation?.sybil?.level
   const verdict = verdictOf(score, kya, verified, sybil)
   const reasons = verdictReasons(score, kya, verified, sybil)
-  const { color, Icon: VIcon } = VERDICT_UI[verdict]
   const bd = reputation?.breakdown
   // Name the chain the read actually happened on. The old copy named X Layer or Circle Arc
   // and nothing else, so an identity resolved on Celo or Robinhood was reported as Arc.
@@ -126,12 +135,24 @@ export default function VerifyStepper({ identity, reputation, query, onComplete 
 
   return (
     <div className="overflow-hidden rounded-xl border border-border bg-card">
-      <div className="border-b border-border px-5 py-3">
-        <span className="text-[11px] font-bold uppercase tracking-wide text-foreground/50">Verification pipeline</span>
-        <span className="ml-2 font-mono text-[11px] text-foreground/40">{query}</span>
+      {/* Card header, matching the /stats panel header: an accent icon tile, a
+          full-contrast title at a real size, and the qualifier on its own muted line.
+          It used to be 11px micro-caps at 50% foreground, which on the light ground was a
+          heading you had to hunt for. */}
+      <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2 border-b border-border px-5 py-4">
+        <div className="flex items-center gap-2.5">
+          <span className="grid h-8 w-8 shrink-0 place-items-center rounded-xl bg-accent/10 text-accent">
+            <ListChecks size={16} strokeWidth={2} />
+          </span>
+          <div className="min-w-0">
+            <h3 className="text-base font-bold tracking-tight text-foreground">Verification pipeline</h3>
+            <p className="text-xs font-medium text-foreground/60">Four live reads, in the order a payer should ask them</p>
+          </div>
+        </div>
+        <span className="truncate font-mono text-xs text-foreground/60">{query}</span>
       </div>
       <div className="divide-y divide-border/60">
-        <StepRow state={state(1)} ok={verified} Icon={Fingerprint} title="Resolve identity" standard="ERC-8004">
+        <StepRow state={state(1)} outcome={verified ? 'pass' : 'fail'} Icon={Fingerprint} title="Resolve identity" standard="ERC-8004">
           {verified && identity?.partial ? (
             <>Live read from the ERC-8004 IdentityRegistry on {chainName}: this wallet <b className="text-foreground">holds an ERC-8004 identity token</b>. The public RPC cannot enumerate the token id; search by agent id for the full record.</>
           ) : verified && identity ? (
@@ -143,13 +164,13 @@ export default function VerifyStepper({ identity, reputation, query, onComplete 
           )}
         </StepRow>
 
-        <StepRow state={state(2)} ok={kya === 'verified'} Icon={BadgeCheck} title="Know Your Agent" standard="KYA">
+        <StepRow state={state(2)} outcome={kya === 'verified' ? 'pass' : 'fail'} Icon={BadgeCheck} title="Know Your Agent" standard="KYA">
           {kya === 'verified' && <>Wallet control attested in the ValidationRegistry. The operator proved they hold the agent&apos;s keys.</>}
-          {kya === 'revoked' && <>KYA attestation was <b className="text-red-600">revoked</b>. This agent is flagged as an incident.</>}
+          {kya === 'revoked' && <>KYA attestation was <b className="text-danger">revoked</b>. This agent is flagged as an incident.</>}
           {(kya === 'unverified' || !kya) && <>No KYA attestation yet. Identity exists, but wallet control is not proven.</>}
         </StepRow>
 
-        <StepRow state={state(3)} ok={score >= 200} Icon={Gauge} title="Score reputation" standard="deterministic 0-1000">
+        <StepRow state={state(3)} outcome={score >= 200 ? 'pass' : 'fail'} Icon={Gauge} title="Score reputation" standard="deterministic 0-1000">
           <>
             <b className="font-mono text-foreground">{score}</b> / 1000 from real on-chain settlements
             {bd && <> (settlement {bd.settlement}, validation {bd.validation}, tenure {bd.tenure}{typeof bd.behavior === 'number' ? `, behavior ${bd.behavior >= 0 ? '+' : ''}${bd.behavior}` : ''})</>}
@@ -158,12 +179,10 @@ export default function VerifyStepper({ identity, reputation, query, onComplete 
           </>
         </StepRow>
 
-        <StepRow state={state(4)} ok={verdict === 'ALLOW'} Icon={Scale} title="Decide" standard="risk engine">
-          <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
-            <span className="inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs font-bold" style={{ color, borderColor: `${color}55`, backgroundColor: `${color}14` }}>
-              <VIcon size={13} /> {verdict}
-            </span>
-            <span className="text-sm text-foreground/60">{reasons.join(' · ')}</span>
+        <StepRow state={state(4)} outcome={verdict === 'ALLOW' ? 'pass' : verdict === 'WARN' ? 'caution' : 'fail'} Icon={Scale} title="Decide" standard="risk engine">
+          <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
+            <VerdictBadge verdict={verdict} size="md" />
+            <span className="text-sm font-medium leading-relaxed text-foreground/70">{reasons.join(' · ')}</span>
           </div>
         </StepRow>
       </div>

@@ -1,9 +1,10 @@
 import { useState } from 'react'
-import { ShieldCheck, ShieldAlert, ShieldX, Loader2, Coins } from 'lucide-react'
+import { ShieldCheck, Loader2, Coins } from 'lucide-react'
 import { apiFetch } from '../../../lib/api'
 import { Button } from '../../ui/button'
 import { authHeaders } from '../../../store/auth'
 import { Panel } from '../../ui/panel'
+import { VerdictBadge } from '../../ui/badge'
 
 type Decision = 'ALLOW' | 'WARN' | 'DENY'
 type Result =
@@ -19,11 +20,10 @@ type Result =
 
 const short = (a?: string) => (a ? `${a.slice(0, 6)}...${a.slice(-4)}` : '-')
 
-const VERDICT: Record<Decision, { icon: typeof ShieldCheck; cls: string; chip: string }> = {
-  ALLOW: { icon: ShieldCheck, cls: 'text-emerald-600 dark:text-emerald-400', chip: 'bg-emerald-500/10 text-emerald-700 dark:text-emerald-300' },
-  WARN: { icon: ShieldAlert, cls: 'text-amber-600 dark:text-amber-400', chip: 'bg-amber-500/10 text-amber-700 dark:text-amber-300' },
-  DENY: { icon: ShieldX, cls: 'text-red-600 dark:text-red-400', chip: 'bg-red-500/10 text-red-700 dark:text-red-300' },
-}
+/* The verdict pill is the SHARED one (ui/badge.tsx). This panel used to draw its own out
+   of raw emerald / amber / red literals, which made it a THIRD ALLOW/WARN/DENY style in the
+   product: the same decision looked different depending on which screen you read it on. A
+   verdict is a decision about money and has to be recognisable on sight everywhere. */
 
 /**
  * Trust Oracle dogfood: one of our own agents BUYS a risk_check over x402 (a gasless Arc
@@ -65,8 +65,7 @@ export default function TrustOraclePanel() {
     }
   }
 
-  const v = result?.executed ? VERDICT[result.riskCheck.decision] : null
-  const VIcon = v?.icon ?? ShieldCheck
+  const decision = result?.executed ? result.riskCheck.decision : null
 
   return (
 <Panel className="mt-8">
@@ -108,7 +107,7 @@ export default function TrustOraclePanel() {
         </Button>
       </div>
 
-      {error && <div className="mt-4 rounded-xl border border-amber-200 dark:border-amber-500/25 bg-amber-50/60 dark:bg-amber-500/10 p-3 text-sm text-foreground/70">{error}</div>}
+      {error && <div className="mt-4 rounded-xl border border-warn/35 bg-warn/[0.08] p-3 text-sm text-foreground/70">{error}</div>}
 
       {result && result.executed === false && (
         <div className="mt-4 rounded-xl border border-border bg-background/40 p-3 text-sm text-foreground/70">
@@ -116,7 +115,7 @@ export default function TrustOraclePanel() {
         </div>
       )}
 
-      {result && result.executed && v && (
+      {result && result.executed && decision && (
         <div className="mt-4 space-y-2 text-sm">
           <div className="flex flex-wrap items-center gap-2 rounded-lg border border-foreground/8 bg-background/40 px-3 py-2">
             <Coins size={13} className="shrink-0 text-usdc" />
@@ -126,23 +125,20 @@ export default function TrustOraclePanel() {
             <span className="ml-auto rounded bg-usdc/10 px-1.5 py-0.5 text-[10px] font-semibold text-usdc">Arc · Gateway-batched</span>
           </div>
 
-          <div className={`flex items-start gap-2 rounded-lg border border-foreground/8 bg-background/40 px-3 py-3`}>
-            <VIcon size={18} className={`mt-0.5 shrink-0 ${v.cls}`} />
-            <div className="min-w-0">
-              <div className="flex items-center gap-2">
-                <span className={`rounded-full px-2 py-0.5 text-[11px] font-bold ${v.chip}`}>{result.riskCheck.decision}</span>
-                <span className="text-xs text-foreground/50">
-                  counterparty <span className="font-mono text-foreground/70">{result.riskCheck.agentId}</span> · risk {result.riskCheck.risk}
-                </span>
-              </div>
-              <ul className="mt-1.5 list-disc space-y-0.5 pl-4 text-xs text-foreground/60">
-                {result.riskCheck.reasons.map((r, i) => (
-                  <li key={i}>{r}</li>
-                ))}
-              </ul>
+          <div className="rounded-lg border border-border bg-background/40 px-3 py-3">
+            <div className="flex flex-wrap items-center gap-2">
+              <VerdictBadge verdict={result.riskCheck.decision} />
+              <span className="text-xs text-foreground/65">
+                counterparty <span className="font-mono text-foreground/80">{result.riskCheck.agentId}</span> · risk {result.riskCheck.risk}
+              </span>
             </div>
+            <ul className="mt-2 list-disc space-y-0.5 pl-4 text-xs leading-relaxed text-foreground/65">
+              {result.riskCheck.reasons.map((r, i) => (
+                <li key={i}>{r}</li>
+              ))}
+            </ul>
           </div>
-          <p className="text-[11px] text-foreground/40">
+          <p className="text-[11px] leading-relaxed text-foreground/60">
             The agent paid for the check and can now act on the verdict, {result.riskCheck.decision === 'DENY' ? 'it will not pay this counterparty.' : result.riskCheck.decision === 'WARN' ? 'proceed with caution.' : 'safe to proceed.'}
           </p>
         </div>

@@ -9,6 +9,7 @@ import {
   type Task, type TaskStatus, type Review, type Bid,
   canTransition, normalizePriceUsd, normalizeDeadlineHours, deadlineFrom,
   sanitizeRating, aggregateRating, agentChainIds, serviceDescription,
+  openTaskComplaint,
 } from '../marketplace.js'
 import { runEscrowJobDemo, fundEscrowOnchain, completeEscrowOnchain, rejectJobOnchain } from '../arc-contracts.js'
 
@@ -111,6 +112,16 @@ export async function hireAgent(input: {
 /**
  * Post an OPEN task without choosing a worker: verified agents bid, the client picks one. The
  * budget caps what any bid may charge. Client-only (any verified session).
+ *
+ * This is the one free write on the marketplace: no gas, and no escrow until acceptBid. So
+ * it is also the one that had nothing standing between a script and an unbounded pile of
+ * rows. The whole spam floor is enforced in a single call to openTaskComplaint below, which
+ * is PURE and lives in ../marketplace.js with its own tests: minimum content, a duplicate
+ * check against this poster's other open tasks, and a per-person ceiling that starts small
+ * for a stranger and grows once they have paid a worker or verified an agent.
+ *
+ * A refusal is a labeled 400 carrying the reason (errStatus maps it), never a silent drop
+ * and never a crash: the caller is told which bound they hit and what would clear it.
  */
 export function postOpenTask(input: {
   service: string
@@ -122,6 +133,18 @@ export function postOpenTask(input: {
   if (!input.client) return { error: 'Forbidden: sign in with a verified session to post a task' }
   const service = String(input.service ?? '').slice(0, 200).trim()
   if (!service) return { error: 'service required' }
+  const description = String(input.description ?? '').slice(0, 2000).trim()
+  const complaint = openTaskComplaint(
+    { service, description },
+    {
+      open: state.tasks.filter((t) => t.client === input.client && t.status === 'open'),
+      // Both promotions cost something a spammer cannot fake in bulk: a KYA verification is
+      // a wallet-control signature, and a released task moved real money through escrow.
+      hasVerifiedAgent: state.agents.some((a) => a.owner === input.client && a.kya === 'verified'),
+      released: state.tasks.filter((t) => t.client === input.client && t.status === 'released').length,
+    },
+  )
+  if (complaint) return { error: complaint }
   const budget = Math.min(normalizePriceUsd(input.budgetUsd), MARKETPLACE_MAX_TASK_USD)
   if (budget <= 0) return { error: 'budgetUsd must be a positive number' }
   const now = new Date().toISOString()
@@ -131,7 +154,7 @@ export function postOpenTask(input: {
     agentId: '',
     service,
     priceUsd: budget,
-    description: String(input.description ?? '').slice(0, 2000),
+    description,
     status: 'open',
     bids: [],
     createdAt: now,

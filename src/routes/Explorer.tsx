@@ -2,11 +2,12 @@ import { useEffect, useRef, useState, type FormEvent } from 'react'
 import TractionPanel from '../components/landing/TractionPanel'
 import { Link, useSearchParams } from 'react-router-dom'
 import { motion, AnimatePresence } from 'framer-motion'
-import { Search, Loader2, Copy, Check, ArrowUpRight, ShieldCheck, ShieldAlert, ShieldX, BadgeCheck, AlertTriangle } from 'lucide-react'
+import { Search, Loader2, Copy, Check, ArrowUpRight, BadgeCheck, AlertTriangle, ShieldCheck, Trophy } from 'lucide-react'
 import Logo from '../components/Logo'
 import ThemeToggle from '../components/ThemeToggle'
 import SiteFooter from '../components/sections/SiteFooter'
 import { Input } from '../components/ui/input'
+import { Badge, VerdictBadge, type BadgeProps } from '../components/ui/badge'
 import VerifyStepper from '../components/landing/VerifyStepper'
 import { useTheme } from '../components/ThemeProvider'
 import { APP_NAME } from '../lib/brand'
@@ -26,12 +27,13 @@ type Verdict = 'ALLOW' | 'WARN' | 'DENY'
 /** How many chains a lookup actually dials, counted from the generated registry rather
  *  than written down: the copy said "on Circle Arc" while five more chains were live. */
 const IDENTITY_CHAIN_COUNT = CHAINS.filter((c) => c.identityLive).length
-// Semantic tokens, not literal hexes: the light values match the old hexes exactly,
-// and the tokens flip with the theme so the verdict colors survive dark mode.
-const VERDICT: Record<Verdict, { color: string; Icon: typeof ShieldCheck }> = {
-  ALLOW: { color: 'var(--ok)', Icon: ShieldCheck },
-  WARN: { color: 'var(--warn)', Icon: ShieldAlert },
-  DENY: { color: 'var(--danger)', Icon: ShieldX },
+/** Verdict as a text colour, for the places a whole pill would be too much (the grade
+ *  word beside the score). The pill itself lives in ui/badge.tsx so ALLOW / WARN / DENY
+ *  are drawn once, with the glyph and the word carrying the meaning alongside the hue. */
+const VERDICT_TEXT: Record<Verdict, string> = {
+  ALLOW: 'text-ok',
+  WARN: 'text-warn',
+  DENY: 'text-danger',
 }
 function riskOf(score: number, kya?: string, verified = true, sybil?: string): Verdict {
   if (kya === 'revoked' || !verified || sybil === 'high') return 'DENY'
@@ -58,31 +60,40 @@ function useCountUp(target: number, duration = 900) {
   return val
 }
 
-function RiskPill({ verdict }: { verdict: Verdict }) {
-  const v = VERDICT[verdict]
+/**
+ * A section heading that is actually legible.
+ *
+ * The explorer's section headings were 11px micro-caps at 40-70% foreground, which on the
+ * light cream ground read as grey fog rather than as structure. This is the same header
+ * shape the /stats panels use: an accent icon tile, a full-contrast title at a real size,
+ * and the qualifier demoted to its own muted line instead of competing with the title.
+ */
+function SectionHead({ icon: Icon, title, note }: { icon: typeof ShieldCheck; title: string; note: string }) {
   return (
-    <span className="inline-flex items-center gap-1.5 rounded-md px-2.5 py-1 text-xs font-semibold"
-      style={{
-        color: v.color,
-        // Hex-alpha suffixes do not compose with var() references; mix instead.
-        background: `color-mix(in srgb, ${v.color} 8%, transparent)`,
-        boxShadow: `inset 0 0 0 1px color-mix(in srgb, ${v.color} 20%, transparent)`,
-      }}>
-      <v.Icon size={13} /> {verdict}
-    </span>
+    <div className="mb-3 flex flex-wrap items-center justify-between gap-x-4 gap-y-2">
+      <div className="flex items-center gap-2.5">
+        <span className="grid h-8 w-8 shrink-0 place-items-center rounded-xl bg-accent/10 text-accent">
+          <Icon size={16} strokeWidth={2} />
+        </span>
+        <h2 className="text-lg font-bold tracking-tight text-foreground">{title}</h2>
+      </div>
+      <span className="text-xs font-medium text-foreground/60">{note}</span>
+    </div>
   )
 }
 
-/** FICO-style spectrum: a red->amber->green gradient bar with a precise pointer at the score. */
+/** FICO-style spectrum: a danger->warn->ok gradient bar with a precise pointer at the score.
+ *  The stops are the semantic tokens, so the band a score falls in is the same colour as the
+ *  verdict that band produces, in either theme. */
 function Spectrum({ score }: { score: number }) {
   const pct = Math.max(0, Math.min(100, score / 10))
   return (
     <div className="w-full">
-      <div className="relative h-2 w-full rounded-full" style={{ background: 'linear-gradient(90deg,#dc2626 0%,#d97706 45%,#059669 100%)' }}>
-        <motion.div className="absolute -top-1 h-4 w-[3px] -translate-x-1/2 rounded-full bg-foreground shadow-[0_0_0_2px_var(--color-background)]"
+      <div className="relative h-2.5 w-full rounded-full" style={{ background: 'linear-gradient(90deg,var(--danger) 0%,var(--warn) 45%,var(--ok) 100%)' }}>
+        <motion.div className="absolute -top-1 h-[18px] w-[3px] -translate-x-1/2 rounded-full bg-foreground shadow-[0_0_0_2px_var(--color-card)]"
           initial={{ left: 0, opacity: 0 }} animate={{ left: `${pct}%`, opacity: 1 }} transition={{ duration: 0.9, ease: [0.16, 1, 0.3, 1], delay: 0.1 }} />
       </div>
-      <div className="mt-1.5 flex justify-between font-mono text-[10px] text-foreground/35">
+      <div className="mt-2 flex justify-between text-[11px] font-medium tabular-nums text-foreground/55">
         <span>0</span><span>250</span><span>500</span><span>750</span><span>1000</span>
       </div>
     </div>
@@ -104,20 +115,27 @@ function CopyAddr({ value, href }: { value: string; href?: string | null }) {
   )
 }
 
-function StatRow({ label, value, cap, tone }: { label: string; value: number | string; cap?: number; tone?: string }) {
+/** A stat's tone is a ROLE, not a colour: callers say "this number is bad", and the token
+ *  decides what bad looks like in the current theme. The old signature took a raw hex, so
+ *  every caller shipped its own #dc2626 and dark mode never got a say. */
+type StatTone = 'warn' | 'danger'
+const STAT_TONE: Record<StatTone, string> = { warn: 'text-warn', danger: 'text-danger' }
+
+function StatRow({ label, value, cap, tone }: { label: string; value: number | string; cap?: number; tone?: StatTone }) {
   const num = typeof value === 'number' ? value : null
   const pct = cap && num != null ? Math.max(0, Math.min(100, (Math.abs(num) / cap) * 100)) : null
+  const negative = (num ?? 0) < 0
   return (
     <div className="py-2">
       <div className="flex items-baseline justify-between gap-3">
-        <span className="text-[11px] uppercase tracking-wide text-foreground/45">{label}</span>
-        <span className="font-mono text-sm font-semibold tabular-nums" style={{ color: tone }}>
-          {num != null && num >= 0 && cap != null ? `${num}` : value}{cap != null && num != null ? <span className="text-foreground/30"> / {cap}</span> : null}
+        <span className="text-[11px] font-semibold uppercase tracking-[0.1em] text-foreground/70">{label}</span>
+        <span className={`text-sm font-bold tabular-nums ${tone ? STAT_TONE[tone] : 'text-foreground'}`}>
+          {num != null && num >= 0 && cap != null ? `${num}` : value}{cap != null && num != null ? <span className="font-medium text-foreground/45"> / {cap}</span> : null}
         </span>
       </div>
       {pct != null && (
-        <div className="mt-1.5 h-1 w-full overflow-hidden rounded-full bg-foreground/[0.08]">
-          <div className="h-full rounded-full" style={{ width: `${pct}%`, background: (num ?? 0) < 0 ? '#dc2626' : 'var(--color-accent)' }} />
+        <div className="mt-1.5 h-1.5 w-full overflow-hidden rounded-full bg-foreground/[0.08]">
+          <div className={`h-full rounded-full ${negative ? 'bg-danger' : 'bg-accent'}`} style={{ width: `${pct}%` }} />
         </div>
       )}
     </div>
@@ -162,29 +180,29 @@ function TrustProfile({ identity, reputation, query }: { identity: AgentIdentity
           <div className="flex flex-wrap items-center gap-2">
             <h2 className="truncate text-lg font-bold tracking-tight text-foreground">{name}</h2>
             {verified && (
-              <span className="inline-flex items-center gap-1 rounded-md bg-emerald-600/10 px-1.5 py-0.5 text-[11px] font-semibold text-emerald-700 dark:text-emerald-400">
-                <BadgeCheck size={12} /> ERC-8004
-              </span>
+              <Badge variant="success"><BadgeCheck size={12} /> ERC-8004</Badge>
             )}
             {reputation?.kya === 'revoked'
-              ? <span className="rounded-md bg-red-600/10 px-1.5 py-0.5 text-[11px] font-semibold text-red-600 dark:text-red-400">KYA revoked</span>
+              ? <Badge variant="danger">KYA revoked</Badge>
               : reputation?.kya === 'verified'
-              ? <span className="rounded-md bg-foreground/[0.06] px-1.5 py-0.5 text-[11px] font-semibold text-foreground/60">KYA verified</span>
+              ? <Badge variant="neutral">KYA verified</Badge>
               : null}
             {(reputation?.sybil?.level === 'high' || reputation?.sybil?.level === 'medium') && (
-              <span className="rounded-md px-1.5 py-0.5 text-[11px] font-semibold" title={`${reputation.sybil.selfDealt}/${reputation.sybil.jobs} jobs hired by its own operator`}
-                style={{ color: reputation.sybil.level === 'high' ? '#dc2626' : '#d97706', background: reputation.sybil.level === 'high' ? '#dc26261a' : '#d977061a' }}>
+              <Badge
+                variant={reputation.sybil.level === 'high' ? 'danger' : 'warning'}
+                title={`${reputation.sybil.selfDealt}/${reputation.sybil.jobs} jobs hired by its own operator`}
+              >
                 Sybil risk: {reputation.sybil.level}
-              </span>
+              </Badge>
             )}
           </div>
-          <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 font-mono text-xs text-foreground/45">
+          <div className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1.5 font-mono text-xs text-foreground/60">
             {identity && !identity.partial && <span>#{identity.tokenId}</span>}
             {owner && <CopyAddr value={owner} href={ownerUrl} />}
             {chainLabel && (
-              <span className="rounded bg-foreground/[0.06] px-1.5 py-0.5 text-[10px] uppercase tracking-wide">
+              <Badge variant="outline" className="font-mono text-[10px] uppercase tracking-[0.08em]">
                 {chainLabel}
-              </span>
+              </Badge>
             )}
             {identity?.partial && <span className="text-[11px] normal-case">identity held on-chain; search by token id for the full record</span>}
           </div>
@@ -195,22 +213,23 @@ function TrustProfile({ identity, reputation, query }: { identity: AgentIdentity
       <div className="border-b border-border p-5">
         <div className="flex items-end justify-between gap-4">
           <div>
-            <div className="text-[11px] font-semibold uppercase tracking-wide text-foreground/45">Reputation</div>
-            <div className="mt-1 flex items-baseline gap-2">
-              <span className="font-mono text-4xl font-bold tabular-nums text-foreground">{shownScore}</span>
-              <span className="font-mono text-sm text-foreground/35">/ 1000</span>
-              <span className="ml-1 text-sm font-semibold" style={{ color: VERDICT[verdict].color }}>{g.label}<span className="text-foreground/35"> · {g.tier}</span></span>
+            <div className="text-[11px] font-semibold uppercase tracking-[0.1em] text-foreground/70">Reputation</div>
+            <div className="mt-1.5 flex flex-wrap items-baseline gap-x-2.5 gap-y-1">
+              <span className="text-[clamp(2.2rem,7vw,2.8rem)] font-semibold leading-none tracking-[-0.035em] tabular-nums text-foreground">{shownScore}</span>
+              <span className="text-sm font-medium text-foreground/50">/ 1000</span>
+              <span className={`ml-1 text-sm font-bold ${VERDICT_TEXT[verdict]}`}>{g.label}<span className="font-medium text-foreground/50"> · {g.tier}</span></span>
             </div>
           </div>
-          <RiskPill verdict={verdict} />
+          <VerdictBadge verdict={verdict} size="md" />
         </div>
         <div className="mt-4"><Spectrum score={score} /></div>
         {reputation?.onchainAttestation && (
-          <div className="mt-3 text-[11px]">
-            <a href={reputation.onchainAttestation.txUrl} target="_blank" rel="noopener noreferrer" className="font-medium text-accent hover:underline">
-              Anchored on-chain · ERC-8004 ReputationRegistry ↗
+          <div className="mt-3.5 text-[11px]">
+            <a href={reputation.onchainAttestation.txUrl} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 font-semibold text-accent hover:underline">
+              Anchored on-chain · ERC-8004 ReputationRegistry
+              <ArrowUpRight size={12} aria-hidden="true" />
             </a>
-            <span className="text-foreground/40"> verify the score on-chain, not just here</span>
+            <span className="text-foreground/60"> verify the score on-chain, not just here</span>
           </div>
         )}
       </div>
@@ -221,10 +240,10 @@ function TrustProfile({ identity, reputation, query }: { identity: AgentIdentity
           {bd && <StatRow label="Settlement" value={bd.settlement} cap={600} />}
           {bd && <StatRow label="Validation" value={bd.validation} cap={240} />}
           {bd && <StatRow label="Tenure" value={bd.tenure} cap={160} />}
-          {bd && typeof bd.behavior === 'number' && <StatRow label="Behavior (jobs)" value={bd.behavior >= 0 ? `+${bd.behavior}` : String(bd.behavior)} tone={bd.behavior < 0 ? '#dc2626' : undefined} />}
+          {bd && typeof bd.behavior === 'number' && <StatRow label="Behavior (jobs)" value={bd.behavior >= 0 ? `+${bd.behavior}` : String(bd.behavior)} tone={bd.behavior < 0 ? 'danger' : undefined} />}
           {beh && <StatRow label="Completed jobs" value={beh.completedJobs} />}
-          {beh && <StatRow label="Contested" value={beh.contestedJobs} tone={beh.contestedJobs > 0 ? '#d97706' : undefined} />}
-          {beh && <StatRow label="Dispute rate" value={`${Math.round(beh.disputeRate * 100)}%`} tone={beh.disputeRate >= 0.3 ? '#dc2626' : undefined} />}
+          {beh && <StatRow label="Contested" value={beh.contestedJobs} tone={beh.contestedJobs > 0 ? 'warn' : undefined} />}
+          {beh && <StatRow label="Dispute rate" value={`${Math.round(beh.disputeRate * 100)}%`} tone={beh.disputeRate >= 0.3 ? 'danger' : undefined} />}
           {beh && <StatRow label="Avg rating" value={beh.avgRating != null ? `${beh.avgRating.toFixed(1)} / 5` : '·'} />}
           {typeof reputation.settledOnchain === 'number' && <StatRow label="Settled on-chain" value={`${reputation.settledOnchain}${reputation.settledUsd ? ` · $${reputation.settledUsd}` : ''}`} />}
         </div>
@@ -232,7 +251,7 @@ function TrustProfile({ identity, reputation, query }: { identity: AgentIdentity
         <div className="p-5 text-sm text-foreground/50">On-chain identity resolved; no platform reputation for this agent yet.</div>
       )}
 
-      <div className="border-t border-border px-5 py-3 text-[11px] text-foreground/40">
+      <div className="border-t border-border px-5 py-3 text-[11px] leading-relaxed text-foreground/60">
         Live ERC-8004 read · deterministic <a href="https://a-identity-asp.onrender.com/methodology" target="_blank" rel="noopener noreferrer" className="text-accent hover:underline">reproducible</a> score.
         Amount-aware verdict: the paid <a href="https://a-identity-asp.onrender.com/proof" target="_blank" rel="noopener noreferrer" className="text-accent hover:underline">risk_check on OKX</a>.
       </div>
@@ -259,14 +278,23 @@ function ProfileSkeleton() {
   )
 }
 
-/** Badge levels share the palette the console and the SVG badge use, so one agent reads the
- *  same everywhere it appears. */
-const GUARDRAIL_COLOR: Record<string, string> = {
-  enforced: '#059669',
-  enforced_with_flags: '#d97706',
-  configured: '#b8860b',
-  none: '#8a8f98',
-  unavailable: '#8a8f98',
+/**
+ * Guardrail standing, as a badge variant rather than a hex.
+ *
+ * The embeddable SVG badge (mcp/src/policy/badge.ts) paints from fixed hexes because it is
+ * rendered for someone else's page and has no theme to read. In here the SAME meanings map
+ * onto the semantic tokens: `enforced` and `enforced_with_flags` keep the exact light-mode
+ * colours the SVG uses (--ok is #059669, --warn is #d97706) and gain a dark-mode value the
+ * hexes never had. `configured` is the one shift, from the SVG's goldenrod to warn: the two
+ * amber states are told apart by their LABEL text ("enforced, flagged" vs "configured"),
+ * which is the channel that survives a colour-blind reader anyway.
+ */
+const GUARDRAIL_BADGE: Record<string, NonNullable<BadgeProps['variant']>> = {
+  enforced: 'success',
+  enforced_with_flags: 'warning',
+  configured: 'warning',
+  none: 'neutral',
+  unavailable: 'neutral',
 }
 
 function LeaderboardSkeleton({ rows = 6 }: { rows?: number }) {
@@ -357,8 +385,8 @@ export default function Explorer() {
         <main ref={topRef} className="mx-auto w-full max-w-[1040px] px-5 py-10 sm:px-8">
           {/* title */}
           <div className="max-w-2xl">
-            <h1 className="text-2xl font-bold tracking-tight sm:text-3xl" style={{ fontFamily: 'var(--font-heading)' }}>Agent Trust Explorer</h1>
-            <p className="mt-2 text-sm text-foreground/55">Resolve any agent&apos;s on-chain identity, reputation and risk across the {IDENTITY_CHAIN_COUNT} chains that carry an ERC-8004 registry. No login, no mocks.</p>
+            <h1 className="text-[clamp(1.75rem,4vw,2.35rem)] font-bold leading-[1.08] tracking-[-0.03em] text-foreground" style={{ fontFamily: 'var(--font-heading)' }}>Agent Trust Explorer</h1>
+            <p className="mt-2.5 text-[15px] font-medium leading-relaxed text-foreground/70">Resolve any agent&apos;s on-chain identity, reputation and verdict across the {IDENTITY_CHAIN_COUNT} chains that carry an ERC-8004 registry. No login, no mocks.</p>
           </div>
 
           {/* search */}
@@ -391,12 +419,12 @@ export default function Explorer() {
                       one agent, so say that instead of letting the first chain's result read
                       as the answer. Each candidate is a one-click, unambiguous lookup. */}
                   {identity?.ambiguity && (
-                    <div className="mb-4 rounded-xl border border-amber-500/30 bg-amber-500/[0.06] p-4">
-                      <div className="flex items-start gap-2">
-                        <AlertTriangle size={15} className="mt-0.5 shrink-0 text-amber-500" />
+                    <div className="mb-4 rounded-2xl border border-warn/35 bg-warn/[0.07] p-4">
+                      <div className="flex items-start gap-2.5">
+                        <AlertTriangle size={16} className="mt-0.5 shrink-0 text-warn" />
                         <div className="min-w-0">
-                          <div className="text-sm font-semibold text-foreground">This number is not unique</div>
-                          <div className="mt-0.5 text-[12px] text-foreground/60">{identity.ambiguity.note}</div>
+                          <div className="text-sm font-bold text-foreground">This number is not unique</div>
+                          <div className="mt-1 text-xs leading-relaxed text-foreground/70">{identity.ambiguity.note}</div>
                           <div className="mt-3 space-y-1.5">
                             {identity.ambiguity.matches.map((m) => (
                               <button
@@ -405,11 +433,11 @@ export default function Explorer() {
                                 onClick={() => { setQuery(m.caip); void lookup(m.caip, true) }}
                                 className="flex w-full items-center gap-2 rounded-lg border border-border bg-card px-3 py-2 text-left transition-colors hover:bg-foreground/[0.03]"
                               >
-                                <span className="rounded bg-foreground/[0.06] px-1.5 py-0.5 font-mono text-[10px] uppercase tracking-wide text-foreground/60">
+                                <Badge variant="neutral" className="font-mono text-[10px] uppercase tracking-[0.08em]">
                                   {m.chain}
-                                </span>
+                                </Badge>
                                 <span className="truncate font-mono text-[11px] text-foreground/70">{m.caip}</span>
-                                <span className="ml-auto shrink-0 font-mono text-[11px] text-foreground/40">
+                                <span className="ml-auto shrink-0 font-mono text-[11px] text-foreground/55">
                                   {m.owner.slice(0, 8)}…{m.owner.slice(-4)}
                                 </span>
                               </button>
@@ -432,19 +460,20 @@ export default function Explorer() {
           {/* leaderboard table */}
           {(boardLoading || board.length > 0) && (
             <div className="mt-12">
-              <div className="mb-2 flex items-baseline justify-between">
-                <h2 className="text-sm font-bold uppercase tracking-wide text-foreground/70">Most trusted agents</h2>
-                <span className="font-mono text-[11px] text-foreground/40">ranked by reputation</span>
-              </div>
+              <SectionHead icon={Trophy} title="Most trusted agents" note="Live leaderboard, ranked by reputation" />
               <div className="overflow-hidden rounded-xl border border-border bg-card">
                 {board.length === 0 ? <LeaderboardSkeleton /> : <table className="w-full text-sm">
+                  {/* Column headings, readable rather than decorative. They were 11px
+                      micro-caps at 40% foreground, which on the light cream ground is below
+                      any sane contrast floor: the columns had labels you could not read.
+                      "Risk" is now "Verdict", because ALLOW is not a risk, it is the answer. */}
                   <thead>
-                    <tr className="border-b border-border text-left text-[11px] uppercase tracking-wide text-foreground/40">
-                      <th className="w-10 py-2.5 pl-4 font-medium">#</th>
-                      <th className="py-2.5 font-medium">Agent</th>
-                      <th className="hidden py-2.5 font-medium sm:table-cell">Reputation</th>
-                      <th className="hidden py-2.5 font-medium md:table-cell">Guardrails</th>
-                      <th className="py-2.5 pr-4 text-right font-medium">Risk</th>
+                    <tr className="border-b border-border bg-foreground/[0.02] text-left text-[11px] font-semibold uppercase tracking-[0.1em] text-foreground/70">
+                      <th scope="col" className="w-10 py-3 pl-4">#</th>
+                      <th scope="col" className="py-3">Agent</th>
+                      <th scope="col" className="hidden py-3 sm:table-cell">Reputation</th>
+                      <th scope="col" className="hidden py-3 md:table-cell">Guardrails</th>
+                      <th scope="col" className="py-3 pr-4 text-right">Verdict</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -455,22 +484,22 @@ export default function Explorer() {
                       return (
                         <tr key={a.id} onClick={() => { const q = a.onchainAgentId || a.id; setQuery(q); void lookup(q, true) }}
                           className={`cursor-pointer border-b border-border/60 transition-colors last:border-0 ${active ? 'bg-foreground/[0.04]' : 'hover:bg-foreground/[0.025]'}`}>
-                          <td className="py-3 pl-4 font-mono text-foreground/35">{i + 1}</td>
+                          <td className="py-3 pl-4 text-sm font-semibold tabular-nums text-foreground/45">{i + 1}</td>
                           <td className="py-3 pr-3">
                             <div className="flex items-center gap-2.5">
                               <AgentAvatar seed={a.onchainAgentId || a.id} size={32} verdict={v.toLowerCase() as OwlVerdict} />
                               <div className="min-w-0">
-                                <div className="truncate font-medium text-foreground">{a.name}</div>
-                                <div className="truncate font-mono text-[11px] text-foreground/40">{a.category}{a.onchainAgentId ? ` · #${a.onchainAgentId}` : ''}</div>
+                                <div className="truncate font-semibold text-foreground">{a.name}</div>
+                                <div className="truncate font-mono text-[11px] text-foreground/55">{a.category}{a.onchainAgentId ? ` · #${a.onchainAgentId}` : ''}</div>
                               </div>
                             </div>
                           </td>
                           <td className="hidden py-3 sm:table-cell">
                             <div className="flex items-center gap-2">
                               <div className="h-1.5 w-20 overflow-hidden rounded-full bg-foreground/[0.08]">
-                                <div className="h-full rounded-full" style={{ width: `${Math.max(3, s / 10)}%`, background: 'var(--color-accent)' }} />
+                                <div className="h-full rounded-full bg-accent" style={{ width: `${Math.max(3, s / 10)}%` }} />
                               </div>
-                              <span className="font-mono text-xs font-semibold tabular-nums text-foreground/80">{s}</span>
+                              <span className="text-sm font-bold tabular-nums text-foreground">{s}</span>
                             </div>
                           </td>
                           {/* Guardrail standing, shown only for agents whose owner PUBLISHED
@@ -478,23 +507,15 @@ export default function Explorer() {
                               published shows nothing about its policy here. */}
                           <td className="hidden py-3 pr-3 md:table-cell">
                             {a.guardrails?.published ? (
-                              <span
-                                className="inline-flex items-center rounded-md px-2 py-0.5 text-[11px] font-semibold"
-                                style={{
-                                  color: GUARDRAIL_COLOR[a.guardrails.level ?? 'none'],
-                                  background: `${GUARDRAIL_COLOR[a.guardrails.level ?? 'none']}14`,
-                                }}
-                              >
+                              <Badge variant={GUARDRAIL_BADGE[a.guardrails.level ?? 'none'] ?? 'neutral'}>
                                 {a.guardrails.label ?? a.guardrails.level}
-                              </span>
+                              </Badge>
                             ) : (
-                              <span className="font-mono text-[11px] text-foreground/25">not published</span>
+                              <span className="text-[11px] font-medium text-foreground/55">not published</span>
                             )}
                           </td>
                           <td className="py-3 pr-4 text-right">
-                            <span className="inline-flex items-center gap-1 font-mono text-xs font-semibold" style={{ color: VERDICT[v].color }}>
-                              <span className="h-1.5 w-1.5 rounded-full" style={{ background: VERDICT[v].color }} />{v}
-                            </span>
+                            <VerdictBadge verdict={v} />
                           </td>
                         </tr>
                       )

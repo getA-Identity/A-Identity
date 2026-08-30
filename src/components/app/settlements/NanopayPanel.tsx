@@ -95,7 +95,7 @@ export default function NanopayPanel() {
         </Button>
       </div>
 
-      {error && <div className="mt-4 rounded-xl border border-amber-200 dark:border-amber-500/25 bg-amber-50/60 dark:bg-amber-500/10 p-3 text-sm text-foreground/70">{error}</div>}
+      {error && <div className="mt-4 rounded-xl border border-warn/35 bg-warn/[0.08] p-3 text-sm text-foreground/70">{error}</div>}
 
       {result && result.executed === false && (
         <div className="mt-4 rounded-xl border border-border bg-background/40 p-3 text-sm text-foreground/70">
@@ -119,10 +119,10 @@ export default function NanopayPanel() {
           <DataRow label={`Paid ${result.amountUsd} USDC -> ${short(result.payTo)}`} value={`from Gateway balance`} />
           <div
             className={`flex items-center gap-2 rounded-lg border px-3 py-2 ${
-              settled ? 'border-emerald-200 dark:border-emerald-500/25 bg-emerald-50/60 dark:bg-emerald-500/10' : 'border-amber-200 dark:border-amber-500/25 bg-amber-50/60 dark:bg-amber-500/10'
+              settled ? 'border-ok/30 bg-ok/[0.08]' : 'border-warn/35 bg-warn/[0.08]'
             }`}
           >
-            {settled ? <Zap size={14} className="text-emerald-600" /> : <Loader2 size={14} className="animate-spin text-amber-600" />}
+            {settled ? <Zap size={14} className="text-ok" /> : <Loader2 size={14} className="animate-spin text-warn" />}
             <span className="text-foreground/75">
               {settled ? (
                 <>Settled through Circle Gateway, <b>batched on-chain</b>, gasless for buyer &amp; seller</>

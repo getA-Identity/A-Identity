@@ -53,7 +53,7 @@ export default function GasPanel() {
 
       {gas ? (
         <div className="mt-4 grid gap-3 sm:grid-cols-2">
-          <div className="rounded-xl border border-emerald-200 bg-emerald-50/60 p-4 dark:border-emerald-500/25 dark:bg-emerald-500/10">
+          <div className="rounded-xl border border-ok/30 bg-ok/[0.08] p-4">
             <p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-foreground/45">
               {gas.chain} · gas paid in
             </p>

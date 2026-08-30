@@ -109,7 +109,7 @@ export default function AppKitPanel() {
           >
             <div className="flex items-center gap-1.5">
               {c.supported ? (
-                <CheckCircle2 size={13} className="shrink-0 text-emerald-500" />
+                <CheckCircle2 size={13} className="shrink-0 text-ok" />
               ) : (
                 <span className="h-2 w-2 shrink-0 rounded-full bg-foreground/20" />
               )}
@@ -158,7 +158,7 @@ export default function AppKitPanel() {
       </div>
 
       {error && (
-        <div className="mt-4 rounded-xl border border-amber-200 bg-amber-50/60 p-3 text-sm text-foreground/70 dark:border-amber-500/25 dark:bg-amber-500/10">
+        <div className="mt-4 rounded-xl border border-warn/35 bg-warn/[0.08] p-3 text-sm text-foreground/80">
           {error}
         </div>
       )}
@@ -170,9 +170,9 @@ export default function AppKitPanel() {
       )}
 
       {result?.executed && (
-        <div className="mt-4 rounded-xl border border-emerald-200 bg-emerald-50/60 p-3 text-sm dark:border-emerald-500/25 dark:bg-emerald-500/10">
+        <div className="mt-4 rounded-xl border border-ok/30 bg-ok/[0.08] p-3 text-sm">
           <div className="flex items-center gap-2 text-foreground/75">
-            <CheckCircle2 size={14} className="shrink-0 text-emerald-500" />
+            <CheckCircle2 size={14} className="shrink-0 text-ok" />
             {result.route} · {result.amountUsd} {result.tokenIn} · {result.state}
           </div>
           {result.explorerUrl && (

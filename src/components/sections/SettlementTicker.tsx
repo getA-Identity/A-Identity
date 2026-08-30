@@ -1,5 +1,5 @@
-import { useEffect, useState } from 'react'
-import { motion } from 'framer-motion'
+import { useEffect, useRef, useState } from 'react'
+import { motion, useReducedMotion } from 'framer-motion'
 import { ArrowUpRight } from 'lucide-react'
 import { ASP_BASE } from '../../lib/mcpBase'
 
@@ -14,6 +14,19 @@ import { ASP_BASE } from '../../lib/mcpBase'
  * Nothing here is generated: the rows are the real USD₮0 transfers on X Layer mainnet that
  * paid for tool calls. If the feed cannot be reached, the panel says so and keeps the link
  * to the full proof page rather than inventing rows.
+ *
+ * WHY IT MOVES, AND WHAT THE MOVEMENT IS NOT ALLOWED TO CLAIM.
+ *
+ * The panel is called a ticker and for a long time it was a static list. It moves now, but
+ * only in the one way that cannot lie: it scrolls its own box down through settlements
+ * that were all fetched in a single read and were already on-chain before the page opened.
+ * A row is never inserted, never animated in from the top, and the order never changes, so
+ * there is no frame in which the panel implies that money arrived while you watched. The
+ * copy says exactly that, in the header, for as long as the drift is running.
+ *
+ * The reader takes it over permanently on any wheel, drag, key or focus, because a person
+ * reading row forty must not be carried to row forty-one; hovering only pauses it. Reduced
+ * motion never starts it, and neither does an off-screen panel.
  */
 
 // Fetched through ASP_BASE (same-origin /asp proxy in prod, so ad blockers that list
@@ -26,9 +39,19 @@ type Feed = { settlements: Settlement[]; total: number; totalUsd: number; payToU
 
 const short = (h: string) => `${h.slice(0, 10)}…${h.slice(-6)}`
 
+/** Pixels a second the ledger drifts by. A row is 46px, so about two and a half seconds. */
+const DRIFT_PX_PER_MS = 0.019
+/** A beat at the top and at the bottom, so the newest row is readable on both passes. */
+const DRIFT_HOLD_MS = 1100
+
 export default function SettlementTicker() {
   const [feed, setFeed] = useState<Feed | null>(null)
   const [failed, setFailed] = useState(false)
+  const still = useReducedMotion() ?? false
+  const listRef = useRef<HTMLDivElement>(null)
+  /** False once the reader has steered. There is no path back: it was their choice. */
+  const [drifting, setDrifting] = useState(true)
+  const hovered = useRef(false)
 
   useEffect(() => {
     let alive = true
@@ -68,16 +91,82 @@ export default function SettlementTicker() {
     }
   }, [])
 
+  /* The drift. It walks the box's own scrollTop, which is the honest way to move a ledger:
+     the scrollbar shows a reader travelling through a fixed list rather than a list being
+     fed from somewhere. When it reaches the last settlement it waits, returns to the
+     newest and waits again. */
+  useEffect(() => {
+    if (still || !drifting || !feed) return
+    const el = listRef.current
+    if (!el) return
+
+    let onScreen = false
+    const io =
+      typeof IntersectionObserver === 'undefined'
+        ? null
+        : new IntersectionObserver(([e]) => (onScreen = e.isIntersecting), { threshold: 0.3 })
+    io?.observe(el)
+
+    let raf = 0
+    let last = 0
+    let hold = DRIFT_HOLD_MS
+    /* The position is kept here as a float and only then written out. `scrollTop` snaps
+       what it is given to a whole device pixel, so a frame's worth of drift (0.3px at
+       60fps) written straight to the element rounds to zero, is read back as zero, and the
+       panel never moves at all. Accumulating first is what makes a slow drift possible. */
+    let pos = el.scrollTop
+    const step = (t: number) => {
+      raf = requestAnimationFrame(step)
+      const dt = last ? Math.min(t - last, 100) : 0
+      last = t
+      if (!onScreen || hovered.current || document.hidden) return
+      if (hold > 0) {
+        hold -= dt
+        return
+      }
+      const max = el.scrollHeight - el.clientHeight
+      if (max <= 0) return
+      // Something other than us moved the box (a focus ring being revealed, say). Follow
+      // it rather than yanking the reader back to where we thought we were.
+      if (Math.abs(el.scrollTop - pos) > 2) pos = el.scrollTop
+      if (pos >= max - 0.5) {
+        pos = 0
+        el.scrollTop = 0
+        hold = DRIFT_HOLD_MS
+        return
+      }
+      pos = Math.min(max, pos + dt * DRIFT_PX_PER_MS)
+      el.scrollTop = pos
+    }
+    raf = requestAnimationFrame(step)
+    return () => {
+      cancelAnimationFrame(raf)
+      io?.disconnect()
+    }
+  }, [still, drifting, feed])
+
+  const takeOver = () => setDrifting(false)
+
   return (
     <div className="overflow-hidden rounded-2xl border border-border bg-card shadow-[0_24px_60px_-32px_rgba(16,24,40,0.35)]">
       <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border px-5 py-3">
-        <p className="flex items-center gap-2 text-sm font-semibold text-foreground">
-          <span className="relative flex h-2 w-2">
-            <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-500/60" />
-            <span className="relative inline-flex h-2 w-2 rounded-full bg-emerald-500" />
-          </span>
-          Every settlement, on-chain
-        </p>
+        <div className="min-w-0">
+          <p className="flex items-center gap-2 text-sm font-semibold text-foreground">
+            <span className="relative flex h-2 w-2">
+              <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-500/60" />
+              <span className="relative inline-flex h-2 w-2 rounded-full bg-emerald-500" />
+            </span>
+            Every settlement, on-chain
+          </p>
+          {/* The one sentence that keeps the movement honest, shown exactly while there IS
+              movement. The list is a complete record read once; scrolling it is not a feed
+              arriving, and a reader should not have to work that out from the timing. */}
+          {feed && drifting && !still && (
+            <p className="mt-0.5 pl-4 text-[11px] leading-tight text-foreground/60">
+              The complete record, newest first. It scrolls; nothing arrives while you watch.
+            </p>
+          )}
+        </div>
         <p className="font-mono text-[10px] uppercase tracking-[0.14em] text-foreground/60">
           USD₮0 · X Layer mainnet
         </p>
@@ -91,7 +180,21 @@ export default function SettlementTicker() {
       </div>
 
       {/* Fixed height with its own scroll: a hundred and twenty rows must never grow the page. */}
-      <div className="h-[264px] divide-y divide-border/60 overflow-y-auto overscroll-y-contain">
+      <div
+        ref={listRef}
+        /* Hover pauses. A wheel, a drag, a key or focus arriving on a row is the reader
+           steering, and the drift does not come back after that. Focus matters most: a
+           keyboard user tabbing down the rows makes the browser scroll this box itself,
+           and two things scrolling one box is a fight the reader always loses. */
+        onMouseEnter={() => (hovered.current = true)}
+        onMouseLeave={() => (hovered.current = false)}
+        onWheel={takeOver}
+        onPointerDown={takeOver}
+        onTouchStart={takeOver}
+        onKeyDown={takeOver}
+        onFocusCapture={takeOver}
+        className="h-[264px] divide-y divide-border/60 overflow-y-auto overscroll-y-contain"
+      >
         {feed?.settlements.map((s, i) => (
           <motion.a
             key={s.txHash + i}

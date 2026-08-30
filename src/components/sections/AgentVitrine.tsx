@@ -1,7 +1,8 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useId, useState, type FocusEvent, type ReactNode } from 'react'
 import { Link } from 'react-router-dom'
-import { motion } from 'framer-motion'
-import { ArrowRight, ArrowUpRight, BadgeCheck, Star, Store } from 'lucide-react'
+import { AnimatePresence, motion, useReducedMotion } from 'framer-motion'
+import { ArrowRight, ArrowUpRight, BadgeCheck, ChevronDown, Star, Store } from 'lucide-react'
+import { EASE_OUT_EXPO } from '../../lib/brand'
 import { getLeaderboard, type FeedAgent } from '../../lib/mcp-client'
 import { MCP_BASE } from '../../lib/mcpBase'
 import { CHAIN_BY_ID } from '../../lib/chains'
@@ -40,6 +41,26 @@ import { OUR_AGENTS, type OnchainAgent } from './AgentRing'
  * none). That is also why the leaderboard cards below carry no chain badge: the
  * leaderboard payload has no chain field, and a badge we cannot source is one we do not
  * draw.
+ *
+ * MOTION, and what it is allowed to say.
+ *
+ * Three things move here, and none of them may be read as an event.
+ *
+ *   1. The registration strip is a marquee of the roster. It is decoration over facts
+ *      that have been true since the day each token was minted, so it carries its own
+ *      disclaimer ("standing on-chain, not a live feed"), it never animates a chip IN,
+ *      and every chip names the agent it belongs to. A badge is never separated from its
+ *      owner, and no chain can be mistaken for one being registered while you watch.
+ *   2. A house card opens its registrations on hover, on keyboard focus, and on a tap of
+ *      its own toggle, because hover is not an interaction on a phone.
+ *   3. A leaderboard card fades in two numbers it already fetched (reputation and rank
+ *      score) on hover or focus.
+ *
+ * Reduced motion is honored per animation, deliberately: `.console-shell` crushes
+ * durations for the app console, and the landing sits outside that scope, so nothing here
+ * inherits an escape hatch. The marquee drops to one scrollable copy, the card panel
+ * opens with a zero-length transition, and the CSS in index.css stops the keyframes as a
+ * second line of defense.
  */
 
 /** One of our agents, with every network it holds a registration on. */
@@ -76,6 +97,23 @@ const BLURB: Record<string, string> = {
 
 const blurbOf = (o: OurAgent) => BLURB[o.identity] ?? o.registrations[0].mission
 
+const keyOf = (a: OnchainAgent) => `${a.chain}-${a.tokenId}`
+
+/**
+ * Where a reader can check a registration for themselves.
+ *
+ * Derived from the generated chain registry, never typed: the mint transaction when we
+ * hold one, and otherwise the identity registry contract, which is the only honest answer
+ * for #8913. A chain with no explorer in the registry gets no link rather than a guess.
+ */
+function receiptHref(a: OnchainAgent): string | undefined {
+  const chain = CHAIN_BY_ID[a.chain]
+  if (!chain.explorer) return undefined
+  if (a.tx) return `${chain.explorer}/tx/${a.tx}`
+  const registry = chain.registries.identity
+  return registry ? `${chain.explorer}/address/${registry}` : undefined
+}
+
 /**
  * Token ids that are ours, so a leaderboard row we registered says so.
  *
@@ -96,6 +134,304 @@ function OursChip() {
     <span className="shrink-0 rounded-full border border-accent/30 bg-accent/10 px-1.5 py-px text-[10px] font-bold uppercase tracking-wide text-accent">
       Ours
     </span>
+  )
+}
+
+/** True when this focus event came from the keyboard rather than from a tap or a click. */
+function isKeyboardFocus(target: EventTarget | null): boolean {
+  const el = target as HTMLElement | null
+  return typeof el?.matches === 'function' && el.matches(':focus-visible')
+}
+
+/** True when focus has left the element the handler is bound to. */
+function focusLeft(e: FocusEvent<HTMLElement>): boolean {
+  return !e.currentTarget.contains(e.relatedTarget as Node | null)
+}
+
+/* ------------------------------------------------------- the registration strip */
+
+/**
+ * One registration, as a chip that can stand on its own.
+ *
+ * Self-contained on purpose: the network mark, the network's name and the token id travel
+ * together with the NAME OF THE AGENT that holds them, because a moving badge that has
+ * been separated from its owner is a badge that claims nothing. The chip links to where
+ * the claim can be checked, which is the mint transaction where there is one.
+ *
+ * `tabbable` is false for the duplicated copy the loop needs. That copy is aria-hidden and
+ * out of the tab order, so the strip announces the roster once and a Tab key walks it once.
+ */
+function RegistrationChip({ a, tabbable }: { a: OnchainAgent; tabbable: boolean }) {
+  const chain = CHAIN_BY_ID[a.chain]
+  const href = receiptHref(a)
+  const body = (
+    <>
+      <ChainLogo id={a.chain} size={20} />
+      <span className="flex flex-col leading-tight">
+        <span className="text-[10px] font-semibold uppercase tracking-[0.1em] text-foreground/60">
+          {a.identity}
+        </span>
+        <span className="text-[13px] font-semibold text-foreground">
+          {chain.shortName}{' '}
+          <span className="font-mono tabular-nums text-foreground/70">#{a.tokenId}</span>
+        </span>
+      </span>
+    </>
+  )
+  const className =
+    'mr-3 inline-flex shrink-0 items-center gap-2.5 rounded-full border border-border bg-background/70 py-1.5 pl-2 pr-4 transition-colors hover:border-accent/50'
+  return href ? (
+    <a
+      href={href}
+      target="_blank"
+      rel="noopener noreferrer"
+      tabIndex={tabbable ? undefined : -1}
+      aria-label={`${a.identity} on ${chain.shortName}, token ${a.tokenId}. Opens the network explorer.`}
+      className={className}
+    >
+      {body}
+    </a>
+  ) : (
+    <span className={className}>{body}</span>
+  )
+}
+
+/**
+ * The roster, flowing. One pass of eight registrations, the way a brand strip rotates.
+ *
+ * The loop needs the list twice so the track can travel exactly one copy and land back on
+ * itself; see the keyframes in index.css for why the gutter is a margin on the chip rather
+ * than a flex gap. Hover and focus stop it (CSS, so no React state runs on every pointer
+ * move), and reduced motion is not "the same strip, frozen": it renders ONE copy inside a
+ * scrollable box, so a reader who asked for stillness can still reach every chip.
+ */
+function RegistrationStrip() {
+  const reduced = useReducedMotion() ?? false
+  const copies = reduced ? 1 : 2
+
+  /* Focusing a chip that has drifted past the right edge makes the browser scroll this
+     overflow box to reveal it, which is correct while the chip is focused (the strip is
+     paused, so it stays put) but must not outlive the focus, or every later frame draws
+     shifted. Reset on the way out. */
+  const onBlurCapture = (e: FocusEvent<HTMLDivElement>) => {
+    if (focusLeft(e)) e.currentTarget.scrollLeft = 0
+  }
+
+  return (
+    <div className="mt-8">
+      <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
+        <p className="text-xs font-bold uppercase tracking-[0.14em] text-foreground/70">
+          Every registration we hold
+        </p>
+        <p className="text-xs text-foreground/60">
+          Standing on-chain since each was minted. The strip moves; the registry does not.
+        </p>
+      </div>
+      <div
+        onBlurCapture={onBlurCapture}
+        className={`vitrine-marquee relative mt-3 ${reduced ? 'overflow-x-auto' : 'overflow-hidden'}`}
+      >
+        <div className={`flex w-max ${reduced ? '' : 'vitrine-marquee-track'}`}>
+          {Array.from({ length: copies }, (_, copy) => (
+            <div key={copy} className="flex" aria-hidden={copy > 0 ? true : undefined}>
+              {OUR_AGENTS.map((a) => (
+                <RegistrationChip key={keyOf(a)} a={a} tabbable={copy === 0} />
+              ))}
+            </div>
+          ))}
+        </div>
+        {/* The chips are meant to arrive from and leave into the section's own surface
+            rather than being sliced off by a hard edge. Only while the strip is a marquee:
+            an absolutely positioned child of a scroll box travels WITH the content, so in
+            the reduced-motion strip these would slide away from the edges they are meant
+            to soften. There is nothing for them to soften there anyway. */}
+        {!reduced && (
+          <>
+            <div
+              aria-hidden="true"
+              className="pointer-events-none absolute inset-y-0 left-0 w-10 bg-gradient-to-r from-card to-transparent"
+            />
+            <div
+              aria-hidden="true"
+              className="pointer-events-none absolute inset-y-0 right-0 w-10 bg-gradient-to-l from-card to-transparent"
+            />
+          </>
+        )}
+      </div>
+    </div>
+  )
+}
+
+/* ------------------------------------------------------------- the house's shelf */
+
+/**
+ * One registration as a poster tile: the network's own colour, its mark, the token id,
+ * and the two facts that keep the tile honest. Which network it really is, stated rather
+ * than implied, because the rehearsal registration on Robinhood Chain testnet is in this
+ * list and a poster is exactly where a testnet could quietly pass for a mainnet. And
+ * whether we hold its mint transaction, because one registration does not and the tile
+ * says so instead of linking somewhere that looks like a receipt.
+ */
+function RegistrationTile({ r }: { r: OnchainAgent }) {
+  const chain = CHAIN_BY_ID[r.chain]
+  const href = receiptHref(r)
+  const className =
+    'block overflow-hidden rounded-xl border border-border bg-card transition-colors hover:border-accent/50'
+  const body: ReactNode = (
+    <>
+      <span className="flex h-12 items-center justify-center" style={{ background: chain.color }}>
+        <ChainLogo id={r.chain} size={26} />
+      </span>
+      <span className="block p-2">
+        <span className="flex items-baseline justify-between gap-1">
+          <span className="truncate text-[11px] font-semibold text-foreground">
+            {chain.shortName}
+          </span>
+          <span className="shrink-0 font-mono text-[11px] tabular-nums text-foreground/70">
+            #{r.tokenId}
+          </span>
+        </span>
+        <span className="mt-0.5 block truncate text-[10px] text-foreground/60">
+          {chain.testnet ? 'testnet' : 'mainnet'} ·{' '}
+          {r.tx ? 'mint tx on record' : 'no mint receipt'}
+        </span>
+      </span>
+    </>
+  )
+  return href ? (
+    <a href={href} target="_blank" rel="noopener noreferrer" className={className}>
+      {body}
+    </a>
+  ) : (
+    <div className={className}>{body}</div>
+  )
+}
+
+/** The networks an agent holds, as a stack of marks that fans open when the card does. */
+function NetworkStack({ chains, open, still }: { chains: OnchainAgent['chain'][]; open: boolean; still: boolean }) {
+  return (
+    <span className="flex items-center" aria-hidden="true">
+      {chains.map((c, i) => (
+        <span
+          key={c}
+          className="rounded-full ring-2 ring-background"
+          style={{
+            marginLeft: i === 0 ? 0 : open ? 3 : -9,
+            transition: `margin-left ${still ? 0 : 260}ms cubic-bezier(0.22, 1, 0.36, 1)`,
+          }}
+        >
+          <ChainLogo id={c} size={26} />
+        </span>
+      ))}
+    </span>
+  )
+}
+
+/**
+ * One of our agents, opening on hover.
+ *
+ * Three ways in, because hover is not an interaction everywhere:
+ *   - the pointer enters the card,
+ *   - focus arrives from the KEYBOARD (a tap that happens to focus the toggle does not
+ *     count, or the toggle could never close what the tap just opened),
+ *   - the toggle is pressed, which is the touch path and the one a keyboard user can
+ *     operate.
+ *
+ * The toggle wins while it is pressed and gives control back the moment the pointer and
+ * focus have both left, so a card never ends up stuck open behind the reader's back.
+ */
+function HouseCard({ agent, index }: { agent: OurAgent; index: number }) {
+  const panelId = useId()
+  const still = useReducedMotion() ?? false
+  const [hovered, setHovered] = useState(false)
+  const [keyed, setKeyed] = useState(false)
+  /** null means "follow the pointer and focus"; a boolean is the reader overriding that. */
+  const [manual, setManual] = useState<boolean | null>(null)
+
+  const auto = hovered || keyed
+  const open = manual ?? auto
+  const networks = [...new Set(agent.registrations.map((r) => r.chain))]
+
+  return (
+    <motion.article
+      {...revealAt(index)}
+      onMouseEnter={() => setHovered(true)}
+      onMouseLeave={() => {
+        setHovered(false)
+        setManual(null)
+      }}
+      onFocusCapture={(e) => {
+        if (isKeyboardFocus(e.target)) setKeyed(true)
+      }}
+      onBlurCapture={(e) => {
+        if (!focusLeft(e)) return
+        setKeyed(false)
+        setManual(null)
+      }}
+      className="flex flex-col gap-4 rounded-2xl border border-accent/30 bg-background/60 p-5 transition-colors hover:border-accent/60"
+    >
+      <div className="flex items-start gap-4">
+        <span className="grid h-11 w-11 shrink-0 place-items-center rounded-xl border border-accent/30 bg-accent/10 text-accent">
+          <BadgeCheck size={20} aria-hidden="true" />
+        </span>
+        <div className="min-w-0 flex-1">
+          <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+            <p className="text-sm font-semibold text-foreground">{agent.identity}</p>
+            <OursChip />
+          </div>
+          <p className="mt-0.5 font-mono text-xs text-foreground/60">
+            {agent.registrations.length}{' '}
+            {agent.registrations.length === 1 ? 'registration' : 'registrations'} on{' '}
+            {networks.length} {networks.length === 1 ? 'network' : 'networks'}
+          </p>
+        </div>
+      </div>
+
+      <p className="text-sm leading-relaxed text-foreground/70">{blurbOf(agent)}</p>
+
+      <div className="mt-auto flex flex-wrap items-center justify-between gap-3">
+        <NetworkStack chains={networks} open={open} still={still} />
+        <button
+          type="button"
+          aria-expanded={open}
+          aria-controls={panelId}
+          onClick={() => setManual(!open)}
+          className="inline-flex items-center gap-1 rounded-full border border-border bg-card px-3 py-1.5 text-xs font-semibold text-foreground/80 transition-colors hover:border-accent/50 hover:text-accent"
+        >
+          {open ? 'Hide the registrations' : 'See the registrations'}
+          <ChevronDown
+            size={13}
+            aria-hidden="true"
+            className={`transition-transform duration-200 ${open ? 'rotate-180' : ''}`}
+          />
+        </button>
+      </div>
+
+      {/* The preview. One tile per registration, in the network's own colour, carrying the
+          token id and two facts a reader can check: which network it is (mainnet or
+          testnet, stated, because the rehearsal registration is in this list) and whether
+          we hold its mint transaction. The tile links to that transaction, or to the
+          registry contract for the one registration that has no mint receipt of ours. */}
+      <AnimatePresence initial={false}>
+        {open && (
+          <motion.div
+            key="panel"
+            id={panelId}
+            initial={{ height: 0, opacity: 0 }}
+            animate={{ height: 'auto', opacity: 1 }}
+            exit={{ height: 0, opacity: 0 }}
+            transition={{ duration: still ? 0 : 0.32, ease: EASE_OUT_EXPO }}
+            className="overflow-hidden"
+          >
+            <div className="grid grid-cols-2 gap-2 pt-1 sm:grid-cols-3">
+              {agent.registrations.map((r) => (
+                <RegistrationTile key={keyOf(r)} r={r} />
+              ))}
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+    </motion.article>
   )
 }
 
@@ -185,58 +521,18 @@ export default function AgentVitrine() {
       {/* The house's own shelf. Two cards rather than eight, because eight would be the
           ring in LiveProof again: this says WHO we run and WHERE, and hands the receipts
           off to the section that exists for them. */}
-      <div className="mt-12 grid gap-4 md:grid-cols-2">
-        {OUR_ROSTER.map((o, i) => {
-          const networks = new Set(o.registrations.map((r) => r.chain)).size
-          return (
-            <motion.article
-              key={o.identity}
-              {...revealAt(i)}
-              className="flex flex-col gap-4 rounded-2xl border border-accent/30 bg-background/60 p-5"
-            >
-              <div className="flex items-start gap-4">
-                <span className="grid h-11 w-11 shrink-0 place-items-center rounded-xl border border-accent/30 bg-accent/10 text-accent">
-                  <BadgeCheck size={20} aria-hidden="true" />
-                </span>
-                <div className="min-w-0 flex-1">
-                  <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
-                    <p className="text-sm font-semibold text-foreground">{o.identity}</p>
-                    <OursChip />
-                  </div>
-                  <p className="mt-0.5 font-mono text-xs text-foreground/60">
-                    {o.registrations.length}{' '}
-                    {o.registrations.length === 1 ? 'registration' : 'registrations'} on{' '}
-                    {networks} {networks === 1 ? 'network' : 'networks'}
-                  </p>
-                </div>
-              </div>
-
-              <p className="text-sm leading-relaxed text-foreground/70">{blurbOf(o)}</p>
-
-              {/* One chip per registration: the network's own mark, its name from the
-                  generated registry, and the token id this agent holds there. A chip claims
-                  only that the agent IS registered on that network, which the identity ring
-                  further down the page backs with a receipt or says it cannot. */}
-              <div className="mt-auto flex flex-wrap items-center gap-1.5">
-                {o.registrations.map((r) => (
-                  <span
-                    key={`${r.chain}-${r.tokenId}`}
-                    className="inline-flex items-center gap-1.5 rounded-full border border-border bg-card px-2 py-0.5 text-[11px] font-semibold text-foreground/70"
-                  >
-                    <ChainLogo id={r.chain} size={14} />
-                    {CHAIN_BY_ID[r.chain].shortName}
-                    <span className="font-mono tabular-nums text-foreground/60">#{r.tokenId}</span>
-                  </span>
-                ))}
-              </div>
-            </motion.article>
-          )
-        })}
+      <div className="mt-12 grid items-start gap-4 md:grid-cols-2">
+        {OUR_ROSTER.map((o, i) => (
+          <HouseCard key={o.identity} agent={o} index={i} />
+        ))}
       </div>
 
+      <RegistrationStrip />
+
       <motion.p {...reveal} className="mt-3 text-xs leading-relaxed text-foreground/60">
-        A badge means that agent really is registered on that network. Every receipt, and
-        the one registration that has no mint transaction of its own, is listed below.{' '}
+        A chip means that agent really is registered on that network, and it opens the
+        transaction that put it there. Every receipt, and the one registration that has no
+        mint transaction of its own, is listed below.{' '}
         <a href="#okx-asp" className="font-semibold text-accent hover:underline">
           See every identity and its receipts
         </a>
@@ -313,9 +609,19 @@ export default function AgentVitrine() {
                             Hire now
                             <ArrowUpRight
                               size={14}
-                              className="opacity-0 transition-opacity group-hover:opacity-100"
+                              className="opacity-0 transition-opacity group-hover:opacity-100 group-focus-visible:opacity-100"
                             />
                           </span>
+                        </div>
+                        {/* The two numbers the ranking is actually made of. They are in the
+                            payload already and stay in the accessibility tree at all times;
+                            only their opacity waits for a pointer or for focus, so the idle
+                            card keeps the name, the rank and the rating as its whole
+                            message. No transform, so nothing here needs a motion escape
+                            hatch beyond the fade the reader asked to keep. */}
+                        <div className="flex items-center justify-between gap-3 border-t border-border/60 pt-3 font-mono text-[11px] tabular-nums text-foreground/60 opacity-0 transition-opacity duration-200 group-hover:opacity-100 group-focus-visible:opacity-100">
+                          <span>reputation {score}/1000</span>
+                          <span>rank score {a.rankScore.toFixed(1)}</span>
                         </div>
                       </Link>
                     </motion.div>
@@ -349,7 +655,7 @@ export default function AgentVitrine() {
                         </span>
                         <ArrowUpRight
                           size={14}
-                          className="shrink-0 text-accent opacity-0 transition-opacity group-hover:opacity-100"
+                          className="shrink-0 text-accent opacity-0 transition-opacity group-hover:opacity-100 group-focus-visible:opacity-100"
                         />
                       </Link>
                     </motion.div>

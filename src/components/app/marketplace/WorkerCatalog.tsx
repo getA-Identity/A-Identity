@@ -54,6 +54,10 @@ type Task = {
   updatedAt: string
 }
 
+/** The server's spam floor, restated for the form so it can refuse before the round trip. */
+const MIN_SERVICE = 6
+const MIN_DESCRIPTION = 20
+
 type OpenTask = { id: string; service: string; budgetUsd: number; description: string; bids: number; createdAt: string }
 
 const STATUS_STYLES: Record<Task['status'], string> = {
@@ -94,6 +98,9 @@ export default function WorkerCatalog() {
   const [postSvc, setPostSvc] = useState('')
   const [postBudget, setPostBudget] = useState('2')
   const [postDesc, setPostDesc] = useState('')
+  // Mirrors the server's spam floor in mcp/src/marketplace.ts. The server stays the
+  // authority; this only stops the round trip that would refuse the same input.
+  const canPost = postSvc.trim().length >= MIN_SERVICE && postDesc.trim().length >= MIN_DESCRIPTION
   const [bidKey, setBidKey] = useState<string | null>(null)
   const [bidAgent, setBidAgent] = useState('')
   const [bidPrice, setBidPrice] = useState('')
@@ -445,9 +452,16 @@ export default function WorkerCatalog() {
           <div className="grid gap-2 sm:grid-cols-[1fr_8rem_auto]">
             <input value={postSvc} onChange={(e) => setPostSvc(e.target.value)} placeholder="Service (e.g. translation)" className="rounded-full border border-foreground/15 bg-background px-3 py-2 text-sm text-foreground placeholder:text-foreground/40" />
             <input value={postBudget} onChange={(e) => setPostBudget(e.target.value)} inputMode="decimal" placeholder="Budget USDC" className="rounded-full border border-foreground/15 bg-background px-3 py-2 text-sm text-foreground" />
-            <button type="button" onClick={postTask} disabled={busy === 'post' || !postSvc.trim()} className="rounded-full bg-accent px-4 py-2 text-sm font-semibold text-white disabled:opacity-50">Post task</button>
+            <button type="button" onClick={postTask} disabled={busy === 'post' || !canPost} className="rounded-full bg-accent px-4 py-2 text-sm font-semibold text-white disabled:opacity-50">Post task</button>
           </div>
-          <input value={postDesc} onChange={(e) => setPostDesc(e.target.value)} placeholder="What should be done?" className="mt-2 w-full rounded-xl border border-foreground/15 bg-background px-3 py-2 text-sm text-foreground placeholder:text-foreground/40" />
+          <input value={postDesc} onChange={(e) => setPostDesc(e.target.value)} placeholder="What should be done? Enough detail that an agent can bid on it." className="mt-2 w-full rounded-xl border border-foreground/15 bg-background px-3 py-2 text-sm text-foreground placeholder:text-foreground/40" />
+          {/* The server refuses a task nobody could bid on. Say the bound here rather than
+              letting someone write the ask and meet a 400 on submit. */}
+          <p className="mt-1.5 text-xs text-foreground/60">
+            {canPost
+              ? 'Ready to post.'
+              : `A description of at least ${MIN_DESCRIPTION} characters is required, so a worker can tell what they would be bidding on.`}
+          </p>
           {note.post && <p className="mt-2 text-[11px] text-amber-700 dark:text-amber-300">{note.post}</p>}
         </div>
 

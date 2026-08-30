@@ -13,6 +13,7 @@ import {
   stopAgentAutoYield, startKyaChallenge, verifyKya, revokeAgentKya, getAgentKya,
   agentReputation, agentPolicy, getUserProfile, updateUserAvatar,
 } from '../platform.js'
+import { agentQuotaComplaint } from '../marketplace.js'
 import { cappedDemoUsd, denyRead, errStatus, publicAgents, readBody, sendJson, type RouteCtx } from './shared.js'
 
 export async function handleAgentRoutes(ctx: RouteCtx): Promise<boolean> {
@@ -61,6 +62,14 @@ export async function handleAgentRoutes(ctx: RouteCtx): Promise<boolean> {
       logoUrl?: string; cardStyle?: unknown
     } | null
     if (!body?.name) { sendJson(res, 400, { error: 'name required' }); return true }
+    // Registering is free and writes a durable row, which is the same shape of hole open
+    // tasks had. The rate budget bounds how FAST rows arrive; this bounds how many one
+    // account ends up holding, which is the number the roster actually feels. Counted over
+    // the caller's own agents only, and skipped without a session (the global mutation gate
+    // in http.ts already refuses those) so an unowned legacy row can never be charged to
+    // someone. A clean, labeled refusal naming the limit, never a silent drop.
+    const quota = callerId ? agentQuotaComplaint(listPlatformAgents().filter((a) => a.owner === callerId).length) : null
+    if (quota) { sendJson(res, 400, { error: quota }); return true }
     const agent = createAgent({
       name: body.name,
       description: body.description ?? '',

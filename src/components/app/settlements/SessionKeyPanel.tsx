@@ -86,7 +86,7 @@ export default function SessionKeyPanel() {
         </Button>
       </div>
 
-      {error && <div className="mt-4 rounded-xl border border-amber-200 dark:border-amber-500/25 bg-amber-50/60 dark:bg-amber-500/10 p-3 text-sm text-foreground/70">{error}</div>}
+      {error && <div className="mt-4 rounded-xl border border-warn/35 bg-warn/[0.08] p-3 text-sm text-foreground/70">{error}</div>}
 
       {result && result.executed === false && (
         <div className="mt-4 rounded-xl border border-border bg-background/40 p-3 text-sm text-foreground/70">
@@ -112,11 +112,11 @@ export default function SessionKeyPanel() {
               key={i}
               className={`flex items-start gap-2 rounded-lg border px-3 py-2 ${
                 a.settled
-                  ? 'border-emerald-200 dark:border-emerald-500/25 bg-emerald-50/60 dark:bg-emerald-500/10'
+                  ? 'border-ok/30 bg-ok/[0.08]'
                   : 'border-foreground/8 bg-background/40'
               }`}
             >
-              {a.settled ? <CheckCircle2 size={14} className="mt-0.5 shrink-0 text-emerald-600" /> : <XCircle size={14} className="mt-0.5 shrink-0 text-foreground/40" />}
+              {a.settled ? <CheckCircle2 size={14} className="mt-0.5 shrink-0 text-ok" /> : <XCircle size={14} className="mt-0.5 shrink-0 text-foreground/40" />}
               <div className="min-w-0">
                 <div className="text-foreground/75">{a.label}</div>
                 <div className="text-[11px] text-foreground/50">

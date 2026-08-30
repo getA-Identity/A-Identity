@@ -85,3 +85,56 @@ test('a GET is never rate budgeted, and an unknown path is not accidentally limi
   assert.equal(rateBudget('GET', '/api/agents/vault'), null)
   assert.equal(rateBudget('POST', '/api/definitely-not-a-route'), null)
 })
+
+// ── free writes: the blind spot this file had ────────────────────────────────────
+//
+// Everything above asks "does this POST spend the shared signer". A posted task, a bid and
+// a registered agent spend nothing, which is exactly why they had no budget at all, and
+// exactly why they are the cheapest thing on the server to abuse: each one appends a
+// permanent row to the single state document the server rewrites on every save, and an
+// open task is additionally a card every visitor to the board renders. Free to the sender,
+// permanent to us, is the shape of "someone opens a thousand tasks on a whim".
+
+test('the free writes that create durable rows are budgeted too, not only the ones that spend gas', () => {
+  for (const path of ['/api/marketplace/post-task', '/api/marketplace/bid', '/api/agents', '/api/v1/agents/register']) {
+    const budget = rateBudget('POST', path)
+    assert.ok(budget, `${path} creates a permanent row for free and must still have a rate budget`)
+    assert.ok(budget.max > 0 && budget.windowMs > 0, `${path} needs a real budget, not a zero one`)
+  }
+})
+
+test('budgeting the free writes did not accidentally limit reading them', () => {
+  // /api/agents is a POST route and a GET route at the same path. Only the write is bounded.
+  assert.equal(rateBudget('GET', '/api/agents'), null)
+  assert.equal(rateBudget('GET', '/api/marketplace/open-tasks'), null)
+})
+
+test('a burst on one free write cannot lock a caller out of the others', () => {
+  const buckets = ['/api/marketplace/post-task', '/api/marketplace/bid', '/api/agents'].map(
+    (p) => rateBudget('POST', p)?.bucket,
+  )
+  assert.equal(
+    new Set(buckets).size, buckets.length,
+    `posting, bidding and registering need separate buckets, got ${buckets.join(', ')}`,
+  )
+})
+
+test('the two agent-registration doors share one budget, so neither is a way around the other', () => {
+  const viaConsole = rateBudget('POST', '/api/agents')
+  const viaApi = rateBudget('POST', '/api/v1/agents/register')
+  assert.ok(viaConsole && viaApi)
+  assert.equal(
+    viaConsole.bucket, viaApi.bucket,
+    'both paths write the same agent row; separate buckets would double the real allowance',
+  )
+})
+
+test('posting a task is limited harder than bidding on one', () => {
+  // A bid answers work someone else already posted, so it is the more legitimately frequent
+  // of the two: an agent that serves a category bids on every open task in it. A post is
+  // the one that creates the listing everyone else then has to load.
+  const post = rateBudget('POST', '/api/marketplace/post-task')
+  const bid = rateBudget('POST', '/api/marketplace/bid')
+  assert.ok(post && bid)
+  assert.ok(post.max < bid.max, `posting (${post.max}) should be tighter than bidding (${bid.max})`)
+})

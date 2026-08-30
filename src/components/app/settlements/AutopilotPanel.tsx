@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { Bot, CheckCircle2, Loader2, Hand, Coins } from 'lucide-react'
+import { Bot, CheckCircle2, Loader2, Hand, Coins, XCircle } from 'lucide-react'
 import { apiFetch } from '../../../lib/api'
 import { Button } from '../../ui/button'
 import { authHeaders } from '../../../store/auth'
@@ -132,7 +132,7 @@ export default function AutopilotPanel() {
         </div>
       )}
 
-      {error && <div className="mt-4 rounded-xl border border-amber-200 dark:border-amber-500/25 bg-amber-50/60 dark:bg-amber-500/10 p-3 text-sm text-foreground/70">{error}</div>}
+      {error && <div className="mt-4 rounded-xl border border-warn/35 bg-warn/[0.08] p-3 text-sm text-foreground/70">{error}</div>}
 
       {result && result.executed === false && (
         <div className="mt-4 rounded-xl border border-border bg-background/40 p-3 text-sm text-foreground/70">
@@ -165,7 +165,7 @@ export default function AutopilotPanel() {
             <div className="mt-1 h-2 w-full overflow-hidden rounded-full bg-foreground/8">
               <div
                 className={`h-full rounded-full transition-all duration-500 ${
-                  allRevealed && executed.pausedForHuman ? 'bg-amber-500' : 'bg-accent'
+                  allRevealed && executed.pausedForHuman ? 'bg-warn' : 'bg-accent'
                 }`}
                 style={{ width: `${budgetPct}%` }}
               />
@@ -176,20 +176,20 @@ export default function AutopilotPanel() {
             <div
               key={p.n}
               className={`flex items-center gap-2 rounded-lg border px-3 py-2 ${
-                p.ok ? 'border-emerald-200 dark:border-emerald-500/25 bg-emerald-50/60 dark:bg-emerald-500/10' : 'border-red-200 dark:border-red-500/25 bg-red-50/60 dark:bg-red-500/10'
+                p.ok ? 'border-ok/30 bg-ok/[0.08]' : 'border-danger/30 bg-danger/[0.08]'
               } motion-safe:animate-[fadeIn_0.35s_ease-out]`}
             >
               {p.ok ? (
-                <CheckCircle2 size={13} className="shrink-0 text-emerald-500" />
+                <CheckCircle2 size={13} className="shrink-0 text-ok" />
               ) : (
-                <span className="shrink-0 text-red-500">✕</span>
+                <XCircle size={13} className="shrink-0 text-danger" />
               )}
               <span className="text-foreground/75">
                 Payment #{p.n}: ${p.amountUsd.toFixed(3)}
               </span>
-              <span className="text-xs text-foreground/45">cumulative ${p.cumulativeUsd.toFixed(3)}</span>
-              {p.transaction && <span className="ml-auto font-mono text-[10px] text-foreground/40">batch {p.transaction.slice(0, 8)}...</span>}
-              {p.reason && <span className="ml-auto text-[11px] text-red-600">{p.reason}</span>}
+              <span className="text-xs text-foreground/60">cumulative ${p.cumulativeUsd.toFixed(3)}</span>
+              {p.transaction && <span className="ml-auto font-mono text-[10px] text-foreground/55">batch {p.transaction.slice(0, 8)}...</span>}
+              {p.reason && <span className="ml-auto text-[11px] text-danger">{p.reason}</span>}
             </div>
           ))}
 
@@ -201,7 +201,7 @@ export default function AutopilotPanel() {
           )}
 
           {allRevealed && executed.pausedForHuman && (
-            <div className="flex items-center gap-2 rounded-lg border border-amber-300 dark:border-amber-500/30 bg-amber-50/70 dark:bg-amber-500/10 px-3 py-2 text-amber-800 dark:text-amber-300 motion-safe:animate-[fadeIn_0.4s_ease-out]">
+            <div className="flex items-center gap-2 rounded-lg border border-warn/40 bg-warn/[0.1] px-3 py-2 text-warn motion-safe:animate-[fadeIn_0.4s_ease-out]">
               <Hand size={14} className="shrink-0" />
               <span>
                 <b>Bounded authority:</b> the agent hit your ${executed.budgetUsd} budget and stopped itself.

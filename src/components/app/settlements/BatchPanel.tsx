@@ -79,7 +79,7 @@ export default function BatchPanel() {
         </Button>
       </div>
 
-      {error && <div className="mt-4 rounded-xl border border-amber-200 dark:border-amber-500/25 bg-amber-50/60 dark:bg-amber-500/10 p-3 text-sm text-foreground/70">{error}</div>}
+      {error && <div className="mt-4 rounded-xl border border-warn/35 bg-warn/[0.08] p-3 text-sm text-foreground/70">{error}</div>}
 
       {result && result.executed === false && (
         <div className="mt-4 rounded-xl border border-border bg-background/40 p-3 text-sm text-foreground/70">
@@ -88,8 +88,8 @@ export default function BatchPanel() {
       )}
 
       {result && result.executed && (
-        <div className="mt-4 flex flex-wrap items-center gap-2 rounded-lg border border-emerald-200 dark:border-emerald-500/25 bg-emerald-50/60 dark:bg-emerald-500/10 px-3 py-2 text-sm">
-          <CheckCircle2 size={14} className="shrink-0 text-emerald-600" />
+        <div className="mt-4 flex flex-wrap items-center gap-2 rounded-lg border border-ok/30 bg-ok/[0.08] px-3 py-2 text-sm">
+          <CheckCircle2 size={14} className="shrink-0 text-ok" />
           <span className="text-foreground/75">
             <b>{result.count}</b> USDC payments (${result.totalUsd}) settled <b>atomically in one Arc tx</b>, wallet preserved as sender
           </span>

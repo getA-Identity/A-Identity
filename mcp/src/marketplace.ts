@@ -9,9 +9,10 @@
  * bound to an on-chain job id.
  *
  * This module holds NO state and does NO I/O: only the state machine, input
- * normalization, review aggregation, and the two card-payload roll-ups (chain footprint,
- * service copy), so it is unit-testable in isolation and the tested logic is the same
- * logic platform.ts runs (mirrors the reputation.ts pattern). Its one import is the chain
+ * normalization, the anti-spam floor on posting an open task, review aggregation, and the
+ * two card-payload roll-ups (chain footprint, service copy), so it is unit-testable in
+ * isolation and the tested logic is the same logic platform.ts runs (mirrors the
+ * reputation.ts pattern). Its one import is the chain
  * registry, which is pure data: chain slugs are RESOLVED through it rather than restated
  * here, per the single-source-of-truth rule in CLAUDE.md.
  */
@@ -165,6 +166,129 @@ export function deadlineFrom(startIso: string, hours: number): string {
   const start = new Date(startIso).getTime()
   const ms = Number.isFinite(start) ? start : 0
   return new Date(ms + normalizeDeadlineHours(hours) * 3600 * 1000).toISOString()
+}
+
+// ── spam floor: what an open task must say, and how many one person may keep open ──
+//
+// Posting an open task costs the poster nothing. No gas, and no escrow either: escrow is
+// committed at acceptBid, not here. That is exactly what makes it the cheapest write on
+// the platform to abuse, and "100 to 1000 tasks on a whim" is not hypothetical. Every open
+// task is a row in the single state document that is serialized in full on every save, and
+// a card every visitor to the open-task board has to render.
+//
+// Three bounds, kept here as pure functions so the rule that runs in production is the
+// same rule the tests exercise:
+//   1. content   a task nobody could bid on is not a task
+//   2. dedup     the same ask posted twice is one ask
+//   3. ceiling   one person may only have so many asks outstanding at once
+//
+// What is deliberately NOT here: a KYA requirement on the POSTER. The worker and the
+// bidder must be verified because they are being trusted with someone else's money. A
+// poster is the one spending it, and a marketplace that refuses every first-time buyer has
+// no first customer. The ceiling carries that weight instead, and it is graduated rather
+// than flat: a stranger gets a small allowance, and it grows once they have done something
+// a spammer cannot cheaply fake.
+
+/** Least a service title may say before it stops naming a service anyone could bid on. */
+export const MIN_SERVICE_CHARS = 6
+/** Least a description may say before a bidder cannot tell what the work is. */
+export const MIN_DESCRIPTION_CHARS = 20
+/** Distinct characters a description needs, so it cannot be one key held down. */
+export const MIN_DESCRIPTION_DISTINCT_CHARS = 5
+/** Open tasks a poster with no track record here may hold at once. */
+export const OPEN_TASK_LIMIT_NEW = 3
+/** Open tasks a poster who has paid a worker, or runs a verified agent, may hold at once. */
+export const OPEN_TASK_LIMIT_ESTABLISHED = 12
+/** Agents a single account may register. Bounds the total; a rate budget bounds the burst. */
+export const MAX_AGENTS_PER_OWNER = 25
+
+/** Case-folded, whitespace-collapsed text, so two spellings of one ask compare equal. */
+export function normalizeTaskText(v: unknown): string {
+  return String(v ?? '').trim().toLowerCase().replace(/\s+/g, ' ')
+}
+
+/**
+ * The identity of an ask: its service and its description, normalized.
+ *
+ * Joined on a newline rather than a printable separator on purpose. normalizeTaskText
+ * collapses all whitespace, so a newline cannot survive inside either half, which means no
+ * pair of inputs can be made to produce another pair's fingerprint by hiding the separator
+ * in a field.
+ */
+export function taskFingerprint(service: unknown, description: unknown): string {
+  return `${normalizeTaskText(service)}\n${normalizeTaskText(description)}`
+}
+
+/**
+ * Why this draft could not be bid on, or null when it could.
+ *
+ * The bar is low enough that an honest poster clears it while typing the thing they
+ * actually want, and high enough that a script has to invent real text per task rather
+ * than loop on a constant. Every return is a sentence the caller can act on.
+ */
+export function taskContentComplaint(draft: { service: unknown; description?: unknown }): string | null {
+  const service = String(draft.service ?? '').trim()
+  if (service.length < MIN_SERVICE_CHARS)
+    return `service must be at least ${MIN_SERVICE_CHARS} characters so a bidder can tell what is being bought (got ${service.length})`
+  if (!/\p{L}/u.test(service)) return 'service must contain words, not only digits or punctuation'
+  const description = String(draft.description ?? '').trim()
+  if (description.length < MIN_DESCRIPTION_CHARS)
+    return `description must be at least ${MIN_DESCRIPTION_CHARS} characters so a bidder knows what the work is (got ${description.length})`
+  if (!/\p{L}/u.test(description)) return 'description must contain words, not only digits or punctuation'
+  if (new Set(description.toLowerCase().replace(/\s+/g, '')).size < MIN_DESCRIPTION_DISTINCT_CHARS)
+    return `description must say something: it uses fewer than ${MIN_DESCRIPTION_DISTINCT_CHARS} distinct characters`
+  return null
+}
+
+/** The two fields that decide whether an ask is the same ask. */
+export type OpenTaskDraft = { service: string; description: string }
+
+/** What the poster has already done here, as data, so the ceiling stays a pure function. */
+export type PosterStanding = {
+  /** This poster's own tasks that are still open and awaiting bids. */
+  open: readonly (OpenTaskDraft & { id: string })[]
+  /** True when this poster owns at least one KYA-verified agent. */
+  hasVerifiedAgent: boolean
+  /** How many of this poster's tasks have settled through escrow to a worker. */
+  released: number
+}
+
+/**
+ * How many tasks this poster may keep open at once.
+ *
+ * Graduated, not flat, and both promotions cost something a spammer cannot fake in bulk:
+ * releasing a task moves real money through the ERC-8183 escrow, and a KYA-verified agent
+ * required a wallet-control signature. A brand new account still gets a real allowance,
+ * which is the whole reason this is not a verification gate.
+ */
+export function openTaskCeiling(poster: { hasVerifiedAgent: boolean; released: number }): number {
+  return poster.hasVerifiedAgent || poster.released > 0 ? OPEN_TASK_LIMIT_ESTABLISHED : OPEN_TASK_LIMIT_NEW
+}
+
+/** Why this poster may not post this task right now, or null when they may. */
+export function openTaskComplaint(draft: OpenTaskDraft, poster: PosterStanding): string | null {
+  const content = taskContentComplaint(draft)
+  if (content) return content
+  const fingerprint = taskFingerprint(draft.service, draft.description)
+  const twin = poster.open.find((t) => taskFingerprint(t.service, t.description) === fingerprint)
+  if (twin) return `Duplicate of your open task ${twin.id}, which asks for the same thing. Edit that one rather than posting it twice.`
+  const ceiling = openTaskCeiling(poster)
+  if (poster.open.length >= ceiling)
+    return `Too many open tasks: you have ${poster.open.length} awaiting bids and the limit is ${ceiling}. Accept a bid, or let one close, before posting another.`
+  return null
+}
+
+/**
+ * Why this account may not register another agent, or null when it may.
+ *
+ * Registering is free and writes a durable row, which is the same hole open tasks had. The
+ * rate budget bounds how fast rows can arrive; this bounds how many one account ends up
+ * holding, which is the number that actually matters to the roster.
+ */
+export function agentQuotaComplaint(ownedCount: number): string | null {
+  return ownedCount >= MAX_AGENTS_PER_OWNER
+    ? `Too many agents: this account has registered ${ownedCount} and the limit is ${MAX_AGENTS_PER_OWNER}. Remove one you no longer run before adding another.`
+    : null
 }
 
 // ── review aggregation (feeds catalog ratings) ────────────────────────────────────

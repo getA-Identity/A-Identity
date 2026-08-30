@@ -1,5 +1,7 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
+import { readFileSync } from 'node:fs'
+import { fileURLToPath } from 'node:url'
 import {
   TASK_TRANSITIONS,
   canTransition,
@@ -14,12 +16,20 @@ import {
   buildAgentManifest,
   agentChainIds,
   serviceDescription,
+  taskFingerprint,
+  openTaskCeiling,
+  openTaskComplaint,
+  agentQuotaComplaint,
   MAX_TASK_PRICE_USD,
   DEFAULT_DEADLINE_HOURS,
   MAX_DEADLINE_HOURS,
+  OPEN_TASK_LIMIT_NEW,
+  OPEN_TASK_LIMIT_ESTABLISHED,
+  MAX_AGENTS_PER_OWNER,
   type TaskStatus,
   type Review,
   type ManifestAgent,
+  type PosterStanding,
 } from './marketplace.js'
 
 // The same state machine + normalization platform.ts will run on real tasks.
@@ -235,4 +245,141 @@ test('a service without its own copy says so, rather than borrowing someone else
   assert.equal(serviceDescription({ name: 'Translate a page', description: '   ' }), null, 'blank is not copy')
   assert.equal(serviceDescription({ name: 'Translate a page', description: '' }), null)
   assert.equal(serviceDescription({ name: 'Translate a page' }), null)
+})
+
+// ── the spam floor on posting an open task ───────────────────────────────────────
+//
+// Posting is the one free write on the marketplace: no gas, and no escrow until a bid is
+// accepted. So these three bounds are the whole defence, and each block below carries its
+// own negative control. Delete the guard a block names from openTaskComplaint and that
+// block goes red, which is the only thing that keeps a rule a rule.
+
+const goodDraft = { service: 'Translate a page', description: 'Translate this landing page into French.' }
+const stranger: PosterStanding = { open: [], hasVerifiedAgent: false, released: 0 }
+
+/** N distinct open tasks from one poster, each clearing the content bar on its own. */
+function otherAsks(n: number) {
+  return Array.from({ length: n }, (_, i) => ({
+    id: `task_${i}`,
+    service: `Service number ${i}`,
+    description: `A distinct piece of work, number ${i}.`,
+  }))
+}
+
+test('a real ask from a new poster clears the spam floor', () => {
+  // The cold start this design refuses to break: a stranger with no history, no verified
+  // agent and no released task can post, first try, with no gate to clear first.
+  assert.equal(openTaskComplaint(goodDraft, stranger), null)
+})
+
+test('an ask nobody could bid on is refused, with a reason that names the bound', () => {
+  const short = openTaskComplaint({ ...goodDraft, service: 'seo' }, stranger)
+  assert.ok(short?.includes('service'), `a 3-character service must be refused, got: ${short}`)
+
+  const bare = openTaskComplaint({ ...goodDraft, description: '' }, stranger)
+  assert.ok(bare?.includes('description'), `an empty description is the "on a whim" post, got: ${bare}`)
+
+  // Clearing the length bar by holding one key down is not a description.
+  const filler = openTaskComplaint({ ...goodDraft, description: 'a'.repeat(60) }, stranger)
+  assert.ok(filler?.includes('distinct'), `one repeated character is not content, got: ${filler}`)
+
+  // Digits and punctuation are not words, in either field.
+  assert.ok(openTaskComplaint({ service: '123456', description: goodDraft.description }, stranger))
+  assert.ok(openTaskComplaint({ service: goodDraft.service, description: '12345678901234567890' }, stranger))
+})
+
+test('the content bar stays low enough for an honest terse ask', () => {
+  // The bound must not be so high that a real, short task is refused: that teaches posters
+  // to pad, which produces worse copy and costs a script nothing.
+  assert.equal(openTaskComplaint({ service: 'Logo design', description: 'Need a simple logo for my app.' }, stranger), null)
+})
+
+test('the same ask posted twice is refused, and named as the duplicate it is', () => {
+  const already = [{ id: 'task_1', service: goodDraft.service, description: goodDraft.description }]
+
+  const again = openTaskComplaint(goodDraft, { ...stranger, open: already })
+  assert.ok(again?.includes('task_1'), `a duplicate must name the task it duplicates, got: ${again}`)
+
+  // Reformatting an ask must not launder it past the check: same words, different case and
+  // spacing, is the same ask.
+  const restyled = openTaskComplaint(
+    { service: '  translate A page ', description: 'Translate  this landing page  into French.' },
+    { ...stranger, open: already },
+  )
+  assert.ok(restyled?.includes('task_1'), `respacing must not defeat the dedup, got: ${restyled}`)
+
+  // The control: a genuinely different ask from the same poster is NOT a duplicate.
+  assert.equal(
+    openTaskComplaint({ service: 'Translate a page', description: 'Translate this pricing page into German.' }, { ...stranger, open: already }),
+    null,
+  )
+})
+
+test('a fingerprint cannot be forged by hiding the separator inside a field', () => {
+  assert.notEqual(taskFingerprint('a', 'b\nc'), taskFingerprint('a\nb', 'c'))
+  assert.equal(taskFingerprint(' Translate  A Page ', 'Do it well'), taskFingerprint('translate a page', 'do it well'))
+})
+
+test('a stranger may hold a few open tasks at once, not a hundred', () => {
+  // One below the ceiling: still fine. This is the control - if the ceiling were off by
+  // one, or absent, this pair could not both hold.
+  assert.equal(openTaskComplaint(goodDraft, { ...stranger, open: otherAsks(OPEN_TASK_LIMIT_NEW - 1) }), null)
+
+  const full = openTaskComplaint(goodDraft, { ...stranger, open: otherAsks(OPEN_TASK_LIMIT_NEW) })
+  assert.ok(full?.includes(String(OPEN_TASK_LIMIT_NEW)), `the refusal must name the limit, got: ${full}`)
+  assert.ok(full?.includes('Accept a bid'), `the refusal must say what would clear it, got: ${full}`)
+})
+
+test('the ceiling rises only for a poster who did something a spammer cannot fake in bulk', () => {
+  // A KYA verification is a wallet-control signature; a released task moved real money
+  // through the ERC-8183 escrow. Neither is free, which is the entire point.
+  assert.equal(openTaskCeiling({ hasVerifiedAgent: false, released: 0 }), OPEN_TASK_LIMIT_NEW)
+  assert.equal(openTaskCeiling({ hasVerifiedAgent: true, released: 0 }), OPEN_TASK_LIMIT_ESTABLISHED)
+  assert.equal(openTaskCeiling({ hasVerifiedAgent: false, released: 1 }), OPEN_TASK_LIMIT_ESTABLISHED)
+  assert.ok(OPEN_TASK_LIMIT_ESTABLISHED > OPEN_TASK_LIMIT_NEW, 'the ladder has to go up, or it is not a ladder')
+})
+
+test('an established poster still has a ceiling, just a higher one', () => {
+  // The graduation is a raise, not an exemption. Unbounded posting for anyone who once
+  // released a task would be the same hole, one released task away.
+  const full = openTaskComplaint(goodDraft, { open: otherAsks(OPEN_TASK_LIMIT_ESTABLISHED), hasVerifiedAgent: true, released: 9 })
+  assert.ok(full?.includes(String(OPEN_TASK_LIMIT_ESTABLISHED)), `even a trusted poster is bounded, got: ${full}`)
+})
+
+test('one account may register agents up to a stated ceiling', () => {
+  assert.equal(agentQuotaComplaint(0), null)
+  assert.equal(agentQuotaComplaint(MAX_AGENTS_PER_OWNER - 1), null)
+  const full = agentQuotaComplaint(MAX_AGENTS_PER_OWNER)
+  assert.ok(full?.includes(String(MAX_AGENTS_PER_OWNER)), `the refusal must name the limit, got: ${full}`)
+})
+
+// ── the guards are wired, not merely written ─────────────────────────────────────
+//
+// Every assertion above is pure, and every one of them would stay green if the call site
+// disappeared. These two read the source that writes the row and check it asks.
+
+const srcFile = (rel: string) => readFileSync(fileURLToPath(new URL(`../src/${rel}`, import.meta.url)), 'utf8')
+
+test('postOpenTask runs the spam floor before it pushes a row', () => {
+  const source = srcFile('platform/tasks.ts')
+  const from = source.indexOf('export function postOpenTask')
+  const to = source.indexOf('export function bidOnTask')
+  assert.ok(from >= 0 && to > from, 'postOpenTask must still be in platform/tasks.ts, ahead of bidOnTask')
+  const body = source.slice(from, to)
+  assert.ok(body.includes('openTaskComplaint('), 'postOpenTask must call openTaskComplaint')
+  assert.ok(
+    body.indexOf('openTaskComplaint(') < body.indexOf('state.tasks.push'),
+    'the check has to run BEFORE the row is pushed, or it is decoration',
+  )
+})
+
+test('both agent-registration doors run the per-owner quota, not just one', () => {
+  // POST /api/agents and POST /api/v1/agents/register write the same row. A guard on one
+  // door only moves the spam to the other, so this names both files rather than one path.
+  for (const file of ['http/agent-routes.ts', 'http/marketplace-routes.ts']) {
+    assert.ok(
+      srcFile(file).includes('agentQuotaComplaint('),
+      `${file} must run the per-owner agent quota before it creates an agent`,
+    )
+  }
 })

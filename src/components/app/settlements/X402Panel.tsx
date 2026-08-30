@@ -191,8 +191,8 @@ export default function X402Panel() {
       {/* The 402 challenge is the whole point of the demo, surface it on-screen so the
           expected red "402" the browser logs to the console reads as intentional, not a bug. */}
       {req && phase !== 'done' && (
-        <div className="mt-3 rounded-xl border border-amber-300/60 bg-amber-50/70 p-3 dark:border-amber-500/30 dark:bg-amber-500/10">
-          <div className="flex items-center gap-1.5 text-sm font-bold text-amber-700 dark:text-amber-300">
+        <div className="mt-3 rounded-xl border border-warn/40 bg-warn/[0.1] p-3">
+          <div className="flex items-center gap-1.5 text-sm font-bold text-warn">
             <Lock size={13} /> HTTP 402 · Payment Required
           </div>
           <p className="mt-1 text-xs leading-relaxed text-foreground/65">
@@ -207,11 +207,11 @@ export default function X402Panel() {
         <p className="mt-2 font-mono text-xs text-foreground/45">paid tx {tx.slice(0, 12)}..., verifying on Arc</p>
       )}
 
-      {error && <p className="mt-3 text-sm text-red-600">{error}</p>}
+      {error && <p className="mt-3 text-sm text-danger">{error}</p>}
 
       {resource && (
-        <div className="mt-4 rounded-xl border border-emerald-200 dark:border-emerald-500/25 bg-emerald-50/60 dark:bg-emerald-500/10 p-4">
-          <div className="flex items-center gap-1.5 text-sm font-bold text-emerald-700 dark:text-emerald-300">
+        <div className="mt-4 rounded-xl border border-ok/30 bg-ok/[0.08] p-4">
+          <div className="flex items-center gap-1.5 text-sm font-bold text-ok">
             <CheckCircle2 size={15} /> Unlocked: paid per request
           </div>
           <div className="mt-2 grid gap-1 text-xs text-foreground/70">

@@ -15,7 +15,7 @@
  * nothing only when the backend cannot be reached at all.
  */
 import { useEffect, useState } from 'react'
-import { ShieldCheck, ShieldAlert } from 'lucide-react'
+import { Activity, ShieldCheck, ShieldAlert } from 'lucide-react'
 import { apiFetch } from '../../lib/api'
 
 type Traction = {
@@ -69,9 +69,18 @@ export default function TractionPanel() {
 
   return (
     <div className="mt-12">
-      <div className="mb-2 flex items-baseline justify-between">
-        <h2 className="text-sm font-bold uppercase tracking-wide text-foreground/70">Guardrails at work</h2>
-        <span className="font-mono text-[11px] text-foreground/60">measured, not projected</span>
+      {/* The heading was 11px micro-caps at 70% foreground with a mono qualifier beside
+          it at the same size, so the section had no visible entry point on the light ground.
+          Same header shape as the /stats panels now: icon tile, full-contrast title, and the
+          qualifier demoted rather than competing. */}
+      <div className="mb-3 flex flex-wrap items-center justify-between gap-x-4 gap-y-2">
+        <div className="flex items-center gap-2.5">
+          <span className="grid h-8 w-8 shrink-0 place-items-center rounded-xl bg-accent/10 text-accent">
+            <Activity size={16} strokeWidth={2} />
+          </span>
+          <h2 className="text-lg font-bold tracking-tight text-foreground">Guardrails at work</h2>
+        </div>
+        <span className="text-xs font-medium text-foreground/60">Measured, not projected</span>
       </div>
 
       <div className="overflow-hidden rounded-xl border border-border bg-card">
@@ -84,18 +93,18 @@ export default function TractionPanel() {
               ['Stopped', `${pct(t.deny, t.checks)}%`, `${t.deny.toLocaleString('en-US')} refused`],
             ].map(([k, v, sub]) => (
               <div key={k} className="bg-card p-4">
-                <div className="text-[11px] font-semibold uppercase tracking-wide text-foreground/60">{k}</div>
-                <div className="mt-1 font-mono text-xl tabular-nums text-foreground">{v}</div>
-                <div className="mt-0.5 text-[11px] text-foreground/60">{sub}</div>
+                <div className="text-[11px] font-semibold uppercase tracking-[0.1em] text-foreground/70">{k}</div>
+                <div className="mt-1.5 text-2xl font-semibold leading-none tracking-[-0.03em] tabular-nums text-foreground">{v}</div>
+                <div className="mt-1.5 text-[11px] leading-relaxed text-foreground/60">{sub}</div>
               </div>
             ))}
           </div>
         ) : (
           <div className="p-4">
-            <div className="text-sm text-foreground/70">
+            <div className="text-sm font-medium text-foreground/80">
               The engine is live and answering, and no policy decisions have been recorded yet.
             </div>
-            <div className="mt-1 text-[11px] text-foreground/60">
+            <div className="mt-1.5 text-[11px] leading-relaxed text-foreground/60">
               Numbers appear here once agents start asking for verdicts. We would rather show none than invent any.
               {t ? ` ${t.registeredAgents} agent${t.registeredAgents === 1 ? '' : 's'} registered so far, which is not the same as traction.` : ''}
             </div>
@@ -107,13 +116,13 @@ export default function TractionPanel() {
             <span className="inline-flex items-center gap-1.5 font-semibold">
               {status.enforcing ? (
                 <>
-                  <ShieldCheck size={13} className="text-emerald-600" />
-                  <span className="text-emerald-600">enforcing now</span>
+                  <ShieldCheck size={13} className="text-ok" />
+                  <span className="text-ok">enforcing now</span>
                 </>
               ) : (
                 <>
-                  <ShieldAlert size={13} className="text-red-500" />
-                  <span className="text-red-500">not enforcing</span>
+                  <ShieldAlert size={13} className="text-danger" />
+                  <span className="text-danger">not enforcing</span>
                 </>
               )}
               <span className="font-normal text-foreground/60">
@@ -133,7 +142,7 @@ export default function TractionPanel() {
             </span>
           )}
           {(t?.overrideAttempts ?? 0) > 0 && (
-            <span className="text-amber-600">
+            <span className="text-warn">
               {t?.overrideAttempts} refused attempt{t?.overrideAttempts === 1 ? '' : 's'} to overwrite a refusal
             </span>
           )}
