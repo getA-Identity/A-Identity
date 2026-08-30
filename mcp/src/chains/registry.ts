@@ -303,6 +303,14 @@ export const CHAINS: ChainDescriptor[] = [
       // USDC is an ASA addressed by a uint64 id, not a contract address, and every
       // consumer of `contracts.usdc` is an EVM path that would read it as 0x hex. The
       // ASA id lives in settlementTokens[].address as a decimal string instead.
+      //
+      // The AgentSpendPolicy vault, deployed 2026-08-30 as the policy's THIRD
+      // implementation (Solidity, Rust/Soroban, now Algorand Python). Application id
+      // 3688854723, account PWYYPJP52LI2SC6FGB7NTWBR2STDS5NUVJBSAIEYNC2TRCHAWGGZ4FVXZ4,
+      // approval sha256 665c8f7e...; source and TEAL committed under
+      // algorand/contracts/agent-spend-policy/, evidence in the provenance entry.
+      // Recorded by app ID because that is how the AVM addresses an application.
+      spendVault: '3688854723',
     },
     confirmations: 1, // a transaction included in a block is final; no reorgs by design
     stablecoins: ['USDC'],

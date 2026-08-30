@@ -362,10 +362,14 @@ Live today:
   and an x402 v2 rail through the GoPlausible facilitator: the buyer signs a fee-zero
   ASA transfer and the atomic group's pooled fee covers it. Live on a real mainnet
   sale, 2026-08-30: 0.001 USDC for verify_agent, tx YNNA54CX... (round 64547231),
-  counted only after our own indexer read of the transfer; the full funding trail from
-  a Stellar XLM treasury is on https://a-identity.xyz/proof/algorand. No ERC-8004
-  registry was found on Algorand, so identity stays bridged from an EVM chain and no
-  KYA anchors here; both sides of the first sale are ours and the proof page says so.
+  counted only after our own indexer read of the transfer, and all four trust tools
+  carry a mainnet receipt. The AgentSpendPolicy vault runs here too (application
+  3688854723, its third implementation, Algorand Python): real USDC under a 1 USDC
+  daily cap, an over-ceiling payment refused with the contract's own
+  ABOVE_AUTO_APPROVE. The full funding trail from a Stellar XLM treasury is on
+  https://a-identity.xyz/proof/algorand. No ERC-8004 registry was found on Algorand,
+  so identity stays bridged from an EVM chain and no KYA anchors here; both sides of
+  the first sale are ours and the proof page says so.
 - **Circle Arc testnet** (`eip155:5042002`). ERC-8004 identity
   `0x8004A818BFB912233c491871b3d84c89A494BD9e`, reputation
   `0x8004B663056A597Dffe9eCcC1965A193B7388713`, validation

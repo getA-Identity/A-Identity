@@ -668,8 +668,22 @@ export const PROVENANCE: ChainProvenance[] = [
   {
     chain: 'algorand',
     summary:
-      'The second non-EVM rail, and the fastest promotion in this ledger: the descriptor entered at beta and flipped to live the same day, 2026-08-30, on a real mainnet sale. The operating accounts were funded from a Stellar XLM treasury through an instant exchange, both accounts opted in to the USDC ASA (the trustline of this chain), and the first x402 sale settled through the GoPlausible facilitator with the buyer paying no network fee. No payment counted until our own indexer read of the transfer.',
-    contracts: [],
+      'The second non-EVM rail, and the fastest promotion in this ledger: the descriptor entered at beta and flipped to live the same day, 2026-08-30, on a real mainnet sale. The operating accounts were funded from a Stellar XLM treasury through an instant exchange, both accounts opted in to the USDC ASA (the trustline of this chain), and the first x402 sale settled through the GoPlausible facilitator with the buyer paying no network fee. No payment counted until our own indexer read of the transfer. The same day, the AgentSpendPolicy vault landed as its THIRD implementation (Solidity, Rust, now Algorand Python): an immutable application holding real USDC under a 1 USDC daily cap, walked through the same settle-refuse-freeze-override ladder the Stellar releases record.',
+    contracts: [
+      {
+        name: 'AgentSpendPolicy (application)',
+        address: '3688854723',
+        note:
+          'Application id 3688854723, account PWYYPJP52LI2SC6FGB7NTWBR2STDS5NUVJBSAIEYNC2TRCHAWGGZ4FVXZ4. ' +
+          'Compiled from algorand/contracts/agent-spend-policy/contract.py with puyapy 5.10.1; approval ' +
+          'program sha256 665c8f7e8896adbdfbdb5e76405485913666a38c64fa0423beed3d2295393850, and the TEAL ' +
+          'is committed next to the source so anyone can recompile and compare. Immutable the way the ' +
+          'ARC-4 router makes natural: no update or delete handler exists, so both are rejected, and ' +
+          'there is no owner-transfer entrypoint. Policy: 1 USDC per UTC day, 0.25 USDC per payment. ' +
+          'Owner is the payTo account, operator is the buyer account - two distinct keys, as the policy ' +
+          'model requires.',
+      },
+    ],
     artifacts: [
       {
         kind: 'bridge',
@@ -726,7 +740,63 @@ export const PROVENANCE: ChainProvenance[] = [
         txHash: 'YNNA54CXZGWBGL5ILYBV4K5RI26KTALIGWGXX6MJOORDAEEUPCWQ',
         onChain: 'algorand',
         blockNumber: 64547231,
-        note: 'The buyer signed a fee-zero ASA transfer inside a pooled-fee atomic group; the GoPlausible facilitator signed the fee payer and broadcast; and the sale counted only once our own indexer read returned the transfer with a confirmed round, matching asset, recipient, amount and sender. The x402 v2 exact scheme, exactly as the challenge advertised it.',
+        note: 'The buyer signed a fee-zero ASA transfer inside a pooled-fee atomic group; the GoPlausible facilitator signed the fee payer and broadcast; and the sale counted only once our own indexer read returned the transfer with a confirmed round, matching asset, recipient, amount and sender. The x402 v2 exact scheme, exactly as the challenge advertised it. Three more sales followed the same day, one per remaining tool (reputation_score BRE5D5WJ..., risk_check XH7XM2D5..., agent_passport JXY7XJQA...), so every tool this rail sells has a mainnet receipt.',
+      },
+      {
+        kind: 'deploy',
+        label: 'The AgentSpendPolicy vault, deployed with a constructor and nothing else',
+        txHash: 'NFDZMQYVEFXBNKHAWIGUODMYCRONPX655VOALPR6AAZHOMK5I5ZA',
+        onChain: 'algorand',
+        note: 'Application 3688854723, created and configured in one transaction: owner, operator, the USDC ASA, the 1 USDC daily cap and the 0.25 USDC ceiling are constructor arguments, and no update, delete or owner-transfer path exists to change the rules after the fact.',
+      },
+      {
+        kind: 'funding',
+        label: 'The app account funded with 0.3 ALGO for its minimum balance',
+        txHash: '5O6XZBKAZLCCRH5UIMSRZ7A7L3PQZULTFPDB6FJU2UU7PFU364CA',
+        onChain: 'algorand',
+        note: 'An application that will hold an ASA needs its own account minimum: 0.1 ALGO base plus 0.1 for the asset opt-in. The chain\'s equivalent of a Stellar reserve, paid before anything else can happen.',
+      },
+      {
+        kind: 'funding',
+        label: 'The vault opts in to USDC through an inner transaction',
+        txHash: 'ZV6L7CM4ZRXMTC2B7NRAQZP6S3VO2RLYUDNAWTOBCZ4OWYZDTI3A',
+        onChain: 'algorand',
+        note: 'A zero-amount transfer from the app to itself, submitted by the contract\'s own opt_in_asset method with fee zero, the outer call\'s pooled fee covering it.',
+      },
+      {
+        kind: 'funding',
+        label: 'The vault funded with 0.30 USDC of dust, on purpose',
+        txHash: 'JQTL5AMJP7TZXULNY7J6WKDUUUW4GB3KSSVGQGCGJWSNL3XPYPPA',
+        onChain: 'algorand',
+        note: 'Dust for the same reason the Arbitrum vault holds 0.02: the caps are the product, not the balance, and an unaudited contract holds amounts nobody would mind losing.',
+      },
+      {
+        kind: 'settlement',
+        label: 'An in-policy vault payment, and two typed refusals beside it',
+        txHash: 'TKMKZ56W75LCIMH7UVXU67L4DQ3ZL62IAWQ7XFSHKRFJXENPLCAA',
+        onChain: 'algorand',
+        note: '0.05 USDC paid by the operator through pay(), under both the ceiling and the cap. A 0.50 USDC attempt was refused with the contract\'s own ABOVE_AUTO_APPROVE, and a 0.01 attempt while frozen with FROZEN; like Soroban, an Algorand refusal fails in SIMULATION and never reaches the ledger, so the refusals have no hash. What makes them typed rather than asserted-about is the committed ARC-56 source map: the simulate failure names a program counter and the map resolves it to the label, reproducible by anyone against the live app for free.',
+      },
+      {
+        kind: 'deploy',
+        label: 'The kill switch, thrown on this mainnet too',
+        txHash: 'JHLVHC6I6O7UYCMZPQXRKTRC2BOSBTCYD6L63FOZKBPIKZ7ZMRZQ',
+        onChain: 'algorand',
+        note: 'set_frozen(1) by the owner. The operator\'s next payment attempt refused with FROZEN, as recorded above.',
+      },
+      {
+        kind: 'settlement',
+        label: 'The owner overrides the freeze and pays anyway',
+        txHash: '77GPTVNIJVZRSGYBLYH5WEOIOPSV3EYN7EIHAQMFAOA7UBSGIQQQ',
+        onChain: 'algorand',
+        note: '0.01 USDC through owner_pay while the vault was frozen: the human keeps a path the agent does not have, and the payment still counts against the day so the agent cannot ride on top of the override. spent_today read back 60000 base units, exactly 0.05 + 0.01.',
+      },
+      {
+        kind: 'deploy',
+        label: 'Unfrozen, back to normal operation',
+        txHash: 'NNTJK4I6TR43JTXS7NSHVYQCFWTNN5DH5SW7LTPNGW4R3M34YHCA',
+        onChain: 'algorand',
+        note: 'set_frozen(0), and the policy view read back live: cap 1000000, ceiling 250000, spent today 60000, unfrozen, allowlist off.',
       },
     ],
     caveats: [

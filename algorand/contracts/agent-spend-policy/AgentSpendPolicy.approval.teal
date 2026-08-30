@@ -1,0 +1,744 @@
+#pragma version 11
+#pragma typetrack false
+
+// algopy.arc4.ARC4Contract.approval_program() -> uint64:
+main:
+    intcblock 0 8 1 32 86400
+    bytecblock "owner" "spent_today" "daily_cap" "auto_approve_max" "day" "operator" "asset_id" "frozen" "allowlist_enabled"
+    txn ApplicationID
+    bnz main_after_if_else@2
+    // contract.py:39
+    // self.owner = Account()
+    bytec_0 // "owner"
+    global ZeroAddress
+    app_global_put
+    // contract.py:40
+    // self.operator = Account()
+    bytec 5 // "operator"
+    global ZeroAddress
+    app_global_put
+    // contract.py:41
+    // self.asset_id = UInt64(0)
+    bytec 6 // "asset_id"
+    intc_0 // 0
+    app_global_put
+    // contract.py:42
+    // self.daily_cap = UInt64(0)
+    bytec_2 // "daily_cap"
+    intc_0 // 0
+    app_global_put
+    // contract.py:43
+    // self.auto_approve_max = UInt64(0)
+    bytec_3 // "auto_approve_max"
+    intc_0 // 0
+    app_global_put
+    // contract.py:44
+    // self.spent_today = UInt64(0)
+    bytec_1 // "spent_today"
+    intc_0 // 0
+    app_global_put
+    // contract.py:45
+    // self.day = UInt64(0)
+    bytec 4 // "day"
+    intc_0 // 0
+    app_global_put
+    // contract.py:46
+    // self.frozen = UInt64(0)
+    bytec 7 // "frozen"
+    intc_0 // 0
+    app_global_put
+    // contract.py:47
+    // self.allowlist_enabled = UInt64(0)
+    bytec 8 // "allowlist_enabled"
+    intc_0 // 0
+    app_global_put
+
+main_after_if_else@2:
+    // contract.py:37
+    // class AgentSpendPolicy(arc4.ARC4Contract):
+    txn OnCompletion
+    !
+    assert
+    txn ApplicationID
+    bz main_create_NoOp@15
+    pushbytess 0x034d4f7a 0x0e6515b6 0x70027a8b 0x13ff1ce9 0x2cf6b7cd 0xf67be79e 0x7d0f6b8a 0x067224b0 0x698a3e71 // method "opt_in_asset()void", method "pay(address,uint64)void", method "owner_pay(address,uint64)void", method "withdraw(address,uint64)void", method "set_policy(uint64,uint64,uint64)void", method "set_frozen(uint64)void", method "set_operator(address)void", method "set_allowed(address,uint64)void", method "policy()(uint64,uint64,uint64,uint64,uint64,uint64)"
+    txna ApplicationArgs 0
+    match opt_in_asset pay owner_pay withdraw set_policy set_frozen set_operator set_allowed policy
+    err
+
+main_create_NoOp@15:
+    // contract.py:37
+    // class AgentSpendPolicy(arc4.ARC4Contract):
+    pushbytes 0x323a1bb5 // method "create(address,address,uint64,uint64,uint64)void"
+    txna ApplicationArgs 0
+    match create
+    err
+
+
+// contract.AgentSpendPolicy.create[routing]() -> void:
+create:
+    // contract.py:49
+    // @arc4.abimethod(create="require")
+    txna ApplicationArgs 1
+    dup
+    len
+    intc_3 // 32
+    ==
+    assert // invalid number of bytes for arc4.static_array<arc4.uint8, 32>
+    txna ApplicationArgs 2
+    dup
+    len
+    intc_3 // 32
+    ==
+    assert // invalid number of bytes for arc4.static_array<arc4.uint8, 32>
+    txna ApplicationArgs 3
+    dup
+    len
+    intc_1 // 8
+    ==
+    assert // invalid number of bytes for arc4.uint64
+    btoi
+    txna ApplicationArgs 4
+    dup
+    len
+    intc_1 // 8
+    ==
+    assert // invalid number of bytes for arc4.uint64
+    btoi
+    txna ApplicationArgs 5
+    dup
+    len
+    intc_1 // 8
+    ==
+    assert // invalid number of bytes for arc4.uint64
+    btoi
+    // contract.py:58
+    // assert auto_approve_max <= daily_cap, "CEILING_ABOVE_CAP"
+    dup
+    dig 2
+    <=
+    assert // CEILING_ABOVE_CAP
+    // contract.py:59
+    // self.owner = owner
+    bytec_0 // "owner"
+    uncover 5
+    app_global_put
+    // contract.py:60
+    // self.operator = operator
+    bytec 5 // "operator"
+    uncover 4
+    app_global_put
+    // contract.py:61
+    // self.asset_id = asset.id
+    bytec 6 // "asset_id"
+    uncover 3
+    app_global_put
+    // contract.py:62
+    // self.daily_cap = daily_cap
+    bytec_2 // "daily_cap"
+    uncover 2
+    app_global_put
+    // contract.py:63
+    // self.auto_approve_max = auto_approve_max
+    bytec_3 // "auto_approve_max"
+    swap
+    app_global_put
+    // contract.py:64
+    // self.day = Global.latest_timestamp // SECONDS_PER_DAY
+    global LatestTimestamp
+    intc 4 // 86400
+    /
+    bytec 4 // "day"
+    swap
+    app_global_put
+    // contract.py:49
+    // @arc4.abimethod(create="require")
+    intc_2 // 1
+    return
+
+
+// contract.AgentSpendPolicy.opt_in_asset[routing]() -> void:
+opt_in_asset:
+    // contract.py:68-69
+    // # Owner-only, and the app account must already hold the 0.1 ALGO step.
+    // assert Txn.sender == self.owner, "NOT_OWNER"
+    txn Sender
+    intc_0 // 0
+    bytec_0 // "owner"
+    app_global_get_ex
+    assert // check self.owner exists
+    ==
+    assert // NOT_OWNER
+    // contract.py:70-75
+    // itxn.AssetTransfer(
+    //     xfer_asset=self.asset_id,
+    //     asset_receiver=Global.current_application_address,
+    //     asset_amount=0,
+    //     fee=0,
+    // ).submit()
+    itxn_begin
+    // contract.py:71
+    // xfer_asset=self.asset_id,
+    intc_0 // 0
+    bytec 6 // "asset_id"
+    app_global_get_ex
+    assert // check self.asset_id exists
+    // contract.py:72
+    // asset_receiver=Global.current_application_address,
+    global CurrentApplicationAddress
+    // contract.py:73
+    // asset_amount=0,
+    intc_0 // 0
+    itxn_field AssetAmount
+    itxn_field AssetReceiver
+    itxn_field XferAsset
+    // contract.py:70
+    // itxn.AssetTransfer(
+    pushint 4 // axfer
+    itxn_field TypeEnum
+    // contract.py:74
+    // fee=0,
+    intc_0 // 0
+    itxn_field Fee
+    // contract.py:70-75
+    // itxn.AssetTransfer(
+    //     xfer_asset=self.asset_id,
+    //     asset_receiver=Global.current_application_address,
+    //     asset_amount=0,
+    //     fee=0,
+    // ).submit()
+    itxn_submit
+    // contract.py:66
+    // @arc4.abimethod
+    intc_2 // 1
+    return
+
+
+// contract.AgentSpendPolicy.pay[routing]() -> void:
+pay:
+    intc_0 // 0
+    // contract.py:91
+    // @arc4.abimethod
+    txna ApplicationArgs 1
+    dup
+    len
+    intc_3 // 32
+    ==
+    assert // invalid number of bytes for arc4.static_array<arc4.uint8, 32>
+    txna ApplicationArgs 2
+    dup
+    len
+    intc_1 // 8
+    ==
+    assert // invalid number of bytes for arc4.uint64
+    btoi
+    dup
+    // contract.py:93
+    // assert Txn.sender == self.operator, "NOT_OPERATOR"
+    txn Sender
+    intc_0 // 0
+    bytec 5 // "operator"
+    app_global_get_ex
+    assert // check self.operator exists
+    ==
+    assert // NOT_OPERATOR
+    // contract.py:94
+    // assert self.frozen == UInt64(0), "FROZEN"
+    intc_0 // 0
+    bytec 7 // "frozen"
+    app_global_get_ex
+    assert // check self.frozen exists
+    !
+    assert // FROZEN
+    // contract.py:95
+    // assert amount > UInt64(0), "ZERO_AMOUNT"
+    dup
+    assert // ZERO_AMOUNT
+    // contract.py:96
+    // assert amount <= self.auto_approve_max, "ABOVE_AUTO_APPROVE"
+    intc_0 // 0
+    bytec_3 // "auto_approve_max"
+    app_global_get_ex
+    assert // check self.auto_approve_max exists
+    dig 1
+    >=
+    assert // ABOVE_AUTO_APPROVE
+    // contract.py:97
+    // self._roll_day()
+    callsub _roll_day
+    // contract.py:98
+    // assert self.spent_today + amount <= self.daily_cap, "DAILY_CAP_EXCEEDED"
+    intc_0 // 0
+    bytec_1 // "spent_today"
+    app_global_get_ex
+    assert // check self.spent_today exists
+    +
+    intc_0 // 0
+    bytec_2 // "daily_cap"
+    app_global_get_ex
+    assert // check self.daily_cap exists
+    <=
+    assert // DAILY_CAP_EXCEEDED
+    // contract.py:99
+    // if self.allowlist_enabled != UInt64(0):
+    intc_0 // 0
+    bytec 8 // "allowlist_enabled"
+    app_global_get_ex
+    assert // check self.allowlist_enabled exists
+    bz pay_after_if_else@7
+    // contract.py:100
+    // allowed, exists = op.Box.get(payee.bytes)
+    dig 1
+    box_get
+    swap
+    bury 4
+    // contract.py:101
+    // assert exists and allowed == b"1", "PAYEE_NOT_ALLOWED"
+    bz pay_bool_false@5
+    dig 2
+    pushbytes 0x31
+    ==
+    bz pay_bool_false@5
+    intc_2 // 1
+
+pay_bool_merge@6:
+    // contract.py:101
+    // assert exists and allowed == b"1", "PAYEE_NOT_ALLOWED"
+    assert // PAYEE_NOT_ALLOWED
+
+pay_after_if_else@7:
+    // contract.py:102
+    // self.spent_today += amount
+    intc_0 // 0
+    bytec_1 // "spent_today"
+    app_global_get_ex
+    assert // check self.spent_today exists
+    dig 1
+    +
+    bytec_1 // "spent_today"
+    swap
+    app_global_put
+    // contract.py:103
+    // self._send(payee, amount)
+    callsub _send
+    // contract.py:91
+    // @arc4.abimethod
+    intc_2 // 1
+    return
+
+pay_bool_false@5:
+    intc_0 // 0
+    b pay_bool_merge@6
+
+
+// contract.AgentSpendPolicy.owner_pay[routing]() -> void:
+owner_pay:
+    // contract.py:105
+    // @arc4.abimethod
+    txna ApplicationArgs 1
+    dup
+    len
+    intc_3 // 32
+    ==
+    assert // invalid number of bytes for arc4.static_array<arc4.uint8, 32>
+    txna ApplicationArgs 2
+    dup
+    len
+    intc_1 // 8
+    ==
+    assert // invalid number of bytes for arc4.uint64
+    btoi
+    // contract.py:107-109
+    // # The human override: ignores freeze, ceiling and cap on purpose, and
+    // # still counts against today so the agent cannot ride on top of it.
+    // assert Txn.sender == self.owner, "NOT_OWNER"
+    txn Sender
+    intc_0 // 0
+    bytec_0 // "owner"
+    app_global_get_ex
+    assert // check self.owner exists
+    ==
+    assert // NOT_OWNER
+    // contract.py:110
+    // assert amount > UInt64(0), "ZERO_AMOUNT"
+    dup
+    assert // ZERO_AMOUNT
+    // contract.py:111
+    // self._roll_day()
+    callsub _roll_day
+    // contract.py:112
+    // self.spent_today += amount
+    intc_0 // 0
+    bytec_1 // "spent_today"
+    app_global_get_ex
+    assert // check self.spent_today exists
+    dig 1
+    +
+    bytec_1 // "spent_today"
+    swap
+    app_global_put
+    // contract.py:113
+    // self._send(payee, amount)
+    callsub _send
+    // contract.py:105
+    // @arc4.abimethod
+    intc_2 // 1
+    return
+
+
+// contract.AgentSpendPolicy.withdraw[routing]() -> void:
+withdraw:
+    // contract.py:115
+    // @arc4.abimethod
+    txna ApplicationArgs 1
+    dup
+    len
+    intc_3 // 32
+    ==
+    assert // invalid number of bytes for arc4.static_array<arc4.uint8, 32>
+    txna ApplicationArgs 2
+    dup
+    len
+    intc_1 // 8
+    ==
+    assert // invalid number of bytes for arc4.uint64
+    btoi
+    // contract.py:117
+    // assert Txn.sender == self.owner, "NOT_OWNER"
+    txn Sender
+    intc_0 // 0
+    bytec_0 // "owner"
+    app_global_get_ex
+    assert // check self.owner exists
+    ==
+    assert // NOT_OWNER
+    // contract.py:118
+    // self._send(to, amount)
+    callsub _send
+    // contract.py:115
+    // @arc4.abimethod
+    intc_2 // 1
+    return
+
+
+// contract.AgentSpendPolicy.set_policy[routing]() -> void:
+set_policy:
+    // contract.py:120
+    // @arc4.abimethod
+    txna ApplicationArgs 1
+    dup
+    len
+    intc_1 // 8
+    ==
+    assert // invalid number of bytes for arc4.uint64
+    btoi
+    txna ApplicationArgs 2
+    dup
+    len
+    intc_1 // 8
+    ==
+    assert // invalid number of bytes for arc4.uint64
+    btoi
+    txna ApplicationArgs 3
+    dup
+    len
+    intc_1 // 8
+    ==
+    assert // invalid number of bytes for arc4.uint64
+    btoi
+    // contract.py:122
+    // assert Txn.sender == self.owner, "NOT_OWNER"
+    txn Sender
+    intc_0 // 0
+    bytec_0 // "owner"
+    app_global_get_ex
+    assert // check self.owner exists
+    ==
+    assert // NOT_OWNER
+    // contract.py:123
+    // assert auto_approve_max <= daily_cap, "CEILING_ABOVE_CAP"
+    dig 1
+    dig 3
+    <=
+    assert // CEILING_ABOVE_CAP
+    // contract.py:124
+    // self.daily_cap = daily_cap
+    bytec_2 // "daily_cap"
+    uncover 3
+    app_global_put
+    // contract.py:125
+    // self.auto_approve_max = auto_approve_max
+    bytec_3 // "auto_approve_max"
+    uncover 2
+    app_global_put
+    // contract.py:126
+    // self.allowlist_enabled = allowlist_enabled
+    bytec 8 // "allowlist_enabled"
+    swap
+    app_global_put
+    // contract.py:120
+    // @arc4.abimethod
+    intc_2 // 1
+    return
+
+
+// contract.AgentSpendPolicy.set_frozen[routing]() -> void:
+set_frozen:
+    // contract.py:128
+    // @arc4.abimethod
+    txna ApplicationArgs 1
+    dup
+    len
+    intc_1 // 8
+    ==
+    assert // invalid number of bytes for arc4.uint64
+    btoi
+    // contract.py:130
+    // assert Txn.sender == self.owner, "NOT_OWNER"
+    txn Sender
+    intc_0 // 0
+    bytec_0 // "owner"
+    app_global_get_ex
+    assert // check self.owner exists
+    ==
+    assert // NOT_OWNER
+    // contract.py:131
+    // self.frozen = frozen
+    bytec 7 // "frozen"
+    swap
+    app_global_put
+    // contract.py:128
+    // @arc4.abimethod
+    intc_2 // 1
+    return
+
+
+// contract.AgentSpendPolicy.set_operator[routing]() -> void:
+set_operator:
+    // contract.py:133
+    // @arc4.abimethod
+    txna ApplicationArgs 1
+    dup
+    len
+    intc_3 // 32
+    ==
+    assert // invalid number of bytes for arc4.static_array<arc4.uint8, 32>
+    // contract.py:135
+    // assert Txn.sender == self.owner, "NOT_OWNER"
+    txn Sender
+    intc_0 // 0
+    bytec_0 // "owner"
+    app_global_get_ex
+    assert // check self.owner exists
+    ==
+    assert // NOT_OWNER
+    // contract.py:136
+    // self.operator = operator
+    bytec 5 // "operator"
+    swap
+    app_global_put
+    // contract.py:133
+    // @arc4.abimethod
+    intc_2 // 1
+    return
+
+
+// contract.AgentSpendPolicy.set_allowed[routing]() -> void:
+set_allowed:
+    // contract.py:138
+    // @arc4.abimethod
+    txna ApplicationArgs 1
+    dup
+    len
+    intc_3 // 32
+    ==
+    assert // invalid number of bytes for arc4.static_array<arc4.uint8, 32>
+    txna ApplicationArgs 2
+    dup
+    len
+    intc_1 // 8
+    ==
+    assert // invalid number of bytes for arc4.uint64
+    btoi
+    // contract.py:140
+    // assert Txn.sender == self.owner, "NOT_OWNER"
+    txn Sender
+    intc_0 // 0
+    bytec_0 // "owner"
+    app_global_get_ex
+    assert // check self.owner exists
+    ==
+    assert // NOT_OWNER
+    // contract.py:141
+    // if allowed != UInt64(0):
+    bz set_allowed_else_body@3
+    // contract.py:142
+    // op.Box.put(payee.bytes, b"1")
+    pushbytes 0x31
+    box_put
+
+set_allowed_after_if_else@4:
+    // contract.py:138
+    // @arc4.abimethod
+    intc_2 // 1
+    return
+
+set_allowed_else_body@3:
+    // contract.py:144
+    // _deleted = op.Box.delete(payee.bytes)
+    box_del
+    pop
+    b set_allowed_after_if_else@4
+
+
+// contract.AgentSpendPolicy.policy[routing]() -> void:
+policy:
+    // contract.py:150
+    // arc4.UInt64(self.daily_cap),
+    intc_0 // 0
+    bytec_2 // "daily_cap"
+    app_global_get_ex
+    assert // check self.daily_cap exists
+    itob
+    // contract.py:151
+    // arc4.UInt64(self.auto_approve_max),
+    intc_0 // 0
+    bytec_3 // "auto_approve_max"
+    app_global_get_ex
+    assert // check self.auto_approve_max exists
+    itob
+    // contract.py:152
+    // arc4.UInt64(self.spent_today),
+    intc_0 // 0
+    bytec_1 // "spent_today"
+    app_global_get_ex
+    assert // check self.spent_today exists
+    itob
+    // contract.py:153
+    // arc4.UInt64(self.day),
+    intc_0 // 0
+    bytec 4 // "day"
+    app_global_get_ex
+    assert // check self.day exists
+    itob
+    // contract.py:154
+    // arc4.UInt64(self.frozen),
+    intc_0 // 0
+    bytec 7 // "frozen"
+    app_global_get_ex
+    assert // check self.frozen exists
+    itob
+    // contract.py:155
+    // arc4.UInt64(self.allowlist_enabled),
+    intc_0 // 0
+    bytec 8 // "allowlist_enabled"
+    app_global_get_ex
+    assert // check self.allowlist_enabled exists
+    itob
+    // contract.py:148-157
+    // return arc4.Tuple(
+    //     (
+    //         arc4.UInt64(self.daily_cap),
+    //         arc4.UInt64(self.auto_approve_max),
+    //         arc4.UInt64(self.spent_today),
+    //         arc4.UInt64(self.day),
+    //         arc4.UInt64(self.frozen),
+    //         arc4.UInt64(self.allowlist_enabled),
+    //     )
+    // )
+    uncover 5
+    uncover 5
+    concat
+    uncover 4
+    concat
+    uncover 3
+    concat
+    uncover 2
+    concat
+    swap
+    concat
+    // contract.py:146
+    // @arc4.abimethod(readonly=True)
+    pushbytes 0x151f7c75
+    swap
+    concat
+    log
+    intc_2 // 1
+    return
+
+
+// contract.AgentSpendPolicy._roll_day() -> void:
+_roll_day:
+    // contract.py:77
+    // def _roll_day(self) -> None:
+    proto 0 0
+    // contract.py:78
+    // today = Global.latest_timestamp // SECONDS_PER_DAY
+    global LatestTimestamp
+    intc 4 // 86400
+    /
+    dup
+    // contract.py:79
+    // if today != self.day:
+    intc_0 // 0
+    bytec 4 // "day"
+    app_global_get_ex
+    assert // check self.day exists
+    !=
+    bz _roll_day_after_if_else@2
+    // contract.py:80
+    // self.day = today
+    bytec 4 // "day"
+    frame_dig 0
+    app_global_put
+    // contract.py:81
+    // self.spent_today = UInt64(0)
+    bytec_1 // "spent_today"
+    intc_0 // 0
+    app_global_put
+
+_roll_day_after_if_else@2:
+    retsub
+
+
+// contract.AgentSpendPolicy._send(payee: bytes, amount: uint64) -> void:
+_send:
+    // contract.py:83
+    // def _send(self, payee: Account, amount: UInt64) -> None:
+    proto 2 0
+    // contract.py:84-89
+    // itxn.AssetTransfer(
+    //     xfer_asset=self.asset_id,
+    //     asset_receiver=payee,
+    //     asset_amount=amount,
+    //     fee=0,
+    // ).submit()
+    itxn_begin
+    // contract.py:85
+    // xfer_asset=self.asset_id,
+    intc_0 // 0
+    bytec 6 // "asset_id"
+    app_global_get_ex
+    assert // check self.asset_id exists
+    frame_dig -1
+    itxn_field AssetAmount
+    frame_dig -2
+    itxn_field AssetReceiver
+    itxn_field XferAsset
+    // contract.py:84
+    // itxn.AssetTransfer(
+    pushint 4 // axfer
+    itxn_field TypeEnum
+    // contract.py:88
+    // fee=0,
+    intc_0 // 0
+    itxn_field Fee
+    // contract.py:84-89
+    // itxn.AssetTransfer(
+    //     xfer_asset=self.asset_id,
+    //     asset_receiver=payee,
+    //     asset_amount=amount,
+    //     fee=0,
+    // ).submit()
+    itxn_submit
+    retsub
