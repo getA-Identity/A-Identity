@@ -88,7 +88,58 @@ A payment is checked in depth - a limit you set is enforced in **three** ways:
 `executeInstruction` routes a payment **vault → Circle → direct settlement**, each additive with a
 fallback, so one layer failing never fabricates a success.
 
+```mermaid
+flowchart TD
+  I[Agent asks to pay] --> S{1. Server policy engine<br/>cap, ceiling, allowlist, freeze}
+  S -->|refuses| D1[DENY, nothing signed]
+  S -->|allows| V{2. On-chain vault<br/>AgentSpendPolicy.pay}
+  V -->|reverts: DailyCapExceeded,<br/>PayeeNotAllowed, IsFrozen,<br/>SessionKeyExpired| D2[The chain refused.<br/>Cap given back, no txHash]
+  V -->|no vault configured| C{3. Circle Agent Wallet<br/>sanctions, allow-block, freeze}
+  C -->|screened out| D3[Wallet layer refused]
+  V -->|passes| R[Receipt required]
+  C -->|passes| R
+  R -->|Transfer log matches| OK[Settled]
+  R -->|no matching log,<br/>or receipt times out| AMB[Ambiguous.<br/>Never marked settled]
+```
+
+Read the diagram by its refusals rather than its happy path. Each layer can say no on its
+own, and the server is only the first of the three: the vault reverts whoever signs, so the
+limit survives our server being wrong, compromised or simply switched off. Nothing reaches
+**Settled** without a receipt carrying a matching `Transfer` log, which is why the ambiguous
+arm exists at all: a payment we cannot prove settled is reported as unproven, not as done.
+
 ## Standards
+
+```mermaid
+flowchart LR
+  subgraph Identity
+    E8004[ERC-8004<br/>agent passport]
+    KYA[KYA attestation<br/>ValidationRegistry]
+    REP[Reputation<br/>ReputationRegistry]
+  end
+  subgraph Authority
+    VAULT[AgentSpendPolicy<br/>Solidity / Soroban / Algorand Python]
+  end
+  subgraph Payment
+    X402[x402<br/>HTTP 402 challenge]
+    E3009[EIP-3009<br/>gasless buyer, we broadcast]
+    SOR[Soroban auth entry]
+    AVM[Algorand atomic group]
+    E8183[ERC-8183<br/>escrow]
+  end
+  E8004 --> KYA --> REP
+  REP --> VAULT
+  VAULT --> X402
+  X402 --> E3009
+  X402 --> SOR
+  X402 --> AVM
+  VAULT --> E8183
+```
+
+The order matters and is the product: identity first, then a bounded authority derived from
+it, and only then a payment rail. A rail is interchangeable, and three of them are drawn
+here precisely because none of them is the thesis.
+
 
 | Standard | Where | What it does |
 |---|---|---|
@@ -237,6 +288,34 @@ The second non-EVM rail, live on its first mainnet sale the day it shipped (2026
   rail can remove.
 
 ## Stack
+
+```mermaid
+flowchart TD
+  UI[Frontend<br/>React + Vite on Vercel] -->|same-origin /api, /mcp| BE
+  AG[Agent] -->|MCP JSON-RPC| BE
+  BUY[x402 buyer] -->|402 challenge, signed payload| BE
+  subgraph BE[Backend on Render]
+    HTTP[http/ route groups]
+    PLAT[platform/ layered domain<br/>core to tasks, graph enforced by a test]
+    RAILS[x402-3009 / x402-stellar / x402-algorand]
+    REG[chains/registry.ts<br/>single source of truth]
+    HTTP --> PLAT
+    HTTP --> RAILS
+    PLAT --> REG
+    RAILS --> REG
+  end
+  BE -->|reads and writes| CH[(13 chains<br/>8 live)]
+  BE -->|durable state| DB[(Postgres, JSON fallback)]
+  REG -.generates.-> UI
+```
+
+Two edges in that picture are load-bearing and both are test-enforced. `platform/` is
+layered, and a module may import only strictly lower layers, never `http/` and never its own
+barrel. `chains/registry.ts` is the only place a chain id, an RPC or explorer host, or a
+token address may live: a test generates its forbidden list from the registry itself and
+fails the build if any other file under `mcp/src` restates one, so a new chain is guarded the
+day it lands rather than the day someone remembers to add it.
+
 
 - **Frontend** - React + Vite (Vercel). Talks to its own origin; `vercel.json` proxies `/api`, `/mcp`,
   `/health` to the backend (first-party → dodges ad-blocker false "offline").

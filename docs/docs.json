@@ -38,6 +38,12 @@
             ]
           },
           {
+            "group": "About",
+            "pages": [
+              "about/team"
+            ]
+          },
+          {
             "group": "Live on OKX.AI",
             "pages": [
               "okx-ai-asp"

@@ -1,0 +1,39 @@
+---
+title: "Team"
+description: "Who builds A-Identity, and how the work is split."
+---
+
+A-Identity is built by a small team. The work splits along a line we keep deliberately
+sharp: one side owns what the protocol does, the other owns who it reaches.
+
+## Business, partnerships and growth
+
+<Card title="Aybars Dorman" icon="handshake">
+  Business development, ecosystem partnerships, grants and go-to-market. Aybars leads the
+  chapter and foundation relationships behind the networks A-Identity settles on, runs the
+  grant and hackathon pipeline, and owns the customer-development work that decides what
+  gets built next.
+</Card>
+
+## Engineering
+
+The protocol, the contracts and the backend are built in the open rather than behind a
+byline. What that side of the team is accountable for is visible in the repository itself
+rather than on this page:
+
+- The `AgentSpendPolicy` contract, in three implementations (Solidity, Rust for Soroban,
+  Algorand Python), each with its own test suite and negative controls.
+- The chain registry that is the single source of truth for every chain, address and
+  endpoint, with a test that fails the build when any other file restates one of them.
+- The self-facilitated x402 payment rails, where the signing domain is proven against the
+  token's live `DOMAIN_SEPARATOR` rather than pasted, and no challenge is served when it
+  cannot be proven.
+- The provenance ledger behind `/proof/:rail`, where every transaction we claim is listed
+  with a caveat block a test forces to be non-empty.
+
+## How to reach us
+
+For partnerships, grants and ecosystem work, contact Aybars. For protocol and integration
+questions, open an issue on the repository or use the machine-readable surfaces documented
+under [Build](/developers/quickstart) - the agent card, the MCP server card and the agent
+skills index are all designed to be read without talking to a person first.
