@@ -30,7 +30,20 @@ export default function Shift() {
   return (
     <SectionShell size="lg" backdrop="rails" backdropPosition="center">
       <div className="mx-auto flex max-w-[960px] flex-col items-center text-center">
-        <motion.div {...revealAt(1)}>
+        {/* A person and an agent, side by side rather than one replacing the other, which
+            is the whole argument of this section. Transparent ground, so it reads on the
+            rails backdrop in either theme. */}
+        <motion.img
+          {...revealAt(0)}
+          src="/art/alpha/together.webp"
+          alt=""
+          aria-hidden="true"
+          loading="lazy"
+          decoding="async"
+          className="pointer-events-none h-28 w-auto select-none object-contain sm:h-32"
+        />
+
+        <motion.div {...revealAt(1)} className="mt-4">
           <Eyebrow icon={Clock}>Why now</Eyebrow>
         </motion.div>
 

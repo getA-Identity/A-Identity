@@ -31,18 +31,21 @@ const GUARDRAIL_URL = 'https://a-identity-backend.onrender.com/api/guardrail-sta
 const CARDS = [
   {
     Icon: KeyRound,
+    art: '/art/alpha/vault.webp',
     title: 'We never hold your keys',
     body:
       'No endpoint takes a private key, a recovery phrase or brokerage credentials. Funds stay in your own wallet.',
   },
   {
     Icon: Layers,
+    art: '/art/alpha/guardrail.webp',
     title: 'One limit, enforced three times',
     body:
       'A cap you set is checked by our server, by your on-chain vault, and by Circle at the wallet layer. Any one of them can refuse.',
   },
   {
     Icon: UserCheck,
+    art: '/art/alpha/gate.webp',
     title: 'A human stays in the tower',
     body:
       'Above the auto-approve line, a person signs. The rules run outside the model, so the agent cannot argue past them.',
@@ -86,12 +89,22 @@ export default function Safety() {
       />
 
       <div className="mt-12 grid gap-5 md:grid-cols-3">
-        {CARDS.map(({ Icon, title, body }, i) => (
+        {CARDS.map(({ Icon, art, title, body }, i) => (
           <motion.div
             key={title}
             {...revealAt(i)}
             className="rounded-2xl border border-border bg-card p-6"
           >
+            {/* The object these three sentences describe. Ground is transparent, so the
+                card's own surface shows through and the art belongs in either theme. */}
+            <img
+              src={art}
+              alt=""
+              aria-hidden="true"
+              loading="lazy"
+              decoding="async"
+              className="pointer-events-none mb-4 h-24 w-auto select-none object-contain object-left"
+            />
             <h3 className="flex items-start gap-2 text-lg font-bold tracking-tight text-foreground">
               <Icon size={18} className="mt-1 shrink-0 text-accent" aria-hidden="true" />
               {title}
