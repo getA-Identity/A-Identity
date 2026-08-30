@@ -27,14 +27,14 @@ export const CHAIN_NAMES = [
   'stellar-testnet',
   'algorand',
   'algorand-testnet',
-  'xlayer',
   'base',
-  'avalanche',
-  'arbitrum',
-  'rhchain-testnet',
   'rhchain',
+  'rhchain-testnet',
+  'arbitrum',
+  'xlayer',
   'celo',
   'celo-sepolia',
+  'avalanche',
 ] as const
 
 export type ChainName = (typeof CHAIN_NAMES)[number]

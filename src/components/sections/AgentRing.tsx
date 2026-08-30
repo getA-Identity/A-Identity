@@ -41,13 +41,24 @@ const OWNER_CELO = '0xF43F43D8aee114a71B164e1f6214BC7625a5742D'
 
 const AGENTS: OnchainAgent[] = [
   {
-    chain: 'xlayer',
-    tokenId: '6271',
-    owner: OWNER_OKX,
-    tx: '0x03a614a902ed742526047dffa165378cb16350a81bf083d4672f6d7a9ecfb078',
-    note: 'Listed on OKX.AI. The live paid Trust Oracle.',
+    chain: 'arc',
+    tokenId: '849980',
+    owner: OWNER_EVM,
+    tx: '0x506b125f3a0481667e3a00dcb86f48cbcaa35c643af963365e9389b06a8f8e54',
+    note: 'Meridian. KYA attested on-chain.',
     mission:
-      'The live Trust Oracle on OKX.AI. Other agents pay it per call, in real stablecoins, to answer one question before money moves: can this counterparty be trusted?',
+      'Meridian, the phase-1 showcase research agent: buys market data through the policy-gated wallet, KYA attested on-chain, scored 542/1000 from real settlements.',
+    anchor: { score: 542, tx: '0x3f5429819347fb0f75e66ee1416fc2c9ad3dade8fb1bf8dac1b9d2606de92a8c' },
+  },
+  {
+    chain: 'base',
+    tokenId: '73232',
+    owner: OWNER_EVM,
+    tx: '0xb428bf8e79df3c44157c134df1858eb75fe3758b74868445c1dcd07948705bf0',
+    note: 'Reputation anchored by our oracle validator.',
+    mission:
+      'The identity behind the Base x402 rail, settling native Circle USDC. Its operating wallets were funded from Stellar pubnet USDC through a NEAR Intents swap.',
+    anchor: { score: 60, tx: '0x4f0295d12dcdc356cc7ac12b8317f1ff07289e4584725895f9b482a2223b2aa6' },
   },
   {
     chain: 'rhchain',
@@ -70,14 +81,21 @@ const AGENTS: OnchainAgent[] = [
     anchor: { score: 60, tx: '0x435a5c62bda28db23505812b9deb93dfce7aff3831e8449a5274fd0e7ecc376a' },
   },
   {
-    chain: 'base',
-    tokenId: '73232',
-    owner: OWNER_EVM,
-    tx: '0xb428bf8e79df3c44157c134df1858eb75fe3758b74868445c1dcd07948705bf0',
-    note: 'Reputation anchored by our oracle validator.',
+    chain: 'xlayer',
+    tokenId: '6271',
+    owner: OWNER_OKX,
+    tx: '0x03a614a902ed742526047dffa165378cb16350a81bf083d4672f6d7a9ecfb078',
+    note: 'Listed on OKX.AI. The live paid Trust Oracle.',
     mission:
-      'The identity behind the Base x402 rail, settling native Circle USDC. Its operating wallets were funded from Stellar pubnet USDC through a NEAR Intents swap.',
-    anchor: { score: 60, tx: '0x4f0295d12dcdc356cc7ac12b8317f1ff07289e4584725895f9b482a2223b2aa6' },
+      'The live Trust Oracle on OKX.AI. Other agents pay it per call, in real stablecoins, to answer one question before money moves: can this counterparty be trusted?',
+  },
+  {
+    chain: 'xlayer',
+    tokenId: '8913',
+    owner: OWNER_OKX,
+    note: 'Second listing on the same registry.',
+    mission:
+      'The second OKX.AI listing of the Trust Oracle, on the same X Layer registry and wallet as #6271. No mint receipt in our ledger; the registry itself is the proof.',
   },
   {
     chain: 'celo',
@@ -87,24 +105,6 @@ const AGENTS: OnchainAgent[] = [
     note: 'The identity behind the Celo x402 rail.',
     mission:
       'The identity behind the Celo x402 rail, where payments settle in USDC through the first-party facilitator Celo runs. Owned by the wallet that receives those payments.',
-  },
-  {
-    chain: 'arc',
-    tokenId: '849980',
-    owner: OWNER_EVM,
-    tx: '0x506b125f3a0481667e3a00dcb86f48cbcaa35c643af963365e9389b06a8f8e54',
-    note: 'Meridian. KYA attested on-chain.',
-    mission:
-      'Meridian, the phase-1 showcase research agent: buys market data through the policy-gated wallet, KYA attested on-chain, scored 542/1000 from real settlements.',
-    anchor: { score: 542, tx: '0x3f5429819347fb0f75e66ee1416fc2c9ad3dade8fb1bf8dac1b9d2606de92a8c' },
-  },
-  {
-    chain: 'xlayer',
-    tokenId: '8913',
-    owner: OWNER_OKX,
-    note: 'Second listing on the same registry.',
-    mission:
-      'The second OKX.AI listing of the Trust Oracle, on the same X Layer registry and wallet as #6271. No mint receipt in our ledger; the registry itself is the proof.',
   },
   {
     chain: 'rhchain-testnet',

@@ -10,7 +10,7 @@
  */
 
 /** Short slug of a chain in the registry. */
-export type ChainId = 'arc' | 'stellar' | 'algorand' | 'xlayer' | 'base' | 'arbitrum' | 'rhchain' | 'celo' | 'stellar-testnet' | 'algorand-testnet' | 'rhchain-testnet' | 'celo-sepolia' | 'avalanche'
+export type ChainId = 'arc' | 'stellar' | 'algorand' | 'base' | 'rhchain' | 'arbitrum' | 'xlayer' | 'celo' | 'stellar-testnet' | 'algorand-testnet' | 'rhchain-testnet' | 'celo-sepolia' | 'avalanche'
 
 export type ChainProtocols = {
   /** x402 HTTP-402 payment support. Settlement is in a stablecoin. */
@@ -164,43 +164,6 @@ export const CHAINS: readonly Chain[] = [
     "settlementSymbol": "USDC"
   },
   {
-    "id": "xlayer",
-    "name": "OKX X Layer",
-    "shortName": "X Layer",
-    "color": "#8A8F98",
-    "chainId": 196,
-    "caip2": "eip155:196",
-    "evmCompatible": true,
-    "testnet": false,
-    "stablecoins": [
-      "USDC",
-      "USDT"
-    ],
-    "rpcUrl": "https://rpc.xlayer.tech",
-    "explorer": "https://www.oklink.com/xlayer",
-    "role": "OKX.AI marketplace rail: identity reads live from OKX ERC-8004; x402 trust tools settle here.",
-    "status": "live",
-    "protocols": {
-      "payment": {
-        "x402": true,
-        "note": "x402 over USDC once the USDC address is confirmed."
-      },
-      "identity": {
-        "standard": "ERC-8004",
-        "erc8004Native": true,
-        "note": "OKX.AI identity registry LIVE (read-side wired); payment rails still planned."
-      }
-    },
-    "identity": "ERC-8004",
-    "erc8004Native": true,
-    "x402": true,
-    "registries": {
-      "identity": "0x8004a169fb4a3325136eb29fa0ceb6d2e539a432"
-    },
-    "identityLive": true,
-    "settlementSymbol": null
-  },
-  {
     "id": "base",
     "name": "Base",
     "shortName": "Base",
@@ -227,44 +190,6 @@ export const CHAINS: readonly Chain[] = [
         "standard": "ERC-8004",
         "erc8004Native": true,
         "note": "Canonical ERC-8004 identity + reputation registries are live here, deployed by their authors; agent #73232 is ours (minted 2026-08-28, tx 0xb428bf8e, and ownerOf/tokenURI read back live). TRAP BEFORE PASTING ADDRESSES: Arc's three registry addresses all have code on Base mainnet, 130 bytes each, which is minimal-proxy sized and delegates to a NON-canonical implementation. Same address, different contract. An eth_getCode check therefore answers yes here and means nothing; the canonical pair above was verified by reading each proxy's EIP-1967 implementation slot and matching the implementation code byte for byte against Arbitrum One (2026-08-28), not by observing that something is deployed."
-      }
-    },
-    "identity": "ERC-8004",
-    "erc8004Native": true,
-    "x402": true,
-    "registries": {
-      "identity": "0x8004a169fb4a3325136eb29fa0ceb6d2e539a432",
-      "reputation": "0x8004BAa17C55a88189AE136b182e5fdA19dE9b63"
-    },
-    "identityLive": true,
-    "settlementSymbol": "USDC"
-  },
-  {
-    "id": "arbitrum",
-    "name": "Arbitrum One",
-    "shortName": "Arbitrum",
-    "color": "#28A0F0",
-    "chainId": 42161,
-    "caip2": "eip155:42161",
-    "evmCompatible": true,
-    "testnet": false,
-    "stablecoins": [
-      "USDC",
-      "USDT"
-    ],
-    "rpcUrl": "https://arb1.arbitrum.io/rpc",
-    "explorer": "https://arbiscan.io",
-    "role": "DeFi gateway: large protocol ecosystem, our ERC-8004 agent #1259, and x402 settling in native Circle USDC through our own EIP-3009 facilitator.",
-    "status": "live",
-    "protocols": {
-      "payment": {
-        "x402": true,
-        "note": "x402 settling in native Circle USDC through our own first-party EIP-3009 facilitator: the buyer signs, we broadcast and pay the gas. The fee is lower here than on Robinhood Chain because the gas measurably is."
-      },
-      "identity": {
-        "standard": "ERC-8004",
-        "erc8004Native": true,
-        "note": "Canonical ERC-8004 identity + reputation registries are live here (deployed by their authors, not by us); agent #1259 is ours. No ValidationRegistry in this family, so KYA cannot be anchored here."
       }
     },
     "identity": "ERC-8004",
@@ -313,6 +238,81 @@ export const CHAINS: readonly Chain[] = [
     },
     "identityLive": true,
     "settlementSymbol": "USDG"
+  },
+  {
+    "id": "arbitrum",
+    "name": "Arbitrum One",
+    "shortName": "Arbitrum",
+    "color": "#28A0F0",
+    "chainId": 42161,
+    "caip2": "eip155:42161",
+    "evmCompatible": true,
+    "testnet": false,
+    "stablecoins": [
+      "USDC",
+      "USDT"
+    ],
+    "rpcUrl": "https://arb1.arbitrum.io/rpc",
+    "explorer": "https://arbiscan.io",
+    "role": "DeFi gateway: large protocol ecosystem, our ERC-8004 agent #1259, and x402 settling in native Circle USDC through our own EIP-3009 facilitator.",
+    "status": "live",
+    "protocols": {
+      "payment": {
+        "x402": true,
+        "note": "x402 settling in native Circle USDC through our own first-party EIP-3009 facilitator: the buyer signs, we broadcast and pay the gas. The fee is lower here than on Robinhood Chain because the gas measurably is."
+      },
+      "identity": {
+        "standard": "ERC-8004",
+        "erc8004Native": true,
+        "note": "Canonical ERC-8004 identity + reputation registries are live here (deployed by their authors, not by us); agent #1259 is ours. No ValidationRegistry in this family, so KYA cannot be anchored here."
+      }
+    },
+    "identity": "ERC-8004",
+    "erc8004Native": true,
+    "x402": true,
+    "registries": {
+      "identity": "0x8004a169fb4a3325136eb29fa0ceb6d2e539a432",
+      "reputation": "0x8004BAa17C55a88189AE136b182e5fdA19dE9b63"
+    },
+    "identityLive": true,
+    "settlementSymbol": "USDC"
+  },
+  {
+    "id": "xlayer",
+    "name": "OKX X Layer",
+    "shortName": "X Layer",
+    "color": "#8A8F98",
+    "chainId": 196,
+    "caip2": "eip155:196",
+    "evmCompatible": true,
+    "testnet": false,
+    "stablecoins": [
+      "USDC",
+      "USDT"
+    ],
+    "rpcUrl": "https://rpc.xlayer.tech",
+    "explorer": "https://www.oklink.com/xlayer",
+    "role": "OKX.AI marketplace rail: identity reads live from OKX ERC-8004; x402 trust tools settle here.",
+    "status": "live",
+    "protocols": {
+      "payment": {
+        "x402": true,
+        "note": "x402 over USDC once the USDC address is confirmed."
+      },
+      "identity": {
+        "standard": "ERC-8004",
+        "erc8004Native": true,
+        "note": "OKX.AI identity registry LIVE (read-side wired); payment rails still planned."
+      }
+    },
+    "identity": "ERC-8004",
+    "erc8004Native": true,
+    "x402": true,
+    "registries": {
+      "identity": "0x8004a169fb4a3325136eb29fa0ceb6d2e539a432"
+    },
+    "identityLive": true,
+    "settlementSymbol": null
   },
   {
     "id": "celo",

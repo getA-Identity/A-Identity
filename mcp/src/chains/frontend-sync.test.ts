@@ -127,16 +127,17 @@ test('the public surface reports exactly the wired chains as live/beta', () => {
   assert.deepEqual(
     live.map((c) => ({ id: c.id, status: c.status })),
     [
+      // 2026-08-30: the registry order itself was re-set as the product's display
+      // ranking (Arc, Stellar, Algorand as the flagship trio, Avalanche last), so this
+      // list follows: still derived by the same status-then-registry rule, never
+      // hand-placed here.
       { id: 'arc', status: 'live' },
       { id: 'stellar', status: 'live' },
-      // 2026-08-30: algorand joins the live group the same day it entered at beta, on a
-      // real mainnet sale; its position is the derived rule again (registry order within
-      // the same status), not a hand placement.
       { id: 'algorand', status: 'live' },
-      { id: 'xlayer', status: 'live' },
       { id: 'base', status: 'live' },
-      { id: 'arbitrum', status: 'live' },
       { id: 'rhchain', status: 'live' },
+      { id: 'arbitrum', status: 'live' },
+      { id: 'xlayer', status: 'live' },
       { id: 'celo', status: 'live' },
       { id: 'stellar-testnet', status: 'beta' },
       { id: 'algorand-testnet', status: 'beta' },

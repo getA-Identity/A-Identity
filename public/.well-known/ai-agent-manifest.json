@@ -58,15 +58,6 @@
           "status": "beta"
         },
         {
-          "id": "xlayer",
-          "chainId": 196,
-          "caip2": "eip155:196",
-          "identity": "ERC-8004",
-          "erc8004Native": true,
-          "note": "OKX.AI identity registry LIVE (read-side wired); payment rails still planned.",
-          "status": "live"
-        },
-        {
           "id": "base",
           "chainId": 8453,
           "caip2": "eip155:8453",
@@ -76,21 +67,12 @@
           "status": "live"
         },
         {
-          "id": "avalanche",
-          "chainId": 43114,
-          "caip2": "eip155:43114",
+          "id": "rhchain",
+          "chainId": 4663,
+          "caip2": "eip155:4663",
           "identity": "ERC-8004",
           "erc8004Native": true,
-          "note": "ERC-8004 registry to be deployed.",
-          "status": "planned"
-        },
-        {
-          "id": "arbitrum",
-          "chainId": 42161,
-          "caip2": "eip155:42161",
-          "identity": "ERC-8004",
-          "erc8004Native": true,
-          "note": "Canonical ERC-8004 identity + reputation registries are live here (deployed by their authors, not by us); agent #1259 is ours. No ValidationRegistry in this family, so KYA cannot be anchored here.",
+          "note": "Identity + Reputation registries LIVE (same canonical addresses as X Layer/Celo); agent #0, the registry's first mint, is ours (2026-08-12). No ValidationRegistry in the mainnet family yet.",
           "status": "live"
         },
         {
@@ -103,12 +85,21 @@
           "status": "beta"
         },
         {
-          "id": "rhchain",
-          "chainId": 4663,
-          "caip2": "eip155:4663",
+          "id": "arbitrum",
+          "chainId": 42161,
+          "caip2": "eip155:42161",
           "identity": "ERC-8004",
           "erc8004Native": true,
-          "note": "Identity + Reputation registries LIVE (same canonical addresses as X Layer/Celo); agent #0, the registry's first mint, is ours (2026-08-12). No ValidationRegistry in the mainnet family yet.",
+          "note": "Canonical ERC-8004 identity + reputation registries are live here (deployed by their authors, not by us); agent #1259 is ours. No ValidationRegistry in this family, so KYA cannot be anchored here.",
+          "status": "live"
+        },
+        {
+          "id": "xlayer",
+          "chainId": 196,
+          "caip2": "eip155:196",
+          "identity": "ERC-8004",
+          "erc8004Native": true,
+          "note": "OKX.AI identity registry LIVE (read-side wired); payment rails still planned.",
           "status": "live"
         },
         {
@@ -128,6 +119,15 @@
           "erc8004Native": true,
           "note": "Identity + Reputation registries LIVE (same addresses as Arc). No ValidationRegistry, mirroring mainnet.",
           "status": "beta"
+        },
+        {
+          "id": "avalanche",
+          "chainId": 43114,
+          "caip2": "eip155:43114",
+          "identity": "ERC-8004",
+          "erc8004Native": true,
+          "note": "ERC-8004 registry to be deployed.",
+          "status": "planned"
         }
       ],
       "multiChain": true
@@ -182,14 +182,6 @@
           "status": "beta"
         },
         {
-          "id": "xlayer",
-          "name": "OKX X Layer",
-          "chainId": 196,
-          "role": "OKX.AI marketplace rail: identity reads live from OKX ERC-8004; x402 trust tools settle here.",
-          "x402": true,
-          "status": "live"
-        },
-        {
           "id": "base",
           "name": "Base",
           "chainId": 8453,
@@ -198,18 +190,10 @@
           "status": "live"
         },
         {
-          "id": "avalanche",
-          "name": "Avalanche C-Chain",
-          "chainId": 43114,
-          "role": "Fast-finality EVM: native Circle USDC, low latency for burst settlement.",
-          "x402": true,
-          "status": "planned"
-        },
-        {
-          "id": "arbitrum",
-          "name": "Arbitrum One",
-          "chainId": 42161,
-          "role": "DeFi gateway: large protocol ecosystem, our ERC-8004 agent #1259, and x402 settling in native Circle USDC through our own EIP-3009 facilitator.",
+          "id": "rhchain",
+          "name": "Robinhood Chain",
+          "chainId": 4663,
+          "role": "Robinhood's own L2 for tokenized real-world assets: canonical ERC-8004 identity + reputation live, agent #0 minted, and paid trust calls settling in USDG through our own first-party x402 facilitator.",
           "x402": true,
           "status": "live"
         },
@@ -222,10 +206,18 @@
           "status": "beta"
         },
         {
-          "id": "rhchain",
-          "name": "Robinhood Chain",
-          "chainId": 4663,
-          "role": "Robinhood's own L2 for tokenized real-world assets: canonical ERC-8004 identity + reputation live, agent #0 minted, and paid trust calls settling in USDG through our own first-party x402 facilitator.",
+          "id": "arbitrum",
+          "name": "Arbitrum One",
+          "chainId": 42161,
+          "role": "DeFi gateway: large protocol ecosystem, our ERC-8004 agent #1259, and x402 settling in native Circle USDC through our own EIP-3009 facilitator.",
+          "x402": true,
+          "status": "live"
+        },
+        {
+          "id": "xlayer",
+          "name": "OKX X Layer",
+          "chainId": 196,
+          "role": "OKX.AI marketplace rail: identity reads live from OKX ERC-8004; x402 trust tools settle here.",
           "x402": true,
           "status": "live"
         },
@@ -244,6 +236,14 @@
           "role": "Celo testnet rail (Alfajores is deprecated): same ERC-8004 registry pair as Arc, x402 USDC via the Sepolia facilitator.",
           "x402": true,
           "status": "beta"
+        },
+        {
+          "id": "avalanche",
+          "name": "Avalanche C-Chain",
+          "chainId": 43114,
+          "role": "Fast-finality EVM: native Circle USDC, low latency for burst settlement.",
+          "x402": true,
+          "status": "planned"
         }
       ],
       "wallets": "circle-agent-wallets",
@@ -374,14 +374,14 @@
         "stellar-testnet",
         "algorand",
         "algorand-testnet",
-        "xlayer",
         "base",
-        "avalanche",
-        "arbitrum",
-        "rhchain-testnet",
         "rhchain",
+        "rhchain-testnet",
+        "arbitrum",
+        "xlayer",
         "celo",
-        "celo-sepolia"
+        "celo-sepolia",
+        "avalanche"
       ]
     },
     "agent_to_human": {

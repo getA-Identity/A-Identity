@@ -357,6 +357,21 @@ from its descriptor, so this list and the running server cannot disagree.
 
 Live today:
 
+- **Circle Arc testnet** (`eip155:5042002`). ERC-8004 identity
+  `0x8004A818BFB912233c491871b3d84c89A494BD9e`, reputation
+  `0x8004B663056A597Dffe9eCcC1965A193B7388713`, validation
+  `0x8004Cb1BF31DAf7788923b405b754f57acEB4272`, plus ERC-8183 escrow, the
+  spend-policy vault and Gateway nanopayments. Gas is USDC.
+- **Stellar pubnet** (`stellar:pubnet`). The same vault wasm, byte for byte, at
+  `CB5LYXFKKTKDDSCM6JO6C4GNRQUFBGSLYDET6Q56JNFJQSMBKH6KWSYP`, holding real Circle USDC
+  under a 1 USDC daily cap. Real money has moved under the on-ledger policy, including a
+  refusal that returned a typed `DailyCapExceeded`. The Soroban x402 rail sells here
+  too: the first mainnet sale settled 2026-08-28 (tx f213371c..., 0.001 USDC), the
+  buyer signing a Soroban authorization entry and paying no fee, our broadcaster paying
+  the network fee at the fee market's own rate, and the sale counting only once the
+  SEP-41 transfer event bound to the authorization's nonce was read back. There is
+  no ERC-8004 registry on either Stellar network, because that standard is EVM-only; a
+  passport is bridged, never anchored here.
 - **Algorand mainnet** (`algorand:wGHE2Pwdvd7S12BL5FaOP20EGYesN73k`). Native Circle
   USDC as ASA 31566704 (6 decimals, read live from the indexer before it was recorded)
   and an x402 v2 rail through the GoPlausible facilitator: the buyer signs a fee-zero
@@ -370,20 +385,19 @@ Live today:
   https://a-identity.xyz/proof/algorand. No ERC-8004 registry was found on Algorand,
   so identity stays bridged from an EVM chain and no KYA anchors here; both sides of
   the first sale are ours and the proof page says so.
-- **Circle Arc testnet** (`eip155:5042002`). ERC-8004 identity
-  `0x8004A818BFB912233c491871b3d84c89A494BD9e`, reputation
-  `0x8004B663056A597Dffe9eCcC1965A193B7388713`, validation
-  `0x8004Cb1BF31DAf7788923b405b754f57acEB4272`, plus ERC-8183 escrow, the
-  spend-policy vault and Gateway nanopayments. Gas is USDC.
-- **OKX X Layer mainnet** (`eip155:196`). ERC-8004 identity
-  `0x8004a169fb4a3325136eb29fa0ceb6d2e539a432`, OKX.AI's own registry. The Trust
-  Oracle sells here as agent #6271 and settles in real USD₮0.
-- **Celo mainnet** (`eip155:42220`). ERC-8004 identity
-  `0x8004A169FB4a3325136EB29fA0ceB6D2e539a432` and reputation
-  `0x8004BAa17C55a88189AE136b182e5fdA19dE9b63`; our agent is #9759. x402 settles
-  in native USDC through our own first-party facilitator. Celo has no
-  ValidationRegistry, so KYA cannot be anchored on-chain there.
-
+- **Base mainnet** (`eip155:8453`). The canonical ERC-8004 identity and reputation
+  registries are live on Base, deployed by their authors as EIP-1967 proxies whose
+  implementations match Arbitrum One byte for byte (verified 2026-08-28 by reading the
+  implementation slot on both chains); agent **#73232** is ours, minted 2026-08-28
+  through the production adapter. x402 settles here in native Circle USDC
+  (`0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913`) through the same first-party EIP-3009
+  facilitator as Robinhood Chain and Arbitrum One, the signing domain proven against
+  the token's live DOMAIN_SEPARATOR; the first settlement landed 2026-08-28 with the
+  receipt carrying the matching Transfer log, and agent #73232's reputation is anchored
+  on the canonical ReputationRegistry by our oracle validator. The full trail,
+  including the Stellar pubnet funding hop behind the operating wallets, is at
+  https://a-identity.xyz/proof/base. The gasless Circle Gateway hop that mints on Base
+  Sepolia is proven too.
 - **Robinhood Chain mainnet** (`eip155:4663`). ERC-8004 identity
   `0x8004a169fb4a3325136eb29fa0ceb6d2e539a432` and reputation
   `0x8004BAa17C55a88189AE136b182e5fdA19dE9b63`. We did not deploy those; the
@@ -406,29 +420,15 @@ Live today:
   2026-08-28 an AgentSpendPolicy vault is live here too, holding native USDC under dust
   caps with a typed AboveAutoApprove refusal proven, and agent #1259's reputation is
   anchored on the canonical ReputationRegistry by our oracle validator.
-- **Stellar pubnet** (`stellar:pubnet`). The same vault wasm, byte for byte, at
-  `CB5LYXFKKTKDDSCM6JO6C4GNRQUFBGSLYDET6Q56JNFJQSMBKH6KWSYP`, holding real Circle USDC
-  under a 1 USDC daily cap. Real money has moved under the on-ledger policy, including a
-  refusal that returned a typed `DailyCapExceeded`. The Soroban x402 rail sells here
-  too: the first mainnet sale settled 2026-08-28 (tx f213371c..., 0.001 USDC), the
-  buyer signing a Soroban authorization entry and paying no fee, our broadcaster paying
-  the network fee at the fee market's own rate, and the sale counting only once the
-  SEP-41 transfer event bound to the authorization's nonce was read back. There is
-  no ERC-8004 registry on either Stellar network, because that standard is EVM-only; a
-  passport is bridged, never anchored here.
-- **Base mainnet** (`eip155:8453`). The canonical ERC-8004 identity and reputation
-  registries are live on Base, deployed by their authors as EIP-1967 proxies whose
-  implementations match Arbitrum One byte for byte (verified 2026-08-28 by reading the
-  implementation slot on both chains); agent **#73232** is ours, minted 2026-08-28
-  through the production adapter. x402 settles here in native Circle USDC
-  (`0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913`) through the same first-party EIP-3009
-  facilitator as Robinhood Chain and Arbitrum One, the signing domain proven against
-  the token's live DOMAIN_SEPARATOR; the first settlement landed 2026-08-28 with the
-  receipt carrying the matching Transfer log, and agent #73232's reputation is anchored
-  on the canonical ReputationRegistry by our oracle validator. The full trail,
-  including the Stellar pubnet funding hop behind the operating wallets, is at
-  https://a-identity.xyz/proof/base. The gasless Circle Gateway hop that mints on Base
-  Sepolia is proven too.
+- **OKX X Layer mainnet** (`eip155:196`). ERC-8004 identity
+  `0x8004a169fb4a3325136eb29fa0ceb6d2e539a432`, OKX.AI's own registry. The Trust
+  Oracle sells here as agent #6271 and settles in real USD₮0.
+- **Celo mainnet** (`eip155:42220`). ERC-8004 identity
+  `0x8004A169FB4a3325136EB29fA0ceB6D2e539a432` and reputation
+  `0x8004BAa17C55a88189AE136b182e5fdA19dE9b63`; our agent is #9759. x402 settles
+  in native USDC through our own first-party facilitator. Celo has no
+  ValidationRegistry, so KYA cannot be anchored on-chain there.
+
 
 Beta, wired and readable:
 
