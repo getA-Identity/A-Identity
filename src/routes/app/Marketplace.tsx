@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { Link } from 'react-router-dom'
+import { Link, useSearchParams } from 'react-router-dom'
 import {
   Activity,
   ArrowUpRight,
@@ -69,7 +69,31 @@ export default function Marketplace() {
   // Agent House opens first: the storefront cards carry the identity, chains, rails,
   // rating and price of every worker, so they answer "who can do this" far better than
   // the plain service table did. The hire table and the Leaderboard stay one tap away.
-  const [tab, setTab] = useState<'hire' | 'house' | 'leaderboard'>('house')
+  // The tab is addressable. Without this a link could ask for the hire form and land
+  // wherever the default happened to be, which is how "Hire" on a profile became a loop
+  // back into Agent House. `?agent=` and `?service=` name the row to open.
+  const [params, setParams] = useSearchParams()
+  const askedTab = params.get('tab')
+  const [tab, setTab] = useState<'hire' | 'house' | 'leaderboard'>(
+    askedTab === 'hire' || askedTab === 'leaderboard' || askedTab === 'house' ? askedTab : 'house',
+  )
+  const preselect = useMemo(() => {
+    const agentId = params.get('agent')
+    const service = params.get('service')
+    return agentId && service ? { agentId, service } : null
+  }, [params])
+
+  // A later link into the same mounted page has to move the tab too, not just the first
+  // render. Changing the tab by hand clears the deep-link params so the brief does not
+  // reopen every time the reader comes back to this tab.
+  useEffect(() => {
+    if (askedTab === 'hire' || askedTab === 'leaderboard' || askedTab === 'house') setTab(askedTab)
+  }, [askedTab])
+
+  const selectTab = useCallback((t: 'hire' | 'house' | 'leaderboard') => {
+    setTab(t)
+    if (params.has('tab') || params.has('agent') || params.has('service')) setParams({}, { replace: true })
+  }, [params, setParams])
 
   // Leaderboard: ONE server-computed composite ranking, fetched lazily the first time
   // a surface that shows it opens (the Leaderboard tab, or the featured carousel on the
@@ -405,7 +429,7 @@ export default function Marketplace() {
             type="button"
             role="tab"
             aria-selected={tab === t}
-            onClick={() => setTab(t)}
+            onClick={() => selectTab(t)}
             className={`relative z-10 whitespace-nowrap rounded-full px-2.5 py-1.5 text-xs transition-colors duration-[240ms] sm:px-4 sm:text-sm ${
               tab === t ? 'text-white' : 'text-foreground/60 hover:text-foreground'
             }`}
@@ -417,7 +441,7 @@ export default function Marketplace() {
 
       {tab === 'hire' && (
         <div className="mt-6" data-tour="catalog">
-          <WorkerCatalog />
+          <WorkerCatalog preselect={preselect} />
         </div>
       )}
 

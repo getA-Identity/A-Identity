@@ -68,8 +68,14 @@ export default function ServicesPane({ services, payments }: Props) {
                   </div>
                   <div className="text-[11px] text-foreground/45">{sv.unit}</div>
                 </div>
+                {/* This used to point at a bare /app/marketplace, carrying neither the
+                    agent nor the service. It dropped the reader on whichever tab the
+                    marketplace happened to open on, and once Agent House became the
+                    default that tab sent them back to a profile: a closed loop with no
+                    hire form in it. The link now names what was clicked, and the
+                    marketplace opens the hire brief for exactly that row. */}
                 <Link
-                  to="/app/marketplace"
+                  to={`/app/marketplace?tab=hire&agent=${encodeURIComponent(sv.agentId)}&service=${encodeURIComponent(sv.service)}`}
                   className="rounded-full border border-accent/40 px-4 py-1.5 text-xs font-semibold text-accent transition-colors duration-[120ms] hover:bg-accent/5"
                 >
                   Hire

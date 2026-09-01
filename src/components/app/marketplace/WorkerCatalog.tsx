@@ -54,6 +54,9 @@ type Task = {
   updatedAt: string
 }
 
+/** Stable DOM id for a catalog row, so a deep link can scroll to the one it named. */
+const rowDomId = (key: string) => `hire-${key.replace(/[^a-zA-Z0-9_-]/g, '-')}`
+
 /** The server's spam floor, restated for the form so it can refuse before the round trip. */
 const MIN_SERVICE = 6
 const MIN_DESCRIPTION = 20
@@ -73,7 +76,10 @@ const STATUS_STYLES: Record<Task['status'], string> = {
 
 const jsonHeaders = () => ({ 'Content-Type': 'application/json', ...authHeaders() })
 
-export default function WorkerCatalog() {
+/** A row named by a link from somewhere else, e.g. the Hire button on an agent profile. */
+export type HirePreselect = { agentId: string; service: string }
+
+export default function WorkerCatalog({ preselect = null }: { preselect?: HirePreselect | null }) {
   const [services, setServices] = useState<CatalogService[]>([])
   const [tasks, setTasks] = useState<Task[]>([])
   const [loading, setLoading] = useState(true)
@@ -98,6 +104,23 @@ export default function WorkerCatalog() {
   const [postSvc, setPostSvc] = useState('')
   const [postBudget, setPostBudget] = useState('2')
   const [postDesc, setPostDesc] = useState('')
+
+  // A link that names an agent and a service opens that row's brief and scrolls to it.
+  // Without this the reader arrives at a list of every worker and has to find the one
+  // they just clicked, which is the same dead end as arriving with no information at all.
+  const [preselectMiss, setPreselectMiss] = useState<HirePreselect | null>(null)
+  useEffect(() => {
+    if (!preselect || loading) return
+    const key = `${preselect.agentId}::${preselect.service}`
+    const found = services.some((s) => `${s.agentId}::${s.service}` === key)
+    if (!found) { setPreselectMiss(preselect); return }
+    setPreselectMiss(null)
+    setHiringKey(key)
+    // The row renders in the same commit; wait one frame before measuring it.
+    requestAnimationFrame(() => {
+      document.getElementById(rowDomId(key))?.scrollIntoView({ block: 'center', behavior: 'smooth' })
+    })
+  }, [preselect, services, loading])
   // Mirrors the server's spam floor in mcp/src/marketplace.ts. The server stays the
   // authority; this only stops the round trip that would refuse the same input.
   const canPost = postSvc.trim().length >= MIN_SERVICE && postDesc.trim().length >= MIN_DESCRIPTION
@@ -324,6 +347,28 @@ export default function WorkerCatalog() {
         </div>
       )}
 
+      {/* A link named a row this catalog does not carry. Saying so, with the reason and a
+          way back, is the whole point: dropping the reader into an unfiltered list here is
+          what made "Hire" feel like it went nowhere. */}
+      {preselectMiss && !loading && (
+        <div className="mt-6 rounded-2xl border border-warn/30 bg-warn/5 p-4 text-sm">
+          <p className="font-semibold text-foreground">
+            {preselectMiss.service} is not hireable here yet.
+          </p>
+          <p className="mt-1 text-foreground/70">
+            Only agents that have passed KYA and written a description appear in this catalog, so a
+            service can be listed on an agent's profile and still be missing from it. Nothing was
+            charged and no task was created.
+          </p>
+          <Link
+            to={`/app/marketplace/${encodeURIComponent(preselectMiss.agentId)}`}
+            className="mt-3 inline-flex items-center gap-1 text-sm font-semibold text-accent"
+          >
+            Back to the agent
+          </Link>
+        </div>
+      )}
+
       {/* Catalog. One row per service in a single container: the wall of identical
           violet buttons is gone; the PRICE is the strong element on each row and Hire
           is a quiet outline action that expands the brief inline. Since every worker
@@ -335,7 +380,7 @@ export default function WorkerCatalog() {
           const key = `${svc.agentId}::${svc.service}`
           const open = hiringKey === key
           return (
-            <div key={key} className="px-5 py-4 transition-colors duration-[120ms] hover:bg-foreground/[0.02]">
+            <div key={key} id={rowDomId(key)} className="px-5 py-4 transition-colors duration-[120ms] hover:bg-foreground/[0.02]">
               <div className="flex flex-wrap items-center gap-4">
                 <div className="min-w-0 flex-1">
                   <div className="flex items-center gap-1.5">

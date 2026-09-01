@@ -227,6 +227,22 @@ export default function ConsoleTour({
     onClose()
   }, [onClose, storageKey])
 
+  // Seen is seen. Unmounting while open means the reader navigated away mid-tour; that
+  // is a decision, not an accident, and re-opening on the next visit turned this into a
+  // recurring blocker rather than a one-time introduction.
+  const seenRef = useRef(storageKey)
+  seenRef.current = storageKey
+  const openRef = useRef(open)
+  openRef.current = open
+  useEffect(() => () => {
+    if (!openRef.current) return
+    try {
+      localStorage.setItem(seenRef.current, 'done')
+    } catch {
+      /* private mode */
+    }
+  }, [])
+
   // Keyboard: arrows advance, Escape leaves.
   useEffect(() => {
     if (!open) return
@@ -244,12 +260,26 @@ export default function ConsoleTour({
   const last = idx === steps.length - 1
 
   return (
-    <div className="fixed inset-0 z-[80]" role="dialog" aria-modal="true" aria-label="Console tour">
+    <div
+      className="fixed inset-0 z-[80]"
+      role="dialog"
+      aria-modal="true"
+      aria-label="Console tour"
+      onPointerDown={(e) => {
+        // Anywhere outside the explainer card leaves the tour. This used to swallow the
+        // click on purpose, which meant that while the tour was open NOTHING on the page
+        // could be pressed: someone trying to hire an agent pressed a button, the click
+        // went nowhere, and the only visible movement was the spotlight jumping to the
+        // next element. Leaving on an outside press is the ordinary behaviour of every
+        // other overlay, and it costs the tour nothing: the reader has already decided.
+        if (cardRef.current?.contains(e.target as Node)) return
+        finish()
+      }}
+    >
       {/* Spotlight: the page dims everywhere except the target; the 9999px
           shadow IS the dim. Position and size are written by the frame loop
           (transform plus width/height), so no React render happens on scroll.
-          Hidden until the first measurement places it. Clicking the dim area
-          is swallowed on purpose. */}
+          Hidden until the first measurement places it. */}
       <div
         ref={spotRef}
         className="cn-tour-spot absolute left-0 top-0 rounded-xl border-2 border-accent"
