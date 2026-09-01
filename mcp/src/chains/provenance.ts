@@ -815,11 +815,11 @@ export type ProofRail = { slug: string; title: string; lede: string; chains: str
 
 export const PROOF_RAILS: ProofRail[] = [
   {
-    slug: 'robinhood',
-    title: 'Robinhood Chain',
+    slug: 'arc',
+    title: 'Circle Arc',
     lede:
-      'Agent #0 on the mainnet registry, paid calls settling in USDG through the x402 facilitator we run ourselves, and the full canonical ERC-8004 set rehearsed on testnet.',
-    chains: ['rhchain', 'rhchain-testnet'],
+      "The phase-1 chain, and the only one where all three ERC-8004 registries run together: identity, reputation and validation. Agent #849980 (Meridian) was registered here, attested for KYA through the ValidationRegistry, and carries the first reputation anchor our oracle validator ever wrote anywhere. Arc is a testnet, so nothing here moves real money, and that is exactly why the full standard could be rehearsed end to end before any mainnet saw a cent.",
+    chains: ['arc'],
   },
   {
     slug: 'stellar',
@@ -829,11 +829,11 @@ export const PROOF_RAILS: ProofRail[] = [
     chains: ['stellar', 'stellar-testnet'],
   },
   {
-    slug: 'arbitrum',
-    title: 'Arbitrum One',
+    slug: 'algorand',
+    title: 'Algorand',
     lede:
-      'Agent #1259 on the canonical ERC-8004 registry, and paid calls settling in native Circle USDC through the facilitator we run ourselves. Other facilitators already serve this chain, which is the point: Arbitrum One is where you can check our rail against a well-served baseline.',
-    chains: ['arbitrum'],
+      'The second non-EVM rail, live the same day it shipped: x402 v2 in native Circle USDC, the buyer signing a fee-zero transfer inside a pooled-fee atomic group, the GoPlausible facilitator broadcasting, and no sale counted until our own indexer read of the transfer. First mainnet sale 2026-08-30, funded end to end from a Stellar XLM treasury, and every hop of that funding is linked here.',
+    chains: ['algorand'],
   },
   {
     slug: 'base',
@@ -843,11 +843,25 @@ export const PROOF_RAILS: ProofRail[] = [
     chains: ['base'],
   },
   {
-    slug: 'algorand',
-    title: 'Algorand',
+    slug: 'robinhood',
+    title: 'Robinhood Chain',
     lede:
-      'The second non-EVM rail, live the same day it shipped: x402 v2 in native Circle USDC, the buyer signing a fee-zero transfer inside a pooled-fee atomic group, the GoPlausible facilitator broadcasting, and no sale counted until our own indexer read of the transfer. First mainnet sale 2026-08-30, funded end to end from a Stellar XLM treasury, and every hop of that funding is linked here.',
-    chains: ['algorand'],
+      'Agent #0 on the mainnet registry, paid calls settling in USDG through the x402 facilitator we run ourselves, and the full canonical ERC-8004 set rehearsed on testnet.',
+    chains: ['rhchain', 'rhchain-testnet'],
+  },
+  {
+    slug: 'arbitrum',
+    title: 'Arbitrum One',
+    lede:
+      'Agent #1259 on the canonical ERC-8004 registry, and paid calls settling in native Circle USDC through the facilitator we run ourselves. Other facilitators already serve this chain, which is the point: Arbitrum One is where you can check our rail against a well-served baseline.',
+    chains: ['arbitrum'],
+  },
+  {
+    slug: 'celo',
+    title: 'Celo',
+    lede:
+      "Agent #9759 on the canonical ERC-8004 registry, registered from the same wallet that receives Celo x402 payments. This is the one live chain where the payment rail is not ours: settlement runs through the first-party facilitator Celo operates, so receipts follow their format rather than ours. The identity provenance is on this page; the live settlement log has its own surface at /celo-proof.",
+    chains: ['celo'],
   },
 ]
 

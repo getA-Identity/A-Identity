@@ -69,7 +69,7 @@ export const NAV_MENU: readonly NavMenuGroup[] = [
       { label: 'CLI', href: `${DOCS_URL}/developers/cli`, desc: 'The console from your terminal', external: true },
       { label: 'Agent Manifest', href: `${DOCS_URL}/developers/agent-manifest`, desc: 'Machine-readable discovery', external: true },
       { label: 'Docs', href: DOCS_URL, desc: 'Everything, in one place', external: true },
-      { label: 'Live Proof', href: 'https://a-identity-asp.onrender.com/proof', desc: 'Real x402 settlements, on-chain', external: true },
+      { label: 'Live Proof', href: '/proof', desc: 'Every chain, every claim, one page' },
     ],
   },
   {
@@ -95,8 +95,8 @@ export type FooterColumn = { title: string; links: FooterLink[] }
  * over three columns, which is how a footer stops being read. What went: the docs
  * deep links a reader reaches from Docs itself (CLI, Reputation, Agent Manifest),
  * each of which is still one hover away in the navbar dropdowns. What stayed: every
- * page that only exists here, and both live-proof surfaces, because an honest-status
- * claim that is hard to find is not much of a claim.
+ * page that only exists here, and the live-proof index, because an honest-status claim
+ * that is hard to find is not much of a claim.
  *
  * Protocol points into the docs site (external); Developers and Company are mostly
  * pages on this site.
@@ -117,10 +117,11 @@ export const FOOTER_COLUMNS: readonly FooterColumn[] = [
       { label: 'SDK', href: `${DOCS_URL}/developers/sdk`, external: true },
       { label: 'Trust Explorer', href: '/explorer' },
       { label: 'For agents', href: '/intro' },
-      { label: 'Live proof (OKX)', href: 'https://a-identity-asp.onrender.com/proof', external: true },
-      // Reachable only by typing the URL before it was listed here: it is the Celo
-      // rail's on-chain receipt, so it belongs next to the OKX proof above it.
-      { label: 'Live proof (Celo)', href: '/celo-proof' },
+      // One link, not two. The footer used to carry a separate entry per proof surface,
+      // which meant the evidence for eight chains was reachable only if you already knew
+      // which two to click. /proof is the index over all of them, and it links onward to
+      // the surfaces that live elsewhere (the ASP settlement proof, the Celo log).
+      { label: 'Live proof', href: '/proof' },
     ],
   },
   {

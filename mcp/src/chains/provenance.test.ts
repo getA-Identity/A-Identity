@@ -138,6 +138,56 @@ test('every rail is published, routable and covered by the site checks', () => {
 })
 
 /**
+ * The /proof index is the ONE link the footer carries, so a live chain that no rail
+ * covers has to be a decision rather than an oversight. The page renders the uncovered
+ * set as its own row; this test is what stops that row from growing silently.
+ *
+ * The allowlist is named with reasons, not counted. Adding a chain to it should feel
+ * like admitting something, because it is.
+ */
+test('every live chain is covered by a proof rail, or named here with a reason', () => {
+  const covered = new Set(PROOF_RAILS.flatMap((r) => r.chains))
+  const excused: Record<string, string> = {
+    xlayer:
+      'The OKX submission settles here and its evidence is served by the ASP deployment at ' +
+      '/proof on the ASP host, which the index links out to. No provenance entry exists in ' +
+      'this repo, so a rail here would have nothing of its own to show.',
+  }
+  const uncovered = CHAINS.filter((c) => c.status === 'live' && !covered.has(c.id)).map((c) => c.id)
+  for (const id of uncovered) {
+    assert.ok(
+      excused[id],
+      `${id} is live but no rail covers it and no reason is recorded. Add a rail to PROOF_RAILS ` +
+        'or name the chain in this test with why it has none.',
+    )
+  }
+  for (const id of Object.keys(excused)) {
+    assert.ok(!covered.has(id), `${id} now has a rail, so its excuse in this test is stale`)
+  }
+})
+
+test('the rail index counts what the ledger actually holds', () => {
+  for (const entry of proofRailIndex()) {
+    assert.ok(entry.lede.length > 40, `rail ${entry.slug} ships a throwaway lede to the index`)
+    assert.ok(entry.networks.length > 0, `rail ${entry.slug} renders as an empty card`)
+    for (const net of entry.networks) {
+      const p = provenanceFor(net.chain)
+      assert.ok(p, `rail ${entry.slug} indexes ${net.chain} with no provenance`)
+      assert.equal(net.artifacts, p.artifacts.length, `${net.chain}: artifact count drifted`)
+      assert.equal(net.contracts, p.contracts.length, `${net.chain}: contract count drifted`)
+      assert.equal(net.caveats, p.caveats.length, `${net.chain}: caveat count drifted`)
+      assert.equal(net.agentTokenId, p.agent?.tokenId ?? null, `${net.chain}: agent id drifted`)
+    }
+    const sum = (k: 'artifacts' | 'contracts' | 'caveats') =>
+      entry.networks.reduce((n, x) => n + x[k], 0)
+    assert.equal(entry.totals.artifacts, sum('artifacts'))
+    assert.equal(entry.totals.contracts, sum('contracts'))
+    assert.equal(entry.totals.caveats, sum('caveats'))
+    assert.equal(entry.mainnet, entry.networks.some((n) => !n.testnet))
+  }
+})
+
+/**
  * Every Stellar hash we publish must be one the deploy record already vouches for.
  *
  * This exists because a hash in this file was WRONG when it shipped to a live page: it was

@@ -170,8 +170,74 @@ async function stellarLiveCheck(
   }
 }
 
-export function proofRailIndex(): { slug: string; title: string; chains: string[] }[] {
-  return PROOF_RAILS.map((r) => ({ slug: r.slug, title: r.title, chains: [...r.chains] }))
+/** One network inside a rail, summarised from the local ledger. No chain is contacted. */
+export type RailIndexNetwork = {
+  chain: string
+  name: string
+  status: string
+  testnet: boolean
+  color: string
+  /** Agent token id when the entry records one, null when the chain carries no identity. */
+  agentTokenId: string | null
+  contracts: number
+  artifacts: number
+  caveats: number
+}
+
+export type RailIndexEntry = {
+  slug: string
+  title: string
+  lede: string
+  chains: string[]
+  networks: RailIndexNetwork[]
+  /** Totals across the rail, so an index card can be honest without fetching the report. */
+  totals: { contracts: number; artifacts: number; caveats: number }
+  /** True when at least one network on the rail is a mainnet. */
+  mainnet: boolean
+}
+
+/**
+ * The rail index, rich enough to render a card per rail without a live read.
+ *
+ * The one page that shows every chain at once cannot afford to open seven RPC
+ * connections before it paints, so this stays purely local: counts and names out of the
+ * ledger we already hold. The live re-read is what /proof/:rail is for, and the index
+ * links there rather than pretending to have done it.
+ */
+export function proofRailIndex(): RailIndexEntry[] {
+  return PROOF_RAILS.map((r) => {
+    const networks: RailIndexNetwork[] = r.chains.flatMap((id) => {
+      const entry = provenanceFor(id)
+      const chain = getChainById(id)
+      if (!entry || !chain) return []
+      return [
+        {
+          chain: id,
+          name: chain.name,
+          status: chain.status,
+          testnet: chain.testnet,
+          color: chain.color,
+          agentTokenId: entry.agent?.tokenId ?? null,
+          contracts: entry.contracts.length,
+          artifacts: entry.artifacts.length,
+          caveats: entry.caveats.length,
+        },
+      ]
+    })
+    return {
+      slug: r.slug,
+      title: r.title,
+      lede: r.lede,
+      chains: [...r.chains],
+      networks,
+      totals: {
+        contracts: networks.reduce((n, x) => n + x.contracts, 0),
+        artifacts: networks.reduce((n, x) => n + x.artifacts, 0),
+        caveats: networks.reduce((n, x) => n + x.caveats, 0),
+      },
+      mainnet: networks.some((n) => !n.testnet),
+    }
+  })
 }
 
 async function liveCheck(chain: ChainDescriptor, entry: ChainProvenance, env: NodeJS.ProcessEnv): Promise<LiveCheck> {

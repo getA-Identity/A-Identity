@@ -33,6 +33,7 @@ const UseCase = lazy(() => import('./routes/UseCase'))
 const Explorer = lazy(() => import('./routes/Explorer'))
 const CeloProof = lazy(() => import('./routes/CeloProof'))
 const ChainProof = lazy(() => import('./routes/ChainProof'))
+const ProofIndex = lazy(() => import('./routes/ProofIndex'))
 const Architecture = lazy(() => import('./routes/Architecture'))
 const Mascot = lazy(() => import('./routes/Mascot'))
 const BrandKit = lazy(() => import('./routes/BrandKit'))
@@ -117,6 +118,7 @@ export default function App() {
         <Route path="/use-cases/:slug" element={<UseCase />} />
         <Route path="/explorer" element={<Explorer />} />
         <Route path="/celo-proof" element={<CeloProof />} />
+        <Route path="/proof" element={<ProofIndex />} />
         <Route path="/proof/:rail" element={<ChainProof />} />
         <Route path="/architecture" element={<Architecture />} />
         {/* Internal design surfaces. Unlinked and noindex. */}

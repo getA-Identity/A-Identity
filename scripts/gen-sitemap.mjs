@@ -74,11 +74,16 @@ const STATIC = [
   ['/intro', 'monthly', '0.7'],
   ['/stats', 'weekly', '0.6'],
   ['/celo-proof', 'weekly', '0.6'],
-  ['/proof/robinhood', 'weekly', '0.7'],
-  ['/proof/arbitrum', 'weekly', '0.6'],
-  ['/proof/base', 'weekly', '0.6'],
+  // The index over every rail, and the only proof link the footer carries. Ranked above
+  // the per-rail pages because it is the one a crawler should reach first.
+  ['/proof', 'weekly', '0.8'],
+  ['/proof/arc', 'weekly', '0.6'],
   ['/proof/stellar', 'weekly', '0.6'],
   ['/proof/algorand', 'weekly', '0.6'],
+  ['/proof/base', 'weekly', '0.6'],
+  ['/proof/robinhood', 'weekly', '0.7'],
+  ['/proof/arbitrum', 'weekly', '0.6'],
+  ['/proof/celo', 'weekly', '0.6'],
 ]
 
 const esc = (s) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;')

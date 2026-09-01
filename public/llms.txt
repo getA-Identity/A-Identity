@@ -30,7 +30,9 @@ against those limits before any value moves, and the verdict is ALLOW, WARN or D
 - Five more mainnets carry settlements of their own: Robinhood Chain, Arbitrum One, Base,
   Stellar pubnet and Algorand. Every rail is counted on its own proof page at
   https://a-identity.xyz/proof/:rail and never summed with the others, because one
-  figure covering several rails is a figure about none of them.
+  figure covering several rails is a figure about none of them. The index over all of
+  them, including the testnet rails and the chains whose evidence lives elsewhere, is
+  https://a-identity.xyz/proof.
 - Public policy counters currently read zero, because no live agent has produced a
   production decision yet. We publish the zero rather than a number nobody can reproduce.
 
