@@ -29,7 +29,7 @@
     "@circle-fin/x402-batching": "^3.2.0",
     "@modelcontextprotocol/sdk": "^1.29.0",
     "@stellar/stellar-sdk": "^16.2.0",
-    "@x402/core": "^2.18.0",
+    "@x402/core": "^2.24.0",
     "@x402/evm": "^2.18.0",
     "@zerodev/ecdsa-validator": "^5.4.9",
     "@zerodev/permissions": "^5.6.3",
