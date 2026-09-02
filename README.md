@@ -209,7 +209,9 @@ listed at `GET /proof`. Four representative ones, each independently verifiable 
 | `agent_passport` | [`0xc7f9342b…c302a0cb`](https://www.oklink.com/x-layer/evm/tx/0xc7f9342bde496f21be725f72f5555fa685aeffcc901b54d47bd75e51c302a0cb) |
 
 **Backed by real data, not an LLM guess:** a live ERC-8004 showcase agent, Meridian
-`#849980`, reputation **~542/1000**, KYA-verified. Scoring is **deterministic and
+`#849980`, KYA-verified, with a reputation earned from **3 real settlements**. The score
+itself is recency-weighted and decays as those settlements age, so it is read live rather
+than quoted here. Scoring is **deterministic and
 unit-tested** (1013 unit tests as of Aug 2026), reads on-chain live via viem, and is fully documented at
 `GET /methodology`. This is our answer to "surface your rigor": every number is
 reproducible and every settlement is on-chain.

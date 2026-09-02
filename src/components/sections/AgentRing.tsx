@@ -64,7 +64,7 @@ export const OUR_AGENTS: OnchainAgent[] = [
     tx: '0x506b125f3a0481667e3a00dcb86f48cbcaa35c643af963365e9389b06a8f8e54',
     note: 'Meridian. KYA attested on-chain.',
     mission:
-      'Meridian, the phase-1 showcase research agent: buys market data through the policy-gated wallet, KYA attested on-chain, scored 542/1000 from real settlements.',
+      'Meridian, the phase-1 showcase research agent: buys market data through the policy-gated wallet, KYA attested on-chain, and carrying the first reputation anchor our oracle ever wrote, 542/1000 on 2026-07-22. That anchor is a fixed record of that day; the live score is recency-weighted and has moved since.',
     anchor: { score: 542, tx: '0x3f5429819347fb0f75e66ee1416fc2c9ad3dade8fb1bf8dac1b9d2606de92a8c' },
   },
   {

@@ -12,7 +12,14 @@ const reveal = {
   transition: { duration: 0.6, ease: EASE_OUT_EXPO },
 }
 
-/** One-click examples so a first-time visitor never faces an empty input. */
+/**
+ * One-click examples so a first-time visitor never faces an empty input.
+ *
+ * These open a LIVE read of the agent named. The transcript below is a scripted sample
+ * of the same call, which is why it prints no fixed reputation: the score is
+ * recency-weighted and decays, so a number frozen into this animation would disagree
+ * with what the example chip returns for the very same agent.
+ */
 const EXAMPLES = [
   { label: 'Meridian #849980', q: '849980' },
   { label: 'An OKX.AI wallet', q: '0x03c4b193d2a42cb0624da3ac938c5917d5fc98c7' },
@@ -53,7 +60,7 @@ const RUN_ALLOW: LogLine[] = [
   { tag: '$ risk_check 0x03c4…98c7' },
   { tag: '[resolve]', body: 'ERC-8004 identity #849980', tail: 'ok', tone: 'ok' },
   { tag: '[kya]', body: 'wallet-proof attestation', tail: 'ok', tone: 'ok' },
-  { tag: '[score]', body: 'reputation 539 / 1000' },
+  { tag: '[score]', body: 'reputation read live, recency-weighted' },
   { tag: '[verdict]', body: 'ALLOW', tone: 'ok' },
   { tag: '[pay]', body: '+$0.005 USDC on Arc', tail: 'settled', tone: 'accent' },
 ]
@@ -152,7 +159,7 @@ function VerifyStage() {
             <span className="h-2.5 w-2.5 rounded-full border border-term-dot" />
             <span className="h-2.5 w-2.5 rounded-full border border-term-dot" />
           </div>
-          <span className="font-mono text-[10px] tracking-[0.14em] text-term-faint">tty · arc</span>
+          <span className="font-mono text-[10px] tracking-[0.14em] text-term-faint">tty · arc · sample run</span>
         </div>
 
         <div className="p-6 sm:p-7">
