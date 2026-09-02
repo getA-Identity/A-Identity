@@ -9,7 +9,7 @@
 import { loadState, saveState } from '../storage.js'
 import { ARC_CHAIN } from '../chains/index.js'
 import type { ActionPolicy, AuditEntry, AgentMeter } from '../policy/index.js'
-import type { Task } from '../marketplace.js'
+import type { KyaStatus, Task } from '../marketplace.js'
 
 // ── types ─────────────────────────────────────────────────────────────────────
 
@@ -83,8 +83,22 @@ export type PlatformAgent = {
   chain: 'arc'
   chainId: number
   /** KYA (Know Your Agent): 'verified' ONLY after the agent proves control of its wallet by
-   *  signing a challenge. New agents start 'unverified'. 'revoked' = flagged as an incident. */
-  kya: 'unverified' | 'verified' | 'revoked'
+   *  signing a challenge. New agents start 'unverified'. 'revoked' = flagged as an incident.
+   *  'unclaimed' = we built this record from someone else's on-chain agent (see `importedFrom`)
+   *  and the party who controls it has never spoken to us. See KyaStatus in marketplace.ts. */
+  kya: KyaStatus
+  /**
+   * Where an `unclaimed` record came from, and what the claim has to beat.
+   *
+   * Present ONLY on a record we created from an on-chain agent someone else owns. It is
+   * what makes the claim checkable: a claimant has to sign as `owner`, and `owner` is
+   * re-read from the chain at claim time rather than trusted from here, because this
+   * field records what was true at import and an on-chain transfer would silently
+   * invalidate it.
+   */
+  importedFrom?: { chain: string; tokenId: string; registry: string; owner: string; at: string; tokenUri?: string }
+  /** How an `unclaimed` record was claimed: the signature, and the ownerOf read it beat. */
+  claimProof?: { address: string; at: string; method: 'wallet-signature'; tokenId: string; chain: string }
   /** How KYA was proven (the wallet-control signature). */
   kyaProof?: { address: string; at: string; method: 'wallet-signature' }
   /** Set once the KYA result is attested on the ERC-8004 ValidationRegistry (real tx). */

@@ -31,6 +31,30 @@ test('revoked KYA forces DENY and is the deciding (first) reason', () => {
   assert.equal(r.reasons[0].severity, 'deny')
 })
 
+/**
+ * The state that would have slipped through silently.
+ *
+ * `unclaimed` was added to the KYA union after `revoked` and `unverified` already had
+ * branches here. A union grows without breaking anything in a ladder built from
+ * equality checks, so the new state would have collected NO reason at all and rendered
+ * as safer than an unverified agent, which is backwards: unverified at least belongs to
+ * the account that made it. This test is what makes that a failure rather than a shrug.
+ */
+test('an unclaimed record warns, and says the owning party never spoke to us', () => {
+  const r = computeMerchantVerdict({ ...healthy, kya: 'unclaimed' })
+  assert.equal(r.verdict, 'WARN')
+  assert.equal(r.reasons[0].code, 'kya_unclaimed')
+  assert.equal(r.reasons[0].severity, 'warn')
+  assert.match(r.reasons[0].detail, /never claimed it here/)
+})
+
+test('unclaimed is not quietly treated as unverified: the two carry different reasons', () => {
+  const unclaimed = computeMerchantVerdict({ ...healthy, kya: 'unclaimed' })
+  const unverified = computeMerchantVerdict({ ...healthy, kya: 'unverified' })
+  assert.notEqual(unclaimed.reasons[0].code, unverified.reasons[0].code)
+  assert.equal(unverified.reasons[0].code, 'kya_unverified')
+})
+
 test('reputation below 200 is DENY', () => {
   const r = computeMerchantVerdict({ ...healthy, reputationScore: 150 })
   assert.equal(r.verdict, 'DENY')

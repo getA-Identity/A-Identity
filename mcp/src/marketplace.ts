@@ -200,6 +200,25 @@ export const OPEN_TASK_LIMIT_NEW = 3
 /** Open tasks a poster who has paid a worker, or runs a verified agent, may hold at once. */
 export const OPEN_TASK_LIMIT_ESTABLISHED = 12
 /** Agents an ordinary account may register. Bounds the total; a rate budget bounds the burst. */
+/**
+ * KYA (Know Your Agent) status, defined ONCE.
+ *
+ * This union used to be retyped in five files (here, commerce.ts, platform/core.ts,
+ * platform/guardrail.ts, and the console's own view type). That is how the profile screen
+ * came to render `revoked` as "KYA Pending": one of those copies listed two states, so the
+ * compiler had nothing to object to. Every surface now imports this, and a new state is a
+ * compile error everywhere it is not handled rather than a silent fall-through.
+ *
+ *   verified    wallet control proven by signature
+ *   unverified  not proven yet, and might never be attempted
+ *   revoked     the attestation was taken away: an incident, not a waiting state
+ *   unclaimed   WE created this record from someone else's on-chain agent. The party that
+ *               controls it has never spoken to us, so there is nothing here to verify
+ *               until they claim it. Strictly weaker than unverified, which at least
+ *               belongs to the account that made it.
+ */
+export type KyaStatus = 'verified' | 'unverified' | 'revoked' | 'unclaimed'
+
 export const MAX_AGENTS_PER_OWNER = 25
 /** Agents an allowlisted operator account may register. See AccountTier below. */
 export const MAX_AGENTS_PER_OPERATOR = 2000
@@ -526,7 +545,7 @@ export type ManifestAgent = {
   category: string
   capabilities: string[]
   walletAddress: string | null
-  kya: 'verified' | 'unverified' | 'revoked'
+  kya: KyaStatus
   onchain: 'queued' | 'registered'
   endpoint?: string
   services: { name: string; priceUsd: number; unit: string; description?: string | null }[]

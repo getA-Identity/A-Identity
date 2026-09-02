@@ -19,6 +19,7 @@
 import type { AgentIdentity } from './data.js'
 import { signedFetch } from './bot-auth.js'
 import { createIdentityProvider, isSafePublicHttpUrl } from './erc8004.js'
+import type { KyaStatus } from './marketplace.js'
 
 // ── verdict ladder ────────────────────────────────────────────────────────────
 
@@ -41,7 +42,7 @@ export type MerchantSignals = {
   /** A resolvable on-chain ERC-8004 identity was found for the merchant agent. */
   identityFound: boolean
   /** The platform's KYA state for the agent; null when the platform has no view. */
-  kya: 'unverified' | 'verified' | 'revoked' | null
+  kya: KyaStatus | null
   /** The platform's 0-1000 reputation score; null when the platform has no view. */
   reputationScore: number | null
   /** The platform's Sybil / wash-reputation flag; null when the platform has no view. */
@@ -75,6 +76,9 @@ export function computeMerchantVerdict(s: MerchantSignals): { verdict: MerchantV
 
   if (s.reputationScore !== null && s.reputationScore >= REP_DENY_BELOW && s.reputationScore < REP_WARN_BELOW) {
     warn.push({ code: 'moderate_reputation', severity: 'warn', detail: `Moderate reputation (${s.reputationScore}); proceed with caution` })
+  }
+  if (s.kya === 'unclaimed') {
+    warn.push({ code: 'kya_unclaimed', severity: 'warn', detail: 'This record was created from an on-chain agent by someone who does not control it - the owning party has never claimed it here, so nothing about it has been attested to us' })
   }
   if (s.kya === 'unverified') {
     warn.push({ code: 'kya_unverified', severity: 'warn', detail: 'Identity known but KYA (wallet-control) is not attested' })
@@ -253,7 +257,7 @@ export async function discoverManifest(rawUrl: string, fetchImpl: typeof fetch =
 export type PlatformReputationView = {
   agentId: string
   name: string | null
-  kya: 'unverified' | 'verified' | 'revoked'
+  kya: KyaStatus
   score: number
   settledOnchain: number
   sybil?: { level: 'none' | 'low' | 'medium' | 'high' }
@@ -309,7 +313,7 @@ export type MerchantCheckResult = {
     name: string | null
     score: number
     band: 'low' | 'moderate' | 'strong'
-    kya: 'unverified' | 'verified' | 'revoked'
+    kya: KyaStatus
     sybil: 'none' | 'low' | 'medium' | 'high'
     settledOnchain: number
   } | null

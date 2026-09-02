@@ -10,7 +10,7 @@ import {
   recordWallet, assignWallet, getWalletBalance, createAgent, listPlatformAgents,
   updateAgentLogo, anchorAgentOnchain, provisionAgentVault, grantAgentSessionKey, getAgentVault,
   provisionCircleWallet, getAgentCircleWallet, getAgentTreasury, startAgentAutoYield,
-  stopAgentAutoYield, startKyaChallenge, verifyKya, revokeAgentKya, getAgentKya,
+  stopAgentAutoYield, startKyaChallenge, startClaimChallenge, verifyAgentClaim, verifyKya, revokeAgentKya, getAgentKya,
   agentReputation, agentPolicy, getUserProfile, updateUserAvatar,
 } from '../platform.js'
 import { accountTier, agentQuotaComplaint } from '../marketplace.js'
@@ -259,6 +259,32 @@ export async function handleAgentRoutes(ctx: RouteCtx): Promise<boolean> {
     sendJson(res, 200, r)
     return true
   }
+  // ── Claim: the on-chain owner takes over a record we imported for them ─────────
+  // Open on purpose, unlike the KYA pair above, which is owner-gated. An unclaimed record
+  // belongs to whoever holds the token, and gating the claim behind the account that
+  // IMPORTED it would let a squatter hold someone's agent hostage. The signature and the
+  // live ownerOf read are the gate; the session only decides who ends up owning the row.
+  if (req.method === 'POST' && url.pathname === '/api/agents/claim/challenge') {
+    const body = (await readBody(req).catch(() => null)) as { agentId?: string } | null
+    if (!body?.agentId) { sendJson(res, 400, { error: 'agentId required' }); return true }
+    const r = startClaimChallenge(body.agentId)
+    if ('error' in r) { sendJson(res, errStatus(r.error), r); return true }
+    sendJson(res, 200, r)
+    return true
+  }
+  if (req.method === 'POST' && url.pathname === '/api/agents/claim/verify') {
+    const body = (await readBody(req).catch(() => null)) as
+      | { agentId?: string; message?: string; signature?: string; address?: string }
+      | null
+    if (!body?.agentId || !body.message || !body.signature || !body.address) {
+      sendJson(res, 400, { error: 'agentId, message, signature and address required' }); return true
+    }
+    const r = await verifyAgentClaim(body.agentId, body.message, body.signature, body.address, callerId)
+    if ('error' in r) { sendJson(res, errStatus(r.error), r); return true }
+    sendJson(res, 200, r)
+    return true
+  }
+
   // ── KYA (Know Your Agent): prove the agent controls its wallet ─────────────────
   // Start a challenge for the agent to sign (owner-only)
   if (req.method === 'POST' && url.pathname === '/api/agents/kya/challenge') {

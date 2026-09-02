@@ -6,7 +6,7 @@
  */
 import {
   getAgentActionPolicy, updateAgentActionPolicy, platformTraction, platformStats,
-  guardrailSelfCheck, registerAgentFromManifest, agentRegistration, setBadgeVisibility,
+  guardrailSelfCheck, registerAgentFromManifest, markImportedAgent, agentRegistration, setBadgeVisibility,
   agentBadge, checkAgentAction, spendPreflight, listAgentAudits, recordAuditOutcome,
   getAgentCirclePolicyPlan, updateAgentPermissions,
 } from '../platform.js'
@@ -204,7 +204,31 @@ export async function handleGuardrailRoutes(ctx: RouteCtx): Promise<boolean> {
     }
     const r = registerAgentFromManifest(manifest as never, callerId)
     if ('error' in r) { fail(errStatus(r.error), r.error); return true }
-    sendJson(res, 201, resolvedFrom ? { ...r, resolvedFrom } : r)
+    // A record built off a token the caller does not own is marked `unclaimed`, not
+    // `unverified`. The difference matters: unverified means nobody has proven control
+    // yet, unclaimed means the party who DOES control it has never spoken to us. Only
+    // marked when the chain actually answered and named someone else; a failed ownerOf
+    // read leaves the record alone rather than guessing against its owner.
+    let imported: ReturnType<typeof markImportedAgent> | null = null
+    if (resolvedFrom?.onchainOwner && resolvedFrom.ownership.matchesCaller !== true) {
+      imported = markImportedAgent(r.agentId, {
+        chain: resolvedFrom.chainId,
+        tokenId: resolvedFrom.tokenId,
+        registry: resolvedFrom.registry,
+        owner: resolvedFrom.onchainOwner,
+        at: new Date().toISOString(),
+        tokenUri: resolvedFrom.tokenURI,
+      })
+    }
+    const claim =
+      imported && !('error' in imported)
+        ? {
+            kya: 'unclaimed' as const,
+            howToClaim:
+              'POST /api/agents/claim/challenge with this agentId, sign the message it returns with the wallet that owns the token on chain, then POST /api/agents/claim/verify. The owner is re-read from the chain at that moment, so a transfer since this import is respected.',
+          }
+        : null
+    sendJson(res, 201, { ...r, ...(resolvedFrom ? { resolvedFrom } : {}), ...(claim ? { claim } : {}) })
     return true
   }
   // The owner's own registration + badge view.

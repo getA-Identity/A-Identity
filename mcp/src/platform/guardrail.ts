@@ -14,6 +14,7 @@ import {
   type AuditEntry, type AuditOutcome, type AuditProvenance, type Decision, type GuardrailProfile,
 } from '../policy/index.js'
 import { resolveCallerInput, type CallerInput } from '../callers/normalize.js'
+import type { KyaStatus } from '../marketplace.js'
 
 // ── Policy Engine v2 store (Phase 1.3) ───────────────────────────────────────────
 //
@@ -203,7 +204,7 @@ export type RegistrationResult = {
     onchain: 'queued' | 'registered'
     tokenId?: string
     explorerUrl?: string
-    kya: 'unverified' | 'verified' | 'revoked'
+    kya: KyaStatus
   }
   badges: Badge[]
   /** Present only once the owner opts in to publishing (see setBadgeVisibility). */

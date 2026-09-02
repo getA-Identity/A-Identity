@@ -11,13 +11,13 @@
  * Each surface keeps its own paint: the profile hero sits on a theme-fixed dark ground
  * and mixes the semantic tokens toward white (.cn-pf2-chip-*), the console card paints
  * from the Badge variants. What they share is the label, the glyph, the tone and the
- * verdict the agent's mark should report, so a fourth state is one row of this table
- * rather than another ternary in two files.
+ * verdict the agent's mark should report, which is why the fourth state, `unclaimed`,
+ * was one row of this table rather than another ternary in two files.
  */
-import { BadgeCheck, ShieldQuestion, ShieldX } from 'lucide-react'
+import { BadgeCheck, ShieldQuestion, ShieldX, UserSearch } from 'lucide-react'
 
 /** The KYA states the marketplace actually stores. */
-export type KyaStatus = 'verified' | 'unverified' | 'revoked'
+export type KyaStatus = 'verified' | 'unverified' | 'revoked' | 'unclaimed'
 
 /** Semantic tone, never a class: each surface maps it into its own vocabulary. */
 export type KyaTone = 'ok' | 'neutral' | 'danger'
@@ -59,6 +59,15 @@ const KYA: Record<KyaStatus, KyaPresentation> = {
     Icon: ShieldX,
     detail: 'The KYA attestation was revoked. This agent is flagged as an incident.',
     verdict: 'deny',
+  },
+  unclaimed: {
+    status: 'unclaimed',
+    label: 'Unclaimed',
+    tone: 'neutral',
+    Icon: UserSearch,
+    detail:
+      'This record was built from an on-chain agent by someone who does not control it. The owning wallet has never claimed it here, so nothing about it has been attested to us.',
+    verdict: 'warn',
   },
 }
 

@@ -201,6 +201,51 @@ export async function resolveAgentManifestUrl(
 }
 
 /**
+ * Read `ownerOf` for one agent token, LIVE, for the claim check.
+ *
+ * Deliberately its own function rather than a field on the import record. A claim is the
+ * moment someone asserts they control the token, and the import record only says who
+ * controlled it when we first looked: an on-chain transfer between those two moments
+ * would let the old owner claim a token they no longer hold. So the claim path re-reads
+ * the chain and never trusts what we stored.
+ *
+ * Returns the address, or an error saying which read failed. Never null-on-failure: a
+ * claim must not be allowed to proceed because a read quietly came back empty.
+ */
+export async function readAgentTokenOwner(
+  link: ExplorerAgentLink,
+  deps: ResolveAgentDeps = {},
+): Promise<{ owner: string } | { error: string }> {
+  const { chain, tokenId, registry } = link
+  const timeoutMs = deps.timeoutMs ?? READ_TIMEOUT_MS
+  const where = `${chain.name} identity registry ${registry}`
+  let read: AgentTokenReader
+  try {
+    read = deps.readContract ?? (await (async () => {
+      const client = await evmPublicClient(chain)
+      return (fn: 'ownerOf' | 'tokenURI', id: bigint) =>
+        client.readContract({ address: registry as `0x${string}`, abi: IDENTITY_ABI, functionName: fn, args: [id] })
+    })())
+  } catch (e) {
+    return { error: `could not open an RPC connection to ${chain.name} (${msg(e)}), so ownerOf(${tokenId}) was not read and no claim can be settled right now` }
+  }
+  try {
+    const owner = await raceTimeout(read('ownerOf', tokenId), timeoutMs)
+    if (typeof owner !== 'string' || !/^0x[0-9a-fA-F]{40}$/.test(owner)) {
+      return { error: `ownerOf(${tokenId}) on the ${where} did not return an address, so ownership could not be established` }
+    }
+    return { owner }
+  } catch (e) {
+    const raw = msg(e)
+    return {
+      error: /revert/i.test(raw)
+        ? `no agent #${tokenId} in the ${where} (ownerOf reverted), so there is no token to claim`
+        : `the live read of ownerOf(${tokenId}) on the ${where} did not come back (${raw}); nothing was claimed, retry`,
+    }
+  }
+}
+
+/**
  * What registering off someone else's token does and does not mean.
  *
  * PURE, and separated out because it is the honest-status rule in one function: quick

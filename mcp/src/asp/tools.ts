@@ -124,7 +124,17 @@ async function gather(agentId: string): Promise<Bundle> {
   // KYA: platform state is authoritative when present; else fall back to the on-chain
   // validation summary; else unknown.
   let kyaStatus: Bundle['kyaStatus'] = 'unknown'
-  if (platform) kyaStatus = platform.kya
+  // The platform now stores a fourth state, `unclaimed`: a record we built from someone
+  // else's on-chain agent, which the controlling party has never claimed here. This tool's
+  // published schema carries four values and the OKX.AI listings are registered against
+  // it, so the state is narrowed HERE rather than widening the schema and resetting review.
+  //
+  // It narrows to `unverified`, the closest true statement in the existing vocabulary:
+  // wallet control is not attested. Not `unknown`, which says we hold no record at all.
+  // The narrowing loses a real distinction (unclaimed is weaker than unverified, because
+  // the record is not even the caller's), so if this tool should ever report it, that is a
+  // deliberate schema change and a re-registration, not a patch.
+  if (platform) kyaStatus = platform.kya === 'unclaimed' ? 'unverified' : platform.kya
   else if (validation && Number((validation as { kyaCount?: number }).kyaCount ?? 0) > 0) kyaStatus = 'verified'
   const kyaVerified = kyaStatus === 'verified'
 
