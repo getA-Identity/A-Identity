@@ -1,13 +1,13 @@
 ---
 title: "Circle Gateway"
-description: "A unified, chain-abstracted USDC balance — move value across chains, gaslessly."
+description: "A unified, chain-abstracted USDC balance: move value across chains, gaslessly."
 ---
 
 An agent shouldn't care which chain its dollars sit on. **Circle Gateway** gives a
 unified USDC balance: deposit on one chain, then move it to another with a signed
-intent — no wallet or gas needed on the destination.
+intent, with no wallet or gas needed on the destination.
 
-A-Identity uses Gateway **permissionlessly — no Circle API key**.
+A-Identity uses Gateway **permissionlessly, with no Circle API key**.
 
 ## How it works
 
@@ -16,8 +16,8 @@ A-Identity uses Gateway **permissionlessly — no Circle API key**.
     USDC is deposited into the Gateway Wallet on Arc, establishing a unified balance.
   </Step>
   <Step title="Sign a burn intent">
-    A signed EIP-712 "burn intent" (a `TransferSpec`) is submitted to the Gateway API —
-    no transaction to send on the destination chain.
+    A signed EIP-712 "burn intent" (a `TransferSpec`) is submitted to the Gateway API.
+    There is no transaction to send on the destination chain.
   </Step>
   <Step title="Minted on the destination">
     The Forwarding Service mints USDC on the destination chain (Base Sepolia in our
@@ -27,7 +27,7 @@ A-Identity uses Gateway **permissionlessly — no Circle API key**.
 
 <Note>
 Verified live: USDC deposited on Arc, then moved to **Base Sepolia** via the
-Forwarding Service and minted there in a few seconds — the cleanest cross-chain USDC
+Forwarding Service and minted there in a few seconds, the cleanest cross-chain USDC
 UX we integrated. This is the same standard Circle Gateway exposes in production.
 </Note>
 
@@ -37,7 +37,7 @@ An agent earning USDC on Arc can pay a service that only accepts USDC on Base wi
 bridging friction, a second wallet, or holding gas on both chains. Value follows the
 work, not the chain.
 
-The same Gateway deposit also powers [Circle Nanopayments](/protocols/nanopayments) —
+The same Gateway deposit also powers [Circle Nanopayments](/protocols/nanopayments):
 gasless, batched, sub-cent x402 payments settle from this balance.
 
 <CardGroup cols={2}>
@@ -50,6 +50,6 @@ gasless, batched, sub-cent x402 payments settle from this balance.
 </CardGroup>
 
 <Card title="Build on Arc" icon="link" href="/chains/arc">
-  Arc is the primary rail — gas in USDC, sub-second finality. Gateway extends it
+  Arc is the primary rail: gas in USDC, sub-second finality. Gateway extends it
   across chains.
 </Card>

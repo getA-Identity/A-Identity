@@ -36,7 +36,7 @@ exists.
 ## Resolve One Now
 
 Resolve an identity with a **live on-chain read** of Arc's ERC-8004 registry (by agent
-id, token id, or owner address). No mocks — it calls `ownerOf` + `tokenURI` for real.
+id, token id, or owner address). No mocks: it calls `ownerOf` + `tokenURI` for real.
 
 ```ts
 const passport = await identity.resolve("eip155:5042002:8004/849980")

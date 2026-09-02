@@ -11,12 +11,12 @@ Forbidden error without one. Spending limits are enforced on-chain regardless of
 caller, and the server never holds the owner's keys.
 
 The `resolve_agent` tool reads **live from Circle Arc's deployed ERC-8004
-IdentityRegistry** by default (`source: "rpc"`) — a real `ownerOf` + `tokenURI` read,
+IdentityRegistry** by default (`source: "rpc"`): a real `ownerOf` + `tokenURI` read,
 no mocks. Extra EVM chains switch on when their RPC env vars are set.
 
 <Note>
 Identity resolution and the platform REST API both read the **live ERC-8004 + ERC-8183
-contracts on Arc testnet** (`GET /api/arc/contracts`) — no mocks. `list_agents` returns
+contracts on Arc testnet** (`GET /api/arc/contracts`), with no mocks. `list_agents` returns
 the real agents a running platform instance knows (the Arc registry isn't enumerable,
 so it can't list every token ever minted). See [Build on Arc](/chains/arc).
 </Note>

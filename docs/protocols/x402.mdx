@@ -26,14 +26,14 @@ on-chain (with replay protection) before serving the resource.
 </Steps>
 
 Each 402 carries a **single-use, resource-scoped nonce**; the redemption must echo it.
-So a payment is bound to the request that quoted it — an unrelated or stockpiled USDC
+So a payment is bound to the request that quoted it: an unrelated or stockpiled USDC
 transfer can't blind-unlock the resource, and every proof is spendable exactly once
 (replay protection persisted across restarts).
 
 ## Settlement
 
 The x402 standard is asset- and network-agnostic, but A-Identity settles every x402
-call in **USDC on Circle Arc** — the same dollar the rest of the platform uses, where
+call in **USDC on Circle Arc**, the same dollar the rest of the platform uses, where
 gas is paid in USDC and finality is sub-second. Each call costs a real sub-cent amount
 (0.001 USDC in the shipped demo), verified as an on-chain USDC transfer before the
 resource is served.
@@ -49,17 +49,17 @@ resource is served.
 
 A-Identity ships **two** x402 rails and labels which is which:
 
-1. **On-chain, self-verifying** (this page) — each call settles as a real USDC transfer
+1. **On-chain, self-verifying** (this page): each call settles as a real USDC transfer
    on Arc, verified on-chain with replay protection and a request nonce. Provable,
    standalone, no hosted meter.
-2. **[Circle Nanopayments](/protocols/nanopayments)** — the same 402 negotiation over
+2. **[Circle Nanopayments](/protocols/nanopayments)**, the same 402 negotiation over
    Circle Gateway's batched scheme: the buyer signs an EIP-3009 authorization off-chain
    (zero gas) and Gateway batches the on-chain settlement, making sub-cent streams
    economical.
 
 <Note>
-We chose the open x402 standard because it is self-verifying — we can **prove**
-settlement on-chain rather than trust a hosted meter — and then added Circle
+We chose the open x402 standard because it is self-verifying: we can **prove**
+settlement on-chain rather than trust a hosted meter. Then we added Circle
 Nanopayments as the gasless, batched rail alongside it. Both are live on Arc testnet.
 </Note>
 

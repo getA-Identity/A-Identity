@@ -11,13 +11,13 @@ a single transaction. That is what makes true **sub-cent** payments economical f
 high-frequency agent traffic.
 
 It is the same [x402](/protocols/x402) negotiation, using Circle Gateway's
-`GatewayWalletBatched` scheme. **Permissionless on Arc testnet — no Circle API key.**
+`GatewayWalletBatched` scheme. **Permissionless on Arc testnet, with no Circle API key.**
 
 ## How one nanopayment works
 
 <Steps>
   <Step title="Deposit once">
-    The buyer deposits USDC into the Gateway Wallet on Arc — a one-time on-chain
+    The buyer deposits USDC into the Gateway Wallet on Arc, a one-time on-chain
     transaction that establishes a spendable Gateway balance. (This is the same
     deposit [Circle Gateway](/chains/gateway) uses.)
   </Step>
@@ -52,7 +52,7 @@ A-Identity ships **both** rails, and says which is which:
 <Note>
 Verified live on Arc testnet: an EIP-3009 authorization signed off-chain settled
 through Circle Gateway with `success: true`, a real batch settlement id, and the
-buyer's Gateway balance debited by the paid amount — on both the local and the live
+buyer's Gateway balance debited by the paid amount, on both the local and the live
 production backend. SDK: [`@circle-fin/x402-batching`](https://developers.circle.com/gateway/nanopayments).
 </Note>
 
@@ -60,7 +60,7 @@ production backend. SDK: [`@circle-fin/x402-batching`](https://developers.circle
 
 An AI agent paying per model response, per dataset row, or per API call cannot afford
 gas on every micro-transaction. Nanopayments make **streaming, sub-cent, machine-to-machine**
-payments economical — the buyer's own key still authorizes every payment, so authority
+payments economical. The buyer's own key still authorizes every payment, so authority
 stays bounded.
 
 <Card title="The x402 standard" icon="coins" href="/protocols/x402">

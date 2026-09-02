@@ -7,7 +7,11 @@ public/llms-full.txt, public/.well-known/ (agent card, MCP server card, agent sk
 ## Ground rules (project law, enforced in review)
 
 - Plain ASCII punctuation in all prose, code comments, and UI copy: no em dashes, no
-  curly quotes, no arrows outside code. English for code/commits/docs.
+  curly quotes, no arrows outside code. English for code/commits/docs. The scope a test
+  actually enforces (mcp/src/ascii-punctuation.test.ts) is mcp/src, src, and the .mdx
+  pages under docs/. On a docs page a blockquote, a code block or span, and a URL or link
+  target keep their own punctuation, because they are someone else's words or an address;
+  frontmatter does not, because title and description are our own published copy.
 - Honest status everywhere: live reads are labeled live, simulations simulated, unbuilt
   things planned. Every on-chain write returns prepared-or-executed: without a signer it
   returns the exact call it would make, and nothing is marked settled without a receipt.

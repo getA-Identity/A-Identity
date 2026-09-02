@@ -1,11 +1,11 @@
 ---
 title: "Circle CCTP"
-description: "Native USDC across chains by burn-and-mint — never wrapped."
+description: "Native USDC across chains by burn-and-mint, never wrapped."
 ---
 
 **CCTP** (Cross-Chain Transfer Protocol) is Circle's canonical way to move USDC
 between chains: USDC is **burned** on the source chain and **minted natively** on the
-destination — never a wrapped or bridged variant. A-Identity drives it with Circle's
+destination, never a wrapped or bridged variant. A-Identity drives it with Circle's
 Bridge Kit (CCTPv2), so an agent's dollars can leave Arc and arrive as real USDC on
 another chain.
 
@@ -28,7 +28,7 @@ liquidity.
     reached fast.
   </Step>
   <Step title="mint">
-    Native USDC is minted on the destination chain (Base Sepolia in our demo) — the
+    Native USDC is minted on the destination chain (Base Sepolia in our demo): the
     same dollar, no wrapper.
   </Step>
 </Steps>
@@ -36,7 +36,7 @@ liquidity.
 <Note>
 Verified live on Arc testnet: a 1 USDC transfer ran the full `approve → burn →
 fetchAttestation → mint` lifecycle in about 15 seconds, each step a real transaction,
-minting native USDC on Base Sepolia — on both the local and the live production
+minting native USDC on Base Sepolia, on both the local and the live production
 backend. SDK: [`@circle-fin/bridge-kit`](https://developers.circle.com/cctp).
 </Note>
 
@@ -50,12 +50,12 @@ backend. SDK: [`@circle-fin/bridge-kit`](https://developers.circle.com/cctp).
 | In A-Identity | `mcp/src/gateway.ts` | `mcp/src/cctp.ts` |
 
 <Warning>
-Leaving Arc, the bridged amount must exceed the CCTPv2 max fee — tiny testnet
+Leaving Arc, the bridged amount must exceed the CCTPv2 max fee: tiny testnet
 transfers can revert with "Max fee must be less than amount". The demo defaults to
 1 USDC.
 </Warning>
 
 <Card title="Build on Arc" icon="link" href="/chains/arc">
-  Arc is the primary rail — gas in USDC, sub-second finality. CCTP and Gateway extend
+  Arc is the primary rail: gas in USDC, sub-second finality. CCTP and Gateway extend
   it across chains.
 </Card>
