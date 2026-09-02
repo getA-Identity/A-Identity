@@ -13,7 +13,8 @@ import {
   stopAgentAutoYield, startKyaChallenge, verifyKya, revokeAgentKya, getAgentKya,
   agentReputation, agentPolicy, getUserProfile, updateUserAvatar,
 } from '../platform.js'
-import { agentQuotaComplaint } from '../marketplace.js'
+import { accountTier, agentQuotaComplaint } from '../marketplace.js'
+import { chargeAgentCreate } from '../rate-budget.js'
 import { cappedDemoUsd, denyRead, errStatus, publicAgents, readBody, sendJson, type RouteCtx } from './shared.js'
 
 export async function handleAgentRoutes(ctx: RouteCtx): Promise<boolean> {
@@ -68,8 +69,27 @@ export async function handleAgentRoutes(ctx: RouteCtx): Promise<boolean> {
     // the caller's own agents only, and skipped without a session (the global mutation gate
     // in http.ts already refuses those) so an unowned legacy row can never be charged to
     // someone. A clean, labeled refusal naming the limit, never a silent drop.
-    const quota = callerId ? agentQuotaComplaint(listPlatformAgents().filter((a) => a.owner === callerId).length) : null
+    //
+    // The ceiling is read at the account's TIER rather than as one flat number, from the
+    // same pure rule the other two registration doors call. Without the operator allowlist
+    // env set, every account is 'default' and this is the exact ceiling it was before.
+    const tier = accountTier(callerId)
+    const quota = callerId ? agentQuotaComplaint(listPlatformAgents().filter((a) => a.owner === callerId).length, tier) : null
     if (quota) { sendJson(res, 400, { error: quota }); return true }
+    // And the row budget, charged in ROWS to the same ledger the bulk door charges, so
+    // neither door is a way around the other's rate. Charged BEFORE the write: a charge
+    // taken after it would let the row that broke the limit through.
+    if (callerId) {
+      const room = chargeAgentCreate(callerId, tier)
+      if (!room.ok) {
+        res.setHeader('Retry-After', String(Math.max(1, Math.ceil((room.resetAt - Date.now()) / 1000))))
+        sendJson(res, 429, {
+          error: `Too many agents registered too quickly: this account may create ${room.max} per minute. Nothing was registered; try again after the window resets.`,
+          resetAt: new Date(room.resetAt).toISOString(),
+        })
+        return true
+      }
+    }
     const agent = createAgent({
       name: body.name,
       description: body.description ?? '',

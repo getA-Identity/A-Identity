@@ -11,7 +11,10 @@ import {
   listTasksForAgent, listTasksForClient, agentManifest, registerExternalAgent,
   listPlatformAgents,
 } from '../platform.js'
-import { agentQuotaComplaint } from '../marketplace.js'
+import {
+  accountTier, agentQuotaComplaint, batchRegisterComplaint, feedbackComplaint, MAX_BATCH_REGISTER,
+} from '../marketplace.js'
+import { chargeAgentCreate, type VolumeCharge } from '../rate-budget.js'
 import { errStatus, readBody, sendJson, validAmount, type RouteCtx } from './shared.js'
 
 export async function handleMarketplaceRoutes(ctx: RouteCtx): Promise<boolean> {
@@ -58,10 +61,26 @@ export async function handleMarketplaceRoutes(ctx: RouteCtx): Promise<boolean> {
     sendJson(res, 'error' in r ? 404 : 200, r)
     return true
   }
-  // POST rides the global mutation gate above: guests are already 401/403 here.
+  // POST rides the global mutation gate above: guests are already 401/403 here, and the
+  // `feedback` rate budget bounds the burst before this handler is ever reached.
   if (req.method === 'POST' && url.pathname === '/api/marketplace/feedback') {
     const body = (await readBody(req).catch(() => null)) as { agentId?: string; score?: number; comment?: string } | null
     if (!body?.agentId || body.score == null) { sendJson(res, 400, { error: 'agentId and score required' }); return true }
+    // The per-rater floor, run BEFORE the row is written, from the same pure rule the
+    // tests exercise. feed.ts already replaces a rater's previous row rather than stacking
+    // it, so nobody can pump an average; what it does NOT stop is the rewrite itself, and
+    // every rewrite still appends an activity line and rewrites the whole state document.
+    // This is where that loop is refused.
+    const prior = agentFeedback(body.agentId)
+    if ('error' in prior) { sendJson(res, 404, prior); return true }
+    // The rater's own previous entry, read from the agent's most recent ratings. Stated
+    // rather than implied: agentFeedback returns the newest 50, so a rater whose row has
+    // been pushed past that window reads as new. That takes 50 MORE RECENT ratings from
+    // other accounts on the same agent, which is not something one spammer can arrange for
+    // themselves, and the rate budget bounds the burst either way.
+    const mine = prior.entries.find((e) => e.rater === callerId)
+    const complaint = feedbackComplaint({ score: body.score, comment: body.comment }, { lastAt: mine?.at }, Date.now())
+    if (complaint) { sendJson(res, 400, { error: complaint }); return true }
     const r = addAgentFeedback(body.agentId, callerId!, body.score, body.comment)
     sendJson(res, 'error' in r ? ('Unknown agent' === r.error ? 404 : 400) : 200, r)
     return true
@@ -213,9 +232,17 @@ export async function handleMarketplaceRoutes(ctx: RouteCtx): Promise<boolean> {
     }
     // The same per-owner ceiling POST /api/agents enforces, from the same pure rule, because
     // this is the same row through a second door. One limit stated once (agentQuotaComplaint
-    // in ../marketplace.js) so the two registration paths cannot drift apart.
-    const quota = callerId ? agentQuotaComplaint(listPlatformAgents().filter((a) => a.owner === callerId).length) : null
+    // in ../marketplace.js) so the registration paths cannot drift apart, read at the
+    // account's tier so an allowlisted operator is not held to a person's ceiling.
+    const tier = accountTier(callerId)
+    const quota = callerId ? agentQuotaComplaint(listPlatformAgents().filter((a) => a.owner === callerId).length, tier) : null
     if (quota) { sendJson(res, 400, { error: quota }); return true }
+    // And one row charged to the shared row ledger, the same one the batch door below
+    // charges, so a caller gets the same number of agents per minute whichever door it uses.
+    if (callerId) {
+      const room = chargeAgentCreate(callerId, tier)
+      if (!room.ok) { sendRowLimit(res, room); return true }
+    }
     const r = await registerExternalAgent({
       name: body.name, description: body.description, category: body.category,
       capabilities: body.capabilities, services: body.services,
@@ -224,6 +251,84 @@ export async function handleMarketplaceRoutes(ctx: RouteCtx): Promise<boolean> {
     sendJson(res, 'error' in r ? errStatus(r.error) : 201, r)
     return true
   }
+  // Bulk self-registration: one request, many manifests, PARTIAL SUCCESS BY DESIGN.
+  //
+  // Registering one agent per request means a fleet arrives one round trip at a time. This
+  // door removes the round trips and changes nothing else: every row runs the same quota,
+  // charges the same row budget, and is reported on its own line. All-or-nothing would
+  // throw away forty-nine good registrations over one typo, and silently skipping the bad
+  // rows would hand back a 201 that lied about what exists, so each row gets a verdict.
+  if (req.method === 'POST' && url.pathname === '/api/v1/agents/register/batch') {
+    const body = (await readBody(req).catch(() => null)) as { agents?: unknown } | null
+    const rows = Array.isArray(body?.agents) ? (body.agents as unknown[]) : null
+    if (!rows) {
+      sendJson(res, 400, { error: 'agents required: an array of manifests, each shaped like the body of POST /api/v1/agents/register', limit: MAX_BATCH_REGISTER })
+      return true
+    }
+    // An oversized batch is refused WHOLE, never trimmed to fit. A truncating batch answers
+    // "register these 200" with a 200-OK that registered 50 and never says which 150 are
+    // missing, which is the silent failure this endpoint exists to avoid.
+    const size = batchRegisterComplaint(rows.length)
+    if (size) { sendJson(res, 400, { error: size, sent: rows.length, limit: MAX_BATCH_REGISTER, registered: 0 }); return true }
+    const tier = accountTier(callerId)
+    const results: { index: number; ok: boolean; name?: string; agentId?: string; manifestUrl?: string; error?: string }[] = []
+    // Once the row ledger is spent, every remaining row gets the same honest refusal
+    // without charging the bucket again: the count is a budget, not a punishment counter.
+    let spent: VolumeCharge | null = null
+    // Sequential on purpose: the quota below is recounted per row, so the run has to see
+    // its own writes. A parallel run would let a batch overshoot the ceiling by its width.
+    for (let index = 0; index < rows.length; index++) {
+      const m = (rows[index] ?? {}) as {
+        name?: string; description?: string; category?: string
+        capabilities?: string[]; services?: { name: string; priceUsd: number; unit: string }[]
+        walletAddress?: string; endpoint?: string
+      }
+      const name = typeof m.name === 'string' ? m.name.trim() : ''
+      if (!name) { results.push({ index, ok: false, error: 'name required' }); continue }
+      if (m.walletAddress && !/^0x[0-9a-fA-F]{40}$/.test(m.walletAddress)) {
+        results.push({ index, ok: false, name, error: 'walletAddress must be a 0x address' }); continue
+      }
+      // The same ceiling, from the same pure rule, recounted as the batch writes rows: when
+      // the account fills up mid-batch the rest are refused rather than let through.
+      const quota = callerId ? agentQuotaComplaint(listPlatformAgents().filter((a) => a.owner === callerId).length, tier) : null
+      if (quota) { results.push({ index, ok: false, name, error: quota }); continue }
+      if (callerId) {
+        const room: VolumeCharge = spent ?? chargeAgentCreate(callerId, tier)
+        if (!room.ok) {
+          spent = room
+          results.push({ index, ok: false, name, error: `Rate limit: this account may register ${room.max} agents per minute. Send the rest after ${new Date(room.resetAt).toISOString()}.` })
+          continue
+        }
+      }
+      const r = await registerExternalAgent({
+        name, description: m.description, category: m.category,
+        capabilities: m.capabilities, services: m.services,
+        walletAddress: m.walletAddress, endpoint: m.endpoint, owner: callerId,
+      })
+      if ('error' in r) { results.push({ index, ok: false, name, error: r.error }); continue }
+      results.push({ index, ok: true, name, agentId: r.agent.id, manifestUrl: r.manifestUrl })
+    }
+    const registered = results.filter((r) => r.ok).length
+    // 201 when at least one row created something, 200 when none did. The counts are the
+    // headline because a caller has to be able to tell a full success from a partial one
+    // without walking the array.
+    sendJson(res, registered > 0 ? 201 : 200, {
+      requested: rows.length,
+      registered,
+      rejected: rows.length - registered,
+      results,
+    })
+    return true
+  }
 
   return false
+}
+
+/** A single write refused by the shared row ledger: 429, a real Retry-After, and no row. */
+function sendRowLimit(res: RouteCtx['res'], room: VolumeCharge): void {
+  res.setHeader('Retry-After', String(Math.max(1, Math.ceil((room.resetAt - Date.now()) / 1000))))
+  sendJson(res, 429, {
+    error: `Too many agents registered too quickly: this account may create ${room.max} per minute. Nothing was registered; try again after the window resets.`,
+    resetAt: new Date(room.resetAt).toISOString(),
+  })
 }

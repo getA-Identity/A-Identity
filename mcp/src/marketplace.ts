@@ -199,8 +199,10 @@ export const MIN_DESCRIPTION_DISTINCT_CHARS = 5
 export const OPEN_TASK_LIMIT_NEW = 3
 /** Open tasks a poster who has paid a worker, or runs a verified agent, may hold at once. */
 export const OPEN_TASK_LIMIT_ESTABLISHED = 12
-/** Agents a single account may register. Bounds the total; a rate budget bounds the burst. */
+/** Agents an ordinary account may register. Bounds the total; a rate budget bounds the burst. */
 export const MAX_AGENTS_PER_OWNER = 25
+/** Agents an allowlisted operator account may register. See AccountTier below. */
+export const MAX_AGENTS_PER_OPERATOR = 2000
 
 /** Case-folded, whitespace-collapsed text, so two spellings of one ask compare equal. */
 export function normalizeTaskText(v: unknown): string {
@@ -278,17 +280,151 @@ export function openTaskComplaint(draft: OpenTaskDraft, poster: PosterStanding):
   return null
 }
 
+// ── account tiers: one rule, at two heights ──────────────────────────────────────
+//
+// MAX_AGENTS_PER_OWNER is the right number for a person and the wrong number for someone
+// running a fleet. Two thousand agents under a twenty-five ceiling is eighty accounts, so
+// for that caller the ceiling stops being a limit and becomes an instruction to open sock
+// puppets, which leaves us with the same rows and no idea who owns them. The fix is a
+// second height for the SAME rule, never a second rule.
+//
+// What is deliberately NOT decided here: who gets the higher one. Qualifying an operator
+// (a business check, a stake, a track record, a fee) is a product decision nobody has
+// made, and inventing a mechanism in code would make it by accident. So the only way to be
+// an operator today is to be named by hand in an env allowlist, which is the posture every
+// other privileged credential in this repo takes: env gated, never autonomous. With the
+// variable unset nobody is an operator and every account gets exactly the ceiling it has
+// today, which is a clean labeled no-op rather than a behavior change.
+
+/** How much room an account gets. 'default' is everyone; 'operator' is allowlisted. */
+export type AccountTier = 'default' | 'operator'
+
+/** The registered-agent ceiling per tier, so a caller never picks between constants. */
+export const AGENT_QUOTA_BY_TIER: Record<AccountTier, number> = {
+  default: MAX_AGENTS_PER_OWNER,
+  operator: MAX_AGENTS_PER_OPERATOR,
+}
+
+/** The env variable that names operator accounts, comma separated (subjects, case-folded). */
+export const OPERATOR_ACCOUNTS_ENV = 'AGENT_OPERATOR_ACCOUNTS'
+
+/** The subjects named in the operator allowlist. Empty when the variable is unset. */
+export function operatorAccounts(env: NodeJS.ProcessEnv = process.env): string[] {
+  return (env[OPERATOR_ACCOUNTS_ENV] ?? '')
+    .split(',')
+    .map((s) => s.trim().toLowerCase())
+    .filter(Boolean)
+}
+
+/**
+ * Which tier an account is in.
+ *
+ * The env read is the one impurity in this module and it is injectable, so the rule is
+ * still exercised without touching the process (the shape x402-3009/rail.ts already uses).
+ * Anything not named is 'default', an absent subject included, so a missing or malformed
+ * variable fails to the ordinary ceiling rather than to an accidental promotion.
+ */
+export function accountTier(subject: string | undefined, env: NodeJS.ProcessEnv = process.env): AccountTier {
+  const id = String(subject ?? '').trim().toLowerCase()
+  if (!id) return 'default'
+  return operatorAccounts(env).includes(id) ? 'operator' : 'default'
+}
+
+/** How many agents an account of this tier may hold. */
+export function agentQuota(tier: AccountTier = 'default'): number {
+  return AGENT_QUOTA_BY_TIER[tier] ?? MAX_AGENTS_PER_OWNER
+}
+
 /**
  * Why this account may not register another agent, or null when it may.
  *
  * Registering is free and writes a durable row, which is the same hole open tasks had. The
  * rate budget bounds how fast rows can arrive; this bounds how many one account ends up
  * holding, which is the number that actually matters to the roster.
+ *
+ * The tier defaults, so a caller that knows nothing about tiers gets the ordinary ceiling
+ * and every existing call site keeps its exact behavior.
  */
-export function agentQuotaComplaint(ownedCount: number): string | null {
-  return ownedCount >= MAX_AGENTS_PER_OWNER
-    ? `Too many agents: this account has registered ${ownedCount} and the limit is ${MAX_AGENTS_PER_OWNER}. Remove one you no longer run before adding another.`
-    : null
+export function agentQuotaComplaint(ownedCount: number, tier: AccountTier = 'default'): string | null {
+  const limit = agentQuota(tier)
+  if (ownedCount < limit) return null
+  const who = tier === 'operator' ? 'this operator account' : 'this account'
+  return `Too many agents: ${who} has registered ${ownedCount} and the limit is ${limit}. Remove one you no longer run before adding another.`
+}
+
+// ── bulk registration: many manifests, one request ───────────────────────────────
+//
+// Registering is one agent per request, so a fleet arrives one HTTP round trip at a time.
+// A batch door fixes the round trips and nothing else: it runs the same quota, charges the
+// same row budget, and reports each row on its own, because all-or-nothing on fifty rows
+// would throw away forty-nine good registrations over one typo.
+
+/** Manifests one batch request may carry. Above this the request is refused whole. */
+export const MAX_BATCH_REGISTER = 50
+
+/**
+ * Why a batch of this size cannot be accepted, or null when it can.
+ *
+ * An oversized batch is REFUSED, never trimmed to fit. Trimming would answer "register
+ * these 200" with a 200-OK that quietly registered 50, and the caller would have no way to
+ * tell which 150 are missing until it went looking.
+ */
+export function batchRegisterComplaint(count: unknown): string | null {
+  if (typeof count !== 'number' || !Number.isInteger(count) || count < 1)
+    return 'agents must be a non-empty array of manifests'
+  if (count > MAX_BATCH_REGISTER)
+    return `Too many manifests in one request: ${count} sent and the limit is ${MAX_BATCH_REGISTER}. Split the list into batches of at most ${MAX_BATCH_REGISTER} and send them in order. Nothing in this request was registered.`
+  return null
+}
+
+// ── the spam floor on rating an agent ────────────────────────────────────────────
+//
+// A rating is a durable row and a reputation input: agentReputation reads feedback into
+// its `behavior` and `discipline` terms, so writing one is not a neutral act. It was also
+// the last free write on the marketplace with no bound of any kind on it.
+//
+// Two bounds, pure like the task floor above so the rule that runs is the rule the tests
+// exercise:
+//   1. content   a comment too short to say anything is noise attached to a score
+//   2. cooldown  one rater may not rewrite the same rating in a loop
+//
+// The cooldown is the one that matters most, and the reason is not obvious. feed.ts drops
+// a rater's previous row before pushing the new one, so ratings never STACK per rater and
+// the average cannot be pumped. But every rewrite still appends an activity line to the
+// agent and still rewrites the whole state document, so an unbounded rewrite loop grows
+// the very thing the replacement was supposed to bound. The cooldown stops that at the
+// door rather than after the write.
+//
+// What is deliberately NOT here: a rule that a rating must carry a comment. A star-only
+// rating is a legitimate thing to leave and the console sends exactly that today, so
+// requiring prose would break honest raters to inconvenience a spammer who can simply type
+// twelve characters. The floor applies to a comment that IS given.
+
+/** Least a comment may say, when one is given at all, before it stops being a comment. */
+export const MIN_FEEDBACK_COMMENT_CHARS = 12
+/** How long a rater must wait before changing their rating of the same agent again. */
+export const FEEDBACK_REWRITE_COOLDOWN_MS = 5 * 60 * 1000
+
+/** The two client-supplied fields of a rating. */
+export type FeedbackDraft = { score: unknown; comment?: unknown }
+/** What this rater has already written about THIS agent, as data, so the rule stays pure. */
+export type RaterStanding = { lastAt?: string }
+
+/** Why this rater may not rate this agent right now, or null when they may. */
+export function feedbackComplaint(draft: FeedbackDraft, standing: RaterStanding, nowMs: number): string | null {
+  const raw = typeof draft.score === 'number' && Number.isFinite(draft.score) ? Math.round(draft.score) : NaN
+  if (!Number.isFinite(raw) || raw < 1 || raw > 10) return 'Score must be a whole number from 1 to 10'
+  const comment = typeof draft.comment === 'string' ? draft.comment.trim() : ''
+  if (comment.length > 0 && comment.length < MIN_FEEDBACK_COMMENT_CHARS)
+    return `A comment must be at least ${MIN_FEEDBACK_COMMENT_CHARS} characters to tell anyone anything (got ${comment.length}). Leave it out to rate without one.`
+  if (comment.length > 0 && !/\p{L}/u.test(comment))
+    return 'A comment must contain words, not only digits or punctuation'
+  const last = standing.lastAt ? new Date(standing.lastAt).getTime() : NaN
+  if (Number.isFinite(last) && nowMs >= last && nowMs - last < FEEDBACK_REWRITE_COOLDOWN_MS) {
+    const minutes = Math.ceil((FEEDBACK_REWRITE_COOLDOWN_MS - (nowMs - last)) / 60_000)
+    return `You already rated this agent. A rating can be changed again in ${minutes} minute${minutes === 1 ? '' : 's'}.`
+  }
+  return null
 }
 
 // ── review aggregation (feeds catalog ratings) ────────────────────────────────────

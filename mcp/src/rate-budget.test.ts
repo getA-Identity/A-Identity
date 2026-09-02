@@ -19,7 +19,7 @@ import assert from 'node:assert/strict'
 import { readFileSync, readdirSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { join } from 'node:path'
-import { rateBudget } from './rate-budget.js'
+import { rateBudget, agentCreateVolume, chargeAgentCreate, AGENT_CREATE_VOLUME } from './rate-budget.js'
 
 const SRC = fileURLToPath(new URL('../src/', import.meta.url))
 const ROUTES = join(SRC, 'http')
@@ -127,6 +127,95 @@ test('the two agent-registration doors share one budget, so neither is a way aro
     viaConsole.bucket, viaApi.bucket,
     'both paths write the same agent row; separate buckets would double the real allowance',
   )
+})
+
+test('rating an agent is budgeted like the other free writes that create rows', () => {
+  // Feedback belonged in this class from the day it was written and was simply left out of
+  // it: it writes a durable row AND feeds reputation (agentReputation reads it into the
+  // behavior and discipline terms), which makes it the one free write where spam changes
+  // what the platform SAYS about somebody.
+  const budget = rateBudget('POST', '/api/marketplace/feedback')
+  assert.ok(budget, 'POST /api/marketplace/feedback creates a permanent row and must have a rate budget')
+  assert.equal(rateBudget('GET', '/api/marketplace/feedback'), null, 'reading ratings is not the write')
+})
+
+test('the feedback budget sits between spam and normal use, in its own bucket', () => {
+  const feedback = rateBudget('POST', '/api/marketplace/feedback')
+  const post = rateBudget('POST', '/api/marketplace/post-task')
+  const bid = rateBudget('POST', '/api/marketplace/bid')
+  assert.ok(feedback && post && bid)
+  // A few ratings a minute is a person working through a shortlist; dozens is not a person.
+  assert.ok(feedback.max >= post.max && feedback.max <= bid.max, `${feedback.max} should sit in the free-write class`)
+  // Its own bucket, so a burst of ratings cannot lock a caller out of posting or bidding.
+  assert.equal(new Set([feedback.bucket, post.bucket, bid.bucket]).size, 3)
+})
+
+// ── the bulk door, and why a request count stops being a limit there ─────────────
+
+test('the bulk registration door has a request budget of its own', () => {
+  const batch = rateBudget('POST', '/api/v1/agents/register/batch')
+  assert.ok(batch, 'the batch door writes rows and must have a request budget')
+  const single = rateBudget('POST', '/api/v1/agents/register')
+  assert.ok(single)
+  // Not the single door's bucket: one request here is many rows, so counting it as one
+  // write against agent-create would be wrong in both directions. What actually bounds it
+  // is the ROW ledger below, which both doors charge.
+  assert.notEqual(batch.bucket, single.bucket)
+})
+
+test('agent rows are counted per row, so the batch cannot buy a second allowance', () => {
+  // The hole this closes: budget the batch per REQUEST and one POST carrying fifty
+  // manifests spends one unit of a budget the single door spends one unit per agent on.
+  const tier = 'default'
+  const { max } = agentCreateVolume(tier)
+  const account = `acct-${Math.random()}`
+  for (let i = 1; i <= max; i++) {
+    assert.equal(chargeAgentCreate(account, tier).ok, true, `row ${i} of ${max} should fit`)
+  }
+  const over = chargeAgentCreate(account, tier)
+  assert.equal(over.ok, false, 'the row after the budget must be refused')
+  assert.equal(over.max, max, 'the refusal has to carry the limit so the caller can be told it')
+  assert.ok(over.resetAt > Date.now(), 'and when the window reopens, so the caller can retry honestly')
+})
+
+test('an operator account gets more room per minute, and everyone else gets what they had', () => {
+  // The default is the number the per-request agent-create bucket has always allowed, so
+  // an ordinary account's real allowance is unchanged by any of this.
+  assert.equal(agentCreateVolume('default').max, rateBudget('POST', '/api/v1/agents/register')?.max)
+  assert.ok(
+    AGENT_CREATE_VOLUME.operator.max > AGENT_CREATE_VOLUME.default.max,
+    'a fleet that may EXIST has to be able to arrive; otherwise the ceiling raise is theatre',
+  )
+  // An unknown tier gets the ordinary budget, never the bigger one: a typo in a tier name
+  // must fail closed.
+  assert.deepEqual(agentCreateVolume('operatorr'), AGENT_CREATE_VOLUME.default)
+  assert.deepEqual(agentCreateVolume(''), AGENT_CREATE_VOLUME.default)
+})
+
+test('a row budget is per account and per window, not one shared pool forever', () => {
+  const tier = 'default'
+  const { max, windowMs } = agentCreateVolume(tier)
+  const a = `acct-a-${Math.random()}`
+  const b = `acct-b-${Math.random()}`
+  const t0 = Date.now()
+  for (let i = 0; i < max + 1; i++) chargeAgentCreate(a, tier, t0)
+  assert.equal(chargeAgentCreate(a, tier, t0).ok, false, 'this account is out of room')
+  assert.equal(chargeAgentCreate(b, tier, t0).ok, true, 'another account must not pay for it')
+  assert.equal(chargeAgentCreate(a, tier, t0 + windowMs + 1).ok, true, 'and the window reopens')
+})
+
+test('a rate limited POST is refused before any route handler runs, so it creates no row', () => {
+  // Every budget above is a number in a table. This checks the number is enforced where it
+  // has to be: ahead of the dispatch, with a return, so a limited feedback POST cannot
+  // reach addAgentFeedback and write the row the limit exists to prevent.
+  const http = readFileSync(join(SRC, 'http.ts'), 'utf8')
+  const limiter = http.indexOf('rateBudget(req.method')
+  const refusal = http.indexOf('sendJson(res, 429', limiter)
+  const dispatch = http.indexOf('Routes(ctx)')
+  assert.ok(limiter > 0, 'http.ts must still consult rateBudget')
+  assert.ok(refusal > limiter, 'and answer 429 when the budget is spent')
+  assert.ok(refusal < dispatch, 'the refusal has to come BEFORE the route handlers, or the row is already written')
+  assert.match(http.slice(refusal, dispatch), /\breturn\b/, 'and it has to return rather than fall through')
 })
 
 test('posting a task is limited harder than bidding on one', () => {

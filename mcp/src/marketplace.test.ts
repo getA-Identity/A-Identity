@@ -20,6 +20,16 @@ import {
   openTaskCeiling,
   openTaskComplaint,
   agentQuotaComplaint,
+  accountTier,
+  agentQuota,
+  operatorAccounts,
+  batchRegisterComplaint,
+  feedbackComplaint,
+  MAX_AGENTS_PER_OPERATOR,
+  MAX_BATCH_REGISTER,
+  MIN_FEEDBACK_COMMENT_CHARS,
+  FEEDBACK_REWRITE_COOLDOWN_MS,
+  OPERATOR_ACCOUNTS_ENV,
   MAX_TASK_PRICE_USD,
   DEFAULT_DEADLINE_HOURS,
   MAX_DEADLINE_HOURS,
@@ -353,6 +363,126 @@ test('one account may register agents up to a stated ceiling', () => {
   assert.ok(full?.includes(String(MAX_AGENTS_PER_OWNER)), `the refusal must name the limit, got: ${full}`)
 })
 
+// ── account tiers: the ceiling is parametric, and only env can raise it ──────────
+//
+// The ceiling that is right for a person is wrong for someone running a fleet, and a fleet
+// under a personal ceiling does not shrink, it splits across sock-puppet accounts. So the
+// ceiling takes a tier. Who is in the operator tier is a PRODUCT DECISION nobody has made,
+// which is why the only mechanism here is an env allowlist a human sets by hand.
+
+const noEnv = {} as NodeJS.ProcessEnv
+const withOperators = (list: string) => ({ [OPERATOR_ACCOUNTS_ENV]: list }) as NodeJS.ProcessEnv
+
+test('the operator tier raises the same ceiling rather than removing it', () => {
+  assert.equal(agentQuota('default'), MAX_AGENTS_PER_OWNER)
+  assert.equal(agentQuota('operator'), MAX_AGENTS_PER_OPERATOR)
+  assert.ok(MAX_AGENTS_PER_OPERATOR > MAX_AGENTS_PER_OWNER, 'the operator tier has to be a raise')
+  // A raise, not an exemption: an operator that fills its fleet is still refused, by name.
+  const full = agentQuotaComplaint(MAX_AGENTS_PER_OPERATOR, 'operator')
+  assert.ok(full?.includes(String(MAX_AGENTS_PER_OPERATOR)), `the refusal must name the operator limit, got: ${full}`)
+  assert.equal(agentQuotaComplaint(MAX_AGENTS_PER_OPERATOR - 1, 'operator'), null)
+})
+
+test('a default account is stopped at the ordinary ceiling even when operators exist', () => {
+  // The env naming somebody else must not move anyone else's ceiling.
+  assert.equal(accountTier('someone@else.test', withOperators('fleet@op.test')), 'default')
+  assert.ok(agentQuotaComplaint(MAX_AGENTS_PER_OWNER, 'default')?.includes(String(MAX_AGENTS_PER_OWNER)))
+  assert.equal(agentQuotaComplaint(MAX_AGENTS_PER_OWNER, 'operator'), null, 'the allowlisted account is the one that gets room')
+})
+
+test('with no allowlist set, nobody is an operator: a clean no-op, not a crash', () => {
+  assert.deepEqual(operatorAccounts(noEnv), [])
+  assert.deepEqual(operatorAccounts({ [OPERATOR_ACCOUNTS_ENV]: '' } as NodeJS.ProcessEnv), [])
+  assert.deepEqual(operatorAccounts({ [OPERATOR_ACCOUNTS_ENV]: ' , ,, ' } as NodeJS.ProcessEnv), [])
+  for (const env of [noEnv, { [OPERATOR_ACCOUNTS_ENV]: '' } as NodeJS.ProcessEnv, { [OPERATOR_ACCOUNTS_ENV]: ' , ,, ' } as NodeJS.ProcessEnv]) {
+    assert.equal(accountTier('fleet@op.test', env), 'default')
+    assert.equal(accountTier(undefined, env), 'default')
+    assert.equal(accountTier('', env), 'default')
+  }
+})
+
+test('only an account the allowlist actually names is an operator', () => {
+  const env = withOperators(' Fleet@Op.test , 0xABCDEF ')
+  // Case-folded and trimmed on both sides, so a session subject spelled differently still
+  // matches the entry a human typed.
+  assert.equal(accountTier('fleet@op.test', env), 'operator')
+  assert.equal(accountTier('  FLEET@OP.TEST ', env), 'operator')
+  assert.equal(accountTier('0xabcdef', env), 'operator')
+  // And nothing near it counts: no prefix, suffix, or empty-string match.
+  assert.equal(accountTier('fleet@op.test.evil', env), 'default')
+  assert.equal(accountTier('leet@op.test', env), 'default')
+  assert.equal(accountTier(undefined, env), 'default')
+})
+
+test('the tier defaults, so every existing call site keeps the ceiling it had', () => {
+  assert.equal(agentQuotaComplaint(0), null)
+  assert.equal(agentQuotaComplaint(MAX_AGENTS_PER_OWNER - 1), null)
+  assert.ok(agentQuotaComplaint(MAX_AGENTS_PER_OWNER)?.includes(String(MAX_AGENTS_PER_OWNER)))
+})
+
+// ── bulk registration: an upper bound that refuses rather than trims ─────────────
+
+test('a batch bigger than the limit is refused whole, and says so', () => {
+  const over = batchRegisterComplaint(MAX_BATCH_REGISTER + 1)
+  assert.ok(over, 'an oversized batch must be refused')
+  assert.ok(over?.includes(String(MAX_BATCH_REGISTER)), `the refusal must name the limit, got: ${over}`)
+  // The wording is load-bearing: a caller has to know nothing was written, because the
+  // alternative reading (some of it was) is the silent truncation this rule exists to ban.
+  assert.match(over ?? '', /Nothing in this request was registered/)
+  assert.equal(batchRegisterComplaint(MAX_BATCH_REGISTER), null, 'exactly the limit is allowed')
+})
+
+test('an empty or nonsensical batch is refused before anything is written', () => {
+  for (const bad of [0, -1, 1.5, Number.NaN, Number.POSITIVE_INFINITY]) {
+    assert.ok(batchRegisterComplaint(bad), `a batch of ${bad} is not a batch`)
+  }
+  assert.equal(batchRegisterComplaint(1), null)
+})
+
+// ── the spam floor on rating an agent ────────────────────────────────────────────
+
+const NOW = Date.UTC(2026, 0, 1, 12, 0, 0)
+const iso = (ms: number) => new Date(ms).toISOString()
+
+test('a score outside 1..10 never becomes a row', () => {
+  for (const bad of [0, 11, -3, Number.NaN, Number.POSITIVE_INFINITY, '5', null, undefined]) {
+    assert.ok(feedbackComplaint({ score: bad }, {}, NOW), `score ${String(bad)} must be refused`)
+  }
+  assert.equal(feedbackComplaint({ score: 1 }, {}, NOW), null)
+  assert.equal(feedbackComplaint({ score: 10 }, {}, NOW), null)
+})
+
+test('a comment too short to say anything is refused, and rating without one still works', () => {
+  const short = feedbackComplaint({ score: 8, comment: 'ok' }, {}, NOW)
+  assert.ok(short?.includes(String(MIN_FEEDBACK_COMMENT_CHARS)), `the refusal must name the bound, got: ${short}`)
+  assert.ok(feedbackComplaint({ score: 8, comment: '1234567890123' }, {}, NOW), 'digits alone are not a comment')
+  // A star-only rating is a legitimate thing to leave and the console sends exactly that,
+  // so the floor applies to a comment that is GIVEN, never to its absence.
+  assert.equal(feedbackComplaint({ score: 8 }, {}, NOW), null)
+  assert.equal(feedbackComplaint({ score: 8, comment: '   ' }, {}, NOW), null)
+  assert.equal(feedbackComplaint({ score: 8, comment: 'Delivered exactly what was asked' }, {}, NOW), null)
+})
+
+test('one rater cannot rewrite the same rating in a loop', () => {
+  // feed.ts already replaces a rater's previous row, so the average was never pumpable.
+  // What kept growing is the write itself: an activity line per rewrite plus a full state
+  // save. The cooldown is what stops that, so it is asserted on the write, not the average.
+  const justNow = feedbackComplaint({ score: 9 }, { lastAt: iso(NOW - 1000) }, NOW)
+  assert.ok(justNow, 'a rewrite one second later must be refused')
+  assert.match(justNow ?? '', /already rated this agent/)
+  const halfway = feedbackComplaint({ score: 9 }, { lastAt: iso(NOW - FEEDBACK_REWRITE_COOLDOWN_MS / 2) }, NOW)
+  assert.ok(halfway, 'halfway through the cooldown is still inside it')
+})
+
+test('a rater whose cooldown has passed may correct their rating', () => {
+  assert.equal(feedbackComplaint({ score: 9 }, { lastAt: iso(NOW - FEEDBACK_REWRITE_COOLDOWN_MS) }, NOW), null)
+  assert.equal(feedbackComplaint({ score: 9 }, { lastAt: iso(NOW - FEEDBACK_REWRITE_COOLDOWN_MS * 10) }, NOW), null)
+  // A first-ever rating has no previous entry, and an unparseable one is not a reason to
+  // lock someone out of rating at all.
+  assert.equal(feedbackComplaint({ score: 9 }, {}, NOW), null)
+  assert.equal(feedbackComplaint({ score: 9 }, { lastAt: 'not a date' }, NOW), null)
+})
+
 // ── the guards are wired, not merely written ─────────────────────────────────────
 //
 // Every assertion above is pure, and every one of them would stay green if the call site
@@ -382,4 +512,57 @@ test('both agent-registration doors run the per-owner quota, not just one', () =
       `${file} must run the per-owner agent quota before it creates an agent`,
     )
   }
+})
+
+test('every registration door reads the ceiling at the account tier, so none keeps its own', () => {
+  // The point of a parametric ceiling is one rule at two heights. A door that called
+  // agentQuotaComplaint without a tier would silently hold an allowlisted operator to a
+  // person's ceiling, which is the drift this whole shape exists to prevent.
+  for (const file of ['http/agent-routes.ts', 'http/marketplace-routes.ts']) {
+    const source = srcFile(file)
+    assert.ok(source.includes('accountTier('), `${file} must resolve the account tier`)
+    assert.ok(
+      source.includes('agentQuotaComplaint(') && /agentQuotaComplaint\([\s\S]{0,200}?,\s*tier\)/.test(source),
+      `${file} must pass the tier into the quota rule, not call it bare`,
+    )
+  }
+})
+
+test('the bulk door reuses the single door rules rather than inventing its own', () => {
+  const source = srcFile('http/marketplace-routes.ts')
+  const from = source.indexOf("'/api/v1/agents/register/batch'")
+  assert.ok(from > 0, 'the bulk registration route must still be in marketplace-routes.ts')
+  const body = source.slice(from)
+  // The size bound, the same per-owner ceiling, and the same row ledger. A second rule at
+  // this door would make the batch a way around the first one.
+  assert.ok(body.includes('batchRegisterComplaint('), 'the batch must bound its own size')
+  assert.ok(body.includes('agentQuotaComplaint('), 'the batch must run the same per-owner quota')
+  assert.ok(body.includes('chargeAgentCreate('), 'the batch must charge the same row budget the single doors charge')
+  assert.ok(
+    body.indexOf('agentQuotaComplaint(') < body.indexOf('registerExternalAgent('),
+    'the checks have to run BEFORE the row is written, or they are decoration',
+  )
+})
+
+test('the single registration doors charge the same row ledger the batch charges', () => {
+  // Counting requests is only a limit while one request is one row. If the single doors
+  // did not charge the row ledger, the batch would have an allowance all of its own.
+  for (const file of ['http/agent-routes.ts', 'http/marketplace-routes.ts']) {
+    assert.ok(
+      srcFile(file).includes('chargeAgentCreate('),
+      `${file} must charge the shared per-account row budget when it registers an agent`,
+    )
+  }
+})
+
+test('the feedback route runs the spam floor before it writes the row', () => {
+  const source = srcFile('http/marketplace-routes.ts')
+  const from = source.indexOf("req.method === 'POST' && url.pathname === '/api/marketplace/feedback'")
+  assert.ok(from > 0, 'the feedback POST must still be in marketplace-routes.ts')
+  const body = source.slice(from, source.indexOf("'/api/marketplace/semantic-search'"))
+  assert.ok(body.includes('feedbackComplaint('), 'the feedback POST must run the per-rater floor')
+  assert.ok(
+    body.indexOf('feedbackComplaint(') < body.indexOf('addAgentFeedback('),
+    'the floor has to run BEFORE the row is written, or it is decoration',
+  )
 })
