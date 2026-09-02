@@ -181,7 +181,11 @@ real settlement - the on-chain proof of the "fee per settlement" model.
 ### Arc testnet
 
 - **Showcase agent "Meridian"** - ERC-8004 id **#849980**, KYA attested on-chain, policy vault,
-  reputation **539** from 3 real settlements. Anchor tx:
+  reputation from **3 real settlements**. The score is recency-weighted, so it decays as those
+  settlements age and any figure pinned in prose goes stale within days: read the live one from
+  [`/api/agents/reputation?agentId=849980`](https://a-identity-backend.onrender.com/api/agents/reputation?agentId=849980),
+  which also reports `settledOnchain` (3, and fixed) next to `settledEffective` (the decayed
+  weight those same settlements still carry). Anchor tx:
   [`0x506b125f…`](https://testnet.arcscan.app/tx/0x506b125f3a0481667e3a00dcb86f48cbcaa35c643af963365e9389b06a8f8e54) ·
   KYA attestation: [`0x758ddbfa…`](https://testnet.arcscan.app/tx/0x758ddbfad38daeb772a37deb07e65339f13aeb393899fc7e1d2689c95adf0dad)
 - **Completed ERC-8183 escrow job #155504** - full lifecycle settled on Arc.

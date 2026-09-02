@@ -240,13 +240,82 @@ test('the pubnet release record and the pubnet provenance entry agree', () => {
   assertReleaseMatchesProvenance('soroban/releases/pubnet-v0.1.0.json', 'stellar')
 })
 
-/** A caveat that stopped being true is worse than one that was never written. */
-test('the Stellar release record does not still say the x402 rail is unbuilt', () => {
-  const release = JSON.parse(
-    readFileSync(repoFile('soroban/releases/testnet-v0.1.0.json'), 'utf8'),
-  ) as { caveats: string[] }
-  const stale = release.caveats.find((c) => /^No x402 rail settles on Stellar yet/.test(c))
-  assert.equal(stale, undefined, 'that caveat was superseded on 2026-08-15; it must read as history, not as current')
+/**
+ * Every Stellar release record, paired with the provenance entry it must not contradict.
+ *
+ * Both, not just testnet's. The two guards below read this list rather than a filename,
+ * because the previous version of the first one hardcoded testnet's path and the pubnet
+ * record was therefore never opened by anything.
+ */
+const STELLAR_RELEASES = [
+  { file: 'soroban/releases/testnet-v0.1.0.json', chain: 'stellar-testnet' },
+  { file: 'soroban/releases/pubnet-v0.1.0.json', chain: 'stellar' },
+] as const
+
+const releaseCaveats = (file: string) =>
+  (JSON.parse(readFileSync(repoFile(file), 'utf8')) as { caveats: string[] }).caveats
+
+/**
+ * A caveat that stopped being true is worse than one that was never written.
+ *
+ * The cheap net, and the reason it is worth keeping next to the ledger-driven one below:
+ * a release record may not deny the x402 rail in the PRESENT tense, on either network.
+ * The subject is not matched at all, because matching it is what failed before. The old
+ * pattern was anchored `^No x402 rail settles on Stellar yet`, so the pubnet record's
+ * "No x402 rail settles on pubnet yet" would have slipped through on the word `pubnet`
+ * even if this test had been reading that file, which it was not. The verb is the tell:
+ * `settles` is a claim about now, `settled` inside a dated sentence is history.
+ */
+test('no Stellar release record denies the x402 rail in the present tense', () => {
+  for (const { file } of STELLAR_RELEASES) {
+    const stale = releaseCaveats(file).find((c) =>
+      /\bno x402 rail\s+(?:settles|sells|runs|exists)\b/i.test(c),
+    )
+    assert.equal(
+      stale,
+      undefined,
+      `${file} denies the x402 rail as if that were still current. Say WHEN it stopped ` +
+        `being true instead: a release record is what was true when it was cut.\n  ${stale}`,
+    )
+  }
+})
+
+/**
+ * The same rot, caught by contradiction rather than by vocabulary.
+ *
+ * Hunting a sentence only ever catches the sentence somebody already noticed. This asks
+ * the ledger: if the provenance entry for this network publishes an x402 SETTLEMENT, then
+ * a caveat on that network's release record may not say the rail is absent unless it also
+ * says when that stopped being true. A rephrasing this file has never seen still fails,
+ * as long as it denies a rail the ledger has a receipt for.
+ *
+ * History is allowed and is the point. The testnet record has denied the rail since
+ * 2026-08-15 and passes, because it dates the denial and names what superseded it.
+ */
+test('a Stellar release caveat may not deny an x402 rail the ledger has settled', () => {
+  for (const { file, chain } of STELLAR_RELEASES) {
+    const entry = PROVENANCE.find((p) => p.chain === chain)
+    assert.ok(entry, `${chain} must have a provenance entry`)
+    const settled = entry.artifacts.filter(
+      (a) => a.kind === 'settlement' && /x402/i.test(`${a.label} ${a.note ?? ''}`),
+    )
+    if (settled.length === 0) continue
+    for (const caveat of releaseCaveats(file)) {
+      // The claim shape: the rail is denied. Tense-agnostic on purpose, because the
+      // question this test asks is not how it is phrased but whether it is bounded.
+      if (!/\bno x402 rail\b|\bx402 rail (?:is|was) (?:not|un)/i.test(caveat)) continue
+      const dated = /\b20\d{2}-\d{2}-\d{2}\b/.test(caveat)
+      const bounded = /\b(superseded|at the time of|no longer|until then|since)\b/i.test(caveat)
+      assert.ok(
+        dated && bounded,
+        `${file} carries a caveat denying the x402 rail, but the ${chain} provenance entry ` +
+          `publishes ${settled.length} x402 settlement(s), the first of them ` +
+          `"${settled[0].label}" (${settled[0].txHash}). Two sources in one repo cannot ` +
+          `disagree about whether a rail sells. Denying it is fine as HISTORY: date it and ` +
+          `name what superseded it.\n  ${caveat}`,
+      )
+    }
+  }
 })
 
 /**
