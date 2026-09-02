@@ -1,6 +1,5 @@
 import { useCallback, useEffect, useState } from 'react'
 import {
-  BadgeCheck,
   CheckCircle2,
   Circle,
   Hourglass,
@@ -13,6 +12,7 @@ import { pickPrimaryAgent } from '../../lib/pickAgent'
 import { CHAIN_BY_ID } from '../../lib/chains'
 import { fetchPlatformAgents, subscribePlatformAgents } from '../../lib/platformAgents'
 import { REPUTATION_LEVELS, levelIndexOf } from '../../lib/reputation-bands'
+import { kyaPresentation, type KyaStatus, type KyaTone } from '../../lib/kya'
 import { apiFetch } from '../../lib/api'
 import { useSelectedAgent } from '../../store/agent'
 import AgentAvatar from '../../components/AgentAvatar'
@@ -38,12 +38,25 @@ const STAGES: { key: Stage; label: string; desc: string }[] = [
  *  when the signed-in account has no agent of its own yet. Resolved live on-chain. */
 const DEMO_AGENT_ID = 'eip155:5042002:8004/849980'
 
+/**
+ * The KYA chip's paint on a themed card. The label, glyph and tone come from lib/kya,
+ * shared with the profile hero; this table only says which Badge variant carries the
+ * tone here, where the raw semantic tokens are readable in both themes.
+ */
+const KYA_BADGE: Record<KyaTone, 'success' | 'neutral' | 'danger'> = {
+  ok: 'success',
+  neutral: 'neutral',
+  danger: 'danger',
+}
+
 /** The subset of a real platform agent the identity card renders. */
 type RealAgent = {
   id: string
   name: string
   category: string
-  kya: 'unverified' | 'verified'
+  /** All three backend states, revoked included: narrowing this to two is what let a
+   *  revoked attestation render as a neutral "pending" chip. */
+  kya: KyaStatus
   onchain: 'queued' | 'registered'
   onchainAgentId?: string
   walletAddress: string | null
@@ -144,7 +157,9 @@ export default function AgentId() {
     ? `ERC-8004 #${realAgent.onchainAgentId}`
     : realAgent?.id ?? liveAgent?.agentId ?? '-'
   const category = realAgent?.category ?? 'Trading / Finance'
-  const kyaVerified = realAgent ? realAgent.kya === 'verified' : false
+  // One read of the KYA state, shared with the marketplace profile hero, so verified,
+  // pending and revoked each get their own word, glyph and tone on both surfaces.
+  const kya = kyaPresentation(realAgent?.kya)
   const registeredLabel = realAgent?.createdAt
     ? new Date(realAgent.createdAt).toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' })
     : liveAgent?.registeredAt ?? '-'
@@ -213,15 +228,15 @@ export default function AgentId() {
                 seed={realAgent?.onchainAgentId || realAgent?.id || 'sample'}
                 category={category}
                 size={52}
-                verdict={kyaVerified ? 'allow' : 'warn'}
+                verdict={kya.verdict}
                 src={realAgent?.logoUrl}
               />
               <div className="min-w-0">
                 <div className="flex flex-wrap items-center gap-2">
                   <h3 className="text-xl font-bold tracking-tight text-foreground">{agentName}</h3>
-                  <Badge variant={kyaVerified ? 'success' : 'warning'}>
-                    {kyaVerified ? <BadgeCheck size={12} /> : <ShieldQuestion size={12} />}
-                    {kyaVerified ? 'KYA Verified' : 'KYA Pending'}
+                  <Badge variant={KYA_BADGE[kya.tone]} title={kya.detail}>
+                    <kya.Icon size={12} />
+                    {kya.label}
                   </Badge>
                 </div>
                 {realChecked ? (
@@ -283,7 +298,7 @@ export default function AgentId() {
           agentId={realAgent.id}
           category={realAgent.category}
           logoUrl={realAgent.logoUrl}
-          verdict={kyaVerified ? 'allow' : 'warn'}
+          verdict={kya.verdict}
           onChanged={() => loadAgents({ force: true, select: realAgent.id })}
         />
       )}

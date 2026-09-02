@@ -15,8 +15,9 @@
  * calculate" popover is absolute inside calcRef and deliberately not portaled.
  */
 import type { Dispatch, ReactNode, RefObject, SetStateAction } from 'react'
-import { BadgeCheck, Check, Copy, ExternalLink, Heart, Info, ShieldQuestion, Star } from 'lucide-react'
+import { Check, Copy, ExternalLink, Heart, Info, Star } from 'lucide-react'
 import type { Chain } from '../../../lib/chains'
+import { kyaPresentation, type KyaTone } from '../../../lib/kya'
 import AgentAvatar from '../../AgentAvatar'
 import ChainLogo from '../ChainLogo'
 import { TagRow } from '../marketplace/AgentCardChrome'
@@ -60,6 +61,18 @@ function Metric({ label, children }: { label: string; children: ReactNode }) {
 
 const Divider = () => <span className="hidden h-8 w-px shrink-0 bg-white/15 sm:block" aria-hidden="true" />
 
+/**
+ * The KYA chip's paint on this hero. The ground here is theme-FIXED dark, so the raw
+ * ok/danger tokens (which are dark in the light theme) would sink into it; the
+ * .cn-pf2-chip-* rules mix the same semantic tokens toward white. The label, glyph and
+ * tone themselves come from lib/kya, so this table only answers "which paint".
+ */
+const KYA_CHIP: Record<KyaTone, string> = {
+  ok: 'cn-pf2-chip-ok',
+  neutral: 'bg-white/10 text-white/70',
+  danger: 'cn-pf2-chip-danger',
+}
+
 export default function ProfileHero({
   agent,
   heroTint,
@@ -84,6 +97,7 @@ export default function ProfileHero({
 }: Props) {
   const price = cheapestService(agent)
   const serviceCount = agent.services?.length ?? 0
+  const kya = kyaPresentation(agent.kya)
   return (
     <div
       className="cn-pf2-hero relative mt-6 rounded-3xl border border-white/10 p-6 text-white shadow-xl sm:p-7"
@@ -103,15 +117,14 @@ export default function ProfileHero({
         <div className="flex items-center gap-2 text-[10px] font-bold uppercase tracking-[0.2em] text-white/55">
           A-Identity · Agent Profile
         </div>
-        {agent.kya === 'verified' ? (
-          <span className="cn-pf2-chip-ok inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-[11px] font-bold">
-            <BadgeCheck size={12} /> KYA Verified
-          </span>
-        ) : (
-          <span className="inline-flex items-center gap-1.5 rounded-full bg-white/10 px-3 py-1 text-[11px] font-bold text-white/70">
-            <ShieldQuestion size={12} /> KYA Pending
-          </span>
-        )}
+        {/* Three states, three chips. A revoked attestation is an incident, so it must
+            never borrow the neutral, hopeful wording that "pending" gets. */}
+        <span
+          className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-[11px] font-bold ${KYA_CHIP[kya.tone]}`}
+          title={kya.detail}
+        >
+          <kya.Icon size={12} /> {kya.label}
+        </span>
       </div>
 
       {/* Identity and numbers on the left, the one call to action on the right. */}
@@ -123,7 +136,7 @@ export default function ProfileHero({
                 seed={agent.onchainAgentId || agent.id}
                 category={agent.category}
                 size={72}
-                verdict={agent.kya === 'verified' ? 'allow' : 'warn'}
+                verdict={kya.verdict}
                 src={agent.logoUrl}
                 className={CIRCLE_MARK}
               />
