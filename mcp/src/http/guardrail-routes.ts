@@ -12,6 +12,10 @@ import {
 } from '../platform.js'
 import { isSafePublicHttpUrl } from '../erc8004.js'
 import { renderBadgeSvg } from '../policy/index.js'
+import {
+  parseExplorerAgentUrl, resolveAgentManifestUrl, describeOwnership,
+  type ResolvedAgentManifest, type OwnershipNote,
+} from '../chains/explorer-agent-url.js'
 import { denyRead, errStatus, readBody, sendJson, validAmount, type RouteCtx } from './shared.js'
 
 /**
@@ -59,6 +63,17 @@ export function describeNonJsonManifest(manifestUrl: string, contentType: string
   return shown
     ? `the URL returned ${shown}, which is not parseable JSON`
     : 'the URL did not return valid JSON'
+}
+
+/** What quick register resolved off chain, plus what that does and does not claim. Rides
+ *  on BOTH the success and the failure bodies so the UI can always say where the URL it
+ *  used came from, rather than the resolution being a silent rewrite of the caller's input. */
+type ResolvedManifestSource = ResolvedAgentManifest & { ownership: OwnershipNote }
+
+/** A tokenURI is agent-controlled and can be a multi-kilobyte inline data: URI, so an
+ *  error message quotes the head of it instead of shipping the whole thing back. */
+function shortUrl(u: string): string {
+  return u.length > 120 ? `${u.slice(0, 120)}...` : u
 }
 
 export async function handleGuardrailRoutes(ctx: RouteCtx): Promise<boolean> {
@@ -129,9 +144,38 @@ export async function handleGuardrailRoutes(ctx: RouteCtx): Promise<boolean> {
   if (req.method === 'POST' && url.pathname === '/api/agents/register-url') {
     const body = (await readBody(req).catch(() => null)) as { url?: string } | null
     if (!body?.url || typeof body.url !== 'string') { sendJson(res, 400, { error: 'url required' }); return true }
-    const manifestUrl = body.url.trim()
+    const pasted = body.url.trim()
+
+    // An explorer agent page is not a mistake we can only complain about. The URL names a
+    // chain and a token id, and the manifest URL people are being asked for IS a value we
+    // can read: tokenURI(tokenId) on that chain's ERC-8004 identity registry. Try that
+    // first; anything unrecognised falls through to the hint table unchanged.
+    //
+    // Resolving is never silent. `resolvedFrom` rides on every reply from here on, so the
+    // caller sees which chain, which token, which tokenURI, and - because registering here
+    // creates OUR record with the caller as owner - what that does not claim on chain.
+    let resolvedFrom: ResolvedManifestSource | null = null
+    const link = parseExplorerAgentUrl(pasted)
+    if (link) {
+      const r = await resolveAgentManifestUrl(link)
+      if ('error' in r) { sendJson(res, 502, { error: `manifest fetch failed: ${r.error}` }); return true }
+      resolvedFrom = { ...r, ownership: describeOwnership(r.onchainOwner, callerId, r.tokenId, r.chainName) }
+    }
+    const manifestUrl = resolvedFrom?.tokenURI ?? pasted
+    /** Reply shape shared by every failure below, so the resolution is visible even when
+     *  the URL the chain handed us turns out to be unusable. */
+    const fail = (status: number, error: string) =>
+      sendJson(res, status, { error, ...(resolvedFrom ? { resolvedFrom } : {}) })
+    // What the chain said, named in the failure messages: the caller must be able to tell
+    // "you pasted a bad URL" apart from "the URL on chain is bad".
+    const onchain = resolvedFrom
+      ? `agent #${resolvedFrom.tokenId} on ${resolvedFrom.chainName} points its tokenURI at ${shortUrl(manifestUrl)}, and `
+      : ''
+
     if (!isSafePublicHttpUrl(manifestUrl)) {
-      sendJson(res, 400, { error: 'url must be a public http(s) URL; localhost, private ranges, and internal hosts are refused' })
+      fail(400, resolvedFrom
+        ? `manifest fetch failed: ${onchain}that is not a public http(s) URL we can fetch (data: URIs, localhost, private ranges, and internal hosts are refused)`
+        : 'url must be a public http(s) URL; localhost, private ranges, and internal hosts are refused')
       return true
     }
     let manifest: unknown
@@ -139,27 +183,28 @@ export async function handleGuardrailRoutes(ctx: RouteCtx): Promise<boolean> {
     let contentType = ''
     try {
       const upstream = await fetch(manifestUrl, { signal: AbortSignal.timeout(10_000), redirect: 'error' })
-      if (!upstream.ok) { sendJson(res, 502, { error: `manifest fetch failed: upstream answered HTTP ${upstream.status}` }); return true }
+      if (!upstream.ok) { fail(502, `manifest fetch failed: ${onchain}upstream answered HTTP ${upstream.status}`); return true }
       contentType = upstream.headers.get('content-type') ?? ''
       fetched = await upstream.text()
       // Same reasoning as MAX_BODY_BYTES: a manifest is a small JSON document, and anything
       // bigger would balloon the single persisted state blob when its fields are stored.
-      if (fetched.length > 200_000) { sendJson(res, 400, { error: 'manifest too large (200KB max)' }); return true }
+      if (fetched.length > 200_000) { fail(400, 'manifest too large (200KB max)'); return true }
       manifest = JSON.parse(fetched)
     } catch (e) {
       // "the URL did not return valid JSON" told the caller nothing they could act on.
       // The overwhelmingly common mistake is pasting an explorer PAGE (8004scan, a block
       // explorer, a GitHub blob) rather than the raw manifest, and every one of those
-      // answers with HTML. Name what came back and what to paste instead.
-      sendJson(res, e instanceof SyntaxError ? 400 : 502, {
-        error: e instanceof SyntaxError
-          ? `manifest fetch failed: ${describeNonJsonManifest(manifestUrl, contentType, fetched)}`
-          : 'manifest fetch failed: the URL did not answer within 10s (redirects are not followed)',
-      })
+      // answers with HTML. Name what came back and what to paste instead. A resolved
+      // tokenURI goes through exactly the same check: the chain can point at HTML too.
+      fail(e instanceof SyntaxError ? 400 : 502,
+        e instanceof SyntaxError
+          ? `manifest fetch failed: ${onchain}${describeNonJsonManifest(manifestUrl, contentType, fetched)}`
+          : `manifest fetch failed: ${onchain}the URL did not answer within 10s (redirects are not followed)`)
       return true
     }
     const r = registerAgentFromManifest(manifest as never, callerId)
-    sendJson(res, 'error' in r ? errStatus(r.error) : 201, r)
+    if ('error' in r) { fail(errStatus(r.error), r.error); return true }
+    sendJson(res, 201, resolvedFrom ? { ...r, resolvedFrom } : r)
     return true
   }
   // The owner's own registration + badge view.
