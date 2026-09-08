@@ -387,8 +387,9 @@ export default function Architecture() {
                   A-Identity Trust Oracle
                 </h3>
                 <p className="mt-2 max-w-sm text-sm leading-relaxed text-foreground/55">
-                  The identity layer, sold as six pay-per-call tools over x402 on X Layer
-                  mainnet. Every number is real and verifiable on-chain.
+                  The identity layer, exposed as six pay-per-call tools over x402 on X Layer
+                  mainnet, so any agent can compose a trust check into its own flow. Every
+                  number is real and verifiable on-chain.
                 </p>
                 <Link to="/explorer" className="mt-6 inline-flex items-center gap-2 rounded-lg bg-accent px-4 py-2.5 text-sm font-semibold text-white transition hover:opacity-90">
                   Open the Trust Explorer <ArrowRight size={15} />

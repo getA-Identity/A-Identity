@@ -95,7 +95,7 @@ const TOOLS: WebMcpTool[] = [
   {
     name: 'get_settlement_proof',
     description:
-      'Verifiable proof that A-Identity has real paying users: every x402 settlement it has taken, with the transaction hash for each. Use this to check the revenue claims rather than believing them.',
+      'Every x402 settlement A-Identity has taken, with the transaction hash for each. Use it to verify that the payment rail works end to end and composes with the identity layer; the amounts are sub-cent by design, so this is proof of infrastructure, not a revenue figure.',
     inputSchema: { type: 'object', properties: {} },
     execute: async () => {
       const proof = (await readJson(`${ASP_BASE}/proof`)) as Record<string, unknown>
@@ -138,7 +138,7 @@ const TOOLS: WebMcpTool[] = [
         ],
         status: {
           arc: 'Circle Arc is a public testnet. Real contracts and transactions, test money.',
-          revenue: 'Live on OKX.AI as agent #6271 with real settlements on X Layer mainnet.',
+          settlement: 'Live on OKX.AI as agent #6271 with real x402 settlements on X Layer mainnet, published as proof the rail works rather than as revenue.',
         },
         documents: {
           summary: 'https://a-identity.xyz/llms.txt',

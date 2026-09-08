@@ -239,9 +239,9 @@ export default function TractionSim() {
             <RowLabel>x402 settlements, two mainnets</RowLabel>
             <div className="mt-3 grid grid-cols-2 gap-3 sm:grid-cols-4">
               <Stat label="X Layer settled" value={<Value feed={xlayer} of={(d) => count(d.settlements)} />} />
-              <Stat label="X Layer taken" value={<Value feed={xlayer} of={(d) => usd(d.usd, 3)} />} />
+              <Stat label="X Layer USD settled" value={<Value feed={xlayer} of={(d) => usd(d.usd, 3)} />} />
               <Stat label="Celo settled" value={<Value feed={celo} of={(d) => count(d.totalSettlements)} />} />
-              <Stat label="Celo taken" value={<Value feed={celo} of={(d) => usd(d.totalUsd, 3)} />} />
+              <Stat label="Celo USD settled" value={<Value feed={celo} of={(d) => usd(d.totalUsd, 3)} />} />
             </div>
             <p className="mt-3 text-xs text-foreground/60">
               Live from <Source href={XLAYER_PROOF_JSON}>/proof.json</Source> on X Layer mainnet and{' '}

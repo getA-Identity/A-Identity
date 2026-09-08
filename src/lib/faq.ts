@@ -107,6 +107,10 @@ const GROUPS: Group[] = [
         bullets: [`Who is paying`, `Who is receiving`, `Whether the amount is allowed`, `Whether approval is needed`],
       },
       {
+        q: `Does A-Identity make money from x402?`,
+        a: `Not in any amount that matters, and we do not present it that way. The settlements on our proof pages are fractions of a cent each. They are published as evidence that an open payment rail works end to end and composes with an identity layer, which is the thing we are building. Across the market, x402 volume is growing while revenue stays small, so we treat it as infrastructure to build on rather than as a business line.`,
+      },
+      {
         q: `What does "Web2 trust, Web3 rails" mean?`,
         a: `The product should feel simple and familiar. Behind the interface, blockchain systems handle payments and settlement. Users see clear rules. The infrastructure works in the background.`,
       },

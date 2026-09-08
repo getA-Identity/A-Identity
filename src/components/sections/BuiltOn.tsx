@@ -134,7 +134,7 @@ const RAILS: Rail[] = [
     tileBg: '#FFDA00',
     color: '#FFDA00',
     role: 'Where the multichain promise was kept first.',
-    detail: 'Live on pubnet: the Soroban spend vault holds real USDC under a 1 USDC daily cap, and the Soroban x402 rail sells on both Stellar networks with the buyer signing an authorization entry and paying no fee.',
+    detail: 'Live on pubnet: the Soroban spend vault holds real USDC under a 1 USDC daily cap, and the Soroban x402 rail settles on both Stellar networks with the buyer signing an authorization entry and paying no fee.',
     chain: 'stellar',
   },
   {
@@ -146,7 +146,7 @@ const RAILS: Rail[] = [
     tileBg: '#ffffff',
     color: '#8C929C',
     role: 'Where agentic commerce pays gasless.',
-    detail: 'Live on mainnet the day it shipped: all four trust tools sell over x402 v2 through the GoPlausible facilitator, the buyer signs a fee-zero transfer inside a pooled-fee atomic group, and the AgentSpendPolicy vault holds real USDC under on-chain caps as its third implementation.',
+    detail: 'Live on mainnet the day it shipped: all four trust tools answer over x402 v2 through the GoPlausible facilitator, the buyer signs a fee-zero transfer inside a pooled-fee atomic group, and the AgentSpendPolicy vault holds real USDC under on-chain caps as its third implementation.',
     chain: 'algorand',
   },
   {
@@ -204,7 +204,7 @@ const RAILS: Rail[] = [
     tileBg: '#FCFF52',
     color: '#FCFF52',
     role: 'Where agents pay for trust in dollars.',
-    detail: 'ERC-8004 agent #9759 lives on mainnet and the four trust tools sell per-call over the first-party x402 facilitator, settled in native USDC.',
+    detail: 'ERC-8004 agent #9759 lives on mainnet and the four trust tools answer per-call over the first-party x402 facilitator, settled in native USDC.',
     chain: 'celo',
   },
   {

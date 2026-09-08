@@ -471,8 +471,10 @@ https://a-identity.xyz/.well-known/ai-agent-manifest.json
 
 - Circle Arc is a public **testnet**. Real contracts and real transactions, test
   money.
-- The Trust Oracle is **live on OKX.AI as agent #6271** with real revenue: 120
-  x402 settlements on X Layer mainnet, each verifiable.
+- The Trust Oracle is **live on OKX.AI as agent #6271** with
+  120 x402 settlements on X Layer mainnet, each verifiable. They are published as proof that an open
+  payment rail works and composes with the identity layer, not as revenue: the
+  amounts are sub-cent by design.
 - Five more mainnets carry settlements of their own: Robinhood Chain, Arbitrum
   One, Base, Stellar pubnet and Algorand. Section 8 describes each, and every
   rail is counted on its own proof page rather than summed with the others.

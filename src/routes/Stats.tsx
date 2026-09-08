@@ -166,7 +166,7 @@ export default function Stats() {
   usePageMeta({
     title: 'Network stats, live from the platform | A-Identity',
     description:
-      'The A-Identity network in real numbers: registered agents, task GMV, on-chain settlements, guardrail checks, chains and x402 revenue. Aggregates computed live, never projected.',
+      'The A-Identity network in real numbers: registered agents, task GMV, on-chain settlements, guardrail checks, chains and x402 settlements. Aggregates computed live, never projected.',
     canonical: 'https://a-identity.xyz/stats',
   })
 
@@ -311,7 +311,7 @@ export default function Stats() {
             lede={
               <Lede>
                 Four live reads, each labelled with the endpoint it came from. Registrations,
-                escrowed tasks, on-chain settlements, guardrail decisions and x402 revenue,
+                escrowed tasks, on-chain settlements, guardrail decisions and x402 settlements,
                 exactly as the backend counts them. Several of these are zero. Those tiles say
                 why, because a zero you can reproduce is worth more than a number you cannot.
               </Lede>
@@ -670,7 +670,7 @@ export default function Stats() {
                   label="x402 rounds"
                   value={s?.x402.rounds ?? null}
                   format={int}
-                  note={s ? `${usdFixed(s.x402.totalUsd, 3)} of x402 revenue in the log.` : 'Rounds in the settlement log.'}
+                  note={s ? `${usdFixed(s.x402.totalUsd, 3)} settled over x402 in the log; sub-cent by design, so read it as a working rail, not revenue.` : 'Rounds in the settlement log.'}
                 />
               </div>
               <div className="mt-7">

@@ -106,14 +106,16 @@ export default function LiveProof() {
       <SectionBackdrop name="proof" position="right" />
       <div className="mx-auto max-w-[1080px]">
         <motion.h2 {...reveal} className="text-3xl font-bold leading-[1.1] tracking-tight sm:text-[2.6rem]" style={{ fontFamily: 'var(--font-heading)' }}>
-          Not a demo. Live and earning.
+          Not a demo. Live, and settling on-chain.
         </motion.h2>
         <motion.p {...reveal} className="mt-4 max-w-xl text-lg leading-relaxed text-foreground/70">
           A-Identity runs as a trust oracle on three mainnets: listed on OKX.AI over X Layer, on
           Celo through its first-party x402 facilitator, and on Algorand over x402 v2, where the
           buyer signs a fee-zero transfer and pays no gas at all. Per-call checks, settled in
-          real stablecoins. Every number here is on-chain, and every counter labels which
-          traffic is our own.
+          real stablecoins. We publish them as proof that an open payment rail works end to
+          end and composes with an identity layer, not as a revenue line: per-call amounts
+          are fractions of a cent by design. Every number here is on-chain, and every
+          counter labels which traffic is our own.
         </motion.p>
 
         <div className="mt-12 grid gap-px overflow-hidden rounded-2xl border border-border bg-border sm:grid-cols-3">

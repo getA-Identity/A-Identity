@@ -198,7 +198,7 @@ sequenceDiagram
 **Live endpoint:** `https://a-identity-asp.onrender.com` - `POST /tools/<name>` (paid),
 or free `GET /proof`, `GET /methodology`, `GET /health`.
 
-**Real on-chain revenue (not a mock):** 120 real x402 settlements on X Layer mainnet - all
+**Real on-chain settlements (not a mock, and not revenue: sub-cent amounts by design):** 120 real x402 settlements on X Layer mainnet - all
 listed at `GET /proof`. Four representative ones, each independently verifiable on OKLink:
 
 | Tool | Settlement tx |

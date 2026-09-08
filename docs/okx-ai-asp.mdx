@@ -83,7 +83,7 @@ curl -i -X POST https://a-identity-asp.onrender.com/tools/verify_agent \
 # HTTP/2 402 ... PAYMENT-REQUIRED: <base64 x402 challenge on eip155:196, USD₮0>
 ```
 
-## Proof: real on-chain revenue
+## Proof: real on-chain settlements
 
 Not a mock. **120 real x402 settlements** on X Layer mainnet, each an independently
 verifiable USD₮0 transfer to our recipient, are listed at
@@ -106,4 +106,4 @@ Agents discover these paid services automatically via the
 | `GET /health` | liveness + the service card (name, tools, prices) |
 | `GET /proof` | verifiable proof (HTML in a browser, JSON for agents) |
 | `GET /methodology` | the deterministic reputation + risk formulas |
-| `GET /stats` | live on-chain revenue (payTo's current USD₮0 balance) |
+| `GET /stats` | live on-chain settlement total (payTo's current USD₮0 balance) |
