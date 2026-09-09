@@ -7,7 +7,7 @@ import WalletModal from '../../auth/WalletModal'
 import { apiFetch, readJson } from '../../../lib/api'
 import { BACKEND_UNREACHABLE } from '../../../lib/mcpBase'
 import { CHAIN_BY_ID, CHAINS, type Chain } from '../../../lib/chains'
-import { chainsFor, ECOSYSTEM_LABEL, shortAddress, type Ecosystem } from '../../../lib/wallet/types'
+import { networkMarks, shortAddress, type Ecosystem } from '../../../lib/wallet/types'
 import { authHeaders, type LinkedWalletRow } from '../../../store/auth'
 import { useWallets } from '../../../store/wallets'
 
@@ -151,8 +151,7 @@ export default function LinkedWallets({ isGuest }: { isGuest: boolean }) {
         <div>
           <h3 className="text-sm font-bold text-foreground/80">Wallets</h3>
           <p className="mt-0.5 text-xs text-foreground/55">
-            Every wallet this account has proven control of, on any chain family the product settles on: EVM, Stellar and Algorand.
-            Linking signs one message; nothing is sent and no key ever leaves your wallet.
+            Every wallet this account has proven control of. Linking signs one message; nothing is sent and no key leaves your wallet.
           </p>
         </div>
         <button
@@ -181,25 +180,38 @@ export default function LinkedWallets({ isGuest }: { isGuest: boolean }) {
           <p className="text-xs text-foreground/45">No wallet on this account yet. Link one to be reachable on its chains.</p>
         )}
         {rows.map((r) => {
-          const chains = chainsFor(r.ecosystem, CHAINS)
-          const live = connected[r.ecosystem]?.address === r.address
+          const marks = networkMarks(r.ecosystem, CHAINS)
+          const shown = marks.slice(0, 5)
+          const extra = marks.length - shown.length
+          const conn = connected[r.ecosystem]
+          const live = conn?.address === r.address
           const explorer = explorerFor(r.ecosystem, r.address)
           return (
             <div key={`${r.ecosystem}:${r.address}`} className="flex flex-wrap items-center gap-3 rounded-xl border border-border bg-background/40 px-3.5 py-3">
-              <Wallet size={18} className="shrink-0 text-foreground/50" />
+              <span className="grid h-9 w-9 shrink-0 place-items-center overflow-hidden rounded-xl border border-border bg-background/60">
+                {live && conn?.icon ? <img src={conn.icon} alt="" className="h-6 w-6 rounded-md object-contain" /> : <Wallet size={17} className="text-foreground/55" />}
+              </span>
               <div className="min-w-0 flex-1">
                 <div className="flex flex-wrap items-center gap-2">
                   <span className="font-mono text-sm font-semibold text-foreground">{shortAddress(r.address)}</span>
-                  <span className="rounded-full border border-border px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wider text-foreground/60">
-                    {ECOSYSTEM_LABEL[r.ecosystem]}
-                  </span>
-                  {live && <span className="text-[10px] font-semibold uppercase tracking-wider text-ok">connected now</span>}
+                  {live && (
+                    <span className="inline-flex items-center gap-1 text-[10px] font-semibold uppercase tracking-wider text-ok">
+                      <span className="h-1.5 w-1.5 rounded-full bg-ok" aria-hidden="true" /> connected
+                    </span>
+                  )}
                 </div>
-                <div className="mt-0.5 truncate text-xs text-foreground/50">
-                  {r.label}
-                  {chains.length > 0 && ` on ${chains.map((c) => c.shortName).join(', ')}`}
-                </div>
+                <div className="mt-0.5 truncate text-xs text-foreground/50">{r.label}</div>
               </div>
+              <span className="flex shrink-0 items-center" title={marks.map((c) => c.shortName).join(', ')} aria-label={`Works on ${marks.map((c) => c.shortName).join(', ')}`}>
+                {shown.map((c, i) => (
+                  <ChainLogo key={c.id} id={c.id} size={22} className={i > 0 ? '-ml-2 ring-2 ring-card' : 'ring-2 ring-card'} />
+                ))}
+                {extra > 0 && (
+                  <span className="-ml-2 grid h-[22px] w-[22px] place-items-center rounded-full border border-border bg-background text-[9px] font-bold text-foreground/60 ring-2 ring-card">
+                    +{extra}
+                  </span>
+                )}
+              </span>
               {explorer && (
                 <a href={explorer} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 text-xs font-semibold text-foreground/55 hover:text-foreground">
                   Explorer <ExternalLink size={12} />

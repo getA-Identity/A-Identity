@@ -13,8 +13,8 @@ import {
 } from '../../lib/wallets'
 import { connectStellar, listStellarWallets, type StellarWalletInfo } from '../../lib/stellar/kit'
 import { ALGORAND_WALLETS, connectAlgorand, type AlgorandWalletId } from '../../lib/algorand/wallet'
-import { CHAINS, type Chain } from '../../lib/chains'
-import { chainsFor, type Ecosystem, type WalletSigner } from '../../lib/wallet/types'
+import { CHAINS } from '../../lib/chains'
+import { networkMarks, type Ecosystem, type WalletSigner } from '../../lib/wallet/types'
 import { EASE_OUT_EXPO } from '../../lib/brand'
 import ChainLogo from '../app/ChainLogo'
 
@@ -285,21 +285,8 @@ type PickerRow = {
   connect: () => Promise<WalletSigner>
 }
 
-/** The networks a wallet family reaches, mainnets first, as marks on the row's right edge. */
-function networksFor(family: Ecosystem): Chain[] {
-  const sorted = chainsFor(family, CHAINS).sort((a, b) => Number(a.testnet) - Number(b.testnet))
-  // A testnet carries the same mark as its mainnet; one mark per network is enough here.
-  const seen = new Set<string>()
-  return sorted.filter((c) => {
-    const key = c.id.replace(/-(testnet|sepolia)$/, '')
-    if (seen.has(key)) return false
-    seen.add(key)
-    return true
-  })
-}
-
 function WalletRow({ row, index, busy, onPick }: { row: PickerRow; index: number; busy: string | null; onPick: (r: PickerRow) => void }) {
-  const networks = networksFor(row.family)
+  const networks = networkMarks(row.family, CHAINS)
   const shown = networks.slice(0, 4)
   const extra = networks.length - shown.length
   const isBusy = busy === row.id

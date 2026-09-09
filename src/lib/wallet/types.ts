@@ -64,3 +64,19 @@ export function ecosystemOfAddress(address: string): Ecosystem | null {
   if (/^[A-Z2-7]{58}$/.test(a)) return 'algorand'
   return null
 }
+
+/**
+ * The networks a wallet family reaches, one mark per network: mainnets first, and a
+ * testnet dropped when its mainnet sibling carries the same mark. Used wherever a row
+ * shows chain logos instead of naming chains.
+ */
+export function networkMarks(ecosystem: Ecosystem, chains: readonly Chain[]): Chain[] {
+  const sorted = chainsFor(ecosystem, chains).sort((a, b) => Number(a.testnet) - Number(b.testnet))
+  const seen = new Set<string>()
+  return sorted.filter((c) => {
+    const key = c.id.replace(/-(testnet|sepolia)$/, '')
+    if (seen.has(key)) return false
+    seen.add(key)
+    return true
+  })
+}
