@@ -248,7 +248,15 @@ type PickerRow = {
 
 /** The networks a wallet family reaches, mainnets first, as marks on the row's right edge. */
 function networksFor(family: Ecosystem): Chain[] {
-  return chainsFor(family, CHAINS).sort((a, b) => Number(a.testnet) - Number(b.testnet))
+  const sorted = chainsFor(family, CHAINS).sort((a, b) => Number(a.testnet) - Number(b.testnet))
+  // A testnet carries the same mark as its mainnet; one mark per network is enough here.
+  const seen = new Set<string>()
+  return sorted.filter((c) => {
+    const key = c.id.replace(/-(testnet|sepolia)$/, '')
+    if (seen.has(key)) return false
+    seen.add(key)
+    return true
+  })
 }
 
 function WalletRow({ row, index, busy, onPick }: { row: PickerRow; index: number; busy: string | null; onPick: (r: PickerRow) => void }) {
