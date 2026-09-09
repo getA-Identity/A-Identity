@@ -461,7 +461,9 @@ test('X402_STELLAR_FACILITATOR=oz without a key does not silently fall back to u
   const r = await settleStellarPayment({
     chain: CHAIN, token: TOKEN, requirements: REQ, payload: payload(), limits: LIMITS,
     deps: baseDeps({
-      env: { X402_STELLAR_FACILITATOR: 'oz', X402_STELLAR_TESTNET_FEE_PAYER: 'SBAA3EOGVYIOBPZJZBNPQJ3F6VD3ZFTLGCLJ4X4WLQBRJBQBSY7AR4CE' },
+      // A real fee-payer key is present on purpose: the assertion is that OZ mode does NOT fall
+      // back to it. Generated per run so nothing seed-shaped sits in the source.
+      env: { X402_STELLAR_FACILITATOR: 'oz', X402_STELLAR_TESTNET_FEE_PAYER: Keypair.random().secret() },
       confirm: confirmed(),
     }),
   })

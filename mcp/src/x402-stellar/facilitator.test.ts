@@ -43,7 +43,9 @@ const TX = '3da74634e2b09b3e1c15c53a1a0e6d1c1e3f3b2a5d4c6e7f8a9b0c1d2e3f4a5b'
  * settle test see a rail with no fee payer. That is the checksum guard doing exactly what
  * it was added for, on me.
  */
-const FEE_PAYER = 'SCTDATUXOG52GBIVRAUPLJA23FJY5BM2CFCAQ7LGKI2552BWIZLW7P23'
+// Generated per run: a real StrKey with a valid checksum, and nothing seed-shaped in the
+// source for the secret scan to read as a leak.
+const FEE_PAYER = Keypair.random().secret()
 
 const ENV = {
   X402_STELLAR_NETWORKS: 'stellar:testnet',

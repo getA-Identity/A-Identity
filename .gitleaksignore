@@ -6,3 +6,10 @@
 # key (the checksum does not even validate) and was removed from the source in d930337,
 # but history keeps the line, and this scan reads history. The rule itself stays on.
 2123faec5cb1c91a9aab7b72801432a9933bec42:mcp/src/wallet-proof.test.ts:stellar-secret-seed:23
+
+# 2026-08-15, commits 4201dc1 and 167a26b: two x402-stellar test fixtures for the fee-payer
+# env var. One was a random, never-funded seed (its account exists on neither network,
+# checked 2026-09-10), the other fails the StrKey checksum and was never a key at all. Both
+# were replaced at the tip by keys generated when the tests run; history keeps the lines.
+4201dc1a7c5820078a1495042baea524acc0fb34:mcp/src/x402-stellar/facilitator.test.ts:stellar-secret-seed:46
+167a26b35e5a752507c813bce09410b755caa15d:mcp/src/x402-stellar/settle.test.ts:stellar-secret-seed:439
