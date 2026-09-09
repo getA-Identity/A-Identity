@@ -7,10 +7,9 @@
  * real payments. Each ecosystem proves control of an address the way its wallets can:
  *
  *  - EVM: personal_sign over the message, recovered with viem (unchanged from SIWE).
- *  - Stellar: SEP-43 signMessage, an ed25519 signature over the raw message bytes by the
- *    G... account key. Wallets disagree on the encoding of the returned signature
- *    (Freighter base64, the SEP text says hex), so both are accepted; the bytes are what
- *    is verified.
+ *  - Stellar: SEP-43 signMessage. Freighter signs per SEP-53 (SHA-256 of a fixed prefix
+ *    plus the message); other wallets sign the raw bytes. Both are accepted, and the
+ *    signature may arrive base64 or hex; the bytes are what is verified.
  *  - Algorand: no wallet-wide message-signing standard is deployed everywhere, so the
  *    proof is a signed, never-broadcast, zero-amount payment from the address to itself
  *    whose note carries the message. The signature is over the transaction bytes, by the
@@ -68,6 +67,9 @@ export type WalletProof = {
 
 const ED25519_SPKI_PREFIX = Buffer.from('302a300506032b6570032100', 'hex')
 
+/** SEP-53: the fixed prefix a Stellar wallet prepends before hashing and signing a message. */
+export const SEP53_PREFIX = 'Stellar Signed Message:\n'
+
 /** Verify a raw 64-byte ed25519 signature over `data` with a raw 32-byte public key. */
 export function ed25519Verify(publicKey: Uint8Array, data: Uint8Array, signature: Uint8Array): boolean {
   if (publicKey.length !== 32 || signature.length !== 64) return false
@@ -110,10 +112,15 @@ export async function verifyWalletProof(p: WalletProof): Promise<boolean> {
       const { StrKey } = await import('@stellar/stellar-sdk')
       const pub = Uint8Array.from(StrKey.decodeEd25519PublicKey(p.address))
       const msg = Buffer.from(p.message, 'utf8')
-      // SEP-43 signs the raw message bytes. Some wallets sign the SHA-256 of the message
-      // instead; that variant is accepted second so a compliant wallet is never penalised.
-      if (ed25519Verify(pub, msg, sig)) return true
+      // Three encodings are in the wild and all three are accepted, most standard first.
+      // SEP-53 (what Freighter signs): SHA-256 of "Stellar Signed Message:\n" + message.
+      // Then the bare SEP-43 reading, the raw message bytes; then SHA-256 of the raw bytes.
+      // Each is a signature by the same key over a deterministic function of the same
+      // message, so accepting all three loosens nothing about WHO signed.
       const { createHash } = await import('node:crypto')
+      const sep53 = createHash('sha256').update(Buffer.concat([Buffer.from(SEP53_PREFIX, 'utf8'), msg])).digest()
+      if (ed25519Verify(pub, sep53, sig)) return true
+      if (ed25519Verify(pub, msg, sig)) return true
       return ed25519Verify(pub, createHash('sha256').update(msg).digest(), sig)
     }
     if (p.ecosystem === 'algorand') {

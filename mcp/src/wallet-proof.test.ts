@@ -8,8 +8,9 @@ import { Keypair } from '@stellar/stellar-sdk'
 import algosdk from 'algosdk'
 import { privateKeyToAccount, generatePrivateKey } from 'viem/accounts'
 import {
-  walletEcosystemOf, normalizeWalletAddress, signInMessage, shortAddress, decodeSignature64, ed25519Verify, verifyWalletProof,
+  walletEcosystemOf, normalizeWalletAddress, signInMessage, shortAddress, decodeSignature64, ed25519Verify, verifyWalletProof, SEP53_PREFIX,
 } from './wallet-proof.js'
+import { createHash } from 'node:crypto'
 
 const EVM = '0x6A5F1b8e56A19D456b799C2fA00E513244F58Ce6'
 const STELLAR = 'GBMF7MDHLF6E5GWNCUJZKDBID5LCU5U5K7J26MRUJCM2FK7J7VZXTZZ3'
@@ -53,6 +54,16 @@ test('stellar: a SEP-43 signature over the raw message verifies, in base64 and i
   const sig = kp.sign(Buffer.from(message, 'utf8'))
   assert.equal(await verifyWalletProof({ ecosystem: 'stellar', address: kp.publicKey(), message, signature: sig.toString('base64') }), true)
   assert.equal(await verifyWalletProof({ ecosystem: 'stellar', address: kp.publicKey(), message, signature: sig.toString('hex') }), true)
+})
+
+test('stellar: a SEP-53 signature (what Freighter produces) verifies: sha256 of prefix + message', async () => {
+  const kp = Keypair.random()
+  const message = signInMessage(kp.publicKey(), 'nonce-53')
+  const hash = createHash('sha256').update(Buffer.concat([Buffer.from(SEP53_PREFIX, 'utf8'), Buffer.from(message, 'utf8')])).digest()
+  const sig = kp.sign(hash).toString('base64')
+  assert.equal(await verifyWalletProof({ ecosystem: 'stellar', address: kp.publicKey(), message, signature: sig }), true)
+  // The prefix is part of what was signed: the same signature over an unprefixed hash is not accepted for another message.
+  assert.equal(await verifyWalletProof({ ecosystem: 'stellar', address: kp.publicKey(), message: message + 'x', signature: sig }), false)
 })
 
 test('stellar: the wrong key, a changed message or garbage is refused', async () => {
