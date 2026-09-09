@@ -1,10 +1,12 @@
 import { useCallback, useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { CheckCircle2, ExternalLink, Link2, Loader2, Lock, Unlink, Wallet } from 'lucide-react'
+import ChainLogo from '../ChainLogo'
+import { ensureEvmChain, EVM_WALLET_CHAINS, getConnectedProvider, walletErrorText } from '../../../lib/wallets'
 import WalletModal from '../../auth/WalletModal'
 import { apiFetch, readJson } from '../../../lib/api'
 import { BACKEND_UNREACHABLE } from '../../../lib/mcpBase'
-import { CHAIN_BY_ID, CHAINS } from '../../../lib/chains'
+import { CHAIN_BY_ID, CHAINS, type Chain } from '../../../lib/chains'
 import { chainsFor, ECOSYSTEM_LABEL, shortAddress, type Ecosystem } from '../../../lib/wallet/types'
 import { authHeaders, type LinkedWalletRow } from '../../../store/auth'
 import { useWallets } from '../../../store/wallets'
@@ -42,6 +44,53 @@ export default function LinkedWallets({ isGuest }: { isGuest: boolean }) {
   const [note, setNote] = useState<string | null>(null)
   const [busy, setBusy] = useState<string | null>(null)
   const [pickerOpen, setPickerOpen] = useState(false)
+  /** The network the connected EVM wallet is on right now, read from the wallet itself. */
+  const [evmChainId, setEvmChainId] = useState<number | null>(null)
+  const [switching, setSwitching] = useState<string | null>(null)
+
+  const evmConnected = connected.evm?.address ?? null
+  useEffect(() => {
+    const eth = getConnectedProvider()
+    if (!evmConnected || !eth) {
+      setEvmChainId(null)
+      return
+    }
+    let alive = true
+    const read = () =>
+      eth.request({ method: 'eth_chainId' })
+        .then((hex) => alive && setEvmChainId(typeof hex === 'string' ? parseInt(hex, 16) : null))
+        .catch(() => alive && setEvmChainId(null))
+    void read()
+    // Wallets announce network changes; keep the chip honest when the person switches inside the extension.
+    const on = (eth as { on?: (ev: string, cb: (v: unknown) => void) => void }).on
+    const off = (eth as { removeListener?: (ev: string, cb: (v: unknown) => void) => void }).removeListener
+    const handler = () => void read()
+    on?.('chainChanged', handler)
+    return () => {
+      alive = false
+      off?.('chainChanged', handler)
+    }
+  }, [evmConnected])
+
+  const switchTo = async (chain: Chain) => {
+    const eth = getConnectedProvider()
+    if (!eth) {
+      setError('Connect the wallet in this tab first (Link a wallet), then switch its network from here.')
+      return
+    }
+    setSwitching(chain.id)
+    setError(null)
+    setNote(null)
+    try {
+      await ensureEvmChain(eth, chain)
+      setEvmChainId(chain.chainId)
+      setNote(`Wallet switched to ${chain.name}.`)
+    } catch (e) {
+      setError(walletErrorText(e, `switch to ${chain.name}`))
+    } finally {
+      setSwitching(null)
+    }
+  }
 
   const load = useCallback(async () => {
     try {
@@ -155,6 +204,33 @@ export default function LinkedWallets({ isGuest }: { isGuest: boolean }) {
                 <a href={explorer} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 text-xs font-semibold text-foreground/55 hover:text-foreground">
                   Explorer <ExternalLink size={12} />
                 </a>
+              )}
+              {r.ecosystem === 'evm' && live && (
+                <div className="flex w-full flex-wrap items-center gap-1.5 pl-[30px] pt-1">
+                  <span className="mr-1 text-[11px] text-foreground/45">
+                    {evmChainId != null
+                      ? `On ${EVM_WALLET_CHAINS.find((c) => c.chainId === evmChainId)?.shortName ?? `chain ${evmChainId}`}. Switch:`
+                      : 'Switch network:'}
+                  </span>
+                  {EVM_WALLET_CHAINS.filter((c) => !c.testnet || c.id === 'arc').map((c) => {
+                    const active = c.chainId === evmChainId
+                    return (
+                      <button
+                        key={c.id}
+                        type="button"
+                        onClick={() => switchTo(c)}
+                        disabled={switching !== null || active}
+                        title={active ? `${c.name} (current)` : `Switch the wallet to ${c.name}`}
+                        className={`inline-flex items-center gap-1.5 rounded-full border px-2 py-0.5 text-[11px] font-semibold transition-colors disabled:cursor-default ${
+                          active ? 'border-accent/50 bg-accent/10 text-foreground' : 'border-border text-foreground/60 hover:border-accent/40 hover:text-foreground'
+                        }`}
+                      >
+                        {switching === c.id ? <Loader2 size={11} className="animate-spin" /> : <ChainLogo id={c.id} size={14} />}
+                        {c.shortName}
+                      </button>
+                    )
+                  })}
+                </div>
               )}
               {!r.session && (
                 <button
