@@ -21,7 +21,9 @@ test('walletEcosystemOf: an address is recognised by its shape, or refused', () 
   assert.equal(walletEcosystemOf(STELLAR), 'stellar')
   assert.equal(walletEcosystemOf(ALGO.addr.toString()), 'algorand')
   assert.equal(walletEcosystemOf('#6271'), null)
-  assert.equal(walletEcosystemOf('SBMF7MDHLF6E5GWNCUJZKDBID5LCU5U5K7J26MRUJCM2FK7J7VZXTZZ3'), null) // a Stellar secret is not an address
+  // A Stellar SECRET seed (S...) is not an address. Built at runtime from the public key
+  // so no seed-shaped literal sits in the source, where the secret scan would (rightly) flag it.
+  assert.equal(walletEcosystemOf('S' + STELLAR.slice(1)), null)
   assert.equal(walletEcosystemOf(''), null)
 })
 
