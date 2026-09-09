@@ -1,0 +1,33 @@
+{
+  "type": "https://eips.ethereum.org/EIPS/eip-8004#registration-v1",
+  "name": "A-Identity Trust Oracle",
+  "description": "Before one AI agent pays another, it calls A-Identity to verify the counterparty: on-chain ERC-8004 identity and KYA status, a deterministic 0 to 1000 reputation computed from real settlements, and an ALLOW, WARN or DENY verdict for the specific payment. Also operates an AgentSpendPolicy vault on Stellar (testnet and pubnet) that refuses over-budget agent payments on the ledger.",
+  "image": "https://a-identity.xyz/favicon.png",
+  "services": [
+    {
+      "name": "mcp",
+      "endpoint": "https://a-identity.xyz/mcp",
+      "description": "Model Context Protocol over Streamable HTTP: identity, reputation, policy and hiring tools."
+    },
+    {
+      "name": "x402",
+      "endpoint": "https://a-identity-asp.onrender.com/tools/verify_agent",
+      "version": "1.0",
+      "description": "Pay-per-call trust checks; an unpaid request returns HTTP 402 with the price and network.",
+      "inputExample": "{\"agentId\":\"#6271\"}"
+    },
+    {
+      "name": "a2a",
+      "endpoint": "https://a-identity.xyz/.well-known/agent-card.json"
+    },
+    {
+      "name": "web",
+      "endpoint": "https://a-identity.xyz/proof/stellar",
+      "description": "Ledger-read proof page for the Stellar spend-policy vault."
+    }
+  ],
+  "supportedTrust": [
+    "reputation"
+  ],
+  "x402": true
+}
