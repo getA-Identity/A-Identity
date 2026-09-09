@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
-import { ArrowLeft, ChevronDown, QrCode, Wallet, X } from 'lucide-react'
+import { motion, AnimatePresence } from 'framer-motion'
+import { ChevronDown, Loader2, Lock, QrCode, Wallet, X } from 'lucide-react'
 import { useAuth } from '../../store/auth'
 import {
   connectWalletConnect,
@@ -12,16 +13,19 @@ import {
 } from '../../lib/wallets'
 import { connectStellar, listStellarWallets, type StellarWalletInfo } from '../../lib/stellar/kit'
 import { ALGORAND_WALLETS, connectAlgorand, type AlgorandWalletId } from '../../lib/algorand/wallet'
-import type { Ecosystem, WalletSigner } from '../../lib/wallet/types'
+import { CHAINS, type Chain } from '../../lib/chains'
+import { chainsFor, type Ecosystem, type WalletSigner } from '../../lib/wallet/types'
+import { EASE_OUT_EXPO } from '../../lib/brand'
+import ChainLogo from '../app/ChainLogo'
 
 /**
- * The wallet picker: one flat list, whatever chain family a wallet belongs to.
+ * The wallet picker: one list, every chain family.
  *
- * Wallets that are actually here come first (installed browser wallets, on any family),
- * then the phone options (WalletConnect, Pera, Defly), and everything the kit knows but
- * is not installed sits behind "More wallets". A small tag says which family a wallet is;
- * nothing else about chains is asked of the person, because the wallet already knows.
- * The same picker signs in and, in `link` mode, attaches one more wallet to an account.
+ * Each row is a wallet; on its right sit the marks of the networks that wallet reaches,
+ * which is the only chain information a person needs and the only one shown. Wallets
+ * found in this browser come first, phone wallets next, and everything the kit knows but
+ * is not installed waits behind "More wallets". The same picker signs in and, in `link`
+ * mode, attaches one more wallet to an account that is already signed in.
  */
 export default function WalletModal({
   open,
@@ -83,13 +87,11 @@ export default function WalletModal({
     return () => window.removeEventListener('keydown', onKey, true)
   }, [open, onClose])
 
-  type Row = { id: string; name: string; family: Ecosystem; icon?: string; hint?: string; installed: boolean; connect: () => Promise<WalletSigner> }
-
-  const rows = useMemo<Row[]>(() => {
-    const out: Row[] = []
+  const rows = useMemo<PickerRow[]>(() => {
+    const out: PickerRow[] = []
     for (const w of evmWallets) {
       out.push({
-        id: `evm:${w.id}`, name: w.name, family: 'evm', icon: w.icon, installed: true,
+        id: `evm:${w.id}`, name: w.name, family: 'evm', icon: w.icon, status: 'detected',
         connect: async () => {
           if (!w.provider) throw new Error('This wallet exposed no provider.')
           setConnectedProvider(w.provider)
@@ -99,15 +101,14 @@ export default function WalletModal({
     }
     for (const w of stellarWallets) {
       out.push({
-        id: `stellar:${w.id}`, name: w.name, family: 'stellar', icon: w.icon, installed: w.isAvailable,
-        // Availability is re-checked by the wallet module itself on connect, so a wallet
-        // that announced late still works from "More wallets".
+        id: `stellar:${w.id}`, name: w.name, family: 'stellar', icon: w.icon, status: w.isAvailable ? 'detected' : 'missing',
+        // The wallet module re-checks availability on connect, so a late announcer works.
         connect: () => connectStellar(w.id),
       })
     }
     if (walletConnectEnabled()) {
       out.push({
-        id: 'evm:walletconnect', name: 'WalletConnect', family: 'evm', hint: 'phone', installed: true,
+        id: 'evm:walletconnect', name: 'WalletConnect', family: 'evm', status: 'phone',
         connect: async () => {
           const provider = await connectWalletConnect()
           setConnectedProvider(provider)
@@ -117,19 +118,17 @@ export default function WalletModal({
     }
     for (const w of ALGORAND_WALLETS) {
       out.push({
-        id: `algorand:${w.id}`, name: w.name, family: 'algorand', hint: w.kind === 'mobile' ? 'phone' : 'extension', installed: w.kind === 'mobile',
+        id: `algorand:${w.id}`, name: w.name, family: 'algorand', status: w.kind === 'mobile' ? 'phone' : 'missing',
         connect: () => connectAlgorand(w.id as AlgorandWalletId),
       })
     }
     return out
   }, [evmWallets, stellarWallets])
 
-  if (!open) return null
+  const primary = rows.filter((r) => r.status !== 'missing')
+  const rest = rows.filter((r) => r.status === 'missing')
 
-  const primary = rows.filter((r) => r.installed)
-  const rest = rows.filter((r) => !r.installed)
-
-  const finish = async (row: Row) => {
+  const finish = async (row: PickerRow) => {
     setBusy(row.id)
     setError(null)
     try {
@@ -148,89 +147,164 @@ export default function WalletModal({
     }
   }
 
-  const Row = ({ r }: { r: Row }) => (
-    <button
-      type="button"
-      onClick={() => finish(r)}
-      disabled={!!busy}
-      className="flex items-center gap-3 rounded-2xl border border-border bg-background/40 px-4 py-3 text-left transition-colors hover:border-accent disabled:opacity-50"
-    >
-      {r.icon ? (
-        <img src={r.icon} alt="" className="h-7 w-7 rounded-lg" />
-      ) : r.hint === 'phone' ? (
-        <QrCode size={22} className="text-foreground/50" />
-      ) : (
-        <Wallet size={22} className="text-foreground/50" />
-      )}
-      <span className="flex-1 text-sm font-semibold text-foreground">
-        {r.name}
-        {r.hint && <span className="ml-1.5 text-xs font-medium text-foreground/40">{r.hint}</span>}
-      </span>
-      <span className="text-[10px] font-semibold uppercase tracking-wider text-foreground/40">{FAMILY[r.family]}</span>
-      {busy === r.id && <span className="text-xs text-foreground/45">...</span>}
-    </button>
-  )
-
   return (
-    <div className="fixed inset-0 z-50 grid place-items-center bg-foreground/40 p-4" onClick={onClose}>
-      <div
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby="wallet-modal-title"
-        className="max-h-[90vh] w-full max-w-sm overflow-y-auto rounded-3xl bg-card p-6 shadow-[0_24px_64px_rgba(25,40,55,0.18)]"
-        onClick={(e) => e.stopPropagation()}
-      >
-        <div className="mb-4">
-          <div className="flex items-center justify-between">
-            <button type="button" onClick={onClose} aria-label="Back" title="Back (Esc)" className="-ml-1.5 inline-flex items-center gap-1.5 rounded-full px-2 py-1 text-xs font-semibold text-foreground/55 transition-colors hover:text-foreground">
-              <ArrowLeft size={14} />
-              Back
-            </button>
-            <button type="button" onClick={onClose} aria-label="Close" className="text-foreground/40 transition-colors hover:text-foreground">
-              <X size={18} />
-            </button>
-          </div>
-          <h3 id="wallet-modal-title" className="mt-2 text-lg font-bold tracking-tight text-foreground">
-            {mode === 'link' ? 'Link a wallet' : 'Connect a wallet'}
-          </h3>
-          <p className="mt-1 text-xs text-foreground/55">You sign one message. Nothing is sent.</p>
-        </div>
+    <AnimatePresence>
+      {open && (
+        <motion.div
+          className="fixed inset-0 z-50 grid place-items-center bg-foreground/45 p-4 backdrop-blur-sm"
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          exit={{ opacity: 0 }}
+          transition={{ duration: 0.18 }}
+          onClick={onClose}
+        >
+          <motion.div
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="wallet-modal-title"
+            className="relative max-h-[88vh] w-full max-w-md overflow-hidden rounded-[28px] border border-border bg-card shadow-[0_32px_80px_rgba(25,40,55,0.22)]"
+            initial={{ opacity: 0, y: 18, scale: 0.98 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            exit={{ opacity: 0, y: 10, scale: 0.98 }}
+            transition={{ duration: 0.32, ease: EASE_OUT_EXPO }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            {/* A thin brand rule along the top: the one decorative element. */}
+            <div className="h-1 w-full bg-gradient-to-r from-accent via-accent/60 to-transparent" aria-hidden="true" />
 
-        <div className="flex flex-col gap-2">
-          {primary.length === 0 && stellarReady && (
-            <p className="px-1 text-sm text-foreground/60">
-              No wallet detected in this browser. Install one (MetaMask, Freighter, Lute) or use a phone wallet below.
-            </p>
-          )}
-          {!stellarReady && primary.length === 0 && <p className="px-1 text-sm text-foreground/45">Looking for wallets...</p>}
-          {primary.map((r) => (
-            <Row key={r.id} r={r} />
-          ))}
-          {rest.length > 0 && (
-            <button
-              type="button"
-              onClick={() => setMore((m) => !m)}
-              className="mt-1 inline-flex items-center gap-1 self-start px-1 text-xs font-semibold text-foreground/50 transition-colors hover:text-foreground"
-            >
-              <ChevronDown size={14} className={more ? 'rotate-180 transition-transform' : 'transition-transform'} />
-              {more ? 'Fewer wallets' : `More wallets (${rest.length})`}
-            </button>
-          )}
-          {more && rest.map((r) => <Row key={r.id} r={r} />)}
-        </div>
+            <div className="flex items-start justify-between gap-4 px-6 pt-5">
+              <div>
+                <h3 id="wallet-modal-title" className="text-xl font-bold tracking-tight text-foreground" style={{ fontFamily: 'var(--font-heading)' }}>
+                  {mode === 'link' ? 'Link a wallet' : 'Connect a wallet'}
+                </h3>
+                <p className="mt-1 text-sm text-foreground/55">
+                  {mode === 'link' ? 'Prove one more wallet is yours.' : 'Pick the wallet you already use.'}
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={onClose}
+                aria-label="Close"
+                title="Close (Esc)"
+                className="grid h-9 w-9 shrink-0 place-items-center rounded-full border border-border text-foreground/50 transition-colors hover:border-accent/40 hover:text-foreground"
+              >
+                <X size={16} />
+              </button>
+            </div>
 
-        {error && <p className="mt-3 text-xs font-semibold text-danger">{error}</p>}
-      </div>
-    </div>
+            <div className="max-h-[calc(88vh-140px)] overflow-y-auto px-4 pb-4 pt-4">
+              <div className="flex flex-col gap-1.5">
+                {primary.length === 0 && (
+                  <p className="px-2 py-3 text-sm text-foreground/55">
+                    {stellarReady
+                      ? 'No wallet found in this browser. Install MetaMask, Freighter or Lute, or use a phone wallet.'
+                      : 'Looking for wallets...'}
+                  </p>
+                )}
+                {primary.map((r, i) => (
+                  <WalletRow key={r.id} row={r} index={i} busy={busy} onPick={finish} />
+                ))}
+
+                {rest.length > 0 && (
+                  <button
+                    type="button"
+                    onClick={() => setMore((m) => !m)}
+                    className="mt-1 flex items-center justify-between rounded-2xl px-3 py-2.5 text-xs font-semibold text-foreground/50 transition-colors hover:bg-foreground/[0.04] hover:text-foreground"
+                  >
+                    <span>{more ? 'Fewer wallets' : `More wallets (${rest.length})`}</span>
+                    <ChevronDown size={15} className={`transition-transform ${more ? 'rotate-180' : ''}`} />
+                  </button>
+                )}
+                {more && rest.map((r, i) => <WalletRow key={r.id} row={r} index={i} busy={busy} onPick={finish} />)}
+              </div>
+
+              {error && (
+                <p role="alert" className="mt-3 rounded-2xl border border-danger/25 bg-danger/10 px-3.5 py-2.5 text-xs font-semibold text-danger">
+                  {error}
+                </p>
+              )}
+            </div>
+
+            <div className="flex items-center gap-2 border-t border-border px-6 py-3 text-[11px] text-foreground/45">
+              <Lock size={12} className="shrink-0" />
+              One signature to prove the wallet is yours. No transaction, no fee, no key leaves your wallet.
+            </div>
+          </motion.div>
+        </motion.div>
+      )}
+    </AnimatePresence>
   )
 }
 
-const FAMILY: Record<Ecosystem, string> = { evm: 'EVM', stellar: 'Stellar', algorand: 'Algorand' }
+type PickerRow = {
+  id: string
+  name: string
+  family: Ecosystem
+  icon?: string
+  /** detected: installed here. phone: a mobile app over QR. missing: known, not installed. */
+  status: 'detected' | 'phone' | 'missing'
+  connect: () => Promise<WalletSigner>
+}
+
+/** The networks a wallet family reaches, mainnets first, as marks on the row's right edge. */
+function networksFor(family: Ecosystem): Chain[] {
+  return chainsFor(family, CHAINS).sort((a, b) => Number(a.testnet) - Number(b.testnet))
+}
+
+function WalletRow({ row, index, busy, onPick }: { row: PickerRow; index: number; busy: string | null; onPick: (r: PickerRow) => void }) {
+  const networks = networksFor(row.family)
+  const shown = networks.slice(0, 4)
+  const extra = networks.length - shown.length
+  const isBusy = busy === row.id
+  return (
+    <motion.button
+      type="button"
+      onClick={() => onPick(row)}
+      disabled={!!busy}
+      initial={{ opacity: 0, y: 6 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: 0.28, delay: Math.min(index, 8) * 0.03, ease: EASE_OUT_EXPO }}
+      className="group flex w-full items-center gap-3.5 rounded-2xl border border-transparent px-3 py-2.5 text-left transition-colors hover:border-border hover:bg-foreground/[0.035] disabled:opacity-50"
+    >
+      <span className="grid h-11 w-11 shrink-0 place-items-center overflow-hidden rounded-2xl border border-border bg-background/60">
+        {row.icon ? (
+          <img src={row.icon} alt="" className="h-7 w-7 rounded-lg object-contain" />
+        ) : row.status === 'phone' ? (
+          <QrCode size={20} className="text-foreground/55" />
+        ) : (
+          <Wallet size={20} className="text-foreground/55" />
+        )}
+      </span>
+      <span className="min-w-0 flex-1">
+        <span className="block truncate text-sm font-semibold text-foreground">{row.name}</span>
+        <span className="mt-0.5 flex items-center gap-1.5 text-[11px] text-foreground/45">
+          {row.status === 'detected' && <span className="h-1.5 w-1.5 rounded-full bg-ok" aria-hidden="true" />}
+          {row.status === 'detected' ? 'Detected in this browser' : row.status === 'phone' ? 'Phone app, scan a code' : 'Not installed'}
+        </span>
+      </span>
+      <span className="flex shrink-0 items-center" aria-label={`Works on ${networks.map((c) => c.shortName).join(', ')}`} title={networks.map((c) => c.shortName).join(', ')}>
+        {isBusy ? (
+          <Loader2 size={18} className="animate-spin text-accent" />
+        ) : (
+          <>
+            {shown.map((c, i) => (
+              <ChainLogo key={c.id} id={c.id} size={22} className={i > 0 ? '-ml-2 ring-2 ring-card' : 'ring-2 ring-card'} />
+            ))}
+            {extra > 0 && (
+              <span className="-ml-2 grid h-[22px] w-[22px] place-items-center rounded-full border border-border bg-background text-[9px] font-bold text-foreground/60 ring-2 ring-card">
+                +{extra}
+              </span>
+            )}
+          </>
+        )}
+      </span>
+    </motion.button>
+  )
+}
 
 /**
  * One sentence from whatever a wallet threw. Wallet kits reject with plain objects
- * ({ code, message }), not Error instances, and a picker that only reads Error.message
- * answers every one of them with "Connection failed", which is what this replaces.
+ * ({ code, message }), not Error instances, so the message is read from either.
  */
 function errorText(e: unknown, wallet: string): string {
   const msg =

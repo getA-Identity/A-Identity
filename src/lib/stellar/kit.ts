@@ -25,6 +25,10 @@ type KitLike = {
   init(params: unknown): void
   setWallet(id: string): void
   getAddress(): Promise<{ address: string }>
+  /** Asks the SELECTED module for its address (Freighter: requestAccess then getAddress) and
+   *  stores it in the kit. getAddress() only reads that memory and throws "No wallet has
+   *  been connected" when it is empty, which is the whole difference. */
+  fetchAddress(): Promise<{ address: string }>
   signMessage(message: string, opts?: { address?: string; networkPassphrase?: string }): Promise<{ signedMessage: string; signerAddress?: string }>
   getNetwork(): Promise<{ network: string; networkPassphrase: string }>
   disconnect(): Promise<void>
@@ -77,7 +81,7 @@ export async function connectStellar(walletId: string): Promise<WalletSigner> {
   if (!info) throw new Error('Unknown Stellar wallet.')
   if (!info.isAvailable) throw new Error(`${info.name} is not installed. Get it at ${info.url}`)
   k.setWallet(walletId)
-  const { address } = await k.getAddress()
+  const { address } = await k.fetchAddress()
   if (!/^G[A-Z2-7]{55}$/.test(address)) throw new Error('The wallet did not return a Stellar account address.')
   let passphrase: string | null = null
   try {
