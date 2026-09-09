@@ -340,7 +340,7 @@ export const CHAINS: readonly Chain[] = [
       "identity": {
         "standard": "ERC-8004",
         "erc8004Native": true,
-        "note": "Identity + Reputation registries LIVE (read-side wired). No ValidationRegistry on Celo yet, so KYA cannot be anchored on-chain there."
+        "note": "Identity + Reputation registries LIVE (read-side wired). No ValidationRegistry on Celo yet, so KYA cannot be anchored on-chain there. Self Agent ID (third-party proof-of-human registry) is readable here: whether a verified human vouches for an agent, and whether two agents share one."
       }
     },
     "identity": "ERC-8004",
@@ -483,7 +483,7 @@ export const CHAINS: readonly Chain[] = [
       "identity": {
         "standard": "ERC-8004",
         "erc8004Native": true,
-        "note": "Identity + Reputation registries LIVE (same addresses as Arc). No ValidationRegistry, mirroring mainnet."
+        "note": "Identity + Reputation registries LIVE (same addresses as Arc). No ValidationRegistry, mirroring mainnet. Self Agent ID proof-of-human registry readable (testnet, mock passports)."
       }
     },
     "identity": "ERC-8004",

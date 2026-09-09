@@ -45,6 +45,15 @@ export interface ChainContracts {
    * misuse. This is evidence, not infrastructure.
    */
   spendVaultExample?: string
+  /**
+   * Self Protocol's Agent ID registry: a THIRD-PARTY ERC-8004 identity registry with the
+   * proof-of-human extension (IERC8004ProofOfHuman), where an agent key is bound to a
+   * passport-derived nullifier. Present only on chains where it was verified with real
+   * reads (hasHumanProof, sameHuman, agentKeyToAgentId round trip). It is an upgradeable
+   * proxy owned by Self, so anything read from it is labeled third-party and live, never
+   * "ours" and never immutable. Read-only in this codebase: we never write to it.
+   */
+  selfAgentRegistry?: string
 }
 
 /**

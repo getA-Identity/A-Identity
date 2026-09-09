@@ -4,7 +4,7 @@
  */
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { asTokenId, isAddress, sameOperator, scoreBand, livenessTarget } from './tools.js'
+import { asTokenId, isAddress, sameOperator, scoreBand, livenessTarget, selfLookupCandidates } from './tools.js'
 import type { PlatformAgent } from '../platform.js'
 
 // A minimal agent for the counterparty_check same-operator relationship signal.
@@ -101,4 +101,22 @@ test('scoreBand: bands align with the risk thresholds (DENY < 200, WARN 200-500)
   assert.equal(scoreBand(699), 'medium')
   assert.equal(scoreBand(700), 'high')
   assert.equal(scoreBand(1000), 'high')
+})
+
+test('selfLookupCandidates: wallet first, then owner, then identity owner, then the query; lowercased, de-duplicated', () => {
+  const out = selfLookupCandidates(
+    agent({ walletAddress: '0x6A5F1b8e56A19D456b799C2fA00E513244F58Ce6', owner: '0xAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA' }),
+    { owner: '0x6a5f1b8e56a19d456b799c2fa00e513244f58ce6' },
+    '0xBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB',
+  )
+  assert.deepEqual(out, [
+    '0x6a5f1b8e56a19d456b799c2fa00e513244f58ce6',
+    '0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+    '0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb',
+  ])
+})
+
+test('selfLookupCandidates: non-addresses (ids, usernames, CAIP ids) are dropped, so an empty list means no lookup', () => {
+  assert.deepEqual(selfLookupCandidates(agent({ owner: 'user_42', walletAddress: null }), null, '#6271'), [])
+  assert.deepEqual(selfLookupCandidates(null, null, 'eip155:42220:0x6a5f1b8e56a19d456b799c2fa00e513244f58ce6'), [])
 })

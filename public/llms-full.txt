@@ -143,7 +143,15 @@ Content-Type: application/json
 Price: $0.008. Inspects both parties together. This is the only call that
 detects same-operator self-dealing, where the payer and payee are controlled by
 the same entity to manufacture settlement history. A one-sided scan cannot see
-it by construction.
+it by construction. On Celo it also asks the Self Agent ID registry, a
+third-party ERC-8004 proof-of-human registry, whether both agents are bound to
+the same verified human (`sameHuman`: true, false, or null when either side is
+not registered there). Two operators can look distinct by owner and wallet and
+still be one person with one passport. `verify_agent` and `agent_passport`
+carry the one-sided read as `human_proof`: registered or not, human-backed or
+not, fresh or expired, and how many agents that human runs. It says a unique
+human exists, never who they are, and it is read live from a registry we do
+not operate.
 
 ### Guardrail status
 

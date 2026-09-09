@@ -16,6 +16,7 @@
 import { createIdentityProvider, isSafePublicHttpUrl } from '../erc8004.js'
 import { ARC_CHAIN } from '../chains/index.js'
 import { readValidationOn } from '../validation-registry.js'
+import { readHumanProofFor, sameHumanOn, type HumanProofRead } from '../self-agent-id.js'
 import { computeAgentReputation, type ReputationResult } from '../reputation.js'
 import {
   listPlatformAgents,
@@ -40,6 +41,8 @@ type Bundle = {
   tokenId: bigint | null
   /** On-chain KYA validation summary (from the ValidationRegistry), if a token id is known. */
   validation: Awaited<ReturnType<typeof readValidationOn>> | null
+  /** Self Agent ID proof-of-human read (third-party registry on Celo), or null if it timed out. */
+  humanProof: HumanProofRead | null
   reputation: ReputationResult & { basis: string; behavioral: BehavioralSummary | null; sybil: SybilSummary | null }
   onchainVerified: boolean
   kyaVerified: boolean
@@ -119,6 +122,18 @@ async function gather(agentId: string): Promise<Bundle> {
   const validation: Bundle['validation'] =
     tokenId !== null ? await withTimeout(readValidationOn(anchorChain, tokenId), RPC_TIMEOUT_MS, null) : null
 
+  // Proof-of-human, from Self Agent ID: a different question from KYA (a unique human
+  // vouched for this agent, versus the agent controls its wallet), read from a third-party
+  // registry on Celo. Timeout-guarded like every other on-chain read behind a paid call, and
+  // informational in risk_check: it is surfaced, not scored, so a registry outage or an
+  // agent that never went through Self cannot flip a verdict on its own. counterparty_check
+  // is the one place it becomes a signal, through sameHuman.
+  const humanProof: Bundle['humanProof'] = await withTimeout(
+    readHumanProofFor(anchorChain, selfLookupCandidates(platform, identity, q)),
+    RPC_TIMEOUT_MS,
+    null,
+  )
+
   const onchainVerified = Boolean(identity) || platform?.onchain === 'registered'
 
   // KYA: platform state is authoritative when present; else fall back to the on-chain
@@ -167,7 +182,28 @@ async function gather(agentId: string): Promise<Bundle> {
     }
   }
 
-  return { agentId: q, platform, identity, tokenId, validation, reputation, onchainVerified, kyaVerified, kyaStatus, revoked: kyaStatus === 'revoked', tenureDays }
+  return { agentId: q, platform, identity, tokenId, validation, humanProof, reputation, onchainVerified, kyaVerified, kyaStatus, revoked: kyaStatus === 'revoked', tenureDays }
+}
+
+/**
+ * The addresses worth asking the Self Agent ID registry about, in order of how likely
+ * each is to be the key the agent signs with: its settlement wallet, then its owner (when
+ * that is an address), then the on-chain identity's owner, then the raw query if the
+ * caller passed an address. Lowercased and de-duplicated. Pure, so it is unit-testable.
+ */
+export function selfLookupCandidates(
+  platform: Pick<PlatformAgent, 'walletAddress' | 'owner'> | null,
+  identity: { owner?: string | null } | null,
+  query: string,
+): string[] {
+  const raw = [platform?.walletAddress, platform?.owner, identity?.owner, query]
+  const out: string[] = []
+  for (const v of raw) {
+    if (typeof v !== 'string' || !isAddress(v)) continue
+    const a = v.toLowerCase()
+    if (!out.includes(a)) out.push(a)
+  }
+  return out
 }
 
 /**
@@ -260,6 +296,7 @@ export async function verifyAgent(agentId: string) {
         }
       : null,
     kya_onchain: b.validation ?? null,
+    human_proof: b.humanProof,
     platform: b.platform ? { id: b.platform.id, name: b.platform.name, onchain: b.platform.onchain, kya: b.platform.kya } : null,
     source: b.platform && b.identity ? 'platform+onchain' : b.identity ? 'onchain' : b.platform ? 'platform' : 'none',
     checkedAt: new Date().toISOString(),
@@ -332,7 +369,7 @@ export async function agentPassport(agentId: string) {
       : null,
     verified: b.onchainVerified,
     liveness,
-    kya: { status: b.kyaStatus, revoked: b.revoked, onchain: b.validation ?? null },
+    kya: { status: b.kyaStatus, revoked: b.revoked, onchain: b.validation ?? null, humanProof: b.humanProof },
     reputation: { score: b.reputation.score, breakdown: b.reputation.breakdown, behavioral: b.reputation.behavioral, sybil: b.reputation.sybil, settledOnchain: b.reputation.settledOnchain, settledEffective: b.reputation.settledEffective, settledUsd: b.reputation.settledUsd, onchainAttestation: getReputationAttestation(b.tokenId), basis: b.reputation.basis },
     risk: { decision: risk.decision, level: risk.risk, reasons: risk.reasons },
     platform: b.platform
@@ -529,6 +566,15 @@ export async function counterpartyCheck(from: string, to: string, txContext: TxC
     reasons.push('Counterparty is operated by the same owner as the payer (self-dealing); a settlement between them builds no independent reputation.')
     if (decision === 'ALLOW') { decision = 'WARN'; if (risk === 'low') risk = 'medium' }
   }
+  // The same question one layer deeper: are the two agents bound to the same verified
+  // HUMAN in the Self Agent ID registry? Two operators can look distinct by owner and
+  // wallet and still be one person with one passport. Answerable only when both sides are
+  // registered there on the same chain; otherwise null, never a guessed false.
+  const sameHuman = await selfSameHuman(payer.humanProof, cp.humanProof)
+  if (sameHuman === true && payer.agentId !== cp.agentId) {
+    reasons.push('Payer and counterparty are bound to the same verified human in the Self Agent ID registry (same passport nullifier); a settlement between them builds no independent reputation.')
+    if (decision === 'ALLOW') { decision = 'WARN'; if (risk === 'low') risk = 'medium' }
+  }
   return {
     tool: 'counterparty_check',
     _meta: TOOL_META,
@@ -538,6 +584,7 @@ export async function counterpartyCheck(from: string, to: string, txContext: TxC
     risk,
     reasons,
     sameOperator: isSelfDeal,
+    sameHuman,
     counterparty: {
       agentId: cp.agentId,
       name: cp.platform?.name ?? null,
@@ -546,11 +593,25 @@ export async function counterpartyCheck(from: string, to: string, txContext: TxC
       revoked: cp.revoked,
       reputation: cp.reputation.score,
       sybil: cp.reputation.sybil?.level ?? 'none',
+      humanBacked: humanBacked(cp.humanProof),
     },
     payer: { agentId: payer.agentId, verified: payer.onchainVerified, kya_status: payer.kyaStatus },
     txContext: txContext ?? null,
     checkedAt: new Date().toISOString(),
   }
+}
+
+/** The proof-of-human flag as a tri-state: true / false when the registry answered, null otherwise. */
+function humanBacked(p: HumanProofRead | null): boolean | null {
+  if (!p || !p.supported || !('registered' in p)) return null
+  return p.registered ? p.humanBacked : false
+}
+
+/** sameHuman across two reads, only when both are registered on the same chain. */
+async function selfSameHuman(a: HumanProofRead | null, b: HumanProofRead | null): Promise<boolean | null> {
+  if (!a || !b || !a.supported || !b.supported || !('registered' in a) || !('registered' in b)) return null
+  if (!a.registered || !b.registered || a.chain !== b.chain || !a.agentId || !b.agentId) return null
+  return withTimeout(sameHumanOn(a.chain, BigInt(a.agentId), BigInt(b.agentId)), RPC_TIMEOUT_MS, null)
 }
 
 export type { TxContext }

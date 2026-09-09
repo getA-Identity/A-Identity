@@ -720,6 +720,12 @@ export const CHAINS: ChainDescriptor[] = [
       reputationRegistry: '0x8004BAa17C55a88189AE136b182e5fdA19dE9b63',
       usdc: '0xcebA9300f2b948710d2653dD7B07f33A8B32118C', // native Circle USDC on Celo (EIP-712 domain name "USDC", version "2" - read live)
       create2Factory: CREATE2_FACTORY,
+      // Self Protocol's Agent ID registry (ERC-8004 proof-of-human extension), THIRD PARTY
+      // and an upgradeable proxy owned by Self. Verified live 2026-09-09: eth_getCode
+      // present, maxAgentsPerHuman() = 10, requireHumanProof() = true, and real reads on
+      // agent 1 (hasHumanProof true, isProofFresh true, agentIdToAgentKey -> agentKeyToAgentId
+      // round trip, sameHuman(1,1) true, sameHuman(1,2) false). Read-only for us.
+      selfAgentRegistry: '0xaC3DF9ABf80d0F5c020C06B04Cced27763355944',
     },
     confirmations: 3,
     // cUSD was rebranded USDm (same contract, 0x765DE816845861e75A25fCA122bb6898B8B1282a).
@@ -729,7 +735,7 @@ export const CHAINS: ChainDescriptor[] = [
     identity: {
       standard: 'ERC-8004',
       erc8004Native: true,
-      note: 'Identity + Reputation registries LIVE (read-side wired). No ValidationRegistry on Celo yet, so KYA cannot be anchored on-chain there.',
+      note: 'Identity + Reputation registries LIVE (read-side wired). No ValidationRegistry on Celo yet, so KYA cannot be anchored on-chain there. Self Agent ID (third-party proof-of-human registry) is readable here: whether a verified human vouches for an agent, and whether two agents share one.',
     },
     payment: { x402: true, note: 'x402 over USDC via the first-party Celo facilitator (EIP-3009, buyer pays no gas); CIP-64 fee abstraction lets gas be paid in stablecoins.' },
   },
@@ -759,6 +765,10 @@ export const CHAINS: ChainDescriptor[] = [
       reputationRegistry: '0x8004B663056A597Dffe9eCcC1965A193B7388713',
       usdc: '0x01C5C0122039549AD1493B8220cABEdD739BC44E',
       create2Factory: CREATE2_FACTORY,
+      // Self Agent ID registry on Celo Sepolia (mock passports). Verified live 2026-09-09
+      // with the same reads as mainnet; here sameHuman(1,2) is true because mock documents
+      // share a nullifier, which is exactly why testnet reads are labeled testnet.
+      selfAgentRegistry: '0x043DaCac8b0771DD5b444bCC88f2f8BBDBEdd379',
     },
     confirmations: 3,
     stablecoins: ['USDC'],
@@ -767,7 +777,7 @@ export const CHAINS: ChainDescriptor[] = [
     identity: {
       standard: 'ERC-8004',
       erc8004Native: true,
-      note: 'Identity + Reputation registries LIVE (same addresses as Arc). No ValidationRegistry, mirroring mainnet.',
+      note: 'Identity + Reputation registries LIVE (same addresses as Arc). No ValidationRegistry, mirroring mainnet. Self Agent ID proof-of-human registry readable (testnet, mock passports).',
     },
     payment: { x402: true, note: 'x402 over testnet USDC via the Celo Sepolia facilitator (api.x402.sepolia.celo.org).' },
   },

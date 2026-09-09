@@ -219,5 +219,24 @@ export const MULTICALL3_FROM_ABI = [
   ] },
 ] as const
 
+/**
+ * Self Agent ID registry (Self Protocol), the ERC-8004 proof-of-human extension. Only the
+ * read surface we use: the agent key is a bytes32 left-padded agent address, and the
+ * nullifier is a scoped per-human identifier that is public on-chain but is still hashed
+ * before it leaves this codebase. Verified against Celo mainnet and Celo Sepolia with real
+ * reads on 2026-09-09 (see the registry comment on `selfAgentRegistry`).
+ */
+export const SELF_AGENT_REGISTRY_ABI = [
+  { type: 'function', name: 'agentKeyToAgentId', stateMutability: 'view', inputs: [{ name: 'agentKey', type: 'bytes32' }], outputs: [{ type: 'uint256' }] },
+  { type: 'function', name: 'hasHumanProof', stateMutability: 'view', inputs: [{ name: 'agentId', type: 'uint256' }], outputs: [{ type: 'bool' }] },
+  { type: 'function', name: 'isProofFresh', stateMutability: 'view', inputs: [{ name: 'agentId', type: 'uint256' }], outputs: [{ type: 'bool' }] },
+  { type: 'function', name: 'proofExpiresAt', stateMutability: 'view', inputs: [{ name: 'agentId', type: 'uint256' }], outputs: [{ type: 'uint256' }] },
+  { type: 'function', name: 'getHumanNullifier', stateMutability: 'view', inputs: [{ name: 'agentId', type: 'uint256' }], outputs: [{ type: 'uint256' }] },
+  { type: 'function', name: 'getAgentCountForHuman', stateMutability: 'view', inputs: [{ name: 'nullifier', type: 'uint256' }], outputs: [{ type: 'uint256' }] },
+  { type: 'function', name: 'getProofProvider', stateMutability: 'view', inputs: [{ name: 'agentId', type: 'uint256' }], outputs: [{ type: 'address' }] },
+  { type: 'function', name: 'sameHuman', stateMutability: 'view', inputs: [{ name: 'agentIdA', type: 'uint256' }, { name: 'agentIdB', type: 'uint256' }], outputs: [{ type: 'bool' }] },
+  { type: 'function', name: 'maxAgentsPerHuman', stateMutability: 'view', inputs: [], outputs: [{ type: 'uint256' }] },
+] as const
+
 export const ZERO_ADDRESS = '0x0000000000000000000000000000000000000000' as const
 export const ZERO_HASH = ('0x' + '0'.repeat(64)) as `0x${string}`
