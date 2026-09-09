@@ -7,6 +7,7 @@ import { BACKEND_UNREACHABLE } from '../../lib/mcpBase'
 import { authHeaders, useAuth } from '../../store/auth'
 import { LOGO_PX, logoErrorText, resizeLogoToDataUrl } from '../../components/app/agent/logo-image'
 import { publishUserAvatarChanged } from './AppLayout'
+import LinkedWallets from '../../components/app/profile/LinkedWallets'
 
 /**
  * Your own account, as opposed to the agents you own.
@@ -127,7 +128,7 @@ export default function Profile() {
       ambient
       width="form"
       title="Profile"
-      description="Your account in this console: who you are signed in as, and the photo shown on your avatar."
+      description="Your account in this console: who you are signed in as, the photo shown on your avatar, and the wallets you have proven control of."
     >
       {/* Who you are, and what this session is actually allowed to do. */}
       <div className="mt-6 rounded-2xl border border-border bg-card p-5">
@@ -246,6 +247,9 @@ export default function Profile() {
           </div>
         </div>
       </div>
+
+      {/* The wallets the account can be reached at, across chain families. */}
+      <LinkedWallets isGuest={isGuest} />
     </AppPage>
   )
 }

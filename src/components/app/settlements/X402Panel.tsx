@@ -4,38 +4,13 @@ import { CheckCircle2, ExternalLink, Lock, Zap } from 'lucide-react'
 
 import { apiFetch } from '../../../lib/api'
 import { Button } from '../../ui/button'
-import { getActiveInjectedProvider, getConnectedProvider } from '../../../lib/wallets'
-import { ARC_TESTNET } from '../../../lib/arc'
+import { ensureEvmChain, getActiveInjectedProvider, getConnectedProvider, type Eip1193 } from '../../../lib/wallets'
+import { CHAIN_BY_ID } from '../../../lib/chains'
 import { Panel } from '../../ui/panel'
 
-/** Arc Testnet chain id as the 0x-hex EIP-155 wallets expect. */
-const ARC_CHAIN_HEX = '0x' + ARC_TESTNET.id.toString(16)
-
-/** Make sure the wallet is on Arc before we send a USDC transfer, otherwise the transfer
- *  would be broadcast to the Arc-USDC address on whatever chain is active (e.g. Ethereum
- *  mainnet), a confusing and potentially fund-losing transaction. Switches (or adds) Arc. */
-async function ensureArcChain(eth: { request: (a: { method: string; params?: unknown[] }) => Promise<unknown> }) {
-  const current = (await eth.request({ method: 'eth_chainId' })) as string
-  if (typeof current === 'string' && current.toLowerCase() === ARC_CHAIN_HEX) return
-  try {
-    await eth.request({ method: 'wallet_switchEthereumChain', params: [{ chainId: ARC_CHAIN_HEX }] })
-  } catch (err) {
-    if ((err as { code?: number })?.code === 4902) {
-      await eth.request({
-        method: 'wallet_addEthereumChain',
-        params: [{
-          chainId: ARC_CHAIN_HEX,
-          chainName: ARC_TESTNET.name,
-          nativeCurrency: ARC_TESTNET.nativeCurrency,
-          rpcUrls: [ARC_TESTNET.rpc.http],
-          blockExplorerUrls: [ARC_TESTNET.blockExplorer],
-        }],
-      })
-    } else {
-      throw new Error('Switch your wallet to Arc Testnet to pay.')
-    }
-  }
-}
+/** Make sure the wallet is on Arc before we send a USDC transfer. The switch-or-add logic
+ *  lives in lib/wallets (ensureEvmChain) and serves every registry chain; this is the Arc call. */
+const ensureArcChain = (eth: Eip1193) => ensureEvmChain(eth, CHAIN_BY_ID.arc)
 
 const ERC20_TRANSFER = [
   {

@@ -36,6 +36,10 @@ export type PublicChain = {
   chainId: number | null
   caip2: string
   evmCompatible: boolean
+  /** Which wallet and signing family this chain belongs to. */
+  ecosystem: 'evm' | 'stellar' | 'algorand'
+  /** The gas token, as a wallet needs it to add the chain (wallet_addEthereumChain). */
+  nativeCurrency: { name: string; symbol: string; decimals: number }
   testnet: boolean
   stablecoins: string[]
   /** Primary RPC. The registry's env-var override is deliberately NOT applied here:
@@ -80,6 +84,8 @@ export function toPublicChain(c: ChainDescriptor): PublicChain {
     chainId: c.evmChainId,
     caip2: c.caip2,
     evmCompatible: c.ecosystem === 'evm',
+    ecosystem: c.ecosystem,
+    nativeCurrency: c.nativeCurrency,
     testnet: c.testnet,
     stablecoins: [...c.stablecoins],
     rpcUrl: c.rpcUrls[0] ?? null,
@@ -172,6 +178,10 @@ export type Chain = {
   /** CAIP-2 chain identifier. */
   caip2: string
   evmCompatible: boolean
+  /** Which wallet and signing family this chain belongs to. */
+  ecosystem: 'evm' | 'stellar' | 'algorand'
+  /** The gas token, as a wallet needs it to add the chain (wallet_addEthereumChain). */
+  nativeCurrency: { name: string; symbol: string; decimals: number }
   testnet: boolean
   /** Stablecoins available on this chain. First is the default settlement coin. */
   stablecoins: string[]

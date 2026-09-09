@@ -216,8 +216,25 @@ export type PlatformUser = {
    *  agent logo has (sanitizeLogoUrl / MAX_LOGO_DATA_URL_CHARS in agents.ts). Absent means
    *  the console falls back to the initials disc. */
   avatarUrl?: string
+  /**
+   * Wallets this person has proven control of, beyond the one (if any) their session
+   * subject already is. Each entry was linked by signing a nonce with that wallet, on its
+   * own ecosystem's signing primitive (see wallet-proof.ts). Addresses are stored in
+   * their canonical form (EVM lowercased, Stellar and Algorand as given), never a key.
+   */
+  wallets?: LinkedWallet[]
   createdAt: string
   updatedAt: string
+}
+
+/** One wallet a person linked to their account by signature. */
+export type LinkedWallet = {
+  ecosystem: 'evm' | 'stellar' | 'algorand'
+  address: string
+  /** Which wallet software signed, as the client reported it (freighter, pera, metamask...). Display only. */
+  wallet?: string
+  linkedAt: string
+  method: 'wallet-signature'
 }
 
 export type InstructionType = 'payment' | 'purchase' | 'rental' | 'batch'

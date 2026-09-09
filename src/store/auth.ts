@@ -15,7 +15,9 @@
  */
 import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
-import { setConnectedProvider, type Eip1193 } from '../lib/wallets'
+import { evmSigner, setConnectedProvider, type Eip1193 } from '../lib/wallets'
+import type { Ecosystem, WalletSigner } from '../lib/wallet/types'
+import { useWallets } from './wallets'
 
 import { apiFetch } from '../lib/api'
 
@@ -23,6 +25,9 @@ export type User = {
   name: string
   email: string
 }
+
+/** A wallet linked to the account by signature, as the backend lists it. */
+export type LinkedWalletRow = { ecosystem: Ecosystem; address: string; wallet?: string; linkedAt: string }
 
 type AuthState = {
   user: User | null
@@ -38,11 +43,19 @@ type AuthState = {
    *  /app with a valid HttpOnly cookie but empty localStorage would otherwise bounce to
    *  /login before the cookie check resolves. */
   restored: boolean
+  /** For a wallet session, which chain family the signed-in wallet lives on; null otherwise. */
+  ecosystem: Ecosystem | null
   /** Guest preview: an email-only local session (no token -> browse-only). */
   login: (email: string, name?: string) => Promise<void>
   /** Real auth: Sign-In with Ethereum. Prove wallet ownership by signing a nonce.
    *  Pass the chosen EIP-1193 provider (an injected wallet or WalletConnect). */
   loginWallet: (provider: Eip1193) => Promise<void>
+  /** Real auth with any wallet family: the signer proves control of its address by signing
+   *  a nonce on its own ecosystem's primitive (EVM personal_sign, Stellar SEP-43, an
+   *  Algorand zero-value self-payment). Same session shape as loginWallet. */
+  loginWithSigner: (signer: WalletSigner) => Promise<void>
+  /** Prove control of one more wallet and attach it to the signed-in account. */
+  linkWallet: (signer: WalletSigner) => Promise<{ wallets: LinkedWalletRow[]; note: string }>
   /** Real email auth: send a one-time magic sign-in link (via Resend). */
   requestMagicLink: (email: string) => Promise<void>
   /** Finish magic-link sign-in with the token carried by the emailed link. */
@@ -59,6 +72,7 @@ export const useAuth = create<AuthState>()(
       token: null,
       verified: false,
       restored: false,
+      ecosystem: null,
       login: async (email, name) => {
         try {
           const res = await apiFetch('/api/auth/login', {
@@ -81,30 +95,22 @@ export const useAuth = create<AuthState>()(
         // Remember the wallet the user chose, so later payments (x402) use this exact
         // provider instead of whichever extension won window.ethereum.
         setConnectedProvider(provider)
-        const eth = provider
-        let address: string | undefined
-        try {
-          const accounts = (await eth.request({ method: 'eth_requestAccounts' })) as string[]
-          address = accounts?.[0]
-        } catch (e) {
-          throw new Error(walletError(e, 'connect to your wallet'))
-        }
-        if (!address) throw new Error('No account selected in your wallet.')
+        await get().loginWithSigner(await evmSigner(provider))
+      },
+      loginWithSigner: async (signer) => {
         // apiFetch wakes a cold backend BEFORE posting and then posts exactly once, so
         // a free-tier spin-up cannot fail sign-in and the nonce is never issued twice.
         const nres = await apiFetch('/api/auth/nonce', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ address }),
+          body: JSON.stringify({ address: signer.address }),
         }).catch(() => null)
-        if (!nres || !nres.ok) throw new Error('Could not reach the server (it may be waking up). Try again in a moment.')
-        const { message } = (await nres.json()) as { message: string }
-        let signature: string
-        try {
-          signature = (await eth.request({ method: 'personal_sign', params: [message, address] })) as string
-        } catch (e) {
-          throw new Error(walletError(e, 'sign the message'))
+        if (!nres || !nres.ok) {
+          const e = nres ? ((await nres.json().catch(() => ({}))) as { error?: string }) : {}
+          throw new Error(e.error ?? 'Could not reach the server (it may be waking up). Try again in a moment.')
         }
+        const { message, address } = (await nres.json()) as { message: string; address: string }
+        const signature = await signer.signMessage(message)
         const vres = await apiFetch('/api/auth/verify', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -114,8 +120,32 @@ export const useAuth = create<AuthState>()(
           const e = (await vres.json().catch(() => ({}))) as { error?: string }
           throw new Error(e.error ?? 'Wallet sign-in failed.')
         }
-        const data = (await vres.json()) as { token: string; user: User }
-        set({ user: data.user, token: data.token, verified: true })
+        const data = (await vres.json()) as { token: string; user: User; ecosystem?: Ecosystem }
+        useWallets.getState().remember(signer)
+        set({ user: data.user, token: data.token, verified: true, ecosystem: data.ecosystem ?? signer.ecosystem })
+      },
+      linkWallet: async (signer) => {
+        if (!get().verified) throw new Error('Sign in with a wallet or an email link before linking a wallet.')
+        const nres = await apiFetch('/api/auth/nonce', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ address: signer.address, purpose: 'link' }),
+        }).catch(() => null)
+        if (!nres || !nres.ok) {
+          const e = nres ? ((await nres.json().catch(() => ({}))) as { error?: string }) : {}
+          throw new Error(e.error ?? 'Could not reach the server (it may be waking up). Try again in a moment.')
+        }
+        const { message, address } = (await nres.json()) as { message: string; address: string }
+        const signature = await signer.signMessage(message)
+        const res = await apiFetch('/api/user/wallets/link', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', ...authHeaders() },
+          body: JSON.stringify({ address, message, signature, wallet: signer.walletName }),
+        })
+        const data = (await res.json().catch(() => ({}))) as { wallets?: LinkedWalletRow[]; note?: string; error?: string }
+        if (!res.ok) throw new Error(data.error ?? 'Could not link the wallet.')
+        useWallets.getState().remember(signer)
+        return { wallets: data.wallets ?? [], note: data.note ?? 'Wallet linked.' }
       },
       requestMagicLink: async (email) => {
         // Exactly-once matters most here: a retried POST would email two sign-in
@@ -165,7 +195,7 @@ export const useAuth = create<AuthState>()(
             return
           }
           if (res.ok) {
-            const data = (await res.json()) as { user?: User; verified?: boolean; authenticated?: boolean }
+            const data = (await res.json()) as { user?: User; verified?: boolean; authenticated?: boolean; ecosystem?: Ecosystem | null }
             // The backend now answers "signed out" with 200 { authenticated: false }
             // rather than a 401, because a 401 made every anonymous page load emit a
             // console error. This is the same definitive signal, just not shouted.
@@ -173,7 +203,7 @@ export const useAuth = create<AuthState>()(
               set({ user: null, token: null, verified: false })
               return
             }
-            if (data.user) set({ user: data.user, verified: Boolean(data.verified) })
+            if (data.user) set({ user: data.user, verified: Boolean(data.verified), ecosystem: data.ecosystem ?? null })
           }
         } catch {
           /* still waking / unreachable after retries, keep the persisted session */
@@ -188,13 +218,13 @@ export const useAuth = create<AuthState>()(
         void apiFetch('/api/auth/logout', { method: 'POST' }).catch(() => {
           /* ignore: the local logout below already happened */
         })
-        set({ user: null, token: null, verified: false })
+        set({ user: null, token: null, verified: false, ecosystem: null })
       },
     }),
     // Persist ONLY the (non-secret) user + verified flag; the session TOKEN is never
     // written to localStorage, it lives in the HttpOnly cookie (and in memory for this
     // tab). `restore()` reconciles `verified` against the cookie on load.
-    { name: 'a-identity-auth', partialize: (s) => ({ user: s.user, verified: s.verified }) },
+    { name: 'a-identity-auth', partialize: (s) => ({ user: s.user, verified: s.verified, ecosystem: s.ecosystem }) },
   ),
 )
 
@@ -204,10 +234,3 @@ export function authHeaders(): Record<string, string> {
   return t ? { Authorization: `Bearer ${t}` } : {}
 }
 
-/** Turn a raw wallet/provider error into a friendly, human message. */
-function walletError(e: unknown, action: string): string {
-  const code = (e as { code?: number })?.code
-  const msg = (e as { message?: string })?.message ?? ''
-  if (code === 4001 || /reject|denied|cancel/i.test(msg)) return 'Request cancelled in your wallet.'
-  return `Could not ${action}${msg ? `: ${msg}` : ''}.`
-}

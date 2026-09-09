@@ -11,11 +11,13 @@ import {
   updateAgentLogo, anchorAgentOnchain, provisionAgentVault, grantAgentSessionKey, getAgentVault,
   provisionCircleWallet, getAgentCircleWallet, getAgentTreasury, startAgentAutoYield,
   stopAgentAutoYield, startKyaChallenge, startClaimChallenge, verifyAgentClaim, verifyKya, revokeAgentKya, getAgentKya,
-  agentReputation, agentPolicy, getUserProfile, updateUserAvatar,
+  agentReputation, agentPolicy, getUserProfile, updateUserAvatar, getUserWallets, linkUserWallet, unlinkUserWallet,
 } from '../platform.js'
 import { accountTier, agentQuotaComplaint } from '../marketplace.js'
 import { chargeAgentCreate } from '../rate-budget.js'
 import { cappedDemoUsd, denyRead, errStatus, publicAgents, readBody, sendJson, type RouteCtx } from './shared.js'
+import { consumeWalletProof } from './auth-routes.js'
+import { walletEcosystemOf } from '../wallet-proof.js'
 
 export async function handleAgentRoutes(ctx: RouteCtx): Promise<boolean> {
   const { req, res, url, callerId } = ctx
@@ -166,6 +168,41 @@ export async function handleAgentRoutes(ctx: RouteCtx): Promise<boolean> {
     // defaulting to the session subject instead would answer a request aimed at someone
     // else with 200 while changing the sender's own photo, which is worse than a 403.
     const r = updateUserAvatar(body.subject ?? callerId, body.avatarUrl ?? null, callerId)
+    if ('error' in r) { sendJson(res, errStatus(r.error), r); return true }
+    sendJson(res, 200, r)
+    return true
+  }
+  // ── Wallets linked to the person signed in, across ecosystems ────────────────
+  // The session subject may itself be a wallet (a wallet sign-in) or an email (a magic
+  // link); either way the person can prove control of more wallets, on any ecosystem the
+  // registry knows, and have them listed on their account. Read is caller-scoped; the two
+  // writes sit behind the verified-session gate and behind `ownsUser` inside the platform.
+  if (req.method === 'GET' && url.pathname === '/api/user/wallets') {
+    const subjectEcosystem = callerId && ctx.caller?.method === 'wallet' ? walletEcosystemOf(callerId) : null
+    sendJson(res, 200, {
+      signedIn: Boolean(callerId),
+      // The wallet the session IS, when it is one: not linked, but the account's own key.
+      session: subjectEcosystem && callerId ? { ecosystem: subjectEcosystem, address: callerId } : null,
+      wallets: getUserWallets(callerId),
+    })
+    return true
+  }
+  // Link: the body carries the same { address, message, signature } shape as sign-in, over
+  // a nonce minted with purpose 'link' by POST /api/auth/nonce. The signature is verified
+  // here, on the wallet's own ecosystem, before the platform records anything.
+  if (req.method === 'POST' && url.pathname === '/api/user/wallets/link') {
+    const body = (await readBody(req).catch(() => null)) as { address?: string; message?: string; signature?: string; wallet?: string } | null
+    const proof = await consumeWalletProof(body ?? {}, 'link')
+    if (!proof.ok) { sendJson(res, proof.status, { error: proof.error }); return true }
+    const r = linkUserWallet(callerId, { ecosystem: proof.ecosystem, address: proof.address, wallet: typeof body?.wallet === 'string' ? body.wallet : undefined }, callerId)
+    if ('error' in r) { sendJson(res, errStatus(r.error), r); return true }
+    sendJson(res, 200, r)
+    return true
+  }
+  if (req.method === 'POST' && url.pathname === '/api/user/wallets/unlink') {
+    const body = (await readBody(req).catch(() => null)) as { address?: string } | null
+    if (!body?.address || typeof body.address !== 'string') { sendJson(res, 400, { error: 'address required' }); return true }
+    const r = unlinkUserWallet(callerId, body.address, callerId)
     if ('error' in r) { sendJson(res, errStatus(r.error), r); return true }
     sendJson(res, 200, r)
     return true

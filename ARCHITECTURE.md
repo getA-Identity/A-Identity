@@ -325,9 +325,9 @@ day it lands rather than the day someone remembers to add it.
   `/health` to the backend (first-party → dodges ad-blocker false "offline").
 - **Backend** - Node HTTP + **MCP** (Model Context Protocol) server (Render). REST companion for the UI,
   `/mcp` JSON-RPC for agents. Durable state via Postgres (`DATABASE_URL`), JSON-file fallback for dev.
-- **Auth** - Sign-In with Ethereum (wallet) + email magic link (Resend) are *verified*; a plain guest
+- **Auth** - wallet sign-in on any chain family the registry knows (EVM personal_sign, Stellar SEP-43 signMessage, an Algorand signed zero-value self-payment; mcp/src/wallet-proof.ts) + email magic link (Resend) are *verified*; a plain guest
   session is read-only. Agent ownership is bound to a verified identity.
-- **Tests / CI** - `node:test` unit suite: **1071 tests across 79 colocated `*.test.ts` files**
+- **Tests / CI** - `node:test` unit suite: **1081 tests across 80 colocated `*.test.ts` files**
   (as of Aug 2026; `npm test` in `mcp/`) + a full E2E (`mcp/e2e.mjs`) of about **67 checks** that
   adapts to signer presence: live reads always run, and the on-chain write checks (x402, ERC-8183
   escrow, Gateway, **Nanopayments settle**, **CCTP burn-and-mint**) activate with a funded

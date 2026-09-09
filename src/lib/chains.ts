@@ -33,6 +33,10 @@ export type Chain = {
   /** CAIP-2 chain identifier. */
   caip2: string
   evmCompatible: boolean
+  /** Which wallet and signing family this chain belongs to. */
+  ecosystem: 'evm' | 'stellar' | 'algorand'
+  /** The gas token, as a wallet needs it to add the chain (wallet_addEthereumChain). */
+  nativeCurrency: { name: string; symbol: string; decimals: number }
   testnet: boolean
   /** Stablecoins available on this chain. First is the default settlement coin. */
   stablecoins: string[]
@@ -63,6 +67,12 @@ export const CHAINS: readonly Chain[] = [
     "chainId": 5042002,
     "caip2": "eip155:5042002",
     "evmCompatible": true,
+    "ecosystem": "evm",
+    "nativeCurrency": {
+      "name": "USD Coin",
+      "symbol": "USDC",
+      "decimals": 18
+    },
     "testnet": true,
     "stablecoins": [
       "USDC",
@@ -102,6 +112,12 @@ export const CHAINS: readonly Chain[] = [
     "chainId": null,
     "caip2": "stellar:pubnet",
     "evmCompatible": false,
+    "ecosystem": "stellar",
+    "nativeCurrency": {
+      "name": "Lumen",
+      "symbol": "XLM",
+      "decimals": 7
+    },
     "testnet": false,
     "stablecoins": [
       "USDC",
@@ -137,6 +153,12 @@ export const CHAINS: readonly Chain[] = [
     "chainId": null,
     "caip2": "algorand:wGHE2Pwdvd7S12BL5FaOP20EGYesN73k",
     "evmCompatible": false,
+    "ecosystem": "algorand",
+    "nativeCurrency": {
+      "name": "Algo",
+      "symbol": "ALGO",
+      "decimals": 6
+    },
     "testnet": false,
     "stablecoins": [
       "USDC"
@@ -171,6 +193,12 @@ export const CHAINS: readonly Chain[] = [
     "chainId": 8453,
     "caip2": "eip155:8453",
     "evmCompatible": true,
+    "ecosystem": "evm",
+    "nativeCurrency": {
+      "name": "Ether",
+      "symbol": "ETH",
+      "decimals": 18
+    },
     "testnet": false,
     "stablecoins": [
       "USDC",
@@ -210,6 +238,12 @@ export const CHAINS: readonly Chain[] = [
     "chainId": 4663,
     "caip2": "eip155:4663",
     "evmCompatible": true,
+    "ecosystem": "evm",
+    "nativeCurrency": {
+      "name": "Ether",
+      "symbol": "ETH",
+      "decimals": 18
+    },
     "testnet": false,
     "stablecoins": [
       "USDG"
@@ -247,6 +281,12 @@ export const CHAINS: readonly Chain[] = [
     "chainId": 42161,
     "caip2": "eip155:42161",
     "evmCompatible": true,
+    "ecosystem": "evm",
+    "nativeCurrency": {
+      "name": "Ether",
+      "symbol": "ETH",
+      "decimals": 18
+    },
     "testnet": false,
     "stablecoins": [
       "USDC",
@@ -285,6 +325,12 @@ export const CHAINS: readonly Chain[] = [
     "chainId": 196,
     "caip2": "eip155:196",
     "evmCompatible": true,
+    "ecosystem": "evm",
+    "nativeCurrency": {
+      "name": "OKB",
+      "symbol": "OKB",
+      "decimals": 18
+    },
     "testnet": false,
     "stablecoins": [
       "USDC",
@@ -322,6 +368,12 @@ export const CHAINS: readonly Chain[] = [
     "chainId": 42220,
     "caip2": "eip155:42220",
     "evmCompatible": true,
+    "ecosystem": "evm",
+    "nativeCurrency": {
+      "name": "Celo",
+      "symbol": "CELO",
+      "decimals": 18
+    },
     "testnet": false,
     "stablecoins": [
       "USDC",
@@ -361,6 +413,12 @@ export const CHAINS: readonly Chain[] = [
     "chainId": null,
     "caip2": "stellar:testnet",
     "evmCompatible": false,
+    "ecosystem": "stellar",
+    "nativeCurrency": {
+      "name": "Lumen",
+      "symbol": "XLM",
+      "decimals": 7
+    },
     "testnet": true,
     "stablecoins": [
       "USDC"
@@ -395,6 +453,12 @@ export const CHAINS: readonly Chain[] = [
     "chainId": null,
     "caip2": "algorand:SGO1GKSzyE7IEPItTxCByw9x8FmnrCDe",
     "evmCompatible": false,
+    "ecosystem": "algorand",
+    "nativeCurrency": {
+      "name": "Algo",
+      "symbol": "ALGO",
+      "decimals": 6
+    },
     "testnet": true,
     "stablecoins": [
       "USDC"
@@ -429,6 +493,12 @@ export const CHAINS: readonly Chain[] = [
     "chainId": 46630,
     "caip2": "eip155:46630",
     "evmCompatible": true,
+    "ecosystem": "evm",
+    "nativeCurrency": {
+      "name": "Ether",
+      "symbol": "ETH",
+      "decimals": 18
+    },
     "testnet": true,
     "stablecoins": [
       "USDC.e"
@@ -467,6 +537,12 @@ export const CHAINS: readonly Chain[] = [
     "chainId": 11142220,
     "caip2": "eip155:11142220",
     "evmCompatible": true,
+    "ecosystem": "evm",
+    "nativeCurrency": {
+      "name": "Celo",
+      "symbol": "CELO",
+      "decimals": 18
+    },
     "testnet": true,
     "stablecoins": [
       "USDC"
@@ -504,6 +580,12 @@ export const CHAINS: readonly Chain[] = [
     "chainId": 43114,
     "caip2": "eip155:43114",
     "evmCompatible": true,
+    "ecosystem": "evm",
+    "nativeCurrency": {
+      "name": "Avalanche",
+      "symbol": "AVAX",
+      "decimals": 18
+    },
     "testnet": false,
     "stablecoins": [
       "USDC",

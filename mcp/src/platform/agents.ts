@@ -8,7 +8,7 @@
  */
 import {
   state, save, id, ownsAgent, ownsUser, normalizeSubject, pushActivity, short, inFlightAgentOps,
-  type PlatformAgent, type PlatformUser, type Wallet, type Permissions, type Service,
+  type PlatformAgent, type PlatformUser, type LinkedWallet, type Wallet, type Permissions, type Service,
 } from './core.js'
 import { sanitizeVelocity } from './permissions.js'
 import { ARC_TESTNET } from '../arc.js'
@@ -354,7 +354,82 @@ export async function anchorAgentOnchain(agentId: string, caller?: string) {
  * inside a document that is serialized in full on every save. Grows as PlatformUser grows.
  */
 function userIsEmpty(u: PlatformUser): boolean {
-  return u.avatarUrl === undefined
+  return u.avatarUrl === undefined && (u.wallets === undefined || u.wallets.length === 0)
+}
+
+/** The wallets a person has linked to their account by signature; [] when none. Caller-scoped. */
+export function getUserWallets(subject: string | undefined): LinkedWallet[] {
+  const key = normalizeSubject(subject)
+  return key ? [...(state.users[key]?.wallets ?? [])] : []
+}
+
+/**
+ * Link a wallet the caller has just proven control of (the route verified the signature
+ * before calling this; this function trusts nothing else). One row per address: linking
+ * the same address twice updates its timestamp rather than duplicating it. A wallet that
+ * is some OTHER account's session subject or linked wallet is refused, because one wallet
+ * vouching for two accounts is exactly the ambiguity the link exists to remove.
+ */
+export function linkUserWallet(
+  subject: string | undefined,
+  wallet: { ecosystem: LinkedWallet['ecosystem']; address: string; wallet?: string },
+  caller?: string,
+): { wallets: LinkedWallet[]; linked: 'added' | 'updated'; note: string } | { error: string } {
+  const key = normalizeSubject(subject)
+  if (!key) return { error: 'Unknown account: no subject was given and the session carried none' }
+  if (!ownsUser(key, caller)) return { error: 'Forbidden: you may only link wallets to your own account' }
+  const address = wallet.address.trim()
+  if (!address) return { error: 'address required' }
+  const addrKey = normalizeSubject(address)
+  if (addrKey === key) return { error: 'That wallet is already this account: it is the wallet you signed in with' }
+  for (const [otherKey, u] of Object.entries(state.users)) {
+    if (otherKey === key) continue
+    if (otherKey === addrKey || (u.wallets ?? []).some((w) => normalizeSubject(w.address) === addrKey)) {
+      return { error: 'Forbidden: that wallet already belongs to another account' }
+    }
+  }
+  const now = new Date().toISOString()
+  const row: PlatformUser = state.users[key] ?? { subject: key, createdAt: now, updatedAt: now }
+  row.wallets = row.wallets ?? []
+  const existing = row.wallets.find((w) => normalizeSubject(w.address) === addrKey)
+  let linked: 'added' | 'updated'
+  if (existing) {
+    existing.linkedAt = now
+    if (wallet.wallet) existing.wallet = wallet.wallet.slice(0, 40)
+    linked = 'updated'
+  } else {
+    if (row.wallets.length >= 20) return { error: 'At most 20 linked wallets per account' }
+    row.wallets.push({ ecosystem: wallet.ecosystem, address, wallet: wallet.wallet?.slice(0, 40), linkedAt: now, method: 'wallet-signature' })
+    linked = 'added'
+  }
+  row.updatedAt = now
+  state.users[key] = row
+  save(state)
+  return {
+    wallets: [...row.wallets],
+    linked,
+    note: linked === 'added' ? `${wallet.ecosystem} wallet ${short(address)} linked to your account.` : `${short(address)} was already linked; its proof was refreshed.`,
+  }
+}
+
+/** Remove a linked wallet. Removing one that is not linked is a clean no-op. */
+export function unlinkUserWallet(subject: string | undefined, address: string, caller?: string): { wallets: LinkedWallet[]; removed: boolean } | { error: string } {
+  const key = normalizeSubject(subject)
+  if (!key) return { error: 'Unknown account: no subject was given and the session carried none' }
+  if (!ownsUser(key, caller)) return { error: 'Forbidden: you may only unlink wallets from your own account' }
+  const row = state.users[key]
+  if (!row?.wallets) return { wallets: [], removed: false }
+  const addrKey = normalizeSubject(address)
+  const before = row.wallets.length
+  row.wallets = row.wallets.filter((w) => normalizeSubject(w.address) !== addrKey)
+  const removed = row.wallets.length !== before
+  if (removed) {
+    row.updatedAt = new Date().toISOString()
+    if (row.wallets.length === 0) delete row.wallets
+    if (userIsEmpty(row)) delete state.users[key]
+    save(state)
+  }
+  return { wallets: [...(row.wallets ?? [])], removed }
 }
 
 /**
