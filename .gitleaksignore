@@ -1,12 +1,8 @@
-# Findings verified as safe, one line each, by fingerprint rather than by file.
-#
-# Why fingerprints and not a path allowlist: an allowlist on the FILE would mean a new,
-# real seed pasted into the same test file goes unreported forever. A fingerprint pins one
-# specific string in one specific place, so the rule keeps working around it.
-#
-# Both entries below are throwaway Stellar seeds used as test fixtures. Verified on
-# 2026-08-25 by deriving the public address and querying both networks: the account has
-# NEVER existed on pubnet or testnet, so it was never funded and never transacted. Nothing
-# to rotate.
-4201dc1a7c5820078a1495042baea524acc0fb34:mcp/src/x402-stellar/facilitator.test.ts:stellar-secret-seed:46
-167a26b35e5a752507c813bce09410b755caa15d:mcp/src/x402-stellar/settle.test.ts:stellar-secret-seed:439
+# Fingerprints of findings reviewed and judged not to be secrets. Format: commit:file:rule:line.
+# Each entry says why, because an ignore without a reason is a hole nobody can audit.
+
+# 2026-09-09, commit 2123fae: a test asserted that a Stellar SECRET-shaped string is not an
+# address, using a literal made by swapping the G of a public key for an S. It was never a
+# key (the checksum does not even validate) and was removed from the source in d930337,
+# but history keeps the line, and this scan reads history. The rule itself stays on.
+2123faec5cb1c91a9aab7b72801432a9933bec42:mcp/src/wallet-proof.test.ts:stellar-secret-seed:23
