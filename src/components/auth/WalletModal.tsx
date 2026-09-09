@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { ChevronDown, Loader2, Lock, QrCode, Wallet, X } from 'lucide-react'
 import { useAuth } from '../../store/auth'
@@ -46,6 +46,9 @@ export default function WalletModal({
   const [more, setMore] = useState(false)
   const [busy, setBusy] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
+  /** Which attempt is current. A wallet that answers after the person cancelled, or after
+   *  the timeout, is answering an attempt nobody is waiting for any more. */
+  const attempt = useRef(0)
 
   useEffect(() => {
     if (!open) return
@@ -128,22 +131,37 @@ export default function WalletModal({
   const primary = rows.filter((r) => r.status !== 'missing')
   const rest = rows.filter((r) => r.status === 'missing')
 
+  const cancel = () => {
+    attempt.current += 1
+    setBusy(null)
+    setError(null)
+  }
+
   const finish = async (row: PickerRow) => {
+    const mine = ++attempt.current
     setBusy(row.id)
     setError(null)
     try {
-      const signer = await row.connect()
+      // A multi-chain extension (Trust Wallet, for one) can show its own "switch to your
+      // Ethereum wallet" prompt and then never settle the request if that prompt is closed.
+      // Nothing here can finish that prompt, so the wait is bounded and the person gets a
+      // sentence and a way out instead of a spinner.
+      const signer = await withDeadline(row.connect(), CONNECT_MS, `${row.name} did not answer. Open the extension, finish any prompt there (some wallets first ask you to switch to their Ethereum account), then try again.`)
+      if (mine !== attempt.current) return
       if (mode === 'link') {
-        const r = await linkWallet(signer)
+        const r = await withDeadline(linkWallet(signer), SIGN_MS, `${row.name} did not return a signature. Open the extension, approve or dismiss the request there, then try again.`)
+        if (mine !== attempt.current) return
         onConnected({ note: r.note })
       } else {
-        await loginWithSigner(signer)
+        await withDeadline(loginWithSigner(signer), SIGN_MS, `${row.name} did not return a signature. Open the extension, approve or dismiss the request there, then try again.`)
+        if (mine !== attempt.current) return
         onConnected()
       }
     } catch (e) {
+      if (mine !== attempt.current) return
       setError(errorText(e, row.name))
     } finally {
-      setBusy(null)
+      if (mine === attempt.current) setBusy(null)
     }
   }
 
@@ -218,6 +236,14 @@ export default function WalletModal({
                 {more && rest.map((r, i) => <WalletRow key={r.id} row={r} index={i} busy={busy} onPick={finish} />)}
               </div>
 
+              {busy && (
+                <div className="mt-3 flex items-center justify-between gap-3 rounded-2xl border border-border bg-background/60 px-3.5 py-2.5 text-xs text-foreground/60">
+                  <span>Waiting for your wallet. If it opened a prompt, finish it there.</span>
+                  <button type="button" onClick={cancel} className="shrink-0 font-semibold text-foreground/70 underline underline-offset-2 hover:text-foreground">
+                    Cancel
+                  </button>
+                </div>
+              )}
               {error && (
                 <p role="alert" className="mt-3 rounded-2xl border border-danger/25 bg-danger/10 px-3.5 py-2.5 text-xs font-semibold text-danger">
                   {error}
@@ -234,6 +260,19 @@ export default function WalletModal({
       )}
     </AnimatePresence>
   )
+}
+
+/** How long a wallet gets to answer a connect request, and a signature request. */
+const CONNECT_MS = 60_000
+const SIGN_MS = 120_000
+
+/** Race a wallet call against a deadline, so a prompt nobody can see cannot hang the picker. */
+function withDeadline<T>(p: Promise<T>, ms: number, message: string): Promise<T> {
+  let timer: ReturnType<typeof setTimeout>
+  const deadline = new Promise<T>((_, reject) => {
+    timer = setTimeout(() => reject(new Error(message)), ms)
+  })
+  return Promise.race([p, deadline]).finally(() => clearTimeout(timer))
 }
 
 type PickerRow = {
@@ -322,5 +361,6 @@ function errorText(e: unknown, wallet: string): string {
     : ''
   if (/not connected|not installed|not available|not found/i.test(msg)) return `${wallet} was not found in this browser. Install it, unlock it, then try again.`
   if (/declin|reject|denied|cancel|closed/i.test(msg)) return `You declined in ${wallet}.`
+  if (/switch|network|chain/i.test(msg) && !/signature/i.test(msg)) return `${wallet} asked to switch its active account or network. Do that inside the extension, then try again.`
   return msg || `${wallet}: connection failed.`
 }
