@@ -51,6 +51,25 @@ export type GuardrailProfile = {
   lastDecisionDate: string | null
   /** Caveats a buyer must read before treating a band as a judgement. */
   disclosure: string[]
+  /**
+   * Signals about this agent's policy that come from a THIRD PARTY and are self-reported
+   * by the owner, kept apart from the bands above because those are observed and these
+   * are attested. Present only when such an attestation exists. Never folded into
+   * `policyEnforced`: an attestation is a signed claim, not something we watched refuse.
+   */
+  attestations?: ThirdPartyPolicyAttestation[]
+}
+
+export type ThirdPartyPolicyAttestation = {
+  source: 'circle-agent-wallet'
+  kind: 'owner-attested'
+  /** Day precision, like lastDecisionDate. */
+  attestedOn: string
+  verifiedBy: 'wallet-signature' | 'erc1271-signature'
+  chain?: string
+  /** Bands derived from the attested policy; never the policy. */
+  bands: Record<string, unknown>
+  disclosure: string
 }
 
 const volumeBand = (n: number): VolumeBand => (n === 0 ? 'none' : n < 10 ? 'few' : n < 100 ? 'some' : 'many')

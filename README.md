@@ -1,7 +1,7 @@
 # A-Identity
 
 [![CI](https://github.com/getA-Identity/A-Identity/actions/workflows/ci.yml/badge.svg)](https://github.com/getA-Identity/A-Identity/actions/workflows/ci.yml)
-[![Tests](https://img.shields.io/badge/tests-1107%20unit%20%2B%20E2E-brightgreen)](mcp/README.md#develop)
+[![Tests](https://img.shields.io/badge/tests-1123%20unit%20%2B%20E2E-brightgreen)](mcp/README.md#develop)
 [![npm: marketplace-sdk](https://img.shields.io/npm/v/%40a-identity%2Fmarketplace-sdk?label=marketplace-sdk)](https://www.npmjs.com/package/@a-identity/marketplace-sdk)
 [![npm: trust-guard](https://img.shields.io/npm/v/%40a-identity%2Ftrust-guard?label=trust-guard)](https://www.npmjs.com/package/@a-identity/trust-guard)
 [![Ask DeepWiki](https://deepwiki.com/badge.svg)](https://deepwiki.com/getA-Identity/A-Identity)
@@ -212,7 +212,7 @@ listed at `GET /proof`. Four representative ones, each independently verifiable 
 `#849980`, KYA-verified, with a reputation earned from **3 real settlements**. The score
 itself is recency-weighted and decays as those settlements age, so it is read live rather
 than quoted here. Scoring is **deterministic and
-unit-tested** (1107 unit tests as of Sep 2026), reads on-chain live via viem, and is fully documented at
+unit-tested** (1123 unit tests as of Sep 2026), reads on-chain live via viem, and is fully documented at
 `GET /methodology`. This is our answer to "surface your rigor": every number is
 reproducible and every settlement is on-chain.
 
@@ -616,7 +616,10 @@ GET  /api/agents/vault          live on-chain vault policy + balance
 POST /api/agents/circle-wallet  provision a Circle Agent Wallet (hosted screening, w/ Circle keys)
 GET  /api/agents/circle-wallet  live Circle wallet state + balance
 POST /api/agents/kya/challenge  start a KYA wallet-control challenge
-POST /api/agents/kya/verify     verify the signature (+ on-chain ValidationRegistry attestation)
+POST /api/agents/kya/verify     verify the signature, key or ERC-1271 contract account (+ on-chain ValidationRegistry attestation)
+POST /api/agents/circle-policy/challenge  hash a pasted `circle wallet limit --output json`; returns the message the wallet signs
+POST /api/agents/circle-policy/attest     store the owner-attested Circle policy as bands + signed hash (never the policy)
+GET  /api/agents/circle-policy  the attestation, bands only
 GET  /api/agents/kya            KYA status + live on-chain validation
 GET  /api/x402/nano/data        x402 Nanopayments seller (gasless, Gateway-batched; 402→settle)
 GET  /api/x402/gateway/tools/:name  the trust tools for Circle Agent Marketplace buyers: Gateway nanopayments on Base mainnet (402; GET or POST to pay)

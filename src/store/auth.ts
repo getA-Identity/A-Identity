@@ -27,7 +27,10 @@ export type User = {
 }
 
 /** A wallet linked to the account by signature, as the backend lists it. */
-export type LinkedWalletRow = { ecosystem: Ecosystem; address: string; wallet?: string; linkedAt: string }
+/** Set when an agent's owner attested a Circle spending policy for this address: the wallet
+ *  is a Circle agent wallet (a smart contract account), shown as such, no new family. */
+export type CircleAgentWalletMark = { agentId: string; agentName: string; attestedAt: string; method: 'wallet-signature' | 'erc1271-signature' }
+export type LinkedWalletRow = { ecosystem: Ecosystem; address: string; wallet?: string; linkedAt: string; circleAgentWallet?: CircleAgentWalletMark | null }
 
 type AuthState = {
   user: User | null

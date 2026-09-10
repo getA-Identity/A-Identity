@@ -27,6 +27,7 @@ const LAYERS: Record<string, number> = {
   // vault.ts asks it the question and it asks core only for the agent's shape.
   'vault-adapter.ts': 2,
   'kya.ts': 3,
+  'circle-policy.ts': 3,
   'vault.ts': 3,
   'reputation.ts': 3,
   'instructions.ts': 3,

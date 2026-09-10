@@ -76,6 +76,11 @@ export function assignWallet(address: string, agentId: string, caller?: string):
     delete agent.kyaRequestHash
     pushActivity(agent, 'KYA reset to unverified: the wallet it proved control of was replaced')
   }
+  // The policy attestation is about the old wallet's Circle policy; it goes with it.
+  if (agent.circlePolicyAttestation && agent.circlePolicyAttestation.address.toLowerCase() !== wallet.address.toLowerCase()) {
+    delete agent.circlePolicyAttestation
+    pushActivity(agent, 'Circle policy attestation dropped: it named the wallet that was replaced')
+  }
   pushActivity(agent, `Wallet ${short(wallet.address)} assigned`)
   save(state)
   return wallet

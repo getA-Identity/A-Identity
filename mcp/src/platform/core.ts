@@ -63,6 +63,36 @@ export type AgentVault = {
   source: 'deployed' | 'migrated'
 }
 
+/** A cap's size as a band. 'uncapped' is Circle's own word for an absent limit. */
+export type CapBand = 'uncapped' | 'dust' | 'small' | 'moderate' | 'large'
+
+export type CirclePolicyBands = {
+  transferLimits: { perTx: CapBand; daily: CapBand; weekly: CapBand; monthly: CapBand }
+  recipientAllowlist: boolean
+  contractAllowlist: boolean
+  /** Whether the owner set the policy or Circle's code defaults apply. */
+  origin: 'custom' | 'default' | 'mixed' | 'unknown'
+  /** True when the pasted JSON had the shape Circle CLI prints; false means the bands
+   *  above are all unknown-as-uncapped and only the signed hash carries meaning. */
+  parsed: boolean
+}
+
+export type CirclePolicyAttestation = {
+  address: string
+  at: string
+  /** sha256 of the exact JSON the owner pasted. */
+  policyHash: string
+  /** How the signature was checked: a key recovered offline, or a contract account on `chain`. */
+  method: 'wallet-signature' | 'erc1271-signature'
+  chain?: string
+  /** Circle's own chain name from the JSON (BASE, ARB, ...), when present. */
+  circleChain?: string
+  bands: CirclePolicyBands
+  /** The signed message and signature, kept so anyone can re-verify the attestation. */
+  message: string
+  signature: string
+}
+
 export type PlatformAgent = {
   id: string
   name: string
@@ -99,8 +129,24 @@ export type PlatformAgent = {
   importedFrom?: { chain: string; tokenId: string; registry: string; owner: string; at: string; tokenUri?: string }
   /** How an `unclaimed` record was claimed: the signature, and the ownerOf read it beat. */
   claimProof?: { address: string; at: string; method: 'wallet-signature'; tokenId: string; chain: string }
-  /** How KYA was proven (the wallet-control signature). */
-  kyaProof?: { address: string; at: string; method: 'wallet-signature' }
+  /**
+   * How KYA was proven. 'wallet-signature' is a key-held wallet recovered offline;
+   * 'erc1271-signature' is a smart contract account (a Circle agent wallet, for one)
+   * whose `isValidSignature` said yes on `chain`, which is named because a contract
+   * account exists per chain and the proof is only as wide as the chain that answered.
+   */
+  kyaProof?: { address: string; at: string; method: 'wallet-signature' | 'erc1271-signature'; chain?: string }
+  /**
+   * The owner's signed statement that Circle enforces a spending policy on this wallet.
+   *
+   * Circle exposes no API for reading another party's policy, so this can only ever be
+   * self-reported: the owner runs `circle wallet limit --output json`, we hash what they
+   * paste, and the wallet signs the hash. What is stored is the hash, the signature and
+   * BANDS derived from the policy, never the policy itself: caps and allowlists are the
+   * owner's private position. guardrail_check labels it owner-attested and never treats it
+   * as enforcement; our vault is the only thing we call enforced.
+   */
+  circlePolicyAttestation?: CirclePolicyAttestation
   /** Set once the KYA result is attested on the ERC-8004 ValidationRegistry (real tx). */
   kyaOnchainTx?: string
   kyaOnchainExplorer?: string

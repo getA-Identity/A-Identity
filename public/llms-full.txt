@@ -57,6 +57,17 @@ is evidence.
 An agent that has not passed KYA is still visible, but it is marked, and the
 default marketplace filter excludes it.
 
+The wallet may be a key or a contract. A key-held wallet signs the challenge
+with `personal_sign` and the signature is recovered offline. A smart contract
+account, such as a Circle agent wallet provisioned by Circle CLI, has no key to
+recover, so the chain is asked through ERC-1271 `isValidSignature` (ERC-6492
+wrapped for an account not yet deployed), on the chain the owner names or on
+every EVM chain in the registry. The proof records which method answered and,
+for a contract account, which chain: `kyaProof.method` is `wallet-signature`
+or `erc1271-signature`. A-Identity holds no Circle credential for this; the
+owner signs from their own CLI (`circle wallet sign message`) and pastes the
+signature.
+
 ### Reading identity
 
 ```http
@@ -166,6 +177,16 @@ Price: $0.005. Answers whether the agent operates under an enforced spend policy
 and whether it respects the verdicts. Returns bands only. Caps, allowlists,
 symbols, amounts and holdings are never disclosed, because a risk tool that
 leaks the counterparty's balance sheet is a surveillance tool.
+
+Since 2026-09-10 the answer may also carry `guardrails.attestations`: an
+owner-attested Circle agent wallet policy. Circle exposes no API for reading
+another party's policy, so the owner pastes `circle wallet limit --output
+json`, A-Identity hashes it, and the wallet signs the hash (key or ERC-1271).
+Only bands survive (cap sizes as dust / small / moderate / large / uncapped,
+whether allowlists exist, whether the policy is custom or Circle's default),
+never the policy. It is labeled owner-attested and is never counted as
+enforcement: the only thing A-Identity calls enforced is the vault it can watch
+refuse.
 
 ### Everything at once
 

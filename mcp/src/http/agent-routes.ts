@@ -12,6 +12,7 @@ import {
   provisionCircleWallet, getAgentCircleWallet, getAgentTreasury, startAgentAutoYield,
   stopAgentAutoYield, startKyaChallenge, startClaimChallenge, verifyAgentClaim, verifyKya, revokeAgentKya, getAgentKya,
   agentReputation, agentPolicy, getUserProfile, updateUserAvatar, getUserWallets, linkUserWallet, unlinkUserWallet,
+  startCirclePolicyChallenge, attestCirclePolicy, getCirclePolicyAttestation, circleAgentWalletFor,
 } from '../platform.js'
 import { accountTier, agentQuotaComplaint } from '../marketplace.js'
 import { chargeAgentCreate } from '../rate-budget.js'
@@ -183,7 +184,10 @@ export async function handleAgentRoutes(ctx: RouteCtx): Promise<boolean> {
       signedIn: Boolean(callerId),
       // The wallet the session IS, when it is one: not linked, but the account's own key.
       session: subjectEcosystem && callerId ? { ecosystem: subjectEcosystem, address: callerId } : null,
-      wallets: getUserWallets(callerId),
+      // A wallet is shown as a Circle agent wallet when an agent's owner attested a Circle
+      // policy for that address. No new wallet family: it is an EVM address with a claim.
+      wallets: getUserWallets(callerId).map((w) => ({ ...w, circleAgentWallet: w.ecosystem === 'evm' ? circleAgentWalletFor(w.address) : null })),
+      sessionCircleAgentWallet: subjectEcosystem === 'evm' && callerId ? circleAgentWalletFor(callerId) : null,
     })
     return true
   }
@@ -334,11 +338,14 @@ export async function handleAgentRoutes(ctx: RouteCtx): Promise<boolean> {
   }
   // Finish KYA: verify the wallet signature, mark verified, attest on-chain (best-effort)
   if (req.method === 'POST' && url.pathname === '/api/agents/kya/verify') {
-    const body = (await readBody(req).catch(() => null)) as { agentId?: string; message?: string; signature?: string } | null
+    const body = (await readBody(req).catch(() => null)) as { agentId?: string; message?: string; signature?: string; chain?: string } | null
     if (!body?.agentId || !body?.message || !body?.signature) {
       sendJson(res, 400, { error: 'agentId, message, signature required' }); return true
     }
-    const r = await verifyKya(body.agentId, body.message, body.signature, callerId)
+    // `chain` is optional and only matters for a smart contract account: it names the
+    // registry chain whose ERC-1271 answer is asked for. Without it every EVM chain is.
+    const chain = typeof body.chain === 'string' && body.chain.trim() ? body.chain.trim() : undefined
+    const r = await verifyKya(body.agentId, body.message, body.signature, callerId, { chain })
     if ('error' in r) { sendJson(res, errStatus(r.error), r); return true }
     sendJson(res, 200, r)
     return true
@@ -349,6 +356,37 @@ export async function handleAgentRoutes(ctx: RouteCtx): Promise<boolean> {
     const body = (await readBody(req).catch(() => null)) as { agentId?: string; reason?: string } | null
     if (!body?.agentId) { sendJson(res, 400, { error: 'agentId required' }); return true }
     const r = await revokeAgentKya(body.agentId, body.reason ?? '', callerId)
+    if ('error' in r) { sendJson(res, errStatus(r.error), r); return true }
+    sendJson(res, 200, r)
+    return true
+  }
+  // ── Owner-attested Circle agent wallet policy ─────────────────────────────────
+  // The owner pastes `circle wallet limit --output json`; we hash it and hand back the
+  // message the wallet signs (key or ERC-1271 contract account). Only bands and the signed
+  // hash are stored, never the policy. Owner-gated on both writes.
+  if (req.method === 'POST' && url.pathname === '/api/agents/circle-policy/challenge') {
+    const body = (await readBody(req).catch(() => null)) as { agentId?: string; policy?: unknown } | null
+    if (!body?.agentId) { sendJson(res, 400, { error: 'agentId required' }); return true }
+    const policyText = typeof body.policy === 'string' ? body.policy : body.policy && typeof body.policy === 'object' ? JSON.stringify(body.policy) : ''
+    const r = startCirclePolicyChallenge(body.agentId, policyText, callerId)
+    if ('error' in r) { sendJson(res, errStatus(r.error), r); return true }
+    sendJson(res, 200, r)
+    return true
+  }
+  if (req.method === 'POST' && url.pathname === '/api/agents/circle-policy/attest') {
+    const body = (await readBody(req).catch(() => null)) as { agentId?: string; policy?: unknown; message?: string; signature?: string; chain?: string } | null
+    if (!body?.agentId || !body?.message || !body?.signature) { sendJson(res, 400, { error: 'agentId, policy, message, signature required' }); return true }
+    const policyText = typeof body.policy === 'string' ? body.policy : body.policy && typeof body.policy === 'object' ? JSON.stringify(body.policy) : ''
+    const chain = typeof body.chain === 'string' && body.chain.trim() ? body.chain.trim() : undefined
+    const r = await attestCirclePolicy(body.agentId, policyText, body.message, body.signature, callerId, { chain })
+    if ('error' in r) { sendJson(res, errStatus(r.error), r); return true }
+    sendJson(res, 200, r)
+    return true
+  }
+  if (req.method === 'GET' && url.pathname === '/api/agents/circle-policy') {
+    const agentId = url.searchParams.get('agentId') ?? ''
+    if (!agentId) { sendJson(res, 400, { error: 'agentId required' }); return true }
+    const r = getCirclePolicyAttestation(agentId)
     if ('error' in r) { sendJson(res, errStatus(r.error), r); return true }
     sendJson(res, 200, r)
     return true

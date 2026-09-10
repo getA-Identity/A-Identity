@@ -5,6 +5,7 @@
  */
 import { state, save, id, ownsAgent, pushActivity, type PlatformAgent, type Service } from './core.js'
 import { createAgent } from './agents.js'
+import { attestationForProfile } from './circle-policy.js'
 import {
   applyPolicyPatch, buildAuditEntry, capAudits, evaluateAction, filterAudits,
   resolveActionPolicy, summarizeAudits, guardrailProfile, unobservableProfile,
@@ -440,14 +441,18 @@ export function agentGuardrailProfile(agentId: string): {
 
   const now = new Date()
   const { policy, configured } = resolveActionPolicy(agent.actionPolicy, id('pol'), now.toISOString())
+  const profile = guardrailProfile({
+    entries: state.audits[agent.id] ?? [],
+    policyConfigured: configured,
+    policyVersion: policy.version,
+    now,
+  })
+  // A signed, self-reported Circle policy rides along as a third-party attestation. It
+  // is appended, never mixed into the observed bands, and it carries its own disclosure.
+  const attested = attestationForProfile(agent)
   return {
     found: true,
     agentId: agent.id,
-    profile: guardrailProfile({
-      entries: state.audits[agent.id] ?? [],
-      policyConfigured: configured,
-      policyVersion: policy.version,
-      now,
-    }),
+    profile: attested ? { ...profile, attestations: [attested] } : profile,
   }
 }

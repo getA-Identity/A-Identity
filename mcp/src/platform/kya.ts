@@ -8,6 +8,7 @@ import { state, save, ownsAgent, pushActivity, short, type PlatformAgent } from 
 import { recordValidationOnchain, readValidation } from '../arc-contracts.js'
 import { readAgentTokenOwner, type ExplorerAgentLink } from '../chains/explorer-agent-url.js'
 import { getChainById } from '../chains/registry.js'
+import { verifyWalletSignature, type SignatureDeps } from '../erc1271.js'
 
 // ── KYA (Know Your Agent): prove wallet control ──────────────────────────────────
 
@@ -41,11 +42,19 @@ export function startKyaChallenge(
  * on the real ERC-8004 ValidationRegistry (needs the agent anchored + a signer key; an
  * on-chain failure never undoes the cryptographically-proven 'verified' state).
  */
+export type KyaVerifyOptions = {
+  /** Registry chain (id or CAIP-2) a contract wallet lives on. Optional: without it every
+   *  EVM chain in the registry is asked, in parallel. Ignored for a key-held wallet. */
+  chain?: string
+  deps?: SignatureDeps
+}
+
 export async function verifyKya(
   agentId: string,
   message: string,
   signature: string,
   caller?: string,
+  opts: KyaVerifyOptions = {},
 ): Promise<{ error: string } | { kya: 'verified'; kyaProof: PlatformAgent['kyaProof']; onchain: unknown }> {
   const agent = state.agents.find((a) => a.id === agentId)
   if (!agent) return { error: 'Unknown agent' }
@@ -56,23 +65,26 @@ export async function verifyKya(
   const nonce = challenge && challenge.exp > Date.now() ? challenge.nonce : undefined
   if (!nonce || !message.includes(nonce)) return { error: 'Stale or missing challenge; request a new one' }
 
-  const { verifyMessage } = await import('viem')
-  let ok = false
-  try {
-    ok = await verifyMessage({
-      address: agent.walletAddress as `0x${string}`,
-      message,
-      signature: signature as `0x${string}`,
-    })
-  } catch {
-    ok = false
-  }
-  if (!ok) return { error: 'Signature does not match the agent wallet' }
+  // A key-held wallet is recovered offline; a smart contract account (a Circle agent
+  // wallet, for one) is asked on-chain through ERC-1271. Same challenge, same standard of
+  // proof, and the proof records which of the two answered.
+  const verdict = await verifyWalletSignature({ address: agent.walletAddress, message, signature, chain: opts.chain }, opts.deps)
+  if (!verdict.ok) return { error: 'Signature does not match the agent wallet (neither as a key signature nor as a contract account signature)' }
 
   kyaChallenges.delete(agentId)
   agent.kya = 'verified'
-  agent.kyaProof = { address: agent.walletAddress, at: new Date().toISOString(), method: 'wallet-signature' }
-  pushActivity(agent, `KYA passed: wallet control proven (${short(agent.walletAddress)})`)
+  agent.kyaProof = {
+    address: agent.walletAddress,
+    at: new Date().toISOString(),
+    method: verdict.method,
+    ...(verdict.method === 'erc1271-signature' ? { chain: verdict.chain } : {}),
+  }
+  pushActivity(
+    agent,
+    verdict.method === 'erc1271-signature'
+      ? `KYA passed: contract wallet control proven through ERC-1271 on ${verdict.chain} (${short(agent.walletAddress)})`
+      : `KYA passed: wallet control proven (${short(agent.walletAddress)})`,
+  )
 
   // Layer B - anchor the KYA result on the ERC-8004 ValidationRegistry (best-effort).
   let onchain: unknown = null
@@ -80,7 +92,7 @@ export async function verifyKya(
     const requestUri =
       'data:application/json,' +
       encodeURIComponent(
-        JSON.stringify({ kya: 'wallet-signature', agent: agent.id, address: agent.walletAddress, at: agent.kyaProof.at }),
+        JSON.stringify({ kya: agent.kyaProof.method, agent: agent.id, address: agent.walletAddress, at: agent.kyaProof.at, ...(agent.kyaProof.chain ? { chain: agent.kyaProof.chain } : {}) }),
       )
     const r = await recordValidationOnchain(BigInt(agent.onchainAgentId), requestUri)
     if (r.executed) {

@@ -8,7 +8,7 @@ import { apiFetch, readJson } from '../../../lib/api'
 import { BACKEND_UNREACHABLE } from '../../../lib/mcpBase'
 import { CHAIN_BY_ID, CHAINS, type Chain } from '../../../lib/chains'
 import { networkMarks, shortAddress, type Ecosystem } from '../../../lib/wallet/types'
-import { authHeaders, type LinkedWalletRow } from '../../../store/auth'
+import { authHeaders, type CircleAgentWalletMark, type LinkedWalletRow } from '../../../store/auth'
 import { useWallets } from '../../../store/wallets'
 
 /**
@@ -21,7 +21,7 @@ import { useWallets } from '../../../store/wallets'
  */
 const jsonHeaders = () => ({ 'Content-Type': 'application/json', ...authHeaders() })
 
-type Listing = { session: { ecosystem: Ecosystem; address: string } | null; wallets: LinkedWalletRow[] }
+type Listing = { session: { ecosystem: Ecosystem; address: string } | null; wallets: LinkedWalletRow[]; sessionCircleAgentWallet?: CircleAgentWalletMark | null }
 
 /** Where a person can look an address up, per chain family. */
 function explorerFor(ecosystem: Ecosystem, address: string): string | null {
@@ -100,7 +100,7 @@ export default function LinkedWallets({ isGuest }: { isGuest: boolean }) {
         setError(data.error ?? 'Could not load your wallets.')
         return
       }
-      setListing({ session: data.session ?? null, wallets: data.wallets ?? [] })
+      setListing({ session: data.session ?? null, wallets: data.wallets ?? [], sessionCircleAgentWallet: data.sessionCircleAgentWallet ?? null })
       setError(null)
     } catch {
       setError(BACKEND_UNREACHABLE)
@@ -131,9 +131,9 @@ export default function LinkedWallets({ isGuest }: { isGuest: boolean }) {
     }
   }
 
-  const rows: { ecosystem: Ecosystem; address: string; label: string; linkedAt?: string; session: boolean }[] = []
-  if (listing?.session) rows.push({ ...listing.session, label: 'Signed in with this wallet', session: true })
-  for (const w of listing?.wallets ?? []) rows.push({ ecosystem: w.ecosystem, address: w.address, label: w.wallet ?? 'Linked by signature', linkedAt: w.linkedAt, session: false })
+  const rows: { ecosystem: Ecosystem; address: string; label: string; linkedAt?: string; session: boolean; circle?: CircleAgentWalletMark | null }[] = []
+  if (listing?.session) rows.push({ ...listing.session, label: 'Signed in with this wallet', session: true, circle: listing.sessionCircleAgentWallet ?? null })
+  for (const w of listing?.wallets ?? []) rows.push({ ecosystem: w.ecosystem, address: w.address, label: w.wallet ?? 'Linked by signature', linkedAt: w.linkedAt, session: false, circle: w.circleAgentWallet ?? null })
 
   return (
     <div className="mt-4 rounded-2xl border border-border bg-card p-5">
@@ -197,6 +197,14 @@ export default function LinkedWallets({ isGuest }: { isGuest: boolean }) {
                   {live && (
                     <span className="inline-flex items-center gap-1 text-[10px] font-semibold uppercase tracking-wider text-ok">
                       <span className="h-1.5 w-1.5 rounded-full bg-ok" aria-hidden="true" /> connected
+                    </span>
+                  )}
+                  {r.circle && (
+                    <span
+                      className="inline-flex items-center gap-1 rounded-full border border-accent/40 bg-accent/10 px-2 py-0.5 text-[10px] font-semibold text-foreground/80"
+                      title={`Circle agent wallet: its owner attested a Circle spending policy for agent ${r.circle.agentName} on ${r.circle.attestedAt.slice(0, 10)}, verified by ${r.circle.method === 'erc1271-signature' ? 'an ERC-1271 contract signature' : 'a wallet signature'}. Owner-attested, not enforcement we can see.`}
+                    >
+                      <CheckCircle2 size={11} className="text-accent" /> Circle agent wallet
                     </span>
                   )}
                 </div>
