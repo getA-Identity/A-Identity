@@ -14,7 +14,9 @@
  * be lying about who holds the key, which is the opposite of what this product sells.
  * So we generate; the human runs.
  *
- * Docs: developers.circle.com/agent-stack/circle-cli/command-reference
+ * Docs: developers.circle.com/agent-stack (Circle CLI 1.0.0, command shapes verified against
+ * `circle wallet limit set --help` on 2026-09-10: --policy-type, --rule-type, --per-tx, --daily,
+ * --weekly, --monthly, --targets "[...]"; limits are mainnet-only).
  */
 
 /** The subset of an agent's permissions Circle's policy engine can express. */
@@ -132,8 +134,11 @@ export function bootstrapCommands(email?: string): CliCommand[] {
   return [
     { purpose: 'Install the Circle CLI', command: 'npm install -g @circle-fin/cli', needsOtp: false },
     {
-      purpose: 'Sign in to the agent wallet (sends a one-time code)',
-      command: `circle wallet login ${email ?? '<your-email>'} --testnet`,
+      // Circle CLI 1.0 (verified against its own --help, 2026-09-10): login takes the email
+      // and no network flag. Mainnet is the default session; a first login also provisions
+      // agent wallets on every EVM chain the CLI supports. The old --testnet flag is gone.
+      purpose: 'Sign in to the agent wallet (sends a one-time code; first login also creates the wallets)',
+      command: `circle wallet login ${email ?? '<your-email>'}`,
       needsOtp: true,
     },
   ]

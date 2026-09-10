@@ -72,5 +72,5 @@ test('no permissions still yields a readable plan rather than an empty one', () 
 test('bootstrap tells the owner to install and sign in, in that order', () => {
   const [install, login] = bootstrapCommands('a@b.com')
   assert.match(install.command, /npm install -g @circle-fin\/cli/)
-  assert.match(login.command, /circle wallet login a@b\.com --testnet/)
+  assert.match(login.command, /^circle wallet login a@b\.com$/)
 })

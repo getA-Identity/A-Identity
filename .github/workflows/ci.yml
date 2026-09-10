@@ -16,7 +16,7 @@ jobs:
 
       - uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 22
 
       # Secret scanning we control. GitHub's own is enabled on both remotes and catches
       # PROVIDER patterns; Stellar's seed format is not one of them, and the setting that

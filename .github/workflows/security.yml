@@ -90,7 +90,7 @@ jobs:
       # the project actually installs.
       - uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 22
 
       # No `npm install` anywhere in this job, deliberately. `npm audit` resolves from
       # the committed lockfile and queries the registry directly, so the whole gate runs
