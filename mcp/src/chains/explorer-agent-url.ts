@@ -127,9 +127,13 @@ const READ_TIMEOUT_MS = 6000
 
 function raceTimeout<T>(p: Promise<T>, ms: number): Promise<T> {
   return new Promise((resolve, reject) => {
+    // The deadline timer is deliberately NOT unref'd. It is cleared the moment the read
+    // settles, so it only ever keeps the process alive for a read that is not answering,
+    // and that is exactly the case where it must fire: an unref'd timer here let Node 22's
+    // test runner drain the loop and cancel the test as "still pending" before the
+    // deadline produced the labeled failure this function exists to produce.
     const timer = setTimeout(() => reject(new Error(`the RPC did not answer within ${ms}ms`)), ms)
     const clear = () => clearTimeout(timer)
-    if (typeof (timer as { unref?: () => void }).unref === 'function') (timer as unknown as { unref: () => void }).unref()
     p.then((v) => { clear(); resolve(v) }, (e) => { clear(); reject(e) })
   })
 }
