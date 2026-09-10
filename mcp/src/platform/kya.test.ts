@@ -1,6 +1,6 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { privateKeyToAccount } from 'viem/accounts'
+import { generatePrivateKey, privateKeyToAccount } from 'viem/accounts'
 import { __resetPlatformStateForTests, createAgent, startKyaChallenge, verifyKya, type PlatformAgent } from '../platform.js'
 import { state } from './core.js'
 import { verifyWalletSignature, contractSignatureChains, type ContractSignatureCheck } from '../erc1271.js'
@@ -18,10 +18,9 @@ import { CHAINS } from '../chains/index.js'
  */
 __resetPlatformStateForTests()
 
-const KEY = '0x59c6995e998f97a5a0044966f0945389dc9e86dae88c7a8412f4603b6b78690d' as const
-const OTHER = '0x8b3a350cf5c34c9194ca85829a2df0ec3153be0318b5e2d3348e872092edffba' as const
-const eoa = privateKeyToAccount(KEY)
-const other = privateKeyToAccount(OTHER)
+// Keys are generated when the tests run: nothing key-shaped lives in the tree.
+const eoa = privateKeyToAccount(generatePrivateKey())
+const other = privateKeyToAccount(generatePrivateKey())
 /** A contract account has no key; any 65-byte blob will do as its "signature". */
 const SCA = '0x00000000000000000000000000000000000000cA'
 const SCA_SIG = ('0x' + 'ab'.repeat(65)) as `0x${string}`

@@ -62,4 +62,13 @@ regexes = [
   # contract; only S is a seed, and it is deliberately NOT listed here.
   '''\bG[A-Z2-7]{55}\b''',
   '''\bC[A-Z2-7]{55}\b''',
+  # Circle's CCTP V2 contract addresses, one pair per environment, published at
+  # developers.circle.com/cctp/references/contract-addresses and recorded in the chain
+  # registry as `tokenMessenger:`. The generic-api-key rule reads "token" next to a hex
+  # blob as a credential; these are 20-byte contract addresses anyone can call. Added
+  # 2026-09-10 when the registry gained them. Each is the exact published value, so a
+  # typo in the registry would NOT be allowlisted, which is the point of listing values
+  # rather than the field name.
+  '''0x28b5a0e9C621a5BadaA536219b3a228C8168cf5d''',
+  '''0x8FE6B999Dc680CcFDD5Bf7EB0974218be2542DAA''',
 ]

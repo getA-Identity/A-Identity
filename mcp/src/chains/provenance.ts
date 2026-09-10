@@ -383,6 +383,22 @@ export const PROVENANCE: ChainProvenance[] = [
     ],
     artifacts: [
       {
+        kind: 'bridge',
+        label: 'CCTP inbound: 0.2 USDC burned on Arc testnet, minted here through the CctpForwarder in one call',
+        txHash: '32a09568d56bb0f0eeda54b6529f8756cc1e7e60e0bc235e914aec0898dd1fa2',
+        onChain: 'stellar-testnet',
+        blockNumber: 4607724,
+        note: 'mint_and_forward(message, attestation) on Circle\'s CctpForwarder CA66Q2WF..., 2026-09-10, ledger 4607724. The recipient G... account rode in the hook data of the Arc burn (tx 0x09d6a77e, block 61433933) with the forwarder in both address slots, which is the only way a Stellar account can receive a CCTP mint; Iris attested in seconds and the whole leg took 16 s. Driven by mcp/src/cctp-stellar.ts, not Bridge Kit, which has no Stellar adapter.',
+      },
+      {
+        kind: 'bridge',
+        label: 'CCTP outbound: 0.15 USDC burned here for the Arc testnet signer',
+        txHash: 'b5766784c5409a877ae28039182824978dd306c147a30d469b7f3fdc204dd458',
+        onChain: 'stellar-testnet',
+        blockNumber: 4607728,
+        note: 'deposit_for_burn on Circle\'s TokenMessengerMinter CDNG7HXA..., 2026-09-10, ledger 4607728, after a SAC approve with a 100-ledger expiry (tx ec96149d). Amount passed as 1500000 seven-decimal subunits for a 150000-unit message; the mint landed on Arc as receiveMessage tx 0x072be2ef (block 61434003) 21 s after the burn. The round trip closes the NEAR Intents caveat for test money: USDC now crosses between Stellar and an EVM chain natively.',
+      },
+      {
         kind: 'deploy',
         label: 'The spend policy, deployed',
         txHash: '718f050b962b6e645d8cca5cc053d9f1c11a7264d3ddc266f7e36661bd82c68c',
@@ -603,6 +619,22 @@ export const PROVENANCE: ChainProvenance[] = [
       },
     ],
     artifacts: [
+      {
+        kind: 'bridge',
+        label: 'CCTP outbound: 0.2 USDC burned for a Stellar testnet account, recipient in the hook data',
+        txHash: '0x09d6a77e86c1e80d09c59217fd90b2a798de0a304233f2ac00bd5259d2713b7d',
+        onChain: 'arc',
+        blockNumber: 61433933,
+        note: 'depositForBurnWithHook on TokenMessengerV2 0x8FE6B999..., 2026-09-10, after an approve (tx 0x306a3730). mintRecipient and destinationCaller are both the Stellar CctpForwarder, the G... recipient is the hook payload, maxFee 0 because Iris quotes zero on this testnet pair. Minted on Stellar testnet as mint_and_forward tx 32a09568 (ledger 4607724).',
+      },
+      {
+        kind: 'bridge',
+        label: 'CCTP inbound: 0.15 USDC minted here from a Stellar testnet burn',
+        txHash: '0x072be2ef20242f12496a03522b1ea3aa6b4cef0aa33fc9e52889e195b9d8ecd4',
+        onChain: 'arc',
+        blockNumber: 61434003,
+        note: 'receiveMessage on MessageTransmitterV2 0xE737e5cE..., 2026-09-10, block 61434003, permissionless because the Stellar burn (tx b5766784, ledger 4607728) set destinationCaller to zero. Test money both ways; the same code path runs on mainnet only behind CCTP_STELLAR_ALLOW_MAINNET and a single-digit cap, and no mainnet transfer has been made.',
+      },
       {
         kind: 'mint',
         label: 'Agent #849980 registered, the mint the public copy long mislabeled an anchor',

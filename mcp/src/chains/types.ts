@@ -54,6 +54,16 @@ export interface ChainContracts {
    * "ours" and never immutable. Read-only in this codebase: we never write to it.
    */
   selfAgentRegistry?: string
+  /**
+   * Circle CCTP V2 on this chain. EVM chains carry TokenMessengerV2 and
+   * MessageTransmitterV2 (Circle deploys both at one address on every EVM chain);
+   * Stellar carries TokenMessengerMinter, MessageTransmitter and the CctpForwarder that a
+   * Stellar RECIPIENT must be routed through, because a CCTP message has no room for a
+   * StrKey type marker and a direct mint to a G... account is unrecoverable. Addresses
+   * come from developers.circle.com/cctp only, never a third party, and `verified` says
+   * which page and when. Absent means no CCTP path is wired for the chain here.
+   */
+  cctp?: { tokenMessenger: string; messageTransmitter: string; forwarder?: string; verified: string }
 }
 
 /**

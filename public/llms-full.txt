@@ -363,7 +363,18 @@ Flow: `find_agent`, `get_agent_manifest`, `hire_agent`, `deliver_task`,
 ### Cross-chain
 
 Circle Gateway for a chain-abstracted USDC balance, and CCTP for burn-and-mint
-transfer between supported chains.
+transfer between supported chains. Since 2026-09-10 CCTP V2 also runs between
+Stellar and the EVM chains here, driven directly (Bridge Kit has no Stellar
+adapter): burn on the source, Iris attestation, mint on the destination, with a
+Stellar recipient carried in the hook data and minted through Circle's
+CctpForwarder in one call, because a direct mint to a G... account is
+unrecoverable. Proven both ways on TESTNET the day it shipped (Arc testnet to
+Stellar testnet in 16 s, back in 21 s; both legs on the proof pages). Mainnet
+is refused by the code unless the environment opts in, and no mainnet transfer
+has been made. Contract ids and domains come from developers.circle.com/cctp
+and are recorded in the chain registry with the page each was read from.
+`GET /api/cctp/stellar/status` lists the sides; `POST /api/cctp/stellar/bridge`
+returns every step prepared unless asked to execute.
 
 ---
 

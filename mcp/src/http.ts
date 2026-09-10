@@ -38,6 +38,7 @@ import { handleX402ThreeKRoutes } from './http/x402-3009-routes.js'
 import { handleX402StellarRoutes } from './http/x402-stellar-routes.js'
 import { handleX402AlgorandRoutes } from './http/x402-algorand-routes.js'
 import { handleX402GatewayRoutes } from './http/x402-gateway-routes.js'
+import { handleCctpRoutes } from './http/cctp-routes.js'
 import { handleChainRoutes } from './http/chain-routes.js'
 import { handleArcRoutes } from './http/arc-routes.js'
 import { handleAgentRoutes } from './http/agent-routes.js'
@@ -219,6 +220,7 @@ const server = http.createServer(async (req, res) => {
     if (await handleX402AlgorandRoutes(ctx)) return
     // Same again: /api/x402/gateway/* sits under /api/x402/.
     if (await handleX402GatewayRoutes(ctx)) return
+    if (await handleCctpRoutes(ctx)) return
     if (await handleX402ThreeKRoutes(ctx)) return
     if (await handleChainRoutes(ctx)) return
     if (await handleArcRoutes(ctx)) return
@@ -331,6 +333,8 @@ server.listen(PORT, () => {
   console.error(`  GET  /api/x402/gateway/proof     Gateway-credited settlements, batch hashes once landed`)
   console.error(`  GET  /api/x402/gateway/openapi.json            OpenAPI for the paid tools (marketplace listing)`)
   console.error(`  GET  /api/x402/gateway/tools/:name             price + what to sign; POST (or GET) to pay and call`)
+  console.error(`  GET  /api/cctp/stellar/status    CCTP between Stellar and EVM: chains, Circle-verified contracts, signers`)
+  console.error(`  POST /api/cctp/stellar/bridge    prepared-or-executed CCTP transfer (verified session, capped, testnet unless opted in)`)
   console.error(`  GET  /api/proof/:rail            provenance ledger + a live re-read (see /api/proof/rails)`)
 })
 

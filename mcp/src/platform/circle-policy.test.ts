@@ -1,6 +1,6 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { privateKeyToAccount } from 'viem/accounts'
+import { generatePrivateKey, privateKeyToAccount } from 'viem/accounts'
 import {
   __resetPlatformStateForTests,
   createAgent,
@@ -30,8 +30,8 @@ import type { ContractSignatureCheck } from '../erc1271.js'
  */
 __resetPlatformStateForTests()
 
-const KEY = '0x59c6995e998f97a5a0044966f0945389dc9e86dae88c7a8412f4603b6b78690d' as const
-const eoa = privateKeyToAccount(KEY)
+// Keys are generated when the tests run: nothing key-shaped lives in the tree.
+const eoa = privateKeyToAccount(generatePrivateKey())
 const SCA = '0x00000000000000000000000000000000000000cA'
 const SCA_SIG = ('0x' + 'cd'.repeat(65)) as `0x${string}`
 const OWNER = 'owner@test'
@@ -167,7 +167,7 @@ test('the guardrail profile carries the attestation as owner-attested, bands onl
 })
 
 test('a wallet is marked as a Circle agent wallet by its attestation, and loses the mark when the agent changes wallet', async () => {
-  const fresh = privateKeyToAccount('0x47e179ec197488593b187f80a00eb0da91f1b9d0b13f8733639f19c30a34926a')
+  const fresh = privateKeyToAccount(generatePrivateKey())
   const agent = seed(fresh.address)
   assert.equal(circleAgentWalletFor(fresh.address), null)
   const c = startCirclePolicyChallenge(agent.id, CLI_JSON, OWNER)

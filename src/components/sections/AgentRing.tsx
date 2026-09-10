@@ -75,7 +75,7 @@ export const OUR_AGENTS: OnchainAgent[] = [
     tx: '0xb428bf8e79df3c44157c134df1858eb75fe3758b74868445c1dcd07948705bf0',
     note: 'Reputation anchored by our oracle validator.',
     mission:
-      'The identity behind the Base x402 rail, settling native Circle USDC. Its operating wallets were funded from Stellar pubnet USDC through a NEAR Intents swap.',
+      'The identity behind the Base x402 rail, settling native Circle USDC. Its operating wallets were funded from Stellar pubnet USDC through a NEAR Intents swap; USDC now crosses between Stellar and EVM natively through Circle CCTP, proven both ways on testnet.',
     anchor: { score: 60, tx: '0x4f0295d12dcdc356cc7ac12b8317f1ff07289e4584725895f9b482a2223b2aa6' },
   },
   {

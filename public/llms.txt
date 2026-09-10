@@ -20,7 +20,8 @@ against those limits before any value moves, and the verdict is ALLOW, WARN or D
   that reverts an over-limit payment, and Circle's wallet-layer screening).
 - **Payments**: x402 pay-per-call, gasless Circle Nanopayments (an Arc testnet demo, and
   the trust tools on Base mainnet for Circle Agent Marketplace buyers), ERC-8183 job
-  escrow, and cross-chain USDC through Circle Gateway and CCTP.
+  escrow, and cross-chain USDC through Circle Gateway and CCTP, including CCTP between
+  Stellar and EVM (testnet-proven both ways; mainnet opt-in only).
 
 ## Status, stated plainly
 

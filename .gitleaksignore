@@ -13,3 +13,12 @@
 # were replaced at the tip by keys generated when the tests run; history keeps the lines.
 4201dc1a7c5820078a1495042baea524acc0fb34:mcp/src/x402-stellar/facilitator.test.ts:stellar-secret-seed:46
 167a26b35e5a752507c813bce09410b755caa15d:mcp/src/x402-stellar/settle.test.ts:stellar-secret-seed:439
+
+# 2026-09-10, commit 3006bb5: two new test files (KYA through ERC-1271, the Circle policy
+# attestation) reused the Hardhat default account #1 key that claim.test.ts already uses
+# as a signing fixture, and the generic-api-key rule flagged the new files because the
+# path allowlist names files, not values. The key is Hardhat's published default (in its
+# manual), never configuration. Both files were switched at the tip to keys generated when
+# the tests run, so no new file needs allowlisting; history keeps the two lines.
+3006bb5da0ef7af8b61248b718250ecb1c77c07f:mcp/src/platform/circle-policy.test.ts:generic-api-key:33
+3006bb5da0ef7af8b61248b718250ecb1c77c07f:mcp/src/platform/kya.test.ts:generic-api-key:21

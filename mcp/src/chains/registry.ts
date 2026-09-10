@@ -68,6 +68,12 @@ export const CHAINS: ChainDescriptor[] = [
       memo: '0x5294E9927c3306DcBaDb03fe70b92e01cCede505', // Arc predeployed Memo precompile (transaction memos)
       multicall3From: '0x522fAf9A91c41c443c66765030741e4AaCe147D0', // Arc predeployed Multicall3From (batched transactions)
       create2Factory: CREATE2_FACTORY,
+      cctp: {
+        tokenMessenger: '0x8FE6B999Dc680CcFDD5Bf7EB0974218be2542DAA',
+        messageTransmitter: '0xE737e5cEBEEBa77EFE34D4aa090756590b1CE275',
+        verified:
+          'developers.circle.com/cctp/references/contract-addresses, read 2026-09-10: the V2 TESTNET rows for Arc Testnet (domain 26). Both addresses read back 2175 bytes of code on the Arc testnet RPC the same day. Same addresses on every EVM testnet Circle lists.',
+      },
     },
     confirmations: 1, // deterministic sub-second finality
     stablecoins: ['USDC', 'EURC', 'USYC'],
@@ -137,6 +143,13 @@ export const CHAINS: ChainDescriptor[] = [
       // is an EVM path that would treat a C... StrKey as a 0x address. When the rail
       // lands, the SAC belongs in `settlementTokens` with the derivation recorded, the
       // same way USDG does on Robinhood Chain.
+      cctp: {
+        tokenMessenger: 'CAE2G5Z77UP7GYPYGFOWFGW7C7J6I4YP2AFGSADRKQY62SYUFLPNFTXL',
+        messageTransmitter: 'CACMENFFJPJMSDAJQLX4R7K3SFZIW2LJSE3R2UMLGSWHFHS353FVXAZV',
+        forwarder: 'CBZL2IH7F6BIDAA3WBNXYKIXSATJGMSW7K5P5MJ6STX5RXN47TZJDF5T',
+        verified:
+          'developers.circle.com/cctp/references/stellar-contracts, read 2026-09-10: the MAINNET rows for domain 27 (TokenMessengerMinter, MessageTransmitter, CctpForwarder). Stellar mainnet CCTP is live since 2026-05-18 per the release notes. No transfer of ours has crossed here yet; the testnet pair below has.',
+      },
     },
     confirmations: 1, // deterministic finality once a ledger closes
     stablecoins: ['USDC', 'EURC'],
@@ -223,6 +236,13 @@ export const CHAINS: ChainDescriptor[] = [
       // own policy an under-limit payment settled (3da74634...) and an over-limit one was
       // refused on chain with the contract's typed DailyCapExceeded (12df418f...).
       spendVault: 'CAIL6ECRAB5FUURQ54R7OTZPXRRCDO2S353YT6N6UZUWIBDG2ZOEB4UI',
+      cctp: {
+        tokenMessenger: 'CDNG7HXAPBWICI2E3AUBP3YZWZELJLYSB6F5CC7WLDTLTHVM74SLRTHP',
+        messageTransmitter: 'CBJ6MTCKKZG73PMDZCJMSFRD7DQEMI4FKDH7CGDSV4W6FHCRBCQAVVJY',
+        forwarder: 'CA66Q2WFBND6V4UEB7RD4SAXSVIWMD6RA4X3U32ELVFGXV5PJK4T4VSZ',
+        verified:
+          'developers.circle.com/cctp/references/stellar-contracts, read 2026-09-10: the TESTNET rows for domain 27 (TokenMessengerMinter, MessageTransmitter, CctpForwarder). A Stellar recipient MUST be routed through the CctpForwarder with its StrKey in the hook data; a direct mint to a G... account is unrecoverable.',
+      },
     },
     confirmations: 1,
     stablecoins: ['USDC'],
@@ -436,6 +456,12 @@ export const CHAINS: ChainDescriptor[] = [
       reputationRegistry: '0x8004BAa17C55a88189AE136b182e5fdA19dE9b63',
       usdc: '0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913', // native Circle USDC on Base
       create2Factory: CREATE2_FACTORY,
+      cctp: {
+        tokenMessenger: '0x28b5a0e9C621a5BadaA536219b3a228C8168cf5d',
+        messageTransmitter: '0x81D40F21F12A8F0E3252Bccb954D722d4c464B64',
+        verified:
+          'developers.circle.com/cctp/references/contract-addresses, read 2026-09-10: the V2 mainnet TokenMessengerV2 and MessageTransmitterV2 rows for this chain. Circle deploys both at the same address on every EVM mainnet it lists.',
+      },
     },
     confirmations: 3,
     stablecoins: ['USDC', 'USDT', 'PYUSD'],
@@ -639,6 +665,12 @@ export const CHAINS: ChainDescriptor[] = [
       reputationRegistry: '0x8004BAa17C55a88189AE136b182e5fdA19dE9b63',
       usdc: '0xaf88d065e77c8cC2239327C5EDb3A432268e5831', // native Circle USDC on Arbitrum One
       create2Factory: CREATE2_FACTORY,
+      cctp: {
+        tokenMessenger: '0x28b5a0e9C621a5BadaA536219b3a228C8168cf5d',
+        messageTransmitter: '0x81D40F21F12A8F0E3252Bccb954D722d4c464B64',
+        verified:
+          'developers.circle.com/cctp/references/contract-addresses, read 2026-09-10: the V2 mainnet TokenMessengerV2 and MessageTransmitterV2 rows for this chain. Circle deploys both at the same address on every EVM mainnet it lists.',
+      },
     },
     confirmations: 3,
     stablecoins: ['USDC', 'USDT'],
@@ -684,7 +716,11 @@ export const CHAINS: ChainDescriptor[] = [
     testnet: false,
     status: 'live',
     evmChainId: 196,
-    cctpDomain: null, // verify CCTP support before integrating
+    // developers.circle.com/cctp/concepts/supported-chains-and-domains, read 2026-09-10:
+    // X Layer is domain 37 (CCTP V2 since 2026-08-04 per the release notes). The USDC
+    // address for payments is still unverified here, so the cctp block below is what a
+    // bridge INTO this chain needs (mint recipient side) and nothing more is claimed.
+    cctpDomain: 37,
     nativeCurrency: { name: 'OKB', symbol: 'OKB', decimals: 18 },
     usdcDecimals: 6,
     rpcUrls: ['https://rpc.xlayer.tech'],
@@ -695,6 +731,12 @@ export const CHAINS: ChainDescriptor[] = [
       // pending: verify the canonical USDC address on X Layer before wiring them.
       identityRegistry: '0x8004a169fb4a3325136eb29fa0ceb6d2e539a432',
       create2Factory: CREATE2_FACTORY,
+      cctp: {
+        tokenMessenger: '0x28b5a0e9C621a5BadaA536219b3a228C8168cf5d',
+        messageTransmitter: '0x81D40F21F12A8F0E3252Bccb954D722d4c464B64',
+        verified:
+          'developers.circle.com/cctp/references/contract-addresses, read 2026-09-10: the V2 mainnet TokenMessengerV2 and MessageTransmitterV2 rows for this chain. Circle deploys both at the same address on every EVM mainnet it lists.',
+      },
     },
     confirmations: 5,
     stablecoins: ['USDC', 'USDT'],

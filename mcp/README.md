@@ -115,6 +115,12 @@ Directories:
   challenge is served. Nothing is recorded or served until the transfer is read back from
   Gateway's transfers API. Prices are read from `asp/payment.ts`, never restated. Sells on
   Base mainnet (`X402_GATEWAY_NETWORKS`, `X402_GATEWAY_PAYTO`).
+- `src/cctp-stellar.ts` - Circle CCTP V2 between Stellar and EVM, driven directly because
+  Bridge Kit has no Stellar adapter: burn, Iris attestation, mint, in both directions.
+  A Stellar recipient is carried in the hook data and minted through the CctpForwarder in
+  one atomic call (a direct mint to a G... account is unrecoverable). Prepared-or-executed,
+  dedicated bridging keys, capped, mainnet only behind `CCTP_STELLAR_ALLOW_MAINNET`.
+  Proven both ways on testnet 2026-09-10; contract ids in the registry cite Circle's page.
 - `src/x402-stellar/` - the same contract on Soroban, a sibling rather than a fork. The buyer
   signs an authorization ENTRY, so there is no per-token domain to prove, and settled means
   we read the transfer event ourselves and match it to the buyer's authorization nonce. Ships
@@ -156,7 +162,7 @@ node --env-file=.env dist/http.js     # Node 20.6+
 ARC_SIGNER_KEY=0x<funded-key> node dist/http.js
 ```
 
-Tests: **1123 unit tests across 83 colocated `*.test.ts` files** (as of Sep 2026; `npm test`) +
+Tests: **1141 unit tests across 84 colocated `*.test.ts` files** (as of Sep 2026; `npm test`) +
 a full **E2E of about 67 checks** (`npm run e2e`) that adapts to signer presence: green with no
 signer key (live Arc reads; on-chain writes reported as prepared), with the real Arc write
 checks activating under a funded `ARC_SIGNER_KEY`. CI runs the no-signer path.
