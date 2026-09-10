@@ -107,6 +107,14 @@ Directories:
   `settlementTokens` entry. Its EIP-712 signing domain is PROVEN against the token's live
   `DOMAIN_SEPARATOR` rather than pasted; if it cannot be proven, no challenge is served.
   Sells on Robinhood Chain (USDG) and Arbitrum One (native Circle USDC).
+- `src/x402-gateway/` - the Circle Gateway batched rail (Nanopayments) for Circle Agent
+  Marketplace buyers: the buyer signs an EIP-3009 authorization against Gateway's
+  `GatewayWalletBatched` domain and pays no gas, Gateway credits and batches, we broadcast
+  nothing. Chain-generic: a chain joins by declaring a `gateway` in the registry, and the
+  live supported-kinds endpoint must name that wallet and the chain's USDC before a
+  challenge is served. Nothing is recorded or served until the transfer is read back from
+  Gateway's transfers API. Prices are read from `asp/payment.ts`, never restated. Sells on
+  Base mainnet (`X402_GATEWAY_NETWORKS`, `X402_GATEWAY_PAYTO`).
 - `src/x402-stellar/` - the same contract on Soroban, a sibling rather than a fork. The buyer
   signs an authorization ENTRY, so there is no per-token domain to prove, and settled means
   we read the transfer event ourselves and match it to the buyer's authorization nonce. Ships
@@ -148,7 +156,7 @@ node --env-file=.env dist/http.js     # Node 20.6+
 ARC_SIGNER_KEY=0x<funded-key> node dist/http.js
 ```
 
-Tests: **1082 unit tests across 78 colocated `*.test.ts` files** (as of Sep 2026; `npm test`) +
+Tests: **1107 unit tests across 81 colocated `*.test.ts` files** (as of Sep 2026; `npm test`) +
 a full **E2E of about 67 checks** (`npm run e2e`) that adapts to signer presence: green with no
 signer key (live Arc reads; on-chain writes reported as prepared), with the real Arc write
 checks activating under a funded `ARC_SIGNER_KEY`. CI runs the no-signer path.

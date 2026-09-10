@@ -362,6 +362,7 @@ export const PROVENANCE: ChainProvenance[] = [
       'The operating wallets were funded through a NEAR Intents market-maker swap from Stellar pubnet USDC: a custodial hop that took under a minute. The Stellar-side transactions are recorded above; the market maker\'s Base-side delivery transactions are not ours to claim.',
       'There is no ValidationRegistry in this family, so a KYA result cannot be anchored on Base. It is still verified off-chain and recorded.',
       'This is an L2 that settles to Ethereum, so "settled" has layers and we name them: we wait the descriptor\'s confirmations, which is the sequencer\'s ordering commitment, and we record the block. That is not Ethereum finality.',
+      'A second paid rail exists here in code, through Circle Gateway nanopayments (the buyer signs against GatewayWalletBatched, Gateway credits and batches, we broadcast nothing), for buyers arriving from Circle Agent Marketplace. As of 2026-09-10 it is configured and unproven: no Gateway-credited call has been read back on this chain yet, so no artifact for it appears above. It counts only once one does, and that row will be labeled internal because the first buyer wallet is ours.',
     ],
   },
   {
@@ -839,7 +840,7 @@ export const PROOF_RAILS: ProofRail[] = [
     slug: 'base',
     title: 'Base',
     lede:
-      'Agent #73232 on the canonical ERC-8004 registry, and paid calls settling in native Circle USDC through the facilitator we run ourselves. The operating wallets were funded from Stellar pubnet USDC through a NEAR Intents swap, and that funding trail is part of the record.',
+      'Agent #73232 on the canonical ERC-8004 registry, and paid calls settling in native Circle USDC through the facilitator we run ourselves. A second rail through Circle Gateway nanopayments sells the same tools here to Circle Agent Marketplace buyers, gasless on both sides, and stays labeled unproven until a Gateway-credited call is read back. The operating wallets were funded from Stellar pubnet USDC through a NEAR Intents swap, and that funding trail is part of the record.',
     chains: ['base'],
   },
   {

@@ -37,6 +37,7 @@ import { handleCeloRoutes } from './http/celo-routes.js'
 import { handleX402ThreeKRoutes } from './http/x402-3009-routes.js'
 import { handleX402StellarRoutes } from './http/x402-stellar-routes.js'
 import { handleX402AlgorandRoutes } from './http/x402-algorand-routes.js'
+import { handleX402GatewayRoutes } from './http/x402-gateway-routes.js'
 import { handleChainRoutes } from './http/chain-routes.js'
 import { handleArcRoutes } from './http/arc-routes.js'
 import { handleAgentRoutes } from './http/agent-routes.js'
@@ -174,6 +175,9 @@ const server = http.createServer(async (req, res) => {
   // authorization is a signed payment, not a session. Both are fail-closed (501) when the
   // rail is unconfigured, and /api/facilitator/settle is additionally payTo-allowlisted
   // because we pay the gas there.
+  // /api/x402/gateway/* is exempt on the same terms as the EIP-3009 tools: the credential
+  // is a signed Gateway authorization, the rail is fail-closed (501) when unconfigured,
+  // and it serves read-only trust tools. We broadcast nothing there, so no allowlist.
   // /api/x402/stellar/* is exempt on similar but not identical terms, and the difference is
   // worth stating rather than glossing. On the soroban-auth scheme the credential is a signed
   // authorization entry, exactly like the EVM rails. On the `settled` scheme the credential is
@@ -186,6 +190,7 @@ const server = http.createServer(async (req, res) => {
     !url.pathname.startsWith('/api/celo/tools/') &&
     !url.pathname.startsWith('/api/x402/stellar/') &&
     !url.pathname.startsWith('/api/x402/algorand/') &&
+    !url.pathname.startsWith('/api/x402/gateway/') &&
     !url.pathname.startsWith('/api/x402/tools/') && !url.pathname.startsWith('/api/facilitator/')
   if (isMutation && !caller) {
     sendJson(res, 401, { error: 'Authentication required. Sign in with a wallet or an email link.' })
@@ -212,6 +217,8 @@ const server = http.createServer(async (req, res) => {
     if (await handleX402StellarRoutes(ctx)) return
     // Same precedence reason as Stellar: /api/x402/algorand/* sits under /api/x402/.
     if (await handleX402AlgorandRoutes(ctx)) return
+    // Same again: /api/x402/gateway/* sits under /api/x402/.
+    if (await handleX402GatewayRoutes(ctx)) return
     if (await handleX402ThreeKRoutes(ctx)) return
     if (await handleChainRoutes(ctx)) return
     if (await handleArcRoutes(ctx)) return
@@ -320,6 +327,10 @@ server.listen(PORT, () => {
   console.error(`  GET  /api/x402/stellar/tools/:name             price + what to sign; POST to pay and call`)
   console.error(`  GET  /api/x402/algorand/status   the AVM rail: config, facilitator, payTo opt-in`)
   console.error(`  GET  /api/x402/algorand/tools/:name            price + what to sign; POST to pay and call`)
+  console.error(`  GET  /api/x402/gateway/status    the Circle Gateway batched rail: config, proven kind per chain`)
+  console.error(`  GET  /api/x402/gateway/proof     Gateway-credited settlements, batch hashes once landed`)
+  console.error(`  GET  /api/x402/gateway/openapi.json            OpenAPI for the paid tools (marketplace listing)`)
+  console.error(`  GET  /api/x402/gateway/tools/:name             price + what to sign; POST (or GET) to pay and call`)
   console.error(`  GET  /api/proof/:rail            provenance ledger + a live re-read (see /api/proof/rails)`)
 })
 

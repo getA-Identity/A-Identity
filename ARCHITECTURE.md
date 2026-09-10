@@ -148,7 +148,7 @@ here precisely because none of them is the thesis.
 | **ERC-8183** Commerce | `0x0747EEf0…4583` | Agent-to-agent job escrow: create → setBudget → approve → fund → submit → complete; USDC held in escrow, released on delivery. |
 | **x402** | `mcp/src/x402.ts` | HTTP-402 pay-per-call: server returns 402 + requirements, client pays USDC on Arc, server verifies on-chain (with replay protection) and serves the resource. |
 | **Circle Gateway** | `mcp/src/gateway.ts` | Chain-abstracted USDC: deposit on Arc → a unified balance, then move it to Base Sepolia via the Forwarding Service (signed EIP-712 burn intent). Minted on Base in <500 ms, gaslessly. Permissionless - no Circle API key. |
-| **Circle Nanopayments** | `mcp/src/nanopay.ts` | The second x402 rail: the `exact`/`GatewayWalletBatched` scheme. Buyer signs an **EIP-3009 authorization off-chain (0 gas)**; Circle Gateway verifies + credits instantly and **batches** the on-chain settlement - sub-cent USDC becomes economical. Permissionless on Arc testnet (`@circle-fin/x402-batching`); buyer balance = the same Gateway Wallet deposit (`0x0077…19b9`). |
+| **Circle Nanopayments** | `mcp/src/nanopay.ts` | The second x402 rail: the `exact`/`GatewayWalletBatched` scheme. Buyer signs an **EIP-3009 authorization off-chain (0 gas)**; Circle Gateway verifies + credits instantly and **batches** the on-chain settlement - sub-cent USDC becomes economical. Permissionless on Arc testnet (`@circle-fin/x402-batching`); buyer balance = the same Gateway Wallet deposit (`0x0077…19b9`). The mainnet form lives in `mcp/src/x402-gateway/`: the six trust tools on Base through Circle's mainnet Gateway, kind proven against the registry, every call read back from Gateway's transfers API before it counts. |
 | **Circle CCTP** | `mcp/src/cctp.ts` | Native USDC cross-chain by **burn-and-mint** (CCTPv2 via `@circle-fin/bridge-kit`): burn on Arc → attest → mint natively on Base Sepolia (never wrapped). Canonical bridge, distinct from Gateway's unified-balance forwarding. |
 
 > Circle products used: **USDC, Wallets, Gateway, Nanopayments, CCTP** - all live on Arc testnet.
@@ -301,7 +301,7 @@ flowchart TD
   subgraph BE[Backend on Render]
     HTTP[http/ route groups]
     PLAT[platform/ layered domain<br/>core to tasks, graph enforced by a test]
-    RAILS[x402-3009 / x402-stellar / x402-algorand]
+    RAILS[x402-3009 / x402-stellar / x402-algorand / x402-gateway]
     REG[chains/registry.ts<br/>single source of truth]
     HTTP --> PLAT
     HTTP --> RAILS
@@ -327,7 +327,7 @@ day it lands rather than the day someone remembers to add it.
   `/mcp` JSON-RPC for agents. Durable state via Postgres (`DATABASE_URL`), JSON-file fallback for dev.
 - **Auth** - wallet sign-in on any chain family the registry knows (EVM personal_sign, Stellar SEP-43 signMessage, an Algorand signed zero-value self-payment; mcp/src/wallet-proof.ts) + email magic link (Resend) are *verified*; a plain guest
   session is read-only. Agent ownership is bound to a verified identity.
-- **Tests / CI** - `node:test` unit suite: **1082 tests across 80 colocated `*.test.ts` files**
+- **Tests / CI** - `node:test` unit suite: **1107 tests across 81 colocated `*.test.ts` files**
   (as of Aug 2026; `npm test` in `mcp/`) + a full E2E (`mcp/e2e.mjs`) of about **67 checks** that
   adapts to signer presence: live reads always run, and the on-chain write checks (x402, ERC-8183
   escrow, Gateway, **Nanopayments settle**, **CCTP burn-and-mint**) activate with a funded

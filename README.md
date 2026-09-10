@@ -1,7 +1,7 @@
 # A-Identity
 
 [![CI](https://github.com/getA-Identity/A-Identity/actions/workflows/ci.yml/badge.svg)](https://github.com/getA-Identity/A-Identity/actions/workflows/ci.yml)
-[![Tests](https://img.shields.io/badge/tests-1082%20unit%20%2B%20E2E-brightgreen)](mcp/README.md#develop)
+[![Tests](https://img.shields.io/badge/tests-1107%20unit%20%2B%20E2E-brightgreen)](mcp/README.md#develop)
 [![npm: marketplace-sdk](https://img.shields.io/npm/v/%40a-identity%2Fmarketplace-sdk?label=marketplace-sdk)](https://www.npmjs.com/package/@a-identity/marketplace-sdk)
 [![npm: trust-guard](https://img.shields.io/npm/v/%40a-identity%2Ftrust-guard?label=trust-guard)](https://www.npmjs.com/package/@a-identity/trust-guard)
 [![Ask DeepWiki](https://deepwiki.com/badge.svg)](https://deepwiki.com/getA-Identity/A-Identity)
@@ -212,7 +212,7 @@ listed at `GET /proof`. Four representative ones, each independently verifiable 
 `#849980`, KYA-verified, with a reputation earned from **3 real settlements**. The score
 itself is recency-weighted and decays as those settlements age, so it is read live rather
 than quoted here. Scoring is **deterministic and
-unit-tested** (1082 unit tests as of Sep 2026), reads on-chain live via viem, and is fully documented at
+unit-tested** (1107 unit tests as of Sep 2026), reads on-chain live via viem, and is fully documented at
 `GET /methodology`. This is our answer to "surface your rigor": every number is
 reproducible and every settlement is on-chain.
 
@@ -376,8 +376,11 @@ implementation code byte for byte against Arbitrum One), our agent #73232 (minte
 2026-08-28, tx `0xb428bf8e`), native Circle USDC, the Gateway hop, and the same
 first-party x402 facilitator that serves Robinhood Chain and Arbitrum One, settling in
 native USDC: the first settlement landed 2026-08-28 (tx `0xb59ae67c`, 102828 gas, the
-receipt carrying the matching Transfer log). The whole trail, including the Stellar
-funding hop behind the wallets, is on [/proof/base](https://a-identity.xyz/proof/base).
+receipt carrying the matching Transfer log). A second rail sells the same tools here
+through Circle Gateway nanopayments to Circle Agent Marketplace buyers, gasless on both
+sides, and stays labeled unproven until a Gateway-credited call is read back. The whole
+trail, including the Stellar funding hop behind the wallets, is on
+[/proof/base](https://a-identity.xyz/proof/base).
 Avalanche carries public metadata only and stays `planned` until something of ours is
 deployed on it.
 
@@ -616,6 +619,9 @@ POST /api/agents/kya/challenge  start a KYA wallet-control challenge
 POST /api/agents/kya/verify     verify the signature (+ on-chain ValidationRegistry attestation)
 GET  /api/agents/kya            KYA status + live on-chain validation
 GET  /api/x402/nano/data        x402 Nanopayments seller (gasless, Gateway-batched; 402→settle)
+GET  /api/x402/gateway/tools/:name  the trust tools for Circle Agent Marketplace buyers: Gateway nanopayments on Base mainnet (402; GET or POST to pay)
+GET  /api/x402/gateway/status   that rail's config and the Gateway kind proven per chain
+GET  /api/x402/gateway/proof    Gateway-credited settlements, batch hashes once landed
 POST /api/arc/nanopay-demo      one-click gasless nanopayment (EIP-3009 + Circle Gateway batch)
 POST /api/arc/cctp-demo         one-click CCTP burn-and-mint (Arc→Base Sepolia, native USDC)
 POST /api/arc/agent-run         autonomous run: agent pays a service on its own until its budget is used up, then stops (+ protocol fee)

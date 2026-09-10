@@ -18,8 +18,9 @@ against those limits before any value moves, and the verdict is ALLOW, WARN or D
 - **Bounded authority**: daily caps, an auto-approve line, payee allowlists and a freeze
   switch, enforced in three independent places (a server pre-check, an on-chain vault
   that reverts an over-limit payment, and Circle's wallet-layer screening).
-- **Payments**: x402 pay-per-call, gasless Circle Nanopayments, ERC-8183 job escrow, and
-  cross-chain USDC through Circle Gateway and CCTP.
+- **Payments**: x402 pay-per-call, gasless Circle Nanopayments (an Arc testnet demo, and
+  the trust tools on Base mainnet for Circle Agent Marketplace buyers), ERC-8183 job
+  escrow, and cross-chain USDC through Circle Gateway and CCTP.
 
 ## Status, stated plainly
 

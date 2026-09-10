@@ -701,6 +701,149 @@ export async function gasSpentOnDay(
   return total
 }
 
+/**
+ * One settlement on the Circle Gateway batched rail (see x402-gateway/).
+ *
+ * A fourth record type rather than a reuse of X402SettlementRecord, for the reason that
+ * type gives: the two record different KINDS of evidence. That one is a chain receipt we
+ * produced by broadcasting. This one is a facilitator credit read back from Gateway's own
+ * transfers API: the buyer's funds were locked inside the GatewayWallet and the seller's
+ * pending balance was credited, and the on-chain batch that applies the net position
+ * lands LATER, once, for many payments at a time. So a row here has two moments, the
+ * credit (always, or it is not a row) and the batch (eventually, with a hash), and the
+ * outcome vocabulary names both instead of collapsing them into "settled".
+ */
+export type GatewaySettlementRecord = {
+  ts: string
+  /** 'credited'    = Gateway's transfers API returned a transfer for this authorization,
+   *                  to our payTo, for the price, from the payer: the seller balance holds
+   *                  it, the on-chain batch has not landed yet.
+   *  'completed'   = the same row after the batch landed; `tx` is the batch transaction.
+   *  'failed'      = Gateway reported the transfer failed after crediting it.
+   *  'unconfirmed' = settle answered success but no transfer could be read back inside
+   *                  the window. NOT served, not revenue, shown rather than hidden. */
+  outcome: 'credited' | 'completed' | 'failed' | 'unconfirmed'
+  tool: string
+  resource: string
+  /** CAIP-2 network the payment settles on. */
+  network: string
+  asset: string
+  assetSymbol: string
+  assetDecimals: number
+  /** Base units, exactly as Gateway's transfer record reported them. */
+  value: string
+  amountUsd: number
+  payer: string
+  payTo: string
+  /** The EIP-3009 nonce: the key the transfer is read back by, and the key a later
+   *  refresh uses to learn the batch hash. */
+  authNonce: string
+  /** Gateway's transfer id, from the settle response or the read-back. */
+  transferId?: string
+  /** Gateway's own status word at the time of the last read (received, batched,
+   *  confirmed, completed, failed). Kept verbatim so a reader can compare it to ours. */
+  gatewayStatus?: string
+  /** The on-chain batch transaction, present once Gateway reports it. One hash covers
+   *  many payments, so the same value legitimately appears on several rows. */
+  tx?: string
+  explorerUrl?: string
+  /** Always Gateway's transfers API. Present as a field so a future path that trusted the
+   *  settle response alone would have to write something else here and be visible. */
+  confirmedBy: 'gateway-transfers-api'
+  facilitator: string
+}
+
+const GATEWAY_SETTLEMENTS_FILE = join(DATA_DIR, 'gateway-settlements.json')
+export const GATEWAY_SETTLEMENTS_CAP = 2000
+
+/** Load the retained Gateway settlement records, oldest first. Never throws: this feeds
+ *  a proof page, where showing nothing beats a 500. Nothing here guards spending, because
+ *  this rail spends nothing per call. */
+export async function loadGatewaySettlements(): Promise<GatewaySettlementRecord[]> {
+  try {
+    const p = await getPool()
+    if (p) {
+      await p.query('CREATE TABLE IF NOT EXISTS gateway_settlements (id bigserial PRIMARY KEY, data jsonb NOT NULL)')
+      const r = await p.query('SELECT data FROM gateway_settlements ORDER BY id ASC')
+      return r.rows.map((row: { data: GatewaySettlementRecord }) => row.data)
+    }
+  } catch (e) {
+    console.error('[storage] gateway settlement read failed:', e instanceof Error ? e.message : e)
+    return []
+  }
+  try {
+    return JSON.parse(readFileSync(GATEWAY_SETTLEMENTS_FILE, 'utf8')) as GatewaySettlementRecord[]
+  } catch {
+    return []
+  }
+}
+
+/** Durably record one settlement attempt, trimming past the cap. Never throws: by the time
+ *  we get here Gateway has already locked the buyer's funds, so a logging hiccup must not
+ *  turn a paid call into an error for the buyer. */
+export async function persistGatewaySettlement(rec: GatewaySettlementRecord): Promise<void> {
+  try {
+    const p = await getPool()
+    if (p) {
+      await p.query('CREATE TABLE IF NOT EXISTS gateway_settlements (id bigserial PRIMARY KEY, data jsonb NOT NULL)')
+      await p.query('INSERT INTO gateway_settlements (data) VALUES ($1)', [JSON.stringify(rec)])
+      await p.query(
+        'DELETE FROM gateway_settlements WHERE id NOT IN (SELECT id FROM gateway_settlements ORDER BY id DESC LIMIT $1)',
+        [GATEWAY_SETTLEMENTS_CAP],
+      )
+      return
+    }
+    let arr: GatewaySettlementRecord[] = []
+    try {
+      arr = JSON.parse(readFileSync(GATEWAY_SETTLEMENTS_FILE, 'utf8')) as GatewaySettlementRecord[]
+    } catch {
+      /* first write */
+    }
+    arr.push(rec)
+    if (arr.length > GATEWAY_SETTLEMENTS_CAP) arr = arr.slice(-GATEWAY_SETTLEMENTS_CAP)
+    mkdirSync(DATA_DIR, { recursive: true })
+    writeFileSync(GATEWAY_SETTLEMENTS_FILE, JSON.stringify(arr))
+  } catch (e) {
+    console.error('[storage] gateway settlement persist failed:', e instanceof Error ? e.message : e)
+  }
+}
+
+/**
+ * Upgrade a credited row once Gateway reports its batch: outcome, Gateway's status word,
+ * the batch hash and its explorer link. Keyed by the authorization nonce because that is
+ * the one value both we and Gateway hold for the same payment. Never throws; a refresh
+ * that fails leaves the row as it was, which is still true.
+ */
+export async function updateGatewaySettlement(
+  authNonce: string,
+  patch: Pick<GatewaySettlementRecord, 'outcome'> & Partial<Pick<GatewaySettlementRecord, 'gatewayStatus' | 'tx' | 'explorerUrl' | 'transferId'>>,
+): Promise<void> {
+  try {
+    const p = await getPool()
+    if (p) {
+      await p.query('CREATE TABLE IF NOT EXISTS gateway_settlements (id bigserial PRIMARY KEY, data jsonb NOT NULL)')
+      await p.query("UPDATE gateway_settlements SET data = data || $2::jsonb WHERE data->>'authNonce' = $1", [authNonce, JSON.stringify(patch)])
+      return
+    }
+    let arr: GatewaySettlementRecord[] = []
+    try {
+      arr = JSON.parse(readFileSync(GATEWAY_SETTLEMENTS_FILE, 'utf8')) as GatewaySettlementRecord[]
+    } catch {
+      return
+    }
+    let touched = false
+    for (const r of arr) {
+      if (r.authNonce === authNonce) {
+        Object.assign(r, patch)
+        touched = true
+      }
+    }
+    if (touched) writeFileSync(GATEWAY_SETTLEMENTS_FILE, JSON.stringify(arr))
+  } catch (e) {
+    console.error('[storage] gateway settlement update failed:', e instanceof Error ? e.message : e)
+  }
+}
+
 // Flush pending state on shutdown, then exit (Render sends SIGTERM on redeploy).
 process.on('SIGTERM', () => {
   void flush().finally(() => process.exit(0))

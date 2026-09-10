@@ -71,6 +71,12 @@ export const CHAINS: ChainDescriptor[] = [
     },
     confirmations: 1, // deterministic sub-second finality
     stablecoins: ['USDC', 'EURC', 'USYC'],
+    gateway: {
+      facilitator: 'https://gateway-api-testnet.circle.com',
+      wallet: '0x0077777d7EBA4688BDeF3E311b846F25870A19B9',
+      verified:
+        'Read live 2026-09-10 from GET https://gateway-api-testnet.circle.com/v1/x402/supported: the kind for eip155:5042002 is scheme "exact", x402Version 2, extra.name "GatewayWalletBatched", extra.version "1", extra.verifyingContract this address, extra.assets [USDC 0x3600000000000000000000000000000000000000, 6 decimals]. The same address is the GatewayWallet that gateway.ts deposits into. Testnet: nothing settled here is worth anything, and the demo rail in nanopay.ts says so.',
+    },
     signerEnvVar: 'ARC_SIGNER_KEY',
     rpcEnvVar: 'ARC_RPC_URL',
     identity: { standard: 'ERC-8004', erc8004Native: true },
@@ -447,6 +453,12 @@ export const CHAINS: ChainDescriptor[] = [
           'Native Circle USDC on Base mainnet, the same address the descriptor already carried for contracts.usdc. Read live 2026-08-28: name() "USD Coin", symbol() "USDC", version() "2", decimals() 6, DOMAIN_SEPARATOR 0x02fa7265e7c5d81118673727957699e4d68f74cd74b7db77da710fe8a2c7834f, which those four fields reproduce exactly. EIP-3009 confirmed by a read-only authorizationState call. Canonical Circle USDC, so it legitimately shares the contracts.usdc slot.',
       },
     ],
+    gateway: {
+      facilitator: 'https://gateway-api.circle.com',
+      wallet: '0x77777777Dcc4d5A8B6E418Fd04D8997ef11000eE',
+      verified:
+        'Read live 2026-09-10 from GET https://gateway-api.circle.com/v1/x402/supported: the kind for eip155:8453 is scheme "exact", x402Version 2, extra.name "GatewayWalletBatched", extra.version "1", extra.verifyingContract this address, extra.assets [USDC 0x833589fcd6edb6e08f4c7c32d4f71b54bda02913, 6 decimals], minValiditySeconds 604800. The same wallet address serves every Gateway mainnet chain. Nanopayments has been on mainnet since 2026-04-29 (Circle release notes); Base is in the Gateway supported-blockchains table with Nanopayments = Yes. The rail re-reads this endpoint before selling and refuses if the advertised wallet or asset differs.',
+    },
     signerEnvVar: 'BASE_SIGNER_KEY',
     rpcEnvVar: 'BASE_RPC_URL',
     identity: {

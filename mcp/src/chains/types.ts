@@ -165,6 +165,21 @@ export interface ChainDescriptor {
    *  (registry.test.ts enforces both directions). */
   settlementTokens?: SettlementToken[]
 
+  /**
+   * Circle Gateway on this chain, for the batched x402 rail (Nanopayments): the buyer signs
+   * an EIP-3009 authorization against the GatewayWalletBatched domain and Gateway settles
+   * net positions on-chain in batches. `wallet` is that domain's verifyingContract, the
+   * GatewayWallet contract on this chain; `facilitator` is the Gateway API host the rail
+   * talks to (Circle runs one host for every mainnet and another for every testnet).
+   *
+   * The pair here is what the rail EXPECTS. Before any challenge is served the rail reads
+   * the facilitator's live /v1/x402/supported and refuses to sell unless the kind it
+   * advertises for this chain names exactly this wallet and this chain's USDC: a pasted
+   * address that drifted from what Gateway signs against would produce authorizations
+   * nobody can settle. Absent on a chain Gateway does not serve.
+   */
+  gateway?: { facilitator: string; wallet: string; verified: string }
+
   /** Env var holding the signer key for writes on this chain (writes are gated on it). */
   signerEnvVar?: string
   /** Env var that overrides the primary RPC url, if set. */

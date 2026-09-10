@@ -297,6 +297,21 @@ authorization off-chain and pays no gas; Gateway verifies, credits instantly and
 batches the on-chain settlement, which is what makes sub-cent pricing economic.
 Probe it unauthenticated at `GET https://a-identity.xyz/api/x402/nano/data`.
 
+**Gasless nanopayments on Base mainnet** (`eip155:8453`), the same scheme
+through Circle's mainnet Gateway (verifying contract
+`0x77777777dcc4d5a8b6e418fd04d8997ef11000ee`, read live from Gateway's
+supported-kinds endpoint and matched against the registry before any challenge
+is served). It sells the six paid trust tools and the free preview at the
+prices in the table below, with no settlement fee, to buyers on Circle Agent
+Marketplace and to any x402 v2 client with a Gateway balance. No call is
+recorded or served until the transfer is read back from Gateway's transfers
+API; the on-chain batch hash is attached once Gateway reports it. Status as of
+2026-09-10: configured and unproven, meaning no Gateway-credited call has been
+read back on Base yet; the proof at
+`GET https://a-identity-backend.onrender.com/api/x402/gateway/proof` says so
+itself. Sub-cent infrastructure, not revenue. Probe it at
+`GET https://a-identity-backend.onrender.com/api/x402/gateway/tools/verify_agent`.
+
 On Arc the native gas token is USDC, so an agent needs no second asset to
 transact. This is also why Circle Paymaster is not used on Arc: a token
 paymaster exists to let an account pay gas in USDC where the native token is
@@ -409,7 +424,9 @@ Live today:
   on the canonical ReputationRegistry by our oracle validator. The full trail,
   including the Stellar pubnet funding hop behind the operating wallets, is at
   https://a-identity.xyz/proof/base. The gasless Circle Gateway hop that mints on Base
-  Sepolia is proven too.
+  Sepolia is proven too. A second paid rail through Circle Gateway nanopayments sells
+  the same tools here to Circle Agent Marketplace buyers (section 6); it is configured
+  and unproven until the first Gateway-credited call is read back.
 - **Robinhood Chain mainnet** (`eip155:4663`). ERC-8004 identity
   `0x8004a169fb4a3325136eb29fa0ceb6d2e539a432` and reputation
   `0x8004BAa17C55a88189AE136b182e5fdA19dE9b63`. We did not deploy those; the
