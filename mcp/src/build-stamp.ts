@@ -39,6 +39,9 @@ export function buildStamp(env: NodeJS.ProcessEnv = process.env): {
   commitShort: string
   branch: string | null
   startedAt: string
+  /** The Node.js version the process runs on, so a dependency's engine requirement can be
+   *  checked against the deployed runtime from outside instead of guessed. */
+  node: string
 } {
   const commit = firstOf(COMMIT_VARS, env) ?? 'unknown'
   return {
@@ -46,5 +49,6 @@ export function buildStamp(env: NodeJS.ProcessEnv = process.env): {
     commitShort: commit === 'unknown' ? 'unknown' : commit.slice(0, 7),
     branch: firstOf(BRANCH_VARS, env) ?? null,
     startedAt: STARTED_AT,
+    node: process.version,
   }
 }
