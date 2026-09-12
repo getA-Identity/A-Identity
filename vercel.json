@@ -25,6 +25,10 @@
       "destination": "https://a-identity-asp.onrender.com/:path*"
     },
     {
+      "source": "/.well-known/x402",
+      "destination": "/.well-known/x402.json"
+    },
+    {
       "source": "/(.*)",
       "destination": "/index.html"
     }

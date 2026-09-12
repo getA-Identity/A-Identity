@@ -281,6 +281,12 @@ The second non-EVM rail, live on its first mainnet sale the day it shipped (2026
   inside a pooled-fee atomic group, the GoPlausible facilitator broadcasts, and nothing counts as
   settled until our own indexer read returns the transfer. Three more sales followed the same day,
   one per remaining tool, so every tool this rail sells has a mainnet receipt.
+- **Discoverable, and attributed to the Global x402 Challenge.** Every tool's 402 declares a
+  Bazaar discovery extension (validated in the test suite with the same Ajv check the
+  facilitator runs), the resources are named under `a-identity.xyz` so the catalog can enrich
+  the merchant from the site, and the settle path forwards the challenge tag, the resource and
+  the declaration to the facilitator itself. Whether a sale was attributed is the
+  facilitator's record rather than ours: `mcp/scripts/algo-challenge-check.mjs` reads it.
 - **`AgentSpendPolicy` application `3688854723`** (created by
   [`NFDZMQYV…`](https://allo.info/tx/NFDZMQYVEFXBNKHAWIGUODMYCRONPX655VOALPR6AAZHOMK5I5ZA)) - the
   policy's *third* implementation (Solidity, Rust/Soroban, now Algorand Python), compiled with
@@ -327,7 +333,7 @@ day it lands rather than the day someone remembers to add it.
   `/mcp` JSON-RPC for agents. Durable state via Postgres (`DATABASE_URL`), JSON-file fallback for dev.
 - **Auth** - wallet sign-in on any chain family the registry knows (EVM personal_sign, Stellar SEP-43 signMessage, an Algorand signed zero-value self-payment; mcp/src/wallet-proof.ts) + email magic link (Resend) are *verified*; a plain guest
   session is read-only. Agent ownership is bound to a verified identity.
-- **Tests / CI** - `node:test` unit suite: **1141 tests across 84 colocated `*.test.ts` files**
+- **Tests / CI** - `node:test` unit suite: **1146 tests across 84 colocated `*.test.ts` files**
   (as of Aug 2026; `npm test` in `mcp/`) + a full E2E (`mcp/e2e.mjs`) of about **67 checks** that
   adapts to signer presence: live reads always run, and the on-chain write checks (x402, ERC-8183
   escrow, Gateway, **Nanopayments settle**, **CCTP burn-and-mint**) activate with a funded

@@ -5,10 +5,15 @@ import {
   algorandRailChallenge,
   algorandRailPaywallGate,
   algorandRailPriceUsd,
+  algorandRailResource,
   algorandRailStatus,
+  algorandResourceOrigin,
   facilitatorNetworkFor,
   DEFAULT_FACILITATOR,
+  DEFAULT_RESOURCE_ORIGIN,
   RAIL_BASE_PRICES_USD,
+  RAIL_TOOLS,
+  type RailToolName,
 } from './rail.js'
 
 const MAINNET = 'algorand:wGHE2Pwdvd7S12BL5FaOP20EGYesN73k'
@@ -80,6 +85,58 @@ test('the optional tag rides the accepts extra and is absent when unset', () => 
   const c2 = algorandRailChallenge('risk_check', without)
   const extra2 = ((c2.body.accepts as Record<string, unknown>[])[0].extra ?? {}) as Record<string, unknown>
   assert.equal(extra2.tag, undefined)
+})
+
+test('every 402 declares a Bazaar discovery extension that passes the validation the facilitator runs', async () => {
+  // The facilitator compiles `schema` with Ajv's 2020 draft (strict off) and drops the
+  // declaration silently when `info` fails it, so this runs that exact check instead of
+  // eyeballing the shape. The negative case proves the validator is not vacuous.
+  const mod = (await import('ajv/dist/2020.js' as string)) as { default?: unknown }
+  const AjvCtor = ((mod.default as { default?: unknown })?.default ?? mod.default ?? mod) as new (opts: object) => {
+    compile: (schema: unknown) => ((data: unknown) => boolean) & { errors?: unknown }
+  }
+  const s = algorandRailStatus({ X402_ALGORAND_NETWORKS: TESTNET, X402_ALGORAND_PAYTO: PAY_TO })
+  for (const tool of RAIL_TOOLS) {
+    const c = algorandRailChallenge(tool, s)
+    const bazaar = (c.body.extensions as { bazaar?: { info: { input: Record<string, unknown> }; schema: unknown } })?.bazaar
+    assert.ok(bazaar?.info && bazaar.schema, `${tool} declares no bazaar extension`)
+    const validate = new AjvCtor({ strict: false, allErrors: true }).compile(bazaar.schema)
+    assert.ok(validate(bazaar.info), `${tool}: ${JSON.stringify(validate.errors)}`)
+    assert.equal(bazaar.info.input.method, 'POST')
+    assert.equal(bazaar.info.input.bodyType, 'json')
+    const withoutAgent = { ...bazaar.info, input: { ...bazaar.info.input, body: {} } }
+    assert.equal(validate(withoutAgent), false, `${tool}: a body without agentId must not validate`)
+  }
+})
+
+test('resources are named under the site origin by default, and a malformed override is ignored', () => {
+  assert.equal(algorandRailResource('verify_agent', {}), 'https://a-identity.xyz/api/x402/algorand/tools/verify_agent')
+  assert.equal(
+    algorandRailResource('risk_check', { X402_ALGORAND_RESOURCE_ORIGIN: 'https://api.example.com/' }),
+    'https://api.example.com/api/x402/algorand/tools/risk_check',
+  )
+  for (const bad of ['http://a-identity.xyz', 'not a url', 'https://a-identity.xyz/sub', 'https://a-identity.xyz/?q=1']) {
+    assert.equal(algorandResourceOrigin({ X402_ALGORAND_RESOURCE_ORIGIN: bad }), DEFAULT_RESOURCE_ORIGIN, bad)
+  }
+  const s = algorandRailStatus({ X402_ALGORAND_NETWORKS: TESTNET, X402_ALGORAND_PAYTO: PAY_TO })
+  const c = algorandRailChallenge('agent_passport', s, {})
+  assert.equal((c.body.resource as { url: string }).url, 'https://a-identity.xyz/api/x402/algorand/tools/agent_passport')
+})
+
+test('each catalog description names what the caller gets back, not just the topic', () => {
+  const s = algorandRailStatus({ X402_ALGORAND_NETWORKS: TESTNET, X402_ALGORAND_PAYTO: PAY_TO })
+  const names: Record<RailToolName, RegExp> = {
+    verify_agent: /KYA/,
+    reputation_score: /0-1000/,
+    risk_check: /ALLOW \/ WARN \/ DENY/,
+    agent_passport: /passport/,
+  }
+  for (const tool of RAIL_TOOLS) {
+    const description = (algorandRailChallenge(tool, s).body.resource as { description: string }).description
+    assert.ok(description.length >= 80, `${tool}: "${description}" is too thin for a catalog listing`)
+    assert.match(description, names[tool])
+    assert.match(description, /agentId/, `${tool}: the listing must say what to send`)
+  }
 })
 
 test('an unconfigured challenge is a 501, never a free 402 menu', () => {

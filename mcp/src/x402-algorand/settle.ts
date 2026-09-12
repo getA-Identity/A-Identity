@@ -42,6 +42,30 @@ export type AlgorandRequirements = {
   /** Base units required. */
   amount: string
   resource: string
+  /** The challenge tag (e.g. x402-global-challenge), sent to the facilitator in extra. */
+  tag?: string | null
+  /** The resource as the 402 described it; a v2 facilitator catalogs it from the payload. */
+  resourceInfo?: { url: string; description: string; mimeType: string }
+  /** Server-declared extensions, today the Bazaar discovery declaration. */
+  extensions?: Record<string, unknown>
+}
+
+/**
+ * The payment payload as the facilitator should see it. The buyer's signed group is passed
+ * through untouched, since it is the only part a signature covers and the only part that
+ * moves money. What we set is the metadata a v2 facilitator reads for discovery: `resource`
+ * and `extensions`. Our declaration wins over whatever a buyer echoed, because the catalog
+ * entry describes OUR resource, and many buyers do not echo extensions at all, which would
+ * leave the tool unlisted however carefully the 402 declared it.
+ */
+export function facilitatorPaymentPayload(payload: unknown, requirements: AlgorandRequirements): Record<string, unknown> {
+  const forwarded: Record<string, unknown> = payload && typeof payload === 'object' ? { ...(payload as Record<string, unknown>) } : {}
+  if (requirements.resourceInfo) forwarded.resource = { ...requirements.resourceInfo }
+  if (requirements.extensions) {
+    const echoed = forwarded.extensions && typeof forwarded.extensions === 'object' ? (forwarded.extensions as Record<string, unknown>) : {}
+    forwarded.extensions = { ...echoed, ...requirements.extensions }
+  }
+  return forwarded
 }
 
 export type AlgorandSettleCode =
@@ -240,8 +264,11 @@ export async function settleAlgorandPayment(args: {
     return { success: false, code: 'already_redeemed', errorReason: `transaction ${verified.txId} already paid for a serving` }
   }
 
+  // The requirements mirror the 402's accepts entry field for field, tag included: the
+  // facilitator attributes a sale to the challenge from extra.tag on what it settles, and an
+  // entry that differs from the one the buyer accepted is a mismatch waiting to happen.
   const facilitatorBody = {
-    paymentPayload: payload,
+    paymentPayload: facilitatorPaymentPayload(payload, requirements),
     paymentRequirements: {
       scheme: 'exact',
       network: requirements.facilitatorNetwork,
@@ -251,7 +278,7 @@ export async function settleAlgorandPayment(args: {
       payTo: requirements.payTo,
       maxTimeoutSeconds: 120,
       resource: requirements.resource,
-      extra: { decimals: token.decimals },
+      extra: { decimals: token.decimals, ...(requirements.tag ? { tag: requirements.tag } : {}) },
     },
   }
 

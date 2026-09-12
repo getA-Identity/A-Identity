@@ -1,0 +1,17 @@
+{
+  "version": 1,
+  "name": "A-Identity",
+  "description": "Trust oracle for AI agents: verify an agent's on-chain identity, KYA status, 0-1000 reputation and ALLOW / WARN / DENY risk verdict before paying it, sold per call over x402.",
+  "url": "https://a-identity.xyz",
+  "website": "https://a-identity.xyz",
+  "documentation": "https://a-identity.mintlify.site",
+  "image": "https://a-identity.xyz/apple-touch-icon.png",
+  "resources": [
+    "https://a-identity.xyz/api/x402/algorand/tools/verify_agent",
+    "https://a-identity.xyz/api/x402/algorand/tools/reputation_score",
+    "https://a-identity.xyz/api/x402/algorand/tools/risk_check",
+    "https://a-identity.xyz/api/x402/algorand/tools/agent_passport"
+  ],
+  "status": "https://a-identity.xyz/api/x402/algorand/status",
+  "proof": "https://a-identity.xyz/api/x402/algorand/proof"
+}

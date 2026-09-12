@@ -237,6 +237,56 @@ test('a settle the indexer cannot confirm is ambiguous: recorded, unserved, hone
   assert.equal(persisted[0].confirmedBy, 'none')
 })
 
+function capturingNet(txId: string) {
+  const bodies: Record<'verify' | 'settle', Record<string, any> | null> = { verify: null, settle: null }
+  const base = mockNet(txId)
+  const fetcher: typeof fetch = async (input, init) => {
+    const url = String(input)
+    if (url.endsWith('/verify')) bodies.verify = JSON.parse(String(init?.body))
+    if (url.endsWith('/settle')) bodies.settle = JSON.parse(String(init?.body))
+    return base.fetcher(input, init)
+  }
+  return { fetcher, bodies }
+}
+
+test('the facilitator sees the challenge tag, our resource and our discovery declaration, with the signed group untouched', async () => {
+  const { group, txId } = buildGroup()
+  const net = capturingNet(txId)
+  const extensions = { bazaar: { info: { input: { type: 'http', method: 'POST' } }, schema: { type: 'object' } } }
+  const resourceInfo = { url: 'https://a-identity.xyz/api/x402/algorand/tools/verify_agent', description: 'verify', mimeType: 'application/json' }
+  // A buyer that echoed a different resource and some unrelated extension of its own.
+  const buyerPayload = { ...payloadOf(group), resource: { url: 'https://elsewhere.example/x' }, extensions: { other: { kept: true } } }
+  const r = await settleAlgorandPayment({
+    chain, token, requirements: { ...REQ, tag: 'x402-global-challenge', resourceInfo, extensions },
+    payload: buyerPayload, facilitator: 'https://facilitator.example',
+    deps: { fetcher: net.fetcher, sleep: async () => {}, attempts: 1, persist: async () => {}, loadResult: async () => ({ ok: true, rows: [] }) },
+  })
+  assert.ok(r.success, r.success ? '' : r.errorReason)
+  for (const step of ['verify', 'settle'] as const) {
+    const body = net.bodies[step]
+    assert.ok(body, `${step} was not called`)
+    assert.equal(body.paymentRequirements.extra.tag, 'x402-global-challenge', `${step}: tag`)
+    assert.equal(body.paymentRequirements.extra.decimals, token.decimals, `${step}: decimals`)
+    assert.deepEqual(body.paymentPayload.resource, resourceInfo, `${step}: our resource wins`)
+    assert.deepEqual(body.paymentPayload.extensions.bazaar, extensions.bazaar, `${step}: our declaration`)
+    assert.deepEqual(body.paymentPayload.extensions.other, { kept: true }, `${step}: buyer extensions kept`)
+    assert.deepEqual(body.paymentPayload.payload.paymentGroup, group, `${step}: signed group forwarded as-is`)
+  }
+  assert.equal(buyerPayload.resource.url, 'https://elsewhere.example/x', 'the buyer payload object is not mutated')
+})
+
+test('with no tag configured none is invented on the way to the facilitator', async () => {
+  const { group, txId } = buildGroup()
+  const net = capturingNet(txId)
+  const r = await settleAlgorandPayment({
+    chain, token, requirements: REQ, payload: payloadOf(group), facilitator: 'https://facilitator.example',
+    deps: { fetcher: net.fetcher, sleep: async () => {}, attempts: 1, persist: async () => {}, loadResult: async () => ({ ok: true, rows: [] }) },
+  })
+  assert.ok(r.success, r.success ? '' : r.errorReason)
+  assert.equal(net.bodies.settle?.paymentRequirements.extra.tag, undefined)
+  assert.equal(net.bodies.settle?.paymentPayload.resource, undefined)
+})
+
 test('a payment naming a network this challenge does not settle on is refused', async () => {
   const { group } = buildGroup()
   const payload = { ...payloadOf(group), network: 'algorand:wGHE2Pwdvd7S12BL5FaOP20EGYesN73ktiC1qzkkit8=' }

@@ -118,6 +118,10 @@ const server = http.createServer(async (req, res) => {
     'Access-Control-Allow-Headers',
     'Content-Type, Authorization, X-Payment, X-Payment-Nonce, X-Payment-Payer, X-Payment-Sig, PAYMENT-SIGNATURE, mcp-session-id, mcp-protocol-version',
   )
+  // The x402 v2 challenge and receipt travel in response headers, which a browser hides from
+  // cross-origin script unless they are exposed; the body carries the same object, the
+  // headers are what v2 clients read first.
+  res.setHeader('Access-Control-Expose-Headers', 'PAYMENT-REQUIRED, PAYMENT-RESPONSE, X-PAYMENT-RESPONSE')
 
   if (req.method === 'OPTIONS') { res.writeHead(204).end(); return }
 

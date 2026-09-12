@@ -8,6 +8,10 @@
  *   BASE=http://localhost:3457 TOOL=verify_agent AGENT=849980 CONFIRM=yes \
  *     node --env-file=.env scripts/x402-algorand-buyer.mjs
  *
+ * Challenge note: the leaderboard files localhost traffic under "dev" and treats repeated
+ * self-payments as manipulation. Use this script to PROVE the rail (one call against the
+ * public origin, e.g. BASE=https://a-identity.xyz), never to generate volume.
+ *
  * Env: X402_ALGORAND_BUYER_MNEMONIC (the paying account). The fee payer
  * address comes from the facilitator's /supported, never typed here.
  */
@@ -67,9 +71,11 @@ log(`payment txid: ${pay1.txID()} (buyer ${buyer.addr}, fee 0)`)
 
 if (process.env.CONFIRM !== 'yes') { log('Dry run (set CONFIRM=yes to pay). Nothing was sent.'); process.exit(0) }
 
+// Echo the challenge's resource and extensions the way an x402 v2 client does, so the run
+// exercises the same payload shape the Bazaar catalogs from.
 const payload = {
   x402Version: 2, scheme: 'exact', network: accepts.network,
-  resource: challenge.resource, accepted: accepts, extensions: {},
+  resource: challenge.resource, accepted: accepts, extensions: challenge.extensions ?? {},
   payload: { paymentGroup, paymentIndex: 1 },
 }
 const header = Buffer.from(JSON.stringify(payload)).toString('base64')

@@ -10,6 +10,7 @@
  * would advertise a service we do not perform.
  */
 import {
+  algorandChallengeReadiness,
   algorandRailChallenge,
   algorandRailPaywallGate,
   algorandRailPriceUsd,
@@ -63,6 +64,7 @@ export async function handleX402AlgorandRoutes(ctx: RouteCtx): Promise<boolean> 
       payToOptIn: optIn,
       facilitator: status.facilitator,
       ...(status.tag ? { tag: status.tag } : {}),
+      challenge: algorandChallengeReadiness(status),
       price: {
         note:
           'The buyer pays no network fee: they sign an ASA transfer with fee zero and the ' +
@@ -125,13 +127,7 @@ export async function handleX402AlgorandRoutes(ctx: RouteCtx): Promise<boolean> 
     return true
   }
 
-  if (req.method === 'GET') {
-    const challenge = algorandRailChallenge(tool, status)
-    sendWithPaymentRequired(res, challenge.httpStatus, challenge.body)
-    return true
-  }
-
-  if (req.method !== 'POST') {
+  if (req.method !== 'GET' && req.method !== 'POST') {
     sendJson(res, 405, { error: 'use GET for the price and POST to call', price: algorandRailPriceUsd(tool) })
     return true
   }
@@ -144,18 +140,29 @@ export async function handleX402AlgorandRoutes(ctx: RouteCtx): Promise<boolean> 
     return true
   }
 
-  const body = (await readBody(req)) as { agentId?: unknown; txContext?: unknown } | null
-  const agentId = typeof body?.agentId === 'string' ? body.agentId : ''
+  // The declared call is a POST with a JSON body. A paid GET is accepted as well, input in
+  // query params, because generic x402 clients replay whichever method they probed with.
+  let agentId = ''
+  let txContext: TxContext | null = null
+  if (req.method === 'POST') {
+    const body = (await readBody(req)) as { agentId?: unknown; txContext?: unknown } | null
+    agentId = typeof body?.agentId === 'string' ? body.agentId.trim() : ''
+    txContext = (body?.txContext ?? null) as TxContext | null
+  } else {
+    agentId = url.searchParams.get('agentId')?.trim() ?? ''
+    const amount = Number(url.searchParams.get('amountUsd'))
+    if (url.searchParams.has('amountUsd') && Number.isFinite(amount) && amount >= 0) txContext = { amountUsd: amount } as TxContext
+  }
   if (!agentId) {
-    sendJson(res, 400, { error: 'agentId is required', input: RAIL_TOOL_CARDS[tool].input, example: RAIL_TOOL_CARDS[tool].example })
+    // Refused before any settlement, so a missing input never costs the buyer a payment.
+    sendJson(res, 400, {
+      error: 'agentId is required: a JSON body on POST, or a query param on GET',
+      input: RAIL_TOOL_CARDS[tool].input,
+      example: RAIL_TOOL_CARDS[tool].example,
+    })
     return true
   }
-  const out = await algorandRailServeTool(
-    tool,
-    { agentId, txContext: (body?.txContext ?? null) as TxContext | null },
-    header,
-    status,
-  )
+  const out = await algorandRailServeTool(tool, { agentId, txContext }, header, status)
   if (out.httpStatus === 200) {
     // The x402 v2 receipt header, mirroring what the facilitator settled.
     const settlement = (out.body as { settlement?: unknown })?.settlement

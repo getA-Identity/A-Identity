@@ -24,6 +24,8 @@
  *   X402_ALGORAND_MAINNET_PAYTO / X402_ALGORAND_TESTNET_PAYTO  per-network override
  *   X402_ALGORAND_FACILITATOR     default https://facilitator.goplausible.xyz
  *   X402_ALGORAND_TAG             optional challenge tag (e.g. x402-global-challenge)
+ *   X402_ALGORAND_RESOURCE_ORIGIN public https origin the resources are served from
+ *                                 (default https://a-identity.xyz, which proxies /api here)
  *   X402_ALGORAND_MIN_VALUE_USD / X402_ALGORAND_MAX_VALUE_USD  price rails
  */
 import { CHAINS, getChain, getChainById } from '../chains/index.js'
@@ -38,6 +40,28 @@ export { RAIL_BASE_PRICES_USD, RAIL_TOOL_CARDS, RAIL_TOOLS }
 export type { RailToolName }
 
 export const DEFAULT_FACILITATOR = 'https://facilitator.goplausible.xyz'
+
+/**
+ * The public origin the four resources are named under. The Bazaar enriches a merchant from
+ * its resource domain (title, description, logo, well-known files), and the site origin is
+ * the one that carries all of that; it proxies /api to this backend. The Render hostname
+ * this rail first shipped with carries none of it, which is why the merchant showed up as a
+ * bare address with no logo.
+ */
+export const DEFAULT_RESOURCE_ORIGIN = 'https://a-identity.xyz'
+
+/** A malformed override is treated as unset, the same rule the payTo follows. */
+export function algorandResourceOrigin(env: NodeJS.ProcessEnv = process.env): string {
+  const raw = (env.X402_ALGORAND_RESOURCE_ORIGIN ?? '').trim()
+  if (!raw) return DEFAULT_RESOURCE_ORIGIN
+  try {
+    const u = new URL(raw)
+    const bare = (u.pathname === '/' || u.pathname === '') && !u.search && !u.hash
+    return u.protocol === 'https:' && bare ? u.origin : DEFAULT_RESOURCE_ORIGIN
+  } catch {
+    return DEFAULT_RESOURCE_ORIGIN
+  }
+}
 
 /**
  * Registry CAIP-2 id <-> the facilitator's network string.
@@ -201,8 +225,137 @@ export function algorandAmountRaw(tool: RailToolName, token: SettlementToken): b
   return BigInt(Math.round(algorandRailPriceUsd(tool).totalUsd * 10 ** token.decimals))
 }
 
-export function algorandRailResource(tool: RailToolName): string {
-  return `https://a-identity-backend.onrender.com/api/x402/algorand/tools/${tool}`
+export function algorandRailResource(tool: RailToolName, env: NodeJS.ProcessEnv = process.env): string {
+  return `${algorandResourceOrigin(env)}/api/x402/algorand/tools/${tool}`
+}
+
+// ── discovery: what the Bazaar catalog and the agents browsing it see ──────────────────
+
+type AlgorandListing = {
+  /** Shown in the Bazaar catalog, so it names what the caller receives, not the topic. */
+  description: string
+  /** A valid example request body. */
+  body: Record<string, unknown>
+  /** JSON Schema of the request body. */
+  bodySchema: Record<string, unknown>
+  /** Illustrative response: the field names are the live response's, the values are examples. */
+  example: Record<string, unknown>
+}
+
+const AGENT_ID_SCHEMA = { type: 'string', minLength: 1, description: RAIL_TOOL_CARDS.verify_agent.input.agentId }
+const AGENT_ONLY_BODY = { type: 'object', properties: { agentId: AGENT_ID_SCHEMA }, required: ['agentId'] }
+const EXAMPLE_TIME = '2026-09-12T00:00:00.000Z'
+
+export const ALGORAND_LISTINGS: Record<RailToolName, AlgorandListing> = {
+  verify_agent: {
+    description:
+      'Verify an AI agent before you pay it: whether its ERC-8004 on-chain identity resolves, its KYA ' +
+      '(Know Your Agent) status, whether it has been revoked, and a live probe of its endpoint. POST a JSON body with agentId.',
+    body: { agentId: '#0' },
+    bodySchema: AGENT_ONLY_BODY,
+    example: {
+      tool: 'verify_agent', agentId: '#0', verified: true, kya_status: 'verified', revoked: false,
+      liveness: { checked: true, reachable: true, httpStatus: 200 },
+      identity: { tokenId: '0', chain: 'rhchain', valid: true, partial: false },
+      source: 'onchain', checkedAt: EXAMPLE_TIME,
+    },
+  },
+  reputation_score: {
+    description:
+      'Reputation of an AI agent as a deterministic 0-1000 score, with the breakdown behind it (settlements, ' +
+      'validations, tenure, behavior, discipline), a Sybil signal, and the latest on-chain attestation of the score. POST a JSON body with agentId.',
+    body: { agentId: '#0' },
+    bodySchema: AGENT_ONLY_BODY,
+    example: {
+      tool: 'reputation_score', agentId: '#0', score: 612,
+      breakdown: { settlement: 240, validation: 150, tenure: 90, behavior: 92, discipline: 40 },
+      sybil: { level: 'low' }, settledOnchain: 12, settledUsd: 3.4, basis: 'on-chain settlements and validations',
+      computedAt: EXAMPLE_TIME,
+    },
+  },
+  risk_check: {
+    description:
+      'Pre-payment ALLOW / WARN / DENY verdict on an AI agent counterparty, with the reasons and the signals ' +
+      'behind it. Add txContext.amountUsd to size the check to the deal. POST a JSON body with agentId.',
+    body: { agentId: '#0', txContext: { amountUsd: 25 } },
+    bodySchema: {
+      type: 'object',
+      properties: {
+        agentId: AGENT_ID_SCHEMA,
+        txContext: {
+          type: 'object',
+          description: 'Optional deal context the verdict is sized to.',
+          properties: { amountUsd: { type: 'number', minimum: 0 }, chain: { type: 'string' }, kind: { type: 'string' } },
+        },
+      },
+      required: ['agentId'],
+    },
+    example: {
+      tool: 'risk_check', agentId: '#0', decision: 'ALLOW', risk: 'low', reasons: [],
+      signals: { onchainVerified: true, kyaVerified: true, reputationScore: 612, tenureDays: 41, revoked: false, txContext: { amountUsd: 25 } },
+      checkedAt: EXAMPLE_TIME,
+    },
+  },
+  agent_passport: {
+    description:
+      'Full trust passport for an AI agent in one JSON document: on-chain identity, KYA status, 0-1000 ' +
+      'reputation with its breakdown, and the ALLOW / WARN / DENY risk verdict. POST a JSON body with agentId.',
+    body: { agentId: '#0' },
+    bodySchema: AGENT_ONLY_BODY,
+    example: {
+      tool: 'agent_passport', agentId: '#0', standard: 'ERC-8004', verified: true,
+      kya: { status: 'verified', revoked: false },
+      reputation: { score: 612 },
+      risk: { decision: 'ALLOW', level: 'low', reasons: [] },
+      tenureDays: 41, issuedAt: EXAMPLE_TIME,
+    },
+  },
+}
+
+/** The x402 v2 resource object for one tool. */
+export function algorandResourceInfo(tool: RailToolName, env: NodeJS.ProcessEnv = process.env): { url: string; description: string; mimeType: string } {
+  return { url: algorandRailResource(tool, env), description: ALGORAND_LISTINGS[tool].description, mimeType: 'application/json' }
+}
+
+/**
+ * The Bazaar discovery declaration, in the exact shape @x402-avm/extensions builds for a
+ * JSON-body route after the resource server has stamped the method on it. The facilitator
+ * validates `info` against `schema` with Ajv and silently drops a declaration that fails, so
+ * the test suite runs the same validation rather than trusting the shape by eye.
+ */
+export function algorandDiscoveryExtension(tool: RailToolName): Record<string, unknown> {
+  const listing = ALGORAND_LISTINGS[tool]
+  return {
+    bazaar: {
+      info: {
+        input: { type: 'http', method: 'POST', bodyType: 'json', body: listing.body },
+        output: { type: 'json', example: listing.example },
+      },
+      schema: {
+        $schema: 'https://json-schema.org/draft/2020-12/schema',
+        type: 'object',
+        properties: {
+          input: {
+            type: 'object',
+            properties: {
+              type: { type: 'string', const: 'http' },
+              method: { type: 'string', enum: ['POST'] },
+              bodyType: { type: 'string', enum: ['json'] },
+              body: listing.bodySchema,
+            },
+            required: ['type', 'method', 'bodyType', 'body'],
+            additionalProperties: false,
+          },
+          output: {
+            type: 'object',
+            properties: { type: { type: 'string' }, example: { type: 'object' } },
+            required: ['type'],
+          },
+        },
+        required: ['input'],
+      },
+    },
+  }
 }
 
 /** The x402 v2 PaymentRequired object, served as JSON body AND (by the route)
@@ -213,7 +366,6 @@ export function algorandRailChallenge(
   status: AlgorandRailStatus,
   env: NodeJS.ProcessEnv = process.env,
 ): { httpStatus: number; body: Record<string, unknown> } {
-  void env
   if (!status.configured || !status.token || !status.payTo || !status.facilitatorNetwork) {
     return {
       httpStatus: 501,
@@ -225,11 +377,7 @@ export function algorandRailChallenge(
     httpStatus: 402,
     body: {
       x402Version: 2,
-      resource: {
-        url: algorandRailResource(tool),
-        description: RAIL_TOOL_CARDS[tool].description,
-        mimeType: 'application/json',
-      },
+      resource: algorandResourceInfo(tool, env),
       accepts: [
         {
           scheme: 'exact',
@@ -246,6 +394,9 @@ export function algorandRailChallenge(
           },
         },
       ],
+      // The Bazaar reads this back from the buyer's payment payload; the settle path also
+      // forwards it itself, so a buyer that does not echo extensions still gets us listed.
+      extensions: algorandDiscoveryExtension(tool),
       error: 'payment required',
       facilitator: status.facilitator,
       note:
@@ -361,7 +512,13 @@ export async function algorandRailServeTool(
     asset: chosen.token.address,
     payTo: chosen.payTo,
     amount: algorandAmountRaw(tool, chosen.token).toString(),
-    resource: algorandRailResource(tool),
+    resource: algorandRailResource(tool, env),
+    // What the facilitator attributes and catalogs the sale by. The tag used to stop at the
+    // 402: the settle body carried only decimals, so every sale landed in the leaderboard's
+    // "direct" bucket instead of the challenge one.
+    tag: chosen.tag,
+    resourceInfo: algorandResourceInfo(tool, env),
+    extensions: algorandDiscoveryExtension(tool),
   }
 
   let settled: Awaited<ReturnType<typeof settleAlgorandPayment>>
@@ -436,6 +593,23 @@ export async function algorandRailServeTool(
 }
 
 // ── proof ──────────────────────────────────────────────────────────────────────────
+
+/**
+ * What the Global x402 Challenge needs from this rail, stated from the code's side only.
+ * Whether the facilitator actually attributed the traffic is ITS record, not ours: read it
+ * with mcp/scripts/algo-challenge-check.mjs rather than inferring it from this block.
+ */
+export function algorandChallengeReadiness(status: AlgorandRailStatus, env: NodeJS.ProcessEnv = process.env) {
+  return {
+    tag: status.tag,
+    tagSentToFacilitator: status.tag !== null,
+    discovery: 'every tool declares a Bazaar discovery extension in its 402, and the settle path forwards it with each payment',
+    resourceOrigin: algorandResourceOrigin(env),
+    resources: RAIL_TOOLS.map((t) => algorandRailResource(t, env)),
+    shape: 'composite: every tool settles to the one payTo above',
+    attribution: "decided by the facilitator's leaderboard, not by this backend; read it with mcp/scripts/algo-challenge-check.mjs",
+  }
+}
 
 export type AlgorandRailProof = {
   rail: 'x402-algorand'
