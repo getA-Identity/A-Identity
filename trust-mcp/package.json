@@ -4,7 +4,7 @@
   "description": "MCP server that lets an AI agent verify another agent before paying it, and pay A-Identity for each verdict in USDC on Algorand from its own account, under a per-call spending cap.",
   "type": "module",
   "bin": {
-    "a-identity-trust-mcp": "./dist/index.js"
+    "a-identity-trust-mcp": "dist/index.js"
   },
   "main": "./dist/server.js",
   "types": "./dist/server.d.ts",
