@@ -19,7 +19,7 @@ const DEFAULT_SITE = 'https://a-identity.xyz'
 const BASE = (process.env.BASE ?? DEFAULT_SITE).replace(/\/$/, '')
 const FACILITATOR = (process.env.X402_ALGORAND_FACILITATOR ?? 'https://facilitator.goplausible.xyz').replace(/\/$/, '')
 const TAG = 'x402-global-challenge'
-const TOOLS = ['verify_agent', 'reputation_score', 'risk_check', 'agent_passport']
+const TOOLS = ['verify_agent', 'reputation_score', 'risk_check', 'agent_passport', 'agent_batch_audit']
 
 let failures = 0
 const check = (pass, label, detail = '') => {

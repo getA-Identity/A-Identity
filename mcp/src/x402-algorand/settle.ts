@@ -82,6 +82,7 @@ export type AlgorandSettleCode =
   | 'facilitator_rejected'
   | 'facilitator_unreachable'
   | 'not_confirmed'
+  | 'service_unavailable'
   | 'unexpected'
 
 export type AlgorandSettleResult =
@@ -103,6 +104,13 @@ export type AlgorandSettleDeps = AlgorandConfirmDeps & {
   meta?: { tool: string; baseUsd: number }
   persist?: (rec: AlgorandSettlementRecord) => Promise<void>
   loadResult?: typeof loadAlgorandSettlementsResult
+  /**
+   * Runs once the facilitator has verified the payment and BEFORE anything is submitted.
+   * The rail produces the paid answer here, so a tool that cannot answer (an RPC outage, a
+   * batch past its deadline) costs the buyer nothing: a refusal, or a throw, ends the call
+   * with nothing broadcast and nothing recorded.
+   */
+  beforeSettle?: () => Promise<{ ok: true } | { ok: false; reason: string }>
 }
 
 type DecodedEntry = {
@@ -290,6 +298,16 @@ export async function settleAlgorandPayment(args: {
       code: 'facilitator_rejected',
       errorReason: String(verifyRes.json.invalidReason ?? 'the facilitator rejected the payment without a reason'),
     }
+  }
+
+  if (deps.beforeSettle) {
+    let gate: { ok: true } | { ok: false; reason: string }
+    try {
+      gate = await deps.beforeSettle()
+    } catch (e) {
+      gate = { ok: false, reason: e instanceof Error ? e.message : String(e) }
+    }
+    if (!gate.ok) return { success: false, code: 'service_unavailable', errorReason: gate.reason }
   }
 
   const settleRes = await facilitatorCall(facilitator, '/settle', facilitatorBody, fetcher)

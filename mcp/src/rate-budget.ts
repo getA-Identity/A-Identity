@@ -93,6 +93,11 @@ export function rateBudget(method: string, pathname: string): { bucket: string; 
   if (pathname === '/api/x402/stellar/facilitator/verify') return { bucket: 'stellar-verify', max: 60, windowMs: 60_000 }
   if (pathname.startsWith('/api/x402/stellar/tools/')) return { bucket: 'stellar-tools', max: 20, windowMs: 60_000 }
   if (pathname.startsWith('/api/x402/tools/')) return { bucket: 'x402tools', max: 20, windowMs: 60_000 }
+  // The Algorand rail spends no gas of ours (the facilitator pays the pooled fee), but a
+  // paid call now does its work before settlement, and a batch audit runs up to fifty live
+  // checks. Unpaid calls stop at the 402 and cost nothing, so the budget is sized for real
+  // buyers retrying, not for a crawler reading prices.
+  if (pathname.startsWith('/api/x402/algorand/tools/')) return { bucket: 'algorand-tools', max: 30, windowMs: 60_000 }
   // MCP can also drive a release (release_escrow tool) which spends the shared signer, so cap
   // the whole /mcp endpoint. A backstop against escrow-release spam via MCP (a per-tool limit is
   // the finer follow-up); normal MCP usage stays well under it.

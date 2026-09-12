@@ -1,7 +1,7 @@
 {
   "name": "@a-identity/trust-guard",
-  "version": "0.1.0",
-  "description": "One-line trust guard: verify an AI agent (ERC-8004 identity + KYA + 0-1000 reputation + Sybil + risk) before you pay or hire it. Throws on DENY.",
+  "version": "0.2.0",
+  "description": "One-line trust guard: verify an AI agent (ERC-8004 identity + KYA + 0-1000 reputation + Sybil + risk) before you pay or hire it. Throws on DENY. Pays per call over x402 on X Layer or Algorand.",
   "type": "module",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
@@ -9,6 +9,10 @@
     ".": {
       "types": "./dist/index.d.ts",
       "import": "./dist/index.js"
+    },
+    "./algorand": {
+      "types": "./dist/algorand.d.ts",
+      "import": "./dist/algorand.js"
     }
   },
   "files": [
@@ -21,7 +25,7 @@
   },
   "scripts": {
     "build": "tsc",
-    "test": "tsc -p tsconfig.test.json && node --test dist-test/index.test.js",
+    "test": "tsc -p tsconfig.test.json && node --test dist-test/index.test.js dist-test/algorand.test.js",
     "prepare": "tsc",
     "prepublishOnly": "tsc"
   },
@@ -35,7 +39,9 @@
     "x402",
     "risk",
     "guard",
-    "okx"
+    "okx",
+    "algorand",
+    "usdc"
   ],
   "homepage": "https://a-identity.xyz",
   "repository": {
@@ -51,7 +57,16 @@
   "publishConfig": {
     "access": "public"
   },
+  "peerDependencies": {
+    "algosdk": "^3.7.0"
+  },
+  "peerDependenciesMeta": {
+    "algosdk": {
+      "optional": true
+    }
+  },
   "devDependencies": {
+    "algosdk": "^3.7.0",
     "typescript": "^5.9.3"
   }
 }

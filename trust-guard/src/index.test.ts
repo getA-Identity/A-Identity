@@ -68,6 +68,33 @@ test('a 402 is retried with headers from onPaymentRequired, then succeeds', asyn
   assert.equal(hit, 2)
 })
 
+test('the algorand rail calls the site origin and its tool path', async () => {
+  const { fn, calls } = fakeFetch(200, { tool: 'risk_check', agentId: '#1', decision: 'WARN', risk: 'medium', reasons: [] })
+  const g = new TrustGuard({ rail: 'algorand', fetch: fn })
+  await g.riskCheck('#1')
+  assert.equal(calls[0].url, 'https://a-identity.xyz/api/x402/algorand/tools/risk_check')
+})
+
+test('batchAudit posts the shortlist on Algorand and refuses on the X Layer rail', async () => {
+  const { fn, calls } = fakeFetch(200, { tool: 'agent_batch_audit', count: 2, summary: { ALLOW: 1, WARN: 0, DENY: 1 }, results: [] })
+  const g = new TrustGuard({ rail: 'algorand', fetch: fn })
+  const audit = await g.batchAudit(['#1', '#2'], { amountUsd: 10 })
+  assert.equal(audit.summary.DENY, 1)
+  assert.equal(calls[0].url, 'https://a-identity.xyz/api/x402/algorand/tools/agent_batch_audit')
+  assert.deepEqual(JSON.parse(String(calls[0].init!.body)), { agentIds: ['#1', '#2'], txContext: { amountUsd: 10 } })
+  await assert.rejects(() => new TrustGuard({ fetch: fn }).batchAudit(['#1']), /Algorand rail only/)
+})
+
+test('a v2 challenge carried only in the PAYMENT-REQUIRED header reaches the payer', async () => {
+  const challenge = { x402Version: 2, accepts: [{ scheme: 'exact', amount: '1000' }] }
+  let seen: unknown = null
+  const fn = async () =>
+    new Response('', { status: 402, headers: { 'payment-required': Buffer.from(JSON.stringify(challenge)).toString('base64') } })
+  const g = new TrustGuard({ fetch: fn, onPaymentRequired: async (c) => { seen = c; return null } })
+  await assert.rejects(() => g.riskCheck('x'), PaymentRequiredError)
+  assert.deepEqual(seen, challenge)
+})
+
 test('the one-shot guard() helper works against a default client', async () => {
   const { fn } = fakeFetch(200, { tool: 'risk_check', agentId: 'z', decision: 'DENY', risk: 'high', reasons: ['sybil'] })
   await assert.rejects(() => guard('z', { fetch: fn }), TrustDenyError)

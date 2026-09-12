@@ -287,6 +287,60 @@ test('with no tag configured none is invented on the way to the facilitator', as
   assert.equal(net.bodies.settle?.paymentPayload.resource, undefined)
 })
 
+test('a beforeSettle refusal submits nothing: the facilitator verified, nobody settles, nothing is recorded', async () => {
+  const { group, txId } = buildGroup()
+  const net = mockNet(txId)
+  const persisted: AlgorandSettlementRecord[] = []
+  const r = await settleAlgorandPayment({
+    chain, token, requirements: REQ, payload: payloadOf(group), facilitator: 'https://facilitator.example',
+    deps: {
+      fetcher: net.fetcher, sleep: async () => {}, attempts: 1,
+      persist: async (rec) => { persisted.push(rec) },
+      loadResult: async () => ({ ok: true, rows: [] }),
+      beforeSettle: async () => ({ ok: false, reason: 'the tool could not answer' }),
+    },
+  })
+  assert.equal(r.success, false)
+  if (!r.success) {
+    assert.equal(r.code, 'service_unavailable')
+    assert.equal(r.errorReason, 'the tool could not answer')
+    assert.equal(r.ambiguous, undefined)
+  }
+  assert.ok(net.calls.some((u) => u.endsWith('/verify')), 'the payment was verified first')
+  assert.ok(!net.calls.some((u) => u.endsWith('/settle')), 'nothing may be submitted')
+  assert.equal(persisted.length, 0)
+})
+
+test('beforeSettle runs after a valid verify and before settle, and a hook that throws is a refusal', async () => {
+  const first = buildGroup()
+  const order: string[] = []
+  const base = mockNet(first.txId)
+  const fetcher: typeof fetch = async (input, init) => {
+    const url = String(input)
+    if (url.endsWith('/verify')) order.push('verify')
+    if (url.endsWith('/settle')) order.push('settle')
+    return base.fetcher(input, init)
+  }
+  const common = { sleep: async () => {}, attempts: 1, persist: async () => {}, loadResult: async () => ({ ok: true as const, rows: [] }) }
+  const ok = await settleAlgorandPayment({
+    chain, token, requirements: REQ, payload: payloadOf(first.group), facilitator: 'https://facilitator.example',
+    deps: { ...common, fetcher, beforeSettle: async () => { order.push('hook'); return { ok: true } } },
+  })
+  assert.ok(ok.success, ok.success ? '' : ok.errorReason)
+  assert.deepEqual(order, ['verify', 'hook', 'settle'])
+
+  const second = buildGroup({ amount: 1200n })
+  const thrown = await settleAlgorandPayment({
+    chain, token, requirements: REQ, payload: payloadOf(second.group), facilitator: 'https://facilitator.example',
+    deps: { ...common, fetcher: mockNet(second.txId).fetcher, beforeSettle: async () => { throw new Error('rpc down') } },
+  })
+  assert.equal(thrown.success, false)
+  if (!thrown.success) {
+    assert.equal(thrown.code, 'service_unavailable')
+    assert.match(thrown.errorReason, /rpc down/)
+  }
+})
+
 test('a payment naming a network this challenge does not settle on is refused', async () => {
   const { group } = buildGroup()
   const payload = { ...payloadOf(group), network: 'algorand:wGHE2Pwdvd7S12BL5FaOP20EGYesN73ktiC1qzkkit8=' }

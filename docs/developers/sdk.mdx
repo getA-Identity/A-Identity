@@ -116,6 +116,37 @@ Agentic Wallet, for instance) and the guard settles the challenge and retries on
 it out and a 402 surfaces as `PaymentRequiredError` for you to handle. Widen the gate with
 `denyOn: ['DENY', 'WARN']` when a warn should also stop the payment.
 
+### Paying On Algorand
+
+Since 0.2 the same guard can call and pay the oracle on Algorand, in native USDC, from the
+agent's own account. The payer signs one fee-zero transfer of exactly the quoted amount and
+refuses anything above its per-call cap before it signs.
+
+```bash
+npm install @a-identity/trust-guard algosdk
+```
+
+```ts
+import { TrustGuard } from "@a-identity/trust-guard"
+import { algorandPayer } from "@a-identity/trust-guard/algorand"
+
+const oracle = new TrustGuard({
+  rail: "algorand",
+  onPaymentRequired: algorandPayer({ mnemonic: process.env.AGENT_MNEMONIC!, maxUsdPerCall: 0.1 }),
+})
+
+await oracle.guard(counterpartyAgentId)                  // 0.05 USDC, throws on DENY
+const audit = await oracle.batchAudit(["#12", "#907"])   // 0.04 USDC per agent, up to 50
+```
+
+The oracle produces the answer before it submits the payment, so a check that cannot finish
+costs nothing. Agents that live in an MCP client get the same tools from
+`@a-identity/trust-mcp`:
+
+```bash
+claude mcp add a-identity-trust -e A_IDENTITY_ALGORAND_MNEMONIC="..." -- npx -y @a-identity/trust-mcp
+```
+
 <Card title="Payment Details" icon="coins" href="/protocols/x402">
   How x402 settlement works, verified on-chain in USDC on Arc.
 </Card>

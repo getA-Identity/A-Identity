@@ -1,6 +1,6 @@
 /**
- * The Algorand (AVM) x402 rail: sell the four trust tools for USDC on Algorand,
- * mainnet and testnet, over x402 v2's "exact" scheme.
+ * The Algorand (AVM) x402 rail: sell the trust tools for USDC on Algorand, mainnet and
+ * testnet, over x402 v2's "exact" scheme.
  *
  * How this rail differs from the other two, stated up front:
  *
@@ -14,8 +14,11 @@
  *    rekey, no close-to), and no payment counts as settled until we have read
  *    the transfer back from an indexer ourselves. A facilitator's success
  *    response is a claim; the ledger is the record.
- *  - There is no settlement fee on top of the base price: the facilitator
- *    currently covers network fees, so charging one would be a markup wearing
+ *  - The answer is produced BEFORE the payment is submitted and released only after the
+ *    transfer is confirmed. A tool that cannot answer therefore costs the buyer nothing.
+ *  - It has its own price list, ten times the shared base list the other rails and the
+ *    OKX listings keep, plus a batch audit sold only here. There is no settlement fee on
+ *    top: the facilitator covers network fees, so charging one would be a markup wearing
  *    a cost's name.
  *
  * Env (all optional; unset means this rail is a labeled 501, never a mock):
@@ -34,15 +37,25 @@ import { isAlgorandAddress } from '../chains/algorand/ids.js'
 import { agentPassport, reputationScore, riskCheck, verifyAgent, type TxContext } from '../asp/tools.js'
 import { RAIL_BASE_PRICES_USD, RAIL_TOOLS, RAIL_TOOL_CARDS, type RailToolName } from '../x402-3009/rail.js'
 import { loadAlgorandSettlements, type AlgorandSettlementRecord } from '../storage.js'
+import { BATCH_MAX_AGENTS, runBatchAudit } from './batch.js'
 import { settleAlgorandPayment, type AlgorandRequirements, type AlgorandSettleDeps } from './settle.js'
 
 export { RAIL_BASE_PRICES_USD, RAIL_TOOL_CARDS, RAIL_TOOLS }
 export type { RailToolName }
 
+/** The batch audit: sold on this rail only, priced per agent. */
+export const ALGORAND_BATCH_TOOL = 'agent_batch_audit' as const
+export type AlgorandToolName = RailToolName | typeof ALGORAND_BATCH_TOOL
+export const ALGORAND_TOOLS: readonly AlgorandToolName[] = [...RAIL_TOOLS, ALGORAND_BATCH_TOOL]
+
+export function isAlgorandTool(name: string): name is AlgorandToolName {
+  return (ALGORAND_TOOLS as readonly string[]).includes(name)
+}
+
 export const DEFAULT_FACILITATOR = 'https://facilitator.goplausible.xyz'
 
 /**
- * The public origin the four resources are named under. The Bazaar enriches a merchant from
+ * The public origin the resources are named under. The Bazaar enriches a merchant from
  * its resource domain (title, description, logo, well-known files), and the site origin is
  * the one that carries all of that; it proxies /api to this backend. The Render hostname
  * this rail first shipped with carries none of it, which is why the merchant showed up as a
@@ -213,19 +226,52 @@ export async function payToOptInCheck(
 
 // ── pricing and the challenge ──────────────────────────────────────────────────────
 
-export function algorandRailPriceUsd(tool: RailToolName): { baseUsd: number; totalUsd: number } {
-  const baseUsd = RAIL_BASE_PRICES_USD[tool]
+/**
+ * Algorand's own price list: ten times the shared base list. The shared list stays where it
+ * is on purpose, because the X Layer ASP, the EIP-3009 rails, Stellar and the Gateway rail
+ * charge it and the OKX listings are registered against it. On Algorand the leaderboard the
+ * challenge is judged by counts USDC processed, and a tenth of a cent per verdict made every
+ * real call nearly invisible there. The test suite pins both lists.
+ */
+export const ALGORAND_PRICES_USD: Record<RailToolName, number> = {
+  verify_agent: 0.01,
+  reputation_score: 0.02,
+  risk_check: 0.05,
+  agent_passport: 0.1,
+}
+
+/** Per agent in a batch audit: a fifth under a single risk_check, for buying in bulk. */
+export const ALGORAND_BATCH_PER_AGENT_USD = 0.04
+export const ALGORAND_BATCH_MAX_AGENTS = BATCH_MAX_AGENTS
+/** The size a batch challenge is quoted at when the caller names none. */
+export const ALGORAND_BATCH_DEFAULT_QUOTE = 10
+
+export function clampBatchCount(count: unknown): number {
+  const n = Math.floor(Number(count))
+  if (!Number.isFinite(n) || n < 1) return 1
+  return Math.min(n, ALGORAND_BATCH_MAX_AGENTS)
+}
+
+export type AlgorandPrice = { baseUsd: number; totalUsd: number; unitUsd?: number; count?: number }
+
+export function algorandRailPriceUsd(tool: AlgorandToolName, count: number = 1): AlgorandPrice {
+  if (tool === ALGORAND_BATCH_TOOL) {
+    const n = clampBatchCount(count)
+    const total = Math.round(ALGORAND_BATCH_PER_AGENT_USD * n * 1e6) / 1e6
+    return { baseUsd: total, totalUsd: total, unitUsd: ALGORAND_BATCH_PER_AGENT_USD, count: n }
+  }
   // No settlement fee: the facilitator pays the network fee today. If that ever
   // changes, the fee belongs on the chain's settlement token with a measured
   // feeBasis, exactly as the EVM rails record theirs.
+  const baseUsd = ALGORAND_PRICES_USD[tool]
   return { baseUsd, totalUsd: baseUsd }
 }
 
-export function algorandAmountRaw(tool: RailToolName, token: SettlementToken): bigint {
-  return BigInt(Math.round(algorandRailPriceUsd(tool).totalUsd * 10 ** token.decimals))
+export function algorandAmountRaw(tool: AlgorandToolName, token: SettlementToken, count: number = 1): bigint {
+  return BigInt(Math.round(algorandRailPriceUsd(tool, count).totalUsd * 10 ** token.decimals))
 }
 
-export function algorandRailResource(tool: RailToolName, env: NodeJS.ProcessEnv = process.env): string {
+export function algorandRailResource(tool: AlgorandToolName, env: NodeJS.ProcessEnv = process.env): string {
   return `${algorandResourceOrigin(env)}/api/x402/algorand/tools/${tool}`
 }
 
@@ -244,9 +290,14 @@ type AlgorandListing = {
 
 const AGENT_ID_SCHEMA = { type: 'string', minLength: 1, description: RAIL_TOOL_CARDS.verify_agent.input.agentId }
 const AGENT_ONLY_BODY = { type: 'object', properties: { agentId: AGENT_ID_SCHEMA }, required: ['agentId'] }
+const TX_CONTEXT_SCHEMA = {
+  type: 'object',
+  description: 'Optional deal context the verdict is sized to.',
+  properties: { amountUsd: { type: 'number', minimum: 0 }, chain: { type: 'string' }, kind: { type: 'string' } },
+}
 const EXAMPLE_TIME = '2026-09-12T00:00:00.000Z'
 
-export const ALGORAND_LISTINGS: Record<RailToolName, AlgorandListing> = {
+export const ALGORAND_LISTINGS: Record<AlgorandToolName, AlgorandListing> = {
   verify_agent: {
     description:
       'Verify an AI agent before you pay it: whether its ERC-8004 on-chain identity resolves, its KYA ' +
@@ -280,14 +331,7 @@ export const ALGORAND_LISTINGS: Record<RailToolName, AlgorandListing> = {
     body: { agentId: '#0', txContext: { amountUsd: 25 } },
     bodySchema: {
       type: 'object',
-      properties: {
-        agentId: AGENT_ID_SCHEMA,
-        txContext: {
-          type: 'object',
-          description: 'Optional deal context the verdict is sized to.',
-          properties: { amountUsd: { type: 'number', minimum: 0 }, chain: { type: 'string' }, kind: { type: 'string' } },
-        },
-      },
+      properties: { agentId: AGENT_ID_SCHEMA, txContext: TX_CONTEXT_SCHEMA },
       required: ['agentId'],
     },
     example: {
@@ -310,10 +354,36 @@ export const ALGORAND_LISTINGS: Record<RailToolName, AlgorandListing> = {
       tenureDays: 41, issuedAt: EXAMPLE_TIME,
     },
   },
+  agent_batch_audit: {
+    description:
+      `Batch trust audit for up to ${BATCH_MAX_AGENTS} AI agents in one paid call: an ALLOW / WARN / DENY verdict, ` +
+      'risk level, reasons and reputation score for every agent, plus a summary count. ' +
+      `${ALGORAND_BATCH_PER_AGENT_USD} USDC per agent; quote a size with ?count=N, then POST a JSON body with agentIds.`,
+    body: { agentIds: ['#0', '#1'], txContext: { amountUsd: 25 } },
+    bodySchema: {
+      type: 'object',
+      properties: {
+        agentIds: { type: 'array', minItems: 1, maxItems: BATCH_MAX_AGENTS, items: AGENT_ID_SCHEMA },
+        txContext: TX_CONTEXT_SCHEMA,
+      },
+      required: ['agentIds'],
+    },
+    example: {
+      tool: 'agent_batch_audit', count: 2, summary: { ALLOW: 1, WARN: 0, DENY: 1 },
+      results: [
+        { agentId: '#0', decision: 'ALLOW', risk: 'low', reasons: [], reputationScore: 612, onchainVerified: true, kyaVerified: true, revoked: false },
+        {
+          agentId: '#1', decision: 'DENY', risk: 'high', reasons: ['No verifiable on-chain identity (ERC-8004) found for this agent'],
+          reputationScore: 0, onchainVerified: false, kyaVerified: false, revoked: false,
+        },
+      ],
+      checkedAt: EXAMPLE_TIME,
+    },
+  },
 }
 
 /** The x402 v2 resource object for one tool. */
-export function algorandResourceInfo(tool: RailToolName, env: NodeJS.ProcessEnv = process.env): { url: string; description: string; mimeType: string } {
+export function algorandResourceInfo(tool: AlgorandToolName, env: NodeJS.ProcessEnv = process.env): { url: string; description: string; mimeType: string } {
   return { url: algorandRailResource(tool, env), description: ALGORAND_LISTINGS[tool].description, mimeType: 'application/json' }
 }
 
@@ -323,7 +393,7 @@ export function algorandResourceInfo(tool: RailToolName, env: NodeJS.ProcessEnv 
  * validates `info` against `schema` with Ajv and silently drops a declaration that fails, so
  * the test suite runs the same validation rather than trusting the shape by eye.
  */
-export function algorandDiscoveryExtension(tool: RailToolName): Record<string, unknown> {
+export function algorandDiscoveryExtension(tool: AlgorandToolName): Record<string, unknown> {
   const listing = ALGORAND_LISTINGS[tool]
   return {
     bazaar: {
@@ -360,11 +430,12 @@ export function algorandDiscoveryExtension(tool: RailToolName): Record<string, u
 
 /** The x402 v2 PaymentRequired object, served as JSON body AND (by the route)
  *  as a base64 PAYMENT-REQUIRED header, since v2 clients read the header and
- *  v1-era ones read the body. */
+ *  v1-era ones read the body. A batch challenge is quoted for `count` agents. */
 export function algorandRailChallenge(
-  tool: RailToolName,
+  tool: AlgorandToolName,
   status: AlgorandRailStatus,
   env: NodeJS.ProcessEnv = process.env,
+  quote: { count?: number } = {},
 ): { httpStatus: number; body: Record<string, unknown> } {
   if (!status.configured || !status.token || !status.payTo || !status.facilitatorNetwork) {
     return {
@@ -372,7 +443,10 @@ export function algorandRailChallenge(
       body: { error: 'Algorand x402 rail not configured', reason: status.reason ?? 'unconfigured' },
     }
   }
-  const amount = algorandAmountRaw(tool, status.token).toString()
+  const isBatch = tool === ALGORAND_BATCH_TOOL
+  const count = isBatch ? clampBatchCount(quote.count ?? ALGORAND_BATCH_DEFAULT_QUOTE) : 1
+  const price = algorandRailPriceUsd(tool, count)
+  const amount = algorandAmountRaw(tool, status.token, count).toString()
   return {
     httpStatus: 402,
     body: {
@@ -397,6 +471,19 @@ export function algorandRailChallenge(
       // The Bazaar reads this back from the buyer's payment payload; the settle path also
       // forwards it itself, so a buyer that does not echo extensions still gets us listed.
       extensions: algorandDiscoveryExtension(tool),
+      ...(isBatch
+        ? {
+            pricing: {
+              unitUsd: price.unitUsd,
+              count: price.count,
+              totalUsd: price.totalUsd,
+              maxAgents: ALGORAND_BATCH_MAX_AGENTS,
+              note:
+                'Quoted for `count` agents (?count=N, 1 to 50). A paid call is priced by the number of distinct ' +
+                'agentIds it sends: paying for at least that many is accepted, paying for fewer is refused with a fresh quote.',
+            },
+          }
+        : {}),
       error: 'payment required',
       facilitator: status.facilitator,
       note:
@@ -432,12 +519,13 @@ export function algorandRailLimits(status: AlgorandRailStatus, env: NodeJS.Proce
 
 // ── serving a paid call ────────────────────────────────────────────────────────────
 
-export type AlgorandRailToolInput = { agentId: string; txContext?: TxContext | null }
+export type AlgorandRailToolInput = { agentId: string; txContext?: TxContext | null; agentIds?: string[] }
+export type AlgorandRailHandlers = Record<AlgorandToolName, (input: AlgorandRailToolInput) => Promise<unknown>>
 export type AlgorandRailServeDeps = AlgorandSettleDeps & {
-  handlers?: Record<RailToolName, (input: AlgorandRailToolInput) => Promise<unknown>>
+  handlers?: AlgorandRailHandlers
 }
 
-function algorandHandlers(status: AlgorandRailStatus): Record<RailToolName, (input: AlgorandRailToolInput) => Promise<unknown>> {
+function algorandHandlers(status: AlgorandRailStatus): AlgorandRailHandlers {
   const meta = <T extends Record<string, unknown>>(result: T) => ({
     ...result,
     _meta: {
@@ -447,8 +535,8 @@ function algorandHandlers(status: AlgorandRailStatus): Record<RailToolName, (inp
         asset: status.token?.address,
         assetSymbol: status.token?.symbol,
         facilitator:
-          'the GoPlausible facilitator broadcast the atomic group and paid its pooled fee; ' +
-          'we confirmed the transfer ourselves from an indexer before serving this answer',
+          'the answer was produced before the payment was submitted; the GoPlausible facilitator broadcast ' +
+          'the atomic group and paid its pooled fee, and we confirmed the transfer from an indexer before releasing it',
       },
     },
   })
@@ -457,16 +545,21 @@ function algorandHandlers(status: AlgorandRailStatus): Record<RailToolName, (inp
     reputation_score: async (i) => meta(await reputationScore(i.agentId)),
     risk_check: async (i) => meta(await riskCheck(i.agentId, i.txContext ?? null)),
     agent_passport: async (i) => meta(await agentPassport(i.agentId)),
+    agent_batch_audit: async (i) => {
+      const audit = await runBatchAudit(i.agentIds ?? [], i.txContext ?? null)
+      if (!audit.ok) throw new Error(audit.reason)
+      return meta(audit.result)
+    },
   }
 }
 
 /**
- * The full paid-call path for one tool. Same status contract as the Stellar rail:
- * 501 unconfigured, 402 fixable (fresh challenge), 502 our side, 202 unconfirmed,
- * 200 the money moved and we read it ourselves.
+ * The full paid-call path for one tool. Status contract: 501 unconfigured, 402 fixable
+ * (fresh challenge), 503 the tool could not answer so nothing was settled, 502 our side,
+ * 202 unconfirmed, 200 the money moved, we read it ourselves, and the answer is attached.
  */
 export async function algorandRailServeTool(
-  tool: RailToolName,
+  tool: AlgorandToolName,
   input: AlgorandRailToolInput,
   paymentHeader: string,
   status: AlgorandRailStatus,
@@ -476,11 +569,18 @@ export async function algorandRailServeTool(
   const gate = algorandRailPaywallGate(status)
   if (!gate.ok) return { httpStatus: gate.httpStatus, body: gate.body }
 
+  const isBatch = tool === ALGORAND_BATCH_TOOL
+  const count = isBatch ? (input.agentIds?.length ?? 0) : 1
+  if (isBatch && (count < 1 || count > ALGORAND_BATCH_MAX_AGENTS)) {
+    return { httpStatus: 400, body: { error: `agentIds must name 1 to ${ALGORAND_BATCH_MAX_AGENTS} agents`, received: count } }
+  }
+  const quote = { count }
+
   let payload: unknown
   try {
     payload = JSON.parse(Buffer.from(paymentHeader, 'base64').toString('utf8'))
   } catch {
-    const challenge = algorandRailChallenge(tool, status, env)
+    const challenge = algorandRailChallenge(tool, status, env, quote)
     return { httpStatus: challenge.httpStatus, body: { ...challenge.body, reason: 'the payment header is not base64-encoded JSON' } }
   }
 
@@ -491,7 +591,7 @@ export async function algorandRailServeTool(
   if (typeof paidNetwork === 'string' && paidNetwork.trim() && algorandCaip2Of(paidNetwork) !== status.network) {
     const s = algorandRailStatus(env, paidNetwork)
     if (!s.configured) {
-      const challenge = algorandRailChallenge(tool, status, env)
+      const challenge = algorandRailChallenge(tool, status, env, quote)
       return {
         httpStatus: challenge.httpStatus,
         body: { ...challenge.body, reason: s.reason ?? `this rail does not settle on '${paidNetwork}'` },
@@ -505,13 +605,13 @@ export async function algorandRailServeTool(
     return { httpStatus: 501, body: { error: 'Algorand x402 rail not configured', reason: 'network descriptor missing from the registry' } }
   }
 
-  const price = algorandRailPriceUsd(tool)
+  const price = algorandRailPriceUsd(tool, count)
   const requirements: AlgorandRequirements = {
     network: chain.caip2,
     facilitatorNetwork: chosen.facilitatorNetwork!,
     asset: chosen.token.address,
     payTo: chosen.payTo,
-    amount: algorandAmountRaw(tool, chosen.token).toString(),
+    amount: algorandAmountRaw(tool, chosen.token, count).toString(),
     resource: algorandRailResource(tool, env),
     // What the facilitator attributes and catalogs the sale by. The tag used to stop at the
     // 402: the settle body carried only decimals, so every sale landed in the leaderboard's
@@ -519,6 +619,20 @@ export async function algorandRailServeTool(
     tag: chosen.tag,
     resourceInfo: algorandResourceInfo(tool, env),
     extensions: algorandDiscoveryExtension(tool),
+  }
+
+  // The answer is produced after the facilitator verified the payment and before anything is
+  // submitted, then released only once the transfer is confirmed. A tool that fails here, or a
+  // batch that misses its deadline, costs the buyer nothing.
+  const handlers = deps.handlers ?? algorandHandlers(chosen)
+  const produced: { body?: unknown } = {}
+  const beforeSettle = async (): Promise<{ ok: true } | { ok: false; reason: string }> => {
+    try {
+      produced.body = await handlers[tool](input)
+      return { ok: true }
+    } catch (e) {
+      return { ok: false, reason: e instanceof Error ? e.message : String(e) }
+    }
   }
 
   let settled: Awaited<ReturnType<typeof settleAlgorandPayment>>
@@ -529,7 +643,7 @@ export async function algorandRailServeTool(
       requirements,
       payload,
       facilitator: chosen.facilitator,
-      deps: { ...deps, meta: { tool, baseUsd: price.baseUsd } },
+      deps: { ...deps, beforeSettle, meta: { tool, baseUsd: price.baseUsd } },
     })
   } catch (e) {
     return {
@@ -544,12 +658,26 @@ export async function algorandRailServeTool(
   }
 
   if (!settled.success) {
+    if (settled.code === 'service_unavailable') {
+      return {
+        httpStatus: 503,
+        body: {
+          error: 'the answer could not be produced, so nothing was settled',
+          code: settled.code,
+          reason: settled.errorReason,
+          note:
+            'The tool runs before the payment is submitted. Your signed payment was never broadcast and no money ' +
+            "moved; the same payment can be retried until its group's lastValid round passes." +
+            (isBatch ? ' A batch that keeps missing its deadline will fit with fewer agentIds.' : ''),
+        },
+      }
+    }
     const retryable: string[] = [
       'malformed_payload', 'unsupported_network', 'unsupported_asset', 'wrong_recipient', 'wrong_amount',
       'wrong_transaction_type', 'unsafe_group', 'unsigned_payment', 'facilitator_rejected', 'already_redeemed',
     ]
     if (retryable.includes(settled.code)) {
-      const challenge = algorandRailChallenge(tool, status, env)
+      const challenge = algorandRailChallenge(tool, status, env, quote)
       return { httpStatus: challenge.httpStatus, body: { ...challenge.body, reason: settled.errorReason } }
     }
     return {
@@ -575,21 +703,7 @@ export async function algorandRailServeTool(
     }
   }
 
-  const handlers = deps.handlers ?? algorandHandlers(chosen)
-  try {
-    const body = await handlers[tool](input)
-    return { httpStatus: 200, body: { ...(body as Record<string, unknown>), settlement: settled } }
-  } catch (e) {
-    return {
-      httpStatus: 500,
-      body: {
-        error: 'tool failed after settlement',
-        reason: e instanceof Error ? e.message : String(e),
-        settlement: settled,
-        note: 'Your payment settled on-chain and is recorded. This failure is on our side.',
-      },
-    }
-  }
+  return { httpStatus: 200, body: { ...((produced.body ?? {}) as Record<string, unknown>), settlement: settled } }
 }
 
 // ── proof ──────────────────────────────────────────────────────────────────────────
@@ -605,7 +719,11 @@ export function algorandChallengeReadiness(status: AlgorandRailStatus, env: Node
     tagSentToFacilitator: status.tag !== null,
     discovery: 'every tool declares a Bazaar discovery extension in its 402, and the settle path forwards it with each payment',
     resourceOrigin: algorandResourceOrigin(env),
-    resources: RAIL_TOOLS.map((t) => algorandRailResource(t, env)),
+    resources: ALGORAND_TOOLS.map((t) => algorandRailResource(t, env)),
+    prices: {
+      ...ALGORAND_PRICES_USD,
+      agent_batch_audit: { perAgentUsd: ALGORAND_BATCH_PER_AGENT_USD, maxAgents: ALGORAND_BATCH_MAX_AGENTS },
+    },
     shape: 'composite: every tool settles to the one payTo above',
     attribution: "decided by the facilitator's leaderboard, not by this backend; read it with mcp/scripts/algo-challenge-check.mjs",
   }

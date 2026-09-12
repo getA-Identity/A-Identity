@@ -10,6 +10,9 @@
  * would advertise a service we do not perform.
  */
 import {
+  ALGORAND_BATCH_TOOL,
+  ALGORAND_LISTINGS,
+  ALGORAND_TOOLS,
   algorandChallengeReadiness,
   algorandRailChallenge,
   algorandRailPaywallGate,
@@ -18,11 +21,12 @@ import {
   algorandRailServeTool,
   algorandRailStatus,
   algorandRailNetworks,
+  isAlgorandTool,
   payToOptInCheck,
-  RAIL_TOOLS,
   RAIL_TOOL_CARDS,
   type RailToolName,
 } from '../x402-algorand/rail.js'
+import { normalizeAgentIds } from '../x402-algorand/batch.js'
 import type { TxContext } from '../asp/tools.js'
 import { readBody, sendJson, type RouteCtx, sendChallenge } from './shared.js'
 
@@ -37,6 +41,23 @@ function sendWithPaymentRequired(res: RouteCtx['res'], httpStatus: number, body:
     }
   }
   sendChallenge(res, httpStatus, body)
+}
+
+type ToolBody = { agentId?: unknown; agentIds?: unknown; txContext?: unknown } | null
+
+async function readToolBody(req: RouteCtx['req']): Promise<ToolBody> {
+  try {
+    return (await readBody(req)) as ToolBody
+  } catch {
+    return null
+  }
+}
+
+/** A GET carries the deal size as ?amountUsd=; a POST carries a txContext object. */
+function txContextFromQuery(url: URL): TxContext | null {
+  if (!url.searchParams.has('amountUsd')) return null
+  const amount = Number(url.searchParams.get('amountUsd'))
+  return Number.isFinite(amount) && amount >= 0 ? ({ amountUsd: amount } as TxContext) : null
 }
 
 export async function handleX402AlgorandRoutes(ctx: RouteCtx): Promise<boolean> {
@@ -69,7 +90,8 @@ export async function handleX402AlgorandRoutes(ctx: RouteCtx): Promise<boolean> 
         note:
           'The buyer pays no network fee: they sign an ASA transfer with fee zero and the ' +
           "facilitator's fee-payer transaction covers the atomic group's pooled fee. No " +
-          'settlement fee is added on top of the base price.',
+          'settlement fee is added on top of the price, and the answer is produced before the ' +
+          'payment is submitted, so a tool that cannot answer costs nothing.',
       },
       authorization: {
         scheme: 'exact (x402 v2, AVM)',
@@ -101,7 +123,7 @@ export async function handleX402AlgorandRoutes(ctx: RouteCtx): Promise<boolean> 
     return true
   }
 
-  // ── GET+POST /api/x402/algorand/tools/:name - the four paid trust tools ──
+  // ── GET+POST /api/x402/algorand/tools/:name - the paid trust tools ──
   const match = url.pathname.match(/^\/api\/x402\/algorand\/tools\/([a-z_]+)$/)
   if (!match) {
     sendJson(res, 404, {
@@ -109,17 +131,19 @@ export async function handleX402AlgorandRoutes(ctx: RouteCtx): Promise<boolean> 
       endpoints: [
         'GET /api/x402/algorand/status',
         'GET /api/x402/algorand/proof',
-        ...RAIL_TOOLS.map((t) => `GET+POST /api/x402/algorand/tools/${t}`),
+        ...ALGORAND_TOOLS.map((t) => `GET+POST /api/x402/algorand/tools/${t}`),
       ],
     })
     return true
   }
 
-  const tool = match[1] as RailToolName
-  if (!RAIL_TOOLS.includes(tool)) {
-    sendJson(res, 404, { error: `unknown tool '${tool}'`, tools: [...RAIL_TOOLS] })
+  const name = match[1]
+  if (!isAlgorandTool(name)) {
+    sendJson(res, 404, { error: `unknown tool '${name}'`, tools: [...ALGORAND_TOOLS] })
     return true
   }
+  const tool = name
+  const isBatch = tool === ALGORAND_BATCH_TOOL
 
   const gate = algorandRailPaywallGate(status)
   if (!gate.ok) {
@@ -134,35 +158,55 @@ export async function handleX402AlgorandRoutes(ctx: RouteCtx): Promise<boolean> 
 
   // v2 header first, the v1 alias second; both carry base64 JSON.
   const header = String(req.headers['payment-signature'] ?? req.headers['x-payment'] ?? '')
+  const body: ToolBody = req.method === 'POST' ? await readToolBody(req) : null
+
   if (!header) {
-    const challenge = algorandRailChallenge(tool, status)
+    // A batch is quoted for the size the caller names: ?count=N, the agentIds it lists, or
+    // the default quote when it names nothing.
+    let count: number | undefined
+    if (isBatch) {
+      const countParam = url.searchParams.get('count')
+      const listed = normalizeAgentIds(body?.agentIds ?? url.searchParams.get('agentIds') ?? undefined)
+      count = countParam ? Number(countParam) : listed.ok ? listed.ids.length : undefined
+    }
+    const challenge = algorandRailChallenge(tool, status, process.env, { count })
     sendWithPaymentRequired(res, challenge.httpStatus, challenge.body)
     return true
   }
 
   // The declared call is a POST with a JSON body. A paid GET is accepted as well, input in
   // query params, because generic x402 clients replay whichever method they probed with.
-  let agentId = ''
-  let txContext: TxContext | null = null
-  if (req.method === 'POST') {
-    const body = (await readBody(req)) as { agentId?: unknown; txContext?: unknown } | null
-    agentId = typeof body?.agentId === 'string' ? body.agentId.trim() : ''
-    txContext = (body?.txContext ?? null) as TxContext | null
+  const txContext: TxContext | null = req.method === 'POST' ? ((body?.txContext ?? null) as TxContext | null) : txContextFromQuery(url)
+  let out: { httpStatus: number; body: unknown }
+  if (isBatch) {
+    const ids = normalizeAgentIds(req.method === 'POST' ? body?.agentIds : url.searchParams.get('agentIds') ?? undefined)
+    if (!ids.ok) {
+      // Refused before any settlement, so a malformed list never costs the buyer a payment.
+      sendJson(res, 400, {
+        error: ids.reason,
+        input: { agentIds: 'array of 1 to 50 agent ids (JSON body on POST, comma-separated query param on GET)' },
+        example: ALGORAND_LISTINGS[tool].body,
+      })
+      return true
+    }
+    out = await algorandRailServeTool(tool, { agentId: '', agentIds: ids.ids, txContext }, header, status)
   } else {
-    agentId = url.searchParams.get('agentId')?.trim() ?? ''
-    const amount = Number(url.searchParams.get('amountUsd'))
-    if (url.searchParams.has('amountUsd') && Number.isFinite(amount) && amount >= 0) txContext = { amountUsd: amount } as TxContext
+    const agentId = req.method === 'POST'
+      ? (typeof body?.agentId === 'string' ? body.agentId.trim() : '')
+      : (url.searchParams.get('agentId')?.trim() ?? '')
+    if (!agentId) {
+      // Refused before any settlement, so a missing input never costs the buyer a payment.
+      const card = RAIL_TOOL_CARDS[tool as RailToolName]
+      sendJson(res, 400, {
+        error: 'agentId is required: a JSON body on POST, or a query param on GET',
+        input: card.input,
+        example: card.example,
+      })
+      return true
+    }
+    out = await algorandRailServeTool(tool, { agentId, txContext }, header, status)
   }
-  if (!agentId) {
-    // Refused before any settlement, so a missing input never costs the buyer a payment.
-    sendJson(res, 400, {
-      error: 'agentId is required: a JSON body on POST, or a query param on GET',
-      input: RAIL_TOOL_CARDS[tool].input,
-      example: RAIL_TOOL_CARDS[tool].example,
-    })
-    return true
-  }
-  const out = await algorandRailServeTool(tool, { agentId, txContext }, header, status)
+
   if (out.httpStatus === 200) {
     // The x402 v2 receipt header, mirroring what the facilitator settled.
     const settlement = (out.body as { settlement?: unknown })?.settlement

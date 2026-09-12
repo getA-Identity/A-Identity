@@ -1,0 +1,66 @@
+{
+  "name": "@a-identity/trust-mcp",
+  "version": "0.1.0",
+  "description": "MCP server that lets an AI agent verify another agent before paying it, and pay A-Identity for each verdict in USDC on Algorand from its own account, under a per-call spending cap.",
+  "type": "module",
+  "bin": {
+    "a-identity-trust-mcp": "./dist/index.js"
+  },
+  "main": "./dist/server.js",
+  "types": "./dist/server.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/server.d.ts",
+      "import": "./dist/server.js"
+    }
+  },
+  "files": [
+    "dist",
+    "README.md"
+  ],
+  "engines": {
+    "node": ">=18"
+  },
+  "scripts": {
+    "build": "tsc",
+    "test": "tsc -p tsconfig.test.json && node --test dist-test/server.test.js",
+    "prepublishOnly": "tsc"
+  },
+  "keywords": [
+    "a-identity",
+    "mcp",
+    "model-context-protocol",
+    "agent",
+    "trust",
+    "reputation",
+    "erc-8004",
+    "kya",
+    "x402",
+    "algorand",
+    "usdc"
+  ],
+  "homepage": "https://a-identity.xyz",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/getA-Identity/A-Identity.git",
+    "directory": "trust-mcp"
+  },
+  "bugs": {
+    "url": "https://github.com/getA-Identity/A-Identity/issues"
+  },
+  "author": "A-Identity",
+  "license": "MIT",
+  "publishConfig": {
+    "access": "public"
+  },
+  "dependencies": {
+    "@a-identity/trust-guard": "^0.2.0",
+    "@modelcontextprotocol/sdk": "^1.29.0",
+    "algosdk": "^3.7.0",
+    "zod": "^3.25.76"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "typescript": "^5.9.3"
+  }
+}
