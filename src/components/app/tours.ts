@@ -15,8 +15,8 @@ export const TOURS: Record<string, PageTour> = {
     steps: [
       {
         target: 'rail',
-        title: 'Your console, grouped',
-        body: 'Everything lives in three groups: who the agent IS (Agent), where its money moves (Money), and who else is out there (Network). Overview is always the way back.',
+        title: 'Four things, always in view',
+        body: 'How your agent is doing, the checks it paid for, who it is, and what it may spend. Wallet, payments and the marketplace are under More.',
       },
       {
         target: 'status',

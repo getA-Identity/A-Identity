@@ -14,6 +14,7 @@ import {
   ALGORAND_LISTINGS,
   ALGORAND_TOOLS,
   algorandChallengeReadiness,
+  algorandReceiptsFor,
   algorandRailChallenge,
   algorandRailPaywallGate,
   algorandRailPriceUsd,
@@ -27,6 +28,8 @@ import {
   type RailToolName,
 } from '../x402-algorand/rail.js'
 import { normalizeAgentIds } from '../x402-algorand/batch.js'
+import { isAlgorandAddress } from '../chains/algorand/ids.js'
+import { loadAlgorandSettlements } from '../storage.js'
 import type { TxContext } from '../asp/tools.js'
 import { readBody, sendJson, type RouteCtx, sendChallenge } from './shared.js'
 
@@ -123,6 +126,24 @@ export async function handleX402AlgorandRoutes(ctx: RouteCtx): Promise<boolean> 
     return true
   }
 
+  // ── GET /api/x402/algorand/receipts?payer= - the checks one account paid for ──
+  if (req.method === 'GET' && url.pathname === '/api/x402/algorand/receipts') {
+    const payer = (url.searchParams.get('payer') ?? '').trim()
+    if (!isAlgorandAddress(payer)) {
+      sendJson(res, 400, { error: 'payer must be a 58-character Algorand address' })
+      return true
+    }
+    const receipts = algorandReceiptsFor(await loadAlgorandSettlements(), payer)
+    sendJson(res, 200, {
+      payer,
+      count: receipts.length,
+      totalUsd: Number(receipts.reduce((sum, r) => sum + r.amountUsd, 0).toFixed(6)),
+      receipts,
+      note: 'Checks this account paid for on the Algorand rail, each confirmed on-chain. Payers are public on the ledger, so this read needs no sign-in.',
+    })
+    return true
+  }
+
   // ── GET+POST /api/x402/algorand/tools/:name - the paid trust tools ──
   const match = url.pathname.match(/^\/api\/x402\/algorand\/tools\/([a-z_]+)$/)
   if (!match) {
@@ -131,6 +152,7 @@ export async function handleX402AlgorandRoutes(ctx: RouteCtx): Promise<boolean> 
       endpoints: [
         'GET /api/x402/algorand/status',
         'GET /api/x402/algorand/proof',
+        'GET /api/x402/algorand/receipts?payer=<address>',
         ...ALGORAND_TOOLS.map((t) => `GET+POST /api/x402/algorand/tools/${t}`),
       ],
     })

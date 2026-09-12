@@ -33,6 +33,7 @@ const UseCase = lazy(() => import('./routes/UseCase'))
 const Explorer = lazy(() => import('./routes/Explorer'))
 const CeloProof = lazy(() => import('./routes/CeloProof'))
 const ChainProof = lazy(() => import('./routes/ChainProof'))
+const Algorand = lazy(() => import('./routes/Algorand'))
 const ProofIndex = lazy(() => import('./routes/ProofIndex'))
 const Architecture = lazy(() => import('./routes/Architecture'))
 const Mascot = lazy(() => import('./routes/Mascot'))
@@ -50,6 +51,7 @@ const AgentProfile = lazy(() => import('./routes/app/AgentProfile'))
 // The account profile (the person), distinct from AgentProfile above (an agent).
 const Profile = lazy(() => import('./routes/app/Profile'))
 const Earnings = lazy(() => import('./routes/app/Earnings'))
+const Checks = lazy(() => import('./routes/app/Checks'))
 
 export default function App() {
   // Restore the session from the HttpOnly cookie once on load (the token isn't in
@@ -120,6 +122,8 @@ export default function App() {
         <Route path="/celo-proof" element={<CeloProof />} />
         <Route path="/proof" element={<ProofIndex />} />
         <Route path="/proof/:rail" element={<ChainProof />} />
+        {/* The one page someone arriving from the Algorand ecosystem needs. */}
+        <Route path="/algorand" element={<Algorand />} />
         <Route path="/architecture" element={<Architecture />} />
         {/* Internal design surfaces. Unlinked and noindex. */}
         <Route path="/mascot" element={<Mascot />} />
@@ -128,6 +132,7 @@ export default function App() {
         <Route element={<ProtectedRoute />}>
           <Route path="/app" element={<AppLayout />}>
             <Route index element={<Dashboard />} />
+            <Route path="checks" element={<Checks />} />
             <Route path="agent-id" element={<AgentId />} />
             <Route path="wallet" element={<Wallet />} />
             <Route path="settlements" element={<Settlements />} />

@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import {
   ArrowLeftRight, Coins, CornerDownLeft, CreditCard, Fingerprint,
-  LayoutDashboard, Search, Send, SlidersHorizontal, Snowflake, Store, UserRound,
+  LayoutDashboard, Receipt, Search, Send, SlidersHorizontal, Snowflake, Store, UserRound,
 } from 'lucide-react'
 
 /**
@@ -31,9 +31,10 @@ type Cmd = {
 const COMMANDS: Cmd[] = [
   { id: 'pay', label: 'New payment', hint: 'Settlements', icon: Send, to: '/app/settlements', keywords: 'pay send transfer usdc payment new' },
   { id: 'approve', label: 'Review what is waiting', hint: 'Settlements', icon: ArrowLeftRight, to: '/app/settlements', keywords: 'approve pending queue waiting review' },
-  { id: 'limits', label: 'Change limits', hint: 'Permissions', icon: SlidersHorizontal, to: '/app/permissions', keywords: 'limit cap permission policy allow spend daily' },
-  { id: 'freeze', label: 'Freeze all activity', hint: 'Permissions', icon: Snowflake, to: '/app/permissions', keywords: 'freeze stop pause halt emergency panic' },
+  { id: 'limits', label: 'Change limits', hint: 'Limits', icon: SlidersHorizontal, to: '/app/permissions', keywords: 'limit cap permission policy allow spend daily' },
+  { id: 'freeze', label: 'Freeze all activity', hint: 'Limits', icon: Snowflake, to: '/app/permissions', keywords: 'freeze stop pause halt emergency panic' },
   { id: 'overview', label: 'Overview', hint: 'Console', icon: LayoutDashboard, to: '/app', keywords: 'home dashboard overview status' },
+  { id: 'checks', label: 'Checks my agent paid for', hint: 'Checks', icon: Receipt, to: '/app/checks', keywords: 'checks receipts algorand paid verify risk history' },
   { id: 'identity', label: 'Agent ID', hint: 'Console', icon: Fingerprint, to: '/app/agent-id', keywords: 'identity passport erc-8004 kya register verify reputation' },
   { id: 'wallet', label: 'Wallet', hint: 'Console', icon: CreditCard, to: '/app/wallet', keywords: 'wallet balance usdc fund faucet treasury' },
   { id: 'market', label: 'Marketplace', hint: 'Console', icon: Store, to: '/app/marketplace', keywords: 'marketplace hire agent house worker' },

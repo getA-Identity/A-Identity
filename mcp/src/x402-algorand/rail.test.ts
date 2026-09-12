@@ -12,6 +12,7 @@ import {
   algorandRailResource,
   algorandRailServeTool,
   algorandRailStatus,
+  algorandReceiptsFor,
   algorandResourceOrigin,
   facilitatorNetworkFor,
   DEFAULT_FACILITATOR,
@@ -176,6 +177,17 @@ test('the batch audit is priced per agent, quoted by count, and capped at fifty 
   const defaulted = algorandRailChallenge('agent_batch_audit', s, {})
   assert.equal((defaulted.body.accepts as Record<string, unknown>[])[0].amount, '400000')
   assert.equal(algorandRailChallenge('risk_check', s).body.pricing, undefined, 'single tools carry no batch pricing block')
+})
+
+test('receipts list only the settled checks one payer made, newest first', () => {
+  const row = (payer: string, ts: string, outcome: 'settled' | 'ambiguous', tool = 'risk_check') =>
+    ({ ts, outcome, tool, payer, amountUsd: 0.05, network: MAINNET, tx: `TX-${ts}` }) as unknown as AlgorandSettlementRecord
+  const rows = [row(PAY_TO, '1', 'settled'), row('OTHER', '2', 'settled'), row(PAY_TO, '3', 'ambiguous'), row(PAY_TO, '4', 'settled', 'verify_agent')]
+  const receipts = algorandReceiptsFor(rows, PAY_TO)
+  assert.deepEqual(receipts.map((r) => r.ts), ['4', '1'])
+  assert.equal(receipts[0].tool, 'verify_agent')
+  assert.equal(algorandReceiptsFor(rows, PAY_TO, 1).length, 1)
+  assert.equal(algorandReceiptsFor(rows, 'NOBODY').length, 0)
 })
 
 // ── the paid path: the answer is produced before settlement ──────────────────────────

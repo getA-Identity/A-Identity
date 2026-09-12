@@ -162,7 +162,7 @@ node --env-file=.env dist/http.js     # Node 20.6+
 ARC_SIGNER_KEY=0x<funded-key> node dist/http.js
 ```
 
-Tests: **1156 unit tests across 85 colocated `*.test.ts` files** (as of Sep 2026; `npm test`) +
+Tests: **1157 unit tests across 85 colocated `*.test.ts` files** (as of Sep 2026; `npm test`) +
 a full **E2E of about 67 checks** (`npm run e2e`) that adapts to signer presence: green with no
 signer key (live Arc reads; on-chain writes reported as prepared), with the real Arc write
 checks activating under a funded `ARC_SIGNER_KEY`. CI runs the no-signer path.

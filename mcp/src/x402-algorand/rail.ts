@@ -729,6 +729,31 @@ export function algorandChallengeReadiness(status: AlgorandRailStatus, env: Node
   }
 }
 
+/** One paid check, as its payer sees it. */
+export type AlgorandReceipt = {
+  ts: string
+  tool: string
+  amountUsd: number
+  network: string
+  tx?: string
+  round?: number
+  explorerUrl?: string
+}
+
+/**
+ * The checks one account paid for, newest first. Only settled rows count: an ambiguous row
+ * is a payment we could not confirm, and a receipt is a claim that the money moved. Payers
+ * are public on the ledger, so this read needs no sign-in and reveals nothing the chain does
+ * not already show.
+ */
+export function algorandReceiptsFor(rows: AlgorandSettlementRecord[], payer: string, limit = 50): AlgorandReceipt[] {
+  return rows
+    .filter((r) => r.outcome === 'settled' && r.payer === payer)
+    .slice(-limit)
+    .reverse()
+    .map((r) => ({ ts: r.ts, tool: r.tool, amountUsd: r.amountUsd, network: r.network, tx: r.tx, round: r.round, explorerUrl: r.explorerUrl }))
+}
+
 export type AlgorandRailProof = {
   rail: 'x402-algorand'
   configured: boolean

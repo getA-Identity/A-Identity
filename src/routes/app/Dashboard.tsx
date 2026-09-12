@@ -60,6 +60,7 @@ function registryLine(c: Chain): string {
 
 export default function Dashboard() {
   const user = useAuth((s) => s.user)
+  const ecosystem = useAuth((s) => s.ecosystem)
 
   const [agents, setAgents] = useState<Agent[]>([])
   const [rep, setRep] = useState<number | null>(null)
@@ -218,7 +219,7 @@ export default function Dashboard() {
   const steps: Step[] = [
     {
       label: 'Claim an Agent ID',
-      detail: 'An ERC-8004 passport on Arc, so others can verify your agent.',
+      detail: 'A public ID, so other agents can check yours.',
       done: Boolean(agent),
       to: '/app/agent-id',
     },
@@ -231,21 +232,21 @@ export default function Dashboard() {
     },
     {
       label: 'Fund it with testnet USDC',
-      detail: 'Free from faucet.circle.com. Nothing can settle from an empty wallet.',
+      detail: 'Free test USDC from faucet.circle.com.',
       done: (balance ?? 0) > 0,
       to: '/app/wallet',
       blockedBy: agent?.walletAddress ? undefined : 'after step 2',
     },
     {
       label: 'Set your limits',
-      detail: 'A daily cap and the line below which the agent may act alone.',
+      detail: 'How much it may spend a day, and when it must ask you.',
       done: Boolean(p),
       to: '/app/permissions',
       blockedBy: agent ? undefined : 'after step 1',
     },
     {
       label: 'Make the first payment',
-      detail: 'Watch the policy engine decide, then settle it on Arc.',
+      detail: 'Watch your limits decide, then pay.',
       done: (txTotal ?? 0) > 0,
       to: '/app/settlements',
       blockedBy: (balance ?? 0) > 0 ? undefined : 'after step 3',
@@ -265,12 +266,29 @@ export default function Dashboard() {
             {`Welcome back, ${user?.name ?? 'there'}.`}
           </span>
         }
-        description="Your agent console. Everything your agent needs to act, with you in the tower."
+        description="Your agent, its money and its limits, in one place."
       >
       {error && (
         <div className="mt-6 rounded-xl border border-warn/25 bg-warn/10 p-4 text-sm text-foreground/70">
           {error}
         </div>
+      )}
+
+      {/* Someone who signed in with an Algorand wallet came for the Algorand product, which
+          lives on Checks, not in the Arc setup below. One line that says where. */}
+      {ecosystem === 'algorand' && (
+        <Link
+          to="/app/checks"
+          className="mt-6 flex items-center justify-between gap-4 rounded-xl border border-accent/25 bg-accent/[0.06] px-5 py-4 transition-colors hover:bg-accent/[0.1]"
+        >
+          <div>
+            <div className="text-sm font-semibold text-foreground">Signed in with Algorand</div>
+            <div className="mt-0.5 text-xs text-foreground/60">See every check your agent paid for, and connect it in one line.</div>
+          </div>
+          <span className="inline-flex shrink-0 items-center gap-1 text-sm font-semibold text-accent">
+            Checks <ArrowUpRight size={14} />
+          </span>
+        </Link>
       )}
 
       {/* What the agent is doing right now, before any number. */}

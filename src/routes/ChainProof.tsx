@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { motion } from 'framer-motion'
-import { ArrowUpRight, RefreshCw } from 'lucide-react'
+import { ArrowUpRight, ChevronDown, RefreshCw } from 'lucide-react'
 import { useParams } from 'react-router-dom'
 import PageHeader from '../components/PageHeader'
 import SiteFooter from '../components/sections/SiteFooter'
@@ -15,15 +15,18 @@ import { BACKEND_UNREACHABLE } from '../lib/mcpBase'
 /**
  * /proof/:rail: what we actually did on a chain, with the transaction that proves it.
  *
- * This is a provenance page rather than a settlement log, which is why it is not a copy
- * of /celo-proof: the evidence here is mints, deploys and contract addresses, and the
- * settlement section fills itself in from the same backend once a rail has one. Every
- * value comes from GET /api/proof/:rail verbatim.
+ * The page leads with three numbers anyone can read (payments settled, the dollars behind
+ * them, the latest one with its link) and keeps the full ledger one click down: the agent,
+ * the contracts, every transaction, and how to check it yourself. Nothing was removed from
+ * the ledger; it is folded, and it is still in the prerendered HTML.
  *
- * The one thing worth reading twice is the live badge on the agent card. The backend
- * re-reads ownerOf and tokenURI from the chain on every load and reports whether they
- * still match what we recorded. A page whose claims cannot fail is not proof, so this
- * one is built to be able to say "this no longer matches" out loud.
+ * Settlements come from the rail that actually carries them. Algorand and Stellar keep
+ * their own logs; the EIP-3009 chains share the facilitator's, filtered to this rail's
+ * networks. Reading the facilitator for Algorand used to report "no settlements here" on a
+ * rail that had them.
+ *
+ * The live badge on the agent card re-reads ownerOf and tokenURI from the chain on every
+ * load, so this page can say "this no longer matches" out loud.
  */
 
 type Artifact = {
@@ -75,10 +78,9 @@ type RailProof = {
   howToVerify: string[]
 }
 
-type Settlement = {
+type FacilitatorSettlement = {
   outcome: string
   tool: string
-  /** CAIP-2 network the payment settled on; the facilitator rail sells on more than one. */
   network?: string
   assetSymbol: string
   value: string
@@ -86,6 +88,7 @@ type Settlement = {
   payer: string
   tx?: string
   explorerUrl?: string
+  ts?: string
 }
 
 type FacilitatorProof = {
@@ -102,7 +105,39 @@ type FacilitatorProof = {
   /** Per-chain breakdown. This page is per-rail, so it MUST read this rather than
    *  present the facilitator-wide totals as if they belonged to the rail in the URL. */
   byNetwork?: Record<string, { count: number; usd: number; assetSymbol: string }>
-  recent: Settlement[]
+  recent: FacilitatorSettlement[]
+}
+
+/** The shape the Algorand and Stellar rails publish at their own /proof. */
+type OwnRailSettlement = {
+  ts: string
+  outcome: string
+  tool: string
+  amountUsd: number
+  assetSymbol?: string
+  tx?: string
+  explorerUrl?: string
+}
+type OwnRailProof = { configured: boolean; assetSymbol: string | null; totalSettlements: number; totalUsd: number; ambiguous: number; recent: OwnRailSettlement[] }
+
+/** One settled payment, in the form the page renders whichever log it came from. */
+type Sale = { key: string; tool: string; amountLabel: string; tx?: string; explorerUrl?: string; ts?: string; internal: boolean }
+
+type Sales = {
+  source: string
+  configured: boolean
+  assetSymbol: string | null
+  count: number | null
+  usd: number | null
+  sales: Sale[]
+  /** Only the facilitator splits its traffic; the per-rail logs do not. */
+  facilitatorCounters?: { internal: number; external: number; reverted: number; ambiguous: number }
+}
+
+/** Rails whose settlements live in their own log rather than the shared facilitator's. */
+const OWN_RAIL_PROOF: Record<string, string> = {
+  algorand: '/api/x402/algorand/proof',
+  stellar: '/api/x402/stellar/proof',
 }
 
 const REFRESH_MS = 60_000
@@ -157,13 +192,53 @@ function Row({ label, children }: { label: string; children: React.ReactNode }) 
   )
 }
 
+function fromOwnRail(p: OwnRailProof, source: string): Sales {
+  const sales = [...p.recent]
+    .filter((s) => s.outcome === 'settled')
+    .reverse()
+    .map((s) => ({
+      key: s.tx ?? s.ts,
+      tool: s.tool,
+      amountLabel: `${s.amountUsd} ${s.assetSymbol ?? p.assetSymbol ?? 'USDC'}`,
+      tx: s.tx,
+      explorerUrl: s.explorerUrl,
+      ts: s.ts,
+      internal: false,
+    }))
+  return { source, configured: p.configured, assetSymbol: p.assetSymbol, count: p.totalSettlements, usd: p.totalUsd, sales }
+}
+
+function fromFacilitator(p: FacilitatorProof, railNets: Set<string>): Sales {
+  const perNet = p.byNetwork ? Object.entries(p.byNetwork).filter(([caip]) => railNets.has(caip)) : null
+  const recent = p.recent.filter((s) => s.network != null && railNets.has(s.network))
+  return {
+    source: 'GET /api/facilitator/proof, filtered to this rail',
+    configured: p.configured,
+    assetSymbol: p.assetSymbol,
+    count: perNet ? perNet.reduce((sum, [, v]) => sum + v.count, 0) : null,
+    usd: perNet ? Number(perNet.reduce((sum, [, v]) => sum + v.usd, 0).toFixed(6)) : null,
+    sales: [...recent].reverse().map((s) => ({
+      key: s.tx ?? `${s.tool}-${s.value}`,
+      tool: s.tool,
+      amountLabel: `${Number(s.value) / 10 ** s.assetDecimals} ${s.assetSymbol}`,
+      tx: s.tx,
+      explorerUrl: s.explorerUrl,
+      ts: s.ts,
+      internal: p.internalPayers.includes(s.payer.toLowerCase()),
+    })),
+    facilitatorCounters: { internal: p.internalSettlements, external: p.externalSettlements, reverted: p.reverted, ambiguous: p.ambiguous },
+  }
+}
+
 export default function ChainProof() {
   const { rail = 'robinhood' } = useParams()
   const [proof, setProof] = useState<RailProof | null>(null)
-  const [settlements, setSettlements] = useState<FacilitatorProof | null>(null)
+  const [facilitator, setFacilitator] = useState<FacilitatorProof | null>(null)
+  const [ownRail, setOwnRail] = useState<OwnRailProof | null>(null)
   const [failure, setFailure] = useState<null | 'unreachable' | 'missing'>(null)
   const [, setTick] = useState(0)
   const loadSeq = useRef(0)
+  const ownRailPath = OWN_RAIL_PROOF[rail]
 
   usePageMeta({
     title: proof ? `${proof.title}: every claim, with its transaction | A-Identity` : 'On-chain proof | A-Identity',
@@ -186,15 +261,17 @@ export default function ChainProof() {
         const code = (e as { status?: number }).status
         setFailure(code === 404 || code === 501 ? 'missing' : 'unreachable')
       })
-    getJson<FacilitatorProof>('/api/facilitator/proof')
+    const settlementsPath = ownRailPath ?? '/api/facilitator/proof'
+    getJson<FacilitatorProof | OwnRailProof>(settlementsPath)
       .then((data) => {
         if (seq !== loadSeq.current) return
-        setSettlements(data)
+        if (ownRailPath) setOwnRail(data as OwnRailProof)
+        else setFacilitator(data as FacilitatorProof)
       })
       .catch(() => {
-        /* the settlement section simply stays absent; the ledger above is the page */
+        /* the summary shows dashes; the ledger below is the page */
       })
-  }, [rail])
+  }, [rail, ownRailPath])
 
   useEffect(() => {
     load()
@@ -211,6 +288,15 @@ export default function ChainProof() {
     return () => window.clearInterval(id)
   }, [])
 
+  const railNets = new Set(proof?.networks.map((n) => n.caip2) ?? [])
+  const sales: Sales | null = ownRail
+    ? fromOwnRail(ownRail, `GET ${ownRailPath}`)
+    : facilitator && proof
+      ? fromFacilitator(facilitator, railNets)
+      : null
+  const latest = sales?.sales[0]
+  const liveNet = proof?.networks.find((n) => n.status === 'live') ?? proof?.networks[0]
+
   return (
     <ThemeScope surface="background" className="w-full" style={{ fontFamily: 'var(--font-body)' }}>
       <PageHeader />
@@ -224,12 +310,7 @@ export default function ChainProof() {
                 Every claim, with its transaction.
               </DisplayHeading>
             }
-            lede={
-              <Lede>
-                {proof?.lede ??
-                  'The provenance ledger for this rail: what we minted, what we deployed, what we verified, and the transaction behind each one. Re-read from the chain every time this page loads.'}
-              </Lede>
-            }
+            lede={<Lede>Real payments on {proof?.title ?? 'this chain'}. Click any number to see it on-chain.</Lede>}
           />
 
           {failure && !proof && (
@@ -252,240 +333,231 @@ export default function ChainProof() {
             </motion.div>
           )}
 
-          <div className="mt-12 flex flex-col gap-5">
-            {!proof && !failure && (
-              <div className="rounded-3xl border border-border bg-card p-6 sm:p-8">
-                <Skeleton />
+          {/* The summary: three numbers and a status, readable without knowing anything. */}
+          {!failure && (
+            <motion.div {...revealAt(3)} className="mt-10 grid gap-px overflow-hidden rounded-2xl border border-border bg-border sm:grid-cols-3">
+              <div className="bg-card p-5">
+                <div className="text-3xl font-bold tabular-nums tracking-tight text-foreground">{sales?.count ?? <Skeleton />}</div>
+                <div className="mt-1 text-sm text-foreground/60">payments settled</div>
               </div>
-            )}
-
-            {proof?.networks.map((net, i) => (
-              <motion.section
-                key={net.chain}
-                {...revealAt(i)}
-                className="rounded-3xl border border-border bg-card p-6 sm:p-8"
-              >
-                <div className="flex flex-wrap items-center justify-between gap-3">
-                  <h2 className="text-lg font-bold tracking-tight text-foreground">{net.name}</h2>
-                  <div className="flex flex-wrap items-center gap-2">
-                    <Chip tone={net.status === 'live' ? 'ok' : 'warn'}>{net.status}</Chip>
-                    <span className="font-mono text-[11px] text-foreground/45">{net.caip2}</span>
-                  </div>
+              <div className="bg-card p-5">
+                <div className="text-3xl font-bold tabular-nums tracking-tight text-foreground">
+                  {sales?.usd != null ? `$${sales.usd}` : <Skeleton />}
                 </div>
-                <p className="mt-2 text-sm leading-relaxed text-foreground/60">{net.summary}</p>
+                <div className="mt-1 text-sm text-foreground/60">paid {sales?.assetSymbol ? `in ${sales.assetSymbol}` : 'on-chain'}</div>
+              </div>
+              <div className="bg-card p-5">
+                <div className="text-3xl font-bold tracking-tight text-foreground">{latest?.ts ? ago(latest.ts) : sales ? '-' : <Skeleton />}</div>
+                <div className="mt-1 flex flex-wrap items-center gap-2 text-sm text-foreground/60">
+                  {latest?.explorerUrl ? (
+                    <a href={latest.explorerUrl} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 text-accent hover:underline">
+                      latest payment <ArrowUpRight size={13} />
+                    </a>
+                  ) : (
+                    'latest payment'
+                  )}
+                  {liveNet && <Chip tone={liveNet.status === 'live' ? 'ok' : 'warn'}>{liveNet.status}</Chip>}
+                </div>
+              </div>
+            </motion.div>
+          )}
 
-                {/* The agent, and whether the chain still agrees with what we recorded. */}
-                {net.agent && (
-                  <div className="mt-6 rounded-2xl border border-border bg-background p-5">
+          {!proof && !failure && (
+            <div className="mt-5 rounded-3xl border border-border bg-card p-6 sm:p-8">
+              <Skeleton />
+            </div>
+          )}
+
+          {/* The full ledger, folded. A <details> keeps every word in the prerendered HTML
+              for crawlers and for anyone who wants it, while the page itself stays short. */}
+          {proof && (
+            <details className="group mt-8">
+              <summary className="inline-flex cursor-pointer list-none items-center gap-2 rounded-full border border-border bg-card px-5 py-2.5 text-sm font-semibold text-foreground/75 transition-colors hover:bg-foreground/[0.04] [&::-webkit-details-marker]:hidden">
+                Show the full ledger
+                <ChevronDown size={15} className="transition-transform group-open:rotate-180" />
+              </summary>
+
+              <div className="mt-6 flex flex-col gap-5">
+                <p className="max-w-[70ch] text-sm leading-relaxed text-foreground/60">{proof.lede}</p>
+
+                {proof.networks.map((net, i) => (
+                  <motion.section
+                    key={net.chain}
+                    {...revealAt(i)}
+                    className="rounded-3xl border border-border bg-card p-6 sm:p-8"
+                  >
                     <div className="flex flex-wrap items-center justify-between gap-3">
-                      <h3 className="text-sm font-semibold text-foreground">Agent #{net.agent.tokenId}</h3>
-                      {net.live.reachable ? (
-                        net.live.matchesLedger === undefined ? null : net.live.matchesLedger ? (
-                          <Chip tone="ok">re-read live: ownerOf matches</Chip>
-                        ) : (
-                          <Chip tone="danger">re-read live: ownerOf no longer matches</Chip>
-                        )
-                      ) : (
-                        <Chip tone="warn">chain unreachable right now</Chip>
-                      )}
-                    </div>
-                    <div className="mt-3">
-                      <Row label="CAIP id">{net.agent.caip}</Row>
-                      <Row label="Owner">
-                        <ExplorerLink href={net.explorer ? `${net.explorer}/address/${net.agent.owner}` : null}>
-                          {net.agent.owner}
-                        </ExplorerLink>
-                      </Row>
-                      <Row label="Token URI">{net.agent.tokenUri}</Row>
-                      {net.live.reachable && (
-                        <Row label="Checked">
-                          block {net.live.blockNumber}, {ago(net.live.checkedAt)}
-                        </Row>
-                      )}
-                      {!net.live.reachable && <Row label="Live read failed">{net.live.reason}</Row>}
-                    </div>
-                  </div>
-                )}
-
-                {/* Contracts, each with whether code is actually there right now. */}
-                <div className="mt-6">
-                  <h3 className="text-sm font-semibold text-foreground">Contracts</h3>
-                  <div className="mt-2">
-                    {net.contractsLinked.map((c) => {
-                      const live = net.live.reachable
-                        ? net.live.contracts.find((x) => x.address.toLowerCase() === c.address.toLowerCase())
-                        : undefined
-                      return (
-                        <div key={c.address} className="border-b border-border/60 py-3 last:border-0">
-                          <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
-                            <span className="text-xs font-semibold text-foreground/80">{c.name}</span>
-                            <span className="flex items-center gap-2">
-                              {live && (
-                                <span className={`text-[10px] uppercase tracking-wide ${live.deployed ? 'text-ok' : 'text-danger'}`}>
-                                  {live.deployed ? 'code present' : 'no code'}
-                                </span>
-                              )}
-                              <ExplorerLink href={c.explorerUrl}>{c.address}</ExplorerLink>
-                            </span>
-                          </div>
-                          {c.note && <p className="mt-1 text-xs leading-relaxed text-foreground/50">{c.note}</p>}
-                        </div>
-                      )
-                    })}
-                  </div>
-                </div>
-
-                {/* The transactions. */}
-                <div className="mt-6">
-                  <h3 className="text-sm font-semibold text-foreground">Transactions</h3>
-                  <div className="mt-2">
-                    {net.artifactsLinked.map((a) => (
-                      <div key={a.txHash} className="border-b border-border/60 py-3 last:border-0">
-                        <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
-                          <span className="text-xs text-foreground/75">{a.label}</span>
-                          <ExplorerLink href={a.explorerUrl}>{a.txHash}</ExplorerLink>
-                        </div>
-                        <p className="mt-1 text-[11px] text-foreground/45">
-                          {a.kind}
-                          {a.blockNumber ? ` - block ${a.blockNumber}` : ''}
-                          {a.externalChain
-                            ? ` - on ${a.externalChain}, which we do not wire, so there is no link to derive`
-                            : a.onChain !== net.chain
-                              ? ` - on ${a.onChain}`
-                              : ''}
-                          {a.note ? ` - ${a.note}` : ''}
-                        </p>
+                      <h2 className="text-lg font-bold tracking-tight text-foreground">{net.name}</h2>
+                      <div className="flex flex-wrap items-center gap-2">
+                        <Chip tone={net.status === 'live' ? 'ok' : 'warn'}>{net.status}</Chip>
+                        <span className="font-mono text-[11px] text-foreground/45">{net.caip2}</span>
                       </div>
-                    ))}
-                  </div>
-                </div>
-
-                {/* The "What is not true here" box used to render here, listing every
-                    caveat this rail publishes. Removed from the PAGE on the maintainer's
-                    instruction, 2026-08-25.
-
-                    The data is not gone and is not hidden: `net.caveats` still arrives in
-                    every response from GET /api/proof/:rail, provenance.ts still carries it,
-                    and chains/provenance.test.ts still fails the build if any chain
-                    publishes an empty caveat list or a throwaway one. So the limitations
-                    remain machine-readable and remain enforced; they are no longer rendered
-                    for a human reading this page.
-
-                    Worth knowing before restoring it: the caveats are what several other
-                    surfaces cite as the reason this rail can call itself honest, and one
-                    audit finding (D-5, Circle can freeze a vault's USDC because the pubnet
-                    issuer sets auth_revocable) recommended ADDING a line here. That
-                    recommendation was declined; it is recorded as an accepted risk in
-                    audit/DESIGN-DECISIONS.md rather than dropped. */}
-              </motion.section>
-            ))}
-
-            {/* Settlements: absent until a rail has any, and honest about internal traffic.
-                The facilitator log covers EVERY chain the rail sells on, while this page is
-                about ONE rail, so the figures are filtered to this ledger's networks and the
-                counters the log does not split per chain are labeled "all chains" instead of
-                being presented as this rail's own. */}
-            {proof &&
-              (() => {
-                const railNets = new Set(proof.networks.map((n) => n.caip2))
-                const perNet = settlements?.byNetwork
-                  ? Object.entries(settlements.byNetwork).filter(([caip]) => railNets.has(caip))
-                  : null
-                const hereCount = perNet ? perNet.reduce((sum, [, v]) => sum + v.count, 0) : null
-                const hereUsd = perNet
-                  ? Number(perNet.reduce((sum, [, v]) => sum + v.usd, 0).toFixed(6))
-                  : null
-                const recentHere = settlements
-                  ? settlements.recent.filter((s) => s.network != null && railNets.has(s.network))
-                  : []
-                return (
-                  <motion.section {...revealAt(2)} className="rounded-3xl border border-border bg-card p-6 sm:p-8">
-                    <div className="flex flex-wrap items-center justify-between gap-3">
-                      <h2 className="text-lg font-bold tracking-tight text-foreground">Settlement rail</h2>
-                      {settlements?.configured ? (
-                        <Chip tone="ok">{settlements.assetSymbol ?? 'configured'}</Chip>
-                      ) : (
-                        <Chip tone="muted">not configured</Chip>
-                      )}
                     </div>
-                    {!settlements || !settlements.configured ? (
-                      <p className="mt-2 text-sm leading-relaxed text-foreground/55">
-                        No settlement rail is configured on this backend right now. This section fills
-                        itself in from GET /api/facilitator/proof the moment one is, and shows real
-                        zeros until then.
-                      </p>
-                    ) : (
-                      <>
-                        <p className="mt-2 text-sm leading-relaxed text-foreground/55">
-                          Read from GET /api/facilitator/proof, filtered to this ledger's networks.
-                          The buyer signs and pays no gas; we broadcast, and a settlement only counts
-                          once a receipt carries the matching Transfer log. Payments from our own
-                          wallets are labeled, not hidden. Counters the log keeps only rail-wide are
-                          labeled all chains.
-                        </p>
-                        <div className="mt-4">
-                          {hereCount != null ? (
-                            <>
-                              <Row label="Settled on this ledger's networks">{hereCount}</Row>
-                              <Row label="Total on this ledger's networks">${hereUsd}</Row>
-                            </>
+                    <p className="mt-2 text-sm leading-relaxed text-foreground/60">{net.summary}</p>
+
+                    {/* The agent, and whether the chain still agrees with what we recorded. */}
+                    {net.agent && (
+                      <div className="mt-6 rounded-2xl border border-border bg-background p-5">
+                        <div className="flex flex-wrap items-center justify-between gap-3">
+                          <h3 className="text-sm font-semibold text-foreground">Agent #{net.agent.tokenId}</h3>
+                          {net.live.reachable ? (
+                            net.live.matchesLedger === undefined ? null : net.live.matchesLedger ? (
+                              <Chip tone="ok">re-read live: ownerOf matches</Chip>
+                            ) : (
+                              <Chip tone="danger">re-read live: ownerOf no longer matches</Chip>
+                            )
                           ) : (
-                            <Row label="Settled (facilitator, all chains)">{settlements.totalSettlements}</Row>
+                            <Chip tone="warn">chain unreachable right now</Chip>
                           )}
-                          <Row label="Internal / external (all chains)">
-                            {settlements.internalSettlements} / {settlements.externalSettlements}
-                          </Row>
-                          <Row label="Reverted / ambiguous (all chains)">
-                            {settlements.reverted} / {settlements.ambiguous}
-                          </Row>
                         </div>
-                        <div className="mt-4">
-                          {recentHere.length === 0 ? (
-                            <p className="text-xs leading-relaxed text-foreground/45">
-                              None of the facilitator's recent settlements landed on this ledger's
-                              networks. The rail's other chains hold those rows.
-                            </p>
-                          ) : (
-                            recentHere.slice(0, 8).map((s) => (
-                              <div
-                                key={s.tx ?? `${s.tool}-${s.value}`}
-                                className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1 border-b border-border/60 py-2.5 last:border-0"
-                              >
-                                <span className="text-xs text-foreground/75">
-                                  {s.tool}{' '}
-                                  <span className="text-foreground/45">
-                                    {Number(s.value) / 10 ** s.assetDecimals} {s.assetSymbol}
-                                  </span>
-                                  {settlements.internalPayers.includes(s.payer.toLowerCase()) && (
-                                    <span className="ml-2 rounded-md bg-warn/10 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-warn">
-                                      internal
+                        <div className="mt-3">
+                          <Row label="CAIP id">{net.agent.caip}</Row>
+                          <Row label="Owner">
+                            <ExplorerLink href={net.explorer ? `${net.explorer}/address/${net.agent.owner}` : null}>
+                              {net.agent.owner}
+                            </ExplorerLink>
+                          </Row>
+                          <Row label="Token URI">{net.agent.tokenUri}</Row>
+                          {net.live.reachable && (
+                            <Row label="Checked">
+                              block {net.live.blockNumber}, {ago(net.live.checkedAt)}
+                            </Row>
+                          )}
+                          {!net.live.reachable && <Row label="Live read failed">{net.live.reason}</Row>}
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Contracts, each with whether code is actually there right now. */}
+                    <div className="mt-6">
+                      <h3 className="text-sm font-semibold text-foreground">Contracts</h3>
+                      <div className="mt-2">
+                        {net.contractsLinked.map((c) => {
+                          const live = net.live.reachable
+                            ? net.live.contracts.find((x) => x.address.toLowerCase() === c.address.toLowerCase())
+                            : undefined
+                          return (
+                            <div key={c.address} className="border-b border-border/60 py-3 last:border-0">
+                              <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
+                                <span className="text-xs font-semibold text-foreground/80">{c.name}</span>
+                                <span className="flex items-center gap-2">
+                                  {live && (
+                                    <span className={`text-[10px] uppercase tracking-wide ${live.deployed ? 'text-ok' : 'text-danger'}`}>
+                                      {live.deployed ? 'code present' : 'no code'}
                                     </span>
                                   )}
+                                  <ExplorerLink href={c.explorerUrl}>{c.address}</ExplorerLink>
                                 </span>
-                                <ExplorerLink href={s.explorerUrl}>{s.tx ?? ''}</ExplorerLink>
                               </div>
-                            ))
-                          )}
-                        </div>
-                      </>
-                    )}
-                  </motion.section>
-                )
-              })()}
+                              {c.note && <p className="mt-1 text-xs leading-relaxed text-foreground/50">{c.note}</p>}
+                            </div>
+                          )
+                        })}
+                      </div>
+                    </div>
 
-            {proof && (
-              <motion.section {...revealAt(3)} className="rounded-3xl border border-border bg-card p-6 sm:p-8">
-                <h2 className="text-lg font-bold tracking-tight text-foreground">How to check this yourself</h2>
-                <ul className="mt-3 flex flex-col gap-2">
-                  {proof.howToVerify.map((h) => (
-                    <li key={h} className="text-sm leading-relaxed text-foreground/65">
-                      {h}
-                    </li>
-                  ))}
-                </ul>
-              </motion.section>
-            )}
-          </div>
+                    {/* The transactions. */}
+                    <div className="mt-6">
+                      <h3 className="text-sm font-semibold text-foreground">Transactions</h3>
+                      <div className="mt-2">
+                        {net.artifactsLinked.map((a) => (
+                          <div key={a.txHash} className="border-b border-border/60 py-3 last:border-0">
+                            <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
+                              <span className="text-xs text-foreground/75">{a.label}</span>
+                              <ExplorerLink href={a.explorerUrl}>{a.txHash}</ExplorerLink>
+                            </div>
+                            <p className="mt-1 text-[11px] text-foreground/45">
+                              {a.kind}
+                              {a.blockNumber ? ` - block ${a.blockNumber}` : ''}
+                              {a.externalChain
+                                ? ` - on ${a.externalChain}, which we do not wire, so there is no link to derive`
+                                : a.onChain !== net.chain
+                                  ? ` - on ${a.onChain}`
+                                  : ''}
+                              {a.note ? ` - ${a.note}` : ''}
+                            </p>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+
+                    {/* The caveats box is intentionally not rendered (maintainer decision,
+                        2026-08-25). `net.caveats` still arrives from GET /api/proof/:rail and
+                        chains/provenance.test.ts still fails the build on an empty list. */}
+                  </motion.section>
+                ))}
+
+                {/* Settlements, from the log that actually carries this rail's payments. */}
+                <motion.section {...revealAt(2)} className="rounded-3xl border border-border bg-card p-6 sm:p-8">
+                  <div className="flex flex-wrap items-center justify-between gap-3">
+                    <h2 className="text-lg font-bold tracking-tight text-foreground">Payments</h2>
+                    {sales?.configured ? (
+                      <Chip tone="ok">{sales.assetSymbol ?? 'configured'}</Chip>
+                    ) : (
+                      <Chip tone="muted">not configured</Chip>
+                    )}
+                  </div>
+                  {!sales || !sales.configured ? (
+                    <p className="mt-2 text-sm leading-relaxed text-foreground/55">
+                      No payment rail is configured for this chain on the backend right now. This section fills
+                      itself in the moment one is, and shows real zeros until then.
+                    </p>
+                  ) : (
+                    <>
+                      <p className="mt-2 text-sm leading-relaxed text-foreground/55">
+                        Read from {sales.source}. A payment only counts once we have read the transfer back from
+                        the chain ourselves. Payments from our own wallets are labeled where the log records them.
+                      </p>
+                      {sales.facilitatorCounters && (
+                        <div className="mt-4">
+                          <Row label="Internal / external (all chains)">
+                            {sales.facilitatorCounters.internal} / {sales.facilitatorCounters.external}
+                          </Row>
+                          <Row label="Reverted / ambiguous (all chains)">
+                            {sales.facilitatorCounters.reverted} / {sales.facilitatorCounters.ambiguous}
+                          </Row>
+                        </div>
+                      )}
+                      <div className="mt-4">
+                        {sales.sales.length === 0 ? (
+                          <p className="text-xs leading-relaxed text-foreground/45">No settled payment on this rail yet.</p>
+                        ) : (
+                          sales.sales.slice(0, 8).map((s) => (
+                            <div
+                              key={s.key}
+                              className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1 border-b border-border/60 py-2.5 last:border-0"
+                            >
+                              <span className="text-xs text-foreground/75">
+                                {s.tool} <span className="text-foreground/45">{s.amountLabel}</span>
+                                {s.ts && <span className="ml-2 text-foreground/40">{ago(s.ts)}</span>}
+                                {s.internal && (
+                                  <span className="ml-2 rounded-md bg-warn/10 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-warn">
+                                    internal
+                                  </span>
+                                )}
+                              </span>
+                              <ExplorerLink href={s.explorerUrl}>{s.tx ?? ''}</ExplorerLink>
+                            </div>
+                          ))
+                        )}
+                      </div>
+                    </>
+                  )}
+                </motion.section>
+
+                <motion.section {...revealAt(3)} className="rounded-3xl border border-border bg-card p-6 sm:p-8">
+                  <h2 className="text-lg font-bold tracking-tight text-foreground">How to check this yourself</h2>
+                  <ul className="mt-3 flex flex-col gap-2">
+                    {proof.howToVerify.map((h) => (
+                      <li key={h} className="text-sm leading-relaxed text-foreground/65">
+                        {h}
+                      </li>
+                    ))}
+                  </ul>
+                </motion.section>
+              </div>
+            </details>
+          )}
         </SectionShell>
       </main>
 

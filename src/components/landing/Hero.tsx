@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { motion, type Variants } from 'framer-motion'
 import { ArrowRight, ArrowUpRight, Sparkles } from 'lucide-react'
-import { CAL_URL, EASE_OUT_EXPO } from '../../lib/brand'
+import { EASE_OUT_EXPO } from '../../lib/brand'
 import { useTheme } from '../ThemeProvider'
 
 /*
@@ -69,13 +69,13 @@ export default function Hero() {
           next chain earns its first real settlement. */}
       <motion.div custom={0} variants={fadeUp} initial="hidden" animate="visible">
         <Link
-          to="/proof/algorand"
+          to="/algorand"
           className="group mb-6 inline-flex items-center gap-2 rounded-full border border-border bg-card/80 px-4 py-1.5 text-xs font-semibold text-foreground/75 backdrop-blur transition-colors hover:border-accent/50 hover:text-foreground"
         >
-          <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" aria-hidden="true" />
-          NEW · x402 is live on Algorand mainnet, gasless for the buyer
+          <span className="h-1.5 w-1.5 rounded-full bg-ok" aria-hidden="true" />
+          NEW · Live on Algorand
           <span className="inline-flex items-center gap-0.5 text-accent">
-            see the proof <ArrowUpRight size={12} className="transition-transform group-hover:translate-x-0.5 group-hover:-translate-y-0.5" />
+            try it <ArrowUpRight size={12} className="transition-transform group-hover:translate-x-0.5 group-hover:-translate-y-0.5" />
           </span>
         </Link>
       </motion.div>
@@ -105,9 +105,11 @@ export default function Hero() {
         className="mt-5 max-w-[46ch] text-foreground/65"
         style={{ fontFamily: 'var(--font-body)', fontSize: 'clamp(1rem, 2.4vw, 1.2rem)', lineHeight: 1.6 }}
       >
-        A verified on-chain identity and a bounded wallet for every AI agent.
+        Know who your agent is paying, before it pays.
       </motion.p>
 
+      {/* Two doors, both working ones: run a real check right here, or put the check inside
+          an agent. Nothing to read first. */}
       <motion.div
         custom={3}
         variants={fadeUp}
@@ -117,42 +119,28 @@ export default function Hero() {
       >
         <motion.button
           type="button"
-          onClick={() => navigate('/signup')}
+          onClick={openSpotlight}
           whileHover={{ scale: 1.03 }}
           whileTap={{ scale: 0.97 }}
           className="inline-flex items-center gap-2.5 rounded-full px-7 py-3.5 text-sm font-semibold text-white sm:px-8 sm:py-4 sm:text-base"
           style={{ background: ACCENT, boxShadow: '0 10px 34px rgba(115,66,226,0.34)', border: '1px solid transparent' }}
         >
-          Get your Agent ID <ArrowRight size={18} />
+          <Sparkles size={17} /> Check an agent
+          <kbd className="hidden rounded border border-white/30 px-1.5 py-0.5 font-mono text-[10px] font-semibold text-white/80 sm:inline">
+            {kbd}
+          </kbd>
         </motion.button>
 
-        <motion.a
-          href={CAL_URL}
-          target="_blank"
-          rel="noopener noreferrer"
+        <motion.button
+          type="button"
+          onClick={() => navigate('/algorand')}
           whileHover={{ scale: 1.03 }}
           whileTap={{ scale: 0.97 }}
-          className="inline-flex items-center rounded-full border border-border bg-card px-7 py-3.5 text-sm font-semibold text-foreground sm:px-8 sm:py-4 sm:text-base"
+          className="inline-flex items-center gap-2 rounded-full border border-border bg-card px-7 py-3.5 text-sm font-semibold text-foreground sm:px-8 sm:py-4 sm:text-base"
         >
-          Book a call
-        </motion.a>
+          Add to your agent <ArrowRight size={18} />
+        </motion.button>
       </motion.div>
-
-      <motion.button
-        custom={4}
-        variants={fadeUp}
-        initial="hidden"
-        animate="visible"
-        type="button"
-        onClick={openSpotlight}
-        className="group mt-5 inline-flex items-center gap-2 text-sm font-semibold text-foreground/60 transition-colors hover:text-foreground"
-      >
-        <Sparkles size={15} style={{ color: ACCENT }} className="transition-transform group-hover:rotate-12" />
-        Verify an agent right now
-        <kbd className="rounded border border-border px-1.5 py-0.5 font-mono text-[10px] font-semibold text-foreground/55">
-          {kbd}
-        </kbd>
-      </motion.button>
 
       {/* The console itself, horizontal, as the hero's floor. On desktop the header is
           exactly one viewport tall and overflow-hidden, so the fold crops this frame the

@@ -68,6 +68,7 @@ const STATIC = [
   ...useCases.map((slug) => [`/use-cases/${slug}`, 'monthly', '0.7']),
   ['/contact', 'monthly', '0.6'],
   ['/explorer', 'weekly', '0.6'],
+  ['/algorand', 'weekly', '0.8'],
   ['/signup', 'yearly', '0.5'],
   ['/login', 'yearly', '0.5'],
   ['/brand', 'monthly', '0.4'],

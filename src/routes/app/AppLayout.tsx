@@ -2,6 +2,7 @@ import { Suspense, useEffect, useRef, useState } from 'react'
 import { Link, NavLink, useLocation, useNavigate } from 'react-router-dom'
 import {
   ArrowLeftRight,
+  ChevronDown,
   Compass,
   HelpCircle,
   Coins,
@@ -11,6 +12,7 @@ import {
   Lock,
   LogOut,
   Menu,
+  Receipt,
   Search,
   SlidersHorizontal,
   Store,
@@ -41,37 +43,29 @@ import { apiFetch, wakeBackend } from '../../lib/api'
 import '../../console.css'
 
 /**
- * The sidebar, grouped.
+ * The sidebar: four things on top, everything else under More.
  *
- * Grouped by what the screen is ABOUT: who the agent is and what it may do, where its
- * money is, and who else is out there. Overview sits above the groups because it is not
- * a category, it is the way back.
+ * The rail used to show all eight screens in three groups, which put the demo surfaces on
+ * the same footing as the four things a person actually comes back for: how the agent is
+ * doing, what it paid for, who it is, and what it may spend. Those stay in view; the rest
+ * is one click away and opens by itself when you are on one of its screens.
  */
 const NAV = [
   { to: '/app', label: 'Overview', icon: LayoutDashboard, end: true },
+  { to: '/app/checks', label: 'Checks', icon: Receipt, end: false },
+  { to: '/app/agent-id', label: 'Agent ID', icon: Fingerprint, end: false },
+  { to: '/app/permissions', label: 'Limits', icon: SlidersHorizontal, end: false },
 ] as const
 
-const NAV_GROUPS = [
-  {
-    label: 'Agent',
-    items: [
-      { to: '/app/agent-id', label: 'Agent ID', icon: Fingerprint },
-      { to: '/app/permissions', label: 'Permissions', icon: SlidersHorizontal },
-    ],
-  },
-  {
-    label: 'Money',
-    items: [
-      { to: '/app/wallet', label: 'Wallet', icon: CreditCard },
-      { to: '/app/settlements', label: 'Settlements', icon: ArrowLeftRight },
-      { to: '/app/earnings', label: 'Earnings', icon: Coins },
-    ],
-  },
-  {
-    label: 'Network',
-    items: [{ to: '/app/marketplace', label: 'Marketplace', icon: Store }],
-  },
+const NAV_MORE = [
+  { to: '/app/wallet', label: 'Wallet', icon: CreditCard },
+  { to: '/app/settlements', label: 'Settlements', icon: ArrowLeftRight },
+  { to: '/app/earnings', label: 'Earnings', icon: Coins },
+  { to: '/app/marketplace', label: 'Marketplace', icon: Store },
 ] as const
+
+/** Whether More was left open, per browser. */
+const MORE_OPEN_KEY = 'aid-rail-more-open'
 
 /**
  * Destinations that are reachable but deliberately absent from the rail. The account
@@ -83,7 +77,7 @@ const OFF_RAIL = [{ to: '/app/profile', label: 'Profile', icon: User }] as const
 /** Flat list of every destination, for the breadcrumb. */
 const ALL_NAV = [
   ...NAV,
-  ...NAV_GROUPS.flatMap((g) => g.items.map((i) => ({ ...i, end: false as const }))),
+  ...NAV_MORE.map((i) => ({ ...i, end: false as const })),
   ...OFF_RAIL.map((i) => ({ ...i, end: false as const })),
 ]
 
@@ -220,6 +214,27 @@ export default function AppLayout() {
     return () => window.removeEventListener('keydown', onKey)
   }, [drawerOpen])
 
+  // More: remembered per browser, and always open while you are on one of its screens so
+  // the active row is never hidden.
+  const inMore = NAV_MORE.some((n) => location.pathname.startsWith(n.to))
+  const [moreOpenPref, setMoreOpenPref] = useState<boolean>(() => {
+    try {
+      return localStorage.getItem(MORE_OPEN_KEY) === '1'
+    } catch {
+      return false
+    }
+  })
+  const moreOpen = moreOpenPref || inMore
+  const toggleMore = () => {
+    const next = !moreOpen
+    setMoreOpenPref(next)
+    try {
+      localStorage.setItem(MORE_OPEN_KEY, next ? '1' : '0')
+    } catch {
+      /* storage blocked: the toggle still works for this visit */
+    }
+  }
+
   // Longest match wins: /app matches every console path, so it is considered last.
   const current = [...ALL_NAV].sort((a, b) => b.to.length - a.to.length).find((n) => location.pathname.startsWith(n.to))
   const title = current?.label ?? 'Overview'
@@ -245,14 +260,15 @@ export default function AppLayout() {
     return () => clearTimeout(t)
   }, [theme])
 
-  // Guided tours, one per screen. Each auto-opens on the FIRST visit to its
-  // screen (after the enter choreography settles) and can be replayed from the
-  // help button or the account menu. Seen-state is per page, per browser.
+  // Guided tours, one per screen. Only the Overview tour opens by itself, once, on the
+  // first visit: a tour popping up on every screen was a wall between a person and the
+  // screen they came for. Every other tour waits for the help button or the account menu.
+  // Seen-state is per page, per browser.
   const [tourOpen, setTourOpen] = useState(false)
   const pageTour = TOURS[location.pathname]
   useEffect(() => {
     setTourOpen(false)
-    if (!pageTour) return
+    if (!pageTour || location.pathname !== '/app') return
     try {
       if (localStorage.getItem(pageTour.storageKey)) return
     } catch {
@@ -294,13 +310,19 @@ export default function AppLayout() {
           </NavLink>
         ))}
 
-        {NAV_GROUPS.map((group) => (
-          <div key={group.label} className="mt-5 border-t border-border pt-4 first:border-0">
-            <div className="mb-1 px-3 text-[10px] font-semibold uppercase tracking-[0.12em] text-foreground/35">
-              {group.label}
-            </div>
+        <div className="mt-5 border-t border-border pt-4">
+          <button
+            type="button"
+            onClick={toggleMore}
+            aria-expanded={moreOpen}
+            className="mb-1 flex w-full items-center justify-between rounded-md px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.12em] text-foreground/40 transition-colors hover:text-foreground/70"
+          >
+            More
+            <ChevronDown size={13} className={`transition-transform duration-200 ${moreOpen ? 'rotate-180' : ''}`} />
+          </button>
+          {moreOpen && (
             <div className="flex flex-col gap-1">
-              {group.items.map(({ to, label, icon: Icon }) => (
+              {NAV_MORE.map(({ to, label, icon: Icon }) => (
                 <NavLink key={to} to={to} className={({ isActive }) => rowClass(isActive)}>
                   {({ isActive }) => (
                     <>
@@ -311,8 +333,8 @@ export default function AppLayout() {
                 </NavLink>
               ))}
             </div>
-          </div>
-        ))}
+          )}
+        </div>
       </nav>
 
       {/* Backend status, one line. */}
