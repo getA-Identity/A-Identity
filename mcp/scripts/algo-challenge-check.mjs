@@ -15,7 +15,8 @@
  *      says whether the entry counts; the first half only says whether it could.
  */
 
-const BASE = (process.env.BASE ?? 'https://a-identity.xyz').replace(/\/$/, '')
+const DEFAULT_SITE = 'https://a-identity.xyz'
+const BASE = (process.env.BASE ?? DEFAULT_SITE).replace(/\/$/, '')
 const FACILITATOR = (process.env.X402_ALGORAND_FACILITATOR ?? 'https://facilitator.goplausible.xyz').replace(/\/$/, '')
 const TAG = 'x402-global-challenge'
 const TOOLS = ['verify_agent', 'reputation_score', 'risk_check', 'agent_passport']
@@ -91,20 +92,39 @@ if (!payTo) {
   check(false, 'payTo known', 'status gave none; set PAYTO=... to check the facilitator side anyway')
 } else {
   info(`payTo ${payTo}`)
+  // The leaderboard pages at 50 whatever limit is asked for, so a small entry sits past the
+  // first page: read every page, or "not listed" means "not on page one".
+  async function leaderboard(src, range) {
+    const items = []
+    let total = 0
+    for (let offset = 0; offset < 5000; ) {
+      const page = await getJson(
+        `${FACILITATOR}/data/leaderboards?cat=merchants&limit=50&offset=${offset}&range=${range}&env=mainnet&src=${encodeURIComponent(src)}`,
+      )
+      const rows = page.body?.items ?? []
+      total = page.body?.total ?? total
+      items.push(...rows)
+      offset += rows.length
+      if (rows.length === 0 || (total && offset >= total)) break
+    }
+    return items
+  }
   for (const src of [TAG, 'direct', 'dev']) {
-    const lb = await getJson(`${FACILITATOR}/data/leaderboards?cat=merchants&limit=500&range=all&env=mainnet&src=${encodeURIComponent(src)}`)
-    const items = lb.body?.items ?? []
-    const me = items.find((i) => i.address === payTo)
-    info(
-      `leaderboard src=${src}: ` +
-        (me
-          ? `rank ${me.rank} of ${items.length}, ${me.settles} settles, ${Number(me.volume).toFixed(4)} USD, bazaar=${me.bazaar}, domain=${me.sub}`
-          : `not listed (${items.length} entries)`),
-    )
-    if (src === TAG) {
-      check(Boolean(me), 'listed on the challenge leaderboard')
-      for (const rank of [10, 20, 50]) {
-        if (items[rank - 1]) info(`rank ${rank} currently sits at ${Number(items[rank - 1].volume).toFixed(2)} USD`)
+    for (const range of src === TAG ? ['all', '24h'] : ['all']) {
+      const items = await leaderboard(src, range)
+      const me = items.find((i) => i.address === payTo)
+      info(
+        `leaderboard src=${src} range=${range}: ` +
+          (me
+            ? `rank ${me.rank} of ${items.length}, ${me.settles} settles, ${Number(me.volume).toFixed(4)} USD, bazaar=${me.bazaar}, domain=${me.sub}`
+            : `not listed (${items.length} entries)`),
+      )
+      if (src === TAG && range === 'all') {
+        check(Boolean(me), 'listed on the challenge leaderboard')
+        check(!me || me.sub === new URL(DEFAULT_SITE).host, 'merchant domain is the site', me?.sub ?? '')
+        for (const rank of [10, 20, 50]) {
+          if (items[rank - 1]) info(`rank ${rank} currently sits at ${Number(items[rank - 1].volume).toFixed(2)} USD`)
+        }
       }
     }
   }
