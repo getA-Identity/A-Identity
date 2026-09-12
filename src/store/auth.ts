@@ -129,6 +129,18 @@ export const useAuth = create<AuthState>()(
       },
       linkWallet: async (signer) => {
         if (!get().verified) throw new Error('Sign in with a wallet or an email link before linking a wallet.')
+        // The wallet the session IS is already on the account, and the backend refuses to
+        // link it a second time. Say so BEFORE asking the extension for a signature: a
+        // person with one Freighter account otherwise approves a signature for nothing and
+        // then reads a refusal, which looks like the link silently failing.
+        const subject = get().user?.email ?? ''
+        if (subject && subject.toLowerCase() === signer.address.toLowerCase()) {
+          throw new Error(
+            // Worded around the modal's error mapper on purpose: "switch", "network" and
+            // "chain" would make it read this as the extension asking for a change.
+            `${signer.walletName ?? 'This wallet'} is showing the account you signed in with, so it is already on your account. To link a different wallet, pick another account inside the extension first, then try again.`,
+          )
+        }
         const nres = await apiFetch('/api/auth/nonce', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },

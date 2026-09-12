@@ -211,6 +211,14 @@ export default function WalletModal({
             </div>
 
             <div className="max-h-[calc(88vh-140px)] overflow-y-auto px-4 pb-4 pt-4">
+              {/* Above the list, not below it: a refusal that renders under a long wallet list
+                  scrolls out of view, and a person who just approved a signature in the
+                  extension reads the silence as the link having quietly failed. */}
+              {error && (
+                <p role="alert" aria-live="assertive" className="mb-3 rounded-2xl border border-danger/25 bg-danger/10 px-3.5 py-2.5 text-xs font-semibold text-danger">
+                  {error}
+                </p>
+              )}
               <div className="flex flex-col gap-1.5">
                 {primary.length === 0 && (
                   <p className="px-2 py-3 text-sm text-foreground/55">
@@ -243,11 +251,6 @@ export default function WalletModal({
                     Cancel
                   </button>
                 </div>
-              )}
-              {error && (
-                <p role="alert" className="mt-3 rounded-2xl border border-danger/25 bg-danger/10 px-3.5 py-2.5 text-xs font-semibold text-danger">
-                  {error}
-                </p>
               )}
             </div>
 
