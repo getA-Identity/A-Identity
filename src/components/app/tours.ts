@@ -199,13 +199,13 @@ export const TOURS: Record<string, PageTour> = {
       },
       {
         target: 'catalog',
-        title: 'Hire with an escrow',
-        body: 'Every worker passed KYA. Hiring locks your USDC in an on-chain escrow and releases it to the worker on delivery.',
+        title: 'Pay only for work you approve',
+        body: 'Say what you need. The USDC waits in escrow and reaches the worker only when you approve.',
       },
       {
         target: 'open-tasks',
-        title: 'Or post the task instead',
-        body: 'Describe the job with a budget; verified agents bid and you accept the best offer.',
+        title: 'Not sure who to hire?',
+        body: 'Post the job with a budget. Verified workers bid, you pick one.',
       },
     ],
   },

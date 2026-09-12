@@ -4,13 +4,11 @@ import { CheckCircle2, ExternalLink, Lock, Zap } from 'lucide-react'
 
 import { apiFetch } from '../../../lib/api'
 import { Button } from '../../ui/button'
-import { ensureEvmChain, getActiveInjectedProvider, getConnectedProvider, type Eip1193 } from '../../../lib/wallets'
 import { CHAIN_BY_ID } from '../../../lib/chains'
 import { Panel } from '../../ui/panel'
+import { payStepLabel, useEvmPayer } from '../wallet/PayWallet'
 
-/** Make sure the wallet is on Arc before we send a USDC transfer. The switch-or-add logic
- *  lives in lib/wallets (ensureEvmChain) and serves every registry chain; this is the Arc call. */
-const ensureArcChain = (eth: Eip1193) => ensureEvmChain(eth, CHAIN_BY_ID.arc)
+const ARC = CHAIN_BY_ID.arc
 
 const ERC20_TRANSFER = [
   {
@@ -41,9 +39,10 @@ type Resource = {
   resource: { title: string; arcBlock: string | null; chainId: number; servedAt: string }
 }
 
-type Phase = 'idle' | 'quoting' | 'paying' | 'verifying' | 'done' | 'error'
+type Phase = 'idle' | 'quoting' | 'wallet' | 'paying' | 'verifying' | 'done' | 'error'
 
 export default function X402Panel() {
+  const payer = useEvmPayer()
   const [req, setReq] = useState<Accepts | null>(null)
   const [resource, setResource] = useState<Resource | null>(null)
   const [phase, setPhase] = useState<Phase>('idle')
@@ -69,16 +68,11 @@ export default function X402Panel() {
       const nonce = reqs.nonce ?? accepts.nonce
       setReq(accepts)
 
-      // 2. Pay the required USDC on Arc from the wallet the user signed in with, so
-      //    we don't pop a different extension than the one they're using.
-      const eth = getConnectedProvider() ?? getActiveInjectedProvider()
-      if (!eth) throw new Error('No wallet found. Sign in with a browser wallet to pay.')
+      // 2. The wallet: chosen, connected and on Arc (added first if it has never seen Arc),
+      //    so the USDC transfer cannot land on another chain.
+      setPhase('wallet')
+      const { provider: eth, from } = await payer.prepare(ARC)
       setPhase('paying')
-      const accounts = (await eth.request({ method: 'eth_requestAccounts' })) as string[]
-      const from = accounts?.[0]
-      if (!from) throw new Error('No account selected.')
-      // Pin the wallet to Arc before sending, so the USDC transfer can't land on another chain.
-      await ensureArcChain(eth)
       const data = encodeFunctionData({
         abi: ERC20_TRANSFER,
         functionName: 'transfer',
@@ -131,10 +125,12 @@ export default function X402Panel() {
     }
   }
 
-  const busy = phase === 'quoting' || phase === 'paying' || phase === 'verifying'
+  const busy = phase === 'quoting' || phase === 'wallet' || phase === 'paying' || phase === 'verifying'
   const label =
     phase === 'quoting'
       ? 'Getting quote...'
+      : phase === 'wallet'
+        ? payStepLabel(payer.step, ARC.shortName, payer.wallet?.name)
       : phase === 'paying'
         ? 'Confirm in your wallet...'
         : phase === 'verifying'
@@ -162,6 +158,21 @@ export default function X402Panel() {
           {label}
         </Button>
       </div>
+      {/* Which wallet pays, always visible, with a way to change it. Arc is added to the
+          wallet automatically, so there is no network to set up by hand. */}
+      <p className="mt-2 text-xs text-foreground/55">
+        {payer.wallet ? (
+          <>
+            Pays from <span className="font-semibold text-foreground/80">{payer.wallet.name}</span> on {ARC.shortName}.{' '}
+            <button type="button" onClick={payer.change} disabled={busy} className="font-semibold text-accent hover:underline disabled:opacity-50">
+              Change
+            </button>
+          </>
+        ) : (
+          `You pick the wallet when you pay. ${ARC.shortName} is added to it automatically.`
+        )}
+      </p>
+      {payer.picker}
 
       {/* The 402 challenge is the whole point of the demo, surface it on-screen so the
           expected red "402" the browser logs to the console reads as intentional, not a bug. */}

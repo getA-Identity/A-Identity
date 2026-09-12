@@ -2,7 +2,7 @@ import { useCallback, useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { CheckCircle2, ExternalLink, Link2, Loader2, Lock, Unlink, Wallet } from 'lucide-react'
 import ChainLogo from '../ChainLogo'
-import { ensureEvmChain, EVM_WALLET_CHAINS, getConnectedProvider, walletErrorText } from '../../../lib/wallets'
+import { currentEvmWallet, ensureEvmChain, EVM_WALLET_CHAINS, getConnectedProvider, walletErrorText } from '../../../lib/wallets'
 import WalletModal from '../../auth/WalletModal'
 import { apiFetch, readJson } from '../../../lib/api'
 import { BACKEND_UNREACHABLE } from '../../../lib/mcpBase'
@@ -73,9 +73,10 @@ export default function LinkedWallets({ isGuest }: { isGuest: boolean }) {
   }, [evmConnected])
 
   const switchTo = async (chain: Chain) => {
-    const eth = getConnectedProvider()
+    // The wallet chosen before, even after a reload, so switching does not ask to link again.
+    const eth = getConnectedProvider() ?? currentEvmWallet()?.provider
     if (!eth) {
-      setError('Connect the wallet in this tab first (Link a wallet), then switch its network from here.')
+      setError('Link an EVM wallet first, then switch its network from here.')
       return
     }
     setSwitching(chain.id)

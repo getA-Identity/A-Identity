@@ -7,6 +7,7 @@ import {
   evmSigner,
   getInjectedWallets,
   refreshInjectedWallets,
+  rememberEvmWallet,
   setConnectedProvider,
   walletConnectEnabled,
   type WalletOption,
@@ -97,7 +98,8 @@ export default function WalletModal({
         id: `evm:${w.id}`, name: w.name, family: 'evm', icon: w.icon, status: 'detected',
         connect: async () => {
           if (!w.provider) throw new Error('This wallet exposed no provider.')
-          setConnectedProvider(w.provider)
+          // The wallet you sign in with is also the one later payments come from, until you change it.
+          rememberEvmWallet({ ...w, provider: w.provider })
           return evmSigner(w.provider, { id: w.id, name: w.name, icon: w.icon })
         },
       })
@@ -114,7 +116,7 @@ export default function WalletModal({
         id: 'evm:walletconnect', name: 'WalletConnect', family: 'evm', status: 'phone',
         connect: async () => {
           const provider = await connectWalletConnect()
-          setConnectedProvider(provider)
+          setConnectedProvider(provider, { name: 'WalletConnect' })
           return evmSigner(provider, { id: 'walletconnect', name: 'WalletConnect' })
         },
       })
