@@ -74,7 +74,7 @@ not spend.
 | --- | --- |
 | `X402_3009_SIGNER_KEY` | Broadcaster for the EIP-3009 rail. Overrides the chain signer when set, so it can be the wallet paying gas on Robinhood Chain and Arbitrum One mainnet ([`x402-3009/engine.ts:528`](mcp/src/x402-3009/engine.ts#L528)). |
 | `X402_STELLAR_TESTNET_FEE_PAYER` | Pays the network fee for every Stellar settlement we broadcast. **Live in production since 2026-08-24.** |
-| `X402_STELLAR_PUBNET_FEE_PAYER` | The same role on pubnet, and no longer hypothetical: the first mainnet Stellar sale (2026-08-28) was broadcast with it. Whether the hosted deployment carries it is an env question the rail answers itself at `/api/x402/stellar/status`; without it the pubnet rail is fail-closed. |
+| `X402_STELLAR_PUBNET_FEE_PAYER` | The same role on pubnet, and no longer hypothetical: the first mainnet Stellar sale (2026-08-28) was broadcast with it. **Set on the hosted deployment**, which `/api/x402/stellar/status` answers for itself; without it the pubnet rail is fail-closed. Its value today is the vault operator account `GDLAJM25YQRTIZOVZPVEM2GJ6L2I4OTZGY3HAWX3HGMPV7SM3QZONO4S`, which is a role overlap rather than a design: see [Stellar operational posture](#stellar-operational-posture) below. |
 | `X402_STELLAR_TESTNET_OZ_KEY` / `X402_STELLAR_PUBNET_OZ_KEY` | OpenZeppelin Channels API keys, the fallback broadcaster. |
 | `CELO_X402_API_KEY` | Gates the Celo paid rail; without it that rail is fail-closed. |
 | `X402_PAY_TO` / `X402_STELLAR_PAYTO` / `X402_ALGORAND_PAYTO` (plus the per-network `*_MAINNET_PAYTO` / `*_TESTNET_PAYTO` overrides) | Receiving addresses. Not secrets, but a wrong value sells to an account nobody controls, so treat edits as privileged. |
@@ -188,6 +188,60 @@ the first one is tracked as an open audit finding rather than a settled decision
   re-run, plus an adversarial review that found and fixed real defects. That is not an audit
   and this project does not call it one. The EVM `AgentSpendPolicy` has not had the Soroban
   port's payee-validity gate backported (audit finding G-1).
+
+## Stellar operational posture
+
+Stellar is the chain where a contract of ours holds value, so the key layout there deserves
+to be written down rather than inferred from env var names. Everything below is current as
+of 2026-09-15.
+
+- **One key does two jobs, and that is the open item.** On each network the account named
+  by `X402_STELLAR_TESTNET_FEE_PAYER` / `X402_STELLAR_PUBNET_FEE_PAYER` is today the vault
+  operator key itself: pubnet `GDLAJM25YQRTIZOVZPVEM2GJ6L2I4OTZGY3HAWX3HGMPV7SM3QZONO4S`,
+  testnet `GDZXSO4AOKPSHMQZMBNEEBQNYOIF7TWDPD7K2U5VAPKFN3QIAIELTAN6`. So the key that may
+  call `vault.pay` under the on-ledger policy is also the key that signs and broadcasts
+  every x402 settlement. The policy still bounds what that key can spend out of the vault,
+  which is the point of the vault, but a fee payer is a hot, high-frequency key and an
+  operator is not, and they should not be the same account.
+
+  **The fix, and it is a chore rather than a design change.** A dedicated pubnet fee payer
+  already exists as the local alias `aid-pubnet-x402-fee`,
+  `GAFVDEN6BC52WWPRPINOVENMXW3FU4LCSVVVA5C67RLPG4GAK6BE4SXY`, and it is unfunded: Horizon
+  answers 404 for it, because on Stellar an account does not exist until someone sends it
+  the base reserve. Fund it with about 2 XLM, set `X402_STELLAR_PUBNET_FEE_PAYER` to it in
+  the Render env, redeploy, and confirm one settlement lands with the new account before
+  calling it done. It needs XLM only, never USDC and never a trustline, because a fee payer
+  signs envelopes and nothing else. After that the operator key stops paying fees. Treat
+  this as a rotation of `X402_STELLAR_PUBNET_FEE_PAYER`: same procedure as the rotation
+  list above, plus the confirmation step, because a fee payer that cannot pay makes the
+  rail fail-closed rather than loud.
+
+- **The owner multisig's three signers are in one keystore.** The pubnet vault owner was
+  raised to a 2-of-3 multisig on 2026-08-25, which is what stops a single compromised key
+  from moving the vault's balance. All three signers currently live in the same local
+  keystore, so the property the multisig buys is not yet realised against an attacker who
+  reaches that machine. This is audit finding D-1's residual and it is the maintainer's to
+  close, by moving at least one signer somewhere else.
+
+- **The vault has a calendar, and it is on the clock.** A Soroban contract instance is
+  archived when its rent lapses, and this one only re-extends its own TTL when under 60
+  days remain. The pubnet vault's instance archives around **2027-01-06** unless it is
+  touched, so the action window opens in early **November 2026**. The weekly workflow
+  `.github/workflows/stellar-ops.yml` goes red at 45 days remaining, and also audits
+  key-role overlap and allowlist drift, so none of the three depends on anyone
+  remembering. `mcp/scripts/stellar-vault-allowlist.mjs` and
+  `mcp/scripts/stellar-key-roles.mjs` are the same checks, runnable by hand.
+
+- **RPC failover is reads only, deliberately.** Each Stellar descriptor carries a primary
+  RPC and one or two independent fallbacks, and a read that fails moves down the list. A
+  `sendTransaction` never does: a resubmitted envelope answers `DUPLICATE` on the second
+  host, and the rail would read that as a decided refusal of a payment that is in fact in
+  flight. Availability is worth a retry; a wrong answer about whether money moved is not.
+
+- **Audit decisions on the record.** D-2, D-3 and D-4 were decided on 2026-09-15 on the
+  maintainer's instruction and are written up under `audit/`. Two hardening items, A3-02
+  and A4-01, ship only with a redeploy rather than with a config change, so they land on
+  the next one.
 
 ## Reporting
 

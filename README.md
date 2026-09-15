@@ -1,7 +1,7 @@
 # A-Identity
 
 [![CI](https://github.com/getA-Identity/A-Identity/actions/workflows/ci.yml/badge.svg)](https://github.com/getA-Identity/A-Identity/actions/workflows/ci.yml)
-[![Tests](https://img.shields.io/badge/tests-1157%20unit%20%2B%20E2E-brightgreen)](mcp/README.md#develop)
+[![Tests](https://img.shields.io/badge/tests-1280%20unit%20%2B%20E2E-brightgreen)](mcp/README.md#develop)
 [![npm: marketplace-sdk](https://img.shields.io/npm/v/%40a-identity%2Fmarketplace-sdk?label=marketplace-sdk)](https://www.npmjs.com/package/@a-identity/marketplace-sdk)
 [![npm: trust-guard](https://img.shields.io/npm/v/%40a-identity%2Ftrust-guard?label=trust-guard)](https://www.npmjs.com/package/@a-identity/trust-guard)
 [![Ask DeepWiki](https://deepwiki.com/badge.svg)](https://deepwiki.com/getA-Identity/A-Identity)
@@ -29,9 +29,11 @@ per-request payments.
 
 > Status: hackathon MVP. Arc is the live phase-1 network. Stellar is phase 2 and
 > shipped: the Soroban spend vault holds real Circle USDC on pubnet under a 1 USDC daily
-> cap, and the Soroban x402 rail sells on BOTH Stellar networks, the first mainnet sale
-> settled 2026-08-28 by our own broadcaster. Pubnet is `live`; the testnet mirror stays
-> `beta`, because test money is not live money. Algorand is phase 3 and went `live` the
+> cap, and the hosted deployment sells over the Soroban x402 rail on BOTH Stellar
+> networks, with the first mainnet sale settled 2026-08-28 by our own broadcaster. Pubnet
+> is `live`; the testnet mirror stays `beta`, because test money is not live money. The
+> chain page is [Build on Stellar](https://a-identity.mintlify.site/chains/stellar).
+> Algorand is phase 3 and went `live` the
 > day it shipped, 2026-08-30: an x402 v2 rail through the GoPlausible facilitator with a
 > real mainnet sale recorded (0.001 USDC, funded end to end from a Stellar XLM treasury;
 > the whole trail is at [/proof/algorand](https://a-identity.xyz/proof/algorand)). Its
@@ -212,7 +214,7 @@ listed at `GET /proof`. Four representative ones, each independently verifiable 
 `#849980`, KYA-verified, with a reputation earned from **3 real settlements**. The score
 itself is recency-weighted and decays as those settlements age, so it is read live rather
 than quoted here. Scoring is **deterministic and
-unit-tested** (1157 unit tests as of Sep 2026), reads on-chain live via viem, and is fully documented at
+unit-tested** (1280 unit tests as of Sep 2026), reads on-chain live via viem, and is fully documented at
 `GET /methodology`. This is our answer to "surface your rigor": every number is
 reproducible and every settlement is on-chain.
 
@@ -366,9 +368,15 @@ owner override on the ledger. Pubnet is `live`; the testnet mirror stays `beta`,
 test money is not live money. Since 2026-08-28 the Soroban x402 rail sells on pubnet
 too: the first mainnet sale (tx `f213371c`, 0.001 USDC) settled through our own
 broadcaster, the buyer signing an authorization entry and paying no fee, the sale
-counted only once the SEP-41 transfer event bound to its nonce was read back. There is
-no ERC-8004 on Stellar, so an agent's passport is bridged from an EVM chain rather than
-anchored here.
+counted only once the SEP-41 transfer event bound to its nonce was read back. Since
+2026-09-15 the console reads live vault state and prepares the owner calls (`set_policy`,
+`set_frozen`, `set_allowed`, `set_session_key_expiry`, `withdraw`, `owner_pay`) for the
+owner to sign with their own Stellar wallet, so the server never holds that key, and a
+per-agent Soroban vault can be provisioned on testnet against the existing code entry.
+There is no ERC-8004 on Stellar, so an agent's passport is bridged from an EVM chain
+rather than anchored here; TrionLabs' third-party Stellar 8004 registry is read, read-only
+and labeled as theirs, which is a pointer and not our anchor. The chain page is
+[Build on Stellar](https://a-identity.mintlify.site/chains/stellar).
 
 Base carries the canonical ERC-8004 identity and reputation registries (verified
 2026-08-28 by reading each proxy's EIP-1967 implementation slot and matching the
@@ -755,9 +763,12 @@ The living version is [ROADMAP.md](ROADMAP.md) (now / next / later). The phase v
 
 - **Phase 1 (now):** Arc + Circle, end to end. Live contract reads; write path
   wired and env-gated.
-- **Phase 2 (in progress):** Stellar. The Soroban spend vault, the x402 rail and the
-  facilitator all run end to end on testnet; pubnet (USDC + EURC native) is the
-  remaining half.
+- **Phase 2 (shipped):** Stellar. The Soroban spend vault, the x402 rail and the
+  facilitator run end to end on both networks, and pubnet has been `live` and selling
+  since 2026-08-28. What is still owed there is operational rather than structural: a fee
+  payer separate from the vault operator key, the 2-of-3 owner signers split across more
+  than one keystore, the vault's instance TTL re-extended before it archives, and an
+  external audit the contract has never had.
 - **Phase 3:** Avalanche.
 
 New networks are a registry entry plus (for non-EVM) one adapter: the chain registry

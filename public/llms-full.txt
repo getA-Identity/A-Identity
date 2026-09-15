@@ -428,9 +428,16 @@ Live today:
   too: the first mainnet sale settled 2026-08-28 (tx f213371c..., 0.001 USDC), the
   buyer signing a Soroban authorization entry and paying no fee, our broadcaster paying
   the network fee at the fee market's own rate, and the sale counting only once the
-  SEP-41 transfer event bound to the authorization's nonce was read back. There is
+  SEP-41 transfer event bound to the authorization's nonce was read back. The console
+  reads the vault's live state and prepares its owner calls (`set_policy`, `set_frozen`,
+  `set_allowed`, `set_session_key_expiry`, `withdraw`, `owner_pay`) for the owner to
+  sign with their own Stellar wallet, so the server never holds that key, and a weekly
+  ops workflow watches the vault's archival deadline, the fee-payer and operator role
+  overlap, and allowlist drift. There is
   no ERC-8004 registry on either Stellar network, because that standard is EVM-only; a
-  passport is bridged, never anchored here.
+  passport is bridged, never anchored here. TrionLabs' Stellar 8004 agent registry is
+  READ, read-only and labeled third-party: a pointer someone can check, never our
+  identity anchor, and KYA cannot be anchored on this chain at all.
 - **Algorand mainnet** (`algorand:wGHE2Pwdvd7S12BL5FaOP20EGYesN73k`). Native Circle
   USDC as ASA 31566704 (6 decimals, read live from the indexer before it was recorded)
   and an x402 v2 rail through the GoPlausible facilitator: the buyer signs a fee-zero
@@ -507,7 +514,11 @@ Beta, wired and readable:
   rail running end to end against it: the buyer signs a Soroban authorization entry
   and pays no transaction fee, we broadcast, and a sale counts only once we read the
   SEP-41 transfer event bound to that authorization's nonce. Settlement is in testnet
-  USDC through the SAC, at 7 decimals.
+  USDC through the SAC, at 7 decimals. This is also where a per-agent Soroban vault can
+  be provisioned, instantiated against the code entry already on the ledger rather than
+  by re-uploading the wasm; the same console screen shows its live state and hands the
+  owner calls back for the owner's own wallet to sign. TrionLabs' Stellar 8004 registry
+  is read here too, read-only and labeled third-party, where A-Identity is agent 25.
 
 Planned, descriptor only:
 

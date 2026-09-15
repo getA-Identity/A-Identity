@@ -36,6 +36,13 @@ against those limits before any value moves, and the verdict is ALLOW, WARN or D
   figure covering several rails is a figure about none of them. The index over all of
   them, including the testnet rails and the chains whose evidence lives elsewhere, is
   https://a-identity.xyz/proof.
+- On Stellar the spend policy is a Soroban contract holding real Circle USDC, and the
+  console now shows its live state and lets the owner sign `set_policy`, `set_frozen`,
+  `set_allowed`, `set_session_key_expiry`, `withdraw` and `owner_pay` with their own
+  wallet, so the server never holds that key. TrionLabs' third-party Stellar 8004 agent
+  registry is READ, read-only and labeled as theirs: a pointer, never our identity anchor,
+  and ERC-8004 remains EVM-only. A weekly ops workflow watches the vault's archival
+  deadline, the overlap between the fee-payer and operator roles, and allowlist drift.
 - Public policy counters currently read zero, because no live agent has produced a
   production decision yet. We publish the zero rather than a number nobody can reproduce.
 

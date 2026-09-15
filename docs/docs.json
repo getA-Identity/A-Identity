@@ -78,6 +78,7 @@
               "chains/robinhood",
               "chains/arbitrum",
               "chains/base",
+              "chains/stellar",
               "chains/gateway",
               "chains/cctp"
             ]

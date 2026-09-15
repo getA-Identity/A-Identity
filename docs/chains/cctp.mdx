@@ -40,6 +40,26 @@ minting native USDC on Base Sepolia, on both the local and the live production
 backend. SDK: [`@circle-fin/bridge-kit`](https://developers.circle.com/cctp).
 </Note>
 
+## Stellar
+
+Stellar is on this rail too, and it is the one destination that needs its own paragraph.
+Circle's Bridge Kit has no Stellar adapter, so [`mcp/src/cctp-stellar.ts`](https://github.com/getA-Identity/A-Identity/blob/main/mcp/src/cctp-stellar.ts)
+drives the protocol directly: burn, Iris attestation, mint, in both directions.
+
+- **A Stellar recipient must go through Circle's `CctpForwarder`.** The CCTP message format
+  has no room for a StrKey type marker, so the `G...` account rides in the hook data and the
+  forwarder mints and forwards in one atomic call. A direct mint to a `G...` account is
+  unrecoverable.
+- **Seven decimals on one side, six on the other.** Stellar assets carry 7 decimals and
+  every EVM USDC carries 6, so an amount is converted rather than copied.
+- **Testnet-proven both ways on 2026-09-10**: Arc testnet to Stellar testnet, and a Stellar
+  testnet burn minted back on Arc. Both legs are on the proof pages.
+- **Mainnet is opt-in only.** It runs behind `CCTP_STELLAR_ALLOW_MAINNET` with a
+  single-digit USD cap (`CCTP_STELLAR_MAX_USD`, default 5), and the hosted deployment
+  carries no CCTP Stellar keys, so production returns a labeled prepared no-op there.
+
+More on the chain itself: [Build on Stellar](/chains/stellar).
+
 ## Gateway vs CCTP
 
 | | Circle Gateway | CCTP |

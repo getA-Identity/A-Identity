@@ -4,9 +4,37 @@ Now / next / later, in the open. "Now" means work is underway or committed for t
 current cycle. Nothing below carries a target date, deliberately: a date we cannot keep
 is worth less than an honest ordering, and the dates that do appear are on things that
 already happened. Recently shipped is listed so the roadmap stays honest about velocity.
-Updated 2026-08-30.
+Updated 2026-09-15.
 
 ## Recently shipped
+
+- **Stellar owner controls, a third-party registry read, and the ops calendar**
+  (2026-09-15): the console now shows live Soroban vault state and prepares the owner
+  calls (`set_policy`, `set_frozen`, `set_allowed`, `set_session_key_expiry`, `withdraw`,
+  `owner_pay`) for the owner to sign with their own Stellar wallet, so the server never
+  holds that key. A per-agent Soroban vault can be provisioned on testnet against the
+  existing code entry rather than by re-uploading the wasm, with pubnet gated behind
+  `STELLAR_VAULT_ALLOW_PUBNET`. TrionLabs' Stellar 8004 registry is now READ, read-only
+  and labeled third-party, which is a pointer rather than an anchor. Alongside them:
+  RPC read failover across the registry's fallback list (a `sendTransaction` deliberately
+  never fails over), the x402 fee reported as bid and charged separately instead of as one
+  number, a weekly ops workflow that warns on vault archival, key-role overlap and
+  allowlist drift, and a [Build on Stellar](https://a-identity.mintlify.site/chains/stellar)
+  docs page.
+
+- **CCTP between Stellar and EVM, proven both ways** (2026-09-10): native USDC burned on
+  Arc testnet and minted on Stellar testnet through Circle's `CctpForwarder` (a `G...`
+  recipient rides in the hook data, because a direct mint to an account is unrecoverable),
+  and the reverse leg burned on Stellar and minted back on Arc. Driven directly by
+  `mcp/src/cctp-stellar.ts`, because Bridge Kit has no Stellar adapter. Mainnet stays
+  opt-in only, capped, and returns a labeled prepared no-op wherever the keys are absent.
+
+- **Wallet sign-in and linking on every chain family** (2026-09-09): an owner signs in, or
+  links a wallet to an existing account, with an EVM `personal_sign`, a Stellar SEP-43
+  `signMessage` through Stellar Wallets Kit (Freighter signs SEP-53), or an Algorand
+  signed zero-value self-payment. One account can carry wallets from several families at
+  once, which is what lets an EVM-anchored passport and a Stellar signing key belong to
+  one owner.
 
 - **Algorand went live on its first mainnet sale** (2026-08-30): the second non-EVM
   ecosystem, entered as a registry descriptor and promoted the same day on a real
@@ -79,17 +107,20 @@ Updated 2026-08-30.
 - merchant_check: commerce-grade counterparty verification for agentic checkouts
   (MCP tool + REST).
 - Structural hardening: the backend split into a layered platform/ + http/ module
-  system with the layer graph enforced by tests; 1157 unit tests + full E2E suite.
+  system with the layer graph enforced by tests; 1280 unit tests + full E2E suite.
 
 ## Now
 
-- **Turn the two newest rails on in the hosted deployment.** Both mainnet firsts above
-  were settled from an operator machine, against the same code path production runs.
-  Production sells on Stellar pubnet only once its environment names that network, a
-  pubnet payTo holding a USDC trustline, and a funded fee payer; on Algorand it needs the
-  network named and a payTo opted in to the USDC ASA. Until each is set, that rail is
-  fail-closed and says so at its own status route. Fail-closed is the behaviour we want,
-  but a fail-closed rail is not a shipped one.
+- **Give the Stellar pubnet rail a fee payer of its own.** Turning the two newest rails on
+  in the hosted deployment is done: `/api/x402/stellar/status` reports both Stellar
+  networks configured with our own broadcaster and a fee payer on each, production has
+  sold on pubnet since 2026-08-28, and `/api/x402/algorand/status` reports the mainnet
+  network named with the payTo opted in to the USDC ASA. What is left is a role overlap
+  the switch-on created: on each network the account paying settlement fees is today the
+  vault operator key itself, so the key that may call `vault.pay` is also the key that
+  broadcasts every settlement. A dedicated pubnet fee payer exists as a local alias and is
+  unfunded; funding it, setting `X402_STELLAR_PUBNET_FEE_PAYER` to it and confirming one
+  settlement lands separates the two. [SECURITY.md](SECURITY.md) carries the detail.
 - **Backport the payee-validity gate to the EVM `AgentSpendPolicy`** (audit finding G-1,
   still open). The Soroban and Algorand ports refuse a payee equal to the vault itself;
   the Solidity original accepts it and burns the cap against a payment that goes nowhere.
@@ -110,12 +141,15 @@ Updated 2026-08-30.
   batched settlement) bundled into one deliberate listing update.
 - **Spend-preflight in the console UI** (the API is live; the Permissions screen gets
   a "would this pass?" panel).
-- **A readable identity story for the non-EVM rails**. ERC-8004 is EVM-only, and neither
-  Stellar nor Algorand has an agent registry we are willing to resolve against, so a
-  passport on those chains is bridged from an EVM chain rather than anchored. Today that
-  bridge is a sentence in the docs. Making it a pointer a buyer can check, and saying at
-  the point of sale that KYA cannot be anchored there, is the next honest step rather
-  than deploying a registry of our own and calling it a standard.
+- **A readable identity story for the non-EVM rails**. ERC-8004 is EVM-only, so a passport
+  on Stellar or Algorand is bridged from an EVM chain rather than anchored. The pointer
+  half shipped on 2026-09-15: TrionLabs' Stellar 8004 registry is read, read-only and
+  labeled third-party, and A-Identity is agent 25 on its testnet instance. Three things
+  remain, and none of them is a registry of our own called a standard. Mainnet
+  registration is blocked on the registry's owner, because their mainnet instance
+  simulated as archived and restoring somebody else's contract is their call, not ours.
+  Algorand still has no registry we can verify. And KYA remains unanchorable on both
+  chains, which the point of sale has to keep saying out loud.
 
 ## Later
 
