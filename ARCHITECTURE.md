@@ -249,7 +249,7 @@ sells on this network.
   the next was refused with the contract's own `DailyCapExceeded`, and `spent_today` came to rest
   at exactly the 1 USDC cap. A Soroban refusal fails in simulation and never reaches the ledger,
   so the typed error code is the artifact and there is no hash to link.
-- **First x402 sale on mainnet** (2026-08-28):
+- **First x402 sale on mainnet** (2026-08-27):
   [`f213371c…`](https://stellar.expert/explorer/public/tx/f213371c1241968ee78170923d8c5a3bd9b32950e73bb9c563d800ab2c70ec9e),
   ledger 64155370, 0.001 USDC for `verify_agent`. The buyer signed a Soroban authorization entry
   and paid no fee; we assembled, bid the fee market's own rate and submitted, and the sale counted
@@ -333,7 +333,7 @@ day it lands rather than the day someone remembers to add it.
   `/mcp` JSON-RPC for agents. Durable state via Postgres (`DATABASE_URL`), JSON-file fallback for dev.
 - **Auth** - wallet sign-in on any chain family the registry knows (EVM personal_sign, Stellar SEP-43 signMessage, an Algorand signed zero-value self-payment; mcp/src/wallet-proof.ts) + email magic link (Resend) are *verified*; a plain guest
   session is read-only. Agent ownership is bound to a verified identity.
-- **Tests / CI** - `node:test` unit suite: **1280 tests across 90 colocated `*.test.ts` files**
+- **Tests / CI** - `node:test` unit suite: **1296 tests across 92 colocated `*.test.ts` files**
   (as of Aug 2026; `npm test` in `mcp/`) + a full E2E (`mcp/e2e.mjs`) of about **67 checks** that
   adapts to signer presence: live reads always run, and the on-chain write checks (x402, ERC-8183
   escrow, Gateway, **Nanopayments settle**, **CCTP burn-and-mint**) activate with a funded

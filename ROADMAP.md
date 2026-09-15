@@ -47,7 +47,7 @@ Updated 2026-09-15.
   `3688854723`, no update or delete handler, real USDC under a 1 USDC daily cap, walked
   through the same settle-refuse-freeze-override ladder as the Stellar releases.
 
-- **The Stellar x402 rail sells on pubnet** (2026-08-28): first mainnet sale
+- **The Stellar x402 rail sells on pubnet** (2026-08-27): first mainnet sale
   `f213371c...` at ledger 64155370, 0.001 USDC through our own facilitator, the buyer
   signing a Soroban authorization entry and paying no fee. Recorded with the part that
   did not work: two earlier attempts bid the 100-stroop minimum that testnet always
@@ -107,20 +107,17 @@ Updated 2026-09-15.
 - merchant_check: commerce-grade counterparty verification for agentic checkouts
   (MCP tool + REST).
 - Structural hardening: the backend split into a layered platform/ + http/ module
-  system with the layer graph enforced by tests; 1280 unit tests + full E2E suite.
+  system with the layer graph enforced by tests; 1296 unit tests + full E2E suite.
 
 ## Now
 
-- **Give the Stellar pubnet rail a fee payer of its own.** Turning the two newest rails on
-  in the hosted deployment is done: `/api/x402/stellar/status` reports both Stellar
-  networks configured with our own broadcaster and a fee payer on each, production has
-  sold on pubnet since 2026-08-28, and `/api/x402/algorand/status` reports the mainnet
-  network named with the payTo opted in to the USDC ASA. What is left is a role overlap
-  the switch-on created: on each network the account paying settlement fees is today the
-  vault operator key itself, so the key that may call `vault.pay` is also the key that
-  broadcasts every settlement. A dedicated pubnet fee payer exists as a local alias and is
-  unfunded; funding it, setting `X402_STELLAR_PUBNET_FEE_PAYER` to it and confirming one
-  settlement lands separates the two. [SECURITY.md](SECURITY.md) carries the detail.
+- **Separate the testnet fee payer from the testnet vault operator.** The pubnet half is
+  done: since 2026-09-15 `X402_STELLAR_PUBNET_FEE_PAYER` is a dedicated XLM-only account,
+  proven by the production sale it broadcast, so on mainnet the key that may call
+  `vault.pay` no longer pays for every settlement. Production has sold on pubnet since
+  2026-08-28 and `/api/x402/algorand/status` reports the mainnet network named with the
+  payTo opted in to the USDC ASA. On testnet the two Stellar roles still share one key,
+  which is test money. [SECURITY.md](SECURITY.md) carries the detail.
 - **Backport the payee-validity gate to the EVM `AgentSpendPolicy`** (audit finding G-1,
   still open). The Soroban and Algorand ports refuse a payee equal to the vault itself;
   the Solidity original accepts it and burns the cap against a payment that goes nowhere.

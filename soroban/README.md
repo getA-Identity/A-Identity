@@ -325,21 +325,21 @@ It reads the vault roles off the ledger by simulation and the rail roles from th
 public status endpoints, which publish account ids and environment variable NAMES and never
 a secret. It reads no key material and prints none.
 
-**The overlap it reports today: the x402 fee payer IS the vault operator, on both
-networks.** One key, two jobs, and the jobs have different threat models. A fee payer is hot
-on Render, signs on every sale, and its whole job is to hold a couple of XLM; an operator
-can spend the vault's daily budget. It is a warning rather than a failure because the
-operator is already the lower-privilege half of the vault and the blast radius is bounded by
-the daily cap, which is what the cap is for. The script exits 1 only if the fee payer ever
-becomes the vault OWNER, which would put the entire balance behind a server key.
+**The overlap it reports today is on testnet only.** A fee payer is hot on Render, signs on
+every sale, and its whole job is to hold a couple of XLM; an operator can spend the vault's
+daily budget. Those are different threat models, so one key should not do both jobs. On
+testnet it still does (`GDZXSO4A...` is both the x402 fee payer and the vault operator), and
+the script reports that as a warning rather than a failure, because it is test money and the
+operator's blast radius is bounded by the daily cap, which is what the cap is for. The
+script exits 1 only if the fee payer ever becomes the vault OWNER, which would put the entire
+balance behind a server key.
 
-**The fix is funding, not key generation.** A dedicated pubnet fee payer already exists in
-the maintainer's local CLI keystore under the alias `aid-pubnet-x402-fee`, public key
-`GAFVDEN6BC52WWPRPINOVENMXW3FU4LCSVVVA5C67RLPG4GAK6BE4SXY`. Horizon returned 404 for it on
-2026-09-15, so it has never been funded and does not yet exist on pubnet. To close the
-overlap: fund it with about 2 XLM, set `X402_STELLAR_PUBNET_FEE_PAYER` on Render to that
-alias's seed, redeploy, confirm one settlement lands with the new broadcaster, and only then
-is the operator key out of the fee-paying business.
+**Pubnet was split on 2026-09-15.** The dedicated fee payer that sat unfunded in the
+maintainer's local CLI keystore under the alias `aid-pubnet-x402-fee`, public key
+`GAFVDEN6BC52WWPRPINOVENMXW3FU4LCSVVVA5C67RLPG4GAK6BE4SXY`, was funded with 3 XLM and set as
+`X402_STELLAR_PUBNET_FEE_PAYER` on Render, and the next production sale,
+`43a97d67dad5f90a4c8dff703fb07bd9b5f17503201ffb37d5168b08bd12b2b4` at ledger 64432240, was
+broadcast from it. On mainnet the vault operator key is out of the fee-paying business.
 
 `payTo` being the vault owner on pubnet is reported as INFO and is not a problem: that is
 where sales are meant to land.

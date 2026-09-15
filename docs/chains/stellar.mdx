@@ -29,9 +29,10 @@ a single unit of gas. Both networks run the same wasm and the same rail code:
   - **Real money, but small money.** The pubnet vault's policy is 1 USDC per UTC day and
     0.25 USDC per payment, an order of magnitude under the testnet vault, because this one
     holds value.
-  - **Both sides of every payment have been ours so far.** The one production x402 sale on
-    pubnet had our payer and our payee. That is evidence the rail works, not evidence of
-    demand, and the proof page says so.
+  - **Both sides of every payment have been ours so far.** All three x402 sales on pubnet,
+    one from an operator machine on 2026-08-27 and two through the hosted deployment, had
+    our payer and our payee. That is evidence the rail works, not evidence of demand, and
+    the proof page says so.
   - **The contract is not audited.** Free tooling we can re-run, an adversarial review that
     found and fixed real defects, and a negative-control runner that deletes each guard in
     turn and requires the suite to go red. None of that is an audit and this project does
@@ -155,10 +156,12 @@ list is append-only.
 ### Archival, which is a calendar item rather than a risk
 
 Soroban charges rent, and a contract instance whose rent lapses is archived rather than
-lost. The pubnet vault's instance archives around **2027-01-06** unless it is touched
-inside the last 60 days of that window, because the contract only re-extends when under 60
-days remain. So the action window opens in early November 2026. A weekly GitHub workflow
-turns red at 45 days remaining rather than waiting for the deadline.
+lost. The pubnet vault's instance archives around **2027-01-06** unless it is touched in
+time, and a touch only counts once the remaining life is under the contract's re-extension
+threshold of 1,036,800 ledgers. The contract calls that 60 days, counted at 17,280 ledgers a
+day, but at the measured 5.625 s close it is about 67.5 days, so the action window opens
+around 2026-10-31 rather than in November. A weekly GitHub workflow turns red at 45 days
+remaining rather than waiting for the deadline.
 
 ### Owner controls, signed by the owner
 

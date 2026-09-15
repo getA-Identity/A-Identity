@@ -1,7 +1,7 @@
 # A-Identity
 
 [![CI](https://github.com/getA-Identity/A-Identity/actions/workflows/ci.yml/badge.svg)](https://github.com/getA-Identity/A-Identity/actions/workflows/ci.yml)
-[![Tests](https://img.shields.io/badge/tests-1280%20unit%20%2B%20E2E-brightgreen)](mcp/README.md#develop)
+[![Tests](https://img.shields.io/badge/tests-1296%20unit%20%2B%20E2E-brightgreen)](mcp/README.md#develop)
 [![npm: marketplace-sdk](https://img.shields.io/npm/v/%40a-identity%2Fmarketplace-sdk?label=marketplace-sdk)](https://www.npmjs.com/package/@a-identity/marketplace-sdk)
 [![npm: trust-guard](https://img.shields.io/npm/v/%40a-identity%2Ftrust-guard?label=trust-guard)](https://www.npmjs.com/package/@a-identity/trust-guard)
 [![Ask DeepWiki](https://deepwiki.com/badge.svg)](https://deepwiki.com/getA-Identity/A-Identity)
@@ -30,7 +30,7 @@ per-request payments.
 > Status: hackathon MVP. Arc is the live phase-1 network. Stellar is phase 2 and
 > shipped: the Soroban spend vault holds real Circle USDC on pubnet under a 1 USDC daily
 > cap, and the hosted deployment sells over the Soroban x402 rail on BOTH Stellar
-> networks, with the first mainnet sale settled 2026-08-28 by our own broadcaster. Pubnet
+> networks, with the first mainnet sale settled 2026-08-27 by our own broadcaster. Pubnet
 > is `live`; the testnet mirror stays `beta`, because test money is not live money. The
 > chain page is [Build on Stellar](https://a-identity.mintlify.site/chains/stellar).
 > Algorand is phase 3 and went `live` the
@@ -214,7 +214,7 @@ listed at `GET /proof`. Four representative ones, each independently verifiable 
 `#849980`, KYA-verified, with a reputation earned from **3 real settlements**. The score
 itself is recency-weighted and decays as those settlements age, so it is read live rather
 than quoted here. Scoring is **deterministic and
-unit-tested** (1280 unit tests as of Sep 2026), reads on-chain live via viem, and is fully documented at
+unit-tested** (1296 unit tests as of Sep 2026), reads on-chain live via viem, and is fully documented at
 `GET /methodology`. This is our answer to "surface your rigor": every number is
 reproducible and every settlement is on-chain.
 
@@ -365,7 +365,7 @@ wasm, byte for byte, at
 [`CB5LYXFK...WSYP`](https://stellar.expert/explorer/public/contract/CB5LYXFKKTKDDSCM6JO6C4GNRQUFBGSLYDET6Q56JNFJQSMBKH6KWSYP),
 holding real Circle USDC under a 1 USDC daily cap, with four settlements, a freeze and an
 owner override on the ledger. Pubnet is `live`; the testnet mirror stays `beta`, because
-test money is not live money. Since 2026-08-28 the Soroban x402 rail sells on pubnet
+test money is not live money. Since 2026-08-27 the Soroban x402 rail sells on pubnet
 too: the first mainnet sale (tx `f213371c`, 0.001 USDC) settled through our own
 broadcaster, the buyer signing an authorization entry and paying no fee, the sale
 counted only once the SEP-41 transfer event bound to its nonce was read back. Since
@@ -627,7 +627,8 @@ POST /api/agents/kya/challenge  start a KYA wallet-control challenge
 POST /api/agents/kya/verify     verify the signature, key or ERC-1271 contract account (+ on-chain ValidationRegistry attestation)
 POST /api/agents/circle-policy/challenge  hash a pasted `circle wallet limit --output json`; returns the message the wallet signs
 POST /api/agents/circle-policy/attest     store the owner-attested Circle policy as bands + signed hash (never the policy)
-GET  /api/agents/circle-policy  the attestation, bands only
+GET  /api/agents/circle-policy/attestation  the attestation, bands only
+GET  /api/agents/circle-policy  the same caps as Circle wallet policy commands the owner runs (owner only)
 GET  /api/agents/kya            KYA status + live on-chain validation
 GET  /api/x402/nano/data        x402 Nanopayments seller (gasless, Gateway-batched; 402→settle)
 GET  /api/x402/gateway/tools/:name  the trust tools for Circle Agent Marketplace buyers: Gateway nanopayments on Base mainnet (402; GET or POST to pay)
@@ -636,7 +637,7 @@ GET  /api/x402/gateway/proof    Gateway-credited settlements, batch hashes once 
 POST /api/arc/nanopay-demo      one-click gasless nanopayment (EIP-3009 + Circle Gateway batch)
 POST /api/arc/cctp-demo         one-click CCTP burn-and-mint (Arc→Base Sepolia, native USDC)
 GET  /api/cctp/stellar/status   CCTP between Stellar and EVM: sides, Circle-verified contracts, signers (addresses only)
-POST /api/cctp/stellar/bridge   prepared-or-executed CCTP transfer either way (verified session; capped; testnet unless opted in)
+POST /api/cctp/stellar/bridge   CCTP transfer either way: prepared for any verified session, executed only for CCTP_BRIDGE_OPERATORS (dedicated keys; capped; testnet unless opted in)
 POST /api/arc/agent-run         autonomous run: agent pays a service on its own until its budget is used up, then stops (+ protocol fee)
 GET  /api/marketplace           Agent House feed
 POST /api/follow                follow an agent
@@ -765,10 +766,10 @@ The living version is [ROADMAP.md](ROADMAP.md) (now / next / later). The phase v
   wired and env-gated.
 - **Phase 2 (shipped):** Stellar. The Soroban spend vault, the x402 rail and the
   facilitator run end to end on both networks, and pubnet has been `live` and selling
-  since 2026-08-28. What is still owed there is operational rather than structural: a fee
-  payer separate from the vault operator key, the 2-of-3 owner signers split across more
-  than one keystore, the vault's instance TTL re-extended before it archives, and an
-  external audit the contract has never had.
+  since 2026-08-27. What is still owed there is operational rather than structural: the
+  2-of-3 owner signers split across more than one keystore, the vault's instance TTL
+  re-extended before it archives, and an external audit the contract has never had. The
+  pubnet fee payer was split off the vault operator key on 2026-09-15.
 - **Phase 3:** Avalanche.
 
 New networks are a registry entry plus (for non-EVM) one adapter: the chain registry

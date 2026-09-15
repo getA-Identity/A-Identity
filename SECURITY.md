@@ -20,7 +20,7 @@ single source of truth and a test fails the build if any other file disagrees:
   is not a statement about the seven mainnets.
 - **Money moves.** x402 calls settle in real USD₮0 on X Layer, real Circle USDC on Celo,
   Arbitrum One and Base, USDG (Paxos Global Dollar) on Robinhood Chain, SEP-41 USDC on
-  Stellar (pubnet since 2026-08-28, and testnet), and the Circle USDC ASA on Algorand
+  Stellar (pubnet since 2026-08-27, and testnet), and the Circle USDC ASA on Algorand
   mainnet (since 2026-08-30).
 - **We hold no user keys.** Agent wallet keys are generated in the browser
   ([`src/components/app/agent/RegisterForm.tsx`](src/components/app/agent/RegisterForm.tsx));
@@ -62,7 +62,7 @@ values, such as the WalletConnect project id.
 than by nature: a key set on it is a mainnet key the moment somebody sends it gas. Stellar
 pubnet stopped being hypothetical on 2026-08-24, when burner keys were funded there, a
 contract was deployed and 1 USDC moved through it, and it stopped being a vault-only story
-on 2026-08-28, when the first x402 sale settled on that network. Those pubnet burners are
+on 2026-08-27, when the first x402 sale settled on that network. Those pubnet burners are
 separate from `STELLAR_PUBNET_SIGNER_SECRET` and are named in
 `soroban/releases/pubnet-v0.1.0.json`; the owner account among them was raised to a 2-of-3
 multisig on 2026-08-25, so it is the one key in this document that a single compromise does
@@ -74,8 +74,11 @@ not spend.
 | --- | --- |
 | `X402_3009_SIGNER_KEY` | Broadcaster for the EIP-3009 rail. Overrides the chain signer when set, so it can be the wallet paying gas on Robinhood Chain and Arbitrum One mainnet ([`x402-3009/engine.ts:528`](mcp/src/x402-3009/engine.ts#L528)). |
 | `X402_STELLAR_TESTNET_FEE_PAYER` | Pays the network fee for every Stellar settlement we broadcast. **Live in production since 2026-08-24.** |
-| `X402_STELLAR_PUBNET_FEE_PAYER` | The same role on pubnet, and no longer hypothetical: the first mainnet Stellar sale (2026-08-28) was broadcast with it. **Set on the hosted deployment**, which `/api/x402/stellar/status` answers for itself; without it the pubnet rail is fail-closed. Its value today is the vault operator account `GDLAJM25YQRTIZOVZPVEM2GJ6L2I4OTZGY3HAWX3HGMPV7SM3QZONO4S`, which is a role overlap rather than a design: see [Stellar operational posture](#stellar-operational-posture) below. |
+| `X402_STELLAR_PUBNET_FEE_PAYER` | The same role on pubnet, spending **real value** on every mainnet Stellar sale. **Set on the hosted deployment**, which `/api/x402/stellar/status` answers for itself; without it the pubnet rail is fail-closed. Since 2026-09-15 its value is the dedicated XLM-only account `GAFVDEN6BC52WWPRPINOVENMXW3FU4LCSVVVA5C67RLPG4GAK6BE4SXY`; the first two mainnet sales (2026-08-27 and 2026-08-28) were broadcast by the vault operator key, before that split. See [Stellar operational posture](#stellar-operational-posture) below. |
 | `X402_STELLAR_TESTNET_OZ_KEY` / `X402_STELLAR_PUBNET_OZ_KEY` | OpenZeppelin Channels API keys, the fallback broadcaster. |
+| `CCTP_EVM_SIGNER_KEY` | The only key the Stellar CCTP bridge signs with on an EVM chain. It used to fall back to that chain's own signer, so an executed bridge could burn USDC from `ARC_SIGNER_KEY`; it no longer can. Unset means every EVM step comes back prepared. |
+| `CCTP_STELLAR_TESTNET_SECRET` / `CCTP_STELLAR_PUBNET_SECRET` | Dedicated Stellar bridging seeds, never the vault operator or a fee payer. The pubnet one moves **real value** once `CCTP_STELLAR_ALLOW_MAINNET=true`. |
+| `CCTP_BRIDGE_OPERATORS` | Not a key, and privileged anyway: the session subjects allowed to make the server EXECUTE a bridge. Unset means nobody. Any verified session may still ask for the prepared steps, which broadcast nothing. |
 | `CELO_X402_API_KEY` | Gates the Celo paid rail; without it that rail is fail-closed. |
 | `X402_PAY_TO` / `X402_STELLAR_PAYTO` / `X402_ALGORAND_PAYTO` (plus the per-network `*_MAINNET_PAYTO` / `*_TESTNET_PAYTO` overrides) | Receiving addresses. Not secrets, but a wrong value sells to an account nobody controls, so treat edits as privileged. |
 | `X402_ALGORAND_FACILITATOR` | Not a key at all, and worth saying so: the Algorand rail has no broadcaster of ours. It settles through the GoPlausible facilitator, which signs the fee payer, so `ALGORAND_MAINNET_SIGNER_MNEMONIC` above covers only our own writes (vault calls, funding). Pointing this at a different host changes who assembles a payment group, which makes it privileged even though it is public. |
@@ -98,13 +101,14 @@ be at the top of this list.
 
 1. **The seven live mainnet signers** (`XLAYER_SIGNER_KEY`, `CELO_SIGNER_KEY`,
    `RHCHAIN_SIGNER_KEY`, `ARB_SIGNER_KEY`, `BASE_SIGNER_KEY`,
-   `STELLAR_PUBNET_SIGNER_SECRET`, `ALGORAND_MAINNET_SIGNER_MNEMONIC`) and
-   `X402_3009_SIGNER_KEY`. These hold real value and sign without a human. Sweep the balance
-   to a fresh key, set the new key in the Render env, redeploy, then confirm a settlement
-   lands before considering it done. Two of them need a step the EVM keys do not: a fresh
-   Stellar account has to open its USDC trustline and a fresh Algorand account has to opt in
-   to the USDC ASA before either can receive anything, so a rotation that skips it produces
-   failures that read as a product bug.
+   `STELLAR_PUBNET_SIGNER_SECRET`, `ALGORAND_MAINNET_SIGNER_MNEMONIC`),
+   `X402_3009_SIGNER_KEY` and `X402_STELLAR_PUBNET_FEE_PAYER`. These hold real value and
+   sign without a human. Sweep the balance to a fresh key, set the new key in the Render env,
+   redeploy, then confirm a settlement lands before considering it done. Two of them need a
+   step the EVM keys do not: a fresh Stellar account has to open its USDC trustline and a
+   fresh Algorand account has to opt in to the USDC ASA before either can receive anything,
+   so a rotation that skips it produces failures that read as a product bug. The pubnet fee
+   payer is the exception on Stellar: it holds XLM only and needs no trustline.
 2. **`OKX_API_KEY` / `OKX_SECRET_KEY` / `OKX_PASSPHRASE`.** Exchange credentials. Rotate in
    the OKX console; check the key's permission scope while you are there.
 3. **`X402_STELLAR_TESTNET_FEE_PAYER`.** Test funds, but it is now spending on every
@@ -195,26 +199,23 @@ Stellar is the chain where a contract of ours holds value, so the key layout the
 to be written down rather than inferred from env var names. Everything below is current as
 of 2026-09-15.
 
-- **One key does two jobs, and that is the open item.** On each network the account named
-  by `X402_STELLAR_TESTNET_FEE_PAYER` / `X402_STELLAR_PUBNET_FEE_PAYER` is today the vault
-  operator key itself: pubnet `GDLAJM25YQRTIZOVZPVEM2GJ6L2I4OTZGY3HAWX3HGMPV7SM3QZONO4S`,
-  testnet `GDZXSO4AOKPSHMQZMBNEEBQNYOIF7TWDPD7K2U5VAPKFN3QIAIELTAN6`. So the key that may
-  call `vault.pay` under the on-ledger policy is also the key that signs and broadcasts
-  every x402 settlement. The policy still bounds what that key can spend out of the vault,
-  which is the point of the vault, but a fee payer is a hot, high-frequency key and an
-  operator is not, and they should not be the same account.
+- **The pubnet fee payer is an account of its own; testnet still shares one.** Since
+  2026-09-15 `X402_STELLAR_PUBNET_FEE_PAYER` is the dedicated XLM-only account
+  `GAFVDEN6BC52WWPRPINOVENMXW3FU4LCSVVVA5C67RLPG4GAK6BE4SXY` (local alias
+  `aid-pubnet-x402-fee`). It was funded with 3 XLM, set in the Render env, and proven by the
+  pubnet sale `43a97d67dad5f90a4c8dff703fb07bd9b5f17503201ffb37d5168b08bd12b2b4` at ledger
+  64432240, whose source account is the new fee payer and whose fee_charged was 23479
+  stroops. The vault operator `GDLAJM25YQRTIZOVZPVEM2GJ6L2I4OTZGY3HAWX3HGMPV7SM3QZONO4S`,
+  which paid for the first two mainnet sales, no longer signs or pays for settlements, so
+  the key that may call `vault.pay` is no longer the hot key that broadcasts every sale.
 
-  **The fix, and it is a chore rather than a design change.** A dedicated pubnet fee payer
-  already exists as the local alias `aid-pubnet-x402-fee`,
-  `GAFVDEN6BC52WWPRPINOVENMXW3FU4LCSVVVA5C67RLPG4GAK6BE4SXY`, and it is unfunded: Horizon
-  answers 404 for it, because on Stellar an account does not exist until someone sends it
-  the base reserve. Fund it with about 2 XLM, set `X402_STELLAR_PUBNET_FEE_PAYER` to it in
-  the Render env, redeploy, and confirm one settlement lands with the new account before
-  calling it done. It needs XLM only, never USDC and never a trustline, because a fee payer
-  signs envelopes and nothing else. After that the operator key stops paying fees. Treat
-  this as a rotation of `X402_STELLAR_PUBNET_FEE_PAYER`: same procedure as the rotation
-  list above, plus the confirmation step, because a fee payer that cannot pay makes the
-  rail fail-closed rather than loud.
+  The fee payer holds XLM only, never USDC and never a trustline, because it signs envelopes
+  and nothing else. At about 0.0023 XLM a settlement its balance is the rail's runway, and a
+  fee payer that cannot pay makes the rail fail closed rather than loud, so its balance is
+  worth watching. Rotating it is the rotation procedure above plus one confirmed settlement.
+  On testnet the overlap remains: `X402_STELLAR_TESTNET_FEE_PAYER` is still the vault
+  operator `GDZXSO4AOKPSHMQZMBNEEBQNYOIF7TWDPD7K2U5VAPKFN3QIAIELTAN6`, which
+  `mcp/scripts/stellar-key-roles.mjs` reports as a warning. That one is test money.
 
 - **The owner multisig's three signers are in one keystore.** The pubnet vault owner was
   raised to a 2-of-3 multisig on 2026-08-25, which is what stops a single compromised key
@@ -224,9 +225,11 @@ of 2026-09-15.
   close, by moving at least one signer somewhere else.
 
 - **The vault has a calendar, and it is on the clock.** A Soroban contract instance is
-  archived when its rent lapses, and this one only re-extends its own TTL when under 60
-  days remain. The pubnet vault's instance archives around **2027-01-06** unless it is
-  touched, so the action window opens in early **November 2026**. The weekly workflow
+  archived when its rent lapses, and this one only re-extends its own TTL once fewer than
+  1,036,800 ledgers remain: sixty days as the contract counts them, at 17,280 ledgers a day,
+  but about 67.5 days at the measured 5.625 s close. The pubnet vault's instance archives
+  around **2027-01-06** unless it is touched, so the action window opens around
+  **2026-10-31**. The weekly workflow
   `.github/workflows/stellar-ops.yml` goes red at 45 days remaining, and also audits
   key-role overlap and allowlist drift, so none of the three depends on anyone
   remembering. `mcp/scripts/stellar-vault-allowlist.mjs` and

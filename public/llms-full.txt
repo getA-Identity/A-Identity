@@ -374,7 +374,8 @@ is refused by the code unless the environment opts in, and no mainnet transfer
 has been made. Contract ids and domains come from developers.circle.com/cctp
 and are recorded in the chain registry with the page each was read from.
 `GET /api/cctp/stellar/status` lists the sides; `POST /api/cctp/stellar/bridge`
-returns every step prepared unless asked to execute.
+returns every step prepared, and executes only for an operator the host names in
+CCTP_BRIDGE_OPERATORS, signing with dedicated bridging keys and never a chain's own signer.
 
 ---
 
@@ -425,7 +426,7 @@ Live today:
   `CB5LYXFKKTKDDSCM6JO6C4GNRQUFBGSLYDET6Q56JNFJQSMBKH6KWSYP`, holding real Circle USDC
   under a 1 USDC daily cap. Real money has moved under the on-ledger policy, including a
   refusal that returned a typed `DailyCapExceeded`. The Soroban x402 rail sells here
-  too: the first mainnet sale settled 2026-08-28 (tx f213371c..., 0.001 USDC), the
+  too: the first mainnet sale settled 2026-08-27 (tx f213371c..., 0.001 USDC), the
   buyer signing a Soroban authorization entry and paying no fee, our broadcaster paying
   the network fee at the fee market's own rate, and the sale counting only once the
   SEP-41 transfer event bound to the authorization's nonce was read back. The console
