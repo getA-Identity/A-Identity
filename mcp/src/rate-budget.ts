@@ -32,6 +32,11 @@ export function rateBudget(method: string, pathname: string): { bucket: string; 
   // stuck re-signing cannot lock themselves out of building the next call.
   if (pathname === '/api/stellar/vault/prepare') return { bucket: 'stellar-vault-prepare', max: 20, windowMs: 60_000 }
   if (pathname === '/api/stellar/vault/submit') return { bucket: 'stellar-vault-submit', max: 10, windowMs: 60_000 }
+  // The CCTP bridge. Preparing one is free, but an operator's EXECUTED bridge burns USDC from
+  // a key this server holds and then holds the request open while it polls Iris for the
+  // attestation, so it is bounded like the other writes that spend a key of ours, and harder.
+  // It had no budget at all, which is how one caller could repeat it as often as they liked.
+  if (pathname === '/api/cctp/stellar/bridge') return { bucket: 'cctp-bridge', max: 3, windowMs: 60_000 }
   // Every other POST that broadcasts from the shared signer.
   //
   // The reason was already written down two lines up, for release and dispute, and then

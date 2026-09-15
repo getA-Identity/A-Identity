@@ -9,7 +9,8 @@
  * Without --execute every step is printed prepared and nothing is broadcast. Mainnet is
  * refused unless CCTP_STELLAR_ALLOW_MAINNET=true is in the environment, and the module
  * caps the amount either way. Keys: CCTP_STELLAR_TESTNET_SECRET / CCTP_STELLAR_PUBNET_SECRET
- * for the Stellar side, CCTP_EVM_SIGNER_KEY or the chain's own signer for the EVM side.
+ * for the Stellar side, CCTP_EVM_SIGNER_KEY for the EVM side. A chain's own signer is never
+ * used to bridge, so set CCTP_EVM_SIGNER_KEY in the operator's environment for this run.
  */
 const arg = (name, def) => {
   const i = process.argv.indexOf(`--${name}`)

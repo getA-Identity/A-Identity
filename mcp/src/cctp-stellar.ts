@@ -31,7 +31,7 @@
 import { Keypair } from '@stellar/stellar-sdk'
 import { CHAINS, getChain, getChainById, type ChainDescriptor } from './chains/index.js'
 import { evmPublicClient, evmWalletClientFromKey, txUrl } from './chains/evm/client.js'
-import { sorobanServer, networkPassphrase } from './chains/stellar/client.js'
+import { sorobanServer, networkPassphrase, simulationArchivedEntries } from './chains/stellar/client.js'
 import { isAccountId, isContractId, isSecretSeed } from './chains/stellar/strkey.js'
 
 type Hex = `0x${string}`
@@ -123,9 +123,71 @@ export function cctpSide(id: string): CctpSide | { error: string } {
 export function stellarBridgeSecretVar(chain: ChainDescriptor): string {
   return chain.caip2 === 'stellar:pubnet' ? 'CCTP_STELLAR_PUBNET_SECRET' : 'CCTP_STELLAR_TESTNET_SECRET'
 }
-/** The EVM side signs with CCTP_EVM_SIGNER_KEY when set, else the chain's own signer. */
-export function evmBridgeKeyVar(chain: ChainDescriptor, env: NodeJS.ProcessEnv): string {
-  return env.CCTP_EVM_SIGNER_KEY?.trim() ? 'CCTP_EVM_SIGNER_KEY' : (chain.signerEnvVar ?? '(none)')
+/**
+ * The EVM side's bridging key: CCTP_EVM_SIGNER_KEY, and nothing else.
+ *
+ * It used to fall back to the chain's own signer, which broke the rule stated one function
+ * up and was reachable from the public bridge route: with no dedicated key on the host, an
+ * executed bridge burned USDC from ARC_SIGNER_KEY, the wallet every Arc demo spends from. A
+ * bridge now signs with a key that exists for bridging, or it signs nothing and every EVM
+ * step comes back prepared.
+ */
+export const EVM_BRIDGE_KEY_VAR = 'CCTP_EVM_SIGNER_KEY'
+
+export function evmBridgeKey(env: NodeJS.ProcessEnv): string | undefined {
+  return env[EVM_BRIDGE_KEY_VAR]?.trim() || undefined
+}
+
+/** The variable naming who may make this server EXECUTE a bridge. */
+export const BRIDGE_OPERATORS_VAR = 'CCTP_BRIDGE_OPERATORS'
+
+/**
+ * A session subject in the form sessions are issued in: an EVM address and an email are
+ * lowercased, a Stellar or Algorand address is kept exactly, because base32 is case
+ * significant and lowercasing one would make it match nothing.
+ */
+function subjectKey(s: string): string {
+  const t = s.trim()
+  return /^0x[0-9a-fA-F]{40}$/.test(t) || t.includes('@') ? t.toLowerCase() : t
+}
+
+export function bridgeOperators(env: NodeJS.ProcessEnv = process.env): string[] {
+  return (env[BRIDGE_OPERATORS_VAR] ?? '').split(',').map(subjectKey).filter(Boolean)
+}
+
+/**
+ * Who may make this server EXECUTE a bridge, as opposed to preparing one.
+ *
+ * A verified session was the only gate, and wallet sign-in is open to anyone holding a
+ * wallet, so verified meant anyone. An executed bridge burns USDC from a key this server
+ * holds, which made the route a faucet: a caller could move the Arc testnet signer's USDC
+ * to a Stellar account of their own, five dollars a call and as often as they liked, and
+ * the same door would have opened onto real money the day CCTP_STELLAR_ALLOW_MAINNET was
+ * set on the host.
+ *
+ * Preparing stays open to every verified caller, because a prepared bridge broadcasts
+ * nothing. Executing needs the caller's session subject in CCTP_BRIDGE_OPERATORS, and unset
+ * means nobody.
+ */
+export function bridgeExecuteGate(
+  caller: string | undefined,
+  env: NodeJS.ProcessEnv = process.env,
+): { ok: true } | { ok: false; reason: string } {
+  const operators = bridgeOperators(env)
+  const prepareInstead = 'Send the same body without execute to get every step prepared; that path broadcasts nothing.'
+  if (operators.length === 0) {
+    return {
+      ok: false,
+      reason: `executing a bridge spends a key this server holds, and ${BRIDGE_OPERATORS_VAR} names no operator here, so nobody may. ${prepareInstead}`,
+    }
+  }
+  if (!caller || !operators.includes(subjectKey(caller))) {
+    return {
+      ok: false,
+      reason: `executing a bridge spends a key this server holds, so it is limited to the operators named in ${BRIDGE_OPERATORS_VAR}, and this session is not one of them. ${prepareInstead}`,
+    }
+  }
+  return { ok: true }
 }
 
 const DEFAULT_MAX_USD = 5
@@ -278,7 +340,12 @@ function defaultStellar(env: NodeJS.ProcessEnv): StellarCalls {
         .build()
       const sim = await server.simulateTransaction(tx)
       if (rpc.Api.isSimulationError(sim)) return { txHash: '', status: 'failed', reason: `simulation refused: ${sim.error}` }
-      if (rpc.Api.isSimulationRestore(sim)) return { txHash: '', status: 'failed', reason: 'needs a state restore first; nothing submitted' }
+      // Both shapes of archived state. Since protocol 23 there is no restore preamble: the
+      // transaction would restore the entries itself and this bridging key would pay the rent,
+      // so it is refused exactly as the preamble always was.
+      if (rpc.Api.isSimulationRestore(sim) || simulationArchivedEntries(sim).length > 0) {
+        return { txHash: '', status: 'failed', reason: 'reads archived state that needs a restore first; restoring is an operator decision, so nothing was submitted' }
+      }
       const assembled = rpc.assembleTransaction(tx, sim).build()
       assembled.sign(kp)
       const sent = await server.sendTransaction(assembled)
@@ -432,7 +499,7 @@ export async function bridgeEvmToStellar(input: BridgeInput, deps: CctpDeps = {}
   if (bad) return { error: bad }
   const finality = input.finality ?? 2000
   const units = usdcUnits6(input.amountUsd)
-  const evmKey = (c.env.CCTP_EVM_SIGNER_KEY?.trim() || (from.chain.signerEnvVar ? c.env[from.chain.signerEnvVar]?.trim() : undefined)) || undefined
+  const evmKey = evmBridgeKey(c.env)
   const stellarSecret = c.env[stellarBridgeSecretVar(to.chain)]?.trim()
   const stellarSigner = stellarSecret && isSecretSeed(stellarSecret) ? c.stellar.publicKey(stellarSecret) : null
   const recipient = input.recipient ?? stellarSigner ?? ''
@@ -466,7 +533,7 @@ export async function bridgeEvmToStellar(input: BridgeInput, deps: CctpDeps = {}
   let burnTx = input.resumeBurnTx
   if (!burnTx) {
     if (!execute || !evmKey) {
-      const why = !execute ? 'execute was not requested' : `${evmBridgeKeyVar(from.chain, c.env)} is not set`
+      const why = !execute ? 'execute was not requested' : `${EVM_BRIDGE_KEY_VAR} is not set`
       steps.push({ name: 'approve USDC to TokenMessengerV2', state: 'prepared', ...show(approveCall), reason: why })
       steps.push({ name: 'depositForBurnWithHook (recipient in hook data, forwarder in both address slots)', state: 'prepared', ...show(burnCall), reason: why, detail: { maxFee: maxFee.toString(), hookRecipient: recipient, forwarder } })
       steps.push({ name: 'Iris attestation', state: 'prepared', reason: `GET ${host}/v2/messages/${from.domain}?transactionHash=<burn tx>` })
@@ -539,7 +606,7 @@ export async function bridgeStellarToEvm(input: BridgeInput, deps: CctpDeps = {}
   const units7 = units7From6(units)
   const stellarSecret = c.env[stellarBridgeSecretVar(from.chain)]?.trim()
   const stellarOk = Boolean(stellarSecret && isSecretSeed(stellarSecret))
-  const evmKey = (c.env.CCTP_EVM_SIGNER_KEY?.trim() || (to.chain.signerEnvVar ? c.env[to.chain.signerEnvVar]?.trim() : undefined)) || undefined
+  const evmKey = evmBridgeKey(c.env)
   const recipient = input.recipient ?? (evmKey ? await c.evm.signerAddress(evmKey) : '')
   if (!/^0x[0-9a-fA-F]{40}$/.test(recipient)) return { error: 'recipient must be a 0x EVM address; none given and no EVM signer to default to' }
   const host = irisHost(from.chain.testnet)
@@ -618,7 +685,7 @@ export async function bridgeStellarToEvm(input: BridgeInput, deps: CctpDeps = {}
 
   const mintCall = { to: to.contracts.messageTransmitter, abi: MESSAGE_TRANSMITTER_V2_ABI, functionName: 'receiveMessage', args: [payload.message, payload.attestation] }
   if (!evmKey) {
-    steps.push({ name: 'receiveMessage on MessageTransmitterV2', state: 'prepared', ...display.mint, args: [payload.message, payload.attestation], reason: `${evmBridgeKeyVar(to.chain, c.env)} is not set; destinationCaller is zero so anyone may submit this` })
+    steps.push({ name: 'receiveMessage on MessageTransmitterV2', state: 'prepared', ...display.mint, args: [payload.message, payload.attestation], reason: `${EVM_BRIDGE_KEY_VAR} is not set; destinationCaller is zero so anyone may submit this` })
     return { ...base, executed: true, steps, attested: payload, reason: 'burned and attested; the EVM mint is prepared, not submitted' }
   }
   const mint = await c.evm.write(to, evmKey, mintCall)
@@ -645,9 +712,8 @@ export function cctpStellarStatus(env: NodeJS.ProcessEnv = process.env) {
       const s = env[v]?.trim()
       signer = s && isSecretSeed(s) ? { configured: true, from: v, address: defaultStellar(env).publicKey(s) } : { configured: false, from: v }
     } else if (ch.ecosystem === 'evm') {
-      const v = evmBridgeKeyVar(ch, env)
-      const k = v === 'CCTP_EVM_SIGNER_KEY' ? env.CCTP_EVM_SIGNER_KEY?.trim() : ch.signerEnvVar ? env[ch.signerEnvVar]?.trim() : undefined
-      signer = { configured: Boolean(k && /^(0x)?[0-9a-fA-F]{64}$/.test(k)), from: v }
+      const k = evmBridgeKey(env)
+      signer = { configured: Boolean(k && /^(0x)?[0-9a-fA-F]{64}$/.test(k)), from: EVM_BRIDGE_KEY_VAR }
     }
     return {
       chain: ch.id,

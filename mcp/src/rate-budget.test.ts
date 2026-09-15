@@ -37,6 +37,9 @@ const SPENDS_GAS = [
   'registerAgentOnchain', 'createJobOnchain', 'rejectJobOnchain', 'claimJobRefundOnchain',
   'executeInstruction', 'hireAgent', 'acceptBid', 'deliverWork', 'releaseEscrow',
   'disputeEscrow', 'grantSessionKey', 'payUsdcOnchain', 'payUsdcBatchOnchain',
+  // Burns USDC from a server-held bridging key when executed. It sat off this list, and so
+  // off the budget, while every verified session could execute it.
+  'bridgeCctp',
 ]
 
 /** POST routes in a file, each with the source that follows it up to the next route. */

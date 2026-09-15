@@ -15,11 +15,14 @@ import {
   bridgeStellarToEvm,
   bridgeCctp,
   cctpStellarStatus,
+  bridgeExecuteGate,
   ZERO_BYTES32,
   type CctpDeps,
   type IrisMessage,
 } from './cctp-stellar.js'
 import { CHAINS, getChainById } from './chains/index.js'
+import { handleCctpRoutes } from './http/cctp-routes.js'
+import type { RouteCtx } from './http/shared.js'
 
 /**
  * The CCTP Stellar path, dry. Two things it must never get wrong, because Circle's
@@ -134,7 +137,7 @@ function fakes(over: { allowance?: bigint; balance?: bigint; iris?: IrisMessage[
   const log: Log = { evmWrites: [], stellarInvokes: [], irisCalls: 0 }
   const irisSeq = over.iris ?? [{ status: 'complete', message: MESSAGE, attestation: ATTESTATION, eventNonce: '0x01' }]
   const deps: CctpDeps = {
-    env: over.env ?? ({ ARC_SIGNER_KEY: EVM_KEY, CCTP_STELLAR_TESTNET_SECRET: SEED } as NodeJS.ProcessEnv),
+    env: over.env ?? ({ CCTP_EVM_SIGNER_KEY: EVM_KEY, CCTP_STELLAR_TESTNET_SECRET: SEED } as NodeJS.ProcessEnv),
     sleep: async () => {},
     now: (() => { let t = 0; return () => (t += 1000) })(),
     irisMaxWaitMs: 10_000,
@@ -224,7 +227,7 @@ test('EVM -> Stellar executed: allowance reused, burn confirmed, Iris polled to 
 })
 
 test('EVM -> Stellar executed without a Stellar signer stops after attestation with the mint prepared and the payload attached', async () => {
-  const { deps, log } = fakes({ env: { ARC_SIGNER_KEY: EVM_KEY } as NodeJS.ProcessEnv })
+  const { deps, log } = fakes({ env: { CCTP_EVM_SIGNER_KEY: EVM_KEY } as NodeJS.ProcessEnv })
   const r = await bridgeEvmToStellar({ from: 'arc', to: 'stellar-testnet', amountUsd: 0.2, recipient: G, execute: true }, deps)
   assert.ok(!('error' in r))
   assert.equal(r.executed, true)
@@ -320,11 +323,94 @@ test('the status names every CCTP side, its Circle contracts, and whether a sign
   assert.equal(s.maxUsd, 5)
   for (const id of ['arc', 'base', 'stellar', 'stellar-testnet', 'xlayer']) assert.ok(s.sides.some((x) => x.chain === id), id)
   assert.ok(s.sides.every((x) => x.signer.configured === false))
-  const withKeys = cctpStellarStatus({ ARC_SIGNER_KEY: EVM_KEY, CCTP_STELLAR_TESTNET_SECRET: SEED } as NodeJS.ProcessEnv)
+  const withKeys = cctpStellarStatus({ CCTP_EVM_SIGNER_KEY: EVM_KEY, CCTP_STELLAR_TESTNET_SECRET: SEED } as NodeJS.ProcessEnv)
   const st = withKeys.sides.find((x) => x.chain === 'stellar-testnet')!
   assert.equal(st.signer.configured, true)
   assert.equal(st.signer.address, Keypair.fromSecret(SEED).publicKey())
   assert.equal(JSON.stringify(withKeys).includes(SEED), false)
   assert.equal(JSON.stringify(withKeys).includes(EVM_KEY.slice(2)), false)
-  assert.equal(withKeys.sides.find((x) => x.chain === 'arc')!.signer.from, 'ARC_SIGNER_KEY')
+  const arcSide = withKeys.sides.find((x) => x.chain === 'arc')!
+  assert.equal(arcSide.signer.from, 'CCTP_EVM_SIGNER_KEY')
+  assert.equal(arcSide.signer.configured, true)
+  // The chain's own signer is not a bridging key, so it never shows up as one.
+  const chainKeyOnly = cctpStellarStatus({ ARC_SIGNER_KEY: EVM_KEY } as NodeJS.ProcessEnv)
+  assert.equal(chainKeyOnly.sides.find((x) => x.chain === 'arc')!.signer.configured, false)
+})
+
+test('the chain\'s own signer never bridges: without CCTP_EVM_SIGNER_KEY every EVM step stays prepared, both ways', async () => {
+  // The hole this closes: with no dedicated key on the host, the EVM side fell back to the
+  // chain signer, so an executed bridge burned USDC from ARC_SIGNER_KEY.
+  const onlyChainKey = { ARC_SIGNER_KEY: EVM_KEY, CCTP_STELLAR_TESTNET_SECRET: SEED } as NodeJS.ProcessEnv
+  const out = fakes({ env: onlyChainKey })
+  const toStellar = await bridgeEvmToStellar({ from: 'arc', to: 'stellar-testnet', amountUsd: 0.2, recipient: G, execute: true }, out.deps)
+  assert.ok(!('error' in toStellar))
+  assert.equal(toStellar.executed, false)
+  assert.match(toStellar.reason ?? '', /CCTP_EVM_SIGNER_KEY is not set/)
+  assert.equal(out.log.evmWrites.length, 0)
+
+  const back = fakes({ env: onlyChainKey })
+  const toEvm = await bridgeStellarToEvm({ from: 'stellar-testnet', to: 'arc', amountUsd: 0.15, recipient: EVM_ADDR, execute: true }, back.deps)
+  assert.ok(!('error' in toEvm))
+  const mint = toEvm.steps[toEvm.steps.length - 1]
+  assert.equal(mint.state, 'prepared')
+  assert.match(mint.reason ?? '', /CCTP_EVM_SIGNER_KEY is not set/)
+  assert.equal(back.log.evmWrites.length, 0)
+})
+
+test('only an operator named in CCTP_BRIDGE_OPERATORS may make the server execute a bridge', () => {
+  const evm = '0x' + 'AbCd'.repeat(10)
+  const g = Keypair.random().publicKey()
+  // Unset means nobody, the safe default for a route that spends a server key.
+  assert.equal(bridgeExecuteGate(g, {} as NodeJS.ProcessEnv).ok, false)
+  const env = { CCTP_BRIDGE_OPERATORS: ` ${evm}, ${g} ,Ops@Example.test` } as NodeJS.ProcessEnv
+  assert.equal(bridgeExecuteGate(undefined, env).ok, false)
+  assert.equal(bridgeExecuteGate(Keypair.random().publicKey(), env).ok, false)
+  // Sessions store an EVM address and an email lowercased, so both match however they were listed.
+  assert.equal(bridgeExecuteGate(evm.toLowerCase(), env).ok, true)
+  assert.equal(bridgeExecuteGate('ops@example.test', env).ok, true)
+  // A StrKey is case-significant base32: exact, or nothing.
+  assert.equal(bridgeExecuteGate(g, env).ok, true)
+  assert.equal(bridgeExecuteGate(g.toLowerCase(), env).ok, false)
+})
+
+test('the bridge route refuses to EXECUTE for a verified caller who is not an operator, before any work', async () => {
+  const saved = process.env.CCTP_BRIDGE_OPERATORS
+  delete process.env.CCTP_BRIDGE_OPERATORS
+  try {
+    const out: { status?: number; body?: Record<string, unknown> } = {}
+    const res = {
+      setHeader: () => undefined,
+      writeHead(status: number) {
+        out.status = status
+        return this
+      },
+      end: (payload?: string) => {
+        if (payload) out.body = JSON.parse(payload) as Record<string, unknown>
+      },
+    } as never
+    const body = { from: 'arc', to: 'stellar-testnet', amountUsd: 0.2, recipient: G, execute: true }
+    const req = {
+      method: 'POST',
+      headers: {},
+      on(event: string, cb: (arg?: unknown) => void) {
+        if (event === 'data') cb(Buffer.from(JSON.stringify(body)))
+        if (event === 'end') cb()
+        return this
+      },
+    } as never
+    const stranger = Keypair.random().publicKey()
+    const ctx: RouteCtx = {
+      req,
+      res,
+      url: new URL('http://localhost/api/cctp/stellar/bridge'),
+      caller: { subject: stranger, method: 'wallet' } as never,
+      callerId: stranger,
+    }
+    assert.equal(await handleCctpRoutes(ctx), true)
+    assert.equal(out.status, 403)
+    assert.match(String(out.body?.error), /CCTP_BRIDGE_OPERATORS/)
+    assert.match(String(out.body?.error), /without execute/)
+  } finally {
+    if (saved !== undefined) process.env.CCTP_BRIDGE_OPERATORS = saved
+  }
 })
