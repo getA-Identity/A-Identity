@@ -151,7 +151,7 @@ jobs:
             exit 1
           fi
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
           node-version: 22
 
@@ -176,7 +176,7 @@ jobs:
           cargo audit
           cargo audit --file contracts/agent-spend-policy/fuzz/Cargo.lock
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
           node-version: 22
 
