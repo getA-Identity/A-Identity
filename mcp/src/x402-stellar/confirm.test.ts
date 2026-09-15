@@ -345,8 +345,12 @@ test('an empty event list plus readable meta is a real answer about the transact
         envelopeXdr: xdr.TransactionEnvelope.fromXDR(GASLESS_ENVELOPE, 'base64'),
         events: { contractEventsXdr: [] },
         // A meta that parses as v4 and carries one operation with no events at all.
+        // `switch()` returns the NUMBER 4, because TransactionMeta is `switch (int v)` in
+        // the XDR. This mock used to return { name: 'transactionMetaV4' }, a shape the SDK
+        // never produces, and it passed while the production path could not read a single
+        // real meta. The enum-like shape is covered separately below, on purpose.
         resultMetaXdr: {
-          switch: () => ({ name: 'transactionMetaV4' }),
+          switch: () => 4,
           v4: () => ({ operations: () => [{ events: () => [] }] }),
         },
       },
@@ -391,19 +395,139 @@ test('no events from either source is our blindness, not a refusal', async () =>
  * The fallback doing its job: the RPC dropped the convenience field, and the transfer is
  * still found, because resultMetaXdr cannot be dropped. Read off our real settlement
  * 3da74634 rather than a hand-built shape.
+ *
+ * Run over BOTH discriminant shapes, and the first one is the fix. `TransactionMeta` is
+ * declared `switch (int v)`, so the SDK returns the number 4 and `.name` on it is undefined:
+ * the old `meta.switch().name !== 'transactionMetaV4'` guard was therefore always true, this
+ * fallback always returned null in production, and the only reason the suite was green is
+ * that this very test mocked a shape the SDK cannot produce. A defence documented in the
+ * file, asserted by two tests, and dead against the real network.
  */
-test('a transfer only present in the meta is still found', async () => {
+const META_SHAPES: [string, (events: xdr.ContractEvent[]) => unknown][] = [
+  ['the SDK number 4, which is what the real network returns', (events) => ({ switch: () => 4, v4: () => ({ operations: () => [{ events: () => events }] }) })],
+  [
+    'an enum-like { name }, accepted defensively in case a future SDK names the discriminant',
+    (events) => ({ switch: () => ({ name: 'transactionMetaV4' }), v4: () => ({ operations: () => [{ events: () => events }] }) }),
+  ],
+]
+
+for (const [label, meta] of META_SHAPES) {
+  test(`a transfer only present in the meta is still found (${label})`, async () => {
+    const events = xdr.ContractEvent.fromXDR(GASLESS_TRANSFER, 'base64')
+    const r = await confirmStellarTransfer(CHAIN, HASH, OURS, {
+      server: serverFor({
+        [HASH]: {
+          status: rpc.Api.GetTransactionStatus.SUCCESS,
+          ledger: 4148274,
+          envelopeXdr: xdr.TransactionEnvelope.fromXDR(GASLESS_ENVELOPE, 'base64'),
+          events: { contractEventsXdr: [] },
+          resultMetaXdr: meta([events]),
+        },
+      }),
+      timeoutMs: 50,
+      pollMs: 1,
+      sleep: async () => {},
+    })
+    assert.equal(r.confirmed, true, 'the meta is the source that cannot be omitted')
+  })
+}
+
+/**
+ * The real SDK object, not a mock of it, because the bug was that our mock was wrong.
+ *
+ * Builds an actual xdr.TransactionMeta v4 and asserts what `switch()` really returns. If a
+ * future SDK changes that, this fails first and points at the place to widen isMetaV4,
+ * rather than the rail silently going blind again.
+ */
+test('the SDK really returns a number for a v4 meta discriminant', () => {
+  const meta = new xdr.TransactionMeta(4, new xdr.TransactionMetaV4({
+    ext: new xdr.ExtensionPoint(0),
+    txChangesBefore: [],
+    operations: [],
+    txChangesAfter: [],
+    sorobanMeta: null,
+    events: [],
+    diagnosticEvents: [],
+  }))
+  assert.equal(typeof meta.switch(), 'number', 'TransactionMeta is `switch (int v)` in the XDR')
+  assert.equal(meta.switch(), 4)
+  assert.equal((meta.switch() as unknown as { name?: string }).name, undefined, 'a number has no .name, which is the whole bug')
+})
+
+/**
+ * And the shapes that must NOT be read, so "accept the number" did not become "accept
+ * anything". A meta whose version we do not recognise has to read as "we cannot see" and
+ * end in no_event_data, never as "there is nothing here" and a refusal.
+ */
+test('a meta version we do not handle is blindness, not an empty transaction', async () => {
   const events = xdr.ContractEvent.fromXDR(GASLESS_TRANSFER, 'base64')
+  const unreadable: unknown[] = [
+    // The older meta versions, each of which really does return its own number.
+    { switch: () => 3, v4: () => ({ operations: () => [{ events: () => [events] }] }) },
+    { switch: () => 0, v4: () => ({ operations: () => [{ events: () => [events] }] }) },
+    // A name that is not ours, and a { name: undefined } object, which is what reading
+    // `.name` off the real number used to produce.
+    { switch: () => ({ name: 'transactionMetaV3' }), v4: () => ({ operations: () => [{ events: () => [events] }] }) },
+    { switch: () => ({ name: undefined }), v4: () => ({ operations: () => [{ events: () => [events] }] }) },
+  ]
+  for (const resultMetaXdr of unreadable) {
+    const r = await confirmStellarTransfer(CHAIN, HASH, OURS, {
+      server: serverFor({
+        [HASH]: {
+          status: rpc.Api.GetTransactionStatus.SUCCESS,
+          ledger: 4148274,
+          envelopeXdr: xdr.TransactionEnvelope.fromXDR(GASLESS_ENVELOPE, 'base64'),
+          events: { contractEventsXdr: [] },
+          resultMetaXdr,
+        },
+      }),
+      timeoutMs: 50,
+      pollMs: 1,
+      sleep: async () => {},
+    })
+    assert.equal(r.confirmed, false)
+    if (!r.confirmed) assert.equal(r.code, 'no_event_data', `an unrecognised meta must read as blindness, got ${r.code}`)
+  }
+})
+
+// ── the fee the ledger charged, as opposed to the fee we bid ──────────────────────
+
+/** An xdr.TransactionResult carrying a real feeCharged, built rather than stubbed. */
+const resultWithFee = (stroops: number) =>
+  new xdr.TransactionResult({
+    feeCharged: xdr.Int64.fromString(String(stroops)),
+    result: xdr.TransactionResultResult.txSuccess([]),
+    ext: new xdr.TransactionResultExt(0),
+  })
+
+test('a confirmed settlement reports what the ledger charged, not what we bid', async () => {
   const r = await confirmStellarTransfer(CHAIN, HASH, OURS, {
     server: serverFor({
+      [HASH]: { ...success([GASLESS_TRANSFER]), resultXdr: resultWithFee(23479) },
+    }),
+    timeoutMs: 50,
+    pollMs: 1,
+    sleep: async () => {},
+  })
+  assert.equal(r.confirmed, true)
+  // 23479 is the charge Horizon reports for our first pubnet sale, whose envelope bid 34035.
+  // Reporting the bid as "what we paid" overstated the cost by 45 percent.
+  if (r.confirmed) assert.equal(r.feeChargedStroops, '23479')
+})
+
+test('an unreadable fee is absent, never zero: zero is a claim about the ledger', async () => {
+  const noResult = await confirmStellarTransfer(CHAIN, HASH, OURS, deps({ [HASH]: success([GASLESS_TRANSFER]) }))
+  assert.equal(noResult.confirmed, true)
+  if (noResult.confirmed) assert.equal(noResult.feeChargedStroops, undefined)
+
+  const throws = await confirmStellarTransfer(CHAIN, HASH, OURS, {
+    server: serverFor({
       [HASH]: {
-        status: rpc.Api.GetTransactionStatus.SUCCESS,
-        ledger: 4148274,
-        envelopeXdr: xdr.TransactionEnvelope.fromXDR(GASLESS_ENVELOPE, 'base64'),
-        events: { contractEventsXdr: [] },
-        resultMetaXdr: {
-          switch: () => ({ name: 'transactionMetaV4' }),
-          v4: () => ({ operations: () => [{ events: () => [events] }] }),
+        ...success([GASLESS_TRANSFER]),
+        resultXdr: {
+          feeCharged: () => {
+            throw new Error('unreadable')
+          },
         },
       },
     }),
@@ -411,7 +535,30 @@ test('a transfer only present in the meta is still found', async () => {
     pollMs: 1,
     sleep: async () => {},
   })
-  assert.equal(r.confirmed, true, 'the meta is the source that cannot be omitted')
+  assert.equal(throws.confirmed, true, 'an unreadable fee must not fail a real settlement')
+  if (throws.confirmed) assert.equal(throws.feeChargedStroops, undefined)
+})
+
+test('a transaction that landed and FAILED still reports its fee, because it still paid one', async () => {
+  const r = await confirmStellarTransfer(CHAIN, HASH, OURS, {
+    server: serverFor({
+      [HASH]: {
+        status: rpc.Api.GetTransactionStatus.FAILED,
+        ledger: 4148274,
+        resultXdr: resultWithFee(22973),
+      },
+    }),
+    timeoutMs: 50,
+    pollMs: 1,
+    sleep: async () => {},
+  })
+  assert.equal(r.confirmed, false)
+  if (r.confirmed) return
+  assert.equal(r.code, 'tx_failed')
+  // Money out, no sale. Dropping it here would make the fee log agree only with the happy
+  // path, and the daily budget would never see what a failing settlement costs.
+  assert.equal(r.feeChargedStroops, '22973')
+  assert.match(r.reason, /a failed transaction is charged its fee/)
 })
 
 /**

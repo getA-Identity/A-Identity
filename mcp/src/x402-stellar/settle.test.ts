@@ -1212,3 +1212,100 @@ test('self is chosen with no facilitator set, and refuses cleanly when it has no
   }
   assert.equal(seam.sent, 0)
 })
+
+// ── the bid versus the charge ────────────────────────────────────────────────────────
+//
+// `feeStroops` on a row was always the assembled envelope's fee, which is the MAXIMUM we
+// bid, and the proof endpoint called it "What WE paid". Stellar runs a fee auction and
+// charges the clearing fee, so the two are different numbers: our first pubnet sale bid
+// 34035 stroops and the ledger charged 23479. These tests pin which number goes where, and
+// the last one pins the one place the bid is deliberately still used.
+
+test('a settled row records BOTH the bid and what the ledger charged', async () => {
+  const seam = selfRpc()
+  const rows: Record<string, unknown>[] = []
+  const r = await settleStellarPayment({
+    chain: CHAIN, token: TOKEN, requirements: REQ, payload: payload(), limits: LIMITS,
+    deps: selfDeps(seam, {
+      confirm: confirmed({ feeChargedStroops: '23479' }),
+      persist: async (rec) => { rows.push(rec as unknown as Record<string, unknown>) },
+    }),
+  })
+  assert.equal(r.success, true, r.success ? '' : r.errorReason)
+  if (r.success) {
+    assert.equal(r.feeStroops, (INCLUSION_FEE + 33_053n).toString(), 'the bid keeps its field and its meaning')
+    assert.equal(r.feeChargedStroops, '23479')
+    assert.notEqual(r.feeStroops, r.feeChargedStroops, 'if these were the same number there would be nothing to fix')
+  }
+  assert.equal(rows[0].feeStroops, (INCLUSION_FEE + 33_053n).toString())
+  assert.equal(rows[0].feeChargedStroops, '23479')
+})
+
+test('a charge we could not read is absent, never zero', async () => {
+  // Old rows carry no charge at all, and so does any confirmation whose result XDR we
+  // could not parse. Defaulting to '0' would put a false ledger fact in the durable log
+  // and drag the charged total down every time the RPC answered oddly.
+  const seam = selfRpc()
+  const rows: Record<string, unknown>[] = []
+  const r = await settleStellarPayment({
+    chain: CHAIN, token: TOKEN, requirements: REQ, payload: payload(), limits: LIMITS,
+    deps: selfDeps(seam, { confirm: confirmed(), persist: async (rec) => { rows.push(rec as unknown as Record<string, unknown>) } }),
+  })
+  assert.equal(r.success, true)
+  if (r.success) assert.equal(r.feeChargedStroops, undefined)
+  assert.equal('feeChargedStroops' in rows[0], false, 'absent, not present-and-zero')
+})
+
+test('a transaction that landed and FAILED still records the fee it cost us', async () => {
+  const seam = selfRpc()
+  const rows: Record<string, unknown>[] = []
+  const r = await settleStellarPayment({
+    chain: CHAIN, token: TOKEN, requirements: REQ, payload: payload(), limits: LIMITS,
+    deps: selfDeps(seam, {
+      confirm: (async () => ({
+        confirmed: false, txHash: TX, code: 'tx_failed', ledger: 4_147_945,
+        reason: 'the transaction landed and failed, so no value moved. It still cost 22973 stroops',
+        feeChargedStroops: '22973',
+      })) as never,
+      persist: async (rec) => { rows.push(rec as unknown as Record<string, unknown>) },
+    }),
+  })
+  assert.equal(r.success, false)
+  if (!r.success) assert.equal(r.code, 'settlement_failed')
+  assert.equal(rows.length, 1)
+  assert.equal(rows[0].outcome, 'reverted')
+  // Money out and no sale. This is the row that would otherwise make the rail look cheaper
+  // than it is, because a failure costs its fee exactly like a success does.
+  assert.equal(rows[0].feeChargedStroops, '22973')
+})
+
+test('an ambiguous row carries the bid and no charge, because nothing was read', async () => {
+  const seam = selfRpc()
+  const rows: Record<string, unknown>[] = []
+  await settleStellarPayment({
+    chain: CHAIN, token: TOKEN, requirements: REQ, payload: payload(), limits: LIMITS,
+    deps: selfDeps(seam, {
+      confirm: (async () => ({ confirmed: false, txHash: TX, code: 'not_found', reason: 'not visible yet' })) as never,
+      persist: async (rec) => { rows.push(rec as unknown as Record<string, unknown>) },
+    }),
+  })
+  assert.equal(rows[0].outcome, 'ambiguous')
+  assert.equal(rows[0].feeStroops, (INCLUSION_FEE + 33_053n).toString(), 'the fee we may have paid still reaches the budget')
+  assert.equal(rows[0].feeChargedStroops, undefined, 'we never saw the ledger, so we have no charge to claim')
+})
+
+test('the daily budget sums the BID and not the charge', async () => {
+  // Deliberate and conservative. A bid is the most a settlement can cost; the ledger charges
+  // less and refunds the rest. Reserving against the bid stops broadcasting slightly early,
+  // and reserving against the charge would let a day's real exposure run past the ceiling
+  // whenever the fee market moved between the bid and the close. A guard that spends money
+  // errs toward stopping.
+  const at = new Date('2026-08-24T12:00:00Z')
+  const rows = [
+    { network: 'stellar:pubnet', ts: '2026-08-24T01:00:00Z', feeStroops: '34035', feeChargedStroops: '23479' },
+    { network: 'stellar:pubnet', ts: '2026-08-24T02:00:00Z', feeStroops: '33153', feeChargedStroops: '22973' },
+  ] as unknown as StellarSettlementRecord[]
+  const spent = await feeSpentOnDay('stellar:pubnet', at, async () => ({ ok: true as const, rows }))
+  assert.equal(spent, 34_035n + 33_153n, 'the reserve is the bid total')
+  assert.notEqual(spent, 23_479n + 22_973n, 'and it is deliberately NOT the charged total')
+})

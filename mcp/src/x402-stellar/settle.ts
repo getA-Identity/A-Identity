@@ -184,7 +184,11 @@ export type StellarSettleSuccess = {
   asset: string
   assetSymbol: string
   value: string
+  /** The maximum fee we BID for this settlement, in stroops. Not what the ledger took. */
   feeStroops: string
+  /** What the ledger actually charged, when our own confirmation could read it. Absent is
+   *  absent: an unreadable fee is never reported as zero. */
+  feeChargedStroops?: string
   broadcaster: Broadcaster
   explorerUrl: string
   settledAt: string
@@ -846,7 +850,13 @@ export async function settleStellarPayment(input: {
       { env, ...(deps.confirmDeps ?? {}) },
     )
 
-    const base = recordFor(broadcast.txHash, broadcast.feeStroops)
+    // The bid is what we offered; the charge is what the ledger took. Both are written,
+    // because reporting one as the other is the overstatement this field exists to end.
+    // `feeChargedStroops` rides on the confirmation and is therefore present on exactly the
+    // two outcomes that are ledger facts: a settlement, and a transaction that landed and
+    // failed. An ambiguous row has no charge to record because nothing was read.
+    const charged = confirmed.feeChargedStroops ? { feeChargedStroops: confirmed.feeChargedStroops } : {}
+    const base = { ...recordFor(broadcast.txHash, broadcast.feeStroops), ...charged }
 
     if (!confirmed.confirmed) {
       // Two very different situations share this branch, and the CODE is what separates
@@ -892,6 +902,7 @@ export async function settleStellarPayment(input: {
       assetSymbol: token.symbol,
       value: auth.amount.toString(),
       feeStroops: broadcast.feeStroops?.toString() ?? '0',
+      ...charged,
       broadcaster: chosen,
       explorerUrl: txUrl(chain, broadcast.txHash) ?? '',
       settledAt: now().toISOString(),
@@ -1212,7 +1223,17 @@ async function defaultOzSubmit(
 }
 
 /**
- * What we have paid in network fees on this network today, in stroops.
+ * What we have RESERVED against network fees on this network today, in stroops.
+ *
+ * Sums `feeStroops`, which is the BID and not the charge, and that is a deliberate choice
+ * rather than an oversight now that both numbers are on the row. A bid is the most a
+ * settlement can cost; the ledger charges the clearing fee and refunds the rest. Budgeting
+ * against the bid therefore stops broadcasting slightly early, and budgeting against the
+ * charge would let a day's real exposure exceed the ceiling whenever the fee market moved
+ * between the bid and the close. A guard that spends money should err toward stopping.
+ * The gap is not small enough to hand-wave: our first pubnet sale bid 34035 and was
+ * charged 23479, so the reserve runs about 45 percent above the outturn. The test named
+ * "the daily budget sums the BID and not the charge" keeps this true.
  *
  * Summed from the durable settlement log rather than a counter, for the reason the EVM rail
  * gives for the same choice: a counter and a log can disagree, and the log is the one a

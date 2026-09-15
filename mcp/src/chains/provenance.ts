@@ -580,7 +580,7 @@ export const PROVENANCE: ChainProvenance[] = [
         txHash: 'f213371c1241968ee78170923d8c5a3bd9b32950e73bb9c563d800ab2c70ec9e',
         onChain: 'stellar',
         blockNumber: 64155370,
-        note: 'The buyer signed a Soroban authorization entry for transfer on the USDC SAC and paid nothing; we assembled, paid 34035 stroops and submitted, and the sale counted only once the SEP-41 transfer event bound to the authorization\'s nonce was read back. Recorded honestly: the first two attempts never landed, because the transaction bid the 100-stroop minimum inclusion fee that testnet always accepts while pubnet\'s auction was clearing at 200 across every percentile. The fix bids the fee market\'s own p90 with headroom, and this settlement is the measurement.',
+        note: 'The buyer signed a Soroban authorization entry for transfer on the USDC SAC and paid nothing; we assembled, BID 34035 stroops and were CHARGED 23479 (Horizon fee_charged, read 2026-09-15), and the sale counted only once the SEP-41 transfer event bound to the authorization\'s nonce was read back. The two fee numbers are not the same claim and an earlier version of this note reported the bid as what we paid: Stellar runs a fee auction and charges the clearing fee, so the envelope fee is a ceiling we offer and the charge is what the ledger took. Recorded honestly: the first two attempts never landed, because the transaction bid the 100-stroop minimum inclusion fee that testnet always accepts while pubnet\'s auction was clearing at 200 across every percentile. The fix bids the fee market\'s own p90 with headroom, and this settlement is the measurement.',
       },
     ],
     caveats: [

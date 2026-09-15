@@ -130,6 +130,15 @@ export type ConfirmResult =
       /** Present only on the hash-bound scheme, so a caller cannot mistake it for the other. */
       binding?: 'tx-hash'
       bindingNote?: string
+      /**
+       * What the LEDGER charged for this transaction, in stroops, read from the result XDR.
+       *
+       * Not the same number as the envelope's fee, which is the maximum we bid: Stellar
+       * charges the clearing fee and refunds the rest, so the bid overstates what we paid.
+       * Absent when the response carried no readable result, because a fee we could not
+       * read is not a fee we may assert.
+       */
+      feeChargedStroops?: string
     }
   | {
       confirmed: false
@@ -141,6 +150,14 @@ export type ConfirmResult =
       sawTransfers?: { sac: string; from: string; to: string; amountRaw: string }[]
       /** Every authorization nonce the transaction actually carried. */
       sawNonces?: string[]
+      /**
+       * What the ledger charged, on the one failure that is a ledger fact: `tx_failed`.
+       *
+       * A transaction that lands and FAILS still costs its fee. That is the whole reason
+       * this field is on the failure arm too: recording zero for a failed settlement would
+       * understate what the rail spends, and the daily budget would never see it.
+       */
+      feeChargedStroops?: string
     }
 
 type SeenTransfer = {
@@ -153,28 +170,84 @@ type SeenTransfer = {
 }
 
 /**
+ * The discriminant TransactionMeta really returns for v4.
+ *
+ * `TransactionMeta` is declared in the XDR as `switch (int v)`, so `switch()` returns a
+ * NUMBER. The named form exists in the generated types for unions whose discriminant is an
+ * enum; this union's is not one.
+ */
+const META_V4 = 4
+
+/**
+ * Is this meta a v4 meta, in either shape a caller can hand us?
+ *
+ * The first version asked `meta.switch().name !== 'transactionMetaV4'`, and `.name` on a
+ * number is `undefined`, so against the real SDK that comparison was ALWAYS true and this
+ * fallback always returned null. The docstring below claimed the meta was "the source that
+ * cannot be omitted" and the two tests that covered it mocked `switch: () => ({ name: ... })`,
+ * a shape the SDK never produces, so the defence read as present in both the prose and the
+ * suite while doing nothing in production. Verified live on 2026-09-15: `switch()` returns
+ * the number 4 on pubnet (protocol 27) and on testnet (protocol 28), and `.v4()` exists on
+ * both.
+ *
+ * The enum-like shape is still accepted, deliberately. It costs one comparison, it is what
+ * a future SDK would produce if this union ever gained a named discriminant, and accepting
+ * it cannot make us read a meta we should not: anything that is neither still returns null.
+ */
+function isMetaV4(sw: unknown): boolean {
+  if (typeof sw === 'number') return sw === META_V4
+  if (sw && typeof sw === 'object' && 'name' in sw) {
+    return (sw as { name?: unknown }).name === 'transactionMetaV4'
+  }
+  return false
+}
+
+/**
  * Contract events read out of the transaction meta, the source that cannot be omitted.
  *
  * Returns null when the meta itself gives us nothing to look at, which is the only honest
  * `no_event_data`. Returns an empty array when the meta parses and genuinely holds no events,
  * because that IS an answer about the transaction.
  *
- * Only meta v4 is handled, and deliberately not by guessing at older shapes: both networks
- * run Protocol 27, the SDK is pinned, and a silent fallback that quietly reads nothing from
- * an unexpected version is exactly the failure this function exists to prevent. An
- * unrecognised version returns null, which reads as "we cannot see" rather than "there is
- * nothing".
+ * Only meta v4 is handled, and deliberately not by guessing at older shapes: testnet runs
+ * Protocol 28 and pubnet Protocol 27, meta v4 holds on both, the SDK is pinned, and a silent
+ * fallback that quietly reads nothing from an unexpected version is exactly the failure this
+ * function exists to prevent. An unrecognised version returns null, which reads as "we
+ * cannot see" rather than "there is nothing".
  */
 function eventsFromMeta(tx: rpc.Api.GetSuccessfulTransactionResponse): unknown[] | null {
-  const meta = tx.resultMetaXdr as unknown as { switch?: () => { name?: string }; v4?: () => unknown }
+  const meta = tx.resultMetaXdr as unknown as { switch?: () => unknown; v4?: () => unknown }
   try {
-    if (meta?.switch?.().name !== 'transactionMetaV4') return null
+    if (!isMetaV4(meta?.switch?.())) return null
     const v4 = meta.v4?.() as { operations?: () => { events?: () => unknown[] }[] } | undefined
     const ops = v4?.operations?.()
     if (!ops) return null
     return ops.map((op) => op.events?.() ?? [])
   } catch {
     return null
+  }
+}
+
+/**
+ * What the ledger actually charged, in stroops, or undefined when we cannot read it.
+ *
+ * `resultXdr` is a required field on both the SUCCESS and the FAILED response, and
+ * `feeCharged()` on it is an xdr.Int64. This is the number that says what the rail spent:
+ * the envelope's own fee is a BID, the maximum we offered, and Stellar charges the clearing
+ * fee instead. On our first pubnet sale the bid was 34035 and the charge was 23479, so
+ * reporting the bid as "what we paid" overstated the cost by 45 percent.
+ *
+ * Guarded rather than trusted, because an unreadable fee must not turn a real settlement
+ * into an exception. Absent means absent, never zero: zero is a claim about the ledger.
+ */
+function feeChargedOf(tx: { resultXdr?: { feeCharged?: () => unknown } }): string | undefined {
+  try {
+    const charged = tx.resultXdr?.feeCharged?.()
+    if (charged === undefined || charged === null) return undefined
+    const s = String(charged)
+    return /^-?\d+$/.test(s) ? s : undefined
+  } catch {
+    return undefined
   }
 }
 
@@ -405,12 +478,19 @@ export async function confirmStellarTransfer(
   }
 
   if (got.status === rpc.Api.GetTransactionStatus.FAILED) {
+    // The fee is reported even here, and especially here. A failed transaction still pays
+    // for the ledger space it took, so this is real money the rail spent on a sale it did
+    // not make, and leaving it out would make the fee log agree only with the happy path.
+    const feeCharged = feeChargedOf(got)
     return {
       confirmed: false,
       txHash,
       code: 'tx_failed',
-      reason: 'the transaction landed and failed, so no value moved',
+      reason:
+        'the transaction landed and failed, so no value moved' +
+        (feeCharged ? `. It still cost ${feeCharged} stroops: a failed transaction is charged its fee` : ''),
       ledger: got.ledger,
+      ...(feeCharged ? { feeChargedStroops: feeCharged } : {}),
     }
   }
 
@@ -473,6 +553,7 @@ export async function confirmStellarTransfer(
     }
   }
 
+  const feeCharged = feeChargedOf(success)
   return {
     confirmed: true,
     txHash,
@@ -483,5 +564,6 @@ export async function confirmStellarTransfer(
     authNonce: expect.authNonce ?? '',
     ...(expect.authNonce === null ? { binding: 'tx-hash' as const, bindingNote: WEAKER_BINDING } : {}),
     ...(match.muxedId ? { muxedId: match.muxedId } : {}),
+    ...(feeCharged ? { feeChargedStroops: feeCharged } : {}),
   }
 }

@@ -455,12 +455,21 @@ export type StellarSettlementRecord = {
    *  that trusted a facilitator's word would have to write something else here and would
    *  be visible on the proof page for doing it. */
   confirmedBy: 'soroban-rpc'
-  /** What the settlement cost US, in stroops. Stroops and not USD, because a row is a
-   *  record of what happened and the USD value of an XLM fee is a thing that keeps
-   *  changing after the row is written. It IS priceable: the XLM/USDC order book is on the
-   *  ledger we settle on. Pricing belongs to whoever reads the row, at the time they read
-   *  it, not baked in here. */
+  /** The MAXIMUM FEE WE BID, in stroops: the assembled envelope's own fee, and what the
+   *  daily budget reserves against. It is deliberately not what we paid. Stellar runs an
+   *  auction and charges the clearing fee, so the bid is a ceiling we offer rather than a
+   *  price: our first pubnet sale bid 34035 and was charged 23479. Reserving against the
+   *  bid is the conservative direction, because it is the most a settlement could cost.
+   *  Stroops and not USD, because a row is a record of what happened and the USD value of
+   *  an XLM fee keeps changing after the row is written. It IS priceable: the XLM/USDC
+   *  order book is on the ledger we settle on. Pricing belongs to whoever reads the row,
+   *  at the time they read it, not baked in here. */
   feeStroops?: string
+  /** What the LEDGER actually charged, in stroops, read from the transaction result by our
+   *  own confirmation. Present only on rows whose confirmation could read it, which is why
+   *  it is optional rather than defaulted: rows written before this field existed carry the
+   *  bid alone, and a zero here would be a claim about the ledger we cannot make. */
+  feeChargedStroops?: string
   /** Present when we broadcast for a third-party payTo rather than for ourselves. */
   facilitatedFor?: string
 }
