@@ -10,7 +10,8 @@ import {
 import { policyPay, policyOwnerPay, payUsdcWithMemoOnchain, payUsdcBatchOnchain, memoReasonJson, readPolicyVault } from '../arc-contracts.js'
 import type { MemoInput } from '../arc-contracts.js'
 import { circlePay } from '../circle-agent.js'
-import { vaultChainFor } from './vault-adapter.js'
+import { vaultChainFor, isEvmVault, payFromVault, readVaultPolicy } from './vault-adapter.js'
+import { isAccountId } from '../chains/index.js'
 
 // ── instructions ──────────────────────────────────────────────────────────────
 
@@ -454,18 +455,53 @@ export function approveInstruction(ixId: string, caller?: string): Instruction |
   return ix
 }
 
+const EVM_PAYEE_RE = /^0x[0-9a-fA-F]{40}$/
+
 /**
- * Resolve an instruction payee to a real Arc address to settle to, or null.
- *  - a 0x… address -> itself
+ * True only when this agent actually settles through a Soroban vault.
+ *
+ * The vault ADDRESS is part of the test, not just the chain field, and the two must agree
+ * everywhere or they disagree somewhere. An agent naming a Stellar chain with no vault
+ * deployed would otherwise have its payee resolved as a G... account and then settle on the
+ * Arc rails, which is precisely the cross-chain mix-up the rest of this file exists to
+ * prevent. One predicate, asked by both the payee resolver and the settlement guard.
+ */
+function hasStellarVault(agent?: PlatformAgent): boolean {
+  if (!agent?.vaultAddress) return false
+  return vaultChainFor(agent)?.ecosystem === 'stellar'
+}
+
+/**
+ * Resolve an instruction payee to a real address to settle to, or null.
+ *  - a 0x… address -> itself, on an EVM vault
+ *  - a G… account -> itself, on a Stellar vault
  *  - `agent://<idOrName>` (or a bare agent id/name) -> THAT agent's wallet address,
  *    so agent-to-agent payments settle on-chain instead of falling back to simulated.
+ *
+ * The address shape is decided by the PAYING vault's ecosystem, not by what the string
+ * happens to look like. A Soroban vault cannot pay a 0x address and an Arc vault cannot pay
+ * a G... account, so accepting either everywhere would resolve a payee the settlement path
+ * then has to reject one layer deeper, wearing the wrong chain's error message. An agent://
+ * payee is held to the same rule: the target's wallet has to be on the paying vault's
+ * ecosystem or it is not a payee, which is the honest answer rather than a cross-chain
+ * payment this product does not make.
+ *
+ * An agent with no vault, and every agent whose vault predates the chain field, resolves
+ * exactly as before: `vaultChainFor` answers Arc for those rows.
  */
-function resolvePayeeAddress(payee: string): string | null {
-  if (/^0x[0-9a-fA-F]{40}$/.test(payee)) return payee
+function resolvePayeeAddress(payee: string, agent?: PlatformAgent): string | null {
+  const stellar = hasStellarVault(agent)
+  const accepts = (v: string | undefined | null): string | null => {
+    const s = (v ?? '').trim()
+    if (!s) return null
+    return stellar ? (isAccountId(s) ? s : null) : EVM_PAYEE_RE.test(s) ? s : null
+  }
+  const direct = accepts(payee)
+  if (direct) return direct
   const key = payee.replace(/^agent:\/\//i, '').trim()
   if (!key) return null
   const target = state.agents.find((a) => a.id === key || a.name.toLowerCase() === key.toLowerCase())
-  return target?.walletAddress && /^0x[0-9a-fA-F]{40}$/.test(target.walletAddress) ? target.walletAddress : null
+  return accepts(target?.walletAddress)
 }
 
 // ── the audit trail on the paths that cannot emit an on-chain Memo ────────────
@@ -589,19 +625,34 @@ export function sessionKeyBound(
 type SettlementBackend = {
   policyPay: typeof policyPay
   policyOwnerPay: typeof policyOwnerPay
+  /**
+   * The vault payment for every vault the two calls above cannot reach.
+   *
+   * Added rather than substituted. `policyPay` and `policyOwnerPay` are the Arc adapter
+   * bound to the Arc descriptor, which was right for exactly as long as a vault could only
+   * be on Arc; they stay, byte for byte, for the vaults that are. A Soroban vault's C...
+   * contract id went into them anyway and failed with a message about an address, so it
+   * now takes this routed call instead. The RESULT shape is the same on both, which is why
+   * every branch below reads exactly as it did.
+   */
+  payFromVault: typeof payFromVault
   circlePay: typeof circlePay
   payUsdcWithMemo: typeof payUsdcWithMemoOnchain
   payUsdcBatch: typeof payUsdcBatchOnchain
   readVault: typeof readPolicyVault
+  /** The chain-routed vault read, used for the session-key label off EVM. */
+  readVaultPolicy: typeof readVaultPolicy
 }
 
 const REAL_SETTLEMENT: SettlementBackend = {
   policyPay,
   policyOwnerPay,
+  payFromVault,
   circlePay,
   payUsdcWithMemo: payUsdcWithMemoOnchain,
   payUsdcBatch: payUsdcBatchOnchain,
   readVault: readPolicyVault,
+  readVaultPolicy,
 }
 
 let settlement: SettlementBackend = REAL_SETTLEMENT
@@ -617,12 +668,13 @@ let settlement: SettlementBackend = REAL_SETTLEMENT
  *
  * Two gates, both with reasons rather than convenience behind them:
  *
- *  - EVM only. The Soroban AgentSpendPolicy has the same `SessionKeyExpired` refusal, but
- *    `platform/vault-adapter.ts` does not surface an expiry for it yet, so a Stellar vault
- *    settles here labeled `onchain-vault`. That is a stated gap, not a claim. The REFUSAL
- *    side is unaffected: a `SessionKeyExpired` revert is recognised whatever the chain.
- *  - The chain's signer key must be configured. Without it `policyPay` returns prepared and
- *    this path never settles for real, so there is nothing to ground a label on.
+ *  - EVM and Stellar, not Algorand. Both AgentSpendPolicy implementations carry the same
+ *    `SessionKeyExpired` refusal and both now surface the expiry through the vault view, so
+ *    the label is available on either. The Algorand port does not exist, so a vault named
+ *    on that chain is `unsupported-chain` rather than an unread bound. The REFUSAL side was
+ *    never chain-gated: a `SessionKeyExpired` revert is recognised whatever the chain.
+ *  - The chain's signer key must be configured. Without it the vault payment returns
+ *    prepared and this path never settles for real, so there is nothing to ground a label on.
  *
  * And a deadline, because of WHERE this sits. By the time it runs the payment has already
  * moved on-chain, but the instruction has not yet been flipped to executed_onchain and the
@@ -633,7 +685,9 @@ const SESSION_KEY_READ_MS = 4_000
 
 async function readSessionKeyBound(agent: PlatformAgent, vault: string): Promise<SessionKeyBound> {
   const chain = vaultChainFor(agent)
-  if (!chain || chain.ecosystem !== 'evm') return { live: false, why: 'unsupported-chain' }
+  if (!chain || (chain.ecosystem !== 'evm' && chain.ecosystem !== 'stellar')) {
+    return { live: false, why: 'unsupported-chain' }
+  }
   if (!chain.signerEnvVar || !process.env[chain.signerEnvVar]) return { live: false, why: 'no-read' }
   // The deadline timer is deliberately NOT unref'd, and it was, which is a real bug rather
   // than a style point. An unref'd timer does not keep the event loop alive, so on a
@@ -649,7 +703,11 @@ async function readSessionKeyBound(agent: PlatformAgent, vault: string): Promise
     deadline = setTimeout(() => resolve(null), SESSION_KEY_READ_MS)
   })
   try {
-    return sessionKeyBound(await Promise.race([settlement.readVault(vault), giveUp]))
+    // Same question, asked of whichever adapter owns this vault. The EVM read keeps its
+    // own entry point because that is the one every existing test injects.
+    const read =
+      chain.ecosystem === 'evm' ? settlement.readVault(vault) : settlement.readVaultPolicy(agent, vault)
+    return sessionKeyBound(await Promise.race([read, giveUp]))
   } catch {
     return { live: false, why: 'no-read' }
   } finally {
@@ -706,7 +764,11 @@ export async function executeInstruction(ixId: string, caller?: string): Promise
   const fmt = (n: number) => (n < 0.01 ? n.toFixed(4) : n.toFixed(2))
   // Where this actually settles on-chain: a 0x… payee, or an agent:// payee
   // resolved to that agent's wallet. null -> nothing to send to -> simulated.
-  const settleTo = resolvePayeeAddress(ix.payee)
+  const settleTo = resolvePayeeAddress(ix.payee, agent)
+  // Asked once, from the same predicate the payee resolver used. A Stellar vault must never
+  // fall through to the Arc rails below: those settle 0x payees from an EVM signer, and a
+  // G... payee reaching them is not a fallback, it is a different chain.
+  const vaultIsStellar = hasStellarVault(agent)
   // The decision that AUTHORIZED this settlement: 'auto_approved' (within policy) or
   // 'approved' (a human said yes). Captured before the status flips to executed_*, so
   // every audit payload records why the money was allowed to move, on-chain memo or not.
@@ -725,9 +787,12 @@ export async function executeInstruction(ixId: string, caller?: string): Promise
     !agent?.vaultOwner || !agent?.vaultOperator || agent.vaultOwner.toLowerCase() === agent.vaultOperator.toLowerCase()
   if (settleTo && agent?.vaultAddress && !(ix.status === 'approved' && !serverCanOwnerPay)) {
     const humanApproved = ix.status === 'approved'
-    const res = humanApproved
-      ? await settlement.policyOwnerPay(agent.vaultAddress, settleTo, total)
-      : await settlement.policyPay(agent.vaultAddress, settleTo, total)
+    // Arc keeps the two calls it always made; anything else is routed by the vault's chain.
+    const res = isEvmVault(agent)
+      ? humanApproved
+        ? await settlement.policyOwnerPay(agent.vaultAddress, settleTo, total)
+        : await settlement.policyPay(agent.vaultAddress, settleTo, total)
+      : await settlement.payFromVault(agent, agent.vaultAddress, settleTo, total, humanApproved)
     if (res.executed) {
       // Which authority let this through. Asked ONLY now, with a receipt in hand, and only
       // on the agent path: `ownerPay` is owner-only and the contract exempts it from the
@@ -778,6 +843,38 @@ export async function executeInstruction(ixId: string, caller?: string): Promise
       return ix
     }
     // Not a policy revert (no key / infra error) - fall through to direct settlement.
+  }
+
+  /**
+   * A Stellar vault's payment stops here, whatever happened above.
+   *
+   * Three ways to arrive: the vault branch was skipped because a human override needs an
+   * owner signature we do not hold, the payment was neither executed nor reverted (no
+   * signer, pending, or an RPC that would not answer), or the refusal was not one of the
+   * typed policy errors. Every one of them used to continue into the Circle and direct
+   * rails below, which settle on Arc from an EVM signer. Reaching those with a G... payee
+   * cannot succeed, and the shape of the bug that would produce is the worst kind: a
+   * payment recorded as settled on a chain it never touched.
+   *
+   * So it goes back to the human with the reason, and the day's budget goes back with it.
+   */
+  if (vaultIsStellar && settleTo && agent?.vaultAddress) {
+    const why =
+      ix.status === 'approved'
+        ? 'A human override on this vault is owner_pay, which only the owner wallet can sign; this server holds the operator key. ' +
+          'Sign it with POST /api/stellar/vault/prepare and POST /api/stellar/vault/submit.'
+        : 'The Soroban vault could not settle it: the payment was neither confirmed nor refused on chain, so nothing moved.'
+    returnToHuman(
+      ix,
+      agent,
+      total,
+      `${why} Nothing was settled and nothing fell through to another chain: this agent's vault is on ` +
+        `${vaultChainFor(agent)?.name ?? 'Stellar'} and its payee is a Stellar account, which the Arc rails cannot pay.`,
+      'onchain-vault',
+    )
+    pushActivity(agent, `Stellar vault could not settle ${fmt(total)} USDC to ${short(settleTo)}; returned to a human`)
+    save(state)
+    return ix
   }
 
   // Circle Agent Wallet: the agent's USDC lives in a Circle-managed wallet whose

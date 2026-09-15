@@ -41,6 +41,7 @@ import { handleX402GatewayRoutes } from './http/x402-gateway-routes.js'
 import { handleCctpRoutes } from './http/cctp-routes.js'
 import { handleChainRoutes } from './http/chain-routes.js'
 import { handleArcRoutes } from './http/arc-routes.js'
+import { handleStellarVaultRoutes } from './http/stellar-vault-routes.js'
 import { handleAgentRoutes } from './http/agent-routes.js'
 import { handleGuardrailRoutes } from './http/guardrail-routes.js'
 import { handleInstructionRoutes } from './http/instruction-routes.js'
@@ -228,6 +229,10 @@ const server = http.createServer(async (req, res) => {
     if (await handleX402ThreeKRoutes(ctx)) return
     if (await handleChainRoutes(ctx)) return
     if (await handleArcRoutes(ctx)) return
+    // Before the agent group, which owns /api/agents/vault: these are the Soroban half of
+    // the same story and sit under their own prefix, so the order is about keeping the two
+    // vault surfaces visibly separate rather than about a path collision.
+    if (await handleStellarVaultRoutes(ctx)) return
     if (await handleAgentRoutes(ctx)) return
     if (await handleGuardrailRoutes(ctx)) return
     if (await handleInstructionRoutes(ctx)) return
@@ -337,6 +342,9 @@ server.listen(PORT, () => {
   console.error(`  GET  /api/x402/gateway/proof     Gateway-credited settlements, batch hashes once landed`)
   console.error(`  GET  /api/x402/gateway/openapi.json            OpenAPI for the paid tools (marketplace listing)`)
   console.error(`  GET  /api/x402/gateway/tools/:name             price + what to sign; POST (or GET) to pay and call`)
+  console.error(`  GET  /api/stellar/vaults         live Soroban spend vaults: policy, balance, archival TTL (public)`)
+  console.error(`  POST /api/stellar/vault/prepare  build an owner call unsigned (verified session, owner-gated)`)
+  console.error(`  POST /api/stellar/vault/submit   broadcast the envelope the owner signed (we never sign it)`)
   console.error(`  GET  /api/cctp/stellar/status    CCTP between Stellar and EVM: chains, Circle-verified contracts, signers`)
   console.error(`  POST /api/cctp/stellar/bridge    prepared-or-executed CCTP transfer (verified session, capped, testnet unless opted in)`)
   console.error(`  GET  /api/proof/:rail            provenance ledger + a live re-read (see /api/proof/rails)`)

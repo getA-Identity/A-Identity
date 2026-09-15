@@ -1,8 +1,20 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { Keypair } from '@stellar/stellar-sdk'
+import {
+  Account,
+  Asset,
+  BASE_FEE,
+  Contract,
+  Keypair,
+  Networks,
+  Operation,
+  SorobanDataBuilder,
+  TransactionBuilder,
+  nativeToScVal,
+  xdr,
+} from '@stellar/stellar-sdk'
 
-import { createStellarAdapter, errorIn } from './adapter.js'
+import { createStellarAdapter, errorIn, errorName } from './adapter.js'
 import { stellarKeypair, stellarRpcUrl, stellarSignerAddress } from './client.js'
 import { getChainById, requireChain } from '../registry.js'
 
@@ -203,4 +215,253 @@ test('a bare code with no event log is assumed ours rather than silently dropped
 
 test('a message with no contract error at all yields nothing', () => {
   assert.equal(errorIn('HostError: Error(Storage, MissingValue)', 'CAIL6ECRAB5FUURQ54R7OTZPXRRCDO2S353YT6N6UZUWIBDG2ZOEB4UI'), undefined)
+})
+
+// ── deploying a vault ────────────────────────────────────────────────────────────
+//
+// A deploy is the one write here that creates something rather than changing it, so the
+// checks that matter are the ones that run BEFORE the network: a vault deployed with
+// owner == operator is a vault with no policy, and a deploy that reaches simulation with
+// the wrong wasm hash pays a fee to fail.
+
+/** A server that fails the test if anything touches it. */
+const noNetwork = () =>
+  new Proxy({} as never, {
+    get(_t, prop) {
+      return () => {
+        throw new Error(`the network was touched (${String(prop)}) when it should not have been`)
+      }
+    },
+  })
+
+test('an unsigned deploy returns the exact constructor call and nothing else', async () => {
+  const a = createStellarAdapter(testnet())
+  const owner = Keypair.random().publicKey()
+  const operator = Keypair.random().publicKey()
+  const token = requireChain('stellar:testnet').settlementTokens?.[0]?.address as string
+  const r = await a.deployVault(
+    { owner, operator, token, dailyCapRaw: 25_000_000n, autoApproveMaxRaw: 5_000_000n },
+    {},
+  )
+  assert.equal(r.outcome, 'prepared')
+  if (r.outcome !== 'prepared') return
+  assert.equal(r.contract, '<new>')
+  assert.equal(r.method, '__constructor')
+  assert.deepEqual(r.args, [owner, operator, token, '25000000', '5000000'])
+  assert.equal(r.network, 'stellar:testnet')
+  assert.match(r.reason, /STELLAR_TESTNET_SIGNER_SECRET/)
+})
+
+test('owner == operator is refused before the network is touched at all', async () => {
+  // The contract refuses it too (OwnerIsOperator), and that is the point: this check exists
+  // so the refusal costs nothing and names the reason, not because the chain would miss it.
+  const a = createStellarAdapter(testnet(), { server: noNetwork })
+  const same = Keypair.random().publicKey()
+  const token = requireChain('stellar:testnet').settlementTokens?.[0]?.address as string
+  const r = await a.deployVault(
+    { owner: same, operator: same, token, dailyCapRaw: 1n, autoApproveMaxRaw: 1n },
+    { STELLAR_TESTNET_SIGNER_SECRET: Keypair.random().secret() },
+  )
+  assert.equal(r.outcome, 'refused')
+  if (r.outcome !== 'refused') return
+  assert.match(r.reason, /OwnerIsOperator/)
+})
+
+test('a deploy refuses a payee-shaped owner and a G... token before it can confuse the chain', async () => {
+  const a = createStellarAdapter(testnet(), { server: noNetwork })
+  const token = requireChain('stellar:testnet').settlementTokens?.[0]?.address as string
+  const good = Keypair.random().publicKey()
+  const bad = await a.deployVault(
+    { owner: 'not-an-account', operator: good, token, dailyCapRaw: 1n, autoApproveMaxRaw: 1n },
+    {},
+  )
+  assert.equal(bad.outcome, 'refused')
+  const badToken = await a.deployVault(
+    { owner: good, operator: Keypair.random().publicKey(), token: good, dailyCapRaw: 1n, autoApproveMaxRaw: 1n },
+    {},
+  )
+  assert.equal(badToken.outcome, 'refused')
+  if (badToken.outcome === 'refused') assert.match(badToken.reason, /not a Soroban contract id/)
+})
+
+test('the frozen error table names all ten codes and nothing beyond them', () => {
+  // These discriminants are public ABI: error.rs says the list is append-only and a number
+  // is never reused, so this copy cannot legitimately drift from the contract.
+  assert.deepEqual(
+    [1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map((c) => errorName(c)),
+    [
+      'Frozen', 'SessionKeyExpired', 'PayeeNotAllowed', 'AboveAutoApprove', 'DailyCapExceeded',
+      'InvalidAmount', 'InvalidPayee', 'MathOverflow', 'InsufficientBalance', 'OwnerIsOperator',
+    ],
+  )
+  // 13 is the trustline failure the SAC raises. Naming it would tell a client a token error
+  // was a policy refusal, which is the exact confusion contractErrorIsOurs exists to prevent.
+  assert.equal(errorName(13), undefined)
+  assert.equal(errorName(0), undefined)
+  assert.equal(errorName(undefined), undefined)
+})
+
+// ── relaying an envelope somebody else signed ────────────────────────────────────
+//
+// These two endpoints are the only place this server broadcasts bytes a caller handed it,
+// so the tests that matter are the refusals. Every envelope below is built with the real
+// SDK and a runtime-generated key: a seed-shaped literal never appears in this repo, even
+// a fake one, because the history scan cannot tell the difference.
+
+const account = (kp: Keypair) => new Account(kp.publicKey(), '0')
+
+function ownerEnvelope(opts: {
+  kp: Keypair
+  passphrase: string
+  contract?: string
+  method?: string
+  ops?: number
+  payment?: boolean
+  sign?: boolean
+}): string {
+  const b = new TransactionBuilder(account(opts.kp), { fee: BASE_FEE, networkPassphrase: opts.passphrase })
+  const c = new Contract(opts.contract ?? VAULT)
+  if (opts.payment) {
+    b.addOperation(Operation.payment({ destination: opts.kp.publicKey(), asset: Asset.native(), amount: '1' }))
+  } else {
+    for (let i = 0; i < (opts.ops ?? 1); i += 1) b.addOperation(c.call(opts.method ?? 'set_frozen', nativeToScVal(true)))
+  }
+  const tx = b.setTimeout(300).build()
+  if (opts.sign !== false) tx.sign(opts.kp)
+  return tx.toXDR()
+}
+
+test('a payment operation is not an owner call, however well signed', async () => {
+  const a = createStellarAdapter(testnet(), { server: noNetwork })
+  const kp = Keypair.random()
+  const seen = a.inspectOwnerEnvelope(ownerEnvelope({ kp, passphrase: Networks.TESTNET, payment: true }))
+  assert.equal(seen.ok, false)
+  if (!seen.ok) assert.match(seen.reason, /payment is not accepted|only a contract invocation/)
+})
+
+test('a two-operation envelope is refused, because only one of them was ever inspected', async () => {
+  const a = createStellarAdapter(testnet(), { server: noNetwork })
+  const kp = Keypair.random()
+  const seen = a.inspectOwnerEnvelope(ownerEnvelope({ kp, passphrase: Networks.TESTNET, ops: 2 }))
+  assert.equal(seen.ok, false)
+  if (!seen.ok) assert.match(seen.reason, /2 operations/)
+})
+
+test('a method outside the six is refused even on a vault we know', async () => {
+  const a = createStellarAdapter(testnet(), { server: noNetwork })
+  const kp = Keypair.random()
+  // `pay` is the agent operator's call and the server signs it itself; relaying it here
+  // would be a second, unauthenticated door into the same money.
+  const seen = a.inspectOwnerEnvelope(ownerEnvelope({ kp, passphrase: Networks.TESTNET, method: 'pay' }))
+  assert.equal(seen.ok, false)
+  if (!seen.ok) assert.match(seen.reason, /not one of the owner entrypoints/)
+})
+
+test('an envelope signed for the other network is refused rather than relayed', async () => {
+  // A signature is bound to a passphrase and the passphrase is not in the envelope, so the
+  // only way to catch this is to check whether the source key's signature verifies under
+  // each network. Relaying it would burn the owner's fee on a transaction pubnet cannot take.
+  const a = createStellarAdapter(testnet(), { server: noNetwork })
+  const kp = Keypair.random()
+  const seen = a.inspectOwnerEnvelope(ownerEnvelope({ kp, passphrase: Networks.PUBLIC }))
+  assert.equal(seen.ok, false)
+  if (!seen.ok) {
+    assert.equal(seen.code, 'wrong_network')
+    assert.match(seen.reason, /other Stellar network/)
+  }
+})
+
+test('an unsigned envelope is refused: there is nothing to submit', async () => {
+  const a = createStellarAdapter(testnet(), { server: noNetwork })
+  const kp = Keypair.random()
+  const seen = a.inspectOwnerEnvelope(ownerEnvelope({ kp, passphrase: Networks.TESTNET, sign: false }))
+  assert.equal(seen.ok, false)
+  if (!seen.ok) assert.match(seen.reason, /no signature/)
+})
+
+test('a well-formed owner call is read back with its contract, method and source', async () => {
+  const a = createStellarAdapter(testnet(), { server: noNetwork })
+  const kp = Keypair.random()
+  const seen = a.inspectOwnerEnvelope(ownerEnvelope({ kp, passphrase: Networks.TESTNET, method: 'set_frozen' }))
+  assert.equal(seen.ok, true)
+  if (!seen.ok) return
+  assert.equal(seen.contract, VAULT)
+  assert.equal(seen.method, 'set_frozen')
+  assert.equal(seen.source, kp.publicKey())
+  assert.equal(seen.sourceSigned, true, 'the source key signed it, under THIS network')
+})
+
+// ── preparing an owner call ──────────────────────────────────────────────────────
+
+/** The smallest simulation response assembleTransaction will accept. */
+function fakeSim() {
+  return {
+    _parsed: true,
+    latestLedger: 1_000,
+    minResourceFee: '12345',
+    transactionData: new SorobanDataBuilder(),
+    result: { auth: [], retval: xdr.ScVal.scvVoid() },
+    events: [],
+  } as never
+}
+
+test('a prepared owner call comes back unsigned, on this network, with the fee it will cost', async () => {
+  const owner = Keypair.random()
+  const a = createStellarAdapter(testnet(), {
+    server: () =>
+      ({
+        getAccount: async (id: string) => new Account(id, '7'),
+        simulateTransaction: async () => fakeSim(),
+      }) as never,
+  })
+  const r = await a.prepareOwnerCall(VAULT, 'set_session_key_expiry', [{ kind: 'u64', value: '1893456000' }], owner.publicKey(), {})
+  assert.equal(r.ok, true)
+  if (!r.ok) return
+  assert.equal(r.networkPassphrase, Networks.TESTNET)
+  assert.equal(r.network, 'stellar:testnet')
+  assert.equal(r.contract, VAULT)
+  assert.equal(r.method, 'set_session_key_expiry')
+  assert.deepEqual(r.args, ['1893456000'])
+  assert.equal(r.source, owner.publicKey())
+  assert.ok(Number(r.feeStroops) > 0)
+  // The one claim this whole endpoint rests on: we hand back something we did not sign.
+  const back = TransactionBuilder.fromXDR(r.xdr, Networks.TESTNET)
+  assert.equal(back.signatures.length, 0, 'a prepared call must never come back signed')
+  assert.match(r.summary, /pays/, 'the summary has to say who pays the fee')
+  // Source-account credentials carry no signature expiry, so this is null rather than invented.
+  assert.equal(r.expiresAtLedger, null)
+  assert.ok(r.validUntil, 'the time bound is what governs instead, so it is reported')
+})
+
+test('a contract refusal in simulation is typed, named and never turned into an envelope', async () => {
+  const owner = Keypair.random()
+  const a = createStellarAdapter(testnet(), {
+    server: () =>
+      ({
+        getAccount: async (id: string) => new Account(id, '7'),
+        simulateTransaction: async () => ({ error: 'HostError: Error(Contract, #5)', _parsed: true }) as never,
+      }) as never,
+  })
+  const r = await a.prepareOwnerCall(VAULT, 'owner_pay', [{ kind: 'address', value: PAYEE }, { kind: 'i128', value: '10' }], owner.publicKey(), {})
+  assert.equal(r.ok, false)
+  if (r.ok) return
+  assert.equal(r.code, 'refused')
+  assert.equal(r.contractErrorCode, 5)
+  assert.equal(r.contractErrorName, 'DailyCapExceeded')
+})
+
+test('an account that does not exist is an RPC answer, not a crash', async () => {
+  const a = createStellarAdapter(testnet(), {
+    server: () =>
+      ({
+        getAccount: async () => {
+          throw new Error('Account not found')
+        },
+      }) as never,
+  })
+  const r = await a.prepareOwnerCall(VAULT, 'set_frozen', [{ kind: 'bool', value: true }], Keypair.random().publicKey(), {})
+  assert.equal(r.ok, false)
+  if (r.ok) return
+  assert.equal(r.code, 'rpc_error')
+  assert.match(r.reason, /XLM reserve|not an account/)
 })

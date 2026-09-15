@@ -220,12 +220,20 @@ export async function handleAgentRoutes(ctx: RouteCtx): Promise<boolean> {
     sendJson(res, 200, r)
     return true
   }
-  // Provision an on-chain policy vault for an agent (deploy + optional funding, env-gated)
+  // Provision an on-chain policy vault for an agent (deploy + optional funding, env-gated).
+  // `chain` names where, by registry id or CAIP-2, and defaults to Arc so a caller that
+  // does not send it behaves exactly as it always did. On a Stellar chain the owner must be
+  // a G... account (yours), there is no funding step, and pubnet is opt-in server-side.
   if (req.method === 'POST' && url.pathname === '/api/agents/vault') {
-    const body = (await readBody(req).catch(() => null)) as { agentId?: string; fundUsd?: number; ownerAddress?: string } | null
+    const body = (await readBody(req).catch(() => null)) as { agentId?: string; fundUsd?: number; ownerAddress?: string; chain?: string } | null
     if (!body?.agentId) { sendJson(res, 400, { error: 'agentId required' }); return true }
     // fundUsd is deposited from the shared server signer - cap it like the other demo spends.
-    const r = await provisionAgentVault(body.agentId, { fundUsd: cappedDemoUsd(body.fundUsd), caller: callerId, ownerAddress: body.ownerAddress })
+    const r = await provisionAgentVault(body.agentId, {
+      fundUsd: cappedDemoUsd(body.fundUsd),
+      caller: callerId,
+      ownerAddress: body.ownerAddress,
+      chain: typeof body.chain === 'string' && body.chain.trim() ? body.chain.trim() : undefined,
+    })
     if ('error' in r && typeof r.error === 'string') { sendJson(res, errStatus(r.error), r); return true }
     sendJson(res, 200, r)
     return true

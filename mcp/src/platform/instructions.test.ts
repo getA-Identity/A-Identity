@@ -1,5 +1,6 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
+import { Keypair } from '@stellar/stellar-sdk'
 import { __resetPlatformStateForTests, dailySpent, type PlatformAgent } from './core.js'
 import { createAgent } from './agents.js'
 import { vaultChainFor } from './vault-adapter.js'
@@ -368,4 +369,227 @@ test('NEGATIVE CONTROL: a cap or allowlist refusal is the vault, not the session
       },
     )
   }
+})
+
+// ── the same story on Soroban ────────────────────────────────────────────────────
+//
+// A vault on Stellar was half wired: `executeInstruction` called the Arc adapter whatever
+// chain the vault was on, the payee resolver accepted only 0x addresses, and the vault view
+// dropped the session-key expiry. The result was not an error message, which would have
+// been fine. It was a SILENT FALL-THROUGH: the vault path failed as an infrastructure
+// hiccup and settlement continued down the Arc rails, which is a payment recorded against a
+// chain it never touched. These tests are mostly about that fall-through not happening.
+
+const STELLAR_VAULT = 'CAIL6ECRAB5FUURQ54R7OTZPXRRCDO2S353YT6N6UZUWIBDG2ZOEB4UI'
+
+/** An agent whose vault is a Soroban contract, with the owner and operator separated the
+ *  way that contract enforces (it refuses owner == operator at construction). */
+function seedStellarVaultAgent(): PlatformAgent {
+  const agent = createAgent({
+    name: 'Soroban Vault Agent',
+    description: 'Seeded for Stellar vault settlement tests.',
+    category: 'Research',
+    capabilities: [],
+    permissions: { dailyCapUsd: 1000, autoApproveUnderUsd: 100, agentToHuman: true },
+    owner: OWNER,
+  })
+  agent.vaultAddress = STELLAR_VAULT
+  agent.vaultChainCaip2 = 'stellar:testnet'
+  agent.vaultOwner = Keypair.random().publicKey()
+  agent.vaultOperator = Keypair.random().publicKey()
+  return agent
+}
+
+function seedStellarInstruction(agent: PlatformAgent, payee: string, amountUsd = 0.5) {
+  const ix = createInstruction({ agentId: agent.id, type: 'payment', amountUsd, payee, caller: OWNER })
+  assert.ok(!('error' in ix), `seed failed: ${JSON.stringify(ix)}`)
+  return ix
+}
+
+const stellarSettled = async () => ({
+  executed: true as const,
+  txHash: 'ab'.repeat(32),
+  explorerUrl: `https://example.test/tx/${'ab'.repeat(32)}`,
+})
+
+test('a Stellar vault settles through the routed adapter, not the Arc one', async () => {
+  __resetPlatformStateForTests()
+  const agent = seedStellarVaultAgent()
+  const payee = Keypair.random().publicKey()
+  const ix = seedStellarInstruction(agent, payee)
+
+  await withSettlement(
+    {
+      payFromVault: stellarSettled,
+      readVaultPolicy: async () => ({ dailyCapUsd: 1000, autoApproveUsd: 100, allowlistEnabled: false, frozen: false, sessionKeyExpiry: 0 }),
+      // The Arc pair must not be reached for a vault on another chain.
+      policyPay: async () => {
+        throw new Error('the Arc adapter was called for a Soroban vault')
+      },
+      policyOwnerPay: async () => {
+        throw new Error('the Arc adapter was called for a Soroban vault')
+      },
+    },
+    async () => {
+      await withSignerConfigured(agent, async () => {
+        const done = await executeInstruction(ix.id, OWNER)
+        assert.ok(!('error' in done))
+        assert.equal(done.status, 'executed_onchain')
+        assert.equal(done.enforcedBy, 'onchain-vault')
+        assert.equal(done.txHash, 'ab'.repeat(32))
+        assert.ok(done.explorerUrl?.includes('ab'.repeat(32)))
+      })
+    },
+  )
+})
+
+test('a Stellar vault can now earn the session-key label, which it could not before', async () => {
+  // The label was gated to EVM, with the reason written down: the vault view did not
+  // surface an expiry for Soroban. It does now, and the claim is still grounded on a read
+  // of the chain rather than on configuration.
+  __resetPlatformStateForTests()
+  const agent = seedStellarVaultAgent()
+  const payee = Keypair.random().publicKey()
+  const ix = seedStellarInstruction(agent, payee)
+  const expiry = Math.floor(Date.now() / 1000) + HOUR
+
+  await withSettlement(
+    {
+      payFromVault: stellarSettled,
+      readVaultPolicy: async () => ({ dailyCapUsd: 1000, autoApproveUsd: 100, allowlistEnabled: false, frozen: false, sessionKeyExpiry: expiry, sessionKeyExpired: false }),
+    },
+    async () => {
+      await withSignerConfigured(agent, async () => {
+        const done = await executeInstruction(ix.id, OWNER)
+        assert.ok(!('error' in done))
+        assert.equal(done.enforcedBy, 'session-key')
+        assert.ok(done.policyNote.includes(new Date(expiry * 1000).toISOString()))
+      })
+    },
+  )
+})
+
+test('a typed Soroban refusal comes back as a policy rejection with the contract error name', async () => {
+  __resetPlatformStateForTests()
+  const agent = seedStellarVaultAgent()
+  const payee = Keypair.random().publicKey()
+  const ix = seedStellarInstruction(agent, payee)
+  assert.equal(dailySpent(agent), 0.5, 'an auto-approved payment commits against the cap before it settles')
+
+  await withSettlement(
+    {
+      payFromVault: async () => ({ executed: false as const, reverted: true as const, reason: 'DailyCapExceeded' }),
+      payUsdcWithMemo: async () => {
+        throw new Error('a policy refusal must not fall through to direct settlement')
+      },
+    },
+    async () => {
+      await withSignerConfigured(agent, async () => {
+        const done = await executeInstruction(ix.id, OWNER)
+        assert.ok(!('error' in done))
+        assert.equal(done.status, 'pending_approval')
+        assert.equal(done.txHash, undefined)
+        assert.equal(done.enforcedBy, 'onchain-vault')
+        assert.ok(done.policyNote.includes('DailyCapExceeded'))
+        assert.equal(dailySpent(agent), 0, 'a payment that moved nothing gives the day back')
+      })
+    },
+  )
+})
+
+test('THE ONE THAT MATTERS: a Stellar vault that neither settled nor reverted never reaches the Arc rails', async () => {
+  // Pending, no signer, an RPC that would not answer: on Arc all three deliberately fall
+  // through to direct settlement, so a chain hiccup never blocks the flow. On Stellar that
+  // fallback settles a G... payee from an EVM signer, which cannot work and, if it somehow
+  // did, would be a payment on a chain nobody authorised. It stops here instead.
+  __resetPlatformStateForTests()
+  const agent = seedStellarVaultAgent()
+  const payee = Keypair.random().publicKey()
+  const ix = seedStellarInstruction(agent, payee)
+
+  await withSettlement(
+    {
+      payFromVault: async () => ({ executed: false as const, reverted: false as const, reason: 'pending: abc. not in a ledger yet' }),
+      payUsdcWithMemo: async () => {
+        throw new Error('a Stellar vault must never fall through to Arc direct settlement')
+      },
+      payUsdcBatch: async () => {
+        throw new Error('a Stellar vault must never fall through to the Arc batch path')
+      },
+      circlePay: async () => {
+        throw new Error('a Stellar vault must never fall through to Circle')
+      },
+    },
+    async () => {
+      await withSignerConfigured(agent, async () => {
+        const done = await executeInstruction(ix.id, OWNER)
+        assert.ok(!('error' in done))
+        assert.equal(done.status, 'pending_approval')
+        assert.equal(done.enforcedBy, 'onchain-vault')
+        assert.equal(done.txHash, undefined)
+        assert.ok(done.policyNote.includes('nothing fell through to another chain'))
+        assert.equal(dailySpent(agent), 0)
+      })
+    },
+  )
+})
+
+test('a human override on a Stellar vault is owner-signed, so it goes back to the human rather than onward', async () => {
+  // `owner_pay` is owner-only and the owner is the human's own G... account by
+  // construction, so the server cannot sign it. Before this, that case skipped the vault
+  // branch entirely and continued into the Arc rails with a Stellar payee.
+  __resetPlatformStateForTests()
+  const agent = seedStellarVaultAgent()
+  const payee = Keypair.random().publicKey()
+  const ix = seedStellarInstruction(agent, payee, 500)
+  assert.equal(ix.status, 'pending_approval')
+  assert.ok(!('error' in approveInstruction(ix.id, OWNER)))
+
+  await withSettlement(
+    {
+      payFromVault: async () => {
+        throw new Error('the server must not attempt owner_pay on a vault it does not own')
+      },
+      payUsdcWithMemo: async () => {
+        throw new Error('a Stellar vault must never fall through to Arc direct settlement')
+      },
+    },
+    async () => {
+      await withSignerConfigured(agent, async () => {
+        const done = await executeInstruction(ix.id, OWNER)
+        assert.ok(!('error' in done))
+        assert.equal(done.status, 'pending_approval')
+        assert.equal(done.enforcedBy, 'onchain-vault')
+        assert.ok(done.policyNote.includes('/api/stellar/vault/prepare'))
+      })
+    },
+  )
+})
+
+test('a 0x payee on a Stellar-vault agent is not a payee at all, so nothing settles anywhere', async () => {
+  // The payee shape follows the PAYING vault's ecosystem. Accepting a 0x address here would
+  // resolve a payee the Soroban adapter then has to reject one layer deeper, wearing the
+  // wrong chain's error message.
+  __resetPlatformStateForTests()
+  const agent = seedStellarVaultAgent()
+  const ix = seedStellarInstruction(agent, PAYEE)
+
+  await withSettlement(
+    {
+      payFromVault: async () => {
+        throw new Error('a 0x payee must never reach a Soroban vault')
+      },
+      payUsdcWithMemo: async () => {
+        throw new Error('a Stellar-vault agent must not settle on the Arc rails')
+      },
+    },
+    async () => {
+      await withSignerConfigured(agent, async () => {
+        const done = await executeInstruction(ix.id, OWNER)
+        assert.ok(!('error' in done))
+        assert.equal(done.status, 'executed_simulated')
+        assert.ok(done.policyNote.includes('no Arc address'))
+      })
+    },
+  )
 })

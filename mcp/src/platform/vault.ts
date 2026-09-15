@@ -3,33 +3,231 @@
  * Wallet, and treasury auto-yield into USYC.
  * Layering: L2 domain module; imports ./core.js and flat ../ modules only.
  */
-import { state, save, ownsAgent, pushActivity, short, inFlightAgentOps, type PlatformAgent } from './core.js'
-import { deployPolicyVault, payUsdcOnchain, policySetSessionExpiry } from '../arc-contracts.js'
+import { state, save, ownsAgent, pushActivity, short, inFlightAgentOps, normalizeSubject, type PlatformAgent } from './core.js'
+import { deployPolicyVault, payUsdcOnchain } from '../arc-contracts.js'
 import {
   vaultChainFor, readVaultPolicy, writeVaultPolicy, writeVaultFrozen, writeVaultAllowed,
+  writeVaultSessionExpiry, deployStellarVault, stellarOperatorAddress,
   allowlistEntriesFor,
 } from './vault-adapter.js'
-import { ARC_CHAIN, addressUrl } from '../chains/index.js'
+import { ARC_CHAIN, CHAINS, addressUrl, isAccountId } from '../chains/index.js'
+import type { ChainDescriptor } from '../chains/types.js'
 import { createAgentWallet, readCircleWallet } from '../circle-agent.js'
 import { previewTreasury, startAutoYield, type TreasuryPreview, type TreasuryExecution } from '../treasury.js'
 
 // ── on-chain policy vault ────────────────────────────────────────────────────────
 
 /**
+ * Which chain a vault is asked for, by registry id or by CAIP-2.
+ *
+ * Arc is the default because it is the only chain vaults were ever deployed on, so an
+ * existing caller that names no chain keeps the exact behaviour it had. A name the registry
+ * does not know is refused rather than silently defaulted: a typo that quietly deployed on
+ * a different chain would be a vault the owner cannot find.
+ */
+function resolveVaultChain(want?: string): ChainDescriptor | null {
+  const key = (want ?? ARC_CHAIN.id).trim()
+  if (!key) return ARC_CHAIN
+  return CHAINS.find((c) => c.id === key || c.caip2 === key) ?? null
+}
+
+/**
+ * The Stellar accounts this caller has proven control of, newest link last.
+ *
+ * Read from `state.users` rather than through agents.ts, because that module sits two
+ * layers above this one. The rows are the same ones /api/user/wallets lists, each written
+ * only after a signature over a nonce was verified.
+ */
+function callerStellarWallets(caller?: string): string[] {
+  const key = normalizeSubject(caller)
+  if (!key) return []
+  return (state.users[key]?.wallets ?? [])
+    .filter((w) => w.ecosystem === 'stellar' && isAccountId(w.address))
+    .map((w) => w.address)
+}
+
+/**
+ * Deploy an AgentSpendPolicy on a Stellar network and record it on the agent.
+ *
+ * Three things are different enough from the Arc path to be worth stating rather than
+ * leaving to be inferred from the code:
+ *
+ *  - The owner MUST be a real G... account belonging to the human, and the operator is
+ *    always the chain signer. The contract itself refuses owner == operator, so the
+ *    separation the EVM path asks for politely is unbypassable here.
+ *  - There is NO funding step. We hold no USDC to send and would not send a user's money
+ *    anyway; the vault is funded by sending USDC to the contract id, and the answer says
+ *    so with the explorer link rather than leaving a zero balance unexplained.
+ *  - Pubnet is real money, so it is refused unless an operator has opted in with
+ *    STELLAR_VAULT_ALLOW_PUBNET=true. Testnet needs no flag.
+ */
+async function provisionStellarVault(
+  agent: PlatformAgent,
+  chain: ChainDescriptor,
+  opts: { caller?: string; ownerAddress?: string },
+) {
+  if (!chain.testnet && process.env.STELLAR_VAULT_ALLOW_PUBNET !== 'true') {
+    return {
+      error:
+        `Deploying a vault on ${chain.name} moves real money, so it is opt-in: set ` +
+        'STELLAR_VAULT_ALLOW_PUBNET=true on the server to allow it. Nothing was deployed. ' +
+        `The rehearsal network needs no flag, so ${CHAINS.find((c) => c.ecosystem === 'stellar' && c.testnet)?.id ?? 'the Stellar testnet'} is available now.`,
+    }
+  }
+
+  const linked = callerStellarWallets(opts.caller)
+  const owner =
+    isAccountId((opts.ownerAddress ?? '').trim())
+      ? (opts.ownerAddress as string).trim()
+      : isAccountId((opts.caller ?? '').trim())
+        ? (opts.caller as string).trim()
+        : linked[0]
+  if (!owner) {
+    return {
+      error:
+        'This vault needs a Stellar account (G...) as its human owner: it is the account ' +
+        'that freezes, withdraws and overrides, and it must not be the server. Sign in with a ' +
+        'Stellar wallet, link one to your account, or pass ownerAddress. Nothing was deployed.',
+    }
+  }
+
+  const operator = await stellarOperatorAddress(chain)
+  if (!operator) {
+    return {
+      error:
+        `${chain.signerEnvVar ?? 'the chain signer'} is not set, so this server has no account to ` +
+        `operate a vault on ${chain.name}. Nothing was deployed and nothing was charged: set the ` +
+        'key and ask again.',
+    }
+  }
+  if (owner === operator) {
+    return {
+      error:
+        'The owner you gave is this server\'s own operator account. The contract refuses that at ' +
+        'construction (OwnerIsOperator), because one key that can both spend past the policy and ' +
+        'lift the policy is the same as having no policy. Nothing was deployed.',
+    }
+  }
+
+  const token = chain.settlementTokens?.[0]
+  if (!token) {
+    return { error: `${chain.name} declares no settlement token, so a vault has nothing to custody.` }
+  }
+
+  const dep = await deployStellarVault(chain, {
+    owner,
+    operator,
+    token: token.address,
+    dailyCapUsd: agent.permissions.dailyCapUsd,
+    autoApproveUsd: agent.permissions.autoApproveUnderUsd,
+  })
+  if (dep.outcome !== 'settled') {
+    // Nothing is recorded on the agent unless a deploy landed. A `pending` deploy is the
+    // one that tempts a lie: it may still land, so it is reported with its hash and left
+    // for a human to confirm rather than written down as a vault that might not exist.
+    return {
+      error: dep.reason,
+      outcome: dep.outcome,
+      chain: chain.caip2,
+      ...('txHash' in dep ? { txHash: dep.txHash, explorerUrl: dep.explorerUrl } : {}),
+      ...(dep.outcome === 'prepared' || dep.outcome === 'refused'
+        ? { prepared: { contract: dep.contract, method: dep.method, args: dep.args } }
+        : {}),
+    }
+  }
+
+  const explorer = addressUrl(chain, dep.vault)
+  agent.vaultAddress = dep.vault
+  agent.vaultChainCaip2 = chain.caip2
+  agent.vaultExplorer = explorer
+  agent.vaultOwner = owner
+  agent.vaultOperator = operator
+  agent.vaults = [
+    ...(agent.vaults ?? []),
+    { chainCaip2: chain.caip2, address: dep.vault, explorer, owner, operator, source: 'deployed' },
+  ]
+  pushActivity(
+    agent,
+    `On-chain policy vault deployed on ${chain.name} at ${short(dep.vault)} (tx ${short(dep.txHash)})` +
+      ` - human owner ${short(owner)}, agent operator ${short(operator)}`,
+  )
+  save(state)
+  return {
+    vaultAddress: dep.vault,
+    vaultExplorer: explorer,
+    chain: chain.caip2,
+    owner,
+    operator,
+    ownerOperatorSeparated: true,
+    deployTx: dep.txHash,
+    deployExplorer: dep.explorerUrl,
+    // Said plainly, because a vault with a zero balance and no explanation reads as broken.
+    funding: {
+      funded: false,
+      note:
+        `Fund the vault by sending ${token.symbol} to the contract id ${dep.vault} on ${chain.name}. ` +
+        'This server holds no user funds and never moves them, so there is no funding step here.',
+      explorerUrl: explorer,
+    },
+    ownerSigning: 'wallet' as const,
+    note:
+      'Owner and operator are different accounts, so freeze, withdraw, set_policy, set_allowed, ' +
+      'set_session_key_expiry and owner_pay are signed by the owner wallet. Build those through ' +
+      'POST /api/stellar/vault/prepare and submit them with POST /api/stellar/vault/submit.',
+  }
+}
+
+/**
  * Provision an on-chain AgentSpendPolicy vault for an agent: deploy a contract
- * that enforces the agent's daily cap + auto-approve ceiling on Arc, and
- * optionally fund it with USDC. Once set, this agent's address payments settle
+ * that enforces the agent's daily cap + auto-approve ceiling, and optionally fund
+ * it with USDC. Once set, this agent's address payments settle
  * through the vault (chain-enforced), with the server engine as the pre-check.
- * Owner-only; env-gated behind ARC_SIGNER_KEY.
+ * Owner-only; env-gated behind the chain's own signer key.
+ *
+ * `chain` names where, by registry id or CAIP-2, and defaults to Arc so every existing
+ * caller behaves exactly as it did. Stellar takes the separate path above, because the two
+ * chains disagree about what an address is, what a decimal is and who may sign an owner
+ * call, and pretending otherwise is what produced a vault story that only worked on one of
+ * them.
  */
 export async function provisionAgentVault(
   agentId: string,
-  opts: { fundUsd?: number; caller?: string; ownerAddress?: string } = {},
+  opts: { fundUsd?: number; caller?: string; ownerAddress?: string; chain?: string } = {},
 ) {
   const agent = state.agents.find((a) => a.id === agentId)
   if (!agent) return { error: 'Unknown agent' }
   if (!ownsAgent(agent, opts.caller)) return { error: 'Forbidden: not the agent owner' }
   if (agent.vaultAddress) return { error: 'Agent already has an on-chain policy vault', vaultAddress: agent.vaultAddress }
+
+  const chain = resolveVaultChain(opts.chain)
+  if (!chain) {
+    return { error: `Unknown chain ${opts.chain}: name a registry id or a CAIP-2 id from GET /api/chains.` }
+  }
+  if (chain.ecosystem === 'algorand') {
+    return {
+      error:
+        `No AgentSpendPolicy vault is deployed on ${chain.name} yet; the AVM port is planned and ` +
+        'nothing was deployed.',
+    }
+  }
+  if (chain.ecosystem === 'evm' && chain.id !== ARC_CHAIN.id) {
+    return {
+      error:
+        `Vault deployment on ${chain.name} is planned, not built: the EVM deployer is bound to ` +
+        `${ARC_CHAIN.name}. Nothing was deployed.`,
+    }
+  }
+
+  if (chain.ecosystem === 'stellar') {
+    const opKey = `vault:${agentId}`
+    if (inFlightAgentOps.has(opKey)) return { error: 'A vault is already being provisioned for this agent' }
+    inFlightAgentOps.add(opKey)
+    try {
+      return await provisionStellarVault(agent, chain, opts)
+    } finally {
+      inFlightAgentOps.delete(opKey)
+    }
+  }
 
   // Human owner of the vault = a REAL wallet distinct from the server signer/operator,
   // so freeze/override/withdraw are owner-gated on-chain. Prefer an explicit address,
@@ -161,7 +359,41 @@ export async function getAgentVault(agentId: string) {
   // Through the dispatcher, so an owner reading a Soroban vault's limits gets the vault's
   // real numbers rather than an EVM adapter's error about an address.
   const live = await readVaultPolicy(agent, agent.vaultAddress)
-  return { vaultAddress: agent.vaultAddress, chain: agent.vaultChainCaip2 ?? null, ...(live ?? {}) }
+  const chain = vaultChainFor(agent)
+  const owner = live?.owner ?? agent.vaultOwner ?? null
+  const operator = live?.operator ?? agent.vaultOperator ?? null
+  // Who signs the owner-only calls, DERIVED rather than asserted: they differ, so the
+  // owner's own wallet has to. On Stellar this is always 'wallet', because the contract
+  // refuses owner == operator at construction; on Arc it depends on how the vault was
+  // deployed. A vault whose owner or operator we cannot read is reported as 'server',
+  // which is the same assumption the settlement path has always made for those rows.
+  const ownerSigning: 'server' | 'wallet' =
+    owner && operator && owner.toLowerCase() !== operator.toLowerCase() ? 'wallet' : 'server'
+  return {
+    vaultAddress: agent.vaultAddress,
+    chain: agent.vaultChainCaip2 ?? null,
+    ...(live ?? {}),
+    chainId: chain?.id ?? null,
+    chainName: chain?.name ?? null,
+    ecosystem: chain?.ecosystem ?? null,
+    owner,
+    operator,
+    explorer: live?.explorer ?? agent.vaultExplorer ?? null,
+    ownerSigning,
+    ownerSigningNote:
+      ownerSigning === 'wallet'
+        ? 'Owner and operator are different accounts, so set_policy, set_frozen, set_allowed, ' +
+          'set_session_key_expiry, withdraw and owner_pay must be signed by the owner wallet. ' +
+          'On Stellar, build them with POST /api/stellar/vault/prepare and broadcast them with ' +
+          'POST /api/stellar/vault/submit.'
+        : 'The server signer is also this vault owner, so owner calls are signed here.',
+    /**
+     * Whether the on-chain read answered at all. Absent limits mean the RPC did not answer,
+     * not that the cap is zero, and the two look identical without this. Named `liveRead`
+     * rather than `live` because /api/stellar/vaults already uses `live` for an object.
+     */
+    liveRead: live !== null,
+  }
 }
 
 /**
@@ -201,6 +433,8 @@ export async function grantAgentSessionKey(
   expiresInSeconds?: number
   txHash?: string
   explorerUrl?: string
+  /** On a chain where the owner is not us, the exact call their wallet has to sign. */
+  prepared?: { contract: string; method: string; args: unknown[]; network: string }
 }> {
   const agent = state.agents.find((a) => a.id === agentId)
   if (!agent) return { granted: false, reason: 'Unknown agent' }
@@ -224,18 +458,47 @@ export async function grantAgentSessionKey(
       'transmitted or stored by this server.',
   }
 
-  const res = await policySetSessionExpiry(agent.vaultAddress, expiry)
-  if (res.executed) {
+  // On Soroban the answer is known before any round trip, and saying so costs nothing.
+  // `set_session_key_expiry` calls `owner.require_auth()`, the owner is the human's own
+  // G... account by construction (the contract refuses owner == operator at deploy), and
+  // this server holds only the operator key. So there is no configuration under which we
+  // could sign this, and simulating it would spend a request to be told what the contract
+  // guarantees. Answer ownerGated with the exact call, which is what the wallet then signs.
+  const vaultChain = vaultChainFor(agent)
+  if (vaultChain?.ecosystem === 'stellar') {
+    return {
+      granted: false,
+      ownerGated: true,
+      ...identity,
+      sessionKeyExpiry: expiry,
+      expiresInSeconds: input.revoke ? 0 : Math.max(0, expiry - now),
+      prepared: {
+        contract: agent.vaultAddress,
+        method: 'set_session_key_expiry',
+        args: [String(expiry)],
+        network: vaultChain.caip2,
+      },
+      reason:
+        'This vault is owned by your own Stellar wallet, so only that wallet can grant or revoke ' +
+        'the session key. Nothing was submitted. Build the transaction with POST ' +
+        `/api/stellar/vault/prepare ({ network: "${vaultChain.id}", contract: "${agent.vaultAddress}", ` +
+        `source: <your G... account>, action: "set_session_key_expiry", args: { expiryUnix: ${expiry} } }), ` +
+        'sign it in your wallet, and send it to POST /api/stellar/vault/submit.',
+    }
+  }
+
+  const res = await writeVaultSessionExpiry(agent, agent.vaultAddress, expiry)
+  if (res.ok) {
     pushActivity(agent, input.revoke
-      ? `Session key revoked on-chain (tx ${short(res.txHash)})`
-      : `Session key granted, expires ${new Date(expiry * 1000).toISOString()} (tx ${short(res.txHash)})`)
+      ? `Session key revoked on-chain (tx ${short(res.txHash ?? '')})`
+      : `Session key granted, expires ${new Date(expiry * 1000).toISOString()} (tx ${short(res.txHash ?? '')})`)
     save(state)
     return { granted: true, ...identity, sessionKeyExpiry: expiry, expiresInSeconds: input.revoke ? 0 : Math.max(0, expiry - now), txHash: res.txHash, explorerUrl: res.explorerUrl }
   }
-  if (res.reverted && res.reason === 'NotOwner') {
+  if (res.reason === 'NotOwner') {
     return { granted: false, ownerGated: true, ...identity, sessionKeyExpiry: expiry, reason: 'The vault owner must sign this from their own wallet (owner is not the operator).' }
   }
-  return { granted: false, ...identity, reason: res.reverted ? res.reason : (res.reason ?? 'no signer configured') }
+  return { granted: false, ...identity, reason: res.reason }
 }
 
 export type VaultSyncResult = {

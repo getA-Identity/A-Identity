@@ -23,6 +23,15 @@ export function rateBudget(method: string, pathname: string): { bucket: string; 
   // contract, not a call. Its own bucket, and a tighter one, because a burst of these
   // drains the signer faster than anything else here and each one is permanent.
   if (pathname === '/api/agents/vault') return { bucket: 'vault-deploy', max: 3, windowMs: 60_000 }
+  // The Soroban owner-signing pair. Neither spends our gas: `prepare` signs nothing and
+  // `submit` broadcasts an envelope whose own source account pays the fee. What they DO
+  // spend is our RPC budget, and they are the only endpoints here that will relay bytes a
+  // caller handed us, so they are bounded anyway. Prepare is the looser of the two because
+  // a console builds one per edit; submit is tighter because a signature is a deliberate act
+  // and a burst of them is a retry loop rather than a person. Separate buckets, so a caller
+  // stuck re-signing cannot lock themselves out of building the next call.
+  if (pathname === '/api/stellar/vault/prepare') return { bucket: 'stellar-vault-prepare', max: 20, windowMs: 60_000 }
+  if (pathname === '/api/stellar/vault/submit') return { bucket: 'stellar-vault-submit', max: 10, windowMs: 60_000 }
   // Every other POST that broadcasts from the shared signer.
   //
   // The reason was already written down two lines up, for release and dispute, and then
