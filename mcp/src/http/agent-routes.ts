@@ -391,7 +391,11 @@ export async function handleAgentRoutes(ctx: RouteCtx): Promise<boolean> {
     sendJson(res, 200, r)
     return true
   }
-  if (req.method === 'GET' && url.pathname === '/api/agents/circle-policy') {
+  // The attestation read has a path of its own. It used to answer at /api/agents/circle-policy,
+  // which is the owner-gated CLI plan in guardrail-routes.ts, and this group is dispatched
+  // first: from 2026-09-10 the plan was unreachable and the console's Circle panel was handed
+  // an attestation it could not render. Left ungated, as it shipped.
+  if (req.method === 'GET' && url.pathname === '/api/agents/circle-policy/attestation') {
     const agentId = url.searchParams.get('agentId') ?? ''
     if (!agentId) { sendJson(res, 400, { error: 'agentId required' }); return true }
     const r = getCirclePolicyAttestation(agentId)
