@@ -26,6 +26,12 @@ export type WalletSigner = {
    * signed zero-value self-payment carrying the message in its note (Algorand).
    */
   signMessage: (message: string) => Promise<string>
+  /**
+   * Sign a prepared transaction envelope, when the connector can. Stellar today: the
+   * backend builds the call and simulates it, the wallet signs the XDR, the backend
+   * broadcasts it. Returns the signed XDR. No key ever reaches the server.
+   */
+  signTransaction?: (xdr: string, opts: { networkPassphrase: string }) => Promise<string>
   /** Forget the connection on the connector's side, when it has one. */
   disconnect?: () => Promise<void>
 }

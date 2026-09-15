@@ -3,6 +3,7 @@ import { motion } from 'framer-motion'
 import { ArrowUpRight, ChevronDown, RefreshCw } from 'lucide-react'
 import { useParams } from 'react-router-dom'
 import PageHeader from '../components/PageHeader'
+import StellarVaultsLive from '../components/proof/StellarVaultsLive'
 import SiteFooter from '../components/sections/SiteFooter'
 import ThemeScope from '../components/ThemeScope'
 import { DisplayHeading, Eyebrow, Lede } from '../components/ui/display'
@@ -117,6 +118,8 @@ type OwnRailSettlement = {
   assetSymbol?: string
   tx?: string
   explorerUrl?: string
+  /** True when we paid ourselves. Absent on an older backend, which reads as not internal. */
+  internal?: boolean
 }
 type OwnRailProof = { configured: boolean; assetSymbol: string | null; totalSettlements: number; totalUsd: number; ambiguous: number; recent: OwnRailSettlement[] }
 
@@ -203,7 +206,7 @@ function fromOwnRail(p: OwnRailProof, source: string): Sales {
       tx: s.tx,
       explorerUrl: s.explorerUrl,
       ts: s.ts,
-      internal: false,
+      internal: s.internal ?? false,
     }))
   return { source, configured: p.configured, assetSymbol: p.assetSymbol, count: p.totalSettlements, usd: p.totalUsd, sales }
 }
@@ -359,6 +362,16 @@ export default function ChainProof() {
                   {liveNet && <Chip tone={liveNet.status === 'live' ? 'ok' : 'warn'}>{liveNet.status}</Chip>}
                 </div>
               </div>
+            </motion.div>
+          )}
+
+          {/* The vaults that enforce the policy on this rail, re-read from the ledger. */}
+          {rail === 'stellar' && !failure && (
+            <motion.div {...revealAt(4)} className="mt-8">
+              <StellarVaultsLive
+                heading="Live vault state"
+                caption="Read from the ledger on every load, not copied from a deployment record."
+              />
             </motion.div>
           )}
 

@@ -1,22 +1,39 @@
 import { useCallback, useEffect, useState } from 'react'
 import { ExternalLink, Link2 } from 'lucide-react'
 import { apiFetch, readJson, explainError } from '../../../lib/api'
-import { authHeaders } from '../../../store/auth'
+import { authHeaders, useAuth } from '../../../store/auth'
 import { shortAddress as short } from '../../../lib/utils'
 import { Skeleton } from '../../ui/skeleton'
 import { Stat } from '../../ui/stat'
+import StellarVaultPanel from './StellarVaultPanel'
+import StellarVaultsLive from '../../proof/StellarVaultsLive'
 
 type VaultState = {
   vaultAddress: string | null
+  /** CAIP-2 of the chain the vault lives on, e.g. 'stellar:testnet' or 'eip155:5042002'. */
+  chain?: string | null
+  ecosystem?: 'evm' | 'stellar' | 'algorand'
+  /** Who signs owner-only calls: the server (it owns the vault) or the human's wallet. */
+  ownerSigning?: 'server' | 'wallet'
+  owner?: string
+  operator?: string
   dailyCapUsd?: number
   autoApproveUsd?: number
   frozen?: boolean
+  allowlistEnabled?: boolean
   spentTodayUsd?: number
   balanceUsd?: number
   sessionKeyExpiry?: number
   sessionKeyExpired?: boolean
   explorer?: string
   error?: string
+}
+
+/** The chip on a live vault, from the chain it actually landed on. */
+function liveLabel(v: VaultState): string {
+  if (v.ecosystem === 'stellar' || v.chain?.startsWith('stellar:'))
+    return v.chain === 'stellar:pubnet' ? 'Live on Stellar pubnet' : 'Live on Stellar testnet'
+  return 'Live on Arc'
 }
 
 /** Human-readable "expires in ~Xh Ym" for a UNIX-seconds expiry. */
@@ -30,9 +47,14 @@ function untilLabel(expiryUnix?: number): string {
 }
 
 /**
- * Deploy the agent's policy as a real smart contract on Arc. Once live, address
- * payments settle THROUGH the vault. A payment over the cap or auto-approve line
- * reverts onchain, not just on our server. Programmable money enforcing itself.
+ * Deploy the agent's policy as a real smart contract. Once live, address payments settle
+ * THROUGH the vault: a payment over the cap or auto-approve line reverts onchain, not just
+ * on our server. Programmable money enforcing itself.
+ *
+ * Which chain depends on who is signed in. An EVM or email session deploys on Arc, where
+ * the server owns the vault and signs owner-only calls for it. A Stellar wallet session
+ * deploys a Soroban vault OWNED BY THAT WALLET, so freeze, withdraw and the session-key
+ * deadline are signed in the wallet and this panel only prepares and submits them.
  */
 export default function VaultPanel({ agentId }: { agentId: string }) {
   const [vault, setVault] = useState<VaultState | null>(null)
@@ -42,6 +64,10 @@ export default function VaultPanel({ agentId }: { agentId: string }) {
   const [sessionHours, setSessionHours] = useState('1')
   const [busyKey, setBusyKey] = useState(false)
   const [err, setErr] = useState<string | null>(null)
+  const [note, setNote] = useState<string | null>(null)
+  // A Stellar wallet session deploys the vault on Stellar, where that wallet can own it.
+  // Any other session deploys on Arc, as before.
+  const onStellar = useAuth((s) => s.ecosystem) === 'stellar'
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -63,21 +89,27 @@ export default function VaultPanel({ agentId }: { agentId: string }) {
   const provision = async () => {
     setBusy(true)
     setErr(null)
+    setNote(null)
     try {
       const res = await apiFetch('/api/agents/vault', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', ...authHeaders() },
-        body: JSON.stringify({ agentId, fundUsd: Math.max(0, Number(fund) || 0) }),
+        // On Stellar there is no funding step: the vault is funded by sending USDC to its
+        // contract id afterwards, so no amount is sent here.
+        body: JSON.stringify(
+          onStellar ? { agentId, chain: 'stellar-testnet' } : { agentId, fundUsd: Math.max(0, Number(fund) || 0) },
+        ),
         timeoutMs: 90_000, // deploying a contract + funding it on-chain takes a while
         onWaking: () => setErr('Waking up the backend (free tier)...'),
       })
-      const j = await readJson<{ error?: string }>(res)
+      const j = await readJson<{ error?: string; note?: string }>(res)
       if (!res.ok) {
         setErr(explainError(res.status, j.error))
         return
       }
       if (j.error) setErr(j.error)
       else setErr(null)
+      if (j.note) setNote(j.note)
       await load()
     } catch {
       setErr('Deploying the vault timed out. It runs on-chain and can be slow, give it a moment and try again.')
@@ -109,6 +141,19 @@ export default function VaultPanel({ agentId }: { agentId: string }) {
 
   const has = !!vault?.vaultAddress
   const keyActive = has && (vault?.sessionKeyExpiry ?? 0) > 0 && !vault?.sessionKeyExpired
+  const stellarVault = has && (vault?.ecosystem === 'stellar' || (vault?.chain ?? '').startsWith('stellar:'))
+  // Owner-only calls are signed by the human's wallet, so the controls for them live here
+  // only when the backend says a wallet is the owner and tells us which account it is.
+  const stellarOwnerControls = stellarVault && vault?.ownerSigning === 'wallet' && !!vault?.owner && !!vault?.chain
+  const chainName = has
+    ? stellarVault
+      ? vault?.chain === 'stellar:pubnet'
+        ? 'Stellar pubnet'
+        : 'Stellar testnet'
+      : 'Arc'
+    : onStellar
+      ? 'Stellar testnet'
+      : 'Arc'
 
   return (
     <section className="mt-4 overflow-hidden rounded-2xl border border-accent/25 bg-gradient-to-b from-accent/[0.06] to-card p-6 shadow-[0_1px_3px_rgba(16,24,40,0.04)] sm:p-7">
@@ -121,7 +166,7 @@ export default function VaultPanel({ agentId }: { agentId: string }) {
             <h3 className="text-[15px] font-semibold text-foreground">Onchain Policy Vault</h3>
             {has && (
               <span className="rounded-full bg-accent/10 px-2 py-0.5 text-[10px] font-semibold text-accent">
-                Live on Arc
+                {liveLabel(vault!)}
               </span>
             )}
           </div>
@@ -129,9 +174,9 @@ export default function VaultPanel({ agentId }: { agentId: string }) {
         </div>
       </div>
       <p className="mt-3 mb-4 text-xs text-foreground/55">
-        Deploy this policy as a smart contract on Arc. Once live, the agent's payments to an Arc
-        address settle <b>through the vault</b>. Anything over the cap or auto-approve line
-        reverts onchain, not just on our server. Programmable money enforcing itself.
+        Deploy this policy as a smart contract on {chainName}. Once live, the agent's payments
+        settle <b>through the vault</b>. Anything over the cap or auto-approve line reverts
+        onchain, not just on our server. Programmable money enforcing itself.
       </p>
 
       {loading ? (
@@ -163,87 +208,124 @@ export default function VaultPanel({ agentId }: { agentId: string }) {
             <Stat label="Vault Balance" value={`$${vault!.balanceUsd?.toFixed(2) ?? '0.00'}`} />
           </div>
           {vault!.frozen && (
-            <div className="text-xs font-semibold text-red-600">Frozen onchain. The agent cannot spend.</div>
+            <div className="text-xs font-semibold text-danger">Frozen onchain. The agent cannot spend.</div>
           )}
           <p className="text-[11px] text-foreground/45">
             The contract enforces the same limits set above. Address payments now settle through it.
           </p>
 
+          {/* A Stellar vault whose owner is a wallet is changed BY that wallet: the server
+              prepares the call, the wallet signs it, the server broadcasts it. The Arc path
+              below stays as it was, asking the server to sign. */}
+          {stellarOwnerControls && (
+            <StellarVaultPanel
+              network={vault!.chain!}
+              contract={vault!.vaultAddress!}
+              owner={vault!.owner!}
+              frozen={!!vault!.frozen}
+              sessionKeyExpiry={vault!.sessionKeyExpiry}
+              sessionKeyExpired={vault!.sessionKeyExpired}
+              onDone={load}
+            />
+          )}
+
           {/* Session key: a time-bounded spend authority the human grants the agent. */}
-          <div className="mt-2 rounded-xl border border-border bg-background/40 p-3">
-            <div className="flex items-center justify-between gap-2">
-              <div className="text-xs font-semibold text-foreground/70">Session key (bounded authority)</div>
-              {keyActive ? (
-                <span className="rounded-full bg-emerald-500/10 px-2 py-0.5 text-[10px] font-bold text-emerald-700 dark:text-emerald-300">
-                  active · {untilLabel(vault!.sessionKeyExpiry)}
-                </span>
-              ) : vault!.sessionKeyExpired ? (
-                <span className="rounded-full bg-red-500/10 px-2 py-0.5 text-[10px] font-bold text-red-700 dark:text-red-300">expired</span>
-              ) : (
-                <span className="rounded-full bg-foreground/10 px-2 py-0.5 text-[10px] font-bold text-foreground/50">no time limit</span>
-              )}
+          {!stellarOwnerControls && (
+            <div className="mt-2 rounded-xl border border-border bg-background/40 p-3">
+              <div className="flex items-center justify-between gap-2">
+                <div className="text-xs font-semibold text-foreground/70">Session key (bounded authority)</div>
+                {keyActive ? (
+                  <span className="rounded-full bg-emerald-500/10 px-2 py-0.5 text-[10px] font-bold text-emerald-700 dark:text-emerald-300">
+                    active · {untilLabel(vault!.sessionKeyExpiry)}
+                  </span>
+                ) : vault!.sessionKeyExpired ? (
+                  <span className="rounded-full bg-red-500/10 px-2 py-0.5 text-[10px] font-bold text-red-700 dark:text-red-300">expired</span>
+                ) : (
+                  <span className="rounded-full bg-foreground/10 px-2 py-0.5 text-[10px] font-bold text-foreground/50">no time limit</span>
+                )}
+              </div>
+              <p className="mt-1 text-[11px] text-foreground/45">
+                Grant the agent a spend authority scoped to the cap/allowlist above and a <b>time limit</b>.
+                When it expires, the agent's on-chain payments revert until you extend or re-grant it.
+              </p>
+              <div className="mt-2 flex flex-wrap items-end gap-2">
+                <div>
+                  <label className="text-[10px] font-semibold text-foreground/50">Valid for (hours)</label>
+                  <input
+                    type="number"
+                    min="0"
+                    step="1"
+                    value={sessionHours}
+                    onChange={(e) => setSessionHours(e.target.value)}
+                    className="mt-1 w-24 rounded-lg border border-border bg-card px-3 py-1.5 text-sm outline-none focus:border-accent"
+                  />
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setSessionKey({ durationHours: Math.max(0, Number(sessionHours) || 0) })}
+                  disabled={busyKey}
+                  className="rounded-full bg-accent px-3 py-1.5 text-xs font-semibold text-white hover:scale-[1.02] disabled:opacity-50"
+                >
+                  {busyKey ? 'Signing...' : keyActive ? 'Extend / re-grant' : 'Grant session key'}
+                </button>
+                {keyActive && (
+                  <button
+                    type="button"
+                    onClick={() => setSessionKey({ revoke: true })}
+                    disabled={busyKey}
+                    className="rounded-full border border-red-300 px-3 py-1.5 text-xs font-semibold text-red-600 hover:bg-red-50 disabled:opacity-50 dark:border-red-500/30 dark:hover:bg-red-500/10"
+                  >
+                    Revoke now
+                  </button>
+                )}
+              </div>
             </div>
-            <p className="mt-1 text-[11px] text-foreground/45">
-              Grant the agent a spend authority scoped to the cap/allowlist above and a <b>time limit</b>.
-              When it expires, the agent's on-chain payments revert until you extend or re-grant it.
-            </p>
-            <div className="mt-2 flex flex-wrap items-end gap-2">
+          )}
+        </div>
+      ) : (
+        <div className="space-y-4">
+          <div className="flex flex-wrap items-end gap-3">
+            {/* Arc funds the vault at deploy time from the server signer. Stellar does not:
+                the vault is funded by sending USDC to its contract id afterwards. */}
+            {!onStellar && (
               <div>
-                <label className="text-[10px] font-semibold text-foreground/50">Valid for (hours)</label>
+                <label className="text-[11px] font-semibold text-foreground/50">Fund with (USDC)</label>
                 <input
                   type="number"
                   min="0"
-                  step="1"
-                  value={sessionHours}
-                  onChange={(e) => setSessionHours(e.target.value)}
-                  className="mt-1 w-24 rounded-lg border border-border bg-card px-3 py-1.5 text-sm outline-none focus:border-accent"
+                  step="0.5"
+                  value={fund}
+                  onChange={(e) => setFund(e.target.value)}
+                  className="mt-1 w-28 rounded-xl border border-border bg-card px-3 py-2 text-sm outline-none focus:border-accent"
                 />
               </div>
-              <button
-                type="button"
-                onClick={() => setSessionKey({ durationHours: Math.max(0, Number(sessionHours) || 0) })}
-                disabled={busyKey}
-                className="rounded-full bg-accent px-3 py-1.5 text-xs font-semibold text-white hover:scale-[1.02] disabled:opacity-50"
-              >
-                {busyKey ? 'Signing...' : keyActive ? 'Extend / re-grant' : 'Grant session key'}
-              </button>
-              {keyActive && (
-                <button
-                  type="button"
-                  onClick={() => setSessionKey({ revoke: true })}
-                  disabled={busyKey}
-                  className="rounded-full border border-red-300 px-3 py-1.5 text-xs font-semibold text-red-600 hover:bg-red-50 disabled:opacity-50 dark:border-red-500/30 dark:hover:bg-red-500/10"
-                >
-                  Revoke now
-                </button>
-              )}
-            </div>
+            )}
+            <button
+              type="button"
+              onClick={provision}
+              disabled={busy}
+              className="rounded-full bg-accent px-4 py-2 text-sm font-semibold text-white transition-transform hover:scale-[1.02] disabled:opacity-50"
+            >
+              {busy ? `Deploying on ${chainName}...` : 'Provision on-chain vault'}
+            </button>
           </div>
-        </div>
-      ) : (
-        <div className="flex flex-wrap items-end gap-3">
-          <div>
-            <label className="text-[11px] font-semibold text-foreground/50">Fund with (USDC)</label>
-            <input
-              type="number"
-              min="0"
-              step="0.5"
-              value={fund}
-              onChange={(e) => setFund(e.target.value)}
-              className="mt-1 w-28 rounded-xl border border-border bg-card px-3 py-2 text-sm outline-none focus:border-accent"
-            />
+          {onStellar && (
+            <p className="text-[11px] text-foreground/50">
+              You sign with your Stellar wallet, and it owns the vault. There is no funding step
+              here: send USDC to the vault's contract id once it is deployed.
+            </p>
+          )}
+
+          {/* What the same contract already does on Stellar, before anyone deploys one. */}
+          <div className="pt-1">
+            <div className="text-xs font-semibold text-foreground/70">Live vaults on Stellar</div>
+            <p className="mt-1 text-[11px] text-foreground/45">Read from the ledger on every load.</p>
+            <StellarVaultsLive />
           </div>
-          <button
-            type="button"
-            onClick={provision}
-            disabled={busy}
-            className="rounded-full bg-accent px-4 py-2 text-sm font-semibold text-white transition-transform hover:scale-[1.02] disabled:opacity-50"
-          >
-            {busy ? 'Deploying on Arc...' : 'Provision on-chain vault'}
-          </button>
         </div>
       )}
-      {err && <div className="mt-3 text-xs text-red-600">{err}</div>}
+      {note && <div className="mt-3 text-xs text-foreground/60">{note}</div>}
+      {err && <div className="mt-3 text-xs text-danger">{err}</div>}
     </section>
   )
 }

@@ -47,7 +47,7 @@ const PAYMENTS_TAB = {
   id: 'payments',
   label: 'Payments',
   status: 'live' as const,
-  note: 'The USDC payment policy on Arc. Enforced by this server and by the on-chain vault.',
+  note: 'The USDC payment policy. Enforced by this server and by the on-chain vault on the chain the vault lives on.',
 }
 const AUDIT_TAB = {
   id: 'audit',
