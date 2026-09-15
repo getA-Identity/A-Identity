@@ -11,7 +11,11 @@
     "https://a-identity.xyz/api/x402/algorand/tools/reputation_score",
     "https://a-identity.xyz/api/x402/algorand/tools/risk_check",
     "https://a-identity.xyz/api/x402/algorand/tools/agent_passport",
-    "https://a-identity.xyz/api/x402/algorand/tools/agent_batch_audit"
+    "https://a-identity.xyz/api/x402/algorand/tools/agent_batch_audit",
+    "https://a-identity.xyz/api/x402/stellar/tools/verify_agent",
+    "https://a-identity.xyz/api/x402/stellar/tools/reputation_score",
+    "https://a-identity.xyz/api/x402/stellar/tools/risk_check",
+    "https://a-identity.xyz/api/x402/stellar/tools/agent_passport"
   ],
   "mcp": "npx -y @a-identity/trust-mcp",
   "status": "https://a-identity.xyz/api/x402/algorand/status",
