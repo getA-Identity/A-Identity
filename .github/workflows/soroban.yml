@@ -19,6 +19,14 @@ on:
     paths:
       - 'soroban/**'
       - '.github/workflows/soroban.yml'
+  # The advisory scan on a clock as well as on a commit. A RustSec or GitHub advisory against
+  # soroban-sdk is published whether or not anyone touches the contract, and a deployed wasm
+  # cannot be patched in place, so the day to learn about one is the day it appears. On the
+  # schedule only the `advisories` job runs: the build, the tests and the negative controls
+  # check things that cannot change without a commit.
+  schedule:
+    - cron: '41 5 * * *'
+  workflow_dispatch:
 
 defaults:
   run:
@@ -26,6 +34,7 @@ defaults:
 
 jobs:
   contract:
+    if: github.event_name != 'schedule'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -148,3 +157,32 @@ jobs:
 
       - name: Negative controls (the suite must go red without each guard)
         run: node audit/run-negative-controls.mjs
+
+  # Both advisory sources, against every committed Rust lockfile, daily and by hand. The fuzz
+  # crate is a workspace of its own with a lock of its own, and nothing else ever read it.
+  advisories:
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: soroban
+
+      - name: Advisory audit (RustSec)
+        run: |
+          cargo install cargo-audit --locked || true
+          cargo audit
+          cargo audit --file contracts/agent-spend-policy/fuzz/Cargo.lock
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Advisory audit (GitHub Security Advisories)
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          node audit/ghsa-check.mjs
+          node audit/ghsa-check.mjs contracts/agent-spend-policy/fuzz/Cargo.lock
