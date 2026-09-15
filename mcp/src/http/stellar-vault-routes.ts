@@ -93,6 +93,7 @@ async function observe(chain: ChainDescriptor, contract: string): Promise<VaultO
       ledger: ttl.ledger,
       checkedAt,
       liveUntilLedger: ttl.liveUntilLedger,
+      archived: ttl.archived,
       state: {
         owner: state.owner,
         operator: state.operator,
@@ -247,6 +248,7 @@ export async function handleStellarVaultRoutes(ctx: RouteCtx): Promise<boolean> 
       expiresAtLedger: built.expiresAtLedger,
       validUntil: built.validUntil,
       feeStroops: built.feeStroops,
+      archivedEntries: built.archivedEntries,
       note:
         `This transaction is NOT signed. Its source account ${source} pays the ` +
         `${built.feeStroops} stroop fee, not this server, and this server never holds your key. ` +

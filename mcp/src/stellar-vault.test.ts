@@ -8,6 +8,7 @@ import {
   LEDGER_CLOSE_SECONDS,
   OWNER_ACTIONS,
   authorizeOwnerCall,
+  chooseStellarVaultOwner,
   isOwnerAction,
   ledgerTtl,
   ownerCallPlan,
@@ -313,4 +314,50 @@ test('the network label comes from the descriptor, so the two chains cannot be s
   const obs = { reachable: false as const, checkedAt: '2026-01-01T00:00:00.000Z', reason: 'x' }
   assert.equal(vaultReport(pubnet, VAULT, 'u', obs).network, 'pubnet')
   assert.equal(vaultReport(stellar, VAULT, 'u', obs).network, 'testnet')
+})
+
+test('an instance whose TTL has lapsed is reported ARCHIVED, never as a countdown that ended long ago', () => {
+  // The RPC returns an archived entry with liveUntilLedgerSeq 0. That 0 used to reach
+  // ledgerTtl, and the public vault view printed an archival date at the dawn of the ledger.
+  const lapsed = vaultReport(stellar, VAULT, 'https://example.test/contract', {
+    reachable: true,
+    ledger: 100,
+    checkedAt: '2026-01-01T00:00:00.000Z',
+    state: state(),
+    liveUntilLedger: 50,
+  })
+  assert.equal(lapsed.ttl, undefined)
+  assert.match(lapsed.archived ?? '', /ARCHIVED/)
+  const flagged = vaultReport(stellar, VAULT, 'https://example.test/contract', {
+    reachable: true,
+    ledger: 100,
+    checkedAt: '2026-01-01T00:00:00.000Z',
+    state: state(),
+    liveUntilLedger: null,
+    archived: true,
+  })
+  assert.equal(flagged.ttl, undefined)
+  assert.match(flagged.archived ?? '', /ARCHIVED/)
+})
+
+test('a new vault owner is never guessed: explicit, then the wallet session, then the one linked wallet', () => {
+  const explicit = Keypair.random().publicKey()
+  const session = Keypair.random().publicKey()
+  const linkedA = Keypair.random().publicKey()
+  const linkedB = Keypair.random().publicKey()
+  assert.deepEqual(chooseStellarVaultOwner({ ownerAddress: explicit, caller: session, linkedWallets: [linkedA] }), { ok: true, owner: explicit })
+  assert.deepEqual(chooseStellarVaultOwner({ caller: session, linkedWallets: [linkedA, linkedB] }), { ok: true, owner: session })
+  assert.deepEqual(chooseStellarVaultOwner({ caller: 'me@example.test', linkedWallets: [linkedA] }), { ok: true, owner: linkedA })
+  // REFUSAL: several linked wallets and none named. This used to take the OLDEST link, and
+  // the owner is permanent, so a guess here is a vault the caller may never control.
+  const several = chooseStellarVaultOwner({ caller: 'me@example.test', linkedWallets: [linkedA, linkedB] })
+  assert.equal(several.ok, false)
+  if (!several.ok) {
+    assert.deepEqual(several.linkedWallets, [linkedA, linkedB])
+    assert.match(several.reason, /ownerAddress/)
+  }
+  // REFUSAL: a malformed ownerAddress is refused, not quietly replaced by another account.
+  assert.equal(chooseStellarVaultOwner({ ownerAddress: explicit.slice(0, -1), caller: session, linkedWallets: [linkedA] }).ok, false)
+  // REFUSAL: nothing to go on at all.
+  assert.equal(chooseStellarVaultOwner({ caller: 'me@example.test', linkedWallets: [] }).ok, false)
 })

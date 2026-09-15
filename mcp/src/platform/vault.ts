@@ -13,6 +13,7 @@ import {
 import { ARC_CHAIN, CHAINS, addressUrl, isAccountId } from '../chains/index.js'
 import type { ChainDescriptor } from '../chains/types.js'
 import { createAgentWallet, readCircleWallet } from '../circle-agent.js'
+import { chooseStellarVaultOwner } from '../stellar-vault.js'
 import { previewTreasury, startAutoYield, type TreasuryPreview, type TreasuryExecution } from '../treasury.js'
 
 // ── on-chain policy vault ────────────────────────────────────────────────────────
@@ -75,21 +76,18 @@ async function provisionStellarVault(
     }
   }
 
-  const linked = callerStellarWallets(opts.caller)
-  const owner =
-    isAccountId((opts.ownerAddress ?? '').trim())
-      ? (opts.ownerAddress as string).trim()
-      : isAccountId((opts.caller ?? '').trim())
-        ? (opts.caller as string).trim()
-        : linked[0]
-  if (!owner) {
-    return {
-      error:
-        'This vault needs a Stellar account (G...) as its human owner: it is the account ' +
-        'that freezes, withdraws and overrides, and it must not be the server. Sign in with a ' +
-        'Stellar wallet, link one to your account, or pass ownerAddress. Nothing was deployed.',
-    }
+  // Permanent once deployed (the contract has no set_owner), so the rules live in one pure,
+  // tested function instead of a ternary that quietly took the oldest linked wallet and let a
+  // malformed ownerAddress fall through to some other account.
+  const choice = chooseStellarVaultOwner({
+    ownerAddress: opts.ownerAddress,
+    caller: opts.caller,
+    linkedWallets: callerStellarWallets(opts.caller),
+  })
+  if (!choice.ok) {
+    return { error: choice.reason, ...(choice.linkedWallets ? { linkedWallets: choice.linkedWallets } : {}) }
   }
+  const owner = choice.owner
 
   const operator = await stellarOperatorAddress(chain)
   if (!operator) {

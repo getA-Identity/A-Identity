@@ -298,6 +298,58 @@ export function authorizeCallerAndVault(input: Omit<AuthorizeInput, 'liveOwner'>
   return { ok: true }
 }
 
+// ── who owns a new vault ─────────────────────────────────────────────────────────
+
+export type VaultOwnerChoice = { ok: true; owner: string } | { ok: false; reason: string; linkedWallets?: string[] }
+
+/**
+ * Which Stellar account becomes a new vault's OWNER, or why none may be picked.
+ *
+ * The choice is permanent: AgentSpendPolicy has no set_owner and no upgrade, so a wrong owner
+ * is a vault the caller cannot withdraw from, ever. That is why nothing here is guessed.
+ *
+ *  1. An explicit `ownerAddress` wins, and a malformed one is refused rather than replaced.
+ *     Falling through to another account because of a typo would hand the vault to an
+ *     account the caller did not name.
+ *  2. A wallet session's own G... account, which the caller has just proven.
+ *  3. The caller's ONE linked Stellar wallet. With several, the caller has to say which: this
+ *     used to take the first in the list, the OLDEST link, silently and for good.
+ */
+export function chooseStellarVaultOwner(input: { ownerAddress?: string; caller?: string; linkedWallets: string[] }): VaultOwnerChoice {
+  const explicit = (input.ownerAddress ?? '').trim()
+  if (explicit) {
+    return isAccountId(explicit)
+      ? { ok: true, owner: explicit }
+      : {
+          ok: false,
+          reason:
+            `ownerAddress ${explicit} is not a Stellar account id (G... StrKey). A vault owner is ` +
+            'permanent, so no other account is picked in its place. Nothing was deployed.',
+        }
+  }
+  const session = (input.caller ?? '').trim()
+  if (isAccountId(session)) return { ok: true, owner: session }
+  const linked = [...new Set(input.linkedWallets.map((w) => w.trim()).filter((w) => isAccountId(w)))]
+  if (linked.length === 1) return { ok: true, owner: linked[0] }
+  if (linked.length > 1) {
+    return {
+      ok: false,
+      linkedWallets: linked,
+      reason:
+        `This account has ${linked.length} linked Stellar wallets, and a vault owner is permanent ` +
+        '(the contract has no set_owner), so one is not picked for you. Send ownerAddress naming ' +
+        'the wallet that should own this vault. Nothing was deployed.',
+    }
+  }
+  return {
+    ok: false,
+    reason:
+      'This vault needs a Stellar account (G...) as its human owner: it is the account ' +
+      'that freezes, withdraws and overrides, and it must not be the server. Sign in with a ' +
+      'Stellar wallet, link one to your account, or pass ownerAddress. Nothing was deployed.',
+  }
+}
+
 // ── the public view ──────────────────────────────────────────────────────────────
 
 /**
@@ -350,7 +402,16 @@ export type VaultStateView = {
 /** What a live read of one vault found, or why it found nothing. */
 export type VaultObservation =
   | { reachable: false; reason: string; checkedAt: string }
-  | { reachable: true; ledger: number; checkedAt: string; state: VaultStateView; liveUntilLedger: number | null }
+  | {
+      reachable: true
+      ledger: number
+      checkedAt: string
+      state: VaultStateView
+      /** Null when the instance entry is not live for the next ledger. */
+      liveUntilLedger: number | null
+      /** True when the entry came back but its TTL had lapsed, as opposed to no entry at all. */
+      archived?: boolean
+    }
 
 export type StellarVaultReport = {
   chain: string
@@ -391,16 +452,24 @@ export function vaultReport(
   if (!obs.reachable) {
     return { ...base, live: { reachable: false, checkedAt: obs.checkedAt, reason: obs.reason } }
   }
+  // Live means live for the next ledger. A liveUntilLedger at or behind the ledger it was read
+  // at is a lapsed entry, and handing it to ledgerTtl would print a countdown that ended long
+  // ago as if it were still running: the RPC reports an archived entry's TTL as ledger 0.
+  const live = obs.liveUntilLedger !== null && obs.liveUntilLedger > obs.ledger
   return {
     ...base,
     live: { reachable: true, ledger: obs.ledger, checkedAt: obs.checkedAt },
     state: obs.state,
-    ...(obs.liveUntilLedger !== null
-      ? { ttl: ledgerTtl(obs.liveUntilLedger, obs.ledger, nowMs) }
+    ...(live
+      ? { ttl: ledgerTtl(obs.liveUntilLedger as number, obs.ledger, nowMs) }
       : {
           archived:
-            'no live instance entry: either this vault has already archived and needs a restoring ' +
-            'footprint on its next call, or this address is not deployed on this network.',
+            obs.archived || obs.liveUntilLedger !== null
+              ? 'the instance entry is ARCHIVED: its TTL lapsed, so the next call to this vault has to ' +
+                'restore it, and since protocol 23 that restore happens inside the call with the rent ' +
+                'folded into its fee. Nothing the vault holds is lost.'
+              : 'no live instance entry: either this vault has already archived and needs a restoring ' +
+                'footprint on its next call, or this address is not deployed on this network.',
         }),
   }
 }
