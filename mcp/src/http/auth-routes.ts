@@ -10,33 +10,59 @@ import { normalizeWalletAddress, shortAddress, signInMessage, verifyWalletProof,
 import { clearSessionCookie, readBody, sendJson, sessionCookie, type RouteCtx } from './shared.js'
 
 /**
- * Short-lived sign-in nonces, keyed by the canonical wallet address (EVM lowercased,
- * Stellar and Algorand as given). In-memory + a 10-minute TTL: a nonce expires if unused
- * and stale entries can't pile up. Correct for our single backend instance; a scaled
- * deploy would move these (and the KYA challenges in platform.ts, and the x402 nonces)
- * to shared storage.
+ * Short-lived sign-in nonces, keyed by the NONCE itself, with the canonical wallet address
+ * (EVM lowercased, Stellar and Algorand as given) and the purpose stored beside it.
+ * In-memory + a 10-minute TTL: a nonce expires if unused and stale entries can't pile up.
+ * Correct for our single backend instance; a scaled deploy would move these (and the KYA
+ * challenges in platform.ts, and the x402 nonces) to shared storage.
+ *
+ * Keyed by the nonce rather than by the address, and that is a fix. The address is public,
+ * so a store keyed by it let anyone ask for a nonce for somebody else's wallet and overwrite
+ * the one that person was in the middle of signing: their signature was then refused as
+ * stale, every time, for as long as the stranger kept asking. A nonce is 128 random bits
+ * that only its requester ever sees, so nobody can reach an entry they were not handed.
  *
  * The same nonce store serves two purposes, told apart by `purpose`: a fresh sign-in, and
  * linking a second wallet to an account that is already signed in. The message a wallet
  * signs says which, so a signature minted for one cannot be replayed as the other.
  */
 const NONCE_TTL_MS = 10 * 60 * 1000
-const nonces = new Map<string, { nonce: string; exp: number; purpose: 'sign in' | 'link' }>()
+/**
+ * A ceiling on pending nonces, so a flood of requests cannot grow this map without bound.
+ * Expired entries are swept first; only a store still full after that drops its oldest
+ * entry, which takes far more traffic than the per-IP auth budget allows from one address.
+ */
+const MAX_PENDING_NONCES = 10_000
+const nonces = new Map<string, { address: string; exp: number; purpose: 'sign in' | 'link' }>()
+
+/** The nonce a sign-in message carries, read from the last line signInMessage writes. */
+function nonceIn(message: string): string | undefined {
+  return /\nNonce: ([0-9a-f]{32})$/.exec(message)?.[1]
+}
 
 /** Mint a nonce and the message to sign for an address, on whatever ecosystem it belongs to. */
 export function issueNonce(address: string, purpose: 'sign in' | 'link' = 'sign in'): { ecosystem: WalletEcosystem; address: string; message: string } | null {
   const ecosystem = walletEcosystemOf(address)
   if (!ecosystem) return null
   const addr = normalizeWalletAddress(address, ecosystem)
+  const now = Date.now()
+  if (nonces.size >= MAX_PENDING_NONCES) {
+    for (const [k, v] of nonces) if (v.exp <= now) nonces.delete(k)
+  }
+  if (nonces.size >= MAX_PENDING_NONCES) {
+    const oldest = nonces.keys().next().value
+    if (oldest !== undefined) nonces.delete(oldest)
+  }
   const nonce = randomBytes(16).toString('hex')
-  nonces.set(`${purpose}:${addr}`, { nonce, exp: Date.now() + NONCE_TTL_MS, purpose })
+  nonces.set(nonce, { address: addr, exp: now + NONCE_TTL_MS, purpose })
   return { ecosystem, address: addr, message: signInMessage(addr, nonce, purpose) }
 }
 
 /**
  * Consume a nonce and verify the signature. Returns the canonical address and ecosystem
- * on success, or the reason for refusal. The nonce is deleted on success and on a stale
- * read, never on a bad signature, so a mistyped wallet prompt can be retried once.
+ * on success, or the reason for refusal. The nonce must have been issued for this address
+ * and this purpose. It is deleted on success and on a stale read, never on a bad signature,
+ * so a mistyped wallet prompt can be retried until the nonce expires.
  */
 export async function consumeWalletProof(
   body: { address?: string; message?: string; signature?: string },
@@ -46,14 +72,15 @@ export async function consumeWalletProof(
   const ecosystem = walletEcosystemOf(body.address)
   if (!ecosystem) return { ok: false, status: 400, error: 'address is not an EVM, Stellar or Algorand address' }
   const addr = normalizeWalletAddress(body.address, ecosystem)
-  const key = `${purpose}:${addr}`
-  const entry = nonces.get(key)
-  if (entry && entry.exp <= Date.now()) nonces.delete(key)
-  const nonce = entry && entry.exp > Date.now() ? entry.nonce : undefined
-  if (!nonce || body.message !== signInMessage(addr, nonce, purpose)) return { ok: false, status: 401, error: 'stale or missing nonce; request a new one' }
+  const nonce = nonceIn(body.message)
+  const entry = nonce ? nonces.get(nonce) : undefined
+  const now = Date.now()
+  if (nonce && entry && entry.exp <= now) nonces.delete(nonce)
+  const live = Boolean(nonce && entry && entry.exp > now && entry.address === addr && entry.purpose === purpose)
+  if (!live || body.message !== signInMessage(addr, nonce as string, purpose)) return { ok: false, status: 401, error: 'stale or missing nonce; request a new one' }
   const ok = await verifyWalletProof({ ecosystem, address: addr, message: body.message, signature: String(body.signature) })
   if (!ok) return { ok: false, status: 401, error: 'signature does not match address' }
-  nonces.delete(key)
+  nonces.delete(nonce as string)
   return { ok: true, ecosystem, address: addr }
 }
 
