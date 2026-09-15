@@ -127,7 +127,17 @@ export const CHAINS: ChainDescriptor[] = [
     cctpDomain: 27,
     nativeCurrency: { name: 'Lumen', symbol: 'XLM', decimals: 7 },
     usdcDecimals: 7, // Stellar assets use 7 decimals, not the 6 every EVM USDC uses
-    rpcUrls: ['https://mainnet.sorobanrpc.com'],
+    // Primary first, then two independent public fallbacks, all three probed live on
+    // 2026-09-15 with getLatestLedger (ledger 64431596, protocol 27, answers within one
+    // ledger of each other). The Stellar client fails over READS across this list and never
+    // a sendTransaction: a resubmitted envelope answers DUPLICATE on the second host, which
+    // the rail would read as a decided refusal of a payment that is in fact in flight.
+    rpcUrls: [
+      'https://mainnet.sorobanrpc.com',
+      'https://soroban-rpc.mainnet.stellar.gateway.fm',
+      'https://rpc.ankr.com/stellar_soroban',
+    ],
+    horizonUrls: ['https://horizon.stellar.org'],
     explorer: 'https://stellar.expert/explorer/public',
     contracts: {
       // The AgentSpendPolicy vault, deployed 2026-08-24. wasm sha256
@@ -136,6 +146,23 @@ export const CHAINS: ChainDescriptor[] = [
       // same target. Its deploy pair and the payments made under its policy are recorded
       // in soroban/releases/pubnet-v0.1.0.json.
       spendVault: 'CB5LYXFKKTKDDSCM6JO6C4GNRQUFBGSLYDET6Q56JNFJQSMBKH6KWSYP',
+      // The code entry behind it, live on pubnet until ledger 66177015 (read 2026-09-15).
+      // A new per-agent vault instantiates against this hash for about 0.1 XLM instead of
+      // re-uploading the 11,625-byte wasm for about 12 XLM.
+      spendVaultWasmHash: '155eb31c1867254eacbf1b7a4755164d15cc6b6f939644705ab6b8df61579239',
+      // TrionLabs Stellar 8004, third party, read-only for us. Identity, Reputation and
+      // Validation instance entries all read back present on 2026-09-15 and total_agents
+      // simulated to 68. A register_with_uri simulation on 2026-09-09 reported the instance
+      // and code entries ARCHIVED with a 36.6 XLM restore in the footprint, which is why our
+      // own mainnet registration is not done: mcp/scripts/stellar-8004-check.mjs re-reads
+      // that state rather than this comment.
+      stellar8004: {
+        identity: 'CBGPDCJIHQ32G42BE7F2CIT3YW6XRN5ED6GQJHCRZSNAYH6TGMCL6X35',
+        reputation: 'CBOIAIMMWAXI57OATLX6BWVDQLCC4YU55HV6MZXFRP6CBSGAMXSTEPPA',
+        validation: 'CBT6WWEVEPT2UFGFGVJJ7ELYGLQAGRYSVGDTGMCJTRWXOH27MWUO7UJG',
+        verified:
+          'Ids from trionlabs/stellar-8004 webapp/packages/sdk/src/core/config.ts (2026-09-08), each instance entry read back with getLedgerEntries on 2026-09-15, and the Identity registry answered total_agents 68 by simulation the same day. Upgradeable behind a 3-day timelock and owned by Trion, so anything read here is labeled third-party and live, never ours and never immutable.',
+      },
       //
       // No `usdc` either, and that is not an oversight. On Stellar USDC is a SEP-41
       // Stellar Asset Contract, whose id is DERIVED per network from the classic asset
@@ -157,6 +184,7 @@ export const CHAINS: ChainDescriptor[] = [
       {
         symbol: 'USDC',
         address: 'CCW67TSZV3SSS2HXMBQ5JFGCKJNXKZM7UQUWUZPUTHXSTZLEO7SJMI75',
+        classicAsset: 'USDC:GA5ZSEJYB37JRC5AVCIA5MOP4RHTM335X2KGX3IHOJAPP5RE34K4KZVN',
         decimals: 7,
         authorization: 'soroban-auth',
         // No domainVersionCandidates here either, for the reason the testnet entry gives:
@@ -185,8 +213,9 @@ export const CHAINS: ChainDescriptor[] = [
         'No native ERC-8004: that standard is EVM-only and nothing bridges it here. A Soroban ' +
         'agent registry DOES exist on pubnet, TrionLabs Stellar-8004 (MIT), Identity ' +
         'CBGPDCJIHQ32G42BE7F2CIT3YW6XRN5ED6GQJHCRZSNAYH6TGMCL6X35, read live 2026-08-26: ' +
-        'name "Agent Registry", symbol AGENT, version 0.1.0, total_agents 68. It is NOT a bridge ' +
-        'and we do not resolve against it. Its exported interface contains no function binding an ' +
+        'name "Agent Registry", symbol AGENT, version 0.1.0, total_agents 68. It is NOT a bridge. ' +
+        'Since 2026-09-15 we READ it, read-only and labeled third-party (contracts.stellar8004), ' +
+        'and we still do not treat it as our identity anchor. Its exported interface contains no function binding an ' +
         'agent to a foreign-chain identity, no CAIP-10 and no chain id; the only places a ' +
         'cross-chain reference could live are the free-form agent_uri and set_metadata, which are ' +
         'assertions by whoever holds the key and are checked by nothing. It mints its own ids in ' +
@@ -226,7 +255,11 @@ export const CHAINS: ChainDescriptor[] = [
     cctpDomain: 27,
     nativeCurrency: { name: 'Lumen', symbol: 'XLM', decimals: 7 },
     usdcDecimals: 7,
-    rpcUrls: ['https://soroban-testnet.stellar.org'],
+    // SDF's testnet RPC first, one independent public fallback second, both probed live on
+    // 2026-09-15 (ledger 4680843, protocol 28). Reads fail over across the list; a
+    // sendTransaction never does, for the reason the pubnet entry gives.
+    rpcUrls: ['https://soroban-testnet.stellar.org', 'https://soroban-rpc.testnet.stellar.gateway.fm'],
+    horizonUrls: ['https://horizon-testnet.stellar.org'],
     explorer: 'https://stellar.expert/explorer/testnet',
     faucet: 'https://friendbot.stellar.org',
     contracts: {
@@ -236,6 +269,21 @@ export const CHAINS: ChainDescriptor[] = [
       // own policy an under-limit payment settled (3da74634...) and an over-limit one was
       // refused on chain with the contract's typed DailyCapExceeded (12df418f...).
       spendVault: 'CAIL6ECRAB5FUURQ54R7OTZPXRRCDO2S353YT6N6UZUWIBDG2ZOEB4UI',
+      // The same code entry as pubnet, live on testnet until ledger 6739602 (read
+      // 2026-09-15). Per-agent vaults instantiate against it; testnet resets would take
+      // the code entry with them, which is why the adapter reads its TTL before deploying.
+      spendVaultWasmHash: '155eb31c1867254eacbf1b7a4755164d15cc6b6f939644705ab6b8df61579239',
+      // TrionLabs Stellar 8004 on testnet, third party, read-only for us. Our own
+      // registration is agent 25 here (tx 6070127842948b6aa26103e270f8e38b670f8c92916edbc691f3cd5f10754b07,
+      // 2026-09-08), owner GBMF7MDH...ZZ3, and find_owner(25) read back that owner on
+      // 2026-09-15 with total_agents 26.
+      stellar8004: {
+        identity: 'CDE3K4COIAGWNNJQQLL26SYI3KBJF5FUDHXG5FA6GYDJCG7T5V7FIWZH',
+        reputation: 'CBZEAGIEI3HXMDRLF44KLQJQQOH6LCYWWSGJVSYQYQO2HQ6DDGZ7HT55',
+        validation: 'CC5USZRO26MOIAVNYTTJDS63C2OBBLREOAOET4CPF2EZWO3YFKLMO3SL',
+        verified:
+          'Ids from trionlabs/stellar-8004 config.ts (2026-09-08); the Identity interface was fetched from the live testnet contract with `stellar contract info interface`, each instance entry read back with getLedgerEntries on 2026-09-15, and find_owner(25) simulated to our registration key the same day. Testnet resets periodically, so an id here is a rehearsal, never a record.',
+      },
       cctp: {
         tokenMessenger: 'CDNG7HXAPBWICI2E3AUBP3YZWZELJLYSB6F5CC7WLDTLTHVM74SLRTHP',
         messageTransmitter: 'CBJ6MTCKKZG73PMDZCJMSFRD7DQEMI4FKDH7CGDSV4W6FHCRBCQAVVJY',
@@ -250,6 +298,7 @@ export const CHAINS: ChainDescriptor[] = [
       {
         symbol: 'USDC',
         address: 'CBIELTK6YBZJU5UP2WWQEUCYKLPU6AUNZ2BQ4WWFEIE3USCIHMXQDAMA',
+        classicAsset: 'USDC:GBBD47IF6LWK7P7MDEVSCWR7DPUWV3NY3DTQEVFL4NAT4AQH3ZLLFLA5',
         decimals: 7,
         authorization: 'soroban-auth',
         // No domainVersionCandidates, and that absence is asserted by registry.test.ts
@@ -277,8 +326,9 @@ export const CHAINS: ChainDescriptor[] = [
       note:
         'Same as pubnet: no ERC-8004 here, so KYA cannot be anchored and the passport is bridged ' +
         'rather than native. Stellar-8004 has its own testnet deployment, a different contract by ' +
-        'a different deployer, Identity CDE3K4COIAGWNNJQQLL26SYI3KBJF5FUDHXG5FA6GYDJCG7T5V7FIWZH. ' +
-        'Same caveat as pubnet: we do not resolve against it and it binds no foreign identity.',
+        'a different deployer, Identity CDE3K4COIAGWNNJQQLL26SYI3KBJF5FUDHXG5FA6GYDJCG7T5V7FIWZH, ' +
+        'where A-Identity is agent 25 since 2026-09-08. Same caveat as pubnet: we read it, ' +
+        'labeled third-party, and it binds no foreign identity.',
     },
     payment: {
       x402: true,

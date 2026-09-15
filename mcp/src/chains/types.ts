@@ -64,6 +64,23 @@ export interface ChainContracts {
    * which page and when. Absent means no CCTP path is wired for the chain here.
    */
   cctp?: { tokenMessenger: string; messageTransmitter: string; forwarder?: string; verified: string }
+  /**
+   * The sha256 of the AgentSpendPolicy wasm whose CODE ENTRY is already uploaded on this
+   * chain (Stellar only). A new vault for an agent is instantiated against this hash rather
+   * than re-uploading 11 KB of code, which on pubnet is the difference between a 0.1 XLM
+   * deploy and a 12 XLM one. Recorded here because the hash is what `soroban/releases/`
+   * vouches for and what `stellar contract fetch` reproduces; the code entry's own TTL is
+   * read live before any deploy, never assumed from this field.
+   */
+  spendVaultWasmHash?: string
+  /**
+   * TrionLabs Stellar 8004, a THIRD-PARTY port of the ERC-8004 registries to Soroban.
+   * Present only where the instances were read live. Read-only in this codebase, labeled
+   * third-party wherever it is shown, and never treated as our identity anchor: it mints
+   * its own u32 ids in its own space, binds no foreign-chain identity, and is upgradeable
+   * behind a timelock by its owner. `verified` says what was read and when.
+   */
+  stellar8004?: { identity: string; reputation?: string; validation?: string; verified: string }
 }
 
 /**
@@ -124,6 +141,13 @@ export interface SettlementToken {
    */
   settlementFeeUsd?: number
   feeBasis?: string
+  /**
+   * The classic Stellar asset a SAC wraps, as `CODE:ISSUER` (Stellar only). A SAC id is a
+   * derivation of exactly this plus the network passphrase, so recording it next to the
+   * derived id keeps the derivation checkable, and it is what Horizon's order-book and
+   * trustline endpoints are addressed by.
+   */
+  classicAsset?: string
 }
 
 /**
@@ -162,6 +186,12 @@ export interface ChainDescriptor {
 
   /** RPC endpoints, primary first. A fallback transport is built over all of them. */
   rpcUrls: string[]
+  /**
+   * Horizon endpoints (Stellar only), primary first. Horizon is the classic-side API:
+   * order books, trustlines and fee_charged live there and not on Soroban RPC. Read-only
+   * use in this codebase, and every write still goes through Soroban RPC.
+   */
+  horizonUrls?: string[]
   wsUrl?: string
   explorer: string | null
   faucet?: string

@@ -135,7 +135,7 @@ export const CHAINS: readonly Chain[] = [
       "identity": {
         "standard": "Soroban registry + SEP-10",
         "erc8004Native": false,
-        "note": "No native ERC-8004: that standard is EVM-only and nothing bridges it here. A Soroban agent registry DOES exist on pubnet, TrionLabs Stellar-8004 (MIT), Identity CBGPDCJIHQ32G42BE7F2CIT3YW6XRN5ED6GQJHCRZSNAYH6TGMCL6X35, read live 2026-08-26: name \"Agent Registry\", symbol AGENT, version 0.1.0, total_agents 68. It is NOT a bridge and we do not resolve against it. Its exported interface contains no function binding an agent to a foreign-chain identity, no CAIP-10 and no chain id; the only places a cross-chain reference could live are the free-form agent_uri and set_metadata, which are assertions by whoever holds the key and are checked by nothing. It mints its own ids in its own space starting at 0 (owner_of(0) resolves), so an id there and an ERC-8004 token id are different identities that happen to be integers. Two further differences worth knowing before wiring anything: it is UPGRADEABLE behind a 51,840-ledger timelock, which ours deliberately is not, and stellar.expert reports its source as unverified."
+        "note": "No native ERC-8004: that standard is EVM-only and nothing bridges it here. A Soroban agent registry DOES exist on pubnet, TrionLabs Stellar-8004 (MIT), Identity CBGPDCJIHQ32G42BE7F2CIT3YW6XRN5ED6GQJHCRZSNAYH6TGMCL6X35, read live 2026-08-26: name \"Agent Registry\", symbol AGENT, version 0.1.0, total_agents 68. It is NOT a bridge. Since 2026-09-15 we READ it, read-only and labeled third-party (contracts.stellar8004), and we still do not treat it as our identity anchor. Its exported interface contains no function binding an agent to a foreign-chain identity, no CAIP-10 and no chain id; the only places a cross-chain reference could live are the free-form agent_uri and set_metadata, which are assertions by whoever holds the key and are checked by nothing. It mints its own ids in its own space starting at 0 (owner_of(0) resolves), so an id there and an ERC-8004 token id are different identities that happen to be integers. Two further differences worth knowing before wiring anything: it is UPGRADEABLE behind a 51,840-ledger timelock, which ours deliberately is not, and stellar.expert reports its source as unverified."
       }
     },
     "identity": "Soroban registry + SEP-10",
@@ -435,7 +435,7 @@ export const CHAINS: readonly Chain[] = [
       "identity": {
         "standard": "Soroban registry + SEP-10",
         "erc8004Native": false,
-        "note": "Same as pubnet: no ERC-8004 here, so KYA cannot be anchored and the passport is bridged rather than native. Stellar-8004 has its own testnet deployment, a different contract by a different deployer, Identity CDE3K4COIAGWNNJQQLL26SYI3KBJF5FUDHXG5FA6GYDJCG7T5V7FIWZH. Same caveat as pubnet: we do not resolve against it and it binds no foreign identity."
+        "note": "Same as pubnet: no ERC-8004 here, so KYA cannot be anchored and the passport is bridged rather than native. Stellar-8004 has its own testnet deployment, a different contract by a different deployer, Identity CDE3K4COIAGWNNJQQLL26SYI3KBJF5FUDHXG5FA6GYDJCG7T5V7FIWZH, where A-Identity is agent 25 since 2026-09-08. Same caveat as pubnet: we read it, labeled third-party, and it binds no foreign identity."
       }
     },
     "identity": "Soroban registry + SEP-10",
