@@ -53,7 +53,7 @@ type LiveCheck =
       owner?: string
       tokenUri?: string
       matchesLedger?: boolean
-      contracts: { name: string; address: string; deployed: boolean }[]
+      contracts: { name: string; address: string; deployed: boolean; archived?: boolean }[]
     }
   | { reachable: false; checkedAt: string; reason: string }
 
@@ -455,8 +455,8 @@ export default function ChainProof() {
                                 <span className="text-xs font-semibold text-foreground/80">{c.name}</span>
                                 <span className="flex items-center gap-2">
                                   {live && (
-                                    <span className={`text-[10px] uppercase tracking-wide ${live.deployed ? 'text-ok' : 'text-danger'}`}>
-                                      {live.deployed ? 'code present' : 'no code'}
+                                    <span className={`text-[10px] uppercase tracking-wide ${live.archived ? 'text-warn' : live.deployed ? 'text-ok' : 'text-danger'}`}>
+                                      {live.archived ? 'archived' : live.deployed ? 'code present' : 'no code'}
                                     </span>
                                   )}
                                   <ExplorerLink href={c.explorerUrl}>{c.address}</ExplorerLink>

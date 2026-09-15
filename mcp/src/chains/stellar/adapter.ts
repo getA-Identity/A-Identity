@@ -37,7 +37,14 @@ import {
 import { randomBytes } from 'node:crypto'
 
 import type { ChainDescriptor } from '../types.js'
-import { networkPassphrase, sorobanServer, stellarKeypair, stellarSignerAddress } from './client.js'
+import {
+  isLiveLedgerEntry,
+  networkPassphrase,
+  simulationArchivedEntries,
+  sorobanServer,
+  stellarKeypair,
+  stellarSignerAddress,
+} from './client.js'
 import { isAccountId, isContractId } from './strkey.js'
 
 /**
@@ -183,6 +190,34 @@ function errorFields(e: ReturnType<typeof errorIn>): Record<string, unknown> {
 }
 
 /**
+ * The refusal sentence for a call over archived state, with the rent named when it is known.
+ *
+ * Two shapes, and they mean different things. A restore PREAMBLE, the only shape before
+ * protocol 23, says a separate restore transaction has to land first, so submitting without
+ * one pays a fee to fail. The FOLDED form (protocol 23 on, CAP-0066) says the transaction
+ * would restore the archived entries itself and succeed, with the rent inside its fee, so
+ * whoever signs would pay for the restore. On the paths this server pays for, both get the
+ * same answer: restoring is an operator decision, not a side effect of a request.
+ */
+function archivedRefusal(sim: rpc.Api.SimulateTransactionResponse, archived: number[], what: string): string {
+  if (archived.length === 0) {
+    return (
+      `${what} reads state that has been archived, and the RPC answered with a separate restore ` +
+      'preamble, so it needs a restore transaction before it can run. Nothing was submitted, ' +
+      'because submitting without one pays a fee to fail.'
+    )
+  }
+  const fee = rpc.Api.isSimulationSuccess(sim) ? sim.minResourceFee : undefined
+  return (
+    `${what} reads state that has been archived (footprint entries ${archived.join(', ')}). ` +
+    'Since protocol 23 the ledger would restore it inside this same transaction' +
+    (fee ? `, for a simulated resource fee of ${fee} stroops that includes the rent,` : '') +
+    ' and this server would pay for it. Restoring is an operator decision rather than a side ' +
+    'effect of a request, so nothing was submitted.'
+  )
+}
+
+/**
  * The frozen error table from soroban/contracts/agent-spend-policy/src/error.rs, by number.
  *
  * It is duplicated here rather than derived because the Rust enum is not importable from
@@ -275,6 +310,11 @@ export type PreparedOwnerCall =
       validUntil: string | null
       /** The whole transaction fee, in stroops, paid by the SOURCE account and not by us. */
       feeStroops: string
+      /**
+       * Footprint entries this call would RESTORE from archived state, which since protocol 23
+       * happens inside the call with the rent included in `feeStroops`. Empty in the ordinary case.
+       */
+      archivedEntries: number[]
       summary: string
     }
   | {
@@ -430,17 +470,13 @@ export function createStellarAdapter(chain: ChainDescriptor, deps: StellarAdapte
         ...errorFields(errorIn(sim.error, vault)),
       }
     }
-    // An archived entry is not an error, it is a restore preamble, and submitting anyway
-    // burns a fee on a transaction that cannot succeed. Soroban archives entries as a
-    // matter of course, so this is an expected state rather than an edge case.
-    if (rpc.Api.isSimulationRestore(sim)) {
-      return {
-        outcome: 'refused',
-        ...shape,
-        reason:
-          'this call reads state that has been archived, so it needs a restore before it can run. ' +
-          'Nothing was submitted, because submitting would have paid a fee to fail.',
-      }
+    // Archived state is an expected condition rather than an edge case, because Soroban
+    // archives entries as a matter of course, and it arrives in two shapes: a restore
+    // preamble before protocol 23, or folded into the fee since. This call is signed and paid
+    // for by the server's operator key, so both are refused rather than restored at its cost.
+    const archived = simulationArchivedEntries(sim)
+    if (rpc.Api.isSimulationRestore(sim) || archived.length > 0) {
+      return { outcome: 'refused', ...shape, reason: archivedRefusal(sim, archived, 'this call') }
     }
 
     const assembled = rpc.assembleTransaction(tx, sim).build()
@@ -594,10 +630,16 @@ export function createStellarAdapter(chain: ChainDescriptor, deps: StellarAdapte
     // preamble, and submitting anyway pays a fee to fail; reporting it up front also says
     // the true thing, which is that a redeploy of the code entry is an operator action.
     let codeLive = false
+    let codeArchived = false
     try {
       const key = xdr.LedgerKey.contractCode(new xdr.LedgerKeyContractCode({ hash: Buffer.from(wasmHash, 'hex') }))
       const entries = await server.getLedgerEntries(key)
-      codeLive = entries.entries.length > 0
+      // Not `entries.length > 0`. An archived code entry still comes back from the RPC, with
+      // liveUntilLedgerSeq 0, and instantiating against it would restore the whole module
+      // inside the deploy, at this server's cost.
+      const entry = entries.entries[0] as { liveUntilLedgerSeq?: number } | undefined
+      codeLive = isLiveLedgerEntry(entry, entries.latestLedger)
+      codeArchived = entry !== undefined && !codeLive
     } catch (e) {
       return refuse(
         `the code entry for wasm hash ${wasmHash} could not be read on ${chain.name} ` +
@@ -606,7 +648,7 @@ export function createStellarAdapter(chain: ChainDescriptor, deps: StellarAdapte
     }
     if (!codeLive) {
       return refuse(
-        `the code entry for wasm hash ${wasmHash} is not live on ${chain.name}, so there is ` +
+        `the code entry for wasm hash ${wasmHash} is ${codeArchived ? 'archived' : 'not live'} on ${chain.name}, so there is ` +
           'nothing to instantiate against. No upload was attempted: re-uploading the module, or ' +
           'restoring the archived entry, is an operator action rather than something to do inside ' +
           'a request. Nothing was submitted.',
@@ -642,11 +684,9 @@ export function createStellarAdapter(chain: ChainDescriptor, deps: StellarAdapte
         ...errorFields(errorIn(sim.error, '<new>')),
       }
     }
-    if (rpc.Api.isSimulationRestore(sim)) {
-      return refuse(
-        'this deploy reads state that has been archived, so it needs a restore before it can ' +
-          'run. Nothing was submitted, because submitting would have paid a fee to fail.',
-      )
+    const archived = simulationArchivedEntries(sim)
+    if (rpc.Api.isSimulationRestore(sim) || archived.length > 0) {
+      return refuse(archivedRefusal(sim, archived, 'this deploy'))
     }
 
     const assembled = rpc.assembleTransaction(tx, sim).build()
@@ -745,10 +785,17 @@ export function createStellarAdapter(chain: ChainDescriptor, deps: StellarAdapte
         ok: false,
         code: 'restore_needed',
         reason:
-          'this call reads state that has been archived, so it needs a restore before it can ' +
-          'run. Nothing was prepared, because a signature on it would pay a fee to fail.',
+          'this call reads state that has been archived, and the RPC answered with a separate ' +
+          'restore preamble, so it needs a restore transaction before it can run. Nothing was ' +
+          'prepared, because a signature on it would pay a fee to fail.',
       }
     }
+    // Since protocol 23 archived state comes back WITHOUT a preamble: the transaction restores
+    // it itself and the rent is inside its fee. Unlike the operator's calls, an owner call is
+    // paid for by the owner, and refusing it here would put `withdraw`, the vault's escape
+    // hatch, out of this console's reach on exactly the day it is needed. So it is prepared and
+    // disclosed instead, and the owner's wallet shows the whole fee before anything is signed.
+    const archivedEntries = simulationArchivedEntries(sim)
 
     const assembled = rpc.assembleTransaction(tx, sim).build()
     // Address credentials carry their own signature expiry; source-account credentials, the
@@ -776,10 +823,14 @@ export function createStellarAdapter(chain: ChainDescriptor, deps: StellarAdapte
       expiresAtLedger,
       validUntil,
       feeStroops: assembled.fee,
+      archivedEntries,
       summary:
         `${method}(${display.join(', ')}) on vault ${vault} (${chain.caip2}). ` +
         `Simulated and accepted by the contract; NOT signed. The source account ${source} pays ` +
         `the ${assembled.fee} stroop fee for this transaction, not this server. ` +
+        (archivedEntries.length
+          ? `It also restores archived state (footprint entries ${archivedEntries.join(', ')}): the ledger does that inside this transaction, and the rent is part of that fee. `
+          : '') +
         'If that account is multisig, every required signature has to be added before it is submitted.',
     }
   }
@@ -1036,7 +1087,7 @@ export function createStellarAdapter(chain: ChainDescriptor, deps: StellarAdapte
     async readInstanceTtl(
       contract: string,
       env: NodeJS.ProcessEnv = process.env,
-    ): Promise<{ ledger: number; liveUntilLedger: number | null }> {
+    ): Promise<{ ledger: number; liveUntilLedger: number | null; archived: boolean }> {
       if (!isContractId(contract)) throw new Error(`${contract} is not a Soroban contract id`)
       const server = rpcFor(env)
       const key = xdr.LedgerKey.contractData(
@@ -1048,7 +1099,16 @@ export function createStellarAdapter(chain: ChainDescriptor, deps: StellarAdapte
       )
       const res = await server.getLedgerEntries(key)
       const entry = res.entries[0] as { liveUntilLedgerSeq?: number } | undefined
-      return { ledger: res.latestLedger, liveUntilLedger: entry?.liveUntilLedgerSeq ?? null }
+      // An archived instance still comes back, with liveUntilLedgerSeq 0, and passing that 0 on
+      // as a ledger number turned an archived vault into a countdown that ended at genesis.
+      // Live means live for the next ledger. A lapsed entry is `archived`; a missing one is
+      // not, because it may simply not be deployed on this network.
+      const live = isLiveLedgerEntry(entry, res.latestLedger)
+      return {
+        ledger: res.latestLedger,
+        liveUntilLedger: live ? (entry?.liveUntilLedgerSeq as number) : null,
+        archived: entry !== undefined && !live,
+      }
     },
 
     /** The agent's bounded payment. Amount is in the token's own base units. */

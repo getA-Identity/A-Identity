@@ -42,7 +42,7 @@ import {
 import { addressUrl } from '../explorer.js'
 import { CHAINS } from '../registry.js'
 import type { ChainDescriptor } from '../types.js'
-import { networkPassphrase, sorobanServer } from './client.js'
+import { networkPassphrase, simulationArchivedEntries, sorobanServer } from './client.js'
 import { isContractId } from './strkey.js'
 
 /**
@@ -292,12 +292,14 @@ export type Stellar8004Read =
 export function stellar8004Simulate(
   chain: ChainDescriptor,
   env: NodeJS.ProcessEnv = process.env,
+  /** TEST ONLY: a simulator handle. Production passes nothing and reads the chain's RPC. */
+  deps: { server?: Pick<rpc.Server, 'simulateTransaction'> } = {},
 ): Stellar8004Simulate {
   const net = networkPassphrase(chain)
   return async (contractId, method, args) => {
     let sim: rpc.Api.SimulateTransactionResponse
     try {
-      const server = sorobanServer(chain, env)
+      const server = deps.server ?? sorobanServer(chain, env)
       const account = new Account(READ_ONLY_SOURCE, '0')
       const tx = new TransactionBuilder(account, { fee: BASE_FEE, networkPassphrase: net })
         .addOperation(new Contract(contractId).call(method, ...args))
@@ -308,11 +310,20 @@ export function stellar8004Simulate(
       return { status: 'error', error: e instanceof Error ? e.message : String(e) }
     }
     if (rpc.Api.isSimulationError(sim)) return { status: 'error', error: sim.error }
-    // Checked BEFORE the value is used: a simulation that comes back with a restore
-    // preamble is reporting archived state, and the number beside it is a value the ledger
-    // would make you pay rent to read for real.
-    if (rpc.Api.isSimulationRestore(sim)) {
-      return { status: 'restore', reason: `${method} reads archived state and needs a restore first` }
+    // Checked BEFORE the value is used, in both shapes archived state arrives in: the number
+    // beside it is a value the ledger would make you pay rent to read for real. A restore
+    // preamble was the only shape before protocol 23. Since CAP-0066 there is no preamble,
+    // the archived footprint indexes ride in the transaction data and the rent is folded into
+    // the fee, and checking the preamble alone is how Trion's pubnet registry read as live on
+    // 2026-09-15 with its instance and code both lapsed.
+    const archived = simulationArchivedEntries(sim)
+    if (rpc.Api.isSimulationRestore(sim) || archived.length > 0) {
+      return {
+        status: 'restore',
+        reason:
+          `${method} reads archived state and needs a restore first` +
+          (archived.length ? ` (footprint entries ${archived.join(', ')} are archived)` : ''),
+      }
     }
     if (!rpc.Api.isSimulationSuccess(sim) || !sim.result) {
       return { status: 'error', error: `${method}: simulation returned no result` }

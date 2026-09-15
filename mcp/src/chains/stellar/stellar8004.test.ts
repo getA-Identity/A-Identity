@@ -10,7 +10,7 @@
  */
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { Address, Keypair, nativeToScVal, xdr } from '@stellar/stellar-sdk'
+import { Address, Keypair, SorobanDataBuilder, nativeToScVal, xdr } from '@stellar/stellar-sdk'
 
 import { getChainById } from '../registry.js'
 import {
@@ -23,6 +23,7 @@ import {
   stellar8004Chains,
   stellar8004Label,
   stellar8004SaleIdentity,
+  stellar8004Simulate,
   type Stellar8004Simulate,
 } from './stellar8004.js'
 
@@ -277,4 +278,42 @@ test('the point-of-sale identity says KYA cannot be anchored on Stellar, and cla
   assert.equal(i.stellar8004.testnet, `stellar:testnet:${TESTNET_REGISTRY}#${A_IDENTITY_TESTNET_AGENT_ID}`)
   assert.equal(i.stellar8004.pubnet, null, 'nothing is claimed on pubnet until a registration lands')
   assert.match(i.stellar8004.note, /not our anchor/)
+})
+
+test('an archived registry reads as archived even when the RPC sends no restore preamble', async () => {
+  // Trion's pubnet Identity registry on 2026-09-15: instance and code lapsed, and a view call
+  // simulated with no preamble, the archived entries listed in the transaction data instead.
+  // Checking the preamble alone read that registry as live.
+  const transactionData = new SorobanDataBuilder(
+    new xdr.SorobanTransactionData({
+      ext: new xdr.SorobanTransactionDataExt(1, new xdr.SorobanResourcesExtV0({ archivedSorobanEntries: [0, 1] })),
+      resources: new xdr.SorobanResources({
+        footprint: new xdr.LedgerFootprint({ readOnly: [], readWrite: [] }),
+        instructions: 0,
+        diskReadBytes: 0,
+        writeBytes: 0,
+      }),
+      resourceFee: new xdr.Int64(0),
+    }).toXDR('base64'),
+  )
+  const server = {
+    simulateTransaction: async () =>
+      ({
+        _parsed: true,
+        id: '1',
+        latestLedger: 64_432_560,
+        events: [],
+        minResourceFee: '272124886',
+        transactionData,
+        result: { auth: [], retval: nativeToScVal(68, { type: 'u32' }) },
+      }) as never,
+  }
+  const simulate = stellar8004Simulate(PUBNET, {}, { server })
+  const r = await simulate(PUBNET.contracts.stellar8004!.identity, 'total_agents', [])
+  assert.equal(r.status, 'restore')
+  if (r.status === 'restore') assert.match(r.reason, /footprint entries 0, 1 are archived/)
+
+  const read = await readStellar8004Agent(PUBNET, 7, { simulate })
+  assert.equal(read.readable, false)
+  if (!read.readable) assert.equal(read.reason, 'archived')
 })

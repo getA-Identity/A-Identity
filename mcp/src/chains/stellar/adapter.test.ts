@@ -465,3 +465,135 @@ test('an account that does not exist is an RPC answer, not a crash', async () =>
   assert.equal(r.code, 'rpc_error')
   assert.match(r.reason, /XLM reserve|not an account/)
 })
+
+// ── archived state, in the shape protocol 23 actually reports it ─────────────────
+//
+// Since CAP-0066 a simulation over archived state carries NO restore preamble: the archived
+// footprint indexes ride in the transaction data and the rent is folded into the fee, which
+// `rpc.Api.isSimulationRestore` never looks at. And an archived ledger entry still comes back
+// from getLedgerEntries, with liveUntilLedgerSeq 0. Both shapes were read live on 2026-09-15.
+
+/** Transaction data whose resource extension lists these footprint entries as archived. */
+function archivedData(indexes: number[]): SorobanDataBuilder {
+  return new SorobanDataBuilder(
+    new xdr.SorobanTransactionData({
+      ext: new xdr.SorobanTransactionDataExt(1, new xdr.SorobanResourcesExtV0({ archivedSorobanEntries: indexes })),
+      resources: new xdr.SorobanResources({
+        footprint: new xdr.LedgerFootprint({ readOnly: [], readWrite: [] }),
+        instructions: 0,
+        diskReadBytes: 0,
+        writeBytes: 0,
+      }),
+      resourceFee: new xdr.Int64(0),
+    }).toXDR('base64'),
+  )
+}
+
+/** A successful simulation over archived state, with no preamble anywhere in it. */
+function archivedSim() {
+  return { ...(fakeSim() as object), minResourceFee: '272124886', transactionData: archivedData([0, 1]) } as never
+}
+
+test('an owner call over archived state is prepared, and says it restores that state inside its own fee', async () => {
+  // Refusing it would put withdraw, the vault's escape hatch, out of the console's reach on
+  // the day the vault needs it. The owner pays, and the owner's wallet shows the fee.
+  const owner = Keypair.random()
+  const a = createStellarAdapter(testnet(), {
+    server: () =>
+      ({ getAccount: async (id: string) => new Account(id, '7'), simulateTransaction: async () => archivedSim() }) as never,
+  })
+  const r = await a.prepareOwnerCall(
+    VAULT,
+    'withdraw',
+    [{ kind: 'address', value: owner.publicKey() }, { kind: 'i128', value: '10' }],
+    owner.publicKey(),
+    {},
+  )
+  assert.equal(r.ok, true)
+  if (!r.ok) return
+  assert.deepEqual(r.archivedEntries, [0, 1])
+  assert.match(r.summary, /restores archived state \(footprint entries 0, 1\)/)
+})
+
+test('a separate restore preamble is still refused, because that shape cannot run without a restore first', async () => {
+  const owner = Keypair.random()
+  const withPreamble = {
+    ...(fakeSim() as object),
+    restorePreamble: { minResourceFee: '1000', transactionData: new SorobanDataBuilder() },
+  } as never
+  const a = createStellarAdapter(testnet(), {
+    server: () =>
+      ({ getAccount: async (id: string) => new Account(id, '7'), simulateTransaction: async () => withPreamble }) as never,
+  })
+  const r = await a.prepareOwnerCall(VAULT, 'set_frozen', [{ kind: 'bool', value: false }], owner.publicKey(), {})
+  assert.equal(r.ok, false)
+  if (r.ok) return
+  assert.equal(r.code, 'restore_needed')
+})
+
+test('an operator write over archived state is refused even with no preamble, because the server would pay the rent', async () => {
+  let sent = false
+  const a = createStellarAdapter(testnet(), {
+    server: () =>
+      ({
+        getAccount: async (id: string) => new Account(id, '7'),
+        simulateTransaction: async () => archivedSim(),
+        sendTransaction: async () => {
+          sent = true
+          throw new Error('must not be submitted')
+        },
+      }) as never,
+  })
+  const r = await a.policyPay(VAULT, PAYEE, 1n, { STELLAR_TESTNET_SIGNER_SECRET: Keypair.random().secret() })
+  assert.equal(r.outcome, 'refused')
+  if (r.outcome !== 'refused') return
+  assert.match(r.reason, /archived \(footprint entries 0, 1\)/)
+  assert.match(r.reason, /272124886 stroops/)
+  assert.equal(sent, false)
+})
+
+test('a deploy refuses a code entry the RPC still returns but that has archived', async () => {
+  let touched = false
+  const a = createStellarAdapter(testnet(), {
+    server: () =>
+      ({
+        getLedgerEntries: async () => ({ latestLedger: 5_000, entries: [{ liveUntilLedgerSeq: 0 }] }),
+        getAccount: async () => {
+          touched = true
+          throw new Error('an archived code entry must stop the deploy before an account is loaded')
+        },
+        simulateTransaction: async () => {
+          touched = true
+          return fakeSim()
+        },
+      }) as never,
+  })
+  const token = requireChain('stellar:testnet').settlementTokens?.[0]?.address as string
+  const r = await a.deployVault(
+    { owner: Keypair.random().publicKey(), operator: Keypair.random().publicKey(), token, dailyCapRaw: 1n, autoApproveMaxRaw: 1n },
+    { STELLAR_TESTNET_SIGNER_SECRET: Keypair.random().secret() },
+  )
+  assert.equal(r.outcome, 'refused')
+  if (r.outcome !== 'refused') return
+  assert.match(r.reason, /is archived on/)
+  assert.equal(touched, false)
+})
+
+test('an archived instance reads as archived with no TTL, never as a countdown from ledger zero', async () => {
+  const at = (entries: { liveUntilLedgerSeq: number }[], latestLedger = 64_432_560) =>
+    createStellarAdapter(testnet(), {
+      server: () => ({ getLedgerEntries: async () => ({ latestLedger, entries }) }) as never,
+    })
+  assert.deepEqual(await at([{ liveUntilLedgerSeq: 0 }]).readInstanceTtl(VAULT, {}), {
+    ledger: 64_432_560,
+    liveUntilLedger: null,
+    archived: true,
+  })
+  assert.deepEqual(await at([{ liveUntilLedgerSeq: 66_177_017 }]).readInstanceTtl(VAULT, {}), {
+    ledger: 64_432_560,
+    liveUntilLedger: 66_177_017,
+    archived: false,
+  })
+  // No entry at all is not "archived": the address may simply not be deployed here.
+  assert.deepEqual(await at([], 10).readInstanceTtl(VAULT, {}), { ledger: 10, liveUntilLedger: null, archived: false })
+})

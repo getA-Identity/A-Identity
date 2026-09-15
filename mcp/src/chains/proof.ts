@@ -31,7 +31,8 @@ export type LiveCheck =
       tokenUri?: string
       /** Does the chain still say what the ledger says? */
       matchesLedger?: boolean
-      contracts: { name: string; address: string; deployed: boolean }[]
+      /** `archived` marks a contract whose instance entry came back with a lapsed TTL. */
+      contracts: { name: string; address: string; deployed: boolean; archived?: boolean }[]
     }
   | { reachable: false; checkedAt: string; reason: string }
 
@@ -136,7 +137,7 @@ async function stellarLiveCheck(
   checkedAt: string,
 ): Promise<LiveCheck> {
   try {
-    const { sorobanServer } = await import('./stellar/client.js')
+    const { isLiveLedgerEntry, sorobanServer } = await import('./stellar/client.js')
     const { Address, xdr } = await import('@stellar/stellar-sdk')
     const server = sorobanServer(chain, env)
     const latest = await server.getLatestLedger()
@@ -150,20 +151,27 @@ async function stellarLiveCheck(
       ),
     )
     const found = await server.getLedgerEntries(...keys)
-    const present = new Set(
-      found.entries.map((e) => {
-        try {
-          return Address.fromScAddress(e.key.contractData().contract()).toString()
-        } catch {
-          return ''
-        }
-      }),
-    )
+    // Kept by contract, entry and all. An archived instance still comes back from the RPC,
+    // with liveUntilLedgerSeq 0, so presence alone printed "code present" over a contract that
+    // cannot be called until somebody pays to restore it, which is the one state this check
+    // exists to surface.
+    const byAddress = new Map<string, { liveUntilLedgerSeq?: number }>()
+    for (const e of found.entries) {
+      try {
+        byAddress.set(Address.fromScAddress(e.key.contractData().contract()).toString(), e)
+      } catch {
+        /* an entry whose key will not decode names no contract */
+      }
+    }
     return {
       reachable: true,
       checkedAt,
       blockNumber: String(latest.sequence),
-      contracts: entry.contracts.map((c) => ({ name: c.name, address: c.address, deployed: present.has(c.address) })),
+      contracts: entry.contracts.map((c) => {
+        const hit = byAddress.get(c.address)
+        const archived = hit !== undefined && !isLiveLedgerEntry(hit, found.latestLedger)
+        return { name: c.name, address: c.address, deployed: hit !== undefined, ...(archived ? { archived: true } : {}) }
+      }),
     }
   } catch (e) {
     return { reachable: false, checkedAt, reason: e instanceof Error ? e.message : String(e) }

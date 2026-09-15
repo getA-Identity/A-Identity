@@ -11,8 +11,14 @@
  * 2026-09-09 a register_with_uri SIMULATION reported the pubnet Identity registry's instance
  * and code entries archived, with a 36.64 XLM restore in the footprint: the next writer pays
  * to bring Trion's contract back, and that writer was going to be us. So the script simulates
- * that exact call again and reports the fee. Under 1 XLM means the registry has been restored
- * and a human can finish this in a minute; it prints the command for them.
+ * that exact call again and reports the fee. Under 1 XLM with nothing archived means the
+ * registry has been restored and a human can finish this in a minute; it prints the command.
+ *
+ * Archived state is read from BOTH places it can show up. A restore preamble was the only one
+ * before protocol 23. Since CAP-0066 the RPC sends no preamble and lists the archived
+ * footprint entries in the transaction data instead, with the rent folded into the fee, so a
+ * reader of the preamble alone calls a cold registry warm. The reads above the price use the
+ * same check, through stellar8004Simulate, and print ARCHIVED when it fires.
  *
  * SIMULATES. Never signs, never submits, holds no key. A simulation costs nothing and
  * touches nothing, which is why this can be run by anyone, any time.
@@ -33,7 +39,7 @@ import {
 } from '@stellar/stellar-sdk'
 
 import { addressUrl } from '../dist/chains/explorer.js'
-import { networkPassphrase, sorobanServer } from '../dist/chains/stellar/client.js'
+import { networkPassphrase, simulationArchivedEntries, sorobanServer } from '../dist/chains/stellar/client.js'
 import {
   A_IDENTITY_TESTNET_AGENT_ID,
   readStellar8004Agent,
@@ -150,25 +156,20 @@ try {
   const restore = rpc.Api.isSimulationRestore(sim) ? sim.restorePreamble : null
   const restoreFee = restore ? Number(restore.minResourceFee ?? 0) : 0
   const total = callFee + restoreFee
+  // The field that actually says whether the registry is cold since CAP-0066: the archived
+  // footprint indexes, listed in the transaction data rather than sent as a preamble.
+  const archived = simulationArchivedEntries(sim)
 
-  // A missing restorePreamble is NOT proof the entries are warm. Since CAP-0066 the ledger
-  // restores an archived entry as part of the transaction that touches it, so the rent is
-  // folded into minResourceFee instead of arriving as a separate preamble. A simulation that
-  // reports no preamble and a fee of tens of XLM is the same archived state, priced
-  // differently, and reading the flag alone would call it fixed.
   console.log(`separate restore preamble   ${restore ? 'YES, the registry instance or code is ARCHIVED' : 'no'}`)
+  console.log(
+    `archived footprint entries  ${archived.length ? `${archived.join(', ')}, restored inside the call with the rent folded into the fee` : 'none'}`,
+  )
   console.log(`call minResourceFee         ${XLM(callFee).toFixed(7)} XLM (${callFee} stroops)`)
   if (restore) console.log(`restore minResourceFee      ${XLM(restoreFee).toFixed(7)} XLM (${restoreFee} stroops)`)
   console.log(`total to submit             ${XLM(total).toFixed(7)} XLM`)
-  if (!restore && XLM(total) >= 1) {
-    console.log(
-      'No preamble and a fee this size means the rent is inside the call: the ledger would ' +
-        'restore the archived entries as part of our transaction, and we would pay for it.',
-    )
-  }
 
-  if (XLM(total) < 1) {
-    console.log('\nUNDER 1 XLM. The registry is restored and the registration is a one-command job.')
+  if (XLM(total) < 1 && archived.length === 0 && !restore) {
+    console.log('\nUNDER 1 XLM AND NOTHING ARCHIVED. The registry is live and the registration is a one-command job.')
     console.log('Run this by hand, with the secret for the aid-8004-identity alias in the CLI:\n')
     console.log(
       `  stellar contract invoke --network mainnet --source aid-8004-identity --inclusion-fee 100000 \\\n` +
@@ -177,9 +178,10 @@ try {
     )
   } else {
     console.log(
-      `\nNOT under 1 XLM, so this is still blocked and no registration is claimed anywhere. ` +
-        `Submitting would pay ${XLM(total).toFixed(2)} XLM of rent to restore somebody else's contract. ` +
-        `The fix is Trion's: their registry owner extends its TTL, or restores it once.`,
+      `\nStill blocked, and no registration is claimed anywhere. ` +
+        `Submitting would pay ${XLM(total).toFixed(2)} XLM, most of it rent to restore somebody else's contract. ` +
+        `Restoring is permissionless, so waiting is a choice rather than a lock: the clean fix is Trion's, ` +
+        `their registry owner extending its TTL or restoring it once.`,
     )
   }
 } catch (e) {

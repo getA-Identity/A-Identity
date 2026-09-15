@@ -1,10 +1,13 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { Keypair, rpc } from '@stellar/stellar-sdk'
+import { Keypair, SorobanDataBuilder, rpc, xdr } from '@stellar/stellar-sdk'
 
 import {
   FailoverSorobanServer,
+  isLiveLedgerEntry,
   isTransportError,
+  simulationArchivedEntries,
+  simulationNeedsRestore,
   sorobanServer,
   stellarRpcUrl,
   stellarRpcUrls,
@@ -385,4 +388,66 @@ test('a fallback that cannot be built is dropped rather than taking the primary 
   assert.equal(server.serverURL.host, 'primary.invalid', 'the primary is untouched')
   assert.equal(lines.length, 1)
   assert.match(lines[0]!, /ignoring the RPC fallback/)
+})
+
+// ── archived state ───────────────────────────────────────────────────────────────
+
+/** Transaction data whose resource extension lists these footprint entries as archived. */
+function archivedData(indexes: number[]): SorobanDataBuilder {
+  return new SorobanDataBuilder(
+    new xdr.SorobanTransactionData({
+      ext: new xdr.SorobanTransactionDataExt(1, new xdr.SorobanResourcesExtV0({ archivedSorobanEntries: indexes })),
+      resources: new xdr.SorobanResources({
+        footprint: new xdr.LedgerFootprint({ readOnly: [], readWrite: [] }),
+        instructions: 0,
+        diskReadBytes: 0,
+        writeBytes: 0,
+      }),
+      resourceFee: new xdr.Int64(0),
+    }).toXDR('base64'),
+  )
+}
+
+const simulated = (over: Record<string, unknown>) =>
+  ({
+    _parsed: true,
+    id: '1',
+    latestLedger: 100,
+    events: [],
+    minResourceFee: '272124886',
+    transactionData: new SorobanDataBuilder(),
+    result: { auth: [], retval: xdr.ScVal.scvVoid() },
+    ...over,
+  }) as unknown as rpc.Api.SimulateTransactionResponse
+
+test('archived state is caught in the shape protocol 23 reports it, which the SDK helper cannot see', () => {
+  // Read live on 2026-09-15 against a pubnet contract whose instance and code had lapsed: no
+  // restore preamble at all, the archived footprint indexes in the transaction data, and the
+  // rent folded into minResourceFee.
+  const folded = simulated({ transactionData: archivedData([0, 1]) })
+  assert.equal(rpc.Api.isSimulationRestore(folded), false, 'the SDK helper reads only the preamble, which is the gap')
+  assert.deepEqual(simulationArchivedEntries(folded), [0, 1])
+  assert.equal(simulationNeedsRestore(folded), true)
+
+  // The pre-protocol-23 shape still counts.
+  const preamble = simulated({ restorePreamble: { minResourceFee: '1000', transactionData: new SorobanDataBuilder() } })
+  assert.equal(simulationNeedsRestore(preamble), true)
+  assert.deepEqual(simulationArchivedEntries(preamble), [])
+
+  // Warm state and a failed simulation are neither.
+  assert.equal(simulationNeedsRestore(simulated({})), false)
+  const failed = { _parsed: true, id: '1', latestLedger: 100, events: [], error: 'HostError' } as unknown as rpc.Api.SimulateTransactionResponse
+  assert.equal(simulationNeedsRestore(failed), false)
+  assert.deepEqual(simulationArchivedEntries(failed), [])
+})
+
+test('a ledger entry is live only when its TTL reaches past the ledger it was read at', () => {
+  // An archived entry still comes back from getLedgerEntries, with liveUntilLedgerSeq 0.
+  assert.equal(isLiveLedgerEntry({ liveUntilLedgerSeq: 0 }, 64_432_560), false)
+  assert.equal(isLiveLedgerEntry({ liveUntilLedgerSeq: 66_177_017 }, 64_432_560), true)
+  // Live for the NEXT ledger, which is where a transaction sent now would land.
+  assert.equal(isLiveLedgerEntry({ liveUntilLedgerSeq: 100 }, 100), false)
+  assert.equal(isLiveLedgerEntry({ liveUntilLedgerSeq: 101 }, 100), true)
+  assert.equal(isLiveLedgerEntry({}, 100), false)
+  assert.equal(isLiveLedgerEntry(undefined, 100), false)
 })

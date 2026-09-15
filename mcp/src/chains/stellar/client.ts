@@ -19,7 +19,7 @@
  * and a submission never does. See FailoverSorobanServer for why that asymmetry is the
  * whole point rather than an omission.
  */
-import { Keypair, Networks, rpc } from '@stellar/stellar-sdk'
+import { Keypair, Networks, SorobanDataBuilder, rpc, xdr } from '@stellar/stellar-sdk'
 
 import type { ChainDescriptor } from '../types.js'
 import { resolveRpcUrls } from '../evm/client.js'
@@ -388,6 +388,67 @@ export function sorobanServer(chain: ChainDescriptor, env: NodeJS.ProcessEnv = p
   const urls = stellarRpcUrls(chain, env)
   if (urls.length === 1) return new rpc.Server(urls[0])
   return new FailoverSorobanServer(urls)
+}
+
+// ── archived state ───────────────────────────────────────────────────────────────
+
+/**
+ * The footprint indexes a simulation found ARCHIVED, or an empty list.
+ *
+ * Protocol 23 (CAP-0066) changed how an RPC reports archived state, and the SDK's own helper
+ * did not follow. Before it, a simulation that touched an archived entry came back with a
+ * separate `restorePreamble`, which is the only thing `rpc.Api.isSimulationRestore` looks at.
+ * Since it, the ledger restores an archived entry inside the transaction that touches it, so
+ * the RPC sends no preamble at all: it lists the archived footprint indexes in the
+ * transaction data's `archivedSorobanEntries` and folds the restore rent into
+ * `minResourceFee`. Read live on 2026-09-15 against a pubnet contract whose instance and
+ * code had both lapsed: no preamble, archivedSorobanEntries [0, 1], and a 272,124,886 stroop
+ * resource fee for a read-only call. Checking the flag alone called that contract warm.
+ *
+ * Transaction data that will not parse yields an empty list rather than a throw. Callers use
+ * this to refuse or to disclose, and a parse failure is not evidence of archived state.
+ */
+export function simulationArchivedEntries(sim: rpc.Api.SimulateTransactionResponse): number[] {
+  if (!rpc.Api.isSimulationSuccess(sim)) return []
+  try {
+    const raw: unknown = sim.transactionData
+    const data =
+      raw instanceof SorobanDataBuilder
+        ? raw.build()
+        : typeof raw === 'string'
+          ? xdr.SorobanTransactionData.fromXDR(raw, 'base64')
+          : (raw as xdr.SorobanTransactionData | undefined)
+    const ext = data?.ext()
+    if (!ext || Number(ext.switch()) !== 1) return []
+    return [...ext.resourceExt().archivedSorobanEntries()]
+  } catch {
+    return []
+  }
+}
+
+/**
+ * Whether a simulation touched archived state at all, in either protocol's shape.
+ *
+ * A caller that has to tell the two shapes apart, because the preamble needs a separate
+ * restore transaction while the folded form restores itself, reads
+ * `rpc.Api.isSimulationRestore` and `simulationArchivedEntries` directly instead.
+ */
+export function simulationNeedsRestore(sim: rpc.Api.SimulateTransactionResponse): boolean {
+  return rpc.Api.isSimulationRestore(sim) || simulationArchivedEntries(sim).length > 0
+}
+
+/**
+ * Whether a contract data or code entry read back by getLedgerEntries is live for the NEXT
+ * ledger, which is the one a transaction submitted now would land in.
+ *
+ * Presence proves nothing on its own. An archived entry still comes back from the RPC, with
+ * `liveUntilLedgerSeq` 0 (read live on 2026-09-15), so a check of `entries.length > 0`
+ * reports an archived contract as deployed and an archived vault as live. Compare against
+ * the same response's `latestLedger`, so the answer never mixes two reads.
+ */
+export function isLiveLedgerEntry(entry: { liveUntilLedgerSeq?: number } | undefined, latestLedger: number): boolean {
+  const until = entry?.liveUntilLedgerSeq
+  return typeof until === 'number' && Number.isFinite(until) && until > latestLedger
 }
 
 /**
