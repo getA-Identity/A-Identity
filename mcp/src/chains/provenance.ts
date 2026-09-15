@@ -481,7 +481,7 @@ export const PROVENANCE: ChainProvenance[] = [
   {
     chain: 'stellar',
     summary:
-      'The same Soroban spend policy as the testnet rail, deployed to Stellar mainnet and funded with real USDC. An agent spent exactly its daily budget and not one unit more: four payments settled inside the policy, the fifth was refused with the contract\'s own DailyCapExceeded, and the human override paid through a freeze that had already stopped the agent. Small money on purpose, and the cap is the reason. Since 2026-08-28 the Soroban x402 rail also SELLS here: the first mainnet sale settled through our own facilitator, the buyer signing an authorization entry and paying no fee, and the sale counted only once we read the SEP-41 transfer event bound to its nonce.',
+      'The same Soroban spend policy as the testnet rail, deployed to Stellar mainnet and funded with real USDC. An agent spent exactly its daily budget and not one unit more: four payments settled inside the policy, the fifth was refused with the contract\'s own DailyCapExceeded, and the human override paid through a freeze that had already stopped the agent. Small money on purpose, and the cap is the reason. Since 2026-08-27 the Soroban x402 rail also SELLS here: the first mainnet sale settled through our own facilitator, the buyer signing an authorization entry and paying no fee, and the sale counted only once we read the SEP-41 transfer event bound to its nonce.',
     contracts: [
       {
         name: 'AgentSpendPolicy (Soroban, pubnet)',
@@ -550,6 +550,14 @@ export const PROVENANCE: ChainProvenance[] = [
         onChain: 'stellar',
         blockNumber: 64103495,
         note: '0.25 USDC, the largest single payment the policy auto-approves. Two more followed at ledgers 64103499 (f514ac178bd4aba60d53cc3980f5517bb1bd93d53d7f69d227a798632251aefb) and 64103501 (ebf3cb627c18ec226be9e2790054c4de43d0da2b524f27fb499ab0af6a477d80), taking spent_today to 0.95 of a 1 USDC cap. The cap is cumulative across payments, which is what made the next one refusable.',
+      },
+      {
+        kind: 'settlement',
+        label: 'A fifth agent payment, 0.01 USDC, just before the freeze',
+        txHash: 'db886f90d2edf82f9e885a6147589732175f18cdb0dfe41be5afc35fa3740291',
+        onChain: 'stellar',
+        blockNumber: 64103518,
+        note: 'pay(owner, 100000) by the operator, taking spent_today from 0.95 to 0.96 USDC. Missing from the first version of the release record and found on 2026-09-15 by reconciling the operator account on Horizon: without it the 1 USDC that went in and the payments recorded coming out did not add up to the zero balance and the full cap the record ends on. The same amount was then refused with Frozen once the freeze was on.',
       },
       {
         kind: 'deploy',
@@ -858,7 +866,7 @@ export const PROOF_RAILS: ProofRail[] = [
     slug: 'stellar',
     title: 'Stellar',
     lede:
-      'A Soroban spend policy that refuses an over-limit payment with a typed error, deployed on MAINNET as well as testnet and holding real USDC: an agent spent exactly its 1 USDC daily budget there and the next payment was refused by the contract. The x402 facilitator we wrote for this chain now sells on BOTH networks: the first mainnet sale settled 2026-08-28 through our own broadcaster, at the fee market\'s own rate. OpenZeppelin Channels got to a Stellar facilitator first and is kept as a fallback; what is ours is that no payment counts until we have read the transfer ourselves.',
+      'A Soroban spend policy that refuses an over-limit payment with a typed error, deployed on MAINNET as well as testnet and holding real USDC: an agent spent exactly its 1 USDC daily budget there and the next payment was refused by the contract. The x402 facilitator we wrote for this chain now sells on BOTH networks: the first mainnet sale settled 2026-08-27 through our own broadcaster, at the fee market\'s own rate. OpenZeppelin Channels got to a Stellar facilitator first and is kept as a fallback; what is ours is that no payment counts until we have read the transfer ourselves.',
     chains: ['stellar', 'stellar-testnet'],
   },
   {

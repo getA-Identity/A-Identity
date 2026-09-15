@@ -112,7 +112,7 @@ export const CHAINS: ChainDescriptor[] = [
     ecosystem: 'stellar',
     testnet: false,
     // Listed live by a maintainer's call, 2026-08-27 (commit 050073d), and the caveat
-    // that used to temper the label closed on 2026-08-28: the Soroban x402 rail now
+    // that used to temper the label closed on 2026-08-27 (UTC): the Soroban x402 rail now
     // SELLS on pubnet. First sale tx f213371c... (ledger 64155370), 0.001 USDC through
     // our own facilitator, the buyer signing a Soroban authorization entry and paying
     // no fee, our fee payer bidding the network's own market rate (the 100-stroop

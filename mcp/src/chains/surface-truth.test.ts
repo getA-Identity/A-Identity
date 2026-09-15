@@ -61,7 +61,7 @@ test('every live or beta chain carries an identity registry, or is a listed exce
     // One, implementations byte-identical), so the descriptor now carries them.
     stellar:
       'live on the strength of the PAYMENT side: the on-ledger spend policy holds real USDC on ' +
-      'pubnet, and since 2026-08-28 the Soroban x402 rail sells there too (first sale tx ' +
+      'pubnet, and since 2026-08-27 the Soroban x402 rail sells there too (first sale tx ' +
       'f213371c, settled by our own broadcaster). Identity is not wired and is not claimed, ' +
       'which is the whole reason for this exception: ERC-8004 is EVM-only and a Stellar ' +
       'agent\'s passport is bridged from an EVM chain rather than anchored here. What changed ' +

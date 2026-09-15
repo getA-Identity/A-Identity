@@ -101,11 +101,19 @@
     },
     {
       "kind": "settlement",
+      "label": "A fifth agent payment, 0.01 USDC, just before the freeze",
+      "txHash": "db886f90d2edf82f9e885a6147589732175f18cdb0dfe41be5afc35fa3740291",
+      "ledger": 64103518,
+      "successful": true,
+      "detail": "pay(owner, 100000), signed by the operator: 0.01 USDC, taking spent_today from 0.95 to 0.96 USDC. The first version of this record left it out, and the record did not add up without it: 1 USDC went in, while 0.20 + 3 x 0.25 + the 0.04 owner_pay is 0.99, against a finalState of zero balance and exactly 1 USDC spent. Found on 2026-09-15 by reading the operator account's history on Horizon, which shows this call landing at 2026-08-24T13:55:24Z with a fee_charged of 18279 stroops. The same amount was then refused with Frozen once the kill switch was on; that is the Frozen entry under refusals."
+    },
+    {
+      "kind": "settlement",
       "label": "Evidence 4 of 4: the owner overrides a freeze and pays anyway",
       "txHash": "58c118ee659b65875efe5e916f7bb332bc896b62537fa8dd030e2c225defa1cf",
       "ledger": 64103531,
       "successful": true,
-      "detail": "owner_pay while the vault was frozen. It settles, because the human path is meant to work exactly when the agent path does not, and its `Paid` event carries by_owner:true. It was CHARGED to the daily cap and is not LIMITED by it: check_owner_pay applies the amount, arithmetic and balance guards and no cap comparison, so the override bypasses the budget as well as the gates. It does not bypass the accounting. Corrected on 2026-08-24 after an audit agent proved the original wording false; the payment itself was 0.04 USDC against a 0.95 running total and a 1 USDC cap, so it would have been allowed either way and the transaction shown here is unaffected."
+      "detail": "owner_pay while the vault was frozen. It settles, because the human path is meant to work exactly when the agent path does not, and its `Paid` event carries by_owner:true. It was CHARGED to the daily cap and is not LIMITED by it: check_owner_pay applies the amount, arithmetic and balance guards and no cap comparison, so the override bypasses the budget as well as the gates. It does not bypass the accounting. Corrected on 2026-08-24 after an audit agent proved the original wording false; the payment itself was 0.04 USDC against a 0.96 running total and a 1 USDC cap, so it would have been allowed either way and the transaction shown here is unaffected."
     },
     {
       "kind": "deploy",
@@ -171,7 +179,7 @@
     "The owner and operator are burner keys generated for this deploy and held in a local CLI keystore, not a multisig and not an HSM. Losing the owner key makes the vault balance unrecoverable. That is a deliberate trade against a capped balance, and it is the same trade written up in soroban/README.md.",
     "Payer and payee are both ours. The owner account funded the vault and also received every payment, so this is evidence that the rail works, not evidence of demand.",
     "There is no ERC-8004 registry on Stellar, so the agent passport is bridged from an EVM chain rather than anchored here, and KYA cannot be attested on this network.",
-    "At the time of this release no x402 rail settled on pubnet, and what it proved was the on-ledger spend policy alone. Superseded on 2026-08-28, when the Soroban x402 rail took its first mainnet sale through our own broadcaster: the buyer signed an authorization entry for transfer on the USDC SAC and paid no network fee, we assembled the transaction, bid 34035 stroops and were charged 23479 (Horizon fee_charged) to submit it, and the sale counted only once the SEP-41 transfer event bound to that authorization's nonce was read back. Transaction f213371c1241968ee78170923d8c5a3bd9b32950e73bb9c563d800ab2c70ec9e at ledger 64155370; see the stellar entry in mcp/src/chains/provenance.ts, which is also where the settlement artifact lives. Left here rather than deleted, because a release record is what was true when it was cut.",
+    "At the time of this release no x402 rail settled on pubnet, and what it proved was the on-ledger spend policy alone. Superseded on 2026-08-27, when the Soroban x402 rail took its first mainnet sale through our own broadcaster: the buyer signed an authorization entry for transfer on the USDC SAC and paid no network fee, we assembled the transaction, bid 34035 stroops and were charged 23479 (Horizon fee_charged) to submit it, and the sale counted only once the SEP-41 transfer event bound to that authorization's nonce was read back. Transaction f213371c1241968ee78170923d8c5a3bd9b32950e73bb9c563d800ab2c70ec9e at ledger 64155370; see the stellar entry in mcp/src/chains/provenance.ts, which is also where the settlement artifact lives. Left here rather than deleted, because a release record is what was true when it was cut.",
     "Two of the four pieces of evidence are typed error codes rather than transaction hashes, because Soroban refusals never reach the ledger. See howRefusalsHaveNoHash above. Anyone can reproduce them in seconds against the live contract with `stellar contract invoke --id CB5LYXFK... --network pubnet -- pay --to G... --amount 5000000`, which costs nothing precisely because it is refused."
   ]
 }

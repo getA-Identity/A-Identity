@@ -249,7 +249,7 @@ export const POSTS: BlogPost[] = [
       {
         heading: 'What we are not claiming',
         body: [
-          'Mainnet, and deliberately small. The vault is live on Stellar pubnet at CB5LYXFKKTKDDSCM6JO6C4GNRQUFBGSLYDET6Q56JNFJQSMBKH6KWSYP, its owner is a 2-of-3 multisig, and the x402 rail settled its first production sale there on 2026-08-28. What that does not buy is scale: the daily cap is one dollar, both sides of that first sale were ours, and the proof page says so rather than leaving it as a silence for someone to misread.',
+          'Mainnet, and deliberately small. The vault is live on Stellar pubnet at CB5LYXFKKTKDDSCM6JO6C4GNRQUFBGSLYDET6Q56JNFJQSMBKH6KWSYP, its owner is a 2-of-3 multisig, and the x402 rail settled its first mainnet sale there on 2026-08-27. What that does not buy is scale: the daily cap is one dollar, both sides of that first sale were ours, and the proof page says so rather than leaving it as a silence for someone to misread.',
           'Not audited. There are 108 unit tests, and separately a runner that deletes each safety check in turn and requires the suite to go red. That second part carries more weight than the count: a green suite proves the contract passes its tests, and only the deletion runner proves the tests would notice if the contract stopped being safe. It is still not an audit and we will not call it one.',
           'No agent identity on Stellar yet. The agent\'s passport lives on an EVM chain and is referenced from here, because there is no Soroban registry to anchor it in. The spending guardrail shipped before the identity layer, which is the opposite of the order we expected and is fine: a cap the ledger enforces is useful even against an agent nobody has vouched for.',
         ],
@@ -321,7 +321,7 @@ export const POSTS: BlogPost[] = [
         {
           heading: 'İddia etmediklerimiz',
           body: [
-            'Mainnet, ve bilerek küçük. Vault Stellar pubnet\'te canlı: CB5LYXFKKTKDDSCM6JO6C4GNRQUFBGSLYDET6Q56JNFJQSMBKH6KWSYP, sahibi 2/3 çoklu imza, ve x402 rayı ilk üretim satışını orada 28 Ağustos 2026\'da yaptı. Bunun satın almadığı şey ölçek: günlük tavan bir dolar, o ilk satışın iki tarafı da bizdik, ve proof sayfamız bunu biri yanlış okusun diye sessizlikte bırakmak yerine açıkça yazıyor.',
+            'Mainnet, ve bilerek küçük. Vault Stellar pubnet\'te canlı: CB5LYXFKKTKDDSCM6JO6C4GNRQUFBGSLYDET6Q56JNFJQSMBKH6KWSYP, sahibi 2/3 çoklu imza, ve x402 rayı ilk mainnet satışını orada 27 Ağustos 2026\'da yaptı. Bunun satın almadığı şey ölçek: günlük tavan bir dolar, o ilk satışın iki tarafı da bizdik, ve proof sayfamız bunu biri yanlış okusun diye sessizlikte bırakmak yerine açıkça yazıyor.',
             'Denetlenmedi. 108 birim testi var, ayrıca her güvenlik kontrolünü sırayla silip test paketinin kırmızıya dönmesini zorunlu kılan bir koşucu. İkinci kısım sayıdan daha ağır basıyor: yeşil bir paket kontratın testlerini geçtiğini kanıtlar, testlerin kontrat güvenli olmaktan çıktığında bunu fark edeceğini ise yalnızca o silme koşucusu kanıtlar. Yine de bu bir denetim değil ve öyle demeyeceğiz.',
             'Stellar\'da henüz ajan kimliği yok. Ajanın pasaportu bir EVM zincirinde duruyor ve buradan referansla gösteriliyor, çünkü onu tutturacak bir Soroban kaydı yok. Harcama korkuluğu kimlik katmanından önce yayına girdi; beklediğimizin tam tersi bir sıra ve sorun değil: defterin uyguladığı bir tavan, kimsenin kefil olmadığı bir ajana karşı da işe yarar.',
           ],

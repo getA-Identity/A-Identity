@@ -82,7 +82,7 @@ test('Arc, X Layer, Celo (live), Base, Celo Sepolia and RH Chain Testnet (beta) 
   // chain met.
   assert.deepEqual(live.map((c) => c.id).sort(), ['algorand', 'algorand-testnet', 'arbitrum', 'arc', 'base', 'celo', 'celo-sepolia', 'rhchain', 'rhchain-testnet', 'stellar', 'stellar-testnet', 'xlayer'])
   // pubnet joined on 2026-08-24 with the vault deploy, was called live on 2026-08-27,
-  // and the x402 rail started SELLING there on 2026-08-28 (first sale tx f213371c,
+  // and the x402 rail started SELLING there on 2026-08-27 (first sale tx f213371c,
   // settled by our own broadcaster at the network's market-rate inclusion fee). The
   // remaining published caveat is identity: ERC-8004 is EVM-only and nothing bridges it
   // here. This assertion only pins the status values.

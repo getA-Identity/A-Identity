@@ -897,7 +897,7 @@ const FEE_PAYER_ENV = { X402_STELLAR_TESTNET_FEE_PAYER: FEE_PAYER.secret() }
  */
 // 200, not the 100-stroop protocol minimum: the broadcaster bids the fee market's own
 // rate with a 200 floor, because pubnet's inclusion auction cleared at 200 across every
-// percentile while a minimum bid sat invisible until it expired (2026-08-28, the first
+// percentile while a minimum bid sat invisible until it expired (2026-08-27, the first
 // two mainnet settlement attempts). The mock server exposes no getFeeStats, so the
 // floor is what a test broadcast bids.
 const INCLUSION_FEE = 200n
