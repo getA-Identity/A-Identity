@@ -203,3 +203,143 @@ authorization surface is one line.
 One property worth stating: because `pay` moves the vault's own balance, the operator
 never holds the token and never needs a trustline. It needs XLM for fees, or a sponsor.
 That is a smaller blast radius than the EVM version has.
+
+## Operations calendar
+
+The section above explains why the instance TTL cannot be topped up early. This one is the
+consequence: there is a date, it is months out, and the only thing to do before it arrives
+is be told when it arrives.
+
+Read live on 2026-09-15 with `node ../mcp/scripts/stellar-vault-archival.mjs`:
+
+| Network | Vault | Live until ledger | Remaining | Archives around |
+| --- | --- | --- | --- | --- |
+| pubnet | `CB5LYXFK...KWSYP` | 66,177,017 | about 113.6 days | 2027-01-06 |
+| testnet | `CAIL6ECR...B4UI` | 6,739,602 | about 134.0 days | 2027-01-27 |
+
+**The pubnet action window opens in early November 2026.** A write extends the clock only
+once the remaining life has fallen below the contract's 60-day `LONG_TTL_THRESHOLD`, so the
+first useful moment is when 113.6 days becomes 60, which is about 54 days after the read
+above. Acting in October buys nothing at all: the call succeeds, costs a fee, and `live
+until` does not move. That is not a theory, it is what happened on 2026-08-25.
+
+**The cheapest deliberate touch is `set_frozen(false)` on a vault that is already
+unfrozen.** It changes no state, it costs a fee, and on pubnet it needs two of the owner
+account's three signers because D-1 made that account a 2-of-3 multisig. Any writing
+entrypoint would do; this one is chosen because it cannot move money even if it is sent
+twice.
+
+**The reminder is a weekly job, not a calendar entry.** `.github/workflows/stellar-ops.yml`
+runs Mondays at 06:17 UTC and calls the archival script with `--warn-days 45`. Forty-five is
+deliberate rather than round: the re-extension window opens at 60 days, so the first red run
+is already about fifteen days inside the window where a touch actually works. The failure
+mail is the notification. There is no earlier action to take, which is precisely why a job
+that warns too early would be worse than no job.
+
+**Testnet's numbers are a rehearsal.** Stellar testnet is reset periodically, and a reset
+takes the vault, its balance and its allowlist with it. The testnet row above stops being
+true the moment that happens, and the correct response is to redeploy there rather than to
+worry about its TTL.
+
+## Redeploy runbook
+
+This contract has no upgrade path. `withdraw`, redeploy, repoint is the escape hatch, and it
+produces a new contract id every time. Two open audit findings are cheap only if they ride
+along with a redeploy that is happening anyway, so they are steps here rather than tickets:
+A3-02 (decision D-3) and A7-01 (decision D-2).
+
+Read `../audit/DESIGN-DECISIONS.md` before starting. The order below is not arbitrary: the
+snapshot has to happen while the OLD vault is still readable, and the balance has to leave
+before the address stops being the one anybody watches.
+
+1. **Freeze the old vault.** `set_frozen(true)`. Finding A7-03 is that the documented
+   recovery runbook used to omit this step. It stops the agent path from settling into a
+   vault that is about to be abandoned.
+2. **Snapshot the allowlist.** `node ../mcp/scripts/stellar-vault-allowlist.mjs`, then
+   `--check` to confirm the committed file matches the chain, and commit the result. This is
+   D-2 option A and it is the whole reason the snapshot exists: the allowlist lives in
+   entries keyed to the contract id, no view enumerates it, and the `AllowlistSet` events
+   that armed it expire out of RPC retention after about 7.9 days. Read the `note` field in
+   the file it writes before trusting it. The snapshot is a lower bound, built by probing
+   named candidates, and a payee nobody named is not in it.
+3. **Withdraw the balance** to the owner account, and read the balance back as zero.
+4. **Instantiate against the code entry that is already uploaded.** The wasm hash
+   `155eb31c1867254eacbf1b7a4755164d15cc6b6f939644705ab6b8df61579239` is live on both
+   networks and its code entry lives until ledger 66,177,015, around 2027-01-06.
+   Instantiating on top of it cost 0.0992122 XLM on pubnet; uploading the same 11,625 bytes
+   fresh cost 12.2319214 XLM. Pass the SAME constructor policy as the record in `releases/`,
+   because those five arguments are permanent and there is no `initialize` to correct them.
+   A source change means a new hash and the 12 XLM upload, so step 7 is what makes this
+   step expensive.
+5. **Repoint.** `mcp/src/chains/registry.ts` `contracts.spendVault` and
+   `contracts.spendVaultWasmHash`, `mcp/src/chains/provenance.ts`, and a new receipt in
+   `releases/` that marks the old address superseded rather than deleting it.
+6. **Re-arm the allowlist from the snapshot,** one `set_allowed(payee, true)` per entry,
+   then `set_policy(..., allowlist_enabled)` to match what the snapshot recorded. Re-run the
+   snapshot script against the NEW contract and confirm `--check` passes. Getting this wrong
+   is silent: an unarmed allowlist on a vault whose `allowlist_enabled` is false does not
+   refuse anything, it permits everything.
+7. **Carry A3-02 in the same commit.** In `src/lib.rs`, `withdraw` runs
+   `policy::check_amount` before `require_valid_payee`; `settle` runs them the other way
+   round. Swap those two lines in `withdraw` so both money paths name the same first reason
+   for the same pair of violations, then un-ignore
+   `a_doubly_invalid_input_names_the_same_first_reason_on_every_money_path` in
+   `src/test/arithmetic.rs`, rebuild with `stellar contract build`, and re-record
+   `LINUX_X64` in `.github/workflows/soroban.yml`. That literal is the hash the CI runner
+   produces from the source, so a source change is supposed to move it; leaving it stale
+   turns the drift gate red for the right reason and the wrong commit.
+
+   Do NOT un-ignore the other `#[ignore]`d test in that file. It asserts INV-05 as it was
+   originally written, that `pay` plus `owner_pay` stays under the daily cap, and decision
+   D-4 chose to keep the contract as it is and keep the corrected wording instead. That
+   assertion is false by design, so un-ignoring it would make `cargo test` red permanently.
+   What it needs is its reason string updated to say the decision is made rather than
+   pending.
+8. **A4-01 rides along or it does not ship.** The token's error codes collide with this
+   contract's, so a caller cannot tell an `Error(Contract, #13)` raised by the SAC from one
+   of ours. Moving this contract's discriminants clear of the SAC range is a redeploy-only
+   change with no cheaper carrier, and it is an ABI break: the codes are public and frozen
+   by `test/errors.rs`. It needs its own line in `../audit/DESIGN-DECISIONS.md` recording
+   the new range and what reads it, and it must not be improvised during the redeploy.
+
+Then re-run the verification the rest of this README describes, and rehearse the whole
+sequence on testnet first. Rehearsing it is free and finding A7-03 is that it never has
+been.
+
+## Key roles
+
+Three roles per network, and they are meant to be three different keys.
+
+| Role | Can do | Read from |
+| --- | --- | --- |
+| owner | withdraw the whole balance, set the policy, freeze. Permanent, there is no `set_owner` | `vault.owner()` |
+| operator | spend inside the policy and only inside it | `vault.operator()` |
+| x402 fee payer | sign and pay for the broadcast. No vault authority at all | `/api/x402/stellar/status` |
+
+```bash
+node ../mcp/scripts/stellar-key-roles.mjs            # reports, exits 0 on a known warning
+node ../mcp/scripts/stellar-key-roles.mjs --strict   # a warning exits 1
+```
+
+It reads the vault roles off the ledger by simulation and the rail roles from the backend's
+public status endpoints, which publish account ids and environment variable NAMES and never
+a secret. It reads no key material and prints none.
+
+**The overlap it reports today: the x402 fee payer IS the vault operator, on both
+networks.** One key, two jobs, and the jobs have different threat models. A fee payer is hot
+on Render, signs on every sale, and its whole job is to hold a couple of XLM; an operator
+can spend the vault's daily budget. It is a warning rather than a failure because the
+operator is already the lower-privilege half of the vault and the blast radius is bounded by
+the daily cap, which is what the cap is for. The script exits 1 only if the fee payer ever
+becomes the vault OWNER, which would put the entire balance behind a server key.
+
+**The fix is funding, not key generation.** A dedicated pubnet fee payer already exists in
+the maintainer's local CLI keystore under the alias `aid-pubnet-x402-fee`, public key
+`GAFVDEN6BC52WWPRPINOVENMXW3FU4LCSVVVA5C67RLPG4GAK6BE4SXY`. Horizon returned 404 for it on
+2026-09-15, so it has never been funded and does not yet exist on pubnet. To close the
+overlap: fund it with about 2 XLM, set `X402_STELLAR_PUBNET_FEE_PAYER` on Render to that
+alias's seed, redeploy, confirm one settlement lands with the new broadcaster, and only then
+is the operator key out of the fee-paying business.
+
+`payTo` being the vault owner on pubnet is reported as INFO and is not a problem: that is
+where sales are meant to land.

@@ -1,0 +1,176 @@
+name: Stellar ops
+
+# Three Stellar facts that go wrong on a calendar rather than on a commit, so no
+# push-triggered workflow would ever catch them.
+#
+#   1. The vault instance TTL cannot be topped up early. `bump_instance` calls
+#      `extend_ttl(threshold, extend_to)`, which does NOTHING while the remaining life is
+#      still above the contract's 60-day LONG_TTL_THRESHOLD. Verified on chain, not
+#      inferred: a real set_frozen(false) landed on the pubnet vault on 2026-08-25 and
+#      `live until` did not move, because 134 days remained. So there is no "do it now and
+#      forget it" option. The only thing that works is to be told when the window OPENS,
+#      which for pubnet is early November 2026, and that is what the archival step is for.
+#      It runs with --warn-days 45, so it goes red once the 60-day re-extension window is
+#      already open and the cheapest touch, a 2-of-3 signed set_frozen(false) on an
+#      unfrozen vault, will actually move `live until`.
+#
+#   2. One key is doing two jobs. The pubnet x402 fee payer IS the pubnet vault operator,
+#      and the same is true on testnet. A fee payer is hot on a server and signs on every
+#      sale; an operator can spend the vault's daily budget. Those are different threat
+#      models sharing one secret. The role step reports it every week and deliberately
+#      exits 0, because it is a known state with a known fix and a job that is red for
+#      months teaches people to ignore it. It exits 1 only if the fee payer ever becomes
+#      the vault OWNER, which would be handing the whole balance to a server key.
+#
+#   3. A redeploy silently drops the allowlist (audit A7-01, decision D-2). The allowlist
+#      lives in entries keyed to the contract id, there is no view that enumerates it, and
+#      RPC event retention is about 7.9 days, so the writes that armed it are already gone.
+#      The snapshot in soroban/releases/*-allowlist.json is the only record of it, and it
+#      is worth nothing if it silently stops matching the chain. The --check step is what
+#      keeps it honest between redeploys.
+#
+# Everything here is READ-ONLY on chain: simulations, ledger entry reads and public status
+# endpoints. No signer, no secret, nothing submitted. A monitor that can write is a monitor
+# that can break the thing it watches.
+#
+# Each check carries `continue-on-error: true` and prints its own exit code, so one red
+# check never hides the other two. The final step is what actually fails the job.
+
+on:
+  schedule:
+    # Monday 06:17 UTC. Off the hour on purpose: GitHub queues scheduled jobs and the top
+    # of the hour is the most contended slot, so a job asking for it runs late or is
+    # dropped. Weekly is the right cadence for a countdown measured in months.
+    - cron: '17 6 * * 1'
+  workflow_dispatch:
+
+jobs:
+  stellar-ops:
+    name: Vault TTL, key roles, allowlist drift
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Install backend deps
+        run: npm ci --prefix mcp
+
+      # The scripts import from mcp/dist, the same compiled output the server runs, rather
+      # than from src. One build, one set of chain descriptors, and no second copy of the
+      # registry to disagree with itself. A failure here stops the job: the checks below
+      # cannot say anything without it, and running them anyway would report a missing
+      # module as a Stellar problem.
+      - name: Build
+        run: npm run build --prefix mcp
+
+      # Red is the POINT of this step, not a failure of it. See note 1 in the header: there
+      # is no earlier action available, so the failure mail IS the notification.
+      - name: Vault archival countdown
+        id: archival
+        continue-on-error: true
+        run: |
+          set +e
+          node mcp/scripts/stellar-vault-archival.mjs --warn-days 45 2>&1 | tee /tmp/archival.txt
+          code=${PIPESTATUS[0]}
+          set -e
+          {
+            echo "## Vault archival countdown (--warn-days 45)"
+            echo '```'
+            cat /tmp/archival.txt
+            echo '```'
+            echo "exit code: $code"
+          } >> "$GITHUB_STEP_SUMMARY"
+          exit $code
+
+      # Warn only. See note 2 in the header: the known overlap must not hold this job red
+      # for months. --strict is there for whoever is actually doing the fix, locally.
+      - name: Key roles
+        id: roles
+        continue-on-error: true
+        run: |
+          set +e
+          node mcp/scripts/stellar-key-roles.mjs 2>&1 | tee /tmp/roles.txt
+          code=${PIPESTATUS[0]}
+          set -e
+          {
+            echo "## Stellar key roles (warn only)"
+            echo '```'
+            cat /tmp/roles.txt
+            echo '```'
+            echo "exit code: $code"
+          } >> "$GITHUB_STEP_SUMMARY"
+          exit $code
+
+      # Red means the live allowlist no longer matches the committed snapshot: either a
+      # payee was armed or removed without recording it, or the file a redeploy would
+      # restore from is now wrong. Both need a human before any redeploy happens.
+      - name: Allowlist drift
+        id: allowlist
+        continue-on-error: true
+        run: |
+          set +e
+          node mcp/scripts/stellar-vault-allowlist.mjs --check 2>&1 | tee /tmp/allowlist.txt
+          code=${PIPESTATUS[0]}
+          set -e
+          {
+            echo "## Allowlist drift (--check)"
+            echo '```'
+            cat /tmp/allowlist.txt
+            echo '```'
+            echo "exit code: $code"
+          } >> "$GITHUB_STEP_SUMMARY"
+          exit $code
+
+      # Reports only, and it can never fail this job. The script is being written
+      # separately and may not be in the tree yet, so a missing file must be a blank
+      # section in the summary rather than a red weekly job for something nobody broke.
+      # When it lands, decide deliberately whether it should gate, and drop the `|| true`
+      # in the same commit if it should.
+      - name: ERC-8004 on Stellar (reports only)
+        id: erc8004
+        continue-on-error: true
+        run: |
+          # The absence of the file is checked before running it, rather than letting node
+          # throw. `|| true` alone would still be correct, but it would paste a fifteen-line
+          # MODULE_NOT_FOUND stack into the job summary every week for a script that simply
+          # has not landed yet, which trains people to skip the summary.
+          if [ -f mcp/scripts/stellar-8004-check.mjs ]; then
+            node mcp/scripts/stellar-8004-check.mjs 2>&1 | tee /tmp/erc8004.txt || true
+          else
+            echo "mcp/scripts/stellar-8004-check.mjs is not in the tree yet, so nothing was checked." | tee /tmp/erc8004.txt
+          fi
+          {
+            echo "## ERC-8004 on Stellar (report only, never gates this job)"
+            echo '```'
+            cat /tmp/erc8004.txt
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      # The gate. Only the two checks that are meant to hold the line are read here: the
+      # archival countdown and the allowlist drift check. Key roles is warn-only by
+      # decision, and the 8004 report is not ours to gate on yet.
+      - name: Fail the job if a gating check went red
+        run: |
+          archival='${{ steps.archival.outcome }}'
+          allowlist='${{ steps.allowlist.outcome }}'
+          roles='${{ steps.roles.outcome }}'
+          echo "archival=$archival  allowlist=$allowlist  roles(warn only)=$roles"
+          if [ "$roles" != "success" ]; then
+            echo "::warning::stellar-key-roles.mjs exited non-zero. It only does that when the fee"
+            echo "::warning::payer became a vault OWNER or a status endpoint was unreadable. Read the summary."
+          fi
+          fail=0
+          if [ "$archival" != "success" ]; then
+            echo "::error::A vault is within 45 days of archival, or its TTL could not be read."
+            echo "::error::The 60-day re-extension window is open: a 2-of-3 signed set_frozen(false)"
+            echo "::error::on the unfrozen vault is the cheapest touch that moves 'live until'."
+            fail=1
+          fi
+          if [ "$allowlist" != "success" ]; then
+            echo "::error::The live allowlist drifted from soroban/releases/*-allowlist.json, or it"
+            echo "::error::could not be read. Do not redeploy a vault until the snapshot is correct."
+            fail=1
+          fi
+          exit $fail

@@ -1,0 +1,47 @@
+{
+  "network": "stellar:testnet",
+  "contract": "CAIL6ECRAB5FUURQ54R7OTZPXRRCDO2S353YT6N6UZUWIBDG2ZOEB4UI",
+  "readAt": "2026-09-14T23:43:30.927Z",
+  "ledger": 4681164,
+  "allowlistEnabled": true,
+  "owner": "GBLHNAL57WLA5GKTIGPBHCJTQDNEZFX2CVH53EDUOGWIERNKECRENHQ5",
+  "operator": "GDZXSO4AOKPSHMQZMBNEEBQNYOIF7TWDPD7K2U5VAPKFN3QIAIELTAN6",
+  "allowed": [
+    "GBMRWLL7FTWNQZFVWXTC3PCHHU4LJASDGWADDU4UXYCK2WF6SEJAN6TI"
+  ],
+  "probed": [
+    {
+      "account": "GARC7OFBBQCZJ5N3LCI7HTTYJ2MMPDAFDNGIHSQMZ7EPJ5EAWQJ5R6I5",
+      "allowed": false
+    },
+    {
+      "account": "GBLHNAL57WLA5GKTIGPBHCJTQDNEZFX2CVH53EDUOGWIERNKECRENHQ5",
+      "allowed": false
+    },
+    {
+      "account": "GBMRWLL7FTWNQZFVWXTC3PCHHU4LJASDGWADDU4UXYCK2WF6SEJAN6TI",
+      "allowed": true
+    },
+    {
+      "account": "GBRKRUDYKYOSGH4QIYAFONPWXFCFC7K5AYHIVJDNYJAZ33BE5YSMTS6R",
+      "allowed": false
+    },
+    {
+      "account": "GDLAJM25YQRTIZOVZPVEM2GJ6L2I4OTZGY3HAWX3HGMPV7SM3QZONO4S",
+      "allowed": false
+    },
+    {
+      "account": "GDZXSO4AOKPSHMQZMBNEEBQNYOIF7TWDPD7K2U5VAPKFN3QIAIELTAN6",
+      "allowed": false
+    }
+  ],
+  "eventWindow": {
+    "available": true,
+    "oldestLedger": 4560215,
+    "retentionLedgers": 120960,
+    "retentionDaysApprox": 7.9,
+    "contractEventsSeen": 0,
+    "allowlistSetPayees": []
+  },
+  "note": "Built by PROBING is_allowed(payee) for every candidate this repo can name, not by enumerating the contract. The vault has no allowed_payees() view (INV-19) and RPC event retention is about 7.9 days, so the AllowlistSet writes that armed this list are gone. `allowed` is therefore a lower bound: a payee nobody named here is invisible to this script and would be lost by a redeploy. That residual is what D-2 option A accepts. Regenerate with `node mcp/scripts/stellar-vault-allowlist.mjs`, add candidates with --probe G..., and gate a redeploy with --check."
+}

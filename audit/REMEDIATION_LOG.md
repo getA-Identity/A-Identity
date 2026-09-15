@@ -40,10 +40,16 @@ names it, the register says OPEN even when the change looks as though it may hav
 incidentally, and says so. Re-verified against the working tree on 2026-08-25; the
 verification is noted inline wherever it was more than reading a commit message.
 
-**62 findings: 18 FIXED, 13 ACCEPTED, 31 OPEN.** Most of the open set is documentation and
-process, and most of it is cheap. Four of the open ids cannot be closed without a redeploy or
-a decision that costs one, and those four are exactly what `DESIGN-DECISIONS.md` is waiting
-on: A3-02 (D-3), A7-01 (D-2), A5-01 (D-4) and A4-01 (bundled with D-3).
+**62 findings: 18 FIXED, 14 ACCEPTED, 30 OPEN.** Most of the open set is documentation and
+process, and most of it is cheap.
+
+Updated 2026-09-15, when the last three design decisions were recorded. Only one id moved:
+A5-01 went OPEN to ACCEPTED, because D-4 decided the contract keeps its behaviour and there
+is nothing left to ship. **The other three did not move, and the reason is worth stating so
+nobody reads a decided board as a closed one.** A3-02 and A4-01 are decided and bundled into
+the next redeploy, which has not happened; A7-01 is decided and mitigated by a runbook step,
+a snapshot script and a weekly drift check, none of which change the contract property that
+a redeploy drops the allowlist. A decision closes a question. It does not close a finding.
 
 ### A1 - authorization
 
@@ -76,7 +82,7 @@ on: A3-02 (D-3), A7-01 (D-2), A5-01 (D-4) and A4-01 (bundled with D-3).
 | Id | Sev | Disposition | Detail |
 | --- | --- | --- | --- |
 | A3-01 | Low | **FIXED** | `f0c730f` |
-| A3-02 | Low | **OPEN** | A live defect in the deployed wasm: `settle` checks the payee before the amount, `withdraw` the reverse, so the same two violations return two different codes. The failing test is committed and `#[ignore]`d with the finding id in the attribute, so `cargo test` prints it on every run. Closes with: a redeploy carrying the two-line reorder. Awaiting D-3 |
+| A3-02 | Low | **OPEN**, bundled into the next redeploy | A live defect in the deployed wasm: `settle` checks the payee before the amount, `withdraw` the reverse, so the same two violations return two different codes. The failing test is committed and `#[ignore]`d with the finding id in the attribute, so `cargo test` prints it on every run. D-3 decided 2026-09-15, option A: the two-line reorder ships with the next redeploy that happens for another reason, together with un-ignoring that test and re-recording the CI `LINUX_X64` wasm hash. The source is deliberately not edited yet, because `soroban.yml` pins a Linux-built hash this machine cannot produce. Closes with: that redeploy. The sequence is written out in `soroban/README.md`, "Redeploy runbook" |
 | A3-03 | Low | **FIXED** | `f0c730f` |
 | A3-04 | Low | **FIXED** | `f0c730f` |
 | A3-05 | Low | **FIXED** | `f0c730f` |
@@ -90,7 +96,7 @@ on: A3-02 (D-3), A7-01 (D-2), A5-01 (D-4) and A4-01 (bundled with D-3).
 
 | Id | Sev | Disposition | Detail |
 | --- | --- | --- | --- |
-| A4-01 | Medium | **OPEN** | The token's error codes collide with this contract's and a caller cannot tell them apart. Confirmed with a passing PoC. Needs a redeploy; closes with: moving this contract's discriminants clear of the SAC range, bundled with whatever redeploy D-3 triggers |
+| A4-01 | Medium | **OPEN**, bundled into the next redeploy | The token's error codes collide with this contract's and a caller cannot tell them apart. Confirmed with a passing PoC. Needs a redeploy; closes with: moving this contract's discriminants clear of the SAC range, bundled with whatever redeploy D-3 triggers. D-3 was decided 2026-09-15 and this rides with it. It is also an ABI break, since the discriminants are public and frozen by `test/errors.rs`, so it needs its own design line recording the new range before any code moves |
 | A4-02 | Medium | **ACCEPTED** | D-5 decided 2026-08-25. Option A (publish the freeze disclosure) was DECLINED and the caveats box was removed from `/proof/:rail` in `51978c5`; option C, keeping balances small, is what bounds the exposure and is in force. The facts are unchanged and are recorded in D-5. The caveat data is still machine-readable in `provenance.ts` and still test-enforced; it is no longer rendered |
 | A4-03 | Low here, Medium elsewhere | **OPEN** | Settlement is asserted, never verified: no balance delta anywhere. A deployment risk rather than a live one for the two audited deployments. Closes with: a balance-delta assertion around settlement |
 | A4-04 | Low | **OPEN** | Three payee-side failures produce untyped aborts and a muxed destination is unpayable. Closes with: typed refusals for the three, and an explicit statement that muxed destinations are unsupported |
@@ -100,7 +106,7 @@ on: A3-02 (D-3), A7-01 (D-2), A5-01 (D-4) and A4-01 (bundled with D-3).
 
 | Id | Sev | Disposition | Detail |
 | --- | --- | --- | --- |
-| A5-01 | Low | **OPEN** | `owner_pay` is charged to the daily cap but not bounded by it. The published claim was corrected (`1466845`) and INV-05 was rewritten (`3ccb10d`), but whether the contract should gain a cap gate is undecided. Closes with: D-4. See the note below on why this is not being decided here |
+| A5-01 | Low | **ACCEPTED** | `owner_pay` is charged to the daily cap but not bounded by it. D-4 decided 2026-09-15, option A: the contract keeps this behaviour and the corrected wording stands, so the published claim is "the daily cap bounds the agent; the owner is bounded by the balance and by nothing else". The documentation half was already done (`1466845`, `3ccb10d`), which is why A3-07 is FIXED. Nothing ships for this. One loose end it creates: the `#[ignore]`d test `inv_05_as_written_...` still says "a decision that has not been made" in its reason string, which is now false and should say decided |
 | A5-02 | Info | **OPEN** | Verified 2026-08-25: `policy.rs:104` still says the accumulator keeps "on-chain accounting ... honest about total outflow". It resets daily and does not count `withdraw`, so it is not that record. `ad8d5b6` corrected four parity comments; this was not one of them. Closes with: correcting that sentence |
 | A5-03 | Low | **ACCEPTED** | A compromised operator can burn the cap at net-zero cost. Accepted and mitigated by the allowlist, as recorded in `AUDIT_REPORT.md`. The comment claiming `require_valid_payee` closes it is what was wrong, not the trade |
 | A5-04 | Info | **OPEN** | `InvalidPayee` is absent from the documented refusal ladder and fires in a different position per entrypoint. The position half is A3-02. Closes with: documenting the rung |
@@ -127,7 +133,7 @@ refusal writes nothing, including the TTL bump.
 
 | Id | Sev | Disposition | Detail |
 | --- | --- | --- | --- |
-| A7-01 | Medium | **OPEN** | A redeploy silently drops the allowlist, and testnet's `allowlist_enabled` is `true` today, so a redeploy there right now would re-open the policy. Pubnet RPC event retention is about 7.9 days, so the recovery window is finite. Closes with: D-2 |
+| A7-01 | Medium | **OPEN**, mitigated | A redeploy silently drops the allowlist. Re-verified live 2026-09-15: testnet's `allowlist_enabled` is still `true` with exactly one payee armed, `GBMRWLL7...SEJAN6TI`, the x402 seller, so a redeploy there right now would still drop it and come up empty and unenforced. D-2 decided 2026-09-15, option A now plus C bundled into any redeploy. The mitigation shipped: `mcp/scripts/stellar-vault-allowlist.mjs`, committed snapshots at `soroban/releases/*-allowlist.json`, a runbook step in `soroban/README.md`, and a weekly `--check` in `.github/workflows/stellar-ops.yml`. It stays OPEN because none of that changes the contract property, and because the recovery window it was meant to use has already closed: `getEvents` returned zero events for both vaults on 2026-09-15, so the snapshot is built by probing named candidates and is a lower bound. Closes with: option C, the allowlist as a constructor argument, at the next redeploy |
 | A7-02 | High | **ACCEPTED** | Same disposition and same residual as A1-01: D-1, `cf35b33`, owner account is a 2-of-3 multisig. "Singular" is closed; "permanent" and "un-timelocked" are properties of the deployed contract and cannot be closed without a new contract id |
 | A7-03 | Low | **OPEN** | The documented recovery runbook omits the freeze step and has never been rehearsed. Closes with: adding the step and rehearsing it once on testnet, which is free |
 | A7-04 | Info | **ACCEPTED** | Not a defect. No upgrade path, confirmed at bytecode level; protocol 28 does not change it. The finding's status is "Verified, no action" |
@@ -159,19 +165,24 @@ refusal writes nothing, including the TTL bump.
 
 ---
 
-## Awaiting a maintainer decision
+## The design decisions, all five now recorded
 
-Three of the five design decisions are still undecided, and this log does not decide them.
-They are not OPEN findings in the ordinary sense: the analysis is finished and the trade-off
-is written up. What is missing is a choice that the audit has no standing to make.
+The last three were decided on **2026-09-15**, on the maintainer's instruction to close every
+open item. In each case the option adopted is the one `DESIGN-DECISIONS.md` had recommended
+since 2026-08-25. This log does not decide them and did not; it records what was decided and,
+more usefully, what that did and did not change underneath.
 
-| Decision | Findings it disposes of | Choosing between |
-| --- | --- | --- |
-| D-2 | A7-01 | A: record the allowlist off-chain before any redeploy, a free runbook change that works only inside the 7.9-day event window. B: add an enumerating view, which needs a redeploy and reintroduces the unbounded read INV-19 deliberately avoids. C: take the allowlist as a constructor argument, which needs a redeploy but carries the policy forward atomically. D: accept, and document that a redeploy resets the policy |
-| D-3 | A3-02, and it is the natural carrier for A4-01 | A: fix in the next redeploy that happens for another reason, two lines reordered. B: redeploy for this alone, a new contract id for a Low. C: document the divergence and leave a wrong answer in production |
-| D-4 | A5-01 | A: leave the contract and keep the corrected wording, so the claim is "the cap binds the agent, not the human". B: add a cap gate to `owner_pay` in a future redeploy, which removes the override's usefulness in the case it exists for. C: add a separate, higher owner ceiling |
+| Decision | Findings | Option taken | What it changed here |
+| --- | --- | --- | --- |
+| D-2 | A7-01 | **A** now, **C** bundled into any redeploy | A7-01 stays OPEN, mitigated. A snapshot script, committed snapshots, a runbook step and a weekly drift check. The contract property is unchanged, and the 7.9-day event window the original option A assumed has already closed, so the snapshot is a probed lower bound rather than a replay of history |
+| D-3 | A3-02, carrying A4-01 | **A**, bundle into the next redeploy | Nothing shipped. Both stay OPEN. The source edit is deliberately deferred because `soroban.yml` pins a Linux-built wasm hash this machine cannot reproduce, so the reorder, the un-ignored test and the new hash have to land in one commit |
+| D-4 | A5-01 | **A**, keep the contract and the corrected wording | A5-01 moves OPEN to ACCEPTED. Nothing to ship; the published claim already matches the code |
 
-D-1 (A7-02, A1-01) and D-5 (A4-02) are decided and their findings are dispositioned above.
+D-1 (A7-02, A1-01) and D-5 (A4-02) were decided on 2026-08-25 and their findings are
+dispositioned above.
+
+Every one of these is reversible by recording the reversal in `DESIGN-DECISIONS.md`, which is
+the same way it was made.
 
 ---
 
