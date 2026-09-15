@@ -30,7 +30,7 @@
           "caip2": "stellar:pubnet",
           "identity": "Soroban registry + SEP-10",
           "erc8004Native": false,
-          "note": "No native ERC-8004: that standard is EVM-only and nothing bridges it here. An agent id resolved on Stellar is a claim about a different chain until a Soroban registry is deployed.",
+          "note": "No ERC-8004. TrionLabs Stellar 8004 (third party, upgradeable) is read, labeled third-party; A-Identity is agent 25 on its testnet registry; not our identity anchor and KYA is not anchorable here.",
           "status": "live"
         },
         {
@@ -38,7 +38,7 @@
           "caip2": "stellar:testnet",
           "identity": "Soroban registry + SEP-10",
           "erc8004Native": false,
-          "note": "Same as pubnet: no ERC-8004 here, so KYA cannot be anchored and the passport is bridged rather than native.",
+          "note": "No ERC-8004. TrionLabs Stellar 8004 (third party, upgradeable) is read, labeled third-party; A-Identity is agent 25 on its testnet registry; not our identity anchor and KYA is not anchorable here.",
           "status": "beta"
         },
         {

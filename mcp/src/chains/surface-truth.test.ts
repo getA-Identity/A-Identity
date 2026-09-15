@@ -63,12 +63,16 @@ test('every live or beta chain carries an identity registry, or is a listed exce
       'live on the strength of the PAYMENT side: the on-ledger spend policy holds real USDC on ' +
       'pubnet, and since 2026-08-28 the Soroban x402 rail sells there too (first sale tx ' +
       'f213371c, settled by our own broadcaster). Identity is not wired and is not claimed, ' +
-      'which is the whole reason for this exception: ERC-8004 is EVM-only, no Soroban identity ' +
-      'registry we trust exists to point at, and a Stellar agent\'s passport is bridged from an ' +
-      'EVM chain rather than anchored here. Delete this entry the day a Soroban registry lands, ' +
-      'or demote the chain.',
+      'which is the whole reason for this exception: ERC-8004 is EVM-only and a Stellar ' +
+      'agent\'s passport is bridged from an EVM chain rather than anchored here. What changed ' +
+      'on 2026-09-15 is narrower than it sounds: a third-party Soroban registry, TrionLabs ' +
+      'Stellar 8004, is now READ (contracts.stellar8004) and labeled third-party and live ' +
+      'wherever it is shown. Reading somebody else\'s upgradeable registry is not anchoring in ' +
+      'it, so this entry stays, and `identityRegistry` stays empty because that field means a ' +
+      'registry we anchor on. Delete this entry the day such a registry lands here, or demote ' +
+      'the chain.',
     'stellar-testnet':
-      'beta on the strength of the PAYMENT path only: a Soroban spend policy, our own x402 facilitator, and settlements we confirm by reading the transfer ourselves. Identity is not wired and is not claimed. ERC-8004 is EVM-only, no Soroban identity registry exists to point at, and the passport a Stellar agent carries is bridged from an EVM chain rather than anchored here. Delete this entry the day a Soroban registry lands, or demote the chain.',
+      'beta on the strength of the PAYMENT path only: a Soroban spend policy, our own x402 facilitator, and settlements we confirm by reading the transfer ourselves. Identity is not wired and is not claimed. ERC-8004 is EVM-only and the passport a Stellar agent carries is bridged from an EVM chain rather than anchored here. Since 2026-09-15 the third-party TrionLabs Stellar 8004 registry is READ here (contracts.stellar8004), where A-Identity is agent 25 in that registry\'s own u32 id space; it is labeled third-party and live, and it is still not treated as an identity anchor, so `identityRegistry` stays empty. Delete this entry the day a registry we anchor on lands, or demote the chain.',
     algorand:
       'live on the strength of the PAYMENT side: the x402 v2 rail through the GoPlausible facilitator settled its first real mainnet sale on 2026-08-30 (tx YNNA54CX..., confirmed by our own indexer read). Identity is not wired and is not claimed: no ERC-8004 registry or agent-identity ARC was found on Algorand as of 2026-08-30, and the passport is bridged from an EVM chain. Delete this entry the day a registry we can verify lands, or demote the chain.',
     'algorand-testnet':

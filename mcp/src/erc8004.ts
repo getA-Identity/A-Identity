@@ -7,10 +7,33 @@
  * no writes.
  */
 import type { AgentIdentity } from './data.js'
-import { identityChains, resolveRpcUrls } from './chains/index.js'
+import { getChainById, identityChains, resolveRpcUrls, type ChainDescriptor } from './chains/index.js'
+import {
+  parseStellar8004Id,
+  readStellar8004Agent,
+  type Stellar8004Read,
+} from './chains/stellar/stellar8004.js'
+
+/**
+ * What `resolve` answers with.
+ *
+ * `AgentIdentity` plus three fields that appear ONLY on a third-party registry read, so a
+ * caller that does nothing new keeps getting exactly what it got, and a caller that shows
+ * the answer to somebody cannot present Trion's Soroban registry as an ERC-8004 result.
+ * The extras are not decoration: an agent id there is a u32 in its own space, it proves no
+ * link to any EVM identity, and the registry is upgradeable by its owner.
+ */
+export type ResolvedIdentity = AgentIdentity & {
+  /** Present and true only when the registry read is somebody else's, never ours. */
+  thirdParty?: true
+  /** The caveat in one sentence, so it cannot be rendered as a field name. */
+  note?: string
+  /** The full third-party read, with the registry state that produced it. */
+  stellar8004?: Stellar8004Read
+}
 
 export interface IdentityProvider {
-  resolve(query: string): Promise<AgentIdentity | null>
+  resolve(query: string): Promise<ResolvedIdentity | null>
   readonly kind: 'rpc'
   /** The chain slugs this provider actually dials, so coverage can be asserted rather
    *  than assumed (a silently empty client list would just resolve nothing). */
@@ -74,11 +97,52 @@ export class RpcIdentityProvider implements IdentityProvider {
     return this.clients.map((c) => c.chainName)
   }
 
-  async resolve(query: string): Promise<AgentIdentity | null> {
+  async resolve(query: string): Promise<ResolvedIdentity | null> {
+    const q = query.trim()
+
+    // A Stellar 8004 id is answered FIRST and by a different registry, because it is not an
+    // ERC-8004 id and nothing below could read it: the shapes are disjoint (they carry a
+    // C... Soroban contract id or the stellar8004: prefix, never eip155), so no EVM query
+    // reaches this branch and every EVM path below is unchanged.
+    const stellar = parseStellar8004Id(q)
+    if (stellar.kind === 'refused') {
+      // A Stellar 8004 id naming a registry our descriptors do not declare. Falling through
+      // to the EVM clients would read a u32 as an ERC-8004 token id on eight chains and
+      // hand back whichever stranger owns that number.
+      return null
+    }
+    if (stellar.kind === 'stellar8004') {
+      const chain = getChainById(stellar.chain)
+      if (!chain) return null
+      const read = await this._readStellar8004(chain, stellar.agentId)
+      // A registry we could not read and an agent the registry does not have both resolve to
+      // null here, which is the same thing every EVM path already does with a failed read.
+      // The difference between them is preserved where it can be acted on: call
+      // readStellar8004Agent directly and the archived and unreachable arms are distinct.
+      if (!read.readable || !read.found) return null
+      const domain = read.agent.registration?.domain
+      return {
+        agentId: read.label,
+        tokenId: read.agent.id,
+        owner: read.agent.owner ?? '',
+        registrationUri: read.agent.agentUri ?? '',
+        domain: typeof domain === 'string' ? domain : '',
+        // Never self-attestable, for the same reason the EVM path pins it false: the
+        // registration document is hosted by whoever registered the agent.
+        valid: false,
+        // Not dated. The EVM path defaults this to today when metadata is missing; a
+        // registration date we did not read is not a date, and this registry does not
+        // expose one.
+        registeredAt: '',
+        chain: chain.id as AgentIdentity['chain'],
+        thirdParty: true,
+        note: read.note,
+        stellar8004: read,
+      }
+    }
+
     // Lazy import viem so the mock path never loads it.
     const { createPublicClient, http, isAddress } = await import('viem')
-
-    const q = query.trim()
 
     // Detect CAIP-10 format: eip155:chainId:8004/tokenId
     const caipMatch = q.match(/^eip155:(\d+):8004\/(\d+)$/i)
@@ -135,6 +199,14 @@ export class RpcIdentityProvider implements IdentityProvider {
     // Domain lookups aren't resolvable on-chain in ERC-8004 v0.1 (no reverse index),
     // so we don't fabricate one - resolve by agent id, token id, or owner address.
     return null
+  }
+
+  /**
+   * The third-party read, as its own method so a test can replace it without a network.
+   * Same seam `_readToken` uses, for the same reason.
+   */
+  private async _readStellar8004(chain: ChainDescriptor, agentId: number): Promise<Stellar8004Read> {
+    return readStellar8004Agent(chain, agentId)
   }
 
   private async _readToken(

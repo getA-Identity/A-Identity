@@ -70,6 +70,7 @@ export type { RailToolName }
 /**
  * Which party assembles the transaction, pays the network fee, and submits it.
  *
+import { stellar8004SaleIdentity } from '../chains/stellar/stellar8004.js'
  * `buyer` is not a configurable choice like the other two: it is what a settlement records
  * when the payment arrived already made, from a vault or a wallet that broadcast it itself.
  * It lives in the same union so the proof page cannot report a fee we did not pay.
@@ -451,6 +452,12 @@ export function stellarRailChallenge(
     httpStatus: 402,
     body: {
       x402Version: 2,
+        // Said at the POINT OF SALE, not only in the docs: a buyer deciding whether to pay
+        // for a trust check on Stellar is exactly the party who needs to know that the
+        // passport being checked is anchored on an EVM chain and that KYA cannot be
+        // anchored here. The Stellar 8004 entry is the honest half of that: a third-party
+        // registry we read, with our testnet id, and nothing claimed on pubnet.
+        identity: stellar8004SaleIdentity(),
       error: 'payment required',
       // v2 hoists the resource out of each accepts entry into one object on the challenge.
       // The per-entry string stays for v1 clients; it is the same field in both places.
@@ -598,6 +605,10 @@ function stellarHandlers(
   }
 }
 
+        // The same sentence the challenge made before the money moved, repeated in the
+        // answer it bought. A buyer who only ever sees the served response would otherwise
+        // have to take the challenge's word for where identity actually lives.
+        identity: stellar8004SaleIdentity(),
 /**
  * The full paid-call path for one tool.
  *

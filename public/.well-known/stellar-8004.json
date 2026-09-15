@@ -26,6 +26,12 @@
       "description": "Ledger-read proof page for the Stellar spend-policy vault."
     }
   ],
+  "registrations": [
+    {
+      "agentId": 25,
+      "agentRegistry": "stellar:testnet:CDE3K4COIAGWNNJQQLL26SYI3KBJF5FUDHXG5FA6GYDJCG7T5V7FIWZH"
+    }
+  ],
   "supportedTrust": [
     "reputation"
   ],

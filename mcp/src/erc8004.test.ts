@@ -92,3 +92,112 @@ test('a full CAIP id never reports ambiguity, because it names its chain', async
   assert.equal(r?.ambiguity, undefined)
 })
 
+
+// -- Stellar 8004 is a different registry, and must never read as an ERC-8004 answer ---
+
+test('a Stellar 8004 id is answered by the third-party read, labeled third-party', async () => {
+  // The routing matters more than the values: a u32 Soroban agent id and an ERC-8004 token
+  // id are different identities that happen to be integers, so reading one with the other's
+  // client would hand back a stranger. The read itself is injected; its own unit tests live
+  // in chains/stellar/stellar8004.test.ts.
+  const { RpcIdentityProvider } = await import('./erc8004.js')
+  const { getChainById } = await import('./chains/index.js')
+  const registry = getChainById('stellar-testnet')!.contracts.stellar8004!.identity
+  const provider = new RpcIdentityProvider([
+    { chainId: 1, chainName: 'first', rpcUrl: 'http://unused', registry: '0x' + '1'.repeat(40) as `0x${string}`, caipPrefix: 'eip155:1' },
+  ])
+  let evmReads = 0
+  ;(provider as unknown as { _readToken: unknown })._readToken = async () => {
+    evmReads += 1
+    return null
+  }
+  ;(provider as unknown as { _readStellar8004: unknown })._readStellar8004 = async (
+    chain: { id: string; explorer: string },
+    agentId: number,
+  ) => ({
+    readable: true,
+    found: true,
+    source: 'third-party',
+    live: true,
+    chain: chain.id,
+    registry: { identity: registry, owner: null, version: '0.1.0', totalAgents: 26, upgradeable: true, pendingUpgrade: null },
+    agent: {
+      id: agentId,
+      owner: 'GBMFTESTONLYNOTAREALACCOUNT',
+      wallet: null,
+      agentUri: 'data:application/json,{}',
+      agentUriKind: 'data',
+      registration: { name: 'A-Identity Trust Oracle' },
+    },
+    label: `stellar:testnet:${registry}#${agentId}`,
+    explorerUrl: `${chain.explorer}/contract/${registry}`,
+    note: 'third-party registry note',
+  })
+
+  const r = await provider.resolve(`stellar:testnet:${registry}#25`)
+  assert.ok(r, 'a Stellar 8004 id must resolve through the Stellar reader')
+  assert.equal(evmReads, 0, 'no EVM registry may be dialed for a Soroban id')
+  assert.equal(r.thirdParty, true, 'a caller must not be able to mistake this for an ERC-8004 read')
+  assert.equal(r.chain, 'stellar-testnet', 'the chain is the registry slug, not a CAIP-2 id')
+  assert.equal(r.agentId, `stellar:testnet:${registry}#25`)
+  assert.equal(r.tokenId, 25)
+  assert.equal(r.valid, false, 'a self-hosted registration document cannot mark itself verified')
+  assert.equal(r.note, 'third-party registry note')
+  assert.equal(r.stellar8004?.readable, true)
+})
+
+test('the short Stellar 8004 alias routes the same way', async () => {
+  const { RpcIdentityProvider } = await import('./erc8004.js')
+  const provider = new RpcIdentityProvider([])
+  let asked: { chain: string; agentId: number } | null = null
+  ;(provider as unknown as { _readStellar8004: unknown })._readStellar8004 = async (
+    chain: { id: string },
+    agentId: number,
+  ) => {
+    asked = { chain: chain.id, agentId }
+    return { readable: true, found: false, source: 'third-party', live: true, chain: chain.id, registry: 'C', label: 'l', explorerUrl: 'e', reason: 'no such agent', note: 'n' }
+  }
+  const r = await provider.resolve('stellar8004:pubnet#7')
+  assert.equal(r, null, 'an agent the registry does not have resolves to nothing, like every other miss')
+  assert.deepEqual(asked, { chain: 'stellar', agentId: 7 })
+})
+
+test('a Stellar 8004 id naming a registry we do not declare is refused, never read on EVM', async () => {
+  const { RpcIdentityProvider } = await import('./erc8004.js')
+  const provider = new RpcIdentityProvider([
+    { chainId: 1, chainName: 'first', rpcUrl: 'http://unused', registry: '0x' + '1'.repeat(40) as `0x${string}`, caipPrefix: 'eip155:1' },
+  ])
+  let evmReads = 0
+  ;(provider as unknown as { _readToken: unknown })._readToken = async () => {
+    evmReads += 1
+    return null
+  }
+  let stellarReads = 0
+  ;(provider as unknown as { _readStellar8004: unknown })._readStellar8004 = async () => {
+    stellarReads += 1
+    return null
+  }
+  const r = await provider.resolve(`stellar:testnet:C${'A'.repeat(55)}#25`)
+  assert.equal(r, null)
+  assert.equal(stellarReads, 0, 'a registry we do not declare is not read against ours')
+  assert.equal(evmReads, 0, 'and the number is not retried as an ERC-8004 token id')
+})
+
+test('every EVM query still takes the EVM path unchanged', async () => {
+  // The guard against the Stellar branch quietly swallowing something: the shapes are
+  // disjoint, so a bare id, a CAIP id and an address must all reach the EVM reader.
+  const { RpcIdentityProvider } = await import('./erc8004.js')
+  const provider = new RpcIdentityProvider([
+    { chainId: 1, chainName: 'only', rpcUrl: 'http://unused', registry: '0x' + '1'.repeat(40) as `0x${string}`, caipPrefix: 'eip155:1' },
+  ])
+  const seen: string[] = []
+  ;(provider as unknown as { _readToken: unknown })._readToken = async (
+    _c: unknown, _h: unknown, client: { chainName: string }, tokenId: bigint,
+  ) => {
+    seen.push(String(tokenId))
+    return { agentId: 'x', tokenId: Number(tokenId), owner: '0xaaa', registrationUri: '', domain: '', valid: true, registeredAt: '', chain: client.chainName }
+  }
+  assert.ok(await provider.resolve('25'))
+  assert.ok(await provider.resolve('eip155:1:8004/25'))
+  assert.deepEqual(seen, ['25', '25'])
+})
