@@ -25,6 +25,7 @@ import { feePayerEnvVar, stellarSignerAddress } from '../chains/stellar/client.j
 import { isSecretSeed } from '../chains/stellar/strkey.js'
 import { stellarFeePayer } from '../chains/stellar/client.js'
 import { stellarSettle, stellarSupported, stellarVerify } from '../x402-stellar/facilitator.js'
+import { stellarFeeEconomics, type StellarFeeEconomics } from '../x402-stellar/economics.js'
 import {
   RAIL_TOOLS,
   RAIL_TOOL_CARDS,
@@ -87,6 +88,33 @@ function broadcastReadiness(networkId: string): Record<string, unknown> {
   }
 }
 
+/**
+ * What a settlement costs us on each configured network, priced live off that network's own
+ * order book.
+ *
+ * Here rather than in the rail because it is the only thing on this endpoint that touches a
+ * third party, and a status endpoint must survive that third party being down. Every network
+ * is read in PARALLEL so the worst case is one timeout rather than one per network, and
+ * `stellarFeeEconomics` is documented never to throw; the catch is belt and braces for the
+ * same reason the rail's settle path has one, because a promise rejecting here would take
+ * out a response that is otherwise entirely local.
+ */
+async function economicsByNetwork(): Promise<Record<string, StellarFeeEconomics>> {
+  const entries = await Promise.all(
+    stellarRailNetworks().map(async (id): Promise<[string, StellarFeeEconomics]> => {
+      const s = stellarRailStatus(process.env, id)
+      const chain = s.chain ? getChainById(s.chain) : null
+      if (!chain) return [s.network || id, { live: false, reason: `'${id}' is not a chain in the registry` }]
+      try {
+        return [chain.caip2, await stellarFeeEconomics(chain)]
+      } catch (e) {
+        return [chain.caip2, { live: false, reason: e instanceof Error ? e.message : String(e) }]
+      }
+    }),
+  )
+  return Object.fromEntries(entries)
+}
+
 export async function handleX402StellarRoutes(ctx: RouteCtx): Promise<boolean> {
   const { req, res, url } = ctx
   if (!url.pathname.startsWith('/api/x402/stellar')) return false
@@ -100,6 +128,7 @@ export async function handleX402StellarRoutes(ctx: RouteCtx): Promise<boolean> {
 
   // ── GET /api/x402/stellar/status - configuration, honestly ──
   if (req.method === 'GET' && url.pathname === '/api/x402/stellar/status') {
+    const economics = await economicsByNetwork()
     sendJson(res, 200, {
       rail: 'x402-stellar',
       vm: 'soroban',
@@ -118,8 +147,14 @@ export async function handleX402StellarRoutes(ctx: RouteCtx): Promise<boolean> {
           'The buyer pays no network fee: they sign a Soroban authorization entry and we ' +
           'assemble, pay the fee and submit. Unlike our EVM rails there is no settlement fee ' +
           'added on top of the base price, which is us absorbing a real cost rather than ' +
-          'there being none.',
+          'there being none. What that cost actually is, right now, is under `economics`.',
       },
+      // Keyed by CAIP-2, one entry per configured network. Each is a LIVE read of that
+      // network's own XLM/USDC order book, or live:false with the reason it could not be
+      // made: the cost of absorbing the settlement fee is a number we publish rather than a
+      // sentence we remember, and a price we cannot fetch is reported as missing rather than
+      // filled in from memory.
+      economics,
       authorization: {
         scheme: 'soroban-auth',
         domainProving:

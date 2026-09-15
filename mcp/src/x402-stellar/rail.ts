@@ -41,6 +41,14 @@
  * claim we cannot price it. If XLM approaches $0.4353 this decision gets revisited rather
  * than discovered.
  *
+ * And a third correction, which is why every number in the two paragraphs above now has a
+ * live counterpart. All of it was arithmetic done by hand on a day, written into a comment,
+ * and thereafter unobservable: "0.1587048 on 2026-08-15" is exactly the kind of figure that
+ * goes stale silently while still reading as current. x402-stellar/economics.ts runs the
+ * same sum against the live order book and the fee the ledger last actually charged us, and
+ * GET /api/x402/stellar/status publishes it per network under `economics`. The prose here is
+ * the reasoning; that endpoint is the number. When they disagree, the endpoint is right.
+ *
  * **A minimum value floor, and a smaller one than the EVM rails carry.** This paragraph
  * used to say there was none, on the reasoning that a floor exists to cover gas and there is
  * no fee to cover here. Both halves were wrong. There IS a fee, we simply absorb it, as the
@@ -62,6 +70,7 @@ import { loadStellarSettlements, type StellarSettlementRecord } from '../storage
 import { agentPassport, reputationScore, riskCheck, verifyAgent, type TxContext } from '../asp/tools.js'
 import { feePayerEnvVar, stellarFeePayer, networkPassphrase } from '../chains/stellar/client.js'
 import { isAccountId, isContractId } from '../chains/stellar/strkey.js'
+import { stellar8004SaleIdentity } from '../chains/stellar/stellar8004.js'
 import { RAIL_BASE_PRICES_USD, RAIL_TOOLS, RAIL_TOOL_CARDS, type RailToolName } from '../x402-3009/rail.js'
 
 export { RAIL_BASE_PRICES_USD, RAIL_TOOL_CARDS, RAIL_TOOLS }
@@ -70,7 +79,6 @@ export type { RailToolName }
 /**
  * Which party assembles the transaction, pays the network fee, and submits it.
  *
-import { stellar8004SaleIdentity } from '../chains/stellar/stellar8004.js'
  * `buyer` is not a configurable choice like the other two: it is what a settlement records
  * when the payment arrived already made, from a vault or a wallet that broadcast it itself.
  * It lives in the same union so the proof page cannot report a fee we did not pay.
@@ -444,6 +452,12 @@ export function stellarRailChallenge(
         // exist; latent is not the same as absent.
         networkPassphrase: networkPassphrase(chain!),
         broadcaster: s.broadcaster,
+        // Said at the POINT OF SALE, not only in the docs: a buyer deciding whether to pay
+        // for a trust check on Stellar is exactly the party who needs to know that the
+        // passport being checked is anchored on an EVM chain and that KYA cannot be
+        // anchored here. The Stellar 8004 entry is the honest half of that: a third-party
+        // registry we read, with our testnet id, and nothing claimed on pubnet.
+        identity: stellar8004SaleIdentity(),
       },
     })
   }
@@ -452,12 +466,6 @@ export function stellarRailChallenge(
     httpStatus: 402,
     body: {
       x402Version: 2,
-        // Said at the POINT OF SALE, not only in the docs: a buyer deciding whether to pay
-        // for a trust check on Stellar is exactly the party who needs to know that the
-        // passport being checked is anchored on an EVM chain and that KYA cannot be
-        // anchored here. The Stellar 8004 entry is the honest half of that: a third-party
-        // registry we read, with our testnet id, and nothing claimed on pubnet.
-        identity: stellar8004SaleIdentity(),
       error: 'payment required',
       // v2 hoists the resource out of each accepts entry into one object on the challenge.
       // The per-entry string stays for v1 clients; it is the same field in both places.
@@ -470,9 +478,12 @@ export function stellarRailChallenge(
           'The buyer pays no network fee on this rail: you sign a Soroban authorization entry ' +
           'and we assemble, pay the fee and submit. Unlike our EVM rails we add no settlement ' +
           'fee on top of the base price. That is us absorbing a real cost rather than there ' +
-          'being none: a settlement measured 22,973 stroops (0.0022973 XLM) on stellar:testnet, ' +
-          'about $0.000365 at the XLM/USDC price on Stellar\'s own order book. The base price is ' +
-          'identical on every rail we sell on.',
+          'being none: a settlement was CHARGED 22,973 stroops (0.0022973 XLM) on stellar:testnet ' +
+          'and 23,479 on stellar:pubnet, which is what the ledger took rather than the higher ' +
+          'fee the envelope bid. What that is worth in USD moves with the XLM price, so it is ' +
+          'not quoted here: GET /api/x402/stellar/status prices it live off the XLM/USDC order ' +
+          'book on the ledger this settles on. The base price is identical on every rail we ' +
+          'sell on.',
         ...RAIL_TOOL_CARDS[tool],
         method: `POST ${stellarRailResource(tool)}`,
         payment:
@@ -594,6 +605,10 @@ function stellarHandlers(
         asset: status.token?.address,
         assetSymbol: status.token?.symbol,
         facilitator: FACILITATOR[broadcaster],
+        // The same sentence the challenge made before the money moved, repeated in the
+        // answer it bought. A buyer who only ever sees the served response would otherwise
+        // have to take the challenge's word for where identity actually lives.
+        identity: stellar8004SaleIdentity(),
       },
     },
   })
@@ -605,10 +620,6 @@ function stellarHandlers(
   }
 }
 
-        // The same sentence the challenge made before the money moved, repeated in the
-        // answer it bought. A buyer who only ever sees the served response would otherwise
-        // have to take the challenge's word for where identity actually lives.
-        identity: stellar8004SaleIdentity(),
 /**
  * The full paid-call path for one tool.
  *
@@ -820,9 +831,81 @@ export type StellarRailProof = {
   byNetwork: Record<string, { count: number; usd: number; assetSymbol: string }>
   /** Who actually moved each settled payment. The number that makes the claim checkable. */
   byBroadcaster: Record<Broadcaster, number>
-  fees: { totalStroops: string; settles: number; note: string }
-  recent: StellarSettlementRecord[]
+  /** Settled payments made from accounts we control. Labeled, never hidden or filtered. */
+  internalSettlements: number
+  internalUsd: number
+  externalSettlements: number
+  externalUsd: number
+  internalPayers: string[]
+  fees: {
+    /** Kept under its original name, and it is the BID total. Renaming it would silently
+     *  change what an existing reader is shown; `bidStroops` is the same number said
+     *  plainly, and `chargedStroops` is the one that was missing. */
+    totalStroops: string
+    bidStroops: string
+    chargedStroops: string
+    settles: number
+    chargedSettles: number
+    note: string
+  }
+  /** Each row carries whether its payer is one of ours, so a reader does not have to
+   *  cross-reference `internalPayers` by hand. */
+  recent: (StellarSettlementRecord & { internal: boolean })[]
   note: string
+}
+
+/**
+ * OUR OWN Stellar accounts, hardcoded on purpose, exactly as the EIP-3009 rail does it.
+ *
+ * The proof page labels these settlements internal so nobody can read our own traffic as
+ * third-party demand. Hardcoding is the whole point: an env var alone is how a deployment
+ * ends up reporting its own demo payments as external demand. A public G... account is not
+ * a credential and it cannot be quietly unset the way a variable can.
+ *
+ * Only the buyer burners are listed here. The payTo and fee-payer accounts are DERIVED from
+ * the configured networks at call time instead, because those are deployment state: writing
+ * them down would mean a redeployment onto a new payee silently stops labeling itself.
+ * Nothing here is or reads a seed; these are the public halves and nothing else.
+ */
+const KNOWN_INTERNAL_PAYERS = [
+  // The pubnet buyer burner. It paid for the first mainnet sale
+  // (f213371c...) and for the production sale (546bfa8d...).
+  'GAHWB3OFVABZL3FDDOZDF5XHDECJQC3YG2J3KZQCC2Q34MQJHTTQK45W',
+  // The testnet buyer, which signed every gasless rehearsal on that network.
+  'GBRKRUDYKYOSGH4QIYAFONPWXFCFC7K5AYHIVJDNYJAZ33BE5YSMTS6R',
+]
+
+/**
+ * Every Stellar account whose payments are ours rather than someone else's.
+ *
+ * Three sources, in this order: the burners above, the configured payee and fee payer of
+ * every configured network (read live, never written down), and X402_STELLAR_INTERNAL_PAYERS
+ * for anything a deploy should not be needed to add.
+ *
+ * Compared EXACTLY, never lowercased. A StrKey is case-significant base32, so the EVM habit
+ * of normalising both sides would turn every entry into a string that matches nothing:
+ * the same bug this repo already fixed once in the Stellar replay key and once in the payTo
+ * allowlist. Entries from the env are validated with isAccountId, so a malformed value is
+ * dropped rather than silently widening or narrowing the label.
+ */
+export function stellarInternalPayers(env: NodeJS.ProcessEnv = process.env): string[] {
+  const out = new Set<string>(KNOWN_INTERNAL_PAYERS)
+  for (const id of stellarRailNetworks(env)) {
+    const s = stellarRailStatus(env, id)
+    if (s.payTo) out.add(s.payTo)
+    const chain = s.chain ? getChainById(s.chain) : null
+    // The PUBLIC key of the fee payer, derived from the configured secret at call time.
+    // Nothing about the seed leaves this line, and an unset or malformed one simply
+    // contributes nothing.
+    if (chain) {
+      const kp = stellarFeePayer(chain, env)
+      if (kp) out.add(kp.publicKey())
+    }
+  }
+  for (const a of (env.X402_STELLAR_INTERNAL_PAYERS ?? '').split(',').map((s) => s.trim())) {
+    if (isAccountId(a)) out.add(a)
+  }
+  return [...out]
 }
 
 /**
@@ -835,21 +918,35 @@ export type StellarRailProof = {
  */
 export async function stellarRailProof(
   status: StellarRailStatus,
-  deps: { load?: () => Promise<StellarSettlementRecord[]> } = {},
+  deps: { load?: () => Promise<StellarSettlementRecord[]>; env?: NodeJS.ProcessEnv } = {},
 ): Promise<StellarRailProof> {
+  const env = deps.env ?? process.env
   const rows = await (deps.load ?? loadStellarSettlements)()
+  const mine = new Set(stellarInternalPayers(env))
   const settled = rows.filter((r) => r.outcome === 'settled')
   const byTool: Record<string, { count: number; usd: number }> = {}
   const byNetwork: Record<string, { count: number; usd: number; assetSymbol: string }> = {}
   const byBroadcaster: Record<Broadcaster, number> = { self: 0, oz: 0, buyer: 0 }
   let totalUsd = 0
-  let feeTotal = 0n
+  let internalSettlements = 0
+  let internalUsd = 0
+  let bidTotal = 0n
+  let chargedTotal = 0n
+  let chargedSettles = 0
   for (const r of rows) {
     if (r.feeStroops) {
       try {
-        feeTotal += BigInt(r.feeStroops)
+        bidTotal += BigInt(r.feeStroops)
       } catch {
         /* a malformed row must not break the report */
+      }
+    }
+    if (r.feeChargedStroops) {
+      try {
+        chargedTotal += BigInt(r.feeChargedStroops)
+        chargedSettles += 1
+      } catch {
+        /* likewise: a row we cannot parse is dropped from the total, never guessed at */
       }
     }
   }
@@ -862,6 +959,10 @@ export async function stellarRailProof(
     n.count += 1
     n.usd = Number((n.usd + r.amountUsd).toFixed(6))
     byBroadcaster[r.broadcaster] += 1
+    if (mine.has(r.payer)) {
+      internalSettlements += 1
+      internalUsd += r.amountUsd
+    }
   }
   return {
     rail: 'x402-stellar',
@@ -873,17 +974,35 @@ export async function stellarRailProof(
     payTo: status.payTo,
     totalSettlements: settled.length,
     totalUsd: Number(totalUsd.toFixed(6)),
+    internalSettlements,
+    internalUsd: Number(internalUsd.toFixed(6)),
+    externalSettlements: settled.length - internalSettlements,
+    externalUsd: Number((totalUsd - internalUsd).toFixed(6)),
+    internalPayers: [...mine],
     reverted: rows.filter((r) => r.outcome === 'reverted').length,
     ambiguous: rows.filter((r) => r.outcome === 'ambiguous').length,
     byTool,
     byNetwork,
     byBroadcaster,
     fees: {
-      totalStroops: feeTotal.toString(),
+      totalStroops: bidTotal.toString(),
+      bidStroops: bidTotal.toString(),
+      chargedStroops: chargedTotal.toString(),
       settles: rows.filter((r) => Boolean(r.feeStroops)).length,
-      note: 'What WE paid in network fees so the buyer paid none. Stroops, not USD: the XLM price moves after a row is written, and the order book to price it with is on the ledger these settled on.',
+      chargedSettles,
+      note:
+        'Two different numbers, and the difference used to be hidden behind the words "what we ' +
+        'paid". The BID is the maximum we offered for a settlement, which is the envelope fee and ' +
+        'what the daily budget reserves against. The CHARGE is what the ledger actually took, read ' +
+        'back from the transaction result. Stellar runs a fee auction and charges the clearing fee, ' +
+        'so the bid is always at least the charge: our first pubnet sale bid 34035 stroops and was ' +
+        'charged 23479. Rows written before we recorded the charge carry only the bid, which is why ' +
+        'chargedSettles can be smaller than settles and why the two totals are not comparable row ' +
+        'for row. Stroops, not USD: the XLM price moves after a row is written, so no USD figure is ' +
+        'baked in here. GET /api/x402/stellar/status prices it live off the order book on the very ' +
+        'ledger these settled on.',
     },
-    recent: rows.slice(-25).reverse(),
+    recent: rows.slice(-25).reverse().map((r) => ({ ...r, internal: mine.has(r.payer) })),
     note:
       'Rows counted as settled were confirmed by our own read of the SEP-41 transfer event, ' +
       'whoever broadcast it. HOW each was bound differs and the difference matters: a row with ' +
@@ -892,6 +1011,10 @@ export async function stellarRailProof(
       'and is bound to the transaction hash alone, which proves the payment happened and was ' +
       'not redeemed here before, not that it was made for this purchase rather than another of ' +
       'the same price. `recent` also carries reverted and ambiguous rows, which were NOT ' +
-      'confirmed and are not counted in totalSettlements; read outcome, not the array length.',
+      'confirmed and are not counted in totalSettlements; read outcome, not the array length. ' +
+      'Payments from accounts we control are LABELED internal (per row, and summed into ' +
+      'internalSettlements / internalUsd) and never hidden: our own traffic proves the rail ' +
+      'works and proves nothing at all about demand, so removing it would understate the first ' +
+      'and reporting it plain would overstate the second.',
   }
 }

@@ -7,18 +7,23 @@ import {
   ozKeyVar,
   stellarAmountRaw,
   stellarBroadcaster,
+  stellarInternalPayers,
   stellarRailChallenge,
   stellarRailNetworks,
   stellarRailPaidNetwork,
   stellarRailPaymentHeader,
+  stellarRailPaymentResponseHeader,
+  stellarRailProof,
   stellarRailServeTool,
   stellarRailPaywallGate,
   stellarRailPriceUsd,
   stellarRailStatus,
   stellarRailToken,
 } from './rail.js'
+import type { StellarSettlementRecord } from '../storage.js'
 import { RAIL_BASE_PRICES_USD as EIP3009_PRICES } from '../x402-3009/rail.js'
 import { getChainById } from '../chains/registry.js'
+import { stellar8004SaleIdentity } from '../chains/stellar/stellar8004.js'
 import { Keypair, StrKey } from '@stellar/stellar-sdk'
 import { sendChallenge } from '../http/shared.js'
 
@@ -32,6 +37,11 @@ const READY = {
   X402_STELLAR_PAYTO: PAYTO,
   STELLAR_TESTNET_SIGNER_SECRET: SEED,
 }
+
+/** The two buyer burners the rail knows are ours, and one account that is not. */
+const OUR_PUBNET_BUYER = 'GAHWB3OFVABZL3FDDOZDF5XHDECJQC3YG2J3KZQCC2Q34MQJHTTQK45W'
+const OUR_TESTNET_BUYER = 'GBRKRUDYKYOSGH4QIYAFONPWXFCFC7K5AYHIVJDNYJAZ33BE5YSMTS6R'
+const STRANGER = StrKey.encodeEd25519PublicKey(Buffer.alloc(32, 3))
 
 test('the base prices are the SAME OBJECT the EIP-3009 rail sells at', () => {
   // Imported, not restated. Three rails already sell these four tools; a fourth copy
@@ -399,4 +409,204 @@ test('a settled call hands the buyer its receipt in PAYMENT-RESPONSE', async () 
   assert.equal(decoded.amount, '50000')
   // Nothing is claimed settled that the body does not also carry.
   assert.equal((out.body as Record<string, Record<string, unknown>>).settlement.transaction, TX)
+})
+
+// ── the proof: whose payments these are, and what the fee really was ──────────────────
+
+const proofRow = (over: Partial<StellarSettlementRecord> = {}): StellarSettlementRecord => ({
+  ts: '2026-09-15T00:00:00.000Z',
+  outcome: 'settled',
+  tool: 'verify_agent',
+  resource: '/api/x402/stellar/tools/verify_agent',
+  network: 'stellar:pubnet',
+  asset: 'CCW67TSZV3SSS2HXMBQ5JFGCKJNXKZM7UQUWUZPUTHXSTZLEO7SJMI75',
+  assetSymbol: 'USDC',
+  assetDecimals: 7,
+  value: '10000',
+  amountUsd: 0.001,
+  baseUsd: 0.001,
+  payer: OUR_PUBNET_BUYER,
+  payTo: PAYTO,
+  tx: 'f213371c1241968ee78170923d8c5a3bd9b32950e73bb9c563d800ab2c70ec9e',
+  broadcaster: 'self',
+  confirmedBy: 'soroban-rpc',
+  ...over,
+})
+
+test('our own buyer accounts are labeled internal without an env var being set', async () => {
+  // Hardcoded on purpose, the same decision the EIP-3009 rail records: a list that lives
+  // only in configuration is how a deployment ends up reporting its own demo payments as
+  // third-party demand. A public G... account is not a credential.
+  const payers = stellarInternalPayers({})
+  assert.ok(payers.includes(OUR_PUBNET_BUYER), 'the pubnet burner that paid for the first mainnet sale')
+  assert.ok(payers.includes(OUR_TESTNET_BUYER), 'the testnet buyer that signed every rehearsal')
+})
+
+test('the proof splits internal from external and labels every row', async () => {
+  const rows = [
+    proofRow(),
+    proofRow({ payer: OUR_TESTNET_BUYER, network: 'stellar:testnet', amountUsd: 0.25, tool: 'risk_check' }),
+    proofRow({ payer: STRANGER, amountUsd: 0.25, tool: 'risk_check' }),
+  ]
+  const p = await stellarRailProof(stellarRailStatus({}), { load: async () => rows, env: {} })
+  assert.equal(p.totalSettlements, 3)
+  assert.equal(p.internalSettlements, 2)
+  assert.equal(p.externalSettlements, 1)
+  assert.equal(p.internalUsd, 0.251)
+  assert.equal(p.externalUsd, 0.25)
+  assert.equal(Number((p.internalUsd + p.externalUsd).toFixed(6)), p.totalUsd)
+  // Per row as well as in the totals, so a reader does not have to cross-reference by hand.
+  const byPayer = Object.fromEntries(p.recent.map((r) => [r.payer, r.internal]))
+  assert.equal(byPayer[OUR_PUBNET_BUYER], true)
+  assert.equal(byPayer[OUR_TESTNET_BUYER], true)
+  assert.equal(byPayer[STRANGER], false)
+})
+
+test('internal traffic is labeled, never filtered out of the totals', async () => {
+  // Removing it would understate that the rail works; reporting it plain would overstate
+  // demand. Labeling is the only option that is honest in both directions.
+  const rows = [proofRow(), proofRow()]
+  const p = await stellarRailProof(stellarRailStatus({}), { load: async () => rows, env: {} })
+  assert.equal(p.totalSettlements, 2, 'our own sales still count as settlements')
+  assert.equal(p.recent.length, 2)
+  assert.equal(p.externalSettlements, 0)
+  assert.match(p.note, /LABELED internal/)
+})
+
+test('a StrKey is compared exactly, because case is significant in base32', async () => {
+  // The EVM rail lowercases both sides and is right to. Doing that here would turn every
+  // entry into a string that matches nothing: the same bug this repo already fixed once in
+  // the Stellar replay key and once in the payTo allowlist.
+  const rows = [proofRow({ payer: OUR_PUBNET_BUYER.toLowerCase() })]
+  const p = await stellarRailProof(stellarRailStatus({}), { load: async () => rows, env: {} })
+  assert.equal(p.internalSettlements, 0, 'a lowercased StrKey is a different string and not our account')
+})
+
+test('X402_STELLAR_INTERNAL_PAYERS adds accounts, and drops anything that is not one', async () => {
+  const env = { X402_STELLAR_INTERNAL_PAYERS: `${STRANGER}, not-an-account , 0x8c8d9cd12d8896a40cf2115ee731258bb4983349` }
+  const payers = stellarInternalPayers(env)
+  assert.ok(payers.includes(STRANGER))
+  assert.equal(payers.includes('not-an-account'), false)
+  assert.equal(payers.some((p) => p.startsWith('0x')), false, 'an EVM address belongs to the other rail')
+  const p = await stellarRailProof(stellarRailStatus(env), { load: async () => [proofRow({ payer: STRANGER })], env })
+  assert.equal(p.internalSettlements, 1)
+})
+
+test('the configured payee and fee payer are derived, never written down', async () => {
+  // They are deployment state. Hardcoding them would mean a redeploy onto a new payee
+  // silently stops labeling its own traffic, which is exactly the failure the hardcoded
+  // burner list exists to prevent for the buyers.
+  const feePayer = Keypair.random()
+  const env = { ...READY, STELLAR_TESTNET_SIGNER_SECRET: feePayer.secret() }
+  const payers = stellarInternalPayers(env)
+  assert.ok(payers.includes(PAYTO), 'the account we are paid at')
+  assert.ok(payers.includes(feePayer.publicKey()), 'the account that pays the network fee')
+  assert.equal(payers.some((p) => p.startsWith('S')), false, 'a public key, never a seed')
+  // And with nothing configured, neither appears: no network, no deployment state.
+  assert.equal(stellarInternalPayers({}).includes(PAYTO), false)
+})
+
+test('the proof reports the bid and the charge as two different numbers', async () => {
+  const rows = [
+    // The real pair from our first pubnet sale: bid 34035, charged 23479.
+    proofRow({ feeStroops: '34035', feeChargedStroops: '23479' }),
+    // A row written before the charge was recorded. It carries the bid alone, which is why
+    // chargedSettles can be smaller than settles.
+    proofRow({ feeStroops: '33153' }),
+  ]
+  const p = await stellarRailProof(stellarRailStatus({}), { load: async () => rows, env: {} })
+  assert.equal(p.fees.bidStroops, '67188')
+  assert.equal(p.fees.chargedStroops, '23479')
+  assert.equal(p.fees.settles, 2)
+  assert.equal(p.fees.chargedSettles, 1)
+  // Kept under its original name so an existing reader is not silently shown a different
+  // number, and it is the bid, which is what it always was.
+  assert.equal(p.fees.totalStroops, p.fees.bidStroops)
+  assert.match(p.fees.note, /BID is the maximum we offered/)
+  assert.match(p.fees.note, /CHARGE is what the ledger actually took/)
+  assert.doesNotMatch(p.fees.note, /What WE paid/)
+})
+
+test('a malformed fee is dropped from the totals rather than breaking the report', async () => {
+  const rows = [
+    proofRow({ feeStroops: '34035', feeChargedStroops: '23479' }),
+    proofRow({ feeStroops: 'not-a-number', feeChargedStroops: 'nor-this' }),
+  ]
+  const p = await stellarRailProof(stellarRailStatus({}), { load: async () => rows, env: {} })
+  assert.equal(p.fees.bidStroops, '34035')
+  assert.equal(p.fees.chargedStroops, '23479')
+})
+
+test('the fields the proof page renders each row from are all still there', async () => {
+  // src/routes/ChainProof.tsx reads exactly these off `recent[]`. Adding `internal` next to
+  // them must not disturb any of them.
+  const p = await stellarRailProof(stellarRailStatus({}), { load: async () => [proofRow({ explorerUrl: 'https://example.invalid/tx/1' })], env: {} })
+  const row = p.recent[0]
+  for (const field of ['ts', 'outcome', 'tool', 'amountUsd', 'assetSymbol', 'tx', 'explorerUrl'] as const) {
+    assert.ok(field in row, `the proof page reads ${field} off every recent row`)
+  }
+  assert.equal(typeof row.internal, 'boolean')
+})
+
+test('the v2 receipt header keeps its five fields; the fee detail stays in the body', async () => {
+  // PAYMENT-RESPONSE has to satisfy someone else's type (the reference SettleResponse), so
+  // it carries exactly what that type defines and nothing of ours. The richer record,
+  // including both fee numbers, belongs in the body, where nothing has to fit a foreign
+  // shape. Adding feeChargedStroops must not leak into the header.
+  const header = stellarRailPaymentResponseHeader({
+    success: true,
+    transaction: '3da74634e2b09b3e1c15c53a1a0e6d1c1e3f3b2a5d4c6e7f8a9b0c1d2e3f4a5b',
+    ledger: 64_155_370,
+    payer: OUR_PUBNET_BUYER,
+    network: 'stellar:pubnet',
+    asset: 'CCW67TSZV3SSS2HXMBQ5JFGCKJNXKZM7UQUWUZPUTHXSTZLEO7SJMI75',
+    assetSymbol: 'USDC',
+    value: '10000',
+    feeStroops: '34035',
+    feeChargedStroops: '23479',
+    broadcaster: 'self',
+    explorerUrl: 'https://example.invalid/tx/1',
+    settledAt: '2026-09-15T00:00:00.000Z',
+  })
+  const decoded = JSON.parse(Buffer.from(header, 'base64').toString('utf8')) as Record<string, unknown>
+  assert.deepEqual(Object.keys(decoded).sort(), ['amount', 'network', 'payer', 'success', 'transaction'])
+  assert.equal(decoded.feeStroops, undefined)
+  assert.equal(decoded.feeChargedStroops, undefined)
+})
+
+test('the challenge says at the point of sale that KYA cannot be anchored on Stellar', async () => {
+  // The ROADMAP line this closes. A buyer on this rail is being sold a trust check, and the
+  // thing they cannot see from the price is that the passport being checked is anchored on
+  // an EVM chain: ERC-8004 is EVM-only and no amount of Soroban makes it otherwise. Saying
+  // it in the docs and not in the 402 is saying it where nobody is deciding.
+  const out = stellarRailChallenge('risk_check', stellarRailStatus(READY), READY)
+  assert.equal(out.httpStatus, 402)
+  if (out.httpStatus !== 402) return
+  const accepts = out.body.accepts as Record<string, Record<string, Record<string, unknown>>>[]
+  assert.ok(accepts.length > 0)
+  const registry = getChainById('stellar-testnet')!.contracts.stellar8004!.identity
+  for (const a of accepts) {
+    const identity = a.extra.identity as unknown as {
+      anchoredOn: string
+      note: string
+      passport: string
+      stellar8004: { testnet: string | null; pubnet: string | null; note: string }
+    }
+    assert.ok(identity, 'every way to pay carries the same identity statement')
+    assert.equal(identity.anchoredOn, 'evm')
+    assert.match(identity.note, /ERC-8004 is EVM-only/)
+    assert.match(identity.note, /KYA cannot be anchored on Stellar/)
+    assert.equal(identity.passport, 'https://a-identity.xyz/.well-known/agent-card.json')
+    // Derived from the descriptor, so a registry id cannot drift between here and the read.
+    assert.equal(identity.stellar8004.testnet, `stellar:testnet:${registry}#25`)
+    assert.equal(identity.stellar8004.pubnet, null, 'nothing is claimed on pubnet until it is registered')
+    assert.match(identity.stellar8004.note, /third-party registry, read-only for us, not our anchor/)
+  }
+
+  // And the SAME object is what the served answer carries under _meta.settlement.identity.
+  // stellarHandlers is module-private and its handlers are replaced by the injected ones in
+  // every serve test here, so what is worth pinning is that there is one source rather than
+  // two copies that can drift: both spots call stellar8004SaleIdentity(), whose own shape is
+  // asserted in chains/stellar/stellar8004.test.ts.
+  assert.deepEqual(accepts[0].extra.identity, stellar8004SaleIdentity())
 })
