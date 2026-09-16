@@ -64,18 +64,30 @@ export default function Hero() {
       className="relative z-10 mx-auto flex w-full max-w-[1280px] flex-col items-center px-5 text-center sm:px-8"
       style={{ paddingTop: 'clamp(40px, 7vw, 80px)' }}
     >
-      {/* The announcement pill: the newest chain, worn where nobody can miss it and
-          linking straight to the proof rather than to a claim. Swap the copy when the
-          next chain earns its first real settlement. */}
+      {/* The announcement pill: the featured network, worn where nobody can miss it and
+          linking to a page where every claim opens its transaction. Arc Mainnet since
+          2026-09-16, the day it opened and the day our first payment settled on it. The
+          order of emphasis is a product decision (Arc, then Stellar, then Algorand), so
+          swap the copy when that decision changes, not only when a chain goes live. */}
       <motion.div custom={0} variants={fadeUp} initial="hidden" animate="visible">
         <Link
-          to="/algorand"
-          className="group mb-6 inline-flex items-center gap-2 rounded-full border border-border bg-card/80 px-4 py-1.5 text-xs font-semibold text-foreground/75 backdrop-blur transition-colors hover:border-accent/50 hover:text-foreground"
+          to="/arc"
+          className="group mb-6 inline-flex items-center gap-2 rounded-full border border-border bg-card/80 py-1 pl-1 pr-4 text-xs font-semibold text-foreground/75 backdrop-blur transition-colors hover:border-accent/50 hover:text-foreground"
         >
-          <span className="h-1.5 w-1.5 rounded-full bg-ok" aria-hidden="true" />
-          NEW · Live on Algorand
+          <span
+            className="grid h-6 w-6 place-items-center rounded-full"
+            style={{ background: 'linear-gradient(155deg, #011667 0%, #3B1046 55%, #7B0E25 100%)' }}
+            aria-hidden="true"
+          >
+            <img src="/logos/arc-mark.webp" alt="" width={14} height={13} className="h-[13px] w-[14px] brightness-0 invert" />
+          </span>
+          <span className="relative flex h-1.5 w-1.5" aria-hidden="true">
+            <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-ok opacity-60" />
+            <span className="relative inline-flex h-1.5 w-1.5 rounded-full bg-ok" />
+          </span>
+          Arc Mainnet is live
           <span className="inline-flex items-center gap-0.5 text-accent">
-            try it <ArrowUpRight size={12} className="transition-transform group-hover:translate-x-0.5 group-hover:-translate-y-0.5" />
+            see it <ArrowUpRight size={12} className="transition-transform group-hover:translate-x-0.5 group-hover:-translate-y-0.5" />
           </span>
         </Link>
       </motion.div>
@@ -133,7 +145,7 @@ export default function Hero() {
 
         <motion.button
           type="button"
-          onClick={() => navigate('/algorand')}
+          onClick={() => navigate('/arc')}
           whileHover={{ scale: 1.03 }}
           whileTap={{ scale: 0.97 }}
           className="inline-flex items-center gap-2 rounded-full border border-border bg-card px-7 py-3.5 text-sm font-semibold text-foreground sm:px-8 sm:py-4 sm:text-base"

@@ -34,6 +34,7 @@ const Explorer = lazy(() => import('./routes/Explorer'))
 const CeloProof = lazy(() => import('./routes/CeloProof'))
 const ChainProof = lazy(() => import('./routes/ChainProof'))
 const Algorand = lazy(() => import('./routes/Algorand'))
+const Arc = lazy(() => import('./routes/Arc'))
 const ProofIndex = lazy(() => import('./routes/ProofIndex'))
 const Architecture = lazy(() => import('./routes/Architecture'))
 const Mascot = lazy(() => import('./routes/Mascot'))
@@ -122,6 +123,8 @@ export default function App() {
         <Route path="/celo-proof" element={<CeloProof />} />
         <Route path="/proof" element={<ProofIndex />} />
         <Route path="/proof/:rail" element={<ChainProof />} />
+        {/* Arc Mainnet: the featured network, live since the day it opened. */}
+        <Route path="/arc" element={<Arc />} />
         {/* The one page someone arriving from the Algorand ecosystem needs. */}
         <Route path="/algorand" element={<Algorand />} />
         <Route path="/architecture" element={<Architecture />} />

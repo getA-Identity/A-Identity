@@ -121,8 +121,8 @@ const RAILS: Rail[] = [
     tileBg: 'linear-gradient(155deg, #011667 0%, #3B1046 55%, #7B0E25 100%)',
     color: '#3B1B6E',
     whiteMark: true,
-    role: 'Where identity and reputation live.',
-    detail: 'ERC-8004 passports, KYA attestations, spend vaults and escrow settle here, with sub-second finality and gas paid in USDC.',
+    role: 'The featured network, live on mainnet.',
+    detail: 'Live on Arc Mainnet since the day it opened: our agent #0, a spend vault holding real USDC, and checks paid through Circle Gateway nanopayments. KYA attestations and escrow run on Arc testnet, all with sub-second finality and gas paid in USDC.',
     chain: 'arc',
   },
   {

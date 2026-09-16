@@ -27,7 +27,15 @@ Built on **Circle Arc** (gas paid in USDC, sub-second finality), using
 **ERC-8004** for identity, **ERC-8183** for job escrow, and **x402** for
 per-request payments.
 
-> Status: hackathon MVP. Arc is the live phase-1 network. Stellar is phase 2 and
+> **Arc Mainnet is live.** Arc opened to the public on 2026-09-16 and A-Identity went live
+> on it the same day: agent #0 on the canonical ERC-8004 registry, an AgentSpendPolicy
+> vault holding real USDC under a 1 USDC daily cap, and trust checks paid through both
+> Circle Gateway nanopayments and our own EIP-3009 facilitator. Every receipt is at
+> [/arc](https://a-identity.xyz/arc) and [/proof/arc](https://a-identity.xyz/proof/arc);
+> the first payments were our own and are labeled internal.
+>
+> Status: hackathon MVP. Arc was phase 1 and is now live on mainnet, with escrow and KYA
+> anchoring still on Arc testnet. Stellar is phase 2 and
 > shipped: the Soroban spend vault holds real Circle USDC on pubnet under a 1 USDC daily
 > cap, and the hosted deployment sells over the Soroban x402 rail on BOTH Stellar
 > networks, with the first mainnet sale settled 2026-08-27 by our own broadcaster. Pubnet

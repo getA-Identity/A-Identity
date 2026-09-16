@@ -141,16 +141,17 @@ export const LANDING_FAQ: Item[] = [
   {
     q: 'Which chains can my agent pay on today?',
     plain:
-      'Seven networks settle real money today: OKX X Layer, Robinhood Chain, Arbitrum One, Base, Celo, Stellar and, newest, Algorand, where x402 v2 payments are gasless for the buyer: it signs a fee-zero USDC transfer and the pooled group fee covers it. Two testnet mirrors rehearse every change first. Every chain publishes a proof page with real transactions (https://a-identity.xyz/proof/algorand is the newest), and a chain is only called live here after a real payment has been recorded on it.',
+      'Eight networks settle real money today, led by Arc Mainnet, the newest: live since the day it opened, where an agent pays in USDC, the gas is USDC too, and Circle Gateway nanopayments make a check gasless on both sides. Then Stellar and Algorand, where the buyer also pays no fee, and Base, Arbitrum One, Robinhood Chain, OKX X Layer and Celo. Testnet mirrors rehearse every change first. Every chain publishes a proof page with real transactions (https://a-identity.xyz/proof/arc is the newest), and a chain is only called live here after a real payment has been recorded on it.',
     a: (
       <>
-        Seven networks settle real money today: OKX X Layer, Robinhood Chain, Arbitrum One, Base,
-        Celo, Stellar and, newest, <strong>Algorand</strong>, where x402 v2 payments are gasless
-        for the buyer: it signs a fee-zero USDC transfer and the pooled group fee covers it. Two
-        testnet mirrors rehearse every change first. Every chain publishes a proof page with real
-        transactions (
-        <a href="/proof/algorand" className={linkClass}>
-          /proof/algorand
+        Eight networks settle real money today, led by <strong>Arc Mainnet</strong>, the newest:
+        live since the day it opened, where an agent pays in USDC, the gas is USDC too, and
+        Circle Gateway nanopayments make a check gasless on both sides. Then Stellar and
+        Algorand, where the buyer also pays no fee, and Base, Arbitrum One, Robinhood Chain, OKX X
+        Layer and Celo. Testnet mirrors rehearse every change first. Every chain publishes a
+        proof page with real transactions (
+        <a href="/proof/arc" className={linkClass}>
+          /proof/arc
         </a>{' '}
         is the newest), and a chain is only called <em>live</em> here after a real payment has
         been recorded on it.

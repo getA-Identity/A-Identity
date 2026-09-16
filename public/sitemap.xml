@@ -88,6 +88,11 @@
     <priority>0.6</priority>
   </url>
   <url>
+    <loc>https://a-identity.xyz/arc</loc>
+    <changefreq>weekly</changefreq>
+    <priority>0.9</priority>
+  </url>
+  <url>
     <loc>https://a-identity.xyz/algorand</loc>
     <changefreq>weekly</changefreq>
     <priority>0.8</priority>
@@ -160,6 +165,22 @@
   <url>
     <loc>https://a-identity.xyz/proof/celo</loc>
     <changefreq>weekly</changefreq>
+    <priority>0.6</priority>
+  </url>
+  <url>
+    <loc>https://a-identity.xyz/blog/arc-mainnet-day-one</loc>
+    <xhtml:link rel="alternate" hreflang="en" href="https://a-identity.xyz/blog/arc-mainnet-day-one"/>
+    <xhtml:link rel="alternate" hreflang="tr" href="https://a-identity.xyz/tr/blog/arc-mainnet-day-one"/>
+    <xhtml:link rel="alternate" hreflang="x-default" href="https://a-identity.xyz/blog/arc-mainnet-day-one"/>
+    <changefreq>monthly</changefreq>
+    <priority>0.6</priority>
+  </url>
+  <url>
+    <loc>https://a-identity.xyz/tr/blog/arc-mainnet-day-one</loc>
+    <xhtml:link rel="alternate" hreflang="en" href="https://a-identity.xyz/blog/arc-mainnet-day-one"/>
+    <xhtml:link rel="alternate" hreflang="tr" href="https://a-identity.xyz/tr/blog/arc-mainnet-day-one"/>
+    <xhtml:link rel="alternate" hreflang="x-default" href="https://a-identity.xyz/blog/arc-mainnet-day-one"/>
+    <changefreq>monthly</changefreq>
     <priority>0.6</priority>
   </url>
   <url>

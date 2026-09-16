@@ -82,11 +82,13 @@ leaves the caller's process.
 - [SDK reference](https://a-identity.mintlify.site/developers/sdk)
 - [MCP server guide](https://a-identity.mintlify.site/developers/mcp-server)
 - [Architecture](https://a-identity.xyz/architecture): how the pieces fit together.
+- [Arc Mainnet](https://a-identity.xyz/arc): the featured network, live since it opened on 2026-09-16, with every receipt linked.
 
 ## Selected writing
 
 Full index: https://a-identity.xyz/blog
 
+- [Arc Mainnet, day one](https://a-identity.xyz/blog/arc-mainnet-day-one): an agent, a spend vault and two USDC payment rails on the day Arc Mainnet opened.
 - [Verify an AI agent before you pay it](https://a-identity.xyz/blog/verify-an-agent-before-you-pay-it): the four checks, in the order an agent needs them.
 - [What 120 real agent-to-agent payments look like](https://a-identity.xyz/blog/what-120-real-agent-payments-look-like): the distribution of settlements we actually took.
 - [Your agent has two budgets, and only one is money](https://a-identity.xyz/blog/two-kinds-of-agent-budget): token cost and payment authority are not the same problem.

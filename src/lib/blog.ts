@@ -89,6 +89,105 @@ export const AUTHORS = {
 
 export const POSTS: BlogPost[] = [
   {
+    slug: 'arc-mainnet-day-one',
+    title: 'Arc Mainnet, day one: an agent, a budget and two ways to get paid',
+    excerpt:
+      'Arc Mainnet opened on September 16, and by the evening A-Identity had an agent on its identity registry, a spend vault holding real USDC and trust checks settling through Circle Gateway. Here is what we shipped, what it cost, and what is still on testnet.',
+    chain: 'Arc',
+    accent: '#3B1B6E',
+    date: 'Sep 16, 2026',
+    readingTime: '5 min read',
+    seed: 19,
+    author: AUTHORS.protocol,
+    sections: [
+      {
+        heading: 'The Network Opened, So We Moved In',
+        body: [
+          'Circle opened Arc Mainnet to the public on September 16. Arc is a chain where the gas token is USDC itself, finality is deterministic and under a second, and Circle Gateway, CCTP and nanopayments are there from the first block. For a product whose whole job is to answer one question before an agent pays, should it pay this counterparty, that is the most natural home it could have.',
+          'Arc was where A-Identity started, on testnet. The same day mainnet opened, we moved the parts that handle real money onto it, and every step below has a transaction you can open at a-identity.xyz/proof/arc.',
+        ],
+      },
+      {
+        heading: 'Funding a Chain That Had No Gas of Ours',
+        body: [
+          'A new network has a chicken and egg problem: every write needs gas, and on Arc the gas is USDC we did not hold there yet. We burned native USDC on Base through CCTP V2 with Circle\'s Forwarding Service attached. Circle attested the burn and broadcast the mint on Arc for us, paying the destination gas out of the transfer. 1.012 USDC left Base and 0.945 arrived on Arc sixteen seconds after the burn receipt, with nothing of ours signing on the Arc side.',
+        ],
+      },
+      {
+        heading: 'Agent Number Zero',
+        body: [
+          'Arc Mainnet carries the canonical ERC-8004 identity and reputation registries, the same family Base and Arbitrum One share. We checked that the hard way, by reading each proxy\'s implementation slot and matching the implementation code against Base, because a small proxy at a familiar address proves nothing on its own. Then we registered, and our agent became token #0, the first mint on that registry. Our oracle anchored its reputation right after.',
+        ],
+      },
+      {
+        heading: 'A Budget the Contract Enforces',
+        body: [
+          'The AgentSpendPolicy vault is the contract that gives an agent a budget it cannot exceed. On Arc Mainnet it holds real USDC under a 1 USDC daily cap and a 0.25 USDC auto-approve line. It paid 0.01 inside its policy, and when we asked it to pay 0.50 the contract refused with its own typed error before anything was broadcast.',
+        ],
+      },
+      {
+        heading: 'Two Ways to Get Paid, Both in USDC',
+        body: [
+          'Trust checks now sell on Arc Mainnet through two x402 rails. With Circle Gateway nanopayments the buyer signs against its Gateway balance, Circle credits the call at once and settles on-chain in a batch, and nobody pays gas. With our own EIP-3009 facilitator the buyer signs a transfer and we broadcast it. That settlement measured 87165 gas, and because the gas is USDC that is an exact 0.0148 dollars with no price feed involved, which is where the 0.03 settlement fee comes from.',
+          'One thing broke on the way, and it was ours. Our gas ceiling was a single number sized for ether, and on a chain whose gas is a dollar it refused the first settlement before broadcasting. Nothing moved. The ceiling now follows the unit of the chain it guards.',
+        ],
+      },
+      {
+        heading: 'What Is Still on Testnet',
+        body: [
+          'Escrow and KYA anchoring still run on Arc testnet: the ValidationRegistry and Arc\'s reference escrow contract are not on mainnet yet. The first payments on mainnet were our own and the ledger labels them internal, and Arc\'s mainnet explorer is permissioned for now, so a receipt link may ask you to sign in. Start at a-identity.xyz/arc and click anything.',
+        ],
+      },
+    ],
+    tr: {
+      title: 'Arc Mainnet, ilk gun: bir ajan, bir butce ve iki odeme yolu',
+      excerpt:
+        'Arc Mainnet 16 Eylul\'de acildi ve aksam olmadan A-Identity\'nin kimlik kaydinda bir ajani, gercek USDC tutan bir harcama kasasi ve Circle Gateway uzerinden odenen guven sorgulari vardi. Neyi yayina aldigimiz, maliyeti ve hala testnet\'te kalanlar.',
+      chain: 'Arc',
+      readingTime: '5 dk okuma',
+      sections: [
+        {
+          heading: 'Ag Acildi, Biz de Tasindik',
+          body: [
+            'Circle, Arc Mainnet\'i 16 Eylul\'de herkese acti. Arc, gas tokeninin bizzat USDC oldugu, kesinlesmenin deterministik ve bir saniyenin altinda oldugu, Circle Gateway, CCTP ve nanopayments\'in ilk bloktan itibaren hazir oldugu bir zincir. Tek isi bir ajan odeme yapmadan once "bu karsi tarafa odemeli mi" sorusunu yanitlamak olan bir urun icin bundan daha dogal bir ev olamaz.',
+            'A-Identity, Arc\'ta testnet uzerinde basladi. Mainnet\'in acildigi gun gercek parayla calisan parcalari oraya tasidik ve asagidaki her adimin a-identity.xyz/proof/arc adresinde acabileceginiz bir islemi var.',
+          ],
+        },
+        {
+          heading: 'Bizim Gas\'imiz Olmayan Bir Zinciri Fonlamak',
+          body: [
+            'Yeni bir agin tavuk yumurta sorunu var: her yazma islemi gas ister ve Arc\'ta gas, orada henuz tutmadigimiz USDC\'dir. Base\'deki native USDC\'yi, Circle\'in Forwarding Service\'i ekli olarak CCTP V2 ile yaktik. Circle yakimi onayladi ve Arc tarafindaki mint islemini bizim yerimize yayinladi, hedef zincirin gas\'ini da transferden karsiladi. Base\'den 1.012 USDC cikti, yakim makbuzundan on alti saniye sonra Arc\'a 0.945 USDC ulasti ve Arc tarafinda bizim hicbir anahtarimiz imza atmadi.',
+          ],
+        },
+        {
+          heading: 'Sifir Numarali Ajan',
+          body: [
+            'Arc Mainnet, Base ve Arbitrum One ile ayni aileden kanonik ERC-8004 kimlik ve itibar kayitlarini tasiyor. Bunu zor yoldan dogruladik: her proxy\'nin implementation slot\'unu okuyup implementation kodunu Base\'dekiyle karsilastirdik, cunku tanidik bir adresteki kucuk bir proxy tek basina hicbir sey kanitlamaz. Sonra kaydolduk ve ajanimiz o kayit defterinin ilk mint\'i olan 0 numarali token oldu. Oracle\'imiz hemen ardindan itibarini zincire yazdi.',
+          ],
+        },
+        {
+          heading: 'Kontratin Uyguladigi Bir Butce',
+          body: [
+            'AgentSpendPolicy kasasi, bir ajana asamayacagi bir butce veren kontrattir. Arc Mainnet\'te 1 USDC gunluk limit ve 0.25 USDC otomatik onay siniri altinda gercek USDC tutuyor. Politikanin icinde 0.01 odedi, 0.50 odemesini istedigimizde ise kontrat hicbir sey yayinlanmadan kendi tipli hatasiyla reddetti.',
+          ],
+        },
+        {
+          heading: 'Iki Odeme Yolu, Ikisi de USDC',
+          body: [
+            'Guven sorgulari artik Arc Mainnet\'te iki x402 yolu uzerinden satiliyor. Circle Gateway nanopayments ile alici Gateway bakiyesine karsi imza atar, Circle cagriyi aninda kredilendirir ve zincirde toplu olarak yerlestirir; kimse gas odemez. Kendi EIP-3009 facilitator\'imizla alici bir transfer imzalar, biz yayinlariz. O settlement 87165 gas olctu ve gas USDC oldugu icin bu, fiyat beslemesi gerektirmeyen tam 0.0148 dolardir; 0.03\'luk settlement ucreti de buradan gelir.',
+            'Yolda bir sey bozuldu ve hata bizimdi. Gas tavanimiz ether icin boyutlanmis tek bir sayiydi ve gas\'in dolar oldugu bir zincirde ilk settlement\'i yayinlamadan reddetti. Hicbir sey hareket etmedi. Tavan artik korudugu zincirin birimini takip ediyor.',
+          ],
+        },
+        {
+          heading: 'Hala Testnet\'te Olanlar',
+          body: [
+            'Escrow ve KYA baglama hala Arc testnet\'te calisiyor: ValidationRegistry ve Arc\'in referans escrow kontrati henuz mainnet\'te degil. Mainnet\'teki ilk odemeler bizimdi ve kayit defteri onlari internal olarak etiketliyor. Arc\'in mainnet explorer\'i simdilik yetkili erisimli, bu yuzden bir makbuz linki giris yapmanizi isteyebilir. a-identity.xyz/arc adresinden baslayin ve herhangi bir seye tiklayin.',
+          ],
+        },
+      ],
+    },
+  },
+  {
     slug: 'x402-on-algorand-gasless-agent-payments',
     title: 'x402 on Algorand: gasless checkout for AI agents',
     excerpt:

@@ -8,28 +8,28 @@ adapter per virtual machine does the work. Adding a chain is a data edit, not a 
 path. The table below is the honest state of that registry.
 
 The vocabulary is exact. **Live** is the registry's status for the chains that carry
-the product today, and it has never meant "no caveats": Arc is live and is a public
-testnet, and each row states exactly what runs where, including what does not run
+the product today, and it has never meant "no caveats": Arc Mainnet is live with its first
+payments self-funded, Arc testnet still carries escrow and KYA, and each row states exactly what runs where, including what does not run
 there yet. **Beta** marks the testnet mirrors of live chains: wired and readable, test
 money. **Planned** means the descriptor exists so onboarding is a data edit, and
 nothing is deployed yet.
 
 | Chain | CAIP-2 | Status | What is deployed |
 | --- | --- | --- | --- |
+| [Arc Mainnet](/chains/arc#arc-mainnet) | `eip155:5042` | live | Agent #0 on the canonical ERC-8004 registry, an AgentSpendPolicy vault with real USDC, x402 via our EIP-3009 facilitator and Circle Gateway nanopayments |
 | [Circle Arc](/chains/arc) (testnet) | `eip155:5042002` | live | ERC-8004 identity, reputation and validation, ERC-8183 escrow, AgentSpendPolicy vaults, USDC |
+| [Stellar](/chains/stellar) | `stellar:pubnet` | live | An `AgentSpendPolicy` Soroban vault holding real Circle USDC under a 1 USDC daily cap, with a typed `DailyCapExceeded` refusal on the ledger; the Soroban x402 rail sells here too (first mainnet sale 2026-08-27, buyer signs an authorization entry and pays no fee). No ERC-8004 on either Stellar network: that standard is EVM-only |
+| [Stellar (testnet)](/chains/stellar) | `stellar:testnet` | beta | The same vault wasm plus the Soroban x402 rail end to end, in test money: the buyer signs an authorization entry and pays no fee |
+| Algorand | `algorand:wGHE2Pwdvd7S12BL5FaOP20EGYesN73k` | live | Native Circle USDC (ASA 31566704), x402 v2 through the GoPlausible facilitator: the buyer signs a fee-zero transfer and the atomic group's pooled fee covers it. First mainnet sale settled 2026-08-30 and counted only after our own indexer read; no ERC-8004 registry found on Algorand, so identity stays bridged |
+| Algorand (testnet) | `algorand:SGO1GKSzyE7IEPItTxCByw9x8FmnrCDe` | beta | The same x402 code path as mainnet, in test money, against the facilitator's testnet network |
 | [OKX X Layer](/chains/xlayer) | `eip155:196` | live | Canonical ERC-8004 identity; the trust oracle is listed here and sells over x402 |
 | [Robinhood Chain](/chains/robinhood) | `eip155:4663` | live | Canonical ERC-8004 identity and reputation, agent #0, and our own x402 facilitator settling in USDG |
 | [Celo](/chains/celo) | `eip155:42220` | live | Canonical ERC-8004 identity and reputation, agent #9759, x402 over USDC via the first-party Celo facilitator |
 | [Base](/chains/base) | `eip155:8453` | live | Canonical ERC-8004 identity and reputation registries, deployed by their authors and read live; agent #73232 is ours; x402 settles in native Circle USDC through our own EIP-3009 facilitator (first settlement 2026-08-28); plus the Gateway hop that mints on Base Sepolia |
 | [Robinhood Chain Testnet](/chains/robinhood) | `eip155:46630` | beta | The full canonical ERC-8004 trio plus a deployed AgentSpendPolicy vault |
 | [Celo Sepolia](/chains/celo) | `eip155:11142220` | beta | Same ERC-8004 pair as Arc, x402 over testnet USDC |
-| [Stellar](/chains/stellar) | `stellar:pubnet` | live | An `AgentSpendPolicy` Soroban vault holding real Circle USDC under a 1 USDC daily cap, with a typed `DailyCapExceeded` refusal on the ledger; the Soroban x402 rail sells here too (first mainnet sale 2026-08-27, buyer signs an authorization entry and pays no fee). No ERC-8004 on either Stellar network: that standard is EVM-only |
-| [Stellar (testnet)](/chains/stellar) | `stellar:testnet` | beta | The same vault wasm plus the Soroban x402 rail end to end, in test money: the buyer signs an authorization entry and pays no fee |
-| Algorand | `algorand:wGHE2Pwdvd7S12BL5FaOP20EGYesN73k` | live | Native Circle USDC (ASA 31566704), x402 v2 through the GoPlausible facilitator: the buyer signs a fee-zero transfer and the atomic group's pooled fee covers it. First mainnet sale settled 2026-08-30 and counted only after our own indexer read; no ERC-8004 registry found on Algorand, so identity stays bridged |
-| Algorand (testnet) | `algorand:SGO1GKSzyE7IEPItTxCByw9x8FmnrCDe` | beta | The same x402 code path as mainnet, in test money, against the facilitator's testnet network |
-| [Arc Mainnet](/chains/arc#arc-mainnet) | `eip155:5042` | live | Agent #0 on the canonical ERC-8004 registry, an AgentSpendPolicy vault with real USDC, x402 via our EIP-3009 facilitator and Circle Gateway nanopayments |
-| Avalanche C-Chain | `eip155:43114` | planned | Descriptor only |
 | [Arbitrum One](/chains/arbitrum) | `eip155:42161` | live | Canonical ERC-8004 identity and reputation, agent #1259, and x402 settling in native Circle USDC through our own facilitator |
+| Avalanche C-Chain | `eip155:43114` | planned | Descriptor only |
 
 <Note>
   A backend test asserts that every CAIP-2 id in the registry appears on this page, so a

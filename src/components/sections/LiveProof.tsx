@@ -109,10 +109,11 @@ export default function LiveProof() {
           Not a demo. Live, and settling on-chain.
         </motion.h2>
         <motion.p {...reveal} className="mt-4 max-w-xl text-lg leading-relaxed text-foreground/70">
-          A-Identity runs as a trust oracle on three mainnets: listed on OKX.AI over X Layer, on
-          Celo through its first-party x402 facilitator, and on Algorand over x402 v2, where the
-          buyer signs a fee-zero transfer and pays no gas at all. Per-call checks, settled in
-          real stablecoins. We publish them as proof that an open payment rail works end to
+          A-Identity runs as a trust oracle on eight mainnets, led by Arc Mainnet, where it went
+          live the day the network opened: an agent on the canonical registry, a spend vault
+          holding real USDC, and checks paid through Circle Gateway nanopayments with no gas on
+          either side. Stellar and Algorand follow, then Base, Arbitrum One, Robinhood Chain, OKX
+          X Layer and Celo. Per-call checks, settled in real stablecoins. We publish them as proof that an open payment rail works end to
           end and composes with an identity layer, not as a revenue line: per-call amounts
           are fractions of a cent by design. Every number here is on-chain, and every
           counter labels which traffic is our own.
@@ -163,6 +164,27 @@ export default function LiveProof() {
             </motion.span>
           )}
 
+          <Link
+            to="/arc"
+            className="inline-flex items-center gap-1.5 text-sm font-semibold text-accent hover:underline"
+          >
+            Arc Mainnet, live <ArrowUpRight size={15} />
+          </Link>
+
+          <Link
+            to="/proof/stellar"
+            className="inline-flex items-center gap-1.5 text-sm font-semibold text-accent hover:underline"
+          >
+            The Stellar rail <ArrowUpRight size={15} />
+          </Link>
+
+          <Link
+            to="/proof/algorand"
+            className="inline-flex items-center gap-1.5 text-sm font-semibold text-accent hover:underline"
+          >
+            The Algorand rail <ArrowUpRight size={15} />
+          </Link>
+
           <a
             href={PROOF_URL}
             target="_blank"
@@ -179,12 +201,6 @@ export default function LiveProof() {
             See every Celo settlement <ArrowUpRight size={15} />
           </Link>
 
-          <Link
-            to="/proof/algorand"
-            className="inline-flex items-center gap-1.5 text-sm font-semibold text-accent hover:underline"
-          >
-            See the Algorand rail, live <ArrowUpRight size={15} />
-          </Link>
         </motion.div>
 
         {/* The claim above, made checkable: every settlement as a row that opens on OKLink. */}
