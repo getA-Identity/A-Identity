@@ -82,7 +82,7 @@ leaves the caller's process.
 - [SDK reference](https://a-identity.mintlify.site/developers/sdk)
 - [MCP server guide](https://a-identity.mintlify.site/developers/mcp-server)
 - [Architecture](https://a-identity.xyz/architecture): how the pieces fit together.
-- [Arc Mainnet](https://a-identity.xyz/arc): the featured network, live since it opened on 2026-09-16, with every receipt linked.
+- [Arc Mainnet](https://a-identity.xyz/arc): the featured network, live since it opened on 2026-09-16. A-Identity holds agent #0, the first identity minted on Arc Mainnet's ERC-8004 registry; every receipt is linked.
 
 ## Selected writing
 

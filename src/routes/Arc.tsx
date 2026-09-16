@@ -135,7 +135,7 @@ function DayOneNumbers({ proof, paidChecks, failed }: { proof: ProofNetwork | nu
   const cells = [
     {
       value: proof?.agent ? `#${proof.agent.tokenId}` : '-',
-      label: "our agent, the registry's first mint",
+      label: "the first identity Arc Mainnet's ERC-8004 registry minted",
       link: mint,
     },
     { value: paidChecks ? String(Math.round(checks)) : '-', label: 'paid checks settled in production', link: undefined },
@@ -299,6 +299,9 @@ export default function Arc() {
               </span>
               Live since Sep 16, 2026
             </span>
+            <span className="inline-flex items-center rounded-full border border-accent/30 bg-accent/10 px-2.5 py-0.5 text-[11px] font-bold uppercase tracking-[0.08em] text-accent">
+              Agent #0 on the registry
+            </span>
           </motion.div>
           <motion.div {...revealAt(1)} className="mt-5">
             <DisplayHeading size="display" className="max-w-[16ch]">
@@ -307,7 +310,8 @@ export default function Arc() {
           </motion.div>
           <motion.div {...revealAt(2)} className="mt-5">
             <Lede>
-              Know who your agent is paying before it pays. Checked on Arc, paid in USDC, and gasless for the agent that asks.
+              The day Arc Mainnet opened, A-Identity minted the first identity on its ERC-8004 registry. Now your agent can
+              check who it is paying before it pays, on Arc, in USDC, with no gas to hold.
             </Lede>
           </motion.div>
           <motion.div {...revealAt(3)} className="mt-8 flex flex-wrap items-center gap-3">

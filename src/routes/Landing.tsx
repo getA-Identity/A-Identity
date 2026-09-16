@@ -7,6 +7,7 @@ import ScrollTopButton from '../components/ScrollTopButton'
 import LiveProof from '../components/sections/LiveProof'
 import LandingFaq from '../components/sections/LandingFaq'
 import CloseCta from '../components/sections/CloseCta'
+import ArcSpotlight from '../components/sections/ArcSpotlight'
 import SiteFooter from '../components/sections/SiteFooter'
 import TrustSpotlight from '../components/landing/TrustSpotlight'
 import MouseDither from '../components/landing/MouseDither'
@@ -56,6 +57,10 @@ export default function Landing() {
         <Navbar />
         <Hero />
       </header>
+
+      {/* The season's one headline, straight under the hero: agent #0 on Arc Mainnet, read
+          live from the registry. It sits above the five jobs rather than replacing one. */}
+      <ArcSpotlight />
 
       {/* Five jobs, in the order a visitor needs them: try it, see how it works, see that it
           is real, plug it in, clear the last doubt. Everything else (protocols, safety detail,

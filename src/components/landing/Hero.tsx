@@ -85,7 +85,7 @@ export default function Hero() {
             <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-ok opacity-60" />
             <span className="relative inline-flex h-1.5 w-1.5 rounded-full bg-ok" />
           </span>
-          Arc Mainnet is live
+          Agent #0 on Arc Mainnet
           <span className="inline-flex items-center gap-0.5 text-accent">
             see it <ArrowUpRight size={12} className="transition-transform group-hover:translate-x-0.5 group-hover:-translate-y-0.5" />
           </span>
