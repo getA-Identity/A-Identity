@@ -2,7 +2,7 @@
 /**
  * A1 on MAINNET - publish an agent's reputation as an ERC-8004 `giveFeedback`
  * attestation on any EVM mainnet in the registry that carries the canonical
- * ReputationRegistry (Robinhood Chain, Arbitrum One, Base, Celo).
+ * ReputationRegistry (Robinhood Chain, Arbitrum One, Base, Celo, Arc Mainnet).
  *
  * Chain-generic sibling of publish-reputation.mjs (which stays Arc-testnet-scoped, with
  * its Arc-only gas quirks). Registry addresses come from the chain descriptor, never
@@ -28,7 +28,7 @@
  * After it prints the attestation record, paste that object into
  * `src/asp/attestations.ts` (ATTESTATIONS), rebuild, and deploy.
  */
-import { createPublicClient, createWalletClient, http, defineChain, keccak256, toHex, parseEther } from 'viem'
+import { createPublicClient, createWalletClient, http, defineChain, keccak256, toHex } from 'viem'
 import { privateKeyToAccount } from 'viem/accounts'
 
 const arg = (name, def) => {
@@ -96,12 +96,16 @@ if (onchainOwner.toLowerCase() === validator.address.toLowerCase()) {
 }
 console.log('owner (onchain)   :', onchainOwner, '(distinct from validator)')
 
-// Front the validator's gas from the chain signer if it is short. Dust: these L2 writes
-// cost well under a cent; the floor is sized to one attestation, not a balance.
+// Front the validator's gas from the chain signer if it is short. The floor is sized to one
+// attestation at the LIVE gas price, not a fixed ether amount: a fixed 0.00002 of the native
+// token is plenty on an ETH L2 and a thousandth of one write on Arc, where the native token
+// is USDC and 0.00002 of it is 0.00002 dollars. One giveFeedback measured ~150k gas; the
+// floor covers 300k and the top-up 750k.
 const bal = await pub.getBalance({ address: validator.address })
-const MIN = parseEther('0.00002')
+const gasPrice = await pub.getGasPrice()
+const MIN = gasPrice * 300_000n
 if (bal < MIN) {
-  const topUp = parseEther('0.00005')
+  const topUp = gasPrice * 750_000n
   const fundTx = await funderWallet.sendTransaction({ to: validator.address, value: topUp })
   await pub.waitForTransactionReceipt({ hash: fundTx, timeout: 180_000 })
   console.log('validator funded  :', `${chain.explorer}/tx/${fundTx}`)
