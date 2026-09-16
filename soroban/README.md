@@ -204,6 +204,48 @@ One property worth stating: because `pay` moves the vault's own balance, the ope
 never holds the token and never needs a trustline. It needs XLM for fees, or a sponsor.
 That is a smaller blast radius than the EVM version has.
 
+## Deployed vaults and their live policy
+
+Two instances of this contract are deployed. The table is a read of each contract's own view
+functions on 2026-09-16, not a copy of what we meant to configure. The policy is fixed at
+construction and there is no setter for the token or decimals, so the cap and ceiling below
+change only if the owner calls `set_policy`, which would show up in the next read.
+
+| Network | Contract | Token | Daily cap | Auto-approve max | Balance at read |
+| --- | --- | --- | --- | --- | --- |
+| pubnet (mainnet) | `CB5LYXFKKTKDDSCM6JO6C4GNRQUFBGSLYDET6Q56JNFJQSMBKH6KWSYP` | Circle USDC SAC `CCW67TSZV3SSS2HXMBQ5JFGCKJNXKZM7UQUWUZPUTHXSTZLEO7SJMI75` | 1 USDC (`10000000`, 7 decimals) | 0.25 USDC (`2500000`) | 0.04 USDC |
+| testnet | `CAIL6ECRAB5FUURQ54R7OTZPXRRCDO2S353YT6N6UZUWIBDG2ZOEB4UI` | Circle testnet USDC SAC `CBIELTK6YBZJU5UP2WWQEUCYKLPU6AUNZ2BQ4WWFEIE3USCIHMXQDAMA` | 10 USDC (`100000000`) | 2 USDC (`20000000`) | 13.988 USDC |
+
+The pubnet vault is dust on purpose, an order of magnitude under the testnet one, because
+the caps are the product and the balance is not. That also means it runs dry: every payment
+in its release record spent the dust it was funded with, and the same read on 2026-09-16
+found it at 0 before it was refilled with 0.04 USDC (transaction
+`c91aaa824b84ee33a8b328514fcb415554626d824e443a2c338e318c99e4042c`, ledger 64458213). A
+vault with nothing in it still enforces its policy, but "holds USDC" is a claim about the
+balance, so the balance is what gets checked.
+
+Read it yourself, free, with no key (the script prints the live policy and balance and, without
+`--key-env`, only the transfer it would make):
+
+```bash
+cd mcp && npm run build
+node scripts/stellar-vault-fund.mjs --chain stellar --vault CB5LYXFKKTKDDSCM6JO6C4GNRQUFBGSLYDET6Q56JNFJQSMBKH6KWSYP --amount 0.01
+```
+
+Or straight against the contract with the Stellar CLI, where each view call is a simulation
+and costs nothing: `stellar contract invoke --id CB5LYXFKKTKDDSCM6JO6C4GNRQUFBGSLYDET6Q56JNFJQSMBKH6KWSYP --network pubnet -- daily_cap`
+(and `auto_approve_max`, `balance`, `spent_today`, `token`).
+
+**What proves the cap binds.** On pubnet the refusals are typed contract errors with no
+transaction hash, because Soroban clients simulate first and a refused payment never reaches
+the ledger: `DailyCapExceeded` (code 5) with `spent_today` at 0.95 against the 1 USDC cap, and
+`AboveAutoApprove` (code 4) for a 0.50 payment, both recorded in
+[`releases/pubnet-v0.1.0.json`](releases/pubnet-v0.1.0.json) and reproducible by anyone with
+the command in that record. On testnet one refusal was forced onto the ledger for a reviewer
+to open: transaction `12df418f21d329f606f412b1aee498714f1178d68fd0db0a97c64f0de6f209d3`, which Horizon reports as `successful: false` with its fee
+charged, produced by `mcp/scripts/stellar-prove-revert.mjs`. It is a deliberately failed
+transaction, and that is the point of it.
+
 ## Operations calendar
 
 The section above explains why the instance TTL cannot be topped up early. This one is the

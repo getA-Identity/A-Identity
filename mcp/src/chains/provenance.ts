@@ -726,6 +726,14 @@ export const PROVENANCE: ChainProvenance[] = [
         blockNumber: 64155370,
         note: 'The buyer signed a Soroban authorization entry for transfer on the USDC SAC and paid nothing; we assembled, BID 34035 stroops and were CHARGED 23479 (Horizon fee_charged, read 2026-09-15), and the sale counted only once the SEP-41 transfer event bound to the authorization\'s nonce was read back. The two fee numbers are not the same claim and an earlier version of this note reported the bid as what we paid: Stellar runs a fee auction and charges the clearing fee, so the envelope fee is a ceiling we offer and the charge is what the ledger took. Recorded honestly: the first two attempts never landed, because the transaction bid the 100-stroop minimum inclusion fee that testnet always accepts while pubnet\'s auction was clearing at 200 across every percentile. The fix bids the fee market\'s own p90 with headroom, and this settlement is the measurement.',
       },
+      {
+        kind: 'funding',
+        label: 'The pubnet vault refilled after a read found it empty',
+        txHash: 'c91aaa824b84ee33a8b328514fcb415554626d824e443a2c338e318c99e4042c',
+        onChain: 'stellar',
+        blockNumber: 64458213,
+        note: '0.04 USDC transferred into the vault through the USDC SAC on 2026-09-16 by mcp/scripts/stellar-vault-fund.mjs. A third-party review read the contract that day and found balance 0: the dust it was funded with had been spent by the payments recorded above, so "holds real USDC" had stopped being true without anything failing. Read back from the contract after the transfer: balance 0.04, daily_cap 1 USDC, auto_approve_max 0.25 USDC, the policy unchanged since construction.',
+      },
     ],
     caveats: [
       'Real money, but small money. The cap is 1 USDC per UTC day and the vault was funded with 1 USDC. Nothing here shows behaviour at a size anyone would mind losing, and that is the deliberate trade for an unaudited contract holding value.',
