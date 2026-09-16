@@ -59,8 +59,13 @@ jobs:
         with:
           node-version: 22
 
+      # `npm install`, the same as ci.yml, not `npm ci`. mcp/package-lock.json is missing
+      # utf-8-validate on Linux, so `npm ci` exits EUSAGE before anything runs; the first
+      # dispatch of this job (2026-09-16) died there, which means no scheduled run had ever
+      # checked a vault. Regenerating the lock is a dependency change of its own and is not
+      # smuggled in through a monitor.
       - name: Install backend deps
-        run: npm ci --prefix mcp
+        run: npm install --prefix mcp
 
       # The scripts import from mcp/dist, the same compiled output the server runs, rather
       # than from src. One build, one set of chain descriptors, and no second copy of the
