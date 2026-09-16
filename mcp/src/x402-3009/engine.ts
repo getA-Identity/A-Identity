@@ -431,7 +431,7 @@ export async function settlePayment(input: {
         errorReason: `settlement would cost ${projected} wei of gas, above this rail's ceiling of ${limits.maxGasWei}`,
       }
     }
-    const spentToday = await (deps.gasSpentTodayWei ?? (() => gasSpentOnDay(now().toISOString().slice(0, 10))))()
+    const spentToday = await (deps.gasSpentTodayWei ?? (() => gasSpentOnDay(now().toISOString().slice(0, 10), undefined, chain.caip2)))()
     // An unreadable gas ledger is not zero spend. It is reported as its own reason so an
     // operator reading the logs can tell a real exhausted budget from a database outage,
     // and so this never reads to a buyer as "you spent our budget".

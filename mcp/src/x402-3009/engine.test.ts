@@ -585,6 +585,19 @@ test('gas is summed for this day only, and one malformed row does not break the 
   assert.equal(await gasSpentOnDay('2026-08-25', async () => ({ ok: true as const, rows })), 350n)
 })
 
+test('the daily gas ledger is per network, because wei of ether and wei of USDC are not one unit', async () => {
+  const rows = [
+    { ts: '2026-09-16T01:00:00Z', network: 'eip155:8453', gasWei: '600000000000' },
+    { ts: '2026-09-16T02:00:00Z', network: 'eip155:5042', gasWei: '25808110704255246' },
+    { ts: '2026-09-16T03:00:00Z', network: 'eip155:8453', gasWei: '400000000000' },
+  ] as unknown as X402SettlementRecord[]
+  const load = async () => ({ ok: true as const, rows })
+  assert.equal(await gasSpentOnDay('2026-09-16', load, 'eip155:8453'), 1_000_000_000_000n)
+  assert.equal(await gasSpentOnDay('2026-09-16', load, 'eip155:5042'), 25_808_110_704_255_246n)
+  // No network keeps the old total, which is only a measure of activity.
+  assert.equal(await gasSpentOnDay('2026-09-16', load), 25_809_110_704_255_246n)
+})
+
 test('(producer) a database that will not answer is reported unreadable, not empty', async () => {
   const boom = async () => {
     throw Object.assign(new Error('connect ECONNREFUSED 127.0.0.1:5432'), { code: 'ECONNREFUSED' })

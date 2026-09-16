@@ -100,6 +100,15 @@ const DEFAULTS = {
   /** ~0.0004 ETH at 0.05 gwei is far above one settlement and far below a wallet. */
   maxGasWei: 20_000_000_000_000n,
   dailyGasWei: 500_000_000_000_000n,
+  /**
+   * The same two ceilings for a chain whose GAS TOKEN IS A DOLLAR (Arc: native USDC, 18
+   * decimals). The ETH defaults above are wei of ether, and read as wei of USDC they are
+   * 0.00002 and 0.0005 dollars, which refused Arc Mainnet's first settlement on 2026-09-16
+   * (projected 0.0258 USDC at 143 gwei). Here the unit is exact rather than priced, so the
+   * ceiling is a dollar figure with no oracle: 0.05 USDC per settlement, 1 USDC per day.
+   */
+  stableGasMaxWei: 50_000_000_000_000_000n,
+  stableGasDailyWei: 1_000_000_000_000_000_000n,
   timeoutMs: 60_000,
 } as const
 
@@ -238,14 +247,30 @@ export function railPaywallGate(
   return { ok: false, httpStatus: 501, body: { error: 'x402-3009 rail not configured', ...(status.reason ? { reason: status.reason } : {}) } }
 }
 
+/**
+ * True when the chain pays gas in a dollar stablecoin, so a native-unit gas figure is already
+ * a dollar figure. Read from the descriptor's native currency, never from the chain id.
+ */
+export function gasIsStable(chain: Pick<ChainDescriptor, 'nativeCurrency'> | undefined): boolean {
+  return chain?.nativeCurrency.symbol === 'USDC'
+}
+
 export function railLimits(status: RailStatus, env: NodeJS.ProcessEnv = process.env): Limits {
   const decimals = status.token?.decimals ?? 6
+  // The two gas ceilings are in the chain's native unit, and the ETH variables must not
+  // leak onto a chain whose native unit is a dollar: X402_3009_MAX_GAS_WEI=1e16 is a
+  // sensible 0.01 ETH cap and a 0.01 USDC one, and nothing about the number says which.
+  const stable = gasIsStable(status.chain ? getChainById(status.chain) : undefined)
   return {
     minValue: tokenUnits(decimals, status.minValueUsd),
     maxValue: tokenUnits(decimals, status.maxValueUsd),
     expiryHeadroomSec: num(env, 'X402_3009_EXPIRY_HEADROOM_SEC', DEFAULTS.expiryHeadroomSec),
-    maxGasWei: big(env, 'X402_3009_MAX_GAS_WEI', DEFAULTS.maxGasWei),
-    dailyGasWei: big(env, 'X402_3009_DAILY_GAS_WEI', DEFAULTS.dailyGasWei),
+    maxGasWei: stable
+      ? big(env, 'X402_3009_STABLE_GAS_MAX_WEI', DEFAULTS.stableGasMaxWei)
+      : big(env, 'X402_3009_MAX_GAS_WEI', DEFAULTS.maxGasWei),
+    dailyGasWei: stable
+      ? big(env, 'X402_3009_STABLE_GAS_DAILY_WEI', DEFAULTS.stableGasDailyWei)
+      : big(env, 'X402_3009_DAILY_GAS_WEI', DEFAULTS.dailyGasWei),
   }
 }
 

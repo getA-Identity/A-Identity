@@ -5,6 +5,7 @@ import {
   railPaywallGate,
   railToken,
   railLimits,
+  gasIsStable,
   railPriceUsd,
   railChallenge,
   railRequirements,
@@ -157,6 +158,27 @@ test('limits derive from the token decimals and the configured bounds', () => {
   const l = railLimits(s, {} as NodeJS.ProcessEnv)
   assert.equal(l.minValue, 21_000n)
   assert.equal(l.maxValue, 1_000_000n)
+})
+
+test('a chain whose gas token is USDC gets dollar gas ceilings, and the ETH variables do not reach it', () => {
+  // Arc Mainnet's first settlement on 2026-09-16 was refused by the ETH-denominated default:
+  // 0.0258 USDC of projected gas against a ceiling of 0.00002 "ether" read as USDC.
+  const env = { X402_3009_NETWORKS: 'eip155:5042', X402_3009_PAYTO: '0x00000000000000000000000000000000000000aa' } as NodeJS.ProcessEnv
+  const arc = railStatus(env, 'eip155:5042')
+  assert.equal(arc.chain, 'arc-mainnet')
+  const l = railLimits(arc, { X402_3009_MAX_GAS_WEI: '1', X402_3009_DAILY_GAS_WEI: '1' } as NodeJS.ProcessEnv)
+  assert.equal(l.maxGasWei, 50_000_000_000_000_000n, '0.05 USDC per settlement')
+  assert.equal(l.dailyGasWei, 1_000_000_000_000_000_000n, '1 USDC per day')
+  assert.ok(l.maxGasWei > 25_808_110_704_255_246n, 'the measured launch-day projection must clear the ceiling')
+  const tuned = railLimits(arc, { X402_3009_STABLE_GAS_MAX_WEI: '30000000000000000' } as NodeJS.ProcessEnv)
+  assert.equal(tuned.maxGasWei, 30_000_000_000_000_000n)
+
+  // And the ETH chains are untouched by the stable variables.
+  const base = railStatus({ X402_3009_NETWORKS: 'eip155:8453', X402_3009_PAYTO: '0x00000000000000000000000000000000000000aa' } as NodeJS.ProcessEnv, 'eip155:8453')
+  const lb = railLimits(base, { X402_3009_STABLE_GAS_MAX_WEI: '1' } as NodeJS.ProcessEnv)
+  assert.equal(lb.maxGasWei, 20_000_000_000_000n)
+  assert.equal(gasIsStable(getChainById('base')), false)
+  assert.equal(gasIsStable(getChainById('arc-mainnet')), true)
 })
 
 test('proof counts only settled rows, labels internal payers, and never hides failures', async () => {

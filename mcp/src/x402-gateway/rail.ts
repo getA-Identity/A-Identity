@@ -516,10 +516,17 @@ export async function railServeTool(
  * OUR OWN buyer wallets, hardcoded on purpose so the proof page can never report our
  * own test traffic as external demand (the same decision the other rails record).
  * X402_GATEWAY_INTERNAL_PAYERS adds more without a deploy. The first entry is the owner
- * wallet that paid the first testnet call through this rail on 2026-09-10; the Circle
- * agent wallet that makes the first mainnet call joins it with that receipt's commit.
+ * wallet that paid the first testnet call through this rail on 2026-09-10; the second is
+ * the buyer wallet that paid the first mainnet call.
  */
-const KNOWN_INTERNAL_PAYERS = ['0xd305607510e0db2c95807173c7a05bea53c1ed36']
+const KNOWN_INTERNAL_PAYERS = [
+  '0xd305607510e0db2c95807173c7a05bea53c1ed36',
+  // The x402 buyer wallet (X402_3009_BUYER_KEY), which paid the first MAINNET call through
+  // this rail on Arc Mainnet on 2026-09-16 (transfer 5958b158). Without it a local proof
+  // counted that self-funded call as external demand, which is the exact error this list
+  // exists to make impossible.
+  '0x8c8d9cd12d8896a40cf2115ee731258bb4983349',
+]
 
 export function internalPayers(env: NodeJS.ProcessEnv = process.env): string[] {
   const extra = (env.X402_GATEWAY_INTERNAL_PAYERS ?? '')

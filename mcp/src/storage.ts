@@ -671,10 +671,16 @@ export async function persistAlgorandSettlement(rec: AlgorandSettlementRecord): 
 }
 
 /**
- * Native-unit gas spent on a given UTC day across every settlement attempt.
+ * Native-unit gas spent on a given UTC day across every settlement attempt, on ONE network
+ * when `network` is given.
  *
  * The settlement log IS the gas ledger: no second table, and the daily budget the rail
  * enforces is therefore auditable from the same rows a reviewer can already see.
+ *
+ * Per network because native units are not one currency: wei of ether on Base and wei of
+ * USDC on Arc used to be added into a single total, so a day of Arc settlements would have
+ * spent Base's ETH budget and the other way round. Without `network` the old all-rows total
+ * is kept for callers that only want a count of activity.
  *
  * Fail-closed: an unreadable log returns GAS_BUDGET_UNKNOWN rather than zero, so the rail
  * stops broadcasting instead of spending against a ceiling it cannot measure.
@@ -684,6 +690,7 @@ export const GAS_BUDGET_UNKNOWN = BigInt(Number.MAX_SAFE_INTEGER)
 export async function gasSpentOnDay(
   dayIso: string,
   load: () => Promise<X402SettlementsRead> = loadX402SettlementsResult,
+  network?: string,
 ): Promise<bigint> {
   let read: X402SettlementsRead
   try {
@@ -701,6 +708,7 @@ export async function gasSpentOnDay(
   let total = 0n
   for (const r of read.rows) {
     if (!r.gasWei || !r.ts.startsWith(dayIso)) continue
+    if (network && r.network !== network) continue
     try {
       total += BigInt(r.gasWei)
     } catch {
