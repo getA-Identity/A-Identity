@@ -16,8 +16,13 @@
  *
  * Prepared-or-executed: without the key env var it prints the transfer it would submit.
  *
+ * --check: read-only monitor mode for .github/workflows/stellar-ops.yml. Prints the live
+ * policy and balance, never signs, and exits 1 when the balance is 0, because public copy
+ * says the pubnet vault holds USDC and that is exactly the claim that went false unnoticed.
+ *
  * Usage: cd mcp && npm run build && node --env-file=.env scripts/stellar-vault-fund.mjs \
  *          --chain stellar --vault C... --amount 0.04 --key-env STELLAR_BURNER_SECRET
+ *        node scripts/stellar-vault-fund.mjs --chain stellar --vault C... --check
  */
 import { Address, Contract, Keypair, TransactionBuilder, nativeToScVal, rpc } from '@stellar/stellar-sdk'
 
@@ -40,7 +45,8 @@ const chain = getChainById(arg('chain', ''))
 if (!chain || chain.ecosystem !== 'stellar') fail('--chain must be a Stellar chain in the registry (stellar or stellar-testnet)')
 const vault = arg('vault', '')
 if (!/^C[A-Z2-7]{55}$/.test(vault)) fail('--vault must be a Soroban contract id (C...)')
-const amount = Number(arg('amount', '0'))
+const CHECK = process.argv.includes('--check')
+const amount = Number(arg('amount', CHECK ? '0.01' : '0'))
 if (!(amount > 0 && amount <= 1)) fail('--amount must be above 0 and at most 1 (the vault policy is dust by design)')
 const keyEnv = arg('key-env', '')
 
@@ -54,6 +60,15 @@ const human = (raw) => Number(raw) / 10 ** before.decimals
 console.log(`Chain:  ${chain.name} (${chain.caip2})`)
 console.log(`Vault:  ${vault}, token ${token.symbol} ${token.address}`)
 console.log(`Policy: daily cap ${human(before.dailyCapRaw)}, auto-approve ${human(before.autoApproveMaxRaw)}, balance ${human(before.balanceRaw)} ${token.symbol}`)
+
+if (CHECK) {
+  if (BigInt(before.balanceRaw) === 0n) {
+    console.log(`EMPTY: ${vault} holds 0 ${token.symbol}. Public copy says this vault holds USDC; refill it or change the copy.`)
+    process.exit(1)
+  }
+  console.log(`ok: ${vault} holds ${human(before.balanceRaw)} ${token.symbol}`)
+  process.exit(0)
+}
 
 const secret = keyEnv ? process.env[keyEnv] : undefined
 if (!secret) {

@@ -29,6 +29,11 @@ name: Stellar ops
 #      is worth nothing if it silently stops matching the chain. The --check step is what
 #      keeps it honest between redeploys.
 #
+#   4. The pubnet vault runs dry by design. Its caps are dust, so the payments that prove the
+#      policy also spend its balance, and on 2026-09-16 an outside fact-check found it at 0
+#      while README, docs and a public PR still said it "holds real USDC". The balance step
+#      goes red when either vault reads 0, so the claim cannot go false silently again.
+#
 # Everything here is READ-ONLY on chain: simulations, ledger entry reads and public status
 # endpoints. No signer, no secret, nothing submitted. A monitor that can write is a monitor
 # that can break the thing it watches.
@@ -123,6 +128,31 @@ jobs:
           } >> "$GITHUB_STEP_SUMMARY"
           exit $code
 
+      # Red means a vault reads balance 0 (see note 4). Refill with
+      # mcp/scripts/stellar-vault-fund.mjs, or change every copy that says it holds USDC.
+      - name: Vault balance
+        id: balance
+        continue-on-error: true
+        run: |
+          set +e
+          {
+            node mcp/scripts/stellar-vault-fund.mjs --chain stellar --vault CB5LYXFKKTKDDSCM6JO6C4GNRQUFBGSLYDET6Q56JNFJQSMBKH6KWSYP --check
+            p=$?
+            node mcp/scripts/stellar-vault-fund.mjs --chain stellar-testnet --vault CAIL6ECRAB5FUURQ54R7OTZPXRRCDO2S353YT6N6UZUWIBDG2ZOEB4UI --check
+            t=$?
+            exit $(( p | t ))
+          } 2>&1 | tee /tmp/balance.txt
+          code=${PIPESTATUS[0]}
+          set -e
+          {
+            echo "## Vault balance (--check)"
+            echo '```'
+            cat /tmp/balance.txt
+            echo '```'
+            echo "exit code: $code"
+          } >> "$GITHUB_STEP_SUMMARY"
+          exit $code
+
       # Reports only, and it can never fail this job. The script is being written
       # separately and may not be in the tree yet, so a missing file must be a blank
       # section in the summary rather than a red weekly job for something nobody broke.
@@ -155,8 +185,9 @@ jobs:
         run: |
           archival='${{ steps.archival.outcome }}'
           allowlist='${{ steps.allowlist.outcome }}'
+          balance='${{ steps.balance.outcome }}'
           roles='${{ steps.roles.outcome }}'
-          echo "archival=$archival  allowlist=$allowlist  roles(warn only)=$roles"
+          echo "archival=$archival  allowlist=$allowlist  balance=$balance  roles(warn only)=$roles"
           if [ "$roles" != "success" ]; then
             echo "::warning::stellar-key-roles.mjs exited non-zero. It only does that when the fee"
             echo "::warning::payer became a vault OWNER or a status endpoint was unreadable. Read the summary."
@@ -171,6 +202,11 @@ jobs:
           if [ "$allowlist" != "success" ]; then
             echo "::error::The live allowlist drifted from soroban/releases/*-allowlist.json, or it"
             echo "::error::could not be read. Do not redeploy a vault until the snapshot is correct."
+            fail=1
+          fi
+          if [ "$balance" != "success" ]; then
+            echo "::error::A Stellar vault reads balance 0, or it could not be read. Public copy says"
+            echo "::error::the pubnet vault holds USDC: refill it with stellar-vault-fund.mjs or fix the copy."
             fail=1
           fi
           exit $fail
