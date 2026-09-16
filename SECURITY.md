@@ -49,6 +49,7 @@ values, such as the WalletConnect project id.
 | `RHCHAIN_SIGNER_KEY` | Robinhood Chain | mainnet | **real value** |
 | `ARB_SIGNER_KEY` | Arbitrum One | mainnet | **real value** |
 | `BASE_SIGNER_KEY` | Base | mainnet | **real value** |
+| `ARC_MAINNET_SIGNER_KEY` | Arc Mainnet | mainnet | **real value** (USDC is the gas) |
 | `AVAX_SIGNER_KEY` | Avalanche C-Chain | mainnet (`planned`) | real value if funded |
 | `STELLAR_PUBNET_SIGNER_SECRET` | Stellar pubnet | mainnet | **real value** |
 | `ALGORAND_MAINNET_SIGNER_MNEMONIC` | Algorand | mainnet | **real value** |
@@ -59,7 +60,9 @@ values, such as the WalletConnect project id.
 | `STELLAR_TESTNET_SIGNER_SECRET` | Stellar Testnet | testnet | test funds |
 
 `AVAX_SIGNER_KEY` is the only row left that is dormant, and it is dormant by funding rather
-than by nature: a key set on it is a mainnet key the moment somebody sends it gas. Stellar
+than by nature: a key set on it is a mainnet key the moment somebody sends it gas.
+`ARC_MAINNET_SIGNER_KEY` stopped being dormant on 2026-09-16; on Arc the gas is USDC itself,
+so funding the gas IS funding the key, and today it holds the same operator key as Base. Stellar
 pubnet stopped being hypothetical on 2026-08-24, when burner keys were funded there, a
 contract was deployed and 1 USDC moved through it, and it stopped being a vault-only story
 on 2026-08-27, when the first x402 sale settled on that network. Those pubnet burners are

@@ -21,19 +21,19 @@ test('usdcUnits / fromUsdcUnits round-trip at 6 decimals (Arc)', () => {
 
 test('resolveRpcUrls puts the primary first and honors the override env var', () => {
   const def = resolveRpcUrls(ARC_CHAIN, {})
-  assert.equal(def[0], 'https://rpc.testnet.arc.network')
+  assert.equal(def[0], 'https://rpc.testnet.arc.io')
   assert.equal(def.length, 4)
   // The override REPLACES the primary (rpcUrls[0]); the 3 fallbacks stay. Same as the
   // original ARC_RPCS computation, so the length stays 4 and the old primary is gone.
   const overridden = resolveRpcUrls(ARC_CHAIN, { ARC_RPC_URL: 'https://my.node' })
   assert.equal(overridden[0], 'https://my.node')
   assert.equal(overridden.length, 4)
-  assert.ok(!overridden.includes('https://rpc.testnet.arc.network'))
+  assert.ok(!overridden.includes('https://rpc.testnet.arc.io'))
 })
 
 test('explorer link helpers use the descriptor explorer', () => {
-  assert.equal(txUrl(ARC_CHAIN, '0xabc'), 'https://testnet.arcscan.app/tx/0xabc')
-  assert.equal(addressUrl(ARC_CHAIN, '0xdef'), 'https://testnet.arcscan.app/address/0xdef')
+  assert.equal(txUrl(ARC_CHAIN, '0xabc'), 'https://explorer.testnet.arc.io/tx/0xabc')
+  assert.equal(addressUrl(ARC_CHAIN, '0xdef'), 'https://explorer.testnet.arc.io/address/0xdef')
 })
 
 test('without a signer, registerAgent returns the exact prepared ERC-8004 call', async () => {

@@ -10,7 +10,7 @@
  */
 
 /** Short slug of a chain in the registry. */
-export type ChainId = 'arc' | 'stellar' | 'algorand' | 'base' | 'rhchain' | 'arbitrum' | 'xlayer' | 'celo' | 'stellar-testnet' | 'algorand-testnet' | 'rhchain-testnet' | 'celo-sepolia' | 'avalanche'
+export type ChainId = 'arc-mainnet' | 'arc' | 'stellar' | 'algorand' | 'base' | 'rhchain' | 'arbitrum' | 'xlayer' | 'celo' | 'stellar-testnet' | 'algorand-testnet' | 'rhchain-testnet' | 'celo-sepolia' | 'avalanche'
 
 export type ChainProtocols = {
   /** x402 HTTP-402 payment support. Settlement is in a stablecoin. */
@@ -60,6 +60,51 @@ export type Chain = {
 
 export const CHAINS: readonly Chain[] = [
   {
+    "id": "arc-mainnet",
+    "name": "Arc Mainnet",
+    "shortName": "Arc Mainnet",
+    "color": "#2775CA",
+    "chainId": 5042,
+    "caip2": "eip155:5042",
+    "evmCompatible": true,
+    "ecosystem": "evm",
+    "nativeCurrency": {
+      "name": "USD Coin",
+      "symbol": "USDC",
+      "decimals": 18
+    },
+    "testnet": false,
+    "stablecoins": [
+      "USDC",
+      "EURC",
+      "USYC"
+    ],
+    "rpcUrl": "https://rpc.mainnet.arc.io",
+    "explorer": "https://explorer.arc.io",
+    "role": "Circle's stablecoin-native L1 on mainnet: agent #0 on the canonical ERC-8004 registry, a spend vault holding real USDC, and x402 settling through our own EIP-3009 facilitator and Circle Gateway nanopayments.",
+    "status": "live",
+    "protocols": {
+      "payment": {
+        "x402": true,
+        "note": "x402 settling in USDC on two rails: our own EIP-3009 facilitator (the buyer signs, we broadcast and pay gas that is itself USDC; first settlement 0xd44287c8 on 2026-09-16) and Circle Gateway nanopayments (GatewayWalletBatched; first credit the same day, batched on-chain by Gateway)."
+      },
+      "identity": {
+        "standard": "ERC-8004",
+        "erc8004Native": true,
+        "note": "Canonical ERC-8004 identity + reputation registries are live here, deployed by their authors (implementation code matched against Base on 2026-09-16); agent #0, the registry's first mint, is ours (tx 0x1d9f5711). No ValidationRegistry in this family."
+      }
+    },
+    "identity": "ERC-8004",
+    "erc8004Native": true,
+    "x402": true,
+    "registries": {
+      "identity": "0x8004a169fb4a3325136eb29fa0ceb6d2e539a432",
+      "reputation": "0x8004BAa17C55a88189AE136b182e5fdA19dE9b63"
+    },
+    "identityLive": true,
+    "settlementSymbol": "USDC"
+  },
+  {
     "id": "arc",
     "name": "Circle Arc (Testnet)",
     "shortName": "Arc",
@@ -79,8 +124,8 @@ export const CHAINS: readonly Chain[] = [
       "EURC",
       "USYC"
     ],
-    "rpcUrl": "https://rpc.testnet.arc.network",
-    "explorer": "https://testnet.arcscan.app",
+    "rpcUrl": "https://rpc.testnet.arc.io",
+    "explorer": "https://explorer.testnet.arc.io",
     "role": "Primary payment rail: gas in USDC, sub-second finality, App Kit unified balance.",
     "status": "live",
     "protocols": {

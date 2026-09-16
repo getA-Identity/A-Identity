@@ -724,7 +724,7 @@ export default function WorkerCatalog({ preselect = null }: { preselect?: HirePr
                           rel="noopener noreferrer"
                           className="inline-flex items-center gap-1 text-xs font-semibold text-usdc hover:underline"
                         >
-                          <ExternalLink size={12} /> Escrow on arcscan
+                          <ExternalLink size={12} /> Escrow on the Arc explorer
                         </a>
                       )}
                     </div>

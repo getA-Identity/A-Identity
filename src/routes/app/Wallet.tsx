@@ -26,6 +26,7 @@ import ChainLogo from '../../components/app/ChainLogo'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '../../components/ui/tooltip'
 import { useSelectedAgent } from '../../store/agent'
 import { Skeleton } from '../../components/ui/skeleton'
+import { CHAIN_BY_ID } from '../../lib/chains'
 const FAUCET = 'https://faucet.circle.com'
 
 type Agent = { id: string; name: string; walletAddress: string | null }
@@ -450,12 +451,12 @@ export default function Wallet() {
                       {copied ? 'Copied' : 'Copy address'}
                     </button>
                     <a
-                      href={`https://testnet.arcscan.app/address/${agent.walletAddress}`}
+                      href={`${CHAIN_BY_ID.arc.explorer}/address/${agent.walletAddress}`}
                       target="_blank"
                       rel="noopener noreferrer"
                       className="inline-flex items-center gap-2 rounded-lg border border-border px-3 py-2 text-xs font-semibold text-foreground/70 transition-colors duration-[120ms] hover:bg-foreground/[0.04] hover:text-foreground"
                     >
-                      <ExternalLink size={13} /> View on arcscan
+                      <ExternalLink size={13} /> View on the Arc explorer
                     </a>
                     <a
                       href={FAUCET}

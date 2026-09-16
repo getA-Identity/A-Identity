@@ -11,6 +11,7 @@ import { Stat } from '../components/ui/stat'
 import { usePageMeta } from '../lib/head'
 import { MCP_BASE, BACKEND_UNREACHABLE } from '../lib/mcpBase'
 import { REPUTATION_LEVELS } from '../lib/reputation-bands'
+import { CHAIN_BY_ID } from '../lib/chains'
 
 /**
  * /intro: the agent-facing front door.
@@ -26,9 +27,11 @@ import { REPUTATION_LEVELS } from '../lib/reputation-bands'
  * rankScore formula is copied from the backend that computes it.
  */
 
-/** The deployed ERC-8004 IdentityRegistry on Circle Arc testnet (mcp/src/chains/registry.ts). */
-const REGISTRY_ADDRESS = '0x8004A818BFB912233c491871b3d84c89A494BD9e'
-const REGISTRY_EXPLORER = `https://testnet.arcscan.app/address/${REGISTRY_ADDRESS}`
+/** The deployed ERC-8004 IdentityRegistry on Circle Arc testnet, read from the generated
+ *  registry mirror so the address and its explorer host cannot drift from mcp/src/chains. */
+const ARC = CHAIN_BY_ID.arc
+const REGISTRY_ADDRESS = ARC.registries.identity ?? ''
+const REGISTRY_EXPLORER = `${ARC.explorer}/address/${REGISTRY_ADDRESS}`
 
 const MCP_ADD_CMD = 'claude mcp add a-identity --transport http https://a-identity.xyz/mcp'
 

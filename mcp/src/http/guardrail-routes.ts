@@ -10,6 +10,7 @@ import {
   agentBadge, checkAgentAction, spendPreflight, listAgentAudits, recordAuditOutcome,
   getAgentCirclePolicyPlan, updateAgentPermissions,
 } from '../platform.js'
+import { CHAINS } from '../chains/index.js'
 import { isSafePublicHttpUrl } from '../erc8004.js'
 import { renderBadgeSvg } from '../policy/index.js'
 import {
@@ -17,6 +18,24 @@ import {
   type ResolvedAgentManifest, type OwnershipNote,
 } from '../chains/explorer-agent-url.js'
 import { denyRead, errStatus, readBody, sendJson, validAmount, type RouteCtx } from './shared.js'
+
+/**
+ * Block explorer hosts: every explorer the chain registry declares, plus the hosts people
+ * still paste that the registry no longer (or never) pointed at. Derived rather than listed
+ * so a chain whose explorer moves (Arc, 2026-09-16: arcscan.app to explorer.testnet.arc.io)
+ * keeps getting the hint without anyone remembering this file.
+ */
+const EXPLORER_HOSTS = [
+  ...new Set([
+    ...CHAINS.flatMap((c) => {
+      try { return c.explorer ? [new URL(c.explorer).host.toLowerCase()] : [] } catch { return [] }
+    }),
+    'etherscan.io',
+    'oklink.com',
+    'arcscan.app',
+  ]),
+]
+const EXPLORER_HOST_RE = new RegExp(`(^|\\.)(${EXPLORER_HOSTS.map((h) => h.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('|')})$`, 'i')
 
 /**
  * Explorer and code-host pages people paste when they mean "the metadata URL". Each
@@ -29,7 +48,7 @@ const MANIFEST_URL_HINTS: { match: RegExp; hint: string }[] = [
     hint: 'that is an 8004scan explorer page, which serves HTML. Open the agent there, copy the tokenURI / metadata link it shows, and paste that instead',
   },
   {
-    match: /(^|\.)(etherscan\.io|basescan\.org|celoscan\.io|arbiscan\.io|oklink\.com|arcscan\.app)$/i,
+    match: EXPLORER_HOST_RE,
     hint: 'that is a block explorer page, which serves HTML. Paste the raw metadata JSON URL the token points at, not the explorer page',
   },
   {

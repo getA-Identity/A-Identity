@@ -69,7 +69,7 @@ export default function RegisterSuccess({
               rel="noopener noreferrer"
               className="mt-1 inline-block break-all text-xs font-semibold text-usdc hover:underline"
             >
-              View transaction on arcscan
+              View transaction on the Arc explorer
             </a>
           )}
         </div>

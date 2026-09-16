@@ -50,15 +50,17 @@ switch.
   in real USD₮0: **120 x402 settlements on X Layer mainnet** to date, each one
   listed with its transaction hash at
   <https://a-identity-asp.onrender.com/proof>.
-- Five more mainnets carry settlements of their own: Robinhood Chain, Arbitrum
-  One, Base, Stellar pubnet and Algorand. Every rail is counted on its own proof
+- Six more mainnets carry settlements of their own: Arc Mainnet, Robinhood Chain,
+  Arbitrum One, Base, Stellar pubnet and Algorand. Every rail is counted on its own proof
   page at `https://a-identity.xyz/proof/:rail` and never summed with the others,
   because one figure covering several rails is a figure about none of them.
-- A gasless rail settles on **Circle Arc testnet** through Circle Gateway's
-  batched nanopayments: the buyer signs an EIP-3009 authorization off-chain and
-  pays no gas. On Arc the gas token is USDC itself.
-- Circle Arc is a public **testnet**. Real contracts, real transactions, test
-  money. We say so rather than letting the word "live" do work it has not earned.
+- **Arc Mainnet** went live for us the day it opened, 2026-09-16: agent #0 on the
+  canonical ERC-8004 registry, a spend vault holding real USDC, and x402 settling
+  both through our own EIP-3009 facilitator and through Circle Gateway's batched
+  nanopayments, where the buyer signs off-chain and pays no gas. On Arc the gas
+  token is USDC itself. Those first payments are self-funded and labeled so.
+- Escrow, KYA anchoring and the account-abstraction path still run on **Circle Arc
+  testnet**: real contracts, real transactions, test money.
 
 ## Six protocols, one passport
 
@@ -71,7 +73,7 @@ switch.
 | **Escrow** | ERC-8183 job escrow on Arc |
 | **Score** | Deterministic reputation, 0 to 1000 |
 
-Built on rails that already move money: Circle, Circle Arc, OKX X Layer, Celo,
+Built on rails that already move money: Circle, Arc Mainnet, OKX X Layer, Celo,
 Arbitrum One, Robinhood Chain, Stellar, Algorand and Base. Stellar's Soroban spend
 vault holds real Circle USDC on pubnet and the Soroban x402 rail sells on both Stellar
 networks. Algorand settles x402 v2 in native Circle USDC through the GoPlausible

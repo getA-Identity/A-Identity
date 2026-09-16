@@ -6,9 +6,10 @@ human sets, and can then pay other agents.
 
 Live: **https://a-identity.xyz** · backend **https://a-identity-backend.onrender.com**.
 
-The registry holds **13 chains**. Eight are `live`, and seven of those are mainnets carrying
-our own traffic and real money: **OKX X Layer**, **Celo**, **Robinhood Chain**,
-**Arbitrum One**, **Base**, **Stellar** (pubnet) and **Algorand**. The eighth live chain is
+The registry holds **14 chains**. Nine are `live`, and eight of those are mainnets carrying
+our own traffic and real money: **Arc Mainnet** (live since it opened on 2026-09-16),
+**OKX X Layer**, **Celo**, **Robinhood Chain**, **Arbitrum One**, **Base**, **Stellar**
+(pubnet) and **Algorand**. The ninth live chain is
 **Circle Arc** (5042002), which is a testnet, so value moving there is test value; Arc is
 where phase 1 started and it still carries all three ERC-8004 registries (identity +
 reputation + validation), which is what makes KYA anchorable there. No mainnet in the
@@ -186,11 +187,11 @@ real settlement - the on-chain proof of the "fee per settlement" model.
   [`/api/agents/reputation?agentId=849980`](https://a-identity-backend.onrender.com/api/agents/reputation?agentId=849980),
   which also reports `settledOnchain` (3, and fixed) next to `settledEffective` (the decayed
   weight those same settlements still carry). Anchor tx:
-  [`0x506b125f…`](https://testnet.arcscan.app/tx/0x506b125f3a0481667e3a00dcb86f48cbcaa35c643af963365e9389b06a8f8e54) ·
-  KYA attestation: [`0x758ddbfa…`](https://testnet.arcscan.app/tx/0x758ddbfad38daeb772a37deb07e65339f13aeb393899fc7e1d2689c95adf0dad)
+  [`0x506b125f…`](https://explorer.testnet.arc.io/tx/0x506b125f3a0481667e3a00dcb86f48cbcaa35c643af963365e9389b06a8f8e54) ·
+  KYA attestation: [`0x758ddbfa…`](https://explorer.testnet.arc.io/tx/0x758ddbfad38daeb772a37deb07e65339f13aeb393899fc7e1d2689c95adf0dad)
 - **Completed ERC-8183 escrow job #155504** - full lifecycle settled on Arc.
-  createJob [`0xcce5a56c…`](https://testnet.arcscan.app/tx/0xcce5a56cc0518d5760f90d11d88eb70d5097636179eb3e92903152a96a684cc5) →
-  complete [`0x245f0ee7…`](https://testnet.arcscan.app/tx/0x245f0ee76a6d8dd21e8a14cbd1f489a3d80a1824113316f3b39c58c0e50f25e3)
+  createJob [`0xcce5a56c…`](https://explorer.testnet.arc.io/tx/0xcce5a56cc0518d5760f90d11d88eb70d5097636179eb3e92903152a96a684cc5) →
+  complete [`0x245f0ee7…`](https://explorer.testnet.arc.io/tx/0x245f0ee76a6d8dd21e8a14cbd1f489a3d80a1824113316f3b39c58c0e50f25e3)
 - **Circle Gateway** - USDC deposited on Arc, then moved to **Base Sepolia gaslessly** via the
   Forwarding Service and minted there in ~6s (verified live on prod). Recipient balance on Base:
   [signer on Basescan](https://sepolia.basescan.org/address/0xd305607510E0Db2c95807173c7A05BEA53c1ed36).
@@ -314,7 +315,7 @@ flowchart TD
     PLAT --> REG
     RAILS --> REG
   end
-  BE -->|reads and writes| CH[(13 chains<br/>8 live)]
+  BE -->|reads and writes| CH[(14 chains<br/>9 live)]
   BE -->|durable state| DB[(Postgres, JSON fallback)]
   REG -.generates.-> UI
 ```
@@ -333,7 +334,7 @@ day it lands rather than the day someone remembers to add it.
   `/mcp` JSON-RPC for agents. Durable state via Postgres (`DATABASE_URL`), JSON-file fallback for dev.
 - **Auth** - wallet sign-in on any chain family the registry knows (EVM personal_sign, Stellar SEP-43 signMessage, an Algorand signed zero-value self-payment; mcp/src/wallet-proof.ts) + email magic link (Resend) are *verified*; a plain guest
   session is read-only. Agent ownership is bound to a verified identity.
-- **Tests / CI** - `node:test` unit suite: **1296 tests across 92 colocated `*.test.ts` files**
+- **Tests / CI** - `node:test` unit suite: **1299 tests across 92 colocated `*.test.ts` files**
   (as of Aug 2026; `npm test` in `mcp/`) + a full E2E (`mcp/e2e.mjs`) of about **67 checks** that
   adapts to signer presence: live reads always run, and the on-chain write checks (x402, ERC-8183
   escrow, Gateway, **Nanopayments settle**, **CCTP burn-and-mint**) activate with a funded

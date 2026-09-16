@@ -131,6 +131,9 @@ test('the public surface reports exactly the wired chains as live/beta', () => {
       // ranking (Arc, Stellar, Algorand as the flagship trio, Avalanche last), so this
       // list follows: still derived by the same status-then-registry rule, never
       // hand-placed here.
+      // 2026-09-16: Arc Mainnet goes live, and sorts first because the registry puts the
+      // mainnet ahead of its testnet twin.
+      { id: 'arc-mainnet', status: 'live' },
       { id: 'arc', status: 'live' },
       { id: 'stellar', status: 'live' },
       { id: 'algorand', status: 'live' },

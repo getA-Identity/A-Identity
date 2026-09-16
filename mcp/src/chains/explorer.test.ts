@@ -23,8 +23,8 @@ const stellarChain = (): ChainDescriptor =>
 
 test('EVM explorer links are unchanged', () => {
   const arc = requireChain('eip155:5042002')
-  assert.equal(txUrl(arc, '0xabc'), 'https://testnet.arcscan.app/tx/0xabc')
-  assert.equal(addressUrl(arc, '0xdef'), 'https://testnet.arcscan.app/address/0xdef')
+  assert.equal(txUrl(arc, '0xabc'), 'https://explorer.testnet.arc.io/tx/0xabc')
+  assert.equal(addressUrl(arc, '0xdef'), 'https://explorer.testnet.arc.io/address/0xdef')
 })
 
 /**

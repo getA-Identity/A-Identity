@@ -16,7 +16,7 @@ import { registerWorker, processFundedTasks } from './translator.mjs'
 
 const base = process.env.BASE ?? 'https://a-identity-backend.onrender.com'
 const cycles = Math.min(Math.max(Number(process.env.SEED_CYCLES ?? 20), 1), 100)
-const EXPLORER = 'https://testnet.arcscan.app'
+const EXPLORER = 'https://explorer.testnet.arc.io'
 
 const PROMPTS = [
   'Translate "The agent economy is here" to French',

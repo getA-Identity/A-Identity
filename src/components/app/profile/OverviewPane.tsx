@@ -6,7 +6,7 @@
  */
 import { Activity, ExternalLink } from 'lucide-react'
 import { humanizeActivity, short } from '../../../lib/format'
-import type { Chain } from '../../../lib/chains'
+import { CHAIN_BY_ID, type Chain } from '../../../lib/chains'
 import { TagRow } from '../marketplace/AgentCardChrome'
 import type { MarketAgent } from './types'
 
@@ -70,7 +70,7 @@ export default function OverviewPane({ agent, chainInfo }: Props) {
               ['ERC-8004', agent.onchainAgentId ? `#${agent.onchainAgentId}` : 'queued', agent.onchainExplorer ?? null],
               ['Chain', chainInfo ? chainInfo.name : 'Circle Arc (testnet)', null],
               ['Category', agent.category, null],
-              ['Wallet', agent.walletAddress ? short(agent.walletAddress) : 'none', agent.walletAddress ? `https://testnet.arcscan.app/address/${agent.walletAddress}` : null],
+              ['Wallet', agent.walletAddress ? short(agent.walletAddress) : 'none', agent.walletAddress ? `${CHAIN_BY_ID.arc.explorer}/address/${agent.walletAddress}` : null],
               ['Registered', new Date(agent.createdAt).toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' }), null],
               ['Registration tx', agent.onchainTx ? short(agent.onchainTx) : 'pending', agent.onchainExplorer ?? null],
             ] as const

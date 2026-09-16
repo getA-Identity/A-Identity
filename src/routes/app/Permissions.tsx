@@ -29,6 +29,7 @@ import PolicyTester from '../../components/app/permissions/PolicyTester'
 import VaultPanel from '../../components/app/permissions/VaultPanel'
 import VenuePanel from '../../components/app/permissions/VenuePanel'
 import CirclePolicyPanel from '../../components/app/permissions/CirclePolicyPanel'
+import { CHAIN_BY_ID } from '../../lib/chains'
 
 /**
  * One action surface as the backend registry describes it.
@@ -85,7 +86,7 @@ type VaultSyncNote = {
   txs?: { setPolicy?: string; setFrozen?: string }
 }
 
-const ARCSCAN_TX = 'https://testnet.arcscan.app/tx/'
+const ARCSCAN_TX = `${CHAIN_BY_ID.arc.explorer}/tx/`
 
 export default function Permissions() {
   const [tab, setTab] = useState('payments')

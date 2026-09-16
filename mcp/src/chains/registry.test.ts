@@ -80,7 +80,9 @@ test('Arc, X Layer, Celo (live), Base, Celo Sepolia and RH Chain Testnet (beta) 
   // x402 rail code ships wired end to end but credential-gated, and the descriptors
   // promote to live the day a real mainnet payment is recorded, the bar every other
   // chain met.
-  assert.deepEqual(live.map((c) => c.id).sort(), ['algorand', 'algorand-testnet', 'arbitrum', 'arc', 'base', 'celo', 'celo-sepolia', 'rhchain', 'rhchain-testnet', 'stellar', 'stellar-testnet', 'xlayer'])
+  // 2026-09-16: arc-mainnet enters planned in the morning and goes LIVE the same day, on agent
+  // #0 plus a real EIP-3009 settlement, a Gateway credit and a vault payment.
+  assert.deepEqual(live.map((c) => c.id).sort(), ['algorand', 'algorand-testnet', 'arbitrum', 'arc', 'arc-mainnet', 'base', 'celo', 'celo-sepolia', 'rhchain', 'rhchain-testnet', 'stellar', 'stellar-testnet', 'xlayer'])
   // pubnet joined on 2026-08-24 with the vault deploy, was called live on 2026-08-27,
   // and the x402 rail started SELLING there on 2026-08-27 (first sale tx f213371c,
   // settled by our own broadcaster at the network's market-rate inclusion fee). The
@@ -112,8 +114,10 @@ test('Arc, X Layer, Celo (live), Base, Celo Sepolia and RH Chain Testnet (beta) 
   assert.equal(ARC_CHAIN.contracts.usdc, '0x3600000000000000000000000000000000000000')
   assert.equal(ARC_CHAIN.evmChainId, 5042002)
   assert.equal(ARC_CHAIN.usdcDecimals, 6)
-  assert.equal(ARC_CHAIN.explorer, 'https://testnet.arcscan.app')
-  assert.equal(ARC_CHAIN.rpcUrls[0], 'https://rpc.testnet.arc.network')
+  // Re-pointed 2026-09-16 when Arc moved its testnet hosts to arc.io (the old ones still
+  // answered, and arcscan.app 301s to the new explorer with the path intact).
+  assert.equal(ARC_CHAIN.explorer, 'https://explorer.testnet.arc.io')
+  assert.equal(ARC_CHAIN.rpcUrls[0], 'https://rpc.testnet.arc.io')
   assert.equal(ARC_CHAIN.signerEnvVar, 'ARC_SIGNER_KEY')
 })
 
@@ -126,6 +130,7 @@ test('every roadmap chain is present and planned', () => {
   // facilitator and confirmed settlements went end to end on it.
   // stellar (pubnet) left on 2026-08-24 when AgentSpendPolicy was deployed there and an
   // agent spent a real USDC budget under it. avalanche is the last one standing.
+  // arc-mainnet was here for a few hours on 2026-09-16 and left the same day it entered.
   for (const id of ['avalanche']) {
     const c = getChainById(id)
     assert.ok(c, `${id} missing from registry`)
@@ -163,7 +168,7 @@ test('no Stellar network is still planned, and the split that allowed it is inta
 
 test('evmChains covers Arc and every other EVM chain', () => {
   const ids = evmChains().map((c) => c.id).sort()
-  assert.deepEqual(ids, ['arbitrum', 'arc', 'avalanche', 'base', 'celo', 'celo-sepolia', 'rhchain', 'rhchain-testnet', 'xlayer'])
+  assert.deepEqual(ids, ['arbitrum', 'arc', 'arc-mainnet', 'avalanche', 'base', 'celo', 'celo-sepolia', 'rhchain', 'rhchain-testnet', 'xlayer'])
 })
 
 // ── Robinhood Chain (Phase 6.1) ──────────────────────────────────────────────────
@@ -333,3 +338,48 @@ test('every EVM chain records a verified CREATE2 factory, and no non-EVM chain d
   }
 })
 
+
+// ── Arc mainnet (2026-09-16) ─────────────────────────────────────────────────────
+
+test('Arc mainnet is its own descriptor, and shares no testnet-only value with its twin', () => {
+  // The split exists so a testnet key can never become a mainnet key by a rename, and so
+  // the testnet-era 0x8004A818 registry set (no code on Arc mainnet) cannot leak across.
+  const main = getChainById('arc-mainnet')
+  const test_ = getChainById('arc')
+  assert.ok(main && test_)
+  assert.equal(main.caip2, 'eip155:5042')
+  assert.equal(main.evmChainId, 5042) // eth_chainId answered 0x13b2
+  assert.equal(main.testnet, false)
+  assert.equal(main.cctpDomain, 26)
+  assert.equal(main.rpcUrls[0], 'https://rpc.mainnet.arc.io')
+  assert.equal(main.explorer, 'https://explorer.arc.io')
+  assert.equal(main.signerEnvVar, 'ARC_MAINNET_SIGNER_KEY')
+  assert.equal(main.rpcEnvVar, 'ARC_MAINNET_RPC_URL')
+  assert.notEqual(main.signerEnvVar, test_.signerEnvVar)
+
+  // The canonical mainnet ERC-8004 family, implementation code matched against Base.
+  assert.equal(main.contracts.identityRegistry, getChainById('base')?.contracts.identityRegistry)
+  assert.equal(main.contracts.reputationRegistry, getChainById('base')?.contracts.reputationRegistry)
+  assert.notEqual(main.contracts.identityRegistry?.toLowerCase(), test_.contracts.identityRegistry?.toLowerCase())
+  assert.equal(main.contracts.validationRegistry, undefined)
+  // Arc's reference ERC-8183 deployment is documented for testnet only.
+  assert.equal(main.contracts.agenticCommerce, undefined)
+
+  // CCTP and Gateway: mainnet contracts, not the testnet pair.
+  assert.equal(main.contracts.cctp?.tokenMessenger, '0x28b5a0e9C621a5BadaA536219b3a228C8168cf5d')
+  assert.notEqual(main.contracts.cctp?.tokenMessenger, test_.contracts.cctp?.tokenMessenger)
+  assert.equal(main.gateway?.facilitator, 'https://gateway-api.circle.com')
+  assert.equal(main.gateway?.wallet, getChainById('base')?.gateway?.wallet)
+  assert.notEqual(main.gateway?.wallet, test_.gateway?.wallet)
+
+  // The USDC predeploy IS the same address on both networks, and the domain is proven.
+  assert.equal(main.contracts.usdc, '0x3600000000000000000000000000000000000000')
+  const usdc = main.settlementTokens?.[0]
+  assert.equal(usdc?.symbol, 'USDC')
+  assert.equal(usdc?.decimals, 6)
+  assert.deepEqual(usdc?.domainVersionCandidates, ['2'])
+  // The fee arrived with the first measured settlement (2026-09-16, 87165 gas at 169.75
+  // gwei = 0.0148 USDC), never before it, and its basis names that transaction.
+  assert.equal(usdc?.settlementFeeUsd, 0.03)
+  assert.match(usdc?.feeBasis ?? '', /0xd44287c8/)
+})

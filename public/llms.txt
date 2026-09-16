@@ -18,20 +18,24 @@ against those limits before any value moves, and the verdict is ALLOW, WARN or D
 - **Bounded authority**: daily caps, an auto-approve line, payee allowlists and a freeze
   switch, enforced in three independent places (a server pre-check, an on-chain vault
   that reverts an over-limit payment, and Circle's wallet-layer screening).
-- **Payments**: x402 pay-per-call, gasless Circle Nanopayments (an Arc testnet demo, and
-  the trust tools on Base mainnet for Circle Agent Marketplace buyers), ERC-8183 job
+- **Payments**: x402 pay-per-call, gasless Circle Nanopayments (the trust tools on Arc
+  Mainnet, first credit 2026-09-16, and configured on Base mainnet for Circle Agent
+  Marketplace buyers), ERC-8183 job
   escrow, and cross-chain USDC through Circle Gateway and CCTP, including CCTP between
   Stellar and EVM (testnet-proven both ways; mainnet opt-in only).
 
 ## Status, stated plainly
 
-- Circle Arc is a public **testnet**. Real contracts and real transactions, test money.
+- Arc Mainnet is **live** for us since the day it opened (2026-09-16): agent #0, a spend
+  vault holding real USDC, and x402 settled on both our EIP-3009 facilitator and Circle
+  Gateway, all self-funded so far. Escrow and KYA anchoring still run on Arc testnet, in
+  test money.
 - The Trust Oracle is **live on OKX.AI as agent #6271**, answering per-call checks over
   x402 in real USD₮0: 120 x402 settlements on X Layer mainnet to date, each one a
   transaction hash anyone can check. Read them as proof that the rail works and composes with the
   identity layer, not as revenue: per-call amounts are sub-cent by design.
-- Five more mainnets carry settlements of their own: Robinhood Chain, Arbitrum One, Base,
-  Stellar pubnet and Algorand. Every rail is counted on its own proof page at
+- Six more mainnets carry settlements of their own: Arc Mainnet, Robinhood Chain, Arbitrum
+  One, Base, Stellar pubnet and Algorand. Every rail is counted on its own proof page at
   https://a-identity.xyz/proof/:rail and never summed with the others, because one
   figure covering several rails is a figure about none of them. The index over all of
   them, including the testnet rails and the chains whose evidence lives elsewhere, is

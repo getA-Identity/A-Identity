@@ -7,6 +7,7 @@
  */
 import CopyBlock from '../CopyBlock'
 import type { MarketAgent } from './types'
+import { CHAIN_BY_ID } from '../../../lib/chains'
 
 type Props = {
   agent: MarketAgent
@@ -73,7 +74,7 @@ export default function MetadataPane({ agent }: Props) {
               <li>
                 ERC-8004 IdentityRegistry{' '}
                 <a
-                  href="https://testnet.arcscan.app/address/0x8004A818BFB912233c491871b3d84c89A494BD9e"
+                  href={`${CHAIN_BY_ID.arc.explorer}/address/${CHAIN_BY_ID.arc.registries.identity}`}
                   target="_blank"
                   rel="noopener noreferrer"
                   className="font-mono text-xs text-accent hover:underline"

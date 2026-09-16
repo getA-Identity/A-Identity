@@ -12,6 +12,7 @@ import { cn } from '../../lib/utils'
  */
 const LOGO: Record<ChainId, string> = {
   arc: '/chains/arc.svg',
+  'arc-mainnet': '/chains/arc.svg',
   base: '/chains/base.svg',
   arbitrum: '/chains/arbitrum.svg',
   avalanche: '/chains/avalanche.svg',

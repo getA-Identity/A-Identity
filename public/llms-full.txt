@@ -412,11 +412,22 @@ https://a-identity.xyz/.well-known/mcp/server-card.json
 
 ## 8. Chains
 
-13 chains sit in the registry, in three buckets. The bucket a chain is in comes
+14 chains sit in the registry, in three buckets. The bucket a chain is in comes
 from its descriptor, so this list and the running server cannot disagree.
 
 Live today:
 
+- **Arc Mainnet** (`eip155:5042`), live since the day it opened, 2026-09-16. Agent #0
+  on the canonical ERC-8004 identity registry `0x8004a169fb4a3325136eb29fa0ceb6d2e539a432`
+  is ours (reputation `0x8004BAa17C55a88189AE136b182e5fdA19dE9b63`, anchored by our
+  oracle the same day). x402 settles in USDC on two rails: our own EIP-3009 facilitator
+  (first settlement tx 0xd44287c8..., 0.021 USDC, the buyer paying no gas) and Circle
+  Gateway nanopayments (first credit the same day, batched on-chain by Gateway). An
+  AgentSpendPolicy vault holds real USDC under a 1 USDC daily cap and refused an
+  over-limit payment by contract. Funded by a CCTP V2 burn on Base that Circle's
+  Forwarding Service minted here. Every payment so far is self-funded and labeled
+  internal. Escrow, KYA anchoring, Paymaster and Circle developer wallets stay on
+  testnet, and the mainnet explorer is permissioned. Proof: https://a-identity.xyz/proof/arc
 - **Circle Arc testnet** (`eip155:5042002`). ERC-8004 identity
   `0x8004A818BFB912233c491871b3d84c89A494BD9e`, reputation
   `0x8004B663056A597Dffe9eCcC1965A193B7388713`, validation
@@ -538,14 +549,16 @@ https://a-identity.xyz/.well-known/ai-agent-manifest.json
 
 ## 9. Status, stated plainly
 
-- Circle Arc is a public **testnet**. Real contracts and real transactions, test
-  money.
+- Circle Arc runs on both networks. Arc **Mainnet** (live since 2026-09-16) carries agent
+  #0, a spend vault and both x402 rails in real USDC, all self-funded so far. Arc
+  **testnet** still carries escrow, KYA anchoring, Paymaster and the account-abstraction
+  path, in test money.
 - The Trust Oracle is **live on OKX.AI as agent #6271** with
   120 x402 settlements on X Layer mainnet, each verifiable. They are published as proof that an open
   payment rail works and composes with the identity layer, not as revenue: the
   amounts are sub-cent by design.
-- Five more mainnets carry settlements of their own: Robinhood Chain, Arbitrum
-  One, Base, Stellar pubnet and Algorand. Section 8 describes each, and every
+- Six more mainnets carry settlements of their own: Arc Mainnet, Robinhood Chain,
+  Arbitrum One, Base, Stellar pubnet and Algorand. Section 8 describes each, and every
   rail is counted on its own proof page rather than summed with the others.
 - Public policy counters currently read **zero**, because no live third-party
   agent has produced a production decision yet. We publish the zero rather than a

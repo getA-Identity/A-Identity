@@ -94,7 +94,7 @@ export default function BatchPanel() {
             <b>{result.count}</b> USDC payments (${result.totalUsd}) settled <b>atomically in one Arc tx</b>, wallet preserved as sender
           </span>
           <a href={result.explorerUrl} target="_blank" rel="noopener noreferrer" className="ml-auto inline-flex items-center gap-1 text-xs font-semibold text-accent hover:underline">
-            View on arcscan <ExternalLink size={11} />
+            View on the Arc explorer <ExternalLink size={11} />
           </a>
         </div>
       )}

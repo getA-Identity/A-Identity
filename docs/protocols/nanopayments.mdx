@@ -46,7 +46,7 @@ A-Identity ships **both** rails, and says which is which:
 | Where | `mcp/src/x402.ts` | `mcp/src/nanopay.ts` |
 | Settlement | A real USDC transfer per call, verified on-chain | Off-chain EIP-3009 auth, **batched** on-chain by Gateway |
 | Gas | Paid per call (USDC on Arc) | **Zero** for buyer and seller |
-| Proof | An arcscan tx hash | A Gateway batch settlement id |
+| Proof | An Arc explorer tx hash | A Gateway batch settlement id |
 | Best for | Provable, standalone settlement | High-frequency, sub-cent streams |
 
 <Note>

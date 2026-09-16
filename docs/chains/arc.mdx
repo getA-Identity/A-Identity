@@ -27,8 +27,11 @@ primary settlement rail.
 </CardGroup>
 
 <Note>
-  Mainnet is not public yet. Everything here targets **Arc Testnet**. Get testnet
-  USDC from the [Circle faucet](https://faucet.circle.com). What we did here is on the
+  Arc Mainnet opened on 2026-09-16 and A-Identity went live on it that day (see
+  [Arc Mainnet](#arc-mainnet) below). Escrow, KYA anchoring and the account-abstraction
+  path still run on **Arc Testnet**, and the rest of this page targets it unless a section
+  says Mainnet. Get testnet USDC from
+  the [Circle faucet](https://faucet.circle.com). What we did here is on the
   record: agent #849980, the KYA attestation and the first reputation anchor our oracle
   ever wrote are each listed with their transaction at
   [/proof/arc](https://a-identity.xyz/proof/arc), and the index over every chain is at
@@ -41,9 +44,9 @@ primary settlement rail.
 | --- | --- |
 | Chain ID | `5042002` |
 | Native currency | USDC (18 decimals) |
-| RPC (HTTP) | `https://rpc.testnet.arc.network` |
-| RPC (WebSocket) | `wss://rpc.testnet.arc.network` |
-| Block explorer | [testnet.arcscan.app](https://testnet.arcscan.app) |
+| RPC (HTTP) | `https://rpc.testnet.arc.io` |
+| RPC (WebSocket) | `wss://rpc.testnet.arc.io` |
+| Block explorer | [explorer.testnet.arc.io](https://explorer.testnet.arc.io) |
 | Faucet | [faucet.circle.com](https://faucet.circle.com) |
 
 <Warning>
@@ -51,6 +54,48 @@ primary settlement rail.
   ERC-20 interface uses 6. Both point at the same underlying balance. Set
   display decimals correctly or amounts will look off by a factor of a trillion.
 </Warning>
+
+## Arc Mainnet
+
+Arc Mainnet is in the registry as `arc-mainnet` with status **live** since 2026-09-16, the
+day it opened: agent #0 on the canonical registry is ours, an AgentSpendPolicy vault
+(`0xe07819e6d28a5dfd5a9f4cd94dc6dc9aeeda4146`) holds real USDC under dust caps, and paid
+calls settled through both our EIP-3009 facilitator and Circle Gateway nanopayments. Every
+payment so far is self-funded and labeled internal; each transaction is listed at
+[/proof/arc](https://a-identity.xyz/proof/arc). It is a separate descriptor from the testnet on purpose,
+with its own signer variable (`ARC_MAINNET_SIGNER_KEY`), so a testnet key can never become
+a mainnet key by a rename.
+
+| Field | Value |
+| --- | --- |
+| Chain ID | `5042` |
+| RPC (HTTP) | `https://rpc.mainnet.arc.io` (plus Blockdaemon, dRPC and QuickNode hosts under `mainnet.arc.io`) |
+| Block explorer | [explorer.arc.io](https://explorer.arc.io), permissioned |
+| USDC (ERC-20 interface) | `0x3600000000000000000000000000000000000000`, the same predeploy address as testnet |
+| ERC-8004 identity | `0x8004a169fb4a3325136eb29fa0ceb6d2e539a432` |
+| ERC-8004 reputation | `0x8004BAa17C55a88189AE136b182e5fdA19dE9b63` |
+| CCTP V2 | domain `26`, TokenMessengerV2 `0x28b5a0e9C621a5BadaA536219b3a228C8168cf5d` |
+| Circle Gateway | GatewayWallet `0x77777777Dcc4d5A8B6E418Fd04D8997ef11000eE` |
+
+<Warning>
+  The ERC-8004 registries on Arc Mainnet are **not** the testnet addresses. The testnet
+  set (`0x8004A818...`) has no code on mainnet; mainnet carries the canonical family that
+  Base, Arbitrum One, X Layer and Celo share. A 130-byte proxy at an address proves
+  nothing by itself, so the pair was checked by reading each proxy's EIP-1967
+  implementation slot and matching the implementation code against Base. There is no
+  ValidationRegistry on mainnet, and Arc's reference ERC-8183 contract is documented for
+  testnet only.
+</Warning>
+
+What stays on testnet until it has its own evidence: Circle developer-controlled wallets
+(Circle's Wallets table lists the `ARC` mainnet chain code, but our wallet path has not
+created or used one there yet), Paymaster (Circle's Paymaster addresses page lists no Arc
+network, and its v0.7 and v0.8 addresses have no code on Arc mainnet), the
+account-abstraction path, the treasury and airdrop demos, and ERC-8183 escrow (Arc's
+reference contract has code on testnet and none on mainnet). docs.arc.io describes the mainnet
+RPC and explorer as permissioned during a private-mainnet phase; the RPC answered without
+credentials on launch day, and `ARC_MAINNET_RPC_URL` takes a credentialed endpoint if that
+changes.
 
 ## Connect With viem
 
@@ -64,12 +109,12 @@ export const arcTestnet = defineChain({
   nativeCurrency: { name: 'USD Coin', symbol: 'USDC', decimals: 18 },
   rpcUrls: {
     default: {
-      http: ['https://rpc.testnet.arc.network'],
-      webSocket: ['wss://rpc.testnet.arc.network'],
+      http: ['https://rpc.testnet.arc.io'],
+      webSocket: ['wss://rpc.testnet.arc.io'],
     },
   },
   blockExplorers: {
-    default: { name: 'Arcscan', url: 'https://testnet.arcscan.app' },
+    default: { name: 'Arc Testnet Explorer', url: 'https://explorer.testnet.arc.io' },
   },
   testnet: true,
 })
@@ -154,7 +199,7 @@ deployer wallet from the faucet first.
   <Step title="Deploy">
     ```bash
     forge create src/Counter.sol:Counter \
-      --rpc-url https://rpc.testnet.arc.network \
+      --rpc-url https://rpc.testnet.arc.io \
       --private-key $PRIVATE_KEY \
       --broadcast
     ```

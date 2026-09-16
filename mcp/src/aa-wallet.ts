@@ -16,17 +16,18 @@
  * Zerodev SDK is imported DYNAMICALLY so tsc/boot never hard-depend on it.
  *
  * NOTE on the RPC: Kernel's counterfactual-address step (`getSenderAddress`) needs an RPC that
- * returns eth_call revert data in viem's expected shape. Arc's primary `rpc.testnet.arc.network`
- * does NOT; `rpc.blockdaemon.testnet.arc.network` does - so the AA reads route through it.
+ * returns eth_call revert data in viem's expected shape. Arc's primary testnet RPC did NOT when
+ * this was written; the Blockdaemon endpoint does - so the AA reads route through it. The hosts
+ * moved from arc.network to arc.io on 2026-09-16 and this list moved with them.
  */
 import { ARC_EXPLORER, CONTRACTS } from './arc-contracts.js'
 import { ARC_CHAIN } from './chains/index.js'
 
 /** Arc RPCs whose eth_call revert format works with the Kernel getSenderAddress step. */
 const AA_RPCS = [
-  'https://rpc.blockdaemon.testnet.arc.network',
-  'https://rpc.drpc.testnet.arc.network',
-  'https://rpc.quicknode.testnet.arc.network',
+  'https://rpc.blockdaemon.testnet.arc.io',
+  'https://rpc.drpc.testnet.arc.io',
+  'https://rpc.quicknode.testnet.arc.io',
 ]
 const ARC_CHAIN_ID = ARC_CHAIN.evmChainId as number
 const USDC = CONTRACTS.usdc as `0x${string}`

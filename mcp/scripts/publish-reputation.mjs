@@ -38,10 +38,10 @@ const EVIDENCE_URI = arg('evidence', 'https://a-identity-asp.onrender.com/method
 
 // ── chain + contracts (Arc testnet) ─────────────────────────────────────────────────
 const ARC_RPCS = [
-  'https://rpc.testnet.arc.network',
-  'https://rpc.blockdaemon.testnet.arc.network',
-  'https://rpc.drpc.testnet.arc.network',
-  'https://rpc.quicknode.testnet.arc.network',
+  'https://rpc.testnet.arc.io',
+  'https://rpc.blockdaemon.testnet.arc.io',
+  'https://rpc.drpc.testnet.arc.io',
+  'https://rpc.quicknode.testnet.arc.io',
 ]
 // Fallback across every Arc RPC so one rate-limited/flaky endpoint rolls to the next.
 const arcTransport = fallback(ARC_RPCS.map((u) => http(u, { timeout: 8000, retryCount: 3, retryDelay: 500 })))
@@ -51,7 +51,7 @@ const ARC = defineChain({
   nativeCurrency: { name: 'USD Coin', symbol: 'USDC', decimals: 18 },
   rpcUrls: { default: { http: ARC_RPCS } },
 })
-const EXPLORER = 'https://testnet.arcscan.app'
+const EXPLORER = 'https://explorer.testnet.arc.io'
 const IDENTITY_REGISTRY = '0x8004A818BFB912233c491871b3d84c89A494BD9e'
 const REPUTATION_REGISTRY = '0x8004B663056A597Dffe9eCcC1965A193B7388713'
 const OWNER_OF_ABI = [{ type: 'function', name: 'ownerOf', stateMutability: 'view', inputs: [{ name: 'tokenId', type: 'uint256' }], outputs: [{ type: 'address' }] }]

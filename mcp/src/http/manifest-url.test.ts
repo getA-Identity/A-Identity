@@ -26,6 +26,9 @@ test('block explorers get the explorer hint, matched on host not on the whole UR
     'https://celoscan.io/token/0xabc?a=1',
     'https://www.oklink.com/x-layer/evm/address/0xabc',
     'https://testnet.arcscan.app/tx/0xdead',
+    // Arc's explorers after the 2026-09-16 host move, derived from the registry.
+    'https://explorer.testnet.arc.io/tx/0xdead',
+    'https://explorer.arc.io/address/0xabc',
   ]) {
     assert.match(describeNonJsonManifest(u, 'text/html', HTML), /block explorer page/, u)
   }

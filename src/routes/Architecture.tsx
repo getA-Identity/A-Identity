@@ -299,9 +299,9 @@ function Terminal() {
 // otherwise about.
 const STATS = [
   { k: '120', v: 'real x402 settlements', mono: 'X Layer mainnet' },
-  { k: '1296', v: 'unit tests, green', mono: 'deterministic' },
+  { k: '1299', v: 'unit tests, green', mono: 'deterministic' },
   { k: '7', v: 'services, one free', mono: '$0 to $0.01' },
-  { k: '8', v: 'chains read live', mono: 'ERC-8004 registries' },
+  { k: '9', v: 'chains read live', mono: 'ERC-8004 registries' },
 ]
 
 export default function Architecture() {

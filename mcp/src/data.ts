@@ -22,6 +22,7 @@ import { publicChains } from './chains/public-view.js'
  * with a chain slug the type system said could not exist.
  */
 export const CHAIN_NAMES = [
+  'arc-mainnet',
   'arc',
   'stellar',
   'stellar-testnet',

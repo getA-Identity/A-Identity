@@ -200,6 +200,16 @@
   "supportsAuthenticatedExtendedCard": false,
   "registrations": [
     {
+      "chain": "eip155:5042",
+      "agentId": "0",
+      "caip": "eip155:5042:0x8004a169fb4a3325136eb29fa0ceb6d2e539a432/0",
+      "registry": "0x8004a169fb4a3325136eb29fa0ceb6d2e539a432",
+      "owner": "0xd305607510E0Db2c95807173c7A05BEA53c1ed36",
+      "tx": "0x1d9f57113cee71e6a0aa73d0905d02f88a08877489c05828e604db2a48412844",
+      "explorer": "https://explorer.arc.io/tx/0x1d9f57113cee71e6a0aa73d0905d02f88a08877489c05828e604db2a48412844",
+      "note": "ERC-8004 IdentityRegistry on Arc Mainnet, the canonical address Base and Arbitrum One carry, minted the day Arc Mainnet opened (2026-09-16). Token #0 is the registry's first mint. Our x402 rails settle here in USDC, and the explorer is permissioned during Arc's private-mainnet phase."
+    },
+    {
       "chain": "eip155:196",
       "agentId": "6271",
       "caip": "eip155:196:0x8004a169fb4a3325136eb29fa0ceb6d2e539a432/6271",
@@ -253,7 +263,7 @@
       "registry": "0x8004A818BFB912233c491871b3d84c89A494BD9e",
       "owner": "0xd305607510E0Db2c95807173c7A05BEA53c1ed36",
       "tx": "0x506b125f3a0481667e3a00dcb86f48cbcaa35c643af963365e9389b06a8f8e54",
-      "explorer": "https://testnet.arcscan.app/tx/0x506b125f3a0481667e3a00dcb86f48cbcaa35c643af963365e9389b06a8f8e54",
+      "explorer": "https://explorer.testnet.arc.io/tx/0x506b125f3a0481667e3a00dcb86f48cbcaa35c643af963365e9389b06a8f8e54",
       "note": "ERC-8004 IdentityRegistry on Circle Arc testnet, the Arc registry family rather than the canonical mainnet address. Agent #849980 (Meridian) is the phase-1 showcase agent, KYA-attested through Arc's ValidationRegistry. Testnet: no real money."
     }
   ]

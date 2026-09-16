@@ -1,7 +1,7 @@
 # A-Identity
 
 [![CI](https://github.com/getA-Identity/A-Identity/actions/workflows/ci.yml/badge.svg)](https://github.com/getA-Identity/A-Identity/actions/workflows/ci.yml)
-[![Tests](https://img.shields.io/badge/tests-1296%20unit%20%2B%20E2E-brightgreen)](mcp/README.md#develop)
+[![Tests](https://img.shields.io/badge/tests-1299%20unit%20%2B%20E2E-brightgreen)](mcp/README.md#develop)
 [![npm: marketplace-sdk](https://img.shields.io/npm/v/%40a-identity%2Fmarketplace-sdk?label=marketplace-sdk)](https://www.npmjs.com/package/@a-identity/marketplace-sdk)
 [![npm: trust-guard](https://img.shields.io/npm/v/%40a-identity%2Ftrust-guard?label=trust-guard)](https://www.npmjs.com/package/@a-identity/trust-guard)
 [![Ask DeepWiki](https://deepwiki.com/badge.svg)](https://deepwiki.com/getA-Identity/A-Identity)
@@ -156,7 +156,7 @@ cross-chain).
 
 > Honesty note: with a funded signer, a task **locks its escrow on-chain at hire** (real ERC-8183
 > createJob → setBudget → approve → fund) and **completes on-chain at release** (submit → complete),
-> both verifiable on arcscan. The platform signer is the escrow party in this build; each party
+> both verifiable on the Arc explorer. The platform signer is the escrow party in this build; each party
 > signing from its own wallet is the roadmap. Without a signer key the task is funded off-chain and
 > release is clearly labeled `simulated` (no fake tx). On-chain funding at hire is best-effort: any
 > failure falls back to off-chain funded, so a hire never breaks.
@@ -214,7 +214,7 @@ listed at `GET /proof`. Four representative ones, each independently verifiable 
 `#849980`, KYA-verified, with a reputation earned from **3 real settlements**. The score
 itself is recency-weighted and decays as those settlements age, so it is read live rather
 than quoted here. Scoring is **deterministic and
-unit-tested** (1296 unit tests as of Sep 2026), reads on-chain live via viem, and is fully documented at
+unit-tested** (1299 unit tests as of Sep 2026), reads on-chain live via viem, and is fully documented at
 `GET /methodology`. This is our answer to "surface your rigor": every number is
 reproducible and every settlement is on-chain.
 
@@ -255,15 +255,32 @@ one in the chain registry (`mcp/src/chains/registry.ts`), in registry order, and
 address that is missing here is missing on-chain: nothing is listed that a live
 `eth_getCode` plus a real read did not confirm.
 
+### Arc Mainnet, `eip155:5042` - live
+
+Live since the day Arc Mainnet opened, 2026-09-16. Agent **#0**, the registry's first mint,
+is ours (tx [`0x1d9f5711...`](https://explorer.arc.io/tx/0x1d9f57113cee71e6a0aa73d0905d02f88a08877489c05828e604db2a48412844)).
+x402 settled here through our own EIP-3009 facilitator (tx
+[`0xd44287c8...`](https://explorer.arc.io/tx/0xd44287c8d73790b818ab73016dc21483260d1948d58ac95e8a169be1d750df9c))
+and through Circle Gateway nanopayments, all self-funded so far. The explorer is
+permissioned during Arc's private-mainnet phase; every transaction is at
+[/proof/arc](https://a-identity.xyz/proof/arc).
+
+| Contract | Address | Standard |
+| --- | --- | --- |
+| Identity Registry | [`0x8004a169fb4a3325136eb29fa0ceb6d2e539a432`](https://explorer.arc.io/address/0x8004a169fb4a3325136eb29fa0ceb6d2e539a432) | ERC-8004 |
+| Reputation Registry | [`0x8004BAa17C55a88189AE136b182e5fdA19dE9b63`](https://explorer.arc.io/address/0x8004BAa17C55a88189AE136b182e5fdA19dE9b63) | ERC-8004 |
+| AgentSpendPolicy vault (ours) | [`0xe07819e6d28a5dfd5a9f4cd94dc6dc9aeeda4146`](https://explorer.arc.io/address/0xe07819e6d28a5dfd5a9f4cd94dc6dc9aeeda4146) | Spend policy |
+| USDC | [`0x3600000000000000000000000000000000000000`](https://explorer.arc.io/address/0x3600000000000000000000000000000000000000) | ERC-20 + EIP-3009 |
+
 ### Circle Arc testnet, `eip155:5042002` - live
 
 | Contract | Address | Standard |
 | --- | --- | --- |
-| Identity Registry | [`0x8004A818BFB912233c491871b3d84c89A494BD9e`](https://testnet.arcscan.app/address/0x8004A818BFB912233c491871b3d84c89A494BD9e) | ERC-8004 |
-| Reputation Registry | [`0x8004B663056A597Dffe9eCcC1965A193B7388713`](https://testnet.arcscan.app/address/0x8004B663056A597Dffe9eCcC1965A193B7388713) | ERC-8004 |
-| Validation Registry | [`0x8004Cb1BF31DAf7788923b405b754f57acEB4272`](https://testnet.arcscan.app/address/0x8004Cb1BF31DAf7788923b405b754f57acEB4272) | ERC-8004 |
-| Agentic Commerce (jobs) | [`0x0747EEf0706327138c69792bF28Cd525089e4583`](https://testnet.arcscan.app/address/0x0747EEf0706327138c69792bF28Cd525089e4583) | ERC-8183 |
-| USDC | [`0x3600000000000000000000000000000000000000`](https://testnet.arcscan.app/address/0x3600000000000000000000000000000000000000) | ERC-20 |
+| Identity Registry | [`0x8004A818BFB912233c491871b3d84c89A494BD9e`](https://explorer.testnet.arc.io/address/0x8004A818BFB912233c491871b3d84c89A494BD9e) | ERC-8004 |
+| Reputation Registry | [`0x8004B663056A597Dffe9eCcC1965A193B7388713`](https://explorer.testnet.arc.io/address/0x8004B663056A597Dffe9eCcC1965A193B7388713) | ERC-8004 |
+| Validation Registry | [`0x8004Cb1BF31DAf7788923b405b754f57acEB4272`](https://explorer.testnet.arc.io/address/0x8004Cb1BF31DAf7788923b405b754f57acEB4272) | ERC-8004 |
+| Agentic Commerce (jobs) | [`0x0747EEf0706327138c69792bF28Cd525089e4583`](https://explorer.testnet.arc.io/address/0x0747EEf0706327138c69792bF28Cd525089e4583) | ERC-8183 |
+| USDC | [`0x3600000000000000000000000000000000000000`](https://explorer.testnet.arc.io/address/0x3600000000000000000000000000000000000000) | ERC-20 |
 
 Our showcase agent **#849980** lives here, and so do the escrow, the spend-policy
 vault and the Gateway nanopayment rail.
@@ -423,17 +440,17 @@ No install, no keys - it is already live:
 
 ### Proof it's real (Arc testnet)
 
-Every claim here is a transaction you can open on [arcscan](https://testnet.arcscan.app):
+Every claim here is a transaction you can open on [the Arc testnet explorer](https://explorer.testnet.arc.io):
 
 - **Showcase agent "Meridian"** - ERC-8004 id **#849980**, KYA attested on-chain, reputation
   from real settlements. Registration (mint) tx:
-  [`0x506b125f…`](https://testnet.arcscan.app/tx/0x506b125f3a0481667e3a00dcb86f48cbcaa35c643af963365e9389b06a8f8e54) ·
+  [`0x506b125f…`](https://explorer.testnet.arc.io/tx/0x506b125f3a0481667e3a00dcb86f48cbcaa35c643af963365e9389b06a8f8e54) ·
   KYA attestation:
-  [`0x758ddbfa…`](https://testnet.arcscan.app/tx/0x758ddbfad38daeb772a37deb07e65339f13aeb393899fc7e1d2689c95adf0dad)
+  [`0x758ddbfa…`](https://explorer.testnet.arc.io/tx/0x758ddbfad38daeb772a37deb07e65339f13aeb393899fc7e1d2689c95adf0dad)
 - **ERC-8183 escrow job #155504** - full lifecycle settled on Arc: createJob
-  [`0xcce5a56c…`](https://testnet.arcscan.app/tx/0xcce5a56cc0518d5760f90d11d88eb70d5097636179eb3e92903152a96a684cc5) →
+  [`0xcce5a56c…`](https://explorer.testnet.arc.io/tx/0xcce5a56cc0518d5760f90d11d88eb70d5097636179eb3e92903152a96a684cc5) →
   complete
-  [`0x245f0ee7…`](https://testnet.arcscan.app/tx/0x245f0ee76a6d8dd21e8a14cbd1f489a3d80a1824113316f3b39c58c0e50f25e3)
+  [`0x245f0ee7…`](https://explorer.testnet.arc.io/tx/0x245f0ee76a6d8dd21e8a14cbd1f489a3d80a1824113316f3b39c58c0e50f25e3)
 - **Circle Gateway** - USDC deposited on Arc, moved to Base Sepolia gaslessly and minted there:
   [recipient on Basescan](https://sepolia.basescan.org/address/0xd305607510E0Db2c95807173c7A05BEA53c1ed36)
 
@@ -444,7 +461,7 @@ An agent's spend policy can be deployed **as its own smart contract on Arc**:
 vault, its USDC payments settle **through the contract**, which enforces the policy
 on-chain - a per-UTC-day cap, an auto-approve ceiling, a payee allowlist, and a freeze
 switch. A payment that breaks a rule **reverts on Arc** with a typed error (verifiable
-on arcscan), not just a server "no"; the human owner can override, adjust limits, freeze,
+on the Arc explorer), not just a server "no"; the human owner can override, adjust limits, freeze,
 or withdraw. The server policy engine stays as the fast pre-check and fallback, so agents
 without a vault behave exactly as before.
 
@@ -457,13 +474,13 @@ real Arc testnet - or use the **Permissions → On-chain policy vault** panel in
 Every direct USDC settlement is routed through Arc's predeployed **`Memo` precompile**
 (`0x5294…`), so each agent payment carries an **on-chain, indexable audit trail of *why* it
 happened** - `{agentId, instructionId, service, policyDecision}` - emitted as a `Memo` event on
-arcscan, not a server log. `Memo.memo(usdc, transferCalldata, memoId, memoBytes)` routes the
+the Arc explorer, not a server log. `Memo.memo(usdc, transferCalldata, memoId, memoBytes)` routes the
 transfer via the `CallFrom` precompile, so the paying wallet stays `msg.sender` (the USDC still
 moves exactly as a bare transfer, plus the reason). The `memoId` is a deterministic keccak of the
 instruction, so anyone can look the payment up by `memoId` without the tx hash. Additive and
 credential-gated: on a chain without a `Memo` precompile it degrades to a plain transfer; the
 smart-account vault path stays un-memoed (an SCA can't call the precompile). The Settlements
-screen shows the reason and links to the memo on arcscan.
+screen shows the reason and links to the memo on the Arc explorer.
 
 Try it: `cd mcp && node --env-file=.env scripts/test-memo.mjs` settles $0.01 through the `Memo`
 precompile on real Arc testnet, then reads the emitted event back by its `memoId` to prove the

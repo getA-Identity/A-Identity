@@ -37,10 +37,10 @@ const SAFE_SINGLETON_FACTORY = '0x914d7Fec6aaC8cd542e72Bca78B30650d45643d7'
 const DEPLOYS = [
   { label: 'IdentityRegistryUpgradeable (impl)', address: '0x7274e874CA62410a93Bd8bf61c69d8045E399c02', explorer: 'https://celo-sepolia.blockscout.com', tx: '0x412bc49217750d3f7880672626efb71828c5376f450db50e09dff2c4d9cee277' },
   { label: 'ReputationRegistryUpgradeable (impl)', address: '0x16e0FA7f7C56B9a767E34B192B51f921BE31dA34', explorer: 'https://celo-sepolia.blockscout.com', tx: '0xfa3303e58ea645834e096e89bc1083ad8201bb12d363b9ea72dbf0ec20da35d8' },
-  { label: 'ValidationRegistryUpgradeable (impl)', address: '0xDB31f5d9167f8ebc8B30FbBF814c4d297c2D7F99', explorer: 'https://testnet.arcscan.app', tx: '0x4e552f7bb116b76be03a66f2f65e047b772089d0d799dfa7f6cf216c64938c76' },
+  { label: 'ValidationRegistryUpgradeable (impl)', address: '0xDB31f5d9167f8ebc8B30FbBF814c4d297c2D7F99', explorer: 'https://explorer.testnet.arc.io', tx: '0x4e552f7bb116b76be03a66f2f65e047b772089d0d799dfa7f6cf216c64938c76' },
   { label: 'IdentityRegistry (proxy)', address: '0x8004A818BFB912233c491871b3d84c89A494BD9e', explorer: 'https://celo-sepolia.blockscout.com', tx: '0xd71d82ea66150fb5c61cda01c8ef118b91bcda8b7aab01391918291ff8ee732f' },
   { label: 'ReputationRegistry (proxy)', address: '0x8004B663056A597Dffe9eCcC1965A193B7388713', explorer: 'https://celo-sepolia.blockscout.com', tx: '0xff75d8bac3d3a3c21d51e13716fffdf5d954a22fc2d2c29c749deedd48a45963' },
-  { label: 'ValidationRegistry (proxy)', address: '0x8004Cb1BF31DAf7788923b405b754f57acEB4272', explorer: 'https://testnet.arcscan.app', tx: '0xac802302aa6efd2e3837b775bb2ef6be099d01e8c724a0737fef18b2f71a9ec7' },
+  { label: 'ValidationRegistry (proxy)', address: '0x8004Cb1BF31DAf7788923b405b754f57acEB4272', explorer: 'https://explorer.testnet.arc.io', tx: '0xac802302aa6efd2e3837b775bb2ef6be099d01e8c724a0737fef18b2f71a9ec7' },
 ]
 
 let getChainById, resolveRpcUrls

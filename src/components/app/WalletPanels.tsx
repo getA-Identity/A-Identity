@@ -5,6 +5,7 @@ import { apiFetch, readJson, explainError } from '../../lib/api'
 import { Skeleton } from '../ui/skeleton'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '../ui/tooltip'
 import { Stat, StatBadge } from '../ui/stat'
+import { CHAIN_BY_ID } from '../../lib/chains'
 
 const short = (a: string) => (a.length > 14 ? `${a.slice(0, 8)}...${a.slice(-4)}` : a)
 
@@ -140,7 +141,7 @@ export function CircleWalletPanel({ agentId }: { agentId: string }) {
         <div className="space-y-3">
           {addr && (
             <a
-              href={wallet?.explorer ?? `https://testnet.arcscan.app/address/${addr}`}
+              href={wallet?.explorer ?? `${CHAIN_BY_ID.arc.explorer}/address/${addr}`}
               target="_blank"
               rel="noopener noreferrer"
               className="inline-flex items-center gap-1 font-mono text-xs font-semibold text-usdc hover:underline"

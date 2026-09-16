@@ -18,6 +18,14 @@
       ],
       "chains": [
         {
+          "id": "arc-mainnet",
+          "chainId": 5042,
+          "caip2": "eip155:5042",
+          "identity": "ERC-8004",
+          "erc8004Native": true,
+          "status": "live"
+        },
+        {
           "id": "arc",
           "chainId": 5042002,
           "caip2": "eip155:5042002",
@@ -141,6 +149,14 @@
         "EURC"
       ],
       "rails": [
+        {
+          "id": "arc-mainnet",
+          "name": "Arc Mainnet",
+          "chainId": 5042,
+          "role": "Circle's stablecoin-native L1 on mainnet: agent #0 on the canonical ERC-8004 registry, a spend vault holding real USDC, and x402 settling through our own EIP-3009 facilitator and Circle Gateway nanopayments.",
+          "x402": true,
+          "status": "live"
+        },
         {
           "id": "arc",
           "name": "Circle Arc (Testnet)",
@@ -369,6 +385,7 @@
       "trust": "Both agents verify each other via ERC-8004 before value moves. Reputation gate (default: 300+).",
       "settlement": "x402 in stablecoins across seven live chains. Arc, X Layer, Celo, Arbitrum, Robinhood Chain and Base carry settling rails; Celo Sepolia stays beta as a test network. Stellar pubnet is live with an on-chain spend policy holding real Circle USDC AND the Soroban x402 rail selling on it, settling SEP-41 USDC through our own facilitator; the buyer signs an authorization entry and pays no fee. Base is live with agent #73232 and x402 settling in native Circle USDC through our own EIP-3009 facilitator, proven at /proof/base. Avalanche is planned. No shared accounts or API keys.",
       "chains_supported": [
+        "arc-mainnet",
         "arc",
         "stellar",
         "stellar-testnet",

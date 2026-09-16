@@ -36,6 +36,117 @@ export const CHAINS: ChainDescriptor[] = [
   // X Layer and Celo, with planned Avalanche last. Testnet mirrors sit next to their
   // mainnet twin. Statuses stay the honest part: live = a real payment recorded,
   // beta = wired, planned = descriptor only.
+  //
+  // The Arc pair. Arc mainnet opened publicly on 2026-09-16, and it enters as its OWN
+  // descriptor rather than by promoting `arc`, for the same two reasons the Stellar split
+  // gives below: `arc` is referenced by provenance artifacts, settlement rows and 21
+  // modules through ARC_CHAIN, so renaming it is a migration rather than a data edit; and
+  // `ARC_SIGNER_KEY` already means a TESTNET key, so handing that name to mainnet would turn
+  // an existing testnet key into a mainnet signing key the next time anyone pulled. The
+  // mainnet descriptor therefore names its own env vars. Every address below comes from
+  // docs.arc.io/arc/references/contract-addresses (Mainnet tabs) and was read back live on
+  // rpc.mainnet.arc.io the same day; nothing is carried over from the testnet entry on the
+  // assumption that the two match, because on Arc they mostly do not.
+  {
+    caip2: 'eip155:5042',
+    id: 'arc-mainnet',
+    // Arc's own name for the network. Deliberately not 'Circle Arc': that string is a
+    // prefix of the testnet's 'Circle Arc (Testnet)', and the public-copy guards match
+    // chain names by substring, so the two would be indistinguishable in any bucket check.
+    name: 'Arc Mainnet',
+    // Distinct from the testnet chip while both are listed; the testnet keeps the plain
+    // 'Arc' it has carried on every surface since launch.
+    shortName: 'Arc Mainnet',
+    color: '#2775CA',
+    role: 'Circle\'s stablecoin-native L1 on mainnet: agent #0 on the canonical ERC-8004 registry, a spend vault holding real USDC, and x402 settling through our own EIP-3009 facilitator and Circle Gateway nanopayments.',
+    ecosystem: 'evm',
+    testnet: false,
+    // LIVE since 2026-09-16, the day the network opened, on the bar every other chain met:
+    // agent #0 minted (tx 0x1d9f5711) AND money moving (first EIP-3009 settlement 0xd44287c8,
+    // a Gateway nanopayment credit, and a vault payment under its caps). All of it
+    // self-funded and labeled so in provenance. It entered as `planned` that morning.
+    status: 'live',
+    evmChainId: 5042,
+    cctpDomain: 26,
+    nativeCurrency: { name: 'USD Coin', symbol: 'USDC', decimals: 18 },
+    usdcDecimals: 6, // native USDC is 18 decimals; the ERC-20 interface is 6 (same balance)
+    // All four answered eth_chainId 0x13b2 without credentials on 2026-09-16, although
+    // docs.arc.io still describes the endpoints as permissioned during a "private mainnet
+    // phase". If that gate closes, ARC_MAINNET_RPC_URL takes a credentialed endpoint. The
+    // Circle primary publishes no WebSocket, so none is claimed.
+    rpcUrls: [
+      'https://rpc.mainnet.arc.io',
+      'https://rpc.blockdaemon.mainnet.arc.io',
+      'https://rpc.drpc.mainnet.arc.io',
+      'https://rpc.quicknode.mainnet.arc.io',
+    ],
+    // A Blockscout instance that docs.arc.io labels permissioned: the page shell answers
+    // 200 and its public API answered 403 on 2026-09-16. Links derived from it may not open
+    // for every reader, and provenance says so wherever it cites one.
+    explorer: 'https://explorer.arc.io',
+    contracts: {
+      // The canonical MAINNET ERC-8004 pair (the Base / Arbitrum One / X Layer / Celo
+      // family), NOT the testnet-era 0x8004A818 set, which has no code on Arc mainnet.
+      // Verified 2026-09-16 the way Base taught us to: both are 130-byte EIP-1967 proxies,
+      // and a 130-byte proxy proves nothing on its own. Each proxy's implementation slot
+      // was read on Arc mainnet and on Base; both point at 0x7274e874...9c02 (identity,
+      // 14474 bytes) and 0x16e0fa7f...da34 (reputation, 10491 bytes), and the
+      // implementation code hashes match across the two chains. name()/symbol() answered
+      // AgentIdentity/AGENT. No ValidationRegistry exists in this family, so none is
+      // claimed and KYA cannot be anchored on-chain here.
+      identityRegistry: '0x8004a169fb4a3325136eb29fa0ceb6d2e539a432',
+      reputationRegistry: '0x8004BAa17C55a88189AE136b182e5fdA19dE9b63',
+      usdc: '0x3600000000000000000000000000000000000000',
+      memo: '0x5294E9927c3306DcBaDb03fe70b92e01cCede505', // predeployed Memo, same address as testnet (1228 bytes of code read back)
+      multicall3From: '0x522fAf9A91c41c443c66765030741e4AaCe147D0', // predeployed Multicall3From, same address as testnet
+      create2Factory: CREATE2_FACTORY,
+      cctp: {
+        tokenMessenger: '0x28b5a0e9C621a5BadaA536219b3a228C8168cf5d',
+        messageTransmitter: '0x81D40F21F12A8F0E3252Bccb954D722d4c464B64',
+        verified:
+          'developers.circle.com/cctp/references/contract-addresses, read 2026-09-16: the V2 mainnet TokenMessengerV2 and MessageTransmitterV2 rows for Arc (domain 26), matching the docs.arc.io Mainnet tab. Both read back 2175 bytes of code on rpc.mainnet.arc.io the same day. Circle deploys both at the same address on every EVM mainnet it lists; not the testnet pair.',
+      },
+    },
+    confirmations: 1, // deterministic sub-second finality
+    stablecoins: ['USDC', 'EURC', 'USYC'],
+    settlementTokens: [
+      {
+        symbol: 'USDC',
+        address: '0x3600000000000000000000000000000000000000',
+        decimals: 6,
+        authorization: 'eip3009',
+        domainVersionCandidates: ['2'],
+        settlementFeeUsd: 0.03,
+        feeBasis:
+          'The first real settlement on 2026-09-16 (tx 0xd44287c8, block 21157204) measured 87165 gas at an effective 169.75 gwei, and because Arc\'s gas token IS USDC that is an exact 0.0148 USDC with no price feed involved. The base fee moved from about 35 to about 187 gwei over launch day, so the fee is 2x the measurement: it stops covering cost if the effective gas price passes about 340 gwei, at which point we re-measure and edit this line. The x402-3009 rail also refuses any single settlement projected above 0.05 USDC of gas.',
+        verified:
+          'The USDC ERC-20 interface over Arc\'s native gas balance, the address docs.arc.io lists for Mainnet (the same address as testnet, a predeploy). Read live 2026-09-16 on rpc.mainnet.arc.io: name() "USDC", symbol() "USDC", version() "2", decimals() 6, DOMAIN_SEPARATOR 0x940506929bba468048a19b567f4f0d534714bc06604b5c3017e5d16785ccdf84, which those fields plus chainId 5042 reproduce exactly. EIP-3009 confirmed by a read-only authorizationState call. Canonical Circle USDC, so it shares the contracts.usdc slot. The ERC-20 face is 6 decimals while the native balance is 18; this entry is the 6.',
+      },
+    ],
+    gateway: {
+      facilitator: 'https://gateway-api.circle.com',
+      wallet: '0x77777777Dcc4d5A8B6E418Fd04D8997ef11000eE',
+      verified:
+        'Read live 2026-09-16 from GET https://gateway-api.circle.com/v1/x402/supported: the kind for eip155:5042 is scheme "exact", x402Version 2, extra.name "GatewayWalletBatched", extra.version "1", extra.verifyingContract this address, extra.assets [USDC 0x3600000000000000000000000000000000000000, 6 decimals], minValiditySeconds 604800. docs.arc.io lists the same GatewayWallet for Arc mainnet (GatewayMinter 0x2222222d...C205), and both read back code on rpc.mainnet.arc.io. Circle\'s own Gateway supported-blockchains page did not list Arc mainnet yet that day; the live endpoint is what the rail re-reads before selling, and it refuses if the advertised wallet or asset differs.',
+    },
+    signerEnvVar: 'ARC_MAINNET_SIGNER_KEY',
+    rpcEnvVar: 'ARC_MAINNET_RPC_URL',
+    identity: {
+      standard: 'ERC-8004',
+      erc8004Native: true,
+      note:
+        'Canonical ERC-8004 identity + reputation registries are live here, deployed by their authors ' +
+        '(implementation code matched against Base on 2026-09-16); agent #0, the registry\'s first mint, ' +
+        'is ours (tx 0x1d9f5711). No ValidationRegistry in this family.',
+    },
+    payment: {
+      x402: true,
+      note:
+        'x402 settling in USDC on two rails: our own EIP-3009 facilitator (the buyer signs, we broadcast and pay ' +
+        'gas that is itself USDC; first settlement 0xd44287c8 on 2026-09-16) and Circle Gateway nanopayments ' +
+        '(GatewayWalletBatched; first credit the same day, batched on-chain by Gateway).',
+    },
+  },
   {
     caip2: 'eip155:5042002',
     id: 'arc',
@@ -50,14 +161,19 @@ export const CHAINS: ChainDescriptor[] = [
     cctpDomain: 26,
     nativeCurrency: { name: 'USD Coin', symbol: 'USDC', decimals: 18 },
     usdcDecimals: 6, // native USDC is 18 decimals; the ERC-20 interface is 6 (same balance)
+    // Arc moved its hosts from arc.network / arcscan.app to arc.io around the mainnet
+    // launch. Re-pointed 2026-09-16 after all four new hosts answered eth_chainId 0x4cef52
+    // and returned the same revert-data shape as the old ones. The old RPC hosts still
+    // answered that day and testnet.arcscan.app 301s to the new explorer with the path
+    // intact, so explorer links already published in provenance keep resolving.
     rpcUrls: [
-      'https://rpc.testnet.arc.network',
-      'https://rpc.blockdaemon.testnet.arc.network',
-      'https://rpc.drpc.testnet.arc.network',
-      'https://rpc.quicknode.testnet.arc.network',
+      'https://rpc.testnet.arc.io',
+      'https://rpc.blockdaemon.testnet.arc.io',
+      'https://rpc.drpc.testnet.arc.io',
+      'https://rpc.quicknode.testnet.arc.io',
     ],
-    wsUrl: 'wss://rpc.testnet.arc.network',
-    explorer: 'https://testnet.arcscan.app',
+    wsUrl: 'wss://rpc.testnet.arc.io',
+    explorer: 'https://explorer.testnet.arc.io',
     faucet: 'https://faucet.circle.com',
     contracts: {
       identityRegistry: '0x8004A818BFB912233c491871b3d84c89A494BD9e',
@@ -983,7 +1099,9 @@ export function liveChains(): ChainDescriptor[] {
   return CHAINS.filter((c) => c.status === 'live' || c.status === 'beta')
 }
 
-/** The canonical live Arc chain the app is currently built on. */
+/** The canonical live Arc chain the app is currently built on: still the TESTNET. The
+ *  modules bound to it (vault, treasury, airdrop, paymaster, Circle wallets, nanopay)
+ *  move to mainnet rail by rail, each on its own evidence, never by repointing this. */
 export const ARC_CHAIN = requireChain('eip155:5042002')
 
 // Fail fast at import time if a descriptor is malformed - cheaper to catch here than
