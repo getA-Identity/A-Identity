@@ -128,6 +128,23 @@ Directories:
   signs an authorization ENTRY, so there is no per-token domain to prove, and settled means
   we read the transfer event ourselves and match it to the buyer's authorization nonce. Ships
   its own facilitator; OpenZeppelin Channels is available as a fallback broadcaster.
+- `src/stellar-passkey.ts` - every decision the passkey-vault endpoints make, pure and with
+  no network and no Stellar SDK in scope: which network may be served at all (testnet by
+  name, pubnet refused by name), which host functions the fee-sponsoring relay may forward,
+  which authorization entries may ride along with them, how a KYA verdict maps onto a binary
+  on-chain allowlist, and the caps on what the operator key may be made to spend.
+- `src/http/stellar-passkey-routes.ts` - the thin half of that: the endpoints behind the
+  public `/stellar` page (relay, vault deploy, allowlist plan, agent pay, status). Not behind
+  the verified-session gate, because the owner is a passkey the browser holds rather than an
+  A-Identity login. What stands in for that gate: these endpoints serve testnet alone, are
+  rate-budgeted, fail closed, and cap what the operator key can be made to spend. They log no
+  request body, because an authorization entry carries the passkey's own credential material.
+- `src/chains/stellar/relay.ts` - the only place a relay request's XDR is decoded, into the
+  plain shape below. It signs nothing, sends nothing and keeps nothing, and it never sees the
+  credential behind an authorization entry as more than opaque bytes to re-encode.
+- `src/chains/stellar/relay-shape.ts` - what a relay request CONTAINS, in plain strings and
+  deliberately free of `@stellar/stellar-sdk` even as a type, so the half that decodes and the
+  half that decides cannot drift on what an inspection looks like.
 - `src/policy/` - Policy Engine v2 (pure evaluate + audit + compliance + badges + meters).
 - `src/asp/` - the OKX.AI paid Trust Oracle (tools, x402 payment, proof, settlements).
   Registered listing: do not change tool schemas or prices casually.
@@ -153,7 +170,7 @@ npm run start        # MCP server on stdio
 npm run start:http   # the HTTP server (REST + /mcp). Reads config from process.env directly.
 npm run smoke        # spin up the MCP server + exercise every read-only tool
 npm run http-smoke   # exercise the tools over HTTP (server must be running)
-npm test             # tsc + node:test unit tests (1299 across 92 files, as of Sep 2026)
+npm test             # tsc + node:test unit tests (1371 across 94 files, as of Sep 2026)
 npm run e2e          # full end-to-end flow against a running server (E2E_BASE=...)
 ```
 
@@ -165,7 +182,7 @@ node --env-file=.env dist/http.js     # Node 20.6+
 ARC_SIGNER_KEY=0x<funded-key> node dist/http.js
 ```
 
-Tests: **1299 unit tests across 92 colocated `*.test.ts` files** (as of Sep 2026; `npm test`) +
+Tests: **1371 unit tests across 94 colocated `*.test.ts` files** (as of Sep 2026; `npm test`) +
 a full **E2E of about 67 checks** (`npm run e2e`) that adapts to signer presence: green with no
 signer key (live Arc reads; on-chain writes reported as prepared), with the real Arc write
 checks activating under a funded `ARC_SIGNER_KEY`. CI runs the no-signer path.

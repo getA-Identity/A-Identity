@@ -47,6 +47,10 @@ against those limits before any value moves, and the verdict is ALLOW, WARN or D
   registry is READ, read-only and labeled as theirs: a pointer, never our identity anchor,
   and ERC-8004 remains EVM-only. A weekly ops workflow watches the vault's archival
   deadline, the overlap between the fee-payer and operator roles, and allowlist drift.
+- A second Stellar testnet vault, CBGTXWFBYAOZBR6EN3UK4PTLUAY6BRV2C36D3DPOTE5JSOLQXANS6J6U,
+  is owned by a WebAuthn passkey rather than a key: an OpenZeppelin smart account is the
+  owner, so the human holds no seed phrase. Proven on chain 2026-09-19, testnet only, and
+  the passkey in that run was software standing in for a platform authenticator.
 - Public policy counters currently read zero, because no live agent has produced a
   production decision yet. We publish the zero rather than a number nobody can reproduce.
 
@@ -83,6 +87,7 @@ leaves the caller's process.
 - [MCP server guide](https://a-identity.mintlify.site/developers/mcp-server)
 - [Architecture](https://a-identity.xyz/architecture): how the pieces fit together.
 - [Arc Mainnet](https://a-identity.xyz/arc): the featured network, live since it opened on 2026-09-16. A-Identity holds agent #0, the first identity minted on Arc Mainnet's ERC-8004 registry; every receipt is linked.
+- [Stellar passkey vault](https://a-identity.xyz/stellar): run the whole policy flow yourself on Stellar testnet. A WebAuthn passkey becomes an OpenZeppelin smart account, that account owns an AgentSpendPolicy vault and signs its limit, the risk engine answers ALLOW, WARN or DENY, and the vault refuses a payment to a payee that is not allowlisted. Fees are sponsored, so it needs no wallet and no XLM.
 
 ## Selected writing
 

@@ -237,7 +237,17 @@ test('every .gitignore in the tree is tracked', () => {
   const found: string[] = []
   const walk = (dir: string) => {
     for (const e of readdirSync(dir, { withFileTypes: true })) {
-      if (e.name === 'node_modules' || e.name === '.git' || e.name === 'stellar-build' || e.name === 'dist') continue
+      // stellar-hackathon-turkiye is a separate repo checked out here for convenience
+      // (root .gitignore says so); like stellar-build it carries its own .gitignore that
+      // is nobody's business to track from this tree.
+      if (
+        e.name === 'node_modules' ||
+        e.name === '.git' ||
+        e.name === 'stellar-build' ||
+        e.name === 'stellar-hackathon-turkiye' ||
+        e.name === 'dist'
+      )
+        continue
       const full = join(dir, e.name)
       if (e.isDirectory()) walk(full)
       else if (e.name === '.gitignore') found.push(relative(ROOT, full))

@@ -128,3 +128,7 @@ new-brand/
 /analytics.png
 /rapor.png
 /trafik-edinme.png
+
+# Separate Stellar Turkiye hackathon app, checked out here for convenience.
+# It carries its own .git, so committing it would embed a foreign repo in ours.
+stellar-hackathon-turkiye/

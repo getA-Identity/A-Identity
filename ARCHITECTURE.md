@@ -258,6 +258,37 @@ sells on this network.
 - Full record with every hash and caveat: [`soroban/releases/pubnet-v0.1.0.json`](soroban/releases/pubnet-v0.1.0.json)
   and the `stellar` entry in [`provenance.ts`](mcp/src/chains/provenance.ts).
 
+### Stellar testnet: an owner that is a passkey, not a key
+
+`owner.require_auth()` does not care whether the owner is an account or a contract, and when it
+is a contract Soroban dispatches to that contract's `__check_auth`. So a vault can be owned by an
+OpenZeppelin smart account whose only signer is a WebAuthn passkey, and the human on the other
+end never holds a seed phrase. That ran end to end on testnet on 2026-09-19: the passkey signed
+`set_policy` and `set_allowed` through the smart account's `execute`, the agent paid an allowed
+payee 0.5 USDC, and a payment to a payee the owner revoked mid-flight was refused **on the
+ledger** with `PayeeNotAllowed`. It is a second vault rather than a migration, because
+`AgentSpendPolicy` has `set_operator` and deliberately no `set_owner`. Testnet only, the passkey
+in that run was a software P-256 key standing in for a platform authenticator, and the fee was
+paid by a deployer key rather than the OpenZeppelin Channels sponsor the public flow uses; every
+caveat is in [`soroban/releases/testnet-passkey-owner-2026-09-19.json`](soroban/releases/testnet-passkey-owner-2026-09-19.json).
+
+```mermaid
+flowchart LR
+  PK[Passkey<br/>WebAuthn P-256] -->|signs the auth digest| SA
+  subgraph Owner side
+    SA[Smart account<br/>OpenZeppelin, a C... contract]
+  end
+  KYA[risk_check verdict] -->|ALLOW: set_allowed true<br/>DENY: set_allowed false<br/>WARN: nothing on chain| SA
+  SA -->|execute, owner.require_auth satisfied<br/>because the invoker IS the owner| V
+  CH[OpenZeppelin Channels<br/>fee sponsor] -.->|sources and pays the tx| SA
+  subgraph On the ledger
+    V[AgentSpendPolicy<br/>cap, ceiling, allowlist, freeze]
+  end
+  OP[Agent, operator key] -->|pay payee, amount| V
+  V -->|payee allowed, inside the limits| T[USDC SAC<br/>transfer settles]
+  V -->|payee not allowed| E[Error Contract 3<br/>PayeeNotAllowed, nothing moves]
+```
+
 ### Base and Arbitrum One
 
 Both are mainnets where the canonical ERC-8004 registries were already deployed **by their
@@ -334,7 +365,7 @@ day it lands rather than the day someone remembers to add it.
   `/mcp` JSON-RPC for agents. Durable state via Postgres (`DATABASE_URL`), JSON-file fallback for dev.
 - **Auth** - wallet sign-in on any chain family the registry knows (EVM personal_sign, Stellar SEP-43 signMessage, an Algorand signed zero-value self-payment; mcp/src/wallet-proof.ts) + email magic link (Resend) are *verified*; a plain guest
   session is read-only. Agent ownership is bound to a verified identity.
-- **Tests / CI** - `node:test` unit suite: **1299 tests across 92 colocated `*.test.ts` files**
+- **Tests / CI** - `node:test` unit suite: **1371 tests across 94 colocated `*.test.ts` files**
   (as of Aug 2026; `npm test` in `mcp/`) + a full E2E (`mcp/e2e.mjs`) of about **67 checks** that
   adapts to signer presence: live reads always run, and the on-chain write checks (x402, ERC-8183
   escrow, Gateway, **Nanopayments settle**, **CCTP burn-and-mint**) activate with a funded

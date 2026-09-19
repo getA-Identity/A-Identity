@@ -1525,13 +1525,15 @@ export const POSTS: BlogPost[] = [
         heading: 'Referenced, not re-anchored',
         body: [
           'The agent carries one ERC-8004 passport on an EVM chain. Stellar has no equivalent registry to re-anchor it in, and we are not going to invent one and call it a standard, so the passport is read from the chain that holds it and referenced from Stellar rather than copied onto it.',
-          'That is a real limit and worth saying plainly. SEP-10 would prove control of a Stellar account, which is not the same thing as proving the passport, and no Soroban identity registry exists to point at yet. A registry on Stellar is planned, and until it is deployed we will keep calling it planned.',
+          'That is a real limit and worth saying plainly. SEP-10 would prove control of a Stellar account, which is not the same thing as proving the passport. One line of this has aged: a Soroban agent registry does now exist. TrionLabs run Stellar 8004 on both networks, and since 2026-09-15 we read it, labeled as theirs.',
+          'Reading it is not anchoring in it, and the difference is the whole point. It mints its own ids in its own space, its interface binds no foreign-chain identity, and it is upgradeable behind a timelock owned by someone else. So it is a pointer a reader can check, not the place an A-Identity passport lives, and the passport is still carried on an EVM chain and referenced from Stellar.',
         ],
       },
       {
         heading: 'What is on Stellar today',
         body: [
-          'The money side, not the identity side. An on-chain spend policy is deployed on Stellar testnet: a vault that holds USDC for an agent and enforces a daily cap, a per-payment ceiling, a payee allowlist and a freeze switch on the ledger itself.',
+          'The money side, not the identity side. An on-chain spend policy is deployed on both Stellar networks: a vault that holds USDC for an agent and enforces a daily cap, a per-payment ceiling, a payee allowlist and a freeze switch on the ledger itself.',
+          'It reached testnet first and went to pubnet on 2026-08-24, as CB5LYXFKKTKDDSCM6JO6C4GNRQUFBGSLYDET6Q56JNFJQSMBKH6KWSYP, running the same wasm byte for byte and holding real Circle USDC rather than test money. Its cap there is deliberately an order of magnitude smaller, because the cap is the product and the balance is not.',
           'So an agent on Stellar can be bounded before it can be identified, which is the opposite order from what we expected and is fine. A cap that the ledger enforces is useful even against an agent nobody has vouched for.',
         ],
       },

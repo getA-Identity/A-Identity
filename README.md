@@ -1,7 +1,7 @@
 # A-Identity
 
 [![CI](https://github.com/getA-Identity/A-Identity/actions/workflows/ci.yml/badge.svg)](https://github.com/getA-Identity/A-Identity/actions/workflows/ci.yml)
-[![Tests](https://img.shields.io/badge/tests-1299%20unit%20%2B%20E2E-brightgreen)](mcp/README.md#develop)
+[![Tests](https://img.shields.io/badge/tests-1371%20unit%20%2B%20E2E-brightgreen)](mcp/README.md#develop)
 [![npm: marketplace-sdk](https://img.shields.io/npm/v/%40a-identity%2Fmarketplace-sdk?label=marketplace-sdk)](https://www.npmjs.com/package/@a-identity/marketplace-sdk)
 [![npm: trust-guard](https://img.shields.io/npm/v/%40a-identity%2Ftrust-guard?label=trust-guard)](https://www.npmjs.com/package/@a-identity/trust-guard)
 [![Ask DeepWiki](https://deepwiki.com/badge.svg)](https://deepwiki.com/getA-Identity/A-Identity)
@@ -223,7 +223,7 @@ listed at `GET /proof`. Four representative ones, each independently verifiable 
 `#849980`, KYA-verified, with a reputation earned from **3 real settlements**. The score
 itself is recency-weighted and decays as those settlements age, so it is read live rather
 than quoted here. Scoring is **deterministic and
-unit-tested** (1299 unit tests as of Sep 2026), reads on-chain live via viem, and is fully documented at
+unit-tested** (1371 unit tests as of Sep 2026), reads on-chain live via viem, and is fully documented at
 `GET /methodology`. This is our answer to "surface your rigor": every number is
 reproducible and every settlement is on-chain.
 
@@ -401,8 +401,44 @@ owner to sign with their own Stellar wallet, so the server never holds that key,
 per-agent Soroban vault can be provisioned on testnet against the existing code entry.
 There is no ERC-8004 on Stellar, so an agent's passport is bridged from an EVM chain
 rather than anchored here; TrionLabs' third-party Stellar 8004 registry is read, read-only
-and labeled as theirs, which is a pointer and not our anchor. The chain page is
-[Build on Stellar](https://a-identity.mintlify.site/chains/stellar).
+and labeled as theirs, which is a pointer and not our anchor. Since 2026-09-19 testnet also
+carries a second vault, [`CBGTXWFB...NS6J6U`](https://stellar.expert/explorer/testnet/contract/CBGTXWFBYAOZBR6EN3UK4PTLUAY6BRV2C36D3DPOTE5JSOLQXANS6J6U),
+whose owner is not a key at all but an OpenZeppelin smart account signed by a WebAuthn
+passkey: it set its own policy, allowlisted a payee, paid one, and refused a revoked payee
+on the ledger with `PayeeNotAllowed`, all recorded in
+[`soroban/releases/testnet-passkey-owner-2026-09-19.json`](soroban/releases/testnet-passkey-owner-2026-09-19.json).
+The chain page is [Build on Stellar](https://a-identity.mintlify.site/chains/stellar).
+
+### Built with stellar-build skills
+
+The Stellar work here was written with [`kaankacar/stellar-build`](https://github.com/kaankacar/stellar-build)
+installed. That bundle does not redistribute the Stellar knowledge modules; it fetches them
+from their canonical upstreams at install time and drops them at the paths below. The paths
+are where each file sits once installed, and each link points at the upstream revision it
+came from, so every link resolves.
+
+Skill files used:
+
+- [`skills/soroban/SKILL.md`](https://github.com/stellar/stellar-dev-skill/blob/9abdab805d62/skills/soroban/SKILL.md) (the `AgentSpendPolicy` contract in `soroban/contracts/agent-spend-policy`: storage choices, the single `require_auth` line, typed errors, instance TTL)
+- [`skills/smart-contracts/SKILL.md`](https://github.com/stellar/stellar-dev-skill/blob/main/skills/smart-contracts/SKILL.md) (the audit and negative-control discipline in `soroban/audit`, where each guard is deleted in turn and the suite is required to go red)
+- [`skills/dapp/SKILL.md`](https://github.com/stellar/stellar-dev-skill/blob/main/skills/dapp/SKILL.md) (Stellar Wallets Kit sign-in in `src/lib/stellar/kit.ts`, and the passkey smart account flow behind the vault above)
+- [`skills/agentic-payments/SKILL.md`](https://github.com/stellar/stellar-dev-skill/blob/main/skills/agentic-payments/SKILL.md) (the Soroban x402 rail in `mcp/src/x402-stellar`, where the buyer signs an authorization entry and pays no network fee)
+- [`skills/data/SKILL.md`](https://github.com/stellar/stellar-dev-skill/blob/main/skills/data/SKILL.md) (the RPC and Horizon reads in `mcp/src/chains/stellar`, including read failover and turning a ledger TTL into a date)
+- [`skills/assets/SKILL.md`](https://github.com/stellar/stellar-dev-skill/blob/main/skills/assets/SKILL.md) (SAC derivation on both networks and the trustline handling every classic payee needs)
+- [`skills/cross-chain/SKILL.md`](https://github.com/stellar/stellar-dev-skill/blob/main/skills/cross-chain/SKILL.md) (CCTP between Stellar and EVM in `mcp/src/cctp-stellar.ts`: domain 27 and the `CctpForwarder` a Stellar recipient requires)
+
+Not used, and why:
+
+- [`skills/stellar-anchor-skill/SKILL.md`](https://github.com/CheesecakeLabs/stellar-anchor-skill/blob/main/SKILL.md) (no anchor built)
+- [`skills/zk-proofs/SKILL.md`](https://github.com/stellar/stellar-dev-skill/blob/main/skills/zk-proofs/SKILL.md) (no ZK circuit built)
+
+Those last two were read past rather than applied, and the reason is structural rather than
+a matter of time: this project operates no fiat on-ramp or off-ramp, so there is no anchor
+and no SEP-6, SEP-24 or SEP-31 flow to build, and it proves nothing in zero knowledge, so
+there is no circuit and no verifier contract. Two notes on the links: `soroban` is pinned to
+the revision installed here because upstream has since split that skill into
+`smart-contracts`, and the anchor skill comes from Cheesecake Labs rather than from the same
+upstream as the rest.
 
 Base carries the canonical ERC-8004 identity and reputation registries (verified
 2026-08-28 by reading each proxy's EIP-1967 implementation slot and matching the

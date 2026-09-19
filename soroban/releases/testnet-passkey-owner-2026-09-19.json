@@ -1,0 +1,255 @@
+{
+  "note": "The receipt for the first AgentSpendPolicy whose OWNER is a passkey rather than a G key, on Stellar testnet. Same shape as testnet-v0.1.0.json and for the same reason: nothing here is a binary, everything is a hash a reader can pull from the ledger. No wasm was built or uploaded for this release. The vault was instantiated against the code entry the v0.1.0 deploy already put on the ledger, so `wasm.sha256` below is the v0.1.0 hash restated, not a new build. The whole flow, from the smart account deploy to the on-chain refusal, ran headless in 73 seconds of wall clock on 2026-09-19 (13:47:00Z to 13:48:13Z); every step is a transaction below.",
+  "version": "v0.1.0",
+  "record": "testnet-passkey-owner-2026-09-19",
+  "network": "stellar:testnet",
+  "networkPassphrase": "Test SDF Network ; September 2015",
+  "protocolVersion": 28,
+  "protocolVersionNote": "Read from the header of ledger 4760409 on Horizon (protocol_version 28), not copied from the v0.1.0 record, which said 27 because testnet was on 27 in August. The smart-account-kit constants used here come from the kit's deployment manifest for protocol 27 and worked unchanged under 28, which the successful deploy and execute transactions below are the evidence for.",
+  "deployedAtNote": "closed_at of ledger 4760409, the ledger that included the vault's instantiate transaction ccac0b30, read from Horizon rather than from the wall clock. The smart account landed one ledger earlier, 4760408, at 13:47:07Z.",
+  "deployedAt": "2026-09-19T13:47:12Z",
+  "toolchain": {
+    "rustc": "1.96.0",
+    "sorobanSdk": "=27.0.6",
+    "stellarCli": "27.1.0",
+    "target": "wasm32v1-none",
+    "note": "Restated from testnet-v0.1.0.json because nothing was rebuilt. This release ran no cargo command at all."
+  },
+  "wasm": {
+    "sha256": "155eb31c1867254eacbf1b7a4755164d15cc6b6f939644705ab6b8df61579239",
+    "bytes": 11625,
+    "limitBytes": 131072,
+    "note": "The v0.1.0 code entry, already on the ledger. Instantiating against an existing entry skips the upload, which is the difference between the 2173875 stroops (0.217 XLM) Horizon charged for this deploy and the roughly 12 XLM an upload costs. Verify with `stellar contract fetch --id CBGTXWFBYAOZBR6EN3UK4PTLUAY6BRV2C36D3DPOTE5JSOLQXANS6J6U --network testnet --out-file passkey-vault.wasm` and sha256 the bytes."
+  },
+  "contractId": "CBGTXWFBYAOZBR6EN3UK4PTLUAY6BRV2C36D3DPOTE5JSOLQXANS6J6U",
+  "constructor": {
+    "owner": "CC5RNXNHKKPAHFP5YEOTZDFOQDQVC6AQKX3EH3W6QKFKGVBAXPVM3RWA",
+    "operator": "GDZXSO4AOKPSHMQZMBNEEBQNYOIF7TWDPD7K2U5VAPKFN3QIAIELTAN6",
+    "token": "CBIELTK6YBZJU5UP2WWQEUCYKLPU6AUNZ2BQ4WWFEIE3USCIHMXQDAMA",
+    "dailyCap": "50000000",
+    "autoApproveMax": "10000000",
+    "note": "7-decimal base units, so the cap is 5 USDC per UTC day and the per-payment auto-approve ceiling is 1 USDC. The owner is a CONTRACT address: the vault's `owner.require_auth()` does not care whether the owner is an account or a contract, and when it is a contract the host dispatches to that contract's `__check_auth`, which is where the passkey comes in. The operator is the same testnet operator key the v0.1.0 vault uses. `decimals` was not passed in; the constructor read 7 from the token, as before."
+  },
+  "whyANewVault": "The contract has `set_operator` but no `set_owner`, on purpose: the owner is permanent. So the existing testnet vault CAIL6ECRAB5FUURQ54R7OTZPXRRCDO2S353YT6N6UZUWIBDG2ZOEB4UI keeps its G-account owner, and proving that a passkey can own a vault meant deploying one whose owner was the smart account from the first ledger.",
+  "settlementToken": {
+    "symbol": "USDC",
+    "sac": "CBIELTK6YBZJU5UP2WWQEUCYKLPU6AUNZ2BQ4WWFEIE3USCIHMXQDAMA",
+    "classicAsset": "USDC:GBBD47IF6LWK7P7MDEVSCWR7DPUWV3NY3DTQEVFL4NAT4AQH3ZLLFLA5",
+    "decimals": 7,
+    "verified": "Unchanged from testnet-v0.1.0.json, where the derivation and the live read are recorded. The vault read decimals() 7 from it again at construction."
+  },
+  "smartAccount": {
+    "contractId": "CC5RNXNHKKPAHFP5YEOTZDFOQDQVC6AQKX3EH3W6QKFKGVBAXPVM3RWA",
+    "deployTx": "dcd3c4227b0a773bf3d825a8fb0c5d37196b9cb7366377bf8a2c76162d3d914c",
+    "ledger": 4760408,
+    "ownership": "The instance is ours. The code is not: it is OpenZeppelin's Stellar smart account, deployed through the `smart-account-kit` npm package.",
+    "kit": {
+      "package": "smart-account-kit",
+      "version": "0.8.0",
+      "repository": "github.com/stellar/smart-account-kit (formerly under kalepail)",
+      "thirdParty": true
+    },
+    "accountWasmHash": "1b5f4534a76322da2ad7c745f6900857a6802b0ca79850c35a03561df997785a",
+    "accountWasmHashNote": "OpenZeppelin's account wasm hash as published in the kit's docs/deployments-protocol-27-2026-07-09.md. Third party. We did not build it and we do not vouch for it beyond having deployed an instance of it.",
+    "webauthnVerifier": "CC7EKIHQP3TN4CARQDND6CEOY2UXLWWC2X5GHTD5NLAT7BG5GPZIOM3F",
+    "webauthnVerifierNote": "OpenZeppelin's testnet WebAuthn verifier contract, from the same manifest. Third party. Every owner call below passed through it: the smart account's `__check_auth` hands the P-256 signature to this contract.",
+    "signer": "One WebAuthn (P-256) signer and nothing else. In this spike the passkey was a SOFTWARE P-256 key generated in the process, standing in for a platform authenticator: same verifier contract, same WebAuthn signature format (authenticatorData, clientDataJSON, low-S DER signature). The only difference from a browser passkey is where the private key lives. The WebAuthn credential id is deliberately not recorded here; the contract id and the transactions are the evidence.",
+    "feePayer": "GDNRET2G5WNC25QQ43ODLGAZ42X74DQDGRHWHSLKC6FCVF7C6JYLHAJA",
+    "feePayerNote": "A dedicated testnet deployer key, submitting over direct RPC. Horizon lists it as the fee account of the smart account deploy and of every passkey-signed owner call below. The spike did NOT go through OpenZeppelin Channels; see caveats.",
+    "auditStatus": "The kit's own README and SECURITY.md say the SDK, demo, relayer proxy and indexer integration have not received an independent audit, that the underlying OpenZeppelin Stellar contracts have a separate audit at rc-v0.7.0 with a different scope, and that the deployed artifacts use a later source revision than that audit. We repeat that rather than improve on it."
+  },
+  "allowlist": {
+    "enabled": true,
+    "allowed": [
+      "GBMRWLL7FTWNQZFVWXTC3PCHHU4LJASDGWADDU4UXYCK2WF6SEJAN6TI"
+    ],
+    "refused": [
+      "GDSEJCFLEBVEJ5GGDNCPRPKCRFH64CIHA3H3C3ILO5C5VTQMTSLUHQ7N"
+    ],
+    "kyaMapping": "The on-chain allowlist is binary and the KYA verdict has three states, so the mapping is stated rather than implied. ALLOW writes set_allowed(payee, true). WARN is a server-side flag and writes nothing on chain. DENY writes set_allowed(payee, false), after which pay() to that payee is refused with PayeeNotAllowed, error 3. WARN never lives on the ledger.",
+    "note": "A fresh vault starts with allowlist_enabled false and an empty allowlist. It was switched on by the passkey-signed set_policy below before the first payment, so the allowed payment and the refused one both ran with the allowlist enforced."
+  },
+  "artifacts": [
+    {
+      "kind": "deploy",
+      "label": "The OpenZeppelin smart account, deployed with one WebAuthn signer",
+      "txHash": "dcd3c4227b0a773bf3d825a8fb0c5d37196b9cb7366377bf8a2c76162d3d914c",
+      "ledger": 4760408,
+      "successful": true,
+      "feeChargedStroops": 198984,
+      "feePayer": "GDNRET2G5WNC25QQ43ODLGAZ42X74DQDGRHWHSLKC6FCVF7C6JYLHAJA",
+      "detail": "smart-account-kit 0.8.0 createWallet over direct RPC against OpenZeppelin's account wasm 1b5f4534... with the WebAuthn verifier CC7EKIHQ... as the signer's verifier. Third-party code, our instance."
+    },
+    {
+      "kind": "deploy",
+      "label": "AgentSpendPolicy instantiated against the existing code entry, owner = the smart account",
+      "txHash": "ccac0b30612a216deea7d84035cac3e3acbb5884c827f60065ed33ff61729fd2",
+      "ledger": 4760409,
+      "successful": true,
+      "feeChargedStroops": 2173875,
+      "feePayer": "GDZXSO4AOKPSHMQZMBNEEBQNYOIF7TWDPD7K2U5VAPKFN3QIAIELTAN6",
+      "detail": "createCustomContract with wasmHash 155eb31c... and constructor (owner CC5RNXNH..., operator GDZXSO4A..., token CBIELTK6..., dailyCap 50000000, autoApproveMax 10000000). No upload. The return value was the contract id CBGTXWFB..., and owner() read back the smart account."
+    },
+    {
+      "kind": "settlement",
+      "label": "set_policy(5 USDC, 1 USDC, allowlist_enabled = true), signed by the passkey through the smart account's execute",
+      "txHash": "994b5cb92c5dee9ce733109e9b7cecd35625aeb3b3edc35903a22cc93a0dd758",
+      "ledger": 4760411,
+      "successful": true,
+      "feeChargedStroops": 372629,
+      "feePayer": "GDNRET2G5WNC25QQ43ODLGAZ42X74DQDGRHWHSLKC6FCVF7C6JYLHAJA",
+      "detail": "The spike itself. The passkey signed the authorization digest, the smart account's __check_auth verified it through the WebAuthn verifier, and execute invoked the vault. The vault's owner.require_auth() was satisfied because the smart account is the direct invoker. allowlist_enabled() read true afterwards."
+    },
+    {
+      "kind": "settlement",
+      "label": "set_allowed(trusted payee, true), signed by the passkey",
+      "txHash": "e371b1b38cb1f31aca91709d7ace18fe974f5673a8eafc00012df442dc15ef47",
+      "ledger": 4760413,
+      "successful": true,
+      "feeChargedStroops": 528307,
+      "feePayer": "GDNRET2G5WNC25QQ43ODLGAZ42X74DQDGRHWHSLKC6FCVF7C6JYLHAJA",
+      "detail": "Payee GBMRWLL7..., the same testnet payee the v0.1.0 vault allows. This is what a KYA ALLOW writes. A first allow creates a ledger entry and pays its rent, which is why the two allows below cost 528307 stroops each and the revoke 22143."
+    },
+    {
+      "kind": "funding",
+      "label": "3 USDC into the vault, through the SAC",
+      "txHash": "b84b70de3a087a316bf2267c9bdccb9c191fd9be1ac5b0a741bdbd73aa238faf",
+      "ledger": 4760414,
+      "successful": true,
+      "feeChargedStroops": 183205,
+      "feePayer": "GBLHNAL57WLA5GKTIGPBHCJTQDNEZFX2CVH53EDUOGWIERNKECRENHQ5",
+      "detail": "A plain SAC transfer from the v0.1.0 owner account. The vault holds the token in contract storage and needs no trustline."
+    },
+    {
+      "kind": "settlement",
+      "label": "The agent pays the allowed payee 0.5 USDC",
+      "txHash": "bf375df0b03b7e4a9644676cd4d157df0fe4c4139d870ec2706fcdbe56fb7e4f",
+      "ledger": 4760415,
+      "successful": true,
+      "feeChargedStroops": 23557,
+      "feePayer": "GDZXSO4AOKPSHMQZMBNEEBQNYOIF7TWDPD7K2U5VAPKFN3QIAIELTAN6",
+      "detail": "pay(GBMRWLL7..., 5000000) from the operator key, inside the 1 USDC ceiling and the 5 USDC cap, to a payee on the allowlist. balance() went to 25000000 and spent_today() to 5000000."
+    },
+    {
+      "kind": "settlement",
+      "label": "set_allowed(untrusted payee, true): arming the race that puts a refusal on the ledger",
+      "txHash": "b7ea4c33b19b487b6ee2aadcd6e5486b9917d08325a0e8444e2ac7c643707c33",
+      "ledger": 4760419,
+      "successful": true,
+      "feeChargedStroops": 528307,
+      "feePayer": "GDNRET2G5WNC25QQ43ODLGAZ42X74DQDGRHWHSLKC6FCVF7C6JYLHAJA",
+      "detail": "The untrusted payee GDSEJCFL... is a fresh account nobody vouched for. It was allowed for one purpose: so that the agent could build and sign a payment to it that would still be valid at simulation time. See howTheRefusalGotAHash."
+    },
+    {
+      "kind": "settlement",
+      "label": "set_allowed(untrusted payee, false): the owner revokes while the agent's payment is in flight",
+      "txHash": "9a3aece13d12279be23864a8131b0cf96d18801bd6eb01e966b74f330d22ca88",
+      "ledger": 4760420,
+      "successful": true,
+      "feeChargedStroops": 22143,
+      "feePayer": "GDNRET2G5WNC25QQ43ODLGAZ42X74DQDGRHWHSLKC6FCVF7C6JYLHAJA",
+      "detail": "This is what a KYA DENY writes. Signed by the passkey through the smart account, one ledger before the held payment landed."
+    },
+    {
+      "kind": "settlement",
+      "label": "The held payment lands and is refused ON CHAIN with PayeeNotAllowed",
+      "txHash": "22b33018c807946df066365bde2a72293372bf7768ab96688acb623c290357a0",
+      "ledger": 4760421,
+      "successful": false,
+      "feeChargedStroops": 15913,
+      "feePayer": "GDZXSO4AOKPSHMQZMBNEEBQNYOIF7TWDPD7K2U5VAPKFN3QIAIELTAN6",
+      "contractErrorCode": 3,
+      "contractError": "PayeeNotAllowed",
+      "detail": "Included in the ledger and refused by the contract: Horizon reports successful false with the fee charged, and the result carries Error(Contract, #3). Code 3 is PayeeNotAllowed in the frozen table in src/error.rs. spent_today() stayed at 5000000 and is_allowed(GDSEJCFL...) read false afterwards, so the refusal cost the agent nothing but the fee."
+    }
+  ],
+  "simulationRefusal": {
+    "label": "pay(untrusted payee, 0.5 USDC) before it was ever allowed",
+    "txHash": null,
+    "error": "Error(Contract, #3)",
+    "contractError": "PayeeNotAllowed",
+    "detail": "Refused in simulation, so no transaction exists and there is no hash. The diagnostic events show the vault reading its balance and then escalating error 3 before any transfer. This is the normal shape of a Soroban refusal; the on-chain one above had to be manufactured."
+  },
+  "howTheRefusalGotAHash": "The same way the v0.1.0 record got its DailyCapExceeded hash, and for the same reason: on Soroban every normal client simulates before submitting, so a payment the contract refuses fails in simulation and no transaction is ever created. To get a transaction a reviewer can open, the payment has to fail at APPLY time, which happens when the policy tightens between the moment the agent builds its payment and the moment the ledger includes it. Here the owner allowed the untrusted payee (b7ea4c33), the agent simulated, built and signed pay(untrusted, 0.5 USDC) while it was allowed and HELD the signed envelope, the owner revoked with set_allowed(untrusted, false) (9a3aece1), and then the held envelope was submitted and failed on chain with error 3 (22b33018). That is not a contrivance: it is exactly the race a real agent hits when a human changes the allowlist mid-flight, and it is the race a KYA DENY that arrives after an agent has already signed will produce.",
+  "liveReadAfterwards": {
+    "how": "Simulation reads with `stellar contract invoke --id CBGTXWFB... --network testnet -- <fn>` on 2026-09-19, after the flow finished. Simulations cost nothing and change nothing.",
+    "owner": "CC5RNXNHKKPAHFP5YEOTZDFOQDQVC6AQKX3EH3W6QKFKGVBAXPVM3RWA",
+    "allowlist_enabled": true,
+    "spent_today": "5000000",
+    "balance": "25000000",
+    "is_allowed_untrusted": false
+  },
+  "caveats": [
+    "Testnet. Nothing here is money, and Stellar testnet is reset periodically, so this vault is a rehearsal and never a record. No passkey-owned vault exists on pubnet.",
+    "The passkey in this record was a SOFTWARE P-256 key generated inside the spike process, standing in for a platform authenticator. Same verifier contract, same WebAuthn signature format, same execute path; the only difference from a browser or phone passkey is where the private key lives. Nothing here proves a real authenticator's user-verification flow, only that the contract path accepts a WebAuthn signature.",
+    "The smart account code is OpenZeppelin's and the kit that deployed it is unaudited by its own statement: smart-account-kit 0.8.0 says its SDK, demo, relayer proxy and indexer integration have had no independent audit, that the underlying contracts were audited at rc-v0.7.0 with a different scope, and that the deployed artifacts use a later source revision than that audit. Our AgentSpendPolicy is not audited either, and we do not call it audited.",
+    "The WebAuthn verifier CC7EKIHQ... and the account wasm 1b5f4534... are third-party testnet deployments taken from the kit's manifest. We did not build, verify or deploy them; we deployed one instance of the account against them.",
+    "One passkey is one signer. The smart account was created with a single WebAuthn signer and no recovery signer was added, so loss of the passkey is loss of the owner. And the owner is permanent by design (`set_operator` exists, `set_owner` does not), so there is no admin path around that: a lost passkey means a vault whose balance can never be withdrawn. Adding a recovery signer to the smart account is the mitigation, and it was not done here.",
+    "Two different fee payers, and the record separates them. Every artifact above was paid by a dedicated testnet deployer key over direct RPC. The public flow sponsors fees through OpenZeppelin Channels instead (the Launchtube successor at channels.openzeppelin.com, sharing an API key with the x402 facilitator we already use), and that path was proven separately on the same day: see relaySponsoredRun below. Neither run makes the other's claim.",
+    "A fresh vault starts with allowlist_enabled false and an empty allowlist. Until the owner turns the allowlist on, pay() to any payee inside the ceiling and the cap will settle. In this record set_policy switched it on before the vault was funded; a deployment that funds first and configures second has a window in which the allowlist protects nothing.",
+    "The WebAuthn credential id and the raw signatures are not in this file, deliberately. A credential id next to a high-entropy value is what a secret scanner keys on, and none of it is needed: the contract id, the transactions and the ledgers are the evidence, and the ledger holds the signatures.",
+    "The owner, operator, payees and fee payer are all throwaway testnet keys. No mainnet key touched this flow."
+  ],
+  "relaySponsoredRun": {
+    "what": "The same flow again, end to end, with fees sponsored by OpenZeppelin Channels through our own relay endpoint rather than by a key of ours. The smart-account kit posted { func, auth } to POST /api/stellar/passkey/relay, which decoded the XDR, refused everything outside the three shapes it allows, and forwarded the rest with our API key; a Channels channel account sourced and paid each transaction. This is what a visitor to /stellar exercises, so it is recorded rather than described.",
+    "date": "2026-09-19",
+    "sponsor": "OpenZeppelin Relayer (Channels), https://channels.openzeppelin.com/testnet/",
+    "smartAccount": "CC2GS57AI3DZUVD5UBZ7ZFKVKUDZGXU56AICTYOXISGVJMLUQK2CJVVO",
+    "vault": "CCV2MMK4WFJJVYITOWAH6Z3OW5RW7MYOYB3WGOZJ54NEL4PIJHV3KA7T",
+    "artifacts": [
+      {
+        "kind": "deploy",
+        "label": "The smart account, deployed with its fee sponsored by Channels rather than paid by us",
+        "txHash": "9df1bbb1d29e623bcdce1dc8919f0f8add4941e148e390d789d80a755b795b32",
+        "ledger": 4764131,
+        "successful": true,
+        "note": "The kit posted { func, auth } to our relay with no key of the visitor involved. The shared sign-only deployer signs the create authorization; a Channels channel account supplies the source, the sequence number and the fee."
+      },
+      {
+        "kind": "deploy",
+        "label": "The vault, deployed by the backend against the existing code entry, owner = that smart account",
+        "txHash": "f343b7c3670a9523ef76011a1e70ff05f92570b0fb272db0dca3fd108dda341f",
+        "ledger": 4764133,
+        "successful": true,
+        "note": "POST /api/stellar/passkey/vault/deploy. This one is paid by our own testnet operator key, not by Channels: it is our write, not the visitor's."
+      },
+      {
+        "kind": "funding",
+        "label": "0.2 USDC seeded into the new vault through the SAC, so the agent has something to spend",
+        "txHash": "d000eace19cd8c660d8b938a92ded4b407fd999b740d2a7c425dfa757cae0fd5",
+        "ledger": 4764134,
+        "successful": true
+      },
+      {
+        "kind": "settlement",
+        "label": "set_policy signed by the passkey, relayed and sponsored",
+        "txHash": "fb2b59a05f5f5988d5ec0e625212d7af8e6c5067a945c9544e146f5180c5982e",
+        "ledger": 4764136,
+        "successful": true
+      },
+      {
+        "kind": "settlement",
+        "label": "set_allowed(trusted payee, true): the owner overriding a DENY with the passkey",
+        "txHash": "6b083e8340d8585aa800b022bba843c74e03547ee4cf360243029b8a81c0b86a",
+        "ledger": 4764142,
+        "successful": true,
+        "note": "The trust check answered DENY for this payee, honestly: the agent id named did not resolve to an on-chain identity, so there was no reputation or tenure to score. The vault owner is a human, and the human overrode it, which is the \"Allow anyway\" button on /stellar. The override is itself an owner-signed on-chain write, so it is as auditable as the refusal it replaces."
+      },
+      {
+        "kind": "settlement",
+        "label": "set_allowed(untrusted payee, false): a DENY written to the ledger",
+        "txHash": "4c0d73771f3c196d4fd0c50121b0b9481a0ee0f7b57617864c1dc14d4d20b449",
+        "ledger": 4764144,
+        "successful": true
+      },
+      {
+        "kind": "settlement",
+        "label": "The agent pays the allowed payee 0.05 USDC and it settles",
+        "txHash": "8590694194da891361734f541042870e1a297f829a0fc701c82b988c34a23410",
+        "ledger": 4764146,
+        "successful": true
+      }
+    ],
+    "refusal": "The payment to the revoked payee answered HTTP 409 with contract error 3, PayeeNotAllowed, refused in simulation, so it has no transaction hash. That is Soroban rather than evasion, and it is the same refusal the ledger recorded under artifacts above when the policy was tightened mid-flight."
+  }
+}

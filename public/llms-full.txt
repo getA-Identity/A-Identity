@@ -531,6 +531,18 @@ Beta, wired and readable:
   by re-uploading the wasm; the same console screen shows its live state and hands the
   owner calls back for the owner's own wallet to sign. TrionLabs' Stellar 8004 registry
   is read here too, read-only and labeled third-party, where A-Identity is agent 25.
+  A second vault, `CBGTXWFBYAOZBR6EN3UK4PTLUAY6BRV2C36D3DPOTE5JSOLQXANS6J6U`, is owned
+  by a WebAuthn passkey instead of a key: its owner is an OpenZeppelin smart account
+  (`CC5RNXNHKKPAHFP5YEOTZDFOQDQVC6AQKX3EH3W6QKFKGVBAXPVM3RWA`, third-party code, our
+  instance), and `owner.require_auth()` is satisfied because that contract is the direct
+  invoker. On 2026-09-19 the passkey signed `set_policy` and `set_allowed`, the agent paid
+  an allowed payee, and a payment to a payee revoked mid-flight was refused on the ledger
+  with `PayeeNotAllowed` (tx 22b33018...). The KYA verdict maps onto a BINARY allowlist:
+  ALLOW writes `set_allowed(payee, true)`, DENY writes `set_allowed(payee, false)`, and
+  WARN writes nothing on chain. Testnet only; the passkey in that run was a software
+  P-256 key standing in for a platform authenticator, and the fee was paid by a deployer
+  key rather than the OpenZeppelin Channels sponsor the public flow uses. The record is
+  soroban/releases/testnet-passkey-owner-2026-09-19.json.
 
 Planned, descriptor only:
 
@@ -575,6 +587,7 @@ from published methods or verifiable on a public chain.
 | Resource | URL |
 | --- | --- |
 | Site | https://a-identity.xyz |
+| Stellar page | https://a-identity.xyz/stellar |
 | Machine summary | https://a-identity.xyz/llms.txt |
 | This document | https://a-identity.xyz/llms-full.txt |
 | Authentication | https://a-identity.xyz/auth.md |

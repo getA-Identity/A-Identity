@@ -75,6 +75,9 @@ refusal of a payment that is in fact in flight.
 | Contract | pubnet | testnet |
 | --- | --- | --- |
 | `AgentSpendPolicy` (ours) | [`CB5LYXFK...KWSYP`](https://stellar.expert/explorer/public/contract/CB5LYXFKKTKDDSCM6JO6C4GNRQUFBGSLYDET6Q56JNFJQSMBKH6KWSYP) | [`CAIL6ECR...OEB4UI`](https://stellar.expert/explorer/testnet/contract/CAIL6ECRAB5FUURQ54R7OTZPXRRCDO2S353YT6N6UZUWIBDG2ZOEB4UI) |
+| `AgentSpendPolicy`, passkey-owned (ours) | testnet only | [`CBGTXWFB...NS6J6U`](https://stellar.expert/explorer/testnet/contract/CBGTXWFBYAOZBR6EN3UK4PTLUAY6BRV2C36D3DPOTE5JSOLQXANS6J6U) |
+| OpenZeppelin smart account (third party) | testnet only | [`CC5RNXNH...VM3RWA`](https://stellar.expert/explorer/testnet/contract/CC5RNXNHKKPAHFP5YEOTZDFOQDQVC6AQKX3EH3W6QKFKGVBAXPVM3RWA) |
+| OpenZeppelin WebAuthn verifier (third party) | testnet only | [`CC7EKIHQ...ZIOM3F`](https://stellar.expert/explorer/testnet/contract/CC7EKIHQP3TN4CARQDND6CEOY2UXLWWC2X5GHTD5NLAT7BG5GPZIOM3F) |
 | USDC, SEP-41 SAC | [`CCW67TSZ...SJMI75`](https://stellar.expert/explorer/public/contract/CCW67TSZV3SSS2HXMBQ5JFGCKJNXKZM7UQUWUZPUTHXSTZLEO7SJMI75) | [`CBIELTK6...XQDAMA`](https://stellar.expert/explorer/testnet/contract/CBIELTK6YBZJU5UP2WWQEUCYKLPU6AUNZ2BQ4WWFEIE3USCIHMXQDAMA) |
 | CCTP TokenMessengerMinter | `CAE2G5Z77UP7GYPYGFOWFGW7C7J6I4YP2AFGSADRKQY62SYUFLPNFTXL` | `CDNG7HXAPBWICI2E3AUBP3YZWZELJLYSB6F5CC7WLDTLTHVM74SLRTHP` |
 | CCTP MessageTransmitter | `CACMENFFJPJMSDAJQLX4R7K3SFZIW2LJSE3R2UMLGSWHFHS353FVXAZV` | `CBJ6MTCKKZG73PMDZCJMSFRD7DQEMI4FKDH7CGDSV4W6FHCRBCQAVVJY` |
@@ -86,12 +89,17 @@ refusal of a payment that is in fact in flight.
 The vaults are ours. The USDC SACs are Circle's asset seen through Soroban. The CCTP
 contracts are Circle's, and the registry cites the Circle page each row was read from. The
 Stellar 8004 rows belong to TrionLabs: we **read** them, labeled third-party, and they are
-not our anchor. See [Identity on Stellar](#identity-on-stellar-stated-plainly) below.
+not our anchor. See [Identity on Stellar](#identity-on-stellar-stated-plainly) below. The
+two OpenZeppelin rows are theirs as well: the smart account instance is ours, the account
+wasm and the WebAuthn verifier behind it are third-party testnet deployments we read out of
+the `smart-account-kit` manifest rather than built or verified. See
+[Passkey owner](#passkey-owner) below.
 
-Both vaults carry the same wasm, sha256
+All three vaults carry the same wasm, sha256
 `155eb31c1867254eacbf1b7a4755164d15cc6b6f939644705ab6b8df61579239`, byte for byte, so
-pubnet runs the code that has been under test since the testnet deploy rather than a
-rebuild of it. The pubnet vault was deployed 2026-08-24, the testnet vault 2026-08-15.
+pubnet runs the code that has been under test since the first testnet deploy rather than a
+rebuild of it. The pubnet vault was deployed 2026-08-24, the first testnet vault
+2026-08-15, and the passkey-owned testnet vault 2026-09-19.
 
 ## The spend vault
 
@@ -100,11 +108,11 @@ has **no upgrade entrypoint and no `initialize`**: the constructor ran atomicall
 and its arguments are permanent. There has been no upgrade, no re-initialization and no
 owner transfer on either network.
 
-| | pubnet | testnet |
-| --- | --- | --- |
-| Daily cap (UTC day) | 1 USDC | 10 USDC |
-| Auto-approve ceiling per payment | 0.25 USDC | 2 USDC |
-| Owner | 2-of-3 multisig since 2026-08-25 | single key |
+| | pubnet | testnet | testnet, passkey-owned |
+| --- | --- | --- | --- |
+| Daily cap (UTC day) | 1 USDC | 10 USDC | 5 USDC |
+| Auto-approve ceiling per payment | 0.25 USDC | 2 USDC | 1 USDC |
+| Owner | 2-of-3 multisig since 2026-08-25 | single key | a smart account with one passkey signer |
 
 ### The gate order, and why order is the product
 
@@ -171,6 +179,133 @@ one with their own Stellar wallet and the server never holds the key. A per-agen
 vault can also be provisioned on testnet: it instantiates against the existing code entry
 rather than re-uploading the wasm, which is the difference between about 0.1 XLM and about
 12 XLM. Pubnet provisioning is gated behind `STELLAR_VAULT_ALLOW_PUBNET`.
+
+There are two ways to be that owner, and the second one has no seed phrase in it. An owner
+can be a plain `G...` account signing with a Stellar wallet, which is what both vaults in
+the table above use. Or the owner can be a **contract**, because `owner.require_auth()`
+does not care which: Soroban dispatches to a contract owner's `__check_auth`, so a smart
+account whose only signer is a passkey can hold the same authority. That is not a design
+note any more. It ran on testnet on 2026-09-19, and the next section is the record.
+
+## Passkey owner
+
+A spend vault whose owner is a passkey. No seed phrase, no browser extension, no key this
+server could sign with even if it wanted to. The owner is an OpenZeppelin smart account
+contract whose single signer is a WebAuthn P-256 credential, and the vault's
+`owner.require_auth()` is satisfied because that contract is the direct invoker of the call.
+
+```mermaid
+sequenceDiagram
+    autonumber
+    participant PK as Passkey, WebAuthn P-256
+    participant SA as Smart account CC5RNXNH, OZ
+    participant BE as A-Identity backend
+    participant CH as OpenZeppelin Channels
+    participant V as AgentSpendPolicy CBGTXWFB
+    participant T as USDC SAC CBIELTK6
+    participant OP as Agent, operator key
+
+    Note over PK,V: Owner side. The owner is a contract, so there is no owner key.
+    PK->>SA: sign the authorization digest
+    SA->>SA: __check_auth verifies P-256 through the WebAuthn verifier CC7EKIHQ
+    BE->>CH: relay the func and its auth, testnet only, fail closed
+    CH->>V: execute calls set_policy, 5 USDC per day, 1 USDC per payment
+    V-->>CH: owner.require_auth satisfied, the invoker IS the owner
+    Note over BE,CH: Channels sources and pays the transaction. Proven on 2026-09-19 through this relay, ledgers 4764131 to 4764146.
+
+    Note over BE,V: KYA has three states. The on-chain allowlist has two.
+    BE->>BE: risk_check answers ALLOW, WARN or DENY
+    BE->>CH: ALLOW writes set_allowed payee true
+    BE-->>BE: WARN writes nothing on chain, only a server-side flag
+    BE->>CH: DENY writes set_allowed payee false
+    CH->>V: the passkey signs whichever write there is
+
+    Note over OP,T: Agent side. The operator never holds the money.
+    OP->>V: pay allowed payee 0.5 USDC
+    V->>T: transfer out of vault storage
+    T-->>OP: settled, spent_today 0.5 USDC
+    OP->>V: pay a payee the owner did not allow
+    V-->>OP: Error Contract 3, PayeeNotAllowed, nothing moves
+```
+
+### What ran, and what it cost
+
+| Step | Transaction |
+| --- | --- |
+| Smart account deployed, one WebAuthn signer | [`dcd3c422...d914c`](https://stellar.expert/explorer/testnet/tx/dcd3c4227b0a773bf3d825a8fb0c5d37196b9cb7366377bf8a2c76162d3d914c), ledger 4760408 |
+| Vault deployed, owner = that smart account | [`ccac0b30...29fd2`](https://stellar.expert/explorer/testnet/tx/ccac0b30612a216deea7d84035cac3e3acbb5884c827f60065ed33ff61729fd2), ledger 4760409 |
+| `set_policy`, signed by the passkey | [`994b5cb9...0dd758`](https://stellar.expert/explorer/testnet/tx/994b5cb92c5dee9ce733109e9b7cecd35625aeb3b3edc35903a22cc93a0dd758), ledger 4760411 |
+| `set_allowed(payee, true)`, signed by the passkey | [`e371b1b3...5ef47`](https://stellar.expert/explorer/testnet/tx/e371b1b38cb1f31aca91709d7ace18fe974f5673a8eafc00012df442dc15ef47), ledger 4760413 |
+| 3 USDC funded in through the SAC | [`b84b70de...238faf`](https://stellar.expert/explorer/testnet/tx/b84b70de3a087a316bf2267c9bdccb9c191fd9be1ac5b0a741bdbd73aa238faf), ledger 4760414 |
+| The agent pays an allowed payee 0.5 USDC | [`bf375df0...6fb7e4f`](https://stellar.expert/explorer/testnet/tx/bf375df0b03b7e4a9644676cd4d157df0fe4c4139d870ec2706fcdbe56fb7e4f), ledger 4760415 |
+| An unlisted payee is allowed, to arm the race | [`b7ea4c33...3707c33`](https://stellar.expert/explorer/testnet/tx/b7ea4c33b19b487b6ee2aadcd6e5486b9917d08325a0e8444e2ac7c643707c33), ledger 4760419 |
+| The owner revokes it mid-flight | [`9a3aece1...22ca88`](https://stellar.expert/explorer/testnet/tx/9a3aece13d12279be23864a8131b0cf96d18801bd6eb01e966b74f330d22ca88), ledger 4760420 |
+| The held payment lands and is refused with `#3` | [`22b33018...0357a0`](https://stellar.expert/explorer/testnet/tx/22b33018c807946df066365bde2a72293372bf7768ab96688acb623c290357a0), ledger 4760421 |
+
+The vault is
+[`CBGTXWFB...NS6J6U`](https://stellar.expert/explorer/testnet/contract/CBGTXWFBYAOZBR6EN3UK4PTLUAY6BRV2C36D3DPOTE5JSOLQXANS6J6U),
+carrying wasm `155eb31c...9239`, the same code the other two vaults run. Its owner is
+[`CC5RNXNH...VM3RWA`](https://stellar.expert/explorer/testnet/contract/CC5RNXNHKKPAHFP5YEOTZDFOQDQVC6AQKX3EH3W6QKFKGVBAXPVM3RWA),
+an instance of OpenZeppelin's account wasm `1b5f4534...785a` with their WebAuthn verifier
+[`CC7EKIHQ...ZIOM3F`](https://stellar.expert/explorer/testnet/contract/CC7EKIHQP3TN4CARQDND6CEOY2UXLWWC2X5GHTD5NLAT7BG5GPZIOM3F)
+behind it, deployed through the `smart-account-kit` npm package 0.8.0. The whole record,
+with fees and the live reads taken afterwards, is in
+[`soroban/releases/testnet-passkey-owner-2026-09-19.json`](https://github.com/getA-Identity/A-Identity/blob/main/soroban/releases/testnet-passkey-owner-2026-09-19.json).
+
+### Why this is a second vault rather than a migration
+
+`AgentSpendPolicy` has `set_operator` and deliberately no `set_owner`. The owner is
+permanent, which is the point of it, so an existing vault cannot be handed to a passkey.
+The vault above was deployed with the smart account as its owner from its first ledger, and
+[`CAIL6ECR...OEB4UI`](https://stellar.expert/explorer/testnet/contract/CAIL6ECRAB5FUURQ54R7OTZPXRRCDO2S353YT6N6UZUWIBDG2ZOEB4UI)
+keeps its `G...` owner. Neither upload was needed: both instantiate against the code entry
+already on the ledger, about 0.1 XLM rather than about 12.
+
+### KYA maps onto a binary allowlist, and that is worth saying exactly
+
+The trust verdict has three states and `set_allowed` has two, so the mapping is published
+rather than implied:
+
+- **ALLOW** writes `set_allowed(payee, true)`. The agent can pay that payee inside the cap.
+- **WARN** writes **nothing on chain**. It is a server-side flag on the decision record.
+- **DENY** writes `set_allowed(payee, false)`, after which `pay()` to that payee reverts with
+  `PayeeNotAllowed`, error `3`.
+
+Nothing here should be read as three states living on the ledger. The ledger holds a
+boolean per payee, and a WARN that nobody acted on looks exactly like a payee nobody has
+ever mentioned.
+
+<Warning>
+  **Testnet only, and the passkey in the record was software.** The P-256 key in the
+  2026-09-19 run was generated inside the process rather than held by a platform
+  authenticator: the same verifier contract, the same WebAuthn signature format of
+  `authenticatorData`, `clientDataJSON` and a low-S DER signature, and the same `execute`
+  path. The only difference is where the private key lives, which means the run proves the
+  contract path accepts a WebAuthn signature and proves nothing about a real
+  authenticator's user-verification prompt.
+
+  Five more caveats, in the order they would bite:
+
+  - **One passkey is one signer.** The smart account was created with a single WebAuthn
+    signer and no recovery signer. Losing the passkey loses the owner, and since there is
+    no `set_owner` there is no path around that: the balance would be unrecoverable. Adding
+    a recovery signer is the mitigation and it was not applied here.
+  - **The kit is unaudited by its own statement**, the OpenZeppelin Stellar contracts under
+    it were audited at `rc-v0.7.0` with a different scope, and the deployed artifacts use a
+    later source revision than that audit. Our `AgentSpendPolicy` is not audited either.
+  - **The verifier and the account wasm are third party.** We deployed one instance against
+    ids read from someone else's manifest. We did not build or verify them.
+  - **Two fee payers, and they are separate claims.** The release record above was paid by
+    a dedicated testnet deployer key over direct RPC. The public flow sponsors fees through
+    OpenZeppelin Channels instead, and that path was proven separately the same day: the
+    smart account at ledger 4764131, `set_policy` at 4764136, the owner's allowlist writes
+    at 4764142 and 4764144, and the agent's payment at 4764146, every one of them sourced
+    and paid by a Channels channel account rather than by the visitor. Neither run makes
+    the other's claim.
+  - **A fresh vault starts open.** `allowlist_enabled` is `false` and the allowlist is empty
+    until an owner call turns it on. Fund a vault before configuring it and there is a
+    window in which the allowlist protects nothing.
+</Warning>
 
 ## Pay for a trust check
 
