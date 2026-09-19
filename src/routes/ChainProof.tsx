@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { motion } from 'framer-motion'
 import { ArrowUpRight, ChevronDown, RefreshCw } from 'lucide-react'
-import { useParams } from 'react-router-dom'
+import { Link, useParams } from 'react-router-dom'
 import PageHeader from '../components/PageHeader'
 import StellarVaultsLive from '../components/proof/StellarVaultsLive'
 import SiteFooter from '../components/sections/SiteFooter'
@@ -372,6 +372,13 @@ export default function ChainProof() {
                 heading="Live vault state"
                 caption="Read from the ledger on every load, not copied from a deployment record."
               />
+              <p className="mt-3 text-sm text-foreground/60">
+                These are ours. You can deploy your own on testnet in a minute, owned by a passkey rather than a key we
+                hold:{' '}
+                <Link to="/stellar" className="inline-flex items-center gap-1 font-semibold text-accent hover:underline">
+                  try the passkey vault on testnet <ArrowUpRight size={13} className="shrink-0" />
+                </Link>
+              </p>
             </motion.div>
           )}
 

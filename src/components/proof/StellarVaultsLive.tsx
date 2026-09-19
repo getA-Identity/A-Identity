@@ -9,6 +9,7 @@
  * stays live until, and roughly when it would archive if nobody bumps it.
  */
 import { useEffect, useState } from 'react'
+import { Link } from 'react-router-dom'
 import { ArrowUpRight } from 'lucide-react'
 import { apiFetch } from '../../lib/api'
 import { Skeleton } from '../ui/skeleton'
@@ -41,6 +42,9 @@ type StellarVaultRow = {
   live: VaultLive
   state?: VaultOnChain
   ttl?: VaultTtl
+  /** What kind of key owns it: a passkey smart account (C...) or a plain account (G...).
+   *  Absent on an older backend, which is why nothing is inferred from the address. */
+  ownerKind?: 'smart-account' | 'account'
 }
 
 type StellarVaultsResponse = { checkedAt: string; vaults: StellarVaultRow[] }
@@ -160,6 +164,7 @@ export default function StellarVaultsLive({
                     ) : (
                       <Chip tone="warn">unreachable</Chip>
                     )}
+                    {v.ownerKind === 'smart-account' && <Chip tone="muted">passkey owner</Chip>}
                   </div>
                   {v.explorerUrl ? (
                     <a
@@ -193,6 +198,16 @@ export default function StellarVaultsLive({
                     Archives around {archives}
                     {typeof v.ttl?.approxDays === 'number' ? ` (~${v.ttl.approxDays} days)` : ''}
                     {typeof v.live.ledger === 'number' ? `, read at ledger ${v.live.ledger}` : ''}
+                  </p>
+                )}
+
+                {/* A vault a passkey owns is one anyone can make for themselves, so the row
+                    that shows one links the page where they do it. */}
+                {v.ownerKind === 'smart-account' && (
+                  <p className="mt-3 text-[11px]">
+                    <Link to="/stellar" className="inline-flex items-center gap-1 font-semibold text-accent hover:underline">
+                      Make one of these with your own passkey <ArrowUpRight size={11} className="shrink-0" />
+                    </Link>
                   </p>
                 )}
               </div>

@@ -9,7 +9,7 @@ const BASE = 'http://localhost:4173'
 // /stats and /intro were missing, which is how a redesign of /stats reached a build
 // without this catching anything. /brand-kit stays listed even though it now redirects
 // to /brand: the redirect itself is worth a check.
-const PUBLIC = ['/', '/explorer?q=849980', '/arc', '/algorand', '/celo-proof', '/proof', '/proof/arc', '/proof/stellar',
+const PUBLIC = ['/', '/explorer?q=849980', '/arc', '/stellar', '/algorand', '/celo-proof', '/proof', '/proof/arc', '/proof/stellar',
   '/proof/algorand', '/proof/base', '/proof/robinhood', '/proof/arbitrum', '/proof/celo',
   '/stats', '/intro', '/mascot', '/brand-kit', '/motion', '/manifesto', '/brand', '/contact', '/faq', '/blog', '/architecture', '/login', '/bozuk-link']
 const CONSOLE = ['/app', '/app/checks', '/app/agent-id', '/app/wallet', '/app/settlements', '/app/permissions', '/app/marketplace', '/app/earnings']

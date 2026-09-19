@@ -69,6 +69,7 @@ const STATIC = [
   ['/contact', 'monthly', '0.6'],
   ['/explorer', 'weekly', '0.6'],
   ['/arc', 'weekly', '0.9'],
+  ['/stellar', 'weekly', '0.8'],
   ['/algorand', 'weekly', '0.8'],
   ['/signup', 'yearly', '0.5'],
   ['/login', 'yearly', '0.5'],
