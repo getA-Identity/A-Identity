@@ -400,6 +400,29 @@ export const CHAINS: ChainDescriptor[] = [
         verified:
           'Ids from trionlabs/stellar-8004 config.ts (2026-09-08); the Identity interface was fetched from the live testnet contract with `stellar contract info interface`, each instance entry read back with getLedgerEntries on 2026-09-15, and find_owner(25) simulated to our registration key the same day. Testnet resets periodically, so an id here is a rehearsal, never a record.',
       },
+      // The passkey-owned vault, deployed 2026-09-19 (tx ccac0b30612a216deea7d84035cac3e3acbb5884c827f60065ed33ff61729fd2,
+      // ledger 4760409) against the same code entry as spendVault. Its OWNER is the OpenZeppelin
+      // smart account CC5RNXNHKKPAHFP5YEOTZDFOQDQVC6AQKX3EH3W6QKFKGVBAXPVM3RWA (deploy tx
+      // dcd3c4227b0a773bf3d825a8fb0c5d37196b9cb7366377bf8a2c76162d3d914c), whose only signer is a
+      // WebAuthn P-256 credential; the operator is the same account STELLAR_TESTNET_SIGNER_SECRET
+      // decodes to. set_policy (994b5cb9...) and set_allowed (e371b1b3...) on it were signed by the
+      // passkey through the smart account's `execute`, and a pay() to an unlisted payee was
+      // refused on chain with PayeeNotAllowed (22b33018..., FAILED). Testnet resets periodically,
+      // so this is a rehearsal, never a record; mcp/scripts/stellar-passkey-proof.mjs reproduces it.
+      passkeyVault: 'CBGTXWFBYAOZBR6EN3UK4PTLUAY6BRV2C36D3DPOTE5JSOLQXANS6J6U',
+      // OpenZeppelin's smart account contracts on testnet, third party and read from the
+      // smart-account-kit release document rather than measured by us: a passkey wallet is
+      // instantiated against this wasm hash with the WebAuthn verifier as its signer's
+      // verifier, and the relay endpoint refuses any deploy whose executable is a different
+      // hash. Pubnet constants exist in the same document and are deliberately NOT recorded:
+      // this release is testnet only.
+      smartAccount: {
+        wasmHash: '1b5f4534a76322da2ad7c745f6900857a6802b0ca79850c35a03561df997785a',
+        webauthnVerifier: 'CC7EKIHQP3TN4CARQDND6CEOY2UXLWWC2X5GHTD5NLAT7BG5GPZIOM3F',
+        ed25519Verifier: 'CAAVTMCBXEIBPR64EAASKFXERVPYFZA2JYP5A3BG6PESWEFUJX5IHKN4',
+        verified:
+          'smart-account-kit 0.8.0, from the deployments table for protocol 27 dated 2026-07-09 that ships inside that package (the testnet rows), read 2026-09-19; the wasm hash was then exercised live the same day by deploying CC5RNXNHKKPAHFP5YEOTZDFOQDQVC6AQKX3EH3W6QKFKGVBAXPVM3RWA against it (tx dcd3c422...) and signing vault owner calls through it. Third-party contracts owned by OpenZeppelin, so anything read from them is labeled third-party and live, never ours.',
+      },
       cctp: {
         tokenMessenger: 'CDNG7HXAPBWICI2E3AUBP3YZWZELJLYSB6F5CC7WLDTLTHVM74SLRTHP',
         messageTransmitter: 'CBJ6MTCKKZG73PMDZCJMSFRD7DQEMI4FKDH7CGDSV4W6FHCRBCQAVVJY',

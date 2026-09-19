@@ -124,15 +124,28 @@ async function observe(chain: ChainDescriptor, contract: string): Promise<VaultO
 const CACHE_MS = 30_000
 let cache: { at: number; body: { vaults: StellarVaultReport[]; checkedAt: string } } | null = null
 
+/**
+ * Every vault row this endpoint publishes: the flagship vault per network, and, where the
+ * registry records one, the passkey-owned vault whose owner is a smart account rather than a
+ * G... account. The flagship rows come first and keep their shape; the passkey row is an
+ * extra row with its own label, so a reader who only knew the old list sees nothing moved.
+ */
+function vaultRows(): { chain: ChainDescriptor; contract: string; label: string }[] {
+  const rows: { chain: ChainDescriptor; contract: string; label: string }[] = []
+  for (const chain of vaultChains()) rows.push({ chain, contract: chain.contracts.spendVault as string, label: 'flagship vault' })
+  for (const chain of CHAINS.filter((c) => c.ecosystem === 'stellar' && Boolean(c.contracts.passkeyVault))) {
+    rows.push({ chain, contract: chain.contracts.passkeyVault as string, label: 'passkey-owned vault (smart account owner)' })
+  }
+  return rows
+}
+
 async function vaultsView(): Promise<{ vaults: StellarVaultReport[]; checkedAt: string }> {
   const now = Date.now()
   if (cache && now - cache.at < CACHE_MS) return cache.body
-  const chains = vaultChains()
   const reports = await Promise.all(
-    chains.map(async (chain) => {
-      const contract = chain.contracts.spendVault as string
+    vaultRows().map(async ({ chain, contract, label }) => {
       const obs = await observe(chain, contract)
-      return vaultReport(chain, contract, addressUrl(chain, contract), obs, now)
+      return vaultReport(chain, contract, addressUrl(chain, contract), obs, now, label)
     }),
   )
   const body = { vaults: reports, checkedAt: new Date(now).toISOString() }
@@ -154,7 +167,9 @@ export async function handleStellarVaultRoutes(ctx: RouteCtx): Promise<boolean> 
       ...(await vaultsView()),
       note:
         'Live reads of the AgentSpendPolicy instances the registry declares, cached for 30 s. ' +
-        'TTL days are an estimate from the ledger close time stated beside them, not a promise.',
+        'TTL days are an estimate from the ledger close time stated beside them, not a promise. ' +
+        'ownerKind is read off each vault\'s live owner: account for a G... wallet, smart-account ' +
+        'for a C... passkey account whose owner calls are signed by a WebAuthn credential.',
     })
     return true
   }

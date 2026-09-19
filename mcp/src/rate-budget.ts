@@ -32,6 +32,19 @@ export function rateBudget(method: string, pathname: string): { bucket: string; 
   // stuck re-signing cannot lock themselves out of building the next call.
   if (pathname === '/api/stellar/vault/prepare') return { bucket: 'stellar-vault-prepare', max: 20, windowMs: 60_000 }
   if (pathname === '/api/stellar/vault/submit') return { bucket: 'stellar-vault-submit', max: 10, windowMs: 60_000 }
+  // The passkey demo under /api/stellar/passkey/, reachable WITHOUT a session because the
+  // public /stellar page has no A-Identity login, which is exactly why every one of its POSTs
+  // is bounded here and fail-closed there. The relay forwards bytes to OpenZeppelin Channels
+  // under our key after a narrow allowlist check, so it is bounded like submit. The deploy puts
+  // a whole contract on chain from the testnet operator key and seeds it with that key's own
+  // USDC, so it gets the vault-deploy shape. agent-pay spends the operator key's fee and the
+  // vault's balance under a 1 USD cap. The allowlist plan writes nothing on chain but runs a
+  // full risk_check, which reads two chains, so it is bounded like prepare. Separate buckets:
+  // a caller stuck on one step must not lock themselves out of the next.
+  if (pathname === '/api/stellar/passkey/relay') return { bucket: 'passkey-relay', max: 10, windowMs: 60_000 }
+  if (pathname === '/api/stellar/passkey/vault/deploy') return { bucket: 'passkey-vault-deploy', max: 3, windowMs: 60_000 }
+  if (pathname === '/api/stellar/passkey/agent-pay') return { bucket: 'passkey-agent-pay', max: 10, windowMs: 60_000 }
+  if (pathname === '/api/stellar/passkey/allowlist/plan') return { bucket: 'passkey-allowlist-plan', max: 20, windowMs: 60_000 }
   // The CCTP bridge. Preparing one is free, but an operator's EXECUTED bridge burns USDC from
   // a key this server holds and then holds the request open while it polls Iris for the
   // attestation, so it is bounded like the other writes that spend a key of ours, and harder.

@@ -427,6 +427,28 @@ export function createStellarAdapter(chain: ChainDescriptor, deps: StellarAdapte
   }
 
   /**
+   * The same read, for a method that takes arguments (`balance(holder)` on a SAC). Kept apart
+   * from `view` rather than widening it, so the twelve vault reads stay exactly as they were.
+   */
+  async function viewWith(
+    contract: string,
+    method: string,
+    args: ReturnType<typeof nativeToScVal>[],
+    env: NodeJS.ProcessEnv,
+  ): Promise<unknown> {
+    const server = rpcFor(env)
+    const source = stellarSignerAddress(chain, env) ?? READ_ONLY_SOURCE
+    const tx = new TransactionBuilder(new Account(source, '0'), { fee: BASE_FEE, networkPassphrase: net })
+      .addOperation(new Contract(contract).call(method, ...args))
+      .setTimeout(30)
+      .build()
+    const sim = await server.simulateTransaction(tx)
+    if (rpc.Api.isSimulationError(sim)) throw new Error(`${method}: ${sim.error}`)
+    if (!sim.result) throw new Error(`${method}: simulation returned no result`)
+    return scValToNative(sim.result.retval)
+  }
+
+  /**
    * Build, simulate, sign, submit, and wait. Returns `prepared` untouched when there is no
    * signer.
    *
@@ -573,6 +595,14 @@ export function createStellarAdapter(chain: ChainDescriptor, deps: StellarAdapte
    * owner is the human's own account and is never us; the contract itself refuses
    * owner == operator with OwnerIsOperator, and so does this function, before the network
    * is touched at all.
+   *
+   * The owner may be a CONTRACT as well as an account. The constructor takes any Address,
+   * and a passkey smart account (an OpenZeppelin account whose signer is a WebAuthn
+   * credential) is a C... id: proven on testnet 2026-09-19, where set_policy on a vault owned
+   * by one was signed with the passkey through the account's `execute` and the vault's
+   * `owner.require_auth()` was satisfied because the account was the direct invoker. The
+   * operator stays a G... account on purpose: it is the key that signs `pay`, and this server
+   * holds it.
    */
   async function deployVault(
     input: {
@@ -594,7 +624,9 @@ export function createStellarAdapter(chain: ChainDescriptor, deps: StellarAdapte
     const shape = { contract: '<new>', method: '__constructor', args: display, network: chain.caip2 }
     const refuse = (reason: string): VaultDeployOutcome => ({ outcome: 'refused', ...shape, reason })
 
-    if (!isAccountId(input.owner)) return refuse(`${input.owner} is not a Stellar account id (G... StrKey)`)
+    if (!isAccountId(input.owner) && !isContractId(input.owner)) {
+      return refuse(`${input.owner} is neither a Stellar account id (G... StrKey) nor a contract id (C... StrKey)`)
+    }
     if (!isAccountId(input.operator)) return refuse(`${input.operator} is not a Stellar account id (G... StrKey)`)
     if (!isContractId(input.token)) return refuse(`${input.token} is not a Soroban contract id (C... StrKey)`)
     if (input.owner === input.operator) {
@@ -1109,6 +1141,42 @@ export function createStellarAdapter(chain: ChainDescriptor, deps: StellarAdapte
         liveUntilLedger: live ? (entry?.liveUntilLedgerSeq as number) : null,
         archived: entry !== undefined && !live,
       }
+    },
+
+    /**
+     * A holder's balance of a SEP-41 token, in base units, read by simulation.
+     *
+     * Used before the seed transfer below, so a vault is only ever promised a seed the signer
+     * can pay: a transfer the SAC would refuse for want of balance is not worth a round trip.
+     */
+    async readTokenBalance(token: string, holder: string, env: NodeJS.ProcessEnv = process.env): Promise<bigint> {
+      if (!isContractId(token)) throw new Error(`${token} is not a Soroban contract id`)
+      if (!isAccountId(holder) && !isContractId(holder)) throw new Error(`${holder} is not a Stellar address`)
+      return BigInt(String(await viewWith(token, 'balance', [addr(holder)], env)))
+    },
+
+    /**
+     * Move token out of the SIGNER's own account through the SAC: `transfer(signer, to, amount)`.
+     *
+     * The same shape as mcp/scripts/stellar-vault-fund.mjs, here so the passkey demo can seed
+     * the vault it just deployed without a human running a script. It is the signer's OWN
+     * balance that moves, which is why the amount is capped by the caller and why this is
+     * prepared-or-executed like every other write: no key, no transfer, and the exact call is
+     * returned instead.
+     */
+    async sacTransferFromSigner(token: string, to: string, amountRaw: bigint | string, env: NodeJS.ProcessEnv = process.env): Promise<CallOutcome> {
+      const from = stellarSignerAddress(chain, env)
+      if (!from) {
+        return {
+          outcome: 'prepared',
+          contract: token,
+          method: 'transfer',
+          args: ['<the account the chain signer decodes to>', to, String(amountRaw)],
+          network: chain.caip2,
+          reason: `${chain.signerEnvVar ?? 'the chain signer'} is not set, so nothing was submitted. This is the exact call it would make.`,
+        }
+      }
+      return write(token, 'transfer', [addr(from), addr(to), i128(amountRaw)], [from, to, String(amountRaw)], env)
     },
 
     /** The agent's bounded payment. Amount is in the token's own base units. */

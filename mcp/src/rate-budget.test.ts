@@ -40,6 +40,12 @@ const SPENDS_GAS = [
   // Burns USDC from a server-held bridging key when executed. It sat off this list, and so
   // off the budget, while every verified session could execute it.
   'bridgeCctp',
+  // The Soroban writes the passkey demo makes from the testnet operator key: a whole
+  // contract, a SEP-41 transfer of our own USDC into it, and the agent's bounded payment.
+  // They reach the adapter directly rather than through a platform function, which is
+  // exactly why naming them here matters: without these three the scan walks past a route
+  // group that deploys contracts and moves money.
+  'deployVault', 'sacTransferFromSigner', 'policyPay',
 ]
 
 /** POST routes in a file, each with the source that follows it up to the next route. */

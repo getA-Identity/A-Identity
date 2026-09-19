@@ -413,6 +413,23 @@ export type VaultObservation =
       archived?: boolean
     }
 
+/**
+ * What kind of thing owns a vault, read off the owner's StrKey prefix.
+ *
+ * A G... owner is a classic account: a wallet, a multisig, a person. A C... owner is a
+ * contract, which on this surface means a passkey smart account: the owner entrypoints are
+ * then signed by a WebAuthn credential through the account's `execute`. Null when there is
+ * no owner to read, because a kind guessed from a label would be a claim about a ledger
+ * nobody looked at.
+ */
+export function ownerKindOf(owner: string | null | undefined): 'smart-account' | 'account' | null {
+  if (typeof owner !== 'string') return null
+  const o = owner.trim()
+  if (isContractId(o)) return 'smart-account'
+  if (isAccountId(o)) return 'account'
+  return null
+}
+
 export type StellarVaultReport = {
   chain: string
   caip2: string
@@ -420,6 +437,10 @@ export type StellarVaultReport = {
   status: string
   contract: string
   explorerUrl: string
+  /** What this row is, for a reader: the flagship vault, or the passkey-owned one. */
+  label: string
+  /** Read off the live owner's StrKey prefix; null when the owner could not be read. */
+  ownerKind: 'smart-account' | 'account' | null
   live: { reachable: boolean; ledger?: number; checkedAt: string; reason?: string }
   state?: VaultStateView
   ttl?: LedgerTtl
@@ -440,6 +461,7 @@ export function vaultReport(
   explorerUrl: string,
   obs: VaultObservation,
   nowMs: number = Date.now(),
+  label = 'flagship vault',
 ): StellarVaultReport {
   const base = {
     chain: chain.id,
@@ -448,6 +470,8 @@ export function vaultReport(
     status: chain.status,
     contract,
     explorerUrl,
+    label,
+    ownerKind: ownerKindOf(obs.reachable ? obs.state.owner : null),
   }
   if (!obs.reachable) {
     return { ...base, live: { reachable: false, checkedAt: obs.checkedAt, reason: obs.reason } }

@@ -42,6 +42,7 @@ import { handleCctpRoutes } from './http/cctp-routes.js'
 import { handleChainRoutes } from './http/chain-routes.js'
 import { handleArcRoutes } from './http/arc-routes.js'
 import { handleStellarVaultRoutes } from './http/stellar-vault-routes.js'
+import { handleStellarPasskeyRoutes } from './http/stellar-passkey-routes.js'
 import { handleAgentRoutes } from './http/agent-routes.js'
 import { handleGuardrailRoutes } from './http/guardrail-routes.js'
 import { handleInstructionRoutes } from './http/instruction-routes.js'
@@ -191,9 +192,18 @@ const server = http.createServer(async (req, res) => {
   // presents it first is served, and that path is restricted to CONTRACT payers so it is only
   // reachable by agents whose spending a contract already bounded. Both are fail-closed (501)
   // when the rail is unconfigured, and settle is payTo-allowlisted because we pay the fee.
+  // /api/stellar/passkey/* is exempt on different terms, and they are worth stating because
+  // no payment gates it either. The public /stellar demo has no A-Identity login: the owner is
+  // a passkey the browser holds, not a session we issued. What stands in for the gate is that
+  // every endpoint there is TESTNET ONLY, refuses pubnet by name, is rate-budgeted, and fails
+  // closed: the relay decodes the XDR and forwards only a smart-account deploy against the
+  // registry's wasm hash or an owner call on a vault whose live operator is our own signer,
+  // the deploy and agent-pay spend the testnet operator key under caps of 10 / 2 / 1 USD, and
+  // the allowlist plan writes nothing. Nothing there can reach pubnet or a session's agents.
   const isMutation =
     req.method === 'POST' && url.pathname.startsWith('/api/') && !url.pathname.startsWith('/api/auth/') &&
     !url.pathname.startsWith('/api/celo/tools/') &&
+    !url.pathname.startsWith('/api/stellar/passkey/') &&
     !url.pathname.startsWith('/api/x402/stellar/') &&
     !url.pathname.startsWith('/api/x402/algorand/') &&
     !url.pathname.startsWith('/api/x402/gateway/') &&
@@ -233,6 +243,8 @@ const server = http.createServer(async (req, res) => {
     // the same story and sit under their own prefix, so the order is about keeping the two
     // vault surfaces visibly separate rather than about a path collision.
     if (await handleStellarVaultRoutes(ctx)) return
+    // The passkey demo: its own prefix under /api/stellar/, no overlap with the vault pair.
+    if (await handleStellarPasskeyRoutes(ctx)) return
     if (await handleAgentRoutes(ctx)) return
     if (await handleGuardrailRoutes(ctx)) return
     if (await handleInstructionRoutes(ctx)) return
@@ -345,6 +357,11 @@ server.listen(PORT, () => {
   console.error(`  GET  /api/stellar/vaults         live Soroban spend vaults: policy, balance, archival TTL (public)`)
   console.error(`  POST /api/stellar/vault/prepare  build an owner call unsigned (verified session, owner-gated)`)
   console.error(`  POST /api/stellar/vault/submit   broadcast the envelope the owner signed (we never sign it)`)
+  console.error(`  GET  /api/stellar/passkey/status what the passkey demo is configured with (testnet only, never a secret)`)
+  console.error(`  POST /api/stellar/passkey/relay  fee-sponsor a smart-account deploy or a passkey-signed vault owner call via OZ Channels (allowlisted XDR)`)
+  console.error(`  POST /api/stellar/passkey/vault/deploy   deploy a vault owned by a passkey smart account, operator = this server (testnet, capped)`)
+  console.error(`  POST /api/stellar/passkey/allowlist/plan risk_check a payee and map ALLOW/WARN/DENY onto the vault allowlist (writes nothing)`)
+  console.error(`  POST /api/stellar/passkey/agent-pay      the agent side: pay() through a vault this server operates (testnet, <= 1 USD)`)
   console.error(`  GET  /api/cctp/stellar/status    CCTP between Stellar and EVM: chains, Circle-verified contracts, signers`)
   console.error(`  POST /api/cctp/stellar/bridge    prepared-or-executed CCTP transfer (verified session, capped, testnet unless opted in)`)
   console.error(`  GET  /api/proof/:rail            provenance ledger + a live re-read (see /api/proof/rails)`)

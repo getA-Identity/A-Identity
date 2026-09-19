@@ -81,6 +81,23 @@ export interface ChainContracts {
    * behind a timelock by its owner. `verified` says what was read and when.
    */
   stellar8004?: { identity: string; reputation?: string; validation?: string; verified: string }
+  /**
+   * ONE AgentSpendPolicy vault whose OWNER is a passkey smart account (a C... contract) rather
+   * than a G... account, kept as evidence the same way `spendVaultExample` is: the owner
+   * entrypoints on it were signed by a WebAuthn credential through the smart account's
+   * `execute`, and the vault's `owner.require_auth()` was satisfied because the smart account
+   * was the direct invoker. Evidence, not infrastructure: nothing generic reads this slot.
+   */
+  passkeyVault?: string
+  /**
+   * The OpenZeppelin smart account contracts a passkey wallet is deployed from on this network
+   * (Stellar only). THIRD-PARTY: OpenZeppelin publishes the wasm and the two verifier
+   * contracts, and `smart-account-kit` instantiates an account against exactly this hash, so
+   * the relay endpoint accepts a deploy only when the executable it would create IS this hash.
+   * `verified` names the release document the constants were read from and when. Absent on a
+   * network where no passkey path is served.
+   */
+  smartAccount?: { wasmHash: string; webauthnVerifier: string; ed25519Verifier: string; verified: string }
 }
 
 /**

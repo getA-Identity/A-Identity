@@ -202,6 +202,24 @@ export function ozFacilitatorUrl(chain: ChainDescriptor, env: NodeJS.ProcessEnv 
 }
 
 /**
+ * The OZ Relayer's DIRECT Channels endpoint for this network: the fee-sponsoring relay that
+ * takes `{ params: { func, auth } }` or `{ params: { xdr } }` and broadcasts from its own
+ * channel accounts. Same relayer as the x402 facilitator above, a different plugin on it, and
+ * the same key (`ozKeyVar`) authenticates against both; verified 2026-09-19, when a bogus
+ * getTransaction answered an authenticated "Transaction not found" rather than 401.
+ *
+ * The passkey endpoints under /api/stellar/passkey/ post here on the smart-account kit's
+ * behalf, which is why the host lives in this one place beside its sibling and nowhere else.
+ */
+export function ozRelayerUrl(chain: ChainDescriptor, env: NodeJS.ProcessEnv = process.env): string {
+  const override = env.X402_STELLAR_OZ_RELAYER_URL?.trim()
+  if (override) return override
+  return chain.caip2 === 'stellar:pubnet'
+    ? 'https://channels.openzeppelin.com/'
+    : 'https://channels.openzeppelin.com/testnet/'
+}
+
+/**
  * Resolve the rail for one network.
  *
  * A network we do not sell on resolves to unconfigured rather than falling back silently:

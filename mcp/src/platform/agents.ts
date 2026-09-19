@@ -417,6 +417,26 @@ export function linkUserWallet(
   }
 }
 
+/**
+ * Every account subject a wallet address vouches for: the account whose session subject IS
+ * this address (a wallet sign-in), and every account that linked it by signature. Public
+ * lookup by design and safe to be one, because it answers only "which subjects" and never
+ * returns a wallet list, a key or anything else about those accounts. Subjects come back
+ * normalized, the way `agent.owner` compares.
+ */
+export function subjectsLinkedToWallet(address: string): string[] {
+  const key = normalizeSubject(address)
+  if (!key) return []
+  const out = new Set<string>()
+  for (const [subject, u] of Object.entries(state.users)) {
+    if (subject === key || (u.wallets ?? []).some((w) => normalizeSubject(w.address) === key)) out.add(subject)
+  }
+  // A wallet session that never linked anything has no user row at all, and it is still an
+  // account: an agent whose `owner` is this very address is bound to it.
+  out.add(key)
+  return [...out]
+}
+
 /** Remove a linked wallet. Removing one that is not linked is a clean no-op. */
 export function unlinkUserWallet(subject: string | undefined, address: string, caller?: string): { wallets: LinkedWallet[]; removed: boolean } | { error: string } {
   const key = normalizeSubject(subject)
