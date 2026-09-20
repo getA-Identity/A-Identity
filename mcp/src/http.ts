@@ -43,6 +43,7 @@ import { handleChainRoutes } from './http/chain-routes.js'
 import { handleArcRoutes } from './http/arc-routes.js'
 import { handleStellarVaultRoutes } from './http/stellar-vault-routes.js'
 import { handleStellarPasskeyRoutes } from './http/stellar-passkey-routes.js'
+import { handleSoroswapRoutes } from './http/soroswap-routes.js'
 import { handleAgentRoutes } from './http/agent-routes.js'
 import { handleGuardrailRoutes } from './http/guardrail-routes.js'
 import { handleInstructionRoutes } from './http/instruction-routes.js'
@@ -245,6 +246,8 @@ const server = http.createServer(async (req, res) => {
     if (await handleStellarVaultRoutes(ctx)) return
     // The passkey demo: its own prefix under /api/stellar/, no overlap with the vault pair.
     if (await handleStellarPasskeyRoutes(ctx)) return
+    // Soroswap: one public GET, a simulated price and nothing signed.
+    if (await handleSoroswapRoutes(ctx)) return
     if (await handleAgentRoutes(ctx)) return
     if (await handleGuardrailRoutes(ctx)) return
     if (await handleInstructionRoutes(ctx)) return
@@ -362,6 +365,7 @@ server.listen(PORT, () => {
   console.error(`  POST /api/stellar/passkey/vault/deploy   deploy a vault owned by a passkey smart account, operator = this server (testnet, capped)`)
   console.error(`  POST /api/stellar/passkey/allowlist/plan risk_check a payee and map ALLOW/WARN/DENY onto the vault allowlist (writes nothing)`)
   console.error(`  POST /api/stellar/passkey/agent-pay      the agent side: pay() through a vault this server operates (testnet, <= 1 USD)`)
+  console.error(`  GET  /api/stellar/soroswap/quote what a swap would return, simulated live off Soroswap's router (public, signs nothing)`)
   console.error(`  GET  /api/cctp/stellar/status    CCTP between Stellar and EVM: chains, Circle-verified contracts, signers`)
   console.error(`  POST /api/cctp/stellar/bridge    prepared-or-executed CCTP transfer (verified session, capped, testnet unless opted in)`)
   console.error(`  GET  /api/proof/:rail            provenance ledger + a live re-read (see /api/proof/rails)`)

@@ -55,7 +55,7 @@ import { isAccountId, isContractId } from './strkey.js'
  * choice here: a read must not depend on holding a key, and hardcoding somebody's real
  * funded account would quietly couple our reads to their balance.
  */
-const READ_ONLY_SOURCE = 'GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAWHF'
+export const READ_ONLY_SOURCE = 'GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAWHF'
 
 /** Testnet and pubnet differ only by this string, and getting it wrong signs for the
  *  wrong network, so it is derived from the descriptor rather than passed around. */

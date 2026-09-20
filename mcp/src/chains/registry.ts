@@ -423,6 +423,20 @@ export const CHAINS: ChainDescriptor[] = [
         verified:
           'smart-account-kit 0.8.0, from the deployments table for protocol 27 dated 2026-07-09 that ships inside that package (the testnet rows), read 2026-09-19; the wasm hash was then exercised live the same day by deploying CC5RNXNHKKPAHFP5YEOTZDFOQDQVC6AQKX3EH3W6QKFKGVBAXPVM3RWA against it (tx dcd3c422...) and signing vault owner calls through it. Third-party contracts owned by OpenZeppelin, so anything read from them is labeled third-party and live, never ours.',
       },
+      // XLM's own SAC, derived with `stellar contract id asset --asset native --network
+      // testnet` on 2026-09-20 rather than copied from a docs page. Not a settlement token:
+      // we never sell in XLM. It is the far side of the Soroswap quote below and the asset
+      // a Soroban fee is denominated in, so it is a read, never a price we charge.
+      nativeSac: 'CDLZFC3SYJYDZT7K67VZ75HPJVIEUVNIXF47ZG2FB2RMQQVU2HHGCYSC',
+      // Soroswap's testnet router. Third party, and the only Soroswap id recorded anywhere
+      // in this repository: the factory CDP3HMUH... and the USDC/XLM pair CCBX3NZT... were
+      // both read back OUT of this router (get_factory, router_pair_for) on 2026-09-20 and
+      // are derived at call time rather than stored, so they cannot drift from it.
+      soroswap: {
+        router: 'CCJUD55AG6W5HAI5LRVNKAE5WDP5XGZBUDS5WNTIVDU7O264UZZE7BRD',
+        verified:
+          'Read live on 2026-09-20 with the Stellar CLI 27.1.0 against testnet: `contract info interface` lists router_get_amounts_out, get_factory and router_pair_for; get_factory() answered CDP3HMUH6SMS3S7NPGNDJLULCOXXEPSHY4JKUKMBNQMATHDHWXRRJTBY; router_pair_for(USDC SAC, native SAC) answered CCBX3NZTCQLQFSPG7HBOKL4P2RVPOPVFHDNRTOSCCJWBTPL2GHEH7RQS; and router_get_amounts_out(10000000, [USDC, XLM]) answered ["10000000","94345893"], which is the quote path we use. Soroswap is not ours and this is testnet, where a pool price is whatever a faucet-funded liquidity provider left behind rather than a market rate.',
+      },
       cctp: {
         tokenMessenger: 'CDNG7HXAPBWICI2E3AUBP3YZWZELJLYSB6F5CC7WLDTLTHVM74SLRTHP',
         messageTransmitter: 'CBJ6MTCKKZG73PMDZCJMSFRD7DQEMI4FKDH7CGDSV4W6FHCRBCQAVVJY',

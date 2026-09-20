@@ -98,6 +98,23 @@ export interface ChainContracts {
    * network where no passkey path is served.
    */
   smartAccount?: { wasmHash: string; webauthnVerifier: string; ed25519Verifier: string; verified: string }
+  /**
+   * The Stellar Asset Contract for the native asset, XLM (Stellar only).
+   *
+   * Derived with `stellar contract id asset --asset native`, never typed. It is here rather
+   * than in `settlementTokens` because we do not settle in XLM and never will: it is the
+   * other side of a swap quote and the asset a fee is paid in, which are reads, not sales.
+   */
+  nativeSac?: string
+  /**
+   * Soroswap, the Soroban AMM and DEX aggregator (Stellar only). THIRD-PARTY.
+   *
+   * Only the ROUTER is recorded, deliberately. The router answers `get_factory()` and
+   * `router_pair_for(a, b)`, so the factory and any pair are derived from it live, the same
+   * way an explorer link is derived rather than typed. One id can go stale here; three
+   * would go stale independently and disagree.
+   */
+  soroswap?: { router: string; verified: string }
 }
 
 /**
