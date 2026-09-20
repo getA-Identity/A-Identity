@@ -10,8 +10,8 @@ import { useTheme } from '../ThemeProvider'
  * CTA pair stacked on the center axis, and under them the real /app console as a
  * wide framed still that the fold crops on desktop, so the first screen ends on
  * the product itself. The interactive live trust lookup stays one keystroke away
- * in the ⌘K spotlight; the small link under the CTAs opens it. Palette unchanged
- * (accent #7342E2 + semantic tokens).
+ * in the ⌘K spotlight, which the first CTA opens; the quiet link under the pair
+ * opens the Stellar demo. Palette unchanged (accent #7342E2 + semantic tokens).
  *
  * The still is a capture of the live console in dark theme (public/console-hero.webp,
  * regenerate by re-shooting /app); it reads as a product photo, so it does not
@@ -152,6 +152,22 @@ export default function Hero() {
         >
           Add to your agent <ArrowRight size={18} />
         </motion.button>
+      </motion.div>
+
+      {/* A third door, quieter than the pair above it because it asks for more than a
+          click: the Stellar demo, which the visitor runs in this browser with a passkey
+          instead of a wallet. It sits here rather than in the pill, which belongs to the
+          featured network, and the copy promises the demo rather than a finished run:
+          whether a step submits or only reports what it would submit depends on the
+          deployment, and the page itself says which happened, step by step. */}
+      <motion.div custom={4} variants={fadeUp} initial="hidden" animate="visible" className="mt-5">
+        <Link
+          to="/stellar"
+          className="group inline-flex items-center gap-1.5 text-sm font-semibold text-foreground/60 transition-colors hover:text-foreground"
+        >
+          Run the Stellar testnet demo: a passkey that owns a spend vault
+          <ArrowUpRight size={15} className="transition-transform group-hover:translate-x-0.5 group-hover:-translate-y-0.5" />
+        </Link>
       </motion.div>
 
       {/* The console itself, horizontal, as the hero's floor. On desktop the header is

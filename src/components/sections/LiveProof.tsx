@@ -32,7 +32,7 @@ const STATS = [
   // repository could reproduce.
   { n: 120, k: '120', v: 'real settlements', sub: 'X Layer mainnet' },
   { n: null, k: '#6271', v: 'live agent', sub: 'listed on OKX.AI' },
-  { n: 1386, k: '1386', v: 'tests, green', sub: 'deterministic scores' },
+  { n: 1404, k: '1404', v: 'tests, green', sub: 'deterministic scores' },
 ] as const
 
 /** A number that counts itself up the first time it scrolls into view. */
@@ -169,6 +169,14 @@ export default function LiveProof() {
             className="inline-flex items-center gap-1.5 text-sm font-semibold text-accent hover:underline"
           >
             Arc Mainnet, live <ArrowUpRight size={15} />
+          </Link>
+
+          {/* The page a visitor can run, next to the receipts it writes. */}
+          <Link
+            to="/stellar"
+            className="inline-flex items-center gap-1.5 text-sm font-semibold text-accent hover:underline"
+          >
+            The Stellar demo, on testnet <ArrowUpRight size={15} />
           </Link>
 
           <Link
