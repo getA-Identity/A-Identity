@@ -138,6 +138,17 @@ test('an answer that is not a two-leg amounts array is refused rather than read 
   }
 })
 
+test('a quote of zero is not a quote, and says why rather than showing a confident nothing', async () => {
+  // The router answers 0 honestly when the input is below what its reserves can price. A
+  // live probe of the testnet pool does exactly this for one stroop.
+  const dust = stub({
+    [AMOUNTS_OUT]: [nativeToScVal(1n, { type: 'i128' }), nativeToScVal(0n, { type: 'i128' })],
+  })
+  const q = await soroswapQuote({ chain: TESTNET, sellAsset: USDC, buyAsset: XLM, sellAmount: '1', deps: dust })
+  assert.equal(q.available, false)
+  if (!q.available) assert.match(q.reason, /below what this pool can price/)
+})
+
 test('a derived id that cannot be read is null, and does not lose the quote', async () => {
   // get_factory and router_pair_for are conveniences. Losing one must not lose the price.
   const partial = stub({

@@ -169,6 +169,16 @@ export async function soroswapQuote(input: {
     return { available: false, reason: `${AMOUNTS_OUT} returned ${describe(amounts)}, which is not a two-leg amounts array` }
   }
   const out = String(amounts[amounts.length - 1])
+  // A quote of nothing is not a quote. The router answers 0 honestly when the input is
+  // smaller than the pool can price at its current reserves, and returning that as an
+  // available quote would put a confident "you receive 0" in front of someone, which reads
+  // as a broken integration rather than as an amount below the pool's resolution.
+  if (!/^[0-9]+$/.test(out) || BigInt(out) <= 0n) {
+    return {
+      available: false,
+      reason: `${sellAmount} base units is below what this pool can price: ${AMOUNTS_OUT} returned ${out}`,
+    }
+  }
 
   // Derived, never stored: if the router ever repoints, these follow it in the same breath.
   const derived = async (method: string, args: xdr.ScVal[]): Promise<string | null> => {

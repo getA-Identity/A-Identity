@@ -31,6 +31,7 @@ const TrustOraclePanel = lazy(() => import('../../components/app/settlements/Tru
 const GatewayPanel = lazy(() => import('../../components/app/settlements/GatewayPanel'))
 const CctpPanel = lazy(() => import('../../components/app/settlements/CctpPanel'))
 const AppKitPanel = lazy(() => import('../../components/app/settlements/AppKitPanel'))
+const SoroswapPanel = lazy(() => import('../../components/app/settlements/SoroswapPanel'))
 const GasPanel = lazy(() => import('../../components/app/settlements/GasPanel'))
 
 type Tab = 'payments' | 'automation' | 'commerce' | 'rails'
@@ -839,6 +840,9 @@ export default function Settlements() {
               <GatewayPanel />
               <CctpPanel />
               <AppKitPanel />
+              {/* Next to App Kit on purpose: one converts and the other only prices the
+                  conversion, and the pair makes that difference impossible to miss. */}
+              <SoroswapPanel />
               <GasPanel />
             </>
           )}
