@@ -255,13 +255,25 @@ export function stellarTxKey(caip2: string, txHash: string): string {
 export function schemeOf(payload: unknown): { ok: true; scheme: PaymentScheme } | { ok: false; reason: string } {
   const p = (payload ?? {}) as Record<string, unknown>
   const hasEntry = typeof p.authEntryXdr === 'string' && p.authEntryXdr.trim() !== ''
+  // `transaction` is what @x402/stellar puts on the wire (its ExactStellarPayloadV2), and
+  // it resolves to the same scheme because we read the authorization entry out of it and
+  // discard the envelope. See authEntriesFromEnvelope for why the envelope is a carrier.
+  const hasTx = typeof p.transaction === 'string' && p.transaction.trim() !== ''
   const hasHash = typeof p.txHash === 'string' && p.txHash.trim() !== ''
-  if (hasEntry && hasHash) {
-    return { ok: false, reason: 'the payload carries both authEntryXdr and txHash; send one, so it is clear what you are paying with' }
+  if (hasEntry && hasTx) {
+    return { ok: false, reason: 'the payload carries both authEntryXdr and transaction; send one, so it is clear which authorization is being presented' }
   }
-  if (hasEntry) return { ok: true, scheme: 'soroban-auth' }
+  if ((hasEntry || hasTx) && hasHash) {
+    return { ok: false, reason: 'the payload carries both an authorization to broadcast and a txHash you already paid with; send one, so it is clear what you are paying with' }
+  }
+  if (hasEntry || hasTx) return { ok: true, scheme: 'soroban-auth' }
   if (hasHash) return { ok: true, scheme: 'settled' }
-  return { ok: false, reason: 'the payload carries neither authEntryXdr (sign and we broadcast) nor txHash (you already paid)' }
+  return {
+    ok: false,
+    reason:
+      'the payload carries none of transaction (a signed envelope, which is what @x402/stellar sends), ' +
+      'authEntryXdr (a bare authorization entry) or txHash (you already paid)',
+  }
 }
 
 /**
@@ -411,18 +423,88 @@ export async function redeemStellarPayment(input: {
 }
 
 /**
- * Decode X-PAYMENT into an authorization entry.
+ * Pull the authorization entries out of a signed transaction envelope.
+ *
+ * WHY THIS EXISTS. `@x402/stellar` puts a whole base64 transaction envelope on the wire
+ * (`ExactStellarPayloadV2 = { transaction: string }`), while this rail was built around
+ * the bare entry and asks for `authEntryXdr`. The security model is identical either way,
+ * because on Soroban what the payer actually signs is the authorization entry and not the
+ * envelope around it. So rather than run a second scheme we unwrap the envelope, keep the
+ * entry, and throw everything else away.
+ *
+ * "Throw everything else away" is the important half. The envelope a client builds carries
+ * its own source account, sequence number, fee and time bounds, and none of those are ours
+ * to honour: we assemble and submit the transaction, we pay the fee, and we pick the source.
+ * Treating the envelope as an instruction rather than a carrier would let a buyer choose
+ * who pays and how much. It is read for exactly one field and discarded.
+ *
+ * A fee-bump envelope is unwrapped rather than refused. It changes who pays for the inner
+ * transaction, which is a question about an envelope we are not going to submit anyway.
+ */
+export function authEntriesFromEnvelope(
+  txB64: string,
+): { ok: true; entries: xdr.SorobanAuthorizationEntry[] } | { ok: false; reason: string } {
+  let env: xdr.TransactionEnvelope
+  try {
+    env = xdr.TransactionEnvelope.fromXDR(txB64, 'base64')
+  } catch (e) {
+    return { ok: false, reason: `payload.transaction did not decode as a TransactionEnvelope: ${msg(e)}` }
+  }
+  let ops: xdr.Operation[]
+  try {
+    const kind = env.switch().name
+    if (kind === 'envelopeTypeTx') ops = env.v1().tx().operations()
+    else if (kind === 'envelopeTypeTxV0') ops = env.v0().tx().operations()
+    else if (kind === 'envelopeTypeTxFeeBump') ops = env.feeBump().tx().innerTx().v1().tx().operations()
+    else return { ok: false, reason: `payload.transaction is a ${kind} envelope, which carries no operations` }
+  } catch (e) {
+    return { ok: false, reason: `could not read the operations out of payload.transaction: ${msg(e)}` }
+  }
+  if (ops.length !== 1) {
+    return {
+      ok: false,
+      reason: `payload.transaction carries ${ops.length} operations and a purchase is one invokeHostFunction; send a transaction with exactly one`,
+    }
+  }
+  const body = ops[0].body()
+  if (body.switch().name !== 'invokeHostFunction') {
+    return { ok: false, reason: `payload.transaction's only operation is a ${body.switch().name}, not an invokeHostFunction` }
+  }
+  return { ok: true, entries: body.invokeHostFunctionOp().auth() }
+}
+
+/**
+ * Decode a payment payload into the one authorization entry it presents.
  *
  * Accepts the parsed body a route hands us, not a header string, so the header decoding
- * lives in exactly one place upstream and this stays testable without base64.
+ * lives in exactly one place upstream and this stays testable without base64. Two carriers
+ * are accepted and they mean the same thing: `transaction`, the signed envelope that
+ * `@x402/stellar` sends, and `authEntryXdr`, the bare entry this rail asked for first.
  */
 export function parseStellarPayload(
   payload: unknown,
 ): { ok: true; entry: xdr.SorobanAuthorizationEntry } | { ok: false; reason: string } {
   if (!payload || typeof payload !== 'object') return { ok: false, reason: 'payload is not an object' }
   const p = payload as Record<string, unknown>
+  const txB64 = typeof p.transaction === 'string' ? p.transaction.trim() : ''
   const xdrB64 = typeof p.authEntryXdr === 'string' ? p.authEntryXdr.trim() : ''
-  if (!xdrB64) return { ok: false, reason: 'payload.authEntryXdr is missing' }
+  if (txB64 && xdrB64) {
+    return { ok: false, reason: 'payload carries both transaction and authEntryXdr; send one, so it is clear which authorization is being presented' }
+  }
+  if (txB64) {
+    const pulled = authEntriesFromEnvelope(txB64)
+    if (!pulled.ok) return pulled
+    // One purchase is one authorization. Several entries would mean choosing which one to
+    // settle against, and a choice made here is a choice the payer did not make.
+    if (pulled.entries.length !== 1) {
+      return {
+        ok: false,
+        reason: `payload.transaction's invokeHostFunction carries ${pulled.entries.length} authorization entries and a purchase is one; sign exactly one transfer`,
+      }
+    }
+    return { ok: true, entry: pulled.entries[0] }
+  }
+  if (!xdrB64) return { ok: false, reason: 'payload carries neither transaction nor authEntryXdr' }
   try {
     return { ok: true, entry: xdr.SorobanAuthorizationEntry.fromXDR(xdrB64, 'base64') }
   } catch (e) {

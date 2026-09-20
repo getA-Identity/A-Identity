@@ -505,7 +505,16 @@ export function stellarRailChallenge(
         ...RAIL_TOOL_CARDS[tool],
         method: `POST ${stellarRailResource(tool)}`,
         payment:
-          'Sign a Soroban authorization entry for the `transfer` call described in `extra`, then POST with header X-PAYMENT: base64(JSON of {x402Version:2, scheme:"exact", network, payload:{authEntryXdr}}).',
+          'Sign a Soroban authorization entry for the `transfer` call described in `extra`, then POST with ' +
+          'header PAYMENT-SIGNATURE: base64(JSON of {x402Version:2, scheme:"exact", network, payload:{transaction}}), ' +
+          'where `transaction` is the base64 envelope carrying that entry. That is what a stock @x402/stellar ' +
+          'client sends and it needs no change to pay here. We read the entry out of the envelope and discard ' +
+          'the rest: we assemble, source, pay for and submit the transaction ourselves, so the envelope\'s own ' +
+          'source, sequence and fee are not honoured and you are not charged for them.',
+        alsoAcceptedCarrier:
+          'The bare entry, payload:{authEntryXdr}, under either PAYMENT-SIGNATURE or the x402 v1 header name ' +
+          'X-PAYMENT. It predates the envelope shape on this rail and is kept so nothing that already pays here ' +
+          'has to move. Send one carrier or the other, never both.',
         // The second shape exists for agents whose spending is bounded on chain. Our own
         // Soroban spend policy cannot sign an authorization entry (it has no __check_auth,
         // deliberately), so without this there would be no way to pay for a tool through a

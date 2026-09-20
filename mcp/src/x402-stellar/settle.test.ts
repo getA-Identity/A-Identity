@@ -16,13 +16,14 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 
-import { Account, Keypair, Networks, SorobanDataBuilder, hash, xdr } from '@stellar/stellar-sdk'
+import { Account, BASE_FEE, Keypair, Networks, Operation, SorobanDataBuilder, TransactionBuilder, hash, xdr } from '@stellar/stellar-sdk'
 
 import { getChainById } from '../chains/registry.js'
 import { loadStellarSettlementsResult } from '../storage.js'
 import type { StellarSettlementRecord } from '../storage.js'
 import type { SettlementToken } from '../chains/types.js'
 import {
+  authEntriesFromEnvelope,
   decodeAuthEntry,
   parseStellarPayload,
   redeemStellarPayment,
@@ -626,6 +627,91 @@ test('the scheme is decided by what the payload carries, not by what it claims',
   if (!both.ok) assert.match(both.reason, /send one/)
   assert.equal(schemeOf({}).ok, false)
   assert.equal(schemeOf(null).ok, false)
+})
+
+// ── the canonical @x402/stellar carrier: payload.transaction ─────────────────────────
+//
+// A stock @x402/stellar client puts the whole signed envelope on the wire as
+// `{ transaction }` rather than sending the bare entry. These tests build such an
+// envelope around the SAME real ENTRY the rest of this file uses, so a client that
+// never heard of this rail and a client written against it end up at one decoder.
+
+/** Wrap entries in a v1 envelope the way a stock client would. */
+function envelopeAround(entries: xdr.SorobanAuthorizationEntry[], opts: { extraOp?: boolean; wrongOp?: boolean } = {}): string {
+  const source = new Account(Keypair.random().publicKey(), '1')
+  const fn = xdr.SorobanAuthorizationEntry.fromXDR(ENTRY, 'base64').rootInvocation().function().contractFn()
+  const host = xdr.HostFunction.hostFunctionTypeInvokeContract(
+    new xdr.InvokeContractArgs({ contractAddress: fn.contractAddress(), functionName: fn.functionName(), args: fn.args() }),
+  )
+  const b = new TransactionBuilder(source, { fee: BASE_FEE, networkPassphrase: Networks.TESTNET })
+  if (opts.wrongOp) b.addOperation(Operation.bumpSequence({ bumpTo: '2' }))
+  else b.addOperation(Operation.invokeHostFunction({ func: host, auth: entries }))
+  if (opts.extraOp) b.addOperation(Operation.bumpSequence({ bumpTo: '3' }))
+  return b.setTimeout(30).build().toEnvelope().toXDR('base64')
+}
+
+test('an envelope and a bare entry are the same authorization to this rail', () => {
+  const entry = xdr.SorobanAuthorizationEntry.fromXDR(ENTRY, 'base64')
+  const viaEnvelope = parseStellarPayload({ transaction: envelopeAround([entry]) })
+  const viaEntry = parseStellarPayload({ authEntryXdr: ENTRY })
+  assert.equal(viaEnvelope.ok, true)
+  assert.equal(viaEntry.ok, true)
+  if (!viaEnvelope.ok || !viaEntry.ok) return
+  // Byte equality rather than field-by-field: the envelope is a carrier and nothing about
+  // the entry may change on the way through it.
+  assert.equal(viaEnvelope.entry.toXDR('base64'), ENTRY)
+  assert.equal(viaEnvelope.entry.toXDR('base64'), viaEntry.entry.toXDR('base64'))
+})
+
+test('the envelope carrier reaches the same decoded payer, amount and payee', () => {
+  const entry = xdr.SorobanAuthorizationEntry.fromXDR(ENTRY, 'base64')
+  const parsed = parseStellarPayload({ transaction: envelopeAround([entry]) })
+  assert.equal(parsed.ok, true)
+  if (!parsed.ok) return
+  const d = decodeAuthEntry(parsed.entry)
+  assert.equal(d.ok, true)
+  if (!d.ok) return
+  assert.equal(d.auth.amount, PAID)
+})
+
+test('schemeOf reads payload.transaction as the same scheme as a bare entry', () => {
+  const entry = xdr.SorobanAuthorizationEntry.fromXDR(ENTRY, 'base64')
+  assert.deepEqual(schemeOf({ transaction: envelopeAround([entry]) }), { ok: true, scheme: 'soroban-auth' })
+})
+
+test('sending both carriers is refused rather than one of them being picked', () => {
+  const entry = xdr.SorobanAuthorizationEntry.fromXDR(ENTRY, 'base64')
+  const both = { transaction: envelopeAround([entry]), authEntryXdr: ENTRY }
+  const sch = schemeOf(both)
+  assert.equal(sch.ok, false)
+  if (!sch.ok) assert.match(sch.reason, /send one/)
+  const parsed = parseStellarPayload(both)
+  assert.equal(parsed.ok, false)
+})
+
+test('an envelope that does not carry exactly one authorized transfer is refused', () => {
+  const entry = xdr.SorobanAuthorizationEntry.fromXDR(ENTRY, 'base64')
+  // Zero entries: nothing was authorized, so there is nothing to settle against.
+  const none = parseStellarPayload({ transaction: envelopeAround([]) })
+  assert.equal(none.ok, false)
+  if (!none.ok) assert.match(none.reason, /0 authorization entries/)
+  // Two entries: settling one of them would be us choosing, and the payer did not choose.
+  const two = parseStellarPayload({ transaction: envelopeAround([entry, entry]) })
+  assert.equal(two.ok, false)
+  if (!two.ok) assert.match(two.reason, /2 authorization entries/)
+})
+
+test('an envelope whose shape is not one invokeHostFunction is refused', () => {
+  const entry = xdr.SorobanAuthorizationEntry.fromXDR(ENTRY, 'base64')
+  const extra = authEntriesFromEnvelope(envelopeAround([entry], { extraOp: true }))
+  assert.equal(extra.ok, false)
+  if (!extra.ok) assert.match(extra.reason, /2 operations/)
+  const wrong = authEntriesFromEnvelope(envelopeAround([entry], { wrongOp: true }))
+  assert.equal(wrong.ok, false)
+  if (!wrong.ok) assert.match(wrong.reason, /not an invokeHostFunction/)
+  const garbage = authEntriesFromEnvelope('not-base64-xdr')
+  assert.equal(garbage.ok, false)
+  if (!garbage.ok) assert.match(garbage.reason, /did not decode as a TransactionEnvelope/)
 })
 
 const VAULT = 'CAIL6ECRAB5FUURQ54R7OTZPXRRCDO2S353YT6N6UZUWIBDG2ZOEB4UI'

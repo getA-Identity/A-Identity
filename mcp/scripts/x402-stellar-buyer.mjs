@@ -44,7 +44,7 @@
  *   X402_STELLAR_BUYER_RPC     optional. Overrides the RPC used for simulation. The default
  *                              comes from the chain registry, never from a literal here.
  */
-import { Account, Keypair, TransactionBuilder, BASE_FEE, Contract, rpc, xdr, authorizeEntry } from '@stellar/stellar-sdk'
+import { Account, Keypair, TransactionBuilder, BASE_FEE, Contract, Operation, rpc, xdr, authorizeEntry } from '@stellar/stellar-sdk'
 import { CHAINS } from '../dist/chains/registry.js'
 
 const arg = (name, def) => {
@@ -157,13 +157,45 @@ const authEntryXdr = signed.toXDR('base64')
 console.log(`Signed: authorization entry, valid through ledger ${validUntilLedger} (now ${latest.sequence})`)
 
 // ── 4. retry the original request with the credential ─────────────────────────────
-const payment = { x402Version: 2, scheme: 'exact', network: req.network, payload: { authEntryXdr } }
+//
+// Two carriers say the same thing and the rail takes either. The DEFAULT is the canonical
+// one, so this script exercises the path a stock @x402/stellar client would take rather
+// than a private shape only we speak:
+//
+//   transaction   the signed entry inside a transaction envelope, sent under the x402 v2
+//                 header PAYMENT-SIGNATURE. This is `ExactStellarPayloadV2`. The envelope's
+//                 own source, sequence and fee are ignored by the seller, which is why the
+//                 source below is payTo and not the buyer, and why nothing here is funded.
+//   authEntryXdr  the bare entry, under the v1 header X-PAYMENT. Run with CARRIER=entry to
+//                 send it, which is what keeps the older shape honest rather than assumed.
+//
+const CARRIER = (process.env.CARRIER ?? 'transaction').toLowerCase()
+if (CARRIER !== 'transaction' && CARRIER !== 'entry') {
+  console.error(`error: CARRIER must be transaction or entry, got ${CARRIER}`)
+  process.exit(1)
+}
+let payload
+let headerName
+if (CARRIER === 'entry') {
+  payload = { authEntryXdr }
+  headerName = 'X-PAYMENT'
+} else {
+  // The same operation the simulation approved, rebuilt with the SIGNED entry attached.
+  const envelope = new TransactionBuilder(new Account(payTo, '0'), { fee: BASE_FEE, networkPassphrase: passphrase })
+    .addOperation(Operation.invokeHostFunction({ func: draft.operations[0].func, auth: [signed] }))
+    .setTimeout(300)
+    .build()
+  payload = { transaction: envelope.toEnvelope().toXDR('base64') }
+  headerName = 'PAYMENT-SIGNATURE'
+}
+const payment = { x402Version: 2, scheme: 'exact', network: req.network, payload }
 const header = Buffer.from(JSON.stringify(payment)).toString('base64')
+console.log(`Carrier: ${CARRIER}, sent as ${headerName}`)
 
 console.log(`POST    ${URL_ARG}`)
 const paidRes = await fetch(URL_ARG, {
   method: 'POST',
-  headers: { 'Content-Type': 'application/json', 'X-PAYMENT': header },
+  headers: { 'Content-Type': 'application/json', [headerName]: header },
   body: JSON.stringify({ agentId: AGENT }),
   signal: AbortSignal.timeout(60000),
 })
