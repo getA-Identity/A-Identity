@@ -49,6 +49,27 @@ export const WEBAUTHN_VERIFIER = 'CC7EKIHQP3TN4CARQDND6CEOY2UXLWWC2X5GHTD5NLAT7B
 export const ED25519_VERIFIER = 'CAAVTMCBXEIBPR64EAASKFXERVPYFZA2JYP5A3BG6PESWEFUJX5IHKN4'
 /** Pinned in package.json; recorded here so the page can say it without the lockfile. */
 export const SMART_ACCOUNT_KIT_VERSION = '0.8.0'
+/**
+ * The WebAuthn relying party this deployment claims, pinned rather than left to default.
+ *
+ * A passkey is bound to the rpId it was created under, and the browser will not offer a
+ * credential whose rpId is not a registrable suffix of the current origin. Left unset the
+ * kit takes the exact hostname, which silently splits one person's credentials across
+ * a-identity.xyz and www.a-identity.xyz and makes a passkey created on a Vercel preview
+ * URL unfindable in production. Pinning the apex collapses those into one credential.
+ *
+ * Anywhere else (localhost, a preview host, a fork on another domain) returns undefined
+ * on purpose: the apex is not a suffix of those origins, so claiming it would make
+ * navigator.credentials refuse outright, and the browser default is the only value that
+ * can work there.
+ */
+const WEBAUTHN_APEX = 'a-identity.xyz'
+function relyingPartyId(): string | undefined {
+  if (typeof window === 'undefined') return undefined
+  const host = window.location.hostname
+  return host === WEBAUTHN_APEX || host.endsWith(`.${WEBAUTHN_APEX}`) ? WEBAUTHN_APEX : undefined
+}
+
 /** The backend endpoint the kit's RelayerClient posts { func, auth } to. */
 export const RELAYER_PATH = '/api/stellar/passkey/relay'
 
@@ -152,6 +173,7 @@ async function load(): Promise<{ sak: Sak; kit: SmartAccountKit }> {
         webauthnVerifierAddress: WEBAUTHN_VERIFIER,
         ed25519VerifierAddress: ED25519_VERIFIER,
         rpName: 'A-Identity',
+        rpId: relyingPartyId(),
         // With a relayer configured the kit keeps the shared sign-only deployer and posts
         // { func, auth }; the visitor never pays a fee and the deployer never holds value.
         relayerUrl: `${MCP_BASE}${RELAYER_PATH}`,
