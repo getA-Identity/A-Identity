@@ -1,0 +1,52 @@
+# SEP-1 stellar.toml for A-Identity.
+#
+# This file exists so that a Stellar client, wallet or indexer that finds one of our
+# accounts on the ledger can resolve it back to a named operator rather than to an
+# anonymous G address. Nothing here is generated at build time; every value below was
+# read off pubnet or out of mcp/src/chains/registry.ts, which is the single source of
+# truth for chain constants in this repository.
+#
+# WHAT THIS FILE DOES NOT CLAIM, stated rather than left to inference:
+# A-Identity is not an anchor. There is no TRANSFER_SERVER, no WEB_AUTH_ENDPOINT, no
+# KYC_SERVER and no ANCHOR_QUOTE_SERVER here, because we operate no fiat on-ramp or
+# off-ramp and implement no SEP-6, SEP-10, SEP-12, SEP-24, SEP-31 or SEP-38 flow. We
+# issue no asset either, so there is no CURRENCIES table. The SEPs this project does
+# implement are SEP-41 (the USDC Stellar Asset Contract our vault settles in) and
+# SEP-43 (wallet sign-in through Stellar Wallets Kit); neither one belongs in a
+# stellar.toml, and listing anchor fields we do not serve would be a lie a client
+# would then act on.
+#
+# The accounts below are pubnet. Our testnet accounts are deliberately absent: a
+# stellar.toml is resolved from a domain and this domain is production.
+
+VERSION="2.7.0"
+NETWORK_PASSPHRASE="Public Global Stellar Network ; September 2015"
+
+# Pubnet accounts A-Identity controls, in the order money moves through them.
+#
+#   GARC7OFB...  owner of the AgentSpendPolicy vault. A 2-of-3 multisig since
+#                2026-08-25. Sets the policy and is the only account that can withdraw.
+#   GDLAJM25...  the agent's operator key. It can only call pay(), and only inside the
+#                policy the owner set: 1 USDC per UTC day, 0.25 USDC per payment.
+#   GAFVDEN6...  the x402 rail's fee payer. It assembles and broadcasts the buyer's
+#                signed authorization entry and absorbs the network fee, which is what
+#                lets an agent buying from us hold no XLM at all.
+#
+# The vault they operate is a Soroban contract rather than an account, so it cannot
+# appear in this list: CB5LYXFKKTKDDSCM6JO6C4GNRQUFBGSLYDET6Q56JNFJQSMBKH6KWSYP.
+# It holds USDC in contract storage and therefore carries no trustline.
+ACCOUNTS=[
+"GARC7OFBBQCZJ5N3LCI7HTTYJ2MMPDAFDNGIHSQMZ7EPJ5EAWQJ5R6I5",
+"GDLAJM25YQRTIZOVZPVEM2GJ6L2I4OTZGY3HAWX3HGMPV7SM3QZONO4S",
+"GAFVDEN6BC52WWPRPINOVENMXW3FU4LCSVVVA5C67RLPG4GAK6BE4SXY"
+]
+
+[DOCUMENTATION]
+ORG_NAME="A-Identity"
+ORG_DBA="A-Identity"
+ORG_URL="https://a-identity.xyz"
+ORG_LOGO="https://a-identity.xyz/logo/mark-1024.png"
+ORG_DESCRIPTION="A passport and a bounded wallet for AI agents. An agent gets a verifiable on-chain identity, and a Soroban spend policy that enforces a daily cap, a per-payment ceiling, a payee allowlist and a freeze switch on the ledger rather than in application code. Paid APIs settle over x402 in USDC on both Stellar networks, and Circle CCTP moves that USDC between Stellar and EVM chains."
+ORG_GITHUB="getA-Identity"
+ORG_OFFICIAL_EMAIL="agents@a-identity.xyz"
+ORG_SUPPORT_EMAIL="agents@a-identity.xyz"
