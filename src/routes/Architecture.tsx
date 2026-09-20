@@ -299,7 +299,7 @@ function Terminal() {
 // otherwise about.
 const STATS = [
   { k: '120', v: 'real x402 settlements', mono: 'X Layer mainnet' },
-  { k: '1386', v: 'unit tests, green', mono: 'deterministic' },
+  { k: '1404', v: 'unit tests, green', mono: 'deterministic' },
   { k: '7', v: 'services, one free', mono: '$0 to $0.01' },
   { k: '9', v: 'chains read live', mono: 'ERC-8004 registries' },
 ]
