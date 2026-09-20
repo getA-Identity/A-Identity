@@ -5,13 +5,16 @@ import { Keypair, StrKey } from '@stellar/stellar-sdk'
 
 import { CHAINS } from './chains/index.js'
 import type { RelayAuth, RelayFunc, RelayInspection } from './chains/stellar/relay-shape.js'
+import { rateBudget } from './rate-budget.js'
 import {
   ALLOWLIST_ENFORCEMENT,
   PASSKEY_CAPS,
+  PASSKEY_RELAY_LIMITS,
   PASSKEY_RELEASE,
   allowlistPlan,
   allowlistRequest,
   bindPayeeToAgent,
+  createRelayBudget,
   ownerKindOf,
   ozRelayOutcome,
   ozRelayRequest,
@@ -20,8 +23,12 @@ import {
   passkeyDeployPlan,
   passkeyStatusView,
   relayDecision,
+  relayFeeReported,
+  relayFeeSettlement,
   relayParams,
   relayPreflight,
+  type OzRelayOutcome,
+  type PasskeyRelayLimits,
   type RelayPreflightOk,
 } from './stellar-passkey.js'
 
@@ -521,6 +528,178 @@ test('a payee is bound to an agent by a proven wallet, by a caller\'s word, or n
   assert.equal(none.agentId, null)
 })
 
+// ── what the relay may spend, across everyone ─────────────────────────────
+
+/**
+ * The bounds a judge asks about: what stops someone draining the Channels quota.
+ *
+ * Three of the four numbers SDF's own reference relayer proxy sets. The per-IP one we
+ * already had and the first test keeps the published copy honest against it; the global
+ * rate limit and the fee reserve are new and the rest of these pin them. Each test builds
+ * its own budget, because a module-level window shared between tests is a test that passes
+ * depending on what ran before it.
+ */
+
+const smallLimits = (over: Partial<PasskeyRelayLimits> = {}): PasskeyRelayLimits => ({
+  perIp: { bucket: 'passkey-relay', max: 10, windowMs: 60_000 },
+  global: { max: 3, windowMs: 60_000 },
+  fee: { ceilingStroops: 1_100_000n, dailyStroops: 3_300_000n, windowMs: 86_400_000 },
+  ...over,
+})
+
+test('the per-IP limit the status endpoint publishes is the one rate-budget.ts actually enforces', () => {
+  const enforced = rateBudget('POST', '/api/stellar/passkey/relay')
+  assert.ok(enforced, 'the relay must still have a per-IP budget at all')
+  assert.equal(PASSKEY_RELAY_LIMITS.perIp.bucket, enforced.bucket)
+  assert.equal(PASSKEY_RELAY_LIMITS.perIp.max, enforced.max)
+  assert.equal(PASSKEY_RELAY_LIMITS.perIp.windowMs, enforced.windowMs)
+  // SDF's proxy for this same kit sets 10 per IP per minute, and this is the same number.
+  assert.equal(enforced.max, 10)
+  assert.equal(enforced.windowMs, 60_000)
+})
+
+test('the global rate limit bounds every caller together, not one address at a time', () => {
+  const b = createRelayBudget(smallLimits())
+  const t0 = 1_000_000
+  for (let i = 1; i <= 3; i++) {
+    const ok = b.admit(t0)
+    assert.equal(ok.ok, true, `admission ${i} should pass`)
+    if (ok.ok) assert.equal(ok.used, i)
+  }
+  const refused = b.admit(t0)
+  assert.equal(refused.ok, false, 'the fourth in the same window must be refused')
+  if (refused.ok) return
+  assert.equal(refused.status, 429)
+  assert.equal(refused.code, 'relay_global_rate_limit')
+  assert.equal(refused.retryAfterSeconds, 60)
+  // The reason has to say what makes this different from the per-IP budget, or an operator
+  // reading a 429 cannot tell which of the two fired.
+  assert.match(refused.reason, /ALL callers/)
+  assert.match(refused.reason, /nothing was forwarded/i)
+  // And the window really does reopen, rather than the limit being a one-way door.
+  const after = b.admit(t0 + 60_001)
+  assert.equal(after.ok, true)
+  if (after.ok) assert.equal(after.used, 1)
+})
+
+test('every forwarded request reserves the fee ceiling, and the 24 hour budget then refuses', () => {
+  const b = createRelayBudget(smallLimits())
+  const t0 = 2_000_000
+  for (let i = 0; i < 3; i++) {
+    const r = b.reserve(t0)
+    assert.equal(r.ok, true, `reservation ${i + 1} should fit in 3 ceilings of budget`)
+    if (r.ok) assert.equal(r.reservedStroops, 1_100_000n)
+  }
+  const refused = b.reserve(t0)
+  assert.equal(refused.ok, false, 'a fourth reservation does not fit and must be refused')
+  if (refused.ok) return
+  assert.equal(refused.status, 429)
+  assert.equal(refused.code, 'relay_fee_budget_exhausted')
+  assert.match(refused.reason, /relayer key was not used/)
+  // The honest sentence: this is a ceiling we reserve, not XLM we measured.
+  assert.match(refused.reason, /not a measurement/)
+  const snap = b.snapshot(t0)
+  assert.equal(snap.fee.relaysLeft, 0)
+  assert.equal(snap.fee.relaysForwarded, 3)
+  assert.equal(snap.fee.reservedStroops, '3300000')
+  // 24 hours later the budget is whole again, and nothing carries over.
+  const next = b.reserve(t0 + 86_400_001)
+  assert.equal(next.ok, true)
+  assert.equal(b.snapshot(t0 + 86_400_001).fee.relaysForwarded, 1)
+})
+
+test('the real budget is 100 broadcasts a day, which is the ceiling divided into the budget', () => {
+  // Stated as a derived fact rather than a second literal: if either number moves, this is
+  // what tells the person who moved it what they just changed the demo's day to.
+  assert.equal(PASSKEY_RELAY_LIMITS.fee.dailyStroops / PASSKEY_RELAY_LIMITS.fee.ceilingStroops, 100n)
+  assert.equal(PASSKEY_RELAY_LIMITS.fee.ceilingStroops, 1_100_000n, 'SDF sets a max total fee of 1,100,000 stroops for the same relayer')
+  assert.equal(PASSKEY_RELAY_LIMITS.global.max, 100)
+  assert.equal(PASSKEY_RELAY_LIMITS.global.windowMs, 60_000)
+  assert.equal(createRelayBudget().snapshot(1).fee.relaysLeft, 100)
+})
+
+test('a fee is read only from a charge-shaped field, and a bid is deliberately not one', () => {
+  assert.equal(relayFeeReported({ feeCharged: 40_123 }), 40_123n)
+  assert.equal(relayFeeReported({ fee: '40123' }), 40_123n)
+  assert.equal(relayFeeReported({ fee_stroops: 7 }), 7n)
+  // Nothing to read is null, never zero: zero would claim a free broadcast.
+  for (const v of [null, undefined, {}, { fee: 'not-a-number' }, { fee: -1 }, { fee: 1.5 }, 'x', 7]) {
+    assert.equal(relayFeeReported(v), null, JSON.stringify(v) ?? String(v))
+  }
+  // maxFee is a bid, and reporting a bid as a charge would be a ceiling wearing a
+  // measurement's label. We already have a ceiling.
+  assert.equal(relayFeeReported({ maxFee: 1_000_000 }), null)
+})
+
+test('a reserve settles against the relayer\'s own number when it reports one', () => {
+  const ok: OzRelayOutcome = { success: true, transactionId: 'tx-1', hash: 'a'.repeat(64), status: 'submitted', data: { feeCharged: '100000' } }
+  const s = relayFeeSettlement(ok, 1_100_000n)
+  assert.equal(s.basis, 'measured')
+  assert.equal(s.feeStroops, 100_000n)
+  assert.equal(s.refundStroops, 1_000_000n, 'the day keeps only what was charged')
+  // A fee above the reserve cannot refund a negative amount into the budget.
+  const huge: OzRelayOutcome = { success: true, transactionId: 'tx-2', hash: 'b'.repeat(64), status: 'submitted', data: { feeCharged: '9999999' } }
+  assert.equal(relayFeeSettlement(huge, 1_100_000n).refundStroops, 0n)
+})
+
+test('a submission the relayer prices silently keeps its whole reserve, labelled as a reserve', () => {
+  // This is the production case as of 2026-09-20: Channels answers with transactionId,
+  // status and hash, and no fee anywhere. The point of the test is that we say so instead
+  // of recording a number we do not have.
+  const silent: OzRelayOutcome = { success: true, transactionId: 'tx-3', hash: 'c'.repeat(64), status: 'submitted', data: { transactionId: 'tx-3', status: 'submitted' } }
+  const s = relayFeeSettlement(silent, 1_100_000n)
+  assert.equal(s.basis, 'reserved')
+  assert.equal(s.feeStroops, null, 'an unknown fee is null, never 0')
+  assert.equal(s.refundStroops, 0n)
+  assert.match(s.note, /not a measurement/)
+})
+
+test('a relayer refusal hands the reserve back only when it names no transaction', () => {
+  const refusedClean: OzRelayOutcome = { success: false, error: 'SIMULATION_FAILED', code: 'SIMULATION_FAILED', data: { error: 'SIMULATION_FAILED' } }
+  const clean = relayFeeSettlement(refusedClean, 1_100_000n)
+  assert.equal(clean.basis, 'not-broadcast')
+  assert.equal(clean.refundStroops, 1_100_000n, 'nothing was broadcast, so the day owes the whole reserve back')
+  assert.equal(clean.feeStroops, 0n)
+
+  // A refusal that names a hash may still have reached the network, and a guess in that
+  // direction hands budget back for a transaction we may have paid for.
+  const maybe: OzRelayOutcome = { success: false, error: 'TIMEOUT', code: null, data: { hash: 'd'.repeat(64) } }
+  const kept = relayFeeSettlement(maybe, 1_100_000n)
+  assert.equal(kept.basis, 'reserved')
+  assert.equal(kept.refundStroops, 0n)
+  assert.match(kept.note, /may have reached the network/)
+})
+
+test('settling a reserve into a window that has already rolled credits nothing', () => {
+  const b = createRelayBudget(smallLimits())
+  const t0 = 3_000_000
+  const r = b.reserve(t0)
+  assert.equal(r.ok, true)
+  if (!r.ok) return
+  // A relayer round trip can outlive the window it started in. Refunding then would credit
+  // a day that never paid, and the next day would quietly start with free budget.
+  const later = t0 + 86_400_001
+  b.settle({ windowResetAt: r.windowResetAt, refundStroops: r.reservedStroops, measured: false }, later)
+  assert.equal(b.snapshot(later).fee.reservedStroops, '0', 'the new window starts empty either way')
+  const fresh = b.reserve(later)
+  assert.equal(fresh.ok, true)
+  b.settle({ windowResetAt: (fresh as { windowResetAt: number }).windowResetAt, refundStroops: 1_100_000n, measured: true }, later)
+  const snap = b.snapshot(later)
+  assert.equal(snap.fee.reservedStroops, '0', 'a refund inside its own window is credited')
+  assert.equal(snap.fee.feesReported, 1)
+  assert.equal(snap.fee.basis, 'measured')
+})
+
+test('a snapshot reads the budget without opening a window of its own', () => {
+  const b = createRelayBudget(smallLimits())
+  const idle = b.snapshot(4_000_000)
+  assert.equal(idle.global.used, 0)
+  assert.equal(idle.global.resetAt, null, 'a GET must not start the minute')
+  assert.equal(idle.fee.resetAt, null)
+  assert.equal(idle.fee.basis, 'nothing-forwarded')
+  assert.equal(b.admit(4_000_000).ok, true, 'and the first real request still gets its full window')
+})
+
 // ── the status view ──────────────────────────────────────────────────────────────
 
 test('the status view names the key variable, says whether it is set, and carries no secret', () => {
@@ -530,6 +709,7 @@ test('the status view names the key variable, says whether it is set, and carrie
     relayerUrl: 'https://relayer.example/testnet/',
     operator: null,
     explorerFor: (a) => `https://example/contract/${a}`,
+    relayLimits: createRelayBudget().snapshot(),
   })
   const text = JSON.stringify(view)
   assert.equal((view.relayer as Record<string, unknown>).keyVar, 'X402_STELLAR_TESTNET_OZ_KEY')
@@ -552,11 +732,44 @@ test('the passkey vault is published as a smart-account-owned row, with its expl
     relayerUrl: 'https://relayer.example/testnet/',
     operator: accountId(),
     explorerFor: (a) => `https://example/contract/${a}`,
+    relayLimits: createRelayBudget().snapshot(),
   })
   const vault = view.passkeyVault as Record<string, unknown>
   assert.equal(vault.contract, testnet.contracts.passkeyVault)
   assert.equal(vault.ownerKind, 'smart-account')
   assert.match(String(vault.explorerUrl), new RegExp(String(testnet.contracts.passkeyVault)))
+})
+
+test('the status view publishes both relay limits, and calls the fee figure a reserve', () => {
+  const b = createRelayBudget()
+  const at = 5_000_000
+  b.admit(at)
+  const r = b.reserve(at)
+  const view = passkeyStatusView(testnet, {
+    keyVar: 'X402_STELLAR_TESTNET_OZ_KEY',
+    keyConfigured: true,
+    relayerUrl: 'https://relayer.example/testnet/',
+    operator: accountId(),
+    explorerFor: (a) => `https://example/contract/${a}`,
+    relayLimits: b.snapshot(at),
+  })
+  const limits = view.limits as Record<string, Record<string, unknown>>
+  // Per IP, and it names where it is applied rather than leaving a reader to find out.
+  assert.equal(limits.perIp.max, 10)
+  assert.match(String(limits.perIp.enforcedIn), /rate-budget\.ts/)
+  // Global, with what is left of the current minute.
+  assert.equal(limits.global.max, 100)
+  assert.equal(limits.global.used, 1)
+  // The fee budget, as a count of broadcasts rather than as XLM we claim to have spent.
+  assert.equal(limits.fee.ceilingStroops, '1100000')
+  assert.equal(limits.fee.dailyStroops, '110000000')
+  assert.equal(limits.fee.relaysForwarded, 1)
+  assert.equal(limits.fee.relaysLeft, 99)
+  assert.equal(limits.fee.basis, 'reserved')
+  assert.match(String(limits.fee.note), /Reserved, not measured/)
+  assert.ok(r.ok)
+  // Nothing in a published limit may be a bigint: it would throw on the way out.
+  assert.doesNotThrow(() => JSON.stringify(view))
 })
 
 test('an owner kind is read off the StrKey prefix and is never guessed from a label', () => {

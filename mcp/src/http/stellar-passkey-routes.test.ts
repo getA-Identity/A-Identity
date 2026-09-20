@@ -6,6 +6,7 @@ import { Address, Keypair, Operation, StrKey, nativeToScVal, xdr } from '@stella
 import { CHAINS } from '../chains/index.js'
 import type { CallOutcome, VaultState } from '../chains/stellar/adapter.js'
 import { __resetPlatformStateForTests } from '../platform.js'
+import { createRelayBudget, type PasskeyRelayLimits } from '../stellar-passkey.js'
 import { handleStellarPasskeyRoutes, type PasskeyAdapter, type PasskeyRouteDeps } from './stellar-passkey-routes.js'
 import type { RouteCtx } from './shared.js'
 
@@ -415,6 +416,176 @@ test('a relayer that cannot be reached is a 502 that says so, never a silent suc
   assert.equal(r.status, 502)
   assert.equal(r.body.code, 'relayer_unreachable')
   assert.equal(r.body.success, false)
+})
+
+// ── what the relay may spend, across everyone ─────────────────────────────
+
+/**
+ * The two bounds that exist because this relay spends a credential of ours rather than the
+ * caller's own gas, tested at the boundary where the ORDER is the property: the global rate
+ * limit has to refuse before the body is read, and the fee reserve has to refuse after the
+ * request has been judged relayable but before our key leaves the process. The arithmetic
+ * itself is tested in ../stellar-passkey.test.ts, where it is pure.
+ */
+
+const tinyLimits: PasskeyRelayLimits = {
+  perIp: { bucket: 'passkey-relay', max: 10, windowMs: 60_000 },
+  global: { max: 1, windowMs: 60_000 },
+  fee: { ceilingStroops: 1_100_000n, dailyStroops: 1_100_000n, windowMs: 86_400_000 },
+}
+
+test('REFUSAL: the global rate limit stops the second caller before the body is even read', async () => {
+  const { deps, spy } = stubs()
+  const withBudget: PasskeyRouteDeps = { ...deps, relayBudget: createRelayBudget(tinyLimits) }
+  const func = executeFunc(contractId(), contractId(), 'set_policy')
+  const body = relayBody(func, [authEntry(func, contractId())])
+  // The first is refused later, on its own merits; what matters is that it was admitted.
+  const first = await call('POST', '/api/stellar/passkey/relay', body, withBudget)
+  assert.notEqual(first.status, 429, 'the first request in a window must not be rate limited')
+  // The second is refused by the limit, and a body it would otherwise have rejected as
+  // garbage proves the refusal happened before the body was looked at.
+  const second = await call('POST', '/api/stellar/passkey/relay', { nonsense: true }, withBudget)
+  assert.equal(second.status, 429)
+  assert.equal(second.body.code, 'relay_global_rate_limit')
+  assert.equal(second.body.success, false)
+  assert.equal(second.body.retryAfterSeconds, 60)
+  assert.match(String(second.body.reason), /ALL callers/)
+  assert.deepEqual(spy.fetches, [], 'a rate limited request must never reach the relayer')
+  assert.deepEqual(spy.reads, [], 'and must never cost a ledger read')
+})
+
+test('REFUSAL: the day\'s fee reserve stops the next forward, after the key check and before the key is used', async () => {
+  const smartAccount = contractId()
+  const vault = contractId()
+  const { deps, spy, signer } = stubs()
+  let posts = 0
+  const withKey: PasskeyRouteDeps = {
+    ...deps,
+    env: { X402_STELLAR_TESTNET_OZ_KEY: 'test-key-value' },
+    relayBudget: createRelayBudget({ ...tinyLimits, global: { max: 50, windowMs: 60_000 } }),
+    adapter: () => ({
+      ...(deps.adapter!(testnet) as PasskeyAdapter),
+      readVault: async (v: string) => {
+        spy.reads.push(v)
+        return vaultState({ owner: smartAccount, operator: signer })
+      },
+    }),
+    fetch: (async () => {
+      posts += 1
+      return { status: 200, json: async () => ({ success: true, data: { transactionId: 'tx-1', status: 'submitted', hash: 'e1'.repeat(32) } }) }
+    }) as unknown as typeof fetch,
+  }
+  const send = () => {
+    const func = executeFunc(smartAccount, vault, 'set_policy')
+    return call('POST', '/api/stellar/passkey/relay', relayBody(func, [authEntry(func, smartAccount)]), withKey)
+  }
+
+  const first = await send()
+  assert.equal(first.status, 200)
+  assert.equal(posts, 1)
+  // Channels named no fee, so the whole ceiling stands against the day and says so.
+  const fee = first.body.fee as Record<string, unknown>
+  assert.equal(fee.reservedStroops, '1100000')
+  assert.equal(fee.chargedStroops, null, 'a fee we were not told is null, never 0')
+  assert.equal(fee.basis, 'reserved')
+
+  const second = await send()
+  assert.equal(second.status, 429)
+  assert.equal(second.body.code, 'relay_fee_budget_exhausted')
+  assert.equal(posts, 1, 'the relayer key must not be used once the day is committed')
+  assert.match(String(second.body.reason), /relayer key was not used/)
+  // The refusal publishes the same numbers the status endpoint does, so a caller reading a
+  // 429 can see what it is up against.
+  assert.equal((second.body.limits as Record<string, unknown>).relaysLeft, 0)
+})
+
+test('a relayer refusal that names no transaction hands its reserve back to the day', async () => {
+  const smartAccount = contractId()
+  const { deps, spy, signer } = stubs()
+  const budget = createRelayBudget({ ...tinyLimits, global: { max: 50, windowMs: 60_000 }, fee: { ceilingStroops: 1_100_000n, dailyStroops: 2_200_000n, windowMs: 86_400_000 } })
+  const withKey: PasskeyRouteDeps = {
+    ...deps,
+    env: { X402_STELLAR_TESTNET_OZ_KEY: 'test-key-value' },
+    relayBudget: budget,
+    adapter: () => ({
+      ...(deps.adapter!(testnet) as PasskeyAdapter),
+      readVault: async (v: string) => {
+        spy.reads.push(v)
+        return vaultState({ owner: smartAccount, operator: signer })
+      },
+    }),
+    fetch: (async () => ({ status: 400, json: async () => ({ success: false, error: 'SIMULATION_FAILED' }) })) as unknown as typeof fetch,
+  }
+  const func = executeFunc(smartAccount, contractId(), 'set_allowed')
+  const r = await call('POST', '/api/stellar/passkey/relay', relayBody(func, [authEntry(func, smartAccount)]), withKey)
+  assert.equal(r.status, 400)
+  assert.equal((r.body.fee as Record<string, unknown>).basis, 'not-broadcast')
+  // Nothing was broadcast, so nothing was paid, so the day is whole again. Otherwise a
+  // caller sending shape-valid payloads Channels rejects could burn the demo for free.
+  assert.equal(budget.snapshot().fee.relaysLeft, 2)
+  assert.equal(budget.snapshot().fee.reservedStroops, '0')
+})
+
+test('a relayer that never answers keeps its reserve, because we cannot know what it cost', async () => {
+  const smartAccount = contractId()
+  const { deps, spy, signer } = stubs()
+  const budget = createRelayBudget({ ...tinyLimits, global: { max: 50, windowMs: 60_000 }, fee: { ceilingStroops: 1_100_000n, dailyStroops: 2_200_000n, windowMs: 86_400_000 } })
+  const withKey: PasskeyRouteDeps = {
+    ...deps,
+    env: { X402_STELLAR_TESTNET_OZ_KEY: 'test-key-value' },
+    relayBudget: budget,
+    adapter: () => ({
+      ...(deps.adapter!(testnet) as PasskeyAdapter),
+      readVault: async (v: string) => {
+        spy.reads.push(v)
+        return vaultState({ owner: smartAccount, operator: signer })
+      },
+    }),
+    fetch: (async () => {
+      throw new Error('getaddrinfo ENOTFOUND')
+    }) as unknown as typeof fetch,
+  }
+  const func = executeFunc(smartAccount, contractId(), 'set_frozen')
+  const r = await call('POST', '/api/stellar/passkey/relay', relayBody(func, [authEntry(func, smartAccount)]), withKey)
+  assert.equal(r.status, 502)
+  assert.equal(r.body.code, 'relayer_unreachable')
+  assert.equal((r.body.fee as Record<string, unknown>).basis, 'reserved')
+  assert.equal(budget.snapshot().fee.relaysLeft, 1, 'an unknown outcome is charged, not forgiven')
+})
+
+test('a request that never reaches the relayer never charges the day', async () => {
+  // The order the relay is built around: a payload this gate refuses must not cost a fee
+  // reserve, a ledger read, or a use of our key. The reserve is the last thing charged.
+  const { deps, spy } = stubs()
+  const budget = createRelayBudget(tinyLimits)
+  const withBudget: PasskeyRouteDeps = { ...deps, env: { X402_STELLAR_TESTNET_OZ_KEY: 'test-key-value' }, relayBudget: budget }
+  const func = invokeFunc(contractId(), 'transfer')
+  const r = await call('POST', '/api/stellar/passkey/relay', relayBody(func, [authEntry(func, contractId())]), withBudget)
+  assert.equal(r.status, 400, 'transfer is not an owner entrypoint')
+  assert.deepEqual(spy.fetches, [])
+  assert.equal(budget.snapshot().fee.relaysForwarded, 0, 'a refused request reserves nothing')
+  assert.equal(budget.snapshot().fee.relaysLeft, 1)
+  // But it did use its place in the global window, which is what a rate limit is for.
+  assert.equal(budget.snapshot().global.used, 1)
+})
+
+// ── the status endpoint publishes them ─────────────────────────────────
+
+test('status publishes the global limit and the fee reserve, live from the budget being charged', async () => {
+  const { deps } = stubs()
+  const budget = createRelayBudget()
+  const r = await call('GET', '/api/stellar/passkey/status', undefined, { ...deps, relayBudget: budget })
+  assert.equal(r.status, 200)
+  const limits = r.body.limits as Record<string, Record<string, unknown>>
+  assert.equal(limits.perIp.max, 10)
+  assert.equal(limits.global.max, 100)
+  assert.equal(limits.fee.ceilingStroops, '1100000')
+  assert.equal(limits.fee.relaysLeft, 100)
+  assert.equal(limits.fee.basis, 'nothing-forwarded')
+  assert.match(String(limits.fee.note), /Reserved, not measured/)
+  // Reading the status must not consume any of what it reports.
+  assert.equal(limits.global.used, 0)
+  assert.equal(budget.snapshot().fee.relaysForwarded, 0)
 })
 
 // ── the deploy ───────────────────────────────────────────────────────────────────

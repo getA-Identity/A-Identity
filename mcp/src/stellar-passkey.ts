@@ -21,7 +21,9 @@
  *  - which host functions may be relayed (exactly three shapes, listed, never a pattern),
  *  - which authorization entries may ride along (the ones FOR that function, by byte equality),
  *  - how a KYA decision maps onto a binary on-chain allowlist,
- *  - and the caps on what the operator key may be made to spend.
+ *  - the caps on what the operator key may be made to spend,
+ *  - and what the relay may spend across everyone: a global rate limit and a 24 hour
+ *    reserve against the relayer fee, both published by the status endpoint.
  *
  * `mcp/src/http/stellar-passkey-routes.ts` is the thin half: it reads the body, calls these,
  * calls the adapter, forwards to the relayer, and picks a status code.
@@ -347,6 +349,288 @@ export function ozRelayOutcome(httpStatus: number, json: unknown): OzRelayOutcom
   return { success: false, error: message, code, data }
 }
 
+// ── what the relay may spend, across everyone ────────────────────────────────────
+
+/**
+ * The ceilings the relay endpoint enforces on ALL callers at once, and the honest account
+ * of where each one can be enforced.
+ *
+ * Measured against SDF's own reference relayer proxy for this same smart-account kit
+ * (relayer-proxy/wrangler.toml in the smart-account-kit repo, deployed at
+ * smart-account-relayer-proxy.sdf-ecosystem.workers.dev), which sets four numbers: 10
+ * requests per IP per minute, 100 requests per minute across everyone, a maximum resource
+ * fee of 1,000,000 stroops and a maximum total fee of 1,100,000. The first we already had
+ * as the `passkey-relay` bucket in rate-budget.ts, and a test pins the two together so the
+ * number published here cannot drift from the number http.ts applies. Of the other three,
+ * the global rate limit is enforced here as SDF enforces it, the max total fee becomes the
+ * amount we RESERVE per forwarded request, and the max RESOURCE fee is not enforced at all,
+ * because it is a component of a fee we never compute. Saying that is the point of the next
+ * three paragraphs.
+ *
+ * The fee ceiling is the one that needs a plain word, because SDF can enforce it in a way
+ * we cannot. SDF's proxy BUILDS the envelope, so it reads the fee its own simulation
+ * produced and refuses before sending. On the kit's `{ func, auth }` carrier we build
+ * nothing: we hand two base64 strings to Channels, and Channels simulates, prices, signs
+ * and broadcasts under its own channel account. The fee does not exist at the moment we
+ * decide, and the answer Channels sends back is a submission acknowledgement
+ * (`transactionId`, `status`, `hash`) with no fee anywhere in it. There is no pre-check to
+ * make here, so this module does not pretend to one.
+ *
+ * What it does instead is RESERVE. Every forwarded request charges the ceiling against a
+ * rolling 24 hour budget BEFORE it goes out, and the reserve is settled afterwards against
+ * whatever turns out to be knowable:
+ *
+ *   relayer reported a fee    the reserve is replaced by that number (basis: measured)
+ *   it reported none          the full reserve stands (basis: reserved)
+ *   it refused, named no tx   nothing was broadcast, so the reserve is handed back
+ *   it never answered         we cannot know, so the reserve stands
+ *
+ * Reserving the ceiling rather than the charge stops us slightly early, which is the same
+ * direction x402-stellar/settle.ts argues for when it budgets the BID and not the charge: a
+ * guard that spends money should err toward stopping. So the quantity actually bounded is
+ * the COUNT of fee-sponsored broadcasts per day, and the status endpoint publishes it as
+ * exactly that rather than as a measurement of XLM we spent.
+ */
+export type PasskeyRelayLimits = {
+  /** Enforced in rate-budget.ts and applied per client IP by http.ts. Published here, not applied here. */
+  perIp: { bucket: string; max: number; windowMs: number }
+  /** Enforced here, across every caller at once: a per-IP budget times N addresses is not a budget. */
+  global: { max: number; windowMs: number }
+  /** ceilingStroops is reserved per forwarded request; dailyStroops is the rolling window it comes out of. */
+  fee: { ceilingStroops: bigint; dailyStroops: bigint; windowMs: number }
+}
+
+export const PASSKEY_RELAY_LIMITS: PasskeyRelayLimits = {
+  perIp: { bucket: 'passkey-relay', max: 10, windowMs: 60_000 },
+  global: { max: 100, windowMs: 60_000 },
+  // 1,100,000 is SDF's max TOTAL fee for the same relayer, to the stroop. 110,000,000 is
+  // exactly 100 of those, so the budget reads as "100 fee-sponsored broadcasts a day" and
+  // the status endpoint can say that number rather than leaving a reader to divide.
+  fee: { ceilingStroops: 1_100_000n, dailyStroops: 110_000_000n, windowMs: 86_400_000 },
+}
+
+export type RelayBudgetRefusal = {
+  ok: false
+  status: 429
+  code: 'relay_global_rate_limit' | 'relay_fee_budget_exhausted'
+  reason: string
+  retryAfterSeconds: number
+}
+export type RelayAdmission = { ok: true; used: number; max: number; resetAt: number } | RelayBudgetRefusal
+export type RelayReservation = { ok: true; reservedStroops: bigint; windowResetAt: number } | RelayBudgetRefusal
+
+/** What a settled reserve did to the day, handed back to the ledger by the route. */
+export type RelaySettlement = {
+  refundStroops: bigint
+  /** The fee the relayer named, 0 when it refused before broadcasting, null when unknown. */
+  feeStroops: bigint | null
+  basis: 'measured' | 'reserved' | 'not-broadcast'
+  note: string
+}
+
+export type RelayBudgetSnapshot = {
+  perIp: { bucket: string; max: number; windowMs: number; enforcedIn: string }
+  global: { max: number; windowMs: number; used: number; resetAt: string | null; enforcedIn: string }
+  fee: {
+    ceilingStroops: string
+    dailyStroops: string
+    reservedStroops: string
+    remainingStroops: string
+    relaysLeft: number
+    relaysForwarded: number
+    feesReported: number
+    windowMs: number
+    resetAt: string | null
+    basis: 'measured' | 'mixed' | 'reserved' | 'nothing-forwarded'
+    enforcedIn: string
+    note: string
+  }
+}
+
+export type RelayBudget = {
+  /** The global rate limit, charged at the door, before anything is decoded. */
+  admit(now?: number): RelayAdmission
+  /** The day's fee reserve, charged in the last step before our key is used. */
+  reserve(now?: number): RelayReservation
+  /** Give back what was not spent, once the relayer has said what it did. */
+  settle(input: { windowResetAt: number; refundStroops: bigint; measured: boolean }, now?: number): void
+  /** What the status endpoint publishes. Reads; never opens a window. */
+  snapshot(now?: number): RelayBudgetSnapshot
+}
+
+const PER_IP_WHERE = 'mcp/src/rate-budget.ts (bucket passkey-relay), applied per client IP by mcp/src/http.ts'
+const GLOBAL_WHERE = 'mcp/src/http/stellar-passkey-routes.ts, charged before the body is read'
+const FEE_WHERE = 'mcp/src/http/stellar-passkey-routes.ts, charged in the step before the relayer key is used'
+
+/**
+ * A relay budget with its own counters, so a test can hold one and the server can hold one.
+ *
+ * Process local, like every other limiter here and for the same reason: a horizontally
+ * scaled deploy moves all of them to a shared store together. Stated rather than implied,
+ * because on two Render instances this bounds 100 a minute each and not 100 between them.
+ */
+export function createRelayBudget(limits: PasskeyRelayLimits = PASSKEY_RELAY_LIMITS): RelayBudget {
+  let win = { used: 0, resetAt: 0 }
+  let day = { reserved: 0n, forwarded: 0, reported: 0, resetAt: 0 }
+  const rollWindow = (now: number) => {
+    if (win.resetAt <= now) win = { used: 0, resetAt: now + limits.global.windowMs }
+  }
+  const rollDay = (now: number) => {
+    if (day.resetAt <= now) day = { reserved: 0n, forwarded: 0, reported: 0, resetAt: now + limits.fee.windowMs }
+  }
+  const secondsTo = (at: number, now: number) => Math.max(1, Math.ceil((at - now) / 1000))
+
+  return {
+    admit(now = Date.now()) {
+      rollWindow(now)
+      if (win.used >= limits.global.max) {
+        const retryAfterSeconds = secondsTo(win.resetAt, now)
+        return {
+          ok: false,
+          status: 429,
+          code: 'relay_global_rate_limit',
+          retryAfterSeconds,
+          reason:
+            `this relay forwards at most ${limits.global.max} requests per ${limits.global.windowMs / 1000} s across ALL callers, ` +
+            `and that window is used up. The per-IP budget bounds one address; this one bounds everyone together, because a ` +
+            `credential we hold pays for whatever goes through. Nothing was decoded and nothing was forwarded. Retry in ${retryAfterSeconds} s.`,
+        }
+      }
+      win.used += 1
+      return { ok: true, used: win.used, max: limits.global.max, resetAt: win.resetAt }
+    },
+
+    reserve(now = Date.now()) {
+      rollDay(now)
+      const reservedStroops = limits.fee.ceilingStroops
+      if (day.reserved + reservedStroops > limits.fee.dailyStroops) {
+        const retryAfterSeconds = secondsTo(day.resetAt, now)
+        return {
+          ok: false,
+          status: 429,
+          code: 'relay_fee_budget_exhausted',
+          retryAfterSeconds,
+          reason:
+            `this relay reserves ${reservedStroops} stroops of relayer fee for every request it forwards, and the 24 hour budget of ` +
+            `${limits.fee.dailyStroops} stroops is committed (${day.reserved} reserved across ${day.forwarded} forwarded requests). ` +
+            'Nothing was forwarded and the relayer key was not used. The reserve is a ceiling and not a measurement: Channels prices ' +
+            'the transaction after we hand it over, so the number bounded here is how many broadcasts we will pay for, not how much XLM they cost.',
+        }
+      }
+      day.reserved += reservedStroops
+      day.forwarded += 1
+      return { ok: true, reservedStroops, windowResetAt: day.resetAt }
+    },
+
+    settle(input, now = Date.now()) {
+      rollDay(now)
+      // The window rolled out from under this request, so its reserve went with it and
+      // refunding now would credit a day that never paid.
+      if (day.resetAt !== input.windowResetAt) return
+      if (input.measured) day.reported += 1
+      if (input.refundStroops > 0n) day.reserved = day.reserved > input.refundStroops ? day.reserved - input.refundStroops : 0n
+    },
+
+    snapshot(now = Date.now()) {
+      const g = win.resetAt > now ? win : { used: 0, resetAt: 0 }
+      const d = day.resetAt > now ? day : { reserved: 0n, forwarded: 0, reported: 0, resetAt: 0 }
+      const remaining = limits.fee.dailyStroops > d.reserved ? limits.fee.dailyStroops - d.reserved : 0n
+      const basis: RelayBudgetSnapshot['fee']['basis'] =
+        d.forwarded === 0 ? 'nothing-forwarded' : d.reported === 0 ? 'reserved' : d.reported === d.forwarded ? 'measured' : 'mixed'
+      return {
+        perIp: { ...limits.perIp, enforcedIn: PER_IP_WHERE },
+        global: { max: limits.global.max, windowMs: limits.global.windowMs, used: g.used, resetAt: g.resetAt ? new Date(g.resetAt).toISOString() : null, enforcedIn: GLOBAL_WHERE },
+        fee: {
+          ceilingStroops: limits.fee.ceilingStroops.toString(),
+          dailyStroops: limits.fee.dailyStroops.toString(),
+          reservedStroops: d.reserved.toString(),
+          remainingStroops: remaining.toString(),
+          relaysLeft: Number(remaining / limits.fee.ceilingStroops),
+          relaysForwarded: d.forwarded,
+          feesReported: d.reported,
+          windowMs: limits.fee.windowMs,
+          resetAt: d.resetAt ? new Date(d.resetAt).toISOString() : null,
+          basis,
+          enforcedIn: FEE_WHERE,
+          note:
+            'Reserved, not measured. We do not build the envelope on the { func, auth } carrier, so Channels prices the ' +
+            'transaction after we hand it over and its answer names no fee; each forwarded request therefore commits the ' +
+            'ceiling and the reserve is only replaced by a real number if the relayer ever reports one. What this bounds is how ' +
+            'many broadcasts our relayer key will pay for in 24 hours.',
+        },
+      }
+    },
+  }
+}
+
+/** The one the server uses. A test makes its own so no two tests share a window. */
+export const relayBudget = createRelayBudget()
+
+/**
+ * A fee in the relayer's answer, if there is one.
+ *
+ * Channels has not been observed to report a fee on any answer we have seen; these are the
+ * names its payload would have to use for a reserve to settle against a real number, so the
+ * day stays on basis `reserved` until one appears rather than on a guess dressed as a
+ * measurement. A bid field (maxFee) is deliberately not read: it would be a ceiling
+ * reported as a charge, and we already have a ceiling.
+ */
+const FEE_FIELDS = ['feeCharged', 'fee_charged', 'feeStroops', 'fee_stroops', 'fee']
+
+export function relayFeeReported(data: unknown): bigint | null {
+  const d = asObject(data)
+  if (!d) return null
+  for (const k of FEE_FIELDS) {
+    const v = d[k]
+    if (typeof v === 'number' && Number.isInteger(v) && v >= 0) return BigInt(v)
+    if (typeof v === 'string' && /^\d+$/.test(v.trim())) return BigInt(v.trim())
+  }
+  return null
+}
+
+/**
+ * What the day owes back once the relayer has answered, and on what basis.
+ *
+ * The refusal case is the one worth reading twice. A refusal that names a transaction may
+ * still have reached the network, so the reserve stands; a refusal that names none did not,
+ * so the reserve is handed back in full. Erring the other way would let a caller sending
+ * shape-valid payloads that Channels rejects burn the day's budget for free.
+ */
+export function relayFeeSettlement(outcome: OzRelayOutcome, reservedStroops: bigint): RelaySettlement {
+  if (outcome.success) {
+    const fee = relayFeeReported(outcome.data)
+    if (fee === null) {
+      return {
+        refundStroops: 0n,
+        feeStroops: null,
+        basis: 'reserved',
+        note: `the relayer acknowledged the submission without naming a fee, so the full reserve of ${reservedStroops} stroops stands; this is a reserve, not a measurement`,
+      }
+    }
+    return {
+      refundStroops: fee >= reservedStroops ? 0n : reservedStroops - fee,
+      feeStroops: fee,
+      basis: 'measured',
+      note: `the relayer reported ${fee} stroops, so the reserve of ${reservedStroops} was settled against it`,
+    }
+  }
+  const hash = str(asObject(outcome.data)?.hash)
+  if (hash) {
+    return {
+      refundStroops: 0n,
+      feeStroops: null,
+      basis: 'reserved',
+      note: `the relayer refused but named transaction ${hash}, which may have reached the network, so the reserve stands rather than being handed back on a guess`,
+    }
+  }
+  return {
+    refundStroops: reservedStroops,
+    feeStroops: 0n,
+    basis: 'not-broadcast',
+    note: 'the relayer refused without naming a transaction, so nothing was broadcast and nothing was paid; the reserve was handed back',
+  }
+}
+
 // ── the deploy and the agent payment: bodies and caps ────────────────────────────
 
 const finite = (v: unknown): v is number => typeof v === 'number' && Number.isFinite(v)
@@ -499,7 +783,16 @@ export const UNBOUND_PAYEE_REASONS = [
 
 export function passkeyStatusView(
   chain: ChainDescriptor,
-  cfg: { keyVar: string; keyConfigured: boolean; relayerUrl: string; operator: string | null; explorerFor: (address: string) => string },
+  cfg: {
+    keyVar: string
+    keyConfigured: boolean
+    relayerUrl: string
+    operator: string | null
+    explorerFor: (address: string) => string
+    /** Live, from the budget the relay endpoint actually charges. Required, so the numbers
+     *  cannot be published from a copy that has drifted from the one being enforced. */
+    relayLimits: RelayBudgetSnapshot
+  },
 ): Record<string, unknown> {
   const sa = chain.contracts.smartAccount
   return {
@@ -531,6 +824,11 @@ export function passkeyStatusView(
       role: 'the vault operator that signs pay(), and the source of every vault deployed here',
     },
     caps: { ...PASSKEY_CAPS },
+    // Published for the same reason the caps are: nothing sits in front of this endpoint
+    // except these numbers, so a reader who cannot see them cannot check them. The fee
+    // block says reserved rather than spent on purpose; its own note explains why we
+    // cannot say spent.
+    limits: cfg.relayLimits,
     endpoints: {
       status: 'GET /api/stellar/passkey/status',
       relay: 'POST /api/stellar/passkey/relay  { func, auth[] } | { xdr }',

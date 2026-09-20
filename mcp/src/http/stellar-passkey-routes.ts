@@ -12,6 +12,13 @@
  * in for the gate is that everything here is testnet only, rate-budgeted and fail-closed, and
  * that the two endpoints which spend the operator key do so under caps a test pins.
  *
+ * The relay has two more bounds that http.ts cannot give it, because http.ts budgets per IP
+ * and the thing at risk here is one credential of ours shared by everyone: a GLOBAL rate
+ * limit charged at the door, and a 24 hour reserve against the relayer fee charged in the
+ * last step before the key is used. Both live in ../stellar-passkey.ts with the argument for
+ * why the fee can only be reserved and not pre-checked, and both are published by
+ * GET /api/stellar/passkey/status rather than kept private.
+ *
  * Nothing here logs a request body. An authorization entry carries the passkey's signature and
  * its clientDataJSON, which are the person's credential material as far as a log is concerned.
  */
@@ -36,9 +43,12 @@ import {
   passkeyChain,
   passkeyDeployPlan,
   passkeyStatusView,
+  relayBudget as sharedRelayBudget,
   relayDecision,
+  relayFeeSettlement,
   relayParams,
   relayPreflight,
+  type RelayBudget,
   type RiskDecisionName,
 } from '../stellar-passkey.js'
 import { readBody, sendJson, type RouteCtx } from './shared.js'
@@ -55,6 +65,9 @@ export type PasskeyRouteDeps = {
   riskCheck?: (agentId: string, tx: { payee?: string; amountUsd?: number } | null) => Promise<{ decision: RiskDecisionName; risk: string; reasons: string[]; signals: unknown }>
   agents?: () => { id: string; name: string; owner?: string }[]
   linkedSubjects?: (address: string) => string[]
+  /** The global rate limit and the 24 hour fee reserve. A test hands in its own so no two
+   *  tests share a window; production always uses the one process-wide ledger. */
+  relayBudget?: RelayBudget
 }
 
 /** How long we wait for the relayer. Testnet retries inside Channels can take minutes. */
@@ -76,6 +89,7 @@ export async function handleStellarPasskeyRoutes(ctx: RouteCtx, deps: PasskeyRou
   const risk = deps.riskCheck ?? ((agentId: string, tx: { payee?: string; amountUsd?: number } | null) => liveRiskCheck(agentId, tx))
   const agents = deps.agents ?? (() => listPlatformAgents().map((a) => ({ id: a.id, name: a.name, owner: a.owner })))
   const linkedSubjects = deps.linkedSubjects ?? subjectsLinkedToWallet
+  const budget = deps.relayBudget ?? sharedRelayBudget
 
   const refuseChain = (gate: Extract<ReturnType<typeof passkeyChain>, { ok: false }>, keyed: 'ok' | 'success') => {
     sendJson(res, gate.status, {
@@ -103,6 +117,7 @@ export async function handleStellarPasskeyRoutes(ctx: RouteCtx, deps: PasskeyRou
         relayerUrl: ozRelayerUrl(chain, env),
         operator: signerOf(chain, env),
         explorerFor: (a) => addressUrl(chain, a),
+        relayLimits: budget.snapshot(),
       }),
     )
     return true
@@ -110,6 +125,17 @@ export async function handleStellarPasskeyRoutes(ctx: RouteCtx, deps: PasskeyRou
 
   // ── POST /api/stellar/passkey/relay - fee-sponsor an allowlisted request ───────
   if (req.method === 'POST' && url.pathname === '/api/stellar/passkey/relay') {
+    // The global rate limit, charged at the door and before the body is even read.
+    // http.ts already bounds this path per IP, which bounds one address; this bounds
+    // everyone together, which is the unit that matters when the thing being spent is a
+    // credential of ours rather than a caller's own gas. SDF's reference proxy for this
+    // same kit sets both numbers and we had only the first.
+    const admitted = budget.admit()
+    if (!admitted.ok) {
+      res.setHeader('Retry-After', String(admitted.retryAfterSeconds))
+      sendJson(res, admitted.status, { success: false, code: admitted.code, error: admitted.reason, reason: admitted.reason, retryAfterSeconds: admitted.retryAfterSeconds })
+      return true
+    }
     const body = await readBody(req).catch(() => null)
     const parsed = relayParams(body)
     if (!parsed.ok) {
@@ -165,6 +191,27 @@ export async function handleStellarPasskeyRoutes(ctx: RouteCtx, deps: PasskeyRou
       return true
     }
 
+    // The fee reserve, charged in the last step before our key is used and never before it,
+    // so a request that was going to be answered `prepared` never costs the day anything.
+    // It is a RESERVE: we do not build the envelope on the { func, auth } carrier, so
+    // Channels prices the transaction after we hand it over and there is no fee to check
+    // beforehand. See PASSKEY_RELAY_LIMITS for the whole argument.
+    const reserved = budget.reserve()
+    if (!reserved.ok) {
+      res.setHeader('Retry-After', String(reserved.retryAfterSeconds))
+      sendJson(res, reserved.status, {
+        success: false,
+        code: reserved.code,
+        error: reserved.reason,
+        reason: reserved.reason,
+        retryAfterSeconds: reserved.retryAfterSeconds,
+        rule: pre.rule,
+        vault: pre.vault,
+        limits: budget.snapshot().fee,
+      })
+      return true
+    }
+
     const controller = new AbortController()
     const timer = setTimeout(() => controller.abort(), RELAYER_TIMEOUT_MS)
     let httpStatus: number
@@ -185,6 +232,9 @@ export async function handleStellarPasskeyRoutes(ctx: RouteCtx, deps: PasskeyRou
     } catch (e) {
       clearTimeout(timer)
       const why = e instanceof Error && e.name === 'AbortError' ? `no answer within ${RELAYER_TIMEOUT_MS / 1000} s` : e instanceof Error ? e.message : String(e)
+      // The reserve is deliberately NOT handed back here. A request that timed out may
+      // have been simulated, priced and broadcast; we simply do not know, and the safe
+      // reading of "we do not know what we spent" is that we spent it.
       sendJson(res, 502, {
         success: false,
         code: 'relayer_unreachable',
@@ -193,12 +243,26 @@ export async function handleStellarPasskeyRoutes(ctx: RouteCtx, deps: PasskeyRou
         relayer: PASSKEY_RELEASE.relayerName,
         rule: pre.rule,
         vault: pre.vault,
+        fee: {
+          reservedStroops: reserved.reservedStroops.toString(),
+          basis: 'reserved',
+          note: 'the relayer never answered, so whether this cost anything is unknown and the reserve stands against the 24 hour budget rather than being handed back on a guess',
+        },
       })
       return true
     }
     clearTimeout(timer)
 
     const outcome = ozRelayOutcome(httpStatus, json)
+    // What the day owes back, decided over the relayer's answer and applied once.
+    const settled = relayFeeSettlement(outcome, reserved.reservedStroops)
+    budget.settle({ windowResetAt: reserved.windowResetAt, refundStroops: settled.refundStroops, measured: settled.basis === 'measured' })
+    const feeBlock = {
+      reservedStroops: reserved.reservedStroops.toString(),
+      chargedStroops: settled.feeStroops === null ? null : settled.feeStroops.toString(),
+      basis: settled.basis,
+      note: settled.note,
+    }
     if (outcome.success) {
       sendJson(res, 200, {
         success: true,
@@ -213,6 +277,7 @@ export async function handleStellarPasskeyRoutes(ctx: RouteCtx, deps: PasskeyRou
         rule: pre.rule,
         vault: pre.vault,
         summary: pre.summary,
+        fee: feeBlock,
         note: 'Accepted by the relayer, which pays the fee and broadcasts from its own channel account. A hash is a submission, not a receipt: read the transaction before recording anything as settled.',
       })
       return true
@@ -226,6 +291,7 @@ export async function handleStellarPasskeyRoutes(ctx: RouteCtx, deps: PasskeyRou
       network: chain.caip2,
       rule: pre.rule,
       vault: pre.vault,
+      fee: feeBlock,
     })
     return true
   }
