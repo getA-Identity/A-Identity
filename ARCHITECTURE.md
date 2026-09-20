@@ -44,7 +44,7 @@ flowchart LR
   end
   subgraph Enforcement
     P[Policy engine<br/>server pre-check]
-    V[On-chain policy vault<br/>AgentSpendPolicy - reverts on Arc]
+    V[On-chain policy vault<br/>AgentSpendPolicy - reverts on chain,<br/>Solidity on EVM and Soroban on Stellar]
     C[Circle Agent Wallet<br/>hosted screening]
   end
   subgraph Payment rails
@@ -61,7 +61,7 @@ flowchart LR
   P --> V
   P --> C
   P --> S & X & N & E
-  S -->|USDC on Arc| OUT[(Arc testnet)]
+  S -->|USDC on Arc| OUT[(Arc Mainnet and testnet)]
   V --> OUT
   E --> OUT
   X --> OUT
@@ -94,7 +94,7 @@ flowchart TD
   I[Agent asks to pay] --> S{1. Server policy engine<br/>cap, ceiling, allowlist, freeze}
   S -->|refuses| D1[DENY, nothing signed]
   S -->|allows| V{2. On-chain vault<br/>AgentSpendPolicy.pay}
-  V -->|reverts: DailyCapExceeded,<br/>PayeeNotAllowed, IsFrozen,<br/>SessionKeyExpired| D2[The chain refused.<br/>Cap given back, no txHash]
+  V -->|reverts: DailyCapExceeded,<br/>PayeeNotAllowed, SessionKeyExpired,<br/>and IsFrozen on EVM / Frozen on Soroban| D2[The chain refused.<br/>Cap given back, no txHash]
   V -->|no vault configured| C{3. Circle Agent Wallet<br/>sanctions, allow-block, freeze}
   C -->|screened out| D3[Wallet layer refused]
   V -->|passes| R[Receipt required]
@@ -277,13 +277,23 @@ flowchart LR
   PK[Passkey<br/>WebAuthn P-256] -->|signs the auth digest| SA
   subgraph Owner side
     SA[Smart account<br/>OpenZeppelin, a C... contract]
+    WV[WebAuthn verifier<br/>CC7EKIHQ..., third party]
+    SA -->|__check_auth hands it the<br/>P-256 signature| WV
+    WV -->|valid| SA
   end
-  KYA[risk_check verdict] -->|ALLOW: set_allowed true<br/>DENY: set_allowed false<br/>WARN: nothing on chain| SA
+  KYA[risk_check verdict] -->|allowlist/plan maps it:<br/>ALLOW set_allowed true<br/>DENY set_allowed false<br/>WARN nothing on chain| SA
+  subgraph Fee sponsorship and the gate in front of it
+    RL[Our relay<br/>POST /api/stellar/passkey/relay<br/>decodes the XDR, passes three shapes,<br/>refuses everything else]
+    CH[OpenZeppelin Channels<br/>sources and pays the tx]
+    RL -->|forwards with OUR key| CH
+  end
+  SA -.->|the kit posts func and auth| RL
+  CH -.->|broadcasts under a channel account| SA
   SA -->|execute, owner.require_auth satisfied<br/>because the invoker IS the owner| V
-  CH[OpenZeppelin Channels<br/>fee sponsor] -.->|sources and pays the tx| SA
   subgraph On the ledger
     V[AgentSpendPolicy<br/>cap, ceiling, allowlist, freeze]
   end
+  OPK[Our operator key] -->|deploys the vault and seeds it<br/>NOT sponsored by Channels| V
   OP[Agent, operator key] -->|pay payee, amount| V
   V -->|payee allowed, inside the limits| T[USDC SAC<br/>transfer settles]
   V -->|payee not allowed| E[Error Contract 3<br/>PayeeNotAllowed, nothing moves]
@@ -365,7 +375,7 @@ day it lands rather than the day someone remembers to add it.
   `/mcp` JSON-RPC for agents. Durable state via Postgres (`DATABASE_URL`), JSON-file fallback for dev.
 - **Auth** - wallet sign-in on any chain family the registry knows (EVM personal_sign, Stellar SEP-43 signMessage, an Algorand signed zero-value self-payment; mcp/src/wallet-proof.ts) + email magic link (Resend) are *verified*; a plain guest
   session is read-only. Agent ownership is bound to a verified identity.
-- **Tests / CI** - `node:test` unit suite: **1386 tests across 95 colocated `*.test.ts` files**
+- **Tests / CI** - `node:test` unit suite: **1404 tests across 95 colocated `*.test.ts` files**
   (as of Aug 2026; `npm test` in `mcp/`) + a full E2E (`mcp/e2e.mjs`) of about **67 checks** that
   adapts to signer presence: live reads always run, and the on-chain write checks (x402, ERC-8183
   escrow, Gateway, **Nanopayments settle**, **CCTP burn-and-mint**) activate with a funded

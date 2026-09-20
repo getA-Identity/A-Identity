@@ -24,8 +24,11 @@
 //!   no Soroban counterpart, and this is the note that explains why.
 //! * `InvalidPayee`. Paying the vault itself, or the token contract, moves nothing but
 //!   still consumes the day's budget. A compromised operator could burn the whole cap at
-//!   zero cost and deny the legitimate agent every day, forever. The EVM sibling still
-//!   lacks this gate; it is tracked as open item G-1 rather than fixed here.
+//!   zero cost and deny the legitimate agent every day, forever. This was finding G-1, and
+//!   it is now CLOSED on both chains: the Solidity sibling declares `InvalidPayee` and
+//!   reverts with it in `pay`, `ownerPay` and `withdraw`. The divergence this bullet used
+//!   to record is gone, and the bullet is kept because the reasoning is still why the gate
+//!   exists.
 //! * `MathOverflow`. Solidity 0.8 raises `Panic(0x11)` on overflow, which is not a named
 //!   error a client can branch on. `checked_add` plus a typed code is.
 //! * `OwnerIsOperator`, and this is the one that matters, because it is a security check

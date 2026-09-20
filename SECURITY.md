@@ -193,8 +193,9 @@ the first one is tracked as an open audit finding rather than a settled decision
   key is silent and unlimited.
 - **No external audit.** The Soroban contract has been through free tooling we can run and
   re-run, plus an adversarial review that found and fixed real defects. That is not an audit
-  and this project does not call it one. The EVM `AgentSpendPolicy` has not had the Soroban
-  port's payee-validity gate backported (audit finding G-1).
+  and this project does not call it one. Audit finding G-1, the payee-validity gate the EVM
+  `AgentSpendPolicy` was missing, has since been backported: the Solidity declares
+  `InvalidPayee` and reverts with it in `pay`, `ownerPay` and `withdraw`.
 
 ## Stellar operational posture
 

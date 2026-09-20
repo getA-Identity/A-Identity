@@ -107,7 +107,7 @@ Updated 2026-09-15.
 - merchant_check: commerce-grade counterparty verification for agentic checkouts
   (MCP tool + REST).
 - Structural hardening: the backend split into a layered platform/ + http/ module
-  system with the layer graph enforced by tests; 1386 unit tests + full E2E suite.
+  system with the layer graph enforced by tests; 1404 unit tests + full E2E suite.
 
 ## Now
 
@@ -118,10 +118,12 @@ Updated 2026-09-15.
   2026-08-28 and `/api/x402/algorand/status` reports the mainnet network named with the
   payTo opted in to the USDC ASA. On testnet the two Stellar roles still share one key,
   which is test money. [SECURITY.md](SECURITY.md) carries the detail.
-- **Backport the payee-validity gate to the EVM `AgentSpendPolicy`** (audit finding G-1,
-  still open). The Soroban and Algorand ports refuse a payee equal to the vault itself;
-  the Solidity original accepts it and burns the cap against a payment that goes nowhere.
-  Three implementations of one policy model are a strength only while they agree.
+- **Backport the payee-validity gate to the EVM `AgentSpendPolicy`** (audit finding G-1).
+  DONE. The Soroban and Algorand ports refused a payee equal to the vault itself while the
+  Solidity original accepted it and burned the cap against a payment that went nowhere; the
+  Solidity now declares `InvalidPayee` and reverts with it in `pay`, `ownerPay` and
+  `withdraw`. Three implementations of one policy model are a strength only while they
+  agree, and on this gate they now do.
 - **Ops hardening**: post-event secret rotation; the backend off the free tier for demo
   reliability; and the rate-limit buckets off process-local state, which is the one piece
   of runtime state Postgres did not absorb, so a horizontally scaled deploy would still
