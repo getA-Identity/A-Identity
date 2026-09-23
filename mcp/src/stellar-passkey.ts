@@ -38,8 +38,9 @@ export { ownerKindOf }
 /** What this release is, stated once so every endpoint says the same thing. */
 export const PASSKEY_RELEASE = {
   name: 'stellar-passkey-vault',
-  network: 'stellar:testnet',
-  testnetOnly: true,
+  /** The network a request gets when it names none. Testnet, deliberately: an unqualified
+   *  call must never be the one that spends real money. */
+  defaultNetwork: 'stellar:testnet',
   relayerProduct: 'OpenZeppelin Relayer (Channels)',
   relayerName: 'openzeppelin-channels',
 } as const
@@ -50,48 +51,107 @@ export const PASSKEY_RELEASE = {
  * These endpoints have no session in front of them, so the caps ARE the authorization. A
  * vault's daily cap bounds what the agent can move per day and its ceiling what one payment
  * may be; the seed is USDC that leaves our own account for good; agent-pay is one payment.
+ *
+ * WHY THIS IS PER NETWORK, and why there is no flat export any more. The same numbers on
+ * pubnet would be a public faucet on real USDC: 0.2 a visitor, unbounded visitors. The flat
+ * `PASSKEY_CAPS` was removed rather than kept beside a pubnet copy, because a call site that
+ * forgot to switch would have read the testnet numbers and spent mainnet money, and that is
+ * the one mistake here that cannot be undone. Every call site takes a chain now, so the
+ * compiler finds them all.
+ *
+ * On pubnet the seed is dust on purpose. Five of the six steps a visitor runs cost XLM fees
+ * only, which the relayer sponsors; the seed is the single leg that moves our USDC, so it
+ * is the single number that has to be small, and `seedDailyTotalUsd` bounds the sum of it
+ * across everyone rather than per visitor.
  */
-export const PASSKEY_CAPS = {
+export type PasskeyCaps = {
+  dailyCapUsd: number
+  autoApproveUsd: number
+  seedUsdDefault: number
+  seedUsdMax: number
+  agentPayMaxUsd: number
+  /** The sum of every seed this network may pay out in a UTC day, across all callers. */
+  seedDailyTotalUsd: number
+}
+
+const TESTNET_CAPS: PasskeyCaps = {
   dailyCapUsd: 10,
   autoApproveUsd: 2,
   seedUsdDefault: 0.2,
   seedUsdMax: 0.5,
   agentPayMaxUsd: 1,
-} as const
+  // Test money. The bound exists so the shape is identical on both networks and the pubnet
+  // path is not the only one whose budget code ever runs.
+  seedDailyTotalUsd: 20,
+}
+
+const PUBNET_CAPS: PasskeyCaps = {
+  dailyCapUsd: 0.05,
+  autoApproveUsd: 0.02,
+  seedUsdDefault: 0.01,
+  seedUsdMax: 0.02,
+  agentPayMaxUsd: 0.01,
+  // One dollar a day, so a hundred visitors can each see a real mainnet settlement and the
+  // hundred and first is told plainly that the day's budget is spent rather than served a
+  // failure that looks like a bug.
+  seedDailyTotalUsd: 1,
+}
+
+/** The caps for one network. Pubnet is the tight set; everything else is testnet's. */
+export function passkeyCaps(chain: ChainDescriptor): PasskeyCaps {
+  return chain.caip2 === 'stellar:pubnet' ? PUBNET_CAPS : TESTNET_CAPS
+}
+
+/** Published so the status endpoint can show both without a caller having to ask twice. */
+export const PASSKEY_CAPS_BY_NETWORK: Record<string, PasskeyCaps> = {
+  'stellar:testnet': TESTNET_CAPS,
+  'stellar:pubnet': PUBNET_CAPS,
+}
 
 // ── which network ────────────────────────────────────────────────────────────────
 
 export type PasskeyChainGate =
   | { ok: true; chain: ChainDescriptor }
-  | { ok: false; status: 400; code: 'bad_request' | 'testnet_only'; reason: string }
+  | { ok: false; status: 400; code: 'bad_request' | 'network_not_served'; reason: string }
 
 /**
- * The one network this release serves, resolved by registry id or CAIP-2, defaulting to
- * testnet when nothing is named. Pubnet is refused BY NAME rather than falling through: the
- * pubnet smart-account constants exist in the same OpenZeppelin release document and were
- * deliberately not recorded, and no pubnet vault has a smart-account owner.
+ * Which Stellar network a request runs on, by registry id or CAIP-2.
+ *
+ * A network is served when the registry records OpenZeppelin's smart-account constants for
+ * it, and not otherwise. That is the whole rule, and it is a fact about the registry rather
+ * than a list kept here, so a network becomes servable the day its constants are read off
+ * its own ledger and recorded, and never before.
+ *
+ * Naming nothing gets TESTNET, deliberately. Pubnet moves real USDC, so reaching it has to
+ * be something a caller asked for in words rather than something a missing field did.
  */
 export function passkeyChain(want: unknown, chains: ChainDescriptor[]): PasskeyChainGate {
-  const key = typeof want === 'string' && want.trim() ? want.trim() : PASSKEY_RELEASE.network
+  const key = typeof want === 'string' && want.trim() ? want.trim() : PASSKEY_RELEASE.defaultNetwork
   const chain = chains.find((c) => c.ecosystem === 'stellar' && (c.id === key || c.caip2 === key)) ?? null
   if (!chain) {
-    return { ok: false, status: 400, code: 'bad_request', reason: `network must be ${PASSKEY_RELEASE.network} (or its registry id); ${key} is not a Stellar chain in the registry` }
-  }
-  if (!chain.testnet || chain.caip2 !== PASSKEY_RELEASE.network) {
     return {
       ok: false,
       status: 400,
-      code: 'testnet_only',
-      reason:
-        `${chain.caip2} is not served: the passkey vault release is TESTNET ONLY. The pubnet smart-account ` +
-        'constants are deliberately not in the registry and no pubnet vault has a smart-account owner, so ' +
-        'nothing here can reach real money. Nothing was submitted.',
+      code: 'bad_request',
+      reason: `${key} is not a Stellar chain in the registry; name one of ${servedNetworks(chains).join(', ') || '(none)'} by CAIP-2 or registry id`,
     }
   }
   if (!chain.contracts.smartAccount) {
-    return { ok: false, status: 400, code: 'testnet_only', reason: `${chain.caip2} declares no contracts.smartAccount, so no passkey account can be deployed or relayed on it` }
+    return {
+      ok: false,
+      status: 400,
+      code: 'network_not_served',
+      reason:
+        `${chain.caip2} declares no contracts.smartAccount, so no passkey account can be deployed or relayed on it. ` +
+        'The constants are recorded per network only once they have been read off that network. Nothing was submitted.',
+    }
   }
   return { ok: true, chain }
+}
+
+/** Every network this release can serve right now, for an error message and for status. */
+export function servedNetworks(chains: ChainDescriptor[]): string[] {
+  return chains.filter((c) => c.ecosystem === 'stellar' && c.contracts.smartAccount).map((c) => c.caip2)
 }
 
 // ── the relay: what may be forwarded ─────────────────────────────────────────────
@@ -566,6 +626,129 @@ export function createRelayBudget(limits: PasskeyRelayLimits = PASSKEY_RELAY_LIM
 /** The one the server uses. A test makes its own so no two tests share a window. */
 export const relayBudget = createRelayBudget()
 
+// ── what the SEED may cost us, across everyone, per network ──────────────────────
+//
+// The relay budget above bounds XLM fees a third party charges us. This one bounds the
+// only leg that moves our own USDC: the seed a freshly deployed demo vault is given. On
+// testnet that is play money and the budget exists so the code path is exercised. On
+// pubnet it is the difference between a demo and a faucet, because nothing sits in front
+// of the deploy endpoint except these numbers.
+//
+// Counted in micro-USD integers rather than floats. Seeds are hundredths of a dollar and
+// summing 0.01 a hundred times in binary floating point does not give 1.
+
+export type SeedBudgetRefusal = {
+  ok: false
+  status: 429
+  code: 'seed_budget_exhausted'
+  reason: string
+  retryAfterSeconds: number
+}
+export type SeedCharge =
+  | { ok: true; chargedUsd: number; spentUsd: number; budgetUsd: number; resetAt: number }
+  | SeedBudgetRefusal
+
+export type SeedSnapshot = {
+  network: string
+  budgetUsd: number
+  spentUsd: number
+  remainingUsd: number
+  seedsLeft: number
+  seedsPaid: number
+  windowMs: number
+  resetAt: number | null
+  enforcedIn: string
+  note: string
+}
+
+export interface SeedBudget {
+  charge(network: string, usd: number, caps: PasskeyCaps, now?: number): SeedCharge
+  /** Hand the reserve back when the seed did not happen after all. */
+  refund(network: string, usd: number, now?: number): void
+  snapshot(network: string, caps: PasskeyCaps, now?: number): SeedSnapshot
+}
+
+const MICRO = 1_000_000
+const micro = (usd: number) => Math.max(0, Math.round(usd * MICRO))
+
+/** Factory rather than a singleton so a test never inherits another test's day. */
+export function createSeedBudget(windowMs = 86_400_000): SeedBudget {
+  const days = new Map<string, { spent: number; paid: number; resetAt: number }>()
+  const roll = (network: string, now: number) => {
+    const d = days.get(network)
+    if (!d || d.resetAt <= now) {
+      const fresh = { spent: 0, paid: 0, resetAt: now + windowMs }
+      days.set(network, fresh)
+      return fresh
+    }
+    return d
+  }
+  return {
+    charge(network, usd, caps, now = Date.now()) {
+      const d = roll(network, now)
+      const budget = micro(caps.seedDailyTotalUsd)
+      const want = micro(usd)
+      // A zero seed is allowed and costs nothing: a caller may deploy an empty vault on
+      // purpose, and refusing that would make the budget stop something it does not pay for.
+      if (want === 0) {
+        return { ok: true, chargedUsd: 0, spentUsd: d.spent / MICRO, budgetUsd: caps.seedDailyTotalUsd, resetAt: d.resetAt }
+      }
+      if (d.spent + want > budget) {
+        const retryAfterSeconds = Math.max(1, Math.ceil((d.resetAt - now) / 1000))
+        return {
+          ok: false,
+          status: 429,
+          code: 'seed_budget_exhausted',
+          retryAfterSeconds,
+          reason:
+            `the ${network} demo seeds at most ${caps.seedDailyTotalUsd} USDC per UTC day across ALL callers, and ` +
+            `${d.spent / MICRO} of it is spent across ${d.paid} vaults. Nothing was deployed and no USDC left this server. ` +
+            'The vault deploy and every passkey signature cost network fees only, which the relayer sponsors; the seed is the one ' +
+            `leg that moves our own money, which is why it is the one leg with a shared ceiling. Retry in ${retryAfterSeconds} s, ` +
+            'or fund a vault yourself and skip the seed entirely by sending seedUsd 0.',
+        }
+      }
+      d.spent += want
+      d.paid += 1
+      return { ok: true, chargedUsd: usd, spentUsd: d.spent / MICRO, budgetUsd: caps.seedDailyTotalUsd, resetAt: d.resetAt }
+    },
+
+    refund(network, usd, now = Date.now()) {
+      const d = days.get(network)
+      // A refund into a window that already rolled is a refund of money the new window
+      // never counted, so it is dropped rather than credited against someone else's day.
+      if (!d || d.resetAt <= now) return
+      const back = micro(usd)
+      if (back === 0) return
+      d.spent = Math.max(0, d.spent - back)
+      d.paid = Math.max(0, d.paid - 1)
+    },
+
+    snapshot(network, caps, now = Date.now()) {
+      const d = days.get(network)
+      const live = d && d.resetAt > now ? d : { spent: 0, paid: 0, resetAt: 0 }
+      const remaining = Math.max(0, micro(caps.seedDailyTotalUsd) - live.spent)
+      return {
+        network,
+        budgetUsd: caps.seedDailyTotalUsd,
+        spentUsd: live.spent / MICRO,
+        remainingUsd: remaining / MICRO,
+        seedsLeft: caps.seedUsdDefault > 0 ? Math.floor(remaining / micro(caps.seedUsdDefault)) : 0,
+        seedsPaid: live.paid,
+        windowMs,
+        resetAt: live.resetAt || null,
+        enforcedIn: 'mcp/src/http/stellar-passkey-routes.ts, charged before the vault deploy spends the operator key',
+        note:
+          'Measured, not reserved: unlike the relayer fee, we choose this amount and know it exactly. A deploy that fails after ' +
+          'the charge hands it back, so a refused chain write does not cost the day a seed.',
+      }
+    },
+  }
+}
+
+/** Process-local, like the relay budget, and bounded per instance for the same reason. */
+export const seedBudget = createSeedBudget()
+
 /**
  * A fee in the relayer's answer, if there is one.
  *
@@ -647,22 +830,22 @@ export type PasskeyDeployPlan =
  * contract accepts them, because in this contract 0 means NO cap, and a vault anyone on the
  * internet can have us deploy and seed must have one.
  */
-export function passkeyDeployPlan(body: unknown, decimals: number): PasskeyDeployPlan {
+export function passkeyDeployPlan(body: unknown, decimals: number, caps: PasskeyCaps, network: string): PasskeyDeployPlan {
   const b = asObject(body) ?? {}
   const owner = typeof b.owner === 'string' ? b.owner.trim() : ''
   if (!isContractId(owner)) {
     return { ok: false, reason: 'owner must be the passkey smart account\'s contract id (C... StrKey). A G... owner uses POST /api/agents/vault through the console instead.' }
   }
-  if (!finite(b.dailyCapUsd) || b.dailyCapUsd <= 0 || b.dailyCapUsd > PASSKEY_CAPS.dailyCapUsd) {
-    return { ok: false, reason: `dailyCapUsd must be a number above 0 and at most ${PASSKEY_CAPS.dailyCapUsd} on testnet (0 would mean no cap)` }
+  if (!finite(b.dailyCapUsd) || b.dailyCapUsd <= 0 || b.dailyCapUsd > caps.dailyCapUsd) {
+    return { ok: false, reason: `dailyCapUsd must be a number above 0 and at most ${caps.dailyCapUsd} on ${network} (0 would mean no cap)` }
   }
-  if (!finite(b.autoApproveUsd) || b.autoApproveUsd <= 0 || b.autoApproveUsd > PASSKEY_CAPS.autoApproveUsd) {
-    return { ok: false, reason: `autoApproveUsd must be a number above 0 and at most ${PASSKEY_CAPS.autoApproveUsd} on testnet (0 would mean no ceiling)` }
+  if (!finite(b.autoApproveUsd) || b.autoApproveUsd <= 0 || b.autoApproveUsd > caps.autoApproveUsd) {
+    return { ok: false, reason: `autoApproveUsd must be a number above 0 and at most ${caps.autoApproveUsd} on ${network} (0 would mean no ceiling)` }
   }
-  let seedUsd: number = PASSKEY_CAPS.seedUsdDefault
+  let seedUsd: number = caps.seedUsdDefault
   if (b.seedUsd !== undefined) {
-    if (!finite(b.seedUsd) || b.seedUsd < 0 || b.seedUsd > PASSKEY_CAPS.seedUsdMax) {
-      return { ok: false, reason: `seedUsd must be a number from 0 to ${PASSKEY_CAPS.seedUsdMax}; it is USDC that leaves this server's own account for good` }
+    if (!finite(b.seedUsd) || b.seedUsd < 0 || b.seedUsd > caps.seedUsdMax) {
+      return { ok: false, reason: `seedUsd must be a number from 0 to ${caps.seedUsdMax} on ${network}; it is USDC that leaves this server's own account for good` }
     }
     seedUsd = b.seedUsd
   }
@@ -681,14 +864,14 @@ export function passkeyDeployPlan(body: unknown, decimals: number): PasskeyDeplo
 export type PasskeyAgentPayPlan = { ok: true; contract: string; to: string; amountUsd: number; amountRaw: string } | { ok: false; reason: string }
 
 /** The agent's payment: one call to `pay()`, at most one dollar, on a vault this server operates. */
-export function passkeyAgentPayPlan(body: unknown, decimals: number): PasskeyAgentPayPlan {
+export function passkeyAgentPayPlan(body: unknown, decimals: number, caps: PasskeyCaps, network: string): PasskeyAgentPayPlan {
   const b = asObject(body) ?? {}
   const contract = typeof b.contract === 'string' ? b.contract.trim() : ''
   const to = typeof b.to === 'string' ? b.to.trim() : ''
   if (!isContractId(contract)) return { ok: false, reason: 'contract must be the vault\'s Soroban contract id (C... StrKey)' }
   if (!isAccountId(to) && !isContractId(to)) return { ok: false, reason: 'to must be a Stellar account (G...) or a contract (C...)' }
-  if (!finite(b.amountUsd) || b.amountUsd <= 0 || b.amountUsd > PASSKEY_CAPS.agentPayMaxUsd) {
-    return { ok: false, reason: `amountUsd must be a number above 0 and at most ${PASSKEY_CAPS.agentPayMaxUsd} on this demo endpoint` }
+  if (!finite(b.amountUsd) || b.amountUsd <= 0 || b.amountUsd > caps.agentPayMaxUsd) {
+    return { ok: false, reason: `amountUsd must be a number above 0 and at most ${caps.agentPayMaxUsd} on ${network}` }
   }
   return { ok: true, contract, to, amountUsd: b.amountUsd, amountRaw: toRawUnits(b.amountUsd, decimals) }
 }
@@ -792,14 +975,18 @@ export function passkeyStatusView(
     /** Live, from the budget the relay endpoint actually charges. Required, so the numbers
      *  cannot be published from a copy that has drifted from the one being enforced. */
     relayLimits: RelayBudgetSnapshot
+    /** Live too, from the same ledger the deploy endpoint charges. */
+    seedLimits: SeedSnapshot
   },
 ): Record<string, unknown> {
   const sa = chain.contracts.smartAccount
   return {
     release: PASSKEY_RELEASE.name,
-    testnetOnly: PASSKEY_RELEASE.testnetOnly,
     network: chain.caip2,
     chain: chain.id,
+    // Real money or not, said first rather than left to be inferred from a CAIP-2 string.
+    realMoney: chain.caip2 === 'stellar:pubnet',
+    defaultNetwork: PASSKEY_RELEASE.defaultNetwork,
     relayer: {
       product: PASSKEY_RELEASE.relayerProduct,
       name: PASSKEY_RELEASE.relayerName,
@@ -823,12 +1010,18 @@ export function passkeyStatusView(
       account: cfg.operator,
       role: 'the vault operator that signs pay(), and the source of every vault deployed here',
     },
-    caps: { ...PASSKEY_CAPS },
+    // The caps in force on THIS network, and every network's beside them, because a reader
+    // comparing pubnet against testnet should not have to call the endpoint twice to learn
+    // that the pubnet seed is a fiftieth of the testnet one.
+    caps: { ...passkeyCaps(chain) },
+    capsByNetwork: PASSKEY_CAPS_BY_NETWORK,
     // Published for the same reason the caps are: nothing sits in front of this endpoint
     // except these numbers, so a reader who cannot see them cannot check them. The fee
     // block says reserved rather than spent on purpose; its own note explains why we
     // cannot say spent.
     limits: cfg.relayLimits,
+    // The other ceiling, and the one that bounds OUR money rather than a third party's fee.
+    seedBudget: cfg.seedLimits,
     endpoints: {
       status: 'GET /api/stellar/passkey/status',
       relay: 'POST /api/stellar/passkey/relay  { func, auth[] } | { xdr }',

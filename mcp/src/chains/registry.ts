@@ -286,6 +286,18 @@ export const CHAINS: ChainDescriptor[] = [
       // is an EVM path that would treat a C... StrKey as a 0x address. When the rail
       // lands, the SAC belongs in `settlementTokens` with the derivation recorded, the
       // same way USDG does on Robinhood Chain.
+      // OpenZeppelin's smart account contracts on PUBNET, third party, and the reason a
+      // passkey can own a vault with real money behind it. The account wasm hash is the
+      // SAME on both networks, byte for byte, which is worth knowing rather than assuming:
+      // OpenZeppelin built once and uploaded the identical code entry to each. Only the
+      // two verifier instances differ, because a contract id is per network.
+      smartAccount: {
+        wasmHash: '1b5f4534a76322da2ad7c745f6900857a6802b0ca79850c35a03561df997785a',
+        webauthnVerifier: 'CB7HENHJ7NF34I5FFXQK7D5I3WWQRGB5O5XO77D3NXMT7LM7LOKRQ5YR',
+        ed25519Verifier: 'CBOOZV2BK5OETGL4Q4KGEBESPRLJFN7DOFWDT7OZGLD7EQEZUVOWUEMC',
+        verified:
+          'Taken from smart-account-kit https://github.com/stellar/smart-account-kit/blob/main/docs/deployments-protocol-27-2026-07-09.md (the Mainnet table, deploy account GAAH4OT3..., uploads charged 90.68 XLM) and then READ BACK OFF PUBNET on 2026-09-24 rather than trusted: the WebAuthn verifier CB7HENHJ... and the Ed25519 verifier CBOOZV2B... each answer verify, canonicalize_key and batch_canonicalize_key, and the code entry for wasm hash 1b5f4534... is live on pubnet and exposes execute, __check_auth, __constructor, add_signer and add_policy. Third-party contracts owned by OpenZeppelin, unaudited by their own SECURITY.md, so anything read from them is labeled third-party and live, never ours.',
+      },
       cctp: {
         tokenMessenger: 'CAE2G5Z77UP7GYPYGFOWFGW7C7J6I4YP2AFGSADRKQY62SYUFLPNFTXL',
         messageTransmitter: 'CACMENFFJPJMSDAJQLX4R7K3SFZIW2LJSE3R2UMLGSWHFHS353FVXAZV',

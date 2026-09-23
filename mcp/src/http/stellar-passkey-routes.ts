@@ -31,7 +31,7 @@ import { riskCheck as liveRiskCheck } from '../asp/tools.js'
 import { listPlatformAgents, subjectsLinkedToWallet } from '../platform.js'
 import { ozApiKey, ozKeyVar, ozRelayerUrl } from '../x402-stellar/rail.js'
 import {
-  PASSKEY_CAPS,
+  passkeyCaps,
   PASSKEY_RELEASE,
   UNBOUND_PAYEE_REASONS,
   allowlistPlan,
@@ -44,12 +44,14 @@ import {
   passkeyDeployPlan,
   passkeyStatusView,
   relayBudget as sharedRelayBudget,
+  seedBudget as sharedSeedBudget,
   relayDecision,
   relayFeeSettlement,
   relayParams,
   relayPreflight,
   type RelayBudget,
   type RiskDecisionName,
+  type SeedBudget,
 } from '../stellar-passkey.js'
 import { readBody, sendJson, type RouteCtx } from './shared.js'
 
@@ -68,6 +70,9 @@ export type PasskeyRouteDeps = {
   /** The global rate limit and the 24 hour fee reserve. A test hands in its own so no two
    *  tests share a window; production always uses the one process-wide ledger. */
   relayBudget?: RelayBudget
+  /** The shared per-network ceiling on seed USDC. A test hands in its own so no two tests
+   *  share a day, and so a pubnet assertion never depends on what a testnet one spent. */
+  seedBudget?: SeedBudget
 }
 
 /** How long we wait for the relayer. Testnet retries inside Channels can take minutes. */
@@ -118,6 +123,7 @@ export async function handleStellarPasskeyRoutes(ctx: RouteCtx, deps: PasskeyRou
         operator: signerOf(chain, env),
         explorerFor: (a) => addressUrl(chain, a),
         relayLimits: budget.snapshot(),
+        seedLimits: (deps.seedBudget ?? sharedSeedBudget).snapshot(chain.caip2, passkeyCaps(chain)),
       }),
     )
     return true
@@ -307,9 +313,10 @@ export async function handleStellarPasskeyRoutes(ctx: RouteCtx, deps: PasskeyRou
       sendJson(res, 400, { ok: false, code: 'bad_request', reason: `${chain.caip2} declares no settlement token, so there is nothing a vault could hold` })
       return true
     }
-    const plan = passkeyDeployPlan(body, token.decimals)
+    const caps = passkeyCaps(chain)
+    const plan = passkeyDeployPlan(body, token.decimals, caps, chain.caip2)
     if (!plan.ok) {
-      sendJson(res, 400, { ok: false, code: 'bad_request', reason: plan.reason, caps: { ...PASSKEY_CAPS } })
+      sendJson(res, 400, { ok: false, code: 'bad_request', reason: plan.reason, network: chain.caip2, caps: { ...caps } })
       return true
     }
 
@@ -346,6 +353,16 @@ export async function handleStellarPasskeyRoutes(ctx: RouteCtx, deps: PasskeyRou
       return true
     }
 
+    // Charged here and not earlier: a prepared answer spends nothing, so it must not spend
+    // the day's budget either. Refunded below on every path where the seed does not land.
+    const charged = (deps.seedBudget ?? sharedSeedBudget).charge(chain.caip2, plan.seedUsd, caps)
+    if (!charged.ok) {
+      res.setHeader('Retry-After', String(charged.retryAfterSeconds))
+      sendJson(res, charged.status, { ok: false, code: charged.code, reason: charged.reason, network: chain.caip2, seedBudget: (deps.seedBudget ?? sharedSeedBudget).snapshot(chain.caip2, caps) })
+      return true
+    }
+    const refundSeed = () => (deps.seedBudget ?? sharedSeedBudget).refund(chain.caip2, plan.seedUsd)
+
     const adapter = adapterFor(chain)
     const deployed = await adapter.deployVault(
       { owner: plan.owner, operator, token: token.address, dailyCapRaw: plan.dailyCapRaw, autoApproveMaxRaw: plan.autoApproveMaxRaw },
@@ -364,6 +381,7 @@ export async function handleStellarPasskeyRoutes(ctx: RouteCtx, deps: PasskeyRou
         ...(named ? { contractErrorName: named } : {}),
         seed: { amountUsd: plan.seedUsd, outcome: 'none', reason: 'no vault was created, so nothing was seeded' },
       })
+      refundSeed()
       return true
     }
 
@@ -380,8 +398,12 @@ export async function handleStellarPasskeyRoutes(ctx: RouteCtx, deps: PasskeyRou
             outcome: 'skipped',
             reason: `the operator ${operator} holds ${Number(balance) / 10 ** token.decimals} ${token.symbol}, less than the ${plan.seedUsd} requested, so the vault starts empty. Fund it by any SEP-41 transfer to ${deployed.vault}.`,
           }
+          refundSeed()
         } else {
           const moved = await adapter.sacTransferFromSigner(token.address, deployed.vault, plan.seedRaw, env)
+          // Only a settled transfer keeps the charge. Anything else means the USDC is still
+          // ours, and a budget that counted it would shrink for money that never moved.
+          if (moved.outcome !== 'settled') refundSeed()
           seed = {
             amountUsd: plan.seedUsd,
             outcome: moved.outcome,
@@ -391,6 +413,7 @@ export async function handleStellarPasskeyRoutes(ctx: RouteCtx, deps: PasskeyRou
           }
         }
       } catch (e) {
+        refundSeed()
         seed = { amountUsd: plan.seedUsd, outcome: 'error', reason: `the seed transfer was not attempted: ${e instanceof Error ? e.message : String(e)}` }
       }
     }
@@ -473,9 +496,10 @@ export async function handleStellarPasskeyRoutes(ctx: RouteCtx, deps: PasskeyRou
     const gate = passkeyChain(body?.network, CHAINS)
     if (!gate.ok) return refuseChain(gate, 'ok')
     const chain = gate.chain
-    const plan = passkeyAgentPayPlan(body, tokenDecimals(chain))
+    const payCaps = passkeyCaps(chain)
+    const plan = passkeyAgentPayPlan(body, tokenDecimals(chain), payCaps, chain.caip2)
     if (!plan.ok) {
-      sendJson(res, 400, { ok: false, code: 'bad_request', reason: plan.reason, maxUsd: PASSKEY_CAPS.agentPayMaxUsd })
+      sendJson(res, 400, { ok: false, code: 'bad_request', reason: plan.reason, network: chain.caip2, maxUsd: payCaps.agentPayMaxUsd })
       return true
     }
     const adapter = adapterFor(chain)

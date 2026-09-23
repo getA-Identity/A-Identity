@@ -205,17 +205,23 @@ test('status says what is configured, names the key variable, and carries no cre
   assert.equal(relayer.product, 'OpenZeppelin Relayer (Channels)')
   assert.equal(relayer.keyVar, 'X402_STELLAR_TESTNET_OZ_KEY')
   assert.equal(relayer.keyConfigured, false, 'an empty env must read as unconfigured, never as ready')
-  assert.equal(r.body.testnetOnly, true)
+  assert.equal(r.body.realMoney, false, 'testnet must say plainly that it is not real money')
   assert.equal((r.body.smartAccount as Record<string, unknown>).wasmHash, WASM)
   assert.equal(JSON.stringify(r.body).includes('Bearer '), false)
 })
 
-test('status refuses pubnet with the reason, rather than answering about testnet', async () => {
+test('status answers about pubnet, and says first that it is real money', async () => {
   const { deps } = stubs()
   const r = await call('GET', '/api/stellar/passkey/status?network=stellar', undefined, deps)
-  assert.equal(r.status, 400)
-  assert.equal(r.body.code, 'testnet_only')
-  assert.match(String(r.body.reason), /TESTNET ONLY/)
+  assert.equal(r.status, 200)
+  assert.equal(r.body.network, 'stellar:pubnet')
+  assert.equal(r.body.realMoney, true)
+  // The pubnet key is a different variable from the testnet one, and confusing them is how
+  // a mainnet relay ends up unconfigured while the status page claims it is ready.
+  assert.equal((r.body.relayer as Record<string, unknown>).keyVar, 'X402_STELLAR_PUBNET_OZ_KEY')
+  const caps = r.body.caps as Record<string, number>
+  assert.equal(caps.seedDailyTotalUsd, 1, 'pubnet publishes the tight seed ceiling')
+  assert.ok(caps.seedUsdDefault <= 0.01)
 })
 
 // ── the relay, fail-closed ───────────────────────────────────────────────────────
@@ -230,13 +236,21 @@ test('the relay refuses a body that is neither of the kit\'s two shapes', async 
   assert.deepEqual(spy.fetches, [], 'a malformed body must never reach the relayer')
 })
 
-test('the relay refuses pubnet before it decodes anything', async () => {
+test('the relay serves pubnet, and answers prepared while the MAINNET key is unset', async () => {
   const { deps, spy } = stubs()
   const func = deployFunc(accountId(), WASM)
   const r = await call('POST', '/api/stellar/passkey/relay', relayBody(func, [authEntry(func, accountId())], { network: 'stellar' }), deps)
-  assert.equal(r.status, 400)
-  assert.equal(r.body.code, 'testnet_only')
-  assert.deepEqual(spy.fetches, [])
+  // Not a refusal any more, and not a broadcast either: with no pubnet key the relay says
+  // exactly what it would have posted and posts nothing, which is the same prepared shape
+  // every other write in this codebase takes when a credential is missing.
+  // 501 with outcome prepared is this codebase's established shape for a missing
+  // credential, not an error: the call is validated, the exact payload is returned, and
+  // nothing is posted. The only thing that had to change for pubnet is WHICH key is named.
+  assert.equal(r.status, 501)
+  assert.equal(r.body.outcome, 'prepared')
+  assert.equal(r.body.success, false)
+  assert.match(String(r.body.reason ?? ''), /X402_STELLAR_PUBNET_OZ_KEY/)
+  assert.deepEqual(spy.fetches, [], 'nothing may reach a relayer we have no key for')
 })
 
 test('func that is not XDR at all is refused with what is wrong, and costs nothing', async () => {

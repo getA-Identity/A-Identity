@@ -107,7 +107,7 @@ Updated 2026-09-15.
 - merchant_check: commerce-grade counterparty verification for agentic checkouts
   (MCP tool + REST).
 - Structural hardening: the backend split into a layered platform/ + http/ module
-  system with the layer graph enforced by tests; 1404 unit tests + full E2E suite.
+  system with the layer graph enforced by tests; 1410 unit tests + full E2E suite.
 
 ## Now
 

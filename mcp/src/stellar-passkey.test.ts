@@ -8,7 +8,8 @@ import type { RelayAuth, RelayFunc, RelayInspection } from './chains/stellar/rel
 import { rateBudget } from './rate-budget.js'
 import {
   ALLOWLIST_ENFORCEMENT,
-  PASSKEY_CAPS,
+  passkeyCaps,
+  createSeedBudget,
   PASSKEY_RELAY_LIMITS,
   PASSKEY_RELEASE,
   allowlistPlan,
@@ -59,18 +60,86 @@ const accountId = (): string => Keypair.random().publicKey()
 
 // ── which network is served ──────────────────────────────────────────────────────
 
-test('pubnet is refused by name, not by falling through to testnet', () => {
+test('pubnet is served, by registry id and by CAIP-2, now that its constants are recorded', () => {
   for (const want of ['stellar', 'stellar:pubnet']) {
     const gate = passkeyChain(want, CHAINS)
-    assert.equal(gate.ok, false, `${want} must not be served`)
-    if (gate.ok) return
-    assert.equal(gate.code, 'testnet_only')
-    // The reason has to say WHY rather than just no: an operator reading this should learn
-    // that the pubnet constants were left out on purpose.
-    assert.match(gate.reason, /TESTNET ONLY/)
-    assert.match(gate.reason, /pubnet/)
+    assert.equal(gate.ok, true, `${want} must resolve`)
+    if (gate.ok) assert.equal(gate.chain.caip2, 'stellar:pubnet')
   }
   assert.equal(pubnet.testnet, false, 'this test is only meaningful while stellar is the mainnet descriptor')
+})
+
+test('naming no network gets TESTNET, because reaching real money must be something you asked for', () => {
+  const gate = passkeyChain(undefined, CHAINS)
+  assert.equal(gate.ok, true)
+  if (gate.ok) assert.equal(gate.chain.caip2, 'stellar:testnet')
+  assert.equal(PASSKEY_RELEASE.defaultNetwork, 'stellar:testnet')
+})
+
+test('a Stellar network with no smart-account constants is refused, and says why', () => {
+  // The rule is a fact about the registry, not a list kept in the gate: strip the block and
+  // the network stops being served, which is what makes "recorded only once read" enforceable.
+  const bare = { ...testnet, contracts: { ...testnet.contracts, smartAccount: undefined } }
+  const gate = passkeyChain(bare.caip2, [bare])
+  assert.equal(gate.ok, false)
+  if (!gate.ok) {
+    assert.equal(gate.code, 'network_not_served')
+    assert.match(gate.reason, /no contracts.smartAccount/)
+    assert.match(gate.reason, /Nothing was submitted/)
+  }
+})
+
+test('the pubnet caps are the tight set, and every one of them is below testnet', () => {
+  const t = passkeyCaps(testnet)
+  const m = passkeyCaps(pubnet)
+  // This is the assertion that matters: a future edit that loosens pubnet, or that points
+  // pubnet at the testnet table by accident, fails here rather than on someone's balance.
+  assert.ok(m.seedUsdDefault < t.seedUsdDefault, 'the pubnet seed must be smaller')
+  assert.ok(m.seedUsdMax < t.seedUsdMax)
+  assert.ok(m.agentPayMaxUsd < t.agentPayMaxUsd)
+  assert.ok(m.dailyCapUsd < t.dailyCapUsd)
+  assert.ok(m.autoApproveUsd < t.autoApproveUsd)
+  assert.ok(m.seedDailyTotalUsd < t.seedDailyTotalUsd)
+  // And a number, not just an ordering: a dollar a day is the published pubnet ceiling.
+  assert.equal(m.seedDailyTotalUsd, 1)
+})
+
+test('the seed budget bounds our own USDC across everyone, and hands a reserve back', () => {
+  const caps = passkeyCaps(pubnet)
+  const b = createSeedBudget()
+  const net = pubnet.caip2
+  const at = 1_000_000
+  // A hundred seeds of a hundredth fit in the dollar; the hundred and first does not.
+  for (let i = 0; i < 100; i += 1) {
+    assert.equal(b.charge(net, caps.seedUsdDefault, caps, at).ok, true, `seed ${i + 1} should fit`)
+  }
+  const over = b.charge(net, caps.seedUsdDefault, caps, at)
+  assert.equal(over.ok, false)
+  if (!over.ok) {
+    assert.equal(over.code, 'seed_budget_exhausted')
+    assert.match(over.reason, /no USDC left this server/)
+    // The refusal must offer the way out rather than just closing the door.
+    assert.match(over.reason, /fund a vault yourself/)
+  }
+  // A deploy that failed after the charge gives the day its money back.
+  b.refund(net, caps.seedUsdDefault, at)
+  assert.equal(b.charge(net, caps.seedUsdDefault, caps, at).ok, true, 'a refunded seed is spendable again')
+})
+
+test('a zero seed costs the budget nothing, because it moves nothing', () => {
+  const caps = passkeyCaps(pubnet)
+  const b = createSeedBudget()
+  for (let i = 0; i < 500; i += 1) assert.equal(b.charge(pubnet.caip2, 0, caps, 1).ok, true)
+  assert.equal(b.snapshot(pubnet.caip2, caps, 1).spentUsd, 0)
+})
+
+test('the two networks do not share a seed day', () => {
+  const b = createSeedBudget()
+  const mainCaps = passkeyCaps(pubnet)
+  const testCaps = passkeyCaps(testnet)
+  b.charge(pubnet.caip2, mainCaps.seedDailyTotalUsd, mainCaps, 1)
+  assert.equal(b.charge(pubnet.caip2, mainCaps.seedUsdDefault, mainCaps, 1).ok, false, 'pubnet is spent')
+  assert.equal(b.charge(testnet.caip2, testCaps.seedUsdDefault, testCaps, 1).ok, true, 'testnet is untouched')
 })
 
 test('a network that is not a Stellar chain is refused before anything else happens', () => {
@@ -85,7 +154,7 @@ test('an unnamed network means testnet, and both the slug and the CAIP-2 id reso
   for (const want of [undefined, '', 'stellar-testnet', 'stellar:testnet']) {
     const gate = passkeyChain(want, CHAINS)
     assert.equal(gate.ok, true, `${String(want)} should resolve to testnet`)
-    if (gate.ok) assert.equal(gate.chain.caip2, PASSKEY_RELEASE.network)
+    if (gate.ok) assert.equal(gate.chain.caip2, PASSKEY_RELEASE.defaultNetwork)
   }
 })
 
@@ -405,10 +474,14 @@ test('a relayer error carries the message and the code from wherever the kit loo
   if (!nothing.success) assert.match(nothing.error, /HTTP 502/)
 })
 
+/** The caps the tests assert against, read from the same table production reads. */
+const PASSKEY_CAPS = passkeyCaps(testnet)
+const NET = testnet.caip2
+
 // ── the deploy ───────────────────────────────────────────────────────────────────
 
 test('a vault for a passkey account needs a CONTRACT owner, and an account owner is sent elsewhere', () => {
-  const good = passkeyDeployPlan({ owner: contractId(), dailyCapUsd: 5, autoApproveUsd: 1 }, DECIMALS)
+  const good = passkeyDeployPlan({ owner: contractId(), dailyCapUsd: 5, autoApproveUsd: 1 }, DECIMALS, PASSKEY_CAPS, NET)
   assert.equal(good.ok, true)
   if (good.ok) {
     assert.equal(good.dailyCapRaw, '50000000')
@@ -416,7 +489,7 @@ test('a vault for a passkey account needs a CONTRACT owner, and an account owner
     // Unstated seed means the small default, never zero and never the maximum.
     assert.equal(good.seedUsd, PASSKEY_CAPS.seedUsdDefault)
   }
-  const account = passkeyDeployPlan({ owner: accountId(), dailyCapUsd: 5, autoApproveUsd: 1 }, DECIMALS)
+  const account = passkeyDeployPlan({ owner: accountId(), dailyCapUsd: 5, autoApproveUsd: 1 }, DECIMALS, PASSKEY_CAPS, NET)
   assert.equal(account.ok, false)
   if (!account.ok) assert.match(account.reason, /smart account's contract id/)
 })
@@ -428,15 +501,15 @@ test('the deploy caps are enforced here, because nothing else stands between the
     { owner, dailyCapUsd: 5, autoApproveUsd: PASSKEY_CAPS.autoApproveUsd + 0.01 },
     { owner, dailyCapUsd: 5, autoApproveUsd: 1, seedUsd: PASSKEY_CAPS.seedUsdMax + 0.01 },
   ]
-  for (const body of over) assert.equal(passkeyDeployPlan(body, DECIMALS).ok, false, JSON.stringify(body))
+  for (const body of over) assert.equal(passkeyDeployPlan(body, DECIMALS, PASSKEY_CAPS, NET).ok, false, JSON.stringify(body))
 })
 
 test('a zero cap is refused although the contract accepts it, because here zero means no cap', () => {
   const owner = contractId()
-  assert.equal(passkeyDeployPlan({ owner, dailyCapUsd: 0, autoApproveUsd: 1 }, DECIMALS).ok, false)
-  assert.equal(passkeyDeployPlan({ owner, dailyCapUsd: 5, autoApproveUsd: 0 }, DECIMALS).ok, false)
+  assert.equal(passkeyDeployPlan({ owner, dailyCapUsd: 0, autoApproveUsd: 1 }, DECIMALS, PASSKEY_CAPS, NET).ok, false)
+  assert.equal(passkeyDeployPlan({ owner, dailyCapUsd: 5, autoApproveUsd: 0 }, DECIMALS, PASSKEY_CAPS, NET).ok, false)
   // A zero SEED is fine: it means the vault starts empty, which is a choice, not a policy.
-  const noSeed = passkeyDeployPlan({ owner, dailyCapUsd: 5, autoApproveUsd: 1, seedUsd: 0 }, DECIMALS)
+  const noSeed = passkeyDeployPlan({ owner, dailyCapUsd: 5, autoApproveUsd: 1, seedUsd: 0 }, DECIMALS, PASSKEY_CAPS, NET)
   assert.equal(noSeed.ok, true)
   if (noSeed.ok) assert.equal(noSeed.seedRaw, '0')
 })
@@ -444,7 +517,7 @@ test('a zero cap is refused although the contract accepts it, because here zero 
 test('a cap that is not a finite number never reaches the constructor', () => {
   const owner = contractId()
   for (const bad of [Number.NaN, Number.POSITIVE_INFINITY, -1, '5', null, undefined]) {
-    assert.equal(passkeyDeployPlan({ owner, dailyCapUsd: bad, autoApproveUsd: 1 }, DECIMALS).ok, false, String(bad))
+    assert.equal(passkeyDeployPlan({ owner, dailyCapUsd: bad, autoApproveUsd: 1 }, DECIMALS, PASSKEY_CAPS, NET).ok, false, String(bad))
   }
 })
 
@@ -452,20 +525,20 @@ test('a cap that is not a finite number never reaches the constructor', () => {
 
 test('the agent payment is bounded here as well as on chain, and at a dollar', () => {
   const contract = contractId()
-  const good = passkeyAgentPayPlan({ contract, to: accountId(), amountUsd: 0.5 }, DECIMALS)
+  const good = passkeyAgentPayPlan({ contract, to: accountId(), amountUsd: 0.5 }, DECIMALS, PASSKEY_CAPS, NET)
   assert.equal(good.ok, true)
   if (good.ok) assert.equal(good.amountRaw, '5000000')
-  const over = passkeyAgentPayPlan({ contract, to: accountId(), amountUsd: PASSKEY_CAPS.agentPayMaxUsd + 0.01 }, DECIMALS)
+  const over = passkeyAgentPayPlan({ contract, to: accountId(), amountUsd: PASSKEY_CAPS.agentPayMaxUsd + 0.01 }, DECIMALS, PASSKEY_CAPS, NET)
   assert.equal(over.ok, false)
   // Zero is refused because the contract refuses it (InvalidAmount), so refusing it here
   // costs a caller a round trip rather than a fee.
-  assert.equal(passkeyAgentPayPlan({ contract, to: accountId(), amountUsd: 0 }, DECIMALS).ok, false)
+  assert.equal(passkeyAgentPayPlan({ contract, to: accountId(), amountUsd: 0 }, DECIMALS, PASSKEY_CAPS, NET).ok, false)
 })
 
 test('a payee may be an account or a contract, and a vault must be a contract', () => {
-  assert.equal(passkeyAgentPayPlan({ contract: contractId(), to: contractId(), amountUsd: 0.1 }, DECIMALS).ok, true)
-  assert.equal(passkeyAgentPayPlan({ contract: accountId(), to: accountId(), amountUsd: 0.1 }, DECIMALS).ok, false)
-  assert.equal(passkeyAgentPayPlan({ contract: contractId(), to: 'not-an-address', amountUsd: 0.1 }, DECIMALS).ok, false)
+  assert.equal(passkeyAgentPayPlan({ contract: contractId(), to: contractId(), amountUsd: 0.1 }, DECIMALS, PASSKEY_CAPS, NET).ok, true)
+  assert.equal(passkeyAgentPayPlan({ contract: accountId(), to: accountId(), amountUsd: 0.1 }, DECIMALS, PASSKEY_CAPS, NET).ok, false)
+  assert.equal(passkeyAgentPayPlan({ contract: contractId(), to: 'not-an-address', amountUsd: 0.1 }, DECIMALS, PASSKEY_CAPS, NET).ok, false)
 })
 
 // ── the allowlist plan ───────────────────────────────────────────────────────────
@@ -710,12 +783,13 @@ test('the status view names the key variable, says whether it is set, and carrie
     operator: null,
     explorerFor: (a) => `https://example/contract/${a}`,
     relayLimits: createRelayBudget().snapshot(),
+    seedLimits: createSeedBudget().snapshot(testnet.caip2, passkeyCaps(testnet)),
   })
   const text = JSON.stringify(view)
   assert.equal((view.relayer as Record<string, unknown>).keyVar, 'X402_STELLAR_TESTNET_OZ_KEY')
   assert.equal((view.relayer as Record<string, unknown>).keyConfigured, false)
   assert.equal((view.relayer as Record<string, unknown>).product, PASSKEY_RELEASE.relayerProduct)
-  assert.equal(view.testnetOnly, true)
+  assert.equal(view.realMoney, false)
   assert.equal((view.pubnet as Record<string, unknown>).served, false)
   // The smart-account constants are published as third-party facts, with their provenance.
   const sa = view.smartAccount as Record<string, unknown>
@@ -733,6 +807,7 @@ test('the passkey vault is published as a smart-account-owned row, with its expl
     operator: accountId(),
     explorerFor: (a) => `https://example/contract/${a}`,
     relayLimits: createRelayBudget().snapshot(),
+    seedLimits: createSeedBudget().snapshot(testnet.caip2, passkeyCaps(testnet)),
   })
   const vault = view.passkeyVault as Record<string, unknown>
   assert.equal(vault.contract, testnet.contracts.passkeyVault)
@@ -752,6 +827,7 @@ test('the status view publishes both relay limits, and calls the fee figure a re
     operator: accountId(),
     explorerFor: (a) => `https://example/contract/${a}`,
     relayLimits: b.snapshot(at),
+    seedLimits: createSeedBudget().snapshot(testnet.caip2, passkeyCaps(testnet)),
   })
   const limits = view.limits as Record<string, Record<string, unknown>>
   // Per IP, and it names where it is applied rather than leaving a reader to find out.
