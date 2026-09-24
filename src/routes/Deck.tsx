@@ -82,6 +82,22 @@ function Art({ src, className, float = true }: { src: string; className?: string
   )
 }
 
+/** The mascot, bobbing gently. Transparent renders, so no edge mask. */
+function Owl({ src, className, style }: { src: string; className?: string; style?: React.CSSProperties }) {
+  const print = usePrint()
+  return (
+    <motion.img
+      src={src}
+      alt=""
+      draggable={false}
+      className={className}
+      style={{ filter: 'drop-shadow(0 24px 40px rgba(0,0,0,0.45))', ...style }}
+      animate={print ? undefined : { y: [0, -10, 0], rotate: [0, -2, 0] }}
+      transition={{ duration: 4.5, repeat: Infinity, ease: 'easeInOut' }}
+    />
+  )
+}
+
 /** Two dashed rings turning in opposite directions, the deck's recurring orbit motif. */
 function Orbits({ size, className }: { size: number; className?: string }) {
   const print = usePrint()
@@ -168,13 +184,13 @@ function Chip({ children, tone = 'accent' }: { children: ReactNode; tone?: 'acce
   )
 }
 
-function Slide({ n, children }: { n: number; children: ReactNode }) {
+function Slide({ n, children, brand = true }: { n: number; children: ReactNode; brand?: boolean }) {
   return (
     <section className="relative overflow-hidden bg-background text-foreground" style={{ width: W, height: H }}>
       <Backdrop />
       <div className="relative h-full px-24 pb-20 pt-20">{children}</div>
       <div className="absolute inset-x-24 bottom-8 flex items-center justify-between text-[14px] text-foreground/55">
-        <img src="/brand/lockup-horizontal-full-cream.png" alt="A-Identity" className="h-6 w-auto opacity-80" />
+        {brand ? <img src="/brand/lockup-horizontal-full-cream.png" alt="A-Identity" className="h-9 w-auto opacity-90" /> : <span />}
         <span className="font-mono tracking-widest">
           {String(n).padStart(2, '0')} / {String(SLIDES.length).padStart(2, '0')}
         </span>
@@ -188,10 +204,13 @@ function Slide({ n, children }: { n: number; children: ReactNode }) {
 function SlideTitle() {
   const print = usePrint()
   return (
-    <Slide n={1}>
+    <Slide n={1} brand={false}>
       <div className="grid h-full grid-cols-[1.15fr_1fr] items-center gap-10">
         <div>
           <Reveal>
+            <img src="/brand/lockup-horizontal-full-cream.png" alt="A-Identity" className="mb-10 h-16 w-auto" />
+          </Reveal>
+          <Reveal delay={0.06}>
             <Eyebrow>Circle Developer Grants 2026 · Cohort 2</Eyebrow>
           </Reveal>
           <Reveal delay={0.12}>
@@ -213,8 +232,12 @@ function SlideTitle() {
         </div>
         <div className="relative flex h-full items-center justify-center">
           <Orbits size={620} className="left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2" />
-          <Reveal delay={0.2} y={40}>
-            <Art src="/art/art-passport.webp" className="w-[560px]" />
+          <div
+            className="absolute left-1/2 top-1/2 h-[420px] w-[420px] -translate-x-1/2 -translate-y-1/2 rounded-full blur-[90px]"
+            style={{ background: 'color-mix(in srgb, var(--accent) 38%, transparent)' }}
+          />
+          <Reveal delay={0.2} y={40} className="relative">
+            <Owl src="/mascots/owl-card.png" className="w-[500px]" />
           </Reveal>
           <motion.div
             className="absolute right-6 top-[22%] rounded-2xl border border-border bg-card/80 px-5 py-4 backdrop-blur"
@@ -368,9 +391,9 @@ function SlideProblem() {
 // ── 3. solution ───────────────────────────────────────────────────────────────────
 
 const VERDICTS = [
-  { label: 'ALLOW', color: 'var(--ok)', note: 'payee added to the vault allowlist' },
-  { label: 'WARN', color: 'var(--warn)', note: 'nothing written, a human decides' },
-  { label: 'DENY', color: 'var(--danger)', note: 'payee removed, the contract refuses' },
+  { label: 'ALLOW', color: 'var(--ok)', owl: '/mascots/owl-soft-allow.png', note: 'payee added to the vault allowlist' },
+  { label: 'WARN', color: 'var(--warn)', owl: '/mascots/owl-soft-warn.png', note: 'nothing written, a human decides' },
+  { label: 'DENY', color: 'var(--danger)', owl: '/mascots/owl-soft-deny.png', note: 'payee removed, the contract refuses' },
 ]
 
 function SlideSolution() {
@@ -396,12 +419,30 @@ function SlideSolution() {
         <Eyebrow>The solution</Eyebrow>
       </Reveal>
       <Reveal delay={0.1}>
-        <Title className="mt-6">
-          Verify, then pay. <span className="text-foreground/55">One system, enforced on chain.</span>
-        </Title>
+        <Title className="mt-6">Verify, then pay.</Title>
       </Reveal>
+      <Reveal delay={0.18}>
+        <p className="mt-3 text-[26px] text-foreground/60">One system, enforced on chain.</p>
+      </Reveal>
+      {/* The owl's eyes follow the verdict the chips are showing. */}
+      <div className="absolute right-24 top-12 h-[210px] w-[210px]">
+        <AnimatePresence mode="wait" initial={false}>
+          <motion.img
+            key={active}
+            src={VERDICTS[active].owl}
+            alt=""
+            draggable={false}
+            className="absolute inset-0 h-full w-full"
+            style={{ filter: 'drop-shadow(0 20px 36px rgba(0,0,0,0.45))' }}
+            initial={print ? false : { opacity: 0, scale: 0.92, y: 6 }}
+            animate={{ opacity: 1, scale: 1, y: 0 }}
+            exit={{ opacity: 0, scale: 0.92, y: -6 }}
+            transition={{ duration: 0.35, ease: EASE }}
+          />
+        </AnimatePresence>
+      </div>
 
-      <div className="relative mt-16" style={{ height: 320, marginLeft: -96, marginRight: -96 }}>
+      <div className="relative mt-10" style={{ height: 320, marginLeft: -96, marginRight: -96 }}>
         <svg className="absolute inset-0" width={W} height={320}>
           {xs.slice(0, -1).map((x, i) => (
             <motion.line
@@ -645,66 +686,85 @@ function SlideTraction() {
 
 // ── 6. team ───────────────────────────────────────────────────────────────────────
 
+type Person = { initials: string; photo?: string; name: string; role: string; focus: string; points: string[] }
+
+// `photo` takes a path under /public; until one is set the card shows the initials ring.
+const PEOPLE: Person[] = [
+  {
+    initials: 'AD',
+    name: 'Aybars Dorman',
+    role: 'Co-Founder & CEO',
+    focus: 'Product, go-to-market, business development',
+    points: [
+      '27,500+ users onboarded to BiLira through partnerships he led, including a learn-to-earn program with Circle',
+      '293 developers onboarded at TON Society Türkiye',
+      'Dorman Review: 3,417 subscribers. SDF ambassador, CoinDesk Türkiye columnist',
+    ],
+  },
+  {
+    initials: 'MC',
+    name: 'Meriç Cintosun',
+    role: 'Co-Founder & CTO',
+    focus: 'Full stack, frontend to contracts',
+    points: [
+      'Took A-Identity to 8 live mainnets, Arc Mainnet on its launch day',
+      'The spend vault in Solidity and in Rust, and our own x402 facilitators',
+      '1st Stellar HackPera, 2nd Casper Agentic Buildathon, 1st SUI Bootcamp, 1st MultiversX Xperience',
+    ],
+  },
+  {
+    initials: 'MP',
+    name: 'Müge Ayşe Polat',
+    role: 'Head of Brand and Strategy',
+    focus: 'Positioning, go-to-market, ecosystem',
+    points: [
+      'Leads positioning, go-to-market, the investor narrative and partnerships',
+      'Drives ecosystem strategy across AI agents, digital trust and Web3',
+      'Growth and strategy background across global platforms and behavioral science',
+    ],
+  },
+]
+
 function SlideTeam() {
   const print = usePrint()
-  const people = [
-    {
-      initials: 'AD',
-      name: 'Aybars Dorman',
-      role: 'Co-Founder & CEO · product, go-to-market, BD',
-      points: [
-        '27,500+ users onboarded to BiLira through partnerships he led, including a learn-to-earn program with Circle',
-        '293 developers onboarded at TON Society Türkiye, 50+ projects sent to TON Foundation funding',
-        'Dorman Review newsletters: 3,417 subscribers',
-        'Stellar Development Foundation ambassador, CoinDesk Türkiye columnist',
-      ],
-    },
-    {
-      initials: 'MC',
-      name: 'Meriç Cintosun',
-      role: 'Co-Founder & CTO · full stack, frontend to contracts',
-      points: [
-        'Took A-Identity to 8 live mainnets, Arc Mainnet on launch day',
-        'The spend vault in Solidity and in Rust for Soroban, and our own x402 facilitators',
-        '1st Stellar HackPera (Riskon), 2nd Casper Agentic Buildathon (CasCet)',
-        '1st SUI Bootcamp Istanbul (SuiVox), 1st MultiversX Xperience (Axis AI)',
-      ],
-    },
-  ]
   return (
     <Slide n={6}>
-      <Reveal>
-        <Eyebrow>Team</Eyebrow>
-      </Reveal>
-      <Reveal delay={0.1}>
-        <Title className="mt-6 max-w-[1200px]">Two founders who ship, and who have onboarded users before.</Title>
-      </Reveal>
-      <div className="mt-14 grid grid-cols-2 gap-8">
-        {people.map((p, pi) => (
-          <Reveal key={p.name} delay={0.3 + pi * 0.2}>
-            <div className="h-[450px] rounded-3xl border border-border bg-card/75 p-10 backdrop-blur">
-              <div className="flex items-center gap-6">
-                <div className="relative h-[88px] w-[88px]">
-                  <motion.div
-                    className="absolute inset-0 rounded-full"
-                    style={{ background: 'conic-gradient(from 0deg, var(--accent), var(--usdc), var(--accent))' }}
-                    animate={print ? undefined : { rotate: 360 }}
-                    transition={{ duration: 8, repeat: Infinity, ease: 'linear' }}
-                  />
-                  <div className="absolute inset-[3px] flex items-center justify-center rounded-full bg-card font-heading text-[30px]">
-                    {p.initials}
-                  </div>
-                </div>
-                <div>
-                  <div className="font-heading text-[36px] leading-tight">{p.name}</div>
-                  <div className="mt-1 text-[16px] text-accent">{p.role}</div>
+      <div className="flex items-start justify-between">
+        <div>
+          <Reveal>
+            <Eyebrow>Team</Eyebrow>
+          </Reveal>
+          <Reveal delay={0.1}>
+            <Title className="mt-6">Builders who ship, and who grow users.</Title>
+          </Reveal>
+        </div>
+        <Reveal delay={0.3} y={30}>
+          <Owl src="/mascots/owl-wing.png" className="-mt-8 w-[170px]" />
+        </Reveal>
+      </div>
+      <div className="mt-8 grid grid-cols-3 gap-6">
+        {PEOPLE.map((p, pi) => (
+          <Reveal key={p.name} delay={0.3 + pi * 0.18}>
+            <div className="h-[500px] rounded-3xl border border-border bg-card/75 p-8 backdrop-blur">
+              <div className="relative h-[104px] w-[104px]">
+                <motion.div
+                  className="absolute inset-0 rounded-full"
+                  style={{ background: 'conic-gradient(from 0deg, var(--accent), var(--usdc), var(--accent))' }}
+                  animate={print ? undefined : { rotate: 360 }}
+                  transition={{ duration: 8, repeat: Infinity, ease: 'linear' }}
+                />
+                <div className="absolute inset-[3px] flex items-center justify-center overflow-hidden rounded-full bg-card font-heading text-[34px]">
+                  {p.photo ? <img src={p.photo} alt={p.name} className="h-full w-full object-cover" /> : p.initials}
                 </div>
               </div>
-              <ul className="mt-8 space-y-4">
+              <div className="mt-6 font-heading text-[32px] leading-tight">{p.name}</div>
+              <div className="mt-1 text-[18px] font-semibold text-accent">{p.role}</div>
+              <div className="mt-1 text-[15px] text-foreground/55">{p.focus}</div>
+              <ul className="mt-6 space-y-3">
                 {p.points.map((pt, i) => (
-                  <Reveal key={pt} delay={0.6 + pi * 0.2 + i * 0.1} y={10}>
-                    <li className="flex gap-4 text-[19px] leading-[1.45] text-foreground/80">
-                      <span className="mt-[11px] h-1.5 w-1.5 shrink-0 rounded-full bg-accent" />
+                  <Reveal key={pt} delay={0.55 + pi * 0.18 + i * 0.08} y={10}>
+                    <li className="flex gap-3 text-[17px] leading-[1.45] text-foreground/80">
+                      <span className="mt-[10px] h-1.5 w-1.5 shrink-0 rounded-full bg-accent" />
                       {pt}
                     </li>
                   </Reveal>
@@ -832,11 +892,11 @@ function SlideClose() {
     ['X', 'x.com/ai_dentity'],
   ]
   return (
-    <Slide n={8}>
+    <Slide n={8} brand={false}>
       <div className="grid h-full grid-cols-[1fr_1fr] items-center gap-10">
         <div>
           <Reveal>
-            <img src="/brand/lockup-horizontal-full-cream.png" alt="A-Identity" className="h-14 w-auto" />
+            <img src="/brand/lockup-horizontal-full-cream.png" alt="A-Identity" className="h-[72px] w-auto" />
           </Reveal>
           <Reveal delay={0.15}>
             <h2 className="mt-12 font-heading text-[112px] leading-[0.95] tracking-[-0.03em]">
@@ -861,7 +921,12 @@ function SlideClose() {
             ))}
           </Reveal>
           <Reveal delay={0.7} className="mt-10 text-[17px] text-foreground/60">
-            Aybars Dorman, CEO · Meriç Cintosun, CTO
+            {['Aybars Dorman, CEO', 'Meriç Cintosun, CTO', 'Müge Ayşe Polat, Head of Brand and Strategy'].map((who, i) => (
+              <span key={who} className="whitespace-nowrap">
+                {i > 0 && ' · '}
+                {who}
+              </span>
+            ))}
           </Reveal>
         </div>
         <div className="relative flex h-full items-center justify-center">
@@ -873,6 +938,7 @@ function SlideClose() {
               transition={{ duration: 3.2, repeat: Infinity, ease: 'easeInOut' }}
             />
             <Art src="/art/art-gateway.webp" className="relative w-[720px]" float={false} />
+            <Owl src="/mascots/owl-soft.png" className="absolute bottom-[10%] left-1/2 w-[190px] -translate-x-1/2" />
           </Reveal>
         </div>
       </div>
