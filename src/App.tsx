@@ -41,6 +41,7 @@ const Architecture = lazy(() => import('./routes/Architecture'))
 const Mascot = lazy(() => import('./routes/Mascot'))
 const BrandKit = lazy(() => import('./routes/BrandKit'))
 const Motion = lazy(() => import('./routes/Motion'))
+const Deck = lazy(() => import('./routes/Deck'))
 const NotFound = lazy(() => import('./routes/NotFound'))
 const AppLayout = lazy(() => import('./routes/app/AppLayout'))
 const Dashboard = lazy(() => import('./routes/app/Dashboard'))
@@ -134,6 +135,8 @@ export default function App() {
         {/* Internal design surfaces. Unlinked and noindex. */}
         <Route path="/mascot" element={<Mascot />} />
         <Route path="/motion" element={<Motion />} />
+        {/* The pitch deck. Unlinked and noindex; /deck?print=1 is the PDF source. */}
+        <Route path="/deck" element={<Deck />} />
 
         <Route element={<ProtectedRoute />}>
           <Route path="/app" element={<AppLayout />}>
