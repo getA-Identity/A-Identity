@@ -83,7 +83,10 @@ export type AgentIdentity = {
   owner: string
   domain: string
   valid: boolean
+  /** YYYY-MM-DD, or '' when nobody could date the registration (never defaulted to today). */
   registeredAt: string
+  /** Where a non-empty registeredAt came from: the mint block on chain, or the agent's own file. */
+  registeredAtSource?: 'onchain-mint' | 'self-reported'
   registrationUri?: string
   chain?: string
   /** Existence proven (owner holds an identity token) but the token id could not be

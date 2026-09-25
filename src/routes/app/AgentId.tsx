@@ -162,7 +162,7 @@ export default function AgentId() {
   const kya = kyaPresentation(realAgent?.kya)
   const registeredLabel = realAgent?.createdAt
     ? new Date(realAgent.createdAt).toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' })
-    : liveAgent?.registeredAt ?? '-'
+    : liveAgent?.registeredAt || '-' // '' is the backend's "undated", not a date
   // Platform agents are minted on Arc, but the label is derived rather than typed: the
   // registry is what knows a chain's name, and a hand-typed one is how a page ends up
   // calling some other chain's agent an Arc agent.

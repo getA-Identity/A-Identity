@@ -201,3 +201,128 @@ test('every EVM query still takes the EVM path unchanged', async () => {
   assert.ok(await provider.resolve('eip155:1:8004/25'))
   assert.deepEqual(seen, ['25', '25'])
 })
+
+// -- registration dates: read from the chain or reported unknown, never invented --------
+
+const DATE_REG = ('0x' + '1'.repeat(40)) as `0x${string}`
+const DATE_CHAIN = { chainId: 1, chainName: 'only', rpcUrl: 'http://unused', registry: DATE_REG, caipPrefix: 'eip155:1' }
+const MINT_TX = ('0x' + 'a'.repeat(64)) as `0x${string}`
+const OTHER_TX = ('0x' + 'b'.repeat(64)) as `0x${string}`
+const topicOf = (n: bigint | string) => '0x' + BigInt(n).toString(16).padStart(64, '0')
+/** Written out by hand so a typo in the module's constant cannot hide behind itself. */
+const TRANSFER_TOPIC_FOR_TEST = '0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef'
+
+/**
+ * Drive the real `_readToken` with no network: a fake viem client for the chain reads and a
+ * stubbed fetch for the tokenURI. `card` is the registration file (null makes tokenURI
+ * revert); `receipts` maps a tx hash to what the chain would answer for it.
+ */
+async function readTokenWith(
+  card: Record<string, unknown> | null,
+  receipts: Record<string, unknown> = {},
+  blockTimestamp = 0n,
+) {
+  const { RpcIdentityProvider } = await import('./erc8004.js')
+  const provider = new RpcIdentityProvider([DATE_CHAIN])
+  const client = {
+    readContract: async ({ functionName }: { functionName: string }) => {
+      if (functionName === 'ownerOf') return '0x' + 'c'.repeat(40)
+      if (functionName === 'tokenURI' && card) return 'https://agent.example/card.json'
+      throw new Error('execution reverted')
+    },
+    getTransactionReceipt: async ({ hash }: { hash: string }) => {
+      if (!(hash in receipts)) throw new Error('receipt not found')
+      return receipts[hash]
+    },
+    getBlock: async () => ({ timestamp: blockTimestamp }),
+  }
+  const realFetch = globalThis.fetch
+  globalThis.fetch = (async () => new Response(JSON.stringify(card ?? {}), { status: 200 })) as typeof fetch
+  try {
+    return await (provider as unknown as {
+      _readToken: (c: unknown, h: unknown, chain: typeof DATE_CHAIN, id: bigint) => Promise<Record<string, unknown> | null>
+    })._readToken(() => client, () => undefined, DATE_CHAIN, 0n)
+  } finally {
+    globalThis.fetch = realFetch
+  }
+}
+
+test('an undated registration reports registeredAt unknown, never the day it was asked', async () => {
+  // The bug: the EVM read defaulted registeredAt to TODAY, so our Arc Mainnet agent #0,
+  // minted 2026-09-16 with a registration file that carries no date, was reported as
+  // registered on whatever day anyone resolved it.
+  const plain = await readTokenWith({ name: 'agent' })
+  assert.equal(plain?.registeredAt, '', 'no date anywhere means unknown')
+  assert.equal(plain?.registeredAtSource, undefined)
+
+  const reverted = await readTokenWith(null)
+  assert.ok(reverted, 'an unreadable tokenURI still resolves the identity')
+  assert.equal(reverted.registeredAt, '')
+
+  // A registration file that names a transaction which did NOT mint this token earns nothing:
+  // here the receipt holds an ERC-20 style Transfer (three topics) and a mint of token 7.
+  const misleading = await readTokenWith(
+    { registrations: [{ chain: 'eip155:1', registry: DATE_REG, agentId: '0', tx: OTHER_TX }] },
+    {
+      [OTHER_TX]: {
+        status: 'success',
+        blockNumber: 5n,
+        logs: [
+          { address: DATE_REG, topics: [TRANSFER_TOPIC_FOR_TEST, topicOf(0n), topicOf(9n)] },
+          { address: DATE_REG, topics: [TRANSFER_TOPIC_FOR_TEST, topicOf(0n), topicOf(9n), topicOf(7n)] },
+        ],
+      },
+    },
+    1_000n,
+  )
+  assert.equal(misleading?.registeredAt, '', 'a pointer the chain does not back is ignored')
+
+  // A date the agent wrote about itself is kept, normalized, and labeled as its own word;
+  // one that is not a date is dropped rather than passed through.
+  const selfDated = await readTokenWith({ registeredAt: '2025-01-02T10:00:00Z' })
+  assert.equal(selfDated?.registeredAt, '2025-01-02')
+  assert.equal(selfDated?.registeredAtSource, 'self-reported')
+  const garbage = await readTokenWith({ registeredAt: 'yesterday' })
+  assert.equal(garbage?.registeredAt, '')
+  const notAString = await readTokenWith({ registeredAt: 20250102 })
+  assert.equal(notAString?.registeredAt, '')
+})
+
+test('a mint named by the registration file is verified on chain and dated by its block', async () => {
+  const { TRANSFER_TOPIC, mintTxHint, receiptMintsToken } = await import('./erc8004.js')
+  const { toEventSelector } = await import('viem')
+  assert.equal(TRANSFER_TOPIC, toEventSelector('Transfer(address,address,uint256)'))
+  assert.equal(TRANSFER_TOPIC_FOR_TEST, TRANSFER_TOPIC)
+
+  const mintReceipt = {
+    status: 'success',
+    blockNumber: 100n,
+    logs: [{ address: DATE_REG.toUpperCase().replace('0X', '0x'), topics: [TRANSFER_TOPIC, topicOf(0n), topicOf('0x' + 'c'.repeat(40)), topicOf(0n)] }],
+  }
+  const minted = await readTokenWith(
+    {
+      // The on-chain date wins over whatever the file claims about itself.
+      registeredAt: '2020-01-01',
+      registrations: [{ chain: 'eip155:1', registry: DATE_REG, agentId: '0', caip: `eip155:1:${DATE_REG}/0`, tx: MINT_TX }],
+    },
+    { [MINT_TX]: mintReceipt },
+    BigInt(Date.parse('2026-09-16T12:19:45Z') / 1000),
+  )
+  assert.equal(minted?.registeredAt, '2026-09-16')
+  assert.equal(minted?.registeredAtSource, 'onchain-mint')
+
+  // A reverted mint transaction proves nothing.
+  assert.equal(receiptMintsToken({ ...mintReceipt, status: 'reverted' }, DATE_REG, 0n), false)
+  // Another contract minting the same id is not this registry's mint.
+  assert.equal(receiptMintsToken(mintReceipt, '0x' + '2'.repeat(40), 0n), false)
+  assert.equal(receiptMintsToken(mintReceipt, DATE_REG, 1n), false)
+  assert.equal(receiptMintsToken(null, DATE_REG, 0n), false)
+
+  // The hint is matched on registry AND token id, in both the ERC-8004 file form and ours.
+  assert.equal(mintTxHint([{ agentRegistry: `eip155:1:${DATE_REG}`, agentId: 0, tx: MINT_TX }], 'eip155:1', DATE_REG, 0n), MINT_TX)
+  assert.equal(mintTxHint([{ caip: `eip155:1:${DATE_REG}/0`, agentId: '0', tx: MINT_TX }], 'eip155:1', DATE_REG, 0n), MINT_TX)
+  assert.equal(mintTxHint([{ chain: 'eip155:2', registry: DATE_REG, agentId: '0', tx: MINT_TX }], 'eip155:1', DATE_REG, 0n), null)
+  assert.equal(mintTxHint([{ chain: 'eip155:1', registry: DATE_REG, agentId: '1', tx: MINT_TX }], 'eip155:1', DATE_REG, 0n), null)
+  assert.equal(mintTxHint([{ chain: 'eip155:1', registry: DATE_REG, agentId: '0', tx: '0x1234' }], 'eip155:1', DATE_REG, 0n), null)
+  assert.equal(mintTxHint('not a list', 'eip155:1', DATE_REG, 0n), null)
+})

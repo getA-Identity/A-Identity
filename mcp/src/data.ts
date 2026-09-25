@@ -47,7 +47,19 @@ export type AgentIdentity = {
   registrationUri: string
   domain: string
   valid: boolean
+  /**
+   * The registration date (YYYY-MM-DD), or '' when it is unknown. Never defaulted: an
+   * empty string means nobody could date the registration, not that it happened today.
+   */
   registeredAt: string
+  /**
+   * Where a non-empty `registeredAt` came from, because the two sources carry very
+   * different weight. 'onchain-mint' is the block timestamp of a transaction whose receipt
+   * carries this registry's mint of this token id. 'self-reported' is a date the agent
+   * wrote into its own registration file, which nothing on chain vouches for. Absent when
+   * `registeredAt` is ''.
+   */
+  registeredAtSource?: 'onchain-mint' | 'self-reported'
   chain: ChainName
   /** True when only EXISTENCE could be proven (owner holds an identity token) but the
    *  token id could not be enumerated (e.g. X Layer's public RPC caps getLogs), so

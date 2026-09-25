@@ -81,6 +81,93 @@ type ChainClient = {
   caipPrefix: string
 }
 
+// -- Registration date ---------------------------------------------------------
+//
+// ERC-8004 stores no registration time, so a date has to come from the mint itself. The
+// obvious read, "find the Transfer(from = 0) log for this token id", needs eth_getLogs
+// across the chain's whole history, and the public RPCs refuse that: on 2026-09-25 Arc
+// Mainnet's four endpoints answered with a 100000-block cap, a 10000-block cap on a free
+// plan, rate limits on anything wider than a few blocks, and pruned history. A mint 1.5M
+// blocks back would take hundreds of calls to find that way.
+//
+// What IS cheap is checking a claim: when the agent's registration file names the mint
+// transaction for this exact registry and token id, one receipt read proves (or refutes)
+// that the transaction minted it, and one block read dates it. The file only says where to
+// look; the date comes from the chain, and a file that points anywhere else gets nothing.
+// Without such a pointer the date is unknown, and unknown is reported as ''.
+
+/** keccak256("Transfer(address,address,uint256)"): the ERC-721 Transfer, a mint when `from` is zero. */
+export const TRANSFER_TOPIC = '0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef'
+const ZERO_TOPIC = `0x${'0'.repeat(64)}`
+/** Cap on the receipt + block read, so dating a registration can never stall a resolve. */
+const MINT_DATE_TIMEOUT_MS = 2500
+
+/**
+ * The mint transaction an agent's registration file names for THIS registry and token id,
+ * or null. Accepts the ERC-8004 registration-file form (`agentRegistry` as
+ * "<caip2>:<registry>") and the agent-card form this repo publishes (`chain` + `registry`,
+ * or a `caip` of "<caip2>:<registry>/<id>"). Pure, so it is unit-testable.
+ */
+export function mintTxHint(
+  registrations: unknown,
+  caipPrefix: string,
+  registry: string,
+  tokenId: bigint,
+): `0x${string}` | null {
+  if (!Array.isArray(registrations)) return null
+  const want = `${caipPrefix}:${registry}`.toLowerCase()
+  for (const r of registrations) {
+    if (!r || typeof r !== 'object') continue
+    const e = r as Record<string, unknown>
+    const id = typeof e.agentId === 'number' || typeof e.agentId === 'string' ? String(e.agentId) : null
+    if (id !== tokenId.toString()) continue
+    const at =
+      typeof e.agentRegistry === 'string'
+        ? e.agentRegistry
+        : typeof e.chain === 'string' && typeof e.registry === 'string'
+          ? `${e.chain}:${e.registry}`
+          : typeof e.caip === 'string'
+            ? e.caip.replace(/\/[^/]*$/, '')
+            : ''
+    if (at.toLowerCase() !== want) continue
+    if (typeof e.tx === 'string' && /^0x[0-9a-fA-F]{64}$/.test(e.tx)) return e.tx as `0x${string}`
+  }
+  return null
+}
+
+/**
+ * True when a receipt shows `registry` minting `tokenId`: a successful transaction with a
+ * Transfer log from that contract whose `from` is zero and whose token id matches. An
+ * ERC-20 Transfer has the same topic0 but only three topics, so it cannot match. Pure.
+ */
+export function receiptMintsToken(
+  receipt: { status?: string; logs?: ReadonlyArray<{ address?: string; topics?: ReadonlyArray<string> }> } | null | undefined,
+  registry: string,
+  tokenId: bigint,
+): boolean {
+  if (!receipt || receipt.status !== 'success' || !Array.isArray(receipt.logs)) return false
+  return receipt.logs.some((l) => {
+    const t = l.topics ?? []
+    if (t.length !== 4 || l.address?.toLowerCase() !== registry.toLowerCase()) return false
+    if (t[0]?.toLowerCase() !== TRANSFER_TOPIC || t[1]?.toLowerCase() !== ZERO_TOPIC) return false
+    try {
+      return BigInt(t[3]) === tokenId
+    } catch {
+      return false
+    }
+  })
+}
+
+/**
+ * A date an agent wrote into its own registration file, normalized to YYYY-MM-DD, or ''
+ * when it is missing or not a date. Self-reported: callers label it so. Pure.
+ */
+export function selfReportedDate(value: unknown): string {
+  if (typeof value !== 'string' || !/^\d{4}-\d{2}-\d{2}/.test(value)) return ''
+  const ms = Date.parse(value)
+  return Number.isFinite(ms) ? new Date(ms).toISOString().slice(0, 10) : ''
+}
+
 /**
  * Real on-chain ERC-8004 reads using viem.
  * Multi-chain: one client per chain, routed by CAIP-10 prefix or token id.
@@ -130,9 +217,8 @@ export class RpcIdentityProvider implements IdentityProvider {
         // Never self-attestable, for the same reason the EVM path pins it false: the
         // registration document is hosted by whoever registered the agent.
         valid: false,
-        // Not dated. The EVM path defaults this to today when metadata is missing; a
-        // registration date we did not read is not a date, and this registry does not
-        // expose one.
+        // Not dated: this registry exposes no registration time, and a date we did not read
+        // is not a date. The EVM path reports '' the same way when it cannot date a mint.
         registeredAt: '',
         chain: chain.id as AgentIdentity['chain'],
         thirdParty: true,
@@ -241,7 +327,11 @@ export class RpcIdentityProvider implements IdentityProvider {
 
       // Fetch registration JSON from tokenURI (display metadata only).
       let domain = ''
-      let registeredAt = new Date().toISOString().slice(0, 10)
+      // Unknown until something dates it. This used to default to TODAY, so any agent whose
+      // registration file carried no date (our own Arc Mainnet #0 among them) was reported
+      // as registered on whatever day you asked.
+      let selfReported = ''
+      let mintTx: `0x${string}` | null = null
       // `valid` is NOT self-attestable: the tokenURI JSON is hosted by the agent itself,
       // so reading `valid` from it lets any agent mark itself verified (and an unreachable
       // URI would default it to `true`). Authoritative verification comes from the on-chain
@@ -252,14 +342,24 @@ export class RpcIdentityProvider implements IdentityProvider {
           // redirect:'error' so a public URL can't 30x us into an internal target.
           const reg = await fetch(tokenUri, { signal: AbortSignal.timeout(4000), redirect: 'error' })
           if (reg.ok) {
-            const data = (await reg.json()) as Partial<AgentIdentity>
+            const data = (await reg.json()) as Partial<AgentIdentity> & { registrations?: unknown }
             domain = data.domain ?? ''
-            registeredAt = data.registeredAt ?? registeredAt
+            selfReported = selfReportedDate(data.registeredAt)
+            mintTx = mintTxHint(data.registrations, chain.caipPrefix, chain.registry, tokenId)
           }
         } catch {
           // tokenURI not reachable - use on-chain data only
         }
       }
+
+      // A date the chain vouches for wins over one the agent wrote down about itself.
+      const minted = mintTx ? await this._readMintDate(client, chain, tokenId, mintTx) : ''
+      const registeredAt = minted || selfReported
+      const registeredAtSource: AgentIdentity['registeredAtSource'] = minted
+        ? 'onchain-mint'
+        : selfReported
+          ? 'self-reported'
+          : undefined
 
       return {
         agentId: `${chain.caipPrefix}:8004/${tokenId}`,
@@ -269,10 +369,46 @@ export class RpcIdentityProvider implements IdentityProvider {
         domain,
         valid,
         registeredAt,
+        ...(registeredAtSource ? { registeredAtSource } : {}),
         chain: chain.chainName as AgentIdentity['chain'],
       }
     } catch {
       return null
+    }
+  }
+
+  /**
+   * The UTC date of the block that minted `tokenId`, read from the transaction the agent's
+   * registration file names, or '' when that transaction did not mint it, the RPC could not
+   * answer, or the read took longer than MINT_DATE_TIMEOUT_MS. Never throws: a registration
+   * that cannot be dated is still a registration.
+   */
+  private async _readMintDate(
+    client: {
+      getTransactionReceipt: (a: { hash: `0x${string}` }) => Promise<unknown>
+      getBlock: (a: { blockNumber: bigint }) => Promise<{ timestamp: bigint }>
+    },
+    chain: ChainClient,
+    tokenId: bigint,
+    tx: `0x${string}`,
+  ): Promise<string> {
+    const read = async (): Promise<string> => {
+      const receipt = (await client.getTransactionReceipt({ hash: tx })) as Parameters<typeof receiptMintsToken>[0] & {
+        blockNumber?: bigint
+      }
+      if (!receiptMintsToken(receipt, chain.registry, tokenId) || typeof receipt?.blockNumber !== 'bigint') return ''
+      const block = await client.getBlock({ blockNumber: receipt.blockNumber })
+      return new Date(Number(block.timestamp) * 1000).toISOString().slice(0, 10)
+    }
+    let timer: ReturnType<typeof setTimeout> | undefined
+    const timeout = new Promise<string>((resolve) => {
+      timer = setTimeout(() => resolve(''), MINT_DATE_TIMEOUT_MS)
+      timer.unref?.()
+    })
+    try {
+      return await Promise.race([read().catch(() => ''), timeout])
+    } finally {
+      clearTimeout(timer)
     }
   }
 
