@@ -113,12 +113,21 @@ function howToVerify(networks: ChainProofReport[]): string[] {
       'Settlements are proven by our own read of the SEP-41 transfer event, matched to the authorization that paid for them, never by a broadcaster reporting success. See GET /api/x402/stellar/proof, whose byBroadcaster field says who actually moved each one.',
     ]
   }
-  return [
+  const lines = [
     shared.replace('ledger named', 'block named'),
     'Every claim about an agent is re-read live when you load this page. If ownerOf stopped matching what we recorded, this page would say so.',
     'The registry addresses are the canonical ERC-8004 ones. Compare them to any other chain we list; they are deliberately identical.',
-    'Settlements are proven by a receipt plus a matching Transfer log, not by a third party reporting success. See GET /api/facilitator/proof.',
+    'Settlements we broadcast are proven by a receipt plus a matching Transfer log, not by a third party reporting success. See GET /api/facilitator/proof.',
   ]
+  // Only where a mainnet network on this rail sells through Circle Gateway: there Circle,
+  // not we, broadcasts the batch, and the line above would be true of our rail but silent
+  // about theirs.
+  if (networks.some((n) => !getChainById(n.chain)?.testnet && getChainById(n.chain)?.gateway)) {
+    lines.push(
+      'Circle Gateway sales are the exception: Circle broadcasts the batch, so one counts only once Circle\'s transfers API returns that transfer for the payment\'s own authorization nonce, and it links to Circle\'s batch transaction once that lands. See GET /api/x402/gateway/proof.',
+    )
+  }
+  return lines
 }
 
 /**
