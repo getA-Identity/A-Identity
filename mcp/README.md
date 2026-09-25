@@ -14,14 +14,19 @@ runs without an explicit human action, and without a signer key every write retu
 `prepared` / `simulated` no-op.
 
 **Not testnet only.** This line used to say it was, which was true of Arc and never true of
-the registry. Arc is testnet and is the `live` phase-1 network, but four mainnets carry our
-own traffic and real value: OKX X Layer, Celo, Robinhood Chain and Arbitrum One. Stellar
-pubnet is a fifth mainnet and it is `live`, not `beta`: the Soroban spend vault holds real
+the registry. Arc was the phase-1 network on testnet and has been `live` on Arc Mainnet
+(`eip155:5042`) since the day it opened, 2026-09-16: agent #0 on the canonical ERC-8004
+registry, an `AgentSpendPolicy` vault holding real USDC, and x402 selling there through both
+our EIP-3009 facilitator and Circle Gateway nanopayments (see `src/x402-3009/` and
+`src/x402-gateway/` below), every payment so far self-funded and labeled internal. Escrow, KYA anchoring
+and the console's register, anchor and vault flows still run on Arc testnet. Other mainnets
+carrying our own traffic and real value: OKX X Layer, Celo, Base, Robinhood Chain,
+Arbitrum One and Algorand. Stellar pubnet is `live` too, not `beta`: the Soroban spend vault holds real
 USDC under its on-ledger policy, and since 2026-08-28 the Soroban x402 rail SELLS on both
 Stellar networks from the hosted deployment, which `/api/x402/stellar/status` answers for
 itself. Two payment
-rails of our own sell across these chains - `x402-3009/` (self-facilitated EIP-3009, on the
-EVM mainnets) and `x402-stellar/` (Soroban, on the two Stellar networks) - and each chain
+rails of our own sell across these chains - `x402-3009/` (self-facilitated EIP-3009, on Arc
+Mainnet, Base, Arbitrum One and Robinhood Chain) and `x402-stellar/` (Soroban, on the two Stellar networks) - and each chain
 has its own signer env var. [`src/chains/registry.ts`](src/chains/registry.ts)
 is the source of truth for which is which, and [`../SECURITY.md`](../SECURITY.md) lists every
 key and what it can spend.
@@ -36,11 +41,11 @@ exposes the read-only set and nothing that can move money.
 
 | Tool                | Input                                   | Returns                                             |
 | ------------------- | --------------------------------------- | --------------------------------------------------- |
-| `resolve_agent`     | `query` (CAIP-10 id / token id / owner) | live ERC-8004 identity read from Arc, or `found:false` |
+| `resolve_agent`     | `query` (CAIP-10 id / token id / owner) | live ERC-8004 identity read from every registry chain, or `found:false`; `registeredAt` is the mint block's date when the chain can prove it, else self-reported (labeled) or `''` |
 | `get_reputation`    | `agentId`                               | deterministic score (0-1000) + breakdown            |
 | `list_agents`       | -                                       | agents this platform instance knows                 |
 | `get_chain_status`  | -                                       | supported chains + status                           |
-| `get_arc_status`    | -                                       | live Arc testnet chainId + latest block             |
+| `get_arc_status`    | -                                       | live Arc testnet chainId + latest block (Arc Mainnet evidence: `GET /api/proof/arc`) |
 | `get_circle_status` | -                                       | Circle platform link state (real ping with a key)   |
 | `list_capabilities` | -                                       | the A-Identity protocol surface                     |
 | `merchant_check`    | merchant agent id or URL                | commerce verdict before a checkout (`src/commerce.ts`) |
@@ -109,7 +114,9 @@ Directories:
   receipt carrying a matching `Transfer` log. Chain-generic, so a chain joins by declaring a
   `settlementTokens` entry. Its EIP-712 signing domain is PROVEN against the token's live
   `DOMAIN_SEPARATOR` rather than pasted; if it cannot be proven, no challenge is served.
-  Sells on Robinhood Chain (USDG) and Arbitrum One (native Circle USDC).
+  Sells on Arc Mainnet (USDC, the ERC-20 face of the gas token), Base, Arbitrum One (native
+  Circle USDC on both) and Robinhood Chain (USDG); `GET /api/facilitator/status` lists the
+  configured networks and their fees.
 - `src/x402-gateway/` - the Circle Gateway batched rail (Nanopayments) for Circle Agent
   Marketplace buyers: the buyer signs an EIP-3009 authorization against Gateway's
   `GatewayWalletBatched` domain and pays no gas, Gateway credits and batches, we broadcast
@@ -117,7 +124,8 @@ Directories:
   live supported-kinds endpoint must name that wallet and the chain's USDC before a
   challenge is served. Nothing is recorded or served until the transfer is read back from
   Gateway's transfers API. Prices are read from `asp/payment.ts`, never restated. Sells on
-  Base mainnet (`X402_GATEWAY_NETWORKS`, `X402_GATEWAY_PAYTO`).
+  Arc Mainnet (the primary network) and Base mainnet (`X402_GATEWAY_NETWORKS`,
+  `X402_GATEWAY_PAYTO`); `GET /api/x402/gateway/status` answers for itself.
 - `src/cctp-stellar.ts` - Circle CCTP V2 between Stellar and EVM, driven directly because
   Bridge Kit has no Stellar adapter: burn, Iris attestation, mint, in both directions.
   A Stellar recipient is carried in the hook data and minted through the CctpForwarder in
@@ -170,7 +178,7 @@ npm run start        # MCP server on stdio
 npm run start:http   # the HTTP server (REST + /mcp). Reads config from process.env directly.
 npm run smoke        # spin up the MCP server + exercise every read-only tool
 npm run http-smoke   # exercise the tools over HTTP (server must be running)
-npm test             # tsc + node:test unit tests (1410 across 95 files, as of Sep 2026)
+npm test             # tsc + node:test unit tests (1412 across 95 files, as of Sep 2026)
 npm run e2e          # full end-to-end flow against a running server (E2E_BASE=...)
 ```
 
@@ -182,7 +190,7 @@ node --env-file=.env dist/http.js     # Node 20.6+
 ARC_SIGNER_KEY=0x<funded-key> node dist/http.js
 ```
 
-Tests: **1410 unit tests across 95 colocated `*.test.ts` files** (as of Sep 2026; `npm test`) +
+Tests: **1412 unit tests across 95 colocated `*.test.ts` files** (as of Sep 2026; `npm test`) +
 a full **E2E of about 67 checks** (`npm run e2e`) that adapts to signer presence: green with no
 signer key (live Arc reads; on-chain writes reported as prepared), with the real Arc write
 checks activating under a funded `ARC_SIGNER_KEY`. CI runs the no-signer path.

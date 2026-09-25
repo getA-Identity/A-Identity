@@ -427,7 +427,8 @@ Live today:
   over-limit payment by contract. Funded by a CCTP V2 burn on Base that Circle's
   Forwarding Service minted here. Every payment so far is self-funded and labeled
   internal. Escrow, KYA anchoring, Paymaster and Circle developer wallets stay on
-  testnet, and the mainnet explorer is permissioned. Proof: https://a-identity.xyz/proof/arc
+  testnet. The mainnet explorer's pages open in a browser; only its JSON API turns
+  non-browser clients away. Proof: https://a-identity.xyz/proof/arc
 - **Circle Arc testnet** (`eip155:5042002`). ERC-8004 identity
   `0x8004A818BFB912233c491871b3d84c89A494BD9e`, reputation
   `0x8004B663056A597Dffe9eCcC1965A193B7388713`, validation
@@ -469,7 +470,7 @@ Live today:
   implementation slot on both chains); agent **#73232** is ours, minted 2026-08-28
   through the production adapter. x402 settles here in native Circle USDC
   (`0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913`) through the same first-party EIP-3009
-  facilitator as Robinhood Chain and Arbitrum One, the signing domain proven against
+  facilitator as Arc Mainnet, Robinhood Chain and Arbitrum One, the signing domain proven against
   the token's live DOMAIN_SEPARATOR; the first settlement landed 2026-08-28 with the
   receipt carrying the matching Transfer log, and agent #73232's reputation is anchored
   on the canonical ReputationRegistry by our oracle validator. The full trail,

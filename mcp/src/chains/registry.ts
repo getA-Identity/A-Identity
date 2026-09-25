@@ -80,9 +80,10 @@ export const CHAINS: ChainDescriptor[] = [
       'https://rpc.drpc.mainnet.arc.io',
       'https://rpc.quicknode.mainnet.arc.io',
     ],
-    // A Blockscout instance that docs.arc.io labels permissioned: the page shell answers
-    // 200 and its public API answered 403 on 2026-09-16. Links derived from it may not open
-    // for every reader, and provenance says so wherever it cites one.
+    // A Blockscout instance. On 2026-09-16 the page shell answered 200 and its public API
+    // 403; by 2026-09-25 its pages opened to anyone in a browser without signing in, and only
+    // the JSON API still turned non-browser clients away with a bot challenge. Derived links
+    // are for people; a script reads the same facts from any RPC above.
     explorer: 'https://explorer.arc.io',
     contracts: {
       // The canonical MAINNET ERC-8004 pair (the Base / Arbitrum One / X Layer / Celo

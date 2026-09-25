@@ -207,7 +207,7 @@
       "owner": "0xd305607510E0Db2c95807173c7A05BEA53c1ed36",
       "tx": "0x1d9f57113cee71e6a0aa73d0905d02f88a08877489c05828e604db2a48412844",
       "explorer": "https://explorer.arc.io/tx/0x1d9f57113cee71e6a0aa73d0905d02f88a08877489c05828e604db2a48412844",
-      "note": "ERC-8004 IdentityRegistry on Arc Mainnet, the canonical address Base and Arbitrum One carry, minted the day Arc Mainnet opened (2026-09-16). Token #0 is the registry's first mint. Our x402 rails settle here in USDC, and the explorer is permissioned during Arc's private-mainnet phase."
+      "note": "ERC-8004 IdentityRegistry on Arc Mainnet, the canonical address Base and Arbitrum One carry, minted the day Arc Mainnet opened (2026-09-16). Token #0 is the registry's first mint. Our x402 rails settle here in USDC. The explorer's pages open in a browser; only its JSON API turns non-browser clients away."
     },
     {
       "chain": "eip155:196",

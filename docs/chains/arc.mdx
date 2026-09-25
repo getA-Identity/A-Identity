@@ -70,7 +70,7 @@ a mainnet key by a rename.
 | --- | --- |
 | Chain ID | `5042` |
 | RPC (HTTP) | `https://rpc.mainnet.arc.io` (plus Blockdaemon, dRPC and QuickNode hosts under `mainnet.arc.io`) |
-| Block explorer | [explorer.arc.io](https://explorer.arc.io), permissioned |
+| Block explorer | [explorer.arc.io](https://explorer.arc.io), pages open in a browser; its JSON API challenges non-browser clients |
 | USDC (ERC-20 interface) | `0x3600000000000000000000000000000000000000`, the same predeploy address as testnet |
 | ERC-8004 identity | `0x8004a169fb4a3325136eb29fa0ceb6d2e539a432` |
 | ERC-8004 reputation | `0x8004BAa17C55a88189AE136b182e5fdA19dE9b63` |
@@ -93,9 +93,10 @@ created or used one there yet), Paymaster (Circle's Paymaster addresses page lis
 network, and its v0.7 and v0.8 addresses have no code on Arc mainnet), the
 account-abstraction path, the treasury and airdrop demos, and ERC-8183 escrow (Arc's
 reference contract has code on testnet and none on mainnet). docs.arc.io describes the mainnet
-RPC and explorer as permissioned during a private-mainnet phase; the RPC answered without
+RPC endpoints as permissioned during a private-mainnet phase; they answered without
 credentials on launch day, and `ARC_MAINNET_RPC_URL` takes a credentialed endpoint if that
-changes.
+changes. The explorer's pages open in a browser without signing in; only its JSON API
+answers non-browser clients with a bot challenge.
 
 ## Connect With viem
 

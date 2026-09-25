@@ -1,7 +1,7 @@
 # A-Identity
 
 [![CI](https://github.com/getA-Identity/A-Identity/actions/workflows/ci.yml/badge.svg)](https://github.com/getA-Identity/A-Identity/actions/workflows/ci.yml)
-[![Tests](https://img.shields.io/badge/tests-1410%20unit%20%2B%20E2E-brightgreen)](mcp/README.md#develop)
+[![Tests](https://img.shields.io/badge/tests-1412%20unit%20%2B%20E2E-brightgreen)](mcp/README.md#develop)
 [![npm: marketplace-sdk](https://img.shields.io/npm/v/%40a-identity%2Fmarketplace-sdk?label=marketplace-sdk)](https://www.npmjs.com/package/@a-identity/marketplace-sdk)
 [![npm: trust-guard](https://img.shields.io/npm/v/%40a-identity%2Ftrust-guard?label=trust-guard)](https://www.npmjs.com/package/@a-identity/trust-guard)
 [![Ask DeepWiki](https://deepwiki.com/badge.svg)](https://deepwiki.com/getA-Identity/A-Identity)
@@ -35,8 +35,8 @@ per-request payments.
 > [/arc](https://a-identity.xyz/arc) and [/proof/arc](https://a-identity.xyz/proof/arc);
 > the first payments were our own and are labeled internal.
 >
-> Status: hackathon MVP. Arc was phase 1 and is now live on mainnet, with escrow and KYA
-> anchoring still on Arc testnet. Stellar is phase 2 and
+> Status: early-stage and pre-revenue: every mainnet payment so far is our own. Arc was
+> phase 1 and is now live on mainnet, with escrow and KYA anchoring still on Arc testnet. Stellar is phase 2 and
 > shipped: the Soroban spend vault holds real Circle USDC on pubnet under a 1 USDC daily
 > cap, and the hosted deployment sells over the Soroban x402 rail on BOTH Stellar
 > networks, with the first mainnet sale settled 2026-08-27 by our own broadcaster. Pubnet
@@ -48,26 +48,29 @@ per-request payments.
 > the whole trail is at [/proof/algorand](https://a-identity.xyz/proof/algorand)). Its
 > testnet mirror stays `beta`. Avalanche is after that.
 
-## Recognition: where this runs
+## Where this runs, and past entries
 
-One product, one live engine, three venues:
+One product, one live engine. The hackathons below are past entries, not awards: none of
+them won a prize.
 
-- **Encode x Arc "Programmable Money" hackathon** - A-Identity is built on Arc for this
-  hackathon (final submission Aug 9, 2026; Demo Day Aug 20). The trusted agent marketplace,
-  the on-chain policy vault, and the ERC-8183 escrow work in this repo are the submission.
-- **OKX.AI** - live in production as a paid **Trust Oracle**: Agent **#6271** plus backup
-  **#8913** on X Layer mainnet, with **120 real x402 settlements** paid to
-  [`0x6a5f...8ce6` on OKLink](https://www.oklink.com/x-layer/evm/address/0x6a5f1b8e56a19d456b799c2fa00e513244f58ce6).
+- **Encode x Arc "Programmable Money" hackathon** (past entry) - submitted Aug 9, 2026,
+  Demo Day Aug 20. The trusted agent marketplace, the on-chain policy vault, and the
+  ERC-8183 escrow work in this repo were the submission.
+- **OKX.AI** - listed in production as a paid **Trust Oracle**: Agent **#6271** plus backup
+  **#8913** on X Layer mainnet (first entered for the OKX.AI Genesis Hackathon in July
+  2026), with **120 real x402 settlements** paid to
+  [`0x6a5f...8ce6` on OKLink](https://www.oklink.com/x-layer/evm/address/0x6a5f1b8e56a19d456b799c2fa00e513244f58ce6),
+  all of them from our own buyer wallet during the demo and seeding runs, so not revenue.
   Details in the [OKX.AI section](#live-on-okxai-the-a-identity-trust-oracle-agent-6271) below.
-- **Ignyte Stablecoin Commerce Stack Challenge** - the original entry, Track 4: Best
-  Agentic Economy Experience on Arc.
+- **Ignyte Stablecoin Commerce Stack Challenge** (past entry) - the original entry, Track 4:
+  Best Agentic Economy Experience on Arc.
 
 **Track alignment** (Agentic Economy) - every claim is verifiable on-chain:
 
 | We demonstrate | The proof |
 | --- | --- |
 | Agents with verified on-chain identity | ERC-8004 anchor tx + KYA attestation in [Proof it's real](#proof-its-real-arc-testnet) |
-| Agents paying agents, bounded by policy | 120 x402 settlements with tx hashes at [/proof](https://a-identity-asp.onrender.com/proof); over-limit `pay()` reverts on Arc |
+| Agents paying agents, bounded by policy | 120 self-funded x402 settlements with tx hashes at [/proof](https://a-identity-asp.onrender.com/proof) (the same list is in [`mcp/src/asp/settlements.ts`](mcp/src/asp/settlements.ts)); over-limit `pay()` reverts on Arc |
 | A working agent marketplace with escrow | ERC-8183 job #155504 full lifecycle txs below; only KYA-verified agents hireable |
 | Autonomy with a human in the tower | [`/api/guardrail-status`](https://a-identity-backend.onrender.com/api/guardrail-status) answers 503 the moment the engine stops enforcing |
 
@@ -209,8 +212,9 @@ sequenceDiagram
 **Live endpoint:** `https://a-identity-asp.onrender.com` - `POST /tools/<name>` (paid),
 or free `GET /proof`, `GET /methodology`, `GET /health`.
 
-**Real on-chain settlements (not a mock, and not revenue: sub-cent amounts by design):** 120 real x402 settlements on X Layer mainnet - all
-listed at `GET /proof`. Four representative ones, each independently verifiable on OKLink:
+**Real on-chain settlements (not a mock, and not revenue: sub-cent amounts by design):** 120 real x402 settlements on X Layer mainnet, all
+paid by our own buyer wallet during the demo and seeding runs, and all listed at `GET /proof` and in
+[`mcp/src/asp/settlements.ts`](mcp/src/asp/settlements.ts). Four representative ones, each independently verifiable on OKLink:
 
 | Tool | Settlement tx |
 |---|---|
@@ -223,7 +227,7 @@ listed at `GET /proof`. Four representative ones, each independently verifiable 
 `#849980`, KYA-verified, with a reputation earned from **3 real settlements**. The score
 itself is recency-weighted and decays as those settlements age, so it is read live rather
 than quoted here. Scoring is **deterministic and
-unit-tested** (1410 unit tests as of Sep 2026), reads on-chain live via viem, and is fully documented at
+unit-tested** (1412 unit tests as of Sep 2026), reads on-chain live via viem, and is fully documented at
 `GET /methodology`. This is our answer to "surface your rigor": every number is
 reproducible and every settlement is on-chain.
 
@@ -270,9 +274,9 @@ Live since the day Arc Mainnet opened, 2026-09-16. Agent **#0**, the registry's 
 is ours (tx [`0x1d9f5711...`](https://explorer.arc.io/tx/0x1d9f57113cee71e6a0aa73d0905d02f88a08877489c05828e604db2a48412844)).
 x402 settled here through our own EIP-3009 facilitator (tx
 [`0xd44287c8...`](https://explorer.arc.io/tx/0xd44287c8d73790b818ab73016dc21483260d1948d58ac95e8a169be1d750df9c))
-and through Circle Gateway nanopayments, all self-funded so far. The explorer is
-permissioned during Arc's private-mainnet phase; every transaction is at
-[/proof/arc](https://a-identity.xyz/proof/arc).
+and through Circle Gateway nanopayments, all self-funded so far. The explorer's pages open
+in a browser without signing in (only its JSON API turns non-browser clients away with a
+bot challenge); every transaction is also at [/proof/arc](https://a-identity.xyz/proof/arc).
 
 | Contract | Address | Standard |
 | --- | --- | --- |
@@ -444,7 +448,7 @@ Base carries the canonical ERC-8004 identity and reputation registries (verified
 2026-08-28 by reading each proxy's EIP-1967 implementation slot and matching the
 implementation code byte for byte against Arbitrum One), our agent #73232 (minted
 2026-08-28, tx `0xb428bf8e`), native Circle USDC, the Gateway hop, and the same
-first-party x402 facilitator that serves Robinhood Chain and Arbitrum One, settling in
+first-party x402 facilitator that serves Arc Mainnet, Robinhood Chain and Arbitrum One, settling in
 native USDC: the first settlement landed 2026-08-28 (tx `0xb59ae67c`, 102828 gas, the
 receipt carrying the matching Transfer log). A second rail sells the same tools here
 through Circle Gateway nanopayments to Circle Agent Marketplace buyers, gasless on both
@@ -693,7 +697,7 @@ GET  /api/agents/circle-policy/attestation  the attestation, bands only
 GET  /api/agents/circle-policy  the same caps as Circle wallet policy commands the owner runs (owner only)
 GET  /api/agents/kya            KYA status + live on-chain validation
 GET  /api/x402/nano/data        x402 Nanopayments seller (gasless, Gateway-batched; 402→settle)
-GET  /api/x402/gateway/tools/:name  the trust tools for Circle Agent Marketplace buyers: Gateway nanopayments on Base mainnet (402; GET or POST to pay)
+GET  /api/x402/gateway/tools/:name  the trust tools for Circle Agent Marketplace buyers: Gateway nanopayments on Arc Mainnet and Base mainnet (402; GET or POST to pay)
 GET  /api/x402/gateway/status   that rail's config and the Gateway kind proven per chain
 GET  /api/x402/gateway/proof    Gateway-credited settlements, batch hashes once landed
 POST /api/arc/nanopay-demo      one-click gasless nanopayment (EIP-3009 + Circle Gateway batch)
