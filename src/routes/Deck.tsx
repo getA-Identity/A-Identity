@@ -211,7 +211,7 @@ function SlideTitle() {
             <img src="/brand/lockup-horizontal-full-cream.png" alt="A-Identity" className="mb-10 h-16 w-auto" />
           </Reveal>
           <Reveal delay={0.06}>
-            <Eyebrow>Circle Developer Grants 2026 · Cohort 2</Eyebrow>
+            <Eyebrow>Pitch deck · 2026</Eyebrow>
           </Reveal>
           <Reveal delay={0.12}>
             <h1 className="mt-8 font-heading text-[92px] leading-[0.98] tracking-[-0.03em]">
@@ -650,7 +650,7 @@ function SlideTraction() {
               { v: 8, s: '', l: 'mainnets live' },
               { v: 17, s: '', l: 'KYA-verified agents' },
               { v: 20, s: '', l: 'escrow jobs settled on Arc testnet' },
-              { v: 1410, s: '', l: 'unit tests gate every deploy' },
+              { v: 1412, s: '', l: 'unit tests gate every deploy' },
             ].map((c, i) => (
               <Reveal key={c.l} delay={0.5 + i * 0.12}>
                 <div className="rounded-2xl border border-border bg-card/75 p-6 backdrop-blur">

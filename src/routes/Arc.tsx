@@ -11,6 +11,7 @@ import { DisplayHeading, Eyebrow, Lede } from '../components/ui/display'
 import { SectionShell, reveal, revealAt } from '../components/ui/section'
 import { CHAIN_BY_ID } from '../lib/chains'
 import { usePageMeta } from '../lib/head'
+import { sumPaidChecks, type ByNetwork } from '../lib/paidChecks'
 import { getJson, useCountUp } from '../lib/rail'
 
 /** Arc's own mark on Arc's own gradient, the same tile the Built On wall uses. */
@@ -32,28 +33,35 @@ const NETWORK = ARC.caip2
 type Artifact = { kind: string; label: string; txHash: string; blockNumber?: number; explorerUrl: string | null }
 type ProofNetwork = { chain: string; status: string; agent?: { tokenId: string }; artifactsLinked: Artifact[] }
 type ProofRail = { networks: ProofNetwork[] }
-type RailProof = { byNetwork?: Record<string, { count: number; usd: number }> }
 type GatewayStatus = { prices?: Record<string, number> }
 type DirectStatus = { configured?: boolean; price?: { settlementFeeUsd: number } }
 
+/** Our agent on Arc Mainnet, by its CAIP id, so the read cannot land on another chain. */
+const MAINNET_AGENT = `${NETWORK}:8004/0`
+
 /**
- * Meridian runs first because it walks the whole pipeline to a verdict. Our Arc Mainnet agent
- * is one click away, and checking it is the honest demo of a brand-new identity: it resolves
- * on-chain and still gets DENY, because a day-old agent with no KYA has not earned trust yet.
+ * The page is about Arc Mainnet, so the check that runs on load is our Arc Mainnet agent:
+ * a live read of the mainnet registry. It is also the honest demo of a brand-new identity:
+ * it resolves on-chain and still gets DENY, because an agent with no KYA and no settlement
+ * history has not earned trust yet. Meridian walks the full pipeline to a better verdict,
+ * but it lives on Arc testnet, and its label says so.
  */
 const ARC_EXAMPLES = [
-  { label: 'Meridian', q: '849980' },
-  { label: 'Arc Mainnet #0', q: `${NETWORK}:8004/0` },
+  { label: 'Arc Mainnet #0', q: MAINNET_AGENT },
+  // The bare token id on purpose: it is what reaches Meridian's platform record (KYA and
+  // settlement history), while its CAIP id reads only the bare on-chain identity.
+  { label: 'Meridian (Arc testnet)', q: '849980' },
   { label: 'OKX.AI #6271', q: 'eip155:196:8004/6271' },
 ]
 
 const MCP_COMMAND = 'claude mcp add a-identity \\\n  --transport http https://a-identity.xyz/mcp'
 
-const PAY_SNIPPET = `# Ask for a paid verdict on Arc Mainnet. The 402 that answers
-# carries the exact price, asset and GatewayWalletBatched domain.
+const PAY_SNIPPET = `# Ask for a paid verdict on our Arc Mainnet agent. The 402 that
+# answers carries the exact price, asset and GatewayWalletBatched
+# domain in its PAYMENT-REQUIRED header.
 curl -i -X POST https://a-identity.xyz/api/x402/gateway/tools/risk_check \\
   -H 'content-type: application/json' \\
-  -d '{"agentId":"849980"}'
+  -d '{"agentId":"${MAINNET_AGENT}"}'
 
 # Sign it from your Circle Gateway balance on Arc and send it back
 # in PAYMENT-SIGNATURE. No gas on either side.`
@@ -83,16 +91,15 @@ function useArcData() {
       else setFailed(true)
     })
     // Paid checks on Arc Mainnet from BOTH rails, each read from its own ledger and
-    // summed only for this one network, never across chains.
+    // summed only for this one network, never across chains. /proof/arc sums the same
+    // two ledgers with the same helper, so the two pages report the same payments.
     void Promise.all([
-      getJson<RailProof>('/api/x402/gateway/proof'),
-      getJson<RailProof>(`/api/facilitator/proof?network=${NETWORK}`),
+      getJson<{ byNetwork?: ByNetwork }>('/api/x402/gateway/proof'),
+      getJson<{ byNetwork?: ByNetwork }>('/api/facilitator/proof'),
     ]).then(([gateway, direct]) => {
       if (!alive) return
-      const g = gateway?.byNetwork?.[NETWORK]
-      const d = direct?.byNetwork?.[NETWORK]
-      if (!gateway && !direct) return
-      setPaidChecks({ count: (g?.count ?? 0) + (d?.count ?? 0), usd: (g?.usd ?? 0) + (d?.usd ?? 0) })
+      const sum = sumPaidChecks([gateway, direct], new Set([NETWORK]))
+      if (sum) setPaidChecks({ count: sum.count, usd: sum.usd })
     })
     void getJson<GatewayStatus>('/api/x402/gateway/status').then((s) => {
       if (alive && s?.prices) setGatewayPrices(s.prices)
@@ -383,7 +390,7 @@ export default function Arc() {
             <ul className="mt-3 grid gap-2 text-[15px] leading-relaxed text-foreground/70 sm:grid-cols-2 sm:gap-x-8">
               <li>The first payments on Arc Mainnet were ours, bought from ourselves, and the ledger labels them internal.</li>
               <li>Escrow and KYA anchoring still run on Arc testnet, where the full ERC-8004 set lives.</li>
-              <li>Arc&apos;s mainnet explorer is permissioned for now, so a receipt link may ask you to sign in.</li>
+              <li>Every receipt opens on Arc&apos;s public explorer in a browser, no sign-in. Only the explorer&apos;s JSON API turns scripts away with a bot check.</li>
               <li>Every claim on this page links to its transaction, and the full ledger is one click away.</li>
             </ul>
             <div className="mt-5 flex flex-wrap gap-x-6 gap-y-2 text-sm font-semibold">

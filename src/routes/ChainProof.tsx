@@ -12,6 +12,7 @@ import { apiFetch } from '../lib/api'
 import { ago } from '../lib/format'
 import { usePageMeta } from '../lib/head'
 import { BACKEND_UNREACHABLE } from '../lib/mcpBase'
+import { sumPaidChecks, type ByNetwork } from '../lib/paidChecks'
 
 /**
  * /proof/:rail: what we actually did on a chain, with the transaction that proves it.
@@ -23,8 +24,10 @@ import { BACKEND_UNREACHABLE } from '../lib/mcpBase'
  *
  * Settlements come from the rail that actually carries them. Algorand and Stellar keep
  * their own logs; the EIP-3009 chains share the facilitator's, filtered to this rail's
- * networks. Reading the facilitator for Algorand used to report "no settlements here" on a
- * rail that had them.
+ * networks, and Circle Gateway nanopayments are added wherever that log has rows on them
+ * (Arc Mainnet). Reading the facilitator for Algorand used to report "no settlements here"
+ * on a rail that had them, and reading its default network's asset used to label Arc's USDC
+ * as Robinhood Chain's USDG.
  *
  * The live badge on the agent card re-reads ownerOf and tokenURI from the chain on every
  * load, so this page can say "this no longer matches" out loud.
@@ -88,6 +91,7 @@ type FacilitatorSettlement = {
   assetDecimals: number
   payer: string
   tx?: string
+  authNonce?: string
   explorerUrl?: string
   ts?: string
 }
@@ -95,6 +99,8 @@ type FacilitatorSettlement = {
 type FacilitatorProof = {
   configured: boolean
   network: string
+  /** The asset of the facilitator's DEFAULT network, not of the rail in the URL. A rail
+   *  page reads its symbol from byNetwork instead. */
   assetSymbol: string | null
   totalSettlements: number
   totalUsd: number
@@ -105,8 +111,37 @@ type FacilitatorProof = {
   internalPayers: string[]
   /** Per-chain breakdown. This page is per-rail, so it MUST read this rather than
    *  present the facilitator-wide totals as if they belonged to the rail in the URL. */
-  byNetwork?: Record<string, { count: number; usd: number; assetSymbol: string }>
+  byNetwork?: ByNetwork
   recent: FacilitatorSettlement[]
+}
+
+/** One Circle Gateway nanopayment, as GET /api/x402/gateway/proof publishes it. */
+type GatewaySettlement = {
+  /** credited: Gateway holds it for us, batch not on-chain yet. completed: the batch landed. */
+  outcome: string
+  tool: string
+  network: string
+  assetSymbol: string
+  value: string
+  assetDecimals: number
+  payer: string
+  tx?: string
+  authNonce?: string
+  transferId?: string
+  explorerUrl?: string
+  ts?: string
+}
+
+type GatewayProof = {
+  configured: boolean
+  internalSettlements: number
+  externalSettlements: number
+  failed: number
+  unconfirmed: number
+  internalPayers: string[]
+  /** Counts credited and completed rows, the same way the backend's own totals do. */
+  byNetwork?: ByNetwork
+  recent: GatewaySettlement[]
 }
 
 /** The shape the Algorand and Stellar rails publish at their own /proof. */
@@ -121,20 +156,45 @@ type OwnRailSettlement = {
   /** True when we paid ourselves. Absent on an older backend, which reads as not internal. */
   internal?: boolean
 }
-type OwnRailProof = { configured: boolean; assetSymbol: string | null; totalSettlements: number; totalUsd: number; ambiguous: number; recent: OwnRailSettlement[] }
+type OwnRailProof = {
+  configured: boolean
+  assetSymbol: string | null
+  totalSettlements: number
+  totalUsd: number
+  ambiguous: number
+  /** Only rails that tell our own wallets apart publish this. */
+  externalSettlements?: number
+  recent: OwnRailSettlement[]
+}
 
 /** One settled payment, in the form the page renders whichever log it came from. */
-type Sale = { key: string; tool: string; amountLabel: string; tx?: string; explorerUrl?: string; ts?: string; internal: boolean }
+type Sale = {
+  key: string
+  tool: string
+  amountLabel: string
+  tx?: string
+  explorerUrl?: string
+  ts?: string
+  internal: boolean
+  /** The rail, named only when it is not the chain's default one. */
+  via?: string
+  /** Credited by Circle Gateway, with its on-chain batch still to land. */
+  pending?: boolean
+}
 
 type Sales = {
   source: string
+  /** What a row had to pass to be counted, in the words of the logs that were read. */
+  basis: string
   configured: boolean
   assetSymbol: string | null
   count: number | null
   usd: number | null
   sales: Sale[]
-  /** Only the facilitator splits its traffic; the per-rail logs do not. */
-  facilitatorCounters?: { internal: number; external: number; reverted: number; ambiguous: number }
+  /** Counters the logs publish rail-wide, labeled with their scope. */
+  counters: { label: string; value: string }[]
+  /** True only when every log read says no payment came from outside our own wallets. */
+  allInternal: boolean
 }
 
 /** Rails whose settlements live in their own log rather than the shared facilitator's. */
@@ -142,6 +202,9 @@ const OWN_RAIL_PROOF: Record<string, string> = {
   algorand: '/api/x402/algorand/proof',
   stellar: '/api/x402/stellar/proof',
 }
+
+/** Gateway rows the backend counts as paid: the money is Circle-held or already batched. */
+const GATEWAY_PAID = new Set(['credited', 'completed'])
 
 const REFRESH_MS = 60_000
 
@@ -195,10 +258,19 @@ function Row({ label, children }: { label: string; children: React.ReactNode }) 
   )
 }
 
+const OWN_CHAIN_BASIS = 'A payment only counts once we have read the transfer back from the chain ourselves.'
+
+const tsOf = (s: Sale) => (s.ts ? Date.parse(s.ts) || 0 : 0)
+
+/** Newest first. The logs do not agree on an order (some append, some reverse), so the
+ *  page sorts by timestamp rather than trusting either, and "latest" means latest. */
+const newestFirst = (sales: Sale[]) => [...sales].sort((a, b) => tsOf(b) - tsOf(a))
+
+const units = (value: string, decimals: number) => Number(value) / 10 ** decimals
+
 function fromOwnRail(p: OwnRailProof, source: string): Sales {
-  const sales = [...p.recent]
+  const sales = p.recent
     .filter((s) => s.outcome === 'settled')
-    .reverse()
     .map((s) => ({
       key: s.tx ?? s.ts,
       tool: s.tool,
@@ -208,28 +280,83 @@ function fromOwnRail(p: OwnRailProof, source: string): Sales {
       ts: s.ts,
       internal: s.internal ?? false,
     }))
-  return { source, configured: p.configured, assetSymbol: p.assetSymbol, count: p.totalSettlements, usd: p.totalUsd, sales }
-}
-
-function fromFacilitator(p: FacilitatorProof, railNets: Set<string>): Sales {
-  const perNet = p.byNetwork ? Object.entries(p.byNetwork).filter(([caip]) => railNets.has(caip)) : null
-  const recent = p.recent.filter((s) => s.network != null && railNets.has(s.network))
   return {
-    source: 'GET /api/facilitator/proof, filtered to this rail',
+    source,
+    basis: OWN_CHAIN_BASIS,
     configured: p.configured,
     assetSymbol: p.assetSymbol,
-    count: perNet ? perNet.reduce((sum, [, v]) => sum + v.count, 0) : null,
-    usd: perNet ? Number(perNet.reduce((sum, [, v]) => sum + v.usd, 0).toFixed(6)) : null,
-    sales: [...recent].reverse().map((s) => ({
-      key: s.tx ?? `${s.tool}-${s.value}`,
+    count: p.totalSettlements,
+    usd: p.totalUsd,
+    sales: newestFirst(sales),
+    counters: [],
+    allInternal: p.externalSettlements === 0,
+  }
+}
+
+/**
+ * The EVM rails: our EIP-3009 facilitator on every one of them, plus Circle Gateway
+ * nanopayments wherever the Gateway log has rows on this rail's networks (Arc Mainnet
+ * today). Counts, dollars and the asset symbol all come from each log's byNetwork, summed
+ * by the same helper /arc uses, so the two pages report the same payments.
+ */
+function fromEvmRails(fac: FacilitatorProof, gw: GatewayProof | null, railNets: Set<string>): Sales {
+  const totals = sumPaidChecks([fac, gw], railNets)
+  const direct = fac.recent.filter((s) => s.outcome === 'settled' && s.network != null && railNets.has(s.network))
+  const viaGateway = (gw?.recent ?? []).filter((s) => GATEWAY_PAID.has(s.outcome) && railNets.has(s.network))
+  const gatewayHere =
+    gw != null && (viaGateway.length > 0 || Object.keys(gw.byNetwork ?? {}).some((caip) => railNets.has(caip)))
+  const facMine = new Set(fac.internalPayers.map((a) => a.toLowerCase()))
+  const gwMine = new Set((gw?.internalPayers ?? []).map((a) => a.toLowerCase()))
+
+  const sales: Sale[] = [
+    ...direct.map((s) => ({
+      key: `3009-${s.tx ?? s.authNonce ?? s.ts ?? s.value}`,
       tool: s.tool,
-      amountLabel: `${Number(s.value) / 10 ** s.assetDecimals} ${s.assetSymbol}`,
+      amountLabel: `${units(s.value, s.assetDecimals)} ${s.assetSymbol}`,
       tx: s.tx,
       explorerUrl: s.explorerUrl,
       ts: s.ts,
-      internal: p.internalPayers.includes(s.payer.toLowerCase()),
+      internal: facMine.has(s.payer.toLowerCase()),
     })),
-    facilitatorCounters: { internal: p.internalSettlements, external: p.externalSettlements, reverted: p.reverted, ambiguous: p.ambiguous },
+    // Several Gateway payments can share one batch hash, so the key is the authorization.
+    ...(gatewayHere ? viaGateway : []).map((s) => ({
+      key: `gateway-${s.authNonce ?? s.transferId ?? s.ts ?? s.value}`,
+      tool: s.tool,
+      amountLabel: `${units(s.value, s.assetDecimals)} ${s.assetSymbol}`,
+      tx: s.outcome === 'completed' ? s.tx : undefined,
+      explorerUrl: s.outcome === 'completed' ? s.explorerUrl : undefined,
+      ts: s.ts,
+      internal: gwMine.has(s.payer.toLowerCase()),
+      via: 'Circle Gateway',
+      pending: s.outcome !== 'completed',
+    })),
+  ]
+
+  const counters = [
+    { label: 'EIP-3009 internal / external (all chains)', value: `${fac.internalSettlements} / ${fac.externalSettlements}` },
+    { label: 'EIP-3009 reverted / ambiguous (all chains)', value: `${fac.reverted} / ${fac.ambiguous}` },
+  ]
+  if (gw && gatewayHere) {
+    counters.push(
+      { label: 'Circle Gateway internal / external (all networks)', value: `${gw.internalSettlements} / ${gw.externalSettlements}` },
+      { label: 'Circle Gateway failed / unconfirmed (all networks)', value: `${gw.failed} / ${gw.unconfirmed}` },
+    )
+  }
+
+  return {
+    source: gatewayHere
+      ? 'GET /api/facilitator/proof and GET /api/x402/gateway/proof, filtered to this rail'
+      : 'GET /api/facilitator/proof, filtered to this rail',
+    basis: gatewayHere
+      ? "An EIP-3009 payment only counts once we have read the transfer back from the chain ourselves. A Circle Gateway payment counts once Circle's transfers API confirms it, and links its batch transaction once that lands on-chain."
+      : OWN_CHAIN_BASIS,
+    configured: fac.configured || Boolean(gatewayHere && gw?.configured),
+    assetSymbol: totals && totals.assetSymbols.length > 0 ? totals.assetSymbols.join(' and ') : null,
+    count: totals?.count ?? null,
+    usd: totals?.usd ?? null,
+    sales: newestFirst(sales),
+    counters,
+    allInternal: fac.externalSettlements === 0 && (!gatewayHere || gw?.externalSettlements === 0),
   }
 }
 
@@ -237,7 +364,10 @@ export default function ChainProof() {
   const { rail = 'robinhood' } = useParams()
   const [proof, setProof] = useState<RailProof | null>(null)
   const [facilitator, setFacilitator] = useState<FacilitatorProof | null>(null)
-  const [ownRail, setOwnRail] = useState<OwnRailProof | null>(null)
+  const [gateway, setGateway] = useState<GatewayProof | null>(null)
+  const [gatewayUnread, setGatewayUnread] = useState(false)
+  // Kept with the path it was read from, so a rail's own log never shows on another rail.
+  const [ownRail, setOwnRail] = useState<{ path: string; data: OwnRailProof } | null>(null)
   const [failure, setFailure] = useState<null | 'unreachable' | 'missing'>(null)
   const [, setTick] = useState(0)
   const loadSeq = useRef(0)
@@ -264,16 +394,27 @@ export default function ChainProof() {
         const code = (e as { status?: number }).status
         setFailure(code === 404 || code === 501 ? 'missing' : 'unreachable')
       })
-    const settlementsPath = ownRailPath ?? '/api/facilitator/proof'
-    getJson<FacilitatorProof | OwnRailProof>(settlementsPath)
-      .then((data) => {
-        if (seq !== loadSeq.current) return
-        if (ownRailPath) setOwnRail(data as OwnRailProof)
-        else setFacilitator(data as FacilitatorProof)
-      })
-      .catch(() => {
-        /* the summary shows dashes; the ledger below is the page */
-      })
+    if (ownRailPath) {
+      getJson<OwnRailProof>(ownRailPath)
+        .then((data) => {
+          if (seq === loadSeq.current) setOwnRail({ path: ownRailPath, data })
+        })
+        .catch(() => {
+          /* the summary shows dashes; the ledger below is the page */
+        })
+      return
+    }
+    // Both EVM logs are read together, so the headline never flashes one rail's count
+    // before the other's arrives. A failed read keeps whatever the last good one said.
+    void Promise.allSettled([
+      getJson<FacilitatorProof>('/api/facilitator/proof'),
+      getJson<GatewayProof>('/api/x402/gateway/proof'),
+    ]).then(([fac, gw]) => {
+      if (seq !== loadSeq.current) return
+      if (fac.status === 'fulfilled') setFacilitator(fac.value)
+      if (gw.status === 'fulfilled') setGateway(gw.value)
+      setGatewayUnread(gw.status === 'rejected')
+    })
   }, [rail, ownRailPath])
 
   useEffect(() => {
@@ -292,10 +433,12 @@ export default function ChainProof() {
   }, [])
 
   const railNets = new Set(proof?.networks.map((n) => n.caip2) ?? [])
-  const sales: Sales | null = ownRail
-    ? fromOwnRail(ownRail, `GET ${ownRailPath}`)
+  const sales: Sales | null = ownRailPath
+    ? ownRail && ownRail.path === ownRailPath
+      ? fromOwnRail(ownRail.data, `GET ${ownRailPath}`)
+      : null
     : facilitator && proof
-      ? fromFacilitator(facilitator, railNets)
+      ? fromEvmRails(facilitator, gateway, railNets)
       : null
   const latest = sales?.sales[0]
   const liveNet = proof?.networks.find((n) => n.status === 'live') ?? proof?.networks[0]
@@ -341,7 +484,10 @@ export default function ChainProof() {
             <motion.div {...revealAt(3)} className="mt-10 grid gap-px overflow-hidden rounded-2xl border border-border bg-border sm:grid-cols-3">
               <div className="bg-card p-5">
                 <div className="text-3xl font-bold tabular-nums tracking-tight text-foreground">{sales?.count ?? <Skeleton />}</div>
-                <div className="mt-1 text-sm text-foreground/60">payments settled</div>
+                <div className="mt-1 text-sm text-foreground/60">
+                  {sales?.count === 1 ? 'payment' : 'payments'} settled
+                  {sales?.allInternal && sales.count ? ', all from our own wallets' : ''}
+                </div>
               </div>
               <div className="bg-card p-5">
                 <div className="text-3xl font-bold tabular-nums tracking-tight text-foreground">
@@ -363,6 +509,12 @@ export default function ChainProof() {
                 </div>
               </div>
             </motion.div>
+          )}
+          {!failure && !ownRailPath && gatewayUnread && !gateway && (
+            <p className="mt-3 text-xs text-foreground/50">
+              The Circle Gateway log could not be read just now, so any Gateway payments on this chain are missing from
+              these numbers until it answers.
+            </p>
           )}
 
           {/* The vaults that enforce the policy on this rail, re-read from the ledger. */}
@@ -525,17 +677,16 @@ export default function ChainProof() {
                   ) : (
                     <>
                       <p className="mt-2 text-sm leading-relaxed text-foreground/55">
-                        Read from {sales.source}. A payment only counts once we have read the transfer back from
-                        the chain ourselves. Payments from our own wallets are labeled where the log records them.
+                        Read from {sales.source}. {sales.basis} Payments from our own wallets are labeled where the
+                        log records them.
                       </p>
-                      {sales.facilitatorCounters && (
+                      {sales.counters.length > 0 && (
                         <div className="mt-4">
-                          <Row label="Internal / external (all chains)">
-                            {sales.facilitatorCounters.internal} / {sales.facilitatorCounters.external}
-                          </Row>
-                          <Row label="Reverted / ambiguous (all chains)">
-                            {sales.facilitatorCounters.reverted} / {sales.facilitatorCounters.ambiguous}
-                          </Row>
+                          {sales.counters.map((c) => (
+                            <Row key={c.label} label={c.label}>
+                              {c.value}
+                            </Row>
+                          ))}
                         </div>
                       )}
                       <div className="mt-4">
@@ -549,7 +700,13 @@ export default function ChainProof() {
                             >
                               <span className="text-xs text-foreground/75">
                                 {s.tool} <span className="text-foreground/45">{s.amountLabel}</span>
+                                {s.via && <span className="ml-2 text-foreground/45">via {s.via}</span>}
                                 {s.ts && <span className="ml-2 text-foreground/40">{ago(s.ts)}</span>}
+                                {s.pending && (
+                                  <span className="ml-2 rounded-md bg-foreground/[0.06] px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-foreground/60">
+                                    batch pending
+                                  </span>
+                                )}
                                 {s.internal && (
                                   <span className="ml-2 rounded-md bg-warn/10 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-warn">
                                     internal
