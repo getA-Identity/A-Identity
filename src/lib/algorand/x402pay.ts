@@ -1,5 +1,6 @@
 /**
- * Buying the detailed /check report from the visitor's own Algorand wallet, over x402.
+ * Buying from the Algorand x402 rail with the visitor's own wallet: the detailed /check
+ * report (pay_check) and the other paid tools, all through the same steps.
  *
  * A browser port of trust-guard's algorandPayer (trust-guard/src/algorand.ts), which is the
  * proven way to pay this rail, with the mnemonic replaced by the person's wallet. What the
@@ -37,7 +38,12 @@ const ALGORAND = CHAIN_BY_ID.algorand
 /** Mainnet algod, from the generated registry mirror: the same node the backend reads. */
 export const ALGOD_URL = (ALGORAND.rpcUrl ?? '').replace(/\/+$/, '')
 
-export const PAY_CHECK_PATH = '/api/x402/algorand/tools/pay_check'
+/** The tools this rail sells; each one answers at /api/x402/algorand/tools/<tool>. */
+export type PaidTool = 'pay_check' | 'verify_agent' | 'reputation_score' | 'risk_check' | 'agent_passport' | 'agent_batch_audit'
+
+export const toolPath = (tool: PaidTool) => `/api/x402/algorand/tools/${tool}`
+
+export const PAY_CHECK_PATH = toolPath('pay_check')
 
 // ---- small helpers ----
 
@@ -163,14 +169,20 @@ export type Poster = (body: string, headers: Record<string, string>) => Promise<
 
 export const reportBody = (address: string) => JSON.stringify({ address })
 
+/** The detailed report's terms: fetchQuoteFor with the pay_check body. */
+export function fetchQuote(post: Poster, address: string, expectedUsd: number): Promise<Quote> {
+  return fetchQuoteFor(post, reportBody(address), expectedUsd)
+}
+
 /**
- * Ask the paid endpoint for its terms: a POST without a payment header answers 402 with them.
- * Nothing is signed or charged by this call.
+ * Ask a paid endpoint for its terms: a POST of the call's own body without a payment header
+ * answers 402 with them. The body matters for the batch audit, whose 402 is quoted for the
+ * number of distinct agents it names. Nothing is signed or charged by this call.
  */
-export async function fetchQuote(post: Poster, address: string, expectedUsd: number): Promise<Quote> {
+export async function fetchQuoteFor(post: Poster, body: string, expectedUsd: number): Promise<Quote> {
   let res: Response
   try {
-    res = await post(reportBody(address), { 'content-type': 'application/json' })
+    res = await post(body, { 'content-type': 'application/json' })
   } catch {
     throw new Error('The payment terms could not be fetched.')
   }
@@ -193,15 +205,21 @@ export async function fetchUsdcHolding(address: string, fetchImpl: FetchLike = f
   return { optedIn: true, amount: BigInt(h.amount), frozen: h['is-frozen'] === true }
 }
 
-/** The sentence that stops a payment this wallet cannot make, or null when it can pay. */
-export function fundsProblem(holding: UsdcHolding, amount: bigint): string | null {
+/**
+ * The sentence that stops a payment this wallet cannot make, or null when it can pay. `what`
+ * names the thing being bought in that sentence ("the report", "this check").
+ */
+export function fundsProblem(holding: UsdcHolding, amount: bigint, what = 'the report'): string | null {
   if (!holding.optedIn || holding.amount === 0n) return 'This wallet has no USDC on Algorand.'
   if (holding.frozen) return "This wallet's USDC is frozen, so it cannot pay."
   if (holding.amount < amount) {
-    return `This wallet holds ${formatUsdc(Number(holding.amount) / USDC_UNIT)} USDC; the report costs ${formatUsdc(Number(amount) / USDC_UNIT)} USDC.`
+    return `This wallet holds ${formatUsdc(Number(holding.amount) / USDC_UNIT)} USDC; ${what} costs ${formatUsdc(Number(amount) / USDC_UNIT)} USDC.`
   }
   return null
 }
+
+/** A USDC holding in dollars, for showing a balance. */
+export const holdingUsdc = (holding: UsdcHolding): number => (holding.optedIn ? Number(holding.amount) / USDC_UNIT : 0)
 
 /** The facilitator's fee payer for the network: it signs and pays the group's pooled fee. */
 export async function fetchFeePayer(facilitator: string, network: string, fetchImpl: FetchLike = fetch): Promise<string> {
@@ -347,15 +365,44 @@ function isDetails(x: unknown): x is ReportDetails {
   return !!d && Array.isArray(d.topPayers) && Array.isArray(d.recentPayments)
 }
 
+/** The detailed report out of a paid pay_check answer, or null when it is not one. */
+export const readReport = (json: Record<string, unknown>): PaidReport | null =>
+  isDetails(json.details) ? (json as unknown as PaidReport) : null
+
 /**
- * Send the signed payment and classify the answer. A status only counts as "nothing charged"
- * when the body is our rail's own JSON for that status; a bare 5xx from a proxy in between
- * could have cut off a call that went on to settle, so it reads as unknown.
+ * What a paid call came back as, for any tool. Same classification as SubmitOutcome; the
+ * answer is whatever `read` made of the 200 body, and an unreadable 200 keeps the raw body so
+ * the person can still see what they paid for.
  */
+export type PaidOutcome<T> =
+  | { kind: 'paid'; answer: T; raw: Record<string, unknown>; tx: string; amountUsd: number | null }
+  | { kind: 'paid_unreadable'; tx: string; raw: unknown }
+  | Exclude<SubmitOutcome, { kind: 'paid' } | { kind: 'paid_unreadable' }>
+
+/** The detailed report's paid call: submitPaid with the pay_check body and reader. */
 export async function submitPayment(post: Poster, address: string, header: string, payTxId: string): Promise<SubmitOutcome> {
+  const out = await submitPaid(post, reportBody(address), header, payTxId, readReport)
+  if (out.kind === 'paid') return { kind: 'paid', report: out.answer, tx: out.tx, amountUsd: out.amountUsd }
+  if (out.kind === 'paid_unreadable') return { kind: 'paid_unreadable', tx: out.tx }
+  return out
+}
+
+/**
+ * Send the signed payment with the call's body and classify the answer. A status only counts
+ * as "nothing charged" when the body is our rail's own JSON for that status; a bare 5xx from a
+ * proxy in between could have cut off a call that went on to settle, so it reads as unknown.
+ * A 200 counts as paid only with a successful settlement AND an answer `read` recognises.
+ */
+export async function submitPaid<T>(
+  post: Poster,
+  body: string,
+  header: string,
+  payTxId: string,
+  read: (json: Record<string, unknown>) => T | null,
+): Promise<PaidOutcome<T>> {
   let res: Response
   try {
-    res = await post(reportBody(address), { 'content-type': 'application/json', 'PAYMENT-SIGNATURE': header })
+    res = await post(body, { 'content-type': 'application/json', 'PAYMENT-SIGNATURE': header })
   } catch {
     return { kind: 'unknown', tx: payTxId }
   }
@@ -364,15 +411,16 @@ export async function submitPayment(post: Poster, address: string, header: strin
   switch (res.status) {
     case 200: {
       const tx = typeof settlement?.transaction === 'string' ? settlement.transaction : payTxId
-      if (json && settlement?.success === true && isDetails(json.details)) {
-        return {
-          kind: 'paid',
-          report: json as unknown as PaidReport,
-          tx,
-          amountUsd: typeof settlement.amountUsd === 'number' ? settlement.amountUsd : null,
-        }
+      let answer: T | null = null
+      try {
+        answer = json && settlement?.success === true ? read(json) : null
+      } catch {
+        /* a reader that trips on the shape means "not an answer we can show", nothing more */
       }
-      return { kind: 'paid_unreadable', tx }
+      if (json && answer !== null) {
+        return { kind: 'paid', answer, raw: json, tx, amountUsd: typeof settlement?.amountUsd === 'number' ? settlement.amountUsd : null }
+      }
+      return { kind: 'paid_unreadable', tx, raw: json }
     }
     case 402:
       if (json && Array.isArray(json.accepts)) {

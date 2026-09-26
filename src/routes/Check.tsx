@@ -1,23 +1,7 @@
-import { useCallback, useEffect, useRef, useState, type FormEvent, type ReactNode } from 'react'
+import { Suspense, useCallback, useEffect, useRef, useState, type FormEvent, type ReactNode } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { AnimatePresence, motion } from 'framer-motion'
-import {
-  AlertTriangle,
-  ArrowUpRight,
-  Check as CheckMark,
-  CheckCircle2,
-  ChevronDown,
-  FileText,
-  Info,
-  Link2,
-  Loader2,
-  Lock,
-  QrCode,
-  Search,
-  Wallet,
-  X,
-  XCircle,
-} from 'lucide-react'
+import { AlertTriangle, ArrowUpRight, Check as CheckMark, CheckCircle2, ChevronDown, FileText, Info, Link2, Loader2, Search, XCircle } from 'lucide-react'
 import PageHeader from '../components/PageHeader'
 import SiteFooter from '../components/sections/SiteFooter'
 import ThemeScope from '../components/ThemeScope'
@@ -25,27 +9,16 @@ import CopyBlock from '../components/app/CopyBlock'
 import { Button } from '../components/ui/button'
 import { Input } from '../components/ui/input'
 import { DisplayHeading } from '../components/ui/display'
+import { CheckWalletProvider, WalletBar } from '../components/check/CheckWallet'
+import PaidChecks, { type CheckedAddress } from '../components/check/PaidChecks'
+import { PayProgress, StopBox } from '../components/check/Receipt'
+import ReportView from '../components/check/ReportView'
+import { REPORT_BOUGHT_EVENT, loadBought, saveBought, type Bought } from '../components/check/bought'
+import { EASE, day, n, plural } from '../components/check/format'
+import { useCheckWallet } from '../components/check/walletContext'
 import { apiFetch, readJson } from '../lib/api'
-import { ALGORAND_WALLETS, algorandWalletError, connectAlgorand, signAlgorandGroup, type AlgorandWalletId } from '../lib/algorand/wallet'
-import {
-  PAY_CHECK_PATH,
-  PayRefusal,
-  accountUrl,
-  buildGroup,
-  buildHeader,
-  fetchFeePayer,
-  fetchParams,
-  fetchQuote,
-  fetchUsdcHolding,
-  formatUsd,
-  formatUsdc,
-  fundsProblem,
-  submitPayment,
-  txUrl,
-  type PaidReport,
-  type Poster,
-  type Quote,
-} from '../lib/algorand/x402pay'
+import { paymentIsOut, purchase, type PayStep, type Stop } from '../lib/algorand/purchase'
+import { PAY_CHECK_PATH, formatUsd, readReport, reportBody, type Poster } from '../lib/algorand/x402pay'
 import { ago, short } from '../lib/format'
 import { usePageMeta } from '../lib/head'
 import { cn } from '../lib/utils'
@@ -178,8 +151,6 @@ const OWLS: Record<Mood, { src: string; ring: string; tilt: number }> = {
   error: { src: '/mascots/owl-officer.png', ring: 'bg-foreground/[0.06]', tilt: 0 },
 }
 
-const EASE: [number, number, number, number] = [0.16, 1, 0.3, 1]
-
 function Owl({ mood }: { mood: Mood }) {
   const o = OWLS[mood]
   const thinking = mood === 'thinking'
@@ -235,17 +206,6 @@ const TONE_ICON: Record<Tone, { Icon: typeof Info; cls: string; label: string }>
   warn: { Icon: AlertTriangle, cls: 'text-warn', label: 'Warning' },
   bad: { Icon: XCircle, cls: 'text-danger', label: 'Problem' },
   neutral: { Icon: Info, cls: 'text-foreground/45', label: 'Note' },
-}
-
-const n = (v: number) => v.toLocaleString('en-US')
-const plural = (v: number, one: string, many: string) => `${n(v)} ${v === 1 ? one : many}`
-
-/** "Aug 16", or "Aug 16, 2025" when it is not this year. UTC, so it is the same day for everyone. */
-function day(iso: string): string | null {
-  const d = new Date(iso)
-  if (Number.isNaN(d.getTime())) return null
-  const sameYear = d.getUTCFullYear() === new Date().getUTCFullYear()
-  return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: sameYear ? undefined : 'numeric', timeZone: 'UTC' })
 }
 
 /** The facts row. Only what the backend actually knows: a null is left out, never shown as zero. */
@@ -499,342 +459,20 @@ function Fold({ title, children }: { title: string; children: ReactNode }) {
 /** The paid endpoint, reached the way every other call on this page is. One send, never retried. */
 const postReport: Poster = (body, headers) => apiFetch(PAY_CHECK_PATH, { method: 'POST', body, headers, timeoutMs: 120_000 })
 
-/** A bought report, kept for this tab so a reload or a detour does not lose what was paid for. */
-type Bought = { report: PaidReport & Partial<CheckResult>; tx: string; amountUsd: number }
-const boughtKey = (address: string) => `a-identity:check-report:${address}`
-
-function loadBought(address: string): Bought | null {
-  try {
-    const raw = window.sessionStorage.getItem(boughtKey(address))
-    const b = raw ? (JSON.parse(raw) as Bought) : null
-    return b && b.report && Array.isArray(b.report.details?.topPayers) && typeof b.tx === 'string' ? b : null
-  } catch {
-    return null
-  }
-}
-
-function saveBought(address: string, b: Bought): void {
-  try {
-    window.sessionStorage.setItem(boughtKey(address), JSON.stringify(b))
-  } catch {
-    /* storage can be off; the report is still on screen */
-  }
-}
-
-/** How a purchase stopped short of a report, each with what happened to the money. */
-type Stop =
-  | { kind: 'cancelled' }
-  | { kind: 'refusal'; text: string }
-  | { kind: 'wallet'; wallet: string; text: string }
-  | { kind: 'before' }
-  | { kind: 'refused'; reason: string }
-  | { kind: 'unavailable' }
-  | { kind: 'pending'; tx: string }
-  | { kind: 'unknown'; tx: string }
-  | { kind: 'paid_unreadable'; tx: string }
-
-type Pay =
-  | { s: 'idle' }
-  | { s: 'quoting' }
-  | { s: 'choosing'; quote: Quote; busy: AlgorandWalletId | null; error: string | null }
-  | { s: 'checking' | 'signing' | 'confirming'; from: string; wallet: string }
-  | { s: 'paid'; bought: Bought }
-  | { s: 'stopped'; stop: Stop }
-
-const sentence = (t: string) => (/[.!?]$/.test(t.trim()) ? t.trim() : `${t.trim()}.`)
-
-function TxLink({ tx, children }: { tx: string; children?: ReactNode }) {
-  return (
-    <a
-      href={txUrl(tx)}
-      target="_blank"
-      rel="noopener noreferrer"
-      className="inline-flex items-center gap-0.5 break-all font-mono font-semibold text-accent hover:underline"
-    >
-      {children ?? short(tx, 6)}
-      <ArrowUpRight size={13} className="shrink-0" />
-    </a>
-  )
-}
-
-function AccountLink({ address }: { address: string }) {
-  return (
-    <a
-      href={accountUrl(address)}
-      target="_blank"
-      rel="noopener noreferrer"
-      title={address}
-      className="font-mono text-foreground underline decoration-foreground/25 underline-offset-2 hover:text-accent hover:decoration-accent/50"
-    >
-      {address.length > 12 ? `${address.slice(0, 6)}...${address.slice(-4)}` : address}
-    </a>
-  )
-}
-
-/** One line per ending, each saying what happened to the money. Only true sentences. */
-function StopText({ stop }: { stop: Stop }) {
-  switch (stop.kind) {
-    case 'cancelled':
-      return <>Payment cancelled. Nothing was charged.</>
-    case 'refusal':
-      return <>{sentence(stop.text)} Nothing was charged.</>
-    case 'wallet':
-      return (
-        <>
-          {stop.wallet}: {sentence(stop.text)} Nothing was charged.
-        </>
-      )
-    case 'before':
-      return <>Something went wrong before paying. Nothing was charged.</>
-    case 'refused':
-      return <>The payment was refused: {stop.reason}. Nothing was charged.</>
-    case 'unavailable':
-      return <>The report could not be made right now. Nothing was charged.</>
-    case 'pending':
-      return (
-        <>
-          Your payment was sent but is not confirmed yet. Check it here: <TxLink tx={stop.tx} />. Do not pay again.
-        </>
-      )
-    case 'unknown':
-      return (
-        <>
-          We could not confirm what happened. Check your wallet before trying again. Your payment, if it went through:{' '}
-          <TxLink tx={stop.tx} />
-        </>
-      )
-    case 'paid_unreadable':
-      return (
-        <>
-          Your payment went through, but the report could not be shown. Receipt: <TxLink tx={stop.tx} />
-        </>
-      )
-  }
-}
-
-/** One flat list of the three Algorand wallets. Nothing is picked for the visitor. */
-function WalletList({
-  price,
-  busy,
-  error,
-  onPick,
-  onCancel,
-  onClose,
-}: {
-  price: string
-  busy: AlgorandWalletId | null
-  error: string | null
-  onPick: (id: AlgorandWalletId) => void
-  onCancel: () => void
-  onClose: () => void
-}) {
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') onClose()
-    }
-    window.addEventListener('keydown', onKey)
-    return () => window.removeEventListener('keydown', onKey)
-  }, [onClose])
-  const busyName = ALGORAND_WALLETS.find((w) => w.id === busy)?.name
-  return (
-    <div className="fixed inset-0 z-50 grid place-items-center bg-foreground/45 p-4 backdrop-blur-sm" onClick={onClose}>
-      <div
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby="pay-report-title"
-        className="w-full max-w-sm overflow-hidden rounded-3xl border border-border bg-card shadow-xl"
-        onClick={(e) => e.stopPropagation()}
-      >
-        <div className="flex items-start justify-between gap-4 px-5 pt-5">
-          <div>
-            <h3 id="pay-report-title" className="text-lg font-bold tracking-tight text-foreground">
-              Pay with
-            </h3>
-            <p className="mt-0.5 text-sm text-foreground/55">Pick the Algorand wallet that holds your USDC.</p>
-          </div>
-          <button
-            type="button"
-            onClick={onClose}
-            aria-label="Close"
-            className="grid h-8 w-8 shrink-0 place-items-center rounded-full border border-border text-foreground/50 transition-colors hover:text-foreground"
-          >
-            <X size={15} />
-          </button>
-        </div>
-        <div className="flex flex-col gap-1 p-3">
-          {error && (
-            <p role="alert" className="mb-1 rounded-xl border border-danger/25 bg-danger/10 px-3 py-2 text-xs font-semibold text-danger">
-              {error}
-            </p>
-          )}
-          {ALGORAND_WALLETS.map((w) => (
-            <button
-              key={w.id}
-              type="button"
-              onClick={() => onPick(w.id)}
-              disabled={busy !== null}
-              className="flex items-center gap-3 rounded-2xl px-3 py-2.5 text-left transition-colors hover:bg-foreground/[0.04] disabled:opacity-50"
-            >
-              <span className="grid h-10 w-10 shrink-0 place-items-center rounded-xl border border-border bg-background/60">
-                {busy === w.id ? (
-                  <Loader2 size={18} className="animate-spin text-accent" />
-                ) : w.kind === 'mobile' ? (
-                  <QrCode size={18} className="text-foreground/55" />
-                ) : (
-                  <Wallet size={18} className="text-foreground/55" />
-                )}
-              </span>
-              <span className="min-w-0">
-                <span className="block text-sm font-semibold text-foreground">{w.name}</span>
-                <span className="block text-[11px] text-foreground/50">{w.kind === 'mobile' ? 'Phone app, scan a code' : 'Browser extension'}</span>
-              </span>
-            </button>
-          ))}
-          {busy && (
-            <div className="mt-1 flex items-center justify-between gap-3 rounded-2xl border border-border bg-background/60 px-3.5 py-2.5 text-xs text-foreground/60">
-              <span>Waiting for {busyName ?? 'your wallet'}. If it opened a prompt, finish it there.</span>
-              <button type="button" onClick={onCancel} className="shrink-0 font-semibold text-foreground/70 underline underline-offset-2 hover:text-foreground">
-                Cancel
-              </button>
-            </div>
-          )}
-        </div>
-        <div className="flex items-center gap-2 border-t border-border px-5 py-3 text-[11px] text-foreground/50">
-          <Lock size={12} className="shrink-0" />
-          You approve one {price} USDC payment in your wallet. Network fees are covered.
-        </div>
-      </div>
-    </div>
-  )
-}
-
-function ReportView({ bought }: { bought: Bought }) {
-  const { report, tx, amountUsd } = bought
-  const d = report.details
-  const created = d.createdAt ? day(d.createdAt) : null
-  const sampled = report.facts?.payers?.sampled
-  return (
-    <motion.section
-      initial={{ opacity: 0, y: 6 }}
-      animate={{ opacity: 1, y: 0 }}
-      transition={{ duration: 0.35, ease: EASE }}
-      style={{ fontFeatureSettings: '"calt" 0' }}
-      className="mt-6 overflow-hidden rounded-3xl border border-border bg-card print:break-inside-avoid"
-    >
-      <div className="px-5 pb-4 pt-5 sm:px-8">
-        <h3 className="flex items-center gap-2 text-lg font-bold tracking-tight text-foreground" style={{ fontFamily: 'var(--font-heading)' }}>
-          <FileText size={18} className="shrink-0 text-accent" />
-          Detailed report
-        </h3>
-        {report.address && <p className="mt-1 break-all font-mono text-xs text-foreground/50">{report.address}</p>}
-        {d.createdBy && (
-          <p className="mt-3 text-[15px] text-foreground/80">
-            Created by <AccountLink address={d.createdBy} />
-            {created ? ` on ${created}` : ''}
-          </p>
-        )}
-      </div>
-
-      <div className="border-t border-border px-5 py-5 sm:px-8">
-        <h4 className="text-sm font-semibold text-foreground">Biggest payers</h4>
-        {d.topPayers.length === 0 ? (
-          <p className="mt-2 text-sm text-foreground/60">No USDC payments found.</p>
-        ) : (
-          <>
-            <div className="mt-3 overflow-x-auto rounded-xl border border-border print:overflow-visible">
-              <table className="w-full text-left text-[13px]">
-                <thead className="bg-foreground/[0.03] text-[11px] uppercase tracking-wide text-foreground/50">
-                  <tr>
-                    <th scope="col" className="px-2.5 py-2 font-semibold sm:px-3">Payer</th>
-                    <th scope="col" className="px-2.5 py-2 text-right font-semibold sm:px-3">Payments</th>
-                    <th scope="col" className="px-2.5 py-2 text-right font-semibold sm:px-3">USDC</th>
-                    <th scope="col" className="px-2.5 py-2 text-right font-semibold sm:px-3">Share</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-border">
-                  {d.topPayers.map((p) => (
-                    <tr key={p.address} className="align-top">
-                      <td className="px-2.5 py-2.5 sm:px-3">
-                        <AccountLink address={p.address} />
-                        {p.linked && (
-                          <span className="mt-1 block w-fit rounded-md bg-warn/10 px-2 py-0.5 text-[11px] font-semibold leading-snug text-warn">
-                            linked to this address
-                          </span>
-                        )}
-                      </td>
-                      <td className="px-2.5 py-2.5 text-right tabular-nums text-foreground/75 sm:px-3">{n(p.payments)}</td>
-                      <td className="px-2.5 py-2.5 text-right tabular-nums text-foreground/75 sm:px-3">{formatUsdc(p.usdc)}</td>
-                      <td className="px-2.5 py-2.5 text-right tabular-nums text-foreground/75 sm:px-3">
-                        {p.share > 0 && p.share < 0.005 ? '<1%' : `${Math.round(p.share * 100)}%`}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-            <p className="mt-2 text-xs text-foreground/50">
-              Share of the {formatUsdc(d.totalUsdcSampled)} USDC in {typeof sampled === 'number' ? `its last ${plural(sampled, 'payment', 'payments')}` : 'the payments read'}.
-            </p>
-          </>
-        )}
-      </div>
-
-      <div className="border-t border-border px-5 py-5 sm:px-8">
-        <h4 className="text-sm font-semibold text-foreground">Last payments</h4>
-        {d.recentPayments.length === 0 ? (
-          <p className="mt-2 text-sm text-foreground/60">No USDC payments found.</p>
-        ) : (
-          <ul className="mt-2 divide-y divide-border">
-            {d.recentPayments.map((p, i) => (
-              <li key={p.txId ?? i} className="flex items-center gap-3 py-2.5 text-[13px]">
-                <span className="w-[4.5rem] shrink-0 text-foreground/55">{(p.at && day(p.at)) || ''}</span>
-                <span className="flex min-w-0 flex-1 flex-wrap items-center gap-x-2 gap-y-1">
-                  <AccountLink address={p.payer} />
-                  {p.linked && <span className="rounded-full bg-warn/10 px-2 py-0.5 text-[11px] font-semibold text-warn">linked</span>}
-                </span>
-                <span className="shrink-0 tabular-nums text-foreground/80">{formatUsdc(p.usdc)} USDC</span>
-                {p.txId ? (
-                  <a
-                    href={txUrl(p.txId)}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    aria-label="View this payment on the explorer"
-                    className="shrink-0 text-accent hover:opacity-80"
-                  >
-                    <ArrowUpRight size={15} />
-                  </a>
-                ) : (
-                  <span className="w-[15px] shrink-0" />
-                )}
-              </li>
-            ))}
-          </ul>
-        )}
-      </div>
-
-      <div className="border-t border-border bg-foreground/[0.02] px-5 py-4 text-sm text-foreground/75 sm:px-8">
-        <p className="flex flex-wrap items-center gap-x-1.5">
-          <CheckCircle2 size={15} className="shrink-0 text-ok" aria-hidden="true" />
-          Paid {formatUsd(amountUsd)}. Receipt: <TxLink tx={tx} />
-        </p>
-        {typeof report.checkedAt === 'string' && (
-          <p className="mt-1 text-xs text-foreground/50">Read live from the Algorand ledger, {ago(report.checkedAt)}.</p>
-        )}
-      </div>
-    </motion.section>
-  )
-}
+type Pay = { s: 'idle' } | PayStep | { s: 'paid'; bought: Bought } | { s: 'stopped'; stop: Stop }
 
 function ReportOffer({ result, onBusy }: { result: CheckResult; onBusy: (busy: boolean) => void }) {
   const address = result.address as string
   const priceUsd = result.fullReport.priceUsd
   const price = formatUsd(priceUsd)
+  const w = useCheckWallet()
   const [pay, setPay] = useState<Pay>(() => {
     const b = loadBought(address)
     return b ? { s: 'paid', bought: b } : { s: 'idle' }
   })
   /** Which attempt is current: a wallet that answers after a cancel, or after the visitor left, is ignored. */
   const attempt = useRef(0)
+  const release = useRef<(() => void) | null>(null)
 
   const inFlight = pay.s === 'checking' || pay.s === 'signing' || pay.s === 'confirming'
   useEffect(() => {
@@ -851,103 +489,75 @@ function ReportOffer({ result, onBusy }: { result: CheckResult; onBusy: (busy: b
   useEffect(
     () => () => {
       attempt.current += 1
+      release.current?.()
       onBusy(false)
     },
     [onBusy],
   )
-
-  const stop = (s: Stop) => setPay({ s: 'stopped', stop: s })
+  // The same report bought from the Paid checks list below shows up here as well.
+  useEffect(() => {
+    const onBought = (e: Event) => {
+      if ((e as CustomEvent<{ address?: string }>).detail?.address !== address) return
+      const b = loadBought(address)
+      if (b) setPay((p) => (p.s === 'idle' || p.s === 'stopped' ? { s: 'paid', bought: b } : p))
+    }
+    window.addEventListener(REPORT_BOUGHT_EVENT, onBought)
+    return () => window.removeEventListener(REPORT_BOUGHT_EVENT, onBought)
+  }, [address])
 
   const start = async () => {
+    if (w.paying) return
     const mine = ++attempt.current
-    setPay({ s: 'quoting' })
+    const alive = () => mine === attempt.current
+    const done = w.holdPayment()
+    release.current = done
     try {
-      const quote = await fetchQuote(postReport, address, priceUsd)
-      if (mine === attempt.current) setPay({ s: 'choosing', quote, busy: null, error: null })
-    } catch (e) {
-      if (mine === attempt.current) stop(e instanceof PayRefusal ? { kind: 'refusal', text: e.message } : { kind: 'before' })
+      // The connected wallet pays; with none, the wallet list opens once the terms are in.
+      const end = await purchase({
+        post: postReport,
+        body: reportBody(address),
+        expectedUsd: priceUsd,
+        what: 'the report',
+        read: readReport,
+        wallet: w.wallet,
+        askWallet: w.askWallet,
+        alive,
+        step: (s) => {
+          if (alive()) setPay(s)
+        },
+      })
+      if (end === null) return
+      if (end.kind === 'closed') {
+        setPay({ s: 'idle' })
+        return
+      }
+      if (end.kind === 'stopped') {
+        setPay({ s: 'stopped', stop: end.stop })
+        if (end.stop.kind === 'pending' || end.stop.kind === 'unknown' || end.stop.kind === 'paid_unreadable') w.refreshBalance()
+        return
+      }
+      const bought: Bought = { report: end.answer, tx: end.tx, amountUsd: end.amountUsd }
+      saveBought(address, bought)
+      setPay({ s: 'paid', bought })
+      w.refreshBalance()
+    } finally {
+      done()
+      if (release.current === done) release.current = null
     }
   }
-
-  const closeList = useCallback(() => {
-    attempt.current += 1
-    setPay({ s: 'idle' })
-  }, [])
 
   /** Stop waiting for the wallet. A signature that still arrives is dropped, never sent. */
   const cancelSigning = () => {
     attempt.current += 1
-    stop({ kind: 'cancelled' })
-  }
-
-  const pick = async (id: AlgorandWalletId) => {
-    if (pay.s !== 'choosing' || pay.busy) return
-    const { quote } = pay
-    const wallet = ALGORAND_WALLETS.find((w) => w.id === id)?.name ?? 'Your wallet'
-    const mine = ++attempt.current
-    setPay({ s: 'choosing', quote, busy: id, error: null })
-
-    let from: string
-    try {
-      from = (await connectAlgorand(id)).address
-    } catch (e) {
-      if (mine !== attempt.current) return
-      const w = algorandWalletError(e)
-      if (w.cancelled) stop({ kind: 'cancelled' })
-      else setPay({ s: 'choosing', quote, busy: null, error: w.message || `${wallet} could not connect.` })
-      return
-    }
-    if (mine !== attempt.current) return
-
-    // Everything that can refuse does so here, before the wallet is asked to sign.
-    setPay({ s: 'checking', from, wallet })
-    let sdk: typeof import('algosdk')
-    let group: ReturnType<typeof buildGroup>
-    try {
-      sdk = await import('algosdk')
-      const [holding, feePayer, params] = await Promise.all([
-        fetchUsdcHolding(from),
-        fetchFeePayer(quote.facilitator, quote.accept.network),
-        fetchParams(),
-      ])
-      const problem = fundsProblem(holding, quote.amount)
-      if (problem) throw new PayRefusal(problem)
-      group = buildGroup(sdk, { quote, sender: from, feePayer, params })
-    } catch (e) {
-      if (mine === attempt.current) stop(e instanceof PayRefusal ? { kind: 'refusal', text: e.message } : { kind: 'before' })
-      return
-    }
-    if (mine !== attempt.current) return
-
-    setPay({ s: 'signing', from, wallet })
-    let header: string
-    try {
-      const signedPayTxn = await signAlgorandGroup(id, from, [group.feeTxn, group.payTxn], 1)
-      if (mine !== attempt.current) return
-      header = buildHeader(sdk, { quote, feeTxn: group.feeTxn, payTxn: group.payTxn, signedPayTxn })
-    } catch (e) {
-      if (mine !== attempt.current) return
-      if (e instanceof PayRefusal) return stop({ kind: 'refusal', text: e.message })
-      const w = algorandWalletError(e)
-      stop(w.cancelled ? { kind: 'cancelled' } : w.message ? { kind: 'wallet', wallet, text: w.message } : { kind: 'before' })
-      return
-    }
-
-    // From here the signed payment has left the page. No cancel, and every answer is kept.
-    setPay({ s: 'confirming', from, wallet })
-    const out = await submitPayment(postReport, address, header, group.payTxn.txID())
-    if (out.kind === 'paid') {
-      const bought: Bought = { report: out.report as Bought['report'], tx: out.tx, amountUsd: out.amountUsd ?? quote.amountUsd }
-      saveBought(address, bought)
-      setPay({ s: 'paid', bought })
-    } else if (out.kind === 'not_charged') stop({ kind: 'before' })
-    else stop(out)
+    release.current?.()
+    release.current = null
+    setPay({ s: 'stopped', stop: { kind: 'cancelled' } })
   }
 
   if (pay.s === 'paid') return <ReportView bought={pay.bought} />
 
   // A payment that is out, or went through, is not offered a second time on this screen.
-  const canBuy = !(pay.s === 'stopped' && (pay.stop.kind === 'pending' || pay.stop.kind === 'paid_unreadable'))
+  const canBuy = !(pay.s === 'stopped' && paymentIsOut(pay.stop))
 
   return (
     <section className="mt-6 rounded-3xl border border-border bg-card px-5 py-5 sm:px-8">
@@ -959,46 +569,20 @@ function ReportOffer({ result, onBusy }: { result: CheckResult; onBusy: (busy: b
         See who pays this address: its ten biggest payers, its last ten payments, and the wallet that created it.
       </p>
 
-      {pay.s === 'stopped' && (
-        <div
-          role="alert"
-          className={cn(
-            // A refusal reason can carry a 58-character address; it wraps instead of widening the page.
-            'mt-4 break-words rounded-2xl border px-4 py-3 text-sm leading-relaxed [overflow-wrap:anywhere]',
-            pay.stop.kind === 'pending' || pay.stop.kind === 'unknown'
-              ? 'border-warn/35 bg-warn/[0.08] text-foreground'
-              : 'border-border bg-background/60 text-foreground/80',
-          )}
-        >
-          <StopText stop={pay.stop} />
-        </div>
-      )}
+      {pay.s === 'stopped' && <StopBox stop={pay.stop} noun="report" className="mt-4" />}
 
       {pay.s === 'checking' || pay.s === 'signing' || pay.s === 'confirming' ? (
-        <div className="mt-4 rounded-2xl border border-border bg-background/60 px-4 py-3" role="status" aria-live="polite">
-          <p className="flex items-center gap-2 text-[15px] font-semibold text-foreground">
-            <Loader2 size={16} className="shrink-0 animate-spin text-accent" />
-            {pay.s === 'checking' ? 'Checking the USDC in your wallet...' : pay.s === 'signing' ? `Approve the ${price} payment in your wallet` : 'Confirming on Algorand...'}
-          </p>
-          <p className="mt-1 text-xs text-foreground/55">
-            Paying from <span className="font-mono">{short(pay.from, 4)}</span> in {pay.wallet}.
-            {pay.s === 'confirming' && ' This can take up to a minute. Keep this page open.'}
-          </p>
-          {pay.s === 'signing' && (
-            <button
-              type="button"
-              onClick={cancelSigning}
-              className="mt-2 text-xs font-semibold text-foreground/70 underline underline-offset-2 hover:text-foreground"
-            >
-              Cancel
-            </button>
-          )}
-        </div>
+        <PayProgress step={pay} price={price} onCancel={cancelSigning} className="mt-4" />
       ) : (
         canBuy && (
           <>
-            <Button type="button" className="mt-4 w-full sm:w-auto" onClick={() => void start()} disabled={pay.s === 'quoting'}>
-              {pay.s === 'quoting' && <Loader2 size={15} className="animate-spin" />}
+            <Button
+              type="button"
+              className="mt-4 w-full sm:w-auto"
+              onClick={() => void start()}
+              disabled={pay.s === 'quoting' || pay.s === 'wallet' || w.paying}
+            >
+              {(pay.s === 'quoting' || pay.s === 'wallet') && <Loader2 size={15} className="animate-spin" />}
               Get the detailed report ({price})
             </Button>
             <p className="mt-2.5 text-xs leading-relaxed text-foreground/55">
@@ -1007,20 +591,6 @@ function ReportOffer({ result, onBusy }: { result: CheckResult; onBusy: (busy: b
             </p>
           </>
         )
-      )}
-
-      {pay.s === 'choosing' && (
-        <WalletList
-          price={price}
-          busy={pay.busy}
-          error={pay.error}
-          onPick={(id) => void pick(id)}
-          onCancel={() => {
-            attempt.current += 1
-            setPay({ s: 'choosing', quote: pay.quote, busy: null, error: null })
-          }}
-          onClose={closeList}
-        />
       )}
     </section>
   )
@@ -1097,108 +667,121 @@ export default function Check() {
   // The report is offered for an address that exists on Algorand; for one that was never used
   // it would be an empty page for money.
   const offerReport = !!result?.address && hasPrice && result.facts.payers !== null
+  // What the Paid checks list knows about the address in the box: it was checked, what it
+  // resolved to, and whether it was ever used (an empty report is not sold).
+  const checked: CheckedAddress | null =
+    view.s === 'done' && result ? { query: view.q, address: result.address, neverUsed: !!result.address && result.facts.payers === null } : null
 
   return (
     <ThemeScope surface="background" className="flex min-h-screen w-full flex-col" style={{ fontFamily: 'var(--font-body)' }}>
       <PageHeader />
-      <main className="w-full flex-1 px-4 pb-16 pt-10 sm:px-8 sm:pb-24 sm:pt-16">
-        <div className="mx-auto w-full max-w-[640px]">
-          <div className="text-center">
-            <DisplayHeading size="section" as="h1">
-              Before you pay
-            </DisplayHeading>
-            <p
-              className="mx-auto mt-3 max-w-[46ch] text-[17px] leading-relaxed text-foreground/70 sm:text-lg"
-              style={{ textWrap: 'balance' }}
-            >
-              Paste an Algorand address or service link to see if it looks safe to pay.
-            </p>
-          </div>
-
-          <form onSubmit={onSubmit} className="mt-7 flex gap-2" role="search">
-            <div className="relative min-w-0 flex-1">
-              <Search size={17} className="pointer-events-none absolute left-3.5 top-1/2 -translate-y-1/2 text-foreground/40" />
-              <Input
-                ref={inputRef}
-                value={input}
-                onChange={(e) => setInput(e.target.value)}
-                aria-label="Algorand address or service link"
-                placeholder="Address or service link"
-                autoComplete="off"
-                autoCapitalize="off"
-                autoCorrect="off"
-                spellCheck={false}
-                enterKeyHint="go"
-                maxLength={512}
-                className="h-12 rounded-xl pl-10 text-base"
-              />
-            </div>
-            <Button type="submit" shape="rounded" className="h-12 px-5 text-[15px]" disabled={view.s === 'loading' || payBusy}>
-              Check
-            </Button>
-          </form>
-
-          {examples.length > 0 && (
-            <div className="mt-3 flex flex-wrap items-center gap-2 text-xs text-foreground/55">
-              Try
-              {examples.map((ex) => (
-                <button
-                  key={ex.q}
-                  type="button"
-                  onClick={() => submit(ex.q)}
-                  disabled={payBusy}
-                  className="rounded-full border border-border px-3 py-1 font-semibold text-foreground/70 transition-colors hover:border-accent/50 hover:text-foreground disabled:opacity-50"
-                >
-                  {ex.label}
-                </button>
-              ))}
-            </div>
-          )}
-
-          <div className="mt-8">
-            <Answer view={view} onRetry={(q) => void run(q)} />
-            {view.s === 'done' && result && (
-              <p className="mt-3 text-center text-xs text-foreground/50">Read live from the Algorand ledger, {ago(result.checkedAt)}.</p>
-            )}
-            {view.s === 'done' && result && offerReport && <ReportOffer key={result.address} result={result} onBusy={setPayBusy} />}
-          </div>
-
-          <div className="mt-10 overflow-hidden rounded-2xl border border-border bg-card">
-            <Fold title="How we decide">
-              <ul className="space-y-3">
-                {RULES.map((r) => {
-                  const t = TONE_ICON[r.tone]
-                  return (
-                    <li key={r.label} className="flex gap-3 text-[15px] leading-snug text-foreground/80">
-                      <t.Icon size={18} className={cn('mt-0.5 shrink-0', t.cls)} aria-hidden="true" />
-                      <span>
-                        <span className="font-semibold text-foreground">{r.label}:</span> {r.text}
-                      </span>
-                    </li>
-                  )
-                })}
-              </ul>
-              <p className="mt-4 text-sm leading-relaxed text-foreground/60">
-                All of it is read live from public data: the Algorand ledger and the x402 facilitator's public records.
+      <CheckWalletProvider>
+        <main className="w-full flex-1 px-4 pb-16 pt-6 sm:px-8 sm:pb-24 sm:pt-10">
+          <div className="mx-auto w-full max-w-[640px]">
+            <WalletBar />
+            <div className="mt-5 text-center sm:mt-6">
+              <DisplayHeading size="section" as="h1">
+                Before you pay
+              </DisplayHeading>
+              <p
+                className="mx-auto mt-3 max-w-[46ch] text-[17px] leading-relaxed text-foreground/70 sm:text-lg"
+                style={{ textWrap: 'balance' }}
+              >
+                Paste an Algorand address or service link to see if it looks safe to pay.
               </p>
-            </Fold>
-            <Fold title="For agents">
-              <p className="text-[15px] leading-relaxed text-foreground/75">
-                {hasPrice
-                  ? `An AI agent can buy the same detailed report for ${formatUsd(reportPrice)} per call, paid over x402 on Algorand.`
-                  : 'An AI agent can buy the same detailed report, paid per call over x402 on Algorand.'}
-              </p>
-              <div className="mt-4">
-                <CopyBlock
-                  title="Ask from an agent"
-                  subtitle="Answers 402 with the payment terms"
-                  text={curlFor(result?.address ?? '<ALGORAND_ADDRESS>')}
+            </div>
+
+            <form onSubmit={onSubmit} className="mt-7 flex gap-2" role="search">
+              <div className="relative min-w-0 flex-1">
+                <Search size={17} className="pointer-events-none absolute left-3.5 top-1/2 -translate-y-1/2 text-foreground/40" />
+                <Input
+                  ref={inputRef}
+                  value={input}
+                  onChange={(e) => setInput(e.target.value)}
+                  aria-label="Algorand address or service link"
+                  placeholder="Address or service link"
+                  autoComplete="off"
+                  autoCapitalize="off"
+                  autoCorrect="off"
+                  spellCheck={false}
+                  enterKeyHint="go"
+                  maxLength={512}
+                  className="h-12 rounded-xl pl-10 text-base"
                 />
               </div>
-            </Fold>
+              <Button type="submit" shape="rounded" className="h-12 px-5 text-[15px]" disabled={view.s === 'loading' || payBusy}>
+                Check
+              </Button>
+            </form>
+
+            {examples.length > 0 && (
+              <div className="mt-3 flex flex-wrap items-center gap-2 text-xs text-foreground/55">
+                Try
+                {examples.map((ex) => (
+                  <button
+                    key={ex.q}
+                    type="button"
+                    onClick={() => submit(ex.q)}
+                    disabled={payBusy}
+                    className="rounded-full border border-border px-3 py-1 font-semibold text-foreground/70 transition-colors hover:border-accent/50 hover:text-foreground disabled:opacity-50"
+                  >
+                    {ex.label}
+                  </button>
+                ))}
+              </div>
+            )}
+
+            <div className="mt-8">
+              <Answer view={view} onRetry={(q) => void run(q)} />
+              {view.s === 'done' && result && (
+                <p className="mt-3 text-center text-xs text-foreground/50">Read live from the Algorand ledger, {ago(result.checkedAt)}.</p>
+              )}
+              {view.s === 'done' && result && offerReport && <ReportOffer key={result.address} result={result} onBusy={setPayBusy} />}
+            </div>
+
+            {/* Its own boundary: the prices arrive after the first render, so a snapshot taken
+                with other prices (or none) re-renders this section alone, not the page. */}
+            <Suspense fallback={null}>
+              <PaidChecks boxValue={input} checked={checked} reportAddress={offerReport && result ? result.address : null} />
+            </Suspense>
+
+            <div className="mt-10 overflow-hidden rounded-2xl border border-border bg-card">
+              <Fold title="How we decide">
+                <ul className="space-y-3">
+                  {RULES.map((r) => {
+                    const t = TONE_ICON[r.tone]
+                    return (
+                      <li key={r.label} className="flex gap-3 text-[15px] leading-snug text-foreground/80">
+                        <t.Icon size={18} className={cn('mt-0.5 shrink-0', t.cls)} aria-hidden="true" />
+                        <span>
+                          <span className="font-semibold text-foreground">{r.label}:</span> {r.text}
+                        </span>
+                      </li>
+                    )
+                  })}
+                </ul>
+                <p className="mt-4 text-sm leading-relaxed text-foreground/60">
+                  All of it is read live from public data: the Algorand ledger and the x402 facilitator's public records.
+                </p>
+              </Fold>
+              <Fold title="For agents">
+                <p className="text-[15px] leading-relaxed text-foreground/75">
+                  {hasPrice
+                    ? `An AI agent can buy the same detailed report for ${formatUsd(reportPrice)} per call, paid over x402 on Algorand.`
+                    : 'An AI agent can buy the same detailed report, paid per call over x402 on Algorand.'}
+                </p>
+                <div className="mt-4">
+                  <CopyBlock
+                    title="Ask from an agent"
+                    subtitle="Answers 402 with the payment terms"
+                    text={curlFor(result?.address ?? '<ALGORAND_ADDRESS>')}
+                  />
+                </div>
+              </Fold>
+            </div>
           </div>
-        </div>
-      </main>
+        </main>
+      </CheckWalletProvider>
       <SiteFooter />
     </ThemeScope>
   )
