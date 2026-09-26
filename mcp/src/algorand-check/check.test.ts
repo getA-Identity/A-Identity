@@ -184,6 +184,13 @@ test('pay_check keeps its verdict when the facilitator is down, and refuses to g
   assert.ok('error' in r && r.httpStatus === 502, 'no verdict is invented without the ledger')
 })
 
+test('the paid report is priced at five dollars unless the operator moves it, within bounds', async () => {
+  const { payCheckPriceUsd } = await import('./check.js')
+  assert.equal(payCheckPriceUsd({}), 5)
+  assert.equal(payCheckPriceUsd({ X402_ALGORAND_PAY_CHECK_USD: '0.5' }), 0.5)
+  for (const bad of ['0', '-1', 'abc', '1000']) assert.equal(payCheckPriceUsd({ X402_ALGORAND_PAY_CHECK_USD: bad }), 5, bad)
+})
+
 test('the paid report adds the per-payer breakdown that the free answer leaves out', async () => {
   clearPayCheckCache()
   const env = { ALGORAND_MAINNET_INDEXER_URL: 'https://idx.test' }
@@ -197,5 +204,7 @@ test('the paid report adds the per-payer breakdown that the free answer leaves o
   assert.equal(top.address, own)
   assert.equal(top.linked, true)
   assert.equal(top.usdc, 0.06)
-  assert.equal(paid.details!.sellerFunder, CREATOR)
+  assert.equal(paid.details!.createdBy, CREATOR)
+  assert.equal(paid.details!.recentPayments.length, 5)
+  assert.equal(paid.details!.totalUsdcSampled, 0.1)
 })

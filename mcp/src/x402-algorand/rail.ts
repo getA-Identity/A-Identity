@@ -38,7 +38,7 @@ import { agentPassport, reputationScore, riskCheck, verifyAgent, type TxContext 
 import { RAIL_BASE_PRICES_USD, RAIL_TOOLS, RAIL_TOOL_CARDS, type RailToolName } from '../x402-3009/rail.js'
 import { loadAlgorandSettlements, type AlgorandSettlementRecord } from '../storage.js'
 import { BATCH_MAX_AGENTS, runBatchAudit } from './batch.js'
-import { PAY_CHECK_PRICE_USD, runPayCheck } from '../algorand-check/check.js'
+import { payCheckPriceUsd, runPayCheck } from '../algorand-check/check.js'
 import { settleAlgorandPayment, type AlgorandRequirements, type AlgorandSettleDeps } from './settle.js'
 
 export { RAIL_BASE_PRICES_USD, RAIL_TOOL_CARDS, RAIL_TOOLS }
@@ -267,7 +267,10 @@ export function algorandRailPriceUsd(tool: AlgorandToolName, count: number = 1):
     const total = Math.round(ALGORAND_BATCH_PER_AGENT_USD * n * 1e6) / 1e6
     return { baseUsd: total, totalUsd: total, unitUsd: ALGORAND_BATCH_PER_AGENT_USD, count: n }
   }
-  if (tool === ALGORAND_PAY_CHECK_TOOL) return { baseUsd: PAY_CHECK_PRICE_USD, totalUsd: PAY_CHECK_PRICE_USD }
+  if (tool === ALGORAND_PAY_CHECK_TOOL) {
+    const usd = payCheckPriceUsd()
+    return { baseUsd: usd, totalUsd: usd }
+  }
   // No settlement fee: the facilitator pays the network fee today. If that ever
   // changes, the fee belongs on the chain's settlement token with a measured
   // feeBasis, exactly as the EVM rails record theirs.
@@ -766,7 +769,7 @@ export function algorandChallengeReadiness(status: AlgorandRailStatus, env: Node
     prices: {
       ...ALGORAND_PRICES_USD,
       agent_batch_audit: { perAgentUsd: ALGORAND_BATCH_PER_AGENT_USD, maxAgents: ALGORAND_BATCH_MAX_AGENTS },
-      pay_check: PAY_CHECK_PRICE_USD,
+      pay_check: payCheckPriceUsd(env),
     },
     shape: 'composite: every tool settles to the one payTo above',
     attribution: "decided by the facilitator's leaderboard, not by this backend; read it with mcp/scripts/algo-challenge-check.mjs",

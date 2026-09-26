@@ -50,6 +50,7 @@ export type PayerFacts = {
 }
 
 export type PayerDetail = { address: string; payments: number; usdc: number; share: number; linked: boolean; funder: string | null }
+export type PaymentDetail = { payer: string; usdc: number; at: string | null; txId: string | null; linked: boolean }
 
 export type PayCheckResult = {
   query: string
@@ -69,7 +70,17 @@ export type PayCheckResult = {
   checkedAt: string
   fullReport: { tool: 'pay_check'; priceUsd: number; url: string }
   /** Only in the paid report. */
-  details?: { topPayers: PayerDetail[]; sellerFunder: string | null; sources: string[] }
+  details?: {
+    /** The ten largest payers in the sample, with the wallet that created each of the traced ones. */
+    topPayers: PayerDetail[]
+    /** The ten most recent USDC payments it received. */
+    recentPayments: PaymentDetail[]
+    /** The wallet whose payment created this account, and when. */
+    createdBy: string | null
+    createdAt: string | null
+    totalUsdcSampled: number
+    sources: string[]
+  }
 }
 
 export type PayCheckError = { error: string; httpStatus: 400 | 404 | 502 }
@@ -84,7 +95,17 @@ export type PayCheckDeps = {
   facilitator?: string
 }
 
-export const PAY_CHECK_PRICE_USD = 0.01
+/**
+ * The paid report, per call. Deliberately priced as a report a person decides to buy, not a
+ * fraction of a cent an agent spends without noticing: the free answer on /check stays free,
+ * and X402_ALGORAND_PAY_CHECK_USD can move this without a deploy of new code.
+ */
+export const PAY_CHECK_PRICE_USD = 5
+
+export function payCheckPriceUsd(env: NodeJS.ProcessEnv = process.env): number {
+  const v = Number(env.X402_ALGORAND_PAY_CHECK_USD)
+  return Number.isFinite(v) && v >= 0.001 && v <= 100 ? Math.round(v * 1e6) / 1e6 : PAY_CHECK_PRICE_USD
+}
 
 /** The rules, in the words the page shows. The engine below implements exactly these. */
 export const RULES = {
@@ -277,17 +298,22 @@ async function inboundUsdc(
   idx: string,
   address: string,
   assetId: number,
-): Promise<{ payer: string; amount: number }[]> {
+): Promise<{ payer: string; amount: number; at: string | null; txId: string | null }[]> {
   const qs = new URLSearchParams({ 'asset-id': String(assetId), 'tx-type': 'axfer', limit: String(SAMPLE_LIMIT) })
   const { status, json } = await getJson(fetcher, `${idx}/v2/accounts/${address}/transactions?${qs}`)
   if (status !== 200) throw new Error(`indexer answered ${status} for the transfer history`)
   const txns = (json as { transactions?: IndexerTxn[] })?.transactions ?? []
-  const out: { payer: string; amount: number }[] = []
+  const out: { payer: string; amount: number; at: string | null; txId: string | null }[] = []
   for (const t of txns) {
     const x = t['asset-transfer-transaction']
     if (!x || x['asset-id'] !== assetId || x.receiver !== address || !t.sender || t.sender === address) continue
     if (!x.amount || x.amount <= 0) continue
-    out.push({ payer: t.sender, amount: x.amount })
+    out.push({
+      payer: t.sender,
+      amount: x.amount,
+      at: typeof t['round-time'] === 'number' ? new Date(t['round-time'] * 1000).toISOString() : null,
+      txId: t.id ?? null,
+    })
   }
   return out
 }
@@ -347,7 +373,7 @@ export async function runPayCheck(q: string, deps: PayCheckDeps = {}): Promise<P
   // The ledger reads are required; the facilitator and the name service only add context,
   // so their failure costs a fact, never the verdict.
   let account: IndexerAccount | null
-  let inbound: { payer: string; amount: number }[]
+  let inbound: { payer: string; amount: number; at: string | null; txId: string | null }[]
   let born: { funder: string | null; at: string | null }
   try {
     const acct = await getJson(fetcher, `${idx}/v2/accounts/${address}?exclude=created-apps,created-assets,apps-local-state`)
@@ -484,21 +510,31 @@ export async function runPayCheck(q: string, deps: PayCheckDeps = {}): Promise<P
     facts: { accountAgeDays, canReceiveUsdc, seller, payers },
     explorerUrl: addressUrl(chain, address),
     checkedAt: new Date(now).toISOString(),
-    fullReport: { tool: 'pay_check', priceUsd: PAY_CHECK_PRICE_USD, url: '/api/x402/algorand/tools/pay_check' },
+    fullReport: { tool: 'pay_check', priceUsd: payCheckPriceUsd(env), url: '/api/x402/algorand/tools/pay_check' },
   }
   if (deps.detailed) {
     const linkOf = new Map(traced.map((t) => [t.payer, t]))
+    const unit = 10 ** usdc.decimals
     result.details = {
       topPayers: ranked.slice(0, 10).map(([payer, v]) => ({
         address: payer,
         payments: v.payments,
-        usdc: v.amount / 10 ** usdc.decimals,
+        usdc: v.amount / unit,
         share: total > 0 ? v.amount / total : 0,
         linked: linkOf.get(payer)?.linked ?? false,
         funder: linkOf.get(payer)?.funder ?? null,
       })),
-      sellerFunder: born.funder,
-      sources: [`${idx} (Algorand indexer)`, `${facilitator} (x402 facilitator public records)`, `${NFD_API} (NFD names)`],
+      recentPayments: inbound.slice(0, 10).map((t) => ({
+        payer: t.payer,
+        usdc: t.amount / unit,
+        at: t.at,
+        txId: t.txId,
+        linked: linkOf.get(t.payer)?.linked ?? false,
+      })),
+      createdBy: born.funder,
+      createdAt: born.at,
+      totalUsdcSampled: total / unit,
+      sources: [`${idx} (Algorand indexer)`, `${facilitator || 'no facilitator'} (x402 facilitator public records)`, `${NFD_API} (NFD names)`],
     }
   }
   return result

@@ -650,7 +650,7 @@ function SlideTraction() {
               { v: 8, s: '', l: 'mainnets live' },
               { v: 17, s: '', l: 'KYA-verified agents' },
               { v: 20, s: '', l: 'escrow jobs settled on Arc testnet' },
-              { v: 1419, s: '', l: 'unit tests gate every deploy' },
+              { v: 1420, s: '', l: 'unit tests gate every deploy' },
             ].map((c, i) => (
               <Reveal key={c.l} delay={0.5 + i * 0.12}>
                 <div className="rounded-2xl border border-border bg-card/75 p-6 backdrop-blur">
