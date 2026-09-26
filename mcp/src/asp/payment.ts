@@ -228,6 +228,16 @@ export async function applyOkxX402(app: Express): Promise<PaymentStatus> {
     }
     const httpServer = new coreServer.x402HTTPResourceServer(resourceServer, routes)
 
+    // Initialize HERE, awaited and inside this try, before anything is installed on `app`.
+    // paymentMiddlewareFromHTTPServer calls httpServer.initialize() itself the moment it is
+    // created and only awaits that promise on the first paid request, so when OKX's
+    // /supported refused us at boot (a 401 on a stale key) the rejection had no handler and
+    // Node exited with status 1: the whole gateway, free routes and proof included, went
+    // down with the paywall. Awaiting it first turns that into the free mode this function
+    // already promises, and `false` below stops the middleware from making a second,
+    // unguarded call.
+    await httpServer.initialize()
+
     // Wraps res.send BEFORE the payment middleware installs, so that when the SDK sends a
     // 402 our wrapper is already in the chain and can fold the header's challenge into the
     // body. Only 402s are touched; every other response passes through untouched.
@@ -251,8 +261,7 @@ export async function applyOkxX402(app: Express): Promise<PaymentStatus> {
       next()
     })
 
-    app.use(expressX402.paymentMiddlewareFromHTTPServer(httpServer))
-    await resourceServer.initialize()
+    app.use(expressX402.paymentMiddlewareFromHTTPServer(httpServer, undefined, undefined, false))
 
     return { ...base, enabled: true, mode: 'paid', reason: 'OKX x402 active on X Layer.' }
   } catch (e) {
