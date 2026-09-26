@@ -9,6 +9,7 @@
  * value (see mcp/src/wallet-proof.ts). Building that transaction needs the network's
  * current parameters, which come from the registry's algod endpoint.
  */
+import type { Transaction } from 'algosdk'
 import { CHAIN_BY_ID } from '../chains'
 import type { WalletSigner } from '../wallet/types'
 
@@ -27,9 +28,12 @@ const PERA_MAINNET_CHAIN_ID = 416001
 
 const isAlgoAddress = (s: string) => /^[A-Z2-7]{58}$/.test(s)
 
+/** One entry of a sign request (ARC-1): an empty `signers` list means "shown, not signed by you". */
+type SignEntry<T> = { txn: T; signers?: string[] }
+
 type Connector =
-  | { kind: 'pera' | 'defly'; connect(): Promise<string[]>; reconnectSession(): Promise<string[]>; disconnect(): Promise<void>; signTransaction(groups: { txn: unknown }[][]): Promise<Uint8Array[]> }
-  | { kind: 'lute'; connect(genesisId: string): Promise<string[]>; signTxns(txns: { txn: string }[]): Promise<(Uint8Array | null)[]> }
+  | { kind: 'pera' | 'defly'; connect(): Promise<string[]>; reconnectSession(): Promise<string[]>; disconnect(): Promise<void>; signTransaction(groups: SignEntry<unknown>[][], signerAddress?: string): Promise<Uint8Array[]> }
+  | { kind: 'lute'; connect(genesisId: string): Promise<string[]>; signTxns(txns: SignEntry<string>[]): Promise<(Uint8Array | null)[]> }
 
 const connectors = new Map<AlgorandWalletId, Promise<Connector>>()
 
@@ -40,12 +44,12 @@ function connector(id: AlgorandWalletId): Promise<Connector> {
       if (id === 'pera') {
         const { PeraWalletConnect } = await import('@perawallet/connect')
         const c = new PeraWalletConnect({ chainId: PERA_MAINNET_CHAIN_ID, shouldShowSignTxnToast: false })
-        return { kind: 'pera', connect: () => c.connect(), reconnectSession: () => c.reconnectSession(), disconnect: () => c.disconnect(), signTransaction: (g) => c.signTransaction(g as never) }
+        return { kind: 'pera', connect: () => c.connect(), reconnectSession: () => c.reconnectSession(), disconnect: () => c.disconnect(), signTransaction: (g, signer) => c.signTransaction(g as never, signer) }
       }
       if (id === 'defly') {
         const { DeflyWalletConnect } = await import('@blockshake/defly-connect')
         const c = new DeflyWalletConnect({ chainId: PERA_MAINNET_CHAIN_ID, shouldShowSignTxnToast: false })
-        return { kind: 'defly', connect: () => c.connect(), reconnectSession: () => c.reconnectSession(), disconnect: () => c.disconnect(), signTransaction: (g) => c.signTransaction(g as never) }
+        return { kind: 'defly', connect: () => c.connect(), reconnectSession: () => c.reconnectSession(), disconnect: () => c.disconnect(), signTransaction: (g, signer) => c.signTransaction(g as never, signer) }
       }
       const { default: LuteConnect } = await import('lute-connect')
       const c = new LuteConnect('A-Identity')
@@ -138,4 +142,67 @@ export async function reconnectAlgorand(id: AlgorandWalletId): Promise<WalletSig
   } catch {
     return null
   }
+}
+
+function fromBase64(b64: string): Uint8Array {
+  return Uint8Array.from(atob(b64), (c) => c.charCodeAt(0))
+}
+
+/**
+ * Sign ONE transaction of an atomic group with the wallet that holds `address`, leaving the
+ * others unsigned for someone else (the x402 facilitator's fee payer). The wallet is shown the
+ * whole group, so the person sees what the payment belongs to.
+ *
+ * Returns the signed bytes of txns[index], picked out of whatever the wallet returned by
+ * transaction id: Pera and Defly drop the entries they skip, Lute returns null for them, and a
+ * wallet that handed back a different transaction is refused rather than trusted.
+ *
+ * Pera and Defly get `signers` on every entry plus the signer address, because Defly only
+ * honours an empty `signers` list when a signer address is passed, and with one passed both
+ * treat an entry with no `signers` as "do not sign".
+ */
+export async function signAlgorandGroup(id: AlgorandWalletId, address: string, txns: Transaction[], index: number): Promise<Uint8Array> {
+  const target = txns[index]
+  if (!target) throw new Error('Nothing to sign.')
+  const c = await connector(id)
+  const algosdk = await import('algosdk')
+  let returned: (Uint8Array | string | null | undefined)[]
+  if (c.kind === 'lute') {
+    returned = await c.signTxns(
+      txns.map((txn, i) => {
+        const b64 = toBase64(algosdk.encodeUnsignedTransaction(txn))
+        return i === index ? { txn: b64 } : { txn: b64, signers: [] }
+      }),
+    )
+  } else {
+    returned = await c.signTransaction([txns.map((txn, i) => ({ txn, signers: i === index ? [address] : [] }))], address)
+  }
+  const wanted = target.txID()
+  for (const r of returned ?? []) {
+    const bytes = typeof r === 'string' ? fromBase64(r) : r instanceof Uint8Array ? r : null
+    if (!bytes) continue
+    try {
+      const s = algosdk.decodeSignedTransaction(bytes)
+      if (s.txn.txID() === wanted && (s.sig || s.msig || s.lsig)) return bytes
+    } catch {
+      /* not a signed transaction; keep looking */
+    }
+  }
+  throw new Error('The wallet did not return a signature for the payment.')
+}
+
+/**
+ * What a wallet failure means for the person: whether they closed or declined it, and the
+ * wallet's own words. Wallet kits reject with Error instances or with plain { code, message }
+ * objects, so the message is read from either.
+ */
+export function algorandWalletError(e: unknown): { cancelled: boolean; message: string } {
+  const msg =
+    e instanceof Error ? e.message
+    : typeof e === 'string' ? e
+    : e && typeof e === 'object' && typeof (e as { message?: unknown }).message === 'string' ? (e as { message: string }).message
+    : ''
+  const code = e && typeof e === 'object' ? Number((e as { code?: unknown }).code) : NaN
+  const cancelled = code === 4001 || code === 4100 || /reject|declin|denied|cancel|closed|CONNECT_MODAL_CLOSED/i.test(msg)
+  return { cancelled, message: msg }
 }
