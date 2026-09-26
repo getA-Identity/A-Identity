@@ -35,12 +35,12 @@ type Prices = {
 }
 type RailStatus = { configured: boolean; challenge?: { prices?: Prices } }
 
-const MCP_COMMAND = 'claude mcp add a-identity-trust \\\n  -e A_IDENTITY_ALGORAND_MNEMONIC="your 25 words" \\\n  -- npx -y @a-identity/trust-mcp'
+const MCP_COMMAND = 'claude mcp add a-identity-trust \\\n  -e A_IDENTITY_ALGORAND_MNEMONIC="your 25 words" \\\n  -e A_IDENTITY_MAX_USD_PER_CALL=10 \\\n  -- npx -y @a-identity/trust-mcp'
 
 const SDK_SNIPPET = `import { TrustGuard } from '@a-identity/trust-guard'
 import { algorandPayer } from '@a-identity/trust-guard/algorand'
 
-const oracle = new TrustGuard({ rail: 'algorand', onPaymentRequired: algorandPayer({ mnemonic }) })
+const oracle = new TrustGuard({ rail: 'algorand', onPaymentRequired: algorandPayer({ mnemonic, maxUsdPerCall: 10 }) })
 await oracle.guard(agentId) // throws if you should not pay`
 
 /** Each tool, named by the question it answers. */

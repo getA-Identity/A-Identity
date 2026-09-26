@@ -154,30 +154,30 @@ test('an unconfigured challenge is a 501, never a free 402 menu', () => {
   assert.equal(c.httpStatus, 501)
 })
 
-test('Algorand sells at its own list, ten times the shared base list, which stays untouched for the other rails', () => {
+test('Algorand sells at its own whole-dollar list, and the shared base list stays untouched for the other rails', () => {
   for (const tool of RAIL_TOOLS) {
     const p = algorandRailPriceUsd(tool)
     assert.equal(p.totalUsd, p.baseUsd, `${tool}: no settlement fee is invented on this rail`)
     assert.equal(p.baseUsd, ALGORAND_PRICES_USD[tool])
-    assert.equal(Math.round(ALGORAND_PRICES_USD[tool] * 1e6), Math.round(RAIL_BASE_PRICES_USD[tool] * 10 * 1e6), tool)
   }
+  assert.deepEqual(ALGORAND_PRICES_USD, { verify_agent: 1, reputation_score: 2, risk_check: 5, agent_passport: 10 })
   // The X Layer ASP, the EIP-3009 rails, Stellar and Gateway still charge this list, and the
   // OKX listings are registered against it: raising Algorand must not move it.
   assert.deepEqual(RAIL_BASE_PRICES_USD, { verify_agent: 0.001, reputation_score: 0.002, risk_check: 0.005, agent_passport: 0.01 })
 })
 
 test('the batch audit is priced per agent, quoted by count, and capped at fifty agents', () => {
-  assert.equal(algorandRailPriceUsd('agent_batch_audit', 10).totalUsd, 0.4)
-  assert.equal(algorandRailPriceUsd('agent_batch_audit', 50).totalUsd, 2)
+  assert.equal(algorandRailPriceUsd('agent_batch_audit', 10).totalUsd, 40)
+  assert.equal(algorandRailPriceUsd('agent_batch_audit', 50).totalUsd, 200)
   assert.equal(algorandRailPriceUsd('agent_batch_audit', 60).count, 50)
-  assert.equal(algorandRailPriceUsd('agent_batch_audit', 0).totalUsd, 0.04)
+  assert.equal(algorandRailPriceUsd('agent_batch_audit', 0).totalUsd, 4)
   assert.equal(algorandRailPriceUsd('agent_batch_audit', Number.NaN).count, 1)
   const s = algorandRailStatus(TESTNET_ENV)
   const quoted = algorandRailChallenge('agent_batch_audit', s, {}, { count: 25 })
-  assert.equal((quoted.body.accepts as Record<string, unknown>[])[0].amount, '1000000')
+  assert.equal((quoted.body.accepts as Record<string, unknown>[])[0].amount, '100000000')
   assert.equal((quoted.body.pricing as { count: number }).count, 25)
   const defaulted = algorandRailChallenge('agent_batch_audit', s, {})
-  assert.equal((defaulted.body.accepts as Record<string, unknown>[])[0].amount, '400000')
+  assert.equal((defaulted.body.accepts as Record<string, unknown>[])[0].amount, '40000000')
   assert.equal(algorandRailChallenge('risk_check', s).body.pricing, undefined, 'single tools carry no batch pricing block')
 })
 
@@ -248,10 +248,10 @@ function handlersWith(overrides: Partial<AlgorandRailHandlers>, order: string[])
 
 test('a paid call produces its answer after verify and before settle, and releases it with the receipt', async () => {
   const order: string[] = []
-  const { header, txId } = signedPayment(10_000n)
+  const { header, txId } = signedPayment(1_000_000n)
   const persisted: AlgorandSettlementRecord[] = []
   const out = await algorandRailServeTool('verify_agent', { agentId: '#0' }, header, algorandRailStatus(TESTNET_ENV), {
-    env: {}, fetcher: paidNet(txId, 10_000, order), sleep: async () => {}, attempts: 1,
+    env: {}, fetcher: paidNet(txId, 1_000_000, order), sleep: async () => {}, attempts: 1,
     persist: async (rec) => { persisted.push(rec) },
     loadResult: async () => ({ ok: true, rows: [] }),
     handlers: handlersWith({ verify_agent: async () => ({ tool: 'verify_agent', verified: true }) }, order),
@@ -268,11 +268,11 @@ test('a paid call produces its answer after verify and before settle, and releas
 
 test('a tool that cannot answer returns 503 and the facilitator is never asked to settle', async () => {
   const order: string[] = []
-  const { header, txId } = signedPayment(400_000n)
+  const { header, txId } = signedPayment(40_000_000n)
   const persisted: AlgorandSettlementRecord[] = []
   const agentIds = Array.from({ length: 10 }, (_, i) => `#${i}`)
   const out = await algorandRailServeTool('agent_batch_audit', { agentId: '', agentIds }, header, algorandRailStatus(TESTNET_ENV), {
-    env: {}, fetcher: paidNet(txId, 400_000, order), sleep: async () => {}, attempts: 1,
+    env: {}, fetcher: paidNet(txId, 40_000_000, order), sleep: async () => {}, attempts: 1,
     persist: async (rec) => { persisted.push(rec) },
     loadResult: async () => ({ ok: true, rows: [] }),
     handlers: handlersWith({ agent_batch_audit: async () => { throw new Error('the audit did not finish inside 14000 ms') } }, order),
@@ -283,14 +283,14 @@ test('a tool that cannot answer returns 503 and the facilitator is never asked t
   assert.equal(persisted.length, 0)
 
   // Paying for fewer agents than the call lists is refused with a fresh quote before any work.
-  const short = signedPayment(40_000n)
+  const short = signedPayment(4_000_000n)
   const shortOrder: string[] = []
   const refused = await algorandRailServeTool('agent_batch_audit', { agentId: '', agentIds }, short.header, algorandRailStatus(TESTNET_ENV), {
-    env: {}, fetcher: paidNet(short.txId, 40_000, shortOrder), sleep: async () => {}, attempts: 1,
+    env: {}, fetcher: paidNet(short.txId, 4_000_000, shortOrder), sleep: async () => {}, attempts: 1,
     persist: async () => {}, loadResult: async () => ({ ok: true, rows: [] }),
     handlers: handlersWith({ agent_batch_audit: async () => ({ tool: 'agent_batch_audit' }) }, shortOrder),
   })
   assert.equal(refused.httpStatus, 402)
-  assert.equal(((refused.body as { accepts: { amount: string }[] }).accepts[0]).amount, '400000')
+  assert.equal(((refused.body as { accepts: { amount: string }[] }).accepts[0]).amount, '40000000')
   assert.deepEqual(shortOrder, [])
 })

@@ -6,7 +6,7 @@ for each check in USDC on Algorand from its own account.
 ```bash
 claude mcp add a-identity-trust \
   -e A_IDENTITY_ALGORAND_MNEMONIC="your 25 words" \
-  -e A_IDENTITY_MAX_USD_PER_CALL=0.25 \
+  -e A_IDENTITY_MAX_USD_PER_CALL=10 \
   -- npx -y @a-identity/trust-mcp
 ```
 
@@ -17,21 +17,24 @@ Any MCP client that runs stdio servers works the same way (Cursor, Claude Deskto
 | Tool | Price (USDC on Algorand) | What your agent gets |
 | --- | --- | --- |
 | `price_quote` | free | The live price of any tool below, and whether it fits your cap |
-| `risk_check` | $0.05 | ALLOW / WARN / DENY on a counterparty, with reasons. Call it before paying. |
-| `verify_agent` | $0.01 | On-chain ERC-8004 identity, KYA status, revocation |
-| `reputation_score` | $0.02 | Deterministic 0-1000 score with its breakdown and a Sybil signal |
-| `agent_passport` | $0.10 | Identity, KYA, reputation and risk in one document |
-| `agent_batch_audit` | $0.04 per agent, up to 50 | Every verdict for a shortlist, with a summary count |
+| `risk_check` | $5 | ALLOW / WARN / DENY on a counterparty, with reasons. Call it before paying. |
+| `verify_agent` | $1 | On-chain ERC-8004 identity, KYA status, revocation |
+| `reputation_score` | $2 | Deterministic 0-1000 score with its breakdown and a Sybil signal |
+| `agent_passport` | $10 | Identity, KYA, reputation and risk in one document |
+| `agent_batch_audit` | $4 per agent, up to 50 | Every verdict for a shortlist, with a summary count |
 
 The price that is actually charged is always the one in the tool's x402 challenge; the table is a
-convenience, and `price_quote` reads the live number.
+convenience, and `price_quote` reads the live number. These are Algorand prices since
+2026-09-26, above the default per-call cap of 0.25 USDC: set `A_IDENTITY_MAX_USD_PER_CALL` to the
+most you will pay for one call (10 covers every single-agent tool), or every paid call is
+refused before anything is signed.
 
 ## Configuration
 
 | Variable | Default | |
 | --- | --- | --- |
 | `A_IDENTITY_ALGORAND_MNEMONIC` | unset | The paying account. It needs USDC (ASA 31566704, opted in) and no ALGO for fees. Unset: paid tools return their price instead of paying. |
-| `A_IDENTITY_MAX_USD_PER_CALL` | `0.25` | Any single call priced above this is refused before anything is signed. A 50-agent audit is $2.00. |
+| `A_IDENTITY_MAX_USD_PER_CALL` | `0.25` | Any single call priced above this is refused before anything is signed. On Algorand every tool now costs more than the default, so raise it: 10 covers every single-agent tool, and a 50-agent audit is $200. |
 | `A_IDENTITY_BASE_URL` | `https://a-identity.xyz` | The oracle origin, if you self-host. |
 | `A_IDENTITY_ALGOD_URL` | public Nodely endpoint | algod override. |
 

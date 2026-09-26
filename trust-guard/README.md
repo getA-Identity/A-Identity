@@ -57,7 +57,7 @@ Every call is paid per request over x402. Pick where the money moves:
 | Rail | Settles in | verify | reputation | risk_check | passport | batch audit |
 | --- | --- | --- | --- | --- | --- | --- |
 | `xlayer` (default) | USDT0 on X Layer mainnet | $0.001 | $0.002 | $0.005 | $0.01 | n/a |
-| `algorand` | USDC on Algorand mainnet | $0.01 | $0.02 | $0.05 | $0.10 | $0.04 per agent, up to 50 |
+| `algorand` | USDC on Algorand mainnet | $1 | $2 | $5 | $10 | $4 per agent, up to 50 |
 
 The live price is always the one in the 402 challenge; the table is a convenience.
 
@@ -75,11 +75,11 @@ const oracle = new TrustGuard({
   rail: 'algorand',
   onPaymentRequired: algorandPayer({
     mnemonic: process.env.AGENT_MNEMONIC!, // the agent's own account, opted in to USDC
-    maxUsdPerCall: 0.1,                    // refuses anything pricier, before signing
+    maxUsdPerCall: 10,                     // refuses anything pricier, before signing
   }),
 })
 
-await oracle.guard(counterpartyId) // pays 0.05 USDC for the verdict, throws on DENY
+await oracle.guard(counterpartyId) // pays 5 USDC for the verdict, throws on DENY
 ```
 
 What the payer signs, and nothing more: one USDC transfer of exactly the quoted amount to the
@@ -99,8 +99,8 @@ audit.summary            // { ALLOW: 2, WARN: 0, DENY: 1 }
 audit.results[2].reasons // why #4411 was refused
 ```
 
-One paid call, up to 50 agents, $0.04 each. Raise `maxUsdPerCall` to cover the list (50 agents
-is $2.00).
+One paid call, up to 50 agents, $4 each. Raise `maxUsdPerCall` to cover the list (50 agents
+is $200).
 
 ### From an MCP client
 

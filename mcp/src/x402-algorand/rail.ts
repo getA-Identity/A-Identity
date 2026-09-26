@@ -16,8 +16,8 @@
  *    response is a claim; the ledger is the record.
  *  - The answer is produced BEFORE the payment is submitted and released only after the
  *    transfer is confirmed. A tool that cannot answer therefore costs the buyer nothing.
- *  - It has its own price list, ten times the shared base list the other rails and the
- *    OKX listings keep, plus a batch audit sold only here. There is no settlement fee on
+ *  - It has its own price list, a thousand times the shared base list the other rails and
+ *    the OKX listings keep, plus a batch audit and pay_check sold only here. There is no settlement fee on
  *    top: the facilitator covers network fees, so charging one would be a markup wearing
  *    a cost's name.
  *
@@ -234,21 +234,22 @@ export async function payToOptInCheck(
 // ── pricing and the challenge ──────────────────────────────────────────────────────
 
 /**
- * Algorand's own price list: ten times the shared base list. The shared list stays where it
- * is on purpose, because the X Layer ASP, the EIP-3009 rails, Stellar and the Gateway rail
- * charge it and the OKX listings are registered against it. On Algorand the leaderboard the
- * challenge is judged by counts USDC processed, and a tenth of a cent per verdict made every
- * real call nearly invisible there. The test suite pins both lists.
+ * Algorand's own price list, set by the team on 2026-09-26: whole dollars per verdict, a
+ * thousand times the shared base list. The shared list stays where it is on purpose, because
+ * the X Layer ASP, the EIP-3009 rails, Stellar and the Gateway rail charge it and the OKX
+ * listings were registered against it. On Algorand the challenge is judged by USDC
+ * processed, and these are priced as decisions a buyer makes, not fractions of a cent. The
+ * test suite pins both lists.
  */
 export const ALGORAND_PRICES_USD: Record<RailToolName, number> = {
-  verify_agent: 0.01,
-  reputation_score: 0.02,
-  risk_check: 0.05,
-  agent_passport: 0.1,
+  verify_agent: 1,
+  reputation_score: 2,
+  risk_check: 5,
+  agent_passport: 10,
 }
 
 /** Per agent in a batch audit: a fifth under a single risk_check, for buying in bulk. */
-export const ALGORAND_BATCH_PER_AGENT_USD = 0.04
+export const ALGORAND_BATCH_PER_AGENT_USD = 4
 export const ALGORAND_BATCH_MAX_AGENTS = BATCH_MAX_AGENTS
 /** The size a batch challenge is quoted at when the caller names none. */
 export const ALGORAND_BATCH_DEFAULT_QUOTE = 10

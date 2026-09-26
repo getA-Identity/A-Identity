@@ -31,7 +31,7 @@ const ASKED: Record<string, string> = {
   pay_check: 'Is it safe to pay this address?',
 }
 
-const MCP_COMMAND = 'claude mcp add a-identity-trust \\\n  -e A_IDENTITY_ALGORAND_MNEMONIC="your 25 words" \\\n  -- npx -y @a-identity/trust-mcp'
+const MCP_COMMAND = 'claude mcp add a-identity-trust \\\n  -e A_IDENTITY_ALGORAND_MNEMONIC="your 25 words" \\\n  -e A_IDENTITY_MAX_USD_PER_CALL=10 \\\n  -- npx -y @a-identity/trust-mcp'
 
 const shortAddr = (a: string) => `${a.slice(0, 6)}...${a.slice(-4)}`
 

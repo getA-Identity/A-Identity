@@ -132,11 +132,11 @@ import { algorandPayer } from "@a-identity/trust-guard/algorand"
 
 const oracle = new TrustGuard({
   rail: "algorand",
-  onPaymentRequired: algorandPayer({ mnemonic: process.env.AGENT_MNEMONIC!, maxUsdPerCall: 0.1 }),
+  onPaymentRequired: algorandPayer({ mnemonic: process.env.AGENT_MNEMONIC!, maxUsdPerCall: 10 }),
 })
 
-await oracle.guard(counterpartyAgentId)                  // 0.05 USDC, throws on DENY
-const audit = await oracle.batchAudit(["#12", "#907"])   // 0.04 USDC per agent, up to 50
+await oracle.guard(counterpartyAgentId)                  // 5 USDC, throws on DENY
+const audit = await oracle.batchAudit(["#12", "#907"])   // 4 USDC per agent, up to 50
 ```
 
 The oracle produces the answer before it submits the payment, so a check that cannot finish
