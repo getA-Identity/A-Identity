@@ -37,6 +37,7 @@ import { handleCeloRoutes } from './http/celo-routes.js'
 import { handleX402ThreeKRoutes } from './http/x402-3009-routes.js'
 import { handleX402StellarRoutes } from './http/x402-stellar-routes.js'
 import { handleX402AlgorandRoutes } from './http/x402-algorand-routes.js'
+import { handleAlgorandCheckRoutes } from './http/algorand-check-routes.js'
 import { handleX402GatewayRoutes } from './http/x402-gateway-routes.js'
 import { handleCctpRoutes } from './http/cctp-routes.js'
 import { handleChainRoutes } from './http/chain-routes.js'
@@ -234,6 +235,7 @@ const server = http.createServer(async (req, res) => {
     if (await handleX402StellarRoutes(ctx)) return
     // Same precedence reason as Stellar: /api/x402/algorand/* sits under /api/x402/.
     if (await handleX402AlgorandRoutes(ctx)) return
+    if (await handleAlgorandCheckRoutes(ctx)) return
     // Same again: /api/x402/gateway/* sits under /api/x402/.
     if (await handleX402GatewayRoutes(ctx)) return
     if (await handleCctpRoutes(ctx)) return

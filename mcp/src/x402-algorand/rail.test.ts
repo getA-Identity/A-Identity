@@ -138,12 +138,14 @@ test('each catalog description names what the caller gets back, not just the top
     risk_check: /ALLOW \/ WARN \/ DENY/,
     agent_passport: /passport/,
     agent_batch_audit: /per agent/,
+    pay_check: /Don't pay/,
   }
   for (const tool of ALGORAND_TOOLS) {
     const description = (algorandRailChallenge(tool, s).body.resource as { description: string }).description
     assert.ok(description.length >= 80, `${tool}: "${description}" is too thin for a catalog listing`)
     assert.match(description, names[tool])
-    assert.match(description, /agentId/, `${tool}: the listing must say what to send`)
+    // pay_check is sent an address, every agent tool an agentId; the listing must name its own.
+    assert.match(description, tool === 'pay_check' ? /with address/ : /agentId/, `${tool}: the listing must say what to send`)
   }
 })
 
@@ -239,7 +241,7 @@ function paidNet(txId: string, amount: number, order: string[]) {
 function handlersWith(overrides: Partial<AlgorandRailHandlers>, order: string[]): AlgorandRailHandlers {
   const unexpected = async () => { throw new Error('unexpected tool') }
   return {
-    verify_agent: unexpected, reputation_score: unexpected, risk_check: unexpected, agent_passport: unexpected, agent_batch_audit: unexpected,
+    verify_agent: unexpected, reputation_score: unexpected, risk_check: unexpected, agent_passport: unexpected, agent_batch_audit: unexpected, pay_check: unexpected,
     ...Object.fromEntries(Object.entries(overrides).map(([k, fn]) => [k, async (i: never) => { order.push('tool'); return fn!(i) }])),
   } as AlgorandRailHandlers
 }

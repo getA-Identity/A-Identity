@@ -12,6 +12,7 @@
 import {
   ALGORAND_BATCH_TOOL,
   ALGORAND_LISTINGS,
+  ALGORAND_PAY_CHECK_TOOL,
   ALGORAND_TOOLS,
   algorandChallengeReadiness,
   algorandReceiptsFor,
@@ -28,6 +29,7 @@ import {
   type RailToolName,
 } from '../x402-algorand/rail.js'
 import { normalizeAgentIds } from '../x402-algorand/batch.js'
+import { hostOf } from '../algorand-check/check.js'
 import { isAlgorandAddress } from '../chains/algorand/ids.js'
 import { loadAlgorandSettlements } from '../storage.js'
 import type { TxContext } from '../asp/tools.js'
@@ -46,7 +48,7 @@ function sendWithPaymentRequired(res: RouteCtx['res'], httpStatus: number, body:
   sendChallenge(res, httpStatus, body)
 }
 
-type ToolBody = { agentId?: unknown; agentIds?: unknown; txContext?: unknown } | null
+type ToolBody = { agentId?: unknown; agentIds?: unknown; txContext?: unknown; address?: unknown } | null
 
 async function readToolBody(req: RouteCtx['req']): Promise<ToolBody> {
   try {
@@ -212,6 +214,19 @@ export async function handleX402AlgorandRoutes(ctx: RouteCtx): Promise<boolean> 
       return true
     }
     out = await algorandRailServeTool(tool, { agentId: '', agentIds: ids.ids, txContext }, header, status)
+  } else if (tool === ALGORAND_PAY_CHECK_TOOL) {
+    const address = req.method === 'POST'
+      ? (typeof body?.address === 'string' ? body.address.trim() : '')
+      : (url.searchParams.get('address')?.trim() ?? '')
+    if (!address || (!isAlgorandAddress(address) && !hostOf(address))) {
+      // Refused before any settlement, so a missing or malformed input never costs a payment.
+      sendJson(res, 400, {
+        error: 'address is required: an Algorand address, or the link of an x402 seller (JSON body on POST, query param on GET)',
+        example: ALGORAND_LISTINGS[tool].body,
+      })
+      return true
+    }
+    out = await algorandRailServeTool(tool, { agentId: '', address }, header, status)
   } else {
     const agentId = req.method === 'POST'
       ? (typeof body?.agentId === 'string' ? body.agentId.trim() : '')

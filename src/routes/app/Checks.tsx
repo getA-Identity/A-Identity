@@ -28,6 +28,7 @@ const ASKED: Record<string, string> = {
   reputation_score: 'How has it behaved?',
   agent_passport: 'Everything, in one answer',
   agent_batch_audit: 'A whole shortlist',
+  pay_check: 'Is it safe to pay this address?',
 }
 
 const MCP_COMMAND = 'claude mcp add a-identity-trust \\\n  -e A_IDENTITY_ALGORAND_MNEMONIC="your 25 words" \\\n  -- npx -y @a-identity/trust-mcp'

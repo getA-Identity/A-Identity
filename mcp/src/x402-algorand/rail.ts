@@ -38,6 +38,7 @@ import { agentPassport, reputationScore, riskCheck, verifyAgent, type TxContext 
 import { RAIL_BASE_PRICES_USD, RAIL_TOOLS, RAIL_TOOL_CARDS, type RailToolName } from '../x402-3009/rail.js'
 import { loadAlgorandSettlements, type AlgorandSettlementRecord } from '../storage.js'
 import { BATCH_MAX_AGENTS, runBatchAudit } from './batch.js'
+import { PAY_CHECK_PRICE_USD, runPayCheck } from '../algorand-check/check.js'
 import { settleAlgorandPayment, type AlgorandRequirements, type AlgorandSettleDeps } from './settle.js'
 
 export { RAIL_BASE_PRICES_USD, RAIL_TOOL_CARDS, RAIL_TOOLS }
@@ -45,8 +46,14 @@ export type { RailToolName }
 
 /** The batch audit: sold on this rail only, priced per agent. */
 export const ALGORAND_BATCH_TOOL = 'agent_batch_audit' as const
-export type AlgorandToolName = RailToolName | typeof ALGORAND_BATCH_TOOL
-export const ALGORAND_TOOLS: readonly AlgorandToolName[] = [...RAIL_TOOLS, ALGORAND_BATCH_TOOL]
+/**
+ * "Before you pay" for an Algorand address: sold on this rail only. The trust tools above
+ * resolve ERC-8004 agents, which an Algorand seller is not, so this one reads the Algorand
+ * ledger and the facilitator's public records instead (see ../algorand-check/check.ts).
+ */
+export const ALGORAND_PAY_CHECK_TOOL = 'pay_check' as const
+export type AlgorandToolName = RailToolName | typeof ALGORAND_BATCH_TOOL | typeof ALGORAND_PAY_CHECK_TOOL
+export const ALGORAND_TOOLS: readonly AlgorandToolName[] = [...RAIL_TOOLS, ALGORAND_BATCH_TOOL, ALGORAND_PAY_CHECK_TOOL]
 
 export function isAlgorandTool(name: string): name is AlgorandToolName {
   return (ALGORAND_TOOLS as readonly string[]).includes(name)
@@ -260,6 +267,7 @@ export function algorandRailPriceUsd(tool: AlgorandToolName, count: number = 1):
     const total = Math.round(ALGORAND_BATCH_PER_AGENT_USD * n * 1e6) / 1e6
     return { baseUsd: total, totalUsd: total, unitUsd: ALGORAND_BATCH_PER_AGENT_USD, count: n }
   }
+  if (tool === ALGORAND_PAY_CHECK_TOOL) return { baseUsd: PAY_CHECK_PRICE_USD, totalUsd: PAY_CHECK_PRICE_USD }
   // No settlement fee: the facilitator pays the network fee today. If that ever
   // changes, the fee belongs on the chain's settlement token with a measured
   // feeBasis, exactly as the EVM rails record theirs.
@@ -296,6 +304,19 @@ const TX_CONTEXT_SCHEMA = {
   properties: { amountUsd: { type: 'number', minimum: 0 }, chain: { type: 'string' }, kind: { type: 'string' } },
 }
 const EXAMPLE_TIME = '2026-09-12T00:00:00.000Z'
+
+/** What pay_check is sent: an address, or the link of a listed x402 seller. */
+const PAY_CHECK_BODY = {
+  type: 'object',
+  properties: {
+    address: {
+      type: 'string',
+      minLength: 1,
+      description: 'The Algorand address you are about to pay, or the link of an x402 seller listed with the facilitator.',
+    },
+  },
+  required: ['address'],
+}
 
 export const ALGORAND_LISTINGS: Record<AlgorandToolName, AlgorandListing> = {
   verify_agent: {
@@ -377,6 +398,21 @@ export const ALGORAND_LISTINGS: Record<AlgorandToolName, AlgorandListing> = {
           reputationScore: 0, onchainVerified: false, kyaVerified: false, revoked: false,
         },
       ],
+      checkedAt: EXAMPLE_TIME,
+    },
+  },
+  pay_check: {
+    description:
+      'Before you pay an Algorand address: a Looks safe / Be careful / Don\'t pay verdict from the public record, with ' +
+      'plain reasons, account age, whether it can receive USDC, its x402 seller history, and who pays it, including the ' +
+      'share paid by wallets linked to the seller. POST a JSON body with address.',
+    body: { address: 'WHZ74ZGNGZGAVEQZTHESENVP5RTHMEQ4BOUKF7UHWOADQMKXDKAK3FESJE' },
+    bodySchema: PAY_CHECK_BODY,
+    example: {
+      address: 'WHZ74ZGNGZGAVEQZTHESENVP5RTHMEQ4BOUKF7UHWOADQMKXDKAK3FESJE',
+      verdict: 'careful', headline: 'Be careful',
+      reasons: [{ tone: 'warn', code: 'self_funded', text: '100% of the USDC it received came from wallets linked to it, so its payments may be its own.' }],
+      facts: { accountAgeDays: 28, canReceiveUsdc: true, payers: { sampled: 10, distinct: 1, topPayerShare: 1, sellerFundedShare: 1 } },
       checkedAt: EXAMPLE_TIME,
     },
   },
@@ -519,7 +555,7 @@ export function algorandRailLimits(status: AlgorandRailStatus, env: NodeJS.Proce
 
 // ── serving a paid call ────────────────────────────────────────────────────────────
 
-export type AlgorandRailToolInput = { agentId: string; txContext?: TxContext | null; agentIds?: string[] }
+export type AlgorandRailToolInput = { agentId: string; txContext?: TxContext | null; agentIds?: string[]; address?: string }
 export type AlgorandRailHandlers = Record<AlgorandToolName, (input: AlgorandRailToolInput) => Promise<unknown>>
 export type AlgorandRailServeDeps = AlgorandSettleDeps & {
   handlers?: AlgorandRailHandlers
@@ -549,6 +585,13 @@ function algorandHandlers(status: AlgorandRailStatus): AlgorandRailHandlers {
       const audit = await runBatchAudit(i.agentIds ?? [], i.txContext ?? null)
       if (!audit.ok) throw new Error(audit.reason)
       return meta(audit.result)
+    },
+    // A lookup that cannot answer (an unknown link, the ledger unreachable) throws here, which
+    // is before settlement: the buyer is refused with nothing charged.
+    pay_check: async (i) => {
+      const r = await runPayCheck(i.address ?? '', { detailed: true, facilitator: status.facilitator ?? undefined })
+      if ('error' in r) throw new Error(r.error)
+      return meta(r as unknown as Record<string, unknown>)
     },
   }
 }
@@ -723,6 +766,7 @@ export function algorandChallengeReadiness(status: AlgorandRailStatus, env: Node
     prices: {
       ...ALGORAND_PRICES_USD,
       agent_batch_audit: { perAgentUsd: ALGORAND_BATCH_PER_AGENT_USD, maxAgents: ALGORAND_BATCH_MAX_AGENTS },
+      pay_check: PAY_CHECK_PRICE_USD,
     },
     shape: 'composite: every tool settles to the one payTo above',
     attribution: "decided by the facilitator's leaderboard, not by this backend; read it with mcp/scripts/algo-challenge-check.mjs",
