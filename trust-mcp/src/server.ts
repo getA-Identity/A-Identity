@@ -13,14 +13,15 @@ import { PaymentRequiredError, TrustGuard, TrustOracleError, type FetchLike } fr
 import { AlgorandPaymentError, algorandPayer, readAlgorandQuote, SpendCapError } from '@a-identity/trust-guard/algorand'
 
 export const SERVER_NAME = 'a-identity-trust'
-export const SERVER_VERSION = '0.1.0'
+export const SERVER_VERSION = '0.2.0'
 export const DEFAULT_BASE_URL = 'https://a-identity.xyz'
-export const DEFAULT_MAX_USD_PER_CALL = 0.25
+export const DEFAULT_MAX_USD_PER_CALL = 10
 
 export interface TrustMcpConfig {
   /** The paying Algorand account (25 words). Unset: paid tools return their price. */
   mnemonic?: string
-  /** The most any single call may cost, in USD. Default 0.25. */
+  /** The most any single call may cost, in USD. Default 10, which covers every single-agent
+   *  tool at Algorand's prices (1 to 10 USDC); a batch audit needs it raised. */
   maxUsdPerCall?: number
   /** The oracle origin. Default https://a-identity.xyz. */
   baseUrl?: string
@@ -123,7 +124,7 @@ export function buildTrustMcpServer(config: TrustMcpConfig = {}): McpServer {
     {
       title: 'Should I pay this agent?',
       description:
-        'Paid ($0.05 USDC on Algorand). Call BEFORE paying or hiring another agent: an ALLOW / WARN / DENY verdict on the counterparty with the reasons and signals behind it. Do not pay on DENY.',
+        'Paid ($5 USDC on Algorand). Call BEFORE paying or hiring another agent: an ALLOW / WARN / DENY verdict on the counterparty with the reasons and signals behind it. Do not pay on DENY.',
       inputSchema: { agentId, amountUsd },
     },
     async ({ agentId, amountUsd }) => paid(() => oracle.riskCheck(agentId, amountUsd === undefined ? undefined : { amountUsd })),
@@ -133,7 +134,7 @@ export function buildTrustMcpServer(config: TrustMcpConfig = {}): McpServer {
     'verify_agent',
     {
       title: 'Verify an agent',
-      description: 'Paid ($0.01 USDC on Algorand). Whether the agent has an on-chain ERC-8004 identity, its KYA (Know Your Agent) status, and whether it has been revoked.',
+      description: 'Paid ($1 USDC on Algorand). Whether the agent has an on-chain ERC-8004 identity, its KYA (Know Your Agent) status, and whether it has been revoked.',
       inputSchema: { agentId },
     },
     async ({ agentId }) => paid(() => oracle.verify(agentId)),
@@ -143,7 +144,7 @@ export function buildTrustMcpServer(config: TrustMcpConfig = {}): McpServer {
     'reputation_score',
     {
       title: 'Agent reputation',
-      description: 'Paid ($0.02 USDC on Algorand). A deterministic 0-1000 reputation with its breakdown, a Sybil signal, and the latest on-chain attestation of the score.',
+      description: 'Paid ($2 USDC on Algorand). A deterministic 0-1000 reputation with its breakdown, a Sybil signal, and the latest on-chain attestation of the score.',
       inputSchema: { agentId },
     },
     async ({ agentId }) => paid(() => oracle.reputation(agentId)),
@@ -153,7 +154,7 @@ export function buildTrustMcpServer(config: TrustMcpConfig = {}): McpServer {
     'agent_passport',
     {
       title: 'Agent passport',
-      description: 'Paid ($0.10 USDC on Algorand). Identity, KYA, reputation and the risk verdict for one agent in a single document.',
+      description: 'Paid ($10 USDC on Algorand). Identity, KYA, reputation and the risk verdict for one agent in a single document.',
       inputSchema: { agentId },
     },
     async ({ agentId }) => paid(() => oracle.passport(agentId)),
@@ -164,7 +165,7 @@ export function buildTrustMcpServer(config: TrustMcpConfig = {}): McpServer {
     {
       title: 'Audit a shortlist of agents',
       description:
-        'Paid ($0.04 USDC per agent on Algorand, up to 50). Every verdict for a shortlist in one call, with a summary count. The whole audit is produced before the payment is submitted, so an audit that cannot finish costs nothing. Check the total with price_quote against your cap first.',
+        'Paid ($4 USDC per agent on Algorand, up to 50). Every verdict for a shortlist in one call, with a summary count. The whole audit is produced before the payment is submitted, so an audit that cannot finish costs nothing. Check the total with price_quote against your cap first.',
       inputSchema: {
         agentIds: z.array(z.string().min(1)).min(1).max(50).describe('The agents to audit.'),
         amountUsd,

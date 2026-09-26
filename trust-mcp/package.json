@@ -1,6 +1,6 @@
 {
   "name": "@a-identity/trust-mcp",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "MCP server that lets an AI agent verify another agent before paying it, and pay A-Identity for each verdict in USDC on Algorand from its own account, under a per-call spending cap.",
   "type": "module",
   "bin": {
@@ -54,7 +54,7 @@
     "access": "public"
   },
   "dependencies": {
-    "@a-identity/trust-guard": "^0.2.0",
+    "@a-identity/trust-guard": "^0.3.0",
     "@modelcontextprotocol/sdk": "^1.29.0",
     "algosdk": "^3.7.0",
     "zod": "^3.25.76"

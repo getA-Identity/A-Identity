@@ -85,7 +85,7 @@ await oracle.guard(counterpartyId) // pays 5 USDC for the verdict, throws on DEN
 What the payer signs, and nothing more: one USDC transfer of exactly the quoted amount to the
 quoted payTo, with fee zero, grouped with an unsigned fee-payer transaction the GoPlausible
 facilitator signs and pays for. The account needs USDC and no ALGO for fees, and the key never
-leaves your process. A challenge above `maxUsdPerCall` (default 0.25), for any asset other
+leaves your process. A challenge above `maxUsdPerCall` (default 10), for any asset other
 than native Circle USDC, or on an unknown network is refused before anything is signed.
 
 The oracle produces its answer before it submits your payment and releases it only once the

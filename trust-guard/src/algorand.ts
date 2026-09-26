@@ -9,9 +9,9 @@
  *
  *   const oracle = new TrustGuard({
  *     rail: 'algorand',
- *     onPaymentRequired: algorandPayer({ mnemonic: process.env.AGENT_MNEMONIC!, maxUsdPerCall: 0.1 }),
+ *     onPaymentRequired: algorandPayer({ mnemonic: process.env.AGENT_MNEMONIC!, maxUsdPerCall: 10 }),
  *   })
- *   await oracle.guard(counterpartyId)   // pays 0.05 USDC for the risk_check, throws on DENY
+ *   await oracle.guard(counterpartyId)   // pays 5 USDC for the risk_check, throws on DENY
  *
  * What it signs, and nothing more: one USDC transfer of exactly the challenge's amount to the
  * challenge's payTo, with fee ZERO, grouped with an unsigned fee-payer transaction that the
@@ -54,12 +54,13 @@ export const ALGORAND_USDC: Record<string, { asset: string; algod: string; label
 }
 
 export const DEFAULT_ALGORAND_FACILITATOR = 'https://facilitator.goplausible.xyz'
-export const DEFAULT_MAX_USD_PER_CALL = 0.25
+export const DEFAULT_MAX_USD_PER_CALL = 10
 
 export interface AlgorandPayerOptions {
   /** The paying account's 25-word mnemonic. */
   mnemonic: string
-  /** The most this payer will pay for a single call, in USD. Default 0.25. */
+  /** The most this payer will pay for a single call, in USD. Default 10, which covers every
+   *  single-agent tool at Algorand's prices (1 to 10 USDC); a batch audit needs it raised. */
   maxUsdPerCall?: number
   /** algod endpoint; defaults to the public Nodely endpoint for the challenge's network. */
   algodUrl?: string

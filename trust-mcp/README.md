@@ -25,16 +25,15 @@ Any MCP client that runs stdio servers works the same way (Cursor, Claude Deskto
 
 The price that is actually charged is always the one in the tool's x402 challenge; the table is a
 convenience, and `price_quote` reads the live number. These are Algorand prices since
-2026-09-26, above the default per-call cap of 0.25 USDC: set `A_IDENTITY_MAX_USD_PER_CALL` to the
-most you will pay for one call (10 covers every single-agent tool), or every paid call is
-refused before anything is signed.
+2026-09-26. The default per-call cap is 10 USDC, which covers every single-agent tool; set
+`A_IDENTITY_MAX_USD_PER_CALL` higher for a batch audit (50 agents is $200), or lower to spend less.
 
 ## Configuration
 
 | Variable | Default | |
 | --- | --- | --- |
 | `A_IDENTITY_ALGORAND_MNEMONIC` | unset | The paying account. It needs USDC (ASA 31566704, opted in) and no ALGO for fees. Unset: paid tools return their price instead of paying. |
-| `A_IDENTITY_MAX_USD_PER_CALL` | `0.25` | Any single call priced above this is refused before anything is signed. On Algorand every tool now costs more than the default, so raise it: 10 covers every single-agent tool, and a 50-agent audit is $200. |
+| `A_IDENTITY_MAX_USD_PER_CALL` | `10` | Any single call priced above this is refused before anything is signed. 10 covers every single-agent tool; a 50-agent audit is $200. |
 | `A_IDENTITY_BASE_URL` | `https://a-identity.xyz` | The oracle origin, if you self-host. |
 | `A_IDENTITY_ALGOD_URL` | public Nodely endpoint | algod override. |
 
