@@ -88,6 +88,7 @@ leaves the caller's process.
 - [Architecture](https://a-identity.xyz/architecture): how the pieces fit together.
 - [Arc Mainnet](https://a-identity.xyz/arc): the featured network, live since it opened on 2026-09-16. A-Identity holds agent #0, the first identity minted on Arc Mainnet's ERC-8004 registry; every receipt is linked.
 - [Stellar passkey vault](https://a-identity.xyz/stellar): run the whole policy flow yourself on Stellar testnet. A WebAuthn passkey becomes an OpenZeppelin smart account, that account owns an AgentSpendPolicy vault and signs its limit, the risk engine answers ALLOW, WARN or DENY, and the vault refuses a payment to a payee that is not allowlisted. Fees are sponsored, so it needs no wallet and no XLM.
+- [Before you pay](https://a-identity.xyz/check): paste an Algorand address or an x402 service link and get a plain answer (looks safe, be careful, don't pay, or not enough history yet) with the reasons, read live from the Algorand ledger and the x402 facilitator's public records. A deep link runs it on load: https://a-identity.xyz/check?q=<address>.
 
 ## Selected writing
 

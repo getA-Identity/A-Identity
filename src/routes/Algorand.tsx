@@ -1,12 +1,13 @@
 import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { motion } from 'framer-motion'
-import { ArrowUpRight } from 'lucide-react'
+import { ArrowRight, ArrowUpRight } from 'lucide-react'
 import PageHeader from '../components/PageHeader'
 import SiteFooter from '../components/sections/SiteFooter'
 import ThemeScope from '../components/ThemeScope'
 import CopyBlock from '../components/app/CopyBlock'
 import { TryIt } from '../components/rail/RailKit'
+import { Button } from '../components/ui/button'
 import { DisplayHeading, Eyebrow, Lede } from '../components/ui/display'
 import { SectionShell, reveal, revealAt } from '../components/ui/section'
 import { ago } from '../lib/format'
@@ -30,6 +31,7 @@ type Prices = {
   risk_check: number
   agent_passport: number
   agent_batch_audit?: { perAgentUsd: number; maxAgents: number }
+  pay_check?: number
 }
 type RailStatus = { configured: boolean; challenge?: { prices?: Prices } }
 
@@ -43,6 +45,7 @@ await oracle.guard(agentId) // throws if you should not pay`
 
 /** Each tool, named by the question it answers. */
 const QUESTIONS: { key: keyof Omit<Prices, 'agent_batch_audit'> | 'agent_batch_audit'; ask: string; tool: string }[] = [
+  { key: 'pay_check', ask: 'Is it safe to pay this Algorand address?', tool: 'pay_check' },
   { key: 'risk_check', ask: 'Should I pay this agent?', tool: 'risk_check' },
   { key: 'verify_agent', ask: 'Is it who it says it is?', tool: 'verify_agent' },
   { key: 'reputation_score', ask: 'How has it behaved?', tool: 'reputation_score' },
@@ -152,6 +155,14 @@ export default function Algorand() {
           </motion.div>
           <motion.div {...revealAt(2)} className="mt-5">
             <Lede>One call. A clear answer. Paid in USDC on Algorand.</Lede>
+          </motion.div>
+          {/* The same question for a person: paste an address, get a plain answer, no agent needed. */}
+          <motion.div {...revealAt(3)} className="mt-7">
+            <Button asChild size="lg">
+              <Link to="/check">
+                Check an address before you pay <ArrowRight size={16} />
+              </Link>
+            </Button>
           </motion.div>
           <LiveNumbers proof={proof} failed={proofFailed} />
         </SectionShell>
