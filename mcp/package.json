@@ -37,7 +37,7 @@
     "algosdk": "^3.7.0",
     "express": "^5.2.1",
     "pg": "^8.22.0",
-    "viem": "^2.52.2",
+    "viem": "^2.56.6",
     "zod": "^3.25.76"
   },
   "optionalDependencies": {
