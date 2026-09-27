@@ -98,12 +98,21 @@ export const MAX_ID_LENGTH = 200
 /** Parsed field: a value, nothing typed yet (problem null), or a sentence saying what is wrong. */
 export type Parsed<T> = { ok: true; value: T } | { ok: false; problem: string | null }
 
+/**
+ * An Algorand address is not an agent id: these tools read ERC-8004 registries, so one would
+ * be charged for a guaranteed "no identity found". Stopped before any payment, and pointed at
+ * the check that does answer it.
+ */
+const ALGORAND_ADDRESS = /^[A-Z2-7]{58}$/
+const NOT_AN_AGENT = 'That is an Algorand address, not an agent id. To check it, use "Who pays this Algorand address?" above.'
+
 /** One agent id: "#0", a CAIP id, a 0x owner address, or a platform id. One token, no spaces. */
 export function readAgentId(raw: string): Parsed<string> {
   const id = raw.trim()
   if (!id) return { ok: false, problem: null }
   if (/\s/.test(id)) return { ok: false, problem: 'Enter one agent id, like #0.' }
   if (id.length > MAX_ID_LENGTH) return { ok: false, problem: 'That agent id is too long.' }
+  if (ALGORAND_ADDRESS.test(id)) return { ok: false, problem: NOT_AN_AGENT }
   return { ok: true, value: id }
 }
 
@@ -119,6 +128,7 @@ export function readAgentIds(raw: string, max: number): { ids: string[]; problem
     const id = part.trim()
     if (!id || seen.has(id)) continue
     if (id.length > MAX_ID_LENGTH) return { ids, problem: 'One of those agent ids is too long.' }
+    if (ALGORAND_ADDRESS.test(id)) return { ids, problem: NOT_AN_AGENT }
     seen.add(id)
     ids.push(id)
   }
@@ -134,8 +144,6 @@ export function readDealSize(raw: string): Parsed<number | null> {
   if (!/^[0-9]+(\.[0-9]+)?$/.test(t) || !Number.isFinite(v) || v > 1e12) return { ok: false, problem: 'Enter the deal size as a number, like 25.' }
   return { ok: true, value: v }
 }
-
-const ALGORAND_ADDRESS = /^[A-Z2-7]{58}$/
 
 /** The same rule the backend's hostOf applies to a service link. */
 function isServiceLink(raw: string): boolean {
