@@ -764,7 +764,7 @@ export default function Check() {
                   All of it is read live from public data: the Algorand ledger and the x402 facilitator's public records.
                 </p>
               </Fold>
-              <Fold title="For agents">
+              <Fold title="For developers">
                 <p className="text-[15px] leading-relaxed text-foreground/75">
                   {hasPrice
                     ? `An AI agent can buy the same detailed report for ${formatUsd(reportPrice)} per call, paid over x402 on Algorand.`

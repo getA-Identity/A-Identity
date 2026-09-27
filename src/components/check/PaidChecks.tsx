@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState, type FormEvent } from 'react'
-import { AlertTriangle, CheckCircle2, Info, Loader2, XCircle } from 'lucide-react'
+import { AlertTriangle, CheckCircle2, ChevronDown, Info, Loader2, XCircle } from 'lucide-react'
 import { Button } from '../ui/button'
 import { Input } from '../ui/input'
 import { apiFetch } from '../../lib/api'
@@ -63,12 +63,15 @@ const posterFor =
 
 type Service = { tool: PaidTool; question: string; detail: string }
 
+/** Ids that resolve live, for anyone who does not have one to hand: our own agents. */
+const EXAMPLE_AGENT = '#0'
+const EXAMPLE_AGENTS = ['#0', 'eip155:8453:8004/73232', '849980']
+
 const SERVICES: Service[] = [
-  { tool: 'pay_check', question: 'Who pays this Algorand address?', detail: 'Its biggest payers, its last payments, and the wallet that created it.' },
-  { tool: 'verify_agent', question: 'Is this AI agent who it says it is?', detail: 'Its on-chain identity and its KYA status.' },
-  { tool: 'reputation_score', question: 'How has this AI agent behaved?', detail: 'A score out of 1000, and what it is made of.' },
-  { tool: 'risk_check', question: 'Should I pay this AI agent?', detail: 'Allow, warn or deny, with the reasons.' },
-  { tool: 'agent_passport', question: 'Everything about this AI agent, in one answer', detail: 'Identity, KYA, score and verdict together.' },
+  { tool: 'verify_agent', question: 'Is this AI agent who it says it is?', detail: 'Whether its ID is real and its owner has been verified.' },
+  { tool: 'reputation_score', question: 'How has this AI agent behaved?', detail: 'A score out of 1000, based on its track record.' },
+  { tool: 'risk_check', question: 'Should I pay this AI agent?', detail: 'A clear yes, careful or no, with the reasons.' },
+  { tool: 'agent_passport', question: 'Everything about this AI agent, in one answer', detail: 'Its ID, owner check, score and a yes or no, together.' },
   { tool: 'agent_batch_audit', question: 'Check a whole list of AI agents', detail: 'A verdict for each agent on your list.' },
 ]
 
@@ -105,10 +108,22 @@ export default function PaidChecks({
   const prices = price.s === 'ok' ? price.prices : null
 
   return (
-    <section aria-labelledby="paid-checks-title" className="mt-10">
-      <h2 id="paid-checks-title" className="text-xl font-bold tracking-tight text-foreground" style={{ fontFamily: 'var(--font-heading)' }}>
-        Paid checks
-      </h2>
+    <details className="group mt-10 rounded-2xl border border-border bg-card">
+      <summary className="flex cursor-pointer list-none items-center justify-between gap-4 px-5 py-4 sm:px-6 [&::-webkit-details-marker]:hidden">
+        <span>
+          <span id="paid-checks-title" className="block text-[15px] font-semibold text-foreground">
+            For AI agents
+          </span>
+          <span className="mt-0.5 block text-sm text-foreground/60">Checks for programs that pay on their own.</span>
+        </span>
+        <ChevronDown size={18} className="shrink-0 text-foreground/50 transition-transform duration-200 group-open:rotate-180" aria-hidden="true" />
+      </summary>
+      <section aria-labelledby="paid-checks-title" className="px-5 pb-5 sm:px-6">
+      <p className="text-[15px] leading-relaxed text-foreground/75">
+        Some computer programs, called AI agents, now buy and sell from each other on their own. Each one has an ID number,
+        a bit like a company registration number. If you run one, or you are about to pay one, these checks look it up
+        before any money moves. Not sure what to type? Press &quot;Try an example&quot;.
+      </p>
       {price.s === 'failed' && (
         <p className="mt-2 flex flex-wrap items-center gap-x-2 text-sm text-foreground/70">
           Prices could not be loaded just now.
@@ -118,7 +133,7 @@ export default function PaidChecks({
         </p>
       )}
       {price.s === 'off' && <p className="mt-2 text-sm text-foreground/70">Paid checks are not available right now.</p>}
-      <div className="mt-3 divide-y divide-border overflow-hidden rounded-2xl border border-border bg-card">
+      <div className="mt-4 divide-y divide-border overflow-hidden rounded-2xl border border-border bg-background/40">
         {SERVICES.map((s) => (
           <ServiceRow key={s.tool} service={s} prices={prices} pricesLoading={price.s === 'loading'} boxValue={boxValue} checked={checked} reportAddress={reportAddress} />
         ))}
@@ -126,7 +141,8 @@ export default function PaidChecks({
       <p className="mt-2.5 text-xs leading-relaxed text-foreground/55">
         Paid in USDC on Algorand from your own wallet. Network fees are covered. If an answer cannot be produced, nothing is charged.
       </p>
-    </section>
+      </section>
+    </details>
   )
 }
 
@@ -365,34 +381,44 @@ function ServiceRow({
 
             {(tool === 'verify_agent' || tool === 'reputation_score' || tool === 'risk_check' || tool === 'agent_passport') && (
               <>
-                <label htmlFor={`${id}-agent`} className="block text-sm font-semibold text-foreground">
-                  Agent id
-                </label>
-                <Input id={`${id}-agent`} value={agentId} onChange={(e) => setAgentId(e.target.value)} placeholder="#0 or eip155:5042:8004/0" maxLength={200} className="mt-1.5 h-11 text-base" {...inputProps} />
-                {hintText(problem, "The agent's number, like #0, its full id, or its owner's 0x address.")}
+                <div className="flex items-baseline justify-between gap-3">
+                  <label htmlFor={`${id}-agent`} className="block text-sm font-semibold text-foreground">
+                    The agent&apos;s ID
+                  </label>
+                  <button type="button" onClick={() => setAgentId(EXAMPLE_AGENT)} className="text-sm font-semibold text-accent hover:underline">
+                    Try an example
+                  </button>
+                </div>
+                <Input id={`${id}-agent`} value={agentId} onChange={(e) => setAgentId(e.target.value)} placeholder="#0" maxLength={200} className="mt-1.5 h-11 text-base" {...inputProps} />
+                {hintText(problem, "You will find it on the agent's page. It looks like #0.")}
               </>
             )}
 
             {tool === 'risk_check' && (
               <div className="mt-3">
                 <label htmlFor={`${id}-deal`} className="block text-sm font-semibold text-foreground">
-                  Deal size in USD <span className="font-normal text-foreground/55">(optional)</span>
+                  How much are you about to pay it, in dollars? <span className="font-normal text-foreground/55">(optional)</span>
                 </label>
                 <Input id={`${id}-deal`} value={deal} onChange={(e) => setDeal(e.target.value)} placeholder="25" inputMode="decimal" maxLength={16} className="mt-1.5 h-11 text-base" {...inputProps} />
-                {hintText(dealProblem, 'How much you are about to pay it. The verdict is sized to it.')}
+                {hintText(dealProblem, 'Bigger payments get a stricter answer.')}
               </div>
             )}
 
             {tool === 'agent_batch_audit' && (
               <>
-                <label htmlFor={`${id}-ids`} className="block text-sm font-semibold text-foreground">
-                  Agent ids
-                </label>
+                <div className="flex items-baseline justify-between gap-3">
+                  <label htmlFor={`${id}-ids`} className="block text-sm font-semibold text-foreground">
+                    The agents&apos; IDs
+                  </label>
+                  <button type="button" onClick={() => setIds(EXAMPLE_AGENTS.join('\n'))} className="text-sm font-semibold text-accent hover:underline">
+                    Try an example
+                  </button>
+                </div>
                 <textarea
                   id={`${id}-ids`}
                   value={ids}
                   onChange={(e) => setIds(e.target.value)}
-                  placeholder={'#0\n#1\neip155:5042:8004/2'}
+                  placeholder={'#0\n#1'}
                   rows={4}
                   className="mt-1.5 flex w-full resize-y rounded-xl border border-foreground/15 bg-card px-3.5 py-2.5 font-mono text-base text-foreground shadow-sm transition-colors placeholder:text-foreground/40 focus:border-accent/40 focus:outline-none focus:ring-2 focus:ring-ring/30"
                   {...inputProps}
