@@ -23,7 +23,7 @@
   },
   "scripts": {
     "build": "tsc",
-    "test": "tsc -p tsconfig.test.json && node --test dist-test/server.test.js",
+    "test": "tsc -p tsconfig.test.json && node --test dist-test/server.test.js dist-test/wallet.test.js",
     "prepublishOnly": "tsc"
   },
   "keywords": [

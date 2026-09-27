@@ -47,6 +47,7 @@ await oracle.verify(id)        // ERC-8004 identity + KYA status
 await oracle.reputation(id)    // 0-1000 score (+ its on-chain attestation, if published)
 await oracle.riskCheck(id, tx) // ALLOW / WARN / DENY
 await oracle.passport(id)      // identity + reputation + KYA + risk in one call
+await oracle.payCheck(address) // Algorand rail: is it safe to pay this Algorand address? (5 USDC)
 await oracle.guard(id, opts)   // the gate: throws on DENY
 ```
 

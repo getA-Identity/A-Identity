@@ -85,6 +85,16 @@ test('batchAudit posts the shortlist on Algorand and refuses on the X Layer rail
   await assert.rejects(() => new TrustGuard({ fetch: fn }).batchAudit(['#1']), /Algorand rail only/)
 })
 
+test('payCheck posts the address on Algorand and refuses on the X Layer rail', async () => {
+  const { fn, calls } = fakeFetch(200, { verdict: 'careful', headline: 'Be careful', reasons: [] })
+  const g = new TrustGuard({ rail: 'algorand', fetch: fn })
+  const report = await g.payCheck('WHZ74ZGNGZGAVEQZTHESENVP5RTHMEQ4BOUKF7UHWOADQMKXDKAK3FESJE')
+  assert.equal(report.verdict, 'careful')
+  assert.equal(calls[0].url, 'https://a-identity.xyz/api/x402/algorand/tools/pay_check')
+  assert.deepEqual(JSON.parse(String(calls[0].init!.body)), { address: 'WHZ74ZGNGZGAVEQZTHESENVP5RTHMEQ4BOUKF7UHWOADQMKXDKAK3FESJE' })
+  await assert.rejects(() => new TrustGuard({ fetch: fn }).payCheck('X'), /Algorand rail only/)
+})
+
 test('a v2 challenge carried only in the PAYMENT-REQUIRED header reaches the payer', async () => {
   const challenge = { x402Version: 2, accepts: [{ scheme: 'exact', amount: '1000' }] }
   let seen: unknown = null

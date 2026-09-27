@@ -44,10 +44,10 @@ async function connect(config: TrustMcpConfig) {
 
 const text = (r: unknown) => JSON.parse(((r as { content: { text: string }[] }).content[0]).text)
 
-test('the server lists the free quote and the five paid trust tools', async () => {
+test('the server lists the free quote and the six paid tools, the address check included', async () => {
   const client = await connect({ fetch: world('50000').fetch })
   const { tools } = await client.listTools()
-  assert.deepEqual(tools.map((t) => t.name).sort(), ['agent_batch_audit', 'agent_passport', 'price_quote', 'reputation_score', 'risk_check', 'verify_agent'])
+  assert.deepEqual(tools.map((t) => t.name).sort(), ['agent_batch_audit', 'agent_passport', 'pay_check', 'price_quote', 'reputation_score', 'risk_check', 'verify_agent'])
 })
 
 test('price_quote reads the live price from the 402 without paying', async () => {

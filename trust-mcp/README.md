@@ -12,10 +12,36 @@ claude mcp add a-identity-trust \
 
 Any MCP client that runs stdio servers works the same way (Cursor, Claude Desktop, your own).
 
+## No Algorand wallet? Use a one-time one
+
+The same package runs as commands. It makes a wallet on your computer (the 25 secret words are
+saved in `~/.a-identity/algorand-wallet.json`, readable by you only, and never printed), tells
+you what to send, pays for the check, and sends everything left back to you when you are done.
+
+```bash
+npx -y @a-identity/trust-mcp wallet new            # prints the wallet's address
+# send 0.3 ALGO to that address (Algorand network), then:
+npx -y @a-identity/trust-mcp wallet optin          # lets it hold USDC
+# send USDC (Algorand network): 5 covers one address check
+npx -y @a-identity/trust-mcp check <ADDRESS OR SELLER LINK>
+npx -y @a-identity/trust-mcp ask risk '#0' 25      # or verify / reputation / passport
+npx -y @a-identity/trust-mcp wallet sweep <YOUR ALGORAND ADDRESS>   # everything back, wallet closed
+```
+
+`npx -y @a-identity/trust-mcp wallet status` shows the balances and the next step at any point.
+The MCP server uses the same wallet file when `A_IDENTITY_ALGORAND_MNEMONIC` is not set.
+
+### One prompt for Claude Code
+
+Paste this into Claude Code. It asks before anything costs money.
+
+> Help me check an Algorand address before I pay it, using A-Identity. Run every command yourself and never print or ask for any secret words. 1) Run `npx -y @a-identity/trust-mcp wallet new` and show me the address it prints. 2) Tell me to send 0.3 ALGO (Algorand network) to it, then run `npx -y @a-identity/trust-mcp wallet status` every 30 seconds until the ALGO arrives, and run `npx -y @a-identity/trust-mcp wallet optin`. 3) Tell me to send 5 USDC (Algorand network) to the same address and wait the same way until it arrives. 4) Ask me which address or link to check, confirm the 5 USDC price with me, then run `npx -y @a-identity/trust-mcp check <that address>` and explain the answer in plain words with the receipt link. 5) When I say I am done, ask for my own Algorand address and run `npx -y @a-identity/trust-mcp wallet sweep <my address>` to send everything left back to me.
+
 ## Tools
 
 | Tool | Price (USDC on Algorand) | What your agent gets |
 | --- | --- | --- |
+| `pay_check` | $5 | Is it safe to pay this Algorand address? A verdict, its biggest payers, its last payments, and who created it |
 | `price_quote` | free | The live price of any tool below, and whether it fits your cap |
 | `risk_check` | $5 | ALLOW / WARN / DENY on a counterparty, with reasons. Call it before paying. |
 | `verify_agent` | $1 | On-chain ERC-8004 identity, KYA status, revocation |

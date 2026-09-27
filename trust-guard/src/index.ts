@@ -178,6 +178,19 @@ export class TrustGuard {
   }
 
   /**
+   * Before you pay an Algorand address (Algorand rail only): a Looks safe / Be careful /
+   * Don't pay verdict from the public record, with its reasons, and the paid details: its
+   * biggest payers, its last payments, and the wallet that created it. Takes the address, or
+   * the link of an x402 seller listed with the facilitator.
+   */
+  payCheck(address: string): Promise<Record<string, unknown>> {
+    if (this.rail !== 'algorand') {
+      return Promise.reject(new Error("payCheck is sold on the Algorand rail only: construct with { rail: 'algorand' }."))
+    }
+    return this.call('pay_check', { address })
+  }
+
+  /**
    * The safety gate. Runs risk_check and THROWS `TrustDenyError` when the verdict is in
    * `denyOn` (default just `['DENY']`; pass `['DENY','WARN']` to also block warnings).
    * Returns the verdict otherwise, so you can log/branch on ALLOW vs WARN.

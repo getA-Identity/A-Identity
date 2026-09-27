@@ -49,7 +49,7 @@ const refused = (error: string, extra: Record<string, unknown> = {}): ToolResult
   content: [{ type: 'text', text: JSON.stringify({ error, ...extra }, null, 2) }],
 })
 
-const PAID_TOOLS = ['verify_agent', 'reputation_score', 'risk_check', 'agent_passport', 'agent_batch_audit'] as const
+const PAID_TOOLS = ['pay_check', 'verify_agent', 'reputation_score', 'risk_check', 'agent_passport', 'agent_batch_audit'] as const
 
 const agentId = z.string().min(1).describe('The agent to check: an ERC-8004 token id ("#849980"), a CAIP id, or an owner address.')
 const amountUsd = z.number().min(0).optional().describe('What the payment you are about to make is worth, in USD. Sizes the verdict to the deal.')
@@ -117,6 +117,17 @@ export function buildTrustMcpServer(config: TrustMcpConfig = {}): McpServer {
         return refused(e instanceof Error ? e.message : String(e))
       }
     },
+  )
+
+  server.registerTool(
+    'pay_check',
+    {
+      title: 'Is it safe to pay this Algorand address?',
+      description:
+        'Paid ($5 USDC on Algorand). Before paying an Algorand address: Looks safe, Be careful or Don\'t pay, with the reasons, its biggest payers (and whether they are linked to it), its last payments, and the wallet that created it. Takes an Algorand address or the link of an x402 seller.',
+      inputSchema: { address: z.string().min(1).describe('The Algorand address you are about to pay, or the link of an x402 seller.') },
+    },
+    async ({ address }) => paid(() => oracle.payCheck(address)),
   )
 
   server.registerTool(
