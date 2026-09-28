@@ -28,14 +28,29 @@ npx -y @a-identity/trust-mcp ask risk '#0' 25      # or verify / reputation / pa
 npx -y @a-identity/trust-mcp wallet sweep <YOUR ALGORAND ADDRESS>   # everything back, wallet closed
 ```
 
-`npx -y @a-identity/trust-mcp wallet status` shows the balances and the next step at any point.
+`npx -y @a-identity/trust-mcp@latest wallet status` shows the balances and the next step at any point.
 The MCP server uses the same wallet file when `A_IDENTITY_ALGORAND_MNEMONIC` is not set.
 
-### One prompt for Claude Code
+## Only have XLM? Pay from Stellar
+
+`stellar start` makes a one-time Stellar wallet next to the Algorand one and says how much XLM
+to send. After that one deposit everything is automatic: `stellar run` exchanges the XLM through
+SideShift into ALGO and USDC on Algorand, and `stellar return <your Stellar address>` sends what
+is left back to you as XLM and closes both wallets. Run each until it says Ready or Done.
+
+SideShift has minimums, so one 5 USDC check needs about 43 XLM; every extra 25 XLM or so is one
+more check, and the rest comes back at the end. USDC left under 3 is below SideShift's minimum
+and stays in the Algorand wallet. SideShift is not available in every country.
+
+### One prompt for Claude Code (paying with XLM)
+
+> Help me check an Algorand address before I pay it, using A-Identity, paying with XLM from Stellar. Run every command yourself and never print or ask for any secret words or keys. 1) Run `npx -y @a-identity/trust-mcp@latest stellar start` and show me the Stellar address and the amount of XLM it asks for. 2) Wait while I send XLM to that address from my own wallet or exchange. Then run `npx -y @a-identity/trust-mcp@latest stellar run` again and again (it waits about a minute each time) until it prints "Ready", and tell me briefly what it did. 3) Ask me which Algorand address or service link to check, confirm the 5 USDC price with me, then run `npx -y @a-identity/trust-mcp@latest check <that address>` and explain the answer in plain words with the receipt link. Repeat for more checks while money is left. 4) When I say I am done, ask for my own Stellar address and run `npx -y @a-identity/trust-mcp@latest stellar return <my address>` again and again until it prints "Done", then tell me what came back.
+
+### One prompt for Claude Code (paying with ALGO and USDC)
 
 Paste this into Claude Code. It asks before anything costs money.
 
-> Help me check an Algorand address before I pay it, using A-Identity. Run every command yourself and never print or ask for any secret words. 1) Run `npx -y @a-identity/trust-mcp wallet new` and show me the address it prints. 2) Tell me to send 0.3 ALGO (Algorand network) to it, then run `npx -y @a-identity/trust-mcp wallet status` every 30 seconds until the ALGO arrives, and run `npx -y @a-identity/trust-mcp wallet optin`. 3) Tell me to send 5 USDC (Algorand network) to the same address and wait the same way until it arrives. 4) Ask me which address or link to check, confirm the 5 USDC price with me, then run `npx -y @a-identity/trust-mcp check <that address>` and explain the answer in plain words with the receipt link. 5) When I say I am done, ask for my own Algorand address and run `npx -y @a-identity/trust-mcp wallet sweep <my address>` to send everything left back to me.
+> Help me check an Algorand address before I pay it, using A-Identity. Run every command yourself and never print or ask for any secret words. 1) Run `npx -y @a-identity/trust-mcp@latest wallet new` and show me the address it prints. 2) Tell me to send 0.3 ALGO (Algorand network) to it, then run `npx -y @a-identity/trust-mcp@latest wallet status` every 30 seconds until the ALGO arrives, and run `npx -y @a-identity/trust-mcp@latest wallet optin`. 3) Tell me to send 5 USDC (Algorand network) to the same address and wait the same way until it arrives. 4) Ask me which address or link to check, confirm the 5 USDC price with me, then run `npx -y @a-identity/trust-mcp@latest check <that address>` and explain the answer in plain words with the receipt link. 5) When I say I am done, ask for my own Algorand address and run `npx -y @a-identity/trust-mcp@latest wallet sweep <my address>` to send everything left back to me.
 
 ## Tools
 

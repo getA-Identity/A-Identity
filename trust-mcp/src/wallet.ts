@@ -100,18 +100,18 @@ export function nextStep(s: WalletStatus, priceUsd: number = 5): string {
   if (!s.usdcOptedIn && s.algo < 0.202) {
     return `Send ${ALGO_TO_SEND} ALGO on the Algorand network to ${s.address}. Send only ALGO for now: USDC sent before the next step would be refused.`
   }
-  if (!s.usdcOptedIn) return 'The ALGO has arrived. Run: npx -y @a-identity/trust-mcp wallet optin'
+  if (!s.usdcOptedIn) return 'The ALGO has arrived. Run: npx -y @a-identity/trust-mcp@latest wallet optin'
   if (s.usdc < priceUsd) {
     return `Send USDC on the Algorand network to ${s.address}. One address check costs ${priceUsd} USDC; it holds ${s.usdc}.`
   }
-  return 'Ready. Run: npx -y @a-identity/trust-mcp check <ADDRESS OR LINK>'
+  return 'Ready. Run: npx -y @a-identity/trust-mcp@latest check <ADDRESS OR LINK>'
 }
 
 // ── writing to the ledger ──────────────────────────────────────────────────────────
 
 type Params = { 'last-round'?: number; 'min-fee'?: number; 'genesis-id'?: string; 'genesis-hash'?: string }
 
-async function params(algod: string, fetchImpl: FetchLikeAlgorand) {
+export async function params(algod: string, fetchImpl: FetchLikeAlgorand) {
   const { status, json } = await getJson(fetchImpl, `${algod}/v2/transactions/params`)
   const p = (json ?? {}) as Params
   if (status !== 200 || typeof p['last-round'] !== 'number' || typeof p['genesis-hash'] !== 'string') {
@@ -129,7 +129,7 @@ async function params(algod: string, fetchImpl: FetchLikeAlgorand) {
   }
 }
 
-type Suggested = Awaited<ReturnType<typeof params>>
+export type Suggested = Awaited<ReturnType<typeof params>>
 
 /** A zero-amount USDC transfer to itself: how an Algorand account agrees to hold USDC. */
 export function buildOptIn(address: string, suggested: Suggested) {
@@ -173,7 +173,7 @@ export function buildSweep(address: string, to: string, usdcCloseTo: string | nu
   return txns.length > 1 ? algosdk.assignGroupID(txns) : txns
 }
 
-async function submit(algod: string, fetchImpl: FetchLikeAlgorand, signed: Uint8Array[]): Promise<string> {
+export async function submit(algod: string, fetchImpl: FetchLikeAlgorand, signed: Uint8Array[]): Promise<string> {
   const body = new Uint8Array(signed.reduce((n, b) => n + b.length, 0))
   let at = 0
   for (const b of signed) {
@@ -230,4 +230,56 @@ export async function sweep(
   const retiredFile = path.replace(/\.json$/, '') + `.closed-${Date.now()}.json`
   renameSync(path, retiredFile)
   return { txId, usdc: s.usdc, algo: s.algo, retiredFile }
+}
+
+/** Whether an Algorand transaction we may already have sent is on the ledger (read from the indexer). */
+export async function algorandTxLanded(txId: string, algod: string = DEFAULT_ALGOD, fetchImpl: FetchLikeAlgorand = fetch): Promise<boolean> {
+  // The node first: it knows a transaction that is still in its pool or just confirmed, which
+  // the indexer may not have caught up with yet. Treating those as sent is what stops a resume
+  // from sending the same money twice.
+  const pending = await getJson(fetchImpl, `${algod}/v2/transactions/pending/${txId}`)
+  if (pending.status === 200 && !pending.json?.['pool-error']) return true
+  const idx = algod.replace('-api.', '-idx.')
+  const { status, json } = await getJson(fetchImpl, `${idx}/v2/transactions/${txId}`)
+  const t = json?.transaction as { 'confirmed-round'?: number } | undefined
+  return status === 200 && Number(t?.['confirmed-round'] ?? 0) > 0
+}
+
+/**
+ * One transfer out of the wallet: ALGO or USDC, a set amount or everything (`close`, which also
+ * closes the ALGO account or the USDC holding). Returned unsent with its id, so a caller can
+ * record the id before submitting and check it after a crash instead of sending twice.
+ */
+export function buildTransfer(
+  w: WalletFile,
+  a: { asset: 'algo' | 'usdc'; to: string; micro: number; close: boolean },
+  suggested: Suggested,
+): { txId: string; signed: Uint8Array } {
+  const { sk } = algosdk.mnemonicToSecretKey(w.mnemonic)
+  const txn =
+    a.asset === 'algo'
+      ? algosdk.makePaymentTxnWithSuggestedParamsFromObject({
+          sender: w.address,
+          receiver: a.to,
+          amount: a.close ? 0 : a.micro,
+          ...(a.close ? { closeRemainderTo: a.to } : {}),
+          suggestedParams: suggested,
+        })
+      : algosdk.makeAssetTransferTxnWithSuggestedParamsFromObject({
+          sender: w.address,
+          receiver: a.to,
+          assetIndex: USDC_ASSET,
+          amount: a.close ? 0 : a.micro,
+          ...(a.close ? { closeRemainderTo: a.to } : {}),
+          suggestedParams: suggested,
+        })
+  return { txId: txn.txID(), signed: txn.signTxn(sk) }
+}
+
+/** The USDC creator: the one account an empty USDC holding can always be closed to. */
+export async function usdcCreator(algod: string = DEFAULT_ALGOD, fetchImpl: FetchLikeAlgorand = fetch): Promise<string> {
+  const { json } = await getJson(fetchImpl, `${algod}/v2/assets/${USDC_ASSET}`)
+  const creator = String(((json?.params ?? {}) as { creator?: string }).creator ?? '')
+  if (!algosdk.isValidAddress(creator)) throw new Error('Could not read the USDC asset to close the empty holding.')
+  return creator
 }

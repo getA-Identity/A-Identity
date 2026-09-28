@@ -3,12 +3,12 @@
  * whole thing from a terminal in one session: make a one-time wallet, wait for it to be
  * funded, pay for a check, and send what is left back.
  *
- *   npx -y @a-identity/trust-mcp wallet new
- *   npx -y @a-identity/trust-mcp wallet status
- *   npx -y @a-identity/trust-mcp wallet optin
- *   npx -y @a-identity/trust-mcp check <ALGORAND ADDRESS OR SELLER LINK>        (5 USDC)
- *   npx -y @a-identity/trust-mcp ask <verify|reputation|risk|passport> <AGENT ID> [DEAL USD]
- *   npx -y @a-identity/trust-mcp wallet sweep <YOUR ALGORAND ADDRESS>
+ *   npx -y @a-identity/trust-mcp@latest wallet new
+ *   npx -y @a-identity/trust-mcp@latest wallet status
+ *   npx -y @a-identity/trust-mcp@latest wallet optin
+ *   npx -y @a-identity/trust-mcp@latest check <ALGORAND ADDRESS OR SELLER LINK>        (5 USDC)
+ *   npx -y @a-identity/trust-mcp@latest ask <verify|reputation|risk|passport> <AGENT ID> [DEAL USD]
+ *   npx -y @a-identity/trust-mcp@latest wallet sweep <YOUR ALGORAND ADDRESS>
  *
  * Nothing here prints the wallet's 25 words. The spending cap (A_IDENTITY_MAX_USD_PER_CALL,
  * default 10 USDC) is checked before anything is signed.
@@ -17,18 +17,26 @@ import { PaymentRequiredError, TrustGuard, TrustOracleError, type FetchLike } fr
 import { AlgorandPaymentError, algorandPayer, SpendCapError } from '@a-identity/trust-guard/algorand'
 import { configFromEnv, DEFAULT_BASE_URL, DEFAULT_MAX_USD_PER_CALL } from './server.js'
 import { createWallet, keyfilePath, loadWallet, nextStep, optIn, readStatus, sweep, DEFAULT_ALGOD } from './wallet.js'
+import { createStellarWallet, loadStellarWallet, stellarKeyfilePath } from './stellar.js'
+import { bridgeStatePath, loadState, planIn, retireFiles, runBack, runIn } from './bridge.js'
+import { pair } from './sideshift.js'
 
 type Out = (line: string) => void
 
 const EXPLORER = 'https://allo.info'
 const HELP = `A-Identity checks, paid in USDC on Algorand from a wallet on this computer.
 
-  npx -y @a-identity/trust-mcp wallet new             make a one-time wallet (prints its address only)
-  npx -y @a-identity/trust-mcp wallet status          balances and the next step
-  npx -y @a-identity/trust-mcp wallet optin           let the wallet hold USDC (after ALGO arrives)
-  npx -y @a-identity/trust-mcp check <ADDRESS|LINK>   is it safe to pay this Algorand address? (5 USDC)
-  npx -y @a-identity/trust-mcp ask <verify|reputation|risk|passport> <AGENT ID> [DEAL USD]
-  npx -y @a-identity/trust-mcp wallet sweep <YOUR ADDRESS>   send everything left back and close the wallet
+  npx -y @a-identity/trust-mcp@latest wallet new             make a one-time wallet (prints its address only)
+  npx -y @a-identity/trust-mcp@latest wallet status          balances and the next step
+  npx -y @a-identity/trust-mcp@latest wallet optin           let the wallet hold USDC (after ALGO arrives)
+  npx -y @a-identity/trust-mcp@latest check <ADDRESS|LINK>   is it safe to pay this Algorand address? (5 USDC)
+  npx -y @a-identity/trust-mcp@latest ask <verify|reputation|risk|passport> <AGENT ID> [DEAL USD]
+  npx -y @a-identity/trust-mcp@latest wallet sweep <YOUR ADDRESS>   send everything left back and close the wallet
+
+Paying with XLM instead (it is exchanged through SideShift):
+  npx -y @a-identity/trust-mcp@latest stellar start          make the wallets and say how much XLM to send
+  npx -y @a-identity/trust-mcp@latest stellar run            exchange the XLM into ALGO and USDC (run until it says Ready)
+  npx -y @a-identity/trust-mcp@latest stellar return <YOUR STELLAR ADDRESS>   everything back to you as XLM (run until Done)
 
 Run with no arguments, it is an MCP server (for Claude Code, Cursor or any MCP client).`
 
@@ -89,9 +97,45 @@ export async function runCli(
       return 0
     }
 
+    if (cmd === 'stellar') {
+      const spath = stellarKeyfilePath(env)
+      const statePath = bridgeStatePath(env)
+      if (sub === 'start') {
+        const a = createWallet(path)
+        const x = createStellarWallet(spath)
+        const plan = planIn(await pair('xlm-stellar', 'algo-algorand', fetchImpl), await pair('xlm-stellar', 'usdc-algorand', fetchImpl))
+        out(x.created ? 'Made two one-time wallets on this computer (their secrets are saved under ~/.a-identity, readable by you only, and never printed).' : 'Using the one-time wallets already on this computer.')
+        out(`Send XLM to this Stellar address: ${x.address}`)
+        out(`Send at least ${plan.totalXlm} XLM for one 5 USDC address check; each extra ${plan.perExtraCheckXlm} XLM is about one more.`)
+        out(`It becomes ALGO and USDC in the Algorand wallet ${a.address}.`)
+        out('Then run: npx -y @a-identity/trust-mcp@latest stellar run')
+        return 0
+      }
+      const aw = loadWallet(path)
+      const sw = loadStellarWallet(spath)
+      if (!aw || !sw) {
+        out('No one-time wallets yet. Run: npx -y @a-identity/trust-mcp@latest stellar start')
+        return 1
+      }
+      const ctx = { algorand: aw, stellar: sw, statePath, algod, fetchImpl, out }
+      if (sub === 'run') return (await runIn(ctx)) ? 0 : 2
+      if (sub === 'return') {
+        if (!arg) {
+          out('Name your own Stellar address: npx -y @a-identity/trust-mcp@latest stellar return <YOUR STELLAR ADDRESS>')
+          return 1
+        }
+        if (!(await runBack(ctx, arg))) return 2
+        const leftUsdc = loadState(statePath).back?.usdcLeft ?? 0
+        retireFiles(leftUsdc > 0 ? [spath, statePath] : [spath, statePath, path])
+        return 0
+      }
+      out(HELP)
+      return 1
+    }
+
     const w = loadWallet(path)
     if (!w) {
-      out('No wallet yet. Run: npx -y @a-identity/trust-mcp wallet new')
+      out('No wallet yet. Run: npx -y @a-identity/trust-mcp@latest wallet new')
       return 1
     }
 
@@ -109,7 +153,7 @@ export async function runCli(
 
     if (cmd === 'wallet' && sub === 'sweep') {
       if (!arg) {
-        out('Name the address to send everything back to: npx -y @a-identity/trust-mcp wallet sweep <YOUR ALGORAND ADDRESS>')
+        out('Name the address to send everything back to: npx -y @a-identity/trust-mcp@latest wallet sweep <YOUR ALGORAND ADDRESS>')
         return 1
       }
       const r = await sweep(w, path, arg, algod, fetchImpl)
@@ -136,7 +180,7 @@ export async function runCli(
       })
       if (cmd === 'check') {
         if (!sub) {
-          out('Name the address or link to check: npx -y @a-identity/trust-mcp check <ADDRESS OR LINK>')
+          out('Name the address or link to check: npx -y @a-identity/trust-mcp@latest check <ADDRESS OR LINK>')
           return 1
         }
         describeAnswer(out, 'pay_check', await oracle.payCheck(sub))
@@ -144,7 +188,7 @@ export async function runCli(
       }
       const method = ASK[sub ?? '']
       if (!method || !arg) {
-        out('Usage: npx -y @a-identity/trust-mcp ask <verify|reputation|risk|passport> <AGENT ID> [DEAL USD]')
+        out('Usage: npx -y @a-identity/trust-mcp@latest ask <verify|reputation|risk|passport> <AGENT ID> [DEAL USD]')
         return 1
       }
       const deal = extra === undefined ? undefined : Number(extra)
@@ -162,7 +206,7 @@ export async function runCli(
     if (e instanceof SpendCapError) out(`Not paid: the price ${e.amountUsd} USDC is above the cap of ${e.capUsd}. Raise A_IDENTITY_MAX_USD_PER_CALL to allow it. Nothing was signed.`)
     else if (e instanceof PaymentRequiredError) {
       const reason = (e.challenge as { reason?: unknown } | null)?.reason
-      out(`Not paid: the payment was not accepted${typeof reason === 'string' ? ` (${reason})` : ''}. Nothing was charged. Check the wallet with: npx -y @a-identity/trust-mcp wallet status`)
+      out(`Not paid: the payment was not accepted${typeof reason === 'string' ? ` (${reason})` : ''}. Nothing was charged. Check the wallet with: npx -y @a-identity/trust-mcp@latest wallet status`)
     }
     else if (e instanceof AlgorandPaymentError) out(`Not paid: ${e.message}. Nothing was signed.`)
     else if (e instanceof TrustOracleError) out(`The check failed (HTTP ${e.status}): ${e.message}`)

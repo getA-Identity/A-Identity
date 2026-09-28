@@ -13,7 +13,7 @@ import { PaymentRequiredError, TrustGuard, TrustOracleError, type FetchLike } fr
 import { AlgorandPaymentError, algorandPayer, readAlgorandQuote, SpendCapError } from '@a-identity/trust-guard/algorand'
 
 export const SERVER_NAME = 'a-identity-trust'
-export const SERVER_VERSION = '0.2.0'
+export const SERVER_VERSION = '0.3.0'
 export const DEFAULT_BASE_URL = 'https://a-identity.xyz'
 export const DEFAULT_MAX_USD_PER_CALL = 10
 
