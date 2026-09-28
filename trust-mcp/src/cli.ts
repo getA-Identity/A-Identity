@@ -3,12 +3,12 @@
  * whole thing from a terminal in one session: make a one-time wallet, wait for it to be
  * funded, pay for a check, and send what is left back.
  *
- *   npx -y @a-identity/trust-mcp@latest wallet new
- *   npx -y @a-identity/trust-mcp@latest wallet status
- *   npx -y @a-identity/trust-mcp@latest wallet optin
- *   npx -y @a-identity/trust-mcp@latest check <ALGORAND ADDRESS OR SELLER LINK>        (5 USDC)
- *   npx -y @a-identity/trust-mcp@latest ask <verify|reputation|risk|passport> <AGENT ID> [DEAL USD]
- *   npx -y @a-identity/trust-mcp@latest wallet sweep <YOUR ALGORAND ADDRESS>
+ *   npx -y @a-identity/trust-mcp wallet new
+ *   npx -y @a-identity/trust-mcp wallet status
+ *   npx -y @a-identity/trust-mcp wallet optin
+ *   npx -y @a-identity/trust-mcp check <ALGORAND ADDRESS OR SELLER LINK>        (5 USDC)
+ *   npx -y @a-identity/trust-mcp ask <verify|reputation|risk|passport> <AGENT ID> [DEAL USD]
+ *   npx -y @a-identity/trust-mcp wallet sweep <YOUR ALGORAND ADDRESS>
  *
  * Nothing here prints the wallet's 25 words. The spending cap (A_IDENTITY_MAX_USD_PER_CALL,
  * default 10 USDC) is checked before anything is signed.
@@ -17,26 +17,36 @@ import { PaymentRequiredError, TrustGuard, TrustOracleError, type FetchLike } fr
 import { AlgorandPaymentError, algorandPayer, SpendCapError } from '@a-identity/trust-guard/algorand'
 import { configFromEnv, DEFAULT_BASE_URL, DEFAULT_MAX_USD_PER_CALL } from './server.js'
 import { createWallet, keyfilePath, loadWallet, nextStep, optIn, readStatus, sweep, DEFAULT_ALGOD } from './wallet.js'
-import { createStellarWallet, loadStellarWallet, stellarKeyfilePath } from './stellar.js'
+import { spawn } from 'node:child_process'
+import { closeSync, mkdirSync, openSync } from 'node:fs'
+import { dirname, join } from 'node:path'
+import { createStellarWallet, HORIZON, isStellarAddress, loadStellarWallet, readXlm, STELLAR_KEEP_XLM, stellarKeyfilePath } from './stellar.js'
 import { bridgeStatePath, loadState, planIn, retireFiles, runBack, runIn } from './bridge.js'
+import { advanceBuy, buyStatePath, loadBuy, saveBuy, statusLines } from './buy.js'
 import { pair } from './sideshift.js'
+import { CMD } from './version.js'
 
 type Out = (line: string) => void
 
 const EXPLORER = 'https://allo.info'
 const HELP = `A-Identity checks, paid in USDC on Algorand from a wallet on this computer.
 
-  npx -y @a-identity/trust-mcp@latest wallet new             make a one-time wallet (prints its address only)
-  npx -y @a-identity/trust-mcp@latest wallet status          balances and the next step
-  npx -y @a-identity/trust-mcp@latest wallet optin           let the wallet hold USDC (after ALGO arrives)
-  npx -y @a-identity/trust-mcp@latest check <ADDRESS|LINK>   is it safe to pay this Algorand address? (5 USDC)
-  npx -y @a-identity/trust-mcp@latest ask <verify|reputation|risk|passport> <AGENT ID> [DEAL USD]
-  npx -y @a-identity/trust-mcp@latest wallet sweep <YOUR ADDRESS>   send everything left back and close the wallet
+The easy way, with XLM: one command, one deposit, and every XLM you send is spent on checks.
+  ${CMD} buy [--return <YOUR STELLAR ADDRESS>]   says where to send XLM, then does the rest on its own
+  ${CMD} status                                  what it has bought so far, and where it is
+
+Step by step, with USDC:
+  ${CMD} wallet new             make a one-time wallet (prints its address only)
+  ${CMD} wallet status          balances and the next step
+  ${CMD} wallet optin           let the wallet hold USDC (after ALGO arrives)
+  ${CMD} check <ADDRESS|LINK>   is it safe to pay this Algorand address? (5 USDC)
+  ${CMD} ask <verify|reputation|risk|passport> <AGENT ID> [DEAL USD]
+  ${CMD} wallet sweep <YOUR ADDRESS>   send everything left back and close the wallet
 
 Paying with XLM instead (it is exchanged through SideShift):
-  npx -y @a-identity/trust-mcp@latest stellar start          make the wallets and say how much XLM to send
-  npx -y @a-identity/trust-mcp@latest stellar run            exchange the XLM into ALGO and USDC (run until it says Ready)
-  npx -y @a-identity/trust-mcp@latest stellar return <YOUR STELLAR ADDRESS>   everything back to you as XLM (run until Done)
+  ${CMD} stellar start          make the wallets and say how much XLM to send
+  ${CMD} stellar run            exchange the XLM into ALGO and USDC (run until it says Ready)
+  ${CMD} stellar return <YOUR STELLAR ADDRESS>   everything back to you as XLM (run until Done)
 
 Run with no arguments, it is an MCP server (for Claude Code, Cursor or any MCP client).`
 
@@ -75,15 +85,48 @@ function describeAnswer(out: Out, tool: string, r: Record<string, unknown>) {
   if (tx) out(`Receipt: ${EXPLORER}/tx/${tx}`)
 }
 
+/** The background worker gives up after this long, or after this many errors in a row. */
+const WORKER_MAX_MS = 6 * 60 * 60 * 1000
+const WORKER_MAX_ERRORS = 10
+const WORKER_PAUSE_MS = 15_000
+
+export type CliDeps = {
+  /** Starts `buy --worker` detached from this process; returns its pid. */
+  spawnWorker?: (args: string[], logPath: string) => number
+  isAlive?: (pid: number) => boolean
+  sleep?: (ms: number) => Promise<void>
+  now?: () => number
+}
+
+function spawnDetached(args: string[], logPath: string): number {
+  mkdirSync(dirname(logPath), { recursive: true, mode: 0o700 })
+  const fd = openSync(logPath, 'a', 0o600)
+  const child = spawn(process.execPath, [process.argv[1], ...args], { detached: true, stdio: ['ignore', fd, fd], env: process.env, windowsHide: true })
+  child.unref()
+  closeSync(fd)
+  return child.pid ?? 0
+}
+
+function pidAlive(pid: number): boolean {
+  try {
+    process.kill(pid, 0)
+    return true
+  } catch (e) {
+    return (e as NodeJS.ErrnoException).code === 'EPERM'
+  }
+}
+
 export async function runCli(
   argv: string[],
   env: NodeJS.ProcessEnv = process.env,
   out: Out = (l) => console.log(l),
   fetchImpl: FetchLike = (input, init) => fetch(input, init),
+  deps: CliDeps = {},
 ): Promise<number> {
   const [cmd, sub, arg, extra] = argv
   const path = keyfilePath(env)
   const algod = env.A_IDENTITY_ALGOD_URL?.trim() || DEFAULT_ALGOD
+  const horizon = env.A_IDENTITY_HORIZON_URL?.trim() || HORIZON
   try {
     if (!cmd || cmd === 'help' || cmd === '--help' || cmd === '-h') {
       out(HELP)
@@ -94,6 +137,133 @@ export async function runCli(
       const w = createWallet(path)
       out(w.created ? `Made a one-time wallet. Its secret words are saved in ${path} (readable by you only) and are never printed.` : `Using the wallet already in ${path}.`)
       describeStatus(out, await readStatus(w.address, algod, fetchImpl))
+      return 0
+    }
+
+    if (cmd === 'buy' || cmd === 'status') {
+      const spath = stellarKeyfilePath(env)
+      const statePath = bridgeStatePath(env)
+      const buyPath = buyStatePath(env)
+      const logPath = join(dirname(buyPath), 'buy.log')
+      const now = deps.now ?? Date.now
+      const alive = (st: ReturnType<typeof loadBuy>) =>
+        Boolean(st.worker && now() - Date.parse(st.worker.startedAt) < WORKER_MAX_MS + 60_000 && (deps.isAlive ?? pidAlive)(st.worker.pid))
+      const walletsCtx = () => {
+        const aw = loadWallet(path)
+        const sw = loadStellarWallet(spath)
+        return aw && sw ? { algorand: aw, stellar: sw, statePath, buyPath, algod, horizon, fetchImpl, baseUrl: configFromEnv(env).baseUrl } : null
+      }
+
+      if (cmd === 'status') {
+        const ctx = walletsCtx()
+        if (!ctx) {
+          out(`Nothing started yet. Start with: ${CMD} buy`)
+          return 1
+        }
+        const st = loadBuy(buyPath)
+        for (const l of await statusLines({ ...ctx, out }, alive(st))) out(l)
+        if (st.finished && !st.returnTo) out(`To get what is left back as XLM: ${CMD} stellar return <YOUR STELLAR ADDRESS>`)
+        return 0
+      }
+
+      // The background worker: advances until everything is done, then exits.
+      if (sub === '--worker') {
+        const ctx = walletsCtx()
+        if (!ctx) return 1
+        const stamp = (l: string) => out(`${new Date(now()).toISOString()}  ${l}`)
+        const sleep = deps.sleep ?? ((ms: number) => new Promise<void>((r) => setTimeout(r, ms)))
+        const started = now()
+        const mark = (f: (s: ReturnType<typeof loadBuy>) => void) => {
+          const s = loadBuy(buyPath)
+          f(s)
+          saveBuy(buyPath, s)
+        }
+        mark((s) => {
+          s.worker = { pid: process.pid, startedAt: new Date(started).toISOString() }
+          delete s.stopped
+        })
+        let errors = 0
+        for (;;) {
+          try {
+            if ((await advanceBuy({ ...ctx, out: stamp, now, sleep: deps.sleep })) === 'done') break
+            errors = 0
+          } catch (e) {
+            const msg = e instanceof Error ? e.message : String(e)
+            stamp(`Problem: ${msg}`)
+            if (++errors >= WORKER_MAX_ERRORS) {
+              mark((s) => (s.stopped = `${msg} Run the buy command again to try again.`))
+              break
+            }
+          }
+          if (now() - started > WORKER_MAX_MS) {
+            mark((s) => (s.stopped = 'It waited 6 hours. Run the buy command again to continue.'))
+            break
+          }
+          await sleep(WORKER_PAUSE_MS)
+        }
+        mark((s) => delete s.worker)
+        return 0
+      }
+
+      const st = loadBuy(buyPath)
+      if (st.finished) {
+        // Finished, unless more XLM arrived since: then that is spent too.
+        const ctx = walletsCtx()
+        const more = ctx && !loadState(statePath).back && (await readXlm(ctx.stellar.address, horizon, fetchImpl)).xlm - STELLAR_KEEP_XLM >= 15
+        if (!more) {
+          if (ctx) for (const l of await statusLines({ ...ctx, out }, false)) out(l)
+          return 0
+        }
+        delete st.finished
+      }
+      const returnTo = sub === '--return' ? arg : undefined
+      if (sub === '--return' && !returnTo) {
+        out(`Name your own Stellar address: ${CMD} buy --return <YOUR STELLAR ADDRESS>`)
+        return 1
+      }
+      const a = createWallet(path)
+      const x = createStellarWallet(spath)
+      if (returnTo) {
+        if (!isStellarAddress(returnTo) || returnTo === x.address) {
+          out(`${returnTo} is not your Stellar address. It starts with G and is 56 characters long.`)
+          return 1
+        }
+        const back = loadState(statePath).back
+        if (back && back.to !== returnTo) {
+          out(`What is left is already on its way to ${back.to}.`)
+          return 1
+        }
+        if (!(await readXlm(returnTo, horizon, fetchImpl)).exists) {
+          out(`${returnTo} does not exist on Stellar yet. Use an address that already holds XLM.`)
+          return 1
+        }
+        st.returnTo = returnTo
+      }
+      delete st.stopped
+      saveBuy(buyPath, st)
+
+      if (alive(st)) {
+        out('Already working on it.')
+        const ctx = walletsCtx()
+        if (ctx) for (const l of await statusLines({ ...ctx, out }, true)) out(l)
+        return 0
+      }
+
+      const plan = planIn(await pair('xlm-stellar', 'algo-algorand', fetchImpl), await pair('xlm-stellar', 'usdc-algorand', fetchImpl))
+      out('Send XLM to this Stellar address (no memo needed):')
+      out(`  ${x.address}`)
+      out(`Send as much as you want to spend, at least ${plan.totalXlm} XLM. All of it is spent on A-Identity checks.`)
+      out(
+        `About ${Math.ceil(plan.algoXlm + STELLAR_KEEP_XLM)} XLM of it becomes ALGO for network fees` +
+          (st.returnTo ? `, and what is left of that comes back to ${st.returnTo} at the end.` : '.'),
+      )
+      out('Nothing else to do: it keeps working in the background, even if you close this window, as long as this computer stays on.')
+      out(`To see how it is going: ${CMD} status`)
+      out(`(Wallets on this computer, secrets never printed: Stellar ${x.address}, Algorand ${a.address}.)`)
+      const pid = (deps.spawnWorker ?? spawnDetached)(['buy', '--worker'], logPath)
+      const fresh = loadBuy(buyPath)
+      fresh.worker = { pid, startedAt: new Date(now()).toISOString() }
+      saveBuy(buyPath, fresh)
       return 0
     }
 
@@ -108,20 +278,20 @@ export async function runCli(
         out(`Send XLM to this Stellar address: ${x.address}`)
         out(`Send at least ${plan.totalXlm} XLM for one 5 USDC address check; each extra ${plan.perExtraCheckXlm} XLM is about one more.`)
         out(`It becomes ALGO and USDC in the Algorand wallet ${a.address}.`)
-        out('Then run: npx -y @a-identity/trust-mcp@latest stellar run')
+        out(`Then run: ${CMD} stellar run`)
         return 0
       }
       const aw = loadWallet(path)
       const sw = loadStellarWallet(spath)
       if (!aw || !sw) {
-        out('No one-time wallets yet. Run: npx -y @a-identity/trust-mcp@latest stellar start')
+        out(`No one-time wallets yet. Run: ${CMD} stellar start`)
         return 1
       }
-      const ctx = { algorand: aw, stellar: sw, statePath, algod, fetchImpl, out }
+      const ctx = { algorand: aw, stellar: sw, statePath, algod, horizon, fetchImpl, out }
       if (sub === 'run') return (await runIn(ctx)) ? 0 : 2
       if (sub === 'return') {
         if (!arg) {
-          out('Name your own Stellar address: npx -y @a-identity/trust-mcp@latest stellar return <YOUR STELLAR ADDRESS>')
+          out(`Name your own Stellar address: ${CMD} stellar return <YOUR STELLAR ADDRESS>`)
           return 1
         }
         if (!(await runBack(ctx, arg))) return 2
@@ -135,7 +305,7 @@ export async function runCli(
 
     const w = loadWallet(path)
     if (!w) {
-      out('No wallet yet. Run: npx -y @a-identity/trust-mcp@latest wallet new')
+      out(`No wallet yet. Run: ${CMD} wallet new`)
       return 1
     }
 
@@ -153,7 +323,7 @@ export async function runCli(
 
     if (cmd === 'wallet' && sub === 'sweep') {
       if (!arg) {
-        out('Name the address to send everything back to: npx -y @a-identity/trust-mcp@latest wallet sweep <YOUR ALGORAND ADDRESS>')
+        out(`Name the address to send everything back to: ${CMD} wallet sweep <YOUR ALGORAND ADDRESS>`)
         return 1
       }
       const r = await sweep(w, path, arg, algod, fetchImpl)
@@ -180,7 +350,7 @@ export async function runCli(
       })
       if (cmd === 'check') {
         if (!sub) {
-          out('Name the address or link to check: npx -y @a-identity/trust-mcp@latest check <ADDRESS OR LINK>')
+          out(`Name the address or link to check: ${CMD} check <ADDRESS OR LINK>`)
           return 1
         }
         describeAnswer(out, 'pay_check', await oracle.payCheck(sub))
@@ -188,7 +358,7 @@ export async function runCli(
       }
       const method = ASK[sub ?? '']
       if (!method || !arg) {
-        out('Usage: npx -y @a-identity/trust-mcp@latest ask <verify|reputation|risk|passport> <AGENT ID> [DEAL USD]')
+        out(`Usage: ${CMD} ask <verify|reputation|risk|passport> <AGENT ID> [DEAL USD]`)
         return 1
       }
       const deal = extra === undefined ? undefined : Number(extra)
@@ -206,7 +376,7 @@ export async function runCli(
     if (e instanceof SpendCapError) out(`Not paid: the price ${e.amountUsd} USDC is above the cap of ${e.capUsd}. Raise A_IDENTITY_MAX_USD_PER_CALL to allow it. Nothing was signed.`)
     else if (e instanceof PaymentRequiredError) {
       const reason = (e.challenge as { reason?: unknown } | null)?.reason
-      out(`Not paid: the payment was not accepted${typeof reason === 'string' ? ` (${reason})` : ''}. Nothing was charged. Check the wallet with: npx -y @a-identity/trust-mcp@latest wallet status`)
+      out(`Not paid: the payment was not accepted${typeof reason === 'string' ? ` (${reason})` : ''}. Nothing was charged. Check the wallet with: ${CMD} wallet status`)
     }
     else if (e instanceof AlgorandPaymentError) out(`Not paid: ${e.message}. Nothing was signed.`)
     else if (e instanceof TrustOracleError) out(`The check failed (HTTP ${e.status}): ${e.message}`)

@@ -11,9 +11,10 @@ import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
 import { z } from 'zod'
 import { PaymentRequiredError, TrustGuard, TrustOracleError, type FetchLike } from '@a-identity/trust-guard'
 import { AlgorandPaymentError, algorandPayer, readAlgorandQuote, SpendCapError } from '@a-identity/trust-guard/algorand'
+import { VERSION } from './version.js'
 
 export const SERVER_NAME = 'a-identity-trust'
-export const SERVER_VERSION = '0.3.0'
+export const SERVER_VERSION = VERSION
 export const DEFAULT_BASE_URL = 'https://a-identity.xyz'
 export const DEFAULT_MAX_USD_PER_CALL = 10
 

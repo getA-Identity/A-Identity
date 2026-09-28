@@ -31,7 +31,7 @@ export const USDC_FOR_ONE_CHECK = 5.1
 type ShiftRec = { id: string; depositAddress: string; depositMemo: string | null; amount: string; tx?: string; sent?: boolean; settled?: boolean; settleHash?: string | null }
 export type BridgeState = {
   version: 1
-  fundIn: { algo?: ShiftRec; usdc?: ShiftRec; done?: boolean }
+  fundIn: { algo?: ShiftRec; usdc?: ShiftRec; done?: boolean; topUps?: ShiftRec[] }
   back?: { to: string; merge?: { hash?: string; done?: boolean }; usdc?: ShiftRec; algo?: ShiftRec; usdcLeft?: number; done?: boolean }
 }
 
@@ -209,6 +209,35 @@ export async function runIn(ctx: Ctx, maxWaitMs = 80_000): Promise<boolean> {
   const s = await readStatus(ctx.algorand.address, algod, f)
   ctx.out(`Ready: the Algorand wallet holds ${s.usdc} USDC, enough for ${Math.floor(s.usdc / 5)} address check(s) at 5 USDC.`)
   return true
+}
+
+/**
+ * XLM that arrives after the way in finished (a second deposit) goes into USDC too, so every
+ * XLM sent is spent. 'none' when there is nothing to exchange, 'settled' when a top-up landed.
+ */
+export async function runTopUp(ctx: Ctx, maxWaitMs = 80_000): Promise<'none' | 'waiting' | 'settled'> {
+  const f = ctx.fetchImpl ?? fetch
+  const horizon = ctx.horizon ?? HORIZON
+  const deadline = (ctx.now ?? Date.now)() + maxWaitMs
+  const st = loadState(ctx.statePath)
+  if (!st.fundIn.done || st.back) return 'none'
+  const topUps = (st.fundIn.topUps = st.fundIn.topUps ?? [])
+  let rec = topUps.find((r) => !r.settled)
+  if (!rec) {
+    const a = await readXlm(ctx.stellar.address, horizon, f)
+    const spend = a.xlm - STELLAR_KEEP_XLM
+    // Under SideShift's minimum there is nothing to do; its pair is read only when it might pass.
+    if (spend < 10) return 'none'
+    const usdcPair = await pair('xlm-stellar', 'usdc-algorand', f)
+    if (spend < usdcPair.min * 1.02) return 'none'
+    const shift = await createShift({ from: 'xlm-stellar', to: 'usdc-algorand', settleAddress: ctx.algorand.address, refundAddress: ctx.stellar.address }, f)
+    rec = { id: shift.id, depositAddress: shift.depositAddress, depositMemo: shift.depositMemo, amount: round7(spend) }
+    topUps.push(rec)
+    saveState(ctx.statePath, st)
+    ctx.out(`More XLM arrived. Exchanging ${rec.amount} XLM for USDC on Algorand.`)
+  }
+  await sendXlmOnce(ctx, st, rec)
+  return (await settled(ctx, st, rec, 'XLM to USDC', deadline)) ? 'settled' : 'waiting'
 }
 
 /** Advance the way back to `to`, the user's own Stellar address. Returns true when done. */

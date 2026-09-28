@@ -16,6 +16,7 @@ import { dirname, join } from 'node:path'
 import * as algosdk from 'algosdk'
 import type { FetchLike } from '@a-identity/trust-guard'
 import { ALGORAND_USDC } from '@a-identity/trust-guard/algorand'
+import { CMD } from './version.js'
 
 type FetchLikeAlgorand = FetchLike
 
@@ -100,11 +101,11 @@ export function nextStep(s: WalletStatus, priceUsd: number = 5): string {
   if (!s.usdcOptedIn && s.algo < 0.202) {
     return `Send ${ALGO_TO_SEND} ALGO on the Algorand network to ${s.address}. Send only ALGO for now: USDC sent before the next step would be refused.`
   }
-  if (!s.usdcOptedIn) return 'The ALGO has arrived. Run: npx -y @a-identity/trust-mcp@latest wallet optin'
+  if (!s.usdcOptedIn) return `The ALGO has arrived. Run: ${CMD} wallet optin`
   if (s.usdc < priceUsd) {
     return `Send USDC on the Algorand network to ${s.address}. One address check costs ${priceUsd} USDC; it holds ${s.usdc}.`
   }
-  return 'Ready. Run: npx -y @a-identity/trust-mcp@latest check <ADDRESS OR LINK>'
+  return `Ready. Run: ${CMD} check <ADDRESS OR LINK>`
 }
 
 // ── writing to the ledger ──────────────────────────────────────────────────────────
