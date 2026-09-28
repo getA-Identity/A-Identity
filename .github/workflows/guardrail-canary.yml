@@ -1,13 +1,15 @@
 # Guardrail canary (Phase 5.4).
 #
-# Answers one question on a schedule: is the guardrail still enforcing? It does that two
-# ways, and NEITHER of them touches real money or creates anything:
+# Answers one question on a schedule: is the guardrail still enforcing? It does that three
+# ways, and NONE of them touches real money or creates anything:
 #
 #   1. Reruns the deterministic decision vectors locally. Pure functions, no account, no
 #      network, no fabricated market data.
 #   2. Probes the live public surfaces, including /api/guardrail-status, which runs canonical
 #      vectors through the same pure engine the product uses and returns 503 if any of them
 #      answers wrongly.
+#   3. Calls one paid tool on every rail that sells today WITHOUT paying, and requires the
+#      402 challenge. A 200 there is a paid tool answering for free.
 #
 # Explicitly NOT done here, because a monitor that writes is a monitor that can fake
 # traction: no agent is created, no decision is recorded, no order or payment is placed on
@@ -86,43 +88,81 @@ jobs:
           echo "could not reach the self-check after 6 attempts"
           exit 1
 
-      - name: The paid ASP is still charging, not silently serving for free
+      - name: The ASP is up, and its paid tools charge unless it declares free mode
+        # Runs even when the step above failed, and so does the traction step below: each
+        # probes a different surface. While this step was red, from 2026-09-16 on, the
+        # traction check was skipped on every run.
+        if: ${{ !cancelled() }}
         run: |
           set -euo pipefail
-          # asp/payment.ts enables x402 only when PAY_TO_ADDRESS + the three OKX keys are
-          # all present, and otherwise falls back to `mode: 'free'` and SERVES. That is
-          # convenient in development and fail-open in production: if the env were ever
-          # cleared on a redeploy, every paid tool would start answering for free and
-          # nothing would say so. So the 402 challenge itself is monitored.
+          # This step used to demand a 402, because asp/payment.ts falls back to
+          # `mode: 'free'` and SERVES the paid tools whenever PAY_TO_ADDRESS, the three OKX
+          # keys or OKX's facilitator are missing. On 2026-09-26 OKX.AI delisted #6271 and
+          # #8913 and its facilitator refuses us, so free mode is now the intended state: the
+          # listing that paid mode existed for is gone. The ASP stays up because the site,
+          # the docs and the llms files link to its X Layer ledger at /proof, and the 402
+          # guard moved to the rails that sell today (the `rails` job below).
+          #
+          # So a 200 passes only when the ASP itself says it is free. GET /health publishes
+          # payment.mode, the value applyOkxX402 returned when it decided whether to install
+          # the paywall: a declaration, not a guess. A 402 still passes, so restoring the OKX
+          # keys and paid mode needs no edit here.
           ASP="https://a-identity-asp.onrender.com"
           for i in 1 2 3 4 5 6; do
-            code=$(curl -s -D /tmp/paid.hdr -o /tmp/paid.json -w "%{http_code}" --max-time 45 \
+            # `|| code=000` rather than `|| echo 000`: curl already prints 000 on a failed
+            # connection, and echoing another one made the code read 000000.
+            code=$(curl -s -D /tmp/asp.hdr -o /tmp/asp.json -w "%{http_code}" --max-time 45 \
               -X POST -H 'Content-Type: application/json' \
-              -d '{"agentId":"aid/1"}' "$ASP/tools/verify_agent" || echo 000)
+              -d '{"agentId":"aid/1"}' "$ASP/tools/verify_agent") || code=000
             echo "attempt $i: HTTP $code"
-            # Same trap as the step above: a suspended service also answers 503, and an
-            # unreachable ASP during an OKX review window is urgent for a different reason
-            # than a disabled paywall. Name it rather than retrying six times first.
-            if grep -qi '^x-render-routing:[[:space:]]*suspend' /tmp/paid.hdr 2>/dev/null; then
-              echo "::error::The ASP service is SUSPENDED on Render, so every paid tool is"
-              echo "::error::unreachable. OKX reviewers hitting it see 503 instead of a 402."
+            # Same trap as the step above: a suspended service also answers 503. Name it
+            # rather than retrying six times first.
+            if grep -qi '^x-render-routing:[[:space:]]*suspend' /tmp/asp.hdr 2>/dev/null; then
+              echo "::error::The ASP service is SUSPENDED on Render, and /proof is down with it."
               exit 1
             fi
-            # 402 is the correct answer: the paywall is live and issued a challenge.
-            if [ "$code" = "402" ]; then echo "x402 challenge served, paid mode is on"; exit 0; fi
-            # 200 means a PAID tool answered without payment. Not a cold start, a real
-            # regression, so it must not be retried away.
-            if [ "$code" = "200" ]; then
-              echo "a paid tool answered without payment: x402 is disabled or misconfigured"
-              cat /tmp/paid.json || true
-              exit 1
-            fi
-            sleep 20
+            case "$code" in
+              402)
+                echo "x402 challenge served: the ASP is in paid mode"
+                exit 0 ;;
+              200)
+                # A paid tool answered without payment. Fine only while the ASP says so.
+                hcode=$(curl -s -o /tmp/asp-health.json -w "%{http_code}" --max-time 45 "$ASP/health") || hcode=000
+                if [ "$hcode" != "200" ]; then echo "GET /health: HTTP $hcode"; sleep 20; continue; fi
+                node -e "
+                  const read = (f) => { try { return JSON.parse(require('fs').readFileSync(f, 'utf8')) } catch { return null } };
+                  const tool = read('/tmp/asp.json');
+                  const health = read('/tmp/asp-health.json');
+                  if (!tool || tool.tool !== 'verify_agent') {
+                    console.log('::error::The ASP answered 200, but not with a verify_agent result.');
+                    process.exit(1);
+                  }
+                  const mode = health && health.payment ? health.payment.mode : undefined;
+                  if (mode === undefined) {
+                    console.log('::error::GET /health no longer declares payment.mode, so a free answer cannot be told from a fail-open.');
+                    process.exit(1);
+                  }
+                  if (mode !== 'free') {
+                    console.log('::error::A paid tool answered without payment while /health declares payment.mode=' + mode + '. That is the fail-open this step exists for.');
+                    process.exit(1);
+                  }
+                  console.log('::notice::The ASP is in free mode, as intended since OKX.AI delisted #6271 and #8913 on 2026-09-26. Its own reason: ' + health.paymentReason);
+                "
+                exit 0 ;;
+              000|5??)
+                # No answer or a 5xx: a cold start, a restart or a deploy. Retry.
+                sleep 20 ;;
+              *)
+                echo "::error::The ASP answered HTTP $code, which is neither a 402 challenge nor a tool result."
+                cat /tmp/asp.json || true
+                exit 1 ;;
+            esac
           done
-          echo "could not reach the ASP after 6 attempts"
+          echo "::error::The ASP gave no usable answer in 6 attempts (last HTTP $code)."
           exit 1
 
       - name: Traction endpoint answers and excludes CI from its headlines
+        if: ${{ !cancelled() }}
         run: |
           set -euo pipefail
           curl -sf --max-time 45 "https://a-identity-backend.onrender.com/api/traction" -o /tmp/traction.json
@@ -134,3 +174,94 @@ jobs:
             if (typeof t.ci.checks !== 'number') { console.error('ci.checks must be a number'); process.exit(1) }
             console.log('traction ok: ' + t.checks + ' checks, \$' + t.protectedNotionalUsd + ' protected, ci kept separate (' + t.ci.checks + ')');
           "
+
+  rails:
+    # The fail-open guard the ASP step used to be, moved to the rails that sell today. Every
+    # rail here is fail-closed by design (501 when unconfigured, never a free serve); this is
+    # what notices if that ever stops being true, or if a rail stops offering a challenge.
+    # One matrix leg per rail rather than a copied step each: the probe cannot drift between
+    # copies, a red rail is named in the run summary, and with fail-fast off one red rail
+    # cannot hide another.
+    name: Selling rail still charges (${{ matrix.rail }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        # Each call is the one the rail itself documents: POST with a JSON body, to
+        # verify_agent, the cheapest tool every rail sells. The comment names the source.
+        include:
+          # The rail's own 402: tool.method and tool.example.
+          - rail: EIP-3009
+            path: /api/x402/tools/verify_agent
+            body: '{"agentId":"#0"}'
+          # /api/x402/gateway/openapi.json, the POST request example.
+          - rail: Circle Gateway
+            path: /api/x402/gateway/tools/verify_agent
+            body: '{"agentId":"#73232"}'
+          # The Bazaar listing inside the rail's own 402: POST, JSON body.
+          - rail: Algorand
+            path: /api/x402/algorand/tools/verify_agent
+            body: '{"agentId":"#0"}'
+          # docs/chains/stellar.mdx, "Pay for a trust check".
+          - rail: Stellar
+            path: /api/x402/stellar/tools/verify_agent
+            body: '{"agentId":"#849980"}'
+          # The rail's own 402: tool.method and tool.example. docs/chains/celo.mdx says we
+          # sell the trust tools on Celo, and /api/celo/status reports the rail configured.
+          - rail: Celo
+            path: /api/celo/tools/verify_agent
+            body: '{"agentId":"#1"}'
+    steps:
+      - name: An unpaid call to a paid tool gets a 402 challenge, not a free answer
+        env:
+          RAIL: ${{ matrix.rail }}
+          TOOL_URL: https://a-identity-backend.onrender.com${{ matrix.path }}
+          BODY: ${{ matrix.body }}
+        run: |
+          set -euo pipefail
+          # The retry shape of the live steps: what a cold start, a restart or a deploy can
+          # cause is retried, a definite answer is not.
+          for i in 1 2 3 4 5 6; do
+            code=$(curl -s -D /tmp/rail.hdr -o /tmp/rail.json -w "%{http_code}" --max-time 45 \
+              -X POST -H 'Content-Type: application/json' -d "$BODY" "$TOOL_URL") || code=000
+            echo "attempt $i: HTTP $code from POST $TOOL_URL"
+            if grep -qi '^x-render-routing:[[:space:]]*suspend' /tmp/rail.hdr 2>/dev/null; then
+              echo "::error::The backend service is SUSPENDED on Render, so no rail can sell."
+              exit 1
+            fi
+            case "$code" in
+              402)
+                # The status alone is not a challenge: a buyer needs something to pay.
+                node -e "
+                  let c = null;
+                  try { c = JSON.parse(require('fs').readFileSync('/tmp/rail.json', 'utf8')) } catch {}
+                  const accepts = c && Array.isArray(c.accepts) ? c.accepts : [];
+                  if (!accepts.length) {
+                    console.log('::error::The ' + process.env.RAIL + ' rail answered 402 with no accepts list, so there is nothing a buyer could pay.');
+                    process.exit(1);
+                  }
+                  console.log('402 challenge served, payable on ' + accepts.map((a) => a.network).join(', '));
+                "
+                exit 0 ;;
+              200)
+                # A paid tool answered without payment. Not a cold start, so not retried away.
+                echo "::error::FAIL-OPEN: the $RAIL rail served a paid tool without payment."
+                cat /tmp/rail.json || true
+                exit 1 ;;
+              501)
+                # What every rail answers when its configuration is missing.
+                echo "::error::The $RAIL rail says it is not configured, so it is not selling."
+                cat /tmp/rail.json || true
+                exit 1 ;;
+              000|429|5??)
+                # No answer, a 5xx, or the per-IP rate budget, which resets within a minute.
+                sleep 20 ;;
+              *)
+                echo "::error::The $RAIL rail answered HTTP $code where a 402 challenge was expected."
+                cat /tmp/rail.json || true
+                exit 1 ;;
+            esac
+          done
+          echo "::error::The $RAIL rail gave no 402 challenge in 6 attempts (last HTTP $code)."
+          cat /tmp/rail.json 2>/dev/null || true
+          exit 1
