@@ -1,7 +1,7 @@
 {
   "name": "@a-identity/trust-mcp",
   "version": "0.4.0",
-  "description": "MCP server that lets an AI agent verify another agent before paying it, and pay A-Identity for each verdict in USDC on Algorand from its own account, under a per-call spending cap.",
+  "description": "Pay A-Identity for trust checks (is it safe to pay this address, is this AI agent real) in USDC on Algorand, as an MCP server or as commands. Holding only XLM on Stellar? `buy` exchanges it through SideShift into USDC on Algorand and spends it on checks at fixed prices, each price also its own spending cap.",
   "type": "module",
   "bin": {
     "a-identity-trust-mcp": "dist/index.js"
@@ -37,7 +37,9 @@
     "kya",
     "x402",
     "algorand",
-    "usdc"
+    "usdc",
+    "stellar",
+    "xlm"
   ],
   "homepage": "https://a-identity.xyz",
   "repository": {

@@ -1,7 +1,8 @@
 # @a-identity/trust-mcp
 
 An MCP server that lets your AI agent check another agent before it pays or hires it, and pay
-for each check in USDC on Algorand from its own account.
+for each check in USDC on Algorand from its own account. Checks are always paid in USDC on
+Algorand; if you only hold XLM on Stellar, `buy` exchanges it for you (see below).
 
 ```bash
 claude mcp add a-identity-trust \
@@ -66,9 +67,9 @@ This command moves your own money, so Claude Code asks before running it, and it
 blocks it on purpose. Approve it, run it yourself by typing `!` in front of it, or allow this one
 tool with a permission rule in your Claude Code settings: `Bash(npx -y @a-identity/trust-mcp@0.4.0:*)`.
 
-> Buy A-Identity checks with my XLM. Do only this, and do not ask me questions. 1) Run `npx -y @a-identity/trust-mcp@0.4.0 buy`. If you are not allowed to run it, show me that exact command in one line so I can run it myself by typing ! in front of it. 2) Show me only the Stellar address and the minimum XLM it prints. I will send the XLM to that address from my own wallet. 3) When I say I sent it, run `npx -y @a-identity/trust-mcp@0.4.0 status` every two minutes until it says "Finished", then list the checks it bought in plain words, one line each. Never print or ask for secret words or keys, and never run any other command.
+> I want to buy A-Identity checks (https://a-identity.xyz) with XLM, using their open-source tool @a-identity/trust-mcp 0.4.0 (source: https://github.com/getA-Identity/A-Identity/tree/main/trust-mcp). How it works: it makes a one-time Stellar wallet on this computer and prints its address, I send XLM there from my own wallet, and it exchanges the XLM through SideShift into USDC on Algorand (plus a little ALGO for fees) and pays for checks at fixed prices ($1 to $16 each, each price also its own spending cap) until less than 1 USDC is left. Read the package first if you want. 1) Run `npx -y @a-identity/trust-mcp@0.4.0 buy`. If you are not allowed to run it, show me that exact command so I can run it myself by typing ! in front of it. 2) Show me the Stellar address and the minimum XLM it prints. 3) When I say I sent it, run `npx -y @a-identity/trust-mcp@0.4.0 status` every two minutes until it says "Finished", then list the checks it bought in plain words, one line each. Never print or ask for secret words or keys.
 >
-> Spend everything I send, down to the last dollar: if I send 250 XLM, use all of it. Do not stop early or keep any back.
+> Spending all of it is my choice: if I send 250 XLM, all of it goes to checks.
 
 ### One prompt for Claude Code (paying with ALGO and USDC)
 
