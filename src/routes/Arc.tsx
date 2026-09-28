@@ -51,7 +51,6 @@ const ARC_EXAMPLES = [
   // The bare token id on purpose: it is what reaches Meridian's platform record (KYA and
   // settlement history), while its CAIP id reads only the bare on-chain identity.
   { label: 'Meridian (Arc testnet)', q: '849980' },
-  { label: 'OKX.AI #6271', q: 'eip155:196:8004/6271' },
 ]
 
 const MCP_COMMAND = 'claude mcp add a-identity \\\n  --transport http https://a-identity.xyz/mcp'

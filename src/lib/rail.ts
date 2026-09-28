@@ -34,6 +34,6 @@ export async function getJson<T>(path: string): Promise<T | null> {
 /** The agents a visitor can check with one click. */
 export const CHECK_EXAMPLES = [
   { label: 'Meridian', q: '849980' },
-  { label: 'OKX.AI #6271', q: 'eip155:196:8004/6271' },
+  { label: 'X Layer #6271', q: 'eip155:196:8004/6271' },
 ]
 

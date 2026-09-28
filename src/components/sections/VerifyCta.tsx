@@ -23,7 +23,7 @@ const reveal = {
 const EXAMPLES = [
   { label: 'Meridian #849980', q: '849980' },
   { label: 'An OKX.AI wallet', q: '0x03c4b193d2a42cb0624da3ac938c5917d5fc98c7' },
-  { label: 'Our listing #6271', q: 'eip155:196:8004/6271' },
+  { label: 'Our X Layer agent #6271', q: 'eip155:196:8004/6271' },
 ]
 
 /* ------------------------------------------------------------------------- */
