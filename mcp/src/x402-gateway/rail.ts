@@ -266,7 +266,7 @@ export async function railChallenge(tool: GatewayToolName, status: GatewayRailSt
         name: tool,
         price: { totalUsd: price, settlementFeeUsd: 0 },
         priceNote:
-          'Gasless for the buyer and for us: you sign an EIP-3009 authorization against Circle Gateway\'s GatewayWalletBatched domain from your Gateway balance, Gateway credits it instantly and batches the on-chain settlement. No settlement fee is added; the price is identical on every rail we sell on.',
+          'Gasless for the buyer and for us: you sign an EIP-3009 authorization against Circle Gateway\'s GatewayWalletBatched domain from your Gateway balance, Gateway credits it instantly and batches the on-chain settlement. No settlement fee is added; the base price is identical on every rail we sell on.',
         ...GATEWAY_TOOL_CARDS[tool],
         method: `POST ${railResource(tool)} (JSON body) or GET with query parameters`,
         payment:
@@ -305,11 +305,32 @@ export function railPaidNetwork(payload: unknown): string | undefined {
 
 export type RailServeResult = { httpStatus: number; body: unknown; headers?: Record<string, string> }
 
+const RAIL_PROOF_PATH = '/api/x402/gateway/proof'
+
+/**
+ * The ASP tools stamp every answer with the OKX.AI surface's `_meta`: its network line
+ * (X Layer) and its proof link (that submission's proof page). Neither is true of a call
+ * made here, so this rail restates both, as the Celo rail does: the network(s) the payment
+ * settles on, and this rail's own proof. The rest (methodology, the deterministic-score
+ * note) is the same product and passes through.
+ */
+function railMeta(aspMeta: unknown, networks: string[]): Record<string, unknown> {
+  const named = networks.map((n) => {
+    const c = getChain(n) ?? getChainById(n)
+    return c ? `${c.name} (${c.caip2})` : n
+  })
+  return {
+    ...((aspMeta as Record<string, unknown>) ?? {}),
+    network: named.length ? named.join(' or ') : 'not configured on this server',
+    proof: RAIL_PROOF_PATH,
+  }
+}
+
 function defaultHandlers(status: GatewayRailStatus, proven: ProvenKind): Record<GatewayToolName, (input: GatewayToolInput) => Promise<unknown>> {
   const meta = <T extends Record<string, unknown>>(result: T) => ({
     ...result,
     _meta: {
-      ...((result._meta as Record<string, unknown>) ?? {}),
+      ...railMeta(result._meta, [status.network]),
       settlement: {
         rail: 'x402-gateway',
         network: status.network,
@@ -333,10 +354,24 @@ function defaultHandlers(status: GatewayRailStatus, proven: ProvenKind): Record<
   }
 }
 
-/** The free tool, served without a payment. */
-export async function railFreeTool(input: GatewayToolInput): Promise<unknown> {
+/** The free tool, served without a payment. Its upgrade list names this rail's own paths
+ *  (the ASP's `/tools/...` paths do not exist on this host) and every tool it sells, at
+ *  the prices the 402 charges. */
+export async function railFreeTool(input: GatewayToolInput, env: NodeJS.ProcessEnv = process.env): Promise<unknown> {
   if (!input.agentId) throw new Error('agentId is required')
-  return trustPreview(input.agentId)
+  const preview = await trustPreview(input.agentId)
+  const selling = railNetworks(env)
+    .map((n) => railStatus(env, n))
+    .filter((s) => s.configured)
+    .map((s) => s.network)
+  return {
+    ...preview,
+    _meta: railMeta(preview._meta, selling),
+    upgrade: {
+      ...preview.upgrade,
+      tools: GATEWAY_TOOLS.map((t) => ({ name: t, method: `POST ${railResource(t)}`, price: PRICES[`POST /tools/${t}`] })),
+    },
+  }
 }
 
 /** The input fields a tool needs, checked before any money moves. */
