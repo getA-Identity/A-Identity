@@ -102,6 +102,10 @@ export type BuyState = {
   /** Payments signed but never landed since the last check that was paid; three in a row stop the run. */
   refusals?: number
   worker?: { pid: number; startedAt: string }
+  /** Which round of buying this is; each `buy` after a finished one starts the next. */
+  round?: number
+  /** Set when a round starts on wallets that were already funded: it waits for new XLM. */
+  waitForXlm?: boolean
   finished?: string
   stopped?: string
 }
@@ -293,7 +297,13 @@ export async function advanceBuy(ctx: BuyCtx, maxWaitMs = 60_000): Promise<'wait
     const t = await runTopUp(ctx, maxWaitMs)
     if (t === 'waiting') return 'waiting'
     if (t === 'none') break
+    const st = loadBuy(ctx.buyPath)
+    if (st.waitForXlm) {
+      delete st.waitForXlm
+      saveBuy(ctx.buyPath, st)
+    }
   }
+  if (loadBuy(ctx.buyPath).waitForXlm) return 'waiting'
   const returnTo = loadBuy(ctx.buyPath).returnTo
   if (returnTo && !(await runBack(ctx, returnTo, maxWaitMs))) return 'waiting'
   const st = loadBuy(ctx.buyPath)
@@ -323,6 +333,7 @@ export async function statusLines(ctx: BuyCtx, workerAlive: boolean): Promise<st
   if (st.finished) lines.push('Finished.')
   else if (st.stopped) lines.push(`Stopped: ${st.stopped}`)
   else if (!workerAlive) lines.push('Paused (the computer restarted or the work was stopped). Run the buy command again to continue.')
+  else if (st.waitForXlm) lines.push(`Waiting for your XLM at ${ctx.stellar.address}.`)
   else if (br.back) lines.push(`Buying is done. Sending what is left back to ${br.back.to}.`)
   else if (br.fundIn.done) lines.push('Buying checks.')
   else if (br.fundIn.usdc) lines.push('Your XLM arrived. Exchanging it for USDC on Algorand (a few minutes).')

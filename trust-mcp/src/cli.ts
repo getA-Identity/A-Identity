@@ -205,20 +205,27 @@ export async function runCli(
         return 0
       }
 
-      const st = loadBuy(buyPath)
-      if (st.finished) {
-        // Finished, unless more XLM arrived since: then that is spent too.
+      // `buy` starts a round, or continues the one under way; `status` only looks.
+      let st = loadBuy(buyPath)
+      if (alive(st)) {
+        out('Already working on it.')
         const ctx = walletsCtx()
-        const more = ctx && !loadState(statePath).back && (await readXlm(ctx.stellar.address, horizon, fetchImpl)).xlm - STELLAR_KEEP_XLM >= 15
-        if (!more) {
-          if (ctx) for (const l of await statusLines({ ...ctx, out }, false)) out(l)
-          return 0
-        }
-        delete st.finished
+        if (ctx) for (const l of await statusLines({ ...ctx, out }, true)) out(l)
+        return 0
       }
       const returnTo = sub === '--return' ? arg : undefined
       if (sub === '--return' && !returnTo) {
         out(`Name your own Stellar address: ${CMD} buy --return <YOUR STELLAR ADDRESS>`)
+        return 1
+      }
+      const earlier = loadState(statePath)
+      if (earlier.back?.done) {
+        // A finished return merged the Stellar wallet away: a new round needs a new one. The
+        // Algorand wallet stays, with anything left in it.
+        retireFiles([spath, statePath, buyPath])
+        st = loadBuy(buyPath)
+      } else if (earlier.back && earlier.back.to !== st.returnTo) {
+        out(`What is left is on its way to ${earlier.back.to}. Finish that first: ${CMD} stellar return ${earlier.back.to}`)
         return 1
       }
       const a = createWallet(path)
@@ -228,11 +235,6 @@ export async function runCli(
           out(`${returnTo} is not your Stellar address. It starts with G and is 56 characters long.`)
           return 1
         }
-        const back = loadState(statePath).back
-        if (back && back.to !== returnTo) {
-          out(`What is left is already on its way to ${back.to}.`)
-          return 1
-        }
         if (!(await readXlm(returnTo, horizon, fetchImpl)).exists) {
           out(`${returnTo} does not exist on Stellar yet. Use an address that already holds XLM.`)
           return 1
@@ -240,23 +242,33 @@ export async function runCli(
         st.returnTo = returnTo
       }
       delete st.stopped
+      const br = loadState(statePath)
+      const funded = Boolean(br.fundIn.done && !br.back)
+      if (!st.round || st.finished) {
+        // A new round. On wallets an earlier run already funded, nothing tells it XLM is on the
+        // way, so it waits for a new deposit before it can call itself finished.
+        st.round = (st.round ?? 0) + 1
+        delete st.finished
+        st.waitForXlm = funded
+      }
       saveBuy(buyPath, st)
 
-      if (alive(st)) {
-        out('Already working on it.')
-        const ctx = walletsCtx()
-        if (ctx) for (const l of await statusLines({ ...ctx, out }, true)) out(l)
-        return 0
-      }
-
-      const plan = planIn(await pair('xlm-stellar', 'algo-algorand', fetchImpl), await pair('xlm-stellar', 'usdc-algorand', fetchImpl))
+      const usdcPair = await pair('xlm-stellar', 'usdc-algorand', fetchImpl)
       out('Send XLM to this Stellar address (no memo needed):')
       out(`  ${x.address}`)
-      out(`Send as much as you want to spend, at least ${plan.totalXlm} XLM. All of it is spent on A-Identity checks.`)
-      out(
-        `About ${Math.ceil(plan.algoXlm + STELLAR_KEEP_XLM)} XLM of it becomes ALGO for network fees` +
-          (st.returnTo ? `, and what is left of that comes back to ${st.returnTo} at the end.` : '.'),
-      )
+      if (funded) {
+        // The ALGO for fees is already there: only the exchange into USDC has a minimum.
+        out(`Send as much as you want to spend, at least ${Math.ceil(usdcPair.min * 1.02 + 0.1)} XLM. All of it is spent on A-Identity checks.`)
+        const held = await readStatus(a.address, algod, fetchImpl)
+        if (held.usdc >= 1) out(`The Algorand wallet already holds ${held.usdc} USDC from before; that is spent on checks too.`)
+      } else {
+        const plan = planIn(await pair('xlm-stellar', 'algo-algorand', fetchImpl), usdcPair)
+        out(`Send as much as you want to spend, at least ${plan.totalXlm} XLM. All of it is spent on A-Identity checks.`)
+        out(
+          `About ${Math.ceil(plan.algoXlm + STELLAR_KEEP_XLM)} XLM of it becomes ALGO for network fees` +
+            (st.returnTo ? `, and what is left of that comes back to ${st.returnTo} at the end.` : '.'),
+        )
+      }
       out('Nothing else to do: it keeps working in the background, even if you close this window, as long as this computer stays on.')
       out(`To see how it is going: ${CMD} status`)
       out(`(Wallets on this computer, secrets never printed: Stellar ${x.address}, Algorand ${a.address}.)`)

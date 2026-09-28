@@ -8,6 +8,7 @@ import { Keypair } from '@stellar/stellar-base'
 import { advanceBuy, itemAt, loadBuy, nextAffordable, ROUND_USD, saveBuy, type BuyCtx } from './buy.js'
 import { runCli } from './cli.js'
 import { loadWallet } from './wallet.js'
+import { loadStellarWallet } from './stellar.js'
 import { ALGOD, HORIZON, ORACLE, world } from './world.fixture.js'
 
 function setup() {
@@ -162,7 +163,7 @@ test('the command says where to send XLM, then the background worker buys everyt
   const burner = start.text.match(/\n {2}(G[A-Z2-7]{55})\n/)?.[1]
   assert.ok(burner, start.text)
   assert.match(start.text, /at least 44 XLM/)
-  assert.match(start.text, /npx -y @a-identity\/trust-mcp@0\.4\.0 status/)
+  assert.match(start.text, /npx -y @a-identity\/trust-mcp@0\.4\.1 status/)
   assert.deepEqual(spawned, [['buy', '--worker']])
   assert.equal(loadBuy(env.A_IDENTITY_BUY_STATE).worker?.pid, 4242)
   assert.match((await run('status')).text, /Paused/)
@@ -176,7 +177,7 @@ test('the command says where to send XLM, then the background worker buys everyt
   assert.equal(loadBuy(env.A_IDENTITY_BUY_STATE).worker, undefined)
 })
 
-test('without a return address, XLM sent after the checks were bought starts the worker again', async () => {
+function cliWorld(extra: Partial<Parameters<typeof runCli>[4]> = {}) {
   const { w, dir } = setup()
   const env = {
     A_IDENTITY_KEYFILE: join(dir, 'algorand-wallet.json'),
@@ -187,26 +188,64 @@ test('without a return address, XLM sent after the checks were bought starts the
     A_IDENTITY_HORIZON_URL: HORIZON,
     A_IDENTITY_BASE_URL: ORACLE,
   }
-  let spawns = 0
-  const deps = { spawnWorker: () => (spawns++, 1), isAlive: () => false, sleep: async () => {}, now: () => Date.parse('2026-09-28T12:00:00Z') }
+  const calls = { spawns: 0 }
+  const deps = { spawnWorker: () => (calls.spawns++, 1), isAlive: () => true, sleep: async () => {}, now: () => Date.parse('2026-09-28T12:00:00Z'), ...extra }
   const run = async (...argv: string[]) => {
     const lines: string[] = []
     await runCli(argv, env, (l) => lines.push(l), w.fetchImpl, deps)
     return lines.join('\n')
   }
+  const wallets = () => ({ algorand: loadWallet(env.A_IDENTITY_KEYFILE)!.address, stellar: loadStellarWallet(env.A_IDENTITY_STELLAR_KEYFILE)!.address })
+  return { w, env, run, calls, wallets }
+}
+
+test('each buy after a finished round starts a new one, which waits for new XLM and spends it', async () => {
+  const { w, run, calls, wallets } = cliWorld({ isAlive: () => false })
   const burner = (await run('buy')).match(/\n {2}(G[A-Z2-7]{55})\n/)![1]
   w.xlm.set(burner, 60)
   await run('buy', '--worker')
   const first = w.paid.length
   assert.match(await run('status'), /^Finished\./)
 
-  assert.doesNotMatch(await run('buy'), /Send XLM/, 'finished and nothing new: it only reports')
-  assert.equal(spawns, 1)
+  const again = await run('buy')
+  assert.equal(calls.spawns, 2, 'a new round starts')
+  assert.match(again, /at least 15 XLM/, 'the ALGO is already there, so only the USDC minimum applies')
+  assert.doesNotMatch(again, /becomes ALGO/)
 
   w.xlm.set(burner, (w.xlm.get(burner) ?? 0) + 100)
-  await run('buy')
-  assert.equal(spawns, 2, 'more XLM arrived, so the worker starts again')
   await run('buy', '--worker')
-  assert.ok(w.paid.length > first, `the later XLM was spent too: ${first} then ${w.paid.length} checks`)
-  assert.ok((w.algo.get(loadWallet(env.A_IDENTITY_KEYFILE)!.address)?.usdc ?? 0) < 1, 'and spent to under a dollar')
+  assert.ok(w.paid.length > first, `the new XLM was spent: ${first} then ${w.paid.length} checks`)
+  assert.ok((w.algo.get(wallets().algorand)?.usdc ?? 0) < 1, 'to under a dollar')
+  assert.match(await run('status'), /^Finished\./)
+})
+
+test('on wallets an earlier stellar run funded, buy waits for the new XLM instead of finishing at once', async () => {
+  // The worker's first pause is when the XLM arrives, as it would while the person sends it.
+  let sent = false
+  const { w, run, calls, wallets } = cliWorld({
+    sleep: async () => {
+      if (!sent) w.xlm.set(wallets().stellar, (w.xlm.get(wallets().stellar) ?? 0) + 250)
+      sent = true
+    },
+  })
+  // An earlier session: the wallets were funded and one check was bought, 1.07 USDC is left.
+  await run('stellar', 'start')
+  w.xlm.set(wallets().stellar, 44)
+  await run('stellar', 'run')
+  w.algo.get(wallets().algorand)!.usdc = 1.07
+
+  const start = await run('buy')
+  assert.equal(calls.spawns, 1)
+  assert.match(start, /at least 15 XLM/)
+  assert.doesNotMatch(start, /at least 44 XLM/)
+  assert.match(start, /already holds 1\.07 USDC from before; that is spent on checks too/)
+  assert.match(await run('status'), /^Waiting for your XLM at G/, 'not Finished before any XLM was sent')
+
+  await run('buy', '--worker')
+  assert.ok(sent, 'the worker waited for the XLM instead of finishing')
+  const status = await run('status')
+  assert.match(status, /^Finished\./)
+  assert.ok(w.paid.length >= 9, `the old USDC and the new XLM were both spent: ${w.paid.length} checks`)
+  assert.equal(w.paid[0].tool, 'verify_agent', 'the 1.07 USDC left from before went first, on a 1 USDC check')
+  assert.ok((w.algo.get(wallets().algorand)?.usdc ?? 0) < 1)
 })
