@@ -90,11 +90,14 @@ function describeAnswer(out: Out, tool: string, r: Record<string, unknown>) {
 const WORKER_MAX_MS = 6 * 60 * 60 * 1000
 const WORKER_MAX_ERRORS = 10
 const WORKER_PAUSE_MS = 15_000
+/** A round younger than this is taken to be the current person's own, even by `buy --new`. */
+const FRESH_ROUND_MS = 30 * 60 * 1000
 
 export type CliDeps = {
   /** Starts `buy --worker` detached from this process; returns its pid. */
   spawnWorker?: (args: string[], logPath: string) => number
   isAlive?: (pid: number) => boolean
+  stopWorker?: (pid: number) => void
   sleep?: (ms: number) => Promise<void>
   now?: () => number
 }
@@ -106,6 +109,14 @@ function spawnDetached(args: string[], logPath: string): number {
   child.unref()
   closeSync(fd)
   return child.pid ?? 0
+}
+
+function stopProcess(pid: number) {
+  try {
+    process.kill(pid, 'SIGTERM')
+  } catch {
+    /* already gone */
+  }
 }
 
 function pidAlive(pid: number): boolean {
@@ -208,12 +219,6 @@ export async function runCli(
 
       // `buy` starts a round, or continues the one under way; `status` only looks.
       let st = loadBuy(buyPath)
-      if (alive(st)) {
-        out('Already working on it.')
-        const ctx = walletsCtx()
-        if (ctx) for (const l of await statusLines({ ...ctx, out }, true)) out(l)
-        return 0
-      }
       const flags = argv.slice(1)
       const at = flags.indexOf('--return')
       const returnTo = at >= 0 ? flags[at + 1] : undefined
@@ -231,31 +236,47 @@ export async function runCli(
       }
 
       if (flags.includes('--new')) {
-        // New wallets for this person, unless that would strand money or a round under way.
+        // New wallets for this person. Wallets that hold unspent money, or an exchange under
+        // way, are never set aside. A round that is still waiting for XLM and has received
+        // nothing is set aside (its worker stopped) once it is old enough not to be this
+        // person's own, just started: a second `buy --new` a minute later continues it instead.
         const aw = loadWallet(path)
         const sw = loadStellarWallet(spath)
         const br = loadState(statePath)
-        const underway = Boolean(st.round && !st.finished)
-        if ((aw || sw) && underway) out('A round is already under way on the wallets on this computer; continuing it.')
-        else if (aw || sw) {
+        if (aw || sw) {
           const exchanging = Boolean((br.fundIn.algo && !br.fundIn.done) || br.fundIn.topUps?.some((r) => !r.settled) || (br.back && !br.back.done))
           const xlm = sw ? (await readXlm(sw.address, horizon, fetchImpl)).xlm : 0
           const usdc = aw ? (await readStatus(aw.address, algod, fetchImpl)).usdc : 0
-          if (exchanging || xlm - STELLAR_KEEP_XLM >= 1 || usdc >= 1) {
+          const unspent = exchanging || xlm - STELLAR_KEEP_XLM >= 1 || usdc >= 1
+          const underway = Boolean(st.round && !st.finished)
+          const started = st.roundStartedAt ? Date.parse(st.roundStartedAt) : 0
+          if (unspent && (underway || alive(st))) out('A round with money in it is under way on the wallets on this computer; continuing it.')
+          else if (unspent) {
             out(
               `The wallets already on this computer still hold money that was not spent (${xlm} XLM, ${usdc} USDC)` +
                 `${exchanging ? ', or an exchange is under way' : ''}. Run ${CMD} buy without --new to spend it on checks, or ` +
                 `${CMD} stellar return <YOUR STELLAR ADDRESS> to get it back, before starting new wallets.`,
             )
             return 1
+          } else if (underway && now() - started < FRESH_ROUND_MS) out('A round was started here a few minutes ago; continuing it.')
+          else {
+            if (st.worker && alive(st)) (deps.stopWorker ?? stopProcess)(st.worker.pid)
+            const stamp = archive([path, spath, statePath, buyPath])
+            out(
+              `Made new wallets. The earlier ones (Algorand ${aw?.address ?? '-'}, Stellar ${sw?.address ?? '-'}) were moved aside, ` +
+                `not deleted: their files in ${dirname(path)} now end in .closed-${stamp}.json, and anything left in them stays there. ` +
+                `Do not send anything to the earlier Stellar address.`,
+            )
+            st = loadBuy(buyPath)
           }
-          const stamp = archive([path, spath, statePath, buyPath])
-          out(
-            `Made new wallets. The earlier ones (Algorand ${aw?.address ?? '-'}, Stellar ${sw?.address ?? '-'}) were moved aside, ` +
-              `not deleted: their files in ${dirname(path)} now end in .closed-${stamp}.json, and anything left in them stays there.`,
-          )
-          st = loadBuy(buyPath)
         }
+      }
+
+      if (alive(st)) {
+        out('Already working on it.')
+        const ctx = walletsCtx()
+        if (ctx) for (const l of await statusLines({ ...ctx, out }, true)) out(l)
+        return 0
       }
 
       const earlier = loadState(statePath)
@@ -270,6 +291,12 @@ export async function runCli(
       }
       const a = createWallet(path)
       const x = createStellarWallet(spath)
+      if ((a.created || x.created) && (existsSync(statePath) || existsSync(buyPath))) {
+        // State left behind by wallets that are gone (moved by hand, say) belongs to them, not
+        // to these new ones: acting on it would treat an empty wallet as funded.
+        archive([statePath, buyPath])
+        st = loadBuy(buyPath)
+      }
       if (returnTo) {
         if (!isStellarAddress(returnTo) || returnTo === x.address) {
           out(`${returnTo} is not your Stellar address. It starts with G and is 56 characters long.`)
@@ -288,6 +315,7 @@ export async function runCli(
         // A new round. On wallets an earlier run already funded, nothing tells it XLM is on the
         // way, so it waits for a new deposit before it can call itself finished.
         st.round = (st.round ?? 0) + 1
+        st.roundStartedAt = new Date(now()).toISOString()
         delete st.finished
         st.waitForXlm = funded
       }

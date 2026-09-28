@@ -1,6 +1,6 @@
 {
   "name": "@a-identity/trust-mcp",
-  "version": "0.4.2",
+  "version": "0.4.3",
   "description": "Pay A-Identity for trust checks (is it safe to pay this address, is this AI agent real) in USDC on Algorand, as an MCP server or as commands. Holding only XLM on Stellar? `buy` exchanges it through SideShift into USDC on Algorand and spends it on checks at fixed prices, each price also its own spending cap.",
   "type": "module",
   "bin": {

@@ -104,6 +104,7 @@ export type BuyState = {
   worker?: { pid: number; startedAt: string }
   /** Which round of buying this is; each `buy` after a finished one starts the next. */
   round?: number
+  roundStartedAt?: string
   /** Set when a round starts on wallets that were already funded: it waits for new XLM. */
   waitForXlm?: boolean
   finished?: string

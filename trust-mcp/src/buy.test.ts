@@ -163,7 +163,7 @@ test('the command says where to send XLM, then the background worker buys everyt
   const burner = start.text.match(/\n {2}(G[A-Z2-7]{55})\n/)?.[1]
   assert.ok(burner, start.text)
   assert.match(start.text, /at least 44 XLM/)
-  assert.match(start.text, /npx -y @a-identity\/trust-mcp@0\.4\.2 status/)
+  assert.match(start.text, /npx -y @a-identity\/trust-mcp@0\.4\.3 status/)
   assert.deepEqual(spawned, [['buy', '--worker']])
   assert.equal(loadBuy(env.A_IDENTITY_BUY_STATE).worker?.pid, 4242)
   assert.match((await run('status')).text, /Paused/)
@@ -188,15 +188,23 @@ function cliWorld(extra: Partial<Parameters<typeof runCli>[4]> = {}) {
     A_IDENTITY_HORIZON_URL: HORIZON,
     A_IDENTITY_BASE_URL: ORACLE,
   }
-  const calls = { spawns: 0 }
-  const deps = { spawnWorker: () => (calls.spawns++, 1), isAlive: () => true, sleep: async () => {}, now: () => Date.parse('2026-09-28T12:00:00Z'), ...extra }
+  const calls = { spawns: 0, stopped: [] as number[] }
+  const clock = { t: Date.parse('2026-09-28T12:00:00Z') }
+  const deps = {
+    spawnWorker: () => (calls.spawns++, 1),
+    isAlive: () => true,
+    stopWorker: (pid: number) => void calls.stopped.push(pid),
+    sleep: async () => {},
+    now: () => clock.t,
+    ...extra,
+  }
   const run = async (...argv: string[]) => {
     const lines: string[] = []
     await runCli(argv, env, (l) => lines.push(l), w.fetchImpl, deps)
     return lines.join('\n')
   }
   const wallets = () => ({ algorand: loadWallet(env.A_IDENTITY_KEYFILE)!.address, stellar: loadStellarWallet(env.A_IDENTITY_STELLAR_KEYFILE)!.address })
-  return { w, env, run, calls, wallets }
+  return { w, env, run, calls, wallets, clock }
 }
 
 test('each buy after a finished round starts a new one, which waits for new XLM and spends it', async () => {
@@ -273,7 +281,7 @@ test('buy --new moves wallets someone used before aside and starts this person o
 
   // Run again during the new round, --new continues it instead of starting yet another.
   const again = await run('buy', '--new')
-  assert.match(again, /already under way/)
+  assert.match(again, /continuing it/)
   assert.equal(wallets().stellar, after.stellar)
 })
 
@@ -294,4 +302,44 @@ test('status says the XLM is being exchanged while a later deposit turns into US
   writeFileSync(ctx.statePath, JSON.stringify({ version: 1, fundIn: { done: true, topUps: [{ id: 's1', depositAddress: 'G', depositMemo: '1', amount: '240', sent: true }] } }))
   const lines = await statusLines(ctx, true)
   assert.match(lines[0], /Your XLM arrived\. Exchanging it for USDC/)
+})
+
+test('buy --new sets aside an old round that is still waiting for XLM and got none, stopping its worker', async () => {
+  // As on a shared computer: someone's round from hours ago, waiting for XLM, its worker still up.
+  const { w, run, calls, wallets, clock } = cliWorld({ isAlive: (pid) => pid === 1 })
+  const first = (await run('buy')).match(/\n {2}(G[A-Z2-7]{55})\n/)![1]
+  w.xlm.set(first, 60)
+  await run('buy', '--worker')
+  await run('buy') // a new round on funded wallets: waits for XLM that never comes
+  const old = wallets()
+  clock.t += 2 * 60 * 60 * 1000
+
+  const fresh = await run('buy', '--new')
+  assert.deepEqual(calls.stopped, [1], 'the idle worker was stopped')
+  assert.match(fresh, /Made new wallets\./)
+  assert.match(fresh, /Do not send anything to the earlier Stellar address/)
+  assert.match(fresh, /at least 44 XLM/, 'a fresh start, not the funded minimum')
+  assert.notEqual(wallets().stellar, old.stellar)
+  assert.notEqual(wallets().algorand, old.algorand)
+})
+
+test('buy --new run again a few minutes later continues the round this person just started, same address', async () => {
+  const { run, calls, wallets, clock } = cliWorld({ isAlive: () => false })
+  const shown = (await run('buy', '--new')).match(/\n {2}(G[A-Z2-7]{55})\n/)![1]
+  clock.t += 5 * 60 * 1000
+  const again = await run('buy', '--new')
+  assert.match(again, /continuing it/)
+  assert.equal(wallets().stellar, shown)
+  assert.match(again, new RegExp(`\\n {2}${shown}\\n`))
+  assert.deepEqual(calls.stopped, [])
+})
+
+test('state left without its wallets is set aside, so new wallets are never taken for funded ones', async () => {
+  const { run, env } = cliWorld({ isAlive: () => false })
+  writeFileSync(env.A_IDENTITY_BRIDGE_STATE, JSON.stringify({ version: 1, fundIn: { done: true } }))
+  saveBuy(env.A_IDENTITY_BUY_STATE, { version: 1, cursor: 3, skip: [], purchases: [], round: 2, waitForXlm: true })
+  const out = await run('buy')
+  assert.match(out, /at least 44 XLM/)
+  assert.doesNotMatch(out, /at least 15 XLM/)
+  assert.equal(loadBuy(env.A_IDENTITY_BUY_STATE).cursor, 0)
 })
