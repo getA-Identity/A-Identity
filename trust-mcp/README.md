@@ -34,7 +34,7 @@ The MCP server uses the same wallet file when `A_IDENTITY_ALGORAND_MNEMONIC` is 
 ## Only have XLM? One command, and all of it is spent on checks
 
 ```bash
-npx -y @a-identity/trust-mcp@0.4.0 buy --return <YOUR STELLAR ADDRESS>
+npx -y @a-identity/trust-mcp@0.4.0 buy
 ```
 
 It makes two one-time wallets on your computer (secrets saved under `~/.a-identity`, readable by
@@ -66,9 +66,7 @@ This command moves your own money, so Claude Code asks before running it, and it
 blocks it on purpose. Approve it, run it yourself by typing `!` in front of it, or allow this one
 tool with a permission rule in your Claude Code settings: `Bash(npx -y @a-identity/trust-mcp@0.4.0:*)`.
 
-> Buy A-Identity checks with my XLM. Do only this, and do not ask me questions. 1) Run `npx -y @a-identity/trust-mcp@0.4.0 buy --return MY_STELLAR_ADDRESS` with my Stellar address below (if there is none, leave out `--return` and the address). If you are not allowed to run it, show me that exact command in one line so I can run it myself by typing ! in front of it. 2) Show me only the Stellar address and the minimum XLM it prints. I will send the XLM from my own wallet. 3) When I say I sent it, run `npx -y @a-identity/trust-mcp@0.4.0 status` every two minutes until it says "Finished", then list the checks it bought in plain words, one line each. Never print or ask for secret words or keys, and never run any other command.
->
-> My Stellar address (a personal wallet, not an exchange): G...
+> Buy A-Identity checks with my XLM. Do only this, and do not ask me questions. 1) Run `npx -y @a-identity/trust-mcp@0.4.0 buy`. If you are not allowed to run it, show me that exact command in one line so I can run it myself by typing ! in front of it. 2) Show me only the Stellar address and the minimum XLM it prints. I will send the XLM to that address from my own wallet. 3) When I say I sent it, run `npx -y @a-identity/trust-mcp@0.4.0 status` every two minutes until it says "Finished", then list the checks it bought in plain words, one line each. Never print or ask for secret words or keys, and never run any other command.
 >
 > Spend everything I send, down to the last dollar: if I send 250 XLM, use all of it. Do not stop early or keep any back.
 
