@@ -19,7 +19,7 @@ import { dirname, join } from 'node:path'
 import * as algosdk from 'algosdk'
 import { TrustGuard, TrustOracleError } from '@a-identity/trust-guard'
 import { algorandPayer, SpendCapError } from '@a-identity/trust-guard/algorand'
-import { loadState, runBack, runIn, runTopUp, type Ctx } from './bridge.js'
+import { loadState, runAlgoToUsdc, runBack, runIn, runTopUp, type Ctx } from './bridge.js'
 import { algorandTxLanded, DEFAULT_ALGOD, readStatus } from './wallet.js'
 import { DEFAULT_BASE_URL } from './server.js'
 
@@ -307,6 +307,12 @@ export async function advanceBuy(ctx: BuyCtx, maxWaitMs = 60_000): Promise<'wait
   }
   if (loadBuy(ctx.buyPath).waitForXlm) return 'waiting'
   const returnTo = loadBuy(ctx.buyPath).returnTo
+  if (!returnTo) {
+    // Nothing goes back, so the ALGO bought for fees is spent as well.
+    const a = await runAlgoToUsdc(ctx, maxWaitMs)
+    if (a === 'waiting') return 'waiting'
+    if (a === 'settled' && (await spend(ctx)) === 'waiting') return 'waiting'
+  }
   if (returnTo && !(await runBack(ctx, returnTo, maxWaitMs))) return 'waiting'
   const st = loadBuy(ctx.buyPath)
   st.finished = new Date((ctx.now ?? Date.now)()).toISOString()
@@ -336,6 +342,7 @@ export async function statusLines(ctx: BuyCtx, workerAlive: boolean): Promise<st
   else if (st.stopped) lines.push(`Stopped: ${st.stopped}`)
   else if (!workerAlive) lines.push('Paused (the computer restarted or the work was stopped). Run the buy command again to continue.')
   else if (br.fundIn.topUps?.some((r) => !r.settled)) lines.push('Your XLM arrived. Exchanging it for USDC on Algorand (a few minutes).')
+  else if (br.fundIn.algoToUsdc && !br.fundIn.algoToUsdc.settled) lines.push('Exchanging the ALGO left over for USDC, to spend it on checks too (a few minutes).')
   else if (st.waitForXlm) lines.push(`Waiting for your XLM at ${ctx.stellar.address}.`)
   else if (br.back) lines.push(`Buying is done. Sending what is left back to ${br.back.to}.`)
   else if (br.fundIn.done) lines.push('Buying checks.')

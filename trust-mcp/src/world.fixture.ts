@@ -11,7 +11,7 @@ import { USDC_ASSET } from './wallet.js'
 export const HORIZON = 'https://horizon.test'
 export const ALGOD = 'https://mainnet-api.test'
 export const ORACLE = 'https://oracle.test'
-export const RATE = { algo: 1.694, usdc: 0.2045, algoBack: 0.565, usdcBack: 4.7 }
+export const RATE = { algo: 1.694, usdc: 0.2045, algoBack: 0.565, usdcBack: 4.7, algoUsdc: 0.126 }
 const MAINNET = 'algorand:wGHE2Pwdvd7S12BL5FaOP20EGYesN73ktiC1qzkkit8='
 
 /** The oracle's prices, as the live Algorand rail sells them. */
@@ -102,6 +102,7 @@ export function world() {
           'xlm-stellar>usdc-algorand': [14.39, RATE.usdc],
           'algo-algorand>xlm-stellar': [24.86, RATE.algoBack],
           'usdc-algorand>xlm-stellar': [3.0, RATE.usdcBack],
+          'algo-algorand>usdc-algorand': [23.24, RATE.algoUsdc],
         }
         const [min, rate] = rates[key]
         return json({ min: String(min), max: '100000', rate: String(rate) })
@@ -123,7 +124,13 @@ export function world() {
         if (!(s as { paid?: boolean }).paid) {
           ;(s as { paid?: boolean }).paid = true
           const out =
-            s.to === 'algo-algorand' ? s.received * RATE.algo : s.to === 'usdc-algorand' ? s.received * RATE.usdc : s.from === 'algo-algorand' ? s.received * RATE.algoBack : s.received * RATE.usdcBack
+            s.to === 'algo-algorand'
+              ? s.received * RATE.algo
+              : s.to === 'usdc-algorand'
+                ? s.received * (s.from === 'algo-algorand' ? RATE.algoUsdc : RATE.usdc)
+                : s.from === 'algo-algorand'
+                  ? s.received * RATE.algoBack
+                  : s.received * RATE.usdcBack
           if (s.to === 'xlm-stellar') xlm.set(s.settle, (xlm.get(s.settle) ?? 0) + out)
           else {
             const a = algo.get(s.settle) ?? { algo: 0, usdc: null }

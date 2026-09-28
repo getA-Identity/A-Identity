@@ -163,7 +163,7 @@ test('the command says where to send XLM, then the background worker buys everyt
   const burner = start.text.match(/\n {2}(G[A-Z2-7]{55})\n/)?.[1]
   assert.ok(burner, start.text)
   assert.match(start.text, /at least 44 XLM/)
-  assert.match(start.text, /npx -y @a-identity\/trust-mcp@0\.4\.3 status/)
+  assert.match(start.text, /npx -y @a-identity\/trust-mcp@0\.4\.4 status/)
   assert.deepEqual(spawned, [['buy', '--worker']])
   assert.equal(loadBuy(env.A_IDENTITY_BUY_STATE).worker?.pid, 4242)
   assert.match((await run('status')).text, /Paused/)
@@ -342,4 +342,20 @@ test('state left without its wallets is set aside, so new wallets are never take
   assert.match(out, /at least 44 XLM/)
   assert.doesNotMatch(out, /at least 15 XLM/)
   assert.equal(loadBuy(env.A_IDENTITY_BUY_STATE).cursor, 0)
+})
+
+test('with nothing going back, the ALGO bought for fees is exchanged for USDC and spent too', async () => {
+  const { ctx, w, lines } = setup()
+  w.xlm.set(ctx.stellar.address, 250)
+  assert.equal(await advanceBuy(ctx, 0), 'done')
+  const paid = loadBuy(ctx.buyPath).purchases.filter((p) => p.status === 'paid')
+  assert.equal(paid.reduce((s, p) => s + p.usd, 0), 50, 'the 47 from the XLM, plus 3 from the ALGO')
+  const left = w.algo.get(ctx.algorand.address)!
+  assert.ok(left.algo >= 0.2 && left.algo < 0.25, `only what holding USDC needs is left: ${left.algo} ALGO`)
+  assert.ok((left.usdc ?? 0) < 1, `and under a dollar: ${left.usdc} USDC`)
+  assert.ok(lines.some((l) => /Exchanging the 26\.\d+ ALGO left over for USDC/.test(l)))
+
+  const payments = w.paid.length
+  assert.equal(await advanceBuy(ctx, 0), 'done')
+  assert.equal(w.paid.length, payments, 'the ALGO is exchanged once, and nothing is paid twice')
 })

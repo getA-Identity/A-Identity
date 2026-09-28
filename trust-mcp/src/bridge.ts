@@ -27,11 +27,13 @@ import { algorandTxLanded, buildTransfer, DEFAULT_ALGOD, optIn, params, readStat
 export const TARGET_ALGO = 26.5
 /** One address check, and a little over for the exchange's spread. */
 export const USDC_FOR_ONE_CHECK = 5.1
+/** ALGO kept above the minimum balance for the few fees the wallet still pays itself. */
+export const ALGO_FEE_ROOM = 0.01
 
 type ShiftRec = { id: string; depositAddress: string; depositMemo: string | null; amount: string; tx?: string; sent?: boolean; settled?: boolean; settleHash?: string | null }
 export type BridgeState = {
   version: 1
-  fundIn: { algo?: ShiftRec; usdc?: ShiftRec; done?: boolean; topUps?: ShiftRec[] }
+  fundIn: { algo?: ShiftRec; usdc?: ShiftRec; done?: boolean; topUps?: ShiftRec[]; algoToUsdc?: ShiftRec }
   back?: { to: string; merge?: { hash?: string; done?: boolean }; usdc?: ShiftRec; algo?: ShiftRec; usdcLeft?: number; done?: boolean }
 }
 
@@ -238,6 +240,35 @@ export async function runTopUp(ctx: Ctx, maxWaitMs = 80_000): Promise<'none' | '
   }
   await sendXlmOnce(ctx, st, rec)
   return (await settled(ctx, st, rec, 'XLM to USDC', deadline)) ? 'settled' : 'waiting'
+}
+
+/**
+ * SideShift will not sell less than about 14 XLM of ALGO, so the way in buys some 26 ALGO where
+ * holding USDC needs 0.2. When nothing is coming back, that ALGO is spent too: everything above
+ * what the wallet must keep goes into USDC on Algorand, once, if it clears SideShift's minimum.
+ */
+export async function runAlgoToUsdc(ctx: Ctx, maxWaitMs = 80_000): Promise<'none' | 'waiting' | 'settled'> {
+  const f = ctx.fetchImpl ?? fetch
+  const algod = ctx.algod ?? DEFAULT_ALGOD
+  const deadline = (ctx.now ?? Date.now)() + maxWaitMs
+  const st = loadState(ctx.statePath)
+  if (!st.fundIn.done || st.back) return 'none'
+  let rec = st.fundIn.algoToUsdc
+  if (rec?.settled) return 'none'
+  if (!rec) {
+    const w = await readStatus(ctx.algorand.address, algod, f)
+    if (!w.usdcOptedIn) return 'none'
+    const spare = w.algo - w.minBalanceAlgo - ALGO_FEE_ROOM
+    const p = await pair('algo-algorand', 'usdc-algorand', f)
+    if (spare < p.min * 1.01) return 'none'
+    const shift = await createShift({ from: 'algo-algorand', to: 'usdc-algorand', settleAddress: ctx.algorand.address, refundAddress: ctx.algorand.address }, f)
+    rec = { id: shift.id, depositAddress: shift.depositAddress, depositMemo: shift.depositMemo, amount: (Math.floor(spare * 1e6) / 1e6).toFixed(6) }
+    st.fundIn.algoToUsdc = rec
+    saveState(ctx.statePath, st)
+    ctx.out(`Exchanging the ${rec.amount} ALGO left over for USDC, to spend it on checks too.`)
+  }
+  await sendAlgorandOnce(ctx, st, rec, { asset: 'algo', micro: Math.round(Number(rec.amount) * 1e6), close: false })
+  return (await settled(ctx, st, rec, 'ALGO to USDC', deadline)) ? 'settled' : 'waiting'
 }
 
 /** Advance the way back to `to`, the user's own Stellar address. Returns true when done. */

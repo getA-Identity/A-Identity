@@ -333,8 +333,9 @@ export async function runCli(
         const plan = planIn(await pair('xlm-stellar', 'algo-algorand', fetchImpl), usdcPair)
         out(`Send as much as you want to spend, at least ${plan.totalXlm} XLM. All of it is spent on A-Identity checks.`)
         out(
-          `About ${Math.ceil(plan.algoXlm + STELLAR_KEEP_XLM)} XLM of it becomes ALGO for network fees` +
-            (st.returnTo ? `, and what is left of that comes back to ${st.returnTo} at the end.` : '.'),
+          st.returnTo
+            ? `About ${Math.ceil(plan.algoXlm + STELLAR_KEEP_XLM)} XLM of it becomes ALGO for network fees, and what is left of that comes back to ${st.returnTo} at the end.`
+            : `About ${Math.ceil(plan.algoXlm)} XLM of it first becomes ALGO, which the Algorand wallet needs to hold USDC; at the end that ALGO is exchanged for USDC and spent too, all but 0.2.`,
         )
       }
       out('Nothing else to do: it keeps working in the background, even if you close this window, as long as this computer stays on.')
