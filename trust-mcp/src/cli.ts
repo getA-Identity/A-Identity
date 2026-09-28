@@ -18,7 +18,7 @@ import { AlgorandPaymentError, algorandPayer, SpendCapError } from '@a-identity/
 import { configFromEnv, DEFAULT_BASE_URL, DEFAULT_MAX_USD_PER_CALL } from './server.js'
 import { createWallet, keyfilePath, loadWallet, nextStep, optIn, readStatus, sweep, DEFAULT_ALGOD } from './wallet.js'
 import { spawn } from 'node:child_process'
-import { closeSync, mkdirSync, openSync } from 'node:fs'
+import { closeSync, existsSync, mkdirSync, openSync, renameSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { createStellarWallet, HORIZON, isStellarAddress, loadStellarWallet, readXlm, STELLAR_KEEP_XLM, stellarKeyfilePath } from './stellar.js'
 import { bridgeStatePath, loadState, planIn, retireFiles, runBack, runIn } from './bridge.js'
@@ -32,7 +32,8 @@ const EXPLORER = 'https://allo.info'
 const HELP = `A-Identity checks, paid in USDC on Algorand from a wallet on this computer.
 
 The easy way, with XLM: one command, one deposit, and every XLM you send is spent on checks.
-  ${CMD} buy [--return <YOUR STELLAR ADDRESS>]   says where to send XLM, then does the rest on its own
+  ${CMD} buy [--new] [--return <YOUR STELLAR ADDRESS>]   says where to send XLM, then does the rest on its own
+                                                        (--new: new wallets, if this computer has someone else's)
   ${CMD} status                                  what it has bought so far, and where it is
 
 Step by step, with USDC:
@@ -213,16 +214,55 @@ export async function runCli(
         if (ctx) for (const l of await statusLines({ ...ctx, out }, true)) out(l)
         return 0
       }
-      const returnTo = sub === '--return' ? arg : undefined
-      if (sub === '--return' && !returnTo) {
+      const flags = argv.slice(1)
+      const at = flags.indexOf('--return')
+      const returnTo = at >= 0 ? flags[at + 1] : undefined
+      if (at >= 0 && (!returnTo || returnTo.startsWith('--'))) {
         out(`Name your own Stellar address: ${CMD} buy --return <YOUR STELLAR ADDRESS>`)
         return 1
       }
+      // Everything a round keeps on this computer, moved aside together (never deleted).
+      const answers = join(dirname(buyPath), 'answers')
+      const archive = (files: string[]) => {
+        const stamp = now()
+        retireFiles(files, stamp)
+        if (existsSync(answers)) renameSync(answers, `${answers}.closed-${stamp}`)
+        return stamp
+      }
+
+      if (flags.includes('--new')) {
+        // New wallets for this person, unless that would strand money or a round under way.
+        const aw = loadWallet(path)
+        const sw = loadStellarWallet(spath)
+        const br = loadState(statePath)
+        const underway = Boolean(st.round && !st.finished)
+        if ((aw || sw) && underway) out('A round is already under way on the wallets on this computer; continuing it.')
+        else if (aw || sw) {
+          const exchanging = Boolean((br.fundIn.algo && !br.fundIn.done) || br.fundIn.topUps?.some((r) => !r.settled) || (br.back && !br.back.done))
+          const xlm = sw ? (await readXlm(sw.address, horizon, fetchImpl)).xlm : 0
+          const usdc = aw ? (await readStatus(aw.address, algod, fetchImpl)).usdc : 0
+          if (exchanging || xlm - STELLAR_KEEP_XLM >= 1 || usdc >= 1) {
+            out(
+              `The wallets already on this computer still hold money that was not spent (${xlm} XLM, ${usdc} USDC)` +
+                `${exchanging ? ', or an exchange is under way' : ''}. Run ${CMD} buy without --new to spend it on checks, or ` +
+                `${CMD} stellar return <YOUR STELLAR ADDRESS> to get it back, before starting new wallets.`,
+            )
+            return 1
+          }
+          const stamp = archive([path, spath, statePath, buyPath])
+          out(
+            `Made new wallets. The earlier ones (Algorand ${aw?.address ?? '-'}, Stellar ${sw?.address ?? '-'}) were moved aside, ` +
+              `not deleted: their files in ${dirname(path)} now end in .closed-${stamp}.json, and anything left in them stays there.`,
+          )
+          st = loadBuy(buyPath)
+        }
+      }
+
       const earlier = loadState(statePath)
       if (earlier.back?.done) {
         // A finished return merged the Stellar wallet away: a new round needs a new one. The
         // Algorand wallet stays, with anything left in it.
-        retireFiles([spath, statePath, buyPath])
+        archive([spath, statePath, buyPath])
         st = loadBuy(buyPath)
       } else if (earlier.back && earlier.back.to !== st.returnTo) {
         out(`What is left is on its way to ${earlier.back.to}. Finish that first: ${CMD} stellar return ${earlier.back.to}`)

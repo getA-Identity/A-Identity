@@ -1,11 +1,11 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { mkdtempSync, readdirSync } from 'node:fs'
+import { mkdtempSync, readdirSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import * as algosdk from 'algosdk'
 import { Keypair } from '@stellar/stellar-base'
-import { advanceBuy, itemAt, loadBuy, nextAffordable, ROUND_USD, saveBuy, type BuyCtx } from './buy.js'
+import { advanceBuy, itemAt, loadBuy, nextAffordable, ROUND_USD, saveBuy, statusLines, type BuyCtx } from './buy.js'
 import { runCli } from './cli.js'
 import { loadWallet } from './wallet.js'
 import { loadStellarWallet } from './stellar.js'
@@ -163,7 +163,7 @@ test('the command says where to send XLM, then the background worker buys everyt
   const burner = start.text.match(/\n {2}(G[A-Z2-7]{55})\n/)?.[1]
   assert.ok(burner, start.text)
   assert.match(start.text, /at least 44 XLM/)
-  assert.match(start.text, /npx -y @a-identity\/trust-mcp@0\.4\.1 status/)
+  assert.match(start.text, /npx -y @a-identity\/trust-mcp@0\.4\.2 status/)
   assert.deepEqual(spawned, [['buy', '--worker']])
   assert.equal(loadBuy(env.A_IDENTITY_BUY_STATE).worker?.pid, 4242)
   assert.match((await run('status')).text, /Paused/)
@@ -241,11 +241,57 @@ test('on wallets an earlier stellar run funded, buy waits for the new XLM instea
   assert.match(start, /already holds 1\.07 USDC from before; that is spent on checks too/)
   assert.match(await run('status'), /^Waiting for your XLM at G/, 'not Finished before any XLM was sent')
 
-  await run('buy', '--worker')
+  const log = await run('buy', '--worker')
   assert.ok(sent, 'the worker waited for the XLM instead of finishing')
+  assert.doesNotMatch(log, /Ready:/, 'waiting on funded wallets does not log the same line on every pass')
   const status = await run('status')
   assert.match(status, /^Finished\./)
   assert.ok(w.paid.length >= 9, `the old USDC and the new XLM were both spent: ${w.paid.length} checks`)
   assert.equal(w.paid[0].tool, 'verify_agent', 'the 1.07 USDC left from before went first, on a 1 USDC check')
   assert.ok((w.algo.get(wallets().algorand)?.usdc ?? 0) < 1)
+})
+
+test('buy --new moves wallets someone used before aside and starts this person on new ones', async () => {
+  const { w, run, calls, wallets, env } = cliWorld({ isAlive: () => false })
+  const first = (await run('buy')).match(/\n {2}(G[A-Z2-7]{55})\n/)![1]
+  w.xlm.set(first, 60)
+  const worker = await run('buy', '--worker')
+  assert.equal((worker.match(/Ready:/g) ?? []).length, 1, 'the way in reports Ready once')
+  const before = wallets()
+
+  const fresh = await run('buy', '--new')
+  assert.match(fresh, /Made new wallets\. The earlier ones .* were moved aside, not deleted/)
+  const after = wallets()
+  assert.notEqual(after.stellar, before.stellar)
+  assert.notEqual(after.algorand, before.algorand)
+  assert.match(fresh, new RegExp(`\\n {2}${after.stellar}\\n`), 'the address shown is the new one')
+  assert.match(fresh, /at least 44 XLM/, 'a fresh start, with its own ALGO for fees')
+  assert.equal(calls.spawns, 2)
+  const kept = readdirSync(join(env.A_IDENTITY_KEYFILE, '..')).filter((f) => f.includes('.closed-'))
+  assert.equal(kept.length, 5, `the old wallet files, states and answers were kept: ${kept.join(', ')}`)
+  assert.deepEqual(loadBuy(env.A_IDENTITY_BUY_STATE).purchases, [], 'the new person starts with an empty list')
+
+  // Run again during the new round, --new continues it instead of starting yet another.
+  const again = await run('buy', '--new')
+  assert.match(again, /already under way/)
+  assert.equal(wallets().stellar, after.stellar)
+})
+
+test('buy --new refuses to set aside wallets that still hold unspent money', async () => {
+  const { w, run, calls, wallets } = cliWorld({ isAlive: () => false })
+  await run('stellar', 'start')
+  w.xlm.set(wallets().stellar, 30)
+  const before = wallets()
+  const refused = await run('buy', '--new')
+  assert.match(refused, /still hold money that was not spent \(30 XLM/)
+  assert.deepEqual(wallets(), before)
+  assert.equal(calls.spawns, 0)
+})
+
+test('status says the XLM is being exchanged while a later deposit turns into USDC', async () => {
+  const { ctx } = setup()
+  saveBuy(ctx.buyPath, { version: 1, cursor: 0, skip: [], purchases: [], round: 1, waitForXlm: true })
+  writeFileSync(ctx.statePath, JSON.stringify({ version: 1, fundIn: { done: true, topUps: [{ id: 's1', depositAddress: 'G', depositMemo: '1', amount: '240', sent: true }] } }))
+  const lines = await statusLines(ctx, true)
+  assert.match(lines[0], /Your XLM arrived\. Exchanging it for USDC/)
 })

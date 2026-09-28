@@ -291,7 +291,8 @@ async function spend(ctx: BuyCtx): Promise<'waiting' | 'spent'> {
  */
 export async function advanceBuy(ctx: BuyCtx, maxWaitMs = 60_000): Promise<'waiting' | 'done'> {
   if (loadBuy(ctx.buyPath).finished) return 'done'
-  if (!(await runIn(ctx, maxWaitMs))) return 'waiting'
+  // Once the way in is done there is nothing for runIn to say; calling it would only log noise.
+  if (!loadState(ctx.statePath).fundIn.done && !(await runIn(ctx, maxWaitMs))) return 'waiting'
   for (;;) {
     if ((await spend(ctx)) === 'waiting') return 'waiting'
     const t = await runTopUp(ctx, maxWaitMs)
@@ -333,6 +334,7 @@ export async function statusLines(ctx: BuyCtx, workerAlive: boolean): Promise<st
   if (st.finished) lines.push('Finished.')
   else if (st.stopped) lines.push(`Stopped: ${st.stopped}`)
   else if (!workerAlive) lines.push('Paused (the computer restarted or the work was stopped). Run the buy command again to continue.')
+  else if (br.fundIn.topUps?.some((r) => !r.settled)) lines.push('Your XLM arrived. Exchanging it for USDC on Algorand (a few minutes).')
   else if (st.waitForXlm) lines.push(`Waiting for your XLM at ${ctx.stellar.address}.`)
   else if (br.back) lines.push(`Buying is done. Sending what is left back to ${br.back.to}.`)
   else if (br.fundIn.done) lines.push('Buying checks.')
