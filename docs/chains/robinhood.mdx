@@ -100,6 +100,7 @@ const owner = await client.readContract({
 | IdentityRegistry | mainnet | [`0x8004a169fb4a3325136eb29fa0ceb6d2e539a432`](https://robinhoodchain.blockscout.com/address/0x8004a169fb4a3325136eb29fa0ceb6d2e539a432) |
 | ReputationRegistry | mainnet | [`0x8004BAa17C55a88189AE136b182e5fdA19dE9b63`](https://robinhoodchain.blockscout.com/address/0x8004BAa17C55a88189AE136b182e5fdA19dE9b63) |
 | USDG (settlement) | mainnet | [`0x5fc5360D0400a0Fd4f2af552ADD042D716F1d168`](https://robinhoodchain.blockscout.com/address/0x5fc5360D0400a0Fd4f2af552ADD042D716F1d168) |
+| AgentSpendPolicy vault (ours) | mainnet | [`0x05a6aad7124c2f1c7b82b03e0bbe3867bc500073`](https://robinhoodchain.blockscout.com/address/0x05a6aad7124c2f1c7b82b03e0bbe3867bc500073) |
 | IdentityRegistry | testnet | [`0x8004A818BFB912233c491871b3d84c89A494BD9e`](https://explorer.testnet.chain.robinhood.com/address/0x8004A818BFB912233c491871b3d84c89A494BD9e) |
 | ReputationRegistry | testnet | [`0x8004B663056A597Dffe9eCcC1965A193B7388713`](https://explorer.testnet.chain.robinhood.com/address/0x8004B663056A597Dffe9eCcC1965A193B7388713) |
 | ValidationRegistry | testnet | [`0x8004Cb1BF31DAf7788923b405b754f57acEB4272`](https://explorer.testnet.chain.robinhood.com/address/0x8004Cb1BF31DAf7788923b405b754f57acEB4272) |
@@ -113,6 +114,17 @@ which reproduces the same address rather than forking a new one.
 There is **no ValidationRegistry in the mainnet family**, mirroring Celo and X Layer, so
 a KYA result cannot be anchored on-chain there. It is still verified off-chain and
 recorded; we simply do not claim an anchor that does not exist.
+
+The **AgentSpendPolicy vault** is ours: 1 USDG a day, 0.25 USDG per payment for the agent
+key, and anything above is refused with the contract's typed `AboveAutoApprove` error and
+left to the owner. Since 2026-10-01 the agent key (`0x8C8D...3349`) is a separate wallet
+from the owner key (`0xd305...ed36`), and its session key runs to 2026-11-15. The owner is
+still a server-held key; the transactions are listed on
+[/proof/robinhood](https://a-identity.xyz/proof/robinhood).
+
+Before an agent pays here, [/check/robinhood](https://a-identity.xyz/check/robinhood)
+(or `GET /api/robinhood/check?q=...`, or the MCP tool `evm_pay_check`) answers whether a
+token is the real USDG and whether the payee holds an ERC-8004 agent id.
 
 ## The x402 facilitator
 
@@ -159,8 +171,8 @@ curl -s https://a-identity-backend.onrender.com/api/facilitator/proof
 
 ## Where this chain fits
 
-Arc is where escrow and the spend vault live. X Layer is where the trust oracle is
-listed. Celo is where x402 settles through a first-party facilitator someone else runs.
-Robinhood Chain is the one where we had to build the rail ourselves, and it is the chain
-whose users are agents trading real-world assets, which is exactly the population that
-needs a policy layer in front of it.
+Arc is where escrow lives and where the spend vault first ran. Celo is where x402 settles
+through a facilitator someone else runs. Robinhood Chain is where an agent pays in USDG
+among hundreds of tokens that copy its name, so it is where checking the dollar before
+paying matters most, and it is the chain whose users are agents trading real-world assets,
+which is exactly the population that needs a policy layer in front of it.

@@ -82,10 +82,18 @@ const owner = await client.readContract({
 | IdentityRegistry | [`0x8004a169fb4a3325136eb29fa0ceb6d2e539a432`](https://arbiscan.io/address/0x8004a169fb4a3325136eb29fa0ceb6d2e539a432) |
 | ReputationRegistry | [`0x8004BAa17C55a88189AE136b182e5fdA19dE9b63`](https://arbiscan.io/address/0x8004BAa17C55a88189AE136b182e5fdA19dE9b63) |
 | USDC (settlement) | [`0xaf88d065e77c8cC2239327C5EDb3A432268e5831`](https://arbiscan.io/address/0xaf88d065e77c8cC2239327C5EDb3A432268e5831) |
+| AgentSpendPolicy vault (ours) | [`0xac6c5c9af62bc482ffeef882a6ac4678513be6db`](https://arbiscan.io/address/0xac6c5c9af62bc482ffeef882a6ac4678513be6db) |
 
-We deployed none of these. The registries were already live and registering on them is
-permissionless; what is ours is agent #1259 and the rail on top. There is no
-ValidationRegistry in this family, so a KYA result cannot be anchored on-chain here.
+We deployed none of these except the vault. The registries were already live and
+registering on them is permissionless; what is ours is agent #1259, the vault and the rail
+on top. There is no ValidationRegistry in this family, so a KYA result cannot be anchored
+on-chain here.
+
+The vault caps the agent key at 1 USDC a day and 0.25 USDC per payment. Since 2026-10-01
+the agent key is a separate wallet from the owner key and its session key runs to
+2026-11-15. Before paying here, [/check/arbitrum](https://a-identity.xyz/check/arbitrum)
+answers whether a token is native Circle USDC and whether the payee is a registered agent;
+the chain itself confirms it is an Arbitrum chain through the ArbSys precompile.
 
 ## The price, and where it comes from
 
@@ -112,6 +120,6 @@ curl -s https://a-identity-backend.onrender.com/api/proof/arbitrum
 
 It is the chain where our rail can be compared. [Robinhood Chain](/chains/robinhood) is an
 Arbitrum L2 and is where the same engine settles in USDG, Paxos's dollar, rather than USDC;
-[Arc](/chains/arc) holds escrow and the spend vault; [Celo](/chains/celo) settles through
-someone else's facilitator. Being live on Robinhood Chain and being live on Arbitrum One
+[Arc](/chains/arc) holds escrow; [Celo](/chains/celo) settles through someone else's
+facilitator. Being live on Robinhood Chain and being live on Arbitrum One
 are two different statements, and both are true.
