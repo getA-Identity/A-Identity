@@ -29,8 +29,8 @@
   "provenance": {
     "entry": "stellar-testnet",
     "kind": "settlement",
-    "label": "The sponsored flow ends where the demo does: one payment allowed, one refused",
-    "note": "0.05 USDC to the allowed payee, settled. The same call to the payee the owner had revoked at ledger 4764144 answered contract error #3, PayeeNotAllowed, in simulation, so it has no hash of its own. That pairing, a settlement and a typed refusal under a policy a passkey set, is the whole 90-second demonstration."
+    "label": "Rehearsal, sponsored: one payment allowed, one refused",
+    "note": "0.05 USDC to the allowed payee, paid by our operator, settled. The same call to the payee the owner had revoked at ledger 4764144 answered contract error #3, PayeeNotAllowed, in simulation, so it has no hash of its own. That pairing, a settlement and a typed refusal under a policy an owner call set, is the 90-second demonstration the /stellar page rehearses."
   },
   "decoded": {
     "hash": "8590694194da891361734f541042870e1a297f829a0fc701c82b988c34a23410",

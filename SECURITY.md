@@ -246,9 +246,11 @@ of 2026-09-15.
   flight. Availability is worth a retry; a wrong answer about whether money moved is not.
 
 - **Audit decisions on the record.** D-2, D-3 and D-4 were decided on 2026-09-15 on the
-  maintainer's instruction and are written up under `audit/`. Two hardening items, A3-02
-  and A4-01, ship only with a redeploy rather than with a config change, so they land on
-  the next one.
+  maintainer's instruction and are written up under `audit/`. A3-02 is fixed in the v0.1.1
+  contract source (2026-10-01) and reaches each vault when a v0.1.1 vault replaces it; its
+  code entry is on testnet. A4-01 (error renumbering) and D-2 option C (allowlist as a
+  constructor argument) are deferred past v0.1.1, because each changes the contract
+  interface.
 
 ## Reporting
 

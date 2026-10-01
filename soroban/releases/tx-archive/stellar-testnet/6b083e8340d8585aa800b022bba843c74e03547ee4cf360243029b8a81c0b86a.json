@@ -28,9 +28,9 @@
   "deliverable": null,
   "provenance": {
     "entry": "stellar-testnet",
-    "kind": "settlement",
-    "label": "A human overrides a DENY, and the override is itself on chain",
-    "note": "risk_check answered DENY for this payee, correctly: the agent id it was given did not resolve to an on-chain identity, so there was no reputation or tenure to score. The vault owner is a human and chose to allow it anyway, which the page offers as its own button. Worth stating plainly because it cuts against the pitch: the guardrail is a bound on the AGENT, not on the owner, and an owner who overrides it leaves an owner-signed transaction behind rather than a silent exception."
+    "kind": "owner-action",
+    "label": "Rehearsal, sponsored: the owner overrides a DENY, and the override is itself on chain",
+    "note": "risk_check answered DENY for this payee, correctly: the agent id it was given did not resolve to an on-chain identity, so there was no reputation or tenure to score. The owner allowed it anyway, which the /stellar page offers as its own button; in this run the \"owner\" pressing it was our own script with a software key. Worth stating plainly because it cuts against the pitch: the guardrail is a bound on the AGENT, not on the owner, and an owner who overrides it leaves an owner-signed transaction behind rather than a silent exception."
   },
   "decoded": {
     "hash": "6b083e8340d8585aa800b022bba843c74e03547ee4cf360243029b8a81c0b86a",

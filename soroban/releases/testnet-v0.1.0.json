@@ -35,7 +35,15 @@
   "artifacts": [
     {
       "kind": "deploy",
-      "label": "AgentSpendPolicy uploaded and instantiated",
+      "label": "AgentSpendPolicy wasm uploaded (UploadContractWasm)",
+      "txHash": "242c4ec6291e31348c0dc6a92ab016aa042ca467eb522abc287d69e6a9e9e644",
+      "ledger": 4147601,
+      "successful": true,
+      "note": "Added 2026-10-02: this receipt originally recorded only the create below. Horizon shows the upload one ledger earlier, sourced by the owner account GBLHNAL5..., at 2026-08-15T02:05:41Z."
+    },
+    {
+      "kind": "deploy",
+      "label": "AgentSpendPolicy instantiated (the create; the upload is the row above)",
       "txHash": "718f050b962b6e645d8cca5cc053d9f1c11a7264d3ddc266f7e36661bd82c68c",
       "ledger": 4147602,
       "successful": true

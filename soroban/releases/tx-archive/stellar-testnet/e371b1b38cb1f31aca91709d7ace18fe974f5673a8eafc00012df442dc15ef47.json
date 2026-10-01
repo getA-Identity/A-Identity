@@ -28,9 +28,9 @@
   "deliverable": null,
   "provenance": {
     "entry": "stellar-testnet",
-    "kind": "settlement",
-    "label": "The passkey allowlists a payee, which is what a KYA ALLOW writes",
-    "note": "The on-chain allowlist is binary and the KYA verdict has three states, so the mapping is stated rather than implied: ALLOW writes set_allowed(payee, true), WARN is a server-side flag that writes nothing on chain, and DENY writes set_allowed(payee, false). WARN never reaches the ledger, and nothing here should be read as if it did."
+    "kind": "owner-action",
+    "label": "Rehearsal: the software key allowlists a payee, which is what a KYA ALLOW writes",
+    "note": "Signed by the same software P-256 key, fee paid by our deployer. The on-chain allowlist is binary and the KYA verdict has three states, so the mapping is stated rather than implied: ALLOW writes set_allowed(payee, true), WARN is a server-side flag that writes nothing on chain, and DENY writes set_allowed(payee, false). WARN never reaches the ledger, and nothing here should be read as if it did."
   },
   "decoded": {
     "hash": "e371b1b38cb1f31aca91709d7ace18fe974f5673a8eafc00012df442dc15ef47",

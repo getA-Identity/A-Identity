@@ -28,9 +28,9 @@
   "deliverable": null,
   "provenance": {
     "entry": "stellar-testnet",
-    "kind": "settlement",
+    "kind": "owner-action",
     "label": "The owner freezes the vault, and the agent stops",
-    "note": "The kill switch, exercised rather than described. With the vault frozen the operator's next payment was refused with error #1, Frozen. That refusal has no hash of its own, for the reason every Soroban refusal here has none: the contract answers during simulation and nothing is submitted."
+    "note": "Signed by the owner account GBLHNAL5..., whose key is ours, in a local CLI keystore: this vault was never meant to show an owner we do not hold. The kill switch, exercised rather than described. With the vault frozen the operator's next payment was refused with error #1, Frozen. That refusal has no hash of its own, for the reason every Soroban refusal here has none: the contract answers during simulation and nothing is submitted."
   },
   "decoded": {
     "hash": "fd0fb958923c5e5e70bedae6451cc9a492b250d3cec3750313814b7e4ccdf117",

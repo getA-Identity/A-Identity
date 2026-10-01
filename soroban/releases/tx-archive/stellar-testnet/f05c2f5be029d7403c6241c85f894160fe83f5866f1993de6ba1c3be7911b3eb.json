@@ -28,7 +28,7 @@
   "deliverable": null,
   "provenance": {
     "entry": "stellar-testnet",
-    "kind": "settlement",
+    "kind": "owner-action",
     "label": "The owner overrides: a payment past the freeze AND past the allowlist",
     "note": "owner_pay to an account that is NOT on the allowlist while the vault is frozen. It settles, because the human path is meant to work exactly when the agent path does not. It was still CHARGED to the daily cap, which is the Solidity original's behaviour ported deliberately. Note the exact claim, because an earlier version of this note overstated it: owner_pay increments the day accumulator, but it is not LIMITED by the cap. `check_owner_pay` in policy.rs runs the amount, arithmetic and balance guards and no cap comparison, so the override bypasses the budget as well as the gates. What it does not bypass is the accounting: the outflow is recorded."
   },

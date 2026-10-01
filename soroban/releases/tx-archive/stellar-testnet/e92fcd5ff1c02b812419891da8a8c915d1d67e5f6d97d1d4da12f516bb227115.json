@@ -28,7 +28,7 @@
   "deliverable": null,
   "provenance": {
     "entry": "stellar-testnet",
-    "kind": "settlement",
+    "kind": "owner-action",
     "label": "The owner unfreezes, and the agent spends again",
     "note": "The other half of a kill switch is that it turns back off. A freeze you cannot lift is a loss, not a control."
   },

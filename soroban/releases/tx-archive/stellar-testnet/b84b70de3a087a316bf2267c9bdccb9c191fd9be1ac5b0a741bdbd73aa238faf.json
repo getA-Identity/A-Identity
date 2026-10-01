@@ -29,7 +29,7 @@
   "provenance": {
     "entry": "stellar-testnet",
     "kind": "funding",
-    "label": "3 USDC into the passkey vault, through the SAC",
+    "label": "Rehearsal: 3 USDC into the passkey vault, through the SAC",
     "note": "A plain SEP-41 transfer into contract storage, so this vault needs no trustline either. Sent from the older vault's owner account, which is the only role these two deployments share."
   },
   "decoded": {

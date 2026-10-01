@@ -28,7 +28,7 @@
   "deliverable": null,
   "provenance": {
     "entry": "stellar",
-    "kind": "settlement",
+    "kind": "owner-action",
     "label": "The owner overrides a freeze and pays anyway",
     "note": "owner_pay while the vault was frozen. It settles, because the human path is meant to work exactly when the agent path does not, and its Paid event carries by_owner:true. It was still CHARGED to the daily cap, but note what that does and does not mean: owner_pay increments the day accumulator and is NOT limited by it. `check_owner_pay` in policy.rs has no cap comparison. The override bypasses the budget as well as the gates; what it does not bypass is the accounting. An earlier version of this note said the budget still bound it, which was wrong. The freeze went on at ledger 64103526 (c003e3fed6d39d820da51ea281b6d17fc910961bee88163ef8fb6fa084e059cf) and came off at 64103532 (8bccb734a624cb6165cdd74da5c2d196c3b67dd8a0ed92e3435df1ffd2ae9f9a), because a freeze you cannot lift is a loss rather than a control."
   },

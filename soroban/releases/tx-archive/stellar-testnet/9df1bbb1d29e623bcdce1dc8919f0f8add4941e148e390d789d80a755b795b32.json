@@ -29,8 +29,8 @@
   "provenance": {
     "entry": "stellar-testnet",
     "kind": "deploy",
-    "label": "The same flow again, with the fee sponsored: a smart account nobody paid gas for",
-    "note": "The artifacts above were paid by a dedicated testnet key over direct RPC, which proved the contract path and not the path a visitor takes. This one is the visitor's: the smart-account kit posted { func, auth } to our own relay, which decoded the XDR, refused everything outside the three shapes it allows, and forwarded the rest to OpenZeppelin Channels, where a channel account supplied the source, the sequence number and the fee. The person holding the passkey had no XLM and no account."
+    "label": "Rehearsal, sponsored: a smart account deployed with its fee paid by OpenZeppelin Channels",
+    "note": "The artifacts above were paid by our own testnet deployer over direct RPC, which proved the contract path and not the fee path the public /stellar page uses. This run exercised that fee path, and it was OUR run, not a visitor's: our own script drove the smart-account kit, which posted { func, auth } to our relay; the relay decoded the XDR, refused everything outside the three shapes it allows, and forwarded the rest to OpenZeppelin Channels, whose channel account supplied the source and sequence while a Channels account (GCNJB6V5..., read off Horizon as this transaction's fee account) paid the fee. The P-256 key was again a software key in our process."
   },
   "decoded": {
     "hash": "9df1bbb1d29e623bcdce1dc8919f0f8add4941e148e390d789d80a755b795b32",

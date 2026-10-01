@@ -29,8 +29,8 @@
   "provenance": {
     "entry": "stellar-testnet",
     "kind": "deploy",
-    "label": "A second spend vault, owned by that smart account from its first ledger",
-    "note": "The same wasm 155eb31c..., instantiated against the existing code entry with no upload, with the smart account as owner and our usual testnet operator as operator. The daily cap is 5 USDC and the per-payment ceiling 1 USDC. The vault above keeps its plain account owner, because there is no `set_owner` to move it."
+    "label": "Rehearsal: a second spend vault, owned by that smart account from its first ledger",
+    "note": "The same wasm 155eb31c..., instantiated against the existing code entry with no upload, with the smart account as owner and our usual testnet operator as operator, which also paid the fee. The daily cap is 5 USDC and the per-payment ceiling 1 USDC. The vault above keeps its plain account owner, because there is no `set_owner` to move it."
   },
   "decoded": {
     "hash": "ccac0b30612a216deea7d84035cac3e3acbb5884c827f60065ed33ff61729fd2",

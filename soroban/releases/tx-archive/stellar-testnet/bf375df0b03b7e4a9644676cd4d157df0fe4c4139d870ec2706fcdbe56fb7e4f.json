@@ -29,8 +29,8 @@
   "provenance": {
     "entry": "stellar-testnet",
     "kind": "settlement",
-    "label": "The agent pays an allowed payee under a policy a passkey set",
-    "note": "0.5 USDC, inside the 1 USDC ceiling and the 5 USDC daily cap, to the payee the passkey allowed. The vault went to 2.5 USDC and spent_today to 0.5. The human held a passkey and never a seed phrase; the agent held an operator key that can spend only inside these limits."
+    "label": "Rehearsal: the agent pays an allowed payee under a policy the software key set",
+    "note": "0.5 USDC, inside the 1 USDC ceiling and the 5 USDC daily cap, to the payee the owner allowed. The vault went to 2.5 USDC and spent_today to 0.5. The operator key that paid is ours and can spend only inside these limits."
   },
   "decoded": {
     "hash": "bf375df0b03b7e4a9644676cd4d157df0fe4c4139d870ec2706fcdbe56fb7e4f",

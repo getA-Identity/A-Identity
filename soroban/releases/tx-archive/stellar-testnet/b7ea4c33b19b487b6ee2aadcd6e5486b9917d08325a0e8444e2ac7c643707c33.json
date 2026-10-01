@@ -28,9 +28,9 @@
   "deliverable": null,
   "provenance": {
     "entry": "stellar-testnet",
-    "kind": "settlement",
-    "label": "The owner allows an untrusted payee, on purpose, to arm the race",
-    "note": "The payee here is a fresh account nobody has vouched for. Asked to pay it before this, the vault refused in simulation with error #3 and no transaction was ever created, which is the normal and unlinkable shape of a Soroban refusal. Allowing it is step one of forcing a refusal that a reviewer can open."
+    "kind": "owner-action",
+    "label": "Rehearsal: the owner allows an untrusted payee, on purpose, to arm the race",
+    "note": "Signed by the software P-256 key, fee paid by our deployer. The payee here is a fresh account nobody has vouched for. Asked to pay it before this, the vault refused in simulation with error #3 and no transaction was ever created, which is the normal and unlinkable shape of a Soroban refusal. Allowing it is step one of forcing a refusal that a reviewer can open."
   },
   "decoded": {
     "hash": "b7ea4c33b19b487b6ee2aadcd6e5486b9917d08325a0e8444e2ac7c643707c33",

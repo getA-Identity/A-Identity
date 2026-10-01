@@ -90,5 +90,5 @@ Both forms are idempotent: a re-run keeps the existing caption and deliverable u
 ones are given, keeps the first `archivedAt`, and never drops a meta an earlier run
 captured. The script is read-only against the network: it signs and submits nothing.
 
-As of 2026-10-02 the backfill holds 41 transactions (17 pubnet, 24 testnet), all with
+As of 2026-10-02 the archive holds 45 transactions (17 pubnet, 28 testnet), all with
 result meta.

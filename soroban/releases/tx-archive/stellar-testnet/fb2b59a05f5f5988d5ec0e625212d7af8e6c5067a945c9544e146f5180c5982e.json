@@ -28,9 +28,9 @@
   "deliverable": null,
   "provenance": {
     "entry": "stellar-testnet",
-    "kind": "settlement",
-    "label": "A passkey sets its vault policy without holding a single stroop",
-    "note": "set_policy on a second vault (CCV2MMK4WFJJVYITOWAH6Z3OW5RW7MYOYB3WGOZJ54NEL4PIJHV3KA7T), signed by the passkey and sponsored through the same relay. This is the claim the public /stellar page rests on: bounded authority set by someone who never funded an account."
+    "kind": "owner-action",
+    "label": "Rehearsal, sponsored: set_policy signed by a software key, fee paid by Channels",
+    "note": "set_policy on a second vault (CCV2MMK4WFJJVYITOWAH6Z3OW5RW7MYOYB3WGOZJ54NEL4PIJHV3KA7T), sponsored through the same relay. What this shows is that an owner call can land with the fee paid by a third party and no XLM in the owner's hands. What it does not show is a person holding the key: the signer was a software P-256 key in our own run."
   },
   "decoded": {
     "hash": "fb2b59a05f5f5988d5ec0e625212d7af8e6c5067a945c9544e146f5180c5982e",

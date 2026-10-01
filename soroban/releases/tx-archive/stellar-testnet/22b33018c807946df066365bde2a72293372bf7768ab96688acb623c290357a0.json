@@ -34,7 +34,7 @@
   "provenance": {
     "entry": "stellar-testnet",
     "kind": "settlement",
-    "label": "The held payment lands and the contract refuses it on chain",
+    "label": "Rehearsal: the held payment lands and the contract refuses it on chain",
     "note": "Included in the ledger and refused by the contract: Horizon reports it unsuccessful with the fee charged, and the result carries Error(Contract, #3), PayeeNotAllowed. spent_today stayed at 0.5 USDC and is_allowed read false afterwards, so the revoke cost the agent its fee and nothing else. This is the one refusal on this network with a hash a reviewer can open, and it exists only because the policy was tightened between build and apply."
   },
   "decoded": {

@@ -28,7 +28,7 @@
   "deliverable": null,
   "provenance": {
     "entry": "stellar",
-    "kind": "deploy",
+    "kind": "owner-action",
     "label": "The kill switch, thrown on mainnet",
     "note": "set_frozen(true), event FrozenSet. With the vault frozen the operator's next payment was refused with error 1, Frozen, and that refusal has no hash of its own for the reason every Soroban refusal here has none. Lifted again at ledger 64103532 by 8bccb734a624cb6165cdd74da5c2d196c3b67dd8a0ed92e3435df1ffd2ae9f9a, because the other half of a kill switch is that it turns back off: a freeze you cannot lift is a loss rather than a control."
   },

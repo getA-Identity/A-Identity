@@ -966,12 +966,42 @@ export const PROVENANCE: ChainProvenance[] = [
         deliverable: 'rehearsal',
         note: '0.05 USDC to the allowed payee, paid by our operator, settled. The same call to the payee the owner had revoked at ledger 4764144 answered contract error #3, PayeeNotAllowed, in simulation, so it has no hash of its own. That pairing, a settlement and a typed refusal under a policy an owner call set, is the 90-second demonstration the /stellar page rehearses.',
       },
+      {
+        kind: 'deploy',
+        label: 'The v0.1.1 vault code, uploaded: the A3-02 fix every SoW 2 vault runs',
+        txHash: '09d041ab3c0dbae95b902b0c22be8f6587f43542798701db98a09df948119e02',
+        onChain: 'stellar-testnet',
+        blockNumber: 4974389,
+        date: '2026-10-01',
+        deliverable: 'SOW2-D2',
+        note: 'UploadContractWasm for sha256 353e4264..., 11605 bytes, the v0.1.1 build in which settle checks the amount before the payee (finding A3-02), sourced by our deployer GDNRET2G.... Uploading code creates no vault: the D2 and D3 vaults are instantiated against this code entry, and the flagship testnet vault stays on v0.1.0 because a vault cannot change its code.',
+      },
+      {
+        kind: 'deploy',
+        label: 'Our WebAuthn verifier instance, OpenZeppelin v0.7.2 code',
+        txHash: '8c6894a8bc0ee1aa8168a49f1de0c4dbdc7f7bf3e86b731277754b81d8242005',
+        onChain: 'stellar-testnet',
+        blockNumber: 4974910,
+        date: '2026-10-01',
+        deliverable: 'SOW2-D3',
+        note: 'Instance CABPDJH4... of wasm e63a030d..., which we built from OpenZeppelin/stellar-contracts v0.7.2 (soroban/third-party/openzeppelin-smart-account). It is the verifier every D3 passkey signature passes through. The code is OpenZeppelin\'s and was already on testnet; this instance is ours, with a salt derived from the source commit.',
+      },
+      {
+        kind: 'deploy',
+        label: 'Our Ed25519 verifier instance, OpenZeppelin v0.7.2 code',
+        txHash: '33642444e71dbda544e61e728019ac728d10a38f9ebfce65ed955bf29fb06a4b',
+        onChain: 'stellar-testnet',
+        blockNumber: 4974913,
+        date: '2026-10-01',
+        deliverable: 'SOW2-D3',
+        note: 'Instance CCKPFIAA... of wasm 60e8798d..., built the same way. The smart-account kit requires an Ed25519 verifier in its configuration; a D3 passkey wallet has no Ed25519 signer, and the vault deploy refuses an owner account that carries one.',
+      },
     ],
     // Every address below is copied from soroban/releases/testnet-v0.1.0.json or
     // testnet-passkey-owner-2026-09-19.json, and each publishedAt is the day that receipt
-    // was cut. Two accounts the 2026-09-19 sponsored run touched are deliberately absent,
-    // the OpenZeppelin Channels fee-bump account and the smart-account kit's public
-    // deployer, because no receipt of ours records their full address yet.
+    // was cut. The smart-account kit's public deployer, which the 2026-09-19 sponsored run
+    // also touched, is deliberately absent, because no receipt of ours records its full
+    // address yet.
     accounts: [
       {
         role: 'Operator of the flagship testnet vault CAIL6ECR..., and the x402 testnet fee payer',
@@ -997,8 +1027,17 @@ export const PROVENANCE: ChainProvenance[] = [
         network: 'stellar-testnet',
         custody: 'ours: local CLI keystore',
         usedFor:
-          'Paid the fee for the rehearsal smart account deploy and for every software-key owner call in the first 2026-09-19 run, over direct RPC. It holds no vault role and cannot authorize an owner call; it only sources and pays for transactions.',
+          'Paid the fee for the rehearsal smart account deploy and for every software-key owner call in the first 2026-09-19 run, over direct RPC. On 2026-10-01 it uploaded the v0.1.1 vault code and deployed our own OpenZeppelin verifier instances. It holds no vault role and cannot authorize an owner call; it only sources and pays for transactions.',
         publishedAt: '2026-09-19',
+      },
+      {
+        role: 'OpenZeppelin Channels fee-bump account in the 2026-09-19 sponsored rehearsal',
+        address: 'GCNJB6V5YIODDSSCWXZ2VOKMRPRVZ2V723RRQS6STXE6NWTGVOJY35CN',
+        network: 'stellar-testnet',
+        custody: 'third party: OpenZeppelin Channels',
+        usedFor:
+          'Fee-bumped the three owner-side transactions of the sponsored rehearsal run, relayed through our endpoint with our API key. We do not hold its key. Read off Horizon as the fee_account of those transactions and recorded in soroban/releases/testnet-passkey-owner-2026-09-19.json.',
+        publishedAt: '2026-10-02',
       },
     ],
     caveats: [
@@ -1565,9 +1604,9 @@ export const STELLAR_SOW2: Sow2Evidence = {
       status: 'pending',
       date: null,
       caption:
-        'Nothing to show yet. What will appear here: a testnet vault whose owner key was generated inside a browser wallet, then a freeze or policy change and a withdraw to the owner, each a transaction the owner account sources, pays for and signs whole, with its date, hash and explorer link. The vault and its owner address will be published in the accounts table below BEFORE the first owner action, so the order can be checked.',
+        'The fixed vault code is on testnet (below); the vault itself is not deployed yet. What will appear here: a testnet vault whose owner key was generated inside a browser wallet, then a freeze or policy change and a withdraw to the owner, each a transaction the owner account sources, pays for and signs whole, with its date, hash and explorer link. The vault and its owner address will be published in the accounts table below BEFORE the first owner action, so the order can be checked.',
       links: [],
-      artifacts: [],
+      artifacts: ['09d041ab3c0dbae95b902b0c22be8f6587f43542798701db98a09df948119e02'],
     },
     {
       id: 'D3',
@@ -1575,9 +1614,9 @@ export const STELLAR_SOW2: Sow2Evidence = {
       status: 'pending',
       date: null,
       caption:
-        'Nothing to show yet. What will appear here: a testnet vault owned by a passkey smart account whose signer is a device authenticator, and an owner action that passkey signed, with its date, hash and explorer link. The smart account address and the vault will be published in the accounts table below BEFORE the passkey signs any owner action. The 2026-09-19 runs further down are a rehearsal with a software key and are not this deliverable.',
-      links: [{ label: 'The passkey vault page', url: '/stellar' }],
-      artifacts: [],
+        'Our own verifier instances of OpenZeppelin\'s audited v0.7.2 code are on testnet (below); no D3 vault exists yet. What will appear here: a testnet vault owned by a passkey smart account whose signer is a device authenticator, and an owner action that passkey signed, with its date, hash and explorer link. The smart account address and the vault will be published in the accounts table below BEFORE the passkey signs any owner action. The 2026-09-19 runs further down are a rehearsal with a software key and are not this deliverable.',
+      links: [{ label: 'The passkey vault page, on testnet', url: '/stellar?network=testnet' }],
+      artifacts: ['8c6894a8bc0ee1aa8168a49f1de0c4dbdc7f7bf3e86b731277754b81d8242005', '33642444e71dbda544e61e728019ac728d10a38f9ebfce65ed955bf29fb06a4b'],
     },
   ],
   trustModel:
@@ -1585,7 +1624,7 @@ export const STELLAR_SOW2: Sow2Evidence = {
   caveats: [
     'The 2026-09-19 passkey runs on testnet are a rehearsal, not SOW 2 D3 evidence. Every owner call in them was signed by a software P-256 key generated inside our own script, and the first run\'s fees were paid by our own deployer key.',
     'Every owner action recorded on this page before SOW 2 was signed by a key we hold. Those artifacts prove the contract enforces its policy; they do not prove an owner outside our systems, which is the point of D2 and D3.',
-    'Two accounts the 2026-09-19 sponsored run touched are not in the accounts table yet: the OpenZeppelin Channels account that fee-bumped it and the smart-account kit\'s public deployer. No receipt of ours records their full address, and this table publishes only addresses a receipt does.',
+    'One account the 2026-09-19 sponsored run touched is not in the accounts table: the smart-account kit\'s public deployer. No receipt of ours records its full address, and this table publishes only addresses a receipt does.',
     'Testnet resets periodically. A D2 or D3 vault is evidence that the flow works on the ledger at the time shown, not a permanent record; the hashes and dates here are what survive a reset.',
     'This section reads from the live backend. A page saved without it, or rendered before the backend answered, shows no evidence rather than stale evidence.',
   ],

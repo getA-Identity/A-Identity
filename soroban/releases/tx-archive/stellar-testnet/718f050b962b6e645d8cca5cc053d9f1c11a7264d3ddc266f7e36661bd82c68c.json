@@ -29,8 +29,8 @@
   "provenance": {
     "entry": "stellar-testnet",
     "kind": "deploy",
-    "label": "The spend policy, deployed",
-    "note": "Upload and instantiate in one transaction. The wasm sha256 is 155eb31c1867254eacbf1b7a4755164d15cc6b6f939644705ab6b8df61579239, recorded in soroban/releases/testnet-v0.1.0.json and confirmed by Stellar Expert as the code this contract carries. The binary itself is deliberately not committed: Rust wasm is not bit-reproducible across machines by default, so shipping one would invite a reproducibility claim we cannot honour. Pull it with `stellar contract fetch` and compare."
+    "label": "The spend policy, instantiated",
+    "note": "The second deploy transaction: CreateContractV2 against the code entry uploaded one ledger earlier, with the five constructor arguments. The wasm sha256 is 155eb31c1867254eacbf1b7a4755164d15cc6b6f939644705ab6b8df61579239, recorded in soroban/releases/testnet-v0.1.0.json and confirmed by Stellar Expert as the code this contract carries. The binary itself is deliberately not committed: Rust wasm is not bit-reproducible across machines by default, so shipping one would invite a reproducibility claim we cannot honour. Pull it with `stellar contract fetch` and compare."
   },
   "decoded": {
     "hash": "718f050b962b6e645d8cca5cc053d9f1c11a7264d3ddc266f7e36661bd82c68c",

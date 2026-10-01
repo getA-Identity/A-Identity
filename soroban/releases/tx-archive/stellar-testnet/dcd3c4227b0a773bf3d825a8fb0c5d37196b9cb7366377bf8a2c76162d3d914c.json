@@ -29,8 +29,8 @@
   "provenance": {
     "entry": "stellar-testnet",
     "kind": "deploy",
-    "label": "A passkey smart account, deployed as an owner that is not a key",
-    "note": "OpenZeppelin's Stellar smart account, deployed through smart-account-kit 0.8.0 with one WebAuthn P-256 signer and no recovery signer. Third-party code, our instance. The passkey in this run was a SOFTWARE P-256 key standing in for a platform authenticator: the same verifier contract, the same WebAuthn signature format of authenticatorData, clientDataJSON and a low-S DER signature. The only difference from a phone or browser passkey is where the private key lives, and it is named here rather than left for a reader to assume."
+    "label": "Rehearsal: a passkey smart account, deployed as an owner that is not a key",
+    "note": "OpenZeppelin's Stellar smart account, deployed through smart-account-kit 0.8.0 with one WebAuthn P-256 signer and no recovery signer. Third-party code, our instance. The \"passkey\" was a SOFTWARE P-256 key generated inside our own script (mcp/scripts/stellar-passkey-proof.mjs), standing in for a platform authenticator: the same verifier contract and the same WebAuthn signature format, but the private key lived in a process of ours, not on anyone's device. Fee paid by our dedicated testnet deployer GDNRET2G... over direct RPC."
   },
   "decoded": {
     "hash": "dcd3c4227b0a773bf3d825a8fb0c5d37196b9cb7366377bf8a2c76162d3d914c",

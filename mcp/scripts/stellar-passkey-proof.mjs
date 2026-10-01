@@ -32,10 +32,9 @@
  *   node scripts/stellar-passkey-proof.mjs --key-name asp-operator --payee G...
  *
  * Prepared-or-executed, like every other write in this repo: with no key it prints what it
- * would do and submits nothing. Testnet only, by a check below (`chain.testnet`). That
- * check's message still says the pubnet constants are absent from the registry; they are
- * recorded now and the /stellar page serves pubnet, and the check stays for a better reason:
- * a software key rehearsing on real money proves nothing a testnet run does not.
+ * would do and submits nothing. Testnet only, by a check below (`chain.testnet`): the pubnet
+ * constants are recorded and the /stellar page serves pubnet, and the check stays because a
+ * software key rehearsing on real money proves nothing a testnet run does not.
  *
  * Nothing here prints, stores or commits credential material. The WebAuthn credential id and
  * its assertions stay in memory for the run and are never written anywhere; what this script
@@ -70,8 +69,8 @@ const chain = getChainById(arg('chain', 'stellar-testnet'))
 if (!chain || chain.ecosystem !== 'stellar') fail('--chain must name a Stellar chain in the registry')
 if (!chain.testnet) {
   fail(
-    'this proof is TESTNET ONLY. The pubnet smart-account constants are deliberately absent from the ' +
-      'registry, and a passkey account holding real money is not something to create from a script.',
+    'this proof is TESTNET ONLY. It signs with a software P-256 key, which proves nothing on real ' +
+      'money that a testnet run does not, and a passkey account holding real money is not something to create from a script.',
   )
 }
 const sa = chain.contracts.smartAccount

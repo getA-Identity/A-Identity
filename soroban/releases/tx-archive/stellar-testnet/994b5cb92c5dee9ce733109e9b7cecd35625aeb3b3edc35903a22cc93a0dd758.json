@@ -28,9 +28,9 @@
   "deliverable": null,
   "provenance": {
     "entry": "stellar-testnet",
-    "kind": "settlement",
-    "label": "The passkey sets the policy, and the vault accepts it",
-    "note": "set_policy(5 USDC, 1 USDC, allowlist on), signed by the passkey and delivered through the smart account's `execute`. The chain of custody is the point: the passkey signs an authorization digest, the smart account verifies that signature through OpenZeppelin's WebAuthn verifier in `__check_auth`, and the vault's `owner.require_auth()` is satisfied because the smart account is the direct invoker. No key of ours can do this, and no key of the owner's exists."
+    "kind": "owner-action",
+    "label": "Rehearsal: set_policy signed by a software P-256 key, and the vault accepts it",
+    "note": "set_policy(5 USDC, 1 USDC, allowlist on), delivered through the smart account's `execute`. The chain of custody on the ledger: a P-256 signature over the authorization digest, verified by OpenZeppelin's WebAuthn verifier in the account's `__check_auth`, which satisfies the vault's `owner.require_auth()`. The signature came from a software key in our own script and the fee from our deployer GDNRET2G..., so this proves the contract path and does NOT prove that a key outside our systems authorized anything."
   },
   "decoded": {
     "hash": "994b5cb92c5dee9ce733109e9b7cecd35625aeb3b3edc35903a22cc93a0dd758",

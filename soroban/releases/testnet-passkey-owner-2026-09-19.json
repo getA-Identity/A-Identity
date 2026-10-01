@@ -250,6 +250,8 @@
         "successful": true
       }
     ],
-    "refusal": "The payment to the revoked payee answered HTTP 409 with contract error 3, PayeeNotAllowed, refused in simulation, so it has no transaction hash. That is Soroban rather than evasion, and it is the same refusal the ledger recorded under artifacts above when the policy was tightened mid-flight."
+    "refusal": "The payment to the revoked payee answered HTTP 409 with contract error 3, PayeeNotAllowed, refused in simulation, so it has no transaction hash. That is Soroban rather than evasion, and it is the same refusal the ledger recorded under artifacts above when the policy was tightened mid-flight.",
+    "feeBumpAccount": "GCNJB6V5YIODDSSCWXZ2VOKMRPRVZ2V723RRQS6STXE6NWTGVOJY35CN",
+    "feeBumpAccountNote": "Added 2026-10-02, read off Horizon: the fee_account of 9df1bbb1..., fb2b59a0... and 6b083e83..., the three owner-side transactions of this run. It is an OpenZeppelin Channels account; we do not hold its key. The agent payment in this run was paid by our operator, not by Channels."
   }
 }

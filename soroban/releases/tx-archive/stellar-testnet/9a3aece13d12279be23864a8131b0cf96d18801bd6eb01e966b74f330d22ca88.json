@@ -28,9 +28,9 @@
   "deliverable": null,
   "provenance": {
     "entry": "stellar-testnet",
-    "kind": "settlement",
-    "label": "The owner revokes while the agent's payment is already signed",
-    "note": "set_allowed(payee, false), signed by the passkey, which is what a KYA DENY writes. The agent had already simulated, built and signed its payment and was holding it. This is not a contrivance: it is the race a real agent hits when a human, or a KYA verdict, changes the allowlist mid-flight."
+    "kind": "owner-action",
+    "label": "Rehearsal: the owner revokes while the agent's payment is already signed",
+    "note": "set_allowed(payee, false), signed by the software P-256 key, which is what a KYA DENY writes. The agent had already simulated, built and signed its payment and was holding it. This is not a contrivance: it is the race a real agent hits when a human, or a KYA verdict, changes the allowlist mid-flight."
   },
   "decoded": {
     "hash": "9a3aece13d12279be23864a8131b0cf96d18801bd6eb01e966b74f330d22ca88",
