@@ -343,7 +343,7 @@ function decodeOzSigners(
     if (tag === 'External' && vec[1] && vec[1].switch().name === 'scvAddress' && vec[2] && vec[2].switch().name === 'scvBytes') {
       const verifier = scAddressString(vec[1].address())
       const keyData = Buffer.from(vec[2].bytes())
-      if (sa && verifier === sa.webauthnVerifier) {
+      if (sa && (verifier === sa.webauthnVerifier || (sa.formerWebauthnVerifiers ?? []).includes(verifier))) {
         const point = keyData.subarray(0, 65)
         out.push({
           kind: 'webauthn-secp256r1',
@@ -356,7 +356,7 @@ function decodeOzSigners(
         })
         continue
       }
-      if (sa && verifier === sa.ed25519Verifier) {
+      if (sa && (verifier === sa.ed25519Verifier || (sa.formerEd25519Verifiers ?? []).includes(verifier))) {
         let ok: boolean | null = null
         const k = ed25519Key(keyData)
         if (k && valBytes && valBytes.length === 64 && digests.authDigest) {

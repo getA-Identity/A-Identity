@@ -28,7 +28,7 @@ const pubnet = CHAINS.find((c) => c.id === 'stellar') as ChainDescriptor
 const TESTNET_PASS = networkPassphrase(testnet)
 const PUBNET_PASS = networkPassphrase(pubnet)
 
-test('the passkey set_policy decodes to one WebAuthn signer through the registry verifier, flags 0x05 and our origin', () => {
+test('the passkey set_policy decodes to one WebAuthn signer through a registry verifier, flags 0x05 and our origin', () => {
   const ev = decodeTxEvidence(PASSKEY_SET_POLICY.envelope_xdr, PASSKEY_SET_POLICY.result_xdr, null, TESTNET_PASS, { chain: testnet })
   assert.equal(ev.hash, PASSKEY_SET_POLICY.hash)
   assert.equal(ev.status, 'success')
@@ -54,7 +54,11 @@ test('the passkey set_policy decodes to one WebAuthn signer through the registry
   assert.equal(a?.signers.length, 1)
   const [s] = a?.signers ?? []
   assert.equal(s?.kind, 'webauthn-secp256r1')
-  assert.equal(s?.verifier, testnet.contracts.smartAccount?.webauthnVerifier)
+  // The rehearsal signed through smart-account-kit's testnet verifier, which the registry
+  // now keeps as a FORMER verifier (testnet moved to our own v0.7.2 build on 2026-10-01).
+  // It still decodes as WebAuthn, and it is not the current one.
+  assert.ok(testnet.contracts.smartAccount?.formerWebauthnVerifiers?.includes(String(s?.verifier)))
+  assert.notEqual(s?.verifier, testnet.contracts.smartAccount?.webauthnVerifier)
   assert.equal(s?.publicKeyHex?.length, 130, 'a 65-byte uncompressed P-256 point')
   assert.ok(s?.publicKeyHex?.startsWith('04'))
   assert.equal(s?.credentialIdHex?.length, 64)

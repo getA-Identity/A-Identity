@@ -269,7 +269,9 @@ test('the relay refuses a body that is neither of the kit\'s two shapes', async 
 
 test('the relay serves pubnet, and answers prepared while the MAINNET key is unset', async () => {
   const { deps, spy } = stubs()
-  const func = deployFunc(accountId(), WASM)
+  // Pubnet's own account code: the networks no longer share one (testnet runs our v0.7.2
+  // build, pubnet the kit's deployment), and the relay checks the hash per network.
+  const func = deployFunc(accountId(), pubnet.contracts.smartAccount!.wasmHash)
   const r = await call('POST', '/api/stellar/passkey/relay', relayBody(func, [authEntry(func, accountId())], { network: 'stellar' }), deps)
   // Not a refusal any more, and not a broadcast either: with no pubnet key the relay says
   // exactly what it would have posted and posts nothing, which is the same prepared shape

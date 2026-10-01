@@ -299,11 +299,13 @@ export const CHAINS: ChainDescriptor[] = [
       // is an EVM path that would treat a C... StrKey as a 0x address. When the rail
       // lands, the SAC belongs in `settlementTokens` with the derivation recorded, the
       // same way USDG does on Robinhood Chain.
-      // OpenZeppelin's smart account contracts on PUBNET, third party, and the reason a
-      // passkey can own a vault with real money behind it. The account wasm hash is the
-      // SAME on both networks, byte for byte, which is worth knowing rather than assuming:
-      // OpenZeppelin built once and uploaded the identical code entry to each. Only the
-      // two verifier instances differ, because a contract id is per network.
+      // OpenZeppelin's smart account contracts on PUBNET as smart-account-kit deployed them,
+      // third party, and the reason a passkey can own a vault with real money behind it. The
+      // code is OpenZeppelin's from main@1e513890, not a release tag, deployed by the kit's
+      // maintainers; the verifier bytes equal our own v0.7.2 build, and the account differs
+      // from v0.7.2 only by doc strings and the order of two functions
+      // (soroban/third-party/openzeppelin-smart-account/SOURCES.md). Testnet now runs our own
+      // v0.7.2 build instead; pubnet keeps this deployment.
       smartAccount: {
         wasmHash: '1b5f4534a76322da2ad7c745f6900857a6802b0ca79850c35a03561df997785a',
         webauthnVerifier: 'CB7HENHJ7NF34I5FFXQK7D5I3WWQRGB5O5XO77D3NXMT7LM7LOKRQ5YR',
@@ -452,19 +454,31 @@ export const CHAINS: ChainDescriptor[] = [
       // devicePasskeyVault, once deployed). Testnet resets periodically, so this is a rehearsal,
       // never a record; the same script reproduces it.
       passkeyVault: 'CBGTXWFBYAOZBR6EN3UK4PTLUAY6BRV2C36D3DPOTE5JSOLQXANS6J6U',
-      // OpenZeppelin's smart account contracts on testnet, third party and read from the
-      // smart-account-kit release document rather than measured by us: a passkey wallet is
-      // instantiated against this wasm hash with the WebAuthn verifier as its signer's
-      // verifier, and the relay endpoint refuses any deploy whose executable is a different
-      // hash. The pubnet constants from the same document ARE recorded, on the pubnet entry
-      // above, after being read back off pubnet on 2026-09-24; what stays testnet only is the
-      // passkey relay and demo that consume them here.
+      // OpenZeppelin's smart account contracts on TESTNET, built by us from the audited release
+      // line rather than taken from smart-account-kit, so the SoW 2 D3 bar 'a third-party audit
+      // at a named version' is checkable against a hash: OpenZeppelin/stellar-contracts tag
+      // v0.7.2 (a9c42169...), whose packages/accounts source equals the 'Stellar Contracts RC
+      // v0.7.0 Audit' (OpenZeppelin Security, 2026-04-06) fix commit. Rust 1.91.1 + stellar CLI
+      // 27.0.0; soroban/third-party/openzeppelin-smart-account/build.sh rebuilds every hash. The
+      // code and its audit are OpenZeppelin's. The three code entries were already on testnet
+      // when we went to upload them (the same bytes), so the upload was skipped and we extended
+      // them; the two verifier INSTANCES are ours, deployed by passkey-deployer with salts
+      // derived from the source commit. With doc strings removed the account spec is identical
+      // to the kit's 1b5f4534, so smart-account-kit 0.8.0 drives it unchanged. A passkey wallet
+      // is instantiated against this hash and the relay refuses any deploy whose executable is
+      // different, so the 2026-09-19 rehearsal account (wasm 1b5f4534) no longer passes the
+      // relay's checks here, which is intended. Pubnet keeps the kit's own deployment.
       smartAccount: {
-        wasmHash: '1b5f4534a76322da2ad7c745f6900857a6802b0ca79850c35a03561df997785a',
-        webauthnVerifier: 'CC7EKIHQP3TN4CARQDND6CEOY2UXLWWC2X5GHTD5NLAT7BG5GPZIOM3F',
-        ed25519Verifier: 'CAAVTMCBXEIBPR64EAASKFXERVPYFZA2JYP5A3BG6PESWEFUJX5IHKN4',
+        wasmHash: 'a12747ff6c139dc14fc2fd30d200d6bbb5da7b5d59812c047ce1f9cad226b289',
+        webauthnVerifier: 'CABPDJH4OPZ6GPOFIFH3QKTUADUDRFD2HPYLRBXRLK4ZBVDHPIESVJPD',
+        ed25519Verifier: 'CCKPFIAAUZ2CCOPDABGJPJYG54EI23FO4PA4J253X2JXHMU4R5QCVBI2',
+        // smart-account-kit's own testnet instances, which this entry recorded until
+        // 2026-10-01 and which the 2026-09-19 rehearsal signed through. Kept only so those
+        // transactions still decode; a new wallet is never accepted against them.
+        formerWebauthnVerifiers: ['CC7EKIHQP3TN4CARQDND6CEOY2UXLWWC2X5GHTD5NLAT7BG5GPZIOM3F'],
+        formerEd25519Verifiers: ['CAAVTMCBXEIBPR64EAASKFXERVPYFZA2JYP5A3BG6PESWEFUJX5IHKN4'],
         verified:
-          'smart-account-kit 0.8.0, from the deployments table for protocol 27 dated 2026-07-09 that ships inside that package (the testnet rows), read 2026-09-19; the wasm hash was then exercised live the same day by deploying CC5RNXNHKKPAHFP5YEOTZDFOQDQVC6AQKX3EH3W6QKFKGVBAXPVM3RWA against it (tx dcd3c422...) and signing vault owner calls through it. Third-party contracts owned by OpenZeppelin, so anything read from them is labeled third-party and live, never ours.',
+          'Built 2026-10-01 from OpenZeppelin/stellar-contracts v0.7.2 (a9c42169) with Rust 1.91.1 and stellar CLI 27.0.0 (soroban/third-party/openzeppelin-smart-account/receipt-build-2026-10-01.json). The account and verifier code entries were already live on testnet with the same hashes; we extended them (tx 711894901b..., e9a4d5a627...). Our WebAuthn verifier instance was deployed in tx 8c6894a8bc... (ledger 4974910) and our Ed25519 verifier in tx 33642444e7... (ledger 4974913), and stellar contract fetch read all three back with matching sha256 on 2026-10-01. Code and audit OpenZeppelin, verifier instances ours.',
       },
       // XLM's own SAC, derived with `stellar contract id asset --asset native --network
       // testnet` on 2026-09-20 rather than copied from a docs page. Not a settlement token:

@@ -824,7 +824,7 @@ test('the status view names the key variable, says whether it is set, and carrie
   const sa = view.smartAccount as Record<string, unknown>
   assert.equal(sa.wasmHash, WASM)
   assert.equal(sa.thirdParty, true)
-  assert.match(String(sa.verified), /smart-account-kit/)
+  assert.match(String(sa.verified), /v0\.7\.2/, 'testnet runs our own build of the audited release line')
   assert.equal(text.includes('Bearer'), false, 'a status view must never carry a credential of any shape')
 })
 

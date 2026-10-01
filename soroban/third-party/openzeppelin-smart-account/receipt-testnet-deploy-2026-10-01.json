@@ -1,0 +1,73 @@
+{
+  "kind": "third-party-code-testnet-receipt",
+  "network": "stellar:testnet",
+  "networkPassphrase": "Test SDF Network ; September 2015",
+  "recordedAtUtc": "2026-10-01T23:45:00Z",
+  "build": "receipt-build-2026-10-01.json in this directory: OpenZeppelin/stellar-contracts v0.7.2 (a9c42169000638da937577f592ebf61a7a3c94ca), Rust 1.91.1, stellar CLI 27.0.0",
+  "operator": "passkey-deployer, GDNRET2G5WNC25QQ43ODLGAZ42X74DQDGRHWHSLKC6FCVF7C6JYLHAJA, a testnet key in our local stellar CLI keystore",
+  "codeEntries": {
+    "note": "All three code entries were ALREADY on testnet when we went to upload them, with exactly our hashes, so `stellar contract upload` skipped the install and we did not upload them. We do not know who did; the kit's maintainers uploaded the two verifier hashes for their own deployment. A code entry is identified by the sha256 of its bytes, so the bytes on the ledger are the bytes we built. We extended each entry's TTL so it outlives the sprint and its review.",
+    "account": {
+      "sha256": "a12747ff6c139dc14fc2fd30d200d6bbb5da7b5d59812c047ce1f9cad226b289",
+      "uploadedByUs": false,
+      "extendTx": "711894901bf55336be3a36582903c9837783747fb856d49360775ddc225e8a5e",
+      "extendLedger": 4974894,
+      "liveUntilLedger": 6274894
+    },
+    "webauthnVerifier": {
+      "sha256": "e63a030d0f1a1481e36059a4837c433083b33e704c1f9625b7314795b6d72b76",
+      "uploadedByUs": false,
+      "extendTx": "268389b88ebd7109068e153fa628172d03a9b2a557172b88e227abfaa827d0ae",
+      "extendNote": "The extend was a no-op: the entry already lived past the requested ledger.",
+      "liveUntilLedger": 7878982
+    },
+    "ed25519Verifier": {
+      "sha256": "60e8798db610bdaf3370d39ebda56ee1dc2c15ce1c3a9e28b528bfa24a06b477",
+      "uploadedByUs": false,
+      "extendTx": "e9a4d5a62753522b251114b034af31451bc699d25ab2a57a4721452eeec9c49a",
+      "extendLedger": 4974897,
+      "liveUntilLedger": 6274897
+    }
+  },
+  "verifierInstances": {
+    "note": "These two instances ARE ours: deployed by passkey-deployer with salts derived from the source commit, so anyone can recompute the ids. Neither verifier has a constructor or holds state.",
+    "saltDerivation": "sha256('a-identity:OpenZeppelin/stellar-contracts:a9c42169000638da937577f592ebf61a7a3c94ca:testnet:<role>') with role webauthn-verifier or ed25519-verifier",
+    "webauthnVerifier": {
+      "contractId": "CABPDJH4OPZ6GPOFIFH3QKTUADUDRFD2HPYLRBXRLK4ZBVDHPIESVJPD",
+      "wasmHash": "e63a030d0f1a1481e36059a4837c433083b33e704c1f9625b7314795b6d72b76",
+      "salt": "97d1415720d0f50b1e60d7fd5c7183d3e54f6290be326cdc9eeac2ab80370f98",
+      "deployTx": "8c6894a8bc0ee1aa8168a49f1de0c4dbdc7f7bf3e86b731277754b81d8242005",
+      "ledger": 4974910,
+      "closedAt": "2026-10-01T23:42:17Z",
+      "feeChargedStroops": 61340,
+      "instanceExtendTx": "c323ddcc71780b6302edfe09da0bb79674cd0f353439b6a42b58ccfe80b04d43",
+      "liveUntilLedger": 6274917
+    },
+    "ed25519Verifier": {
+      "contractId": "CCKPFIAAUZ2CCOPDABGJPJYG54EI23FO4PA4J253X2JXHMU4R5QCVBI2",
+      "wasmHash": "60e8798db610bdaf3370d39ebda56ee1dc2c15ce1c3a9e28b528bfa24a06b477",
+      "salt": "6c7ed5290aed8a389030d6bfd1912bf1db06620cdca4add7cb76b35a7bb747d0",
+      "deployTx": "33642444e71dbda544e61e728019ac728d10a38f9ebfce65ed955bf29fb06a4b",
+      "ledger": 4974913,
+      "closedAt": "2026-10-01T23:42:32Z",
+      "feeChargedStroops": 61252,
+      "instanceExtendTx": "b877fb9099908689934429e49f9568d4e8522ae37c7ed78511aa4a64a71f2e1a",
+      "liveUntilLedger": 6274918
+    }
+  },
+  "readBack": {
+    "method": "stellar contract fetch --id <verifier> and --wasm-hash <account>, then shasum -a 256",
+    "readAtUtc": "2026-10-01T23:44:00Z",
+    "webauthnVerifierInstance": "e63a030d0f1a1481e36059a4837c433083b33e704c1f9625b7314795b6d72b76",
+    "ed25519VerifierInstance": "60e8798db610bdaf3370d39ebda56ee1dc2c15ce1c3a9e28b528bfa24a06b477",
+    "accountCodeEntry": "a12747ff6c139dc14fc2fd30d200d6bbb5da7b5d59812c047ce1f9cad226b289",
+    "allMatchTheBuild": true
+  },
+  "registry": "mcp/src/chains/registry.ts, stellar-testnet contracts.smartAccount, points at these ids from 2026-10-01. Pubnet keeps smart-account-kit's deployment.",
+  "caveats": [
+    "The audit is OpenZeppelin Security's audit of OpenZeppelin's own library, 'Stellar Contracts RC v0.7.0 Audit' (2026-04-06). packages/accounts/src at v0.7.2 equals the audit-fix commit, but the deployable crates live in examples/, which the audit does not list, and soroban-sdk moved from 25.3.0 to 26.1.0.",
+    "OpenZeppelin issue #876 (the auth digest is not bound to the account) is present in v0.7.2; its fix exists only on the unreleased v0.9.0 branch.",
+    "The WebAuthn verifier does not check the origin or the rpIdHash, so the chain cannot tell a device authenticator from a software P-256 key.",
+    "A testnet reset deletes all of this. The build is reproducible from build.sh; the instance ids are reproducible from the recorded salts and the deployer."
+  ]
+}

@@ -122,7 +122,19 @@ export interface ChainContracts {
    * `verified` names the release document the constants were read from and when. Absent on a
    * network where no passkey path is served.
    */
-  smartAccount?: { wasmHash: string; webauthnVerifier: string; ed25519Verifier: string; verified: string }
+  smartAccount?: {
+    wasmHash: string
+    webauthnVerifier: string
+    ed25519Verifier: string
+    verified: string
+    /**
+     * Verifier instances this network USED to record, kept so a transaction signed through
+     * one of them still decodes as what it was. Never accepted for a new wallet: the relay
+     * and the deploy checks read only the current ids above.
+     */
+    formerWebauthnVerifiers?: string[]
+    formerEd25519Verifiers?: string[]
+  }
   /**
    * The Stellar Asset Contract for the native asset, XLM (Stellar only).
    *
