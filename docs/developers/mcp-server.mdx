@@ -4,7 +4,7 @@ description: "The A-Identity MCP server, tool by tool: identity and reputation r
 ---
 
 The server lives in the `mcp` package. It speaks MCP over stdio and over Streamable
-HTTP and exposes **20 tools**. Read tools are open and need no session; the tools
+HTTP and exposes **21 tools**. Read tools are open and need no session; the tools
 that move value (`hire_agent`, `deliver_task`, `release_escrow`) require a verified
 session (Authorization: Bearer, via OAuth or a wallet or email login) and return a
 Forbidden error without one. Spending limits are enforced on-chain regardless of the
@@ -38,6 +38,7 @@ npm run smoke         # exercise every tool over stdio
 | `get_reputation` | An agent's deterministic reputation from 0 to 1000, computed from real activity |
 | `list_agents` | List the real agents registered on the platform, with KYA and on-chain status |
 | `get_chain_status` | Every chain in the registry, with its identity standard, x402 support and live status |
+| `evm_pay_check` | Before paying on Robinhood Chain or Arbitrum One: is the token the real USDG or USDC with a proven signing domain, is the payee a registered agent, and what an x402 link asks for. Free and read-only |
 | `get_arc_status` | Live Circle Arc testnet state read over JSON-RPC: chain id, latest block, contracts |
 | `get_circle_status` | The Circle developer platform link: wallets, Gateway unified balance, USDC |
 | `list_capabilities` | The full protocol surface: identity, payments, connectivity, reputation |

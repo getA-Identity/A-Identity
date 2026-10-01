@@ -95,6 +95,16 @@ test('a GET is never rate budgeted, and an unknown path is not accidentally limi
   assert.equal(rateBudget('POST', '/api/definitely-not-a-route'), null)
 })
 
+test('the free pay checks on Robinhood Chain and Arbitrum One are budgeted in their own bucket', () => {
+  // The two public GETs that read a chain on every call, and one of them fetches a link the
+  // caller chose. Their own bucket, so a burst on them cannot lock anyone out of /check.
+  for (const path of ['/api/robinhood/check', '/api/arbitrum/check']) {
+    assert.deepEqual(rateBudget('GET', path), { bucket: 'evm-pay-check', max: 30, windowMs: 60_000 })
+  }
+  assert.notEqual(rateBudget('GET', '/api/robinhood/check')?.bucket, rateBudget('GET', '/api/algorand/check')?.bucket)
+  assert.equal(rateBudget('GET', '/api/robinhood/check/codes'), null, 'the static code list is not a chain read')
+})
+
 // ── free writes: the blind spot this file had ────────────────────────────────────
 //
 // Everything above asks "does this POST spend the shared signer". A posted task, a bid and

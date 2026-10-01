@@ -6,7 +6,7 @@ import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
 import { listCapabilities, CHAIN_CONFIG } from './data.js'
 import { CHAINS, identityChains } from './chains/index.js'
 import {
-  resolveAgentInput, getReputationInput, listAgentsInput, getChainStatusInput,
+  resolveAgentInput, getReputationInput, listAgentsInput, getChainStatusInput, evmPayCheckInput,
   getArcStatusInput, getCircleStatusInput, listCapabilitiesInput, merchantCheckInput,
   findAgentInput, getAgentManifestInput, hireAgentInput, deliverTaskInput,
   checkTaskStatusInput, releaseEscrowInput, registerAgentInput, policyGetInput,
@@ -17,6 +17,7 @@ import { computeAgentReputation } from './reputation.js'
 import { getArcStatus } from './arc.js'
 import { getCircleStatus } from './circle.js'
 import { merchantCheck } from './commerce.js'
+import { runEvmPayCheck } from './evm-pay-check/check.js'
 
 const json = (value: unknown) => ({
   content: [{ type: 'text' as const, text: JSON.stringify(value, null, 2) }],
@@ -182,6 +183,20 @@ export function buildServer(data: ServerData = {}): McpServer {
     },
     async () => {
       return json({ chains: CHAIN_CONFIG })
+    },
+  )
+
+  server.registerTool(
+    'evm_pay_check',
+    {
+      title: 'Check before paying on Robinhood Chain or Arbitrum One',
+      description:
+        'Before an agent pays: is this the real dollar, and who gets paid? Paste a token or wallet address, an ERC-8004 agent id, or an x402 link. Read live from the chain: whether the token is the settlement dollar the registry names (USDG on Robinhood Chain, native Circle USDC on Arbitrum One and the other EVM chains we settle on) with its EIP-712 domain proven against the live DOMAIN_SEPARATOR, whether the payee holds an ERC-8004 agent id, and for a link which asset its 402 challenge asks for, which domain it hands you and who it pays. Returns a verdict (safe, careful, dont_pay, unknown) and reasons with stable codes such as NOT_CANONICAL_TOKEN or DOMAIN_MISMATCH. Free, read-only, no keys.',
+      inputSchema: evmPayCheckInput,
+    },
+    async ({ query, chain }) => {
+      const out = await runEvmPayCheck(query, chain ?? 'rhchain')
+      return json('error' in out ? { ok: false, error: out.error } : out)
     },
   )
 

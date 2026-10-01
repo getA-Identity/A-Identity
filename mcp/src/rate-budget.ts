@@ -10,6 +10,11 @@ export function rateBudget(method: string, pathname: string): { bucket: string; 
   // The free "Before you pay" check behind /check: each call reads the Algorand indexer a
   // dozen times, and it is the one public GET here that anyone can link to.
   if (method === 'GET' && pathname === '/api/algorand/check') return { bucket: 'algorand-check', max: 20, windowMs: 60_000 }
+  // The same check for Robinhood Chain and Arbitrum One: a handful of RPC reads, and for an
+  // x402 link one outbound GET, in its own bucket. A little looser than the Algorand check's
+  // because visitors on a-identity.xyz can arrive through one shared proxy hop, and a demo
+  // should not trip on it; the 60 s answer cache absorbs the repeats.
+  if (method === 'GET' && (pathname === '/api/robinhood/check' || pathname === '/api/arbitrum/check')) return { bucket: 'evm-pay-check', max: 30, windowMs: 60_000 }
   if (method !== 'POST') return null
   // Auth challenges + guest login: cheap to abuse, keep them tight.
   if (pathname === '/api/auth/nonce' || pathname === '/api/auth/verify' || pathname === '/api/auth/login')

@@ -16,7 +16,8 @@
  * `preActionCheckInput`), and the docs test is where strictness lives.
  */
 import { z } from 'zod'
-import { ARC_CHAIN, CHAIN_IDS } from './chains/index.js'
+import { ARC_CHAIN, CHAIN_IDS, CHAINS } from './chains/index.js'
+import { payCheckChains } from './evm-pay-check/check.js'
 import { SURFACE_IDS } from './policy/index.js'
 
 /** An example agent id, derived rather than typed out so it cannot name a stale chain. */
@@ -163,6 +164,22 @@ export const recordAuditOutcomeInput = {
   evidenceRef: z.string().optional(),
 }
 
+/** The chains the pay check reads, from the registry: live EVM chains with an identity registry and an EIP-3009 dollar. */
+// Robinhood Chain first: it is the default, and the chain whose explorer is full of impostor dollars.
+const PAY_CHECK_CHAIN_IDS = payCheckChains(CHAINS)
+  .map((c) => c.id)
+  .sort((a, b) => Number(b === 'rhchain') - Number(a === 'rhchain')) as [string, ...string[]]
+
+export const evmPayCheckInput = {
+  query: z
+    .string()
+    .describe('A token or wallet address (0x...), an agent id ("eip155:<chain>:8004/<n>" or "#n"), or an https x402 link whose 402 challenge should be read'),
+  chain: z
+    .enum(PAY_CHECK_CHAIN_IDS)
+    .optional()
+    .describe(`Which chain to read (${PAY_CHECK_CHAIN_IDS.join(', ')}). Default: ${PAY_CHECK_CHAIN_IDS[0]}. A CAIP agent id names its own chain.`),
+}
+
 /**
  * Every tool name the MCP server can register, mapped to its input shape. The marketplace
  * and policy groups are only registered when the HTTP entry injects their hooks, but they
@@ -173,6 +190,7 @@ export const MCP_TOOL_SCHEMAS = {
   get_reputation: getReputationInput,
   list_agents: listAgentsInput,
   get_chain_status: getChainStatusInput,
+  evm_pay_check: evmPayCheckInput,
   get_arc_status: getArcStatusInput,
   get_circle_status: getCircleStatusInput,
   list_capabilities: listCapabilitiesInput,

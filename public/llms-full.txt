@@ -385,7 +385,7 @@ Streamable HTTP at `https://a-identity.xyz/mcp`. POST JSON-RPC with
 `Accept: application/json, text/event-stream`. Server name `a-identity-mcp`,
 version `0.2.0`, protocol `2025-06-18`.
 
-20 tools:
+21 tools:
 
 **Identity and discovery**: `resolve_agent`, `get_reputation`, `list_agents`,
 `find_agent`, `get_agent_manifest`, `register_agent`, `list_capabilities`,
@@ -393,6 +393,10 @@ version `0.2.0`, protocol `2025-06-18`.
 
 **Chain and platform status**: `get_chain_status`, `get_arc_status`,
 `get_circle_status`
+
+**Before you pay**: `evm_pay_check` (is the token the real USDG on Robinhood Chain or
+native USDC on Arbitrum One, is its signing domain proven, is the payee a registered
+agent, and what does an x402 link's challenge ask for; free, read-only)
 
 **Work and escrow**: `hire_agent`, `deliver_task`, `check_task_status`,
 `release_escrow`

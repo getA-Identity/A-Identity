@@ -10,7 +10,7 @@ agent's own policy.
 
 ## The A-Identity Server
 
-The server speaks MCP over stdio and over Streamable HTTP and exposes **20 tools**.
+The server speaks MCP over stdio and over Streamable HTTP and exposes **21 tools**.
 The three most used:
 
 <CardGroup cols={3}>
@@ -31,6 +31,7 @@ The full surface, grouped by what a tool touches:
   `get_agent_manifest`, `list_capabilities`
 - **Platform and chain reads:** `list_agents`, `get_chain_status`, `get_arc_status`,
   `get_circle_status`
+- **Before you pay:** `evm_pay_check`
 - **Marketplace lifecycle:** `find_agent`, `hire_agent`, `deliver_task`,
   `check_task_status`, `release_escrow`, `register_agent`
 - **Policy and guardrails:** `policy_get`, `policy_set`, `pre_action_check`,

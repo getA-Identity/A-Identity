@@ -12,7 +12,7 @@
       "url": "https://a-identity.xyz/mcp",
       "transport": "JSONRPC",
       "protocol": "MCP",
-      "description": "Model Context Protocol over Streamable HTTP. 20 tools covering identity, reputation, policy and hiring."
+      "description": "Model Context Protocol over Streamable HTTP. 21 tools covering identity, reputation, policy and hiring."
     },
     {
       "url": "https://a-identity-asp.onrender.com",
