@@ -730,7 +730,7 @@ export const CHAINS: ChainDescriptor[] = [
     caip2: 'eip155:4663',
     id: 'rhchain',
     name: 'Robinhood Chain',
-    shortName: 'RH Chain',
+    shortName: 'Robinhood Chain',
     color: '#0F9D30',
     role: 'Robinhood\'s own L2 for tokenized real-world assets: canonical ERC-8004 identity + reputation live, agent #0 minted, and paid trust calls settling in USDG through our own first-party x402 facilitator.',
     ecosystem: 'evm',
@@ -796,7 +796,7 @@ export const CHAINS: ChainDescriptor[] = [
     caip2: 'eip155:46630',
     id: 'rhchain-testnet',
     name: 'Robinhood Chain Testnet',
-    shortName: 'RH Chain test',
+    shortName: 'Robinhood Chain Testnet',
     // Robinhood's brand green is #00C805, which is too light to read as chip text on its own
     // tint in a light theme. This is a darkened variant of it, not a different brand.
     color: '#0F9D30',
@@ -902,6 +902,18 @@ export const CHAINS: ChainDescriptor[] = [
           'A real settlement measured 103569 gas at an effective 0.02 gwei on 2026-08-13 (tx 0x69abb8a9), costing 0.00000207 ETH, roughly $0.004. The fee is 1.28x that, and the headroom is deliberately thinner than Robinhood Chain\'s because this chain\'s base fee has sat at its 0.02 gwei floor rather than moving: buying 2x headroom against a pinned floor buys nothing. It stops covering cost if ETH roughly doubles or gas passes about 133000, at which point we re-measure and edit this line.',
         verified:
           'Native Circle USDC on Arbitrum One, the same address the descriptor already carried for contracts.usdc. Read live 2026-08-13: name() "USD Coin", symbol() "USDC", version() "2", decimals() 6, DOMAIN_SEPARATOR 0x08d11903f8419e68b1b8721bcbe2e9fc68569122a77ef18c216f10b3b5112c78, which those four fields reproduce exactly. EIP-3009 confirmed by a read-only authorizationState call. Unlike Robinhood Chain this IS canonical Circle USDC, so it is the one settlement token that legitimately shares the contracts.usdc slot.',
+      },
+    ],
+    documentedTokens: [
+      {
+        symbol: 'USDG',
+        name: 'Global Dollar',
+        address: '0x004B506865409877C9fA29bfb1ebA929984B9bbC',
+        decimals: 6,
+        issuer: 'Paxos',
+        domainVersionCandidates: ['1'],
+        verified:
+          'Paxos documents this address for Arbitrum Mainnet (docs.paxos.com/guides/stablecoin/usdg/mainnet). Read live 2026-10-01: name() "Global Dollar", symbol() "USDG", decimals() 6, totalSupply about 13.99M, DOMAIN_SEPARATOR 0x7391a9981c0db2d0877a1675128126c7c69badfeb3a80f6d1e194720ce92aefa, authorizationState answers (EIP-3009), version() reverts as it does on Robinhood Chain. Not a settlement token: our rail here settles in native USDC.',
       },
     ],
     signerEnvVar: 'ARB_SIGNER_KEY',

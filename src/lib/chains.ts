@@ -278,7 +278,7 @@ export const CHAINS: readonly Chain[] = [
   {
     "id": "rhchain",
     "name": "Robinhood Chain",
-    "shortName": "RH Chain",
+    "shortName": "Robinhood Chain",
     "color": "#0F9D30",
     "chainId": 4663,
     "caip2": "eip155:4663",
@@ -533,7 +533,7 @@ export const CHAINS: readonly Chain[] = [
   {
     "id": "rhchain-testnet",
     "name": "Robinhood Chain Testnet",
-    "shortName": "RH Chain test",
+    "shortName": "Robinhood Chain Testnet",
     "color": "#0F9D30",
     "chainId": 46630,
     "caip2": "eip155:46630",

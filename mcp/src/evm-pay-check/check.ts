@@ -25,7 +25,7 @@
  * domain is "Could not verify", and a registration is labeled as identity, not a review.
  */
 import { CHAINS, getChainById } from '../chains/registry.js'
-import type { ChainDescriptor, SettlementToken } from '../chains/types.js'
+import type { ChainDescriptor, DocumentedToken, SettlementToken } from '../chains/types.js'
 import { addressUrl } from '../chains/explorer.js'
 import { EIP3009_ABI } from '../chains/evm/abis.js'
 import { evmPublicClient } from '../chains/evm/client.js'
@@ -39,6 +39,7 @@ export type InputKind = 'token' | 'address' | 'agent' | 'x402'
 /** Every code a caller can see, with what it means. Stable: agents branch on these. */
 export const REASON_CODES = {
   CANONICAL_TOKEN: 'The address is the settlement token the registry names for this chain.',
+  DOCUMENTED_TOKEN: 'The address is a dollar its issuer documents for this chain, though our rail here settles in another.',
   DOMAIN_PROVEN: "The token's EIP-712 signing domain reproduces its live DOMAIN_SEPARATOR.",
   DOMAIN_UNVERIFIED: 'The signing domain could not be proven right now, so nothing about it is asserted.',
   NOT_CANONICAL_TOKEN: 'A token that presents itself as the settlement dollar but is not at its address.',
@@ -59,6 +60,9 @@ export const REASON_CODES = {
   CHALLENGE_WRONG_ASSET: 'The 402 challenge asks for a token that is not the settlement token.',
   DOMAIN_MISMATCH: 'The 402 challenge tells the buyer to sign against a domain the token does not have.',
   CHALLENGE_OTHER_CHAIN: 'The 402 challenge does not ask for payment on this chain.',
+  CHALLENGE_NO_DOMAIN: 'The 402 challenge names the right token but not the signing domain, so a wallet would have to guess it.',
+  CHALLENGE_SEVERAL_OFFERS: 'The 402 challenge offers more than one way to pay on this chain; the answer is about the riskiest.',
+  PAYEE_IS_TOKEN_CONTRACT: 'The payee is a token contract, not a wallet; money sent there is usually stuck.',
 } as const
 export type ReasonCode = keyof typeof REASON_CODES
 export type Reason = { tone: ReasonTone; code: ReasonCode; text: string }
@@ -78,7 +82,19 @@ export type CanonicalFacts = {
 
 /** How a non-canonical token relates to the settlement dollar. 'impersonation' copies its name AND symbol. */
 export type LookalikeTier = 'impersonation' | 'same_symbol' | 'similar'
-export type TokenFacts = { address: string; name: string | null; symbol: string | null; decimals: number | null; canonical: boolean; lookalike: boolean; tier: LookalikeTier | null }
+export type TokenFacts = {
+  address: string
+  name: string | null
+  symbol: string | null
+  decimals: number | null
+  canonical: boolean
+  /** Set when the address is a dollar its issuer documents here but our rail does not settle in. */
+  documented?: { issuer: string } | null
+  lookalike: boolean
+  tier: LookalikeTier | null
+  /** The real token a lookalike presents itself as, and where that one is. */
+  imitates?: { symbol: string; address: string } | null
+}
 export type AccountFacts = {
   isContract: boolean
   nonce: number | null
@@ -107,6 +123,8 @@ export type ChallengeFacts = {
   offers: number
   networks: string[]
   onThisChain: ChallengeOffer | null
+  /** How many offers name this chain. The answer is about the riskiest of them. */
+  offersOnThisChain?: number
 }
 
 /**
@@ -150,6 +168,8 @@ export type EvmPayCheckDeps = {
   httpGet?: (url: string, accept: string) => Promise<Fetched | Refused>
   env?: NodeJS.ProcessEnv
   now?: () => number
+  /** The whole check must answer within this, or it says nothing was decided. Default 15 s. */
+  deadlineMs?: number
 }
 
 /** The chains this check serves: live EVM chains with an identity registry and an EIP-3009 settlement token. */
@@ -269,13 +289,35 @@ function units(v: bigint, decimals: number): string {
   return `${neg ? '-' : ''}${whole}${frac ? `.${frac}` : ''}`
 }
 
-async function attempt<T>(p: Promise<T>): Promise<{ ok: true; value: T } | { ok: false }> {
+/**
+ * Did the contract answer "no", or did the chain not answer at all? A revert is an answer (there
+ * is no agent #n; this contract is not a token). Anything else, a timeout or a rate limit, is not,
+ * and must never become a verdict: it is the difference between "this agent does not exist" and
+ * "we could not ask". The same test the explorer-claim path uses, plus viem's own error name.
+ */
+export function isRevert(e: unknown): boolean {
+  let cur: unknown = e
+  for (let i = 0; cur && i < 6; i++) {
+    const err = cur as { name?: unknown; message?: unknown; shortMessage?: unknown; cause?: unknown }
+    if (err.name === 'ContractFunctionRevertedError') return true
+    if (/revert/i.test(String(err.shortMessage ?? '')) || /revert/i.test(String(err.message ?? ''))) return true
+    cur = err.cause
+  }
+  return false
+}
+
+async function attempt<T>(p: Promise<T>): Promise<{ ok: true; value: T } | { ok: false; revert: boolean }> {
   try {
     return { ok: true, value: await p }
-  } catch {
-    return { ok: false }
+  } catch (e) {
+    return { ok: false, revert: isRevert(e) }
   }
 }
+
+const NOT_DECIDED = (chain: ChainDescriptor): EvmPayCheckError => ({
+  error: `${chain.name} did not answer one of the reads this check needs, so nothing was decided. Try again in a minute.`,
+  httpStatus: 502,
+})
 
 // ── the chain reads ────────────────────────────────────────────────────────────────────
 
@@ -286,6 +328,7 @@ type Ctx = {
   canonical: CanonicalFacts
   canonicalName: string | null
   httpGet: (url: string, accept: string) => Promise<Fetched | Refused>
+  injected: boolean
 }
 
 /**
@@ -392,34 +435,70 @@ function tokenReasons(ctx: Ctx, t: TokenFacts, out: Reason[]): void {
     return
   }
   const label = t.name && t.symbol ? `"${t.name}" (${t.symbol})` : t.symbol ?? t.name ?? 'a token'
-  const where = `the ${sym} ${ctx.chain.name} settles in is at ${ctx.token.address}`
+  // A lookalike is named against the real token it copies, which on a chain with a documented
+  // dollar besides the one we settle in may not be the settlement token.
+  const real = t.imitates ?? { symbol: sym, address: ctx.token.address }
+  const settles = same(real.address, ctx.token.address)
+  const where = settles ? `the ${real.symbol} ${ctx.chain.name} settles in is at ${real.address}` : `the real ${real.symbol} on ${ctx.chain.name} is at ${real.address}`
   if (t.tier === 'impersonation') {
-    out.push({ tone: 'bad', code: 'NOT_CANONICAL_TOKEN', text: `This is not ${sym}. It copies the name and symbol, ${label}, but ${where}. Anything paid in this token is not ${sym}.` })
+    out.push({ tone: 'bad', code: 'NOT_CANONICAL_TOKEN', text: `This is not ${real.symbol}. It copies the name and symbol, ${label}, but ${where}. Anything paid in this token is not ${real.symbol}.` })
   } else if (t.tier === 'same_symbol') {
-    out.push({ tone: 'bad', code: 'NOT_CANONICAL_TOKEN', text: `This uses the symbol ${t.symbol} under another name, ${label}. It is not the ${sym} ${ctx.chain.name} settles in, which is at ${ctx.token.address}.` })
+    out.push({ tone: 'bad', code: 'NOT_CANONICAL_TOKEN', text: `This uses the symbol ${t.symbol} under another name, ${label}. It is not the real ${real.symbol}; ${where}.` })
   } else if (t.tier === 'similar') {
-    out.push({ tone: 'warn', code: 'NOT_CANONICAL_TOKEN', text: `${label} is a different token whose name mentions ${sym}. It is not ${sym}; ${where}.` })
+    out.push({ tone: 'warn', code: 'NOT_CANONICAL_TOKEN', text: `${label} is a different token whose name mentions ${real.symbol}. It is not ${real.symbol}; ${where}.` })
   } else {
     out.push({ tone: 'warn', code: 'OTHER_TOKEN', text: `${label} is a token, but not ${sym}, the dollar ${ctx.chain.name} settles in.` })
   }
 }
 
-async function readToken(ctx: Ctx, address: `0x${string}`): Promise<TokenFacts | null> {
+const TIER_RANK: Record<LookalikeTier, number> = { impersonation: 3, same_symbol: 2, similar: 1 }
+
+/** A contract's token facts; null when it is not a token, 'unreadable' when the chain did not answer. */
+async function readToken(ctx: Ctx, address: `0x${string}`): Promise<TokenFacts | null | 'unreadable'> {
   const [name, symbol, decimals] = await Promise.all(
     (['name', 'symbol', 'decimals'] as const).map((fn) => attempt(ctx.client.readContract({ address, abi: TOKEN_META_ABI as readonly unknown[], functionName: fn }))),
   )
   // A contract that answers symbol() and decimals() is treated as a token; a name alone is
-  // not enough, since registries and vaults have names too.
-  if (!symbol.ok || !decimals.ok) return null
+  // not enough, since registries and vaults have names too. A read that did not come back is
+  // not "not a token": a lookalike must never be waved through as a wallet because the RPC
+  // timed out on symbol().
+  if (!symbol.ok || !decimals.ok) {
+    const lost = (!symbol.ok && !symbol.revert) || (!decimals.ok && !decimals.revert)
+    return lost ? 'unreadable' : null
+  }
   const t = { name: name.ok ? String(name.value) : null, symbol: String(symbol.value), decimals: Number(decimals.value) }
+  const reals = [
+    { symbol: ctx.token.symbol, name: ctx.canonicalName, address: ctx.token.address },
+    ...documentedTokensOf(ctx.chain).map((d) => ({ symbol: d.symbol, name: d.name, address: d.address })),
+  ]
+  let best: { tier: LookalikeTier; real: (typeof reals)[number] } | null = null
+  for (const real of reals) {
+    const tier = lookalikeTier(real, t)
+    if (tier && (!best || TIER_RANK[tier] > TIER_RANK[best.tier])) best = { tier, real }
+  }
   return {
     address,
     ...t,
     canonical: false,
-    ...(() => {
-      const tier = lookalikeTier({ symbol: ctx.token.symbol, name: ctx.canonicalName }, t)
-      return { lookalike: tier !== null, tier }
-    })(),
+    lookalike: best !== null,
+    tier: best?.tier ?? null,
+    imitates: best ? { symbol: best.real.symbol, address: best.real.address } : null,
+  }
+}
+
+export function documentedTokensOf(chain: ChainDescriptor): DocumentedToken[] {
+  return chain.documentedTokens ?? []
+}
+
+/** Prove a documented token's domain the same way the settlement token's is proven. */
+async function proveDocumented(ctx: Ctx, d: DocumentedToken): Promise<DomainResult> {
+  const token = { symbol: d.symbol, address: d.address, decimals: d.decimals, authorization: 'eip3009', domainVersionCandidates: d.domainVersionCandidates, verified: d.verified } as SettlementToken
+  const address = d.address as `0x${string}`
+  const reader: TokenReader = (fn, args) => ctx.client.readContract({ address, abi: EIP3009_ABI as readonly unknown[], functionName: fn, args: args ?? [] })
+  try {
+    return await provenDomainCached(ctx.chain, token, ctx.injected ? { reader } : {})
+  } catch {
+    return { ok: false, code: 'rpc_error', reason: '' }
   }
 }
 
@@ -438,11 +517,28 @@ async function checkAddress(ctx: Ctx, address: `0x${string}`): Promise<PathOut |
     tokenReasons(ctx, t, reasons)
     return { kind: 'token', address, reasons, token: t, positive: ctx.canonical.domainProven ? `This is the real ${ctx.token.symbol}` : null }
   }
+  const doc = documentedTokensOf(ctx.chain).find((d) => same(d.address, address))
+  if (doc) {
+    const proof = await proveDocumented(ctx, doc)
+    const t: TokenFacts = { address, name: doc.name, symbol: doc.symbol, decimals: doc.decimals, canonical: false, documented: { issuer: doc.issuer }, lookalike: false, tier: null, imitates: null }
+    reasons.push({
+      tone: 'good',
+      code: 'DOCUMENTED_TOKEN',
+      text: `This is ${doc.symbol} at the address ${doc.issuer} documents for ${ctx.chain.name}, read live. Our x402 rail on ${ctx.chain.name} settles in ${ctx.token.symbol}, so a seller here asking for ${doc.symbol} is asking for a different dollar than ours.`,
+    })
+    if (proof.ok) {
+      reasons.push({ tone: 'good', code: 'DOMAIN_PROVEN', text: `Its signing domain ("${proof.proven.domain.name}", version ${proof.proven.domain.version}) reproduces the live DOMAIN_SEPARATOR.` })
+    } else {
+      reasons.push({ tone: 'warn', code: 'DOMAIN_UNVERIFIED', text: `Its signing domain could not be proven right now: ${UNPROVEN[proof.code] ?? UNPROVEN.rpc_error}. Do not sign a payment for it until it can be.` })
+    }
+    return { kind: 'token', address, reasons, token: t, positive: proof.ok ? `This is the real ${doc.symbol}` : null }
+  }
   const code = await attempt(ctx.client.getCode({ address }))
-  if (!code.ok) return { error: `${ctx.chain.name} could not be read right now. Try again in a minute.`, httpStatus: 502 }
+  if (!code.ok) return NOT_DECIDED(ctx.chain)
   const isContract = !!code.value && code.value !== '0x'
   if (isContract) {
     const t = await readToken(ctx, address)
+    if (t === 'unreadable') return NOT_DECIDED(ctx.chain)
     if (t) {
       tokenReasons(ctx, t, reasons)
       return { kind: 'token', address, reasons, token: t, positive: null }
@@ -469,11 +565,13 @@ export function cardClaims(card: unknown, want: { caip2: string; registry: strin
   return 'does_not_claim'
 }
 
-async function checkAgent(ctx: Ctx, tokenId: bigint): Promise<PathOut> {
+async function checkAgent(ctx: Ctx, tokenId: bigint): Promise<PathOut | EvmPayCheckError> {
   const registry = ctx.chain.contracts.identityRegistry as `0x${string}`
   const caip = `${ctx.chain.caip2}:8004/${tokenId}`
   const reasons: Reason[] = []
   const owner = await attempt(ctx.client.readContract({ address: registry, abi: AGENT_ABI as readonly unknown[], functionName: 'ownerOf', args: [tokenId] }))
+  // Only a revert means the id does not exist. A read that did not come back decides nothing.
+  if (!owner.ok && !owner.revert) return NOT_DECIDED(ctx.chain)
   if (!owner.ok) {
     reasons.push({ tone: 'bad', code: 'AGENT_NOT_FOUND', text: `There is no agent #${tokenId} in ${ctx.chain.name}'s ERC-8004 identity registry. Anyone presenting this id is not registered here.` })
     return { kind: 'agent', address: null, reasons, agent: { caip, tokenId: tokenId.toString(), owner: null, tokenUri: null, card: null }, positive: null }
@@ -560,15 +658,36 @@ async function checkChallenge(ctx: Ctx, url: string): Promise<PathOut | EvmPayCh
   if (!ch) return { error: 'That link answered 402 but carries no x402 challenge (no accepts list).', httpStatus: 400 }
 
   const networks = [...new Set(ch.accepts.map((a) => String(a.network ?? '')).filter(Boolean))]
-  const mine = ch.accepts.find((a) => {
+  const mine = ch.accepts.filter((a) => {
     const n = String(a.network ?? '').toLowerCase()
     return n === ctx.chain.caip2.toLowerCase() || n === ctx.chain.id.toLowerCase()
   })
-  const reasons: Reason[] = []
-  if (!mine) {
-    reasons.push({ tone: 'neutral', code: 'CHALLENGE_OTHER_CHAIN', text: `It asks for payment on ${networks.join(', ') || 'no named network'}, not on ${ctx.chain.name}, so there is nothing here to check on this chain.` })
-    return { kind: 'x402', address: null, reasons, challenge: { url, x402Version: ch.x402Version, offers: ch.accepts.length, networks, onThisChain: null }, positive: null }
+  if (!mine.length) {
+    const reasons: Reason[] = [{ tone: 'neutral', code: 'CHALLENGE_OTHER_CHAIN', text: `It asks for payment on ${networks.join(', ') || 'no named network'}, not on ${ctx.chain.name}, so there is nothing here to check on this chain.` }]
+    return { kind: 'x402', address: null, reasons, challenge: { url, x402Version: ch.x402Version, offers: ch.accepts.length, networks, onThisChain: null, offersOnThisChain: 0 }, positive: null }
   }
+  // A buyer's wallet may pick any offer, so every offer on this chain is checked and the answer
+  // is the riskiest one: a challenge with one honest offer and one lookalike is not honest.
+  const results: OfferResult[] = []
+  for (const raw of mine) {
+    const r = await checkOffer(ctx, raw)
+    if ('error' in r) return r
+    results.push(r)
+  }
+  const rank = (r: OfferResult) => (r.reasons.some((x) => x.tone === 'bad') ? 2 : r.reasons.some((x) => x.tone === 'warn') ? 1 : 0)
+  const worst = results.reduce((a, b) => (rank(b) > rank(a) ? b : a))
+  const reasons = [...worst.reasons]
+  if (results.length > 1) {
+    reasons.push({ tone: 'neutral', code: 'CHALLENGE_SEVERAL_OFFERS', text: `It offers ${results.length} ways to pay on ${ctx.chain.name}; this answer is about the riskiest of them.` })
+  }
+  const challenge: ChallengeFacts = { url, x402Version: ch.x402Version, offers: ch.accepts.length, networks, onThisChain: worst.offer, offersOnThisChain: results.length }
+  return { kind: 'x402', address: worst.offer.payTo, reasons, challenge, account: worst.account, positive: rank(worst) === 0 ? worst.positive : null }
+}
+
+type OfferResult = { offer: ChallengeOffer; reasons: Reason[]; account: AccountFacts | null; positive: string | null }
+
+async function checkOffer(ctx: Ctx, mine: RawOffer): Promise<OfferResult | EvmPayCheckError> {
+  const reasons: Reason[] = []
   const offer: ChallengeOffer = {
     network: String(mine.network),
     asset: typeof mine.asset === 'string' ? mine.asset : null,
@@ -577,14 +696,13 @@ async function checkChallenge(ctx: Ctx, url: string): Promise<PathOut | EvmPayCh
     domainName: typeof mine.extra?.name === 'string' ? mine.extra.name : null,
     domainVersion: typeof mine.extra?.version === 'string' ? mine.extra.version : null,
   }
-  const challenge: ChallengeFacts = { url, x402Version: ch.x402Version, offers: ch.accepts.length, networks, onThisChain: offer }
   const sym = ctx.token.symbol
   let assetOk = false
   if (!offer.asset || !/^0x[0-9a-fA-F]{40}$/.test(offer.asset)) {
     reasons.push({ tone: 'bad', code: 'CHALLENGE_WRONG_ASSET', text: `It names no token address on ${ctx.chain.name}, so there is no way to tell what it would take.` })
   } else if (!same(offer.asset, ctx.token.address)) {
     const t = await readToken(ctx, offer.asset as `0x${string}`)
-    const label = t?.symbol ? `${t.symbol} at ${short(offer.asset)}` : short(offer.asset)
+    const label = t && t !== 'unreadable' && t.symbol ? `${t.symbol} at ${short(offer.asset)}` : short(offer.asset)
     reasons.push({
       tone: 'bad',
       code: 'CHALLENGE_WRONG_ASSET',
@@ -597,20 +715,23 @@ async function checkChallenge(ctx: Ctx, url: string): Promise<PathOut | EvmPayCh
 
   // The domain a challenge hands the buyer is what the buyer signs. If it is not the token's
   // proven domain, the signature cannot settle there, and a challenge that gets it wrong on
-  // purpose is asking for a signature meant for something else.
+  // purpose is asking for a signature meant for something else. A challenge that names no
+  // domain leaves the wallet to guess, which is a warning, not a match.
   const extraChain = mine.extra?.chainId != null ? Number(mine.extra.chainId) : null
   const extraContract = typeof mine.extra?.verifyingContract === 'string' ? mine.extra.verifyingContract : null
-  if (assetOk && ctx.canonical.domainProven) {
+  if (assetOk && (offer.domainName === null || offer.domainVersion === null)) {
+    reasons.push({ tone: 'warn', code: 'CHALLENGE_NO_DOMAIN', text: `It asks for ${sym} but does not say which signing domain to use, so a wallet would have to guess it. ${sym}'s proven domain is "${ctx.canonical.domainName ?? '?'}", version ${ctx.canonical.domainVersion ?? '?'}.` })
+  } else if (assetOk && ctx.canonical.domainProven) {
     const mismatch =
-      (offer.domainName !== null && offer.domainName !== ctx.canonical.domainName) ||
-      (offer.domainVersion !== null && offer.domainVersion !== ctx.canonical.domainVersion) ||
+      offer.domainName !== ctx.canonical.domainName ||
+      offer.domainVersion !== ctx.canonical.domainVersion ||
       (extraChain !== null && extraChain !== ctx.chain.evmChainId) ||
       (extraContract !== null && !same(extraContract, ctx.token.address))
     if (mismatch) {
       reasons.push({
         tone: 'bad',
         code: 'DOMAIN_MISMATCH',
-        text: `It tells you to sign against a domain ("${offer.domainName ?? '?'}", version ${offer.domainVersion ?? '?'}) that is not ${sym}'s proven one ("${ctx.canonical.domainName}", version ${ctx.canonical.domainVersion}). Do not sign it.`,
+        text: `It tells you to sign against a domain ("${offer.domainName}", version ${offer.domainVersion}) that is not ${sym}'s proven one ("${ctx.canonical.domainName}", version ${ctx.canonical.domainVersion}). Do not sign it.`,
       })
     } else {
       reasons.push({ tone: 'good', code: 'DOMAIN_PROVEN', text: `The signing domain it hands you matches ${sym}'s live DOMAIN_SEPARATOR.` })
@@ -626,10 +747,12 @@ async function checkChallenge(ctx: Ctx, url: string): Promise<PathOut | EvmPayCh
       reasons.push({ tone: 'bad', code: 'ZERO_ADDRESS', text: 'It pays the zero address. Anything sent there is gone for good.' })
     } else {
       const code = await attempt(ctx.client.getCode({ address: payTo }))
-      const isContract = code.ok && !!code.value && code.value !== '0x'
+      if (!code.ok) return NOT_DECIDED(ctx.chain)
+      const isContract = !!code.value && code.value !== '0x'
       const t = isContract ? await readToken(ctx, payTo) : null
+      if (t === 'unreadable') return NOT_DECIDED(ctx.chain)
       if (t) {
-        reasons.push({ tone: 'bad', code: 'CHALLENGE_WRONG_ASSET', text: `It pays a token contract (${t.symbol ?? short(payTo)}), not a wallet. Money sent there is usually stuck.` })
+        reasons.push({ tone: 'bad', code: 'PAYEE_IS_TOKEN_CONTRACT', text: `It pays a token contract (${t.symbol ?? short(payTo)}), not a wallet. Money sent there is usually stuck.` })
       } else {
         account = await readAccount(ctx, payTo, isContract)
         payeeReasons(ctx, account, reasons)
@@ -637,7 +760,7 @@ async function checkChallenge(ctx: Ctx, url: string): Promise<PathOut | EvmPayCh
     }
   }
   const registered = !!account?.agentsHeld && account.agentsHeld > 0
-  return { kind: 'x402', address: offer.payTo, reasons, challenge, account, positive: assetOk && registered ? `Real ${sym}, paid to a registered agent` : null }
+  return { offer, reasons, account, positive: assetOk && registered ? `Real ${sym}, paid to a registered agent` : null }
 }
 
 // ── the check ──────────────────────────────────────────────────────────────────────────
@@ -665,6 +788,25 @@ export async function runEvmPayCheck(q: string, chainId: string, deps: EvmPayChe
     if (!other) return { error: `That agent id is on chain ${parsed.evmChainId}, which this check does not read.`, httpStatus: 400 }
     chain = other
   }
+  // Every read below is a network call, and a slow RPC must end in "nothing was decided", not
+  // in a page that waits forever or a verdict assembled from whatever arrived in time.
+  const deadlineMs = deps.deadlineMs ?? 15_000
+  const target = chain
+  let timer: ReturnType<typeof setTimeout> | undefined
+  const late = new Promise<EvmPayCheckError>((resolve) => {
+    timer = setTimeout(
+      () => resolve({ error: `${target.name} did not answer within ${Math.round(deadlineMs / 1000)} seconds, so nothing was decided. Try again in a minute.`, httpStatus: 502 }),
+      deadlineMs,
+    )
+  })
+  try {
+    return await Promise.race([decide(q, parsed, target, deps), late])
+  } finally {
+    clearTimeout(timer)
+  }
+}
+
+async function decide(q: string, parsed: ParsedQuery, chain: ChainDescriptor, deps: EvmPayCheckDeps): Promise<EvmPayCheckResult | EvmPayCheckError> {
   const token = settlementTokenOf(chain)!
   const env = deps.env ?? process.env
   const injected = !!deps.client
@@ -678,7 +820,7 @@ export async function runEvmPayCheck(q: string, chainId: string, deps: EvmPayChe
   const arbitrum: ArbitrumFacts | null = arbId.ok
     ? { arbSys: ARBSYS, arbChainId: Number(arbId.value as bigint), matches: Number(arbId.value as bigint) === chain.evmChainId }
     : null
-  const ctx: Ctx = { chain, client, token, canonical, canonicalName, httpGet: deps.httpGet ?? ((u, a) => safeHttpsGet(u, a)) }
+  const ctx: Ctx = { chain, client, token, canonical, canonicalName, httpGet: deps.httpGet ?? ((u, a) => safeHttpsGet(u, a)), injected }
 
   const out =
     parsed.kind === 'address'
@@ -699,8 +841,10 @@ export async function runEvmPayCheck(q: string, chainId: string, deps: EvmPayChe
 
   let headline = HEADLINES[verdict]
   if (verdict === 'safe' && out.positive) headline = out.positive
-  if (verdict === 'dont_pay' && out.token?.tier === 'impersonation') headline = `Not the real ${token.symbol}. Don't pay with it`
-  else if (verdict === 'dont_pay' && out.token?.tier === 'same_symbol') headline = `Not the ${token.symbol} ${chain.name} settles in`
+  const imitated = out.token?.imitates ?? { symbol: token.symbol, address: token.address }
+  const settlesIn = same(imitated.address, token.address)
+  if (verdict === 'dont_pay' && out.token?.tier === 'impersonation') headline = `Not the real ${imitated.symbol}. Don't pay with it`
+  else if (verdict === 'dont_pay' && out.token?.tier === 'same_symbol') headline = settlesIn ? `Not the ${imitated.symbol} ${chain.name} settles in` : `Not the real ${imitated.symbol}`
 
   return {
     query: q.trim(),

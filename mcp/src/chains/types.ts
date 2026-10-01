@@ -127,6 +127,19 @@ export interface ChainContracts {
  * USDG is live on 4663 and no canonical USDC is documented. Putting USDG in `usdc` would
  * silently repoint escrow and vault deployments at a token they were never tested with.
  */
+export interface DocumentedToken {
+  symbol: string
+  /** The token's own name(), read live when the entry was added. */
+  name: string
+  address: string
+  decimals: number
+  /** Who documents this address, in the words the pay check shows. */
+  issuer: string
+  domainVersionCandidates?: string[]
+  /** Where the address is documented and what was read live, when. */
+  verified: string
+}
+
 export interface SettlementToken {
   /** `symbol()` as the contract reports it. NOT the EIP-712 domain name: the bridged
    *  testnet token reports symbol "USDC.e" while its domain name is "USDC". */
@@ -238,6 +251,10 @@ export interface ChainDescriptor {
    *  is possible here yet. Every symbol listed here must also appear in `stablecoins`
    *  (registry.test.ts enforces both directions). */
   settlementTokens?: SettlementToken[]
+  /** Dollars an issuer documents on this chain that our rail does NOT settle in. The pay check
+   *  recognizes them as real instead of calling them "another token", and names them when a
+   *  lookalike copies them. Nothing settles in them, so they never enter a 402 challenge. */
+  documentedTokens?: DocumentedToken[]
 
   /**
    * Circle Gateway on this chain, for the batched x402 rail (Nanopayments): the buyer signs

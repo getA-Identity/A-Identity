@@ -6,6 +6,8 @@ import { clearDomainCache, eip712DomainSeparator } from '../x402-3009/domain.js'
 import { preflight, type Fetched, type Refused } from './safe-get.js'
 import {
   cardClaims,
+  documentedTokensOf,
+  isRevert,
   fold,
   lookalikeTier,
   looksLike,
@@ -25,6 +27,7 @@ const ARB = getChainById('arbitrum') as ChainDescriptor
 const USDG = settlementTokenOf(RH)!.address as `0x${string}`
 const USDC = settlementTokenOf(ARB)!.address as `0x${string}`
 const REGISTRY = RH.contracts.identityRegistry as `0x${string}`
+const ARB_USDG = documentedTokensOf(ARB)[0].address as `0x${string}`
 
 const FAKE = '0x1111111111111111111111111111111111111111'
 const HOMOGLYPH = '0x2222222222222222222222222222222222222222'
@@ -49,6 +52,12 @@ type World = {
   rpcDown?: boolean
   /** What ArbSys.arbChainID() answers; undefined means the precompile is absent (not an Arbitrum chain). */
   arbChainId?: number
+  /** ownerOf does not come back at all (a timeout), as opposed to reverting. */
+  ownerOfDown?: boolean
+  /** These contracts' name/symbol/decimals reads time out. */
+  metaDown?: string[]
+  /** getCode answers only after this many ms. */
+  slowMs?: number
 }
 
 const lc = (a: string) => a.toLowerCase()
@@ -61,6 +70,7 @@ function world(over: Partial<World> = {}): World {
       // USDG has no version(): the proof must come from the candidate list.
       [lc(USDG)]: { name: 'Global Dollar', symbol: 'USDG', decimals: 6, separator: usdgSep },
       [lc(USDC)]: { name: 'USD Coin', symbol: 'USDC', decimals: 6, version: '2', separator: usdcSep },
+      [lc(ARB_USDG)]: { name: 'Global Dollar', symbol: 'USDG', decimals: 6, separator: eip712DomainSeparator({ name: 'Global Dollar', version: '1', chainId: ARB.evmChainId as number, verifyingContract: ARB_USDG }) },
       [lc(FAKE)]: { name: 'Global Dollar', symbol: 'USDG', decimals: 6 },
       // Cyrillic DZE in place of the Latin S.
       [lc(HOMOGLYPH)]: { name: 'Gl0bal D0llar', symbol: 'UЅDG', decimals: 6 },
@@ -86,6 +96,7 @@ function client(w: World): ChainClient {
   const revert = (what: string) => Promise.reject(new Error(`execution reverted: ${what}`))
   return {
     async getCode({ address }) {
+      if (w.slowMs) await new Promise((r) => setTimeout(r, w.slowMs))
       if (w.rpcDown) throw new Error('rpc down')
       return w.code[lc(address)] ?? '0x'
     },
@@ -104,6 +115,7 @@ function client(w: World): ChainClient {
       if (a === lc(REGISTRY)) {
         if (w.registryDown) throw new Error('registry down')
         if (functionName === 'balanceOf') return BigInt(w.held[lc(String(args?.[0]))] ?? 0)
+        if (w.ownerOfDown) throw new Error('HTTP request failed. Status: 429')
         const id = String(args?.[0])
         const agent = w.agents[id]
         if (!agent) return revert('ERC721NonexistentToken')
@@ -111,6 +123,7 @@ function client(w: World): ChainClient {
         if (functionName === 'tokenURI') return agent.uri
         return revert(functionName)
       }
+      if (w.metaDown?.map(lc).includes(a)) throw new Error('The request took too long to respond.')
       const t = w.tokens[a]
       if (!t) return revert('no code')
       switch (functionName) {
@@ -467,6 +480,75 @@ test('a redirect is reported with its target host and not followed', async () =>
   const out = await check(SELLER, world(), web({ [SELLER]: { status: 302, headers: { location: 'https://elsewhere.example/pay' } } }))
   assert.ok('error' in out)
   assert.match(out.error, /elsewhere\.example/)
+})
+
+// ── a read that did not come back is never a verdict ─────────────────────────────
+
+test('isRevert: a contract saying no is an answer, a transport failure is not', () => {
+  assert.equal(isRevert(new Error('execution reverted: ERC721NonexistentToken')), true)
+  assert.equal(isRevert({ name: 'ContractFunctionExecutionError', message: 'x', cause: { name: 'ContractFunctionRevertedError', message: 'y' } }), true)
+  assert.equal(isRevert(new Error('HTTP request failed. Status: 429')), false)
+  assert.equal(isRevert(new Error('The request took too long to respond.')), false)
+})
+
+test('an agent read that times out says nothing was decided, never "no such agent"', async () => {
+  const out = await check('#0', world({ ownerOfDown: true }))
+  assert.ok('error' in out)
+  assert.equal(out.httpStatus, 502)
+  assert.match(out.error, /nothing was decided/)
+})
+
+test('a lookalike whose symbol() times out is not waved through as a wallet', async () => {
+  const out = await check(FAKE, world({ metaDown: [FAKE] }))
+  assert.ok('error' in out)
+  assert.equal(out.httpStatus, 502)
+})
+
+test('a check that runs past its deadline answers nothing was decided', async () => {
+  const out = await runEvmPayCheck(FRESH, 'rhchain', { client: client(world({ slowMs: 200 })), httpGet: web({}).httpGet, deadlineMs: 50 })
+  assert.ok('error' in out)
+  assert.equal(out.httpStatus, 502)
+  assert.match(out.error, /did not answer within/)
+})
+
+// ── a dollar the issuer documents, on a chain we settle in another ───────────────────
+
+test('Paxos USDG on Arbitrum One is the real USDG, and the answer says our rail there settles in USDC', async () => {
+  const r = ok(await check(ARB_USDG, world(), web({}), 'arbitrum'))
+  assert.equal(r.verdict, 'safe')
+  assert.equal(r.headline, 'This is the real USDG')
+  assert.deepEqual(codes(r), ['DOCUMENTED_TOKEN', 'DOMAIN_PROVEN'])
+  assert.match(r.reasons[0].text, /Paxos/)
+  assert.match(r.reasons[0].text, /USDC/)
+})
+
+test('a copy of USDG on Arbitrum One is named against the USDG Paxos documents there', async () => {
+  const r = ok(await check(FAKE, world(), web({}), 'arbitrum'))
+  assert.equal(r.verdict, 'dont_pay')
+  assert.equal(r.headline, "Not the real USDG. Don't pay with it")
+  assert.ok(r.reasons[0].text.includes(ARB_USDG))
+})
+
+// ── challenges that hide something ───────────────────────────────────────────────────
+
+test('a challenge with an honest offer and a lookalike one is judged by the lookalike', async () => {
+  const r = ok(await check(SELLER, world(), web({ [SELLER]: challenge(goodOffer(), [goodOffer({ asset: FAKE })]) })))
+  assert.equal(r.verdict, 'dont_pay')
+  assert.ok(codes(r).includes('CHALLENGE_WRONG_ASSET'))
+  assert.ok(codes(r).includes('CHALLENGE_SEVERAL_OFFERS'))
+  assert.equal(r.challenge?.offersOnThisChain, 2)
+})
+
+test('a challenge that names the right token but no signing domain is a be-careful', async () => {
+  const r = ok(await check(SELLER, world(), web({ [SELLER]: challenge(goodOffer({ extra: {} })) })))
+  assert.equal(r.verdict, 'careful')
+  assert.ok(codes(r).includes('CHALLENGE_NO_DOMAIN'))
+})
+
+test('a challenge that pays a token contract is refused under its own code', async () => {
+  const r = ok(await check(SELLER, world(), web({ [SELLER]: challenge(goodOffer({ payTo: WETH })) })))
+  assert.equal(r.verdict, 'dont_pay')
+  assert.ok(codes(r).includes('PAYEE_IS_TOKEN_CONTRACT'))
 })
 
 // ── the edges ────────────────────────────────────────────────────────────────────────

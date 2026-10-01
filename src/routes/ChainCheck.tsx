@@ -111,7 +111,9 @@ function isResult(x: unknown): x is Result {
 
 async function runCheck(slug: PayCheckSlug, q: string): Promise<Outcome> {
   try {
-    const res = await apiFetch(`/api/${slug}/check?q=${encodeURIComponent(q)}`, { retries: 1, timeoutMs: 20_000 })
+    // No client retry: the server answers within its own 15 s deadline, and a retry would run
+    // the whole check twice for one question. A failure shows Try again instead.
+    const res = await apiFetch(`/api/${slug}/check?q=${encodeURIComponent(q)}`, { retries: 0, timeoutMs: 20_000 })
     if (res.status === 400 || res.status === 404) {
       const { error } = await readJson<{ error?: unknown }>(res)
       const message = typeof error === 'string' && error.length <= 240 ? error : undefined
