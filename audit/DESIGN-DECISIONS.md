@@ -17,11 +17,19 @@ document had already recommended. A recommendation is the audit's opinion; a dec
 maintainer's, and these three are now the maintainer's. They can be reversed the same way
 they were made, by recording it here.
 
+**Updated 2026-10-01, for v0.1.1.** D-3 is implemented in source: `settle` now runs
+`policy::check_amount` first, the committed A3-02 test is un-ignored and green, and the crate
+is version 0.1.1. The direction is the opposite of what this document used to prescribe (a
+swap inside `withdraw`), and D-3 below says why. Two items that were "bundled into the next
+redeploy" are explicitly **deferred past v0.1.1**: A4-01 (error renumbering) and D-2 option
+C (the allowlist as a constructor argument). The section "Deferred past v0.1.1" gives the
+reasons.
+
 | | Finding(s) | Status |
 | --- | --- | --- |
 | D-1 | A7-02 High, A1-01 Medium | **DONE 2026-08-25**, option B, `cf35b33`. One residual left open, named in D-1 |
-| D-2 | A7-01 Medium | **DECIDED 2026-09-15**, option A now plus C bundled into any redeploy. A7-01 stays OPEN, mitigated: a runbook step and a weekly check, not a contract fix |
-| D-3 | A3-02 Low (live defect), carries A4-01 Medium | **DECIDED 2026-09-15**, option A. Bundled into the next redeploy; A3-02 and A4-01 stay OPEN until one happens |
+| D-2 | A7-01 Medium | **DECIDED 2026-09-15**, option A now plus C bundled into any redeploy. A7-01 stays OPEN, mitigated: a runbook step and a weekly check, not a contract fix. Option C is **deferred past v0.1.1** (2026-10-01) |
+| D-3 | A3-02 Low (live defect in v0.1.0) | **DECIDED 2026-09-15**, option A. **Implemented in v0.1.1 source 2026-10-01** by moving the amount check to the top of `settle`. The deployed v0.1.0 vaults keep the old order until they are replaced. A4-01 no longer rides with it: **deferred past v0.1.1** |
 | D-4 | A5-01 Low, A3-07 Info | **DECIDED 2026-09-15**, option A. The contract is unchanged and the corrected wording stands, so A5-01 becomes ACCEPTED |
 | D-5 | A4-02 Medium | **DECLINED 2026-08-25**, option A not taken, `51978c5`. Option C is in force |
 
@@ -176,18 +184,19 @@ storage decision and should not be adopted just to make C unnecessary.
 **The situation.** `settle` checks the payee before the amount; `withdraw` checks the amount
 before the payee. So `pay(vault, 0)` returns `InvalidPayee` (7) and `withdraw(vault, 0)`
 returns `InvalidAmount` (6). Same two violations, same contract, two different answers.
+That is the v0.1.0 wasm, `155eb31c...`, which is what both deployed vaults run.
 
 This matters more here than it would elsewhere, because the typed refusal *is* the product:
 a caller is meant to branch on the reason. It violates INV-17 and INV-22.
 
-The failing test exists and is committed, `#[ignore]`d with the finding id in the attribute
-so `cargo test` prints it on every run.
+The failing test was committed `#[ignore]`d with the finding id in the attribute, so `cargo
+test` printed it on every run until v0.1.1 un-ignored it.
 
 **Options.**
 
 | | Trade-off |
 | --- | --- |
-| **A. Fix in the next redeploy** | Two lines reordered in `withdraw`. Free if a redeploy happens anyway |
+| **A. Fix in the next redeploy** | One line added at the top of `settle`. Free if a redeploy happens anyway |
 | **B. Redeploy for this alone** | Not worth a new contract id for a Low |
 | **C. Document the divergence** | Honest, cheap, leaves a wrong answer in production |
 
@@ -198,42 +207,88 @@ recommendation on file. **B** is rejected: a new contract id is too much to spen
 **C** is rejected as a substitute, though the divergence is documented anyway, because
 documenting a wrong answer is not the same as deciding to keep it.
 
-**The source is deliberately NOT edited today, and that is worth stating plainly rather than
-leaving as an omission.** `.github/workflows/soroban.yml` pins `LINUX_X64`, the sha256 of the
-wasm that runner builds from this source. Any change to the contract changes that hash, and
-the machine this decision was recorded on is macOS arm64, which produces a different binary
-from the same source and the same rustc. So editing the two lines now would turn the drift
-gate red with no way to record the correct replacement value from here. The change is
-therefore staged in the runbook rather than in the tree.
+### IMPLEMENTED IN SOURCE, 2026-10-01: v0.1.1, in `settle`, not in `withdraw`
 
-What ships with the redeploy, all in one commit, written up step by step in the "Redeploy
-runbook" section of `soroban/README.md`:
+**A correction to this section first.** Until 2026-10-01 it prescribed "the two-line reorder
+in `withdraw`, so `require_valid_payee` runs before `policy::check_amount` exactly as `settle`
+does", and the runbook in `soroban/README.md` said the same. That direction was wrong, on
+three independent counts:
 
-1. the two-line reorder in `withdraw`, so `require_valid_payee` runs before
-   `policy::check_amount` exactly as `settle` does;
-2. un-ignoring `a_doubly_invalid_input_names_the_same_first_reason_on_every_money_path` in
-   `src/test/arithmetic.rs`, which is the committed failing test for this finding;
-3. a rebuild with `stellar contract build` and a re-recorded `LINUX_X64` literal in
-   `.github/workflows/soroban.yml`.
+1. **It would have left the committed test red.**
+   `a_doubly_invalid_input_names_the_same_first_reason_on_every_money_path` asserts
+   `InvalidAmount` on all three paths. Swapping the lines in `withdraw` makes all three
+   return `InvalidPayee`, so the one test this finding exists to turn green would have failed
+   on the commit that claimed to fix it.
+2. **It contradicts INV-17.** The invariant puts `InvalidAmount` on the first rung, and the
+   finding itself (`findings/A3-arithmetic.md`, A3-02) says that on the invariant's own terms
+   `settle` is the side that is wrong, and recommends exactly the `settle` edit.
+3. **It contradicts `test/errors.rs`,** whose gate-order test says in its comments that the
+   amount is checked before anything else and payee validity comes next.
 
-Note what does NOT ship with it. The other `#[ignore]`d test in that file belongs to D-4,
-asserts INV-05 as originally written, and is false by design under D-4 option A. Un-ignoring
-it would make `cargo test` red permanently. It needs its reason string updated to say
-decided rather than pending, and nothing else.
+What shipped in the v0.1.1 source:
 
-A4-01 still rides with this, as it always did: it is Medium, needs a redeploy, and has no
-cheaper carrier. It is also an ABI break, since the error discriminants are public and
-frozen by `test/errors.rs`, so it needs its own design line recording the new range before
-anyone starts moving codes.
+1. `policy::check_amount(amount)?` is the first line of `settle`, ahead of
+   `require_valid_payee`, with a comment citing A3-02 and INV-17. `withdraw` is unchanged and
+   stays amount-first. The ladders in `policy.rs` still call `check_amount` as their own first
+   rung; that call is a pure function over the same value, so it can never answer differently
+   from the one in `settle`, and keeping it leaves `policy.rs` correct on its own for the
+   fuzzer and the property sweep. There is exactly one effective first rung.
+2. `a_doubly_invalid_input_names_the_same_first_reason_on_every_money_path` is un-ignored and
+   passes. No other test asserted `InvalidPayee` for a doubly-invalid input, so no other test
+   changed meaning: every existing `InvalidPayee` assertion pairs the bad payee with a
+   positive amount.
+3. The crate is version 0.1.1. The release wasm built with `stellar contract build` (CLI
+   27.1.0, rustc 1.96.0) on macOS arm64 is
+   `353e4264f51e6173b9a2a60603239914cbb1456956e912374caf4d9b358db7c0`, 11,605 bytes. The same
+   machine rebuilds the v0.1.0 source to `155eb31c...`, the deployed hash, so the change in
+   hash is the source change and not the machine.
 
-A3-02 and A4-01 therefore both stay **OPEN, bundled into the next redeploy**. The decision is
-made; the code change is not, and saying otherwise would make this document the thing it
-exists to prevent.
+**The CI drift gate is the one thing this change cannot finish by itself.** The reason this
+section used to give for not editing the source, that `.github/workflows/soroban.yml` pins
+`LINUX_X64` and a macOS machine cannot produce the Linux value, is still true. It is a
+reason to re-record a literal from the first CI log, not a reason to keep a known wrong
+answer in the source. So the gate goes red once, on the push that changes the source, for
+exactly the reason it exists, and a follow-up commit records the new Linux hash from that
+run's log.
+
+**What this does NOT do.** It does not fix the deployed v0.1.0 vaults. They have no upgrade
+path, and they answer the old order until a v0.1.1 vault replaces each of them. A3-02 is
+therefore FIXED in source and stays open against each deployed v0.1.0 vault; the remediation
+log says which.
+
+**What does not ship with it.** The other `#[ignore]`d test in that file belongs to D-4,
+asserts INV-05 as originally written, and is false by design under D-4 option A. It stays
+ignored, and its reason string now says the decision was made and which way.
 
 ---
 
 **Original recommendation, kept for the record: A.** Hold it until a redeploy is happening for another
-reason, then take it. It is genuinely two lines.
+reason, then take it. It is genuinely two lines. (It turned out to be one line, in the other
+function.)
+
+---
+
+## Deferred past v0.1.1: A4-01 and D-2 option C
+
+Both were written down as "bundled into the next redeploy". v0.1.1 is that redeploy, and both
+are deliberately left out of it. Decided by the maintainer on 2026-10-01.
+
+**A4-01, renumbering this contract's error codes clear of the SAC's range.** Deferred because
+it is an ABI break. The discriminants are public, frozen by `test/errors.rs`, and decoded by
+number outside this crate: the backend carries a code-to-name table in
+`mcp/src/chains/stellar/adapter.ts` and the frontend another in `src/lib/stellar/passkey.ts`.
+Moving the codes would make each table wrong for whichever vault version it is not talking
+to, and while v0.1.0 and v0.1.1 vaults coexist the decoders would have to know which version
+they are reading. That needs its own design line recording the new range and every reader,
+and it does not belong in a release whose point is a one-line ordering fix. A4-01 stays OPEN.
+
+**D-2 option C, taking the allowlist as a constructor argument.** Deferred because it changes
+the constructor, which is permanent per deploy and is called by every deploy path, receipt
+and rehearsal we have. A new constructor shape means new deploy tooling, new receipt fields
+and a new argument-size bound to decide, for a carry-forward that option A already performs
+as a runbook step. D-2 option A stays in force, and A7-01 stays OPEN, mitigated.
+
+Both remain the right changes for a later version. Neither is cancelled.
 
 ---
 
@@ -280,13 +335,13 @@ documentation half was already done, `1466845` and `3ccb10d`, which is why A3-07
 Nothing needs to ship for this. A5-01 becomes **ACCEPTED**: a known property, decided, with
 the published claim already matching the code.
 
-One loose end this decision creates rather than closes, and it belongs to whoever next runs
-`cargo test`: the `#[ignore]`d test
+One loose end this decision created, now closed: the `#[ignore]`d test
 `inv_05_as_written_the_sum_of_pay_and_owner_pay_stays_under_the_cap` in
-`src/test/arithmetic.rs` still carries the reason string "KNOWN OPEN ... a decision that has
-not been made". That is now false. The test should stay ignored and stay in the tree, because
-it is the cheapest statement of what the contract does not do, but its reason string should
-say the decision was made on 2026-09-15 and which way.
+`src/test/arithmetic.rs` used to carry the reason string "KNOWN OPEN ... a decision that has
+not been made". Since v0.1.1 (2026-10-01) it reads "decided 2026-09-15 (D-4 option A):
+owner_pay is charged to the day but not limited by it; stays ignored by design". The test
+stays ignored and stays in the tree, because it is the cheapest statement of what the
+contract does not do.
 
 ---
 
@@ -344,22 +399,24 @@ policy and is not told the issuer can freeze it.
 | | Decision | Status | Option taken | Needs redeploy |
 | --- | --- | --- | --- | --- |
 | D-1 | Permanent owner | **DONE 2026-08-25**, `cf35b33`, one residual open | **B**, `SetOptions` to a 2-of-3 | no |
-| D-2 | Redeploy drops the allowlist | **DECIDED 2026-09-15**, A in force, C bundled | **A** now, **C** if redeploying anyway | partly |
-| D-3 | Ladder order differs by path | **DECIDED 2026-09-15**, staged in the runbook | **A**, bundle into the next redeploy | yes |
+| D-2 | Redeploy drops the allowlist | **DECIDED 2026-09-15**, A in force; C **deferred past v0.1.1** (2026-10-01) | **A** now, **C** in a later version | partly |
+| D-3 | Ladder order differs by path | **DECIDED 2026-09-15**, **implemented in v0.1.1 source 2026-10-01** (`settle` amount-first) | **A**, carried by the v0.1.1 redeploy | yes |
 | D-4 | `owner_pay` not capped | **DECIDED 2026-09-15**, nothing to ship | **A**, keep the corrected wording | no |
 | D-5 | Circle can freeze | **DECLINED 2026-08-25**, `51978c5`, option C in force | **A + C**, disclose and stay small | no |
 
-Three of the five need no redeploy at all. If a redeploy is ever done for another reason,
-D-3 and D-2's constructor change are the two to carry with it, and A4-01 goes with them. The
-sequence is written out step by step under "Redeploy runbook" in `soroban/README.md`.
+Three of the five need no redeploy at all. D-3 is the one the v0.1.1 redeploy carries. D-2's
+constructor change and A4-01 were meant to ride with it and are deferred past v0.1.1, for the
+reasons in "Deferred past v0.1.1". The sequence is written out step by step under "Redeploy
+runbook" in `soroban/README.md`.
 
 **A decision is not a fix, and this board must not be read as though it were.** D-4 needed
 nothing shipped and its finding is now ACCEPTED. D-2 shipped a runbook step, a script and a
 weekly drift check, which mitigate A7-01 without changing the contract property that causes
-it, so A7-01 stays OPEN. D-3 shipped nothing at all yet, deliberately, because the source
-edit cannot be made on this machine without invalidating the CI wasm hash gate; A3-02 and
-A4-01 stay OPEN and bundled. Two of the three rows that changed on 2026-09-15 still have
-open findings underneath them, and that is the honest state rather than a tidier one.
+it, so A7-01 stays OPEN. D-3 shipped nothing on 2026-09-15; on 2026-10-01 it shipped in the
+v0.1.1 source, which fixes A3-02 for any vault built from that source and for neither of the
+v0.1.0 vaults already deployed. A4-01 stays OPEN, deferred past v0.1.1. Two of the three rows
+that changed on 2026-09-15 still have open findings underneath them, and that is the honest
+state rather than a tidier one.
 
 All three were decided on the maintainer's instruction on 2026-09-15, and in every case the
 option adopted is the one this document had recommended since 2026-08-25. The maintainer can

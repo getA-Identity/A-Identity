@@ -2,6 +2,11 @@
 //!
 //! Written by the arithmetic audit agent. Every test here either kills a mutant that
 //! survives the existing 52, or pins a boundary that nothing else asserts.
+//!
+//! The section ids below are the ids in `audit/findings/A3-arithmetic.md` (A3-NN for a
+//! finding, V-N for a property the audit verified). The draft this file was copied from
+//! numbered its sections in its own order, and several headers carried those draft
+//! numbers, which pointed a reader at the wrong finding. Relabelled in v0.1.1.
 
 use super::{assert_error, setup, UNIT};
 use crate::policy::{check_operator_pay, check_owner_pay, Snapshot};
@@ -85,7 +90,7 @@ fn a_payment_of_the_last_remaining_unit_succeeds() {
     assert_eq!(s.client().balance(), 0);
 }
 
-// ── A3-02: DailyCapExceeded fires BEFORE InsufficientBalance (INV-17) ─────────────
+// ── A3-06: DailyCapExceeded fires BEFORE InsufficientBalance (INV-17) ─────────────
 //
 // The existing `the_gate_order_matches_the_solidity_original` stops at
 // `AboveAutoApprove`. The last two rungs of the documented ladder are untested, and the
@@ -175,7 +180,7 @@ fn math_overflow_is_reported_before_the_daily_cap_and_the_balance() {
     assert_eq!(check_operator_pay(&s, UNIT), Err(Error::MathOverflow));
 }
 
-// ── A3-03: the negative-amount guard, on every money path ────────────────────────
+// ── V-1: the negative-amount guard, on every money path ──────────────────────────
 //
 // The OpenZeppelin "Spending Limit Policy Bypass By Specifying Negative Amount" finding.
 // Verified reachable on all three paths, for the full range of negative i128, and proven
@@ -248,7 +253,7 @@ fn the_pure_ladder_never_accepts_a_non_positive_amount() {
     }
 }
 
-// ── A3-04: overflow boundaries on both ladders ───────────────────────────────────
+// ── A3-08 / V-6: overflow boundaries on both ladders ─────────────────────────────
 
 #[test]
 fn the_owner_ladder_overflows_by_name_rather_than_panicking() {
@@ -385,7 +390,7 @@ fn the_pure_ladder_treats_each_zero_as_no_bound_at_extreme_inputs() {
     assert_eq!(check_operator_pay(&s, i128::MAX), Ok(i128::MAX));
 }
 
-// ── A3-06: today() and the day boundary ──────────────────────────────────────────
+// ── A3-09: today() and the day boundary ──────────────────────────────────────────
 
 #[test]
 fn the_day_index_is_safe_at_both_ends_of_u64() {
@@ -430,19 +435,15 @@ fn two_full_daily_caps_can_move_across_a_utc_midnight_two_seconds_apart() {
     );
 }
 
-// ── A3-07: the refusal ladder must not depend on which money path is taken ───────
+// ── A3-02: the refusal ladder must not depend on which money path is taken (INV-17)
 //
-// FAILS ON CURRENT CODE. `settle` runs `require_valid_payee` BEFORE `check_amount`;
-// `withdraw` runs `check_amount` BEFORE `require_valid_payee`. So an input that violates
-// both gets a different first reason depending on the entrypoint.
+// Up to v0.1.0 `settle` ran `require_valid_payee` BEFORE `check_amount`, while `withdraw`
+// ran `check_amount` BEFORE `require_valid_payee`, so an input that violated both got a
+// different first reason depending on the entrypoint. Fixed in v0.1.1 by making
+// `check_amount` the first line of `settle`. The wasm deployed before v0.1.1 still has the
+// old order, so this test describes the source and any vault built from it, not those.
 
 #[test]
-#[ignore = "A3-02: KNOWN OPEN. settle checks the payee first, withdraw checks the amount \
-              first, so pay(vault, 0) returns InvalidPayee and withdraw(vault, 0) returns \
-              InvalidAmount for the same pair of violations. This is a live defect in the \
-              deployed wasm and the fix is a contract change, which this contract cannot \
-              take without a redeploy. Tracked in audit/DESIGN-DECISIONS.md. Un-ignore in \
-              the commit that redeploys."]
 fn a_doubly_invalid_input_names_the_same_first_reason_on_every_money_path() {
     let s = setup(0, 0);
     s.fund_vault(10 * UNIT);
@@ -458,7 +459,7 @@ fn a_doubly_invalid_input_names_the_same_first_reason_on_every_money_path() {
     assert_error(via_withdraw, Error::InvalidAmount);
 }
 
-// ── A3-08: property sweep over the pure ladder ───────────────────────────────────
+// ── V-7: property sweep over the pure ladder ─────────────────────────────────────
 //
 // The ladder takes no Env, so it can be swept exhaustively over boundary values with no
 // host in the way. This is the property test the crate has no proptest dependency for:
@@ -610,12 +611,11 @@ fn the_owner_ladder_holds_its_money_invariants_over_a_boundary_sweep() {
 /// written in `audit/00-threat-model.md` does not hold, so that the invariant text is
 /// corrected rather than the code.
 #[test]
-#[ignore = "A3-07 / A5-01: KNOWN OPEN, and the invariant is what was wrong rather than \
-              the contract. owner_pay increments the day accumulator and is not compared \
-              against daily_cap, so this assertion is false by design. Kept, failing and \
-              ignored, because it is the cheapest statement of a decision that has not been \
-              made: either owner_pay gets a cap gate (a redeploy) or the product stops \
-              claiming a per-day ceiling binds the human path. See audit/DESIGN-DECISIONS.md."]
+#[ignore = "A3-07 / A5-01: decided 2026-09-15 (D-4 option A): owner_pay is charged to \
+              the day but not limited by it; stays ignored by design. The invariant text was \
+              what was wrong, not the contract: the daily cap bounds the agent, and the owner \
+              is bounded by the balance. Kept as the cheapest statement of what the contract \
+              deliberately does not do. See audit/DESIGN-DECISIONS.md D-4."]
 fn inv_05_as_written_the_sum_of_pay_and_owner_pay_stays_under_the_cap() {
     let s = setup(10 * UNIT, 0);
     s.fund_vault(100 * UNIT);
@@ -631,7 +631,7 @@ fn inv_05_as_written_the_sum_of_pay_and_owner_pay_stays_under_the_cap() {
     );
 }
 
-// ── A3-09: the TTL constants are arithmetic, and their margins are untested ───────
+// ── A3-03 / A3-04: the TTL constants are arithmetic, and their margins are untested
 //
 // `cargo mutants` reports three surviving mutants on the const expressions in
 // storage.rs:

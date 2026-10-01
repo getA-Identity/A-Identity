@@ -83,6 +83,25 @@ version table showing protocol 25 is stale. `soroban-sdk` is therefore pinned to
 `=27.0.6`, exactly, with no caret: a drifting or stale SDK pin is itself a published
 Soroban audit finding.
 
+**Both networks now run protocol 29.** Read live on 2026-10-01, from the ledger headers
+themselves rather than from an announcement:
+
+| Network | Protocol | Since ledger | Closed at (UTC) | Ledger before it |
+| --- | --- | --- | --- | --- |
+| testnet | 29 | 4,935,524 | 2026-09-29 17:00:07 | 4,935,523, protocol 28 |
+| pubnet | 29 | 64,717,645 | 2026-10-01 17:00:07 | 64,717,644, protocol 28 |
+
+Pubnet moved hours before this note was written, so anything that says pubnet is on 28 was
+true until 2026-10-01 17:00 UTC and is stale after it. Both RPCs' `getVersionInfo` report
+`protocolVersion` 29 on the same day. Re-check with `getLatestLedger` against each network's
+RPC; the boundary ledgers above are Horizon `GET /ledgers/{sequence}` reads.
+
+A protocol upgrade does not change a deployed contract: the v0.1.0 vaults run the same
+`155eb31c...` bytes under 29 that they ran under 27. The SDK pin stays at `=27.0.6` and the
+CLI at 27.1.0 for v0.1.1, deliberately, so that the only difference between the v0.1.0 and
+v0.1.1 artifacts is the source change. Moving the SDK forward is its own change with its own
+hash, not something to fold into a fix.
+
 Target is `wasm32v1-none`. Some documentation still says `wasm32-unknown-unknown`; that is
 wrong for this platform.
 
@@ -97,20 +116,36 @@ the suite was at 93% lines while 22 mutants still survived, including two that d
 TTL guards outright.
 
 ```bash
-cargo test                                   # 106 contract tests (2 ignored, see below)
+cargo test                                   # 107 contract tests pass, 1 ignored (see below)
 cargo clippy --all-targets -- -D warnings
 cargo fmt --check
 stellar contract build                       # -> target/wasm32v1-none/release/*.wasm
 node audit/run-negative-controls.mjs         # each guard deleted, suite must go red
 ```
 
-Two of the 106 are `#[ignore]`d on purpose, and the reason is in the attribute rather than
-in a comment somewhere else. They encode findings A3-02 and A3-07 from the 2026-08-25 audit:
-the refusal ladder's first rung differs between `settle` and `withdraw`, and `owner_pay` is
-charged to the daily cap without being limited by it. Both are live in the deployed wasm and
-both need a contract change, which this contract cannot take without a redeploy. They are
-kept failing-and-ignored rather than deleted, because a deleted test is a decision nobody
-can see. Un-ignore them in the commit that redeploys.
+One more test is declared than runs: it is `#[ignore]`d on purpose, and the reason is in the
+attribute rather than in a comment somewhere else. It encodes finding A3-07 from the
+2026-08-25 audit, that `owner_pay` is charged to the daily cap without being limited by it.
+Decision D-4 (2026-09-15, option A) kept that behaviour: the daily cap bounds the agent, and
+the owner is bounded by the balance. So the test asserts something false by design, and it
+stays ignored for good. It is kept rather than deleted, because a deleted test is a decision
+nobody can see.
+
+Until v0.1.1 there were two. The other encoded A3-02: `settle` checked the payee before the
+amount while `withdraw` checked the amount first, so `pay(vault, 0)` answered `InvalidPayee`
+and `withdraw(vault, 0)` answered `InvalidAmount`. v0.1.1 moves `policy::check_amount` to the
+first line of `settle`, and
+`a_doubly_invalid_input_names_the_same_first_reason_on_every_money_path` now runs and passes.
+The fix is in the source and in any vault built from it. **It is not in the two deployed
+vaults,** which run the v0.1.0 wasm (`155eb31c...`) and keep the old order until v0.1.1
+vaults replace them: until then, a client talking to them has to treat `InvalidPayee` and
+`InvalidAmount` as interchangeable first reasons on `pay` and `owner_pay`.
+
+The v0.1.1 release wasm, built here with `stellar contract build` (CLI 27.1.0, rustc 1.96.0,
+macOS arm64), is `353e4264f51e6173b9a2a60603239914cbb1456956e912374caf4d9b358db7c0`, 11,605
+bytes, well under the 131,072-byte network limit. The same machine rebuilds the v0.1.0 source
+to the deployed `155eb31c...`, so the new hash is the source change and not the machine. Not
+uploaded to either network yet.
 
 `.github/workflows/soroban.yml` runs all of it plus two advisory checks and a 128KB size
 gate, scoped to `soroban/**` so a frontend commit does not pay for a Rust toolchain. The
@@ -281,14 +316,84 @@ that warns too early would be worse than no job.
 **Testnet's numbers are a rehearsal.** Stellar testnet is reset periodically, and a reset
 takes the vault, its balance and its allowlist with it. The testnet row above stops being
 true the moment that happens, and the correct response is to redeploy there rather than to
-worry about its TTL.
+worry about its TTL. "Testnet reset plan" below is that response, written down before it is
+needed.
+
+## Testnet reset plan
+
+**The date.** Stellar resets testnet two to four times a year, at 17:00 UTC, announced at least
+two weeks ahead. The next scheduled reset is **2026-12-16**, per
+developers.stellar.org/docs/networks, read on 2026-10-01. Re-read that page before relying on
+the date; it is the source, this paragraph is a copy.
+
+**What a reset deletes.** Every ledger entry, every transaction and all history. For us that
+is:
+
+- **Our vaults.** The testnet AgentSpendPolicy instance, its balance, its allowlist entries
+  and its day buckets, and the uploaded wasm code entry it runs. Any v0.1.1 vault deployed
+  on testnet before the reset goes the same way.
+- **The OpenZeppelin smart-account code and verifiers we upload.** We build those contracts
+  ourselves from the audited OpenZeppelin stellar-contracts release line and upload them to
+  testnet ourselves; a reset deletes the code entries and every account instantiated from
+  them, including the passkey smart account behind the D3 evidence.
+- **Every account we hold there.** Owner, operator, fee payer, the x402 seller: each has to be
+  re-created and re-funded, and each one's trustlines re-opened.
+- **Possibly the Circle testnet USDC SAC instance.** A Stellar Asset Contract's id is derived
+  from the asset (code plus issuer), so if Circle re-creates the same issuer account the SAC
+  can be re-deployed at the same `CBIELTK6...` id by anyone, and nothing in our registry
+  changes. If the issuer does not come back, or comes back under a different key, the id
+  changes, and the chain registry entry has to follow it. Check before redeploying anything
+  that is constructed against it, because the vault constructor reads `decimals()` from the
+  token and fails at deploy if the SAC is not there.
+
+**What survives, because it was never on the ledger.**
+
+- **The archive.** Every transaction we claim is archived at capture time in
+  `releases/tx-archive/`: the envelope, the result and the meta, as XDR. That is the proof,
+  without Horizon and without RPC, that a hash once existed and what it did, because the
+  envelope is what hashes to the transaction id and the meta is what the network returned.
+  After a reset, explorer links for testnet hashes go dead; the archive is what a reviewer
+  reads instead.
+- **The receipts.** `releases/*.json` record the wasm hash, the constructor arguments, the
+  contract id and every claimed transaction for each deploy.
+- **The source and the build.** The wasm is rebuilt from the tagged source, and its sha256 is
+  compared against the receipt before it is uploaded again.
+
+**The redeploy, in order.**
+
+1. Re-create and fund the deployer, owner, operator and fee-payer accounts from the keys we
+   already hold. The keys are not on the ledger and are not lost; only the accounts are.
+2. Confirm the token: read `decimals()` and `symbol()` through the Circle testnet USDC SAC,
+   re-deploying the SAC instance for the asset if it is missing.
+3. Rebuild the wasm, check its sha256 against the receipt, and upload it.
+4. Instantiate each vault from its receipt: the same constructor arguments, and the **same
+   deployer and salt**. A contract id is derived from the deployer address and the salt, so a
+   redeploy with both recorded comes back at the same `C...` address, and every link to it
+   keeps working. The planned tool for this is `mcp/scripts/stellar-deploy-vault.mjs`, which
+   takes the receipt as input; it is not in the tree as of 2026-10-01, and until it is the
+   same deploy is a `stellar contract deploy --salt` by hand with the recorded values. The
+   v0.1.0 receipts record no salt (those vaults were deployed with a random one), so the
+   v0.1.0 testnet address cannot be reproduced and is replaced by a new one: repoint as in
+   the redeploy runbook below. Every receipt from v0.1.1 on records the deployer and salt.
+5. Re-arm the policy: `set_policy`, the allowlist from `releases/testnet-allowlist.json`, the
+   session key expiry, and fund the vault.
+6. Re-upload the OpenZeppelin smart-account and verifier wasm and check each code hash
+   against the reproducible build, then re-create the passkey smart account. A passkey is
+   bound to its device, so this step needs a person with the device; it cannot be scripted.
+7. **Recapture.** Re-run each evidence flow and archive the new transactions in
+   `releases/tx-archive/` beside the old ones. Old hashes are kept and marked as pre-reset
+   rather than replaced: they happened, the archive proves it, and a reader should be able
+   to see both.
+
+Pubnet is never reset, and none of this applies there.
 
 ## Redeploy runbook
 
 This contract has no upgrade path. `withdraw`, redeploy, repoint is the escape hatch, and it
-produces a new contract id every time. Two open audit findings are cheap only if they ride
-along with a redeploy that is happening anyway, so they are steps here rather than tickets:
-A3-02 (decision D-3) and A7-01 (decision D-2).
+produces a new contract id every time. Audit findings that are cheap only if they ride along
+with a redeploy are steps here rather than tickets. The next redeploy is v0.1.1, and it
+carries A3-02 (decision D-3), already in the source. A7-01's contract fix (D-2 option C) and
+A4-01 are deferred past v0.1.1; D-2 option A, the allowlist snapshot, is a step below.
 
 Read `../audit/DESIGN-DECISIONS.md` before starting. The order below is not arbitrary: the
 snapshot has to happen while the OLD vault is still readable, and the balance has to leave
@@ -311,8 +416,9 @@ before the address stops being the one anybody watches.
    Instantiating on top of it cost 0.0992122 XLM on pubnet; uploading the same 11,625 bytes
    fresh cost 12.2319214 XLM. Pass the SAME constructor policy as the record in `releases/`,
    because those five arguments are permanent and there is no `initialize` to correct them.
-   A source change means a new hash and the 12 XLM upload, so step 7 is what makes this
-   step expensive.
+   A source change means a new hash and the 12 XLM upload, and v0.1.1 IS a source change
+   (`353e4264...`, step 7), so a v0.1.1 redeploy uploads fresh. Record the deployer and the
+   salt in the new receipt, so the address can be reproduced after a testnet reset.
 5. **Repoint.** `mcp/src/chains/registry.ts` `contracts.spendVault` and
    `contracts.spendVaultWasmHash`, `mcp/src/chains/provenance.ts`, and a new receipt in
    `releases/` that marks the old address superseded rather than deleting it.
@@ -321,28 +427,35 @@ before the address stops being the one anybody watches.
    snapshot script against the NEW contract and confirm `--check` passes. Getting this wrong
    is silent: an unarmed allowlist on a vault whose `allowlist_enabled` is false does not
    refuse anything, it permits everything.
-7. **Carry A3-02 in the same commit.** In `src/lib.rs`, `withdraw` runs
-   `policy::check_amount` before `require_valid_payee`; `settle` runs them the other way
-   round. Swap those two lines in `withdraw` so both money paths name the same first reason
-   for the same pair of violations, then un-ignore
+7. **Ship A3-02: deploy the v0.1.1 wasm.** The source change is already made, in `settle`:
+   `policy::check_amount` is its first line, ahead of `require_valid_payee`, which is the
+   order `withdraw` already had, so `pay`, `owner_pay` and `withdraw` all name
+   `InvalidAmount` first for the same pair of violations, as INV-17 specifies.
    `a_doubly_invalid_input_names_the_same_first_reason_on_every_money_path` in
-   `src/test/arithmetic.rs`, rebuild with `stellar contract build`, and re-record
-   `LINUX_X64` in `.github/workflows/soroban.yml`. That literal is the hash the CI runner
-   produces from the source, so a source change is supposed to move it; leaving it stale
-   turns the drift gate red for the right reason and the wrong commit.
+   `src/test/arithmetic.rs` is un-ignored and passes. What is left for the redeploy is to
+   build with `stellar contract build`, check the hash against the v0.1.1 receipt, upload,
+   and re-record `LINUX_X64` in `.github/workflows/soroban.yml` from the first CI run on the
+   new source. That literal is the hash the CI runner produces from the source, so a source
+   change is supposed to move it.
+
+   **A correction.** Until 2026-10-01 this step said to swap the two lines in `withdraw`
+   instead. That was backwards: it would have made all three paths answer `InvalidPayee`,
+   left the committed test red, and contradicted INV-17. `../audit/DESIGN-DECISIONS.md` D-3
+   has the full reason.
 
    Do NOT un-ignore the other `#[ignore]`d test in that file. It asserts INV-05 as it was
    originally written, that `pay` plus `owner_pay` stays under the daily cap, and decision
    D-4 chose to keep the contract as it is and keep the corrected wording instead. That
    assertion is false by design, so un-ignoring it would make `cargo test` red permanently.
-   What it needs is its reason string updated to say the decision is made rather than
-   pending.
-8. **A4-01 rides along or it does not ship.** The token's error codes collide with this
+   Its reason string already says the decision was made.
+8. **A4-01 does not ride along with v0.1.1.** The token's error codes collide with this
    contract's, so a caller cannot tell an `Error(Contract, #13)` raised by the SAC from one
    of ours. Moving this contract's discriminants clear of the SAC range is a redeploy-only
-   change with no cheaper carrier, and it is an ABI break: the codes are public and frozen
-   by `test/errors.rs`. It needs its own line in `../audit/DESIGN-DECISIONS.md` recording
-   the new range and what reads it, and it must not be improvised during the redeploy.
+   change and an ABI break: the codes are public, frozen by `test/errors.rs`, and decoded by
+   number in the backend and the frontend. It was deferred past v0.1.1 on 2026-10-01, and so
+   was D-2 option C (the allowlist as a constructor argument), which changes the permanent
+   constructor. Both need their own line in `../audit/DESIGN-DECISIONS.md` before any code
+   moves, and neither is to be improvised during a redeploy.
 
 Then re-run the verification the rest of this README describes, and rehearse the whole
 sequence on testnet first. Rehearsing it is free and finding A7-03 is that it never has

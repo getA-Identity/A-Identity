@@ -19,6 +19,7 @@ verified by re-introducing the defect and watching the suite go red, then restor
 | budget | - | `4bc0a78` | 485,587 CPU of 400,000,000; 158,346 mem of 41,943,040 | pinned at 10% so a regression reports |
 | fuzzing | - | `4bc0a78` | `fuzz/policy_ladder`, 20,136 executions committed and re-runnable | n/a |
 | F-05 (out of scope, found earlier) | High | `dc14389` | storage tells "empty" from "unreadable"; 6 tests | yes: restoring the fail-open turns the producer tests red |
+| A3-02 | Low | the v0.1.1 commit (2026-10-01) | `settle` runs `policy::check_amount` before `require_valid_payee`, so `pay`, `owner_pay` and `withdraw` all answer `InvalidAmount` for `(vault, 0)`. `test/arithmetic.rs` `a_doubly_invalid_input_names_the_same_first_reason_on_every_money_path` is un-ignored and green: 107 contract tests pass, 1 ignored (the D-4 test, by design). Release wasm from `stellar contract build` (CLI 27.1.0, rustc 1.96.0, macOS arm64): sha256 `353e4264f51e6173b9a2a60603239914cbb1456956e912374caf4d9b358db7c0`, 11,605 bytes; the same machine rebuilds v0.1.0 source to the deployed `155eb31c...`. **Deployed: NOT YET UPLOADED. No network carries this wasm as of 2026-10-01; this sentence is a placeholder to be replaced with the upload and instantiate transactions, the contract id per network, and the `soroban/releases/` receipt once they exist.** | yes: the committed test failed against v0.1.0 (`InvalidPayee` where `InvalidAmount` was asserted) and passes against v0.1.1 |
 
 ---
 
@@ -40,8 +41,10 @@ names it, the register says OPEN even when the change looks as though it may hav
 incidentally, and says so. Re-verified against the working tree on 2026-08-25; the
 verification is noted inline wherever it was more than reading a commit message.
 
-**62 findings: 18 FIXED, 14 ACCEPTED, 30 OPEN.** Most of the open set is documentation and
-process, and most of it is cheap.
+**62 findings: 21 FIXED, 14 ACCEPTED, 27 OPEN.** Most of the open set is documentation and
+process, and most of it is cheap. One of the 21, A3-02, is fixed in source only: the two
+deployed v0.1.0 vaults still answer the old order until v0.1.1 vaults replace them, and its
+row says so.
 
 Updated 2026-09-15, when the last three design decisions were recorded. Only one id moved:
 A5-01 went OPEN to ACCEPTED, because D-4 decided the contract keeps its behaviour and there
@@ -50,6 +53,14 @@ nobody reads a decided board as a closed one.** A3-02 and A4-01 are decided and 
 the next redeploy, which has not happened; A7-01 is decided and mitigated by a runbook step,
 a snapshot script and a weekly drift check, none of which change the contract property that
 a redeploy drops the allowlist. A decision closes a question. It does not close a finding.
+
+Updated 2026-10-01, for v0.1.1. Three ids moved, all OPEN to FIXED. **A3-02**: D-3 is
+implemented in the contract source, in `settle` rather than in `withdraw` as the runbook used
+to say (`DESIGN-DECISIONS.md` D-3 has the reason). **A3-08** and **A5-04**: INV-17 in
+`00-threat-model.md` now lists `InvalidPayee` and `MathOverflow` in the ladder and states the
+order per entrypoint, which is the documentation both asked for. Two ids that were bundled
+with A3-02 did NOT move: **A4-01** and **A7-01** (via D-2 option C) are explicitly deferred
+past v0.1.1, because each changes the contract's public interface.
 
 ### A1 - authorization
 
@@ -82,13 +93,13 @@ a redeploy drops the allowlist. A decision closes a question. It does not close 
 | Id | Sev | Disposition | Detail |
 | --- | --- | --- | --- |
 | A3-01 | Low | **FIXED** | `f0c730f` |
-| A3-02 | Low | **OPEN**, bundled into the next redeploy | A live defect in the deployed wasm: `settle` checks the payee before the amount, `withdraw` the reverse, so the same two violations return two different codes. The failing test is committed and `#[ignore]`d with the finding id in the attribute, so `cargo test` prints it on every run. D-3 decided 2026-09-15, option A: the two-line reorder ships with the next redeploy that happens for another reason, together with un-ignoring that test and re-recording the CI `LINUX_X64` wasm hash. The source is deliberately not edited yet, because `soroban.yml` pins a Linux-built hash this machine cannot produce. Closes with: that redeploy. The sequence is written out in `soroban/README.md`, "Redeploy runbook" |
+| A3-02 | Low | **FIXED** in source, v0.1.1 (2026-10-01); not yet deployed | `settle` now runs `policy::check_amount` first, so the same two violations return `InvalidAmount` on all three money paths, and the committed test is un-ignored and green. The fix is in `settle`, not the `withdraw` swap this row and the runbook used to prescribe, which would have made all three answer `InvalidPayee` and left the test red. Release wasm `353e4264...db7c0`, 11,605 bytes (macOS arm64 build). Still live in the deployed v0.1.0 wasm (`155eb31c...`) on both networks, which cannot be patched in place: each vault is fixed only when a v0.1.1 vault replaces it. The CI `LINUX_X64` hash in `soroban.yml` has to be re-recorded from the first CI run on the new source. Deployed: not yet uploaded, see the evidence table |
 | A3-03 | Low | **FIXED** | `f0c730f` |
 | A3-04 | Low | **FIXED** | `f0c730f` |
 | A3-05 | Low | **FIXED** | `f0c730f` |
 | A3-06 | Low | **FIXED** | `f0c730f` |
 | A3-07 | Info | **FIXED** | `3ccb10d`. Its recommended fix was explicitly the invariant text and not the code: `00-threat-model.md:232-236` now states INV-05 over `pay` alone and records the correction in place. Whether to also cap `owner_pay` in the contract is a separate question, tracked as A5-01 under D-4 |
-| A3-08 | Info | **OPEN** | `MathOverflow` is a rung of the refusal ladder that the ladder documentation does not list. `error.rs:29-30` documents the variant in the Solidity-parity list, which is a different list. Closes with: adding it where the ladder is documented |
+| A3-08 | Info | **FIXED** | v0.1.1 (2026-10-01). INV-17 in `00-threat-model.md` now lists `MathOverflow` between `AboveAutoApprove` and `DailyCapExceeded`, and the owner ladder's own order, which is where the ladder is documented |
 | A3-09 | Info | **OPEN** | The calendar-bucket consequence, same substance as A2-06 and closed by the same wording change |
 | A3-10 | Info | **OPEN**, and the finding needs restating first | It reports that "the committed `soroban/mutants.out`" under-reports by 49 mutants. Verified 2026-08-25: `git log --all -- 'soroban/mutants.out*'` is empty, so that directory has never been committed on any branch and there is no stale committed artifact to replace. It is ignored locally by `soroban/.gitignore`, which is itself invisible to git for the reason A8-06 gives, so a fresh clone WOULD stage it. Closes with: restating the finding against the untracked directory, or withdrawing it |
 
@@ -96,7 +107,7 @@ a redeploy drops the allowlist. A decision closes a question. It does not close 
 
 | Id | Sev | Disposition | Detail |
 | --- | --- | --- | --- |
-| A4-01 | Medium | **OPEN**, bundled into the next redeploy | The token's error codes collide with this contract's and a caller cannot tell them apart. Confirmed with a passing PoC. Needs a redeploy; closes with: moving this contract's discriminants clear of the SAC range, bundled with whatever redeploy D-3 triggers. D-3 was decided 2026-09-15 and this rides with it. It is also an ABI break, since the discriminants are public and frozen by `test/errors.rs`, so it needs its own design line recording the new range before any code moves |
+| A4-01 | Medium | **OPEN**, deferred past v0.1.1 | The token's error codes collide with this contract's and a caller cannot tell them apart. Confirmed with a passing PoC. Needs a redeploy; closes with: moving this contract's discriminants clear of the SAC range. It was bundled with D-3 and is now deferred past v0.1.1 (decided 2026-10-01): it is an ABI break, the discriminants are public and frozen by `test/errors.rs`, and the backend and the frontend each decode them by number, so it needs its own design line recording the new range and every reader before any code moves. See `DESIGN-DECISIONS.md`, "Deferred past v0.1.1" |
 | A4-02 | Medium | **ACCEPTED** | D-5 decided 2026-08-25. Option A (publish the freeze disclosure) was DECLINED and the caveats box was removed from `/proof/:rail` in `51978c5`; option C, keeping balances small, is what bounds the exposure and is in force. The facts are unchanged and are recorded in D-5. The caveat data is still machine-readable in `provenance.ts` and still test-enforced; it is no longer rendered |
 | A4-03 | Low here, Medium elsewhere | **OPEN** | Settlement is asserted, never verified: no balance delta anywhere. A deployment risk rather than a live one for the two audited deployments. Closes with: a balance-delta assertion around settlement |
 | A4-04 | Low | **OPEN** | Three payee-side failures produce untyped aborts and a muxed destination is unpayable. Closes with: typed refusals for the three, and an explicit statement that muxed destinations are unsupported |
@@ -106,10 +117,10 @@ a redeploy drops the allowlist. A decision closes a question. It does not close 
 
 | Id | Sev | Disposition | Detail |
 | --- | --- | --- | --- |
-| A5-01 | Low | **ACCEPTED** | `owner_pay` is charged to the daily cap but not bounded by it. D-4 decided 2026-09-15, option A: the contract keeps this behaviour and the corrected wording stands, so the published claim is "the daily cap bounds the agent; the owner is bounded by the balance and by nothing else". The documentation half was already done (`1466845`, `3ccb10d`), which is why A3-07 is FIXED. Nothing ships for this. One loose end it creates: the `#[ignore]`d test `inv_05_as_written_...` still says "a decision that has not been made" in its reason string, which is now false and should say decided |
+| A5-01 | Low | **ACCEPTED** | `owner_pay` is charged to the daily cap but not bounded by it. D-4 decided 2026-09-15, option A: the contract keeps this behaviour and the corrected wording stands, so the published claim is "the daily cap bounds the agent; the owner is bounded by the balance and by nothing else". The documentation half was already done (`1466845`, `3ccb10d`), which is why A3-07 is FIXED. Nothing ships for this. The loose end it created, the `#[ignore]`d test `inv_05_as_written_...` saying "a decision that has not been made", is closed in v0.1.1: its reason string now says decided 2026-09-15 (D-4 option A) and that it stays ignored by design |
 | A5-02 | Info | **OPEN** | Verified 2026-08-25: `policy.rs:104` still says the accumulator keeps "on-chain accounting ... honest about total outflow". It resets daily and does not count `withdraw`, so it is not that record. `ad8d5b6` corrected four parity comments; this was not one of them. Closes with: correcting that sentence |
 | A5-03 | Low | **ACCEPTED** | A compromised operator can burn the cap at net-zero cost. Accepted and mitigated by the allowlist, as recorded in `AUDIT_REPORT.md`. The comment claiming `require_valid_payee` closes it is what was wrong, not the trade |
-| A5-04 | Info | **OPEN** | `InvalidPayee` is absent from the documented refusal ladder and fires in a different position per entrypoint. The position half is A3-02. Closes with: documenting the rung |
+| A5-04 | Info | **FIXED** | v0.1.1 (2026-10-01). INV-17 now names `InvalidPayee` as the second rung, and the position half closed with A3-02: in the v0.1.1 source it fires second on every entrypoint. The deployed v0.1.0 wasm still fires it first on `pay` and `owner_pay` |
 | A5-05 | Info | **FIXED** | `ad8d5b6`. Four parity comments corrected in error.rs, lib.rs and policy.rs |
 | A5-06 | Low | **OPEN** | `set_policy` is a whole-struct overwrite with no partial update and no compare-and-swap, so a stale read overwrites a concurrent change silently. Closes with: a compare-and-swap argument, which needs a redeploy, or an operational rule that only one writer touches policy |
 | A5-07 | Info | **OPEN** | The allowlist can be enabled over an empty payee set, locking the agent out. The finding says "believed intended"; a belief is not a decision. Closes with: a maintainer confirming it is intended, at which point it becomes ACCEPTED |
@@ -133,7 +144,7 @@ refusal writes nothing, including the TTL bump.
 
 | Id | Sev | Disposition | Detail |
 | --- | --- | --- | --- |
-| A7-01 | Medium | **OPEN**, mitigated | A redeploy silently drops the allowlist. Re-verified live 2026-09-15: testnet's `allowlist_enabled` is still `true` with exactly one payee armed, `GBMRWLL7...SEJAN6TI`, the x402 seller, so a redeploy there right now would still drop it and come up empty and unenforced. D-2 decided 2026-09-15, option A now plus C bundled into any redeploy. The mitigation shipped: `mcp/scripts/stellar-vault-allowlist.mjs`, committed snapshots at `soroban/releases/*-allowlist.json`, a runbook step in `soroban/README.md`, and a weekly `--check` in `.github/workflows/stellar-ops.yml`. It stays OPEN because none of that changes the contract property, and because the recovery window it was meant to use has already closed: `getEvents` returned zero events for both vaults on 2026-09-15, so the snapshot is built by probing named candidates and is a lower bound. Closes with: option C, the allowlist as a constructor argument, at the next redeploy |
+| A7-01 | Medium | **OPEN**, mitigated | A redeploy silently drops the allowlist. Re-verified live 2026-09-15: testnet's `allowlist_enabled` is still `true` with exactly one payee armed, `GBMRWLL7...SEJAN6TI`, the x402 seller, so a redeploy there right now would still drop it and come up empty and unenforced. D-2 decided 2026-09-15, option A now plus C bundled into any redeploy. The mitigation shipped: `mcp/scripts/stellar-vault-allowlist.mjs`, committed snapshots at `soroban/releases/*-allowlist.json`, a runbook step in `soroban/README.md`, and a weekly `--check` in `.github/workflows/stellar-ops.yml`. It stays OPEN because none of that changes the contract property, and because the recovery window it was meant to use has already closed: `getEvents` returned zero events for both vaults on 2026-09-15, so the snapshot is built by probing named candidates and is a lower bound. Closes with: option C, the allowlist as a constructor argument, which is deferred past v0.1.1 (decided 2026-10-01) because it changes the permanent constructor and every deploy path that calls it |
 | A7-02 | High | **ACCEPTED** | Same disposition and same residual as A1-01: D-1, `cf35b33`, owner account is a 2-of-3 multisig. "Singular" is closed; "permanent" and "un-timelocked" are properties of the deployed contract and cannot be closed without a new contract id |
 | A7-03 | Low | **OPEN** | The documented recovery runbook omits the freeze step and has never been rehearsed. Closes with: adding the step and rehearsing it once on testnet, which is free |
 | A7-04 | Info | **ACCEPTED** | Not a defect. No upgrade path, confirmed at bytecode level; protocol 28 does not change it. The finding's status is "Verified, no action" |
@@ -174,8 +185,8 @@ more usefully, what that did and did not change underneath.
 
 | Decision | Findings | Option taken | What it changed here |
 | --- | --- | --- | --- |
-| D-2 | A7-01 | **A** now, **C** bundled into any redeploy | A7-01 stays OPEN, mitigated. A snapshot script, committed snapshots, a runbook step and a weekly drift check. The contract property is unchanged, and the 7.9-day event window the original option A assumed has already closed, so the snapshot is a probed lower bound rather than a replay of history |
-| D-3 | A3-02, carrying A4-01 | **A**, bundle into the next redeploy | Nothing shipped. Both stay OPEN. The source edit is deliberately deferred because `soroban.yml` pins a Linux-built wasm hash this machine cannot reproduce, so the reorder, the un-ignored test and the new hash have to land in one commit |
+| D-2 | A7-01 | **A** now, **C** bundled into any redeploy; C deferred past v0.1.1 on 2026-10-01 | A7-01 stays OPEN, mitigated. A snapshot script, committed snapshots, a runbook step and a weekly drift check. The contract property is unchanged, and the 7.9-day event window the original option A assumed has already closed, so the snapshot is a probed lower bound rather than a replay of history |
+| D-3 | A3-02, carrying A4-01 | **A**, bundle into the next redeploy | Nothing shipped on 2026-09-15. On 2026-10-01 v0.1.1 shipped it in source, in `settle`: A3-02 is FIXED in source and not yet deployed. A4-01 was split off and deferred past v0.1.1, and stays OPEN. The CI `LINUX_X64` hash is re-recorded from the first CI run on the new source |
 | D-4 | A5-01 | **A**, keep the contract and the corrected wording | A5-01 moves OPEN to ACCEPTED. Nothing to ship; the published claim already matches the code |
 
 D-1 (A7-02, A1-01) and D-5 (A4-02) were decided on 2026-08-25 and their findings are

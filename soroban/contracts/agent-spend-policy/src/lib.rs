@@ -294,6 +294,18 @@ impl AgentSpendPolicy {
     /// whole invocation rolls back together if the transfer fails, so a failed transfer
     /// cannot leave the day counter charged.
     fn settle(env: &Env, to: &Address, amount: i128, by_owner: bool) -> Result<(), Error> {
+        // Amount first, then payee, which is the order `withdraw` already uses. Until
+        // v0.1.1 this function checked the payee first, so `pay(vault, 0)` answered
+        // `InvalidPayee` while `withdraw(vault, 0)` answered `InvalidAmount` for the same
+        // two violations (finding A3-02). INV-17 puts `InvalidAmount` on the first rung of
+        // one refusal ladder shared by `pay`, `owner_pay` and `withdraw`, and a caller
+        // branching on the typed reason should not get a different answer per entrypoint.
+        //
+        // The ladders in `policy.rs` call `check_amount` again as their own first rung.
+        // That second call is a pure function over the same value, so it can never answer
+        // differently from this one, and it is kept so `policy.rs` stays correct as a
+        // standalone module for the fuzzer and the property sweep.
+        policy::check_amount(amount)?;
         Self::require_valid_payee(env, to)?;
 
         let day = store::today(env);

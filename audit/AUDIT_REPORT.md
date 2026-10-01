@@ -75,7 +75,7 @@ rotation, so a compromised owner key is total and irreversible loss.
 
 | Gate | Result |
 | --- | --- |
-| Contract tests | **106**, 2 ignored (both encode known-open findings) |
+| Contract tests | At the audit: **106** passing, 2 ignored (both encoding known-open findings). Since v0.1.1 (2026-10-01): **107** passing, 1 ignored. The A3-02 test was un-ignored when the fix landed; the one still ignored is the D-4 test, false by design |
 | Mutation score | **137 mutants, 0 survivors**, 126 caught, 11 unviable. Re-measured 2026-08-25 and archived at `audit/tool-output/P5-cargo-mutants.txt`; `mutants.out/` is gitignored, so until now the newest ARCHIVED run said "10 missed" and contradicted this row |
 | Line coverage | **99.70%** lines, **98.18%** functions, **99.82%** regions. The one uncovered line is `storage.rs:110`, the `#[contracttype]` macro on `DataKey`. Re-measured 2026-08-25 and archived at `audit/tool-output/P5-llvm-cov.txt`; it had been asserted in two places and archived in none |
 | Function coverage | **98.18%** |
@@ -86,7 +86,7 @@ rotation, so a compromised owner key is total and irreversible loss.
 | GHSA check | 0 of 215 locked crates in a published vulnerable range |
 | clippy `-D warnings` | clean, and enforced in CI (`soroban.yml:47`) |
 | clippy security lint set | **NOT enforced, and it does not pass.** `unwrap_used`, `expect_used`, `panic`, `indexing_slicing` and `arithmetic_side_effects` are enabled by no `clippy.toml`, no `[lints]` table and no crate attribute, and plain `-D warnings` enables none of them. Turned on by hand, the library alone fails with 4 errors: `unwrap()` at `storage.rs:144,152,160,168`. See A8-04 and A6-03 |
-| Deployed wasm | `155eb31c...79239` on both networks, byte-identical, verified by `stellar contract fetch` |
+| Deployed wasm | `155eb31c...79239` (v0.1.0) on both networks, byte-identical, verified by `stellar contract fetch`. The v0.1.1 source builds to `353e4264...db7c0`, 11,605 bytes, on macOS arm64; it is not deployed anywhere yet |
 
 ---
 
@@ -107,16 +107,16 @@ rotation, so a compromised owner key is total and irreversible loss.
 | A8-03 | Secret scanning and push protection off on a public repo | **Fixed** (one setting left) |
 | A2-04 | The live vaults archive on a known date | **Fixed** (made checkable) |
 | A1-01 | Owner over-privilege, formalising P-2 | **Accepted**: same as A7-02, D-1, `cf35b33` |
-| A7-01 | A redeploy silently drops the allowlist | Open, awaiting D-2 (**undecided**) |
-| A4-01 | Token error codes collide with this contract's | Open, needs redeploy |
+| A7-01 | A redeploy silently drops the allowlist | Open, mitigated: D-2 decided 2026-09-15, option A in force; option C (constructor argument) deferred past v0.1.1 |
+| A4-01 | Token error codes collide with this contract's | Open, deferred past v0.1.1: an ABI break the backend and frontend decode tables would have to follow |
 | A4-02 | Circle can freeze the vault permanently | **Accepted**: D-5 declined the disclosure, `51978c5`; option C, small balances, is in force |
 
 ### Notable Low
 
 | Id | Title | Status |
 | --- | --- | --- |
-| A3-02 | The refusal ladder's first rung differs by path | Open, live defect, needs redeploy (D-3) |
-| A5-01 / A3-07 | `owner_pay` is charged to the cap but not limited by it | A3-07 (the invariant text) **Fixed**, `3ccb10d`. A5-01 (the contract) Open, awaiting D-4, which is **undecided** |
+| A3-02 | The refusal ladder's first rung differs by path | **Fixed in v0.1.1 source** (D-3, 2026-10-01, `settle` checks the amount first). Still live in the deployed v0.1.0 wasm until a v0.1.1 vault replaces each one; not yet uploaded |
+| A5-01 / A3-07 | `owner_pay` is charged to the cap but not limited by it | A3-07 (the invariant text) **Fixed**, `3ccb10d`. A5-01 (the contract) **Accepted**: D-4 decided 2026-09-15, option A, the cap bounds the agent and the owner is bounded by the balance |
 | A2-01, A2-02 | TTL guards could be disabled without failing a test | **Fixed** |
 | A3-01 | Paying exactly the vault balance was untested | **Fixed** |
 | A5-03 | A compromised operator can burn the cap at net-zero cost | Accepted, mitigated by the allowlist |
@@ -208,12 +208,12 @@ function.
 
 | | Where |
 | --- | --- |
-| **31 open findings**, each with what would close it | `REMEDIATION_LOG.md` |
-| **Three decisions still undecided**: D-2, D-3, D-4. D-1 and D-5 are settled | `DESIGN-DECISIONS.md` |
+| **27 open findings** (as of 2026-10-01), each with what would close it | `REMEDIATION_LOG.md` |
+| All five decisions are recorded: D-1 and D-5 on 2026-08-25, D-2, D-3 and D-4 on 2026-09-15. D-3 is implemented in the v0.1.1 source; A4-01 and D-2 option C are deferred past v0.1.1 | `DESIGN-DECISIONS.md` |
 | One repo setting (non-provider secret patterns), a paid feature; the gitleaks step in `ci.yml` is what covers it meanwhile | maintainer, both remotes |
 | npm advisories: both HIGHs closed 2026-08-25 (`259db02`); `mcp/` keeps 22 (15 moderate, 7 low) deliberately | `SECURITY.md`, and the daily gate in `.github/workflows/security.yml` |
 | A longer fuzz campaign with a committed corpus | unfinished |
-| Items that need a redeploy: A3-02, A4-01, D-2's constructor change | bundle if a redeploy happens |
+| Items that need a redeploy: A3-02 ships with the v0.1.1 redeploy (source done, not yet uploaded); A4-01 and D-2's constructor change are deferred to a later version | `DESIGN-DECISIONS.md`, `soroban/README.md` "Redeploy runbook" |
 
 ---
 

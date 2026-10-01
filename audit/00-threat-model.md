@@ -259,9 +259,19 @@ Every finding in Phase 3 must reference one of these, or state `n/a` and justify
 - **INV-16** — A zero `daily_cap`, a zero `auto_approve_max` and a zero
   `SessionKeyExpiry` each mean "no bound", never "bound of zero".
 - **INV-17** — The refusal ladder order is fixed and observable:
-  `InvalidAmount` → `Frozen` → `SessionKeyExpired` → `PayeeNotAllowed` →
-  `AboveAutoApprove` → `DailyCapExceeded` → `InsufficientBalance`. A caller must be able
-  to branch on the reason.
+  `InvalidAmount` -> `InvalidPayee` -> `Frozen` -> `SessionKeyExpired` ->
+  `PayeeNotAllowed` -> `AboveAutoApprove` -> `MathOverflow` -> `DailyCapExceeded` ->
+  `InsufficientBalance`. A caller must be able to branch on the reason. The order is the
+  same on `pay`, `owner_pay` and `withdraw` for every rung that path has: `owner_pay` has
+  `InvalidAmount` -> `InvalidPayee` -> `MathOverflow` -> `InsufficientBalance`, and
+  `withdraw` has `InvalidAmount` -> `InvalidPayee` -> `InsufficientBalance`.
+  Amended for v0.1.1. The original text omitted `InvalidPayee` (A5-04) and `MathOverflow`
+  (A3-08), and the deployed v0.1.0 wasm (`155eb31c...`) does not hold the shared first
+  rung: its `pay` and `owner_pay` check the payee before the amount, so `pay(vault, 0)`
+  answers `InvalidPayee` where `withdraw(vault, 0)` answers `InvalidAmount` (A3-02). The
+  v0.1.1 source moves `check_amount` to the first line of `settle`, and
+  `a_doubly_invalid_input_names_the_same_first_reason_on_every_money_path` pins it. A
+  vault holds this invariant only if it runs a v0.1.1 or later wasm.
 
 ### Durability and liveness
 
