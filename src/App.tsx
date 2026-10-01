@@ -35,6 +35,7 @@ const CeloProof = lazy(() => import('./routes/CeloProof'))
 const ChainProof = lazy(() => import('./routes/ChainProof'))
 const Algorand = lazy(() => import('./routes/Algorand'))
 const Check = lazy(() => import('./routes/Check'))
+const ChainCheck = lazy(() => import('./routes/ChainCheck'))
 const Arc = lazy(() => import('./routes/Arc'))
 const Stellar = lazy(() => import('./routes/Stellar'))
 const ProofIndex = lazy(() => import('./routes/ProofIndex'))
@@ -132,6 +133,8 @@ export default function App() {
         <Route path="/algorand" element={<Algorand />} />
         {/* Before you pay: paste an Algorand address, get a plain answer. ?q= runs it on load. */}
         <Route path="/check" element={<Check />} />
+        <Route path="/check/robinhood" element={<ChainCheck slug="robinhood" />} />
+        <Route path="/check/arbitrum" element={<ChainCheck slug="arbitrum" />} />
         {/* Stellar: the passkey vault demo, run end to end on testnet by the visitor. */}
         <Route path="/stellar" element={<Stellar />} />
         <Route path="/architecture" element={<Architecture />} />
