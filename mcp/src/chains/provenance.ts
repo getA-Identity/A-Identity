@@ -86,7 +86,7 @@ export const PROVENANCE: ChainProvenance[] = [
       {
         name: 'AgentSpendPolicy vault',
         address: '0xe07819e6d28a5dfd5a9f4cd94dc6dc9aeeda4146',
-        note: 'Ours: the same Solidity contract that runs on Arc testnet, Robinhood Chain and Arbitrum One, and its source is verified on Sourcify as an exact match of both the creation and the runtime bytecode (mcp/scripts/sourcify-verify.mjs recompiles and compares before it uploads). dailyCap 1 USDC, autoApproveMax 0.25 USDC. The owner is the operating wallet 0xd305...ed36; the operator, the agent\'s session key, is the buyer agent 0x8C8D...3349 since 2026-09-25, and its key expires 2026-10-24. Dust on purpose; the caps are the product.',
+        note: 'Ours: the same Solidity contract that runs on Arc testnet, Robinhood Chain and Arbitrum One, and its source is verified on Sourcify as an exact match of both the creation and the runtime bytecode (mcp/scripts/sourcify-verify.mjs recompiles and compares before it uploads). dailyCap 1 USDC, autoApproveMax 0.25 USDC. The owner is the operating wallet 0xd305...ed36; the operator, the agent\'s session key, is the buyer agent 0x8C8D...3349 since 2026-09-25, and its key, renewed on 2026-10-01, expires 2026-11-15. Dust on purpose; the caps are the product.',
       },
       {
         name: 'Circle GatewayWallet',
@@ -264,6 +264,14 @@ export const PROVENANCE: ChainProvenance[] = [
         onChain: 'arc-mainnet',
         blockNumber: 22711681,
         note: 'aggregate3 with allowFailure false: three 0.01 USDC transfers to our own wallet, so only gas moved (82525 gas, 0.001659 USDC). The receipt carries three USDC Transfer events, each from our own address rather than the batching contract. Driven by mcp/scripts/test-batch.mjs --chain arc-mainnet, 6 of 6 checks.',
+      },
+      {
+        kind: 'session-key',
+        label: 'Vault session key renewed again, to 2026-11-15, before it could lapse',
+        txHash: '0x4edb2b62f58628723c46aff622342a5fd79eaeb37741ba9e72039c8b44e14960',
+        onChain: 'arc-mainnet',
+        blockNumber: 23715743,
+        note: 'Renewed on 2026-10-01, three weeks before the 2026-10-24 expiry, so the key cannot lapse while it is being shown, as the Robinhood Chain and Arbitrum One keys did. An owner-only setSessionKeyExpiry through mcp/scripts/evm-vault-session.mjs, 29713 gas, 0.000594 USDC; the operator is still the agent key 0x8C8D...3349, and an operator pay() of 0.01 USDC simulated as allowed afterwards.',
       },
     ],
     caveats: [
