@@ -532,6 +532,123 @@ export function stellarFeePayer(
   return stellarKeypair(chain, env)
 }
 
+// ── Horizon: the classic-side reads a Soroban RPC cannot answer ─────────────────────
+
+/**
+ * The Horizon base url for this chain, from the registry and nowhere else.
+ *
+ * Read-only use only. Balances net of reserves, liabilities, sponsorship and trustline
+ * authorization are classic-ledger facts that Soroban RPC exposes only as raw XDR entries;
+ * Horizon serves them already decoded, which is why the preflights below read it.
+ */
+export function horizonUrl(chain: ChainDescriptor): string {
+  const url = chain.horizonUrls?.[0]
+  if (!url) throw new Error(`${chain.id} declares no Horizon url`)
+  return url.replace(/\/+$/, '')
+}
+
+/** One classic account as the preflights need it, or the plain fact that it does not exist. */
+export type HorizonAccount =
+  | { found: false }
+  | {
+      found: true
+      /** Native balance in stroops. */
+      nativeStroops: bigint
+      /** XLM committed to open sell offers, which a fee cannot use. */
+      sellingLiabilitiesStroops: bigint
+      subentries: number
+      sponsoring: number
+      sponsored: number
+      /** Non-native balances: one per trustline, CODE and ISSUER kept apart. */
+      trustlines: { code: string; issuer: string; authorized: boolean }[]
+    }
+
+/** A Horizon amount ("12.3456789") in stroops, exactly, with no float in between. */
+export function amountToStroops(amount: string): bigint {
+  const m = /^(-?)(\d+)(?:\.(\d{1,7}))?$/.exec(String(amount).trim())
+  if (!m) throw new Error(`not a Stellar amount: ${amount}`)
+  const whole = BigInt(m[2]) * 10_000_000n + BigInt((m[3] ?? '').padEnd(7, '0') || '0')
+  return m[1] === '-' ? -whole : whole
+}
+
+/** Stroops as a decimal XLM string with trailing zeros trimmed: 1500000n is "0.15". */
+export function stroopsToXlm(stroops: bigint): string {
+  const neg = stroops < 0n
+  const abs = neg ? -stroops : stroops
+  const whole = abs / 10_000_000n
+  const frac = (abs % 10_000_000n).toString().padStart(7, '0').replace(/0+$/, '')
+  return `${neg ? '-' : ''}${whole}${frac ? `.${frac}` : ''}`
+}
+
+/**
+ * GET {horizon}/accounts/{id}. A 404 is an answer (the account does not exist) and comes
+ * back as `{ found: false }`; anything else that is not a 200 throws, because "Horizon was
+ * down" must never read as "the account has no trustline".
+ */
+export async function readHorizonAccount(chain: ChainDescriptor, id: string, doFetch: typeof fetch = fetch): Promise<HorizonAccount> {
+  const res = await doFetch(`${horizonUrl(chain)}/accounts/${encodeURIComponent(id)}`, {
+    headers: { accept: 'application/json' },
+    signal: AbortSignal.timeout(8_000),
+  })
+  if (res.status === 404) return { found: false }
+  if (!res.ok) throw new Error(`Horizon answered ${res.status} for ${id}`)
+  const body = (await res.json()) as {
+    subentry_count?: number
+    num_sponsoring?: number
+    num_sponsored?: number
+    balances?: {
+      asset_type?: string
+      asset_code?: string
+      asset_issuer?: string
+      balance?: string
+      selling_liabilities?: string
+      is_authorized?: boolean
+    }[]
+  }
+  const balances = body.balances ?? []
+  const native = balances.find((b) => b.asset_type === 'native')
+  return {
+    found: true,
+    nativeStroops: native?.balance ? amountToStroops(native.balance) : 0n,
+    sellingLiabilitiesStroops: native?.selling_liabilities ? amountToStroops(native.selling_liabilities) : 0n,
+    subentries: Number(body.subentry_count ?? 0),
+    sponsoring: Number(body.num_sponsoring ?? 0),
+    sponsored: Number(body.num_sponsored ?? 0),
+    trustlines: balances
+      .filter((b) => b.asset_type === 'credit_alphanum4' || b.asset_type === 'credit_alphanum12')
+      .map((b) => ({ code: String(b.asset_code), issuer: String(b.asset_issuer), authorized: b.is_authorized !== false })),
+  }
+}
+
+/**
+ * The network's base reserve in stroops, read off the latest ledger Horizon has closed.
+ *
+ * Read rather than assumed: it has been 0.5 XLM on both networks for years, but it is a
+ * network parameter that a validator vote can change, and a preflight that hardcodes it
+ * would be wrong on that day without saying so.
+ */
+export async function readBaseReserveStroops(chain: ChainDescriptor, doFetch: typeof fetch = fetch): Promise<bigint> {
+  const res = await doFetch(`${horizonUrl(chain)}/ledgers?order=desc&limit=1`, {
+    headers: { accept: 'application/json' },
+    signal: AbortSignal.timeout(8_000),
+  })
+  if (!res.ok) throw new Error(`Horizon answered ${res.status} for the latest ledger`)
+  const body = (await res.json()) as { _embedded?: { records?: { base_reserve_in_stroops?: number }[] } }
+  const reserve = body._embedded?.records?.[0]?.base_reserve_in_stroops
+  if (typeof reserve !== 'number' || !Number.isFinite(reserve) || reserve <= 0) throw new Error('Horizon returned no base reserve')
+  return BigInt(reserve)
+}
+
+/**
+ * What an account can spend, in stroops: its native balance minus its minimum balance
+ * ((2 + subentries + sponsoring - sponsored) base reserves) minus XLM locked in offers.
+ * Can be negative for an account below its reserve, and callers clamp it for display.
+ */
+export function spendableStroops(acct: Extract<HorizonAccount, { found: true }>, baseReserve: bigint): bigint {
+  const units = 2n + BigInt(acct.subentries) + BigInt(acct.sponsoring) - BigInt(acct.sponsored)
+  return acct.nativeStroops - units * baseReserve - acct.sellingLiabilitiesStroops
+}
+
 /** The public account the signer would act as, without exposing the key. */
 export function stellarSignerAddress(
   chain: ChainDescriptor,

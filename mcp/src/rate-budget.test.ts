@@ -105,6 +105,17 @@ test('the free pay checks on Robinhood Chain and Arbitrum One are budgeted in th
   assert.equal(rateBudget('GET', '/api/robinhood/check/codes'), null, 'the static code list is not a chain read')
 })
 
+test('the two public vault reads are budgeted in buckets of their own', () => {
+  // Both accept any contract id and each uncached call is a ledger-entry read plus a set of
+  // simulations, so they are bounded like the pay checks. Separate buckets, so a burst of
+  // allowlist checks cannot blank the panel's own state read.
+  const read = rateBudget('GET', '/api/stellar/vault/read')
+  const allowed = rateBudget('GET', '/api/stellar/vault/is-allowed')
+  assert.equal(read?.bucket, 'stellar-vault-read')
+  assert.equal(allowed?.bucket, 'stellar-vault-is-allowed')
+  assert.equal(rateBudget('GET', '/api/stellar/vaults'), null, 'the registry list is cached for 30 s and stays unbudgeted')
+})
+
 // ── free writes: the blind spot this file had ────────────────────────────────────
 //
 // Everything above asks "does this POST spend the shared signer". A posted task, a bid and

@@ -40,12 +40,36 @@ import type { ChainDescriptor } from '../types.js'
 import {
   isLiveLedgerEntry,
   networkPassphrase,
+  readBaseReserveStroops,
+  readHorizonAccount,
   simulationArchivedEntries,
   sorobanServer,
+  spendableStroops,
   stellarKeypair,
   stellarSignerAddress,
+  stroopsToXlm,
+  type HorizonAccount,
 } from './client.js'
 import { isAccountId, isContractId } from './strkey.js'
+
+/**
+ * A view the CONTRACT answered with an error, as opposed to a host nobody reached.
+ *
+ * The distinction decides what a public read says. A simulation error is the contract's
+ * own answer and identical on every host, so a contract whose views answer this way is not
+ * an AgentSpendPolicy (or not one we can read), which is a 422. A transport failure says
+ * nothing about the contract at all, which is a 502 with a time stamp. Collapsing the two
+ * would call a working vault "not a vault" on the day an RPC host is slow.
+ */
+export class SimulationError extends Error {
+  constructor(
+    readonly method: string,
+    readonly detail: string,
+  ) {
+    super(`${method}: ${detail}`)
+    this.name = 'SimulationError'
+  }
+}
 
 /**
  * The stand-in source account for reads when no signer is configured.
@@ -85,8 +109,14 @@ export type CallOutcome =
       args: unknown[]
       network: string
       reason: string
+      /**
+       * Present on a dry run only: the simulation accepted the call, and this is what it
+       * would cost. A dry run is still `prepared`, never `settled`, because nothing landed.
+       */
+      simulation?: { minResourceFeeStroops: string; feeStroops: string; latestLedger: number }
     }
-  /** The contract refused it in simulation, so it never reached the ledger and cost nothing. */
+  /** Nothing reached a ledger: the contract refused it in simulation, or the network would
+   *  not take the envelope. Either way it cost nothing beyond, at most, a retry. */
   | {
       outcome: 'refused'
       contract: string
@@ -104,6 +134,22 @@ export type CallOutcome =
        * define it and a client must not read it as if it did.
        */
       contractErrorIsOurs?: boolean
+      /**
+       * Set when the NETWORK turned the envelope away at sendTransaction, as opposed to the
+       * contract refusing it in simulation. `code` is what a client acts on; `resultCode` is
+       * the core's own name for it (txBadSeq, txInsufficientFee, ...), kept verbatim.
+       */
+      rejection?: {
+        code: 'not_accepted' | 'insufficient_balance' | 'insufficient_fee' | 'bad_seq' | 'error'
+        resultCode: string
+      }
+      /**
+       * The hash the envelope would have had. Present on a rejection so a client can cite it;
+       * named apart from `txHash` because nothing with this hash is in any ledger.
+       */
+      rejectedHash?: string
+      /** On an insufficient-balance rejection: what the source could spend, and what it needed. */
+      xlm?: { availableXlm: string; neededXlm: string }
     }
   /** In the ledger and successful. */
   | {
@@ -111,6 +157,8 @@ export type CallOutcome =
       txHash: string
       ledger: number | undefined
       explorerUrl: string
+      /** What the source account was actually charged, read off the result. */
+      feeChargedStroops?: string
     }
   /** In the ledger and failed. It consumed a fee and moved nothing. */
   | {
@@ -119,6 +167,12 @@ export type CallOutcome =
       ledger: number | undefined
       explorerUrl: string
       contractErrorCode?: number
+      contractErrorFrom?: string
+      contractErrorIsOurs?: boolean
+      /** The transaction result's own name (txFailed, ...), and the operation's beneath it. */
+      resultCode?: string
+      opResultCode?: string
+      feeChargedStroops?: string
       reason: string
     }
   /**
@@ -143,9 +197,18 @@ export type VaultState = {
   frozen: boolean
   allowlistEnabled: boolean
   sessionKeyExpiry: string
+  /** The contract's own UTC day index, floor(ledger close timestamp / 86400). */
   day: string
   spentTodayRaw: string
   balanceRaw: string
+  /**
+   * The newest ledger any of the simulations behind this state was answered at. Every view
+   * is simulated against the latest ledger the host has, so the twelve answers can straddle
+   * a ledger close; the highest one is reported, because a stamp that claims an OLDER ledger
+   * than some of the numbers were read at would understate how fresh they are. Always set by
+   * readVault; optional in the type only so a test double that predates it still compiles.
+   */
+  ledger?: number
 }
 
 /** The contract error code out of a simulation error string, when it names one. */
@@ -253,6 +316,43 @@ export function ourErrorName(e: ReturnType<typeof errorIn>): string | undefined 
 }
 
 /**
+ * Which of our typed codes each entrypoint can actually return, read off lib.rs and policy.rs.
+ *
+ * The frozen table says what a number MEANS; this says which numbers a given call can
+ * produce at all, and the difference matters for naming. `withdraw` runs check_amount (6),
+ * require_valid_payee (7) and its own balance check (9) and nothing else, so a #10 against
+ * a withdraw is not OwnerIsOperator: that code is only raised by the constructor and
+ * set_operator. A number outside an entrypoint's set means the code came from somewhere our
+ * table does not describe (another build, or a callee whose frame we could not attribute),
+ * and naming it from the table would be a confident wrong answer.
+ *
+ * The four owner setters that return no Result (set_frozen, set_allowed,
+ * set_session_key_expiry) can fail only by trap, so their set is empty.
+ */
+export const METHOD_ERROR_CODES: Readonly<Record<string, readonly number[]>> = {
+  pay: [1, 2, 3, 4, 5, 6, 7, 8, 9],
+  owner_pay: [6, 7, 8, 9],
+  withdraw: [6, 7, 9],
+  set_policy: [6],
+  set_operator: [10],
+  __constructor: [6, 10],
+  set_frozen: [],
+  set_allowed: [],
+  set_session_key_expiry: [],
+}
+
+/**
+ * The name of a typed error, only when the vault we called raised it AND the entrypoint we
+ * called can raise that code. Undefined otherwise, and the bare number stays available.
+ */
+export function errorNameFor(method: string, e: { code: number; ours: boolean } | undefined): string | undefined {
+  if (!e || !e.ours) return undefined
+  const allowed = METHOD_ERROR_CODES[method]
+  if (allowed && !allowed.includes(e.code)) return undefined
+  return errorName(e.code)
+}
+
+/**
  * The six entrypoints only the vault OWNER may call.
  *
  * Frozen as a list rather than checked by a pattern, because this is an authorization
@@ -310,21 +410,40 @@ export type PreparedOwnerCall =
       validUntil: string | null
       /** The whole transaction fee, in stroops, paid by the SOURCE account and not by us. */
       feeStroops: string
+      /** The same fee in XLM, as a decimal string with trailing zeros trimmed. */
+      feeXlm: string
       /**
        * Footprint entries this call would RESTORE from archived state, which since protocol 23
        * happens inside the call with the rent included in `feeStroops`. Empty in the ordinary case.
        */
       archivedEntries: number[]
+      /** True when `archivedEntries` is non-empty: the call restores state inside its own fee. */
+      restoreNeeded: boolean
+      /**
+       * What was checked before handing this back, so a client never mistakes an unchecked
+       * preflight for a passed one. 'unchecked' means Horizon did not answer, and the
+       * simulation, which did pass, is the only evidence.
+       */
+      preflight: {
+        xlm: 'checked' | 'unchecked'
+        trustline: 'checked' | 'not-needed' | 'unchecked'
+      }
       summary: string
     }
   | {
       ok: false
-      code: 'bad_request' | 'refused' | 'restore_needed' | 'rpc_error'
+      code: 'bad_request' | 'refused' | 'restore_needed' | 'rpc_error' | 'insufficient_xlm' | 'no_trustline'
       reason: string
       contractErrorCode?: number
       contractErrorFrom?: string
       contractErrorIsOurs?: boolean
       contractErrorName?: string
+      /** insufficient_xlm: what the source can spend after reserves and liabilities, and what it needs. */
+      availableXlm?: string
+      neededXlm?: string
+      /** no_trustline: the account that cannot receive, and the classic asset it lacks, CODE:ISSUER. */
+      destination?: string
+      asset?: string
     }
 
 /** What an envelope somebody else signed turns out to contain. Never trusted, only read. */
@@ -347,29 +466,96 @@ export type EnvelopeInspection =
     }
   | { ok: false; code: 'bad_request' | 'wrong_network'; reason: string }
 
-/** A deploy settles with a contract id; every other arm is the ordinary five-arm outcome. */
+/**
+ * A deploy settles with a contract id, the salt and the wasm hash it was made from; a dry
+ * run comes back `prepared` with the id the salt derives; every other arm is the ordinary
+ * five-arm outcome.
+ */
 export type VaultDeployOutcome =
-  | Exclude<CallOutcome, { outcome: 'settled' }>
-  | (Extract<CallOutcome, { outcome: 'settled' }> & { vault: string })
+  | Exclude<CallOutcome, { outcome: 'settled' | 'prepared' }>
+  | (Extract<CallOutcome, { outcome: 'prepared' }> & { vault?: string })
+  | (Extract<CallOutcome, { outcome: 'settled' }> & { vault: string; salt?: string; wasmHash?: string })
+
+/** Every diagnostic event a getTransaction answer carries, wherever this protocol put them. */
+function diagnosticEventsOf(tx: rpc.Api.GetTransactionResponse): xdr.DiagnosticEvent[] {
+  const out: xdr.DiagnosticEvent[] = []
+  const top = (tx as { diagnosticEventsXdr?: unknown[] }).diagnosticEventsXdr ?? []
+  for (const e of top) {
+    if (e instanceof xdr.DiagnosticEvent) out.push(e)
+    else if (typeof e === 'string') out.push(xdr.DiagnosticEvent.fromXDR(e, 'base64'))
+  }
+  if (out.length > 0) return out
+  // Older RPCs leave the top-level field empty and keep the events inside the meta: under
+  // sorobanMeta in a v3 meta, and at the top of a v4 one (protocol 23 on).
+  const meta = (tx as { resultMetaXdr?: xdr.TransactionMeta }).resultMetaXdr
+  if (!meta) return out
+  const arm = meta.switch() as unknown as number
+  if (arm === 3) return [...(meta.v3().sorobanMeta()?.diagnosticEvents() ?? [])]
+  if (arm === 4) return [...meta.v4().diagnosticEvents()]
+  return out
+}
 
 /**
- * The contract error code out of a failed transaction's diagnostic events.
+ * The contract error out of a landed-and-FAILED transaction, decoded from XDR.
  *
- * This field was previously declared and never assigned, so a caller branching on it had a
- * branch that could never be taken. Reading it is what makes a typed revert usable by the
- * client, which is the product claim: the revert reason is why the human path takes over.
+ * This used to stringify each event and run a JSON regex over it for "contractCode", which
+ * never matched the SDK's XDR objects, so a typed refusal that landed (the repo's own
+ * 12df418f..., DailyCapExceeded) came back with no code at all. The topics of an error event
+ * are [Symbol("error"), Error(...)], and the second one is an ScError whose `sceContract`
+ * arm carries the contract's own u32.
+ *
+ * Attribution follows the same rule as `errorIn`, adjusted for order: these events are in
+ * EMISSION order, oldest first, so the contract that raised a code first is the origin and
+ * the frames after it are the callers propagating it. `ours` is true only when that origin is
+ * the contract we called.
  */
-function failureCodeIn(tx: rpc.Api.GetTransactionResponse): number | undefined {
+export function failureErrorIn(
+  tx: rpc.Api.GetTransactionResponse,
+  calledContract: string,
+): { code: number; from?: string; ours: boolean } | undefined {
   try {
-    for (const raw of (tx as { diagnosticEventsXdr?: unknown[] }).diagnosticEventsXdr ?? []) {
-      const s = JSON.stringify(raw)
-      const m = /"contractCode":(\d+)/.exec(s)
-      if (m) return Number(m[1])
+    for (const ev of diagnosticEventsOf(tx)) {
+      const body = ev.event().body()
+      if ((body.switch() as unknown as number) !== 0) continue
+      const topics = body.v0().topics()
+      if (topics.length < 2 || topics[0].switch().name !== 'scvSymbol' || topics[0].sym().toString() !== 'error') continue
+      const err = topics.find((t) => t.switch().name === 'scvError')
+      if (!err || err.error().switch().name !== 'sceContract') continue
+      const code = err.error().contractCode()
+      const raw = ev.event().contractId()
+      const from = raw ? StrKey.encodeContract(Buffer.from(raw as unknown as Uint8Array)) : undefined
+      return { code, from, ours: from === undefined ? true : from === calledContract }
     }
   } catch {
-    /* a code we cannot read is simply absent */
+    /* an event we cannot decode is simply absent, never a reason to invent a code */
   }
   return undefined
+}
+
+/** Just the number, for callers that only ever wanted that. */
+export function failureCodeIn(tx: rpc.Api.GetTransactionResponse): number | undefined {
+  return failureErrorIn(tx, '')?.code
+}
+
+/** The transaction result's name and its first operation's, both verbatim from the XDR. */
+function resultCodesOf(result: xdr.TransactionResult | undefined): { resultCode?: string; opResultCode?: string; feeChargedStroops?: string } {
+  if (!result) return {}
+  const out: { resultCode?: string; opResultCode?: string; feeChargedStroops?: string } = {}
+  try {
+    out.feeChargedStroops = result.feeCharged().toString()
+    const r = result.result()
+    out.resultCode = r.switch().name
+    if (out.resultCode === 'txFailed' || out.resultCode === 'txSuccess') {
+      const op = r.results()[0]
+      if (op && op.switch().name === 'opInner') {
+        const tr = op.tr()
+        if (tr.switch().name === 'invokeHostFunction') out.opResultCode = tr.invokeHostFunctionResult().switch().name
+      }
+    }
+  } catch {
+    /* a result we cannot decode leaves these absent rather than guessed */
+  }
+  return out
 }
 
 /**
@@ -389,6 +575,10 @@ export type StellarAdapterDeps = {
   server?: (env: NodeJS.ProcessEnv) => SorobanRpc
   /** TEST ONLY: the 32-byte deploy salt, so a deploy is reproducible. */
   salt?: () => Buffer
+  /** TEST ONLY: the fetch the Horizon preflights use. Production uses the global one. */
+  fetch?: typeof fetch
+  /** TEST ONLY: how long `land` waits between polls. Production waits a second. */
+  pollMs?: number
 }
 
 export function createStellarAdapter(chain: ChainDescriptor, deps: StellarAdapterDeps = {}) {
@@ -405,37 +595,22 @@ export function createStellarAdapter(chain: ChainDescriptor, deps: StellarAdapte
   const rpcFor = (env: NodeJS.ProcessEnv): SorobanRpc =>
     deps.server ? deps.server(env) : sorobanServer(chain, env)
 
-  /** A read, done as a simulation. Costs nothing, touches nothing, signs nothing. */
-  async function view(vault: string, method: string, env: NodeJS.ProcessEnv): Promise<unknown> {
-    const server = rpcFor(env)
-    const c = new Contract(vault)
-    // A transaction needs a source account even to be simulated, but the simulator never
-    // checks that the account exists or that its sequence is real: it is building a
-    // footprint, not authorizing anything. So a read works with no signer, no funded
-    // account, and no network round trip to fetch one. It must still be a CLASSIC account
-    // id; passing the vault's own C... address fails, because a contract is not an account.
-    const source = stellarSignerAddress(chain, env) ?? READ_ONLY_SOURCE
-    const account = new Account(source, '0')
-    const tx = new TransactionBuilder(account, { fee: BASE_FEE, networkPassphrase: net })
-      .addOperation(c.call(method))
-      .setTimeout(30)
-      .build()
-    const sim = await server.simulateTransaction(tx)
-    if (rpc.Api.isSimulationError(sim)) throw new Error(`${method}: ${sim.error}`)
-    if (!sim.result) throw new Error(`${method}: simulation returned no result`)
-    return scValToNative(sim.result.retval)
-  }
-
   /**
-   * The same read, for a method that takes arguments (`balance(holder)` on a SAC). Kept apart
-   * from `view` rather than widening it, so the twelve vault reads stay exactly as they were.
+   * A read, done as a simulation, with the ledger it was answered at. Costs nothing,
+   * touches nothing, signs nothing.
+   *
+   * A transaction needs a source account even to be simulated, but the simulator never
+   * checks that the account exists or that its sequence is real: it is building a
+   * footprint, not authorizing anything. So a read works with no signer, no funded account,
+   * and no network round trip to fetch one. It must still be a CLASSIC account id; passing
+   * the vault's own C... address fails, because a contract is not an account.
    */
-  async function viewWith(
+  async function viewAt(
     contract: string,
     method: string,
     args: ReturnType<typeof nativeToScVal>[],
     env: NodeJS.ProcessEnv,
-  ): Promise<unknown> {
+  ): Promise<{ value: unknown; ledger: number }> {
     const server = rpcFor(env)
     const source = stellarSignerAddress(chain, env) ?? READ_ONLY_SOURCE
     const tx = new TransactionBuilder(new Account(source, '0'), { fee: BASE_FEE, networkPassphrase: net })
@@ -443,9 +618,24 @@ export function createStellarAdapter(chain: ChainDescriptor, deps: StellarAdapte
       .setTimeout(30)
       .build()
     const sim = await server.simulateTransaction(tx)
-    if (rpc.Api.isSimulationError(sim)) throw new Error(`${method}: ${sim.error}`)
-    if (!sim.result) throw new Error(`${method}: simulation returned no result`)
-    return scValToNative(sim.result.retval)
+    if (rpc.Api.isSimulationError(sim)) throw new SimulationError(method, sim.error)
+    if (!sim.result) throw new SimulationError(method, 'simulation returned no result')
+    return { value: scValToNative(sim.result.retval), ledger: Number(sim.latestLedger) || 0 }
+  }
+
+  /** A no-argument view, value only. */
+  async function view(vault: string, method: string, env: NodeJS.ProcessEnv): Promise<unknown> {
+    return (await viewAt(vault, method, [], env)).value
+  }
+
+  /** A view with arguments (`balance(holder)` on a SAC), value only. */
+  async function viewWith(
+    contract: string,
+    method: string,
+    args: ReturnType<typeof nativeToScVal>[],
+    env: NodeJS.ProcessEnv,
+  ): Promise<unknown> {
+    return (await viewAt(contract, method, args, env)).value
   }
 
   /**
@@ -501,9 +691,50 @@ export function createStellarAdapter(chain: ChainDescriptor, deps: StellarAdapte
       return { outcome: 'refused', ...shape, reason: archivedRefusal(sim, archived, 'this call') }
     }
 
+    // The authorization this call needs, as the simulation recorded it. Recording mode
+    // happily records an entry for ANY address that calls require_auth, so a simulation
+    // succeeding proves nothing about whether our key can satisfy it. Source-account
+    // credentials are satisfied by our envelope signature, because our key is the source.
+    // An address credential names someone else, a vault owner who is a person's wallet or
+    // a passkey smart account, and that entry would go out unsigned: the host refuses it
+    // at apply time and the server's key pays the fee for a transaction that was never
+    // going to pass. So it is not submitted at all, and the caller is told whose signature
+    // the call needs instead. This is what makes it impossible for any path through
+    // `write` to produce, or even attempt, an owner authorization for a vault this server
+    // does not own.
+    const needsOther = needsAddressAuth(sim)
+    if (needsOther.length > 0) {
+      return {
+        outcome: 'prepared',
+        ...shape,
+        reason:
+          `${method} needs an authorization from ${needsOther.join(', ')}, which is not this server's key ` +
+          `(${kp.publicKey()}), so nothing was signed or submitted. An owner call on a vault owned by a ` +
+          'wallet or a passkey account is signed by that owner: build it with POST /api/stellar/vault/prepare ' +
+          'and submit what the owner signs.',
+      }
+    }
+
     const assembled = rpc.assembleTransaction(tx, sim).build()
     assembled.sign(kp)
     return land(server, assembled, shape)
+  }
+
+  /** The addresses whose OWN signature a simulated call needs, beyond the source account's. */
+  function needsAddressAuth(sim: rpc.Api.SimulateTransactionResponse): string[] {
+    const out: string[] = []
+    const auth = (sim as { result?: { auth?: xdr.SorobanAuthorizationEntry[] } }).result?.auth ?? []
+    for (const entry of auth) {
+      try {
+        if (entry.credentials().switch().name !== 'sorobanCredentialsAddress') continue
+        out.push(Address.fromScAddress(entry.credentials().address().address()).toString())
+      } catch {
+        // An entry we cannot read is treated as someone else's: refusing to submit costs a
+        // retry, submitting it costs a fee and a failed transaction in the ledger.
+        out.push('<an address this server could not decode>')
+      }
+    }
+    return out
   }
 
   /**
@@ -520,17 +751,62 @@ export function createStellarAdapter(chain: ChainDescriptor, deps: StellarAdapte
   ): Promise<CallOutcome> {
     const sent = await server.sendTransaction(signed)
     const explorerUrl = `${chain.explorer}/tx/${sent.hash}`
-    if (sent.status === 'ERROR') {
+
+    // Four statuses, and only two of them mean the network has the transaction.
+    //
+    // TRY_AGAIN_LATER: the node would not take it into its queue (it is full, or this source
+    // already has one in flight). Nothing was accepted and nothing can land from this send,
+    // so it is safe to retry, which is exactly why it must not read as pending: pending
+    // tells a person to wait for something that is not coming.
+    if (sent.status === 'TRY_AGAIN_LATER') {
       return {
         outcome: 'refused',
         ...shape,
-        reason: `the network rejected the transaction before the ledger (${sent.status})`,
+        rejectedHash: sent.hash,
+        rejection: { code: 'not_accepted', resultCode: 'TRY_AGAIN_LATER' },
+        reason:
+          'the network did not accept the transaction into its queue (TRY_AGAIN_LATER). Nothing ' +
+          'was submitted to a ledger, so it is safe to send again in a few seconds.',
+      }
+    }
+    // ERROR: the node validated it and turned it away, with a result saying why. The three
+    // causes a person can act on are named; anything else keeps the core's own code.
+    if (sent.status === 'ERROR') {
+      const codes = resultCodesOf((sent as { errorResult?: xdr.TransactionResult }).errorResult)
+      const resultCode = codes.resultCode ?? 'ERROR'
+      const named =
+        resultCode === 'txInsufficientBalance'
+          ? ({
+              code: 'insufficient_balance',
+              why: 'the source account does not hold enough spendable XLM for the fee after its reserves',
+            } as const)
+          : resultCode === 'txInsufficientFee'
+            ? ({
+                code: 'insufficient_fee',
+                why: 'the fee bid was below what the network is charging right now; prepare the call again for a current fee',
+              } as const)
+            : resultCode === 'txBadSeq'
+              ? ({
+                  code: 'bad_seq',
+                  why: 'the source account sequence moved since this was built (another transaction from it landed first); prepare the call again',
+                } as const)
+              : ({ code: 'error', why: `the network rejected it with ${resultCode}` } as const)
+      return {
+        outcome: 'refused',
+        ...shape,
+        rejectedHash: sent.hash,
+        rejection: { code: named.code, resultCode },
+        reason: `the network rejected the transaction before the ledger: ${named.why}. Nothing landed and no fee was charged.`,
       }
     }
 
+    // PENDING, and DUPLICATE, which means the network already holds this exact envelope from
+    // an earlier send. Either way it may land, so both are polled, and both end as pending
+    // rather than failed if the poll runs out first.
+    const pause = deps.pollMs ?? 1000
     let got = await server.getTransaction(sent.hash)
     for (let i = 0; i < 30 && got.status === 'NOT_FOUND'; i += 1) {
-      await new Promise((r) => setTimeout(r, 1000))
+      await new Promise((r) => setTimeout(r, pause))
       got = await server.getTransaction(sent.hash)
     }
     if (got.status === 'NOT_FOUND') {
@@ -539,21 +815,27 @@ export function createStellarAdapter(chain: ChainDescriptor, deps: StellarAdapte
         txHash: sent.hash,
         explorerUrl,
         reason:
-          'submitted and not in the ledger yet. The transaction stays valid for its full timeout, ' +
-          'so it may still land: do not retry it and do not record it as failed.',
+          (sent.status === 'DUPLICATE'
+            ? 'the network already had this exact transaction from an earlier send (DUPLICATE), and it is not in a ledger yet. '
+            : 'submitted and not in the ledger yet. ') +
+          'The transaction stays valid for its full timeout, so it may still land: do not retry it and do not record it as failed.',
       }
     }
     if (got.status === 'FAILED') {
+      const e = failureErrorIn(got, shape.contract)
+      const codes = resultCodesOf((got as { resultXdr?: xdr.TransactionResult }).resultXdr)
       return {
         outcome: 'failed',
         txHash: sent.hash,
         ledger: got.ledger,
         explorerUrl,
-        ...(failureCodeIn(got) !== undefined ? { contractErrorCode: failureCodeIn(got) } : {}),
+        ...(e ? { contractErrorCode: e.code, contractErrorIsOurs: e.ours, ...(e.from ? { contractErrorFrom: e.from } : {}) } : {}),
+        ...codes,
         reason: 'the transaction landed and failed. It consumed a fee and moved nothing.',
       }
     }
-    return { outcome: 'settled', txHash: sent.hash, ledger: got.ledger, explorerUrl }
+    const fee = resultCodesOf((got as { resultXdr?: xdr.TransactionResult }).resultXdr).feeChargedStroops
+    return { outcome: 'settled', txHash: sent.hash, ledger: got.ledger, explorerUrl, ...(fee ? { feeChargedStroops: fee } : {}) }
   }
 
   /**
@@ -611,6 +893,18 @@ export function createStellarAdapter(chain: ChainDescriptor, deps: StellarAdapte
       token: string
       dailyCapRaw: bigint | string
       autoApproveMaxRaw: bigint | string
+      /**
+       * Instantiate against THIS code entry instead of `contracts.spendVaultWasmHash`, for a
+       * new build (v0.1.1 on) whose hash is not the registry default yet. Its TTL is read
+       * live exactly like the default's.
+       */
+      wasmHash?: string
+      /** The 32-byte salt, so the contract id is known before the deploy and recorded after it. */
+      salt?: Buffer
+      /** Simulate only: return `prepared` with the simulated cost and the derived id. */
+      dryRun?: boolean
+      /** A dry run with no key needs a deployer account to simulate from; a real deploy ignores it. */
+      deployer?: string
     },
     env: NodeJS.ProcessEnv = process.env,
   ): Promise<VaultDeployOutcome> {
@@ -640,22 +934,31 @@ export function createStellarAdapter(chain: ChainDescriptor, deps: StellarAdapte
       return refuse('a negative cap or ceiling is refused by the constructor (InvalidAmount). Nothing was submitted.')
     }
 
-    const wasmHash = chain.contracts.spendVaultWasmHash
+    const wasmHash = (input.wasmHash ?? chain.contracts.spendVaultWasmHash ?? '').toLowerCase()
     if (!wasmHash) {
       return refuse(
         `${chain.name} declares no contracts.spendVaultWasmHash, so there is no code entry to ` +
           'instantiate against and no vault can be deployed here.',
       )
     }
+    if (!/^[0-9a-f]{64}$/.test(wasmHash)) return refuse(`wasm hash ${wasmHash} is not 32 bytes of hex. Nothing was submitted.`)
+    if (input.salt !== undefined && input.salt.length !== 32) {
+      return refuse(`a deploy salt is exactly 32 bytes; this one is ${input.salt.length}. Nothing was submitted.`)
+    }
 
     const kp = stellarKeypair(chain, env)
-    if (!kp) {
+    // A dry run simulates from the deployer it is given when no key is set: the simulator
+    // never checks a sequence or a signature, so the cost and the derived id come back
+    // without anything that could sign.
+    const dryDeployer = input.dryRun && !kp && input.deployer && isAccountId(input.deployer) ? input.deployer : null
+    if (!kp && !dryDeployer) {
       return {
         outcome: 'prepared',
         ...shape,
         reason: `${chain.signerEnvVar ?? 'the chain signer'} is not set, so nothing was submitted. This is the exact call it would make.`,
       }
     }
+    const deployer = kp ? kp.publicKey() : (dryDeployer as string)
 
     const server = rpcFor(env)
     // The code entry first. An archived one produces a simulation that asks for a restore
@@ -687,12 +990,12 @@ export function createStellarAdapter(chain: ChainDescriptor, deps: StellarAdapte
       )
     }
 
-    const salt = deps.salt ? deps.salt() : randomBytes(32)
-    const account = await server.getAccount(kp.publicKey())
+    const salt = input.salt ?? (deps.salt ? deps.salt() : randomBytes(32))
+    const account = kp ? await server.getAccount(deployer) : new Account(deployer, '0')
     const tx = new TransactionBuilder(account, { fee: BASE_FEE, networkPassphrase: net })
       .addOperation(
         Operation.createCustomContract({
-          address: new Address(kp.publicKey()),
+          address: new Address(deployer),
           wasmHash: Buffer.from(wasmHash, 'hex'),
           salt,
           constructorArgs: [
@@ -722,6 +1025,17 @@ export function createStellarAdapter(chain: ChainDescriptor, deps: StellarAdapte
     }
 
     const assembled = rpc.assembleTransaction(tx, sim).build()
+    if (input.dryRun || !kp) {
+      return {
+        outcome: 'prepared',
+        ...shape,
+        reason:
+          `dry run: simulated against wasm ${wasmHash} with salt ${salt.toString('hex')} and accepted. ` +
+          'Nothing was signed or submitted.',
+        simulation: { minResourceFeeStroops: String(sim.minResourceFee), feeStroops: assembled.fee, latestLedger: Number(sim.latestLedger) || 0 },
+        vault: derivedContractId(deployer, salt),
+      }
+    }
     assembled.sign(kp)
     const outcome = await land(server, assembled, shape)
     if (outcome.outcome !== 'settled') return outcome
@@ -731,12 +1045,64 @@ export function createStellarAdapter(chain: ChainDescriptor, deps: StellarAdapte
     try {
       const got = await server.getTransaction(outcome.txHash)
       const retval = (got as { returnValue?: xdr.ScVal }).returnValue
-      vault = retval ? String(scValToNative(retval)) : derivedContractId(kp.publicKey(), salt)
+      vault = retval ? String(scValToNative(retval)) : derivedContractId(deployer, salt)
     } catch {
-      vault = derivedContractId(kp.publicKey(), salt)
+      vault = derivedContractId(deployer, salt)
     }
-    if (!isContractId(vault)) vault = derivedContractId(kp.publicKey(), salt)
-    return { ...outcome, vault }
+    if (!isContractId(vault)) vault = derivedContractId(deployer, salt)
+    return { ...outcome, vault, salt: salt.toString('hex'), wasmHash }
+  }
+
+  /**
+   * Upload an AgentSpendPolicy wasm as a code entry, so a NEW build can be instantiated.
+   *
+   * An operator action, called only by mcp/scripts/stellar-deploy-vault.mjs and never by a
+   * route: it costs roughly 12 XLM on pubnet for an 11 KB module, and the code entry it
+   * creates is permanent until it archives. Prepared-or-executed like every write here, and
+   * a dry run simulates and returns the cost without signing. The hash returned is computed
+   * locally from the bytes, which is exactly the hash the ledger keys the entry by, so a
+   * receipt can record it before the network answers.
+   */
+  async function uploadVaultWasm(
+    wasm: Buffer,
+    opts: { dryRun?: boolean; deployer?: string } = {},
+    env: NodeJS.ProcessEnv = process.env,
+  ): Promise<CallOutcome & { wasmHash: string }> {
+    const wasmHash = hash(wasm).toString('hex')
+    const shape = { contract: '<upload>', method: 'uploadContractWasm', args: [wasmHash, String(wasm.length)], network: chain.caip2 }
+    const kp = stellarKeypair(chain, env)
+    const dryDeployer = opts.dryRun && !kp && opts.deployer && isAccountId(opts.deployer) ? opts.deployer : null
+    if (!kp && !dryDeployer) {
+      return {
+        outcome: 'prepared',
+        ...shape,
+        wasmHash,
+        reason: `${chain.signerEnvVar ?? 'the chain signer'} is not set, so nothing was submitted. This is the exact call it would make.`,
+      }
+    }
+    const source = kp ? kp.publicKey() : (dryDeployer as string)
+    const server = rpcFor(env)
+    const account = kp ? await server.getAccount(source) : new Account(source, '0')
+    const tx = new TransactionBuilder(account, { fee: BASE_FEE, networkPassphrase: net })
+      .addOperation(Operation.uploadContractWasm({ wasm }))
+      .setTimeout(180)
+      .build()
+    const sim = await server.simulateTransaction(tx)
+    if (rpc.Api.isSimulationError(sim)) {
+      return { outcome: 'refused', ...shape, wasmHash, reason: `the upload was refused before it could be submitted: ${sim.error}` }
+    }
+    const assembled = rpc.assembleTransaction(tx, sim).build()
+    if (opts.dryRun || !kp) {
+      return {
+        outcome: 'prepared',
+        ...shape,
+        wasmHash,
+        reason: 'dry run: the upload simulated and was accepted. Nothing was signed or submitted.',
+        simulation: { minResourceFeeStroops: String(sim.minResourceFee), feeStroops: assembled.fee, latestLedger: Number(sim.latestLedger) || 0 },
+      }
+    }
+    assembled.sign(kp)
+    return { ...(await land(server, assembled, shape)), wasmHash }
   }
 
   /** One planned argument turned into XDR. The plan itself carries no SDK type. */
@@ -753,6 +1119,30 @@ export function createStellarAdapter(chain: ChainDescriptor, deps: StellarAdapte
     }
   }
 
+  /** The Horizon read the preflights use: an account, or `null` when Horizon did not answer. */
+  async function horizonAccount(id: string): Promise<HorizonAccount | null> {
+    try {
+      return await readHorizonAccount(chain, id, deps.fetch ?? fetch)
+    } catch {
+      return null
+    }
+  }
+
+  /**
+   * What an account can actually spend on a fee, in stroops, or null when Horizon did not
+   * answer. Net of the minimum balance (two base reserves plus one per subentry and per entry
+   * it sponsors, minus the ones sponsored for it) and of XLM locked in open offers, because
+   * the network will not let a fee dip into either.
+   */
+  async function spendableXlm(account: string): Promise<{ available: bigint; reserve: bigint } | null> {
+    const a = await horizonAccount(account)
+    if (!a) return null
+    const reserve = await readBaseReserveStroops(chain, deps.fetch ?? fetch).catch(() => null)
+    if (reserve === null) return null
+    if (!a.found) return { available: 0n, reserve }
+    return { available: spendableStroops(a, reserve), reserve }
+  }
+
   /**
    * Build an owner call the OWNER signs, and hand it back unsigned.
    *
@@ -762,6 +1152,21 @@ export function createStellarAdapter(chain: ChainDescriptor, deps: StellarAdapte
    * exact transaction, prove by simulation that the contract would accept it, and give the
    * unsigned envelope to the person whose wallet can authorize it. We never sign it, and
    * the fee is charged to the owner's account because the owner's account is its source.
+   *
+   * Two preflights run around the simulation, because both failures are ones the contract
+   * cannot name well and the person can fix before signing:
+   *
+   *  - A withdraw (or owner_pay) to a G... account checks that the account holds a trustline
+   *    for the vault token's classic asset. Without one the SAC traps with its own #13, which
+   *    reaches the owner as an anonymous refusal. A C... destination needs no trustline: a
+   *    contract holds a SAC balance in its own storage.
+   *  - The source's spendable XLM is compared with the simulated fee. The network would
+   *    reject the envelope with txInsufficientBalance anyway, but only after the person has
+   *    signed it.
+   *
+   * Both read Horizon, from the registry's horizonUrls. A Horizon that does not answer
+   * leaves the preflight `unchecked` and says so; it never fails the prepare, because the
+   * simulation, which did pass, is the authoritative check and Horizon is the courtesy.
    */
   async function prepareOwnerCall(
     vault: string,
@@ -769,6 +1174,7 @@ export function createStellarAdapter(chain: ChainDescriptor, deps: StellarAdapte
     args: ScArg[],
     source: string,
     env: NodeJS.ProcessEnv = process.env,
+    opts: { vaultToken?: string } = {},
   ): Promise<PreparedOwnerCall> {
     if (!isContractId(vault)) return { ok: false, code: 'bad_request', reason: `${vault} is not a Soroban contract id` }
     if (!isAccountId(source)) return { ok: false, code: 'bad_request', reason: `${source} is not a Stellar account id` }
@@ -780,13 +1186,63 @@ export function createStellarAdapter(chain: ChainDescriptor, deps: StellarAdapte
     try {
       account = await server.getAccount(source)
     } catch (e) {
+      const message = e instanceof Error ? e.message : String(e)
+      // The SDK says "Account not found" when the ledger answered and there is no such
+      // account; the failover layer underneath keeps a transport failure a transport failure.
+      // An account that does not exist holds no XLM at all, which is the actionable reading.
+      if (/not found/i.test(message)) {
+        const reserve = (await readBaseReserveStroops(chain, deps.fetch ?? fetch).catch(() => null)) ?? 5_000_000n
+        return {
+          ok: false,
+          code: 'insufficient_xlm',
+          availableXlm: '0',
+          neededXlm: stroopsToXlm(2n * reserve),
+          reason:
+            `${source} does not exist on ${chain.name}. On Stellar an account has to be created and hold ` +
+            `its minimum balance of ${stroopsToXlm(2n * reserve)} XLM before it can be a transaction source, ` +
+            'and the fee comes on top of that. Fund it, then prepare the call again.',
+        }
+      }
       return {
         ok: false,
         code: 'rpc_error',
         reason:
-          `${source} could not be loaded on ${chain.name} (${e instanceof Error ? e.message : String(e)}). ` +
+          `${source} could not be loaded on ${chain.name} (${message}). ` +
           'On Stellar an account has to exist and hold its XLM reserve before it can be a ' +
           'transaction source; an unfunded account is not an account.',
+      }
+    }
+
+    // The trustline preflight, before the simulation, so the refusal names the real cause.
+    let trustline: 'checked' | 'not-needed' | 'unchecked' = 'not-needed'
+    if (method === 'withdraw' || method === 'owner_pay') {
+      const to = String(args[0]?.value ?? '')
+      if (isAccountId(to)) {
+        trustline = 'unchecked'
+        let token = opts.vaultToken
+        if (!token) token = await view(vault, 'token', env).then(String).catch(() => undefined)
+        const asset = (chain.settlementTokens ?? []).find((t) => t.address === token)?.classicAsset
+        if (asset) {
+          const dest = await horizonAccount(to)
+          if (dest) {
+            const [code, issuer] = asset.split(':')
+            const line = dest.found ? dest.trustlines.find((t) => t.code === code && t.issuer === issuer) : undefined
+            if (!dest.found || !line || !line.authorized) {
+              return {
+                ok: false,
+                code: 'no_trustline',
+                destination: to,
+                asset,
+                reason: !dest.found
+                  ? `${to} does not exist on ${chain.name}, so it cannot hold ${code}. Nothing was prepared. Fund that account and add a ${code} trustline (issuer ${issuer}), or withdraw to an account that has one.`
+                  : !line
+                    ? `${to} has no trustline for ${code} (issuer ${issuer}), so the token contract would refuse the transfer. Nothing was prepared. Add the trustline in that wallet first, or withdraw to an account that has one.`
+                    : `${to} holds a ${code} trustline that the issuer has not authorized, so the transfer would be refused. Nothing was prepared.`,
+              }
+            }
+            trustline = 'checked'
+          }
+        }
       }
     }
 
@@ -804,12 +1260,13 @@ export function createStellarAdapter(chain: ChainDescriptor, deps: StellarAdapte
     }
     if (rpc.Api.isSimulationError(sim)) {
       const e = errorIn(sim.error, vault)
+      const name = errorNameFor(method, e)
       return {
         ok: false,
         code: 'refused',
         reason: `the contract refused it in simulation, so nothing was prepared: ${sim.error}`,
         ...errorFields(e),
-        ...(ourErrorName(e) ? { contractErrorName: ourErrorName(e) } : {}),
+        ...(name ? { contractErrorName: name } : {}),
       }
     }
     if (rpc.Api.isSimulationRestore(sim)) {
@@ -819,7 +1276,9 @@ export function createStellarAdapter(chain: ChainDescriptor, deps: StellarAdapte
         reason:
           'this call reads state that has been archived, and the RPC answered with a separate ' +
           'restore preamble, so it needs a restore transaction before it can run. Nothing was ' +
-          'prepared, because a signature on it would pay a fee to fail.',
+          'prepared, because a signature on it would pay a fee to fail. A restore is a ' +
+          'RestoreFootprint transaction that any funded account may submit and pay for; once it ' +
+          'lands, prepare this call again.',
       }
     }
     // Since protocol 23 archived state comes back WITHOUT a preamble: the transaction restores
@@ -830,6 +1289,27 @@ export function createStellarAdapter(chain: ChainDescriptor, deps: StellarAdapte
     const archivedEntries = simulationArchivedEntries(sim)
 
     const assembled = rpc.assembleTransaction(tx, sim).build()
+
+    // The XLM preflight, against the fee the simulation produced.
+    let xlm: 'checked' | 'unchecked' = 'unchecked'
+    const spend = await spendableXlm(source)
+    if (spend) {
+      const fee = BigInt(assembled.fee)
+      const available = spend.available > 0n ? spend.available : 0n
+      if (available < fee) {
+        return {
+          ok: false,
+          code: 'insufficient_xlm',
+          availableXlm: stroopsToXlm(available),
+          neededXlm: stroopsToXlm(fee),
+          reason:
+            `${source} can spend ${stroopsToXlm(available)} XLM after its reserves and open offers, ` +
+            `and this call costs ${stroopsToXlm(fee)} XLM in fees. Nothing was prepared. Add XLM to that account, then prepare it again.`,
+        }
+      }
+      xlm = 'checked'
+    }
+
     // Address credentials carry their own signature expiry; source-account credentials, the
     // ordinary case when the owner IS the transaction source, do not. Reported as null in
     // that case rather than invented, with the time bound stated beside it.
@@ -855,7 +1335,10 @@ export function createStellarAdapter(chain: ChainDescriptor, deps: StellarAdapte
       expiresAtLedger,
       validUntil,
       feeStroops: assembled.fee,
+      feeXlm: stroopsToXlm(BigInt(assembled.fee)),
       archivedEntries,
+      restoreNeeded: archivedEntries.length > 0,
+      preflight: { xlm, trustline },
       summary:
         `${method}(${display.join(', ')}) on vault ${vault} (${chain.caip2}). ` +
         `Simulated and accepted by the contract; NOT signed. The source account ${source} pays ` +
@@ -979,14 +1462,33 @@ export function createStellarAdapter(chain: ChainDescriptor, deps: StellarAdapte
       network: chain.caip2,
     }
     try {
-      return { inspection, outcome: await land(server, tx as Parameters<SorobanRpc['sendTransaction']>[0], shape) }
+      const outcome = await land(server, tx as Parameters<SorobanRpc['sendTransaction']>[0], shape)
+      // The network said the source cannot cover the fee. Say how far short it is, from the
+      // same Horizon read the prepare preflight uses, so the owner learns the number rather
+      // than the error name. Best effort: a Horizon that does not answer leaves it out.
+      if (outcome.outcome === 'refused' && outcome.rejection?.code === 'insufficient_balance') {
+        const spend = await spendableXlm(inspection.source)
+        if (spend) {
+          const available = spend.available > 0n ? spend.available : 0n
+          outcome.xlm = { availableXlm: stroopsToXlm(available), neededXlm: stroopsToXlm(BigInt(tx.fee)) }
+        }
+      }
+      return { inspection, outcome }
     } catch (e) {
+      // A send that threw is NOT decided, for the reason client.ts gives at length: the
+      // envelope may never have left, or it may have been accepted with the answer lost on
+      // the way back. Calling that refused would invite the owner to sign again while the
+      // first one may still land, so it is reported as pending under the hash the envelope
+      // already has, and the ledger decides.
       return {
         inspection,
         outcome: {
-          outcome: 'refused',
-          ...shape,
-          reason: `the RPC would not take the transaction: ${e instanceof Error ? e.message : String(e)}`,
+          outcome: 'pending',
+          txHash: tx.hash().toString('hex'),
+          explorerUrl: `${chain.explorer}/tx/${tx.hash().toString('hex')}`,
+          reason:
+            `the RPC did not answer the submission (${e instanceof Error ? e.message : String(e)}), so whether ` +
+            'it was accepted is unknown. It stays valid until its time bound: look the hash up before signing again.',
         },
       }
     }
@@ -994,6 +1496,7 @@ export function createStellarAdapter(chain: ChainDescriptor, deps: StellarAdapte
 
   return {
     deployVault,
+    uploadVaultWasm,
     prepareOwnerCall,
     inspectOwnerEnvelope,
     submitSignedEnvelope,
@@ -1059,47 +1562,133 @@ export function createStellarAdapter(chain: ChainDescriptor, deps: StellarAdapte
     /** The whole vault state in one round of simulations. */
     async readVault(vault: string, env: NodeJS.ProcessEnv = process.env): Promise<VaultState> {
       if (!isContractId(vault)) throw new Error(`${vault} is not a Soroban contract id`)
-      const s = (v: unknown) => String(v)
-      const [
-        owner,
-        operator,
-        token,
-        decimals,
-        dailyCap,
-        autoApproveMax,
-        frozen,
-        allowlistEnabled,
-        sessionKeyExpiry,
-        day,
-        spentToday,
-        balance,
-      ] = await Promise.all([
-        view(vault, 'owner', env),
-        view(vault, 'operator', env),
-        view(vault, 'token', env),
-        view(vault, 'decimals', env),
-        view(vault, 'daily_cap', env),
-        view(vault, 'auto_approve_max', env),
-        view(vault, 'frozen', env),
-        view(vault, 'allowlist_enabled', env),
-        view(vault, 'session_key_expiry', env),
-        view(vault, 'today', env),
-        view(vault, 'spent_today', env),
-        view(vault, 'balance', env),
+      const s = (v: { value: unknown }) => String(v.value)
+      const reads = await Promise.all([
+        viewAt(vault, 'owner', [], env),
+        viewAt(vault, 'operator', [], env),
+        viewAt(vault, 'token', [], env),
+        viewAt(vault, 'decimals', [], env),
+        viewAt(vault, 'daily_cap', [], env),
+        viewAt(vault, 'auto_approve_max', [], env),
+        viewAt(vault, 'frozen', [], env),
+        viewAt(vault, 'allowlist_enabled', [], env),
+        viewAt(vault, 'session_key_expiry', [], env),
+        viewAt(vault, 'today', [], env),
+        viewAt(vault, 'spent_today', [], env),
+        viewAt(vault, 'balance', [], env),
       ])
+      const [owner, operator, token, decimals, dailyCap, autoApproveMax, frozen, allowlistEnabled, sessionKeyExpiry, day, spentToday, balance] =
+        reads
       return {
         owner: s(owner),
         operator: s(operator),
         token: s(token),
-        decimals: Number(decimals),
+        decimals: Number(decimals.value),
         dailyCapRaw: s(dailyCap),
         autoApproveMaxRaw: s(autoApproveMax),
-        frozen: Boolean(frozen),
-        allowlistEnabled: Boolean(allowlistEnabled),
+        frozen: Boolean(frozen.value),
+        allowlistEnabled: Boolean(allowlistEnabled.value),
         sessionKeyExpiry: s(sessionKeyExpiry),
         day: s(day),
         spentTodayRaw: s(spentToday),
         balanceRaw: s(balance),
+        ledger: Math.max(...reads.map((r) => r.ledger)),
+      }
+    },
+
+    /** A SEP-41 token's own `symbol()`, read by simulation, for a vault whose token the registry does not name. */
+    async readTokenSymbol(token: string, env: NodeJS.ProcessEnv = process.env): Promise<string> {
+      if (!isContractId(token)) throw new Error(`${token} is not a Soroban contract id`)
+      return String(await view(token, 'symbol', env))
+    },
+
+    /**
+     * Whether one payee is on the vault's allowlist, live, and whether the list is enforced.
+     *
+     * A checker rather than a list, because that is the shape the contract gives: it exposes
+     * `is_allowed(payee)` and no view that enumerates the allowed set. The set can be
+     * reconstructed from AllowlistSet events by an indexer that has kept them, but public RPC
+     * nodes keep only about a week of events, so a list built from RPC history would be
+     * silently incomplete for any vault older than that. Both reads are simulations at the
+     * latest ledger, and the higher of the two ledgers is reported.
+     */
+    async isAllowed(
+      vault: string,
+      payee: string,
+      env: NodeJS.ProcessEnv = process.env,
+    ): Promise<{ allowed: boolean; allowlistEnabled: boolean; ledger: number }> {
+      if (!isContractId(vault)) throw new Error(`${vault} is not a Soroban contract id`)
+      if (!isAccountId(payee) && !isContractId(payee)) throw new Error(`${payee} is not a Stellar address`)
+      const [allowed, enabled] = await Promise.all([
+        viewAt(vault, 'is_allowed', [addr(payee)], env),
+        viewAt(vault, 'allowlist_enabled', [], env),
+      ])
+      return { allowed: Boolean(allowed.value), allowlistEnabled: Boolean(enabled.value), ledger: Math.max(allowed.ledger, enabled.ledger) }
+    },
+
+    /**
+     * What code a contract instance runs, read off its instance entry with getLedgerEntries.
+     *
+     * The executable is the only thing that ties an address to source we can point at: a
+     * contract id says nothing about what was deployed behind it. `wasmHash` is the sha256 of
+     * the module, the same value soroban/releases/ records and `stellar contract fetch`
+     * reproduces. A Stellar Asset Contract has no wasm and reports `stellar-asset`. The same
+     * read carries the instance's TTL, so it is returned beside it rather than read twice.
+     *
+     * `found: false` means the RPC returned no instance entry at all: nothing is deployed at
+     * that address on this network (or a testnet reset took it). An archived instance still
+     * comes back, so it is `found` with `archived: true`.
+     */
+    async readExecutableWasmHash(
+      contract: string,
+      env: NodeJS.ProcessEnv = process.env,
+    ): Promise<{
+      ledger: number
+      found: boolean
+      executable: 'wasm' | 'stellar-asset' | 'other' | null
+      wasmHash: string | null
+      liveUntilLedger: number | null
+      archived: boolean
+    }> {
+      if (!isContractId(contract)) throw new Error(`${contract} is not a Soroban contract id`)
+      const server = rpcFor(env)
+      const key = xdr.LedgerKey.contractData(
+        new xdr.LedgerKeyContractData({
+          contract: new Address(contract).toScAddress(),
+          key: xdr.ScVal.scvLedgerKeyContractInstance(),
+          durability: xdr.ContractDataDurability.persistent(),
+        }),
+      )
+      const res = await server.getLedgerEntries(key)
+      const entry = res.entries[0] as { liveUntilLedgerSeq?: number; val?: xdr.LedgerEntryData } | undefined
+      if (!entry) {
+        return { ledger: res.latestLedger, found: false, executable: null, wasmHash: null, liveUntilLedger: null, archived: false }
+      }
+      const live = isLiveLedgerEntry(entry, res.latestLedger)
+      let executable: 'wasm' | 'stellar-asset' | 'other' | null = null
+      let wasmHash: string | null = null
+      try {
+        const exe = (entry.val as xdr.LedgerEntryData).contractData().val().instance().executable()
+        const arm = exe.switch().name
+        if (arm === 'contractExecutableWasm') {
+          executable = 'wasm'
+          wasmHash = Buffer.from(exe.wasmHash() as unknown as Uint8Array).toString('hex')
+        } else if (arm === 'contractExecutableStellarAsset') {
+          executable = 'stellar-asset'
+        } else {
+          executable = 'other'
+        }
+      } catch {
+        // An entry whose value we cannot decode is reported as found with no executable,
+        // never given a hash we did not read.
+      }
+      return {
+        ledger: res.latestLedger,
+        found: true,
+        executable,
+        wasmHash,
+        liveUntilLedger: live ? (entry.liveUntilLedgerSeq as number) : null,
+        archived: !live,
       }
     },
 
@@ -1182,6 +1771,24 @@ export function createStellarAdapter(chain: ChainDescriptor, deps: StellarAdapte
     /** The agent's bounded payment. Amount is in the token's own base units. */
     policyPay: (vault: string, to: string, amountRaw: bigint | string, env = process.env) =>
       write(vault, 'pay', [addr(to), i128(amountRaw)], [to, String(amountRaw)], env),
+
+    // ── owner entrypoints signed with OUR key ─────────────────────────────────────────
+    //
+    // The six helpers below call owner-only entrypoints and sign with the chain's env key.
+    // They exist for one case only: a vault whose owner IS that env key. They are reached
+    // through platform/vault-adapter.ts (the console's policy sync, the session-key grant,
+    // and the human-override settlement), never from a route that takes a vault from a
+    // request body, and every one of them is prepared-or-executed like the rest of `write`.
+    //
+    // They can never authorize anything for a vault owned by a person's wallet or by a
+    // passkey smart account. The contract calls `owner.require_auth()` against the owner it
+    // stored, so our signature counts only if we are that owner; and `write` now reads the
+    // simulation's recorded authorization and refuses to submit when it names any address
+    // other than our own source account, returning `prepared` with the owner it would need.
+    // So the worst a misrouted call can do is say which signature is missing. It cannot spend
+    // our fee on a transaction the host would refuse, and it cannot produce an owner
+    // authorization: that only ever comes from the owner's own wallet, through
+    // /api/stellar/vault/prepare and /submit, where this server signs nothing.
 
     /** The human override: skips ceiling, allowlist and freeze, still counted by the cap. */
     policyOwnerPay: (vault: string, to: string, amountRaw: bigint | string, env = process.env) =>

@@ -84,11 +84,36 @@ export interface ChainContracts {
   /**
    * ONE AgentSpendPolicy vault whose OWNER is a passkey smart account (a C... contract) rather
    * than a G... account, kept as evidence the same way `spendVaultExample` is: the owner
-   * entrypoints on it were signed by a WebAuthn credential through the smart account's
-   * `execute`, and the vault's `owner.require_auth()` was satisfied because the smart account
-   * was the direct invoker. Evidence, not infrastructure: nothing generic reads this slot.
+   * entrypoints on it were signed through the smart account's `execute`, and the vault's
+   * `owner.require_auth()` was satisfied because the smart account was the direct invoker.
+   * A REHEARSAL: the signing credential was a software P-256 key in our own script, not a
+   * device passkey, which is why it is published with role 'rehearsal' and is not the SOW 2
+   * D3 vault (`devicePasskeyVault`). Evidence, not infrastructure.
    */
   passkeyVault?: string
+  /**
+   * SOW 2 D2: the AgentSpendPolicy vault whose OWNER is a browser-wallet key (a G... account
+   * the person holds in Freighter or another Stellar Wallets Kit wallet), so its owner calls
+   * are signed in that wallet with the owner as the transaction source. Unset until ops
+   * deploys it with mcp/scripts/stellar-deploy-vault.mjs and records the release receipt;
+   * nothing reads an empty slot as a vault.
+   */
+  walletOwnedVault?: string
+  /**
+   * SOW 2 D3: the AgentSpendPolicy vault whose OWNER is a smart account whose signer is a
+   * device passkey, as opposed to `passkeyVault`, whose owner calls were signed by a
+   * software P-256 key in our own script. Unset until ops deploys it.
+   */
+  devicePasskeyVault?: string
+  /**
+   * Every AgentSpendPolicy build we published for this network, by the sha256 of its wasm
+   * (Stellar only). A contract instance whose executable is one of these hashes runs source
+   * we can point at, which is what lets the owner-call gate accept a vault that is in no
+   * registry slot and on no agent record, provided its live owner is the caller's own
+   * wallet. Append-only: a hash leaves this list only if its build is withdrawn, and then
+   * with a note. `version` names the release receipt under soroban/releases/.
+   */
+  knownVaultWasmHashes?: { hash: string; version: string }[]
   /**
    * The OpenZeppelin smart account contracts a passkey wallet is deployed from on this network
    * (Stellar only). THIRD-PARTY: OpenZeppelin publishes the wasm and the two verifier

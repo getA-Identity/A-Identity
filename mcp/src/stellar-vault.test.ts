@@ -12,8 +12,16 @@ import {
   isOwnerAction,
   ledgerTtl,
   ownerCallPlan,
+  TtlCache,
+  VAULT_ROLE_LABELS,
+  amountOf,
+  isAllowedBody,
+  knownBuildOf,
+  registryVaultSlots,
   toRawUnits,
+  vaultReadBody,
   vaultReport,
+  type RawVaultState,
   type VaultStateView,
 } from './stellar-vault.js'
 
@@ -360,4 +368,170 @@ test('a new vault owner is never guessed: explicit, then the wallet session, the
   assert.equal(chooseStellarVaultOwner({ ownerAddress: explicit.slice(0, -1), caller: session, linkedWallets: [linkedA] }).ok, false)
   // REFUSAL: nothing to go on at all.
   assert.equal(chooseStellarVaultOwner({ caller: 'me@example.test', linkedWallets: [] }).ok, false)
+})
+
+// ── SOW 2: the single-vault read, the checker, and the known-build gate ──────────
+
+const V010 = '155eb31c1867254eacbf1b7a4755164d15cc6b6f939644705ab6b8df61579239'
+
+test('an Amount is the integer the contract holds and a decimal with trailing zeros trimmed', () => {
+  assert.deepEqual(amountOf('100000000', 7), { raw: '100000000', display: '10' })
+  assert.deepEqual(amountOf('5000000', 7), { raw: '5000000', display: '0.5' })
+  assert.deepEqual(amountOf('1', 7), { raw: '1', display: '0.0000001' })
+  assert.deepEqual(amountOf('0', 7), { raw: '0', display: '0' })
+  // Larger than a float can hold exactly: string arithmetic, never Number.
+  assert.deepEqual(amountOf('123456789012345678901', 7), { raw: '123456789012345678901', display: '12345678901234.5678901' })
+})
+
+const rawState = (over: Partial<RawVaultState> = {}): RawVaultState => ({
+  owner: Keypair.random().publicKey(),
+  operator: Keypair.random().publicKey(),
+  token: stellar.settlementTokens?.[0]?.address as string,
+  decimals: 7,
+  dailyCapRaw: '250000000',
+  autoApproveMaxRaw: '50000000',
+  frozen: false,
+  allowlistEnabled: true,
+  sessionKeyExpiry: '0',
+  day: '20728',
+  spentTodayRaw: '30000000',
+  balanceRaw: '1000000000',
+  ledger: 4972480,
+  ...over,
+})
+
+const readBody = (state: RawVaultState, over: Partial<Parameters<typeof vaultReadBody>[0]> = {}) =>
+  vaultReadBody({
+    chain: stellar,
+    contract: VAULT,
+    state,
+    wasmHash: V010,
+    ttl: { liveUntilLedger: 5100000, archived: false },
+    explorerUrl: 'https://explorer.example/contract/' + VAULT,
+    tokenSymbol: 'USDC',
+    ledger: 4972480,
+    readAt: '2026-10-02T10:00:00.000Z',
+    nowMs: Date.parse('2026-10-02T10:00:00.000Z'),
+    ...over,
+  })
+
+test('the read answers what can still leave today, and when the day resets, from the contract day', () => {
+  const b = readBody(rawState())
+  assert.equal(b.network, stellar.caip2)
+  assert.equal(b.chainId, stellar.id)
+  assert.equal(b.realMoney, false)
+  assert.deepEqual(b.dailyCap, { raw: '250000000', display: '25' })
+  assert.deepEqual(b.spentToday, { raw: '30000000', display: '3' })
+  assert.deepEqual(b.remainingToday, { raw: '220000000', display: '22' })
+  assert.deepEqual(b.autoApproveMax, { raw: '50000000', display: '5' })
+  assert.deepEqual(b.balance, { raw: '1000000000', display: '100' })
+  assert.equal(b.day, 20728)
+  // Day 20728 runs from 20728 * 86400; the bucket resets at the start of day 20729, in UTC.
+  assert.equal(b.resetsAt, new Date(20729 * 86_400_000).toISOString())
+  assert.equal(b.ledger, 4972480)
+  assert.equal(b.readAt, '2026-10-02T10:00:00.000Z')
+  assert.equal(b.knownBuild, true)
+  assert.equal(b.build, 'v0.1.0')
+  assert.equal(b.role, 'flagship')
+  assert.equal(b.ownerKind, 'account')
+  assert.equal(b.note, undefined, 'a known, live vault needs no caveat')
+})
+
+test('a cap of 0 means no cap, so nothing-left-today is null rather than zero', () => {
+  const b = readBody(rawState({ dailyCapRaw: '0', spentTodayRaw: '70000000' }))
+  assert.deepEqual(b.dailyCap, { raw: '0', display: '0' })
+  assert.equal(b.remainingToday, null)
+})
+
+test('spent past the cap (the owner override counts without being refused) floors at 0, never negative', () => {
+  const b = readBody(rawState({ dailyCapRaw: '10000000', spentTodayRaw: '30000000' }))
+  assert.deepEqual(b.remainingToday, { raw: '0', display: '0' })
+})
+
+test('a session key expiry of 0 is never expired; a past one is, and a pubnet read is real money', () => {
+  assert.equal(readBody(rawState({ sessionKeyExpiry: '0' })).sessionKeyExpired, false)
+  const past = Math.floor(Date.parse('2026-10-01T00:00:00Z') / 1000)
+  assert.equal(readBody(rawState({ sessionKeyExpiry: String(past) })).sessionKeyExpired, true)
+  const future = Math.floor(Date.parse('2026-11-01T00:00:00Z') / 1000)
+  assert.equal(readBody(rawState({ sessionKeyExpiry: String(future) })).sessionKeyExpired, false)
+  const pubnet = CHAINS.find((c) => c.id === 'stellar')!
+  assert.equal(readBody(rawState(), { chain: pubnet, contract: pubnet.contracts.spendVault as string }).realMoney, true)
+})
+
+test('an unknown build and an archived instance each carry a note, never a silent number', () => {
+  const b = readBody(rawState(), { wasmHash: 'ab'.repeat(32), ttl: { liveUntilLedger: null, archived: true } })
+  assert.equal(b.knownBuild, false)
+  assert.equal(b.build, null)
+  assert.match(String(b.note), /not an AgentSpendPolicy build we published/)
+  assert.match(String(b.note), /archived/)
+})
+
+test('the checker has three answers, and an unenforced list is its own state, not a yes', () => {
+  const at = { chain: stellar, contract: VAULT, address: Keypair.random().publicKey(), ledger: 1, readAt: 'x' }
+  assert.equal(isAllowedBody({ ...at, allowed: true, allowlistEnabled: true }).effective, 'allowed')
+  assert.equal(isAllowedBody({ ...at, allowed: false, allowlistEnabled: true }).effective, 'blocked')
+  assert.equal(isAllowedBody({ ...at, allowed: false, allowlistEnabled: false }).effective, 'not-enforced')
+  assert.equal(isAllowedBody({ ...at, allowed: true, allowlistEnabled: false }).effective, 'not-enforced')
+})
+
+test('a known build is matched by hash on its own network only, case-insensitively', () => {
+  assert.deepEqual(knownBuildOf(stellar, V010), { known: true, version: 'v0.1.0' })
+  assert.deepEqual(knownBuildOf(stellar, V010.toUpperCase()), { known: true, version: 'v0.1.0' })
+  assert.deepEqual(knownBuildOf(stellar, 'ab'.repeat(32)), { known: false, version: null })
+  assert.deepEqual(knownBuildOf(stellar, null), { known: false, version: null })
+})
+
+test('the registry slots carry roles, and the 2026-09-19 vault is labeled a rehearsal, not D3', () => {
+  const slots = registryVaultSlots(stellar)
+  assert.equal(slots[0].role, 'flagship')
+  assert.equal(slots[0].contract, VAULT)
+  const rehearsal = slots.find((s) => s.contract === stellar.contracts.passkeyVault)
+  assert.equal(rehearsal?.role, 'rehearsal')
+  assert.equal(
+    VAULT_ROLE_LABELS.rehearsal,
+    'Rehearsal: owner calls were signed by a software P-256 key in our own script, not a device passkey. Not SOW 2 D3 evidence.',
+  )
+  // The D2 and D3 slots are empty until ops deploys them; an empty slot is not a row.
+  assert.ok(!slots.some((s) => s.role === 'wallet-owned' || s.role === 'device-passkey'))
+})
+
+test('the gate admits a known build outside every list only when its live owner is the caller', () => {
+  const me = Keypair.random().publicKey()
+  const loose = 'CBIELTK6YBZJU5UP2WWQEUCYKLPU6AUNZ2BQ4WWFEIE3USCIHMXQDAMA'
+  const ask = (over: Partial<Parameters<typeof authorizeOwnerCall>[0]>) =>
+    authorizeOwnerCall({
+      source: me,
+      contract: loose,
+      caller: me,
+      callerIsWallet: true,
+      linkedWallets: [],
+      registryVaults: [VAULT],
+      ownedVaults: [],
+      liveOwner: me,
+      ...over,
+    })
+  assert.deepEqual(ask({ knownBuild: true }), { ok: true })
+  const stranger = ask({ knownBuild: true, liveOwner: Keypair.random().publicKey() })
+  assert.equal(stranger.ok, false)
+  if (!stranger.ok) assert.equal(stranger.code, 'not_owner')
+  const unknown = ask({ knownBuild: false })
+  assert.equal(unknown.ok, false)
+  if (!unknown.ok) {
+    assert.equal(unknown.code, 'unknown_vault')
+    assert.match(unknown.reason, /knownVaultWasmHashes/)
+  }
+})
+
+test('the read cache never serves an entry at or past its TTL, and a bust drops only its key', () => {
+  let now = 0
+  const c = new TtlCache<number>(5_000, () => now)
+  c.set('a', 1)
+  c.set('b', 2)
+  now = 4_999
+  assert.equal(c.get('a'), 1)
+  c.deleteWhere((k) => k === 'a')
+  assert.equal(c.get('a'), undefined)
+  assert.equal(c.get('b'), 2)
+  now = 5_000
+  assert.equal(c.get('b'), undefined, 'exactly five seconds old is already stale')
 })

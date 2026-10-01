@@ -4,8 +4,14 @@ import { Keypair, SorobanDataBuilder, rpc, xdr } from '@stellar/stellar-sdk'
 
 import {
   FailoverSorobanServer,
+  amountToStroops,
+  horizonUrl,
   isLiveLedgerEntry,
   isTransportError,
+  readBaseReserveStroops,
+  readHorizonAccount,
+  spendableStroops,
+  stroopsToXlm,
   simulationArchivedEntries,
   simulationNeedsRestore,
   sorobanServer,
@@ -450,4 +456,61 @@ test('a ledger entry is live only when its TTL reaches past the ledger it was re
   assert.equal(isLiveLedgerEntry({ liveUntilLedgerSeq: 101 }, 100), true)
   assert.equal(isLiveLedgerEntry({}, 100), false)
   assert.equal(isLiveLedgerEntry(undefined, 100), false)
+})
+
+// ── Horizon, for the two owner-call preflights ───────────────────────────────────
+
+test('XLM amounts convert exactly in both directions, with no float in between', () => {
+  assert.equal(amountToStroops('100.0000000'), 1_000_000_000n)
+  assert.equal(amountToStroops('0.0000001'), 1n)
+  assert.equal(amountToStroops('1.5'), 15_000_000n)
+  assert.throws(() => amountToStroops('1.23456789'), /not a Stellar amount/)
+  assert.equal(stroopsToXlm(15_000_000n), '1.5')
+  assert.equal(stroopsToXlm(100n), '0.00001')
+  assert.equal(stroopsToXlm(0n), '0')
+  assert.equal(stroopsToXlm(-5n), '-0.0000005')
+})
+
+test('spendable XLM is the balance less the minimum balance and the XLM locked in offers', () => {
+  const acct = {
+    found: true as const,
+    nativeStroops: 100_000_000n,
+    sellingLiabilitiesStroops: 20_000_000n,
+    subentries: 3,
+    sponsoring: 1,
+    sponsored: 2,
+    trustlines: [],
+  }
+  // (2 + 3 + 1 - 2) = 4 reserves of 0.5 XLM = 2 XLM; 10 - 2 - 2 = 6 XLM.
+  assert.equal(spendableStroops(acct, 5_000_000n), 60_000_000n)
+})
+
+test('a Horizon 404 is an answer (no such account); any other failure throws rather than read as one', async () => {
+  const chain = getChainById('stellar-testnet') as ChainDescriptor
+  assert.equal(horizonUrl(chain), chain.horizonUrls?.[0]?.replace(/\/+$/, ''))
+  const answer = (status: number, body: unknown) => (async () => new Response(JSON.stringify(body), { status })) as unknown as typeof fetch
+  assert.deepEqual(await readHorizonAccount(chain, 'G', answer(404, {})), { found: false })
+  await assert.rejects(() => readHorizonAccount(chain, 'G', answer(503, {})), /503/)
+  const got = await readHorizonAccount(
+    chain,
+    'G',
+    answer(200, {
+      subentry_count: 2,
+      balances: [
+        { asset_type: 'credit_alphanum4', asset_code: 'USDC', asset_issuer: 'GISSUER', balance: '1.0000000', is_authorized: false },
+        { asset_type: 'native', balance: '3.0000000', selling_liabilities: '0.5000000' },
+      ],
+    }),
+  )
+  assert.deepEqual(got, {
+    found: true,
+    nativeStroops: 30_000_000n,
+    sellingLiabilitiesStroops: 5_000_000n,
+    subentries: 2,
+    sponsoring: 0,
+    sponsored: 0,
+    trustlines: [{ code: 'USDC', issuer: 'GISSUER', authorized: false }],
+  })
+  assert.equal(await readBaseReserveStroops(chain, answer(200, { _embedded: { records: [{ base_reserve_in_stroops: 5_000_000 }] } })), 5_000_000n)
+  await assert.rejects(() => readBaseReserveStroops(chain, answer(200, { _embedded: { records: [] } })), /no base reserve/)
 })

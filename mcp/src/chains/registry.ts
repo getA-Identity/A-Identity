@@ -217,8 +217,12 @@ export const CHAINS: ChainDescriptor[] = [
   // key the next time anyone pulled, with no error and no prompt. Both networks therefore
   // name themselves. "pubnet" and "testnet" are also Stellar's own words for them.
   //
-  // Both are protocol 27, verified by direct RPC probe on 2026-08-15 against each
-  // network's own getVersionInfo. See soroban/releases/protocol-verification-2026-08-15.json.
+  // Both were protocol 27 when first verified, by direct RPC probe on 2026-08-15 against
+  // each network's own getVersionInfo (soroban/releases/protocol-verification-2026-08-15.json).
+  // Neither has stayed there: read live again on 2026-10-01 with getLatestLedger, testnet
+  // answered protocol 29 at ledger 4972479 and pubnet answered protocol 29 at ledger
+  // 64720040. A protocol number in a comment is a dated observation, never a constant;
+  // code that depends on one reads it live.
   {
     caip2: 'stellar:pubnet',
     id: 'stellar',
@@ -267,6 +271,14 @@ export const CHAINS: ChainDescriptor[] = [
       // A new per-agent vault instantiates against this hash for about 0.1 XLM instead of
       // re-uploading the 11,625-byte wasm for about 12 XLM.
       spendVaultWasmHash: '155eb31c1867254eacbf1b7a4755164d15cc6b6f939644705ab6b8df61579239',
+      // Every AgentSpendPolicy build we published for pubnet. The owner-call gate accepts a
+      // vault outside the registry slots only when its live executable is one of these AND
+      // its live owner is the caller's own wallet. v0.1.1 is appended by ops when its
+      // release receipt lands, not before.
+      knownVaultWasmHashes: [{ hash: '155eb31c1867254eacbf1b7a4755164d15cc6b6f939644705ab6b8df61579239', version: 'v0.1.0' }],
+      // walletOwnedVault (SOW 2 D2) and devicePasskeyVault (SOW 2 D3) are deliberately
+      // absent: both are testnet deliverables, and a slot is filled only after a deploy
+      // receipt exists under soroban/releases/.
       // TrionLabs Stellar 8004, third party, read-only for us. Identity, Reputation and
       // Validation instance entries all read back present on 2026-09-15 and total_agents
       // simulated to 68. A register_with_uri simulation on 2026-09-09 reported the instance
@@ -297,7 +309,7 @@ export const CHAINS: ChainDescriptor[] = [
         webauthnVerifier: 'CB7HENHJ7NF34I5FFXQK7D5I3WWQRGB5O5XO77D3NXMT7LM7LOKRQ5YR',
         ed25519Verifier: 'CBOOZV2BK5OETGL4Q4KGEBESPRLJFN7DOFWDT7OZGLD7EQEZUVOWUEMC',
         verified:
-          'Taken from smart-account-kit https://github.com/stellar/smart-account-kit/blob/main/docs/deployments-protocol-27-2026-07-09.md (the Mainnet table, deploy account GAAH4OT3..., uploads charged 90.68 XLM) and then READ BACK OFF PUBNET on 2026-09-24 rather than trusted: the WebAuthn verifier CB7HENHJ... and the Ed25519 verifier CBOOZV2B... each answer verify, canonicalize_key and batch_canonicalize_key, and the code entry for wasm hash 1b5f4534... is live on pubnet and exposes execute, __check_auth, __constructor, add_signer and add_policy. Third-party contracts owned by OpenZeppelin, unaudited by their own SECURITY.md, so anything read from them is labeled third-party and live, never ours.',
+          'Taken from smart-account-kit https://github.com/stellar/smart-account-kit/blob/main/docs/deployments-protocol-27-2026-07-09.md (the Mainnet table, deploy account GAAH4OT3..., uploads charged 90.68 XLM) and then READ BACK OFF PUBNET on 2026-09-24 rather than trusted: the WebAuthn verifier CB7HENHJ... and the Ed25519 verifier CBOOZV2B... each answer verify, canonicalize_key and batch_canonicalize_key, and the code entry for wasm hash 1b5f4534... is live on pubnet and exposes execute, __check_auth, __constructor, add_signer and add_policy. Third-party contracts owned by OpenZeppelin: the contracts were audited by OpenZeppelin Security at release candidate v0.7.0, while the smart-account-kit SDK that deploys and drives them declares itself unaudited. Either way anything read from them is labeled third-party and live, never ours.',
       },
       cctp: {
         tokenMessenger: 'CAE2G5Z77UP7GYPYGFOWFGW7C7J6I4YP2AFGSADRKQY62SYUFLPNFTXL',
@@ -402,6 +414,13 @@ export const CHAINS: ChainDescriptor[] = [
       // 2026-09-15). Per-agent vaults instantiate against it; testnet resets would take
       // the code entry with them, which is why the adapter reads its TTL before deploying.
       spendVaultWasmHash: '155eb31c1867254eacbf1b7a4755164d15cc6b6f939644705ab6b8df61579239',
+      // Every AgentSpendPolicy build we published for testnet, the same v0.1.0 hash as
+      // pubnet. v0.1.1 is appended by ops when its release receipt lands, not before.
+      knownVaultWasmHashes: [{ hash: '155eb31c1867254eacbf1b7a4755164d15cc6b6f939644705ab6b8df61579239', version: 'v0.1.0' }],
+      // walletOwnedVault (SOW 2 D2: owner is a browser-wallet key) and devicePasskeyVault
+      // (SOW 2 D3: owner is a smart account behind a device passkey) are left UNSET on
+      // purpose. Ops fills each one after deploying it with mcp/scripts/stellar-deploy-vault.mjs
+      // and committing the receipt that script writes; an empty slot is not a vault.
       // TrionLabs Stellar 8004 on testnet, third party, read-only for us. Our own
       // registration is agent 25 here (tx 6070127842948b6aa26103e270f8e38b670f8c92916edbc691f3cd5f10754b07,
       // 2026-09-08), owner GBMF7MDH...ZZ3, and find_owner(25) read back that owner on
@@ -417,18 +436,23 @@ export const CHAINS: ChainDescriptor[] = [
       // ledger 4760409) against the same code entry as spendVault. Its OWNER is the OpenZeppelin
       // smart account CC5RNXNHKKPAHFP5YEOTZDFOQDQVC6AQKX3EH3W6QKFKGVBAXPVM3RWA (deploy tx
       // dcd3c4227b0a773bf3d825a8fb0c5d37196b9cb7366377bf8a2c76162d3d914c), whose only signer is a
-      // WebAuthn P-256 credential; the operator is the same account STELLAR_TESTNET_SIGNER_SECRET
-      // decodes to. set_policy (994b5cb9...) and set_allowed (e371b1b3...) on it were signed by the
-      // passkey through the smart account's `execute`, and a pay() to an unlisted payee was
-      // refused on chain with PayeeNotAllowed (22b33018..., FAILED). Testnet resets periodically,
-      // so this is a rehearsal, never a record; mcp/scripts/stellar-passkey-proof.mjs reproduces it.
+      // WebAuthn-shaped P-256 credential; the operator is the same account STELLAR_TESTNET_SIGNER_SECRET
+      // decodes to. set_policy (994b5cb9...) and set_allowed (e371b1b3...) on it were signed with
+      // that credential through the smart account's `execute`, and a pay() to an unlisted payee was
+      // refused on chain with PayeeNotAllowed (22b33018..., FAILED). Read the word passkey here
+      // narrowly: the credential was a SOFTWARE P-256 key generated inside
+      // mcp/scripts/stellar-passkey-proof.mjs, not a device authenticator, so /api/stellar/vaults
+      // labels this row role 'rehearsal' and it is not SOW 2 D3 evidence (that is
+      // devicePasskeyVault, once deployed). Testnet resets periodically, so this is a rehearsal,
+      // never a record; the same script reproduces it.
       passkeyVault: 'CBGTXWFBYAOZBR6EN3UK4PTLUAY6BRV2C36D3DPOTE5JSOLQXANS6J6U',
       // OpenZeppelin's smart account contracts on testnet, third party and read from the
       // smart-account-kit release document rather than measured by us: a passkey wallet is
       // instantiated against this wasm hash with the WebAuthn verifier as its signer's
       // verifier, and the relay endpoint refuses any deploy whose executable is a different
-      // hash. Pubnet constants exist in the same document and are deliberately NOT recorded:
-      // this release is testnet only.
+      // hash. The pubnet constants from the same document ARE recorded, on the pubnet entry
+      // above, after being read back off pubnet on 2026-09-24; what stays testnet only is the
+      // passkey relay and demo that consume them here.
       smartAccount: {
         wasmHash: '1b5f4534a76322da2ad7c745f6900857a6802b0ca79850c35a03561df997785a',
         webauthnVerifier: 'CC7EKIHQP3TN4CARQDND6CEOY2UXLWWC2X5GHTD5NLAT7BG5GPZIOM3F',

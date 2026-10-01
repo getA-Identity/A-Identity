@@ -15,6 +15,14 @@ export function rateBudget(method: string, pathname: string): { bucket: string; 
   // because visitors on a-identity.xyz can arrive through one shared proxy hop, and a demo
   // should not trip on it; the 60 s answer cache absorbs the repeats.
   if (method === 'GET' && (pathname === '/api/robinhood/check' || pathname === '/api/arbitrum/check')) return { bucket: 'evm-pay-check', max: 30, windowMs: 60_000 }
+  // The console's live vault panel. Open on purpose (a vault's limits are public ledger state)
+  // and it accepts ANY contract id, so each uncached read is a ledger-entry read plus a dozen
+  // simulations against a public RPC we do not own. Sized for a panel that refreshes every
+  // few seconds and a reader pasting a handful of addresses into the checker; the 5 s
+  // per-contract cache absorbs the refreshes. Separate buckets, so a burst of checker queries
+  // cannot blank the panel's own state read.
+  if (method === 'GET' && pathname === '/api/stellar/vault/read') return { bucket: 'stellar-vault-read', max: 60, windowMs: 60_000 }
+  if (method === 'GET' && pathname === '/api/stellar/vault/is-allowed') return { bucket: 'stellar-vault-is-allowed', max: 30, windowMs: 60_000 }
   if (method !== 'POST') return null
   // Auth challenges + guest login: cheap to abuse, keep them tight.
   if (pathname === '/api/auth/nonce' || pathname === '/api/auth/verify' || pathname === '/api/auth/login')

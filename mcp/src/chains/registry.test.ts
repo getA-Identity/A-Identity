@@ -383,3 +383,38 @@ test('Arc mainnet is its own descriptor, and shares no testnet-only value with i
   assert.equal(usdc?.settlementFeeUsd, 0.03)
   assert.match(usdc?.feeBasis ?? '', /0xd44287c8/)
 })
+
+test('the Stellar vault slots: v0.1.0 is a known build on both networks, and the SOW 2 slots stay empty until a receipt exists', () => {
+  // knownVaultWasmHashes is what lets the owner-call gate accept a vault outside the named
+  // slots, so a typo here would either shut out every wallet-owned vault or, worse, vouch
+  // for code we never published. The hash is the one soroban/releases/*-v0.1.0.json records.
+  const V010 = '155eb31c1867254eacbf1b7a4755164d15cc6b6f939644705ab6b8df61579239'
+  for (const id of ['stellar', 'stellar-testnet']) {
+    const c = getChainById(id)
+    assert.ok(c, id)
+    const known = c.contracts.knownVaultWasmHashes ?? []
+    assert.ok(known.some((k) => k.hash === V010 && k.version === 'v0.1.0'), `${id} must vouch for v0.1.0`)
+    for (const k of known) {
+      assert.match(k.hash, /^[0-9a-f]{64}$/, `${id}: a wasm hash is 32 bytes of lowercase hex`)
+      assert.match(k.version, /^v\d+\.\d+\.\d+$/, `${id}: a version names a release receipt`)
+    }
+    // The flagship's own executable is a build it vouches for, by construction.
+    assert.ok(known.some((k) => k.hash === c.contracts.spendVaultWasmHash), `${id}: spendVaultWasmHash must be a known build`)
+    // Ops fills these after the deploy and the receipt, never before, so absent is normal.
+    // What may never happen is a slot holding something that is not a contract id, or the
+    // same contract in two slots, because the vault list labels each slot differently.
+    const slots = [c.contracts.spendVault, c.contracts.passkeyVault, c.contracts.walletOwnedVault, c.contracts.devicePasskeyVault]
+    for (const s of slots) if (s !== undefined) assert.match(s, /^C[A-Z2-7]{55}$/, `${id}: a vault slot holds a C... contract id`)
+    const filled = slots.filter((s): s is string => typeof s === 'string')
+    assert.equal(new Set(filled).size, filled.length, `${id}: one contract, one role`)
+    // The two SOW 2 slots are testnet deliverables; pubnet keeps only its flagship.
+    if (!c.testnet) {
+      assert.equal(c.contracts.walletOwnedVault, undefined)
+      assert.equal(c.contracts.devicePasskeyVault, undefined)
+    }
+  }
+  // Only Stellar chains carry Soroban build hashes.
+  for (const c of CHAINS.filter((x) => x.ecosystem !== 'stellar')) {
+    assert.equal(c.contracts.knownVaultWasmHashes, undefined, `${c.id} is not a Soroban chain`)
+  }
+})

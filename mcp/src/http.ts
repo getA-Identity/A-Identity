@@ -362,6 +362,8 @@ server.listen(PORT, () => {
   console.error(`  GET  /api/x402/gateway/openapi.json            OpenAPI for the paid tools (marketplace listing)`)
   console.error(`  GET  /api/x402/gateway/tools/:name             price + what to sign; POST (or GET) to pay and call`)
   console.error(`  GET  /api/stellar/vaults         live Soroban spend vaults: policy, balance, archival TTL (public)`)
+  console.error(`  GET  /api/stellar/vault/read     one vault by contract, live, stamped with ledger and time (public)`)
+  console.error(`  GET  /api/stellar/vault/is-allowed  one payee against a vault's allowlist, live (public)`)
   console.error(`  POST /api/stellar/vault/prepare  build an owner call unsigned (verified session, owner-gated)`)
   console.error(`  POST /api/stellar/vault/submit   broadcast the envelope the owner signed (we never sign it)`)
   console.error(`  GET  /api/stellar/passkey/status what the passkey demo is configured with (testnet only, never a secret)`)
