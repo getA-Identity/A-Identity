@@ -1,0 +1,107 @@
+---
+title: "Passkey recovery"
+description: "What happens to a passkey-owned Stellar vault if the passkey is lost, how a second device protects you, and what A-Identity cannot do for you."
+---
+
+<Warning>
+  **Read this before you create the passkey.** If you lose every device that holds this
+  passkey, the vault's owner controls (freeze, unfreeze, policy changes and withdraw) are
+  gone for good. The funds in the vault become unreachable to you, and nobody, including
+  A-Identity, can recover them. The agent, which we call the operator, can keep paying
+  allowlisted payees inside the policy until its session key expires.
+</Warning>
+
+That warning is the whole risk in one paragraph. The rest of this page explains why it is
+true and what you can do about it while you still have the passkey.
+
+## What the smart account is
+
+Your vault does not have an owner key. Its owner is a **smart account**: a small contract
+on Stellar whose only job is to say yes or no on your behalf. When you press Freeze or
+Withdraw, your device asks for your fingerprint, face or PIN, the passkey signs that one
+action, and the smart account checks the signature on the ledger before the vault does
+anything.
+
+The account is the OpenZeppelin smart account, built by us from their audited release
+line; [the selection record](/chains/stellar-d3-selection) explains that choice. It starts
+with exactly **one signer: your passkey**. Nothing we hold can sign for it, and the vault
+has no function that hands ownership to someone else, so the owner you create on day one
+is the owner forever.
+
+## Where the passkey lives
+
+A passkey is created and kept by your device or your password manager, never by us. Where
+it lives decides what losing a device costs you:
+
+- **A device-bound passkey** (for example one kept only on a hardware security key, or in
+  a browser profile that does not sync) lives only on that one device. Lose or wipe the
+  device and the passkey is gone.
+- **A synced passkey** (iCloud Keychain on Apple devices, Google Password Manager on
+  Chrome and Android) is copied to the other devices signed in to that account. Losing one
+  phone does not lose it, **as long as that iCloud or Google account survives** and you can
+  still sign in to it. If you lose access to that account, you lose the passkey with it.
+
+Which kind you get is decided by your device and browser when you create the passkey, not
+by us. The enrolment page shows what your device reported (for example whether the
+passkey is eligible for backup) so you can see which case you are in.
+
+One more thing to keep: the smart account's address, a long string starting with `C`. The
+page shows it and stores it in this browser. On a new browser the passkey alone may not be
+enough for the page to find your account, so copy the address somewhere safe.
+
+## Adding a second device
+
+The smart account accepts more than one signer, and a second device is the real
+protection against loss. When you add one, we add it as a **separate rule** on the
+account, so that **either device alone** can act. We do not add it to the first rule,
+because two signers on that rule would make every action need both devices, which is the
+opposite of a backup.
+
+Adding a device is itself an owner action: **the existing passkey must approve it**. That
+means it has to happen **before** you lose the first device. After the loss there is
+nothing left that can approve the change.
+
+<Note>
+  The page offers "Add another device" on testnet. Whether a second-device enrolment has
+  been carried out end to end is recorded on [the Stellar page](/chains/stellar) when it
+  happens; until then, treat it as built but not yet demonstrated.
+</Note>
+
+## What we cannot do
+
+- **No reset.** There is no "forgot my passkey" link, because there is no account on our
+  side that could be reset. The owner is a contract on the ledger.
+- **No support override.** Nobody at A-Identity can sign as your smart account, freeze or
+  withdraw on your behalf, or move your funds out after a loss.
+- **No custody.** We never hold your passkey, a copy of it, or any key that controls the
+  owner. That is the point of the design, and it is also why we cannot help after a loss.
+
+What we do control is the **operator**, the agent's key. It can only call `pay()` inside
+the limits you set: the daily cap, the per-payment ceiling, the allowlist and the session
+expiry. It cannot withdraw, cannot change the policy and cannot unfreeze. If you lose the
+passkey while the vault is frozen, the agent stays stopped. If you lose it while the vault
+is running, the agent keeps spending inside those limits until the session key expires.
+
+## Testnet
+
+The demo runs on Stellar testnet at
+[a-identity.xyz/stellar?network=testnet](https://a-identity.xyz/stellar?network=testnet).
+Testnet money is not real, and the network is wiped from time to time (the next scheduled
+reset is 2026-12-16), which deletes every account, vault and balance on it regardless of
+who holds which passkey. Treat a testnet vault as a rehearsal.
+
+## Mainnet
+
+The same page runs on Stellar mainnet by default, with real USDC. There the amounts are
+dust on purpose: the backend caps the seed, the vault's daily limit and the total all
+visitors together can cost, so a lost passkey on mainnet loses cents, not savings. The
+account and verifier contracts on mainnet are OpenZeppelin's own published deployment,
+labelled as theirs, rather than our build.
+
+## How the page shows your recovery state
+
+The passkey page carries a recovery badge for as long as the vault exists. It says, in
+plain words, how many devices can act as the owner today: **one device, no backup** until a
+second device is added, and how many afterwards. You also confirm, before the vault is
+created, that you have read the warning at the top of this page; the page does not deploy
+a vault without that confirmation.

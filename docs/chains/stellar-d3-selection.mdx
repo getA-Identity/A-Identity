@@ -1,0 +1,228 @@
+---
+title: "Passkey account selection record"
+description: "Why the Stellar passkey owner is an OpenZeppelin smart account built by us from the audited v0.7.2 release line: the four-part bar, each candidate against it, the sources read, and the risk that remains."
+---
+
+This is the written selection record for the passkey owner of a Stellar spend vault. It is
+dated **2026-10-01** and it records one decision: which smart-account contract may own an
+`AgentSpendPolicy` vault on behalf of a person who holds a passkey and no seed phrase.
+
+<Note>
+  **The timing, stated plainly.** The plan called for a short spike in week 1 with a written
+  record at the end of it. The technical spike ran on **2026-09-19**, later than planned,
+  and its on-chain record is
+  [`soroban/releases/testnet-passkey-owner-2026-09-19.json`](https://github.com/getA-Identity/A-Identity/tree/main/soroban/releases).
+  The written record, this page, was completed on **2026-10-01**. The spike proved the
+  contract path works; it did not settle the audit question, and its signatures came from
+  a software P-256 key in our own script, so nothing from that run is evidence of a
+  device passkey.
+</Note>
+
+## The bar
+
+A candidate is selected only if it meets all four parts. They are quoted from the
+statement of work:
+
+1. the account contract carries a third-party audit report at a named version;
+2. the surrounding SDK is maintained;
+3. the authorization model supports a single fixed owner;
+4. the account contract exposes no entrypoint that can invoke an arbitrary contract
+   without its own authorization.
+
+Part 4 exists because of our own audit finding A1-02. The vault's owner check is
+`owner.require_auth()`, and on Soroban a contract that is the **direct invoker** of the
+vault is authorized without any signature at all. If the owner were an account contract
+with an entrypoint that forwards an arbitrary call without first demanding its own
+authorization, anyone could call that entrypoint and act as the vault's owner.
+
+The audit of the contract and the maturity of the SDK are assessed separately below. A
+well-audited contract driven by a young SDK is a different risk from an unaudited contract,
+and folding the two into one verdict would hide which one we are carrying.
+
+## The candidates
+
+| | OpenZeppelin smart account, driven by `smart-account-kit` | `passkey-kit` | `soroban-webauthn` |
+| --- | --- | --- | --- |
+| 1. Third-party audit at a named version | **Pass, with caveats** (below) | **Fail**: its README says the smart-wallet contract is unaudited | **Fail**: its README says demo material, not audited |
+| 2. SDK maintained | **Pass**, assessed as immature | Pass (0.19.1, 2026-09-18) | Not assessed: no SDK, a demo app |
+| 3. Single fixed owner | **Pass** | Not assessed after part 1 failed | Not assessed after part 1 failed |
+| 4. No unauthorized arbitrary call | **Pass** | Not assessed after part 1 failed | Not assessed after part 1 failed |
+| Verdict | **Selected**, built by us from tag `v0.7.2` | Rejected on part 1 | Rejected on part 1 |
+
+### (a) OpenZeppelin smart account and WebAuthn verifier
+
+The account contract and the WebAuthn verifier come from
+[OpenZeppelin/stellar-contracts](https://github.com/OpenZeppelin/stellar-contracts): the
+library in `packages/accounts` and the deployable crates in
+`examples/multisig-smart-account`. The browser side is
+[stellar/smart-account-kit](https://github.com/stellar/smart-account-kit) 0.8.0, a
+TypeScript SDK over that contract.
+
+**Part 1, the audit: pass, with three caveats.**
+
+The report is **"Stellar Contracts RC v0.7.0 Audit"** by OpenZeppelin Security, dated
+**2026-04-06** on its cover, fieldwork 2026-03-02 to 2026-03-19, published
+**2026-04-28**. In the repository it is the file `Stellar Contracts Library v0.7.0
+Audit.pdf` in the [`audits` directory](https://github.com/OpenZeppelin/stellar-contracts/tree/v0.7.2/audits).
+It is a differential audit of HEAD commit `239a2a7` against BASE `82f9711`, and its scope
+lists `packages/accounts/src/smart_account/` (`mod.rs`, `storage.rs`),
+`packages/accounts/src/verifiers/` (`ed25519.rs`, `mod.rs`, `webauthn.rs`) and
+`packages/accounts/src/policies/`. It reports 21 issues, 18 resolved, including one high
+(H-01, rule selection downgrade after signature collection, resolved).
+
+The caveats, none of which we can make go away:
+
+- **Third party to us, not independent of the author.** OpenZeppelin Security audited
+  OpenZeppelin's own library. It is a third party relative to A-Identity, which is what the
+  bar asks, and it is not an independent firm relative to the code's author. A reader who
+  needs the second property should know it is absent.
+- **The published deployment is not the audited version.** The kit's published account
+  wasm `1b5f4534...785a` is built from commit `1e513890`, which is 46 commits after the
+  `v0.7.0` tag and is contained in no release tag. The kit says so itself: its SECURITY.md
+  states that the deployed artifacts use a later source revision than the audit.
+- **The deployable crate is not in the audit's file list.** The contract a wallet actually
+  deploys is `examples/multisig-smart-account/account`, a thin wrapper (constructor,
+  `batch_add_signer`, `__check_auth`, `upgrade`) around the audited library. The audit
+  scope lists `packages/` only. The same is true of the WebAuthn verifier crate, which
+  wraps the audited `verifiers/webauthn.rs`.
+
+**The decision that answers the second caveat.** We do not use the kit's published wasm
+for the vault owner on testnet. We **build the account and the WebAuthn verifier
+ourselves** from the tag
+[`v0.7.2`](https://github.com/OpenZeppelin/stellar-contracts/tree/v0.7.2/packages/accounts),
+and upload them to testnet ourselves. The `v0.7.2` tag is on the audited release line:
+`packages/accounts/src` is byte-identical between `v0.7.0` and `v0.7.2` (we diffed it;
+the only changes under `packages/accounts` are a build-metadata block in `Cargo.toml` and
+the README). So "the audit at a named version" becomes something a reader can check
+against a wasm hash anyone can reproduce, rather than something we assert about a
+binary someone else built. The build recipe, the toolchain and the resulting hashes live
+in
+[`soroban/third-party/openzeppelin-smart-account/`](https://github.com/getA-Identity/A-Identity/tree/main/soroban/third-party/openzeppelin-smart-account);
+for the hashes, see the build receipt in that directory. The third caveat stays: the
+example wrapper is still outside the file list, and it is small enough to read in full,
+which we did (see part 4).
+
+On pubnet the passkey page still uses OpenZeppelin's published deployment, account wasm
+`1b5f4534...785a` and WebAuthn verifier `CB7HENHJ...`, and labels it as theirs. Only the
+testnet passkey owner is built by us.
+
+**Part 2, the SDK: maintained, and immature.** `smart-account-kit` is published under the
+`stellar` GitHub organisation. npm lists 14 releases from 2026-03-03 (0.2.10) to
+2026-09-08 (0.8.0), the version we use, and the repository was last pushed on
+2026-09-18. That is maintained. It is also young, and we carry it as a separate SDK risk:
+
+- it is a 0.x package with one npm maintainer;
+- its own README and SECURITY.md call it unaudited integration software: "The SDK, demo,
+  relayer proxy, and indexer integration have not received an independent third-party
+  security audit";
+- since 2026-09-18 (its pull request #15) it states that it is outside the Stellar
+  Development Foundation bug bounty. The contracts underneath have a bounty of their own:
+  OpenZeppelin's Immunefi program covers the `packages` folder of the latest release.
+
+**Part 3, a single fixed owner: pass.** The account's constructor installs exactly one
+Default context rule with exactly the signers and policies it is given. Constructed with
+one WebAuthn signer and no policies, it is a 1-of-1 account: that passkey and nothing
+else. Every function that changes the account's rules, signers, policies or code, `add_context_rule`,
+`update_context_rule_name`, `update_context_rule_valid_until`, `remove_context_rule`,
+`add_signer`, `remove_signer`, `add_policy`, `remove_policy`, the example's
+`batch_add_signer` and `upgrade`, begins with `current_contract_address().require_auth()`,
+so only the account's own authorization, which here means the passkey, can change its
+signer set.
+
+**Part 4, no unauthorized arbitrary call: pass.** The account built from `v0.7.2`
+exports 17 functions. We read each one:
+
+| Export | What guards it |
+| --- | --- |
+| `__constructor` | Runs once, atomically, at deploy. |
+| `__check_auth` | Called only by the host while verifying the account's own authorization. |
+| `get_context_rules_count`, `get_context_rule`, `get_signer_id`, `get_policy_id` | Views. They invoke nothing. |
+| the eight rule, signer and policy mutators listed under part 3, `batch_add_signer`, `upgrade` | `current_contract_address().require_auth()` first. |
+| `execute(target, target_fn, target_args)` | `current_contract_address().require_auth()` first, then `invoke_contract`. |
+
+`execute` is the only entrypoint that calls an arbitrary contract, and it demands the
+account's own authorization before it does
+([`mod.rs`, lines 509 to 513 at `v0.7.2`](https://github.com/OpenZeppelin/stellar-contracts/blob/v0.7.2/packages/accounts/src/smart_account/mod.rs#L509-L513)).
+So the account can be the direct invoker of the vault only after the passkey has signed
+for that exact invocation, which is the property A1-02 needs.
+
+The audit finding closest to this part is **M-06, "Arbitrary External Calls Possible in
+`do_check_auth`"**: the authorization path called the verifier contract of every signer a
+caller appended, including ones no rule needed. The report marks it resolved in pull
+requests #656 and #667; #667 ("authenticate after matching signers") is in the `v0.7.0`
+history, and we did not find a commit that names #656. That finding concerns calls made
+during authorization, not a path around it.
+
+**Known issues we disclose rather than discount.**
+
+- [OpenZeppelin issue #876](https://github.com/OpenZeppelin/stellar-contracts/issues/876):
+  the digest a signer commits to is not bound to the smart account, so a signature
+  collected for one account would also verify on another account that lists the same
+  external key with the same nonce, expiry and invocation. It was fixed by pull request
+  #868 on 2026-09-10, and on 2026-10-01 that fix sits on the `v0.9.0` branch and in no
+  release tag, so it is **not** in `v0.7.2`. For our case the risk is low: each passkey is
+  enrolled into exactly one account, and the vault accepts only its own owner address.
+- **M-05 is acknowledged, not resolved**: signer keys are stored in raw form, so a key
+  presented in a different but equivalent encoding does not match. A clean enrolment
+  produces one encoding, so this costs usability rather than safety here.
+- **The verifier does not check the origin or the RP ID.** Its own source says origin
+  validation in `clientDataJSON` and the `rpIdHash` check are omitted and left to the
+  authenticator. The chain therefore cannot tell a passkey created on our site from one
+  created elsewhere, or from a software key that produces the same format. That is why
+  the 2026-09-19 software-key run decodes exactly like a real device would, and why it is
+  never presented as one.
+
+### (b) `passkey-kit`
+
+[stellar/passkey-kit](https://github.com/stellar/passkey-kit) is maintained (0.19.1 on
+npm, 2026-09-18). Its README opens with a caution that the smart-wallet contract, SDKs and
+relayer proxy have not received an independent third-party security audit. It fails part
+1, so parts 3 and 4 were not assessed.
+
+### (c) `soroban-webauthn`
+
+[stellar-experimental/soroban-webauthn](https://github.com/stellar-experimental/soroban-webauthn)
+exists, is not archived, and was last pushed on 2026-03-13. Its README says the code is
+demo material only and has not been audited. It fails part 1.
+
+## Decision
+
+**GO**: the passkey owner of a testnet spend vault is the OpenZeppelin smart account with
+one WebAuthn signer, **built by us from the audited release line at tag `v0.7.2`** and
+uploaded to testnet by us. The browser drives it through `smart-account-kit` 0.8.0, and
+OpenZeppelin Channels pays the network fee through our relay; the page names the account
+that paid.
+
+The risk that remains, in one place:
+
+- the auditor is the author's own security team;
+- the deployable wrapper crates are outside the audit's file list, read in full by us
+  rather than audited;
+- the SDK is young, self-declared unaudited and outside the SDF bug bounty;
+- issue #876 is unfixed in any release;
+- the chain cannot distinguish a device authenticator from software, so the device claim
+  rests on what the registration and the recording show;
+- one passkey is one signer. Losing every device that holds it loses the owner for good,
+  which is what [the recovery page](/chains/stellar-passkey-recovery) is for.
+
+## Sources
+
+Every source below was read on 2026-10-01 (UTC).
+
+| Source | What it was used for |
+| --- | --- |
+| [OpenZeppelin, Stellar Contracts RC v0.7.0 audit summary](https://www.openzeppelin.com/news/stellar-contracts-rc-v0.7.0-audit) | Title, fieldwork dates, publication date, scope |
+| [`audits/` at `v0.7.2`](https://github.com/OpenZeppelin/stellar-contracts/tree/v0.7.2/audits) | The report itself: cover date, scope file list, H-01, M-05, M-06 |
+| [`packages/accounts` at `v0.7.2`](https://github.com/OpenZeppelin/stellar-contracts/tree/v0.7.2/packages/accounts) | Parts 3 and 4, the verifier's omitted checks |
+| [`examples/multisig-smart-account` at `v0.7.2`](https://github.com/OpenZeppelin/stellar-contracts/tree/v0.7.2/examples/multisig-smart-account) | The deployable account and verifier crates |
+| [OpenZeppelin issue #876](https://github.com/OpenZeppelin/stellar-contracts/issues/876) | The unbound digest, and that its fix is not released |
+| [smart-account-kit deployment manifest](https://github.com/stellar/smart-account-kit/tree/main/docs) | Wasm `1b5f4534` built from commit `1e513890` |
+| [smart-account-kit on npm](https://www.npmjs.com/package/smart-account-kit) | Release history and maintainer count |
+| [smart-account-kit pull request #15](https://github.com/stellar/smart-account-kit/pull/15) | Outside the SDF bug bounty since 2026-09-18 |
+| [OpenZeppelin on Stellar bug bounty](https://immunefi.com/bug-bounty/openzeppelin-stellar/scope/) | The contracts' own bounty scope |
+| [stellar/passkey-kit](https://github.com/stellar/passkey-kit) | Candidate (b) |
+| [stellar-experimental/soroban-webauthn](https://github.com/stellar-experimental/soroban-webauthn) | Candidate (c) |
+
+The commit counts and the source diff between tags were taken from a clone of the
+OpenZeppelin repository on the same day: `git rev-list --count v0.7.0..1e513890` gives 46,
+and `git diff v0.7.0 v0.7.2 -- packages/accounts/src` is empty.
