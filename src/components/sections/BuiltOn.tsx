@@ -170,7 +170,7 @@ const RAILS: Rail[] = [
     tileBg: '#CCFF00',
     color: '#CCFF00',
     role: 'Where retail agents will trade.',
-    detail: 'Agent #0 on the mainnet ERC-8004 registry is this product, and paid calls settle here in USDG through an x402 facilitator we run ourselves, because no published one serves this chain. The buyer signs and pays no gas; we broadcast.',
+    detail: 'Agent #0 on the mainnet ERC-8004 registry is this product, and paid calls settle here in USDG through an x402 facilitator we run ourselves, the same one on every chain we sell on. The buyer signs and pays no gas; we broadcast.',
     chain: 'rhchain',
   },
   {

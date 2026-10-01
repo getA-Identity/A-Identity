@@ -21,7 +21,7 @@ import { previewTreasury, startAutoYield, type TreasuryPreview, type TreasuryExe
 /**
  * Which chain a vault is asked for, by registry id or by CAIP-2.
  *
- * Arc is the default because it is the only chain vaults were ever deployed on, so an
+ * Arc is the default because it is the chain vaults were first deployed on, so an
  * existing caller that names no chain keeps the exact behaviour it had. A name the registry
  * does not know is refused rather than silently defaulted: a typo that quietly deployed on
  * a different chain would be a vault the owner cannot find.

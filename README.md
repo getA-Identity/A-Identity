@@ -1,6 +1,6 @@
 # A-Identity
 
-[![CI](https://github.com/getA-Identity/A-Identity/actions/workflows/ci.yml/badge.svg)](https://github.com/getA-Identity/A-Identity/actions/workflows/ci.yml)
+[![CI](https://github.com/getA-Identity/A-Identity/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/getA-Identity/A-Identity/actions/workflows/ci.yml)
 [![Tests](https://img.shields.io/badge/tests-1471%20unit%20%2B%20E2E-brightgreen)](mcp/README.md#develop)
 [![npm: marketplace-sdk](https://img.shields.io/npm/v/%40a-identity%2Fmarketplace-sdk?label=marketplace-sdk)](https://www.npmjs.com/package/@a-identity/marketplace-sdk)
 [![npm: trust-guard](https://img.shields.io/npm/v/%40a-identity%2Ftrust-guard?label=trust-guard)](https://www.npmjs.com/package/@a-identity/trust-guard)
@@ -56,12 +56,12 @@ them won a prize.
 - **Encode x Arc "Programmable Money" hackathon** (past entry) - submitted Aug 9, 2026,
   Demo Day Aug 20. The trusted agent marketplace, the on-chain policy vault, and the
   ERC-8183 escrow work in this repo were the submission.
-- **OKX.AI** - listed in production as a paid **Trust Oracle**: Agent **#6271** plus backup
+- **OKX.AI** - listed as a paid **Trust Oracle** until OKX.AI delisted it on 2026-09-26: Agent **#6271** plus backup
   **#8913** on X Layer mainnet (first entered for the OKX.AI Genesis Hackathon in July
   2026), with **120 real x402 settlements** paid to
   [`0x6a5f...8ce6` on OKLink](https://www.oklink.com/x-layer/evm/address/0x6a5f1b8e56a19d456b799c2fa00e513244f58ce6),
   all of them from our own buyer wallet during the demo and seeding runs, so not revenue.
-  Details in the [OKX.AI section](#live-on-okxai-the-a-identity-trust-oracle-agent-6271) below.
+  Details in the [OKX.AI section](#on-okxai-until-2026-09-26-the-a-identity-trust-oracle-agent-6271) below.
 - **Ignyte Stablecoin Commerce Stack Challenge** (past entry) - the original entry, Track 4:
   Best Agentic Economy Experience on Arc.
 
@@ -177,9 +177,9 @@ cross-chain).
 
 ---
 
-## Live on OKX.AI: the A-Identity Trust Oracle (Agent #6271)
+## On OKX.AI until 2026-09-26: the A-Identity Trust Oracle (Agent #6271)
 
-A-Identity is **live on [OKX.AI](https://www.okx.ai/agents)** as an **A2MCP ASP**,
+A-Identity was listed on **[OKX.AI](https://www.okx.ai/agents)** until OKX.AI delisted #6271 and #8913 on 2026-09-26, as an **A2MCP ASP**,
 *the identity and reputation oracle for the agent economy.* Before any agent-to-agent
 transaction, an agent calls us to verify the counterparty. Same live engine as the
 Arc product below; seven services, six of them paid, sold pay-per-call via **x402 on X Layer mainnet**
@@ -317,7 +317,7 @@ OKX.AI's own registry, not ours. Our paid Trust Oracle is agent **#6271** in it
 
 The full canonical ERC-8004 set, at the same addresses as Arc. Agent **#0** is ours:
 [mint tx](https://explorer.testnet.chain.robinhood.com/tx/0x20918ec68186bd4aaee7c36d33d0383f1bc6a2bc921e72e3b812d034da5212fd).
-No canonical stablecoin is documented for this chain, so no payment rail is claimed.
+Its settlement token is the canonical bridge's USDC.e, which our facilitator can verify against; we do not sell on this testnet.
 
 ### Robinhood Chain mainnet, `eip155:4663` - live
 

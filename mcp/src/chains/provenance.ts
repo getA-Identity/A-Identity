@@ -281,7 +281,7 @@ export const PROVENANCE: ChainProvenance[] = [
   {
     chain: 'rhchain',
     summary:
-      'Agent #0 on the canonical ERC-8004 IdentityRegistry is ours: the first token that registry ever minted. Paid trust calls settle here in USDG through our own first-party x402 facilitator, which we run because no published facilitator serves this chain.',
+      'Agent #0 on the canonical ERC-8004 IdentityRegistry is ours: the first token that registry ever minted. Paid trust calls settle here in USDG through our own first-party x402 facilitator, the same code path and receipt standard we run on every chain we sell on. Other x402 facilitators serve this chain too.',
     agent: { tokenId: '0', caip: 'eip155:4663:8004/0', owner: OWNER, tokenUri: AGENT_CARD },
     contracts: [
       {
@@ -370,7 +370,7 @@ export const PROVENANCE: ChainProvenance[] = [
       'Token #1 on this registry was minted 76 blocks after ours by 0x2B5B35AC5A2d5c1224337BA86bf3816AbEe69da3, carrying OUR agent card URL as its tokenURI. It is not ours. A tokenURI is not a discriminator on this registry, so resolve an agent by ownerOf, never by the card it points at. We report this rather than hide it: it is the clearest possible demonstration of why this product exists.',
       'There is no ValidationRegistry in this mainnet family, so a KYA result cannot be anchored on-chain here. It is still verified off-chain and recorded.',
       'No canonical Circle USDC is documented for this chain, so the registry asserts none. USDG is named as what it is, in its own field.',
-      'We run our own x402 facilitator here because no published one serves this chain, not because nobody else relays. Gasless EIP-3009 relaying on USDG predates us by weeks, and on-chain an x402 settlement is indistinguishable from any other relayed authorization.',
+      'We run our own x402 facilitator here so one code path and one receipt standard cover every chain we sell on, not because nobody else serves this chain: as of 2026-09-30 other facilitators do (at least one hosted service lists USDG on this chain, and open-source ones predate our launch), and gasless EIP-3009 relaying on USDG predates us by weeks. On-chain an x402 settlement is indistinguishable from any other relayed authorization.',
       'This is an Arbitrum L2: we wait the descriptor\'s confirmations and record the block, but soft finality is not L1 finality, and the proof page does not claim otherwise.',
       'The settlements recorded here are self-funded tests. The buyer wallet and the receiving address are both ours, and the receiving address is the same account that broadcasts. Labeled internal, always: evidence the rail works, not evidence of demand.',
     ],

@@ -83,7 +83,7 @@ import { robinhoodChain } from './chain'
 
 const client = createPublicClient({ chain: robinhoodChain, transport: http() })
 
-// Agent #0 is the first agent ever registered on this chain.
+// Agent #0 is the first token this canonical registry minted.
 const owner = await client.readContract({
   address: '0x8004a169fb4a3325136eb29fa0ceb6d2e539a432',
   abi: [{ type: 'function', name: 'ownerOf', stateMutability: 'view', inputs: [{ type: 'uint256' }], outputs: [{ type: 'address' }] }],

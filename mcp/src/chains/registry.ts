@@ -789,7 +789,7 @@ export const CHAINS: ChainDescriptor[] = [
     },
     payment: {
       x402: true,
-      note: 'x402 settling in USDG (Paxos Global Dollar) through our own first-party EIP-3009 facilitator: the buyer signs, we broadcast and pay the gas. We run it because no published facilitator serves this chain, not because nobody else relays here.',
+      note: 'x402 settling in USDG (Paxos Global Dollar) through our own first-party EIP-3009 facilitator: the buyer signs, we broadcast and pay the gas. We run our own so one code path and one receipt standard cover every chain we sell on; other facilitators serve this chain too.',
     },
   },
   {
@@ -800,7 +800,7 @@ export const CHAINS: ChainDescriptor[] = [
     // Robinhood's brand green is #00C805, which is too light to read as chip text on its own
     // tint in a light theme. This is a darkened variant of it, not a different brand.
     color: '#0F9D30',
-    role: 'Robinhood Chain rehearsal rail: the canonical ERC-8004 registry set is live here; mainnet waits on a human-funded signer.',
+    role: 'Robinhood Chain rehearsal rail: the canonical ERC-8004 registry set is live here, and agent #0 is ours on testnet as it is on mainnet.',
     ecosystem: 'evm',
     testnet: true,
     status: 'beta',

@@ -217,7 +217,7 @@
           "id": "rhchain-testnet",
           "name": "Robinhood Chain Testnet",
           "chainId": 46630,
-          "role": "Robinhood Chain rehearsal rail: the canonical ERC-8004 registry set is live here; mainnet waits on a human-funded signer.",
+          "role": "Robinhood Chain rehearsal rail: the canonical ERC-8004 registry set is live here, and agent #0 is ours on testnet as it is on mainnet.",
           "x402": true,
           "status": "beta"
         },

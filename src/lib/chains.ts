@@ -300,7 +300,7 @@ export const CHAINS: readonly Chain[] = [
     "protocols": {
       "payment": {
         "x402": true,
-        "note": "x402 settling in USDG (Paxos Global Dollar) through our own first-party EIP-3009 facilitator: the buyer signs, we broadcast and pay the gas. We run it because no published facilitator serves this chain, not because nobody else relays here."
+        "note": "x402 settling in USDG (Paxos Global Dollar) through our own first-party EIP-3009 facilitator: the buyer signs, we broadcast and pay the gas. We run our own so one code path and one receipt standard cover every chain we sell on; other facilitators serve this chain too."
       },
       "identity": {
         "standard": "ERC-8004",
@@ -550,7 +550,7 @@ export const CHAINS: readonly Chain[] = [
     ],
     "rpcUrl": "https://rpc.testnet.chain.robinhood.com",
     "explorer": "https://explorer.testnet.chain.robinhood.com",
-    "role": "Robinhood Chain rehearsal rail: the canonical ERC-8004 registry set is live here; mainnet waits on a human-funded signer.",
+    "role": "Robinhood Chain rehearsal rail: the canonical ERC-8004 registry set is live here, and agent #0 is ours on testnet as it is on mainnet.",
     "status": "beta",
     "protocols": {
       "payment": {

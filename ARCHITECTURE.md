@@ -393,7 +393,7 @@ day it lands rather than the day someone remembers to add it.
   trustless regardless (the contract reverts), but the agent does not yet sign its own payments -
   that's the roadmap (agent-held key / Circle programmable wallet). We say this plainly.
 - **Which money is real**: Arc is a testnet, so everything in the "Arc testnet" section above is
-  real tech and test money. The seven live mainnets above are not: X Layer, Celo, Robinhood
+  real tech and test money. The eight live mainnets above are not: Arc Mainnet, X Layer, Celo, Robinhood
   Chain, Arbitrum One, Base, Stellar pubnet and Algorand settle real value, in small deliberate
   amounts, and [SECURITY.md](SECURITY.md) says which key spends where. This line used to read
   "Testnet: Arc testnet, test USDC" and nothing else, which was true of Arc and wrong about the

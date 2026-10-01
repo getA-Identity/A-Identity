@@ -488,8 +488,8 @@ Live today:
   `0x8004BAa17C55a88189AE136b182e5fdA19dE9b63`. We did not deploy those; the
   ERC-8004 authors did. What is ours is agent **#0**, the registry's first mint.
   Payments settle here in USDG (`0x5fc5360D0400a0Fd4f2af552ADD042D716F1d168`,
-  Paxos Global Dollar) through our own first-party x402 facilitator, because the
-  chain has no published one: the buyer signs an EIP-3009 authorization and pays no gas, we
+  Paxos Global Dollar) through our own first-party x402 facilitator, the same one
+  we run on every chain we sell on (others serve this chain too): the buyer signs an EIP-3009 authorization and pays no gas, we
   broadcast it, and nothing counts as settled without a receipt carrying the
   matching Transfer log. No canonical Circle USDC is published for this chain, so
   the registry asserts none. Since 2026-08-28 an AgentSpendPolicy vault is live here

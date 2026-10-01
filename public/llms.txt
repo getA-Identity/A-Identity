@@ -30,7 +30,7 @@ against those limits before any value moves, and the verdict is ALLOW, WARN or D
   vault holding real USDC, and x402 settled on both our EIP-3009 facilitator and Circle
   Gateway, all self-funded so far. Escrow and KYA anchoring still run on Arc testnet, in
   test money.
-- The Trust Oracle is **live on OKX.AI as agent #6271**, answering per-call checks over
+- The Trust Oracle was listed on OKX.AI as agent #6271 until OKX.AI delisted it on 2026-09-26. It answered per-call checks over
   x402 in real USD₮0: 120 x402 settlements on X Layer mainnet to date, each one a
   transaction hash anyone can check. Read them as proof that the rail works and composes with the
   identity layer, not as revenue: per-call amounts are sub-cent by design.
