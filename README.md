@@ -9,6 +9,12 @@
 
 **[Live demo](https://a-identity.xyz)** | **[Docs](https://a-identity.mintlify.site)** | **[Architecture](ARCHITECTURE.md)** | **[Roadmap](ROADMAP.md)**
 
+> **Arbitrum Open House Singapore entry.** Before an agent pays on Robinhood Chain or
+> Arbitrum One: is that USDG real, and who gets paid? Try
+> [a-identity.xyz/check/robinhood](https://a-identity.xyz/check/robinhood). What was built
+> during the Buildathon, what existed before, and how to verify both:
+> [docs/arbitrum-open-house.md](docs/arbitrum-open-house.md).
+
 ![A seven screen tour captured from the live site: the landing, why the problem is now, the three enforcement layers, our own registered agents with their network badges, the Trust Explorer resolving agent #849980 on Arc with its KYA attestation and deterministic score, the network stats page, and the Stellar provenance ledger.](docs/images/product-tour.gif)
 
 *Captured from [a-identity.xyz](https://a-identity.xyz) in production, so every number in it is a live read rather than a mockup.*
@@ -53,6 +59,11 @@ per-request payments.
 One product, one live engine. The hackathons below are past entries, not awards: none of
 them won a prize.
 
+- **Arbitrum Open House Singapore Online Buildathon** (current entry, Sep 14 - Oct 4, 2026) -
+  the Robinhood Chain and Arbitrum One pay check, fixes to our own x402 rail found by
+  auditing it, and the mainnet vaults' keys renewed and split from the owner key.
+  [docs/arbitrum-open-house.md](docs/arbitrum-open-house.md) separates that work from what
+  existed before.
 - **Encode x Arc "Programmable Money" hackathon** (past entry) - submitted Aug 9, 2026,
   Demo Day Aug 20. The trusted agent marketplace, the on-chain policy vault, and the
   ERC-8183 escrow work in this repo were the submission.

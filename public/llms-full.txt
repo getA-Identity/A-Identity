@@ -493,7 +493,8 @@ Live today:
   broadcast it, and nothing counts as settled without a receipt carrying the
   matching Transfer log. No canonical Circle USDC is published for this chain, so
   the registry asserts none. Since 2026-08-28 an AgentSpendPolicy vault is live here
-  too, holding USDG under dust caps with a typed AboveAutoApprove refusal proven, and
+  too, holding USDG under dust caps with a typed AboveAutoApprove refusal proven; since
+  2026-10-01 its agent key is a separate wallet from its owner key, renewed to 2026-11-15. And
   agent #0's reputation is anchored on the canonical ReputationRegistry by our oracle
   validator (tagged with its identity-only basis).
 - **Arbitrum One** (`eip155:42161`). ERC-8004 identity
@@ -503,11 +504,12 @@ Live today:
   (`0xaf88d065e77c8cC2239327C5EDb3A432268e5831`) through the same first-party EIP-3009
   facilitator, at a lower disclosed fee because the gas measurably is lower. Since
   2026-08-28 an AgentSpendPolicy vault is live here too, holding native USDC under dust
-  caps with a typed AboveAutoApprove refusal proven, and agent #1259's reputation is
+  caps with a typed AboveAutoApprove refusal proven; since 2026-10-01 its agent key is a
+  separate wallet from its owner key, renewed to 2026-11-15. Agent #1259's reputation is
   anchored on the canonical ReputationRegistry by our oracle validator.
 - **OKX X Layer mainnet** (`eip155:196`). ERC-8004 identity
   `0x8004a169fb4a3325136eb29fa0ceb6d2e539a432`, OKX.AI's own registry. The Trust
-  Oracle sells here as agent #6271 and settles in real USD₮0.
+  Oracle sold here as agent #6271 until OKX.AI delisted it on 2026-09-26, settling in real USD₮0.
 - **Celo mainnet** (`eip155:42220`). ERC-8004 identity
   `0x8004A169FB4a3325136EB29fA0ceB6D2e539a432` and reputation
   `0x8004BAa17C55a88189AE136b182e5fdA19dE9b63`; our agent is #9759. x402 settles

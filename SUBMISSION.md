@@ -1,5 +1,8 @@
 # A-Identity: Stellar Pro Hackathon 2026, Scale Track
 
+> This file is the Stellar Pro Hackathon deliverable. The Arbitrum Open House Singapore entry is
+> [docs/arbitrum-open-house.md](docs/arbitrum-open-house.md).
+
 Istanbul, 2026-09-19 to 2026-09-21. Submitted against the Scale Track, which asks for two
 things beyond the usual deliverables: an accurate architecture diagram, and a
 post-hackathon roadmap toward SCF and InstAward. Both are below, sections 4 and 9.
