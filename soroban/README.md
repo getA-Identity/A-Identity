@@ -144,8 +144,10 @@ vaults replace them: until then, a client talking to them has to treat `InvalidP
 The v0.1.1 release wasm, built here with `stellar contract build` (CLI 27.1.0, rustc 1.96.0,
 macOS arm64), is `353e4264f51e6173b9a2a60603239914cbb1456956e912374caf4d9b358db7c0`, 11,605
 bytes, well under the 131,072-byte network limit. The same machine rebuilds the v0.1.0 source
-to the deployed `155eb31c...`, so the new hash is the source change and not the machine. Not
-uploaded to either network yet.
+to the deployed `155eb31c...`, so the new hash is the source change and not the machine. Its
+code entry was uploaded to testnet on 2026-10-01 (tx
+`09d041ab3c0dbae95b902b0c22be8f6587f43542798701db98a09df948119e02`, ledger 4,974,389), and new
+testnet vaults instantiate against it. Pubnet does not carry it.
 
 `.github/workflows/soroban.yml` runs all of it plus two advisory checks and a 128KB size
 gate, scoped to `soroban/**` so a frontend commit does not pay for a Rust toolchain. The
@@ -369,9 +371,10 @@ is:
 4. Instantiate each vault from its receipt: the same constructor arguments, and the **same
    deployer and salt**. A contract id is derived from the deployer address and the salt, so a
    redeploy with both recorded comes back at the same `C...` address, and every link to it
-   keeps working. The planned tool for this is `mcp/scripts/stellar-deploy-vault.mjs`, which
-   takes the receipt as input; it is not in the tree as of 2026-10-01, and until it is the
-   same deploy is a `stellar contract deploy --salt` by hand with the recorded values. The
+   keeps working. The tool for this is `mcp/scripts/stellar-deploy-vault.mjs`: pass the
+   receipt's `--wasm-hash`, `--salt`, owner, operator and limits, with the same deployer key,
+   and it derives the same contract id before it submits. A `stellar contract deploy --salt`
+   by hand with the recorded values does the same. The
    v0.1.0 receipts record no salt (those vaults were deployed with a random one), so the
    v0.1.0 testnet address cannot be reproduced and is replaced by a new one: repoint as in
    the redeploy runbook below. Every receipt from v0.1.1 on records the deployer and salt.

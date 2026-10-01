@@ -410,13 +410,19 @@ export const CHAINS: ChainDescriptor[] = [
       // own policy an under-limit payment settled (3da74634...) and an over-limit one was
       // refused on chain with the contract's typed DailyCapExceeded (12df418f...).
       spendVault: 'CAIL6ECRAB5FUURQ54R7OTZPXRRCDO2S353YT6N6UZUWIBDG2ZOEB4UI',
-      // The same code entry as pubnet, live on testnet until ledger 6739602 (read
-      // 2026-09-15). Per-agent vaults instantiate against it; testnet resets would take
-      // the code entry with them, which is why the adapter reads its TTL before deploying.
-      spendVaultWasmHash: '155eb31c1867254eacbf1b7a4755164d15cc6b6f939644705ab6b8df61579239',
-      // Every AgentSpendPolicy build we published for testnet, the same v0.1.0 hash as
-      // pubnet. v0.1.1 is appended by ops when its release receipt lands, not before.
-      knownVaultWasmHashes: [{ hash: '155eb31c1867254eacbf1b7a4755164d15cc6b6f939644705ab6b8df61579239', version: 'v0.1.0' }],
+      // The v0.1.1 code entry (the A3-02 fix), uploaded 2026-10-01 in tx
+      // 09d041ab3c0dbae95b902b0c22be8f6587f43542798701db98a09df948119e02 at ledger 4974389.
+      // New vaults instantiate against it: the SOW 2 vaults, per-agent vaults and passkey
+      // vaults. The flagship vault above stays on v0.1.0, because a vault cannot change its
+      // code. Testnet resets would take the code entry with them, which is why the adapter
+      // reads its TTL before deploying.
+      spendVaultWasmHash: '353e4264f51e6173b9a2a60603239914cbb1456956e912374caf4d9b358db7c0',
+      // Every AgentSpendPolicy build we published for testnet: v0.1.0 (the same hash as
+      // pubnet) and v0.1.1, which exists on testnet only.
+      knownVaultWasmHashes: [
+        { hash: '155eb31c1867254eacbf1b7a4755164d15cc6b6f939644705ab6b8df61579239', version: 'v0.1.0' },
+        { hash: '353e4264f51e6173b9a2a60603239914cbb1456956e912374caf4d9b358db7c0', version: 'v0.1.1' },
+      ],
       // walletOwnedVault (SOW 2 D2: owner is a browser-wallet key) and devicePasskeyVault
       // (SOW 2 D3: owner is a smart account behind a device passkey) are left UNSET on
       // purpose. Ops fills each one after deploying it with mcp/scripts/stellar-deploy-vault.mjs

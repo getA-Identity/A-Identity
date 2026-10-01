@@ -115,7 +115,7 @@ rotation, so a compromised owner key is total and irreversible loss.
 
 | Id | Title | Status |
 | --- | --- | --- |
-| A3-02 | The refusal ladder's first rung differs by path | **Fixed in v0.1.1 source** (D-3, 2026-10-01, `settle` checks the amount first). Still live in the deployed v0.1.0 wasm until a v0.1.1 vault replaces each one; not yet uploaded |
+| A3-02 | The refusal ladder's first rung differs by path | **Fixed in v0.1.1 source** (D-3, 2026-10-01, `settle` checks the amount first). Still live in the deployed v0.1.0 wasm until a v0.1.1 vault replaces each one; the v0.1.1 code entry is on testnet (2026-10-01), no vault runs it yet |
 | A5-01 / A3-07 | `owner_pay` is charged to the cap but not limited by it | A3-07 (the invariant text) **Fixed**, `3ccb10d`. A5-01 (the contract) **Accepted**: D-4 decided 2026-09-15, option A, the cap bounds the agent and the owner is bounded by the balance |
 | A2-01, A2-02 | TTL guards could be disabled without failing a test | **Fixed** |
 | A3-01 | Paying exactly the vault balance was untested | **Fixed** |
@@ -213,7 +213,7 @@ function.
 | One repo setting (non-provider secret patterns), a paid feature; the gitleaks step in `ci.yml` is what covers it meanwhile | maintainer, both remotes |
 | npm advisories: both HIGHs closed 2026-08-25 (`259db02`); `mcp/` keeps 22 (15 moderate, 7 low) deliberately | `SECURITY.md`, and the daily gate in `.github/workflows/security.yml` |
 | A longer fuzz campaign with a committed corpus | unfinished |
-| Items that need a redeploy: A3-02 ships with the v0.1.1 redeploy (source done, not yet uploaded); A4-01 and D-2's constructor change are deferred to a later version | `DESIGN-DECISIONS.md`, `soroban/README.md` "Redeploy runbook" |
+| Items that need a redeploy: A3-02 ships with the v0.1.1 redeploy (source done, code entry on testnet since 2026-10-01, no vault yet); A4-01 and D-2's constructor change are deferred to a later version | `DESIGN-DECISIONS.md`, `soroban/README.md` "Redeploy runbook" |
 
 ---
 
