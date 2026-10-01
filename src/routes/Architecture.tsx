@@ -299,7 +299,7 @@ function Terminal() {
 // otherwise about.
 const STATS = [
   { k: '120', v: 'real x402 settlements', mono: 'X Layer mainnet' },
-  { k: '1471', v: 'unit tests, green', mono: 'deterministic' },
+  { k: '1480', v: 'unit tests, green', mono: 'deterministic' },
   { k: '7', v: 'services, one free', mono: '$0 to $0.01' },
   { k: '9', v: 'chains read live', mono: 'ERC-8004 registries' },
 ]
@@ -372,7 +372,7 @@ export default function Architecture() {
 
           {/* bento: proof + OKX */}
           <section className="mt-16">
-            <Index n="03" label="live on OKX.AI" />
+            <Index n="03" label="on OKX.AI until 2026-09-26" />
             <div className="mt-5 grid gap-px overflow-hidden rounded-xl border border-border bg-border sm:grid-cols-4">
               {/* wide cell */}
               <div className="relative bg-background p-6 sm:col-span-2 sm:row-span-2">

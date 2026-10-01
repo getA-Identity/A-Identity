@@ -46,7 +46,7 @@ switch.
 
 ## Not a demo. Live and earning.
 
-- The Trust Oracle is live on OKX.AI as agent **#6271**, selling per-call checks
+- The Trust Oracle was listed on OKX.AI as agent **#6271** until 2026-09-26, selling per-call checks
   in real USD₮0: **120 x402 settlements on X Layer mainnet** to date, each one
   listed with its transaction hash at
   <https://a-identity-asp.onrender.com/proof>.

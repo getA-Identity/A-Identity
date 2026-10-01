@@ -1,8 +1,8 @@
 /**
  * Our own x402 facilitator for Stellar.
  *
- * The EVM version of this file (`x402-3009/facilitator.ts`) exists because Robinhood Chain
- * had no facilitator from anyone. Stellar is different, and the difference has to be said
+ * The EVM version of this file (`x402-3009/facilitator.ts`) exists so one code path and one
+ * receipt standard cover every EVM chain we sell on. Stellar is different, and the difference has to be said
  * out loud rather than implied by our shipping one: OpenZeppelin Channels got there first
  * and is a real, working Stellar x402 facilitator. We are not filling a gap here. We are
  * declining to make our own settlement depend on somebody else's service, which is the same

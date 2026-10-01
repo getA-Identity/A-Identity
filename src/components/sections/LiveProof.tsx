@@ -31,8 +31,8 @@ const STATS = [
   // and Celo's count comes from a live endpoint, so the sum was a number nothing in the
   // repository could reproduce.
   { n: 120, k: '120', v: 'real settlements', sub: 'X Layer mainnet' },
-  { n: null, k: '#6271', v: 'live agent', sub: 'listed on OKX.AI' },
-  { n: 1471, k: '1471', v: 'tests, green', sub: 'deterministic scores' },
+  { n: null, k: '#0', v: 'first registry token', sub: 'Robinhood Chain mainnet' },
+  { n: 1480, k: '1480', v: 'tests, green', sub: 'deterministic scores' },
 ] as const
 
 /** A number that counts itself up the first time it scrolls into view. */

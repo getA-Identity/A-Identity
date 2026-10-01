@@ -1,11 +1,11 @@
 /**
- * The public x402 facilitator for chains that have none.
+ * Our public x402 facilitator for the EVM chains we sell on.
  *
  * An x402 facilitator is the service a seller calls to check a payment (/verify) and to
- * make it happen (/settle). Robinhood Chain has no such service from anyone, which is
- * why a seller there cannot accept gasless x402 payments at all. We already had to build
+ * make it happen (/settle). Others serve some of these chains too; we run our own so one
+ * code path and one receipt standard cover every chain we sell on. We already had to build
  * verification and settlement for our own paywall, so exposing them costs us one route
- * group and gives the chain the missing piece of infrastructure.
+ * group.
  *
  * The honest boundary, stated in /supported rather than discovered the hard way:
  *   - /verify and /supported are OPEN. Verification is read-only and costs us nothing.

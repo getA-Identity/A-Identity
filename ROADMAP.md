@@ -97,7 +97,7 @@ Updated 2026-09-15.
   canonical Circle USDC; the testnet stays beta as the rehearsal rail.
 - Trusted agent marketplace on Arc: verify -> hire (ERC-8183 escrow) -> work -> release,
   with a composite leaderboard and public agent certificates.
-- Paid Trust Oracle live on OKX.AI (X Layer mainnet): six paid x402 tools plus a free
+- Paid Trust Oracle listed on OKX.AI (X Layer mainnet) until 2026-09-26: six paid x402 tools plus a free
   preview, 120 real settlements published with tx hashes at /proof.
 - On-chain AgentSpendPolicy vault per agent, session keys (both vault-native and real
   ERC-4337 via a Kernel smart account), Arc Memo audit trail, Multicall3From batch
@@ -107,7 +107,7 @@ Updated 2026-09-15.
 - merchant_check: commerce-grade counterparty verification for agentic checkouts
   (MCP tool + REST).
 - Structural hardening: the backend split into a layered platform/ + http/ module
-  system with the layer graph enforced by tests; 1471 unit tests + full E2E suite.
+  system with the layer graph enforced by tests; 1480 unit tests + full E2E suite.
 
 ## Now
 

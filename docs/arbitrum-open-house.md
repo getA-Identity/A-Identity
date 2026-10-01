@@ -22,7 +22,7 @@ name "Global Dollar"; 45 of them showed more than 10,000 holders, and the bigges
   [/proof/arbitrum](https://a-identity.xyz/proof/arbitrum) list every transaction we claim
   and re-read agent #0 and agent #1259 from the chain on every load.
 
-## Built during the Buildathon (Sep 14 - Oct 4, 2026)
+## Built during the Buildathon (from Sep 14, 2026)
 
 | Commit or tx | Date | What |
 | --- | --- | --- |
@@ -68,7 +68,7 @@ What the pay check does, in detail:
 
 ## Numbers (2026-10-01)
 
-- 1,471 unit tests declared across 98 files, all passing, plus 48 end-to-end and 149
+- 1,480 unit tests declared across 98 files, all passing, plus 48 end-to-end and 149
   guardrail assertions against a running server.
 - Vault policy on both chains: 1 USDG or USDC a day and 0.25 per payment for the agent key;
   above that the contract refuses with `AboveAutoApprove` and the payment is the owner's to make.

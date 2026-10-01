@@ -534,7 +534,7 @@ export const PROVENANCE: ChainProvenance[] = [
     ],
     caveats: [
       'We deployed nothing here. The registries were already live, and registering on them is permissionless; what is ours is agent #1259 and the rail.',
-      'This chain is ALREADY served by other x402 facilitators, Coinbase\'s among them. We run ours anyway so that one code path and one receipt standard cover every chain we sell on, including the ones nobody else serves. Arbitrum One is where you can check our rail against a well-served baseline, which is more useful to you than being first would have been.',
+      'This chain is ALREADY served by other x402 facilitators, Coinbase\'s among them. We run ours anyway so that one code path and one receipt standard cover every chain we sell on. Arbitrum One is where you can check our rail against a well-served baseline, which is more useful to you than being first would have been.',
       'Gasless EIP-3009 relaying on this USDC contract predates us by years and runs constantly. We did not bring gasless USDC to Arbitrum and do not claim to; on-chain an x402 settlement is indistinguishable from any other relayed authorization.',
       'The settlements recorded here are self-funded tests. The buyer wallet and the receiving address are both ours, and the receiving address is the same account that broadcasts. They are labeled internal and always will be: this is evidence the rail works, not evidence of demand.',
       'There is no ValidationRegistry in this family, so a KYA result cannot be anchored on Arbitrum One. It is still verified off-chain and recorded.',

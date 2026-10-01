@@ -138,7 +138,7 @@ const TOOLS: WebMcpTool[] = [
         ],
         status: {
           arc: 'Circle Arc is a public testnet. Real contracts and transactions, test money.',
-          settlement: 'Live on OKX.AI as agent #6271 with real x402 settlements on X Layer mainnet, published as proof the rail works rather than as revenue.',
+          settlement: 'Listed on OKX.AI as agent #6271 until OKX.AI delisted it on 2026-09-26, with real x402 settlements on X Layer mainnet, published as proof the rail works rather than as revenue.',
         },
         documents: {
           summary: 'https://a-identity.xyz/llms.txt',

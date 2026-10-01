@@ -391,7 +391,7 @@ export default function Stats() {
                 asp?.asp?.agentId ? (
                   <>
                     Taken by <span className="font-semibold text-foreground/75">{asp.asp.name ?? 'our ASP'}</span>,
-                    listed on OKX.AI as agent{' '}
+                    listed on OKX.AI until 2026-09-26 as agent{' '}
                     <span className="font-mono font-semibold text-foreground/75">{asp.asp.agentId}</span>. The
                     ASP publishes this document itself, so this card is reading a rail that does not answer
                     to this website.
