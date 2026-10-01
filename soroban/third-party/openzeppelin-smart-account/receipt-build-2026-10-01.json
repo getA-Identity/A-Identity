@@ -1,0 +1,149 @@
+{
+  "kind": "third-party-build-receipt",
+  "status": "built locally; nothing uploaded or deployed by this receipt",
+  "builtAtUtc": "2026-10-01T23:14:00Z",
+  "builder": "A-Identity, from OpenZeppelin's public repository; the code and its audit are OpenZeppelin's",
+  "host": { "os": "macOS (Darwin 25.6.0)", "arch": "arm64" },
+  "source": {
+    "repository": "https://github.com/OpenZeppelin/stellar-contracts",
+    "tag": "v0.7.2",
+    "commit": "a9c42169000638da937577f592ebf61a7a3c94ca",
+    "fetchedBy": "build.sh: git clone --depth 1 --branch v0.7.2, HEAD checked against the commit above",
+    "vendoredHere": false
+  },
+  "toolchain": {
+    "rustc": "rustc 1.91.1 (ed61e7d7e 2025-11-07)",
+    "rustupToolchain": "1.91.1, installed beside the default and selected with RUSTUP_TOOLCHAIN",
+    "target": "wasm32v1-none",
+    "stellarCli": "stellar 27.0.0 (5a7c5fe76530bf4248477ac812fc757146b98cc4)",
+    "stellarCliTarball": {
+      "file": "stellar-cli-27.0.0-aarch64-apple-darwin.tar.gz",
+      "sha256": "70a259d10534259656b63fe7073116ec3bda0ce83839c9c72364750614beeae6",
+      "matchesGithubPublishedDigest": true
+    },
+    "command": "stellar contract build --locked --optimize=true --package <crate>",
+    "upstreamPin": "none: OpenZeppelin's rust-toolchain.toml says channel = \"stable\"; this toolchain is the one smart-account-kit recorded for its 2026-07-09 deployment"
+  },
+  "artifacts": [
+    {
+      "role": "smart-account",
+      "crate": "multisig-account-example",
+      "path": "examples/multisig-smart-account/account",
+      "sha256": "a12747ff6c139dc14fc2fd30d200d6bbb5da7b5d59812c047ce1f9cad226b289",
+      "bytes": 41911,
+      "constructor": "__constructor(signers: Vec<Signer>, policies: Map<Address, Val>)"
+    },
+    {
+      "role": "webauthn-verifier",
+      "crate": "multisig-webauthn-verifier-example",
+      "path": "examples/multisig-smart-account/webauthn-verifier",
+      "sha256": "e63a030d0f1a1481e36059a4837c433083b33e704c1f9625b7314795b6d72b76",
+      "bytes": 12105,
+      "constructor": null
+    },
+    {
+      "role": "ed25519-verifier",
+      "crate": "multisig-ed25519-verifier-example",
+      "path": "examples/multisig-smart-account/ed25519-verifier",
+      "sha256": "60e8798db610bdaf3370d39ebda56ee1dc2c15ce1c3a9e28b528bfa24a06b477",
+      "bytes": 1848,
+      "constructor": null
+    }
+  ],
+  "reproducibility": {
+    "sameMachineRebuilds": [
+      "exported source tree (git archive v0.7.2), fresh cargo target dir: same three hashes",
+      "build.sh --kit-check from fresh shallow clones and fresh cargo target dirs: same three hashes",
+      "build.sh again into a second fresh work dir: same three hashes"
+    ],
+    "kitCommitCheck": {
+      "commit": "1e513890ecf79833c9d6e7ef38a9358001c0b111",
+      "reproduced": {
+        "multisig-account-example": "1b5f4534a76322da2ad7c745f6900857a6802b0ca79850c35a03561df997785a",
+        "multisig-webauthn-verifier-example": "e63a030d0f1a1481e36059a4837c433083b33e704c1f9625b7314795b6d72b76",
+        "multisig-ed25519-verifier-example": "60e8798db610bdaf3370d39ebda56ee1dc2c15ce1c3a9e28b528bfa24a06b477"
+      },
+      "matchesPublishedManifest": "smart-account-kit docs/deployments-protocol-27-2026-07-09.md, all three"
+    },
+    "otherToolchainControl": {
+      "toolchain": "rustc 1.96.0 with stellar CLI 27.1.0, same v0.7.2 source",
+      "multisig-account-example": "f6f40f184fde4670288dd3350409d9751afa276cf7a0d84acd5c7b0d8f122719 (41484 bytes)",
+      "multisig-webauthn-verifier-example": "71df7b7aa9f7b14b9245f60977a26ea918a5ab38423e12fc0e0cd7fdea8e7995 (12290 bytes)",
+      "meaning": "the toolchain pin changes the bytes, so it is part of the claim"
+    },
+    "caveat": "Rust does not guarantee bit-reproducible wasm across hosts. Reproduced on one macOS arm64 host; Linux not tried by us."
+  },
+  "audit": {
+    "title": "Stellar Contracts RC v0.7.0 Audit",
+    "fileInRepository": "audits/Stellar Contracts Library v0.7.0 Audit.pdf",
+    "author": "OpenZeppelin Security",
+    "date": "2026-04-06",
+    "reviewWindow": "2026-03-02 to 2026-03-19",
+    "kind": "differential, HEAD 239a2a707a6deeeb53ce0f5388e059c9ce44db58 (v0.7.0-rc.1) against BASE 82f97111f9568d32653dd5b3563baf5b73509c89 (v0.6.0)",
+    "fixesMergedAt": "d55dd379714c7b928dc9d9a3c70ddfdc78ff9abd",
+    "atTag": { "tag": "v0.7.2", "gitBlob": "d182add256f84b0549d5008730c41b9458a867f3", "sha256": "9514b16815e853d656e0f284fb8d82b98135c04b394595f3c3f97e68804f40f5" },
+    "publicPage": "https://www.openzeppelin.com/news/stellar-contracts-rc-v0.7.0-audit",
+    "inScope": ["packages/accounts/src/smart_account", "packages/accounts/src/verifiers (mod, ed25519, webauthn)", "packages/accounts/src/policies", "packages/contract-utils/src/upgradeable"],
+    "notInScope": ["examples/ (the three crates built here are example wrappers)", "soroban-sdk"],
+    "deltaFixesToTag": "packages/accounts/src and packages/contract-utils/src unchanged from d55dd37 to v0.7.2; example Cargo.toml metadata added; soroban-sdk 25.3.0 to 26.1.0",
+    "unresolvedFindings": ["M-05 raw signer keys stored (acknowledged design choice)", "L-07 governor", "L-08 governor"]
+  },
+  "kitCompatibility": {
+    "kit": "smart-account-kit 0.8.0 with smart-account-kit-bindings 0.4.0",
+    "accountSpecDocsStripped": "identical to the kit's deployed 1b5f4534 (fetched from testnet and pubnet by wasm hash) and to the 38 entries in smart-account-kit-bindings 0.4.0: 17 functions, 5 structs, 4 unions, 1 error enum, 11 events",
+    "accountSpecDocDifferences": ["update_context_rule_name", "update_context_rule_valid_until"],
+    "accountCodeDifference": "same 99 function bodies; functions 94 and 95 swap places and four call sites change index 136 against 137; nothing else",
+    "verifiers": "byte-identical to the kit's deployed verifier wasm on testnet and pubnet",
+    "verdict": "compatible; switching is configuration (accountWasmHash, webauthnVerifierAddress, ed25519VerifierAddress)"
+  },
+  "chainReads": {
+    "method": "read-only RPC getLedgerEntries and stellar contract fetch; nothing signed or submitted",
+    "atUtc": "2026-10-01T23:10:00Z",
+    "testnet": {
+      "ledger": 4974511,
+      "codeEntries": {
+        "a12747ff6c139dc14fc2fd30d200d6bbb5da7b5d59812c047ce1f9cad226b289": "present, liveUntilLedger 4994944, uploader not identified by us",
+        "1b5f4534a76322da2ad7c745f6900857a6802b0ca79850c35a03561df997785a": "present, liveUntilLedger 7878979",
+        "e63a030d0f1a1481e36059a4837c433083b33e704c1f9625b7314795b6d72b76": "present, liveUntilLedger 7878982",
+        "60e8798db610bdaf3370d39ebda56ee1dc2c15ce1c3a9e28b528bfa24a06b477": "present, liveUntilLedger 5807716"
+      },
+      "kitVerifierInstances": {
+        "CC7EKIHQP3TN4CARQDND6CEOY2UXLWWC2X5GHTD5NLAT7BG5GPZIOM3F": "wasm e63a030d..., 0 instance storage entries",
+        "CAAVTMCBXEIBPR64EAASKFXERVPYFZA2JYP5A3BG6PESWEFUJX5IHKN4": "wasm 60e8798d..., 0 instance storage entries"
+      }
+    },
+    "pubnet": {
+      "ledger": 64722072,
+      "codeEntries": {
+        "a12747ff6c139dc14fc2fd30d200d6bbb5da7b5d59812c047ce1f9cad226b289": "absent",
+        "1b5f4534a76322da2ad7c745f6900857a6802b0ca79850c35a03561df997785a": "present, liveUntilLedger 65479856",
+        "e63a030d0f1a1481e36059a4837c433083b33e704c1f9625b7314795b6d72b76": "present, liveUntilLedger 65479861",
+        "60e8798db610bdaf3370d39ebda56ee1dc2c15ce1c3a9e28b528bfa24a06b477": "present, liveUntilLedger 65479863"
+      },
+      "kitVerifierInstances": {
+        "CB7HENHJ7NF34I5FFXQK7D5I3WWQRGB5O5XO77D3NXMT7LM7LOKRQ5YR": "wasm e63a030d..., 0 instance storage entries",
+        "CBOOZV2BK5OETGL4Q4KGEBESPRLJFN7DOFWDT7OZGLD7EQEZUVOWUEMC": "wasm 60e8798d..., 0 instance storage entries"
+      }
+    }
+  },
+  "knownIssues": [
+    {
+      "id": "OpenZeppelin/stellar-contracts#876",
+      "title": "Auth digest is not bound to an account and delegated signers authorize an opaque hash",
+      "state": "closed 2026-09-10 by PR #868, merged into the unreleased v0.9.0 branch",
+      "affects": "v0.7.2 and the kit's 1b5f4534; no released tag has the fix",
+      "ourExposure": "low: our passkey signs only invocations rooted at the account's own execute, so the account address is the root of the signed invocation tree"
+    },
+    {
+      "id": "webauthn-verifier-scope",
+      "title": "The WebAuthn verifier does not check origin, rpIdHash, the signature counter or attestation",
+      "source": "documented in packages/accounts/src/verifiers/webauthn.rs at v0.7.2",
+      "consequence": "the chain cannot tell a device authenticator from a software P-256 key; the 2026-09-19 testnet passkey artifacts were signed by a software key and are not D3 evidence"
+    }
+  ],
+  "planned": [
+    "upload the three wasm files to testnet from the passkey-deployer identity and extend the account code entry TTL",
+    "deploy two verifier instances from the same identity with the salts listed in README.md (Planned testnet deployment)",
+    "record the resulting transaction hashes and contract ids in a separate receipt; until then no instance here is ours"
+  ]
+}
