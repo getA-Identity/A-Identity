@@ -23,6 +23,14 @@ export function rateBudget(method: string, pathname: string): { bucket: string; 
   // cannot blank the panel's own state read.
   if (method === 'GET' && pathname === '/api/stellar/vault/read') return { bucket: 'stellar-vault-read', max: 60, windowMs: 60_000 }
   if (method === 'GET' && pathname === '/api/stellar/vault/is-allowed') return { bucket: 'stellar-vault-is-allowed', max: 30, windowMs: 60_000 }
+  // One transaction decoded for the evidence pages. Each uncached hash is an RPC read, a
+  // Horizon read and possibly an indexer read; found answers are cached for the process, so
+  // the bucket only bounds people walking through hashes nobody has asked for yet.
+  if (method === 'GET' && /^\/api\/stellar\/tx\/[^/]+$/.test(pathname)) return { bucket: 'stellar-tx-read', max: 30, windowMs: 60_000 }
+  // The passkey page's two public reads: one demo vault, and who paid a transaction's fee.
+  // Both are RPC reads with no session in front of them.
+  if (method === 'GET' && (pathname === '/api/stellar/passkey/vault' || pathname === '/api/stellar/passkey/fee-payer'))
+    return { bucket: 'stellar-passkey-read', max: 30, windowMs: 60_000 }
   if (method !== 'POST') return null
   // Auth challenges + guest login: cheap to abuse, keep them tight.
   if (pathname === '/api/auth/nonce' || pathname === '/api/auth/verify' || pathname === '/api/auth/login')

@@ -116,6 +116,16 @@ test('the two public vault reads are budgeted in buckets of their own', () => {
   assert.equal(rateBudget('GET', '/api/stellar/vaults'), null, 'the registry list is cached for 30 s and stays unbudgeted')
 })
 
+test('the decoded-transaction read and the passkey page reads are budgeted too', () => {
+  // A hash nobody asked for yet costs an RPC, a Horizon and maybe an indexer read; the two
+  // passkey reads are RPC reads with no session in front of them.
+  assert.equal(rateBudget('GET', '/api/stellar/tx/09d041ab3c0dbae95b902b0c22be8f6587f43542798701db98a09df948119e02')?.bucket, 'stellar-tx-read')
+  assert.equal(rateBudget('GET', '/api/stellar/tx/'), null, 'no hash, no read')
+  assert.equal(rateBudget('GET', '/api/stellar/passkey/vault')?.bucket, 'stellar-passkey-read')
+  assert.equal(rateBudget('GET', '/api/stellar/passkey/fee-payer')?.bucket, 'stellar-passkey-read')
+  assert.equal(rateBudget('GET', '/api/stellar/passkey/status'), null, 'the status is configuration, not a chain read')
+})
+
 // ── free writes: the blind spot this file had ────────────────────────────────────
 //
 // Everything above asks "does this POST spend the shared signer". A posted task, a bid and

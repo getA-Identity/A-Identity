@@ -120,9 +120,11 @@ const server = http.createServer(async (req, res) => {
   res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS')
   // Includes the x402 payment headers (X-Payment*, PAYMENT-SIGNATURE); without them a
   // cross-origin caller's redemption preflight is blocked and shows as "Failed to fetch".
+  // X-Client-Name and X-Client-Version ride on every smart-account-kit relay POST, so a
+  // cross-origin dev page (vite on one port, this server on another) needs them too.
   res.setHeader(
     'Access-Control-Allow-Headers',
-    'Content-Type, Authorization, X-Payment, X-Payment-Nonce, X-Payment-Payer, X-Payment-Sig, PAYMENT-SIGNATURE, mcp-session-id, mcp-protocol-version',
+    'Content-Type, Authorization, X-Payment, X-Payment-Nonce, X-Payment-Payer, X-Payment-Sig, PAYMENT-SIGNATURE, mcp-session-id, mcp-protocol-version, X-Client-Name, X-Client-Version',
   )
   // The x402 v2 challenge and receipt travel in response headers, which a browser hides from
   // cross-origin script unless they are exposed; the body carries the same object, the
