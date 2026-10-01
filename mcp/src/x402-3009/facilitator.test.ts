@@ -2,7 +2,7 @@ import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { privateKeyToAccount } from 'viem/accounts'
 import { supported, verify, settle, resolveNetwork, facilitatorChains } from './facilitator.js'
-import { railStatus } from './rail.js'
+import { railStatus, railLimits } from './rail.js'
 import { eip712DomainSeparator, clearDomainCache, type TokenReader } from './domain.js'
 import { getChainById } from '../chains/index.js'
 
@@ -111,6 +111,52 @@ test('a chain whose domain cannot be proven is reported unavailable, never adver
   const unavailable = out.body.unavailable as { network: string; reason: string }[]
   assert.ok(unavailable.length >= 1)
   assert.match(unavailable[0].reason, /DOMAIN_SEPARATOR/)
+})
+
+test('/verify reads the x402 v2 `amount`, which a stock v2 client sends instead of maxAmountRequired', async () => {
+  clearDomainCache()
+  const b = await body()
+  const reqs = b.paymentRequirements as Record<string, unknown>
+  const v2 = { ...b, paymentRequirements: { ...reqs, amount: reqs.maxAmountRequired, maxAmountRequired: undefined } }
+  const out = await verify(v2, { reader: reader(), publicClient: publicClient({ count: 0 }), now: () => NOW, loadSpent: async () => [], env })
+  assert.equal(out.body.isValid, true, JSON.stringify(out.body))
+})
+
+test('/verify refuses requirements with no amount, or two amounts that disagree, instead of assuming zero', async () => {
+  clearDomainCache()
+  const b = await body()
+  const reqs = b.paymentRequirements as Record<string, unknown>
+  const none = await verify({ ...b, paymentRequirements: { ...reqs, maxAmountRequired: undefined } }, { reader: reader(), env })
+  assert.equal(none.body.code, 'malformed_payload')
+  const both = await verify({ ...b, paymentRequirements: { ...reqs, amount: '1' } }, { reader: reader(), env })
+  assert.equal(both.body.code, 'requirements_mismatch')
+})
+
+test("/supported quotes each chain's own floor, and lists a chain it will not settle as verify-only", async () => {
+  clearDomainCache()
+  // Arbitrum first, so the DEFAULT status is Arbitrum's: the Robinhood kind must still carry
+  // Robinhood's floor, which is what the buyer will actually be held to.
+  const two = { X402_3009_NETWORKS: `${getChainById('arbitrum')!.caip2},${chain.caip2}`, X402_3009_PAYTO: PAY_TO } as NodeJS.ProcessEnv
+  const out = await supported(railStatus(two), { reader: reader(), env: two })
+  const kinds = out.body.kinds as { network: string; minAmountRequired: string }[]
+  const rh = kinds.find((k) => k.network === chain.caip2)
+  const rhFloor = railLimits({ ...railStatus(two, chain.caip2), token }, two).minValue.toString()
+  const arbFloor = railLimits({ ...railStatus(two, getChainById('arbitrum')!.caip2), token: getChainById('arbitrum')!.settlementTokens![0] }, two).minValue.toString()
+  assert.notEqual(rhFloor, arbFloor, 'the two chains must have different floors for this test to mean anything')
+  assert.equal(rh?.minAmountRequired, rhFloor)
+  const verifyOnly = (out.body.verifyOnly ?? []) as { network: string }[]
+  assert.ok(verifyOnly.some((v) => v.network === getChainById('rhchain-testnet')!.caip2), 'a chain the rail does not sell on is not advertised as payable')
+  assert.ok(!kinds.some((k) => k.network === getChainById('rhchain-testnet')!.caip2))
+})
+
+test('/supported never repeats an RPC URL from a failed proof, which can carry a provider key', async () => {
+  clearDomainCache()
+  const leaky: TokenReader = async (fn) => {
+    if (fn === 'DOMAIN_SEPARATOR') throw new Error('HTTP request failed. URL: https://rpc.example/v2/SECRETKEY123')
+    return reader()(fn)
+  }
+  const out = await supported(railStatus(env), { reader: leaky, env })
+  assert.doesNotMatch(JSON.stringify(out.body), /SECRETKEY123|rpc\.example/)
 })
 
 test('/verify answers the documented shape and performs no writes', async () => {

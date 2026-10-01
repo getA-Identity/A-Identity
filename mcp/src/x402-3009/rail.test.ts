@@ -204,6 +204,21 @@ test('proof counts only settled rows, labels internal payers, and never hides fa
   assert.match(p.gas.note, /Native units only/)
 })
 
+test('proof gas is per network in its own unit, and never one total across chains', async () => {
+  const arc = getChainById('arc-mainnet')!
+  const rows: X402SettlementRecord[] = [
+    row('settled', '0xaaa0000000000000000000000000000000000001', 0.021, 'risk_check'),
+    { ...row('settled', '0xaaa0000000000000000000000000000000000001', 0.031, 'verify_agent'), network: arc.caip2, gasWei: '1745023831756271' },
+  ]
+  const p = await railProof(railStatus(configured), { load: async () => rows, env: configured })
+  assert.equal(p.gas.byNetwork[chain.caip2].total, '4300000000000')
+  assert.equal(p.gas.byNetwork[chain.caip2].unit, chain.nativeCurrency?.symbol)
+  assert.equal(p.gas.byNetwork[arc.caip2].unit, arc.nativeCurrency?.symbol)
+  assert.equal(p.gas.settles, 2)
+  assert.ok(!('totalWei' in p.gas), 'a sum of ETH-wei and USDC-wei must not exist')
+  assert.deepEqual(p.networks, [chain.caip2])
+})
+
 test('our own buyer wallet is internal even with no environment at all', () => {
   // The deployed rail's first settlement was reported as EXTERNAL demand because the env
   // var listing our buyer wallet was not set there. Traction that overstates itself when a

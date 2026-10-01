@@ -140,6 +140,22 @@ if (!chain) {
   console.error(`error: the challenge names network '${accepts.network}', which is not in our registry.`)
   process.exit(1)
 }
+// 3a. The asset must be the dollar our registry says this chain settles in. The separator
+//     check below does not prove that on its own: a lookalike token can publish the real
+//     token's name and version over its own address and hash to a separator of its own, and
+//     Robinhood Chain's explorer lists hundreds of tokens named "Global Dollar". The same rule
+//     the pay check applies (mcp/src/evm-pay-check), applied here before anything is signed.
+const settles = (chain.settlementTokens ?? []).find((t) => t.authorization === 'eip3009')
+if (!settles || String(accepts.asset).toLowerCase() !== settles.address.toLowerCase()) {
+  console.error(
+    `error: the challenge asks for ${accepts.assetSymbol ?? 'a token'} at ${accepts.asset}, which is not the ${settles?.symbol ?? 'settlement token'} ${chain.name} settles in${settles ? ` (${settles.address})` : ''}. Refusing to sign.`,
+  )
+  process.exit(1)
+}
+if (String(extra.verifyingContract).toLowerCase() !== String(accepts.asset).toLowerCase() || Number(extra.chainId) !== chain.evmChainId) {
+  console.error('error: the domain in `extra` names a different contract or chain than the asset the challenge asks for. Refusing to sign.')
+  process.exit(1)
+}
 const pub = createPublicClient({ transport: http(resolveRpcUrls(chain, process.env)[0], { timeout: 15000, retryCount: 2 }) })
 const onchain = await pub.readContract({
   address: accepts.asset,

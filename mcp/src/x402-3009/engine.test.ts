@@ -196,6 +196,27 @@ test('every refusal reports its own code', async () => {
   }
 })
 
+test('a payment for a lookalike USDG is refused as unsupported_asset, however well it is signed', async () => {
+  // Robinhood Chain's explorer lists hundreds of tokens named "Global Dollar" with the symbol
+  // USDG. A challenge that names one of them must not settle here, and the refusal has to come
+  // from the address, before any signature or chain read, because a lookalike can carry the
+  // real name, version and a working domain of its own.
+  clearDomainCache()
+  const LOOKALIKE = '0x1111111111111111111111111111111111111111' as `0x${string}`
+  const { payload } = await signed()
+  let reads = 0
+  const r = await verifyPayment({
+    chain, token, requirements: { ...REQUIREMENTS, asset: LOOKALIKE }, payload, limits: LIMITS,
+    deps: deps({ publicClient: publicClient({}), reader: (...a: Parameters<TokenReader>) => { reads++; return tokenReader()(...a) } }),
+  })
+  assert.equal(r.isValid, false)
+  if (!r.isValid) {
+    assert.equal(r.code, 'unsupported_asset')
+    assert.match(r.invalidReason, new RegExp(token.address))
+  }
+  assert.equal(reads, 0, 'refused on the address alone, with no token read')
+})
+
 /** A contract wallet: the payer is a contract address, and the signature over the
  *  authorization is made by a key that does NOT recover to it. Only an ERC-1271
  *  `isValidSignature` call can accept this, which is the whole point. */

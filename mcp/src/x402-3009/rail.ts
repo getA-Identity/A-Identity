@@ -675,7 +675,12 @@ export type RailProof = {
   internalPayers: string[]
   reverted: number
   ambiguous: number
-  gas: { totalWei: string; settles: number; note: string }
+  /** Which networks this rail sells on. The single-network fields above describe the default one. */
+  networks: string[]
+  /** Gas per network, each in that network's own native unit. Never summed across networks:
+   *  wei of ETH and wei of Arc's USDC are different money, and one total of both is a number
+   *  about nothing that reads as ETH. */
+  gas: { byNetwork: Record<string, { total: string; unit: string; decimals: number; settles: number }>; settles: number; note: string }
   byTool: Record<string, { count: number; usd: number }>
   /** Per-chain breakdown. Two chains summed into one figure is a number about nothing. */
   byNetwork: Record<string, { count: number; usd: number; assetSymbol: string }>
@@ -718,11 +723,13 @@ export async function railProof(
   let totalUsd = 0
   let internalSettlements = 0
   let internalUsd = 0
-  let gasTotal = 0n
+  const gasByNetwork: Record<string, { total: bigint; settles: number }> = {}
   for (const r of rows) {
     if (r.gasWei) {
       try {
-        gasTotal += BigInt(r.gasWei)
+        const g = (gasByNetwork[r.network] ??= { total: 0n, settles: 0 })
+        g.total += BigInt(r.gasWei)
+        g.settles += 1
       } catch {
         /* a malformed row must not break the report */
       }
@@ -758,10 +765,16 @@ export async function railProof(
     internalPayers: [...mine],
     reverted: rows.filter((r) => r.outcome === 'reverted').length,
     ambiguous: rows.filter((r) => r.outcome === 'ambiguous').length,
+    networks: railNetworks(env),
     gas: {
-      totalWei: gasTotal.toString(),
+      byNetwork: Object.fromEntries(
+        Object.entries(gasByNetwork).map(([network, g]) => {
+          const c = getChain(network)
+          return [network, { total: g.total.toString(), unit: c?.nativeCurrency?.symbol ?? 'native', decimals: c?.nativeCurrency?.decimals ?? 18, settles: g.settles }]
+        }),
+      ),
       settles: rows.filter((r) => Boolean(r.gasWei)).length,
-      note: 'Native units only. This chain has no price feed we verify, so no USD gas figure is asserted.',
+      note: "Native units only, per network, each in that network's own gas unit, and never summed across networks. No USD gas figure is asserted, because we verify no price feed.",
     },
     byTool,
     byNetwork,

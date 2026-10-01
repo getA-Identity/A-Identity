@@ -68,13 +68,20 @@ export async function supported(
   const env = deps.env ?? process.env
   const kinds: SupportedKind[] = []
   const unavailable: { network: string; reason: string }[] = []
+  const verifyOnly: { network: string; reason: string }[] = []
 
   for (const chain of facilitatorChains(env)) {
     const token = railToken(chain, env)
     if (!token) continue
+    // A chain /verify can check but /settle refuses is not something a buyer can pay with here.
+    const chainStatus = railStatus(env, chain.caip2)
+    if (!chainStatus.configured) {
+      verifyOnly.push({ network: chain.caip2, reason: chainStatus.reason ?? `this rail does not sell on ${chain.id}` })
+      continue
+    }
     const domain = await provenDomainCached(chain, token, deps)
     if (!domain.ok) {
-      unavailable.push({ network: chain.caip2, reason: domain.reason })
+      unavailable.push({ network: chain.caip2, reason: scrubUrls(domain.reason) })
       continue
     }
     const extra = {
@@ -84,7 +91,8 @@ export async function supported(
       versionSource: domain.proven.versionSource,
       provenAt: domain.proven.provenAt,
     }
-    const limits = railLimits({ ...status, token }, env)
+    // The floor is this chain's own: cheapest price plus the fee measured on THIS chain.
+    const limits = railLimits({ ...chainStatus, token }, env)
     const shared = {
       scheme: 'exact' as const,
       asset: token.address,
@@ -104,6 +112,7 @@ export async function supported(
     body: {
       kinds,
       ...(unavailable.length ? { unavailable } : {}),
+      ...(verifyOnly.length ? { verifyOnly } : {}),
       facilitator: {
         operator: 'A-Identity',
         selfHosted: true,
@@ -117,6 +126,11 @@ export async function supported(
       },
     },
   }
+}
+
+/** A prover reason can quote an RPC error, and an operator's RPC URL can carry an API key. */
+function scrubUrls(s: string): string {
+  return s.replace(/\b[a-z][a-z0-9+.-]*:\/\/\S+/gi, '<rpc>')
 }
 
 type FacilitatorRequest = {
@@ -138,6 +152,18 @@ function readRequest(body: unknown): { ok: true; chain: ChainDescriptor; require
   }
   const asset = String(req.asset ?? '')
   const payTo = String(req.payTo ?? '')
+  // x402 v2 renamed `maxAmountRequired` to `amount`, and the reference v2 client posts its
+  // requirements as-is. Reading only the v1 name made every stock v2 request "cost exactly 0"
+  // and fail as wrong_amount. Either spelling is read; a missing amount is malformed, never a
+  // default of zero, and two spellings that disagree are refused rather than picked between.
+  const v2Amount = req.amount == null ? null : String(req.amount).trim()
+  const v1Amount = req.maxAmountRequired == null ? null : String(req.maxAmountRequired).trim()
+  if (!v2Amount && !v1Amount) {
+    return { ok: false, body: { isValid: false, invalidReason: 'paymentRequirements names no amount (v2 `amount` or v1 `maxAmountRequired`)', code: 'malformed_payload' } }
+  }
+  if (v2Amount && v1Amount && v2Amount !== v1Amount) {
+    return { ok: false, body: { isValid: false, invalidReason: `paymentRequirements says amount ${v2Amount} and maxAmountRequired ${v1Amount}`, code: 'requirements_mismatch' } }
+  }
   if (!/^0x[0-9a-fA-F]{40}$/.test(asset) || !/^0x[0-9a-fA-F]{40}$/.test(payTo)) {
     return { ok: false, body: { isValid: false, invalidReason: 'paymentRequirements needs a 0x asset and a 0x payTo', code: 'malformed_payload' } }
   }
@@ -150,7 +176,7 @@ function readRequest(body: unknown): { ok: true; chain: ChainDescriptor; require
       network: chain.caip2,
       asset: asset as `0x${string}`,
       payTo: payTo as `0x${string}`,
-      maxAmountRequired: String(req.maxAmountRequired ?? '0'),
+      maxAmountRequired: (v2Amount || v1Amount) as string,
       resource: String(req.resource ?? '/api/facilitator/settle'),
     },
   }
