@@ -79,6 +79,8 @@
               "chains/arbitrum",
               "chains/base",
               "chains/stellar",
+              "chains/stellar-d3-selection",
+              "chains/stellar-passkey-recovery",
               "chains/gateway",
               "chains/cctp"
             ]

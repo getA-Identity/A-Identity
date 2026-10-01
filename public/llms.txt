@@ -47,10 +47,17 @@ against those limits before any value moves, and the verdict is ALLOW, WARN or D
   registry is READ, read-only and labeled as theirs: a pointer, never our identity anchor,
   and ERC-8004 remains EVM-only. A weekly ops workflow watches the vault's archival
   deadline, the overlap between the fee-payer and operator roles, and allowlist drift.
+  A public vault panel at https://a-identity.xyz/app/vault/stellar reads any of our
+  Stellar vaults live, with the time each value was read, and needs no wallet and no
+  sign-in; owner controls appear only to the connected owner, and never on pubnet.
 - A second Stellar testnet vault, CBGTXWFBYAOZBR6EN3UK4PTLUAY6BRV2C36D3DPOTE5JSOLQXANS6J6U,
-  is owned by a WebAuthn passkey rather than a key: an OpenZeppelin smart account is the
-  owner, so the human holds no seed phrase. Proven on chain 2026-09-19, testnet only, and
-  the passkey in that run was software standing in for a platform authenticator.
+  is owned by an OpenZeppelin smart account with a WebAuthn signer rather than a key.
+  It is a REHEARSAL from 2026-09-19: every owner signature in it came from a software
+  P-256 key in our own script, so it proves the contract path and nothing about a device.
+  The device-passkey run is made separately on testnet, in a browser, with an account and
+  verifier we build from OpenZeppelin's audited stellar-contracts release line (tag
+  v0.7.2). Why that account: https://a-identity.mintlify.site/chains/stellar-d3-selection.
+  What losing the passkey means: https://a-identity.mintlify.site/chains/stellar-passkey-recovery.
 - Public policy counters currently read zero, because no live agent has produced a
   production decision yet. We publish the zero rather than a number nobody can reproduce.
 
@@ -87,7 +94,10 @@ leaves the caller's process.
 - [MCP server guide](https://a-identity.mintlify.site/developers/mcp-server)
 - [Architecture](https://a-identity.xyz/architecture): how the pieces fit together.
 - [Arc Mainnet](https://a-identity.xyz/arc): the featured network, live since it opened on 2026-09-16. A-Identity holds agent #0, the first identity minted on Arc Mainnet's ERC-8004 registry; every receipt is linked.
-- [Stellar passkey vault](https://a-identity.xyz/stellar): run the whole policy flow yourself on Stellar testnet. A WebAuthn passkey becomes an OpenZeppelin smart account, that account owns an AgentSpendPolicy vault and signs its limit, the risk engine answers ALLOW, WARN or DENY, and the vault refuses a payment to a payee that is not allowlisted. Fees are sponsored, so it needs no wallet and no XLM.
+- [Stellar passkey vault](https://a-identity.xyz/stellar): run the whole policy flow yourself. A WebAuthn passkey becomes an OpenZeppelin smart account, that account owns an AgentSpendPolicy vault and signs its limit, the risk engine answers ALLOW, WARN or DENY, and the vault refuses a payment to a payee that is not allowlisted. It opens on Stellar pubnet by default, in real USDC with dust amounts capped by the backend; add ?network=testnet (https://a-identity.xyz/stellar?network=testnet) to run it on testnet. Network fees are sponsored through OpenZeppelin Channels only while the deployment has a Channels key configured for that network; when it does not, the page says so and submits nothing. Read the recovery page before creating a passkey: losing every device that holds it loses the vault's owner for good.
+- [Stellar vault panel](https://a-identity.xyz/app/vault/stellar): the live state of an AgentSpendPolicy vault (status, headroom today and when it resets, auto-approve ceiling, allowlist, session expiry, USDC balance), read off the ledger with a timestamp per value. No wallet and no sign-in needed to read.
+- [Passkey account selection record](https://a-identity.mintlify.site/chains/stellar-d3-selection): which smart account may own a vault, the audit at a named version, and the risk that remains.
+- [Passkey recovery](https://a-identity.mintlify.site/chains/stellar-passkey-recovery): what a lost passkey costs, how a second device helps, and what nobody can do for you.
 - [Before you pay](https://a-identity.xyz/check): paste an Algorand address or an x402 service link and get a plain answer (looks safe, be careful, don't pay, or not enough history yet) with the reasons, read live from the Algorand ledger and the x402 facilitator's public records. A deep link runs it on load: https://a-identity.xyz/check?q=<address>.
 - [Is it the real USDG? (Robinhood Chain)](https://a-identity.xyz/check/robinhood): paste a token, a wallet, an agent id (eip155:<chain>:8004/<n> or #n) or an x402 link. Read live from Robinhood Chain: whether the token is the USDG the chain settles in, with its EIP-712 signing domain proven against the live DOMAIN_SEPARATOR; whether the payee holds an ERC-8004 agent id; and, for a link, which asset its 402 challenge asks for, which domain it hands you to sign and who it pays. Free JSON for agents: GET https://a-identity.xyz/api/robinhood/check?q=<input>; every reason carries a stable code (list: /api/robinhood/check/codes). The same check for Arbitrum One and native USDC: https://a-identity.xyz/check/arbitrum.
 

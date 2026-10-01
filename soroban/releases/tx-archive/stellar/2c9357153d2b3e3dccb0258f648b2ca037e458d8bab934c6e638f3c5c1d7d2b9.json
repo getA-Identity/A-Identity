@@ -1,0 +1,66 @@
+{
+  "hash": "2c9357153d2b3e3dccb0258f648b2ca037e458d8bab934c6e638f3c5c1d7d2b9",
+  "chainId": "stellar",
+  "network": "stellar:pubnet",
+  "ledger": 64185763,
+  "createdAt": "2026-08-29T23:49:57.000Z",
+  "status": "success",
+  "resultCode": {
+    "tx": "txSuccess",
+    "inner": null,
+    "operations": [
+      "paymentSuccess"
+    ],
+    "contractError": null
+  },
+  "sourceAccount": "GDORXUAQDFOW3BN45DN5HLKMXZ57MBWIBBDWMJ6XMQYUDJ44EM7CU7VG",
+  "feeAccount": "GDORXUAQDFOW3BN45DN5HLKMXZ57MBWIBBDWMJ6XMQYUDJ44EM7CU7VG",
+  "feeChargedStroops": "100",
+  "envelopeXdr": "AAAAAgAAAADdG9AQGV1thbzo29OtTL579gbICEdmJ9dkMUGnnCM+KgAAA+gD02WbAAAAAQAAAAEAAAAAAAAAAAAAAABqk3FNAAAAAQAAAA8xNzYwMjI1NTkwNzQyOTcAAAAAAQAAAAAAAAABAAAAABekMYXMB6YOfDOZN5UB8eEqtx9+Y2IujE4TM/0rXmxtAAAAAAAAAAAKbknAAAAAAAAAAAGcIz4qAAAAQMY4d7RcBWHJ/85jdE8X/h83TS5l8se3VMBwwE7OVI6oBb1hE9cZ+9xzpduNufHEwVQTm5O/ZOE/DjjlJGeKkwo=",
+  "resultXdr": "AAAAAAAAAGQAAAAAAAAAAQAAAAAAAAABAAAAAAAAAAA=",
+  "resultMetaXdr": "AAAABAAAAAAAAAACAAAAAwPTZaMAAAAAAAAAAN0b0BAZXW2FvOjb061Mvnv2BsgIR2Yn12QxQaecIz4qAAAAABfXg5wD02WbAAAAAAAAAAAAAAAAAAAAAAAAAAABAAAAAAAAAAAAAAAAAAAAAAAAAQPTZaMAAAAAAAAAAN0b0BAZXW2FvOjb061Mvnv2BsgIR2Yn12QxQaecIz4qAAAAABfXg5wD02WbAAAAAQAAAAAAAAAAAAAAAAAAAAABAAAAAAAAAAAAAAEAAAAAAAAAAAAAAAAAAAAAAAAAAgAAAAAAAAAAAAAAAAAAAAMAAAAAA9NlowAAAABqk3AlAAAAAAAAAAEAAAAAAAAABAAAAAMD02WjAAAAAAAAAADdG9AQGV1thbzo29OtTL579gbICEdmJ9dkMUGnnCM+KgAAAAAX14OcA9NlmwAAAAEAAAAAAAAAAAAAAAAAAAAAAQAAAAAAAAAAAAABAAAAAAAAAAAAAAAAAAAAAAAAAAIAAAAAAAAAAAAAAAAAAAADAAAAAAPTZaMAAAAAapNwJQAAAAAAAAABA9NlowAAAAAAAAAA3RvQEBldbYW86NvTrUy+e/YGyAhHZifXZDFBp5wjPioAAAAADWk53APTZZsAAAABAAAAAAAAAAAAAAAAAAAAAAEAAAAAAAAAAAAAAQAAAAAAAAAAAAAAAAAAAAAAAAACAAAAAAAAAAAAAAAAAAAAAwAAAAAD02WjAAAAAGqTcCUAAAAAAAAAAwPTYwoAAAAAAAAAABekMYXMB6YOfDOZN5UB8eEqtx9+Y2IujE4TM/0rXmxtAAACZQP3kx0BmnSAAAAvRAAAAAIAAAAAAAAAAAAAAAABAAAAAAAAAAAAAAEAAAAAAAAAAAAAAAAAAAAAAAAAAgAAAAAAAAAAAAAAAAAAAAMAAAAAA9NbAgAAAABqkzNxAAAAAAAAAAED02WjAAAAAAAAAAAXpDGFzAemDnwzmTeVAfHhKrcffmNiLoxOEzP9K15sbQAAAmUOZdzdAZp0gAAAL0QAAAACAAAAAAAAAAAAAAAAAQAAAAAAAAAAAAABAAAAAAAAAAAAAAAAAAAAAAAAAAIAAAAAAAAAAAAAAAAAAAADAAAAAAPTWwIAAAAAapMzcQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA==",
+  "metaFrom": "stellar-expert",
+  "metaNote": "Result meta from Stellar Expert, a third-party indexer, accepted because the envelope and result it served match Horizon byte for byte. Meta is not covered by the transaction hash.",
+  "fetchedFrom": "horizon",
+  "explorer": "https://stellar.expert/explorer/public/tx/2c9357153d2b3e3dccb0258f648b2ca037e458d8bab934c6e638f3c5c1d7d2b9",
+  "archivedAt": "2026-10-01T20:44:13.570Z",
+  "caption": "The first funding leg leaves the Stellar treasury",
+  "deliverable": null,
+  "provenance": {
+    "entry": "algorand",
+    "kind": "bridge",
+    "label": "The first funding leg leaves the Stellar treasury",
+    "note": "17.5 XLM to an instant-exchange deposit address, memo-tagged. NEAR Intents, the route Base used, lists no Algorand assets, so this crossing runs through SideShift; the trade-off is named rather than hidden: a custodial hop of a few dollars, refundable to the treasury, chosen over standing up a DEX integration for one funding event."
+  },
+  "decoded": {
+    "hash": "2c9357153d2b3e3dccb0258f648b2ca037e458d8bab934c6e638f3c5c1d7d2b9",
+    "innerHash": null,
+    "status": "success",
+    "resultCode": {
+      "tx": "txSuccess",
+      "inner": null,
+      "operations": [
+        "paymentSuccess"
+      ],
+      "contractError": null
+    },
+    "sourceAccount": "GDORXUAQDFOW3BN45DN5HLKMXZ57MBWIBBDWMJ6XMQYUDJ44EM7CU7VG",
+    "feeAccount": "GDORXUAQDFOW3BN45DN5HLKMXZ57MBWIBBDWMJ6XMQYUDJ44EM7CU7VG",
+    "feeBump": false,
+    "feeChargedStroops": "100",
+    "operations": [
+      {
+        "type": "payment",
+        "source": null,
+        "contract": null,
+        "function": null,
+        "args": null
+      }
+    ],
+    "auth": [],
+    "summary": "One payment operation. Fee 0.00001 XLM paid by GDORXU...U7VG. It succeeded.",
+    "caveats": [
+      "Result meta from Stellar Expert, a third-party indexer, accepted because the envelope and result it served match Horizon byte for byte. Meta is not covered by the transaction hash."
+    ]
+  }
+}

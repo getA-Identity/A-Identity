@@ -14,7 +14,21 @@
 import { getChainById } from './registry.js'
 import type { ChainDescriptor } from './types.js'
 import { evmPublicClient } from './evm/client.js'
-import { artifactUrl, contractUrl, provenanceFor, railBySlug, PROOF_RAILS, type ChainProvenance } from './provenance.js'
+import {
+  artifactUrl,
+  contractUrl,
+  provenanceFor,
+  railBySlug,
+  PROOF_RAILS,
+  PROVENANCE,
+  SOW2_RAIL,
+  STELLAR_SOW2,
+  type ChainArtifact,
+  type ChainProvenance,
+  type ProvenanceAccount,
+  type Sow2Deliverable,
+  type Sow2Evidence,
+} from './provenance.js'
 
 const IDENTITY_ABI = [
   { type: 'function', name: 'ownerOf', stateMutability: 'view', inputs: [{ name: 'tokenId', type: 'uint256' }], outputs: [{ type: 'address' }] },
@@ -44,7 +58,23 @@ export type ChainProofReport = ChainProvenance & {
   explorer: string | null
   contractsLinked: { name: string; address: string; note?: string; explorerUrl: string | null }[]
   artifactsLinked: (ChainProvenance['artifacts'][number] & { explorerUrl: string | null })[]
+  /** The published accounts with an explorer link derived from this chain. Empty, never
+   *  absent, so a reader can tell "none published" from an older backend. */
+  accountsLinked: (ProvenanceAccount & { explorerUrl: string | null })[]
   live: LiveCheck
+}
+
+/** One artifact a SOW 2 deliverable names, resolved against the ledger. */
+export type Sow2ArtifactRef = {
+  txHash: string
+  label: string
+  date: string | null
+  onChain: string | null
+  explorerUrl: string | null
+}
+
+export type Sow2Report = Omit<Sow2Evidence, 'deliverables'> & {
+  deliverables: (Sow2Deliverable & { artifactsLinked: Sow2ArtifactRef[] })[]
 }
 
 export type RailProofReport = {
@@ -53,6 +83,8 @@ export type RailProofReport = {
   lede: string
   networks: ChainProofReport[]
   howToVerify: string[]
+  /** Only on the Stellar rail: the dated SOW 2 section. */
+  sow2?: Sow2Report
 }
 
 export async function chainProofReport(chainId: string, env: NodeJS.ProcessEnv = process.env): Promise<ChainProofReport | null> {
@@ -68,6 +100,7 @@ export async function chainProofReport(chainId: string, env: NodeJS.ProcessEnv =
     explorer: chain.explorer,
     contractsLinked: entry.contracts.map((c) => ({ ...c, explorerUrl: contractUrl(chainId, c.address) })),
     artifactsLinked: entry.artifacts.map((a) => ({ ...a, explorerUrl: artifactUrl(a) })),
+    accountsLinked: (entry.accounts ?? []).map((acc) => ({ ...acc, explorerUrl: contractUrl(acc.network, acc.address) })),
     live: await liveCheck(chain, entry, env),
   }
 }
@@ -84,6 +117,35 @@ export async function railProofReport(slug: string, env: NodeJS.ProcessEnv = pro
     lede: rail.lede,
     networks,
     howToVerify: howToVerify(networks),
+    ...(rail.slug === SOW2_RAIL ? { sow2: sow2Report() } : {}),
+  }
+}
+
+/**
+ * The SOW 2 section with every hash it names resolved to a dated, linked artifact.
+ *
+ * Purely local, like the ledger it reads: nothing here waits on a chain, so the section
+ * renders in full even when the live re-read below it could not reach an RPC. A hash that
+ * resolves to nothing is dropped rather than rendered as a dead link; provenance.test.ts
+ * fails the build before that can ship.
+ */
+export function sow2Report(): Sow2Report {
+  const byHash = new Map<string, ChainArtifact>()
+  for (const p of PROVENANCE) {
+    if (getChainById(p.chain)?.ecosystem !== 'stellar') continue
+    for (const a of p.artifacts) byHash.set(a.txHash, a)
+  }
+  return {
+    ...STELLAR_SOW2,
+    deliverables: STELLAR_SOW2.deliverables.map((d) => ({
+      ...d,
+      artifactsLinked: d.artifacts.flatMap((h) => {
+        const a = byHash.get(h)
+        return a
+          ? [{ txHash: a.txHash, label: a.label, date: a.date ?? null, onChain: a.onChain ?? null, explorerUrl: artifactUrl(a) }]
+          : []
+      }),
+    })),
   }
 }
 

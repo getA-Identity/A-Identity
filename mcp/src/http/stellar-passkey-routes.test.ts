@@ -5,6 +5,7 @@ import { Address, Keypair, Operation, StrKey, nativeToScVal, xdr } from '@stella
 
 import { CHAINS } from '../chains/index.js'
 import type { CallOutcome, VaultState } from '../chains/stellar/adapter.js'
+import type { ContractCode, FeePayerRead, SmartAccountReader, SmartAccountRules } from '../chains/stellar/smart-account.js'
 import { __resetPlatformStateForTests } from '../platform.js'
 import { createRelayBudget, type PasskeyRelayLimits } from '../stellar-passkey.js'
 import { handleStellarPasskeyRoutes, type PasskeyAdapter, type PasskeyRouteDeps } from './stellar-passkey-routes.js'
@@ -33,7 +34,9 @@ import type { RouteCtx } from './shared.js'
 __resetPlatformStateForTests()
 
 const testnet = CHAINS.find((c) => c.id === 'stellar-testnet')!
+const pubnet = CHAINS.find((c) => c.id === 'stellar')!
 const WASM = testnet.contracts.smartAccount!.wasmHash
+const VERIFIER = testnet.contracts.smartAccount!.webauthnVerifier
 const TOKEN = testnet.settlementTokens![0]!.address
 
 const contractId = (): string => StrKey.encodeContract(randomBytes(32))
@@ -155,10 +158,36 @@ const vaultState = (over: Partial<VaultState> = {}): VaultState => ({
   ...over,
 })
 
-type Spy = { reads: string[]; fetches: string[] }
+type Spy = { reads: string[]; fetches: string[]; codes: string[]; rules: string[] }
 
-function stubs(over: Partial<PasskeyAdapter> = {}): { deps: PasskeyRouteDeps; spy: Spy; signer: string } {
-  const spy: Spy = { reads: [], fetches: [] }
+/** A P-256 point's shape (0x04 and 64 bytes), generated at runtime. Nothing here verifies it. */
+const KEY = `04${randomBytes(64).toString('hex')}`
+/** The live read of a demo smart account: deployed, running the registry's account wasm. */
+const DEMO_CODE: ContractCode = { ledger: 1, found: true, executable: 'wasm', wasmHash: WASM, archived: false }
+/** One Default rule whose only signer is the passkey KEY (with a credential id after the point). */
+const ONE_PASSKEY: SmartAccountRules = {
+  count: 1,
+  rules: [{ id: 0, name: 'primary', contextType: 'default', signers: [{ kind: 'external', verifier: VERIFIER, keyHex: `${KEY}${'ab'.repeat(20)}` }], policies: [], validUntil: null }],
+  removed: [],
+}
+
+function reader(spy: Spy, over: Partial<SmartAccountReader> = {}): SmartAccountReader {
+  return {
+    readCode: async (c: string) => {
+      spy.codes.push(c)
+      return DEMO_CODE
+    },
+    readRules: async (c: string) => {
+      spy.rules.push(c)
+      return ONE_PASSKEY
+    },
+    readFeePayer: async (): Promise<FeePayerRead> => ({ found: false, status: 'NOT_FOUND', ledger: null }),
+    ...over,
+  }
+}
+
+function stubs(over: Partial<PasskeyAdapter> = {}, accounts: Partial<SmartAccountReader> = {}): { deps: PasskeyRouteDeps; spy: Spy; signer: string } {
+  const spy: Spy = { reads: [], fetches: [], codes: [], rules: [] }
   const signer = accountId()
   const adapter: PasskeyAdapter = {
     readVault: async (vault: string) => {
@@ -177,6 +206,8 @@ function stubs(over: Partial<PasskeyAdapter> = {}): { deps: PasskeyRouteDeps; sp
     deps: {
       env: {},
       adapter: () => adapter,
+      accounts: () => reader(spy, accounts),
+      feePayerWaitsMs: [0],
       signerAddress: () => signer,
       fetch: (async (url: string) => {
         spy.fetches.push(String(url))
@@ -607,10 +638,10 @@ test('status publishes the global limit and the fee reserve, live from the budge
 test('the deploy refuses an account owner and an over-cap policy, before the key is touched', async () => {
   const { deps, spy } = stubs()
   const bad = [
-    { owner: accountId(), dailyCapUsd: 5, autoApproveUsd: 1 },
-    { owner: contractId(), dailyCapUsd: 50, autoApproveUsd: 1 },
-    { owner: contractId(), dailyCapUsd: 5, autoApproveUsd: 5 },
-    { owner: contractId(), dailyCapUsd: 5, autoApproveUsd: 1, seedUsd: 5 },
+    { owner: accountId(), dailyCapUsd: 5, autoApproveUsd: 1, ownerPublicKey: KEY },
+    { owner: contractId(), dailyCapUsd: 50, autoApproveUsd: 1, ownerPublicKey: KEY },
+    { owner: contractId(), dailyCapUsd: 5, autoApproveUsd: 5, ownerPublicKey: KEY },
+    { owner: contractId(), dailyCapUsd: 5, autoApproveUsd: 1, seedUsd: 5, ownerPublicKey: KEY },
   ]
   for (const body of bad) {
     const r = await call('POST', '/api/stellar/passkey/vault/deploy', body, deps)
@@ -624,7 +655,7 @@ test('the deploy refuses an account owner and an over-cap policy, before the key
 test('the deploy without a signer returns the exact constructor call and submits nothing', async () => {
   const { deps } = stubs()
   const owner = contractId()
-  const r = await call('POST', '/api/stellar/passkey/vault/deploy', { owner, dailyCapUsd: 5, autoApproveUsd: 1 }, { ...deps, signerAddress: () => null })
+  const r = await call('POST', '/api/stellar/passkey/vault/deploy', { owner, dailyCapUsd: 5, autoApproveUsd: 1, ownerPublicKey: KEY }, { ...deps, signerAddress: () => null })
   assert.equal(r.status, 200)
   assert.equal(r.body.ok, false)
   assert.equal(r.body.outcome, 'prepared')
@@ -648,7 +679,7 @@ test('a settled deploy reports both hashes, and a seed the operator cannot cover
       throw new Error('the seed must not be attempted when the balance cannot cover it')
     },
   })
-  const r = await call('POST', '/api/stellar/passkey/vault/deploy', { owner, dailyCapUsd: 5, autoApproveUsd: 1 }, deps)
+  const r = await call('POST', '/api/stellar/passkey/vault/deploy', { owner, dailyCapUsd: 5, autoApproveUsd: 1, ownerPublicKey: KEY }, deps)
   assert.equal(r.status, 200)
   assert.equal(r.body.ok, true)
   assert.equal(r.body.vault, vault)
@@ -673,7 +704,7 @@ test('a deploy the contract refuses is reported as refused, with our own error n
       contractErrorIsOurs: true,
     }),
   })
-  const r = await call('POST', '/api/stellar/passkey/vault/deploy', { owner: contractId(), dailyCapUsd: 5, autoApproveUsd: 1 }, deps)
+  const r = await call('POST', '/api/stellar/passkey/vault/deploy', { owner: contractId(), dailyCapUsd: 5, autoApproveUsd: 1, ownerPublicKey: KEY }, deps)
   assert.equal(r.status, 409)
   assert.equal(r.body.ok, false)
   assert.equal(r.body.contractErrorName, 'OwnerIsOperator')
@@ -824,4 +855,325 @@ test('the plan refuses a malformed vault or payee before it looks anything up', 
     const r = await call('POST', '/api/stellar/passkey/allowlist/plan', body, deps)
     assert.equal(r.status, 400, JSON.stringify(body))
   }
+})
+
+// ── SOW 2 D3: the network, from the body or the relayer URL's query string ───────
+
+test('the relay reads its network from the query string, which is the only place the kit can carry it', async () => {
+  const { deps, spy } = stubs()
+  const func = deployFunc(accountId(), pubnet.contracts.smartAccount!.wasmHash)
+  const r = await call('POST', '/api/stellar/passkey/relay?network=stellar:pubnet', relayBody(func, [authEntry(func, accountId())]), deps)
+  assert.equal(r.status, 501)
+  assert.equal(r.body.outcome, 'prepared')
+  assert.equal(r.body.network, 'stellar:pubnet')
+  assert.match(String(r.body.reason), /X402_STELLAR_PUBNET_OZ_KEY/, 'the pubnet key is the one named, so the query string was read')
+  assert.deepEqual(spy.fetches, [])
+})
+
+test('REFUSAL: a relay whose body and query string name different networks is refused before decoding', async () => {
+  const { deps, spy } = stubs()
+  const func = deployFunc(accountId(), WASM)
+  const r = await call('POST', '/api/stellar/passkey/relay?network=stellar:testnet', relayBody(func, [authEntry(func, accountId())], { network: 'stellar:pubnet' }), deps)
+  assert.equal(r.status, 400)
+  assert.equal(r.body.code, 'network_conflict')
+  assert.deepEqual(spy.fetches, [])
+  assert.deepEqual(spy.reads, [])
+})
+
+test('status answers per network, says it is served, and carries no stale testnet-only flag', async () => {
+  const { deps } = stubs()
+  for (const network of ['stellar:testnet', 'stellar:pubnet']) {
+    const r = await call('GET', `/api/stellar/passkey/status?network=${network}`, undefined, deps)
+    assert.equal(r.status, 200)
+    assert.equal(r.body.network, network)
+    assert.equal(r.body.served, true)
+    assert.deepEqual([...(r.body.servedNetworks as string[])].sort(), ['stellar:pubnet', 'stellar:testnet'])
+    assert.equal('pubnet' in r.body, false)
+    assert.equal('testnetOnly' in r.body, false)
+    const sa = r.body.smartAccount as Record<string, unknown>
+    const chain = network === 'stellar:pubnet' ? pubnet : testnet
+    assert.equal(sa.webauthnVerifier, chain.contracts.smartAccount!.webauthnVerifier, 'each network publishes its own verifier')
+    const op = r.body.operator as Record<string, unknown>
+    assert.equal(op.configured, true)
+    assert.equal(typeof op.address, 'string')
+  }
+})
+
+// ── SOW 2 D3.5: owner actions through the smart account are accepted shapes ──────
+
+test('D3.5: set_frozen, withdraw and set_policy through execute() are relayed shapes on a demo vault', async () => {
+  for (const fn of ['set_frozen', 'withdraw', 'set_policy']) {
+    const smartAccount = contractId()
+    const vault = contractId()
+    const { deps, spy, signer } = stubs({
+      readVault: async (v: string) => {
+        spy.reads.push(v)
+        return vaultState({ owner: smartAccount, operator: signer })
+      },
+    })
+    const func = executeFunc(smartAccount, vault, fn)
+    const r = await call('POST', '/api/stellar/passkey/relay', relayBody(func, [authEntry(func, smartAccount)]), deps)
+    assert.equal(r.status, 501, fn)
+    assert.equal(r.body.outcome, 'prepared')
+    assert.equal(r.body.rule, 'smart-account-execute')
+    assert.deepEqual(spy.codes, [smartAccount], 'the owner\'s code is read live before anything is forwarded')
+  }
+})
+
+test('REFUSAL: an owner call on a vault whose owner runs other code is not relayed, even on a vault we operate', async () => {
+  const smartAccount = contractId()
+  const { deps, spy, signer } = stubs(
+    {
+      readVault: async (v: string) => {
+        spy.reads.push(v)
+        return vaultState({ owner: smartAccount, operator: signer })
+      },
+    },
+    { readCode: async () => ({ ...DEMO_CODE, wasmHash: 'ee'.repeat(32) }) },
+  )
+  const func = executeFunc(smartAccount, contractId(), 'withdraw')
+  const r = await call('POST', '/api/stellar/passkey/relay', relayBody(func, [authEntry(func, smartAccount)]), { ...deps, env: { X402_STELLAR_TESTNET_OZ_KEY: 'test-key-value' } })
+  assert.equal(r.status, 403)
+  assert.equal(r.body.code, 'smart_account_code_mismatch')
+  assert.deepEqual(spy.fetches, [], 'a key we hold must not be used for a vault that is not a demo vault')
+})
+
+test('REFUSAL: the relay never pays for an owner call on a recorded flagship vault, and reads nothing to decide that', async () => {
+  const { deps, spy } = stubs()
+  const smartAccount = contractId()
+  const func = executeFunc(smartAccount, testnet.contracts.spendVault!, 'set_policy')
+  const r = await call('POST', '/api/stellar/passkey/relay', relayBody(func, [authEntry(func, smartAccount)]), deps)
+  assert.equal(r.status, 403)
+  assert.equal(r.body.code, 'flagship_vault')
+  assert.deepEqual(spy.reads, [])
+  assert.deepEqual(spy.codes, [])
+})
+
+test('a relayed owner call names who paid its fee, read off the ledger rather than assumed', async () => {
+  const smartAccount = contractId()
+  const hash = 'd4'.repeat(32)
+  const channelFund = accountId()
+  const { deps, signer } = stubs(
+    { readVault: async () => vaultState({ owner: smartAccount, operator: signer }) },
+    {
+      readFeePayer: async (): Promise<FeePayerRead> => ({
+        found: true,
+        status: 'SUCCESS',
+        ledger: 5000001,
+        feeAccount: channelFund,
+        sourceAccount: accountId(),
+        feeBump: true,
+        feeChargedStroops: '123456',
+      }),
+    },
+  )
+  const withKey: PasskeyRouteDeps = {
+    ...deps,
+    env: { X402_STELLAR_TESTNET_OZ_KEY: 'test-key-value' },
+    fetch: (async () => ({ status: 200, json: async () => ({ success: true, data: { transactionId: 't', status: 'submitted', hash } }) })) as unknown as typeof fetch,
+  }
+  const func = executeFunc(smartAccount, contractId(), 'set_frozen')
+  const r = await call('POST', '/api/stellar/passkey/relay', relayBody(func, [authEntry(func, smartAccount)]), withKey)
+  assert.equal(r.status, 200)
+  const fp = r.body.feePayer as Record<string, unknown>
+  assert.equal(fp.account, channelFund)
+  assert.equal(fp.who, 'relayer')
+  assert.equal(fp.feeBump, true)
+  assert.equal(fp.read, 'live')
+})
+
+// ── SOW 2 D3.8: a smart account adding a device to itself ───────────────────────
+
+function addRuleFunc(account: string, signers: xdr.ScVal[], contextType = 'Default', policies: xdr.ScMapEntry[] = []): xdr.HostFunction {
+  return invokeFunc(account, 'add_context_rule', [
+    xdr.ScVal.scvVec([xdr.ScVal.scvSymbol(contextType)]),
+    xdr.ScVal.scvString('device 2'),
+    xdr.ScVal.scvVoid(),
+    xdr.ScVal.scvVec(signers),
+    xdr.ScVal.scvMap(policies),
+  ])
+}
+const webauthnSigner = (verifier = VERIFIER) =>
+  xdr.ScVal.scvVec([xdr.ScVal.scvSymbol('External'), xdr.ScVal.scvAddress(new Address(verifier).toScAddress()), xdr.ScVal.scvBytes(randomBytes(85))])
+
+test('D3.8: add_context_rule with one passkey, authorized by the account itself, decodes and is relayed', async () => {
+  const { deps, spy } = stubs()
+  const account = contractId()
+  const func = addRuleFunc(account, [webauthnSigner()])
+  const r = await call('POST', '/api/stellar/passkey/relay?network=stellar:testnet', relayBody(func, [authEntry(func, account)]), deps)
+  assert.equal(r.status, 501, JSON.stringify(r.body))
+  assert.equal(r.body.outcome, 'prepared')
+  assert.equal(r.body.rule, 'smart-account-admin')
+  assert.deepEqual(spy.codes, [account], 'the account\'s own code is read live')
+  assert.deepEqual(spy.reads, [], 'adding a device touches no vault')
+})
+
+test('D3.8 REFUSAL: a second signer that is not a passkey, or a rule with a policy, is refused from the real XDR', async () => {
+  const { deps, spy } = stubs()
+  const account = contractId()
+  const delegated = xdr.ScVal.scvVec([xdr.ScVal.scvSymbol('Delegated'), xdr.ScVal.scvAddress(new Address(accountId()).toScAddress())])
+  const cases = [
+    addRuleFunc(account, [delegated]),
+    addRuleFunc(account, [webauthnSigner(contractId())]),
+    addRuleFunc(account, [webauthnSigner(), webauthnSigner()]),
+    addRuleFunc(account, [webauthnSigner()], 'Default', [new xdr.ScMapEntry({ key: xdr.ScVal.scvAddress(new Address(contractId()).toScAddress()), val: xdr.ScVal.scvVoid() })]),
+  ]
+  for (const func of cases) {
+    const r = await call('POST', '/api/stellar/passkey/relay', relayBody(func, [authEntry(func, account)]), deps)
+    assert.equal(r.status, 400)
+  }
+  const ruleZero = invokeFunc(account, 'add_signer', [xdr.ScVal.scvU32(0), webauthnSigner()])
+  const z = await call('POST', '/api/stellar/passkey/relay', relayBody(ruleZero, [authEntry(ruleZero, account)]), deps)
+  assert.equal(z.status, 400)
+  assert.match(String(z.body.reason), /2-of-2/)
+  assert.deepEqual(spy.codes, [], 'a shape refusal costs no ledger read')
+})
+
+test('D3.8 REFUSAL: an account running other code may not have the relay pay for its signer changes', async () => {
+  const { deps } = stubs({}, { readCode: async () => ({ ...DEMO_CODE, found: false, executable: null, wasmHash: null }) })
+  const account = contractId()
+  const func = addRuleFunc(account, [webauthnSigner()])
+  const r = await call('POST', '/api/stellar/passkey/relay', relayBody(func, [authEntry(func, account)]), deps)
+  assert.equal(r.status, 403)
+  assert.equal(r.body.code, 'not_smart_account')
+})
+
+// ── SOW 2 X.4: agent-pay acts only on demo vaults ───────────────────────────────
+
+test('X.4 REFUSAL: agent-pay refuses the flagship testnet vault by id, before any read, even with a signer set', async () => {
+  let paid = 0
+  const { deps, spy } = stubs({ policyPay: async () => { paid += 1; throw new Error('must not pay') } })
+  for (const vault of [testnet.contracts.spendVault!, testnet.contracts.passkeyVault!]) {
+    const r = await call('POST', '/api/stellar/passkey/agent-pay', { contract: vault, to: accountId(), amountUsd: 0.1 }, deps)
+    assert.equal(r.status, 403)
+    assert.equal(r.body.code, 'flagship_vault')
+  }
+  assert.equal(paid, 0)
+  assert.deepEqual(spy.reads, [])
+})
+
+test('X.4 REFUSAL: agent-pay will not pay from a vault our key operates when a G... account owns it', async () => {
+  let paid = 0
+  const { deps, signer } = stubs({
+    readVault: async () => vaultState({ owner: accountId(), operator: signer }),
+    policyPay: async () => { paid += 1; throw new Error('must not pay') },
+  })
+  const r = await call('POST', '/api/stellar/passkey/agent-pay', { contract: contractId(), to: accountId(), amountUsd: 0.1 }, deps)
+  assert.equal(r.status, 403)
+  assert.equal(r.body.code, 'owner_not_contract')
+  assert.equal(paid, 0)
+})
+
+test('X.4 REFUSAL: agent-pay will not pay from a vault whose smart-account owner runs other code', async () => {
+  let paid = 0
+  const owner = contractId()
+  const { deps, signer, spy } = stubs(
+    {
+      readVault: async () => vaultState({ owner, operator: signer }),
+      policyPay: async () => { paid += 1; throw new Error('must not pay') },
+    },
+    { readCode: async (c: string) => { spy.codes.push(c); return { ...DEMO_CODE, wasmHash: 'ee'.repeat(32) } } },
+  )
+  const r = await call('POST', '/api/stellar/passkey/agent-pay', { contract: contractId(), to: accountId(), amountUsd: 0.1 }, deps)
+  assert.equal(r.status, 403)
+  assert.equal(r.body.code, 'smart_account_code_mismatch')
+  assert.deepEqual(spy.codes, [owner])
+  assert.equal(paid, 0)
+})
+
+// ── SOW 2 D3.3: the deploy verifies its owner on the ledger first ───────────────
+
+test('D3.3 REFUSAL: the deploy reads the owner\'s signers first and refuses a delegated or extra signer, spending nothing', async () => {
+  let deployed = 0
+  const delegatedRules: SmartAccountRules = {
+    count: 1,
+    rules: [{ ...ONE_PASSKEY.rules[0], signers: [ONE_PASSKEY.rules[0].signers[0], { kind: 'delegated', address: accountId() }] }],
+    removed: [],
+  }
+  const { deps, spy } = stubs({ deployVault: async () => { deployed += 1; throw new Error('must not deploy') } }, {
+    readRules: async (c: string) => { spy.rules.push(c); return delegatedRules },
+  })
+  const owner = contractId()
+  const r = await call('POST', '/api/stellar/passkey/vault/deploy', { owner, ownerPublicKey: KEY, dailyCapUsd: 5, autoApproveUsd: 1 }, deps)
+  assert.equal(r.status, 403)
+  assert.equal(r.body.code, 'owner_signer_unexpected')
+  assert.match(String(r.body.reason), /Nothing was deployed and nothing was spent/)
+  assert.deepEqual(spy.rules, [owner])
+  assert.equal(deployed, 0)
+})
+
+test('D3.3 REFUSAL: a passkey key that is not the account\'s signer, other account code, or an unreadable account', async () => {
+  const cases: [Partial<SmartAccountReader>, string, number, string?][] = [
+    [{}, 'owner_key_mismatch', 403, `04${'99'.repeat(64)}`],
+    [{ readCode: async () => ({ ...DEMO_CODE, wasmHash: 'ee'.repeat(32) }) }, 'smart_account_code_mismatch', 403],
+    [{ readCode: async () => { throw new Error('ETIMEDOUT') } }, 'rpc_error', 502],
+    [{ readRules: async () => { throw new Error('ETIMEDOUT') } }, 'rpc_error', 502],
+  ]
+  for (const [accounts, code, status, key] of cases) {
+    const { deps } = stubs({ deployVault: async () => { throw new Error('must not deploy') } }, accounts)
+    const r = await call('POST', '/api/stellar/passkey/vault/deploy', { owner: contractId(), ownerPublicKey: key ?? KEY, dailyCapUsd: 5, autoApproveUsd: 1 }, deps)
+    assert.equal(r.status, status, code)
+    assert.equal(r.body.code, code)
+  }
+})
+
+test('D3.3: a settled deploy returns the deploy hash, the vault, who paid, the operator and the owner read back', async () => {
+  const vault = contractId()
+  const owner = contractId()
+  const hash = 'e5'.repeat(32)
+  const { deps, signer } = stubs({
+    deployVault: async () => ({ outcome: 'settled', vault, txHash: hash, ledger: 5000002, explorerUrl: `x/${hash}` }),
+    readTokenBalance: async () => 0n,
+    readVault: async () => vaultState({ owner, operator: signer }),
+  })
+  const r = await call('POST', '/api/stellar/passkey/vault/deploy', { owner, ownerPublicKey: KEY, dailyCapUsd: 5, autoApproveUsd: 1, seedUsd: 0 }, deps)
+  assert.equal(r.status, 200)
+  assert.equal(r.body.vault, vault)
+  assert.equal((r.body.deploy as Record<string, unknown>).txHash, hash)
+  assert.equal(r.body.operator, signer)
+  assert.deepEqual(r.body.feePayer, { account: signer, who: 'operator' })
+  assert.equal(r.body.vaultWasmHash, testnet.contracts.spendVaultWasmHash)
+  const back = r.body.ownerReadBack as Record<string, unknown>
+  assert.equal(back.read, 'live')
+  assert.equal(back.owner, owner)
+  assert.equal(back.matches, true)
+  assert.equal((r.body.ownerCheck as Record<string, unknown>).read, 'live')
+})
+
+// ── the two reads the owner's page makes ────────────────────────────────────────
+
+test('GET vault reads one vault live and says whether its owner is a demo smart account', async () => {
+  const owner = contractId()
+  const { deps, signer } = stubs({ readVault: async () => vaultState({ owner, operator: signer, frozen: true }) })
+  const contract = contractId()
+  const r = await call('GET', `/api/stellar/passkey/vault?contract=${contract}&network=stellar:testnet`, undefined, deps)
+  assert.equal(r.status, 200)
+  assert.equal(r.body.read, 'live')
+  assert.equal(r.body.owner, owner)
+  assert.equal(r.body.frozen, true)
+  assert.equal(r.body.ownerIsDemoSmartAccount, true)
+  assert.equal(r.body.operatorIsThisServer, true)
+  const bad = await call('GET', '/api/stellar/passkey/vault?contract=nope', undefined, deps)
+  assert.equal(bad.status, 400)
+})
+
+test('GET fee-payer names the fee-bump outer source from the ledger, and 404s a hash it cannot find', async () => {
+  const fund = accountId()
+  const hash = 'f6'.repeat(32)
+  const { deps, signer } = stubs({}, {
+    readFeePayer: async (h: string): Promise<FeePayerRead> =>
+      h === hash
+        ? { found: true, status: 'SUCCESS', ledger: 7, feeAccount: fund, sourceAccount: accountId(), feeBump: true, feeChargedStroops: '100' }
+        : { found: false, status: 'NOT_FOUND', ledger: null },
+  })
+  const r = await call('GET', `/api/stellar/passkey/fee-payer?hash=${hash}&network=stellar:testnet`, undefined, deps)
+  assert.equal(r.status, 200)
+  assert.equal(r.body.feeAccount, fund)
+  assert.equal(r.body.who, 'relayer')
+  assert.equal(r.body.feeBump, true)
+  assert.notEqual(r.body.feeAccount, signer)
+  const missing = await call('GET', `/api/stellar/passkey/fee-payer?hash=${'00'.repeat(32)}`, undefined, deps)
+  assert.equal(missing.status, 404)
+  const bad = await call('GET', '/api/stellar/passkey/fee-payer?hash=xyz', undefined, deps)
+  assert.equal(bad.status, 400)
 })

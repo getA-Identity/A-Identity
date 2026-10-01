@@ -1,0 +1,66 @@
+{
+  "hash": "eab46931587b7fadbaffa71fd96233954315bfd4a900dd7ba906de219d1912cf",
+  "chainId": "stellar",
+  "network": "stellar:pubnet",
+  "ledger": 64185772,
+  "createdAt": "2026-08-29T23:50:48.000Z",
+  "status": "success",
+  "resultCode": {
+    "tx": "txSuccess",
+    "inner": null,
+    "operations": [
+      "paymentSuccess"
+    ],
+    "contractError": null
+  },
+  "sourceAccount": "GDORXUAQDFOW3BN45DN5HLKMXZ57MBWIBBDWMJ6XMQYUDJ44EM7CU7VG",
+  "feeAccount": "GDORXUAQDFOW3BN45DN5HLKMXZ57MBWIBBDWMJ6XMQYUDJ44EM7CU7VG",
+  "feeChargedStroops": "100",
+  "envelopeXdr": "AAAAAgAAAADdG9AQGV1thbzo29OtTL579gbICEdmJ9dkMUGnnCM+KgAAA+gD02WbAAAAAgAAAAEAAAAAAAAAAAAAAABqk3GAAAAAAQAAAA42MTM4Njc2MjQxMjQ1OQAAAAAAAQAAAAAAAAABAAAAABekMYXMB6YOfDOZN5UB8eEqtx9+Y2IujE4TM/0rXmxtAAAAAAAAAAAKbknAAAAAAAAAAAGcIz4qAAAAQLiVNuoJkLnpy3h421pJn31kdclMZkPfnWPK4Ew/OPBBzKFaqk93JT2AQDrwtV1J2/5abSRuwZFYtiWr0z5kpAM=",
+  "resultXdr": "AAAAAAAAAGQAAAAAAAAAAQAAAAAAAAABAAAAAAAAAAA=",
+  "resultMetaXdr": "AAAABAAAAAAAAAACAAAAAwPTZawAAAAAAAAAAN0b0BAZXW2FvOjb061Mvnv2BsgIR2Yn12QxQaecIz4qAAAAAA1pOXgD02WbAAAAAQAAAAAAAAAAAAAAAAAAAAABAAAAAAAAAAAAAAEAAAAAAAAAAAAAAAAAAAAAAAAAAgAAAAAAAAAAAAAAAAAAAAMAAAAAA9NlowAAAABqk3AlAAAAAAAAAAED02WsAAAAAAAAAADdG9AQGV1thbzo29OtTL579gbICEdmJ9dkMUGnnCM+KgAAAAANaTl4A9NlmwAAAAIAAAAAAAAAAAAAAAAAAAAAAQAAAAAAAAAAAAABAAAAAAAAAAAAAAAAAAAAAAAAAAIAAAAAAAAAAAAAAAAAAAADAAAAAAPTZawAAAAAapNwWAAAAAAAAAABAAAAAAAAAAQAAAADA9NlrAAAAAAAAAAA3RvQEBldbYW86NvTrUy+e/YGyAhHZifXZDFBp5wjPioAAAAADWk5eAPTZZsAAAACAAAAAAAAAAAAAAAAAAAAAAEAAAAAAAAAAAAAAQAAAAAAAAAAAAAAAAAAAAAAAAACAAAAAAAAAAAAAAAAAAAAAwAAAAAD02WsAAAAAGqTcFgAAAAAAAAAAQPTZawAAAAAAAAAAN0b0BAZXW2FvOjb061Mvnv2BsgIR2Yn12QxQaecIz4qAAAAAAL677gD02WbAAAAAgAAAAAAAAAAAAAAAAAAAAABAAAAAAAAAAAAAAEAAAAAAAAAAAAAAAAAAAAAAAAAAgAAAAAAAAAAAAAAAAAAAAMAAAAAA9NlrAAAAABqk3BYAAAAAAAAAAMD02WjAAAAAAAAAAAXpDGFzAemDnwzmTeVAfHhKrcffmNiLoxOEzP9K15sbQAAAmUOZdzdAZp0gAAAL0QAAAACAAAAAAAAAAAAAAAAAQAAAAAAAAAAAAABAAAAAAAAAAAAAAAAAAAAAAAAAAIAAAAAAAAAAAAAAAAAAAADAAAAAAPTWwIAAAAAapMzcQAAAAAAAAABA9NlrAAAAAAAAAAAF6QxhcwHpg58M5k3lQHx4Sq3H35jYi6MThMz/StebG0AAAJlGNQmnQGadIAAAC9EAAAAAgAAAAAAAAAAAAAAAAEAAAAAAAAAAAAAAQAAAAAAAAAAAAAAAAAAAAAAAAACAAAAAAAAAAAAAAAAAAAAAwAAAAAD01sCAAAAAGqTM3EAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=",
+  "metaFrom": "stellar-expert",
+  "metaNote": "Result meta from Stellar Expert, a third-party indexer, accepted because the envelope and result it served match Horizon byte for byte. Meta is not covered by the transaction hash.",
+  "fetchedFrom": "horizon",
+  "explorer": "https://stellar.expert/explorer/public/tx/eab46931587b7fadbaffa71fd96233954315bfd4a900dd7ba906de219d1912cf",
+  "archivedAt": "2026-10-01T20:44:14.785Z",
+  "caption": "The second funding leg leaves the Stellar treasury",
+  "deliverable": null,
+  "provenance": {
+    "entry": "algorand",
+    "kind": "bridge",
+    "label": "The second funding leg leaves the Stellar treasury",
+    "note": "Another 17.5 XLM, this one crossing into USDC on the algorand network for the buyer."
+  },
+  "decoded": {
+    "hash": "eab46931587b7fadbaffa71fd96233954315bfd4a900dd7ba906de219d1912cf",
+    "innerHash": null,
+    "status": "success",
+    "resultCode": {
+      "tx": "txSuccess",
+      "inner": null,
+      "operations": [
+        "paymentSuccess"
+      ],
+      "contractError": null
+    },
+    "sourceAccount": "GDORXUAQDFOW3BN45DN5HLKMXZ57MBWIBBDWMJ6XMQYUDJ44EM7CU7VG",
+    "feeAccount": "GDORXUAQDFOW3BN45DN5HLKMXZ57MBWIBBDWMJ6XMQYUDJ44EM7CU7VG",
+    "feeBump": false,
+    "feeChargedStroops": "100",
+    "operations": [
+      {
+        "type": "payment",
+        "source": null,
+        "contract": null,
+        "function": null,
+        "args": null
+      }
+    ],
+    "auth": [],
+    "summary": "One payment operation. Fee 0.00001 XLM paid by GDORXU...U7VG. It succeeded.",
+    "caveats": [
+      "Result meta from Stellar Expert, a third-party indexer, accepted because the envelope and result it served match Horizon byte for byte. Meta is not covered by the transaction hash."
+    ]
+  }
+}

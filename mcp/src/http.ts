@@ -44,6 +44,7 @@ import { handleCctpRoutes } from './http/cctp-routes.js'
 import { handleChainRoutes } from './http/chain-routes.js'
 import { handleArcRoutes } from './http/arc-routes.js'
 import { handleStellarVaultRoutes } from './http/stellar-vault-routes.js'
+import { handleStellarEvidenceRoutes } from './http/stellar-evidence-routes.js'
 import { handleStellarPasskeyRoutes } from './http/stellar-passkey-routes.js'
 import { handleSoroswapRoutes } from './http/soroswap-routes.js'
 import { handleAgentRoutes } from './http/agent-routes.js'
@@ -197,12 +198,17 @@ const server = http.createServer(async (req, res) => {
   // when the rail is unconfigured, and settle is payTo-allowlisted because we pay the fee.
   // /api/stellar/passkey/* is exempt on different terms, and they are worth stating because
   // no payment gates it either. The public /stellar demo has no A-Identity login: the owner is
-  // a passkey the browser holds, not a session we issued. What stands in for the gate is that
-  // every endpoint there is TESTNET ONLY, refuses pubnet by name, is rate-budgeted, and fails
-  // closed: the relay decodes the XDR and forwards only a smart-account deploy against the
-  // registry's wasm hash or an owner call on a vault whose live operator is our own signer,
-  // the deploy and agent-pay spend the testnet operator key under caps of 10 / 2 / 1 USD, and
-  // the allowlist plan writes nothing. Nothing there can reach pubnet or a session's agents.
+  // a passkey the browser holds, not a session we issued. It serves BOTH Stellar networks
+  // (an unnamed request is testnet, so reaching pubnet is always asked for by name). What
+  // stands in for the gate is that every endpoint there is rate-budgeted and fails closed:
+  // the relay decodes the XDR and forwards only a smart-account deploy against the registry's
+  // wasm hash, an owner call on a demo vault (our signer operates it, and its live owner is a
+  // smart account running the registry's account wasm), or a smart account adding one
+  // WebAuthn signer to itself. The deploy first reads the owner account's signers off the
+  // ledger and requires exactly the passkey the browser named. Deploy and agent-pay spend the
+  // operator key only under per-network caps (testnet 10 / 2 / 1 USD, pubnet dust, with a
+  // shared daily seed ceiling), agent-pay refuses the recorded flagship vaults by id, and the
+  // allowlist plan writes nothing. Nothing there can reach a session's agents.
   const isMutation =
     req.method === 'POST' && url.pathname.startsWith('/api/') && !url.pathname.startsWith('/api/auth/') &&
     !url.pathname.startsWith('/api/celo/tools/') &&
@@ -248,6 +254,8 @@ const server = http.createServer(async (req, res) => {
     // the same story and sit under their own prefix, so the order is about keeping the two
     // vault surfaces visibly separate rather than about a path collision.
     if (await handleStellarVaultRoutes(ctx)) return
+    // One public GET, /api/stellar/tx/:hash: a transaction decoded into what it proves.
+    if (await handleStellarEvidenceRoutes(ctx)) return
     // The passkey demo: its own prefix under /api/stellar/, no overlap with the vault pair.
     if (await handleStellarPasskeyRoutes(ctx)) return
     // Soroswap: one public GET, a simulated price and nothing signed.
@@ -366,11 +374,14 @@ server.listen(PORT, () => {
   console.error(`  GET  /api/stellar/vault/is-allowed  one payee against a vault's allowlist, live (public)`)
   console.error(`  POST /api/stellar/vault/prepare  build an owner call unsigned (verified session, owner-gated)`)
   console.error(`  POST /api/stellar/vault/submit   broadcast the envelope the owner signed (we never sign it)`)
-  console.error(`  GET  /api/stellar/passkey/status what the passkey demo is configured with (testnet only, never a secret)`)
-  console.error(`  POST /api/stellar/passkey/relay  fee-sponsor a smart-account deploy or a passkey-signed vault owner call via OZ Channels (allowlisted XDR)`)
-  console.error(`  POST /api/stellar/passkey/vault/deploy   deploy a vault owned by a passkey smart account, operator = this server (testnet, capped)`)
+  console.error(`  GET  /api/stellar/tx/:hash?network=  one transaction decoded: fee payer, call, result, auth signers (public, read-only)`)
+  console.error(`  GET  /api/stellar/passkey/status?network=   what the passkey demo is configured with per network (pubnet or testnet, never a secret)`)
+  console.error(`  POST /api/stellar/passkey/relay?network=    fee-sponsor a smart-account deploy, a passkey-signed owner call on a demo vault, or a device add, via OZ Channels (allowlisted XDR)`)
+  console.error(`  POST /api/stellar/passkey/vault/deploy   deploy a vault owned by a verified one-passkey smart account, operator = this server (per-network caps)`)
+  console.error(`  GET  /api/stellar/passkey/vault          one demo vault read live (owner, operator, frozen, balance)`)
+  console.error(`  GET  /api/stellar/passkey/fee-payer      who paid a transaction's fee, read from the ledger (fee-bump outer source)`)
   console.error(`  POST /api/stellar/passkey/allowlist/plan risk_check a payee and map ALLOW/WARN/DENY onto the vault allowlist (writes nothing)`)
-  console.error(`  POST /api/stellar/passkey/agent-pay      the agent side: pay() through a vault this server operates (testnet, <= 1 USD)`)
+  console.error(`  POST /api/stellar/passkey/agent-pay      the agent side: pay() through a demo vault this server operates (per-network caps, never a flagship vault)`)
   console.error(`  GET  /api/stellar/soroswap/quote what a swap would return, simulated live off Soroswap's router (public, signs nothing)`)
   console.error(`  GET  /api/cctp/stellar/status    CCTP between Stellar and EVM: chains, Circle-verified contracts, signers`)
   console.error(`  POST /api/cctp/stellar/bridge    prepared-or-executed CCTP transfer (verified session, capped, testnet unless opted in)`)

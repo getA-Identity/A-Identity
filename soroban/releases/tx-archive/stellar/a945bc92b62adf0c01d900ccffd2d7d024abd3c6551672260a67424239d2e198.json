@@ -1,0 +1,66 @@
+{
+  "hash": "a945bc92b62adf0c01d900ccffd2d7d024abd3c6551672260a67424239d2e198",
+  "chainId": "stellar",
+  "network": "stellar:pubnet",
+  "ledger": 64154689,
+  "createdAt": "2026-08-27T22:45:49.000Z",
+  "status": "success",
+  "resultCode": {
+    "tx": "txSuccess",
+    "inner": null,
+    "operations": [
+      "paymentSuccess"
+    ],
+    "contractError": null
+  },
+  "sourceAccount": "GAHWB3OFVABZL3FDDOZDF5XHDECJQC3YG2J3KZQCC2Q34MQJHTTQK45W",
+  "feeAccount": "GAHWB3OFVABZL3FDDOZDF5XHDECJQC3YG2J3KZQCC2Q34MQJHTTQK45W",
+  "feeChargedStroops": "100",
+  "envelopeXdr": "AAAAAgAAAAAPYO3FqAOV7KMbsjL25xkEmAt4NpO1ZgIWob4yCTznBQAAA+gD0uvXAAAAAgAAAAEAAAAAAAAAAAAAAABqkL6SAAAAAQAAAAkxNjQxMzI2MTIAAAAAAAABAAAAAAAAAAEAAAAA08Tm+SLyP+/tqV0T8fKUB2KPM1W2BA1HxA2t5uF4zGgAAAABVVNEQwAAAAA7mRE4Dv6Yi6CokA6xz+RPNm99vpRr7QdyQPf2JN8VxQAAAAAA1Z+AAAAAAAAAAAEJPOcFAAAAQJKjE59wa8Qs8XOk/3Pj1SrsXKhpFEBJLfds6t6kfRzeorVOuGED5XcdYDSRXixIJtziOS7DbUlaF36PatUXXAk=",
+  "resultXdr": "AAAAAAAAAGQAAAAAAAAAAQAAAAAAAAABAAAAAAAAAAA=",
+  "resultMetaXdr": "AAAABAAAAAAAAAACAAAAAwPS7EEAAAAAAAAAAA9g7cWoA5XsoxuyMvbnGQSYC3g2k7VmAhahvjIJPOcFAAAAAAExLDcD0uvXAAAAAQAAAAEAAAAAAAAAAAAAAAABAAAAAAAAAAAAAAEAAAAAAAAAAAAAAAAAAAAAAAAAAgAAAAAAAAAAAAAAAAAAAAMAAAAAA9LsJAAAAABqkL11AAAAAAAAAAED0uxBAAAAAAAAAAAPYO3FqAOV7KMbsjL25xkEmAt4NpO1ZgIWob4yCTznBQAAAAABMSw3A9Lr1wAAAAIAAAABAAAAAAAAAAAAAAAAAQAAAAAAAAAAAAABAAAAAAAAAAAAAAAAAAAAAAAAAAIAAAAAAAAAAAAAAAAAAAADAAAAAAPS7EEAAAAAapC+HQAAAAAAAAABAAAAAAAAAAQAAAADA9LsLAAAAAEAAAAAD2DtxagDleyjG7Iy9ucZBJgLeDaTtWYCFqG+Mgk85wUAAAABVVNEQwAAAAA7mRE4Dv6Yi6CokA6xz+RPNm99vpRr7QdyQPf2JN8VxQAAAAABfXhAf/////////8AAAABAAAAAAAAAAAAAAABA9LsQQAAAAEAAAAAD2DtxagDleyjG7Iy9ucZBJgLeDaTtWYCFqG+Mgk85wUAAAABVVNEQwAAAAA7mRE4Dv6Yi6CokA6xz+RPNm99vpRr7QdyQPf2JN8VxQAAAAAAp9jAf/////////8AAAABAAAAAAAAAAAAAAADA9LppAAAAAEAAAAA08Tm+SLyP+/tqV0T8fKUB2KPM1W2BA1HxA2t5uF4zGgAAAABVVNEQwAAAAA7mRE4Dv6Yi6CokA6xz+RPNm99vpRr7QdyQPf2JN8VxQAAAFC7tLQ5f/////////8AAAABAAAAAAAAAAAAAAABA9LsQQAAAAEAAAAA08Tm+SLyP+/tqV0T8fKUB2KPM1W2BA1HxA2t5uF4zGgAAAABVVNEQwAAAAA7mRE4Dv6Yi6CokA6xz+RPNm99vpRr7QdyQPf2JN8VxQAAAFC8ilO5f/////////8AAAABAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA==",
+  "metaFrom": "stellar-expert",
+  "metaNote": "Result meta from Stellar Expert, a third-party indexer, accepted because the envelope and result it served match Horizon byte for byte. Meta is not covered by the transaction hash.",
+  "fetchedFrom": "horizon",
+  "explorer": "https://stellar.expert/explorer/public/tx/a945bc92b62adf0c01d900ccffd2d7d024abd3c6551672260a67424239d2e198",
+  "archivedAt": "2026-10-01T22:56:46.837Z",
+  "caption": "Gas wallet funded from Stellar pubnet USDC via a NEAR Intents swap",
+  "deliverable": null,
+  "provenance": {
+    "entry": "base",
+    "kind": "funding",
+    "label": "Gas wallet funded from Stellar pubnet USDC via a NEAR Intents swap",
+    "note": "1.4 USDC left a pubnet burner into the market-maker deposit with a routing memo, and 0.000555 ETH arrived on Base for the operator wallet about 30 seconds later. The market maker's Base-side delivery transaction is theirs, not ours, so it is not claimed here."
+  },
+  "decoded": {
+    "hash": "a945bc92b62adf0c01d900ccffd2d7d024abd3c6551672260a67424239d2e198",
+    "innerHash": null,
+    "status": "success",
+    "resultCode": {
+      "tx": "txSuccess",
+      "inner": null,
+      "operations": [
+        "paymentSuccess"
+      ],
+      "contractError": null
+    },
+    "sourceAccount": "GAHWB3OFVABZL3FDDOZDF5XHDECJQC3YG2J3KZQCC2Q34MQJHTTQK45W",
+    "feeAccount": "GAHWB3OFVABZL3FDDOZDF5XHDECJQC3YG2J3KZQCC2Q34MQJHTTQK45W",
+    "feeBump": false,
+    "feeChargedStroops": "100",
+    "operations": [
+      {
+        "type": "payment",
+        "source": null,
+        "contract": null,
+        "function": null,
+        "args": null
+      }
+    ],
+    "auth": [],
+    "summary": "One payment operation. Fee 0.00001 XLM paid by GAHWB3...K45W. It succeeded.",
+    "caveats": [
+      "Result meta from Stellar Expert, a third-party indexer, accepted because the envelope and result it served match Horizon byte for byte. Meta is not covered by the transaction hash."
+    ]
+  }
+}

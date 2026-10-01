@@ -5,8 +5,15 @@ description: "Both Stellar networks: the Soroban spend vault holding real Circle
 
 Stellar is the only chain here where the spend limit is enforced by a contract *before*
 the payment exists, and the only one where a buyer pays for a trust check without holding
-a single unit of gas. Both networks run the same wasm and the same rail code:
-`stellar:pubnet` is `live`, `stellar:testnet` is `beta`.
+a single unit of gas. Both networks run the same rail code and the same vault contract,
+at two versions named [below](#what-is-deployed): `stellar:pubnet` is `live`,
+`stellar:testnet` is `beta`. Both
+networks are on protocol 29 (testnet since 2026-09-29, pubnet since 2026-10-01).
+
+Three companion pages: [the live vault panel](https://a-identity.xyz/app/vault/stellar)
+reads any of our vaults with no wallet and no sign-in, [the proof page](https://a-identity.xyz/proof/stellar)
+lists every transaction we claim on this chain, and the passkey owner has its own
+[selection record](/chains/stellar-d3-selection) and [recovery page](/chains/stellar-passkey-recovery).
 
 ## Why Stellar
 
@@ -75,9 +82,9 @@ refusal of a payment that is in fact in flight.
 | Contract | pubnet | testnet |
 | --- | --- | --- |
 | `AgentSpendPolicy` (ours) | [`CB5LYXFK...KWSYP`](https://stellar.expert/explorer/public/contract/CB5LYXFKKTKDDSCM6JO6C4GNRQUFBGSLYDET6Q56JNFJQSMBKH6KWSYP) | [`CAIL6ECR...OEB4UI`](https://stellar.expert/explorer/testnet/contract/CAIL6ECRAB5FUURQ54R7OTZPXRRCDO2S353YT6N6UZUWIBDG2ZOEB4UI) |
-| `AgentSpendPolicy`, passkey-owned (ours) | testnet only | [`CBGTXWFB...NS6J6U`](https://stellar.expert/explorer/testnet/contract/CBGTXWFBYAOZBR6EN3UK4PTLUAY6BRV2C36D3DPOTE5JSOLQXANS6J6U) |
-| OpenZeppelin smart account (third party) | testnet only | [`CC5RNXNH...VM3RWA`](https://stellar.expert/explorer/testnet/contract/CC5RNXNHKKPAHFP5YEOTZDFOQDQVC6AQKX3EH3W6QKFKGVBAXPVM3RWA) |
-| OpenZeppelin WebAuthn verifier (third party) | testnet only | [`CC7EKIHQ...ZIOM3F`](https://stellar.expert/explorer/testnet/contract/CC7EKIHQP3TN4CARQDND6CEOY2UXLWWC2X5GHTD5NLAT7BG5GPZIOM3F) |
+| `AgentSpendPolicy`, 2026-09-19 passkey rehearsal (ours; software key, not a device) | none | [`CBGTXWFB...NS6J6U`](https://stellar.expert/explorer/testnet/contract/CBGTXWFBYAOZBR6EN3UK4PTLUAY6BRV2C36D3DPOTE5JSOLQXANS6J6U) |
+| OpenZeppelin smart account instance from that rehearsal (our instance of their wasm) | none | [`CC5RNXNH...VM3RWA`](https://stellar.expert/explorer/testnet/contract/CC5RNXNHKKPAHFP5YEOTZDFOQDQVC6AQKX3EH3W6QKFKGVBAXPVM3RWA) |
+| OpenZeppelin WebAuthn verifier (third party, their published deployment) | `CB7HENHJ7NF34I5FFXQK7D5I3WWQRGB5O5XO77D3NXMT7LM7LOKRQ5YR` | [`CC7EKIHQ...ZIOM3F`](https://stellar.expert/explorer/testnet/contract/CC7EKIHQP3TN4CARQDND6CEOY2UXLWWC2X5GHTD5NLAT7BG5GPZIOM3F) |
 | USDC, SEP-41 SAC | [`CCW67TSZ...SJMI75`](https://stellar.expert/explorer/public/contract/CCW67TSZV3SSS2HXMBQ5JFGCKJNXKZM7UQUWUZPUTHXSTZLEO7SJMI75) | [`CBIELTK6...XQDAMA`](https://stellar.expert/explorer/testnet/contract/CBIELTK6YBZJU5UP2WWQEUCYKLPU6AUNZ2BQ4WWFEIE3USCIHMXQDAMA) |
 | CCTP TokenMessengerMinter | `CAE2G5Z77UP7GYPYGFOWFGW7C7J6I4YP2AFGSADRKQY62SYUFLPNFTXL` | `CDNG7HXAPBWICI2E3AUBP3YZWZELJLYSB6F5CC7WLDTLTHVM74SLRTHP` |
 | CCTP MessageTransmitter | `CACMENFFJPJMSDAJQLX4R7K3SFZIW2LJSE3R2UMLGSWHFHS353FVXAZV` | `CBJ6MTCKKZG73PMDZCJMSFRD7DQEMI4FKDH7CGDSV4W6FHCRBCQAVVJY` |
@@ -91,15 +98,23 @@ contracts are Circle's, and the registry cites the Circle page each row was read
 Stellar 8004 rows belong to TrionLabs: we **read** them, labeled third-party, and they are
 not our anchor. See [Identity on Stellar](#identity-on-stellar-stated-plainly) below. The
 two OpenZeppelin rows are theirs as well: the smart account instance is ours, the account
-wasm and the WebAuthn verifier behind it are third-party testnet deployments we read out of
-the `smart-account-kit` manifest rather than built or verified. See
-[Passkey owner](#passkey-owner) below.
+wasm and the WebAuthn verifier behind it are OpenZeppelin's published deployments, read
+out of the `smart-account-kit` manifest rather than built by us. The device-passkey owner
+for SOW 2 does not use them on testnet: we build the account and verifier ourselves from
+OpenZeppelin's audited release line, as the [selection record](/chains/stellar-d3-selection)
+explains. See [Passkey owner](#passkey-owner) below.
 
-All three vaults carry the same wasm, sha256
+The three vaults above carry the same wasm, `v0.1.0`, sha256
 `155eb31c1867254eacbf1b7a4755164d15cc6b6f939644705ab6b8df61579239`, byte for byte, so
 pubnet runs the code that has been under test since the first testnet deploy rather than a
 rebuild of it. The pubnet vault was deployed 2026-08-24, the first testnet vault
-2026-08-15, and the passkey-owned testnet vault 2026-09-19.
+2026-08-15, and the passkey rehearsal vault 2026-09-19. Vaults deployed for SOW 2 run
+`v0.1.1`, a rebuild with one change (see [the gate order](#the-gate-order-and-why-order-is-the-product)),
+so from then on there are two wasm hashes on testnet, not one. Each `v0.1.1` vault's hash
+is named in its release receipt in
+[`soroban/releases`](https://github.com/getA-Identity/A-Identity/tree/main/soroban/releases).
+The existing vaults keep `v0.1.0`: the contract has no upgrade entrypoint, so a fix
+reaches a vault only through a new deployment.
 
 ## The spend vault
 
@@ -114,13 +129,54 @@ owner transfer on either network.
 | Auto-approve ceiling per payment | 0.25 USDC | 2 USDC | 1 USDC |
 | Owner | 2-of-3 multisig since 2026-08-25 | single key | a smart account with one passkey signer |
 
+### Check a number yourself: a worked example
+
+Every number the [vault panel](https://a-identity.xyz/app/vault/stellar) shows is read off
+the ledger, and you can read the same storage without us. Take the testnet vault's limits:
+
+1. Open
+   [`CAIL6ECR...OEB4UI` on stellar.expert](https://stellar.expert/explorer/testnet/contract/CAIL6ECRAB5FUURQ54R7OTZPXRRCDO2S353YT6N6UZUWIBDG2ZOEB4UI)
+   and choose the **Storage** tab.
+2. Open the contract **instance** entry. It is one ledger entry holding the vault's
+   configuration as a map.
+3. Find `DailyCap`. It reads **`100000000`**, an `i128` in the token's base units. Stellar
+   USDC has 7 decimals, so that is 100000000 / 10^7 = **10 USDC per UTC day**.
+4. Find `AutoApproveMax`. It reads **`20000000`**, which is **2 USDC**: the largest single
+   payment the agent may make on its own.
+5. Compare both with the panel's daily cap and auto-approve rows. They are the same two
+   integers, divided by 10^7.
+
+We read these values live over Soroban RPC at testnet ledger 4974373 on 2026-10-01 (UTC).
+The same instance entry also holds `Owner`, `Operator`, `Token`, `Decimals` (7),
+`Frozen`, `AllowlistEnabled` and `SessionKeyExpiry` (0, meaning no time bound).
+
+**Why you will usually not find "spent today".** The day's running total is not in the
+instance. It is a separate **temporary** entry keyed `SpentOnDay(day)`, where `day` is the
+ledger's Unix time divided by 86400 and rounded down (day 20727 is 2026-10-01 UTC). It is
+written only when a payment happens. On a day with no payments it simply does not exist,
+and the vault reads a missing entry as zero, which is the correct answer: nothing was
+spent. On 2026-10-01 both `SpentOnDay(20726)` and `SpentOnDay(20727)` were absent for this
+vault, so its spend for both days read as zero. On a day with payments the entry appears, its value is
+an `i128` in the same 7-decimal units, and it lives for about two days, so yesterday's
+entry can still sit beside today's. `owner_pay` adds to it like any other payment, but it
+is never refused by it.
+
 ### The gate order, and why order is the product
 
 The ladder runs in a fixed order, and the order is observable behaviour rather than an
 implementation detail: an agent told `Frozen` when it expected `DailyCapExceeded` routes to
-the wrong recovery path. Both entry points first refuse an invalid payee, the vault itself
-or the settlement token. For an operator payment the ladder then runs amount, freeze,
-session-key expiry, allowlist, auto-approve ceiling, daily cap, and finally balance.
+the wrong recovery path. For an operator payment the ladder runs amount, payee (refusing
+the vault itself or the settlement token), freeze, session-key expiry, allowlist,
+auto-approve ceiling, daily cap, and finally balance.
+
+That first pair changed between versions, and the change is the only one in `v0.1.1`. In
+`v0.1.0` the payment path checked the payee before the amount while `withdraw` checked
+the amount first, so the same doubly invalid input (a zero amount to the vault's own
+address) was refused as `InvalidPayee` by `pay` and as `InvalidAmount` by `withdraw`.
+Our internal audit recorded it as finding A3-02. `v0.1.1` moves the amount check to the
+front of the shared payment path, so `pay`, `owner_pay` and `withdraw` all answer
+`InvalidAmount` first, which is what the invariant and the test written for it always
+said. The three `v0.1.0` vaults above keep the old order.
 
 That last pair is worth reading closely. When the pubnet vault's budget was spent to its
 edge, the next payment was refused with `DailyCapExceeded` even though the vault was also
@@ -147,7 +203,10 @@ about total outflow.
 | 10 | `OwnerIsOperator` | Owner and operator are the same address. Refused at construction and on `set_operator`. |
 
 These discriminants are frozen public ABI. A client decodes an integer, not a name, so the
-list is append-only.
+list is append-only. Two changes that would break that ABI or the constructor, renumbering
+the errors (internal finding A4-01) and taking the allowlist as a constructor argument,
+are deliberately **not** in `v0.1.1`; they are deferred to a later version so that every
+client decoding these codes today keeps working.
 
 <Warning>
   **A refusal has no transaction hash on Soroban, and that is the platform rather than
@@ -184,15 +243,37 @@ There are two ways to be that owner, and the second one has no seed phrase in it
 can be a plain `G...` account signing with a Stellar wallet, which is what both vaults in
 the table above use. Or the owner can be a **contract**, because `owner.require_auth()`
 does not care which: Soroban dispatches to a contract owner's `__check_auth`, so a smart
-account whose only signer is a passkey can hold the same authority. That is not a design
-note any more. It ran on testnet on 2026-09-19, and the next section is the record.
+account whose only signer is a passkey can hold the same authority. The contract path ran
+on testnet on 2026-09-19 with a software key standing in for the passkey; the next section
+is that record, and what the device-passkey run for SOW 2 changes.
 
 ## Passkey owner
 
-A spend vault whose owner is a passkey. No seed phrase, no browser extension, no key this
-server could sign with even if it wanted to. The owner is an OpenZeppelin smart account
-contract whose single signer is a WebAuthn P-256 credential, and the vault's
-`owner.require_auth()` is satisfied because that contract is the direct invoker of the call.
+A spend vault whose owner is a passkey. No seed phrase, no browser extension, and no owner
+key this server could sign with even if it wanted to. The owner is an OpenZeppelin smart
+account contract whose single signer is a WebAuthn P-256 credential, and the vault's
+`owner.require_auth()` is satisfied because that contract is the direct invoker of the call,
+which it can only be after the passkey has signed for that exact call. Why this account
+and not another is the [selection record](/chains/stellar-d3-selection); what happens if
+the passkey is lost is the [recovery page](/chains/stellar-passkey-recovery), and it is
+worth reading first.
+
+The page that runs this flow is [a-identity.xyz/stellar](https://a-identity.xyz/stellar).
+It opens on **pubnet** by default, with dust amounts capped by the backend and
+OpenZeppelin's own published account and verifier, labelled as theirs. Add
+`?network=testnet` to run it on testnet, where the SOW 2 device-passkey evidence is
+produced, against an account and verifier we build from OpenZeppelin's audited release
+line. Fees are sponsored through OpenZeppelin Channels only when the deployment has a
+Channels key configured for that network; when it does not, the page says so and submits
+nothing.
+
+<Warning>
+  **Everything in the diagram and the table below is the 2026-09-19 rehearsal, not a
+  device passkey.** Every owner signature in it came from a software P-256 key generated
+  inside our own script (`mcp/scripts/stellar-passkey-proof.mjs`). It proves the contract
+  path accepts a WebAuthn-format signature. It is not evidence that a person's device
+  signed anything, and it is never presented as such.
+</Warning>
 
 ```mermaid
 sequenceDiagram
@@ -208,7 +289,7 @@ sequenceDiagram
     Note over PK,V: Owner side. The owner is a contract, so there is no owner key.
     PK->>SA: sign the authorization digest
     SA->>SA: __check_auth verifies P-256 through the WebAuthn verifier CC7EKIHQ
-    BE->>CH: relay the func and its auth, testnet only, fail closed
+    BE->>CH: relay the func and its auth, fail closed
     CH->>V: execute calls set_policy, 5 USDC per day, 1 USDC per payment
     V-->>CH: owner.require_auth satisfied, the invoker IS the owner
     Note over BE,CH: Channels sources and pays the transaction. Proven on 2026-09-19 through this relay, ledgers 4764131 to 4764146.
@@ -249,8 +330,11 @@ carrying wasm `155eb31c...9239`, the same code the other two vaults run. Its own
 an instance of OpenZeppelin's account wasm `1b5f4534...785a` with their WebAuthn verifier
 [`CC7EKIHQ...ZIOM3F`](https://stellar.expert/explorer/testnet/contract/CC7EKIHQP3TN4CARQDND6CEOY2UXLWWC2X5GHTD5NLAT7BG5GPZIOM3F)
 behind it, deployed through the `smart-account-kit` npm package 0.8.0. The whole record,
-with fees and the live reads taken afterwards, is in
-[`soroban/releases/testnet-passkey-owner-2026-09-19.json`](https://github.com/getA-Identity/A-Identity/blob/main/soroban/releases/testnet-passkey-owner-2026-09-19.json).
+with fees and the live reads taken afterwards, is `testnet-passkey-owner-2026-09-19.json`
+in [`soroban/releases`](https://github.com/getA-Identity/A-Identity/tree/main/soroban/releases).
+The rehearsal smart account's instance has since been archived for unpaid rent (read
+over RPC on 2026-10-01), so it cannot sign again without a restore; the vault itself is
+still live.
 
 ### Why this is a second vault rather than a migration
 
@@ -276,32 +360,39 @@ boolean per payee, and a WARN that nobody acted on looks exactly like a payee no
 ever mentioned.
 
 <Warning>
-  **Testnet only, and the passkey in the record was software.** The P-256 key in the
-  2026-09-19 run was generated inside the process rather than held by a platform
+  **The 2026-09-19 rehearsal ran on testnet, and its passkey was software.** The P-256 key
+  in that run was generated inside our own script rather than held by a platform
   authenticator: the same verifier contract, the same WebAuthn signature format of
   `authenticatorData`, `clientDataJSON` and a low-S DER signature, and the same `execute`
   path. The only difference is where the private key lives, which means the run proves the
   contract path accepts a WebAuthn signature and proves nothing about a real
-  authenticator's user-verification prompt.
+  authenticator's user-verification prompt. The SOW 2 device-passkey run is a separate
+  record, made in a browser with a real device on
+  [a-identity.xyz/stellar?network=testnet](https://a-identity.xyz/stellar?network=testnet),
+  and it is listed on [the proof page](https://a-identity.xyz/proof/stellar) on its own.
 
-  Five more caveats, in the order they would bite:
+  Five more caveats about the rehearsal, in the order they would bite:
 
-  - **One passkey is one signer.** The smart account was created with a single WebAuthn
-    signer and no recovery signer. Losing the passkey loses the owner, and since there is
-    no `set_owner` there is no path around that: the balance would be unrecoverable. Adding
-    a recovery signer is the mitigation and it was not applied here.
-  - **The kit is unaudited by its own statement**, the OpenZeppelin Stellar contracts under
-    it were audited at `rc-v0.7.0` with a different scope, and the deployed artifacts use a
-    later source revision than that audit. Our `AgentSpendPolicy` is not audited either.
-  - **The verifier and the account wasm are third party.** We deployed one instance against
-    ids read from someone else's manifest. We did not build or verify them.
+  - **One passkey is one signer.** The rehearsal account was created with a single WebAuthn
+    signer and no second device. Losing the passkey loses the owner, and since there is no
+    `set_owner` there is no path around that: the balance would be unrecoverable. The
+    [recovery page](/chains/stellar-passkey-recovery) explains the second-device mitigation,
+    which was not applied here.
+  - **The SDK is unaudited by its own statement**, and the account wasm the rehearsal used,
+    `1b5f4534...785a`, was built from an OpenZeppelin commit 46 commits after the audited
+    `v0.7.0` release, from an example crate the audit does not list. That is why the SOW 2
+    run uses an account and verifier we build from the audited release line; the
+    [selection record](/chains/stellar-d3-selection) has the details. Our `AgentSpendPolicy`
+    is not audited either.
+  - **The rehearsal's verifier and account wasm are third party.** We deployed one instance
+    against ids read from someone else's manifest. We did not build them.
   - **Two fee payers, and they are separate claims.** The release record above was paid by
-    a dedicated testnet deployer key over direct RPC. The public flow sponsors fees through
-    OpenZeppelin Channels instead, and that path was proven separately the same day: the
-    smart account at ledger 4764131, `set_policy` at 4764136, the owner's allowlist writes
-    at 4764142 and 4764144, and the agent's payment at 4764146, every one of them sourced
-    and paid by a Channels channel account rather than by the visitor. Neither run makes
-    the other's claim.
+    a dedicated testnet deployer key over direct RPC. A second run the same day went through
+    our relay to OpenZeppelin Channels: the smart account at ledger 4764131, `set_policy` at
+    4764136, the owner's allowlist writes at 4764142 and 4764144, and the agent's payment at
+    4764146, every one of them sourced and paid by a Channels channel account. Its owner
+    signatures came from the same kind of software key, so it is also a rehearsal. The
+    hosted page sponsors fees this way only while the deployment has a Channels key set.
   - **A fresh vault starts open.** `allowlist_enabled` is `false` and the allowlist is empty
     until an owner call turns it on. Fund a vault before configuring it and there is a
     window in which the allowlist protects nothing.
@@ -447,7 +538,8 @@ footprint. Whether that is still true is a live read rather than a claim in this
 
 ```bash
 # The vault's code, pulled from the ledger and hashed. It must match the wasm hash
-# this page names, on BOTH networks.
+# this page names for that vault's version: v0.1.0 for this one and the first two
+# testnet vaults, v0.1.1 (named in its release receipt) for the SOW 2 vaults.
 stellar contract fetch \
   --id CB5LYXFKKTKDDSCM6JO6C4GNRQUFBGSLYDET6Q56JNFJQSMBKH6KWSYP \
   --network-passphrase 'Public Global Stellar Network ; September 2015' \
@@ -469,7 +561,13 @@ curl -s https://a-identity-backend.onrender.com/api/stellar/vaults
 ```
 
 The human-readable version of the first one is
-[/proof/stellar](https://a-identity.xyz/proof/stellar).
+[/proof/stellar](https://a-identity.xyz/proof/stellar), and the live state of any one of
+our vaults, with the time each value was read, is on
+[the vault panel](https://a-identity.xyz/app/vault/stellar). Neither needs a wallet.
+
+When this documentation cites the repository, it cites the
+[repository root](https://github.com/getA-Identity/A-Identity), a directory, or a release
+tag, never a single commit, because a directory or a tag is what a reader can re-run.
 
 ## Where Stellar fits
 

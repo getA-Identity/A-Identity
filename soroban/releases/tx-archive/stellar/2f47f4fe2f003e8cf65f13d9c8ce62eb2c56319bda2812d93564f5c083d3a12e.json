@@ -1,0 +1,66 @@
+{
+  "hash": "2f47f4fe2f003e8cf65f13d9c8ce62eb2c56319bda2812d93564f5c083d3a12e",
+  "chainId": "stellar",
+  "network": "stellar:pubnet",
+  "ledger": 64155317,
+  "createdAt": "2026-08-27T23:45:11.000Z",
+  "status": "success",
+  "resultCode": {
+    "tx": "txSuccess",
+    "inner": null,
+    "operations": [
+      "paymentSuccess"
+    ],
+    "contractError": null
+  },
+  "sourceAccount": "GARC7OFBBQCZJ5N3LCI7HTTYJ2MMPDAFDNGIHSQMZ7EPJ5EAWQJ5R6I5",
+  "feeAccount": "GARC7OFBBQCZJ5N3LCI7HTTYJ2MMPDAFDNGIHSQMZ7EPJ5EAWQJ5R6I5",
+  "feeChargedStroops": "100",
+  "envelopeXdr": "AAAAAgAAAAAiL7ihDAWU9btYkfPOeE6Yx4wFG0yDygzPyPT0gLQT2AAAA+gD0iPhAAAADwAAAAEAAAAAAAAAAAAAAABqkMx5AAAAAAAAAAEAAAAAAAAAAQAAAAAPYO3FqAOV7KMbsjL25xkEmAt4NpO1ZgIWob4yCTznBQAAAAFVU0RDAAAAADuZETgO/piLoKiQDrHP5E82b32+lGvtB3JA9/Yk3xXFAAAAAAAHoSAAAAAAAAAAAoC0E9gAAABASoB/Uut/9/fWSdm3BjMNdHkUStuczCgSKyHv2qIbaBvtOPPXaKJKIz8inap1iq3wW+fEPe6naKBQFnMFWKlQCK0fVbEAAABApx285LEDtmSfd2OOOkPetoEV2zLbnpLQ6nPpj5rXzxVY5Iy0pgU5FXaWel4zSd5ZyRpOYZ5W/m1slU4Gj8LTDQ==",
+  "resultXdr": "AAAAAAAAAGQAAAAAAAAAAQAAAAAAAAABAAAAAAAAAAA=",
+  "resultMetaXdr": "AAAABAAAAAAAAAACAAAAAwPS7rUAAAAAAAAAACIvuKEMBZT1u1iR8854TpjHjAUbTIPKDM/I9PSAtBPYAAAAAAHJQC0D0iPhAAAADgAAAAMAAAAAAAAAAAAAAAABAgICAAAAAgAAAACXlWJSCd0jVX2xynfhD3jhvNiQqveXD1n5poUzrR9VsQAAAAEAAAAA8wbqWkikjxZl+HOn2+M80gx4UpoF38/yVtuNMQF8DDEAAAABAAAAAQAAAAAAAAAAAAAAAAAAAAAAAAACAAAAAAAAAAAAAAACAAAAAAAAAAAAAAADAAAAAAPSZlkAAAAAao3FAAAAAAAAAAABA9LutQAAAAAAAAAAIi+4oQwFlPW7WJHzznhOmMeMBRtMg8oMz8j09IC0E9gAAAAAAclALQPSI+EAAAAPAAAAAwAAAAAAAAAAAAAAAAECAgIAAAACAAAAAJeVYlIJ3SNVfbHKd+EPeOG82JCq95cPWfmmhTOtH1WxAAAAAQAAAADzBupaSKSPFmX4c6fb4zzSDHhSmgXfz/JW240xAXwMMQAAAAEAAAABAAAAAAAAAAAAAAAAAAAAAAAAAAIAAAAAAAAAAAAAAAIAAAAAAAAAAAAAAAMAAAAAA9LutQAAAABqkMwHAAAAAAAAAAEAAAAAAAAABAAAAAMD0iRrAAAAAQAAAAAiL7ihDAWU9btYkfPOeE6Yx4wFG0yDygzPyPT0gLQT2AAAAAFVU0RDAAAAADuZETgO/piLoKiQDrHP5E82b32+lGvtB3JA9/Yk3xXFAAAAAACYloB//////////wAAAAEAAAAAAAAAAAAAAAED0u61AAAAAQAAAAAiL7ihDAWU9btYkfPOeE6Yx4wFG0yDygzPyPT0gLQT2AAAAAFVU0RDAAAAADuZETgO/piLoKiQDrHP5E82b32+lGvtB3JA9/Yk3xXFAAAAAACQ9WB//////////wAAAAEAAAAAAAAAAAAAAAMD0uxDAAAAAQAAAAAPYO3FqAOV7KMbsjL25xkEmAt4NpO1ZgIWob4yCTznBQAAAAFVU0RDAAAAADuZETgO/piLoKiQDrHP5E82b32+lGvtB3JA9/Yk3xXFAAAAAAAAAAB//////////wAAAAEAAAAAAAAAAAAAAAED0u61AAAAAQAAAAAPYO3FqAOV7KMbsjL25xkEmAt4NpO1ZgIWob4yCTznBQAAAAFVU0RDAAAAADuZETgO/piLoKiQDrHP5E82b32+lGvtB3JA9/Yk3xXFAAAAAAAHoSB//////////wAAAAEAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+  "metaFrom": "stellar-expert",
+  "metaNote": "Result meta from Stellar Expert, a third-party indexer, accepted because the envelope and result it served match Horizon byte for byte. Meta is not covered by the transaction hash.",
+  "fetchedFrom": "horizon",
+  "explorer": "https://stellar.expert/explorer/public/tx/2f47f4fe2f003e8cf65f13d9c8ce62eb2c56319bda2812d93564f5c083d3a12e",
+  "archivedAt": "2026-10-01T20:44:07.129Z",
+  "caption": "A buyer wallet funded with 0.05 USDC for the first x402 sale",
+  "deliverable": null,
+  "provenance": {
+    "entry": "stellar",
+    "kind": "funding",
+    "label": "A buyer wallet funded with 0.05 USDC for the first x402 sale",
+    "note": "The owner account (now 2-of-3 multisig, so the payment carries two signatures) moved 0.05 USDC to a burner that already held a USDC trustline. The buyer needs USDC and a trustline and nothing else: it signs authorization entries and never pays a network fee."
+  },
+  "decoded": {
+    "hash": "2f47f4fe2f003e8cf65f13d9c8ce62eb2c56319bda2812d93564f5c083d3a12e",
+    "innerHash": null,
+    "status": "success",
+    "resultCode": {
+      "tx": "txSuccess",
+      "inner": null,
+      "operations": [
+        "paymentSuccess"
+      ],
+      "contractError": null
+    },
+    "sourceAccount": "GARC7OFBBQCZJ5N3LCI7HTTYJ2MMPDAFDNGIHSQMZ7EPJ5EAWQJ5R6I5",
+    "feeAccount": "GARC7OFBBQCZJ5N3LCI7HTTYJ2MMPDAFDNGIHSQMZ7EPJ5EAWQJ5R6I5",
+    "feeBump": false,
+    "feeChargedStroops": "100",
+    "operations": [
+      {
+        "type": "payment",
+        "source": null,
+        "contract": null,
+        "function": null,
+        "args": null
+      }
+    ],
+    "auth": [],
+    "summary": "One payment operation. Fee 0.00001 XLM paid by GARC7O...R6I5. It succeeded.",
+    "caveats": [
+      "Result meta from Stellar Expert, a third-party indexer, accepted because the envelope and result it served match Horizon byte for byte. Meta is not covered by the transaction hash."
+    ]
+  }
+}

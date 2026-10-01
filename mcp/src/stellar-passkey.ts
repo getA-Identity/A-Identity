@@ -4,11 +4,14 @@
  * The feature in one paragraph. A person on the public /stellar page creates a passkey; the
  * smart-account kit deploys an OpenZeppelin smart account (a C... contract) whose only signer
  * is that WebAuthn credential; this server deploys an AgentSpendPolicy vault whose OWNER is
- * that contract and whose OPERATOR is our own testnet key; the person's passkey then signs the
- * owner calls (set_policy, set_allowed) through the smart account's `execute`, the vault's
- * `owner.require_auth()` is satisfied because the smart account is the direct invoker, and the
- * agent side pays through `pay()` under the policy the passkey set. Proven live on testnet on
- * 2026-09-19; the registry's `passkeyVault` is that vault.
+ * that contract and whose OPERATOR is our own key for that network; the person's passkey then
+ * signs the owner calls (set_policy, set_allowed, set_frozen, withdraw) through the smart
+ * account's `execute`, the vault's `owner.require_auth()` is satisfied because the smart
+ * account is the direct invoker, and the agent side pays through `pay()` under the policy the
+ * passkey set. Both Stellar networks are served: pubnet with dust caps sized for real money,
+ * testnet for rehearsal and for the evidence a device passkey produces. The registry's
+ * `passkeyVault` (testnet, 2026-09-19) was signed by a SOFTWARE P-256 key in
+ * mcp/scripts/stellar-passkey-proof.mjs: it is a rehearsal of this flow, never device evidence.
  *
  * Fees: the kit posts `{ func, auth }` to a relayer, and our endpoint forwards it to
  * OpenZeppelin Channels with a key we hold. Whatever we forward is paid for and broadcast
@@ -17,8 +20,13 @@
  * shape `chains/stellar/relay.ts` decodes, because a rule that can only be tested against a
  * ledger is a rule nobody re-tests after they change it:
  *
- *  - which network may be served at all (testnet, by name; pubnet refused, by name),
- *  - which host functions may be relayed (exactly three shapes, listed, never a pattern),
+ *  - which network may be served at all (any Stellar network the registry records the
+ *    OpenZeppelin constants for; an unnamed one is testnet, never pubnet),
+ *  - which host functions may be relayed (exactly four shapes, listed, never a pattern),
+ *  - which vaults the operator key may act on (demo vaults owned by a smart account running
+ *    the registry's wasm, read live; never a flagship vault, refused by id),
+ *  - which smart account a vault may be deployed for (one WebAuthn signer, the one the
+ *    browser names, read live off the account before anything is spent),
  *  - which authorization entries may ride along (the ones FOR that function, by byte equality),
  *  - how a KYA decision maps onto a binary on-chain allowlist,
  *  - the caps on what the operator key may be made to spend,
@@ -28,7 +36,7 @@
  * `mcp/src/http/stellar-passkey-routes.ts` is the thin half: it reads the body, calls these,
  * calls the adapter, forwards to the relayer, and picks a status code.
  */
-import type { RelayInspection } from './chains/stellar/relay-shape.js'
+import type { RelayInspection, RelaySigner } from './chains/stellar/relay-shape.js'
 import { isAccountId, isContractId } from './chains/stellar/strkey.js'
 import type { ChainDescriptor } from './chains/types.js'
 import { OWNER_ACTIONS, isOwnerAction, ownerKindOf, toRawUnits, type OwnerAction } from './stellar-vault.js'
@@ -154,6 +162,53 @@ export function servedNetworks(chains: ChainDescriptor[]): string[] {
   return chains.filter((c) => c.ecosystem === 'stellar' && c.contracts.smartAccount).map((c) => c.caip2)
 }
 
+/**
+ * Which network a request NAMED, from its body or its query string.
+ *
+ * The query string exists for one caller: the smart-account kit's RelayerClient posts the
+ * kit's own `{ func, auth }` and nothing else, so the only place a browser can say which
+ * network a relayed request is for is the relayer URL it was configured with
+ * (`/api/stellar/passkey/relay?network=stellar:testnet`). Both are read, and two that
+ * disagree are refused rather than one being preferred: a request that names pubnet in one
+ * place and testnet in the other was built by something confused, and the cost of guessing
+ * wrong is a fee on the wrong ledger or a refusal the person cannot explain.
+ *
+ * Returns the raw name (or undefined for none); `passkeyChain` resolves it.
+ */
+export function requestedNetwork(
+  fromBody: unknown,
+  fromQuery: string | null | undefined,
+  chains: ChainDescriptor[],
+): { ok: true; network: string | undefined } | { ok: false; status: 400; code: 'network_conflict'; reason: string } {
+  const b = typeof fromBody === 'string' && fromBody.trim() ? fromBody.trim() : undefined
+  const q = typeof fromQuery === 'string' && fromQuery.trim() ? fromQuery.trim() : undefined
+  if (b && q) {
+    const resolve = (k: string) => chains.find((c) => c.ecosystem === 'stellar' && (c.id === k || c.caip2 === k))?.caip2 ?? k
+    if (resolve(b) !== resolve(q)) {
+      return {
+        ok: false,
+        status: 400,
+        code: 'network_conflict',
+        reason: `the body names ${b} and the query string names ${q}; name one network once. Nothing was decoded or forwarded.`,
+      }
+    }
+  }
+  return { ok: true, network: b ?? q }
+}
+
+/**
+ * The vaults the operator key must never be made to act on from these public endpoints,
+ * by id: the network's flagship vault and the 2026-09-19 passkey rehearsal vault.
+ *
+ * Belt and braces. The live checks below already refuse any vault whose owner is not a
+ * smart account running the registry's account wasm, and the flagship vault's owner is a
+ * G... account. Naming them as well means a future change to that owner, or a signer key
+ * that happens to operate both, still cannot turn this demo into a way to spend from them.
+ */
+export function flagshipVaults(chain: ChainDescriptor): string[] {
+  return [chain.contracts.spendVault, chain.contracts.passkeyVault].filter((v): v is string => typeof v === 'string' && isContractId(v))
+}
+
 // ── the relay: what may be forwarded ─────────────────────────────────────────────
 
 /** The two bodies the smart-account kit's RelayerClient sends, verbatim. */
@@ -182,26 +237,35 @@ export function relayParams(body: unknown): { ok: true; params: RelayParams; net
   return { ok: true, params: { func: inner.func.trim(), auth: (inner.auth as string[]).map((a) => a.trim()) }, network: b.network }
 }
 
-export type RelayRule = 'smart-account-deploy' | 'owner-call' | 'smart-account-execute'
+export type RelayRule = 'smart-account-deploy' | 'owner-call' | 'smart-account-execute' | 'smart-account-admin'
 
 export type RelayPreflightOk = {
   ok: true
   rule: RelayRule
-  /** The vault the request reaches, or null for a deploy, which reaches no vault. */
+  /** The vault the request reaches, or null for a deploy or an account admin call, which reach no vault. */
   vault: string | null
-  /** The smart account doing the calling, on the execute rule. */
+  /** The smart account doing the calling, on the execute and admin rules. */
   smartAccount: string | null
-  method: OwnerAction | null
+  /** The vault entrypoint on the vault rules, or the account method on the admin rule. */
+  method: OwnerAction | AccountAdminMethod | null
   /** Every address that authorizes something in this request. */
   authAddresses: string[]
   summary: string
 }
 export type RelayPreflight = RelayPreflightOk | { ok: false; status: 400; code: 'bad_request'; reason: string }
 
+/** The two account methods a smart account may call on ITSELF through this relay. */
+export const ACCOUNT_ADMIN_METHODS = ['add_context_rule', 'add_signer'] as const
+export type AccountAdminMethod = (typeof ACCOUNT_ADMIN_METHODS)[number]
+
 const ACCEPTED =
-  'this relay forwards exactly three shapes: a createContractV2 of the OpenZeppelin smart account wasm the ' +
-  'registry names, an owner entrypoint on a vault this server operates, or a smart account\'s ' +
-  `execute() whose target is such a vault and whose target_fn is an owner entrypoint (${OWNER_ACTIONS.join(', ')})`
+  'this relay forwards exactly four shapes: a createContractV2 of the OpenZeppelin smart account wasm the ' +
+  'registry names, an owner entrypoint on a vault this server operates, a smart account\'s ' +
+  `execute() whose target is such a vault and whose target_fn is an owner entrypoint (${OWNER_ACTIONS.join(', ')}), ` +
+  'or a smart account adding one WebAuthn signer to ITSELF (add_context_rule with a Default context, one signer and no policy; or add_signer on a rule other than 0)'
+
+/** What a preflight needs from the registry. Both come from `chain.contracts.smartAccount`. */
+export type RelayPreflightCtx = { smartAccountWasmHash: string | undefined; webauthnVerifier: string | undefined }
 
 /**
  * The half of the relay gate that needs no network, run FIRST and over the whole request.
@@ -213,7 +277,7 @@ const ACCEPTED =
  * smart account. Source-account credentials are refused on the kit's `{ func, auth }` carrier
  * because the envelope's source there is the RELAYER's channel account, not anyone we know.
  */
-export function relayPreflight(inspection: RelayInspection, ctx: { smartAccountWasmHash: string | undefined }): RelayPreflight {
+export function relayPreflight(inspection: RelayInspection, ctx: RelayPreflightCtx): RelayPreflight {
   const bad = (reason: string): RelayPreflight => ({ ok: false, status: 400, code: 'bad_request', reason })
   if (!inspection.ok) return bad(inspection.reason)
   const { func, auth, carrier } = inspection
@@ -248,8 +312,55 @@ export function relayPreflight(inspection: RelayInspection, ctx: { smartAccountW
     }
   }
 
-  // An invocation. Two shapes: the smart account's execute() wrapping an owner call, or the
-  // owner call itself, authorized directly by the (contract) owner.
+  // A smart account changing its own signer set: the shape adding a second device needs.
+  // Read closely, because a signer the relay helped add is a signer that can move the vault.
+  if ((ACCOUNT_ADMIN_METHODS as readonly string[]).includes(func.method)) {
+    const account = func.contract
+    const admin = func.admin
+    if (!isContractId(account)) return bad(`${account} is not a contract id, so it cannot be a smart account`)
+    if (!admin) return bad(`${func.method} on ${account} does not carry the OpenZeppelin account's own argument types, so it is not read and not relayed`)
+    const verifier = ctx.webauthnVerifier
+    if (!verifier) return bad('this chain declares no contracts.smartAccount.webauthnVerifier, so there is no verifier a new signer could be checked against')
+    const isPasskey = (s: RelaySigner) => s.kind === 'external' && s.verifier === verifier
+    if (admin.method === 'add_context_rule') {
+      if (admin.contextType !== 'default') {
+        return bad(`add_context_rule with a ${admin.contextType} context is not relayed; a second device gets its own Default rule, so it can authorize alone`)
+      }
+      if (admin.signers.length !== 1 || !isPasskey(admin.signers[0])) {
+        return bad(`add_context_rule must carry exactly one WebAuthn signer under the registry's verifier ${verifier}; this one carries ${admin.signers.length} signer(s) of kind ${admin.signers.map((s) => s.kind).join(', ') || 'none'}`)
+      }
+      if (admin.policies > 0) {
+        return bad('add_context_rule with a policy is not relayed; a policy can authorize on its own, and this relay only pays to add a device')
+      }
+    } else {
+      if (admin.contextRuleId === null) return bad('add_signer names no context rule id')
+      if (admin.contextRuleId === 0) {
+        return bad('add_signer on rule 0 is not relayed: rule 0 has no policy, so a second signer there would make every action need BOTH devices (2-of-2). A second device gets its own rule through add_context_rule.')
+      }
+      if (!isPasskey(admin.signer)) return bad(`add_signer must add a WebAuthn signer under the registry's verifier ${verifier}; this one is ${admin.signer.kind}`)
+    }
+    for (const [i, a] of auth.entries()) {
+      if (a.root.kind !== 'contract-fn' || a.root.contract !== account || a.root.method !== func.method || a.root.argsXdr !== func.argsXdr) {
+        return bad(`auth[${i}] authorizes something other than this exact ${func.method}; every entry must be for the host function it rides with`)
+      }
+      if (a.sub.length > 0) return bad(`auth[${i}] authorizes ${a.sub.length} sub-invocation(s) under ${func.method}; an account adding its own signer needs none`)
+      if (a.credentials !== 'address' || a.address !== account) {
+        return bad(`auth[${i}] is not the smart account ${account} authorizing a change to itself; nothing else may authorize it`)
+      }
+    }
+    return {
+      ok: true,
+      rule: 'smart-account-admin',
+      vault: null,
+      smartAccount: account,
+      method: admin.method,
+      authAddresses: [account],
+      summary: `${account} adds one WebAuthn signer to itself (${admin.method}${admin.method === 'add_signer' ? ` on rule ${admin.contextRuleId}` : ', a new Default rule'})`,
+    }
+  }
+
+  // An invocation on a vault. Two shapes: the smart account's execute() wrapping an owner
+  // call, or the owner call itself, authorized directly by the (contract) owner.
   if (func.execute) {
     const smartAccount = func.contract
     const { target, targetFn } = func.execute
@@ -305,14 +416,63 @@ export function relayPreflight(inspection: RelayInspection, ctx: { smartAccountW
   }
 }
 
+/**
+ * Whether a contract runs the smart-account code the registry names, from a live read.
+ *
+ * "Is a demo smart account" is decided by CODE, never by a claim: the instance entry's
+ * executable has to be the registry's account wasm. A missing entry, a Stellar Asset
+ * Contract, an undecodable entry or another wasm are all refusals, each with its own words.
+ */
+export function smartAccountCodeVerdict(
+  address: string,
+  code: { found: boolean; executable: string | null; wasmHash: string | null } | null,
+  expectedWasmHash: string | undefined,
+): { ok: true } | { ok: false; code: 'rpc_error' | 'not_smart_account' | 'smart_account_code_mismatch' | 'network_not_served'; reason: string } {
+  const want = expectedWasmHash?.toLowerCase()
+  if (!want) return { ok: false, code: 'network_not_served', reason: 'this chain declares no contracts.smartAccount, so there is no account code anything could be checked against' }
+  if (!code) return { ok: false, code: 'rpc_error', reason: `the code of ${address} could not be read on chain; the check is never skipped, so nothing was done` }
+  if (!code.found) return { ok: false, code: 'not_smart_account', reason: `nothing is deployed at ${address} on this network, so it is not a smart account` }
+  if (code.executable !== 'wasm' || !code.wasmHash) {
+    return { ok: false, code: 'not_smart_account', reason: `${address} runs ${code.executable ?? 'an executable this server cannot decode'}, not the OpenZeppelin smart-account wasm` }
+  }
+  if (code.wasmHash.toLowerCase() !== want) {
+    return {
+      ok: false,
+      code: 'smart_account_code_mismatch',
+      reason: `${address} runs wasm ${code.wasmHash}, and the only account code this demo serves on this network is ${want}, read from the registry`,
+    }
+  }
+  return { ok: true }
+}
+
+export type RelayDecisionCode =
+  | 'no_operator'
+  | 'rpc_error'
+  | 'not_our_vault'
+  | 'owner_not_contract'
+  | 'not_owner'
+  | 'flagship_vault'
+  | 'not_smart_account'
+  | 'smart_account_code_mismatch'
+  | 'network_not_served'
+
 export type RelayDecision =
   | { ok: true; vault: string | null; owner: string | null; operator: string | null }
-  | {
-      ok: false
-      status: 403 | 502 | 503
-      code: 'no_operator' | 'rpc_error' | 'not_our_vault' | 'owner_not_contract' | 'not_owner'
-      reason: string
-    }
+  | { ok: false; status: 403 | 502 | 503; code: RelayDecisionCode; reason: string }
+
+/** The live facts a relay decision rests on, each read by the route and none taken from the request. */
+export type RelayLive = {
+  /** The vault's owner() and operator(), on the vault rules. Null when the read failed. */
+  vault: { owner: string; operator: string } | null
+  /** This server's operator account for the network, or null when no key is configured. */
+  signer: string | null
+  /** The code the smart account in question runs: the vault owner, or the admin caller. Null when unread or failed. */
+  accountCode: { found: boolean; executable: string | null; wasmHash: string | null } | null
+  /** The registry's account wasm for the network. */
+  expectedWasmHash: string | undefined
+  /** Vault ids refused outright (flagshipVaults). */
+  flagship: string[]
+}
 
 /**
  * The half that needs the ledger, and why it is never skipped.
@@ -322,36 +482,213 @@ export type RelayDecision =
  * failing open here would let anyone have us pay for calls on vaults we know nothing about;
  * and no signer at all is 503, because without one there is no vault we operate. The owner
  * bound to the authorization is checked against the vault's live `owner()`, not against the
- * request's own claim about itself.
+ * request's own claim about itself, and that owner has to be a smart account running the
+ * registry's account code: a demo vault this flow deployed, and no other.
  */
-export function relayDecision(pre: RelayPreflightOk, live: { owner: string; operator: string } | null, signer: string | null): RelayDecision {
+export function relayDecision(pre: RelayPreflightOk, live: RelayLive): RelayDecision {
   if (pre.rule === 'smart-account-deploy') return { ok: true, vault: null, owner: null, operator: null }
-  if (!signer) {
+  if (pre.rule === 'smart-account-admin') {
+    const verdict = smartAccountCodeVerdict(pre.smartAccount ?? '', live.accountCode, live.expectedWasmHash)
+    if (!verdict.ok) {
+      return { ok: false, status: verdict.code === 'rpc_error' ? 502 : 403, code: verdict.code, reason: `${verdict.reason}. Nothing was forwarded.` }
+    }
+    return { ok: true, vault: null, owner: pre.smartAccount, operator: null }
+  }
+  if (pre.vault && live.flagship.includes(pre.vault)) {
+    return {
+      ok: false,
+      status: 403,
+      code: 'flagship_vault',
+      reason: `vault ${pre.vault} is one of this network's recorded vaults, and the public passkey relay never pays for calls on those, whoever signs them. Nothing was forwarded.`,
+    }
+  }
+  if (!live.signer) {
     return {
       ok: false,
       status: 503,
       code: 'no_operator',
-      reason: 'this server has no Stellar testnet signer configured, so it operates no vault and relays no owner call. Nothing was forwarded.',
+      reason: 'this server has no Stellar signer configured for this network, so it operates no vault and relays no owner call. Nothing was forwarded.',
     }
   }
-  if (!live) {
+  if (!live.vault) {
     return { ok: false, status: 502, code: 'rpc_error', reason: `vault ${pre.vault} could not be read on chain, so the call was not forwarded. The check is never skipped: an unreadable vault is a reason to stop.` }
   }
-  if (live.operator.trim() !== signer) {
-    return { ok: false, status: 403, code: 'not_our_vault', reason: `vault ${pre.vault} is operated by ${live.operator}, not by this server, so this relay will not pay for calls on it. Nothing was forwarded.` }
+  if (live.vault.operator.trim() !== live.signer) {
+    return { ok: false, status: 403, code: 'not_our_vault', reason: `vault ${pre.vault} is operated by ${live.vault.operator}, not by this server, so this relay will not pay for calls on it. Nothing was forwarded.` }
   }
-  const owner = live.owner.trim()
+  const owner = live.vault.owner.trim()
+  if (!isContractId(owner)) {
+    return { ok: false, status: 403, code: 'owner_not_contract', reason: `vault ${pre.vault} is owned by the account ${owner}, not by a smart account; its owner signs through the vault console, not this relay.` }
+  }
   if (pre.rule === 'owner-call') {
-    if (!isContractId(owner)) {
-      return { ok: false, status: 403, code: 'owner_not_contract', reason: `vault ${pre.vault} is owned by the account ${owner}, not by a smart account; its owner signs through the vault console, not this relay.` }
-    }
     const stranger = pre.authAddresses.find((a) => a !== owner)
     if (stranger) return { ok: false, status: 403, code: 'not_owner', reason: `${stranger} authorized this call, and vault ${pre.vault} reports its owner as ${owner}, read live. Nothing was forwarded.` }
   }
   if (pre.rule === 'smart-account-execute' && owner !== pre.smartAccount) {
     return { ok: false, status: 403, code: 'not_owner', reason: `${pre.smartAccount} is not the owner of vault ${pre.vault}; it reports ${owner}, read live. Nothing was forwarded.` }
   }
-  return { ok: true, vault: pre.vault, owner, operator: live.operator.trim() }
+  const verdict = smartAccountCodeVerdict(owner, live.accountCode, live.expectedWasmHash)
+  if (!verdict.ok) {
+    return { ok: false, status: verdict.code === 'rpc_error' ? 502 : 403, code: verdict.code, reason: `vault ${pre.vault} is not a demo vault: ${verdict.reason}. Nothing was forwarded.` }
+  }
+  return { ok: true, vault: pre.vault, owner, operator: live.vault.operator.trim() }
+}
+
+// ── the operator key's own calls: which vaults it may act on ─────────────────────
+
+export type OperatorGate =
+  | { ok: true; owner: string; operator: string }
+  | {
+      ok: false
+      status: 403 | 502 | 503
+      code: 'flagship_vault' | 'no_operator' | 'rpc_error' | 'not_operator' | 'owner_not_contract' | 'not_smart_account' | 'smart_account_code_mismatch' | 'network_not_served'
+      reason: string
+    }
+
+/**
+ * Whether the OPERATOR key may call pay() on this vault for an anonymous caller (X.4).
+ *
+ * The risk this closes is specific. agent-pay has no session in front of it, and its first
+ * version checked only that the vault's live operator was our signer. If the same key also
+ * operates a vault that is not a demo (the flagship testnet vault is operated by exactly the
+ * account STELLAR_TESTNET_SIGNER_SECRET decodes to), anyone could have us call pay() on it,
+ * inside its policy but at a time and to a payee of their choosing. So a vault qualifies only
+ * when all of these read true, live: it is not a recorded vault, our signer operates it, and
+ * its owner is a smart account whose instance runs the registry's account wasm, which is to
+ * say a vault this passkey flow deployed for a passkey.
+ */
+export function operatorGate(
+  vault: string,
+  input: {
+    flagship: string[]
+    signer: string | null
+    live: { owner: string; operator: string } | null
+    ownerCode: { found: boolean; executable: string | null; wasmHash: string | null } | null
+    expectedWasmHash: string | undefined
+  },
+): OperatorGate {
+  if (input.flagship.includes(vault)) {
+    return {
+      ok: false,
+      status: 403,
+      code: 'flagship_vault',
+      reason: `vault ${vault} is one of this network's recorded vaults; the public passkey endpoints never have the operator key act on it. Nothing was submitted.`,
+    }
+  }
+  if (!input.signer) return { ok: false, status: 503, code: 'no_operator', reason: 'no operator key is configured for this network, so this server operates no vault. Nothing was submitted.' }
+  if (!input.live) return { ok: false, status: 502, code: 'rpc_error', reason: `vault ${vault} could not be read, so nothing was submitted. The operator check is never skipped.` }
+  if (input.live.operator.trim() !== input.signer) {
+    return { ok: false, status: 403, code: 'not_operator', reason: `vault ${vault} is operated by ${input.live.operator}, not by this server (${input.signer}), so this server cannot and will not call pay() on it.` }
+  }
+  const owner = input.live.owner.trim()
+  if (!isContractId(owner)) {
+    return { ok: false, status: 403, code: 'owner_not_contract', reason: `vault ${vault} is owned by the account ${owner}, so it is not a passkey demo vault and the public endpoint will not pay from it. Nothing was submitted.` }
+  }
+  const verdict = smartAccountCodeVerdict(owner, input.ownerCode, input.expectedWasmHash)
+  if (!verdict.ok) {
+    return { ok: false, status: verdict.code === 'rpc_error' ? 502 : 403, code: verdict.code, reason: `vault ${vault} is not a passkey demo vault: ${verdict.reason}. Nothing was submitted.` }
+  }
+  return { ok: true, owner, operator: input.live.operator.trim() }
+}
+
+// ── the deploy's owner: one passkey, read live ───────────────────────────────────
+
+export type OwnerAccountCheck =
+  | { ok: true; ruleId: number; verifier: string; keyHex: string }
+  | {
+      ok: false
+      status: 400 | 403 | 502
+      code:
+        | 'rpc_error'
+        | 'not_smart_account'
+        | 'smart_account_code_mismatch'
+        | 'network_not_served'
+        | 'owner_rules_unexpected'
+        | 'owner_signer_unexpected'
+        | 'owner_key_mismatch'
+      reason: string
+    }
+
+/**
+ * Whether a vault may be deployed with this smart account as its owner.
+ *
+ * The deploy spends our key and, on pubnet, our USDC, for an owner nobody has vouched for,
+ * so what the browser says about the owner is checked against the account itself before
+ * anything is spent. It must run the registry's account wasm, and it must hold exactly one
+ * active context rule (Default, no policy, no expiry) whose only signer is
+ * External(registry WebAuthn verifier, the passkey key the browser sent). No Ed25519 key,
+ * no delegated G... account and no policy may sit beside it: any of those could authorize
+ * the vault's owner calls without the passkey, and then "the passkey owns this vault" would
+ * be a sentence the chain does not back.
+ *
+ * The key comparison is on the first 65 bytes, the uncompressed P-256 point. The
+ * OpenZeppelin WebAuthn signer stores the credential id after it (smart-account-kit's
+ * buildKeyData), which the browser need not send and the check need not trust.
+ */
+export function ownerAccountCheck(input: {
+  owner: string
+  publicKeyHex: string
+  code: { found: boolean; executable: string | null; wasmHash: string | null } | null
+  rules: { count: number; rules: { id: number; contextType: string; signers: RelaySigner[]; policies: string[]; validUntil: number | null }[] } | null
+  expected: { wasmHash: string | undefined; webauthnVerifier: string | undefined }
+}): OwnerAccountCheck {
+  const verdict = smartAccountCodeVerdict(input.owner, input.code, input.expected.wasmHash)
+  if (!verdict.ok) {
+    return { ok: false, status: verdict.code === 'rpc_error' ? 502 : verdict.code === 'network_not_served' ? 400 : 403, code: verdict.code, reason: verdict.reason }
+  }
+  if (!input.rules) return { ok: false, status: 502, code: 'rpc_error', reason: `the signers of ${input.owner} could not be read, so no vault was deployed for it` }
+  const verifier = input.expected.webauthnVerifier
+  if (!verifier) return { ok: false, status: 400, code: 'network_not_served', reason: 'this chain declares no WebAuthn verifier, so no passkey signer can be checked' }
+  const { rules } = input.rules
+  if (rules.length !== 1) {
+    return {
+      ok: false,
+      status: 403,
+      code: 'owner_rules_unexpected',
+      reason: `${input.owner} has ${rules.length} active context rules; a vault is deployed only for an account whose single rule holds the one passkey, so that nothing but that passkey can authorize for it`,
+    }
+  }
+  const rule = rules[0]
+  if (rule.contextType !== 'default' || rule.policies.length > 0 || rule.validUntil !== null) {
+    return {
+      ok: false,
+      status: 403,
+      code: 'owner_rules_unexpected',
+      reason: `${input.owner}'s rule ${rule.id} is ${rule.contextType} with ${rule.policies.length} polic(ies)${rule.validUntil !== null ? ` and expires at ledger ${rule.validUntil}` : ''}; it must be a Default rule with no policy and no expiry`,
+    }
+  }
+  if (rule.signers.length !== 1) {
+    return { ok: false, status: 403, code: 'owner_signer_unexpected', reason: `${input.owner}'s rule ${rule.id} holds ${rule.signers.length} signers; it must hold exactly one, the passkey` }
+  }
+  const signer = rule.signers[0]
+  if (signer.kind !== 'external' || signer.verifier !== verifier) {
+    const what = signer.kind === 'external' ? `an External signer under ${signer.verifier}` : signer.kind === 'delegated' ? `the delegated account ${signer.address}` : 'a signer of a kind this server does not read'
+    return { ok: false, status: 403, code: 'owner_signer_unexpected', reason: `${input.owner}'s only signer is ${what}, not a WebAuthn passkey under the registry's verifier ${verifier}` }
+  }
+  const want = input.publicKeyHex.toLowerCase()
+  if (signer.keyHex.length < 130 || signer.keyHex.slice(0, 130).toLowerCase() !== want) {
+    return {
+      ok: false,
+      status: 403,
+      code: 'owner_key_mismatch',
+      reason: `${input.owner}'s passkey signer is not the public key this request sent, so the browser asking is not the passkey that controls it. No vault was deployed.`,
+    }
+  }
+  return { ok: true, ruleId: rule.id, verifier, keyHex: signer.keyHex }
+}
+
+/**
+ * The passkey's public key as the browser sends it: the 65-byte uncompressed P-256 point
+ * (0x04 || x || y), in hex or base64 / base64url. Returned as lowercase hex, or null.
+ */
+export function parsePasskeyPublicKey(v: unknown): string | null {
+  if (typeof v !== 'string') return null
+  const t = v.trim()
+  let bytes: Buffer | null = null
+  if (/^(0x)?[0-9a-fA-F]{130}$/.test(t)) bytes = Buffer.from(t.replace(/^0x/, ''), 'hex')
+  else if (/^[A-Za-z0-9+/_-]{86,88}={0,2}$/.test(t)) bytes = Buffer.from(t.replace(/-/g, '+').replace(/_/g, '/'), 'base64')
+  if (!bytes || bytes.length !== 65 || bytes[0] !== 0x04) return null
+  return bytes.toString('hex')
 }
 
 // ── the relayer's wire shape ─────────────────────────────────────────────────────
@@ -819,22 +1156,42 @@ export function relayFeeSettlement(outcome: OzRelayOutcome, reservedStroops: big
 const finite = (v: unknown): v is number => typeof v === 'number' && Number.isFinite(v)
 
 export type PasskeyDeployPlan =
-  | { ok: true; owner: string; dailyCapUsd: number; autoApproveUsd: number; seedUsd: number; dailyCapRaw: string; autoApproveMaxRaw: string; seedRaw: string }
+  | {
+      ok: true
+      owner: string
+      /** The passkey's 65-byte P-256 point, lowercase hex, checked against the account's live signer. */
+      ownerPublicKeyHex: string
+      dailyCapUsd: number
+      autoApproveUsd: number
+      seedUsd: number
+      dailyCapRaw: string
+      autoApproveMaxRaw: string
+      seedRaw: string
+    }
   | { ok: false; reason: string }
 
 /**
  * A vault owned by a passkey smart account, under the demo caps.
  *
  * The owner has to be a CONTRACT: a G... owner already has the vault console, and this path
- * exists for the account a browser passkey controls. Zero caps are refused although the
- * contract accepts them, because in this contract 0 means NO cap, and a vault anyone on the
- * internet can have us deploy and seed must have one.
+ * exists for the account a browser passkey controls. The browser also sends the passkey's
+ * public key, which the route compares with the account's live signer before anything is
+ * spent (ownerAccountCheck). Zero caps are refused although the contract accepts them,
+ * because in this contract 0 means NO cap, and a vault anyone on the internet can have us
+ * deploy and seed must have one.
  */
 export function passkeyDeployPlan(body: unknown, decimals: number, caps: PasskeyCaps, network: string): PasskeyDeployPlan {
   const b = asObject(body) ?? {}
   const owner = typeof b.owner === 'string' ? b.owner.trim() : ''
   if (!isContractId(owner)) {
     return { ok: false, reason: 'owner must be the passkey smart account\'s contract id (C... StrKey). A G... owner uses POST /api/agents/vault through the console instead.' }
+  }
+  const ownerPublicKeyHex = parsePasskeyPublicKey(b.ownerPublicKey)
+  if (!ownerPublicKeyHex) {
+    return {
+      ok: false,
+      reason: 'ownerPublicKey must be the passkey\'s 65-byte uncompressed P-256 public key (0x04 || x || y), hex or base64; it is compared with the smart account\'s live signer before a vault is deployed for it',
+    }
   }
   if (!finite(b.dailyCapUsd) || b.dailyCapUsd <= 0 || b.dailyCapUsd > caps.dailyCapUsd) {
     return { ok: false, reason: `dailyCapUsd must be a number above 0 and at most ${caps.dailyCapUsd} on ${network} (0 would mean no cap)` }
@@ -852,6 +1209,7 @@ export function passkeyDeployPlan(body: unknown, decimals: number, caps: Passkey
   return {
     ok: true,
     owner,
+    ownerPublicKeyHex,
     dailyCapUsd: b.dailyCapUsd,
     autoApproveUsd: b.autoApproveUsd,
     seedUsd,
@@ -977,15 +1335,36 @@ export function passkeyStatusView(
     relayLimits: RelayBudgetSnapshot
     /** Live too, from the same ledger the deploy endpoint charges. */
     seedLimits: SeedSnapshot
+    /** Every network this deployment serves, so a page can offer exactly those. */
+    servedNetworks: string[]
   },
 ): Record<string, unknown> {
   const sa = chain.contracts.smartAccount
+  const caps = passkeyCaps(chain)
+  const realMoney = chain.caip2 === 'stellar:pubnet'
+  const missing = [!cfg.keyConfigured ? cfg.keyVar : null, !cfg.operator ? (chain.signerEnvVar ?? 'the chain signer') : null].filter(Boolean)
   return {
     release: PASSKEY_RELEASE.name,
     network: chain.caip2,
     chain: chain.id,
     // Real money or not, said first rather than left to be inferred from a CAIP-2 string.
-    realMoney: chain.caip2 === 'stellar:pubnet',
+    realMoney,
+    // Served means these endpoints answer for this network at all, which is a fact about the
+    // registry (the OpenZeppelin constants are recorded for it). Whether each step can
+    // actually EXECUTE rather than answer prepared is `readiness`, a fact about this
+    // deployment's configuration, and the two are kept apart so neither is mistaken for
+    // the other.
+    served: Boolean(sa),
+    servedNetworks: cfg.servedNetworks,
+    readiness: {
+      relay: cfg.keyConfigured,
+      operator: Boolean(cfg.operator),
+      allSteps: missing.length === 0,
+      note:
+        missing.length === 0
+          ? 'Every step executes: the relay forwards to the relayer and the operator key deploys, seeds and pays.'
+          : `Steps that need ${missing.join(' and ')} answer prepared: validated, and nothing submitted.`,
+    },
     defaultNetwork: PASSKEY_RELEASE.defaultNetwork,
     relayer: {
       product: PASSKEY_RELEASE.relayerProduct,
@@ -993,27 +1372,59 @@ export function passkeyStatusView(
       url: cfg.relayerUrl,
       keyVar: cfg.keyVar,
       keyConfigured: cfg.keyConfigured,
+      configured: cfg.keyConfigured,
+      // Not knowable from here, and said so rather than filled in. Channels pays from its
+      // own fund account through a pool of channel accounts, and which one is a fact of
+      // each transaction: the fee-bump's outer source, read off the ledger per hash.
+      feePayerAccount: null,
+      feePayerNote:
+        'The relayer fee-bumps each transaction from its own account; the paying account is named per transaction by GET /api/stellar/passkey/fee-payer?hash=...&network=..., read from the ledger.',
       endpoint: '/api/stellar/passkey/relay',
       note: cfg.keyConfigured
         ? 'Allowlisted requests are forwarded and fee-sponsored by the relayer; the key never leaves this server.'
         : `${cfg.keyVar} is unset, so the relay answers prepared: it validates and returns exactly what it would post, and forwards nothing.`,
     },
     smartAccount: sa
-      ? { wasmHash: sa.wasmHash, webauthnVerifier: sa.webauthnVerifier, ed25519Verifier: sa.ed25519Verifier, verified: sa.verified, thirdParty: true, publisher: 'OpenZeppelin' }
+      ? {
+          wasmHash: sa.wasmHash,
+          webauthnVerifier: sa.webauthnVerifier,
+          ed25519Verifier: sa.ed25519Verifier,
+          verified: sa.verified,
+          thirdParty: true,
+          publisher: 'OpenZeppelin',
+        }
       : null,
+    vault: {
+      // The code a vault deployed here instantiates, from the registry. Ops move it when a
+      // new build is uploaded; nothing in this file names a hash of its own.
+      wasmHash: chain.contracts.spendVaultWasmHash ?? null,
+      flagshipRefused: flagshipVaults(chain),
+    },
     passkeyVault: chain.contracts.passkeyVault
-      ? { contract: chain.contracts.passkeyVault, explorerUrl: cfg.explorerFor(chain.contracts.passkeyVault), ownerKind: 'smart-account' }
+      ? {
+          contract: chain.contracts.passkeyVault,
+          explorerUrl: cfg.explorerFor(chain.contracts.passkeyVault),
+          ownerKind: 'smart-account',
+          note: 'A rehearsal: its owner was signed by a software P-256 key in mcp/scripts/stellar-passkey-proof.mjs, not by a device passkey.',
+        }
       : null,
     operator: {
       envVar: chain.signerEnvVar ?? null,
       configured: Boolean(cfg.operator),
       account: cfg.operator,
-      role: 'the vault operator that signs pay(), and the source of every vault deployed here',
+      address: cfg.operator,
+      role: 'the vault operator that signs pay(), and the source and fee payer of every vault deployed here. It can pay() from a demo vault inside the policy its owner set, to payees the owner allowlisted, and nothing else.',
     },
     // The caps in force on THIS network, and every network's beside them, because a reader
     // comparing pubnet against testnet should not have to call the endpoint twice to learn
-    // that the pubnet seed is a fiftieth of the testnet one.
-    caps: { ...passkeyCaps(chain) },
+    // that the pubnet seed is a fiftieth of the testnet one. The named aliases are the ones
+    // the page reads to size its defaults.
+    caps: {
+      ...caps,
+      dailyCapMaxUsd: caps.dailyCapUsd,
+      perPaymentMaxUsd: caps.autoApproveUsd,
+      sharedDailyCeilingUsd: caps.seedDailyTotalUsd,
+    },
     capsByNetwork: PASSKEY_CAPS_BY_NETWORK,
     // Published for the same reason the caps are: nothing sits in front of this endpoint
     // except these numbers, so a reader who cannot see them cannot check them. The fee
@@ -1023,13 +1434,14 @@ export function passkeyStatusView(
     // The other ceiling, and the one that bounds OUR money rather than a third party's fee.
     seedBudget: cfg.seedLimits,
     endpoints: {
-      status: 'GET /api/stellar/passkey/status',
-      relay: 'POST /api/stellar/passkey/relay  { func, auth[] } | { xdr }',
-      deploy: 'POST /api/stellar/passkey/vault/deploy  { owner, dailyCapUsd, autoApproveUsd, seedUsd? }',
-      allowlistPlan: 'POST /api/stellar/passkey/allowlist/plan  { contract, payee, agentId? }',
-      agentPay: 'POST /api/stellar/passkey/agent-pay  { contract, to, amountUsd }',
+      status: 'GET /api/stellar/passkey/status?network=',
+      relay: 'POST /api/stellar/passkey/relay?network=  { func, auth[] } | { xdr }',
+      deploy: 'POST /api/stellar/passkey/vault/deploy  { network, owner, ownerPublicKey, dailyCapUsd, autoApproveUsd, seedUsd? }',
+      vault: 'GET /api/stellar/passkey/vault?contract=&network=',
+      feePayer: 'GET /api/stellar/passkey/fee-payer?hash=&network=',
+      allowlistPlan: 'POST /api/stellar/passkey/allowlist/plan  { network, contract, payee, agentId? }',
+      agentPay: 'POST /api/stellar/passkey/agent-pay  { network, contract, to, amountUsd }',
     },
-    pubnet: { served: false, reason: 'testnet only in this release: the pubnet smart-account constants are deliberately not recorded and no pubnet vault has a smart-account owner' },
     checkedAt: new Date().toISOString(),
   }
 }

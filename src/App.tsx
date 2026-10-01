@@ -57,6 +57,9 @@ const AgentProfile = lazy(() => import('./routes/app/AgentProfile'))
 const Profile = lazy(() => import('./routes/app/Profile'))
 const Earnings = lazy(() => import('./routes/app/Earnings'))
 const Checks = lazy(() => import('./routes/app/Checks'))
+// Public console screen: the live Stellar vault panel. Its own chunk, and the only route
+// that reaches Stellar Wallets Kit, which kit.ts loads with a dynamic import on first use.
+const StellarVault = lazy(() => import('./routes/app/StellarVault'))
 
 export default function App() {
   // Restore the session from the HttpOnly cookie once on load (the token isn't in
@@ -143,6 +146,13 @@ export default function App() {
         <Route path="/motion" element={<Motion />} />
         {/* The pitch deck. Unlinked and noindex; /deck?print=1 is the PDF source. */}
         <Route path="/deck" element={<Deck />} />
+
+        {/* The Stellar vault panel lives in the console shell but OUTSIDE the sign-in gate:
+            a vault's state is a public read, and the page must work with no session and no
+            wallet. Only its owner actions ask for a session, at the moment they need one. */}
+        <Route path="/app/vault/stellar" element={<AppLayout />}>
+          <Route index element={<StellarVault />} />
+        </Route>
 
         <Route element={<ProtectedRoute />}>
           <Route path="/app" element={<AppLayout />}>

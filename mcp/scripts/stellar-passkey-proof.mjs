@@ -2,6 +2,14 @@
 /**
  * Prove that a PASSKEY can own an on-chain spend policy, end to end, on Stellar testnet.
  *
+ * READ THIS FIRST. This script is a REHEARSAL. Its "passkey" is a SOFTWARE P-256 key that
+ * Node generates in memory, not a credential on any device, so nothing it produces is device
+ * evidence and none of its runs may be presented as one. That includes the 2026-09-19
+ * testnet artifacts it made (the registry's `passkeyVault` CBGTXWFB..., its owner
+ * CC5RNXNH..., and the set_policy, set_allowed and refused pay() transactions under them).
+ * Device evidence is produced by a person on https://a-identity.xyz/stellar?network=testnet
+ * with a real platform or roaming authenticator, and recorded as such.
+ *
  * The claim this script exists to check, because it is the one nobody should take on our
  * word: an OpenZeppelin smart account whose only signer is a WebAuthn credential can be the
  * OWNER of our AgentSpendPolicy vault. The vault's owner entrypoints call
@@ -24,8 +32,10 @@
  *   node scripts/stellar-passkey-proof.mjs --key-name asp-operator --payee G...
  *
  * Prepared-or-executed, like every other write in this repo: with no key it prints what it
- * would do and submits nothing. Testnet only, by a check rather than by convention: the
- * pubnet smart-account constants are deliberately not in the registry.
+ * would do and submits nothing. Testnet only, by a check below (`chain.testnet`). That
+ * check's message still says the pubnet constants are absent from the registry; they are
+ * recorded now and the /stellar page serves pubnet, and the check stays for a better reason:
+ * a software key rehearsing on real money proves nothing a testnet run does not.
  *
  * Nothing here prints, stores or commits credential material. The WebAuthn credential id and
  * its assertions stay in memory for the run and are never written anywhere; what this script

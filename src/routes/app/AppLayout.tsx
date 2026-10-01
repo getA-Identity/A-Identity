@@ -10,6 +10,7 @@ import {
   Fingerprint,
   LayoutDashboard,
   Lock,
+  LogIn,
   LogOut,
   Menu,
   Receipt,
@@ -17,6 +18,7 @@ import {
   SlidersHorizontal,
   Store,
   User,
+  Vault,
   X,
 } from 'lucide-react'
 import CommandBar from '../../components/app/CommandBar'
@@ -40,6 +42,7 @@ import { APP_NAME } from '../../lib/brand'
 import { useMcpHealth } from '../../hooks/useMcp'
 import { useScreenTransition } from '../../hooks/useScreenTransition'
 import { apiFetch, wakeBackend } from '../../lib/api'
+import { analyticsActive, track } from '../../lib/analytics'
 import '../../console.css'
 
 /**
@@ -62,6 +65,8 @@ const NAV_MORE = [
   { to: '/app/settlements', label: 'Settlements', icon: ArrowLeftRight },
   { to: '/app/earnings', label: 'Earnings', icon: Coins },
   { to: '/app/marketplace', label: 'Marketplace', icon: Store },
+  // Public: reads any Stellar vault with no session. Owner actions ask for one when needed.
+  { to: '/app/vault/stellar', label: 'Stellar vault', icon: Vault },
 ] as const
 
 /** Whether More was left open, per browser. */
@@ -146,6 +151,27 @@ export default function AppLayout() {
   // by the time the user clicks Anchor / Execute / Provision.
   useEffect(() => {
     wakeBackend()
+  }, [])
+
+  // One event per console visit. The tag loads when the browser is idle (App.tsx), which on
+  // a direct load of a console URL is after this effect, so the event waits for the same
+  // idle slot instead of being dropped into a module that has not started yet. Only the
+  // first path segment after /app goes with it: never an id or an address.
+  useEffect(() => {
+    const screen = location.pathname.split('/')[2] || 'overview'
+    const fire = () => track('console_opened', { screen })
+    if (analyticsActive()) {
+      fire()
+      return
+    }
+    if (window.requestIdleCallback) {
+      const id = window.requestIdleCallback(fire, { timeout: 5000 })
+      return () => window.cancelIdleCallback?.(id)
+    }
+    const t = window.setTimeout(fire, 5000)
+    return () => window.clearTimeout(t)
+    // Once per shell mount, not per navigation inside it.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
   // The signed-in person's photo, if they set one. Read once from their own account
@@ -364,6 +390,20 @@ export default function AppLayout() {
       {/* Who is signed in, and the way into your own account. The photo and the name are
           one link; the log out button stays a sibling so a control is never nested in a
           link. */}
+      {!user ? (
+        // The one console screen open to visitors (the Stellar vault panel) renders this
+        // shell with nobody signed in: say so, and offer the way in, instead of an empty card.
+        <div className="mt-2 flex items-center justify-between gap-2.5 rounded-xl border border-border bg-foreground/[0.02] p-2.5">
+          <div className="min-w-0 text-xs text-foreground/60">Not signed in</div>
+          <Link
+            to="/login"
+            className="inline-flex shrink-0 items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-xs font-semibold text-accent hover:bg-foreground/[0.05]"
+          >
+            <LogIn size={13} />
+            Sign in
+          </Link>
+        </div>
+      ) : (
       <div className="mt-2 flex items-center gap-2.5 rounded-xl border border-border bg-foreground/[0.02] p-2.5">
         <Link
           to="/app/profile"
@@ -388,6 +428,7 @@ export default function AppLayout() {
           <LogOut size={15} />
         </button>
       </div>
+      )}
     </>
   )
 
@@ -489,7 +530,17 @@ export default function AppLayout() {
               <ThemeToggle />
 
               {/* Account menu. The avatar is a real control now: who you are, how the
-                  backend is doing, and the way out, one press away on every screen. */}
+                  backend is doing, and the way out, one press away on every screen. With
+                  nobody signed in (the public vault panel) it is a plain way in instead. */}
+              {!user ? (
+                <Link
+                  to="/login"
+                  className="inline-flex items-center gap-1.5 rounded-full border border-border px-3 py-1.5 text-xs font-semibold text-foreground/80 hover:bg-foreground/[0.04]"
+                >
+                  <LogIn size={13} />
+                  Sign in
+                </Link>
+              ) : (
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
                   <button
@@ -544,6 +595,7 @@ export default function AppLayout() {
                   </DropdownMenuItem>
                 </DropdownMenuContent>
               </DropdownMenu>
+              )}
             </div>
           </header>
 

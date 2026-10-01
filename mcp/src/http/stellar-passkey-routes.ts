@@ -2,15 +2,23 @@
  * The passkey vault demo: a smart-account owner, a fee-sponsoring relay, and the agent side.
  *
  * Thin adapters only. Every decision (which network, which host functions may be relayed,
- * which authorization entries may ride along, how a KYA decision maps onto the allowlist,
- * the caps) lives in ../stellar-passkey.ts, pure and unit-tested. Everything that touches XDR
- * lives in ../chains/stellar/relay.ts and the Stellar adapter. This file reads a body, calls
- * those, forwards to the relayer, and picks a status code.
+ * which authorization entries may ride along, which vaults the operator key may act on,
+ * which smart account a vault may be deployed for, how a KYA decision maps onto the
+ * allowlist, the caps) lives in ../stellar-passkey.ts, pure and unit-tested. Everything that
+ * touches XDR lives in ../chains/stellar/relay.ts, ../chains/stellar/smart-account.ts and
+ * the Stellar adapter. This file reads a body, reads the ledger, calls those, forwards to
+ * the relayer, and picks a status code.
+ *
+ * Both Stellar networks are served. A request names its network in the body or, for the
+ * relay, in the query string (the smart-account kit posts only `{ func, auth }`, so the
+ * page puts the network in the relayer URL it configures). Naming none gets testnet.
  *
  * NOT behind the verified-session gate, and http.ts says why at the exemption: the public
  * /stellar page has no A-Identity login, the owner is a passkey the browser holds. What stands
- * in for the gate is that everything here is testnet only, rate-budgeted and fail-closed, and
- * that the two endpoints which spend the operator key do so under caps a test pins.
+ * in for the gate is that everything here is rate-budgeted and fail-closed, that the two
+ * endpoints which spend the operator key do so under per-network caps a test pins (pubnet's
+ * are dust), and that the operator key only ever acts on a vault whose live owner is a smart
+ * account running the registry's account wasm, never on a recorded flagship vault.
  *
  * The relay has two more bounds that http.ts cannot give it, because http.ts budgets per IP
  * and the thing at risk here is one credential of ours shared by everyone: a GLOBAL rate
@@ -22,11 +30,12 @@
  * Nothing here logs a request body. An authorization entry carries the passkey's signature and
  * its clientDataJSON, which are the person's credential material as far as a log is concerned.
  */
-import { CHAINS, addressUrl, createStellarAdapter, txUrl, type ChainDescriptor, type StellarAdapter } from '../chains/index.js'
+import { CHAINS, addressUrl, createStellarAdapter, isContractId, txUrl, type ChainDescriptor, type StellarAdapter } from '../chains/index.js'
 // Direct, like stellar-vault-routes.ts: the frozen error table is not part of the barrel.
 import { errorName } from '../chains/stellar/adapter.js'
 import { stellarSignerAddress } from '../chains/stellar/client.js'
 import { inspectRelayPayload } from '../chains/stellar/relay.js'
+import { createSmartAccountReader, type ContractCode, type FeePayerRead, type SmartAccountReader, type SmartAccountRules } from '../chains/stellar/smart-account.js'
 import { riskCheck as liveRiskCheck } from '../asp/tools.js'
 import { listPlatformAgents, subjectsLinkedToWallet } from '../platform.js'
 import { ozApiKey, ozKeyVar, ozRelayerUrl } from '../x402-stellar/rail.js'
@@ -37,6 +46,9 @@ import {
   allowlistPlan,
   allowlistRequest,
   bindPayeeToAgent,
+  flagshipVaults,
+  operatorGate,
+  ownerAccountCheck,
   ozRelayOutcome,
   ozRelayRequest,
   passkeyAgentPayPlan,
@@ -49,6 +61,9 @@ import {
   relayFeeSettlement,
   relayParams,
   relayPreflight,
+  requestedNetwork,
+  servedNetworks,
+  smartAccountCodeVerdict,
   type RelayBudget,
   type RiskDecisionName,
   type SeedBudget,
@@ -62,6 +77,8 @@ export type PasskeyAdapter = Pick<StellarAdapter, 'readVault' | 'deployVault' | 
 export type PasskeyRouteDeps = {
   env?: NodeJS.ProcessEnv
   adapter?: (chain: ChainDescriptor) => PasskeyAdapter
+  /** The live reads of a smart account (its code and its rules) and of a relayed transaction's fee payer. */
+  accounts?: (chain: ChainDescriptor) => SmartAccountReader
   signerAddress?: (chain: ChainDescriptor, env: NodeJS.ProcessEnv) => string | null
   fetch?: typeof fetch
   riskCheck?: (agentId: string, tx: { payee?: string; amountUsd?: number } | null) => Promise<{ decision: RiskDecisionName; risk: string; reasons: string[]; signals: unknown }>
@@ -73,14 +90,30 @@ export type PasskeyRouteDeps = {
   /** The shared per-network ceiling on seed USDC. A test hands in its own so no two tests
    *  share a day, and so a pubnet assertion never depends on what a testnet one spent. */
   seedBudget?: SeedBudget
+  /** How long to wait before each attempt to read a relayed transaction's fee payer. Tests pass []. */
+  feePayerWaitsMs?: number[]
 }
 
 /** How long we wait for the relayer. Testnet retries inside Channels can take minutes. */
 const RELAYER_TIMEOUT_MS = 150_000
 
+/**
+ * Two short looks for the transaction a relayer just accepted, so the answer can name who
+ * paid its fee. A Stellar ledger closes in about five seconds; past that the page asks
+ * GET /api/stellar/passkey/fee-payer itself rather than this request holding the kit open.
+ */
+const FEE_PAYER_WAITS_MS = [2_000, 3_000]
+
 /** The settlement token's decimals, which on Stellar is 7 and is never assumed to be. */
 function tokenDecimals(chain: ChainDescriptor): number {
   return chain.settlementTokens?.[0]?.decimals ?? chain.usdcDecimals ?? 7
+}
+
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms))
+
+/** Who paid, in words a page can print beside the account. */
+function feePayerWho(account: string, operator: string | null): 'operator' | 'relayer' {
+  return operator && account === operator ? 'operator' : 'relayer'
 }
 
 export async function handleStellarPasskeyRoutes(ctx: RouteCtx, deps: PasskeyRouteDeps = {}): Promise<boolean> {
@@ -89,28 +122,46 @@ export async function handleStellarPasskeyRoutes(ctx: RouteCtx, deps: PasskeyRou
 
   const env = deps.env ?? process.env
   const adapterFor = deps.adapter ?? ((chain: ChainDescriptor) => createStellarAdapter(chain))
+  const accountsFor = deps.accounts ?? ((chain: ChainDescriptor) => createSmartAccountReader(chain))
   const signerOf = deps.signerAddress ?? ((chain: ChainDescriptor, e: NodeJS.ProcessEnv) => stellarSignerAddress(chain, e))
   const doFetch = deps.fetch ?? fetch
   const risk = deps.riskCheck ?? ((agentId: string, tx: { payee?: string; amountUsd?: number } | null) => liveRiskCheck(agentId, tx))
   const agents = deps.agents ?? (() => listPlatformAgents().map((a) => ({ id: a.id, name: a.name, owner: a.owner })))
   const linkedSubjects = deps.linkedSubjects ?? subjectsLinkedToWallet
   const budget = deps.relayBudget ?? sharedRelayBudget
+  const seeds = deps.seedBudget ?? sharedSeedBudget
 
-  const refuseChain = (gate: Extract<ReturnType<typeof passkeyChain>, { ok: false }>, keyed: 'ok' | 'success') => {
+  const refuseChain = (gate: { status: number; code: string; reason: string }, keyed: 'ok' | 'success') => {
     sendJson(res, gate.status, {
       [keyed]: false,
       code: gate.code,
       reason: gate.reason,
       ...(keyed === 'success' ? { error: gate.reason } : {}),
       release: PASSKEY_RELEASE.name,
-      testnetOnly: true,
+      servedNetworks: servedNetworks(CHAINS),
     })
     return true
   }
 
+  /** Which chain a request is for: the body's network or the query string's, never both disagreeing. */
+  const chainOf = (bodyNetwork: unknown) => {
+    const named = requestedNetwork(bodyNetwork, url.searchParams.get('network'), CHAINS)
+    if (!named.ok) return named
+    return passkeyChain(named.network, CHAINS)
+  }
+
+  /** A contract's code, or null when the read failed. Null is read as "stop" by every verdict. */
+  const codeOf = async (chain: ChainDescriptor, address: string): Promise<ContractCode | null> => {
+    try {
+      return await accountsFor(chain).readCode(address, env)
+    } catch {
+      return null
+    }
+  }
+
   // ── GET /api/stellar/passkey/status - what is configured, never a secret ───────
   if (req.method === 'GET' && url.pathname === '/api/stellar/passkey/status') {
-    const gate = passkeyChain(url.searchParams.get('network') ?? undefined, CHAINS)
+    const gate = chainOf(undefined)
     if (!gate.ok) return refuseChain(gate, 'ok')
     const chain = gate.chain
     sendJson(
@@ -123,9 +174,88 @@ export async function handleStellarPasskeyRoutes(ctx: RouteCtx, deps: PasskeyRou
         operator: signerOf(chain, env),
         explorerFor: (a) => addressUrl(chain, a),
         relayLimits: budget.snapshot(),
-        seedLimits: (deps.seedBudget ?? sharedSeedBudget).snapshot(chain.caip2, passkeyCaps(chain)),
+        seedLimits: seeds.snapshot(chain.caip2, passkeyCaps(chain)),
+        servedNetworks: servedNetworks(CHAINS),
       }),
     )
+    return true
+  }
+
+  // ── GET /api/stellar/passkey/vault - one vault, read live, for the owner's page ─
+  if (req.method === 'GET' && url.pathname === '/api/stellar/passkey/vault') {
+    const gate = chainOf(undefined)
+    if (!gate.ok) return refuseChain(gate, 'ok')
+    const chain = gate.chain
+    const contract = (url.searchParams.get('contract') ?? '').trim()
+    if (!isContractId(contract)) {
+      sendJson(res, 400, { ok: false, code: 'bad_request', reason: 'contract must be the vault\'s Soroban contract id (C... StrKey)' })
+      return true
+    }
+    let v: Awaited<ReturnType<PasskeyAdapter['readVault']>>
+    try {
+      v = await adapterFor(chain).readVault(contract, env)
+    } catch (e) {
+      sendJson(res, 502, { ok: false, code: 'rpc_error', reason: `vault ${contract} could not be read on ${chain.caip2}: ${e instanceof Error ? e.message : String(e)}` })
+      return true
+    }
+    const owner = v.owner.trim()
+    const ownerCode = isContractId(owner) ? await codeOf(chain, owner) : null
+    const verdict = isContractId(owner) ? smartAccountCodeVerdict(owner, ownerCode, chain.contracts.smartAccount?.wasmHash) : null
+    sendJson(res, 200, {
+      ok: true,
+      read: 'live',
+      network: chain.caip2,
+      contract,
+      explorerUrl: addressUrl(chain, contract),
+      ...v,
+      ownerKind: isContractId(owner) ? 'smart-account' : 'account',
+      ownerIsDemoSmartAccount: verdict?.ok ?? false,
+      ...(verdict && !verdict.ok ? { ownerNote: verdict.reason } : {}),
+      operatorIsThisServer: v.operator.trim() === signerOf(chain, env),
+      checkedAt: new Date().toISOString(),
+    })
+    return true
+  }
+
+  // ── GET /api/stellar/passkey/fee-payer - who paid for a transaction, from the ledger ─
+  if (req.method === 'GET' && url.pathname === '/api/stellar/passkey/fee-payer') {
+    const gate = chainOf(undefined)
+    if (!gate.ok) return refuseChain(gate, 'ok')
+    const chain = gate.chain
+    const hash = (url.searchParams.get('hash') ?? '').trim().toLowerCase()
+    if (!/^[0-9a-f]{64}$/.test(hash)) {
+      sendJson(res, 400, { ok: false, code: 'bad_request', reason: 'hash must be a transaction hash, 64 hex characters' })
+      return true
+    }
+    let read: FeePayerRead
+    try {
+      read = await accountsFor(chain).readFeePayer(hash, env)
+    } catch (e) {
+      sendJson(res, 502, { ok: false, code: 'rpc_error', reason: `transaction ${hash} could not be read on ${chain.caip2}: ${e instanceof Error ? e.message : String(e)}` })
+      return true
+    }
+    if (!read.found) {
+      sendJson(res, 404, { ok: false, code: 'not_found', hash, network: chain.caip2, reason: `${chain.caip2} RPC does not know transaction ${hash} (not yet in a ledger, or past the RPC's retention window).` })
+      return true
+    }
+    const operator = signerOf(chain, env)
+    sendJson(res, 200, {
+      ok: true,
+      read: 'live',
+      network: chain.caip2,
+      hash,
+      status: read.status,
+      ledger: read.ledger,
+      feeAccount: read.feeAccount,
+      sourceAccount: read.sourceAccount,
+      feeBump: read.feeBump,
+      feeChargedStroops: read.feeChargedStroops,
+      who: feePayerWho(read.feeAccount, operator),
+      explorerUrl: txUrl(chain, hash),
+      note: read.feeBump
+        ? 'The fee was charged to the fee-bump outer source; the inner source is the account the transaction ran under. Neither is the smart account that authorized it.'
+        : 'Not a fee-bump: the fee was charged to the transaction source.',
+    })
     return true
   }
 
@@ -148,7 +278,9 @@ export async function handleStellarPasskeyRoutes(ctx: RouteCtx, deps: PasskeyRou
       sendJson(res, 400, { success: false, code: 'bad_request', error: parsed.reason, reason: parsed.reason })
       return true
     }
-    const gate = passkeyChain(parsed.network, CHAINS)
+    // The kit's RelayerClient posts only { func, auth }, so the network usually arrives in
+    // the query string of the relayer URL the page configured; a body may name it too.
+    const gate = chainOf(parsed.network)
     if (!gate.ok) return refuseChain(gate, 'success')
     const chain = gate.chain
 
@@ -156,23 +288,34 @@ export async function handleStellarPasskeyRoutes(ctx: RouteCtx, deps: PasskeyRou
     // the property: a request this relay would never forward must never cost a key lookup,
     // let alone a ledger read.
     const seen = inspectRelayPayload(chain, parsed.params)
-    const pre = relayPreflight(seen, { smartAccountWasmHash: chain.contracts.smartAccount?.wasmHash })
+    const sa = chain.contracts.smartAccount
+    const pre = relayPreflight(seen, { smartAccountWasmHash: sa?.wasmHash, webauthnVerifier: sa?.webauthnVerifier })
     if (!pre.ok) {
       const status = !seen.ok && seen.code === 'wrong_network' ? 409 : pre.status
       sendJson(res, status, { success: false, code: !seen.ok ? seen.code : pre.code, error: pre.reason, reason: pre.reason })
       return true
     }
 
-    let live: { owner: string; operator: string } | null = null
-    if (pre.vault) {
+    // The live reads, each only when the decision could still pass: a flagship vault or a
+    // missing signer is refused before anything is read.
+    const flagship = flagshipVaults(chain)
+    const signer = signerOf(chain, env)
+    let vaultLive: { owner: string; operator: string } | null = null
+    let accountCode: ContractCode | null = null
+    if (pre.rule === 'smart-account-admin' && pre.smartAccount) {
+      accountCode = await codeOf(chain, pre.smartAccount)
+    } else if (pre.vault && !flagship.includes(pre.vault) && signer) {
       try {
         const v = await adapterFor(chain).readVault(pre.vault, env)
-        live = { owner: v.owner, operator: v.operator }
+        vaultLive = { owner: v.owner, operator: v.operator }
       } catch {
-        live = null
+        vaultLive = null
+      }
+      if (vaultLive && vaultLive.operator.trim() === signer && isContractId(vaultLive.owner.trim())) {
+        accountCode = await codeOf(chain, vaultLive.owner.trim())
       }
     }
-    const decision = relayDecision(pre, live, signerOf(chain, env))
+    const decision = relayDecision(pre, { vault: vaultLive, signer, accountCode, expectedWasmHash: sa?.wasmHash, flagship })
     if (!decision.ok) {
       sendJson(res, decision.status, { success: false, code: decision.code, error: decision.reason, reason: decision.reason, rule: pre.rule, vault: pre.vault })
       return true
@@ -187,6 +330,7 @@ export async function handleStellarPasskeyRoutes(ctx: RouteCtx, deps: PasskeyRou
         success: false,
         outcome: 'prepared',
         relayer: PASSKEY_RELEASE.relayerName,
+        network: chain.caip2,
         reason,
         error: reason,
         rule: pre.rule,
@@ -270,6 +414,37 @@ export async function handleStellarPasskeyRoutes(ctx: RouteCtx, deps: PasskeyRou
       note: settled.note,
     }
     if (outcome.success) {
+      // Who paid, read off the ledger rather than assumed: the relayer fee-bumps from an
+      // account of its own, and a page that says "you paid nothing" should be able to name
+      // the account that did. Two short looks; past them the page asks fee-payer itself.
+      let feePayer: Record<string, unknown> = {
+        account: null,
+        who: 'relayer',
+        read: 'not-yet',
+        lookup: outcome.hash ? `/api/stellar/passkey/fee-payer?hash=${outcome.hash}&network=${encodeURIComponent(chain.caip2)}` : null,
+      }
+      if (outcome.hash) {
+        for (const wait of deps.feePayerWaitsMs ?? FEE_PAYER_WAITS_MS) {
+          if (wait > 0) await sleep(wait)
+          try {
+            const read = await accountsFor(chain).readFeePayer(outcome.hash, env)
+            if (read.found) {
+              feePayer = {
+                account: read.feeAccount,
+                sourceAccount: read.sourceAccount,
+                feeBump: read.feeBump,
+                feeChargedStroops: read.feeChargedStroops,
+                status: read.status,
+                who: feePayerWho(read.feeAccount, signer),
+                read: 'live',
+              }
+              break
+            }
+          } catch {
+            // A read that fails is the same as one that has not landed yet: the page asks again.
+          }
+        }
+      }
       sendJson(res, 200, {
         success: true,
         // The kit reads `data` when it is nested and the root otherwise; both are given.
@@ -284,6 +459,7 @@ export async function handleStellarPasskeyRoutes(ctx: RouteCtx, deps: PasskeyRou
         vault: pre.vault,
         summary: pre.summary,
         fee: feeBlock,
+        feePayer,
         note: 'Accepted by the relayer, which pays the fee and broadcasts from its own channel account. A hash is a submission, not a receipt: read the transaction before recording anything as settled.',
       })
       return true
@@ -305,7 +481,7 @@ export async function handleStellarPasskeyRoutes(ctx: RouteCtx, deps: PasskeyRou
   // ── POST /api/stellar/passkey/vault/deploy - a vault owned by the smart account ─
   if (req.method === 'POST' && url.pathname === '/api/stellar/passkey/vault/deploy') {
     const body = (await readBody(req).catch(() => null)) as { network?: unknown } | null
-    const gate = passkeyChain(body?.network, CHAINS)
+    const gate = chainOf(body?.network)
     if (!gate.ok) return refuseChain(gate, 'ok')
     const chain = gate.chain
     const token = chain.settlementTokens?.[0]
@@ -317,6 +493,27 @@ export async function handleStellarPasskeyRoutes(ctx: RouteCtx, deps: PasskeyRou
     const plan = passkeyDeployPlan(body, token.decimals, caps, chain.caip2)
     if (!plan.ok) {
       sendJson(res, 400, { ok: false, code: 'bad_request', reason: plan.reason, network: chain.caip2, caps: { ...caps } })
+      return true
+    }
+
+    // The owner, read live before anything is spent: the registry's account code, and one
+    // rule holding exactly the passkey this browser named. A browser can claim any C...
+    // address; the account itself is what is believed.
+    const sa = chain.contracts.smartAccount
+    const reader = accountsFor(chain)
+    const [ownerCode, ownerRules] = await Promise.all([
+      reader.readCode(plan.owner, env).catch(() => null),
+      reader.readRules(plan.owner, env).catch((): SmartAccountRules | null => null),
+    ])
+    const ownerOk = ownerAccountCheck({
+      owner: plan.owner,
+      publicKeyHex: plan.ownerPublicKeyHex,
+      code: ownerCode,
+      rules: ownerRules,
+      expected: { wasmHash: sa?.wasmHash, webauthnVerifier: sa?.webauthnVerifier },
+    })
+    if (!ownerOk.ok) {
+      sendJson(res, ownerOk.status, { ok: false, code: ownerOk.code, reason: `${ownerOk.reason}. Nothing was deployed and nothing was spent.`, network: chain.caip2, owner: plan.owner })
       return true
     }
 
@@ -335,9 +532,19 @@ export async function handleStellarPasskeyRoutes(ctx: RouteCtx, deps: PasskeyRou
       caip2: chain.caip2,
       owner: plan.owner,
       ownerKind: 'smart-account' as const,
+      ownerCheck: {
+        read: 'live',
+        wasmHash: sa?.wasmHash,
+        ruleId: ownerOk.ruleId,
+        signer: { kind: 'webauthn', verifier: ownerOk.verifier, publicKeyHex: plan.ownerPublicKeyHex },
+        note: 'The smart account runs the registry\'s account wasm and its only signer is this passkey, read off the ledger before the deploy.',
+      },
       operator,
+      // The deploy and the seed are sourced and paid by the operator account, not by the relayer.
+      feePayer: operator ? { account: operator, who: 'operator' } : null,
       token: token.address,
       tokenSymbol: token.symbol,
+      vaultWasmHash: chain.contracts.spendVaultWasmHash ?? null,
       constructorArgs,
     }
     if (!operator) {
@@ -355,13 +562,13 @@ export async function handleStellarPasskeyRoutes(ctx: RouteCtx, deps: PasskeyRou
 
     // Charged here and not earlier: a prepared answer spends nothing, so it must not spend
     // the day's budget either. Refunded below on every path where the seed does not land.
-    const charged = (deps.seedBudget ?? sharedSeedBudget).charge(chain.caip2, plan.seedUsd, caps)
+    const charged = seeds.charge(chain.caip2, plan.seedUsd, caps)
     if (!charged.ok) {
       res.setHeader('Retry-After', String(charged.retryAfterSeconds))
-      sendJson(res, charged.status, { ok: false, code: charged.code, reason: charged.reason, network: chain.caip2, seedBudget: (deps.seedBudget ?? sharedSeedBudget).snapshot(chain.caip2, caps) })
+      sendJson(res, charged.status, { ok: false, code: charged.code, reason: charged.reason, network: chain.caip2, seedBudget: seeds.snapshot(chain.caip2, caps) })
       return true
     }
-    const refundSeed = () => (deps.seedBudget ?? sharedSeedBudget).refund(chain.caip2, plan.seedUsd)
+    const refundSeed = () => seeds.refund(chain.caip2, plan.seedUsd)
 
     const adapter = adapterFor(chain)
     const deployed = await adapter.deployVault(
@@ -418,6 +625,16 @@ export async function handleStellarPasskeyRoutes(ctx: RouteCtx, deps: PasskeyRou
       }
     }
 
+    // owner() read back from the new vault, so the page shows the chain's answer rather than
+    // the argument we passed. A read that fails says so; it does not undo a settled deploy.
+    let ownerReadBack: Record<string, unknown>
+    try {
+      const v = await adapter.readVault(deployed.vault, env)
+      ownerReadBack = { read: 'live', owner: v.owner, matches: v.owner.trim() === plan.owner, operator: v.operator }
+    } catch (e) {
+      ownerReadBack = { read: 'failed', owner: null, matches: null, reason: e instanceof Error ? e.message : String(e) }
+    }
+
     sendJson(res, 200, {
       ok: true,
       outcome: 'settled',
@@ -425,11 +642,13 @@ export async function handleStellarPasskeyRoutes(ctx: RouteCtx, deps: PasskeyRou
       vault: deployed.vault,
       explorerUrl: addressUrl(chain, deployed.vault),
       deploy: { txHash: deployed.txHash, explorerUrl: deployed.explorerUrl, ledger: deployed.ledger },
+      ownerReadBack,
       seed,
       note:
         `Vault ${deployed.vault} is owned by the smart account ${plan.owner} and operated by ${operator}. The owner's ` +
-        'passkey signs set_policy / set_allowed through the smart account (relay them via POST /api/stellar/passkey/relay); ' +
-        'the operator signs pay() (POST /api/stellar/passkey/agent-pay). Testnet: a reset takes all of this with it.',
+        'passkey signs set_policy, set_allowed, set_frozen and withdraw through the smart account (relayed via POST /api/stellar/passkey/relay); ' +
+        `the operator signs pay() (POST /api/stellar/passkey/agent-pay), only to payees the owner allowlisted and only inside the owner's policy.` +
+        (chain.testnet ? ' Testnet: a reset takes all of this with it.' : ''),
     })
     return true
   }
@@ -437,7 +656,7 @@ export async function handleStellarPasskeyRoutes(ctx: RouteCtx, deps: PasskeyRou
   // ── POST /api/stellar/passkey/allowlist/plan - KYA decision onto the allowlist ──
   if (req.method === 'POST' && url.pathname === '/api/stellar/passkey/allowlist/plan') {
     const body = (await readBody(req).catch(() => null)) as { network?: unknown } | null
-    const gate = passkeyChain(body?.network, CHAINS)
+    const gate = chainOf(body?.network)
     if (!gate.ok) return refuseChain(gate, 'ok')
     const chain = gate.chain
     const want = allowlistRequest(body)
@@ -493,7 +712,7 @@ export async function handleStellarPasskeyRoutes(ctx: RouteCtx, deps: PasskeyRou
   // ── POST /api/stellar/passkey/agent-pay - the agent side, through pay() ────────
   if (req.method === 'POST' && url.pathname === '/api/stellar/passkey/agent-pay') {
     const body = (await readBody(req).catch(() => null)) as { network?: unknown } | null
-    const gate = passkeyChain(body?.network, CHAINS)
+    const gate = chainOf(body?.network)
     if (!gate.ok) return refuseChain(gate, 'ok')
     const chain = gate.chain
     const payCaps = passkeyCaps(chain)
@@ -504,6 +723,18 @@ export async function handleStellarPasskeyRoutes(ctx: RouteCtx, deps: PasskeyRou
     }
     const adapter = adapterFor(chain)
     const base = { network: chain.id, caip2: chain.caip2, contract: plan.contract, to: plan.to, amountUsd: plan.amountUsd, amountRaw: plan.amountRaw }
+    const flagship = flagshipVaults(chain)
+    const expectedWasmHash = chain.contracts.smartAccount?.wasmHash
+
+    // A flagship vault is refused before anything else, prepared answer included: the
+    // exact pay() call on it is not something this public endpoint should hand out either.
+    if (flagship.includes(plan.contract)) {
+      const g = operatorGate(plan.contract, { flagship, signer: null, live: null, ownerCode: null, expectedWasmHash })
+      if (!g.ok) {
+        sendJson(res, g.status, { ok: false, ...base, code: g.code, reason: g.reason })
+        return true
+      }
+    }
 
     const signer = signerOf(chain, env)
     if (!signer) {
@@ -511,15 +742,19 @@ export async function handleStellarPasskeyRoutes(ctx: RouteCtx, deps: PasskeyRou
       sendJson(res, 200, { ok: false, ...base, outcome: prepared.outcome, ...('reason' in prepared ? { reason: prepared.reason } : {}), note: 'No operator key is configured, so this is the exact pay() call and nothing was submitted.' })
       return true
     }
-    let operator: string
+    let live: { owner: string; operator: string } | null = null
+    let readError: string | null = null
     try {
-      operator = (await adapter.readVault(plan.contract, env)).operator
+      const v = await adapter.readVault(plan.contract, env)
+      live = { owner: v.owner, operator: v.operator }
     } catch (e) {
-      sendJson(res, 502, { ok: false, ...base, code: 'rpc_error', reason: `vault ${plan.contract} could not be read (${e instanceof Error ? e.message : String(e)}), so nothing was submitted. The operator check is never skipped.` })
-      return true
+      readError = e instanceof Error ? e.message : String(e)
     }
-    if (operator.trim() !== signer) {
-      sendJson(res, 403, { ok: false, ...base, code: 'not_operator', reason: `vault ${plan.contract} is operated by ${operator}, not by this server (${signer}), so this server cannot and will not call pay() on it.` })
+    const owner = live?.owner.trim() ?? ''
+    const ownerCode = live && live.operator.trim() === signer && isContractId(owner) ? await codeOf(chain, owner) : null
+    const g = operatorGate(plan.contract, { flagship, signer, live, ownerCode, expectedWasmHash })
+    if (!g.ok) {
+      sendJson(res, g.status, { ok: false, ...base, code: g.code, reason: readError && g.code === 'rpc_error' ? `${g.reason} (${readError})` : g.reason })
       return true
     }
 
@@ -531,6 +766,9 @@ export async function handleStellarPasskeyRoutes(ctx: RouteCtx, deps: PasskeyRou
       ...base,
       outcome: outcome.outcome,
       operator: signer,
+      owner: g.owner,
+      // pay() is sourced and paid by the operator account, never by the relayer.
+      feePayer: { account: signer, who: 'operator' },
       ...('txHash' in outcome ? { txHash: outcome.txHash, explorerUrl: outcome.explorerUrl } : {}),
       ...('ledger' in outcome ? { ledger: outcome.ledger } : {}),
       ...('reason' in outcome ? { reason: outcome.reason } : {}),

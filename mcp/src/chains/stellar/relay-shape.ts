@@ -29,6 +29,40 @@ export type RelayAuth = {
   sub: RelayInvocation[]
 }
 
+/**
+ * A smart-account signer as it appears in a call's arguments, decoded to plain strings.
+ *
+ * `external` is a key checked by a verifier contract (a WebAuthn passkey when the verifier
+ * is the registry's WebAuthn verifier, an Ed25519 key when it is the Ed25519 one); its key
+ * bytes are kept as hex so a decision can compare them without the SDK. `delegated` is a
+ * Stellar address that authorizes by its own require_auth.
+ */
+export type RelaySigner =
+  | { kind: 'external'; verifier: string; keyHex: string }
+  | { kind: 'delegated'; address: string }
+  | { kind: 'unknown' }
+
+/** Which calls a context rule applies to: every call, one contract's, or one wasm's deploys. */
+export type RelayContextType = 'default' | 'call-contract' | 'create-contract' | 'unknown'
+
+/**
+ * A smart account changing its OWN signer set, the one administrative shape this relay
+ * reads closely enough to decide on. Present only when the invocation targets the method
+ * by name and its arguments decode into the OpenZeppelin account's own types; anything
+ * else stays null and is refused as an unknown shape.
+ */
+export type RelayAccountAdmin =
+  | {
+      method: 'add_context_rule'
+      contextType: RelayContextType
+      name: string | null
+      validUntil: number | null
+      signers: RelaySigner[]
+      /** How many policies the new rule would install. */
+      policies: number
+    }
+  | { method: 'add_signer'; contextRuleId: number | null; signer: RelaySigner }
+
 /** The host function the relayer is asked to wrap in a transaction and pay for. */
 export type RelayFunc =
   | {
@@ -49,6 +83,8 @@ export type RelayFunc =
       argsXdr: string
       /** Present when this is a smart account's `execute(target, target_fn, target_args)`. */
       execute: { target: string; targetFn: string; targetArgs: unknown[] } | null
+      /** Present when this is `add_context_rule` or `add_signer` with arguments that decode. */
+      admin: RelayAccountAdmin | null
     }
   | { kind: 'other'; what: string }
 

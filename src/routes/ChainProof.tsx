@@ -3,11 +3,13 @@ import { motion } from 'framer-motion'
 import { ArrowUpRight, ChevronDown, RefreshCw } from 'lucide-react'
 import { Link, useParams } from 'react-router-dom'
 import PageHeader from '../components/PageHeader'
+import StellarSow2Evidence, { type PublishedAccount, type Sow2Report } from '../components/proof/StellarSow2Evidence'
 import StellarVaultsLive from '../components/proof/StellarVaultsLive'
 import SiteFooter from '../components/sections/SiteFooter'
 import ThemeScope from '../components/ThemeScope'
 import { DisplayHeading, Eyebrow, Lede } from '../components/ui/display'
 import { SectionShell, SectionIntro, reveal, revealAt } from '../components/ui/section'
+import { track } from '../lib/analytics'
 import { apiFetch } from '../lib/api'
 import { ago } from '../lib/format'
 import { usePageMeta } from '../lib/head'
@@ -42,6 +44,10 @@ type Artifact = {
    *  model. Such an artifact carries no explorer link, on purpose. */
   externalChain?: string
   blockNumber?: number
+  /** UTC day the ledger closed. Stellar artifacts carry one; others may not yet. */
+  date?: string
+  /** Which commitment this transaction is evidence for (SOW1, SOW2-D2, rehearsal, ...). */
+  deliverable?: string
   note?: string
   explorerUrl: string | null
 }
@@ -70,6 +76,8 @@ type Network = {
   agent?: { tokenId: string; caip: string; owner: string; tokenUri: string }
   contractsLinked: ContractRow[]
   artifactsLinked: Artifact[]
+  /** Absent on a backend older than the SoW 2 section. */
+  accountsLinked?: PublishedAccount[]
   caveats: string[]
   live: LiveCheck
 }
@@ -80,6 +88,8 @@ type RailProof = {
   lede: string
   networks: Network[]
   howToVerify: string[]
+  /** Only on the Stellar rail, and only from a backend that serves it. */
+  sow2?: Sow2Report
 }
 
 type FacilitatorSettlement = {
@@ -426,6 +436,16 @@ export default function ChainProof() {
     }
   }, [load])
 
+  // One proof_opened per visit to this page, with the rail as its only label: a slug from a
+  // closed list, never an address. The ref keeps a re-render or a rail change from
+  // counting the same visit twice.
+  const tracked = useRef(false)
+  useEffect(() => {
+    if (tracked.current) return
+    tracked.current = true
+    track('proof_opened', { rail })
+  }, [rail])
+
   useEffect(() => {
     // Re-render so the "checked Ns ago" caption keeps counting without new data.
     const id = window.setInterval(() => setTick((t) => t + 1), 5000)
@@ -517,6 +537,20 @@ export default function ChainProof() {
             </p>
           )}
 
+          {/* The dated SoW 2 section, in the open. Rendered even when the backend has not
+              answered, so the page (and its prerendered snapshot) says where the evidence
+              comes from instead of leaving a hole where it should be. */}
+          {rail === 'stellar' && (
+            <div className="mt-8">
+              <StellarSow2Evidence
+                sow2={proof?.sow2}
+                networks={proof?.networks ?? []}
+                state={proof ? 'ready' : failure ? 'unreachable' : 'loading'}
+                onRetry={load}
+              />
+            </div>
+          )}
+
           {/* The vaults that enforce the policy on this rail, re-read from the ledger. */}
           {rail === 'stellar' && !failure && (
             <motion.div {...revealAt(4)} className="mt-8">
@@ -525,10 +559,10 @@ export default function ChainProof() {
                 caption="Read from the ledger on every load, not copied from a deployment record."
               />
               <p className="mt-3 text-sm text-foreground/60">
-                These are ours. You can deploy your own on testnet in a minute, owned by a passkey rather than a key we
-                hold:{' '}
+                The flagship vaults are ours, and so are their owner keys. A vault whose owner is a passkey rather than a
+                key we hold is what the testnet passkey page sets up:{' '}
                 <Link to="/stellar" className="inline-flex items-center gap-1 font-semibold text-accent hover:underline">
-                  try the passkey vault on testnet <ArrowUpRight size={13} className="shrink-0" />
+                  the passkey vault on testnet <ArrowUpRight size={13} className="shrink-0" />
                 </Link>
               </p>
             </motion.div>
@@ -640,6 +674,8 @@ export default function ChainProof() {
                             </div>
                             <p className="mt-1 text-[11px] text-foreground/45">
                               {a.kind}
+                              {a.date ? ` - ${a.date}` : ''}
+                              {a.deliverable ? ` - ${a.deliverable}` : ''}
                               {a.blockNumber ? ` - block ${a.blockNumber}` : ''}
                               {a.externalChain
                                 ? ` - on ${a.externalChain}, which we do not wire, so there is no link to derive`

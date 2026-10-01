@@ -2,10 +2,10 @@ import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
-import { PROVENANCE, PROOF_RAILS, artifactUrl, contractUrl, provenanceFor } from './provenance.js'
+import { PROVENANCE, PROOF_RAILS, STELLAR_SOW2, artifactUrl, contractUrl, provenanceFor } from './provenance.js'
 import { CHAINS, getChainById } from './registry.js'
-import { OWNER_ADDRESS_RE, SETTLEMENT_ADDRESS_RE, SHAPE_NAME, TX_HASH_RE } from './stellar/strkey.js'
-import { proofRailIndex } from './proof.js'
+import { OWNER_ADDRESS_RE, SETTLEMENT_ADDRESS_RE, SHAPE_NAME, TX_HASH_RE, isAccountId, isContractId } from './stellar/strkey.js'
+import { proofRailIndex, sow2Report } from './proof.js'
 
 /**
  * The ledger is the page a reviewer clicks, so the failure mode that matters is a claim
@@ -361,4 +361,104 @@ test('no caveat calls a chain planned that the registry has already promoted', (
       }
     }
   }
+})
+
+/**
+ * SOW 2 asks for a dated evidence section, so a date is part of the claim. A SOW 2 artifact
+ * without one cannot be placed in the sprint, and a Stellar artifact without a deliverable
+ * cannot be told apart from the rehearsal that preceded it.
+ */
+const isUtcDay = (s: string) => /^\d{4}-\d{2}-\d{2}$/.test(s) && new Date(`${s}T00:00:00Z`).toISOString().startsWith(s)
+const stellarEntries = () => PROVENANCE.filter((p) => getChainById(p.chain)?.ecosystem === 'stellar')
+
+test('every Stellar artifact is dated and assigned, and every SOW 2 one above all', () => {
+  for (const p of PROVENANCE) {
+    for (const a of p.artifacts) {
+      if (a.date !== undefined) assert.ok(isUtcDay(a.date), `${p.chain}: ${a.label} carries a date that is not a UTC day: ${a.date}`)
+      if (a.deliverable?.startsWith('SOW2')) {
+        assert.ok(a.date, `${p.chain}: ${a.label} is evidence for ${a.deliverable} and has no date`)
+        assert.ok(a.date >= STELLAR_SOW2.sprintStart, `${p.chain}: ${a.label} is dated before the SOW 2 sprint started`)
+      }
+    }
+  }
+  for (const p of stellarEntries()) {
+    for (const a of p.artifacts) {
+      assert.ok(a.date, `${p.chain}: ${a.label} has no date. Read the ledger close time from Horizon, never a commit date.`)
+      assert.ok(a.deliverable, `${p.chain}: ${a.label} names no deliverable`)
+    }
+  }
+})
+
+test('the testnet deploy is published as the two transactions it was', () => {
+  // The ledger once said "upload and instantiate in one transaction" and listed only the
+  // create. Horizon shows an UploadContractWasm one ledger earlier, from the same account.
+  const t = provenanceFor('stellar-testnet')!
+  const upload = t.artifacts.find((a) => a.txHash.startsWith('242c4ec6'))
+  const create = t.artifacts.find((a) => a.txHash.startsWith('718f050b'))
+  assert.ok(upload && create, 'both deploy transactions must be published')
+  assert.equal(upload.blockNumber, 4147601)
+  assert.equal(create.blockNumber, 4147602)
+  assert.ok(!/in one transaction/i.test(create.note ?? ''), 'the create note still claims a one-transaction deploy')
+})
+
+test('published accounts are valid StrKeys on their own chain, never listed twice', () => {
+  let total = 0
+  for (const p of PROVENANCE) {
+    const seen = new Set<string>()
+    for (const acc of p.accounts ?? []) {
+      total += 1
+      assert.equal(acc.network, p.chain, `${acc.address} is published under ${p.chain} but names ${acc.network}`)
+      assert.ok(isAccountId(acc.address) || isContractId(acc.address), `${p.chain}: ${acc.role} is not a valid Stellar StrKey: ${acc.address}`)
+      assert.ok(!seen.has(acc.address), `${p.chain}: ${acc.address} is published twice`)
+      seen.add(acc.address)
+      assert.ok(isUtcDay(acc.publishedAt), `${p.chain}: ${acc.role} has no real publishedAt`)
+      assert.ok(acc.role.length > 5 && acc.usedFor.length > 20, `${p.chain}: ${acc.address} needs a role and what it is used for`)
+      // An owner label is a statement that the key is NOT ours. Nothing we hold may wear one.
+      if (acc.custody.startsWith('owner:')) {
+        assert.ok(!/\bours?\b/i.test(acc.role), `${acc.address} is labeled as an outside owner but its role says it is ours`)
+      }
+    }
+  }
+  assert.ok(total >= 6, 'the Stellar entries publish the backend and owner accounts the proof page lists')
+  // Every account the pubnet stellar.toml publishes is also on the proof page, and the
+  // reverse, so the two public lists of our pubnet keys cannot drift apart.
+  const toml = readFileSync(repoFile('public/.well-known/stellar.toml'), 'utf8')
+  const tomlAccounts = [...(toml.match(/ACCOUNTS=\[([^\]]*)\]/)?.[1] ?? '').matchAll(/"(G[A-Z2-7]{55})"/g)].map((m) => m[1])
+  const pubnet = (provenanceFor('stellar')?.accounts ?? []).map((a) => a.address)
+  assert.deepEqual([...pubnet].sort(), [...tomlAccounts].sort(), 'stellar.toml and the pubnet accounts list disagree')
+})
+
+test('the SOW 2 section resolves every hash and passes no rehearsal off as a deliverable', () => {
+  assert.ok(isUtcDay(STELLAR_SOW2.sprintStart))
+  assert.deepEqual(STELLAR_SOW2.deliverables.map((d) => d.id), ['D1', 'D2', 'D3'])
+  assert.ok(STELLAR_SOW2.caveats.length > 0 && STELLAR_SOW2.caveats.every((c) => c.length > 20))
+  assert.match(STELLAR_SOW2.trustModel, /require_auth/)
+  const byHash = new Map(stellarEntries().flatMap((p) => p.artifacts.map((a) => [a.txHash, a] as const)))
+  for (const d of STELLAR_SOW2.deliverables) {
+    assert.ok(d.caption.length > 40, `${d.id} needs a caption that says what will appear`)
+    for (const l of d.links) assert.match(l.url, /^\/[a-z0-9/-]*$/, `${d.id}: ${l.url} is not a path on this site`)
+    if (d.status === 'live') {
+      assert.ok(d.date && isUtcDay(d.date), `${d.id} is live with no date`)
+      assert.ok(d.artifacts.length > 0 || d.id === 'D1', `${d.id} is live but names no artifact`)
+    } else {
+      assert.equal(d.date, null, `${d.id} is ${d.status} but carries a date`)
+    }
+    for (const h of d.artifacts) {
+      const a = byHash.get(h)
+      assert.ok(a, `${d.id} names ${h}, which no Stellar entry publishes`)
+      assert.equal(a.deliverable, `SOW2-${d.id}`, `${d.id} names ${a.label}, which is evidence for ${a.deliverable}`)
+      assert.ok(a.date)
+    }
+  }
+  // The 2026-09-19 runs were signed by a software key in our own script. They stay labeled
+  // as a rehearsal in the field AND in the label, because the label is what a reader sees.
+  const rehearsal = provenanceFor('stellar-testnet')!.artifacts.filter((a) => a.date === '2026-09-19')
+  assert.ok(rehearsal.length >= 13)
+  for (const a of rehearsal) {
+    assert.equal(a.deliverable, 'rehearsal', `${a.label} is from the 2026-09-19 software-key run`)
+    assert.match(a.label, /^Rehearsal/, `${a.label} must say it is a rehearsal where a reader sees it`)
+    assert.ok(!/the visitor's/i.test(a.note ?? ''), `${a.label} calls our own run the visitor's`)
+  }
+  const report = sow2Report()
+  for (const d of report.deliverables) assert.equal(d.artifactsLinked.length, d.artifacts.length)
 })

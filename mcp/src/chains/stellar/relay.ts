@@ -18,9 +18,9 @@ import { Address, FeeBumpTransaction, Keypair, Networks, TransactionBuilder, scV
 import type { ChainDescriptor } from '../types.js'
 import { networkPassphrase } from './client.js'
 import { isAccountId } from './strkey.js'
-import type { RelayAuth, RelayFunc, RelayInspection, RelayInvocation } from './relay-shape.js'
+import type { RelayAccountAdmin, RelayAuth, RelayContextType, RelayFunc, RelayInspection, RelayInvocation, RelaySigner } from './relay-shape.js'
 
-export type { RelayAuth, RelayFunc, RelayInspection, RelayInvocation } from './relay-shape.js'
+export type { RelayAccountAdmin, RelayAuth, RelayContextType, RelayFunc, RelayInspection, RelayInvocation, RelaySigner } from './relay-shape.js'
 
 /** A value the SDK can render natively, or its base64 ScVal when it cannot. */
 function native(v: xdr.ScVal): unknown {
@@ -64,6 +64,76 @@ function describeExecute(method: string, args: xdr.ScVal[]): { target: string; t
   }
 }
 
+/**
+ * One OpenZeppelin `Signer` enum value: `Vec[Symbol("External"), Address, Bytes]` or
+ * `Vec[Symbol("Delegated"), Address]`. Anything else is `unknown`, which every decision
+ * over it refuses, so a new signer kind can never be read as one we know.
+ */
+function describeSigner(v: xdr.ScVal): RelaySigner {
+  try {
+    if (v.switch().name !== 'scvVec') return { kind: 'unknown' }
+    const parts = v.vec() ?? []
+    if (parts.length < 2 || parts[0].switch().name !== 'scvSymbol') return { kind: 'unknown' }
+    const tag = parts[0].sym().toString()
+    if (tag === 'External' && parts.length === 3 && parts[1].switch().name === 'scvAddress' && parts[2].switch().name === 'scvBytes') {
+      return { kind: 'external', verifier: Address.fromScAddress(parts[1].address()).toString(), keyHex: Buffer.from(parts[2].bytes()).toString('hex') }
+    }
+    if (tag === 'Delegated' && parts.length === 2 && parts[1].switch().name === 'scvAddress') {
+      return { kind: 'delegated', address: Address.fromScAddress(parts[1].address()).toString() }
+    }
+  } catch {
+    /* falls through to unknown */
+  }
+  return { kind: 'unknown' }
+}
+
+/** `ContextRuleType`: `Vec[Symbol("Default")]`, `Vec[Symbol("CallContract"), Address]`, `Vec[Symbol("CreateContract"), Bytes]`. */
+function describeContextType(v: xdr.ScVal): RelayContextType {
+  try {
+    if (v.switch().name !== 'scvVec') return 'unknown'
+    const parts = v.vec() ?? []
+    if (parts.length === 0 || parts[0].switch().name !== 'scvSymbol') return 'unknown'
+    const tag = parts[0].sym().toString()
+    if (tag === 'Default' && parts.length === 1) return 'default'
+    if (tag === 'CallContract' && parts.length === 2) return 'call-contract'
+    if (tag === 'CreateContract' && parts.length === 2) return 'create-contract'
+  } catch {
+    /* falls through to unknown */
+  }
+  return 'unknown'
+}
+
+/**
+ * A smart account's `add_context_rule(context_type, name, valid_until, signers, policies)` or
+ * `add_signer(context_rule_id, signer)`, when the arguments have the account's own types.
+ * Null otherwise, which the decision refuses as an unknown shape rather than guessing at.
+ */
+function describeAdmin(method: string, args: xdr.ScVal[]): RelayAccountAdmin | null {
+  try {
+    if (method === 'add_context_rule' && args.length === 5) {
+      const [type, name, validUntil, signers, policies] = args
+      if (signers.switch().name !== 'scvVec' || policies.switch().name !== 'scvMap') return null
+      const vu = validUntil.switch().name === 'scvU32' ? validUntil.u32() : validUntil.switch().name === 'scvVoid' ? null : undefined
+      if (vu === undefined) return null
+      return {
+        method,
+        contextType: describeContextType(type),
+        name: name.switch().name === 'scvString' ? name.str().toString() : null,
+        validUntil: vu,
+        signers: (signers.vec() ?? []).map((s) => describeSigner(s)),
+        policies: (policies.map() ?? []).length,
+      }
+    }
+    if (method === 'add_signer' && args.length === 2) {
+      const [ruleId, signer] = args
+      return { method, contextRuleId: ruleId.switch().name === 'scvU32' ? ruleId.u32() : null, signer: describeSigner(signer) }
+    }
+  } catch {
+    return null
+  }
+  return null
+}
+
 function describeFunc(func: xdr.HostFunction): RelayFunc {
   switch (func.switch().name) {
     case 'hostFunctionTypeInvokeContract': {
@@ -77,6 +147,7 @@ function describeFunc(func: xdr.HostFunction): RelayFunc {
         args: args.map((a) => native(a)),
         argsXdr: inv.toXDR('base64'),
         execute: describeExecute(method, args),
+        admin: describeAdmin(method, args),
       }
     }
     case 'hostFunctionTypeCreateContractV2':

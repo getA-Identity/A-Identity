@@ -1,58 +1,101 @@
 /**
  * The backend half of the passkey vault demo: the endpoints under /api/stellar/passkey
- * that the page calls with plain JSON. The passkey never touches these. They are the
- * server-side pieces (the vault deploy from our operator, the KYA verdict, the agent's
- * payment from its operator key), each answering in the prepared-or-executed vocabulary
- * the rest of the product uses.
+ * that the page calls with plain JSON, plus the transaction decoder another route serves.
+ * The passkey never touches these. They are the server-side pieces (the vault deploy from
+ * our operator, the KYA verdict, the agent's payment from its operator key, the live reads
+ * that name who paid and what was signed), each answering in the prepared-or-executed
+ * vocabulary the rest of the product uses.
  *
- * Every reader here tolerates extra fields and never throws on a shape it half-recognizes:
- * a missing outcome reads as failed, with the server's own reason where it gave one.
+ * Every call names its network. Every reader here tolerates extra fields and never throws
+ * on a shape it half-recognizes: a missing outcome reads as failed, with the server's own
+ * reason where it gave one.
  */
 import { apiFetch, explainError, readJson } from '../api'
-import { PASSKEY_NETWORK, txUrl } from './passkey'
+import { txUrl, type PasskeyNetwork } from './passkey'
 
 const JSON_HEADERS = { 'Content-Type': 'application/json' }
 
-/** GET /api/stellar/passkey/status: configuration flags, read to label the page. */
-export type PasskeyStatus = Record<string, unknown>
+const num = (v: unknown): number | null => (typeof v === 'number' && Number.isFinite(v) ? v : null)
+const str = (v: unknown): string | null => (typeof v === 'string' && v.trim() ? v : null)
+const obj = (v: unknown): Record<string, unknown> | null => (v && typeof v === 'object' && !Array.isArray(v) ? (v as Record<string, unknown>) : null)
 
-export async function readPasskeyStatus(): Promise<PasskeyStatus | null> {
+// ── status ───────────────────────────────────────────────────────────────────────
+
+/** The caps the backend enforces on this network, which the page sizes its defaults from. */
+export type PasskeyCaps = {
+  dailyCapMaxUsd: number
+  perPaymentMaxUsd: number
+  seedUsdDefault: number
+  seedUsdMax: number
+  agentPayMaxUsd: number
+  sharedDailyCeilingUsd: number
+}
+
+export type PasskeyStatus = {
+  network: PasskeyNetwork
+  realMoney: boolean
+  caps: PasskeyCaps | null
+  relayer: { configured: boolean | null; product: string | null; keyVar: string | null }
+  operator: { configured: boolean; address: string | null }
+  smartAccount: { wasmHash: string; webauthnVerifier: string; verified: string | null } | null
+  vaultWasmHash: string | null
+  raw: Record<string, unknown>
+}
+
+function capsOf(v: unknown): PasskeyCaps | null {
+  const c = obj(v)
+  if (!c) return null
+  const dailyCapMaxUsd = num(c.dailyCapMaxUsd) ?? num(c.dailyCapUsd)
+  const perPaymentMaxUsd = num(c.perPaymentMaxUsd) ?? num(c.autoApproveUsd)
+  const seedUsdDefault = num(c.seedUsdDefault)
+  const seedUsdMax = num(c.seedUsdMax)
+  const agentPayMaxUsd = num(c.agentPayMaxUsd)
+  const sharedDailyCeilingUsd = num(c.sharedDailyCeilingUsd) ?? num(c.seedDailyTotalUsd)
+  if ([dailyCapMaxUsd, perPaymentMaxUsd, seedUsdDefault, seedUsdMax, agentPayMaxUsd, sharedDailyCeilingUsd].some((x) => x === null)) return null
+  return { dailyCapMaxUsd: dailyCapMaxUsd!, perPaymentMaxUsd: perPaymentMaxUsd!, seedUsdDefault: seedUsdDefault!, seedUsdMax: seedUsdMax!, agentPayMaxUsd: agentPayMaxUsd!, sharedDailyCeilingUsd: sharedDailyCeilingUsd! }
+}
+
+/** GET /api/stellar/passkey/status?network=: what this deployment serves on that network. */
+export async function readPasskeyStatus(net: PasskeyNetwork): Promise<PasskeyStatus | null> {
   try {
-    const res = await apiFetch('/api/stellar/passkey/status', { retries: 1 })
+    const res = await apiFetch(`/api/stellar/passkey/status?network=${encodeURIComponent(net)}`, { retries: 1 })
     if (!res.ok) return null
-    const body = (await res.json()) as unknown
-    return body && typeof body === 'object' ? (body as PasskeyStatus) : null
+    const body = obj(await res.json())
+    if (!body) return null
+    const relayer = obj(body.relayer) ?? {}
+    const operator = obj(body.operator) ?? {}
+    const sa = obj(body.smartAccount)
+    const configured = typeof relayer.configured === 'boolean' ? relayer.configured : typeof relayer.keyConfigured === 'boolean' ? relayer.keyConfigured : null
+    return {
+      network: net,
+      realMoney: body.realMoney === true,
+      caps: capsOf(body.caps),
+      relayer: { configured, product: str(relayer.product), keyVar: str(relayer.keyVar) },
+      operator: { configured: operator.configured === true, address: str(operator.address) ?? str(operator.account) },
+      smartAccount: sa && str(sa.wasmHash) && str(sa.webauthnVerifier) ? { wasmHash: String(sa.wasmHash), webauthnVerifier: String(sa.webauthnVerifier), verified: str(sa.verified) } : null,
+      vaultWasmHash: str(obj(body.vault)?.wasmHash),
+      raw: body,
+    }
   } catch {
     return null
   }
 }
 
-export type SponsorReadiness = {
-  /** true: the relay can pay; false: it cannot (prepared only); null: the status did not say. */
-  ready: boolean | null
-  /** The relayer product or key source, when the status names one. */
-  product?: string
+/**
+ * The defaults the page offers, derived from the caps rather than written down, so a
+ * default can never exceed what the backend will accept on the network in view. The
+ * payment is half the seed (so two can settle), never above the per-payment ceiling or
+ * the agent-pay cap, and rounded to the token's seven decimals.
+ */
+export function defaultsFor(caps: PasskeyCaps): { dailyCapUsd: number; autoApproveUsd: number; seedUsd: number; payUsd: number } {
+  const round7 = (n: number) => Math.floor(n * 1e7) / 1e7
+  const autoApproveUsd = caps.perPaymentMaxUsd
+  const seedUsd = Math.min(caps.seedUsdDefault, caps.seedUsdMax)
+  const payUsd = round7(Math.min(caps.agentPayMaxUsd, autoApproveUsd, seedUsd > 0 ? seedUsd / 2 : caps.agentPayMaxUsd))
+  return { dailyCapUsd: caps.dailyCapMaxUsd, autoApproveUsd, seedUsd, payUsd }
 }
 
-/**
- * Whether this deployment can sponsor fees, read from the status body. Looks under
- * `relayer` first, then at the top level, for the first boolean that answers the question.
- */
-export function sponsorReadiness(status: PasskeyStatus | null): SponsorReadiness {
-  if (!status) return { ready: null }
-  const nested = status.relayer ?? status.relay ?? status.sponsor
-  const scopes = [nested, status].filter((s): s is Record<string, unknown> => !!s && typeof s === 'object')
-  const product = scopes.map((s) => s.product ?? s.mode ?? s.kind).find((v): v is string => typeof v === 'string')
-  for (const s of scopes) {
-    // keyConfigured is the one the backend actually sends (relayer.keyConfigured); the
-    // rest are there so a rename on that side degrades to "it did not say" rather than
-    // to a confident wrong answer.
-    for (const key of ['keyConfigured', 'configured', 'keySet', 'ready', 'enabled', 'relayerConfigured', 'sponsorConfigured']) {
-      if (typeof s[key] === 'boolean') return { ready: s[key] as boolean, product }
-    }
-  }
-  return { ready: null, product }
-}
+// ── the vault deploy ─────────────────────────────────────────────────────────────
 
 type NotSettled = 'prepared' | 'refused' | 'failed' | 'pending'
 
@@ -81,6 +124,9 @@ export type SeedResult = {
   reason?: string
 }
 
+/** Who paid a transaction's network fee, as the backend named it. */
+export type FeePayerNamed = { account: string; who: 'operator' | 'relayer' }
+
 export type VaultDeploy =
   | {
       outcome: 'settled'
@@ -91,12 +137,20 @@ export type VaultDeploy =
       explorerUrl: string
       ledger?: number
       seed?: SeedResult
+      operator: string | null
+      feePayer: FeePayerNamed | null
+      /** owner() read back from the new vault, live. */
+      ownerReadBack: { owner: string | null; matches: boolean | null; read: string }
     }
-  | { outcome: NotSettled; reason: string; txHash?: string; explorerUrl?: string }
+  | { outcome: NotSettled; reason: string; code?: string; txHash?: string; explorerUrl?: string }
 
 type DeployBody = Partial<{
   outcome: string
+  code: string
   vault: string
+  operator: string | null
+  feePayer: { account?: unknown; who?: unknown } | null
+  ownerReadBack: { owner?: unknown; matches?: unknown; read?: unknown } | null
   /** The vault contract's explorer page. The deploy transaction lives under `deploy`. */
   explorerUrl: string
   deploy: { txHash?: string; explorerUrl?: string; ledger?: number } | null
@@ -109,17 +163,26 @@ type DeployBody = Partial<{
   contractErrorName: string
 }>
 
-/** POST /api/stellar/passkey/vault/deploy: a fresh vault whose OWNER is the smart account. */
-export async function deployPasskeyVault(input: {
-  owner: string
-  dailyCapUsd: number
-  autoApproveUsd: number
-  seedUsd?: number
-}): Promise<VaultDeploy> {
+function feePayerOf(v: unknown): FeePayerNamed | null {
+  const f = obj(v)
+  const account = str(f?.account)
+  if (!account) return null
+  return { account, who: f?.who === 'operator' ? 'operator' : 'relayer' }
+}
+
+/**
+ * POST /api/stellar/passkey/vault/deploy: a fresh vault whose OWNER is the smart account.
+ * The passkey's public key goes with it: the backend reads the account's signers off the
+ * ledger and deploys only when that key is its one and only signer.
+ */
+export async function deployPasskeyVault(
+  net: PasskeyNetwork,
+  input: { owner: string; ownerPublicKey: string; dailyCapUsd: number; autoApproveUsd: number; seedUsd?: number },
+): Promise<VaultDeploy> {
   const res = await apiFetch('/api/stellar/passkey/vault/deploy', {
     method: 'POST',
     headers: JSON_HEADERS,
-    body: JSON.stringify({ network: PASSKEY_NETWORK, ...input }),
+    body: JSON.stringify({ network: net, ...input }),
     timeoutMs: 120_000,
   })
   const body = await readJson<DeployBody>(res)
@@ -134,22 +197,27 @@ export async function deployPasskeyVault(input: {
           amountUsd: s.amountUsd ?? 0,
           outcome: s.outcome ?? (s.txHash ? 'settled' : 'none'),
           txHash: s.txHash,
-          explorerUrl: s.explorerUrl ?? (s.txHash ? txUrl(s.txHash) : undefined),
+          explorerUrl: s.explorerUrl ?? (s.txHash ? txUrl(net, s.txHash) : undefined),
           reason: s.reason,
         }
       : undefined
+    const back = obj(body.ownerReadBack)
     return {
       outcome: 'settled',
       vault: body.vault,
       vaultUrl: body.explorerUrl ?? '',
       txHash,
-      explorerUrl: body.deploy?.explorerUrl ?? txUrl(txHash),
+      explorerUrl: body.deploy?.explorerUrl ?? txUrl(net, txHash),
       ledger: body.deploy?.ledger ?? body.ledger,
       seed,
+      operator: str(body.operator),
+      feePayer: feePayerOf(body.feePayer),
+      ownerReadBack: { owner: str(back?.owner), matches: typeof back?.matches === 'boolean' ? back.matches : null, read: str(back?.read) ?? 'not read' },
     }
   }
   return {
     outcome: notSettled(body.outcome),
+    code: body.code,
     reason:
       body.reason ??
       (body.contractErrorName ? `The contract refused it: ${body.contractErrorName}` : explainError(res.status, body.error)),
@@ -157,6 +225,176 @@ export async function deployPasskeyVault(input: {
     explorerUrl: body.deploy?.explorerUrl,
   }
 }
+
+// ── live reads ───────────────────────────────────────────────────────────────────
+
+export type VaultRead = {
+  owner: string
+  operator: string
+  frozen: boolean
+  allowlistEnabled: boolean
+  decimals: number
+  balanceRaw: string
+  dailyCapRaw: string
+  autoApproveMaxRaw: string
+  spentTodayRaw: string
+  ownerIsDemoSmartAccount: boolean
+  checkedAt: string
+}
+
+/** GET /api/stellar/passkey/vault: one vault, read live. Null when it could not be read. */
+export async function readPasskeyVault(net: PasskeyNetwork, contract: string): Promise<VaultRead | null> {
+  try {
+    const res = await apiFetch(`/api/stellar/passkey/vault?contract=${encodeURIComponent(contract)}&network=${encodeURIComponent(net)}`, { retries: 1 })
+    if (!res.ok) return null
+    const b = obj(await res.json())
+    if (!b || !str(b.owner)) return null
+    return {
+      owner: String(b.owner),
+      operator: String(b.operator ?? ''),
+      frozen: b.frozen === true,
+      allowlistEnabled: b.allowlistEnabled === true,
+      decimals: num(b.decimals) ?? 7,
+      balanceRaw: String(b.balanceRaw ?? '0'),
+      dailyCapRaw: String(b.dailyCapRaw ?? '0'),
+      autoApproveMaxRaw: String(b.autoApproveMaxRaw ?? '0'),
+      spentTodayRaw: String(b.spentTodayRaw ?? '0'),
+      ownerIsDemoSmartAccount: b.ownerIsDemoSmartAccount === true,
+      checkedAt: str(b.checkedAt) ?? new Date().toISOString(),
+    }
+  } catch {
+    return null
+  }
+}
+
+export type FeePayerRead =
+  | { state: 'found'; feeAccount: string; sourceAccount: string; feeBump: boolean; feeChargedStroops: string | null; who: 'operator' | 'relayer'; status: string }
+  | { state: 'not-yet' }
+  | { state: 'unavailable'; reason: string }
+
+/**
+ * GET /api/stellar/passkey/fee-payer: who the ledger charged for a transaction. A hash the
+ * RPC does not know yet answers 404, which is "not yet" for a few seconds after a submit,
+ * so the caller may ask again.
+ */
+export async function readFeePayer(net: PasskeyNetwork, hash: string): Promise<FeePayerRead> {
+  try {
+    const res = await apiFetch(`/api/stellar/passkey/fee-payer?hash=${encodeURIComponent(hash)}&network=${encodeURIComponent(net)}`, { retries: 1 })
+    const b = obj(await res.json().catch(() => null)) ?? {}
+    if (res.status === 404) return { state: 'not-yet' }
+    if (!res.ok || !str(b.feeAccount)) return { state: 'unavailable', reason: str(b.reason) ?? explainError(res.status, str(b.error) ?? undefined) }
+    return {
+      state: 'found',
+      feeAccount: String(b.feeAccount),
+      sourceAccount: String(b.sourceAccount ?? ''),
+      feeBump: b.feeBump === true,
+      feeChargedStroops: str(b.feeChargedStroops),
+      who: b.who === 'operator' ? 'operator' : 'relayer',
+      status: str(b.status) ?? 'unknown',
+    }
+  } catch (e) {
+    return { state: 'unavailable', reason: e instanceof Error ? e.message : 'the read did not go through' }
+  }
+}
+
+/** One signer inside a decoded authorization, as GET /api/stellar/tx/:hash describes it. */
+export type DecodedSigner = {
+  kind: 'webauthn-secp256r1' | 'ed25519' | 'delegated' | 'unknown'
+  verifier: string | null
+  publicKeyHex: string | null
+  authenticatorFlags: { UP: boolean; UV: boolean; BE: boolean; BS: boolean; AT: boolean; ED: boolean } | null
+  signCount: number | null
+  clientDataType: string | null
+  origin: string | null
+}
+
+export type DecodedAuth = {
+  credential: string | null
+  address: string | null
+  nonce: string | null
+  signatureExpirationLedger: number | null
+  rootInvocation: { contract: string | null; function: string | null }
+  signers: DecodedSigner[]
+}
+
+export type TxEvidence =
+  | {
+      state: 'found'
+      hash: string
+      status: string | null
+      sourceAccount: string | null
+      feeAccount: string | null
+      feeChargedStroops: string | null
+      auth: DecodedAuth[]
+      summary: string | null
+      caveat: string | null
+      explorerTx: string | null
+    }
+  | { state: 'absent' }
+  | { state: 'unavailable'; reason: string }
+
+const flagsOf = (v: unknown): DecodedSigner['authenticatorFlags'] => {
+  const f = obj(v)
+  if (!f) return null
+  const b = (k: string) => f[k] === true
+  return { UP: b('UP'), UV: b('UV'), BE: b('BE'), BS: b('BS'), AT: b('AT'), ED: b('ED') }
+}
+
+/**
+ * GET /api/stellar/tx/:hash?network=: the transaction decoded, authorization by
+ * authorization, by a route another part of this product serves. When that route is not
+ * deployed the answer is 404 with no body of ours, read as `absent` so the page can say
+ * the decoder is not available rather than show an error.
+ */
+export async function readTxEvidence(net: PasskeyNetwork, hash: string): Promise<TxEvidence> {
+  try {
+    const res = await apiFetch(`/api/stellar/tx/${encodeURIComponent(hash)}?network=${encodeURIComponent(net)}`, { retries: 1 })
+    const b = obj(await res.json().catch(() => null))
+    if (res.status === 404 && !str(b?.hash)) return { state: 'absent' }
+    if (!res.ok || !b) return { state: 'unavailable', reason: str(b?.reason) ?? explainError(res.status, str(b?.error) ?? undefined) }
+    const auth = Array.isArray(b.auth) ? b.auth : []
+    return {
+      state: 'found',
+      hash: str(b.hash) ?? hash,
+      status: str(b.status),
+      sourceAccount: str(b.sourceAccount),
+      feeAccount: str(b.feeAccount),
+      feeChargedStroops: b.feeChargedStroops === undefined || b.feeChargedStroops === null ? null : String(b.feeChargedStroops),
+      auth: auth.map((a) => {
+        const e = obj(a) ?? {}
+        const root = obj(e.rootInvocation) ?? {}
+        const signers = Array.isArray(e.signers) ? e.signers : []
+        return {
+          credential: str(e.credential),
+          address: str(e.address),
+          nonce: e.nonce === undefined || e.nonce === null ? null : String(e.nonce),
+          signatureExpirationLedger: num(e.signatureExpirationLedger),
+          rootInvocation: { contract: str(root.contract), function: str(root.function) },
+          signers: signers.map((s) => {
+            const x = obj(s) ?? {}
+            const kind = x.kind === 'webauthn-secp256r1' || x.kind === 'ed25519' || x.kind === 'delegated' ? x.kind : 'unknown'
+            return {
+              kind,
+              verifier: str(x.verifier),
+              publicKeyHex: str(x.publicKeyHex),
+              authenticatorFlags: flagsOf(x.authenticatorFlags),
+              signCount: num(x.signCount),
+              clientDataType: str(x.clientDataType),
+              origin: str(x.origin),
+            } as DecodedSigner
+          }),
+        }
+      }),
+      summary: str(b.summary),
+      caveat: str(b.caveat),
+      explorerTx: str(obj(b.explorer)?.tx),
+    }
+  } catch (e) {
+    return { state: 'unavailable', reason: e instanceof Error ? e.message : 'the read did not go through' }
+  }
+}
+
+// ── the allowlist plan ───────────────────────────────────────────────────────────
 
 export type Decision = 'ALLOW' | 'WARN' | 'DENY'
 
@@ -187,11 +425,11 @@ type PlanBody = Partial<{
 }>
 
 /** POST /api/stellar/passkey/allowlist/plan: the risk engine's verdict and the write it implies. */
-export async function planAllowlist(input: { contract: string; payee: string; agentId?: string }): Promise<AllowlistPlan> {
+export async function planAllowlist(net: PasskeyNetwork, input: { contract: string; payee: string; agentId?: string }): Promise<AllowlistPlan> {
   const res = await apiFetch('/api/stellar/passkey/allowlist/plan', {
     method: 'POST',
     headers: JSON_HEADERS,
-    body: JSON.stringify({ network: PASSKEY_NETWORK, ...input }),
+    body: JSON.stringify({ network: net, ...input }),
     timeoutMs: 60_000,
   })
   const body = await readJson<PlanBody>(res)
@@ -212,16 +450,20 @@ export async function planAllowlist(input: { contract: string; payee: string; ag
   }
 }
 
+// ── the agent's payment ──────────────────────────────────────────────────────────
+
 export type AgentPay =
-  | { outcome: 'settled'; txHash: string; explorerUrl: string; ledger?: number }
+  | { outcome: 'settled'; txHash: string; explorerUrl: string; ledger?: number; feePayer: FeePayerNamed | null }
   | { outcome: 'refused'; contractErrorCode?: number; contractErrorName?: string; note?: string }
-  | { outcome: 'prepared' | 'failed' | 'pending'; reason: string; txHash?: string; explorerUrl?: string }
+  | { outcome: 'prepared' | 'failed' | 'pending'; reason: string; code?: string; txHash?: string; explorerUrl?: string }
 
 type PayBody = Partial<{
   outcome: string
+  code: string
   txHash: string
   explorerUrl: string
   ledger: number
+  feePayer: unknown
   contractErrorCode: unknown
   contractErrorName: unknown
   note: string
@@ -230,16 +472,16 @@ type PayBody = Partial<{
 }>
 
 /** POST /api/stellar/passkey/agent-pay: the agent's operator calls pay() on the vault. */
-export async function agentPay(input: { contract: string; to: string; amountUsd: number }): Promise<AgentPay> {
+export async function agentPay(net: PasskeyNetwork, input: { contract: string; to: string; amountUsd: number }): Promise<AgentPay> {
   const res = await apiFetch('/api/stellar/passkey/agent-pay', {
     method: 'POST',
     headers: JSON_HEADERS,
-    body: JSON.stringify({ network: PASSKEY_NETWORK, ...input }),
+    body: JSON.stringify({ network: net, ...input }),
     timeoutMs: 90_000,
   })
   const body = await readJson<PayBody>(res)
   if (res.ok && body.outcome === 'settled' && body.txHash) {
-    return { outcome: 'settled', txHash: body.txHash, explorerUrl: body.explorerUrl ?? txUrl(body.txHash), ledger: body.ledger }
+    return { outcome: 'settled', txHash: body.txHash, explorerUrl: body.explorerUrl ?? txUrl(net, body.txHash), ledger: body.ledger, feePayer: feePayerOf(body.feePayer) }
   }
   if (body.outcome === 'refused') {
     return {
@@ -254,6 +496,7 @@ export async function agentPay(input: { contract: string; to: string; amountUsd:
   // nothing failed: the call was built and deliberately not submitted.
   return {
     outcome,
+    code: body.code,
     reason: body.reason ?? body.note ?? explainError(res.status, body.error),
     txHash: body.txHash,
     explorerUrl: body.explorerUrl,

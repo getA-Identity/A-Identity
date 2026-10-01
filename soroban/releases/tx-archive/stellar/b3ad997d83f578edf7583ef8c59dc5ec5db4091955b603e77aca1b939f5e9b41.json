@@ -1,0 +1,66 @@
+{
+  "hash": "b3ad997d83f578edf7583ef8c59dc5ec5db4091955b603e77aca1b939f5e9b41",
+  "chainId": "stellar",
+  "network": "stellar:pubnet",
+  "ledger": 64103437,
+  "createdAt": "2026-08-24T13:47:51.000Z",
+  "status": "success",
+  "resultCode": {
+    "tx": "txSuccess",
+    "inner": null,
+    "operations": [
+      "pathPaymentStrictReceiveSuccess"
+    ],
+    "contractError": null
+  },
+  "sourceAccount": "GARC7OFBBQCZJ5N3LCI7HTTYJ2MMPDAFDNGIHSQMZ7EPJ5EAWQJ5R6I5",
+  "feeAccount": "GARC7OFBBQCZJ5N3LCI7HTTYJ2MMPDAFDNGIHSQMZ7EPJ5EAWQJ5R6I5",
+  "feeChargedStroops": "100",
+  "envelopeXdr": "AAAAAgAAAAAiL7ihDAWU9btYkfPOeE6Yx4wFG0yDygzPyPT0gLQT2AAAAGQD0iPhAAAABAAAAAAAAAAAAAAAAQAAAAAAAAACAAAAAAAAAAADdQKAAAAAACIvuKEMBZT1u1iR8854TpjHjAUbTIPKDM/I9PSAtBPYAAAAAVVTREMAAAAAO5kROA7+mIugqJAOsc/kTzZvfb6Ua+0HckD39iTfFcUAAAAAAJiWgAAAAAAAAAAAAAAAAYC0E9gAAABAOz3pke9YnsMu26mL310yt/mszmtt1DCNpFTzbDR/pNmRj4r3kn14NjCMtNC8SVleMmPQeUe8KJhFp8lfuWJVAw==",
+  "resultXdr": "AAAAAAAAAGQAAAAAAAAAAQAAAAAAAAACAAAAAAAAAAEAAAABAAAAAE7oxge8yV4waCq4+Iv9JptMeGBpgBxx8S7/6aJSGLdHAAAAAG6Nr0YAAAABVVNEQwAAAAA7mRE4Dv6Yi6CokA6xz+RPNm99vpRr7QdyQPf2JN8VxQAAAAAAmJaAAAAAAAAAAAADDoCDAAAAACIvuKEMBZT1u1iR8854TpjHjAUbTIPKDM/I9PSAtBPYAAAAAVVTREMAAAAAO5kROA7+mIugqJAOsc/kTzZvfb6Ua+0HckD39iTfFcUAAAAAAJiWgAAAAAA=",
+  "resultMetaXdr": "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",
+  "metaFrom": "stellar-expert",
+  "metaNote": "Result meta from Stellar Expert, a third-party indexer, accepted because the envelope and result it served match Horizon byte for byte. Meta is not covered by the transaction hash.",
+  "fetchedFrom": "horizon",
+  "explorer": "https://stellar.expert/explorer/public/tx/b3ad997d83f578edf7583ef8c59dc5ec5db4091955b603e77aca1b939f5e9b41",
+  "archivedAt": "2026-10-01T20:41:32.138Z",
+  "caption": "1 USDC bought on Stellar's own order book",
+  "deliverable": null,
+  "provenance": {
+    "entry": "stellar",
+    "kind": "funding",
+    "label": "1 USDC bought on Stellar's own order book",
+    "note": "A strict-receive path payment, XLM in and exactly 1.0000000 USDC out at 0.1949500 USDC per XLM. No bridge and no exchange. It is also where the USD figures in this repo come from: a price read off the same ledger the rail settles on, rather than from an API we cannot show you."
+  },
+  "decoded": {
+    "hash": "b3ad997d83f578edf7583ef8c59dc5ec5db4091955b603e77aca1b939f5e9b41",
+    "innerHash": null,
+    "status": "success",
+    "resultCode": {
+      "tx": "txSuccess",
+      "inner": null,
+      "operations": [
+        "pathPaymentStrictReceiveSuccess"
+      ],
+      "contractError": null
+    },
+    "sourceAccount": "GARC7OFBBQCZJ5N3LCI7HTTYJ2MMPDAFDNGIHSQMZ7EPJ5EAWQJ5R6I5",
+    "feeAccount": "GARC7OFBBQCZJ5N3LCI7HTTYJ2MMPDAFDNGIHSQMZ7EPJ5EAWQJ5R6I5",
+    "feeBump": false,
+    "feeChargedStroops": "100",
+    "operations": [
+      {
+        "type": "pathPaymentStrictReceive",
+        "source": null,
+        "contract": null,
+        "function": null,
+        "args": null
+      }
+    ],
+    "auth": [],
+    "summary": "One pathPaymentStrictReceive operation. Fee 0.00001 XLM paid by GARC7O...R6I5. It succeeded.",
+    "caveats": [
+      "Result meta from Stellar Expert, a third-party indexer, accepted because the envelope and result it served match Horizon byte for byte. Meta is not covered by the transaction hash."
+    ]
+  }
+}

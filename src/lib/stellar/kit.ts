@@ -98,6 +98,65 @@ export async function readStellarNetwork(): Promise<'stellar:pubnet' | 'stellar:
 }
 
 /**
+ * What the connected wallet says about its network, including whether it said anything.
+ *
+ * `readStellarNetwork` folds "the wallet is on no network we know" and "the wallet would
+ * not say" into one null, which is fine for a label and not fine for a signature: a module
+ * without getNetwork (several kit modules have none) could be on pubnet while the screen
+ * targets testnet. Owner signing reads this instead and refuses when `reported` is false.
+ */
+export type WalletNetworkReading = {
+  /** The CAIP-2 network the passphrase maps to, or null when it is neither Stellar network. */
+  network: 'stellar:pubnet' | 'stellar:testnet' | null
+  passphrase: string | null
+  /** False when the wallet could not or would not report a network at all. */
+  reported: boolean
+}
+
+export async function readWalletNetwork(): Promise<WalletNetworkReading> {
+  try {
+    const k = await kit()
+    const { networkPassphrase } = await k.getNetwork()
+    if (!networkPassphrase) return { network: null, passphrase: null, reported: false }
+    return { network: stellarNetworkOf(networkPassphrase), passphrase: networkPassphrase, reported: true }
+  } catch {
+    return { network: null, passphrase: null, reported: false }
+  }
+}
+
+/**
+ * Whether any Stellar wallet is installed in this browser, and the kit's list.
+ *
+ * Extensions announce themselves a beat after the page loads, so a caller that gets
+ * `installed: false` on first paint should ask again after a moment before telling a
+ * person to install something. A kit that fails to load reports nothing installed and
+ * `failed: true`, so the caller can say "could not check" rather than "none".
+ */
+export async function detectStellarWallets(): Promise<{ installed: boolean; wallets: StellarWalletInfo[]; failed: boolean }> {
+  try {
+    const wallets = await listStellarWallets()
+    return { installed: wallets.some((w) => w.isAvailable), wallets, failed: false }
+  } catch {
+    return { installed: false, wallets: [], failed: true }
+  }
+}
+
+/**
+ * Drop the kit's connection to the selected wallet. The extension keeps its own record of
+ * which sites it trusts; this only makes this page forget the account, which is all a
+ * page can do.
+ */
+export async function disconnectStellar(): Promise<void> {
+  if (!kitPromise) return
+  try {
+    const k = await kitPromise
+    await k.disconnect()
+  } catch {
+    /* nothing was connected, or the module has no disconnect: forgetting is still done */
+  }
+}
+
+/**
  * The refusal sentence when a wallet is pointed at another network than the one a screen
  * targets, or null when signing may go ahead (including when the wallet will not say).
  */

@@ -1,0 +1,66 @@
+{
+  "hash": "f10c27d98a07c386c975bfeb3168947acab5e13e63536bc14093eb700a97c662",
+  "chainId": "stellar",
+  "network": "stellar:pubnet",
+  "ledger": 64103407,
+  "createdAt": "2026-08-24T13:45:03.000Z",
+  "status": "success",
+  "resultCode": {
+    "tx": "txSuccess",
+    "inner": null,
+    "operations": [
+      "changeTrustSuccess"
+    ],
+    "contractError": null
+  },
+  "sourceAccount": "GARC7OFBBQCZJ5N3LCI7HTTYJ2MMPDAFDNGIHSQMZ7EPJ5EAWQJ5R6I5",
+  "feeAccount": "GARC7OFBBQCZJ5N3LCI7HTTYJ2MMPDAFDNGIHSQMZ7EPJ5EAWQJ5R6I5",
+  "feeChargedStroops": "100",
+  "envelopeXdr": "AAAAAgAAAAAiL7ihDAWU9btYkfPOeE6Yx4wFG0yDygzPyPT0gLQT2AAAAGQD0iPhAAAAAQAAAAAAAAAAAAAAAQAAAAAAAAAGAAAAAVVTREMAAAAAO5kROA7+mIugqJAOsc/kTzZvfb6Ua+0HckD39iTfFcV//////////wAAAAAAAAABgLQT2AAAAEBB+KESN3Rb6q/fnyjzDRFKo1Im7rKI6a9FsV277xNx2C4HZu3pFjS4J+JgWTe+FDRqO7dFSa91rvE0kcDLGDUD",
+  "resultXdr": "AAAAAAAAAGQAAAAAAAAAAQAAAAAAAAAGAAAAAAAAAAA=",
+  "resultMetaXdr": "AAAABAAAAAAAAAACAAAAAwPSI+8AAAAAAAAAACIvuKEMBZT1u1iR8854TpjHjAUbTIPKDM/I9PSAtBPYAAAAAAvrwZwD0iPhAAAAAAAAAAAAAAAAAAAAAAAAAAABAAAAAAAAAAAAAAAAAAAAAAAAAQPSI+8AAAAAAAAAACIvuKEMBZT1u1iR8854TpjHjAUbTIPKDM/I9PSAtBPYAAAAAAvrwZwD0iPhAAAAAQAAAAAAAAAAAAAAAAAAAAABAAAAAAAAAAAAAAEAAAAAAAAAAAAAAAAAAAAAAAAAAgAAAAAAAAAAAAAAAAAAAAMAAAAAA9Ij7wAAAABqjErfAAAAAAAAAAEAAAAAAAAAAwAAAAAD0iPvAAAAAQAAAAAiL7ihDAWU9btYkfPOeE6Yx4wFG0yDygzPyPT0gLQT2AAAAAFVU0RDAAAAADuZETgO/piLoKiQDrHP5E82b32+lGvtB3JA9/Yk3xXFAAAAAAAAAAB//////////wAAAAEAAAAAAAAAAAAAAAMD0iPvAAAAAAAAAAAiL7ihDAWU9btYkfPOeE6Yx4wFG0yDygzPyPT0gLQT2AAAAAAL68GcA9Ij4QAAAAEAAAAAAAAAAAAAAAAAAAAAAQAAAAAAAAAAAAABAAAAAAAAAAAAAAAAAAAAAAAAAAIAAAAAAAAAAAAAAAAAAAADAAAAAAPSI+8AAAAAaoxK3wAAAAAAAAABA9Ij7wAAAAAAAAAAIi+4oQwFlPW7WJHzznhOmMeMBRtMg8oMz8j09IC0E9gAAAAAC+vBnAPSI+EAAAABAAAAAQAAAAAAAAAAAAAAAAEAAAAAAAAAAAAAAQAAAAAAAAAAAAAAAAAAAAAAAAACAAAAAAAAAAAAAAAAAAAAAwAAAAAD0iPvAAAAAGqMSt8AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=",
+  "metaFrom": "stellar-expert",
+  "metaNote": "Result meta from Stellar Expert, a third-party indexer, accepted because the envelope and result it served match Horizon byte for byte. Meta is not covered by the transaction hash.",
+  "fetchedFrom": "horizon",
+  "explorer": "https://stellar.expert/explorer/public/tx/f10c27d98a07c386c975bfeb3168947acab5e13e63536bc14093eb700a97c662",
+  "archivedAt": "2026-10-01T22:57:20.673Z",
+  "caption": "The payee opens a USDC trustline",
+  "deliverable": null,
+  "provenance": {
+    "entry": "stellar",
+    "kind": "funding",
+    "label": "The payee opens a USDC trustline",
+    "note": "A Stellar prerequisite with no EVM analogue, and one that is easy to learn the hard way: paying an account that holds no USDC trustline fails with op_no_trust, which a buyer reads as our bug rather than as their missing setup. The vault itself needs none, because it holds the token in contract storage rather than through a trustline."
+  },
+  "decoded": {
+    "hash": "f10c27d98a07c386c975bfeb3168947acab5e13e63536bc14093eb700a97c662",
+    "innerHash": null,
+    "status": "success",
+    "resultCode": {
+      "tx": "txSuccess",
+      "inner": null,
+      "operations": [
+        "changeTrustSuccess"
+      ],
+      "contractError": null
+    },
+    "sourceAccount": "GARC7OFBBQCZJ5N3LCI7HTTYJ2MMPDAFDNGIHSQMZ7EPJ5EAWQJ5R6I5",
+    "feeAccount": "GARC7OFBBQCZJ5N3LCI7HTTYJ2MMPDAFDNGIHSQMZ7EPJ5EAWQJ5R6I5",
+    "feeBump": false,
+    "feeChargedStroops": "100",
+    "operations": [
+      {
+        "type": "changeTrust",
+        "source": null,
+        "contract": null,
+        "function": null,
+        "args": null
+      }
+    ],
+    "auth": [],
+    "summary": "One changeTrust operation. Fee 0.00001 XLM paid by GARC7O...R6I5. It succeeded.",
+    "caveats": [
+      "Result meta from Stellar Expert, a third-party indexer, accepted because the envelope and result it served match Horizon byte for byte. Meta is not covered by the transaction hash."
+    ]
+  }
+}

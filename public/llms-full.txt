@@ -546,10 +546,23 @@ Beta, wired and readable:
   an allowed payee, and a payment to a payee revoked mid-flight was refused on the ledger
   with `PayeeNotAllowed` (tx 22b33018...). The KYA verdict maps onto a BINARY allowlist:
   ALLOW writes `set_allowed(payee, true)`, DENY writes `set_allowed(payee, false)`, and
-  WARN writes nothing on chain. Testnet only; the passkey in that run was a software
-  P-256 key standing in for a platform authenticator, and the fee was paid by a deployer
-  key rather than the OpenZeppelin Channels sponsor the public flow uses. The record is
-  soroban/releases/testnet-passkey-owner-2026-09-19.json.
+  WARN writes nothing on chain. That run is a REHEARSAL: every owner signature in it
+  came from a software P-256 key in our own script, not from a device, and the fee was
+  paid by a deployer key. The record is
+  soroban/releases/testnet-passkey-owner-2026-09-19.json. The device-passkey run for
+  SOW 2 is separate: a person enrols a real device passkey on
+  https://a-identity.xyz/stellar?network=testnet, the owner is an OpenZeppelin smart
+  account and WebAuthn verifier we build ourselves from the audited stellar-contracts
+  release line (tag v0.7.2) and upload to testnet, and OpenZeppelin Channels pays the
+  network fee through our relay, with the paying account named on the page. The page
+  opens on pubnet by default, where it uses OpenZeppelin's own published deployment,
+  labelled as theirs, with dust amounts capped by the backend. The selection record is
+  https://a-identity.mintlify.site/chains/stellar-d3-selection and the recovery position
+  (losing every device that holds the passkey loses the owner for good) is
+  https://a-identity.mintlify.site/chains/stellar-passkey-recovery. Vaults deployed for
+  SOW 2 run AgentSpendPolicy v0.1.1, which checks the amount before the payee on every
+  payment path; the three earlier vaults keep v0.1.0. The live state of any of our
+  vaults is readable without a wallet at https://a-identity.xyz/app/vault/stellar.
 
 Planned, descriptor only:
 
@@ -572,8 +585,8 @@ https://a-identity.xyz/.well-known/ai-agent-manifest.json
   #0, a spend vault and both x402 rails in real USDC, all self-funded so far. Arc
   **testnet** still carries escrow, KYA anchoring, Paymaster and the account-abstraction
   path, in test money.
-- The Trust Oracle is **live on OKX.AI as agent #6271** with
-  120 x402 settlements on X Layer mainnet, each verifiable. They are published as proof that an open
+- The Trust Oracle was **listed on OKX.AI as agent #6271 until OKX.AI delisted it on
+  2026-09-26**, with 120 x402 settlements on X Layer mainnet, each verifiable. They are published as proof that an open
   payment rail works and composes with the identity layer, not as revenue: the
   amounts are sub-cent by design.
 - Six more mainnets carry settlements of their own: Arc Mainnet, Robinhood Chain,
@@ -594,7 +607,10 @@ from published methods or verifiable on a public chain.
 | Resource | URL |
 | --- | --- |
 | Site | https://a-identity.xyz |
-| Stellar page | https://a-identity.xyz/stellar |
+| Stellar page | https://a-identity.xyz/stellar (pubnet by default; ?network=testnet for testnet) |
+| Stellar vault panel | https://a-identity.xyz/app/vault/stellar |
+| Passkey selection record | https://a-identity.mintlify.site/chains/stellar-d3-selection |
+| Passkey recovery | https://a-identity.mintlify.site/chains/stellar-passkey-recovery |
 | Machine summary | https://a-identity.xyz/llms.txt |
 | This document | https://a-identity.xyz/llms-full.txt |
 | Authentication | https://a-identity.xyz/auth.md |
@@ -608,7 +624,7 @@ from published methods or verifiable on a public chain.
 | Settlement proof | https://a-identity-asp.onrender.com/proof |
 | Scoring method | https://a-identity-asp.onrender.com/methodology |
 | Source | https://github.com/getA-Identity/A-Identity |
-| Trust Oracle on OKX.AI | https://www.okx.ai/agents/6271 |
+| Trust Oracle on OKX.AI (listed until 2026-09-26) | https://www.okx.ai/agents/6271 |
 
 ## 11. Glossary
 

@@ -7,14 +7,24 @@
  *
  * Soroban contract state expires, so each row also carries its TTL: the ledger the vault
  * stays live until, and roughly when it would archive if nobody bumps it.
+ *
+ * Each row also says WHOSE vault it is: the registry slot it fills (flagship, wallet-owned,
+ * device passkey, or the 2026-09-19 rehearsal) and the owner and operator read live. A
+ * rehearsal row is marked as one in the row itself, because a reviewer scanning for owner
+ * evidence should not have to open a ledger to learn that a software key signed it. The
+ * role fields are newer than this endpoint; on a backend without them the row falls back to
+ * its plain label and claims no role.
  */
 import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { ArrowUpRight } from 'lucide-react'
 import { apiFetch } from '../../lib/api'
+import { ago } from '../../lib/format'
 import { Skeleton } from '../ui/skeleton'
 
 type VaultLive = { reachable: boolean; ledger?: number; checkedAt?: string; reason?: string }
+
+type VaultRole = 'flagship' | 'wallet-owned' | 'device-passkey' | 'rehearsal'
 
 type VaultOnChain = {
   owner?: string
@@ -44,12 +54,21 @@ type StellarVaultRow = {
   ttl?: VaultTtl
   /** What kind of key owns it: a passkey smart account (C...) or a plain account (G...).
    *  Absent on an older backend, which is why nothing is inferred from the address. */
-  ownerKind?: 'smart-account' | 'account'
+  ownerKind?: 'smart-account' | 'account' | null
+  /** What this row is in words, e.g. "flagship vault". */
+  label?: string
+  /** The registry slot, once the backend serves it. Undefined on an older backend. */
+  role?: VaultRole
+  roleLabel?: string
+  /** Set when the instance entry has lapsed; the text says what that means. */
+  archived?: string
 }
 
 type StellarVaultsResponse = { checkedAt: string; vaults: StellarVaultRow[] }
 
-function Chip({ tone, children }: { tone: 'ok' | 'warn' | 'danger' | 'muted'; children: React.ReactNode }) {
+type Tone = 'ok' | 'warn' | 'danger' | 'muted'
+
+function Chip({ tone, children }: { tone: Tone; children: React.ReactNode }) {
   const cls =
     tone === 'ok'
       ? 'bg-ok/10 text-ok'
@@ -82,6 +101,41 @@ function archiveDate(value: string | undefined): string | null {
 
 function shortId(id: string): string {
   return id.length > 16 ? `${id.slice(0, 8)}...${id.slice(-6)}` : id
+}
+
+/** An address cell: short on screen, whole in the tooltip, so it can still be checked. */
+function IdCell({ label, value }: { label: string; value: string | undefined }) {
+  return (
+    <div>
+      <div className="text-[11px] uppercase tracking-wide text-foreground/45">{label}</div>
+      <div className="mt-0.5 font-mono text-xs text-foreground" title={value}>
+        {value ? shortId(value) : '-'}
+      </div>
+    </div>
+  )
+}
+
+const ROLE_CHIP: Record<VaultRole, { tone: Tone; text: string }> = {
+  flagship: { tone: 'muted', text: 'flagship' },
+  'wallet-owned': { tone: 'ok', text: 'wallet-owned' },
+  'device-passkey': { tone: 'ok', text: 'device passkey' },
+  rehearsal: { tone: 'warn', text: 'rehearsal' },
+}
+
+/** Session key expiry in words. 0 is "no bound at all", never a date in 1970. */
+function sessionExpiry(expiry: number | undefined, nowMs: number): string {
+  if (typeof expiry !== 'number') return '-'
+  if (expiry === 0) return 'none set'
+  const day = new Date(expiry * 1000).toISOString().slice(0, 10)
+  return expiry * 1000 <= nowMs ? `expired ${day}` : `until ${day}`
+}
+
+/** "2026-10-02 14:03 UTC": the read stamp in one zone for every reader. */
+function utcStamp(iso: string | undefined): string | null {
+  if (!iso) return null
+  const d = new Date(iso)
+  if (Number.isNaN(d.getTime())) return null
+  return `${d.toISOString().slice(0, 16).replace('T', ' ')} UTC`
 }
 
 /**
@@ -150,11 +204,16 @@ export default function StellarVaultsLive({
           {vaults.map((v) => {
             const s = v.state
             const archives = archiveDate(v.ttl?.archivesAround)
+            const role = v.role ? ROLE_CHIP[v.role] : undefined
+            const stamp = utcStamp(v.live.checkedAt)
             return (
               <div key={v.caip2 + v.contract} className="bg-card p-5">
                 <div className="flex flex-wrap items-center justify-between gap-2">
                   <div className="flex flex-wrap items-center gap-2">
-                    <Chip tone={v.network === 'pubnet' ? 'ok' : 'warn'}>{v.network}</Chip>
+                    <Chip tone={v.network === 'pubnet' ? 'ok' : 'warn'}>
+                      {v.network === 'pubnet' ? 'pubnet, real money' : 'testnet'}
+                    </Chip>
+                    {role && <Chip tone={role.tone}>{role.text}</Chip>}
                     {v.live.reachable ? (
                       s?.frozen ? (
                         <Chip tone="danger">frozen</Chip>
@@ -164,7 +223,7 @@ export default function StellarVaultsLive({
                     ) : (
                       <Chip tone="warn">unreachable</Chip>
                     )}
-                    {v.ownerKind === 'smart-account' && <Chip tone="muted">passkey owner</Chip>}
+                    {v.ownerKind === 'smart-account' && <Chip tone="muted">smart-account owner</Chip>}
                   </div>
                   {v.explorerUrl ? (
                     <a
@@ -180,18 +239,47 @@ export default function StellarVaultsLive({
                   )}
                 </div>
 
+                {v.roleLabel ? (
+                  <p className={`mt-2 text-[11px] leading-relaxed ${v.role === 'rehearsal' ? 'text-warn' : 'text-foreground/55'}`}>
+                    {v.roleLabel}
+                  </p>
+                ) : (
+                  v.label && <p className="mt-2 text-[11px] text-foreground/50">{v.label}</p>
+                )}
+
                 {v.live.reachable && s ? (
-                  <div className="mt-3 grid grid-cols-2 gap-3 text-sm sm:grid-cols-4">
-                    <Cell label="Daily cap" value={usd(s.dailyCapUsd)} />
-                    <Cell label="Per payment" value={usd(s.autoApproveUsd)} />
-                    <Cell label="Spent today" value={usd(s.spentTodayUsd)} />
-                    <Cell label="Balance" value={usd(s.balanceUsd)} />
-                  </div>
+                  <>
+                    <div className="mt-3 grid grid-cols-2 gap-3 text-sm sm:grid-cols-4">
+                      <Cell label="Daily cap" value={usd(s.dailyCapUsd)} />
+                      <Cell label="Per payment" value={usd(s.autoApproveUsd)} />
+                      <Cell label="Spent today" value={usd(s.spentTodayUsd)} />
+                      <Cell label="Balance" value={usd(s.balanceUsd)} />
+                    </div>
+                    <div className="mt-3 grid grid-cols-2 gap-3 text-sm sm:grid-cols-4">
+                      <Cell
+                        label="Allowlist"
+                        value={s.allowlistEnabled === undefined ? '-' : s.allowlistEnabled ? 'enforced' : 'not enforced'}
+                      />
+                      <Cell label="Session key" value={sessionExpiry(s.sessionKeyExpiry, Date.now())} />
+                      <IdCell label="Owner" value={s.owner} />
+                      <IdCell label="Operator" value={s.operator} />
+                    </div>
+                  </>
                 ) : (
                   <p className="mt-3 text-xs leading-relaxed text-foreground/55">
                     {v.live.reason ?? 'The RPC did not answer, so this row has no live state to show.'}
                   </p>
                 )}
+
+                {stamp && (
+                  <p className="mt-3 text-[11px] text-foreground/45">
+                    {v.live.reachable
+                      ? `Read ${stamp} (${ago(v.live.checkedAt as string)})${typeof v.live.ledger === 'number' ? `, at ledger ${v.live.ledger}` : ''}`
+                      : `Read attempted ${stamp} and failed, so no value is shown rather than an old one.`}
+                  </p>
+                )}
+
+                {v.archived && <p className="mt-2 text-[11px] leading-relaxed text-warn">{v.archived}</p>}
 
                 {archives && (
                   <p className="mt-3 text-[11px] text-foreground/45">

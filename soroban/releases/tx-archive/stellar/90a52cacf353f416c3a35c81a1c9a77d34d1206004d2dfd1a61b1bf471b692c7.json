@@ -1,0 +1,66 @@
+{
+  "hash": "90a52cacf353f416c3a35c81a1c9a77d34d1206004d2dfd1a61b1bf471b692c7",
+  "chainId": "stellar",
+  "network": "stellar:pubnet",
+  "ledger": 64154691,
+  "createdAt": "2026-08-27T22:46:01.000Z",
+  "status": "success",
+  "resultCode": {
+    "tx": "txSuccess",
+    "inner": null,
+    "operations": [
+      "paymentSuccess"
+    ],
+    "contractError": null
+  },
+  "sourceAccount": "GAHWB3OFVABZL3FDDOZDF5XHDECJQC3YG2J3KZQCC2Q34MQJHTTQK45W",
+  "feeAccount": "GAHWB3OFVABZL3FDDOZDF5XHDECJQC3YG2J3KZQCC2Q34MQJHTTQK45W",
+  "feeChargedStroops": "100",
+  "envelopeXdr": "AAAAAgAAAAAPYO3FqAOV7KMbsjL25xkEmAt4NpO1ZgIWob4yCTznBQAAA+gD0uvXAAAAAwAAAAEAAAAAAAAAAAAAAABqkL6aAAAAAQAAAAkxNjQxMzI2MjUAAAAAAAABAAAAAAAAAAEAAAAA08Tm+SLyP+/tqV0T8fKUB2KPM1W2BA1HxA2t5uF4zGgAAAABVVNEQwAAAAA7mRE4Dv6Yi6CokA6xz+RPNm99vpRr7QdyQPf2JN8VxQAAAAAAp9jAAAAAAAAAAAEJPOcFAAAAQAwhRKa8vmZS46iayTuuYLKBAc3MnIommFPIXJLOlnvh8/3ob4U6NfO9qjmbUk3XHmifzeHoGmeN6J8vzA+EXwQ=",
+  "resultXdr": "AAAAAAAAAGQAAAAAAAAAAQAAAAAAAAABAAAAAAAAAAA=",
+  "resultMetaXdr": "AAAABAAAAAAAAAACAAAAAwPS7EMAAAAAAAAAAA9g7cWoA5XsoxuyMvbnGQSYC3g2k7VmAhahvjIJPOcFAAAAAAExK9MD0uvXAAAAAgAAAAEAAAAAAAAAAAAAAAABAAAAAAAAAAAAAAEAAAAAAAAAAAAAAAAAAAAAAAAAAgAAAAAAAAAAAAAAAAAAAAMAAAAAA9LsQQAAAABqkL4dAAAAAAAAAAED0uxDAAAAAAAAAAAPYO3FqAOV7KMbsjL25xkEmAt4NpO1ZgIWob4yCTznBQAAAAABMSvTA9Lr1wAAAAMAAAABAAAAAAAAAAAAAAAAAQAAAAAAAAAAAAABAAAAAAAAAAAAAAAAAAAAAAAAAAIAAAAAAAAAAAAAAAAAAAADAAAAAAPS7EMAAAAAapC+KQAAAAAAAAABAAAAAAAAAAQAAAADA9LsQQAAAAEAAAAAD2DtxagDleyjG7Iy9ucZBJgLeDaTtWYCFqG+Mgk85wUAAAABVVNEQwAAAAA7mRE4Dv6Yi6CokA6xz+RPNm99vpRr7QdyQPf2JN8VxQAAAAAAp9jAf/////////8AAAABAAAAAAAAAAAAAAABA9LsQwAAAAEAAAAAD2DtxagDleyjG7Iy9ucZBJgLeDaTtWYCFqG+Mgk85wUAAAABVVNEQwAAAAA7mRE4Dv6Yi6CokA6xz+RPNm99vpRr7QdyQPf2JN8VxQAAAAAAAAAAf/////////8AAAABAAAAAAAAAAAAAAADA9LsQQAAAAEAAAAA08Tm+SLyP+/tqV0T8fKUB2KPM1W2BA1HxA2t5uF4zGgAAAABVVNEQwAAAAA7mRE4Dv6Yi6CokA6xz+RPNm99vpRr7QdyQPf2JN8VxQAAAFC8ilO5f/////////8AAAABAAAAAAAAAAAAAAABA9LsQwAAAAEAAAAA08Tm+SLyP+/tqV0T8fKUB2KPM1W2BA1HxA2t5uF4zGgAAAABVVNEQwAAAAA7mRE4Dv6Yi6CokA6xz+RPNm99vpRr7QdyQPf2JN8VxQAAAFC9Mix5f/////////8AAAABAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA==",
+  "metaFrom": "stellar-expert",
+  "metaNote": "Result meta from Stellar Expert, a third-party indexer, accepted because the envelope and result it served match Horizon byte for byte. Meta is not covered by the transaction hash.",
+  "fetchedFrom": "horizon",
+  "explorer": "https://stellar.expert/explorer/public/tx/90a52cacf353f416c3a35c81a1c9a77d34d1206004d2dfd1a61b1bf471b692c7",
+  "archivedAt": "2026-10-01T20:36:59.640Z",
+  "caption": "Buyer wallet funded with USDC through the same NEAR Intents hop",
+  "deliverable": null,
+  "provenance": {
+    "entry": "base",
+    "kind": "funding",
+    "label": "Buyer wallet funded with USDC through the same NEAR Intents hop",
+    "note": "1.1 Stellar USDC became 1.096 native Base USDC at the buyer address. The buyer holds zero native ETH on purpose, so it cannot broadcast anything itself."
+  },
+  "decoded": {
+    "hash": "90a52cacf353f416c3a35c81a1c9a77d34d1206004d2dfd1a61b1bf471b692c7",
+    "innerHash": null,
+    "status": "success",
+    "resultCode": {
+      "tx": "txSuccess",
+      "inner": null,
+      "operations": [
+        "paymentSuccess"
+      ],
+      "contractError": null
+    },
+    "sourceAccount": "GAHWB3OFVABZL3FDDOZDF5XHDECJQC3YG2J3KZQCC2Q34MQJHTTQK45W",
+    "feeAccount": "GAHWB3OFVABZL3FDDOZDF5XHDECJQC3YG2J3KZQCC2Q34MQJHTTQK45W",
+    "feeBump": false,
+    "feeChargedStroops": "100",
+    "operations": [
+      {
+        "type": "payment",
+        "source": null,
+        "contract": null,
+        "function": null,
+        "args": null
+      }
+    ],
+    "auth": [],
+    "summary": "One payment operation. Fee 0.00001 XLM paid by GAHWB3...K45W. It succeeded.",
+    "caveats": [
+      "Result meta from Stellar Expert, a third-party indexer, accepted because the envelope and result it served match Horizon byte for byte. Meta is not covered by the transaction hash."
+    ]
+  }
+}

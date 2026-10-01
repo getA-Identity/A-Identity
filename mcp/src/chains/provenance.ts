@@ -22,8 +22,28 @@ import { getChainById } from './registry.js'
 // (their API answers 404 for it). See ./explorer.ts for the verification.
 import { txUrl, addressUrl } from './explorer.js'
 
+/**
+ * Which body of work an artifact is evidence FOR, so the proof page can say which
+ * transactions answer which commitment instead of leaving a reviewer to guess.
+ *
+ *   SOW1          the first Stellar Instawards statement of work (testnet spend policy,
+ *                 the under/over-limit pair, the x402 purchase, freeze and override).
+ *   SOW2-D1..D3   the second one, by deliverable.
+ *   rehearsal     work done to learn a path before it is evidence of anything, and
+ *                 labeled so it can never be mistaken for a deliverable.
+ *   self-funded   beyond any statement of work: pubnet, CCTP, funding hops.
+ */
+export type Deliverable = 'SOW1' | 'SOW2-D1' | 'SOW2-D2' | 'SOW2-D3' | 'rehearsal' | 'self-funded'
+
 export type ChainArtifact = {
-  kind: 'mint' | 'deploy' | 'session-key' | 'bridge' | 'settlement' | 'funding' | 'attestation'
+  /**
+   * `owner-action` is a call only the vault OWNER can make (set_policy, set_frozen,
+   * set_allowed, owner_pay, withdraw). It is its own kind rather than a `settlement`
+   * because who signed it is the claim: an owner action signed by a key of ours and one
+   * signed inside a person's own wallet are different statements, and the accounts list
+   * below says which key each owner is.
+   */
+  kind: 'mint' | 'deploy' | 'session-key' | 'bridge' | 'settlement' | 'funding' | 'attestation' | 'owner-action'
   label: string
   txHash: string
   /** Registry id of the chain this transaction lives on. Usually the entry's own chain;
@@ -48,7 +68,50 @@ export type ChainArtifact = {
    */
   externalChain?: string
   blockNumber?: number
+  /**
+   * The UTC day the transaction's ledger closed, as YYYY-MM-DD. Read from Horizon's
+   * created_at for the transaction (which is its ledger's close time) or from a release
+   * receipt, never from a commit date or memory: a commit can land days after the
+   * transaction it records. Required on every SOW 2 artifact by provenance.test.ts.
+   */
+  date?: string
+  deliverable?: Deliverable
   note?: string
+}
+
+/**
+ * Who holds the key behind a published account, in a closed vocabulary.
+ *
+ * Closed on purpose: custody is the claim a reviewer of an owner action actually needs, and
+ * free text is how "held by the user" quietly comes to mean "held by our script". The two
+ * `owner:` values are for owners we do NOT hold; nothing of ours may be labeled with them.
+ */
+export type AccountCustody =
+  | 'ours: backend environment key'
+  | 'ours: local CLI keystore'
+  | 'third party: OpenZeppelin Channels'
+  | 'owner: generated inside a browser wallet, secret never on our systems'
+  | 'owner: passkey smart account'
+
+/**
+ * An account we publish, so anyone can tell our keys apart from an owner's.
+ *
+ * SOW 2 asks for the owner of each new vault to be published before its first owner
+ * action, next to the backend accounts we also run. Publishing ours is the other half of
+ * that: an owner action is only evidence that we did NOT sign it if every key we do hold
+ * is named somewhere a reader can compare against.
+ */
+export type ProvenanceAccount = {
+  role: string
+  /** A Stellar account (G...) or contract (C...) id, copied from the registry, a release
+   *  receipt or stellar.toml, never typed from memory. */
+  address: string
+  /** Registry id; provenance.test.ts requires it to equal the entry's own chain. */
+  network: string
+  custody: AccountCustody
+  usedFor: string
+  /** The UTC day the address first appeared in a release receipt or published doc of ours. */
+  publishedAt: string
 }
 
 export type ChainProvenance = {
@@ -58,6 +121,8 @@ export type ChainProvenance = {
   agent?: { tokenId: string; caip: string; owner: string; tokenUri: string }
   contracts: { name: string; address: string; note?: string }[]
   artifacts: ChainArtifact[]
+  /** Every account on this chain whose key we hold or whose role we publish. */
+  accounts?: ProvenanceAccount[]
   /** What is NOT true here. Never empty for a chain that is not fully wired. */
   caveats: string[]
 }
@@ -632,7 +697,7 @@ export const PROVENANCE: ChainProvenance[] = [
       {
         name: 'AgentSpendPolicy, passkey-owned (Soroban)',
         address: 'CBGTXWFBYAOZBR6EN3UK4PTLUAY6BRV2C36D3DPOTE5JSOLQXANS6J6U',
-        note: 'Ours, and the same wasm as the vault above, byte for byte: instantiated against the code entry already on the ledger rather than uploaded again, which is the difference between about 0.1 XLM and about 12 XLM. What is new is the owner. It is not an account but a CONTRACT, the smart account below, so `owner.require_auth()` dispatches to that contract\'s `__check_auth` and a passkey signature is what satisfies it. A separate vault rather than a migration because the contract has `set_operator` and deliberately no `set_owner`: the owner is permanent, so proving a passkey can own a vault meant deploying one that a passkey owned from its first ledger. Policy 5 USDC a day, 1 USDC a payment, allowlist on. Recorded in soroban/releases/testnet-passkey-owner-2026-09-19.json.',
+        note: 'Ours, and the same wasm as the vault above, byte for byte: instantiated against the code entry already on the ledger rather than uploaded again, which is the difference between about 0.1 XLM and about 12 XLM. What is new is the owner. It is not an account but a CONTRACT, the smart account below, so `owner.require_auth()` dispatches to that contract\'s `__check_auth` and a passkey signature is what satisfies it. A separate vault rather than a migration because the contract has `set_operator` and deliberately no `set_owner`: the owner is permanent, so proving a passkey can own a vault meant deploying one that a passkey owned from its first ledger. Policy 5 USDC a day, 1 USDC a payment, allowlist on. Recorded in soroban/releases/testnet-passkey-owner-2026-09-19.json. A rehearsal: every owner call it has received was signed by a software P-256 key in our own script, so it is not SOW 2 D3 evidence.',
       },
       {
         name: 'OpenZeppelin smart account (third party)',
@@ -652,6 +717,8 @@ export const PROVENANCE: ChainProvenance[] = [
         txHash: '32a09568d56bb0f0eeda54b6529f8756cc1e7e60e0bc235e914aec0898dd1fa2',
         onChain: 'stellar-testnet',
         blockNumber: 4607724,
+        date: '2026-09-10',
+        deliverable: 'self-funded',
         note: 'mint_and_forward(message, attestation) on Circle\'s CctpForwarder CA66Q2WF..., 2026-09-10, ledger 4607724. The recipient G... account rode in the hook data of the Arc burn (tx 0x09d6a77e, block 61433933) with the forwarder in both address slots, which is the only way a Stellar account can receive a CCTP mint; Iris attested in seconds and the whole leg took 16 s. Driven by mcp/src/cctp-stellar.ts, not Bridge Kit, which has no Stellar adapter.',
       },
       {
@@ -660,15 +727,29 @@ export const PROVENANCE: ChainProvenance[] = [
         txHash: 'b5766784c5409a877ae28039182824978dd306c147a30d469b7f3fdc204dd458',
         onChain: 'stellar-testnet',
         blockNumber: 4607728,
+        date: '2026-09-10',
+        deliverable: 'self-funded',
         note: 'deposit_for_burn on Circle\'s TokenMessengerMinter CDNG7HXA..., 2026-09-10, ledger 4607728, after a SAC approve with a 100-ledger expiry (tx ec96149d). Amount passed as 1500000 seven-decimal subunits for a 150000-unit message; the mint landed on Arc as receiveMessage tx 0x072be2ef (block 61434003) 21 s after the burn. The round trip closes the NEAR Intents caveat for test money: USDC now crosses between Stellar and an EVM chain natively.',
       },
       {
         kind: 'deploy',
-        label: 'The spend policy, deployed',
+        label: 'The spend policy wasm, uploaded',
+        txHash: '242c4ec6291e31348c0dc6a92ab016aa042ca467eb522abc287d69e6a9e9e644',
+        onChain: 'stellar-testnet',
+        blockNumber: 4147601,
+        date: '2026-08-15',
+        deliverable: 'SOW1',
+        note: 'The first of the two deploy transactions: an UploadContractWasm host function sourced by the owner account GBLHNAL5..., one ledger before the instance was created. Read off Horizon on 2026-10-02 (the account\'s transaction list and this transaction\'s operation). An earlier version of this ledger called the deploy one transaction and listed only the create below; soroban/releases/testnet-v0.1.0.json still omits this upload.',
+      },
+      {
+        kind: 'deploy',
+        label: 'The spend policy, instantiated',
         txHash: '718f050b962b6e645d8cca5cc053d9f1c11a7264d3ddc266f7e36661bd82c68c',
         onChain: 'stellar-testnet',
         blockNumber: 4147602,
-        note: 'Upload and instantiate in one transaction. The wasm sha256 is 155eb31c1867254eacbf1b7a4755164d15cc6b6f939644705ab6b8df61579239, recorded in soroban/releases/testnet-v0.1.0.json and confirmed by Stellar Expert as the code this contract carries. The binary itself is deliberately not committed: Rust wasm is not bit-reproducible across machines by default, so shipping one would invite a reproducibility claim we cannot honour. Pull it with `stellar contract fetch` and compare.',
+        date: '2026-08-15',
+        deliverable: 'SOW1',
+        note: 'The second deploy transaction: CreateContractV2 against the code entry uploaded one ledger earlier, with the five constructor arguments. The wasm sha256 is 155eb31c1867254eacbf1b7a4755164d15cc6b6f939644705ab6b8df61579239, recorded in soroban/releases/testnet-v0.1.0.json and confirmed by Stellar Expert as the code this contract carries. The binary itself is deliberately not committed: Rust wasm is not bit-reproducible across machines by default, so shipping one would invite a reproducibility claim we cannot honour. Pull it with `stellar contract fetch` and compare.',
       },
       {
         kind: 'settlement',
@@ -676,6 +757,8 @@ export const PROVENANCE: ChainProvenance[] = [
         txHash: '3da7463422c7d122202b009bb27442199ffc3b6da87da12a7112963bf4bcc999',
         onChain: 'stellar-testnet',
         blockNumber: 4147945,
+        date: '2026-08-15',
+        deliverable: 'SOW1',
         note: 'The first half of the pair the SoW measures. The operator paid 1 USDC inside a 2 USDC per-payment ceiling and a 10 USDC daily cap; the payee went to 1.0000000, the vault from 15 to 14, and spent_today to 1 USDC.',
       },
       {
@@ -684,6 +767,8 @@ export const PROVENANCE: ChainProvenance[] = [
         txHash: '12df418f21d329f606f412b1aee498714f1178d68fd0db0a97c64f0de6f209d3',
         onChain: 'stellar-testnet',
         blockNumber: 4147972,
+        date: '2026-08-15',
+        deliverable: 'SOW1',
         note: 'The other half, and the one that took work to produce. On Soroban a refused call normally leaves NO transaction at all, because the contract says no during simulation and nothing is ever submitted. To get a hash a reviewer can open, the policy was tightened while this payment was in flight, so it failed at apply time and the ledger recorded error #5, DailyCapExceeded.',
       },
       {
@@ -692,6 +777,8 @@ export const PROVENANCE: ChainProvenance[] = [
         txHash: 'bec1b68be5861fdf7cc71b50ce7c8a5b5cb311326a240ca8e1f6a6af99e2a400',
         onChain: 'stellar-testnet',
         blockNumber: 4147942,
+        date: '2026-08-15',
+        deliverable: 'SOW1',
         note: 'The vault holds the token in contract storage rather than through a trustline, so it needs none. Both classic accounts do, and that is easy to learn the hard way: paying an account with no USDC trustline fails with op_no_trust, which a buyer reads as our bug.',
       },
       {
@@ -700,27 +787,38 @@ export const PROVENANCE: ChainProvenance[] = [
         txHash: '6d87799242b9fb36a26ac6f2d2fb11c5e7fb8bdd52bc6cf0471dcc8a8caba09c',
         onChain: 'stellar-testnet',
         blockNumber: 4149194,
+        date: '2026-08-15',
+        deliverable: 'SOW1',
         note: 'A buyer agent answered a 402 with a signed Soroban authorization entry and got the tool back. Horizon records the fee as charged to our operator account, not to the buyer, which is the gasless claim as a number somebody else can look up.',
       },
       {
-        kind: 'settlement',
+        kind: 'owner-action',
         label: 'The owner freezes the vault, and the agent stops',
         txHash: 'fd0fb958923c5e5e70bedae6451cc9a492b250d3cec3750313814b7e4ccdf117',
         onChain: 'stellar-testnet',
-        note: 'The kill switch, exercised rather than described. With the vault frozen the operator\'s next payment was refused with error #1, Frozen. That refusal has no hash of its own, for the reason every Soroban refusal here has none: the contract answers during simulation and nothing is submitted.',
+        blockNumber: 4259182,
+        date: '2026-08-21',
+        deliverable: 'SOW1',
+        note: 'Signed by the owner account GBLHNAL5..., whose key is ours, in a local CLI keystore: this vault was never meant to show an owner we do not hold. The kill switch, exercised rather than described. With the vault frozen the operator\'s next payment was refused with error #1, Frozen. That refusal has no hash of its own, for the reason every Soroban refusal here has none: the contract answers during simulation and nothing is submitted.',
       },
       {
-        kind: 'settlement',
+        kind: 'owner-action',
         label: 'The owner overrides: a payment past the freeze AND past the allowlist',
         txHash: 'f05c2f5be029d7403c6241c85f894160fe83f5866f1993de6ba1c3be7911b3eb',
         onChain: 'stellar-testnet',
+        blockNumber: 4259183,
+        date: '2026-08-21',
+        deliverable: 'SOW1',
         note: 'owner_pay to an account that is NOT on the allowlist while the vault is frozen. It settles, because the human path is meant to work exactly when the agent path does not. It was still CHARGED to the daily cap, which is the Solidity original\'s behaviour ported deliberately. Note the exact claim, because an earlier version of this note overstated it: owner_pay increments the day accumulator, but it is not LIMITED by the cap. `check_owner_pay` in policy.rs runs the amount, arithmetic and balance guards and no cap comparison, so the override bypasses the budget as well as the gates. What it does not bypass is the accounting: the outflow is recorded.',
       },
       {
-        kind: 'settlement',
+        kind: 'owner-action',
         label: 'The owner unfreezes, and the agent spends again',
         txHash: 'e92fcd5ff1c02b812419891da8a8c915d1d67e5f6d97d1d4da12f516bb227115',
         onChain: 'stellar-testnet',
+        blockNumber: 4259184,
+        date: '2026-08-21',
+        deliverable: 'SOW1',
         note: 'The other half of a kill switch is that it turns back off. A freeze you cannot lift is a loss, not a control.',
       },
       {
@@ -729,111 +827,178 @@ export const PROVENANCE: ChainProvenance[] = [
         txHash: 'fab5c864939da4165c21384afb24d690662c58ec17d46e36f7bc35ddf60b321f',
         onChain: 'stellar-testnet',
         blockNumber: 4149294,
+        date: '2026-08-15',
+        deliverable: 'SOW1',
         note: 'The agent paid from the vault instead of from a wallet, so the allowlist, the ceiling and the daily cap all ran on chain before the transaction existed. The same call to an unlisted payee was refused by the contract with error #3, PayeeNotAllowed, and produced no transaction at all, which is why that refusal has no hash here. The passkey vault below does have one, for a reason its own note gives.',
       },
+      // The 2026-09-19 passkey rehearsal, two runs on one day. Every owner call in both runs
+      // was signed by a SOFTWARE P-256 key held by our own script, so these artifacts prove
+      // the contract path accepts a WebAuthn signature and nothing about who held the key.
+      // They are labeled `rehearsal` and are not SOW 2 D3 evidence; the test that keys on
+      // `deliverable` keeps it that way.
       {
         kind: 'deploy',
-        label: 'A passkey smart account, deployed as an owner that is not a key',
+        label: 'Rehearsal: a passkey smart account, deployed as an owner that is not a key',
         txHash: 'dcd3c4227b0a773bf3d825a8fb0c5d37196b9cb7366377bf8a2c76162d3d914c',
         onChain: 'stellar-testnet',
         blockNumber: 4760408,
-        note: 'OpenZeppelin\'s Stellar smart account, deployed through smart-account-kit 0.8.0 with one WebAuthn P-256 signer and no recovery signer. Third-party code, our instance. The passkey in this run was a SOFTWARE P-256 key standing in for a platform authenticator: the same verifier contract, the same WebAuthn signature format of authenticatorData, clientDataJSON and a low-S DER signature. The only difference from a phone or browser passkey is where the private key lives, and it is named here rather than left for a reader to assume.',
+        date: '2026-09-19',
+        deliverable: 'rehearsal',
+        note: 'OpenZeppelin\'s Stellar smart account, deployed through smart-account-kit 0.8.0 with one WebAuthn P-256 signer and no recovery signer. Third-party code, our instance. The "passkey" was a SOFTWARE P-256 key generated inside our own script (mcp/scripts/stellar-passkey-proof.mjs), standing in for a platform authenticator: the same verifier contract and the same WebAuthn signature format, but the private key lived in a process of ours, not on anyone\'s device. Fee paid by our dedicated testnet deployer GDNRET2G... over direct RPC.',
       },
       {
         kind: 'deploy',
-        label: 'A second spend vault, owned by that smart account from its first ledger',
+        label: 'Rehearsal: a second spend vault, owned by that smart account from its first ledger',
         txHash: 'ccac0b30612a216deea7d84035cac3e3acbb5884c827f60065ed33ff61729fd2',
         onChain: 'stellar-testnet',
         blockNumber: 4760409,
-        note: 'The same wasm 155eb31c..., instantiated against the existing code entry with no upload, with the smart account as owner and our usual testnet operator as operator. The daily cap is 5 USDC and the per-payment ceiling 1 USDC. The vault above keeps its plain account owner, because there is no `set_owner` to move it.',
+        date: '2026-09-19',
+        deliverable: 'rehearsal',
+        note: 'The same wasm 155eb31c..., instantiated against the existing code entry with no upload, with the smart account as owner and our usual testnet operator as operator, which also paid the fee. The daily cap is 5 USDC and the per-payment ceiling 1 USDC. The vault above keeps its plain account owner, because there is no `set_owner` to move it.',
       },
       {
-        kind: 'settlement',
-        label: 'The passkey sets the policy, and the vault accepts it',
+        kind: 'owner-action',
+        label: 'Rehearsal: set_policy signed by a software P-256 key, and the vault accepts it',
         txHash: '994b5cb92c5dee9ce733109e9b7cecd35625aeb3b3edc35903a22cc93a0dd758',
         onChain: 'stellar-testnet',
         blockNumber: 4760411,
-        note: 'set_policy(5 USDC, 1 USDC, allowlist on), signed by the passkey and delivered through the smart account\'s `execute`. The chain of custody is the point: the passkey signs an authorization digest, the smart account verifies that signature through OpenZeppelin\'s WebAuthn verifier in `__check_auth`, and the vault\'s `owner.require_auth()` is satisfied because the smart account is the direct invoker. No key of ours can do this, and no key of the owner\'s exists.',
+        date: '2026-09-19',
+        deliverable: 'rehearsal',
+        note: 'set_policy(5 USDC, 1 USDC, allowlist on), delivered through the smart account\'s `execute`. The chain of custody on the ledger: a P-256 signature over the authorization digest, verified by OpenZeppelin\'s WebAuthn verifier in the account\'s `__check_auth`, which satisfies the vault\'s `owner.require_auth()`. The signature came from a software key in our own script and the fee from our deployer GDNRET2G..., so this proves the contract path and does NOT prove that a key outside our systems authorized anything.',
       },
       {
-        kind: 'settlement',
-        label: 'The passkey allowlists a payee, which is what a KYA ALLOW writes',
+        kind: 'owner-action',
+        label: 'Rehearsal: the software key allowlists a payee, which is what a KYA ALLOW writes',
         txHash: 'e371b1b38cb1f31aca91709d7ace18fe974f5673a8eafc00012df442dc15ef47',
         onChain: 'stellar-testnet',
         blockNumber: 4760413,
-        note: 'The on-chain allowlist is binary and the KYA verdict has three states, so the mapping is stated rather than implied: ALLOW writes set_allowed(payee, true), WARN is a server-side flag that writes nothing on chain, and DENY writes set_allowed(payee, false). WARN never reaches the ledger, and nothing here should be read as if it did.',
+        date: '2026-09-19',
+        deliverable: 'rehearsal',
+        note: 'Signed by the same software P-256 key, fee paid by our deployer. The on-chain allowlist is binary and the KYA verdict has three states, so the mapping is stated rather than implied: ALLOW writes set_allowed(payee, true), WARN is a server-side flag that writes nothing on chain, and DENY writes set_allowed(payee, false). WARN never reaches the ledger, and nothing here should be read as if it did.',
       },
       {
         kind: 'funding',
-        label: '3 USDC into the passkey vault, through the SAC',
+        label: 'Rehearsal: 3 USDC into the passkey vault, through the SAC',
         txHash: 'b84b70de3a087a316bf2267c9bdccb9c191fd9be1ac5b0a741bdbd73aa238faf',
         onChain: 'stellar-testnet',
         blockNumber: 4760414,
+        date: '2026-09-19',
+        deliverable: 'rehearsal',
         note: 'A plain SEP-41 transfer into contract storage, so this vault needs no trustline either. Sent from the older vault\'s owner account, which is the only role these two deployments share.',
       },
       {
         kind: 'settlement',
-        label: 'The agent pays an allowed payee under a policy a passkey set',
+        label: 'Rehearsal: the agent pays an allowed payee under a policy the software key set',
         txHash: 'bf375df0b03b7e4a9644676cd4d157df0fe4c4139d870ec2706fcdbe56fb7e4f',
         onChain: 'stellar-testnet',
         blockNumber: 4760415,
-        note: '0.5 USDC, inside the 1 USDC ceiling and the 5 USDC daily cap, to the payee the passkey allowed. The vault went to 2.5 USDC and spent_today to 0.5. The human held a passkey and never a seed phrase; the agent held an operator key that can spend only inside these limits.',
+        date: '2026-09-19',
+        deliverable: 'rehearsal',
+        note: '0.5 USDC, inside the 1 USDC ceiling and the 5 USDC daily cap, to the payee the owner allowed. The vault went to 2.5 USDC and spent_today to 0.5. The operator key that paid is ours and can spend only inside these limits.',
       },
       {
-        kind: 'settlement',
-        label: 'The owner allows an untrusted payee, on purpose, to arm the race',
+        kind: 'owner-action',
+        label: 'Rehearsal: the owner allows an untrusted payee, on purpose, to arm the race',
         txHash: 'b7ea4c33b19b487b6ee2aadcd6e5486b9917d08325a0e8444e2ac7c643707c33',
         onChain: 'stellar-testnet',
         blockNumber: 4760419,
-        note: 'The payee here is a fresh account nobody has vouched for. Asked to pay it before this, the vault refused in simulation with error #3 and no transaction was ever created, which is the normal and unlinkable shape of a Soroban refusal. Allowing it is step one of forcing a refusal that a reviewer can open.',
+        date: '2026-09-19',
+        deliverable: 'rehearsal',
+        note: 'Signed by the software P-256 key, fee paid by our deployer. The payee here is a fresh account nobody has vouched for. Asked to pay it before this, the vault refused in simulation with error #3 and no transaction was ever created, which is the normal and unlinkable shape of a Soroban refusal. Allowing it is step one of forcing a refusal that a reviewer can open.',
       },
       {
-        kind: 'settlement',
-        label: 'The owner revokes while the agent\'s payment is already signed',
+        kind: 'owner-action',
+        label: 'Rehearsal: the owner revokes while the agent\'s payment is already signed',
         txHash: '9a3aece13d12279be23864a8131b0cf96d18801bd6eb01e966b74f330d22ca88',
         onChain: 'stellar-testnet',
         blockNumber: 4760420,
-        note: 'set_allowed(payee, false), signed by the passkey, which is what a KYA DENY writes. The agent had already simulated, built and signed its payment and was holding it. This is not a contrivance: it is the race a real agent hits when a human, or a KYA verdict, changes the allowlist mid-flight.',
+        date: '2026-09-19',
+        deliverable: 'rehearsal',
+        note: 'set_allowed(payee, false), signed by the software P-256 key, which is what a KYA DENY writes. The agent had already simulated, built and signed its payment and was holding it. This is not a contrivance: it is the race a real agent hits when a human, or a KYA verdict, changes the allowlist mid-flight.',
       },
       {
         kind: 'settlement',
-        label: 'The held payment lands and the contract refuses it on chain',
+        label: 'Rehearsal: the held payment lands and the contract refuses it on chain',
         txHash: '22b33018c807946df066365bde2a72293372bf7768ab96688acb623c290357a0',
         onChain: 'stellar-testnet',
         blockNumber: 4760421,
+        date: '2026-09-19',
+        deliverable: 'rehearsal',
         note: 'Included in the ledger and refused by the contract: Horizon reports it unsuccessful with the fee charged, and the result carries Error(Contract, #3), PayeeNotAllowed. spent_today stayed at 0.5 USDC and is_allowed read false afterwards, so the revoke cost the agent its fee and nothing else. This is the one refusal on this network with a hash a reviewer can open, and it exists only because the policy was tightened between build and apply.',
       },
       {
         kind: 'deploy',
-        label: 'The same flow again, with the fee sponsored: a smart account nobody paid gas for',
+        label: 'Rehearsal, sponsored: a smart account deployed with its fee paid by OpenZeppelin Channels',
         txHash: '9df1bbb1d29e623bcdce1dc8919f0f8add4941e148e390d789d80a755b795b32',
         onChain: 'stellar-testnet',
         blockNumber: 4764131,
-        note: 'The artifacts above were paid by a dedicated testnet key over direct RPC, which proved the contract path and not the path a visitor takes. This one is the visitor\'s: the smart-account kit posted { func, auth } to our own relay, which decoded the XDR, refused everything outside the three shapes it allows, and forwarded the rest to OpenZeppelin Channels, where a channel account supplied the source, the sequence number and the fee. The person holding the passkey had no XLM and no account.',
+        date: '2026-09-19',
+        deliverable: 'rehearsal',
+        note: 'The artifacts above were paid by our own testnet deployer over direct RPC, which proved the contract path and not the fee path the public /stellar page uses. This run exercised that fee path, and it was OUR run, not a visitor\'s: our own script drove the smart-account kit, which posted { func, auth } to our relay; the relay decoded the XDR, refused everything outside the three shapes it allows, and forwarded the rest to OpenZeppelin Channels, whose channel account supplied the source and sequence while a Channels account (GCNJB6V5..., read off Horizon as this transaction\'s fee account) paid the fee. The P-256 key was again a software key in our process.',
       },
       {
-        kind: 'settlement',
-        label: 'A passkey sets its vault policy without holding a single stroop',
+        kind: 'owner-action',
+        label: 'Rehearsal, sponsored: set_policy signed by a software key, fee paid by Channels',
         txHash: 'fb2b59a05f5f5988d5ec0e625212d7af8e6c5067a945c9544e146f5180c5982e',
         onChain: 'stellar-testnet',
         blockNumber: 4764136,
-        note: 'set_policy on a second vault (CCV2MMK4WFJJVYITOWAH6Z3OW5RW7MYOYB3WGOZJ54NEL4PIJHV3KA7T), signed by the passkey and sponsored through the same relay. This is the claim the public /stellar page rests on: bounded authority set by someone who never funded an account.',
+        date: '2026-09-19',
+        deliverable: 'rehearsal',
+        note: 'set_policy on a second vault (CCV2MMK4WFJJVYITOWAH6Z3OW5RW7MYOYB3WGOZJ54NEL4PIJHV3KA7T), sponsored through the same relay. What this shows is that an owner call can land with the fee paid by a third party and no XLM in the owner\'s hands. What it does not show is a person holding the key: the signer was a software P-256 key in our own run.',
       },
       {
-        kind: 'settlement',
-        label: 'A human overrides a DENY, and the override is itself on chain',
+        kind: 'owner-action',
+        label: 'Rehearsal, sponsored: the owner overrides a DENY, and the override is itself on chain',
         txHash: '6b083e8340d8585aa800b022bba843c74e03547ee4cf360243029b8a81c0b86a',
         onChain: 'stellar-testnet',
         blockNumber: 4764142,
-        note: 'risk_check answered DENY for this payee, correctly: the agent id it was given did not resolve to an on-chain identity, so there was no reputation or tenure to score. The vault owner is a human and chose to allow it anyway, which the page offers as its own button. Worth stating plainly because it cuts against the pitch: the guardrail is a bound on the AGENT, not on the owner, and an owner who overrides it leaves an owner-signed transaction behind rather than a silent exception.',
+        date: '2026-09-19',
+        deliverable: 'rehearsal',
+        note: 'risk_check answered DENY for this payee, correctly: the agent id it was given did not resolve to an on-chain identity, so there was no reputation or tenure to score. The owner allowed it anyway, which the /stellar page offers as its own button; in this run the "owner" pressing it was our own script with a software key. Worth stating plainly because it cuts against the pitch: the guardrail is a bound on the AGENT, not on the owner, and an owner who overrides it leaves an owner-signed transaction behind rather than a silent exception.',
       },
       {
         kind: 'settlement',
-        label: 'The sponsored flow ends where the demo does: one payment allowed, one refused',
+        label: 'Rehearsal, sponsored: one payment allowed, one refused',
         txHash: '8590694194da891361734f541042870e1a297f829a0fc701c82b988c34a23410',
         onChain: 'stellar-testnet',
         blockNumber: 4764146,
-        note: '0.05 USDC to the allowed payee, settled. The same call to the payee the owner had revoked at ledger 4764144 answered contract error #3, PayeeNotAllowed, in simulation, so it has no hash of its own. That pairing, a settlement and a typed refusal under a policy a passkey set, is the whole 90-second demonstration.',
+        date: '2026-09-19',
+        deliverable: 'rehearsal',
+        note: '0.05 USDC to the allowed payee, paid by our operator, settled. The same call to the payee the owner had revoked at ledger 4764144 answered contract error #3, PayeeNotAllowed, in simulation, so it has no hash of its own. That pairing, a settlement and a typed refusal under a policy an owner call set, is the 90-second demonstration the /stellar page rehearses.',
+      },
+    ],
+    // Every address below is copied from soroban/releases/testnet-v0.1.0.json or
+    // testnet-passkey-owner-2026-09-19.json, and each publishedAt is the day that receipt
+    // was cut. Two accounts the 2026-09-19 sponsored run touched are deliberately absent,
+    // the OpenZeppelin Channels fee-bump account and the smart-account kit's public
+    // deployer, because no receipt of ours records their full address yet.
+    accounts: [
+      {
+        role: 'Operator of the flagship testnet vault CAIL6ECR..., and the x402 testnet fee payer',
+        address: 'GDZXSO4AOKPSHMQZMBNEEBQNYOIF7TWDPD7K2U5VAPKFN3QIAIELTAN6',
+        network: 'stellar-testnet',
+        custody: 'ours: backend environment key',
+        usedFor:
+          'pay() inside the vault policy (it can never call an owner entrypoint), broadcasting and paying the fee for every testnet x402 settlement, and the operator of the 2026-09-19 rehearsal vaults. One key in two roles on testnet, which mcp/scripts/stellar-key-roles.mjs reports as a warning.',
+        publishedAt: '2026-08-15',
+      },
+      {
+        role: 'Owner of the flagship testnet vault CAIL6ECR...',
+        address: 'GBLHNAL57WLA5GKTIGPBHCJTQDNEZFX2CVH53EDUOGWIERNKECRENHQ5',
+        network: 'stellar-testnet',
+        custody: 'ours: local CLI keystore',
+        usedFor:
+          'The vault\'s deploy (upload and create), its funding, and every owner action on it: set_policy, set_allowed, set_frozen and owner_pay. Permanent, because the contract has no set_owner. It also funded the 2026-09-19 rehearsal vault.',
+        publishedAt: '2026-08-15',
+      },
+      {
+        role: 'Deployer and fee payer of the 2026-09-19 passkey rehearsal',
+        address: 'GDNRET2G5WNC25QQ43ODLGAZ42X74DQDGRHWHSLKC6FCVF7C6JYLHAJA',
+        network: 'stellar-testnet',
+        custody: 'ours: local CLI keystore',
+        usedFor:
+          'Paid the fee for the rehearsal smart account deploy and for every software-key owner call in the first 2026-09-19 run, over direct RPC. It holds no vault role and cannot authorize an owner call; it only sources and pays for transactions.',
+        publishedAt: '2026-09-19',
       },
     ],
     caveats: [
@@ -841,7 +1006,8 @@ export const PROVENANCE: ChainProvenance[] = [
       'No identity. ERC-8004 is EVM-only and no Soroban identity registry exists to point at, so a Stellar agent\'s passport is bridged from an EVM chain rather than anchored here. KYA cannot be verified on this chain.',
       'Not audited. The contract has been reviewed with the free tooling we could actually run, named, with output committed, plus an adversarial review that found and fixed real defects. That is not an audit and we will not call it one.',
       'Neither vault here has a second owner. The older one is owned by a single key, not a multisig; the passkey one is owned by a smart account with a single WebAuthn signer and no recovery signer, which moves the failure from a lost key to a lost passkey without reducing it. In both cases the owner is permanent, because the contract has `set_operator` and deliberately no `set_owner`, so losing it makes the balance unrecoverable. That is a deliberate trade against a capped balance, written up in soroban/README.md rather than discovered, and on the passkey side the mitigation that was NOT applied is adding a recovery signer to the smart account.',
-      'The passkey release is testnet only and the passkey behind it was software. No passkey-owned vault exists on pubnet, and the P-256 key in the run that produced these hashes was generated in a process rather than held by a platform authenticator: same verifier, same signature format, different custody. Two fee payers appear above and they are separate claims: the first run was paid by a dedicated testnet deployer key over direct RPC, and the four sponsored artifacts at ledgers 4764131 to 4764146 were sourced and paid by an OpenZeppelin Channels channel account through our own relay. Full record and caveats in soroban/releases/testnet-passkey-owner-2026-09-19.json.',
+      'The 2026-09-19 passkey runs are a rehearsal, not SOW 2 D3 evidence. Both runs were driven by our own script, and the P-256 key that signed every owner call in them was generated in that process rather than held by a platform authenticator on anyone\'s device: same verifier, same signature format, custody ours. No passkey-owned vault exists on pubnet. Two fee payers appear above and they are separate claims: the first run was paid by our dedicated testnet deployer GDNRET2G... over direct RPC; in the second, the three owner-side transactions at ledgers 4764131 to 4764142 were sourced by an OpenZeppelin Channels channel account and fee-bumped by a Channels account through our own relay, while the agent payment at 4764146 was paid by our operator. Full record and caveats in soroban/releases/testnet-passkey-owner-2026-09-19.json.',
+      'Every owner action on this network so far was signed by a key we hold: the flagship vault\'s owner GBLHNAL5... is ours, in a local CLI keystore, and the passkey vaults\' owner calls came from a software key in our script. Owner actions signed inside a wallet or on a device we do not control are what SOW 2 D2 and D3 add, and none of them is recorded here yet.',
       'On the `settled` scheme, where an agent pays from the vault and hands us the hash, the binding is the transaction rather than an authorization nonce. We can prove the payment happened and was not redeemed here before. We cannot prove it was made for that particular purchase rather than another of the same price, and we cannot prove the party presenting the hash is the party that made the payment: a landed transaction is public, so whoever presents it first is served. The scheme is restricted to contract payers for this reason, since an account can sign an authorization entry and get the stronger binding for free.',
       'One payment is one sale, and that took a fix. The two schemes keyed their replay guards in disjoint namespaces, so a purchase we had already broadcast, served and been paid for could be re-presented as a hash and sell the tool a second time. Found by an adversarial review, reproduced live against e1b0097a, and closed by burning both keys on every settlement plus refusing account payers on the hash path.',
       'A refused payment usually has no transaction to link. That is Soroban, not evasion: the contract answers during simulation and nothing is submitted, so most of our proofs of refusal are typed error codes rather than hashes.',
@@ -870,6 +1036,8 @@ export const PROVENANCE: ChainProvenance[] = [
         txHash: 'f10c27d98a07c386c975bfeb3168947acab5e13e63536bc14093eb700a97c662',
         onChain: 'stellar',
         blockNumber: 64103407,
+        date: '2026-08-24',
+        deliverable: 'self-funded',
         note: 'A Stellar prerequisite with no EVM analogue, and one that is easy to learn the hard way: paying an account that holds no USDC trustline fails with op_no_trust, which a buyer reads as our bug rather than as their missing setup. The vault itself needs none, because it holds the token in contract storage rather than through a trustline.',
       },
       {
@@ -878,6 +1046,8 @@ export const PROVENANCE: ChainProvenance[] = [
         txHash: '4230a328bf063cc005e8fea00c45a9d38af57968b8ee166cbb5a11fb92b51fba',
         onChain: 'stellar',
         blockNumber: 64103416,
+        date: '2026-08-24',
+        deliverable: 'self-funded',
         note: 'The code entry alone cost 12.2319214 XLM, which is almost the whole bill for this deploy: a Soroban wasm entry pays rent for its size and this one is 11,625 bytes. The binary is deliberately not committed, because Rust wasm is not bit-reproducible across machines by default. Pull it with `stellar contract fetch` and sha256 it against the hash above.',
       },
       {
@@ -886,6 +1056,8 @@ export const PROVENANCE: ChainProvenance[] = [
         txHash: '847dc7e99e73f6c0062e5aed29599f41226998053fe7b6c35e48e9cf64a6ee2d',
         onChain: 'stellar',
         blockNumber: 64103418,
+        date: '2026-08-24',
+        deliverable: 'self-funded',
         note: 'Instantiating on top of the uploaded hash cost 0.0992122 XLM. The constructor read decimals() off the token itself, which is how the deploy proves the address really implements SEP-41; it read 7, not the 6 every EVM USDC uses.',
       },
       {
@@ -894,6 +1066,8 @@ export const PROVENANCE: ChainProvenance[] = [
         txHash: 'b3ad997d83f578edf7583ef8c59dc5ec5db4091955b603e77aca1b939f5e9b41',
         onChain: 'stellar',
         blockNumber: 64103437,
+        date: '2026-08-24',
+        deliverable: 'self-funded',
         note: 'A strict-receive path payment, XLM in and exactly 1.0000000 USDC out at 0.1949500 USDC per XLM. No bridge and no exchange. It is also where the USD figures in this repo come from: a price read off the same ledger the rail settles on, rather than from an API we cannot show you.',
       },
       {
@@ -902,6 +1076,8 @@ export const PROVENANCE: ChainProvenance[] = [
         txHash: 'e558baf97bb8dde87cc585245df430e72667e21bd2cb78fee62418cd04692344',
         onChain: 'stellar',
         blockNumber: 64103469,
+        date: '2026-08-24',
+        deliverable: 'self-funded',
         note: 'Submitted twice, and the reason is worth recording rather than hiding. The first attempt returned a submission timeout, which is not a failure: a Stellar transaction stays valid for its whole timeout window. Horizon was checked first and showed the hash absent with no fee charged, so the retry was a resubmission of the same envelope and not a second payment. It landed under the same hash.',
       },
       {
@@ -910,6 +1086,8 @@ export const PROVENANCE: ChainProvenance[] = [
         txHash: 'c4a884c306ee0cd76b7fb4fa245176618897687ad7fee724e2d43b72d20f3733',
         onChain: 'stellar',
         blockNumber: 64103478,
+        date: '2026-08-24',
+        deliverable: 'self-funded',
         note: 'The operator paid 0.20 USDC, inside both the 0.25 ceiling and the 1 USDC cap. Two events fired: the SAC transfer out of the vault, and the vault\'s own Paid event carrying by_owner:false, which is what marks this as the agent path rather than the human one.',
       },
       {
@@ -918,6 +1096,8 @@ export const PROVENANCE: ChainProvenance[] = [
         txHash: 'd2386d419a2d546627b4b7247bb152e70b314e5f84a9d76a60f752cc81f95c80',
         onChain: 'stellar',
         blockNumber: 64103495,
+        date: '2026-08-24',
+        deliverable: 'self-funded',
         note: '0.25 USDC, the largest single payment the policy auto-approves. Two more followed at ledgers 64103499 (f514ac178bd4aba60d53cc3980f5517bb1bd93d53d7f69d227a798632251aefb) and 64103501 (ebf3cb627c18ec226be9e2790054c4de43d0da2b524f27fb499ab0af6a477d80), taking spent_today to 0.95 of a 1 USDC cap. The cap is cumulative across payments, which is what made the next one refusable.',
       },
       {
@@ -926,22 +1106,28 @@ export const PROVENANCE: ChainProvenance[] = [
         txHash: 'db886f90d2edf82f9e885a6147589732175f18cdb0dfe41be5afc35fa3740291',
         onChain: 'stellar',
         blockNumber: 64103518,
+        date: '2026-08-24',
+        deliverable: 'self-funded',
         note: 'pay(owner, 100000) by the operator, taking spent_today from 0.95 to 0.96 USDC. Missing from the first version of the release record and found on 2026-09-15 by reconciling the operator account on Horizon: without it the 1 USDC that went in and the payments recorded coming out did not add up to the zero balance and the full cap the record ends on. The same amount was then refused with Frozen once the freeze was on.',
       },
       {
-        kind: 'deploy',
+        kind: 'owner-action',
         label: 'The kill switch, thrown on mainnet',
         txHash: 'c003e3fed6d39d820da51ea281b6d17fc910961bee88163ef8fb6fa084e059cf',
         onChain: 'stellar',
         blockNumber: 64103526,
+        date: '2026-08-24',
+        deliverable: 'self-funded',
         note: 'set_frozen(true), event FrozenSet. With the vault frozen the operator\'s next payment was refused with error 1, Frozen, and that refusal has no hash of its own for the reason every Soroban refusal here has none. Lifted again at ledger 64103532 by 8bccb734a624cb6165cdd74da5c2d196c3b67dd8a0ed92e3435df1ffd2ae9f9a, because the other half of a kill switch is that it turns back off: a freeze you cannot lift is a loss rather than a control.',
       },
       {
-        kind: 'settlement',
+        kind: 'owner-action',
         label: 'The owner overrides a freeze and pays anyway',
         txHash: '58c118ee659b65875efe5e916f7bb332bc896b62537fa8dd030e2c225defa1cf',
         onChain: 'stellar',
         blockNumber: 64103531,
+        date: '2026-08-24',
+        deliverable: 'self-funded',
         note: 'owner_pay while the vault was frozen. It settles, because the human path is meant to work exactly when the agent path does not, and its Paid event carries by_owner:true. It was still CHARGED to the daily cap, but note what that does and does not mean: owner_pay increments the day accumulator and is NOT limited by it. `check_owner_pay` in policy.rs has no cap comparison. The override bypasses the budget as well as the gates; what it does not bypass is the accounting. An earlier version of this note said the budget still bound it, which was wrong. The freeze went on at ledger 64103526 (c003e3fed6d39d820da51ea281b6d17fc910961bee88163ef8fb6fa084e059cf) and came off at 64103532 (8bccb734a624cb6165cdd74da5c2d196c3b67dd8a0ed92e3435df1ffd2ae9f9a), because a freeze you cannot lift is a loss rather than a control.',
       },
       {
@@ -949,6 +1135,9 @@ export const PROVENANCE: ChainProvenance[] = [
         label: 'A buyer wallet funded with 0.05 USDC for the first x402 sale',
         txHash: '2f47f4fe2f003e8cf65f13d9c8ce62eb2c56319bda2812d93564f5c083d3a12e',
         onChain: 'stellar',
+        blockNumber: 64155317,
+        date: '2026-08-27',
+        deliverable: 'self-funded',
         note: 'The owner account (now 2-of-3 multisig, so the payment carries two signatures) moved 0.05 USDC to a burner that already held a USDC trustline. The buyer needs USDC and a trustline and nothing else: it signs authorization entries and never pays a network fee.',
       },
       {
@@ -957,6 +1146,8 @@ export const PROVENANCE: ChainProvenance[] = [
         txHash: 'f213371c1241968ee78170923d8c5a3bd9b32950e73bb9c563d800ab2c70ec9e',
         onChain: 'stellar',
         blockNumber: 64155370,
+        date: '2026-08-27',
+        deliverable: 'self-funded',
         note: 'The buyer signed a Soroban authorization entry for transfer on the USDC SAC and paid nothing; we assembled, BID 34035 stroops and were CHARGED 23479 (Horizon fee_charged, read 2026-09-15), and the sale counted only once the SEP-41 transfer event bound to the authorization\'s nonce was read back. The two fee numbers are not the same claim and an earlier version of this note reported the bid as what we paid: Stellar runs a fee auction and charges the clearing fee, so the envelope fee is a ceiling we offer and the charge is what the ledger took. Recorded honestly: the first two attempts never landed, because the transaction bid the 100-stroop minimum inclusion fee that testnet always accepts while pubnet\'s auction was clearing at 200 across every percentile. The fix bids the fee market\'s own p90 with headroom, and this settlement is the measurement.',
       },
       {
@@ -965,7 +1156,40 @@ export const PROVENANCE: ChainProvenance[] = [
         txHash: 'c91aaa824b84ee33a8b328514fcb415554626d824e443a2c338e318c99e4042c',
         onChain: 'stellar',
         blockNumber: 64458213,
+        date: '2026-09-16',
+        deliverable: 'self-funded',
         note: '0.04 USDC transferred into the vault through the USDC SAC on 2026-09-16 by mcp/scripts/stellar-vault-fund.mjs. A third-party review read the contract that day and found balance 0: the dust it was funded with had been spent by the payments recorded above, so "holds real USDC" had stopped being true without anything failing. Read back from the contract after the transfer: balance 0.04, daily_cap 1 USDC, auto_approve_max 0.25 USDC, the policy unchanged since construction.',
+      },
+    ],
+    // The three accounts public/.well-known/stellar.toml publishes, with the addresses copied
+    // from soroban/releases/pubnet-v0.1.0.json (owner, operator) and stellar.toml (fee payer).
+    accounts: [
+      {
+        role: 'Owner of the pubnet vault CB5LYXFK..., a 2-of-3 multisig since 2026-08-25',
+        address: 'GARC7OFBBQCZJ5N3LCI7HTTYJ2MMPDAFDNGIHSQMZ7EPJ5EAWQJ5R6I5',
+        network: 'stellar',
+        custody: 'ours: local CLI keystore',
+        usedFor:
+          'The vault\'s deploy, its funding, and every owner action on it (set_frozen, owner_pay). Permanent, because the contract has no set_owner. Its three signers are listed in soroban/releases/pubnet-v0.1.0.json and are all held in one keystore, which SECURITY.md states as an open weakness.',
+        publishedAt: '2026-08-24',
+      },
+      {
+        role: 'Operator of the pubnet vault CB5LYXFK...',
+        address: 'GDLAJM25YQRTIZOVZPVEM2GJ6L2I4OTZGY3HAWX3HGMPV7SM3QZONO4S',
+        network: 'stellar',
+        custody: 'ours: local CLI keystore',
+        usedFor:
+          'pay() inside the policy, 1 USDC per UTC day and 0.25 per payment, and nothing else. It also broadcast the first two pubnet x402 sales, on 2026-08-27 and 2026-08-28, before the fee payer below was split off.',
+        publishedAt: '2026-08-24',
+      },
+      {
+        role: 'x402 pubnet fee payer',
+        address: 'GAFVDEN6BC52WWPRPINOVENMXW3FU4LCSVVVA5C67RLPG4GAK6BE4SXY',
+        network: 'stellar',
+        custody: 'ours: backend environment key',
+        usedFor:
+          'Assembling, broadcasting and paying the network fee for pubnet x402 settlements since 2026-09-15. XLM only: no USDC, no trustline and no role on any vault.',
+        publishedAt: '2026-09-15',
       },
     ],
     caveats: [
@@ -1282,6 +1506,90 @@ export const PROOF_RAILS: ProofRail[] = [
     chains: ['celo'],
   },
 ]
+
+/**
+ * The second Stellar statement of work, as a dated section of the proof page.
+ *
+ * Kept beside the ledger rather than inside it because it is a STATUS, not a history: a
+ * deliverable is pending until its evidence exists, and its row says so instead of being
+ * absent. A missing row reads as "never promised"; a pending one reads as what it is.
+ *
+ * Rules the test enforces: a deliverable marked live names at least one artifact, every
+ * artifact it names exists in a Stellar entry with the matching `deliverable` and a date,
+ * and every link is a path on this site. Explorer links are never typed here; the proof
+ * report derives them from the artifacts.
+ */
+export type Sow2DeliverableId = 'D1' | 'D2' | 'D3'
+export type Sow2Status = 'live' | 'pending' | 'not-delivered'
+
+export type Sow2Deliverable = {
+  id: Sow2DeliverableId
+  title: string
+  status: Sow2Status
+  /** The UTC day the deliverable went live, null while it has not. */
+  date: string | null
+  caption: string
+  /** Paths on this site only (they start with a slash). */
+  links: { label: string; url: string }[]
+  /** Tx hashes of the artifacts that evidence it, resolved against PROVENANCE. */
+  artifacts: string[]
+}
+
+export type Sow2Evidence = {
+  sprintStart: string
+  deliverables: Sow2Deliverable[]
+  trustModel: string
+  /** Shown in the open on the page, never folded. */
+  caveats: string[]
+}
+
+/** The rail whose proof report carries the SOW 2 section. */
+export const SOW2_RAIL = 'stellar'
+
+export const STELLAR_SOW2: Sow2Evidence = {
+  sprintStart: '2026-09-15',
+  deliverables: [
+    {
+      id: 'D1',
+      title: 'Wallet connection and a live, read-only vault panel',
+      status: 'pending',
+      date: null,
+      caption:
+        'A Stellar Wallets Kit connection in the product console and a panel that reads any AgentSpendPolicy vault by contract address, every value stamped with the ledger it was read at. It is marked live here only once it is deployed and checked; until then this row says pending.',
+      links: [{ label: 'Open the live vault panel', url: '/app/vault/stellar' }],
+      artifacts: [],
+    },
+    {
+      id: 'D2',
+      title: 'Owner actions from a browser wallet, on testnet',
+      status: 'pending',
+      date: null,
+      caption:
+        'Nothing to show yet. What will appear here: a testnet vault whose owner key was generated inside a browser wallet, then a freeze or policy change and a withdraw to the owner, each a transaction the owner account sources, pays for and signs whole, with its date, hash and explorer link. The vault and its owner address will be published in the accounts table below BEFORE the first owner action, so the order can be checked.',
+      links: [],
+      artifacts: [],
+    },
+    {
+      id: 'D3',
+      title: 'An owner action signed by a device passkey, on testnet',
+      status: 'pending',
+      date: null,
+      caption:
+        'Nothing to show yet. What will appear here: a testnet vault owned by a passkey smart account whose signer is a device authenticator, and an owner action that passkey signed, with its date, hash and explorer link. The smart account address and the vault will be published in the accounts table below BEFORE the passkey signs any owner action. The 2026-09-19 runs further down are a rehearsal with a software key and are not this deliverable.',
+      links: [{ label: 'The passkey vault page', url: '/stellar' }],
+      artifacts: [],
+    },
+  ],
+  trustModel:
+    'Owner authority (set_policy, set_frozen, withdraw, owner_pay) is never ours on the SOW 2 D2 and D3 vaults: the contract checks owner.require_auth() against the owner address fixed at deploy, there is no set_owner, and we never hold that wallet key or that passkey. Our backend may build the unsigned owner call and relay what the owner signed; it can withhold that, but it cannot alter what was signed or produce the signature. Operator authority (pay, inside the policy: the daily cap, the auto-approve ceiling, the allowlist, the freeze and the session expiry) IS ours on every vault where our backend is the operator, and the policy is what bounds it. The older vaults are a different case and are labeled as such: the owners of CAIL6ECR... on testnet and CB5LYXFK... on pubnet are keys we hold, and the 2026-09-19 passkey rehearsal was signed by a software key in our own script.',
+  caveats: [
+    'The 2026-09-19 passkey runs on testnet are a rehearsal, not SOW 2 D3 evidence. Every owner call in them was signed by a software P-256 key generated inside our own script, and the first run\'s fees were paid by our own deployer key.',
+    'Every owner action recorded on this page before SOW 2 was signed by a key we hold. Those artifacts prove the contract enforces its policy; they do not prove an owner outside our systems, which is the point of D2 and D3.',
+    'Two accounts the 2026-09-19 sponsored run touched are not in the accounts table yet: the OpenZeppelin Channels account that fee-bumped it and the smart-account kit\'s public deployer. No receipt of ours records their full address, and this table publishes only addresses a receipt does.',
+    'Testnet resets periodically. A D2 or D3 vault is evidence that the flow works on the ledger at the time shown, not a permanent record; the hashes and dates here are what survive a reset.',
+    'This section reads from the live backend. A page saved without it, or rendered before the backend answered, shows no evidence rather than stale evidence.',
+  ],
+}
 
 export function provenanceFor(chainId: string): ChainProvenance | undefined {
   return PROVENANCE.find((p) => p.chain === chainId)

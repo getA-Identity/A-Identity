@@ -175,6 +175,8 @@ export type TrackedEvent =
   | 'faq_opened'
   | 'demo_run'
   | 'cta_clicked'
+  | 'console_opened'
+  | 'stellar_vault_read'
 
 /**
  * Record something a visitor did.

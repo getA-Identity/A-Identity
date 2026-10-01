@@ -16,7 +16,13 @@ import {
   allowlistRequest,
   bindPayeeToAgent,
   createRelayBudget,
+  flagshipVaults,
+  operatorGate,
+  ownerAccountCheck,
   ownerKindOf,
+  parsePasskeyPublicKey,
+  requestedNetwork,
+  smartAccountCodeVerdict,
   ozRelayOutcome,
   ozRelayRequest,
   passkeyAgentPayPlan,
@@ -206,10 +212,12 @@ const invokeFunc = (contract: string, method: string, argsXdr = 'ARGS-1', execut
   args: [],
   argsXdr,
   execute,
+  admin: null,
 })
 const addressAuth = (address: string, root: RelayAuth['root'], sub: RelayAuth['sub'] = []): RelayAuth => ({ credentials: 'address', address, root, sub })
 const ok = (func: RelayFunc, auth: RelayAuth[], carrier: 'func-auth' | 'xdr' = 'func-auth'): RelayInspection => ({ ok: true, carrier, func, auth, envelope: null })
-const pre = (i: RelayInspection) => relayPreflight(i, { smartAccountWasmHash: WASM })
+const VERIFIER = testnet.contracts.smartAccount!.webauthnVerifier
+const pre = (i: RelayInspection) => relayPreflight(i, { smartAccountWasmHash: WASM, webauthnVerifier: VERIFIER })
 
 test('a deploy of the smart-account wasm the registry names is relayed', () => {
   const func = deployFunc(WASM)
@@ -354,6 +362,16 @@ test('a decoder refusal is passed through rather than replaced with a generic on
 
 // ── the relay's live half ────────────────────────────────────────────────────────
 
+/** The live read of a demo smart account: deployed, and running the registry's account wasm. */
+const DEMO_CODE = { found: true, executable: 'wasm', wasmHash: WASM }
+const decide = (
+  p: RelayPreflightOk,
+  vault: { owner: string; operator: string } | null,
+  signer: string | null,
+  accountCode: { found: boolean; executable: string | null; wasmHash: string | null } | null = DEMO_CODE,
+  flagship: string[] = [],
+) => relayDecision(p, { vault, signer, accountCode, expectedWasmHash: WASM, flagship })
+
 const preOk = (over: Partial<RelayPreflightOk> = {}): RelayPreflightOk => ({
   ok: true,
   rule: 'smart-account-execute',
@@ -366,12 +384,12 @@ const preOk = (over: Partial<RelayPreflightOk> = {}): RelayPreflightOk => ({
 })
 
 test('a deploy needs no vault and no operator, because it touches neither', () => {
-  const r = relayDecision(preOk({ rule: 'smart-account-deploy', vault: null, smartAccount: null, method: null }), null, null)
+  const r = decide(preOk({ rule: 'smart-account-deploy', vault: null, smartAccount: null, method: null }), null, null, null)
   assert.equal(r.ok, true)
 })
 
 test('REFUSAL: with no signer this server operates no vault, so it relays no owner call', () => {
-  const r = relayDecision(preOk(), { owner: contractId(), operator: accountId() }, null)
+  const r = decide(preOk(), { owner: contractId(), operator: accountId() }, null)
   assert.equal(r.ok, false)
   if (!r.ok) {
     assert.equal(r.status, 503)
@@ -380,7 +398,7 @@ test('REFUSAL: with no signer this server operates no vault, so it relays no own
 })
 
 test('REFUSAL: a vault read that did not answer is a 502, never a pass', () => {
-  const r = relayDecision(preOk(), null, accountId())
+  const r = decide(preOk(), null, accountId())
   assert.equal(r.ok, false)
   if (!r.ok) {
     assert.equal(r.status, 502)
@@ -390,7 +408,7 @@ test('REFUSAL: a vault read that did not answer is a 502, never a pass', () => {
 
 test('REFUSAL: a vault somebody else operates is not ours to pay for', () => {
   const signer = accountId()
-  const r = relayDecision(preOk(), { owner: contractId(), operator: accountId() }, signer)
+  const r = decide(preOk(), { owner: contractId(), operator: accountId() }, signer)
   assert.equal(r.ok, false)
   if (!r.ok) {
     assert.equal(r.status, 403)
@@ -402,14 +420,14 @@ test('REFUSAL: the vault\'s LIVE owner decides who may execute on it, not the re
   const signer = accountId()
   const smartAccount = contractId()
   const p = preOk({ smartAccount })
-  const r = relayDecision(p, { owner: contractId(), operator: signer }, signer)
+  const r = decide(p, { owner: contractId(), operator: signer }, signer)
   assert.equal(r.ok, false)
   if (!r.ok) {
     assert.equal(r.status, 403)
     assert.equal(r.code, 'not_owner')
     assert.match(r.reason, /read live/)
   }
-  const good = relayDecision(p, { owner: smartAccount, operator: signer }, signer)
+  const good = decide(p, { owner: smartAccount, operator: signer }, signer)
   assert.equal(good.ok, true)
 })
 
@@ -417,7 +435,7 @@ test('REFUSAL: a direct owner call is refused when the live owner is an account 
   const signer = accountId()
   const owner = accountId()
   const p = preOk({ rule: 'owner-call', smartAccount: null, authAddresses: [owner] })
-  const r = relayDecision(p, { owner, operator: signer }, signer)
+  const r = decide(p, { owner, operator: signer }, signer)
   assert.equal(r.ok, false)
   if (!r.ok) assert.equal(r.code, 'owner_not_contract')
 })
@@ -426,7 +444,7 @@ test('REFUSAL: an owner call signed by a contract that is not the owner is refus
   const signer = accountId()
   const owner = contractId()
   const p = preOk({ rule: 'owner-call', smartAccount: null, authAddresses: [contractId()] })
-  const r = relayDecision(p, { owner, operator: signer }, signer)
+  const r = decide(p, { owner, operator: signer }, signer)
   assert.equal(r.ok, false)
   if (!r.ok) assert.equal(r.code, 'not_owner')
 })
@@ -477,11 +495,13 @@ test('a relayer error carries the message and the code from wherever the kit loo
 /** The caps the tests assert against, read from the same table production reads. */
 const PASSKEY_CAPS = passkeyCaps(testnet)
 const NET = testnet.caip2
+/** A P-256 point's SHAPE (0x04 and 64 bytes), generated at runtime; nothing here verifies it. */
+const passkeyKey = (): string => `04${randomBytes(64).toString('hex')}`
 
 // ── the deploy ───────────────────────────────────────────────────────────────────
 
 test('a vault for a passkey account needs a CONTRACT owner, and an account owner is sent elsewhere', () => {
-  const good = passkeyDeployPlan({ owner: contractId(), dailyCapUsd: 5, autoApproveUsd: 1 }, DECIMALS, PASSKEY_CAPS, NET)
+  const good = passkeyDeployPlan({ owner: contractId(), ownerPublicKey: passkeyKey(), dailyCapUsd: 5, autoApproveUsd: 1 }, DECIMALS, PASSKEY_CAPS, NET)
   assert.equal(good.ok, true)
   if (good.ok) {
     assert.equal(good.dailyCapRaw, '50000000')
@@ -489,7 +509,7 @@ test('a vault for a passkey account needs a CONTRACT owner, and an account owner
     // Unstated seed means the small default, never zero and never the maximum.
     assert.equal(good.seedUsd, PASSKEY_CAPS.seedUsdDefault)
   }
-  const account = passkeyDeployPlan({ owner: accountId(), dailyCapUsd: 5, autoApproveUsd: 1 }, DECIMALS, PASSKEY_CAPS, NET)
+  const account = passkeyDeployPlan({ owner: accountId(), ownerPublicKey: passkeyKey(), dailyCapUsd: 5, autoApproveUsd: 1 }, DECIMALS, PASSKEY_CAPS, NET)
   assert.equal(account.ok, false)
   if (!account.ok) assert.match(account.reason, /smart account's contract id/)
 })
@@ -497,7 +517,7 @@ test('a vault for a passkey account needs a CONTRACT owner, and an account owner
 test('the deploy caps are enforced here, because nothing else stands between them and the operator key', () => {
   const owner = contractId()
   const over = [
-    { owner, dailyCapUsd: PASSKEY_CAPS.dailyCapUsd + 0.01, autoApproveUsd: 1 },
+    { owner, ownerPublicKey: passkeyKey(), dailyCapUsd: PASSKEY_CAPS.dailyCapUsd + 0.01, autoApproveUsd: 1 },
     { owner, dailyCapUsd: 5, autoApproveUsd: PASSKEY_CAPS.autoApproveUsd + 0.01 },
     { owner, dailyCapUsd: 5, autoApproveUsd: 1, seedUsd: PASSKEY_CAPS.seedUsdMax + 0.01 },
   ]
@@ -506,10 +526,10 @@ test('the deploy caps are enforced here, because nothing else stands between the
 
 test('a zero cap is refused although the contract accepts it, because here zero means no cap', () => {
   const owner = contractId()
-  assert.equal(passkeyDeployPlan({ owner, dailyCapUsd: 0, autoApproveUsd: 1 }, DECIMALS, PASSKEY_CAPS, NET).ok, false)
-  assert.equal(passkeyDeployPlan({ owner, dailyCapUsd: 5, autoApproveUsd: 0 }, DECIMALS, PASSKEY_CAPS, NET).ok, false)
+  assert.equal(passkeyDeployPlan({ owner, ownerPublicKey: passkeyKey(), dailyCapUsd: 0, autoApproveUsd: 1 }, DECIMALS, PASSKEY_CAPS, NET).ok, false)
+  assert.equal(passkeyDeployPlan({ owner, ownerPublicKey: passkeyKey(), dailyCapUsd: 5, autoApproveUsd: 0 }, DECIMALS, PASSKEY_CAPS, NET).ok, false)
   // A zero SEED is fine: it means the vault starts empty, which is a choice, not a policy.
-  const noSeed = passkeyDeployPlan({ owner, dailyCapUsd: 5, autoApproveUsd: 1, seedUsd: 0 }, DECIMALS, PASSKEY_CAPS, NET)
+  const noSeed = passkeyDeployPlan({ owner, ownerPublicKey: passkeyKey(), dailyCapUsd: 5, autoApproveUsd: 1, seedUsd: 0 }, DECIMALS, PASSKEY_CAPS, NET)
   assert.equal(noSeed.ok, true)
   if (noSeed.ok) assert.equal(noSeed.seedRaw, '0')
 })
@@ -517,7 +537,7 @@ test('a zero cap is refused although the contract accepts it, because here zero 
 test('a cap that is not a finite number never reaches the constructor', () => {
   const owner = contractId()
   for (const bad of [Number.NaN, Number.POSITIVE_INFINITY, -1, '5', null, undefined]) {
-    assert.equal(passkeyDeployPlan({ owner, dailyCapUsd: bad, autoApproveUsd: 1 }, DECIMALS, PASSKEY_CAPS, NET).ok, false, String(bad))
+    assert.equal(passkeyDeployPlan({ owner, ownerPublicKey: passkeyKey(), dailyCapUsd: bad, autoApproveUsd: 1 }, DECIMALS, PASSKEY_CAPS, NET).ok, false, String(bad))
   }
 })
 
@@ -784,13 +804,22 @@ test('the status view names the key variable, says whether it is set, and carrie
     explorerFor: (a) => `https://example/contract/${a}`,
     relayLimits: createRelayBudget().snapshot(),
     seedLimits: createSeedBudget().snapshot(testnet.caip2, passkeyCaps(testnet)),
+    servedNetworks: ['stellar:pubnet', 'stellar:testnet'],
   })
   const text = JSON.stringify(view)
   assert.equal((view.relayer as Record<string, unknown>).keyVar, 'X402_STELLAR_TESTNET_OZ_KEY')
   assert.equal((view.relayer as Record<string, unknown>).keyConfigured, false)
   assert.equal((view.relayer as Record<string, unknown>).product, PASSKEY_RELEASE.relayerProduct)
   assert.equal(view.realMoney, false)
-  assert.equal((view.pubnet as Record<string, unknown>).served, false)
+  // Served is a fact about the registry; whether each step executes is readiness, kept apart.
+  assert.equal(view.served, true)
+  assert.deepEqual(view.servedNetworks, ['stellar:pubnet', 'stellar:testnet'])
+  assert.equal('pubnet' in view, false, 'the stale "pubnet not served" block is gone, because pubnet is served')
+  const readiness = view.readiness as Record<string, unknown>
+  assert.equal(readiness.relay, false)
+  assert.equal(readiness.operator, false)
+  assert.equal(readiness.allSteps, false)
+  assert.match(String(readiness.note), /X402_STELLAR_TESTNET_OZ_KEY/)
   // The smart-account constants are published as third-party facts, with their provenance.
   const sa = view.smartAccount as Record<string, unknown>
   assert.equal(sa.wasmHash, WASM)
@@ -808,6 +837,7 @@ test('the passkey vault is published as a smart-account-owned row, with its expl
     explorerFor: (a) => `https://example/contract/${a}`,
     relayLimits: createRelayBudget().snapshot(),
     seedLimits: createSeedBudget().snapshot(testnet.caip2, passkeyCaps(testnet)),
+    servedNetworks: ['stellar:pubnet', 'stellar:testnet'],
   })
   const vault = view.passkeyVault as Record<string, unknown>
   assert.equal(vault.contract, testnet.contracts.passkeyVault)
@@ -828,6 +858,7 @@ test('the status view publishes both relay limits, and calls the fee figure a re
     explorerFor: (a) => `https://example/contract/${a}`,
     relayLimits: b.snapshot(at),
     seedLimits: createSeedBudget().snapshot(testnet.caip2, passkeyCaps(testnet)),
+    servedNetworks: ['stellar:pubnet', 'stellar:testnet'],
   })
   const limits = view.limits as Record<string, Record<string, unknown>>
   // Per IP, and it names where it is applied rather than leaving a reader to find out.
@@ -854,4 +885,331 @@ test('an owner kind is read off the StrKey prefix and is never guessed from a la
   for (const bad of [null, undefined, '', 'GARBAGE', 123 as unknown as string]) {
     assert.equal(ownerKindOf(bad), null, String(bad))
   }
+})
+
+// ── SOW 2 D3: the network a request names, from its body or its query string ─────
+
+test('the relay network may come from the query string, because the kit posts only { func, auth }', () => {
+  const q = requestedNetwork(undefined, 'stellar:testnet', CHAINS)
+  assert.deepEqual(q, { ok: true, network: 'stellar:testnet' })
+  const b = requestedNetwork('stellar', null, CHAINS)
+  assert.deepEqual(b, { ok: true, network: 'stellar' })
+  // The same network named two ways is one network, not a conflict.
+  assert.equal(requestedNetwork('stellar', 'stellar:pubnet', CHAINS).ok, true)
+  // Neither: the gate's own default (testnet) applies downstream.
+  assert.deepEqual(requestedNetwork(undefined, null, CHAINS), { ok: true, network: undefined })
+})
+
+test('REFUSAL: a body and a query string that name different networks are refused, never one preferred', () => {
+  const r = requestedNetwork('stellar:pubnet', 'stellar:testnet', CHAINS)
+  assert.equal(r.ok, false)
+  if (!r.ok) {
+    assert.equal(r.code, 'network_conflict')
+    assert.equal(r.status, 400)
+    assert.match(r.reason, /Nothing was decoded or forwarded/)
+  }
+})
+
+// ── SOW 2 X.4: the recorded vaults are refused by id ────────────────────────────
+
+test('the flagship and rehearsal vaults are named, per network, from the registry', () => {
+  const t = flagshipVaults(testnet)
+  assert.ok(t.includes(testnet.contracts.spendVault!), 'the flagship testnet vault must be refused by id')
+  assert.ok(t.includes(testnet.contracts.passkeyVault!), 'the software-key rehearsal vault must be refused by id')
+  assert.ok(flagshipVaults(pubnet).includes(pubnet.contracts.spendVault!))
+})
+
+// ── SOW 2 D3.8: a smart account adding a device to itself ───────────────────────
+
+type Admin = Extract<RelayFunc, { kind: 'invoke' }>['admin']
+const passkeySigner = (verifier = VERIFIER) => ({ kind: 'external' as const, verifier, keyHex: `04${'ab'.repeat(64)}${'cd'.repeat(16)}` })
+const adminFunc = (account: string, admin: Admin, method = admin?.method ?? 'add_context_rule'): RelayFunc => ({
+  kind: 'invoke',
+  contract: account,
+  method,
+  args: [],
+  argsXdr: 'ADMIN-1',
+  execute: null,
+  admin,
+})
+const newRule = (over: Partial<Extract<NonNullable<Admin>, { method: 'add_context_rule' }>> = {}): Admin => ({
+  method: 'add_context_rule',
+  contextType: 'default',
+  name: 'device 2',
+  validUntil: null,
+  signers: [passkeySigner()],
+  policies: 0,
+  ...over,
+})
+const selfAuth = (account: string, method = 'add_context_rule') => addressAuth(account, { kind: 'contract-fn', contract: account, method, argsXdr: 'ADMIN-1' })
+
+test('a smart account adding a Default rule with one passkey to ITSELF is relayed', () => {
+  const account = contractId()
+  const r = pre(ok(adminFunc(account, newRule()), [selfAuth(account)]))
+  assert.equal(r.ok, true)
+  if (r.ok) {
+    assert.equal(r.rule, 'smart-account-admin')
+    assert.equal(r.smartAccount, account)
+    assert.equal(r.vault, null)
+    assert.equal(r.method, 'add_context_rule')
+  }
+})
+
+test('REFUSAL: a new rule that is not exactly one WebAuthn signer, Default, with no policy, is not relayed', () => {
+  const account = contractId()
+  const cases: [Admin, RegExp][] = [
+    [newRule({ contextType: 'call-contract' }), /call-contract context is not relayed/],
+    [newRule({ signers: [passkeySigner(), passkeySigner()] }), /exactly one WebAuthn signer/],
+    [newRule({ signers: [{ kind: 'delegated', address: accountId() }] }), /delegated/],
+    [newRule({ signers: [passkeySigner(contractId())] }), /exactly one WebAuthn signer/],
+    [newRule({ signers: [] }), /0 signer/],
+    [newRule({ policies: 1 }), /with a policy is not relayed/],
+  ]
+  for (const [admin, why] of cases) {
+    const r = pre(ok(adminFunc(account, admin), [selfAuth(account)]))
+    assert.equal(r.ok, false, JSON.stringify(admin))
+    if (!r.ok) assert.match(r.reason, why)
+  }
+  // Arguments that did not decode into the account's own types are never guessed at.
+  const raw = pre(ok(adminFunc(account, null, 'add_context_rule'), [selfAuth(account)]))
+  assert.equal(raw.ok, false)
+  if (!raw.ok) assert.match(raw.reason, /argument types/)
+})
+
+test('REFUSAL: add_signer on rule 0 would make every action need both devices, so it is not relayed', () => {
+  const account = contractId()
+  const zero = pre(ok(adminFunc(account, { method: 'add_signer', contextRuleId: 0, signer: passkeySigner() }), [selfAuth(account, 'add_signer')]))
+  assert.equal(zero.ok, false)
+  if (!zero.ok) assert.match(zero.reason, /2-of-2/)
+  const other = pre(ok(adminFunc(account, { method: 'add_signer', contextRuleId: 1, signer: passkeySigner() }), [selfAuth(account, 'add_signer')]))
+  assert.equal(other.ok, true)
+  const ed = pre(ok(adminFunc(account, { method: 'add_signer', contextRuleId: 1, signer: passkeySigner(contractId()) }), [selfAuth(account, 'add_signer')]))
+  assert.equal(ed.ok, false, 'a signer under any other verifier (an Ed25519 key) is not a passkey')
+})
+
+test('REFUSAL: only the account itself may authorize a change to its own signers, with no sub-call', () => {
+  const account = contractId()
+  const stranger = pre(ok(adminFunc(account, newRule()), [addressAuth(contractId(), { kind: 'contract-fn', contract: account, method: 'add_context_rule', argsXdr: 'ADMIN-1' })]))
+  assert.equal(stranger.ok, false)
+  if (!stranger.ok) assert.match(stranger.reason, /authorizing a change to itself/)
+  const otherArgs = pre(ok(adminFunc(account, newRule()), [addressAuth(account, { kind: 'contract-fn', contract: account, method: 'add_context_rule', argsXdr: 'ADMIN-2' })]))
+  assert.equal(otherArgs.ok, false, 'an entry for different arguments is authority for a different rule')
+  const sub = pre(
+    ok(adminFunc(account, newRule()), [
+      addressAuth(account, { kind: 'contract-fn', contract: account, method: 'add_context_rule', argsXdr: 'ADMIN-1' }, [
+        { kind: 'contract-fn', contract: contractId(), method: 'transfer', argsXdr: 'X' },
+      ]),
+    ]),
+  )
+  assert.equal(sub.ok, false)
+})
+
+test('the admin rule is decided on the account\'s live CODE: the registry wasm passes, anything else is refused', () => {
+  const account = contractId()
+  const p = preOk({ rule: 'smart-account-admin', vault: null, smartAccount: account, method: 'add_context_rule' })
+  assert.equal(decide(p, null, null).ok, true, 'adding a device needs no vault and no operator key')
+  const other = decide(p, null, null, { found: true, executable: 'wasm', wasmHash: 'ee'.repeat(32) })
+  assert.equal(other.ok, false)
+  if (!other.ok) assert.equal(other.code, 'smart_account_code_mismatch')
+  const none = decide(p, null, null, { found: false, executable: null, wasmHash: null })
+  assert.equal(none.ok, false)
+  if (!none.ok) assert.equal(none.code, 'not_smart_account')
+  const unread = decide(p, null, null, null)
+  assert.equal(unread.ok, false)
+  if (!unread.ok) assert.equal(unread.status, 502, 'an unread code is a reason to stop, never a pass')
+})
+
+test('REFUSAL: an owner call on a vault whose owner is not a demo smart account is not relayed, whoever operates it', () => {
+  const signer = accountId()
+  const smartAccount = contractId()
+  const p = preOk({ smartAccount })
+  const live = { owner: smartAccount, operator: signer }
+  assert.equal(decide(p, live, signer).ok, true)
+  const wrongCode = decide(p, live, signer, { found: true, executable: 'wasm', wasmHash: 'ee'.repeat(32) })
+  assert.equal(wrongCode.ok, false)
+  if (!wrongCode.ok) {
+    assert.equal(wrongCode.code, 'smart_account_code_mismatch')
+    assert.match(wrongCode.reason, /not a demo vault/)
+  }
+  const flagship = decide(preOk({ smartAccount, vault: testnet.contracts.spendVault! }), live, signer, DEMO_CODE, flagshipVaults(testnet))
+  assert.equal(flagship.ok, false)
+  if (!flagship.ok) assert.equal(flagship.code, 'flagship_vault')
+})
+
+// ── SOW 2 X.4: the operator key acts only on demo vaults ────────────────────────
+
+test('X.4: the operator key pays only from a vault owned by a smart account running the registry wasm', () => {
+  const signer = accountId()
+  const owner = contractId()
+  const vault = contractId()
+  const g = operatorGate(vault, { flagship: [], signer, live: { owner, operator: signer }, ownerCode: DEMO_CODE, expectedWasmHash: WASM })
+  assert.equal(g.ok, true)
+  if (g.ok) assert.equal(g.owner, owner)
+})
+
+test('X.4 REFUSAL: a vault the same key operates but a G... account owns is not paid from (the flagship vault shape)', () => {
+  // This is the exact shape of the flagship testnet vault: our signer operates it and a
+  // person's account owns it. The first version of agent-pay would have paid from it.
+  const signer = accountId()
+  const vault = contractId()
+  const g = operatorGate(vault, { flagship: [], signer, live: { owner: accountId(), operator: signer }, ownerCode: null, expectedWasmHash: WASM })
+  assert.equal(g.ok, false)
+  if (!g.ok) {
+    assert.equal(g.code, 'owner_not_contract')
+    assert.equal(g.status, 403)
+  }
+})
+
+test('X.4 REFUSAL: a recorded vault is refused by id before any other check', () => {
+  const signer = accountId()
+  for (const vault of flagshipVaults(testnet)) {
+    const g = operatorGate(vault, { flagship: flagshipVaults(testnet), signer, live: { owner: contractId(), operator: signer }, ownerCode: DEMO_CODE, expectedWasmHash: WASM })
+    assert.equal(g.ok, false)
+    if (!g.ok) assert.equal(g.code, 'flagship_vault')
+  }
+})
+
+test('X.4 REFUSAL: a contract owner running other code, an unread owner, another operator and no signer are each refused', () => {
+  const signer = accountId()
+  const vault = contractId()
+  const owner = contractId()
+  const base = { flagship: [], signer, live: { owner, operator: signer }, ownerCode: DEMO_CODE, expectedWasmHash: WASM }
+  const cases: [Parameters<typeof operatorGate>[1], string, number][] = [
+    [{ ...base, ownerCode: { found: true, executable: 'wasm', wasmHash: 'ee'.repeat(32) } }, 'smart_account_code_mismatch', 403],
+    [{ ...base, ownerCode: { found: true, executable: 'stellar-asset', wasmHash: null } }, 'not_smart_account', 403],
+    [{ ...base, ownerCode: null }, 'rpc_error', 502],
+    [{ ...base, live: { owner, operator: accountId() } }, 'not_operator', 403],
+    [{ ...base, live: null }, 'rpc_error', 502],
+    [{ ...base, signer: null }, 'no_operator', 503],
+  ]
+  for (const [input, code, status] of cases) {
+    const g = operatorGate(vault, input)
+    assert.equal(g.ok, false, code)
+    if (!g.ok) {
+      assert.equal(g.code, code)
+      assert.equal(g.status, status)
+    }
+  }
+})
+
+test('the code verdict needs the registry to name an account wasm at all', () => {
+  const v = smartAccountCodeVerdict(contractId(), DEMO_CODE, undefined)
+  assert.equal(v.ok, false)
+  if (!v.ok) assert.equal(v.code, 'network_not_served')
+  assert.equal(smartAccountCodeVerdict(contractId(), { ...DEMO_CODE, wasmHash: WASM.toUpperCase() }, WASM).ok, true, 'hex case is not identity')
+})
+
+// ── SOW 2 D3.3: the deploy's owner is one passkey, read live ────────────────────
+
+const KEY = `04${'11'.repeat(64)}`
+const CREDENTIAL_SUFFIX = '22'.repeat(20)
+const oneRule = (signers = [{ kind: 'external' as const, verifier: VERIFIER, keyHex: KEY + CREDENTIAL_SUFFIX }], over: Record<string, unknown> = {}) => ({
+  count: 1,
+  rules: [{ id: 0, contextType: 'default', signers, policies: [] as string[], validUntil: null as number | null, ...over }],
+})
+const checkOwner = (over: Partial<Parameters<typeof ownerAccountCheck>[0]> = {}) =>
+  ownerAccountCheck({
+    owner: contractId(),
+    publicKeyHex: KEY,
+    code: DEMO_CODE,
+    rules: oneRule(),
+    expected: { wasmHash: WASM, webauthnVerifier: VERIFIER },
+    ...over,
+  })
+
+test('D3.3: a vault is deployed for an account whose only signer is the passkey the browser named', () => {
+  const r = checkOwner()
+  assert.equal(r.ok, true)
+  if (r.ok) {
+    assert.equal(r.ruleId, 0)
+    assert.equal(r.verifier, VERIFIER)
+  }
+})
+
+test('D3.3 REFUSAL: the owner must run the registry account wasm, and must exist', () => {
+  const wrong = checkOwner({ code: { found: true, executable: 'wasm', wasmHash: 'ee'.repeat(32) } })
+  assert.equal(wrong.ok, false)
+  if (!wrong.ok) assert.equal(wrong.code, 'smart_account_code_mismatch')
+  const none = checkOwner({ code: { found: false, executable: null, wasmHash: null } })
+  assert.equal(none.ok, false)
+  if (!none.ok) assert.equal(none.code, 'not_smart_account')
+  const unread = checkOwner({ rules: null })
+  assert.equal(unread.ok, false)
+  if (!unread.ok) assert.equal(unread.status, 502)
+})
+
+test('D3.3 REFUSAL: a second rule, a policy, an expiry, a second signer, a delegated or Ed25519 signer, or another key', () => {
+  const ed25519 = testnet.contracts.smartAccount!.ed25519Verifier
+  const two = { count: 2, rules: [...oneRule().rules, { ...oneRule().rules[0], id: 1 }] }
+  const cases: [Parameters<typeof ownerAccountCheck>[0]['rules'] | null, string, string?][] = [
+    [two, 'owner_rules_unexpected'],
+    [oneRule(undefined, { policies: [contractId()] }), 'owner_rules_unexpected'],
+    [oneRule(undefined, { validUntil: 99 }), 'owner_rules_unexpected'],
+    [oneRule(undefined, { contextType: 'call-contract' }), 'owner_rules_unexpected'],
+    [oneRule([oneRule().rules[0].signers[0], oneRule().rules[0].signers[0]]), 'owner_signer_unexpected'],
+    [oneRule([{ kind: 'delegated', address: accountId() }] as never), 'owner_signer_unexpected', 'delegated'],
+    [oneRule([{ kind: 'external', verifier: ed25519, keyHex: 'aa'.repeat(32) }]), 'owner_signer_unexpected'],
+  ]
+  for (const [rules, code, words] of cases) {
+    const r = checkOwner({ rules: rules as never })
+    assert.equal(r.ok, false, code)
+    if (!r.ok) {
+      assert.equal(r.code, code)
+      if (words) assert.match(r.reason, new RegExp(words))
+    }
+  }
+  const otherKey = checkOwner({ publicKeyHex: `04${'33'.repeat(64)}` })
+  assert.equal(otherKey.ok, false)
+  if (!otherKey.ok) assert.equal(otherKey.code, 'owner_key_mismatch')
+})
+
+test('a passkey public key is the 65-byte uncompressed point, in hex or base64, and nothing else', () => {
+  const hex = `04${'5a'.repeat(64)}`
+  assert.equal(parsePasskeyPublicKey(hex), hex)
+  assert.equal(parsePasskeyPublicKey(`0x${hex.toUpperCase()}`), hex)
+  const b64url = Buffer.from(hex, 'hex').toString('base64url')
+  assert.equal(parsePasskeyPublicKey(b64url), hex)
+  assert.equal(parsePasskeyPublicKey(Buffer.from(hex, 'hex').toString('base64')), hex)
+  for (const bad of [`03${'5a'.repeat(64)}`, `04${'5a'.repeat(32)}`, '', 'xyz', 42, null]) {
+    assert.equal(parsePasskeyPublicKey(bad), null, String(bad))
+  }
+  const plan = passkeyDeployPlan({ owner: contractId(), dailyCapUsd: 5, autoApproveUsd: 1 }, DECIMALS, PASSKEY_CAPS, NET)
+  assert.equal(plan.ok, false, 'the deploy names the passkey it is for, or it is not planned')
+  if (!plan.ok) assert.match(plan.reason, /ownerPublicKey/)
+})
+
+// ── SOW 2 D3: status, per network ───────────────────────────────────────────────
+
+test('status names per network the caps the page sizes its defaults from, and who can pay and operate', () => {
+  const operator = accountId()
+  const view = passkeyStatusView(pubnet, {
+    keyVar: 'X402_STELLAR_PUBNET_OZ_KEY',
+    keyConfigured: true,
+    relayerUrl: 'https://relayer.example/mainnet/',
+    operator,
+    explorerFor: (a) => `https://example/contract/${a}`,
+    relayLimits: createRelayBudget().snapshot(),
+    seedLimits: createSeedBudget().snapshot(pubnet.caip2, passkeyCaps(pubnet)),
+    servedNetworks: ['stellar:pubnet', 'stellar:testnet'],
+  })
+  assert.equal(view.realMoney, true)
+  assert.equal(view.served, true)
+  const caps = view.caps as Record<string, number>
+  const m = passkeyCaps(pubnet)
+  assert.equal(caps.seedUsdMax, m.seedUsdMax)
+  assert.equal(caps.dailyCapMaxUsd, m.dailyCapUsd)
+  assert.equal(caps.perPaymentMaxUsd, m.autoApproveUsd)
+  assert.equal(caps.sharedDailyCeilingUsd, m.seedDailyTotalUsd)
+  const relayer = view.relayer as Record<string, unknown>
+  assert.equal(relayer.configured, true)
+  assert.equal(relayer.feePayerAccount, null, 'the relayer pays per transaction; the account is read per hash, never filled in')
+  const op = view.operator as Record<string, unknown>
+  assert.equal(op.configured, true)
+  assert.equal(op.address, operator)
+  assert.equal((view.readiness as Record<string, unknown>).allSteps, true)
+  const sa = view.smartAccount as Record<string, unknown>
+  assert.equal(sa.wasmHash, pubnet.contracts.smartAccount!.wasmHash)
+  assert.equal(sa.webauthnVerifier, pubnet.contracts.smartAccount!.webauthnVerifier)
+  assert.equal(sa.ed25519Verifier, pubnet.contracts.smartAccount!.ed25519Verifier)
+  assert.equal((view.vault as Record<string, unknown>).wasmHash, pubnet.contracts.spendVaultWasmHash)
 })

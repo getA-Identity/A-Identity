@@ -69,11 +69,22 @@ export default function VaultPanel({ agentId }: { agentId: string }) {
   // Any other session deploys on Arc, as before.
   const onStellar = useAuth((s) => s.ecosystem) === 'stellar'
 
+  // A refresh never unmounts what is on screen. It used to: `loading` swapped the whole
+  // panel for a skeleton, which unmounted the Stellar owner controls and threw away the
+  // receipt (hash, ledger, pending state) of the transaction that had just triggered the
+  // refresh. The skeleton is now for the first read only; later reads update in place.
   const load = useCallback(async () => {
     setLoading(true)
     try {
       const res = await apiFetch(`/api/agents/vault?agentId=${agentId}`)
-      setVault((await res.json()) as VaultState)
+      const body = await readJson<VaultState>(res)
+      // A non-2xx body is an error message, not a vault: keep the last good state on screen
+      // and say what failed, instead of rendering the error body as an empty vault.
+      if (!res.ok) {
+        setErr(explainError(res.status, body.error))
+        return
+      }
+      setVault(body)
       setErr(null)
     } catch {
       setErr('Could not load vault status.')
@@ -83,6 +94,7 @@ export default function VaultPanel({ agentId }: { agentId: string }) {
   }, [agentId])
 
   useEffect(() => {
+    setVault(null)
     if (agentId) load()
   }, [agentId, load])
 
@@ -179,7 +191,7 @@ export default function VaultPanel({ agentId }: { agentId: string }) {
         onchain, not just on our server. Programmable money enforcing itself.
       </p>
 
-      {loading ? (
+      {loading && !vault ? (
         <div className="space-y-3">
           <Skeleton className="h-4 w-40" />
           <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
@@ -235,11 +247,11 @@ export default function VaultPanel({ agentId }: { agentId: string }) {
               <div className="flex items-center justify-between gap-2">
                 <div className="text-xs font-semibold text-foreground/70">Session key (bounded authority)</div>
                 {keyActive ? (
-                  <span className="rounded-full bg-emerald-500/10 px-2 py-0.5 text-[10px] font-bold text-emerald-700 dark:text-emerald-300">
-                    active · {untilLabel(vault!.sessionKeyExpiry)}
+                  <span className="rounded-full bg-ok/10 px-2 py-0.5 text-[10px] font-bold text-ok">
+                    active, {untilLabel(vault!.sessionKeyExpiry)}
                   </span>
                 ) : vault!.sessionKeyExpired ? (
-                  <span className="rounded-full bg-red-500/10 px-2 py-0.5 text-[10px] font-bold text-red-700 dark:text-red-300">expired</span>
+                  <span className="rounded-full bg-danger/10 px-2 py-0.5 text-[10px] font-bold text-danger">expired</span>
                 ) : (
                   <span className="rounded-full bg-foreground/10 px-2 py-0.5 text-[10px] font-bold text-foreground/50">no time limit</span>
                 )}
@@ -273,7 +285,7 @@ export default function VaultPanel({ agentId }: { agentId: string }) {
                     type="button"
                     onClick={() => setSessionKey({ revoke: true })}
                     disabled={busyKey}
-                    className="rounded-full border border-red-300 px-3 py-1.5 text-xs font-semibold text-red-600 hover:bg-red-50 disabled:opacity-50 dark:border-red-500/30 dark:hover:bg-red-500/10"
+                    className="rounded-full border border-danger/40 px-3 py-1.5 text-xs font-semibold text-danger hover:bg-danger/10 disabled:opacity-50"
                   >
                     Revoke now
                   </button>
