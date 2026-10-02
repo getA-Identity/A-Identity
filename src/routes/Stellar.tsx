@@ -47,6 +47,7 @@ import {
   deployPasskeyVault,
   planAllowlist,
   readPasskeyStatus,
+  readPasskeyVault,
   type AgentPay,
   type AllowlistPlan,
   type Decision,
@@ -54,6 +55,36 @@ import {
   type PasskeyStatus,
   type SeedResult,
 } from '../lib/stellar/passkey-api'
+
+/**
+ * The vault this browser deployed for a smart account, remembered per network and account.
+ *
+ * A vault lives on the ledger, but the page only learns its id from the deploy answer, so
+ * without this a reload (or a redeploy of the site between the vault deploy and the first
+ * owner action, which is exactly the order the evidence needs: publish the owner, then act)
+ * leaves the owner with no way back to their own vault. The record is a hint, never the
+ * truth: on restore the vault's owner() is read live and the vault is used only when it is
+ * this account. Storage can be missing or throw (private mode), so every access is guarded.
+ */
+const VAULT_RECORD = (net: PasskeyNetwork, account: string) => `a-identity:stellar-passkey-vault:${net}:${account}`
+
+function rememberVault(net: PasskeyNetwork, account: string, contract: string): void {
+  try {
+    window.localStorage.setItem(VAULT_RECORD(net, account), JSON.stringify({ contract, savedAt: new Date().toISOString() }))
+  } catch {
+    /* no storage: the vault still works in this tab, it just is not remembered */
+  }
+}
+
+function rememberedVault(net: PasskeyNetwork, account: string): string | null {
+  try {
+    const raw = window.localStorage.getItem(VAULT_RECORD(net, account))
+    const c = raw ? (JSON.parse(raw) as { contract?: unknown }).contract : null
+    return typeof c === 'string' && /^C[A-Z2-7]{55}$/.test(c) ? c : null
+  } catch {
+    return null
+  }
+}
 
 /**
  * /stellar: the passkey vault demo, end to end, on the Stellar network the visitor picks.
@@ -204,6 +235,9 @@ function StellarDemo({ net, onSwitch }: { net: PasskeyNetwork; onSwitch: (n: Pas
   const [vaultUnconfirmed, setVaultUnconfirmed] = useState<{ reason: string; txHash: string | null } | null>(null)
   const [seed, setSeed] = useState<SeedResult | null>(null)
   const [policyWrite, setPolicyWrite] = useState<ChainWrite | null>(null)
+  // A restored vault whose allowlist is already on, read live: the limit was signed in an
+  // earlier session, so the agent steps need not wait for a new signature.
+  const [restoredAllowlistOn, setRestoredAllowlistOn] = useState(false)
 
   // The trust check and the write it implies.
   const [payee, setPayee] = useState('')
@@ -290,6 +324,31 @@ function StellarDemo({ net, onSwitch }: { net: PasskeyNetwork; onSwitch: (n: Pas
     setPayee((v) => v || (testnet ? TESTNET_PAYEES.trusted : (account?.contractId ?? '')))
   }, [defaults, testnet, account])
 
+  // A returning owner gets their vault back: the id remembered for this account is read
+  // live, and it is used only when its owner() is this smart account. Anything else (a vault
+  // a testnet reset deleted, a record from another account) is dropped silently.
+  useEffect(() => {
+    if (!account || vault) return
+    const remembered = rememberedVault(net, account.contractId)
+    if (!remembered) return
+    let alive = true
+    void readPasskeyVault(net, remembered).then((v) => {
+      if (!alive || !v || v.owner !== account.contractId) return
+      setVault({
+        contract: remembered,
+        explorerUrl: contractUrl(net, remembered),
+        ownerReadBack: { owner: v.owner, matches: true, read: 'restored in this browser; owner() read live just now' },
+      })
+      setRestoredAllowlistOn(v.allowlistEnabled)
+      // This browser deployed it, and the deploy is gated on the recovery acknowledgement,
+      // so the acknowledgement was given; asking again would lock the vault card for nothing.
+      setAccepted(true)
+    })
+    return () => {
+      alive = false
+    }
+  }, [account, vault, net])
+
   const label = (card: string, idle: string) => (busy === card ? `${step ? PASSKEY_STEP_LABEL[step] : 'Working'}...` : idle)
   const spin = (card: string) => busy === card && <Loader2 size={15} className="animate-spin" />
   const blocked = !supported || Boolean(hostRefusal)
@@ -368,6 +427,7 @@ function StellarDemo({ net, onSwitch }: { net: PasskeyNetwork; onSwitch: (n: Pas
         return
       }
       setVault({ contract: r.vault, explorerUrl: r.vaultUrl || contractUrl(net, r.vault), ownerReadBack: r.ownerReadBack })
+      rememberVault(net, account.contractId, r.vault)
       setDeployWrite({ write: { outcome: 'settled', txHash: r.txHash, ledger: r.ledger, explorerUrl: r.explorerUrl }, feePayer: r.feePayer })
       addReceipt({ key: 'vault', label: 'Vault deployed', txHash: r.txHash, explorerUrl: r.explorerUrl })
       // The seed is a separate transaction and it is allowed not to happen. An empty
@@ -438,7 +498,7 @@ function StellarDemo({ net, onSwitch }: { net: PasskeyNetwork; onSwitch: (n: Pas
   // The agent cannot pay until the owner's signed limit, which turns the allowlist on, has
   // landed: a vault starts with its allowlist off, and agent-pay refuses (allowlist_off)
   // rather than let our operator key pay anyone from an open vault.
-  const allowlistOn = policyWrite?.outcome === 'settled'
+  const allowlistOn = policyWrite?.outcome === 'settled' || restoredAllowlistOn
   const refusedStatus: Status = !vault || !allowlistOn ? 'locked' : refusal ? (refusal.outcome === 'refused' ? 'stopped' : 'done') : busy === 'refused' ? 'busy' : 'ready'
   const paidStatus: Status = !vault || !allowlistOn ? 'locked' : payment?.outcome === 'settled' ? 'done' : busy === 'settled' ? 'busy' : 'ready'
   const ownerStatus: Status = !vault || !account ? 'locked' : 'ready'
