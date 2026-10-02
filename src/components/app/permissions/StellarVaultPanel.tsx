@@ -117,10 +117,18 @@ export default function StellarVaultPanel({
 
   const keyLabel = (idle: string) => (keyRun.busy ? `${keyRun.step ? STEP_LABEL[keyRun.step] : 'Working'}...` : idle)
   const fullPanel = `/app/vault/stellar?network=${encodeURIComponent(network)}&contract=${encodeURIComponent(contract)}`
+  // While a submitted transaction has not landed, nothing new is offered for signing, so a
+  // pending freeze or withdrawal is never signed twice by a second press.
+  const held = receipt?.outcome === 'pending'
 
   return (
     <div className="mt-2 space-y-3">
       {receipt && <TxReceipt receipt={receipt} onUpdate={setReceipt} onSettled={() => void onDone()} />}
+      {held && (
+        <p className="text-[11px] text-warn">
+          A transaction is still pending. The controls come back once it lands or fails, so nothing is signed twice.
+        </p>
+      )}
 
       <div className="rounded-xl border border-border bg-background/40 p-3">
         <div className="flex flex-wrap items-center justify-between gap-2">
@@ -133,7 +141,7 @@ export default function StellarVaultPanel({
           You sign with your wallet; the server never holds your key. It prepares each call and broadcasts what your wallet signs.
         </p>
         <div className="mt-2">
-          <FreezeButton network={network} contract={contract} owner={owner} frozen={frozen} onReceipt={onReceipt} />
+          <FreezeButton network={network} contract={contract} owner={owner} frozen={frozen} onReceipt={onReceipt} held={held} />
         </div>
       </div>
 
@@ -150,6 +158,7 @@ export default function StellarVaultPanel({
               decimals={live.decimals}
               tokenSymbol={live.tokenSymbol}
               onReceipt={onReceipt}
+              held={held}
             />
           ) : liveFailed ? (
             <p className="text-[11px] text-foreground/60">
@@ -199,11 +208,11 @@ export default function StellarVaultPanel({
               className={`${INPUT} w-24`}
             />
           </div>
-          <button type="button" onClick={() => grantKey(false)} disabled={keyRun.busy !== null} className={BTN}>
+          <button type="button" onClick={() => grantKey(false)} disabled={keyRun.busy !== null || held} className={BTN}>
             {keyLabel(keyActive ? 'Extend / re-grant' : 'Grant session key')}
           </button>
           {keyActive && (
-            <button type="button" onClick={() => grantKey(true)} disabled={keyRun.busy !== null} className={BTN_DANGER}>
+            <button type="button" onClick={() => grantKey(true)} disabled={keyRun.busy !== null || held} className={BTN_DANGER}>
               Revoke now
             </button>
           )}
