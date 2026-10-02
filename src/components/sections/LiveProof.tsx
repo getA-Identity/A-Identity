@@ -32,7 +32,7 @@ const STATS = [
   // repository could reproduce.
   { n: 120, k: '120', v: 'real settlements', sub: 'X Layer mainnet' },
   { n: null, k: '#0', v: 'first registry token', sub: 'Robinhood Chain mainnet' },
-  { n: 1610, k: '1610', v: 'tests, green', sub: 'deterministic scores' },
+  { n: 1628, k: '1628', v: 'tests, green', sub: 'deterministic scores' },
 ] as const
 
 /** A number that counts itself up the first time it scrolls into view. */
