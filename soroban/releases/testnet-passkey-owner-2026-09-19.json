@@ -191,7 +191,7 @@
     "The owner, operator, payees and fee payer are all throwaway testnet keys. No mainnet key touched this flow."
   ],
   "relaySponsoredRun": {
-    "what": "The same flow again, end to end, with fees sponsored by OpenZeppelin Channels through our own relay endpoint rather than by a key of ours. The smart-account kit posted { func, auth } to POST /api/stellar/passkey/relay, which decoded the XDR, refused everything outside the three shapes it allows, and forwarded the rest with our API key; a Channels channel account sourced and paid each transaction. This is what a visitor to /stellar exercises, so it is recorded rather than described.",
+    "what": "The same flow again, end to end, with fees sponsored by OpenZeppelin Channels through our own relay endpoint rather than by a key of ours. The smart-account kit posted { func, auth } to POST /api/stellar/passkey/relay, which decoded the XDR, refused everything outside the three shapes it allows, and forwarded the rest with our API key; a Channels channel account sourced each owner-side transaction and the Channels account GCNJB6V5... fee-bumped it, while the vault deploy and the agent payment were sourced and paid by our operator. This is what a visitor to /stellar exercises, so it is recorded rather than described.",
     "date": "2026-09-19",
     "sponsor": "OpenZeppelin Relayer (Channels), https://channels.openzeppelin.com/testnet/",
     "smartAccount": "CC2GS57AI3DZUVD5UBZ7ZFKVKUDZGXU56AICTYOXISGVJMLUQK2CJVVO",
@@ -252,6 +252,6 @@
     ],
     "refusal": "The payment to the revoked payee answered HTTP 409 with contract error 3, PayeeNotAllowed, refused in simulation, so it has no transaction hash. That is Soroban rather than evasion, and it is the same refusal the ledger recorded under artifacts above when the policy was tightened mid-flight.",
     "feeBumpAccount": "GCNJB6V5YIODDSSCWXZ2VOKMRPRVZ2V723RRQS6STXE6NWTGVOJY35CN",
-    "feeBumpAccountNote": "Added 2026-10-02, read off Horizon: the fee_account of 9df1bbb1..., fb2b59a0... and 6b083e83..., the three owner-side transactions of this run. It is an OpenZeppelin Channels account; we do not hold its key. The agent payment in this run was paid by our operator, not by Channels."
+    "feeBumpAccountNote": "Added 2026-10-02, read off Horizon: the fee_account of 9df1bbb1..., fb2b59a0..., 6b083e83... and 4c0d7377..., the four owner-side transactions of this run, each sourced by a different Channels channel account. It is an OpenZeppelin Channels account; we do not hold its key. The vault deploy f343b7c3... and the agent payment 85906941... in this run were sourced and paid by our operator GDZXSO4A..., not by Channels."
   }
 }

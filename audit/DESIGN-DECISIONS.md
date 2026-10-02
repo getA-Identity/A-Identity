@@ -184,7 +184,7 @@ storage decision and should not be adopted just to make C unnecessary.
 **The situation.** `settle` checks the payee before the amount; `withdraw` checks the amount
 before the payee. So `pay(vault, 0)` returns `InvalidPayee` (7) and `withdraw(vault, 0)`
 returns `InvalidAmount` (6). Same two violations, same contract, two different answers.
-That is the v0.1.0 wasm, `155eb31c...`, which is what both deployed vaults run.
+That is the v0.1.0 wasm, `155eb31c...`, which is what every deployed vault runs: pubnet CB5LYXFK..., testnet CAIL6ECR..., the 2026-09-19 passkey rehearsal vaults CBGTXWFB... and CCV2MMK4..., and any vault the /stellar page deployed on pubnet.
 
 This matters more here than it would elsewhere, because the typed refusal *is* the product:
 a caller is meant to branch on the reason. It violates INV-17 and INV-22.

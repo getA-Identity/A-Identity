@@ -359,8 +359,10 @@ is:
 
 **What survives, because it was never on the ledger.**
 
-- **The archive.** Every transaction we claim is archived at capture time in
-  `releases/tx-archive/`: the envelope, the result and the meta, as XDR. That is the proof,
+- **The archive.** Every Stellar transaction cited in `mcp/src/chains/provenance.ts`, the
+  release records, the third-party receipts and the Stellar docs pages is archived in
+  `releases/tx-archive/` (`stellar-archive-tx.mjs --all-provenance` and `--all-receipts` find
+  nothing missing; the backfill ran 2026-10-02, so for the older ones it was not at capture time): the envelope, the result and the meta, as XDR. That is the proof,
   without Horizon and without RPC, that a hash once existed and what it did, because the
   envelope is what hashes to the transaction id and the meta is what the network returned.
   After a reset, explorer links for testnet hashes go dead; the archive is what a reviewer

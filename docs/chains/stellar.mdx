@@ -406,7 +406,12 @@ ever mentioned.
     hosted page sponsors fees this way only while the deployment has a Channels key set.
   - **A fresh vault starts open.** `allowlist_enabled` is `false` and the allowlist is empty
     until an owner call turns it on. Fund a vault before configuring it and there is a
-    window in which the allowlist protects nothing.
+    window in which the allowlist protects nothing. The public agent-pay endpoint behind
+    the /stellar page closes that window on its side: it refuses (`allowlist_off`) until the
+    owner's signed limit has turned the allowlist on.
+  - **Vault deploys from /stellar are counted.** Each network has a daily deploy count
+    (pubnet 100, testnet 200) and one vault per smart account per window, because the
+    operator account pays for every deploy; the relayer sponsors only passkey-signed calls.
 </Warning>
 
 ## Pay for a trust check
