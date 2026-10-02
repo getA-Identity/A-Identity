@@ -435,8 +435,12 @@ function StellarDemo({ net, onSwitch }: { net: PasskeyNetwork; onSwitch: (n: Pas
   const recoveryStatus: Status = !account && !pending ? 'locked' : accepted ? 'done' : 'ready'
   const vaultStatus: Status = !account || !accepted ? 'locked' : policyWrite?.outcome === 'settled' ? 'done' : busy === 'vault' || busy === 'policy' ? 'busy' : 'ready'
   const kyaStatus: Status = !vault ? 'locked' : plan ? 'done' : busy === 'kya' ? 'busy' : 'ready'
-  const refusedStatus: Status = !vault ? 'locked' : refusal ? (refusal.outcome === 'refused' ? 'stopped' : 'done') : busy === 'refused' ? 'busy' : 'ready'
-  const paidStatus: Status = !vault ? 'locked' : payment?.outcome === 'settled' ? 'done' : busy === 'settled' ? 'busy' : 'ready'
+  // The agent cannot pay until the owner's signed limit, which turns the allowlist on, has
+  // landed: a vault starts with its allowlist off, and agent-pay refuses (allowlist_off)
+  // rather than let our operator key pay anyone from an open vault.
+  const allowlistOn = policyWrite?.outcome === 'settled'
+  const refusedStatus: Status = !vault || !allowlistOn ? 'locked' : refusal ? (refusal.outcome === 'refused' ? 'stopped' : 'done') : busy === 'refused' ? 'busy' : 'ready'
+  const paidStatus: Status = !vault || !allowlistOn ? 'locked' : payment?.outcome === 'settled' ? 'done' : busy === 'settled' ? 'busy' : 'ready'
   const ownerStatus: Status = !vault || !account ? 'locked' : 'ready'
   // After the vault, never before: the vault deploy refuses an account with a second rule.
   const deviceStatus: Status = !account || !vault ? 'locked' : 'ready'
