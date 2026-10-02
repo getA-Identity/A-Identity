@@ -1,0 +1,61 @@
+{
+  "hash": "711894901bf55336be3a36582903c9837783747fb856d49360775ddc225e8a5e",
+  "chainId": "stellar-testnet",
+  "network": "stellar:testnet",
+  "ledger": 4974894,
+  "createdAt": "2026-10-01T23:40:57.000Z",
+  "status": "success",
+  "resultCode": {
+    "tx": "txSuccess",
+    "inner": null,
+    "operations": [
+      "extendFootprintTtlSuccess"
+    ],
+    "contractError": null
+  },
+  "sourceAccount": "GDNRET2G5WNC25QQ43ODLGAZ42X74DQDGRHWHSLKC6FCVF7C6JYLHAJA",
+  "feeAccount": "GDNRET2G5WNC25QQ43ODLGAZ42X74DQDGRHWHSLKC6FCVF7C6JYLHAJA",
+  "feeChargedStroops": "1162062214",
+  "envelopeXdr": "AAAAAgAAAADbEk9G7ZotdhDm3DWYGeav/g4DNE9jyWoXiiqX4vJws0+nib8ASKMbAAAABwAAAAAAAAAAAAAAAQAAAAAAAAAZAAAAAAAT1iAAAAABAAAAAAAAAAEAAAAHoSdH/2wTncFPwv0w0gDWu7Xae11ZgSwEfOH5ytImsokAAAAAAAAAAAAAAAAAAAAAAAAAAE+niVsAAAAB4vJwswAAAEAF7tqGHnkGCOiD6uUBLaFX11U5NuNgthNuOR7Z2uDRLrKylv2/TiE+y/2aeQG9YocvnpwSIaSneaBXgPBqhTUG",
+  "resultXdr": "AAAAAEVDqYYAAAAAAAAAAQAAAAAAAAAZAAAAAAAAAAA=",
+  "resultMetaXdr": "AAAABAAAAAAAAAACAAAAAwBL6S4AAAAAAAAAANsST0btmi12EObcNZgZ5q/+DgM0T2PJaheKKpfi8nCzAAAAFvZpKvkASKMbAAAABgAAAAAAAAAAAAAAAAAAAAABAAAAAAAAAAAAAAEAAAAAAAAAAAAAAAAAAAAAAAAAAgAAAAAAAAAAAAAAAAAAAAMAAAAAAEvnNQAAAABqvuWsAAAAAAAAAAEAS+kuAAAAAAAAAADbEk9G7ZotdhDm3DWYGeav/g4DNE9jyWoXiiqX4vJwswAAABb2aSr5AEijGwAAAAcAAAAAAAAAAAAAAAAAAAAAAQAAAAAAAAAAAAABAAAAAAAAAAAAAAAAAAAAAAAAAAIAAAAAAAAAAAAAAAAAAAADAAAAAABL6S4AAAAAar7viQAAAAAAAAABAAAAAAAAAAIAAAADAEpfAQAAAAlRbV6QpsrfHV8ebNAuCDWM1imXfTBn1HEQtGLenxFOwgBMN4AAAAAAAAAAAQBL6S4AAAAJUW1ekKbK3x1fHmzQLgg1jNYpl30wZ9RxELRi3p8RTsIAX79OAAAAAAAAAAAAAAAAAAAAAQAAAAEAAAAAAAAAAAAACIgAAAAARUOgmgAAAABFQ6CaAAAAAAAAAAIAAAAAAAAAAAAAAAHXkotywnA8z+r365/0701QSlWouXn8m0UOoshCtNHOYQAAAAEAAAAAAAAAAgAAAA8AAAADZmVlAAAAABIAAAAAAAAAANsST0btmi12EObcNZgZ5q/+DgM0T2PJaheKKpfi8nCzAAAACgAAAAAAAAAAAAAAAE+nib8AAAACAAAAAAAAAAHXkotywnA8z+r365/0701QSlWouXn8m0UOoshCtNHOYQAAAAEAAAAAAAAAAgAAAA8AAAADZmVlAAAAABIAAAAAAAAAANsST0btmi12EObcNZgZ5q/+DgM0T2PJaheKKpfi8nCzAAAACv////////////////WcH8cAAAAA",
+  "metaFrom": "rpc",
+  "metaNote": null,
+  "fetchedFrom": "rpc",
+  "explorer": "https://stellar.expert/explorer/testnet/tx/711894901bf55336be3a36582903c9837783747fb856d49360775ddc225e8a5e",
+  "archivedAt": "2026-10-02T00:15:56.035Z",
+  "caption": "extendTx in soroban/third-party/openzeppelin-smart-account/receipt-testnet-deploy-2026-10-01.json",
+  "deliverable": null,
+  "citedIn": [
+    "soroban/third-party/openzeppelin-smart-account/receipt-testnet-deploy-2026-10-01.json"
+  ],
+  "decoded": {
+    "hash": "711894901bf55336be3a36582903c9837783747fb856d49360775ddc225e8a5e",
+    "innerHash": null,
+    "status": "success",
+    "resultCode": {
+      "tx": "txSuccess",
+      "inner": null,
+      "operations": [
+        "extendFootprintTtlSuccess"
+      ],
+      "contractError": null
+    },
+    "sourceAccount": "GDNRET2G5WNC25QQ43ODLGAZ42X74DQDGRHWHSLKC6FCVF7C6JYLHAJA",
+    "feeAccount": "GDNRET2G5WNC25QQ43ODLGAZ42X74DQDGRHWHSLKC6FCVF7C6JYLHAJA",
+    "feeBump": false,
+    "feeChargedStroops": "1162062214",
+    "operations": [
+      {
+        "type": "extendFootprintTtl",
+        "source": null,
+        "contract": null,
+        "function": null,
+        "args": null
+      }
+    ],
+    "auth": [],
+    "summary": "One extendFootprintTtl operation. Fee 116.2062214 XLM paid by GDNRET...HAJA. It succeeded.",
+    "caveats": []
+  }
+}
