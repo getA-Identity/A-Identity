@@ -151,6 +151,14 @@ if (!version) fail(`wasm ${wasmHash} is not in contracts.knownVaultWasmHashes fo
 if (known && arg('version') && arg('version') !== known.version) {
   fail(`--version ${arg('version')} disagrees with the registry, which records ${wasmHash} as ${known.version}`)
 }
+// The receipt path is settled before any network write. Checked after the deploy, a second
+// same-day deploy of the same version would land on chain, pay its fee, and only then be
+// refused a file, leaving the vault recorded nowhere but the terminal.
+const today = new Date().toISOString().slice(0, 10)
+const out = arg('out') || resolve(RELEASES, `${chain.id}-${version}-${today}.json`)
+if (!DRY && secret && existsSync(out)) {
+  fail(`${out} already exists; pass --out to write this receipt elsewhere rather than overwrite a record. Nothing was uploaded or deployed.`)
+}
 if (!chain.testnet && !DRY) console.log('PUBNET: this deploy spends real XLM from the deployer account.')
 
 console.log(`chain:     ${chain.name} (${chain.caip2})`)
@@ -209,7 +217,6 @@ if (DRY && upload && upload.outcome === 'prepared') {
 
 // ── 3. the receipt ────────────────────────────────────────────────────────────────
 
-const today = new Date().toISOString().slice(0, 10)
 const txOf = (o) =>
   o && o.outcome === 'settled'
     ? { txHash: o.txHash, ledger: o.ledger ?? null, feeChargedStroops: o.feeChargedStroops ?? null }
@@ -258,7 +265,8 @@ if (DRY) {
   console.log('dry run: no receipt file was written.')
   process.exit(0)
 }
-const out = arg('out') || resolve(RELEASES, `${chain.id}-${version}-${today}.json`)
+// Checked again because the deploy took time, but the early check above is the one that
+// keeps a fee from being spent on a receipt that cannot be written.
 if (existsSync(out)) fail(`${out} already exists; pass --out to write this receipt elsewhere rather than overwrite a record`)
 mkdirSync(dirname(out), { recursive: true })
 writeFileSync(out, JSON.stringify(receipt, null, 2) + '\n')

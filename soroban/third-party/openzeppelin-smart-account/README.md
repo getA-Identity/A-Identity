@@ -91,27 +91,43 @@ toolchain:
   strings (56 bytes), and in the code section two functions trade places with the four
   call sites that name them adjusted. No other byte differs.
 
-## On chain, as read before anything was uploaded
+## On chain, as read before the deployment
 
 Read-only `getLedgerEntries` on 2026-10-01 around 23:10 UTC, testnet ledger 4974511:
 
 - The `a12747ff...` code entry was ALREADY present on testnet, live until ledger
   4994944 (about 20,400 ledgers, a little over a day). We did not upload it and did not
   identify who did; content addressing means it is the same bytes either way. It will
-  archive unless its TTL is extended, which is why the planned upload is
-  followed by a TTL extend.
+  archive unless its TTL is extended, which is why the deployment below extended it.
 - `e63a030d...` and `60e8798d...` are present on testnet and pubnet, uploaded by the
   smart-account-kit maintainers (deployment account `GAAH4OT3...`).
 - `a12747ff...` is absent on pubnet.
 
-Planned, not done: uploading the three wasm files from our testnet deployer and
-deploying our own two verifier instances. Until those transactions exist with receipts,
-nothing on this page claims an instance of ours.
+## Testnet deployment, done 2026-10-01
 
-## Planned testnet deployment
+The receipt is
+[`receipt-testnet-deploy-2026-10-01.json`](receipt-testnet-deploy-2026-10-01.json) in this
+directory. What it records:
 
-Run by a human holding the `passkey-deployer` identity, after `build.sh` has printed the
-three hashes above. Each verifier salt is the sha256 of
+- **No uploads.** All three code entries were already on testnet with exactly our hashes,
+  so `stellar contract upload` skipped the install for each one and we uploaded nothing
+  (`uploadedByUs: false` on all three). The bytes on the ledger are the bytes we built,
+  because a code entry is named by their sha256; who put them there is not ours to claim.
+- **TTL extends.** The account entry `a12747ff...` was extended in tx `71189490...` at
+  ledger 4974894 and the ed25519 verifier entry `60e8798d...` in tx `e9a4d5a6...` at
+  ledger 4974897, both to about ledger 6.27 million. The WebAuthn verifier entry's extend,
+  tx `268389b8...`, was a no-op: it already lived past the requested ledger.
+- **Our two verifier instances.** The WebAuthn verifier
+  `CABPDJH4OPZ6GPOFIFH3QKTUADUDRFD2HPYLRBXRLK4ZBVDHPIESVJPD`, tx `8c6894a8...` at ledger
+  4974910, and the ed25519 verifier
+  `CCKPFIAAUZ2CCOPDABGJPJYG54EI23FO4PA4J253X2JXHMU4R5QCVBI2`, tx `33642444...` at ledger
+  4974913, both deployed by `passkey-deployer` with the salts below, and each instance's
+  TTL extended after.
+- **The read-back.** Fetching both instances and the account code entry and hashing the
+  bytes gave the three hashes at the top of this page.
+
+The commands, as run by a human holding the `passkey-deployer` identity after `build.sh`
+had printed the three hashes above. Each verifier salt is the sha256 of
 `a-identity:OpenZeppelin/stellar-contracts:<full v0.7.2 commit>:testnet:<role>`, so the
 salt itself names what was deployed:
 
@@ -123,8 +139,8 @@ salt itself names what was deployed:
 ```sh
 OUT=/path/to/scratch/out   # build.sh's output directory
 
-# 1. Upload. Each command prints the wasm hash; it must equal the table at the top. The
-#    two verifier code entries already exist, and the CLI may report that and skip.
+# 1. Upload. Each command prints the wasm hash; it must equal the table at the top. On
+#    2026-10-01 all three entries already existed and the CLI skipped every install.
 stellar contract upload --wasm "$OUT/oz-v0.7.2-multisig_account_example.wasm" --source-account passkey-deployer --network testnet
 stellar contract upload --wasm "$OUT/oz-v0.7.2-multisig_webauthn_verifier_example.wasm" --source-account passkey-deployer --network testnet
 stellar contract upload --wasm "$OUT/oz-v0.7.2-multisig_ed25519_verifier_example.wasm" --source-account passkey-deployer --network testnet
@@ -145,7 +161,7 @@ stellar contract fetch --wasm-hash a12747ff6c139dc14fc2fd30d200d6bbb5da7b5d59812
 shasum -a 256 webauthn.wasm ed25519.wasm account.wasm
 ```
 
-The account wasm is uploaded and never deployed as a singleton: every passkey wallet
+The account wasm is a code entry and never deployed as a singleton: every passkey wallet
 deploys its own instance with its signer as a constructor argument, through the kit.
 Reusing the kit's existing testnet verifier instances (`CC7EKIHQ...`, `CAAVTMCB...`)
 would be technically equivalent, because they run the same bytes and hold no state; we
@@ -217,7 +233,7 @@ shasum -a 256 account.wasm verifier.wasm
   us. That is evidence the pinned toolchain is portable. It is not a guarantee: Rust does
   not promise bit-reproducible wasm across hosts, and we have not run `build.sh` on Linux.
 - Somebody else also arrived at `a12747ff...`: that code entry was already on testnet
-  before we uploaded anything (see "On chain" above). We cannot say who uploaded it or
+  before we went to upload it, and we did not upload it (see "On chain" above). We cannot say who uploaded it or
   how they built it, so we note it rather than count it as an independent reproduction.
 - The toolchain pin matters. The same source built with Rust 1.96.0 and stellar CLI
   27.1.0 gives a different account hash and a different WebAuthn verifier hash.

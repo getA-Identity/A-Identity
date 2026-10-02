@@ -136,9 +136,12 @@ amount while `withdraw` checked the amount first, so `pay(vault, 0)` answered `I
 and `withdraw(vault, 0)` answered `InvalidAmount`. v0.1.1 moves `policy::check_amount` to the
 first line of `settle`, and
 `a_doubly_invalid_input_names_the_same_first_reason_on_every_money_path` now runs and passes.
-The fix is in the source and in any vault built from it. **It is not in the two deployed
-vaults,** which run the v0.1.0 wasm (`155eb31c...`) and keep the old order until v0.1.1
-vaults replace them: until then, a client talking to them has to treat `InvalidPayee` and
+The fix is in the source and in any vault built from it. **It is not in any deployed
+vault.** Every vault deployed so far runs the v0.1.0 wasm (`155eb31c...`) and keeps the old
+order: pubnet `CB5LYXFK...`, testnet `CAIL6ECR...`, the two 2026-09-19 passkey rehearsal
+vaults on testnet `CBGTXWFB...` and `CCV2MMK4...`, and any vault the /stellar page deploys
+on pubnet, which has no v0.1.1 code entry. No v0.1.1 vault had been deployed when this was
+written (2026-10-02), so a client talking to any of these has to treat `InvalidPayee` and
 `InvalidAmount` as interchangeable first reasons on `pay` and `owner_pay`.
 
 The v0.1.1 release wasm, built here with `stellar contract build` (CLI 27.1.0, rustc 1.96.0,
@@ -243,8 +246,11 @@ That is a smaller blast radius than the EVM version has.
 
 ## Deployed vaults and their live policy
 
-Two instances of this contract are deployed. The table is a read of each contract's own view
-functions on 2026-09-16, not a copy of what we meant to configure. The policy is fixed at
+The table covers the two long-lived instances, read through each contract's own view
+functions on 2026-09-16, not a copy of what we meant to configure. They are not the only
+v0.1.0 instances: the 2026-09-19 passkey rehearsal vaults `CBGTXWFB...` and `CCV2MMK4...`
+on testnet are recorded in `releases/testnet-passkey-owner-2026-09-19.json`, and the
+/stellar page deploys more on pubnet. The policy is fixed at
 construction and there is no setter for the token or decimals, so the cap and ceiling below
 change only if the owner calls `set_policy`, which would show up in the next read.
 
@@ -334,9 +340,12 @@ is:
 - **Our vaults.** The testnet AgentSpendPolicy instance, its balance, its allowlist entries
   and its day buckets, and the uploaded wasm code entry it runs. Any v0.1.1 vault deployed
   on testnet before the reset goes the same way.
-- **The OpenZeppelin smart-account code and verifiers we upload.** We build those contracts
-  ourselves from the audited OpenZeppelin stellar-contracts release line and upload them to
-  testnet ourselves; a reset deletes the code entries and every account instantiated from
+- **The OpenZeppelin smart-account code and verifiers we rely on.** We build those
+  contracts ourselves from the audited OpenZeppelin stellar-contracts release line. We did
+  not upload them: on 2026-10-01 all three code entries were already on testnet with exactly
+  our build hashes, so we extended their TTLs and deployed our own two verifier instances
+  (`third-party/openzeppelin-smart-account/receipt-testnet-deploy-2026-10-01.json`). A reset
+  deletes those code entries, our verifier instances and every account instantiated from
   them, including the passkey smart account behind the D3 evidence.
 - **Every account we hold there.** Owner, operator, fee payer, the x402 seller: each has to be
   re-created and re-funded, and each one's trustlines re-opened.
@@ -380,8 +389,9 @@ is:
    the redeploy runbook below. Every receipt from v0.1.1 on records the deployer and salt.
 5. Re-arm the policy: `set_policy`, the allowlist from `releases/testnet-allowlist.json`, the
    session key expiry, and fund the vault.
-6. Re-upload the OpenZeppelin smart-account and verifier wasm and check each code hash
-   against the reproducible build, then re-create the passkey smart account. A passkey is
+6. Upload the OpenZeppelin smart-account and verifier wasm (after a reset, nobody else's
+   copy can be assumed), check each code hash against the reproducible build, re-deploy our
+   two verifier instances from the recorded salts, then re-create the passkey smart account. A passkey is
    bound to its device, so this step needs a person with the device; it cannot be scripted.
 7. **Recapture.** Re-run each evidence flow and archive the new transactions in
    `releases/tx-archive/` beside the old ones. Old hashes are kept and marked as pre-reset

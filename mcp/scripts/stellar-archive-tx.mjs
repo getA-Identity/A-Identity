@@ -12,10 +12,20 @@
  *
  *   node mcp/scripts/stellar-archive-tx.mjs --chain stellar-testnet --hash <hex> [--caption "..."] [--deliverable D2]
  *   node mcp/scripts/stellar-archive-tx.mjs --all-provenance [--chain stellar]
+ *   node mcp/scripts/stellar-archive-tx.mjs --all-receipts [--chain stellar]
  *
  * --all-provenance archives every Stellar transaction listed in mcp/src/chains/provenance.ts,
  * including funding hops recorded under another chain's entry, with that file's own label as
  * the caption. Needs `npm run build` first: it imports the decoder from mcp/dist.
+ *
+ * --all-receipts archives every Stellar transaction cited in a release record
+ * (soroban/releases/*.json), a third-party receipt (soroban/third-party/<name>/receipt-*.json)
+ * or a Stellar docs page (docs/chains/stellar*.mdx) that the archive does not hold yet. A hash
+ * counts as a transaction when a receipt stores it under a transaction key (txHash, deployTx,
+ * extendTx, ...) or a page links it as an explorer tx; those must archive or the run fails.
+ * A bare 64-hex string in free text may be a wasm hash or a digest instead, so it is looked
+ * up and, when no network knows it as a transaction, listed as skipped rather than failed.
+ * The chain is the receipt's own CAIP-2 `network`, or the network the explorer link names.
  *
  * Idempotent. A re-run keeps the existing caption and deliverable unless new ones are given,
  * keeps the first archivedAt, never drops a meta an earlier run captured, and does not
@@ -25,7 +35,7 @@
  * Exit codes: 0 every requested transaction archived, 1 at least one could not be, 2 bad
  * arguments.
  */
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from 'node:fs'
 import { dirname, join, relative } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
@@ -47,6 +57,7 @@ const arg = (name) => {
 const usage = () => {
   console.error('usage: stellar-archive-tx.mjs --chain <registry id> --hash <hex> [--caption "..."] [--deliverable D2]')
   console.error('       stellar-archive-tx.mjs --all-provenance [--chain <registry id>]')
+  console.error('       stellar-archive-tx.mjs --all-receipts [--chain <registry id>] [--list]')
   process.exit(2)
 }
 
@@ -81,6 +92,88 @@ if (flag('all-provenance')) {
       })
     }
   }
+} else if (flag('all-receipts')) {
+  const archivedOn = (hash) => stellarChains.find((c) => existsSync(join(ARCHIVE, c.id, `${hash}.json`)))
+  // A transaction key: txHash, tx, deployTx, extendTx, instanceExtendTx. Not wasmHash or salt.
+  const TX_KEY = /(^tx|Tx)(Hash)?$/
+  // Keys whose value is a code hash, a salt or a contract's code entry, never a transaction.
+  const NOT_TX_KEY = /([wW]asm(Hash)?|^salt|CodeEntry|Instance|^sha256|Sha256)$/
+  const HEX64 = /\b[0-9a-f]{64}\b/g
+  /** @type {Map<string, any>} */
+  const cited = new Map()
+  const cite = (hash, { chain, tryChains, sure, caption, file }) => {
+    const prior = cited.get(hash)
+    if (prior) {
+      if (!prior.citedIn.includes(file)) prior.citedIn.push(file)
+      if (sure && !prior.sure) Object.assign(prior, { chain, tryChains: undefined, sure, caption: caption ?? prior.caption })
+      return
+    }
+    cited.set(hash, { hash, chain, tryChains, sure, caption, citedIn: [file] })
+  }
+  // A bare hash in prose: an explorer tx link pins it and its chain; otherwise it is a maybe.
+  const scanText = (text, file, hint) => {
+    for (const h of new Set(text.match(HEX64) ?? [])) {
+      const linked = stellarChains.find((c) => text.includes(txUrl(c, h)))
+      if (linked) cite(h, { chain: linked, sure: true, caption: `cited in ${file}`, file })
+      else cite(h, { tryChains: hint ? [hint, ...stellarChains.filter((c) => c !== hint)] : stellarChains, sure: false, caption: `cited in ${file}`, file })
+    }
+  }
+  const walk = (node, file, hint, parent, key) => {
+    if (typeof node === 'string') {
+      if (/^[0-9a-f]{64}$/.test(node) && key && TX_KEY.test(key)) {
+        if (!hint) throw new Error(`${file} cites ${node} as ${key} but names no Stellar network`)
+        const label = parent && typeof parent.label === 'string' ? parent.label : `${key} in ${file}`
+        cite(node, { chain: hint, sure: true, caption: label, file })
+      } else if (/^[0-9a-f]{64}$/.test(node) && key && NOT_TX_KEY.test(key)) {
+        // A value its own key says is not a transaction: nothing to look up.
+      } else scanText(node, file, hint)
+      return
+    }
+    if (Array.isArray(node)) node.forEach((v) => walk(v, file, hint, parent, key))
+    else if (node && typeof node === 'object') for (const [k, v] of Object.entries(node)) walk(v, file, hint, node, k)
+  }
+
+  const releases = join(REPO, 'soroban', 'releases')
+  const thirdParty = join(REPO, 'soroban', 'third-party')
+  const receiptFiles = [
+    ...readdirSync(releases).filter((f) => f.endsWith('.json')).map((f) => join(releases, f)),
+    ...readdirSync(thirdParty, { withFileTypes: true })
+      .filter((d) => d.isDirectory())
+      .flatMap((d) => readdirSync(join(thirdParty, d.name)).filter((f) => /^receipt-.*\.json$/.test(f)).map((f) => join(thirdParty, d.name, f))),
+  ]
+  for (const path of receiptFiles) {
+    const doc = JSON.parse(readFileSync(path, 'utf8'))
+    const hint = stellarChains.find((c) => c.caip2 === doc.network || c.id === doc.network)
+    walk(doc, relative(REPO, path), hint, null, null)
+  }
+  const docsDir = join(REPO, 'docs', 'chains')
+  for (const f of readdirSync(docsDir).filter((n) => /^stellar.*\.mdx$/.test(n))) {
+    scanText(readFileSync(join(docsDir, f), 'utf8'), relative(REPO, join(docsDir, f)), undefined)
+  }
+
+  let held = 0
+  for (const c of cited.values()) {
+    if (archivedOn(c.hash)) {
+      held += 1
+      continue
+    }
+    if (onlyChain && c.sure && c.chain !== onlyChain) continue
+    jobs.push({
+      chain: c.chain,
+      tryChains: c.sure ? undefined : onlyChain ? [onlyChain] : c.tryChains,
+      maybe: !c.sure,
+      hash: c.hash,
+      caption: c.caption,
+      captionIsDefault: true,
+      deliverable: arg('deliverable'),
+      citedIn: c.citedIn,
+    })
+  }
+  console.log(`${cited.size} distinct 64-hex strings cited; ${held} already archived; ${jobs.length} to look up.`)
+  if (flag('list')) {
+    for (const j of jobs) console.log(`${j.maybe ? 'maybe' : 'tx   '} ${(j.chain?.id ?? 'any').padEnd(15)} ${j.hash} ${j.citedIn.join(', ')}`)
+    process.exit(0)
+  }
 } else {
   const hash = arg('hash')
   if (!onlyChain || !hash) usage()
@@ -99,16 +192,28 @@ function readExisting(path) {
 }
 
 let failed = 0
+let skipped = 0
 let noMeta = 0
 const results = []
 for (const [i, job] of jobs.entries()) {
   // Polite pacing: these are public services, and nothing here is urgent.
   if (i > 0) await sleep(400)
+  // A maybe is tried on each candidate network in turn; the first that knows it decides.
+  let r
+  for (const c of job.tryChains ?? [job.chain]) {
+    r = await fetchTxEvidence(c, job.hash)
+    job.chain = c
+    if (r.ok || r.code !== 'not_found') break
+  }
+  if (!r.ok && job.maybe && r.code === 'not_found') {
+    skipped += 1
+    console.log(`skipped   ${job.hash.slice(0, 12)}... no Stellar network knows it as a transaction (a wasm hash, salt or digest), cited in ${job.citedIn.join(', ')}`)
+    continue
+  }
   const dir = join(ARCHIVE, job.chain.id)
   const path = join(dir, `${job.hash}.json`)
   const existing = readExisting(path)
 
-  const r = await fetchTxEvidence(job.chain, job.hash)
   if (!r.ok) {
     failed += 1
     results.push({ chain: job.chain.id, hash: job.hash, ok: false, code: r.code, reason: r.reason })
@@ -152,6 +257,7 @@ for (const [i, job] of jobs.entries()) {
     caption,
     deliverable: job.deliverable ?? existing?.deliverable ?? null,
     ...(job.provenance ? { provenance: job.provenance } : existing?.provenance ? { provenance: existing.provenance } : {}),
+    ...(job.citedIn ? { citedIn: job.citedIn } : existing?.citedIn ? { citedIn: existing.citedIn } : {}),
     decoded: evidence,
   }
   const text = `${JSON.stringify(out, null, 2)}\n`
@@ -167,5 +273,5 @@ for (const [i, job] of jobs.entries()) {
 }
 
 const ok = results.filter((x) => x.ok).length
-console.log(`\n${ok} of ${jobs.length} archived; ${failed} failed; ${noMeta} archived without result meta.`)
+console.log(`\n${ok} of ${jobs.length} archived; ${failed} failed; ${skipped} skipped as not a transaction; ${noMeta} archived without result meta.`)
 process.exit(failed ? 1 : 0)

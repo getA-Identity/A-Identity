@@ -27,10 +27,17 @@ export default function OwnerControls({
   vault,
   signer,
   onReceipt,
+  pending = false,
 }: {
   vault: VaultRead
   signer: WalletSigner
   onReceipt: (r: Receipt) => void
+  /**
+   * True while a transaction this page submitted for the vault has no ledger yet. Every
+   * control is held until it lands or fails: the receipt says "do not sign it again", and a
+   * button that stays live invites exactly that.
+   */
+  pending?: boolean
 }) {
   const session = useOwnerSession(signer.address, signer)
 
@@ -73,6 +80,11 @@ export default function OwnerControls({
 
   return (
     <div className="space-y-4">
+      {pending && (
+        <p className="rounded-xl border border-warn/30 bg-warn/10 px-3 py-2 text-xs text-foreground/85">
+          A transaction is still pending. The controls come back once it lands or fails, so nothing is signed twice.
+        </p>
+      )}
       <section aria-label="Freeze" className="rounded-xl border border-border bg-background/60 p-4">
         <h4 className="text-sm font-semibold text-foreground">Freeze</h4>
         <div className="mt-2">
@@ -83,6 +95,7 @@ export default function OwnerControls({
             frozen={vault.frozen}
             onReceipt={onReceipt}
             signIn={signInButton}
+            held={pending}
           />
         </div>
       </section>
@@ -99,11 +112,12 @@ export default function OwnerControls({
             tokenSymbol={vault.tokenSymbol}
             onReceipt={onReceipt}
             signIn={signInButton}
+            held={pending}
           />
         </div>
       </section>
 
-      <PolicyForm vault={vault} onReceipt={onReceipt} signIn={signInButton} />
+      <PolicyForm vault={vault} onReceipt={onReceipt} signIn={signInButton} held={pending} />
     </div>
   )
 }
@@ -113,7 +127,18 @@ export default function OwnerControls({
  * whether the allowlist is enforced. All three are sent together because set_policy takes
  * all three; the form starts from the live values so an untouched field stays as it is.
  */
-function PolicyForm({ vault, onReceipt, signIn }: { vault: VaultRead; onReceipt: (r: Receipt) => void; signIn: ReactNode }) {
+function PolicyForm({
+  vault,
+  onReceipt,
+  signIn,
+  held,
+}: {
+  vault: VaultRead
+  onReceipt: (r: Receipt) => void
+  signIn: ReactNode
+  /** A transaction for this vault is still pending: nothing new is prepared until it is not. */
+  held: boolean
+}) {
   const [cap, setCap] = useState(vault.dailyCap.display)
   const [ceiling, setCeiling] = useState(vault.autoApproveMax.display)
   const [allowlist, setAllowlist] = useState(vault.allowlistEnabled)
@@ -182,7 +207,7 @@ function PolicyForm({ vault, onReceipt, signIn }: { vault: VaultRead; onReceipt:
         <div className="sm:col-span-3">
           <button
             type="submit"
-            disabled={busy !== null}
+            disabled={busy !== null || held}
             className="inline-flex items-center gap-1.5 rounded-full bg-accent px-4 py-2 text-sm font-semibold text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50"
           >
             {busy && <Loader2 size={14} className="animate-spin" aria-hidden="true" />}

@@ -297,9 +297,13 @@ export async function readFeePayer(net: PasskeyNetwork, hash: string): Promise<F
   }
 }
 
-/** One signer inside a decoded authorization, as GET /api/stellar/tx/:hash describes it. */
+/**
+ * One signer inside a decoded authorization, as GET /api/stellar/tx/:hash describes it.
+ * The route nests the WebAuthn assertion under `webauthn` (authenticatorData.flags and
+ * signCount, clientDataJSON.type and origin); this flattens it for the panel.
+ */
 export type DecodedSigner = {
-  kind: 'webauthn-secp256r1' | 'ed25519' | 'delegated' | 'unknown'
+  kind: 'webauthn-secp256r1' | 'ed25519' | 'delegated' | 'account-ed25519' | 'unknown'
   verifier: string | null
   publicKeyHex: string | null
   authenticatorFlags: { UP: boolean; UV: boolean; BE: boolean; BS: boolean; AT: boolean; ED: boolean } | null
@@ -331,7 +335,15 @@ export type TxEvidence =
       explorerTx: string | null
     }
   | { state: 'absent' }
+  /** The route answered, and neither RPC nor Horizon had the transaction yet. Worth retrying. */
+  | { state: 'not-yet'; reason: string }
   | { state: 'unavailable'; reason: string }
+
+/** The route's `caveats: string[]`, as one paragraph; null when it sent none. */
+const caveatsOf = (v: unknown): string | null => {
+  const list = Array.isArray(v) ? v.filter((c): c is string => typeof c === 'string' && c.trim() !== '') : []
+  return list.length ? list.join(' ') : null
+}
 
 const flagsOf = (v: unknown): DecodedSigner['authenticatorFlags'] => {
   const f = obj(v)
@@ -342,14 +354,19 @@ const flagsOf = (v: unknown): DecodedSigner['authenticatorFlags'] => {
 
 /**
  * GET /api/stellar/tx/:hash?network=: the transaction decoded, authorization by
- * authorization, by a route another part of this product serves. When that route is not
- * deployed the answer is 404 with no body of ours, read as `absent` so the page can say
- * the decoder is not available rather than show an error.
+ * authorization, by a route another part of this product serves. The route's own 404 is
+ * `{ error: 'not_found', reason }`, meaning it looked and the ledger copy is not there
+ * yet, read as `not-yet` so the caller retries. Any other 404 (the server's catch-all,
+ * `{ error: 'not found' }`, or no body at all) means the route is not deployed, read as
+ * `absent` so the page can say the decoder is not available rather than show an error.
  */
 export async function readTxEvidence(net: PasskeyNetwork, hash: string): Promise<TxEvidence> {
   try {
     const res = await apiFetch(`/api/stellar/tx/${encodeURIComponent(hash)}?network=${encodeURIComponent(net)}`, { retries: 1 })
     const b = obj(await res.json().catch(() => null))
+    if (res.status === 404 && b?.error === 'not_found') {
+      return { state: 'not-yet', reason: str(b.reason) ?? 'The decoder did not find this transaction yet.' }
+    }
     if (res.status === 404 && !str(b?.hash)) return { state: 'absent' }
     if (!res.ok || !b) return { state: 'unavailable', reason: str(b?.reason) ?? explainError(res.status, str(b?.error) ?? undefined) }
     const auth = Array.isArray(b.auth) ? b.auth : []
@@ -372,21 +389,25 @@ export async function readTxEvidence(net: PasskeyNetwork, hash: string): Promise
           rootInvocation: { contract: str(root.contract), function: str(root.function) },
           signers: signers.map((s) => {
             const x = obj(s) ?? {}
-            const kind = x.kind === 'webauthn-secp256r1' || x.kind === 'ed25519' || x.kind === 'delegated' ? x.kind : 'unknown'
+            const kind =
+              x.kind === 'webauthn-secp256r1' || x.kind === 'ed25519' || x.kind === 'delegated' || x.kind === 'account-ed25519' ? x.kind : 'unknown'
+            const w = obj(x.webauthn)
+            const ad = obj(w?.authenticatorData)
+            const cd = obj(w?.clientDataJSON)
             return {
               kind,
               verifier: str(x.verifier),
               publicKeyHex: str(x.publicKeyHex),
-              authenticatorFlags: flagsOf(x.authenticatorFlags),
-              signCount: num(x.signCount),
-              clientDataType: str(x.clientDataType),
-              origin: str(x.origin),
+              authenticatorFlags: flagsOf(ad?.flags),
+              signCount: num(ad?.signCount),
+              clientDataType: str(cd?.type),
+              origin: str(cd?.origin),
             } as DecodedSigner
           }),
         }
       }),
       summary: str(b.summary),
-      caveat: str(b.caveat),
+      caveat: caveatsOf(b.caveats),
       explorerTx: str(obj(b.explorer)?.tx),
     }
   } catch (e) {

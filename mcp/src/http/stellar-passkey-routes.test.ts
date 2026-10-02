@@ -7,7 +7,7 @@ import { CHAINS } from '../chains/index.js'
 import type { CallOutcome, VaultState } from '../chains/stellar/adapter.js'
 import type { ContractCode, FeePayerRead, SmartAccountReader, SmartAccountRules } from '../chains/stellar/smart-account.js'
 import { __resetPlatformStateForTests } from '../platform.js'
-import { createRelayBudget, type PasskeyRelayLimits } from '../stellar-passkey.js'
+import { createDeployBudget, createRelayBudget, passkeyCaps, type PasskeyRelayLimits } from '../stellar-passkey.js'
 import { handleStellarPasskeyRoutes, type PasskeyAdapter, type PasskeyRouteDeps } from './stellar-passkey-routes.js'
 import type { RouteCtx } from './shared.js'
 
@@ -98,12 +98,20 @@ function executeFunc(smartAccount: string, target: string, targetFn: string): xd
   ])
 }
 
-function deployFunc(deployer: string, wasmHex: string): xdr.HostFunction {
+/** One OpenZeppelin `Signer::External(verifier, key_data)`, as the kit encodes it. */
+const externalSigner = (verifier: string, keyData: Buffer) =>
+  xdr.ScVal.scvVec([xdr.ScVal.scvSymbol('External'), xdr.ScVal.scvAddress(new Address(verifier).toScAddress()), xdr.ScVal.scvBytes(keyData)])
+/** The kit's key data: the 65-byte point (0x04 first), then a credential id. Generated at runtime. */
+const passkeyKeyData = () => Buffer.concat([Buffer.from([4]), randomBytes(64), randomBytes(20)])
+/** The account constructor's `(signers, policies)` exactly as the kit sends it: one passkey, no policy. */
+const accountArgs = (verifier: string, policies: xdr.ScMapEntry[] = []): xdr.ScVal[] => [xdr.ScVal.scvVec([externalSigner(verifier, passkeyKeyData())]), xdr.ScVal.scvMap(policies)]
+
+function deployFunc(deployer: string, wasmHex: string, constructorArgs: xdr.ScVal[] = accountArgs(VERIFIER)): xdr.HostFunction {
   const op = Operation.createCustomContract({
     address: new Address(deployer),
     wasmHash: Buffer.from(wasmHex, 'hex'),
     salt: randomBytes(32),
-    constructorArgs: [nativeToScVal(true)],
+    constructorArgs,
   })
   return op.body().invokeHostFunctionOp().hostFunction()
 }
@@ -215,6 +223,7 @@ function stubs(over: Partial<PasskeyAdapter> = {}, accounts: Partial<SmartAccoun
       }) as unknown as typeof fetch,
       agents: () => [],
       linkedSubjects: () => [],
+      deployBudget: createDeployBudget(),
     },
   }
 }
@@ -271,7 +280,7 @@ test('the relay serves pubnet, and answers prepared while the MAINNET key is uns
   const { deps, spy } = stubs()
   // Pubnet's own account code: the networks no longer share one (testnet runs our v0.7.2
   // build, pubnet the kit's deployment), and the relay checks the hash per network.
-  const func = deployFunc(accountId(), pubnet.contracts.smartAccount!.wasmHash)
+  const func = deployFunc(accountId(), pubnet.contracts.smartAccount!.wasmHash, accountArgs(pubnet.contracts.smartAccount!.webauthnVerifier))
   const r = await call('POST', '/api/stellar/passkey/relay', relayBody(func, [authEntry(func, accountId())], { network: 'stellar' }), deps)
   // Not a refusal any more, and not a broadcast either: with no pubnet key the relay says
   // exactly what it would have posted and posts nothing, which is the same prepared shape
@@ -323,6 +332,28 @@ test('REFUSAL: a deploy of any other wasm is not paid for, however well it is si
   assert.equal(r.status, 400)
   assert.match(String(r.body.error), /only executable this relay pays to create/)
   assert.deepEqual(spy.fetches, [])
+})
+
+test('REFUSAL: a smart-account deploy whose constructor names a foreign verifier, a policy, or other arguments is not paid for', async () => {
+  // Decoded from the real XDR: the constructor would call the verifier and the policy
+  // contract it names, under our relayer's fee, with no authorization entry to catch it.
+  const { deps, spy } = stubs()
+  const policy = new xdr.ScMapEntry({ key: xdr.ScVal.scvAddress(new Address(contractId()).toScAddress()), val: xdr.ScVal.scvVoid() })
+  const cases: [xdr.ScVal[], RegExp][] = [
+    [accountArgs(contractId()), /External signer under C/],
+    [accountArgs(VERIFIER, [policy]), /1 polic\(ies\)/],
+    [[nativeToScVal(true)], /do not decode as the OpenZeppelin account's/],
+    [[xdr.ScVal.scvVec([externalSigner(VERIFIER, passkeyKeyData()), externalSigner(VERIFIER, passkeyKeyData())]), xdr.ScVal.scvMap([])], /installs 2 signer/],
+  ]
+  for (const [args, why] of cases) {
+    const deployer = accountId()
+    const func = deployFunc(deployer, WASM, args)
+    const r = await call('POST', '/api/stellar/passkey/relay', relayBody(func, [authEntry(func, deployer)]), { ...deps, env: { X402_STELLAR_TESTNET_OZ_KEY: 'test-key-value' } })
+    assert.equal(r.status, 400)
+    assert.equal(r.body.success, false)
+    assert.match(String(r.body.error), why)
+  }
+  assert.deepEqual(spy.fetches, [], 'a constructor this relay does not accept must never reach the relayer')
 })
 
 test('REFUSAL: an authorization entry that names a DIFFERENT call cannot ride along', async () => {
@@ -863,7 +894,7 @@ test('the plan refuses a malformed vault or payee before it looks anything up', 
 
 test('the relay reads its network from the query string, which is the only place the kit can carry it', async () => {
   const { deps, spy } = stubs()
-  const func = deployFunc(accountId(), pubnet.contracts.smartAccount!.wasmHash)
+  const func = deployFunc(accountId(), pubnet.contracts.smartAccount!.wasmHash, accountArgs(pubnet.contracts.smartAccount!.webauthnVerifier))
   const r = await call('POST', '/api/stellar/passkey/relay?network=stellar:pubnet', relayBody(func, [authEntry(func, accountId())]), deps)
   assert.equal(r.status, 501)
   assert.equal(r.body.outcome, 'prepared')
@@ -1083,6 +1114,59 @@ test('X.4 REFUSAL: agent-pay will not pay from a vault whose smart-account owner
   assert.equal(paid, 0)
 })
 
+test('X.4 REFUSAL: agent-pay will not pay from a demo vault whose allowlist is off, which is how every vault starts', async () => {
+  let paid = 0
+  const owner = contractId()
+  const { deps, signer } = stubs({
+    readVault: async () => vaultState({ owner, operator: signer, allowlistEnabled: false }),
+    policyPay: async () => { paid += 1; throw new Error('must not pay') },
+  })
+  const r = await call('POST', '/api/stellar/passkey/agent-pay', { contract: contractId(), to: accountId(), amountUsd: 0.1 }, deps)
+  assert.equal(r.status, 403)
+  assert.equal(r.body.code, 'allowlist_off')
+  assert.match(String(r.body.reason), /set_policy/)
+  assert.equal(paid, 0, 'the operator key must not sign pay() while any payee would pass')
+})
+
+test('X.4 REFUSAL: agent-pay refuses the SOW 2 evidence vaults by id, while the relay still serves the D3 owner', async () => {
+  // Both slots are unset in the registry today, so the test fills them for its own length
+  // and puts them back: the property is that the day ops records them, they are refused.
+  const d3 = contractId()
+  const d2 = contractId()
+  const before = { d3: testnet.contracts.devicePasskeyVault, d2: testnet.contracts.walletOwnedVault }
+  testnet.contracts.devicePasskeyVault = d3
+  testnet.contracts.walletOwnedVault = d2
+  try {
+    let paid = 0
+    const smartAccount = contractId()
+    const { deps, spy, signer } = stubs({
+      readVault: async (v: string) => { spy.reads.push(v); return vaultState({ owner: smartAccount, operator: signer }) },
+      policyPay: async () => { paid += 1; throw new Error('must not pay') },
+    })
+    for (const vault of [d3, d2]) {
+      const r = await call('POST', '/api/stellar/passkey/agent-pay', { contract: vault, to: accountId(), amountUsd: 0.1 }, deps)
+      assert.equal(r.status, 403)
+      assert.equal(r.body.code, 'flagship_vault')
+    }
+    assert.equal(paid, 0)
+    assert.deepEqual(spy.reads, [], 'a recorded vault is refused before anything is read')
+    // The D3 vault's own owner still gets its owner call relayed: only the operator path refuses it.
+    const func = executeFunc(smartAccount, d3, 'set_policy')
+    const relayed = await call('POST', '/api/stellar/passkey/relay', relayBody(func, [authEntry(func, smartAccount)]), deps)
+    assert.equal(relayed.status, 501, JSON.stringify(relayed.body))
+    assert.equal(relayed.body.outcome, 'prepared')
+    const status = await call('GET', '/api/stellar/passkey/status', undefined, deps)
+    const vaultBlock = status.body.vault as Record<string, string[]>
+    assert.ok(vaultBlock.operatorRefused.includes(d3))
+    assert.equal(vaultBlock.flagshipRefused.includes(d3), false)
+  } finally {
+    testnet.contracts.devicePasskeyVault = before.d3
+    testnet.contracts.walletOwnedVault = before.d2
+    if (before.d3 === undefined) delete testnet.contracts.devicePasskeyVault
+    if (before.d2 === undefined) delete testnet.contracts.walletOwnedVault
+  }
+})
+
 // ── SOW 2 D3.3: the deploy verifies its owner on the ledger first ───────────────
 
 test('D3.3 REFUSAL: the deploy reads the owner\'s signers first and refuses a delegated or extra signer, spending nothing', async () => {
@@ -1140,6 +1224,78 @@ test('D3.3: a settled deploy returns the deploy hash, the vault, who paid, the o
   assert.equal(back.owner, owner)
   assert.equal(back.matches, true)
   assert.equal((r.body.ownerCheck as Record<string, unknown>).read, 'live')
+  assert.match(String(r.body.note), /starts with its allowlist OFF/, 'the note says what the chain enforces, not what the owner has yet to do')
+})
+
+// ── the deploy count: the operator pays every deploy, seeded or not ─────────────
+
+const settledDeploy = (counter: { n: number }) => async () => {
+  counter.n += 1
+  return { outcome: 'settled' as const, vault: contractId(), txHash: 'a7'.repeat(32), ledger: 5000003, explorerUrl: 'x' }
+}
+
+test('REFUSAL: a zero-seed deploy is still counted, and the deploy past the day\'s count is refused before the key signs', async () => {
+  const counter = { n: 0 }
+  const budget = createDeployBudget()
+  const { deps } = stubs({ deployVault: settledDeploy(counter), readTokenBalance: async () => 0n })
+  const withBudget: PasskeyRouteDeps = { ...deps, deployBudget: budget }
+  const ok = await call('POST', '/api/stellar/passkey/vault/deploy', { owner: contractId(), ownerPublicKey: KEY, dailyCapUsd: 5, autoApproveUsd: 1, seedUsd: 0 }, withBudget)
+  assert.equal(ok.status, 200)
+  assert.equal(budget.snapshot(testnet.caip2, passkeyCaps(testnet)).used, 1, 'a seedUsd of 0 costs the seed budget nothing, but the deploy is counted')
+  // Use up the rest of the day, then ask once more.
+  const caps = passkeyCaps(testnet)
+  for (let i = 1; i < caps.deployDailyMax; i += 1) budget.charge(testnet.caip2, contractId(), caps)
+  const over = await call('POST', '/api/stellar/passkey/vault/deploy', { owner: contractId(), ownerPublicKey: KEY, dailyCapUsd: 5, autoApproveUsd: 1, seedUsd: 0 }, withBudget)
+  assert.equal(over.status, 429)
+  assert.equal(over.body.code, 'deploy_budget_exhausted')
+  assert.match(String(over.body.reason), /paid by the operator account, not by the relayer/)
+  assert.equal((over.body.deployBudget as Record<string, unknown>).left, 0)
+  assert.equal(counter.n, 1, 'the refused deploy never reached the operator key')
+})
+
+test('REFUSAL: the same smart account is not deployed for twice in a window', async () => {
+  const counter = { n: 0 }
+  const { deps } = stubs({ deployVault: settledDeploy(counter), readTokenBalance: async () => 0n })
+  const owner = contractId()
+  const body = { owner, ownerPublicKey: KEY, dailyCapUsd: 5, autoApproveUsd: 1, seedUsd: 0 }
+  assert.equal((await call('POST', '/api/stellar/passkey/vault/deploy', body, deps)).status, 200)
+  const again = await call('POST', '/api/stellar/passkey/vault/deploy', body, deps)
+  assert.equal(again.status, 429)
+  assert.equal(again.body.code, 'deploy_owner_served')
+  assert.equal(counter.n, 1)
+})
+
+test('a deploy that was never submitted hands its count back; one that failed on chain keeps it', async () => {
+  const caps = passkeyCaps(testnet)
+  const refusedBudget = createDeployBudget()
+  const { deps } = stubs()
+  // The stub's deployVault answers refused: nothing was submitted, so nothing was paid.
+  const refused = await call('POST', '/api/stellar/passkey/vault/deploy', { owner: contractId(), ownerPublicKey: KEY, dailyCapUsd: 5, autoApproveUsd: 1 }, { ...deps, deployBudget: refusedBudget })
+  assert.equal(refused.status, 409)
+  assert.equal(refusedBudget.snapshot(testnet.caip2, caps).used, 0)
+
+  const failedBudget = createDeployBudget()
+  const { deps: failing } = stubs({
+    deployVault: async () => ({ outcome: 'failed', txHash: 'b8'.repeat(32), ledger: 9, explorerUrl: 'x', reason: 'landed and failed' }) as never,
+  })
+  const failed = await call('POST', '/api/stellar/passkey/vault/deploy', { owner: contractId(), ownerPublicKey: KEY, dailyCapUsd: 5, autoApproveUsd: 1 }, { ...failing, deployBudget: failedBudget })
+  assert.equal(failed.body.outcome, 'failed')
+  assert.equal(failedBudget.snapshot(testnet.caip2, caps).used, 1, 'a deploy that landed consumed a fee, so it stays counted')
+})
+
+test('status publishes the deploy count beside the seed budget, live from the budget being charged', async () => {
+  const { deps } = stubs()
+  const budget = createDeployBudget()
+  budget.charge(pubnet.caip2, contractId(), passkeyCaps(pubnet))
+  const r = await call('GET', '/api/stellar/passkey/status?network=stellar:pubnet', undefined, { ...deps, deployBudget: budget })
+  assert.equal(r.status, 200)
+  const d = r.body.deployBudget as Record<string, unknown>
+  assert.equal(d.network, 'stellar:pubnet')
+  assert.equal(d.max, 100)
+  assert.equal(d.used, 1)
+  assert.equal(d.left, 99)
+  assert.equal(d.perOwner, 1)
+  assert.match(String(d.note), /paid by the operator account/)
 })
 
 // ── the two reads the owner's page makes ────────────────────────────────────────

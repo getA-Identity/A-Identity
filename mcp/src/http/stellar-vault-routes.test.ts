@@ -88,6 +88,8 @@ function fakeAdapter(
   } = {},
 ) {
   const calls: string[] = []
+  /** The argument list each prepareOwnerCall was handed, in order. */
+  const built: unknown[] = []
   const owner = o.owner ?? Keypair.random().publicKey()
   const adapter: VaultRouteAdapter = {
     async readExecutableWasmHash() {
@@ -136,8 +138,9 @@ function fakeAdapter(
       calls.push('isAllowed')
       return { allowed: o.allowed ?? false, allowlistEnabled: o.allowlistEnabled ?? true, ledger: 4972481 }
     },
-    async prepareOwnerCall(contract, method, _args, source) {
+    async prepareOwnerCall(contract, method, args, source) {
       calls.push('prepareOwnerCall')
+      built.push(args)
       return (
         o.prepared ?? {
           ok: true,
@@ -185,7 +188,7 @@ function fakeAdapter(
     linkedWallets: () => [],
     ...(o.now ? { now: o.now } : {}),
   }
-  return { adapter, deps, calls, owner }
+  return { adapter, deps, calls, owner, built }
 }
 
 async function get(path: string, deps: StellarVaultRouteDeps) {
@@ -599,6 +602,34 @@ test('prepare: a simulation that restores state inside its fee says restoreNeede
   )
   assert.equal(r.status, 200)
   assert.equal(r.body?.restoreNeeded, true)
+})
+
+test('prepare: amounts are scaled by the vault\'s own decimals read live, never by the registry token\'s', async () => {
+  const me = Keypair.random().publicKey()
+  const dest = Keypair.random().publicKey()
+  // A known build holding a 6-decimal SEP-41 token: withdrawing 5 is 5_000_000 raw, not 50_000_000.
+  const six = fakeAdapter({ owner: me, state: { decimals: 6 } })
+  const w = await post('/api/stellar/vault/prepare', { ...prepareBody(me), action: 'withdraw', args: { to: dest, amountUsd: 5 } }, { subject: me, method: 'wallet' }, six.deps)
+  assert.equal(w.status, 200)
+  assert.deepEqual(six.built, [[{ kind: 'address', value: dest }, { kind: 'i128', value: '5000000' }]])
+
+  const p = fakeAdapter({ owner: me, state: { decimals: 2 } })
+  const pol = await post(
+    '/api/stellar/vault/prepare',
+    { ...prepareBody(me), action: 'set_policy', args: { dailyCapUsd: 25, autoApproveUsd: 5, allowlistEnabled: true } },
+    { subject: me, method: 'wallet' },
+    p.deps,
+  )
+  assert.equal(pol.status, 200)
+  assert.deepEqual(p.built, [[{ kind: 'i128', value: '2500' }, { kind: 'i128', value: '500' }, { kind: 'bool', value: true }]])
+
+  // Decimals no amount can be scaled by stop the request before anything is built.
+  const odd = fakeAdapter({ owner: me, state: { decimals: 1.5 } })
+  const r = await post('/api/stellar/vault/prepare', { ...prepareBody(me), action: 'withdraw', args: { to: dest, amountUsd: 5 } }, { subject: me, method: 'wallet' }, odd.deps)
+  assert.equal(r.status, 502)
+  assert.equal(r.body?.code, 'failed')
+  assert.equal(r.body?.resultCode, 'vault_decimals_unreadable')
+  assert.ok(!odd.calls.includes('prepareOwnerCall'))
 })
 
 // ── SOW 2: submit outcomes ───────────────────────────────────────────────────────

@@ -1,7 +1,10 @@
 # Stellar transaction archive
 
-One JSON file per Stellar transaction we cite anywhere: on /proof/stellar, in the release
-records beside this directory, or in a SOW 2 deliverable. The path is
+One JSON file per Stellar transaction we cite: on /proof/stellar (mcp/src/chains/provenance.ts),
+in the release records beside this directory (soroban/releases/*.json), in a third-party
+receipt (soroban/third-party/<name>/receipt-*.json), or on a Stellar docs page
+(docs/chains/stellar*.mdx). The two `--all-*` modes below find those citations by
+scanning, so "every" means every one those scans find. The path is
 `<chainId>/<hash>.json`, where `chainId` is the registry id (`stellar` for pubnet,
 `stellar-testnet` for testnet) and `hash` is the 64-character transaction hash.
 
@@ -33,7 +36,7 @@ its raw bytes are kept here together with what they decode to.
 | `fetchedFrom` | Where the envelope and result came from: `rpc` or `horizon`. |
 | `explorer` | The stellar.expert link, derived from the registry. |
 | `archivedAt` | When the file was first written. A re-run keeps it. |
-| `caption`, `deliverable`, `provenance` | The one-line caption (for `--all-provenance`, the label from mcp/src/chains/provenance.ts), the SOW deliverable it backs if one was given, and the provenance entry it came from. |
+| `caption`, `deliverable`, `provenance`, `citedIn` | The one-line caption (for `--all-provenance`, the label from mcp/src/chains/provenance.ts; for `--all-receipts`, the record's own label, or the key and file that cite it), the SOW deliverable it backs if one was given, the provenance entry it came from, and, for a file `--all-receipts` added, the receipts and pages that cite it. |
 | `decoded` | The decoded evidence: every operation with its contract, function and arguments; every Soroban authorization entry with its credential type (`source_account` or `address`), nonce, expiration ledger, root invocation and signers; and a plain-language `summary` and any `caveats`. |
 
 For an OpenZeppelin smart account, `decoded.auth[].signers[]` names each signer by its
@@ -82,13 +85,22 @@ by the backend at `GET /api/stellar/tx/<hash>?network=<stellar | stellar-testnet
 ```
 node mcp/scripts/stellar-archive-tx.mjs --chain <stellar | stellar-testnet> --hash <hash> --caption "..." --deliverable D2
 node mcp/scripts/stellar-archive-tx.mjs --all-provenance
+node mcp/scripts/stellar-archive-tx.mjs --all-receipts [--list]
 ```
 
 `--all-provenance` archives every Stellar transaction listed in
 mcp/src/chains/provenance.ts, including funding hops recorded under another chain's entry.
-Both forms are idempotent: a re-run keeps the existing caption and deliverable unless new
+`--all-receipts` archives every Stellar transaction cited in soroban/releases/*.json,
+soroban/third-party/<name>/receipt-*.json and docs/chains/stellar*.mdx that is not here
+yet. A hash stored under a transaction key (`txHash`, `deployTx`, `extendTx`, ...) or
+linked as an explorer tx must archive or the run fails; a bare 64-hex string in prose may
+be a wasm hash or a digest, so it is looked up and, when no Stellar network knows it as a
+transaction, reported as skipped. `--list` prints what it would look up and fetches nothing.
+All three forms are idempotent: a re-run keeps the existing caption and deliverable unless new
 ones are given, keeps the first `archivedAt`, and never drops a meta an earlier run
 captured. The script is read-only against the network: it signs and submits nothing.
 
-As of 2026-10-02 the archive holds 45 transactions (17 pubnet, 28 testnet), all with
-result meta.
+As of 2026-10-02 the archive holds 57 transactions (20 pubnet, 37 testnet), all with
+result meta, and neither `--all-provenance` nor `--all-receipts` finds a cited transaction
+it lacks. The `--all-receipts` scan also meets six 64-hex strings in prose that no Stellar
+network knows as a transaction (wasm hashes and build digests), and skips them.

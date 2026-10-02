@@ -18,7 +18,30 @@ export const STELLAR_WALLETS_KIT_VERSION = '2.6.0'
 export const STELLAR_PUBNET_PASSPHRASE = 'Public Global Stellar Network ; September 2015'
 export const STELLAR_TESTNET_PASSPHRASE = 'Test SDF Network ; September 2015'
 
-export type StellarWalletInfo = { id: string; name: string; icon: string; url: string; isAvailable: boolean; type: string }
+export type StellarWalletInfo = {
+  id: string
+  name: string
+  icon: string
+  url: string
+  isAvailable: boolean
+  type: string
+  /** True for a web wallet (a popup on its own site), which the kit always reports as
+   *  available because nothing has to be installed for it. See WEB_WALLET_IDS. */
+  web?: boolean
+}
+
+/**
+ * Kit modules that are web wallets: their isAvailable() is a constant true (Albedo opens a
+ * popup on albedo.link, xBull falls back to its web app), so "available" says nothing about
+ * this browser. Neither implements getNetwork either, so owner signing refuses both. They
+ * are kept as wallets a person may pick, and never counted as "a wallet is installed".
+ */
+export const WEB_WALLET_IDS: ReadonlySet<string> = new Set(['albedo', 'xbull'])
+
+/** Whether a wallet the kit reports is an installed extension (or app) rather than a web wallet. */
+export function isInstalledExtension(w: Pick<StellarWalletInfo, 'id' | 'isAvailable'>): boolean {
+  return w.isAvailable && !WEB_WALLET_IDS.has(w.id)
+}
 
 /** The slice of the kit this module uses, typed here so the kit's own types stay internal. */
 type KitLike = {
@@ -56,11 +79,12 @@ async function kit(): Promise<KitLike> {
   return kitPromise
 }
 
-/** Every wallet the kit knows, installed ones first. */
+/** Every wallet the kit knows: installed extensions first, then web wallets, then the rest. */
 export async function listStellarWallets(): Promise<StellarWalletInfo[]> {
   const k = await kit()
   const list = await k.refreshSupportedWallets()
-  return [...list].sort((a, b) => Number(b.isAvailable) - Number(a.isAvailable))
+  const rank = (w: StellarWalletInfo) => (isInstalledExtension(w) ? 2 : w.isAvailable ? 1 : 0)
+  return list.map((w) => ({ ...w, web: WEB_WALLET_IDS.has(w.id) })).sort((a, b) => rank(b) - rank(a))
 }
 
 /** Human-readable network label for a passphrase the wallet reported. */
@@ -125,17 +149,19 @@ export async function readWalletNetwork(): Promise<WalletNetworkReading> {
 }
 
 /**
- * Whether any Stellar wallet is installed in this browser, and the kit's list.
+ * Whether any Stellar wallet extension is installed in this browser, and the kit's list.
  *
- * Extensions announce themselves a beat after the page loads, so a caller that gets
- * `installed: false` on first paint should ask again after a moment before telling a
- * person to install something. A kit that fails to load reports nothing installed and
+ * Web wallets do not count (see WEB_WALLET_IDS): the kit reports them available everywhere,
+ * so counting them would mean "installed" in every browser and the no-wallet answer could
+ * never be given. Extensions announce themselves a beat after the page loads, so a caller
+ * that gets `installed: false` on first paint should ask again after a moment before telling
+ * a person to install something. A kit that fails to load reports nothing installed and
  * `failed: true`, so the caller can say "could not check" rather than "none".
  */
 export async function detectStellarWallets(): Promise<{ installed: boolean; wallets: StellarWalletInfo[]; failed: boolean }> {
   try {
     const wallets = await listStellarWallets()
-    return { installed: wallets.some((w) => w.isAvailable), wallets, failed: false }
+    return { installed: wallets.some(isInstalledExtension), wallets, failed: false }
   } catch {
     return { installed: false, wallets: [], failed: true }
   }

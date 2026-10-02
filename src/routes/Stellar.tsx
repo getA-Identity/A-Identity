@@ -184,6 +184,9 @@ function StellarDemo({ net, onSwitch }: { net: PasskeyNetwork; onSwitch: (n: Pas
   // Who is signing, and what the passkey controls.
   const [account, setAccount] = useState<PasskeyAccount | null>(null)
   const [pending, setPending] = useState<{ credentialId: string; contractId: string; device: DeviceMeta | null } | null>(null)
+  // The account deploy was submitted under this hash and was not in a ledger when the kit
+  // stopped waiting: pending, not failed, and said that way.
+  const [accountUnconfirmed, setAccountUnconfirmed] = useState<string | null>(null)
   const [deviceLabel, setDeviceLabel] = useState('')
   const [restoring, setRestoring] = useState(false)
   const [supported, setSupported] = useState(true)
@@ -196,6 +199,9 @@ function StellarDemo({ net, onSwitch }: { net: PasskeyNetwork; onSwitch: (n: Pas
   const [ceiling, setCeiling] = useState('')
   const [vault, setVault] = useState<{ contract: string; explorerUrl: string; ownerReadBack: { owner: string | null; matches: boolean | null; read: string } } | null>(null)
   const [deployWrite, setDeployWrite] = useState<{ write: ChainWrite; feePayer: FeePayerNamed | null } | null>(null)
+  // A vault deploy the server submitted and could not confirm in time (202 pending). It may
+  // still land, so the deploy button stays off rather than invite a second vault.
+  const [vaultUnconfirmed, setVaultUnconfirmed] = useState<{ reason: string; txHash: string | null } | null>(null)
   const [seed, setSeed] = useState<SeedResult | null>(null)
   const [policyWrite, setPolicyWrite] = useState<ChainWrite | null>(null)
 
@@ -293,6 +299,7 @@ function StellarDemo({ net, onSwitch }: { net: PasskeyNetwork; onSwitch: (n: Pas
 
   const createAccount = () =>
     run('account', async () => {
+      setAccountUnconfirmed(null)
       const r = await createPasskeyAccount(net, { label: deviceLabel.trim() || null, onStep: setStep, onCreated })
       if (r.ok) {
         setAccount(r.account)
@@ -301,20 +308,24 @@ function StellarDemo({ net, onSwitch }: { net: PasskeyNetwork; onSwitch: (n: Pas
         return
       }
       setPending({ credentialId: r.credentialId, contractId: r.contractId, device: r.device })
-      fail('account', writeMessage(r.write, 'The smart account was not deployed'))
+      if (r.write.outcome === 'pending') setAccountUnconfirmed(r.write.txHash)
+      else fail('account', writeMessage(r.write, 'The smart account was not deployed'))
     })
 
   const retryDeploy = () =>
     run('account', async () => {
       if (!pending) return
+      setAccountUnconfirmed(null)
       const r = await deployPendingPasskey(net, pending.credentialId, setStep)
       if (r.ok) {
-        setAccount(r.account)
+        // The name typed in this session, when the device record could not keep it.
+        setAccount({ ...r.account, label: r.account.label ?? (deviceLabel.trim() || null) })
         setPending(null)
         addReceipt({ key: 'account', label: 'Smart account deployed', txHash: r.write.txHash, explorerUrl: r.write.explorerUrl })
         return
       }
-      fail('account', writeMessage(r.write, 'The smart account was not deployed'))
+      if (r.write.outcome === 'pending') setAccountUnconfirmed(r.write.txHash)
+      else fail('account', writeMessage(r.write, 'The smart account was not deployed'))
     })
 
   const signIn = () =>
@@ -322,6 +333,7 @@ function StellarDemo({ net, onSwitch }: { net: PasskeyNetwork; onSwitch: (n: Pas
       setStep('passkey')
       setAccount(await signInWithPasskey(net))
       setPending(null)
+      setAccountUnconfirmed(null)
     })
 
   const signOut = () =>
@@ -329,6 +341,7 @@ function StellarDemo({ net, onSwitch }: { net: PasskeyNetwork; onSwitch: (n: Pas
       await disconnectPasskey(net)
       setAccount(null)
       setPending(null)
+      setAccountUnconfirmed(null)
     })
 
   // ── 3. the vault, and its limit signed by the passkey ───────────────────────────
@@ -346,6 +359,10 @@ function StellarDemo({ net, onSwitch }: { net: PasskeyNetwork; onSwitch: (n: Pas
         autoApproveUsd: Number(ceiling),
         seedUsd: defaults.seedUsd,
       })
+      if (r.outcome === 'pending') {
+        setVaultUnconfirmed({ reason: r.reason, txHash: r.txHash ?? null })
+        return
+      }
       if (r.outcome !== 'settled') {
         fail('vault', r.outcome === 'prepared' ? `${r.reason} Nothing was submitted.` : r.reason)
         return
@@ -421,7 +438,8 @@ function StellarDemo({ net, onSwitch }: { net: PasskeyNetwork; onSwitch: (n: Pas
   const refusedStatus: Status = !vault ? 'locked' : refusal ? (refusal.outcome === 'refused' ? 'stopped' : 'done') : busy === 'refused' ? 'busy' : 'ready'
   const paidStatus: Status = !vault ? 'locked' : payment?.outcome === 'settled' ? 'done' : busy === 'settled' ? 'busy' : 'ready'
   const ownerStatus: Status = !vault || !account ? 'locked' : 'ready'
-  const deviceStatus: Status = !account ? 'locked' : 'ready'
+  // After the vault, never before: the vault deploy refuses an account with a second rule.
+  const deviceStatus: Status = !account || !vault ? 'locked' : 'ready'
 
   const sa = status?.smartAccount
 
@@ -501,7 +519,7 @@ function StellarDemo({ net, onSwitch }: { net: PasskeyNetwork; onSwitch: (n: Pas
         )}
         {account && (
           <div className="mt-6 max-w-[62ch]">
-            <RecoveryBadge net={net} contractId={account.contractId} refreshKey={signerRefresh} />
+            <RecoveryBadge net={net} contractId={account.contractId} refreshKey={signerRefresh} vaultDeployed={Boolean(vault)} />
           </div>
         )}
       </SectionShell>
@@ -519,12 +537,22 @@ function StellarDemo({ net, onSwitch }: { net: PasskeyNetwork; onSwitch: (n: Pas
               </>
             }
             status={accountStatus}
-            chip={account ? <Chip tone="ok">smart account live</Chip> : restoring ? <Chip tone="muted">restoring</Chip> : pending ? <Chip tone="warn">not deployed yet</Chip> : undefined}
+            chip={
+              account ? (
+                <Chip tone="ok">smart account live</Chip>
+              ) : restoring ? (
+                <Chip tone="muted">restoring</Chip>
+              ) : accountUnconfirmed ? (
+                <Chip tone="warn">submitted, not confirmed</Chip>
+              ) : pending ? (
+                <Chip tone="warn">not deployed yet</Chip>
+              ) : undefined
+            }
           >
             {account ? (
               <div className="grid gap-3">
                 <AddressLink net={net} value={account.contractId} label="Your smart account" />
-                <DeviceSummary device={account.device} />
+                <DeviceSummary device={account.device} label={account.label} />
                 <div className="flex flex-wrap items-center gap-3">
                   {account.creation && <TxLink hash={account.creation.txHash} url={txUrl(net, account.creation.txHash)} label="deployed in" />}
                   <button type="button" onClick={signOut} disabled={busy !== null} className={BTN_QUIET}>
@@ -553,7 +581,12 @@ function StellarDemo({ net, onSwitch }: { net: PasskeyNetwork; onSwitch: (n: Pas
                 )}
                 {pending && (
                   <div className="grid gap-3 rounded-xl border border-warn/30 bg-warn/[0.05] p-4">
-                    <AddressLink net={net} value={pending.contractId} label="Your smart account" note={<Chip tone="warn">not deployed yet</Chip>} />
+                    <AddressLink
+                      net={net}
+                      value={pending.contractId}
+                      label="Your smart account"
+                      note={<Chip tone="warn">{accountUnconfirmed ? 'submitted, not confirmed' : 'not deployed yet'}</Chip>}
+                    />
                     <DeviceSummary device={pending.device} label={deviceLabel.trim() || null} />
                   </div>
                 )}
@@ -562,16 +595,24 @@ function StellarDemo({ net, onSwitch }: { net: PasskeyNetwork; onSwitch: (n: Pas
                     {spin('account')}
                     {label('account', pending ? 'Finish deploying it' : 'Create a passkey account')}
                   </button>
-                  {!pending && (
+                  {(!pending || accountUnconfirmed) && (
                     <button type="button" onClick={signIn} disabled={busy !== null || blocked || !status} className={BTN_QUIET}>
-                      I already have one
+                      {accountUnconfirmed ? 'It landed: sign in' : 'I already have one'}
                     </button>
                   )}
                 </div>
               </div>
             )}
             {errors.account && <p className="mt-3 text-xs text-danger">{errors.account}</p>}
-            {pending && !errors.account && busy !== 'account' && (
+            {pending && accountUnconfirmed && !errors.account && busy !== 'account' && (
+              <p className="mt-3 text-xs text-warn">
+                The deploy was submitted and was not in a ledger yet when the wait ran out, so it may still land. Check the link
+                before you press Finish deploying it: if it landed, sign in instead; a second deploy of an account
+                that already exists is refused and costs nothing.{' '}
+                <TxLink hash={accountUnconfirmed} url={txUrl(net, accountUnconfirmed)} />
+              </p>
+            )}
+            {pending && !accountUnconfirmed && !errors.account && busy !== 'account' && (
               <p className="mt-3 text-xs text-warn">The passkey exists on your device, but its account is not deployed yet.</p>
             )}
           </StepCard>
@@ -635,7 +676,12 @@ function StellarDemo({ net, onSwitch }: { net: PasskeyNetwork; onSwitch: (n: Pas
 
               {!vault ? (
                 <div className="flex flex-wrap items-center gap-3">
-                  <button type="button" onClick={deployVault} disabled={busy !== null || !account || !accepted || !defaults} className={BTN}>
+                  <button
+                    type="button"
+                    onClick={deployVault}
+                    disabled={busy !== null || !account || !accepted || !defaults || vaultUnconfirmed !== null}
+                    className={BTN}
+                  >
                     {spin('vault')}
                     {busy === 'vault' ? 'Checking your account and deploying...' : 'Deploy the vault'}
                   </button>
@@ -675,6 +721,18 @@ function StellarDemo({ net, onSwitch }: { net: PasskeyNetwork; onSwitch: (n: Pas
                   </div>
                   {policyWrite && <TxResult net={net} write={policyWrite} what="The limit" />}
                 </div>
+              )}
+              {vaultUnconfirmed && !vault && (
+                <p className="text-xs text-warn">
+                  The vault deploy was submitted and is not confirmed yet: {vaultUnconfirmed.reason} The deploy button stays off so a
+                  second vault is not created. If the link shows the transaction failed, reload the page to try again.
+                  {vaultUnconfirmed.txHash ? (
+                    <>
+                      {' '}
+                      <TxLink hash={vaultUnconfirmed.txHash} url={txUrl(net, vaultUnconfirmed.txHash)} />
+                    </>
+                  ) : null}
+                </p>
               )}
               {errors.vault && <p className="text-xs text-danger">{errors.vault}</p>}
               {errors.policy && <p className="text-xs text-danger">{errors.policy}</p>}
@@ -941,12 +999,17 @@ function StellarDemo({ net, onSwitch }: { net: PasskeyNetwork; onSwitch: (n: Pas
             lede="One passkey on one device is one point of failure. A second device gets its own rule on your smart account, so either can sign alone."
             status={deviceStatus}
           >
-            {account ? (
+            {account && vault ? (
               <AddDevice
                 net={net}
                 disabled={busy !== null || blocked}
                 onAdded={() => setSignerRefresh((n) => n + 1)}
               />
+            ) : account ? (
+              <p className="text-xs text-foreground/55">
+                Deploy the vault in step 3 first. The vault deploy checks that this passkey is your account's one signer, so a second
+                device added before it would stop the deploy for this account.
+              </p>
             ) : (
               <p className="text-xs text-foreground/55">Create your passkey account in step 1 first.</p>
             )}
@@ -1023,5 +1086,6 @@ function StellarDemo({ net, onSwitch }: { net: PasskeyNetwork; onSwitch: (n: Pas
 function writeMessage(write: ChainWrite, what: string): string {
   if (write.outcome === 'prepared') return `The fee sponsor is not configured on this deployment, so ${what.toLowerCase()} and nothing was submitted.`
   if (write.outcome === 'refused') return `${what}: ${write.reason}`
+  if (write.outcome === 'pending') return `Submitted and not confirmed yet: ${write.reason}`
   return `${what}: ${write.outcome === 'failed' ? write.reason : 'no transaction was returned.'}`
 }

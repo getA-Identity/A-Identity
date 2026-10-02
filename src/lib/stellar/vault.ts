@@ -84,6 +84,7 @@ export type FailureCode =
   | 'wallet_network_unknown'
   | 'wrong_network'
   | 'not_owner'
+  | 'not_your_wallet'
   | 'no_session'
   | 'rejected'
   | 'insufficient_xlm'
@@ -113,8 +114,12 @@ export type VaultFailure = {
   asset?: string
   /** failed: the network's result code, e.g. txBadSeq. */
   resultCode?: string
-  /** pending / not_accepted: the transaction hash. */
+  /** pending / not_accepted, and refused / failed when it landed: the transaction hash. */
   hash?: string
+  /** refused / failed: true when the transaction made a ledger, so its fee was charged. */
+  landed?: boolean
+  /** The backend's explorer link for `hash`, when it sent one. */
+  explorerUrl?: string
   /** wrong_network: what the wallet said and what the vault needs. */
   walletNetwork?: string | null
   targetNetwork?: string
@@ -170,6 +175,8 @@ type PrepareOk = {
   caip2?: string
   contract?: string
   action?: string
+  /** The source account the backend built the envelope for. */
+  source?: string
   summary?: string
   /** Null in the ordinary case: an owner who is the transaction source signs with source-account
    *  credentials, so there is no separate signature-expiry ledger. `validUntil` governs. */
@@ -186,6 +193,10 @@ type PrepareOk = {
 type FailBody = {
   ok?: boolean
   code?: string
+  /** The gate's finer reason under a public code, e.g. not_your_wallet under not_owner. */
+  reasonCode?: string
+  landed?: boolean
+  explorerUrl?: string
   reason?: string
   error?: string
   errorName?: string
@@ -233,6 +244,14 @@ function failureFromBody(status: number, body: FailBody, network: string): Vault
   // guest (browse-only) session. Both are fixed the same way: sign in with the wallet.
   if (status === 401 || (status === 403 && !body.code))
     return { code: 'no_session', message: 'Owner actions are prepared by our backend, and it needs a signed-in session for this wallet first.' }
+  // The backend files this under not_owner, but the connected account may well BE the owner:
+  // what is missing is proof, in this session, that the wallet is yours. The fix is to sign
+  // in with it or link it, not to pick another account.
+  if (body.reasonCode === 'not_your_wallet')
+    return {
+      code: 'not_your_wallet',
+      message: reason || 'This session has not proven control of that wallet, so the backend will not prepare or relay a call from it.',
+    }
   const raw = body.code ?? (body.outcome === 'refused' ? 'refused' : body.outcome === 'failed' ? 'failed' : undefined)
   const code: FailureCode = raw && KNOWN_CODES.has(raw) ? (raw as FailureCode) : status >= 500 ? 'unreachable' : 'failed'
   const f: VaultFailure = { code, message: reason || defaultMessage(code, status) }
@@ -247,6 +266,8 @@ function failureFromBody(status: number, body: FailBody, network: string): Vault
   if (body.resultCode) f.resultCode = body.resultCode
   const hash = body.hash ?? body.txHash
   if (hash) f.hash = hash
+  if (body.landed === true) f.landed = true
+  if (body.explorerUrl) f.explorerUrl = body.explorerUrl
   if (code === 'wrong_network') f.targetNetwork = network
   return f
 }
@@ -347,6 +368,19 @@ export async function prepareOwnerAction(input: OwnerActionInput): Promise<Prepa
   if (!pres.ok || (prep as PrepareOk).ok !== true) throw new OwnerActionError(failureFromBody(pres.status, prep as FailBody, input.network))
   const ready = prep as PrepareOk
   if (!ready.xdr) throw new OwnerActionError({ code: 'failed', message: 'The server prepared no transaction to sign.' })
+  // What the backend says it built must be what was asked for. This checks the backend's own
+  // account of the envelope, not the envelope's bytes: the wallet prompt is where the decoded
+  // call itself is shown before anything is signed.
+  const echoed: [string | undefined, string][] = [
+    [ready.contract, input.contract],
+    [ready.action, input.action],
+    [ready.source, input.source],
+  ]
+  if (echoed.some(([got, want]) => got !== undefined && got !== want))
+    throw new OwnerActionError({
+      code: 'failed',
+      message: 'The prepared transaction does not match what you asked for (contract, action or source), so nothing was sent to the wallet.',
+    })
   const passphrase = ready.networkPassphrase ?? stellarPassphraseFor(input.network)
   if (!passphrase || passphrase !== stellarPassphraseFor(input.network))
     throw new OwnerActionError({

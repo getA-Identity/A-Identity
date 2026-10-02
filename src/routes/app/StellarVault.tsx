@@ -13,7 +13,7 @@
  * is real money and this page is view-only for it: its controls are never mounted.
  *
  * Deep link: ?network=<CAIP-2 or registry id>&contract=<C...>. A network that is not a
- * Stellar chain in the registry is refused by name, never guessed.
+ * Stellar chain in the registry is refused by name, and a missing one is asked for: never guessed.
  */
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
@@ -131,6 +131,12 @@ export default function StellarVault() {
         {contractParam && !contract && (
           <FailureLine title="That is not a vault contract id." next="A vault id starts with C and is 56 characters long. Paste it in the box above." />
         )}
+        {contract && !networkParam && (
+          <FailureLine
+            title="The link names a vault but no network."
+            next="Pick testnet or pubnet above and press Read live. The network is never guessed: the same contract id means different things on each."
+          />
+        )}
 
         {network && contract && (
           <section aria-label="Vault" className="space-y-4">
@@ -218,7 +224,13 @@ export default function StellarVault() {
               <section aria-label="Owner" className="rounded-2xl border border-border bg-card p-4 sm:p-5">
                 <h3 className="text-sm font-semibold text-foreground">Owner</h3>
                 <div className="mt-2 space-y-3">
-                  <OwnerSection vault={v} wallet={wallet} signerAddress={signerAddress} onReceipt={onReceipt} />
+                  <OwnerSection
+                    vault={v}
+                    wallet={wallet}
+                    signerAddress={signerAddress}
+                    onReceipt={onReceipt}
+                    pending={shownReceipt?.outcome === 'pending'}
+                  />
                 </div>
               </section>
             )}
@@ -250,11 +262,14 @@ function OwnerSection({
   wallet,
   signerAddress,
   onReceipt,
+  pending,
 }: {
   vault: VaultRead
   wallet: ReturnType<typeof useStellarWallet>
   signerAddress: string | null
   onReceipt: (r: Receipt) => void
+  /** A transaction this page submitted for the vault has no ledger yet. */
+  pending: boolean
 }) {
   const ownerLine = <OwnerMatch vault={vault} address={signerAddress} />
 
@@ -274,6 +289,20 @@ function OwnerSection({
   // A passkey smart account owner is never a browser wallet, so no wallet state changes
   // the answer; OwnerMatch says where its controls live.
   if (vault.ownerKind === 'smart-account') return ownerLine
+
+  // Code we did not publish, in no registry slot: the backend builds no owner call for it
+  // (unknown_vault), and the read's own note says so. Drawing controls that can only fail
+  // would contradict that note.
+  if (!vault.knownBuild && !vault.role)
+    return (
+      <>
+        {signerAddress && ownerLine}
+        <p className="text-sm text-foreground/75">
+          This vault runs code that is not an AgentSpendPolicy build we published, so this console builds no owner calls for it,
+          whoever is connected.
+        </p>
+      </>
+    )
 
   if (!wallet.signer) {
     if (wallet.detect === 'none')
@@ -324,7 +353,7 @@ function OwnerSection({
   return (
     <>
       {ownerLine}
-      <OwnerControls key={`${vault.network}:${vault.contract}`} vault={vault} signer={wallet.signer} onReceipt={onReceipt} />
+      <OwnerControls key={`${vault.network}:${vault.contract}`} vault={vault} signer={wallet.signer} onReceipt={onReceipt} pending={pending} />
     </>
   )
 }

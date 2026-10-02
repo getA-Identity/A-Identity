@@ -10,6 +10,7 @@ import {
   ALLOWLIST_ENFORCEMENT,
   passkeyCaps,
   createSeedBudget,
+  createDeployBudget,
   PASSKEY_RELAY_LIMITS,
   PASSKEY_RELEASE,
   allowlistPlan,
@@ -18,6 +19,7 @@ import {
   createRelayBudget,
   flagshipVaults,
   operatorGate,
+  operatorRefusedVaults,
   ownerAccountCheck,
   ownerKindOf,
   parsePasskeyPublicKey,
@@ -106,8 +108,10 @@ test('the pubnet caps are the tight set, and every one of them is below testnet'
   assert.ok(m.dailyCapUsd < t.dailyCapUsd)
   assert.ok(m.autoApproveUsd < t.autoApproveUsd)
   assert.ok(m.seedDailyTotalUsd < t.seedDailyTotalUsd)
+  assert.ok(m.deployDailyMax < t.deployDailyMax)
   // And a number, not just an ordering: a dollar a day is the published pubnet ceiling.
   assert.equal(m.seedDailyTotalUsd, 1)
+  assert.equal(m.deployDailyMax, 100, 'a hundred operator-paid mainnet deploys a day, seeded or not')
 })
 
 test('the seed budget bounds our own USDC across everyone, and hands a reserve back', () => {
@@ -126,6 +130,9 @@ test('the seed budget bounds our own USDC across everyone, and hands a reserve b
     assert.match(over.reason, /no USDC left this server/)
     // The refusal must offer the way out rather than just closing the door.
     assert.match(over.reason, /fund a vault yourself/)
+    // And it must say who pays for the deploy: the operator, never the relayer.
+    assert.match(over.reason, /vault deploy costs a network fee the operator account pays/)
+    assert.doesNotMatch(over.reason, /vault deploy[^.;]*relayer sponsors/)
   }
   // A deploy that failed after the charge gives the day its money back.
   b.refund(net, caps.seedUsdDefault, at)
@@ -146,6 +153,68 @@ test('the two networks do not share a seed day', () => {
   b.charge(pubnet.caip2, mainCaps.seedDailyTotalUsd, mainCaps, 1)
   assert.equal(b.charge(pubnet.caip2, mainCaps.seedUsdDefault, mainCaps, 1).ok, false, 'pubnet is spent')
   assert.equal(b.charge(testnet.caip2, testCaps.seedUsdDefault, testCaps, 1).ok, true, 'testnet is untouched')
+})
+
+// ── how many vaults the operator pays to deploy ──────────────────────────────────
+
+test('the deploy count bounds operator-paid deploys across everyone, seeded or not, and refuses the next one', () => {
+  const caps = passkeyCaps(pubnet)
+  const b = createDeployBudget()
+  const net = pubnet.caip2
+  // A zero seed costs the seed budget nothing; it is exactly the deploy this count exists for.
+  for (let i = 0; i < caps.deployDailyMax; i += 1) {
+    assert.equal(b.charge(net, contractId(), caps, 1).ok, true, `deploy ${i + 1} should fit`)
+  }
+  const over = b.charge(net, contractId(), caps, 1)
+  assert.equal(over.ok, false)
+  if (!over.ok) {
+    assert.equal(over.status, 429)
+    assert.equal(over.code, 'deploy_budget_exhausted')
+    assert.match(over.reason, /paid by the operator account, not by the relayer/)
+    assert.match(over.reason, /Nothing was deployed and nothing was spent/)
+    assert.ok(over.retryAfterSeconds > 0)
+  }
+  const snap = b.snapshot(net, caps, 1)
+  assert.equal(snap.used, caps.deployDailyMax)
+  assert.equal(snap.left, 0)
+  assert.match(snap.note, /seeded or not/)
+})
+
+test('REFUSAL: one smart account gets one operator-paid vault per window, so the same owner cannot be sent again', () => {
+  const caps = passkeyCaps(pubnet)
+  const b = createDeployBudget()
+  const owner = contractId()
+  assert.equal(b.charge(pubnet.caip2, owner, caps, 1).ok, true)
+  const again = b.charge(pubnet.caip2, owner, caps, 1)
+  assert.equal(again.ok, false)
+  if (!again.ok) assert.equal(again.code, 'deploy_owner_served')
+  assert.equal(b.snapshot(pubnet.caip2, caps, 1).used, 1, 'a refused deploy is not counted')
+})
+
+test('a deploy that was never submitted hands its count and its owner back; a rolled window credits nothing', () => {
+  const caps = passkeyCaps(testnet)
+  const b = createDeployBudget(1_000)
+  const owner = contractId()
+  assert.equal(b.charge(testnet.caip2, owner, caps, 1).ok, true)
+  b.refund(testnet.caip2, owner, 2)
+  assert.equal(b.snapshot(testnet.caip2, caps, 2).used, 0)
+  assert.equal(b.charge(testnet.caip2, owner, caps, 3).ok, true, 'the same owner may try again after a deploy that cost nothing')
+  // Refunding an owner that was never charged moves nothing.
+  b.refund(testnet.caip2, contractId(), 4)
+  assert.equal(b.snapshot(testnet.caip2, caps, 4).used, 1)
+  // Past the window the day is fresh, and a late refund into it is dropped.
+  b.refund(testnet.caip2, owner, 5_000)
+  assert.equal(b.snapshot(testnet.caip2, caps, 5_000).used, 0)
+  assert.equal(b.charge(testnet.caip2, owner, caps, 5_000).ok, true)
+})
+
+test('the two networks do not share a deploy count', () => {
+  const b = createDeployBudget()
+  const mainCaps = passkeyCaps(pubnet)
+  const owner = contractId()
+  for (let i = 0; i < mainCaps.deployDailyMax; i += 1) b.charge(pubnet.caip2, contractId(), mainCaps, 1)
+  assert.equal(b.charge(pubnet.caip2, owner, mainCaps, 1).ok, false, 'pubnet is used up')
+  assert.equal(b.charge(testnet.caip2, owner, passkeyCaps(testnet), 1).ok, true, 'testnet is untouched')
 })
 
 test('a network that is not a Stellar chain is refused before anything else happens', () => {
@@ -198,12 +267,20 @@ test('a body that is neither shape, or both at once, is refused', () => {
 
 // ── the relay allowlist ──────────────────────────────────────────────────────────
 
-const deployFunc = (wasmHash: string | null, createXdr = 'CREATE-1'): RelayFunc => ({
+/** The kit's key data: the 65-byte point, then a credential id. Generated at runtime. */
+const keyData = (): string => `04${randomBytes(64).toString('hex')}${randomBytes(20).toString('hex')}`
+type DeployAccount = Extract<RelayFunc, { kind: 'create-contract-v2' }>['account']
+const deployFunc = (
+  wasmHash: string | null,
+  createXdr = 'CREATE-1',
+  account: DeployAccount = { signers: [{ kind: 'external', verifier: testnet.contracts.smartAccount!.webauthnVerifier, keyHex: keyData() }], policies: 0 },
+): RelayFunc => ({
   kind: 'create-contract-v2',
   wasmHash,
   deployer: accountId(),
   createXdr,
   constructorArgs: 2,
+  account,
 })
 const invokeFunc = (contract: string, method: string, argsXdr = 'ARGS-1', execute: { target: string; targetFn: string; targetArgs: unknown[] } | null = null): RelayFunc => ({
   kind: 'invoke',
@@ -234,6 +311,36 @@ test('REFUSAL: a deploy of any other wasm is not something this relay pays to cr
   const r = pre(ok(deployFunc(other), [addressAuth(accountId(), { kind: 'create-contract-v2', wasmHash: other, createXdr: 'CREATE-1' })]))
   assert.equal(r.ok, false)
   if (!r.ok) assert.match(r.reason, /only executable this relay pays to create/)
+})
+
+test('REFUSAL: a smart-account deploy whose constructor installs anything but one passkey and no policy is not relayed', () => {
+  // The constructor calls every External signer's verifier and every policy's install(),
+  // with no authorization entry of their own, so these are contracts our relayer would pay
+  // to run. Only the registry's WebAuthn verifier, once, with no policy, is accepted.
+  const auth = (createXdr = 'CREATE-1') => [addressAuth(accountId(), { kind: 'create-contract-v2', wasmHash: WASM, createXdr })]
+  const passkey = { kind: 'external' as const, verifier: VERIFIER, keyHex: keyData() }
+  const ed25519 = testnet.contracts.smartAccount!.ed25519Verifier
+  const cases: [DeployAccount, RegExp][] = [
+    [null, /do not decode as the OpenZeppelin account's \(signers, policies\)/],
+    [{ signers: [], policies: 0 }, /exactly one WebAuthn signer[^]*installs 0 signer/],
+    [{ signers: [passkey, passkey], policies: 0 }, /installs 2 signer/],
+    [{ signers: [{ kind: 'external', verifier: contractId(), keyHex: keyData() }], policies: 0 }, /External signer under C/],
+    [{ signers: [{ kind: 'external', verifier: ed25519, keyHex: 'aa'.repeat(32) }], policies: 0 }, /External signer under/],
+    [{ signers: [{ kind: 'delegated', address: accountId() }], policies: 0 }, /delegated account/],
+    [{ signers: [{ kind: 'unknown' }], policies: 0 }, /kind this relay does not read/],
+    [{ signers: [passkey], policies: 1 }, /1 polic\(ies\)/],
+    [{ signers: [{ ...passkey, keyHex: `04${'ab'.repeat(64)}` }], policies: 0 }, /followed by a credential id/],
+    [{ signers: [{ ...passkey, keyHex: `03${'ab'.repeat(84)}` }], policies: 0 }, /65-byte uncompressed P-256 point/],
+  ]
+  for (const [account, why] of cases) {
+    const r = pre(ok(deployFunc(WASM, 'CREATE-1', account), auth()))
+    assert.equal(r.ok, false, JSON.stringify(account))
+    if (!r.ok) assert.match(r.reason, why)
+  }
+  // A chain that names no verifier relays no deploy rather than skipping the check.
+  const noVerifier = relayPreflight(ok(deployFunc(WASM), auth()), { smartAccountWasmHash: WASM, webauthnVerifier: undefined })
+  assert.equal(noVerifier.ok, false)
+  if (!noVerifier.ok) assert.match(noVerifier.reason, /webauthnVerifier/)
 })
 
 test('REFUSAL: a wasm upload is never relayed, whoever signs it', () => {
@@ -804,6 +911,7 @@ test('the status view names the key variable, says whether it is set, and carrie
     explorerFor: (a) => `https://example/contract/${a}`,
     relayLimits: createRelayBudget().snapshot(),
     seedLimits: createSeedBudget().snapshot(testnet.caip2, passkeyCaps(testnet)),
+    deployLimits: createDeployBudget().snapshot(testnet.caip2, passkeyCaps(testnet)),
     servedNetworks: ['stellar:pubnet', 'stellar:testnet'],
   })
   const text = JSON.stringify(view)
@@ -837,6 +945,7 @@ test('the passkey vault is published as a smart-account-owned row, with its expl
     explorerFor: (a) => `https://example/contract/${a}`,
     relayLimits: createRelayBudget().snapshot(),
     seedLimits: createSeedBudget().snapshot(testnet.caip2, passkeyCaps(testnet)),
+    deployLimits: createDeployBudget().snapshot(testnet.caip2, passkeyCaps(testnet)),
     servedNetworks: ['stellar:pubnet', 'stellar:testnet'],
   })
   const vault = view.passkeyVault as Record<string, unknown>
@@ -858,6 +967,7 @@ test('the status view publishes both relay limits, and calls the fee figure a re
     explorerFor: (a) => `https://example/contract/${a}`,
     relayLimits: b.snapshot(at),
     seedLimits: createSeedBudget().snapshot(testnet.caip2, passkeyCaps(testnet)),
+    deployLimits: createDeployBudget().snapshot(testnet.caip2, passkeyCaps(testnet)),
     servedNetworks: ['stellar:pubnet', 'stellar:testnet'],
   })
   const limits = view.limits as Record<string, Record<string, unknown>>
@@ -917,6 +1027,25 @@ test('the flagship and rehearsal vaults are named, per network, from the registr
   assert.ok(t.includes(testnet.contracts.spendVault!), 'the flagship testnet vault must be refused by id')
   assert.ok(t.includes(testnet.contracts.passkeyVault!), 'the software-key rehearsal vault must be refused by id')
   assert.ok(flagshipVaults(pubnet).includes(pubnet.contracts.spendVault!))
+})
+
+test('the operator refuses every recorded vault, the SOW 2 evidence vaults included, while the relay still serves the D3 owner', () => {
+  // Both slots are unset in the registry today, so they are filled here: the property is
+  // that the day ops records them, agent-pay already refuses them by id.
+  const d3 = contractId()
+  const d2 = contractId()
+  const filled = { ...testnet, contracts: { ...testnet.contracts, devicePasskeyVault: d3, walletOwnedVault: d2 } }
+  const refused = operatorRefusedVaults(filled)
+  for (const v of [d3, d2, testnet.contracts.spendVault!, testnet.contracts.passkeyVault!]) {
+    assert.ok(refused.includes(v), `${v} must be refused to the operator key`)
+  }
+  const signer = accountId()
+  const g = operatorGate(d3, { flagship: refused, signer, live: { owner: contractId(), operator: signer, allowlistEnabled: true }, ownerCode: DEMO_CODE, expectedWasmHash: WASM })
+  assert.equal(g.ok, false)
+  if (!g.ok) assert.equal(g.code, 'flagship_vault')
+  // The relay's list is the narrower one: the D3 vault's owner calls go through it.
+  assert.equal(flagshipVaults(filled).includes(d3), false, 'refusing the D3 vault in the relay would stop its own owner')
+  assert.deepEqual(operatorRefusedVaults(testnet), flagshipVaults(testnet), 'with the slots empty the two lists agree')
 })
 
 // ── SOW 2 D3.8: a smart account adding a device to itself ───────────────────────
@@ -1042,7 +1171,7 @@ test('X.4: the operator key pays only from a vault owned by a smart account runn
   const signer = accountId()
   const owner = contractId()
   const vault = contractId()
-  const g = operatorGate(vault, { flagship: [], signer, live: { owner, operator: signer }, ownerCode: DEMO_CODE, expectedWasmHash: WASM })
+  const g = operatorGate(vault, { flagship: [], signer, live: { owner, operator: signer, allowlistEnabled: true }, ownerCode: DEMO_CODE, expectedWasmHash: WASM })
   assert.equal(g.ok, true)
   if (g.ok) assert.equal(g.owner, owner)
 })
@@ -1052,7 +1181,7 @@ test('X.4 REFUSAL: a vault the same key operates but a G... account owns is not 
   // person's account owns it. The first version of agent-pay would have paid from it.
   const signer = accountId()
   const vault = contractId()
-  const g = operatorGate(vault, { flagship: [], signer, live: { owner: accountId(), operator: signer }, ownerCode: null, expectedWasmHash: WASM })
+  const g = operatorGate(vault, { flagship: [], signer, live: { owner: accountId(), operator: signer, allowlistEnabled: true }, ownerCode: null, expectedWasmHash: WASM })
   assert.equal(g.ok, false)
   if (!g.ok) {
     assert.equal(g.code, 'owner_not_contract')
@@ -1060,10 +1189,28 @@ test('X.4 REFUSAL: a vault the same key operates but a G... account owns is not 
   }
 })
 
+test('X.4 REFUSAL: a demo vault whose allowlist is off, or unread, is not paid from, because the payee would be the caller\'s choice', () => {
+  // The constructor starts the allowlist OFF and this server seeds the vault before the
+  // owner's passkey has signed anything, so this is the state every fresh vault is in.
+  const signer = accountId()
+  const owner = contractId()
+  const vault = contractId()
+  for (const allowlistEnabled of [false, undefined as unknown as boolean, 'true' as unknown as boolean]) {
+    const g = operatorGate(vault, { flagship: [], signer, live: { owner, operator: signer, allowlistEnabled }, ownerCode: DEMO_CODE, expectedWasmHash: WASM })
+    assert.equal(g.ok, false, String(allowlistEnabled))
+    if (!g.ok) {
+      assert.equal(g.code, 'allowlist_off')
+      assert.equal(g.status, 403)
+      assert.match(g.reason, /set_policy/)
+      assert.match(g.reason, /Nothing was submitted/)
+    }
+  }
+})
+
 test('X.4 REFUSAL: a recorded vault is refused by id before any other check', () => {
   const signer = accountId()
   for (const vault of flagshipVaults(testnet)) {
-    const g = operatorGate(vault, { flagship: flagshipVaults(testnet), signer, live: { owner: contractId(), operator: signer }, ownerCode: DEMO_CODE, expectedWasmHash: WASM })
+    const g = operatorGate(vault, { flagship: flagshipVaults(testnet), signer, live: { owner: contractId(), operator: signer, allowlistEnabled: true }, ownerCode: DEMO_CODE, expectedWasmHash: WASM })
     assert.equal(g.ok, false)
     if (!g.ok) assert.equal(g.code, 'flagship_vault')
   }
@@ -1073,12 +1220,12 @@ test('X.4 REFUSAL: a contract owner running other code, an unread owner, another
   const signer = accountId()
   const vault = contractId()
   const owner = contractId()
-  const base = { flagship: [], signer, live: { owner, operator: signer }, ownerCode: DEMO_CODE, expectedWasmHash: WASM }
+  const base = { flagship: [], signer, live: { owner, operator: signer, allowlistEnabled: true }, ownerCode: DEMO_CODE, expectedWasmHash: WASM }
   const cases: [Parameters<typeof operatorGate>[1], string, number][] = [
     [{ ...base, ownerCode: { found: true, executable: 'wasm', wasmHash: 'ee'.repeat(32) } }, 'smart_account_code_mismatch', 403],
     [{ ...base, ownerCode: { found: true, executable: 'stellar-asset', wasmHash: null } }, 'not_smart_account', 403],
     [{ ...base, ownerCode: null }, 'rpc_error', 502],
-    [{ ...base, live: { owner, operator: accountId() } }, 'not_operator', 403],
+    [{ ...base, live: { owner, operator: accountId(), allowlistEnabled: true } }, 'not_operator', 403],
     [{ ...base, live: null }, 'rpc_error', 502],
     [{ ...base, signer: null }, 'no_operator', 503],
   ]
@@ -1190,6 +1337,7 @@ test('status names per network the caps the page sizes its defaults from, and wh
     explorerFor: (a) => `https://example/contract/${a}`,
     relayLimits: createRelayBudget().snapshot(),
     seedLimits: createSeedBudget().snapshot(pubnet.caip2, passkeyCaps(pubnet)),
+    deployLimits: createDeployBudget().snapshot(pubnet.caip2, passkeyCaps(pubnet)),
     servedNetworks: ['stellar:pubnet', 'stellar:testnet'],
   })
   assert.equal(view.realMoney, true)
@@ -1212,4 +1360,12 @@ test('status names per network the caps the page sizes its defaults from, and wh
   assert.equal(sa.webauthnVerifier, pubnet.contracts.smartAccount!.webauthnVerifier)
   assert.equal(sa.ed25519Verifier, pubnet.contracts.smartAccount!.ed25519Verifier)
   assert.equal((view.vault as Record<string, unknown>).wasmHash, pubnet.contracts.spendVaultWasmHash)
+  assert.deepEqual((view.vault as Record<string, unknown>).operatorRefused, operatorRefusedVaults(pubnet))
+  // The deploy count is published beside the seed budget, and the operator's role says the
+  // allowlist must be on before it pays, rather than claiming it already is.
+  const deploys = view.deployBudget as Record<string, unknown>
+  assert.equal(deploys.max, m.deployDailyMax)
+  assert.equal(deploys.left, m.deployDailyMax)
+  assert.match(String(op.role), /starts with its allowlist off/)
+  assert.match(String(op.role), /fee payer of every vault deployed here/)
 })

@@ -54,7 +54,7 @@ type Props = {
   network?: string
   /** The wallet install link the kit reported, when it did. */
   installUrl?: string
-  /** Rendered as the next step for no_session (the sign-in button). */
+  /** Rendered as the next step for no_session and not_your_wallet (the sign-in button). */
   signIn?: ReactNode
 }
 
@@ -89,8 +89,8 @@ function explain(
   switch (f.code) {
     case 'no_wallet':
       return {
-        title: 'No Stellar wallet is installed in this browser.',
-        body: 'Everything above is a public read and works without one. Owner actions need the owner key, which lives in a wallet.',
+        title: 'No Stellar wallet extension is installed in this browser.',
+        body: 'Everything above is a public read and works without one. Owner actions need the owner key, in a wallet that reports which network it is on; a web wallet does not.',
         next: (
           <>
             Install{' '}
@@ -120,6 +120,12 @@ function explain(
         title: 'The connected account is not the owner of this vault.',
         body: f.message,
         next: 'Pick the owner account inside the wallet and connect again. Only the owner can sign these calls.',
+      }
+    case 'not_your_wallet':
+      return {
+        title: 'Your session has not proven this wallet is yours.',
+        body: f.message,
+        next: ctx.signIn ?? 'Sign in with this wallet, or link it from your Profile page, then press the button again.',
       }
     case 'no_session':
       return {
@@ -185,7 +191,12 @@ function explain(
       const plain = CONTRACT_ERROR_TEXT[name]
       return {
         title: name ? `The vault refused it: ${name}${typeof f.errorCode === 'number' ? ` (error ${f.errorCode})` : ''}.` : 'The vault refused it.',
-        body: plain ?? f.message,
+        body: (
+          <>
+            {plain ?? f.message}
+            <Landed f={f} network={ctx.network} />
+          </>
+        ),
         next: CONTRACT_ERROR_NEXT[name] ?? 'Read the vault again; the values above show what the contract will accept.',
       }
     }
@@ -194,11 +205,11 @@ function explain(
         title: 'Part of this vault is archived on the ledger.',
         body: (
           <>
-            Soroban archives contract state whose rent lapsed. Nothing it holds is lost, but the next call has to restore it, and a
-            restore costs a higher fee. {f.message}
+            Soroban archives contract state whose rent lapsed. Nothing it holds is lost, but this call cannot be prepared until the
+            state is restored. {f.message}
           </>
         ),
-        next: 'Press the button again: the new prepare includes the restore, and the wallet shows the higher fee before you sign.',
+        next: 'A separate restore transaction has to land first; this page does not send one. Any funded account can submit it, for example with the stellar CLI (stellar contract restore). Once it lands, press the button again.',
       }
     case 'pending': {
       const href = f.hash && ctx.network ? txExplorerUrl(ctx.network, f.hash) : null
@@ -225,13 +236,18 @@ function explain(
       }
     case 'failed':
       return {
-        title: 'The network rejected the transaction.',
-        body: f.resultCode ? (
+        title: f.landed ? 'The transaction landed in a ledger and failed.' : 'The network rejected the transaction.',
+        body: (
           <>
-            Result code: <Mono>{f.resultCode}</Mono>. {f.message}
+            {f.resultCode ? (
+              <>
+                Result code: <Mono>{f.resultCode}</Mono>. {f.message}
+              </>
+            ) : (
+              f.message
+            )}
+            <Landed f={f} network={ctx.network} />
           </>
-        ) : (
-          f.message
         ),
         next: 'Read the vault again, then retry. If the same code comes back, it names what to fix.',
       }
@@ -249,4 +265,27 @@ function explain(
     default:
       return { title: 'The wallet stopped the request.', body: f.message, next: 'Open the wallet, finish or dismiss any prompt there, then press the button again.' }
   }
+}
+
+/**
+ * The transaction behind a refusal or failure, when there is one: its hash, a link to check
+ * it on the explorer, and, when it made a ledger, that the fee was charged. A landed failure
+ * spent the owner's fee, so it is never shown as if nothing happened.
+ */
+function Landed({ f, network }: { f: VaultFailure; network?: string }) {
+  if (!f.hash) return null
+  const href = (network ? txExplorerUrl(network, f.hash) : null) ?? f.explorerUrl ?? null
+  return (
+    <span className="mt-2 block">
+      {f.landed && <span className="block">It landed in a ledger and the network fee was charged to your account; nothing in the vault moved.</span>}
+      <span className="mt-1 flex flex-wrap items-center gap-2">
+        <Mono>{f.hash}</Mono>
+        {href && (
+          <a href={href} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 font-semibold text-accent">
+            Explorer <ExternalLink size={11} />
+          </a>
+        )}
+      </span>
+    </span>
+  )
 }

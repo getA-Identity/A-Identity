@@ -97,9 +97,19 @@ function networkHint(): string {
     .join(' or ')
 }
 
-/** The settlement token's decimals, which on Stellar is 7 and is never assumed to be. */
+/**
+ * The settlement token's decimals, used ONLY to check an owner call's shape before the gate.
+ * The call that is built is scaled by the vault's own decimals, read live: a known build may
+ * hold any SEP-41 token, and scaling a 6-decimal vault's withdrawal at 7 would sign ten times
+ * the amount the review screen showed.
+ */
 function tokenDecimals(chain: ChainDescriptor): number {
   return chain.settlementTokens?.[0]?.decimals ?? chain.usdcDecimals ?? 7
+}
+
+/** Decimals a vault can report and still be scaled to: a whole number an i128 can carry. */
+function usableDecimals(d: unknown): d is number {
+  return typeof d === 'number' && Number.isInteger(d) && d >= 0 && d <= 30
 }
 
 /** Every contract a registry slot names on this chain: flagship, D2, D3 and the rehearsal. */
@@ -325,8 +335,9 @@ function gateBody(r: Extract<AuthorizeResult, { ok: false }>): { status: number;
 /**
  * Run the whole gate for an owner call: wallet first (no network), then the vault (a
  * registry slot, an agent the caller owns, or, only if neither, one ledger read to see
- * whether it runs a build we published), then the live owner. Returns the live vault state
- * on success, because prepare needs its token for the trustline preflight.
+ * whether it runs a build we published), then the live owner. Returns the live vault's token
+ * and decimals on success: prepare needs the token for the trustline preflight and the
+ * decimals to scale every amount in the call.
  */
 async function gate(
   ctx: RouteCtx,
@@ -335,7 +346,7 @@ async function gate(
   chain: ChainDescriptor,
   contract: string,
   source: string,
-): Promise<{ ok: true; token: string } | { ok: false; status: number; body: Record<string, unknown> }> {
+): Promise<{ ok: true; token: string; decimals: number | null } | { ok: false; status: number; body: Record<string, unknown> }> {
   const who = {
     source,
     contract,
@@ -366,16 +377,18 @@ async function gate(
   // read that will not answer stops the request rather than waving it on.
   let liveOwner: string | null = null
   let token = ''
+  let decimals: number | null = null
   try {
     const state = await a.readVault(contract)
     liveOwner = state.owner
     token = state.token
+    decimals = state.decimals
   } catch {
     liveOwner = null
   }
   const owner = authorizeOwnerCall({ ...who, knownBuild, liveOwner })
   if (!owner.ok) return { ok: false, ...gateBody(owner) }
-  return { ok: true, token }
+  return { ok: true, token, decimals }
 }
 
 /** Vaults recorded on agents this caller owns, on this network. Both the flat field and
@@ -512,9 +525,11 @@ export async function handleStellarVaultRoutes(ctx: RouteCtx, deps: StellarVault
       return true
     }
 
-    const plan = ownerCallPlan(body.action, body?.args ?? {}, tokenDecimals(chain))
-    if (!plan.ok) {
-      sendJson(res, 400, { ok: false, code: 'bad_request', reason: plan.reason })
+    // The shape is checked first, at the registry token's precision, so a malformed body is
+    // refused before the gate spends a read. The plan that is BUILT comes after the gate.
+    const shape = ownerCallPlan(body.action, body?.args ?? {}, tokenDecimals(chain))
+    if (!shape.ok) {
+      sendJson(res, 400, { ok: false, code: 'bad_request', reason: shape.reason })
       return true
     }
 
@@ -522,6 +537,24 @@ export async function handleStellarVaultRoutes(ctx: RouteCtx, deps: StellarVault
     const g = await gate(ctx, deps, adapter, chain, contract, source)
     if (!g.ok) {
       sendJson(res, g.status, g.body)
+      return true
+    }
+
+    // Every amount is scaled by the decimals THIS vault stored from its own token at
+    // construction, which the console also checks its input against. A vault whose decimals
+    // cannot be used is refused rather than scaled by a guess.
+    if (!usableDecimals(g.decimals)) {
+      sendJson(res, 502, {
+        ok: false,
+        code: 'failed',
+        resultCode: 'vault_decimals_unreadable',
+        reason: `the vault reported decimals ${String(g.decimals)}, which no amount can be scaled by, so nothing was built`,
+      })
+      return true
+    }
+    const plan = ownerCallPlan(body.action, body?.args ?? {}, g.decimals)
+    if (!plan.ok) {
+      sendJson(res, 400, { ok: false, code: 'bad_request', reason: plan.reason })
       return true
     }
 

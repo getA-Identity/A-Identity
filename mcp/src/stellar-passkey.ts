@@ -24,12 +24,14 @@
  *    OpenZeppelin constants for; an unnamed one is testnet, never pubnet),
  *  - which host functions may be relayed (exactly four shapes, listed, never a pattern),
  *  - which vaults the operator key may act on (demo vaults owned by a smart account running
- *    the registry's wasm, read live; never a flagship vault, refused by id),
+ *    the registry's wasm, with the owner's allowlist on, read live; never a vault the
+ *    registry records, refused by id),
  *  - which smart account a vault may be deployed for (one WebAuthn signer, the one the
  *    browser names, read live off the account before anything is spent),
  *  - which authorization entries may ride along (the ones FOR that function, by byte equality),
  *  - how a KYA decision maps onto a binary on-chain allowlist,
- *  - the caps on what the operator key may be made to spend,
+ *  - the caps on what the operator key may be made to spend, and how many vaults it pays to
+ *    deploy per day across everyone,
  *  - and what the relay may spend across everyone: a global rate limit and a 24 hour
  *    reserve against the relayer fee, both published by the status endpoint.
  *
@@ -67,10 +69,14 @@ export const PASSKEY_RELEASE = {
  * the one mistake here that cannot be undone. Every call site takes a chain now, so the
  * compiler finds them all.
  *
- * On pubnet the seed is dust on purpose. Five of the six steps a visitor runs cost XLM fees
- * only, which the relayer sponsors; the seed is the single leg that moves our USDC, so it
- * is the single number that has to be small, and `seedDailyTotalUsd` bounds the sum of it
- * across everyone rather than per visitor.
+ * On pubnet the seed is dust on purpose. The steps a visitor's passkey signs (the account
+ * deploy and every owner call) cost XLM fees the relayer sponsors, under the relay's own
+ * budget. The vault deploy, the seed and pay() are different: the operator account sources
+ * and pays for each of them, with XLM of ours. The seed is the single leg that moves our
+ * USDC, so it is the number that has to be small, and `seedDailyTotalUsd` bounds the sum of
+ * it across everyone rather than per visitor. The deploy moves no USDC but costs the
+ * operator a fee every time, whatever the seed, so `deployDailyMax` bounds how many vaults
+ * the operator pays to create per day, across everyone.
  */
 export type PasskeyCaps = {
   dailyCapUsd: number
@@ -80,6 +86,8 @@ export type PasskeyCaps = {
   agentPayMaxUsd: number
   /** The sum of every seed this network may pay out in a UTC day, across all callers. */
   seedDailyTotalUsd: number
+  /** How many vault deploys the operator account pays for in a day, across all callers, seeded or not. */
+  deployDailyMax: number
 }
 
 const TESTNET_CAPS: PasskeyCaps = {
@@ -91,6 +99,9 @@ const TESTNET_CAPS: PasskeyCaps = {
   // Test money. The bound exists so the shape is identical on both networks and the pubnet
   // path is not the only one whose budget code ever runs.
   seedDailyTotalUsd: 20,
+  // Test XLM, but the same operator key pays the flagship testnet vault's fees, so a key
+  // drained by deploys would stop that too.
+  deployDailyMax: 200,
 }
 
 const PUBNET_CAPS: PasskeyCaps = {
@@ -103,6 +114,10 @@ const PUBNET_CAPS: PasskeyCaps = {
   // hundred and first is told plainly that the day's budget is spent rather than served a
   // failure that looks like a bug.
   seedDailyTotalUsd: 1,
+  // The same hundred visitors, counted by deploy rather than by seed: a seedUsd of 0 costs
+  // the seed budget nothing, and without this count it would cost the operator a mainnet
+  // deploy fee with no ceiling at all.
+  deployDailyMax: 100,
 }
 
 /** The caps for one network. Pubnet is the tight set; everything else is testnet's. */
@@ -209,6 +224,23 @@ export function flagshipVaults(chain: ChainDescriptor): string[] {
   return [chain.contracts.spendVault, chain.contracts.passkeyVault].filter((v): v is string => typeof v === 'string' && isContractId(v))
 }
 
+/**
+ * The vaults the OPERATOR key must never be made to pay() from on an anonymous request:
+ * every vault the registry records, which is the flagship and rehearsal vaults above plus the
+ * SOW 2 evidence vaults (`walletOwnedVault`, D2, and `devicePasskeyVault`, D3).
+ *
+ * Kept apart from `flagshipVaults` on purpose, because the relay uses that list and must
+ * not use this one. The D3 vault's owner is a device passkey whose owner calls go through
+ * this relay, so refusing it there would stop the evidence the slot exists for. What the D3
+ * vault must not get is the operator spending from it at a time and to a payee a stranger
+ * picks, and its owner, a smart account on the registry wasm, would pass every live check
+ * below the moment its operator is our signer. So it is refused here, by id.
+ */
+export function operatorRefusedVaults(chain: ChainDescriptor): string[] {
+  const recorded = [chain.contracts.walletOwnedVault, chain.contracts.devicePasskeyVault].filter((v): v is string => typeof v === 'string' && isContractId(v))
+  return [...new Set([...flagshipVaults(chain), ...recorded])]
+}
+
 // ── the relay: what may be forwarded ─────────────────────────────────────────────
 
 /** The two bodies the smart-account kit's RelayerClient sends, verbatim. */
@@ -260,9 +292,21 @@ export type AccountAdminMethod = (typeof ACCOUNT_ADMIN_METHODS)[number]
 
 const ACCEPTED =
   'this relay forwards exactly four shapes: a createContractV2 of the OpenZeppelin smart account wasm the ' +
-  'registry names, an owner entrypoint on a vault this server operates, a smart account\'s ' +
+  'registry names whose constructor installs one WebAuthn signer under the registry\'s verifier and no policy, ' +
+  'an owner entrypoint on a vault this server operates, a smart account\'s ' +
   `execute() whose target is such a vault and whose target_fn is an owner entrypoint (${OWNER_ACTIONS.join(', ')}), ` +
   'or a smart account adding one WebAuthn signer to ITSELF (add_context_rule with a Default context, one signer and no policy; or add_signer on a rule other than 0)'
+
+/**
+ * The OpenZeppelin WebAuthn signer's key data as the smart-account kit builds it
+ * (buildKeyData): the 65-byte uncompressed P-256 point, then the credential id. WebAuthn
+ * caps a credential id at 1023 bytes, so anything longer is not one.
+ */
+function isPasskeyKeyData(keyHex: string): boolean {
+  if (!/^(?:[0-9a-f]{2})+$/i.test(keyHex)) return false
+  const bytes = keyHex.length / 2
+  return keyHex.slice(0, 2) === '04' && bytes > 65 && bytes <= 65 + 1023
+}
 
 /** What a preflight needs from the registry. Both come from `chain.contracts.smartAccount`. */
 export type RelayPreflightCtx = { smartAccountWasmHash: string | undefined; webauthnVerifier: string | undefined }
@@ -295,6 +339,32 @@ export function relayPreflight(inspection: RelayInspection, ctx: RelayPreflightC
     if ((func.wasmHash ?? '').toLowerCase() !== want) {
       return bad(`the deploy would instantiate wasm ${func.wasmHash ?? '(not wasm)'}, and the only executable this relay pays to create is the OpenZeppelin smart account ${want}`)
     }
+    // The constructor arguments, read as closely as the admin rule reads a new rule, because
+    // they ARE a new rule: the constructor installs them as the account's Default rule, and
+    // in doing so calls every External signer's verifier and every policy's install(). Those
+    // are plain cross-contract calls into addresses the request picks, they need no
+    // authorization entry, and so the sub-invocation check below never sees them. Without
+    // this, our relayer would pay to run whatever contract a stranger names in a signer.
+    const verifier = ctx.webauthnVerifier
+    if (!verifier) return bad('this chain declares no contracts.smartAccount.webauthnVerifier, so there is no verifier a new account\'s signer could be checked against')
+    const account = func.account
+    if (!account) {
+      return bad(`the deploy carries ${func.constructorArgs} constructor argument(s) that do not decode as the OpenZeppelin account's (signers, policies), so they are not read and not relayed`)
+    }
+    if (account.signers.length !== 1) {
+      return bad(`a new account must start with exactly one WebAuthn signer under the registry's verifier ${verifier}; this deploy installs ${account.signers.length} signer(s)`)
+    }
+    const signer = account.signers[0]
+    if (signer.kind !== 'external' || signer.verifier !== verifier) {
+      const what = signer.kind === 'external' ? `an External signer under ${signer.verifier}` : signer.kind === 'delegated' ? `the delegated account ${signer.address}` : 'a signer of a kind this relay does not read'
+      return bad(`the deploy installs ${what}; the only signer this relay pays to install is a WebAuthn passkey under the registry's verifier ${verifier}`)
+    }
+    if (!isPasskeyKeyData(signer.keyHex)) {
+      return bad('the passkey signer\'s key data is not a 65-byte uncompressed P-256 point (0x04 || x || y) followed by a credential id, which is what the smart-account kit builds')
+    }
+    if (account.policies > 0) {
+      return bad(`the deploy installs ${account.policies} polic(ies); a policy is a contract the constructor calls and one that can authorize on its own, so this relay only pays to create an account with none`)
+    }
     for (const [i, a] of auth.entries()) {
       if (a.root.kind !== 'create-contract-v2' || a.root.createXdr !== func.createXdr) {
         return bad(`auth[${i}] authorizes something other than this exact deploy; every entry must be for the host function it rides with`)
@@ -308,7 +378,7 @@ export function relayPreflight(inspection: RelayInspection, ctx: RelayPreflightC
       smartAccount: null,
       method: null,
       authAddresses: auth.map((a) => a.address).filter((x): x is string => Boolean(x)),
-      summary: `deploy an OpenZeppelin smart account (wasm ${want.slice(0, 8)}...) from ${func.deployer ?? 'an unknown deployer'}, ${func.constructorArgs} constructor argument(s)`,
+      summary: `deploy an OpenZeppelin smart account (wasm ${want.slice(0, 8)}...) from ${func.deployer ?? 'an unknown deployer'}, with one WebAuthn signer under ${verifier} and no policy`,
     }
   }
 
@@ -541,7 +611,16 @@ export type OperatorGate =
   | {
       ok: false
       status: 403 | 502 | 503
-      code: 'flagship_vault' | 'no_operator' | 'rpc_error' | 'not_operator' | 'owner_not_contract' | 'not_smart_account' | 'smart_account_code_mismatch' | 'network_not_served'
+      code:
+        | 'flagship_vault'
+        | 'no_operator'
+        | 'rpc_error'
+        | 'not_operator'
+        | 'owner_not_contract'
+        | 'not_smart_account'
+        | 'smart_account_code_mismatch'
+        | 'network_not_served'
+        | 'allowlist_off'
       reason: string
     }
 
@@ -553,16 +632,23 @@ export type OperatorGate =
  * operates a vault that is not a demo (the flagship testnet vault is operated by exactly the
  * account STELLAR_TESTNET_SIGNER_SECRET decodes to), anyone could have us call pay() on it,
  * inside its policy but at a time and to a payee of their choosing. So a vault qualifies only
- * when all of these read true, live: it is not a recorded vault, our signer operates it, and
- * its owner is a smart account whose instance runs the registry's account wasm, which is to
- * say a vault this passkey flow deployed for a passkey.
+ * when all of these read true, live: it is not a recorded vault, our signer operates it, its
+ * owner is a smart account whose instance runs the registry's account wasm, which is to say
+ * a vault this passkey flow deployed for a passkey, and its allowlist is ON.
+ *
+ * The last one is what makes "the owner chose the payee" true. The vault's constructor
+ * starts with the allowlist OFF, and with it off pay() reaches any address inside the caps.
+ * This server deploys and seeds the vault before the owner's passkey has signed anything,
+ * so until the owner turns the allowlist on with set_policy, a public pay() endpoint would
+ * let anyone move the seed to themselves. An unread flag is treated as off: fail closed.
  */
 export function operatorGate(
   vault: string,
   input: {
     flagship: string[]
     signer: string | null
-    live: { owner: string; operator: string } | null
+    /** The vault's live owner(), operator() and allowlist_enabled(). Null when the read failed. */
+    live: { owner: string; operator: string; allowlistEnabled: boolean } | null
     ownerCode: { found: boolean; executable: string | null; wasmHash: string | null } | null
     expectedWasmHash: string | undefined
   },
@@ -587,6 +673,17 @@ export function operatorGate(
   const verdict = smartAccountCodeVerdict(owner, input.ownerCode, input.expectedWasmHash)
   if (!verdict.ok) {
     return { ok: false, status: verdict.code === 'rpc_error' ? 502 : 403, code: verdict.code, reason: `vault ${vault} is not a passkey demo vault: ${verdict.reason}. Nothing was submitted.` }
+  }
+  if (input.live.allowlistEnabled !== true) {
+    return {
+      ok: false,
+      status: 403,
+      code: 'allowlist_off',
+      reason:
+        `vault ${vault} has its allowlist off, read live, so pay() would reach any address and the payee would be the caller's choice, ` +
+        'not the owner\'s. The operator key pays from a demo vault only after its owner has turned the allowlist on with set_policy ' +
+        '(signed by the passkey) and allowlisted the payee with set_allowed. Nothing was submitted.',
+    }
   }
   return { ok: true, owner, operator: input.live.operator.trim() }
 }
@@ -1040,9 +1137,10 @@ export function createSeedBudget(windowMs = 86_400_000): SeedBudget {
           reason:
             `the ${network} demo seeds at most ${caps.seedDailyTotalUsd} USDC per UTC day across ALL callers, and ` +
             `${d.spent / MICRO} of it is spent across ${d.paid} vaults. Nothing was deployed and no USDC left this server. ` +
-            'The vault deploy and every passkey signature cost network fees only, which the relayer sponsors; the seed is the one ' +
-            `leg that moves our own money, which is why it is the one leg with a shared ceiling. Retry in ${retryAfterSeconds} s, ` +
-            'or fund a vault yourself and skip the seed entirely by sending seedUsd 0.',
+            'Every passkey signature costs a network fee the relayer sponsors, and the vault deploy costs a network fee the ' +
+            'operator account pays, under its own daily count; the seed is the one leg that moves our own USDC, which is why it ' +
+            `has a ceiling in dollars. Retry in ${retryAfterSeconds} s, or fund a vault yourself and skip the seed entirely by ` +
+            'sending seedUsd 0.',
         }
       }
       d.spent += want
@@ -1085,6 +1183,123 @@ export function createSeedBudget(windowMs = 86_400_000): SeedBudget {
 
 /** Process-local, like the relay budget, and bounded per instance for the same reason. */
 export const seedBudget = createSeedBudget()
+
+// ── how many vaults the operator pays to deploy, across everyone, per network ────
+//
+// The seed budget bounds our USDC, and a zero seed costs it nothing, rightly: it moves
+// nothing. But the deploy itself is sourced, signed and paid by the operator account
+// whatever the seed, and on pubnet that is real XLM out of the same account that pays the
+// flagship vault's fees. With no count of its own, a caller sending seedUsd 0 over and over
+// would have the operator pay for vault after vault, bounded by nothing but a per-IP rate.
+// So the deploy is counted here, seeded or not, and one smart account gets one vault per
+// window, so the same owner cannot simply be sent again.
+
+export type DeployBudgetRefusal = {
+  ok: false
+  status: 429
+  code: 'deploy_budget_exhausted' | 'deploy_owner_served'
+  reason: string
+  retryAfterSeconds: number
+}
+export type DeployCharge = { ok: true; used: number; max: number; resetAt: number } | DeployBudgetRefusal
+
+export type DeploySnapshot = {
+  network: string
+  max: number
+  used: number
+  left: number
+  windowMs: number
+  resetAt: number | null
+  perOwner: number
+  enforcedIn: string
+  note: string
+}
+
+export interface DeployBudget {
+  /** Count one deploy for this owner, or refuse. Charged before the operator key signs anything. */
+  charge(network: string, owner: string, caps: PasskeyCaps, now?: number): DeployCharge
+  /** Hand the count back when nothing was submitted after all, so nothing was paid. */
+  refund(network: string, owner: string, now?: number): void
+  snapshot(network: string, caps: PasskeyCaps, now?: number): DeploySnapshot
+}
+
+/** Factory rather than a singleton so a test never inherits another test's day. */
+export function createDeployBudget(windowMs = 86_400_000): DeployBudget {
+  const days = new Map<string, { used: number; owners: Set<string>; resetAt: number }>()
+  const roll = (network: string, now: number) => {
+    const d = days.get(network)
+    if (!d || d.resetAt <= now) {
+      const fresh = { used: 0, owners: new Set<string>(), resetAt: now + windowMs }
+      days.set(network, fresh)
+      return fresh
+    }
+    return d
+  }
+  return {
+    charge(network, owner, caps, now = Date.now()) {
+      const d = roll(network, now)
+      const retryAfterSeconds = Math.max(1, Math.ceil((d.resetAt - now) / 1000))
+      if (d.owners.has(owner)) {
+        return {
+          ok: false,
+          status: 429,
+          code: 'deploy_owner_served',
+          retryAfterSeconds,
+          reason:
+            `the smart account ${owner} already had a vault deployed for it on ${network} in this window, and the operator account ` +
+            'pays for one vault per owner per day. Nothing was deployed and nothing was spent. Use the vault already created for it, ' +
+            `or retry in ${retryAfterSeconds} s.`,
+        }
+      }
+      if (d.used >= caps.deployDailyMax) {
+        return {
+          ok: false,
+          status: 429,
+          code: 'deploy_budget_exhausted',
+          retryAfterSeconds,
+          reason:
+            `the ${network} demo deploys at most ${caps.deployDailyMax} vaults per day across ALL callers, and that count is used up. ` +
+            'Every deploy is sourced and paid by the operator account, not by the relayer, whether or not it is seeded, so this ' +
+            `count is what bounds the operator's deploy fees. Nothing was deployed and nothing was spent. Retry in ${retryAfterSeconds} s.`,
+        }
+      }
+      d.used += 1
+      d.owners.add(owner)
+      return { ok: true, used: d.used, max: caps.deployDailyMax, resetAt: d.resetAt }
+    },
+
+    refund(network, owner, now = Date.now()) {
+      const d = days.get(network)
+      // A refund into a window that already rolled would credit a day that never paid.
+      if (!d || d.resetAt <= now) return
+      if (!d.owners.delete(owner)) return
+      d.used = Math.max(0, d.used - 1)
+    },
+
+    snapshot(network, caps, now = Date.now()) {
+      const d = days.get(network)
+      const live = d && d.resetAt > now ? d : { used: 0, owners: new Set<string>(), resetAt: 0 }
+      return {
+        network,
+        max: caps.deployDailyMax,
+        used: live.used,
+        left: Math.max(0, caps.deployDailyMax - live.used),
+        windowMs,
+        resetAt: live.resetAt || null,
+        perOwner: 1,
+        enforcedIn: 'mcp/src/http/stellar-passkey-routes.ts, charged before the operator key signs the vault deploy',
+        note:
+          'Counted, not priced: every vault deploy is sourced and paid by the operator account, seeded or not, so the number ' +
+          'bounded is how many deploys it pays for per window, and one per smart account. A deploy that was never submitted ' +
+          '(prepared, or refused before submission) hands its count back; one that landed, failed on chain, or is still pending ' +
+          'keeps it, because it may have cost a fee.',
+      }
+    },
+  }
+}
+
+/** Process-local, like the other two, and bounded per instance for the same reason. */
+export const deployBudget = createDeployBudget()
 
 /**
  * A fee in the relayer's answer, if there is one.
@@ -1335,6 +1550,8 @@ export function passkeyStatusView(
     relayLimits: RelayBudgetSnapshot
     /** Live too, from the same ledger the deploy endpoint charges. */
     seedLimits: SeedSnapshot
+    /** Live as well: how many vault deploys the operator account will still pay for today. */
+    deployLimits: DeploySnapshot
     /** Every network this deployment serves, so a page can offer exactly those. */
     servedNetworks: string[]
   },
@@ -1398,7 +1615,10 @@ export function passkeyStatusView(
       // The code a vault deployed here instantiates, from the registry. Ops move it when a
       // new build is uploaded; nothing in this file names a hash of its own.
       wasmHash: chain.contracts.spendVaultWasmHash ?? null,
+      // Refused by the relay, whoever signs.
       flagshipRefused: flagshipVaults(chain),
+      // Refused by agent-pay: every vault the registry records, the evidence vaults included.
+      operatorRefused: operatorRefusedVaults(chain),
     },
     passkeyVault: chain.contracts.passkeyVault
       ? {
@@ -1413,7 +1633,10 @@ export function passkeyStatusView(
       configured: Boolean(cfg.operator),
       account: cfg.operator,
       address: cfg.operator,
-      role: 'the vault operator that signs pay(), and the source and fee payer of every vault deployed here. It can pay() from a demo vault inside the policy its owner set, to payees the owner allowlisted, and nothing else.',
+      role:
+        'the vault operator that signs pay(), and the source and fee payer of every vault deployed here and of its seed. It can pay() ' +
+        'from a demo vault inside the policy its owner set and nothing else. A new vault starts with its allowlist off, and agent-pay ' +
+        'refuses (allowlist_off) until the owner has turned it on with set_policy; from then on pay() reaches only payees the owner allowlisted.',
     },
     // The caps in force on THIS network, and every network's beside them, because a reader
     // comparing pubnet against testnet should not have to call the endpoint twice to learn
@@ -1433,6 +1656,8 @@ export function passkeyStatusView(
     limits: cfg.relayLimits,
     // The other ceiling, and the one that bounds OUR money rather than a third party's fee.
     seedBudget: cfg.seedLimits,
+    // And the count that bounds the operator's own deploy fees, which a zero seed does not touch.
+    deployBudget: cfg.deployLimits,
     endpoints: {
       status: 'GET /api/stellar/passkey/status?network=',
       relay: 'POST /api/stellar/passkey/relay?network=  { func, auth[] } | { xdr }',

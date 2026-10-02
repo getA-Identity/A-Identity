@@ -1,6 +1,6 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { Keypair } from '@stellar/stellar-sdk'
+import { Keypair, StrKey } from '@stellar/stellar-sdk'
 
 import { CHAINS } from './chains/index.js'
 import { OWNER_METHODS } from './chains/stellar/adapter.js'
@@ -464,6 +464,18 @@ test('an unknown build and an archived instance each carry a note, never a silen
   assert.equal(b.build, null)
   assert.match(String(b.note), /not an AgentSpendPolicy build we published/)
   assert.match(String(b.note), /archived/)
+})
+
+test('the no-owner-actions clause appears only where the gate agrees: never on a registry slot', () => {
+  // VAULT is the flagship slot, which the gate lets through on its slot whatever it runs.
+  const slot = readBody(rawState(), { wasmHash: 'ab'.repeat(32) })
+  assert.equal(slot.role, 'flagship')
+  assert.doesNotMatch(String(slot.note), /no owner actions/)
+  // A contract in no slot, running unknown code: the console builds nothing for it.
+  const loose = StrKey.encodeContract(Buffer.alloc(32, 7))
+  const free = readBody(rawState(), { contract: loose, wasmHash: 'ab'.repeat(32) })
+  assert.equal(free.role, null)
+  assert.match(String(free.note), /the console offers no owner actions on it/)
 })
 
 test('the checker has three answers, and an unenforced list is its own state, not a yes', () => {

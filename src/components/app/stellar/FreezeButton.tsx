@@ -20,6 +20,7 @@ export default function FreezeButton({
   frozen,
   onReceipt,
   signIn,
+  held = false,
 }: {
   network: string
   contract: string
@@ -27,6 +28,8 @@ export default function FreezeButton({
   frozen: boolean
   onReceipt: (r: Receipt) => void
   signIn?: ReactNode
+  /** A transaction for this vault is still pending: the button waits for it. */
+  held?: boolean
 }) {
   const { busy, step, failure, run } = useOwnerRun()
   const next = !frozen
@@ -45,7 +48,7 @@ export default function FreezeButton({
         <button
           type="button"
           onClick={go}
-          disabled={busy !== null}
+          disabled={busy !== null || held}
           className="inline-flex min-w-[9rem] items-center justify-center gap-2 rounded-full border border-border bg-card px-4 py-2 text-sm font-semibold text-foreground hover:bg-foreground/[0.05] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50"
         >
           {busy ? (

@@ -73,6 +73,15 @@ export type RelayFunc =
       deployer: string | null
       createXdr: string
       constructorArgs: number
+      /**
+       * The constructor arguments read as the OpenZeppelin account's own
+       * `__constructor(signers: Vec<Signer>, policies: Map<Address, Val>)`, which installs
+       * them as the account's Default rule. Null when they do not decode as exactly those two,
+       * which the decision refuses rather than guessing at. Read closely because the
+       * constructor calls into every External signer's verifier and every policy contract
+       * the arguments name, inside a deploy the relayer pays for.
+       */
+      account: { signers: RelaySigner[]; policies: number } | null
     }
   | {
       kind: 'invoke'

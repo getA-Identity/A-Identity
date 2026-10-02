@@ -695,10 +695,12 @@ export function vaultReadBody(input: {
   const day = Number(state.day)
   const notes: string[] = []
   if (!build.known) {
+    // The "no owner actions" clause only where the gate agrees: a registry slot is let
+    // through on its slot, whatever it runs, so saying it there would be untrue.
     notes.push(
       'This contract runs code that is not an AgentSpendPolicy build we published. Its views answered ' +
-        'like one, so these are the numbers it reports, not numbers our source can vouch for, and the ' +
-        'console offers no owner actions on it.',
+        'like one, so these are the numbers it reports, not numbers our source can vouch for' +
+        (role === null ? ', and the console offers no owner actions on it.' : '.'),
     )
   }
   if (input.ttl.archived) {

@@ -550,18 +550,24 @@ Beta, wired and readable:
   came from a software P-256 key in our own script, not from a device, and the fee was
   paid by a deployer key. The record is
   soroban/releases/testnet-passkey-owner-2026-09-19.json. The device-passkey run for
-  SOW 2 is separate: a person enrols a real device passkey on
+  SOW 2 is separate and planned, not yet done: a person enrols a real device passkey on
   https://a-identity.xyz/stellar?network=testnet, the owner is an OpenZeppelin smart
-  account and WebAuthn verifier we build ourselves from the audited stellar-contracts
-  release line (tag v0.7.2) and upload to testnet, and OpenZeppelin Channels pays the
-  network fee through our relay, with the paying account named on the page. The page
+  account we build ourselves from the audited stellar-contracts release line (tag
+  v0.7.2), and OpenZeppelin Channels pays the network fee through our relay, with the
+  paying account named on the page. We did not upload that code: its three code entries
+  were already on testnet with exactly our build hashes, so we extended their TTLs and
+  deployed our own two verifier instances, CABPDJH4... (WebAuthn) and CCKPFIAA...
+  (ed25519); the receipt is
+  soroban/third-party/openzeppelin-smart-account/receipt-testnet-deploy-2026-10-01.json. The page
   opens on pubnet by default, where it uses OpenZeppelin's own published deployment,
   labelled as theirs, with dust amounts capped by the backend. The selection record is
   https://a-identity.mintlify.site/chains/stellar-d3-selection and the recovery position
   (losing every device that holds the passkey loses the owner for good) is
-  https://a-identity.mintlify.site/chains/stellar-passkey-recovery. Vaults deployed for
-  SOW 2 run AgentSpendPolicy v0.1.1, which checks the amount before the payee on every
-  payment path; the three earlier vaults keep v0.1.0. The live state of any of our
+  https://a-identity.mintlify.site/chains/stellar-passkey-recovery. The SOW 2 vaults
+  will run AgentSpendPolicy v0.1.1, which checks the amount before the payee on every
+  payment path; its code entry is on testnet (uploaded 2026-10-01) and no vault runs it
+  yet. Every vault deployed so far keeps v0.1.0, and so does every vault the /stellar
+  page deploys on pubnet, which has no v0.1.1 code entry. The live state of any of our
   vaults is readable without a wallet at https://a-identity.xyz/app/vault/stellar.
 
 Planned, descriptor only:

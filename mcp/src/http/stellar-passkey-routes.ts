@@ -18,7 +18,9 @@
  * in for the gate is that everything here is rate-budgeted and fail-closed, that the two
  * endpoints which spend the operator key do so under per-network caps a test pins (pubnet's
  * are dust), and that the operator key only ever acts on a vault whose live owner is a smart
- * account running the registry's account wasm, never on a recorded flagship vault.
+ * account running the registry's account wasm and whose allowlist that owner has turned on,
+ * never on a vault the registry records. The deploy is counted per network per day as well,
+ * seeded or not, because the operator account pays its fee either way.
  *
  * The relay has two more bounds that http.ts cannot give it, because http.ts budgets per IP
  * and the thing at risk here is one credential of ours shared by everyone: a GLOBAL rate
@@ -48,6 +50,7 @@ import {
   bindPayeeToAgent,
   flagshipVaults,
   operatorGate,
+  operatorRefusedVaults,
   ownerAccountCheck,
   ozRelayOutcome,
   ozRelayRequest,
@@ -57,6 +60,7 @@ import {
   passkeyStatusView,
   relayBudget as sharedRelayBudget,
   seedBudget as sharedSeedBudget,
+  deployBudget as sharedDeployBudget,
   relayDecision,
   relayFeeSettlement,
   relayParams,
@@ -64,6 +68,7 @@ import {
   requestedNetwork,
   servedNetworks,
   smartAccountCodeVerdict,
+  type DeployBudget,
   type RelayBudget,
   type RiskDecisionName,
   type SeedBudget,
@@ -90,6 +95,9 @@ export type PasskeyRouteDeps = {
   /** The shared per-network ceiling on seed USDC. A test hands in its own so no two tests
    *  share a day, and so a pubnet assertion never depends on what a testnet one spent. */
   seedBudget?: SeedBudget
+  /** The shared per-network count of vault deploys the operator account pays for. A test
+   *  hands in its own, for the same reason it hands in its own seed budget. */
+  deployBudget?: DeployBudget
   /** How long to wait before each attempt to read a relayed transaction's fee payer. Tests pass []. */
   feePayerWaitsMs?: number[]
 }
@@ -130,6 +138,7 @@ export async function handleStellarPasskeyRoutes(ctx: RouteCtx, deps: PasskeyRou
   const linkedSubjects = deps.linkedSubjects ?? subjectsLinkedToWallet
   const budget = deps.relayBudget ?? sharedRelayBudget
   const seeds = deps.seedBudget ?? sharedSeedBudget
+  const deploys = deps.deployBudget ?? sharedDeployBudget
 
   const refuseChain = (gate: { status: number; code: string; reason: string }, keyed: 'ok' | 'success') => {
     sendJson(res, gate.status, {
@@ -175,6 +184,7 @@ export async function handleStellarPasskeyRoutes(ctx: RouteCtx, deps: PasskeyRou
         explorerFor: (a) => addressUrl(chain, a),
         relayLimits: budget.snapshot(),
         seedLimits: seeds.snapshot(chain.caip2, passkeyCaps(chain)),
+        deployLimits: deploys.snapshot(chain.caip2, passkeyCaps(chain)),
         servedNetworks: servedNetworks(CHAINS),
       }),
     )
@@ -560,10 +570,23 @@ export async function handleStellarPasskeyRoutes(ctx: RouteCtx, deps: PasskeyRou
       return true
     }
 
-    // Charged here and not earlier: a prepared answer spends nothing, so it must not spend
-    // the day's budget either. Refunded below on every path where the seed does not land.
+    // Both budgets are charged here and not earlier: a prepared answer spends nothing, so it
+    // must not spend the day's budgets either. The deploy count first, because the operator
+    // pays the deploy fee whatever the seed is, and a seedUsd of 0 costs the seed budget
+    // nothing. Without the count, that zero seed would be a way to have the operator pay for
+    // vault after vault.
+    const counted = deploys.charge(chain.caip2, plan.owner, caps)
+    if (!counted.ok) {
+      res.setHeader('Retry-After', String(counted.retryAfterSeconds))
+      sendJson(res, counted.status, { ok: false, code: counted.code, reason: counted.reason, network: chain.caip2, owner: plan.owner, deployBudget: deploys.snapshot(chain.caip2, caps) })
+      return true
+    }
+    const refundDeploy = () => deploys.refund(chain.caip2, plan.owner)
+
+    // Refunded below on every path where the seed does not land.
     const charged = seeds.charge(chain.caip2, plan.seedUsd, caps)
     if (!charged.ok) {
+      refundDeploy()
       res.setHeader('Retry-After', String(charged.retryAfterSeconds))
       sendJson(res, charged.status, { ok: false, code: charged.code, reason: charged.reason, network: chain.caip2, seedBudget: seeds.snapshot(chain.caip2, caps) })
       return true
@@ -575,6 +598,10 @@ export async function handleStellarPasskeyRoutes(ctx: RouteCtx, deps: PasskeyRou
       { owner: plan.owner, operator, token: token.address, dailyCapRaw: plan.dailyCapRaw, autoApproveMaxRaw: plan.autoApproveMaxRaw },
       env,
     )
+    // The count comes back only when nothing was submitted, so nothing was paid: prepared, or
+    // refused before submission. A deploy that failed on chain consumed a fee, and a pending
+    // one may still land, so both keep their place in the count.
+    if (deployed.outcome === 'prepared' || deployed.outcome === 'refused') refundDeploy()
     if (deployed.outcome !== 'settled') {
       const named = deployed.outcome === 'refused' && deployed.contractErrorIsOurs ? errorName(deployed.contractErrorCode) : undefined
       const status = deployed.outcome === 'pending' ? 202 : deployed.outcome === 'prepared' ? 200 : 409
@@ -647,7 +674,9 @@ export async function handleStellarPasskeyRoutes(ctx: RouteCtx, deps: PasskeyRou
       note:
         `Vault ${deployed.vault} is owned by the smart account ${plan.owner} and operated by ${operator}. The owner's ` +
         'passkey signs set_policy, set_allowed, set_frozen and withdraw through the smart account (relayed via POST /api/stellar/passkey/relay); ' +
-        `the operator signs pay() (POST /api/stellar/passkey/agent-pay), only to payees the owner allowlisted and only inside the owner's policy.` +
+        'the operator signs pay() (POST /api/stellar/passkey/agent-pay), only inside the owner\'s policy. The vault starts with its ' +
+        'allowlist OFF, and agent-pay refuses to pay from it until the owner turns the allowlist on with set_policy; from then on ' +
+        'pay() reaches only payees the owner allowlisted with set_allowed.' +
         (chain.testnet ? ' Testnet: a reset takes all of this with it.' : ''),
     })
     return true
@@ -723,10 +752,13 @@ export async function handleStellarPasskeyRoutes(ctx: RouteCtx, deps: PasskeyRou
     }
     const adapter = adapterFor(chain)
     const base = { network: chain.id, caip2: chain.caip2, contract: plan.contract, to: plan.to, amountUsd: plan.amountUsd, amountRaw: plan.amountRaw }
-    const flagship = flagshipVaults(chain)
+    // Every vault the registry records, not just the relay's flagship list: the SOW 2 evidence
+    // vaults are owned by keys or passkeys whose owner calls are real, and none of them is a
+    // vault a stranger should be able to have our operator key pay from.
+    const flagship = operatorRefusedVaults(chain)
     const expectedWasmHash = chain.contracts.smartAccount?.wasmHash
 
-    // A flagship vault is refused before anything else, prepared answer included: the
+    // A recorded vault is refused before anything else, prepared answer included: the
     // exact pay() call on it is not something this public endpoint should hand out either.
     if (flagship.includes(plan.contract)) {
       const g = operatorGate(plan.contract, { flagship, signer: null, live: null, ownerCode: null, expectedWasmHash })
@@ -742,11 +774,13 @@ export async function handleStellarPasskeyRoutes(ctx: RouteCtx, deps: PasskeyRou
       sendJson(res, 200, { ok: false, ...base, outcome: prepared.outcome, ...('reason' in prepared ? { reason: prepared.reason } : {}), note: 'No operator key is configured, so this is the exact pay() call and nothing was submitted.' })
       return true
     }
-    let live: { owner: string; operator: string } | null = null
+    let live: { owner: string; operator: string; allowlistEnabled: boolean } | null = null
     let readError: string | null = null
     try {
       const v = await adapter.readVault(plan.contract, env)
-      live = { owner: v.owner, operator: v.operator }
+      // The allowlist flag is read in the same call as the owner and operator, and anything
+      // but a literal true is off: the gate fails closed on it.
+      live = { owner: v.owner, operator: v.operator, allowlistEnabled: v.allowlistEnabled === true }
     } catch (e) {
       readError = e instanceof Error ? e.message : String(e)
     }

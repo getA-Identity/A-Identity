@@ -42,7 +42,11 @@ export function RecoveryNotice({ accepted, onAccept, realMoney, disabled }: { ac
       <ul className="mt-3 grid gap-1.5 text-[13px] leading-relaxed text-foreground/70">
         <li>There is no seed phrase to write down. The passkey is the key, and it stays in the authenticator that made it (or in the password manager that syncs it).</li>
         <li>A synced passkey survives losing one phone; a passkey bound to one device or one security key does not. The page tells you which kind you made.</li>
-        <li>Add a second device below once the account exists. Each device gets its own rule, so either one can sign alone.</li>
+        <li>
+          Add a second device in step 8 once your vault is deployed. Each device gets its own rule, so either one can sign
+          alone. Not before: the vault deploy checks that this passkey is your account's one signer, and refuses an account
+          that already has a second one.
+        </li>
         <li>
           Our server holds the vault's operator key. It can call pay() inside the daily cap and per-payment ceiling, and once
           you turn the allowlist on (signing the limit does) only to payees you allowed. It cannot withdraw, change your limit,
@@ -70,9 +74,20 @@ export function RecoveryNotice({ accepted, onAccept, realMoney, disabled }: { ac
 /**
  * The permanent badge: how many passkeys can sign for this account, read live from its
  * context rules, with the single-device warning in the warn colour. `refreshKey` lets the
- * page ask for a re-read after adding a device.
+ * page ask for a re-read after adding a device. `vaultDeployed` sets the advice: a second
+ * device is added after the vault deploy, which refuses an account with more than one rule.
  */
-export function RecoveryBadge({ net, contractId, refreshKey }: { net: PasskeyNetwork; contractId: string; refreshKey: number }) {
+export function RecoveryBadge({
+  net,
+  contractId,
+  refreshKey,
+  vaultDeployed,
+}: {
+  net: PasskeyNetwork
+  contractId: string
+  refreshKey: number
+  vaultDeployed: boolean
+}) {
   const [snap, setSnap] = useState<SignerSnapshot | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
@@ -107,7 +122,8 @@ export function RecoveryBadge({ net, contractId, refreshKey }: { net: PasskeyNet
       {single && (
         <p className="mt-2 flex items-start gap-2 text-[13px] font-semibold leading-relaxed text-warn">
           <TriangleAlert size={14} className="mt-0.5 shrink-0" />
-          Single device: losing it loses access. Add another device below.
+          Single device: losing it loses access.{' '}
+          {vaultDeployed ? 'Add another device below.' : 'Add another device below once your vault is deployed.'}
         </p>
       )}
       {snap && snap.passkeys.length > 0 && (

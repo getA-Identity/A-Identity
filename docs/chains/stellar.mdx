@@ -108,13 +108,20 @@ The three vaults above carry the same wasm, `v0.1.0`, sha256
 `155eb31c1867254eacbf1b7a4755164d15cc6b6f939644705ab6b8df61579239`, byte for byte, so
 pubnet runs the code that has been under test since the first testnet deploy rather than a
 rebuild of it. The pubnet vault was deployed 2026-08-24, the first testnet vault
-2026-08-15, and the passkey rehearsal vault 2026-09-19. Vaults deployed for SOW 2 run
-`v0.1.1`, a rebuild with one change (see [the gate order](#the-gate-order-and-why-order-is-the-product)),
-so from then on there are two wasm hashes on testnet, not one. Each `v0.1.1` vault's hash
-is named in its release receipt in
-[`soroban/releases`](https://github.com/getA-Identity/A-Identity/tree/main/soroban/releases).
-The existing vaults keep `v0.1.0`: the contract has no upgrade entrypoint, so a fix
-reaches a vault only through a new deployment.
+2026-08-15, and the passkey rehearsal vault 2026-09-19. The same `v0.1.0` code also runs
+in the sponsored rehearsal vault `CCV2MMK4...` from the same day, recorded in
+`testnet-passkey-owner-2026-09-19.json`, and in every vault the
+[/stellar page](https://a-identity.xyz/stellar) deploys on pubnet, because pubnet has no
+other build. `v0.1.1` is a rebuild with one change (see [the gate order](#the-gate-order-and-why-order-is-the-product)).
+Its code entry, sha256
+`353e4264f51e6173b9a2a60603239914cbb1456956e912374caf4d9b358db7c0`, was uploaded to
+testnet on 2026-10-01 (tx `09d041ab...9e02`, ledger 4974389, archived in
+[`soroban/releases/tx-archive`](https://github.com/getA-Identity/A-Identity/tree/main/soroban/releases/tx-archive/stellar-testnet)),
+and new testnet vaults instantiate against it. No vault runs it yet: the SOW 2 vaults are
+planned to, and each one's release receipt will be added to
+[`soroban/releases`](https://github.com/getA-Identity/A-Identity/tree/main/soroban/releases)
+when it is deployed. The existing vaults keep `v0.1.0`: the contract has no upgrade
+entrypoint, so a fix reaches a vault only through a new deployment.
 
 ## The spend vault
 
@@ -176,7 +183,8 @@ address) was refused as `InvalidPayee` by `pay` and as `InvalidAmount` by `withd
 Our internal audit recorded it as finding A3-02. `v0.1.1` moves the amount check to the
 front of the shared payment path, so `pay`, `owner_pay` and `withdraw` all answer
 `InvalidAmount` first, which is what the invariant and the test written for it always
-said. The three `v0.1.0` vaults above keep the old order.
+said. Every `v0.1.0` vault keeps the old order: the three above, the sponsored rehearsal
+vault and the pubnet vaults /stellar deploys.
 
 That last pair is worth reading closely. When the pubnet vault's budget was spent to its
 edge, the next payment was refused with `DailyCapExceeded` even though the vault was also
@@ -292,7 +300,7 @@ sequenceDiagram
     BE->>CH: relay the func and its auth, fail closed
     CH->>V: execute calls set_policy, 5 USDC per day, 1 USDC per payment
     V-->>CH: owner.require_auth satisfied, the invoker IS the owner
-    Note over BE,CH: Channels sources and pays the transaction. Proven on 2026-09-19 through this relay, ledgers 4764131 to 4764146.
+    Note over BE,CH: Channels sources and pays the transaction. Proven on 2026-09-19 through this relay, ledgers 4764131 to 4764144.
 
     Note over BE,V: KYA has three states. The on-chain allowlist has two.
     BE->>BE: risk_check answers ALLOW, WARN or DENY
@@ -366,10 +374,11 @@ ever mentioned.
   `authenticatorData`, `clientDataJSON` and a low-S DER signature, and the same `execute`
   path. The only difference is where the private key lives, which means the run proves the
   contract path accepts a WebAuthn signature and proves nothing about a real
-  authenticator's user-verification prompt. The SOW 2 device-passkey run is a separate
-  record, made in a browser with a real device on
+  authenticator's user-verification prompt. The SOW 2 device-passkey run is planned, not
+  done: it will be a separate record, made in a browser with a real device on
   [a-identity.xyz/stellar?network=testnet](https://a-identity.xyz/stellar?network=testnet),
-  and it is listed on [the proof page](https://a-identity.xyz/proof/stellar) on its own.
+  and listed on [the proof page](https://a-identity.xyz/proof/stellar) on its own once it
+  exists.
 
   Five more caveats about the rehearsal, in the order they would bite:
 
@@ -389,8 +398,10 @@ ever mentioned.
   - **Two fee payers, and they are separate claims.** The release record above was paid by
     a dedicated testnet deployer key over direct RPC. A second run the same day went through
     our relay to OpenZeppelin Channels: the smart account at ledger 4764131, `set_policy` at
-    4764136, the owner's allowlist writes at 4764142 and 4764144, and the agent's payment at
-    4764146, every one of them sourced and paid by a Channels channel account. Its owner
+    4764136 and the owner's allowlist writes at 4764142 and 4764144, each sourced by a
+    Channels channel account and fee-bumped by the Channels account `GCNJB6V5...`, whose
+    key we do not hold. The vault deploy at 4764133 and the agent's payment at 4764146 were
+    not sponsored: our testnet operator `GDZXSO4A...` sourced and paid both. Its owner
     signatures came from the same kind of software key, so it is also a rehearsal. The
     hosted page sponsors fees this way only while the deployment has a Channels key set.
   - **A fresh vault starts open.** `allowlist_enabled` is `false` and the allowlist is empty
@@ -538,8 +549,9 @@ footprint. Whether that is still true is a live read rather than a claim in this
 
 ```bash
 # The vault's code, pulled from the ledger and hashed. It must match the wasm hash
-# this page names for that vault's version: v0.1.0 for this one and the first two
-# testnet vaults, v0.1.1 (named in its release receipt) for the SOW 2 vaults.
+# this page names for that vault's version: v0.1.0 for this one and the testnet vaults
+# above. The SOW 2 vaults will run v0.1.1, named in each one's release receipt once
+# it is deployed; none is deployed yet.
 stellar contract fetch \
   --id CB5LYXFKKTKDDSCM6JO6C4GNRQUFBGSLYDET6Q56JNFJQSMBKH6KWSYP \
   --network-passphrase 'Public Global Stellar Network ; September 2015' \

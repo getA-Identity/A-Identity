@@ -39,7 +39,7 @@ import { Address, FeeBumpTransaction, StrKey, TransactionBuilder, scValToNative,
 import type { Transaction } from '@stellar/stellar-sdk'
 
 import type { ChainDescriptor } from '../types.js'
-import { OWNER_METHODS, errorName } from './adapter.js'
+import { OWNER_METHODS, errorNameFor } from './adapter.js'
 import { networkPassphrase, stellarRpcUrls } from './client.js'
 import { isStellarTxHash } from './strkey.js'
 
@@ -539,8 +539,11 @@ function diagnosticEvents(metaXdr: string | null | undefined, extra: string[] = 
  *
  * The result XDR cannot carry it: a trapped host function reports only that it trapped. The
  * `error` events can, and the one that names the code with a contract id is the raiser.
- * Events run outermost frame first in meta, and a code propagated from a callee is re-raised
- * by every frame above it, so the deepest raiser, the last one, is the origin.
+ * Diagnostic events are in emission order, oldest first: the frame that raises a code emits
+ * its `error` event first, and every caller re-emits the same code under its own contract id
+ * as it unwinds. So the FIRST contract-scoped `error` event is the origin, the same rule
+ * adapter.ts failureErrorIn applies. A token refusing inside a vault call is reported as the
+ * token, never as the vault.
  */
 function contractErrorFrom(events: xdr.DiagnosticEvent[]): { code: number; contract: string | null } | null {
   let found: { code: number; contract: string | null } | null = null
@@ -562,8 +565,8 @@ function contractErrorFrom(events: xdr.DiagnosticEvent[]): { code: number; contr
     if (err.switch().name !== 'sceContract') continue
     const code = Number(err.contractCode())
     const contract = contractIdString(ev.contractId() as Buffer | null)
-    if (label === 'error' && contract) found = { code, contract }
-    else if (!found) found = { code, contract }
+    if (label === 'error' && contract) return { code, contract }
+    if (!found) found = { code, contract }
   }
   return found
 }
@@ -651,14 +654,17 @@ export function decodeTxEvidence(
       const target = operations.find((o) => o.contract)
       const vaultCall = Boolean(target && target.function && VAULT_ENTRYPOINTS.has(target.function))
       const sameContract = Boolean(target && found.contract === target.contract)
-      const name = vaultCall && sameContract ? (errorName(found.code) ?? null) : null
+      // errorNameFor also checks the code is one this entrypoint can raise: a #10 against a
+      // pay is not OwnerIsOperator, it is a code our table does not describe for that call.
+      const name =
+        vaultCall && target?.function ? (errorNameFor(target.function, { code: found.code, ours: sameContract }) ?? null) : null
       contractError = {
         code: found.code,
         contract: found.contract,
         name,
         nameBasis: name
           ? 'Named from the AgentSpendPolicy error table (soroban/contracts/agent-spend-policy/src/error.rs): the called function is a vault entrypoint and the called contract raised the code. The contract\'s wasm was not re-read here.'
-          : 'Not named: the raiser is not the called contract, or the function is not an AgentSpendPolicy entrypoint, so no error table this repo owns defines the code.',
+          : 'Not named: the raiser is not the called contract, the function is not an AgentSpendPolicy entrypoint, or that entrypoint cannot raise this code, so no error table this repo owns defines it here.',
       }
     }
   }

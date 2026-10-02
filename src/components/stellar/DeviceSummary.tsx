@@ -9,8 +9,8 @@ export default function DeviceSummary({ device, label }: { device: DeviceMeta | 
   if (!device) {
     return (
       <p className="text-xs leading-relaxed text-foreground/55">
-        This browser did not record which authenticator made this passkey (it was made elsewhere, or before the page recorded
-        it). The chain does not know either.
+        {label ? `You named this device "${label}". ` : ''}This browser did not record which authenticator made this passkey (it
+        was made elsewhere, or before the page recorded it). The chain does not know either.
       </p>
     )
   }

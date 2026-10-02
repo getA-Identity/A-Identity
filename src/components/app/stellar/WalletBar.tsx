@@ -4,12 +4,16 @@
  *
  * The network shown is what the wallet says, read and never set. A wallet that cannot say
  * is labelled so, because owner signing is blocked for it further down. With no Stellar
- * wallet installed the strip says so and links to Freighter; the read panel below works
- * the same either way.
+ * wallet extension installed the strip says so and links to Freighter; the read panel below
+ * works the same either way.
+ *
+ * Web wallets (Albedo, xBull) are offered as a separate, labelled choice, never as proof
+ * that a wallet is installed: the kit reports them available in every browser, and neither
+ * reports its network, so they can show who owns a vault but cannot sign owner calls here.
  */
 import { useState } from 'react'
 import { Loader2, RefreshCw, Wallet } from 'lucide-react'
-import { stellarNetworkLabel } from '../../../lib/stellar/kit'
+import { isInstalledExtension, stellarNetworkLabel } from '../../../lib/stellar/kit'
 import { FREIGHTER_URL, shortId } from '../../../lib/stellar/vault-read'
 import { Chip, CopyButton } from './bits'
 import type { StellarWalletState } from './useStellarWallet'
@@ -18,7 +22,9 @@ export default function WalletBar({ wallet }: { wallet: StellarWalletState }) {
   const [picking, setPicking] = useState(false)
   const { detect, wallets, signer, network, busy, error } = wallet
   const freighter = wallets.find((w) => /freighter/i.test(w.id) || /freighter/i.test(w.name))
-  const installed = wallets.filter((w) => w.isAvailable)
+  const installed = wallets.filter(isInstalledExtension)
+  const web = wallets.filter((w) => w.web && w.isAvailable)
+  const choices = [...installed, ...web]
 
   return (
     <section aria-label="Stellar wallet" className="rounded-2xl border border-border bg-card p-4">
@@ -63,7 +69,7 @@ export default function WalletBar({ wallet }: { wallet: StellarWalletState }) {
                 {detect === 'checking'
                   ? 'Looking for Stellar wallets in this browser...'
                   : detect === 'none'
-                    ? 'No Stellar wallet is installed. Reading vaults works without one.'
+                    ? 'No Stellar wallet extension is installed. Reading vaults works without one.'
                     : detect === 'failed'
                       ? 'Could not load the wallet list. Reading vaults works without it.'
                       : wallet.rememberedAddress
@@ -85,14 +91,27 @@ export default function WalletBar({ wallet }: { wallet: StellarWalletState }) {
               Disconnect
             </button>
           ) : detect === 'none' || detect === 'failed' ? (
-            <a
-              href={freighter?.url || FREIGHTER_URL}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="rounded-full bg-accent px-3.5 py-1.5 text-xs font-semibold text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-            >
-              Install Freighter
-            </a>
+            <>
+              {detect === 'none' && web.length > 0 && (
+                <button
+                  type="button"
+                  onClick={() => setPicking((v) => !v)}
+                  disabled={busy}
+                  aria-expanded={picking}
+                  className="rounded-full border border-border px-3.5 py-1.5 text-xs font-semibold text-foreground/75 hover:bg-foreground/[0.05] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50"
+                >
+                  {busy ? 'Waiting for the wallet...' : 'Use a web wallet'}
+                </button>
+              )}
+              <a
+                href={freighter?.url || FREIGHTER_URL}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="rounded-full bg-accent px-3.5 py-1.5 text-xs font-semibold text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              >
+                Install Freighter
+              </a>
+            </>
           ) : (
             <button
               type="button"
@@ -108,10 +127,11 @@ export default function WalletBar({ wallet }: { wallet: StellarWalletState }) {
         </div>
       </div>
 
-      {/* The module picker: installed wallets only, the kit's own names and icons. */}
-      {picking && !signer && installed.length > 0 && (
-        <ul className="mt-3 grid gap-1.5 sm:grid-cols-2" aria-label="Installed Stellar wallets">
-          {installed.map((w) => (
+      {/* The module picker: installed extensions, then web wallets labelled as such, with
+          the kit's own names and icons. Wallets that are not installed are not listed. */}
+      {picking && !signer && choices.length > 0 && (
+        <ul className="mt-3 grid gap-1.5 sm:grid-cols-2" aria-label="Stellar wallets you can connect">
+          {choices.map((w) => (
             <li key={w.id}>
               <button
                 type="button"
@@ -124,10 +144,17 @@ export default function WalletBar({ wallet }: { wallet: StellarWalletState }) {
               >
                 {w.icon ? <img src={w.icon} alt="" className="h-5 w-5 rounded object-contain" /> : <Wallet size={16} aria-hidden="true" />}
                 {w.name}
+                {w.web && <Chip tone="muted">Web wallet</Chip>}
               </button>
             </li>
           ))}
         </ul>
+      )}
+      {picking && !signer && web.length > 0 && (
+        <p className="mt-2 text-[11px] text-foreground/60">
+          A web wallet ({web.map((w) => w.name).join(', ')}) does not report which network it is on. Connecting one shows whether you
+          own a vault; signing owner calls here needs a wallet that reports its network, such as Freighter.
+        </p>
       )}
 
       {error && (

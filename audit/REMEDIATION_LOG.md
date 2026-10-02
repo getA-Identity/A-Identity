@@ -42,8 +42,10 @@ incidentally, and says so. Re-verified against the working tree on 2026-08-25; t
 verification is noted inline wherever it was more than reading a commit message.
 
 **62 findings: 21 FIXED, 14 ACCEPTED, 27 OPEN.** Most of the open set is documentation and
-process, and most of it is cheap. One of the 21, A3-02, is fixed in source only: the two
-deployed v0.1.0 vaults still answer the old order until v0.1.1 vaults replace them, and its
+process, and most of it is cheap. One of the 21, A3-02, is fixed in source only: every deployed v0.1.0
+vault (pubnet `CB5LYXFK...`; testnet `CAIL6ECR...` and the 2026-09-19 passkey rehearsal
+vaults `CBGTXWFB...` and `CCV2MMK4...`; and any vault /stellar deploys on pubnet) still
+answers the old order, since a vault is fixed only when a v0.1.1 vault replaces it, and its
 row says so.
 
 Updated 2026-09-15, when the last three design decisions were recorded. Only one id moved:
@@ -93,7 +95,7 @@ past v0.1.1, because each changes the contract's public interface.
 | Id | Sev | Disposition | Detail |
 | --- | --- | --- | --- |
 | A3-01 | Low | **FIXED** | `f0c730f` |
-| A3-02 | Low | **FIXED** in source, v0.1.1 (2026-10-01); not yet deployed | `settle` now runs `policy::check_amount` first, so the same two violations return `InvalidAmount` on all three money paths, and the committed test is un-ignored and green. The fix is in `settle`, not the `withdraw` swap this row and the runbook used to prescribe, which would have made all three answer `InvalidPayee` and left the test red. Release wasm `353e4264...db7c0`, 11,605 bytes (macOS arm64 build). Still live in the deployed v0.1.0 wasm (`155eb31c...`) on both networks, which cannot be patched in place: each vault is fixed only when a v0.1.1 vault replaces it. The CI `LINUX_X64` hash in `soroban.yml` has to be re-recorded from the first CI run on the new source. Code entry uploaded to testnet 2026-10-01 (tx `09d041ab...9e02`); no v0.1.1 vault yet, see the evidence table |
+| A3-02 | Low | **FIXED** in source, v0.1.1 (2026-10-01); code entry on testnet, no vault runs it yet | `settle` now runs `policy::check_amount` first, so the same two violations return `InvalidAmount` on all three money paths, and the committed test is un-ignored and green. The fix is in `settle`, not the `withdraw` swap this row and the runbook used to prescribe, which would have made all three answer `InvalidPayee` and left the test red. Release wasm `353e4264...db7c0`, 11,605 bytes (macOS arm64 build). Still live in the deployed v0.1.0 wasm (`155eb31c...`) on both networks, which cannot be patched in place: each vault is fixed only when a v0.1.1 vault replaces it. The CI `LINUX_X64` hash in `soroban.yml` has to be re-recorded from the first CI run on the new source. Code entry uploaded to testnet 2026-10-01 (tx `09d041ab...9e02`); no v0.1.1 vault yet, see the evidence table |
 | A3-03 | Low | **FIXED** | `f0c730f` |
 | A3-04 | Low | **FIXED** | `f0c730f` |
 | A3-05 | Low | **FIXED** | `f0c730f` |

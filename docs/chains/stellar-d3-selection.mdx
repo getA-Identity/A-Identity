@@ -89,8 +89,14 @@ The caveats, none of which we can make go away:
 **The decision that answers the second caveat.** We do not use the kit's published wasm
 for the vault owner on testnet. We **build the account and the WebAuthn verifier
 ourselves** from the tag
-[`v0.7.2`](https://github.com/OpenZeppelin/stellar-contracts/tree/v0.7.2/packages/accounts),
-and upload them to testnet ourselves. The `v0.7.2` tag is on the audited release line:
+[`v0.7.2`](https://github.com/OpenZeppelin/stellar-contracts/tree/v0.7.2/packages/accounts).
+We did not have to upload them: when we went to, the account and both verifier code
+entries were already on testnet with exactly our build hashes, uploaded by someone else, so
+the upload was skipped. A code entry is named by the sha256 of its bytes, so the bytes on
+the ledger are the bytes we built. We extended the entries' TTLs and deployed our own two
+verifier instances, the WebAuthn verifier `CABPDJH4...` (tx `8c6894a8...`) and the
+ed25519 verifier `CCKPFIAA...` (tx `33642444...`); the receipt is
+`receipt-testnet-deploy-2026-10-01.json` in the directory linked below. The `v0.7.2` tag is on the audited release line:
 `packages/accounts/src` is byte-identical between `v0.7.0` and `v0.7.2` (we diffed it;
 the only changes under `packages/accounts` are a build-metadata block in `Cargo.toml` and
 the README). So "the audit at a named version" becomes something a reader can check
@@ -188,8 +194,9 @@ demo material only and has not been audited. It fails part 1.
 ## Decision
 
 **GO**: the passkey owner of a testnet spend vault is the OpenZeppelin smart account with
-one WebAuthn signer, **built by us from the audited release line at tag `v0.7.2`** and
-uploaded to testnet by us. The browser drives it through `smart-account-kit` 0.8.0, and
+one WebAuthn signer, **built by us from the audited release line at tag `v0.7.2`**, whose
+code entries were already on testnet with our build hashes, verified through WebAuthn by a
+verifier instance we deployed. The browser drives it through `smart-account-kit` 0.8.0, and
 OpenZeppelin Channels pays the network fee through our relay; the page names the account
 that paid.
 

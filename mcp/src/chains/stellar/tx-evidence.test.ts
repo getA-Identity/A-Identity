@@ -1,6 +1,7 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { Keypair, TransactionBuilder, xdr } from '@stellar/stellar-sdk'
+import { randomBytes } from 'node:crypto'
+import { Keypair, StrKey, TransactionBuilder, xdr } from '@stellar/stellar-sdk'
 import type { Transaction } from '@stellar/stellar-sdk'
 
 import { CHAINS } from '../registry.js'
@@ -122,6 +123,59 @@ test('without meta the refusal is still a failure, and the decoder says the erro
   assert.equal(ev.status, 'failed')
   assert.equal(ev.resultCode.contractError, null)
   assert.ok(ev.caveats.some((c) => /No result meta/.test(c)))
+})
+
+/** A contract-scoped `error` diagnostic event, base64, the shape a failed call emits per frame. */
+function errorEventXdr(contract: string, code: number): string {
+  return new xdr.DiagnosticEvent({
+    inSuccessfulContractCall: false,
+    event: new xdr.ContractEvent({
+      ext: new xdr.ExtensionPoint(0),
+      contractId: StrKey.decodeContract(contract) as never,
+      type: xdr.ContractEventType.diagnostic(),
+      body: new xdr.ContractEventBody(
+        0,
+        new xdr.ContractEventV0({
+          topics: [xdr.ScVal.scvSymbol('error'), xdr.ScVal.scvError(xdr.ScError.sceContract(code))],
+          data: xdr.ScVal.scvString('escalating Ok(ScErrorType::Contract) frame-exit to Err'),
+        }),
+      ),
+    }),
+  }).toXDR('base64')
+}
+
+/** The refused pay envelope, decoded against these diagnostic events instead of its own meta. */
+function refusedWith(events: string[]) {
+  return decodeTxEvidence(REFUSED_OVER_LIMIT.envelope_xdr, REFUSED_OVER_LIMIT.result_xdr, null, TESTNET_PASS, {
+    chain: testnet,
+    diagnosticEventsXdr: events,
+  })
+}
+
+test('a code a callee raised and the vault re-emitted is attributed to the callee, the first raiser, and is not named', () => {
+  const vault = testnet.contracts.spendVault as string
+  // A stand-in token contract: a random id, so nothing here claims a real address.
+  const token = StrKey.encodeContract(randomBytes(32))
+  // Emission order, oldest first: the token raises, then the vault re-emits as it unwinds.
+  const nested = refusedWith([errorEventXdr(token, 13), errorEventXdr(vault, 13)])
+  assert.equal(nested.resultCode.contractError?.code, 13)
+  assert.equal(nested.resultCode.contractError?.contract, token)
+  assert.equal(nested.resultCode.contractError?.name, null)
+  // #9 is a code pay CAN raise, so blaming the vault would name it InsufficientBalance.
+  const inTable = refusedWith([errorEventXdr(token, 9), errorEventXdr(vault, 9)])
+  assert.equal(inTable.resultCode.contractError?.contract, token)
+  assert.equal(inTable.resultCode.contractError?.name, null)
+  assert.match(inTable.resultCode.contractError?.nameBasis ?? '', /^Not named/)
+})
+
+test('a vault code is named only when the called entrypoint can raise it: #10 against pay stays a number', () => {
+  const vault = testnet.contracts.spendVault as string
+  const ev = refusedWith([errorEventXdr(vault, 10)])
+  assert.equal(ev.resultCode.contractError?.code, 10)
+  assert.equal(ev.resultCode.contractError?.contract, vault)
+  assert.equal(ev.resultCode.contractError?.name, null)
+  const own = refusedWith([errorEventXdr(vault, 5)])
+  assert.equal(own.resultCode.contractError?.name, 'DailyCapExceeded')
 })
 
 test('the owner freezes on testnet and pubnet carry source-account credentials: the transaction source is the authorizer and the fee payer', () => {

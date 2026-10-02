@@ -34,6 +34,7 @@ export default function WithdrawFlow({
   tokenSymbol,
   onReceipt,
   signIn,
+  held = false,
 }: {
   network: string
   contract: string
@@ -44,6 +45,8 @@ export default function WithdrawFlow({
   tokenSymbol: string
   onReceipt: (r: Receipt) => void
   signIn?: ReactNode
+  /** A transaction for this vault is still pending: nothing new is prepared or signed. */
+  held?: boolean
 }) {
   const [amount, setAmount] = useState('')
   const [to, setTo] = useState(owner)
@@ -152,7 +155,7 @@ export default function WithdrawFlow({
             <button
               type="button"
               onClick={confirm}
-              disabled={working}
+              disabled={working || held}
               className="inline-flex items-center gap-1.5 rounded-full bg-accent px-4 py-2 text-sm font-semibold text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50"
             >
               {working && <Loader2 size={14} className="animate-spin" aria-hidden="true" />}
@@ -219,7 +222,7 @@ export default function WithdrawFlow({
         </div>
         <button
           type="submit"
-          disabled={working}
+          disabled={working || held}
           className="inline-flex items-center justify-center gap-1.5 rounded-full bg-accent px-4 py-2 text-sm font-semibold text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50"
         >
           {working && <Loader2 size={14} className="animate-spin" aria-hidden="true" />}

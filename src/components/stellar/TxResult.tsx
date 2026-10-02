@@ -7,7 +7,9 @@ import FeePayer from './FeePayer'
 /**
  * The outcome of one chain write, in the vocabulary the rest of the product uses, and for a
  * settled one everything a reader needs to check it: the whole hash (copyable), its explorer
- * page, who paid the fee, and, for a passkey-signed write, the decoded authorization.
+ * page, who paid the fee, and, for a passkey-signed write, the decoded authorization. A
+ * pending one is submitted but unconfirmed, so it reads as pending with its hash, never as
+ * a failure.
  */
 export default function TxResult({
   net,
@@ -47,6 +49,14 @@ export default function TxResult({
   }
   if (write.outcome === 'refused') {
     return <p className="text-xs text-warn">{write.reason}</p>
+  }
+  if (write.outcome === 'pending') {
+    return (
+      <p className="text-xs text-warn">
+        {what} was submitted and is not confirmed yet: {write.reason} Check the link before trying again.{' '}
+        <TxLink hash={write.txHash} url={txUrl(net, write.txHash)} />
+      </p>
+    )
   }
   return (
     <p className="text-xs text-danger">

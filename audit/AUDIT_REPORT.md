@@ -86,7 +86,7 @@ rotation, so a compromised owner key is total and irreversible loss.
 | GHSA check | 0 of 215 locked crates in a published vulnerable range |
 | clippy `-D warnings` | clean, and enforced in CI (`soroban.yml:47`) |
 | clippy security lint set | **NOT enforced, and it does not pass.** `unwrap_used`, `expect_used`, `panic`, `indexing_slicing` and `arithmetic_side_effects` are enabled by no `clippy.toml`, no `[lints]` table and no crate attribute, and plain `-D warnings` enables none of them. Turned on by hand, the library alone fails with 4 errors: `unwrap()` at `storage.rs:144,152,160,168`. See A8-04 and A6-03 |
-| Deployed wasm | `155eb31c...79239` (v0.1.0) on both networks, byte-identical, verified by `stellar contract fetch`. The v0.1.1 source builds to `353e4264...db7c0`, 11,605 bytes, on macOS arm64; it is not deployed anywhere yet |
+| Deployed wasm | `155eb31c...79239` (v0.1.0) on both networks, byte-identical, verified by `stellar contract fetch`. The v0.1.1 source builds to `353e4264...db7c0`, 11,605 bytes, on macOS arm64; its code entry was uploaded to testnet on 2026-10-01 (tx `09d041ab...9e02`, ledger 4974389), and no vault instantiates it yet |
 
 ---
 

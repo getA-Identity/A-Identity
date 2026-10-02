@@ -54,8 +54,8 @@ against those limits before any value moves, and the verdict is ALLOW, WARN or D
   is owned by an OpenZeppelin smart account with a WebAuthn signer rather than a key.
   It is a REHEARSAL from 2026-09-19: every owner signature in it came from a software
   P-256 key in our own script, so it proves the contract path and nothing about a device.
-  The device-passkey run is made separately on testnet, in a browser, with an account and
-  verifier we build from OpenZeppelin's audited stellar-contracts release line (tag
+  The device-passkey run is planned, not yet done: it will be made separately on testnet,
+  in a browser, with an account and verifier we build from OpenZeppelin's audited stellar-contracts release line (tag
   v0.7.2). Why that account: https://a-identity.mintlify.site/chains/stellar-d3-selection.
   What losing the passkey means: https://a-identity.mintlify.site/chains/stellar-passkey-recovery.
 - Public policy counters currently read zero, because no live agent has produced a

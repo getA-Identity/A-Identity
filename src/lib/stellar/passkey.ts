@@ -166,17 +166,22 @@ export type PasskeyAccount = {
   creation?: { txHash: string; ledger?: number }
   /** What this browser recorded about the authenticator when the passkey was made here. */
   device: DeviceMeta | null
+  /** The name the owner gave this device when it was enrolled here, or null. */
+  label: string | null
 }
 
 /**
  * What one owner-signed write came to. `settled` is the only state with a hash that made
  * a ledger; `refused` is the contract saying no (named when the code is our vault's);
- * `prepared` means the fee sponsor is not configured and nothing was submitted.
+ * `prepared` means the fee sponsor is not configured and nothing was submitted; `pending`
+ * means it WAS submitted, under the hash it carries, and was not in a ledger yet when the
+ * kit stopped waiting, so it may still land and is neither settled nor failed.
  */
 export type ChainWrite =
   | { outcome: 'settled'; txHash: string; ledger?: number; explorerUrl: string }
   | { outcome: 'refused'; contractErrorCode: number; contractErrorName: string; reason: string; txHash?: string }
   | { outcome: 'prepared'; reason: string }
+  | { outcome: 'pending'; reason: string; txHash: string }
   | { outcome: 'failed'; reason: string; txHash?: string }
 
 export type CreateOutcome =
@@ -258,6 +263,10 @@ function saveDeviceRecord(net: PasskeyNetwork, rec: DeviceRecord): void {
 
 function deviceFor(net: PasskeyNetwork, credentialId: string): DeviceMeta | null {
   return readDeviceRecords(net).find((r) => r.credentialId === credentialId)?.meta ?? null
+}
+
+function labelFor(net: PasskeyNetwork, credentialId: string): string | null {
+  return readDeviceRecords(net).find((r) => r.credentialId === credentialId)?.label ?? null
 }
 
 // ── the kit, one per network ─────────────────────────────────────────────────────
@@ -403,6 +412,7 @@ function accountOf(net: PasskeyNetwork, r: { contractId: string; credentialId: s
     publicKeyHex: hexOf(c?.publicKey),
     creation: c?.creationTransactionHash ? { txHash: c.creationTransactionHash, ledger: c.creationLedger } : undefined,
     device: deviceFor(net, r.credentialId),
+    label: labelFor(net, r.credentialId),
   }
 }
 
@@ -463,7 +473,7 @@ export async function createPasskeyAccount(
   try {
     const r = await kit.createWallet('A-Identity', `A-Identity ${NETWORKS[net].label}`, { autoSubmit: true })
     const submit = (r as { submitResult?: TransactionResult }).submitResult
-    return createOutcome(net, r.contractId, r.credentialId, hexOf(r.publicKey), submit)
+    return createOutcome(net, r.contractId, r.credentialId, hexOf(r.publicKey), submit, opts.label ?? null)
   } finally {
     off()
     state.nextLabel = null
@@ -480,12 +490,20 @@ export async function deployPendingPasskey(net: PasskeyNetwork, credentialId: st
   return createOutcome(net, r.contractId, credentialId, hexOf(stored?.publicKey), r.submitResult)
 }
 
-function createOutcome(net: PasskeyNetwork, contractId: string, credentialId: string, publicKeyHex: string | null, submit: TransactionResult | undefined): CreateOutcome {
+function createOutcome(
+  net: PasskeyNetwork,
+  contractId: string,
+  credentialId: string,
+  publicKeyHex: string | null,
+  submit: TransactionResult | undefined,
+  label?: string | null,
+): CreateOutcome {
   const write: ChainWrite = submit ? toWrite(net, submit) : { outcome: 'failed', reason: 'The kit returned no submission result.' }
   const device = deviceFor(net, credentialId)
   if (write.outcome === 'settled') {
     markSession(net, true)
-    return { ok: true, account: { contractId, credentialId, publicKeyHex, creation: { txHash: write.txHash, ledger: write.ledger }, device }, write }
+    const account = { contractId, credentialId, publicKeyHex, creation: { txHash: write.txHash, ledger: write.ledger }, device, label: label ?? labelFor(net, credentialId) }
+    return { ok: true, account, write }
   }
   return { ok: false, credentialId, contractId, device, write }
 }
@@ -777,6 +795,13 @@ const VAULT_ERRORS: Record<number, string> = {
  */
 const PREPARED = /\bis unset\b|and nothing was|\bprepared\b|not configured|no fee sponsor|sponsor (is )?not|relayer (is )?not configured/i
 
+/**
+ * What the kit says when it submitted a transaction and stopped polling before the ledger
+ * had it ("Transaction confirmation timed out", with the hash). That write may still land,
+ * so it is pending, never failed: calling it failed invites a second submission.
+ */
+const UNCONFIRMED = /timed out/i
+
 function toWrite(net: PasskeyNetwork, r: TransactionResult, vault?: string): ChainWrite {
   if (r.success) return { outcome: 'settled', txHash: r.hash, ledger: r.ledger, explorerUrl: txUrl(net, r.hash) }
   const err = r.error as { message?: string; contractCode?: number; contractErrorName?: string }
@@ -797,6 +822,9 @@ function toWrite(net: PasskeyNetwork, r: TransactionResult, vault?: string): Cha
     }
   }
   if (PREPARED.test(message)) return { outcome: 'prepared', reason: message }
+  if (r.hash && UNCONFIRMED.test(message)) {
+    return { outcome: 'pending', reason: 'Submitted, and not in a ledger yet when the wait ran out. It may still land.', txHash: r.hash }
+  }
   return { outcome: 'failed', reason: message, txHash: r.hash }
 }
 

@@ -32,7 +32,29 @@ function native(v: xdr.ScVal): unknown {
   }
 }
 
-function describeCreateV2(create: xdr.CreateContractArgsV2): { wasmHash: string | null; deployer: string | null; createXdr: string; constructorArgs: number } {
+/**
+ * The OpenZeppelin account constructor's two arguments, `(Vec<Signer>, Map<Address, Val>)`,
+ * when the deploy carries exactly those. Null for any other count or type, so a constructor
+ * this file cannot read is refused by the decision rather than passed as an empty one.
+ */
+function describeAccountConstructor(args: xdr.ScVal[]): { signers: RelaySigner[]; policies: number } | null {
+  try {
+    if (args.length !== 2) return null
+    const [signers, policies] = args
+    if (signers.switch().name !== 'scvVec' || policies.switch().name !== 'scvMap') return null
+    return { signers: (signers.vec() ?? []).map((s) => describeSigner(s)), policies: (policies.map() ?? []).length }
+  } catch {
+    return null
+  }
+}
+
+function describeCreateV2(create: xdr.CreateContractArgsV2): {
+  wasmHash: string | null
+  deployer: string | null
+  createXdr: string
+  constructorArgs: number
+  account: { signers: RelaySigner[]; policies: number } | null
+} {
   const executable = create.executable()
   const wasmHash =
     executable.switch().name === 'contractExecutableWasm' ? Buffer.from(executable.wasmHash()).toString('hex') : null
@@ -45,7 +67,8 @@ function describeCreateV2(create: xdr.CreateContractArgsV2): { wasmHash: string 
       deployer = null
     }
   }
-  return { wasmHash, deployer, createXdr: create.toXDR('base64'), constructorArgs: create.constructorArgs().length }
+  const args = create.constructorArgs()
+  return { wasmHash, deployer, createXdr: create.toXDR('base64'), constructorArgs: args.length, account: describeAccountConstructor(args) }
 }
 
 /** The smart account's `execute(target, target_fn, target_args)`, when the args have that shape. */

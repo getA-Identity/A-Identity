@@ -8,7 +8,8 @@ description: "What happens to a passkey-owned Stellar vault if the passkey is lo
   passkey, the vault's owner controls (freeze, unfreeze, policy changes and withdraw) are
   gone for good. The funds in the vault become unreachable to you, and nobody, including
   A-Identity, can recover them. The agent, which we call the operator, can keep paying
-  allowlisted payees inside the policy until its session key expires.
+  allowlisted payees inside the daily cap. Vaults created from this page set no session
+  expiry, so it can keep paying until the vault balance runs out.
 </Warning>
 
 That warning is the whole risk in one paragraph. The rest of this page explains why it is
@@ -59,7 +60,9 @@ opposite of a backup.
 
 Adding a device is itself an owner action: **the existing passkey must approve it**. That
 means it has to happen **before** you lose the first device. After the loss there is
-nothing left that can approve the change.
+nothing left that can approve the change. It also has to happen **after** the vault is
+created: the vault is deployed only for a smart account with exactly one rule holding the
+one passkey, so the page offers the second device once the vault exists, not before.
 
 <Note>
   The page offers "Add another device" on testnet. Whether a second-device enrolment has
@@ -77,10 +80,12 @@ nothing left that can approve the change.
   owner. That is the point of the design, and it is also why we cannot help after a loss.
 
 What we do control is the **operator**, the agent's key. It can only call `pay()` inside
-the limits you set: the daily cap, the per-payment ceiling, the allowlist and the session
-expiry. It cannot withdraw, cannot change the policy and cannot unfreeze. If you lose the
-passkey while the vault is frozen, the agent stays stopped. If you lose it while the vault
-is running, the agent keeps spending inside those limits until the session key expires.
+the limits you set: the daily cap, the per-payment ceiling and the allowlist. The vault
+also supports a session expiry, but vaults created from this page leave it unset (0,
+which means no time limit). It cannot withdraw, cannot change the policy and cannot
+unfreeze. If you lose the passkey while the vault is frozen, the agent stays stopped. If
+you lose it while the vault is running, the agent keeps spending inside those limits, day
+after day, until the vault balance runs out.
 
 ## Testnet
 
