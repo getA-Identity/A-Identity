@@ -43,6 +43,19 @@ export function isInstalledExtension(w: Pick<StellarWalletInfo, 'id' | 'isAvaila
   return w.isAvailable && !WEB_WALLET_IDS.has(w.id)
 }
 
+/**
+ * What a wallet picker may say about one wallet the kit reports: installed in this browser,
+ * a web wallet that opens its own site (never "detected", because nothing was found), or
+ * known to the kit and not here. Read through this rather than through isAvailable, which is
+ * a constant true for the web wallets.
+ */
+export type StellarWalletPresence = 'installed' | 'web' | 'missing'
+
+export function stellarWalletPresence(w: Pick<StellarWalletInfo, 'id' | 'isAvailable'>): StellarWalletPresence {
+  if (isInstalledExtension(w)) return 'installed'
+  return WEB_WALLET_IDS.has(w.id) ? 'web' : 'missing'
+}
+
 /** The slice of the kit this module uses, typed here so the kit's own types stay internal. */
 type KitLike = {
   init(params: unknown): void

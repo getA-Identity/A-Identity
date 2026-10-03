@@ -12,7 +12,7 @@ import {
   walletConnectEnabled,
   type WalletOption,
 } from '../../lib/wallets'
-import { connectStellar, listStellarWallets, type StellarWalletInfo } from '../../lib/stellar/kit'
+import { connectStellar, listStellarWallets, stellarWalletPresence, type StellarWalletInfo } from '../../lib/stellar/kit'
 import { ALGORAND_WALLETS, connectAlgorand, type AlgorandWalletId } from '../../lib/algorand/wallet'
 import { CHAINS } from '../../lib/chains'
 import { networkMarks, type Ecosystem, type WalletSigner } from '../../lib/wallet/types'
@@ -24,8 +24,8 @@ import ChainLogo from '../app/ChainLogo'
  *
  * Each row is a wallet; on its right sit the marks of the networks that wallet reaches,
  * which is the only chain information a person needs and the only one shown. Wallets
- * found in this browser come first, phone wallets next, and everything the kit knows but
- * is not installed waits behind "More wallets". The same picker signs in and, in `link`
+ * found in this browser come first, then phone and web wallets, each named for what it is,
+ * and everything the kit knows but is not installed waits behind "More wallets". The same picker signs in and, in `link`
  * mode, attaches one more wallet to an account that is already signed in.
  */
 export default function WalletModal({
@@ -105,8 +105,12 @@ export default function WalletModal({
       })
     }
     for (const w of stellarWallets) {
+      // Not w.isAvailable: the kit reports Albedo and xBull as available everywhere, because
+      // they open their own site, so "available" would call them detected in an empty browser.
+      const presence = stellarWalletPresence(w)
       out.push({
-        id: `stellar:${w.id}`, name: w.name, family: 'stellar', icon: w.icon, status: w.isAvailable ? 'detected' : 'missing',
+        id: `stellar:${w.id}`, name: w.name, family: 'stellar', icon: w.icon,
+        status: presence === 'installed' ? 'detected' : presence,
         // The wallet module re-checks availability on connect, so a late announcer works.
         connect: () => connectStellar(w.id),
       })
@@ -285,8 +289,9 @@ type PickerRow = {
   name: string
   family: Ecosystem
   icon?: string
-  /** detected: installed here. phone: a mobile app over QR. missing: known, not installed. */
-  status: 'detected' | 'phone' | 'missing'
+  /** detected: installed here. phone: a mobile app over QR. web: a wallet that opens its own
+   *  site, nothing to install. missing: known, not installed. */
+  status: 'detected' | 'phone' | 'web' | 'missing'
   connect: () => Promise<WalletSigner>
 }
 
@@ -318,7 +323,13 @@ function WalletRow({ row, index, busy, onPick }: { row: PickerRow; index: number
         <span className="block truncate text-sm font-semibold text-foreground">{row.name}</span>
         <span className="mt-0.5 flex items-center gap-1.5 text-[11px] text-foreground/45">
           {row.status === 'detected' && <span className="h-1.5 w-1.5 rounded-full bg-ok" aria-hidden="true" />}
-          {row.status === 'detected' ? 'Detected in this browser' : row.status === 'phone' ? 'Phone app, scan a code' : 'Not installed'}
+          {row.status === 'detected'
+            ? 'Detected in this browser'
+            : row.status === 'phone'
+              ? 'Phone app, scan a code'
+              : row.status === 'web'
+                ? 'Web wallet, opens its own site'
+                : 'Not installed'}
         </span>
       </span>
       <span className="flex shrink-0 items-center" aria-label={`Works on ${networks.map((c) => c.shortName).join(', ')}`} title={networks.map((c) => c.shortName).join(', ')}>
