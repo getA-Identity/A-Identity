@@ -1219,7 +1219,7 @@ export const PROVENANCE: ChainProvenance[] = [
         network: 'stellar-testnet',
         custody: 'ours: local CLI keystore',
         usedFor:
-          'pay() inside the D2 vault policy and nothing else: it can never call an owner entrypoint. Unfunded, and not used during the SoW 2 sprint.',
+          'pay() inside the D2 vault policy and nothing else: it can never call an owner entrypoint. The public Friendbot created the account on 2026-10-03 (tx 02290d96..., test XLM only) so its explorer page resolves; it has never called pay() and is not used during the SoW 2 sprint.',
         publishedAt: '2026-10-03',
       },
     ],
