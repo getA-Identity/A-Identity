@@ -453,12 +453,22 @@ test('the SOW 2 section resolves every hash and passes no rehearsal off as a del
   }
   // The 2026-09-19 runs were signed by a software key in our own script. They stay labeled
   // as a rehearsal in the field AND in the label, because the label is what a reader sees.
-  const rehearsal = provenanceFor('stellar-testnet')!.artifacts.filter((a) => a.date === '2026-09-19')
+  // Picked by the runs' own release record rather than by date: the flagship vault's owner
+  // also withdrew to our operator that day, which is ours but no part of the runs.
+  const runRecord = readFileSync(repoFile('soroban/releases/testnet-passkey-owner-2026-09-19.json'), 'utf8')
+  const rehearsal = provenanceFor('stellar-testnet')!.artifacts.filter((a) => runRecord.includes(a.txHash))
   assert.ok(rehearsal.length >= 13)
   for (const a of rehearsal) {
     assert.equal(a.deliverable, 'rehearsal', `${a.label} is from the 2026-09-19 software-key run`)
     assert.match(a.label, /^Rehearsal/, `${a.label} must say it is a rehearsal where a reader sees it`)
     assert.ok(!/the visitor's/i.test(a.note ?? ''), `${a.label} calls our own run the visitor's`)
+  }
+  // Every later rehearsal too (the 2026-10-03 run on our v0.7.2 build was the next one): the
+  // field alone is not what a reader sees, so a rehearsal row says so in its label.
+  for (const p of stellarEntries()) {
+    for (const a of p.artifacts.filter((x) => x.deliverable === 'rehearsal')) {
+      assert.match(a.label, /^Rehearsal/, `${a.label} is a rehearsal and must say so where a reader sees it`)
+    }
   }
   const report = sow2Report()
   for (const d of report.deliverables) assert.equal(d.artifactsLinked.length, d.artifacts.length)

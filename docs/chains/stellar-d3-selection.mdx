@@ -200,6 +200,14 @@ verifier instance we deployed. The browser drives it through `smart-account-kit`
 OpenZeppelin Channels pays the network fee through our relay; the page names the account
 that paid.
 
+On **2026-10-03** this build carried its first transactions: the whole owner path ran once
+through our relay and deploy route, with software P-256 keys standing in for a device
+(account deploy, vault deploy, set_policy, freeze, unfreeze, withdraw, and a second passkey
+added as its own rule that then withdrew on its own). That run is a rehearsal, labeled as
+one on the proof page, and it is not evidence of a device passkey; its record is
+`testnet-passkey-rehearsal-v072-2026-10-03.json` in
+[`soroban/releases`](https://github.com/getA-Identity/A-Identity/tree/main/soroban/releases).
+
 The risk that remains, in one place:
 
 - the auditor is the author's own security team;

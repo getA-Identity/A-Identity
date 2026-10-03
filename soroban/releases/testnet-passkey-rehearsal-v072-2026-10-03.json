@@ -1,0 +1,345 @@
+{
+  "note": "A REHEARSAL of the SoW 2 D3 owner path on our own OpenZeppelin v0.7.2 build, with SOFTWARE P-256 keys generated in mcp/scripts/stellar-passkey-proof.mjs standing in for device passkeys. Nothing here is D3 evidence: the chain verifies a P-256 signature and cannot tell a device authenticator from a key in our process. It exists so the recorded device session is not the first time this path runs.",
+  "record": "testnet-passkey-rehearsal-v072-2026-10-03",
+  "deliverable": "rehearsal",
+  "network": "stellar:testnet",
+  "networkPassphrase": "Test SDF Network ; September 2015",
+  "ranAt": {
+    "start": "2026-10-03T12:40:15.635Z",
+    "end": "2026-10-03T12:42:32.686Z",
+    "date": "2026-10-03"
+  },
+  "route": {
+    "kind": "backend",
+    "base": "http://localhost:3399",
+    "note": "The page's route: smart-account-kit configured as src/lib/stellar/passkey.ts configures it (the kit's shared sign-only deployer, relayerUrl <base>/api/stellar/passkey/relay?network=...), the vault deployed and seeded by POST <base>/api/stellar/passkey/vault/deploy, and the agent paying through POST <base>/api/stellar/passkey/agent-pay. The backend was mcp/dist built from main efadf663 and run on a local machine with exactly two variables set, STELLAR_TESTNET_SIGNER_SECRET (the operator GDZXSO4A...) and X402_STELLAR_TESTNET_OZ_KEY (our OpenZeppelin Channels testnet key), the same two the hosted backend needs for D3; no other key was loaded."
+  },
+  "kit": {
+    "package": "smart-account-kit",
+    "version": "0.8.0",
+    "thirdParty": true
+  },
+  "smartAccount": {
+    "contractId": "CD5WPJ5OHE4MNQ6UW2KTWIYRMY7QTZMTY7HXEAPKY6QISUDCISHV3BPR",
+    "deployTx": "ac287daf11b3b9bd8219d57582dc92c0dada49bf3474a8f7ecbe00ef57873027",
+    "wasmHash": "a12747ff6c139dc14fc2fd30d200d6bbb5da7b5d59812c047ce1f9cad226b289",
+    "wasmHashReadAtLedger": 5001527,
+    "webauthnVerifier": "CABPDJH4OPZ6GPOFIFH3QKTUADUDRFD2HPYLRBXRLK4ZBVDHPIESVJPD",
+    "rulesAfterRun": [
+      {
+        "id": 0,
+        "contextType": "default",
+        "policies": 0,
+        "signers": [
+          {
+            "kind": "external",
+            "verifier": "CABPDJH4OPZ6GPOFIFH3QKTUADUDRFD2HPYLRBXRLK4ZBVDHPIESVJPD"
+          }
+        ]
+      },
+      {
+        "id": 1,
+        "contextType": "default",
+        "policies": 0,
+        "signers": [
+          {
+            "kind": "external",
+            "verifier": "CABPDJH4OPZ6GPOFIFH3QKTUADUDRFD2HPYLRBXRLK4ZBVDHPIESVJPD"
+          }
+        ]
+      }
+    ],
+    "note": "Rule 0 holds the first passkey alone; the second rule holds the second passkey alone, Default context, no policy, so either can authorize on its own. Public keys and credential ids are deliberately not recorded."
+  },
+  "vault": {
+    "contractId": "CCFQEMTYHUEUYKCU5M6HHARUWTTHZX5VYNHGVRYA5R2Y2IVHALLDBKYT",
+    "deployTx": "d5b44ad8c0abdfce90f1a3f3aaf2903dd26b4a26e9be5cd6bf5c458d4e7b0b40",
+    "wasmHash": "353e4264f51e6173b9a2a60603239914cbb1456956e912374caf4d9b358db7c0",
+    "owner": "CD5WPJ5OHE4MNQ6UW2KTWIYRMY7QTZMTY7HXEAPKY6QISUDCISHV3BPR",
+    "operator": "GDZXSO4AOKPSHMQZMBNEEBQNYOIF7TWDPD7K2U5VAPKFN3QIAIELTAN6",
+    "token": "CBIELTK6YBZJU5UP2WWQEUCYKLPU6AUNZ2BQ4WWFEIE3USCIHMXQDAMA",
+    "dailyCapUsd": 10,
+    "autoApproveUsd": 2,
+    "seedUsd": 0.2
+  },
+  "payee": "GDZXSO4AOKPSHMQZMBNEEBQNYOIF7TWDPD7K2U5VAPKFN3QIAIELTAN6",
+  "withdrawTo": "GDZXSO4AOKPSHMQZMBNEEBQNYOIF7TWDPD7K2U5VAPKFN3QIAIELTAN6",
+  "withdrawTrustline": "checked on Horizon: USDC:GBBD47IF6LWK7P7MDEVSCWR7DPUWV3NY3DTQEVFL4NAT4AQH3ZLLFLA5 present and authorized",
+  "secondDeviceRuleId": 1,
+  "artifacts": [
+    {
+      "step": "smart account deploy",
+      "txHash": "ac287daf11b3b9bd8219d57582dc92c0dada49bf3474a8f7ecbe00ef57873027",
+      "ledger": 5001527,
+      "status": "SUCCESS",
+      "sourceAccount": "GBBDBS7EXFXT7CAK77JZPEO4CHQSTSXNJGMTFIAWLZ6SQAR64ICJBCXA",
+      "feeAccount": "GCNJB6V5YIODDSSCWXZ2VOKMRPRVZ2V723RRQS6STXE6NWTGVOJY35CN",
+      "feeBump": true,
+      "feeChargedStroops": "518804"
+    },
+    {
+      "step": "vault deploy",
+      "txHash": "d5b44ad8c0abdfce90f1a3f3aaf2903dd26b4a26e9be5cd6bf5c458d4e7b0b40",
+      "ledger": 5001529,
+      "status": "SUCCESS",
+      "sourceAccount": "GDZXSO4AOKPSHMQZMBNEEBQNYOIF7TWDPD7K2U5VAPKFN3QIAIELTAN6",
+      "feeAccount": "GDZXSO4AOKPSHMQZMBNEEBQNYOIF7TWDPD7K2U5VAPKFN3QIAIELTAN6",
+      "feeBump": false,
+      "feeChargedStroops": "6211975"
+    },
+    {
+      "step": "seed (by the deploy route)",
+      "txHash": "66433fb8251b2213147dce36c1c49dbba7b64188def7ec4cde3601c5615ded3d",
+      "ledger": 5001530,
+      "status": "SUCCESS",
+      "sourceAccount": "GDZXSO4AOKPSHMQZMBNEEBQNYOIF7TWDPD7K2U5VAPKFN3QIAIELTAN6",
+      "feeAccount": "GDZXSO4AOKPSHMQZMBNEEBQNYOIF7TWDPD7K2U5VAPKFN3QIAIELTAN6",
+      "feeBump": false,
+      "feeChargedStroops": "492968"
+    },
+    {
+      "step": "set_policy by passkey",
+      "txHash": "68971bde0327080686e76bff3a8df01ddef90162de19d255782ebc6fb9d7913f",
+      "ledger": 5001532,
+      "status": "SUCCESS",
+      "sourceAccount": "GDT3KWZ2WZR5NV7GQ256K4M4LGAUBPOHNTDIKBJFLX5TTBAX3TDJABPN",
+      "feeAccount": "GCNJB6V5YIODDSSCWXZ2VOKMRPRVZ2V723RRQS6STXE6NWTGVOJY35CN",
+      "feeBump": true,
+      "feeChargedStroops": "1017407",
+      "authorization": {
+        "credential": "address",
+        "address": "CD5WPJ5OHE4MNQ6UW2KTWIYRMY7QTZMTY7HXEAPKY6QISUDCISHV3BPR",
+        "signerKind": "webauthn-secp256r1",
+        "verifier": "CABPDJH4OPZ6GPOFIFH3QKTUADUDRFD2HPYLRBXRLK4ZBVDHPIESVJPD",
+        "contextRuleIds": [
+          0
+        ],
+        "flags": {
+          "UP": true,
+          "UV": true,
+          "BE": false,
+          "BS": false,
+          "AT": false,
+          "ED": false
+        },
+        "origin": "https://a-identity.xyz",
+        "challengeBinding": "auth-digest",
+        "signatureVerifies": true
+      }
+    },
+    {
+      "step": "set_allowed by passkey",
+      "txHash": "5d78975e422627055438e06477c3476054b9fd35973e2de7d2beb890ccbd1bd7",
+      "ledger": 5001535,
+      "status": "SUCCESS",
+      "sourceAccount": "GBDUH7UPFERLDKEDSB4OB4PUBPJV2ALWQC523UYLAWLF6EME5O4TYIQO",
+      "feeAccount": "GCNJB6V5YIODDSSCWXZ2VOKMRPRVZ2V723RRQS6STXE6NWTGVOJY35CN",
+      "feeBump": true,
+      "feeChargedStroops": "1468836",
+      "authorization": {
+        "credential": "address",
+        "address": "CD5WPJ5OHE4MNQ6UW2KTWIYRMY7QTZMTY7HXEAPKY6QISUDCISHV3BPR",
+        "signerKind": "webauthn-secp256r1",
+        "verifier": "CABPDJH4OPZ6GPOFIFH3QKTUADUDRFD2HPYLRBXRLK4ZBVDHPIESVJPD",
+        "contextRuleIds": [
+          0
+        ],
+        "flags": {
+          "UP": true,
+          "UV": true,
+          "BE": false,
+          "BS": false,
+          "AT": false,
+          "ED": false
+        },
+        "origin": "https://a-identity.xyz",
+        "challengeBinding": "auth-digest",
+        "signatureVerifies": true
+      }
+    },
+    {
+      "step": "agent pays the allowed payee",
+      "txHash": "40753e65ed63e31c2583a06e628cda91bd11513b3fa72975c38b2ba3267f55fb",
+      "ledger": 5001538,
+      "status": "SUCCESS",
+      "sourceAccount": "GDZXSO4AOKPSHMQZMBNEEBQNYOIF7TWDPD7K2U5VAPKFN3QIAIELTAN6",
+      "feeAccount": "GDZXSO4AOKPSHMQZMBNEEBQNYOIF7TWDPD7K2U5VAPKFN3QIAIELTAN6",
+      "feeBump": false,
+      "feeChargedStroops": "29057"
+    },
+    {
+      "step": "set_frozen(true) by passkey",
+      "txHash": "6176ed231dc5f3442eba125ba8143bb27fc3057fd81849c61b0899297b0057e3",
+      "ledger": 5001540,
+      "status": "SUCCESS",
+      "sourceAccount": "GAGD6OJAMVLDXW2LG5YI42QRETNLUHSTPDIIMDMX2Y7JZUDYSVJO5ZB7",
+      "feeAccount": "GCNJB6V5YIODDSSCWXZ2VOKMRPRVZ2V723RRQS6STXE6NWTGVOJY35CN",
+      "feeBump": true,
+      "feeChargedStroops": "21671",
+      "authorization": {
+        "credential": "address",
+        "address": "CD5WPJ5OHE4MNQ6UW2KTWIYRMY7QTZMTY7HXEAPKY6QISUDCISHV3BPR",
+        "signerKind": "webauthn-secp256r1",
+        "verifier": "CABPDJH4OPZ6GPOFIFH3QKTUADUDRFD2HPYLRBXRLK4ZBVDHPIESVJPD",
+        "contextRuleIds": [
+          0
+        ],
+        "flags": {
+          "UP": true,
+          "UV": true,
+          "BE": false,
+          "BS": false,
+          "AT": false,
+          "ED": false
+        },
+        "origin": "https://a-identity.xyz",
+        "challengeBinding": "auth-digest",
+        "signatureVerifies": true
+      }
+    },
+    {
+      "step": "set_frozen(false) by passkey",
+      "txHash": "ac4a2f8f0fc4c198924cf2caf2c08d4818408ce5a7bb525f0a0422228eda8019",
+      "ledger": 5001543,
+      "status": "SUCCESS",
+      "sourceAccount": "GCSVBJGA3WSEBTCC6D3XJN3J4NSHOLVFNUXKUZ6R2BWZZ2J63EHX3CXB",
+      "feeAccount": "GCNJB6V5YIODDSSCWXZ2VOKMRPRVZ2V723RRQS6STXE6NWTGVOJY35CN",
+      "feeBump": true,
+      "feeChargedStroops": "21671",
+      "authorization": {
+        "credential": "address",
+        "address": "CD5WPJ5OHE4MNQ6UW2KTWIYRMY7QTZMTY7HXEAPKY6QISUDCISHV3BPR",
+        "signerKind": "webauthn-secp256r1",
+        "verifier": "CABPDJH4OPZ6GPOFIFH3QKTUADUDRFD2HPYLRBXRLK4ZBVDHPIESVJPD",
+        "contextRuleIds": [
+          0
+        ],
+        "flags": {
+          "UP": true,
+          "UV": true,
+          "BE": false,
+          "BS": false,
+          "AT": false,
+          "ED": false
+        },
+        "origin": "https://a-identity.xyz",
+        "challengeBinding": "auth-digest",
+        "signatureVerifies": true
+      }
+    },
+    {
+      "step": "withdraw by passkey",
+      "txHash": "d946a1ff310281e2e79ba8017af4b2ee5c5f9cc744ce5e8f4994015126bc4a2c",
+      "ledger": 5001545,
+      "status": "SUCCESS",
+      "sourceAccount": "GAAYH6NV4BNYDDAJYYGKKTWQQ7TEYZK5WIVU5ZQGHFFCJYZPHEECAQFE",
+      "feeAccount": "GCNJB6V5YIODDSSCWXZ2VOKMRPRVZ2V723RRQS6STXE6NWTGVOJY35CN",
+      "feeBump": true,
+      "feeChargedStroops": "28748",
+      "authorization": {
+        "credential": "address",
+        "address": "CD5WPJ5OHE4MNQ6UW2KTWIYRMY7QTZMTY7HXEAPKY6QISUDCISHV3BPR",
+        "signerKind": "webauthn-secp256r1",
+        "verifier": "CABPDJH4OPZ6GPOFIFH3QKTUADUDRFD2HPYLRBXRLK4ZBVDHPIESVJPD",
+        "contextRuleIds": [
+          0
+        ],
+        "flags": {
+          "UP": true,
+          "UV": true,
+          "BE": false,
+          "BS": false,
+          "AT": false,
+          "ED": false
+        },
+        "origin": "https://a-identity.xyz",
+        "challengeBinding": "auth-digest",
+        "signatureVerifies": true
+      }
+    },
+    {
+      "step": "add_context_rule (second device)",
+      "txHash": "b57f931d874bb4d53ed8ec1d8e52bd53cfb2e7f1e1ede026989c0467d0cc85aa",
+      "ledger": 5001548,
+      "status": "SUCCESS",
+      "sourceAccount": "GBVZMLMPBXLIOMHWC5AYPIYZJHXAV56CFL3H4O5WFZMKXOYVRETMMUMA",
+      "feeAccount": "GCNJB6V5YIODDSSCWXZ2VOKMRPRVZ2V723RRQS6STXE6NWTGVOJY35CN",
+      "feeBump": true,
+      "feeChargedStroops": "416675",
+      "authorization": {
+        "credential": "address",
+        "address": "CD5WPJ5OHE4MNQ6UW2KTWIYRMY7QTZMTY7HXEAPKY6QISUDCISHV3BPR",
+        "signerKind": "webauthn-secp256r1",
+        "verifier": "CABPDJH4OPZ6GPOFIFH3QKTUADUDRFD2HPYLRBXRLK4ZBVDHPIESVJPD",
+        "contextRuleIds": [
+          0
+        ],
+        "flags": {
+          "UP": true,
+          "UV": true,
+          "BE": false,
+          "BS": false,
+          "AT": false,
+          "ED": false
+        },
+        "origin": "https://a-identity.xyz",
+        "challengeBinding": "auth-digest",
+        "signatureVerifies": true
+      }
+    },
+    {
+      "step": "withdraw by the second passkey",
+      "txHash": "741ad16c32d84dfe226eb25a4c0571665ac8c815fbe0bb8de77fb6b38c1bae16",
+      "ledger": 5001551,
+      "status": "SUCCESS",
+      "sourceAccount": "GAFG3ZV46DE662PINNIIXXHINMKTWQLRSCF3JDBRTEGA2L4XLKG7WNDF",
+      "feeAccount": "GCNJB6V5YIODDSSCWXZ2VOKMRPRVZ2V723RRQS6STXE6NWTGVOJY35CN",
+      "feeBump": true,
+      "feeChargedStroops": "1036032",
+      "authorization": {
+        "credential": "address",
+        "address": "CD5WPJ5OHE4MNQ6UW2KTWIYRMY7QTZMTY7HXEAPKY6QISUDCISHV3BPR",
+        "signerKind": "webauthn-secp256r1",
+        "verifier": "CABPDJH4OPZ6GPOFIFH3QKTUADUDRFD2HPYLRBXRLK4ZBVDHPIESVJPD",
+        "contextRuleIds": [
+          1
+        ],
+        "flags": {
+          "UP": true,
+          "UV": true,
+          "BE": false,
+          "BS": false,
+          "AT": false,
+          "ED": false
+        },
+        "origin": "https://a-identity.xyz",
+        "challengeBinding": "auth-digest",
+        "signatureVerifies": true
+      }
+    }
+  ],
+  "refusals": [
+    {
+      "step": "agent pays an unlisted payee",
+      "refusedWith": "PayeeNotAllowed",
+      "code": 3,
+      "note": "refused in simulation, so no transaction exists"
+    },
+    {
+      "step": "agent pays while frozen",
+      "refusedWith": "Frozen",
+      "code": 1,
+      "note": "refused in simulation, so no transaction exists"
+    }
+  ],
+  "finalState": {
+    "balance": 0,
+    "frozen": false,
+    "allowlistEnabled": true,
+    "readAtLedger": 5001552
+  },
+  "caveats": [
+    "Software keys, not devices. The flags 0x05 (UP, UV) and the origin https://a-identity.xyz in every assertion were produced by this script; a device authenticator reports its own.",
+    "Testnet. A reset (next scheduled 2026-12-16) deletes every id above; the archived envelopes in soroban/releases/tx-archive/stellar-testnet/ are what survive it."
+  ]
+}
