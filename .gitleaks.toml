@@ -31,7 +31,10 @@ entropy = 3.5
 # config file, which is the discipline this repo already follows: the only ones present are
 # Hardhat's published defaults, in tests, as assertions.
 
-[allowlist]
+# One [[allowlists]] block per kind of exception (gitleaks 8.21+ refuses the older single
+# [allowlist] beside it). In this first block a finding is skipped when its PATH or its
+# SECRET matches, the same OR the single block had.
+[[allowlists]]
 description = "Known-safe values, each justified rather than blanket-ignored"
 paths = [
   # Test fixtures only. Verified during the 2026-08-25 audit: these four derive to Hardhat's
@@ -71,4 +74,30 @@ regexes = [
   # rather than the field name.
   '''0x28b5a0e9C621a5BadaA536219b3a228C8168cf5d''',
   '''0x8FE6B999Dc680CcFDD5Bf7EB0974218be2542DAA''',
+  # OpenZeppelin's WebAuthn verifier wasm, sha256 as smart-account-kit publishes it and as
+  # soroban/third-party/openzeppelin-smart-account/build.sh rebuilds it, and the hash the
+  # same source gives under a different toolchain (the receipt's control build). A code
+  # hash anyone can fetch off the ledger, flagged because it sits next to a field name
+  # containing "verifier". Added 2026-10-03, exact values only.
+  '''e63a030d0f1a1481e36059a4837c433083b33e704c1f9625b7314795b6d72b76''',
+  '''71df7b7aa9f7b14b9245f60977a26ea918a5ab38423e12fc0e0cd7fdea8e7995''',
+  # Passkey authenticator AAGUIDs in src/lib/stellar/passkey-device.ts, from the public
+  # passkey-authenticator-aaguids list. They identify a password manager's MODEL, not a
+  # credential, and are flagged only because the line above each names a "Password" product.
+  # Added 2026-10-03, exact values only.
+  '''dd4ec289-e01d-41c9-bb89-70fa845d4bf2''',
+  '''adce0002-35bc-c60a-648b-0b25f1f05503''',
+  '''d548826e-79b4-db40-a3d8-11116f7e8349''',
 ]
+
+# The Stellar transaction archive. Each file's decoded section carries `authDigestHex`: the
+# sha256 of the Soroban authorization payload, which stellar-archive-tx.mjs recomputes from
+# the public envelope to check a passkey signature's challenge binding. It is derived from
+# ledger data anyone can read, and every new owner action adds one, so it is allowed by the
+# shape of the whole MATCH (the field name plus a 64-hex value) rather than value by value.
+# Deliberately not by path: a path-scoped allowlist was tried first and it also hid a
+# Stellar seed planted in the archive, so the seed rule must keep seeing that directory.
+[[allowlists]]
+description = "authDigestHex in the Stellar tx archive is a public, recomputable digest"
+regexTarget = "match"
+regexes = ['''^authDigestHex": "[0-9a-f]{64}"$''']

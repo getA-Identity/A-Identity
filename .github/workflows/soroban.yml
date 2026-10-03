@@ -139,7 +139,9 @@ jobs:
         run: |
           WASM=$(find target/wasm32v1-none/release -name '*.wasm' | head -1)
           ACTUAL=$(sha256sum "$WASM" | cut -d' ' -f1)
-          LINUX_X64=51ba7c9b97b16fd17f4ce8140cf9fa59a689f42aca4cdab4f0fca07a1bdb7b51
+          # Re-recorded 2026-10-03 from run 37121635672: the v0.1.1 source (A3-02) changed the
+          # artifact, as intended. The v0.1.0 value was 51ba7c9b97b16fd17f4ce8140cf9fa59a689f42aca4cdab4f0fca07a1bdb7b51.
+          LINUX_X64=272f7589064f900dfc0d05339d91282fe15a014ebeee7aeb436b7acfc8b99678
           DEPLOYED=155eb31c1867254eacbf1b7a4755164d15cc6b6f939644705ab6b8df61579239
           echo "built on this runner : $ACTUAL"
           echo "deployed on pubnet   : $DEPLOYED (built elsewhere, not comparable here)"
