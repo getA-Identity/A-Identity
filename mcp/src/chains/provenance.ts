@@ -1046,6 +1046,26 @@ export const PROVENANCE: ChainProvenance[] = [
         deliverable: 'SOW2-D2',
         note: 'A plain SAC transfer from GBLHNAL5... (ours) to the vault; it is not an owner action and it touches no other vault. The vault read its balance back as 1 USDC.',
       },
+      {
+        kind: 'owner-action',
+        label: 'The D2 owner freezes its vault from the panel, signed in Freighter',
+        txHash: '60a7dd67cf5c999a74129a7201289402b51373d481e79b1e979273ff4abb4c6e',
+        onChain: 'stellar-testnet',
+        blockNumber: 5006288,
+        date: '2026-10-03',
+        deliverable: 'SOW2-D2',
+        note: 'set_frozen(true) on CDEU2D4T..., the first owner action on this vault, landed 19:17:07 UTC. GDIZE6XJ... is the transaction source and the fee payer (0.0007196 XLM), its signature is the only one on the envelope, and the authorization entry is a source-account credential: the wallet signature over the whole transaction is the authorization, and nothing our backend holds could produce it. Our backend built and simulated the unsigned call for the signed-in session; Freighter showed the owner account, the network and the call before the user approved it.',
+      },
+      {
+        kind: 'owner-action',
+        label: 'The D2 owner withdraws 0.5 test USDC to its own account, signed in Freighter',
+        txHash: 'b59f6ed844c511d6e4fce4f8385235da6a009dcc0ca6dcb424891b10f9eb61c4',
+        onChain: 'stellar-testnet',
+        blockNumber: 5006299,
+        date: '2026-10-03',
+        deliverable: 'SOW2-D2',
+        note: 'withdraw(GDIZE6XJ..., 5000000) on CDEU2D4T..., 0.5 test USDC at seven decimals, landed 19:18:02 UTC while the vault was frozen: the freeze stops the agent, not the owner. Same shape as the freeze: GDIZE6XJ... sources it, pays the fee (0.0014252 XLM) and signs the whole transaction in Freighter, after the panel restated the amount, the destination and the vault on a review screen. Read back afterwards: the vault frozen with 0.5 USDC, the owner account holding 0.5 USDC.',
+      },
       // The 2026-10-03 rehearsal: the whole D3 owner path, run once on our own OpenZeppelin
       // v0.7.2 build before any person runs it, so the recorded device session is not its
       // first run. Same rule as 2026-09-19: SOFTWARE P-256 keys in our own script
@@ -1210,7 +1230,7 @@ export const PROVENANCE: ChainProvenance[] = [
         network: 'stellar-testnet',
         custody: 'owner: generated inside a browser wallet, secret never on our systems',
         usedFor:
-          'set_policy, set_frozen and withdraw on the D2 vault, each in a transaction this account sources, pays for and signs whole in Freighter. The key was generated inside Freighter by the user; the public Friendbot created its testnet account, and the account added its testnet USDC trustline itself in Freighter on 2026-10-03 (tx 870cf65d...). Published here on the day the vault was deployed and before its first owner action.',
+          'set_policy, set_frozen and withdraw on the D2 vault, each in a transaction this account sources, pays for and signs whole in Freighter. The key was generated inside Freighter by the user; the public Friendbot created its testnet account, and the account added its testnet USDC trustline itself in Freighter on 2026-10-03 (tx 870cf65d...). Published here on the day the vault was deployed and before its first owner action, the freeze 60a7dd67... later that day, followed by the withdraw b59f6ed8....',
         publishedAt: '2026-10-03',
       },
       {
@@ -1784,10 +1804,10 @@ export const STELLAR_SOW2: Sow2Evidence = {
     {
       id: 'D2',
       title: 'Owner actions from a browser wallet, on testnet',
-      status: 'pending',
-      date: null,
+      status: 'live',
+      date: '2026-10-03',
       caption:
-        'The D2 vault CDEU2D4T... runs the fixed v0.1.1 code and was deployed on 2026-10-03; its owner GDIZE6XJ..., a key generated inside Freighter, is published in the accounts table below on that same day, before any owner action. Still to appear here: a freeze or policy change and a withdraw to the owner, each a transaction the owner account sources, pays for and signs whole, with its date, hash and explorer link.',
+        'Live since 2026-10-03. The D2 vault CDEU2D4T... runs the fixed v0.1.1 code; its owner GDIZE6XJ..., a key generated inside Freighter, was published in the accounts table below on the day of the deploy, before any owner action. The same day the owner froze the vault (ledger 5006288) and then withdrew 0.5 test USDC to its own account (ledger 5006299), both from the live panel, each a transaction the owner account sources, pays for and signs whole in Freighter. Neither carries a signature or an authorization from any system of ours.',
       links: [{ label: 'Open the D2 vault in the live panel', url: '/app/vault/stellar?network=stellar:testnet&contract=CDEU2D4TFDA5XMFI7QMCOGR2O6HWLV2QMOHYVEQDC4Z6REG73HNF2MKT' }],
       artifacts: [
         '09d041ab3c0dbae95b902b0c22be8f6587f43542798701db98a09df948119e02',
@@ -1795,6 +1815,8 @@ export const STELLAR_SOW2: Sow2Evidence = {
         'ebd666aacdbcbee7ebcf1723c4c29b86f4449134b7d0be86495edd213c5ba69d',
         'c57f0bf6ba1dad27d23a42612cd11a396fc0af08957b2353ff80a36fe64768c0',
         '4c715d7b34d59a2479098ded4f8b542d094de96a12974fcbd80ab3e9014c2221',
+        '60a7dd67cf5c999a74129a7201289402b51373d481e79b1e979273ff4abb4c6e',
+        'b59f6ed844c511d6e4fce4f8385235da6a009dcc0ca6dcb424891b10f9eb61c4',
       ],
     },
     {

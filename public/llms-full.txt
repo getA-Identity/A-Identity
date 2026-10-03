@@ -567,7 +567,13 @@ Beta, wired and readable:
   run AgentSpendPolicy v0.1.1, which checks the amount before the payee on every
   payment path: its code entry was uploaded to testnet on 2026-10-01, and the SOW 2 D2
   vault CDEU2D4TFDA5XMFI7QMCOGR2O6HWLV2QMOHYVEQDC4Z6REG73HNF2MKT has run it since
-  2026-10-03. Every vault deployed before that keeps v0.1.0 and its old order (on pay
+  2026-10-03. Its owner is a key generated inside Freighter that we never held; on
+  2026-10-03 that owner froze the vault (tx
+  60a7dd67cf5c999a74129a7201289402b51373d481e79b1e979273ff4abb4c6e) and withdrew 0.5
+  test USDC to its own account (tx
+  b59f6ed844c511d6e4fce4f8385235da6a009dcc0ca6dcb424891b10f9eb61c4) from
+  https://a-identity.xyz/app/vault/stellar, each transaction sourced, paid for and
+  signed whole in Freighter. Every vault deployed before 2026-10-03 keeps v0.1.0 and its old order (on pay
   and owner_pay, InvalidPayee can come before InvalidAmount), and so does every vault
   the /stellar page deploys on pubnet, which has no v0.1.1 code entry. The live state of any of our
   vaults is readable without a wallet at https://a-identity.xyz/app/vault/stellar.

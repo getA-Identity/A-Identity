@@ -119,7 +119,12 @@ testnet on 2026-10-01 (tx `09d041ab...9e02`, ledger 4974389, archived in
 [`soroban/releases/tx-archive`](https://github.com/getA-Identity/A-Identity/tree/main/soroban/releases/tx-archive/stellar-testnet)),
 and new testnet vaults instantiate against it. The first is the SOW 2 D2 vault
 `CDEU2D4TFDA5XMFI7QMCOGR2O6HWLV2QMOHYVEQDC4Z6REG73HNF2MKT`, deployed 2026-10-03, whose owner is a key generated inside
-Freighter; the D3 vault is planned on the same code, and each vault's release receipt is in
+Freighter. The same day, from the [vault panel](https://a-identity.xyz/app/vault/stellar), that owner froze it
+([`60a7dd67...4c6e`](https://stellar.expert/explorer/testnet/tx/60a7dd67cf5c999a74129a7201289402b51373d481e79b1e979273ff4abb4c6e), ledger 5006288)
+and then withdrew 0.5 test USDC to its own account
+([`b59f6ed8...61c4`](https://stellar.expert/explorer/testnet/tx/b59f6ed844c511d6e4fce4f8385235da6a009dcc0ca6dcb424891b10f9eb61c4), ledger 5006299),
+each a transaction the owner account sources, pays for and signs whole in Freighter, with no
+signature from any system of ours. The D3 vault is planned on the same code, and each vault's release receipt is in
 [`soroban/releases`](https://github.com/getA-Identity/A-Identity/tree/main/soroban/releases)
 when it is deployed. The existing vaults keep `v0.1.0`: the contract has no upgrade
 entrypoint, so a fix reaches a vault only through a new deployment.
