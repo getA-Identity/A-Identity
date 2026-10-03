@@ -1,15 +1,48 @@
+import { spawn } from 'node:child_process'
 import { chromium } from 'playwright'
 
 /**
  * Renders every route against the live backend and fails on any console error or page
  * exception. The point is to catch what tsc cannot: a hook-order break or an undefined
  * component introduced while moving code between files.
+ *
+ * With --serve (what `npm run smoke` passes) this script starts `vite preview` itself and
+ * stops it at the end, so its exit code is the verdict. The npm script used to background
+ * the preview and `kill %1` it, which a non-interactive shell cannot do: every run exited 1
+ * whatever the routes did, and left the server up on 4173. The next run's preview then
+ * moved to another port while these checks went on hitting the OLD build. So a port that is
+ * already answering is refused here rather than tested.
  */
 const BASE = 'http://localhost:4173'
+
+const serve = process.argv.includes('--serve')
+let preview = null
+if (serve) {
+  const busy = await fetch(BASE, { signal: AbortSignal.timeout(2000) }).then(() => true, () => false)
+  if (busy) {
+    console.error(`${BASE} is already serving something. Stop it first: a stale preview would be checked instead of this build.`)
+    process.exit(2)
+  }
+  // vite's own entry under this node, not npx: killing an npx wrapper can leave vite running.
+  preview = spawn(process.execPath, ['node_modules/vite/bin/vite.js', 'preview', '--port', '4173', '--strictPort'], { stdio: 'ignore' })
+  process.on('exit', () => preview.kill())
+  let up = false
+  for (let i = 0; i < 60 && !up; i++) {
+    await new Promise((r) => setTimeout(r, 500))
+    up = await fetch(BASE, { signal: AbortSignal.timeout(2000) }).then((r) => r.ok, () => false)
+  }
+  if (!up) {
+    preview.kill()
+    console.error(`vite preview did not come up on ${BASE} within 30 s.`)
+    process.exit(2)
+  }
+}
 // /stats and /intro were missing, which is how a redesign of /stats reached a build
 // without this catching anything. /brand-kit stays listed even though it now redirects
 // to /brand: the redirect itself is worth a check.
-const PUBLIC = ['/', '/explorer?q=849980', '/arc', '/stellar', '/algorand', '/check', '/check?q=WHZ74ZGNGZGAVEQZTHESENVP5RTHMEQ4BOUKF7UHWOADQMKXDKAK3FESJE', '/check/robinhood', '/check/robinhood?q=%230', '/check/arbitrum', '/celo-proof', '/proof', '/proof/arc', '/proof/stellar',
+// /app/vault/stellar sits in the console shell but outside the sign-in gate, so it belongs
+// here and not in CONSOLE: a reviewer opens it with no account and no wallet.
+const PUBLIC = ['/', '/explorer?q=849980', '/arc', '/stellar', '/stellar?network=testnet', '/app/vault/stellar', '/algorand', '/check', '/check?q=WHZ74ZGNGZGAVEQZTHESENVP5RTHMEQ4BOUKF7UHWOADQMKXDKAK3FESJE', '/check/robinhood', '/check/robinhood?q=%230', '/check/arbitrum', '/celo-proof', '/proof', '/proof/arc', '/proof/stellar',
   '/proof/algorand', '/proof/base', '/proof/robinhood', '/proof/arbitrum', '/proof/celo',
   '/stats', '/intro', '/mascot', '/brand-kit', '/motion', '/manifesto', '/brand', '/contact', '/faq', '/blog', '/architecture', '/login', '/bozuk-link']
 const CONSOLE = ['/app', '/app/checks', '/app/agent-id', '/app/wallet', '/app/settlements', '/app/permissions', '/app/marketplace', '/app/earnings']
@@ -74,6 +107,7 @@ await page.close()
 for (const p of CONSOLE) await visit(p, 'auth ')
 
 await browser.close()
+preview?.kill()
 console.log('\n' + (problems.length ? `${problems.length} route(s) with problems:` : 'ALL ROUTES CLEAN'))
 for (const [p, e] of problems) { console.log('\n' + p); e.slice(0, 4).forEach((x) => console.log('   ' + x.slice(0, 200))) }
 process.exit(problems.length ? 1 : 0)
