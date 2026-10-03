@@ -106,7 +106,12 @@ test('a key-held wallet attests, and the stored record carries bands, hash and s
   assert.equal(r.attestation.method, 'wallet-signature')
   assert.equal(r.attestation.circleChain, 'BASE')
   assert.equal(r.attestation.bands.transferLimits.daily, 'moderate')
-  const stored = JSON.stringify(getCirclePolicyAttestation(agent.id))
+  // The record's `at` is an ISO timestamp, and one taken at hh:mm:x2.50x contains "2.50": it is
+  // blanked so the leak check reads policy values, not the clock. CI failed exactly that way
+  // on 2026-10-03 (a run at 17:33:22.50x), with nothing leaked.
+  const record = getCirclePolicyAttestation(agent.id)
+  assert.ok('attestation' in record && record.attestation && !Number.isNaN(Date.parse(record.attestation.at)), 'the attestation carries a real timestamp')
+  const stored = JSON.stringify(record).replace(/\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z/g, '<at>')
   for (const secret of ['wal-7f3e2c11', '2.50', '40.00', '0x1111111111111111111111111111111111111111', 'pol-9a8b', 'perTxLimit', 'dailyLimit']) {
     assert.equal(stored.includes(secret), false, `attestation leaked ${secret}`)
   }
