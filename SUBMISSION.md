@@ -580,7 +580,8 @@ Stated with their source so a reviewer can correct us rather than guess what we 
   We issue no asset, so there is no issuing account to register, and we will say that rather
   than leave the field blank.
 - **A 5,000 USD InstAward was already taken in July 2026**, as one of thirteen Turkish teams
-  in that cohort. That leaves **10,000 USD of headroom** under the 15,000 aggregate cap and
+  in that cohort, and **a second 5,000 USD InstAward (SOW 2) was accepted** for a sprint from
+  2026-09-15. That leaves **5,000 USD of headroom** under the 15,000 aggregate cap and
   **does not disqualify A-Identity from SCF**, which is a separate programme.
 
 ### 9.3 The proposed Integration Track application, built on Circle CCTP
@@ -656,11 +657,13 @@ do.
 
 InstAward is not awarded through this hackathon. It runs through **Stellar Ambassador
 Chapters**, so the correct ask on Lounge Day is **an introduction to a Chapter Lead**, not a
-grant conversation. With 10,000 USD of headroom under the aggregate cap, the size we would
-ask for is a **second 5,000 USD InstAward**, scoped to the piece of work that is community
-output rather than product: deliverable 4 above, the written Stellar-side CCTP integration
-guide, plus a workshop in Turkish for the Rise In and Stellar Turkiye cohort that the
-July 2026 award already connected us to.
+grant conversation. The second InstAward has since been accepted: SOW 2, 5,000 USD, for a
+sprint from 2026-09-15, scoped to owner control of the Stellar vault from a browser wallet and
+a device passkey. That leaves 5,000 USD under the aggregate cap, which is the most any further
+InstAward could be. The piece of work still proposed for one is community output rather than
+product: deliverable 4 above, the written Stellar-side CCTP integration guide, plus a workshop
+in Turkish for the Rise In and Stellar Turkiye cohort that the July 2026 award already
+connected us to.
 
 ### 9.5 Sequence
 
