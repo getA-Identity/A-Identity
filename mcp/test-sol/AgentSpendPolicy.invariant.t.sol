@@ -57,7 +57,9 @@ contract VaultHandler is Test {
 
     /// Puts the vault back inside the policy and pays within the room left today, so every
     /// run lands agent payments however early it froze or expired the key. Without it some
-    /// runs never move a cent and the safety invariants hold vacuously.
+    /// runs never move a cent and the safety invariants hold vacuously. Two ownerPay calls
+    /// can push the day past the cap (finding F-2), and then even a zero payment is refused
+    /// until midnight, so in that case the clock moves to the next UTC day first.
     function payWithinPolicy(uint256 seed, uint256 amount) external {
         ghostCalls++;
         address to = payees[seed % 3];
@@ -66,6 +68,7 @@ contract VaultHandler is Test {
         vault.setSessionKeyExpiry(0);
         vault.setAllowed(to, true);
         vm.stopPrank();
+        if (vault.spentToday() > cap) vm.warp((block.timestamp / 1 days + 1) * 1 days);
         uint256 room = cap - _min(cap, vault.spentToday());
         uint256 max = _min(_min(ceiling, room), usdc.balanceOf(address(vault)));
         _operatorPay(to, bound(amount, 0, max));

@@ -100,7 +100,7 @@ symlinkSync(join(root, 'lib'), join(work, 'lib'), 'dir')
 // something goes red, and twenty full runs would take minutes for no extra signal.
 const env = { ...process.env, FOUNDRY_FUZZ_RUNS: '256', FOUNDRY_INVARIANT_RUNS: '64' }
 
-/** Run the suite in the work copy; return the names of failing tests, or null if none ran. */
+/** Run the suite in the work copy; return the failing tests as "name: reason", or null if none ran. */
 function failingTests() {
   // A counterexample persisted by one mutant must not be replayed against the next.
   rmSync(join(work, 'forge-cache', 'invariant'), { recursive: true, force: true })
@@ -111,7 +111,7 @@ function failingTests() {
   const failed = []
   for (const suite of Object.values(JSON.parse(line))) {
     for (const [name, t] of Object.entries(suite.test_results ?? {})) {
-      if (t.status !== 'Success') failed.push(name.replace(/\(.*$/, ''))
+      if (t.status !== 'Success') failed.push({ name: name.replace(/\(.*$/, ''), reason: t.reason ?? t.status })
     }
   }
   return failed
@@ -121,7 +121,9 @@ let survivors = 0
 try {
   const baseline = failingTests()
   if (baseline === null || baseline.length) {
-    console.error('Baseline is not green, so the controls would mean nothing:', baseline ?? 'no test output')
+    console.error('Baseline is not green, so the controls would mean nothing:')
+    for (const f of baseline ?? []) console.error(`  ${f.name}: ${f.reason}`)
+    if (baseline === null) console.error('  no test output')
     process.exit(1)
   }
   console.log('baseline: green')
@@ -145,7 +147,7 @@ try {
       console.log(`  SURVIVED ${m.name}`)
       survivors++
     } else {
-      const shown = failed.slice(0, 3).join(', ') + (failed.length > 3 ? `, +${failed.length - 3} more` : '')
+      const shown = failed.slice(0, 3).map((f) => f.name).join(', ') + (failed.length > 3 ? `, +${failed.length - 3} more` : '')
       console.log(`  killed  ${m.name}  [${failed.length}: ${shown}]`)
     }
   }
