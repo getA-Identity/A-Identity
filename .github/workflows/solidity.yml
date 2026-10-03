@@ -1,0 +1,65 @@
+name: Solidity
+
+# Scoped to the EVM contracts and their Foundry suite, so installing Foundry does not tax
+# every frontend commit. ci.yml stays node-only.
+#
+# Foundry here TESTS mcp/contracts/*.sol; it does not build what ships. The deployed
+# bytecode still comes from mcp/scripts/compile-contracts.mjs (npm solc), and
+# mcp/foundry.toml mirrors that script's compiler and optimizer settings so the code under
+# test is the code that gets deployed.
+#
+# The last step is the one worth protecting, the same idea as soroban.yml: it deletes or
+# weakens one guard at a time in a throwaway copy and requires the suite to go RED. A green
+# suite proves the vault passes its tests; only that step proves the tests would notice a
+# guard going missing.
+
+on:
+  push:
+    paths:
+      - 'mcp/contracts/**'
+      - 'mcp/test-sol/**'
+      - 'mcp/foundry.toml'
+      - 'mcp/scripts/sol-negative-controls.mjs'
+      - '.github/workflows/solidity.yml'
+  pull_request:
+    paths:
+      - 'mcp/contracts/**'
+      - 'mcp/test-sol/**'
+      - 'mcp/foundry.toml'
+      - 'mcp/scripts/sol-negative-controls.mjs'
+      - '.github/workflows/solidity.yml'
+  workflow_dispatch:
+
+defaults:
+  run:
+    working-directory: mcp
+
+jobs:
+  contracts:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # Pinned: the suite was written and its mutants were calibrated against this release.
+      - uses: foundry-rs/foundry-toolchain@v1
+        with:
+          version: v1.7.1
+
+      # forge-std is fetched at a pinned tag rather than committed or kept as a submodule.
+      # A submodule would be cloned by every Render and Vercel deploy of this repo for a
+      # dependency only this job uses.
+      - name: Fetch forge-std
+        run: git clone --quiet --depth 1 --branch v1.16.2 https://github.com/foundry-rs/forge-std lib/forge-std
+
+      - name: Build
+        run: forge build
+
+      - name: Tests (unit, fuzz, invariant)
+        run: forge test
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Negative controls (the suite must go red without each guard)
+        run: node scripts/sol-negative-controls.mjs

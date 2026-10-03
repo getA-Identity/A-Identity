@@ -5,6 +5,9 @@
  *
  * Kept deliberately tiny — one contract, standard-JSON in, one .ts artifact out —
  * so there is no Foundry/Hardhat toolchain to maintain alongside the viem stack.
+ * Foundry (foundry.toml, test-sol/) only TESTS these sources; this script stays the one
+ * compiler path to production, and foundry.toml mirrors its compiler and optimizer
+ * settings so the tested code is the deployed code. Change them together.
  */
 import solc from 'solc'
 import { readFileSync, writeFileSync, mkdirSync } from 'node:fs'

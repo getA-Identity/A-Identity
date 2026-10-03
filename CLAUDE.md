@@ -58,6 +58,10 @@ public/llms-full.txt, public/.well-known/ (agent card, MCP server card, agent sk
   test script in mcp/package.json, and the count literal in mcp/src/asp/proof.ts must
   match the number of test() declarations).
 - E2E: boot node mcp/dist/http.js, then npm run e2e, e2e:guardrail, http-smoke.
+- Solidity: cd mcp && npm run test:sol (Foundry unit, fuzz and invariant suite in
+  mcp/test-sol), then npm run test:sol:controls (each guard deleted in a temp copy must
+  turn the suite red). Needs mcp/lib/forge-std, fetched as in .github/workflows/solidity.yml.
+  Never edit mcp/contracts/*.sol casually: the deployed vaults are verified against them.
 - Frontend: npx tsc --noEmit and npm run lint from the repo root.
 - Any change under src/ makes the prerender snapshot stale: run npm run prerender once
   before npm run build (the build fails on a stale snapshot by design).

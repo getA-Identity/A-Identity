@@ -240,12 +240,16 @@ test('every .gitignore in the tree is tracked', () => {
       // stellar-hackathon-turkiye is a separate repo checked out here for convenience
       // (root .gitignore says so); like stellar-build it carries its own .gitignore that
       // is nobody's business to track from this tree.
+      // mcp/lib holds forge-std, fetched for the Foundry suite and gitignored (see
+      // .github/workflows/solidity.yml); it is a dependency, like node_modules. Matched by
+      // full path, so no other directory named lib is skipped.
       if (
         e.name === 'node_modules' ||
         e.name === '.git' ||
         e.name === 'stellar-build' ||
         e.name === 'stellar-hackathon-turkiye' ||
-        e.name === 'dist'
+        e.name === 'dist' ||
+        join(dir, e.name) === join(ROOT, 'mcp', 'lib')
       )
         continue
       const full = join(dir, e.name)

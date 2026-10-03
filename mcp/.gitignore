@@ -5,3 +5,8 @@ dist
 .env.*
 circle-recovery.dat
 recovery_file_*.dat
+
+# Foundry (tests only, see foundry.toml)
+/forge-out
+/forge-cache
+/lib

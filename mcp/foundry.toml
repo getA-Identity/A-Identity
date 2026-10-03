@@ -1,0 +1,25 @@
+# Foundry is here to TEST contracts/*.sol, not to build what ships. The deployed bytecode
+# still comes from scripts/compile-contracts.mjs (npm solc), so there is one compiler path
+# to production. The compiler and optimizer settings below mirror that script, so the code
+# under test is the code that gets deployed.
+
+[profile.default]
+src = "contracts"
+test = "test-sol"
+out = "forge-out"
+cache_path = "forge-cache"
+libs = ["lib"]
+remappings = ["forge-std/=lib/forge-std/src/"]
+solc_version = "0.8.36"
+optimizer = true
+optimizer_runs = 200
+
+[fuzz]
+runs = 1024
+failure_persist_dir = "forge-cache/fuzz"
+
+[invariant]
+runs = 256
+depth = 128
+fail_on_revert = false
+failure_persist_dir = "forge-cache/invariant"
