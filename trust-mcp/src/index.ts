@@ -8,6 +8,8 @@
  *   A_IDENTITY_MAX_USD_PER_CALL    per-call spending cap in USD (default 10)
  *   A_IDENTITY_BASE_URL            oracle origin (default https://a-identity.xyz)
  *   A_IDENTITY_ALGOD_URL           algod endpoint override
+ *   A_IDENTITY_CHECKS_LEDGER       where answers are kept (default ~/.a-identity/checks.json)
+ *   A_IDENTITY_CACHE_HOURS         hours an answer is kept and served free (24 or more; default 24)
  *
  * Logs go to stderr: stdout belongs to the MCP protocol. The mnemonic is never logged.
  */
@@ -27,6 +29,6 @@ await server.connect(new StdioServerTransport())
 
 console.error(
   config.mnemonic
-    ? `[a-identity-trust-mcp] ready; paying on Algorand, capped at ${config.maxUsdPerCall ?? DEFAULT_MAX_USD_PER_CALL} USDC per call`
+    ? `[a-identity-trust-mcp] ready; paying on Algorand, capped at ${config.maxUsdPerCall ?? DEFAULT_MAX_USD_PER_CALL} USDC per call, each check of a target paid for once`
     : '[a-identity-trust-mcp] ready; A_IDENTITY_ALGORAND_MNEMONIC is not set, so paid tools return their price instead of paying',
 )

@@ -28,6 +28,10 @@ export function world() {
   const payTo = algosdk.generateAccount().addr.toString()
   const feePayer = algosdk.generateAccount().addr.toString()
   const prices = { ...PRICES }
+  /** risk_check (and the passport's risk) per agent id; ALLOW unless set. */
+  const decisions: Record<string, 'ALLOW' | 'WARN' | 'DENY'> = {}
+  /** The chain's last round; tests move it on to let a signed payment expire. */
+  const chain = { round: 1000 }
   /**
    * dropAfterSettle: the next paid call settles, then the connection drops before the answer.
    * serverErrors: that many oracle calls answer 503. refusePayment: every payment is turned down.
@@ -43,10 +47,13 @@ export function world() {
 
   const answer = (tool: string, body: Record<string, unknown>): Record<string, unknown> => {
     if (tool === 'pay_check') return { address: body.address, verdict: 'safe', headline: 'Looks safe to pay', reasons: [{ text: 'On Algorand since 2025.' }] }
-    if (tool === 'risk_check') return { tool, agentId: body.agentId, decision: 'ALLOW', reasons: [] }
+    if (tool === 'risk_check') {
+      const decision = decisions[String(body.agentId)] ?? 'ALLOW'
+      return { tool, agentId: body.agentId, decision, reasons: decision === 'ALLOW' ? [] : ['Reputation is below the safe threshold'], txContext: body.txContext ?? null }
+    }
     if (tool === 'reputation_score') return { tool, agentId: body.agentId, score: 612 }
     if (tool === 'verify_agent') return { tool, agentId: body.agentId, verified: true, kya_status: 'verified', revoked: false }
-    if (tool === 'agent_passport') return { tool, agentId: body.agentId, verified: true, reputation: { score: 612 }, risk: { decision: 'ALLOW' } }
+    if (tool === 'agent_passport') return { tool, agentId: body.agentId, verified: true, reputation: { score: 612 }, risk: { decision: decisions[String(body.agentId)] ?? 'ALLOW' } }
     const ids = body.agentIds as string[]
     return { tool, count: ids.length, summary: { ALLOW: ids.length, WARN: 0, DENY: 0 } }
   }
@@ -174,7 +181,7 @@ export function world() {
       if (!a) return json({ message: 'no accounts found' }, 404)
       return json({ amount: Math.round(a.algo * 1e6), 'min-balance': a.usdc === null ? 100_000 : 200_000, assets: a.usdc === null ? [] : [{ 'asset-id': USDC_ASSET, amount: Math.round(a.usdc * 1e6) }] })
     }
-    if (path === '/v2/transactions/params') return json({ 'last-round': 1000, 'min-fee': 1000, 'genesis-id': 'mainnet-v1.0', 'genesis-hash': 'wGHE2Pwdvd7S12BL5FaOP20EGYesN73ktiC1qzkkit8=' })
+    if (path === '/v2/transactions/params') return json({ 'last-round': chain.round, 'min-fee': 1000, 'genesis-id': 'mainnet-v1.0', 'genesis-hash': 'wGHE2Pwdvd7S12BL5FaOP20EGYesN73ktiC1qzkkit8=' })
     if (path === '/v2/assets/' + USDC_ASSET) return json({ params: { creator: algosdk.generateAccount().addr.toString() } })
     if (path.startsWith('/v2/transactions/pending/')) {
       return landed.has(path.split('/').pop()!) ? json({ 'confirmed-round': 5 }) : json({ message: 'not found' }, 404)
@@ -207,5 +214,5 @@ export function world() {
     }
     return json({ message: `unexpected ${input}` }, 500)
   }
-  return { fetchImpl: fetchImpl as never, xlm, algo, sends, paid, prices, faults }
+  return { fetchImpl: fetchImpl as never, xlm, algo, sends, paid, prices, faults, decisions, chain }
 }

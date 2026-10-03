@@ -5,7 +5,8 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import * as algosdk from 'algosdk'
 import { Keypair } from '@stellar/stellar-base'
-import { advanceBuy, itemAt, loadBuy, nextAffordable, ROUND_USD, saveBuy, statusLines, type BuyCtx } from './buy.js'
+import { advanceBuy, loadBuy, saveBuy, statusLines, type BuyCtx } from './buy.js'
+import { retireFiles } from './bridge.js'
 import { runCli } from './cli.js'
 import { loadWallet } from './wallet.js'
 import { loadStellarWallet } from './stellar.js'
@@ -33,148 +34,21 @@ function setup() {
   return { ctx, w, lines, dir }
 }
 
-const usdcOf = (w: ReturnType<typeof world>, ctx: BuyCtx) => w.algo.get(ctx.algorand.address)?.usdc ?? 0
-
-test('one round buys all six checks for 44 USDC, and what is left is filled with the cheaper ones', () => {
-  assert.equal(ROUND_USD, 44)
-  const tools = new Set(Array.from({ length: 7 }, (_, i) => itemAt(i).tool))
-  assert.deepEqual([...tools].sort(), ['agent_batch_audit', 'agent_passport', 'pay_check', 'reputation_score', 'risk_check', 'verify_agent'])
-  // 3.6 USDC after a full round: the 5 and 10 USDC checks are passed over for a 2 and then a 1.
-  const a = nextAffordable(7, 3.6, [])!
-  assert.equal(a.item.tool, 'reputation_score')
-  const b = nextAffordable(a.index + 1, 1.6, [])!
-  assert.equal(b.item.tool, 'verify_agent')
-  assert.equal(nextAffordable(b.index + 1, 0.6, []), null)
-})
-
-test('250 XLM is spent to the last dollar, then what is left goes home, and a second run pays nothing', async () => {
-  const { ctx, w, dir } = setup()
-  const home = Keypair.random().publicKey()
-  w.xlm.set(home, 5)
-  saveBuy(ctx.buyPath, { ...loadBuy(ctx.buyPath), returnTo: home })
-  w.xlm.set(ctx.stellar.address, 250)
-
-  assert.equal(await advanceBuy(ctx, 0), 'done')
-  const st = loadBuy(ctx.buyPath)
-  const paid = st.purchases.filter((p) => p.status === 'paid')
-  assert.equal(new Set(paid.map((p) => p.tool)).size, 6, 'every paid check was bought at least once')
-  assert.equal(paid.length, w.paid.length, 'one payment per check')
-  assert.equal(paid.reduce((s, p) => s + p.usd, 0), 47)
-  assert.ok(paid.every((p) => p.receipt && p.answer), 'each check has its answer and its receipt')
-  assert.ok(usdcOf(w, ctx) < 1, `under a dollar is left: ${usdcOf(w, ctx)}`)
-  assert.ok(!w.xlm.has(ctx.stellar.address), 'the Stellar wallet went home')
-  assert.ok((w.xlm.get(home) ?? 0) > 5 + 14, `the ALGO came home as XLM: ${w.xlm.get(home)}`)
-  assert.equal(readdirSync(join(dir, 'answers')).length, paid.length, 'every full answer is saved')
-
-  const payments = w.paid.length
-  assert.equal(await advanceBuy(ctx, 0), 'done')
-  assert.equal(w.paid.length, payments)
-})
-
-test('a run that stops after a payment was sent does not pay for that check again', async () => {
+test('buy spends nothing on its own: the XLM becomes USDC, the spare ALGO too, and it waits for the agent', async () => {
   const { ctx, w, lines } = setup()
-  w.xlm.set(ctx.stellar.address, 100)
-  w.faults.dropAfterSettle = true
-  await assert.rejects(() => advanceBuy(ctx, 0), /fetch failed/)
-  const stopped = loadBuy(ctx.buyPath).purchases[0]
-  assert.equal(stopped.status, 'paying')
-  assert.ok(stopped.txId, 'the payment id was written before it was sent')
-
-  assert.equal(await advanceBuy(ctx, 0), 'done')
-  const st = loadBuy(ctx.buyPath)
-  assert.equal(st.purchases[0].status, 'paid')
-  assert.equal(st.purchases[0].receipt, stopped.txId)
-  assert.equal(w.paid.filter((p) => p.txId === stopped.txId).length, 1)
-  assert.equal(st.purchases.filter((p) => p.status === 'paid').length, w.paid.length, 'no check was paid twice')
-  assert.ok(lines.some((l) => /before the run stopped/.test(l)))
-})
-
-test('a check whose price went up is refused before signing and skipped, and the rest is still spent', async () => {
-  const { ctx, w } = setup()
-  w.prices.agent_passport = 12
   w.xlm.set(ctx.stellar.address, 250)
   assert.equal(await advanceBuy(ctx, 0), 'done')
-  const st = loadBuy(ctx.buyPath)
-  assert.deepEqual(st.skip, ['agent_passport'])
-  assert.ok(!w.paid.some((p) => p.tool === 'agent_passport'), 'nothing was paid at the new price')
-  assert.ok(usdcOf(w, ctx) < 1, `the money went to the other checks: ${usdcOf(w, ctx)} left`)
-})
+  assert.equal(w.paid.length, 0, 'not one check was bought without the agent asking for it')
+  const left = w.algo.get(ctx.algorand.address)!
+  assert.ok((left.usdc ?? 0) > 50, `the whole amount is USDC for checks: ${left.usdc}`)
+  assert.ok(left.algo >= 0.2 && left.algo < 0.25, `only what holding USDC needs is left as ALGO: ${left.algo}`)
+  assert.ok(lines.some((l) => /Exchanging the 26\.\d+ ALGO left over for USDC/.test(l)))
+  assert.ok(lines.some((l) => /^All of it is exchanged: 5\d\.\d+ USDC is in the wallet for checks/.test(l)))
+  assert.ok(loadBuy(ctx.buyPath).funded)
 
-test('a server error is not an answer: the check is tried again, not skipped', async () => {
-  const { ctx, w } = setup()
-  w.xlm.set(ctx.stellar.address, 100)
-  w.faults.serverErrors = 1
-  await assert.rejects(() => advanceBuy(ctx, 0), /upstream unavailable/)
-  assert.deepEqual(loadBuy(ctx.buyPath).purchases, [], 'nothing recorded, nothing skipped')
+  const sends = w.sends.length
   assert.equal(await advanceBuy(ctx, 0), 'done')
-  const first = loadBuy(ctx.buyPath).purchases[0]
-  assert.equal(first.tool, 'pay_check')
-  assert.equal(first.status, 'paid')
-})
-
-test('payments that are signed and turned down stop the run after three, with nothing charged', async () => {
-  const { ctx, w } = setup()
-  let t = 0
-  ctx.now = () => t
-  w.xlm.set(ctx.stellar.address, 100)
-  w.faults.refusePayment = true
-  const usdc = async () => {
-    await advanceBuy(ctx, 0).catch(() => undefined)
-    return usdcOf(w, ctx)
-  }
-  const before = await usdc()
-  for (let i = 0; i < 3; i++) {
-    t += 100_000 // past the wait for a payment that might still land
-    await usdc()
-  }
-  t += 100_000
-  await assert.rejects(() => advanceBuy(ctx, 0), /never went through 3 times/)
-  assert.equal(usdcOf(w, ctx), before, 'no USDC left the wallet')
-  assert.equal(w.paid.length, 0)
-})
-
-test('the command says where to send XLM, then the background worker buys everything and sends the rest home', async () => {
-  const { w, dir } = setup()
-  const env = {
-    A_IDENTITY_KEYFILE: join(dir, 'algorand-wallet.json'),
-    A_IDENTITY_STELLAR_KEYFILE: join(dir, 'stellar-wallet.json'),
-    A_IDENTITY_BRIDGE_STATE: join(dir, 'bridge.json'),
-    A_IDENTITY_BUY_STATE: join(dir, 'buy.json'),
-    A_IDENTITY_ALGOD_URL: ALGOD,
-    A_IDENTITY_HORIZON_URL: HORIZON,
-    A_IDENTITY_BASE_URL: ORACLE,
-  }
-  const spawned: string[][] = []
-  const deps = { spawnWorker: (args: string[]) => (spawned.push(args), 4242), isAlive: () => false, sleep: async () => {}, now: () => Date.parse('2026-09-28T12:00:00Z') }
-  const home = Keypair.random().publicKey()
-  w.xlm.set(home, 5)
-  const run = async (...argv: string[]) => {
-    const lines: string[] = []
-    const code = await runCli(argv, env, (l) => lines.push(l), w.fetchImpl, deps)
-    return { code, text: lines.join('\n') }
-  }
-
-  const bad = await run('buy', '--return', 'GNOTANADDRESS')
-  assert.equal(bad.code, 1)
-  assert.equal(spawned.length, 0, 'nothing starts with a wrong return address')
-
-  const start = await run('buy', '--return', home)
-  assert.equal(start.code, 0)
-  const burner = start.text.match(/\n {2}(G[A-Z2-7]{55})\n/)?.[1]
-  assert.ok(burner, start.text)
-  assert.match(start.text, /at least 44 XLM/)
-  assert.match(start.text, /npx -y @a-identity\/trust-mcp@0\.4\.4 status/)
-  assert.deepEqual(spawned, [['buy', '--worker']])
-  assert.equal(loadBuy(env.A_IDENTITY_BUY_STATE).worker?.pid, 4242)
-  assert.match((await run('status')).text, /Paused/)
-
-  // The worker, run here in the foreground: the XLM lands, the checks are bought, the rest goes home.
-  w.xlm.set(burner!, 250)
-  assert.equal((await run('buy', '--worker')).code, 0)
-  const done = await run('status')
-  assert.match(done.text, /^Finished\./)
-  assert.match(done.text, /Bought 9 check\(s\) for 47 USDC/)
-  assert.equal(loadBuy(env.A_IDENTITY_BUY_STATE).worker, undefined)
+  assert.equal(w.sends.length, sends, 'nothing is exchanged twice')
 })
 
 function cliWorld(extra: Partial<Parameters<typeof runCli>[4]> = {}) {
@@ -184,11 +58,12 @@ function cliWorld(extra: Partial<Parameters<typeof runCli>[4]> = {}) {
     A_IDENTITY_STELLAR_KEYFILE: join(dir, 'stellar-wallet.json'),
     A_IDENTITY_BRIDGE_STATE: join(dir, 'bridge.json'),
     A_IDENTITY_BUY_STATE: join(dir, 'buy.json'),
+    A_IDENTITY_CHECKS_LEDGER: join(dir, 'checks.json'),
     A_IDENTITY_ALGOD_URL: ALGOD,
     A_IDENTITY_HORIZON_URL: HORIZON,
     A_IDENTITY_BASE_URL: ORACLE,
   }
-  const calls = { spawns: 0, stopped: [] as number[] }
+  const calls = { spawns: 0, stopped: [] as number[], code: 0 }
   const clock = { t: Date.parse('2026-09-28T12:00:00Z') }
   const deps = {
     spawnWorker: () => (calls.spawns++, 1),
@@ -200,31 +75,147 @@ function cliWorld(extra: Partial<Parameters<typeof runCli>[4]> = {}) {
   }
   const run = async (...argv: string[]) => {
     const lines: string[] = []
-    await runCli(argv, env, (l) => lines.push(l), w.fetchImpl, deps)
+    calls.code = await runCli(argv, env, (l) => lines.push(l), w.fetchImpl, deps)
     return lines.join('\n')
   }
   const wallets = () => ({ algorand: loadWallet(env.A_IDENTITY_KEYFILE)!.address, stellar: loadStellarWallet(env.A_IDENTITY_STELLAR_KEYFILE)!.address })
-  return { w, env, run, calls, wallets, clock }
+  const burner = (text: string) => text.match(/\n {2}(G[A-Z2-7]{55})\n/)![1]
+  return { w, env, run, calls, wallets, clock, burner, dir }
 }
 
-test('each buy after a finished round starts a new one, which waits for new XLM and spends it', async () => {
-  const { w, run, calls, wallets } = cliWorld({ isAlive: () => false })
-  const burner = (await run('buy')).match(/\n {2}(G[A-Z2-7]{55})\n/)![1]
-  w.xlm.set(burner, 60)
+test('buy says what the money is for and where to send it, the worker only exchanges, and the agent spends it one new check at a time', async () => {
+  const { w, run, calls, burner, wallets } = cliWorld({ isAlive: () => false })
+  const home = Keypair.random().publicKey()
+  w.xlm.set(home, 5)
+
+  const old = await run('buy', '--return', home)
+  assert.equal(calls.code, 1)
+  assert.match(old, /--return is gone since 0\.4\.5/)
+  assert.match(old, /refund --to <YOUR STELLAR ADDRESS>/)
+  assert.equal(calls.spawns, 0, 'nothing starts with a flag that no longer exists')
+
+  const start = await run('buy')
+  assert.equal(calls.code, 0)
+  assert.match(
+    start,
+    /^Everything you send is spent by your agent on checks of the targets it chooses, each one a different check\.\nIf no new target is left, what remains waits in the wallet; get it back with: npx -y @a-identity\/trust-mcp@0\.4\.5 refund --to <YOUR STELLAR ADDRESS>\n/,
+  )
+  assert.match(start, /at least 44 XLM/)
+  assert.match(start, /claude mcp add a-identity-trust -- npx -y @a-identity\/trust-mcp@0\.4\.5/)
+  assert.match(start, /npx -y @a-identity\/trust-mcp@0\.4\.5 status/)
+  assert.equal(calls.spawns, 1)
+  assert.match(await run('status'), /^Status: Idle \| Spent: 0 USDC \(0 checks\) \| Left: 0 USDC\nPaused/)
+
+  w.xlm.set(burner(start), 250)
   await run('buy', '--worker')
-  const first = w.paid.length
-  assert.match(await run('status'), /^Finished\./)
+  assert.equal(w.paid.length, 0)
+  assert.match(await run('status'), /^Status: Idle \| Spent: 0 USDC \(0 checks\) \| Left: 5\d\.\d+ USDC\nReady: the USDC waits in the wallet/)
+
+  const first = await run('check', '#849980', '20')
+  assert.match(first, /^ALLOW: Safe to pay/)
+  assert.match(first, /Payment decision: ALLOW {2}\[paid 5 USDC\]/)
+  const again = await run('check', '849980', '20')
+  assert.match(again, /saved answer from 2026-09-28 12:00 UTC, free/)
+  const ask = await run('ask', 'risk', '#849980', '30')
+  assert.match(ask, /Saved answer from 2026-09-28 12:00 UTC: nothing was paid this time/)
+  assert.equal(w.paid.length, 1, 'one target, one payment')
+
+  const status = await run('status')
+  assert.match(status, /^Status: Idle \| Spent: 5 USDC \(1 check\) \| Left: /)
+  assert.match(status, /\n1\. Payment decision \(#849980\): ALLOW {2}\[5 USDC\]/)
+
+  // The agent spends what is left down to under a dollar: Finished.
+  w.algo.get(wallets().algorand)!.usdc = 0.4
+  assert.match(await run('status'), /^Status: Finished \| Spent: 5 USDC \(1 check\) \| Left: 0\.4 USDC/)
+})
+
+test('refund sends the USDC and the ALGO back as XLM, merges the Stellar wallet, and stops a worker that was waiting for XLM', async () => {
+  const { w, run, calls, burner, wallets, env } = cliWorld({ isAlive: (pid) => pid === 1 })
+  const shown = burner(await run('buy'))
+  w.xlm.set(shown, 250)
+  await run('buy', '--worker')
+  await run('check', '#849980', '20')
+  await run('buy') // a second round, its worker waiting for XLM that never comes
+  const before = wallets()
+  const usdc = w.algo.get(before.algorand)!.usdc!
+  const home = Keypair.random().publicKey()
+  w.xlm.set(home, 5)
+
+  const bad = await run('refund', '--to', before.stellar)
+  assert.equal(calls.code, 1)
+  assert.match(bad, /is not your Stellar address/)
+
+  const out = await run('refund', '--to', home)
+  assert.equal(calls.code, 0, out)
+  assert.deepEqual(calls.stopped, [1], 'the waiting worker was stopped first')
+  assert.ok(!w.xlm.has(shown), 'the Stellar wallet was merged into the address')
+  assert.equal(w.algo.get(before.algorand)?.usdc ?? null, null, 'no USDC is left behind')
+  assert.ok((w.xlm.get(home) ?? 0) > 5 + 1.4 + usdc * 4.7 * 0.99, `the USDC came home as XLM: ${w.xlm.get(home)}`)
+  assert.match(out, /Done\. Everything that could go back was sent to/)
+  assert.match(await run('status'), /^Status: Finished \| Spent: 5 USDC \(1 check\) \| Left: 0 USDC\nRefunded: everything that could go back was sent to G/)
+
+  const sends = w.sends.length
+  assert.match(await run('refund', '--to', home), /Nothing to send back/)
+  assert.equal(w.sends.length, sends, 'a finished refund sends nothing again')
+  assert.ok(loadWallet(env.A_IDENTITY_KEYFILE), 'the wallets stay where they are until the next buy')
+})
+
+test('refund also empties wallets an earlier run moved aside', async () => {
+  const { w, run, wallets, env } = cliWorld({ isAlive: () => false })
+  await run('stellar', 'start')
+  const old = wallets()
+  w.xlm.set(old.stellar, 30) // XLM sent and never exchanged
+  w.algo.set(old.algorand, { algo: 0.5, usdc: 12 }) // USDC no check was bought with
+  retireFiles([env.A_IDENTITY_KEYFILE, env.A_IDENTITY_STELLAR_KEYFILE], 1_700_000_000_000)
+  const home = Keypair.random().publicKey()
+  w.xlm.set(home, 5)
+
+  const out = await run('refund', '--to', home)
+  assert.match(out, /Wallets moved aside on 2023-11-14 22:13 UTC/)
+  assert.ok(!w.xlm.has(old.stellar), 'the old Stellar wallet was merged into the address')
+  assert.equal(w.algo.get(old.algorand)?.usdc ?? null, null, 'the old USDC went back')
+  assert.ok((w.xlm.get(home) ?? 0) > 5 + 30 + 12 * 4.7 * 0.99, `everything came home as XLM: ${w.xlm.get(home)}`)
+
+  const sends = w.sends.length
+  await run('refund', '--to', home)
+  assert.equal(w.sends.length, sends, 'a second refund sends nothing twice')
+})
+
+test('refund waits while XLM is still being exchanged, and USDC under the minimum is reported with the way back on Algorand', async () => {
+  const { w, run, calls, env, wallets } = cliWorld({ isAlive: () => false })
+  await run('stellar', 'start')
+  const home = Keypair.random().publicKey()
+  w.xlm.set(home, 5)
+  writeFileSync(env.A_IDENTITY_BRIDGE_STATE, JSON.stringify({ version: 1, fundIn: { algo: { id: 's9', depositAddress: home, depositMemo: '1', amount: '15', tx: 'abc', sent: true } } }))
+  assert.match(await run('refund', '--to', home), /still being exchanged/)
+  assert.equal(calls.code, 2)
+  assert.equal(w.sends.length, 0)
+
+  writeFileSync(env.A_IDENTITY_BRIDGE_STATE, JSON.stringify({ version: 1, fundIn: { done: true } }))
+  w.algo.set(wallets().algorand, { algo: 0.3, usdc: 2 })
+  const out = await run('refund', '--to', home)
+  assert.match(out, /2 USDC and 0\.3 ALGO in [A-Z2-7]{58} are under SideShift's minimum/)
+  assert.match(out, /wallet sweep <YOUR ALGORAND ADDRESS>/)
+})
+
+test('each buy after a funded round starts a new one, which waits for new XLM and adds it to the budget', async () => {
+  const { w, run, calls, wallets, burner } = cliWorld({ isAlive: () => false })
+  const shown = burner(await run('buy'))
+  w.xlm.set(shown, 60)
+  await run('buy', '--worker')
+  const first = w.algo.get(wallets().algorand)!.usdc!
+  assert.match(await run('status'), /^Status: Idle/)
 
   const again = await run('buy')
   assert.equal(calls.spawns, 2, 'a new round starts')
   assert.match(again, /at least 15 XLM/, 'the ALGO is already there, so only the USDC minimum applies')
   assert.doesNotMatch(again, /becomes ALGO/)
 
-  w.xlm.set(burner, (w.xlm.get(burner) ?? 0) + 100)
+  w.xlm.set(shown, (w.xlm.get(shown) ?? 0) + 100)
   await run('buy', '--worker')
-  assert.ok(w.paid.length > first, `the new XLM was spent: ${first} then ${w.paid.length} checks`)
-  assert.ok((w.algo.get(wallets().algorand)?.usdc ?? 0) < 1, 'to under a dollar')
-  assert.match(await run('status'), /^Finished\./)
+  assert.ok(w.algo.get(wallets().algorand)!.usdc! > first + 15, 'the new XLM became USDC too')
+  assert.equal(w.paid.length, 0)
+  assert.match(await run('status'), /^Status: Idle/)
 })
 
 test('on wallets an earlier stellar run funded, buy waits for the new XLM instead of finishing at once', async () => {
@@ -246,26 +237,25 @@ test('on wallets an earlier stellar run funded, buy waits for the new XLM instea
   assert.equal(calls.spawns, 1)
   assert.match(start, /at least 15 XLM/)
   assert.doesNotMatch(start, /at least 44 XLM/)
-  assert.match(start, /already holds 1\.07 USDC from before; that is spent on checks too/)
-  assert.match(await run('status'), /^Waiting for your XLM at G/, 'not Finished before any XLM was sent')
+  assert.match(start, /already holds 1\.07 USDC from before; it is part of the same budget/)
+  assert.match(await run('status'), /^Status: Running .*\nWaiting for your XLM at G/, 'not funded before any XLM was sent')
 
   const log = await run('buy', '--worker')
   assert.ok(sent, 'the worker waited for the XLM instead of finishing')
   assert.doesNotMatch(log, /Ready:/, 'waiting on funded wallets does not log the same line on every pass')
-  const status = await run('status')
-  assert.match(status, /^Finished\./)
-  assert.ok(w.paid.length >= 9, `the old USDC and the new XLM were both spent: ${w.paid.length} checks`)
-  assert.equal(w.paid[0].tool, 'verify_agent', 'the 1.07 USDC left from before went first, on a 1 USDC check')
-  assert.ok((w.algo.get(wallets().algorand)?.usdc ?? 0) < 1)
+  assert.match(await run('status'), /^Status: Idle/)
+  assert.ok(w.algo.get(wallets().algorand)!.usdc! > 45, 'the old USDC and the new XLM are one budget')
+  assert.equal(w.paid.length, 0)
 })
 
-test('buy --new moves wallets someone used before aside and starts this person on new ones', async () => {
-  const { w, run, calls, wallets, env } = cliWorld({ isAlive: () => false })
-  const first = (await run('buy')).match(/\n {2}(G[A-Z2-7]{55})\n/)![1]
+test('buy --new moves wallets someone used up before aside and starts this person on new ones', async () => {
+  const { w, run, calls, wallets, env, burner } = cliWorld({ isAlive: () => false })
+  const first = burner(await run('buy'))
   w.xlm.set(first, 60)
   const worker = await run('buy', '--worker')
   assert.equal((worker.match(/Ready:/g) ?? []).length, 1, 'the way in reports Ready once')
   const before = wallets()
+  w.algo.get(before.algorand)!.usdc = 0.5 // that person's agent spent it
 
   const fresh = await run('buy', '--new')
   assert.match(fresh, /Made new wallets\. The earlier ones .* were moved aside, not deleted/)
@@ -276,8 +266,7 @@ test('buy --new moves wallets someone used before aside and starts this person o
   assert.match(fresh, /at least 44 XLM/, 'a fresh start, with its own ALGO for fees')
   assert.equal(calls.spawns, 2)
   const kept = readdirSync(join(env.A_IDENTITY_KEYFILE, '..')).filter((f) => f.includes('.closed-'))
-  assert.equal(kept.length, 5, `the old wallet files, states and answers were kept: ${kept.join(', ')}`)
-  assert.deepEqual(loadBuy(env.A_IDENTITY_BUY_STATE).purchases, [], 'the new person starts with an empty list')
+  assert.equal(kept.length, 4, `the old wallet files and states were kept: ${kept.join(', ')}`)
 
   // Run again during the new round, --new continues it instead of starting yet another.
   const again = await run('buy', '--new')
@@ -292,24 +281,40 @@ test('buy --new refuses to set aside wallets that still hold unspent money', asy
   const before = wallets()
   const refused = await run('buy', '--new')
   assert.match(refused, /still hold money that was not spent \(30 XLM/)
+  assert.match(refused, /refund --to <YOUR STELLAR ADDRESS>/)
   assert.deepEqual(wallets(), before)
   assert.equal(calls.spawns, 0)
 })
 
 test('status says the XLM is being exchanged while a later deposit turns into USDC', async () => {
-  const { ctx } = setup()
-  saveBuy(ctx.buyPath, { version: 1, cursor: 0, skip: [], purchases: [], round: 1, waitForXlm: true })
+  const { ctx, dir } = setup()
+  saveBuy(ctx.buyPath, { version: 1, round: 1, waitForXlm: true })
   writeFileSync(ctx.statePath, JSON.stringify({ version: 1, fundIn: { done: true, topUps: [{ id: 's1', depositAddress: 'G', depositMemo: '1', amount: '240', sent: true }] } }))
-  const lines = await statusLines(ctx, true)
-  assert.match(lines[0], /Your XLM arrived\. Exchanging it for USDC/)
+  const lines = await statusLines({ ...ctx, ledgerPath: join(dir, 'checks.json') }, true)
+  assert.match(lines[0], /^Status: Running \| /)
+  assert.match(lines[1], /Your XLM arrived\. Exchanging it for USDC/)
+})
+
+test('the checks an earlier version bought count in what was spent', async () => {
+  const { ctx, dir, w } = setup()
+  w.algo.set(ctx.algorand.address, { algo: 0.2, usdc: 3 })
+  writeFileSync(ctx.buyPath, JSON.stringify({ version: 1, cursor: 9, skip: [], finished: '2026-09-28T12:00:00.000Z', purchases: [
+    { tool: 'agent_batch_audit', usd: 16, subject: ['#0', '#1', '#2', '#3'], status: 'paid', n: 1, index: 5, answer: '4 agents: 4 allow, 0 warn, 0 deny', receipt: 'TX1' },
+    { tool: 'pay_check', usd: 5, subject: 'proofmint.app', status: 'failed', n: 2, index: 6 },
+  ] }))
+  assert.ok(loadBuy(ctx.buyPath).funded, 'finished in an old state reads as funded')
+  const lines = await statusLines({ ...ctx, ledgerPath: join(dir, 'checks.json') }, false)
+  assert.match(lines[0], /^Status: Idle \| Spent: 16 USDC \(1 check\) \| Left: 3 USDC$/)
+  assert.ok(lines.some((l) => /Group check \(4 agents\).*bought by 0\.4\.4/.test(l)))
 })
 
 test('buy --new sets aside an old round that is still waiting for XLM and got none, stopping its worker', async () => {
   // As on a shared computer: someone's round from hours ago, waiting for XLM, its worker still up.
-  const { w, run, calls, wallets, clock } = cliWorld({ isAlive: (pid) => pid === 1 })
-  const first = (await run('buy')).match(/\n {2}(G[A-Z2-7]{55})\n/)![1]
+  const { w, run, calls, wallets, clock, burner } = cliWorld({ isAlive: (pid) => pid === 1 })
+  const first = burner(await run('buy'))
   w.xlm.set(first, 60)
   await run('buy', '--worker')
+  w.algo.get(wallets().algorand)!.usdc = 0.5
   await run('buy') // a new round on funded wallets: waits for XLM that never comes
   const old = wallets()
   clock.t += 2 * 60 * 60 * 1000
@@ -324,8 +329,8 @@ test('buy --new sets aside an old round that is still waiting for XLM and got no
 })
 
 test('buy --new run again a few minutes later continues the round this person just started, same address', async () => {
-  const { run, calls, wallets, clock } = cliWorld({ isAlive: () => false })
-  const shown = (await run('buy', '--new')).match(/\n {2}(G[A-Z2-7]{55})\n/)![1]
+  const { run, calls, wallets, clock, burner } = cliWorld({ isAlive: () => false })
+  const shown = burner(await run('buy', '--new'))
   clock.t += 5 * 60 * 1000
   const again = await run('buy', '--new')
   assert.match(again, /continuing it/)
@@ -337,25 +342,9 @@ test('buy --new run again a few minutes later continues the round this person ju
 test('state left without its wallets is set aside, so new wallets are never taken for funded ones', async () => {
   const { run, env } = cliWorld({ isAlive: () => false })
   writeFileSync(env.A_IDENTITY_BRIDGE_STATE, JSON.stringify({ version: 1, fundIn: { done: true } }))
-  saveBuy(env.A_IDENTITY_BUY_STATE, { version: 1, cursor: 3, skip: [], purchases: [], round: 2, waitForXlm: true })
+  saveBuy(env.A_IDENTITY_BUY_STATE, { version: 1, round: 2, waitForXlm: true })
   const out = await run('buy')
   assert.match(out, /at least 44 XLM/)
   assert.doesNotMatch(out, /at least 15 XLM/)
-  assert.equal(loadBuy(env.A_IDENTITY_BUY_STATE).cursor, 0)
-})
-
-test('with nothing going back, the ALGO bought for fees is exchanged for USDC and spent too', async () => {
-  const { ctx, w, lines } = setup()
-  w.xlm.set(ctx.stellar.address, 250)
-  assert.equal(await advanceBuy(ctx, 0), 'done')
-  const paid = loadBuy(ctx.buyPath).purchases.filter((p) => p.status === 'paid')
-  assert.equal(paid.reduce((s, p) => s + p.usd, 0), 50, 'the 47 from the XLM, plus 3 from the ALGO')
-  const left = w.algo.get(ctx.algorand.address)!
-  assert.ok(left.algo >= 0.2 && left.algo < 0.25, `only what holding USDC needs is left: ${left.algo} ALGO`)
-  assert.ok((left.usdc ?? 0) < 1, `and under a dollar: ${left.usdc} USDC`)
-  assert.ok(lines.some((l) => /Exchanging the 26\.\d+ ALGO left over for USDC/.test(l)))
-
-  const payments = w.paid.length
-  assert.equal(await advanceBuy(ctx, 0), 'done')
-  assert.equal(w.paid.length, payments, 'the ALGO is exchanged once, and nothing is paid twice')
+  assert.equal(loadBuy(env.A_IDENTITY_BUY_STATE).round, 1)
 })

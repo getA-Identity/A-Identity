@@ -1,28 +1,30 @@
 /**
  * The same package, run as commands instead of as an MCP server, so a coding agent can do the
- * whole thing from a terminal in one session: make a one-time wallet, wait for it to be
- * funded, pay for a check, and send what is left back.
+ * whole thing from a terminal in one session: fund a one-time wallet, check before paying, and
+ * get what is left back.
  *
- *   npx -y @a-identity/trust-mcp wallet new
- *   npx -y @a-identity/trust-mcp wallet status
- *   npx -y @a-identity/trust-mcp wallet optin
- *   npx -y @a-identity/trust-mcp check <ALGORAND ADDRESS OR SELLER LINK>        (5 USDC)
+ *   npx -y @a-identity/trust-mcp buy [--new]                    XLM in, exchanged into USDC
+ *   npx -y @a-identity/trust-mcp status
+ *   npx -y @a-identity/trust-mcp check <TARGET> [AMOUNT USD]    the checks that amount calls for
  *   npx -y @a-identity/trust-mcp ask <verify|reputation|risk|passport> <AGENT ID> [DEAL USD]
- *   npx -y @a-identity/trust-mcp wallet sweep <YOUR ALGORAND ADDRESS>
+ *   npx -y @a-identity/trust-mcp refund --to <YOUR STELLAR ADDRESS>
+ *   npx -y @a-identity/trust-mcp wallet new | status | optin | sweep <YOUR ALGORAND ADDRESS>
  *
- * Nothing here prints the wallet's 25 words. The spending cap (A_IDENTITY_MAX_USD_PER_CALL,
- * default 10 USDC) is checked before anything is signed.
+ * Nothing here prints the wallet's 25 words. Every paid check goes through checks.ts: the
+ * spending cap (A_IDENTITY_MAX_USD_PER_CALL, default 10 USDC) is checked before anything is
+ * signed, and a check already saved is answered from the ledger without paying again.
  */
-import { PaymentRequiredError, TrustGuard, TrustOracleError, type FetchLike } from '@a-identity/trust-guard'
-import { AlgorandPaymentError, algorandPayer, SpendCapError } from '@a-identity/trust-guard/algorand'
+import type { FetchLike } from '@a-identity/trust-guard'
 import { configFromEnv, DEFAULT_BASE_URL, DEFAULT_MAX_USD_PER_CALL } from './server.js'
-import { createWallet, keyfilePath, loadWallet, nextStep, optIn, readStatus, sweep, DEFAULT_ALGOD } from './wallet.js'
+import { createWallet, keyfilePath, loadWallet, nextStep, optIn, readStatus, sweep, DEFAULT_ALGOD, type WalletFile } from './wallet.js'
 import { spawn } from 'node:child_process'
 import { closeSync, existsSync, mkdirSync, openSync, renameSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { createStellarWallet, HORIZON, isStellarAddress, loadStellarWallet, readXlm, STELLAR_KEEP_XLM, stellarKeyfilePath } from './stellar.js'
-import { bridgeStatePath, loadState, planIn, retireFiles, runBack, runIn } from './bridge.js'
+import { bridgeStatePath, exchangeUnderway, loadState, planIn, retireFiles, runBack, runIn } from './bridge.js'
 import { advanceBuy, buyStatePath, loadBuy, saveBuy, statusLines } from './buy.js'
+import { askOne, checkBeforePay, checksLedgerPath, explain, type Gate, type PayDecision, type Tool } from './checks.js'
+import { refundAll } from './refund.js'
 import { pair } from './sideshift.js'
 import { CMD } from './version.js'
 
@@ -31,17 +33,20 @@ type Out = (line: string) => void
 const EXPLORER = 'https://allo.info'
 const HELP = `A-Identity checks, paid in USDC on Algorand from a wallet on this computer.
 
-The easy way, with XLM: one command, one deposit, and every XLM you send is spent on checks.
-  ${CMD} buy [--new] [--return <YOUR STELLAR ADDRESS>]   says where to send XLM, then does the rest on its own
-                                                        (--new: new wallets, if this computer has someone else's)
-  ${CMD} status                                  what it has bought so far, and where it is
+The easy way, with XLM: one deposit becomes the budget your agent spends on checks.
+  ${CMD} buy [--new]          says where to send XLM, then exchanges it into USDC on its own
+                              (--new: new wallets, if this computer has someone else's)
+  ${CMD} status               Running, Idle or Finished, what was spent and what is left
+  ${CMD} refund --to <YOUR STELLAR ADDRESS>   everything left back to you as XLM
+
+Checking, before your agent pays (each check of a target is paid for once; repeats are free for 24 hours):
+  ${CMD} check <ADDRESS|LINK|AGENT ID> [AMOUNT USD]   the checks a payment of that amount calls for
+  ${CMD} ask <verify|reputation|risk|passport> <AGENT ID> [DEAL USD]
 
 Step by step, with USDC:
   ${CMD} wallet new             make a one-time wallet (prints its address only)
   ${CMD} wallet status          balances and the next step
   ${CMD} wallet optin           let the wallet hold USDC (after ALGO arrives)
-  ${CMD} check <ADDRESS|LINK>   is it safe to pay this Algorand address? (5 USDC)
-  ${CMD} ask <verify|reputation|risk|passport> <AGENT ID> [DEAL USD]
   ${CMD} wallet sweep <YOUR ADDRESS>   send everything left back and close the wallet
 
 Paying with XLM instead (it is exchanged through SideShift):
@@ -51,12 +56,18 @@ Paying with XLM instead (it is exchanged through SideShift):
 
 Run with no arguments, it is an MCP server (for Claude Code, Cursor or any MCP client).`
 
-const ASK: Record<string, 'verify' | 'reputation' | 'riskCheck' | 'passport'> = {
-  verify: 'verify',
-  reputation: 'reputation',
-  risk: 'riskCheck',
-  passport: 'passport',
+const ASK: Record<string, Tool> = {
+  verify: 'verify_agent',
+  reputation: 'reputation_score',
+  risk: 'risk_check',
+  passport: 'agent_passport',
 }
+
+/** Printed first by every `buy`: what the money is for, and how to get it back. */
+export const DISCLOSURE = [
+  'Everything you send is spent by your agent on checks of the targets it chooses, each one a different check.',
+  `If no new target is left, what remains waits in the wallet; get it back with: ${CMD} refund --to <YOUR STELLAR ADDRESS>`,
+]
 
 function describeStatus(out: Out, s: Awaited<ReturnType<typeof readStatus>>) {
   out(`Address: ${s.address}`)
@@ -65,8 +76,10 @@ function describeStatus(out: Out, s: Awaited<ReturnType<typeof readStatus>>) {
   out(`Next:    ${nextStep(s)}`)
 }
 
-/** Prints a paid answer as a person reads it, then the receipt. */
-function describeAnswer(out: Out, tool: string, r: Record<string, unknown>) {
+const when = (iso: string) => `${iso.slice(0, 16).replace('T', ' ')} UTC`
+
+/** Prints a paid answer as a person reads it, then the receipt and whether it was paid now. */
+function describeAnswer(out: Out, tool: Tool, r: Record<string, unknown>) {
   if (tool === 'pay_check') {
     out(`${String(r.headline ?? r.verdict)}  (${String(r.address ?? '')})`)
     for (const x of (r.reasons as { text?: string }[] | undefined) ?? []) out(`  - ${x.text}`)
@@ -76,14 +89,31 @@ function describeAnswer(out: Out, tool: string, r: Record<string, unknown>) {
       out('Biggest payers:')
       for (const p of d.topPayers.slice(0, 5)) out(`  ${p.address}  ${p.usdc} USDC  ${Math.round(p.share * 100)}%${p.linked ? '  (linked to this address)' : ''}`)
     }
-  } else if (tool === 'riskCheck') {
+  } else if (tool === 'risk_check') {
     out(`${String(r.decision)}  (${String(r.agentId ?? '')})`)
     for (const x of (r.reasons as string[] | undefined) ?? []) out(`  - ${x}`)
   } else {
-    out(JSON.stringify(Object.fromEntries(Object.entries(r).filter(([k]) => k !== 'settlement' && k !== '_meta')), null, 2))
+    out(JSON.stringify(Object.fromEntries(Object.entries(r).filter(([k]) => k !== 'settlement' && k !== '_meta' && k !== 'cache')), null, 2))
   }
-  const tx = (r.settlement as { transaction?: string } | undefined)?.transaction
+  const cache = r.cache as { source?: string; paidUsd?: number; checkedAt?: string; receipt?: string } | undefined
+  const tx = (r.settlement as { transaction?: string } | undefined)?.transaction ?? cache?.receipt
   if (tx) out(`Receipt: ${EXPLORER}/tx/${tx}`)
+  if (cache?.source === 'cache') out(`Saved answer from ${when(cache.checkedAt ?? '')}: nothing was paid this time.`)
+  else if (cache) out(`Paid ${cache.paidUsd} USDC.`)
+}
+
+/** Prints a check_before_pay decision: the verdict first, then each check and what it cost. */
+function describeDecision(out: Out, d: PayDecision) {
+  out(`${d.decision}: ${d.advice}  (${d.target}, ${d.amount} USD)`)
+  for (const c of d.checks) {
+    out(`  ${c.label}: ${c.summary}  [${c.source === 'paid' ? `paid ${c.paidUsd} USDC` : `saved answer from ${when(c.checkedAt)}, free`}]`)
+    const reasons =
+      c.check === 'pay_check' ? ((c.answer?.reasons as { text?: string }[] | undefined) ?? []).map((x) => x.text ?? '') : c.check === 'risk_check' ? ((c.answer?.reasons as string[] | undefined) ?? []) : []
+    for (const x of reasons.slice(1)) out(`    - ${x}`)
+    if (c.receipt) out(`    Receipt: ${EXPLORER}/tx/${c.receipt}`)
+  }
+  for (const f of d.failed ?? []) out(`  ${f.label}: not checked. ${f.error}`)
+  if (d.budgetLeftUsd !== null && d.budgetLeftUsd !== undefined) out(`Left for checks: ${d.budgetLeftUsd} USDC.`)
 }
 
 /** The background worker gives up after this long, or after this many errors in a row. */
@@ -139,6 +169,19 @@ export async function runCli(
   const path = keyfilePath(env)
   const algod = env.A_IDENTITY_ALGOD_URL?.trim() || DEFAULT_ALGOD
   const horizon = env.A_IDENTITY_HORIZON_URL?.trim() || HORIZON
+  const gateFor = (w: WalletFile): Gate => {
+    const config = configFromEnv(env)
+    return {
+      ledgerPath: config.ledgerPath ?? checksLedgerPath(env),
+      baseUrl: config.baseUrl ?? DEFAULT_BASE_URL,
+      fetchImpl,
+      mnemonic: w.mnemonic,
+      algod: config.algodUrl ?? algod,
+      maxUsdPerCall: config.maxUsdPerCall ?? DEFAULT_MAX_USD_PER_CALL,
+      cacheHours: config.cacheHours,
+      now: deps.now,
+    }
+  }
   try {
     if (!cmd || cmd === 'help' || cmd === '--help' || cmd === '-h') {
       out(HELP)
@@ -152,7 +195,7 @@ export async function runCli(
       return 0
     }
 
-    if (cmd === 'buy' || cmd === 'status') {
+    if (cmd === 'buy' || cmd === 'status' || cmd === 'refund') {
       const spath = stellarKeyfilePath(env)
       const statePath = bridgeStatePath(env)
       const buyPath = buyStatePath(env)
@@ -160,6 +203,7 @@ export async function runCli(
       const now = deps.now ?? Date.now
       const alive = (st: ReturnType<typeof loadBuy>) =>
         Boolean(st.worker && now() - Date.parse(st.worker.startedAt) < WORKER_MAX_MS + 60_000 && (deps.isAlive ?? pidAlive)(st.worker.pid))
+      const ledgerPath = configFromEnv(env).ledgerPath ?? checksLedgerPath(env)
       const walletsCtx = () => {
         const aw = loadWallet(path)
         const sw = loadStellarWallet(spath)
@@ -167,15 +211,51 @@ export async function runCli(
       }
 
       if (cmd === 'status') {
-        const ctx = walletsCtx()
-        if (!ctx) {
+        const aw = loadWallet(path)
+        if (!aw) {
+          out('Status: Idle | Spent: 0 USDC (0 checks) | Left: 0 USDC')
           out(`Nothing started yet. Start with: ${CMD} buy`)
           return 1
         }
         const st = loadBuy(buyPath)
-        for (const l of await statusLines({ ...ctx, out }, alive(st))) out(l)
-        if (st.finished && !st.returnTo) out(`To get what is left back as XLM: ${CMD} stellar return <YOUR STELLAR ADDRESS>`)
+        const lines = await statusLines({ algorand: aw, stellar: loadStellarWallet(spath), statePath, buyPath, ledgerPath, algod, fetchImpl }, alive(st))
+        for (const l of lines) out(l)
+        if (/^Status: Idle/.test(lines[0]) && st.funded) out(`To get what is left back as XLM: ${CMD} refund --to <YOUR STELLAR ADDRESS>`)
         return 0
+      }
+
+      if (cmd === 'refund') {
+        const at = argv.indexOf('--to')
+        const to = at >= 0 ? argv[at + 1] : undefined
+        if (!to || to.startsWith('--')) {
+          out(`Name your own Stellar address: ${CMD} refund --to <YOUR STELLAR ADDRESS>`)
+          return 1
+        }
+        const sw = loadStellarWallet(spath)
+        if (!isStellarAddress(to) || to === sw?.address) {
+          out(`${to} is not your Stellar address. It starts with G and is 56 characters long.`)
+          return 1
+        }
+        const underway = () => exchangeUnderway(loadState(statePath))
+        const busy = `Your XLM is still being exchanged. Wait until ${CMD} status no longer says Running, then run the refund again.`
+        if (underway()) {
+          out(busy)
+          return 2
+        }
+        // The worker is only waiting for XLM: stop it, so nothing new starts while the money goes back.
+        const st = loadBuy(buyPath)
+        if (st.worker && alive(st)) {
+          ;(deps.stopWorker ?? stopProcess)(st.worker.pid)
+          const s = loadBuy(buyPath)
+          delete s.worker
+          saveBuy(buyPath, s)
+          if (underway()) {
+            out(`An exchange started just now. Run ${CMD} buy to let it finish, then run the refund again.`)
+            return 2
+          }
+        }
+        const sleep = deps.sleep ?? ((ms: number) => new Promise<void>((r) => setTimeout(r, ms)))
+        return (await refundAll({ algorandPath: path, stellarPath: spath, statePath, to, algod, horizon, fetchImpl, out, now: deps.now, sleep })) ? 0 : 2
       }
 
       // The background worker: advances until everything is done, then exits.
@@ -220,12 +300,11 @@ export async function runCli(
       // `buy` starts a round, or continues the one under way; `status` only looks.
       let st = loadBuy(buyPath)
       const flags = argv.slice(1)
-      const at = flags.indexOf('--return')
-      const returnTo = at >= 0 ? flags[at + 1] : undefined
-      if (at >= 0 && (!returnTo || returnTo.startsWith('--'))) {
-        out(`Name your own Stellar address: ${CMD} buy --return <YOUR STELLAR ADDRESS>`)
+      if (flags.includes('--return')) {
+        out(`--return is gone since 0.4.5: nothing is spent or sent back on its own any more. Run ${CMD} buy, and when you are done: ${CMD} refund --to <YOUR STELLAR ADDRESS>`)
         return 1
       }
+      for (const l of DISCLOSURE) out(l)
       // Everything a round keeps on this computer, moved aside together (never deleted).
       const answers = join(dirname(buyPath), 'answers')
       const archive = (files: string[]) => {
@@ -248,14 +327,14 @@ export async function runCli(
           const xlm = sw ? (await readXlm(sw.address, horizon, fetchImpl)).xlm : 0
           const usdc = aw ? (await readStatus(aw.address, algod, fetchImpl)).usdc : 0
           const unspent = exchanging || xlm - STELLAR_KEEP_XLM >= 1 || usdc >= 1
-          const underway = Boolean(st.round && !st.finished)
+          const underway = Boolean(st.round && !st.funded)
           const started = st.roundStartedAt ? Date.parse(st.roundStartedAt) : 0
           if (unspent && (underway || alive(st))) out('A round with money in it is under way on the wallets on this computer; continuing it.')
           else if (unspent) {
             out(
               `The wallets already on this computer still hold money that was not spent (${xlm} XLM, ${usdc} USDC)` +
-                `${exchanging ? ', or an exchange is under way' : ''}. Run ${CMD} buy without --new to spend it on checks, or ` +
-                `${CMD} stellar return <YOUR STELLAR ADDRESS> to get it back, before starting new wallets.`,
+                `${exchanging ? ', or an exchange is under way' : ''}. Keep using it for checks, or get it back with ` +
+                `${CMD} refund --to <YOUR STELLAR ADDRESS>, before starting new wallets.`,
             )
             return 1
           } else if (underway && now() - started < FRESH_ROUND_MS) out('A round was started here a few minutes ago; continuing it.')
@@ -275,7 +354,7 @@ export async function runCli(
       if (alive(st)) {
         out('Already working on it.')
         const ctx = walletsCtx()
-        if (ctx) for (const l of await statusLines({ ...ctx, out }, true)) out(l)
+        if (ctx) for (const l of await statusLines({ ...ctx, ledgerPath }, true)) out(l)
         return 0
       }
 
@@ -285,8 +364,8 @@ export async function runCli(
         // Algorand wallet stays, with anything left in it.
         archive([spath, statePath, buyPath])
         st = loadBuy(buyPath)
-      } else if (earlier.back && earlier.back.to !== st.returnTo) {
-        out(`What is left is on its way to ${earlier.back.to}. Finish that first: ${CMD} stellar return ${earlier.back.to}`)
+      } else if (earlier.back) {
+        out(`What is left is on its way to ${earlier.back.to}. Finish that first: ${CMD} refund --to ${earlier.back.to}`)
         return 1
       }
       const a = createWallet(path)
@@ -297,26 +376,15 @@ export async function runCli(
         archive([statePath, buyPath])
         st = loadBuy(buyPath)
       }
-      if (returnTo) {
-        if (!isStellarAddress(returnTo) || returnTo === x.address) {
-          out(`${returnTo} is not your Stellar address. It starts with G and is 56 characters long.`)
-          return 1
-        }
-        if (!(await readXlm(returnTo, horizon, fetchImpl)).exists) {
-          out(`${returnTo} does not exist on Stellar yet. Use an address that already holds XLM.`)
-          return 1
-        }
-        st.returnTo = returnTo
-      }
       delete st.stopped
       const br = loadState(statePath)
       const funded = Boolean(br.fundIn.done && !br.back)
-      if (!st.round || st.finished) {
+      if (!st.round || st.funded) {
         // A new round. On wallets an earlier run already funded, nothing tells it XLM is on the
-        // way, so it waits for a new deposit before it can call itself finished.
+        // way, so it waits for a new deposit before it can call itself funded.
         st.round = (st.round ?? 0) + 1
         st.roundStartedAt = new Date(now()).toISOString()
-        delete st.finished
+        delete st.funded
         st.waitForXlm = funded
       }
       saveBuy(buyPath, st)
@@ -326,19 +394,18 @@ export async function runCli(
       out(`  ${x.address}`)
       if (funded) {
         // The ALGO for fees is already there: only the exchange into USDC has a minimum.
-        out(`Send as much as you want to spend, at least ${Math.ceil(usdcPair.min * 1.02 + 0.1)} XLM. All of it is spent on A-Identity checks.`)
+        out(`Send as much as you want your agent to spend on checks, at least ${Math.ceil(usdcPair.min * 1.02 + 0.1)} XLM.`)
         const held = await readStatus(a.address, algod, fetchImpl)
-        if (held.usdc >= 1) out(`The Algorand wallet already holds ${held.usdc} USDC from before; that is spent on checks too.`)
+        if (held.usdc >= 1) out(`The Algorand wallet already holds ${held.usdc} USDC from before; it is part of the same budget.`)
       } else {
         const plan = planIn(await pair('xlm-stellar', 'algo-algorand', fetchImpl), usdcPair)
-        out(`Send as much as you want to spend, at least ${plan.totalXlm} XLM. All of it is spent on A-Identity checks.`)
-        out(
-          st.returnTo
-            ? `About ${Math.ceil(plan.algoXlm + STELLAR_KEEP_XLM)} XLM of it becomes ALGO for network fees, and what is left of that comes back to ${st.returnTo} at the end.`
-            : `About ${Math.ceil(plan.algoXlm)} XLM of it first becomes ALGO, which the Algorand wallet needs to hold USDC; at the end that ALGO is exchanged for USDC and spent too, all but 0.2.`,
-        )
+        out(`Send as much as you want your agent to spend on checks, at least ${plan.totalXlm} XLM.`)
+        out(`About ${Math.ceil(plan.algoXlm)} XLM of it first becomes ALGO, which the Algorand wallet needs to hold USDC; once the USDC is in, that ALGO becomes USDC too, all but 0.2.`)
       }
-      out('Nothing else to do: it keeps working in the background, even if you close this window, as long as this computer stays on.')
+      out('The exchange runs in the background, even if you close this window, as long as this computer stays on. Nothing is spent until your agent asks for a check.')
+      out('Then let your agent use it; it finds this wallet on its own:')
+      out(`  claude mcp add a-identity-trust -- ${CMD}`)
+      out(`or from a terminal: ${CMD} check <ADDRESS, LINK OR AGENT ID> <AMOUNT ABOUT TO BE PAID, IN USD>`)
       out(`To see how it is going: ${CMD} status`)
       out(`(Wallets on this computer, secrets never printed: Stellar ${x.address}, Algorand ${a.address}.)`)
       const pid = (deps.spawnWorker ?? spawnDetached)(['buy', '--worker'], logPath)
@@ -415,53 +482,37 @@ export async function runCli(
     }
 
     if (cmd === 'check' || cmd === 'ask') {
-      // Nothing is attempted from a wallet that cannot pay yet; the person gets the next step.
-      const ready = await readStatus(w.address, algod, fetchImpl)
-      if (!ready.usdcOptedIn || ready.usdc <= 0) {
-        out(`Not ready to pay yet. ${nextStep(ready)}`)
-        return 1
-      }
-      const config = configFromEnv(env)
-      const cap = config.maxUsdPerCall ?? DEFAULT_MAX_USD_PER_CALL
-      const oracle = new TrustGuard({
-        rail: 'algorand',
-        baseUrl: config.baseUrl ?? DEFAULT_BASE_URL,
-        fetch: fetchImpl,
-        onPaymentRequired: algorandPayer({ mnemonic: w.mnemonic, maxUsdPerCall: cap, algodUrl: config.algodUrl, fetch: fetchImpl }),
-      })
+      // Every check goes through the gate: saved answers are free, new ones are paid for once,
+      // and a wallet without enough USDC is refused before anything is signed.
+      const gate = gateFor(w)
       if (cmd === 'check') {
-        if (!sub) {
-          out(`Name the address or link to check: ${CMD} check <ADDRESS OR LINK>`)
+        const amount = arg === undefined ? 0 : Number(arg)
+        if (!sub || !Number.isFinite(amount) || amount < 0) {
+          out(`Usage: ${CMD} check <ADDRESS, LINK OR AGENT ID> [AMOUNT ABOUT TO BE PAID, IN USD]`)
           return 1
         }
-        describeAnswer(out, 'pay_check', await oracle.payCheck(sub))
+        describeDecision(out, await checkBeforePay(gate, sub, amount))
         return 0
       }
-      const method = ASK[sub ?? '']
-      if (!method || !arg) {
+      const tool = ASK[sub ?? '']
+      if (!tool || !arg) {
         out(`Usage: ${CMD} ask <verify|reputation|risk|passport> <AGENT ID> [DEAL USD]`)
         return 1
       }
       const deal = extra === undefined ? undefined : Number(extra)
-      const r =
-        method === 'riskCheck'
-          ? await oracle.riskCheck(arg, deal !== undefined && Number.isFinite(deal) ? { amountUsd: deal } : undefined)
-          : await oracle[method](arg)
-      describeAnswer(out, method, r as Record<string, unknown>)
+      describeAnswer(out, tool, await askOne(gate, tool, arg, deal !== undefined && Number.isFinite(deal) ? deal : undefined))
       return 0
     }
 
     out(HELP)
     return 1
   } catch (e) {
-    if (e instanceof SpendCapError) out(`Not paid: the price ${e.amountUsd} USDC is above the cap of ${e.capUsd}. Raise A_IDENTITY_MAX_USD_PER_CALL to allow it. Nothing was signed.`)
-    else if (e instanceof PaymentRequiredError) {
-      const reason = (e.challenge as { reason?: unknown } | null)?.reason
-      out(`Not paid: the payment was not accepted${typeof reason === 'string' ? ` (${reason})` : ''}. Nothing was charged. Check the wallet with: ${CMD} wallet status`)
+    const { error } = explain(e, true)
+    out(/^(Not paid|Stopped|Payment refused)/.test(error) ? error : `Not done: ${error}`)
+    if (/budget is spent|wallet holds 0 USDC/.test(error)) {
+      const w = loadWallet(path)
+      if (w) out(nextStep(await readStatus(w.address, algod, fetchImpl).catch(() => ({ address: w.address, exists: false, algo: 0, minBalanceAlgo: 0.1, usdcOptedIn: false, usdc: 0, otherAssets: 0 }))))
     }
-    else if (e instanceof AlgorandPaymentError) out(`Not paid: ${e.message}. Nothing was signed.`)
-    else if (e instanceof TrustOracleError) out(`The check failed (HTTP ${e.status}): ${e.message}`)
-    else out(e instanceof Error ? e.message : String(e))
     return 1
   }
 }

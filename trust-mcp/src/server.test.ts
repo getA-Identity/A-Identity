@@ -1,9 +1,12 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
+import { mkdtempSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import algosdk from 'algosdk'
 import { Client } from '@modelcontextprotocol/sdk/client/index.js'
 import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js'
-import { buildTrustMcpServer, configFromEnv, type TrustMcpConfig } from './server.js'
+import { buildTrustMcpServer, configFromEnv, INSTRUCTIONS, type TrustMcpConfig } from './server.js'
 
 const MAINNET = 'algorand:wGHE2Pwdvd7S12BL5FaOP20EGYesN73ktiC1qzkkit8='
 const buyer = algosdk.generateAccount()
@@ -19,8 +22,12 @@ const challenge = (amount: string) => ({
 /** An oracle that answers 402 until paid, plus the facilitator and algod endpoints the payer reads. */
 function world(amount: string) {
   const hits: string[] = []
+  let payments = 0
   const fetch = async (url: string, init?: RequestInit) => {
     hits.push(url)
+    if (url.includes('/v2/accounts/')) {
+      return new Response(JSON.stringify({ amount: 1_000_000, 'min-balance': 200_000, assets: [{ 'asset-id': 31566704, amount: 20_000_000 }] }))
+    }
     if (url.endsWith('/supported')) {
       return new Response(JSON.stringify({ kinds: [{ network: MAINNET, extra: { feePayer: feePayer.addr.toString() } }] }))
     }
@@ -29,13 +36,16 @@ function world(amount: string) {
     }
     const paid = (init?.headers as Record<string, string> | undefined)?.['PAYMENT-SIGNATURE']
     if (!paid) return new Response(JSON.stringify(challenge(amount)), { status: 402 })
+    payments++
     return new Response(JSON.stringify({ tool: 'risk_check', agentId: '#5', decision: 'DENY', risk: 'high', reasons: ['revoked'] }))
   }
-  return { fetch, hits }
+  return { fetch, hits, payments: () => payments }
 }
 
+const ledger = () => join(mkdtempSync(join(tmpdir(), 'aid-server-')), 'checks.json')
+
 async function connect(config: TrustMcpConfig) {
-  const server = buildTrustMcpServer({ baseUrl: 'https://oracle.test', ...config })
+  const server = buildTrustMcpServer({ baseUrl: 'https://oracle.test', ledgerPath: ledger(), ...config })
   const client = new Client({ name: 'test', version: '0.0.0' })
   const [clientSide, serverSide] = InMemoryTransport.createLinkedPair()
   await Promise.all([server.connect(serverSide), client.connect(clientSide)])
@@ -44,10 +54,51 @@ async function connect(config: TrustMcpConfig) {
 
 const text = (r: unknown) => JSON.parse(((r as { content: { text: string }[] }).content[0]).text)
 
-test('the server lists the free quote and the six paid tools, the address check included', async () => {
+test('the server leads with check_before_pay and check_batch, keeps the single tools, and tells the agent how to use them', async () => {
   const client = await connect({ fetch: world('50000').fetch })
   const { tools } = await client.listTools()
-  assert.deepEqual(tools.map((t) => t.name).sort(), ['agent_batch_audit', 'agent_passport', 'pay_check', 'price_quote', 'reputation_score', 'risk_check', 'verify_agent'])
+  assert.deepEqual(tools.map((t) => t.name).sort(), [
+    'agent_batch_audit',
+    'agent_passport',
+    'check_batch',
+    'check_before_pay',
+    'pay_check',
+    'price_quote',
+    'reputation_score',
+    'risk_check',
+    'verify_agent',
+  ])
+  const main = tools.find((t) => t.name === 'check_before_pay')!.description!
+  assert.match(main, /BEFORE every payment/)
+  assert.match(main, /If the decision is DENY, do not pay/)
+  assert.match(main, /Do not check the same target again/)
+  assert.equal(client.getInstructions(), INSTRUCTIONS)
+  assert.match(INSTRUCTIONS, /call check_before_pay/)
+  assert.match(INSTRUCTIONS, /do not ask the user/)
+})
+
+test('check_before_pay pays once for a target; asking again answers from the ledger and pays nothing', async () => {
+  const mnemonic = algosdk.secretKeyToMnemonic(buyer.sk)
+  const w = world('5000000')
+  const path = ledger()
+  const client = await connect({ fetch: w.fetch, mnemonic, ledgerPath: path })
+  const first = text(await client.callTool({ name: 'check_before_pay', arguments: { target: '#5', amount: 40 } }))
+  assert.equal(first.decision, 'DENY')
+  assert.equal(first.advice, 'Do not pay.')
+  assert.equal(first.checks[0].source, 'paid')
+  const again = text(await client.callTool({ name: 'check_before_pay', arguments: { target: '5', amount: 40 } }))
+  assert.equal(again.checks[0].source, 'cache')
+  assert.equal(again.decision, 'DENY')
+  assert.equal(w.payments(), 1)
+
+  // Without a wallet, the saved answer is still served, and a new target answers with its price.
+  const noWallet = await connect({ fetch: w.fetch, ledgerPath: path })
+  assert.equal(text(await noWallet.callTool({ name: 'check_before_pay', arguments: { target: '#5', amount: 40 } })).checks[0].source, 'cache')
+  const priced = await noWallet.callTool({ name: 'check_before_pay', arguments: { target: '#6', amount: 40 } })
+  assert.equal(priced.isError, true)
+  assert.match(text(priced).error, /A_IDENTITY_ALGORAND_MNEMONIC/)
+  assert.equal(text(priced).price.usd, 5)
+  assert.equal(w.payments(), 1)
 })
 
 test('price_quote reads the live price from the 402 without paying', async () => {
@@ -91,4 +142,6 @@ test('configuration comes from the environment, and a nonsense cap falls back to
   assert.equal(c.mnemonic, 'words')
   assert.equal(c.maxUsdPerCall, undefined)
   assert.equal(configFromEnv({ A_IDENTITY_MAX_USD_PER_CALL: '2' }).maxUsdPerCall, 2)
+  assert.equal(configFromEnv({ A_IDENTITY_CACHE_HOURS: '48', A_IDENTITY_CHECKS_LEDGER: ' /tmp/l.json ' }).cacheHours, 48)
+  assert.equal(configFromEnv({ A_IDENTITY_CHECKS_LEDGER: ' /tmp/l.json ' }).ledgerPath, '/tmp/l.json')
 })

@@ -1,7 +1,7 @@
 {
   "name": "@a-identity/trust-mcp",
-  "version": "0.4.4",
-  "description": "Pay A-Identity for trust checks (is it safe to pay this address, is this AI agent real) in USDC on Algorand, as an MCP server or as commands. Holding only XLM on Stellar? `buy` exchanges it through SideShift into USDC on Algorand and spends it on checks at fixed prices, each price also its own spending cap.",
+  "version": "0.4.5",
+  "description": "Pay A-Identity for trust checks (is it safe to pay this address, is this AI agent real) in USDC on Algorand, as an MCP server or as commands. check_before_pay picks the checks a payment calls for and never pays twice for the same check. Holding only XLM on Stellar? `buy` exchanges it through SideShift into USDC on Algorand as your agent's budget for checks, and `refund` sends what is left back.",
   "type": "module",
   "bin": {
     "a-identity-trust-mcp": "dist/index.js"
@@ -16,14 +16,15 @@
   },
   "files": [
     "dist",
-    "README.md"
+    "README.md",
+    "CHANGELOG.md"
   ],
   "engines": {
     "node": ">=18"
   },
   "scripts": {
     "build": "tsc",
-    "test": "tsc -p tsconfig.test.json && node --test dist-test/server.test.js dist-test/wallet.test.js dist-test/bridge.test.js dist-test/buy.test.js",
+    "test": "tsc -p tsconfig.test.json && node --test dist-test/server.test.js dist-test/checks.test.js dist-test/wallet.test.js dist-test/bridge.test.js dist-test/buy.test.js",
     "prepublishOnly": "tsc"
   },
   "keywords": [

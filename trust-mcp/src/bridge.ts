@@ -49,6 +49,11 @@ export type Ctx = {
   sleep?: (ms: number) => Promise<void>
 }
 
+/** Without a wallet of its own: what the way back and the waiting need. */
+type Base = Omit<Ctx, 'algorand' | 'stellar'>
+/** The way back works on what is there: an archived set may hold only one of the two wallets. */
+export type BackCtx = Base & { algorand: WalletFile | null; stellar: StellarWalletFile | null }
+
 export function bridgeStatePath(env: NodeJS.ProcessEnv = process.env): string {
   return env.A_IDENTITY_BRIDGE_STATE?.trim() || join(homedir(), '.a-identity', 'bridge-state.json')
 }
@@ -72,7 +77,7 @@ export function planIn(algoPair: { min: number; rate: number }, usdcPair: { min:
   return { algoXlm, usdcXlm, totalXlm: Math.ceil(algoXlm + usdcXlm + STELLAR_KEEP_XLM + 1), perExtraCheckXlm: Math.ceil(5 / usdcPair.rate) }
 }
 
-async function waitFor<T>(ctx: Ctx, deadline: number, probe: () => Promise<T | null>): Promise<T | null> {
+async function waitFor<T>(ctx: Base, deadline: number, probe: () => Promise<T | null>): Promise<T | null> {
   const now = ctx.now ?? Date.now
   const sleep = ctx.sleep ?? ((ms) => new Promise((r) => setTimeout(r, ms)))
   for (;;) {
@@ -104,7 +109,7 @@ async function sendXlmOnce(ctx: Ctx, st: BridgeState, rec: ShiftRec) {
 }
 
 /** Send ALGO or USDC from the Algorand wallet into a shift, once. */
-async function sendAlgorandOnce(ctx: Ctx, st: BridgeState, rec: ShiftRec, a: { asset: 'algo' | 'usdc'; micro: number; close: boolean }) {
+async function sendAlgorandOnce(ctx: Base & { algorand: WalletFile }, st: BridgeState, rec: ShiftRec, a: { asset: 'algo' | 'usdc'; micro: number; close: boolean }) {
   const algod = ctx.algod ?? DEFAULT_ALGOD
   const f = ctx.fetchImpl ?? fetch
   if (rec.sent) return
@@ -122,7 +127,7 @@ async function sendAlgorandOnce(ctx: Ctx, st: BridgeState, rec: ShiftRec, a: { a
 }
 
 /** Waits for a shift to settle; throws if it ended any other way. */
-async function settled(ctx: Ctx, st: BridgeState, rec: ShiftRec, label: string, deadline: number): Promise<boolean> {
+async function settled(ctx: Base, st: BridgeState, rec: ShiftRec, label: string, deadline: number): Promise<boolean> {
   if (rec.settled) return true
   const f = ctx.fetchImpl ?? fetch
   const s = await waitFor(ctx, deadline, async () => {
@@ -271,14 +276,22 @@ export async function runAlgoToUsdc(ctx: Ctx, maxWaitMs = 80_000): Promise<'none
   return (await settled(ctx, st, rec, 'ALGO to USDC', deadline)) ? 'settled' : 'waiting'
 }
 
-/** Advance the way back to `to`, the user's own Stellar address. Returns true when done. */
-export async function runBack(ctx: Ctx, to: string, maxWaitMs = 80_000): Promise<boolean> {
+/** Whether XLM, ALGO or USDC is on its way through SideShift right now: sent, or maybe sent, and not settled. */
+export function exchangeUnderway(st: BridgeState): boolean {
+  return [st.fundIn.algo, st.fundIn.usdc, st.fundIn.algoToUsdc, ...(st.fundIn.topUps ?? [])].some((r) => r && (r.tx || r.sent) && !r.settled)
+}
+
+/**
+ * Advance the way back to `to`, the user's own Stellar address. Returns true when done. Either
+ * wallet may be missing (a set moved aside can hold only one): its part is then skipped.
+ */
+export async function runBack(ctx: BackCtx, to: string, maxWaitMs = 80_000): Promise<boolean> {
   const f = ctx.fetchImpl ?? fetch
   const horizon = ctx.horizon ?? HORIZON
   const algod = ctx.algod ?? DEFAULT_ALGOD
   const deadline = (ctx.now ?? Date.now)() + maxWaitMs
   if (!isStellarAddress(to)) throw new Error(`${to} is not a Stellar address (it starts with G and is 56 characters).`)
-  if (to === ctx.stellar.address) throw new Error('Name your own Stellar address, not the one-time wallet.')
+  if (to === ctx.stellar?.address) throw new Error('Name your own Stellar address, not the one-time wallet.')
   const st = loadState(ctx.statePath)
   if (st.back && st.back.to !== to) throw new Error(`A return to ${st.back.to} is already under way; finish it with that address.`)
   st.back = st.back ?? { to }
@@ -291,12 +304,13 @@ export async function runBack(ctx: Ctx, to: string, maxWaitMs = 80_000): Promise
 
   // 1. The Stellar wallet: merge it, which sends every XLM it holds, reserve included.
   st.back.merge = st.back.merge ?? {}
+  const sw = ctx.stellar
   if (!st.back.merge.done) {
-    const me = await readXlm(ctx.stellar.address, horizon, f)
+    const me = sw ? await readXlm(sw.address, horizon, f) : null
     if (st.back.merge.hash && (await stellarTxLanded(st.back.merge.hash, horizon, f))) st.back.merge.done = true
-    else if (!me.exists) st.back.merge.done = true
+    else if (!sw || !me?.exists) st.back.merge.done = true
     else {
-      const { hash, xdr } = buildXlmPayment(ctx.stellar, me.sequence!, { kind: 'merge', to })
+      const { hash, xdr } = buildXlmPayment(sw, me.sequence!, { kind: 'merge', to })
       st.back.merge.hash = hash
       saveState(ctx.statePath, st)
       await submitStellar(xdr, horizon, f)
@@ -306,46 +320,57 @@ export async function runBack(ctx: Ctx, to: string, maxWaitMs = 80_000): Promise
     saveState(ctx.statePath, st)
   }
 
+  const aw = ctx.algorand
+  if (!aw) {
+    st.back.done = true
+    saveState(ctx.statePath, st)
+    ctx.out(`Done. Everything that could go back was sent to ${to} as XLM.`)
+    return true
+  }
+  const actx = { ...ctx, algorand: aw }
+
   // 2. USDC on Algorand, if SideShift will take it.
-  const s = await readStatus(ctx.algorand.address, algod, f)
+  const s = await readStatus(aw.address, algod, f)
   if (s.usdcOptedIn && s.usdc > 0 && !st.back.usdc && st.back.usdcLeft === undefined) {
     const p = await pair('usdc-algorand', 'xlm-stellar', f)
     if (s.usdc >= p.min * 1.01) {
-      const shift = await createShift({ from: 'usdc-algorand', to: 'xlm-stellar', settleAddress: to, refundAddress: ctx.algorand.address }, f)
+      const shift = await createShift({ from: 'usdc-algorand', to: 'xlm-stellar', settleAddress: to, refundAddress: aw.address }, f)
       st.back.usdc = { id: shift.id, depositAddress: shift.depositAddress, depositMemo: shift.depositMemo, amount: String(s.usdc) }
     } else {
       st.back.usdcLeft = s.usdc
     }
     saveState(ctx.statePath, st)
   }
-  if (st.back.usdc) await sendAlgorandOnce(ctx, st, st.back.usdc, { asset: 'usdc', micro: 0, close: true })
+  if (st.back.usdc) await sendAlgorandOnce(actx, st, st.back.usdc, { asset: 'usdc', micro: 0, close: true })
 
   // An empty USDC holding still blocks closing the account; close it to the asset's creator.
   if (!st.back.algo && st.back.usdcLeft === undefined && !st.back.usdc) {
-    const h = await readStatus(ctx.algorand.address, algod, f)
+    const h = await readStatus(aw.address, algod, f)
     if (h.usdcOptedIn && h.usdc === 0) {
-      const { signed } = buildTransfer(ctx.algorand, { asset: 'usdc', to: await usdcCreator(algod, f), micro: 0, close: true }, await params(algod, f))
+      const { signed } = buildTransfer(aw, { asset: 'usdc', to: await usdcCreator(algod, f), micro: 0, close: true }, await params(algod, f))
       await submit(algod, f, [signed])
     }
   }
 
   // 3. ALGO: everything if the USDC holding is closed, otherwise all but the reserve it needs.
   if (!st.back.algo) {
-    const now = await readStatus(ctx.algorand.address, algod, f)
+    const now = await readStatus(aw.address, algod, f)
     const holdingUsdc = now.usdcOptedIn && (st.back.usdcLeft ?? 0) > 0
     const sendable = holdingUsdc ? now.algo - now.minBalanceAlgo - 0.002 : now.algo - 0.002
-    const p = await pair('algo-algorand', 'xlm-stellar', f)
-    if (!now.exists || sendable < p.min * 1.01) {
+    const p = now.exists ? await pair('algo-algorand', 'xlm-stellar', f) : null
+    if (!p) {
+      /* the account is closed: no ALGO to send */
+    } else if (sendable < p.min * 1.01) {
       ctx.out(`The Algorand wallet's ${now.algo} ALGO is under SideShift's ${p.min} ALGO minimum, so it stays in the wallet.`)
     } else {
-      const shift = await createShift({ from: 'algo-algorand', to: 'xlm-stellar', settleAddress: to, refundAddress: ctx.algorand.address }, f)
+      const shift = await createShift({ from: 'algo-algorand', to: 'xlm-stellar', settleAddress: to, refundAddress: aw.address }, f)
       st.back.algo = { id: shift.id, depositAddress: shift.depositAddress, depositMemo: shift.depositMemo, amount: holdingUsdc ? String(sendable) : 'all' }
       saveState(ctx.statePath, st)
     }
   }
   if (st.back.algo) {
     const close = st.back.algo.amount === 'all'
-    await sendAlgorandOnce(ctx, st, st.back.algo, { asset: 'algo', micro: close ? 0 : Math.floor(Number(st.back.algo.amount) * 1e6), close })
+    await sendAlgorandOnce(actx, st, st.back.algo, { asset: 'algo', micro: close ? 0 : Math.floor(Number(st.back.algo.amount) * 1e6), close })
   }
 
   // 4. Both exchanges settle to the user's address.
@@ -355,7 +380,7 @@ export async function runBack(ctx: Ctx, to: string, maxWaitMs = 80_000): Promise
   st.back.done = true
   saveState(ctx.statePath, st)
   if (st.back.usdcLeft) {
-    ctx.out(`${st.back.usdcLeft} USDC was under SideShift's minimum and stays in the Algorand wallet ${ctx.algorand.address}; it still pays for a 1 or 2 USDC agent check.`)
+    ctx.out(`${st.back.usdcLeft} USDC was under SideShift's minimum and stays in the Algorand wallet ${aw.address}; it still pays for a 1 or 2 USDC agent check.`)
   }
   ctx.out(`Done. Everything that could go back was sent to ${to} as XLM.`)
   return true
