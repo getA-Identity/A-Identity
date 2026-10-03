@@ -1169,12 +1169,12 @@ export const PROVENANCE: ChainProvenance[] = [
     // address yet.
     accounts: [
       {
-        role: 'Operator of the flagship testnet vault CAIL6ECR..., and the x402 testnet fee payer',
+        role: 'Operator of the flagship testnet vault CAIL6ECR..., the x402 testnet fee payer, and since 2026-10-03 the hosted backend\'s testnet signer',
         address: 'GDZXSO4AOKPSHMQZMBNEEBQNYOIF7TWDPD7K2U5VAPKFN3QIAIELTAN6',
         network: 'stellar-testnet',
         custody: 'ours: backend environment key',
         usedFor:
-          'pay() inside the vault policy (it can never call an owner entrypoint), broadcasting and paying the fee for every testnet x402 settlement, and the operator of the 2026-09-19 rehearsal vaults and of the 2026-10-03 rehearsal vault CCFQEMTY..., which it deployed and seeded. One key in two roles on testnet, which mcp/scripts/stellar-key-roles.mjs reports as a warning.',
+          'pay() inside the vault policy (it can never call an owner entrypoint), broadcasting and paying the fee for every testnet x402 settlement, and the operator of the 2026-09-19 rehearsal vaults and of the 2026-10-03 rehearsal vaults CCFQEMTY... and CDE5P5QX..., which it deployed and seeded. Since 2026-10-03 it is also the testnet signer of the hosted backend, set on Render by the maintainer: it deploys, seeds and operates every vault /stellar?network=testnet creates, the SoW 2 D3 vault among them once it exists, and it can never sign that vault\'s owner calls, which only the owner\'s passkey can. One key in several roles on testnet, which mcp/scripts/stellar-key-roles.mjs reports as a warning.',
         publishedAt: '2026-08-15',
       },
       {
