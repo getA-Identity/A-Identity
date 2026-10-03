@@ -68,7 +68,10 @@
     "vite": "^6.0.0"
   },
   "overrides": {
-    "axios": "^1.18.0",
+    "axios": "^1.20.0",
+    "@walletconnect/socket-transport": {
+      "ws": "7.5.13"
+    },
     "smart-account-kit-bindings": {
       "@stellar/stellar-sdk": "16.3.0"
     },
