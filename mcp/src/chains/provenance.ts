@@ -1024,7 +1024,7 @@ export const PROVENANCE: ChainProvenance[] = [
         blockNumber: 5000410,
         date: '2026-10-03',
         deliverable: 'SOW2-D2',
-        note: 'GDIZE6XJ... was generated inside Freighter by the user and did not exist on the ledger until the public testnet Friendbot (source GCG75HSV..., not ours) created and funded it with test XLM. That is the account that sources, pays for and signs the D2 owner actions.',
+        note: 'GDIZE6XJ... was generated inside Freighter by the user and did not exist on the testnet ledger until the public testnet Friendbot (source GCG75HSV..., not ours) created and funded it with test XLM. That is the account that sources, pays for and signs the D2 owner actions.',
       },
       {
         kind: 'deploy',
@@ -1210,7 +1210,7 @@ export const PROVENANCE: ChainProvenance[] = [
         network: 'stellar-testnet',
         custody: 'owner: generated inside a browser wallet, secret never on our systems',
         usedFor:
-          'set_policy, set_frozen and withdraw on the D2 vault, each in a transaction this account sources, pays for and signs whole in Freighter. The key was generated inside Freighter by the user; Friendbot created the account. Published here on the day the vault was deployed and before its first owner action.',
+          'set_policy, set_frozen and withdraw on the D2 vault, each in a transaction this account sources, pays for and signs whole in Freighter. The key was generated inside Freighter by the user; the public Friendbot created its testnet account, and the account added its testnet USDC trustline itself in Freighter on 2026-10-03 (tx 870cf65d...). Published here on the day the vault was deployed and before its first owner action.',
         publishedAt: '2026-10-03',
       },
       {

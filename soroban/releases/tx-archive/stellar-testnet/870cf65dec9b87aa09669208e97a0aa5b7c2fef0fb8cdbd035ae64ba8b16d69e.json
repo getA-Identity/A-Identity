@@ -1,0 +1,58 @@
+{
+  "hash": "870cf65dec9b87aa09669208e97a0aa5b7c2fef0fb8cdbd035ae64ba8b16d69e",
+  "chainId": "stellar-testnet",
+  "network": "stellar:testnet",
+  "ledger": 5005975,
+  "createdAt": "2026-10-03T18:51:02.000Z",
+  "status": "success",
+  "resultCode": {
+    "tx": "txSuccess",
+    "inner": null,
+    "operations": [
+      "changeTrustSuccess"
+    ],
+    "contractError": null
+  },
+  "sourceAccount": "GDIZE6XJ36EDO4G2G674DCHMNRQLHOQN3JH7EZDBIQENOJABPSYL44EQ",
+  "feeAccount": "GDIZE6XJ36EDO4G2G674DCHMNRQLHOQN3JH7EZDBIQENOJABPSYL44EQ",
+  "feeChargedStroops": "100",
+  "envelopeXdr": "AAAAAgAAAADRknrp34g3cNo3v8GI7Gxgs7oN2k/yZGFECNckAXywvgAAAGQATEzaAAAAAQAAAAEAAAAAAAAAAAAAAABqwU9GAAAAAAAAAAEAAAAAAAAABgAAAAFVU0RDAAAAAEI+fQXy7K+/7BkrIVo/G+lq7bjY5wJUq+NBPgIH3layf/////////8AAAAAAAAAAQF8sL4AAABA1thyu9wyUalDyphQwLXiOpvD589r7UI2lhNKmJ84ceC7OIDnSDeiubAkucz8BHkZaLXJVjiYO/GZGX+UaPqrBw==",
+  "resultXdr": "AAAAAAAAAGQAAAAAAAAAAQAAAAAAAAAGAAAAAAAAAAA=",
+  "resultMetaXdr": "AAAABAAAAAAAAAACAAAAAwBMYpcAAAAAAAAAANGSeunfiDdw2je/wYjsbGCzug3aT/JkYUQI1yQBfLC+AAAAF0h255wATEzaAAAAAAAAAAAAAAAAAAAAAAAAAAABAAAAAAAAAAAAAAAAAAAAAAAAAQBMYpcAAAAAAAAAANGSeunfiDdw2je/wYjsbGCzug3aT/JkYUQI1yQBfLC+AAAAF0h255wATEzaAAAAAQAAAAAAAAAAAAAAAAAAAAABAAAAAAAAAAAAAAEAAAAAAAAAAAAAAAAAAAAAAAAAAgAAAAAAAAAAAAAAAAAAAAMAAAAAAExilwAAAABqwU6WAAAAAAAAAAEAAAAAAAAAAwAAAAAATGKXAAAAAQAAAADRknrp34g3cNo3v8GI7Gxgs7oN2k/yZGFECNckAXywvgAAAAFVU0RDAAAAAEI+fQXy7K+/7BkrIVo/G+lq7bjY5wJUq+NBPgIH3layAAAAAAAAAAB//////////wAAAAEAAAAAAAAAAAAAAAMATGKXAAAAAAAAAADRknrp34g3cNo3v8GI7Gxgs7oN2k/yZGFECNckAXywvgAAABdIduecAExM2gAAAAEAAAAAAAAAAAAAAAAAAAAAAQAAAAAAAAAAAAABAAAAAAAAAAAAAAAAAAAAAAAAAAIAAAAAAAAAAAAAAAAAAAADAAAAAABMYpcAAAAAasFOlgAAAAAAAAABAExilwAAAAAAAAAA0ZJ66d+IN3DaN7/BiOxsYLO6DdpP8mRhRAjXJAF8sL4AAAAXSHbnnABMTNoAAAABAAAAAQAAAAAAAAAAAAAAAAEAAAAAAAAAAAAAAQAAAAAAAAAAAAAAAAAAAAAAAAACAAAAAAAAAAAAAAAAAAAAAwAAAAAATGKXAAAAAGrBTpYAAAAAAAAAAAAAAAAAAAAAAAAAAQAAAAAAAAAAAAAAAdeSi3LCcDzP6vfrn/TvTVBKVai5efybRQ6iyEK00c5hAAAAAQAAAAAAAAACAAAADwAAAANmZWUAAAAAEgAAAAAAAAAA0ZJ66d+IN3DaN7/BiOxsYLO6DdpP8mRhRAjXJAF8sL4AAAAKAAAAAAAAAAAAAAAAAAAAZAAAAAA=",
+  "metaFrom": "rpc",
+  "metaNote": null,
+  "fetchedFrom": "rpc",
+  "explorer": "https://stellar.expert/explorer/testnet/tx/870cf65dec9b87aa09669208e97a0aa5b7c2fef0fb8cdbd035ae64ba8b16d69e",
+  "archivedAt": "2026-10-03T18:51:59.831Z",
+  "caption": "The D2 owner GDIZE6XJ adds the testnet USDC trustline (issuer GBBD47IF...) in Freighter on 2026-10-03, so the D2 withdraw can pay the owner's own account; a classic account operation, not an action on the vault",
+  "deliverable": "D2",
+  "decoded": {
+    "hash": "870cf65dec9b87aa09669208e97a0aa5b7c2fef0fb8cdbd035ae64ba8b16d69e",
+    "innerHash": null,
+    "status": "success",
+    "resultCode": {
+      "tx": "txSuccess",
+      "inner": null,
+      "operations": [
+        "changeTrustSuccess"
+      ],
+      "contractError": null
+    },
+    "sourceAccount": "GDIZE6XJ36EDO4G2G674DCHMNRQLHOQN3JH7EZDBIQENOJABPSYL44EQ",
+    "feeAccount": "GDIZE6XJ36EDO4G2G674DCHMNRQLHOQN3JH7EZDBIQENOJABPSYL44EQ",
+    "feeBump": false,
+    "feeChargedStroops": "100",
+    "operations": [
+      {
+        "type": "changeTrust",
+        "source": null,
+        "contract": null,
+        "function": null,
+        "args": null
+      }
+    ],
+    "auth": [],
+    "summary": "One changeTrust operation. Fee 0.00001 XLM paid by GDIZE6...44EQ. It succeeded.",
+    "caveats": []
+  }
+}
