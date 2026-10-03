@@ -140,9 +140,10 @@ The fix is in the source and in any vault built from it. **It is not in any depl
 vault.** Every vault deployed so far runs the v0.1.0 wasm (`155eb31c...`) and keeps the old
 order: pubnet `CB5LYXFK...`, testnet `CAIL6ECR...`, the two 2026-09-19 passkey rehearsal
 vaults on testnet `CBGTXWFB...` and `CCV2MMK4...`, and any vault the /stellar page deploys
-on pubnet, which has no v0.1.1 code entry. No v0.1.1 vault had been deployed when this was
-written (2026-10-02), so a client talking to any of these has to treat `InvalidPayee` and
-`InvalidAmount` as interchangeable first reasons on `pay` and `owner_pay`.
+on pubnet, which has no v0.1.1 code entry. A client talking to any of these has to treat
+`InvalidPayee` and `InvalidAmount` as interchangeable first reasons on `pay` and `owner_pay`.
+The first v0.1.1 vault is the SOW 2 D2 vault on testnet, `CDEU2D4TFDA5XMFI7QMCOGR2O6HWLV2QMOHYVEQDC4Z6REG73HNF2MKT`,
+deployed 2026-10-03 (receipt `releases/stellar-testnet-v0.1.1-2026-10-03.json`).
 
 The v0.1.1 release wasm, built here with `stellar contract build` (CLI 27.1.0, rustc 1.96.0,
 macOS arm64), is `353e4264f51e6173b9a2a60603239914cbb1456956e912374caf4d9b358db7c0`, 11,605

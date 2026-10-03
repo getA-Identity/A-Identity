@@ -437,7 +437,7 @@ test('the SOW 2 section resolves every hash and passes no rehearsal off as a del
   for (const d of STELLAR_SOW2.deliverables) {
     assert.ok(d.caption.length > 40, `${d.id} needs a caption that says what will appear`)
     // A site path, optionally with a plain query such as ?network=testnet, never a host.
-    for (const l of d.links) assert.match(l.url, /^\/[a-z0-9/-]*(\?[a-z0-9=:&-]+)?$/, `${d.id}: ${l.url} is not a path on this site`)
+    for (const l of d.links) assert.match(l.url, /^\/[a-z0-9/-]*(\?[A-Za-z0-9=:&-]+)?$/, `${d.id}: ${l.url} is not a path on this site`)
     if (d.status === 'live') {
       assert.ok(d.date && isUtcDay(d.date), `${d.id} is live with no date`)
       assert.ok(d.artifacts.length > 0 || d.id === 'D1', `${d.id} is live but names no artifact`)

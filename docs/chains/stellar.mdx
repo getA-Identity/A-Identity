@@ -117,8 +117,9 @@ Its code entry, sha256
 `353e4264f51e6173b9a2a60603239914cbb1456956e912374caf4d9b358db7c0`, was uploaded to
 testnet on 2026-10-01 (tx `09d041ab...9e02`, ledger 4974389, archived in
 [`soroban/releases/tx-archive`](https://github.com/getA-Identity/A-Identity/tree/main/soroban/releases/tx-archive/stellar-testnet)),
-and new testnet vaults instantiate against it. No vault runs it yet: the SOW 2 vaults are
-planned to, and each one's release receipt will be added to
+and new testnet vaults instantiate against it. The first is the SOW 2 D2 vault
+`CDEU2D4TFDA5XMFI7QMCOGR2O6HWLV2QMOHYVEQDC4Z6REG73HNF2MKT`, deployed 2026-10-03, whose owner is a key generated inside
+Freighter; the D3 vault is planned on the same code, and each vault's release receipt is in
 [`soroban/releases`](https://github.com/getA-Identity/A-Identity/tree/main/soroban/releases)
 when it is deployed. The existing vaults keep `v0.1.0`: the contract has no upgrade
 entrypoint, so a fix reaches a vault only through a new deployment.

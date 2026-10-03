@@ -248,7 +248,7 @@ of 2026-09-15.
 - **Audit decisions on the record.** D-2, D-3 and D-4 were decided on 2026-09-15 on the
   maintainer's instruction and are written up under `audit/`. A3-02 is fixed in the v0.1.1
   contract source (2026-10-01) and reaches each vault when a v0.1.1 vault replaces it; its
-  code entry is on testnet. A4-01 (error renumbering) and D-2 option C (allowlist as a
+  code entry is on testnet, where the SOW 2 D2 vault runs it since 2026-10-03. A4-01 (error renumbering) and D-2 option C (allowlist as a
   constructor argument) are deferred past v0.1.1, because each changes the contract
   interface.
 

@@ -86,7 +86,7 @@ rotation, so a compromised owner key is total and irreversible loss.
 | GHSA check | 0 of 215 locked crates in a published vulnerable range |
 | clippy `-D warnings` | clean, and enforced in CI (`soroban.yml:47`) |
 | clippy security lint set | **NOT enforced, and it does not pass.** `unwrap_used`, `expect_used`, `panic`, `indexing_slicing` and `arithmetic_side_effects` are enabled by no `clippy.toml`, no `[lints]` table and no crate attribute, and plain `-D warnings` enables none of them. Turned on by hand, the library alone fails with 4 errors: `unwrap()` at `storage.rs:144,152,160,168`. See A8-04 and A6-03 |
-| Deployed wasm | `155eb31c...79239` (v0.1.0) on both networks, byte-identical, verified by `stellar contract fetch`. The v0.1.1 source builds to `353e4264...db7c0`, 11,605 bytes, on macOS arm64; its code entry was uploaded to testnet on 2026-10-01 (tx `09d041ab...9e02`, ledger 4974389), and no vault instantiates it yet |
+| Deployed wasm | `155eb31c...79239` (v0.1.0) on both networks, byte-identical, verified by `stellar contract fetch`. The v0.1.1 source builds to `353e4264...db7c0`, 11,605 bytes, on macOS arm64; its code entry was uploaded to testnet on 2026-10-01 (tx `09d041ab...9e02`, ledger 4974389), and the first v0.1.1 vault, the SOW 2 D2 vault `CDEU2D4TFDA5XMFI7QMCOGR2O6HWLV2QMOHYVEQDC4Z6REG73HNF2MKT`, was deployed on testnet on 2026-10-03 (tx `c57f0bf6...68c0`) |
 
 ---
 
@@ -115,7 +115,7 @@ rotation, so a compromised owner key is total and irreversible loss.
 
 | Id | Title | Status |
 | --- | --- | --- |
-| A3-02 | The refusal ladder's first rung differs by path | **Fixed in v0.1.1 source** (D-3, 2026-10-01, `settle` checks the amount first). Still live in the deployed v0.1.0 wasm until a v0.1.1 vault replaces each one; the v0.1.1 code entry is on testnet (2026-10-01), no vault runs it yet |
+| A3-02 | The refusal ladder's first rung differs by path | **Fixed in v0.1.1 source** (D-3, 2026-10-01, `settle` checks the amount first). Still live in the deployed v0.1.0 wasm until a v0.1.1 vault replaces each one; the v0.1.1 code entry is on testnet (2026-10-01) and runs the SOW 2 D2 vault (2026-10-03) |
 | A5-01 / A3-07 | `owner_pay` is charged to the cap but not limited by it | A3-07 (the invariant text) **Fixed**, `3ccb10d`. A5-01 (the contract) **Accepted**: D-4 decided 2026-09-15, option A, the cap bounds the agent and the owner is bounded by the balance |
 | A2-01, A2-02 | TTL guards could be disabled without failing a test | **Fixed** |
 | A3-01 | Paying exactly the vault balance was untested | **Fixed** |

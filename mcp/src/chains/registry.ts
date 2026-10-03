@@ -425,10 +425,16 @@ export const CHAINS: ChainDescriptor[] = [
         { hash: '155eb31c1867254eacbf1b7a4755164d15cc6b6f939644705ab6b8df61579239', version: 'v0.1.0' },
         { hash: '353e4264f51e6173b9a2a60603239914cbb1456956e912374caf4d9b358db7c0', version: 'v0.1.1' },
       ],
-      // walletOwnedVault (SOW 2 D2: owner is a browser-wallet key) and devicePasskeyVault
-      // (SOW 2 D3: owner is a smart account behind a device passkey) are left UNSET on
-      // purpose. Ops fills each one after deploying it with mcp/scripts/stellar-deploy-vault.mjs
-      // and committing the receipt that script writes; an empty slot is not a vault.
+      // The SOW 2 D2 vault: v0.1.1, deployed 2026-10-03 in tx
+      // c57f0bf6ba1dad27d23a42612cd11a396fc0af08957b2353ff80a36fe64768c0 (ledger 5001000) with
+      // salt 1ee85721... (soroban/releases/stellar-testnet-v0.1.1-2026-10-03.json). Its OWNER,
+      // GDIZE6XJ36EDO4G2G674DCHMNRQLHOQN3JH7EZDBIQENOJABPSYL44EQ, is a key the user generated inside
+      // Freighter, and Friendbot (not an account of ours) created that account; its operator is
+      // our sow2-d2-operator key. The existing flagship vault above keeps its CLI-keystore owner.
+      walletOwnedVault: 'CDEU2D4TFDA5XMFI7QMCOGR2O6HWLV2QMOHYVEQDC4Z6REG73HNF2MKT',
+      // devicePasskeyVault (SOW 2 D3: owner is a smart account behind a device passkey) is left
+      // UNSET on purpose. Ops fills it after deploying it and committing its receipt; an empty
+      // slot is not a vault.
       // TrionLabs Stellar 8004 on testnet, third party, read-only for us. Our own
       // registration is agent 25 here (tx 6070127842948b6aa26103e270f8e38b670f8c92916edbc691f3cd5f10754b07,
       // 2026-09-08), owner GBMF7MDH...ZZ3, and find_owner(25) read back that owner on

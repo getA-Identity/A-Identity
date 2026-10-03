@@ -996,6 +996,46 @@ export const PROVENANCE: ChainProvenance[] = [
         deliverable: 'SOW2-D3',
         note: 'Instance CCKPFIAA... of wasm 60e8798d..., built the same way. The smart-account kit requires an Ed25519 verifier in its configuration; a D3 passkey wallet has no Ed25519 signer, and the vault deploy refuses an owner account that carries one.',
       },
+      {
+        kind: 'deploy',
+        label: 'The v0.1.1 vault code, its rent extended past the 2026-12-16 testnet reset',
+        txHash: '5106db1d74522efa9b5b89d7db9d672ebd204b1ed74a78b4ab45e668e55d21ea',
+        onChain: 'stellar-testnet',
+        blockNumber: 4981800,
+        date: '2026-10-02',
+        deliverable: 'SOW2-D2',
+        note: 'A newly uploaded code entry gets the network minimum TTL, about seven days, and every SoW 2 vault instantiates against this one, so it was extended to ledger 6281800 by our deployer GDNRET2G... before any vault needed it.',
+      },
+      {
+        kind: 'funding',
+        label: 'The D2 owner account, created by Friendbot rather than by any account of ours',
+        txHash: 'ebd666aacdbcbee7ebcf1723c4c29b86f4449134b7d0be86495edd213c5ba69d',
+        onChain: 'stellar-testnet',
+        blockNumber: 5000410,
+        date: '2026-10-03',
+        deliverable: 'SOW2-D2',
+        note: 'GDIZE6XJ... was generated inside Freighter by the user and did not exist on the ledger until the public testnet Friendbot (source GCG75HSV..., not ours) created and funded it with test XLM. That is the account that sources, pays for and signs the D2 owner actions.',
+      },
+      {
+        kind: 'deploy',
+        label: 'The D2 vault, deployed from v0.1.1, owner = a key generated inside Freighter',
+        txHash: 'c57f0bf6ba1dad27d23a42612cd11a396fc0af08957b2353ff80a36fe64768c0',
+        onChain: 'stellar-testnet',
+        blockNumber: 5001000,
+        date: '2026-10-03',
+        deliverable: 'SOW2-D2',
+        note: 'Vault CDEU2D4T... instantiated against the v0.1.1 code entry 353e4264... with a recorded salt (soroban/releases/stellar-testnet-v0.1.1-2026-10-03.json), sourced and paid by our deployer GDNRET2G.... Constructor: owner GDIZE6XJ..., operator GAFVKKMD..., daily cap 5 USDC, auto-approve 1 USDC. owner(), operator() and the code hash were read back from the ledger after the deploy. The deployer cannot act on the vault: only the owner can call set_policy, set_frozen and withdraw.',
+      },
+      {
+        kind: 'funding',
+        label: 'The D2 vault funded with 1 test USDC',
+        txHash: '4c715d7b34d59a2479098ded4f8b542d094de96a12974fcbd80ab3e9014c2221',
+        onChain: 'stellar-testnet',
+        blockNumber: 5001017,
+        date: '2026-10-03',
+        deliverable: 'SOW2-D2',
+        note: 'A plain SAC transfer from GBLHNAL5... (ours) to the vault; it is not an owner action and it touches no other vault. The vault read its balance back as 1 USDC.',
+      },
     ],
     // Every address below is copied from soroban/releases/testnet-v0.1.0.json or
     // testnet-passkey-owner-2026-09-19.json, and each publishedAt is the day that receipt
@@ -1018,7 +1058,7 @@ export const PROVENANCE: ChainProvenance[] = [
         network: 'stellar-testnet',
         custody: 'ours: local CLI keystore',
         usedFor:
-          'The vault\'s deploy (upload and create), its funding, and every owner action on it: set_policy, set_allowed, set_frozen and owner_pay. Permanent, because the contract has no set_owner. It also funded the 2026-09-19 rehearsal vault.',
+          'The vault\'s deploy (upload and create), its funding, and every owner action on it: set_policy, set_allowed, set_frozen and owner_pay. Permanent, because the contract has no set_owner. It also funded the 2026-09-19 rehearsal vault and, on 2026-10-03, the SoW 2 D2 vault CDEU2D4T... with 1 test USDC: a token transfer, not an owner action on either.',
         publishedAt: '2026-08-15',
       },
       {
@@ -1027,7 +1067,7 @@ export const PROVENANCE: ChainProvenance[] = [
         network: 'stellar-testnet',
         custody: 'ours: local CLI keystore',
         usedFor:
-          'Paid the fee for the rehearsal smart account deploy and for every software-key owner call in the first 2026-09-19 run, over direct RPC. On 2026-10-01 it uploaded the v0.1.1 vault code and deployed our own OpenZeppelin verifier instances. It holds no vault role and cannot authorize an owner call; it only sources and pays for transactions.',
+          'Paid the fee for the rehearsal smart account deploy and for every software-key owner call in the first 2026-09-19 run, over direct RPC. On 2026-10-01 it uploaded the v0.1.1 vault code and deployed our own OpenZeppelin verifier instances; on 2026-10-02 it extended the v0.1.1 code entry, and on 2026-10-03 it deployed the SoW 2 D2 vault CDEU2D4T.... It holds no vault role and cannot authorize an owner call; it only sources and pays for transactions.',
         publishedAt: '2026-09-19',
       },
       {
@@ -1038,6 +1078,24 @@ export const PROVENANCE: ChainProvenance[] = [
         usedFor:
           'Fee-bumped the four owner-side transactions of the sponsored rehearsal run (ledgers 4764131, 4764136, 4764142 and 4764144), relayed through our endpoint with our API key. We do not hold its key. Read off Horizon as the fee_account of those transactions and recorded in soroban/releases/testnet-passkey-owner-2026-09-19.json.',
         publishedAt: '2026-10-02',
+      },
+      {
+        role: 'Owner of the SoW 2 D2 vault CDEU2D4T...',
+        address: 'GDIZE6XJ36EDO4G2G674DCHMNRQLHOQN3JH7EZDBIQENOJABPSYL44EQ',
+        network: 'stellar-testnet',
+        custody: 'owner: generated inside a browser wallet, secret never on our systems',
+        usedFor:
+          'set_policy, set_frozen and withdraw on the D2 vault, each in a transaction this account sources, pays for and signs whole in Freighter. The key was generated inside Freighter by the user; Friendbot created the account. Published here on the day the vault was deployed and before its first owner action.',
+        publishedAt: '2026-10-03',
+      },
+      {
+        role: 'Operator (agent key) of the SoW 2 D2 vault CDEU2D4T...',
+        address: 'GAFVKKMDZKMV7GTODASFCS222QEUGKTFXOH5XXGIJN2ZCYVRZCKQCWZ2',
+        network: 'stellar-testnet',
+        custody: 'ours: local CLI keystore',
+        usedFor:
+          'pay() inside the D2 vault policy and nothing else: it can never call an owner entrypoint. Unfunded, and not used during the SoW 2 sprint.',
+        publishedAt: '2026-10-03',
       },
     ],
     caveats: [
@@ -1604,9 +1662,15 @@ export const STELLAR_SOW2: Sow2Evidence = {
       status: 'pending',
       date: null,
       caption:
-        'The fixed vault code is on testnet (below); the vault itself is not deployed yet. What will appear here: a testnet vault whose owner key was generated inside a browser wallet, then a freeze or policy change and a withdraw to the owner, each a transaction the owner account sources, pays for and signs whole, with its date, hash and explorer link. The vault and its owner address will be published in the accounts table below BEFORE the first owner action, so the order can be checked.',
-      links: [],
-      artifacts: ['09d041ab3c0dbae95b902b0c22be8f6587f43542798701db98a09df948119e02'],
+        'The D2 vault CDEU2D4T... runs the fixed v0.1.1 code and was deployed on 2026-10-03; its owner GDIZE6XJ..., a key generated inside Freighter, is published in the accounts table below on that same day, before any owner action. Still to appear here: a freeze or policy change and a withdraw to the owner, each a transaction the owner account sources, pays for and signs whole, with its date, hash and explorer link.',
+      links: [{ label: 'Open the D2 vault in the live panel', url: '/app/vault/stellar?network=stellar:testnet&contract=CDEU2D4TFDA5XMFI7QMCOGR2O6HWLV2QMOHYVEQDC4Z6REG73HNF2MKT' }],
+      artifacts: [
+        '09d041ab3c0dbae95b902b0c22be8f6587f43542798701db98a09df948119e02',
+        '5106db1d74522efa9b5b89d7db9d672ebd204b1ed74a78b4ab45e668e55d21ea',
+        'ebd666aacdbcbee7ebcf1723c4c29b86f4449134b7d0be86495edd213c5ba69d',
+        'c57f0bf6ba1dad27d23a42612cd11a396fc0af08957b2353ff80a36fe64768c0',
+        '4c715d7b34d59a2479098ded4f8b542d094de96a12974fcbd80ab3e9014c2221',
+      ],
     },
     {
       id: 'D3',

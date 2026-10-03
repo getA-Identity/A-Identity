@@ -1,0 +1,64 @@
+{
+  "hash": "ebd666aacdbcbee7ebcf1723c4c29b86f4449134b7d0be86495edd213c5ba69d",
+  "chainId": "stellar-testnet",
+  "network": "stellar:testnet",
+  "ledger": 5000410,
+  "createdAt": "2026-10-03T11:07:17.000Z",
+  "status": "success",
+  "resultCode": {
+    "tx": "txSuccess",
+    "inner": null,
+    "operations": [
+      "createAccountSuccess"
+    ],
+    "contractError": null
+  },
+  "sourceAccount": "GCG75HSVWKXMNAR5CEQRUUM2CG6RYIG6NJUILXR77Z6NCZAZIAYZOCPF",
+  "feeAccount": "GCG75HSVWKXMNAR5CEQRUUM2CG6RYIG6NJUILXR77Z6NCZAZIAYZOCPF",
+  "feeChargedStroops": "100",
+  "envelopeXdr": "AAAAAgAAAACN/p5Vsq7Ggj0RIRpRmhG9HCDeamiF3j/+fNFkGUAxlwAPQkAANsSqAAAB/AAAAAEAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAEAAAABAAAAABB90WssODNIgi6BHveqzxTRmIpvAFRyVNM+Hm2GVuCcAAAAAAAAAADRknrp34g3cNo3v8GI7Gxgs7oN2k/yZGFECNckAXywvgAAABdIdugAAAAAAAAAAAIZQDGXAAAAQCYxGlST+fDrpGH0Ms5uJ9t3Mij9q+NL9aHGfhBNixeLxpDFvzjmF40VDQYznfpkKakkzov5idJe8ZMCDSlWwAWGVuCcAAAAQGRVX54qXI0aFLf5AmomnHbqoixHtoCEmeQR4woc4H6oMdRnF2L+emsZfJBUYdJJWQwwaTeJ60HlNuEPz+xWowI=",
+  "resultXdr": "AAAAAAAAAGQAAAAAAAAAAQAAAAAAAAAAAAAAAAAAAAA=",
+  "resultMetaXdr": "AAAABAAAAAAAAAACAAAAAwBMTNoAAAAAAAAAAI3+nlWyrsaCPREhGlGaEb0cIN5qaIXeP/580WQZQDGXAAAAADwymhAANsSqAAAB+wAAAAAAAAAAAAAAAAAAAAABAAAAAAAAAAAAAAEAAAAAAAAAAAAAAAAAAAAAAAAAAgAAAAAAAAAAAAAAAAAAAAMAAAAAAEw9TwAAAABqwJQuAAAAAAAAAAEATEzaAAAAAAAAAACN/p5Vsq7Ggj0RIRpRmhG9HCDeamiF3j/+fNFkGUAxlwAAAAA8MpoQADbEqgAAAfwAAAAAAAAAAAAAAAAAAAAAAQAAAAAAAAAAAAABAAAAAAAAAAAAAAAAAAAAAAAAAAIAAAAAAAAAAAAAAAAAAAADAAAAAABMTNoAAAAAasDh5QAAAAAAAAABAAAAAAAAAAMAAAADAExM2gAAAAAAAAAAEH3Rayw4M0iCLoEe96rPFNGYim8AVHJU0z4ebYZW4JwBduQCv8h1QAAAAKIAAAFeAAAAAAAAAAAAAAAAAAAAAAEAAAAAAAAAAAAAAQAAAAAAAAAAAAAAAAAAAAAAAAACAAAAAAAAAAAAAAAAAAAAAwAAAAAANsWTAAAAAGpVIaYAAAAAAAAAAQBMTNoAAAAAAAAAABB90WssODNIgi6BHveqzxTRmIpvAFRyVNM+Hm2GVuCcAXbj63dRjUAAAACiAAABXgAAAAAAAAAAAAAAAAAAAAABAAAAAAAAAAAAAAEAAAAAAAAAAAAAAAAAAAAAAAAAAgAAAAAAAAAAAAAAAAAAAAMAAAAAADbFkwAAAABqVSGmAAAAAAAAAAAATEzaAAAAAAAAAADRknrp34g3cNo3v8GI7Gxgs7oN2k/yZGFECNckAXywvgAAABdIdugAAExM2gAAAAAAAAAAAAAAAAAAAAAAAAAAAQAAAAAAAAAAAAAAAAAAAAAAAAEAAAAAAAAAAdeSi3LCcDzP6vfrn/TvTVBKVai5efybRQ6iyEK00c5hAAAAAQAAAAAAAAAEAAAADwAAAAh0cmFuc2ZlcgAAABIAAAAAAAAAABB90WssODNIgi6BHveqzxTRmIpvAFRyVNM+Hm2GVuCcAAAAEgAAAAAAAAAA0ZJ66d+IN3DaN7/BiOxsYLO6DdpP8mRhRAjXJAF8sL4AAAAOAAAABm5hdGl2ZQAAAAAACgAAAAAAAAAAAAAAF0h26AAAAAAAAAAAAAAAAAEAAAAAAAAAAAAAAAHXkotywnA8z+r365/0701QSlWouXn8m0UOoshCtNHOYQAAAAEAAAAAAAAAAgAAAA8AAAADZmVlAAAAABIAAAAAAAAAAI3+nlWyrsaCPREhGlGaEb0cIN5qaIXeP/580WQZQDGXAAAACgAAAAAAAAAAAAAAAAAAAGQAAAAA",
+  "metaFrom": "rpc",
+  "metaNote": null,
+  "fetchedFrom": "rpc",
+  "explorer": "https://stellar.expert/explorer/testnet/tx/ebd666aacdbcbee7ebcf1723c4c29b86f4449134b7d0be86495edd213c5ba69d",
+  "archivedAt": "2026-10-03T12:00:33.056Z",
+  "caption": "The D2 owner account, created by Friendbot rather than by any account of ours",
+  "deliverable": "D2",
+  "provenance": {
+    "entry": "stellar-testnet",
+    "kind": "funding",
+    "label": "The D2 owner account, created by Friendbot rather than by any account of ours",
+    "note": "GDIZE6XJ... was generated inside Freighter by the user and did not exist on the ledger until the public testnet Friendbot (source GCG75HSV..., not ours) created and funded it with test XLM. That is the account that sources, pays for and signs the D2 owner actions."
+  },
+  "decoded": {
+    "hash": "ebd666aacdbcbee7ebcf1723c4c29b86f4449134b7d0be86495edd213c5ba69d",
+    "innerHash": null,
+    "status": "success",
+    "resultCode": {
+      "tx": "txSuccess",
+      "inner": null,
+      "operations": [
+        "createAccountSuccess"
+      ],
+      "contractError": null
+    },
+    "sourceAccount": "GCG75HSVWKXMNAR5CEQRUUM2CG6RYIG6NJUILXR77Z6NCZAZIAYZOCPF",
+    "feeAccount": "GCG75HSVWKXMNAR5CEQRUUM2CG6RYIG6NJUILXR77Z6NCZAZIAYZOCPF",
+    "feeBump": false,
+    "feeChargedStroops": "100",
+    "operations": [
+      {
+        "type": "createAccount",
+        "source": "GAIH3ULLFQ4DGSECF2AR555KZ4KNDGEKN4AFI4SU2M7B43MGK3QJZNSR",
+        "contract": null,
+        "function": null,
+        "args": null
+      }
+    ],
+    "auth": [],
+    "summary": "One createAccount operation. Fee 0.00001 XLM paid by GCG75H...OCPF. It succeeded.",
+    "caveats": []
+  }
+}

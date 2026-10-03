@@ -1030,8 +1030,8 @@ test('the flagship and rehearsal vaults are named, per network, from the registr
 })
 
 test('the operator refuses every recorded vault, the SOW 2 evidence vaults included, while the relay still serves the D3 owner', () => {
-  // Both slots are unset in the registry today, so they are filled here: the property is
-  // that the day ops records them, agent-pay already refuses them by id.
+  // Both slots are filled here with fresh ids, so the property holds whatever the registry
+  // records: the day ops records a slot, agent-pay already refuses it by id.
   const d3 = contractId()
   const d2 = contractId()
   const filled = { ...testnet, contracts: { ...testnet.contracts, devicePasskeyVault: d3, walletOwnedVault: d2 } }
@@ -1045,7 +1045,9 @@ test('the operator refuses every recorded vault, the SOW 2 evidence vaults inclu
   if (!g.ok) assert.equal(g.code, 'flagship_vault')
   // The relay's list is the narrower one: the D3 vault's owner calls go through it.
   assert.equal(flagshipVaults(filled).includes(d3), false, 'refusing the D3 vault in the relay would stop its own owner')
-  assert.deepEqual(operatorRefusedVaults(testnet), flagshipVaults(testnet), 'with the slots empty the two lists agree')
+  // As recorded today: the D2 slot is filled (2026-10-03) and the D3 slot is not, so the
+  // operator list is the relay's list plus the D2 vault.
+  assert.deepEqual(operatorRefusedVaults(testnet), [...flagshipVaults(testnet), testnet.contracts.walletOwnedVault!])
 })
 
 // ── SOW 2 D3.8: a smart account adding a device to itself ───────────────────────

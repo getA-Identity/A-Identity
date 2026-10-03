@@ -1,0 +1,36 @@
+{
+  "note": "The deploy receipt for one AgentSpendPolicy vault, written by mcp/scripts/stellar-deploy-vault.mjs from what the network answered. The contract id is derived from the deployer and the salt, so anyone can re-derive it.",
+  "version": "v0.1.1",
+  "network": "stellar:testnet",
+  "chainId": "stellar-testnet",
+  "passphrase": "Test SDF Network ; September 2015",
+  "wasm": {
+    "sha256": "353e4264f51e6173b9a2a60603239914cbb1456956e912374caf4d9b358db7c0"
+  },
+  "uploadTx": null,
+  "createTx": {
+    "txHash": "c57f0bf6ba1dad27d23a42612cd11a396fc0af08957b2353ff80a36fe64768c0",
+    "ledger": 5001000,
+    "feeChargedStroops": "6282655"
+  },
+  "contractId": "CDEU2D4TFDA5XMFI7QMCOGR2O6HWLV2QMOHYVEQDC4Z6REG73HNF2MKT",
+  "ledger": 5001000,
+  "salt": "1ee8572194e37999b964eafd88de0bb2f184f9ac916f1e6c8de194fda2622263",
+  "deployer": "GDNRET2G5WNC25QQ43ODLGAZ42X74DQDGRHWHSLKC6FCVF7C6JYLHAJA",
+  "owner": "GDIZE6XJ36EDO4G2G674DCHMNRQLHOQN3JH7EZDBIQENOJABPSYL44EQ",
+  "ownerKind": "account",
+  "operator": "GAFVKKMDZKMV7GTODASFCS222QEUGKTFXOH5XXGIJN2ZCYVRZCKQCWZ2",
+  "token": "CBIELTK6YBZJU5UP2WWQEUCYKLPU6AUNZ2BQ4WWFEIE3USCIHMXQDAMA",
+  "tokenSymbol": "USDC",
+  "dailyCap": "50000000",
+  "autoApproveMax": "10000000",
+  "feeChargedStroops": {
+    "upload": null,
+    "create": "6282655"
+  },
+  "notes": [
+    "SOW 2 D2: owner key generated inside Freighter by the user; its secret never existed on our systems",
+    "Testnet. Nothing here is money, and testnet resets periodically, so this is a rehearsal and never a record.",
+    "Amounts are token base units at 7 decimals."
+  ]
+}

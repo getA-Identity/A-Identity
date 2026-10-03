@@ -1,0 +1,64 @@
+{
+  "hash": "5106db1d74522efa9b5b89d7db9d672ebd204b1ed74a78b4ab45e668e55d21ea",
+  "chainId": "stellar-testnet",
+  "network": "stellar:testnet",
+  "ledger": 4981800,
+  "createdAt": "2026-10-02T09:16:27.000Z",
+  "status": "success",
+  "resultCode": {
+    "tx": "txSuccess",
+    "inner": null,
+    "operations": [
+      "extendFootprintTtlSuccess"
+    ],
+    "contractError": null
+  },
+  "sourceAccount": "GDNRET2G5WNC25QQ43ODLGAZ42X74DQDGRHWHSLKC6FCVF7C6JYLHAJA",
+  "feeAccount": "GDNRET2G5WNC25QQ43ODLGAZ42X74DQDGRHWHSLKC6FCVF7C6JYLHAJA",
+  "feeChargedStroops": "375238650",
+  "envelopeXdr": "AAAAAgAAAADbEk9G7ZotdhDm3DWYGeav/g4DNE9jyWoXiiqX4vJwsxm4rW0ASKMbAAAADgAAAAAAAAAAAAAAAQAAAAAAAAAZAAAAAAAT1iAAAAABAAAAAAAAAAEAAAAHNT5CZPUeYXO5oqYGAyOZFMuxRWlW6RI3TK9NmzWNt8AAAAAAAAAAAAAAAAAAAAAAAAAAABm4rQkAAAAB4vJwswAAAEBo6ARbK0e2dqmDfXZh/5LLir17X0Fkw5j/wWSaVSDkGTF18a9o0wafmQitCMqcyjosDI5rIWAEAHSJa/eF4/EL",
+  "resultXdr": "AAAAABZdr/oAAAAAAAAAAQAAAAAAAAAZAAAAAAAAAAA=",
+  "resultMetaXdr": "AAAABAAAAAAAAAACAAAAAwBMBCgAAAAAAAAAANsST0btmi12EObcNZgZ5q/+DgM0T2PJaheKKpfi8nCzAAAAFuVCWnsASKMbAAAADQAAAAAAAAAAAAAAAAAAAAABAAAAAAAAAAAAAAEAAAAAAAAAAAAAAAAAAAAAAAAAAgAAAAAAAAAAAAAAAAAAAAMAAAAAAEvpRgAAAABqvvABAAAAAAAAAAEATAQoAAAAAAAAAADbEk9G7ZotdhDm3DWYGeav/g4DNE9jyWoXiiqX4vJwswAAABblQlp7AEijGwAAAA4AAAAAAAAAAAAAAAAAAAAAAQAAAAAAAAAAAAABAAAAAAAAAAAAAAAAAAAAAAAAAAIAAAAAAAAAAAAAAAAAAAADAAAAAABMBCgAAAAAar92awAAAAAAAAABAAAAAAAAAAIAAAADAEvnNQAAAAm/Xl1azEIlZ+u44tildjh5xk/OgCOXcBcraXe8b9S89QBNv7QAAAAAAAAAAQBMBCgAAAAJv15dWsxCJWfruOLYpXY4ecZPzoAjl3AXK2l3vG/UvPUAX9pIAAAAAAAAAAAAAAAAAAAAAQAAAAEAAAAAAAAAAAAACIgAAAAAFl2nDgAAAAAWXacOAAAAAAAAAAIAAAAAAAAAAAAAAAHXkotywnA8z+r365/0701QSlWouXn8m0UOoshCtNHOYQAAAAEAAAAAAAAAAgAAAA8AAAADZmVlAAAAABIAAAAAAAAAANsST0btmi12EObcNZgZ5q/+DgM0T2PJaheKKpfi8nCzAAAACgAAAAAAAAAAAAAAABm4rW0AAAACAAAAAAAAAAHXkotywnA8z+r365/0701QSlWouXn8m0UOoshCtNHOYQAAAAEAAAAAAAAAAgAAAA8AAAADZmVlAAAAABIAAAAAAAAAANsST0btmi12EObcNZgZ5q/+DgM0T2PJaheKKpfi8nCzAAAACv////////////////ylAo0AAAAA",
+  "metaFrom": "rpc",
+  "metaNote": null,
+  "fetchedFrom": "rpc",
+  "explorer": "https://stellar.expert/explorer/testnet/tx/5106db1d74522efa9b5b89d7db9d672ebd204b1ed74a78b4ab45e668e55d21ea",
+  "archivedAt": "2026-10-03T12:00:32.692Z",
+  "caption": "The v0.1.1 vault code, its rent extended past the 2026-12-16 testnet reset",
+  "deliverable": "D2",
+  "provenance": {
+    "entry": "stellar-testnet",
+    "kind": "deploy",
+    "label": "The v0.1.1 vault code, its rent extended past the 2026-12-16 testnet reset",
+    "note": "A newly uploaded code entry gets the network minimum TTL, about seven days, and every SoW 2 vault instantiates against this one, so it was extended to ledger 6281800 by our deployer GDNRET2G... before any vault needed it."
+  },
+  "decoded": {
+    "hash": "5106db1d74522efa9b5b89d7db9d672ebd204b1ed74a78b4ab45e668e55d21ea",
+    "innerHash": null,
+    "status": "success",
+    "resultCode": {
+      "tx": "txSuccess",
+      "inner": null,
+      "operations": [
+        "extendFootprintTtlSuccess"
+      ],
+      "contractError": null
+    },
+    "sourceAccount": "GDNRET2G5WNC25QQ43ODLGAZ42X74DQDGRHWHSLKC6FCVF7C6JYLHAJA",
+    "feeAccount": "GDNRET2G5WNC25QQ43ODLGAZ42X74DQDGRHWHSLKC6FCVF7C6JYLHAJA",
+    "feeBump": false,
+    "feeChargedStroops": "375238650",
+    "operations": [
+      {
+        "type": "extendFootprintTtl",
+        "source": null,
+        "contract": null,
+        "function": null,
+        "args": null
+      }
+    ],
+    "auth": [],
+    "summary": "One extendFootprintTtl operation. Fee 37.523865 XLM paid by GDNRET...HAJA. It succeeded.",
+    "caveats": []
+  }
+}
