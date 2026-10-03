@@ -325,7 +325,7 @@ export const POSTS: BlogPost[] = [
         body: [
           'The vault was funded with 15 USDC and given a 10 USDC cap for the day and a 2 USDC ceiling on any single payment.',
           'A 1 USDC payment from the agent settled and is in the ledger, transaction 3da74634. A payment past the day\'s cap was refused with a typed error, Error(Contract, #5), which is the vault saying DailyCapExceeded, transaction 12df418f.',
-          'The owner then froze the vault, paid an address that was not on the allowlist through the owner path while it was still frozen, and unfroze it again. All three are on the ledger. That override is deliberate rather than a hole: the human path is meant to work exactly when the agent path does not. It still counted against the day\'s cap, so the owner bypasses the gates and not the budget.',
+          'Six days later, on 2026-08-21, the owner froze the vault, paid an address that was not on the allowlist through the owner path while it was still frozen, and unfroze it again. All three are on the ledger. That override is deliberate rather than a hole: the human path is meant to work exactly when the agent path does not. It still counted against the day\'s cap, so the owner bypasses the gates and not the budget.',
         ],
       },
       {
@@ -397,7 +397,7 @@ export const POSTS: BlogPost[] = [
           body: [
             'Kasaya 15 USDC kondu, günlük tavan 10 USDC ve tek ödeme tavanı 2 USDC olarak ayarlandı.',
             'Ajanın 1 USDC\'lik ödemesi gerçekleşti ve defterde duruyor, 3da74634 numaralı işlem. Günlük tavanı aşan bir ödeme ise tipli bir hatayla reddedildi: Error(Contract, #5), yani kasanın DailyCapExceeded demesi, 12df418f numaralı işlem.',
-            'Ardından owner kasayı dondurdu, kasa hala donmuşken owner yolundan allowlist\'te olmayan bir adrese ödeme yaptı ve sonra dondurmayı kaldırdı. Üçü de defterde. Bu geçersiz kılma bir açık değil, kasıtlı: insan yolunun tam olarak ajan yolunun çalışmadığı anda çalışması gerekiyor. Yine de günlük tavandan düştü, yani owner kapıları atlıyor, bütçeyi değil.',
+            'Altı gün sonra, 2026-08-21\'de, owner kasayı dondurdu, kasa hala donmuşken owner yolundan allowlist\'te olmayan bir adrese ödeme yaptı ve sonra dondurmayı kaldırdı. Üçü de defterde. Bu geçersiz kılma bir açık değil, kasıtlı: insan yolunun tam olarak ajan yolunun çalışmadığı anda çalışması gerekiyor. Yine de günlük tavandan düştü, yani owner kapıları atlıyor, bütçeyi değil.',
           ],
         },
         {

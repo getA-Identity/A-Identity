@@ -564,10 +564,12 @@ Beta, wired and readable:
   https://a-identity.mintlify.site/chains/stellar-d3-selection and the recovery position
   (losing every device that holds the passkey loses the owner for good) is
   https://a-identity.mintlify.site/chains/stellar-passkey-recovery. The SOW 2 vaults
-  will run AgentSpendPolicy v0.1.1, which checks the amount before the payee on every
-  payment path; its code entry is on testnet (uploaded 2026-10-01) and no vault runs it
-  yet. Every vault deployed so far keeps v0.1.0, and so does every vault the /stellar
-  page deploys on pubnet, which has no v0.1.1 code entry. The live state of any of our
+  run AgentSpendPolicy v0.1.1, which checks the amount before the payee on every
+  payment path: its code entry was uploaded to testnet on 2026-10-01, and the SOW 2 D2
+  vault CDEU2D4TFDA5XMFI7QMCOGR2O6HWLV2QMOHYVEQDC4Z6REG73HNF2MKT has run it since
+  2026-10-03. Every vault deployed before that keeps v0.1.0 and its old order (on pay
+  and owner_pay, InvalidPayee can come before InvalidAmount), and so does every vault
+  the /stellar page deploys on pubnet, which has no v0.1.1 code entry. The live state of any of our
   vaults is readable without a wallet at https://a-identity.xyz/app/vault/stellar.
 
 Planned, descriptor only:

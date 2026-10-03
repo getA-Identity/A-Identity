@@ -136,8 +136,8 @@ amount while `withdraw` checked the amount first, so `pay(vault, 0)` answered `I
 and `withdraw(vault, 0)` answered `InvalidAmount`. v0.1.1 moves `policy::check_amount` to the
 first line of `settle`, and
 `a_doubly_invalid_input_names_the_same_first_reason_on_every_money_path` now runs and passes.
-The fix is in the source and in any vault built from it. **It is not in any deployed
-vault.** Every vault deployed so far runs the v0.1.0 wasm (`155eb31c...`) and keeps the old
+The fix is in the source and in any vault built from it. **It is not in any vault deployed
+before 2026-10-03.** Every one of those runs the v0.1.0 wasm (`155eb31c...`) and keeps the old
 order: pubnet `CB5LYXFK...`, testnet `CAIL6ECR...`, the two 2026-09-19 passkey rehearsal
 vaults on testnet `CBGTXWFB...` and `CCV2MMK4...`, and any vault the /stellar page deploys
 on pubnet, which has no v0.1.1 code entry. A client talking to any of these has to treat
