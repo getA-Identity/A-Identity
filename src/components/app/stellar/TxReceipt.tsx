@@ -100,7 +100,14 @@ export default function TxReceipt({
             ? `${receipt.what}: landed in ledger ${receipt.ledger?.toLocaleString('en-US') ?? '(not reported)'} and FAILED. Nothing in the vault changed; the network fee was still charged.`
             : `${receipt.what}: submitted, not in a ledger yet.`}
       </div>
-      {receipt.summary && <div className="mt-1 text-xs text-foreground/70">{receipt.summary}</div>}
+      {receipt.summary && (
+        <div className="mt-1 text-xs text-foreground/70">
+          {/* The backend's words about the call it prepared, before the wallet signed it, so a
+              "NOT signed" here describes that preparation, not the settled transaction. */}
+          <span className="font-semibold text-foreground/55">The call as prepared, before your signature: </span>
+          {receipt.summary}
+        </div>
+      )}
       {receipt.hash ? (
         <div className="mt-2 flex flex-wrap items-center gap-2">
           <span className="text-[11px] font-semibold uppercase tracking-wide text-foreground/50">Transaction</span>
