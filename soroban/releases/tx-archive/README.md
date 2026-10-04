@@ -100,7 +100,7 @@ All three forms are idempotent: a re-run keeps the existing caption and delivera
 ones are given, keeps the first `archivedAt`, and never drops a meta an earlier run
 captured. The script is read-only against the network: it signs and submits nothing.
 
-As of 2026-10-04 the archive holds 91 transactions (20 pubnet, 71 testnet), all with
+As of 2026-10-04 the archive holds 92 transactions (20 pubnet, 72 testnet), all with
 result meta, and neither `--all-provenance` nor `--all-receipts` finds a cited transaction
 it lacks. The `--all-receipts` scan also meets seven 64-hex strings in prose that no Stellar
 network knows as a transaction (wasm hashes and build digests), and skips them.

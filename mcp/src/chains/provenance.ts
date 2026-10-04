@@ -1099,6 +1099,16 @@ export const PROVENANCE: ChainProvenance[] = [
         deliverable: 'SOW2-D3',
         note: 'A plain SAC transfer of 0.2 test USDC from GDZXSO4A... into CCTYM23I..., made by the same deploy route at 12:58:22 UTC; it is not an owner action. The vault read its balance back as 0.2 USDC.',
       },
+      {
+        kind: 'owner-action',
+        label: 'The D3 owner freezes its vault with the device passkey, from the page',
+        txHash: '2d4cb917c415c68b2c9eb14079d6634f9b9f65432c7558a6e5d152231f2d6fe6',
+        onChain: 'stellar-testnet',
+        blockNumber: 5019748,
+        date: '2026-10-04',
+        deliverable: 'SOW2-D3',
+        note: 'set_frozen(true) on CCTYM23I..., the first owner action on this vault, landed 13:58:47 UTC, called through execute on the smart account CBII2K5R.... Decoded off the ledger (archive soroban/releases/tx-archive/stellar-testnet/2d4cb917c415c68b2c9eb14079d6634f9b9f65432c7558a6e5d152231f2d6fe6.json): the one authorization entry is an address credential for the smart account, signed by a webauthn-secp256r1 signer under the WebAuthn verifier CABPDJH4... with the device public key 04560be2..., on context rule 0; flags UP, UV, BE and BS; the origin is the a-identity.xyz site; the challenge is the authorization digest and the signature re-verifies. A Channels channel account sourced it and the Channels account GCNJB6V5... paid the fee (0.1048712 XLM) through a fee bump; the smart account paid nothing. The owner approved it with Touch ID in a recorded browser session. The chain itself cannot tell a device authenticator from a software key; the recording and the enrolment are what show the device.',
+      },
       // The 2026-10-03 rehearsal: the whole D3 owner path, run once on our own OpenZeppelin
       // v0.7.2 build before any person runs it, so the recorded device session is not its
       // first run. Same rule as 2026-09-19: SOFTWARE P-256 keys in our own script
@@ -1281,7 +1291,7 @@ export const PROVENANCE: ChainProvenance[] = [
         network: 'stellar-testnet',
         custody: 'owner: passkey smart account',
         usedFor:
-          'set_policy, set_frozen and withdraw on the D3 vault, each authorized only by a WebAuthn signature from the passkey the owner created on 2026-10-04 in a browser on the production site: the account\'s one signer, on rule 0, under the WebAuthn verifier CABPDJH4.... It holds no XLM and pays no fee; a relayer or the vault operator pays, and the page names which. Published here on the day the vault was deployed and before its first owner action.',
+          'set_policy, set_frozen and withdraw on the D3 vault, each authorized only by a WebAuthn signature from the passkey the owner created on 2026-10-04 in a browser on the production site: the account\'s one signer, on rule 0, under the WebAuthn verifier CABPDJH4.... It holds no XLM and pays no fee; a relayer or the vault operator pays, and the page names which. Published here on the day the vault was deployed and before its first owner action, the freeze 2d4cb917... later that day.',
         publishedAt: '2026-10-04',
       },
     ],
@@ -1864,13 +1874,14 @@ export const STELLAR_SOW2: Sow2Evidence = {
     {
       id: 'D3',
       title: 'An owner action signed by a device passkey, on testnet',
-      status: 'pending',
-      date: null,
+      status: 'live',
+      date: '2026-10-04',
       caption:
-        'The D3 smart account CBII2K5R... and its vault CCTYM23I... were deployed on 2026-10-04 and published in the accounts table below the same day, before any owner action. The owner created a passkey on /stellar?network=testnet in a browser; the account\'s one signer is that passkey, under our verifier instance of OpenZeppelin\'s audited v0.7.2 code, and the vault runs the fixed v0.1.1 code with that account as its owner. Still to appear here: an owner action the passkey signs, with its date, hash, explorer link and decoded authorization. The 2026-09-19 runs further down, and the 2026-10-03 run that took the whole owner path once on our own v0.7.2 build through our relay (a second passkey on its own rule included), are rehearsals with software keys and are not this deliverable.',
+        'Live since 2026-10-04. The owner created a passkey on /stellar?network=testnet in a browser; it is the one signer of the smart account CBII2K5R..., under our verifier instance of OpenZeppelin\'s audited v0.7.2 code, and that account owns the vault CCTYM23I... on the fixed v0.1.1 code. Both were deployed and published in the accounts table below that day, before any owner action. The same day the owner froze the vault with the passkey (ledger 5019748): the only authorization on that transaction is a WebAuthn (secp256r1) signature from the device, on the account\'s rule 0, and OpenZeppelin Channels paid the fee, not the passkey. The decoded authorization is linked below. The 2026-09-19 runs further down, and the 2026-10-03 run that took the whole owner path once on our own v0.7.2 build through our relay (a second passkey on its own rule included), are rehearsals with software keys and are not this deliverable.',
       links: [
         { label: 'The passkey vault page, on testnet', url: '/stellar?network=testnet' },
         { label: 'Open the D3 vault in the live panel', url: '/app/vault/stellar?network=stellar:testnet&contract=CCTYM23I6UCKKFWHBUWU2GFUSDY6WJEJ3FYSS7WI33DTI5P5HARB72EH' },
+        { label: 'Decoded authorization of the passkey owner action', url: '/api/stellar/tx/2d4cb917c415c68b2c9eb14079d6634f9b9f65432c7558a6e5d152231f2d6fe6?network=stellar:testnet' },
       ],
       artifacts: [
         '8c6894a8bc0ee1aa8168a49f1de0c4dbdc7f7bf3e86b731277754b81d8242005',
@@ -1878,6 +1889,7 @@ export const STELLAR_SOW2: Sow2Evidence = {
         '5af017bda75de876508400dc9e973467608a151d49d402d9cb0df662fac3ff9b',
         'fa1080f6787f82bf3ca2b9c41828cd2ee16ee20bb78ee65818cdad5801f82c38',
         '62dc830950ba3322019c928fa35a47a509bac886a52c4a316cb31666236bbf10',
+        '2d4cb917c415c68b2c9eb14079d6634f9b9f65432c7558a6e5d152231f2d6fe6',
       ],
     },
   ],

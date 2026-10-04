@@ -550,14 +550,18 @@ Beta, wired and readable:
   came from a software P-256 key in our own script, not from a device, and the fee was
   paid by a deployer key. The record is
   soroban/releases/testnet-passkey-owner-2026-09-19.json. The device-passkey run for
-  SOW 2 is separate and under way: on 2026-10-04 a person enrolled a real device passkey
+  SOW 2 is separate and done: on 2026-10-04 a person enrolled a real device passkey
   on https://a-identity.xyz/stellar?network=testnet, and it is the one signer of the
   OpenZeppelin smart account CBII2K5RHXA7QTBXXUG6O3EMR25NOVOL73KMVGWKWGH7PHO7QXDTHMUD,
   an account we build ourselves from the audited stellar-contracts release line (tag
   v0.7.2). That account owns the vault CCTYM23I6UCKKFWHBUWU2GFUSDY6WJEJ3FYSS7WI33DTI5P5HARB72EH,
   deployed the same day (tx fa1080f6..., ledger 5019022). OpenZeppelin Channels paid the
   account deploy's network fee through our relay, with the paying account named on the
-  page. The owner action that passkey signs is still to come. We did not upload that code: its three code entries
+  page. The same day the owner froze the vault with that passkey (tx
+  2d4cb917c415c68b2c9eb14079d6634f9b9f65432c7558a6e5d152231f2d6fe6, ledger 5019748): the one
+  authorization is a WebAuthn (secp256r1) signature through the smart account on its rule 0,
+  with flags UP, UV, BE and BS, and OpenZeppelin Channels paid the fee. The decoded entry is at
+  https://a-identity.xyz/api/stellar/tx/2d4cb917c415c68b2c9eb14079d6634f9b9f65432c7558a6e5d152231f2d6fe6?network=stellar:testnet. We did not upload that code: its three code entries
   were already on testnet with exactly our build hashes, so we extended their TTLs and
   deployed our own two verifier instances, CABPDJH4... (WebAuthn) and CCKPFIAA...
   (ed25519); the receipt is

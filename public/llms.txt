@@ -54,13 +54,16 @@ against those limits before any value moves, and the verdict is ALLOW, WARN or D
   is owned by an OpenZeppelin smart account with a WebAuthn signer rather than a key.
   It is a REHEARSAL from 2026-09-19: every owner signature in it came from a software
   P-256 key in our own script, so it proves the contract path and nothing about a device.
-  The device-passkey run (SOW 2 D3) is separate and under way on testnet: on 2026-10-04 a
+  The device-passkey run (SOW 2 D3) is separate and done on testnet: on 2026-10-04 a
   person created a passkey in a browser at https://a-identity.xyz/stellar?network=testnet,
   and it is the one signer of the OpenZeppelin smart account
   CBII2K5RHXA7QTBXXUG6O3EMR25NOVOL73KMVGWKWGH7PHO7QXDTHMUD (an account and verifier we build
   from OpenZeppelin's audited stellar-contracts release line, tag v0.7.2), which owns the vault
-  CCTYM23I6UCKKFWHBUWU2GFUSDY6WJEJ3FYSS7WI33DTI5P5HARB72EH. The owner action that passkey signs
-  is still to come. Why that account: https://a-identity.mintlify.site/chains/stellar-d3-selection.
+  CCTYM23I6UCKKFWHBUWU2GFUSDY6WJEJ3FYSS7WI33DTI5P5HARB72EH. The same day the owner froze that
+  vault with the passkey (tx 2d4cb917c415c68b2c9eb14079d6634f9b9f65432c7558a6e5d152231f2d6fe6,
+  a WebAuthn signature on rule 0, fee paid by OpenZeppelin Channels); decoded at
+  https://a-identity.xyz/api/stellar/tx/2d4cb917c415c68b2c9eb14079d6634f9b9f65432c7558a6e5d152231f2d6fe6?network=stellar:testnet.
+  Why that account: https://a-identity.mintlify.site/chains/stellar-d3-selection.
   What losing the passkey means: https://a-identity.mintlify.site/chains/stellar-passkey-recovery.
 - Public policy counters currently read zero, because no live agent has produced a
   production decision yet. We publish the zero rather than a number nobody can reproduce.

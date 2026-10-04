@@ -130,8 +130,12 @@ signature from any system of ours. The SOW 2 D3 vault runs the same code:
 whose owner is the OpenZeppelin smart account `CBII2K5RHXA7QTBXXUG6O3EMR25NOVOL73KMVGWKWGH7PHO7QXDTHMUD`
 ([`5af017bd...ff9b`](https://stellar.expert/explorer/testnet/tx/5af017bda75de876508400dc9e973467608a151d49d402d9cb0df662fac3ff9b), ledger 5019008).
 That account's one signer is a passkey the owner created in a browser on
-[/stellar](https://a-identity.xyz/stellar?network=testnet); its owner action, signed by that passkey,
-is still to come. Each vault's release receipt is in
+[/stellar](https://a-identity.xyz/stellar?network=testnet). The same day the owner froze the vault with that passkey
+([`2d4cb917...6fe6`](https://stellar.expert/explorer/testnet/tx/2d4cb917c415c68b2c9eb14079d6634f9b9f65432c7558a6e5d152231f2d6fe6), ledger 5019748):
+its one authorization is a WebAuthn (secp256r1) signature through the account, on rule 0, and OpenZeppelin Channels
+paid the fee. The decoded authorization is at
+[`/api/stellar/tx/2d4cb917...`](https://a-identity.xyz/api/stellar/tx/2d4cb917c415c68b2c9eb14079d6634f9b9f65432c7558a6e5d152231f2d6fe6?network=stellar:testnet).
+Each vault's release receipt is in
 [`soroban/releases`](https://github.com/getA-Identity/A-Identity/tree/main/soroban/releases). The existing vaults keep `v0.1.0`: the contract has no upgrade
 entrypoint, so a fix reaches a vault only through a new deployment.
 
