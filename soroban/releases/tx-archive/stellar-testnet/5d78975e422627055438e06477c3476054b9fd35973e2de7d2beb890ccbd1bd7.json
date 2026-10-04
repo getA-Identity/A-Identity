@@ -26,6 +26,12 @@
   "archivedAt": "2026-10-03T12:43:08.593Z",
   "caption": "Rehearsal 2026-10-03 (software P-256 key, our OpenZeppelin v0.7.2 build, page route): set_allowed by passkey",
   "deliverable": "rehearsal",
+  "provenance": {
+    "entry": "stellar-testnet",
+    "kind": "owner-action",
+    "label": "Rehearsal, v0.7.2: set_allowed for the payee, signed by the software key",
+    "note": "The payee was our operator account, which holds a USDC trustline, so the run needed no second funded account. Relayed and fee-bumped by Channels."
+  },
   "decoded": {
     "hash": "5d78975e422627055438e06477c3476054b9fd35973e2de7d2beb890ccbd1bd7",
     "innerHash": "df45b72609f48e7adf07a0e534818eece2d62ea14ed8e429187a50be22c878fa",

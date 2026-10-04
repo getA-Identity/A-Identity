@@ -503,12 +503,14 @@ test('the registry slots carry roles, and the 2026-09-19 vault is labeled a rehe
     VAULT_ROLE_LABELS.rehearsal,
     'Rehearsal: owner calls were signed by a software P-256 key in our own script, not a device passkey. Not SOW 2 D3 evidence.',
   )
-  // The D2 vault was deployed and recorded on 2026-10-03, so it is a row with its own role;
-  // the D3 slot is still empty, and an empty slot is not a row.
+  // The D2 vault was deployed and recorded on 2026-10-03 and the D3 vault on 2026-10-04, so
+  // each is a row with its own role.
   const d2 = slots.find((s) => s.role === 'wallet-owned')
   assert.ok(stellar.contracts.walletOwnedVault, 'the D2 slot is filled in the registry')
   assert.equal(d2?.contract, stellar.contracts.walletOwnedVault)
-  assert.ok(!slots.some((s) => s.role === 'device-passkey'))
+  const d3 = slots.find((s) => s.role === 'device-passkey')
+  assert.ok(stellar.contracts.devicePasskeyVault, 'the D3 slot is filled in the registry')
+  assert.equal(d3?.contract, stellar.contracts.devicePasskeyVault)
 })
 
 test('the gate admits a known build outside every list only when its live owner is the caller', () => {

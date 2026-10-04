@@ -26,6 +26,12 @@
   "archivedAt": "2026-10-03T12:43:09.164Z",
   "caption": "Rehearsal 2026-10-03 (software P-256 key, our OpenZeppelin v0.7.2 build, page route): agent pays the allowed payee",
   "deliverable": "rehearsal",
+  "provenance": {
+    "entry": "stellar-testnet",
+    "kind": "settlement",
+    "label": "Rehearsal, v0.7.2: the agent pays the allowed payee, through the agent-pay route",
+    "note": "0.1 USDC by POST /api/stellar/passkey/agent-pay, signed and paid by our operator inside the policy. The same call to a payee nobody allowed was refused with PayeeNotAllowed (#3) in simulation, so that refusal has no hash."
+  },
   "decoded": {
     "hash": "40753e65ed63e31c2583a06e628cda91bd11513b3fa72975c38b2ba3267f55fb",
     "innerHash": null,

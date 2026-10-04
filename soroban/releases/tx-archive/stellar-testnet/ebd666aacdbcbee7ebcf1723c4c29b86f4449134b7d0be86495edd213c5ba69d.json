@@ -30,7 +30,7 @@
     "entry": "stellar-testnet",
     "kind": "funding",
     "label": "The D2 owner account, created by Friendbot rather than by any account of ours",
-    "note": "GDIZE6XJ... was generated inside Freighter by the user and did not exist on the ledger until the public testnet Friendbot (source GCG75HSV..., not ours) created and funded it with test XLM. That is the account that sources, pays for and signs the D2 owner actions."
+    "note": "GDIZE6XJ... was generated inside Freighter by the user and did not exist on the testnet ledger until the public testnet Friendbot (source GCG75HSV..., not ours) created and funded it with test XLM. That is the account that sources, pays for and signs the D2 owner actions."
   },
   "decoded": {
     "hash": "ebd666aacdbcbee7ebcf1723c4c29b86f4449134b7d0be86495edd213c5ba69d",

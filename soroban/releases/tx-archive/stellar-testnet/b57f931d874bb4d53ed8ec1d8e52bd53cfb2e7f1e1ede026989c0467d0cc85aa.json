@@ -26,6 +26,12 @@
   "archivedAt": "2026-10-03T12:43:11.287Z",
   "caption": "Rehearsal 2026-10-03 (software P-256 key, our OpenZeppelin v0.7.2 build, page route): add_context_rule (second device)",
   "deliverable": "rehearsal",
+  "provenance": {
+    "entry": "stellar-testnet",
+    "kind": "owner-action",
+    "label": "Rehearsal, v0.7.2: a second passkey added as its own context rule, never rule 0",
+    "note": "add_context_rule on the smart account itself: a Default rule, id 1, holding one new WebAuthn signer under CABPDJH4... and no policy, approved by the first passkey, the way the page's \"Add another device\" builds it. Read back afterwards: rule 0 still holds the first passkey alone and rule 1 the second alone, so either can act. An action on the account, not on the vault; both keys were software keys."
+  },
   "decoded": {
     "hash": "b57f931d874bb4d53ed8ec1d8e52bd53cfb2e7f1e1ede026989c0467d0cc85aa",
     "innerHash": "28de28de836dd23ec82dd3f408f193b59c4dd9266dd6eef33e6d9d41c295bfeb",

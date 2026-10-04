@@ -26,6 +26,12 @@
   "archivedAt": "2026-10-03T12:43:07.206Z",
   "caption": "Rehearsal 2026-10-03 (software P-256 key, our OpenZeppelin v0.7.2 build, page route): vault deploy",
   "deliverable": "rehearsal",
+  "provenance": {
+    "entry": "stellar-testnet",
+    "kind": "deploy",
+    "label": "Rehearsal, v0.7.2: a v0.1.1 vault owned by that smart account, from the deploy route",
+    "note": "Vault CCFQEMTY... on the v0.1.1 code 353e4264..., deployed by POST /api/stellar/passkey/vault/deploy after the route read the smart account's code and its one passkey signer off the ledger. Sourced and paid by our operator GDZXSO4A..., which is also its operator; daily cap 10 USDC, ceiling 2 USDC."
+  },
   "decoded": {
     "hash": "d5b44ad8c0abdfce90f1a3f3aaf2903dd26b4a26e9be5cd6bf5c458d4e7b0b40",
     "innerHash": null,

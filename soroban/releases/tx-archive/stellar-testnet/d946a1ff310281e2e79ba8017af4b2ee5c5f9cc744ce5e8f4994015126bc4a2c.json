@@ -26,6 +26,12 @@
   "archivedAt": "2026-10-03T12:43:10.787Z",
   "caption": "Rehearsal 2026-10-03 (software P-256 key, our OpenZeppelin v0.7.2 build, page route): withdraw by passkey",
   "deliverable": "rehearsal",
+  "provenance": {
+    "entry": "stellar-testnet",
+    "kind": "owner-action",
+    "label": "Rehearsal, v0.7.2: withdraw to a G account, its trustline checked first",
+    "note": "withdraw(GDZXSO4A..., 0.05 USDC), after Horizon confirmed the destination holds an authorized USDC trustline; the destination's balance rose by exactly 0.05. Signed by the software key under rule 0, relayed and fee-bumped by Channels."
+  },
   "decoded": {
     "hash": "d946a1ff310281e2e79ba8017af4b2ee5c5f9cc744ce5e8f4994015126bc4a2c",
     "innerHash": "9f7c9ce041f18eac8f6a017244a43ff1189e7f0c007ddc7a485448424d3835c3",

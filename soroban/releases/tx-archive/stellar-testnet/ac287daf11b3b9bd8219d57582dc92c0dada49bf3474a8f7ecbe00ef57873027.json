@@ -26,6 +26,12 @@
   "archivedAt": "2026-10-03T12:43:06.810Z",
   "caption": "Rehearsal 2026-10-03 (software P-256 key, our OpenZeppelin v0.7.2 build, page route): smart account deploy",
   "deliverable": "rehearsal",
+  "provenance": {
+    "entry": "stellar-testnet",
+    "kind": "deploy",
+    "label": "Rehearsal, v0.7.2: a smart account on our own OpenZeppelin build, deployed through our relay",
+    "note": "Smart account CD5WPJ5O..., the first instance of the account wasm a12747ff... we built from OpenZeppelin v0.7.2, with one WebAuthn signer under our verifier CABPDJH4.... The kit was configured as the /stellar page configures it and posted { func, auth } to our relay, which forwarded it to OpenZeppelin Channels; Channels sourced it and its account GCNJB6V5... paid the fee. The \"passkey\" was a software P-256 key in our own script, so this proves the path, not a device."
+  },
   "decoded": {
     "hash": "ac287daf11b3b9bd8219d57582dc92c0dada49bf3474a8f7ecbe00ef57873027",
     "innerHash": "2c9d53760dd5e7c9bb9e90dea9c7803574e4776e97df76382eda2065c7ebd605",

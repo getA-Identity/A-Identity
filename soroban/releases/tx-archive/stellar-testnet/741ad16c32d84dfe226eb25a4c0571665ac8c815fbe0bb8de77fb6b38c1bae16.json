@@ -26,6 +26,12 @@
   "archivedAt": "2026-10-03T12:43:11.751Z",
   "caption": "Rehearsal 2026-10-03 (software P-256 key, our OpenZeppelin v0.7.2 build, page route): withdraw by the second passkey",
   "deliverable": "rehearsal",
+  "provenance": {
+    "entry": "stellar-testnet",
+    "kind": "owner-action",
+    "label": "Rehearsal, v0.7.2: signed in with the second passkey alone, it withdraws the rest",
+    "note": "After signing out and back in with the second credential, withdraw(GDZXSO4A..., 0.05 USDC) emptied the vault. Decoded off the ledger: the webauthn-secp256r1 signature is bound to context rule 1, so the second device authorized it on its own. What the recovery page promises for a second device, shown on the contract path with software keys; a device enrolment is still to be shown."
+  },
   "decoded": {
     "hash": "741ad16c32d84dfe226eb25a4c0571665ac8c815fbe0bb8de77fb6b38c1bae16",
     "innerHash": "62608cb769f4cb42556c3350456a22f317a0086e21a13dbed4cb64118fa9d84b",

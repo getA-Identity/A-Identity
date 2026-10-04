@@ -26,6 +26,12 @@
   "archivedAt": "2026-10-03T12:43:10.313Z",
   "caption": "Rehearsal 2026-10-03 (software P-256 key, our OpenZeppelin v0.7.2 build, page route): set_frozen(false) by passkey",
   "deliverable": "rehearsal",
+  "provenance": {
+    "entry": "stellar-testnet",
+    "kind": "owner-action",
+    "label": "Rehearsal, v0.7.2: the software key unfreezes the vault",
+    "note": "set_frozen(false), read back as not frozen right after."
+  },
   "decoded": {
     "hash": "ac4a2f8f0fc4c198924cf2caf2c08d4818408ce5a7bb525f0a0422228eda8019",
     "innerHash": "99a7e081a559de7ee1371f8a72f4fd0f6ad30b8f8646c63fe46b73ba2d438f9f",

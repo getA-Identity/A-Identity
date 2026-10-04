@@ -124,9 +124,15 @@ Freighter. The same day, from the [vault panel](https://a-identity.xyz/app/vault
 and then withdrew 0.5 test USDC to its own account
 ([`b59f6ed8...61c4`](https://stellar.expert/explorer/testnet/tx/b59f6ed844c511d6e4fce4f8385235da6a009dcc0ca6dcb424891b10f9eb61c4), ledger 5006299),
 each a transaction the owner account sources, pays for and signs whole in Freighter, with no
-signature from any system of ours. The D3 vault is planned on the same code, and each vault's release receipt is in
-[`soroban/releases`](https://github.com/getA-Identity/A-Identity/tree/main/soroban/releases)
-when it is deployed. The existing vaults keep `v0.1.0`: the contract has no upgrade
+signature from any system of ours. The SOW 2 D3 vault runs the same code:
+`CCTYM23I6UCKKFWHBUWU2GFUSDY6WJEJ3FYSS7WI33DTI5P5HARB72EH`, deployed 2026-10-04
+([`fa1080f6...2c38`](https://stellar.expert/explorer/testnet/tx/fa1080f6787f82bf3ca2b9c41828cd2ee16ee20bb78ee65818cdad5801f82c38), ledger 5019022),
+whose owner is the OpenZeppelin smart account `CBII2K5RHXA7QTBXXUG6O3EMR25NOVOL73KMVGWKWGH7PHO7QXDTHMUD`
+([`5af017bd...ff9b`](https://stellar.expert/explorer/testnet/tx/5af017bda75de876508400dc9e973467608a151d49d402d9cb0df662fac3ff9b), ledger 5019008).
+That account's one signer is a passkey the owner created in a browser on
+[/stellar](https://a-identity.xyz/stellar?network=testnet); its owner action, signed by that passkey,
+is still to come. Each vault's release receipt is in
+[`soroban/releases`](https://github.com/getA-Identity/A-Identity/tree/main/soroban/releases). The existing vaults keep `v0.1.0`: the contract has no upgrade
 entrypoint, so a fix reaches a vault only through a new deployment.
 
 ## The spend vault

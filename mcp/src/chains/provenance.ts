@@ -1066,6 +1066,39 @@ export const PROVENANCE: ChainProvenance[] = [
         deliverable: 'SOW2-D2',
         note: 'withdraw(GDIZE6XJ..., 5000000) on CDEU2D4T..., 0.5 test USDC at seven decimals, landed 19:18:02 UTC while the vault was frozen: the freeze stops the agent, not the owner. Same shape as the freeze: GDIZE6XJ... sources it, pays the fee (0.0014252 XLM) and signs the whole transaction in Freighter, after the panel restated the amount, the destination and the vault on a review screen. Read back afterwards: the vault frozen with 0.5 USDC, the owner account holding 0.5 USDC.',
       },
+      // SOW 2 D3: the owner's own device passkey, enrolled in a browser on the production site
+      // on 2026-10-04, and the vault it owns. Read back off the ledger before publication:
+      // soroban/releases/testnet-passkey-d3-2026-10-04.json.
+      {
+        kind: 'deploy',
+        label: 'The D3 smart account, created from the owner\'s device passkey on the production site',
+        txHash: '5af017bda75de876508400dc9e973467608a151d49d402d9cb0df662fac3ff9b',
+        onChain: 'stellar-testnet',
+        blockNumber: 5019008,
+        date: '2026-10-04',
+        deliverable: 'SOW2-D3',
+        note: 'Smart account CBII2K5R... on the account wasm a12747ff... (our OpenZeppelin v0.7.2 build), created at 12:57:07 UTC when the owner made a passkey on /stellar?network=testnet in a browser. Read back off the ledger: one context rule (Default, no policy, no expiry) holding exactly one signer, External under the WebAuthn verifier CABPDJH4... with the device public key 04560be2...; no Ed25519 and no Delegated signer. The page reported a platform passkey synced in Apple Passwords (backup eligible, backed up, user verified); that report is the browser\'s, not the ledger\'s. The kit posted the deploy to our relay, which forwarded it to OpenZeppelin Channels: a Channels channel account sourced it and the Channels account GCNJB6V5... paid the fee.',
+      },
+      {
+        kind: 'deploy',
+        label: 'The D3 vault, deployed from v0.1.1, owner = that smart account',
+        txHash: 'fa1080f6787f82bf3ca2b9c41828cd2ee16ee20bb78ee65818cdad5801f82c38',
+        onChain: 'stellar-testnet',
+        blockNumber: 5019022,
+        date: '2026-10-04',
+        deliverable: 'SOW2-D3',
+        note: 'Vault CCTYM23I... on the v0.1.1 code 353e4264..., deployed at 12:58:17 UTC by POST /api/stellar/passkey/vault/deploy after the route read the smart account\'s code and its one passkey signer off the ledger. Sourced and paid (0.6559942 XLM) by GDZXSO4A..., which is the vault\'s operator and cannot call an owner entrypoint. Constructor: owner CBII2K5R..., daily cap 10 USDC, auto-approve 2 USDC. owner(), operator() and the code hash were read back from the ledger after the deploy.',
+      },
+      {
+        kind: 'funding',
+        label: 'The D3 vault seeded with 0.2 test USDC',
+        txHash: '62dc830950ba3322019c928fa35a47a509bac886a52c4a316cb31666236bbf10',
+        onChain: 'stellar-testnet',
+        blockNumber: 5019023,
+        date: '2026-10-04',
+        deliverable: 'SOW2-D3',
+        note: 'A plain SAC transfer of 0.2 test USDC from GDZXSO4A... into CCTYM23I..., made by the same deploy route at 12:58:22 UTC; it is not an owner action. The vault read its balance back as 0.2 USDC.',
+      },
       // The 2026-10-03 rehearsal: the whole D3 owner path, run once on our own OpenZeppelin
       // v0.7.2 build before any person runs it, so the recorded device session is not its
       // first run. Same rule as 2026-09-19: SOFTWARE P-256 keys in our own script
@@ -1194,7 +1227,7 @@ export const PROVENANCE: ChainProvenance[] = [
         network: 'stellar-testnet',
         custody: 'ours: backend environment key',
         usedFor:
-          'pay() inside the vault policy (it can never call an owner entrypoint), broadcasting and paying the fee for every testnet x402 settlement, and the operator of the 2026-09-19 rehearsal vaults and of the 2026-10-03 rehearsal vaults CCFQEMTY... and CDE5P5QX..., which it deployed and seeded. Since 2026-10-03 it is also the testnet signer of the hosted backend, set on Render by the maintainer: it deploys, seeds and operates every vault /stellar?network=testnet creates, the SoW 2 D3 vault among them once it exists, and it can never sign that vault\'s owner calls, which only the owner\'s passkey can. One key in several roles on testnet, which mcp/scripts/stellar-key-roles.mjs reports as a warning.',
+          'pay() inside the vault policy (it can never call an owner entrypoint), broadcasting and paying the fee for every testnet x402 settlement, and the operator of the 2026-09-19 rehearsal vaults and of the 2026-10-03 rehearsal vaults CCFQEMTY... and CDE5P5QX..., which it deployed and seeded. Since 2026-10-03 it is also the testnet signer of the hosted backend, set on Render by the maintainer: it deploys, seeds and operates every vault /stellar?network=testnet creates, the SoW 2 D3 vault CCTYM23I... among them, which it deployed and seeded on 2026-10-04, and it can never sign that vault\'s owner calls, which only the owner\'s passkey can. One key in several roles on testnet, which mcp/scripts/stellar-key-roles.mjs reports as a warning.',
         publishedAt: '2026-08-15',
       },
       {
@@ -1221,7 +1254,7 @@ export const PROVENANCE: ChainProvenance[] = [
         network: 'stellar-testnet',
         custody: 'third party: OpenZeppelin Channels',
         usedFor:
-          'Fee-bumped the four owner-side transactions of the sponsored rehearsal run (ledgers 4764131, 4764136, 4764142 and 4764144), relayed through our endpoint with our API key, and the eight owner-side transactions of the 2026-10-03 rehearsal on our v0.7.2 build (ledgers 5001527 to 5001551). We do not hold its key. Read off Horizon as the fee_account of those transactions and recorded in soroban/releases/testnet-passkey-owner-2026-09-19.json and testnet-passkey-rehearsal-v072-2026-10-03.json.',
+          'Fee-bumped the four owner-side transactions of the sponsored rehearsal run (ledgers 4764131, 4764136, 4764142 and 4764144), relayed through our endpoint with our API key, and the eight owner-side transactions of the 2026-10-03 rehearsal on our v0.7.2 build (ledgers 5001527 to 5001551). On 2026-10-04 it fee-bumped the deploy of the SoW 2 D3 smart account CBII2K5R... (ledger 5019008), the owner\'s own passkey enrolment relayed through our endpoint. We do not hold its key. Read off Horizon as the fee_account of those transactions and recorded in soroban/releases/testnet-passkey-owner-2026-09-19.json, testnet-passkey-rehearsal-v072-2026-10-03.json and testnet-passkey-d3-2026-10-04.json.',
         publishedAt: '2026-10-02',
       },
       {
@@ -1241,6 +1274,15 @@ export const PROVENANCE: ChainProvenance[] = [
         usedFor:
           'pay() inside the D2 vault policy and nothing else: it can never call an owner entrypoint. The public Friendbot created the account on 2026-10-03 (tx 02290d96..., test XLM only) so its explorer page resolves; it has never called pay() and is not used during the SoW 2 sprint.',
         publishedAt: '2026-10-03',
+      },
+      {
+        role: 'Owner of the SoW 2 D3 vault CCTYM23I...: an OpenZeppelin smart account behind a device passkey',
+        address: 'CBII2K5RHXA7QTBXXUG6O3EMR25NOVOL73KMVGWKWGH7PHO7QXDTHMUD',
+        network: 'stellar-testnet',
+        custody: 'owner: passkey smart account',
+        usedFor:
+          'set_policy, set_frozen and withdraw on the D3 vault, each authorized only by a WebAuthn signature from the passkey the owner created on 2026-10-04 in a browser on the production site: the account\'s one signer, on rule 0, under the WebAuthn verifier CABPDJH4.... It holds no XLM and pays no fee; a relayer or the vault operator pays, and the page names which. Published here on the day the vault was deployed and before its first owner action.',
+        publishedAt: '2026-10-04',
       },
     ],
     caveats: [
@@ -1825,9 +1867,18 @@ export const STELLAR_SOW2: Sow2Evidence = {
       status: 'pending',
       date: null,
       caption:
-        'Our own verifier instances of OpenZeppelin\'s audited v0.7.2 code are on testnet (below); no D3 vault exists yet. What will appear here: a testnet vault owned by a passkey smart account whose signer is a device authenticator, and an owner action that passkey signed, with its date, hash and explorer link. The smart account address and the vault will be published in the accounts table below BEFORE the passkey signs any owner action. The 2026-09-19 runs further down, and the 2026-10-03 run that took the whole owner path once on our own v0.7.2 build through our relay (a second passkey on its own rule included), are rehearsals with software keys and are not this deliverable.',
-      links: [{ label: 'The passkey vault page, on testnet', url: '/stellar?network=testnet' }],
-      artifacts: ['8c6894a8bc0ee1aa8168a49f1de0c4dbdc7f7bf3e86b731277754b81d8242005', '33642444e71dbda544e61e728019ac728d10a38f9ebfce65ed955bf29fb06a4b'],
+        'The D3 smart account CBII2K5R... and its vault CCTYM23I... were deployed on 2026-10-04 and published in the accounts table below the same day, before any owner action. The owner created a passkey on /stellar?network=testnet in a browser; the account\'s one signer is that passkey, under our verifier instance of OpenZeppelin\'s audited v0.7.2 code, and the vault runs the fixed v0.1.1 code with that account as its owner. Still to appear here: an owner action the passkey signs, with its date, hash, explorer link and decoded authorization. The 2026-09-19 runs further down, and the 2026-10-03 run that took the whole owner path once on our own v0.7.2 build through our relay (a second passkey on its own rule included), are rehearsals with software keys and are not this deliverable.',
+      links: [
+        { label: 'The passkey vault page, on testnet', url: '/stellar?network=testnet' },
+        { label: 'Open the D3 vault in the live panel', url: '/app/vault/stellar?network=stellar:testnet&contract=CCTYM23I6UCKKFWHBUWU2GFUSDY6WJEJ3FYSS7WI33DTI5P5HARB72EH' },
+      ],
+      artifacts: [
+        '8c6894a8bc0ee1aa8168a49f1de0c4dbdc7f7bf3e86b731277754b81d8242005',
+        '33642444e71dbda544e61e728019ac728d10a38f9ebfce65ed955bf29fb06a4b',
+        '5af017bda75de876508400dc9e973467608a151d49d402d9cb0df662fac3ff9b',
+        'fa1080f6787f82bf3ca2b9c41828cd2ee16ee20bb78ee65818cdad5801f82c38',
+        '62dc830950ba3322019c928fa35a47a509bac886a52c4a316cb31666236bbf10',
+      ],
     },
   ],
   trustModel:

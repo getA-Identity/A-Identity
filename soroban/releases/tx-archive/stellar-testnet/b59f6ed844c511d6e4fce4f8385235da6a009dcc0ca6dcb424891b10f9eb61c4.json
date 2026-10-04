@@ -26,6 +26,12 @@
   "archivedAt": "2026-10-03T19:20:17.782Z",
   "caption": "The D2 owner GDIZE6XJ withdraws 0.5 test USDC from the D2 vault CDEU2D4T to its own account, from the a-identity.xyz panel, signed in Freighter on 2026-10-03: the owner is the transaction source and pays the fee, so the wallet's signature over the whole transaction is the authorization",
   "deliverable": "D2",
+  "provenance": {
+    "entry": "stellar-testnet",
+    "kind": "owner-action",
+    "label": "The D2 owner withdraws 0.5 test USDC to its own account, signed in Freighter",
+    "note": "withdraw(GDIZE6XJ..., 5000000) on CDEU2D4T..., 0.5 test USDC at seven decimals, landed 19:18:02 UTC while the vault was frozen: the freeze stops the agent, not the owner. Same shape as the freeze: GDIZE6XJ... sources it, pays the fee (0.0014252 XLM) and signs the whole transaction in Freighter, after the panel restated the amount, the destination and the vault on a review screen. Read back afterwards: the vault frozen with 0.5 USDC, the owner account holding 0.5 USDC."
+  },
   "decoded": {
     "hash": "b59f6ed844c511d6e4fce4f8385235da6a009dcc0ca6dcb424891b10f9eb61c4",
     "innerHash": null,

@@ -432,9 +432,14 @@ export const CHAINS: ChainDescriptor[] = [
       // Freighter, and Friendbot (not an account of ours) created that account; its operator is
       // our sow2-d2-operator key. The existing flagship vault above keeps its CLI-keystore owner.
       walletOwnedVault: 'CDEU2D4TFDA5XMFI7QMCOGR2O6HWLV2QMOHYVEQDC4Z6REG73HNF2MKT',
-      // devicePasskeyVault (SOW 2 D3: owner is a smart account behind a device passkey) is left
-      // UNSET on purpose. Ops fills it after deploying it and committing its receipt; an empty
-      // slot is not a vault.
+      // The SOW 2 D3 vault: v0.1.1, deployed 2026-10-04 in tx
+      // fa1080f6787f82bf3ca2b9c41828cd2ee16ee20bb78ee65818cdad5801f82c38 (ledger 5019022) by the
+      // hosted testnet signer, which is its operator. Its OWNER is the OpenZeppelin smart account
+      // CBII2K5RHXA7QTBXXUG6O3EMR25NOVOL73KMVGWKWGH7PHO7QXDTHMUD (tx 5af017bd..., ledger 5019008,
+      // fee-bumped by OpenZeppelin Channels), whose one signer is a passkey the owner created in a
+      // browser on the production site, under the WebAuthn verifier below. Read back off the
+      // ledger before publication: soroban/releases/testnet-passkey-d3-2026-10-04.json.
+      devicePasskeyVault: 'CCTYM23I6UCKKFWHBUWU2GFUSDY6WJEJ3FYSS7WI33DTI5P5HARB72EH',
       // TrionLabs Stellar 8004 on testnet, third party, read-only for us. Our own
       // registration is agent 25 here (tx 6070127842948b6aa26103e270f8e38b670f8c92916edbc691f3cd5f10754b07,
       // 2026-09-08), owner GBMF7MDH...ZZ3, and find_owner(25) read back that owner on
@@ -457,7 +462,7 @@ export const CHAINS: ChainDescriptor[] = [
       // narrowly: the credential was a SOFTWARE P-256 key generated inside
       // mcp/scripts/stellar-passkey-proof.mjs, not a device authenticator, so /api/stellar/vaults
       // labels this row role 'rehearsal' and it is not SOW 2 D3 evidence (that is
-      // devicePasskeyVault, once deployed). Testnet resets periodically, so this is a rehearsal,
+      // devicePasskeyVault, deployed 2026-10-04). Testnet resets periodically, so this is a rehearsal,
       // never a record; the same script reproduces it.
       passkeyVault: 'CBGTXWFBYAOZBR6EN3UK4PTLUAY6BRV2C36D3DPOTE5JSOLQXANS6J6U',
       // OpenZeppelin's smart account contracts on TESTNET, built by us from the audited release

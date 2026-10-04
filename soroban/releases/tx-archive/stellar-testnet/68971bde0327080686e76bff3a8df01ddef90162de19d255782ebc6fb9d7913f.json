@@ -26,6 +26,12 @@
   "archivedAt": "2026-10-03T12:43:08.142Z",
   "caption": "Rehearsal 2026-10-03 (software P-256 key, our OpenZeppelin v0.7.2 build, page route): set_policy by passkey",
   "deliverable": "rehearsal",
+  "provenance": {
+    "entry": "stellar-testnet",
+    "kind": "owner-action",
+    "label": "Rehearsal, v0.7.2: set_policy signed by a software key through our verifier",
+    "note": "set_policy(10 USDC, 2 USDC, allowlist on) through the account's execute, relayed and fee-bumped by Channels. Decoded off the ledger: a webauthn-secp256r1 signer under CABPDJH4..., bound to context rule 0, its challenge the entry's auth digest and its signature re-verifying. A software key signed it."
+  },
   "decoded": {
     "hash": "68971bde0327080686e76bff3a8df01ddef90162de19d255782ebc6fb9d7913f",
     "innerHash": "d3db27071b326696cf61d681149ce676877ddfc7d7d4d4e15392dff8a08a95a2",

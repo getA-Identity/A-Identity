@@ -26,6 +26,12 @@
   "archivedAt": "2026-10-03T12:43:09.805Z",
   "caption": "Rehearsal 2026-10-03 (software P-256 key, our OpenZeppelin v0.7.2 build, page route): set_frozen(true) by passkey",
   "deliverable": "rehearsal",
+  "provenance": {
+    "entry": "stellar-testnet",
+    "kind": "owner-action",
+    "label": "Rehearsal, v0.7.2: the software key freezes the vault, and the agent stops",
+    "note": "set_frozen(true), the button the D3 recording will press. With the vault frozen, agent-pay was refused with Frozen (#1) in simulation, so that refusal has no hash. Relayed and fee-bumped by Channels; signed by a software key."
+  },
   "decoded": {
     "hash": "6176ed231dc5f3442eba125ba8143bb27fc3057fd81849c61b0899297b0057e3",
     "innerHash": "8f5dfc090fa0463169e79321c0006ea89061d7305fcf6a4082481ea073081096",

@@ -26,6 +26,12 @@
   "archivedAt": "2026-10-03T19:20:17.401Z",
   "caption": "The D2 owner GDIZE6XJ freezes the D2 vault CDEU2D4T (set_frozen true) from the a-identity.xyz panel, signed in Freighter on 2026-10-03: the owner is the transaction source and pays the fee, so the wallet's signature over the whole transaction is the authorization",
   "deliverable": "D2",
+  "provenance": {
+    "entry": "stellar-testnet",
+    "kind": "owner-action",
+    "label": "The D2 owner freezes its vault from the panel, signed in Freighter",
+    "note": "set_frozen(true) on CDEU2D4T..., the first owner action on this vault, landed 19:17:07 UTC. GDIZE6XJ... is the transaction source and the fee payer (0.0007196 XLM), its signature is the only one on the envelope, and the authorization entry is a source-account credential: the wallet signature over the whole transaction is the authorization, and nothing our backend holds could produce it. Our backend built and simulated the unsigned call for the signed-in session; Freighter showed the owner account, the network and the call before the user approved it."
+  },
   "decoded": {
     "hash": "60a7dd67cf5c999a74129a7201289402b51373d481e79b1e979273ff4abb4c6e",
     "innerHash": null,

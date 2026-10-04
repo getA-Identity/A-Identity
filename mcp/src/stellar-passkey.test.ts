@@ -1045,9 +1045,11 @@ test('the operator refuses every recorded vault, the SOW 2 evidence vaults inclu
   if (!g.ok) assert.equal(g.code, 'flagship_vault')
   // The relay's list is the narrower one: the D3 vault's owner calls go through it.
   assert.equal(flagshipVaults(filled).includes(d3), false, 'refusing the D3 vault in the relay would stop its own owner')
-  // As recorded today: the D2 slot is filled (2026-10-03) and the D3 slot is not, so the
-  // operator list is the relay's list plus the D2 vault.
-  assert.deepEqual(operatorRefusedVaults(testnet), [...flagshipVaults(testnet), testnet.contracts.walletOwnedVault!])
+  // As recorded today: the D2 slot is filled (2026-10-03) and the D3 slot too (2026-10-04),
+  // so the operator list is the relay's list plus both evidence vaults, and the relay's list
+  // still leaves the D3 vault to its owner.
+  assert.deepEqual(operatorRefusedVaults(testnet), [...flagshipVaults(testnet), testnet.contracts.walletOwnedVault!, testnet.contracts.devicePasskeyVault!])
+  assert.equal(flagshipVaults(testnet).includes(testnet.contracts.devicePasskeyVault!), false)
 })
 
 // ── SOW 2 D3.8: a smart account adding a device to itself ───────────────────────

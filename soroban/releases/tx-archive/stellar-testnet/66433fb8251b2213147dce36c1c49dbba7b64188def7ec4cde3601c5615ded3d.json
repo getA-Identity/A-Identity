@@ -26,6 +26,12 @@
   "archivedAt": "2026-10-03T12:43:07.611Z",
   "caption": "Rehearsal 2026-10-03 (software P-256 key, our OpenZeppelin v0.7.2 build, page route): seed (by the deploy route)",
   "deliverable": "rehearsal",
+  "provenance": {
+    "entry": "stellar-testnet",
+    "kind": "funding",
+    "label": "Rehearsal, v0.7.2: 0.2 test USDC seeded by the deploy route",
+    "note": "A SAC transfer from our operator into the new vault, so the agent has something to pay with. Every unit of it came back to the operator by the end of the run (one agent payment and two withdrawals)."
+  },
   "decoded": {
     "hash": "66433fb8251b2213147dce36c1c49dbba7b64188def7ec4cde3601c5615ded3d",
     "innerHash": null,

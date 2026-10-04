@@ -26,6 +26,12 @@
   "archivedAt": "2026-10-03T13:15:55.048Z",
   "caption": "Owner withdraw of 5 test USDC from the flagship testnet vault CAIL6ECR to our operator GDZXSO4A, signed by our own owner key GBLHNAL5 on 2026-09-19: the last owner or operator transaction on that vault",
   "deliverable": null,
+  "provenance": {
+    "entry": "stellar-testnet",
+    "kind": "owner-action",
+    "label": "The flagship vault's owner withdraws 5 test USDC to our operator",
+    "note": "withdraw(GDZXSO4A..., 5 USDC) on CAIL6ECR..., sourced, paid and signed by the owner GBLHNAL5..., a key of ours in a local CLI keystore: test money moved between two of our own accounts. Recorded on 2026-10-03, when a ledger read showed the vault at 8.988 USDC rather than the 13.988 read on 2026-09-16. It is the last owner or operator transaction on this vault, read off Horizon on 2026-10-03."
+  },
   "decoded": {
     "hash": "9536bd1a7fefcb516c9dc67ed71f304a9f9a86362e5401836143cbd09c7ef0b3",
     "innerHash": null,
