@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.4.6 (2026-10-07)
+
+### Fixed
+
+- `refund --to` only found the sets whose files end in exactly `.closed-<stamp>.json`. A set
+  that was moved aside and later swept ends in `.closed-<stamp>.closed-<stamp>.json`, and a file
+  renamed by hand can end in `.old-<tag>.json`; both were skipped without a word, so the XLM in
+  such a Stellar wallet stayed where it was. Every chain of `.closed-` and `.old-` parts is now a
+  set of its own, listed oldest first. A plain `.closed-<stamp>` set keeps its state file name, so
+  a refund that already finished is not run again.
+
 ## 0.4.5 (2026-10-03)
 
 In 0.4.4, `buy` spent the whole deposit on a fixed list of targets, round after round, until

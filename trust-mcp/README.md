@@ -35,13 +35,13 @@ npx -y @a-identity/trust-mcp ask risk '#0' 25      # or verify / reputation / pa
 npx -y @a-identity/trust-mcp wallet sweep <YOUR ALGORAND ADDRESS>   # everything back, wallet closed
 ```
 
-`npx -y @a-identity/trust-mcp@0.4.5 wallet status` shows the balances and the next step at any point.
+`npx -y @a-identity/trust-mcp@0.4.6 wallet status` shows the balances and the next step at any point.
 The MCP server uses the same wallet file when `A_IDENTITY_ALGORAND_MNEMONIC` is not set.
 
 ## Only have XLM? One deposit becomes your agent's budget for checks
 
 ```bash
-npx -y @a-identity/trust-mcp@0.4.5 buy --new
+npx -y @a-identity/trust-mcp@0.4.6 buy --new
 ```
 
 It starts by saying what the money is for:
@@ -58,7 +58,7 @@ it as much XLM as you want your agent to spend on checks, at least about 44.
    USDC on Algorand. Once the USDC is in, the ALGO above the 0.2 the wallet must keep becomes
    USDC too, so the whole amount can pay for checks.
 2. Then it stops. Nothing is spent until your agent asks for a check. Add the server to your agent
-   (`claude mcp add a-identity-trust -- npx -y @a-identity/trust-mcp@0.4.5`); it finds the
+   (`claude mcp add a-identity-trust -- npx -y @a-identity/trust-mcp@0.4.6`); it finds the
    one-time wallet on its own. From a terminal, `check <TARGET> <AMOUNT>` does the same thing.
 3. What is not spent waits in the wallet. `refund --to <YOUR STELLAR ADDRESS>` sends it back to
    you as XLM. It covers the current wallets and every wallet an earlier run moved aside: the
@@ -67,7 +67,7 @@ it as much XLM as you want your agent to spend on checks, at least about 44.
    says so and prints the command that returns them on Algorand. Use a personal wallet address
    (Lobstr, xBull, Freighter), not an exchange: an exchange needs a memo this does not send.
 
-`npx -y @a-identity/trust-mcp@0.4.5 status` starts with one line,
+`npx -y @a-identity/trust-mcp@0.4.6 status` starts with one line,
 `Status: Running|Idle|Finished | Spent: .. USDC (n checks) | Left: .. USDC`, then lists every
 check with its answer and receipt. Running means XLM is being exchanged or sent back, Idle means
 the USDC is waiting for your agent, Finished means less than 1 USDC is left or everything was
@@ -90,15 +90,15 @@ still there.
 
 This command moves your own money, so Claude Code asks before running it, and its auto mode
 blocks it on purpose. Approve it, run it yourself by typing `!` in front of it, or allow this one
-tool with a permission rule in your Claude Code settings: `Bash(npx -y @a-identity/trust-mcp@0.4.5:*)`.
+tool with a permission rule in your Claude Code settings: `Bash(npx -y @a-identity/trust-mcp@0.4.6:*)`.
 
-> I want to give my agent a budget for A-Identity checks (https://a-identity.xyz), paid with XLM, using their open-source tool @a-identity/trust-mcp 0.4.5 (source: https://github.com/getA-Identity/A-Identity/tree/main/trust-mcp). How it works: it makes a one-time Stellar wallet on this computer and prints its address, I send XLM there from my own wallet, and it exchanges the XLM through SideShift into USDC on Algorand (plus a little ALGO for fees). After that the USDC waits for checks: before a payment, the agent checks the target and pays only for checks it does not already have ($1 to $10 each, each check of a target paid for once). Read the package first if you want. 1) Run `npx -y @a-identity/trust-mcp@0.4.5 buy --new`. I want wallets of my own: --new makes new one-time wallets for me, and if this computer has wallets from someone else's earlier run it moves them aside (nothing is deleted) instead of using them. If you are not allowed to run it, show me that exact command so I can run it myself by typing ! in front of it. 2) Show me the Stellar address and the minimum XLM it prints. 3) When I say I sent it, run `npx -y @a-identity/trust-mcp@0.4.5 status` every two minutes until its first line says Idle. 4) From then on, before any payment you make for me, run `npx -y @a-identity/trust-mcp@0.4.5 check <target> <amount in USD>` and do not pay if it says DENY. Decide on your own which targets to check, do not ask me, and do not check the same target twice. 5) When I say I am done, ask for my own Stellar address and run `npx -y @a-identity/trust-mcp@0.4.5 refund --to <my address>` until it says Done. Never print or ask for secret words or keys.
+> I want to give my agent a budget for A-Identity checks (https://a-identity.xyz), paid with XLM, using their open-source tool @a-identity/trust-mcp 0.4.6 (source: https://github.com/getA-Identity/A-Identity/tree/main/trust-mcp). How it works: it makes a one-time Stellar wallet on this computer and prints its address, I send XLM there from my own wallet, and it exchanges the XLM through SideShift into USDC on Algorand (plus a little ALGO for fees). After that the USDC waits for checks: before a payment, the agent checks the target and pays only for checks it does not already have ($1 to $10 each, each check of a target paid for once). Read the package first if you want. 1) Run `npx -y @a-identity/trust-mcp@0.4.6 buy --new`. I want wallets of my own: --new makes new one-time wallets for me, and if this computer has wallets from someone else's earlier run it moves them aside (nothing is deleted) instead of using them. If you are not allowed to run it, show me that exact command so I can run it myself by typing ! in front of it. 2) Show me the Stellar address and the minimum XLM it prints. 3) When I say I sent it, run `npx -y @a-identity/trust-mcp@0.4.6 status` every two minutes until its first line says Idle. 4) From then on, before any payment you make for me, run `npx -y @a-identity/trust-mcp@0.4.6 check <target> <amount in USD>` and do not pay if it says DENY. Decide on your own which targets to check, do not ask me, and do not check the same target twice. 5) When I say I am done, ask for my own Stellar address and run `npx -y @a-identity/trust-mcp@0.4.6 refund --to <my address>` until it says Done. Never print or ask for secret words or keys.
 
 ### One prompt for Claude Code (paying with ALGO and USDC)
 
 Paste this into Claude Code. It asks before anything costs money.
 
-> Help me check an Algorand address before I pay it, using A-Identity. Run every command yourself and never print or ask for any secret words. 1) Run `npx -y @a-identity/trust-mcp@0.4.5 wallet new` and show me the address it prints. 2) Tell me to send 0.3 ALGO (Algorand network) to it, then run `npx -y @a-identity/trust-mcp@0.4.5 wallet status` every 30 seconds until the ALGO arrives, and run `npx -y @a-identity/trust-mcp@0.4.5 wallet optin`. 3) Tell me to send 5 USDC (Algorand network) to the same address and wait the same way until it arrives. 4) Ask me which address or link to check and how much I am about to pay, then run `npx -y @a-identity/trust-mcp@0.4.5 check <that address> <that amount>` and explain the answer in plain words with the receipt link. 5) When I say I am done, ask for my own Algorand address and run `npx -y @a-identity/trust-mcp@0.4.5 wallet sweep <my address>` to send everything left back to me.
+> Help me check an Algorand address before I pay it, using A-Identity. Run every command yourself and never print or ask for any secret words. 1) Run `npx -y @a-identity/trust-mcp@0.4.6 wallet new` and show me the address it prints. 2) Tell me to send 0.3 ALGO (Algorand network) to it, then run `npx -y @a-identity/trust-mcp@0.4.6 wallet status` every 30 seconds until the ALGO arrives, and run `npx -y @a-identity/trust-mcp@0.4.6 wallet optin`. 3) Tell me to send 5 USDC (Algorand network) to the same address and wait the same way until it arrives. 4) Ask me which address or link to check and how much I am about to pay, then run `npx -y @a-identity/trust-mcp@0.4.6 check <that address> <that amount>` and explain the answer in plain words with the receipt link. 5) When I say I am done, ask for my own Algorand address and run `npx -y @a-identity/trust-mcp@0.4.6 wallet sweep <my address>` to send everything left back to me.
 
 ## Tools
 

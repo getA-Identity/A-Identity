@@ -11,6 +11,10 @@ import { runCli } from './cli.js'
 import { loadWallet } from './wallet.js'
 import { loadStellarWallet } from './stellar.js'
 import { ALGOD, HORIZON, ORACLE, world } from './world.fixture.js'
+import { CMD } from './version.js'
+
+/** The command this build prints, escaped for a RegExp, so the version is never hard-coded here. */
+const cmd = CMD.replace(/[.*+?^${}()|[\]\\/]/g, '\\$&')
 
 function setup() {
   const dir = mkdtempSync(join(tmpdir(), 'aid-buy-'))
@@ -98,11 +102,13 @@ test('buy says what the money is for and where to send it, the worker only excha
   assert.equal(calls.code, 0)
   assert.match(
     start,
-    /^Everything you send is spent by your agent on checks of the targets it chooses, each one a different check\.\nIf no new target is left, what remains waits in the wallet; get it back with: npx -y @a-identity\/trust-mcp@0\.4\.5 refund --to <YOUR STELLAR ADDRESS>\n/,
+    new RegExp(
+      `^Everything you send is spent by your agent on checks of the targets it chooses, each one a different check\\.\\nIf no new target is left, what remains waits in the wallet; get it back with: ${cmd} refund --to <YOUR STELLAR ADDRESS>\\n`,
+    ),
   )
   assert.match(start, /at least 44 XLM/)
-  assert.match(start, /claude mcp add a-identity-trust -- npx -y @a-identity\/trust-mcp@0\.4\.5/)
-  assert.match(start, /npx -y @a-identity\/trust-mcp@0\.4\.5 status/)
+  assert.match(start, new RegExp(`claude mcp add a-identity-trust -- ${cmd}`))
+  assert.match(start, new RegExp(`${cmd} status`))
   assert.equal(calls.spawns, 1)
   assert.match(await run('status'), /^Status: Idle \| Spent: 0 USDC \(0 checks\) \| Left: 0 USDC\nPaused/)
 

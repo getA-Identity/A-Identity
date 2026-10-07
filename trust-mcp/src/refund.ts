@@ -2,7 +2,8 @@
  * `refund --to <G...>`: everything left in the one-time wallets on this computer, back to the
  * user's own Stellar address as XLM.
  *
- * It covers the current wallets and every set an earlier run moved aside (*.closed-*.json): a
+ * It covers the current wallets and every set moved aside earlier (see `parseAsideName` for the
+ * file names a wallet directory accumulates): a
  * Stellar wallet is merged into that address, which sends all of its XLM, and USDC and ALGO on
  * Algorand are exchanged back to XLM through SideShift (bridge.ts, runBack). What is under
  * SideShift's minimum (about 3 USDC, about 25 ALGO) cannot go that way; it is reported with the
@@ -35,22 +36,53 @@ export type RefundCtx = {
 }
 
 export type WalletSet = {
-  /** null for the current wallets, otherwise the stamp their files were moved aside with. */
+  /** null for the current wallets, otherwise the key their files were moved aside under. */
   stamp: string | null
+  /** When the set was first moved aside (ms since the epoch); 0 for the current wallets or an unknown date. */
+  movedAsideMs: number
   algorand: WalletFile | null
   algorandPath: string | null
   stellar: StellarWalletFile | null
   statePath: string
 }
 
-function closedFiles(path: string): { stamp: string; path: string }[] {
+/**
+ * A wallet file this directory keeps but no longer uses: `<base>.closed-<ms>.json` when `buy --new`
+ * or a finished return moved a set aside; `<base>.closed-<ms>.closed-<ms>.json` when such a set
+ * was later swept, which retires the file once more; and `<base>.old-<tag>.json` for a file
+ * someone renamed by hand. Any chain of `.closed-` and `.old-` parts counts, so no set is skipped
+ * because of how many times it was set aside or what it was called.
+ */
+const ASIDE = /^((?:\.(?:closed|old)-[0-9A-Za-z]+)+)\.json$/
+
+export type AsideName = { stamp: string; movedAsideMs: number }
+
+/** The set key and the time the set was first moved aside, or null when `file` is not such a file. */
+export function parseAsideName(file: string, base: string): AsideName | null {
+  if (!file.startsWith(base)) return null
+  const m = file.slice(base.length).match(ASIDE)
+  if (!m) return null
+  const parts = m[1].slice(1).split('.')
+  // A plain `.closed-<ms>.json` keeps the bare stamp as its key, so refund state written by earlier
+  // versions (`refund-<ms>.json`) still belongs to it; every other shape keys on its whole suffix.
+  const stamp = parts.length === 1 && parts[0].startsWith('closed-') ? parts[0].slice('closed-'.length) : parts.join('.')
+  const first = parts[0].replace(/^(?:closed|old)-/, '')
+  const movedAsideMs = /^\d{13}$/.test(first)
+    ? Number(first)
+    : /^\d{8}$/.test(first)
+      ? Date.UTC(Number(first.slice(0, 4)), Number(first.slice(4, 6)) - 1, Number(first.slice(6, 8)))
+      : 0
+  return { stamp, movedAsideMs }
+}
+
+function closedFiles(path: string): (AsideName & { path: string })[] {
   const dir = dirname(path)
   if (!existsSync(dir)) return []
   const base = basename(path).replace(/\.json$/, '')
-  const found: { stamp: string; path: string }[] = []
+  const found: (AsideName & { path: string })[] = []
   for (const f of readdirSync(dir)) {
-    const m = f.startsWith(base) ? f.slice(base.length).match(/^\.closed-(\d+)\.json$/) : null
-    if (m) found.push({ stamp: m[1], path: join(dir, f) })
+    const a = parseAsideName(f, base)
+    if (a) found.push({ ...a, path: join(dir, f) })
   }
   return found
 }
@@ -68,22 +100,32 @@ export function walletSets(c: Pick<RefundCtx, 'algorandPath' | 'stellarPath' | '
   const sets: WalletSet[] = []
   const aw = loadWallet(c.algorandPath)
   const sw = loadStellarWallet(c.stellarPath)
-  if (aw || sw) sets.push({ stamp: null, algorand: aw, algorandPath: aw ? c.algorandPath : null, stellar: sw, statePath: c.statePath })
+  if (aw || sw) sets.push({ stamp: null, movedAsideMs: 0, algorand: aw, algorandPath: aw ? c.algorandPath : null, stellar: sw, statePath: c.statePath })
   const closed = new Map<string, WalletSet>()
-  const at = (stamp: string) => {
-    if (!closed.has(stamp)) closed.set(stamp, { stamp, algorand: null, algorandPath: null, stellar: null, statePath: join(dirname(c.statePath), `refund-${stamp}.json`) })
-    return closed.get(stamp)!
+  const at = (a: AsideName) => {
+    if (!closed.has(a.stamp)) {
+      closed.set(a.stamp, { stamp: a.stamp, movedAsideMs: a.movedAsideMs, algorand: null, algorandPath: null, stellar: null, statePath: join(dirname(c.statePath), `refund-${a.stamp}.json`) })
+    }
+    return closed.get(a.stamp)!
   }
   for (const x of closedFiles(c.algorandPath)) {
     const w = readable(() => loadWallet(x.path))
-    if (w) Object.assign(at(x.stamp), { algorand: w, algorandPath: x.path })
+    if (w) Object.assign(at(x), { algorand: w, algorandPath: x.path })
   }
   for (const x of closedFiles(c.stellarPath)) {
     const w = readable(() => loadStellarWallet(x.path))
-    if (w) at(x.stamp).stellar = w
+    if (w) at(x).stellar = w
   }
-  return [...sets, ...[...closed.values()].sort((a, b) => Number(a.stamp) - Number(b.stamp))]
+  return [...sets, ...[...closed.values()].sort((a, b) => a.movedAsideMs - b.movedAsideMs || (a.stamp ?? '').localeCompare(b.stamp ?? ''))]
 }
+
+/** How a set is named in the output: by the day it was moved aside when the file name carries one. */
+export const asideLabel = (s: WalletSet): string =>
+  !s.stamp
+    ? 'The current wallets'
+    : s.movedAsideMs > 0
+      ? `Wallets moved aside on ${new Date(s.movedAsideMs).toISOString().slice(0, 16).replace('T', ' ')} UTC`
+      : `Wallets moved aside (${s.stamp})`
 
 const sweepCommand = (s: WalletSet) => `${s.stamp ? `A_IDENTITY_KEYFILE=${s.algorandPath} ` : ''}${CMD} wallet sweep <YOUR ALGORAND ADDRESS>`
 
@@ -118,7 +160,7 @@ export async function refundAll(c: RefundCtx): Promise<boolean> {
   let allDone = true
   let acted = false
   for (const s of sets) {
-    const name = s.stamp ? `Wallets moved aside on ${new Date(Number(s.stamp)).toISOString().slice(0, 16).replace('T', ' ')} UTC` : 'The current wallets'
+    const name = asideLabel(s)
     const look = await inspect(c, s, mins)
     const before = loadState(s.statePath).back
     if (!look.go && !(before && !before.done)) {
