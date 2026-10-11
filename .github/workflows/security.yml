@@ -83,7 +83,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       # Node 20, the same version ci.yml and soroban.yml use. The npm that ships with it
       # is what resolves the lockfiles in this repository, so the audit reads the tree
