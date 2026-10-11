@@ -146,7 +146,7 @@ const RAILS: Rail[] = [
     tileBg: '#ffffff',
     color: '#8C929C',
     role: 'Where agentic commerce pays gasless.',
-    detail: 'Live on mainnet the day it shipped: all four trust tools answer over x402 v2 through the GoPlausible facilitator, the buyer signs a fee-zero transfer inside a pooled-fee atomic group, and the AgentSpendPolicy vault holds real USDC under on-chain caps as its third implementation.',
+    detail: 'Live on mainnet the day it shipped: six tools (the four trust tools, a batch audit and pay_check) answer over x402 v2 through the GoPlausible facilitator, the buyer signs a fee-zero transfer inside a pooled-fee atomic group, and the AgentSpendPolicy vault holds real USDC under on-chain caps as its third implementation.',
     chain: 'algorand',
   },
   {

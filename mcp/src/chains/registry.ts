@@ -70,10 +70,15 @@ export const CHAINS: ChainDescriptor[] = [
     cctpDomain: 26,
     nativeCurrency: { name: 'USD Coin', symbol: 'USDC', decimals: 18 },
     usdcDecimals: 6, // native USDC is 18 decimals; the ERC-20 interface is 6 (same balance)
-    // All four answered eth_chainId 0x13b2 without credentials on 2026-09-16, although
-    // docs.arc.io still describes the endpoints as permissioned during a "private mainnet
-    // phase". If that gate closes, ARC_MAINNET_RPC_URL takes a credentialed endpoint. The
-    // Circle primary publishes no WebSocket, so none is claimed.
+    // All four answered eth_chainId 0x13b2 without credentials on 2026-09-16. The
+    // "private mainnet phase" wording docs.arc.io carried then is gone: read 2026-10-11, its
+    // RPC page says the Circle primary accepts anonymous requests with open CORS, and it now
+    // lists wss://rpc.mainnet.arc.io, which answered eth_chainId 0x13b2 the same day. No
+    // wsUrl is set yet: that is a descriptor change that regenerates src/lib/chains.ts, so it
+    // gets its own commit. ARC_MAINNET_RPC_URL still takes a credentialed endpoint. History
+    // differs by host: on 2026-10-11 the Circle primary, dRPC and QuickNode returned all 19
+    // Arc Mainnet receipts the provenance ledger cites, and Blockdaemon returned none, serving
+    // older blocks without their transactions.
     rpcUrls: [
       'https://rpc.mainnet.arc.io',
       'https://rpc.blockdaemon.mainnet.arc.io',
@@ -82,8 +87,9 @@ export const CHAINS: ChainDescriptor[] = [
     ],
     // A Blockscout instance. On 2026-09-16 the page shell answered 200 and its public API
     // 403; by 2026-09-25 its pages opened to anyone in a browser without signing in, and only
-    // the JSON API still turned non-browser clients away with a bot challenge. Derived links
-    // are for people; a script reads the same facts from any RPC above.
+    // the JSON API still turned non-browser clients away with a bot challenge, as it still
+    // did on 2026-10-11. Derived links are for people; a script reads the same facts from the
+    // RPCs above, except Blockdaemon for anything but recent blocks.
     explorer: 'https://explorer.arc.io',
     contracts: {
       // The canonical MAINNET ERC-8004 pair (the Base / Arbitrum One / X Layer / Celo
@@ -93,8 +99,13 @@ export const CHAINS: ChainDescriptor[] = [
       // was read on Arc mainnet and on Base; both point at 0x7274e874...9c02 (identity,
       // 14474 bytes) and 0x16e0fa7f...da34 (reputation, 10491 bytes), and the
       // implementation code hashes match across the two chains. name()/symbol() answered
-      // AgentIdentity/AGENT. No ValidationRegistry exists in this family, so none is
-      // claimed and KYA cannot be anchored on-chain here.
+      // AgentIdentity/AGENT. This comment used to say no ValidationRegistry exists in this
+      // family; that was wrong. docs.arc.io lists one at 0x8004Cc8439f36fd5F9F049D9fF86523Df6dAAB58,
+      // and read live 2026-10-11 it is a 130-byte proxy with code here since before the
+      // network opened, pointing at the same implementation (0xdb31f5d9..., getVersion 2.0.0)
+      // as the proxy at that address on Base, with getIdentityRegistry() returning the
+      // identity registry below. It is not wired yet, so no validationRegistry is set and KYA
+      // is not anchored on-chain here.
       identityRegistry: '0x8004a169fb4a3325136eb29fa0ceb6d2e539a432',
       reputationRegistry: '0x8004BAa17C55a88189AE136b182e5fdA19dE9b63',
       usdc: '0x3600000000000000000000000000000000000000',
@@ -138,7 +149,8 @@ export const CHAINS: ChainDescriptor[] = [
       note:
         'Canonical ERC-8004 identity + reputation registries are live here, deployed by their authors ' +
         '(implementation code matched against Base on 2026-09-16); agent #0, the registry\'s first mint, ' +
-        'is ours (tx 0x1d9f5711). No ValidationRegistry in this family.',
+        'is ours (tx 0x1d9f5711). The family\'s ValidationRegistry is deployed here too (read live ' +
+        '2026-10-11) but not wired yet, so KYA is not anchored on-chain here.',
     },
     payment: {
       x402: true,
@@ -745,7 +757,7 @@ export const CHAINS: ChainDescriptor[] = [
         domainVersionCandidates: ['2'],
         settlementFeeUsd: 0.005,
         feeBasis:
-          'A real settlement measured 102828 gas at an effective 0.006 gwei on 2026-08-28 (tx 0xb59ae67c, block 50540810), costing 0.000000617 ETH L2 plus a 0.00000000094 ETH L1 data fee, roughly $0.0025. The fee is 2x that, the same headroom logic as Arbitrum One: Base\'s base fee sits near a floor rather than moving, so buying more headroom against it buys nothing. It stops covering cost if ETH roughly doubles AND gas doubles, at which point we re-measure and edit this line.',
+          'A real settlement measured 102828 gas at an effective 0.006 gwei on 2026-08-27 UTC (tx 0xb59ae67c, block 50540810), costing 0.000000617 ETH L2 plus a 0.00000000094 ETH L1 data fee, roughly $0.0025. The fee is 2x that, the same headroom logic as Arbitrum One: Base\'s base fee sits near a floor rather than moving, so buying more headroom against it buys nothing. It stops covering cost if ETH roughly doubles AND gas doubles, at which point we re-measure and edit this line.',
         verified:
           'Native Circle USDC on Base mainnet, the same address the descriptor already carried for contracts.usdc. Read live 2026-08-28: name() "USD Coin", symbol() "USDC", version() "2", decimals() 6, DOMAIN_SEPARATOR 0x02fa7265e7c5d81118673727957699e4d68f74cd74b7db77da710fe8a2c7834f, which those four fields reproduce exactly. EIP-3009 confirmed by a read-only authorizationState call. Canonical Circle USDC, so it legitimately shares the contracts.usdc slot.',
       },
@@ -763,7 +775,7 @@ export const CHAINS: ChainDescriptor[] = [
       erc8004Native: true,
       note:
         'Canonical ERC-8004 identity + reputation registries are live here, deployed by ' +
-        'their authors; agent #73232 is ours (minted 2026-08-28, tx 0xb428bf8e, and ' +
+        'their authors; agent #73232 is ours (minted 2026-08-27 UTC, tx 0xb428bf8e, and ' +
         'ownerOf/tokenURI read back live). TRAP BEFORE PASTING ADDRESSES: Arc\'s three registry ' +
         'addresses all have code on Base mainnet, 130 bytes each, which is minimal-proxy ' +
         'sized and delegates to a NON-canonical implementation. Same address, different ' +
@@ -778,7 +790,7 @@ export const CHAINS: ChainDescriptor[] = [
         'x402 settling in native Circle USDC through our own first-party EIP-3009 ' +
         'facilitator: the buyer signs, we broadcast and pay the gas. The signing domain is ' +
         'proven against the live DOMAIN_SEPARATOR, and the first settlement landed ' +
-        '2026-08-28 (tx 0xb59ae67c) with the receipt carrying the matching Transfer log.',
+        '2026-08-27 UTC (tx 0xb59ae67c) with the receipt carrying the matching Transfer log.',
     },
   },
   {
@@ -790,9 +802,10 @@ export const CHAINS: ChainDescriptor[] = [
     role: 'Robinhood\'s own L2 for tokenized real-world assets: canonical ERC-8004 identity + reputation live, agent #0 minted, and paid trust calls settling in USDG through our own first-party x402 facilitator.',
     ecosystem: 'evm',
     // LIVE since 2026-08-13: identity is minted here AND money moves here. Four real
-    // settlements, one per sellable tool, each proven by a receipt plus a matching USDG
-    // Transfer log (first: 0xbb41c7aa..., block 35439881). The buyer paid no gas; we
-    // broadcast. That is the same bar X Layer and Celo had to clear.
+    // settlements that day, one per sellable tool, each proven by a receipt plus a
+    // matching USDG Transfer log (first: 0xbb41c7aa..., block 35439881); two more followed,
+    // six in all when the payTo inflows were re-read on 2026-10-11. The buyer paid no gas;
+    // we broadcast. That is the same bar X Layer and Celo had to clear.
     status: 'live',
     testnet: false,
     evmChainId: 4663,
@@ -809,8 +822,12 @@ export const CHAINS: ChainDescriptor[] = [
       // and Celo (identity + reputation). Nobody had to deploy these for us: verified
       // live 2026-08-12 with eth_getCode (both are ERC1967 proxies) plus a REAL read on
       // each - name()/symbol() answered AgentIdentity/AGENT, getClients(1) returned a
-      // clean empty. No ValidationRegistry exists in this mainnet family (mirroring
-      // Celo/X Layer), so none is asserted and KYA cannot be anchored on-chain here.
+      // clean empty. This comment used to say no ValidationRegistry exists in this mainnet
+      // family; that was wrong. Read live 2026-10-11, the family's ValidationRegistry
+      // address (0x8004Cc84...) is a 130-byte proxy here whose getIdentityRegistry()
+      // returns the identity registry below, though its implementation differs from the
+      // one behind the same address on Base. It is not wired, so none is asserted and KYA
+      // is not anchored on-chain here.
       // Still NO usdc on purpose: no canonical stablecoin is documented for this chain.
       identityRegistry: '0x8004a169fb4a3325136eb29fa0ceb6d2e539a432',
       reputationRegistry: '0x8004BAa17C55a88189AE136b182e5fdA19dE9b63',
@@ -840,7 +857,7 @@ export const CHAINS: ChainDescriptor[] = [
     identity: {
       standard: 'ERC-8004',
       erc8004Native: true,
-      note: 'Identity + Reputation registries LIVE (same canonical addresses as X Layer/Celo); agent #0, the registry\'s first mint, is ours (2026-08-12). No ValidationRegistry in the mainnet family yet.',
+      note: 'Identity + Reputation registries LIVE (same canonical addresses as X Layer/Celo); agent #0, the registry\'s first mint, is ours (2026-08-12). A ValidationRegistry proxy is deployed here too (read live 2026-10-11) but not wired, so KYA is not anchored on-chain here.',
     },
     payment: {
       x402: true,
@@ -979,7 +996,7 @@ export const CHAINS: ChainDescriptor[] = [
       // Verified 2026-08-13 with eth_getCode on three independent RPCs: the canonical
       // identity and reputation registries ARE already live here, deployed by the ERC-8004
       // authors. What is missing is ours, not theirs, so the note says which.
-      note: 'Canonical ERC-8004 identity + reputation registries are live here (deployed by their authors, not by us); agent #1259 is ours. No ValidationRegistry in this family, so KYA cannot be anchored here.',
+      note: 'Canonical ERC-8004 identity + reputation registries are live here (deployed by their authors, not by us); agent #1259 is ours. The family\'s ValidationRegistry is deployed here too (read live 2026-10-11) but not wired, so KYA is not anchored on-chain here.',
     },
     payment: {
       x402: true,
@@ -994,7 +1011,7 @@ export const CHAINS: ChainDescriptor[] = [
     // OKX's brand is black/white, which is unreadable as chip text in one of the two
     // themes, so this is a neutral mid-grey rather than a brand claim.
     color: '#8A8F98',
-    role: 'OKX.AI marketplace rail: identity reads live from OKX ERC-8004; x402 trust tools settle here.',
+    role: 'OKX.AI marketplace rail: identity reads live from OKX ERC-8004; the Trust Oracle settled x402 calls here in USD₮0 until OKX.AI delisted it on 2026-09-26.',
     ecosystem: 'evm',
     testnet: false,
     status: 'live',
@@ -1010,8 +1027,10 @@ export const CHAINS: ChainDescriptor[] = [
     explorer: 'https://www.oklink.com/xlayer',
     contracts: {
       // OKX.AI's live ERC-8004 IdentityRegistry (verified: our ASP identities #6271/#8913
-      // resolve via ownerOf; tokenURI serves the OKX CDN agent card). Payments still
-      // pending: verify the canonical USDC address on X Layer before wiring them.
+      // resolve via ownerOf; tokenURI serves the OKX CDN agent card). No usdc is asserted:
+      // the ASP's 120 x402 settlements (2026-07-17 to 2026-07-24) were in USD₮0 through
+      // OKX's own x402 layer, not a rail of ours, and every one was paid by the wallet that
+      // owns #6271 (receipts re-read 2026-10-11).
       identityRegistry: '0x8004a169fb4a3325136eb29fa0ceb6d2e539a432',
       create2Factory: CREATE2_FACTORY,
       cctp: {
@@ -1025,8 +1044,8 @@ export const CHAINS: ChainDescriptor[] = [
     stablecoins: ['USDC', 'USDT'],
     signerEnvVar: 'XLAYER_SIGNER_KEY',
     rpcEnvVar: 'XLAYER_RPC_URL',
-    identity: { standard: 'ERC-8004', erc8004Native: true, note: 'OKX.AI identity registry LIVE (read-side wired); payment rails still planned.' },
-    payment: { x402: true, note: 'x402 over USDC once the USDC address is confirmed.' },
+    identity: { standard: 'ERC-8004', erc8004Native: true, note: 'OKX.AI identity registry LIVE (read-side wired); agents #6271 and #8913 are ours. A ValidationRegistry proxy is deployed here too (read live 2026-10-11) but not wired.' },
+    payment: { x402: true, note: 'x402 in USD₮0 through OKX\'s x402 layer: 120 settlements from 2026-07-17 to 2026-07-24, all paid by our own wallet. OKX.AI delisted the listing on 2026-09-26 and the ASP answered in free mode on 2026-10-11, so nothing is selling here now.' },
   },
   {
     caip2: 'eip155:42220',
@@ -1050,9 +1069,11 @@ export const CHAINS: ChainDescriptor[] = [
       // each - ownerOf(1) resolved an owner on the IdentityRegistry, and
       // getClients(1)/getSummary(1, clients) returned real feedback (count 14, avg 88)
       // from the ReputationRegistry. The IdentityRegistry is the SAME CREATE2 address as
-      // X Layer's entry above. There is NO ValidationRegistry on Celo (ERC-8004 spec
-      // revision pending), so no address is asserted for it and KYA cannot be anchored
-      // on-chain there - the identity note below says so instead of pretending.
+      // X Layer's entry above. This comment used to say there is no ValidationRegistry on
+      // Celo; that was wrong. Read live 2026-10-11, the family's ValidationRegistry address
+      // (0x8004Cc84...) is a proxy here whose getIdentityRegistry() returns the identity
+      // registry below. It is not wired, so no address is asserted for it and KYA is not
+      // anchored on-chain here - the identity note below says so.
       identityRegistry: '0x8004A169FB4a3325136EB29fA0ceB6D2e539a432',
       reputationRegistry: '0x8004BAa17C55a88189AE136b182e5fdA19dE9b63',
       usdc: '0xcebA9300f2b948710d2653dD7B07f33A8B32118C', // native Circle USDC on Celo (EIP-712 domain name "USDC", version "2" - read live)
@@ -1072,7 +1093,7 @@ export const CHAINS: ChainDescriptor[] = [
     identity: {
       standard: 'ERC-8004',
       erc8004Native: true,
-      note: 'Identity + Reputation registries LIVE (read-side wired). No ValidationRegistry on Celo yet, so KYA cannot be anchored on-chain there. Self Agent ID (third-party proof-of-human registry) is readable here: whether a verified human vouches for an agent, and whether two agents share one.',
+      note: 'Identity + Reputation registries LIVE (read-side wired). A ValidationRegistry proxy is deployed here too (read live 2026-10-11) but not wired, so KYA is not anchored on-chain there. Self Agent ID (third-party proof-of-human registry) is readable here: whether a verified human vouches for an agent, and whether two agents share one.',
     },
     payment: { x402: true, note: 'x402 over USDC via the first-party Celo facilitator (EIP-3009, buyer pays no gas); CIP-64 fee abstraction lets gas be paid in stablecoins.' },
   },
@@ -1097,7 +1118,9 @@ export const CHAINS: ChainDescriptor[] = [
       // Verified live 2026-08-09 with eth_getCode on every address here: the ERC-8004
       // pair (the same identity/reputation ADDRESSES as the Arc descriptor, resolving to
       // the same EIP-1967 implementations as Celo mainnet's pair), testnet USDC, and the
-      // CREATE2 factory. No ValidationRegistry, mirroring mainnet.
+      // CREATE2 factory. The testnet family's ValidationRegistry (0x8004Cb1B..., the Arc
+      // testnet address) also has code here, read live 2026-10-11 with getIdentityRegistry()
+      // returning the identity registry below; it is not wired, mirroring mainnet.
       identityRegistry: '0x8004A818BFB912233c491871b3d84c89A494BD9e',
       reputationRegistry: '0x8004B663056A597Dffe9eCcC1965A193B7388713',
       usdc: '0x01C5C0122039549AD1493B8220cABEdD739BC44E',
@@ -1114,7 +1137,7 @@ export const CHAINS: ChainDescriptor[] = [
     identity: {
       standard: 'ERC-8004',
       erc8004Native: true,
-      note: 'Identity + Reputation registries LIVE (same addresses as Arc). No ValidationRegistry, mirroring mainnet. Self Agent ID proof-of-human registry readable (testnet, mock passports).',
+      note: 'Identity + Reputation registries LIVE (same addresses as Arc). A ValidationRegistry proxy is deployed here too (read live 2026-10-11) but not wired, mirroring mainnet. Self Agent ID proof-of-human registry readable (testnet, mock passports).',
     },
     payment: { x402: true, note: 'x402 over testnet USDC via the Celo Sepolia facilitator (api.x402.sepolia.celo.org).' },
   },

@@ -76,7 +76,12 @@ one passkey, so the page offers the second device once the vault exists, not bef
   phone as the second device. It did not reach the ledger: read at testnet ledger 5020737,
   that smart account still has one rule with one signer, the passkey it was created with.
   Its recovery state is therefore a single synced passkey, which the page shows as
-  "1 device can sign".
+  "1 device can sign". Read again at testnet ledger 5143315 on 2026-10-11: still one rule
+  with one signer. By then the account's own instance entry had outlived its rent and was
+  archived (read at ledger 5143331), while the vault it owns was not. That does not lose
+  the passkey's authority: a simulated read marks the entry for restoration, which the
+  ledger performs inside the next transaction that touches the account, at the cost of
+  whoever pays that transaction's fee.
 </Note>
 
 ## What we cannot do

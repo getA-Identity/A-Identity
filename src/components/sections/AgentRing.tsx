@@ -108,7 +108,7 @@ export const OUR_AGENTS: OnchainAgent[] = [
     tx: '0x03a614a902ed742526047dffa165378cb16350a81bf083d4672f6d7a9ecfb078',
     note: 'The paid Trust Oracle OKX.AI listed until it delisted #6271 on 2026-09-26.',
     mission:
-      'The Trust Oracle OKX.AI listed until 2026-09-26. Other agents paid it per call, in real stablecoins, to answer one question before money moves: can this counterparty be trusted?',
+      'The Trust Oracle OKX.AI listed until 2026-09-26. It sold per call, in real stablecoins, the answer to one question before money moves: can this counterparty be trusted? Its 120 X Layer settlements were all paid by this same owner wallet, so they prove the rail, not demand.',
   },
   {
     chain: 'xlayer',

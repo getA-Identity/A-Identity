@@ -162,7 +162,7 @@ export default function Hero() {
           deployment, and the page itself says which happened, step by step. */}
       <motion.div custom={4} variants={fadeUp} initial="hidden" animate="visible" className="mt-5">
         <Link
-          to="/stellar"
+          to="/stellar?network=testnet"
           className="group inline-flex items-center gap-1.5 text-sm font-semibold text-foreground/60 transition-colors hover:text-foreground"
         >
           Run the Stellar testnet demo: a passkey that owns a spend vault

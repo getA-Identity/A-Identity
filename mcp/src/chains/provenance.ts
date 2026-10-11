@@ -20,7 +20,7 @@ import { getChainById } from './registry.js'
 // Ecosystem-aware on purpose. Importing these from evm/client.js rendered
 // `<explorer>/address/<addr>` for every chain, which is a dead route on Stellar Expert
 // (their API answers 404 for it). See ./explorer.ts for the verification.
-import { txUrl, addressUrl } from './explorer.js'
+import { txUrl, addressUrl, applicationUrl } from './explorer.js'
 
 /**
  * Which body of work an artifact is evidence FOR, so the proof page can say which
@@ -345,8 +345,8 @@ export const PROVENANCE: ChainProvenance[] = [
       'We deployed nothing here except the vault. The registries, USDC, CCTP, Gateway, Memo and Multicall3From are their authors\' contracts; registration is permissionless.',
       'The vault\'s owner is still the operating wallet, a server-held key, and this contract has no owner transfer, so moving the owner to a wallet a person holds means deploying a new vault. What the 2026-09-25 split fixed is the other half: the agent key can no longer act as the owner.',
       'The Memo and Multicall3From receipts are test settlements to our own wallet. The product\'s payment path on this chain does not route through either contract yet, and the /api/arc/memos read still points at Arc testnet.',
-      'The block explorer, explorer.arc.io, opens in a browser without signing in, but its JSON API answers non-browser clients with a bot challenge, and docs.arc.io still calls it permissioned. Every transaction here is also readable from any Arc Mainnet RPC.',
-      'There is no ValidationRegistry in this family, so KYA cannot be anchored on Arc Mainnet. Arc\'s reference ERC-8183 escrow is documented for testnet only and has no code here, so escrow stays on testnet.',
+      'The block explorer, explorer.arc.io, opens in a browser without signing in, but its JSON API still answered non-browser clients with a bot challenge on 2026-10-11. Every transaction here is also readable over RPC, though not from every host: on 2026-10-11 Circle\'s primary endpoint, dRPC and QuickNode returned all 19 Arc Mainnet receipts in this list, while the Blockdaemon host returned none of them and served old blocks without their transactions.',
+      'KYA is not anchored on Arc Mainnet. This caveat used to say the family has no ValidationRegistry, and that was wrong: docs.arc.io lists one at 0x8004Cc8439f36fd5F9F049D9fF86523Df6dAAB58, and read live on 2026-10-11 it is a 130-byte EIP-1967 proxy that already had code here on 2026-09-15, whose implementation (0xdb31f5d9..., getVersion 2.0.0) is the one the same proxy on Base points to, and whose getIdentityRegistry() returns the IdentityRegistry above. It is not in the registry descriptor yet and nothing of ours has been written to it. Arc\'s reference ERC-8183 escrow is documented for testnet only and has no code here, so escrow stays on testnet.',
       'Circle Paymaster has no contract on Arc Mainnet, and the account-abstraction, treasury, airdrop and Circle developer-wallet paths are still bound to Arc testnet. They move rail by rail, each on its own evidence.',
       'Gas moved from about 35 to about 187 gwei over launch day, and the fee (0.03 USDC) was set at 2x the settlement measured then. Since then gas has sat near the 20 gwei floor, where the same settlement costs about 0.0017 USDC, so the fee is conservative; it is re-measured if the effective gas price passes about 340 gwei.',
     ],
@@ -372,6 +372,11 @@ export const PROVENANCE: ChainProvenance[] = [
         address: '0x5fc5360D0400a0Fd4f2af552ADD042D716F1d168',
         note: 'The settlement token, at the address Paxos documents for this chain. EIP-3009 confirmed by probe; its EIP-712 domain is proven against the live DOMAIN_SEPARATOR before any challenge is served.',
       },
+      {
+        name: 'AgentSpendPolicy vault',
+        address: '0x05a6aad7124c2f1c7b82b03e0bbe3867bc500073',
+        note: 'Ours: the same Solidity contract that runs on Arc and Arbitrum One. Read live on 2026-10-11: owner the operating wallet 0xd305...ed36, operator the agent key 0x8C8D...3349, dailyCap 1 USDG, autoApproveMax 0.25 USDG, not frozen, allowlist off, session key valid to 2026-11-15, balance 0.02 USDG (funded 0.03, one 0.01 payment since). Dust on purpose; the caps are the product.',
+      },
     ],
     artifacts: [
       {
@@ -395,24 +400,28 @@ export const PROVENANCE: ChainProvenance[] = [
         label: 'x402 settlement in USDG (verify_agent, 0.021 USDG)',
         txHash: '0xec2eaa495b903dee6c9371e0a16f287d8cf9bff7ead00910893ef1ae95bf89e6',
         onChain: 'rhchain',
+        blockNumber: 35440532,
       },
       {
         kind: 'settlement',
         label: 'x402 settlement in USDG (reputation_score, 0.022 USDG)',
         txHash: '0xbf21a18c82b768981eb28910204c4062a0f02cf897e23561b2392770ee45322b',
         onChain: 'rhchain',
+        blockNumber: 35440618,
       },
       {
         kind: 'settlement',
         label: 'x402 settlement in USDG (agent_passport, 0.030 USDG)',
         txHash: '0x0441b74deed3abffd00b8bfd297250f776e0e6046c88df62624effce83c1fbb1',
         onChain: 'rhchain',
+        blockNumber: 35440705,
       },
       {
         kind: 'funding',
         label: 'Funding hop: Arbitrum One deposit, bridged to this chain via Relay',
         txHash: '0xc8daa2954c243e4326b0b3adac3429cd5eca8cdd78d42a082c86289fe95ce941',
         onChain: 'arbitrum',
+        blockNumber: 493801417,
         note: 'The signer was funded from an exchange withdrawal that landed on Arbitrum One, then bridged. Recorded because the money trail should be followable.',
       },
       {
@@ -420,6 +429,7 @@ export const PROVENANCE: ChainProvenance[] = [
         label: 'An AgentSpendPolicy vault, live on mainnet with USDG under dust caps',
         txHash: '0xe48d38b9188038afeb4fc1873fa05357408b976d76b7e6c1f468bcf58d2753d8',
         onChain: 'rhchain',
+        blockNumber: 47888701,
         note: 'The same contract that runs on Arc and (in Rust) on Stellar, holding the chain\'s real settlement token: dailyCap 1 USDG, autoApproveMax 0.25. Its first session key (tx 0xda4a3d7c) lapsed on 2026-09-04 and was renewed to 2026-11-15 on 2026-10-01, when the agent key was also split from the owner key (both below). Deployed 2026-08-28 at 0x05a6aad7124c2f1c7b82b03e0bbe3867bc500073, funded with 0.03 USDG (tx 0x2bbb6077). Dust on purpose: the caps are the product, not the balance.',
       },
       {
@@ -451,13 +461,14 @@ export const PROVENANCE: ChainProvenance[] = [
         label: 'Agent #0\'s reputation anchored on the canonical ReputationRegistry',
         txHash: '0xe11d5d0f46a9b08b8fe6c623ad0f35e898a3c2db67937377083253fe6b260979',
         onChain: 'rhchain',
+        blockNumber: 47889500,
         note: 'giveFeedback from our oracle validator (0xee602A16..., the same identity that attests on Arc; ERC-8004 forbids the owner attesting itself and the script refuses it). Score 60 of 1000, and the tag says WHY it is 60: an onchain-identity-basis score, the +60 identity credit with no platform settlement history bound to this agent. The raw score and basis are committed in the feedback hash.',
       },
     ],
     caveats: [
       'We did not deploy the ERC-8004 registries here. They were already live at their canonical cross-chain addresses; the agent is what is ours.',
       'Token #1 on this registry was minted 76 blocks after ours by 0x2B5B35AC5A2d5c1224337BA86bf3816AbEe69da3, carrying OUR agent card URL as its tokenURI. It is not ours. A tokenURI is not a discriminator on this registry, so resolve an agent by ownerOf, never by the card it points at. We report this rather than hide it: it is the clearest possible demonstration of why this product exists.',
-      'There is no ValidationRegistry in this mainnet family, so a KYA result cannot be anchored on-chain here. It is still verified off-chain and recorded.',
+      'KYA is not anchored on-chain here. This caveat used to say the mainnet family has no ValidationRegistry, and that was wrong: read live 2026-10-11, a proxy at the family\'s ValidationRegistry address has code here and returns this chain\'s identity registry. It is not wired, so a KYA result is still verified off-chain and recorded, not anchored.',
       'No canonical Circle USDC is documented for this chain, so the registry asserts none. USDG is named as what it is, in its own field.',
       'We run our own x402 facilitator here so one code path and one receipt standard cover every chain we sell on, not because nobody else serves this chain: as of 2026-09-30 other facilitators do (at least one hosted service lists USDG on this chain, and open-source ones predate our launch), and gasless EIP-3009 relaying on USDG predates us by weeks. On-chain an x402 settlement is indistinguishable from any other relayed authorization.',
       'This is an Arbitrum L2: we wait the descriptor\'s confirmations and record the block, but soft finality is not L1 finality, and the proof page does not claim otherwise.',
@@ -540,6 +551,11 @@ export const PROVENANCE: ChainProvenance[] = [
         address: '0xaf88d065e77c8cC2239327C5EDb3A432268e5831',
         note: 'The settlement token. Unlike Robinhood Chain this IS canonical Circle USDC, so it is also the descriptor\'s contracts.usdc. EIP-3009 confirmed, and its EIP-712 domain proven against the live DOMAIN_SEPARATOR before any challenge is served.',
       },
+      {
+        name: 'AgentSpendPolicy vault',
+        address: '0xac6c5c9af62bc482ffeef882a6ac4678513be6db',
+        note: 'Ours: the same Solidity contract that runs on Arc and Robinhood Chain. Read live on 2026-10-11: owner the operating wallet 0xd305...ed36, operator the agent key 0x8C8D...3349, dailyCap 1 USDC, autoApproveMax 0.25 USDC, not frozen, allowlist off, session key valid to 2026-11-15, balance 0.01 USDC (funded 0.02, one 0.01 payment since). Dust on purpose; the caps are the product.',
+      },
     ],
     artifacts: [
       {
@@ -555,6 +571,7 @@ export const PROVENANCE: ChainProvenance[] = [
         label: 'Buyer wallet funded with USDC through a Relay same-chain swap',
         txHash: '0xc0a5bc5f9980b75f0ae176d7ba75865fd5338cd3b92d7e443b7f5c4a090735f9',
         onChain: 'arbitrum',
+        blockNumber: 494158345,
         note: 'Permissionless: no exchange, no KYC step. The buyer holds USDC and zero native ETH, so it cannot broadcast anything itself.',
       },
       {
@@ -602,6 +619,7 @@ export const PROVENANCE: ChainProvenance[] = [
         label: 'Agent #1259\'s reputation anchored on the canonical ReputationRegistry',
         txHash: '0x435a5c62bda28db23505812b9deb93dfce7aff3831e8449a5274fd0e7ecc376a',
         onChain: 'arbitrum',
+        blockNumber: 499096983,
         note: 'giveFeedback from our oracle validator (0xee602A16..., the same identity that attests on Arc). Score 60 of 1000, tagged onchain-identity-basis: the +60 identity credit with no platform settlement history bound to this agent, committed with the raw score in the feedback hash. The mainnet registry family\'s giveFeedback selector was located in its implementation bytecode before the first write, never assumed from Arc\'s.',
       },
     ],
@@ -610,7 +628,7 @@ export const PROVENANCE: ChainProvenance[] = [
       'This chain is ALREADY served by other x402 facilitators, Coinbase\'s among them. We run ours anyway so that one code path and one receipt standard cover every chain we sell on. Arbitrum One is where you can check our rail against a well-served baseline, which is more useful to you than being first would have been.',
       'Gasless EIP-3009 relaying on this USDC contract predates us by years and runs constantly. We did not bring gasless USDC to Arbitrum and do not claim to; on-chain an x402 settlement is indistinguishable from any other relayed authorization.',
       'The settlements recorded here are self-funded tests. The buyer wallet and the receiving address are both ours, and the receiving address is the same account that broadcasts. They are labeled internal and always will be: this is evidence the rail works, not evidence of demand.',
-      'There is no ValidationRegistry in this family, so a KYA result cannot be anchored on Arbitrum One. It is still verified off-chain and recorded.',
+      'KYA is not anchored on Arbitrum One. This caveat used to say the family has no ValidationRegistry, and that was wrong: read live 2026-10-11, the family\'s ValidationRegistry proxy has code here and returns this chain\'s identity registry. It is not wired, so a KYA result is still verified off-chain and recorded, not anchored.',
       'The vault\'s owner is the operating wallet 0xd305...ed36, a server-held key that also broadcasts and receives the x402 settlements here, and this contract has no owner transfer, so moving the owner to a wallet a person holds means deploying a new vault. What the 2026-10-01 split fixed is the other half: the agent key 0x8C8D...3349 can no longer act as the owner.',
       'Robinhood Chain is an Arbitrum L2, and being live there is a different statement from being live on Arbitrum One. Both are true today; neither substitutes for the other.',
       'This is an L2 that settles to Ethereum, so "settled" has layers and we name them: we wait the descriptor\'s confirmations, which is the sequencer\'s ordering commitment, and we record the block. That is not Ethereum finality, and these USDC cannot leave for Ethereum until the fraud-proof window passes.',
@@ -655,7 +673,7 @@ export const PROVENANCE: ChainProvenance[] = [
         txHash: '0xb428bf8e79df3c44157c134df1858eb75fe3758b74868445c1dcd07948705bf0',
         onChain: 'base',
         blockNumber: 50540749,
-        note: '177816 gas at an effective 0.006 gwei, about 0.0000016 ETH including the L1 data fee. Verified after the fact: ownerOf(73232) and tokenURI(73232) read back to the values recorded here.',
+        note: '177816 gas at an effective 0.006 gwei, about 0.0000011 ETH including the L1 data fee (0.00000107 ETH on L2 plus 0.00000000056 on L1, read from the receipt). Verified after the fact: ownerOf(73232) and tokenURI(73232) read back to the values recorded here.',
       },
       {
         kind: 'settlement',
@@ -671,17 +689,17 @@ export const PROVENANCE: ChainProvenance[] = [
         txHash: '0x4f0295d12dcdc356cc7ac12b8317f1ff07289e4584725895f9b482a2223b2aa6',
         onChain: 'base',
         blockNumber: 50544732,
-        note: 'giveFeedback from our oracle validator (0xee602A16..., the same identity that attests on Arc and, since today, on Robinhood Chain and Arbitrum One). Score 60 of 1000, tagged onchain-identity-basis: the +60 identity credit with no platform settlement history bound to this agent, committed with the raw score in the feedback hash.',
+        note: 'giveFeedback from our oracle validator (0xee602A16..., the same identity that attests on Arc and, since 2026-08-28, the day it wrote all three, on Robinhood Chain and Arbitrum One). Score 60 of 1000, tagged onchain-identity-basis: the +60 identity credit with no platform settlement history bound to this agent, committed with the raw score in the feedback hash.',
       },
     ],
     caveats: [
       'We deployed nothing here. The registries were already live and registering on them is permissionless; what is ours is agent #73232 and the rail.',
       'The settlement recorded here is a self-funded test: the buyer wallet and the receiving address are both ours, and the receiving address is the same account that broadcasts. It is labeled internal and always will be; this is evidence the rail works, not evidence of demand.',
       'This chain is ALREADY served by other x402 facilitators, Coinbase\'s among them. We run ours anyway so that one code path and one receipt standard cover every chain we sell on.',
-      'The operating wallets were funded through a NEAR Intents market-maker swap from Stellar pubnet USDC: a custodial hop that took under a minute. The Stellar-side transactions are recorded above; the market maker\'s Base-side delivery transactions are not ours to claim.',
-      'There is no ValidationRegistry in this family, so a KYA result cannot be anchored on Base. It is still verified off-chain and recorded.',
+      'The operating wallets were funded through a NEAR Intents market-maker swap from Stellar pubnet USDC: a custodial hop that took under a minute. The Stellar-side transactions are recorded above; the market maker\'s Base-side delivery transactions are not ours to claim. On 2026-09-16 the operating wallet\'s whole Base USDC balance, 0.012 from sales here plus 1 swept from the buyer, was burned through CCTP to fund Arc Mainnet; both transactions are on the Arc proof page, and as of 2026-10-11 the wallet holds no Base USDC and has received none since.',
+      'KYA is not anchored on Base. This caveat used to say the family has no ValidationRegistry, and that was wrong: read live 2026-10-11, the family\'s ValidationRegistry proxy has code here and returns this chain\'s identity registry. It is not wired, so a KYA result is still verified off-chain and recorded, not anchored.',
       'This is an L2 that settles to Ethereum, so "settled" has layers and we name them: we wait the descriptor\'s confirmations, which is the sequencer\'s ordering commitment, and we record the block. That is not Ethereum finality.',
-      'A second paid rail exists here in code, through Circle Gateway nanopayments (the buyer signs against GatewayWalletBatched, Gateway credits and batches, we broadcast nothing), for buyers arriving from Circle Agent Marketplace. As of 2026-09-10 it is configured and unproven: no Gateway-credited call has been read back on this chain yet, so no artifact for it appears above. It counts only once one does, and that row will be labeled internal because the first buyer wallet is ours.',
+      'A second paid rail exists here in code, through Circle Gateway nanopayments (the buyer signs against GatewayWalletBatched, Gateway credits and batches, we broadcast nothing), for buyers arriving from Circle Agent Marketplace. As of 2026-10-11 it is configured and unproven: Gateway\'s live supported-kinds read for Base still matches the registry, but every Gateway-credited call in the production log so far is on Arc Mainnet and none has been read back on this chain, so no artifact for it appears above. It counts only once one does, and that row will be labeled internal because the first buyer wallet is ours.',
     ],
   },
   {
@@ -1291,7 +1309,7 @@ export const PROVENANCE: ChainProvenance[] = [
         network: 'stellar-testnet',
         custody: 'owner: passkey smart account',
         usedFor:
-          'set_policy, set_frozen and withdraw on the D3 vault, each authorized only by a WebAuthn signature from the passkey the owner created on 2026-10-04 in a browser on the production site: the account\'s one signer, on rule 0, under the WebAuthn verifier CABPDJH4.... It holds no XLM and pays no fee; a relayer or the vault operator pays, and the page names which. Published here on the day the vault was deployed and before its first owner action, the freeze 2d4cb917... later that day.',
+          'set_policy, set_frozen and withdraw on the D3 vault, each authorized only by a WebAuthn signature from the passkey the owner created on 2026-10-04 in a browser on the production site: the account\'s one signer, on rule 0, under the WebAuthn verifier CABPDJH4.... It holds no XLM and pays no fee; a relayer or the vault operator pays, and the page names which. Published here on the day the vault was deployed and before its first owner action, the freeze 2d4cb917... later that day. Read on 2026-10-11 at testnet ledger 5143315: still one context rule holding one signer, so the second device the owner tried to add on 2026-10-04 never reached the ledger. At ledger 5143331 the account\'s own instance entry had outlived its rent and was archived (the vault\'s is not): a simulated read marks it for restoration, which the ledger performs inside the next transaction that touches it, at that transaction\'s fee payer\'s cost.',
         publishedAt: '2026-10-04',
       },
     ],
@@ -1299,9 +1317,9 @@ export const PROVENANCE: ChainProvenance[] = [
       'Test money. This is the rehearsal rail: every number on this network is test USDC and none of it is worth anything. It used to add that nothing of value had moved on Stellar mainnet, which stopped being true on 2026-08-24 when the same vault was deployed to pubnet and a real USDC budget was spent through it. That network has its own section on this page, with its own caveats.',
       'No identity. ERC-8004 is EVM-only and no Soroban identity registry exists to point at, so a Stellar agent\'s passport is bridged from an EVM chain rather than anchored here. KYA cannot be verified on this chain.',
       'Not audited. The contract has been reviewed with the free tooling we could actually run, named, with output committed, plus an adversarial review that found and fixed real defects. That is not an audit and we will not call it one.',
-      'Neither vault here has a second owner. The older one is owned by a single key, not a multisig; the passkey one is owned by a smart account with a single WebAuthn signer and no recovery signer, which moves the failure from a lost key to a lost passkey without reducing it. In both cases the owner is permanent, because the contract has `set_operator` and deliberately no `set_owner`, so losing it makes the balance unrecoverable. That is a deliberate trade against a capped balance, written up in soroban/README.md rather than discovered, and on the passkey side the mitigation that was NOT applied is adding a recovery signer to the smart account.',
+      'No vault here has a second owner. The flagship vault and the SoW 2 D2 vault are each owned by a single key, not a multisig; the two 2026-09-19 rehearsal vaults (CBGTXWFB... and CCV2MMK4...) and the SoW 2 D3 vault are each owned by a smart account with a single WebAuthn signer and no recovery signer, which moves the failure from a lost key to a lost passkey without reducing it. Only the two 2026-10-03 rehearsal accounts, run with software keys, carry a second signer, each on its own rule. The D3 owner tried to add a second device on 2026-10-04 and it did not reach the ledger: read on 2026-10-11, its account still holds one context rule with one signer. In every case the owner is permanent, because the contract has `set_operator` and deliberately no `set_owner`, so losing it makes the balance unrecoverable. That is a deliberate trade against a capped balance, written up in soroban/README.md rather than discovered, and on the passkey side the mitigation that was NOT applied is adding a recovery signer to the smart account.',
       'The 2026-09-19 passkey runs are a rehearsal, not SOW 2 D3 evidence. Both runs were driven by our own script, and the P-256 key that signed every owner call in them was generated in that process rather than held by a platform authenticator on anyone\'s device: same verifier, same signature format, custody ours. No passkey-owned vault exists on pubnet. Two fee payers appear above and they are separate claims: the first run was paid by our dedicated testnet deployer GDNRET2G... over direct RPC; in the second, the four owner-side transactions at ledgers 4764131 to 4764144 were sourced by OpenZeppelin Channels channel accounts and fee-bumped by the Channels account GCNJB6V5... through our own relay, while the vault deploy at 4764133 and the agent payment at 4764146 were sourced and paid by our operator. Full record and caveats in soroban/releases/testnet-passkey-owner-2026-09-19.json.',
-      'Every owner action on this network so far was signed by a key we hold: the flagship vault\'s owner GBLHNAL5... is ours, in a local CLI keystore, and the passkey vaults\' owner calls, the 2026-10-03 rehearsal on our v0.7.2 build included, came from software keys in our script. Owner actions signed inside a wallet or on a device we do not control are what SOW 2 D2 and D3 add, and none of them is recorded here yet.',
+      'Until 2026-10-03 every owner action on this network was signed by a key we hold: the flagship vault\'s owner GBLHNAL5... is ours, in a local CLI keystore, and the passkey vaults\' owner calls, the 2026-10-03 rehearsal on our v0.7.2 build included, came from software keys in our script. Owner actions signed inside a wallet or on a device we do not control are what SOW 2 D2 and D3 added, and three are recorded above: the D2 owner\'s freeze and withdraw, signed in Freighter on 2026-10-03, and the D3 owner\'s freeze, signed with a device passkey on 2026-10-04. Read on 2026-10-11 at testnet ledger 5143290, neither vault\'s state has changed since: both are still frozen, holding 0.5 and 0.2 test USDC.',
       'On the `settled` scheme, where an agent pays from the vault and hands us the hash, the binding is the transaction rather than an authorization nonce. We can prove the payment happened and was not redeemed here before. We cannot prove it was made for that particular purchase rather than another of the same price, and we cannot prove the party presenting the hash is the party that made the payment: a landed transaction is public, so whoever presents it first is served. The scheme is restricted to contract payers for this reason, since an account can sign an authorization entry and get the stronger binding for free.',
       'One payment is one sale, and that took a fix. The two schemes keyed their replay guards in disjoint namespaces, so a purchase we had already broadcast, served and been paid for could be re-presented as a hash and sell the tool a second time. Found by an adversarial review, reproduced live against e1b0097a, and closed by burning both keys on every settlement plus refusing account payers on the hash path.',
       'A refused payment usually has no transaction to link. That is Soroban, not evasion: the contract answers during simulation and nothing is submitted, so most of our proofs of refusal are typed error codes rather than hashes.',
@@ -1487,13 +1505,13 @@ export const PROVENANCE: ChainProvenance[] = [
       },
     ],
     caveats: [
-      'Real money, but small money. The cap is 1 USDC per UTC day and the vault was funded with 1 USDC. Nothing here shows behaviour at a size anyone would mind losing, and that is the deliberate trade for an unaudited contract holding value.',
+      'Real money, but small money. The cap is 1 USDC per UTC day and the vault was funded with 1 USDC, then refilled with 0.04 USDC on 2026-09-16, which is all it holds: read at pubnet ledger 64890848 on 2026-10-11, balance 0.04 USDC, not frozen, nothing spent since the refill. Nothing here shows behaviour at a size anyone would mind losing, and that is the deliberate trade for an unaudited contract holding value.',
       'The two refusals have no transaction to link, and that is Soroban rather than evasion. A payment the contract refuses fails in SIMULATION, so nothing is submitted and no hash exists. The 0.50 USDC attempt returned AboveAutoApprove (error 4) and the over-cap attempt returned DailyCapExceeded (error 5). Anyone can reproduce both against the live contract in seconds, and it costs nothing precisely because they are refused.',
       'The over-cap refusal is worth reading closely. The vault held only 0.05 USDC at that moment, so an InsufficientBalance refusal was also available, and the contract returned DailyCapExceeded instead because the cap gate fires before the balance gate. The ORDER is the product: the agent is told its budget is spent, not that the account is short, and those call for different human responses.',
       'Not audited. Free tooling we can re-run, an adversarial review that found and fixed real defects, and a negative-control runner that deletes each guard in turn and requires the suite to go red. That is not an audit and we will not call it one.',
-      'The operator is a single burner key in a local CLI keystore, not an HSM. The owner account has since been raised to 2-of-3 multisig (thresholds 2/2/2, read live 2026-08-28), which an earlier version of this caveat predated; losing two of its three keys still makes the balance unrecoverable, which is the trade a capped vault is meant to make survivable.',
+      'The operator is a single burner key in a local CLI keystore, not an HSM. The owner account has since been raised to 2-of-3 multisig (thresholds 2/2/2, read live 2026-08-28 and again 2026-10-11: three signers of weight 1), which an earlier version of this caveat predated; losing two of its three keys still makes the balance unrecoverable, which is the trade a capped vault is meant to make survivable.',
       'Payer and payee are both ours: the owner account funded the vault and received every payment, including the first x402 sale. Evidence the rail works, not evidence of demand.',
-      'The x402 sale recorded here is one sale, settled from an operator machine. The production deployment sells on pubnet only once its environment names the network, a pubnet payTo and a funded fee payer; until then production serves testnet and says so.',
+      'Three x402 sales have settled on pubnet, and every one is internal: 0.001 USDC each, from our own buyer burner GAHWB3OF... to the owner account GARC7OFB.... The one recorded here was settled from an operator machine on 2026-08-27. The production deployment settled the other two, on 2026-08-28 (546bfa8d..., ledger 64155975) and 2026-09-15 (43a97d67..., ledger 64432240), and the live settlement log on this page lists them; it sells on pubnet with its own fee payer, GAFVDEN6..., since 2026-09-15. Read off Horizon on 2026-10-11, no payment has reached the owner account since 2026-09-15.',
       'No identity. ERC-8004 is EVM-only and no Soroban identity registry exists to point at, so a Stellar agent\'s passport is bridged from an EVM chain rather than anchored here. KYA cannot be verified on this chain.',
     ],
   },
@@ -1518,7 +1536,7 @@ export const PROVENANCE: ChainProvenance[] = [
       {
         name: 'ValidationRegistry',
         address: '0x8004Cb1BF31DAf7788923b405b754f57acEB4272',
-        note: 'The registry KYA attests through. Only the Arc and Robinhood testnet families carry one; on every mainnet we sell on, KYA stays off-chain.',
+        note: 'The registry KYA attests through. The canonical mainnet family has one too (0x8004Cc84..., read live on 2026-10-11 on Arc Mainnet, Base, Arbitrum One, Robinhood Chain, X Layer and Celo), but no mainnet descriptor of ours wires it yet, so on every mainnet we sell on, KYA stays off-chain.',
       },
     ],
     artifacts: [
@@ -1544,33 +1562,36 @@ export const PROVENANCE: ChainProvenance[] = [
         txHash: '0x506b125f3a0481667e3a00dcb86f48cbcaa35c643af963365e9389b06a8f8e54',
         onChain: 'arc',
         blockNumber: 51174931,
-        note: 'register(uri) on 2026-07-10, minting straight to the owner wallet. Re-verified 2026-08-30: ownerOf(849980) reads back the owner recorded here and tokenURI carries the inline Meridian metadata.',
+        note: 'register(uri) on 2026-07-10, minting straight to the owner wallet. Re-verified 2026-10-11: ownerOf(849980) reads back the owner recorded here and tokenURI carries the inline Meridian metadata.',
       },
       {
         kind: 'attestation',
         label: 'KYA attested on-chain through the ValidationRegistry',
         txHash: '0x758ddbfad38daeb772a37deb07e65339f13aeb393899fc7e1d2689c95adf0dad',
         onChain: 'arc',
-        note: 'Wallet-control proof committed on-chain. It shows the agent controls its wallet and nothing more; it is not an audit and the KYA docs say so.',
+        blockNumber: 51174949,
+        note: 'Wallet-control proof committed on-chain on 2026-07-10, 18 blocks after the registration: a ValidationResponse for agent 849980 with response 100, tag kya, and a responseUri recording a wallet-signature check of the agent wallet 0x4e26Ae66...3431. The validator address in that event is the operating wallet that also owns the agent, so this is our own check written on-chain, not an independent validator\'s. It shows the agent controls its wallet and nothing more; it is not an audit and the KYA docs say so.',
       },
       {
         kind: 'attestation',
         label: 'The first reputation anchor our oracle validator wrote anywhere',
         txHash: '0x3f5429819347fb0f75e66ee1416fc2c9ad3dade8fb1bf8dac1b9d2606de92a8c',
         onChain: 'arc',
-        note: 'giveFeedback from the oracle validator (0xee602A16..., never the owner: ERC-8004 forbids self-attestation). Score 542 of 1000 on 2026-07-22, computed from real platform settlement history rather than the flat identity credit the mainnet wave carries.',
+        blockNumber: 53004006,
+        note: 'giveFeedback from the oracle validator (0xee602A16..., never the owner: ERC-8004 forbids self-attestation). Score 542 of 1000 on 2026-07-22, written on-chain as 54 on the standard\'s 0-100 scale under tag a-identity:reputation:v1, computed from real platform settlement history rather than the flat identity credit the mainnet wave carries.',
       },
     ],
     caveats: [
       'Testnet. Nothing on Arc moves real money, and the settlement history behind the 542 score is testnet activity on our own platform.',
       'The KYA attestation proves wallet control at attestation time, not code quality, custody practice, or anything else the word verified might be hoped to stretch to.',
       'The mint transaction was cited in public copy as an anchor tx for weeks. Same hash, wrong noun: it is the registration itself, and the copy now says so.',
+      'Old receipts here are not served by every host. On 2026-10-11 the primary testnet RPC, Blockdaemon and QuickNode all returned null from eth_getTransactionReceipt for every hash in this list (the primary answered by hash only for recent transactions); dRPC and the explorer returned all of them, and the primary still serves each one by block through eth_getBlockReceipts, which is why every artifact here carries its block.',
     ],
   },
   {
     chain: 'celo',
     summary:
-      'Agent #9759 on the canonical ERC-8004 IdentityRegistry, registered 2026-08-09 by the same wallet that receives Celo x402 payments. Payments here settle through the first-party facilitator Celo runs rather than a rail of ours, and this entry was added 2026-08-30, when an inventory found the registration recorded nowhere in the repo.',
+      'Agent #9759 on the canonical ERC-8004 IdentityRegistry, registered 2026-08-09 by the same wallet that receives Celo x402 payments. Payments here settle through the first-party facilitator Celo runs rather than a rail of ours, and this entry was added 2026-08-30, when an inventory found the registration recorded nowhere in the repo. The two settlement rows were added 2026-10-11, each from a receipt read that day.',
     agent: {
       tokenId: '9759',
       caip: 'eip155:42220:8004/9759',
@@ -1581,7 +1602,7 @@ export const PROVENANCE: ChainProvenance[] = [
       {
         name: 'IdentityRegistry',
         address: '0x8004A169FB4a3325136EB29fA0ceB6D2e539a432',
-        note: 'The canonical mainnet address Arbitrum, Base, X Layer and Robinhood Chain share. Deployed by the ERC-8004 authors, not by us.',
+        note: 'The canonical mainnet address Arc Mainnet, Arbitrum One, Base, X Layer and Robinhood Chain share. Deployed by the ERC-8004 authors, not by us.',
       },
       { name: 'ReputationRegistry', address: '0x8004BAa17C55a88189AE136b182e5fdA19dE9b63' },
     ],
@@ -1592,19 +1613,39 @@ export const PROVENANCE: ChainProvenance[] = [
         txHash: '0x0a821026621e5b35ff5602f81348b276b0d0f1b61a3892365658295fc5bcb22e',
         onChain: 'celo',
         blockNumber: 74379462,
-        note: 'register on 2026-08-09 from the Celo payTo wallet. The hash was recovered from the explorer on 2026-08-30, because nothing in the repo had recorded it; ownerOf(9759) and tokenURI(9759) were re-read live the same day and match this entry.',
+        note: 'register on 2026-08-09 from the Celo payTo wallet. The hash was recovered from the explorer on 2026-08-30, because nothing in the repo had recorded it; ownerOf(9759) and tokenURI(9759) were re-read live the same day and match this entry, and again on 2026-10-11.',
+      },
+      {
+        kind: 'settlement',
+        label: 'First x402 payment into the Celo payTo (0.001 USDC, the verify_agent price)',
+        txHash: '0x0b161997be66bd4d83d50b7ae11efa89fa85e663651bfa8d5bc534c4ff304dbc',
+        onChain: 'celo',
+        blockNumber: 74380650,
+        date: '2026-08-09',
+        note: 'transferWithAuthorization on native USDC, broadcast by 0x0d74D5Ce..., a relayer that is not ours and has sent over 800,000 transactions: the buyer signed and paid no gas. The receipt carries one USDC Transfer, 0.001 from our buyer wallet 0x8c8d9cd1... to the payTo, so it is internal. Receipt and log read 2026-10-11.',
+      },
+      {
+        kind: 'settlement',
+        label: 'The newest settlement in the production log (verify_agent, 0.001 USDC)',
+        txHash: '0xd51cb70d62d0e9392d7da5164c3f5aae9fee640477fb48b14465021ad2ab9f1e',
+        onChain: 'celo',
+        blockNumber: 74385753,
+        date: '2026-08-09',
+        note: 'The block closed at 14:41:51Z and the backend logged the row at 14:41:56Z. Same relayer, same buyer, one USDC Transfer of 0.001 to the payTo. Four more payments from that buyer landed in the next ten seconds without a log row; see the caveats. Receipt and log read 2026-10-11.',
       },
     ],
     caveats: [
       'The owner is the Celo payTo wallet, not the wallet that owns every other EVM agent of ours. Deliberate at registration time, but it means this identity and the payment recipient are the same key.',
-      'No reputation anchor exists for #9759 yet; the oracle validator has never written on this chain.',
+      'No reputation anchor exists for #9759 yet; the oracle validator has never written on this chain. getClients(9759) on the ReputationRegistry still returned an empty list on 2026-10-11.',
       'The x402 rail here is Celo\'s own first-party facilitator, not our EIP-3009 rail, so settlement receipts follow their format rather than ours.',
+      'Every payment this rail has taken is internal. Read from the explorer on 2026-10-11: the payTo has received 501 USDC transferWithAuthorization payments, 0.975 USDC in all, every one from our buyer wallet 0x8c8d9cd1... and every one on 2026-08-09 between 13:16 and 14:42 UTC. Its only other USDC inflow is 1.806565 from a CELO swap the payTo made itself, 1.2 of which it then sent to that same buyer wallet to fund the run. No outside wallet has ever sent it USDC, and nothing has arrived since.',
+      'The production log at /api/celo/proof holds 426 of those 501. The missing 75 (0.138 USDC) are interleaved with logged rows in the same burst, so they are payments that reached the chain without the backend writing them down, not an older window the log dropped. The log under-counts the chain; it does not add to it.',
     ],
   },
   {
     chain: 'algorand',
     summary:
-      'The second non-EVM rail, and the fastest promotion in this ledger: the descriptor entered at beta and flipped to live the same day, 2026-08-30, on a real mainnet sale. The operating accounts were funded from a Stellar XLM treasury through an instant exchange, both accounts opted in to the USDC ASA (the trustline of this chain), and the first x402 sale settled through the GoPlausible facilitator with the buyer paying no network fee. No payment counted until our own indexer read of the transfer. The same day, the AgentSpendPolicy vault landed as its THIRD implementation (Solidity, Rust, now Algorand Python): an immutable application holding real USDC under a 1 USDC daily cap, walked through the same settle-refuse-freeze-override ladder the Stellar releases record.',
+      'The second non-EVM rail, and the fastest promotion in this ledger: the descriptor entered at beta and flipped to live the same day, 2026-08-30, on a real mainnet sale. The operating accounts were funded from a Stellar XLM treasury through an instant exchange, both accounts opted in to the USDC ASA (the trustline of this chain), and the first x402 sale settled through the GoPlausible facilitator with the buyer paying no network fee. No payment counted until our own indexer read of the transfer. The same day, the AgentSpendPolicy vault landed as its THIRD implementation (Solidity, Rust, now Algorand Python): an immutable application holding real USDC under a 1 USDC daily cap, walked through the same settle-refuse-freeze-override ladder the Stellar releases record. Since 2026-09-28 the rail has carried thousands of whole-dollar sales, every one paid by a wallet of ours while the payTo sent as much back out through the exchange that funded those wallets: the caveats give the count and the trace.',
     contracts: [
       {
         name: 'AgentSpendPolicy (application)',
@@ -1633,7 +1674,7 @@ export const PROVENANCE: ChainProvenance[] = [
         label: 'ALGO arrives in the payTo account',
         txHash: 'TCIUMHTFNTSYEVFWSFXM3J54PUPGINNBNYS2OEVYZYXFLV3IFERA',
         onChain: 'algorand',
-        note: 'About 34.7 ALGO, far more than the half-ALGO the go-live needs, because the exchange minimum per crossing (16.7 XLM) decides the size, not us. The surplus is future minimum-balance steps and years of fees.',
+        note: 'About 35.1 ALGO (35.126444 on the indexer), far more than the half-ALGO the go-live needs, because the exchange minimum per crossing (16.7 XLM) decides the size, not us. The surplus is future minimum-balance steps and years of fees.',
       },
       {
         kind: 'funding',
@@ -1668,7 +1709,7 @@ export const PROVENANCE: ChainProvenance[] = [
         label: 'About 3.09 USDC arrives in the buyer account',
         txHash: 'E7YTOLPN6TZZDPXLPK3HPRKBXWFABXHPZ2OUK6JMY7Y2UX7ZZY6Q',
         onChain: 'algorand',
-        note: 'The war chest for real paid calls: at 0.001 USDC per verify_agent this is three thousand of them.',
+        note: 'The war chest for real paid calls: at the 0.001 USDC verify_agent cost of the day, three thousand of them. The whole-dollar list that replaced it on 2026-09-26 makes it three.',
       },
       {
         kind: 'settlement',
@@ -1734,13 +1775,50 @@ export const PROVENANCE: ChainProvenance[] = [
         onChain: 'algorand',
         note: 'set_frozen(0), and the policy view read back live: cap 1000000, ceiling 250000, spent today 60000, unfrozen, allowlist off.',
       },
+      {
+        kind: 'settlement',
+        label: 'The first sale at the whole-dollar prices, paid by a one-time wallet of ours',
+        txHash: '7G5ZTZPZLTPXQC7ZJVUL7FHYK2NOE5GMAEBZ3PQGOHTUNBN2XDHQ',
+        onChain: 'algorand',
+        blockNumber: 65471175,
+        date: '2026-09-28',
+        note: '5 USDC from YGZP3O6I..., two days after the list moved from sub-cent to whole dollars (1, 2, 5 and 10 USDC per tool, 4 per agent in a batch, 5 for pay_check). The payer is ours: a one-time wallet funded through SideShift that later closed its account into the payTo. The internal volume described in the caveats starts here.',
+      },
+      {
+        kind: 'settlement',
+        label: 'The latest sale as of 2026-10-11 (verify_agent, 1 USDC), paid by a one-time wallet of ours',
+        txHash: 'IICMRXZ336JKVOBOUPDBDELKB6MXR3YBCFISVGE2VSKCT536G2WA',
+        onChain: 'algorand',
+        blockNumber: 65765721,
+        date: '2026-10-07',
+        note: 'From TPQS5HYX..., which received its USDC from SideShift at 18:42 UTC that day, made 69 payments (392 USDC) between 18:43 and 18:53, and closed into the payTo at 19:20 (below). The live settlement log carries the same row: verify_agent, confirmed by our own indexer read in this round.',
+      },
+      {
+        kind: 'bridge',
+        label: 'The payTo sends what that wallet paid, 392 USDC, back out to SideShift',
+        txHash: '6OZWMFDZ3GE6ZYZJKEZEOB556MLDBAE3GHORDVURRQTEN6TXDQEQ',
+        onChain: 'algorand',
+        blockNumber: 65765764,
+        date: '2026-10-07',
+        note: 'Two minutes after TPQS5HYX... stopped paying, the payTo sent exactly what it had paid to a SideShift deposit address (OKFAIFYW...), which forwarded it to the SideShift wallet that funded every payer of this rail. This is the leg that makes the volume circular: 53 such outflows between 2026-09-28 and 2026-10-07, 16,769.139 USDC in all, every one forwarded to that wallet.',
+      },
+      {
+        kind: 'funding',
+        label: 'The paying wallet closes its account into the payTo',
+        txHash: 'CM3XI237C3VWZDWOPL6JJG5DXTNSJ32IGVQ6UUNSH3WCDFPFBISQ',
+        onChain: 'algorand',
+        blockNumber: 65766315,
+        date: '2026-10-07',
+        note: 'TPQS5HYX... closes its last 0.447905 USDC out to the payTo, with its ALGO in the same group, and stops existing. A buyer outside our team would close to its own account, not to the seller it paid; all 52 one-time payer wallets of this rail closed into the payTo.',
+      },
     ],
     caveats: [
-      'Payer and payee are both ours: the buyer account and the payTo account were funded from the same treasury, and the first sale is evidence the rail works, not evidence of demand.',
+      'Every payment this rail has received is ours. Traced on an Algorand indexer on 2026-10-11: 2844 USDC transfers into the payTo, 16,743.087 USDC, from the first sale (round 64547231) to the latest (round 65765721, 2026-10-07), paid by 53 accounts. One is the buyer account funded above. The other 52 are one-time wallets, each funded through SideShift and each closed into the payTo when it was done, while the payTo sent 16,769.139 USDC back out to SideShift in 53 transfers, 48 of them for exactly what one payer wallet had paid. The money went round rather than in, so none of it is demand, and the live log labels every one of its rows internal.',
+      'The live settlement log behind this page keeps only its latest 2000 rows, so its count and total cover a window, not the rail: read 2026-10-11, 2000 sales and 11,791 USDC since 2026-09-29, against the 2844 and 16,743.087 above. The log publishes that window (keepsLatest, capped, since); the all-time record is the payTo account on any Algorand indexer.',
       'Settlement runs through an external facilitator (GoPlausible, the rail this ecosystem standardized on), not a broadcaster of ours. What stays ours is that the payment group is verified locally before the facilitator sees it and that nothing counts as settled until we read the transfer back from an indexer ourselves.',
       'The funding crossed chains through a custodial instant exchange, because no non-custodial route we use elsewhere lists Algorand. A few dollars rode that trust for a few minutes, and the transaction pair on each side is linked above so the crossing is checkable.',
       'No identity. No ERC-8004 registry or agent-identity ARC was found on Algorand as of 2026-08-30, so KYA cannot be anchored and an agent\'s passport is bridged from an EVM chain rather than anchored here.',
-      'The production deployment sells here only once its environment names the network and the payTo credentials; until then production refuses with a labeled 501, and the first sale above was settled from an operator machine against the same code path production runs.',
+      'The first sale and the three that followed it, one per tool, were settled from an operator machine against the same code path production runs, before production logging began, so the production log never held them. Production has sold here since: GET /api/x402/algorand/status reported the rail configured on 2026-10-11.',
     ],
   },
 ]
@@ -1761,14 +1839,14 @@ export const PROOF_RAILS: ProofRail[] = [
     slug: 'stellar',
     title: 'Stellar',
     lede:
-      'A Soroban spend policy that refuses an over-limit payment with a typed error, deployed on MAINNET as well as testnet and holding real USDC: an agent spent exactly its 1 USDC daily budget there and the next payment was refused by the contract. The x402 facilitator we wrote for this chain now sells on BOTH networks: the first mainnet sale settled 2026-08-27 through our own broadcaster, at the fee market\'s own rate. OpenZeppelin Channels got to a Stellar facilitator first and is kept as a fallback; what is ours is that no payment counts until we have read the transfer ourselves.',
+      'A Soroban spend policy that refuses an over-limit payment with a typed error, deployed on MAINNET as well as testnet and holding real USDC: an agent spent exactly its 1 USDC daily budget there and the next payment was refused by the contract. The x402 facilitator we wrote for this chain now sells on BOTH networks: the first mainnet sale settled 2026-08-27 through our own broadcaster, at the fee market\'s own rate. OpenZeppelin Channels got to a Stellar facilitator first and is kept as a fallback; what is ours is that no payment counts until we have read the transfer ourselves. On testnet, owners whose keys we never held have since acted on vaults of their own: a key generated inside Freighter froze its vault and withdrew on 2026-10-03, and a device passkey froze another on 2026-10-04.',
     chains: ['stellar', 'stellar-testnet'],
   },
   {
     slug: 'algorand',
     title: 'Algorand',
     lede:
-      'The second non-EVM rail, live the same day it shipped: x402 v2 in native Circle USDC, the buyer signing a fee-zero transfer inside a pooled-fee atomic group, the GoPlausible facilitator broadcasting, and no sale counted until our own indexer read of the transfer. First mainnet sale 2026-08-30, funded end to end from a Stellar XLM treasury, and every hop of that funding is linked here.',
+      'The second non-EVM rail, live the same day it shipped: x402 v2 in native Circle USDC, the buyer signing a fee-zero transfer inside a pooled-fee atomic group, the GoPlausible facilitator broadcasting, and no sale counted until our own indexer read of the transfer. First mainnet sale 2026-08-30, funded end to end from a Stellar XLM treasury, and every hop of that funding is linked here. Every payment the rail has received, 2844 through 2026-10-07, came from wallets of ours, and this page labels them internal.',
     chains: ['algorand'],
   },
   {
@@ -1796,7 +1874,7 @@ export const PROOF_RAILS: ProofRail[] = [
     slug: 'celo',
     title: 'Celo',
     lede:
-      "Agent #9759 on the canonical ERC-8004 registry, registered from the same wallet that receives Celo x402 payments. This is the one live chain where the payment rail is not ours: settlement runs through the first-party facilitator Celo operates, so receipts follow their format rather than ours. The identity provenance is on this page; the live settlement log has its own surface at /celo-proof.",
+      "Agent #9759 on the canonical ERC-8004 registry, registered from the same wallet that receives Celo x402 payments. The payment rail here is not ours: settlement runs through the first-party facilitator Celo operates, so receipts follow their format rather than ours. Every payment it has taken so far came from our own buyer wallet. The identity provenance and two settlement receipts are on this page; the live settlement log has its own surface at /celo-proof.",
     chains: ['celo'],
   },
 ]
@@ -1925,8 +2003,12 @@ export function artifactUrl(a: ChainArtifact): string | null {
   return chain ? txUrl(chain, a.txHash) : null
 }
 
-/** Explorer link for a contract on a provenance entry's own chain. */
+/** Explorer link for a contract on a provenance entry's own chain. On Algorand a contract is
+ *  an application, whose bare-integer id `addressUrl` would route to /asset/, so a numeric
+ *  id there is linked as the application it is. Accounts pass through unchanged. */
 export function contractUrl(chainId: string, address: string): string | null {
   const chain = getChainById(chainId)
-  return chain ? addressUrl(chain, address) : null
+  if (!chain) return null
+  if (chain.ecosystem === 'algorand' && /^[0-9]+$/.test(address)) return applicationUrl(chain, address)
+  return addressUrl(chain, address)
 }

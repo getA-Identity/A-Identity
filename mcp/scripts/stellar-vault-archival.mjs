@@ -53,8 +53,9 @@ if (!Number.isFinite(WARN_DAYS) || WARN_DAYS < 0) {
   process.exit(2)
 }
 
-/** Measured on pubnet 2026-08-24. Testnet ran 5.010 s the same day. */
-const CLOSE_SECONDS = 5.625
+/** Measured on both networks 2026-10-11: 432,000 ledgers in the 25 days since 2026-09-16.
+ *  It was 5.625 (pubnet, 2026-08-24), which overstated every remaining life by an eighth. */
+const CLOSE_SECONDS = 5
 
 const targets = CHAINS.filter((c) => c.ecosystem === 'stellar' && c.contracts?.spendVault).map((c) => ({
   chain: c,

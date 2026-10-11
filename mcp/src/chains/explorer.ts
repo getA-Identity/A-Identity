@@ -77,3 +77,16 @@ export function addressUrl(chain: ChainDescriptor, address: string): string {
   }
   return `${base}/address/${address}`
 }
+
+/**
+ * Explorer link for an Algorand application (a contract), by its uint64 id.
+ *
+ * An application id and an ASA id are both bare integers, so `addressUrl` cannot tell them
+ * apart and routes every number to /asset/, which is right for a settlement token and wrong
+ * for a contract: the AgentSpendPolicy vault, application 3688854723, was published as an
+ * asset link. A caller that knows it holds a contract says so by calling this. Checked
+ * 2026-10-11: allo.info/application/3688854723 resolves, allo.info/app/... is a 404.
+ */
+export function applicationUrl(chain: ChainDescriptor, id: string): string {
+  return `${explorerBase(chain)}/application/${id}`
+}

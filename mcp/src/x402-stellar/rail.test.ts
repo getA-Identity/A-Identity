@@ -460,6 +460,17 @@ test('the proof splits internal from external and labels every row', async () =>
   assert.equal(byPayer[OUR_PUBNET_BUYER], true)
   assert.equal(byPayer[OUR_TESTNET_BUYER], true)
   assert.equal(byPayer[STRANGER], false)
+  // The top-level network is the DEFAULT one, not the rows'. Production answered
+  // network stellar:testnet over two settlements that were both on pubnet, so the
+  // response says what that field describes and where the per-network split lives.
+  const both = await stellarRailProof(stellarRailStatus({ X402_STELLAR_NETWORKS: 'stellar:testnet,stellar:pubnet' }), {
+    load: async () => rows,
+    env: {},
+  })
+  assert.equal(both.network, 'stellar:testnet')
+  assert.equal(both.byNetwork['stellar:pubnet']?.count, 2)
+  assert.match(both.scope, /default network, stellar:testnet/)
+  assert.match(both.scope, /byNetwork/)
 })
 
 test('internal traffic is labeled, never filtered out of the totals', async () => {

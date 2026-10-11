@@ -11,7 +11,7 @@
  * false` and the reason. Dropping the evidence because a node timed out would be worse
  * than saying so, and inventing a read would be dishonest.
  */
-import { getChainById } from './registry.js'
+import { CHAINS, getChainById } from './registry.js'
 import type { ChainDescriptor } from './types.js'
 import { evmPublicClient } from './evm/client.js'
 import {
@@ -116,7 +116,7 @@ export async function railProofReport(slug: string, env: NodeJS.ProcessEnv = pro
     title: rail.title,
     lede: rail.lede,
     networks,
-    howToVerify: howToVerify(networks),
+    howToVerify: await howToVerify(networks.map((n) => n.chain)),
     ...(rail.slug === SOW2_RAIL ? { sow2: sow2Report() } : {}),
   }
 }
@@ -152,41 +152,156 @@ export function sow2Report(): Sow2Report {
 /**
  * How to check this rail, in terms that exist on it.
  *
- * Branched by ecosystem because the EVM version was being served for every rail, and three
- * of its four lines are false on Stellar: there is no ERC-8004 registry to compare, no
- * ownerOf to re-read, and /api/facilitator/proof is the EIP-3009 log rather than this one.
- * Telling a reviewer to check something that does not exist is worse than telling them
- * nothing, because they conclude we do not know our own chain.
+ * One generator per ecosystem, keyed by the descriptor's own `ecosystem`, so a fourth
+ * ecosystem is a compile error here rather than a silent fall-through. The fall-through is
+ * what shipped: everything that was not Stellar got the EVM lines, so the Algorand page told
+ * a reviewer to compare ERC-8004 registries and read EVM Transfer logs on a chain that has
+ * neither, and the Celo page pointed at /api/facilitator/proof, a log that never sees a Celo
+ * payment because Celo's own facilitator settles them. Telling a reviewer to check something
+ * that does not exist is worse than telling them nothing, because they conclude we do not
+ * know our own chain.
+ *
+ * Built from the registry and the ledger alone, never from a live read, so a test can pin
+ * every line to the descriptor it describes. Async only because the Stellar arm borrows the
+ * network passphrase from the Stellar client, which is loaded lazily like every other use of
+ * the Stellar SDK in this file.
  */
-function howToVerify(networks: ChainProofReport[]): string[] {
-  const shared = 'Open any transaction link below: each is a real transaction in the ledger named, on the chain named.'
-  if (networks.length && networks.every((n) => n.ecosystem === 'stellar')) {
-    // The fetch command has to name the network the contract is actually ON. This line
-    // said `--network testnet` unconditionally, which was true while this rail was one
-    // network and became a wrong instruction the moment pubnet joined it: run it against
-    // testnet for a pubnet contract and you get "contract not found", which reads as our
-    // evidence being fake rather than as a typo in our own docs.
-    const nets = [...new Set(networks.map((n) => (n.caip2 === 'stellar:pubnet' ? 'pubnet' : 'testnet')))]
-    const fetchNet = nets.length === 1 ? `--network ${nets[0]}` : `--network <${nets.join('|')}, whichever the contract is on>`
-    return [
-      shared,
-      'A refused payment usually has NO transaction to open, and that is Soroban rather than evasion: the contract answers during simulation and nothing is ever submitted. Where a refusal IS linked here, it exists because the limit moved while the payment was in flight, so it failed at apply time and the ledger recorded the typed error. Everywhere else the typed error code is the artifact, and you can reproduce it against the live contract for free precisely because it is refused.',
-      `The contract is unverified on Stellar Expert by design, because Rust wasm is not bit-reproducible across machines. Check it the direct way instead: \`stellar contract fetch --id <contract> ${fetchNet}\` and sha256 the bytes against the hash in soroban/releases/.`,
-      'Settlements are proven by our own read of the SEP-41 transfer event, matched to the authorization that paid for them, never by a broadcaster reporting success. See GET /api/x402/stellar/proof, whose byBroadcaster field says who actually moved each one.',
-    ]
+export async function howToVerify(chainIds: readonly string[]): Promise<string[]> {
+  const chains = chainIds.map((id) => getChainById(id)).filter((c): c is ChainDescriptor => Boolean(c))
+  const lines: string[] = []
+  // First appearance decides the order, so a mixed rail reads in the order it lists its
+  // networks. Every rail is single-ecosystem today; this keeps a mixed one honest anyway.
+  for (const eco of [...new Set(chains.map((c) => c.ecosystem))]) {
+    lines.push(...(await VERIFY_BY_ECOSYSTEM[eco](chains.filter((c) => c.ecosystem === eco))))
   }
-  const lines = [
-    shared.replace('ledger named', 'block named'),
-    'Every claim about an agent is re-read live when you load this page. If ownerOf stopped matching what we recorded, this page would say so.',
-    'The registry addresses are the canonical ERC-8004 ones. Compare them to any other chain we list; they are deliberately identical.',
-    'Settlements we broadcast are proven by a receipt plus a matching Transfer log, not by a third party reporting success. See GET /api/facilitator/proof.',
-  ]
+  return [...new Set(lines)]
+}
+
+const VERIFY_BY_ECOSYSTEM: Record<ChainDescriptor['ecosystem'], (chains: ChainDescriptor[]) => string[] | Promise<string[]>> = {
+  evm: evmVerifyLines,
+  stellar: stellarVerifyLines,
+  algorand: algorandVerifyLines,
+}
+
+/** "A, B and C", for a sentence. */
+function listNames(names: string[]): string {
+  return names.length <= 1 ? (names[0] ?? '') : `${names.slice(0, -1).join(', ')} and ${names[names.length - 1]}`
+}
+
+/**
+ * Where a chain's payments are logged when the facilitator is not ours. A chain absent here
+ * still gets the line, just without a log to point at: no endpoint is invented for it.
+ */
+const THIRD_PARTY_RAIL: Record<string, { operator: string; log: string }> = {
+  celo: { operator: 'the first-party facilitator Celo operates', log: 'GET /api/celo/proof' },
+}
+
+function evmVerifyLines(chains: ChainDescriptor[]): string[] {
+  const lines = ['Open any transaction link below: each is a real transaction in the block named, on the chain named.']
+
+  if (chains.some((c) => c.contracts.identityRegistry && provenanceFor(c.id)?.agent)) {
+    lines.push(
+      'Every claim about an agent is re-read live when you load this page: ownerOf and tokenURI on the identity registry, at the current block. If ownerOf stopped matching what we recorded, this page would say so.',
+    )
+  }
+
+  // Derived, because the line it replaces said every registry address is "deliberately
+  // identical" to every other chain's, and on a rail with a mainnet and a testnet the two
+  // addresses differ: the ERC-8004 authors deploy one address across mainnets and another
+  // across testnets. A reviewer who compared them found us contradicting ourselves.
+  const registries = chains.filter((c) => c.contracts.identityRegistry)
+  if (registries.length) {
+    const clauses = registries.map((c) => {
+      const address = c.contracts.identityRegistry!
+      const twins = CHAINS.filter(
+        (o) => o.id !== c.id && o.contracts.identityRegistry?.toLowerCase() === address.toLowerCase(),
+      ).map((o) => o.name)
+      return twins.length
+        ? `on ${c.name} it is ${address}, the same address ${listNames(twins)} carry`
+        : `on ${c.name} it is ${address}, which no other chain we list carries`
+    })
+    const families = new Set(registries.map((c) => c.contracts.identityRegistry!.toLowerCase()))
+    lines.push(
+      `The identity registry is the canonical ERC-8004 deployment, at the same address wherever that deployment exists, so compare it across chains: ${clauses.join('; ')}.` +
+        (families.size > 1 && registries.some((c) => c.testnet) && registries.some((c) => !c.testnet)
+          ? ' Mainnets and testnets carry two different addresses by design, so those two not matching is expected.'
+          : ''),
+    )
+  }
+
+  const ours = chains.filter((c) => !c.testnet && (c.settlementTokens ?? []).some((t) => t.authorization === 'eip3009'))
+  if (ours.length) {
+    lines.push(
+      `Payments on ${listNames(ours.map((c) => c.name))} go through the EIP-3009 facilitator we run: the buyer signs, we broadcast, and a payment counts only on a receipt carrying a matching Transfer log, never on a third party reporting success. A payment from a wallet we own is labeled internal, not hidden. See GET /api/facilitator/proof.`,
+    )
+  }
+
   // Only where a mainnet network on this rail sells through Circle Gateway: there Circle,
   // not we, broadcasts the batch, and the line above would be true of our rail but silent
   // about theirs.
-  if (networks.some((n) => !getChainById(n.chain)?.testnet && getChainById(n.chain)?.gateway)) {
+  if (chains.some((c) => !c.testnet && c.gateway)) {
     lines.push(
       'Circle Gateway sales are the exception: Circle broadcasts the batch, so one counts only once Circle\'s transfers API returns that transfer for the payment\'s own authorization nonce, and it links to Circle\'s batch transaction once that lands. See GET /api/x402/gateway/proof.',
+    )
+  }
+
+  // A mainnet that takes x402 payments with no settlement token of ours: someone else's
+  // facilitator moves the money, and the standard of evidence is theirs, so say so.
+  for (const c of chains) {
+    if (c.testnet || !c.payment.x402 || (c.settlementTokens ?? []).some((t) => t.authorization !== 'none')) continue
+    const rail = THIRD_PARTY_RAIL[c.id]
+    lines.push(
+      `On ${c.name} the payment rail is not ours: ${rail?.operator ?? 'a facilitator we do not run'} broadcasts each payment, and a payment is recorded when that facilitator answers settled, with the transaction hash it returns. We do not read the transfer back ourselves there, so open those hashes on the explorer rather than taking our log's word for them.${rail ? ` See ${rail.log}.` : ''}`,
+    )
+  }
+  return lines
+}
+
+async function stellarVerifyLines(chains: ChainDescriptor[]): Promise<string[]> {
+  const { networkPassphrase } = await import('./stellar/client.js')
+  // The fetch command has to name the network the contract is actually ON, in words the
+  // Stellar CLI understands out of the box. `--network pubnet` was neither: the CLI's
+  // built-in networks are local, futurenet, testnet and mainnet, and its mainnet entry ships
+  // with no RPC ("Bring Your Own"), so a reviewer copying the line got an error that reads
+  // as our evidence being fake. Pubnet is named by RPC and passphrase instead. The RPC is
+  // the descriptor's public primary and never the deployment's env override, which may be
+  // a private endpoint carrying a key. Checked 2026-10-11 with stellar 27.1.0 against the
+  // pubnet vault: the fetched bytes hash to the registry's spendVaultWasmHash.
+  const fetchLines = chains.map((c) =>
+    c.testnet
+      ? `on ${c.name}, \`stellar contract fetch --id <contract> --network testnet\``
+      : `on ${c.name}, \`stellar contract fetch --id <contract> --rpc-url ${c.rpcUrls[0]} --network-passphrase "${networkPassphrase(c)}"\` (the CLI's built-in mainnet entry ships with no RPC, so name one; any mainnet Soroban RPC will do)`,
+  )
+  return [
+    'Open any transaction link below: each is a real transaction in the ledger named, on the chain named.',
+    'A refused payment usually has NO transaction to open, and that is Soroban rather than evasion: the contract answers during simulation and nothing is ever submitted. Where a refusal IS linked here, it exists because the limit moved while the payment was in flight, so it failed at apply time and the ledger recorded the typed error. Everywhere else the typed error code is the artifact, and you can reproduce it against the live contract for free precisely because it is refused.',
+    `The contract is unverified on Stellar Expert by design, because Rust wasm is not bit-reproducible across machines. Check it the direct way instead, by fetching its bytes and comparing their sha256 with the hash in soroban/releases/. ${fetchLines.join('; ').replace(/^on /, 'On ')}.`,
+    'Settlements are proven by our own read of the SEP-41 transfer event, never by a broadcaster reporting success. A payment we or OpenZeppelin Channels broadcast is matched to the buyer\'s authorization nonce; one the buyer broadcast is bound to its transaction hash alone, and the log says which is which. See GET /api/x402/stellar/proof: byBroadcaster counts who moved each payment, and a payment from an account we control is labeled internal, not hidden.',
+  ]
+}
+
+function algorandVerifyLines(chains: ChainDescriptor[]): string[] {
+  const lines = [
+    'Open any transaction link below: each is a real transaction on the chain it names, linked to that chain\'s own explorer, so a funding hop that crossed from another chain opens there.',
+  ]
+  if (!chains.some((c) => c.contracts.identityRegistry)) {
+    lines.push(
+      'No agent is re-read here because none is claimed: there is no ERC-8004 registry or agent-identity ARC on Algorand that we can anchor to, so an agent\'s passport is bridged from an EVM chain and this rail makes no identity claim of its own.',
+    )
+  }
+  if (chains.some((c) => (provenanceFor(c.id)?.contracts.length ?? 0) > 0)) {
+    lines.push(
+      'Each contract here is an Algorand application, named by its id. The live check above asks algod for it on every load (GET /v2/applications/<id>), which any public algod will answer for you too, and its approval program is committed as TEAL next to its source under algorand/contracts/, so you can compile it yourself and compare.',
+    )
+  }
+  const tokens = chains.flatMap((c) =>
+    (c.settlementTokens ?? [])
+      .filter((t) => t.authorization === 'algorand-group')
+      .map((t) => `${t.symbol} (ASA ${t.address}) on ${c.name}`),
+  )
+  if (tokens.length) {
+    lines.push(
+      `Settlements are proven by our own indexer read of the ASA transfer, never by the facilitator reporting success: the transaction must be confirmed in a round, move ${listNames(tokens)}, pay our payTo at least the price, and come from the account that signed the payment group. See GET /api/x402/algorand/proof, where every row carries its round and what confirmed it.`,
     )
   }
   return lines
@@ -326,19 +441,32 @@ async function liveCheck(chain: ChainDescriptor, entry: ChainProvenance, env: No
   // but a lie: the chain was reachable, we were speaking the wrong protocol at it.
   if (chain.ecosystem === 'stellar') return stellarLiveCheck(chain, entry, env, checkedAt)
   if (chain.ecosystem === 'algorand') {
-    // Reachability by the chain's own protocol: algod /v2/status. No provenance entry
-    // exists for Algorand yet, so this arm is defensive; without it a future entry
-    // would be probed with eth_blockNumber and report a reachable chain as down.
+    // Reachability by the chain's own protocol (algod /v2/status), then each contract by
+    // the question that matters for it. An Algorand contract is an application, and
+    // GET /v2/applications/<id> answers whether it exists now: 200 with its params, 404
+    // once deleted. This arm used to mark every contract `deployed: false` without asking,
+    // written when no Algorand entry existed, and the live vault (application 3688854723)
+    // then rendered "no code" in red on its own proof page. Any other answer fails the
+    // whole check as unreachable rather than guessing in either direction.
     try {
       const rpc = env[chain.rpcEnvVar ?? ''] || chain.rpcUrls[0]
       const res = await fetch(`${rpc}/v2/status`, { signal: AbortSignal.timeout(10_000) })
       if (!res.ok) return { reachable: false, checkedAt, reason: `algod status HTTP ${res.status}` }
       const body = (await res.json()) as { 'last-round'?: number }
+      const contracts = await Promise.all(
+        entry.contracts.map(async (c) => {
+          const app = await fetch(`${rpc}/v2/applications/${encodeURIComponent(c.address)}`, {
+            signal: AbortSignal.timeout(10_000),
+          })
+          if (!app.ok && app.status !== 404) throw new Error(`algod applications/${c.address} HTTP ${app.status}`)
+          return { name: c.name, address: c.address, deployed: app.ok }
+        }),
+      )
       return {
         reachable: true,
         checkedAt,
         blockNumber: String(body['last-round'] ?? ''),
-        contracts: entry.contracts.map((c) => ({ name: c.name, address: c.address, deployed: false })),
+        contracts,
       }
     } catch (e) {
       return { reachable: false, checkedAt, reason: e instanceof Error ? e.message : String(e) }

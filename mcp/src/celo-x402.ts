@@ -799,8 +799,9 @@ export function celoStatusReport(env: NodeJS.ProcessEnv = process.env) {
       usdc: c.contracts.usdc ?? null,
       identityRegistry: c.contracts.identityRegistry ?? null,
       reputationRegistry: c.contracts.reputationRegistry ?? null,
-      // No ValidationRegistry exists on Celo (ERC-8004 spec revision pending), so KYA
-      // anchoring is impossible there and this surface says so instead of faking it.
+      // A ValidationRegistry proxy is deployed on Celo but not wired into the descriptor,
+      // so this reads null and KYA is not anchored there; the surface says so instead of
+      // faking it.
       validationRegistry: c.contracts.validationRegistry ?? null,
       // The shared resolver derives its client list from descriptors that carry an
       // identityRegistry, so this flag IS the readiness signal.
@@ -813,7 +814,7 @@ export function celoStatusReport(env: NodeJS.ProcessEnv = process.env) {
     ...status,
     tools: CELO_TOOLS.map((t) => ({ name: t, priceUsd: CELO_TOOL_PRICES_USD[t], method: `POST /api/celo/tools/${t}` })),
     chains: { celo: describe('celo'), 'celo-sepolia': describe('celo-sepolia') },
-    kyaAnchoring: 'not possible on Celo: no ValidationRegistry is deployed there (spec revision pending)',
+    kyaAnchoring: 'not wired on Celo: a ValidationRegistry proxy is deployed there (read live 2026-10-11), but the descriptor does not set it, so KYA is not anchored on-chain',
   }
 }
 

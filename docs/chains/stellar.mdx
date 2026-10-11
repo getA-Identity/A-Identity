@@ -169,9 +169,10 @@ the ledger, and you can read the same storage without us. Take the testnet vault
 5. Compare both with the panel's daily cap and auto-approve rows. They are the same two
    integers, divided by 10^7.
 
-We read these values live over Soroban RPC at testnet ledger 4974373 on 2026-10-01 (UTC).
-The same instance entry also holds `Owner`, `Operator`, `Token`, `Decimals` (7),
-`Frozen`, `AllowlistEnabled` and `SessionKeyExpiry` (0, meaning no time bound).
+We read these values live over Soroban RPC at testnet ledger 4974373 on 2026-10-01 (UTC),
+and again at testnet ledger 5143289 on 2026-10-11, unchanged. The same instance entry
+also holds `Owner`, `Operator`, `Token`, `Decimals` (7), `Frozen`, `AllowlistEnabled` and
+`SessionKeyExpiry` (0, meaning no time bound).
 
 **Why you will usually not find "spent today".** The day's running total is not in the
 instance. It is a separate **temporary** entry keyed `SpentOnDay(day)`, where `day` is the
@@ -247,12 +248,16 @@ client decoding these codes today keeps working.
 ### Archival, which is a calendar item rather than a risk
 
 Soroban charges rent, and a contract instance whose rent lapses is archived rather than
-lost. The pubnet vault's instance archives around **2027-01-06** unless it is touched in
-time, and a touch only counts once the remaining life is under the contract's re-extension
-threshold of 1,036,800 ledgers. The contract calls that 60 days, counted at 17,280 ledgers a
-day, but at the measured 5.625 s close it is about 67.5 days, so the action window opens
-around 2026-10-31 rather than in November. A weekly GitHub workflow turns red at 45 days
-remaining rather than waiting for the deadline.
+lost. The pubnet vault's instance is live until ledger 66177017 (read 2026-10-11), which
+is around **2026-12-25**, unless it is touched in time, and a touch only counts once the
+remaining life is under the contract's re-extension threshold of 1,036,800 ledgers. The
+contract calls that 60 days, counted at 17,280 ledgers a day, and today that is exactly
+what it is: both networks have closed a ledger every 5.0 s since at least mid-September
+(432,000 ledgers in the 25 days to 2026-10-11), so the action window opens around
+**2026-10-26**. An earlier version of this paragraph used the 5.625 s close measured on
+2026-08-24 and put both dates later, at 2027-01-06 and 2026-10-31, which is the wrong
+direction for a deadline. A weekly GitHub workflow turns red at 45 days remaining rather
+than waiting for the deadline.
 
 ### Owner controls, signed by the owner
 
@@ -390,11 +395,12 @@ ever mentioned.
   `authenticatorData`, `clientDataJSON` and a low-S DER signature, and the same `execute`
   path. The only difference is where the private key lives, which means the run proves the
   contract path accepts a WebAuthn signature and proves nothing about a real
-  authenticator's user-verification prompt. The SOW 2 device-passkey run is planned, not
-  done: it will be a separate record, made in a browser with a real device on
-  [a-identity.xyz/stellar?network=testnet](https://a-identity.xyz/stellar?network=testnet),
-  and listed on [the proof page](https://a-identity.xyz/proof/stellar) on its own once it
-  exists.
+  authenticator's user-verification prompt. The SOW 2 device-passkey run is a separate
+  record, done on 2026-10-04 in a browser with a real device on
+  [a-identity.xyz/stellar?network=testnet](https://a-identity.xyz/stellar?network=testnet):
+  the smart account `CBII2K5R...`, its vault `CCTYM23I...` and the owner's freeze at ledger
+  5019748, described [above](#what-is-deployed) and listed on its own on
+  [the proof page](https://a-identity.xyz/proof/stellar).
 
   Five more caveats about the rehearsal, in the order they would bite:
 
@@ -510,9 +516,13 @@ charges, and Horizon's `fee_charged` is the figure that left the account. Record
 part that did not work: the first two pubnet attempts bid the 100-stroop minimum that
 testnet always accepts, lost pubnet's auction and sat invisible until they expired.
 
-The break-even on the cheapest tool is **XLM at 0.4353 USD**: above that, one settlement
+The break-even on the cheapest tool is **XLM at 0.4259 USD** on pubnet, from the 23479
+stroops the ledger charged there (0.4353 at testnet's 22973): above that, one settlement
 costs more than a `verify_agent` sale. XLM has traded above that before, so this is a price
-move and not a hypothetical, and the decision gets revisited rather than discovered.
+move and not a hypothetical, and the decision gets revisited rather than discovered. Read
+live on 2026-10-11, pubnet's order book bid 0.2046 USD per XLM, so one settlement cost
+about 48 percent of that sale; `GET /api/x402/stellar/status` prices it again on every
+request.
 
 <Warning>
   **The buyer pays no fee, and still needs XLM to exist.** A Stellar account requires a 1

@@ -7,8 +7,9 @@ x402 is an open payment standard from Coinbase and the x402 Foundation. It reviv
 the HTTP 402 status code so a client can pay for a resource in the same request it
 asks for it. No accounts, no API keys by default. A-Identity ships a **real x402
 rail**: the server answers an unpaid request with 402 + machine-readable payment
-requirements, the client pays USDC on Arc, and the server verifies that payment
-on-chain (with replay protection) before serving the resource.
+requirements, the client pays in a stablecoin on the chain the 402 names, and the
+server verifies that payment on-chain (with replay protection) before serving the
+resource.
 
 ## How One Payment Works
 
@@ -32,22 +33,28 @@ transfer can't blind-unlock the resource, and every proof is spendable exactly o
 
 ## Settlement
 
-The x402 standard is asset- and network-agnostic, but A-Identity settles every x402
-call in **USDC on Circle Arc**, the same dollar the rest of the platform uses, where
-gas is paid in USDC and finality is sub-second. Each call costs a real sub-cent amount
-(0.001 USDC in the shipped demo), verified as an on-chain USDC transfer before the
-resource is served.
+The x402 standard is asset- and network-agnostic, and so is our use of it. Paid calls
+settle in **USDC** on Arc Mainnet, Base, Arbitrum One, Stellar, Algorand and Celo, and in
+**USDG** on Robinhood Chain; the Trust Oracle's 120 settlements on X Layer, all from our
+own buyer wallet, were in USD₮0. Arc Mainnet leads: gas there is paid in USDC itself and
+finality is sub-second. Every 402 challenge states its own price, network and asset. What makes a payment count
+differs by rail and is stated, not blurred: on our EIP-3009, Stellar and Algorand rails we
+read the transfer back from the chain ourselves; a Circle Gateway nanopayment counts once
+Circle's transfers API returns it; on Celo the facilitator Celo operates answers settled,
+and we publish the transaction hash it returns rather than re-reading it. Each rail's
+evidence, transaction by transaction, is at
+[a-identity.xyz/proof](https://a-identity.xyz/proof).
 
 | Property | Value |
 | --- | --- |
 | Standard | x402 (HTTP 402) |
-| Settlement | USDC on Circle Arc |
-| Primary rail | Circle Arc (testnet) |
-| Price per call | 0.001 USDC (sub-cent) |
+| Settlement | USDC on most chains, USDG on Robinhood Chain |
+| Primary rail | Arc Mainnet (live since 2026-09-16), rehearsed on Arc testnet |
+| Price per call | Stated in each 402 challenge, from 0.001 USDC |
 
 ## Two rails, same standard
 
-A-Identity ships **two** x402 rails and labels which is which:
+On Arc, A-Identity ships **two** x402 rails and labels which is which:
 
 1. **On-chain, self-verifying** (this page): each call settles as a real USDC transfer
    on Arc, verified on-chain with replay protection and a request nonce. Provable,
@@ -60,7 +67,8 @@ A-Identity ships **two** x402 rails and labels which is which:
 <Note>
 We chose the open x402 standard because it is self-verifying: we can **prove**
 settlement on-chain rather than trust a hosted meter. Then we added Circle
-Nanopayments as the gasless, batched rail alongside it. Both are live on Arc testnet.
+Nanopayments as the gasless, batched rail alongside it. Both are live on Arc Mainnet, and
+on Arc testnet for rehearsal.
 </Note>
 
 ## Paid Tools

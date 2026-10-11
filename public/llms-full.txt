@@ -305,11 +305,14 @@ lists every chain that has settled, and each carries its own proof page. No
 count below is summed across rails, because one figure covering several chains
 is a figure about none of them.
 
-**Per call on X Layer** (`eip155:196`). Each call settles as its own on-chain
+**Per call on X Layer** (`eip155:196`). Each call settled as its own on-chain
 transfer in USD₮0 to
 `0x6a5f1b8e56a19d456b799c2fa00e513244f58ce6`. 120 x402 settlements on X Layer
 mainnet to date, every one listed with its transaction hash at
-https://a-identity-asp.onrender.com/proof.
+https://a-identity-asp.onrender.com/proof, and every one paid by our own buyer wallet
+(the one that owns agent #6271) between 2026-07-17 and 2026-07-24. The list is fixed
+in the ASP. On 2026-10-11 the ASP's /health reported free mode (its OKX x402 layer
+unavailable), so it was not charging.
 
 **Gasless nanopayments on Circle Arc** (`eip155:5042002`). The x402 `exact`
 scheme over Circle Gateway's `GatewayWalletBatched` domain, verifying contract
@@ -327,8 +330,8 @@ prices in the table below, with no settlement fee, to buyers on Circle Agent
 Marketplace and to any x402 v2 client with a Gateway balance. No call is
 recorded or served until the transfer is read back from Gateway's transfers
 API; the on-chain batch hash is attached once Gateway reports it. Status as of
-2026-09-10: configured and unproven, meaning no Gateway-credited call has been
-read back on Base yet; the proof at
+2026-10-11: configured and unproven, meaning no Gateway-credited call has been
+read back on Base yet (every one so far is on Arc Mainnet); the proof at
 `GET https://a-identity-backend.onrender.com/api/x402/gateway/proof` says so
 itself. Sub-cent infrastructure, not revenue. Probe it at
 `GET https://a-identity-backend.onrender.com/api/x402/gateway/tools/verify_agent`.
@@ -428,7 +431,8 @@ Live today:
   (first settlement tx 0xd44287c8..., 0.021 USDC, the buyer paying no gas) and Circle
   Gateway nanopayments (first credit the same day, batched on-chain by Gateway). An
   AgentSpendPolicy vault holds real USDC under a 1 USDC daily cap and refused an
-  over-limit payment by contract. Funded by a CCTP V2 burn on Base that Circle's
+  over-limit payment by contract; since 2026-09-25 its agent key is a separate wallet
+  from its owner key, renewed on 2026-10-01 to 2026-11-15. Funded by a CCTP V2 burn on Base that Circle's
   Forwarding Service minted here. Every payment so far is self-funded and labeled
   internal. Escrow, KYA anchoring, Paymaster and Circle developer wallets stay on
   testnet. The mainnet explorer's pages open in a browser; only its JSON API turns
@@ -460,22 +464,27 @@ Live today:
   and an x402 v2 rail through the GoPlausible facilitator: the buyer signs a fee-zero
   ASA transfer and the atomic group's pooled fee covers it. Live on a real mainnet
   sale, 2026-08-30: 0.001 USDC for verify_agent, tx YNNA54CX... (round 64547231),
-  counted only after our own indexer read of the transfer, and all four trust tools
-  carry a mainnet receipt. The AgentSpendPolicy vault runs here too (application
-  3688854723, its third implementation, Algorand Python): real USDC under a 1 USDC
-  daily cap, an over-ceiling payment refused with the contract's own
-  ABOVE_AUTO_APPROVE. The full funding trail from a Stellar XLM treasury is on
+  counted only after our own indexer read of the transfer. All six tools it sells (the
+  four trust tools at 1 to 10 USDC, agent_batch_audit at 4 per agent and pay_check at
+  5, whole-dollar prices since 2026-09-26) carry a mainnet receipt. The AgentSpendPolicy
+  vault runs here too (application 3688854723, its third implementation, Algorand
+  Python): real USDC under a 1 USDC daily cap, an over-ceiling payment refused with the
+  contract's own ABOVE_AUTO_APPROVE. The full funding trail from a Stellar XLM treasury is on
   https://a-identity.xyz/proof/algorand. No ERC-8004 registry was found on Algorand,
-  so identity stays bridged from an EVM chain and no KYA anchors here; both sides of
-  the first sale are ours and the proof page says so.
+  so identity stays bridged from an EVM chain and no KYA anchors here. Every payment
+  the rail has received is ours, not demand: traced on the indexer on 2026-10-11, 2844
+  USDC transfers into the payTo through 2026-10-07 (16,743.087 USDC) from 53 accounts,
+  the first-sale buyer plus 52 one-time wallets funded through SideShift, each of which
+  closed into the payTo, while the payTo sent 16,769.139 USDC back out to SideShift. The
+  proof page labels them internal, and its live log counts only its latest 2000 rows.
 - **Base mainnet** (`eip155:8453`). The canonical ERC-8004 identity and reputation
   registries are live on Base, deployed by their authors as EIP-1967 proxies whose
   implementations match Arbitrum One byte for byte (verified 2026-08-28 by reading the
-  implementation slot on both chains); agent **#73232** is ours, minted 2026-08-28
+  implementation slot on both chains); agent **#73232** is ours, minted 2026-08-27 UTC
   through the production adapter. x402 settles here in native Circle USDC
   (`0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913`) through the same first-party EIP-3009
   facilitator as Arc Mainnet, Robinhood Chain and Arbitrum One, the signing domain proven against
-  the token's live DOMAIN_SEPARATOR; the first settlement landed 2026-08-28 with the
+  the token's live DOMAIN_SEPARATOR; the first settlement landed 2026-08-27 UTC with the
   receipt carrying the matching Transfer log, and agent #73232's reputation is anchored
   on the canonical ReputationRegistry by our oracle validator. The full trail,
   including the Stellar pubnet funding hop behind the operating wallets, is at
@@ -510,10 +519,13 @@ Live today:
 - **OKX X Layer mainnet** (`eip155:196`). ERC-8004 identity
   `0x8004a169fb4a3325136eb29fa0ceb6d2e539a432`, OKX.AI's own registry. The Trust
   Oracle sold here as agent #6271 until OKX.AI delisted it on 2026-09-26, settling in real USD₮0.
+  Every one of its 120 settlements was paid by our own buyer wallet.
 - **Celo mainnet** (`eip155:42220`). ERC-8004 identity
   `0x8004A169FB4a3325136EB29fA0ceB6D2e539a432` and reputation
   `0x8004BAa17C55a88189AE136b182e5fdA19dE9b63`; our agent is #9759. x402 settles
-  in native USDC through our own first-party facilitator. Celo has no
+  in native USDC through the first-party facilitator Celo runs, not one of ours. Every
+  payment so far is internal: read on 2026-10-11, all 501 USDC payments into the payTo
+  came from our own buyer wallet on 2026-08-09, and none has arrived since. Celo has no
   ValidationRegistry, so KYA cannot be anchored on-chain there.
 
 
@@ -607,11 +619,12 @@ https://a-identity.xyz/.well-known/ai-agent-manifest.json
   **testnet** still carries escrow, KYA anchoring, Paymaster and the account-abstraction
   path, in test money.
 - The Trust Oracle was **listed on OKX.AI as agent #6271 until OKX.AI delisted it on
-  2026-09-26**, with 120 x402 settlements on X Layer mainnet, each verifiable. They are published as proof that an open
+  2026-09-26**, with 120 x402 settlements on X Layer mainnet, each verifiable and each
+  paid by our own buyer wallet. They are published as proof that an open
   payment rail works and composes with the identity layer, not as revenue: the
   amounts are sub-cent by design.
-- Six more mainnets carry settlements of their own: Arc Mainnet, Robinhood Chain,
-  Arbitrum One, Base, Stellar pubnet and Algorand. Section 8 describes each, and every
+- Seven more mainnets carry settlements of their own: Arc Mainnet, Robinhood Chain,
+  Arbitrum One, Base, Celo, Stellar pubnet and Algorand. Section 8 describes each, and every
   rail is counted on its own proof page rather than summed with the others.
 - Public policy counters currently read **zero**, because no live third-party
   agent has produced a production decision yet. We publish the zero rather than a
@@ -642,7 +655,8 @@ from published methods or verifiable on a public chain.
 | Agent skills index | https://a-identity.xyz/.well-known/agent-skills/index.json |
 | Platform manifest | https://a-identity.xyz/.well-known/ai-agent-manifest.json |
 | OpenAPI 3.1 | https://a-identity-asp.onrender.com/openapi.json |
-| Settlement proof | https://a-identity-asp.onrender.com/proof |
+| X Layer settlement proof | https://a-identity-asp.onrender.com/proof |
+| Proof index, every rail | https://a-identity.xyz/proof (JSON: https://a-identity.xyz/api/proof/rails) |
 | Scoring method | https://a-identity-asp.onrender.com/methodology |
 | Source | https://github.com/getA-Identity/A-Identity |
 | Trust Oracle on OKX.AI (listed until 2026-09-26) | https://www.okx.ai/agents/6271 |

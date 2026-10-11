@@ -1,11 +1,14 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import algosdk from 'algosdk'
-import type { AlgorandSettlementRecord } from '../storage.js'
+import { ALGORAND_SETTLEMENTS_CAP, type AlgorandSettlementRecord } from '../storage.js'
 import {
+  ALGORAND_INTERNAL_THROUGH_ROUND,
   ALGORAND_PRICES_USD,
   ALGORAND_TOOLS,
   algorandCaip2Of,
+  algorandInternalPayers,
+  algorandRailProof,
   algorandRailChallenge,
   algorandRailPaywallGate,
   algorandRailPriceUsd,
@@ -190,6 +193,29 @@ test('receipts list only the settled checks one payer made, newest first', () =>
   assert.equal(receipts[0].tool, 'verify_agent')
   assert.equal(algorandReceiptsFor(rows, PAY_TO, 1).length, 1)
   assert.equal(algorandReceiptsFor(rows, 'NOBODY').length, 0)
+})
+
+test('the proof labels our own payers internal and says when its totals cover only the latest rows', async () => {
+  const OURS = 'SN7WYGGDMKNIGKFL7UV3LZBA73K4KTHUGFW3QIC57FSMZPQDXZCBUG7Z6I'
+  const STRANGER = algosdk.generateAccount().addr.toString()
+  const row = (day: number, payer: string, round: number, network = MAINNET) =>
+    ({ ts: `2026-10-0${day}T00:00:00.000Z`, outcome: 'settled', tool: 'verify_agent', payer, amountUsd: 1, assetSymbol: 'USDC', network, round }) as unknown as AlgorandSettlementRecord
+  const traced = ALGORAND_INTERNAL_THROUGH_ROUND
+  const rows = [row(1, STRANGER, traced), row(2, STRANGER, traced + 1), row(3, OURS, traced + 2), row(4, STRANGER, traced - 5, TESTNET)]
+  const p = await algorandRailProof(algorandRailStatus(TESTNET_ENV), { load: async () => rows, env: TESTNET_ENV })
+  assert.equal(p.totalSettlements, 4)
+  assert.equal(p.internalSettlements, 2, 'a traced mainnet row and the known buyer are ours')
+  assert.equal(p.externalSettlements, 2, 'an untraced payer and a testnet row are never assumed ours')
+  assert.deepEqual(p.recent.map((r) => r.internal), [true, false, true, false])
+  assert.ok(p.internalPayers.includes(PAY_TO), 'the configured payTo is ours by definition')
+  assert.equal(p.window.capped, false)
+  assert.doesNotMatch(p.note, /keeps only/)
+
+  const full = Array.from({ length: ALGORAND_SETTLEMENTS_CAP }, (_, i) => row(1, OURS, i))
+  const capped = await algorandRailProof(algorandRailStatus(TESTNET_ENV), { load: async () => full, env: TESTNET_ENV })
+  assert.deepEqual(capped.window, { keepsLatest: ALGORAND_SETTLEMENTS_CAP, rows: ALGORAND_SETTLEMENTS_CAP, capped: true, since: full[0].ts })
+  assert.match(capped.note, new RegExp(`latest ${ALGORAND_SETTLEMENTS_CAP} rows`))
+  assert.equal(algorandInternalPayers({ X402_ALGORAND_INTERNAL_PAYERS: 'not-an-address' }).length, 1, 'a malformed entry is dropped')
 })
 
 // ── the paid path: the answer is produced before settlement ──────────────────────────

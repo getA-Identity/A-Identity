@@ -30,9 +30,11 @@ const STATS = [
   // The settlement count is the X Layer ledger alone. It used to say "X Layer + Celo",
   // and Celo's count comes from a live endpoint, so the sum was a number nothing in the
   // repository could reproduce.
-  { n: 120, k: '120', v: 'real settlements', sub: 'X Layer mainnet' },
+  // The section's lede promises that every counter labels our own traffic, and this one
+  // did not: all 120 came from our own buyer wallet (mcp/src/asp/proof.ts names it).
+  { n: 120, k: '120', v: 'real settlements', sub: 'X Layer mainnet, all from our own buyer wallet' },
   { n: null, k: '#0', v: 'first registry token', sub: 'Robinhood Chain mainnet' },
-  { n: 1630, k: '1630', v: 'tests, green', sub: 'deterministic scores' },
+  { n: 1634, k: '1634', v: 'tests, green', sub: 'deterministic scores' },
 ] as const
 
 /** A number that counts itself up the first time it scrolls into view. */
@@ -173,7 +175,7 @@ export default function LiveProof() {
 
           {/* The page a visitor can run, next to the receipts it writes. */}
           <Link
-            to="/stellar"
+            to="/stellar?network=testnet"
             className="inline-flex items-center gap-1.5 text-sm font-semibold text-accent hover:underline"
           >
             The Stellar demo, on testnet <ArrowUpRight size={15} />

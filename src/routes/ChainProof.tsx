@@ -24,7 +24,7 @@ import { sumPaidChecks, type ByNetwork } from '../lib/paidChecks'
  * the contracts, every transaction, and how to check it yourself. Nothing was removed from
  * the ledger; it is folded, and it is still in the prerendered HTML.
  *
- * Settlements come from the rail that actually carries them. Algorand and Stellar keep
+ * Settlements come from the rail that actually carries them. Algorand, Stellar and Celo keep
  * their own logs; the EIP-3009 chains share the facilitator's, filtered to this rail's
  * networks, and Circle Gateway nanopayments are added wherever that log has rows on them
  * (Arc Mainnet). Reading the facilitator for Algorand used to report "no settlements here"
@@ -154,10 +154,11 @@ type GatewayProof = {
   recent: GatewaySettlement[]
 }
 
-/** The shape the Algorand and Stellar rails publish at their own /proof. */
+/** The shape the Algorand, Stellar and Celo rails publish at their own /proof. */
 type OwnRailSettlement = {
   ts: string
-  outcome: string
+  /** Absent on the Celo log, which records a row only once its facilitator says settled. */
+  outcome?: string
   tool: string
   amountUsd: number
   assetSymbol?: string
@@ -168,12 +169,16 @@ type OwnRailSettlement = {
 }
 type OwnRailProof = {
   configured: boolean
-  assetSymbol: string | null
+  /** Absent on the Celo log, which settles in USDC only. */
+  assetSymbol?: string | null
   totalSettlements: number
   totalUsd: number
-  ambiguous: number
+  ambiguous?: number
   /** Only rails that tell our own wallets apart publish this. */
   externalSettlements?: number
+  /** Published by a log that keeps only its latest rows. Once `capped`, every total above
+   *  covers that window and not all time. */
+  window?: { keepsLatest: number; rows: number; capped: boolean; since: string | null }
   recent: OwnRailSettlement[]
 }
 
@@ -205,12 +210,31 @@ type Sales = {
   counters: { label: string; value: string }[]
   /** True only when every log read says no payment came from outside our own wallets. */
   allInternal: boolean
+  /** Set when the log has hit its row cap, so the count is a window rather than all time. */
+  window?: { keepsLatest: number; since: string | null }
 }
 
-/** Rails whose settlements live in their own log rather than the shared facilitator's. */
+/**
+ * Rails whose settlements live in their own log rather than the shared facilitator's.
+ *
+ * Celo is here because its payments never touch our facilitator: Celo's own facilitator
+ * settles them and /api/celo/proof logs them. Without this entry /proof/celo read the
+ * EIP-3009 log, filtered it to Celo, and printed "0 payments settled" over a rail with
+ * hundreds of real ones.
+ */
 const OWN_RAIL_PROOF: Record<string, string> = {
   algorand: '/api/x402/algorand/proof',
   stellar: '/api/x402/stellar/proof',
+  celo: '/api/celo/proof',
+}
+
+/**
+ * What a row in a rail's own log had to pass, where that is not our own read of the chain.
+ * Celo's log records a payment on its facilitator's word, so saying "we read it back" there
+ * would claim a check this backend never makes.
+ */
+const OWN_RAIL_BASIS: Record<string, string> = {
+  celo: "A payment counts once the facilitator Celo operates answers settled, and the row keeps the transaction hash it returned. We do not read that transfer back ourselves, so each hash links to the explorer for you to check.",
 }
 
 /** Gateway rows the backend counts as paid: the money is Circle-held or already batched. */
@@ -278,28 +302,36 @@ const newestFirst = (sales: Sale[]) => [...sales].sort((a, b) => tsOf(b) - tsOf(
 
 const units = (value: string, decimals: number) => Number(value) / 10 ** decimals
 
-function fromOwnRail(p: OwnRailProof, source: string): Sales {
+/**
+ * `explorer` is the rail's own chain explorer from the ledger, used only for a row that names
+ * a transaction but no link (the Celo log), so the link derives from the registry rather than
+ * being typed here.
+ */
+function fromOwnRail(p: OwnRailProof, source: string, basis: string, explorer: string | null): Sales {
   const sales = p.recent
-    .filter((s) => s.outcome === 'settled')
+    // A log without an outcome field records settled payments only; one with it also keeps
+    // reverted and ambiguous rows, which are not payments.
+    .filter((s) => (s.outcome ?? 'settled') === 'settled')
     .map((s) => ({
       key: s.tx ?? s.ts,
       tool: s.tool,
       amountLabel: `${s.amountUsd} ${s.assetSymbol ?? p.assetSymbol ?? 'USDC'}`,
       tx: s.tx,
-      explorerUrl: s.explorerUrl,
+      explorerUrl: s.explorerUrl ?? (s.tx && explorer ? `${explorer}/tx/${s.tx}` : undefined),
       ts: s.ts,
       internal: s.internal ?? false,
     }))
   return {
     source,
-    basis: OWN_CHAIN_BASIS,
+    basis,
     configured: p.configured,
-    assetSymbol: p.assetSymbol,
+    assetSymbol: p.assetSymbol ?? null,
     count: p.totalSettlements,
     usd: p.totalUsd,
     sales: newestFirst(sales),
     counters: [],
     allInternal: p.externalSettlements === 0,
+    ...(p.window?.capped ? { window: { keepsLatest: p.window.keepsLatest, since: p.window.since } } : {}),
   }
 }
 
@@ -455,7 +487,12 @@ export default function ChainProof() {
   const railNets = new Set(proof?.networks.map((n) => n.caip2) ?? [])
   const sales: Sales | null = ownRailPath
     ? ownRail && ownRail.path === ownRailPath
-      ? fromOwnRail(ownRail.data, `GET ${ownRailPath}`)
+      ? fromOwnRail(
+          ownRail.data,
+          `GET ${ownRailPath}`,
+          OWN_RAIL_BASIS[rail] ?? OWN_CHAIN_BASIS,
+          proof?.networks.find((n) => n.explorer)?.explorer ?? null,
+        )
       : null
     : facilitator && proof
       ? fromEvmRails(facilitator, gateway, railNets)
@@ -506,6 +543,7 @@ export default function ChainProof() {
                 <div className="text-3xl font-bold tabular-nums tracking-tight text-foreground">{sales?.count ?? <Skeleton />}</div>
                 <div className="mt-1 text-sm text-foreground/60">
                   {sales?.count === 1 ? 'payment' : 'payments'} settled
+                  {sales?.window ? ` in the log's latest ${sales.window.keepsLatest.toLocaleString('en-US')} rows` : ''}
                   {sales?.allInternal && sales.count ? ', all from our own wallets' : ''}
                 </div>
               </div>
@@ -529,6 +567,13 @@ export default function ChainProof() {
                 </div>
               </div>
             </motion.div>
+          )}
+          {!failure && sales?.window && (
+            <p className="mt-3 text-xs text-foreground/50">
+              This log keeps only its latest {sales.window.keepsLatest.toLocaleString('en-US')} rows
+              {sales.window.since ? `, which reach back to ${sales.window.since.slice(0, 10)}` : ''}, so the count and the
+              dollars above cover that window rather than every payment since the rail opened.
+            </p>
           )}
           {!failure && !ownRailPath && gatewayUnread && !gateway && (
             <p className="mt-3 text-xs text-foreground/50">
@@ -561,7 +606,7 @@ export default function ChainProof() {
               <p className="mt-3 text-sm text-foreground/60">
                 The flagship vaults are ours, and so are their owner keys. A vault whose owner is a passkey rather than a
                 key we hold is what the testnet passkey page sets up:{' '}
-                <Link to="/stellar" className="inline-flex items-center gap-1 font-semibold text-accent hover:underline">
+                <Link to="/stellar?network=testnet" className="inline-flex items-center gap-1 font-semibold text-accent hover:underline">
                   the passkey vault on testnet <ArrowUpRight size={13} className="shrink-0" />
                 </Link>
               </p>

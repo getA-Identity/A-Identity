@@ -24,8 +24,9 @@ and sells its trust tools over that facilitator, settled in native USDC.
 <Note>
   Celo mainnet is **live**: agent #9759 is ours on the canonical registry, and the x402
   rail has real settlements recorded in a durable log you can read at
-  [/celo-proof](https://a-identity.xyz/celo-proof). The registration itself, with its
-  transaction and its caveats, is at [/proof/celo](https://a-identity.xyz/proof/celo).
+  [/celo-proof](https://a-identity.xyz/celo-proof). Every one of them so far was paid by
+  our own buyer wallet, on 2026-08-09, and is labeled internal. The registration, two
+  settlement receipts and the caveats are at [/proof/celo](https://a-identity.xyz/proof/celo).
   Celo Sepolia is **beta**.
 </Note>
 
@@ -81,7 +82,8 @@ const owner = await client.readContract({
 | IdentityRegistry | Celo Sepolia | [`0x8004A818BFB912233c491871b3d84c89A494BD9e`](https://celo-sepolia.blockscout.com/address/0x8004A818BFB912233c491871b3d84c89A494BD9e) |
 | ReputationRegistry | Celo Sepolia | [`0x8004B663056A597Dffe9eCcC1965A193B7388713`](https://celo-sepolia.blockscout.com/address/0x8004B663056A597Dffe9eCcC1965A193B7388713) |
 
-The mainnet identity registry is the same address X Layer and Robinhood Chain carry, and
+The mainnet identity registry is the same address Arc Mainnet, Base, Arbitrum One, X Layer
+and Robinhood Chain carry, and
 the Celo Sepolia pair matches Arc's. That is the point of a deterministic deployment: one
 agent id means the same thing wherever you resolve it.
 

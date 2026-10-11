@@ -9,6 +9,7 @@ import { DisplayHeading, Eyebrow, Lede } from '../components/ui/display'
 import { SectionShell, SectionIntro, reveal, revealAt } from '../components/ui/section'
 import { Stat } from '../components/ui/stat'
 import { apiFetch } from '../lib/api'
+import { CHAIN_BY_ID } from '../lib/chains'
 import { ago, short } from '../lib/format'
 import { usePageMeta } from '../lib/head'
 import { BACKEND_UNREACHABLE } from '../lib/mcpBase'
@@ -48,6 +49,8 @@ type CeloSettlement = {
   tool: string
   amountUsd: number
   payer?: string
+  /** The settlement transaction the facilitator returned, when it returned one. */
+  tx?: string
   internal?: boolean
 }
 
@@ -60,12 +63,16 @@ type CeloProofData = {
   /** Optional: an older backend that predates the split simply omits these. */
   internalSettlements?: number
   externalSettlements?: number
-  byTool: Record<string, number>
+  /** The backend sends { count, usd } per tool; a bare count is the older shape. Reading the
+   *  object as a number is what printed NaN on every chip here. */
+  byTool: Record<string, number | { count: number; usd: number }>
   recent: CeloSettlement[]
 }
 
 const REFRESH_MS = 60_000
-const CELOSCAN = 'https://celoscan.io/address/'
+/** Derived from the generated registry mirror, never typed: the registry owns the host. */
+const CELO_EXPLORER = CHAIN_BY_ID.celo.explorer
+const toolCount = (v: number | { count: number }) => (typeof v === 'number' ? v : v.count)
 
 const nf = new Intl.NumberFormat('en-US')
 const usd = (n: number, maxFrac = 6) =>
@@ -86,11 +93,12 @@ const Skeleton = () => (
   <span className="inline-block h-5 w-14 animate-pulse rounded bg-foreground/10 align-middle" />
 )
 
-/** An address that opens on Celoscan, because "you can open it" is the whole page. */
+/** An address that opens on the Celo explorer, because "you can open it" is the whole page. */
 function AddrLink({ addr }: { addr: string }) {
+  if (!CELO_EXPLORER) return <span className="break-all font-mono">{addr}</span>
   return (
     <a
-      href={`${CELOSCAN}${addr}`}
+      href={`${CELO_EXPLORER}/address/${addr}`}
       target="_blank"
       rel="noopener noreferrer"
       className="inline-flex items-center gap-1 font-mono text-accent underline-offset-2 hover:underline"
@@ -346,7 +354,7 @@ export default function CeloProof() {
                   value={p ? nf.format(p.totalSettlements ?? 0) : <Skeleton />}
                 />
                 <Stat label="Settled volume" value={p ? usd(p.totalUsd ?? 0) : <Skeleton />} />
-                <Stat label="Tools earning" value={p ? nf.format(byTool.length) : <Skeleton />} />
+                <Stat label="Tools paid for" value={p ? nf.format(byTool.length) : <Skeleton />} />
               </div>
               {/* The headline number without this line would read as demand it is not.
                   The split comes from the backend, which names our own buyer wallets. */}
@@ -371,7 +379,7 @@ export default function CeloProof() {
                       >
                         {tool}
                         <span className="font-mono text-[10px] font-semibold text-foreground/45 tabular-nums">
-                          {nf.format(count)}
+                          {nf.format(toolCount(count))}
                         </span>
                       </span>
                     ))}
@@ -389,8 +397,9 @@ export default function CeloProof() {
             <motion.section {...revealAt(0)} className="rounded-3xl border border-border bg-card p-6 sm:p-8">
               <h2 className="text-lg font-bold tracking-tight text-foreground">Recent settlements</h2>
               <p className="mt-1 text-sm leading-relaxed text-foreground/55">
-                Internal and test traffic is labeled. Judges: everything here is
-                verifiable on-chain.
+                Internal and test traffic is labeled. Each row links to its settlement
+                transaction, and the pay-to address above opens the full on-chain history
+                behind this log.
               </p>
               {p == null ? (
                 <div className="mt-5 space-y-2">
@@ -414,6 +423,7 @@ export default function CeloProof() {
                         <th className="hidden py-2.5 pl-6 pr-4 text-right font-medium sm:table-cell">
                           Payer
                         </th>
+                        <th className="py-2.5 pl-2 pr-4 text-right font-medium">Transaction</th>
                       </tr>
                     </thead>
                     <tbody>
@@ -439,6 +449,24 @@ export default function CeloProof() {
                             </td>
                             <td className="hidden py-3 pl-6 pr-4 text-right font-mono text-xs text-foreground/55 sm:table-cell">
                               {r.payer ? short(r.payer, 6) : <span className="text-foreground/30">-</span>}
+                            </td>
+                            <td className="py-3 pl-2 pr-4 text-right font-mono text-xs">
+                              {r.tx && CELO_EXPLORER ? (
+                                <a
+                                  href={`${CELO_EXPLORER}/tx/${r.tx}`}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  title={r.tx}
+                                  className="inline-flex items-center gap-1 text-accent underline-offset-2 hover:underline"
+                                >
+                                  {short(r.tx, 4)}
+                                  <ArrowUpRight size={11} className="shrink-0" />
+                                </a>
+                              ) : r.tx ? (
+                                <span title={r.tx} className="text-foreground/55">{short(r.tx, 4)}</span>
+                              ) : (
+                                <span className="text-foreground/30">-</span>
+                              )}
                             </td>
                           </tr>
                         )

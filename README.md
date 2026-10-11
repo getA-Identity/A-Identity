@@ -1,7 +1,7 @@
 # A-Identity
 
 [![CI](https://github.com/getA-Identity/A-Identity/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/getA-Identity/A-Identity/actions/workflows/ci.yml)
-[![Tests](https://img.shields.io/badge/tests-1630%20unit%20%2B%20E2E-brightgreen)](mcp/README.md#develop)
+[![Tests](https://img.shields.io/badge/tests-1634%20unit%20%2B%20E2E-brightgreen)](mcp/README.md#develop)
 [![npm: marketplace-sdk](https://img.shields.io/npm/v/%40a-identity%2Fmarketplace-sdk?label=marketplace-sdk)](https://www.npmjs.com/package/@a-identity/marketplace-sdk)
 [![npm: trust-guard](https://img.shields.io/npm/v/%40a-identity%2Ftrust-guard?label=trust-guard)](https://www.npmjs.com/package/@a-identity/trust-guard)
 [![Ask DeepWiki](https://deepwiki.com/badge.svg)](https://deepwiki.com/getA-Identity/A-Identity)
@@ -59,7 +59,7 @@ per-request payments.
 One product, one live engine. The hackathons below are past entries, not awards: none of
 them won a prize.
 
-- **Arbitrum Open House Singapore Online Buildathon** (current entry, Sep 14 - Oct 4, 2026) -
+- **Arbitrum Open House Singapore Online Buildathon** (latest entry; the buildathon ran Sep 14 - Oct 4, 2026) -
   the Robinhood Chain and Arbitrum One pay check, fixes to our own x402 rail found by
   auditing it, and the mainnet vaults' keys renewed and split from the owner key.
   [docs/arbitrum-open-house.md](docs/arbitrum-open-house.md) separates that work from what
@@ -238,7 +238,7 @@ paid by our own buyer wallet during the demo and seeding runs, and all listed at
 `#849980`, KYA-verified, with a reputation earned from **3 real settlements**. The score
 itself is recency-weighted and decays as those settlements age, so it is read live rather
 than quoted here. Scoring is **deterministic and
-unit-tested** (1630 unit tests as of Oct 2026), reads on-chain live via viem, and is fully documented at
+unit-tested** (1634 unit tests as of Oct 2026), reads on-chain live via viem, and is fully documented at
 `GET /methodology`. This is our answer to "surface your rigor": every number is
 reproducible and every settlement is on-chain.
 
@@ -353,8 +353,10 @@ ValidationRegistry in this mainnet family, so KYA cannot be anchored on-chain he
 | USDC | [`0xcebA9300f2b948710d2653dD7B07f33A8B32118C`](https://celoscan.io/address/0xcebA9300f2b948710d2653dD7B07f33A8B32118C) | ERC-20 |
 
 Our agent is [**#9759**](https://celoscan.io/nft/0x8004A169FB4a3325136EB29fA0ceB6D2e539a432/9759),
-and the four trust tools sell here over our own first-party x402 facilitator. Celo
-has no ValidationRegistry, so KYA cannot be anchored on-chain there either.
+and the four trust tools sell here over the first-party x402 facilitator Celo runs, not
+one of ours. Every payment so far came from our own buyer wallet and is labeled internal
+at [/celo-proof](https://a-identity.xyz/celo-proof). Celo has a ValidationRegistry proxy
+that we do not wire, so KYA is not anchored on-chain there either.
 
 ### Celo Sepolia, `eip155:11142220` - beta
 
@@ -376,8 +378,8 @@ The canonical registries again, deployed by their authors rather than by us. Our
 agent **#1259** ([mint tx](https://arbiscan.io/tx/0x23275840eb9a8b85a752769c113109a753f39b592236c85093cf94f6a517b2f3)),
 and paid calls settle in native Circle USDC through our own EIP-3009 facilitator
 ([first settlement](https://arbiscan.io/tx/0x69abb8a9aacf57fa0c3d2d4cd711d4f631e3f90c97222441f9f3ecee06834744),
-0.015 USDC, block 494160024). No ValidationRegistry in this family, so KYA cannot be
-anchored here.
+0.015 USDC, block 494160024). The family's ValidationRegistry proxy has code here but we do
+not wire it, so KYA is not anchored here.
 
 ### Stellar testnet, `stellar:testnet` - beta
 
@@ -458,9 +460,9 @@ upstream as the rest.
 Base carries the canonical ERC-8004 identity and reputation registries (verified
 2026-08-28 by reading each proxy's EIP-1967 implementation slot and matching the
 implementation code byte for byte against Arbitrum One), our agent #73232 (minted
-2026-08-28, tx `0xb428bf8e`), native Circle USDC, the Gateway hop, and the same
+2026-08-27 UTC, tx `0xb428bf8e`), native Circle USDC, the Gateway hop, and the same
 first-party x402 facilitator that serves Arc Mainnet, Robinhood Chain and Arbitrum One, settling in
-native USDC: the first settlement landed 2026-08-28 (tx `0xb59ae67c`, 102828 gas, the
+native USDC: the first settlement landed 2026-08-27 UTC (tx `0xb59ae67c`, 102828 gas, the
 receipt carrying the matching Transfer log). A second rail sells the same tools here
 through Circle Gateway nanopayments to Circle Agent Marketplace buyers, gasless on both
 sides, and stays labeled unproven until a Gateway-credited call is read back. The whole

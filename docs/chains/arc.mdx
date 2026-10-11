@@ -82,8 +82,10 @@ a mainnet key by a rename.
   set (`0x8004A818...`) has no code on mainnet; mainnet carries the canonical family that
   Base, Arbitrum One, X Layer and Celo share. A 130-byte proxy at an address proves
   nothing by itself, so the pair was checked by reading each proxy's EIP-1967
-  implementation slot and matching the implementation code against Base. There is no
-  ValidationRegistry on mainnet, and Arc's reference ERC-8183 contract is documented for
+  implementation slot and matching the implementation code against Base. Mainnet does
+  carry a ValidationRegistry from the same family (`0x8004Cc8439f36fd5F9F049D9fF86523Df6dAAB58`,
+  listed by docs.arc.io and read live on 2026-10-11), but A-Identity does not wire it yet,
+  so KYA is not anchored on mainnet. Arc's reference ERC-8183 contract is documented for
   testnet only.
 </Warning>
 
@@ -92,11 +94,13 @@ What stays on testnet until it has its own evidence: Circle developer-controlled
 created or used one there yet), Paymaster (Circle's Paymaster addresses page lists no Arc
 network, and its v0.7 and v0.8 addresses have no code on Arc mainnet), the
 account-abstraction path, the treasury and airdrop demos, and ERC-8183 escrow (Arc's
-reference contract has code on testnet and none on mainnet). docs.arc.io describes the mainnet
-RPC endpoints as permissioned during a private-mainnet phase; they answered without
-credentials on launch day, and `ARC_MAINNET_RPC_URL` takes a credentialed endpoint if that
-changes. The explorer's pages open in a browser without signing in; only its JSON API
-answers non-browser clients with a bot challenge.
+reference contract has code on testnet and none on mainnet). docs.arc.io says the primary
+mainnet RPC accepts anonymous requests with no API key, and `ARC_MAINNET_RPC_URL` takes a
+provider endpoint of your own if you want one. Not every host keeps old history: on
+2026-10-11 the Blockdaemon mainnet host returned none of the Arc Mainnet receipts at /proof/arc, while
+the primary, dRPC and QuickNode returned all of them. The explorer's pages open in a
+browser without signing in; only its JSON API answers non-browser clients with a bot
+challenge.
 
 ## Connect With viem
 

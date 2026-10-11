@@ -12,8 +12,8 @@ our own traffic and real money: **Arc Mainnet** (live since it opened on 2026-09
 (pubnet) and **Algorand**. The ninth live chain is
 **Circle Arc** (5042002), which is a testnet, so value moving there is test value; Arc is
 where phase 1 started and it still carries all three ERC-8004 registries (identity +
-reputation + validation), which is what makes KYA anchorable there. No mainnet in the
-registry publishes a ValidationRegistry, so KYA cannot be anchored on any of them. The four
+reputation + validation), which is what makes KYA anchorable there. No mainnet descriptor
+in the registry carries a ValidationRegistry we wire, so KYA is anchored on none of them. The four
 testnet mirrors (Stellar, Algorand, Robinhood Chain, Celo Sepolia) are `beta`, and Avalanche
 is the only `planned` entry. This header said "eleven registry entries" and described Stellar
 pubnet as merely holding a vault until 2026-08-30; both had gone stale, and understating the
@@ -210,7 +210,8 @@ put them at their canonical cross-chain addresses. What is ours is the identity 
   [`0x8004a169…`](https://robinhoodchain.blockscout.com/address/0x8004a169fb4a3325136eb29fa0ceb6d2e539a432),
   reputation
   [`0x8004BAa1…`](https://robinhoodchain.blockscout.com/address/0x8004BAa17C55a88189AE136b182e5fdA19dE9b63).
-  There is no ValidationRegistry in the mainnet family, so KYA is not anchorable there.
+  The mainnet family's ValidationRegistry proxy has code there too (read live 2026-10-11), but we
+  do not wire it, so KYA is not anchored there.
 - **Testnet agent #0** (`eip155:46630`) - mint tx:
   [`0x20918ec6…`](https://explorer.testnet.chain.robinhood.com/tx/0x20918ec68186bd4aaee7c36d33d0383f1bc6a2bc921e72e3b812d034da5212fd).
   This network carries the **full canonical set** (identity + reputation + validation) at the same
@@ -229,11 +230,12 @@ put them at their canonical cross-chain addresses. What is ours is the identity 
   [`0x8004A169…`](https://celoscan.io/address/0x8004A169FB4a3325136EB29fA0ceB6D2e539a432); reputation
   [`0x8004BAa1…`](https://celoscan.io/address/0x8004BAa17C55a88189AE136b182e5fdA19dE9b63). Verified
   live on 2026-08-09 with `eth_getCode` plus real reads on both.
-- **x402 in native USDC** through our own first-party Celo facilitator (EIP-3009, so the buyer pays
-  no gas). Every settlement it takes is published verbatim at
+- **x402 in native USDC** through the first-party facilitator Celo operates, not one of ours
+  (EIP-3009, so the buyer pays no gas). A payment is recorded when that facilitator answers
+  settled, with the transaction hash it returns. Every settlement it takes is published verbatim at
   [/celo-proof](https://a-identity.xyz/celo-proof), internal traffic labeled rather than hidden.
-- Celo has **no ValidationRegistry**, so KYA cannot be anchored on-chain there. We say so instead
-  of implying the Arc feature set travels.
+- Celo has a ValidationRegistry proxy (read live 2026-10-11) that we **do not wire**, so KYA is not
+  anchored on-chain there. We say so instead of implying the Arc feature set travels.
 
 ### Stellar pubnet
 
@@ -306,7 +308,7 @@ Both are mainnets where the canonical ERC-8004 registries were already deployed 
 authors**; registering is permissionless, so what is ours is the agent and the rail.
 
 - **Base agent [#73232](https://basescan.org/tx/0xb428bf8e79df3c44157c134df1858eb75fe3758b74868445c1dcd07948705bf0)**
-  (2026-08-28) and the first x402 settlement in native Circle USDC,
+  (2026-08-27 UTC) and the first x402 settlement in native Circle USDC,
   [`0xb59ae67c…`](https://basescan.org/tx/0xb59ae67ced56426bdc1d85a71adadb35b0db59bcffeb3ff637eba23fe49a1450) -
   the receipt carries the matching USDC `Transfer` plus the token's `AuthorizationUsed` event.
   That measurement is what the disclosed settlement fee is derived from, not a guess.
@@ -376,8 +378,8 @@ day it lands rather than the day someone remembers to add it.
   `/mcp` JSON-RPC for agents. Durable state via Postgres (`DATABASE_URL`), JSON-file fallback for dev.
 - **Auth** - wallet sign-in on any chain family the registry knows (EVM personal_sign, Stellar SEP-43 signMessage, an Algorand signed zero-value self-payment; mcp/src/wallet-proof.ts) + email magic link (Resend) are *verified*; a plain guest
   session is read-only. Agent ownership is bound to a verified identity.
-- **Tests / CI** - `node:test` unit suite: **1630 tests across 102 colocated `*.test.ts` files**
-  (as of Aug 2026; `npm test` in `mcp/`) + a full E2E (`mcp/e2e.mjs`) of about **67 checks** that
+- **Tests / CI** - `node:test` unit suite: **1634 tests across 102 colocated `*.test.ts` files**
+  (as of Oct 2026; `npm test` in `mcp/`) + a full E2E (`mcp/e2e.mjs`) of about **67 checks** that
   adapts to signer presence: live reads always run, and the on-chain write checks (x402, ERC-8183
   escrow, Gateway, **Nanopayments settle**, **CCTP burn-and-mint**) activate with a funded
   `ARC_SIGNER_KEY`. GitHub Actions runs the no-signer path.
@@ -392,7 +394,7 @@ day it lands rather than the day someone remembers to add it.
   agent's behalf (a delegated action); the human `owner` is the user's own wallet. The *limit* is
   trustless regardless (the contract reverts), but the agent does not yet sign its own payments -
   that's the roadmap (agent-held key / Circle programmable wallet). We say this plainly.
-- **Which money is real**: Arc is a testnet, so everything in the "Arc testnet" section above is
+- **Which money is real**: Arc testnet is a testnet, so everything in the "Arc testnet" section above is
   real tech and test money. The eight live mainnets above are not: Arc Mainnet, X Layer, Celo, Robinhood
   Chain, Arbitrum One, Base, Stellar pubnet and Algorand settle real value, in small deliberate
   amounts, and [SECURITY.md](SECURITY.md) says which key spends where. This line used to read

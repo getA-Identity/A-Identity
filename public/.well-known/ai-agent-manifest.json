@@ -80,7 +80,7 @@
           "caip2": "eip155:4663",
           "identity": "ERC-8004",
           "erc8004Native": true,
-          "note": "Identity + Reputation registries LIVE (same canonical addresses as X Layer/Celo); agent #0, the registry's first mint, is ours (2026-08-12). No ValidationRegistry in the mainnet family yet.",
+          "note": "Identity + Reputation registries LIVE (same canonical addresses as X Layer/Celo); agent #0, the registry's first mint, is ours (2026-08-12). A ValidationRegistry proxy is deployed here too (read live 2026-10-11) but not wired, so KYA is not anchored on-chain here.",
           "status": "live"
         },
         {
@@ -98,7 +98,7 @@
           "caip2": "eip155:42161",
           "identity": "ERC-8004",
           "erc8004Native": true,
-          "note": "Canonical ERC-8004 identity + reputation registries are live here (deployed by their authors, not by us); agent #1259 is ours. No ValidationRegistry in this family, so KYA cannot be anchored here.",
+          "note": "Canonical ERC-8004 identity + reputation registries are live here (deployed by their authors, not by us); agent #1259 is ours. The family's ValidationRegistry is deployed here too (read live 2026-10-11) but not wired, so KYA is not anchored on-chain here.",
           "status": "live"
         },
         {
@@ -107,7 +107,7 @@
           "caip2": "eip155:196",
           "identity": "ERC-8004",
           "erc8004Native": true,
-          "note": "OKX.AI identity registry LIVE (read-side wired); payment rails still planned.",
+          "note": "OKX.AI identity registry LIVE (read-side wired); agents #6271 and #8913 are ours. A ValidationRegistry proxy is deployed here too (read live 2026-10-11) but not wired.",
           "status": "live"
         },
         {
@@ -116,7 +116,7 @@
           "caip2": "eip155:42220",
           "identity": "ERC-8004",
           "erc8004Native": true,
-          "note": "Identity + Reputation registries LIVE (read-side wired). No ValidationRegistry on Celo yet, so KYA cannot be anchored on-chain there.",
+          "note": "Identity + Reputation registries LIVE (read-side wired). A ValidationRegistry proxy is deployed here too (read live 2026-10-11) but not wired, so KYA is not anchored on-chain there.",
           "status": "live"
         },
         {
@@ -125,7 +125,7 @@
           "caip2": "eip155:11142220",
           "identity": "ERC-8004",
           "erc8004Native": true,
-          "note": "Identity + Reputation registries LIVE (same addresses as Arc). No ValidationRegistry, mirroring mainnet.",
+          "note": "Identity + Reputation registries LIVE (same addresses as Arc). A ValidationRegistry proxy is deployed here too (read live 2026-10-11) but not wired, mirroring mainnet.",
           "status": "beta"
         },
         {
@@ -233,7 +233,7 @@
           "id": "xlayer",
           "name": "OKX X Layer",
           "chainId": 196,
-          "role": "OKX.AI marketplace rail: identity reads live from OKX ERC-8004; x402 trust tools settle here.",
+          "role": "OKX.AI marketplace rail: identity reads live from OKX ERC-8004; the Trust Oracle settled x402 calls here in USD₮0 until OKX.AI delisted it on 2026-09-26.",
           "x402": true,
           "status": "live"
         },
@@ -287,7 +287,8 @@
     }
   },
   "okx_ai_asp": {
-    "status": "live",
+    "status": "delisted",
+    "delisted": "OKX.AI delisted #6271 and #8913 on 2026-09-26; the ASP endpoint still answers and was in free mode on 2026-10-11",
     "marketplace": "OKX.AI",
     "type": "A2MCP",
     "agentId": "#6271",
@@ -383,7 +384,7 @@
         "deliver"
       ],
       "trust": "Both agents verify each other via ERC-8004 before value moves. Reputation gate (default: 300+).",
-      "settlement": "x402 in stablecoins across seven live chains. Arc, X Layer, Celo, Arbitrum, Robinhood Chain and Base carry settling rails; Celo Sepolia stays beta as a test network. Stellar pubnet is live with an on-chain spend policy holding real Circle USDC AND the Soroban x402 rail selling on it, settling SEP-41 USDC through our own facilitator; the buyer signs an authorization entry and pays no fee. Base is live with agent #73232 and x402 settling in native Circle USDC through our own EIP-3009 facilitator, proven at /proof/base. Avalanche is planned. No shared accounts or API keys.",
+      "settlement": "x402 in stablecoins. Eight mainnets have settled real payments: Arc Mainnet, Stellar pubnet, Algorand, Base, Robinhood Chain, Arbitrum One, OKX X Layer and Celo. On Arc Mainnet, Base, Robinhood Chain and Arbitrum One the buyer signs an EIP-3009 authorization and our own facilitator broadcasts it (Arc Mainnet also sells through Circle Gateway nanopayments); on Stellar the buyer signs a Soroban authorization entry and pays no fee; on Algorand the buyer signs a fee-zero ASA transfer and the GoPlausible facilitator broadcasts it; on Celo the facilitator Celo operates settles. Each rail is proven on its own page under https://a-identity.xyz/proof, and as of 2026-10-11 every payment on every rail came from wallets we own and is labeled internal. The testnet mirrors stay beta and Avalanche is planned. No shared accounts or API keys.",
       "chains_supported": [
         "arc-mainnet",
         "arc",

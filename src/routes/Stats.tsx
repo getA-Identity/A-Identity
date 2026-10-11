@@ -34,15 +34,16 @@ import { ASP_BASE, BACKEND_UNREACHABLE } from '../lib/mcpBase'
 /**
  * /stats: the network, in numbers, for anyone who asks "is this real?"
  *
- * Four live reads, each labelled on the surface that shows it: GET /api/stats for the
- * platform aggregates, GET /api/celo/proof for the Celo settlement log, the ASP's own
- * /proof.json for the X Layer one, and GET /api/traction for the guardrail meter and the
- * disclosure text that explains its zeros. Nothing on this page is projected, padded or
+ * Live reads only, each labelled on the surface that shows it: GET /api/stats for the
+ * platform aggregates, GET /api/celo/proof for the Celo settlement log, GET
+ * /api/facilitator/proof for our own EIP-3009 rail, the ASP's own /proof.json for the
+ * X Layer one, GET /api/traction for the guardrail meter and the disclosure text that
+ * explains its zeros, and GET /api/chains for the registry. Nothing on this page is projected, padded or
  * invented, and the backend excludes its own CI canary agents from every headline so
  * monitoring cannot inflate the numbers.
  *
  * The page is built around a fact that would be tempting to hide: several counters here
- * are genuinely zero. No third party has paid us on Celo yet. The guardrail has not been
+ * are genuinely zero. No third party has paid us on Celo or X Layer yet. The guardrail has not been
  * asked a single metered question. Rather than pad those or drop the tiles, each zero
  * carries the reason it is zero, sourced from the API where the API supplies one. That is
  * the same argument the rest of the site makes: a number you cannot reproduce is worth
@@ -52,7 +53,7 @@ import { ASP_BASE, BACKEND_UNREACHABLE } from '../lib/mcpBase'
  * skeletons instead of blanking the page. Reads go through apiFetch, which retries a
  * sleeping free-tier backend through its cold start with wake pings; the ASP is on a
  * different origin and answers CORS directly, so it is fetched plainly. A single sequence
- * guard covers all four, because apiFetch can spend longer retrying than the 60s poll
+ * guard covers every polled read, because apiFetch can spend longer retrying than the 60s poll
  * interval and a slow old fetch must never overwrite a newer snapshot.
  */
 
@@ -65,7 +66,15 @@ type PlatformStats = {
     byCategory: { category: string; count: number }[]
   }
   tasks: { total: number; open: number; released: number; gmvUsd: number; onchainSettled: number }
-  settlements: { instructionsExecuted: number; instructionsUsd: number; withTxHash: number }
+  /** onchainUsd / simulatedUsd are the split the backend publishes so the two are never
+   *  read as one settled total; older backends omit them, hence optional. */
+  settlements: {
+    instructionsExecuted: number
+    instructionsUsd: number
+    withTxHash: number
+    onchainUsd?: number
+    simulatedUsd?: number
+  }
   feedback: { totalRatings: number; avgScore: number | null; ratedAgents: number }
   followersTotal: number
   guardrail: { checks: number; allow: number; warn: number; deny: number; protectedNotionalUsd: number }
@@ -102,6 +111,8 @@ type AspProof = {
   asp?: { name?: string; agentId?: string; network?: string; registrationTxUrl?: string }
   realOnchainRevenue?: {
     network?: string
+    /** The one buyer wallet behind every row of this fixed list. */
+    payer?: string
     totalSettlements?: number
     totalUsd?: number
     byTool?: Record<string, number>
@@ -310,10 +321,11 @@ export default function Stats() {
             }
             lede={
               <Lede>
-                Four live reads, each labelled with the endpoint it came from. Registrations,
-                escrowed tasks, on-chain settlements, guardrail decisions and x402 settlements,
-                exactly as the backend counts them. Several of these are zero. Those tiles say
-                why, because a zero you can reproduce is worth more than a number you cannot.
+                Every figure is a live read, labelled with the endpoint it came from.
+                Registrations, escrowed tasks, on-chain settlements, guardrail decisions and x402
+                settlements, exactly as the backend counts them, with our own payments labelled
+                as ours. Several of these are zero. Those tiles say why, because a zero you can
+                reproduce is worth more than a number you cannot.
               </Lede>
             }
           />
@@ -343,14 +355,17 @@ export default function Stats() {
             <HeroFigure
               value={totalSettlements}
               format={int}
-              label="real x402 settlements, on two mainnets"
+              label="real x402 settlements on X Layer and Celo mainnet"
               sub={
                 bothRails ? (
                   <>
                     The sum of two live reads: {int(xlayerCount)} on X Layer through the OKX.AI
                     listing, {int(celoCount)} on Celo through its first-party x402 facilitator.
-                    Both rails are mainnet, both settle in a stablecoin, and every one of these
-                    has a transaction hash you can open.
+                    Both settle in a stablecoin, and every one of these has a transaction hash you
+                    can open.{' '}
+                    {celo?.externalSettlements === 0
+                      ? 'Every one so far was paid by a buyer wallet of ours, so read it as a rail that works, not as demand.'
+                      : 'The X Layer ones were all paid by a buyer wallet of ours; the Celo split is on its card below.'}
                   </>
                 ) : (
                   'Waiting on both settlement logs. This total is only shown once each rail has answered for itself, because a headline that quietly drops a rail is worse than no headline.'
@@ -364,20 +379,20 @@ export default function Stats() {
                 label="Settled value"
                 value={totalUsd}
                 format={(n) => usdFixed(n, 3)}
-                note="X Layer and Celo combined, in real stablecoin; Robinhood Chain, Arbitrum One and Base settle in their own tokens and are counted on their own cards below. Small because the prices are per call and start at a tenth of a cent."
+                note="X Layer and Celo combined, in real stablecoin. Every other rail is counted on its own card below or on its own proof page, never summed in here. Small because the prices are per call and start at a tenth of a cent."
               />
               <MetricTile
                 icon={Users}
                 label="Paid by someone else"
                 value={celo?.externalSettlements ?? null}
                 format={int}
-                note="Celo settlements from a wallet that is not one of ours."
-                zeroNote="Zero so far on Celo. Every settlement on that rail came from our own buyer wallet, exercising a real payment rail rather than proving demand. The backend labels them internal instead of hiding them."
+                note="Celo settlements from a wallet that is not one of ours, counted by the Celo log, the one that splits payers. Every X Layer row was paid by our own buyer wallet."
+                zeroNote="Zero so far, on both rails. Every Celo settlement came from our own buyer wallet, and so did every X Layer one: real payment rails exercised, not demand. Labelled internal instead of hidden."
               />
             </div>
           </motion.div>
 
-          {/* The four rails, given equal weight, each with the breakdown behind its total. */}
+          {/* Every rail card, given equal weight, each with the breakdown behind its total. */}
           <div className="mt-8 grid gap-5 lg:grid-cols-3">
             <RailCard
               index={0}
@@ -392,9 +407,19 @@ export default function Stats() {
                   <>
                     Taken by <span className="font-semibold text-foreground/75">{asp.asp.name ?? 'our ASP'}</span>,
                     listed on OKX.AI until 2026-09-26 as agent{' '}
-                    <span className="font-mono font-semibold text-foreground/75">{asp.asp.agentId}</span>. The
-                    ASP publishes this document itself, so this card is reading a rail that does not answer
-                    to this website.
+                    <span className="font-mono font-semibold text-foreground/75">{asp.asp.agentId}</span>.
+                    {rev?.payer ? (
+                      <>
+                        {' '}Every row was paid by{' '}
+                        <span className="font-mono font-semibold text-foreground/75" title={rev.payer}>
+                          {rev.payer.slice(0, 6)}...{rev.payer.slice(-4)}
+                        </span>
+                        , the wallet that owns that listing on the X Layer registry: our own buyer, in the
+                        demo and seeding runs of 2026-07-17 to 2026-07-24, so all of them are internal.
+                      </>
+                    ) : null}{' '}
+                    The list is fixed inside the ASP rather than a running counter, and the ASP publishes
+                    it itself, so this card is reading a rail that does not answer to this website.
                   </>
                 ) : undefined
               }
@@ -437,17 +462,18 @@ export default function Stats() {
               tools={toolRows(rh?.byTool)}
               toolsQualifier={
                 rh
-                  ? `Across the whole facilitator rail, not this chain alone: the log breaks tools down rail-wide (${int(rhCount ?? 0)} rows here, ${int(arbCount ?? 0)} on Arbitrum One).`
+                  ? `Across the whole facilitator rail, not this chain alone: the log breaks tools down rail-wide (${int(rhCount ?? 0)} of its ${int(rh.totalSettlements)} rows are on this chain).`
                   : undefined
               }
               caveat={
                 rh && typeof rh.internalSettlements === 'number' ? (
                   <>
-                    This chain had no x402 facilitator from anyone, so we run our own: the buyer signs
-                    and pays no gas, we broadcast, and a settlement only counts once the receipt carries
-                    the matching {rh.assetSymbol ?? 'token'} transfer.{' '}
-                    <span className="font-semibold text-foreground/75">{int(rh.internalSettlements)}</span> of
-                    these are internal, from our own buyer wallet;{' '}
+                    We run our own x402 facilitator here, as on every chain we sell on, though other
+                    facilitators serve this chain too: the buyer signs and pays no gas, we broadcast,
+                    and a settlement only counts once the receipt carries the matching{' '}
+                    {rh.assetSymbol ?? 'token'} transfer. Across the whole rail,{' '}
+                    <span className="font-semibold text-foreground/75">{int(rh.internalSettlements)}</span>{' '}
+                    settlements are internal, from our own buyer wallet;{' '}
                     <span className="font-semibold text-foreground/75">{int(rh.externalSettlements ?? 0)}</span>{' '}
                     came from a wallet that is not ours.
                   </>
@@ -494,8 +520,8 @@ export default function Stats() {
                   The same facilitator and the same engine, settling in native Circle USDC. Agent
                   #73232 is ours on the canonical registry. The rail's first settlement was
                   broadcast from an operator machine and lives on the proof page; this card counts
-                  what the production facilitator has settled on Base, so a zero here is a real
-                  zero, not a missing read.
+                  only what the production facilitator has settled on Base, read live, so the two
+                  can differ.
                 </>
               }
               source="GET /api/facilitator/proof"
@@ -592,7 +618,7 @@ export default function Stats() {
               index={0}
               icon={Store}
               title="Marketplace"
-              caption="Escrow-settled work. GMV counts only tasks whose escrow actually released."
+              caption="Escrow-settled work. GMV counts only tasks whose escrow actually released. The escrow contract runs on Arc testnet, so this is test USDC, not revenue."
               source={<SourceTag label="GET /api/stats" href="https://a-identity.xyz/api/stats" />}
             >
               <div className="grid grid-cols-2 gap-3">
@@ -621,7 +647,7 @@ export default function Stats() {
                   label="GMV"
                   value={s?.tasks.gmvUsd ?? null}
                   format={(n) => usdFixed(n, 2)}
-                  note="Value of released escrow only."
+                  note="Value of released escrow only, in Arc testnet USDC."
                 />
               </div>
               <div className="mt-7">
@@ -639,7 +665,7 @@ export default function Stats() {
               index={1}
               icon={Receipt}
               title="Settlement instructions"
-              caption="Executed settlement instructions, and the share carrying a real Arc transaction hash rather than a simulated run."
+              caption="Executed settlement instructions, and the share carrying a real transaction hash rather than a simulated run. An agent's vault sits on Arc testnet unless it names another chain, and an on-chain run there moves test USDC."
               source={<SourceTag label="GET /api/stats" href="https://a-identity.xyz/api/stats" />}
             >
               <div className="grid grid-cols-2 gap-3">
@@ -652,25 +678,29 @@ export default function Stats() {
                 />
                 <MetricTile
                   icon={CircleDollarSign}
-                  label="Volume"
-                  value={s?.settlements.instructionsUsd ?? null}
+                  label={s && typeof s.settlements.onchainUsd !== 'number' ? 'Volume' : 'Moved on-chain'}
+                  value={s ? (s.settlements.onchainUsd ?? s.settlements.instructionsUsd) : null}
                   format={(n) => usdFixed(n, 2)}
-                  note="Total instructed value."
+                  note={
+                    s && typeof s.settlements.onchainUsd === 'number'
+                      ? `Value of the runs with a transaction. Another ${usdFixed(s.settlements.simulatedUsd ?? 0, 2)} ran simulated, with no signer, and is never counted as settled.`
+                      : 'Total instructed value; this backend does not split on-chain from simulated.'
+                  }
                 />
                 <MetricTile
                   icon={Link2}
                   tone="ok"
-                  label="With Arc tx hash"
+                  label="With tx hash"
                   value={s?.settlements.withTxHash ?? null}
                   format={int}
-                  note="Backed by a real Arc transaction."
+                  note="Backed by a real transaction on the vault's chain."
                 />
                 <MetricTile
                   icon={Gauge}
-                  label="x402 rounds"
+                  label="X Layer x402 rounds"
                   value={s?.x402.rounds ?? null}
                   format={int}
-                  note={s ? `${usdFixed(s.x402.totalUsd, 3)} settled over x402 in the log; sub-cent by design, so read it as a working rail, not revenue.` : 'Rounds in the settlement log.'}
+                  note={s ? `Runs in the fixed X Layer settlement log, ${usdFixed(s.x402.totalUsd, 3)} in all, every row paid by our own buyer wallet: a working rail, not revenue.` : 'Runs in the X Layer settlement log.'}
                 />
               </div>
               <div className="mt-7">
@@ -739,7 +769,11 @@ export default function Stats() {
             surface="background"
             icon={ShieldCheck}
             title="The boundary"
-            caption="Every pre-payment trust check the guardrail has metered, and the notional value it stood in front of. This whole panel is currently zero, and that is reported rather than repaired."
+            caption={
+              s && s.guardrail.checks > 0
+                ? 'Every pre-payment trust check the guardrail has metered, and the notional value it stood in front of.'
+                : 'Every pre-payment trust check the guardrail has metered, and the notional value it stood in front of. This whole panel is currently zero, and that is reported rather than repaired.'
+            }
             source={
               <div className="flex flex-wrap justify-end gap-2">
                 <SourceTag label="GET /api/stats" href="https://a-identity.xyz/api/stats" />
@@ -824,7 +858,7 @@ export default function Stats() {
                       checks across{' '}
                       <span className="font-mono font-semibold text-foreground/75">{int(traction.ci.agents)}</span>{' '}
                       {traction.ci.agents === 1 ? 'agent' : 'agents'}. Those are counted separately and are not in
-                      any number above, which is exactly why the headline reads zero.
+                      any number above{traction.checks === 0 ? ', which is exactly why the headline reads zero' : ''}.
                     </>
                   ) : (
                     'Waiting for the traction read. CI canary activity is metered separately and never counted in the numbers above.'
@@ -853,7 +887,7 @@ export default function Stats() {
             index={0}
             icon={Boxes}
             title="Rails and contracts"
-            caption="Chains from the registry and contracts from the deployed Arc table. Only live and beta chains are wired end to end; the rest are named here rather than implied."
+            caption="Chains from the registry and contracts from the Arc testnet table the platform calls. Only live and beta chains are wired end to end; the rest are named here rather than implied."
             source={
               <div className="flex flex-wrap justify-end gap-2">
                 <SourceTag label="GET /api/stats" href="https://a-identity.xyz/api/stats" />
@@ -889,7 +923,7 @@ export default function Stats() {
                     label="Contracts"
                     value={s?.contracts.deployed ?? null}
                     format={int}
-                    note="Deployed on Arc."
+                    note="On Arc testnet, called by the platform. The registries and usdc are their authors' and Circle's, not ours."
                   />
                 </div>
                 {s && s.contracts.names.length > 0 && (
@@ -969,6 +1003,7 @@ export default function Stats() {
             <div className="mt-3 flex flex-wrap gap-2">
               <SourceTag label="GET /api/stats" href="https://a-identity.xyz/api/stats" />
               <SourceTag label="GET /api/celo/proof" href="https://a-identity.xyz/api/celo/proof" />
+              <SourceTag label="GET /api/facilitator/proof" href="https://a-identity.xyz/api/facilitator/proof" />
               <SourceTag label="GET /api/traction" href="https://a-identity.xyz/api/traction" />
               <SourceTag label="GET /api/chains" href="https://a-identity.xyz/api/chains" />
               <SourceTag label="ASP GET /proof.json" href={ASP_PROOF_JSON} />
@@ -976,7 +1011,7 @@ export default function Stats() {
             <p className="mt-3 text-xs text-foreground/40">
               Reading{' '}
               <span className="font-mono">
-                {[stats && 'stats', celo && 'celo', asp && 'x-layer', traction && 'traction', chains && 'chains']
+                {[stats && 'stats', celo && 'celo', rh && 'facilitator', asp && 'x-layer', traction && 'traction', chains && 'chains']
                   .filter(Boolean)
                   .join(', ') || 'nothing yet'}
               </span>

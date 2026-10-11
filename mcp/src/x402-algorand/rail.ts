@@ -36,7 +36,7 @@ import type { ChainDescriptor, SettlementToken } from '../chains/types.js'
 import { isAlgorandAddress } from '../chains/algorand/ids.js'
 import { agentPassport, reputationScore, riskCheck, verifyAgent, type TxContext } from '../asp/tools.js'
 import { RAIL_BASE_PRICES_USD, RAIL_TOOLS, RAIL_TOOL_CARDS, type RailToolName } from '../x402-3009/rail.js'
-import { loadAlgorandSettlements, type AlgorandSettlementRecord } from '../storage.js'
+import { ALGORAND_SETTLEMENTS_CAP, loadAlgorandSettlements, type AlgorandSettlementRecord } from '../storage.js'
 import { BATCH_MAX_AGENTS, runBatchAudit } from './batch.js'
 import { payCheckPriceUsd, runPayCheck } from '../algorand-check/check.js'
 import { settleAlgorandPayment, type AlgorandRequirements, type AlgorandSettleDeps } from './settle.js'
@@ -813,19 +813,61 @@ export type AlgorandRailProof = {
   facilitator: string
   totalSettlements: number
   totalUsd: number
+  /** Settled payments from accounts we control. Labeled, never hidden or filtered. */
+  internalSettlements: number
+  internalUsd: number
+  externalSettlements: number
+  internalPayers: string[]
+  /** Mainnet rows at or before this round were traced on-chain and are all ours. */
+  internalThroughRound: number
   ambiguous: number
   byTool: Record<string, { count: number; usd: number }>
   byNetwork: Record<string, { count: number; usd: number; assetSymbol: string }>
-  recent: AlgorandSettlementRecord[]
+  /** The log keeps only the latest `keepsLatest` rows, so once `capped` every count and
+   *  total above covers the rows since `since`, not the rail's whole history. */
+  window: { keepsLatest: number; rows: number; capped: boolean; since: string | null }
+  recent: (AlgorandSettlementRecord & { internal: boolean })[]
   note: string
+}
+
+/**
+ * Who paid is ours, by trace rather than by a list of spent wallets.
+ *
+ * Every mainnet payment up to ALGORAND_INTERNAL_THROUGH_ROUND was traced on the indexer on
+ * 2026-10-11 and every payer was ours: the buyer account below, and 52 one-time wallets
+ * funded through SideShift that each closed its account into our payTo. After that round a
+ * payer is ours when it is the buyer, a configured payTo, or named in
+ * X402_ALGORAND_INTERNAL_PAYERS (a malformed entry is dropped). Anything else counts as
+ * external, so a new wallet of ours must be named there before it pays.
+ */
+export const ALGORAND_INTERNAL_THROUGH_ROUND = 65765721
+const KNOWN_INTERNAL_PAYERS = ['SN7WYGGDMKNIGKFL7UV3LZBA73K4KTHUGFW3QIC57FSMZPQDXZCBUG7Z6I']
+
+export function algorandInternalPayers(env: NodeJS.ProcessEnv = process.env): string[] {
+  const out = new Set<string>(KNOWN_INTERNAL_PAYERS)
+  for (const net of algorandRailNetworks(env)) {
+    const payTo = algorandRailStatus(env, net).payTo
+    if (payTo) out.add(payTo)
+  }
+  for (const a of (env.X402_ALGORAND_INTERNAL_PAYERS ?? '').split(',').map((s) => s.trim())) {
+    if (isAlgorandAddress(a)) out.add(a)
+  }
+  return [...out]
 }
 
 export async function algorandRailProof(
   status: AlgorandRailStatus,
-  deps: { load?: () => Promise<AlgorandSettlementRecord[]> } = {},
+  deps: { load?: () => Promise<AlgorandSettlementRecord[]>; env?: NodeJS.ProcessEnv } = {},
 ): Promise<AlgorandRailProof> {
   const rows = await (deps.load ?? loadAlgorandSettlements)()
+  const mine = new Set(algorandInternalPayers(deps.env ?? process.env))
+  const isInternal = (r: AlgorandSettlementRecord) =>
+    mine.has(r.payer) ||
+    (r.round != null && r.round <= ALGORAND_INTERNAL_THROUGH_ROUND && getChain(r.network)?.testnet === false)
   const settledRows = rows.filter((r) => r.outcome === 'settled')
+  const internalRows = settledRows.filter(isInternal)
+  const capped = rows.length >= ALGORAND_SETTLEMENTS_CAP
+  const since = rows[0]?.ts ?? null
   const byTool: Record<string, { count: number; usd: number }> = {}
   const byNetwork: Record<string, { count: number; usd: number; assetSymbol: string }> = {}
   for (const r of settledRows) {
@@ -847,13 +889,23 @@ export async function algorandRailProof(
     facilitator: status.facilitator,
     totalSettlements: settledRows.length,
     totalUsd: Number(settledRows.reduce((s, r) => s + r.amountUsd, 0).toFixed(6)),
+    internalSettlements: internalRows.length,
+    internalUsd: Number(internalRows.reduce((s, r) => s + r.amountUsd, 0).toFixed(6)),
+    externalSettlements: settledRows.length - internalRows.length,
+    internalPayers: [...mine],
+    internalThroughRound: ALGORAND_INTERNAL_THROUGH_ROUND,
     ambiguous: rows.filter((r) => r.outcome === 'ambiguous').length,
     byTool,
     byNetwork,
-    recent: rows.slice(-25),
+    window: { keepsLatest: ALGORAND_SETTLEMENTS_CAP, rows: rows.length, capped, since },
+    recent: rows.slice(-25).map((r) => ({ ...r, internal: isInternal(r) })),
     note:
       'Every settled row was confirmed by our own indexer read of the ASA transfer, never by the ' +
       "facilitator's word alone. An empty log on a configured rail means nothing has sold here yet, " +
-      'and this rail would rather show you zero than a simulation.',
+      'and this rail would rather show you zero than a simulation.' +
+      (capped
+        ? ` This log keeps only the latest ${ALGORAND_SETTLEMENTS_CAP} rows, so these totals cover the payments since ` +
+          `${since}, not the rail's whole history; the all-time record is the payTo account's USDC transfers on any Algorand indexer.`
+        : ''),
   }
 }

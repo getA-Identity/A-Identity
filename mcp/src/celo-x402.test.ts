@@ -334,7 +334,7 @@ test('celoProof aggregates the injected store honestly, zeros included', async (
 
 // ── registry invariants for the Celo pair ─────────────────────────────────────────
 
-test('the celo descriptor asserts exactly what was verified on-chain, and no ValidationRegistry', () => {
+test('the celo descriptor asserts exactly what was verified on-chain, and no unwired ValidationRegistry', () => {
   const celo = getChainById('celo')
   assert.ok(celo)
   assert.equal(celo.status, 'live')
@@ -347,9 +347,10 @@ test('the celo descriptor asserts exactly what was verified on-chain, and no Val
   assert.equal(celo.contracts.usdc, '0xcebA9300f2b948710d2653dD7B07f33A8B32118C')
   // The IdentityRegistry is the SAME CREATE2 address as X Layer's entry.
   assert.equal(celo.contracts.identityRegistry.toLowerCase(), getChainById('xlayer')?.contracts.identityRegistry?.toLowerCase())
-  // No ValidationRegistry exists on Celo - asserting one would be an invented address.
+  // A ValidationRegistry proxy is deployed on Celo but not wired: asserting it here would
+  // advertise KYA anchoring nothing performs, and the note must say it is not wired.
   assert.equal(celo.contracts.validationRegistry, undefined)
-  assert.ok(celo.identity.note?.includes('No ValidationRegistry'))
+  assert.ok(celo.identity.note?.includes('not wired'))
   // cUSD is rebranded USDm; the descriptor uses the current name.
   assert.ok(celo.stablecoins.includes('USDm'))
   assert.equal(celo.stablecoins.includes('cUSD'), false)

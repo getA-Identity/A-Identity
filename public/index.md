@@ -44,16 +44,18 @@ switch.
 - **Check the engine yourself.** The scoring method is published and the
   settlements are on-chain, so you can reproduce any number we show you.
 
-## Not a demo. Live and earning.
+## Not a demo. Live, and settling on-chain.
 
 - The Trust Oracle was listed on OKX.AI as agent **#6271** until 2026-09-26, selling per-call checks
   in real USD₮0: **120 x402 settlements on X Layer mainnet** to date, each one
   listed with its transaction hash at
-  <https://a-identity-asp.onrender.com/proof>.
-- Six more mainnets carry settlements of their own: Arc Mainnet, Robinhood Chain,
-  Arbitrum One, Base, Stellar pubnet and Algorand. Every rail is counted on its own proof
+  <https://a-identity-asp.onrender.com/proof>, and every one paid by our own buyer wallet.
+- Seven more mainnets carry settlements of their own: Arc Mainnet, Robinhood Chain,
+  Arbitrum One, Base, Celo, Stellar pubnet and Algorand. Every rail is counted on its own proof
   page at `https://a-identity.xyz/proof/:rail` and never summed with the others,
-  because one figure covering several rails is a figure about none of them.
+  because one figure covering several rails is a figure about none of them. Payments from
+  wallets we own are labeled internal there rather than hidden, and the index over every
+  log is <https://a-identity.xyz/proof>.
 - **Arc Mainnet** went live for us the day it opened, 2026-09-16: agent #0 on the
   canonical ERC-8004 registry, a spend vault holding real USDC, and x402 settling
   both through our own EIP-3009 facilitator and through Circle Gateway's batched

@@ -303,11 +303,15 @@ Read live on 2026-09-15 with `node ../mcp/scripts/stellar-vault-archival.mjs`:
 | pubnet | `CB5LYXFK...KWSYP` | 66,177,017 | about 113.6 days | 2027-01-06 |
 | testnet | `CAIL6ECR...B4UI` | 6,739,602 | about 134.0 days | 2027-01-27 |
 
-**The pubnet action window opens in early November 2026.** A write extends the clock only
-once the remaining life has fallen below the contract's 60-day `LONG_TTL_THRESHOLD`, so the
-first useful moment is when 113.6 days becomes 60, which is about 54 days after the read
-above. Acting in October buys nothing at all: the call succeeds, costs a fee, and `live
-until` does not move. That is not a theory, it is what happened on 2026-08-25.
+**The pubnet action window opens around 2026-10-26.** A write extends the clock only
+once the remaining life has fallen below the contract's 60-day `LONG_TTL_THRESHOLD` of
+1,036,800 ledgers, which pubnet reaches at ledger 65,140,217. The table above was computed
+at a 5.625 s close; re-measured on 2026-10-11, both networks have closed a ledger every
+5.0 s since mid-September, so its day counts run about an eighth long and the pubnet
+instance archives around 2026-12-25 rather than 2027-01-06. This section used to say the
+window opens in early November. Acting before it opens buys nothing at all: the call
+succeeds, costs a fee, and `live until` does not move. That is not a theory, it is what
+happened on 2026-08-25.
 
 **The cheapest deliberate touch is `set_frozen(false)` on a vault that is already
 unfrozen.** It changes no state, it costs a fee, and on pubnet it needs two of the owner
@@ -428,7 +432,8 @@ before the address stops being the one anybody watches.
 3. **Withdraw the balance** to the owner account, and read the balance back as zero.
 4. **Instantiate against the code entry that is already uploaded.** The wasm hash
    `155eb31c1867254eacbf1b7a4755164d15cc6b6f939644705ab6b8df61579239` is live on both
-   networks and its code entry lives until ledger 66,177,015, around 2027-01-06.
+   networks and its pubnet code entry lives until ledger 66,177,015, around 2026-12-25 at
+   the 5.0 s close measured on 2026-10-11.
    Instantiating on top of it cost 0.0992122 XLM on pubnet; uploading the same 11,625 bytes
    fresh cost 12.2319214 XLM. Pass the SAME constructor policy as the record in `releases/`,
    because those five arguments are permanent and there is no `initialize` to correct them.

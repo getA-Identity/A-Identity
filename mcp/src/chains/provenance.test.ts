@@ -5,7 +5,8 @@ import { fileURLToPath } from 'node:url'
 import { PROVENANCE, PROOF_RAILS, STELLAR_SOW2, artifactUrl, contractUrl, provenanceFor } from './provenance.js'
 import { CHAINS, getChainById } from './registry.js'
 import { OWNER_ADDRESS_RE, SETTLEMENT_ADDRESS_RE, SHAPE_NAME, TX_HASH_RE, isAccountId, isContractId } from './stellar/strkey.js'
-import { proofRailIndex, sow2Report } from './proof.js'
+import { howToVerify, proofRailIndex, sow2Report } from './proof.js'
+import { networkPassphrase } from './stellar/client.js'
 
 /**
  * The ledger is the page a reviewer clicks, so the failure mode that matters is a claim
@@ -472,4 +473,109 @@ test('the SOW 2 section resolves every hash and passes no rehearsal off as a del
   }
   const report = sow2Report()
   for (const d of report.deliverables) assert.equal(d.artifactsLinked.length, d.artifacts.length)
+})
+
+/**
+ * "How to check this yourself" is the one part of a proof page that tells a reviewer what to
+ * DO, so a wrong line there costs more than a wrong caption: they run it, it fails, and the
+ * failure reads as our evidence being fake. Every rail was served the EVM lines unless it was
+ * Stellar, so Algorand was told to compare ERC-8004 registries and read EVM Transfer logs it
+ * does not have, and Celo was sent to the log of a facilitator that never sees its payments.
+ */
+test('every rail tells a reviewer to check only what exists on its own chains', async () => {
+  for (const rail of PROOF_RAILS) {
+    const chains = rail.chains.map((id) => getChainById(id)!)
+    const lines = await howToVerify(rail.chains)
+    const text = lines.join('\n')
+    assert.ok(lines.length >= 3, `rail ${rail.slug} tells a reviewer almost nothing`)
+    for (const l of lines) assert.ok(l.length > 40, `rail ${rail.slug} has a throwaway line: ${l}`)
+
+    const mainnets = chains.filter((c) => !c.testnet)
+    const ownFacilitator = mainnets.some((c) => (c.settlementTokens ?? []).some((t) => t.authorization === 'eip3009'))
+    assert.equal(
+      text.includes('/api/facilitator/proof'), ownFacilitator,
+      `rail ${rail.slug} ${ownFacilitator ? 'omits' : 'points at'} the EIP-3009 facilitator log, which ${ownFacilitator ? 'settles' : 'never settles'} its payments`,
+    )
+    const gateway = mainnets.some((c) => c.gateway)
+    assert.equal(text.includes('/api/x402/gateway/proof'), gateway, `rail ${rail.slug}: Gateway line disagrees with the descriptor`)
+
+    if (chains.every((c) => c.ecosystem !== 'evm')) {
+      // None of these exist off EVM, and each was once served on a non-EVM rail.
+      for (const evmOnly of ['ERC-8004 deployment', 'ownerOf', 'Transfer log', 'block named']) {
+        assert.ok(!text.includes(evmOnly), `rail ${rail.slug} tells a reviewer to check "${evmOnly}", which its chains do not have`)
+      }
+    }
+    if (chains.some((c) => c.ecosystem === 'stellar')) assert.match(text, /GET \/api\/x402\/stellar\/proof/)
+    if (chains.some((c) => c.ecosystem === 'algorand')) {
+      assert.match(text, /GET \/api\/x402\/algorand\/proof/)
+      for (const c of chains.filter((x) => x.ecosystem === 'algorand')) {
+        for (const t of (c.settlementTokens ?? []).filter((x) => x.authorization === 'algorand-group')) {
+          assert.ok(text.includes(`ASA ${t.address}`), `rail ${rail.slug} does not name the ASA it reads, ${t.address}`)
+        }
+      }
+    }
+    // A mainnet whose x402 payments someone else's facilitator settles must say the evidence
+    // standard is theirs, and must not borrow ours.
+    for (const c of mainnets.filter((x) => x.payment.x402 && !(x.settlementTokens ?? []).some((t) => t.authorization !== 'none'))) {
+      const line = lines.find((l) => l.startsWith(`On ${c.name} the payment rail is not ours`))
+      assert.ok(line, `rail ${rail.slug}: ${c.name} settles through a facilitator we do not run, and nothing says so`)
+      assert.match(line, /do not read the transfer back ourselves/)
+    }
+  }
+  // Pinned for the rail whose bug this was, so a refactor cannot drop the Celo pointer.
+  assert.match((await howToVerify(['celo'])).join('\n'), /GET \/api\/celo\/proof/)
+})
+
+test('the registry line is derived from the registry and admits that mainnet and testnet differ', async () => {
+  for (const rail of PROOF_RAILS) {
+    const chains = rail.chains.map((id) => getChainById(id)!)
+    const withRegistry = chains.filter((c) => c.contracts.identityRegistry)
+    const line = (await howToVerify(rail.chains)).find((l) => l.startsWith('The identity registry is'))
+    if (withRegistry.length === 0) {
+      assert.equal(line, undefined, `rail ${rail.slug} describes an identity registry its chains do not carry`)
+      continue
+    }
+    assert.ok(line, `rail ${rail.slug} carries a registry and does not say where`)
+    // Every address the line prints is one the registry holds, and every chain sharing a
+    // rail network's address is named, which is the whole check a reviewer is invited to do.
+    for (const addr of line.match(/0x[0-9a-fA-F]{40}/g) ?? []) {
+      assert.ok(
+        CHAINS.some((c) => c.contracts.identityRegistry?.toLowerCase() === addr.toLowerCase()),
+        `rail ${rail.slug} prints ${addr}, which is no chain's identity registry`,
+      )
+    }
+    for (const c of withRegistry) {
+      assert.ok(line.includes(c.contracts.identityRegistry!), `rail ${rail.slug} omits ${c.name}'s registry`)
+      for (const twin of CHAINS.filter((o) => o.id !== c.id && o.contracts.identityRegistry?.toLowerCase() === c.contracts.identityRegistry!.toLowerCase())) {
+        assert.ok(line.includes(twin.name), `rail ${rail.slug} says ${c.name}'s registry is shared but leaves out ${twin.name}`)
+      }
+    }
+    const mixed = withRegistry.some((c) => c.testnet) && withRegistry.some((c) => !c.testnet)
+    const differ = new Set(withRegistry.map((c) => c.contracts.identityRegistry!.toLowerCase())).size > 1
+    assert.equal(line.includes('two different addresses'), mixed && differ, `rail ${rail.slug}: the mainnet/testnet sentence is wrong`)
+    assert.ok(!/deliberately identical/.test(line), 'the old blanket claim is back')
+  }
+})
+
+test('the Stellar fetch command runs on a stock CLI, and an Algorand contract links as an application', async () => {
+  const text = (await howToVerify(['stellar', 'stellar-testnet'])).join('\n')
+  // The CLI ships local, futurenet, testnet and mainnet; "pubnet" exists only where someone
+  // added it, and the built-in mainnet entry has no RPC, so pubnet is named explicitly.
+  assert.ok(!text.includes('--network pubnet'), 'the Stellar line names a network the stock CLI does not have')
+  const pubnet = getChainById('stellar')!
+  assert.ok(text.includes(`--rpc-url ${pubnet.rpcUrls[0]}`), 'the pubnet fetch names no RPC')
+  assert.ok(text.includes(`--network-passphrase "${networkPassphrase(pubnet)}"`), 'the pubnet fetch carries the wrong passphrase')
+  assert.ok(text.includes('--network testnet'))
+
+  for (const p of PROVENANCE) {
+    if (getChainById(p.chain)?.ecosystem !== 'algorand') continue
+    for (const c of p.contracts) {
+      if (!/^[0-9]+$/.test(c.address)) continue
+      assert.match(
+        contractUrl(p.chain, c.address) ?? '',
+        new RegExp(`/application/${c.address}$`),
+        `${p.chain}: ${c.name} is an application but links as something else`,
+      )
+    }
+  }
 })

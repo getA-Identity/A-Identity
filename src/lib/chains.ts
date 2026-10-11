@@ -91,7 +91,7 @@ export const CHAINS: readonly Chain[] = [
       "identity": {
         "standard": "ERC-8004",
         "erc8004Native": true,
-        "note": "Canonical ERC-8004 identity + reputation registries are live here, deployed by their authors (implementation code matched against Base on 2026-09-16); agent #0, the registry's first mint, is ours (tx 0x1d9f5711). No ValidationRegistry in this family."
+        "note": "Canonical ERC-8004 identity + reputation registries are live here, deployed by their authors (implementation code matched against Base on 2026-09-16); agent #0, the registry's first mint, is ours (tx 0x1d9f5711). The family's ValidationRegistry is deployed here too (read live 2026-10-11) but not wired yet, so KYA is not anchored on-chain here."
       }
     },
     "identity": "ERC-8004",
@@ -257,12 +257,12 @@ export const CHAINS: readonly Chain[] = [
     "protocols": {
       "payment": {
         "x402": true,
-        "note": "x402 settling in native Circle USDC through our own first-party EIP-3009 facilitator: the buyer signs, we broadcast and pay the gas. The signing domain is proven against the live DOMAIN_SEPARATOR, and the first settlement landed 2026-08-28 (tx 0xb59ae67c) with the receipt carrying the matching Transfer log."
+        "note": "x402 settling in native Circle USDC through our own first-party EIP-3009 facilitator: the buyer signs, we broadcast and pay the gas. The signing domain is proven against the live DOMAIN_SEPARATOR, and the first settlement landed 2026-08-27 UTC (tx 0xb59ae67c) with the receipt carrying the matching Transfer log."
       },
       "identity": {
         "standard": "ERC-8004",
         "erc8004Native": true,
-        "note": "Canonical ERC-8004 identity + reputation registries are live here, deployed by their authors; agent #73232 is ours (minted 2026-08-28, tx 0xb428bf8e, and ownerOf/tokenURI read back live). TRAP BEFORE PASTING ADDRESSES: Arc's three registry addresses all have code on Base mainnet, 130 bytes each, which is minimal-proxy sized and delegates to a NON-canonical implementation. Same address, different contract. An eth_getCode check therefore answers yes here and means nothing; the canonical pair above was verified by reading each proxy's EIP-1967 implementation slot and matching the implementation code byte for byte against Arbitrum One (2026-08-28), not by observing that something is deployed."
+        "note": "Canonical ERC-8004 identity + reputation registries are live here, deployed by their authors; agent #73232 is ours (minted 2026-08-27 UTC, tx 0xb428bf8e, and ownerOf/tokenURI read back live). TRAP BEFORE PASTING ADDRESSES: Arc's three registry addresses all have code on Base mainnet, 130 bytes each, which is minimal-proxy sized and delegates to a NON-canonical implementation. Same address, different contract. An eth_getCode check therefore answers yes here and means nothing; the canonical pair above was verified by reading each proxy's EIP-1967 implementation slot and matching the implementation code byte for byte against Arbitrum One (2026-08-28), not by observing that something is deployed."
       }
     },
     "identity": "ERC-8004",
@@ -305,7 +305,7 @@ export const CHAINS: readonly Chain[] = [
       "identity": {
         "standard": "ERC-8004",
         "erc8004Native": true,
-        "note": "Identity + Reputation registries LIVE (same canonical addresses as X Layer/Celo); agent #0, the registry's first mint, is ours (2026-08-12). No ValidationRegistry in the mainnet family yet."
+        "note": "Identity + Reputation registries LIVE (same canonical addresses as X Layer/Celo); agent #0, the registry's first mint, is ours (2026-08-12). A ValidationRegistry proxy is deployed here too (read live 2026-10-11) but not wired, so KYA is not anchored on-chain here."
       }
     },
     "identity": "ERC-8004",
@@ -349,7 +349,7 @@ export const CHAINS: readonly Chain[] = [
       "identity": {
         "standard": "ERC-8004",
         "erc8004Native": true,
-        "note": "Canonical ERC-8004 identity + reputation registries are live here (deployed by their authors, not by us); agent #1259 is ours. No ValidationRegistry in this family, so KYA cannot be anchored here."
+        "note": "Canonical ERC-8004 identity + reputation registries are live here (deployed by their authors, not by us); agent #1259 is ours. The family's ValidationRegistry is deployed here too (read live 2026-10-11) but not wired, so KYA is not anchored on-chain here."
       }
     },
     "identity": "ERC-8004",
@@ -383,17 +383,17 @@ export const CHAINS: readonly Chain[] = [
     ],
     "rpcUrl": "https://rpc.xlayer.tech",
     "explorer": "https://www.oklink.com/xlayer",
-    "role": "OKX.AI marketplace rail: identity reads live from OKX ERC-8004; x402 trust tools settle here.",
+    "role": "OKX.AI marketplace rail: identity reads live from OKX ERC-8004; the Trust Oracle settled x402 calls here in USD₮0 until OKX.AI delisted it on 2026-09-26.",
     "status": "live",
     "protocols": {
       "payment": {
         "x402": true,
-        "note": "x402 over USDC once the USDC address is confirmed."
+        "note": "x402 in USD₮0 through OKX's x402 layer: 120 settlements from 2026-07-17 to 2026-07-24, all paid by our own wallet. OKX.AI delisted the listing on 2026-09-26 and the ASP answered in free mode on 2026-10-11, so nothing is selling here now."
       },
       "identity": {
         "standard": "ERC-8004",
         "erc8004Native": true,
-        "note": "OKX.AI identity registry LIVE (read-side wired); payment rails still planned."
+        "note": "OKX.AI identity registry LIVE (read-side wired); agents #6271 and #8913 are ours. A ValidationRegistry proxy is deployed here too (read live 2026-10-11) but not wired."
       }
     },
     "identity": "ERC-8004",
@@ -437,7 +437,7 @@ export const CHAINS: readonly Chain[] = [
       "identity": {
         "standard": "ERC-8004",
         "erc8004Native": true,
-        "note": "Identity + Reputation registries LIVE (read-side wired). No ValidationRegistry on Celo yet, so KYA cannot be anchored on-chain there. Self Agent ID (third-party proof-of-human registry) is readable here: whether a verified human vouches for an agent, and whether two agents share one."
+        "note": "Identity + Reputation registries LIVE (read-side wired). A ValidationRegistry proxy is deployed here too (read live 2026-10-11) but not wired, so KYA is not anchored on-chain there. Self Agent ID (third-party proof-of-human registry) is readable here: whether a verified human vouches for an agent, and whether two agents share one."
       }
     },
     "identity": "ERC-8004",
@@ -604,7 +604,7 @@ export const CHAINS: readonly Chain[] = [
       "identity": {
         "standard": "ERC-8004",
         "erc8004Native": true,
-        "note": "Identity + Reputation registries LIVE (same addresses as Arc). No ValidationRegistry, mirroring mainnet. Self Agent ID proof-of-human registry readable (testnet, mock passports)."
+        "note": "Identity + Reputation registries LIVE (same addresses as Arc). A ValidationRegistry proxy is deployed here too (read live 2026-10-11) but not wired, mirroring mainnet. Self Agent ID proof-of-human registry readable (testnet, mock passports)."
       }
     },
     "identity": "ERC-8004",

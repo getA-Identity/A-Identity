@@ -10,15 +10,15 @@ import { SectionShell, SectionIntro, reveal, revealAt } from '../components/ui/s
 import { apiFetch } from '../lib/api'
 import { CHAINS } from '../lib/chains'
 import { usePageMeta } from '../lib/head'
-import { BACKEND_UNREACHABLE } from '../lib/mcpBase'
+import { ASP_BASE, BACKEND_UNREACHABLE, MCP_BASE } from '../lib/mcpBase'
 
 /**
  * /proof: every chain in one place, and the one link the footer points at.
  *
  * The footer used to carry two live-proof links, one per surface, which meant the
  * evidence for eight chains was reachable only if you already knew which two to click.
- * This page is the index those links should have had: a card per published rail, the
- * facilitator's own settlement totals above them, and an explicit row for the chains
+ * This page is the index those links should have had: a card per published rail, every
+ * settlement log's own count above them, and an explicit row for the chains
  * whose evidence lives somewhere else. Deep links to /proof/:rail still work and are
  * where the live re-read happens.
  *
@@ -51,17 +51,125 @@ type Rail = {
   mainnet: boolean
 }
 
-type FacilitatorProof = {
-  totalSettlements: number
-  totalUsd: number
-  reverted: number
-  byNetwork?: Record<string, { count: number; usd: number; assetSymbol: string }>
+/**
+ * The fields a settlement log may publish. Every log names its own total; the rest is
+ * optional because each rail grew its own shape, and a field a log omits is shown as
+ * unknown rather than as zero.
+ */
+type RawLog = {
+  totalSettlements?: number
+  internalSettlements?: number
+  network?: string
+  byNetwork?: Record<string, { count: number }>
+  /** The ASP's shape, which nests its X Layer total. */
+  realOnchainRevenue?: { totalSettlements?: number }
+  /** A log that keeps only its latest rows says so here once it is full. */
+  window?: { keepsLatest?: number; capped?: boolean }
+}
+
+/** One settlement log as this page shows it: its own count, never added to another's. */
+type LogRead = {
+  count: number
+  /** Payments from wallets we own, or null when the log does not tell them apart. */
+  internal: number | null
+  /** CAIP-2 ids with at least one settled payment in this log. */
+  networks: string[]
+  /** The row cap, when the log says it is full and the count is a window. */
+  cappedAt: number | null
+}
+
+type LogSpec = {
+  key: string
+  label: string
+  /** Where the page reads it. */
+  fetchUrl: string
+  /** Where a reader opens it raw. */
+  href: string
+  /** What a row had to pass to be counted, in this log's own terms. */
+  basis: string
+  /** For a log that names no network of its own. */
+  network?: string
+  /** For a log that labels no payer: what the record says about who paid, if anything. */
+  payers?: string
 }
 
 const REFRESH_MS = 60_000
 
 /** The OKX submission's settlement proof, served by the ASP deployment rather than here. */
 const ASP_PROOF_URL = 'https://a-identity-asp.onrender.com/proof'
+
+/**
+ * Every settlement log we publish, one tile each.
+ *
+ * This strip used to show the EIP-3009 facilitator's totals alone under the caption
+ * "Networks settling: chains where a payment has actually cleared", which counted four
+ * networks while payments had cleared on eight: Stellar, Algorand, Celo and X Layer keep
+ * their own logs and were simply not read. Summing every log into one number would be the
+ * opposite mistake, a figure that describes no rail, so each log keeps its own tile and only
+ * the network count spans them.
+ */
+const LOGS: LogSpec[] = [
+  {
+    key: 'facilitator',
+    label: 'Our EIP-3009 facilitator',
+    fetchUrl: `${MCP_BASE}/api/facilitator/proof`,
+    href: `${MCP_BASE}/api/facilitator/proof`,
+    basis: 'Counted on a receipt carrying a matching Transfer log.',
+  },
+  {
+    key: 'gateway',
+    label: 'Circle Gateway nanopayments',
+    fetchUrl: `${MCP_BASE}/api/x402/gateway/proof`,
+    href: `${MCP_BASE}/api/x402/gateway/proof`,
+    basis: "Counted once Circle's transfers API returns the payment's own authorization.",
+  },
+  {
+    key: 'stellar',
+    label: 'Stellar x402',
+    fetchUrl: `${MCP_BASE}/api/x402/stellar/proof`,
+    href: `${MCP_BASE}/api/x402/stellar/proof`,
+    basis: 'Counted on our own read of the SEP-41 transfer event.',
+  },
+  {
+    key: 'algorand',
+    label: 'Algorand x402',
+    fetchUrl: `${MCP_BASE}/api/x402/algorand/proof`,
+    href: `${MCP_BASE}/api/x402/algorand/proof`,
+    basis: 'Counted on our own indexer read of the ASA transfer.',
+  },
+  {
+    key: 'celo',
+    label: 'Celo x402',
+    fetchUrl: `${MCP_BASE}/api/celo/proof`,
+    href: `${MCP_BASE}/api/celo/proof`,
+    basis: 'Counted when the facilitator Celo operates answers settled; we do not read it back.',
+  },
+  {
+    key: 'xlayer',
+    label: 'X Layer, the Trust Oracle ASP',
+    fetchUrl: `${ASP_BASE}/proof.json`,
+    href: ASP_PROOF_URL,
+    basis: 'A fixed ledger: each row a transfer with its own transaction hash.',
+    network: CHAINS.find((c) => c.id === 'xlayer')?.caip2,
+    payers: 'All from our own buyer wallet, in the demo and seeding runs.',
+  },
+]
+
+function readLog(raw: RawLog, spec: LogSpec): LogRead {
+  const byNetwork = Object.entries(raw.byNetwork ?? {})
+  const fromNetworks = byNetwork.reduce((n, [, v]) => n + (v.count ?? 0), 0)
+  const count = raw.totalSettlements ?? raw.realOnchainRevenue?.totalSettlements ?? fromNetworks
+  const named = raw.network ?? spec.network
+  const networks = byNetwork.length
+    ? byNetwork.filter(([, v]) => v.count > 0).map(([caip]) => caip)
+    : count > 0 && named
+      ? [named]
+      : []
+  const cappedAt = raw.window?.capped && raw.window.keepsLatest ? raw.window.keepsLatest : null
+  return { count, internal: raw.internalSettlements ?? null, networks, cappedAt }
+}
+
+const chainName = (caip: string) => CHAINS.find((c) => c.caip2 === caip)?.name ?? caip
 
 async function getJson<T>(path: string): Promise<T> {
   const res = await apiFetch(path)
@@ -153,6 +261,46 @@ function ChainChip({ name, color, testnet }: { name: string; color: string; test
   )
 }
 
+/** One settlement log: its own count, where it settled, and who paid, as far as it says. */
+function LogTile({ spec, log }: { spec: LogSpec; log: LogRead | 'failed' | undefined }) {
+  const payers =
+    !log || log === 'failed'
+      ? null
+      : log.internal === null
+        ? (spec.payers ?? 'This log does not label which payers are our own.')
+        : log.count === 0
+          ? 'Nothing settled yet.'
+          : log.internal === log.count
+            ? 'All from our own wallets, labeled internal.'
+            : `${log.internal.toLocaleString('en-US')} from our own wallets, ${(log.count - log.internal).toLocaleString('en-US')} from others.`
+  return (
+    <div className="flex flex-col gap-1 rounded-2xl border border-border bg-card px-5 py-4">
+      <span className="text-[11px] uppercase tracking-wide text-foreground/45">{spec.label}</span>
+      <span className="font-mono text-2xl font-bold tracking-tight text-foreground">
+        {log === 'failed' ? '-' : log ? log.count.toLocaleString('en-US') : <Bar />}
+      </span>
+      <span className="text-xs leading-relaxed text-foreground/55">
+        {log === 'failed'
+          ? 'This log did not answer just now.'
+          : log
+            ? `Settled on ${log.networks.map(chainName).join(', ') || 'no network yet'}${
+                log.cappedAt ? `, in the log's latest ${log.cappedAt.toLocaleString('en-US')} rows` : ''
+              }. ${payers}`
+            : spec.basis}
+      </span>
+      {log && log !== 'failed' && <span className="text-xs leading-relaxed text-foreground/45">{spec.basis}</span>}
+      <a
+        href={spec.href}
+        target="_blank"
+        rel="noopener noreferrer"
+        className="mt-1 inline-flex items-center gap-1 text-xs font-semibold text-accent underline-offset-4 hover:underline"
+      >
+        Open the raw log <ArrowUpRight size={12} />
+      </a>
+    </div>
+  )
+}
+
 function Count({ n, label }: { n: number; label: string }) {
   return (
     <span className="inline-flex items-baseline gap-1.5">
@@ -164,7 +312,8 @@ function Count({ n, label }: { n: number; label: string }) {
 
 export default function ProofIndex() {
   const [rails, setRails] = useState<Rail[] | null>(null)
-  const [settlements, setSettlements] = useState<FacilitatorProof | null>(null)
+  // Keyed by LOGS[].key. A log that failed to answer is marked so, never shown as zero.
+  const [logs, setLogs] = useState<Record<string, LogRead | 'failed'>>({})
   const [failure, setFailure] = useState(false)
   const loadSeq = useRef(0)
 
@@ -188,14 +337,20 @@ export default function ProofIndex() {
         if (seq !== loadSeq.current) return
         setFailure(true)
       })
-    getJson<FacilitatorProof>('/api/facilitator/proof')
-      .then((data) => {
-        if (seq !== loadSeq.current) return
-        setSettlements(data)
-      })
-      .catch(() => {
-        /* the totals strip simply stays a skeleton; the rail cards are the page */
-      })
+    for (const spec of LOGS) {
+      fetch(spec.fetchUrl)
+        .then(async (res) => {
+          if (!res.ok) throw new Error(`HTTP ${res.status}`)
+          return readLog((await res.json()) as RawLog, spec)
+        })
+        .then((read) => {
+          if (seq === loadSeq.current) setLogs((prev) => ({ ...prev, [spec.key]: read }))
+        })
+        .catch(() => {
+          // A refresh that fails keeps the last good read; only a log never read says so.
+          if (seq === loadSeq.current) setLogs((prev) => (prev[spec.key] ? prev : { ...prev, [spec.key]: 'failed' }))
+        })
+    }
   }, [])
 
   useEffect(() => {
@@ -217,7 +372,12 @@ export default function ProofIndex() {
     return CHAINS.filter((c) => c.status === 'live' && !covered.has(c.id))
   }, [rails])
 
-  const settledNetworks = settlements?.byNetwork ? Object.keys(settlements.byNetwork).length : null
+  /** Mainnets with a settled payment in any log. A count of networks, not of payments, so
+   *  it can span logs without adding one log's payments to another's. */
+  const read = LOGS.map((s) => logs[s.key]).filter((l): l is LogRead => Boolean(l) && l !== 'failed')
+  const settledMainnets = [
+    ...new Set(read.flatMap((l) => l.networks).filter((caip) => CHAINS.some((c) => c.caip2 === caip && !c.testnet))),
+  ]
 
   return (
     <ThemeScope surface="background" className="w-full" style={{ fontFamily: 'var(--font-body)' }}>
@@ -242,30 +402,30 @@ export default function ProofIndex() {
             }
           />
 
-          {/* The facilitator's own numbers, above the rails, because a settlement total is
-              the one claim that spans every chain at once. */}
-          <motion.div {...reveal} className="mt-12 grid gap-4 sm:grid-cols-3">
-            <Stat
-              label="Settlements"
-              value={settlements ? settlements.totalSettlements.toLocaleString('en-US') : <Bar />}
-              sub="Paid calls settled through the x402 facilitator we run ourselves. None counted without a receipt carrying a matching transfer log."
-            />
-            <Stat
-              label="Value settled"
-              value={
-                settlements ? (
-                  `$${settlements.totalUsd.toFixed(settlements.totalUsd < 10 ? 4 : 2)}`
-                ) : (
-                  <Bar />
-                )
-              }
-              sub="Real stablecoin, mostly in sub-cent increments. Agent payments are small on purpose."
-            />
-            <Stat
-              label="Networks settling"
-              value={settledNetworks === null ? <Bar /> : settledNetworks}
-              sub="Chains where a payment has actually cleared, which is a smaller number than the chains we support, and it should be."
-            />
+          {/* Every settlement log, each on its own tile, read live. Only the network count
+              spans them, because it counts chains rather than adding payments. */}
+          <motion.div {...reveal} className="mt-12">
+            <h2 className="text-lg font-bold tracking-tight text-foreground">Settlement logs</h2>
+            <p className="mt-2 max-w-[75ch] text-sm leading-relaxed text-foreground/55">
+              Each rail keeps its own log and is counted on its own, never added to another, because one
+              figure across rails describes none of them. A log keeps a retained window, so its count is the
+              rows it holds rather than an all-time total. Payments from wallets we own are labeled wherever
+              the log can tell.
+            </p>
+            <div className="mt-6 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+              <Stat
+                label="Mainnets settling"
+                value={read.length === 0 ? <Bar /> : settledMainnets.length}
+                sub={
+                  read.length === 0
+                    ? 'Mainnets where a payment has actually cleared.'
+                    : `Where a payment has actually cleared: ${settledMainnets.map(chainName).join(', ') || 'none yet'}.`
+                }
+              />
+              {LOGS.map((spec) => (
+                <LogTile key={spec.key} spec={spec} log={logs[spec.key]} />
+              ))}
+            </div>
           </motion.div>
 
           {failure && !rails && (

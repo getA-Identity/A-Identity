@@ -86,8 +86,8 @@ const owner = await client.readContract({
 
 We deployed none of these except the vault. The registries were already live and
 registering on them is permissionless; what is ours is agent #1259, the vault and the rail
-on top. There is no ValidationRegistry in this family, so a KYA result cannot be anchored
-on-chain here.
+on top. The family's ValidationRegistry proxy has code here too (read live 2026-10-11), but
+we do not wire it, so a KYA result is not anchored on-chain here.
 
 The vault caps the agent key at 1 USDC a day and 0.25 USDC per payment. Since 2026-10-01
 the agent key is a separate wallet from the owner key and its session key runs to

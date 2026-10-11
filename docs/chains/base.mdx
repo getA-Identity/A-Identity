@@ -23,7 +23,7 @@ paid trust calls in native Circle USDC through its own EIP-3009 facilitator.
 
 <Note>
   Base is **live** for us: agent #73232 is ours on the canonical registry (minted
-  2026-08-28), and a real settlement in USDC has gone through our own facilitator with
+  2026-08-27 UTC), and a real settlement in USDC has gone through our own facilitator with
   the receipt carrying the matching Transfer log. Everything on this page, including
   the Stellar funding hop behind the operating wallets, is checkable at
   [/proof/base](https://a-identity.xyz/proof/base).
@@ -91,7 +91,7 @@ ValidationRegistry in this family, so a KYA result cannot be anchored on-chain h
 The base price of a tool is identical on every chain we sell on; the only difference is
 the disclosed settlement fee, because we broadcast on the buyer's behalf and that costs
 gas. On Base a real settlement measured **102828 gas at an effective 0.006 gwei**
-(2026-08-28), about **0.00000062 ETH** including the L1 data fee, roughly $0.0025, so
+(2026-08-27 UTC), about **0.00000062 ETH** including the L1 data fee, roughly $0.0025, so
 the fee here is **$0.005**: the same 2x-headroom logic as Arbitrum One, against a base
 fee that sits near its floor rather than moving. The measurement lives in the chain
 registry beside the token, so the number is traceable rather than asserted.
@@ -116,7 +116,7 @@ curl -s https://a-identity-backend.onrender.com/api/proof/base
 ## Where Base fits
 
 [Arbitrum One](/chains/arbitrum) is where the same rail runs against a well-served
-baseline; [Robinhood Chain](/chains/robinhood) is where it runs on a chain with no
-published facilitator; [Arc](/chains/arc) holds escrow and the spend vault. Base is
+baseline; [Robinhood Chain](/chains/robinhood) is where it settles in Paxos USDG rather
+than USDC; [Arc](/chains/arc) holds escrow and the spend vault. Base is
 where the agent ecosystem itself lives, and the [Gateway](/chains/gateway) hop already
 proves USDC minted on Base Sepolia from an Arc deposit.

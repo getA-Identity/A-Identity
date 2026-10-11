@@ -879,6 +879,10 @@ export type StellarRailProof = {
    *  cross-reference `internalPayers` by hand. */
   recent: (StellarSettlementRecord & { internal: boolean })[]
   note: string
+  /** What the top-level network, chain, asset and payTo describe. They are the DEFAULT
+   *  network's, while the counts and rows span every network; on 2026-10-11 production
+   *  answered network stellar:testnet over two settlements that were both on pubnet. */
+  scope: string
 }
 
 /**
@@ -1043,5 +1047,11 @@ export async function stellarRailProof(
       'internalSettlements / internalUsd) and never hidden: our own traffic proves the rail ' +
       'works and proves nothing at all about demand, so removing it would understate the first ' +
       'and reporting it plain would overstate the second.',
+    scope:
+      `network, chain, asset and payTo describe the default network, ${status.network || 'none configured'}: ` +
+      'the first one X402_STELLAR_NETWORKS names. The totals, byNetwork and recent span every ' +
+      'network this log has settled on, ' +
+      'and each row names its own network, asset and payTo, so read byNetwork before taking a ' +
+      'total to be the default network\'s.',
   }
 }

@@ -231,9 +231,11 @@ of 2026-09-15.
 - **The vault has a calendar, and it is on the clock.** A Soroban contract instance is
   archived when its rent lapses, and this one only re-extends its own TTL once fewer than
   1,036,800 ledgers remain: sixty days as the contract counts them, at 17,280 ledgers a day,
-  but about 67.5 days at the measured 5.625 s close. The pubnet vault's instance archives
-  around **2027-01-06** unless it is touched, so the action window opens around
-  **2026-10-31**. The weekly workflow
+  and sixty days of wall time too at the 5.0 s close both networks have run since
+  mid-September (re-measured 2026-10-11). The pubnet vault's instance, live until ledger
+  66,177,017, archives around **2026-12-25** unless it is touched, so the action window
+  opens around **2026-10-26**. An earlier version of this entry said 2027-01-06 and
+  2026-10-31, from a 5.625 s close measured on 2026-08-24. The weekly workflow
   `.github/workflows/stellar-ops.yml` goes red at 45 days remaining, and also audits
   key-role overlap and allowlist drift, so none of the three depends on anyone
   remembering. `mcp/scripts/stellar-vault-allowlist.mjs` and

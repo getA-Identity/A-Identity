@@ -213,8 +213,8 @@ test('the Robinhood pair carries the canonical registries it was actually verifi
   assert.equal(m.status, 'live')
   assert.equal(m.contracts.identityRegistry, '0x8004a169fb4a3325136eb29fa0ceb6d2e539a432')
   assert.equal(m.contracts.reputationRegistry, '0x8004BAa17C55a88189AE136b182e5fdA19dE9b63')
-  // No ValidationRegistry in the mainnet family (mirroring Celo/X Layer): KYA cannot
-  // be anchored on-chain there, so the registry must not pretend otherwise.
+  // The mainnet family's ValidationRegistry proxy has code here but is not wired: KYA is
+  // not anchored on-chain there, so the registry must not pretend otherwise.
   assert.equal(m.contracts.validationRegistry, undefined)
 })
 

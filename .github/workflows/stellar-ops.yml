@@ -9,7 +9,8 @@ name: Stellar ops
 #      inferred: a real set_frozen(false) landed on the pubnet vault on 2026-08-25 and
 #      `live until` did not move, because 134 days remained. So there is no "do it now and
 #      forget it" option. The only thing that works is to be told when the window OPENS,
-#      which for pubnet is early November 2026, and that is what the archival step is for.
+#      which for pubnet is around 2026-10-26 at the 5.0 s close measured on 2026-10-11 (it
+#      used to say early November, from a 5.625 s close), and that is what the archival step is for.
 #      It runs with --warn-days 45, so it goes red once the 60-day re-extension window is
 #      already open and the cheapest touch, a 2-of-3 signed set_frozen(false) on an
 #      unfrozen vault, will actually move `live until`.

@@ -24,7 +24,16 @@ import { usePageMeta } from '../lib/head'
  */
 
 type Sale = { ts: string; outcome: string; tool: string; amountUsd: number; tx?: string; explorerUrl?: string }
-type RailProof = { configured: boolean; totalSettlements: number; totalUsd: number; recent: Sale[] }
+type RailProof = {
+  configured: boolean
+  totalSettlements: number
+  totalUsd: number
+  /** Absent on an older backend, which says nothing about who paid. */
+  externalSettlements?: number
+  /** The log keeps only its latest rows; once capped, the totals cover the rows since `since`. */
+  window?: { capped: boolean; since: string | null }
+  recent: Sale[]
+}
 type Prices = {
   verify_agent: number
   reputation_score: number
@@ -57,6 +66,10 @@ function LiveNumbers({ proof, failed }: { proof: RailProof | null; failed: boole
   const count = useCountUp(proof ? proof.totalSettlements : null)
   const usd = useCountUp(proof ? proof.totalUsd : null)
   const last = proof ? [...proof.recent].reverse().find((s) => s.outcome === 'settled') : undefined
+  // A capped log counts a window, so the label names where the window starts rather than
+  // presenting it as the rail's whole history; and payments from our own wallets say so.
+  const since = proof?.window?.capped && proof.window.since ? proof.window.since.slice(0, 10) : null
+  const ours = proof != null && proof.totalSettlements > 0 && proof.externalSettlements === 0
   if (failed) {
     return <p className="mt-8 text-sm text-foreground/55">The live numbers could not be read right now. The rail itself is unaffected.</p>
   }
@@ -64,11 +77,14 @@ function LiveNumbers({ proof, failed }: { proof: RailProof | null; failed: boole
     <motion.div {...revealAt(3)} className="mt-10 grid gap-px overflow-hidden rounded-2xl border border-border bg-border sm:grid-cols-3">
       <div className="bg-card p-5">
         <div className="text-3xl font-bold tabular-nums tracking-tight text-foreground">{proof ? Math.round(count) : '-'}</div>
-        <div className="mt-1 text-sm text-foreground/60">paid checks settled on mainnet</div>
+        <div className="mt-1 text-sm text-foreground/60">
+          {since ? `paid checks settled since ${since}` : 'paid checks settled on mainnet'}
+          {ours ? ', all paid by our own wallets' : ''}
+        </div>
       </div>
       <div className="bg-card p-5">
         <div className="text-3xl font-bold tabular-nums tracking-tight text-foreground">{proof ? usd.toFixed(3) : '-'}</div>
-        <div className="mt-1 text-sm text-foreground/60">USDC paid, every cent on-chain</div>
+        <div className="mt-1 text-sm text-foreground/60">USDC paid{since ? ` since ${since}` : ''}, every cent on-chain</div>
       </div>
       <div className="bg-card p-5">
         <div className="text-3xl font-bold tracking-tight text-foreground">{last ? ago(last.ts) : '-'}</div>

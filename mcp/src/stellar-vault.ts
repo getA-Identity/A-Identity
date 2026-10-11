@@ -400,12 +400,14 @@ export function chooseStellarVaultOwner(input: { ownerAddress?: string; caller?:
 /**
  * Seconds per ledger close, measured rather than assumed.
  *
- * Pubnet ran 5.625 s on 2026-08-24 and testnet 5.010 s the same day. The larger number is
- * used for both, so a TTL estimate errs toward reporting MORE time than there is... which
- * is the wrong direction for a warning, and is why every answer carries the assumption
- * beside the number instead of presenting a date as a fact.
+ * Pubnet ran 5.625 s on 2026-08-24 and testnet 5.010 s the same day, and this constant
+ * used to carry the larger number. Re-measured on 2026-10-11 off Horizon: both networks
+ * closed exactly 432,000 ledgers in the 25 days since 2026-09-16, 5.000 s each, so 5.625
+ * had been overstating every remaining life by an eighth, which is the wrong direction for
+ * a warning. Every answer still carries the assumption beside the number instead of
+ * presenting a date as a fact, because the close time can move again.
  */
-export const LEDGER_CLOSE_SECONDS = 5.625
+export const LEDGER_CLOSE_SECONDS = 5
 
 export type LedgerTtl = {
   liveUntilLedger: number
@@ -424,7 +426,7 @@ export function ledgerTtl(liveUntilLedger: number, currentLedger: number, nowMs:
     remainingLedgers,
     approxDays: Math.round((seconds / 86400) * 10) / 10,
     archivesAround: new Date(nowMs + seconds * 1000).toISOString().slice(0, 10),
-    assumption: `${LEDGER_CLOSE_SECONDS} s per ledger close, measured on pubnet 2026-08-24`,
+    assumption: `${LEDGER_CLOSE_SECONDS} s per ledger close, measured on pubnet and testnet 2026-10-11`,
   }
 }
 

@@ -111,9 +111,10 @@ registry ever minted. On testnet the ValidationRegistry implementation was the o
 missing, and we deployed it by replaying the canonical Safe-Singleton-Factory calldata,
 which reproduces the same address rather than forking a new one.
 
-There is **no ValidationRegistry in the mainnet family**, mirroring Celo and X Layer, so
-a KYA result cannot be anchored on-chain there. It is still verified off-chain and
-recorded; we simply do not claim an anchor that does not exist.
+A ValidationRegistry proxy has code at the mainnet family's address here (read live
+2026-10-11; an earlier version of this page said none existed, which was wrong), but we do
+**not wire it**, so a KYA result is not anchored on-chain there. It is still verified
+off-chain and recorded; we do not claim an anchor we have not written.
 
 The **AgentSpendPolicy vault** is ours: 1 USDG a day, 0.25 USDG per payment for the agent
 key, and anything above is refused with the contract's typed `AboveAutoApprove` error and
@@ -128,14 +129,15 @@ token is the real USDG and whether the payee holds an ERC-8004 agent id.
 
 ## The x402 facilitator
 
-An x402 facilitator is the service a seller calls to verify a payment and settle it. No
-published facilitator serves this chain, so a seller here has nothing to point an x402
-client at. We run one, and it is open:
+An x402 facilitator is the service a seller calls to verify a payment and settle it. We
+run our own here, and it is open. We are not the only one: as of 2026-09-30 other
+facilitators serve this chain too, hosted and open-source, some predating our launch. We
+run ours so that one code path and one receipt standard cover every chain we sell on.
 
 To be precise about what that does and does not claim: gasless EIP-3009 relaying on USDG
 predates us on this chain by weeks, and an x402 settlement is indistinguishable on-chain
-from any other relayed authorization. What we could not find, and therefore built, is a
-facilitator serving the x402 HTTP protocol here.
+from any other relayed authorization. What is ours is the facilitator below, and the rule
+that nothing counts as settled without a receipt carrying the matching Transfer log.
 
 | Endpoint | Access |
 | --- | --- |
