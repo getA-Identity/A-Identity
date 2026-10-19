@@ -105,7 +105,21 @@ Describe the protocol surface. No input.
 
 ## Connect
 
+The hosted server is live at `https://a-identity.xyz/mcp` (Streamable HTTP, stateless:
+POST JSON-RPC, no session id).
+
 ```bash Claude Code
+claude mcp add --transport http a-identity https://a-identity.xyz/mcp
+```
+
+```bash Check it with curl
+curl -s -X POST https://a-identity.xyz/mcp \
+  -H 'content-type: application/json' \
+  -H 'accept: application/json, text/event-stream' \
+  -d '{"jsonrpc":"2.0","id":1,"method":"tools/list"}'
+```
+
+```bash Self-hosted (stdio)
 claude mcp add a-identity -- node ./mcp/dist/index.js
 ```
 

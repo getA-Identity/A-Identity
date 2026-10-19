@@ -198,7 +198,14 @@ checks activating under a funded `ARC_SIGNER_KEY`. CI runs the no-signer path.
 
 ## Connect from an MCP client
 
-The MCP server speaks stdio. Point any client at the built entry:
+The hosted server is live at `https://a-identity.xyz/mcp` over Streamable HTTP (POST
+JSON-RPC, stateless; a browser GET shows how to connect):
+
+```bash
+claude mcp add --transport http a-identity https://a-identity.xyz/mcp
+```
+
+To self-host, the server also speaks stdio. Point any client at the built entry:
 
 ```jsonc
 { "mcpServers": { "a-identity": { "command": "node", "args": ["./mcp/dist/index.js"] } } }

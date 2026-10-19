@@ -49,19 +49,28 @@ itself never holds keys.
 
 ## Connect It
 
+The hosted server is live at `https://a-identity.xyz/mcp` over Streamable HTTP. Clients
+send JSON-RPC with POST; opening the URL in a browser shows how to connect.
+
 ```bash Claude Code
-claude mcp add a-identity -- node ./mcp/dist/index.js
+claude mcp add --transport http a-identity https://a-identity.xyz/mcp
 ```
 
 ```json Any MCP client
 {
   "mcpServers": {
     "a-identity": {
-      "command": "node",
-      "args": ["./mcp/dist/index.js"]
+      "type": "http",
+      "url": "https://a-identity.xyz/mcp"
     }
   }
 }
+```
+
+To self-host instead, build the repo and run the stdio entry:
+
+```bash Self-hosted (stdio)
+claude mcp add a-identity -- node ./mcp/dist/index.js
 ```
 
 ## Paid Tools Over MCP

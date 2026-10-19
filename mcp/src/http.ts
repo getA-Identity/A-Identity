@@ -51,6 +51,7 @@ import { handleAgentRoutes } from './http/agent-routes.js'
 import { handleGuardrailRoutes } from './http/guardrail-routes.js'
 import { handleInstructionRoutes } from './http/instruction-routes.js'
 import { handleMarketplaceRoutes } from './http/marketplace-routes.js'
+import { mcpNonPostResponse } from './http/mcp-info.js'
 
 // Render/most hosts inject PORT; fall back to our own var, then the local default.
 const PORT = Number(process.env.PORT ?? process.env.A_IDENTITY_HTTP_PORT ?? 3399)
@@ -327,6 +328,16 @@ const server = http.createServer(async (req, res) => {
     return
   }
 
+  // ── GET / DELETE /mcp: describe the endpoint, or 405 for an SSE or session request ──
+  if (url.pathname === '/mcp') {
+    const info = mcpNonPostResponse(req.method ?? 'GET', req.headers.accept)
+    if (info) {
+      res.writeHead(info.status, { ...info.headers, 'Content-Length': Buffer.byteLength(info.body) })
+      res.end(req.method === 'HEAD' ? undefined : info.body)
+      return
+    }
+  }
+
   sendJson(res, 404, { error: 'not found' })
 })
 
@@ -336,6 +347,7 @@ await initState()
 server.listen(PORT, () => {
   console.error(`[a-identity-mcp] HTTP on http://localhost:${PORT}`)
   console.error(`  POST /mcp               MCP JSON-RPC (tools/call, etc.)`)
+  console.error(`  GET  /mcp               endpoint description (405 for an SSE request)`)
   console.error(`  GET  /health            liveness probe`)
   console.error(`  GET  /api/agent?q=...   resolve agent by id/address/domain`)
   console.error(`  GET  /api/reputation?id=... reputation score`)

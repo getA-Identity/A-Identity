@@ -105,7 +105,20 @@ async function main() {
     throw new Error(`POST /api/agents/action-policy should require a verified session (got ${pr.status})`)
   }
 
-  console.log(`✅ HTTP smoke test passed (MCP + REST, ${CHAIN_IDS.length} chains, 6 policy tools + merchant_check over MCP, action-policy wired + gated, merchant-check validated)`)
+  // GET /mcp must never fall through to the 404 again: a browser gets a 200 page that
+  // says the endpoint is live and how to connect, and an MCP client asking for an SSE
+  // stream gets the spec's 405 with Allow: POST, which keeps it on plain POST.
+  const page = await fetch(url, { headers: { Accept: 'text/html' } })
+  const pageText = await page.text()
+  if (page.status !== 200 || !pageText.includes('claude mcp add --transport http')) {
+    throw new Error(`GET /mcp from a browser should describe the endpoint (got ${page.status})`)
+  }
+  const sse = await fetch(url, { headers: { Accept: 'text/event-stream' } })
+  if (sse.status !== 405 || sse.headers.get('allow') !== 'POST') {
+    throw new Error(`GET /mcp asking for SSE should be 405 with Allow: POST (got ${sse.status})`)
+  }
+
+  console.log(`✅ HTTP smoke test passed (MCP + REST, ${CHAIN_IDS.length} chains, 6 policy tools + merchant_check over MCP, action-policy wired + gated, merchant-check validated, GET /mcp described)`)
 }
 
 main().catch((err) => {
