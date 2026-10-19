@@ -30,6 +30,7 @@ against those limits before any value moves, and the verdict is ALLOW, WARN or D
   vault holding real USDC, and x402 settled on both our EIP-3009 facilitator and Circle
   Gateway, all self-funded so far. Escrow and KYA anchoring still run on Arc testnet, in
   test money.
+- A-Identity is a member of the Circle Alliance Program (https://www.circle.com/alliance-program).
 - The Trust Oracle was listed on OKX.AI as agent #6271 until OKX.AI delisted it on 2026-09-26. It answered per-call checks over
   x402 in real USD₮0: 120 x402 settlements on X Layer mainnet to date, each one a
   transaction hash anyone can check, and every one paid by our own buyer wallet. Read them as

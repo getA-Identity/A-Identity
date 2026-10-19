@@ -67,6 +67,8 @@ them won a prize.
 - **Encode x Arc "Programmable Money" hackathon** (past entry) - submitted Aug 9, 2026,
   Demo Day Aug 20. The trusted agent marketplace, the on-chain policy vault, and the
   ERC-8183 escrow work in this repo were the submission.
+- **Circle Alliance Program** - A-Identity is a member
+  ([circle.com/alliance-program](https://www.circle.com/alliance-program)).
 - **OKX.AI** - listed as a paid **Trust Oracle** until OKX.AI delisted it on 2026-09-26: Agent **#6271** plus backup
   **#8913** on X Layer mainnet (first entered for the OKX.AI Genesis Hackathon in July
   2026), with **120 real x402 settlements** paid to

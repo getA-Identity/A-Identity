@@ -6,6 +6,7 @@ import XIcon from '../XIcon'
 import LinkedInIcon from '../LinkedInIcon'
 import YouTubeIcon from '../YouTubeIcon'
 import { APP_NAME, ASK_AI_LINKS, FOOTER_COLUMNS, SOCIALS, type FooterLink } from '../../lib/brand'
+import { MEMBERSHIPS } from '../../lib/memberships'
 import { SectionBackdrop } from '../ui/section-backdrop'
 
 /**
@@ -132,6 +133,24 @@ export default function SiteFooter() {
             </a>
             .
           </p>
+
+          {/* The programs that admitted us, from the same list the landing strip reads. */}
+          {MEMBERSHIPS.length > 0 && (
+            <p className="flex flex-wrap items-center gap-x-3 gap-y-1">
+              <span>Member of:</span>
+              {MEMBERSHIPS.map((m) => (
+                <a
+                  key={m.id}
+                  href={m.href}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="underline-offset-2 transition-colors hover:text-foreground hover:underline"
+                >
+                  {m.org} {m.program}
+                </a>
+              ))}
+            </p>
+          )}
 
           {/* Each link carries the question AND the URL, so the answer is built from the
               page rather than from whatever the model half-remembers. */}
