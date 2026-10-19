@@ -101,3 +101,16 @@ regexes = [
 description = "authDigestHex in the Stellar tx archive is a public, recomputable digest"
 regexTarget = "match"
 regexes = ['''^authDigestHex": "[0-9a-f]{64}"$''']
+
+# The Circle Gateway proof log and the docs that quote it carry `authNonce`: the EIP-3009
+# authorization nonce, a random 32-byte value the BUYER chose and published by signing it.
+# It is part of the on-chain authorization and of GET /api/x402/gateway/proof, so anyone can
+# read it, and it unlocks nothing: the authorization is single-use and already spent by the
+# time the row exists. The generic-api-key rule reads "auth" beside a hex blob as a
+# credential. Allowed by the shape of the whole match (the field name plus a hex value, full
+# or abbreviated), because every quoted proof row carries one. Added 2026-10-19 when the Arc
+# integration guide quoted a real settlement row.
+[[allowlists]]
+description = "authNonce in quoted Gateway proof rows is the buyer's public EIP-3009 nonce"
+regexTarget = "match"
+regexes = ['''^"?authNonce": "0x[0-9a-f.]+"$''']
