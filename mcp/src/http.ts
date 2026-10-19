@@ -43,6 +43,7 @@ import { handleX402GatewayRoutes } from './http/x402-gateway-routes.js'
 import { handleCctpRoutes } from './http/cctp-routes.js'
 import { handleChainRoutes } from './http/chain-routes.js'
 import { handleArcRoutes } from './http/arc-routes.js'
+import { handleArcSeasonRoutes } from './http/arc-season-routes.js'
 import { handleStellarVaultRoutes } from './http/stellar-vault-routes.js'
 import { handleStellarEvidenceRoutes } from './http/stellar-evidence-routes.js'
 import { handleStellarPasskeyRoutes } from './http/stellar-passkey-routes.js'
@@ -252,6 +253,8 @@ const server = http.createServer(async (req, res) => {
     if (await handleCctpRoutes(ctx)) return
     if (await handleX402ThreeKRoutes(ctx)) return
     if (await handleChainRoutes(ctx)) return
+    // The Arc Acceleration Season report: one public GET, counted from the logs per read.
+    if (await handleArcSeasonRoutes(ctx)) return
     if (await handleArcRoutes(ctx)) return
     // Before the agent group, which owns /api/agents/vault: these are the Soroban half of
     // the same story and sit under their own prefix, so the order is about keeping the two
@@ -353,6 +356,7 @@ server.listen(PORT, () => {
   console.error(`  GET  /api/reputation?id=... reputation score`)
   console.error(`  GET  /api/chains        supported chains`)
   console.error(`  GET  /api/arc           live Circle Arc testnet status`)
+  console.error(`  GET  /api/arc/season    Arc Acceleration Season progress: each metric counted from the settlement logs, internal and external apart`)
   console.error(`  GET  /api/circle        Circle platform link (wallets, gateway, USDC)`)
   console.error(`  GET  /api/agents        list agents`)
   console.error(`  GET  /api/agents/action-policy   owner-gated action policy (free)`)

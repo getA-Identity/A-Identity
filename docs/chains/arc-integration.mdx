@@ -1,0 +1,353 @@
+---
+title: "Integrate on Arc Mainnet in 10 minutes"
+description: "Buy an A-Identity trust check through Circle Gateway nanopayments before your agent pays on Arc Mainnet: the 402, the payment, the verdict, and where your payments show up."
+---
+
+Your agent pays for APIs or services on Arc Mainnet. Before each payment it buys one
+trust check from A-Identity, paid in USDC through Circle Gateway nanopayments (the buyer
+signs, nobody pays gas, Circle batches the settlement), and acts on the answer. This page
+is the whole integration. Every endpoint, header, price and address on it was read from
+the running service and from Circle's own endpoints on 2026-10-19.
+
+## What you get
+
+- **A verdict before the payment.** `risk_check` returns `decision` (`ALLOW`, `WARN` or
+  `DENY`), a `risk` band and `reasons` as plain sentences, for the payee and the amount
+  you pass. 0.005 USDC per call. `counterparty_check` (0.008 USDC) does the same for the
+  pair payer plus payee and also detects same-operator self-dealing.
+- **The cheapest check.** `verify_agent` at 0.001 USDC answers whether the payee holds an
+  ERC-8004 identity, its KYA status and whether its endpoint is live. It is identity, not
+  a verdict: the verdict tools start at 0.005 USDC.
+- **What a check reads.** The ERC-8004 registry, live on-chain (owner and registration
+  URI), the KYA wallet-control attestation, a deterministic 0 to 1000 reputation computed
+  from settled payments, validation and tenure with a Sybil check, whether the agent is
+  revoked, and the `txContext.amountUsd` you pass, because a payee that is fine for one
+  dollar may not be fine for ten thousand. Nothing in a verdict is a language-model guess.
+
+The free preview is coarse on purpose: `GET /api/x402/gateway/tools/trust_preview?agentId=...`
+returns a band and flags, no verdict and no reasons, and is rate limited.
+
+## What you need
+
+<Steps>
+  <Step title="An Arc Mainnet wallet holding USDC">
+    Arc Mainnet is `eip155:5042` (chain id 5042), RPC `https://rpc.mainnet.arc.io`, no
+    API key. Gas on Arc is USDC itself, so keep a little USDC beyond what you deposit.
+    The payer address is the one that will appear on our proof page, so use a wallet
+    you are happy to be attributed by.
+  </Step>
+  <Step title="USDC in a Circle Gateway balance on Arc Mainnet">
+    A nanopayment spends a Gateway balance, not your wallet balance. The deposit is one
+    on-chain transaction pair: `approve` the GatewayWallet on the USDC contract, then call
+    `deposit(token, value)` on the GatewayWallet. Circle credits it after about one block
+    (its supported-blockchains table lists Arc at about 0.5 seconds). 1 USDC covers 1000
+    `verify_agent` calls or 200 `risk_check` calls.
+
+    | Item | Value |
+    | --- | --- |
+    | USDC on Arc Mainnet (ERC-20 interface, 6 decimals) | `0x3600000000000000000000000000000000000000` |
+    | Circle GatewayWallet on Arc Mainnet | `0x77777777Dcc4d5A8B6E418Fd04D8997ef11000eE` |
+    | Gateway domain for Arc | `26` |
+    | Gateway API | `https://gateway-api.circle.com` |
+
+    <Warning>
+      The Arc **testnet** GatewayWallet is a different contract
+      (`0x0077777d7EBA4688BDeF3E311b846F25870A19B9`); use the mainnet address above. And
+      never send USDC to the GatewayWallet with a plain ERC-20 transfer: Circle's docs say
+      it is not credited and is lost. Only `deposit()` creates a balance.
+    </Warning>
+
+    Check the balance, no key needed:
+
+    ```bash
+    curl -s -X POST https://gateway-api.circle.com/v1/balances \
+      -H 'content-type: application/json' \
+      -d '{"token":"USDC","sources":[{"domain":26,"depositor":"0xYourWallet"}]}'
+    # {"token":"USDC","balances":[{"domain":26,"depositor":"0x...","balance":"1.000000","pendingBatch":"0"}]}
+    ```
+  </Step>
+  <Step title="A client that can answer a 402">
+    Two easy ways, and one readable reference:
+
+    - **Circle CLI** (`npm install -g @circle-fin/cli`): `circle gateway deposit` and
+      `circle services pay` do the deposit and the payment from the command line.
+    - **`@circle-fin/x402-batching`** (we depend on `^3.4.0`): `GatewayClient` deposits
+      and pays from Node.js or TypeScript. For Arc Mainnet its chain name is `arc` and it
+      requires an `rpcUrl` (the constructor throws without one); the public RPC above works.
+    - **Our reference buyer**, the buyer script we run ourselves:
+      [`mcp/scripts/x402-gateway-buyer.mjs`](https://github.com/getA-Identity/A-Identity/blob/main/mcp/scripts/x402-gateway-buyer.mjs)
+      reads the 402, re-proves the signing domain against Gateway's own `/v1/x402/supported`,
+      signs with the SDK's `BatchEvmScheme` and pays;
+      [`mcp/scripts/gateway-deposit.mjs`](https://github.com/getA-Identity/A-Identity/blob/main/mcp/scripts/gateway-deposit.mjs)
+      is the deposit. Both print the exact calls and exit when no key is set.
+  </Step>
+</Steps>
+
+## The 10-minute flow
+
+<Steps>
+  <Step title="Call the tool and read the 402">
+    Every paid tool answers `GET` (query parameters) and `POST` (JSON body). Unpaid, both
+    answer `402` with the requirements in the body and, base64-encoded, in the
+    `PAYMENT-REQUIRED` header; the two are identical. This is the live challenge:
+
+    ```bash
+    curl -s -D - 'https://a-identity.xyz/api/x402/gateway/tools/risk_check?agentId=eip155:5042:8004/0&amountUsd=25'
+    ```
+
+    Trimmed response (the second `accepts` entry, Base `eip155:8453`, and the description
+    strings are cut; everything else is as served):
+
+    ```json
+    {
+      "x402Version": 2,
+      "error": "payment required",
+      "resource": { "url": "https://a-identity.xyz/api/x402/gateway/tools/risk_check", "mimeType": "application/json" },
+      "accepts": [
+        {
+          "scheme": "exact",
+          "network": "eip155:5042",
+          "asset": "0x3600000000000000000000000000000000000000",
+          "amount": "5000",
+          "payTo": "0xd305607510e0db2c95807173c7a05bea53c1ed36",
+          "maxTimeoutSeconds": 3600,
+          "resource": "https://a-identity.xyz/api/x402/gateway/tools/risk_check",
+          "extra": {
+            "name": "GatewayWalletBatched",
+            "version": "1",
+            "verifyingContract": "0x77777777dcc4d5a8b6e418fd04d8997ef11000ee",
+            "minValiditySeconds": 604800,
+            "assets": [{ "symbol": "USDC", "address": "0x3600000000000000000000000000000000000000", "decimals": 6 }],
+            "registryWallet": "0x77777777Dcc4d5A8B6E418Fd04D8997ef11000eE",
+            "domainVerified": true,
+            "provenAt": "2026-10-19T18:21:33.580Z"
+          }
+        }
+      ],
+      "tool": {
+        "name": "risk_check",
+        "price": { "totalUsd": 0.005, "settlementFeeUsd": 0 },
+        "required": ["agentId"],
+        "example": { "agentId": "#73232", "txContext": { "amountUsd": 25 } }
+      }
+    }
+    ```
+
+    `amount` is in USDC base units (6 decimals): `5000` is 0.005 USDC. `settlementFeeUsd`
+    is 0 on this rail; the price is the whole cost. `domainVerified` and `provenAt` say that
+    before this challenge was served we read Gateway's live `/v1/x402/supported` and found
+    the same `verifyingContract` and the same USDC the registry expects. Pick the
+    `eip155:5042` entry.
+  </Step>
+  <Step title="Pay">
+    Sign an EIP-3009 authorization against the `GatewayWalletBatched` domain (name
+    `GatewayWalletBatched`, version `1`, chainId `5042`, verifyingContract
+    `0x77777777Dcc4d5A8B6E418Fd04D8997ef11000eE`) for exactly `amount`, to `payTo`, and
+    retry the same request with the signed payload. Any of the three clients does this
+    for you:
+
+    <CodeGroup>
+    ```bash Circle CLI
+    npm install -g @circle-fin/cli
+    circle wallet login you@yourteam.com        # or: circle wallet import team-buyer --private-key
+    circle gateway deposit --amount 1 --address 0xYourWallet --chain ARC --method direct
+    circle gateway balance --address 0xYourWallet --chain ARC
+    circle services pay https://a-identity.xyz/api/x402/gateway/tools/risk_check \
+      --address 0xYourWallet --chain ARC --max-amount 0.005 \
+      -X POST -d '{"agentId":"eip155:5042:8004/0","txContext":{"amountUsd":25}}'
+    ```
+
+    ```ts @circle-fin/x402-batching
+    import { GatewayClient } from '@circle-fin/x402-batching/client'
+
+    const gateway = new GatewayClient({
+      chain: 'arc',                                 // Arc Mainnet, Gateway domain 26
+      privateKey: process.env.BUYER_KEY as `0x${string}`,
+      rpcUrl: 'https://rpc.mainnet.arc.io',         // required by the SDK for 'arc'
+    })
+    await gateway.deposit('1')                      // once: approve + deposit on the GatewayWallet
+
+    const { data } = await gateway.pay('https://a-identity.xyz/api/x402/gateway/tools/risk_check', {
+      method: 'POST',
+      body: { agentId: 'eip155:5042:8004/0', txContext: { amountUsd: 25 } },
+    })
+    ```
+
+    ```bash Reference script
+    git clone https://github.com/getA-Identity/A-Identity && cd A-Identity/mcp && npm install && npm run build
+    # X402_GATEWAY_BUYER_KEY=0x... in mcp/.env
+    node --env-file=.env scripts/gateway-deposit.mjs --chain arc-mainnet --amount 1
+    node --env-file=.env scripts/x402-gateway-buyer.mjs \
+      --url https://a-identity.xyz/api/x402/gateway/tools/risk_check \
+      --agent eip155:5042:8004/0 --network eip155:5042 --dry-run   # drop --dry-run to pay
+    ```
+    </CodeGroup>
+
+    The script sends `agentId` only; pass `txContext` through the CLI or the SDK. If you
+    write your own client, the retry carries one header, `PAYMENT-SIGNATURE`, whose value
+    is base64 of this JSON (the older `X-PAYMENT` name is accepted too):
+
+    ```json
+    {
+      "x402Version": 2,
+      "accepted": "the accepts entry you chose, unchanged",
+      "payload": {
+        "signature": "0x...",
+        "authorization": {
+          "from": "0xYourWallet",
+          "to": "0xd305607510e0db2c95807173c7a05bea53c1ed36",
+          "value": "5000",
+          "validAfter": "<unix seconds>",
+          "validBefore": "<unix seconds>",
+          "nonce": "0x<32 random bytes>"
+        }
+      }
+    }
+    ```
+
+    `value` must be exactly the price and `to` exactly our `payTo`; anything else is
+    refused with a fresh 402 and nothing is settled.
+  </Step>
+  <Step title="Read the verdict">
+    A paid call answers `200` with the tool result plus a `settlement` record, and a
+    `PAYMENT-RESPONSE` header (base64 JSON: `success`, `transaction`, `network`, `payer`,
+    `amount`). The shape, with illustrative values for the verdict fields:
+
+    ```json
+    {
+      "tool": "risk_check",
+      "agentId": "eip155:5042:8004/0",
+      "decision": "ALLOW",
+      "risk": "low",
+      "reasons": ["..."],
+      "signals": { "...": "the inputs the verdict was computed from" },
+      "checkedAt": "2026-10-19T18:30:00.000Z",
+      "_meta": { "network": "Arc Mainnet (eip155:5042)", "proof": "/api/x402/gateway/proof" },
+      "settlement": {
+        "ts": "2026-09-24T16:43:58.731Z",
+        "outcome": "completed",
+        "tool": "verify_agent",
+        "network": "eip155:5042",
+        "assetSymbol": "USDC",
+        "value": "1000",
+        "amountUsd": 0.001,
+        "payer": "0x8c8d9cd12d8896a40cf2115ee731258bb4983349",
+        "payTo": "0xd305607510e0db2c95807173c7a05bea53c1ed36",
+        "authNonce": "0xd232cc9dfda4e594a6424abbbbea8fe96d92ea5bd4d7d235d8a9924a709d8481",
+        "transferId": "e06f2175-132f-4f5f-af3f-04ed42b9a028",
+        "gatewayStatus": "completed",
+        "confirmedBy": "gateway-transfers-api",
+        "tx": "0x1338762a8203452d75dfeea76a33fa296c299c6e9fc297bec9112bbe801e0413",
+        "explorerUrl": "https://explorer.arc.io/tx/0x1338762a8203452d75dfeea76a33fa296c299c6e9fc297bec9112bbe801e0413"
+      }
+    }
+    ```
+
+    `decision` is `ALLOW`, `WARN` or `DENY`; on `DENY`, do not make the payment. The
+    `settlement` block above is a real row from the proof log (a `verify_agent` call our own
+    wallet paid on 2026-09-24, labeled internal there); yours carries your payer and your
+    tool. A fresh call comes back as `credited` with no `tx` until Gateway's on-chain batch
+    lands, and the proof page upgrades the row to `completed` with the batch hash when it does.
+
+    | Status | Meaning |
+    | --- | --- |
+    | `400` | A required input is missing. Checked before any payment is taken. |
+    | `402` | No header, a malformed header, `to` not our `payTo`, `value` not exactly the price, or Gateway refused. The body is the challenge again plus `verifyError`. |
+    | `503` | Gateway's kind for Arc could not be proven against the registry right now. No challenge is served rather than one nobody could settle. |
+    | `502` | Gateway answered success but its transfers API returned no matching transfer inside the window. Nothing served, nothing counted; the row is recorded as `unconfirmed` on the proof so it can be resolved. |
+    | `500` | Credited and recorded, but the tool failed on our side. The body names the transfer. |
+  </Step>
+</Steps>
+
+## The tools
+
+Six paid tools and one free preview, at `https://a-identity.xyz/api/x402/gateway/tools/<name>`.
+`agentId`, `from` and `to` each accept an ERC-8004 token id (`#73232`), a CAIP id
+(`eip155:<chain>:8004/<token>`) or a 0x owner address. `txContext` is optional and takes
+`{ "amountUsd": number, "payee": "0x address" }`; on `GET`, pass it as a JSON string or use
+`amountUsd=25` as a shortcut. Prices are the ones the 402 charges; the OpenAPI document at
+[/api/x402/gateway/openapi.json](https://a-identity.xyz/api/x402/gateway/openapi.json) is
+generated from the same source.
+
+| Tool | Price | What it answers | Required input |
+| --- | --- | --- | --- |
+| `verify_agent` | 0.001 USDC | ERC-8004 identity, KYA status, endpoint liveness | `agentId` |
+| `reputation_score` | 0.002 USDC | Deterministic 0 to 1000 reputation with a full breakdown and its on-chain attestation | `agentId` |
+| `risk_check` | 0.005 USDC | Pre-transaction ALLOW / WARN / DENY verdict on a counterparty, with reasons | `agentId` (`txContext` optional) |
+| `guardrail_check` | 0.005 USDC | Whether the agent operates under an enforced spend or trade policy and respects verdicts; bands only, no caps, allowlists, symbols, amounts or holdings disclosed | `agentId` |
+| `counterparty_check` | 0.008 USDC | Deal-specific verdict between two agents: counterparty risk plus same-operator self-deal detection | `from`, `to` (`txContext` optional) |
+| `agent_passport` | 0.01 USDC | The full passport: identity, KYA, reputation and risk in one call | `agentId` |
+| `trust_preview` | free, rate limited | Coarse trust band, flags and the price list; `GET` only | `agentId` |
+
+The same tools, at the same prices, are sold on Base (`eip155:8453`) through the same
+rail; the 402 lists both and you pick by `network`.
+
+## Where your payments show up
+
+A wallet is labeled **external** automatically: our own buyer wallets are hardcoded as
+internal on the rail, and every other payer is external. Nothing is counted until the
+transfer has been read back from Gateway's transfers API for the authorization's nonce,
+to our `payTo`, for the price.
+
+- [a-identity.xyz/proof/arc](https://a-identity.xyz/proof/arc) shows the totals for Arc
+  Mainnet and the newest eight settled checks, each with the tool, the amount, "via Circle
+  Gateway" and the batch transaction once it lands. Rows paid by our wallets carry an
+  "internal" tag; yours carry none. The counter reads "Circle Gateway internal / external
+  (all networks)".
+- [/api/x402/gateway/proof](https://a-identity.xyz/api/x402/gateway/proof) is the JSON
+  behind it: `internalSettlements`, `externalSettlements`, the `internalPayers` list and
+  the last 50 rows with their `payer`.
+- `GET https://a-identity.xyz/api/arc/season` is the Arc Acceleration Season report,
+  computed from the same logs on every request: `usage.internal` and `usage.external`,
+  external usage per wallet (`checks`, `usd`, first and last payment, `activeDays`), and
+  the Milestone 2 counts against their targets (external teams live, 30 external checks,
+  a team active on more than one day, a publicly referenceable integration). It ships with
+  this guide; until that deploy lands it answers 404.
+
+Send your payer address and your team name to
+[hello@a-identity.xyz](mailto:hello@a-identity.xyz) so the usage is attributed to you by
+name, and say whether we may reference the integration in public. That attribution is a
+list we keep by hand, and a team is added only after its wallet has paid a check; the
+external label itself needs nothing from you.
+
+## Free reads
+
+Identity and reputation reads cost nothing and need no key. The MCP server at
+`https://a-identity.xyz/mcp` (Streamable HTTP, stateless) exposes them to any MCP client:
+
+```bash
+claude mcp add --transport http a-identity https://a-identity.xyz/mcp
+```
+
+`resolve_agent` reads an ERC-8004 identity live from the registry, `get_reputation`
+returns the deterministic score with its breakdown, `merchant_check` returns a free
+ALLOW / WARN / DENY for a merchant-side agent before a checkout, and `get_chain_status`
+lists every chain in the registry with its live status. The free `trust_preview` on this rail is the same
+idea over plain HTTP. Free reads do not appear on the proof page, because there is no
+payment to record. The full tool list is on the [MCP server](/developers/mcp-server) page.
+
+## What we never do
+
+- **No keys of yours on our servers.** You sign locally, in the CLI, the SDK or your own
+  code; we receive a signed authorization that can move exactly the price to exactly our
+  `payTo`, and nothing else.
+- **No payment counted without a Gateway read-back.** Gateway's settle response saying
+  success is not enough: the transfer must come back from Gateway's transfers API for your
+  nonce, to our `payTo`, for the price, before the result is served or the row is recorded
+  as revenue. A read-back that fails is a 502 and an `unconfirmed` row in public.
+- **No challenge we could not settle.** Before any 402 we read Gateway's live
+  `/v1/x402/supported` and refuse to sell if the advertised `verifyingContract` or USDC
+  differs from the registry.
+- **Internal traffic labeled, never hidden.** Our own payments are on the same proof page
+  as yours, tagged internal, and the season report counts them separately.
+- **One price on every rail, no settlement fee added.** The price in the 402 is the
+  whole cost, and it is the same price the tools carry on every chain we sell on.
+
+<CardGroup cols={2}>
+  <Card title="Circle Nanopayments" icon="gauge" href="/protocols/nanopayments">
+    How the batched rail settles, and what it gives up next to on-chain x402.
+  </Card>
+  <Card title="Build on Arc" icon="link" href="/chains/arc">
+    Network config, the mainnet registry entry and everything else we run on Arc.
+  </Card>
+</CardGroup>

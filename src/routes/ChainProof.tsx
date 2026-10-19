@@ -3,6 +3,7 @@ import { motion } from 'framer-motion'
 import { ArrowUpRight, ChevronDown, RefreshCw } from 'lucide-react'
 import { Link, useParams } from 'react-router-dom'
 import PageHeader from '../components/PageHeader'
+import ArcSeasonProgress from '../components/proof/ArcSeasonProgress'
 import StellarSow2Evidence, { type PublishedAccount, type Sow2Report } from '../components/proof/StellarSow2Evidence'
 import StellarVaultsLive from '../components/proof/StellarVaultsLive'
 import SiteFooter from '../components/sections/SiteFooter'
@@ -580,6 +581,16 @@ export default function ChainProof() {
               The Circle Gateway log could not be read just now, so any Gateway payments on this chain are missing from
               these numbers until it answers.
             </p>
+          )}
+
+          {/* The Arc Acceleration Season block, in the open and above the folded ledger: the
+              success metrics Circle set, each counted from the settlement logs on every load.
+              It reads its own endpoint and renders before the backend answers, so the page
+              (and its prerendered snapshot) says where the numbers come from. */}
+          {rail === 'arc' && (
+            <div className="mt-8">
+              <ArcSeasonProgress />
+            </div>
           )}
 
           {/* The dated SoW 2 section, in the open. Rendered even when the backend has not

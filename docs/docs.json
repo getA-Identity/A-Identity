@@ -73,6 +73,7 @@
             "pages": [
               "chains/overview",
               "chains/arc",
+              "chains/arc-integration",
               "chains/celo",
               "chains/xlayer",
               "chains/robinhood",

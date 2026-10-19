@@ -645,6 +645,7 @@ from published methods or verifiable on a public chain.
 | Stellar vault panel | https://a-identity.xyz/app/vault/stellar |
 | Passkey selection record | https://a-identity.mintlify.site/chains/stellar-d3-selection |
 | Passkey recovery | https://a-identity.mintlify.site/chains/stellar-passkey-recovery |
+| Integrate on Arc Mainnet (10-minute guide) | https://a-identity.mintlify.site/chains/arc-integration |
 | Machine summary | https://a-identity.xyz/llms.txt |
 | This document | https://a-identity.xyz/llms-full.txt |
 | Authentication | https://a-identity.xyz/auth.md |

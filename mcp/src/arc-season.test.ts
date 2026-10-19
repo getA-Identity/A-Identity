@@ -1,0 +1,398 @@
+import { test } from 'node:test'
+import assert from 'node:assert/strict'
+import {
+  arcSeasonReport,
+  liveArcSeasonDeps,
+  ARC_PARTNERS,
+  ARC_OWNER_HELD_VAULTS,
+  ARC_REFUSALS,
+  ARC_SEASON_TARGETS,
+  type ArcSeasonDeps,
+} from './arc-season.js'
+import { getChainById } from './chains/index.js'
+import { addressUrl, txUrl } from './chains/explorer.js'
+import { internalPayers as gatewayInternalPayers } from './x402-gateway/rail.js'
+import { internalPayers as facilitatorInternalPayers } from './x402-3009/rail.js'
+import type { GatewaySettlementRecord, X402SettlementRecord } from './storage.js'
+
+/**
+ * The Arc Acceleration Season report, fed rows rather than logs.
+ *
+ * Circle judges Deliverable 2 on these numbers with external activity counted apart from
+ * our own, so the two rules that matter most are the ones a wrong row would quietly break:
+ * which rows are checks at all (settled, on Arc Mainnet, nothing else), and which payers
+ * are ours. Everything else here is bookkeeping on top of those two.
+ */
+const arc = getChainById('arc-mainnet')!
+const base = getChainById('base')!
+
+const OURS_GATEWAY = '0xAAAAaaaaAAAAaaaaAAAAaaaaAAAAaaaaAAAAaaaa'
+const OURS_FACILITATOR = '0xBbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb'
+const EXT_A = '0x1111111111111111111111111111111111111111'
+const EXT_B = '0x2222222222222222222222222222222222222222'
+const EXT_C = '0x3333333333333333333333333333333333333333'
+const PAY_TO = '0x000000000000000000000000000000000000dEaD'
+const NOW = Date.parse('2026-10-19T12:00:00Z')
+const DAY = 24 * 60 * 60 * 1000
+
+const lower = (a: string) => a.toLowerCase()
+/** The same address with its hex in upper case, which is how a wallet library may echo it. */
+const shouty = (a: string) => '0x' + a.slice(2).toUpperCase()
+
+let nonce = 0
+const nextNonce = () => '0x' + (++nonce).toString(16).padStart(64, '0')
+
+function gw(over: Partial<GatewaySettlementRecord> = {}): GatewaySettlementRecord {
+  return {
+    ts: '2026-10-18T10:00:00Z',
+    outcome: 'credited',
+    tool: 'risk_check',
+    resource: '/api/x402/gateway/tools/risk_check',
+    network: arc.caip2,
+    asset: 'usdc',
+    assetSymbol: 'USDC',
+    assetDecimals: 6,
+    value: '1000',
+    amountUsd: 0.001,
+    payer: EXT_A,
+    payTo: PAY_TO,
+    authNonce: nextNonce(),
+    confirmedBy: 'gateway-transfers-api',
+    facilitator: 'https://gateway.example',
+    ...over,
+  }
+}
+
+function fac(over: Partial<X402SettlementRecord> = {}): X402SettlementRecord {
+  return {
+    ts: '2026-10-18T11:00:00Z',
+    outcome: 'settled',
+    tool: 'verify_agent',
+    resource: '/api/x402/tools/verify_agent',
+    network: arc.caip2,
+    asset: 'usdc',
+    assetSymbol: 'USDC',
+    assetDecimals: 6,
+    value: '1500',
+    amountUsd: 0.0015,
+    baseUsd: 0.001,
+    feeUsd: 0.0005,
+    payer: EXT_A,
+    payTo: PAY_TO,
+    authNonce: nextNonce(),
+    tx: '0x' + 'ab'.repeat(32),
+    ...over,
+  }
+}
+
+type Over = { gateway?: GatewaySettlementRecord[]; facilitator?: X402SettlementRecord[] } & Partial<
+  Omit<ArcSeasonDeps, 'gatewayRows' | 'facilitatorRows'>
+>
+
+/** Rows in, nothing read from disk; the curated lists empty unless a test fills them. */
+function deps(over: Over = {}): ArcSeasonDeps {
+  const { gateway = [], facilitator = [], ...rest } = over
+  return {
+    gatewayRows: async () => gateway,
+    facilitatorRows: async () => facilitator,
+    internalPayers: { gateway: [lower(OURS_GATEWAY)], facilitator: [lower(OURS_FACILITATOR)] },
+    now: () => NOW,
+    partners: [],
+    vaults: [],
+    refusals: [],
+    ...rest,
+  }
+}
+
+const EMPTY_SIDE = {
+  checks: 0,
+  usd: 0,
+  wallets: [],
+  activeDays: [],
+  byRail: { gateway: { checks: 0, usd: 0 }, facilitator: { checks: 0, usd: 0 } },
+}
+
+test('the zero state reports every metric at 0 with its target and a reason, on the registry network', async () => {
+  const r = await arcSeasonReport(deps())
+  assert.equal(r.chain, 'arc-mainnet')
+  assert.equal(r.network, arc.caip2)
+  assert.equal(r.asOf, new Date(NOW).toISOString())
+  assert.deepEqual(r.program, {
+    name: 'Arc Acceleration Season',
+    deliverable2Due: '2026-10-30',
+    milestone1Due: '2026-11-05',
+    milestone2Due: '2026-11-06',
+  })
+  assert.deepEqual(r.logs, { gateway: { readable: true, rows: 0 }, facilitator: { readable: true, rows: 0 } })
+  assert.deepEqual(r.usage.internal, EMPTY_SIDE)
+  assert.deepEqual(r.usage.external, { ...EMPTY_SIDE, byWallet: [] })
+
+  const m1 = r.milestone1
+  assert.deepEqual([m1.vaults.count, m1.vaults.target], [0, 5])
+  assert.deepEqual([m1.checks.count, m1.checks.target, m1.checks.internal, m1.checks.external], [0, 100, 0, 0])
+  assert.deepEqual([m1.refusals.count, m1.refusals.target], [0, 2])
+  assert.deepEqual(m1.refusals.byKind, { 'vault-policy-on-chain': 0, 'deny-before-signing': 0 })
+  assert.equal(m1.evidence, 'https://a-identity.xyz/proof/arc')
+
+  const m2 = r.milestone2
+  assert.deepEqual([m2.externalTeamsLive.count, m2.externalTeamsLive.target], [0, 2])
+  assert.deepEqual([m2.externalChecks.count, m2.externalChecks.target], [0, 30])
+  assert.deepEqual([m2.teamActiveOnSeveralDays.count, m2.teamActiveOnSeveralDays.target], [0, 1])
+  assert.deepEqual([m2.publicReference.count, m2.publicReference.target], [0, 1])
+  assert.deepEqual([m2.unattributed.wallets, m2.unattributed.checks], [0, 0])
+
+  const after = r.afterProgram.activeExternalWallets
+  assert.deepEqual([after.count, after.target, after.windowDays, after.wallets], [0, 5, 28, []])
+
+  // Every zero carries a sentence saying why, so the page never has to show a bare 0.
+  for (const note of [
+    m1.vaults.note,
+    m1.checks.note,
+    m1.refusals.note,
+    m2.externalTeamsLive.note,
+    m2.externalChecks.note,
+    m2.teamActiveOnSeveralDays.note,
+    m2.publicReference.note,
+    r.usage.basis,
+    r.afterProgram.note,
+    r.note,
+  ]) {
+    assert.ok(note.length > 40, `too short to explain anything: ${note}`)
+  }
+  assert.match(r.note, /revised by Circle on 2026-10-19/)
+})
+
+test('a check is counted only on Arc Mainnet and only with a settled outcome', async () => {
+  const r = await arcSeasonReport(
+    deps({
+      gateway: [
+        gw(),
+        gw({ outcome: 'completed', tx: '0x' + 'cd'.repeat(32) }),
+        gw({ outcome: 'failed' }),
+        gw({ outcome: 'unconfirmed' }),
+        gw({ network: base.caip2 }),
+      ],
+      facilitator: [fac(), fac({ outcome: 'reverted' }), fac({ outcome: 'ambiguous' }), fac({ network: base.caip2 })],
+    }),
+  )
+  assert.equal(r.usage.external.checks, 3)
+  assert.deepEqual(r.usage.external.byRail, { gateway: { checks: 2, usd: 0.002 }, facilitator: { checks: 1, usd: 0.0015 } })
+  assert.equal(r.milestone1.checks.count, 2)
+  // The rows read are reported before filtering, so a reader can see how many were dropped.
+  assert.deepEqual(r.logs, { gateway: { readable: true, rows: 5 }, facilitator: { readable: true, rows: 4 } })
+})
+
+test("internal and external are split by the union of both rails' own-wallet lists, whatever the case", async () => {
+  const r = await arcSeasonReport(
+    deps({
+      gateway: [gw({ payer: shouty(OURS_GATEWAY) }), gw({ payer: OURS_FACILITATOR }), gw({ payer: EXT_A })],
+      facilitator: [fac({ payer: lower(OURS_FACILITATOR) }), fac({ payer: OURS_GATEWAY }), fac({ payer: shouty(EXT_B) })],
+    }),
+  )
+  assert.equal(r.usage.internal.checks, 4)
+  assert.equal(r.usage.external.checks, 2)
+  assert.deepEqual(r.usage.internal.wallets, [lower(OURS_GATEWAY), lower(OURS_FACILITATOR)].sort())
+  assert.deepEqual(r.usage.external.wallets, [lower(EXT_A), lower(EXT_B)])
+  assert.equal(r.usage.internal.usd, 0.005)
+  assert.equal(r.usage.external.usd, 0.0025)
+  assert.deepEqual(r.usage.internal.byRail, { gateway: { checks: 2, usd: 0.002 }, facilitator: { checks: 2, usd: 0.003 } })
+  // The wallets are published lowercased, so the same wallet never appears twice.
+  assert.deepEqual(r.usage.external.byWallet.map((w) => w.wallet), [lower(EXT_A), lower(EXT_B)])
+})
+
+test('Milestone 1 counts Gateway checks alone and leaves the facilitator rows to usage', async () => {
+  const r = await arcSeasonReport(
+    deps({
+      gateway: [gw({ payer: OURS_GATEWAY }), gw({ payer: EXT_A }), gw({ payer: EXT_A })],
+      facilitator: [fac({ payer: OURS_FACILITATOR }), fac({ payer: EXT_B })],
+    }),
+  )
+  const { count, internal, external, rail } = r.milestone1.checks
+  assert.deepEqual({ count, internal, external, rail }, { count: 3, internal: 1, external: 2, rail: 'circle-gateway' })
+  assert.equal(r.usage.internal.byRail.facilitator.checks, 1)
+  assert.equal(r.usage.external.byRail.facilitator.checks, 1)
+  // Milestone 2's external count is rail-agnostic: a paid check is a paid check.
+  assert.equal(r.milestone2.externalChecks.count, 3)
+  assert.match(r.milestone1.checks.note, /3 of 100/)
+  assert.match(r.milestone1.checks.note, /not counted here/)
+})
+
+test("active days are distinct UTC days, bounded by the wallet's first and last check in time order", async () => {
+  const r = await arcSeasonReport(
+    deps({
+      gateway: [
+        gw({ payer: EXT_A, ts: '2026-10-20T23:59:59Z' }),
+        gw({ payer: EXT_A, ts: '2026-10-21T00:00:01Z' }),
+        gw({ payer: EXT_A, ts: '2026-10-21T13:00:00Z' }),
+        // Local midnight-plus-two in a +03:00 zone is still the 20th in UTC, and the
+        // earliest of the four even though it sorts last as a string.
+        gw({ payer: EXT_A, ts: '2026-10-21T02:00:00+03:00' }),
+        gw({ payer: EXT_B, ts: 'not a date' }),
+      ],
+    }),
+  )
+  const [a, b] = r.usage.external.byWallet
+  assert.equal(a.wallet, lower(EXT_A))
+  assert.equal(a.checks, 4)
+  assert.deepEqual(a.activeDays, ['2026-10-20', '2026-10-21'])
+  assert.equal(a.firstTs, '2026-10-21T02:00:00+03:00')
+  assert.equal(a.lastTs, '2026-10-21T13:00:00Z')
+  // An unparseable timestamp still counts the check; it just cannot name a day.
+  assert.equal(b.checks, 1)
+  assert.deepEqual(b.activeDays, [])
+  assert.deepEqual(r.usage.external.activeDays, ['2026-10-20', '2026-10-21'])
+})
+
+test('a partner is live once its wallet paid, on several days only with two UTC days, and public only when flagged', async () => {
+  const r = await arcSeasonReport(
+    deps({
+      partners: [
+        { wallet: shouty(EXT_A), team: 'Team A', publicReference: true },
+        { wallet: EXT_B, team: 'Team B', publicReference: false },
+        { wallet: EXT_C, team: 'Team C, signed up and never paid', publicReference: true },
+      ],
+      gateway: [gw({ payer: EXT_A, ts: '2026-10-17T10:00:00Z' }), gw({ payer: EXT_A, ts: '2026-10-18T10:00:00Z' })],
+      facilitator: [fac({ payer: EXT_B, ts: '2026-10-18T10:00:00Z' }), fac({ payer: EXT_B, ts: '2026-10-18T22:00:00Z' })],
+    }),
+  )
+  const m2 = r.milestone2
+  assert.equal(m2.externalTeamsLive.count, 2)
+  assert.deepEqual(m2.externalTeamsLive.teams.map((t) => [t.team, t.wallet, t.checks, t.publicReference]), [
+    ['Team A', lower(EXT_A), 2, true],
+    ['Team B', lower(EXT_B), 2, false],
+  ])
+  assert.deepEqual([m2.teamActiveOnSeveralDays.count, m2.teamActiveOnSeveralDays.teams], [1, ['Team A']])
+  assert.deepEqual([m2.publicReference.count, m2.publicReference.names], [1, ['Team A']])
+  assert.deepEqual(r.usage.external.byWallet.map((w) => w.team), ['Team A', 'Team B'])
+  assert.deepEqual([m2.unattributed.wallets, m2.unattributed.checks], [0, 0])
+})
+
+test('an external wallet nobody attributed is reported as unattributed, never folded into a team', async () => {
+  const r = await arcSeasonReport(
+    deps({
+      partners: [{ wallet: EXT_A, team: 'Team A', publicReference: false }],
+      gateway: [gw({ payer: EXT_A }), gw({ payer: EXT_B }), gw({ payer: EXT_B })],
+    }),
+  )
+  assert.deepEqual([r.milestone2.unattributed.wallets, r.milestone2.unattributed.checks], [1, 2])
+  assert.equal(r.milestone2.externalTeamsLive.count, 1)
+  assert.equal(r.milestone2.externalChecks.count, 3)
+  assert.match(r.milestone2.unattributed.note, /1 external wallet\(s\) paid 2 check\(s\)/)
+  const b = r.usage.external.byWallet.find((w) => w.wallet === lower(EXT_B))!
+  assert.equal(b.team, undefined)
+})
+
+test('vault and refusal items derive their explorer links from the registry and count by list length', async () => {
+  const deployTx = '0x' + '11'.repeat(32)
+  const refusalTx = '0x' + '22'.repeat(32)
+  const r = await arcSeasonReport(
+    deps({
+      vaults: [{ address: EXT_A, owner: EXT_B, deployTx, deployedAt: '2026-10-25', note: 'deployed from the browser' }],
+      refusals: [
+        { kind: 'vault-policy-on-chain', txHash: refusalTx, at: '2026-10-26T10:00:00Z', note: 'reverted AboveAutoApprove' },
+        {
+          kind: 'deny-before-signing',
+          evidenceUrl: 'https://a-identity.xyz/api/agents/audit-log?id=1',
+          at: '2026-10-26T11:00:00Z',
+          note: 'DENY, nothing signed',
+        },
+      ],
+    }),
+  )
+  const { vaults, refusals } = r.milestone1
+  assert.equal(vaults.count, 1)
+  assert.equal(vaults.items[0].explorerUrl, addressUrl(arc, EXT_A))
+  assert.equal(vaults.items[0].deployExplorerUrl, txUrl(arc, deployTx))
+  assert.ok(vaults.items[0].explorerUrl.startsWith(arc.explorer!))
+  assert.doesNotMatch(vaults.note, /No owner-held vault yet/)
+  assert.equal(refusals.count, 2)
+  assert.deepEqual(refusals.byKind, { 'vault-policy-on-chain': 1, 'deny-before-signing': 1 })
+  assert.equal(refusals.items[0].explorerUrl, txUrl(arc, refusalTx))
+  // A DENY that stopped the payment before signing has no transaction, so no link is invented.
+  assert.equal(refusals.items[1].explorerUrl, null)
+  assert.equal(refusals.items[1].evidenceUrl, 'https://a-identity.xyz/api/agents/audit-log?id=1')
+})
+
+test('with the curated lists empty, the notes say why the launch-day vault and refusal do not count', async () => {
+  const r = await arcSeasonReport(deps({ vaults: [], refusals: [], partners: [] }))
+  // The address comes from the provenance ledger, not from a second copy in the report.
+  assert.match(r.milestone1.vaults.note, /launch-day vault 0x[0-9a-fA-F]{40} was deployed from our server key with our operating wallet as its owner/)
+  assert.match(r.milestone1.vaults.note, /not owner-held and is not counted/)
+  assert.match(r.milestone1.refusals.note, /simulation/)
+  assert.match(r.milestone1.refusals.note, /no hash and is not counted/)
+  assert.match(r.milestone2.externalTeamsLive.note, /only after its wallet has paid/)
+})
+
+test('every curated entry carries what its kind needs, so the lists can fill without the report lying', () => {
+  // Passes on the empty lists of 2026-10-19 and guards the day they fill: a partner with no
+  // wallet, a vault with no deploy hash or a refusal with neither a hash nor an audit link
+  // would count toward a metric while giving a reviewer nothing to open.
+  const isAddress = (a: string) => /^0x[0-9a-fA-F]{40}$/.test(a)
+  const isHash = (h: string) => /^0x[0-9a-fA-F]{64}$/.test(h)
+  for (const p of ARC_PARTNERS) {
+    assert.ok(isAddress(p.wallet), `partner ${p.team} has no wallet address`)
+    assert.ok(p.team.trim().length > 0, `partner ${p.wallet} has no team name`)
+  }
+  for (const v of ARC_OWNER_HELD_VAULTS) {
+    assert.ok(isAddress(v.address) && isAddress(v.owner), `vault ${v.address} needs an address and an owner`)
+    assert.ok(isHash(v.deployTx), `vault ${v.address} has no deploy hash`)
+    assert.match(v.deployedAt, /^\d{4}-\d{2}-\d{2}$/)
+  }
+  for (const r of ARC_REFUSALS) {
+    if (r.kind === 'vault-policy-on-chain') assert.ok(r.txHash && isHash(r.txHash), 'an on-chain refusal needs its reverted transaction')
+    else assert.ok(r.evidenceUrl?.startsWith('https://'), 'a DENY before signing needs an audit entry anyone can open')
+    assert.ok(Number.isFinite(Date.parse(r.at)), `refusal at ${r.at} is not a timestamp`)
+  }
+  // The targets are Circle's revision of Deliverable 1, pinned so a later edit is a decision.
+  assert.deepEqual(ARC_SEASON_TARGETS, {
+    ownerHeldVaults: 5,
+    gatewayChecks: 100,
+    inspectableRefusals: 2,
+    externalTeamsLive: 2,
+    externalChecks: 30,
+    teamsActiveOnSeveralDays: 1,
+    publicReferences: 1,
+    activeExternalWallets: 5,
+    activeWindowDays: 28,
+  })
+})
+
+test('the after-program reference counts external wallets with a check inside the last 28 days', async () => {
+  const r = await arcSeasonReport(
+    deps({
+      gateway: [
+        gw({ payer: EXT_A, ts: new Date(NOW - 3 * DAY).toISOString() }),
+        gw({ payer: EXT_B, ts: new Date(NOW - 30 * DAY).toISOString() }),
+        gw({ payer: OURS_GATEWAY, ts: new Date(NOW - 1 * DAY).toISOString() }),
+      ],
+    }),
+  )
+  const after = r.afterProgram.activeExternalWallets
+  assert.deepEqual([after.count, after.wallets], [1, [lower(EXT_A)]])
+  assert.equal(after.since, new Date(NOW - 28 * DAY).toISOString())
+  // Outside the window the wallet is still an external payer, just not an active one.
+  assert.equal(r.usage.external.wallets.length, 2)
+})
+
+test('an unreadable facilitator log is reported as unreadable rather than as zero demand', async () => {
+  const d = deps({ gateway: [gw({ payer: EXT_A })] })
+  d.facilitatorRows = async () => {
+    throw new Error('postgres unreachable')
+  }
+  const r = await arcSeasonReport(d)
+  assert.deepEqual(r.logs.facilitator, { readable: false, rows: 0, reason: 'postgres unreachable' })
+  assert.deepEqual(r.logs.gateway, { readable: true, rows: 1 })
+  assert.equal(r.usage.external.checks, 1)
+})
+
+test("the live deps read both rails' own internal-payer lists, so neither rail's wallets can read as external", () => {
+  const env = { X402_GATEWAY_INTERNAL_PAYERS: EXT_A, X402_3009_INTERNAL_PAYERS: EXT_B } as NodeJS.ProcessEnv
+  const d = liveArcSeasonDeps(env)
+  assert.deepEqual(d.internalPayers.gateway, gatewayInternalPayers(env))
+  assert.deepEqual(d.internalPayers.facilitator, facilitatorInternalPayers(env))
+  assert.ok(d.internalPayers.gateway.includes(lower(EXT_A)))
+  assert.ok(d.internalPayers.facilitator.includes(lower(EXT_B)))
+  // The hardcoded wallets of both rails are in, with or without the env additions.
+  const bare = liveArcSeasonDeps({} as NodeJS.ProcessEnv)
+  assert.ok(bare.internalPayers.gateway.length >= 1 && bare.internalPayers.facilitator.length >= 1)
+})
