@@ -78,7 +78,7 @@ function StepRow({ state, outcome, Icon, title, standard, children }: {
         ) : state === 'done' ? (
           OUTCOME[outcome].glyph
         ) : (
-          <Icon size={14} className="text-foreground/45" />
+          <Icon size={14} className="text-foreground/60" />
         )}
       </div>
       <div className="min-w-0 flex-1">

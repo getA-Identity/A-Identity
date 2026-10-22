@@ -76,6 +76,7 @@ export const NAV_MENU: readonly NavMenuGroup[] = [
     label: 'Company',
     items: [
       { label: 'Manifesto', href: '/manifesto', desc: 'Why agents need a passport' },
+      { label: 'Roadmap', href: '/roadmap', desc: 'What shipped, and what is next' },
       { label: 'Blog', href: '/blog', desc: 'Notes from the build' },
       { label: 'FAQ', href: '/faq', desc: 'The questions we actually get' },
       { label: 'Brand', href: '/brand', desc: 'The owl, the marks, the rules' },
@@ -128,6 +129,7 @@ export const FOOTER_COLUMNS: readonly FooterColumn[] = [
     title: 'Company',
     links: [
       { label: 'Manifesto', href: '/manifesto' },
+      { label: 'Roadmap', href: '/roadmap' },
       { label: 'Blog', href: '/blog' },
       { label: 'FAQ', href: '/faq' },
       { label: 'Brand', href: '/brand' },

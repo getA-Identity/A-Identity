@@ -39,7 +39,7 @@ function FooterItem({ link }: { link: FooterLink }) {
   /* 14px at 75% rather than 13px at 60%. The footer did not read as empty because it was
      missing content, it read as empty because fifteen links were set below the size the
      rest of the page treats as its smallest readable step. */
-  const className = 'text-sm text-foreground/75 transition-colors hover:text-foreground'
+  const className = 'text-sm text-foreground/80 transition-colors hover:text-foreground'
   if (link.external) {
     return (
       <a href={link.href} target="_blank" rel="noopener noreferrer" className={className}>
@@ -66,7 +66,7 @@ export default function SiteFooter() {
               footer that looks like it gave up. */}
           <div>
             <Lockup height={48} />
-            <p className="mt-3.5 max-w-[30ch] text-[15px] leading-relaxed text-foreground/75">
+            <p className="mt-3.5 max-w-[30ch] text-[15px] leading-relaxed text-foreground/80">
               The passport and wallet for the agentic economy.
             </p>
 
@@ -82,7 +82,7 @@ export default function SiteFooter() {
                   rel="noopener noreferrer"
                   aria-label={label}
                   title={label}
-                  className="text-foreground/70 transition-colors hover:text-accent"
+                  className="text-foreground/80 transition-colors hover:text-accent"
                 >
                   <Icon size={21} />
                 </a>
@@ -105,7 +105,7 @@ export default function SiteFooter() {
                     over three ragged link stacks read as one undifferentiated block; a
                     rule under each heading makes the columns visibly columns without
                     adding a border box around them. */}
-                <h3 className="border-b border-border pb-2.5 text-xs font-bold uppercase tracking-[0.14em] text-foreground/70">
+                <h3 className="border-b border-border pb-2.5 text-xs font-bold uppercase tracking-[0.14em] text-foreground/80">
                   {col.title}
                 </h3>
                 <ul className="mt-4 grid grid-cols-2 gap-x-4 gap-y-2.5 sm:flex sm:flex-col sm:gap-2.5">
@@ -122,7 +122,7 @@ export default function SiteFooter() {
 
         {/* The quiet block: the machine-facing line, the ask-an-AI row and the legal
             line, all at one small size so none of them competes with the links above. */}
-        <div className="mt-14 flex flex-col gap-3 border-t border-border pt-6 text-[13px] text-foreground/60">
+        <div className="mt-14 flex flex-col gap-3 border-t border-border pt-6 text-[13px] text-foreground/70">
           <p>
             This site speaks agent too:{' '}
             <a

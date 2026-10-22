@@ -41,10 +41,10 @@ function Badge({ m, tabbable = true }: { m: Membership; tabbable?: boolean }) {
         className="h-9 w-9 shrink-0 object-contain opacity-70 grayscale transition-[filter,opacity] duration-500 group-hover:opacity-100 group-hover:grayscale-0 group-focus-visible:opacity-100 group-focus-visible:grayscale-0"
       />
       <span className="flex flex-col leading-none">
-        <span className="font-heading text-[17px] tracking-[-0.01em] text-foreground/80 transition-colors duration-500 group-hover:text-foreground group-focus-visible:text-foreground">
+        <span className="font-heading text-[17px] tracking-[-0.01em] text-foreground/90 transition-colors duration-500 group-hover:text-foreground group-focus-visible:text-foreground">
           {m.org}
         </span>
-        <span className="mt-1.5 text-[10.5px] font-bold uppercase tracking-[0.16em] text-foreground/50 transition-colors duration-500 group-hover:text-accent group-focus-visible:text-accent">
+        <span className="mt-1.5 text-[11px] font-bold uppercase tracking-[0.14em] text-foreground/65 transition-colors duration-500 group-hover:text-accent group-focus-visible:text-accent">
           {m.program}
         </span>
       </span>
@@ -108,7 +108,7 @@ export default function MemberOf() {
         {...reveal}
         className="mx-auto flex max-w-[1100px] flex-col items-center gap-4 sm:flex-row sm:justify-center sm:gap-8"
       >
-        <p className="shrink-0 text-[11px] font-bold uppercase tracking-[0.18em] text-foreground/55">Member of</p>
+        <p className="shrink-0 text-xs font-bold uppercase tracking-[0.16em] text-foreground/70">Member of</p>
         {marquee ? <Marquee /> : <Row />}
       </motion.div>
     </section>

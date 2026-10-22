@@ -1,7 +1,8 @@
 import { useState } from 'react'
 import { Link } from 'react-router-dom'
 import { AnimatePresence, motion } from 'framer-motion'
-import { ArrowRight, Bot, Check, Copy, Rocket, User } from 'lucide-react'
+import { ArrowRight, Bot, Check, Copy, Terminal, User } from 'lucide-react'
+import { Button } from '../ui/button'
 import { DisplayHeading, Eyebrow, Lede } from '../ui/display'
 import { SectionShell, SectionIntro, reveal } from '../ui/section'
 import { Steps, StepRow } from '../ui/step-row'
@@ -106,7 +107,7 @@ function Step({
   return (
     <div className="relative pb-7 pl-11 last:pb-0">
       {!last && <span aria-hidden="true" className="absolute bottom-0 left-[13px] top-8 w-px bg-border" />}
-      <span className="absolute left-0 top-0 grid h-7 w-7 place-items-center rounded-full border border-border bg-card font-mono text-[11px] font-semibold text-foreground/60">
+      <span className="absolute left-0 top-0 grid h-7 w-7 place-items-center rounded-full border border-border bg-card font-mono text-[11px] font-semibold text-foreground/70">
         {index}
       </span>
       <p className="pt-0.5 text-[15px] font-semibold leading-7 text-foreground">{title}</p>
@@ -136,7 +137,7 @@ function AgentSteps() {
               className={`rounded-lg border px-4 py-2 text-sm font-medium transition-colors duration-150 ${
                 tool === t.key
                   ? 'border-foreground bg-foreground text-background'
-                  : 'border-border bg-card text-foreground/60 hover:border-accent/40 hover:text-foreground'
+                  : 'border-border bg-card text-foreground/75 hover:border-accent/40 hover:text-foreground'
               }`}
             >
               {t.label}
@@ -174,10 +175,10 @@ function AgentSteps() {
               }}
               className="group flex w-full items-center gap-4 px-4 py-2.5 text-left transition-colors hover:bg-foreground/[0.03]"
             >
-              <span className="w-12 shrink-0 font-mono text-[10px] font-semibold uppercase tracking-wider text-foreground/60">
+              <span className="w-12 shrink-0 font-mono text-[11px] font-semibold uppercase tracking-wider text-foreground/65">
                 {p.tag}
               </span>
-              <span className="min-w-0 flex-1 truncate text-sm text-foreground/70">{p.text}</span>
+              <span className="min-w-0 flex-1 truncate text-sm text-foreground/80">{p.text}</span>
               {copiedPrompt === p.tag ? (
                 <Check size={13} className="shrink-0 text-ok" />
               ) : (
@@ -186,9 +187,9 @@ function AgentSteps() {
             </button>
           ))}
         </div>
-        <p className="mt-3 text-xs text-foreground/60">
-          Prefer packages? <span className="font-mono text-foreground/60">@a-identity/marketplace-sdk</span>{' '}
-          for the full loop, <span className="font-mono text-foreground/60">@a-identity/trust-guard</span>{' '}
+        <p className="mt-3 text-[13px] text-foreground/70">
+          Prefer packages? <span className="font-mono text-foreground/80">@a-identity/marketplace-sdk</span>{' '}
+          for the full loop, <span className="font-mono text-foreground/80">@a-identity/trust-guard</span>{' '}
           to just gate a payment · full reference in the{' '}
           <a
             href="https://a-identity.mintlify.site/developers/mcp-server"
@@ -211,7 +212,7 @@ export default function QuickStart() {
   return (
     <SectionShell id="quickstart" size="lg" backdrop="door">
       <SectionIntro
-        eyebrow={<Eyebrow icon={Rocket}>Getting started</Eyebrow>}
+        eyebrow={<Eyebrow icon={Terminal}>Getting started</Eyebrow>}
         heading={
           <DisplayHeading size="section" className="max-w-[16ch]">
             Two audiences, one door.
@@ -285,14 +286,15 @@ export default function QuickStart() {
                     line you drew.
                   </StepRow>
                 </Steps>
-                <div className="mt-10">
-                  <Link
-                    to="/signup"
-                    className="inline-flex items-center gap-2 rounded-full bg-accent px-6 py-3 text-sm font-semibold text-white transition-transform hover:scale-[1.03]"
-                    style={{ boxShadow: '0 10px 34px rgba(115,66,226,0.34)' }}
-                  >
-                    Get your Agent ID <ArrowRight size={16} />
-                  </Link>
+                <div className="mt-10 flex flex-wrap items-center gap-3">
+                  <Button asChild size="lg" style={{ boxShadow: '0 10px 34px rgba(115,66,226,0.34)' }}>
+                    <Link to="/signup">
+                      Get your Agent ID <ArrowRight size={16} />
+                    </Link>
+                  </Button>
+                  <Button asChild variant="outline" size="lg" className="bg-card">
+                    <Link to="/explorer">Open the live explorer</Link>
+                  </Button>
                 </div>
               </motion.div>
             ) : (

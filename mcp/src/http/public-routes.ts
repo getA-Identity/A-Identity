@@ -19,7 +19,9 @@ import {
   issueX402Nonce, x402NonceValid, consumeX402Nonce, verifyPayerBinding,
 } from '../x402.js'
 import { nanoPaymentRequirements, settleNano, nanoResource } from '../nanopay.js'
-import { sendJson, type RouteCtx } from './shared.js'
+import { readBody, sendJson, type RouteCtx } from './shared.js'
+import { handleFeedback, visitorMarker } from '../feedback.js'
+import { clientIpFromXff } from '../client-ip.js'
 
 export async function handlePublicRoutes(ctx: RouteCtx): Promise<boolean> {
   const { req, res, url } = ctx
@@ -226,6 +228,24 @@ export async function handlePublicRoutes(ctx: RouteCtx): Promise<boolean> {
     if (!settled.ok) { sendJson(res, 402, { ...requirements, settleError: settled.reason }); return true }
     res.setHeader('PAYMENT-RESPONSE', Buffer.from(JSON.stringify(settled.settle)).toString('base64'))
     sendJson(res, 200, nanoResource(settled.settle))
+    return true
+  }
+
+  // ── site feedback: the widget in the corner of every page, emailed to the team ──────
+  // Anonymous by design (the public pages have no sign-in), so http.ts leaves it out of
+  // the verified-session gate; what bounds it is the site-feedback rate bucket and the
+  // honeypot inside handleFeedback. Nothing is stored. The log line carries the kind and
+  // the outcome, never the message.
+  if (req.method === 'POST' && url.pathname === '/api/feedback') {
+    const body = await readBody(req).catch(() => null)
+    const ip = clientIpFromXff(req.headers['x-forwarded-for'], req.socket.remoteAddress)
+    const { status, body: answer, kind } = await handleFeedback(body, {
+      receivedAt: new Date().toISOString(),
+      caller: ctx.callerId,
+      visitor: visitorMarker(ip),
+    })
+    console.log(`[feedback] kind=${kind} delivered=${answer.delivered} status=${status}`)
+    sendJson(res, status, answer)
     return true
   }
 

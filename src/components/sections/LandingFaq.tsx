@@ -4,6 +4,7 @@ import { ArrowRight } from 'lucide-react'
 import { motion } from 'framer-motion'
 import { EASE_OUT_EXPO } from '../../lib/brand'
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from '../ui/accordion'
+import { Button } from '../ui/button'
 
 /**
  * The four questions somebody actually hesitates over before letting an agent near their
@@ -185,7 +186,7 @@ export default function LandingFaq() {
         >
           The questions worth asking first.
         </motion.h2>
-        <motion.p {...reveal} className="mt-4 max-w-xl text-lg leading-relaxed text-foreground/55">
+        <motion.p {...reveal} className="mt-4 max-w-xl text-lg font-medium leading-relaxed text-foreground/70 sm:text-xl">
           Before you let anything move money on your behalf.
         </motion.p>
 
@@ -231,7 +232,7 @@ export default function LandingFaq() {
                     className="faq-answer grid data-[state=closed]:grid-rows-[0fr] data-[state=open]:grid-rows-[1fr]"
                   >
                     <div className="overflow-hidden" inert={open !== `q${i}`}>
-                      <p className="max-w-[62ch] pb-7 pr-8 text-[15px] leading-[1.75] text-foreground/70">
+                      <p className="max-w-[62ch] pb-7 pr-8 text-[15px] leading-[1.75] text-foreground/75">
                         {item.a}
                       </p>
                     </div>
@@ -244,12 +245,11 @@ export default function LandingFaq() {
 
         {/* Four is the landing cut. The full reference set, categories and all, lives on /faq. */}
         <motion.div {...reveal} transition={{ ...reveal.transition, delay: 0.12 }} className="mt-8">
-          <Link
-            to="/faq"
-            className="inline-flex items-center gap-1.5 text-sm font-semibold text-accent transition-opacity hover:opacity-80"
-          >
-            Read all {TOTAL_FAQ_COUNT} questions <ArrowRight size={15} />
-          </Link>
+          <Button asChild size="lg">
+            <Link to="/faq">
+              Read all {TOTAL_FAQ_COUNT} questions <ArrowRight size={16} />
+            </Link>
+          </Button>
         </motion.div>
       </div>
     </section>

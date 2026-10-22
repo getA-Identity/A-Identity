@@ -220,6 +220,8 @@ const server = http.createServer(async (req, res) => {
     !url.pathname.startsWith('/api/x402/stellar/') &&
     !url.pathname.startsWith('/api/x402/algorand/') &&
     !url.pathname.startsWith('/api/x402/gateway/') &&
+    // Site feedback is anonymous by design: bounded by the site-feedback bucket, it sends one email and touches nothing else.
+    url.pathname !== '/api/feedback' &&
     !url.pathname.startsWith('/api/x402/tools/') && !url.pathname.startsWith('/api/facilitator/')
   if (isMutation && !caller) {
     sendJson(res, 401, { error: 'Authentication required. Sign in with a wallet or an email link.' })

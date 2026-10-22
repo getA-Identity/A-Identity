@@ -37,6 +37,8 @@ export function rateBudget(method: string, pathname: string): { bucket: string; 
     return { bucket: 'auth', max: 20, windowMs: 60_000 }
   // Passwordless email: sends a real email, so limit hardest.
   if (pathname === '/api/auth/magic/request') return { bucket: 'magic', max: 5, windowMs: 60_000 }
+  // The site feedback widget: anonymous, and each accepted call sends a real email, so it is limited like the magic link.
+  if (pathname === '/api/feedback') return { bucket: 'site-feedback', max: 5, windowMs: 60_000 }
   // Expensive on-chain demo runs (each spends gas / moves real testnet value).
   if (pathname === '/api/arc/agent-run' || (pathname.startsWith('/api/arc/') && pathname.endsWith('-demo')))
     return { bucket: 'demo', max: 8, windowMs: 60_000 }

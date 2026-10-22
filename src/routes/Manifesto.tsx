@@ -1,51 +1,35 @@
 import { Link } from 'react-router-dom'
 import { motion } from 'framer-motion'
-import { ArrowUpRight } from 'lucide-react'
+import { ArrowRight, ArrowUpRight, Compass } from 'lucide-react'
 import PageHeader from '../components/PageHeader'
 import SiteFooter from '../components/sections/SiteFooter'
-import { DOCS_URL, EASE_OUT_EXPO } from '../lib/brand'
+import { DOCS_URL } from '../lib/brand'
 import { usePageMeta } from '../lib/head'
 import ThemeScope from '../components/ThemeScope'
+import { Button } from '../components/ui/button'
+import { DisplayHeading, Eyebrow } from '../components/ui/display'
+import { reveal } from '../components/ui/section'
+import { ManifestoSection } from '../components/manifesto/ManifestoSection'
+import { PillarsDiagram } from '../components/manifesto/PillarsDiagram'
+import { Principles } from '../components/manifesto/Principles'
+import { MechanismMap } from '../components/manifesto/MechanismMap'
+import { Landscape } from '../components/manifesto/Landscape'
+import { Refusals } from '../components/manifesto/Refusals'
+import { REVISED } from '../components/manifesto/content'
 
-const reveal = {
-  initial: { opacity: 0, y: 24 },
-  whileInView: { opacity: 1, y: 0 },
-  viewport: { once: true, margin: '-80px' },
-  transition: { duration: 0.6, ease: EASE_OUT_EXPO },
-}
-
-const BELIEFS = [
-  {
-    title: 'Agents are economic actors now.',
-    body: 'Over a hundred million agents already buy data, call tools, and trigger payments. They act faster than any human can click. What they lack is a way to prove who they are and settle value without a person in the middle of every step.',
-  },
-  {
-    title: 'Identity comes before money.',
-    body: 'You would not wire funds to a stranger with no name. Agents should not either. A verifiable on-chain identity (ERC-8004) and a portable reputation come first. Payment is what happens after trust is established, not before.',
-  },
-  {
-    title: 'Open rails beat walled gardens.',
-    body: 'Card networks and closed wallets are building agent products that route through their own toll booths. We bet on open standards: ERC-8004 for identity, x402 for payment, MCP for connection. Interoperable, inspectable, owned by no one.',
-  },
-  {
-    title: 'A human stays in the tower.',
-    body: 'Autonomy is not abdication. Agents act inside the limits and policies you set. Anything that holds a key, deploys a contract, or moves real value waits for a human to approve it. Human-on-the-loop, by design, not as an afterthought.',
-  },
-]
-
-const PRINCIPLES = [
-  'Verify first, then pay.',
-  'Real stablecoins, real settlement.',
-  'Reputation you can carry across chains.',
-  'No autonomous custody of keys or funds.',
-  'Every surface is readable by an agent.',
-]
+/**
+ * /manifesto: the public reference for investors, grant programs, partners and researchers
+ * as much as for developers. The argument runs in one direction: the question (how should
+ * an agent earn the right to act), the four pillars an action passes through, the ten laws
+ * with the mechanism that keeps each one, the 2026 landscape read against dated sources,
+ * what we refuse, and the closing statement. Copy lives in components/manifesto/content.ts.
+ */
 
 export default function Manifesto() {
   usePageMeta({
-    title: 'Manifesto · A-Identity',
+    title: 'Manifesto | A-Identity',
     description:
-      'Why agents need a passport before they need a wallet: identity first, bounded spending second, and a receipt for everything in between.',
+      'How should autonomous agents earn the right to act? Four pillars, ten principles and the mechanism behind each: identity, authority, boundaries and accountability, placed in the 2026 landscape of agent trust and payments.',
     canonical: 'https://a-identity.xyz/manifesto',
   })
 
@@ -53,70 +37,130 @@ export default function Manifesto() {
     <ThemeScope surface="background" className="w-full" style={{ fontFamily: 'var(--font-body)' }}>
       <PageHeader />
 
-      <main className="mx-auto w-full max-w-[820px] px-5 py-16 sm:px-8 sm:py-24">
-        <motion.span {...reveal} className="text-sm font-semibold tracking-wide text-accent">
-          Manifesto
-        </motion.span>
-        <motion.h1
-          {...reveal}
-          className="mt-4 text-4xl font-bold leading-[1.1] tracking-tight text-foreground sm:text-5xl"
-          style={{ fontFamily: 'var(--font-heading)' }}
-        >
-          The agentic economy needs a passport.
-        </motion.h1>
-        <motion.p {...reveal} className="mt-6 text-lg leading-relaxed text-foreground/65">
-          Software is starting to transact on its own. That is not a someday story, it is a
-          this-year one. We are building the layer that lets agents prove they are real and pay
-          each other safely, with humans supervising the parts that matter.
-        </motion.p>
-
-        <div className="mt-14 flex flex-col gap-10">
-          {BELIEFS.map((b, i) => (
-            <motion.section {...reveal} key={b.title} className="border-l-2 border-accent/25 pl-6">
-              <div className="text-xs font-semibold tracking-wide text-accent/70">
-                {i + 1}
-              </div>
-              <h2 className="mt-2 text-xl font-bold tracking-tight text-foreground sm:text-2xl">
-                {b.title}
-              </h2>
-              <p className="mt-3 leading-relaxed text-foreground/65">{b.body}</p>
-            </motion.section>
-          ))}
-        </div>
-
-        {/* Principles */}
-        <motion.div
-          {...reveal}
-          className="mt-16 rounded-3xl border border-border bg-card p-8 sm:p-10"
-        >
-          <h2 className="text-lg font-bold tracking-tight text-foreground">What we hold to</h2>
-          <ul className="mt-5 flex flex-col gap-3">
-            {PRINCIPLES.map((p) => (
-              <li key={p} className="flex items-start gap-3 text-foreground/75">
-                <span className="mt-2 h-1.5 w-1.5 shrink-0 rounded-full bg-accent" />
-                <span className="leading-relaxed">{p}</span>
-              </li>
-            ))}
-          </ul>
-        </motion.div>
-
-        {/* Closing CTA */}
-        <motion.div {...reveal} className="mt-14 flex flex-wrap items-center gap-4">
-          <Link
-            to="/signup"
-            className="inline-flex items-center gap-2 rounded-full bg-accent px-6 py-3 text-sm font-semibold text-white transition-transform hover:scale-[1.03]"
+      <main className="w-full">
+        {/* Opening: the question, the core statement, the dateline, then two short paragraphs. */}
+        <section className="mx-auto w-full max-w-[1040px] px-5 pb-14 pt-16 sm:px-8 sm:pb-20 sm:pt-24">
+          <motion.div {...reveal}>
+            <Eyebrow icon={Compass}>Manifesto</Eyebrow>
+          </motion.div>
+          <motion.div {...reveal} className="mt-6 max-w-[920px]">
+            <DisplayHeading size="display">How should autonomous agents earn the right to act?</DisplayHeading>
+          </motion.div>
+          <motion.p
+            {...reveal}
+            className="mt-7 max-w-[760px] text-lg font-medium leading-relaxed text-foreground/70 sm:text-xl"
           >
-            Claim an Agent ID
-          </Link>
-          <a
-            href={DOCS_URL}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="inline-flex items-center gap-1.5 text-sm font-semibold text-foreground/70 transition-colors hover:text-foreground"
+            Identity enables autonomy. Authority defines its limits. Accountability makes it
+            trustworthy.
+          </motion.p>
+          <motion.div
+            {...reveal}
+            className="mt-8 flex flex-wrap items-center gap-x-5 gap-y-2 border-t border-border pt-4 font-mono text-[11px] uppercase tracking-[0.14em] text-foreground/45"
           >
-            Read the docs <ArrowUpRight size={15} />
-          </a>
-        </motion.div>
+            <span>Revised {REVISED}</span>
+            <span className="hidden h-px w-5 bg-foreground/20 sm:block" aria-hidden="true" />
+            <span>One trust layer. Many ecosystems.</span>
+          </motion.div>
+
+          <div className="mt-12 max-w-[760px] space-y-5 text-base leading-relaxed text-foreground/70 sm:text-[17px]">
+            <motion.p {...reveal}>
+              Software now buys data, calls tools and pays for work on its own. The question is no
+              longer whether agents will act. It is what gives an action standing: who did it, for
+              whom, within what limits, and what remains once it is done.
+            </motion.p>
+            <motion.p {...reveal}>
+              This page is our answer, written for investors, grant programs, partners and
+              researchers as much as for developers. The laws are short on purpose. The mechanism
+              under each one is how we keep it, and the landscape section places us among the
+              other answers being built in 2026.
+            </motion.p>
+          </div>
+        </section>
+
+        <ManifestoSection
+          id="pillars"
+          index="01"
+          label="The four pillars"
+          heading="An action passes through four questions."
+          lede="Identity, authority, boundaries and accountability. The gate in the middle answers ALLOW, WARN or DENY, and the receipt outlives the action that produced it."
+        >
+          <PillarsDiagram />
+        </ManifestoSection>
+
+        <ManifestoSection
+          id="principles"
+          index="02"
+          label="Ten principles"
+          heading="Ten laws, each with the part of the product that keeps it."
+          lede="Written to last the way simple laws do, and tied to a mechanism so that none of them stays a slogan."
+        >
+          <Principles />
+        </ManifestoSection>
+
+        <ManifestoSection
+          id="mechanisms"
+          index="03"
+          label="From principle to mechanism"
+          heading="Five words of the manifesto, five parts of the product."
+          lede="Identity, authority, decision, evidence and network trust each name one thing you can call, read or verify today."
+        >
+          <MechanismMap />
+        </ManifestoSection>
+
+        <ManifestoSection
+          id="landscape"
+          index="04"
+          label="The landscape, 2026"
+          heading="Different answers to the same question."
+          lede="Card networks, platforms, open rails and registries are each deciding how an agent proves who it is and how far it may go. Read this as a map, not a scoreboard: every row states what we could verify, with the date we read it."
+        >
+          <Landscape />
+        </ManifestoSection>
+
+        <ManifestoSection
+          id="refusals"
+          index="05"
+          label="What we refuse"
+          heading="Four things we will not do."
+          lede="Each one is a line the code enforces, not a promise in a document."
+          width="prose"
+        >
+          <Refusals />
+        </ManifestoSection>
+
+        {/* Closing: the long-form statement and the three doors out. */}
+        <section className="mx-auto w-full max-w-[760px] border-t border-border px-5 pb-20 pt-14 sm:px-8 sm:pb-28 sm:pt-20">
+          <motion.blockquote {...reveal} className="border-l-2 border-accent pl-6 sm:pl-8">
+            <p
+              className="text-2xl font-bold leading-snug tracking-tight text-foreground sm:text-[2rem]"
+              style={{ fontFamily: 'var(--font-heading)', textWrap: 'balance' }}
+            >
+              Autonomous systems should be free to act, but never free from identity, authority or
+              accountability.
+            </p>
+          </motion.blockquote>
+          <motion.div {...reveal} className="mt-10 flex flex-wrap items-center gap-3">
+            <Button asChild size="lg">
+              <Link to="/architecture">
+                Read the architecture <ArrowRight size={16} aria-hidden="true" />
+              </Link>
+            </Button>
+            <Button asChild variant="outline" size="lg">
+              <Link to="/explorer">Open the explorer</Link>
+            </Button>
+            <Button asChild variant="ghost" size="lg">
+              <a href={DOCS_URL} target="_blank" rel="noopener noreferrer">
+                Read the docs <ArrowUpRight size={16} aria-hidden="true" />
+              </a>
+            </Button>
+          </motion.div>
+          <motion.p
+            {...reveal}
+            className="mt-10 font-mono text-[11px] uppercase tracking-[0.14em] text-foreground/45"
+          >
+            Chain changes. A-Identity remains.
+          </motion.p>
+        </section>
       </main>
 
       <SiteFooter />

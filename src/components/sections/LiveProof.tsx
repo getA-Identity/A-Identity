@@ -5,6 +5,7 @@ import { ArrowUpRight, Radio } from 'lucide-react'
 import { EASE_OUT_EXPO } from '../../lib/brand'
 import { ASP_BASE } from '../../lib/mcpBase'
 import { SectionBackdrop } from '../ui/section-backdrop'
+import { Button } from '../ui/button'
 import AgentRing from './AgentRing'
 import SettlementTicker from './SettlementTicker'
 
@@ -34,7 +35,7 @@ const STATS = [
   // did not: all 120 came from our own buyer wallet (mcp/src/asp/proof.ts names it).
   { n: 120, k: '120', v: 'real settlements', sub: 'X Layer mainnet, all from our own buyer wallet' },
   { n: null, k: '#0', v: 'first registry token', sub: 'Robinhood Chain mainnet' },
-  { n: 1647, k: '1647', v: 'tests, green', sub: 'deterministic scores' },
+  { n: 1659, k: '1659', v: 'tests, green', sub: 'deterministic scores' },
 ] as const
 
 /** A number that counts itself up the first time it scrolls into view. */
@@ -110,14 +111,25 @@ export default function LiveProof() {
         <motion.h2 {...reveal} className="text-3xl font-bold leading-[1.1] tracking-tight sm:text-[2.6rem]" style={{ fontFamily: 'var(--font-heading)' }}>
           Not a demo. Live, and settling on-chain.
         </motion.h2>
-        <motion.p {...reveal} className="mt-4 max-w-xl text-lg leading-relaxed text-foreground/70">
-          A-Identity runs as a trust oracle on eight mainnets, led by Arc Mainnet, where it went
-          live the day the network opened: an agent on the canonical registry, a spend vault
-          holding real USDC, and checks paid through Circle Gateway nanopayments with no gas on
-          either side. Stellar and Algorand follow, then Base, Arbitrum One, Robinhood Chain, OKX
-          X Layer and Celo. Per-call checks, settled in real stablecoins. We publish them as proof that an open payment rail works end to
-          end and composes with an identity layer, not as a revenue line: per-call amounts
-          are fractions of a cent by design. Every number here is on-chain, and every
+        <motion.p {...reveal} className="mt-4 max-w-[56ch] text-lg font-medium leading-relaxed text-foreground/70 sm:text-xl">
+          A trust oracle on eight mainnets, live on Arc Mainnet since the day the network opened.
+          Per-call checks settle in real stablecoins, and every number here is on-chain.
+        </motion.p>
+
+        {/* The networks, in the order of emphasis the product decided on, set in full
+            foreground: this is the line a visitor should be able to quote afterwards. */}
+        <motion.p {...reveal} className="mt-5 flex max-w-[60ch] items-start gap-2.5 text-base font-semibold leading-snug text-foreground sm:text-lg">
+          <span className="mt-[0.45em] inline-block h-2 w-2 shrink-0 rounded-full bg-ok" aria-hidden="true" />
+          <span>
+            Live on Arc Mainnet, Stellar and Algorand, then Base, Arbitrum One, Robinhood Chain,
+            OKX X Layer and Celo.
+          </span>
+        </motion.p>
+
+        {/* The qualifier stays, because the counters below mean nothing without it. */}
+        <motion.p {...reveal} className="mt-4 max-w-[60ch] text-sm leading-relaxed text-foreground/70">
+          Published as proof that an open payment rail works end to end with an identity layer,
+          not as a revenue line: per-call amounts are fractions of a cent by design, and every
           counter labels which traffic is our own.
         </motion.p>
 
@@ -132,7 +144,7 @@ export default function LiveProof() {
               <div className="font-mono text-4xl font-bold tracking-tight text-foreground">
                 <CountUp to={s.n} fallback={s.k} />
               </div>
-              <div className="mt-2 text-[15px] font-medium text-foreground/70">{s.v}</div>
+              <div className="mt-2 text-[15px] font-semibold text-foreground">{s.v}</div>
               <div className="mt-1 text-sm text-foreground/70">{s.sub}</div>
             </motion.div>
           ))}
@@ -142,12 +154,12 @@ export default function LiveProof() {
         <AgentRing />
 
         {/* The wire you can touch. */}
-        <motion.div {...reveal} className="mt-8 flex flex-wrap items-center gap-x-6 gap-y-3">
+        <motion.div {...reveal} className="mt-8 flex flex-wrap items-center gap-x-5 gap-y-3">
           <button
             type="button"
             onClick={runPing}
             disabled={pinging}
-            className="inline-flex items-center gap-2 rounded-full border border-accent/40 bg-accent/10 px-5 py-2.5 text-sm font-semibold text-accent transition hover:bg-accent/15 disabled:opacity-60"
+            className="inline-flex min-h-10 items-center gap-2 rounded-full border border-accent/40 bg-accent/10 px-5 py-2.5 text-sm font-semibold text-accent transition hover:bg-accent/15 disabled:opacity-60"
           >
             <Radio size={15} className={pinging ? 'animate-pulse' : ''} />
             {pinging ? 'Calling the live oracle…' : 'Ping the live oracle'}
@@ -157,60 +169,55 @@ export default function LiveProof() {
             <motion.span
               initial={{ opacity: 0, x: -8 }}
               animate={{ opacity: 1, x: 0 }}
-              className="font-mono text-xs text-foreground/60"
+              className="font-mono text-xs text-foreground/70"
             >
-              <span className={ping.ok ? 'font-bold text-emerald-600 dark:text-emerald-400' : 'font-bold text-amber-600 dark:text-amber-500'}>
+              <span className={ping.ok ? 'font-bold text-ok' : 'font-bold text-warn'}>
                 {ping.status}
               </span>{' '}
               · {ping.ms}ms · {ping.note}
             </motion.span>
           )}
+        </motion.div>
 
-          <Link
-            to="/arc"
-            className="inline-flex items-center gap-1.5 text-sm font-semibold text-accent hover:underline"
-          >
-            Arc Mainnet, live <ArrowUpRight size={15} />
-          </Link>
+        {/* The proof pages, as buttons rather than a run of inline links: Arc is the one the
+            season leads with, so it is the primary; the rest are the same shape, outlined. */}
+        <motion.div {...reveal} className="mt-5 flex flex-wrap items-center gap-3">
+          <Button asChild size="lg">
+            <Link to="/arc">
+              Arc Mainnet, live <ArrowUpRight size={16} />
+            </Link>
+          </Button>
 
           {/* The page a visitor can run, next to the receipts it writes. */}
-          <Link
-            to="/stellar?network=testnet"
-            className="inline-flex items-center gap-1.5 text-sm font-semibold text-accent hover:underline"
-          >
-            The Stellar demo, on testnet <ArrowUpRight size={15} />
-          </Link>
+          <Button asChild variant="outline" className="bg-background">
+            <Link to="/stellar?network=testnet">
+              The Stellar demo, on testnet <ArrowUpRight size={15} />
+            </Link>
+          </Button>
 
-          <Link
-            to="/proof/stellar"
-            className="inline-flex items-center gap-1.5 text-sm font-semibold text-accent hover:underline"
-          >
-            The Stellar rail <ArrowUpRight size={15} />
-          </Link>
+          <Button asChild variant="outline" className="bg-background">
+            <Link to="/proof/stellar">
+              The Stellar rail <ArrowUpRight size={15} />
+            </Link>
+          </Button>
 
-          <Link
-            to="/proof/algorand"
-            className="inline-flex items-center gap-1.5 text-sm font-semibold text-accent hover:underline"
-          >
-            The Algorand rail <ArrowUpRight size={15} />
-          </Link>
+          <Button asChild variant="outline" className="bg-background">
+            <Link to="/proof/algorand">
+              The Algorand rail <ArrowUpRight size={15} />
+            </Link>
+          </Button>
 
-          <a
-            href={PROOF_URL}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="inline-flex items-center gap-1.5 text-sm font-semibold text-accent hover:underline"
-          >
-            See every X Layer settlement <ArrowUpRight size={15} />
-          </a>
+          <Button asChild variant="outline" className="bg-background">
+            <a href={PROOF_URL} target="_blank" rel="noopener noreferrer">
+              See every X Layer settlement <ArrowUpRight size={15} />
+            </a>
+          </Button>
 
-          <Link
-            to={CELO_PROOF_URL}
-            className="inline-flex items-center gap-1.5 text-sm font-semibold text-accent hover:underline"
-          >
-            See every Celo settlement <ArrowUpRight size={15} />
-          </Link>
-
+          <Button asChild variant="outline" className="bg-background">
+            <Link to={CELO_PROOF_URL}>
+              See every Celo settlement <ArrowUpRight size={15} />
+            </Link>
+          </Button>
         </motion.div>
 
         {/* The claim above, made checkable: every settlement as a row that opens on OKLink. */}

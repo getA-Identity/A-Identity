@@ -3,6 +3,7 @@ import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom'
 import { MotionConfig } from 'framer-motion'
 import ScrollToTop from './components/ScrollToTop'
 import PageViews from './components/PageViews'
+import FeedbackWidget from './components/FeedbackWidget'
 import { initAnalytics } from './lib/analytics'
 import { registerWebMcpTools } from './lib/webmcp'
 import { useAuth } from './store/auth'
@@ -23,6 +24,7 @@ const Login = lazy(() => import('./routes/Login'))
 const Signup = lazy(() => import('./routes/Signup'))
 const AuthCallback = lazy(() => import('./routes/AuthCallback'))
 const Manifesto = lazy(() => import('./routes/Manifesto'))
+const Roadmap = lazy(() => import('./routes/Roadmap'))
 const Intro = lazy(() => import('./routes/Intro'))
 const Stats = lazy(() => import('./routes/Stats'))
 const Contact = lazy(() => import('./routes/Contact'))
@@ -109,6 +111,8 @@ export default function App() {
         <Route path="/signup" element={<Signup />} />
         <Route path="/auth/callback" element={<AuthCallback />} />
         <Route path="/manifesto" element={<Manifesto />} />
+        {/* The roadmap page and the GitHub ROADMAP.md render the same data (lib/roadmap.ts). */}
+        <Route path="/roadmap" element={<Roadmap />} />
         <Route path="/intro" element={<Intro />} />
         <Route path="/stats" element={<Stats />} />
         {/* The brand kit is the brand page. There were two of them for a while: a thin
@@ -173,6 +177,11 @@ export default function App() {
         <Route path="*" element={<NotFound />} />
       </Routes>
       </Suspense>
+      {/* The feedback button in the corner of every page, the console included: inside the
+          router so it can say which page a note came from, outside the routes so no page
+          has to remember to mount it, and inside MotionConfig so its dialog honors
+          prefers-reduced-motion like everything else. */}
+      <FeedbackWidget />
       </MotionConfig>
     </BrowserRouter>
   )

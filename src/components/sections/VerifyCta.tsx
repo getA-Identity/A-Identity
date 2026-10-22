@@ -204,7 +204,7 @@ function VerifyStage() {
           </div>
         </div>
       </div>
-      <p className="mt-3 text-xs text-foreground/60">
+      <p className="mt-3 text-[13px] text-foreground/70">
         The transcript is illustrative; the verdict engine behind it is live in the explorer.
       </p>
     </div>
@@ -235,7 +235,7 @@ export default function VerifyCta() {
         <motion.h2 {...reveal} className="text-3xl font-bold leading-[1.1] tracking-tight sm:text-[2.6rem]" style={{ fontFamily: 'var(--font-heading)' }}>
           Trust an agent in one lookup.
         </motion.h2>
-        <motion.p {...reveal} className="mt-4 max-w-xl text-lg leading-relaxed text-foreground/70">
+        <motion.p {...reveal} className="mt-4 max-w-xl text-lg font-medium leading-relaxed text-foreground/70 sm:text-xl">
           Paste a wallet address or token id. We read the chain, not a database, and answer
           in a second.
         </motion.p>
@@ -263,13 +263,13 @@ export default function VerifyCta() {
             width rows, because wrapping them inline left a ragged edge: two chips on the
             first line beside the label and a third stranded under it. From `sm` up the
             original inline wrap returns, where there is room for it to look deliberate. */}
-        <motion.div {...reveal} className="mt-4 text-sm text-foreground/60">
+        <motion.div {...reveal} className="mt-4 text-sm font-medium text-foreground/70">
           <span className="block sm:hidden">Try</span>
           <div className="mt-2 grid gap-2 sm:mt-0 sm:flex sm:flex-wrap sm:items-center">
             <span className="hidden sm:inline">Try</span>
             {EXAMPLES.map((ex) => (
               <button key={ex.q} type="button" onClick={() => go(ex.q)}
-                className="w-full rounded-full border border-border bg-card px-3 py-2 text-center font-mono text-xs text-foreground/65 transition hover:border-accent/50 hover:text-foreground sm:w-auto sm:py-1.5 sm:text-left">
+                className="w-full min-h-10 rounded-full border border-border bg-card px-3.5 py-2 text-center font-mono text-xs font-semibold text-foreground/75 transition hover:border-accent/50 hover:text-foreground sm:w-auto sm:min-h-0 sm:py-1.5 sm:text-left">
                 {ex.label}
               </button>
             ))}

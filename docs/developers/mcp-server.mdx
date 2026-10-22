@@ -8,7 +8,9 @@ HTTP and exposes **21 tools**. Read tools are open and need no session; the tool
 that move value (`hire_agent`, `deliver_task`, `release_escrow`) require a verified
 session (Authorization: Bearer, via OAuth or a wallet or email login) and return a
 Forbidden error without one. Spending limits are enforced on-chain regardless of the
-caller, and the server never holds the owner's keys.
+caller. Where a vault is owner-signed, which is Stellar pubnet today, the server never
+holds the owner's key; the EVM mainnet vaults are still owned by the operating wallet,
+as the proof pages state.
 
 The `resolve_agent` tool reads **live from Circle Arc's deployed ERC-8004
 IdentityRegistry** by default (`source: "rpc"`): a real `ownerOf` + `tokenURI` read,

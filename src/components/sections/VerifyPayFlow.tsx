@@ -3,6 +3,8 @@ import { motion, useReducedMotion } from 'framer-motion'
 import { ArrowRight, Bot, ShieldCheck, User } from 'lucide-react'
 import { Link } from 'react-router-dom'
 import { DOCS_URL } from '../../lib/brand'
+import { Badge } from '../ui/badge'
+import { Button } from '../ui/button'
 import { DisplayHeading, Eyebrow, Lede } from '../ui/display'
 import { SectionShell, SectionIntro, reveal } from '../ui/section'
 
@@ -38,17 +40,13 @@ const LEDGER: {
 /** Rows kept in the feed. The card scrolls internally past ~4.5 of them. */
 const VISIBLE = 6
 
+/* The shared badge from ui/badge, so the verdict here is the same pill as in the explorer
+   and the console: semantic ok / danger tokens, one ring, no palette literals. */
 function VerdictPill({ verdict }: { verdict: Verdict }) {
   return (
-    <span
-      className={
-        verdict === 'ALLOW'
-          ? 'inline-block rounded-full border border-emerald-500/30 bg-emerald-500/10 px-2.5 py-0.5 font-mono text-[10px] font-bold text-emerald-600 dark:text-emerald-400'
-          : 'inline-block rounded-full border border-red-500/30 bg-red-500/10 px-2.5 py-0.5 font-mono text-[10px] font-bold text-red-600 dark:text-red-400'
-      }
-    >
+    <Badge variant={verdict === 'ALLOW' ? 'success' : 'danger'} className="font-mono font-bold">
       {verdict}
-    </span>
+    </Badge>
   )
 }
 
@@ -67,7 +65,7 @@ function LedgerRow({ entry }: { entry: (typeof LEDGER)[number] }) {
           <ArrowRight size={12} className="shrink-0 text-foreground/60" />
           <span className="truncate font-normal text-foreground/70">{entry.to}</span>
         </p>
-        <p className="mt-0.5 truncate text-xs text-foreground/60">{entry.reason}</p>
+        <p className="mt-0.5 truncate text-xs text-foreground/65">{entry.reason}</p>
       </div>
       <div className="justify-self-start sm:justify-self-center">
         <VerdictPill verdict={entry.verdict} />
@@ -80,12 +78,8 @@ function LedgerRow({ entry }: { entry: (typeof LEDGER)[number] }) {
         {entry.amount}
       </p>
       <p
-        className={`col-span-3 truncate font-mono text-[11px] sm:col-span-1 sm:justify-self-end sm:text-right ${
-          denied
-            ? 'text-red-600/80 dark:text-red-400/80'
-            : entry.bridge
-              ? 'text-accent'
-              : 'text-emerald-600/90 dark:text-emerald-400/90'
+        className={`col-span-3 truncate font-mono text-xs sm:col-span-1 sm:justify-self-end sm:text-right ${
+          denied ? 'text-danger/80' : entry.bridge ? 'text-accent' : 'text-ok'
         }`}
       >
         {entry.settle}
@@ -147,13 +141,13 @@ function SettlementLedger() {
             convention every reader takes as "this is happening now". The real ledgers are
             one click away and are labelled as such. */}
         <p className="text-sm font-semibold text-foreground">Settlement ledger, illustrated</p>
-        <p className="font-mono text-[10px] uppercase tracking-[0.14em] text-foreground/60">
+        <p className="font-mono text-[11px] uppercase tracking-[0.14em] text-foreground/65">
           verify then pay · usdc
         </p>
       </div>
 
       {/* column heads (desktop) */}
-      <div className="hidden grid-cols-[minmax(0,1fr)_76px_88px_minmax(150px,0.6fr)] gap-x-4 border-b border-border/60 px-5 py-2 font-mono text-[9px] uppercase tracking-[0.16em] text-foreground/60 sm:grid">
+      <div className="hidden grid-cols-[minmax(0,1fr)_76px_88px_minmax(150px,0.6fr)] gap-x-4 border-b border-border/60 px-5 py-2 font-mono text-xs uppercase tracking-[0.12em] text-foreground/65 sm:grid">
         <span>Counterparties</span>
         <span className="justify-self-center">Verdict</span>
         <span className="justify-self-end">Amount</span>
@@ -190,9 +184,8 @@ export default function VerifyPayFlow() {
         }
         lede={
           <Lede>
-            An agent asks. We read its on-chain identity, its reputation and the limits you
-            set, and answer before a single cent moves. Clean counterparties settle at machine
-            speed. The rest stop here.
+            An agent asks. We read its on-chain identity, its reputation and the limits you set,
+            then answer before a cent moves. Clean counterparties settle; the rest stop here.
           </Lede>
         }
       />
@@ -209,35 +202,31 @@ export default function VerifyPayFlow() {
             own text rather than under its bullet. */}
         <div className="mt-6 flex flex-col gap-3.5 text-sm sm:flex-row sm:flex-wrap sm:items-center sm:gap-x-8 sm:gap-y-3">
           <span className="flex items-start gap-2 text-foreground/70 sm:items-center">
-            <span className="mt-1.5 h-2 w-2 shrink-0 rounded-full bg-emerald-500 sm:mt-0" />
+            <span className="mt-1.5 h-2 w-2 shrink-0 rounded-full bg-ok sm:mt-0" />
             Settles in USDC on Arc
           </span>
           <span className="flex items-start gap-2 text-foreground/70 sm:items-center">
-            <span className="mt-1.5 h-2 w-2 shrink-0 rounded-full bg-red-500 sm:mt-0" />
+            <span className="mt-1.5 h-2 w-2 shrink-0 rounded-full bg-danger sm:mt-0" />
             Refused before it moves
           </span>
           <span className="flex items-start gap-2 text-foreground/70 sm:items-center">
             <span className="mt-1.5 h-2 w-2 shrink-0 rounded-full bg-accent sm:mt-0" />
             Cross-chain settle via Circle Gateway + CCTP
           </span>
-          <span className="mt-1 flex items-center gap-5 border-t border-border/60 pt-4 sm:mt-0 sm:ml-auto sm:border-0 sm:pt-0">
-            <Link
-              to="/explorer"
-              className="inline-flex items-center gap-1.5 font-semibold text-foreground/70 transition-colors hover:text-foreground"
-            >
-              View more
-            </Link>
-            <Link
-              to="/explorer"
-              className="inline-flex items-center gap-1.5 font-semibold text-accent transition-opacity hover:opacity-80"
-            >
-              Run one yourself <ArrowRight size={15} />
-            </Link>
+          <span className="mt-1 flex flex-wrap items-center gap-3 border-t border-border/60 pt-4 sm:mt-0 sm:ml-auto sm:border-0 sm:pt-0">
+            <Button asChild variant="outline" size="lg" className="bg-card">
+              <Link to="/explorer">View more</Link>
+            </Button>
+            <Button asChild size="lg">
+              <Link to="/explorer">
+                Run one yourself <ArrowRight size={16} />
+              </Link>
+            </Button>
           </span>
         </div>
       </motion.div>
 
-      <motion.p {...reveal} transition={{ ...reveal.transition, delay: 0.24 }} className="mt-6 text-sm text-foreground/60">
+      <motion.p {...reveal} transition={{ ...reveal.transition, delay: 0.24 }} className="mt-6 text-sm font-medium text-foreground/70">
         The same verify-then-pay flow is available as an SDK and an MCP server.{' '}
         <a
           href={`${DOCS_URL}/developers/sdk`}

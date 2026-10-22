@@ -95,7 +95,7 @@ export default function TractionPanel() {
               <div key={k} className="bg-card p-4">
                 <div className="text-[11px] font-semibold uppercase tracking-[0.1em] text-foreground/70">{k}</div>
                 <div className="mt-1.5 text-2xl font-semibold leading-none tracking-[-0.03em] tabular-nums text-foreground">{v}</div>
-                <div className="mt-1.5 text-[11px] leading-relaxed text-foreground/60">{sub}</div>
+                <div className="mt-1.5 text-xs leading-relaxed text-foreground/65">{sub}</div>
               </div>
             ))}
           </div>
@@ -104,14 +104,14 @@ export default function TractionPanel() {
             <div className="text-sm font-medium text-foreground/80">
               The engine is live and answering, and no policy decisions have been recorded yet.
             </div>
-            <div className="mt-1.5 text-[11px] leading-relaxed text-foreground/60">
+            <div className="mt-1.5 text-xs leading-relaxed text-foreground/65">
               Numbers appear here once agents start asking for verdicts. We would rather show none than invent any.
               {t ? ` ${t.registeredAgents} agent${t.registeredAgents === 1 ? '' : 's'} registered so far, which is not the same as traction.` : ''}
             </div>
           </div>
         )}
 
-        <div className="flex flex-wrap items-center gap-x-4 gap-y-2 border-t border-border px-4 py-3 text-[11px] text-foreground/60">
+        <div className="flex flex-wrap items-center gap-x-4 gap-y-2 border-t border-border px-4 py-3 text-xs text-foreground/65">
           {status && (
             <span className="inline-flex items-center gap-1.5 font-semibold">
               {status.enforcing ? (
@@ -148,7 +148,7 @@ export default function TractionPanel() {
           )}
         </div>
 
-        <div className="border-t border-border px-4 py-3 text-[11px] leading-relaxed text-foreground/60">
+        <div className="border-t border-border px-4 py-3 text-xs leading-relaxed text-foreground/65">
           Value stopped is USD of intended action the policy refused. It is protected value, not revenue. Aggregate
           only: nothing here identifies an agent, an owner, a holding or an individual amount.
           {(t?.ci.checks ?? 0) > 0 && ` Monitoring activity (${t?.ci.checks} canary checks) is excluded from every number above.`}

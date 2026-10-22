@@ -15,15 +15,19 @@ import { CountUp, SourceTag, ValueSkeleton } from './kit'
  * per-tool breakdown behind that total.
  *
  * The rails get equal weight even though their numbers are nothing alike, because the
- * point of showing both is that the same product earns on two mainnets, not that one is
- * winning. `caveat` is the load-bearing slot: a rail whose traffic is all our own says so
- * here, directly under its own headline number, rather than in a footnote at the bottom of
- * the page where the number has already done its work.
+ * point of showing them side by side is that the same product earns on every chain it
+ * sells on, not that one is winning. `caveat` is the load-bearing slot: a rail whose
+ * traffic is all our own says so here, directly under its own headline number, rather than
+ * in a footnote at the bottom of the page where the number has already done its work.
+ * `chips` sits beside the name for the facts that qualify the count before it is read:
+ * what kind of evidence counted each row, and whose wallets paid.
  */
 export function RailCard({
   chain,
   name,
   network,
+  chips,
+  testnet = false,
   settlements,
   volumeUsd,
   volumeDigits = 3,
@@ -38,10 +42,16 @@ export function RailCard({
   linkLabel,
   index = 0,
 }: {
-  chain: ChainId
+  /** Registry id for the logo; absent for a network the registry does not know yet, which
+   *  gets a blank disc rather than a borrowed logo. */
+  chain?: ChainId
   name: string
   /** CAIP-2 or a human network name, read from the same response as the numbers. */
   network: ReactNode
+  /** Small qualifiers under the name: evidence kind, payer label, status. */
+  chips?: ReactNode
+  /** A test-money network, flagged on the card so its count is never read as mainnet. */
+  testnet?: boolean
   settlements: number | null
   volumeUsd: number | null
   volumeDigits?: number
@@ -78,7 +88,11 @@ export function RailCard({
     >
       <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-2">
         <div className="flex min-w-0 items-center gap-2.5">
-          <ChainLogo id={chain} size={30} />
+          {chain ? (
+            <ChainLogo id={chain} size={30} />
+          ) : (
+            <span aria-hidden className="h-[30px] w-[30px] shrink-0 rounded-full border border-border bg-background" />
+          )}
           <div className="min-w-0">
             <h3 className="truncate text-base font-bold tracking-tight text-foreground">{name}</h3>
             <p className="truncate font-mono text-[10px] uppercase tracking-[0.12em] text-foreground/40">{network}</p>
@@ -86,6 +100,16 @@ export function RailCard({
         </div>
         <SourceTag label={source} href={sourceHref} />
       </div>
+      {(chips || testnet) && (
+        <div className="mt-3 flex flex-wrap items-center gap-1.5">
+          {testnet && (
+            <span className="inline-flex items-center rounded-full bg-warn/10 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.1em] text-warn">
+              testnet, test money
+            </span>
+          )}
+          {chips}
+        </div>
+      )}
 
       <div className="mt-6 flex flex-wrap items-end gap-x-8 gap-y-4">
         <div>

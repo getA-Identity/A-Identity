@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { motion } from 'framer-motion'
+import { Link } from 'react-router-dom'
 import {
   BadgeCheck,
   Boxes,
@@ -25,29 +26,46 @@ import { SectionShell, SectionIntro, reveal, revealAt } from '../components/ui/s
 import { BarList, SegmentBar, type BarRow } from '../components/stats/charts'
 import { int, nf, usdFixed } from '../components/stats/format'
 import { HeroFigure, Meter, MetricTile, SourceTag, StatPanel } from '../components/stats/kit'
+import { EvidenceChip, LogTile, LogsAgreementLine } from '../components/stats/LogTile'
 import { RailCard } from '../components/stats/RailCard'
 import { apiFetch } from '../lib/api'
 import { CHAINS, type ChainId, type ChainStatus } from '../lib/chains'
 import { usePageMeta } from '../lib/head'
-import { ASP_BASE, BACKEND_UNREACHABLE } from '../lib/mcpBase'
+import { BACKEND_UNREACHABLE } from '../lib/mcpBase'
+import {
+  SETTLEMENT_LOGS,
+  SEASON_URL,
+  chainRows,
+  crossLogTotals,
+  fetchSeason,
+  fetchSettlementLogs,
+  okReads,
+  type ChainRow as SettledChain,
+  type ChainSource,
+  type LogResults,
+  type SeasonSummary,
+  type ToolRow,
+} from '../lib/settlement-logs'
 
 /**
  * /stats: the network, in numbers, for anyone who asks "is this real?"
  *
  * Live reads only, each labelled on the surface that shows it: GET /api/stats for the
- * platform aggregates, GET /api/celo/proof for the Celo settlement log, GET
- * /api/facilitator/proof for our own EIP-3009 rail, the ASP's own /proof.json for the
- * X Layer one, GET /api/traction for the guardrail meter and the disclosure text that
- * explains its zeros, and GET /api/chains for the registry. Nothing on this page is projected, padded or
- * invented, and the backend excludes its own CI canary agents from every headline so
- * monitoring cannot inflate the numbers.
+ * platform aggregates, every published settlement log through the one shared spec in
+ * src/lib/settlement-logs.ts (the same list /proof reads, so the two pages cannot drift),
+ * GET /api/arc/season for the Arc Acceleration Season note, GET /api/traction for the
+ * guardrail meter and the disclosure text that explains its zeros, and GET /api/chains for
+ * the registry. Nothing on this page is projected, padded or invented, and the backend
+ * excludes its own CI canary agents from every headline so monitoring cannot inflate the
+ * numbers.
  *
  * The page is built around a fact that would be tempting to hide: several counters here
- * are genuinely zero. No third party has paid us on Celo or X Layer yet. The guardrail has not been
- * asked a single metered question. Rather than pad those or drop the tiles, each zero
- * carries the reason it is zero, sourced from the API where the API supplies one. That is
- * the same argument the rest of the site makes: a number you cannot reproduce is worth
- * less than one you can, and that goes for zero too.
+ * are genuinely zero or nearly so. Almost every settlement on every rail was paid by a
+ * buyer wallet of ours. The guardrail has not been asked a single metered question. Rather
+ * than pad those or drop the tiles, each zero carries the reason it is zero, sourced from
+ * the API where the API supplies one. That is the same argument the rest of the site
+ * makes: a number you cannot reproduce is worth less than one you can, and that goes for
+ * zero too.
  *
  * Every fetch is independent, so one slow or missing endpoint degrades its own panel into
  * skeletons instead of blanking the page. Reads go through apiFetch, which retries a
@@ -84,41 +102,6 @@ type PlatformStats = {
   computedAt: string
 }
 
-/** GET /api/celo/proof. Older backends omit the internal/external split, hence optional. */
-type CeloProof = {
-  network?: string
-  payTo?: string
-  configured: boolean
-  totalSettlements: number
-  totalUsd: number
-  internalSettlements?: number
-  externalSettlements?: number
-  byTool: Record<string, { count: number; usd: number } | number>
-}
-
-/** GET /api/facilitator/proof: our own EIP-3009 rail on Robinhood Chain. Same shape as
- *  the Celo proof plus the asset, because on this rail we know exactly what moved. */
-type FacilitatorProof = CeloProof & {
-  assetSymbol?: string | null
-  reverted?: number
-  ambiguous?: number
-  /** Per-chain breakdown; the rail sells on more than one chain. */
-  byNetwork?: Record<string, { count: number; usd: number; assetSymbol: string }>
-}
-
-/** The ASP's public proof document, served from its own origin with open CORS. */
-type AspProof = {
-  asp?: { name?: string; agentId?: string; network?: string; registrationTxUrl?: string }
-  realOnchainRevenue?: {
-    network?: string
-    /** The one buyer wallet behind every row of this fixed list. */
-    payer?: string
-    totalSettlements?: number
-    totalUsd?: number
-    byTool?: Record<string, number>
-  }
-}
-
 /**
  * GET /api/traction. `disclosure` is the backend's own explanation of what its counters do
  * and do not include; it is rendered verbatim rather than paraphrased, because the whole
@@ -137,8 +120,6 @@ type Traction = {
 type ChainRow = { id: string; name: string; shortName: string; status: ChainStatus; testnet: boolean }
 
 const REFRESH_MS = 60_000
-const ASP_PROOF_JSON = 'https://a-identity-asp.onrender.com/proof.json'
-const ASP_PROOF_PAGE = 'https://a-identity-asp.onrender.com/proof'
 
 /** Ids this build knows how to draw a logo for, from the generated registry mirror. */
 const KNOWN_CHAINS = new Set<string>(CHAINS.map((c) => c.id))
@@ -157,20 +138,84 @@ const STATUS_CHIP: Record<ChainStatus, string> = {
   deprecated: 'bg-foreground/[0.06] text-foreground/40',
 }
 
-/** A per-tool row, normalised across the two rails: Celo sends objects, the ASP sends counts. */
-function toolRows(byTool: Record<string, { count: number; usd: number } | number> | undefined): BarRow[] {
-  if (!byTool) return []
-  return Object.entries(byTool).map(([tool, v]) => {
-    const count = typeof v === 'number' ? v : v.count
-    const usd = typeof v === 'number' ? null : v.usd
-    return {
-      key: tool,
-      label: tool,
-      value: count,
-      valueLabel: usd == null ? int(count) : `${int(count)} · ${usdFixed(usd, 3)}`,
-      title: `${tool}: ${int(count)} paid calls`,
-    }
-  })
+/** Per-tool rows as bars. The shared normalizer already evened out the shapes (most logs
+ *  send objects, the ASP sends bare counts); a USD figure prints only where the log has one. */
+function toolBars(rows: ToolRow[], prefix = ''): BarRow[] {
+  return rows.map((r) => ({
+    key: `${prefix}${r.tool}`,
+    label: r.tool,
+    value: r.count,
+    valueLabel: r.usd == null ? int(r.count) : `${int(r.count)} · ${usdFixed(r.usd, 3)}`,
+    title: `${r.tool}: ${int(r.count)} paid calls`,
+  }))
+}
+
+/**
+ * What qualifies a chain's count that the logs cannot say about themselves: who runs the
+ * rail, what it settles in, what changed since. No number lives here; counts, payers and
+ * windows come from the logs, and these notes only explain the rail behind them.
+ */
+const CHAIN_NOTES: Partial<Record<ChainId, string>> = {
+  'arc-mainnet':
+    "Circle's stablecoin-native L1, selling since 2026-09-16 on two rails at once: our own EIP-3009 facilitator, whose gas is itself USDC, and Circle Gateway nanopayments, which Gateway batches on-chain. Both rails' rows are on this one card.",
+  base:
+    'The same facilitator and the same engine, settling in native Circle USDC. Agent #73232 is ours on the canonical registry. The rail\'s first settlement was broadcast from an operator machine and lives on the proof page; this card counts only what the production facilitator has settled here, read live, so the two can differ.',
+  arbitrum:
+    'The same facilitator and the same engine, settling in native Circle USDC. Other facilitators already serve this chain, which is the point: here our receipts can be compared against a baseline.',
+  rhchain:
+    'We run our own x402 facilitator here, as on every chain we sell on, though other facilitators serve this chain too: the buyer signs and pays no gas, we broadcast, and a settlement only counts once the receipt carries the matching transfer.',
+  stellar:
+    'The buyer signs a Soroban authorization entry and pays no fee; whoever assembles the transaction pays it, and a row counts only after our own read of the SEP-41 transfer event.',
+  algorand:
+    "x402 v2 in native Circle USDC: the buyer signs a fee-zero ASA transfer inside a pooled-fee group, the GoPlausible facilitator broadcasts, and a row counts only after our own indexer read. The log keeps a window, so the count here is its latest rows rather than the rail's history; the all-time record is the payTo account's transfers on any indexer.",
+  celo:
+    'The payment rail here is not ours: settlement runs through the first-party facilitator Celo operates, and a row is counted when that facilitator answers settled, which this site does not read back from the chain.',
+  xlayer:
+    'Listed on OKX.AI until 2026-09-26, selling in the demo and seeding runs of 2026-07-17 to 2026-07-24. The list is fixed inside the ASP rather than a running counter, and the ASP publishes it itself, so this card reads a rail that does not answer to this website.',
+}
+
+/**
+ * Above this share of the labelled settlements, our own wallets are nearly all of them and
+ * the value tiles say so where the figure is shown: the settled value is then mostly our
+ * own self-funded payments that exercised the rails, not revenue or demand.
+ */
+const SELF_FUNDED_SHARE = 0.9
+
+/** A share as a whole percent, rounded down so 99.6% never prints as 100%. */
+const pctFloor = (share: number) => `${Math.floor(share * 100)}%`
+
+/** "row" or "rows", for a count printed beside it. */
+const rowsWord = (n: number) => (n === 1 ? 'row' : 'rows')
+
+/**
+ * A log as the subject of a sentence: "the Stellar x402 log", or "our EIP-3009 facilitator
+ * log" for a label that already starts with "Our", so no sentence reads "the Our". `lead`
+ * capitalizes it for the start of a sentence.
+ */
+function logPhrase(label: string, lead = false): string {
+  const ours = /^our\s+/i.test(label)
+  const phrase = ours ? `our ${label.replace(/^our\s+/i, '')} log` : `the ${label} log`
+  return lead ? phrase.charAt(0).toUpperCase() + phrase.slice(1) : phrase
+}
+
+/** The payer split for one log's rows on one chain, in that log's own scope. */
+function splitSentence(src: ChainSource): string {
+  if (src.splitScope === 'chain' && src.internal != null) {
+    const ext = src.external ?? Math.max(0, src.count - src.internal)
+    return `${int(src.internal)} of these are internal, real payments from our own buyer wallet run to exercise the rail, not third-party demand; ${int(ext)} came from a wallet that is not ours. Labelled, not filtered out: the money moved either way.`
+  }
+  if (src.splitScope === 'inferred' && src.internal != null) {
+    const all = src.external === 0 ? 'internal' : 'external'
+    const why =
+      all === 'internal'
+        ? `: ${src.count === 1 ? 'a real payment' : 'real payments'} from our own buyer wallet, run to exercise the rail, not third-party demand`
+        : ''
+    return `${logPhrase(src.label, true)} labels every one of its rows ${all}, and that covers the ${int(src.count)} ${rowsWord(src.count)} on this chain${why}. Labelled, not filtered out.`
+  }
+  if (src.splitScope === 'log' && src.internal != null) {
+    return `${logPhrase(src.label, true)} splits payers rail-wide rather than per chain: ${int(src.internal)} of its ${int(src.logCount)} rows are internal and ${int(src.external ?? 0)} came from wallets that are not ours. This chain holds ${int(src.count)} of those rows.`
+  }
+  return src.payers ?? 'This log does not label which payers are its own, so its rows are counted as unknown, not as external.'
 }
 
 export default function Stats() {
@@ -182,9 +227,10 @@ export default function Stats() {
   })
 
   const [stats, setStats] = useState<PlatformStats | null>(null)
-  const [celo, setCelo] = useState<CeloProof | null>(null)
-  const [rh, setRh] = useState<FacilitatorProof | null>(null)
-  const [asp, setAsp] = useState<AspProof | null>(null)
+  // Every settlement log, keyed by log. A log that failed is marked so, never shown as zero.
+  const [logs, setLogs] = useState<LogResults>({})
+  const [logsReadAt, setLogsReadAt] = useState<number | null>(null)
+  const [season, setSeason] = useState<SeasonSummary | null>(null)
   const [traction, setTraction] = useState<Traction | null>(null)
   const [chains, setChains] = useState<ChainRow[] | null>(null)
   const [unreachable, setUnreachable] = useState(false)
@@ -219,26 +265,31 @@ export default function Stats() {
         if (fresh()) setUnreachable(true)
       })
 
-    json<CeloProof>('/api/celo/proof')
-      .then((data) => fresh() && setCelo(data))
-      .catch(() => {})
+    // Every published settlement log, through the shared spec, each landing on its own. A
+    // refresh that fails keeps the last good read; only a log never read is marked failed.
+    void fetchSettlementLogs({
+      backend: (path) => apiFetch(path),
+      onEach: (result) => {
+        if (!fresh()) return
+        setLogs((prev) => {
+          const last = prev[result.spec.key]
+          if (result.status === 'failed' && last?.status === 'ok') return prev
+          return { ...prev, [result.spec.key]: result }
+        })
+        setLogsReadAt(result.readAt)
+      },
+    })
 
-    json<FacilitatorProof>('/api/facilitator/proof')
-      .then((data) => fresh() && setRh(data))
-      .catch(() => {})
+    // The Arc Acceleration Season document counts Arc Mainnet checks from the same two
+    // logs. Quoted only when actually read; nothing from it is copied into the page.
+    void fetchSeason((path) => apiFetch(path)).then((data) => {
+      if (fresh() && data) setSeason(data)
+    })
 
     json<Traction>('/api/traction')
       .then((data) => fresh() && setTraction(data))
       .catch(() => {})
 
-    // Different origin, open CORS, no proxy in front of it: a plain fetch is the honest
-    // call here and a failure only costs this one card its numbers.
-    // Same-origin /asp proxy in prod; ASP_PROOF_JSON stays the provenance href because
-    // the source tag must name the real origin the numbers come from.
-    fetch(`${ASP_BASE}/proof.json`)
-      .then((r) => (r.ok ? (r.json() as Promise<AspProof>) : Promise.reject(new Error(String(r.status)))))
-      .then((data) => fresh() && setAsp(data))
-      .catch(() => {})
   }, [])
 
   useEffect(() => {
@@ -266,34 +317,36 @@ export default function Stats() {
   }, [])
 
   const s = stats
-  const rev = asp?.realOnchainRevenue
-  const xlayerCount = typeof rev?.totalSettlements === 'number' ? rev.totalSettlements : null
-  const xlayerUsd = typeof rev?.totalUsd === 'number' ? rev.totalUsd : null
-  const celoCount = celo ? celo.totalSettlements : null
-  const celoUsd = celo ? celo.totalUsd : null
-  // Split by chain rather than shown as one total: the rail settles in a different token
-  // on each, and summing them would be a number about nothing. The CAIP-2 literals are
-  // shared with the cards below so the lookup key and the printed network cannot drift.
-  const RH_CAIP = 'eip155:4663'
-  const ARB_CAIP = 'eip155:42161'
-  const BASE_CAIP = 'eip155:8453'
-  const net = (caip2: string) => rh?.byNetwork?.[caip2] ?? null
-  const rhNet = net(RH_CAIP)
-  const arbNet = net(ARB_CAIP)
-  const baseNet = net(BASE_CAIP)
-  const rhCount = rh ? (rhNet?.count ?? 0) : null
-  const rhUsd = rh ? (rhNet?.usd ?? 0) : null
-  const arbCount = rh ? (arbNet?.count ?? 0) : null
-  const arbUsd = rh ? (arbNet?.usd ?? 0) : null
-  const baseCount = rh ? (baseNet?.count ?? 0) : null
-  const baseUsd = rh ? (baseNet?.usd ?? 0) : null
 
-  // The headline is a sum of two independent live reads, so it only exists once BOTH have
-  // answered. A "total" that silently drops a rail because its fetch was slow is a lie
-  // with a plausible shape, which is the worst kind.
-  const bothRails = xlayerCount != null && celoCount != null
-  const totalSettlements = bothRails ? xlayerCount + celoCount : null
-  const totalUsd = xlayerUsd != null && celoUsd != null ? xlayerUsd + celoUsd : null
+  // The cross-log figures. `total` exists only once EVERY log has answered: a total that
+  // silently drops a rail because its fetch was slow is a lie with a plausible shape, which
+  // is the worst kind. The payer split sums only the logs that label payers.
+  const totals = crossLogTotals(logs)
+  const complete = totals.total != null
+  const answeredLogs = okReads(logs)
+  const rails: SettledChain[] = chainRows(logs)
+  const waitingOn = [...totals.pending, ...totals.failed].map((l) => l.label)
+
+  // The USD headline is `usdKnown`, the sum over the logs that publish a USD figure, with
+  // the logs that publish none named beside it: the strict all-logs `usd` stays null for
+  // good while any log omits one, and a skeleton that never resolves says nothing.
+  const usdLogs = totals.answered - totals.usdUnknownLogs.length
+  const usdScope =
+    totals.usdUnknownLogs.length === 0
+      ? `Every log's own USD figure, summed, in real stablecoin, across all ${int(SETTLEMENT_LOGS.length)} logs.`
+      : `Summed in real stablecoin across the ${int(usdLogs)} ${usdLogs === 1 ? 'log that publishes' : 'logs that publish'} a USD figure; ${totals.usdUnknownLogs.map((l) => l.label).join(' and ')} ${totals.usdUnknownLogs.length === 1 ? 'does not, so its' : 'do not, so their'} rows are counted in the headline but not here.`
+
+  // Who paid, by count, over the logs that label payers. No log splits its USD by payer, so
+  // count is the honest basis; when our own wallets are nearly all of it, both value tiles
+  // say so under the figure itself, because that value is seeding, not revenue or demand.
+  const labelled = totals.internal + totals.external
+  const internalShare = labelled > 0 ? totals.internal / labelled : null
+  const selfFundedSentence =
+    internalShare != null && internalShare >= SELF_FUNDED_SHARE
+      ? internalShare === 1
+        ? `Every one of the ${int(labelled)} settlements a log can label was our own self-funded payment that exercised the rails, counted and labelled internal, so the settled value is our own money, not revenue or demand.`
+        : `${int(totals.internal)} of the ${int(labelled)} settlements a log can label, ${pctFloor(internalShare)} by count, were our own self-funded payments that exercised the rails, counted and labelled internal, so most of the settled value is our own money, not revenue or demand.`
+      : ''
 
   const categoryRows: BarRow[] = (s?.agents.byCategory ?? []).map((c) => ({
     key: c.category,
@@ -353,22 +406,30 @@ export default function Stats() {
             className="mt-12 grid gap-8 lg:grid-cols-[minmax(0,1fr)_300px] lg:items-end"
           >
             <HeroFigure
-              value={totalSettlements}
+              value={totals.total}
               format={int}
-              label="real x402 settlements on X Layer and Celo mainnet"
+              label="settlements across every published log"
               sub={
-                bothRails ? (
+                complete ? (
                   <>
-                    The sum of two live reads: {int(xlayerCount)} on X Layer through the OKX.AI
-                    listing, {int(celoCount)} on Celo through its first-party x402 facilitator.
-                    Both settle in a stablecoin, and every one of these has a transaction hash you
-                    can open.{' '}
-                    {celo?.externalSettlements === 0
-                      ? 'Every one so far was paid by a buyer wallet of ours, so read it as a rail that works, not as demand.'
-                      : 'The X Layer ones were all paid by a buyer wallet of ours; the Celo split is on its card below.'}
+                    The sum of {int(SETTLEMENT_LOGS.length)} live reads, one per settlement log, each counted on its
+                    own terms and labelled with the evidence that counted it below. Each settled in stablecoin on the
+                    chain its log names; where that chain is a testnet, it moved test money, and the card for that
+                    chain below says so.{' '}
+                    {totals.external === 0
+                      ? 'Every labelled payer so far was a buyer wallet of ours, so read it as rails that work, not as demand.'
+                      : `${int(totals.external)} of them were paid by a wallet that is not ours; the rest that a log can label were our own.`}{' '}
+                    {totals.unlabeled > 0 &&
+                      `${int(totals.unlabeled)} sit in a log that does not label payers and are counted as unknown, not as external.`}{' '}
+                    {totals.cappedLogs.length > 0 &&
+                      `The ${totals.cappedLogs.map((l) => l.label).join(' and ')} log keeps only a window of rows, so this total is a window there, not a history.`}
                   </>
                 ) : (
-                  'Waiting on both settlement logs. This total is only shown once each rail has answered for itself, because a headline that quietly drops a rail is worse than no headline.'
+                  <>
+                    Waiting on {waitingOn.length > 0 ? waitingOn.join(', ') : 'the settlement logs'}. This total is only
+                    shown once every log has answered for itself, because a headline that quietly drops a rail is worse
+                    than no headline.
+                  </>
                 )
               }
             />
@@ -377,158 +438,196 @@ export default function Stats() {
                 icon={CircleDollarSign}
                 tone="ok"
                 label="Settled value"
-                value={totalUsd}
+                value={complete ? totals.usdKnown : null}
                 format={(n) => usdFixed(n, 3)}
-                note="X Layer and Celo combined, in real stablecoin. Every other rail is counted on its own card below or on its own proof page, never summed in here. Small because the prices are per call and start at a tenth of a cent."
+                note={
+                  complete
+                    ? `${usdScope} ${selfFundedSentence || 'Our own payments are in it and labelled in the payer split beside it. Prices are per call and start at a tenth of a cent, so most rails stay small.'}`
+                    : 'Every log that publishes a USD figure, summed, in real stablecoin, once every log has answered. Our own payments are in it and labelled in the payer split beside it.'
+                }
+                zeroNote={
+                  usdLogs === 0
+                    ? 'No published log carries a USD figure, so there is nothing to sum here; the counts stand on their own.'
+                    : 'The logs that publish a USD figure report nothing settled yet.'
+                }
               />
               <MetricTile
                 icon={Users}
                 label="Paid by someone else"
-                value={celo?.externalSettlements ?? null}
+                value={complete ? totals.external : null}
                 format={int}
-                note="Celo settlements from a wallet that is not one of ours, counted by the Celo log, the one that splits payers. Every X Layer row was paid by our own buyer wallet."
-                zeroNote="Zero so far, on both rails. Every Celo settlement came from our own buyer wallet, and so did every X Layer one: real payment rails exercised, not demand. Labelled internal instead of hidden."
+                note={
+                  complete
+                    ? `Settlements from a wallet that is not ours, across the ${int(SETTLEMENT_LOGS.length - totals.unlabeledLogs.length)} logs that label payers. ${selfFundedSentence || `${int(totals.internal)} were internal.`} ${totals.unlabeled > 0 ? `${int(totals.unlabeled)} more sit in a log that does not split payers and are counted as unknown, not as external.` : ''}`
+                    : 'Settlements from a wallet that is not ours, summed only across the logs that label payers.'
+                }
+                zeroNote={`Zero so far. ${selfFundedSentence || `Every settlement a log can label came from our own buyer wallets: ${int(totals.internal)} internal payments that prove the rails work, not demand.`} Labelled instead of hidden.${totals.unlabeled > 0 ? ` ${int(totals.unlabeled)} more sit in a log that does not split payers and are counted as unknown.` : ''}`}
               />
             </div>
           </motion.div>
 
-          {/* Every rail card, given equal weight, each with the breakdown behind its total. */}
-          <div className="mt-8 grid gap-5 lg:grid-cols-3">
-            <RailCard
-              index={0}
-              chain="xlayer"
-              name="X Layer"
-              network={rev?.network ?? asp?.asp?.network ?? 'OKX X Layer mainnet'}
-              settlements={xlayerCount}
-              volumeUsd={xlayerUsd}
-              tools={toolRows(rev?.byTool)}
-              caveat={
-                asp?.asp?.agentId ? (
-                  <>
-                    Taken by <span className="font-semibold text-foreground/75">{asp.asp.name ?? 'our ASP'}</span>,
-                    listed on OKX.AI until 2026-09-26 as agent{' '}
-                    <span className="font-mono font-semibold text-foreground/75">{asp.asp.agentId}</span>.
-                    {rev?.payer ? (
-                      <>
-                        {' '}Every row was paid by{' '}
-                        <span className="font-mono font-semibold text-foreground/75" title={rev.payer}>
-                          {rev.payer.slice(0, 6)}...{rev.payer.slice(-4)}
-                        </span>
-                        , the wallet that owns that listing on the X Layer registry: our own buyer, in the
-                        demo and seeding runs of 2026-07-17 to 2026-07-24, so all of them are internal.
-                      </>
-                    ) : null}{' '}
-                    The list is fixed inside the ASP rather than a running counter, and the ASP publishes
-                    it itself, so this card is reading a rail that does not answer to this website.
-                  </>
-                ) : undefined
-              }
-              source="GET /proof.json"
-              sourceHref={ASP_PROOF_JSON}
-              href={ASP_PROOF_PAGE}
-              linkLabel="See every X Layer settlement"
-            />
-            <RailCard
-              index={1}
-              chain="celo"
-              name="Celo"
-              network={celo?.network ?? 'eip155:42220'}
-              settlements={celoCount}
-              volumeUsd={celoUsd}
-              tools={toolRows(celo?.byTool)}
-              caveat={
-                celo && typeof celo.internalSettlements === 'number' ? (
-                  <>
-                    <span className="font-semibold text-foreground/75">{int(celo.internalSettlements)}</span> of
-                    these are internal: real on-chain payments from our own buyer wallet, run to exercise the
-                    rail, not third-party demand.{' '}
-                    <span className="font-semibold text-foreground/75">{int(celo.externalSettlements ?? 0)}</span>{' '}
-                    came from a wallet that is not ours. Labelled, not filtered out: the money moved either way.
-                  </>
-                ) : undefined
-              }
-              source="GET /api/celo/proof"
-              sourceHref="https://a-identity.xyz/api/celo/proof"
-              to="/celo-proof"
-              linkLabel="See every Celo settlement"
-            />
-            <RailCard
-              index={2}
-              chain="rhchain"
-              name="Robinhood Chain"
-              network={rh?.network ?? RH_CAIP}
-              settlements={rhCount}
-              volumeUsd={rhUsd}
-              tools={toolRows(rh?.byTool)}
-              toolsQualifier={
-                rh
-                  ? `Across the whole facilitator rail, not this chain alone: the log breaks tools down rail-wide (${int(rhCount ?? 0)} of its ${int(rh.totalSettlements)} rows are on this chain).`
-                  : undefined
-              }
-              caveat={
-                rh && typeof rh.internalSettlements === 'number' ? (
-                  <>
-                    We run our own x402 facilitator here, as on every chain we sell on, though other
-                    facilitators serve this chain too: the buyer signs and pays no gas, we broadcast,
-                    and a settlement only counts once the receipt carries the matching{' '}
-                    {rh.assetSymbol ?? 'token'} transfer. Across the whole rail,{' '}
-                    <span className="font-semibold text-foreground/75">{int(rh.internalSettlements)}</span>{' '}
-                    settlements are internal, from our own buyer wallet;{' '}
-                    <span className="font-semibold text-foreground/75">{int(rh.externalSettlements ?? 0)}</span>{' '}
-                    came from a wallet that is not ours.
-                  </>
-                ) : undefined
-              }
-              source="GET /api/facilitator/proof"
-              sourceHref="https://a-identity.xyz/api/facilitator/proof"
-              to="/proof/robinhood"
-              linkLabel="See the Robinhood Chain proof"
-            />
-            <RailCard
-              index={3}
-              chain="arbitrum"
-              name="Arbitrum One"
-              network={ARB_CAIP}
-              settlements={arbCount}
-              volumeUsd={arbUsd}
-              tools={[]}
-              toolsEmptyNote="The facilitator log breaks paid calls down per tool for the rail as a whole, not per chain, so this card asserts no per-chain tool bars. Every Arbitrum One row is on the proof page."
-              caveat={
-                <>
-                  The same facilitator and the same engine, settling in native Circle USDC. Other
-                  facilitators already serve this chain, which is the point: here our receipts can be
-                  compared against a baseline. Every settlement so far is internal, from our own buyer
-                  wallet, and labelled as such.
-                </>
-              }
-              source="GET /api/facilitator/proof"
-              sourceHref="https://a-identity.xyz/api/facilitator/proof"
-              to="/proof/arbitrum"
-              linkLabel="See the Arbitrum One proof"
-            />
-            <RailCard
-              index={4}
-              chain="base"
-              name="Base"
-              network={BASE_CAIP}
-              settlements={baseCount}
-              volumeUsd={baseUsd}
-              tools={[]}
-              toolsEmptyNote="The facilitator log breaks paid calls down per tool for the rail as a whole, not per chain, so this card asserts no per-chain tool bars. Every Base row is on the proof page."
-              caveat={
-                <>
-                  The same facilitator and the same engine, settling in native Circle USDC. Agent
-                  #73232 is ours on the canonical registry. The rail's first settlement was
-                  broadcast from an operator machine and lives on the proof page; this card counts
-                  only what the production facilitator has settled on Base, read live, so the two
-                  can differ.
-                </>
-              }
-              source="GET /api/facilitator/proof"
-              sourceHref="https://a-identity.xyz/api/facilitator/proof"
-              to="/proof/base"
-              linkLabel="See the Base proof"
-            />
+          {/* Per log: the same tiles /proof shows, from the same spec, so the two pages agree. */}
+          <div className="mt-10">
+            <h2 className="text-lg font-bold tracking-tight text-foreground">Every settlement log</h2>
+            <p className="mt-2 max-w-[75ch] text-sm leading-relaxed text-foreground/55">
+              The headline above is the sum of these. Each log counts on its own terms, named on its tile: a chain
+              receipt we read, a facilitator credit we read back, our own event read, a facilitator's word, or a fixed
+              ledger. Payments from wallets we own are labelled wherever the log can tell; a log that cannot is counted
+              as unknown, never as external.
+            </p>
+            <div className="mt-6 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+              {SETTLEMENT_LOGS.map((spec) => (
+                <LogTile key={spec.key} spec={spec} result={logs[spec.key]} />
+              ))}
+            </div>
+            {season && (
+              <p className="mt-4 max-w-[75ch] text-xs leading-relaxed text-foreground/50">
+                The Arc Mainnet rows in the facilitator and Gateway logs include the{' '}
+                {season.programName ?? 'Arc Acceleration Season'} checks the season endpoint counts from the same two
+                logs: {int(season.internalChecks ?? 0)} internal and {int(season.externalChecks ?? 0)} external as of{' '}
+                {season.asOf ? season.asOf.slice(0, 10) : 'this read'}.{' '}
+                <Link to={season.evidenceHref} className="font-semibold text-accent underline-offset-4 hover:underline">
+                  Progress against each metric is on /proof/arc
+                </Link>
+                .
+              </p>
+            )}
+            <div className="mt-4">
+              <LogsAgreementLine
+                readAt={logsReadAt}
+                answered={answeredLogs.length}
+                total={SETTLEMENT_LOGS.length}
+                other={{ to: '/proof', label: '/proof' }}
+              />
+            </div>
+          </div>
+
+          {/* Per chain: one card for every network any log has settled on, derived, never listed by
+              hand. A chain that sells on two rails (Arc Mainnet) gets both logs on one card. */}
+          <div className="mt-10">
+            <h2 className="text-lg font-bold tracking-tight text-foreground">Every chain with a settlement</h2>
+            <p className="mt-2 max-w-[75ch] text-sm leading-relaxed text-foreground/55">
+              The same rows, folded per chain. A chain appears here the moment any log counts a settlement on it;
+              nothing is listed by hand and the names and status come from the chain registry.
+            </p>
+            {rails.length === 0 ? (
+              <div className="mt-6 grid gap-5 lg:grid-cols-3">
+                {Array.from({ length: 3 }).map((_, i) => (
+                  <div key={i} className="h-72 animate-pulse rounded-3xl border border-border bg-card motion-reduce:animate-none" />
+                ))}
+              </div>
+            ) : (
+              <div className="mt-6 grid gap-5 lg:grid-cols-3">
+                {rails.map((row, i) => {
+                  const kinds = [...new Set(row.sources.map((src) => src.evidence))]
+                  const tools = row.sources.flatMap((src) => toolBars(src.tools, row.sources.length > 1 ? `${src.key}:` : ''))
+                  const railWide = row.sources.filter((src) => src.tools.length === 0)
+                  const railWideRows = railWide.reduce((n, src) => n + src.count, 0)
+                  const noBars = railWideRows === 1 ? 'row here draws no bar' : 'rows here draw no bars'
+                  const railWideNote =
+                    railWide.length === 0
+                      ? undefined
+                      : railWide.length === 1
+                        ? `${logPhrase(railWide[0].label, true)} breaks paid calls down per tool for the rail as a whole, not per chain, so its ${int(railWideRows)} ${noBars}. Every row is on the proof page.`
+                        : `${int(railWide.length)} logs, ${railWide.map((src) => src.label).join(' and ')}, break paid calls down per tool for the rail as a whole, not per chain, so their ${int(railWideRows)} ${noBars}. Every row is on the proof page.`
+                  const primary = row.sources[0]
+                  const page = row.sources.find((src) => src.pageHref)?.pageHref ?? primary.href
+                  const sourceLabel =
+                    row.sources.length === 1
+                      ? primary.key === 'xlayer'
+                        ? 'ASP GET /proof.json'
+                        : `GET ${primary.href.replace('https://a-identity.xyz', '')}`
+                      : `${row.sources.length} logs`
+                  const payerChip =
+                    row.internal == null
+                      ? { text: 'payers unlabelled', cls: 'bg-foreground/[0.06] text-foreground/45' }
+                      : row.external === 0
+                        ? { text: 'all internal, self-funded', cls: 'bg-foreground/[0.06] text-foreground/45' }
+                        : { text: `${int(row.external ?? 0)} external`, cls: 'bg-ok/10 text-ok' }
+                  const isArc = row.chain?.id === 'arc-mainnet'
+                  return (
+                    <RailCard
+                      key={row.caip2}
+                      index={i}
+                      chain={row.chain?.id}
+                      name={row.name}
+                      network={row.caip2}
+                      testnet={row.testnet}
+                      chips={
+                        <>
+                          {kinds.map((k) => (
+                            <EvidenceChip key={k} kind={k} />
+                          ))}
+                          <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.1em] ${payerChip.cls}`}>
+                            {payerChip.text}
+                          </span>
+                          {row.assets.length > 0 && (
+                            <span className="inline-flex items-center rounded-full bg-foreground/[0.06] px-2 py-0.5 font-mono text-[10px] text-foreground/55">
+                              {row.assets.join(', ')}
+                            </span>
+                          )}
+                        </>
+                      }
+                      settlements={row.count}
+                      volumeUsd={row.usd}
+                      tools={tools}
+                      toolsQualifier={tools.length > 0 ? railWideNote : undefined}
+                      toolsEmptyNote={railWideNote}
+                      caveat={
+                        <>
+                          {row.chain && CHAIN_NOTES[row.chain.id] ? <>{CHAIN_NOTES[row.chain.id]} </> : null}
+                          {row.sources.map((src) => (
+                            <span key={src.key}>
+                              {row.sources.length > 1 ? (
+                                <>
+                                  <span className="font-semibold text-foreground/75">{int(src.count)}</span> through{' '}
+                                  {src.label}
+                                  {src.cappedAt ? `, in its latest ${int(src.cappedAt)} rows` : ''}. {splitSentence(src)}{' '}
+                                </>
+                              ) : (
+                                <>{splitSentence(src)} </>
+                              )}
+                            </span>
+                          ))}
+                          {primary.key === 'xlayer' && primary.payer ? (
+                            <>
+                              Every row was paid by{' '}
+                              <span className="font-mono font-semibold text-foreground/75" title={primary.payer}>
+                                {primary.payer.slice(0, 6)}...{primary.payer.slice(-4)}
+                              </span>
+                              , the wallet that owns that listing on the X Layer registry: our own buyer, so all of
+                              them are internal even though the ledger itself does not say so.{' '}
+                            </>
+                          ) : null}
+                          {isArc && season ? (
+                            <>
+                              These rows include the {season.programName ?? 'Arc Acceleration Season'} checks:{' '}
+                              <span className="font-semibold text-foreground/75">{int(season.internalChecks ?? 0)}</span>{' '}
+                              internal and{' '}
+                              <span className="font-semibold text-foreground/75">{int(season.externalChecks ?? 0)}</span>{' '}
+                              external across both rails, as{' '}
+                              <a href={SEASON_URL} target="_blank" rel="noopener noreferrer" className="font-semibold text-accent underline-offset-4 hover:underline">
+                                GET /api/arc/season
+                              </a>{' '}
+                              counts them from these same logs; the progress block is on{' '}
+                              <Link to={season.evidenceHref} className="font-semibold text-accent underline-offset-4 hover:underline">
+                                /proof/arc
+                              </Link>
+                              .
+                            </>
+                          ) : null}
+                        </>
+                      }
+                      source={sourceLabel}
+                      sourceHref={row.sources.length === 1 ? primary.href : undefined}
+                      to={page.startsWith('/') ? page : undefined}
+                      href={page.startsWith('/') ? undefined : page}
+                      linkLabel={`See the ${row.name} proof`}
+                    />
+                  )
+                })}
+              </div>
+            )}
           </div>
         </SectionShell>
 
@@ -1002,16 +1101,27 @@ export default function Stats() {
             </p>
             <div className="mt-3 flex flex-wrap gap-2">
               <SourceTag label="GET /api/stats" href="https://a-identity.xyz/api/stats" />
-              <SourceTag label="GET /api/celo/proof" href="https://a-identity.xyz/api/celo/proof" />
-              <SourceTag label="GET /api/facilitator/proof" href="https://a-identity.xyz/api/facilitator/proof" />
+              {SETTLEMENT_LOGS.map((spec) => (
+                <SourceTag
+                  key={spec.key}
+                  label={spec.path ? `GET ${spec.path}` : 'ASP GET /proof.json'}
+                  href={spec.href}
+                />
+              ))}
+              <SourceTag label="GET /api/arc/season" href={SEASON_URL} />
               <SourceTag label="GET /api/traction" href="https://a-identity.xyz/api/traction" />
               <SourceTag label="GET /api/chains" href="https://a-identity.xyz/api/chains" />
-              <SourceTag label="ASP GET /proof.json" href={ASP_PROOF_JSON} />
             </div>
             <p className="mt-3 text-xs text-foreground/40">
               Reading{' '}
               <span className="font-mono">
-                {[stats && 'stats', celo && 'celo', rh && 'facilitator', asp && 'x-layer', traction && 'traction', chains && 'chains']
+                {[
+                  stats && 'stats',
+                  ...SETTLEMENT_LOGS.map((spec) => logs[spec.key]?.status === 'ok' && spec.key),
+                  season && 'arc-season',
+                  traction && 'traction',
+                  chains && 'chains',
+                ]
                   .filter(Boolean)
                   .join(', ') || 'nothing yet'}
               </span>

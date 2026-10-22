@@ -42,7 +42,10 @@ const COUNT_PATTERNS: RegExp[] = [
   /\((\d+) across (\d+) files\)/g,
 ]
 
-const DOCS_WITH_COUNTS = ['README.md', 'ARCHITECTURE.md', 'CLAUDE.md', 'mcp/README.md', 'ROADMAP.md']
+// ROADMAP.md left this list on 2026-10-22: it is generated from src/lib/roadmap.ts by
+// scripts/gen-roadmap.mjs and quotes no test count any more, by design, so that a new test
+// does not make the public roadmap stale. The documents that still quote one stay pinned.
+const DOCS_WITH_COUNTS = ['README.md', 'ARCHITECTURE.md', 'CLAUDE.md', 'mcp/README.md']
 
 test('every document that quotes a test count quotes the real one', () => {
   for (const doc of DOCS_WITH_COUNTS) {

@@ -1,7 +1,7 @@
 import { useEffect, useReducer, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { motion, AnimatePresence, useReducedMotion } from 'framer-motion'
-import { Sparkles, Search, X, ArrowUpRight, ArrowRight, ShieldCheck, Wallet, QrCode, Check, Loader2 } from 'lucide-react'
+import { Search, X, ArrowUpRight, ArrowRight, ShieldCheck, Wallet, QrCode, Check, Loader2 } from 'lucide-react'
 import { resolveAgent, getReputation, getLeaderboard, type AgentIdentity, type Reputation, type FeedAgent } from '../../lib/mcp-client'
 import { useAuth } from '../../store/auth'
 import { EASE_OUT_EXPO } from '../../lib/brand'
@@ -63,7 +63,7 @@ function ResultCard({ result, q, onOpen, onClaim }: { result: NonNullable<Result
           <AgentAvatar seed={seed} size={54} verdict={v.toLowerCase() as OwlVerdict} />
           <div className="min-w-0">
             <div className="truncate text-sm font-bold text-foreground">{name}</div>
-            <div className="truncate font-mono text-[11px] text-foreground/60">
+            <div className="truncate font-mono text-[11px] text-foreground/65">
               {identity && !identity.partial ? `#${identity.tokenId}` : shorten(identity?.owner || q)}{identity?.owner ? ` · ${shorten(identity.owner)}` : ''} · KYA {reputation?.kya ?? '·'}
             </div>
           </div>
@@ -147,7 +147,7 @@ function OnboardPanel({ onClose, claimAddress }: { onClose: () => void; claimAdd
   if (done || verified) {
     return (
       <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} className="p-6 text-center">
-        <span className="mx-auto grid h-12 w-12 place-items-center rounded-full bg-emerald-500/12 text-emerald-600 dark:text-emerald-400">
+        <span className="mx-auto grid h-12 w-12 place-items-center rounded-full bg-ok/12 text-ok">
           <Check size={24} />
         </span>
         <h3 className="mt-4 text-lg font-bold text-foreground">You are verified.</h3>
@@ -155,7 +155,7 @@ function OnboardPanel({ onClose, claimAddress }: { onClose: () => void; claimAdd
           Wallet control proven. Your agent identity is ready. Finish the details, register, set spend limits, in your console.
         </p>
         {mismatch && (
-          <p className="mx-auto mt-3 max-w-sm rounded-lg bg-amber-500/10 px-3 py-2 text-xs leading-relaxed text-amber-700 dark:text-amber-400">
+          <p className="mx-auto mt-3 max-w-sm rounded-lg bg-warn/10 px-3 py-2 text-xs leading-relaxed text-warn">
             Heads up: you connected <span className="font-mono">{shorten(mismatch)}</span>, which does not match the agent address you looked up (<span className="font-mono">{shorten(claimAddress)}</span>). This wallet onboards as its own identity. To claim that specific agent, connect the wallet that owns it.
           </p>
         )}
@@ -171,7 +171,7 @@ function OnboardPanel({ onClose, claimAddress }: { onClose: () => void; claimAdd
   return (
     <div className="p-4">
       {/* three-step hint */}
-      <div className="mb-4 flex items-center gap-2 px-1 font-mono text-[11px] text-foreground/60">
+      <div className="mb-4 flex items-center gap-2 px-1 font-mono text-[11px] text-foreground/65">
         <span className="text-accent">connect</span>
         <ArrowRight size={11} />
         <span>sign once</span>
@@ -185,7 +185,7 @@ function OnboardPanel({ onClose, claimAddress }: { onClose: () => void; claimAdd
           <AgentAvatar seed={claimAddress!} size={32} />
           <div className="min-w-0">
             <div className="text-xs font-semibold text-foreground">Claiming this agent</div>
-            <div className="truncate font-mono text-[11px] text-foreground/60">{shorten(claimAddress)}</div>
+            <div className="truncate font-mono text-[11px] text-foreground/65">{shorten(claimAddress)}</div>
           </div>
         </div>
       )}
@@ -222,7 +222,7 @@ function OnboardPanel({ onClose, claimAddress }: { onClose: () => void; claimAdd
           )}
         </div>
       )}
-      {error && <p className="mt-3 px-1 text-xs text-red-600 dark:text-red-400">{error}</p>}
+      {error && <p className="mt-3 px-1 text-xs text-danger">{error}</p>}
     </div>
   )
 }
@@ -310,7 +310,7 @@ export default function TrustSpotlight() {
                the exact size of the back-to-top button above it. The label's own left
                padding replaces the flex gap so a hidden label adds zero width. */
             className="group fixed bottom-6 right-6 z-40 flex h-11 items-center justify-center rounded-full px-[13px] text-white shadow-[0_12px_40px_-8px_rgba(115,66,226,0.6)]"
-            style={{ background: `linear-gradient(135deg, ${ACCENT}, #4f2bb0)` }}
+            style={{ background: ACCENT }}
           >
             {/* The ring introduces the button and then stops. A pulse that never ends is not
                 an invitation, it is a nag, and it keeps a compositor layer awake for the whole
@@ -323,7 +323,7 @@ export default function TrustSpotlight() {
                   transition={{ duration: 2, repeat: 3, ease: 'easeOut' }} />
               </span>
             )}
-            <Sparkles size={18} className="relative shrink-0" />
+            <ShieldCheck size={18} className="relative shrink-0" />
             {/*
               Collapses to the icon once the reader scrolls, and re-opens on hover or focus.
               Expanded it is roughly 200px of fixed overlay parked in the bottom-right corner,
@@ -404,7 +404,7 @@ export default function TrustSpotlight() {
                     )}
                     {!loading && !q.trim() && (
                       <div>
-                        <div className="px-1 pb-2 text-[11px] font-semibold uppercase tracking-wide text-foreground/60">Featured agents</div>
+                        <div className="px-1 pb-2 text-xs font-semibold uppercase tracking-wide text-foreground/65">Featured agents</div>
                         <div className="flex flex-col">
                           {(featured.length ? featured : []).map((a) => {
                             const s = a.reputation?.score ?? 0, v = riskOf(s, a.kya)
@@ -414,7 +414,7 @@ export default function TrustSpotlight() {
                                 <AgentAvatar seed={a.onchainAgentId || a.id} size={34} verdict={v.toLowerCase() as OwlVerdict} />
                                 <div className="min-w-0 flex-1">
                                   <div className="truncate text-sm font-medium text-foreground">{a.name}</div>
-                                  <div className="truncate font-mono text-[11px] text-foreground/60">{a.category}{a.onchainAgentId ? ` · #${a.onchainAgentId}` : ''}</div>
+                                  <div className="truncate font-mono text-[11px] text-foreground/65">{a.category}{a.onchainAgentId ? ` · #${a.onchainAgentId}` : ''}</div>
                                 </div>
                                 <span className="font-mono text-xs font-semibold tabular-nums text-foreground/70">{s}</span>
                                 <span className="h-1.5 w-1.5 rounded-full" style={{ background: RISK[v] }} />
@@ -431,7 +431,7 @@ export default function TrustSpotlight() {
                       </div>
                     )}
                   </div>
-                  <div className="flex items-center justify-between gap-3 border-t border-border px-4 py-2.5 text-[11px] text-foreground/60">
+                  <div className="flex items-center justify-between gap-3 border-t border-border px-4 py-2.5 text-[11px] text-foreground/65">
                     <span>Results are live on-chain reads. No login to look up.</span>
                     <span className="inline-flex items-center gap-1.5"><kbd className="rounded border border-border px-1.5 py-0.5 font-mono">Esc</kbd> close</span>
                   </div>

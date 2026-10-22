@@ -64,6 +64,7 @@ const STATIC = [
   ['/blog', 'weekly', '0.8'],
   ['/tr/blog', 'weekly', '0.8'],
   ['/manifesto', 'monthly', '0.7'],
+  ['/roadmap', 'monthly', '0.7'],
   ['/architecture', 'monthly', '0.7'],
   ...useCases.map((slug) => [`/use-cases/${slug}`, 'monthly', '0.7']),
   ['/contact', 'monthly', '0.6'],

@@ -33,6 +33,7 @@ is what keeps the console, the explorer and viem out of the homepage's first chu
 | `/signup` | [`routes/Signup.tsx`](routes/Signup.tsx) | The same screen in `mode="signup"` |
 | `/auth/callback` | [`routes/AuthCallback.tsx`](routes/AuthCallback.tsx) | Lands the email magic link |
 | `/manifesto` | [`routes/Manifesto.tsx`](routes/Manifesto.tsx) | |
+| `/roadmap` | [`routes/Roadmap.tsx`](routes/Roadmap.tsx) | Data from `lib/roadmap.ts`, which also generates the root `ROADMAP.md` (`npm run roadmap`, guarded by `check:roadmap`) |
 | `/intro` | [`routes/Intro.tsx`](routes/Intro.tsx) | The agent-facing front door: everything a crawling agent needs on one page, carried on static copy so the prerender is complete |
 | `/stats` | [`routes/Stats.tsx`](routes/Stats.tsx) | Built out of `components/stats/` |
 | `/brand` | [`routes/BrandKit.tsx`](routes/BrandKit.tsx) | `/brand-kit` is a `<Navigate replace>` to it, so old links still land |
@@ -172,6 +173,10 @@ the same words cannot drift between two surfaces.
   [`blog-strings.ts`](lib/blog-strings.ts) for the chrome (a typed record, not an i18n
   runtime, because two languages and one section do not justify one).
 - [`usecases.ts`](lib/usecases.ts) is the three use-case stories.
+- [`roadmap.ts`](lib/roadmap.ts) is the roadmap: every item with its status, track, date
+  (shipped items only), evidence links and chains. `/roadmap` renders it and
+  `scripts/gen-roadmap.mjs` generates the root `ROADMAP.md` from it, so the page and the
+  GitHub document cannot drift.
 - [`reputation-bands.ts`](lib/reputation-bands.ts) is the 0-1000 banding, in one copy. Four
   hand-synced copies used to live in the routes.
 
@@ -197,6 +202,13 @@ the contract, and the scripts fail loudly rather than silently dropping content.
   `scripts/prerender.mjs` reads its route list back out of `public/sitemap.xml`: a page that
   falls out of the sitemap also stops being prerendered, and a crawler without JavaScript
   sees an empty shell. `usecases.ts` is scraped by the same `slug:` rule.
+- [`roadmap.ts`](lib/roadmap.ts) is read by `scripts/gen-roadmap.mjs`, which slices each
+  `export const NAME ... = <literal>` out of the source and evaluates the literal as plain
+  JavaScript. The contract is stated at the top of the file: single-quoted strings, no
+  template literals or references to other constants inside the exported literals, and each
+  exported array closing on its own line at column 0. The script also enforces the roadmap's
+  own rules (a shipped item has a date and evidence, a committed item a due date, nothing
+  else carries a date) and fails loudly on either kind of breach.
 - [`components/sections/LandingFaq.tsx`](components/sections/LandingFaq.tsx) is scraped by
   `scripts/check-structured-data.mjs`, which matches `q:` / `plain:` pairs at a four-space
   indent and compares them against the `FAQPage` JSON-LD inlined in `index.html`. Change a
@@ -237,8 +249,10 @@ npm run build        # check + tsc --noEmit + vite build + apply the snapshot
 npm run smoke        # build, serve, and render every route against the live backend
 ```
 
-`npm run build` runs `npm run check` first, which is five guards: `check:seo` (the FAQ
-schema above), `check:skills`, `check:oauth`, `check:sitemap`, and `check:prerender`.
+`npm run build` runs `npm run check` first, which is six guards: `check:seo` (the FAQ
+schema above), `check:skills`, `check:oauth`, `check:sitemap`, `check:prerender`, and
+`check:roadmap` (the root `ROADMAP.md` must match `lib/roadmap.ts`; `npm run roadmap`
+regenerates it).
 
 **The one thing to remember when working in `src/`:** the prerendered HTML in
 `prerendered/` is **committed**, and `scripts/prerender-hash.mjs` fingerprints every

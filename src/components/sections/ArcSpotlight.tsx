@@ -67,7 +67,7 @@ export default function ArcSpotlight() {
               <span className="grid h-8 w-8 place-items-center rounded-lg bg-white/10 ring-1 ring-white/20">
                 <img src="/logos/arc-mark.webp" alt="" width={18} height={17} className="h-[17px] w-[18px]" />
               </span>
-              <span className="text-[11px] font-bold uppercase tracking-[0.14em] text-white/70">Arc Mainnet · Sep 16, 2026</span>
+              <span className="text-xs font-bold uppercase tracking-[0.14em] text-white/90">Live on Arc Mainnet since Sep 16, 2026</span>
             </motion.div>
 
             <motion.h2
@@ -79,7 +79,7 @@ export default function ArcSpotlight() {
               Agent #0 on Arc Mainnet.
             </motion.h2>
 
-            <motion.p {...revealAt(2)} className="mt-5 max-w-[48ch] text-[17px] leading-relaxed text-white/75">
+            <motion.p {...revealAt(2)} className="mt-5 max-w-[48ch] text-[17px] font-medium leading-relaxed text-white/85">
               The day Arc opened, A-Identity minted the first identity on its ERC-8004 registry, then put a spend vault
               holding real USDC and two payment rails beside it.
             </motion.p>
@@ -87,7 +87,7 @@ export default function ArcSpotlight() {
             <motion.div {...revealAt(3)} className="mt-8 flex flex-wrap items-center gap-3">
               <Link
                 to="/arc"
-                className="inline-flex items-center gap-2 rounded-full bg-white px-6 py-3 text-sm font-semibold text-[#1b0f3a] transition-transform hover:scale-[1.03]"
+                className="inline-flex min-h-11 items-center gap-2 rounded-full bg-white px-6 py-3 text-[15px] font-semibold text-[#1b0f3a] transition-transform hover:scale-[1.03]"
               >
                 See it on Arc <ArrowRight size={16} />
               </Link>
@@ -96,7 +96,7 @@ export default function ArcSpotlight() {
                   href={mint.explorerUrl}
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="inline-flex items-center gap-2 rounded-full border border-white/25 px-6 py-3 text-sm font-semibold text-white transition-colors hover:bg-white/10"
+                  className="inline-flex min-h-11 items-center gap-2 rounded-full border border-white/40 px-6 py-3 text-[15px] font-semibold text-white transition-colors hover:bg-white/10"
                 >
                   Open the mint <ArrowUpRight size={16} />
                 </a>
@@ -113,8 +113,8 @@ export default function ArcSpotlight() {
           >
             <div className="flex items-start justify-between">
               <div>
-                <div className="text-[10px] font-bold uppercase tracking-[0.16em] text-white/55">ERC-8004 identity</div>
-                <div className="mt-1 font-mono text-[11px] text-white/60">{REGISTRY ? short(REGISTRY) : ''}</div>
+                <div className="text-[11px] font-bold uppercase tracking-[0.14em] text-white/70">ERC-8004 identity</div>
+                <div className="mt-1 font-mono text-xs text-white/70">{REGISTRY ? short(REGISTRY) : ''}</div>
               </div>
               <img src="/logos/arc-mark.webp" alt="" width={22} height={21} className="h-[21px] w-[22px] opacity-80" />
             </div>
@@ -123,21 +123,21 @@ export default function ArcSpotlight() {
               <span className="text-[64px] font-bold leading-none tracking-[-0.04em]" style={{ fontFamily: 'var(--font-heading)' }}>
                 #0
               </span>
-              <span className="text-sm font-semibold text-white/70">first mint</span>
+              <span className="text-sm font-semibold text-white/85">first mint</span>
             </div>
 
             <dl className="mt-6 grid gap-3 text-[13px]">
               <div className="flex items-center justify-between gap-4 border-t border-white/10 pt-3">
-                <dt className="text-white/55">Holder</dt>
-                <dd className="font-semibold">A-Identity{owner ? <span className="ml-2 font-mono text-[11px] font-normal text-white/55">{short(owner)}</span> : null}</dd>
+                <dt className="text-white/70">Holder</dt>
+                <dd className="font-semibold">A-Identity{owner ? <span className="ml-2 font-mono text-xs font-normal text-white/70">{short(owner)}</span> : null}</dd>
               </div>
               <div className="flex items-center justify-between gap-4 border-t border-white/10 pt-3">
-                <dt className="text-white/55">Network</dt>
+                <dt className="text-white/70">Network</dt>
                 <dd className="font-mono text-[12px]">{ARC.caip2}</dd>
               </div>
               <div className="flex items-center justify-between gap-4 border-t border-white/10 pt-3">
-                <dt className="text-white/55">On-chain check</dt>
-                <dd className={`inline-flex items-center gap-1.5 font-semibold ${verified ? 'text-emerald-300' : 'text-white/60'}`}>
+                <dt className="text-white/70">On-chain check</dt>
+                <dd className={`inline-flex items-center gap-1.5 font-semibold ${verified ? 'dark text-ok' : 'text-white/70'}`}>
                   {verified ? (
                     <>
                       <BadgeCheck size={15} /> read live at block {Number(net?.live.blockNumber ?? 0).toLocaleString('en-US')}

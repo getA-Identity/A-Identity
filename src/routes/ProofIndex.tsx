@@ -5,12 +5,22 @@ import { Link } from 'react-router-dom'
 import PageHeader from '../components/PageHeader'
 import SiteFooter from '../components/sections/SiteFooter'
 import ThemeScope from '../components/ThemeScope'
+import { LogTile, LogsAgreementLine } from '../components/stats/LogTile'
 import { DisplayHeading, Eyebrow, Lede } from '../components/ui/display'
 import { SectionShell, SectionIntro, reveal, revealAt } from '../components/ui/section'
 import { apiFetch } from '../lib/api'
 import { CHAINS } from '../lib/chains'
 import { usePageMeta } from '../lib/head'
-import { ASP_BASE, BACKEND_UNREACHABLE, MCP_BASE } from '../lib/mcpBase'
+import { BACKEND_UNREACHABLE } from '../lib/mcpBase'
+import {
+  SETTLEMENT_LOGS,
+  chainName,
+  fetchSeason,
+  fetchSettlementLogs,
+  okReads,
+  type LogResults,
+  type SeasonSummary,
+} from '../lib/settlement-logs'
 
 /**
  * /proof: every chain in one place, and the one link the footer points at.
@@ -51,125 +61,21 @@ type Rail = {
   mainnet: boolean
 }
 
-/**
- * The fields a settlement log may publish. Every log names its own total; the rest is
- * optional because each rail grew its own shape, and a field a log omits is shown as
- * unknown rather than as zero.
- */
-type RawLog = {
-  totalSettlements?: number
-  internalSettlements?: number
-  network?: string
-  byNetwork?: Record<string, { count: number }>
-  /** The ASP's shape, which nests its X Layer total. */
-  realOnchainRevenue?: { totalSettlements?: number }
-  /** A log that keeps only its latest rows says so here once it is full. */
-  window?: { keepsLatest?: number; capped?: boolean }
-}
-
-/** One settlement log as this page shows it: its own count, never added to another's. */
-type LogRead = {
-  count: number
-  /** Payments from wallets we own, or null when the log does not tell them apart. */
-  internal: number | null
-  /** CAIP-2 ids with at least one settled payment in this log. */
-  networks: string[]
-  /** The row cap, when the log says it is full and the count is a window. */
-  cappedAt: number | null
-}
-
-type LogSpec = {
-  key: string
-  label: string
-  /** Where the page reads it. */
-  fetchUrl: string
-  /** Where a reader opens it raw. */
-  href: string
-  /** What a row had to pass to be counted, in this log's own terms. */
-  basis: string
-  /** For a log that names no network of its own. */
-  network?: string
-  /** For a log that labels no payer: what the record says about who paid, if anything. */
-  payers?: string
-}
-
 const REFRESH_MS = 60_000
 
 /** The OKX submission's settlement proof, served by the ASP deployment rather than here. */
 const ASP_PROOF_URL = 'https://a-identity-asp.onrender.com/proof'
 
 /**
- * Every settlement log we publish, one tile each.
+ * The settlement logs come from src/lib/settlement-logs.ts, the one spec /stats reads too.
  *
  * This strip used to show the EIP-3009 facilitator's totals alone under the caption
  * "Networks settling: chains where a payment has actually cleared", which counted four
  * networks while payments had cleared on eight: Stellar, Algorand, Celo and X Layer keep
  * their own logs and were simply not read. Summing every log into one number would be the
  * opposite mistake, a figure that describes no rail, so each log keeps its own tile and only
- * the network count spans them.
+ * the network count spans them. /stats does print a cross-log total, and labels it as one.
  */
-const LOGS: LogSpec[] = [
-  {
-    key: 'facilitator',
-    label: 'Our EIP-3009 facilitator',
-    fetchUrl: `${MCP_BASE}/api/facilitator/proof`,
-    href: `${MCP_BASE}/api/facilitator/proof`,
-    basis: 'Counted on a receipt carrying a matching Transfer log.',
-  },
-  {
-    key: 'gateway',
-    label: 'Circle Gateway nanopayments',
-    fetchUrl: `${MCP_BASE}/api/x402/gateway/proof`,
-    href: `${MCP_BASE}/api/x402/gateway/proof`,
-    basis: "Counted once Circle's transfers API returns the payment's own authorization.",
-  },
-  {
-    key: 'stellar',
-    label: 'Stellar x402',
-    fetchUrl: `${MCP_BASE}/api/x402/stellar/proof`,
-    href: `${MCP_BASE}/api/x402/stellar/proof`,
-    basis: 'Counted on our own read of the SEP-41 transfer event.',
-  },
-  {
-    key: 'algorand',
-    label: 'Algorand x402',
-    fetchUrl: `${MCP_BASE}/api/x402/algorand/proof`,
-    href: `${MCP_BASE}/api/x402/algorand/proof`,
-    basis: 'Counted on our own indexer read of the ASA transfer.',
-  },
-  {
-    key: 'celo',
-    label: 'Celo x402',
-    fetchUrl: `${MCP_BASE}/api/celo/proof`,
-    href: `${MCP_BASE}/api/celo/proof`,
-    basis: 'Counted when the facilitator Celo operates answers settled; we do not read it back.',
-  },
-  {
-    key: 'xlayer',
-    label: 'X Layer, the Trust Oracle ASP',
-    fetchUrl: `${ASP_BASE}/proof.json`,
-    href: ASP_PROOF_URL,
-    basis: 'A fixed ledger: each row a transfer with its own transaction hash.',
-    network: CHAINS.find((c) => c.id === 'xlayer')?.caip2,
-    payers: 'All from our own buyer wallet, in the demo and seeding runs.',
-  },
-]
-
-function readLog(raw: RawLog, spec: LogSpec): LogRead {
-  const byNetwork = Object.entries(raw.byNetwork ?? {})
-  const fromNetworks = byNetwork.reduce((n, [, v]) => n + (v.count ?? 0), 0)
-  const count = raw.totalSettlements ?? raw.realOnchainRevenue?.totalSettlements ?? fromNetworks
-  const named = raw.network ?? spec.network
-  const networks = byNetwork.length
-    ? byNetwork.filter(([, v]) => v.count > 0).map(([caip]) => caip)
-    : count > 0 && named
-      ? [named]
-      : []
-  const cappedAt = raw.window?.capped && raw.window.keepsLatest ? raw.window.keepsLatest : null
-  return { count, internal: raw.internalSettlements ?? null, networks, cappedAt }
-}
-
-const chainName = (caip: string) => CHAINS.find((c) => c.caip2 === caip)?.name ?? caip
 
 async function getJson<T>(path: string): Promise<T> {
   const res = await apiFetch(path)
@@ -261,46 +167,6 @@ function ChainChip({ name, color, testnet }: { name: string; color: string; test
   )
 }
 
-/** One settlement log: its own count, where it settled, and who paid, as far as it says. */
-function LogTile({ spec, log }: { spec: LogSpec; log: LogRead | 'failed' | undefined }) {
-  const payers =
-    !log || log === 'failed'
-      ? null
-      : log.internal === null
-        ? (spec.payers ?? 'This log does not label which payers are our own.')
-        : log.count === 0
-          ? 'Nothing settled yet.'
-          : log.internal === log.count
-            ? 'All from our own wallets, labeled internal.'
-            : `${log.internal.toLocaleString('en-US')} from our own wallets, ${(log.count - log.internal).toLocaleString('en-US')} from others.`
-  return (
-    <div className="flex flex-col gap-1 rounded-2xl border border-border bg-card px-5 py-4">
-      <span className="text-[11px] uppercase tracking-wide text-foreground/45">{spec.label}</span>
-      <span className="font-mono text-2xl font-bold tracking-tight text-foreground">
-        {log === 'failed' ? '-' : log ? log.count.toLocaleString('en-US') : <Bar />}
-      </span>
-      <span className="text-xs leading-relaxed text-foreground/55">
-        {log === 'failed'
-          ? 'This log did not answer just now.'
-          : log
-            ? `Settled on ${log.networks.map(chainName).join(', ') || 'no network yet'}${
-                log.cappedAt ? `, in the log's latest ${log.cappedAt.toLocaleString('en-US')} rows` : ''
-              }. ${payers}`
-            : spec.basis}
-      </span>
-      {log && log !== 'failed' && <span className="text-xs leading-relaxed text-foreground/45">{spec.basis}</span>}
-      <a
-        href={spec.href}
-        target="_blank"
-        rel="noopener noreferrer"
-        className="mt-1 inline-flex items-center gap-1 text-xs font-semibold text-accent underline-offset-4 hover:underline"
-      >
-        Open the raw log <ArrowUpRight size={12} />
-      </a>
-    </div>
-  )
-}
-
 function Count({ n, label }: { n: number; label: string }) {
   return (
     <span className="inline-flex items-baseline gap-1.5">
@@ -312,8 +178,10 @@ function Count({ n, label }: { n: number; label: string }) {
 
 export default function ProofIndex() {
   const [rails, setRails] = useState<Rail[] | null>(null)
-  // Keyed by LOGS[].key. A log that failed to answer is marked so, never shown as zero.
-  const [logs, setLogs] = useState<Record<string, LogRead | 'failed'>>({})
+  // Keyed by log. A log that failed to answer is marked so, never shown as zero.
+  const [logs, setLogs] = useState<LogResults>({})
+  const [logsReadAt, setLogsReadAt] = useState<number | null>(null)
+  const [season, setSeason] = useState<SeasonSummary | null>(null)
   const [failure, setFailure] = useState(false)
   const loadSeq = useRef(0)
 
@@ -337,20 +205,25 @@ export default function ProofIndex() {
         if (seq !== loadSeq.current) return
         setFailure(true)
       })
-    for (const spec of LOGS) {
-      fetch(spec.fetchUrl)
-        .then(async (res) => {
-          if (!res.ok) throw new Error(`HTTP ${res.status}`)
-          return readLog((await res.json()) as RawLog, spec)
+    // Every log, through the shared spec, each landing on its own. A refresh that fails
+    // keeps the last good read; only a log never read says so.
+    void fetchSettlementLogs({
+      backend: (path) => apiFetch(path),
+      onEach: (result) => {
+        if (seq !== loadSeq.current) return
+        setLogs((prev) => {
+          const last = prev[result.spec.key]
+          if (result.status === 'failed' && last?.status === 'ok') return prev
+          return { ...prev, [result.spec.key]: result }
         })
-        .then((read) => {
-          if (seq === loadSeq.current) setLogs((prev) => ({ ...prev, [spec.key]: read }))
-        })
-        .catch(() => {
-          // A refresh that fails keeps the last good read; only a log never read says so.
-          if (seq === loadSeq.current) setLogs((prev) => (prev[spec.key] ? prev : { ...prev, [spec.key]: 'failed' }))
-        })
-    }
+        setLogsReadAt(result.readAt)
+      },
+    })
+    // The season document counts Arc Mainnet checks from the same two logs; shown only
+    // when it was actually read, never from a copy.
+    void fetchSeason((path) => apiFetch(path)).then((s) => {
+      if (seq === loadSeq.current && s) setSeason(s)
+    })
   }, [])
 
   useEffect(() => {
@@ -374,7 +247,7 @@ export default function ProofIndex() {
 
   /** Mainnets with a settled payment in any log. A count of networks, not of payments, so
    *  it can span logs without adding one log's payments to another's. */
-  const read = LOGS.map((s) => logs[s.key]).filter((l): l is LogRead => Boolean(l) && l !== 'failed')
+  const read = okReads(logs)
   const settledMainnets = [
     ...new Set(read.flatMap((l) => l.networks).filter((caip) => CHAINS.some((c) => c.caip2 === caip && !c.testnet))),
   ]
@@ -422,9 +295,29 @@ export default function ProofIndex() {
                     : `Where a payment has actually cleared: ${settledMainnets.map(chainName).join(', ') || 'none yet'}.`
                 }
               />
-              {LOGS.map((spec) => (
-                <LogTile key={spec.key} spec={spec} log={logs[spec.key]} />
+              {SETTLEMENT_LOGS.map((spec) => (
+                <LogTile key={spec.key} spec={spec} result={logs[spec.key]} />
               ))}
+            </div>
+            {season && (
+              <p className="mt-4 max-w-[75ch] text-xs leading-relaxed text-foreground/50">
+                The Arc Mainnet rows in the facilitator and Gateway logs include the{' '}
+                {season.programName ?? 'Arc Acceleration Season'} checks the season endpoint counts from the same two
+                logs: {season.internalChecks ?? 0} internal and {season.externalChecks ?? 0} external as of{' '}
+                {season.asOf ? season.asOf.slice(0, 10) : 'this read'}.{' '}
+                <Link to={season.evidenceHref} className="font-semibold text-accent underline-offset-4 hover:underline">
+                  Progress against each metric is on /proof/arc
+                </Link>
+                .
+              </p>
+            )}
+            <div className="mt-4">
+              <LogsAgreementLine
+                readAt={logsReadAt}
+                answered={read.length}
+                total={SETTLEMENT_LOGS.length}
+                other={{ to: '/stats', label: '/stats' }}
+              />
             </div>
           </motion.div>
 
