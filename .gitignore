@@ -132,3 +132,6 @@ new-brand/
 # Separate Stellar Turkiye hackathon app, checked out here for convenience.
 # It carries its own .git, so committing it would embed a foreign repo in ours.
 stellar-hackathon-turkiye/
+
+# Private context folder for AI agents (team notes, partner details). Never committed.
+.private/
