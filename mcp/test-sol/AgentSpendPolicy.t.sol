@@ -6,8 +6,9 @@ import {AgentSpendPolicy} from "../contracts/AgentSpendPolicy.sol";
 import {MockUSDC, FalseReturningToken, NoReturnToken, ReentrantToken} from "./mocks/Tokens.sol";
 
 /// Unit and fuzz tests for AgentSpendPolicy. Tests named `..._documents...` pin CURRENT
-/// behaviour that audit/evm/REVIEW.md lists as a finding or a parity gap with the Soroban
-/// port. They are meant to fail the day the behaviour changes, so the change is deliberate.
+/// behaviour that the internal security review lists as a finding (F-1 to F-6, PG-1 to PG-3)
+/// or a parity gap with the Soroban port. They are meant to fail the day the behaviour
+/// changes, so the change is deliberate.
 contract AgentSpendPolicyTest is Test {
     event Paid(address indexed to, uint256 amount, uint256 indexed dayIndex, bool byOwner);
     event PolicyUpdated(uint256 dailyCap, uint256 autoApproveMax, bool allowlistEnabled);
