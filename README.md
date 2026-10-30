@@ -61,7 +61,7 @@ them won a prize.
 
 - **Arbitrum Open House Singapore Online Buildathon** (latest entry; the buildathon ran Sep 14 - Oct 4, 2026) -
   the Robinhood Chain and Arbitrum One pay check, fixes to our own x402 rail found by
-  auditing it, and the mainnet vaults' keys renewed and split from the owner key.
+  reviewing it ourselves, and the mainnet vaults' keys renewed and split from the owner key.
   [docs/arbitrum-open-house.md](docs/arbitrum-open-house.md) separates that work from what
   existed before.
 - **Encode x Arc "Programmable Money" hackathon** (past entry) - submitted Aug 9, 2026,
@@ -643,7 +643,7 @@ Circle's hosted policy engine screens every USDC transfer at the wallet layer (s
 allow/block, freeze). Credential-gated behind `CIRCLE_API_KEY` + `CIRCLE_ENTITY_SECRET`; a clean
 no-op without them. Precise by design: Circle screens transfers - the USD spend cap stays enforced
 by our server and the on-chain vault. Together: **server pre-check + Circle screening + on-chain
-vault** = three independent guarantees.
+vault** = three separate enforcement layers.
 
 ## Architecture
 

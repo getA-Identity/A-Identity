@@ -76,8 +76,8 @@ What the pay check does, in detail:
 
 ## Bugs found and fixed
 
-We audited our own Arbitrum and Robinhood Chain surfaces during the Buildathon. What we
-found was wrong, and is now fixed:
+We reviewed our own Arbitrum and Robinhood Chain surfaces during the Buildathon, an internal
+review and not an audit. What we found was wrong, and is now fixed:
 
 - Both mainnet vaults' session keys had lapsed on 2026-09-04, so every agent payment
   reverted, while the proof pages still described a working 7-day key. Renewed, and the

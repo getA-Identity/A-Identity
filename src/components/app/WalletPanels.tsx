@@ -121,7 +121,7 @@ export function CircleWalletPanel({ agentId }: { agentId: string }) {
           Give the agent a <b>Circle-managed wallet</b> on Arc. Circle's hosted policy engine screens
           every transfer at the <b>wallet layer</b> (sanctions, address allow and block, and freeze) and
           settles real USDC. It complements the onchain vault: the server sets the spend cap, Circle
-          screens at the wallet layer, and the vault enforces it trustlessly onchain.
+          screens at the wallet layer, and the vault contract enforces it onchain, reverting any payment over the cap.
         </p>
       </div>
 

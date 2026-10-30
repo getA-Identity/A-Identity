@@ -191,9 +191,13 @@ the first one is tracked as an open audit finding rather than a settled decision
   rate-limit key to whoever was asking. A header shorter than the configured depth now falls
   back to the socket address instead. One shared bucket over-limits and is loud; a spoofable
   key is silent and unlimited.
-- **No external audit.** The Soroban contract has been through free tooling we can run and
-  re-run, plus an adversarial review that found and fixed real defects. That is not an audit
-  and this project does not call it one. Audit finding G-1, the payee-validity gate the EVM
+- **No external audit, on any chain.** The Soroban contract has been through free tooling we can
+  run and re-run, plus an adversarial review that found and fixed real defects. The Solidity
+  `AgentSpendPolicy` and `MerkleAirdrop` have had internal reviews, the latest an Arc Studio AI
+  review on 2026-10-30 (33 findings, none Critical or High; see `OLYMPIX_SUBMISSION.md`), and were
+  submitted to Olympix for an automated pre-audit scan whose results are pending. None of that is
+  an audit and this project does not call it one. Internal review finding G-1, the payee-validity
+  gate the EVM
   `AgentSpendPolicy` was missing, has since been backported: the Solidity declares
   `InvalidPayee` and reverts with it in `pay`, `ownerPay` and `withdraw`.
 

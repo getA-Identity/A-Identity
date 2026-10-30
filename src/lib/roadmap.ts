@@ -532,7 +532,7 @@ export const ROADMAP_ITEMS: readonly RoadmapItem[] = [
     id: 'invalidpayee-backport',
     title: 'The payee-validity gate backported to the Solidity vault',
     summary:
-      'Audit finding G-1: the Soroban and Algorand ports refused a payee equal to the vault itself while the Solidity original accepted it and burned the cap against a payment that went nowhere. The Solidity now declares InvalidPayee and reverts with it in pay, ownerPay and withdraw.',
+      'Internal review finding G-1: the Soroban and Algorand ports refused a payee equal to the vault itself while the Solidity original accepted it and burned the cap against a payment that went nowhere. The Solidity now declares InvalidPayee and reverts with it in pay, ownerPay and withdraw.',
     status: 'shipped',
     track: 'spending-limits',
     date: '2026-08-27',

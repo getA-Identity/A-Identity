@@ -326,10 +326,10 @@ Newest first. Each item names the day it landed and where to check it.
 
 - **The payee-validity gate backported to the Solidity vault** (2026-08-27; Spending limits)
 
-  Audit finding G-1: the Soroban and Algorand ports refused a payee equal to the vault
-  itself while the Solidity original accepted it and burned the cap against a payment that
-  went nowhere. The Solidity now declares InvalidPayee and reverts with it in pay,
-  ownerPay and withdraw.
+  Internal review finding G-1: the Soroban and Algorand ports refused a payee equal to the
+  vault itself while the Solidity original accepted it and burned the cap against a
+  payment that went nowhere. The Solidity now declares InvalidPayee and reverts with it in
+  pay, ownerPay and withdraw.
 
   Three implementations of one policy model are a strength only while they agree, and on
   this gate they now do.

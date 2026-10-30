@@ -69,7 +69,7 @@ policy). They are genuinely separate keys, and the agent can never change its ow
 | Layer | Enforces | Trust model |
 | --- | --- | --- |
 | Server policy engine | Cap, ceiling, allowlist, freeze, approval gate | Fast pre-check / fallback |
-| On-chain vault | The same policy, on Arc, where an over-limit `pay()` reverts | Trustless source of truth |
+| On-chain vault | The same policy, on Arc, where an over-limit `pay()` reverts | On-chain enforcement, independent of our server (contract not externally audited) |
 | Circle Agent Wallet | Transaction screening (sanctions / allow-block / freeze) | Hosted wallet-layer control |
 
 <Card title="See it on the explorer" icon="link" href="/chains/arc">

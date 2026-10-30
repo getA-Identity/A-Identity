@@ -1,3 +1,8 @@
+> Submitted to Olympix for an automated pre-audit scan of commit 33c7df69. Everything below is the
+> unedited output of Arc Studio, Circle's AI coding agent, run on 2026-10-30: an internal AI review,
+> not an audit. Labels such as "Audit Provenance" and "Files audited" are the tool's own names for
+> its review passes. Olympix has not returned results yet.
+
 # Olympix pre-audit submission: A-Identity Solidity contracts
 
 ## 1. Summary

@@ -391,9 +391,12 @@ day it lands rather than the day someone remembers to add it.
 - **Circle** *screens* transfers; it does **not** enforce the USD spend cap - the server + the on-chain
   vault do.
 - **Operator custody**: today the **server signer** is the vault `operator` that submits `pay()` on the
-  agent's behalf (a delegated action); the human `owner` is the user's own wallet. The *limit* is
-  trustless regardless (the contract reverts), but the agent does not yet sign its own payments -
-  that's the roadmap (agent-held key / Circle programmable wallet). We say this plainly.
+  agent's behalf (a delegated action). The human `owner` is the user's own wallet on vaults a user
+  deploys (Stellar today; Arc from the browser is planned), while our own three mainnet vaults are
+  owned by our server-held operating wallet. The *limit* holds either way, because the contract
+  reverts an over-limit `pay()`; the contract itself is not externally audited. The agent does not
+  yet sign its own payments - that's the roadmap (agent-held key / Circle programmable wallet). We
+  say this plainly.
 - **Which money is real**: Arc testnet is a testnet, so everything in the "Arc testnet" section above is
   real tech and test money. The eight live mainnets above are not: Arc Mainnet, X Layer, Celo, Robinhood
   Chain, Arbitrum One, Base, Stellar pubnet and Algorand settle real value, in small deliberate

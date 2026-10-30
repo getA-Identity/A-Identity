@@ -340,6 +340,7 @@ export const PROVENANCE: ChainProvenance[] = [
       },
     ],
     caveats: [
+      'Not audited. AgentSpendPolicy has had internal reviews, the latest an Arc Studio AI review on 2026-10-30 with 33 findings and none Critical or High (OLYMPIX_SUBMISSION.md in the repo), plus a Foundry unit, fuzz and invariant suite and a negative-control runner that deletes each guard in turn and requires the suite to go red. It has been submitted to Olympix for an automated pre-audit scan whose results are pending. That is not an audit and we will not call it one.',
       'Every payment recorded here is self-funded: every payer, every receiving address and every account that broadcasts is ours, except Circle\'s Gateway batches and forwarded mint. It is labeled internal and always will be. This is evidence the rails work on Arc Mainnet, not evidence of demand.',
       'The Circle Gateway sale is Circle\'s batch transaction, not ours: we broadcast nothing on that rail. Gateway credited the call first (transfer 5958b158-6603-4165-a0a9-cfab2bec2ea7) and applied the net position on-chain later in a batch that may carry other parties\' transfers too, so the batch hash proves settlement of a net position rather than a one-to-one payment.',
       'We deployed nothing here except the vault. The registries, USDC, CCTP, Gateway, Memo and Multicall3From are their authors\' contracts; registration is permissionless.',
@@ -466,6 +467,7 @@ export const PROVENANCE: ChainProvenance[] = [
       },
     ],
     caveats: [
+      'Not audited. AgentSpendPolicy has had internal reviews, the latest an Arc Studio AI review on 2026-10-30 with 33 findings and none Critical or High (OLYMPIX_SUBMISSION.md in the repo), plus a Foundry unit, fuzz and invariant suite and a negative-control runner that deletes each guard in turn and requires the suite to go red. It has been submitted to Olympix for an automated pre-audit scan whose results are pending. That is not an audit and we will not call it one.',
       'We did not deploy the ERC-8004 registries here. They were already live at their canonical cross-chain addresses; the agent is what is ours.',
       'Token #1 on this registry was minted 76 blocks after ours by 0x2B5B35AC5A2d5c1224337BA86bf3816AbEe69da3, carrying OUR agent card URL as its tokenURI. It is not ours. A tokenURI is not a discriminator on this registry, so resolve an agent by ownerOf, never by the card it points at. We report this rather than hide it: it is the clearest possible demonstration of why this product exists.',
       'KYA is not anchored on-chain here. This caveat used to say the mainnet family has no ValidationRegistry, and that was wrong: read live 2026-10-11, a proxy at the family\'s ValidationRegistry address has code here and returns this chain\'s identity registry. It is not wired, so a KYA result is still verified off-chain and recorded, not anchored.',
@@ -624,6 +626,7 @@ export const PROVENANCE: ChainProvenance[] = [
       },
     ],
     caveats: [
+      'Not audited. AgentSpendPolicy has had internal reviews, the latest an Arc Studio AI review on 2026-10-30 with 33 findings and none Critical or High (OLYMPIX_SUBMISSION.md in the repo), plus a Foundry unit, fuzz and invariant suite and a negative-control runner that deletes each guard in turn and requires the suite to go red. It has been submitted to Olympix for an automated pre-audit scan whose results are pending. That is not an audit and we will not call it one.',
       'We deployed nothing here. The registries were already live, and registering on them is permissionless; what is ours is agent #1259 and the rail.',
       'This chain is ALREADY served by other x402 facilitators, Coinbase\'s among them. We run ours anyway so that one code path and one receipt standard cover every chain we sell on. Arbitrum One is where you can check our rail against a well-served baseline, which is more useful to you than being first would have been.',
       'Gasless EIP-3009 relaying on this USDC contract predates us by years and runs constantly. We did not bring gasless USDC to Arbitrum and do not claim to; on-chain an x402 settlement is indistinguishable from any other relayed authorization.',

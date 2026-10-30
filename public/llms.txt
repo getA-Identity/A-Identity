@@ -60,7 +60,9 @@ against those limits before any value moves, and the verdict is ALLOW, WARN or D
   person created a passkey in a browser at https://a-identity.xyz/stellar?network=testnet,
   and it is the one signer of the OpenZeppelin smart account
   CBII2K5RHXA7QTBXXUG6O3EMR25NOVOL73KMVGWKWGH7PHO7QXDTHMUD (an account and verifier we build
-  from OpenZeppelin's audited stellar-contracts release line, tag v0.7.2), which owns the vault
+  from OpenZeppelin's stellar-contracts release line, tag v0.7.2; OpenZeppelin Security audited
+  the library packages, not the deployable wrapper crate, and our vault is not audited), which
+  owns the vault
   CCTYM23I6UCKKFWHBUWU2GFUSDY6WJEJ3FYSS7WI33DTI5P5HARB72EH. The same day the owner froze that
   vault with the passkey (tx 2d4cb917c415c68b2c9eb14079d6634f9b9f65432c7558a6e5d152231f2d6fe6,
   a WebAuthn signature on rule 0, fee paid by OpenZeppelin Channels); decoded at
