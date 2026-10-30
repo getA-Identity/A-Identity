@@ -101,7 +101,7 @@ export const policyGetInput = { agentId: z.string() }
 export const policySetInput = {
   agentId: z.string(),
   policy: z
-    .record(z.unknown())
+    .record(z.string(), z.unknown())
     .describe(
       'Partial policy: perActionCapUsd, dailyCapUsd, humanApprovalAboveUsd, frozen, trade{allowSymbols,denySymbols,allowOptions,tradingHoursUtc,maxConcentrationPct}',
     ),
@@ -117,7 +117,7 @@ export const policySetInput = {
  * the venue's own payload and a registered adapter translates it (see callers/). The audit
  * row then records WHERE the numbers came from instead of implying we saw the venue.
  *
- * `intent` is deliberately `z.record(z.unknown())` and NOT a typed object. A malformed
+ * `intent` is deliberately `z.record(z.string(), z.unknown())` and NOT a typed object. A malformed
  * intent must reach the engine and come back as a recorded DENY with a reason; a zod
  * rejection would return a protocol error and write no audit row at all, which would lose
  * exactly the property this product sells. Strictness belongs in the docs test.
@@ -126,13 +126,13 @@ export const preActionCheckInput = {
   agentId: z.string(),
   surface: z.enum(SURFACE_IDS).describe(`Which action surface (${SURFACE_IDS.join(', ')}); a planned surface can never ALLOW`),
   intent: z
-    .record(z.unknown())
+    .record(z.string(), z.unknown())
     .optional()
     .describe(
       '{ kind: order|purchase|cancel|recurring|settings|transfer|document, notionalUsd, side?, symbol?, assetClass?, protective?, settingKey?, settingValue?, cadence?, merchant?, mcc?, cardId? }. Omit only when sending callerId + action instead.',
     ),
   snapshot: z
-    .record(z.unknown())
+    .record(z.string(), z.unknown())
     .optional()
     .describe(
       '{ todayNotionalUsd, positions[], portfolioValueUsd?, cashAvailableUsd?, marginUsedUsd?, accountType? } gathered by the caller, never authored by the agent being checked',
@@ -142,11 +142,11 @@ export const preActionCheckInput = {
     .optional()
     .describe('A registered caller id (see GET /api/callers). Send with `action` instead of a pre-normalized `intent`.'),
   action: z
-    .record(z.unknown())
+    .record(z.string(), z.unknown())
     .optional()
     .describe("The venue's own action payload, in the shape that caller documents. Requires callerId."),
   account: z
-    .record(z.unknown())
+    .record(z.string(), z.unknown())
     .optional()
     .describe("The venue's own account payload, in the shape that caller documents. Requires callerId."),
 }

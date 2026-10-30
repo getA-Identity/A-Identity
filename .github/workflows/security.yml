@@ -103,6 +103,23 @@ jobs:
       # included here rather than left to nobody.
       - name: npm audit, every committed lockfile
         shell: bash
+        env:
+          # Accepted HIGH advisories, the only way a HIGH passes this gate. Each entry names
+          # the tree, the advisory, the package, the ONLY install paths it may appear under,
+          # the reason, and a review-by date. Past that date the acceptance lapses and the
+          # gate turns red on its own; a new install path for the same package is not covered.
+          ACCEPTED_ADVISORIES: |
+            [
+              { "tree": "backend (/mcp)", "id": "GHSA-mrhx-c7xc-m3w5", "package": "zod",
+                "paths": ["node_modules/@circle-fin/", "node_modules/@okxweb3/", "node_modules/@x402/"], "until": "2027-01-31",
+                "why": "Our own schemas and the MCP SDK run zod 4.6.7. These copies stay on zod 3 on purpose. Circle App Kit, Bridge Kit and the viem adapter pin 3.25.67 exactly, in their latest releases too, and fail at import under zod 4 (z.function().returns). The OKX and x402 packages verify payment headers on live listings and rails, and swapping their validator unrehearsed is a behaviour change we do not make blind. Everything they parse is bounded: headers by Node's 16 KB limit, bodies by the 256 KiB cap before any parse. Lift: Circle on zod 4.6.6 or later; @x402 2.29 (zod 4) after a paid rehearsal; OKX when it ships zod 4." },
+              { "tree": "frontend (/)", "id": "GHSA-mrhx-c7xc-m3w5", "package": "zod",
+                "paths": ["node_modules/@creit.tech/stellar-wallets-kit/", "node_modules/@reown/appkit-wallet/", "node_modules/zod"], "until": "2027-01-31",
+                "why": "Browser bundle only: these copies validate wallet-kit and WalletConnect data inside the visitor's own tab, so exhausting memory can only stop that tab. No server in this tree validates request bodies with zod. The wallet kits pin zod 3." },
+              { "tree": "frontend (/)", "id": "GHSA-qr28-fpjm-wq7f", "package": "decode-uri-component",
+                "paths": ["node_modules/decode-uri-component"], "until": "2027-01-31",
+                "why": "Reached only through @blockshake/defly-connect, WalletConnect v1 and query-string 6 in the browser. The fixed 0.5.1 is ESM-only and cannot be required by query-string 6, so no compatible fix exists. The input is the Defly session URI in the visitor's own tab. Lift when Defly connect leaves WalletConnect v1." }
+            ]
         run: |
           set -uo pipefail
 
@@ -130,18 +147,44 @@ jobs:
                 echo "$label: critical=$1 high=$2 moderate=$3 low=$4"
 
                 if [ "$1" -gt 0 ] || [ "$2" -gt 0 ]; then
-                  echo "::error::$label has $1 critical and $2 high advisories"
-                  printf '%s' "$out" | node -e '
+                  # A package is HIGH either because it carries a HIGH advisory itself or
+                  # because it depends on one that does. Only the advisories themselves are
+                  # judged: if every HIGH or CRITICAL advisory in the tree is accepted (right
+                  # tree, id, package, every install path inside the allowed paths, before
+                  # its date), the tree passes and each acceptance is printed. Anything else
+                  # fails exactly as before.
+                  printf '%s' "$out" | LABEL="$label" node -e '
                     let s = "";
                     process.stdin.on("data", d => s += d).on("end", () => {
                       const a = JSON.parse(s).vulnerabilities || {};
-                      for (const name of Object.keys(a)) {
-                        const v = a[name];
-                        if (v.severity !== "high" && v.severity !== "critical") continue;
-                        const urls = (v.via || []).map(x => typeof x === "string" ? x : x.url).join(" ");
-                        console.log(`  ${v.severity.padEnd(8)} ${name}  ${urls}`);
+                      const accepted = JSON.parse(process.env.ACCEPTED_ADVISORIES || "[]");
+                      const today = new Date().toISOString().slice(0, 10);
+                      const seen = new Map();
+                      for (const v of Object.values(a)) {
+                        for (const x of v.via || []) {
+                          if (typeof x !== "object") continue;
+                          if (x.severity !== "high" && x.severity !== "critical") continue;
+                          const id = (x.url || "").split("/").pop();
+                          seen.set(`${x.name} ${id}`, { name: x.name, id, url: x.url, severity: x.severity });
+                        }
                       }
-                    });'
+                      let bad = 0;
+                      for (const adv of seen.values()) {
+                        const nodes = (a[adv.name] && a[adv.name].nodes) || [];
+                        const ok = accepted.find(e =>
+                          e.tree === process.env.LABEL && e.id === adv.id && e.package === adv.name &&
+                          today <= e.until && nodes.length > 0 &&
+                          nodes.every(n => e.paths.some(p => n === p || n.startsWith(p))));
+                        if (ok) {
+                          console.log(`::notice::${process.env.LABEL}: accepted ${adv.severity} ${adv.name} ${adv.url} until ${ok.until}. ${ok.why}`);
+                        } else {
+                          bad++;
+                          console.log(`::error::${process.env.LABEL}: ${adv.severity} ${adv.name} ${adv.url} at ${nodes.join(", ")}`);
+                        }
+                      }
+                      process.exit(bad > 0 || seen.size === 0 ? 1 : 0);
+                    });' && return 0
+                  echo "::error::$label has $1 critical and $2 high advisories that are not accepted"
                   return 1
                 fi
 

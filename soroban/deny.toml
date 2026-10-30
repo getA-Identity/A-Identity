@@ -23,6 +23,11 @@ ignore = [
   # `cargo tree --target wasm32v1-none -e normal -i paste` prints "nothing to print",
   # so it is not in the deployed wasm. Revisit if it ever becomes reachable.
   "RUSTSEC-2024-0436",
+  # crypto-bigint 0.5.5, timing variability (RUSTSEC-2026-0387). Same shape as paste: it
+  # reaches the tree only through soroban-env-host (k256, p256), a host-side test
+  # dependency; `cargo tree --target wasm32v1-none -e normal -i crypto-bigint@0.5.5`
+  # prints "nothing to print", so it is not in the deployed wasm. Revisit on the next SDK bump.
+  "RUSTSEC-2026-0387",
 ]
 
 [licenses]

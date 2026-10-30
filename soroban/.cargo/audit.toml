@@ -1,0 +1,12 @@
+# cargo-audit configuration for the Soroban workspace (read from this directory by the
+# advisories job in .github/workflows/soroban.yml). Mirrors the ignore list in deny.toml.
+[advisories]
+ignore = [
+  # crypto-bigint 0.5.5, timing variability in operations meant to be constant-time.
+  # Reaches the tree only through soroban-env-host (k256, p256, elliptic-curve), the
+  # host-side test dependency of soroban-sdk: `cargo tree --target wasm32v1-none -e normal
+  # -i crypto-bigint@0.5.5` prints "nothing to print", so it is not in the deployed wasm,
+  # and on the network these curves run inside validators, not in our contract. No
+  # soroban-env-host release on the 27.x line moves off 0.5. Revisit on the next SDK bump.
+  "RUSTSEC-2026-0387",
+]
