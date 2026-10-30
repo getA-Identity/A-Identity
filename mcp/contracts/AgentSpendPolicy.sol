@@ -19,9 +19,13 @@ pragma solidity ^0.8.24;
 ///   - `dailyCap`          — cumulative agent spend per UTC day is capped (0 = no cap)
 ///
 /// The `operator` is the agent's SESSION KEY: a scoped signer the human owner grants,
-/// bounded by the cap/allowlist and — via `sessionKeyExpiry` — by time. When the key
-/// expires the agent's `pay` reverts on-chain; the human can extend it, revoke it (set the
-/// expiry to now), or settle over it with `ownerPay`. This is the bounded-authority,
+/// bounded by the cap/allowlist and — via `sessionKeyExpiry` — by time. The key
+/// is valid through the expiry second inclusive; after that the agent's `pay` reverts
+/// on-chain. The human can extend it, or revoke effective immediately by setting the
+/// expiry strictly before `block.timestamp` (e.g. `block.timestamp - 1`, not 0), calling
+/// `setOperator(address(0))`, or calling `setFrozen(true)`. Setting the expiry to
+/// `block.timestamp` still lets the operator pay for the rest of that second. The human
+/// can settle over it with `ownerPay`. This is the bounded-authority,
 /// no-human-in-the-loop-but-cannot-run-amok primitive, enforced by the contract.
 ///
 /// All amounts are in USDC's 6-decimal ERC-20 units (e.g. $1.00 = 1_000_000),
@@ -34,7 +38,7 @@ interface IERC20 {
 
 contract AgentSpendPolicy {
     /// @notice Human principal — sets policy, settles overrides, freezes, withdraws.
-    address public owner;
+    address public immutable owner;
     /// @notice The agent's signer — may call `pay` within the policy.
     address public operator;
     /// @notice The USDC token (6-decimal ERC-20 interface).
@@ -50,7 +54,11 @@ contract AgentSpendPolicy {
     bool public allowlistEnabled;
     /// @notice UNIX time after which the agent (session key) can no longer `pay`.
     /// 0 = no expiry (unbounded, backward-compatible). The owner override (`ownerPay`)
-    /// is never time-bound; the owner can extend, or revoke by setting this to `now`.
+    /// is never time-bound; the key is valid through the expiry second inclusive. The owner
+    /// can extend, or revoke effective immediately by setting this strictly before
+    /// `block.timestamp` (e.g. `block.timestamp - 1`, not 0), calling `setOperator(address(0))`,
+    /// or calling `setFrozen(true)`. Setting this to `block.timestamp` still lets the
+    /// operator pay for the rest of that second.
     uint256 public sessionKeyExpiry;
 
     /// @notice UTC-day index => units spent by the agent that day.
@@ -171,8 +179,12 @@ contract AgentSpendPolicy {
     }
 
     /// @notice Grant / extend / revoke the agent's session key by setting the UNIX time
-    /// after which its `pay` reverts. Future time = grant/extend; `block.timestamp` (or a
-    /// past time) = revoke now; 0 = no time bound. Owner-only; `ownerPay` is never affected.
+    /// after which its `pay` reverts. The key is valid through the expiry second inclusive.
+    /// Future time = grant/extend; a nonzero time strictly before `block.timestamp`
+    /// (e.g. `block.timestamp - 1`) = revoke effective immediately; 0 = no time bound.
+    /// Setting it to `block.timestamp` still lets the operator pay for the rest of that
+    /// second. To revoke effective immediately, the owner can also call
+    /// `setOperator(address(0))` / `setFrozen(true)`. Owner-only; `ownerPay` is never affected.
     function setSessionKeyExpiry(uint256 _expiry) external onlyOwner {
         sessionKeyExpiry = _expiry;
         emit SessionKeyExpirySet(_expiry);

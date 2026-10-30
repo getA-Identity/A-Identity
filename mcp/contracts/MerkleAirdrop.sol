@@ -22,7 +22,7 @@ interface IERC20 {
 
 contract MerkleAirdrop {
     /// @notice Human treasury/principal — can sweep unclaimed funds after the campaign.
-    address public owner;
+    address public immutable owner;
     /// @notice The USDC token (6-decimal ERC-20 interface).
     IERC20 public immutable token;
     /// @notice The fixed Merkle root committing to every (index, account, amount) leaf.
@@ -43,14 +43,19 @@ contract MerkleAirdrop {
     error TransferFailed();
     error ZeroOwner();
     error SweepBeforeDeadline();
+    error InvalidDeadline();
+    error ZeroToken();
+    error ZeroAddress();
 
     /// @param _owner The treasury that owns sweep — MUST be the shared 2/2 Gnosis Safe, NOT
     /// the deployer key. Passing an explicit owner keeps the funded pool under 2/2 control
     /// instead of the single hot key that broadcast the deploy.
     /// @param _claimDeadline Unix time before which sweep is disabled, so recipients get a
-    /// guaranteed claim window (the owner can't empty the pool early).
+    /// guaranteed claim window (the owner can't empty the pool early). Must be in the future.
     constructor(address _token, bytes32 _merkleRoot, address _owner, uint256 _claimDeadline) {
         if (_owner == address(0)) revert ZeroOwner();
+        if (_token == address(0)) revert ZeroToken();
+        if (_claimDeadline <= block.timestamp) revert InvalidDeadline();
         owner = _owner;
         token = IERC20(_token);
         merkleRoot = _merkleRoot;
@@ -101,6 +106,7 @@ contract MerkleAirdrop {
     function sweep(address to) external {
         if (msg.sender != owner) revert NotOwner();
         if (block.timestamp < claimDeadline) revert SweepBeforeDeadline();
+        if (to == address(0)) revert ZeroAddress();
         uint256 bal = token.balanceOf(address(this));
         if (!token.transfer(to, bal)) revert TransferFailed();
         emit Swept(to, bal);

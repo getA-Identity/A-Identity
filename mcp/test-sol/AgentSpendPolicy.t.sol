@@ -2,8 +2,9 @@
 pragma solidity ^0.8.24;
 
 import {Test} from "forge-std/Test.sol";
+import {stdError} from "forge-std/StdError.sol";
 import {AgentSpendPolicy} from "../contracts/AgentSpendPolicy.sol";
-import {MockUSDC, FalseReturningToken, NoReturnToken, ReentrantToken} from "./mocks/Tokens.sol";
+import {MockUSDC, FalseReturningToken, NoReturnToken, ReentrantToken, HookToken} from "./mocks/Tokens.sol";
 
 /// Unit and fuzz tests for AgentSpendPolicy. Tests named `..._documents...` pin CURRENT
 /// behaviour that the internal security review lists as a finding (F-1 to F-6, PG-1 to PG-3)
@@ -566,5 +567,387 @@ contract AgentSpendPolicyTest is Test {
             vm.expectRevert(AgentSpendPolicy.DailyCapExceeded.selector);
         }
         vault.pay(payee, amount);
+    }
+
+    // ============================================================ F-tagged review tests
+
+    // ----------------------------------------------------------------------- F-02
+
+    /// Covers F-02
+    function test_F02_expiryEqualToNow_stillLetsOperatorPay_sameBlockAndLaterBlock() public {
+        vm.prank(owner);
+        vault.setSessionKeyExpiry(block.timestamp);
+
+        vm.prank(operator);
+        vault.pay(payee, 1); // same block, same second
+
+        vm.roll(block.number + 5); // later block, same timestamp
+        vm.prank(operator);
+        vault.pay(payee, 1);
+        assertEq(usdc.balanceOf(payee), 2);
+
+        vm.warp(block.timestamp + 1); // next second: expired
+        vm.prank(operator);
+        vm.expectRevert(AgentSpendPolicy.SessionKeyExpired.selector);
+        vault.pay(payee, 1);
+    }
+
+    /// Covers F-02
+    function test_F02_expiryOneSecondBeforeNow_revokesImmediately() public {
+        vm.prank(owner);
+        vault.setSessionKeyExpiry(block.timestamp - 1);
+        assertGt(vault.sessionKeyExpiry(), 0);
+
+        vm.prank(operator);
+        vm.expectRevert(AgentSpendPolicy.SessionKeyExpired.selector);
+        vault.pay(payee, 1);
+
+        vm.roll(block.number + 1);
+        vm.prank(operator);
+        vm.expectRevert(AgentSpendPolicy.SessionKeyExpired.selector);
+        vault.pay(payee, 1);
+        assertEq(usdc.balanceOf(payee), 0);
+    }
+
+    /// Covers F-02
+    function test_F02_setOperatorZero_andSetFrozen_revokeInTheSameBlock() public {
+        vm.prank(owner);
+        vault.setFrozen(true);
+        vm.prank(operator);
+        vm.expectRevert(AgentSpendPolicy.IsFrozen.selector);
+        vault.pay(payee, 1);
+
+        vm.prank(owner);
+        vault.setFrozen(false);
+        vm.prank(owner);
+        vault.setOperator(address(0));
+        vm.prank(operator);
+        vm.expectRevert(AgentSpendPolicy.NotOperator.selector);
+        vault.pay(payee, 1);
+        assertEq(usdc.balanceOf(payee), 0);
+    }
+
+    // ----------------------------------------------------------------------- F-07
+
+    /// Covers F-07
+    function test_F07_noOwnershipTransferEntryPoint_andOwnerIsConstant() public {
+        bytes[4] memory data;
+        data[0] = abi.encodeWithSignature("transferOwnership(address)", stranger);
+        data[1] = abi.encodeWithSignature("setOwner(address)", stranger);
+        data[2] = abi.encodeWithSignature("renounceOwnership()");
+        data[3] = abi.encodeWithSignature("acceptOwnership()");
+        address[3] memory callers = [owner, operator, stranger];
+        for (uint256 i = 0; i < 4; i++) {
+            for (uint256 j = 0; j < 3; j++) {
+                vm.prank(callers[j]);
+                (bool ok,) = address(vault).call(data[i]);
+                assertFalse(ok);
+            }
+        }
+        assertEq(vault.owner(), owner);
+
+        // owner() is constant across every state-changing operation
+        vm.prank(operator);
+        vault.pay(payee, 1);
+        assertEq(vault.owner(), owner);
+        vm.startPrank(owner);
+        vault.ownerPay(payee, 1);
+        vault.setPolicy(5, 3, true);
+        vault.setAllowed(payee, true);
+        vault.setOperator(stranger);
+        vault.setSessionKeyExpiry(T0 + 1);
+        vault.setFrozen(true);
+        vault.withdraw(owner, 1);
+        vm.stopPrank();
+        assertEq(vault.owner(), owner);
+    }
+
+    // ----------------------------------------------------------------------- F-08..F-11
+
+    /// Covers F-08
+    function test_F08_dailyCapIsPerCalendarDay_upToTwiceTheCapAcrossMidnight() public {
+        uint256 lastSecond = DAY0_START + 1 days - 1;
+        vm.warp(lastSecond);
+        _spendFullCap();
+        vm.prank(operator);
+        vm.expectRevert(AgentSpendPolicy.DailyCapExceeded.selector);
+        vault.pay(payee, 1);
+
+        vm.warp(lastSecond + 1); // one second later, new UTC day
+        _spendFullCap();
+        assertEq(usdc.balanceOf(payee), 2 * CAP);
+        assertEq(vault.spentToday(), CAP);
+        vm.prank(operator);
+        vm.expectRevert(AgentSpendPolicy.DailyCapExceeded.selector);
+        vault.pay(payee, 1);
+    }
+
+    /// Covers F-09
+    function test_F09_ownerPay_countsTowardTheDay_andIsNotCapChecked() public {
+        vm.prank(owner);
+        vault.ownerPay(payee, 3 * CAP); // far above both the cap and the ceiling
+        assertEq(vault.spentToday(), 3 * CAP);
+        assertEq(usdc.balanceOf(payee), 3 * CAP);
+
+        vm.prank(operator);
+        vm.expectRevert(AgentSpendPolicy.DailyCapExceeded.selector);
+        vault.pay(payee, 1);
+
+        vm.warp(DAY0_START + 1 days); // next UTC day: the agent's budget is back
+        vm.prank(operator);
+        vault.pay(payee, CEILING);
+        assertEq(vault.spentToday(), CEILING);
+    }
+
+    /// Covers F-10
+    function test_F10_payZeroAmount_isAcceptedAndEmitsPaid() public {
+        vm.expectEmit(true, true, false, true, address(vault));
+        emit Paid(payee, 0, T0 / 1 days, false);
+        vm.prank(operator);
+        vault.pay(payee, 0);
+        assertEq(usdc.balanceOf(payee), 0);
+        assertEq(vault.spentToday(), 0);
+        assertEq(vault.balance(), 100 * CAP);
+    }
+
+    /// Covers F-11
+    function test_F11_noReturnToken_makesPayOwnerPayAndWithdrawUnusable() public {
+        NoReturnToken t = new NoReturnToken();
+        AgentSpendPolicy v = new AgentSpendPolicy(owner, operator, address(t), CAP, CEILING);
+        t.mint(address(v), CAP);
+
+        vm.prank(operator);
+        vm.expectRevert();
+        v.pay(payee, 1);
+        assertEq(v.spentToday(), 0);
+
+        vm.startPrank(owner);
+        vm.expectRevert();
+        v.ownerPay(payee, 1);
+        vm.expectRevert();
+        v.withdraw(owner, 1);
+        vm.stopPrank();
+        assertEq(t.balanceOf(address(v)), CAP);
+        assertEq(t.balanceOf(payee), 0);
+    }
+
+    // ------------------------------------------------------------------ F-14 / F-15
+
+    /// Covers F-14
+    function test_F14_constructorOperatorZero_works_andPayByAnyoneRevertsNotOperator() public {
+        AgentSpendPolicy v = new AgentSpendPolicy(owner, address(0), address(usdc), CAP, CEILING);
+        usdc.mint(address(v), CAP);
+        assertEq(v.operator(), address(0));
+
+        address[3] memory callers = [owner, operator, stranger];
+        for (uint256 i = 0; i < 3; i++) {
+            vm.prank(callers[i]);
+            vm.expectRevert(AgentSpendPolicy.NotOperator.selector);
+            v.pay(payee, 1);
+        }
+        vm.prank(owner);
+        v.ownerPay(payee, 1); // the human path still works
+        assertEq(usdc.balanceOf(payee), 1);
+    }
+
+    /// Covers F-14
+    function testFuzz_F14_constructorOperatorZero_payRevertsForAnyNonZeroCaller(address caller) public {
+        vm.assume(caller != address(0));
+        AgentSpendPolicy v = new AgentSpendPolicy(owner, address(0), address(usdc), CAP, CEILING);
+        vm.prank(caller);
+        vm.expectRevert(AgentSpendPolicy.NotOperator.selector);
+        v.pay(payee, 1);
+    }
+
+    /// Covers F-15
+    function test_F15_setOperatorZero_worksAndEmitsOperatorSetZero() public {
+        vm.expectEmit(true, false, false, false, address(vault));
+        emit OperatorSet(address(0));
+        vm.prank(owner);
+        vault.setOperator(address(0));
+        assertEq(vault.operator(), address(0));
+
+        vm.prank(operator);
+        vm.expectRevert(AgentSpendPolicy.NotOperator.selector);
+        vault.pay(payee, 1);
+
+        // and it is reversible by the owner
+        vm.prank(owner);
+        vault.setOperator(operator);
+        vm.prank(operator);
+        vault.pay(payee, 1);
+    }
+
+    // ------------------------------------------------------------------------ F-22
+
+    /// Covers F-22
+    function test_F22_pay_succeedsAtExpiry_failsAtExpiryPlusOne() public {
+        uint256 expiry = T0 + 1 hours;
+        vm.prank(owner);
+        vault.setSessionKeyExpiry(expiry);
+
+        vm.warp(expiry - 1);
+        vm.prank(operator);
+        vault.pay(payee, 1);
+        vm.warp(expiry);
+        vm.prank(operator);
+        vault.pay(payee, 1);
+        assertEq(usdc.balanceOf(payee), 2);
+
+        vm.warp(expiry + 1);
+        vm.prank(operator);
+        vm.expectRevert(AgentSpendPolicy.SessionKeyExpired.selector);
+        vault.pay(payee, 1);
+        assertEq(usdc.balanceOf(payee), 2);
+
+        vm.prank(owner);
+        vault.ownerPay(payee, 1); // ownerPay is never time-bound
+        assertEq(usdc.balanceOf(payee), 3);
+    }
+
+    // ------------------------------------------------------------------------ F-29
+
+    /// Covers F-29
+    function testFuzz_F29_owner_returnsConstructorArgument(address o) public {
+        vm.assume(o != address(0));
+        AgentSpendPolicy v = new AgentSpendPolicy(o, operator, address(usdc), CAP, CEILING);
+        assertEq(v.owner(), o);
+    }
+
+    /// Covers F-29
+    function test_F29_ownerOnlyFunctions_workForOwner_revertForOthers() public {
+        vm.startPrank(owner);
+        vault.setPolicy(5, 3, false);
+        vault.setAllowed(payee, true);
+        vault.setOperator(stranger);
+        vault.setSessionKeyExpiry(T0 + 1);
+        vault.setFrozen(true);
+        vault.ownerPay(payee, 1);
+        vault.withdraw(owner, 1);
+        vm.stopPrank();
+        assertEq(vault.dailyCap(), 5);
+
+        vm.startPrank(stranger);
+        vm.expectRevert(AgentSpendPolicy.NotOwner.selector);
+        vault.setPolicy(0, 0, false);
+        vm.expectRevert(AgentSpendPolicy.NotOwner.selector);
+        vault.ownerPay(payee, 1);
+        vm.expectRevert(AgentSpendPolicy.NotOwner.selector);
+        vault.withdraw(stranger, 1);
+        vm.expectRevert(AgentSpendPolicy.NotOwner.selector);
+        vault.setFrozen(false);
+        vm.stopPrank();
+    }
+
+    /// Covers F-29
+    function test_F29_storageWriteCannotChangeOwner() public {
+        address attacker = makeAddr("attacker");
+        for (uint256 s = 0; s <= 5; s++) {
+            vm.store(address(vault), bytes32(s), bytes32(uint256(uint160(attacker))));
+            assertEq(vault.owner(), owner);
+            vm.store(address(vault), bytes32(s), bytes32(type(uint256).max));
+            assertEq(vault.owner(), owner);
+        }
+        vm.prank(attacker);
+        vm.expectRevert(AgentSpendPolicy.NotOwner.selector);
+        vault.setFrozen(false);
+        vm.prank(owner);
+        vault.setFrozen(false);
+        assertFalse(vault.frozen());
+        vm.prank(owner);
+        vault.withdraw(owner, 1);
+        assertEq(usdc.balanceOf(owner), 1);
+    }
+
+    // ------------------------------------------------------ F-16..F-18 reentrancy
+    // The malicious token is made BOTH the owner and the operator of its own vault, so the
+    // re-entry from transfer() passes the access gates and reaches the state checks. The
+    // outermost call is pranked as the token for the same reason.
+
+    function _hookVault() internal returns (HookToken t, AgentSpendPolicy v) {
+        t = new HookToken();
+        v = new AgentSpendPolicy(address(t), address(t), address(t), CAP, 0);
+        t.mint(address(v), 10 * CAP);
+    }
+
+    /// Covers F-16
+    function test_F16_ownerPay_reentrantTransferSeesUpdatedDay() public {
+        (HookToken t, AgentSpendPolicy v) = _hookVault();
+        bytes[] memory cs = new bytes[](2);
+        cs[0] = abi.encodeCall(v.pay, (payee, 500_000)); // 600k already booked + 500k > 1M cap
+        cs[1] = abi.encodeCall(v.ownerPay, (payee, 600_000)); // uncapped by design (F-09)
+        t.arm(address(v), false, abi.encodeCall(v.spentToday, ()), cs);
+
+        vm.prank(address(t));
+        v.ownerPay(payee, 600_000);
+
+        assertEq(abi.decode(t.observed(), (uint256)), 600_000); // booked BEFORE the external call
+        assertFalse(t.okAt(0));
+        assertEq(t.retSelector(0), AgentSpendPolicy.DailyCapExceeded.selector);
+        assertTrue(t.okAt(1));
+
+        // accounting is exact: what the day says is what left the vault, no double count
+        assertEq(v.spentToday(), 1_200_000);
+        assertEq(t.balanceOf(payee), 1_200_000);
+        assertEq(t.balanceOf(address(v)), 10 * CAP - 1_200_000);
+        vm.prank(address(t));
+        vm.expectRevert(AgentSpendPolicy.DailyCapExceeded.selector);
+        v.pay(payee, 1);
+    }
+
+    /// Covers F-17
+    function test_F17_withdraw_reentrantTransferCannotWithdrawMoreThanTheBalance() public {
+        // (a) hook after the balance moved: the nested withdraw sees the reduced balance.
+        (HookToken t, AgentSpendPolicy v) = _hookVault();
+        bytes[] memory cs = new bytes[](2);
+        cs[0] = abi.encodeCall(v.withdraw, (payee, 7 * CAP + 1)); // one unit more than is left
+        cs[1] = abi.encodeCall(v.withdraw, (payee, 7 * CAP)); // exactly what is left
+        t.arm(address(v), true, abi.encodeCall(v.balance, ()), cs);
+
+        vm.prank(address(t));
+        v.withdraw(payee, 3 * CAP);
+
+        assertEq(abi.decode(t.observed(), (uint256)), 7 * CAP);
+        assertFalse(t.okAt(0));
+        assertTrue(t.okAt(1));
+        assertEq(t.balanceOf(payee), 10 * CAP); // total out == funded, never more
+        assertEq(t.balanceOf(address(v)), 0);
+        assertEq(v.spentToday(), 0); // withdraw never touches the daily accounting
+
+        // (b) hook before the balance moved: the nested withdraw drains the vault, so the outer
+        // transfer cannot be paid and the whole withdrawal reverts: no double withdrawal.
+        (HookToken t2, AgentSpendPolicy v2) = _hookVault();
+        bytes[] memory cs2 = new bytes[](1);
+        cs2[0] = abi.encodeCall(v2.withdraw, (payee, 10 * CAP));
+        t2.arm(address(v2), false, "", cs2);
+        vm.prank(address(t2));
+        vm.expectRevert(stdError.arithmeticError);
+        v2.withdraw(payee, 3 * CAP);
+        assertEq(t2.balanceOf(payee), 0);
+        assertEq(t2.balanceOf(address(v2)), 10 * CAP);
+    }
+
+    /// Covers F-18
+    function test_F18_pay_reentrantTransferCannotDoubleSpendTheCap() public {
+        (HookToken t, AgentSpendPolicy v) = _hookVault();
+        bytes[] memory cs = new bytes[](2);
+        cs[0] = abi.encodeCall(v.pay, (payee, 600_000)); // 600k booked + 600k > 1M cap
+        cs[1] = abi.encodeCall(v.pay, (payee, 400_000)); // exactly the remaining budget
+        t.arm(address(v), false, abi.encodeCall(v.spentToday, ()), cs);
+
+        vm.prank(address(t));
+        v.pay(payee, 600_000);
+
+        assertEq(abi.decode(t.observed(), (uint256)), 600_000); // booked BEFORE the external call
+        assertFalse(t.okAt(0));
+        assertEq(t.retSelector(0), AgentSpendPolicy.DailyCapExceeded.selector);
+        assertTrue(t.okAt(1));
+
+        assertEq(v.spentToday(), CAP);
+        assertEq(t.balanceOf(payee), CAP); // never more than the daily cap
+        assertEq(t.balanceOf(address(v)), 9 * CAP);
+        vm.prank(address(t));
+        vm.expectRevert(AgentSpendPolicy.DailyCapExceeded.selector);
+        v.pay(payee, 1);
     }
 }
