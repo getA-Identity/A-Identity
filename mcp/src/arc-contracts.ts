@@ -152,7 +152,9 @@ export const policySetFrozen = (vault: string, frozen: boolean, env: NodeJS.Proc
   arc.policySetFrozen(vault, frozen, env)
 
 /** Owner grants / extends / revokes the agent's session key (UNIX expiry in seconds;
- *  future = grant/extend, now/past = revoke, 0 = no time bound). */
+ *  future = grant/extend, a second already past = revoke, 0 = no time bound). The current
+ *  second is NOT a revoke: pay still passes until it ends, so revoke with 1, as
+ *  platform/vault-adapter.ts REVOKED_SESSION_EXPIRY does. */
 export const policySetSessionExpiry = (vault: string, expiryUnix: number, env: NodeJS.ProcessEnv = process.env) =>
   arc.policySetSessionExpiry(vault, expiryUnix, env)
 

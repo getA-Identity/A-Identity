@@ -35,6 +35,21 @@ import { IDENTITY_ABI, ERC20_ABI, COMMERCE_ABI, VALIDATION_ABI, REPUTATION_ABI, 
 import { encodeMemo, decodeMemo, type MemoInput } from './memo.js'
 import { AgentSpendPolicyAbi, AgentSpendPolicyBytecode } from '../../contracts/AgentSpendPolicy.js'
 
+/**
+ * Why a vault deploy is refused before any key or RPC is touched, or null when its caps are
+ * usable. In AgentSpendPolicy a daily cap or a per-payment ceiling of 0 is not a small limit,
+ * it is no limit (the pay gates are skipped when the value is 0), so a vault deployed with one
+ * would carry no bound on that axis at all. A deploy asks for both above 0; turning a bound off
+ * later stays possible through setPolicy, by the owner, on purpose.
+ */
+export function vaultCapsRefusal(dailyCapUsd: number, autoApproveUsd: number): string | null {
+  const bad: string[] = []
+  if (!(Number.isFinite(dailyCapUsd) && dailyCapUsd > 0)) bad.push('daily cap')
+  if (!(Number.isFinite(autoApproveUsd) && autoApproveUsd > 0)) bad.push('per-payment ceiling')
+  if (!bad.length) return null
+  return `Refused before any transaction: a ${bad.join(' and a ')} of 0 means no limit in AgentSpendPolicy, so this vault would carry no bound there. Set both above 0.`
+}
+
 type Hex = `0x${string}`
 
 export function createEvmAdapter(chain: ChainDescriptor) {
@@ -625,6 +640,8 @@ export function createEvmAdapter(chain: ChainDescriptor) {
     input: { owner?: string; operator?: string; dailyCapUsd: number; autoApproveUsd: number },
     env: NodeJS.ProcessEnv = process.env,
   ): Promise<VaultDeployed | VaultNoKey | VaultReverted> {
+    const capsRefused = vaultCapsRefusal(input.dailyCapUsd, input.autoApproveUsd)
+    if (capsRefused) return { executed: false, reverted: false, reason: capsRefused }
     const signer = await walletClient(env)
     if (!signer) return { executed: false, reverted: false, reason: NO_KEY }
     const owner = (input.owner ?? signer.account.address) as Hex

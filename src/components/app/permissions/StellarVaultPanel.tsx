@@ -98,7 +98,10 @@ export default function StellarVaultPanel({
 
   const grantKey = (revoke: boolean) => {
     const now = Math.floor(Date.now() / 1000)
-    let expiryUnix = now
+    // A revoke writes 1, not the current second: the contract lets pay through until the
+    // chain time is greater than the expiry, so "now" would leave the key alive for the rest
+    // of that second, and 0 would mean no time bound at all. 1 is already past everywhere.
+    let expiryUnix = 1
     if (!revoke) {
       const h = Number(hours)
       if (!Number.isFinite(h) || h <= 0) {

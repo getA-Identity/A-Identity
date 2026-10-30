@@ -1,10 +1,12 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { CHAINS } from '../chains/index.js'
+import { CHAINS, ARC_CHAIN } from '../chains/index.js'
+import { createEvmAdapter, vaultCapsRefusal } from '../chains/evm/adapter.js'
 import { errorName } from '../chains/stellar/adapter.js'
 import {
   vaultChainFor, isEvmVault, toRaw, fromRaw, fromCallOutcome, allowlistEntriesFor,
   vaultResultFromOutcome, type VaultPolicyView,
+  sessionKeyExpiryFor, REVOKED_SESSION_EXPIRY,
 } from './vault-adapter.js'
 import type { PlatformAgent } from './core.js'
 
@@ -173,4 +175,35 @@ test('the session-key expiry survives the trip through the view, on both chains'
   }
   assert.equal(view.sessionKeyExpiry, 1_893_456_000)
   assert.equal(view.sessionKeyExpired, false)
+})
+
+test('a revoke writes expiry 1, a second already past on every chain, never 0 and never the current second', () => {
+  const now = 1_793_000_000
+  // Both vault contracts let pay through until chain time is GREATER than the expiry, so the
+  // current second would leave the key valid until it ends (Olympix pre-audit F-02), and 0
+  // would mean no time bound at all.
+  assert.equal(REVOKED_SESSION_EXPIRY, 1)
+  assert.equal(sessionKeyExpiryFor({ revoke: true }, now), REVOKED_SESSION_EXPIRY)
+  assert.notEqual(sessionKeyExpiryFor({ revoke: true }, now), now)
+  // A revoke wins over anything else sent with it.
+  assert.equal(sessionKeyExpiryFor({ revoke: true, durationHours: 24, expiryUnix: now + 60 }, now), 1)
+  assert.equal(sessionKeyExpiryFor({ durationHours: 2 }, now), now + 7200)
+  assert.equal(sessionKeyExpiryFor({ expiryUnix: now + 90.7 }, now), now + 90)
+  assert.equal(sessionKeyExpiryFor({ expiryUnix: 0 }, now), 0)
+  assert.equal(sessionKeyExpiryFor({ durationHours: 0 }, now), null)
+  assert.equal(sessionKeyExpiryFor({}, now), null)
+})
+
+test('an EVM vault deploy with a zero daily cap or per-payment ceiling is refused before any key or RPC', async () => {
+  // In AgentSpendPolicy 0 is "no limit", not a small limit, so a deploy with it carries no bound.
+  assert.equal(vaultCapsRefusal(1, 0.25), null)
+  assert.match(vaultCapsRefusal(0, 0.25) ?? '', /a daily cap of 0 means no limit/)
+  assert.match(vaultCapsRefusal(1, 0) ?? '', /a per-payment ceiling of 0 means no limit/)
+  assert.match(vaultCapsRefusal(0, 0) ?? '', /a daily cap and a per-payment ceiling of 0/)
+  assert.ok(vaultCapsRefusal(Number.NaN, 0.25))
+  assert.ok(vaultCapsRefusal(-1, 0.25))
+  // The refusal comes first: with no signer configured the answer is still the caps, not "no key".
+  const r = await createEvmAdapter(ARC_CHAIN).deployVault({ dailyCapUsd: 0, autoApproveUsd: 0.25 }, {})
+  assert.equal(r.executed, false)
+  assert.match((r as { reason: string }).reason, /daily cap of 0 means no limit/)
 })

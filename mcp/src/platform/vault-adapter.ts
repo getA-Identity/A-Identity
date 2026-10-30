@@ -379,6 +379,31 @@ export async function deployStellarVault(
   })
 }
 
+/**
+ * The expiry a revoke writes. Both vault contracts check the key with a strict rule, pay
+ * reverts only once the chain time is greater than the expiry (`block.timestamp > expiry` on
+ * EVM, the same comparison on Soroban). So an expiry of the current second leaves the key
+ * valid until that second ends, and on a fast chain that is several blocks (Olympix pre-audit
+ * finding F-02). 0 cannot stand in either, because 0 means no time bound at all. 1 is the
+ * smallest expiry that is already in the past on every chain, so the revoke holds from the
+ * block that includes it.
+ */
+export const REVOKED_SESSION_EXPIRY = 1
+
+/**
+ * The expiry a grant, extend or revoke request asks for, or null when the request names
+ * none. Pure, so the revoke rule is pinned by a test without a chain.
+ */
+export function sessionKeyExpiryFor(
+  input: { durationHours?: number; expiryUnix?: number; revoke?: boolean },
+  now: number,
+): number | null {
+  if (input.revoke) return REVOKED_SESSION_EXPIRY
+  if (typeof input.expiryUnix === 'number' && input.expiryUnix >= 0) return Math.floor(input.expiryUnix)
+  if (typeof input.durationHours === 'number' && input.durationHours > 0) return now + Math.floor(input.durationHours * 3600)
+  return null
+}
+
 /** The address shape this chain's vault allowlist accepts. An EVM vault takes 0x
  *  addresses; a Soroban one takes StrKey, and mirroring one onto the other silently
  *  writes an entry that can never match a payee. */

@@ -14,10 +14,17 @@
  * that is already public in this repo under MIT.
  *
  * Usage: cd mcp && npm run build && node scripts/sourcify-verify.mjs \
- *          --chain arc-mainnet --address 0x... [--tx 0x<creation tx>] [--dry]
+ *          --chain arc-mainnet --address 0x... [--tx 0x<creation tx>] [--source-ref <git ref>] [--dry]
+ *
+ * --source-ref reads the contract from git at that ref instead of the working tree. A vault
+ * is verified against the source it was BUILT from: the three vaults deployed before the
+ * Olympix pre-audit (Arc Mainnet, Robinhood Chain, Arbitrum One) came from commit c05b1710,
+ * and the reviewed source made owner immutable, which changes the bytecode. Verify those with
+ * --source-ref c05b1710; vaults deployed later match the working tree.
  */
 import solc from 'solc'
 import { readFileSync } from 'node:fs'
+import { execFileSync } from 'node:child_process'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { createPublicClient, http, isAddress } from 'viem'
@@ -30,11 +37,13 @@ const CHAIN_ID = arg('chain', '')
 const ADDRESS = arg('address', '')
 const TX = arg('tx', '')
 const DRY = process.argv.includes('--dry')
+const SOURCE_REF = arg('source-ref', '')
 const SOURCIFY = 'https://sourcify.dev/server'
 const FILE = 'AgentSpendPolicy.sol'
 const CONTRACT = 'AgentSpendPolicy'
 
 if (!isAddress(ADDRESS)) { console.error('error: --address 0x... is required'); process.exit(1) }
+if (SOURCE_REF && !/^[0-9A-Za-z._/-]+$/.test(SOURCE_REF)) { console.error('error: --source-ref must be a git ref or commit'); process.exit(1) }
 
 let getChainById, resolveRpcUrls
 try {
@@ -50,9 +59,13 @@ if (!chain || chain.ecosystem !== 'evm') { console.error(`error: '${CHAIN_ID}' i
 // Same settings as scripts/compile-contracts.mjs. Only this source goes in: the vault imports
 // nothing, so its metadata names this one file and the hash does not depend on the others.
 const here = dirname(fileURLToPath(import.meta.url))
+// The working tree, or the source this vault was built from when --source-ref names it.
+const SOURCE = SOURCE_REF
+  ? execFileSync('git', ['show', `${SOURCE_REF}:mcp/contracts/${FILE}`], { cwd: join(here, '..', '..'), encoding: 'utf8' })
+  : readFileSync(join(here, '..', 'contracts', FILE), 'utf8')
 const stdJsonInput = {
   language: 'Solidity',
-  sources: { [FILE]: { content: readFileSync(join(here, '..', 'contracts', FILE), 'utf8') } },
+  sources: { [FILE]: { content: SOURCE } },
   settings: {
     optimizer: { enabled: true, runs: 200 },
     outputSelection: { '*': { '*': ['abi', 'evm.bytecode.object', 'evm.deployedBytecode.object', 'evm.deployedBytecode.immutableReferences', 'metadata'] } },
@@ -78,11 +91,13 @@ const pub = createPublicClient({ transport: http(rpc, { timeout: 20000, retryCou
 const onchain = (await pub.getCode({ address: ADDRESS })) ?? '0x'
 
 console.log(`Target:   ${chain.name} (${chain.caip2}), ${chain.explorer}/address/${ADDRESS}`)
+console.log(`Source:   mcp/contracts/${FILE} ${SOURCE_REF ? `at ${SOURCE_REF}` : 'in the working tree'}`)
 console.log(`Compiler: ${compilerVersion}, optimizer 200 runs`)
 console.log(`Runtime:  local ${(local.length - 2) / 2} bytes, on chain ${(onchain.length - 2) / 2} bytes`)
 if (onchain === '0x') { console.error('error: no code at that address on this chain'); process.exit(1) }
 if (maskImmutables(onchain) !== maskImmutables(local)) {
   console.error('error: the recompiled runtime bytecode does NOT match the chain. Nothing was sent.')
+  if (!SOURCE_REF) console.error('hint: a vault deployed before the Olympix pre-audit was built from commit c05b1710; rerun with --source-ref c05b1710')
   process.exit(1)
 }
 console.log(`Match:    exact outside ${immutableRanges.length} immutable slot(s), metadata hash included`)

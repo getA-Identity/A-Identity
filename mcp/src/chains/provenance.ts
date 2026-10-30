@@ -151,7 +151,7 @@ export const PROVENANCE: ChainProvenance[] = [
       {
         name: 'AgentSpendPolicy vault',
         address: '0xe07819e6d28a5dfd5a9f4cd94dc6dc9aeeda4146',
-        note: 'Ours: the same Solidity contract that runs on Arc testnet, Robinhood Chain and Arbitrum One, and its source is verified on Sourcify as an exact match of both the creation and the runtime bytecode (mcp/scripts/sourcify-verify.mjs recompiles and compares before it uploads). dailyCap 1 USDC, autoApproveMax 0.25 USDC. The owner is the operating wallet 0xd305...ed36; the operator, the agent\'s session key, is the buyer agent 0x8C8D...3349 since 2026-09-25, and its key, renewed on 2026-10-01, expires 2026-11-15. Dust on purpose; the caps are the product.',
+        note: 'Ours: the same Solidity contract that runs on Arc testnet, Robinhood Chain and Arbitrum One, and its source is verified on Sourcify as an exact match of both the creation and the runtime bytecode (mcp/scripts/sourcify-verify.mjs recompiles and compares before it uploads). dailyCap 1 USDC, autoApproveMax 0.25 USDC. The owner is the operating wallet 0xd305...ed36; the operator, the agent\'s session key, is the buyer agent 0x8C8D...3349 since 2026-09-25, and its key, renewed on 2026-10-01, expires 2026-11-15. Dust on purpose; the caps are the product. Built from the contract source at commit c05b1710, before the Olympix pre-audit made owner immutable, so verify it against that commit (scripts/sourcify-verify.mjs --source-ref c05b1710); vaults deployed after the pre-audit use the reviewed source.',
       },
       {
         name: 'Circle GatewayWallet',
@@ -375,7 +375,7 @@ export const PROVENANCE: ChainProvenance[] = [
       {
         name: 'AgentSpendPolicy vault',
         address: '0x05a6aad7124c2f1c7b82b03e0bbe3867bc500073',
-        note: 'Ours: the same Solidity contract that runs on Arc and Arbitrum One. Read live on 2026-10-11: owner the operating wallet 0xd305...ed36, operator the agent key 0x8C8D...3349, dailyCap 1 USDG, autoApproveMax 0.25 USDG, not frozen, allowlist off, session key valid to 2026-11-15, balance 0.02 USDG (funded 0.03, one 0.01 payment since). Dust on purpose; the caps are the product.',
+        note: 'Ours: the same Solidity contract that runs on Arc and Arbitrum One. Read live on 2026-10-11: owner the operating wallet 0xd305...ed36, operator the agent key 0x8C8D...3349, dailyCap 1 USDG, autoApproveMax 0.25 USDG, not frozen, allowlist off, session key valid to 2026-11-15, balance 0.02 USDG (funded 0.03, one 0.01 payment since). Dust on purpose; the caps are the product. Built from the contract source at commit c05b1710, before the Olympix pre-audit made owner immutable, so verify it against that commit (scripts/sourcify-verify.mjs --source-ref c05b1710); vaults deployed after the pre-audit use the reviewed source.',
       },
     ],
     artifacts: [
@@ -554,7 +554,7 @@ export const PROVENANCE: ChainProvenance[] = [
       {
         name: 'AgentSpendPolicy vault',
         address: '0xac6c5c9af62bc482ffeef882a6ac4678513be6db',
-        note: 'Ours: the same Solidity contract that runs on Arc and Robinhood Chain. Read live on 2026-10-11: owner the operating wallet 0xd305...ed36, operator the agent key 0x8C8D...3349, dailyCap 1 USDC, autoApproveMax 0.25 USDC, not frozen, allowlist off, session key valid to 2026-11-15, balance 0.01 USDC (funded 0.02, one 0.01 payment since). Dust on purpose; the caps are the product.',
+        note: 'Ours: the same Solidity contract that runs on Arc and Robinhood Chain. Read live on 2026-10-11: owner the operating wallet 0xd305...ed36, operator the agent key 0x8C8D...3349, dailyCap 1 USDC, autoApproveMax 0.25 USDC, not frozen, allowlist off, session key valid to 2026-11-15, balance 0.01 USDC (funded 0.02, one 0.01 payment since). Dust on purpose; the caps are the product. Built from the contract source at commit c05b1710, before the Olympix pre-audit made owner immutable, so verify it against that commit (scripts/sourcify-verify.mjs --source-ref c05b1710); vaults deployed after the pre-audit use the reviewed source.',
       },
     ],
     artifacts: [

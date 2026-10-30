@@ -9,6 +9,7 @@ import {
   vaultChainFor, readVaultPolicy, writeVaultPolicy, writeVaultFrozen, writeVaultAllowed,
   writeVaultSessionExpiry, deployStellarVault, stellarOperatorAddress,
   allowlistEntriesFor,
+  sessionKeyExpiryFor,
 } from './vault-adapter.js'
 import { ARC_CHAIN, CHAINS, addressUrl, isAccountId } from '../chains/index.js'
 import type { ChainDescriptor } from '../chains/types.js'
@@ -398,7 +399,8 @@ export async function getAgentVault(agentId: string) {
  * Grant / extend / revoke the agent's on-chain SESSION KEY: set the UNIX time after which
  * the agent's `pay` reverts (SessionKeyExpired). Owner-only on-chain; the server can sign it
  * only when it is the vault owner (owner==operator) - otherwise it's ownerGated (the human
- * signs from their own wallet), mirroring syncVaultPolicy. Revoke sets the expiry to now.
+ * signs from their own wallet), mirroring syncVaultPolicy. Revoke writes REVOKED_SESSION_EXPIRY
+ * (vault-adapter.ts), not the current second, for the reason given there.
  *
  * WHICH key this grants, said plainly because the word "session key" invites the wrong
  * picture: it is the vault's existing `operator` address, and this call gives that address
@@ -440,11 +442,8 @@ export async function grantAgentSessionKey(
   if (!agent.vaultAddress) return { granted: false, reason: 'Agent has no on-chain vault. Provision a vault first.' }
 
   const now = Math.floor(Date.now() / 1000)
-  let expiry: number
-  if (input.revoke) expiry = now
-  else if (typeof input.expiryUnix === 'number' && input.expiryUnix >= 0) expiry = Math.floor(input.expiryUnix)
-  else if (typeof input.durationHours === 'number' && input.durationHours > 0) expiry = now + Math.floor(input.durationHours * 3600)
-  else return { granted: false, reason: 'Provide durationHours (>0), an expiryUnix, or revoke:true.' }
+  const expiry = sessionKeyExpiryFor(input, now)
+  if (expiry === null) return { granted: false, reason: 'Provide durationHours (>0), an expiryUnix, or revoke:true.' }
 
   // Carried on every arm below, including the refusals: the one question an operator is
   // entitled to have answered without reading the source.
