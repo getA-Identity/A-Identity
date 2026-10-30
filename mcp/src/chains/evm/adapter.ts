@@ -694,7 +694,9 @@ export function createEvmAdapter(chain: ChainDescriptor) {
   const policySetFrozen = (vault: string, frozen: boolean, env: NodeJS.ProcessEnv = process.env) =>
     vaultWrite(vault, 'setFrozen', [frozen], env)
   /** Grant / extend / revoke the agent's session key by setting the UNIX expiry (seconds).
-   *  A future time grants/extends; `now` (or a past time) revokes; 0 = no time bound. */
+   *  A future time grants/extends; a second already past revokes at once; 0 = no time bound.
+   *  The current second is NOT a revoke: pay still passes until it ends, so revoke with 1
+   *  (platform/vault-adapter.ts REVOKED_SESSION_EXPIRY). */
   const policySetSessionExpiry = (vault: string, expiryUnix: number, env: NodeJS.ProcessEnv = process.env) =>
     vaultWrite(vault, 'setSessionKeyExpiry', [BigInt(Math.max(0, Math.floor(expiryUnix)))], env)
   const policySetAllowed = (vault: string, payee: string, ok: boolean, env: NodeJS.ProcessEnv = process.env) =>
