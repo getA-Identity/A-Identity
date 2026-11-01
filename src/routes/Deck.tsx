@@ -598,7 +598,7 @@ const RECEIPTS = [
   ["Agent #0 minted, the registry's first identity", '0x1d9f57113c'],
   ['Reputation anchored on the canonical ReputationRegistry', '0xbc70c4ce2d'],
   ['Spend vault deployed, holding real USDC', '0xabf41b6f12'],
-  ['0.01 USDC paid in policy; 0.50 refused by the contract', '0x9975968a2c'],
+  ['0.01 USDC paid in policy (0.50 refused in simulation, no tx)', '0x9975968a2c'],
   ['First Circle Gateway nanopayment', '0x8a47eac41a'],
   ['First EIP-3009 settlement', '0xd44287c8d7'],
 ]

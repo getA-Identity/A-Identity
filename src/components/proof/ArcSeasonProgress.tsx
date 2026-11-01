@@ -65,7 +65,9 @@ type SeasonReport = {
     title: string
     due: string
     vaults: Metric & { items: VaultItem[] }
-    checks: Metric & { internal: number; external: number }
+    // linked and unlinked arrive with the flow count; a backend from before it sends neither,
+    // and its count is every Gateway check, so the row is labeled by which one answered.
+    checks: Metric & { internal: number; external: number; linked?: { paid: number; refused: number }; unlinked?: number }
     refusals: Metric & { items: RefusalItem[] }
     evidence: string
   }
@@ -288,11 +290,19 @@ export default function ArcSeasonProgress() {
           <div className="mt-6 grid gap-4 sm:grid-cols-2">
             <MilestoneCard id={1} title={m1.title} due={m1.due}>
               <MetricRow label="Owner-held vaults deployed from the browser" metric={m1.vaults} />
-              <MetricRow
-                label="Verify-then-pay checks through Circle Gateway"
-                metric={m1.checks}
-                detail={`${m1.checks.internal} internal, ${m1.checks.external} external`}
-              />
+              {m1.checks.linked ? (
+                <MetricRow
+                  label="Verify-then-pay flows through Circle Gateway"
+                  metric={m1.checks}
+                  detail={`${m1.checks.linked.paid} paid, ${m1.checks.linked.refused} refused; ${m1.checks.unlinked ?? 0} internal checks with nothing linked; ${m1.checks.external} external checks count under M2`}
+                />
+              ) : (
+                <MetricRow
+                  label="Verify-then-pay checks through Circle Gateway"
+                  metric={m1.checks}
+                  detail={`${m1.checks.internal} internal, ${m1.checks.external} external`}
+                />
+              )}
               <MetricRow label="Refusals anyone can inspect" metric={m1.refusals} />
               {m1.vaults.items.length > 0 && (
                 <ul className="mt-3 flex flex-col gap-1.5">

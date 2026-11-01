@@ -228,7 +228,7 @@ export const PROVENANCE: ChainProvenance[] = [
       },
       {
         kind: 'settlement',
-        label: 'The vault paid 0.01 USDC inside its policy, and refused a 0.50 payment by contract',
+        label: 'The vault paid 0.01 USDC inside its policy; a 0.50 attempt was refused in simulation (AboveAutoApprove) and never broadcast',
         txHash: '0x9975968a2c23096269724b66f483229366500c2214297a3a6b5b2059a472dc05',
         onChain: 'arc-mainnet',
         blockNumber: 21156403,

@@ -6,8 +6,10 @@ import {
   ARC_PARTNERS,
   ARC_OWNER_HELD_VAULTS,
   ARC_REFUSALS,
+  ARC_VERIFY_THEN_PAY_FLOWS,
   ARC_SEASON_TARGETS,
   type ArcSeasonDeps,
+  type ArcVerifyThenPayFlow,
 } from './arc-season.js'
 import { getChainById } from './chains/index.js'
 import { addressUrl, txUrl } from './chains/explorer.js'
@@ -85,6 +87,20 @@ function fac(over: Partial<X402SettlementRecord> = {}): X402SettlementRecord {
   }
 }
 
+const CHECKED_PAYEE = '0x6666666666666666666666666666666666666666'
+
+function flow(over: Partial<ArcVerifyThenPayFlow> = {}): ArcVerifyThenPayFlow {
+  return {
+    checkNonce: nextNonce(),
+    payee: CHECKED_PAYEE,
+    outcome: 'paid',
+    txHash: '0x' + '55'.repeat(32),
+    at: '2026-11-01T10:00:00Z',
+    note: 'ALLOW, the vault paid',
+    ...over,
+  }
+}
+
 type Over = { gateway?: GatewaySettlementRecord[]; facilitator?: X402SettlementRecord[] } & Partial<
   Omit<ArcSeasonDeps, 'gatewayRows' | 'facilitatorRows'>
 >
@@ -100,6 +116,7 @@ function deps(over: Over = {}): ArcSeasonDeps {
     partners: [],
     vaults: [],
     refusals: [],
+    flows: [],
     ...rest,
   }
 }
@@ -130,6 +147,7 @@ test('the zero state reports every metric at 0 with its target and a reason, on 
   const m1 = r.milestone1
   assert.deepEqual([m1.vaults.count, m1.vaults.target], [0, 5])
   assert.deepEqual([m1.checks.count, m1.checks.target, m1.checks.internal, m1.checks.external], [0, 100, 0, 0])
+  assert.deepEqual([m1.checks.linked, m1.checks.unlinked, m1.checks.items], [{ paid: 0, refused: 0 }, 0, []])
   assert.deepEqual([m1.refusals.count, m1.refusals.target], [0, 2])
   assert.deepEqual(m1.refusals.byKind, { 'vault-policy-on-chain': 0, 'deny-before-signing': 0 })
   assert.equal(m1.evidence, 'https://a-identity.xyz/proof/arc')
@@ -177,7 +195,9 @@ test('a check is counted only on Arc Mainnet and only with a settled outcome', a
   )
   assert.equal(r.usage.external.checks, 3)
   assert.deepEqual(r.usage.external.byRail, { gateway: { checks: 2, usd: 0.002 }, facilitator: { checks: 1, usd: 0.0015 } })
-  assert.equal(r.milestone1.checks.count, 2)
+  // Both Gateway rows that pass are external, so Milestone 1 reports them only as the
+  // external checks it leaves to Milestone 2.
+  assert.deepEqual([r.milestone1.checks.count, r.milestone1.checks.external], [0, 2])
   // The rows read are reported before filtering, so a reader can see how many were dropped.
   assert.deepEqual(r.logs, { gateway: { readable: true, rows: 5 }, facilitator: { readable: true, rows: 4 } })
 })
@@ -200,21 +220,82 @@ test("internal and external are split by the union of both rails' own-wallet lis
   assert.deepEqual(r.usage.external.byWallet.map((w) => w.wallet), [lower(EXT_A), lower(EXT_B)])
 })
 
-test('Milestone 1 counts Gateway checks alone and leaves the facilitator rows to usage', async () => {
+test('Milestone 1 counts verify-then-pay flows, not checks, and leaves external checks to Milestone 2', async () => {
+  const own = gw({ payer: OURS_GATEWAY })
+  const ext = gw({ payer: EXT_A })
   const r = await arcSeasonReport(
     deps({
-      gateway: [gw({ payer: OURS_GATEWAY }), gw({ payer: EXT_A }), gw({ payer: EXT_A })],
+      gateway: [own, gw({ payer: OURS_GATEWAY }), ext, gw({ payer: EXT_A })],
       facilitator: [fac({ payer: OURS_FACILITATOR }), fac({ payer: EXT_B })],
+      flows: [
+        flow({ checkNonce: own.authNonce }),
+        // An external team's check followed by its own vault payment is still Milestone 2's.
+        flow({ checkNonce: ext.authNonce }),
+      ],
     }),
   )
-  const { count, internal, external, rail } = r.milestone1.checks
-  assert.deepEqual({ count, internal, external, rail }, { count: 3, internal: 1, external: 2, rail: 'circle-gateway' })
+  const { count, internal, external, linked, unlinked, rail } = r.milestone1.checks
+  assert.deepEqual(
+    { count, internal, external, linked, unlinked, rail },
+    { count: 1, internal: 2, external: 2, linked: { paid: 1, refused: 0 }, unlinked: 1, rail: 'circle-gateway' },
+  )
   assert.equal(r.usage.internal.byRail.facilitator.checks, 1)
   assert.equal(r.usage.external.byRail.facilitator.checks, 1)
-  // Milestone 2's external count is rail-agnostic: a paid check is a paid check.
+  // Milestone 2's external count is rail-agnostic, and it is where the external checks live.
   assert.equal(r.milestone2.externalChecks.count, 3)
-  assert.match(r.milestone1.checks.note, /3 of 100/)
-  assert.match(r.milestone1.checks.note, /not counted here/)
+  assert.match(r.milestone1.checks.note, /1 of 100 verify-then-pay flows/)
+  assert.match(r.milestone1.checks.note, /count under Milestone 2, not here, so no check counts twice/)
+})
+
+test('a flow counts once, only on our own settled Gateway check on Arc Mainnet, and only with evidence', async () => {
+  const paid = gw({ payer: OURS_GATEWAY })
+  const denied = gw({ payer: OURS_GATEWAY })
+  const reverted = gw({ payer: OURS_GATEWAY })
+  const noEvidence = gw({ payer: OURS_GATEWAY })
+  const noPayee = gw({ payer: OURS_GATEWAY })
+  const paidBeforeCheck = gw({ payer: OURS_GATEWAY, ts: '2026-10-18T10:00:00Z' })
+  const offNetwork = gw({ payer: OURS_GATEWAY, network: base.caip2 })
+  const unsettled = gw({ payer: OURS_GATEWAY, outcome: 'unconfirmed' })
+  const viaFacilitator = fac({ payer: OURS_FACILITATOR })
+  const paidTx = '0x' + '33'.repeat(32)
+  const revertTx = '0x' + '44'.repeat(32)
+  const denyEntry = 'https://a-identity.xyz/proof/arc#deny-1'
+  const r = await arcSeasonReport(
+    deps({
+      gateway: [paid, denied, reverted, noEvidence, noPayee, paidBeforeCheck, offNetwork, unsettled],
+      facilitator: [viaFacilitator],
+      flows: [
+        // Named in upper case: a nonce matches whatever the case.
+        flow({ checkNonce: shouty(paid.authNonce), txHash: paidTx }),
+        // The same check linked twice is still one flow.
+        flow({ checkNonce: paid.authNonce, txHash: paidTx }),
+        flow({ checkNonce: denied.authNonce, outcome: 'refused', txHash: undefined, evidenceUrl: denyEntry }),
+        flow({ checkNonce: reverted.authNonce, outcome: 'refused', txHash: revertTx }),
+        // A payment with no Paid transaction gives a reviewer nothing to open.
+        flow({ checkNonce: noEvidence.authNonce, txHash: undefined, evidenceUrl: 'https://a-identity.xyz/proof/arc' }),
+        // Without the checked payee nobody can match the verdict to the Paid event.
+        flow({ checkNonce: noPayee.authNonce, payee: '' }),
+        // A payment that came before its check was not verified first.
+        flow({ checkNonce: paidBeforeCheck.authNonce, at: '2026-10-18T09:59:59Z' }),
+        flow({ checkNonce: offNetwork.authNonce }),
+        flow({ checkNonce: unsettled.authNonce }),
+        // Only Gateway checks are Milestone 1's, so a facilitator settlement links nothing.
+        flow({ checkNonce: viaFacilitator.authNonce }),
+        // A nonce that names no row counts nothing.
+        flow({ checkNonce: nextNonce() }),
+      ],
+    }),
+  )
+  const c = r.milestone1.checks
+  assert.deepEqual([c.count, c.internal, c.unlinked], [3, 6, 3])
+  assert.deepEqual(c.linked, { paid: 1, refused: 2 })
+  assert.deepEqual(
+    c.items.map((i) => i.explorerUrl),
+    [txUrl(arc, paidTx), null, txUrl(arc, revertTx)],
+  )
+  assert.equal(c.items[1].evidenceUrl, denyEntry)
+  assert.match(c.note, /3 of 100 verify-then-pay flows/)
+  assert.match(c.note, /1 vault payment\(s\) and 2 refusal\(s\)/)
 })
 
 test("active days are distinct UTC days, bounded by the wallet's first and last check in time order", async () => {
@@ -320,6 +401,7 @@ test('with the curated lists empty, the notes say why the launch-day vault and r
   assert.match(r.milestone1.vaults.note, /not owner-held and is not counted/)
   assert.match(r.milestone1.refusals.note, /simulation/)
   assert.match(r.milestone1.refusals.note, /no hash and is not counted/)
+  assert.match(r.milestone1.checks.note, /No verify-then-pay flow yet/)
   assert.match(r.milestone2.externalTeamsLive.note, /only after its wallet has paid/)
 })
 
@@ -342,6 +424,17 @@ test('every curated entry carries what its kind needs, so the lists can fill wit
     if (r.kind === 'vault-policy-on-chain') assert.ok(r.txHash && isHash(r.txHash), 'an on-chain refusal needs its reverted transaction')
     else assert.ok(r.evidenceUrl?.startsWith('https://'), 'a DENY before signing needs an audit entry anyone can open')
     assert.ok(Number.isFinite(Date.parse(r.at)), `refusal at ${r.at} is not a timestamp`)
+  }
+  for (const f of ARC_VERIFY_THEN_PAY_FLOWS) {
+    assert.ok(isHash(f.checkNonce), `flow at ${f.at} does not name its check's settlement nonce`)
+    assert.ok(isAddress(f.payee), `flow at ${f.at} does not name the payee it checked`)
+    if (f.outcome === 'paid') assert.ok(f.txHash && isHash(f.txHash), 'a paid flow needs the vault Paid transaction')
+    else
+      assert.ok(
+        (f.txHash && isHash(f.txHash)) || f.evidenceUrl?.startsWith('https://'),
+        'a refused flow needs its reverted transaction or an audit entry anyone can open',
+      )
+    assert.ok(Number.isFinite(Date.parse(f.at)), `flow at ${f.at} is not a timestamp`)
   }
   // The targets are Circle's revision of Deliverable 1, pinned so a later edit is a decision.
   assert.deepEqual(ARC_SEASON_TARGETS, {

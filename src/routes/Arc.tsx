@@ -188,7 +188,7 @@ function WhatRuns({ proof }: { proof: ProofNetwork | null }) {
       {
         icon: ShieldCheck,
         title: 'A budget the contract enforces',
-        body: 'A spend vault holds real USDC under a $1 daily cap. A payment over its limit was refused by the contract itself.',
+        body: 'A spend vault holds real USDC under a $1 daily cap. It paid inside its policy, and a payment over its limit came back from the contract as AboveAutoApprove in simulation, so nothing was broadcast.',
         artifact: receipt(proof, 'settlement', /vault/i),
       },
       {

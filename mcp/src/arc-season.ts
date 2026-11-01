@@ -5,15 +5,20 @@
  * with current numbers, links to on-chain evidence and usage so far, with external
  * activity counted separately from our own. This module is that report, and it is
  * computed rather than written: every count comes from the two settlement logs on every
- * request, and the three lists a human has to curate (owner-held vaults, inspectable
- * refusals, partner wallets) are exported here as data, empty until the evidence exists.
+ * request, and the four lists a human has to curate (owner-held vaults, inspectable
+ * refusals, partner wallets, verify-then-pay flows) are exported here as data, empty until
+ * the evidence exists.
  *
  * What counts, stated once:
  *   - A check is a settled row on Arc Mainnet. On the Gateway log that is an outcome of
  *     'credited' or 'completed' (Circle holds the money, or the batch has landed); on the
- *     facilitator log it is 'settled' (a receipt with a matching Transfer log). Milestone 1
- *     names Circle Gateway nanopayments, so its check count is the Gateway count alone;
- *     the facilitator rows are reported under usage, labeled as such.
+ *     facilitator log it is 'settled' (a receipt with a matching Transfer log). The
+ *     facilitator rows are reported under usage, labeled as such.
+ *   - Milestone 1 counts verify-then-pay flows, not checks: one of our own Gateway checks
+ *     that a vault payment or an inspectable refusal followed, linked by the nonce the
+ *     check's settlement row is keyed by. A check with nothing linked is a paid check and
+ *     not a flow. An external check is never counted in Milestone 1: it belongs to
+ *     Milestone 2, so no check counts in both.
  *   - A payer is internal when it is on either rail's published list of our own buyer
  *     wallets, compared case-insensitively. Everything else is external.
  *   - A vault counts only when its owner key is one we never held, so the launch-day
@@ -122,6 +127,39 @@ export type ArcRefusal = {
  */
 export const ARC_REFUSALS: ArcRefusal[] = []
 
+export type ArcFlowOutcome = 'paid' | 'refused'
+
+export type ArcVerifyThenPayFlow = {
+  /** The Gateway check that opened the flow, by the EIP-3009 nonce its settlement row is
+   *  keyed by (authNonce). It counts only when that row is one of our own settled Gateway
+   *  checks on Arc Mainnet, so a nonce that names no such row counts nothing. */
+  checkNonce: string
+  /** The address that was checked and then paid or refused. The check's agentId and the
+   *  vault payee are this one address, so a reviewer can match the verdict to the Paid
+   *  event; a Gateway row does not record what was checked. */
+  payee: string
+  outcome: ArcFlowOutcome
+  /** The vault's Paid transaction for a payment, or the reverted pay() for an on-chain
+   *  refusal. Required for a payment. */
+  txHash?: string
+  /** Where a DENY that stopped the payment before signing can be inspected: its public
+   *  audit entry. Only for a refusal with no transaction. */
+  evidenceUrl?: string
+  /** UTC timestamp of the outcome. */
+  at: string
+  note: string
+}
+
+/**
+ * Verify-then-pay flows on Arc Mainnet: a Gateway check followed by the vault payment or
+ * the refusal it led to. A flow is added only after its outcome was read back from the
+ * chain (the Paid or reverted receipt, paying the payee that was checked) or published
+ * (the DENY's audit entry), with the check's settlement nonce. Empty on 2026-11-01: no
+ * settled check is linked to a vault payment or a refusal yet. The two launch-day vault
+ * payments went to our own operating wallet and are not linked to any check.
+ */
+export const ARC_VERIFY_THEN_PAY_FLOWS: ArcVerifyThenPayFlow[] = []
+
 // ── the report ────────────────────────────────────────────────────────────────────
 
 export type ArcSeasonRailTotals = { checks: number; usd: number }
@@ -152,6 +190,7 @@ export type ArcSeasonLogRead = { readable: boolean; rows: number; reason?: strin
 
 export type ArcSeasonVaultItem = ArcOwnerHeldVault & { explorerUrl: string; deployExplorerUrl: string }
 export type ArcSeasonRefusalItem = ArcRefusal & { explorerUrl: string | null }
+export type ArcSeasonFlowItem = ArcVerifyThenPayFlow & { explorerUrl: string | null }
 export type ArcSeasonTeam = ArcSeasonWallet & { team: string; publicReference: boolean }
 
 export type ArcSeasonReport = {
@@ -172,7 +211,21 @@ export type ArcSeasonReport = {
     title: string
     due: string
     vaults: { count: number; target: number; items: ArcSeasonVaultItem[]; note: string }
-    checks: { count: number; target: number; internal: number; external: number; rail: string; note: string }
+    checks: {
+      /** Verify-then-pay flows: our own Gateway checks with a vault payment or a refusal linked. */
+      count: number
+      target: number
+      /** Our own Gateway checks settled on Arc Mainnet, linked or not. */
+      internal: number
+      /** External Gateway checks. Counted under Milestone 2, never in count. */
+      external: number
+      linked: Record<ArcFlowOutcome, number>
+      /** Our own Gateway checks with nothing linked: paid checks, not flows. */
+      unlinked: number
+      items: ArcSeasonFlowItem[]
+      rail: string
+      note: string
+    }
     refusals: {
       count: number
       target: number
@@ -209,6 +262,7 @@ export type ArcSeasonDeps = {
   partners?: ArcPartner[]
   vaults?: ArcOwnerHeldVault[]
   refusals?: ArcRefusal[]
+  flows?: ArcVerifyThenPayFlow[]
 }
 
 /** The real loaders and the rails' own internal-payer lists. The route adds nothing else. */
@@ -226,9 +280,21 @@ export function liveArcSeasonDeps(env: NodeJS.ProcessEnv = process.env): ArcSeas
 
 const GATEWAY_SETTLED = new Set<GatewaySettlementRecord['outcome']>(['credited', 'completed'])
 
-type Check = { rail: 'gateway' | 'facilitator'; payer: string; usd: number; ts: string }
+type Check = { rail: 'gateway' | 'facilitator'; payer: string; usd: number; ts: string; nonce: string }
 
 const usd6 = (n: number) => Number(n.toFixed(6))
+
+const TX_HASH = /^0x[0-9a-fA-F]{64}$/
+const ADDRESS = /^0x[0-9a-fA-F]{40}$/
+
+/** What a reviewer opens to inspect a flow's outcome, or null when the flow names nothing
+ *  and so cannot count: a payment needs its Paid transaction, a refusal its reverted
+ *  transaction or a public audit entry. */
+function flowEvidence(f: ArcVerifyThenPayFlow): string | null {
+  if (f.txHash && TX_HASH.test(f.txHash)) return f.txHash
+  if (f.outcome === 'refused' && f.evidenceUrl?.startsWith('https://')) return f.evidenceUrl
+  return null
+}
 
 /** The UTC day of an ISO timestamp, or null when the timestamp does not parse. */
 function utcDay(ts: string): string | null {
@@ -309,6 +375,7 @@ export async function arcSeasonReport(deps: ArcSeasonDeps): Promise<ArcSeasonRep
   const partners = deps.partners ?? ARC_PARTNERS
   const vaults = deps.vaults ?? ARC_OWNER_HELD_VAULTS
   const refusals = deps.refusals ?? ARC_REFUSALS
+  const flows = deps.flows ?? ARC_VERIFY_THEN_PAY_FLOWS
 
   const gateway = await readLog(deps.gatewayRows)
   const facilitator = await readLog(deps.facilitatorRows)
@@ -316,10 +383,10 @@ export async function arcSeasonReport(deps: ArcSeasonDeps): Promise<ArcSeasonRep
   const checks: Check[] = [
     ...gateway.rows
       .filter((r) => GATEWAY_SETTLED.has(r.outcome) && r.network === chain.caip2)
-      .map((r): Check => ({ rail: 'gateway', payer: r.payer.toLowerCase(), usd: r.amountUsd, ts: r.ts })),
+      .map((r): Check => ({ rail: 'gateway', payer: r.payer.toLowerCase(), usd: r.amountUsd, ts: r.ts, nonce: r.authNonce })),
     ...facilitator.rows
       .filter((r) => r.outcome === 'settled' && r.network === chain.caip2)
-      .map((r): Check => ({ rail: 'facilitator', payer: r.payer.toLowerCase(), usd: r.amountUsd, ts: r.ts })),
+      .map((r): Check => ({ rail: 'facilitator', payer: r.payer.toLowerCase(), usd: r.amountUsd, ts: r.ts, nonce: r.authNonce })),
   ]
   const mine = new Set([...deps.internalPayers.gateway, ...deps.internalPayers.facilitator].map((a) => a.toLowerCase()))
   const internalChecks = checks.filter((c) => mine.has(c.payer))
@@ -341,7 +408,25 @@ export async function arcSeasonReport(deps: ArcSeasonDeps): Promise<ArcSeasonRep
   const unattributed = external.filter((w) => !w.team)
 
   const gatewayChecks = checks.filter((c) => c.rail === 'gateway')
-  const gatewayInternal = gatewayChecks.filter((c) => mine.has(c.payer)).length
+  const ownGateway = gatewayChecks.filter((c) => mine.has(c.payer))
+  const gatewayInternal = ownGateway.length
+  const gatewayExternal = gatewayChecks.length - gatewayInternal
+
+  // A flow counts once per check, only on one of our own settled Gateway checks, only when
+  // it names the payee and its outcome did not come before the check, and only with
+  // something a reviewer can open. An external check is left to Milestone 2.
+  const ownByNonce = new Map(ownGateway.map((c) => [c.nonce.toLowerCase(), c]))
+  const linkedFlows = new Map<string, ArcVerifyThenPayFlow>()
+  for (const f of flows) {
+    const nonce = f.checkNonce.toLowerCase()
+    const check = ownByNonce.get(nonce)
+    if (!check || linkedFlows.has(nonce) || !ADDRESS.test(f.payee) || flowEvidence(f) === null) continue
+    const outcomeAt = Date.parse(f.at)
+    const checkedAt = Date.parse(check.ts)
+    if (Number.isFinite(outcomeAt) && Number.isFinite(checkedAt) && outcomeAt >= checkedAt) linkedFlows.set(nonce, f)
+  }
+  const linked: Record<ArcFlowOutcome, number> = { paid: 0, refused: 0 }
+  for (const f of linkedFlows.values()) linked[f.outcome] += 1
 
   const windowMs = ARC_SEASON_TARGETS.activeWindowDays * 24 * 60 * 60 * 1000
   const since = new Date(now() - windowMs).toISOString()
@@ -378,12 +463,21 @@ export async function arcSeasonReport(deps: ArcSeasonDeps): Promise<ArcSeasonRep
             : `${vaults.length} of ${ARC_SEASON_TARGETS.ownerHeldVaults} vaults deployed from the browser with an owner key A-Identity never held. The launch-day vault${launchVault ? ` ${launchVault}` : ''} is owned by our operating wallet and is not among them.`,
       },
       checks: {
-        count: gatewayChecks.length,
+        count: linkedFlows.size,
         target: ARC_SEASON_TARGETS.gatewayChecks,
         internal: gatewayInternal,
-        external: gatewayChecks.length - gatewayInternal,
+        external: gatewayExternal,
+        linked,
+        unlinked: gatewayInternal - linkedFlows.size,
+        items: [...linkedFlows.values()].map((f) => ({
+          ...f,
+          explorerUrl: f.txHash && TX_HASH.test(f.txHash) ? txUrl(chain, f.txHash) : null,
+        })),
         rail: 'circle-gateway',
-        note: `${gatewayChecks.length} of ${ARC_SEASON_TARGETS.gatewayChecks} verify-then-pay checks settled through Circle Gateway nanopayments on Arc Mainnet, ${gatewayInternal} from our own wallets and ${gatewayChecks.length - gatewayInternal} external. Each is a trust tool call paid before it was served. EIP-3009 facilitator settlements are reported under usage and not counted here, because the metric names Gateway.`,
+        note:
+          linkedFlows.size === 0
+            ? `No verify-then-pay flow yet. A check counts here only when it opened one: a Circle Gateway check on Arc Mainnet paid from our own wallets and followed by a vault payment or an inspectable refusal, linked by the nonce its settlement row is keyed by. ${gatewayInternal} internal Gateway check(s) have settled and none is linked to a vault payment or a refusal yet, so none counts. The ${gatewayExternal} external Gateway check(s) count under Milestone 2, not here, so no check counts twice. EIP-3009 facilitator settlements are reported under usage.`
+            : `${linkedFlows.size} of ${ARC_SEASON_TARGETS.gatewayChecks} verify-then-pay flows on Arc Mainnet: a Circle Gateway check paid from our own wallets and followed by ${linked.paid} vault payment(s) and ${linked.refused} refusal(s), each linked by the check's settlement nonce. ${gatewayInternal - linkedFlows.size} internal check(s) have nothing linked and are not counted. The ${gatewayExternal} external Gateway check(s) count under Milestone 2, not here, so no check counts twice.`,
       },
       refusals: {
         count: refusals.length,
