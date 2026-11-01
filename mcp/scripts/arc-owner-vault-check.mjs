@@ -24,25 +24,31 @@
  *   - dailyCap and autoApproveMax are not 0 (0 means no limit);
  *   - sessionKeyExpiry is not 0 and is later than the chain's current block time.
  * Admitted, it prints the ARC_OWNER_HELD_VAULTS entry ready to paste and explorer links
- * derived from the registry; refused, it prints REFUSED and every reason.
+ * derived from the registry; refused, it prints REFUSED and every reason. The entry says whether
+ * the owner is on the team or external, from --owner-kind, because the chain cannot tell: admitting
+ * a vault on Arc Mainnet requires it, and it is a statement by whoever runs this, not a check.
  *
  * --chain arc runs every check on Arc Testnet as a rehearsal, labeled as one, and never
  * prints a Milestone 1 entry. --vault alone re-reads a vault's code and state with no
  * receipt; nothing is admitted that way, because who sent the deploy is half the claim.
  *
  * Usage: cd mcp && npm run build
- *        node scripts/arc-owner-vault-check.mjs --tx 0x<deploy hash> [--chain arc-mainnet|arc] [--vault 0x<address>]
+ *        node scripts/arc-owner-vault-check.mjs --tx 0x<deploy hash> --owner-kind team|external [--vault 0x<address>]
+ *        node scripts/arc-owner-vault-check.mjs --tx 0x<deploy hash> --chain arc [--vault 0x<address>]
  *        node scripts/arc-owner-vault-check.mjs --vault 0x<address> [--chain arc-mainnet|arc]
  * Exit:  0 admitted, rehearsal passed, or every state check holds; 1 refused; 2 usage or build.
  */
 import { createPublicClient, formatUnits, getAddress, http, toHex } from 'viem'
 
-const USAGE = `usage: node scripts/arc-owner-vault-check.mjs --tx <deploy tx hash> [--chain arc-mainnet|arc] [--vault <address>]
+const USAGE = `usage: node scripts/arc-owner-vault-check.mjs --tx <deploy tx hash> --owner-kind team|external [--vault <address>]
+       node scripts/arc-owner-vault-check.mjs --tx <deploy tx hash> --chain arc [--vault <address>]
        node scripts/arc-owner-vault-check.mjs --vault <address> [--chain arc-mainnet|arc]
 
-  --tx      the vault's deploy transaction: admit it to ARC_OWNER_HELD_VAULTS, or refuse with reasons
-  --vault   re-read a vault's code and state only (with --tx: the vault the receipt must have created)
-  --chain   arc-mainnet (default, Milestone 1) or arc (Arc Testnet rehearsal, never an entry)
+  --tx          the vault's deploy transaction: admit it to ARC_OWNER_HELD_VAULTS, or refuse with reasons
+  --owner-kind  team (a person on our team, in their own wallet) or external (anyone else), printed in
+                the entry. Required with --tx on arc-mainnet; the chain cannot tell them apart
+  --vault       re-read a vault's code and state only (with --tx: the vault the receipt must have created)
+  --chain       arc-mainnet (default, Milestone 1) or arc (Arc Testnet rehearsal, never an entry)
 
 Read-only. Add --env-file=.env before the script path to compare the owner against the
 addresses of our env keys as well.`
@@ -53,14 +59,14 @@ function usage(message) {
 }
 
 function parseArgs(argv) {
-  const opts = { tx: '', vault: '', chain: '' }
+  const opts = { tx: '', vault: '', chain: '', 'owner-kind': '' }
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i]
     if (a === '--help' || a === '-h') {
       console.log(USAGE)
       process.exit(0)
     }
-    const m = a.match(/^--(tx|vault|chain)(?:=(.*))?$/)
+    const m = a.match(/^--(tx|vault|chain|owner-kind)(?:=(.*))?$/)
     if (!m) usage(`unknown argument ${a}`)
     const value = m[2] ?? argv[++i]
     if (!value || value.startsWith('--')) usage(`--${m[1]} needs a value`)
@@ -102,6 +108,9 @@ if (rehearsal !== chain.testnet) {
   console.error(`error: ${chainId} is ${chain.testnet ? '' : 'not '}a testnet in the registry, so it cannot be ${rehearsal ? 'the rehearsal' : 'Milestone 1'}`)
   process.exit(2)
 }
+const ownerKind = admission.parseOwnerKind(opts['owner-kind'])
+if (opts['owner-kind'] && !ownerKind) usage(`--owner-kind ${opts['owner-kind']}: it is team or external`)
+if (opts.tx && !rehearsal && !ownerKind) usage('--owner-kind team|external is required to admit a vault: an entry must say whose wallet the owner is')
 const usdcToken = (chain.settlementTokens ?? []).find((t) => t.symbol === 'USDC')
 const registryUsdc = chain.contracts.usdc ?? usdcToken?.address
 if (!registryUsdc || (usdcToken && usdcToken.address.toLowerCase() !== registryUsdc.toLowerCase())) {
@@ -200,6 +209,7 @@ console.log(
   `artifact  AgentSpendPolicyBytecode, ${(bytecode.length - 2) / 2} bytes of creation code. src/contracts/AgentSpendPolicy.ts exports no deployed bytecode, so the code is compared ${opts.tx ? 'by the deploy\'s creation input (keccak256, method creation-input), and by' : 'by'} the runtime code a simulated creation returns`,
 )
 console.log(`hosts     ${hosts.map((h) => h.label).join(', ')}`)
+if (ownerKind) console.log(`owner is  ${ownerKind} (stated with --owner-kind, not read from the chain)`)
 
 let evidence = null
 let deployer = null
@@ -363,6 +373,7 @@ if (rehearsal) {
 
 const ready = admission.pasteReadyEntry({
   vault,
+  ownerKind,
   deployTx: opts.tx,
   deployBlockTime,
   state: snap.state,

@@ -95,11 +95,20 @@ export type ArcPartner = {
  */
 export const ARC_PARTNERS: ArcPartner[] = []
 
+/**
+ * Whose wallet an owner-held vault's owner key is. 'team': a person on the A-Identity team, in
+ * their own wallet. 'external': anyone else. Our server holds neither, which is what the metric
+ * counts; a reviewer still needs to see which of the two each vault is. The chain cannot tell them
+ * apart, so whoever admits the vault says which, with --owner-kind.
+ */
+export type ArcOwnerKind = 'team' | 'external'
+
 export type ArcOwnerHeldVault = {
   /** The AgentSpendPolicy contract. */
   address: string
   /** The owner key. It is the user's; we never held it, which is the whole metric. */
   owner: string
+  ownerKind: ArcOwnerKind
   deployTx: string
   /** UTC day of the deployment. */
   deployedAt: string

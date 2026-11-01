@@ -39,6 +39,8 @@ type WalletRow = {
 type VaultItem = {
   address: string
   owner: string
+  // A backend from before the label sends no such field, and the line then names no kind.
+  ownerKind?: 'team' | 'external'
   deployTx: string
   deployedAt: string
   note: string
@@ -94,8 +96,8 @@ const REFRESH_MS = 60_000
 const usd = (n: number) => `$${n}`
 const plural = (n: number, one: string, many: string) => `${n} ${n === 1 ? one : many}`
 
-/** One metric: label, count over target, a thin bar, and the reason while the count is 0. */
-function MetricRow({ label, metric, detail }: { label: string; metric: Metric; detail?: string }) {
+/** One metric: label, count over target, a thin bar, and the reason while the count is 0 (with keepNote, always). */
+function MetricRow({ label, metric, detail, keepNote }: { label: string; metric: Metric; detail?: string; keepNote?: boolean }) {
   const pct = metric.target > 0 ? Math.min(100, Math.round((metric.count / metric.target) * 100)) : 0
   const met = metric.count >= metric.target
   return (
@@ -117,7 +119,7 @@ function MetricRow({ label, metric, detail }: { label: string; metric: Metric; d
         <div className="h-full rounded-full bg-accent" style={{ width: `${pct}%` }} />
       </div>
       {detail && <p className="mt-1.5 font-mono text-[11px] text-foreground/50">{detail}</p>}
-      {metric.count === 0 && metric.note && (
+      {(metric.count === 0 || keepNote) && metric.note && (
         <p className="mt-1.5 text-[11px] leading-relaxed text-foreground/50">{metric.note}</p>
       )}
     </div>
@@ -295,7 +297,8 @@ export default function ArcSeasonProgress() {
 
           <div className="mt-6 grid gap-4 sm:grid-cols-2">
             <MilestoneCard id={1} title={m1.title} due={m1.due}>
-              <MetricRow label="Owner-held vaults deployed from the browser" metric={m1.vaults} />
+              {/* The note names the launch-day vault and why it is not counted, which stays true at any count. */}
+              <MetricRow label="Owner-held vaults deployed from the browser" metric={m1.vaults} keepNote />
               {m1.checks.linked ? (
                 <MetricRow
                   label="Verify-then-pay flows through Circle Gateway"
@@ -314,7 +317,8 @@ export default function ArcSeasonProgress() {
                 <ul className="mt-3 flex flex-col gap-1.5">
                   {m1.vaults.items.map((v) => (
                     <li key={v.address} className="text-[11px] text-foreground/65">
-                      <OutLink href={v.explorerUrl}>{short(v.address)}</OutLink> owner {short(v.owner)}, deployed{' '}
+                      <OutLink href={v.explorerUrl}>{short(v.address)}</OutLink> owner {short(v.owner)}
+                      {(v.ownerKind === 'team' || v.ownerKind === 'external') && <span className="font-semibold text-foreground/80"> ({v.ownerKind})</span>}, deployed{' '}
                       <OutLink href={v.deployExplorerUrl}>{v.deployedAt}</OutLink>
                     </li>
                   ))}
