@@ -1,7 +1,7 @@
 # A-Identity
 
 [![CI](https://github.com/getA-Identity/A-Identity/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/getA-Identity/A-Identity/actions/workflows/ci.yml)
-[![Tests](https://img.shields.io/badge/tests-1693%20unit%20%2B%20E2E-brightgreen)](mcp/README.md#develop)
+[![Tests](https://img.shields.io/badge/tests-1764%20unit%20%2B%20E2E-brightgreen)](mcp/README.md#develop)
 [![npm: marketplace-sdk](https://img.shields.io/npm/v/%40a-identity%2Fmarketplace-sdk?label=marketplace-sdk)](https://www.npmjs.com/package/@a-identity/marketplace-sdk)
 [![npm: trust-guard](https://img.shields.io/npm/v/%40a-identity%2Ftrust-guard?label=trust-guard)](https://www.npmjs.com/package/@a-identity/trust-guard)
 [![Ask DeepWiki](https://deepwiki.com/badge.svg)](https://deepwiki.com/getA-Identity/A-Identity)
@@ -240,7 +240,7 @@ paid by our own buyer wallet during the demo and seeding runs, and all listed at
 `#849980`, KYA-verified, with a reputation earned from **3 real settlements**. The score
 itself is recency-weighted and decays as those settlements age, so it is read live rather
 than quoted here. Scoring is **deterministic and
-unit-tested** (1693 unit tests as of Nov 2026), reads on-chain live via viem, and is fully documented at
+unit-tested** (1764 unit tests as of Nov 2026), reads on-chain live via viem, and is fully documented at
 `GET /methodology`. This is our answer to "surface your rigor": every number is
 reproducible and every settlement is on-chain.
 
@@ -717,6 +717,9 @@ GET  /api/x402/nano/data        x402 Nanopayments seller (gasless, Gateway-batch
 GET  /api/x402/gateway/tools/:name  the trust tools for Circle Agent Marketplace buyers: Gateway nanopayments on Arc Mainnet and Base mainnet (402; GET or POST to pay)
 GET  /api/x402/gateway/status   that rail's config and the Gateway kind proven per chain
 GET  /api/x402/gateway/proof    Gateway-credited settlements, batch hashes once landed
+POST /api/x402/gateway/verify-then-pay  free vault + payee checks on Arc Mainnet, then risk_check through Gateway; returns the vault call to sign (never signs)
+GET  /api/x402/gateway/flows/:flowId    one verify-then-pay flow, public by its check nonce (a DENY's evidence)
+POST /api/x402/gateway/flows/:flowId/receipt  {txHash}: the server reads the receipt from every RPC and records only what it proves
 POST /api/arc/nanopay-demo      one-click gasless nanopayment (EIP-3009 + Circle Gateway batch)
 POST /api/arc/cctp-demo         one-click CCTP burn-and-mint (Arc→Base Sepolia, native USDC)
 GET  /api/cctp/stellar/status   CCTP between Stellar and EVM: sides, Circle-verified contracts, signers (addresses only)

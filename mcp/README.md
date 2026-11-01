@@ -127,6 +127,25 @@ Directories:
   Gateway's transfers API. Prices are read from `asp/payment.ts`, never restated. Sells on
   Arc Mainnet (the primary network) and Base mainnet (`X402_GATEWAY_NETWORKS`,
   `X402_GATEWAY_PAYTO`); `GET /api/x402/gateway/status` answers for itself.
+- `src/verify-then-pay/` - verify-then-pay on Arc Mainnet, the hosted half, behind
+  `POST /api/x402/gateway/verify-then-pay` and the `verify_then_pay` MCP tool. Free checks
+  first, read from Arc Mainnet (`reads.ts`): the vault holds the registry's USDC, the payee
+  holds an ERC-8004 agent on Arc Mainnet's own IdentityRegistry, and the vault's policy plus a
+  simulated `pay()` from its operator would accept the payment, so a payment the vault would
+  refuse never buys a check. Then `risk_check` is bought in process through the Gateway rail,
+  Arc Mainnet's offer only, with the payee ADDRESS as agentId (`core.ts`), and the answer must
+  pass `verdict.ts` (settlement echo, payee and amount echo, a finite reputation, an ALLOW
+  that agrees with its own signals). ALLOW returns the exact `vault.pay(payee, amount)` for
+  the operator, WARN an `ownerPay()` hand-off unless `payOnWarn`, DENY nothing; always
+  `executed: false`, because the server signs nothing (`prepare.ts`). Every paid check is a
+  public row in `vtp_flows`, keyed by the check's nonce; it becomes executed only when
+  `POST /api/x402/gateway/flows/:flowId/receipt` shows the server a receipt it reads from
+  every RPC itself, mined in a block after the one the verdict came back in (`receipt.ts`,
+  over `chains/evm/receipts.ts`). Which flow a payment answers is the server's call, not the
+  path's: the latest open check on its vault, payee and amount before its block. The Arc
+  Acceleration Season report counts those rows through `season.ts`, timed by the payment's
+  own block; a flow whose check has aged out of the Gateway log (it keeps 2000 rows, `vtp_flows`
+  keeps every flow) links by the settlement its own row recorded, and the report says so.
 - `src/cctp-stellar.ts` - Circle CCTP V2 between Stellar and EVM, driven directly because
   Bridge Kit has no Stellar adapter: burn, Iris attestation, mint, in both directions.
   A Stellar recipient is carried in the hook data and minted through the CctpForwarder in
@@ -180,7 +199,7 @@ npm run start        # MCP server on stdio
 npm run start:http   # the HTTP server (REST + /mcp). Reads config from process.env directly.
 npm run smoke        # spin up the MCP server + exercise every read-only tool
 npm run http-smoke   # exercise the tools over HTTP (server must be running)
-npm test             # tsc + node:test unit tests (1693 across 106 files, as of Nov 2026)
+npm test             # tsc + node:test unit tests (1764 across 115 files, as of Nov 2026)
 npm run e2e          # full end-to-end flow against a running server (E2E_BASE=...)
 ```
 
@@ -192,7 +211,7 @@ node --env-file=.env dist/http.js     # Node 20.6+
 ARC_SIGNER_KEY=0x<funded-key> node dist/http.js
 ```
 
-Tests: **1693 unit tests across 106 colocated `*.test.ts` files** (as of Nov 2026; `npm test`) +
+Tests: **1764 unit tests across 115 colocated `*.test.ts` files** (as of Nov 2026; `npm test`) +
 a full **E2E of about 67 checks** (`npm run e2e`) that adapts to signer presence: green with no
 signer key (live Arc reads; on-chain writes reported as prepared), with the real Arc write
 checks activating under a funded `ARC_SIGNER_KEY`. CI runs the no-signer path.

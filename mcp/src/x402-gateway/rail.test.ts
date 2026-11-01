@@ -1,5 +1,8 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
+import { mkdtempSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import {
   railStatus,
   railPaywallGate,
@@ -22,7 +25,7 @@ import { provenKind, clearKindCache, readBackTransfer, type GatewayDeps, type Ga
 import { getChainById, CHAINS } from '../chains/index.js'
 import { PRICES } from '../asp/payment.js'
 import { RAIL_BASE_PRICES_USD } from '../x402-3009/rail.js'
-import type { GatewaySettlementRecord } from '../storage.js'
+import { loadGatewaySettlementsResult, type GatewaySettlementRecord } from '../storage.js'
 
 const base = getChainById('base')!
 const PAY_TO = '0x000000000000000000000000000000000000dEaD'
@@ -467,4 +470,26 @@ test('every registry gateway declaration is well formed and on the right host fo
     assert.ok(c.contracts.usdc, `${c.id}: Gateway settles USDC, so the chain must declare it`)
     assert.equal(c.ecosystem, 'evm', `${c.id}: Gateway is EVM-only today`)
   }
+})
+
+test('the Gateway log tells no rows apart from a log it cannot read, in Postgres and in its file', async () => {
+  const file = join(mkdtempSync(join(tmpdir(), 'gateway-log-')), 'gateway-settlements.json')
+  const fileOnly = { getPool: async () => null, file }
+  assert.deepEqual(await loadGatewaySettlementsResult(fileOnly), { ok: true, rows: [] }, 'no file yet is a first run, not a failure')
+  writeFileSync(file, '{ not json')
+  assert.equal((await loadGatewaySettlementsResult(fileOnly)).ok, false)
+  writeFileSync(file, JSON.stringify({ rows: [] }))
+  assert.equal((await loadGatewaySettlementsResult(fileOnly)).ok, false, 'a file that is not a list of rows is not an empty log')
+  const row = { ts: '2026-11-01T10:00:00Z', outcome: 'credited', authNonce: NONCE } as unknown as GatewaySettlementRecord
+  writeFileSync(file, JSON.stringify([row]))
+  assert.deepEqual(await loadGatewaySettlementsResult(fileOnly), { ok: true, rows: [row] })
+
+  const down = {
+    getPool: async () => ({
+      query: async () => {
+        throw new Error('connect ECONNREFUSED')
+      },
+    }),
+  }
+  assert.deepEqual(await loadGatewaySettlementsResult(down), { ok: false, reason: 'connect ECONNREFUSED' })
 })

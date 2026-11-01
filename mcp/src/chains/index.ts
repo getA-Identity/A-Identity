@@ -22,6 +22,20 @@ export {
   tokenUnits,
   fromTokenUnits,
 } from './evm/client.js'
+// Receipts and transactions read from every RPC, one host at a time: a host that does not
+// have a receipt answers null, which a fallback transport takes as the answer.
+export {
+  receiptFromEveryRpc,
+  transactionFromEveryRpc,
+  blockFromEveryRpc,
+  rpcSourceLabel,
+  jsonRpcCall,
+  type RpcCall,
+  type HostAnswer,
+  type EveryRpcRead,
+  type EveryRpcOptions,
+  type BlockStamp,
+} from './evm/receipts.js'
 // Explorer links come from the ecosystem-aware module, NOT from evm/client.js. Every
 // caller already passes a ChainDescriptor, so the EVM behaviour is byte-identical and the
 // non-EVM chains stop getting a route their explorer does not have. See ./explorer.ts.

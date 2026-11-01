@@ -773,26 +773,48 @@ export type GatewaySettlementRecord = {
 const GATEWAY_SETTLEMENTS_FILE = join(DATA_DIR, 'gateway-settlements.json')
 export const GATEWAY_SETTLEMENTS_CAP = 2000
 
-/** Load the retained Gateway settlement records, oldest first. Never throws: this feeds
- *  a proof page, where showing nothing beats a 500. Nothing here guards spending, because
- *  this rail spends nothing per call. */
-export async function loadGatewaySettlements(): Promise<GatewaySettlementRecord[]> {
+export type GatewaySettlementsRead = { ok: true; rows: GatewaySettlementRecord[] } | { ok: false; reason: string }
+
+/**
+ * The retained Gateway settlement records, oldest first, with "no rows yet" and "could not
+ * read the log" told apart. The season report counts Milestone 1 from this, and a log it
+ * cannot read must say so rather than read as zero checks. The seams are injectable so both
+ * failures are tested against this function rather than a copy of it.
+ */
+export async function loadGatewaySettlementsResult(io: { getPool?: () => Promise<unknown>; file?: string } = {}): Promise<GatewaySettlementsRead> {
   try {
-    const p = await getPool()
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const p = (await (io.getPool ?? getPool)()) as any
     if (p) {
       await p.query('CREATE TABLE IF NOT EXISTS gateway_settlements (id bigserial PRIMARY KEY, data jsonb NOT NULL)')
       const r = await p.query('SELECT data FROM gateway_settlements ORDER BY id ASC')
-      return r.rows.map((row: { data: GatewaySettlementRecord }) => row.data)
+      return { ok: true, rows: r.rows.map((row: { data: GatewaySettlementRecord }) => row.data) }
     }
   } catch (e) {
-    console.error('[storage] gateway settlement read failed:', e instanceof Error ? e.message : e)
-    return []
+    const reason = e instanceof Error ? e.message : String(e)
+    console.error('[storage] gateway settlement read failed:', reason)
+    return { ok: false, reason }
   }
+  const file = io.file ?? GATEWAY_SETTLEMENTS_FILE
   try {
-    return JSON.parse(readFileSync(GATEWAY_SETTLEMENTS_FILE, 'utf8')) as GatewaySettlementRecord[]
-  } catch {
-    return []
+    const rows = JSON.parse(readFileSync(file, 'utf8')) as unknown
+    if (!Array.isArray(rows)) return { ok: false, reason: `${file} does not hold a list of settlements` }
+    return { ok: true, rows: rows as GatewaySettlementRecord[] }
+  } catch (e) {
+    if ((e as NodeJS.ErrnoException)?.code === 'ENOENT') return { ok: true, rows: [] }
+    const reason = e instanceof Error ? e.message : String(e)
+    console.error('[storage] gateway settlement file unreadable:', reason)
+    return { ok: false, reason }
   }
+}
+
+/** The retained Gateway settlement records, oldest first. Never throws: this feeds a proof
+ *  page, where showing nothing beats a 500. Nothing here guards spending, because this rail
+ *  spends nothing per call. Where an unreadable log must not read as an empty one (the season
+ *  report), use loadGatewaySettlementsResult. */
+export async function loadGatewaySettlements(): Promise<GatewaySettlementRecord[]> {
+  const r = await loadGatewaySettlementsResult()
+  return r.ok ? r.rows : []
 }
 
 /** Durably record one settlement attempt, trimming past the cap. Never throws: by the time
@@ -858,6 +880,337 @@ export async function updateGatewaySettlement(
     if (touched) writeFileSync(GATEWAY_SETTLEMENTS_FILE, JSON.stringify(arr))
   } catch (e) {
     console.error('[storage] gateway settlement update failed:', e instanceof Error ? e.message : e)
+  }
+}
+
+// ── verify-then-pay flows (see verify-then-pay/) ──────────────────────────────────────
+//
+// One row per paid check bought through POST /api/x402/gateway/verify-then-pay, keyed by the
+// check's Gateway authorization nonce, which is also the key the check's settlement row and
+// the Arc Acceleration Season report use. A row records what was checked, what the verdict
+// was, and what the server prepared; only the server moves it on, and only after reading the
+// payment's receipt from the chain itself. Rows are milestone evidence, so there is no cap:
+// the Gateway log keeps 2000 rows, this keeps every flow, and the season report links a flow
+// whose Gateway row has aged out by the settlement this row recorded.
+
+/** Where a flow stands. The audit vocabulary (executed, blocked, awaiting_human, abandoned)
+ *  plus pending: a verdict that allowed the payment and a receipt nobody has shown us yet. */
+export type VtpFlowOutcome = 'pending' | 'executed' | 'blocked' | 'awaiting_human' | 'abandoned'
+
+/** Why it stands there. */
+export type VtpFlowDetail =
+  | 'agent_will_pay' // ALLOW (or WARN with payOnWarn): pay() was prepared for the operator
+  | 'agent_paid' // the vault's Paid(byOwner = false) and the USDC Transfer were read back
+  | 'owner_paid' // the same, from ownerPay(): the owner settled it
+  | 'deny' // the verdict was DENY; nothing was prepared
+  | 'verdict_unusable' // the check was paid but its answer failed our checks; treated as DENY
+  | 'verdict_unavailable' // the check was paid and the tool failed after settlement
+  | 'verdict_block_unreadable' // the check was paid and answered, but the chain did not answer for its latest block after the verdict, so nothing was prepared
+  | 'reverted_onchain' // the prepared call was sent and the vault reverted it
+  | 'warn_handoff' // WARN without payOnWarn: ownerPay() was prepared for the owner
+  | 'expired' // reserved: a pending flow nobody completed
+
+export type VtpDecision = 'ALLOW' | 'WARN' | 'DENY'
+
+export type VtpFlowRecord = {
+  v: 1
+  /** The check's authorization nonce, lowercase. The primary key. */
+  flowId: string
+  /** CAIP-2 network of both the check and the payment. */
+  network: string
+  createdAt: string
+  updatedAt: string
+  /** The vault and its two keys as read at check time, lowercase. */
+  vault: string
+  owner: string
+  operator: string
+  /** The address checked and the address paid: one address, so the verdict matches the Paid event. */
+  payee: string
+  payeeAgentId: string | null
+  /** The registry's USDC, which the vault's usdc() matched. */
+  asset: string
+  /** USDC base units (6 decimals) as a decimal string, and the same amount in USD as sent to risk_check. */
+  amount: string
+  amountUsd: number
+  check: {
+    authNonce: string
+    transferId: string | null
+    gatewayOutcome: 'credited' | 'completed'
+    payer: string
+    /** The price, in the settlement token's base units. */
+    value: string
+    tool: 'risk_check'
+    /** The settlement row's timestamp. */
+    checkedAt: string
+    /** The latest block the free preflight read before the check was bought. */
+    checkedAtBlock: string
+    /** The latest block read after the verdict came back, never below checkedAtBlock. A
+     *  payment answers this check only when it lands in a later block: a pay() sent while the
+     *  check was still running lands after checkedAtBlock too. null when there was no verdict,
+     *  or the chain did not answer for its latest block after it; such a flow takes no receipt. */
+    verdictBlock: string | null
+  }
+  verdict: null | {
+    decision: VtpDecision | null
+    effective: VtpDecision
+    risk: string | null
+    reasons: string[]
+    reputationScore: number | null
+    agentId: string | null
+    checkedAt: string | null
+    /** Set when our own checks overrode the decision; names the check that failed. */
+    overriddenBecause?: string
+  }
+  payOnWarn: boolean
+  /** The call the server prepared, built from the request's own inputs. Nothing was signed. */
+  prepared: null | { from: string; to: string; data: string; function: 'pay(address,uint256)' | 'ownerPay(address,uint256)'; args: [string, string] }
+  outcome: VtpFlowOutcome
+  detail: VtpFlowDetail
+  /** Present once the server read a receipt that proves what happened. */
+  payment?: {
+    txHash: string
+    blockNumber: string
+    /** The payment block's own timestamp, ISO, read from the block whose hash the receipt
+     *  names: when the chain says the payment happened, not when the server read it. */
+    minedAt: string
+    status: 'success' | 'reverted'
+    /** From the vault's Paid event, or for a revert from which call was sent. */
+    byOwner: boolean | null
+    from: string
+    to: string | null
+    gasUsed: string
+    /** Wei, 18 decimals (Arc's gas is native USDC). */
+    effectiveGasPrice: string
+    /** gasUsed x effectiveGasPrice in USDC, 6 decimals. */
+    costUsdc: string
+    readBackAt: string
+    /** The host the receipt was read from: a registry host, never an env override's URL. */
+    readBackFrom: string
+    explorerUrl: string
+  }
+}
+
+const VTP_FLOWS_FILE = join(DATA_DIR, 'vtp-flows.json')
+
+/** The seams a vtp_flows call reads through. Injectable so the failure branches are tested
+ *  against these functions rather than a reimplementation of them. */
+export type VtpStoreIo = { getPool?: () => Promise<unknown>; file?: string }
+
+export type VtpFlowsRead = { ok: true; rows: VtpFlowRecord[] } | { ok: false; reason: string }
+export type VtpFlowRead = { ok: true; row: VtpFlowRecord | null } | { ok: false; reason: string }
+export type VtpFlowInsert = { ok: true; inserted: boolean } | { ok: false; reason: string }
+export type VtpFlowUpdate =
+  | { ok: true; updated: true; row: VtpFlowRecord }
+  /** The row is missing, or its outcome had already moved: nothing was written. */
+  | { ok: true; updated: false; row: VtpFlowRecord | null }
+  | { ok: false; reason: string; conflict?: 'tx_linked' }
+export type VtpFlowByTx = { ok: true; flowId: string | null } | { ok: false; reason: string }
+/** One vault, payee and amount: the calls that pay them are byte-identical, whichever check
+ *  they followed. Addresses lowercase, the amount in base units as a decimal string. */
+export type VtpFlowMatch = { vault: string; payee: string; amount: string }
+
+const vtpReady = new WeakSet<object>()
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+async function vtpPool(io: VtpStoreIo): Promise<any> {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const p = (await (io.getPool ?? getPool)()) as any
+  if (!p) return null
+  if (!vtpReady.has(p)) {
+    await p.query('CREATE TABLE IF NOT EXISTS vtp_flows (flow_id text PRIMARY KEY, data jsonb NOT NULL)')
+    // One payment transaction links to at most one flow. Rows without a payment have a NULL
+    // key, and NULLs never collide in a unique index.
+    await p.query("CREATE UNIQUE INDEX IF NOT EXISTS vtp_flows_payment_tx ON vtp_flows ((data->'payment'->>'txHash'))")
+    vtpReady.add(p)
+  }
+  return p
+}
+
+const reasonOf = (e: unknown) => (e instanceof Error ? e.message : String(e))
+
+/** The file fallback, with "empty" (no file yet) and "unreadable" told apart. */
+function readVtpFile(file: string): VtpFlowsRead {
+  try {
+    const rows = JSON.parse(readFileSync(file, 'utf8')) as unknown
+    if (!Array.isArray(rows)) return { ok: false, reason: `${file} does not hold a list of flows` }
+    return { ok: true, rows: rows as VtpFlowRecord[] }
+  } catch (e) {
+    if ((e as NodeJS.ErrnoException)?.code === 'ENOENT') return { ok: true, rows: [] }
+    return { ok: false, reason: reasonOf(e) }
+  }
+}
+
+function writeVtpFile(file: string, rows: VtpFlowRecord[]): void {
+  mkdirSync(dirname(file), { recursive: true })
+  writeFileSync(file, JSON.stringify(rows))
+}
+
+/**
+ * Every recorded flow, oldest first, with "no flows" and "could not read the flows" told
+ * apart. The season report counts from this, and a log it cannot read must say so rather than
+ * read as zero flows.
+ */
+export async function loadVtpFlowsResult(io: VtpStoreIo = {}): Promise<VtpFlowsRead> {
+  try {
+    const p = await vtpPool(io)
+    if (p) {
+      const r = await p.query("SELECT data FROM vtp_flows ORDER BY data->>'createdAt' ASC, flow_id ASC")
+      return { ok: true, rows: r.rows.map((row: { data: VtpFlowRecord }) => row.data) }
+    }
+  } catch (e) {
+    const reason = reasonOf(e)
+    console.error('[storage] vtp flow read failed:', reason)
+    return { ok: false, reason }
+  }
+  const read = readVtpFile(io.file ?? VTP_FLOWS_FILE)
+  if (!read.ok) console.error('[storage] vtp flow file unreadable:', read.reason)
+  return read
+}
+
+/** One flow by id (the check nonce, any case). */
+export async function loadVtpFlow(flowId: string, io: VtpStoreIo = {}): Promise<VtpFlowRead> {
+  const id = flowId.toLowerCase()
+  try {
+    const p = await vtpPool(io)
+    if (p) {
+      const r = await p.query('SELECT data FROM vtp_flows WHERE flow_id = $1', [id])
+      return { ok: true, row: (r.rows[0]?.data as VtpFlowRecord | undefined) ?? null }
+    }
+  } catch (e) {
+    return { ok: false, reason: reasonOf(e) }
+  }
+  const read = readVtpFile(io.file ?? VTP_FLOWS_FILE)
+  if (!read.ok) return read
+  return { ok: true, row: read.rows.find((r) => r.flowId === id) ?? null }
+}
+
+/** The flow a payment transaction is already linked to, if any. */
+export async function findVtpFlowByTx(txHash: string, io: VtpStoreIo = {}): Promise<VtpFlowByTx> {
+  const hash = txHash.toLowerCase()
+  try {
+    const p = await vtpPool(io)
+    if (p) {
+      const r = await p.query("SELECT flow_id FROM vtp_flows WHERE data->'payment'->>'txHash' = $1 LIMIT 1", [hash])
+      return { ok: true, flowId: (r.rows[0]?.flow_id as string | undefined) ?? null }
+    }
+  } catch (e) {
+    return { ok: false, reason: reasonOf(e) }
+  }
+  const read = readVtpFile(io.file ?? VTP_FLOWS_FILE)
+  if (!read.ok) return read
+  return { ok: true, flowId: read.rows.find((r) => r.payment?.txHash === hash)?.flowId ?? null }
+}
+
+const OPEN_OUTCOMES: VtpFlowOutcome[] = ['pending', 'awaiting_human']
+
+/**
+ * The flows on one vault, payee and amount that are still open (pending, or waiting for the
+ * owner), oldest first: every check a payment on that vault, payee and amount could answer.
+ * The receipt route reads these to decide which one a payment answers, so a log it cannot
+ * read is an error and never an empty list. Never throws.
+ */
+export async function loadOpenVtpFlows(match: VtpFlowMatch, io: VtpStoreIo = {}): Promise<VtpFlowsRead> {
+  const want = { vault: match.vault.toLowerCase(), payee: match.payee.toLowerCase(), amount: match.amount }
+  try {
+    const p = await vtpPool(io)
+    if (p) {
+      const r = await p.query(
+        "SELECT data FROM vtp_flows WHERE data->>'vault' = $1 AND data->>'payee' = $2 AND data->>'amount' = $3 AND data->>'outcome' = ANY($4::text[]) ORDER BY data->>'createdAt' ASC, flow_id ASC",
+        [want.vault, want.payee, want.amount, OPEN_OUTCOMES],
+      )
+      return { ok: true, rows: r.rows.map((row: { data: VtpFlowRecord }) => row.data) }
+    }
+  } catch (e) {
+    return { ok: false, reason: reasonOf(e) }
+  }
+  const read = readVtpFile(io.file ?? VTP_FLOWS_FILE)
+  if (!read.ok) return read
+  return {
+    ok: true,
+    rows: read.rows.filter((r) => r.vault === want.vault && r.payee === want.payee && r.amount === want.amount && OPEN_OUTCOMES.includes(r.outcome)),
+  }
+}
+
+/**
+ * Write a flow once. Insert-only: a row that already exists is never overwritten, so a second
+ * request for the same check cannot rewrite what the first one recorded. Never throws; a
+ * failure is returned, because the check has already been paid by the time this runs and the
+ * caller has to be told the record is missing rather than handed an error.
+ */
+export async function persistVtpFlow(rec: VtpFlowRecord, io: VtpStoreIo = {}): Promise<VtpFlowInsert> {
+  const row: VtpFlowRecord = { ...rec, flowId: rec.flowId.toLowerCase() }
+  try {
+    const p = await vtpPool(io)
+    if (p) {
+      const r = await p.query('INSERT INTO vtp_flows (flow_id, data) VALUES ($1, $2::jsonb) ON CONFLICT (flow_id) DO NOTHING RETURNING flow_id', [
+        row.flowId,
+        JSON.stringify(row),
+      ])
+      return { ok: true, inserted: r.rows.length === 1 }
+    }
+    const file = io.file ?? VTP_FLOWS_FILE
+    const read = readVtpFile(file)
+    if (!read.ok) return read
+    if (read.rows.some((r) => r.flowId === row.flowId)) return { ok: true, inserted: false }
+    writeVtpFile(file, [...read.rows, row])
+    return { ok: true, inserted: true }
+  } catch (e) {
+    const reason = reasonOf(e)
+    console.error('[storage] vtp flow persist failed:', reason)
+    return { ok: false, reason }
+  }
+}
+
+/**
+ * Move a flow on, compare-and-set: the patch lands only while the row's outcome is one of
+ * `fromOutcomes`, so two receipts racing for one flow cannot both win, and a flow that
+ * already ended stays ended. A payment transaction already linked to another flow is refused
+ * (the unique index in Postgres, a scan in the file fallback). Never throws.
+ */
+export async function updateVtpFlow(
+  flowId: string,
+  patch: Partial<Pick<VtpFlowRecord, 'outcome' | 'detail' | 'payment' | 'updatedAt'>>,
+  fromOutcomes: VtpFlowOutcome[],
+  io: VtpStoreIo = {},
+): Promise<VtpFlowUpdate> {
+  const id = flowId.toLowerCase()
+  const clean = patch.payment ? { ...patch, payment: { ...patch.payment, txHash: patch.payment.txHash.toLowerCase() } } : patch
+  try {
+    const p = await vtpPool(io)
+    if (p) {
+      try {
+        const r = await p.query(
+          "UPDATE vtp_flows SET data = data || $2::jsonb WHERE flow_id = $1 AND data->>'outcome' = ANY($3::text[]) RETURNING data",
+          [id, JSON.stringify(clean), fromOutcomes],
+        )
+        if (r.rows.length === 1) return { ok: true, updated: true, row: r.rows[0].data as VtpFlowRecord }
+      } catch (e) {
+        if ((e as { code?: string })?.code === '23505') return { ok: false, reason: 'that transaction is already linked to another flow', conflict: 'tx_linked' }
+        throw e
+      }
+      const cur = await p.query('SELECT data FROM vtp_flows WHERE flow_id = $1', [id])
+      return { ok: true, updated: false, row: (cur.rows[0]?.data as VtpFlowRecord | undefined) ?? null }
+    }
+    const file = io.file ?? VTP_FLOWS_FILE
+    const read = readVtpFile(file)
+    if (!read.ok) return read
+    const at = read.rows.findIndex((r) => r.flowId === id)
+    if (at < 0) return { ok: true, updated: false, row: null }
+    const cur = read.rows[at]
+    if (!fromOutcomes.includes(cur.outcome)) return { ok: true, updated: false, row: cur }
+    const tx = clean.payment?.txHash
+    if (tx && read.rows.some((r, i) => i !== at && r.payment?.txHash === tx)) {
+      return { ok: false, reason: 'that transaction is already linked to another flow', conflict: 'tx_linked' }
+    }
+    const next: VtpFlowRecord = { ...cur, ...clean }
+    const rows = read.rows.slice()
+    rows[at] = next
+    writeVtpFile(file, rows)
+    return { ok: true, updated: true, row: next }
+  } catch (e) {
+    const reason = reasonOf(e)
+    console.error('[storage] vtp flow update failed:', reason)
+    return { ok: false, reason }
   }
 }
 

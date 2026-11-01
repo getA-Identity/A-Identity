@@ -12,7 +12,7 @@ import {
   type SettlementsByNetwork,
   type SettlementsByNetworkDeps,
 } from './settlement-networks.js'
-import { loadGatewaySettlements, type GatewaySettlementRecord, type X402SettlementRecord } from './storage.js'
+import type { GatewaySettlementRecord, X402SettlementRecord } from './storage.js'
 import { internalPayers as gatewayInternalPayers } from './x402-gateway/rail.js'
 import { internalPayers as facilitatorInternalPayers } from './x402-3009/rail.js'
 
@@ -355,8 +355,11 @@ test("the live deps are the season report's loaders and lists", () => {
   assert.deepEqual(d.internalPayers, liveArcSeasonDeps(env).internalPayers)
   assert.deepEqual(d.internalPayers.gateway, gatewayInternalPayers(env))
   assert.deepEqual(d.internalPayers.facilitator, facilitatorInternalPayers(env))
-  assert.equal(d.gatewayRows, loadGatewaySettlements)
-  assert.equal(typeof d.facilitatorRows, 'function')
+  // The very functions the season report reads through, so a log it reports as unreadable
+  // cannot read as zero here.
+  const season = liveArcSeasonDeps(env)
+  assert.equal(d.gatewayRows, season.gatewayRows)
+  assert.equal(d.facilitatorRows, season.facilitatorRows)
   // No test clock and no shortened deadline leak into the live route.
   assert.equal(d.now, undefined)
   assert.equal(d.deadlineMs, undefined)

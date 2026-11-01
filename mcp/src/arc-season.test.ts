@@ -8,6 +8,7 @@ import {
   ARC_REFUSALS,
   ARC_VERIFY_THEN_PAY_FLOWS,
   ARC_SEASON_TARGETS,
+  mergeFlows,
   type ArcSeasonDeps,
   type ArcVerifyThenPayFlow,
 } from './arc-season.js'
@@ -488,4 +489,95 @@ test("the live deps read both rails' own internal-payer lists, so neither rail's
   // The hardcoded wallets of both rails are in, with or without the env additions.
   const bare = liveArcSeasonDeps({} as NodeJS.ProcessEnv)
   assert.ok(bare.internalPayers.gateway.length >= 1 && bare.internalPayers.facilitator.length >= 1)
+})
+
+test('flows the server recorded count like curated ones, once per check nonce, with the curated entry first', async () => {
+  const paid = gw({ payer: OURS_GATEWAY })
+  const denied = gw({ payer: OURS_GATEWAY })
+  const curated = flow({ checkNonce: paid.authNonce, note: 'curated by hand' })
+  const recorded = [
+    flow({ checkNonce: shouty(paid.authNonce), note: 'recorded by the server', payer: OURS_GATEWAY }),
+    flow({ checkNonce: denied.authNonce, outcome: 'refused', txHash: undefined, evidenceUrl: `https://a-identity.xyz/api/x402/gateway/flows/${denied.authNonce}`, payer: OURS_GATEWAY }),
+    // A recorded flow whose check is not one of ours counts nothing, as a curated one would.
+    flow({ checkNonce: nextNonce(), payer: OURS_GATEWAY }),
+  ]
+  const r = await arcSeasonReport(deps({ gateway: [paid, denied], flows: [curated], flowRows: async () => recorded }))
+  const c = r.milestone1.checks
+  assert.deepEqual([c.count, c.linked], [2, { paid: 1, refused: 1 }])
+  assert.equal(c.items[0].note, 'curated by hand')
+  assert.equal(c.items[1].evidenceUrl, `https://a-identity.xyz/api/x402/gateway/flows/${denied.authNonce}`)
+  assert.deepEqual(r.logs.flows, { readable: true, rows: 3 })
+  assert.deepEqual(mergeFlows([curated], recorded).map((f) => f.note), ['curated by hand', recorded[1].note, recorded[2].note])
+})
+
+test('an unreadable flow log is reported as unreadable, and the count says what it is missing instead of reading zero', async () => {
+  const paid = gw({ payer: OURS_GATEWAY })
+  const r = await arcSeasonReport(
+    deps({
+      gateway: [paid],
+      flows: [flow({ checkNonce: paid.authNonce })],
+      flowRows: async () => {
+        throw new Error('vtp_flows unreachable')
+      },
+    }),
+  )
+  assert.deepEqual(r.logs.flows, { readable: false, rows: 0, reason: 'vtp_flows unreachable' })
+  assert.equal(r.milestone1.checks.count, 1, 'the curated list still counts')
+  assert.match(r.milestone1.checks.note, /^The verify-then-pay flow log could not be read on this request \(vtp_flows unreachable\)/)
+  // Without a loader wired, there is no flow log to report on at all.
+  assert.equal((await arcSeasonReport(deps())).logs.flows, undefined)
+})
+
+test("a flow that names its payer links only to that payer's check, because a nonce is unique per payer", async () => {
+  const check = gw({ payer: OURS_GATEWAY })
+  const other = await arcSeasonReport(deps({ gateway: [check], flowRows: async () => [flow({ checkNonce: check.authNonce, payer: OURS_FACILITATOR })] }))
+  assert.equal(other.milestone1.checks.count, 0)
+  const same = await arcSeasonReport(deps({ gateway: [check], flowRows: async () => [flow({ checkNonce: check.authNonce, payer: shouty(OURS_GATEWAY) })] }))
+  assert.equal(same.milestone1.checks.count, 1)
+})
+
+test('the live deps read the verify-then-pay flow log, mapped to season flows', async () => {
+  const d = liveArcSeasonDeps({} as NodeJS.ProcessEnv)
+  assert.equal(typeof d.flowRows, 'function')
+  assert.ok(Array.isArray(await d.flowRows!()))
+})
+
+test('an unreadable Gateway log is reported as unreadable, and Milestone 1 says so instead of reading zero checks', async () => {
+  const d = deps({ flowRows: async () => [flow({ payer: OURS_GATEWAY })] })
+  d.gatewayRows = async () => {
+    throw new Error('postgres unreachable')
+  }
+  const r = await arcSeasonReport(d)
+  assert.deepEqual(r.logs.gateway, { readable: false, rows: 0, reason: 'postgres unreachable' })
+  assert.equal(r.milestone1.checks.count, 0)
+  assert.match(r.milestone1.checks.note, /^The Circle Gateway settlement log could not be read on this request \(postgres unreachable\), so no check, and no flow linked to one, is counted/)
+  // The live deps read it through the loader that tells the two apart.
+  assert.ok(Array.isArray(await liveArcSeasonDeps({} as NodeJS.ProcessEnv).gatewayRows()))
+})
+
+test("a recorded flow whose check aged out of a full Gateway log links by its own record's settlement, and only then", async () => {
+  // The log keeps its newest three rows here; the flow's check is older than all of them.
+  const kept = [0, 1, 2].map((i) => gw({ payer: OURS_GATEWAY, ts: `2026-11-01T10:0${i}:00Z` }))
+  const echo = { network: arc.caip2, payer: lower(OURS_GATEWAY), outcome: 'credited', ts: '2026-11-01T09:00:00Z' }
+  const old = flow({ payer: OURS_GATEWAY, at: '2026-11-01T09:00:07Z', check: echo })
+  const r = await arcSeasonReport(deps({ gateway: kept, gatewayCap: 3, flowRows: async () => [old] }))
+  const c = r.milestone1.checks
+  assert.deepEqual([c.count, c.agedOut, c.internal, c.unlinked], [1, 1, 3, 3])
+  assert.match(c.note, /1 of the flows link by the settlement their own flow record holds: the Gateway log keeps its newest 3 rows/)
+
+  // Every other case links nothing: a log that is not full, a check newer than the oldest row
+  // kept (its row should be there), a payer that is not ours, another network, an unsettled
+  // check, an outcome before the check, and a log that cannot be read.
+  const none = async (over: Parameters<typeof deps>[0], f = old) => (await arcSeasonReport(deps({ gateway: kept, gatewayCap: 3, flowRows: async () => [f], ...over }))).milestone1.checks.count
+  assert.equal(await none({ gatewayCap: 4 }), 0, 'the log is not full, so nothing aged out of it')
+  assert.equal(await none({}, flow({ payer: OURS_GATEWAY, at: '2026-11-01T10:05:00Z', check: { ...echo, ts: '2026-11-01T10:01:30Z' } })), 0)
+  assert.equal(await none({}, flow({ payer: EXT_A, at: '2026-11-01T09:00:07Z', check: { ...echo, payer: lower(EXT_A) } })), 0)
+  assert.equal(await none({}, flow({ payer: OURS_GATEWAY, at: '2026-11-01T09:00:07Z', check: { ...echo, network: base.caip2 } })), 0)
+  assert.equal(await none({}, flow({ payer: OURS_GATEWAY, at: '2026-11-01T09:00:07Z', check: { ...echo, outcome: 'failed' } })), 0)
+  assert.equal(await none({}, flow({ payer: OURS_GATEWAY, at: '2026-11-01T08:59:00Z', check: echo })), 0)
+  const dark = deps({ gatewayCap: 3, flowRows: async () => [old] })
+  dark.gatewayRows = async () => {
+    throw new Error('postgres unreachable')
+  }
+  assert.equal((await arcSeasonReport(dark)).milestone1.checks.count, 0)
 })

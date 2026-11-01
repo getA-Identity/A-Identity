@@ -19,7 +19,7 @@ import assert from 'node:assert/strict'
 import { readFileSync, readdirSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { join } from 'node:path'
-import { rateBudget, agentCreateVolume, chargeAgentCreate, AGENT_CREATE_VOLUME } from './rate-budget.js'
+import { rateBudget, agentCreateVolume, chargeAgentCreate, AGENT_CREATE_VOLUME, jsonRpcMessageCount, mcpToolBudget, rateLimited } from './rate-budget.js'
 
 const SRC = fileURLToPath(new URL('../src/', import.meta.url))
 const ROUTES = join(SRC, 'http')
@@ -124,6 +124,45 @@ test('the decoded-transaction read and the passkey page reads are budgeted too',
   assert.equal(rateBudget('GET', '/api/stellar/passkey/vault')?.bucket, 'stellar-passkey-read')
   assert.equal(rateBudget('GET', '/api/stellar/passkey/fee-payer')?.bucket, 'stellar-passkey-read')
   assert.equal(rateBudget('GET', '/api/stellar/passkey/status'), null, 'the status is configuration, not a chain read')
+})
+
+test('the three verify-then-pay routes are budgeted, each in a bucket of its own', () => {
+  // The free half of every flow is about twenty Arc Mainnet reads before any payment is asked
+  // for, the receipt route polls every RPC, and the record is the public evidence for a DENY.
+  const flowId = '0x' + 'ab'.repeat(32)
+  assert.deepEqual(rateBudget('POST', '/api/x402/gateway/verify-then-pay'), { bucket: 'vtp', max: 30, windowMs: 60_000 })
+  assert.deepEqual(rateBudget('POST', `/api/x402/gateway/flows/${flowId}/receipt`), { bucket: 'vtp-receipt', max: 30, windowMs: 60_000 })
+  assert.deepEqual(rateBudget('GET', `/api/x402/gateway/flows/${flowId}`), { bucket: 'vtp-flow-read', max: 60, windowMs: 60_000 })
+  // The paid tools next door keep their own (absent) budget: these buckets match nothing else.
+  assert.equal(rateBudget('POST', '/api/x402/gateway/tools/risk_check'), null)
+  assert.equal(rateBudget('GET', `/api/x402/gateway/flows/${flowId}/receipt`), null)
+})
+
+test('over MCP the verify-then-pay tools are charged to the buckets of their routes, and a JSON-RPC batch is charged per message', () => {
+  // Over MCP a verify_then_pay call is the same twenty Arc reads as the POST, so it costs the
+  // same bucket. Every other tool is bounded by the mcp bucket alone.
+  const flowId = '0x' + 'ab'.repeat(32)
+  assert.deepEqual(mcpToolBudget('verify_then_pay'), rateBudget('POST', '/api/x402/gateway/verify-then-pay'))
+  assert.deepEqual(mcpToolBudget('verify_then_pay_receipt'), rateBudget('POST', `/api/x402/gateway/flows/${flowId}/receipt`))
+  for (const tool of ['risk_check', 'list_capabilities', 'release_escrow']) assert.equal(mcpToolBudget(tool), null, tool)
+
+  // The transport runs up to a hundred messages from one POST, so a POST is not one request.
+  assert.equal(jsonRpcMessageCount({ jsonrpc: '2.0', id: 1, method: 'tools/list' }), 1)
+  assert.equal(jsonRpcMessageCount(Array.from({ length: 100 }, (_, i) => ({ jsonrpc: '2.0', id: i, method: 'tools/call' }))), 100)
+  assert.equal(jsonRpcMessageCount([]), 1)
+  assert.equal(jsonRpcMessageCount(undefined), 1)
+
+  // The door charges the POST once, then the rest of its batch: a hundred messages pass a
+  // budget of forty in one go, and nothing in that batch runs.
+  const mcp = rateBudget('POST', '/mcp')!
+  const now = 1_000_000
+  assert.equal(rateLimited('batch-test-a:mcp', mcp.max, mcp.windowMs, 1, now), false)
+  assert.equal(rateLimited('batch-test-a:mcp', mcp.max, mcp.windowMs, 99, now), true)
+  // A batch that fits is served; the next message past the max is not; a new window starts over.
+  assert.equal(rateLimited('batch-test-b:mcp', mcp.max, mcp.windowMs, 1, now), false)
+  assert.equal(rateLimited('batch-test-b:mcp', mcp.max, mcp.windowMs, mcp.max - 1, now), false)
+  assert.equal(rateLimited('batch-test-b:mcp', mcp.max, mcp.windowMs, 1, now), true)
+  assert.equal(rateLimited('batch-test-b:mcp', mcp.max, mcp.windowMs, 1, now + mcp.windowMs), false)
 })
 
 // ── free writes: the blind spot this file had ────────────────────────────────────

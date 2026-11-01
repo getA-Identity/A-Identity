@@ -28,7 +28,7 @@ import {
 } from './platform.js'
 import { verifyToken, isVerified } from './auth.js'
 import { clientIpFromXff, clientIpDiagnostic } from './client-ip.js'
-import { rateBudget } from './rate-budget.js'
+import { jsonRpcMessageCount, rateBudget, rateLimited } from './rate-budget.js'
 import { oauthEnabled, verifyAccessToken } from './oauth.js'
 import { SESSION_COOKIE, parseCookies, publicAgents, readBody, sendJson, type RouteCtx } from './http/shared.js'
 import { handleAuthRoutes } from './http/auth-routes.js'
@@ -39,7 +39,8 @@ import { handleX402StellarRoutes } from './http/x402-stellar-routes.js'
 import { handleX402AlgorandRoutes } from './http/x402-algorand-routes.js'
 import { handleAlgorandCheckRoutes } from './http/algorand-check-routes.js'
 import { handleEvmPayCheckRoutes } from './http/evm-pay-check-routes.js'
-import { handleX402GatewayRoutes } from './http/x402-gateway-routes.js'
+import { handleX402GatewayRoutes, requestOrigin } from './http/x402-gateway-routes.js'
+import { handleVerifyThenPayRoutes, verifyThenPayMcpHooks } from './http/verify-then-pay-routes.js'
 import { handleCctpRoutes } from './http/cctp-routes.js'
 import { handleChainRoutes } from './http/chain-routes.js'
 import { handleArcRoutes } from './http/arc-routes.js'
@@ -77,30 +78,8 @@ function resolveCorsOrigin(origin: string | undefined): string {
 }
 
 // ── basic per-IP rate limiting (in-memory, per-process) ──────────────────────────
-// Fixed-window counters for sensitive/expensive endpoints, so a single client can't
-// spam auth challenges, magic-link emails, or the on-chain demo runs. Process-local by
-// design (same as the nonce / KYA / x402 stores); a horizontally-scaled deploy would move
-// this (and those) to a shared store.
-const rlBuckets = new Map<string, { count: number; resetAt: number }>()
-
-function rateLimited(key: string, max: number, windowMs: number): boolean {
-  const now = Date.now()
-  const b = rlBuckets.get(key)
-  if (!b || b.resetAt <= now) {
-    rlBuckets.set(key, { count: 1, resetAt: now + windowMs })
-    return false
-  }
-  b.count += 1
-  return b.count > max
-}
-
-// Prune expired buckets occasionally so the map can't grow unbounded. unref() so this
-// timer never keeps the process alive on its own.
-setInterval(() => {
-  const now = Date.now()
-  for (const [k, v] of rlBuckets) if (v.resetAt <= now) rlBuckets.delete(k)
-}, 5 * 60 * 1000).unref()
-
+// The buckets and the limiter live in rate-budget.ts, so the MCP hooks below charge the
+// same buckets the routes do.
 
 // The reasoning, and the proxy count, now live in client-ip.ts so the ASP gateway cannot
 // answer this question differently. It did: `trust proxy: true` there handed back the
@@ -193,6 +172,20 @@ const server = http.createServer(async (req, res) => {
   // /api/x402/gateway/* is exempt on the same terms as the EIP-3009 tools: the credential
   // is a signed Gateway authorization, the rail is fail-closed (501) when unconfigured,
   // and it serves read-only trust tools. We broadcast nothing there, so no allowlist.
+  // Two verify-then-pay POSTs share the prefix, and neither signs or broadcasts anything
+  // either. POST /api/x402/gateway/verify-then-pay is payment-gated like the tools: its
+  // free part only reads Arc Mainnet and answers a refusal or the 402, and its paid part is
+  // the same Gateway authorization settled through the same rail. POST
+  // /api/x402/gateway/flows/:flowId/receipt takes no payment and no session. The caller hands
+  // it two things, a flow id and a transaction hash, and neither is taken on its word: flow
+  // ids are public, so the server decides by itself which open flow a payment answers (the
+  // latest check on the same vault, payee and amount before the payment's block) and refuses
+  // the receipt on any other, and it moves that flow only after it read the receipt from every
+  // RPC itself and the receipt proved the payment the flow prepared, mined after the block its
+  // verdict came back in. A transaction proves one flow at most, and a flow that ended stays
+  // ended. All three verify-then-pay routes are rate-budgeted (vtp, vtp-flow-read,
+  // vtp-receipt), and the two MCP tools are charged to the vtp and vtp-receipt buckets per
+  // call.
   // /api/x402/stellar/* is exempt on similar but not identical terms, and the difference is
   // worth stating rather than glossing. On the soroban-auth scheme the credential is a signed
   // authorization entry, exactly like the EVM rails. On the `settled` scheme the credential is
@@ -250,6 +243,9 @@ const server = http.createServer(async (req, res) => {
     if (await handleX402AlgorandRoutes(ctx)) return
     if (await handleAlgorandCheckRoutes(ctx)) return
     if (await handleEvmPayCheckRoutes(ctx)) return
+    // verify-then-pay sits under the Gateway rail's prefix, so it is asked first; it answers
+    // only its own three paths.
+    if (await handleVerifyThenPayRoutes(ctx)) return
     // Same again: /api/x402/gateway/* sits under /api/x402/.
     if (await handleX402GatewayRoutes(ctx)) return
     if (await handleCctpRoutes(ctx)) return
@@ -290,6 +286,18 @@ const server = http.createServer(async (req, res) => {
   if (req.method === 'POST' && url.pathname === '/mcp') {
     try {
       const body = await readBody(req)
+      // The POST was charged one mcp token above. A JSON-RPC batch runs every message in it, at
+      // once, so the rest of the batch is charged here, before any of it runs.
+      const extra = jsonRpcMessageCount(body) - 1
+      if (budget && extra > 0 && rateLimited(`${clientIpOf(req)}:${budget.bucket}`, budget.max, budget.windowMs, extra)) {
+        res.setHeader('Retry-After', String(Math.ceil(budget.windowMs / 1000)))
+        sendJson(res, 429, {
+          jsonrpc: '2.0',
+          error: { code: -32000, message: `Too many requests: a JSON-RPC batch is charged one request per message, and this one would pass ${budget.max} a minute. Send fewer messages per batch, or one per request.` },
+          id: null,
+        })
+        return
+      }
       // Bake the request's VERIFIED caller into the marketplace hooks. A guest / no token ->
       // mcpCaller is undefined, so the ownership gate in platform.ts rejects the mutating tools
       // (hire/deliver/release) with a Forbidden error - MCP never bypasses the verified-session gate.
@@ -316,6 +324,11 @@ const server = http.createServer(async (req, res) => {
             recordAuditOutcome(agentId, auditId, outcome as never, mcpCaller, evidenceRef),
           register: (manifest) => registerAgentFromManifest(manifest as never, mcpCaller),
         },
+        // No caller is baked in: the paid half is gated by the Gateway payment argument, the
+        // receipt half records only what the chain proves, and neither signs anything. Each
+        // call is charged to its route's bucket (vtp, vtp-receipt) for this client's address,
+        // so MCP is not a way around them.
+        verifyThenPay: verifyThenPayMcpHooks({ ip: clientIpOf(req), origin: requestOrigin(ctx) }),
       })
       const transport = new StreamableHTTPServerTransport({
         sessionIdGenerator: undefined,
@@ -389,6 +402,9 @@ server.listen(PORT, () => {
   console.error(`  GET  /api/x402/gateway/proof     Gateway-credited settlements, batch hashes once landed`)
   console.error(`  GET  /api/x402/gateway/openapi.json            OpenAPI for the paid tools (marketplace listing)`)
   console.error(`  GET  /api/x402/gateway/tools/:name             price + what to sign; POST (or GET) to pay and call`)
+  console.error(`  POST /api/x402/gateway/verify-then-pay         free vault + payee checks, then risk_check through Gateway on Arc Mainnet; returns the vault call to sign (never signs)`)
+  console.error(`  GET  /api/x402/gateway/flows/:flowId           one verify-then-pay flow, public by its check nonce`)
+  console.error(`  POST /api/x402/gateway/flows/:flowId/receipt   {txHash}: the server reads the receipt from every RPC and records what it proves`)
   console.error(`  GET  /api/stellar/vaults         live Soroban spend vaults: policy, balance, archival TTL (public)`)
   console.error(`  GET  /api/stellar/vault/read     one vault by contract, live, stamped with ledger and time (public)`)
   console.error(`  GET  /api/stellar/vault/is-allowed  one payee against a vault's allowlist, live (public)`)

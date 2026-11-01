@@ -1,10 +1,17 @@
 /**
- * Which POSTs are rate limited, and how hard.
+ * Which POSTs are rate limited, and how hard, and the limiter that counts them.
  *
  * Its own module so a test can read it without importing http.ts, which boots a server on
  * import. That is not a detail: the reason this rule went unchecked for so long is that
- * nothing could look at it cheaply.
+ * nothing could look at it cheaply. The limiter lives here too, so the MCP hooks charge the
+ * very buckets the routes do: a tool that is also a route costs what the POST would.
  */
+
+/** The verify-then-pay buckets, named once: its REST routes and its MCP tools are charged to
+ *  the same ones (mcpToolBudget), so MCP is not a way around them. */
+export const VTP_BUDGET = { bucket: 'vtp', max: 30, windowMs: 60_000 } as const
+export const VTP_RECEIPT_BUDGET = { bucket: 'vtp-receipt', max: 30, windowMs: 60_000 } as const
+
 /** Per-path rate budget, or null when the path isn't limited. */
 export function rateBudget(method: string, pathname: string): { bucket: string; max: number; windowMs: number } | null {
   // The free "Before you pay" check behind /check: each call reads the Algorand indexer a
@@ -31,7 +38,19 @@ export function rateBudget(method: string, pathname: string): { bucket: string; 
   // Both are RPC reads with no session in front of them.
   if (method === 'GET' && (pathname === '/api/stellar/passkey/vault' || pathname === '/api/stellar/passkey/fee-payer'))
     return { bucket: 'stellar-passkey-read', max: 30, windowMs: 60_000 }
+  // One public verify-then-pay flow record. A single row read, and the evidence a DENY is
+  // linked by, so it gets room; the bucket bounds a crawl of nonces, not a reader.
+  if (method === 'GET' && /^\/api\/x402\/gateway\/flows\/[^/]+$/.test(pathname)) return { bucket: 'vtp-flow-read', max: 60, windowMs: 60_000 }
   if (method !== 'POST') return null
+  // verify-then-pay. The free half of every call is about twenty Arc Mainnet reads (the
+  // vault's getters, the payee's registration, a simulated pay()), and it runs before any
+  // payment is asked for, so an unpaid caller can repeat it; the receipt route reads every
+  // RPC for a receipt, its transaction and its block, and may poll for up to twelve seconds
+  // in all. Neither signs or spends anything of ours. Separate buckets, so someone polling a
+  // receipt cannot lock themselves out of the next flow. The verify_then_pay and
+  // verify_then_pay_receipt MCP tools are charged to these same buckets, per call.
+  if (pathname === '/api/x402/gateway/verify-then-pay') return { ...VTP_BUDGET }
+  if (/^\/api\/x402\/gateway\/flows\/[^/]+\/receipt$/.test(pathname)) return { ...VTP_RECEIPT_BUDGET }
   // Auth challenges + guest login: cheap to abuse, keep them tight.
   if (pathname === '/api/auth/nonce' || pathname === '/api/auth/verify' || pathname === '/api/auth/login')
     return { bucket: 'auth', max: 20, windowMs: 60_000 }
@@ -152,10 +171,52 @@ export function rateBudget(method: string, pathname: string): { bucket: string; 
   // buyers retrying, not for a crawler reading prices.
   if (pathname.startsWith('/api/x402/algorand/tools/')) return { bucket: 'algorand-tools', max: 30, windowMs: 60_000 }
   // MCP can also drive a release (release_escrow tool) which spends the shared signer, so cap
-  // the whole /mcp endpoint. A backstop against escrow-release spam via MCP (a per-tool limit is
-  // the finer follow-up); normal MCP usage stays well under it.
+  // the whole /mcp endpoint. A backstop against escrow-release spam via MCP; normal MCP usage
+  // stays well under it. One token per JSON-RPC message, not per POST: a batch runs every
+  // message in it (jsonRpcMessageCount). The tools that are also routes are charged to their
+  // route's bucket on top (mcpToolBudget).
   if (pathname === '/mcp') return { bucket: 'mcp', max: 40, windowMs: 60_000 }
   return null
+}
+
+/**
+ * The bucket one MCP tool call is charged to, when the tool is also a budgeted route: the
+ * route's own, so a call over MCP costs what the POST would. null for every other tool, which
+ * the mcp bucket alone bounds.
+ */
+export function mcpToolBudget(tool: string): { bucket: string; max: number; windowMs: number } | null {
+  if (tool === 'verify_then_pay') return { ...VTP_BUDGET }
+  if (tool === 'verify_then_pay_receipt') return { ...VTP_RECEIPT_BUDGET }
+  return null
+}
+
+/**
+ * How many JSON-RPC messages one /mcp POST carries. The MCP transport accepts a batch of up to
+ * a hundred and runs them all at once, so a batch is charged per message: one POST is not one
+ * request's worth of work.
+ */
+export function jsonRpcMessageCount(body: unknown): number {
+  return Array.isArray(body) ? Math.max(1, body.length) : 1
+}
+
+// ── the per-IP request limiter ──────────────────────────────────────────────────────
+//
+// Fixed-window counters for sensitive and expensive endpoints, per client IP and bucket, so a
+// single client cannot spam auth challenges, magic-link emails, the on-chain demo runs, or the
+// chain reads behind verify-then-pay. Process-local by design (same as the nonce, KYA and x402
+// stores); a horizontally scaled deploy would move this, and those, to a shared store.
+const rlBuckets = new Map<string, { count: number; resetAt: number }>()
+
+/** Charge `cost` requests to a bucket. True when the bucket is now over its max, so the
+ *  request (or the whole batch) is refused. */
+export function rateLimited(key: string, max: number, windowMs: number, cost = 1, now = Date.now()): boolean {
+  const b = rlBuckets.get(key)
+  if (!b || b.resetAt <= now) {
+    rlBuckets.set(key, { count: cost, resetAt: now + windowMs })
+    return cost > max
+  }
+  b.count += cost
+  return b.count > max
 }
 
 // ── volume budgets: what is counted is ROWS, not requests ───────────────────────────
@@ -233,10 +294,11 @@ export function chargeAgentCreate(account: string, tier: string, now = Date.now(
   return chargeVolume(`agent-create:${account}`, max, windowMs, now)
 }
 
-// Drop expired volume buckets so the map cannot grow without bound, mirroring the sweep
-// http.ts runs over its own. unref() so this timer never keeps a process alive on its own,
-// which matters here because the tests import this module directly.
+// Drop expired buckets, request and volume alike, so neither map can grow without bound.
+// unref() so this timer never keeps a process alive on its own, which matters here because
+// the tests import this module directly.
 setInterval(() => {
   const now = Date.now()
+  for (const [k, v] of rlBuckets) if (v.resetAt <= now) rlBuckets.delete(k)
   for (const [k, v] of volumeBuckets) if (v.resetAt <= now) volumeBuckets.delete(k)
 }, 5 * 60 * 1000).unref()
