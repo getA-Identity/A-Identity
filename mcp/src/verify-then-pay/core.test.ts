@@ -432,6 +432,14 @@ test('402, 502 and 503 from the rail write no flow; a 500 after settlement write
   assert.deepEqual([rec.outcome, rec.detail, rec.verdict, rec.prepared], ['blocked', 'verdict_unavailable', null, null])
   assert.equal(rec.flowId, NONCE)
   assert.equal(r500.body.record?.recorded, true)
+  assert.ok(r500.body.next.includes(`recorded at ${flowUrl(NONCE, ORIGIN)}`))
+
+  // The same failure with a flow log that refuses the write says so, and links nothing.
+  const lost = setup({ gw: { scored: new Error('scorer exploded') }, store: { insert: async () => ({ ok: false, reason: 'disk full' }) } })
+  const r500b = await runVerifyThenPay(request(), header(), lost.deps)
+  assert.equal(r500b.httpStatus, 500)
+  assert.deepEqual([r500b.body.record?.recorded, r500b.body.record?.url, r500b.body.flowId], [false, null, null])
+  assert.match(r500b.body.next, /not recorded as a flow: the flow log refused the write \(disk full\)/)
 })
 
 test('ALLOW prepares exactly pay(payee, amount) for the operator, asks risk_check about the payee address, and executes nothing', async () => {
@@ -543,7 +551,7 @@ test('a paid answer with a NaN reputation is not paid on: blocked, recorded, and
   assert.deepEqual([s.inserted[0].outcome, s.inserted[0].detail], ['blocked', 'verdict_unusable'])
 })
 
-test('a simulation that fails after the verdict is reported, and a flow log that refuses the write is reported, never hidden', async () => {
+test('a simulation that fails after the verdict is reported, and a flow log that refuses the write is reported and leaves nothing to send', async () => {
   // The check took seconds and the vault moved: the verdict stands, the call is flagged.
   let calls = 0
   const moved = setup()
@@ -558,11 +566,14 @@ test('a simulation that fails after the verdict is reported, and a flow log that
   assert.deepEqual(out.body.prepared?.simulation, { ok: false, error: 'DailyCapExceeded' })
   assert.match(out.body.next, /do not send it/)
 
+  // An ALLOW the flow log refused to hold hands back no pay(): no receipt could ever close it.
   const full = setup({ store: { insert: async () => ({ ok: false, reason: 'disk full' }) } })
   const out2 = await runVerifyThenPay(request(), header(), full.deps)
-  assert.equal(out2.body.stage, 'prepared')
-  assert.deepEqual([out2.body.record?.recorded, out2.body.record?.reason], [false, 'disk full'])
-  assert.match(out2.body.next, /could not be written/)
+  assert.equal(out2.httpStatus, 500)
+  assert.deepEqual([out2.body.stage, out2.body.code, out2.body.flowId, out2.body.prepared, out2.body.ownerHandoff], ['check_failed', 'FLOW_NOT_RECORDED', null, null, null])
+  assert.deepEqual([out2.body.record?.recorded, out2.body.record?.url, out2.body.record?.reason], [false, null, 'the flow log refused the write (disk full)'])
+  assert.equal(out2.body.verdict?.effective, 'ALLOW', 'the verdict that was paid for is still reported')
+  assert.match(out2.body.next, /could never be tied to this check/)
 })
 
 test('the block the verdict came back in is recorded, never below the preflight block, and without it nothing is handed back to send', async () => {
@@ -600,4 +611,35 @@ test('the block the verdict came back in is recorded, never below the preflight 
   const d = await runVerifyThenPay(request(), header(), deny.deps)
   assert.deepEqual([d.httpStatus, d.body.stage], [200, 'deny'])
   assert.deepEqual([deny.s.inserted[0].detail, deny.s.inserted[0].check.verdictBlock], ['deny', null])
+})
+
+test('a DENY or an unusable answer whose record was not written says the refusal is not public, and links no record', async () => {
+  for (const [scored, stage] of [
+    [verdict('DENY'), 'deny'],
+    [verdict('ALLOW', { reputationScore: Number.NaN }), 'verdict_unusable'],
+  ] as const) {
+    const full = setup({ gw: { scored }, store: { insert: async () => ({ ok: false, reason: 'disk full' }) } })
+    const out = await runVerifyThenPay(request(), header(), full.deps)
+    assert.equal(out.httpStatus, 500, stage)
+    assert.equal(out.body.stage, stage)
+    assert.deepEqual([out.body.record?.recorded, out.body.record?.url, out.body.flowId, out.body.prepared], [false, null, null, null], stage)
+    assert.match(out.body.next, /do not pay/)
+    assert.match(out.body.next, /The refusal is not public: the flow log refused the write \(disk full\)/)
+    assert.ok(!JSON.stringify(out.body).includes('/api/x402/gateway/flows/'), `${stage}: no link to a record that does not exist`)
+  }
+})
+
+test("an answer whose nonce another request already recorded hands back nothing to send, and never that flow's link", async () => {
+  // Both requests passed the nonce check before either wrote; the other one's row is there,
+  // and may name another payee.
+  for (const decision of ['ALLOW', 'WARN', 'DENY'] as const) {
+    const raced = setup({ gw: { scored: verdict(decision) }, store: { insert: async () => ({ ok: true, inserted: false }) } })
+    const out = await runVerifyThenPay(request(), header(), raced.deps)
+    assert.equal(out.httpStatus, 409, decision)
+    assert.equal(out.body.stage, decision === 'DENY' ? 'deny' : 'check_failed', decision)
+    if (decision !== 'DENY') assert.equal(out.body.code, 'FLOW_NOT_RECORDED')
+    assert.deepEqual([out.body.prepared, out.body.ownerHandoff, out.body.flowId, out.body.record?.url, out.body.record?.recorded], [null, null, null, null, false], decision)
+    assert.match(out.body.record?.reason ?? '', /already written by another request/)
+    assert.ok(!JSON.stringify(out.body).includes('/api/x402/gateway/flows/'), `${decision}: no link to the other request's flow`)
+  }
 })

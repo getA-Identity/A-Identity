@@ -26,7 +26,9 @@
  *      prepared, because no payment could be shown to come after this check.
  *   8. The decision, only from a verdict that passed verdict.ts. DENY stops. WARN prepares
  *      ownerPay() for the owner unless the caller opted into payOnWarn. ALLOW prepares pay()
- *      for the operator. Every paid check writes one flow row, insert-only.
+ *      for the operator. Every paid check writes one flow row, insert-only. An answer whose row
+ *      was not written says so and links no record (never another request's flow under the same
+ *      nonce), and hands back nothing to send: a payment on it could never be receipted.
  *
  * The answer is always executed: false. What it hands back is the exact call, built from the
  * request's own inputs, for the caller's own key to send. The flow moves to executed only when
@@ -82,7 +84,7 @@ export type VtpRefusalCode =
   | 'FLOW_STORE_UNREADABLE'
 
 /** Why a paid check handed back nothing to send although its verdict was not a refusal. */
-export type VtpCheckFailedCode = 'VERDICT_BLOCK_UNREADABLE'
+export type VtpCheckFailedCode = 'VERDICT_BLOCK_UNREADABLE' | 'FLOW_NOT_RECORDED'
 
 export type VtpChecks = {
   asset: { ok: boolean | null; registryUsdc: string; vaultToken: string | null; requested: string | null; code?: string }
@@ -154,7 +156,8 @@ export type VerifyThenPayToolResult = {
   verdict: VtpVerdictView | null
   prepared: PreparedCall | null
   ownerHandoff: OwnerHandoff | null
-  record: { url: string; outcome: VtpFlowOutcome; detail: VtpFlowDetail; recorded: boolean; reason?: string } | null
+  /** The public flow record. url is null whenever recorded is false: there is nothing to open. */
+  record: { url: string | null; outcome: VtpFlowOutcome; detail: VtpFlowDetail; recorded: boolean; reason?: string } | null
   /** What the rail answered, when it did not return a verdict. */
   rail?: { httpStatus: number; body: unknown }
   next: string
@@ -393,9 +396,11 @@ function refused(chain: ChainDescriptor, httpStatus: number, code: VtpRefusalCod
 
 type Insert = Awaited<ReturnType<VtpStore['insert']>>
 
+/** What the answer may say about its record. A record that was not written has no url: the
+ *  url would 404, or open another request's flow written under the same nonce. */
 function recordView(ins: Insert, url: string, outcome: VtpFlowOutcome, detail: VtpFlowDetail): NonNullable<VerifyThenPayToolResult['record']> {
-  if (!ins.ok) return { url, outcome, detail, recorded: false, reason: ins.reason }
-  if (!ins.inserted) return { url, outcome, detail, recorded: false, reason: 'a flow with this id already exists, so this one was not written' }
+  if (!ins.ok) return { url: null, outcome, detail, recorded: false, reason: `the flow log refused the write (${ins.reason})` }
+  if (!ins.inserted) return { url: null, outcome, detail, recorded: false, reason: 'a flow under this nonce was already written by another request, so this answer was not recorded' }
   return { url, outcome, detail, recorded: true }
 }
 
@@ -596,19 +601,21 @@ export async function runVerifyThenPay(input: VtpInput, paymentHeader: string | 
       // Paid, and the tool failed after settlement: the record says what was bought and that
       // no verdict came back, so the flow is blocked, never pending.
       const rec = flowRecord({ chain, flowId, now: ts, p, payOnWarn: parsed.payOnWarn, owner: pre.owner, operator: pre.operator, settlement: paid500, block: pre.block, verdictBlock: null, verdict: null, prepared: null, outcome: 'blocked', detail: 'verdict_unavailable' })
-      const ins = await store.insert(rec)
+      const record = recordView(await store.insert(rec), flowUrl(flowId, origin), rec.outcome, rec.detail)
       return {
         httpStatus: 500,
         body: result(chain, {
           stage: 'check_failed',
           charged: true,
-          flowId,
+          flowId: record.recorded ? flowId : null,
           checks: pre.checks,
           check: checkRef(chain, paid500, flowId),
           rail: { httpStatus: out.httpStatus, body: out.body },
-          record: recordView(ins, flowUrl(flowId, origin), rec.outcome, rec.detail),
+          record,
           reason: 'the check was paid and credited, and the tool failed after settlement, so there is no verdict',
-          next: 'Do not pay: there is no verdict to pay on. The paid check and the failure are recorded at record.url.',
+          next: record.recorded
+            ? `Do not pay: there is no verdict to pay on. The paid check and the failure are recorded at ${record.url}.`
+            : `Do not pay: there is no verdict to pay on. The paid check and the failure are not recorded as a flow: ${record.reason}.`,
         }),
       }
     }
@@ -724,8 +731,44 @@ export async function runVerifyThenPay(input: VtpInput, paymentHeader: string | 
     outcome,
     detail,
   })
-  const record = recordView(await store.insert(rec), flowUrl(flowId, origin), outcome, detail)
-  const recorded = record.recorded
+  const ins = await store.insert(rec)
+  const record = recordView(ins, flowUrl(flowId, origin), outcome, detail)
+  const answered = {
+    charged: true as const,
+    checks: pre.checks,
+    check: checkRef(chain, settlement, flowId),
+    verdict: verdictView(v),
+    ...(v.usable ? {} : { code: v.code, reason: v.reason }),
+  }
+  const headers = out.headers ? { headers: out.headers } : {}
+
+  if (!record.recorded) {
+    // The check was paid and answered, and the flow log does not hold it. Nothing links to a
+    // record that is not there, and nothing is handed back to send: a payment on this answer
+    // could never be tied to this check, so no receipt could close it or count it.
+    const httpStatus = ins.ok ? 409 : 500
+    if (stage === 'deny' || stage === 'verdict_unusable') {
+      const why = stage === 'deny' ? 'DENY' : `The check was paid, but its answer failed ${v.usable ? '' : v.code}, so it is treated as DENY`
+      return {
+        httpStatus,
+        ...headers,
+        body: result(chain, { stage, ...answered, flowId: null, record, next: `${why}: do not pay. Nothing was prepared and nothing should be signed. The refusal is not public: ${record.reason}.` }),
+      }
+    }
+    return {
+      httpStatus,
+      ...headers,
+      body: result(chain, {
+        stage: 'check_failed',
+        ...answered,
+        flowId: null,
+        record,
+        code: 'FLOW_NOT_RECORDED',
+        reason: record.reason,
+        next: `The check was paid and answered ${v.effective}, but its flow was not recorded (${record.reason}), so nothing is handed back to send: a payment made on this answer could never be tied to this check or counted. Do not pay on this flow; ask again with a new authorization.`,
+      }),
+    }
+  }
 
   const next: Record<VtpStage, string> = {
     refused: '',
@@ -746,21 +789,8 @@ export async function runVerifyThenPay(input: VtpInput, paymentHeader: string | 
 
   return {
     httpStatus: failed ? 503 : 200,
-    ...(out.headers ? { headers: out.headers } : {}),
-    body: result(chain, {
-      stage,
-      charged: true,
-      flowId,
-      checks: pre.checks,
-      check: checkRef(chain, settlement, flowId),
-      verdict: verdictView(v),
-      prepared,
-      ownerHandoff,
-      record,
-      ...(v.usable ? {} : { code: v.code, reason: v.reason }),
-      ...(failed ?? {}),
-      next: recorded || stage === 'deny' || stage === 'verdict_unusable' ? next[stage] : `${next[stage]} Note: the flow record could not be written (${record.reason}), so a receipt cannot be attached to it.`,
-    }),
+    ...headers,
+    body: result(chain, { stage, ...answered, flowId, prepared, ownerHandoff, record, ...(failed ?? {}), next: next[stage] }),
   }
 }
 
