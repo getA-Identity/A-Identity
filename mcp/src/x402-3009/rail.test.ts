@@ -1,4 +1,6 @@
 import { test } from 'node:test'
+import { keccak256 } from 'viem'
+import { fakeSigningWallet } from './signing-wallet.fake.js'
 import assert from 'node:assert/strict'
 import { EventEmitter } from 'node:events'
 import { readFileSync } from 'node:fs'
@@ -533,7 +535,8 @@ test('a settled call hands the buyer its receipt in PAYMENT-RESPONSE', async () 
   const { decodePaymentResponseHeader } = await import('@x402/core/http')
   clearDomainCache()
   const { buyer, header } = await signedHeader('7d')
-  const txHash = `0x${'cc'.repeat(32)}`
+  const txRaw = '0x02cc' as const
+  const txHash = keccak256(txRaw)
   const out = await railServeTool('risk_check', { agentId: '#0' }, header, railStatus({ ...configured, X402_3009_SETTLEMENT_FEE_USD: '0.02' }), {
     reader: reader(),
     env: configured,
@@ -544,7 +547,7 @@ test('a settled call hands the buyer its receipt in PAYMENT-RESPONSE', async () 
       estimateContractGas: async () => 85_000n,
       getGasPrice: async () => 50_578_000n,
     },
-    walletClient: { writeContract: async () => txHash as `0x${string}` },
+    walletClient: fakeSigningWallet(txRaw),
     signerAddress: PAY_TO,
     persist: async () => {},
     resolveSettlement: async () => ({ ok: true as const, updated: true }),
@@ -577,7 +580,8 @@ test('a buyer whose transaction landed after the wait is served on retry, with n
   // code answers with a fresh challenge, which asks someone who already paid to pay again.
   clearDomainCache()
   const { buyer, header } = await signedHeader('7e')
-  const txHash = `0x${'dd'.repeat(32)}`
+  const txRaw = '0x02dd' as const
+  const txHash = keccak256(txRaw)
   const rows: X402SettlementRecord[] = []
   const spent: string[] = []
   let landed = false
@@ -593,7 +597,7 @@ test('a buyer whose transaction landed after the wait is served on retry, with n
       estimateContractGas: async () => 85_000n,
       getGasPrice: async () => 50_578_000n,
     },
-    walletClient: { writeContract: async () => { broadcasts += 1; return txHash as `0x${string}` } },
+    walletClient: fakeSigningWallet(txRaw, { onSend: () => { broadcasts += 1 } }),
     signerAddress: PAY_TO as `0x${string}`,
     persist: async (r: X402SettlementRecord) => { rows.push({ ...r }) },
     persistSpent: async (k: string) => { spent.push(k) },
@@ -665,7 +669,8 @@ test('a buyer whose transaction landed after the wait is served on retry, with n
 async function settledCallScene(nonce: string, handler: () => Promise<unknown>) {
   clearDomainCache()
   const { buyer, header } = await signedHeader(nonce)
-  const txHash = `0x${nonce.repeat(32)}` as `0x${string}`
+  const txRaw = `0x02${nonce}` as `0x${string}`
+  const txHash = keccak256(txRaw)
   const rows: X402SettlementRecord[] = []
   const spent: string[] = []
   let broadcasts = 0
@@ -702,7 +707,7 @@ async function settledCallScene(nonce: string, handler: () => Promise<unknown>) 
       estimateContractGas: async () => 85_000n,
       getGasPrice: async () => 50_578_000n,
     },
-    walletClient: { writeContract: async () => { broadcasts += 1; return txHash } },
+    walletClient: fakeSigningWallet(txRaw, { onSend: () => { broadcasts += 1 } }),
     signerAddress: PAY_TO as `0x${string}`,
     gasSpentTodayWei: async () => 0n,
     timeoutMs: 0,
@@ -818,17 +823,47 @@ test('the public proof does not list which landed settlements still have a call 
   assert.equal(p.recent[0].reconciledAt, landed.reconciledAt)
 })
 
-test('a broadcast the log could not record is not told to retry on a read-back that cannot happen', async () => {
+test('a settlement the log could not record is never sent, and the buyer is told to retry this same payment', async () => {
   const s = await settledCallScene('74', async () => ({ verdict: 'ALLOW' }))
   const out = await railServeTool('risk_check', { agentId: '#0' }, s.header, s.status, {
     ...s.deps,
     persist: async () => ({ ok: false }),
-    receipts: { urls: ['https://a.rpc.test'], call: async (_u: string, method: string) => (method === 'eth_blockNumber' ? '0xffffff' : null) },
   })
   assert.equal(out.httpStatus, 502)
-  const note = String((out.body as Record<string, unknown>).note)
-  assert.match(note, /could not record it/)
-  assert.doesNotMatch(note, /Send this same payment again/)
+  const body = out.body as Record<string, unknown>
+  assert.equal(body.code, 'settlement_log_unavailable')
+  assert.equal(body.transaction, undefined)
+  assert.equal(body.ambiguous, undefined)
+  assert.match(String(body.reason), /nothing was broadcast and nothing was charged/)
+  assert.match(String(body.reason), /do not sign a new one/)
+  assert.equal(s.broadcastCount(), 0)
+})
+
+test('a fresh 402 that follows a transaction keeps its hash in verifyError', async () => {
+  // A row from before the request was recorded: it settled, and it cannot be matched to anything.
+  const s = await settledCallScene('75', async () => ({ verdict: 'ALLOW' }))
+  const tx = `0x${'75'.repeat(32)}`
+  const signedHeader = JSON.parse(Buffer.from(s.header, 'base64').toString('utf8')) as { payload: { authorization: { from: string; nonce: string } } }
+  const legacy: X402SettlementRecord = {
+    ...row('settled', signedHeader.payload.authorization.from, 0.021, 'risk_check'),
+    tx,
+    authNonce: signedHeader.payload.authorization.nonce,
+    asset: s.status.token!.address,
+    network: s.status.network,
+    resource: railRequirements('risk_check', s.status, 6).resource,
+    payTo: s.status.payTo!,
+  }
+  s.rows.push(legacy)
+  const out = await railServeTool('risk_check', { agentId: '#0' }, s.header, s.status, {
+    ...s.deps,
+    publicClient: { ...s.deps.publicClient, readContract: async (args: Record<string, unknown>) => (args.functionName === 'authorizationState' ? true : 10_000_000n) },
+  })
+  assert.equal(out.httpStatus, 402)
+  const verifyError = String((out.body as Record<string, unknown>).verifyError)
+  assert.ok(verifyError.includes(tx), verifyError)
+  assert.match(verifyError, /before this server recorded which request/)
+  assert.doesNotMatch(verifyError, /already been redeemed/)
+  assert.equal(s.broadcastCount(), 0)
 })
 
 test('a proof read reconciles at most once per interval and costs nothing with no ambiguous rows', async () => {
@@ -836,7 +871,7 @@ test('a proof read reconciles at most once per interval and costs nothing with n
   const deps = { loadSettlements: async () => { reads += 1; return { ok: true as const, rows: [] } } }
   const t0 = 1_900_000_000_000
   const first = await railReconcileOnProofRead(deps, t0)
-  assert.deepEqual(first, { checked: 0, settled: 0, reverted: 0, ambiguous: 0, skipped: false })
+  assert.deepEqual(first, { checked: 0, settled: 0, reverted: 0, dropped: 0, ambiguous: 0, skipped: false })
   const second = await railReconcileOnProofRead(deps, t0 + 1_000)
   assert.equal(second.skipped, true)
   assert.equal(reads, 1, 'a burst of page loads shares one sweep')

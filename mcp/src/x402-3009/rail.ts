@@ -664,7 +664,10 @@ export async function railServeToolOn(
       'already_redeemed', 'bad_signature', 'insufficient_funds',
     ]
     if (retryable.includes(settled.code)) {
-      const challenge = await railChallenge(tool, status, deps, settled.errorReason)
+      // A refusal that names a transaction is about money that may have moved, so the buyer reads
+      // the hash before anything else: a fresh challenge alone reads as an invitation to pay again.
+      const named = settled.transaction && !settled.errorReason.includes(settled.transaction) ? `${settled.errorReason} (tx ${settled.transaction})` : settled.errorReason
+      const challenge = await railChallenge(tool, status, deps, named)
       return { httpStatus: challenge.httpStatus, body: challenge.body }
     }
     // The money may have moved for another request of this buyer's, so this is no fresh challenge.
@@ -681,11 +684,9 @@ export async function railServeToolOn(
         ...(settled.ambiguous
           ? {
               ambiguous: true,
-              note: settled.unrecorded
-                ? 'The transaction may still land, and our settlement log could not record it, so a retry cannot be matched to it. ' +
-                  'Check the transaction on the explorer before you sign or send anything else. If it landed, your payment moved and this record may be missing from the proof.'
-                : 'The transaction may still land. Nothing was served and the authorization was not marked spent. ' +
-                  'Send this same payment again with this same request rather than signing a new one: we read the transaction from every RPC first, broadcast nothing new while it is unresolved, and if it landed we serve this call with no second charge.',
+              note:
+                'The transaction may still land. Nothing was served and the authorization was not marked spent. ' +
+                'Send this same payment again with this same request rather than signing a new one: we read the transaction from every RPC first, broadcast nothing new while it is unresolved, and if it landed we serve this call with no second charge.',
             }
           : {}),
       },
@@ -695,7 +696,7 @@ export async function railServeToolOn(
   // Everything up to the tool's own answer can still fail. Only a response written out ends the
   // claim, so a buyer who paid and got nothing can send the same payment again.
   const onDelivery = async (delivered: boolean): Promise<void> => {
-    await (delivered ? markSettlementServed(settled.transaction, deps) : releaseSettlementClaim(settled.transaction, settled.settledAt, deps))
+    await (delivered ? markSettlementServed(settled.transaction, settled.settledAt, deps) : releaseSettlementClaim(settled.transaction, settled.settledAt, deps))
   }
 
   const handlers = deps.handlers ?? defaultHandlers(status)
@@ -740,6 +741,8 @@ export type RailProof = {
   internalPayers: string[]
   reverted: number
   ambiguous: number
+  /** Signed and never taken by any node, so it moved nothing and cost no gas. */
+  dropped: number
   /** Which networks this rail sells on. The single-network fields above describe the default one. */
   networks: string[]
   /** Gas per network, each in that network's own native unit. Never summed across networks:
@@ -780,8 +783,8 @@ export function internalPayers(env: NodeJS.ProcessEnv = process.env): string[] {
  * a list of which landed settlements still have a call to redeem, and the request hash is what
  * guards that call. The transaction, amount and payer are what the proof is for.
  */
-export function publicSettlementRow(row: X402SettlementRecord): Omit<X402SettlementRecord, 'authNonce' | 'requestHash' | 'redeemedAt' | 'servedAt'> {
-  const { authNonce: _authNonce, requestHash: _requestHash, redeemedAt: _redeemedAt, servedAt: _servedAt, ...shown } = row
+export function publicSettlementRow(row: X402SettlementRecord): Omit<X402SettlementRecord, 'authNonce' | 'requestHash' | 'redeemedAt' | 'servedAt' | 'signer' | 'signerNonce'> {
+  const { authNonce: _authNonce, requestHash: _requestHash, redeemedAt: _redeemedAt, servedAt: _servedAt, signer: _signer, signerNonce: _signerNonce, ...shown } = row
   return shown
 }
 
@@ -840,6 +843,7 @@ export async function railProof(
     internalPayers: [...mine],
     reverted: rows.filter((r) => r.outcome === 'reverted').length,
     ambiguous: rows.filter((r) => r.outcome === 'ambiguous').length,
+    dropped: rows.filter((r) => r.outcome === 'dropped').length,
     networks: railNetworks(env),
     gas: {
       byNetwork: Object.fromEntries(
@@ -854,7 +858,7 @@ export async function railProof(
     byTool,
     byNetwork,
     recent: rows.slice(-50).reverse().map(publicSettlementRow),
-    note: `Real settlements only, each recorded from an on-chain receipt plus a matching Transfer log. A broadcast with no receipt inside the window is counted as ambiguous until a later read across every RPC finds one, and the row then carries reconciledAt. Payments from our own buyer wallets are labeled internal, never hidden. Totals cover the retained window (last ${X402_SETTLEMENTS_CAP}).`,
+    note: `Real settlements only, each recorded from an on-chain receipt plus a matching Transfer log. A broadcast with no receipt inside the window is counted as ambiguous until a later read across every RPC finds one, and the row then carries reconciledAt. A signed transaction no node ever took is counted as dropped: it moved nothing and cost no gas. Payments from our own buyer wallets are labeled internal, never hidden. Totals cover the retained window (last ${X402_SETTLEMENTS_CAP}).`,
   }
 }
 
@@ -870,8 +874,8 @@ let lastProofReconcileAt = Number.NEGATIVE_INFINITY
  * above and by the interval. It reads the chain and resolves rows, and it never serves or
  * charges anything: a settled row still waits for the buyer's retry.
  */
-export async function railReconcileOnProofRead(deps: EngineDeps = {}, at: number = Date.now()): Promise<{ checked: number; settled: number; reverted: number; ambiguous: number; skipped: boolean }> {
-  if (at - lastProofReconcileAt < PROOF_RECONCILE_EVERY_MS) return { checked: 0, settled: 0, reverted: 0, ambiguous: 0, skipped: true }
+export async function railReconcileOnProofRead(deps: EngineDeps = {}, at: number = Date.now()): Promise<{ checked: number; settled: number; reverted: number; dropped: number; ambiguous: number; skipped: boolean }> {
+  if (at - lastProofReconcileAt < PROOF_RECONCILE_EVERY_MS) return { checked: 0, settled: 0, reverted: 0, dropped: 0, ambiguous: 0, skipped: true }
   lastProofReconcileAt = at
   const totals = await reconcileAmbiguousSettlements({ ...deps, receipts: { ...PROOF_RECONCILE_RECEIPTS, ...deps.receipts } })
   return { ...totals, skipped: false }

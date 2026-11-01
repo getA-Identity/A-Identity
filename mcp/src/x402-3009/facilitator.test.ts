@@ -1,4 +1,5 @@
 import { test } from 'node:test'
+import { fakeSigningWallet } from './signing-wallet.fake.js'
 import assert from 'node:assert/strict'
 import { privateKeyToAccount } from 'viem/accounts'
 import { supported, verify, settle, resolveNetwork, facilitatorChains } from './facilitator.js'
@@ -199,7 +200,7 @@ test('/settle refuses an off-allowlist payTo with zero broadcasts', async () => 
   const out = await settle(await body(OTHER_PAYTO), {
     reader: reader(),
     publicClient: publicClient({ count: 0 }),
-    walletClient: { writeContract: async () => { broadcasts += 1; return `0x${'aa'.repeat(32)}` } },
+    walletClient: fakeSigningWallet('0x02aa', { onSend: () => { broadcasts += 1 } }),
     now: () => NOW, loadSpent: async () => [], env,
   })
   assert.equal(out.httpStatus, 403)
@@ -215,7 +216,7 @@ test('/settle accepts an allowlisted third-party payTo when it is configured', a
   const out = await settle(await body(OTHER_PAYTO), {
     reader: reader(),
     publicClient: publicClient({ count: 0 }),
-    walletClient: { writeContract: async () => `0x${'bb'.repeat(32)}` },
+    walletClient: fakeSigningWallet('0x02bb'),
     signerAddress: PAY_TO as `0x${string}`,
     now: () => NOW, loadSpent: async () => [], persist: async () => {}, persistSpent: async () => {},
     resolveSettlement: async () => ({ ok: true as const, updated: true }),
@@ -244,7 +245,7 @@ test('an exhausted daily gas budget answers 503 and broadcasts nothing', async (
   const out = await settle(await body(), {
     reader: reader(),
     publicClient: publicClient({ count: 0 }),
-    walletClient: { writeContract: async () => { broadcasts += 1; return `0x${'cc'.repeat(32)}` } },
+    walletClient: fakeSigningWallet('0x02cc', { onSend: () => { broadcasts += 1 } }),
     signerAddress: PAY_TO as `0x${string}`,
     now: () => NOW, loadSpent: async () => [], persist: async () => {}, persistSpent: async () => {},
     resolveSettlement: async () => ({ ok: true as const, updated: true }),

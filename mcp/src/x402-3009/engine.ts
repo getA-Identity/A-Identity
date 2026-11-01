@@ -18,11 +18,12 @@
  * Success is evidence we hold, not a claim we relay.
  *
  * The receipt is read from every RPC the chain lists, not through the fallback client: a host
- * that does not have it answers null, and a fallback takes that as the answer. A broadcast is
- * recorded as ambiguous the moment its hash exists, before any wait, so a restart inside the
- * wait loses nothing. The row is read again when a retry of the same authorization arrives and
- * when the proof is read (see reconcileSettlementRow): the buyer who paid is served, and nothing
- * is broadcast twice.
+ * that does not have it answers null, and a fallback takes that as the answer. The transaction is
+ * signed here and its row is written as ambiguous BEFORE the send (see sendCallSigned), so a
+ * restart, a lost answer or a host that drops the connection after accepting it loses nothing,
+ * and if that row cannot be written nothing is sent. The row is read again when a retry of the
+ * same authorization arrives and when the proof is read (see reconcileSettlementRow): the buyer
+ * who paid is served, and nothing is broadcast twice.
  *
  * Chain-generic on purpose: everything comes from a ChainDescriptor plus one
  * SettlementToken, so any registry chain with an EIP-3009 token inherits the rail.
@@ -36,12 +37,17 @@ import { verifyTypedData as verifyTypedDataOnChain } from 'viem/actions'
 import type { ChainDescriptor, EveryRpcOptions, SettlementToken } from '../chains/index.js'
 import {
   EIP3009_ABI,
+  SignerBusyError,
+  canNeverLand,
   describeReceiptWait,
   evmPublicClient,
   evmWalletClientFromKey,
   getChain,
+  nodeSaid,
+  sendCallSigned,
   txUrl,
   waitForReceiptOnEveryRpc,
+  type SignedSend,
 } from '../chains/index.js'
 import {
   persistX402Settlement,
@@ -127,6 +133,10 @@ export type SettleCode =
   | 'gas_ceiling'
   | 'gas_budget_exhausted'
   | 'broadcast_failed'
+  /** The signer stayed busy past this request's wait. Nothing was signed or sent. */
+  | 'signer_busy'
+  /** The row that must exist before a send could not be written. Nothing was sent. */
+  | 'settlement_log_unavailable'
   | 'receipt_reverted'
   | 'no_transfer_log'
   | 'receipt_timeout'
@@ -164,15 +174,13 @@ export type SettleResult =
       code: SettleCode
       transaction?: Hex
       ambiguous?: boolean
-      /** The broadcast could not be written to the log, so a retry cannot find it. */
-      unrecorded?: boolean
     }
 
 export type EngineDeps = DomainDeps & {
   publicClient?: PublicClientLike
-  walletClient?: WalletClientLike
+  walletClient?: SigningClient
   signerAddress?: Hex
-  /** Writes a row. Reports a failure by throwing or by answering `ok: false`. */
+  /** Writes a row. Reports a failure by throwing or by answering `ok: false`, and then nothing is sent. */
   persist?: (rec: X402SettlementRecord) => Promise<void | { ok: boolean }>
   loadSpent?: () => Promise<string[]>
   persistSpent?: (key: string) => Promise<void>
@@ -190,7 +198,7 @@ export type EngineDeps = DomainDeps & {
   loadSettlements?: () => Promise<X402SettlementsRead>
   resolveSettlement?: (tx: string, resolution: X402SettlementResolution) => Promise<X402SettlementUpdate>
   redeemSettlement?: (tx: string, at: string, opts: { staleBefore: string; servedAt?: string }) => Promise<X402SettlementUpdate>
-  markServed?: (tx: string, at: string) => Promise<X402SettlementUpdate>
+  markServed?: (tx: string, at: string, claimedAt: string) => Promise<X402SettlementUpdate>
   releaseClaim?: (tx: string, claimedAt: string) => Promise<X402SettlementUpdate>
 }
 
@@ -202,8 +210,11 @@ type PublicClientLike = {
   getGasPrice: () => Promise<bigint>
 }
 
-type WalletClientLike = {
-  writeContract: (args: Record<string, unknown>) => Promise<Hex>
+/** The slice of a viem wallet client this engine signs and sends with. */
+type SigningClient = {
+  prepareTransactionRequest: (req: Record<string, unknown>) => Promise<Record<string, unknown>>
+  signTransaction: (req: Record<string, unknown>) => Promise<Hex>
+  sendRawTransaction: (req: { serializedTransaction: Hex }) => Promise<Hex>
 }
 
 /**
@@ -445,7 +456,7 @@ export async function settlePayment(input: SettleInput): Promise<SettleResult> {
     const signer = deps.walletClient
       ? null
       : ((await evmWalletClientFromKey(chain, signerKey(chain, env), env)) as unknown as
-          | { client: WalletClientLike; account: { address: Hex } }
+          | { client: SigningClient; account: { address: Hex } }
           | null)
     const wallet = deps.walletClient ?? signer?.client
     const signerAddress = deps.signerAddress ?? signer?.account?.address
@@ -511,20 +522,49 @@ export async function settlePayment(input: SettleInput): Promise<SettleResult> {
       }
     }
 
-    let hash: Hex
-    try {
-      hash = await wallet.writeContract({
-        address: token.address, abi: EIP3009_ABI, functionName: 'transferWithAuthorization', args,
-      })
-    } catch (e) {
-      return { success: false, code: 'broadcast_failed', errorReason: `could not broadcast the settlement: ${msg(e)}` }
-    }
-
-    // Written before any wait. Until this row exists the hash is only in memory, and a restart
-    // or a second instance would find nothing to read and broadcast or charge again.
-    const base = { chain, token, requirements, a, proven, now, meta: deps.meta, tx: hash, requestHash: deps.requestHash }
-    const recorded = await safePersist(persist, record({ ...base, outcome: 'ambiguous' }))
+    const base = { chain, token, requirements, a, proven, now, meta: deps.meta, requestHash: deps.requestHash }
     const resolve = deps.resolveSettlement ?? resolveX402Settlement
+
+    // Signed here, and the row goes in before the send. If the send's answer is lost, a host took
+    // it and the connection dropped, or this process dies, the row still names the hash and the
+    // nonce: a retry of this authorization reads that hash from every RPC and broadcasts nothing.
+    let sent: SignedSend
+    try {
+      sent = await sendCallSigned(
+        chain,
+        { client: wallet, ...(signer?.account ? { account: signer.account } : {}) },
+        { address: token.address as Hex, abi: EIP3009_ABI, functionName: 'transferWithAuthorization', args },
+        {
+          env,
+          rpc: deps.receipts,
+          beforeSend: async ({ hash, nonce, from }) => {
+            const rec = record({ ...base, outcome: 'ambiguous', tx: hash, signer: from ?? signerAddress, signerNonce: nonce })
+            if (!(await writeInTime(persist, rec))) throw new Error('the settlement log could not be written')
+          },
+        },
+      )
+    } catch (e) {
+      if (e instanceof SignerBusyError) {
+        return { success: false, code: 'signer_busy', errorReason: `${e.message}. Nothing moved. Retry this authorization; do not sign a new one.` }
+      }
+      return { success: false, code: 'broadcast_failed', errorReason: `could not prepare the settlement, so nothing was sent: ${nodeSaid(e)}` }
+    }
+    if (sent.status === 'not_noted') {
+      // The write may have committed with its answer lost, so the row is closed if it is there.
+      // Not awaited: a log that just failed must not hold up the answer to the buyer.
+      void resolve(sent.hash, { outcome: 'dropped', reconciledAt: now().toISOString() }).catch(() => null)
+      return {
+        success: false,
+        code: 'settlement_log_unavailable',
+        errorReason: 'the settlement log could not be written, so nothing was broadcast and nothing was charged: a payment is never sent before it is on record. Retry this authorization; do not sign a new one.',
+      }
+    }
+    if (sent.status === 'refused') {
+      // No node took it and no RPC has it. The authorization is still unused and may be retried.
+      await resolve(sent.hash, { outcome: 'dropped', reconciledAt: now().toISOString() }).catch(() => null)
+      return { success: false, code: 'broadcast_failed', errorReason: `the node refused the settlement, so nothing was sent: ${sent.reason}` }
+    }
+    const hash = sent.hash
 
     let missing: string
     let receipt: TransactionReceipt | null = null
@@ -544,8 +584,7 @@ export async function settlePayment(input: SettleInput): Promise<SettleResult> {
       // only on a receipt with a matching Transfer log, and until then nothing is rebroadcast.
       return {
         success: false, code: 'receipt_timeout', transaction: hash, ambiguous: true,
-        ...(recorded ? {} : { unrecorded: true }),
-        errorReason: `broadcast, but ${missing}. ${recorded ? 'Recorded as ambiguous; the transaction may still land.' : 'The transaction may still land, and the settlement log could not be written, so a retry cannot find it.'}`,
+        errorReason: `${sent.status === 'sent' ? 'broadcast' : 'sent and the send did not answer cleanly'}, but ${missing}. Recorded as ambiguous; the transaction may still land.`,
       }
     }
 
@@ -553,13 +592,17 @@ export async function settlePayment(input: SettleInput): Promise<SettleResult> {
     const gasUsed = receipt.gasUsed ?? 0n
     const gasWei = gasUsed * (receipt.effectiveGasPrice ?? gasPrice)
     const mined = { blockNumber: blockNumber.toString(), gasUsed: gasUsed.toString(), gasWei: gasWei.toString() }
-    /** Move the row off ambiguous, or write it whole if the first write never happened. */
+    /**
+     * Move the row off ambiguous. It was written before the send, so no row moved means a proof
+     * read got there first. Only a log with no row under this hash at all is written whole: an
+     * insert beside the row that is there would count one payment twice in the proof and the gas.
+     */
     const finish = async (outcome: 'settled' | 'reverted', claim: { redeemedAt?: string; servedAt?: string } = {}): Promise<X402SettlementUpdate> => {
-      if (recorded) return resolve(hash, { outcome, ...mined, ...claim })
-      await safePersist(persist, {
-        ...record({ ...base, outcome, blockNumber, gasUsed, gasWei }),
-        ...claim,
-      })
+      const moved = await resolve(hash, { outcome, ...mined, ...claim })
+      if (!moved.ok || moved.updated) return moved
+      const read = await (deps.loadSettlements ?? loadX402SettlementsResult)().catch(() => ({ ok: false as const, reason: 'unreadable' }))
+      if (!read.ok || read.rows.some((r) => r.tx?.toLowerCase() === hash.toLowerCase())) return moved
+      await safePersist(persist, { ...record({ ...base, tx: hash, outcome, blockNumber, gasUsed, gasWei }), ...claim })
       return { ok: true, updated: true }
     }
     if (receipt.status !== 'success') {
@@ -584,11 +627,13 @@ export async function settlePayment(input: SettleInput): Promise<SettleResult> {
     // says when it was served (markSettlementServed) or gives the claim back; a bare /settle has
     // nothing to serve, so its answer is the service.
     const settledAt = now().toISOString()
-    const claim = { redeemedAt: settledAt, ...(deps.requestHash ? {} : { servedAt: settledAt }) }
+    // A bare /settle has nothing to serve after this answer, so the answer is the service.
+    const servedNow = deps.requestHash ? undefined : settledAt
+    const claim = { redeemedAt: settledAt, ...(servedNow ? { servedAt: servedNow } : {}) }
     const written = await finish('settled', claim)
     if (written.ok && !written.updated) {
       // A proof read resolved the row while this call waited. The claim is still ours to try for.
-      const taken = await claimCall(hash, settledAt, deps, now)
+      const taken = await claimCall(hash, settledAt, deps, now, servedNow)
       if (!taken.ok || !taken.updated) {
         return { success: false, code: 'in_flight', transaction: hash, errorReason: 'this settlement is already being served. Do not sign a new payment; retry this one shortly.' }
       }
@@ -620,9 +665,11 @@ export async function settlePayment(input: SettleInput): Promise<SettleResult> {
 /** One retry or one proof read asks each host once, and never waits longer than this. */
 const RECONCILE_PER_CALL_MS = 4_000
 const RECONCILE_TOTAL_MS = 12_000
+/** The read that asks whether a transaction can never land comes after that one, in the same request. */
+const NEVER_LAND_LOOK = { perCallTimeoutMs: 2_000, hardTimeoutMs: 6_000 }
 
 export type ReconcileResult =
-  | { outcome: 'settled' | 'reverted'; row: X402SettlementRecord }
+  | { outcome: 'settled' | 'reverted' | 'dropped'; row: X402SettlementRecord }
   /** Still no answer, or the answer could not be recorded; the row is as it was. */
   | { outcome: 'ambiguous'; row: X402SettlementRecord; reason: string }
 
@@ -641,18 +688,26 @@ export type ReconcileResult =
 export async function reconcileSettlementRow(chain: ChainDescriptor, row: X402SettlementRecord, deps: EngineDeps = {}): Promise<ReconcileResult> {
   if (!row.tx) return { outcome: 'ambiguous', row, reason: 'the row carries no transaction hash' }
   const now = deps.now ?? (() => new Date())
+  const env = deps.env ?? process.env
   let receipt: TransactionReceipt
   let paid: boolean
   try {
     const wait = await waitForReceiptOnEveryRpc(chain, row.tx, {
-      env: deps.env ?? process.env,
+      env,
       confirmations: chain.confirmations,
       perCallTimeoutMs: RECONCILE_PER_CALL_MS,
       hardTimeoutMs: RECONCILE_TOTAL_MS,
       ...deps.receipts,
       timeoutMs: 0,
     })
-    if (wait.status !== 'found') return { outcome: 'ambiguous', row, reason: describeReceiptWait(wait) }
+    if (wait.status !== 'found') {
+      if (wait.status !== 'too_shallow' && (await neverLanded(chain, row, deps))) {
+        const resolved = { outcome: 'dropped' as const, reconciledAt: now().toISOString() }
+        const closed = await (deps.resolveSettlement ?? resolveX402Settlement)(row.tx, resolved)
+        if (closed.ok) return { outcome: 'dropped', row: { ...row, ...resolved } }
+      }
+      return { outcome: 'ambiguous', row, reason: describeReceiptWait(wait) }
+    }
     receipt = wait.value
     paid = receipt.status === 'success' && carriesPayment(receipt, { asset: row.asset, from: row.payer, to: row.payTo, value: BigInt(row.value) })
   } catch (e) {
@@ -674,15 +729,32 @@ export async function reconcileSettlementRow(chain: ChainDescriptor, row: X402Se
 }
 
 /**
+ * Whether this row's transaction is certain to have moved nothing: the signer has used its nonce,
+ * no RPC has its hash, and the token says the authorization is unused. Closing such a row is what
+ * frees the buyer's authorization to be sent again, so any doubt answers no.
+ */
+async function neverLanded(chain: ChainDescriptor, row: X402SettlementRecord, deps: EngineDeps): Promise<boolean> {
+  if (!row.tx || !row.signer || row.signerNonce === undefined) return false
+  const env = deps.env ?? process.env
+  const gone = await canNeverLand(chain, { hash: row.tx, from: row.signer, nonce: row.signerNonce }, { env, ...deps.receipts, ...NEVER_LAND_LOOK, timeoutMs: 0 })
+  if (!gone) return false
+  const client = deps.publicClient ?? ((await evmPublicClient(chain, env)) as unknown as PublicClientLike)
+  const used = await client
+    .readContract({ address: row.asset, abi: EIP3009_ABI, functionName: 'authorizationState', args: [row.payer, row.authNonce] })
+    .catch(() => null)
+  return used === false
+}
+
+/**
  * Sweep the newest ambiguous rows: the read path behind GET /api/facilitator/proof, the way
  * refreshCreditedRows is for the Gateway log. Bounded by `limit`, and reads the chain only.
- * A row that never resolves (its transaction was dropped) stays ambiguous and stays counted.
+ * A row that never resolves stays ambiguous and stays counted.
  */
 export async function reconcileAmbiguousSettlements(
   deps: EngineDeps = {},
   limit = 10,
-): Promise<{ checked: number; settled: number; reverted: number; ambiguous: number }> {
-  const totals = { checked: 0, settled: 0, reverted: 0, ambiguous: 0 }
+): Promise<{ checked: number; settled: number; reverted: number; dropped: number; ambiguous: number }> {
+  const totals = { checked: 0, settled: 0, reverted: 0, dropped: 0, ambiguous: 0 }
   const read = await (deps.loadSettlements ?? loadX402SettlementsResult)()
   if (!read.ok) return totals
   const rows = read.rows.filter((r) => r.outcome === 'ambiguous' && r.tx).slice(-Math.max(0, limit))
@@ -838,9 +910,16 @@ async function redeem(input: SettleInput, row: X402SettlementRecord, key: string
   if (row.resource !== requirements.resource || row.payTo.toLowerCase() !== requirements.payTo.toLowerCase()) {
     return refused(`this authorization paid for ${row.resource}, not for ${requirements.resource}`)
   }
-  // Rows from before this rule carry no request to compare. A first-attempt /settle was answered
-  // when it was made, and a tool call's row cannot be told from a stranger replaying it.
-  if (fromBareSettle ? !row.reconciledAt : !row.requestHash) return refused('this authorization has already been redeemed here')
+  // A first-attempt /settle was answered when it was made.
+  if (fromBareSettle && !row.reconciledAt) return refused('this authorization has already been redeemed here')
+  // Rows from before this rule carry no request to compare, and a tool call's row cannot be told
+  // from a stranger replaying it. So nobody can be served from one, and whether it was served is
+  // not on record, which is what this says rather than calling it redeemed.
+  if (!fromBareSettle && !row.requestHash) {
+    return refused(
+      `this authorization settled (tx ${row.tx}) before this server recorded which request a payment was for, so it cannot be matched to this request, and whether its call was served is not on record. Nothing new was charged. Check that transaction before you sign anything; if the money moved and you got no answer, contact us with the transaction hash.`,
+    )
+  }
   if (fromBareSettle ? Boolean(deps.requestHash) : row.requestHash !== deps.requestHash) {
     return {
       success: false,
@@ -891,9 +970,9 @@ async function redeem(input: SettleInput, row: X402SettlementRecord, key: string
 }
 
 /** The paid call's response was written out: its claim is spent. Reports, never throws. */
-export async function markSettlementServed(tx: string, deps: EngineDeps = {}): Promise<boolean> {
+export async function markSettlementServed(tx: string, claimedAt: string, deps: EngineDeps = {}): Promise<boolean> {
   const at = (deps.now ?? (() => new Date()))().toISOString()
-  const out = await (deps.markServed ?? markX402SettlementServed)(tx, at).catch((e: unknown) => ({ ok: false as const, reason: msg(e) }))
+  const out = await (deps.markServed ?? markX402SettlementServed)(tx, at, claimedAt).catch((e: unknown) => ({ ok: false as const, reason: msg(e) }))
   return out.ok && out.updated
 }
 
@@ -986,7 +1065,23 @@ function msg(e: unknown): string {
   return e instanceof Error ? e.message : String(e)
 }
 
-/** Write a row and say whether it was written. A broadcast must not be lost to a throw here. */
+/** How long a send waits for its row. A stalled database is a failed write, and nothing is sent. */
+const ROW_WRITE_MS = 8_000
+
+/** safePersist with a deadline, for the write a send is waiting on, one signer's sends behind it. */
+async function writeInTime(persist: NonNullable<EngineDeps['persist']>, rec: X402SettlementRecord): Promise<boolean> {
+  let timer: ReturnType<typeof setTimeout> | undefined
+  const gaveUp = new Promise<boolean>((resolve) => {
+    timer = setTimeout(() => resolve(false), ROW_WRITE_MS)
+  })
+  try {
+    return await Promise.race([safePersist(persist, rec), gaveUp])
+  } finally {
+    if (timer) clearTimeout(timer)
+  }
+}
+
+/** Write a row and say whether it was written. Reports a failure, never throws. */
 async function safePersist(persist: NonNullable<EngineDeps['persist']>, rec: X402SettlementRecord): Promise<boolean> {
   try {
     const out = await persist(rec)
@@ -1011,6 +1106,8 @@ function record(input: {
   gasUsed?: bigint
   gasWei?: bigint
   requestHash?: string
+  signer?: string
+  signerNonce?: number
 }): X402SettlementRecord {
   const { chain, token, requirements, a, proven, meta } = input
   const baseUsd = meta?.baseUsd ?? 0
@@ -1037,5 +1134,7 @@ function record(input: {
     ...(input.gasWei !== undefined ? { gasWei: input.gasWei.toString() } : {}),
     ...(meta?.facilitatedFor ? { facilitatedFor: meta.facilitatedFor } : {}),
     ...(input.requestHash ? { requestHash: input.requestHash } : {}),
+    ...(input.signer ? { signer: input.signer } : {}),
+    ...(input.signerNonce !== undefined ? { signerNonce: input.signerNonce } : {}),
   }
 }
