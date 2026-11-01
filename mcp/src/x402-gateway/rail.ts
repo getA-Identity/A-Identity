@@ -400,7 +400,8 @@ export function railPaymentResponseHeader(settled: GatewaySettlementRecord): str
  *   503 - Gateway's kind for the chain cannot be proven right now
  *   400 - the tool's input is missing (checked BEFORE settling, so no money moves)
  *   402 - malformed PAYMENT-SIGNATURE, wrong recipient or amount, or Gateway refused
- *   502 - Gateway said success but the transfer could not be read back; NOT served
+ *   502 - Gateway said success but the transfer could not be read back, or the settle call
+ *         itself got no usable answer, so whether money moved is not known; NOT served
  *   500 - credited and recorded, but the tool handler failed; the body names the transfer
  *   200 - credited, recorded, served
  */
@@ -474,12 +475,9 @@ export async function railServeTool(
   try {
     settle = await calls.settle(chain.gateway.facilitator, { resource, ...payload, accepted: payload.accepted ?? requirements }, requirements)
   } catch (e) {
-    settle = { success: false, errorReason: e instanceof Error ? e.message : String(e) }
+    // A throw is not Gateway saying no: the request may have reached it before this failed.
+    settle = { success: false, unknown: true, errorReason: e instanceof Error ? e.message : String(e) }
   }
-  if (!settle.success) return refuse(`Gateway refused the payment: ${settle.errorReason ?? settle.message ?? 'settlement failed'}`)
-
-  // Read the credit back before anything is recorded or served.
-  const back = await readBackTransfer(chain, { nonce: auth.nonce, payTo: chosen.payTo, value: priceUnits, payer: auth.from, transferId: settle.transaction }, deps)
   const persist = deps.persist ?? persistGatewaySettlement
   const base = {
     ts: new Date(calls.now()).toISOString(),
@@ -497,6 +495,28 @@ export async function railServeTool(
     confirmedBy: 'gateway-transfers-api' as const,
     facilitator: chain.gateway.facilitator,
   }
+  if (settle.unknown) {
+    // Not a refusal, so no 402: a challenge would invite a second signature while the first
+    // authorization may still settle. The row is what makes the nonce findable on the proof.
+    let logged = true
+    try {
+      await persist({ ...base, outcome: 'unconfirmed' })
+    } catch {
+      logged = false
+    }
+    return {
+      httpStatus: 502,
+      body: {
+        error: 'settlement unknown',
+        reason: settle.errorReason ?? 'the settle call got no usable answer',
+        note: `The settle call got no usable answer from Gateway, so whether this authorization settled is not known and it stays valid until it expires. Nothing was served and nothing is counted as revenue. ${logged ? 'The row is recorded as unconfirmed on GET /api/x402/gateway/proof.' : 'The row could not be written to GET /api/x402/gateway/proof.'}`,
+      },
+    }
+  }
+  if (!settle.success) return refuse(`Gateway refused the payment: ${settle.errorReason ?? settle.message ?? 'settlement failed'}`)
+
+  // Read the credit back before anything is recorded or served.
+  const back = await readBackTransfer(chain, { nonce: auth.nonce, payTo: chosen.payTo, value: priceUnits, payer: auth.from, transferId: settle.transaction }, deps)
   if (!back.transfer) {
     const rec: GatewaySettlementRecord = { ...base, outcome: 'unconfirmed', ...(settle.transaction ? { transferId: settle.transaction } : {}) }
     await persist(rec)

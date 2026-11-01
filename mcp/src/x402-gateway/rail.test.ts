@@ -21,7 +21,7 @@ import {
   GATEWAY_FREE_TOOL,
   GATEWAY_TOOL_CARDS,
 } from './rail.js'
-import { provenKind, clearKindCache, readBackTransfer, type GatewayDeps, type GatewayKind, type GatewayTransfer, type GatewaySettleResponse } from './facilitator.js'
+import { provenKind, clearKindCache, readBackTransfer, settleWithDeadline, type GatewayDeps, type GatewayKind, type GatewayTransfer, type GatewaySettleResponse } from './facilitator.js'
 import { getChainById, CHAINS } from '../chains/index.js'
 import { PRICES } from '../asp/payment.js'
 import { RAIL_BASE_PRICES_USD } from '../x402-3009/rail.js'
@@ -271,11 +271,46 @@ test('Gateway refusing the payment is a 402 with its reason, and nothing is reco
   assert.match((out.body as { verifyError: string }).verifyError, /insufficient balance/)
   assert.equal(spy.settleCalls.length, 1)
   assert.equal(spy.persisted.length, 0)
+})
+
+for (const [label, settle] of [
+  ['that throws', new Error('gateway down')],
+  ['with no usable answer', { success: false, unknown: true, errorReason: 'gateway down' }],
+] as const) {
+  test(`a settle call ${label} is unknown, not refused: 502, no challenge, an unconfirmed row, nothing served`, async () => {
+    clearKindCache()
+    let served = 0
+    const { d, spy } = deps({ settle, handler: async () => { served += 1; return {} } })
+    const out = await railServeTool('verify_agent', { agentId: '#73232' }, header(), railStatus(configured), d)
+    assert.equal(out.httpStatus, 502)
+    const body = out.body as { error: string; reason: string; accepts?: unknown }
+    assert.equal(body.error, 'settlement unknown')
+    assert.match(body.reason, /gateway down/)
+    assert.equal(body.accepts, undefined, 'a challenge would invite a second signature')
+    assert.equal(served, 0)
+    assert.equal(spy.searchCalls.length, 0)
+    assert.equal(spy.persisted.length, 1)
+    assert.equal(spy.persisted[0].outcome, 'unconfirmed')
+    assert.equal(spy.persisted[0].authNonce, NONCE.toLowerCase())
+  })
+}
+
+test('an unknown settle whose row cannot be written is still 502 unknown, and says the row is missing', async () => {
   clearKindCache()
-  const thrown = deps({ settle: new Error('gateway down') })
-  const out2 = await railServeTool('verify_agent', { agentId: '#73232' }, header(), railStatus(configured), thrown.d)
-  assert.equal(out2.httpStatus, 402)
-  assert.match((out2.body as { verifyError: string }).verifyError, /gateway down/)
+  const { d } = deps({ settle: new Error('gateway down') })
+  const out = await railServeTool('verify_agent', { agentId: '#73232' }, header(), railStatus(configured), { ...d, persist: async () => { throw new Error('db down') } })
+  assert.equal(out.httpStatus, 502)
+  assert.match((out.body as { note: string }).note, /could not be written/)
+})
+
+test('a stalled settle is labeled unknown at its deadline; an answer in time and a throw pass through', async () => {
+  const stalled = await settleWithDeadline(new Promise(() => {}), 5)
+  assert.equal(stalled.success, false)
+  assert.equal(stalled.unknown, true)
+  assert.match(stalled.errorReason ?? '', /did not answer within 5 ms/)
+  const refused = await settleWithDeadline(Promise.resolve({ success: false, errorReason: 'insufficient balance' }), 1000)
+  assert.equal(refused.unknown, undefined, "Gateway's own refusal is a refusal")
+  await assert.rejects(settleWithDeadline(Promise.reject(new Error('boom')), 1000), /boom/)
 })
 
 test('a credited payment is read back, recorded as credited, served, and receipted in PAYMENT-RESPONSE', async () => {

@@ -398,6 +398,35 @@ test('a nonce that already opened a flow is refused before settling, and an unre
   assert.equal(down.g.spy.settles, 0)
 })
 
+test('a settle with no usable answer is charged:null with its own code, and writes no flow', async () => {
+  const stalled = setup({ gw: { settle: { success: false, unknown: true, errorReason: 'Gateway settle did not answer within 8000 ms' } } })
+  const r = await runVerifyThenPay(request(), header(), stalled.deps)
+  assert.equal(r.httpStatus, 502)
+  assert.equal(r.body.stage, 'check_failed')
+  assert.equal(r.body.charged, null, 'the authorization may have reached Gateway: unknown, not false')
+  assert.equal(r.body.code, 'SETTLEMENT_UNKNOWN')
+  assert.equal(r.body.challenge, undefined, 'nothing invites a second signature')
+  assert.equal(r.body.prepared, null)
+  assert.match(r.body.next, /proof/)
+  assert.equal(stalled.s.inserted.length, 0)
+  assert.equal(stalled.g.spy.scored.length, 0)
+  assert.equal(stalled.g.spy.persisted[0].outcome, 'unconfirmed')
+
+  // Gateway's own no stays false, with no such code.
+  const refusedPay = setup({ gw: { settle: { success: false, errorReason: 'insufficient_balance' } } })
+  const no = await runVerifyThenPay(request(), header(), refusedPay.deps)
+  assert.equal(no.body.charged, false)
+  assert.equal(no.body.code, undefined)
+})
+
+test('the verdict view names who it is about and the context it was scored in', async () => {
+  const { deps } = setup()
+  const r = await runVerifyThenPay(request(), header(), deps)
+  assert.equal(r.body.stage, 'prepared')
+  assert.equal(r.body.verdict?.agentId, PAYEE)
+  assert.deepEqual(r.body.verdict?.txContext, { payee: PAYEE, amountUsd: 0.25 })
+})
+
 test('402, 502 and 503 from the rail write no flow; a 500 after settlement writes verdict_unavailable', async () => {
   const refusedPay = setup({ gw: { settle: { success: false, errorReason: 'insufficient_balance' } } })
   const r402 = await runVerifyThenPay(request(), header(), refusedPay.deps)
