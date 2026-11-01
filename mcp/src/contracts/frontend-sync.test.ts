@@ -1,7 +1,10 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { createHash } from 'node:crypto'
-import { readFileSync } from 'node:fs'
+import { spawnSync } from 'node:child_process'
+import { cpSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import {
   AgentSpendPolicyBytecode,
@@ -63,4 +66,34 @@ test('the immutable ranges are kept per immutable, so each one can be checked ag
   assert.ok(refs.owner.length > 1 && refs.usdc.length > 1, 'each immutable is read in more than one place, which is why one value per name must be enforced')
   for (const r of all) assert.equal(r.length, 32, `an immutable range at ${r.start} is not one 32-byte word`)
   for (let i = 1; i < all.length; i++) assert.ok(all[i - 1].start + all[i - 1].length <= all[i].start, `immutable ranges at ${all[i - 1].start} and ${all[i].start} overlap`)
+})
+
+test('the root artifact check fails when either side cannot be read, and never passes by comparing nothing', () => {
+  const backend = 'mcp/src/contracts/AgentSpendPolicy.ts'
+  const files = ['scripts/check-vault-artifact.mjs', 'mcp/contracts/AgentSpendPolicy.sol', backend, FRONTEND_VAULT_MODULE]
+  /** The ABI of one module replaced by text that is not JSON, as an edit gone wrong would leave it. */
+  const mangleAbi = (text: string, name: string) => {
+    const head = `export const ${name} = `
+    const start = text.indexOf(head)
+    const end = text.indexOf(' as const\n', start)
+    assert.ok(start >= 0 && end > start, `${name} is gone from the module`)
+    return `${text.slice(0, start + head.length)}[not json]${text.slice(end)}`
+  }
+  const run = (mangle: { backend?: boolean; frontend?: boolean }) => {
+    const dir = mkdtempSync(join(tmpdir(), 'vault-artifact-'))
+    try {
+      for (const rel of files) cpSync(repo(rel), join(dir, rel), { recursive: true })
+      if (mangle.backend) writeFileSync(join(dir, backend), mangleAbi(readFileSync(repo(backend), 'utf8'), 'AgentSpendPolicyAbi'))
+      if (mangle.frontend) writeFileSync(join(dir, FRONTEND_VAULT_MODULE), mangleAbi(readFileSync(repo(FRONTEND_VAULT_MODULE), 'utf8'), 'AGENT_SPEND_POLICY_ABI'))
+      return spawnSync(process.execPath, [join(dir, 'scripts/check-vault-artifact.mjs')], { encoding: 'utf8' })
+    } finally {
+      rmSync(dir, { recursive: true, force: true })
+    }
+  }
+  assert.equal(run({}).status, 0, 'the untouched copies must pass, or the cases below prove nothing')
+  for (const mangle of [{ backend: true, frontend: true }, { backend: true }, { frontend: true }]) {
+    const r = run(mangle)
+    assert.equal(r.status, 1, `${JSON.stringify(mangle)} passed: ${r.stdout}`)
+    assert.match(r.stderr, /the ABI could not be read from/, JSON.stringify(mangle))
+  }
 })
