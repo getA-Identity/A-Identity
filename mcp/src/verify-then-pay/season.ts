@@ -3,11 +3,13 @@
  *
  * A row becomes a season flow only when it carries something a reviewer can open:
  *   - executed, with a successful receipt the server read: a payment, named by its hash;
- *   - blocked because the vault reverted the prepared call: a refusal, named by its hash;
+ *   - blocked because the vault's policy reverted the prepared call, its typed error recovered
+ *     from the chain (payment.revertReason): a refusal, named by its hash;
  *   - blocked by a DENY verdict: a refusal with no transaction, named by its public flow
  *     record on https://a-identity.xyz, which is the evidence that the payment was stopped.
- * Everything else (pending, waiting for the owner, an unusable or unavailable verdict) counts
- * nothing. The report still links each one only to one of our own settled Gateway checks on
+ * Everything else (a reservation still opening, pending, waiting for the owner, an unusable or
+ * unavailable verdict, a WARN with no human to hand it to, a call that reverted for any other
+ * reason) counts nothing. The report still links each one only to one of our own settled Gateway checks on
  * Arc Mainnet, by nonce and payer, and only when its outcome came after the check.
  *
  * Each season flow carries the check's settlement as its row recorded it (network, payer,
@@ -22,10 +24,17 @@
  */
 import type { ArcVerifyThenPayFlow } from '../arc-season.js'
 import type { VtpFlowRecord } from '../storage.js'
-import { flowUrl, vtpChain, VTP_PUBLIC_ORIGIN } from './context.js'
+import { flowUrl, holdsNoFlow, vtpChain, VTP_PUBLIC_ORIGIN } from './context.js'
 import { formatUnitsString } from './prepare.js'
+import { VAULT_POLICY_ERRORS } from './receipt.js'
 
+/** One row as season flows. Throws on a row that is not a flow record: the report's loader
+ *  catches that per row, so one bad row is reported and never hides the rest. */
 export function toSeasonFlow(row: VtpFlowRecord): ArcVerifyThenPayFlow[] {
+  if (holdsNoFlow(row)) return []
+  if (typeof row.flowId !== 'string' || typeof row.payee !== 'string' || typeof row.check?.payer !== 'string') {
+    throw new TypeError('the row carries no flowId, payee or check payer')
+  }
   const base = {
     checkNonce: row.flowId,
     payer: row.check.payer,
@@ -45,14 +54,14 @@ export function toSeasonFlow(row: VtpFlowRecord): ArcVerifyThenPayFlow[] {
       },
     ]
   }
-  if (row.outcome === 'blocked' && row.detail === 'reverted_onchain' && row.payment) {
+  if (row.outcome === 'blocked' && row.detail === 'reverted_onchain' && row.payment?.revertReason && VAULT_POLICY_ERRORS.has(row.payment.revertReason)) {
     return [
       {
         ...base,
         outcome: 'refused',
         txHash: row.payment.txHash,
         at: row.payment.minedAt,
-        note: `risk_check ${decision}, then the vault reverted the prepared ${row.payment.byOwner ? 'ownerPay' : 'pay'} of ${amount} on chain.`,
+        note: `risk_check ${decision}, then the vault's policy reverted the prepared ${row.payment.byOwner ? 'ownerPay' : 'pay'} of ${amount} on chain (${row.payment.revertReason}).`,
       },
     ]
   }

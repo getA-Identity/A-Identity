@@ -441,7 +441,7 @@ export function buildServer(data: ServerData = {}): McpServer {
       {
         title: `Verify a payee, then pay it from an ${arcName} vault`,
         description:
-          `Before an agent pays from its AgentSpendPolicy vault on ${arcName} (${arc?.caip2 ?? 'Arc Mainnet'}): checks for free that the vault holds the registry's USDC, that the payee holds an ERC-8004 agent on ${arcName}, and that the vault's policy and a simulated pay() from its operator would accept the payment; then buys A-Identity's risk_check on the payee address for ${price} through Circle Gateway (call once without payment to get the x402 challenge, sign it from your Gateway balance, call again with payment). ALLOW returns the exact vault.pay(payee, amount) for the operator to send; WARN returns an ownerPay() hand-off for the owner unless payOnWarn is set; DENY returns nothing to sign. Always executed:false: this server signs nothing. Every paid check is recorded publicly by flowId.`,
+          `Before an agent pays from its AgentSpendPolicy vault on ${arcName} (${arc?.caip2 ?? 'Arc Mainnet'}): checks for free that the vault holds the registry's USDC, that the payee holds an ERC-8004 agent on ${arcName}, and that the vault's policy and a simulated pay() from its operator would accept the payment; then buys A-Identity's risk_check on the payee address for ${price} through Circle Gateway (call once without payment to get the x402 challenge, sign it from your Gateway balance, call again with payment). ALLOW returns the exact vault.pay(payee, amount) for the operator to send; WARN returns an ownerPay() hand-off for the owner unless payOnWarn is set, and nothing to sign when the vault's owner and operator are one key, since no human stands behind the hand-off; DENY returns nothing to sign. Always executed:false: this server signs nothing. Every paid check is recorded publicly by flowId.`,
         inputSchema: verifyThenPayInput,
       },
       async (args) => json(await vtp.run(args)),
@@ -451,7 +451,7 @@ export function buildServer(data: ServerData = {}): McpServer {
       'verify_then_pay_receipt',
       {
         title: 'Record a verify-then-pay payment from its receipt',
-        description: `After the prepared pay() or ownerPay() was sent: give the flowId and the transaction hash. The server reads the receipt from every ${arcName} RPC itself and marks the flow executed only on the vault's Paid event and USDC's Transfer to the checked payee for the checked amount, or records a revert of the prepared call. Idempotent; a transaction proves one flow at most.`,
+        description: `After the prepared pay() or ownerPay() was sent: give the flowId and the transaction hash. The server reads the receipt from every ${arcName} RPC itself and marks the flow executed only on the vault's Paid event and USDC's Transfer to the checked payee for the checked amount, or records a revert of the prepared call: a refusal when the vault's typed policy error made it, otherwise a failed call that counts as nothing and says why. Idempotent; a transaction proves one flow at most.`,
         inputSchema: verifyThenPayReceiptInput,
       },
       async ({ flowId, txHash }) => json(await vtp.receipt({ flowId, txHash })),

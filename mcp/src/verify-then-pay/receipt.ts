@@ -33,6 +33,17 @@
  * prepared. Whatever does not match leaves the row exactly as it was, and one transaction
  * links to one flow at most.
  *
+ * A revert is a refusal only when the vault's policy made it. A receipt carries no reason, so
+ * the reason is recovered by replaying the same call at the block before (eth_call), or read
+ * from the gas when the transaction used all it had, and kept in payment.revertReason. Only the
+ * vault's typed policy errors mark a flow blocked (reverted_onchain). Anything else (out of gas,
+ * a key that is no longer the operator, a token's own refusal, a call that does not revert when
+ * replayed) ends it as failed (reverted_not_policy), which counts as nothing and says why.
+ * ownerPay passes no policy gate in the contract, so its revert is never a refusal. A replay
+ * sees the state before the block, not the transactions ahead of it inside the block, so a cap
+ * spent earlier in the same block reads as not a refusal: the error is on the side of counting
+ * less. If no host can answer the replay, nothing changes and the post is a retry.
+ *
  * Which flow a payment answers is decided here, never taken from the caller. The route takes
  * no session and no payment, and flow ids are public (every check's nonce is listed on
  * GET /api/x402/gateway/proof), so the flowId in the path is the caller's word and nothing
@@ -56,11 +67,11 @@
  * posts its receipt as soon as the payment is mined. Binding a payment to its check needs the
  * check inside the payment (a Memo wrapper), which this version does not send.
  */
-import { parseEventLogs, type Transaction, type TransactionReceipt } from 'viem'
-import { blockFromEveryRpc, receiptFromEveryRpc, rpcSourceLabel, transactionFromEveryRpc, txUrl, type ChainDescriptor } from '../chains/index.js'
+import { decodeErrorResult, parseEventLogs, type Hex, type Transaction, type TransactionReceipt } from 'viem'
+import { blockFromEveryRpc, receiptFromEveryRpc, replayCallFromEveryRpc, rpcSourceLabel, transactionFromEveryRpc, txUrl, type CallReplay, type ChainDescriptor } from '../chains/index.js'
 import { AgentSpendPolicyAbi } from '../contracts/AgentSpendPolicy.js'
 import type { VtpFlowDetail, VtpFlowOutcome, VtpFlowRecord } from '../storage.js'
-import { flowUrl, storageVtpStore, vtpChain, VTP_PUBLIC_ORIGIN, type VtpDeps } from './context.js'
+import { flowUrl, holdsNoFlow, storageVtpStore, vtpChain, VTP_PUBLIC_ORIGIN, type VtpDeps } from './context.js'
 import { gasCostUsdc, ownerPayCalldata, payCalldata } from './prepare.js'
 
 const TRANSFER_ABI = [
@@ -86,6 +97,10 @@ const DEFAULT_PER_CALL_MS = 4000
 export const DEFAULT_RECEIPT_TOTAL_MS = 12_000
 /** The last moment a JavaScript Date can hold. */
 const MAX_DATE_MS = 8.64e15
+/** The contract's policy gates in pay(), and the only reverts that count as a refusal. */
+export const VAULT_POLICY_ERRORS: ReadonlySet<string> = new Set(['IsFrozen', 'SessionKeyExpired', 'PayeeNotAllowed', 'AboveAutoApprove', 'DailyCapExceeded'])
+/** A revert message is a contract's own text and the record is public: this much of it is kept. */
+const MAX_REASON_CHARS = 200
 
 export type ReceiptRefusalCode =
   | 'VERDICT_BLOCK_UNKNOWN'
@@ -95,10 +110,12 @@ export type ReceiptRefusalCode =
   | 'AGENT_PAID_ON_HANDOFF'
   | 'NOT_THIS_FLOWS_CALL'
   | 'TX_UNREADABLE'
+  | 'REVERT_REASON_UNREADABLE'
 
 export type ReceiptJudgement =
   | { ok: true; outcome: 'executed'; detail: 'agent_paid' | 'owner_paid'; byOwner: boolean }
-  | { ok: true; outcome: 'blocked'; detail: 'reverted_onchain'; byOwner: boolean }
+  /** The flow's own call, reverted. What made it revert decides how it is recorded. */
+  | { ok: true; outcome: 'reverted'; byOwner: boolean }
   | { ok: false; code: ReceiptRefusalCode; reason: string }
 
 const lc = (s: string | null | undefined) => (s ?? '').toLowerCase()
@@ -134,12 +151,26 @@ export function judgeReceipt(chain: ChainDescriptor, flow: VtpFlowRecord, receip
   if (!tx) return { ok: false, code: 'TX_UNREADABLE', reason: 'the receipt is reverted and the transaction itself could not be read, so what was attempted is unknown' }
   const input = lc(tx.input)
   if (lc(tx.to) === vault && input === lc(payCalldata(payee, amount)) && lc(tx.from) === lc(flow.operator) && flow.outcome === 'pending') {
-    return { ok: true, outcome: 'blocked', detail: 'reverted_onchain', byOwner: false }
+    return { ok: true, outcome: 'reverted', byOwner: false }
   }
   if (lc(tx.to) === vault && input === lc(ownerPayCalldata(payee, amount)) && lc(tx.from) === lc(flow.owner)) {
-    return { ok: true, outcome: 'blocked', detail: 'reverted_onchain', byOwner: true }
+    return { ok: true, outcome: 'reverted', byOwner: true }
   }
   return { ok: false, code: 'NOT_THIS_FLOWS_CALL', reason: "the reverted transaction is not this flow's prepared call from the key it was prepared for" }
+}
+
+/** The reason a replayed revert carries: the vault's error name, a token's message, or a Panic. Pure. */
+export function revertReasonOf(replay: Extract<CallReplay, { reverted: true }>): string {
+  if (!replay.data) return 'reverted with no reason on replay'
+  try {
+    // Error(string) and Panic(uint256) decode too, though the vault's ABI names neither.
+    const d = decodeErrorResult({ abi: AgentSpendPolicyAbi, data: replay.data }) as { errorName: string; args?: readonly unknown[] }
+    if (d.errorName === 'Error') return `Error: ${String(d.args?.[0] ?? '')}`.slice(0, MAX_REASON_CHARS)
+    if (d.errorName === 'Panic') return `Panic ${String(d.args?.[0] ?? '')}`
+    return d.errorName
+  } catch {
+    return `unknown error ${replay.data.slice(0, 10)}`
+  }
 }
 
 /** Whether a flow could take this payment at all: open, of the kind the payment is, pinned to a
@@ -180,7 +211,8 @@ export type VtpReceiptResult = {
   tool: 'verify_then_pay_receipt'
   flowId: string | null
   /** True when the server read a receipt that proves something about this flow and recorded
-   *  it: a payment (executed) or the vault reverting the prepared call (blocked). */
+   *  it: a payment (executed), the vault's policy reverting the prepared call (blocked), or the
+   *  prepared call reverting for another reason (failed, and reason says which). */
   verified: boolean
   outcome: VtpFlowOutcome | null
   detail: VtpFlowDetail | null
@@ -229,7 +261,7 @@ export async function recordVtpReceipt(flowIdRaw: unknown, txHashRaw: unknown, d
   const read = await store.load(flowId)
   if (!read.ok) return reply(503, flowId, { code: 'FLOW_STORE_UNREADABLE', reason: read.reason, retry: true, next: 'The flow log could not be read; nothing changed. Post the same hash again shortly.' }, origin)
   const flow = read.row
-  if (!flow) return reply(404, flowId, { code: 'UNKNOWN_FLOW', reason: 'no flow with this id', next: 'Use the flowId verify_then_pay returned for a paid check.' }, origin)
+  if (!flow || holdsNoFlow(flow)) return reply(404, flowId, { code: 'UNKNOWN_FLOW', reason: 'no flow with this id', next: 'Use the flowId verify_then_pay returned for a paid check.' }, origin)
 
   const recorded = (f: VtpFlowRecord, httpStatus = 200): Res =>
     reply(httpStatus, flowId, { verified: true, outcome: f.outcome, detail: f.detail, payment: f.payment, next: 'Already recorded from the chain: this is what the receipt proved.' }, origin)
@@ -290,7 +322,7 @@ export async function recordVtpReceipt(flowIdRaw: unknown, txHashRaw: unknown, d
   const open = await store.openFlows({ vault: flow.vault, payee: flow.payee, amount: flow.amount })
   if (!open.ok) return reply(503, flowId, { outcome: flow.outcome, detail: flow.detail, code: 'FLOW_STORE_UNREADABLE', reason: open.reason, retry: true, next: 'The flow log could not be read; nothing changed. Post the same hash again shortly.' }, origin)
   const pool = open.rows.some((r) => r.flowId === flow.flowId) ? open.rows : [...open.rows, flow]
-  const answers = answeredFlow(pool, receipt.blockNumber, { byOwner: j.byOwner, from: j.outcome === 'blocked' && tx ? tx.from : null })
+  const answers = answeredFlow(pool, receipt.blockNumber, { byOwner: j.byOwner, from: j.outcome === 'reverted' && tx ? tx.from : null })
   if (answers && answers.flowId !== flowId) {
     return reply(
       409,
@@ -306,6 +338,23 @@ export async function recordVtpReceipt(flowIdRaw: unknown, txHashRaw: unknown, d
       origin,
     )
   }
+
+  // What made a revert revert. All the gas gone is out of gas, whatever a replay with a host's
+  // own generous gas limit would say; otherwise the same call at the block before names it.
+  let revertReason: string | undefined
+  if (j.outcome === 'reverted' && tx) {
+    if (typeof tx.gas === 'bigint' && receipt.gasUsed >= tx.gas) {
+      revertReason = `out of gas: the transaction used all of its ${tx.gas} gas`
+    } else {
+      const before = receipt.blockNumber - 1n
+      const replay = await replayCallFromEveryRpc(chain, { from: tx.from, to: tx.to as Hex, data: tx.input, blockNumber: before }, { ...opts, timeoutMs: 0, hardTimeoutMs: left() })
+      if (replay.status !== 'found') {
+        return reply(503, flowId, { outcome: flow.outcome, detail: flow.detail, code: 'REVERT_REASON_UNREADABLE', reason: `no ${chain.name} RPC could replay the call at block ${before}, so what made it revert is unknown`, retry: true, next: 'Nothing changed. Post the same hash again shortly.' }, origin)
+      }
+      revertReason = replay.value.reverted ? revertReasonOf(replay.value) : `no revert when replayed at block ${before}: whatever made it revert is not in the state before its block`
+    }
+  }
+  const refused = revertReason !== undefined && VAULT_POLICY_ERRORS.has(revertReason)
 
   // When the chain says it happened: the block the receipt names, and no other block at that height.
   const blockHash = typeof receipt.blockHash === 'string' && HASH.test(receipt.blockHash) ? receipt.blockHash : undefined
@@ -323,6 +372,7 @@ export async function recordVtpReceipt(flowIdRaw: unknown, txHashRaw: unknown, d
     blockNumber: receipt.blockNumber.toString(),
     minedAt: new Date(minedMs).toISOString(),
     status: receipt.status,
+    ...(revertReason !== undefined ? { revertReason } : {}),
     byOwner: j.byOwner,
     from: lc(receipt.from),
     to: receipt.to ? lc(receipt.to) : null,
@@ -333,7 +383,9 @@ export async function recordVtpReceipt(flowIdRaw: unknown, txHashRaw: unknown, d
     readBackFrom: rpcSourceLabel(chain, r.url),
     explorerUrl: txUrl(chain, hash),
   }
-  const u = await store.update(flowId, { outcome: j.outcome, detail: j.detail, payment, updatedAt: at }, OPEN)
+  const ended: { outcome: VtpFlowOutcome; detail: VtpFlowDetail } =
+    j.outcome === 'executed' ? { outcome: 'executed', detail: j.detail } : refused ? { outcome: 'blocked', detail: 'reverted_onchain' } : { outcome: 'failed', detail: 'reverted_not_policy' }
+  const u = await store.update(flowId, { ...ended, payment, updatedAt: at }, OPEN)
   if (!u.ok) {
     if (u.conflict === 'tx_linked') {
       return reply(409, flowId, { outcome: flow.outcome, detail: flow.detail, code: 'TX_LINKED_ELSEWHERE', reason: u.reason, next: 'One transaction proves one flow. Nothing changed.' }, origin)
@@ -352,10 +404,13 @@ export async function recordVtpReceipt(flowIdRaw: unknown, txHashRaw: unknown, d
       outcome: u.row.outcome,
       detail: u.row.detail,
       payment,
+      ...(j.outcome === 'reverted' && !refused ? { reason: `the call reverted, and not on a vault policy rule: ${revertReason}` } : {}),
       next:
         j.outcome === 'executed'
           ? `Recorded from the chain: the vault paid ${flow.payee} ${flow.amount} units in block ${payment.blockNumber}, read back from ${payment.readBackFrom}.`
-          : `Recorded from the chain: the vault reverted the prepared call in block ${payment.blockNumber}. Nothing moved; the revert is the record.`,
+          : refused
+            ? `Recorded from the chain: the vault's policy refused the prepared call in block ${payment.blockNumber} (${revertReason}). Nothing moved; the revert is the record.`
+            : `Recorded from the chain: the prepared call reverted in block ${payment.blockNumber}, and not on a vault policy rule (${revertReason}). Nothing moved, and it counts as neither a payment nor a refusal. This flow has ended; paying needs a new check.`,
     },
     origin,
   )

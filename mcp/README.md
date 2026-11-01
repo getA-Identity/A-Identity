@@ -134,11 +134,15 @@ Directories:
   simulated `pay()` from its operator would accept the payment, so a payment the vault would
   refuse never buys a check. Then `risk_check` is bought in process through the Gateway rail,
   Arc Mainnet's offer only, with the payee ADDRESS as agentId (`core.ts`), and the answer must
-  pass `verdict.ts` (settlement echo, payee and amount echo, a finite reputation, an ALLOW
-  that agrees with its own signals). ALLOW returns the exact `vault.pay(payee, amount)` for
-  the operator, WARN an `ownerPay()` hand-off unless `payOnWarn`, DENY nothing; always
-  `executed: false`, because the server signs nothing (`prepare.ts`). Every paid check is a
-  public row in `vtp_flows`, keyed by the check's nonce; it becomes executed only when
+  pass `verdict.ts` (settlement echo, payee and amount echo, a finite reputation, an ALLOW or
+  a WARN that agrees with its own signals). ALLOW returns the exact `vault.pay(payee, amount)`
+  for the operator, WARN an `ownerPay()` hand-off unless `payOnWarn` (and nothing when the
+  vault's owner and operator are one key), DENY nothing; always `executed: false`, because the
+  server signs nothing (`prepare.ts`). A nonce is reserved by an insert-only `opening` row
+  before the check is bought, so one signed payment reaches Gateway once; to a reader that row
+  is nothing yet. Every paid check is a public row in `vtp_flows`, keyed by the check's nonce;
+  a revert counts as a refusal only on the vault's typed policy errors, recovered by replaying
+  the call at the block before. A flow becomes executed only when
   `POST /api/x402/gateway/flows/:flowId/receipt` shows the server a receipt it reads from
   every RPC itself, mined in a block after the one the verdict came back in (`receipt.ts`,
   over `chains/evm/receipts.ts`). Which flow a payment answers is the server's call, not the

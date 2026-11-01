@@ -3,18 +3,21 @@ import assert from 'node:assert/strict'
 import { mkdtempSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { encodeAbiParameters, encodeEventTopics, type Hex } from 'viem'
-import { answeredFlow, recordVtpReceipt } from './receipt.js'
+import { encodeAbiParameters, encodeErrorResult, encodeEventTopics, type Hex } from 'viem'
+import { answeredFlow, recordVtpReceipt, VAULT_POLICY_ERRORS } from './receipt.js'
 import { storageVtpStore, type VtpStore } from './context.js'
+import { fakeVtpPool } from './fake-pg.js'
 import { gasCostUsdc, ownerPayCalldata, payCalldata } from './prepare.js'
 import { AgentSpendPolicyAbi } from '../contracts/AgentSpendPolicy.js'
-import { getChainById, txUrl, type RpcCall } from '../chains/index.js'
+import { getChainById, JsonRpcError, txUrl, type RpcCall } from '../chains/index.js'
 import { persistVtpFlow, type VtpFlowRecord, type VtpStoreIo } from '../storage.js'
 
 /**
  * The only door to executed: a receipt the server reads itself, from every RPC, that proves
- * the payment the flow prepared. These run the real flow store against a temporary file, so
- * the compare-and-set and the one-transaction-one-flow rule are the ones production uses.
+ * the payment the flow prepared. Most of these run the real flow store against a temporary
+ * file, which is its fallback: production runs Postgres, whose compare-and-set and unique index
+ * are a different code path. The cases that lean on those two run a second time at the end
+ * against fake-pg.ts, which applies the same WHERE and index semantics; no real database runs.
  *
  * The receipts are shaped on a real one: the launch-day vault's operator payment on Arc
  * Mainnet (0xc1f3eb7f), which carries the vault's Paid event, USDC's Transfer in 6 decimals,
@@ -96,7 +99,7 @@ function transferLog(o: { address?: string; from?: string; to?: string; value?: 
 /** Arc's native-balance Transfer of the same payment, 18 decimals, from the system address. */
 const nativeLog = (i = 0) => transferLog({ address: NATIVE_SYSTEM, value: AMOUNT * 10n ** 12n }, i)
 
-function rawReceipt(o: { status?: '0x1' | '0x0'; block?: number; logs?: unknown[]; from?: string; hash?: string } = {}) {
+function rawReceipt(o: { status?: '0x1' | '0x0'; block?: number; logs?: unknown[]; from?: string; hash?: string; gasUsed?: number } = {}) {
   return {
     transactionHash: o.hash ?? HASH,
     blockHash: BLOCK_HASH,
@@ -104,7 +107,7 @@ function rawReceipt(o: { status?: '0x1' | '0x0'; block?: number; logs?: unknown[
     from: o.from ?? OPERATOR,
     to: VAULT,
     status: o.status ?? '0x1',
-    gasUsed: hex(90_341),
+    gasUsed: hex(o.gasUsed ?? 90_341),
     cumulativeGasUsed: hex(90_341),
     effectiveGasPrice: hex(20_100_000_000n),
     logs: o.logs ?? [nativeLog(0), transferLog(), paidLog()],
@@ -141,13 +144,23 @@ function rawBlock(number: bigint, hash = BLOCK_HASH, timestamp = MINED) {
   return { number: hex(number), hash, parentHash: '0x' + 'aa'.repeat(32), timestamp: hex(timestamp), gasLimit: hex(30_000_000), gasUsed: '0x0', baseFeePerGas: hex(20_000_000_000n), miner: '0x' + '00'.repeat(20), transactions: [], uncles: [], logsBloom: '0x' + '00'.repeat(256) }
 }
 
+/** The revert a host answers an eth_call with, as geth shapes it: code 3 and the error's data. */
+const revertWith = (errorName: string, args?: readonly unknown[]) =>
+  new JsonRpcError(3, 'execution reverted', args ? encodeErrorResult({ abi: [{ type: 'error', name: errorName, inputs: [{ type: 'string', name: 'message' }] }], errorName, args: args as never }) : encodeErrorResult({ abi: AgentSpendPolicyAbi, errorName: errorName as never }))
+
 /** Per method, per host: what each RPC answers. Missing means null. An Error is thrown.
- *  Blocks: every host has the one asked for, with the receipt's block hash, unless told otherwise. */
+ *  Blocks: every host has the one asked for, with the receipt's block hash, unless told otherwise.
+ *  A replayed call: every host reverts with the vault's IsFrozen, unless told otherwise. */
 type Hosts = Partial<Record<string, unknown>>
-function rpc(receipts: Hosts, txs: Hosts = {}, blocks?: Hosts): { call: RpcCall; asked: string[] } {
+function rpc(receipts: Hosts, txs: Hosts = {}, blocks?: Hosts, replay: (url: string, params: readonly unknown[]) => unknown = () => revertWith('IsFrozen')): { call: RpcCall; asked: string[] } {
   const asked: string[] = []
   const call: RpcCall = async (url, method, params) => {
     asked.push(`${method}@${url}`)
+    if (method === 'eth_call') {
+      const answer = replay(url, params)
+      if (answer instanceof Error) throw answer
+      return answer
+    }
     const a =
       method === 'eth_getBlockByNumber'
         ? blocks
@@ -277,7 +290,7 @@ test('a reverted receipt of the prepared call is recorded as reverted on chain, 
   const out = await recordVtpReceipt(FLOW, HASH, deps(store, r.call))
   assert.equal(out.httpStatus, 200, JSON.stringify(out.body))
   assert.deepEqual([out.body.verified, out.body.outcome, out.body.detail], [true, 'blocked', 'reverted_onchain'])
-  assert.deepEqual([out.body.payment?.status, out.body.payment?.byOwner], ['reverted', false])
+  assert.deepEqual([out.body.payment?.status, out.body.payment?.byOwner, out.body.payment?.revertReason], ['reverted', false, 'IsFrozen'])
 
   // Not the call this flow prepared, or not from its key: nothing is recorded.
   for (const [what, tx] of [
@@ -312,14 +325,15 @@ test('byOwner gives owner_paid, and a WARN hand-off is closed only by the owner'
   const owner = await storeWith([warn()])
   const settled = await recordVtpReceipt(FLOW, HASH, deps(owner.store, rpc({ [URLS[0]]: rawReceipt({ from: OWNER, logs: [transferLog(), paidLog({ byOwner: true })] }) }).call))
   assert.deepEqual([settled.httpStatus, settled.body.outcome, settled.body.detail], [200, 'executed', 'owner_paid'])
-  // And on a hand-off, a reverted ownerPay from the owner is the hand-off's own refusal.
+  // On a hand-off, the owner's reverted ownerPay closes the flow, and it is no policy refusal:
+  // ownerPay passes none of the vault's policy gates, so only a mistake can revert it.
   const ownerRevert = await storeWith([warn()])
   const rev = await recordVtpReceipt(
     FLOW,
     HASH,
-    deps(ownerRevert.store, rpc({ [URLS[0]]: rawReceipt({ status: '0x0', logs: [] }) }, { [URLS[0]]: rawTx({ from: OWNER, input: ownerPayCalldata(PAYEE, AMOUNT) }) }).call),
+    deps(ownerRevert.store, rpc({ [URLS[0]]: rawReceipt({ status: '0x0', logs: [] }) }, { [URLS[0]]: rawTx({ from: OWNER, input: ownerPayCalldata(PAYEE, AMOUNT) }) }, undefined, () => revertWith('TransferFailed')).call),
   )
-  assert.deepEqual([rev.body.outcome, rev.body.detail, rev.body.payment?.byOwner], ['blocked', 'reverted_onchain', true])
+  assert.deepEqual([rev.body.outcome, rev.body.detail, rev.body.payment?.byOwner, rev.body.payment?.revertReason], ['failed', 'reverted_not_policy', true, 'TransferFailed'])
 })
 
 test('one transaction proves one flow, and a flow that ended takes no receipt', async () => {
@@ -393,6 +407,7 @@ function chainOf(receipts: Record<string, unknown>, txs: Record<string, unknown>
     if (method === 'eth_getTransactionReceipt') return receipts[key] ?? null
     if (method === 'eth_getTransactionByHash') return txs[key] ?? null
     if (method === 'eth_getBlockByNumber') return rawBlock(BigInt(params[0] as string))
+    if (method === 'eth_call') throw revertWith('DailyCapExceeded')
     return null
   }
 }
@@ -498,4 +513,167 @@ test('one receipt post ends inside its hard deadline however many hosts stall, w
   assert.ok(Date.now() - t1 < 2000, `took ${Date.now() - t1} ms against an 80 ms deadline`)
   assert.deepEqual([out2.httpStatus, out2.body.code], [503, 'BLOCK_UNREADABLE'])
   assert.equal((await rowOf(late.store, FLOW)).outcome, 'pending')
+})
+
+// ── what made a revert revert ─────────────────────────────────────────────────────
+
+const REVERTED = rawReceipt({ status: '0x0', logs: [] })
+const postRevert = async (store: VtpStore, replay: (url: string, params: readonly unknown[]) => unknown, receipt: unknown = REVERTED, tx: unknown = rawTx()) => {
+  const r = rpc({ [URLS[0]]: receipt }, { [URLS[0]]: tx }, undefined, replay)
+  return { out: await recordVtpReceipt(FLOW, HASH, deps(store, r.call)), asked: r.asked }
+}
+
+test('only the five typed policy errors make a revert a refusal, and the replay asks about the block before, as the same sender', async () => {
+  assert.deepEqual([...VAULT_POLICY_ERRORS].sort(), ['AboveAutoApprove', 'DailyCapExceeded', 'IsFrozen', 'PayeeNotAllowed', 'SessionKeyExpired'])
+  for (const error of VAULT_POLICY_ERRORS) {
+    const { store } = await storeWith([flow()])
+    const seen: (readonly unknown[])[] = []
+    const { out } = await postRevert(store, (_url, params) => {
+      seen.push(params)
+      return revertWith(error)
+    })
+    assert.deepEqual([out.httpStatus, out.body.verified, out.body.outcome, out.body.detail, out.body.payment?.revertReason], [200, true, 'blocked', 'reverted_onchain', error], error)
+    assert.deepEqual(seen, [[{ from: OPERATOR, to: VAULT, data: payCalldata(PAYEE, AMOUNT) }, hex(100)]], 'the same call at the block before the receipt')
+    assert.match(out.body.next, new RegExp(`policy refused the prepared call in block 101 \\(${error}\\)`))
+    assert.equal(out.body.reason, undefined)
+  }
+})
+
+test('every other revert ends the flow as failed, counts as nothing, and says why', async () => {
+  const cases: [string, () => unknown, string][] = [
+    ['the key is no longer the operator', () => revertWith('NotOperator'), 'NotOperator'],
+    ['the token transfer failed', () => revertWith('TransferFailed'), 'TransferFailed'],
+    ['the token refused with a message', () => revertWith('Error', ['ERC20: transfer amount exceeds balance']), 'Error: ERC20: transfer amount exceeds balance'],
+    ['a panic', () => new JsonRpcError(3, 'execution reverted', encodeErrorResult({ abi: [{ type: 'error', name: 'Panic', inputs: [{ type: 'uint256', name: 'code' }] }], errorName: 'Panic', args: [17n] })), 'Panic 17'],
+    ['an error the vault does not declare', () => new JsonRpcError(3, 'execution reverted', '0xdeadbeef00'), 'unknown error 0xdeadbeef'],
+    ['a revert with no data on any host', () => new JsonRpcError(-32000, 'execution reverted'), 'reverted with no reason on replay'],
+    ['the data one level down, as some hosts nest it', () => new JsonRpcError(3, 'execution reverted', { data: encodeErrorResult({ abi: AgentSpendPolicyAbi, errorName: 'NotOperator' }) }), 'NotOperator'],
+    ['the call does not revert on replay', () => '0x', 'no revert when replayed at block 100: whatever made it revert is not in the state before its block'],
+  ]
+  for (const [what, replay, reason] of cases) {
+    const { store } = await storeWith([flow()])
+    const { out } = await postRevert(store, replay)
+    assert.deepEqual([out.httpStatus, out.body.verified, out.body.outcome, out.body.detail, out.body.payment?.revertReason], [200, true, 'failed', 'reverted_not_policy', reason], what)
+    assert.ok(out.body.reason?.includes(reason), what)
+    assert.match(out.body.next, /neither a payment nor a refusal/, what)
+    const row = await rowOf(store, FLOW)
+    assert.deepEqual([row.outcome, row.payment?.status, row.payment?.revertReason], ['failed', 'reverted', reason], what)
+  }
+
+  // A revert that used all its gas is out of gas, whatever a generous replay would say, and
+  // the chain is not asked for a replay it could only get wrong.
+  const { store } = await storeWith([flow()])
+  const { out, asked } = await postRevert(store, () => revertWith('IsFrozen'), rawReceipt({ status: '0x0', logs: [], gasUsed: 139_644 }))
+  assert.deepEqual([out.body.outcome, out.body.detail, out.body.payment?.revertReason], ['failed', 'reverted_not_policy', 'out of gas: the transaction used all of its 139644 gas'])
+  assert.ok(!asked.some((a) => a.startsWith('eth_call')))
+
+  // A failed flow has ended: the same hash reads back as recorded, another finds it closed.
+  const again = await recordVtpReceipt(FLOW, HASH, deps(store, rpc({}).call))
+  assert.deepEqual([again.httpStatus, again.body.outcome, again.body.detail], [200, 'failed', 'reverted_not_policy'])
+  const other = await recordVtpReceipt(FLOW, '0x' + 'c9'.repeat(32), deps(store, rpc({}).call))
+  assert.deepEqual([other.httpStatus, other.body.code], [409, 'FLOW_ENDED'])
+})
+
+test('a host with no state for the block gives way to the next, a bare revert to one that has the data, and no answer at all changes nothing', async () => {
+  const noState = new JsonRpcError(-32000, 'missing trie node')
+  const later = await storeWith([flow()])
+  const a = await postRevert(later.store, (url) => (url === URLS[0] ? noState : revertWith('AboveAutoApprove')))
+  assert.deepEqual([a.out.body.outcome, a.out.body.payment?.revertReason], ['blocked', 'AboveAutoApprove'])
+
+  const bare = await storeWith([flow()])
+  const b = await postRevert(bare.store, (url) => (url === URLS[0] ? new JsonRpcError(3, 'execution reverted') : revertWith('PayeeNotAllowed')))
+  assert.deepEqual([b.out.body.outcome, b.out.body.payment?.revertReason], ['blocked', 'PayeeNotAllowed'])
+
+  for (const down of [noState, new Error('fetch failed')]) {
+    const seed = flow()
+    const { store } = await storeWith([seed])
+    const { out } = await postRevert(store, () => down)
+    assert.deepEqual([out.httpStatus, out.body.code, out.body.retry, out.body.verified], [503, 'REVERT_REASON_UNREADABLE', true, false])
+    assert.match(out.body.reason ?? '', /RPC could replay the call at block 100/)
+    assert.deepEqual(await rowOf(store, FLOW), seed, 'what made it revert is unknown, so nothing is decided')
+  }
+
+  // A reason that long is a contract's own text, cut before it goes in a public record.
+  const long = await storeWith([flow()])
+  const c = await postRevert(long.store, () => revertWith('Error', ['x'.repeat(5000)]))
+  assert.equal(c.out.body.payment?.revertReason?.length, 200)
+})
+
+// ── against the Postgres-shaped log ───────────────────────────────────────────────
+
+async function pgStoreWith(rows: VtpFlowRecord[]): Promise<{ store: VtpStore; pool: ReturnType<typeof fakeVtpPool> }> {
+  const pool = fakeVtpPool()
+  const store = storageVtpStore({ getPool: async () => pool })
+  for (const r of rows) assert.deepEqual(await store.insert(r), { ok: true, inserted: true })
+  return { store, pool }
+}
+
+test('Postgres-shaped log: a receipt moves the row by a real compare-and-set, and a flow that ended stays ended', async () => {
+  const { store } = await pgStoreWith([flow()])
+  const paid = await recordVtpReceipt(FLOW, HASH, deps(store, rpc({ [URLS[0]]: rawReceipt() }).call))
+  assert.deepEqual([paid.httpStatus, paid.body.outcome, paid.body.detail], [200, 'executed', 'agent_paid'])
+  assert.deepEqual([(await rowOf(store, FLOW)).outcome, (await rowOf(store, FLOW)).payment?.txHash], ['executed', HASH])
+  const repeat = await recordVtpReceipt(FLOW, HASH, deps(store, rpc({}).call))
+  assert.deepEqual([repeat.httpStatus, repeat.body.outcome], [200, 'executed'])
+
+  // Two posts that both read the flow as open: the second one's UPDATE matches no row.
+  const raced = await pgStoreWith([flow()])
+  const stale: VtpStore = { ...raced.store, load: async () => ({ ok: true, row: flow() }) }
+  assert.equal((await recordVtpReceipt(FLOW, HASH, deps(stale, rpc({ [URLS[0]]: rawReceipt() }).call))).httpStatus, 200)
+  const lost = await recordVtpReceipt(FLOW, HASH_B, deps(stale, rpc({ [URLS[0]]: rawReceipt({ hash: HASH_B }) }).call))
+  assert.deepEqual([lost.httpStatus, lost.body.code, lost.body.outcome, lost.body.verified], [409, 'FLOW_ENDED', 'executed', false])
+  assert.equal((await rowOf(raced.store, FLOW)).payment?.txHash, HASH, 'the first post stands')
+})
+
+test('Postgres-shaped log: a DENY takes no receipt, and an opening row reads as no flow at all', async () => {
+  const seed = flow({ outcome: 'blocked', detail: 'deny', prepared: null, verdict: { ...flow().verdict!, decision: 'DENY', effective: 'DENY' } })
+  const denied = await pgStoreWith([seed])
+  const r = rpc({ [URLS[0]]: rawReceipt() })
+  const late = await recordVtpReceipt(FLOW, HASH, deps(denied.store, r.call))
+  assert.deepEqual([late.httpStatus, late.body.code, late.body.outcome, late.body.detail], [409, 'FLOW_ENDED', 'blocked', 'deny'])
+  assert.deepEqual(r.asked, [], 'refused before any RPC was asked')
+  assert.deepEqual(await rowOf(denied.store, FLOW), seed)
+
+  for (const held of [flow({ outcome: 'opening', detail: 'opening', verdict: null, prepared: null }), flow({ outcome: 'abandoned', detail: 'rail_failed', verdict: null, prepared: null })]) {
+    const pg = await pgStoreWith([held])
+    const opening = await recordVtpReceipt(FLOW, HASH, deps(pg.store, r.call))
+    assert.deepEqual([opening.httpStatus, opening.body.code], [404, 'UNKNOWN_FLOW'], held.detail)
+    assert.deepEqual(await rowOf(pg.store, FLOW), held)
+  }
+})
+
+test('Postgres-shaped log, across flows: a payment finds the check it answers, the unique index holds one transaction to one flow, and an opening row never competes', async () => {
+  // A's and B's payments, posted across: the same refusal the file log gives.
+  const crossed = await pgStoreWith([flow(), flowB()])
+  const call = chainOf({ [HASH]: rawReceipt({ block: 150 }), [HASH_B]: rawReceipt({ hash: HASH_B, block: 205 }) })
+  const stolen = await recordVtpReceipt(FLOW, HASH_B, deps(crossed.store, call))
+  assert.deepEqual([stolen.httpStatus, stolen.body.code, stolen.body.answersFlow], [409, 'TX_ANSWERS_LATER_CHECK', FLOW_B])
+  assert.equal((await rowOf(crossed.store, FLOW)).outcome, 'pending')
+  assert.equal((await recordVtpReceipt(FLOW_B, HASH_B, deps(crossed.store, call))).httpStatus, 200)
+  assert.equal((await recordVtpReceipt(FLOW, HASH, deps(crossed.store, call))).httpStatus, 200)
+  // Linked already: refused by the read, before any RPC.
+  const again = rpc({})
+  const third = '0x' + 'ef'.repeat(32)
+  await crossed.store.insert(flow({ flowId: third, check: { ...flow().check, authNonce: third, verdictBlock: '90' } }))
+  const taken = await recordVtpReceipt(third, HASH, deps(crossed.store, again.call))
+  assert.deepEqual([taken.httpStatus, taken.body.code], [409, 'TX_LINKED_ELSEWHERE'])
+  assert.deepEqual(again.asked, [])
+
+  // Two posts that both passed that read on different amounts: only the index stops the second.
+  // Another amount so that the flows do not compete for the payment, and a Paid log that fits each.
+  const other = flowB({ amount: (AMOUNT + 1n).toString() })
+  const race = await pgStoreWith([flow(), other])
+  const blind: VtpStore = { ...race.store, findByTx: async () => ({ ok: true, flowId: null }) }
+  assert.equal((await recordVtpReceipt(FLOW, HASH, deps(blind, rpc({ [URLS[0]]: rawReceipt({ block: 205 }) }).call))).httpStatus, 200)
+  const both = rawReceipt({ block: 205, logs: [transferLog({ value: AMOUNT + 1n }), paidLog({ amount: AMOUNT + 1n })] })
+  const blocked = await recordVtpReceipt(FLOW_B, HASH, deps(blind, rpc({ [URLS[0]]: both }).call))
+  assert.deepEqual([blocked.httpStatus, blocked.body.code, blocked.body.verified], [409, 'TX_LINKED_ELSEWHERE', false])
+  assert.equal((await rowOf(race.store, FLOW_B)).outcome, 'pending')
+
+  // A later reservation on the same vault, payee and amount is not a check yet, so it takes
+  // nothing from the flow that has one.
+  const opening = flowB({ outcome: 'opening', detail: 'opening', verdict: null, prepared: null })
+  const reserved = await pgStoreWith([flow(), opening])
+  const paid = await recordVtpReceipt(FLOW, HASH, deps(reserved.store, rpc({ [URLS[0]]: rawReceipt({ block: 205 }) }).call))
+  assert.deepEqual([paid.httpStatus, paid.body.outcome], [200, 'executed'])
 })

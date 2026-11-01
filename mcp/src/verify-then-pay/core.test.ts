@@ -1,8 +1,14 @@
 import { test, beforeEach } from 'node:test'
 import assert from 'node:assert/strict'
+import { mkdtempSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import { ContractFunctionRevertedError, decodeFunctionData, encodeErrorResult } from 'viem'
 import { runVerifyThenPay, readVtpFlow, type VtpInput } from './core.js'
-import { flowUrl, type VtpStore } from './context.js'
+import { flowUrl, storageVtpStore, type VtpStore } from './context.js'
+import { fakeVtpPool } from './fake-pg.js'
+import { recordVtpReceipt } from './receipt.js'
+import { toSeasonFlow } from './season.js'
 import type { VtpReadClient } from './reads.js'
 import { ARC_MIN_MAX_FEE_WEI } from './prepare.js'
 import { AgentSpendPolicyAbi } from '../contracts/AgentSpendPolicy.js'
@@ -245,7 +251,10 @@ function gateway(over: { scored?: Scored | Error; settle?: GatewaySettleResponse
 
 function memStore(seed: VtpFlowRecord[] = [], over: Partial<VtpStore> = {}) {
   const rows = new Map(seed.map((r) => [r.flowId, r]))
+  /** Every reservation asked for. */
   const inserted: VtpFlowRecord[] = []
+  /** Every row as a compare-and-set left it: what the flow finally recorded. */
+  const closed: VtpFlowRecord[] = []
   const store: VtpStore = {
     load: async (id) => ({ ok: true, row: rows.get(id.toLowerCase()) ?? null }),
     insert: async (rec) => {
@@ -254,12 +263,20 @@ function memStore(seed: VtpFlowRecord[] = [], over: Partial<VtpStore> = {}) {
       rows.set(rec.flowId, rec)
       return { ok: true, inserted: true }
     },
-    update: async () => ({ ok: true, updated: false, row: null }),
+    update: async (id, patch, from) => {
+      const cur = rows.get(id.toLowerCase())
+      if (!cur) return { ok: true, updated: false, row: null }
+      if (!from.includes(cur.outcome)) return { ok: true, updated: false, row: cur }
+      const next = { ...cur, ...patch }
+      rows.set(id.toLowerCase(), next)
+      closed.push(next)
+      return { ok: true, updated: true, row: next }
+    },
     findByTx: async () => ({ ok: true, flowId: null }),
     openFlows: async () => ({ ok: true, rows: [] }),
     ...over,
   }
-  return { store, rows, inserted }
+  return { store, rows, inserted, closed }
 }
 
 function header(over: Record<string, unknown> = {}, auth: Record<string, unknown> = {}): string {
@@ -398,7 +415,7 @@ test('a nonce that already opened a flow is refused before settling, and an unre
   assert.equal(down.g.spy.settles, 0)
 })
 
-test('a settle with no usable answer is charged:null with its own code, and writes no flow', async () => {
+test('a settle with no usable answer is charged:null with its own code, and opens no flow', async () => {
   const stalled = setup({ gw: { settle: { success: false, unknown: true, errorReason: 'Gateway settle did not answer within 8000 ms' } } })
   const r = await runVerifyThenPay(request(), header(), stalled.deps)
   assert.equal(r.httpStatus, 502)
@@ -408,7 +425,9 @@ test('a settle with no usable answer is charged:null with its own code, and writ
   assert.equal(r.body.challenge, undefined, 'nothing invites a second signature')
   assert.equal(r.body.prepared, null)
   assert.match(r.body.next, /proof/)
-  assert.equal(stalled.s.inserted.length, 0)
+  // The reservation was taken before the settle, and it closes as nothing a reader can open.
+  assert.deepEqual([stalled.s.closed[0].outcome, stalled.s.closed[0].detail], ['abandoned', 'rail_failed'])
+  assert.equal((await readVtpFlow(NONCE, { store: stalled.s.store })).httpStatus, 404)
   assert.equal(stalled.g.spy.scored.length, 0)
   assert.equal(stalled.g.spy.persisted[0].outcome, 'unconfirmed')
 
@@ -427,7 +446,7 @@ test('the verdict view names who it is about and the context it was scored in', 
   assert.deepEqual(r.body.verdict?.txContext, { payee: PAYEE, amountUsd: 0.25 })
 })
 
-test('402, 502 and 503 from the rail write no flow; a 500 after settlement writes verdict_unavailable', async () => {
+test('402, 502 and 503 from the rail open no flow and abandon the reservation; a 500 after settlement closes it as verdict_unavailable', async () => {
   const refusedPay = setup({ gw: { settle: { success: false, errorReason: 'insufficient_balance' } } })
   const r402 = await runVerifyThenPay(request(), header(), refusedPay.deps)
   assert.equal(r402.httpStatus, 402)
@@ -435,36 +454,42 @@ test('402, 502 and 503 from the rail write no flow; a 500 after settlement write
   assert.equal(r402.body.charged, false)
   assert.deepEqual((r402.body.challenge?.accepts as { network: string }[]).map((a) => a.network), [arc.caip2])
   assert.match(r402.body.reason ?? '', /insufficient_balance/)
-  assert.equal(refusedPay.s.inserted.length, 0)
+  assert.match(r402.body.next, /trying again takes a new authorization/)
+  assert.deepEqual([refusedPay.s.closed[0].outcome, refusedPay.s.closed[0].detail], ['abandoned', 'rail_failed'])
+  // An abandoned reservation is no flow to a reader, and the nonce still had its one attempt.
+  assert.equal((await readVtpFlow(NONCE, { store: refusedPay.s.store })).httpStatus, 404)
+  assert.deepEqual(toSeasonFlow(refusedPay.s.closed[0]), [])
+  const retried = await runVerifyThenPay(request(), header(), refusedPay.deps)
+  assert.deepEqual([retried.httpStatus, retried.body.code, refusedPay.g.spy.settles], [409, 'NONCE_ALREADY_USED', 1])
 
   const unconfirmed = setup({ gw: { transfers: [] } })
   const r502 = await runVerifyThenPay(request(), header(), unconfirmed.deps)
   assert.equal(r502.httpStatus, 502)
   assert.equal(r502.body.stage, 'check_failed')
   assert.equal(r502.body.charged, null, 'Gateway said success and nothing could be read back: unknown, not false')
-  assert.equal(unconfirmed.s.inserted.length, 0)
+  assert.deepEqual([unconfirmed.s.closed[0].outcome, unconfirmed.s.closed[0].detail], ['abandoned', 'rail_failed'])
   assert.equal(unconfirmed.g.spy.scored.length, 0)
 
   const unproven = setup({ gw: { supported: new Error('Gateway supported 500') } })
   const r503 = await runVerifyThenPay(request(), header(), unproven.deps)
   assert.equal(r503.httpStatus, 503)
   assert.equal(r503.body.stage, 'check_failed')
-  assert.equal(unproven.s.inserted.length, 0)
+  assert.deepEqual([unproven.s.closed[0].outcome, unproven.s.closed[0].detail], ['abandoned', 'rail_failed'])
 
   const broken = setup({ gw: { scored: new Error('scorer exploded') } })
   const r500 = await runVerifyThenPay(request(), header(), broken.deps)
   assert.equal(r500.httpStatus, 500)
   assert.equal(r500.body.stage, 'check_failed')
   assert.equal(r500.body.charged, true)
-  assert.equal(broken.s.inserted.length, 1)
-  const rec = broken.s.inserted[0]
+  assert.equal(broken.s.closed.length, 1)
+  const rec = broken.s.closed[0]
   assert.deepEqual([rec.outcome, rec.detail, rec.verdict, rec.prepared], ['blocked', 'verdict_unavailable', null, null])
   assert.equal(rec.flowId, NONCE)
   assert.equal(r500.body.record?.recorded, true)
   assert.ok(r500.body.next.includes(`recorded at ${flowUrl(NONCE, ORIGIN)}`))
 
   // The same failure with a flow log that refuses the write says so, and links nothing.
-  const lost = setup({ gw: { scored: new Error('scorer exploded') }, store: { insert: async () => ({ ok: false, reason: 'disk full' }) } })
+  const lost = setup({ gw: { scored: new Error('scorer exploded') }, store: { update: async () => ({ ok: false, reason: 'disk full' }) } })
   const r500b = await runVerifyThenPay(request(), header(), lost.deps)
   assert.equal(r500b.httpStatus, 500)
   assert.deepEqual([r500b.body.record?.recorded, r500b.body.record?.url, r500b.body.flowId], [false, null, null])
@@ -513,7 +538,7 @@ test('ALLOW prepares exactly pay(payee, amount) for the operator, asks risk_chec
   assert.equal(out.body.verdict?.decision, 'ALLOW')
   assert.equal(out.body.record?.url, flowUrl(NONCE, ORIGIN))
 
-  const rec = s.inserted[0]
+  const rec = s.closed[0]
   assert.deepEqual([rec.outcome, rec.detail, rec.payOnWarn], ['pending', 'agent_will_pay', false])
   assert.deepEqual([rec.vault, rec.owner, rec.operator, rec.payee, rec.amount, rec.amountUsd], [VAULT, OWNER, OPERATOR, PAYEE, '250000', 0.25])
   assert.equal(rec.check.checkedAtBlock, '29000000')
@@ -531,7 +556,7 @@ test('DENY records a public refusal and prepares nothing to sign', async () => {
   assert.equal(out.body.prepared, null)
   assert.equal(out.body.ownerHandoff, null)
   assert.equal(out.body.verdict?.effective, 'DENY')
-  assert.deepEqual([s.inserted[0].outcome, s.inserted[0].detail, s.inserted[0].prepared], ['blocked', 'deny', null])
+  assert.deepEqual([s.closed[0].outcome, s.closed[0].detail, s.closed[0].prepared], ['blocked', 'deny', null])
   assert.match(out.body.next, /do not pay/)
 
   // The record is public by flowId.
@@ -556,7 +581,7 @@ test('WARN hands the payment to the owner by default, and prepares pay() only wi
   const call = decodeFunctionData({ abi: AgentSpendPolicyAbi, data: own.ownerPay.data as `0x${string}` })
   assert.equal(call.functionName, 'ownerPay')
   assert.deepEqual(call.args?.map((a) => (typeof a === 'string' ? a.toLowerCase() : a)), [PAYEE, 250_000n])
-  assert.deepEqual([handoff.s.inserted[0].outcome, handoff.s.inserted[0].detail], ['awaiting_human', 'warn_handoff'])
+  assert.deepEqual([handoff.s.closed[0].outcome, handoff.s.closed[0].detail], ['awaiting_human', 'warn_handoff'])
   assert.ok(handoff.c.calls.includes('simulate:ownerPay'))
 
   const optIn = setup({ gw: { scored: verdict('WARN') } })
@@ -564,7 +589,7 @@ test('WARN hands the payment to the owner by default, and prepares pay() only wi
   assert.equal(paid.body.stage, 'prepared')
   assert.equal(paid.body.prepared?.from, OPERATOR)
   assert.equal(paid.body.ownerHandoff, null)
-  assert.deepEqual([optIn.s.inserted[0].outcome, optIn.s.inserted[0].payOnWarn], ['pending', true])
+  assert.deepEqual([optIn.s.closed[0].outcome, optIn.s.closed[0].payOnWarn], ['pending', true])
 })
 
 test('a paid answer with a NaN reputation is not paid on: blocked, recorded, and named', async () => {
@@ -577,7 +602,7 @@ test('a paid answer with a NaN reputation is not paid on: blocked, recorded, and
   assert.equal(out.body.verdict?.decision, 'ALLOW')
   assert.equal(out.body.verdict?.effective, 'DENY')
   assert.equal(out.body.verdict?.overriddenBecause, 'REPUTATION_NOT_FINITE')
-  assert.deepEqual([s.inserted[0].outcome, s.inserted[0].detail], ['blocked', 'verdict_unusable'])
+  assert.deepEqual([s.closed[0].outcome, s.closed[0].detail], ['blocked', 'verdict_unusable'])
 })
 
 test('a simulation that fails after the verdict is reported, and a flow log that refuses the write is reported and leaves nothing to send', async () => {
@@ -596,7 +621,7 @@ test('a simulation that fails after the verdict is reported, and a flow log that
   assert.match(out.body.next, /do not send it/)
 
   // An ALLOW the flow log refused to hold hands back no pay(): no receipt could ever close it.
-  const full = setup({ store: { insert: async () => ({ ok: false, reason: 'disk full' }) } })
+  const full = setup({ store: { update: async () => ({ ok: false, reason: 'disk full' }) } })
   const out2 = await runVerifyThenPay(request(), header(), full.deps)
   assert.equal(out2.httpStatus, 500)
   assert.deepEqual([out2.body.stage, out2.body.code, out2.body.flowId, out2.body.prepared, out2.body.ownerHandoff], ['check_failed', 'FLOW_NOT_RECORDED', null, null, null])
@@ -611,13 +636,13 @@ test('the block the verdict came back in is recorded, never below the preflight 
   const ok = setup()
   const out = await runVerifyThenPay(request(), header(), ok.deps)
   assert.equal(out.body.stage, 'prepared')
-  assert.deepEqual([ok.s.inserted[0].check.checkedAtBlock, ok.s.inserted[0].check.verdictBlock], ['29000000', '29000007'])
+  assert.deepEqual([ok.s.closed[0].check.checkedAtBlock, ok.s.closed[0].check.verdictBlock], ['29000000', '29000007'])
   assert.ok(ok.c.calls.lastIndexOf('getBlock') > ok.c.calls.indexOf('settle'), 'the verdict block is read after the check was bought')
 
   // A host that lags answers a lower block after the verdict: the preflight's stands.
   const lag = setup({ chain: { blocks: [29_000_000n, 28_999_990n] } })
   await runVerifyThenPay(request(), header(), lag.deps)
-  assert.equal(lag.s.inserted[0].check.verdictBlock, '29000000')
+  assert.equal(lag.s.closed[0].check.verdictBlock, '29000000')
 
   // No answer after the verdict: the verdict is reported and recorded, and nothing is prepared,
   // because no payment could be shown to come after this check.
@@ -630,7 +655,7 @@ test('the block the verdict came back in is recorded, never below the preflight 
     assert.equal(o.body.ownerHandoff, null, decision)
     assert.equal(o.body.verdict?.effective, decision)
     assert.match(o.body.next, /do not pay on this flow/)
-    const rec = dark.s.inserted[0]
+    const rec = dark.s.closed[0]
     assert.deepEqual([rec.outcome, rec.detail, rec.check.verdictBlock, rec.prepared], ['blocked', 'verdict_block_unreadable', null, null], decision)
     assert.deepEqual(dark.c.calls.filter((x) => x.startsWith('simulate:')), ['simulate:pay'], 'only the preflight simulated; nothing after the verdict')
   }
@@ -639,7 +664,7 @@ test('the block the verdict came back in is recorded, never below the preflight 
   const deny = setup({ chain: { blocks: [29_000_000n, new Error('fetch failed')] }, gw: { scored: verdict('DENY') } })
   const d = await runVerifyThenPay(request(), header(), deny.deps)
   assert.deepEqual([d.httpStatus, d.body.stage], [200, 'deny'])
-  assert.deepEqual([deny.s.inserted[0].detail, deny.s.inserted[0].check.verdictBlock], ['deny', null])
+  assert.deepEqual([deny.s.closed[0].detail, deny.s.closed[0].check.verdictBlock], ['deny', null])
 })
 
 test('a DENY or an unusable answer whose record was not written says the refusal is not public, and links no record', async () => {
@@ -647,7 +672,7 @@ test('a DENY or an unusable answer whose record was not written says the refusal
     [verdict('DENY'), 'deny'],
     [verdict('ALLOW', { reputationScore: Number.NaN }), 'verdict_unusable'],
   ] as const) {
-    const full = setup({ gw: { scored }, store: { insert: async () => ({ ok: false, reason: 'disk full' }) } })
+    const full = setup({ gw: { scored }, store: { update: async () => ({ ok: false, reason: 'disk full' }) } })
     const out = await runVerifyThenPay(request(), header(), full.deps)
     assert.equal(out.httpStatus, 500, stage)
     assert.equal(out.body.stage, stage)
@@ -658,17 +683,183 @@ test('a DENY or an unusable answer whose record was not written says the refusal
   }
 })
 
-test("an answer whose nonce another request already recorded hands back nothing to send, and never that flow's link", async () => {
-  // Both requests passed the nonce check before either wrote; the other one's row is there,
-  // and may name another payee.
+test('an answer whose reservation was no longer open hands back nothing to send, and links no record', async () => {
   for (const decision of ['ALLOW', 'WARN', 'DENY'] as const) {
-    const raced = setup({ gw: { scored: verdict(decision) }, store: { insert: async () => ({ ok: true, inserted: false }) } })
+    const raced = setup({ gw: { scored: verdict(decision) }, store: { update: async () => ({ ok: true, updated: false, row: null }) } })
     const out = await runVerifyThenPay(request(), header(), raced.deps)
     assert.equal(out.httpStatus, 409, decision)
     assert.equal(out.body.stage, decision === 'DENY' ? 'deny' : 'check_failed', decision)
     if (decision !== 'DENY') assert.equal(out.body.code, 'FLOW_NOT_RECORDED')
     assert.deepEqual([out.body.prepared, out.body.ownerHandoff, out.body.flowId, out.body.record?.url, out.body.record?.recorded], [null, null, null, null, false], decision)
-    assert.match(out.body.record?.reason ?? '', /already written by another request/)
-    assert.ok(!JSON.stringify(out.body).includes('/api/x402/gateway/flows/'), `${decision}: no link to the other request's flow`)
+    assert.match(out.body.record?.reason ?? '', /no longer open/)
+    assert.ok(!JSON.stringify(out.body).includes('/api/x402/gateway/flows/'), `${decision}: no link to a record this answer is not`)
   }
+})
+
+// ── one signed payment, one flow ──────────────────────────────────────────────────
+
+test('two concurrent requests with one signed payment reach Gateway once, on every flow log', async () => {
+  const backends: [string, () => VtpStore][] = [
+    ['file', () => storageVtpStore({ file: join(mkdtempSync(join(tmpdir(), 'vtp-race-')), 'vtp-flows.json'), getPool: async () => null })],
+    [
+      'postgres',
+      () => {
+        const pool = fakeVtpPool()
+        return storageVtpStore({ getPool: async () => pool })
+      },
+    ],
+  ]
+  for (const [what, make] of backends) {
+    const store = make()
+    const { g, deps } = setup()
+    const racing = { ...deps, store }
+    const [a, b] = await Promise.all([runVerifyThenPay(request(), header(), racing), runVerifyThenPay(request(), header(), racing)])
+    assert.equal(g.spy.settles, 1, `${what}: Gateway was asked ${g.spy.settles} times`)
+    assert.equal(g.spy.scored.length, 1, what)
+    const answers = [a, b].sort((x, y) => x.httpStatus - y.httpStatus)
+    assert.deepEqual(answers.map((o) => o.httpStatus), [200, 409], what)
+    assert.equal(answers[0].body.stage, 'prepared', what)
+    assert.deepEqual([answers[1].body.code, answers[1].body.charged, answers[1].body.prepared], ['NONCE_ALREADY_USED', false, null], what)
+    const row = await store.load(NONCE)
+    assert.equal(row.ok && row.row?.outcome, 'pending', what)
+    assert.equal(row.ok && row.row?.check.transferId, 'tr-1', what)
+  }
+})
+
+test('the reservation goes in before the rail is asked, and to a reader it is nothing yet', async () => {
+  const { g, s, deps } = setup()
+  const seen: unknown[] = []
+  const settle = g.rail.settle
+  g.rail.settle = async () => {
+    const row = s.rows.get(NONCE)!
+    assert.deepEqual([row.outcome, row.detail, row.verdict, row.prepared, row.check.gatewayOutcome, row.check.verdictBlock], ['opening', 'opening', null, null, 'none', null])
+    assert.deepEqual(toSeasonFlow(row), [], 'the season counts nothing')
+    const read = await readVtpFlow(NONCE, { store: s.store, origin: ORIGIN })
+    seen.push([read.httpStatus, read.body.flow, read.body.error])
+    const asked: string[] = []
+    const posted = await recordVtpReceipt(NONCE, '0x' + 'c1'.repeat(32), {
+      store: s.store,
+      receipts: {
+        urls: arc.rpcUrls,
+        call: async (_url, method) => {
+          asked.push(method)
+          return null
+        },
+      },
+    })
+    seen.push([posted.httpStatus, posted.body.code, asked])
+    return settle()
+  }
+  const out = await runVerifyThenPay(request(), header(), deps)
+  assert.equal(out.httpStatus, 200)
+  assert.deepEqual(seen, [
+    [404, null, 'no flow with this id'],
+    [404, 'UNKNOWN_FLOW', []],
+  ])
+  assert.equal(s.inserted.length, 1)
+  assert.deepEqual([s.closed.length, s.closed[0].outcome], [1, 'pending'])
+  // Closed, it is the record the answer linked.
+  assert.equal((await readVtpFlow(NONCE, { store: s.store, origin: ORIGIN })).httpStatus, 200)
+})
+
+test('a flow log that refuses the reservation refuses the request, and nothing is bought', async () => {
+  const full = setup({ store: { insert: async () => ({ ok: false, reason: 'disk full' }) } })
+  const a = await runVerifyThenPay(request(), header(), full.deps)
+  assert.deepEqual([a.httpStatus, a.body.stage, a.body.code, a.body.charged], [503, 'refused', 'FLOW_STORE_UNREADABLE', false])
+  assert.match(a.body.reason ?? '', /disk full/)
+  assert.equal(full.g.spy.settles, 0)
+
+  // Passed the read and lost the insert: the row appeared between the two.
+  const lost = setup({ store: { insert: async () => ({ ok: true, inserted: false }) } })
+  const b = await runVerifyThenPay(request(), header(), lost.deps)
+  assert.deepEqual([b.httpStatus, b.body.stage, b.body.code, b.body.charged], [409, 'refused', 'NONCE_ALREADY_USED', false])
+  assert.equal(lost.g.spy.settles, 0)
+
+  // No payment yet means nothing to reserve.
+  const free = setup()
+  assert.equal((await runVerifyThenPay(request(), undefined, free.deps)).httpStatus, 402)
+  assert.equal(free.s.inserted.length, 0)
+})
+
+test('a DENY through the Postgres-shaped log closes its reservation as a public refusal the season counts', async () => {
+  const pool = fakeVtpPool()
+  const store = storageVtpStore({ getPool: async () => pool })
+  const { deps } = setup({ gw: { scored: verdict('DENY') } })
+  const out = await runVerifyThenPay(request(), header(), { ...deps, store })
+  assert.deepEqual([out.httpStatus, out.body.stage, out.body.record?.recorded], [200, 'deny', true])
+  const read = await readVtpFlow(NONCE, { store, origin: ORIGIN })
+  assert.deepEqual([read.httpStatus, read.body.flow?.outcome, read.body.flow?.detail, read.body.flow?.verdict?.decision], [200, 'blocked', 'deny', 'DENY'])
+  const [season] = toSeasonFlow(read.body.flow!)
+  assert.equal(season.outcome, 'refused')
+  assert.equal(season.evidenceUrl, flowUrl(NONCE))
+  // A refusal has no payment to come, so a receipt posted to it changes nothing.
+  const late = await recordVtpReceipt(NONCE, '0x' + 'c1'.repeat(32), { store })
+  assert.deepEqual([late.httpStatus, late.body.code], [409, 'FLOW_ENDED'])
+})
+
+// ── a WARN with no human to hand it to ────────────────────────────────────────────
+
+test('a WARN on a vault whose owner and operator are one key blocks the flow and records no approval', async () => {
+  const same = setup({ chain: { owner: OPERATOR }, gw: { scored: verdict('WARN') } })
+  const out = await runVerifyThenPay(request(), header(), same.deps)
+  assert.deepEqual([out.httpStatus, out.body.stage, out.body.prepared, out.body.ownerHandoff, out.body.charged], [200, 'warn_no_human_gate', null, null, true])
+  assert.equal(out.body.checks?.vault.ownerIsOperator, true)
+  const rec = same.s.closed[0]
+  assert.deepEqual([rec.outcome, rec.detail, rec.prepared], ['blocked', 'warn_no_human_gate', null])
+  assert.match(out.body.next, /do not pay/)
+  assert.match(out.body.next, /no approval was recorded/)
+  assert.ok(!same.c.calls.includes('simulate:ownerPay'), 'no owner call was even built')
+  assert.deepEqual(toSeasonFlow(rec), [], 'neither a payment nor a refusal for the season')
+
+  // The same fact in the free preflight, before anything is bought.
+  const free = await runVerifyThenPay(request(), undefined, setup({ chain: { owner: OPERATOR } }).deps)
+  assert.equal(free.body.checks?.vault.ownerIsOperator, true)
+
+  // Two keys is the normal hand-off, and says so.
+  const two = await runVerifyThenPay(request(), header(), setup({ gw: { scored: verdict('WARN') } }).deps)
+  assert.deepEqual([two.body.stage, two.body.checks?.vault.ownerIsOperator], ['awaiting_human', false])
+
+  // payOnWarn is the agent's own decision and claims no human, so it stays the agent's call;
+  // and an ALLOW needs no hand-off at all.
+  const optIn = await runVerifyThenPay(request({ payOnWarn: true }), header(), setup({ chain: { owner: OPERATOR }, gw: { scored: verdict('WARN') } }).deps)
+  assert.deepEqual([optIn.body.stage, optIn.body.prepared?.function], ['prepared', 'pay(address,uint256)'])
+  const allow = await runVerifyThenPay(request(), header(), setup({ chain: { owner: OPERATOR } }).deps)
+  assert.equal(allow.body.stage, 'prepared')
+})
+
+test('with payOnWarn, a WARN carrying a DENY-level signal prepares nothing', async () => {
+  const cases: Record<string, unknown>[] = [{ revoked: true }, { sybil: 'high' }, { onchainVerified: false }, { reputationScore: 60 }]
+  for (const signals of cases) {
+    const { s, deps } = setup({ gw: { scored: verdict('WARN', signals) } })
+    const out = await runVerifyThenPay(request({ payOnWarn: true }), header(), deps)
+    assert.deepEqual([out.body.stage, out.body.code, out.body.prepared, out.body.ownerHandoff], ['verdict_unusable', 'SIGNALS_INCONSISTENT', null, null], JSON.stringify(signals))
+    assert.deepEqual([s.closed[0].outcome, s.closed[0].detail], ['blocked', 'verdict_unusable'])
+    assert.equal(out.body.verdict?.effective, 'DENY')
+  }
+})
+
+// ── how to send what was prepared ─────────────────────────────────────────────────
+
+test('the instruction names the prepared fee, its floor and the gas limit, not the floor as a target', async () => {
+  // Gas at 20.001 gwei: a 20 gwei fee is under the base fee, so "at least 20 gwei" was a trap.
+  const ok = setup()
+  const out = await runVerifyThenPay(request(), header(), ok.deps)
+  const p = out.body.prepared!
+  assert.ok(BigInt(p.fees.maxFeePerGas) > 20_001_000_000n)
+  assert.ok(out.body.next.includes(`maxFeePerGas prepared.fees.maxFeePerGas (${p.fees.maxFeePerGas} wei)`), out.body.next)
+  assert.ok(out.body.next.includes(`never below prepared.fees.floorWei (${p.fees.floorWei} wei)`), out.body.next)
+  assert.ok(out.body.next.includes(`gas limit prepared.fees.gas (${p.fees.gas})`), out.body.next)
+  assert.doesNotMatch(out.body.next, /at least/)
+
+  const warn = setup({ gw: { scored: verdict('WARN') } })
+  const w = await runVerifyThenPay(request(), header(), warn.deps)
+  const o = w.body.ownerHandoff!.ownerPay
+  assert.ok(w.body.next.includes(`maxFeePerGas ownerHandoff.ownerPay.fees.maxFeePerGas (${o.fees.maxFeePerGas} wei)`), w.body.next)
+  assert.ok(w.body.next.includes(`gas limit ownerHandoff.ownerPay.fees.gas (${o.fees.gas})`), w.body.next)
+
+  // An ownerPay that could not be estimated has no limit to name, and says that.
+  const cannot = setup({ chain: { revertOwnerPay: 'TransferFailed' }, gw: { scored: verdict('WARN') } })
+  const c = await runVerifyThenPay(request(), header(), cannot.deps)
+  assert.equal(c.body.ownerHandoff?.ownerPay.fees.gas, null)
+  assert.match(c.body.next, /your own gas limit, since ownerHandoff\.ownerPay\.fees\.gas could not be estimated/)
 })

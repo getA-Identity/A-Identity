@@ -73,9 +73,10 @@ test('an executed flow is a payment, named by its hash, timed by the block it wa
   assert.match(f.note, /in block 101/)
 })
 
-test('a vault revert and a DENY are refusals: one by its hash, the other by its public flow record', () => {
-  const [rev] = toSeasonFlow(row({ outcome: 'blocked', detail: 'reverted_onchain', payment: payment('reverted') }))
+test('a vault policy revert and a DENY are refusals: one by its hash, the other by its public flow record', () => {
+  const [rev] = toSeasonFlow(row({ outcome: 'blocked', detail: 'reverted_onchain', payment: { ...payment('reverted'), revertReason: 'AboveAutoApprove' } }))
   assert.deepEqual([rev.outcome, rev.txHash, rev.evidenceUrl, rev.at], ['refused', TX, undefined, '2026-11-01T10:00:09.000Z'])
+  assert.match(rev.note, /AboveAutoApprove/)
   const [deny] = toSeasonFlow(row({ outcome: 'blocked', detail: 'deny', verdict: { ...row().verdict!, decision: 'DENY', effective: 'DENY' } }))
   assert.deepEqual([deny.outcome, deny.txHash], ['refused', undefined])
   assert.equal(deny.evidenceUrl, `https://a-identity.xyz/api/x402/gateway/flows/${FLOW}`)
@@ -84,6 +85,9 @@ test('a vault revert and a DENY are refusals: one by its hash, the other by its 
 
 test('a flow still open, or one whose verdict was never usable, counts nothing', () => {
   for (const over of [
+    { outcome: 'opening', detail: 'opening', verdict: null },
+    { outcome: 'abandoned', detail: 'rail_failed', verdict: null },
+    { outcome: 'blocked', detail: 'warn_no_human_gate' },
     { outcome: 'pending', detail: 'agent_will_pay' },
     { outcome: 'awaiting_human', detail: 'warn_handoff' },
     { outcome: 'blocked', detail: 'verdict_unusable' },
@@ -92,7 +96,19 @@ test('a flow still open, or one whose verdict was never usable, counts nothing',
     // An executed row without a successful receipt is not a payment.
     { outcome: 'executed', detail: 'agent_paid' },
     { outcome: 'executed', detail: 'agent_paid', payment: payment('reverted') },
+    // A revert that was not the vault's policy is neither a payment nor a refusal.
+    { outcome: 'failed', detail: 'reverted_not_policy', payment: { ...payment('reverted'), revertReason: 'out of gas: the transaction used all of its 100000 gas' } },
+    { outcome: 'failed', detail: 'reverted_not_policy', payment: { ...payment('reverted'), revertReason: 'NotOperator' } },
+    // And a refusal has to name the typed error that made it one.
+    { outcome: 'blocked', detail: 'reverted_onchain', payment: payment('reverted') },
+    { outcome: 'blocked', detail: 'reverted_onchain', payment: { ...payment('reverted'), revertReason: 'TransferFailed' } },
   ] as Partial<VtpFlowRecord>[]) {
     assert.deepEqual(toSeasonFlow(row(over)), [], JSON.stringify(over))
   }
+})
+
+test('a row that is not a flow record throws here, so the report can skip that row alone', () => {
+  assert.throws(() => toSeasonFlow(row({ amount: 'not a number', outcome: 'executed', detail: 'agent_paid', payment: payment('success') })))
+  assert.throws(() => toSeasonFlow(row({ check: undefined as never })), /no flowId, payee or check payer/)
+  assert.throws(() => toSeasonFlow(row({ flowId: 7 as never })), /no flowId, payee or check payer/)
 })

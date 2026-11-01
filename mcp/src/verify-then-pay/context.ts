@@ -18,6 +18,7 @@ import {
   type VtpFlowInsert,
   type VtpFlowMatch,
   type VtpFlowOutcome,
+  type VtpFlowPatch,
   type VtpFlowRead,
   type VtpFlowRecord,
   type VtpFlowsRead,
@@ -49,10 +50,21 @@ export function flowUrl(flowId: string, origin: string = VTP_PUBLIC_ORIGIN): str
   return `${origin.replace(/\/$/, '')}${flowPath(flowId)}`
 }
 
+/**
+ * A row that holds a nonce and no flow: a reservation whose check is still being bought (or
+ * whose server died buying it), or one the rail answered without a verdict. Its fields are the
+ * unverified word of whoever posted the payment, because the signature is only checked when it
+ * settles, so to a reader it is nothing, the same as no row. Only the nonce check sees it.
+ */
+export function holdsNoFlow(row: VtpFlowRecord): boolean {
+  return row.outcome === 'opening' || row.detail === 'rail_failed'
+}
+
 export type VtpStore = {
   load(flowId: string): Promise<VtpFlowRead>
+  /** Reserve a nonce: atomic and insert-only, so one signed payment opens one flow. */
   insert(rec: VtpFlowRecord): Promise<VtpFlowInsert>
-  update(flowId: string, patch: Partial<Pick<VtpFlowRecord, 'outcome' | 'detail' | 'payment' | 'updatedAt'>>, from: VtpFlowOutcome[]): Promise<VtpFlowUpdate>
+  update(flowId: string, patch: VtpFlowPatch, from: VtpFlowOutcome[]): Promise<VtpFlowUpdate>
   findByTx(txHash: string): Promise<VtpFlowByTx>
   /** The open flows (pending or waiting for the owner) on one vault, payee and amount. */
   openFlows(match: VtpFlowMatch): Promise<VtpFlowsRead>

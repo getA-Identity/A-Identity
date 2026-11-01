@@ -8,27 +8,34 @@
  *      be bought (501), so nothing is read either.
  *   3. A presented payment is pinned before it is settled: a payload that names another
  *      network is refused, because the rail settles on whatever network a payload names; and
- *      a nonce that already opened a flow is refused, because a flow is keyed by it.
+ *      a nonce that already opened a flow is refused, because a flow is keyed by it. This read
+ *      only saves the preflight: the reservation in step 6 is what holds under concurrency.
  *   4. The free preflight, read from Arc Mainnet: the vault holds the registry's USDC, the
  *      payee holds an ERC-8004 agent there, the vault's policy and a simulated pay() from its
  *      operator accept the payment, and the operator can pay the gas. A refusal here costs
  *      nothing: the check is never bought for a payment the vault would refuse anyway. It
  *      runs again when the payment arrives, because the vault may have moved since the 402.
  *   5. No payment yet: the 402, carrying the Arc Mainnet Gateway offer and nothing else.
- *   6. The check, bought in process through the rail exactly as /api/x402/gateway/tools/
- *      risk_check sells it (same price, same settlement row, same read-back), with the payee
- *      ADDRESS as agentId and txContext {amountUsd, payee}. A CAIP agent id is never sent:
- *      the scorer matches platform agents by address, not by CAIP id, so one would always be
- *      scored off-platform.
+ *   6. The nonce reserved, then the check. An insert-only opening row keyed by the nonce goes
+ *      in first, so of two requests carrying one signed payment only one reaches Gateway; the
+ *      other is refused (409), and a flow log that refuses the write refuses the request (503)
+ *      before anything is bought. A reservation is nothing yet to any reader. The check is then
+ *      bought in process through the rail exactly as /api/x402/gateway/tools/risk_check sells
+ *      it (same price, same settlement row, same read-back), with the payee ADDRESS as agentId
+ *      and txContext {amountUsd, payee}. A CAIP agent id is never sent: the scorer matches
+ *      platform agents by address, not by CAIP id, so one would always be scored off-platform.
+ *      A rail failure marks the reservation abandoned: a nonce gets one attempt, so trying again
+ *      takes a new authorization.
  *   7. The block the verdict came back in, read at once. A payment answers this check only
  *      when it lands in a later block (receipt.ts), so a pay() sent while the check was still
  *      running never counts as its result. If the chain does not answer for it, nothing is
  *      prepared, because no payment could be shown to come after this check.
  *   8. The decision, only from a verdict that passed verdict.ts. DENY stops. WARN prepares
- *      ownerPay() for the owner unless the caller opted into payOnWarn. ALLOW prepares pay()
- *      for the operator. Every paid check writes one flow row, insert-only. An answer whose row
- *      was not written says so and links no record (never another request's flow under the same
- *      nonce), and hands back nothing to send: a payment on it could never be receipted.
+ *      ownerPay() for the owner unless the caller opted into payOnWarn, and when the vault's
+ *      owner and operator are one key there is no human to hand it to, so it stops there too.
+ *      ALLOW prepares pay() for the operator. Every paid check closes its reservation once,
+ *      compare-and-set from opening. An answer whose row could not be closed says so and links
+ *      no record, and hands back nothing to send: a payment on it could never be receipted.
  *
  * The answer is always executed: false. What it hands back is the exact call, built from the
  * request's own inputs, for the caller's own key to send. The flow moves to executed only when
@@ -38,7 +45,7 @@
 import type { ChainDescriptor } from '../chains/index.js'
 import { railChallenge, railPaidNetwork, railPaywallGate, railServeTool, railStatus, toolPriceUsd, type GatewayRailStatus, type RailDeps } from '../x402-gateway/index.js'
 import type { VtpDecision, VtpFlowDetail, VtpFlowOutcome, VtpFlowRecord } from '../storage.js'
-import { flowPath, flowUrl, storageVtpStore, vtpChain, vtpReadClient, VTP_PUBLIC_ORIGIN, type VtpDeps, type VtpStore } from './context.js'
+import { flowPath, flowUrl, holdsNoFlow, storageVtpStore, vtpChain, vtpReadClient, VTP_PUBLIC_ORIGIN, type VtpDeps, type VtpStore } from './context.js'
 import {
   assessVaultAsset,
   assessVaultPolicy,
@@ -53,7 +60,7 @@ import {
 import { evaluateVerdict, readSettlement, type ExpectedCheck, type VerdictEvaluation } from './verdict.js'
 import { feesFor, gasLimitFor, prepareOwnerPay, preparePay, type Fees, type PreparedCall } from './prepare.js'
 
-export type VtpStage = 'refused' | 'unavailable' | 'payment_required' | 'check_failed' | 'verdict_unusable' | 'deny' | 'awaiting_human' | 'prepared'
+export type VtpStage = 'refused' | 'unavailable' | 'payment_required' | 'check_failed' | 'verdict_unusable' | 'deny' | 'awaiting_human' | 'warn_no_human_gate' | 'prepared'
 
 /** Why a request was refused before anything was charged. The vault codes are the vault
  *  contract's own error names, so a refusal here reads like the revert it prevented. */
@@ -94,6 +101,8 @@ export type VtpChecks = {
     ok: boolean | null
     owner: string | null
     operator: string | null
+    /** The owner and the operator are one key: a WARN has no human to hand it to. null until both are read. */
+    ownerIsOperator: boolean | null
     frozen: boolean | null
     sessionKeyExpiry: string | null
     allowlistEnabled: boolean | null
@@ -266,6 +275,7 @@ function emptyChecks(chain: ChainDescriptor, p: ParsedVtpInput): VtpChecks {
       ok: null,
       owner: null,
       operator: null,
+      ownerIsOperator: null,
       frozen: null,
       sessionKeyExpiry: null,
       allowlistEnabled: null,
@@ -292,6 +302,7 @@ function fillVault(checks: VtpChecks, read: VaultRead): void {
   Object.assign(checks.vault, {
     owner: f.owner,
     operator: f.operator,
+    ownerIsOperator: f.owner && f.operator ? f.owner === f.operator : null,
     frozen: f.frozen,
     sessionKeyExpiry: str(f.sessionKeyExpiry),
     allowlistEnabled: f.allowlistEnabled,
@@ -417,13 +428,13 @@ export function vtpRateLimited(windowMs: number): VtpResponse {
   }
 }
 
-type Insert = Awaited<ReturnType<VtpStore['insert']>>
+type Closed = Awaited<ReturnType<VtpStore['update']>>
 
 /** What the answer may say about its record. A record that was not written has no url: the
- *  url would 404, or open another request's flow written under the same nonce. */
-function recordView(ins: Insert, url: string, outcome: VtpFlowOutcome, detail: VtpFlowDetail): NonNullable<VerifyThenPayToolResult['record']> {
-  if (!ins.ok) return { url: null, outcome, detail, recorded: false, reason: `the flow log refused the write (${ins.reason})` }
-  if (!ins.inserted) return { url: null, outcome, detail, recorded: false, reason: 'a flow under this nonce was already written by another request, so this answer was not recorded' }
+ *  url would 404, or open a reservation that never became this answer. */
+function recordView(closed: Closed, url: string, outcome: VtpFlowOutcome, detail: VtpFlowDetail): NonNullable<VerifyThenPayToolResult['record']> {
+  if (!closed.ok) return { url: null, outcome, detail, recorded: false, reason: `the flow log refused the write (${closed.reason})` }
+  if (!closed.updated) return { url: null, outcome, detail, recorded: false, reason: 'the reservation under this nonce was no longer open, so this answer was not recorded' }
   return { url, outcome, detail, recorded: true }
 }
 
@@ -478,7 +489,7 @@ type RecordInput = {
   payOnWarn: boolean
   owner: string
   operator: string
-  settlement: { transferId: string | null; outcome: 'credited' | 'completed'; payer: string; value: string; ts: string }
+  settlement: { transferId: string | null; outcome: VtpFlowRecord['check']['gatewayOutcome']; payer: string; value: string; ts: string }
   block: bigint
   verdictBlock: bigint | null
   verdict: VtpFlowRecord['verdict']
@@ -546,6 +557,13 @@ async function blockAfterVerdict(client: VtpReadClient, floor: bigint): Promise<
   }
 }
 
+/** How the prepared call has to be sent. A fee at the floor is no fee to send: on a day the base
+ *  fee is above 20 gwei it would never be included. */
+function sendInstruction(call: PreparedCall, path: string): string {
+  const gas = call.fees.gas !== null ? `gas limit ${path}.fees.gas (${call.fees.gas})` : `your own gas limit, since ${path}.fees.gas could not be estimated`
+  return `maxFeePerGas ${path}.fees.maxFeePerGas (${call.fees.maxFeePerGas} wei), never below ${path}.fees.floorWei (${call.fees.floorWei} wei), and ${gas}`
+}
+
 /** The settlement record the rail attached, for a 500: paid, but the tool failed. */
 function settledOn500(body: unknown, expected: ExpectedCheck) {
   const s = readSettlement(body, expected)
@@ -598,10 +616,32 @@ export async function runVerifyThenPay(input: VtpInput, paymentHeader: string | 
   // 5. no usable payment yet: the challenge
   if (!payment || !payment.ok) return paymentRequired(chain, status, railDeps, pre.checks, payment && !payment.ok ? payment.reason : undefined)
 
-  // 6. the check, through the rail, in process
+  // 6. the nonce reserved, so one signed payment reaches Gateway once; then the check, through the rail, in process
+  const flowId = payment.nonce
+  const ts0 = new Date(now()).toISOString()
+  if (flowId) {
+    const opening = flowRecord({
+      chain,
+      flowId,
+      now: ts0,
+      p,
+      payOnWarn: parsed.payOnWarn,
+      owner: pre.owner,
+      operator: pre.operator,
+      settlement: { transferId: null, outcome: 'none', payer: payment.from ?? '', value: '', ts: ts0 },
+      block: pre.block,
+      verdictBlock: null,
+      verdict: null,
+      prepared: null,
+      outcome: 'opening',
+      detail: 'opening',
+    })
+    const opened = await store.insert(opening)
+    if (!opened.ok) return refused(chain, 503, 'FLOW_STORE_UNREADABLE', `the flow log refused the write (${opened.reason}), so a flow for this payment could not be recorded`, pre.checks)
+    if (!opened.inserted) return refused(chain, 409, 'NONCE_ALREADY_USED', `this authorization nonce already opened flow ${flowId}; sign a new authorization`, pre.checks)
+  }
   const out = await railServeTool('risk_check', { agentId: p.payee, txContext: { amountUsd: p.amountUsd, payee: p.payee } }, header, status, railDeps)
   const expected: ExpectedCheck = { network: chain.caip2, authNonce: payment.nonce ?? '', payer: payment.from ?? '', payee: p.payee, amountUsd: p.amountUsd }
-  const flowId = payment.nonce
   const ts = new Date(now()).toISOString()
   const receiptUrl = `${flowUrl(flowId ?? '', origin)}/receipt`
 
@@ -626,7 +666,7 @@ export async function runVerifyThenPay(input: VtpInput, paymentHeader: string | 
       // Paid, and the tool failed after settlement: the record says what was bought and that
       // no verdict came back, so the flow is blocked, never pending.
       const rec = flowRecord({ chain, flowId, now: ts, p, payOnWarn: parsed.payOnWarn, owner: pre.owner, operator: pre.operator, settlement: paid500, block: pre.block, verdictBlock: null, verdict: null, prepared: null, outcome: 'blocked', detail: 'verdict_unavailable' })
-      const record = recordView(await store.insert(rec), flowUrl(flowId, origin), rec.outcome, rec.detail)
+      const record = recordView(await store.update(flowId, rec, ['opening']), flowUrl(flowId, origin), rec.outcome, rec.detail)
       return {
         httpStatus: 500,
         body: result(chain, {
@@ -644,6 +684,9 @@ export async function runVerifyThenPay(input: VtpInput, paymentHeader: string | 
         }),
       }
     }
+    // No verdict and no paid failure. A reservation that cannot be marked stays opening, which
+    // reads as nothing just the same.
+    if (flowId) await store.update(flowId, { outcome: 'abandoned', detail: 'rail_failed', updatedAt: ts }, ['opening'])
     const railBody = out.body as Record<string, unknown>
     const challenge = out.httpStatus === 402 && railBody && typeof railBody === 'object' ? arcOnly(chain, railBody) : null
     const railError = (railBody as { error?: unknown })?.error
@@ -664,7 +707,7 @@ export async function runVerifyThenPay(input: VtpInput, paymentHeader: string | 
           ? 'The settle call got no usable answer from Gateway, so whether this authorization settled is not known and it stays valid until it expires. No verdict was served and no flow was recorded. Do not pay, and look the nonce up on GET /api/x402/gateway/proof before signing another.'
           : unconfirmed
             ? 'Gateway answered success but its transfer could not be read back, so no verdict was served and no flow was recorded. Do not pay; the settlement is recorded as unconfirmed on GET /api/x402/gateway/proof.'
-            : 'No verdict, so do not pay. Nothing was recorded as a flow. Read rail.body for what the Gateway rail refused.',
+            : `No verdict, so do not pay. Nothing was recorded as a flow. Read rail.body for what the Gateway rail refused.${flowId ? ' This nonce has had its one attempt: trying again takes a new authorization.' : ''}`,
       }),
     }
   }
@@ -712,6 +755,12 @@ export async function runVerifyThenPay(input: VtpInput, paymentHeader: string | 
     stage = 'check_failed'
     outcome = 'blocked'
     detail = 'verdict_block_unreadable'
+  } else if (v.effective === 'WARN' && !parsed.payOnWarn && pre.owner === pre.operator) {
+    // The hand-off would go back to the key that asked: nothing a human approved could be told
+    // apart from the agent paying itself, so no owner approval is prepared or recorded.
+    stage = 'warn_no_human_gate'
+    outcome = 'blocked'
+    detail = 'warn_no_human_gate'
   } else if (v.effective === 'WARN' && !parsed.payOnWarn) {
     stage = 'awaiting_human'
     outcome = 'awaiting_human'
@@ -761,8 +810,8 @@ export async function runVerifyThenPay(input: VtpInput, paymentHeader: string | 
     outcome,
     detail,
   })
-  const ins = await store.insert(rec)
-  const record = recordView(ins, flowUrl(flowId, origin), outcome, detail)
+  const closed = await store.update(flowId, rec, ['opening'])
+  const record = recordView(closed, flowUrl(flowId, origin), outcome, detail)
   const answered = {
     charged: true as const,
     checks: pre.checks,
@@ -776,7 +825,7 @@ export async function runVerifyThenPay(input: VtpInput, paymentHeader: string | 
     // The check was paid and answered, and the flow log does not hold it. Nothing links to a
     // record that is not there, and nothing is handed back to send: a payment on this answer
     // could never be tied to this check, so no receipt could close it or count it.
-    const httpStatus = ins.ok ? 409 : 500
+    const httpStatus = closed.ok ? 409 : 500
     if (stage === 'deny' || stage === 'verdict_unusable') {
       const why = stage === 'deny' ? 'DENY' : `The check was paid, but its answer failed ${v.usable ? '' : v.code}, so it is treated as DENY`
       return {
@@ -807,11 +856,12 @@ export async function runVerifyThenPay(input: VtpInput, paymentHeader: string | 
     check_failed: `The check was paid and answered ${v.effective}, but ${chain.name} did not answer for its latest block after the verdict, so a payment could not be shown to come after this check and nothing was prepared: do not pay on this flow, ask again with a new authorization.`,
     verdict_unusable: `The check was paid, but its answer failed ${v.usable ? '' : v.code}, so it is treated as DENY: do not pay. The paid check and why it was not used are public at ${record.url}.`,
     deny: `DENY: do not pay. Nothing was prepared and nothing should be signed. The refusal is public at ${record.url}.`,
-    awaiting_human: `WARN: the agent must not pay this on its own. The owner can settle it by sending ownerHandoff.ownerPay from the owner key ${pre.owner}; then POST {"txHash": "0x..."} to ${receiptUrl} and the server reads the receipt itself.`,
+    awaiting_human: `WARN: the agent must not pay this on its own. The owner can settle it by sending ownerHandoff.ownerPay from the owner key ${pre.owner}${ownerHandoff ? `, with ${sendInstruction(ownerHandoff.ownerPay, 'ownerHandoff.ownerPay')}` : ''}; then POST {"txHash": "0x..."} to ${receiptUrl} and the server reads the receipt itself.`,
+    warn_no_human_gate: `WARN, and this vault's owner and operator are the same key (${pre.owner}), so there is no human to hand the payment to: do not pay. Nothing was prepared and no approval was recorded. Give the vault an owner key the agent does not hold, or ask again with payOnWarn to pay on the WARN as the agent's own decision. The block is public at ${record.url}.`,
     prepared:
       prepared?.simulation.ok === false
         ? `The verdict allows this payment, but the vault would refuse it right now (${prepared.simulation.error}): do not send it. Ask again once the vault can pay.`
-        : `Send prepared exactly as given from the operator key ${pre.operator} (to the vault, value 0, chainId ${chain.evmChainId}, maxFeePerGas at least ${prepared?.fees.floorWei} wei). Then POST {"txHash": "0x..."} to ${receiptUrl}: the flow is marked executed only after the server reads the receipt from ${chain.name} itself.`,
+        : `Send prepared exactly as given from the operator key ${pre.operator} (to the vault, value 0, chainId ${chain.evmChainId}${prepared ? `, ${sendInstruction(prepared, 'prepared')}` : ''}). Then POST {"txHash": "0x..."} to ${receiptUrl}: the flow is marked executed only after the server reads the receipt from ${chain.name} itself.`,
   }
 
   const failed: { code: VtpCheckFailedCode; reason: string } | null =
@@ -866,7 +916,7 @@ export async function readVtpFlow(flowIdRaw: unknown, deps: Pick<VtpDeps, 'store
   const id = flowIdRaw.toLowerCase()
   const read = await store.load(id)
   if (!read.ok) return { httpStatus: 503, body: { flowId: id, flow: null, url: null, receiptUrl: null, paymentExplorerUrl: null, error: `the flow log could not be read: ${read.reason}`, note } }
-  if (!read.row) return { httpStatus: 404, body: { flowId: id, flow: null, url: null, receiptUrl: null, paymentExplorerUrl: null, error: 'no flow with this id', note } }
+  if (!read.row || holdsNoFlow(read.row)) return { httpStatus: 404, body: { flowId: id, flow: null, url: null, receiptUrl: null, paymentExplorerUrl: null, error: 'no flow with this id', note } }
   return {
     httpStatus: 200,
     body: {
