@@ -28,6 +28,9 @@ export {
   receiptFromEveryRpc,
   transactionFromEveryRpc,
   blockFromEveryRpc,
+  blockNumberFromEveryRpc,
+  waitForReceiptOnEveryRpc,
+  describeReceiptWait,
   rpcSourceLabel,
   jsonRpcCall,
   type RpcCall,
@@ -35,6 +38,8 @@ export {
   type EveryRpcRead,
   type EveryRpcOptions,
   type BlockStamp,
+  type ReceiptWait,
+  type ShallowReceipt,
 } from './evm/receipts.js'
 // Explorer links come from the ecosystem-aware module, NOT from evm/client.js. Every
 // caller already passes a ChainDescriptor, so the EVM behaviour is byte-identical and the
