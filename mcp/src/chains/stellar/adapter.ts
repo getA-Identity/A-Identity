@@ -720,9 +720,11 @@ export function createStellarAdapter(chain: ChainDescriptor, deps: StellarAdapte
     assembled.sign(kp)
     const hash = assembled.hash().toString('hex')
     try {
-      hooks.onBroadcast?.(hash)
+      await hooks.onBroadcast?.(hash)
     } catch (e) {
+      // Nothing has been submitted. A hash that could not be saved is one a restart would pay around.
       console.error('[stellar] could not note a transaction hash before sending it:', e instanceof Error ? e.message : e)
+      return { outcome: 'refused', ...shape, reason: `signed and not submitted, because its hash could not be saved first: ${e instanceof Error ? e.message : String(e)}` }
     }
     try {
       return await land(server, assembled, shape)

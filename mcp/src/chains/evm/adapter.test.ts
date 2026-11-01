@@ -308,7 +308,7 @@ test('a send that throws after a node took it is unconfirmed under the signed ha
 })
 
 test('a node that turned the transaction away, or a failure before the send, is a refusal', async () => {
-  const refused = scene({ [HOST_A]: MINED }, { sendThrows: new Error('insufficient funds for gas * price + value') })
+  const refused = scene({ [HOST_A]: null, [HOST_B]: null }, { sendThrows: new Error('insufficient funds for gas * price + value') })
   const res = await refused.adapter.policyPay(VAULT, PAYEE, 1, {})
   assert.equal(res.executed, false)
   if (!res.executed) {
@@ -331,9 +331,69 @@ test('the hash is reported before the send and before any wait', async () => {
   await s.adapter.payUsdcWithMemo(PAYEE, 1, { agentId: 'a', instructionId: 'i', service: 'payment', policyDecision: 'auto_approved' }, {}, hooks)
   await s.adapter.payUsdcBatch([{ to: PAYEE, amountUsd: 1 }], {}, hooks)
   assert.deepEqual(order, [0, 1, 2, 3].map((sends) => `hash:${SENT}:sends=${sends}`))
-  // A hook that throws costs a log line, not the payment's outcome.
-  const r = await scene({ [HOST_A]: MINED }).adapter.policyPay(VAULT, PAYEE, 1, {}, { onBroadcast: () => { throw new Error('disk full') } })
-  assert.equal(r.executed, true)
+  // A hook that cannot note the hash stops the send: a hash nobody can find again is how a restart
+  // pays twice. It is a refusal the caller can read, and not a thrown request.
+  const stopped = scene({ [HOST_A]: MINED })
+  const r = await stopped.adapter.policyPay(VAULT, PAYEE, 1, {}, { onBroadcast: async () => { throw new Error('disk full') } })
+  assert.equal(stopped.counters.sends, 0, 'nothing is sent when the hold cannot be saved')
+  assert.equal(r.executed, false)
+  if (!r.executed) {
+    assert.equal(r.reverted, true)
+    assert.match(r.reason, /signed and not sent/)
+    assert.match(r.reason, /disk full/)
+  }
+})
+
+test('underpriced is a refusal only once every host has been asked for the hash', async () => {
+  const underpriced = new Error('transaction underpriced')
+  const pay = (s: ReturnType<typeof scene>) => s.adapter.policyPay(VAULT, PAYEE, 1, {})
+
+  const nobody = await pay(scene({ [HOST_A]: null, [HOST_B]: null }, { sendThrows: underpriced }))
+  assert.ok(!nobody.executed && 'reverted' in nobody && nobody.reverted, 'every host answered and none has it')
+
+  // Host A took it before the connection dropped, and the fallback's resend heard this from B.
+  const held = await pay(scene({ [HOST_A]: MINED, [HOST_B]: null }, { sendThrows: underpriced }))
+  assert.ok('unconfirmed' in held, 'a host has it, so this was not turned away')
+  if ('unconfirmed' in held) assert.equal(held.txHash, SENT)
+
+  const unclear = await pay(scene({ [HOST_A]: null, [HOST_B]: new Error('HTTP 429') }, { sendThrows: underpriced }))
+  assert.ok('unconfirmed' in unclear, 'a host that would not answer may be the one that has it')
+})
+
+test('a hold names what it was signed with, and a look can tell it can never land', async () => {
+  const noted: unknown[] = []
+  const FROM = '0x70997970C51812dc3A010C7d01b50e0aa8aF8aA9'
+  const s = scene({ [HOST_A]: MINED })
+  await s.adapter.policyPay(VAULT, PAYEE, 1, {}, { onBroadcast: (_h, signed) => { noted.push(signed) } })
+  assert.deepEqual(noted, [{ nonce: undefined, from: PAYEE }])
+
+  const held = { nonce: 7, from: FROM }
+  const look = (hosts: Record<string, (method: string) => unknown>) =>
+    createEvmAdapter(ARC_CHAIN, {
+      receipts: {
+        urls: Object.keys(hosts),
+        call: async (url, method) => {
+          const out = hosts[url](method)
+          if (out instanceof Error) throw out
+          return out
+        },
+      },
+    }).receiptStatus(SENT, {}, held)
+  const passed = (method: string) => (method === 'eth_getTransactionCount' ? '0x8' : null)
+
+  const gone = await look({ [HOST_A]: passed, [HOST_B]: passed })
+  assert.equal(gone.status, 'dropped', 'nonce passed on every host, and no host has it')
+  if (gone.status === 'dropped') assert.match(gone.reason, /can never land/)
+
+  // The same nonce not passed yet, on one host: it may still land.
+  const lagging = await look({ [HOST_A]: passed, [HOST_B]: (m) => (m === 'eth_getTransactionCount' ? '0x7' : null) })
+  assert.equal(lagging.status, 'unknown')
+  // A host that will not answer may be the one that has it.
+  assert.equal((await look({ [HOST_A]: passed, [HOST_B]: (m) => (m === 'eth_getTransactionCount' ? '0x8' : new Error('HTTP 429')) })).status, 'unknown')
+  assert.equal((await look({ [HOST_A]: passed, [HOST_B]: () => new Error('HTTP 503') })).status, 'unknown')
+  // Without what it was signed with, no receipt never means gone.
+  const plain = await createEvmAdapter(ARC_CHAIN, { receipts: { urls: [HOST_A], call: async (_u, m) => passed(m) } }).receiptStatus(SENT, {})
+  assert.equal(plain.status, 'unknown')
 })
 
 test('a mined vault revert names its transaction; a refused simulation has none', async () => {

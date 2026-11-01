@@ -36,7 +36,8 @@ import {
 } from './client.js'
 import { IDENTITY_ABI, ERC20_ABI, COMMERCE_ABI, VALIDATION_ABI, REPUTATION_ABI, MEMO_ABI, MULTICALL3_FROM_ABI, JOB_STATUS, ZERO_ADDRESS, ZERO_HASH } from './abis.js'
 import { encodeMemo, decodeMemo, type MemoInput } from './memo.js'
-import { describeReceiptWait, waitForReceiptOnEveryRpc, type EveryRpcOptions } from './receipts.js'
+import { canNeverLand, describeReceiptWait, waitForReceiptOnEveryRpc, type EveryRpcOptions } from './receipts.js'
+import { sendCallSigned } from './send.js'
 import { AgentSpendPolicyAbi, AgentSpendPolicyBytecode } from '../../contracts/AgentSpendPolicy.js'
 
 /**
@@ -75,13 +76,6 @@ export type EvmAdapterDeps = {
   publicClient?: unknown
   walletClient?: unknown
 }
-
-/**
- * A node's answer that means it did not take this transaction. Deliberately short: "already
- * known" and "nonce too low" are NOT here, because they are what a resend hears when the first
- * host accepted it.
- */
-const NODE_TURNED_IT_AWAY = /insufficient funds|intrinsic gas|fee cap|underpriced|exceeds (block )?gas limit/i
 
 /** Carries a step's Unconfirmed result out of a multi-step write to the catch that reports it. */
 class UnconfirmedStep extends Error {
@@ -151,75 +145,67 @@ export function createEvmAdapter(chain: ChainDescriptor, deps: EvmAdapterDeps = 
   }
 
   /**
-   * Send a settlement with its hash known first.
-   *
-   * writeContract knows a hash only once a host has answered. A host that accepts the
-   * transaction and loses the connection throws instead, the fallback transport resends it to
-   * the next host, which answers "already known" or "nonce too low", and that error used to read
-   * as a revert while the transaction landed. So this signs locally, reports the hash, and only
-   * then sends. Everything up to the send moves nothing, so its errors are the caller's to treat
-   * as a refusal (gas estimation is where an insufficient balance or a bad call shows up). A send
-   * that throws is unconfirmed under that hash, unless the node's answer says it turned the
-   * transaction away.
+   * Send a settlement with its hash known first (see ./send.ts). Everything up to the send moves
+   * nothing, so its errors are the caller's to treat as a refusal (gas estimation is where an
+   * insufficient balance or a bad call shows up), and a hold that cannot be noted is a refusal
+   * too: a hash nobody can find again is how a restart pays twice. A send that throws is
+   * unconfirmed under that hash, unless a node turned the transaction away and no RPC has it.
    */
   async function sendSigned(
     signer: NonNullable<Awaited<ReturnType<typeof walletClient>>>,
     call: { address: Hex; abi: unknown; functionName: string; args: readonly unknown[] },
     what: string,
     hooks: BroadcastHooks,
+    env: NodeJS.ProcessEnv,
   ): Promise<{ ok: true; hash: Hex } | { ok: false; result: Reverted | Unconfirmed }> {
-    const { encodeFunctionData, keccak256 } = await import('viem')
-    const wallet = signer.client as unknown as {
-      prepareTransactionRequest: (req: Record<string, unknown>) => Promise<Record<string, unknown>>
-      signTransaction: (req: Record<string, unknown>) => Promise<Hex>
-      sendRawTransaction: (req: { serializedTransaction: Hex }) => Promise<Hex>
+    const sent = await sendCallSigned(chain, signer, call, {
+      env,
+      rpc: deps.receipts,
+      beforeSend: (signed) => hooks.onBroadcast?.(signed.hash, { nonce: signed.nonce, from: signed.from }),
+    })
+    if (sent.status === 'sent') return { ok: true, hash: sent.hash }
+    if (sent.status === 'not_noted') {
+      console.error('[evm] could not note a settlement hash before sending it:', sent.reason)
+      return { ok: false, result: { executed: false, reverted: true, reason: `${what} was signed and not sent, because its hash could not be saved first: ${sent.reason}` } }
     }
-    const data = encodeFunctionData({ abi: call.abi, functionName: call.functionName, args: call.args } as never)
-    const prepared = await wallet.prepareTransactionRequest({ account: signer.account, to: call.address, data })
-    const serializedTransaction = await wallet.signTransaction(prepared)
-    const hash = keccak256(serializedTransaction)
-    try {
-      hooks.onBroadcast?.(hash)
-    } catch (err) {
-      console.error('[evm] could not note a settlement hash before sending it:', err instanceof Error ? err.message : err)
+    if (sent.status === 'refused') {
+      return { ok: false, result: { executed: false, reverted: true, reason: `the node refused ${what}, so nothing was sent: ${await revertReason(sent.error)}` } }
     }
-    try {
-      await wallet.sendRawTransaction({ serializedTransaction })
-      return { ok: true, hash }
-    } catch (err) {
-      const said = err instanceof Error ? err.message : String(err)
-      if (NODE_TURNED_IT_AWAY.test(said)) {
-        return { ok: false, result: { executed: false, reverted: true, reason: `the node refused ${what}, so nothing was sent: ${await revertReason(err)}` } }
-      }
-      return {
-        ok: false,
-        result: {
-          executed: false,
-          reverted: false,
-          unconfirmed: true,
-          txHash: hash,
-          explorerUrl: tx(hash),
-          reason: `${what} was sent (tx ${hash}) and the send did not answer cleanly, so whether a node took it is unknown. It may have landed or may still land; check the transaction before sending it again.`,
-        },
-      }
+    return {
+      ok: false,
+      result: {
+        executed: false,
+        reverted: false,
+        unconfirmed: true,
+        txHash: sent.hash,
+        explorerUrl: tx(sent.hash),
+        reason: `${what} was sent (tx ${sent.hash}) and the send did not answer cleanly, so whether a node took it is unknown. It may have landed or may still land; check the transaction before sending it again.`,
+      },
     }
   }
 
-  /** One look, across every RPC, at a transaction sent earlier. Reads only. */
+  /**
+   * One look, across every RPC, at a transaction sent earlier. Reads only. With the sender and
+   * nonce it was signed with, this can also say it never will land: its nonce is used and no host
+   * has it. No receipt alone never says that.
+   */
   async function receiptStatus(
     hash: string,
     env: NodeJS.ProcessEnv = process.env,
-  ): Promise<{ status: 'success' | 'reverted'; txHash: string; explorerUrl: string } | { status: 'unknown'; reason: string }> {
+    held: { nonce?: number; from?: string } = {},
+  ): Promise<
+    | { status: 'success' | 'reverted'; txHash: string; explorerUrl: string }
+    | { status: 'dropped'; txHash: string; reason: string }
+    | { status: 'unknown'; reason: string }
+  > {
+    const look = { env, perCallTimeoutMs: RECEIPT_LOOK_PER_CALL_MS, hardTimeoutMs: RECEIPT_LOOK_TOTAL_MS, ...deps.receipts, timeoutMs: 0 }
     try {
-      const wait = await waitForReceiptOnEveryRpc(chain, hash, {
-        env,
-        perCallTimeoutMs: RECEIPT_LOOK_PER_CALL_MS,
-        hardTimeoutMs: RECEIPT_LOOK_TOTAL_MS,
-        ...deps.receipts,
-        timeoutMs: 0,
-      })
-      if (wait.status !== 'found') return { status: 'unknown', reason: describeReceiptWait(wait) }
-      return { status: wait.value.status, txHash: hash, explorerUrl: tx(hash) }
+      const wait = await waitForReceiptOnEveryRpc(chain, hash, look)
+      if (wait.status === 'found') return { status: wait.value.status, txHash: hash, explorerUrl: tx(hash) }
+      if (held.from && held.nonce !== undefined && (await canNeverLand(chain, { hash, from: held.from, nonce: held.nonce }, look))) {
+        return { status: 'dropped', txHash: hash, reason: `tx ${hash} can never land: its nonce ${held.nonce} is already used and no RPC has this transaction` }
+      }
+      return { status: 'unknown', reason: describeReceiptWait(wait) }
     } catch (err) {
       return { status: 'unknown', reason: err instanceof Error ? err.message : String(err) }
     }
@@ -635,7 +621,7 @@ export function createEvmAdapter(chain: ChainDescriptor, deps: EvmAdapterDeps = 
       }
     }
     try {
-      const sent = await sendSigned(signer, { address: usdc, abi: ERC20_ABI, functionName: 'transfer', args: [to as Hex, amount] }, 'USDC transfer', hooks)
+      const sent = await sendSigned(signer, { address: usdc, abi: ERC20_ABI, functionName: 'transfer', args: [to as Hex, amount] }, 'USDC transfer', hooks, env)
       if (!sent.ok) return sent.result
       const landing = await landed(sent.hash, 'USDC transfer', env, SETTLEMENT_BUDGET)
       if (!landing.ok) return landing.result
@@ -685,7 +671,7 @@ export function createEvmAdapter(chain: ChainDescriptor, deps: EvmAdapterDeps = 
     // call BEFORE broadcast (caught below); we then verify receipt.status so a mined-but-reverted
     // tx is never reported as settled (honesty: no false executed_onchain).
     try {
-      const sent = await sendSigned(signer, { address: memoContract, abi: MEMO_ABI, functionName: 'memo', args: [usdc, transferData, memoId, memoBytes] }, 'Memo settlement', hooks)
+      const sent = await sendSigned(signer, { address: memoContract, abi: MEMO_ABI, functionName: 'memo', args: [usdc, transferData, memoId, memoBytes] }, 'Memo settlement', hooks, env)
       if (!sent.ok) return sent.result
       const { hash } = sent
       const read = await receiptOf(hash, 'Memo settlement', env, SETTLEMENT_BUDGET)
@@ -789,7 +775,7 @@ export function createEvmAdapter(chain: ChainDescriptor, deps: EvmAdapterDeps = 
       if (!multicall3From) {
         let last: Hex = '0x' as Hex
         for (const p of clean) {
-          const sent = await sendSigned(signer, { address: usdc, abi: ERC20_ABI, functionName: 'transfer', args: [p.to as Hex, usdcUnits(chain, p.amountUsd)] }, 'a transfer in the sequence', hooks)
+          const sent = await sendSigned(signer, { address: usdc, abi: ERC20_ABI, functionName: 'transfer', args: [p.to as Hex, usdcUnits(chain, p.amountUsd)] }, 'a transfer in the sequence', hooks, env)
           if (!sent.ok) return sent.result
           last = sent.hash
           const read = await receiptOf(last, 'a transfer in the sequence', env, SETTLEMENT_BUDGET)
@@ -799,7 +785,7 @@ export function createEvmAdapter(chain: ChainDescriptor, deps: EvmAdapterDeps = 
         }
         return { executed: true, txHash: last, explorerUrl: tx(last), count: clean.length, totalUsd }
       }
-      const sent = await sendSigned(signer, { address: multicall3From, abi: MULTICALL3_FROM_ABI, functionName: 'aggregate3', args: [calls] }, 'batch settlement', hooks)
+      const sent = await sendSigned(signer, { address: multicall3From, abi: MULTICALL3_FROM_ABI, functionName: 'aggregate3', args: [calls] }, 'batch settlement', hooks, env)
       if (!sent.ok) return sent.result
       const { hash } = sent
       const read = await receiptOf(hash, 'batch settlement', env, SETTLEMENT_BUDGET)
@@ -874,7 +860,7 @@ export function createEvmAdapter(chain: ChainDescriptor, deps: EvmAdapterDeps = 
     const args = [to as Hex, usdcUnits(chain, amountUsd)] as const
     try {
       await client.simulateContract({ address: vault as Hex, abi: AgentSpendPolicyAbi, functionName: functionName as never, args: args as never, account: signer.account })
-      const sent = await sendSigned(signer, { address: vault as Hex, abi: AgentSpendPolicyAbi, functionName, args }, `vault ${functionName}`, hooks)
+      const sent = await sendSigned(signer, { address: vault as Hex, abi: AgentSpendPolicyAbi, functionName, args }, `vault ${functionName}`, hooks, env)
       if (!sent.ok) return sent.result
       const landing = await landed(sent.hash, `vault ${functionName}`, env, SETTLEMENT_BUDGET)
       if (!landing.ok) return landing.result

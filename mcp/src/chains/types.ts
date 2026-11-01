@@ -359,8 +359,10 @@ export type Reverted = {
 }
 
 /** Told about a settlement's hash before it leaves this server, so a restart inside the wait
- *  for its receipt cannot lose it. */
-export type BroadcastHooks = { onBroadcast?: (hash: string) => void }
+ *  for its receipt cannot lose it. It runs before the send and the send waits for it. If it
+ *  throws, nothing is sent: a hash that could not be saved is one a restart would pay around.
+ *  On an EVM chain it also gets the sender and nonce the transaction was signed with. */
+export type BroadcastHooks = { onBroadcast?: (hash: string, signed?: { nonce?: number; from?: string }) => void | Promise<void> }
 
 /**
  * The fourth thing that can happen: it was broadcast, and no RPC produced a receipt inside the

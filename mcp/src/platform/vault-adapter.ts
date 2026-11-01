@@ -317,11 +317,11 @@ export async function payFromVault(
 }
 
 /** One look at a settlement sent earlier, on the chain this agent's vault is on. */
-export async function vaultReceiptStatus(agent: PlatformAgent | undefined, hash: string) {
+export async function vaultReceiptStatus(agent: PlatformAgent | undefined, hash: string, held?: { nonce?: number; from?: string }) {
   const chain = agent?.vaultAddress ? vaultChainFor(agent) : null
   if (chain?.ecosystem === 'stellar') return (await stellar(chain)).receiptStatus(hash)
   const { receiptStatusOnchain } = await import('../arc-contracts.js')
-  return receiptStatusOnchain(hash)
+  return receiptStatusOnchain(hash, undefined, held)
 }
 
 /**

@@ -29,6 +29,8 @@ export {
   transactionFromEveryRpc,
   blockFromEveryRpc,
   blockNumberFromEveryRpc,
+  hashOnEveryRpc,
+  canNeverLand,
   waitForReceiptOnEveryRpc,
   describeReceiptWait,
   replayCallFromEveryRpc,
@@ -44,6 +46,7 @@ export {
   type ReceiptWait,
   type ShallowReceipt,
 } from './evm/receipts.js'
+export { sendCallSigned, nodeSaid, SignerBusyError, __resetSendStateForTests, type SignedSend, type SignedTx, type SignedCall, type SendOptions } from './evm/send.js'
 // Explorer links come from the ecosystem-aware module, NOT from evm/client.js. Every
 // caller already passes a ChainDescriptor, so the EVM behaviour is byte-identical and the
 // non-EVM chains stop getting a route their explorer does not have. See ./explorer.ts.

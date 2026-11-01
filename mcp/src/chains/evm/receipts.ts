@@ -244,6 +244,47 @@ export async function transactionFromEveryRpc(chain: ChainDescriptor, hash: Hex 
   return fromEveryRpc(chain, 'eth_getTransactionByHash', [hash], parseTransaction(hash), opts)
 }
 
+/**
+ * Whether any RPC holds this transaction, asked of every host for both the transaction and its
+ * receipt, because a host may hold one and not the other. 'absent' means every host answered and
+ * none has it. A host that did not answer leaves it 'unclear', since that host may be the one.
+ */
+export async function hashOnEveryRpc(chain: ChainDescriptor, hash: Hex | string, opts: EveryRpcOptions = {}): Promise<'held' | 'absent' | 'unclear'> {
+  const start = (opts.now ?? (() => Date.now()))()
+  const budget = () => (opts.hardTimeoutMs === undefined ? {} : { hardTimeoutMs: Math.max(0, opts.hardTimeoutMs - ((opts.now ?? (() => Date.now()))() - start)) })
+  const asTransaction = await transactionFromEveryRpc(chain, hash, { ...opts, ...budget() })
+  if (asTransaction.status === 'found') return 'held'
+  const asReceipt = await receiptFromEveryRpc(chain, hash, { ...opts, ...budget() })
+  if (asReceipt.status === 'found') return 'held'
+  const allNull = (r: EveryRpcRead<unknown>) => r.answers.length > 0 && r.answers.every((a) => a.answer === 'null')
+  return allNull(asTransaction) && allNull(asReceipt) ? 'absent' : 'unclear'
+}
+
+/**
+ * Whether a signed transaction can never land: every host's confirmed count for its sender has
+ * passed its nonce, so some other transaction took that nonce, and no host has this hash.
+ *
+ * The count is read first, so a transaction mined between the two reads is found by the second.
+ * Strict on purpose, since the answer lets a payment be sent again: a host that does not answer,
+ * or one that has not reached that nonce yet, makes this false, and the caller stays where it is.
+ * Never throws.
+ */
+export async function canNeverLand(chain: ChainDescriptor, want: { hash: string; from: string; nonce: number }, opts: EveryRpcOptions = {}): Promise<boolean> {
+  const urls = opts.urls ?? resolveRpcUrls(chain, opts.env ?? process.env)
+  const call = opts.call ?? jsonRpcCall
+  const perCall = opts.perCallTimeoutMs ?? DEFAULT_PER_CALL_MS
+  if (!urls.length) return false
+  try {
+    const counts = await Promise.all(urls.map((url) => withDeadline(call(url, 'eth_getTransactionCount', [want.from, 'latest'], perCall), perCall)))
+    for (const raw of counts) {
+      if (typeof raw !== 'string' || !/^0x[0-9a-fA-F]+$/.test(raw) || BigInt(raw) <= BigInt(want.nonce)) return false
+    }
+  } catch {
+    return false
+  }
+  return (await hashOnEveryRpc(chain, want.hash, { ...opts, timeoutMs: 0 })) === 'absent'
+}
+
 /** The latest block number, from the first host that answers. */
 export async function blockNumberFromEveryRpc(chain: ChainDescriptor, opts: EveryRpcOptions = {}): Promise<EveryRpcRead<bigint>> {
   return fromEveryRpc(
