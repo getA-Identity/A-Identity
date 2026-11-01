@@ -20,6 +20,8 @@ on:
       - 'mcp/test-sol/**'
       - 'mcp/foundry.toml'
       - 'mcp/scripts/sol-negative-controls.mjs'
+      - 'mcp/scripts/compile-contracts.mjs'
+      - 'mcp/src/contracts/**'
       - '.github/workflows/solidity.yml'
   pull_request:
     paths:
@@ -27,6 +29,8 @@ on:
       - 'mcp/test-sol/**'
       - 'mcp/foundry.toml'
       - 'mcp/scripts/sol-negative-controls.mjs'
+      - 'mcp/scripts/compile-contracts.mjs'
+      - 'mcp/src/contracts/**'
       - '.github/workflows/solidity.yml'
   workflow_dispatch:
 
@@ -63,3 +67,11 @@ jobs:
 
       - name: Negative controls (the suite must go red without each guard)
         run: node scripts/sol-negative-controls.mjs
+
+      # Foundry tested the source; this proves the artifact that ships was compiled from it.
+      # The npm solc is pinned to the version foundry.toml names, so both compile the same.
+      - name: Install backend deps (for the npm solc)
+        run: npm ci
+
+      - name: Contract artifacts match their Solidity source
+        run: npm run compile -- --check

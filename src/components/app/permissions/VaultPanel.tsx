@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useState } from 'react'
+import { Link } from 'react-router-dom'
 import { ExternalLink, Link2 } from 'lucide-react'
 import { apiFetch, readJson, explainError } from '../../../lib/api'
+import { CHAINS, CHAIN_BY_ID } from '../../../lib/chains'
 import { authHeaders, useAuth } from '../../../store/auth'
 import { shortAddress as short } from '../../../lib/utils'
 import { Skeleton } from '../../ui/skeleton'
@@ -33,7 +35,9 @@ type VaultState = {
 function liveLabel(v: VaultState): string {
   if (v.ecosystem === 'stellar' || v.chain?.startsWith('stellar:'))
     return v.chain === 'stellar:pubnet' ? 'Live on Stellar pubnet' : 'Live on Stellar testnet'
-  return 'Live on Arc'
+  // By the registry's own name, so an Arc TESTNET vault never reads as an Arc Mainnet one.
+  const c = CHAINS.find((x) => x.caip2 === v.chain)
+  return c ? `Live on ${c.name}` : 'Live on an unrecognized chain'
 }
 
 /** Human-readable "expires in ~Xh Ym" for a UNIX-seconds expiry. */
@@ -51,10 +55,15 @@ function untilLabel(expiryUnix?: number): string {
  * THROUGH the vault: a payment over the cap or auto-approve line reverts onchain, not just
  * on our server. Programmable money enforcing itself.
  *
- * Which chain depends on who is signed in. An EVM or email session deploys on Arc, where
- * the server owns the vault and signs owner-only calls for it. A Stellar wallet session
- * deploys a Soroban vault OWNED BY THAT WALLET, so freeze, withdraw and the session-key
- * deadline are signed in the wallet and this panel only prepares and submits them.
+ * Which chain depends on who is signed in. An EVM or email session deploys on Arc TESTNET (the
+ * backend's ARC_CHAIN): our server key deploys it, pays the gas, funds it with test USDC and is
+ * its operator, while the owner is the session's wallet or the agent's wallet (the backend
+ * refuses when there is neither). Owner-only calls on such a vault are signed by that owner
+ * wallet, which this panel cannot do; /app/vault/arc can, and the panel links there. A vault
+ * the owner deploys from their own wallet, on Arc Mainnet, is made on /app/vault/arc itself.
+ * A Stellar wallet session deploys a Soroban vault OWNED BY THAT WALLET, so freeze, withdraw
+ * and the session-key deadline are signed in the wallet and this panel only prepares and
+ * submits them.
  */
 export default function VaultPanel({ agentId }: { agentId: string }) {
   const [vault, setVault] = useState<VaultState | null>(null)
@@ -157,15 +166,22 @@ export default function VaultPanel({ agentId }: { agentId: string }) {
   // Owner-only calls are signed by the human's wallet, so the controls for them live here
   // only when the backend says a wallet is the owner and tells us which account it is.
   const stellarOwnerControls = stellarVault && vault?.ownerSigning === 'wallet' && !!vault?.owner && !!vault?.chain
+  // EVM vaults are named by the registry, so the testnet the backend deploys on says so.
+  const evmName = (has && CHAINS.find((c) => c.caip2 === vault?.chain)?.name) || CHAIN_BY_ID.arc.name
   const chainName = has
     ? stellarVault
       ? vault?.chain === 'stellar:pubnet'
         ? 'Stellar pubnet'
         : 'Stellar testnet'
-      : 'Arc'
+      : evmName
     : onStellar
       ? 'Stellar testnet'
-      : 'Arc'
+      : evmName
+  // An Arc vault opens in the public Arc vault panel, where its owner's wallet can sign.
+  const arcPanel =
+    has && !stellarVault && vault?.chain && vault.vaultAddress
+      ? `/app/vault/arc?network=${encodeURIComponent(vault.chain)}&contract=${encodeURIComponent(vault.vaultAddress)}`
+      : null
 
   return (
     <section className="mt-4 overflow-hidden rounded-2xl border border-accent/25 bg-gradient-to-b from-accent/[0.06] to-card p-6 shadow-[0_1px_3px_rgba(16,24,40,0.04)] sm:p-7">
@@ -213,6 +229,16 @@ export default function VaultPanel({ agentId }: { agentId: string }) {
           >
             {short(vault!.vaultAddress!)} <ExternalLink size={11} />
           </a>
+          {arcPanel && (
+            <p className="text-[11px] text-foreground/60">
+              <Link to={arcPanel} className="font-semibold text-accent underline underline-offset-2">
+                Open it in the Arc vault panel
+              </Link>
+              {vault!.ownerSigning === 'wallet'
+                ? ": if it runs the page's current build, its owner-only calls (freeze, limits, the session key, withdraw) are signed there by the owner's wallet."
+                : ': its live state, read straight from the chain.'}
+            </p>
+          )}
           <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
             <Stat label="Daily Cap" value={`$${vault!.dailyCapUsd}`} />
             <Stat label="Auto Approve" value={`$${vault!.autoApproveUsd}`} />
@@ -325,6 +351,18 @@ export default function VaultPanel({ agentId }: { agentId: string }) {
             <p className="text-[11px] text-foreground/50">
               You sign with your Stellar wallet, and it owns the vault. There is no funding step
               here: send USDC to the vault's contract id once it is deployed.
+            </p>
+          )}
+          {!onStellar && (
+            <p className="text-[11px] text-foreground/50">
+              This deploys on {CHAIN_BY_ID.arc.name} with test USDC: our server key deploys it, pays
+              the gas, funds it and is its operator, and the owner is your signed-in wallet (or the
+              agent's own wallet after an email sign-in). To deploy a vault on Arc Mainnet from your
+              own wallet, so the owner key and every owner signature stay yours and the operator is the key you paste, use the{' '}
+              <Link to="/app/vault/arc?deploy=1" className="font-semibold text-accent underline underline-offset-2">
+                Arc vault panel
+              </Link>
+              .
             </p>
           )}
 

@@ -7,7 +7,7 @@
  * computed rather than written: every count comes from the two settlement logs and the
  * verify-then-pay flow log on every request, and the four lists a human has to curate
  * (owner-held vaults, inspectable refusals, partner wallets, verify-then-pay flows recorded
- * anywhere else) are exported here as data, empty until the evidence exists.
+ * anywhere else) are exported here as data, and fill only when the evidence exists.
  *
  * What counts, stated once:
  *   - A check is a settled row on Arc Mainnet. On the Gateway log that is an outcome of
@@ -108,9 +108,9 @@ export type ArcOwnerHeldVault = {
 
 /**
  * Owner-held AgentSpendPolicy vaults on Arc Mainnet, deployed from the browser with a
- * key A-Identity never holds. Filled by the browser vault deployer (planned at
- * /app/vault/arc) as each deployment lands; a vault is listed only with its deploy hash.
- * Empty on 2026-10-19.
+ * key A-Identity never holds. Filled from the browser vault deployer at /app/vault/arc as
+ * each deployment lands; mcp/scripts/arc-owner-vault-check.mjs admits a vault and prints its
+ * entry, and a vault is listed only with its deploy hash. Empty until the first one lands.
  */
 export const ARC_OWNER_HELD_VAULTS: ArcOwnerHeldVault[] = []
 
@@ -556,7 +556,7 @@ export async function arcSeasonReport(deps: ArcSeasonDeps): Promise<ArcSeasonRep
         items: vaults.map((v) => ({ ...v, explorerUrl: addressUrl(chain, v.address), deployExplorerUrl: txUrl(chain, v.deployTx) })),
         note:
           vaults.length === 0
-            ? `No owner-held vault yet. The launch-day vault${launchVault ? ` ${launchVault}` : ''} was deployed from our server key with our operating wallet as its owner, so it is not owner-held and is not counted. This count fills from vaults deployed in the browser (planned at /app/vault/arc) whose owner key A-Identity never holds, each listed with its deploy hash.`
+            ? `No owner-held vault yet. The launch-day vault${launchVault ? ` ${launchVault}` : ''} was deployed from our server key with our operating wallet as its owner, so it is not owner-held and is not counted. This count fills from vaults deployed in the browser at /app/vault/arc whose owner key A-Identity never holds, each listed with its deploy hash.`
             : `${vaults.length} of ${ARC_SEASON_TARGETS.ownerHeldVaults} vaults deployed from the browser with an owner key A-Identity never held. The launch-day vault${launchVault ? ` ${launchVault}` : ''} is owned by our operating wallet and is not among them.`,
       },
       checks: {
@@ -655,6 +655,6 @@ export async function arcSeasonReport(deps: ArcSeasonDeps): Promise<ArcSeasonRep
       },
       note: `After the program the reference is ${ARC_SEASON_TARGETS.activeExternalWallets} external wallets with a settled check inside the last ${ARC_SEASON_TARGETS.activeWindowDays} days, measured on a rolling window from the time of each read.`,
     },
-    note: 'Targets are the Deliverable 1 commitments as revised by Circle on 2026-10-19; counts are read from the settlement logs on every request, and the curated lists (vaults, refusals, partners) are empty until the evidence exists.',
+    note: 'Targets are the Deliverable 1 commitments as revised by Circle on 2026-10-19; counts are read from the settlement logs on every request, and the curated lists (vaults, refusals, partners) fill only when the evidence exists.',
   }
 }

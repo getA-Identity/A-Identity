@@ -44,7 +44,9 @@
     { "name": "policy_set", "description": "Update an agent's action policy. The patch is sanitized and caps are clamped." },
     { "name": "pre_action_check", "description": "Ask whether an intended action is allowed. Returns ALLOW, WARN or DENY with the evidence." },
     { "name": "audit_log", "description": "An agent's recorded decisions, newest first, with the USD value the policy governed." },
-    { "name": "record_audit_outcome", "description": "Record what actually happened after a decision: executed, blocked, awaiting_human or abandoned." }
+    { "name": "record_audit_outcome", "description": "Record what actually happened after a decision: executed, blocked, awaiting_human or abandoned." },
+    { "name": "verify_then_pay", "description": "Before an agent pays from an AgentSpendPolicy vault on Arc Mainnet: confirm the asset is the real USDC, the payee holds an ERC-8004 identity and the vault would allow the payment, then buy risk_check through Circle Gateway (0.005 USDC, x402) and return ALLOW, WARN or DENY. Never signs: on ALLOW it returns the exact vault pay() call, on WARN a hand-off to the owner, on DENY nothing to sign." },
+    { "name": "verify_then_pay_receipt", "description": "Report the vault transaction for a verify_then_pay flow. The server reads the receipt itself from every Arc Mainnet RPC and records only what the chain proves." }
   ],
   "documentation": "https://a-identity.xyz/llms-full.txt",
   "repository": "https://github.com/getA-Identity/A-Identity",

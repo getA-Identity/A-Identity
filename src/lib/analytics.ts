@@ -177,6 +177,10 @@ export type TrackedEvent =
   | 'cta_clicked'
   | 'console_opened'
   | 'stellar_vault_read'
+  // The Arc vault page: network ('mainnet' | 'testnet'), outcome and action only, never an address.
+  | 'arc_vault_read'
+  | 'arc_vault_deploy'
+  | 'arc_vault_owner_action'
 
 /**
  * Record something a visitor did.

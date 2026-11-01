@@ -41,8 +41,9 @@ if (serve) {
 // without this catching anything. /brand-kit stays listed even though it now redirects
 // to /brand: the redirect itself is worth a check.
 // /app/vault/stellar sits in the console shell but outside the sign-in gate, so it belongs
-// here and not in CONSOLE: a reviewer opens it with no account and no wallet.
-const PUBLIC = ['/', '/explorer?q=849980', '/arc', '/stellar', '/stellar?network=testnet', '/app/vault/stellar', '/algorand', '/check', '/check?q=WHZ74ZGNGZGAVEQZTHESENVP5RTHMEQ4BOUKF7UHWOADQMKXDKAK3FESJE', '/check/robinhood', '/check/robinhood?q=%230', '/check/arbitrum', '/celo-proof', '/proof', '/proof/arc', '/proof/stellar',
+// here and not in CONSOLE: a reviewer opens it with no account and no wallet. /app/vault/arc
+// likewise, once bare and once with the mainnet named, the way a shared link opens it.
+const PUBLIC = ['/', '/explorer?q=849980', '/arc', '/stellar', '/stellar?network=testnet', '/app/vault/stellar', '/app/vault/arc', '/app/vault/arc?network=eip155:5042', '/algorand', '/check', '/check?q=WHZ74ZGNGZGAVEQZTHESENVP5RTHMEQ4BOUKF7UHWOADQMKXDKAK3FESJE', '/check/robinhood', '/check/robinhood?q=%230', '/check/arbitrum', '/celo-proof', '/proof', '/proof/arc', '/proof/stellar',
   '/proof/algorand', '/proof/base', '/proof/robinhood', '/proof/arbitrum', '/proof/celo',
   '/stats', '/intro', '/mascot', '/brand-kit', '/motion', '/manifesto', '/roadmap', '/brand', '/contact', '/faq', '/blog', '/architecture', '/login', '/bozuk-link']
 const CONSOLE = ['/app', '/app/checks', '/app/agent-id', '/app/wallet', '/app/settlements', '/app/permissions', '/app/marketplace', '/app/earnings']

@@ -664,3 +664,101 @@ export const CHAIN_BY_ID = Object.fromEntries(CHAINS.map((c) => [c.id, c])) as R
   ChainId,
   Chain
 >
+
+/**
+ * Every public RPC endpoint the registry lists for a chain, primary first, for code that
+ * reads a chain straight from the browser (the Arc vault page polls every one of them for a
+ * receipt, because one host returning null proves nothing). The registry's env-var override
+ * is deliberately NOT applied: this is public metadata, not the transport the server dials.
+ */
+export const CHAIN_RPC_URLS: Record<ChainId, readonly string[]> = {
+  "arc-mainnet": [
+    "https://rpc.mainnet.arc.io",
+    "https://rpc.blockdaemon.mainnet.arc.io",
+    "https://rpc.drpc.mainnet.arc.io",
+    "https://rpc.quicknode.mainnet.arc.io"
+  ],
+  "arc": [
+    "https://rpc.testnet.arc.io",
+    "https://rpc.blockdaemon.testnet.arc.io",
+    "https://rpc.drpc.testnet.arc.io",
+    "https://rpc.quicknode.testnet.arc.io"
+  ],
+  "stellar": [
+    "https://mainnet.sorobanrpc.com",
+    "https://soroban-rpc.mainnet.stellar.gateway.fm",
+    "https://rpc.ankr.com/stellar_soroban"
+  ],
+  "algorand": [
+    "https://mainnet-api.4160.nodely.dev"
+  ],
+  "base": [
+    "https://mainnet.base.org",
+    "https://base-rpc.publicnode.com"
+  ],
+  "rhchain": [
+    "https://rpc.mainnet.chain.robinhood.com"
+  ],
+  "arbitrum": [
+    "https://arb1.arbitrum.io/rpc"
+  ],
+  "xlayer": [
+    "https://rpc.xlayer.tech"
+  ],
+  "celo": [
+    "https://forno.celo.org"
+  ],
+  "stellar-testnet": [
+    "https://soroban-testnet.stellar.org",
+    "https://soroban-rpc.testnet.stellar.gateway.fm"
+  ],
+  "algorand-testnet": [
+    "https://testnet-api.4160.nodely.dev"
+  ],
+  "rhchain-testnet": [
+    "https://rpc.testnet.chain.robinhood.com"
+  ],
+  "celo-sepolia": [
+    "https://forno.celo-sepolia.celo-testnet.org"
+  ],
+  "avalanche": [
+    "https://api.avax.network/ext/bc/C/rpc"
+  ]
+}
+
+/**
+ * The canonical Circle USDC contract on each EVM chain that has one (the registry's
+ * contracts.usdc), with the decimals of its ERC-20 interface. On Arc that interface is 6
+ * decimals over an 18-decimal native balance: one balance, two scales. An absent key is an
+ * absent canonical USDC, never one to infer.
+ */
+export const CHAIN_USDC: Partial<Record<ChainId, { address: string; decimals: number }>> = {
+  "arc-mainnet": {
+    "address": "0x3600000000000000000000000000000000000000",
+    "decimals": 6
+  },
+  "arc": {
+    "address": "0x3600000000000000000000000000000000000000",
+    "decimals": 6
+  },
+  "base": {
+    "address": "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913",
+    "decimals": 6
+  },
+  "arbitrum": {
+    "address": "0xaf88d065e77c8cC2239327C5EDb3A432268e5831",
+    "decimals": 6
+  },
+  "celo": {
+    "address": "0xcebA9300f2b948710d2653dD7B07f33A8B32118C",
+    "decimals": 6
+  },
+  "celo-sepolia": {
+    "address": "0x01C5C0122039549AD1493B8220cABEdD739BC44E",
+    "decimals": 6
+  },
+  "avalanche": {
+    "address": "0xB97EF9Ef8734C71904D8002F8b6Bc66Dd9c48a6E",
+    "decimals": 6
+  }
+}

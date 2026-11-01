@@ -388,7 +388,7 @@ Streamable HTTP at `https://a-identity.xyz/mcp`. POST JSON-RPC with
 `Accept: application/json, text/event-stream`. Server name `a-identity-mcp`,
 version `0.2.0`, protocol `2025-06-18`.
 
-21 tools:
+23 tools:
 
 **Identity and discovery**: `resolve_agent`, `get_reputation`, `list_agents`,
 `find_agent`, `get_agent_manifest`, `register_agent`, `list_capabilities`,
@@ -406,6 +406,10 @@ agent, and what does an x402 link's challenge ask for; free, read-only)
 
 **Policy and audit**: `policy_get`, `policy_set`, `pre_action_check`,
 `audit_log`, `record_audit_outcome`
+
+**Verify then pay (Arc Mainnet)**: `verify_then_pay`, `verify_then_pay_receipt`. Buys
+risk_check through Circle Gateway (0.005 USDC), never signs, and returns the exact vault
+pay() call on ALLOW.
 
 Read tools need no credential. Tools that move value require a verified session
 (Authorization: Bearer, from OAuth or a wallet or email login) and, without one,

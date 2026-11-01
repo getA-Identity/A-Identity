@@ -488,10 +488,10 @@ promised here.
   and a DENY that stopped a payment before signing.
 
   A vault counts only when its owner key is one we never held, so the launch-day vault,
-  owned by our operating wallet, does not. The browser deployer is planned at
-  /app/vault/arc. Targets are the Deliverable 1 commitments as Circle revised them on
-  2026-10-19; the counts are read from the settlement logs on every request, and the
-  curated lists are empty until the evidence exists.
+  owned by our operating wallet, does not. The browser deployer is live at /app/vault/arc,
+  and no owner-held vault exists yet. Targets are the Deliverable 1 commitments as Circle
+  revised them on 2026-10-19; the counts are read from the settlement logs on every
+  request, and the curated lists fill only when the evidence exists.
 
   Chains: Arc Mainnet. Evidence: [Live progress](https://a-identity.xyz/proof/arc), [The computed report](https://a-identity.xyz/api/arc/season), [Partner guide](https://a-identity.mintlify.site/chains/arc-integration).
 

@@ -62,6 +62,9 @@ const Checks = lazy(() => import('./routes/app/Checks'))
 // Public console screen: the live Stellar vault panel. Its own chunk, and the only route
 // that reaches Stellar Wallets Kit, which kit.ts loads with a dynamic import on first use.
 const StellarVault = lazy(() => import('./routes/app/StellarVault'))
+// Public console screen: the Arc vault panel, also its own chunk, carrying the vault's ABI and
+// creation code (src/lib/contracts, generated) so no other route downloads them.
+const ArcVault = lazy(() => import('./routes/app/ArcVault'))
 
 export default function App() {
   // Restore the session from the HttpOnly cookie once on load (the token isn't in
@@ -156,6 +159,12 @@ export default function App() {
             wallet. Only its owner actions ask for a session, at the moment they need one. */}
         <Route path="/app/vault/stellar" element={<AppLayout />}>
           <Route index element={<StellarVault />} />
+        </Route>
+        {/* The Arc vault panel: public like the Stellar one. Reads come straight from the
+            registry's Arc RPCs; every write is signed in the owner's own EVM wallet, and
+            A-Identity signs nothing. It needs no session at any point. */}
+        <Route path="/app/vault/arc" element={<AppLayout />}>
+          <Route index element={<ArcVault />} />
         </Route>
 
         <Route element={<ProtectedRoute />}>

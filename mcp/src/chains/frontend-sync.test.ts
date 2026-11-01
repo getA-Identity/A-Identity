@@ -30,6 +30,31 @@ test('the frontend module exposes every registry chain, and nothing else', () =>
   assert.equal(idCount, CHAINS.length, 'the frontend module has a chain the registry does not')
 })
 
+/** The JSON object a generated `export const NAME: Type = {...}` holds. */
+function jsonExport(text: string, name: string): Record<string, unknown> {
+  const m = new RegExp(`export const ${name}: [^\\n]+ = (\\{[\\s\\S]*?\\n\\})\\n`).exec(text)
+  assert.ok(m, `${name} is missing from the frontend module`)
+  return JSON.parse(m[1]) as Record<string, unknown>
+}
+
+test('the frontend RPC lists and USDC contracts are the registry descriptors, unmodified', () => {
+  // The browser reads Arc straight from these (no backend in between), so a reordered list,
+  // a dropped fallback or a USDC address that is not the registry's would move real money
+  // reads to the wrong place without any other test noticing.
+  const onDisk = readFileSync(frontendChainsPath, 'utf8')
+  const rpc = jsonExport(onDisk, 'CHAIN_RPC_URLS')
+  const usdc = jsonExport(onDisk, 'CHAIN_USDC')
+  assert.deepEqual(Object.keys(rpc).sort(), CHAINS.map((c) => c.id).sort(), 'CHAIN_RPC_URLS must name every registry chain')
+  for (const c of CHAINS) {
+    assert.deepEqual(rpc[c.id], c.rpcUrls, `${c.id}: every registry RPC, primary first, and never the env override`)
+    if (c.ecosystem === 'evm' && c.contracts.usdc) {
+      assert.deepEqual(usdc[c.id], { address: c.contracts.usdc, decimals: c.usdcDecimals }, `${c.id}: USDC is the registry's`)
+    } else {
+      assert.equal(usdc[c.id], undefined, `${c.id} has no canonical EVM USDC, so the frontend must not carry one`)
+    }
+  }
+})
+
 test('the public projection keeps the legacy /api/chains keys', () => {
   // These flat keys predate unification; dropping one would silently break any
   // existing consumer of GET /api/chains.
