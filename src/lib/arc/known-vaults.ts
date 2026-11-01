@@ -10,7 +10,7 @@
  */
 import { getAddress, isAddress, type Address } from 'viem'
 import { apiFetch, readJson } from '../api'
-import { ARC_LEDGER_KEYS, ARC_LEDGER_VAULTS } from '../arc-ledger'
+import { ledgerKnownVaults } from './ours'
 import { arcChainFor } from './vault-read'
 
 export type KnownVault = {
@@ -22,6 +22,8 @@ export type KnownVault = {
   deployedAt?: string
   /** For an owner-held vault: the owner key it was listed with. */
   owner?: string
+  /** For an owner-held vault: whose wallet that key is. */
+  ownerKind?: 'team' | 'external'
   note?: string
 }
 
@@ -31,6 +33,13 @@ export type KnownVaults = {
   ourKeys: Record<string, string[]>
   /** Set when the owner-held list could not be read; ours still shows, from the build. */
   partial: string | null
+  /** True until the backend has been asked, while only what the build knows is listed. */
+  loading?: boolean
+}
+
+/** What the page shows on its first render: the build's own list, with the backend still to ask. */
+export function seededKnownVaults(): KnownVaults {
+  return { ...ledgerKnownVaults(), partial: null, loading: true }
 }
 
 type ProofNetwork = {
@@ -43,7 +52,7 @@ type ProofNetwork = {
 
 type SeasonReport = {
   network?: string
-  milestone1?: { vaults?: { items?: { address?: string; owner?: string; deployTx?: string; deployedAt?: string; note?: string }[] } }
+  milestone1?: { vaults?: { items?: { address?: string; owner?: string; ownerKind?: 'team' | 'external'; deployTx?: string; deployedAt?: string; note?: string }[] } }
 }
 
 const addr = (a: unknown): Address | null => (typeof a === 'string' && isAddress(a, { strict: false }) ? getAddress(a) : null)
@@ -64,11 +73,9 @@ export async function listKnownVaults(onWaking?: () => void): Promise<KnownVault
     getJson<SeasonReport>('/api/arc/season', onWaking),
   ])
   // What the build knows comes first, so a backend that does not answer changes no label.
-  const vaults: KnownVault[] = ARC_LEDGER_VAULTS.flatMap((v) => {
-    const a = addr(v.address)
-    return a ? [{ network: v.network, address: a, kind: 'ours' as const }] : []
-  })
-  const ourKeys: Record<string, string[]> = Object.fromEntries(Object.entries(ARC_LEDGER_KEYS).map(([net, keys]) => [net, [...keys]]))
+  const seeded = ledgerKnownVaults()
+  const vaults: KnownVault[] = seeded.vaults
+  const ourKeys = seeded.ourKeys
   for (const n of proof?.networks ?? []) {
     const chain = arcChainFor(n.caip2)
     if (!chain) continue
@@ -92,7 +99,7 @@ export async function listKnownVaults(onWaking?: () => void): Promise<KnownVault
     const a = addr(v.address)
     if (!a || !seasonChain) continue
     if (vaults.some((x) => x.network === seasonChain.caip2 && x.address === a)) continue
-    vaults.push({ network: seasonChain.caip2, address: a, kind: 'owner-held', deployTx: v.deployTx, deployedAt: v.deployedAt, owner: v.owner, note: v.note })
+    vaults.push({ network: seasonChain.caip2, address: a, kind: 'owner-held', deployTx: v.deployTx, deployedAt: v.deployedAt, owner: v.owner, ownerKind: v.ownerKind, note: v.note })
   }
   const partial = season ? null : 'the owner-held vaults could not be listed (GET /api/arc/season did not answer)'
   return { vaults, ourKeys, partial }

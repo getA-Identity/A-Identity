@@ -519,6 +519,123 @@ test('our launch-day vault and our key are labelled from the build, with no answ
   assert.match(page, /isOurKey\(v\.network, v\.owner, known\?\.ourKeys\)/)
 })
 
+type OursModule = {
+  autoLandVault: <T extends { network: string; kind: string; owner?: string }>(rows: readonly T[], network: string, account: string | null) => T | null
+  ledgerKnownVaults: () => { vaults: { network: string; address: string; kind: string }[]; ourKeys: Record<string, string[]> }
+  FUND_RISK: string
+  NOT_MY_VAULT: string
+  NAMES_OUR_KEY: string
+}
+
+test('a link with no vault opens ours or the connected account\'s own, never a stranger\'s', async () => {
+  const ours = (await import(repoUrl('src/lib/arc/ours.ts').href)) as OursModule
+  const net = ARC_MAINNET?.caip2 ?? ''
+  const stranger = { network: net, address: VAULT, kind: 'owner-held', owner: OWNER }
+  const our = { network: net, address: '0x' + '77'.repeat(20), kind: 'ours' }
+  assert.equal(ours.autoLandVault([stranger, our], net, null), our)
+  assert.equal(ours.autoLandVault([stranger, our], net, '0x' + '99'.repeat(20)), our)
+  assert.equal(ours.autoLandVault([stranger], net, null), null, 'nothing to land on is better than someone else\'s vault with a fund form')
+  assert.equal(ours.autoLandVault([stranger, our], net, OWNER.toUpperCase().replace('0X', '0x')), stranger, 'your own vault, whatever the address case')
+  assert.equal(ours.autoLandVault([our], 'eip155:1', null), null, 'the network the link named')
+  const page = codeOnly(repo('src/routes/app/ArcVault.tsx'))
+  assert.match(page, /autoLandVault\(known\.vaults, network \?\? ARC_MAINNET\.caip2, wallet\.account\)/)
+  assert.match(page, /\|\| typing\.current\) return/, 'never once someone has started typing an address')
+})
+
+test('the build\'s own vaults are on the page from its first render, before any backend answer', async () => {
+  const ours = (await import(repoUrl('src/lib/arc/ours.ts').href)) as OursModule
+  const seeded = ours.ledgerKnownVaults()
+  const launchDay = PROVENANCE.find((p) => p.chain === 'arc-mainnet')?.contracts.find((c) => c.name === 'AgentSpendPolicy vault')?.address ?? ''
+  assert.ok(seeded.vaults.some((v) => v.address.toLowerCase() === launchDay.toLowerCase() && v.kind === 'ours'))
+  assert.ok(Object.keys(seeded.ourKeys).length > 0)
+  const page = codeOnly(repo('src/routes/app/ArcVault.tsx'))
+  assert.match(page, /useState<KnownVaults \| null>\(seededKnownVaults\)/)
+  const lib = codeOnly(repo('src/lib/arc/known-vaults.ts'))
+  assert.match(lib, /loading: true/)
+})
+
+test('a late list never overwrites what someone typed, and a row or a submit takes the box back', () => {
+  const picker = codeOnly(repo('src/components/app/arc/VaultPicker.tsx'))
+  assert.match(picker, /useEffect\(\(\) => \{\s*if \(dirty\) return/, 'the sync effect leaves a dirty input alone')
+  assert.match(picker, /onChange=\{\(e\) => \{\s*typed\(\)\s*setAddress/)
+  assert.match(picker, /onChange=\{\(e\) => \{\s*typed\(\)\s*setNet/)
+  assert.equal([...picker.matchAll(/setDirty\(false\)/g)].length, 2)
+})
+
+test('funding someone else\'s vault takes an explicit tick, and the page says what sending means', async () => {
+  const ours = (await import(repoUrl('src/lib/arc/ours.ts').href)) as OursModule
+  const raw = repo('src/routes/app/ArcVault.tsx')
+  assert.doesNotMatch(raw, /only its owner can take it out/, 'false: the agent key can pay it out within the caps')
+  assert.match(ours.FUND_RISK, /owner can withdraw/)
+  assert.match(ours.FUND_RISK, /agent key can spend it within the caps until the key expires/)
+  assert.match(ours.NOT_MY_VAULT, /not my vault/)
+  const page = codeOnly(raw)
+  assert.match(page, /\{FUND_RISK\}/)
+  assert.match(page, /\{\(isOwner \|\| fundAcked\) && \(\s*<FundForm/, 'the form needs ownership or the tick')
+  assert.match(page, /\{!isOwner && \(\s*<label/)
+  assert.match(page, /const isOwner = Boolean\(v && wallet\.account && sameAddress\(wallet\.account, v\.owner\)\)/)
+  // A tick is for this vault and this account, not for whatever is on screen next.
+  assert.match(page, /fundAck === `\$\{key\}:\$\{wallet\.account \?\? ''\}`/)
+  const flow = repo('src/components/app/arc/DeployFlow.tsx')
+  assert.doesNotMatch(flow, /safe\s+moment/)
+  assert.match(flow, /\{FUND_RISK\}/)
+})
+
+test('a contract that only names our key as owner is not called ours or deployed by us', async () => {
+  const ours = (await import(repoUrl('src/lib/arc/ours.ts').href)) as OursModule
+  assert.match(ours.NAMES_OUR_KEY, /names one of our keys/)
+  assert.match(ours.NAMES_OUR_KEY, /not in our ledger and we did not list it/)
+  const status = codeOnly(repo('src/components/app/arc/VaultStatus.tsx'))
+  // OURS_LABEL ("Deployed with our server key") appears once, inside the block only `ours` opens.
+  const label = status.indexOf('{OURS_LABEL}')
+  assert.ok(label > 0)
+  assert.equal(status.lastIndexOf('{OURS_LABEL}'), label)
+  const opening = status.lastIndexOf('{ours && (', label)
+  const closing = status.lastIndexOf(')}', label)
+  assert.ok(opening > closing, 'the "deployed with our server key" line is reached only when the vault is in the ledger')
+  assert.match(status, /\{!ours && ownerIsOurKey && \([\s\S]{0,300}\{NAMES_OUR_KEY\}/)
+  const page = codeOnly(repo('src/routes/app/ArcVault.tsx'))
+  assert.match(page, /ours \? 'This is our own vault[^']*' : `\$\{NAMES_OUR_KEY\}/)
+})
+
+test('the page labels an operator key of ours, and a team-owned vault is not dressed as a green owner-held one', () => {
+  const status = codeOnly(repo('src/components/app/arc/VaultStatus.tsx'))
+  assert.match(status, /operatorIsOurKey && <Chip tone="warn">/)
+  assert.match(status, /ownerKind === 'team' && \(/)
+  const picker = codeOnly(repo('src/components/app/arc/VaultPicker.tsx'))
+  assert.match(picker, /r\.ownerKind === 'team' \? \(\s*<Chip tone="muted">/, 'not the green chip')
+  const lib = codeOnly(repo('src/lib/arc/known-vaults.ts'))
+  assert.match(lib, /ownerKind: v\.ownerKind/, 'carried from the season report')
+  const page = codeOnly(repo('src/routes/app/ArcVault.tsx'))
+  assert.match(page, /operatorIsOurKey=\{isOurKey\(v\.network, v\.operator, known\?\.ourKeys\)\}/)
+  assert.match(page, /ownerKind=\{listedRow\?\.ownerKind\}/)
+})
+
+test('a wallet that never answers does not stop the page looking, or leave it with no way forward', () => {
+  const flow = codeOnly(repo('src/components/app/arc/DeployFlow.tsx'))
+  assert.doesNotMatch(flow, /busy === 'deploy'\) return/, 'the look runs while the wallet promise is open')
+  assert.match(flow, /useEffect\(\(\) => \{\s*if \(!target\) return\s*void lookForVault\(\)/)
+  assert.match(flow, /release\('deploy'\)/, 'a vault found lets go of the wallet promise, or the next step stays disabled')
+  assert.match(flow, /WALLET_SLOW_MS = 30_000/)
+  assert.match(flow, /\{walletSlow && \(/)
+  assert.match(repo('src/components/app/arc/DeployFlow.tsx'), /Reloading this page is safe/)
+})
+
+test('a wallet error that sent nothing has a labelled way out, and the notice does not promise a retry', () => {
+  const raw = repo('src/components/app/arc/DeployFlow.tsx')
+  assert.match(raw, /My wallet shows nothing was sent: start again/)
+  const flow = codeOnly(raw)
+  assert.match(flow, /next=\{step === 'sending' \? SENDING_NEXT : undefined\}/)
+  assert.match(codeOnly(repo('src/components/app/arc/FailureNotice.tsx')), /const next = instead \?\? usual/)
+})
+
+test('a run let go of cannot clear or fail the run after it', () => {
+  const hook = codeOnly(repo('src/components/app/arc/useArcTx.ts'))
+  assert.match(hook, /if \(current\.current === mine\) setFailure/)
+  assert.match(hook, /if \(current\.current === mine\) \{\s*current\.current = null\s*setBusy\(null\)/)
+  assert.match(hook, /const release = useCallback/)
+})
+
 test('a revoke writes the named past second, and no operator is preset', () => {
   const write = codeOnly(repo('src/lib/arc/vault-write.ts'))
   assert.match(write, /REVOKED_SESSION_EXPIRY/, 'a revoke must write the named past second, not a literal')

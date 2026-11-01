@@ -13,6 +13,7 @@
 import { writeFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { FRONTEND_ARC_LEDGER_MODULE, renderFrontendArcLedger } from '../dist/chains/frontend-ledger.js'
+import { committedOurKeys } from '../dist/arc-owner-vault.js'
 import { renderFrontendChains } from '../dist/chains/public-view.js'
 
 const target = fileURLToPath(new URL('../../src/lib/chains.ts', import.meta.url))
@@ -22,5 +23,5 @@ writeFileSync(target, next)
 console.log(`Generated ${target} from mcp/src/chains/registry.ts`)
 
 const ledgerTarget = fileURLToPath(new URL(`../../${FRONTEND_ARC_LEDGER_MODULE}`, import.meta.url))
-writeFileSync(ledgerTarget, renderFrontendArcLedger())
+writeFileSync(ledgerTarget, renderFrontendArcLedger(committedOurKeys()))
 console.log(`Generated ${ledgerTarget} from mcp/src/chains/provenance.ts`)

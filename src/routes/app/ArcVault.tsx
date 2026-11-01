@@ -40,8 +40,8 @@ import { useArcWallet, type ArcWalletState } from '../../components/app/arc/useA
 import { Chip, Mono } from '../../components/app/stellar/bits'
 import { track } from '../../lib/analytics'
 import type { Chain } from '../../lib/chains'
-import { listKnownVaults, type KnownVaults } from '../../lib/arc/known-vaults'
-import { isOurKey, isOurVault } from '../../lib/arc/ours'
+import { listKnownVaults, seededKnownVaults, type KnownVaults } from '../../lib/arc/known-vaults'
+import { autoLandVault, FUND_RISK, isOurKey, isOurVault, NAMES_OUR_KEY, NOT_MY_VAULT } from '../../lib/arc/ours'
 import { clearTx, loadTx, saveTx, type TxRecord } from '../../lib/arc/pending'
 import { predictedVault, setupAlert, withRecord } from '../../lib/arc/tx-rules'
 import {
@@ -85,7 +85,12 @@ export default function ArcVault() {
   const wallet = useArcWallet()
   const store = useArcSetup()
   const setup = store.setup
-  const [known, setKnown] = useState<KnownVaults | null>(null)
+  // What the build knows, from the first render; the backend's rows join it when it answers.
+  const [known, setKnown] = useState<KnownVaults | null>(seededKnownVaults)
+  // Set once someone starts on an address of their own: nothing moves the page for them after that.
+  const typing = useRef(false)
+  // A stranger's yes to funding this vault from this account. See the Fund section.
+  const [fundAck, setFundAck] = useState<string | null>(null)
   const [read, setRead] = useState<ReadState>(EMPTY)
   const [tx, setTx] = useState<(TxRecord & { key: string }) | null>(null)
   // Bumped when a write from this page reaches its end, so the activity list reads it too.
@@ -108,16 +113,15 @@ export default function ArcVault() {
   const openDeploy = useCallback((net: string) => setParams({ network: net, deploy: '1' }), [setParams])
   const closeDeploy = useCallback(() => setParams(network ? { network } : {}), [setParams, network])
 
-  // With no vault in the link, open a listed one so the page lands on live values: an
-  // owner-held vault first, else ours (labelled as ours), on the network the link named.
+  // With no vault in the link, open one so the page lands on live values: the connected account's
+  // own, else ours (labelled as ours), on the network the link named. Never a stranger's, and
+  // never once someone has started typing an address of their own.
   const refused = Boolean(networkParam && !chain) || Boolean(contractParam && !contract)
   useEffect(() => {
-    if (deployMode || contractParam || refused || !known) return
-    const on = network ?? ARC_MAINNET.caip2
-    const rows = known.vaults.filter((v) => v.network === on)
-    const first = rows.find((v) => v.kind === 'owner-held') ?? rows[0]
+    if (deployMode || contractParam || refused || !known || typing.current) return
+    const first = autoLandVault(known.vaults, network ?? ARC_MAINNET.caip2, wallet.account)
     if (first) pick(first.network, first.address, true)
-  }, [deployMode, contractParam, refused, known, network, pick])
+  }, [deployMode, contractParam, refused, known, network, pick, wallet.account])
 
   const load = useCallback(async () => {
     if (!chain || !contract) return
@@ -165,6 +169,9 @@ export default function ArcVault() {
   )
 
   const v = read.key === key ? read.data : null
+  const listedRow = v ? known?.vaults.find((r) => r.network === v.network && sameAddress(r.address, v.address)) : undefined
+  const isOwner = Boolean(v && wallet.account && sameAddress(wallet.account, v.owner))
+  const fundAcked = fundAck === `${key}:${wallet.account ?? ''}`
   const shownTx = tx && tx.key === key ? tx : null
   // From the ledger as generated into this build, so the labels hold with the backend asleep.
   const ours = Boolean(v && isOurVault(v.network, v.address, known?.vaults))
@@ -250,7 +257,7 @@ export default function ArcVault() {
             onClose={closeDeploy}
           />
         ) : (
-          <VaultPicker known={known} network={network} contract={contract} onPick={pick} onDeploy={openDeploy} />
+          <VaultPicker known={known} network={network} contract={contract} onPick={pick} onDeploy={openDeploy} onTyping={() => (typing.current = true)} />
         )}
 
         {networkParam && !chain && (
@@ -350,7 +357,15 @@ export default function ArcVault() {
               </div>
             )}
 
-            {v && <VaultStatus v={v} chain={chain} ours={ours} ownerIsOurKey={ownerIsOurKey} refreshing={read.loading} />}
+            {v && <VaultStatus
+                v={v}
+                chain={chain}
+                ours={ours}
+                ownerIsOurKey={ownerIsOurKey}
+                operatorIsOurKey={isOurKey(v.network, v.operator, known?.ourKeys)}
+                ownerKind={listedRow?.ownerKind}
+                refreshing={read.loading}
+              />}
 
             {v && <VaultEvents key={key} chain={chain} vault={v.address} decimals={v.decimals} refreshKey={eventsRound} />}
 
@@ -374,9 +389,7 @@ export default function ArcVault() {
             {v && !ours && !ownerIsOurKey && v.knownBuild && v.usdcMatches && (
               <section aria-label="Fund" className="rounded-2xl border border-border bg-card p-4 sm:p-5">
                 <h3 className="text-sm font-semibold text-foreground">Fund this vault</h3>
-                <p className="mt-1 text-xs text-foreground/70">
-                  Any account can send USDC into a vault; only its owner can take it out. Send only after its session key has an expiry.
-                </p>
+                <p className="mt-1 text-xs text-foreground/70">{FUND_RISK} Send only after its session key has an expiry.</p>
                 <div className="mt-3">
                   {!wallet.account || !wallet.wallet ? (
                     <p className="text-xs text-foreground/65">Connect an EVM wallet above to send USDC into it.</p>
@@ -387,14 +400,31 @@ export default function ArcVault() {
                       Not offered: this vault's agent key has no time bound. Its owner should set an expiry first.
                     </p>
                   ) : (
-                    <FundForm
-                      chain={chain}
-                      vault={v}
-                      provider={wallet.wallet.provider}
-                      account={wallet.account}
-                      onSubmitted={onSubmitted}
-                      held={shownTx?.outcome === 'pending'}
-                    />
+                    <>
+                      {!isOwner && (
+                        <label className="mb-3 flex items-start gap-2 rounded-xl border border-warn/30 bg-warn/10 px-3 py-2 text-xs text-foreground/85">
+                          <input
+                            type="checkbox"
+                            className="mt-0.5"
+                            checked={fundAcked}
+                            onChange={(e) => setFundAck(e.target.checked ? `${key}:${wallet.account ?? ''}` : null)}
+                          />
+                          <span>
+                            Your connected account is not this vault's owner, so you would have no way to take USDC back out. {NOT_MY_VAULT}
+                          </span>
+                        </label>
+                      )}
+                      {(isOwner || fundAcked) && (
+                        <FundForm
+                          chain={chain}
+                          vault={v}
+                          provider={wallet.wallet.provider}
+                          account={wallet.account}
+                          onSubmitted={onSubmitted}
+                          held={shownTx?.outcome === 'pending'}
+                        />
+                      )}
+                    </>
                   )}
                 </div>
               </section>
@@ -445,7 +475,9 @@ function OwnerSection({
     return (
       <>
         {ownerLine}
-        <p className="text-sm text-foreground/75">This is our own vault, so this page offers no controls for it, whoever is connected.</p>
+        <p className="text-sm text-foreground/75">
+          {ours ? 'This is our own vault, so this page offers no controls for it, whoever is connected.' : `${NAMES_OUR_KEY} This page offers no controls for it, whoever is connected.`}
+        </p>
       </>
     )
   if (!v.knownBuild)

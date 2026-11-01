@@ -72,7 +72,8 @@ export type AnsweredWindow = BlockRange & { hosts: string[] }
 export type EventHistory = {
   vault: string
   /** The newest block any window starts from. */
-  head: bigint
+  /** The block to read down from. Null when no host has answered yet, so nothing is known. */
+  head: bigint | null
   /** The windows at least one host answered, newest first, each starting right below the last. */
   windows: AnsweredWindow[]
   /** Every event in those windows, across hosts, once each, newest first. */
@@ -87,7 +88,7 @@ export type EventHistory = {
   times: Readonly<Record<string, bigint>>
 }
 
-export function emptyHistory(vault: string, head: bigint): EventHistory {
+export function emptyHistory(vault: string, head: bigint | null): EventHistory {
   return { vault, head, windows: [], events: [], failed: null, skipped: [], dropped: 0, times: {} }
 }
 
@@ -233,6 +234,7 @@ function withWindow(h: EventHistory, w: BlockRange, answers: { host: string; log
 export function nextWindowTop(h: EventHistory): bigint | null {
   if (h.windows.length >= MAX_WINDOWS) return null
   const oldest = h.windows[h.windows.length - 1]
+  // No window read and no head known: nothing says where the chain is, so there is no "back" to go.
   if (!oldest) return h.head
   return oldest.from > 0n ? oldest.from - 1n : null
 }

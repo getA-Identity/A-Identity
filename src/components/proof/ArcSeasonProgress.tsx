@@ -300,7 +300,7 @@ export default function ArcSeasonProgress() {
           <div className="mt-6 grid gap-4 sm:grid-cols-2">
             <MilestoneCard id={1} title={m1.title} due={m1.due}>
               {/* The note names the launch-day vault and why it is not counted, which stays true at any count. */}
-              <MetricRow label="Owner-held vaults deployed from the browser" metric={m1.vaults} keepNote />
+              <MetricRow label="Owner-held vaults deployed by the owner's own wallet" metric={m1.vaults} keepNote />
               {m1.checks.linked ? (
                 <MetricRow
                   label="Verify-then-pay flows through Circle Gateway"

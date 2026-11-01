@@ -18,12 +18,18 @@ export const ARC_LEDGER_VAULTS: readonly { network: string; address: string; nam
   }
 ]
 
-/** Per CAIP-2, the keys the ledger names as ours on Arc, lowercased. */
+/** Per CAIP-2, the keys that are ours on Arc, lowercased: the committed list admission uses. */
 export const ARC_LEDGER_KEYS: Readonly<Record<string, readonly string[]>> = {
   "eip155:5042": [
-    "0xd305607510e0db2c95807173c7a05bea53c1ed36"
+    "0xd305607510e0db2c95807173c7a05bea53c1ed36",
+    "0x8c8d9cd12d8896a40cf2115ee731258bb4983349",
+    "0xee602a161232aac1436e812676b6626382fc84a9",
+    "0xf43f43d8aee114a71b164e1f6214bc7625a5742d"
   ],
   "eip155:5042002": [
-    "0xd305607510e0db2c95807173c7a05bea53c1ed36"
+    "0xd305607510e0db2c95807173c7a05bea53c1ed36",
+    "0x8c8d9cd12d8896a40cf2115ee731258bb4983349",
+    "0xee602a161232aac1436e812676b6626382fc84a9",
+    "0xf43f43d8aee114a71b164e1f6214bc7625a5742d"
   ]
 }

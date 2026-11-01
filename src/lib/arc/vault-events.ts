@@ -75,11 +75,12 @@ export async function readVaultEvents(
   const picked = pickHosts(await readHeads(chain), chain.chainId as number)
   const urls = rpcUrls(chain).filter((u) => picked.usable.includes(hostOf(u)))
   if (picked.top === null) {
-    const base = opts.older ?? emptyHistory(address, 0n)
+    const base = opts.older ?? emptyHistory(address, null)
     return { ...base, skipped: picked.skipped, failed: { range: null, reason: 'no RPC answered for this chain' } }
   }
   const readers = urls.map((u) => readerFor(chain, u, address))
-  const base: EventHistory = { ...(opts.older ?? emptyHistory(address, picked.top)), skipped: picked.skipped }
+  // A history with no window read has no range to continue below, so the read starts at the newest block.
+  const base: EventHistory = { ...(opts.older?.windows.length ? opts.older : emptyHistory(address, picked.top)), skipped: picked.skipped }
   const read = await readOlder(base, { readers, pause, aborted: opts.aborted, onProgress: opts.onProgress })
   return withBlockTimes(read, { readers, pause, aborted: opts.aborted })
 }

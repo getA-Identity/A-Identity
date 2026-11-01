@@ -26,7 +26,7 @@ type Reader = { host: string; logs: (from: bigint, to: bigint) => Promise<readon
 type Event = { kind: string; block: bigint; logIndex: number; txHash: string; hosts: string[]; to?: string; amount?: bigint; byOwner?: boolean; frozen?: boolean }
 type History = {
   vault: string
-  head: bigint
+  head: bigint | null
   windows: (Range & { hosts: string[] })[]
   events: Event[]
   failed: { range: Range | null; reason: string } | null
@@ -42,7 +42,7 @@ type Module = {
   HOST_STRIKES: number
   HEAD_LAG_BLOCKS: bigint
   EVENTS_SHOWN: number
-  emptyHistory: (vault: string, head: bigint) => History
+  emptyHistory: (vault: string, head: bigint | null) => History
   planWindows: (top: bigint, count: number, size?: bigint) => Range[]
   pickHosts: (heads: { host: string; chainId: number | null; block: bigint | null; reason?: string }[], chainId: number) => { top: bigint | null; usable: string[]; skipped: { host: string; reason: string }[] }
   nextWindowTop: (h: History) => bigint | null
@@ -336,4 +336,18 @@ test('stopping a read returns what it had, and the page reads only on request', 
   const bind = repo('src/lib/arc/vault-events.ts')
   for (const name of ['Paid', 'FrozenSet', 'Withdrawn']) assert.match(bind, new RegExp(`getAbiItem\\(\\{ abi: AGENT_SPEND_POLICY_ABI, name: '${name}' \\}\\)`))
   assert.match(repo('src/routes/app/ArcVault.tsx'), /<VaultEvents /)
+})
+
+test('with no head read, there is no further back and no claim about block 0', async () => {
+  // No host answered the first read. A head of 0 here used to offer "further back", read the single
+  // window {0, 0} once hosts answered, and say in bold there were no events in blocks 0 to 0.
+  const m = await mod()
+  const none = { ...m.emptyHistory(VAULT, null), failed: { range: null, reason: 'no RPC answered for this chain' } }
+  assert.equal(m.nextWindowTop(none), null)
+  assert.match(m.historyStatement(none).claim, /says nothing about the vault's activity/)
+  const untouched = await m.readOlder(none, { readers: [] })
+  assert.equal(untouched.windows.length, 0)
+  const page = repo('src/lib/arc/vault-events.ts')
+  assert.match(page, /emptyHistory\(address, null\)/)
+  assert.match(page, /opts\.older\?\.windows\.length \? opts\.older : emptyHistory\(address, picked\.top\)/, 'a history with nothing read starts at the newest block')
 })

@@ -22,6 +22,7 @@ import { ArrowLeft, CheckCircle2, Loader2, ShieldAlert } from 'lucide-react'
 import type { Chain } from '../../../lib/chains'
 import { track } from '../../../lib/analytics'
 import type { SetupState, TxRecord } from '../../../lib/arc/pending'
+import { FUND_RISK } from '../../../lib/arc/ours'
 import { deployReadback } from '../../../lib/arc/receipt'
 import { deployEnd, fundingUnresolved, predictedVault, setupStep, vaultToLookFor, withRecord } from '../../../lib/arc/tx-rules'
 import {
@@ -77,6 +78,11 @@ const INPUT =
 const REREAD_MS = 10_000
 /** While a deploy has no hash, the address it should create is looked at this often. */
 const LOOK_MS = 15_000
+/** How long a wallet that has not answered is waited on before the page says what else it is doing. */
+const WALLET_SLOW_MS = 30_000
+/** After a failure with the setup kept: the failure's own "try again" is not on offer here. */
+const SENDING_NEXT =
+  "Check your wallet's activity. If this page finds the vault at its address it carries on from there. If your wallet shows nothing was sent, use the start again button below."
 
 const STEPS: { key: string; label: string }[] = [
   { key: 'deploy', label: '1. Deploy, owned by you' },
@@ -116,7 +122,9 @@ export default function DeployFlow({
   const [snapshotNote, setSnapshotNote] = useState<string | null>(null)
   const [looked, setLooked] = useState<{ at: string; found: boolean; why: string | null } | null>(null)
   const [refundConfirmed, setRefundConfirmed] = useState(false)
-  const { busy, step: txStep, failure, setFailure, run } = useArcTx()
+  const { busy, step: txStep, failure, setFailure, run, release } = useArcTx()
+  // A wallet that never answers: its promise can stay open for good, so the wait says so.
+  const [walletSlow, setWalletSlow] = useState(false)
 
   // A review is only ever of the network now shown: one prepared on another network (the select
   // changed, or the link did) is dropped rather than signed under this network's banner.
@@ -174,16 +182,29 @@ export default function DeployFlow({
     setLooked({ at: new Date().toISOString(), found: back.status === 'ok', why: back.why })
     if (back.status === 'ok') {
       patch((s) => (vaultToLookFor(s)?.predicted === target.predicted ? { ...s, vault: target.predicted } : s))
+      // The wallet's promise may never settle (a phone browser suspended while the wallet app was
+      // open), and the vault is here, so the page moves on rather than wait on it.
+      release('deploy')
+      setPrepared(null)
       track('arc_vault_deploy', { network: networkWord(chain), outcome: 'found_without_receipt' })
     }
-  }, [chain, patch, target])
+  }, [chain, patch, target, release])
 
+  // From the moment the wallet is asked: `target` exists only once the setup holds that intent, and
+  // the hash may never come back to this page while the vault lands.
   useEffect(() => {
-    if (!target || busy === 'deploy') return
+    if (!target) return
     void lookForVault()
     const t = setInterval(() => void lookForVault(), LOOK_MS)
     return () => clearInterval(t)
-  }, [target, busy, lookForVault])
+  }, [target, lookForVault])
+
+  useEffect(() => {
+    setWalletSlow(false)
+    if (busy !== 'deploy' || !target) return
+    const t = setTimeout(() => setWalletSlow(true), WALLET_SLOW_MS)
+    return () => clearTimeout(t)
+  }, [busy, target])
 
   const updateRecord = useCallback(
     (field: 'deploy' | 'expiryTx' | 'fundTx', r: TxRecord) => patch((s) => withRecord(s, field, r)),
@@ -540,9 +561,25 @@ export default function DeployFlow({
       {step === 'sending' && setup?.intent && (
         <div role="status" className="rounded-2xl border border-warn/30 bg-warn/10 p-4 text-sm text-foreground">
           {busy === 'deploy' ? (
-            <div className="flex items-center gap-2 font-semibold">
-              <Loader2 size={14} className="animate-spin" aria-hidden="true" /> Waiting for your wallet to send the deploy and return its hash.
-            </div>
+            <>
+              <div className="flex items-center gap-2 font-semibold">
+                <Loader2 size={14} className="animate-spin" aria-hidden="true" /> Waiting for your wallet to send the deploy and return its hash.
+              </div>
+              {walletSlow && (
+                <>
+                  <div className="mt-1 text-xs text-foreground/80">
+                    A phone wallet can send it and never tell this page. This page looks for the vault at <Mono>{setup.intent.predicted}</Mono> every{' '}
+                    {LOOK_MS / 1000} seconds and carries on when it is there. Reloading this page is safe: the setup is kept in this browser.
+                    {looked && !looked.found && ` Last look at ${new Date(looked.at).toLocaleTimeString()}: no vault there yet${looked.why ? ` (${looked.why})` : ''}.`}
+                  </div>
+                  <div className="mt-2 flex flex-wrap items-center gap-2">
+                    <Button size="sm" variant="outline" onClick={() => void lookForVault()}>
+                      Look again now
+                    </Button>
+                  </div>
+                </>
+              )}
+            </>
           ) : (
             <>
               <div className="font-semibold">Your wallet was asked to deploy this vault, and no transaction hash came back to this page.</div>
@@ -555,6 +592,13 @@ export default function DeployFlow({
                 <Button size="sm" variant="outline" onClick={() => void lookForVault()}>
                   Look again now
                 </Button>
+                <Button size="sm" variant="outline" onClick={forget}>
+                  My wallet shows nothing was sent: start again
+                </Button>
+              </div>
+              <div className="mt-2 text-xs text-foreground/70">
+                Use that only if your wallet's activity shows no such transaction, pending included. One still in its queue can land later and create a vault
+                whose key has no time bound.
               </div>
             </>
           )}
@@ -705,8 +749,8 @@ export default function DeployFlow({
             <div className="rounded-xl border border-border bg-background/60 p-4">
               <h3 className="text-sm font-semibold text-foreground">Transaction 3 of 3: fund the vault</h3>
               <p className="mt-1 text-xs text-foreground/70">
-                A USDC transfer from your account to <Mono>{setup.vault}</Mono>. The vault's key is bounded in time now, so this is the safe
-                moment to fund it.
+                A USDC transfer from your account to <Mono>{setup.vault}</Mono>. The vault's key is bounded in time now. {FUND_RISK} The
+                contract has not been audited, so send what you can afford to lose.
               </p>
               <div className="mt-3">
                 <FundForm
@@ -769,7 +813,7 @@ export default function DeployFlow({
           {invalid}
         </p>
       )}
-      {failure && <FailureNotice failure={failure} />}
+      {failure && <FailureNotice failure={failure} next={step === 'sending' ? SENDING_NEXT : undefined} />}
 
       {setup && step !== 'done' && step !== 'deploy-failed' && (
         <p className="text-[11px] text-foreground/55">

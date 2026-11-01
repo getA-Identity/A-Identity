@@ -21,24 +21,34 @@ export default function VaultPicker({
   contract,
   onPick,
   onDeploy,
+  onTyping,
 }: {
-  /** null while the lists load. */
+  /** What the build knows at first, then what the backend added. */
   known: KnownVaults | null
   network: string | null
   contract: string | null
   onPick: (network: string, contract: string) => void
   onDeploy: (network: string) => void
+  /** The person has started on an address of their own, so nothing should move the page for them. */
+  onTyping?: () => void
 }) {
   const [address, setAddress] = useState(contract ?? '')
   const [net, setNet] = useState(network ?? ARC_CHAINS[0].caip2)
   const [invalid, setInvalid] = useState<string | null>(null)
+  // What someone is typing is theirs: a list arriving late must not overwrite it.
+  const [dirty, setDirty] = useState(false)
+  const typed = () => {
+    setDirty(true)
+    onTyping?.()
+  }
 
   // Keep the box in step with a deep link or a row click.
   useEffect(() => {
+    if (dirty) return
     if (contract) setAddress(contract)
     const c = arcChainFor(network)
     if (c) setNet(c.caip2)
-  }, [contract, network])
+  }, [contract, network, dirty])
 
   const read = (e: FormEvent) => {
     e.preventDefault()
@@ -48,6 +58,7 @@ export default function VaultPicker({
       return
     }
     setInvalid(null)
+    setDirty(false)
     onPick(net, a)
   }
 
@@ -64,7 +75,7 @@ export default function VaultPicker({
         </Button>
       </div>
 
-      {known === null && (
+      {known?.loading && (
         <p className="mt-2 flex items-center gap-2 text-xs text-foreground/65">
           <Loader2 size={12} className="animate-spin" aria-hidden="true" />
           Loading the vaults the backend lists (the free tier can take up to a minute to wake)...
@@ -75,7 +86,7 @@ export default function VaultPicker({
           Not every list loaded: {known.partial}. Paste a vault address below to read one directly; reads go straight to the chain.
         </p>
       )}
-      {known && !known.partial && known.vaults.every((v) => v.kind !== 'owner-held') && (
+      {known && !known.loading && !known.partial && known.vaults.every((v) => v.kind !== 'owner-held') && (
         <p className="mt-2 text-xs text-foreground/65">No owner-held vault is listed yet. The first ones are deployed from this page.</p>
       )}
 
@@ -92,7 +103,10 @@ export default function VaultPicker({
                 <li key={`${r.network}:${r.address}`}>
                   <button
                     type="button"
-                    onClick={() => onPick(r.network, r.address)}
+                    onClick={() => {
+                      setDirty(false)
+                      onPick(r.network, r.address)
+                    }}
                     aria-current={active ? 'true' : undefined}
                     className={`w-full rounded-xl border px-3 py-2 text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${
                       active ? 'border-accent bg-accent/[0.06]' : 'border-border hover:bg-foreground/[0.04]'
@@ -100,13 +114,21 @@ export default function VaultPicker({
                   >
                     <span className="flex flex-wrap items-center gap-1.5">
                       <span className="text-sm font-semibold text-foreground">
-                        {r.kind === 'ours' ? 'Launch-day vault (ours)' : 'Owner-held vault'}
+                        {r.kind === 'ours' ? 'Launch-day vault (ours)' : r.ownerKind === 'team' ? 'Team-owned vault' : 'Owner-held vault'}
                       </span>
-                      {r.kind === 'ours' ? <Chip tone="warn">Server key</Chip> : <Chip tone="ok">Owner-held</Chip>}
+                      {r.kind === 'ours' ? (
+                        <Chip tone="warn">Server key</Chip>
+                      ) : r.ownerKind === 'team' ? (
+                        <Chip tone="muted">Our team member's wallet</Chip>
+                      ) : (
+                        <Chip tone="ok">Owner-held</Chip>
+                      )}
                     </span>
                     <span className="mt-0.5 block font-mono text-[11px] text-foreground/60">{shortAddress(r.address)}</span>
                     <span className="mt-0.5 block text-[11px] leading-snug text-foreground/65">
-                      {r.kind === 'ours' ? `${OURS_LABEL} ${OURS_DETAIL}` : `Deployed ${r.deployedAt ?? ''} from the owner's own wallet.`}
+                      {r.kind === 'ours'
+                        ? `${OURS_LABEL} ${OURS_DETAIL}`
+                        : `Deployed ${r.deployedAt ?? ''} by ${r.ownerKind === 'team' ? "a team member's own wallet" : "the owner's own wallet"}.`}
                     </span>
                   </button>
                 </li>
@@ -127,7 +149,10 @@ export default function VaultPicker({
             spellCheck={false}
             autoComplete="off"
             value={address}
-            onChange={(e) => setAddress(e.target.value)}
+            onChange={(e) => {
+              typed()
+              setAddress(e.target.value)
+            }}
             placeholder="0x..."
             className="mt-1 w-full rounded-lg border border-border bg-card px-3 py-2 font-mono text-xs text-foreground outline-none focus:border-accent focus-visible:ring-2 focus-visible:ring-ring"
           />
@@ -139,7 +164,10 @@ export default function VaultPicker({
           <select
             id="arc-vault-network"
             value={net}
-            onChange={(e) => setNet(e.target.value)}
+            onChange={(e) => {
+              typed()
+              setNet(e.target.value)
+            }}
             className="mt-1 w-full rounded-lg border border-border bg-card px-3 py-2 text-sm text-foreground outline-none focus:border-accent focus-visible:ring-2 focus-visible:ring-ring"
           >
             {ARC_CHAINS.map((c) => (

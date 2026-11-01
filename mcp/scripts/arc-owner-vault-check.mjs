@@ -19,7 +19,8 @@
  *   - owner() is receipt.from, so the owner's own wallet sent the deploy;
  *   - owner() is none of our keys: the provenance ledger's agent owners (the operating
  *     wallet), both rails' internal payer lists, the oracle validator, and the address of
- *     every EVM key env var that is set (run with --env-file=.env to include those);
+ *     every EVM key env var that is set (run with --env-file=.env to include those; admitting
+ *     with --tx on arc-mainnet refuses without them, a rehearsal or a --vault read does not);
  *   - operator() is set and is not the owner; usdc() is the registry USDC;
  *   - dailyCap and autoApproveMax are not 0 (0 means no limit);
  *   - sessionKeyExpiry is not 0 and is later than the chain's current block time.
@@ -51,7 +52,7 @@ const USAGE = `usage: node scripts/arc-owner-vault-check.mjs --tx <deploy tx has
   --chain       arc-mainnet (default, Milestone 1) or arc (Arc Testnet rehearsal, never an entry)
 
 Read-only. Add --env-file=.env before the script path to compare the owner against the
-addresses of our env keys as well.`
+addresses of our env keys as well. Admitting with --tx on arc-mainnet refuses without it.`
 
 function usage(message) {
   console.error(`error: ${message}\n\n${USAGE}`)
@@ -307,6 +308,7 @@ if (ours.envKeysUnreadable.length) console.log(`  env keys set but not a 32-byte
 // -- decide ----------------------------------------------------------------------------
 
 const checks = [
+  ...(opts.tx && !rehearsal ? [admission.envLoadedCheck(ours)] : []),
   ...(evidence ? admission.deployChecks(evidence) : []),
   ...admission.stateChecks({
     state: snap.state,

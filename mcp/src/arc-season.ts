@@ -118,7 +118,7 @@ export type ArcOwnerHeldVault = {
 }
 
 /**
- * Owner-held AgentSpendPolicy vaults on Arc Mainnet, deployed from the browser with a
+ * Owner-held AgentSpendPolicy vaults on Arc Mainnet, deployed by the owner's own wallet with a
  * key A-Identity never holds. Filled from the browser vault deployer at /app/vault/arc as
  * each deployment lands; mcp/scripts/arc-owner-vault-check.mjs admits a vault and prints its
  * entry, and a vault is listed only with its deploy hash. Empty until the first one lands.
@@ -629,8 +629,8 @@ export async function arcSeasonReport(deps: ArcSeasonDeps): Promise<ArcSeasonRep
         items: vaults.map((v) => ({ ...v, explorerUrl: addressUrl(chain, v.address), deployExplorerUrl: txUrl(chain, v.deployTx) })),
         note:
           vaults.length === 0
-            ? `No owner-held vault yet. The launch-day vault${launchVault ? ` ${launchVault}` : ''} was deployed from our server key with our operating wallet as its owner, so it is not owner-held and is not counted. This count fills from vaults deployed in the browser at /app/vault/arc whose owner key A-Identity never holds, each listed with its deploy hash.`
-            : `${vaults.length} of ${ARC_SEASON_TARGETS.ownerHeldVaults} vaults deployed from the browser with an owner key A-Identity never held. The launch-day vault${launchVault ? ` ${launchVault}` : ''} is owned by our operating wallet and is not among them.`,
+            ? `No owner-held vault yet. The launch-day vault${launchVault ? ` ${launchVault}` : ''} was deployed from our server key with our operating wallet as its owner, so it is not owner-held and is not counted. This count fills from vaults deployed by the owner's own wallet, whose owner key A-Identity never holds, each listed with its deploy hash. The deploy page at /app/vault/arc is one way to do that.`
+            : `${vaults.length} of ${ARC_SEASON_TARGETS.ownerHeldVaults} vaults deployed by the owner's own wallet, with an owner key A-Identity never held. The launch-day vault${launchVault ? ` ${launchVault}` : ''} is owned by our operating wallet and is not among them.`,
       },
       checks: {
         count: linkedFlows.size,

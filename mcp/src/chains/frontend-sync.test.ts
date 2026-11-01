@@ -5,6 +5,9 @@ import { fileURLToPath } from 'node:url'
 import { CHAINS } from './registry.js'
 import { publicChains, renderFrontendChains } from './public-view.js'
 import { ARC_PAGE_CHAINS, FRONTEND_ARC_LEDGER_MODULE, arcLedgerFacts, renderFrontendArcLedger } from './frontend-ledger.js'
+import { committedOurKeys } from '../arc-owner-vault.js'
+import { internalPayers as facilitatorInternalPayers } from '../x402-3009/rail.js'
+import { internalPayers as gatewayInternalPayers } from '../x402-gateway/rail.js'
 import { PROVENANCE } from './provenance.js'
 
 // The frontend's chain module is GENERATED from the registry (npm run gen:chains).
@@ -25,11 +28,11 @@ test('the generated frontend chain module is in sync with the registry', () => {
 
 test('the generated Arc ledger module is in sync with the provenance ledger', () => {
   const onDisk = readFileSync(fileURLToPath(new URL(`../../../${FRONTEND_ARC_LEDGER_MODULE}`, import.meta.url)), 'utf8')
-  assert.equal(onDisk, renderFrontendArcLedger(), `${FRONTEND_ARC_LEDGER_MODULE} is stale or was hand-edited. Run: cd mcp && npm run gen:chains`)
+  assert.equal(onDisk, renderFrontendArcLedger(committedOurKeys()), `${FRONTEND_ARC_LEDGER_MODULE} is stale or was hand-edited. Run: cd mcp && npm run gen:chains`)
 })
 
 test('the Arc ledger module names the launch-day vault and our owner key, and only keys in our custody', () => {
-  const facts = arcLedgerFacts()
+  const facts = arcLedgerFacts(committedOurKeys())
   const mainnet = PROVENANCE.find((p) => p.chain === 'arc-mainnet')
   const vault = mainnet?.contracts.find((c) => c.name === 'AgentSpendPolicy vault')
   const caip2 = CHAINS.find((c) => c.id === 'arc-mainnet')?.caip2
@@ -39,7 +42,7 @@ test('the Arc ledger module names the launch-day vault and our owner key, and on
   assert.deepEqual(Object.keys(facts.keys).sort(), ARC_PAGE_CHAINS.map((id) => CHAINS.find((c) => c.id === id)?.caip2).sort())
 
   // A key an owner holds is never labelled ours, and one of ours always is, whichever way it is listed.
-  const planted = arcLedgerFacts([
+  const planted = arcLedgerFacts([], [
     {
       chain: 'arc-mainnet',
       summary: '',
@@ -124,6 +127,21 @@ test('the projection agrees with each descriptor it came from', () => {
 // ── the public agent manifest: the fifth surface that used to drift ───────────────
 
 /** Compiled to dist/chains/, so the repo root is three levels up. */
+const KNOWN_INTERNAL_PAYERS_FOR_THIS_TEST = [...facilitatorInternalPayers({}), ...gatewayInternalPayers({})]
+
+test('the page and the admission script call the same committed addresses ours', () => {
+  // A vault owned by one of these is refused by the script as "owner is ours". The page used to
+  // know one address, so it offered strangers the fund form on the same vault.
+  const committed = committedOurKeys()
+  for (const needed of KNOWN_INTERNAL_PAYERS_FOR_THIS_TEST) assert.ok(committed.includes(needed), needed)
+  const { keys } = arcLedgerFacts(committed)
+  assert.ok(Object.keys(keys).length === ARC_PAGE_CHAINS.length)
+  for (const [net, held] of Object.entries(keys)) {
+    for (const k of committed) assert.ok(held.includes(k), `${k} is ours to admission and not to the page on ${net}`)
+    for (const k of held) assert.ok(committed.includes(k), `${k} is ours to the page and not to admission`)
+  }
+})
+
 const manifestPath = fileURLToPath(new URL('../../../public/.well-known/ai-agent-manifest.json', import.meta.url))
 
 type ManifestChain = { id: string; status: string }

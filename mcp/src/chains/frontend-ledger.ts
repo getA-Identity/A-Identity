@@ -23,11 +23,17 @@ export const ARC_PAGE_CHAINS = ['arc-mainnet', 'arc'] as const
 export type ArcLedgerFacts = {
   /** The AgentSpendPolicy vaults the ledger lists as ours, per chain, in ledger order. */
   vaults: { network: string; address: string; name: string }[]
-  /** Per CAIP-2, the keys the ledger names as ours, lowercased: agent owners and accounts in our custody. */
+  /** Per CAIP-2, the keys that are ours, lowercased: the same committed list admission refuses an
+   *  owner from, so the page and the script cannot disagree about whose key a vault names. */
   keys: Record<string, string[]>
 }
 
-export function arcLedgerFacts(ledger: readonly ChainProvenance[] = PROVENANCE): ArcLedgerFacts {
+/**
+ * `ourKeys` is every committed address admission calls ours, whatever chain the ledger names it
+ * on (arc-owner-vault.ts committedOurKeys): an EVM key is the same key on both networks. It is
+ * passed in because those lists live above this layer, in the rails.
+ */
+export function arcLedgerFacts(ourKeys: readonly string[], ledger: readonly ChainProvenance[] = PROVENANCE): ArcLedgerFacts {
   const vaults: ArcLedgerFacts['vaults'] = []
   const keys: ArcLedgerFacts['keys'] = {}
   for (const id of ARC_PAGE_CHAINS) {
@@ -38,7 +44,7 @@ export function arcLedgerFacts(ledger: readonly ChainProvenance[] = PROVENANCE):
       if (c.name.startsWith('AgentSpendPolicy')) vaults.push({ network: caip2, address: c.address, name: c.name })
     }
     const ours = [entry.agent?.owner, ...(entry.accounts ?? []).filter((a) => a.custody.startsWith('ours')).map((a) => a.address)]
-    keys[caip2] = [...new Set(ours.filter((a): a is string => Boolean(a)).map((a) => a.toLowerCase()))]
+    keys[caip2] = [...new Set([...ours.filter((a): a is string => Boolean(a)), ...ourKeys].map((a) => a.toLowerCase()))]
   }
   return { vaults, keys }
 }
@@ -56,13 +62,13 @@ const GENERATED_HEADER = `/**
 `
 
 /** Render the frontend's `src/lib/arc-ledger.ts` module text. */
-export function renderFrontendArcLedger(): string {
-  const { vaults, keys } = arcLedgerFacts()
+export function renderFrontendArcLedger(ourKeys: readonly string[]): string {
+  const { vaults, keys } = arcLedgerFacts(ourKeys)
   return `${GENERATED_HEADER}
 /** The AgentSpendPolicy vaults the ledger lists as ours on Arc. */
 export const ARC_LEDGER_VAULTS: readonly { network: string; address: string; name: string }[] = ${JSON.stringify(vaults, null, 2)}
 
-/** Per CAIP-2, the keys the ledger names as ours on Arc, lowercased. */
+/** Per CAIP-2, the keys that are ours on Arc, lowercased: the committed list admission uses. */
 export const ARC_LEDGER_KEYS: Readonly<Record<string, readonly string[]>> = ${JSON.stringify(keys, null, 2)}
 `
 }

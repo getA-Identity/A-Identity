@@ -15,7 +15,7 @@ export default function OwnerMatch({ vault, account, ownerIsOurKey }: { vault: V
     return (
       <p className="text-sm text-foreground/70">
         {ownerIsOurKey
-          ? 'The owner is our operating wallet, a key our server holds, so no visitor can act on this vault here. Reading it needs no wallet.'
+          ? 'The owner this contract names is one of our own keys, so no visitor can act on this vault here. Reading it needs no wallet.'
           : 'Connect an EVM wallet above to see whether you own this vault. Reading it needs no wallet.'}
       </p>
     )
@@ -35,7 +35,7 @@ export default function OwnerMatch({ vault, account, ownerIsOurKey }: { vault: V
       <ShieldAlert size={16} className="mt-0.5 shrink-0 text-danger" aria-hidden="true" />
       <p>
         Connected account <Mono>{account}</Mono> is NOT the owner (owner is <Mono>{vault.owner}</Mono>
-        {ownerIsOurKey ? ', our operating wallet, a key our server holds' : ''}). Owner controls are hidden.
+        {ownerIsOurKey ? ', one of our own keys' : ''}). Owner controls are hidden.
         {ownerIsOurKey ? '' : ' To act on this vault, pick the owner account in your wallet.'}
       </p>
     </div>

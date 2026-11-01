@@ -202,6 +202,40 @@ export function liveOurAddressSources(env: NodeJS.ProcessEnv = process.env): Our
   }
 }
 
+/**
+ * What admission calls ours with no environment at all: the provenance ledger, both rails'
+ * hardcoded buyers and the published attestations. It is what the page's generated key list is
+ * built from, so a vault the script refuses as ours is labelled as ours there too. No env, so the
+ * generated file does not depend on who ran the generator.
+ */
+export function committedOurKeys(): string[] {
+  const live = liveOurAddressSources({})
+  return [...collectOurAddresses({ ...live, keyEnvVars: [], addressEnvVars: [] }).byAddress.keys()].sort()
+}
+
+/**
+ * Whether the run had our environment to compare against. Without it the owner was compared with
+ * the committed addresses only, so a vault owned by an env-only key would pass "none of our keys"
+ * and print a paste-ready entry. Required to admit; a rehearsal or a state read does not need it.
+ * The committed internal payers are always loaded; the env lists add to them and may be unset.
+ */
+export function envLoadedCheck(ours: OurAddresses): Check {
+  const unreadable = ours.envKeysUnreadable.length > 0
+  const none = ours.envKeysDerived.length === 0
+  return {
+    id: 'env-keys-loaded',
+    group: 'ownership',
+    required: true,
+    label: 'our key env vars were loaded, so the owner was compared with every key we hold',
+    ok: !none && !unreadable,
+    detail: none
+      ? 'no EVM key env var is set, so the owner was compared only with the committed addresses. Run with --env-file=.env before the script path.'
+      : unreadable
+        ? `set but not a 32-byte hex key, so never compared: ${ours.envKeysUnreadable.join(', ')}`
+        : `compared with the addresses of ${ours.envKeysDerived.join(', ')}`,
+  }
+}
+
 // -- the code: creation input and runtime ----------------------------------------------
 
 export type ConstructorArgs = { owner: string; operator: string; usdc: string; dailyCap: bigint; autoApproveMax: bigint }

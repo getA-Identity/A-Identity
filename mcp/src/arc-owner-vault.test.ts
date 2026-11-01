@@ -14,6 +14,7 @@ import {
   constructorInputs,
   deployChecks,
   encodeCreationInput,
+  envLoadedCheck,
   isoFromSeconds,
   liveOurAddressSources,
   matchCreationInput,
@@ -433,6 +434,22 @@ test('the entry is paste-ready: it parses, round-trips, is ASCII and carries no 
   assert.doesNotMatch(collides.entry.note, /dailyCap/)
 
   assert.match(renderEntry({ ...ready.entry, note: "the owner's key" }), /note: 'the owner\\'s key',/)
+})
+
+test('admitting without our env refuses by name; a run with it passes that check', () => {
+  const none = envLoadedCheck({ byAddress: new Map(), envKeysDerived: [], envKeysUnreadable: [] })
+  assert.equal(none.ok, false)
+  assert.equal(none.required, true)
+  assert.match(none.detail, /--env-file=\.env/)
+  const unreadable = envLoadedCheck({ byAddress: new Map(), envKeysDerived: ['A_KEY'], envKeysUnreadable: ['B_KEY'] })
+  assert.equal(unreadable.ok, false)
+  assert.match(unreadable.detail, /B_KEY/)
+  const loaded = envLoadedCheck({ byAddress: new Map(), envKeysDerived: ['A_KEY'], envKeysUnreadable: [] })
+  assert.equal(loaded.ok, true)
+  assert.equal(verdict([none]).admitted, false)
+  // The script asks only when it would admit: --tx on Milestone 1, not a rehearsal or a state read.
+  const script = readFileSync(new URL('../scripts/arc-owner-vault-check.mjs', import.meta.url), 'utf8')
+  assert.match(script, /opts\.tx && !rehearsal \? \[admission\.envLoadedCheck\(ours\)\]/)
 })
 
 test('--owner-kind is team or external and is never defaulted, and the script refuses to admit without it', () => {

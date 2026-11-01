@@ -28,6 +28,7 @@ import {
 } from '../../../lib/arc/vault-read'
 import { ZERO_ADDRESS, formatUnitsExact, relativeSeconds, sameAddress, vaultHeadline } from '../../../lib/arc/vault-rules'
 import { Chip, CopyButton, Field, Group, Mono } from '../stellar/bits'
+import { NAMES_OUR_KEY } from '../../../lib/arc/ours'
 import ReadStamp from './ReadStamp'
 
 function Explorer({ href, label = 'Explorer' }: { href: string | null; label?: string }) {
@@ -44,14 +45,20 @@ export default function VaultStatus({
   chain,
   ours,
   ownerIsOurKey,
+  operatorIsOurKey,
+  ownerKind,
   refreshing,
 }: {
   v: VaultSnapshot
   chain: Chain
   /** The provenance ledger lists this vault as ours. */
   ours: boolean
-  /** owner() is a key the ledger names as ours. */
+  /** owner() is a key of ours. Anyone can deploy a contract naming one, so this alone says only that. */
   ownerIsOurKey: boolean
+  /** operator() is a key of ours. */
+  operatorIsOurKey?: boolean
+  /** Whose wallet the owner key is, for a vault on the owner-held list. */
+  ownerKind?: 'team' | 'external'
   refreshing?: boolean
 }) {
   const usd = (x: bigint) => `${formatUnitsExact(x, v.decimals)} USDC`
@@ -62,10 +69,22 @@ export default function VaultStatus({
 
   return (
     <div className="space-y-3">
-      {(ours || ownerIsOurKey) && (
+      {ours && (
         <p className="rounded-xl border border-warn/30 bg-warn/10 px-3 py-2 text-xs text-foreground/85">
-          <span className="font-semibold text-foreground">{ours ? 'Launch-day vault (ours). ' : 'Owned by one of our keys. '}</span>
+          <span className="font-semibold text-foreground">Launch-day vault (ours). </span>
           {OURS_LABEL} {OURS_DETAIL}
+        </p>
+      )}
+      {!ours && ownerIsOurKey && (
+        <p className="rounded-xl border border-warn/30 bg-warn/10 px-3 py-2 text-xs text-foreground/85">
+          <span className="font-semibold text-foreground">Not a vault we list. </span>
+          {NAMES_OUR_KEY}
+        </p>
+      )}
+      {!ours && !ownerIsOurKey && ownerKind === 'team' && (
+        <p className="rounded-xl border border-border bg-foreground/[0.04] px-3 py-2 text-xs text-foreground/85">
+          <span className="font-semibold text-foreground">Team-owned. </span>
+          Its owner key is an A-Identity team member's own wallet, listed that way on the public season report.
         </p>
       )}
 
@@ -194,6 +213,7 @@ export default function VaultStatus({
             <span className="flex flex-wrap items-center gap-2">
               <Mono>{v.operator}</Mono>
               {sameAddress(v.operator, v.owner) && <Chip tone="danger">Same key as the owner</Chip>}
+              {operatorIsOurKey && <Chip tone="warn">One of our keys</Chip>}
               <Explorer href={addressUrl(chain, v.operator)} />
             </span>
           </Field>

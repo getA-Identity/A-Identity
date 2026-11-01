@@ -88,8 +88,10 @@ function explain(f: TxFailure): { title: string; body?: string; next: string; to
   }
 }
 
-export default function FailureNotice({ failure }: { failure: TxFailure }) {
-  const { title, body, next, tone } = explain(failure)
+/** `next` replaces the usual next step when what comes after is not simply trying again. */
+export default function FailureNotice({ failure, next: instead }: { failure: TxFailure; next?: string }) {
+  const { title, body, next: usual, tone } = explain(failure)
+  const next = instead ?? usual
   return (
     <div role="alert" className={`rounded-2xl border p-4 text-sm ${tone === 'warn' ? 'border-warn/30 bg-warn/10' : 'border-danger/25 bg-danger/[0.07]'}`}>
       <div className="flex items-start gap-2">
