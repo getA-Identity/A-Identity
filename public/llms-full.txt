@@ -430,9 +430,11 @@ Live today:
   oracle the same day). x402 settles in USDC on two rails: our own EIP-3009 facilitator
   (first settlement tx 0xd44287c8..., 0.021 USDC, the buyer paying no gas) and Circle
   Gateway nanopayments (first credit the same day, batched on-chain by Gateway). An
-  AgentSpendPolicy vault holds real USDC under a 1 USDC daily cap; an over-limit payment
-  returned the contract's AboveAutoApprove error in simulation, so it was never broadcast
-  and has no hash; since 2026-09-25 its agent key is a separate wallet from its owner key, renewed on 2026-10-01 to 2026-11-15. Funded by a CCTP V2 burn on Base that Circle's
+  AgentSpendPolicy vault holds real USDC under a 1 USDC daily cap; on launch day an
+  over-limit payment returned the contract's AboveAutoApprove error in simulation only,
+  and on 2026-11-01 one was mined and refused on chain (tx 0x134de0b2...); since
+  2026-09-25 its agent key is a separate wallet from its owner key, renewed on 2026-11-01
+  to 2027-01-15. Funded by a CCTP V2 burn on Base that Circle's
   Forwarding Service minted here. Every payment so far is self-funded and labeled
   internal. Escrow, KYA anchoring, Paymaster and Circle developer wallets stay on
   testnet. The mainnet explorer's pages open in a browser; only its JSON API turns
