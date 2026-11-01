@@ -188,7 +188,7 @@ Flat files by group: entries (`index.ts` stdio MCP, `http.ts` REST+MCP, `asp-gat
 `build-stamp.ts`) - Circle rails (`gateway.ts`, `cctp.ts`, `nanopay.ts`, `appkit.ts`,
 `circle.ts`, `circle-agent.ts`, `circle-cli.ts`, `paymaster.ts`) - Arc binding (`arc.ts`,
 `arc-contracts.ts`) - Arc Acceleration Season (`arc-season.ts` the milestone report,
-`arc-owner-vault.ts` the owner-held vault admission) - auth (`auth.ts`, `oauth.ts`, `magic.ts`, `bot-auth.ts`) - domain
+`arc-owner-vault.ts` the owner-held vault admission, `arc-vtp-run.ts` the Milestone 1 flow runner's rules) - auth (`auth.ts`, `oauth.ts`, `magic.ts`, `bot-auth.ts`) - domain
 (`erc8004.ts`, `reputation.ts`, `marketplace.ts`, `data.ts`) - x402/autonomy (`x402.ts`,
 `autopilot.ts`, `trust-oracle.ts`) - treasury (`treasury.ts`, `treasury-safe.ts`,
 `airdrop.ts`) - AA (`aa-wallet.ts`).
@@ -204,7 +204,7 @@ npm run start        # MCP server on stdio
 npm run start:http   # the HTTP server (REST + /mcp). Reads config from process.env directly.
 npm run smoke        # spin up the MCP server + exercise every read-only tool
 npm run http-smoke   # exercise the tools over HTTP (server must be running)
-npm test             # tsc + node:test unit tests (1792 across 117 files, as of Nov 2026)
+npm test             # tsc + node:test unit tests (1874 across 121 files, as of Nov 2026)
 npm run e2e          # full end-to-end flow against a running server (E2E_BASE=...)
 ```
 
@@ -216,7 +216,7 @@ node --env-file=.env dist/http.js     # Node 20.6+
 ARC_SIGNER_KEY=0x<funded-key> node dist/http.js
 ```
 
-Tests: **1792 unit tests across 117 colocated `*.test.ts` files** (as of Nov 2026; `npm test`) +
+Tests: **1874 unit tests across 121 colocated `*.test.ts` files** (as of Nov 2026; `npm test`) +
 a full **E2E of about 67 checks** (`npm run e2e`) that adapts to signer presence: green with no
 signer key (live Arc reads; on-chain writes reported as prepared), with the real Arc write
 checks activating under a funded `ARC_SIGNER_KEY`. CI runs the no-signer path.
@@ -243,6 +243,73 @@ is none of our keys, the operator is set and is not the owner, `usdc()` is the r
 `dailyCap` and `autoApproveMax` are not 0, and the session key outlives the chain's current
 block time. Exit 0 admitted, 1 refused, 2 usage. The launch-day vault (deploy `0xabf41b6f`) is
 refused: its owner is our operating wallet.
+
+### Run the Milestone 1 flows
+
+`scripts/arc-vtp-runner.mjs` runs verify-then-pay flows through the launch-day vault: each one a
+settled Gateway check followed by a vault payment or a refusal. Milestone 1 needs 100. The rules
+live in `src/arc-vtp-run.ts`, unit-tested with fakes. Status: built and tested with fakes; no
+flow has been run with it on Arc Mainnet yet, and `/api/arc/season` is what says how many have.
+
+```bash
+npm run build && (cd ../trust-guard && npm run build)
+
+# PREPARED, the default: reads only, signs nothing, needs no key. Prints the plan, or REFUSED.
+node scripts/arc-vtp-runner.mjs --allow 25 --deny 75
+
+# EXECUTES, with the operator key in env X402_3009_BUYER_KEY, never printed.
+CONFIRM_ARC_VTP_RUN=yes node --env-file=.env scripts/arc-vtp-runner.mjs \
+  --allow 25 --deny 75 --log data/arc-vtp-run.jsonl --execute
+
+# Confirm the count on the public report.
+curl -s https://a-identity.xyz/api/arc/season | jq '.milestone1.checks | {count, target, linked, unlinked}'
+```
+
+`--allow` flows pay Meridian and expect ALLOW and a `Paid` transaction. `--deny` flows name our
+operating wallet (agent #0, internal) and expect `TrustDenyError`. Other flags: `--amount-units`
+(default 1000, and each flow pays one unit more, so no two share an amount), `--base-url`,
+`--budget` (default 0.75 USDC), `--max-fee-gwei` (default 60), `--pause-ms` (default 5000),
+`--operator`, `--ack-stop`, `--ack-fresh-log`, `--reconcile`. Exit 0 fits or finished, 1 refused or
+stopped, 2 usage.
+
+- The plan refuses, naming the exact shortfall, when the budget, the Gateway balance, the vault
+  balance, the daily cap or the gas balance would not cover the upper bound of the run, or when
+  a payee is not expected to reach its verdict today. Gas is bounded at `--max-fee-gwei`, so
+  the budget it checks is above what the run should really cost. It also refuses a check price
+  other than the decided 0.005 USDC, and the signing cap never rises above that, whatever the
+  server quotes.
+- `--allow` and `--deny` are totals for the log, so the same command resumes. What the log counts
+  as done is not run again, and what it spent counts against `--budget` across runs. Each flow's
+  intent reaches the disk before it can spend, so a flow with no result costs its upper bound.
+- Flows run one at a time, refusals first. The run stops at the first unexpected outcome (a WARN
+  where ALLOW was expected, a Gateway or receipt failure, `recorded:false`) and never retries a
+  check or a payment. A WARN leaves the prepared `ownerPay` for the owner, unsent.
+- A flow expected to DENY gets a signer that cannot send, so an ALLOW there stops the run with
+  nothing moved from the vault.
+- When a stop leaves money unknown (a payment with no receipt, a check with no answer, a settle
+  Gateway did not answer) or moved without the server recording it, the next run refuses until a
+  human has looked and passes `--ack-stop`. Those flows stay in the budget at their upper bound.
+- A hash in the log with no verified record is posted again before the plan on every `--execute`,
+  and on its own with `--reconcile` (needs no key). That sends nothing, the server reads the chain
+  itself, and the result is appended, so a payment that landed can still count. A prepared run
+  writes nothing and only says how many are waiting.
+- The budget, the done count and the unique amounts bind per log, so a log is not to be moved or
+  replaced: repair a torn line instead. Its header line binds it to the vault and `--amount-units`,
+  and a repeated amount refuses it. A new log is refused when `GET /api/x402/gateway/proof` shows
+  `risk_check`s from this payer on Arc Mainnet, or cannot be read, until `--ack-fresh-log`. That
+  read covers the proof's last 50 rows.
+- One run per vault on this machine: the lock is `~/.a-identity/arc-vtp-<vault>.lock`, whichever
+  log is named. Two machines are not covered by it. A crash leaves it held, and the message says
+  what to read before deleting it.
+- This script itself is tested by spawning it with every network faked
+  (`src/arc-vtp-runner.test.ts`), and the route's real answers are fed to the built SDK
+  (`src/verify-then-pay/sdk-contract.test.ts`). `npm test` builds trust-guard first for both.
+- The SDK compares the verdict's `agentId` and `txContext` with its own inputs, so the route has to
+  be deployed with those fields before a run: against an older server an ALLOW comes out as
+  `CONTEXT_MISMATCH`, after the check was paid.
+
+Each result names the flow's public record, `/api/x402/gateway/flows/<flowId>`. The log's count is
+this runner's own; the season report decides what counted.
 
 ## Connect from an MCP client
 

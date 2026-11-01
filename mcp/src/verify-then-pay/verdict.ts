@@ -66,6 +66,8 @@ type Common = {
   reasons: string[]
   reputationScore: number | null
   agentId: string | null
+  /** signals.txContext as the scorer echoed it. Null when it echoed none. */
+  txContext: { payee: string | null; amountUsd: number | null } | null
   checkedAt: string | null
 }
 
@@ -115,11 +117,13 @@ export function evaluateVerdict(body: unknown, expected: ExpectedCheck): Verdict
   const rep = signals?.reputationScore
   const reputationScore = typeof rep === 'number' && Number.isFinite(rep) && rep >= 0 && rep <= 1000 ? rep : null
   const reasons = Array.isArray(b.reasons) ? b.reasons.filter((r): r is string => typeof r === 'string') : []
+  const echoed = isObject(signals?.txContext) ? signals.txContext : null
   const common: Common = {
     risk: typeof b.risk === 'string' ? b.risk : null,
     reasons,
     reputationScore,
     agentId: typeof b.agentId === 'string' ? b.agentId : null,
+    txContext: echoed ? { payee: typeof echoed.payee === 'string' ? echoed.payee : null, amountUsd: typeof echoed.amountUsd === 'number' ? echoed.amountUsd : null } : null,
     checkedAt: typeof b.checkedAt === 'string' ? b.checkedAt : null,
   }
   const settled = readSettlement(body, expected)

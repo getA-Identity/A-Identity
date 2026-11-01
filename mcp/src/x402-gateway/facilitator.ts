@@ -48,6 +48,10 @@ export type GatewaySettleResponse = {
   payer?: string
   transaction?: string
   network?: string
+  /** The settle call itself failed: no answer in time, or an answer that is not Gateway's.
+   *  Different from Gateway saying no: the signed authorization may have reached Gateway, and
+   *  it stays valid for a long window, so whether money moved is not known here. */
+  unknown?: boolean
 }
 
 /** One row of Gateway's /v1/x402/transfers, as observed live 2026-09-10 on mainnet. The
@@ -116,6 +120,23 @@ async function defaultGetSupported(facilitatorUrl: string, env: NodeJS.ProcessEn
   return (await r.json()) as { kinds: GatewayKind[] }
 }
 
+/**
+ * The SDK's settle has no deadline of its own, so it is raced against ours: a stalled
+ * facilitator returns a labeled answer rather than holding the request open. The label says
+ * unknown and not refused, because the request may already have reached Gateway.
+ */
+export async function settleWithDeadline(settling: Promise<GatewaySettleResponse>, ms = HTTP_TIMEOUT_MS): Promise<GatewaySettleResponse> {
+  let timer: ReturnType<typeof setTimeout> | undefined
+  const deadline = new Promise<GatewaySettleResponse>((resolve) => {
+    timer = setTimeout(() => resolve({ success: false, unknown: true, errorReason: `Gateway settle did not answer within ${ms} ms` }), ms)
+  })
+  try {
+    return await Promise.race([settling, deadline])
+  } finally {
+    if (timer) clearTimeout(timer)
+  }
+}
+
 async function defaultSettle(
   facilitatorUrl: string,
   payload: unknown,
@@ -125,17 +146,7 @@ async function defaultSettle(
   const { BatchFacilitatorClient } = await import('@circle-fin/x402-batching/server')
   const headers = authHeaders(env)
   const client = new BatchFacilitatorClient({ url: facilitatorUrl, ...(Object.keys(headers).length ? { headers } : {}) })
-  // The SDK's settle has no deadline of its own; race it against ours so a stalled
-  // facilitator returns a labeled failure rather than holding the request open.
-  let timer: ReturnType<typeof setTimeout> | undefined
-  const deadline = new Promise<GatewaySettleResponse>((resolve) => {
-    timer = setTimeout(() => resolve({ success: false, errorReason: `Gateway settle did not answer within ${HTTP_TIMEOUT_MS} ms` }), HTTP_TIMEOUT_MS)
-  })
-  try {
-    return (await Promise.race([client.settle(payload as never, requirements as never) as Promise<GatewaySettleResponse>, deadline])) as GatewaySettleResponse
-  } finally {
-    if (timer) clearTimeout(timer)
-  }
+  return settleWithDeadline(client.settle(payload as never, requirements as never) as Promise<GatewaySettleResponse>)
 }
 
 async function defaultSearchTransfers(

@@ -105,6 +105,24 @@ test('a v2 challenge carried only in the PAYMENT-REQUIRED header reaches the pay
   assert.deepEqual(seen, challenge)
 })
 
+for (const rail of ['xlayer', 'algorand'] as const) {
+  test(`guard() on the ${rail} rail keeps its behaviour since 0.1: only what denyOn names throws`, async () => {
+    // Pinned on purpose, not endorsed: the listings are registered against it, and tightening it
+    // is a decision of its own. The arc rail fails closed; see arc.test.ts.
+    for (const body of [{ decision: 'MAYBE' }, {}, { decision: 'ALLOW', signals: { reputationScore: null } }]) {
+      const { fn } = fakeFetch(200, body)
+      await new TrustGuard({ rail, fetch: fn }).guard('x')
+    }
+  })
+}
+
+test('only the arc rail restricts baseUrl: the other two keep what they took', () => {
+  const { fn } = fakeFetch(200, {})
+  assert.equal(new TrustGuard({ fetch: fn, baseUrl: 'http://oracle.test/' }).baseUrl, 'http://oracle.test')
+  assert.equal(new TrustGuard({ rail: 'algorand', fetch: fn, baseUrl: 'http://oracle.test' }).baseUrl, 'http://oracle.test')
+  assert.throws(() => new TrustGuard({ rail: 'arc', fetch: fn, baseUrl: 'http://oracle.test' }), TypeError)
+})
+
 test('the one-shot guard() helper works against a default client', async () => {
   const { fn } = fakeFetch(200, { tool: 'risk_check', agentId: 'z', decision: 'DENY', risk: 'high', reasons: ['sybil'] })
   await assert.rejects(() => guard('z', { fetch: fn }), TrustDenyError)

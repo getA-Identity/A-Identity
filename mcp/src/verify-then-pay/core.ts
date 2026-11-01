@@ -85,7 +85,7 @@ export type VtpRefusalCode =
   | 'RATE_LIMITED'
 
 /** Why a paid check handed back nothing to send although its verdict was not a refusal. */
-export type VtpCheckFailedCode = 'VERDICT_BLOCK_UNREADABLE' | 'FLOW_NOT_RECORDED'
+export type VtpCheckFailedCode = 'VERDICT_BLOCK_UNREADABLE' | 'FLOW_NOT_RECORDED' | 'SETTLEMENT_UNKNOWN'
 
 export type VtpChecks = {
   asset: { ok: boolean | null; registryUsdc: string; vaultToken: string | null; requested: string | null; code?: string }
@@ -131,6 +131,10 @@ export type VtpVerdictView = {
   risk: string | null
   reasons: string[]
   reputationScore: number | null
+  /** Who the scorer says this verdict is about. The caller compares it with its own payee. */
+  agentId: string | null
+  /** The context the scorer echoed. The caller compares it with its own payee and amount. */
+  txContext: { payee: string | null; amountUsd: number | null } | null
   overriddenBecause?: string
 }
 
@@ -143,8 +147,9 @@ export type VerifyThenPayToolResult = {
   stage: VtpStage
   /** Always false: the hosted server never signs for the operator or the owner. */
   executed: false
-  /** Whether the check was paid for. null only when Gateway answered success and its
-   *  transfer could not be read back, so whether money moved is not known here. */
+  /** Whether the check was paid for. null when Gateway answered success and its transfer could
+   *  not be read back, or when the settle call got no usable answer at all: either way, whether
+   *  money moved is not known here. */
   charged: boolean | null
   flowId: string | null
   code?: string
@@ -523,6 +528,8 @@ function verdictView(v: VerdictEvaluation): VtpVerdictView {
     risk: v.risk,
     reasons: v.reasons,
     reputationScore: v.reputationScore,
+    agentId: v.agentId,
+    txContext: v.txContext,
     ...(v.usable ? {} : { overriddenBecause: v.code }),
   }
 }
@@ -639,20 +646,25 @@ export async function runVerifyThenPay(input: VtpInput, paymentHeader: string | 
     }
     const railBody = out.body as Record<string, unknown>
     const challenge = out.httpStatus === 402 && railBody && typeof railBody === 'object' ? arcOnly(chain, railBody) : null
-    const unconfirmed = out.httpStatus === 502 && (railBody as { error?: unknown })?.error === 'settlement unconfirmed'
+    const railError = (railBody as { error?: unknown })?.error
+    const unconfirmed = out.httpStatus === 502 && railError === 'settlement unconfirmed'
+    const unknown = out.httpStatus === 502 && railError === 'settlement unknown'
     return {
       httpStatus: out.httpStatus,
       ...(challenge ? { headers: challengeHeaders(challenge) } : {}),
       body: result(chain, {
         stage: 'check_failed',
-        charged: unconfirmed ? null : false,
+        charged: unconfirmed || unknown ? null : false,
+        ...(unknown ? { code: 'SETTLEMENT_UNKNOWN' as const } : {}),
         checks: pre.checks,
         ...(challenge ? { challenge } : {}),
         rail: { httpStatus: out.httpStatus, body: challenge ?? out.body },
         reason: String((railBody as { verifyError?: unknown })?.verifyError ?? (railBody as { reason?: unknown })?.reason ?? (railBody as { error?: unknown })?.error ?? `the rail answered ${out.httpStatus}`),
-        next: unconfirmed
-          ? 'Gateway answered success but its transfer could not be read back, so no verdict was served and no flow was recorded. Do not pay; the settlement is recorded as unconfirmed on GET /api/x402/gateway/proof.'
-          : 'No verdict, so do not pay. Nothing was recorded as a flow. Read rail.body for what the Gateway rail refused.',
+        next: unknown
+          ? 'The settle call got no usable answer from Gateway, so whether this authorization settled is not known and it stays valid until it expires. No verdict was served and no flow was recorded. Do not pay, and look the nonce up on GET /api/x402/gateway/proof before signing another.'
+          : unconfirmed
+            ? 'Gateway answered success but its transfer could not be read back, so no verdict was served and no flow was recorded. Do not pay; the settlement is recorded as unconfirmed on GET /api/x402/gateway/proof.'
+            : 'No verdict, so do not pay. Nothing was recorded as a flow. Read rail.body for what the Gateway rail refused.',
       }),
     }
   }

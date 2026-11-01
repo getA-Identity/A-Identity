@@ -4,13 +4,14 @@ description: "The A-Identity MCP server, tool by tool: identity and reputation r
 ---
 
 The server lives in the `mcp` package. It speaks MCP over stdio and over Streamable
-HTTP and exposes **21 tools**. Read tools are open and need no session; the tools
+HTTP and exposes **23 tools**. Read tools are open and need no session; the tools
 that move value (`hire_agent`, `deliver_task`, `release_escrow`) require a verified
 session (Authorization: Bearer, via OAuth or a wallet or email login) and return a
 Forbidden error without one. Spending limits are enforced on-chain regardless of the
 caller. Where a vault is owner-signed, which is Stellar pubnet today, the server never
 holds the owner's key; the EVM mainnet vaults are still owned by the operating wallet,
-as the proof pages state.
+as the proof pages state. The two `verify_then_pay` tools take no session and never sign:
+what they hand back is sent with your own key.
 
 The `resolve_agent` tool reads **live from Circle Arc's deployed ERC-8004
 IdentityRegistry** by default (`source: "rpc"`): a real `ownerOf` + `tokenURI` read,
@@ -57,6 +58,8 @@ npm run smoke         # exercise every tool over stdio
 | `pre_action_check` | Ask whether an intended action is allowed. Returns ALLOW, WARN or DENY with the evidence |
 | `audit_log` | An agent's recorded decisions, newest first, with the USD value the policy governed |
 | `record_audit_outcome` | Record what actually happened after a decision: executed, blocked, awaiting_human or abandoned |
+| `verify_then_pay` | Before an Arc Mainnet vault pays: free checks that the vault would pay, then `risk_check` bought through Circle Gateway (0.005 USDC). ALLOW returns the exact `pay()`, WARN a prepared `ownerPay` for the owner, DENY nothing. Never signs |
+| `verify_then_pay_receipt` | Give a flow id and a transaction hash; the server reads the receipt from every Arc Mainnet RPC and records only what it proves. Never signs |
 
 ## The Core Reads, In Detail
 
@@ -104,6 +107,35 @@ Describe the protocol surface. No input.
 ```json Returns
 { "name": "A-Identity", "capabilities": { "identity": { "standard": "ERC-8004" }, "payments": { "standard": "x402" } } }
 ```
+
+### verify_then_pay
+
+Live on the hosted HTTP server, not on stdio. The tool never signs and never sends: the answer is
+always `executed: false`, and your own key does the rest. Called without `payment`, it runs the
+free checks and returns the x402 challenge, or a refusal if the vault would refuse, and nothing is
+charged. Called with `payment`, it buys the check and returns the call to send.
+
+| Input | Type | Notes |
+| --- | --- | --- |
+| `vault` | string | the AgentSpendPolicy vault on Arc Mainnet that will pay |
+| `payee` | string | the 0x address to pay; it must hold an ERC-8004 agent on Arc Mainnet, and it is what `risk_check` is asked about |
+| `amount` | string | USDC base units, 6 decimals, digits only: `"250000"` is 0.25 USDC |
+| `asset` | string, optional | refused unless it is Arc Mainnet's USDC |
+| `payeeAgentId` | string, optional | checked on chain against the payee, never sent to `risk_check` |
+| `payment` | string, optional | base64 `PAYMENT-SIGNATURE` for the challenge, signed from your own Gateway balance |
+| `payOnWarn` | boolean, optional | on WARN, prepare `pay()` for the operator instead of handing the payment to the owner; default false |
+
+### verify_then_pay_receipt
+
+| Input | Type | Notes |
+| --- | --- | --- |
+| `flowId` | string | the `flowId` `verify_then_pay` returned, the check's authorization nonce |
+| `txHash` | string | the `pay()` or `ownerPay()` transaction |
+
+The flow moves to executed only when the receipt proves the payment. Both tools share the per-address
+budgets of the routes they front. The vault payment is a direct USDC transfer to the checked payee,
+not an x402 settlement. The order, the verdicts and the public record are in
+[Integrate on Arc Mainnet](/chains/arc-integration#verify-then-pay-from-a-vault).
 
 ## Connect
 

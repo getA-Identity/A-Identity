@@ -409,7 +409,9 @@ agent, and what does an x402 link's challenge ask for; free, read-only)
 
 **Verify then pay (Arc Mainnet)**: `verify_then_pay`, `verify_then_pay_receipt`. Buys
 risk_check through Circle Gateway (0.005 USDC), never signs, and returns the exact vault
-pay() call on ALLOW.
+pay() call on ALLOW. Over HTTP: `POST /api/x402/gateway/verify-then-pay`,
+`GET /api/x402/gateway/flows/<flowId>` (public) and
+`POST /api/x402/gateway/flows/<flowId>/receipt`.
 
 Read tools need no credential. Tools that move value require a verified session
 (Authorization: Bearer, from OAuth or a wallet or email login) and, without one,
