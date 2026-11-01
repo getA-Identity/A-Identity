@@ -121,6 +121,15 @@ export default function DeployFlow({
     setSetupState(next)
     saveSetup(next)
   }, [])
+  /** Change one part of the saved setup without overwriting a record a receipt just updated. */
+  const patchSetup = useCallback((patch: Partial<SetupState>) => {
+    setSetupState((prev) => {
+      if (!prev) return prev
+      const next = { ...prev, ...patch }
+      saveSetup(next)
+      return next
+    })
+  }, [])
 
   const step = stepOf(setup, prepared !== null, snapshot)
   const account = wallet.account
@@ -207,7 +216,14 @@ export default function DeployFlow({
 
   const confirmDeploy = () => {
     if (!prepared || !provider || !account || !usdc || parsed.c === null || parsed.a === null || parsed.f === null) return
-    const input = { owner: account, operator: operator.trim(), dailyCap: parsed.c, autoApproveMax: parsed.a, funding: parsed.f }
+    // The owner is the one the review showed. A wallet that changed account since then gets the
+    // review again rather than a deploy for an owner nobody looked at.
+    if (!sameAddress(account, prepared.from)) {
+      setPrepared(null)
+      setInvalid(`Your wallet's account changed since the review (it was ${prepared.from}). Review the deploy again.`)
+      return
+    }
+    const input = { owner: prepared.from, operator: operator.trim(), dailyCap: parsed.c, autoApproveMax: parsed.a, funding: parsed.f }
     void run('deploy', async (onStep) => {
       let p = prepared
       if (preparedStale(p)) {
@@ -244,7 +260,7 @@ export default function DeployFlow({
       const p = await prepareOwnerCall(chain, snapshot, { fn: 'extend', seconds: setup.sessionSeconds })
       const hash = await sendPrepared(provider, p, onStep)
       const record: TxRecord = { ...recordOf(p, hash, snapshot.address), action: 'expiry' }
-      setSetup({ ...setup, expiryTx: record })
+      patchSetup({ expiryTx: record })
       track('arc_vault_owner_action', { network: networkWord(chain), action: 'expiry', outcome: 'submitted' })
       return hash
     })
@@ -292,9 +308,8 @@ export default function DeployFlow({
 
       {!chain.testnet ? (
         <p className="rounded-xl border border-warn/30 bg-warn/10 px-3 py-2 text-xs text-foreground/85">
-          <span className="font-semibold text-foreground">{networkName(chain)}: real USDC.</span> AgentSpendPolicy has had internal security
-          reviews and an automated scan, not an external audit. Keep to dust amounts: the defaults are a 1 USDC daily cap and a 0.25 USDC
-          ceiling on purpose.
+          <span className="font-semibold text-foreground">{networkName(chain)}: real USDC.</span> AgentSpendPolicy has had internal reviews
+          only, no external audit. Keep to dust amounts: the defaults are a 1 USDC daily cap and a 0.25 USDC ceiling on purpose.
         </p>
       ) : (
         <p className="rounded-xl border border-border bg-background/60 px-3 py-2 text-xs text-foreground/75">
@@ -414,7 +429,10 @@ export default function DeployFlow({
               <li>
                 Transaction 3: {parsed.f && parsed.f > 0n ? `a ${formatUnitsExact(parsed.f, decimals)} USDC transfer from your account into the vault.` : 'none: you chose to fund later.'}
               </li>
-              <li>Each is about 0.001 USDC of network fee at today's prices; your balance was checked to cover all three plus the funding.</li>
+              <li>
+                Each of those costs about 0.001 USDC of network fee while Arc's base fee sits at its 20 gwei floor. Your balance was checked to
+                cover all three at the fee quoted here, plus the funding.
+              </li>
             </ul>
           </div>
           <div className="flex flex-wrap items-center gap-2">
@@ -505,12 +523,12 @@ export default function DeployFlow({
                   account={account}
                   held={false}
                   initial={formatUnitsExact(setup.funding, decimals)}
-                  onSubmitted={(r) => setSetup({ ...setup, fundTx: { ...r, action: 'fund' } })}
+                  onSubmitted={(r) => patchSetup({ fundTx: { ...r, action: 'fund' } })}
                 />
               </div>
               <button
                 type="button"
-                onClick={() => setSetup({ ...setup, fundSkipped: true })}
+                onClick={() => patchSetup({ fundSkipped: true })}
                 className="mt-3 text-xs font-semibold text-accent underline underline-offset-2"
               >
                 Skip funding for now
