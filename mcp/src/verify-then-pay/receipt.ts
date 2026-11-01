@@ -23,6 +23,10 @@
  * payment.minedAt. The season report times a flow by it, never by when the server happened
  * to read the receipt.
  *
+ * Every chain read one post makes shares one hard deadline (twelve seconds by default): the
+ * receipt read may poll for eight of them, and whatever it leaves is all the transaction and
+ * the block reads get. A host that stalls costs its own deadline and never the request's.
+ *
  * A reverted receipt has no logs, so it is matched by the transaction: sent to the vault, with
  * exactly the prepared calldata, by the key the flow prepared it for. A flow waiting for its
  * owner (WARN) is closed only by the owner's call: an operator payment is not the hand-off it
@@ -73,8 +77,13 @@ const TRANSFER_ABI = [
 
 const HASH = /^0x[0-9a-fA-F]{64}$/
 const OPEN: VtpFlowOutcome[] = ['pending', 'awaiting_human']
+/** Rounds of the receipt read: a receipt can trail its hash by a block or two. */
 const DEFAULT_RECEIPT_BUDGET_MS = 8000
-const DEFAULT_PER_CALL_MS = 5000
+/** One host's answer. Arc Mainnet's hosts answer well inside a second; a stalled one costs this. */
+const DEFAULT_PER_CALL_MS = 4000
+/** Every chain read one receipt post makes (the receipt, a revert's transaction, the payment's
+ *  block) ends by then, however many hosts stall: a hard deadline, not a round budget. */
+export const DEFAULT_RECEIPT_TOTAL_MS = 12_000
 /** The last moment a JavaScript Date can hold. */
 const MAX_DATE_MS = 8.64e15
 
@@ -195,6 +204,13 @@ function reply(httpStatus: number, flowId: string | null, over: Partial<VtpRecei
   }
 }
 
+/** The answer for a caller over the receipt budget: nothing was read and nothing changed. */
+export function vtpReceiptRateLimited(flowIdRaw: unknown, windowMs: number, origin: string = VTP_PUBLIC_ORIGIN): Res {
+  const s = Math.ceil(windowMs / 1000)
+  const flowId = typeof flowIdRaw === 'string' && HASH.test(flowIdRaw) ? flowIdRaw.toLowerCase() : null
+  return reply(429, flowId, { code: 'RATE_LIMITED', reason: `too many receipt posts from this address in the last ${s} s`, retry: true, next: `Nothing was read and nothing changed. Post the same hash again in ${s} s.` }, origin)
+}
+
 /** POST /api/x402/gateway/flows/:flowId/receipt {txHash}. Idempotent: the same hash again
  *  returns what was recorded. Never broadcasts, never signs. */
 export async function recordVtpReceipt(flowIdRaw: unknown, txHashRaw: unknown, deps: VtpDeps = {}): Promise<Res> {
@@ -228,12 +244,15 @@ export async function recordVtpReceipt(flowIdRaw: unknown, txHashRaw: unknown, d
   }
 
   const opts = { perCallTimeoutMs: DEFAULT_PER_CALL_MS, ...deps.receipts }
-  const r = await receiptFromEveryRpc(chain, hash, { timeoutMs: DEFAULT_RECEIPT_BUDGET_MS, ...opts })
+  const clock = opts.now ?? (() => Date.now())
+  const stopAt = clock() + (deps.receiptTotalMs ?? DEFAULT_RECEIPT_TOTAL_MS)
+  const left = () => Math.max(0, stopAt - clock())
+  const r = await receiptFromEveryRpc(chain, hash, { timeoutMs: DEFAULT_RECEIPT_BUDGET_MS, ...opts, hardTimeoutMs: Math.min(DEFAULT_RECEIPT_BUDGET_MS, left()) })
   if (r.status === 'unreachable') {
     return reply(503, flowId, { outcome: flow.outcome, detail: flow.detail, code: 'RPC_UNREACHABLE', reason: `no ${chain.name} RPC answered`, retry: true, next: 'Nothing changed. Post the same hash again shortly.' }, origin)
   }
   if (r.status === 'not_found') {
-    const t = await transactionFromEveryRpc(chain, hash, { ...opts, timeoutMs: 0 })
+    const t = await transactionFromEveryRpc(chain, hash, { ...opts, timeoutMs: 0, hardTimeoutMs: left() })
     const known = t.status === 'found'
     return reply(
       202,
@@ -242,7 +261,11 @@ export async function recordVtpReceipt(flowIdRaw: unknown, txHashRaw: unknown, d
         outcome: flow.outcome,
         detail: flow.detail,
         code: known ? 'RECEIPT_PENDING' : 'TX_NOT_FOUND',
-        reason: known ? 'the transaction is known but no RPC has its receipt yet' : `no ${chain.name} RPC knows this transaction yet`,
+        reason: known
+          ? 'the transaction is known but no RPC has its receipt yet'
+          : t.status === 'unreachable'
+            ? `no ${chain.name} RPC has its receipt yet, and none answered for the transaction itself in time`
+            : `no ${chain.name} RPC knows this transaction yet`,
         retry: true,
         next: known
           ? 'Nothing changed yet. Post the same hash again once it is mined.'
@@ -254,7 +277,7 @@ export async function recordVtpReceipt(flowIdRaw: unknown, txHashRaw: unknown, d
   const receipt = r.value
   let tx: Transaction | null = null
   if (receipt.status === 'reverted') {
-    const t = await transactionFromEveryRpc(chain, hash, { ...opts, timeoutMs: 0 })
+    const t = await transactionFromEveryRpc(chain, hash, { ...opts, timeoutMs: 0, hardTimeoutMs: left() })
     if (t.status !== 'found') {
       return reply(503, flowId, { outcome: flow.outcome, detail: flow.detail, code: 'TX_UNREADABLE', reason: 'the receipt is reverted and no RPC returned the transaction itself', retry: true, next: 'Nothing changed. Post the same hash again shortly.' }, origin)
     }
@@ -286,7 +309,7 @@ export async function recordVtpReceipt(flowIdRaw: unknown, txHashRaw: unknown, d
 
   // When the chain says it happened: the block the receipt names, and no other block at that height.
   const blockHash = typeof receipt.blockHash === 'string' && HASH.test(receipt.blockHash) ? receipt.blockHash : undefined
-  const b = await blockFromEveryRpc(chain, { number: receipt.blockNumber, hash: blockHash }, { ...opts, timeoutMs: 0 })
+  const b = await blockFromEveryRpc(chain, { number: receipt.blockNumber, hash: blockHash }, { ...opts, timeoutMs: 0, hardTimeoutMs: left() })
   const minedMs = b.status === 'found' ? Number(b.value.timestamp) * 1000 : Number.NaN
   if (b.status !== 'found' || !Number.isFinite(minedMs) || minedMs <= 0 || minedMs > MAX_DATE_MS) {
     return reply(503, flowId, { outcome: flow.outcome, detail: flow.detail, code: 'BLOCK_UNREADABLE', reason: `no ${chain.name} RPC returned block ${receipt.blockNumber} with the receipt's block hash and a usable timestamp, so the payment's time is unknown`, retry: true, next: 'Nothing changed. Post the same hash again shortly.' }, origin)

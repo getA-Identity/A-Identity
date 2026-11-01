@@ -480,3 +480,22 @@ test('the flow log not answering while the payment is matched is a retry, and no
   assert.deepEqual([out.httpStatus, out.body.code, out.body.retry], [503, 'FLOW_STORE_UNREADABLE', true])
   assert.deepEqual(await rowOf(store, FLOW), seed)
 })
+
+test('one receipt post ends inside its hard deadline however many hosts stall, whichever read they stall in', async () => {
+  const stall: RpcCall = () => new Promise(() => {})
+  const dark = await storeWith([flow()])
+  const t0 = Date.now()
+  const out = await recordVtpReceipt(FLOW, HASH, { store: dark.store, now: () => NOW, receipts: { urls: URLS, call: stall }, receiptTotalMs: 60 })
+  assert.ok(Date.now() - t0 < 2000, `took ${Date.now() - t0} ms against a 60 ms deadline`)
+  assert.deepEqual([out.httpStatus, out.body.code, out.body.retry], [503, 'RPC_UNREACHABLE', true])
+
+  // The receipt answers at once and every block read stalls: what is left of the deadline is
+  // all the block read gets, and the post still ends with a retry, not a hang.
+  const quick: RpcCall = async (_url, method) => (method === 'eth_getTransactionReceipt' ? rawReceipt() : new Promise(() => {}))
+  const late = await storeWith([flow()])
+  const t1 = Date.now()
+  const out2 = await recordVtpReceipt(FLOW, HASH, { store: late.store, now: () => NOW, receipts: { urls: URLS, call: quick }, receiptTotalMs: 80 })
+  assert.ok(Date.now() - t1 < 2000, `took ${Date.now() - t1} ms against an 80 ms deadline`)
+  assert.deepEqual([out2.httpStatus, out2.body.code], [503, 'BLOCK_UNREADABLE'])
+  assert.equal((await rowOf(late.store, FLOW)).outcome, 'pending')
+})

@@ -28,7 +28,7 @@ import {
 } from './platform.js'
 import { verifyToken, isVerified } from './auth.js'
 import { clientIpFromXff, clientIpDiagnostic } from './client-ip.js'
-import { rateBudget } from './rate-budget.js'
+import { jsonRpcMessageCount, rateBudget, rateLimited } from './rate-budget.js'
 import { oauthEnabled, verifyAccessToken } from './oauth.js'
 import { SESSION_COOKIE, parseCookies, publicAgents, readBody, sendJson, type RouteCtx } from './http/shared.js'
 import { handleAuthRoutes } from './http/auth-routes.js'
@@ -40,8 +40,7 @@ import { handleX402AlgorandRoutes } from './http/x402-algorand-routes.js'
 import { handleAlgorandCheckRoutes } from './http/algorand-check-routes.js'
 import { handleEvmPayCheckRoutes } from './http/evm-pay-check-routes.js'
 import { handleX402GatewayRoutes, requestOrigin } from './http/x402-gateway-routes.js'
-import { handleVerifyThenPayRoutes } from './http/verify-then-pay-routes.js'
-import { recordVtpReceipt, runVerifyThenPay } from './verify-then-pay/index.js'
+import { handleVerifyThenPayRoutes, verifyThenPayMcpHooks } from './http/verify-then-pay-routes.js'
 import { handleCctpRoutes } from './http/cctp-routes.js'
 import { handleChainRoutes } from './http/chain-routes.js'
 import { handleArcRoutes } from './http/arc-routes.js'
@@ -79,30 +78,8 @@ function resolveCorsOrigin(origin: string | undefined): string {
 }
 
 // ── basic per-IP rate limiting (in-memory, per-process) ──────────────────────────
-// Fixed-window counters for sensitive/expensive endpoints, so a single client can't
-// spam auth challenges, magic-link emails, or the on-chain demo runs. Process-local by
-// design (same as the nonce / KYA / x402 stores); a horizontally-scaled deploy would move
-// this (and those) to a shared store.
-const rlBuckets = new Map<string, { count: number; resetAt: number }>()
-
-function rateLimited(key: string, max: number, windowMs: number): boolean {
-  const now = Date.now()
-  const b = rlBuckets.get(key)
-  if (!b || b.resetAt <= now) {
-    rlBuckets.set(key, { count: 1, resetAt: now + windowMs })
-    return false
-  }
-  b.count += 1
-  return b.count > max
-}
-
-// Prune expired buckets occasionally so the map can't grow unbounded. unref() so this
-// timer never keeps the process alive on its own.
-setInterval(() => {
-  const now = Date.now()
-  for (const [k, v] of rlBuckets) if (v.resetAt <= now) rlBuckets.delete(k)
-}, 5 * 60 * 1000).unref()
-
+// The buckets and the limiter live in rate-budget.ts, so the MCP hooks below charge the
+// same buckets the routes do.
 
 // The reasoning, and the proxy count, now live in client-ip.ts so the ASP gateway cannot
 // answer this question differently. It did: `trust proxy: true` there handed back the
@@ -207,7 +184,8 @@ const server = http.createServer(async (req, res) => {
   // RPC itself and the receipt proved the payment the flow prepared, mined after the block its
   // verdict came back in. A transaction proves one flow at most, and a flow that ended stays
   // ended. All three verify-then-pay routes are rate-budgeted (vtp, vtp-flow-read,
-  // vtp-receipt).
+  // vtp-receipt), and the two MCP tools are charged to the vtp and vtp-receipt buckets per
+  // call.
   // /api/x402/stellar/* is exempt on similar but not identical terms, and the difference is
   // worth stating rather than glossing. On the soroban-auth scheme the credential is a signed
   // authorization entry, exactly like the EVM rails. On the `settled` scheme the credential is
@@ -308,6 +286,18 @@ const server = http.createServer(async (req, res) => {
   if (req.method === 'POST' && url.pathname === '/mcp') {
     try {
       const body = await readBody(req)
+      // The POST was charged one mcp token above. A JSON-RPC batch runs every message in it, at
+      // once, so the rest of the batch is charged here, before any of it runs.
+      const extra = jsonRpcMessageCount(body) - 1
+      if (budget && extra > 0 && rateLimited(`${clientIpOf(req)}:${budget.bucket}`, budget.max, budget.windowMs, extra)) {
+        res.setHeader('Retry-After', String(Math.ceil(budget.windowMs / 1000)))
+        sendJson(res, 429, {
+          jsonrpc: '2.0',
+          error: { code: -32000, message: `Too many requests: a JSON-RPC batch is charged one request per message, and this one would pass ${budget.max} a minute. Send fewer messages per batch, or one per request.` },
+          id: null,
+        })
+        return
+      }
       // Bake the request's VERIFIED caller into the marketplace hooks. A guest / no token ->
       // mcpCaller is undefined, so the ownership gate in platform.ts rejects the mutating tools
       // (hire/deliver/release) with a Forbidden error - MCP never bypasses the verified-session gate.
@@ -335,11 +325,10 @@ const server = http.createServer(async (req, res) => {
           register: (manifest) => registerAgentFromManifest(manifest as never, mcpCaller),
         },
         // No caller is baked in: the paid half is gated by the Gateway payment argument, the
-        // receipt half records only what the chain proves, and neither signs anything.
-        verifyThenPay: {
-          run: async (input) => (await runVerifyThenPay(input, input.payment, { origin: requestOrigin(ctx) })).body,
-          receipt: async ({ flowId, txHash }) => (await recordVtpReceipt(flowId, txHash, { origin: requestOrigin(ctx) })).body,
-        },
+        // receipt half records only what the chain proves, and neither signs anything. Each
+        // call is charged to its route's bucket (vtp, vtp-receipt) for this client's address,
+        // so MCP is not a way around them.
+        verifyThenPay: verifyThenPayMcpHooks({ ip: clientIpOf(req), origin: requestOrigin(ctx) }),
       })
       const transport = new StreamableHTTPServerTransport({
         sessionIdGenerator: undefined,

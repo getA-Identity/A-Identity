@@ -1,7 +1,7 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { Readable } from 'node:stream'
-import { createVerifyThenPayRoutes, type VtpRouteDeps } from './verify-then-pay-routes.js'
+import { createVerifyThenPayRoutes, verifyThenPayMcpHooks, type VtpRouteDeps } from './verify-then-pay-routes.js'
 import type { RouteCtx } from './shared.js'
 
 /**
@@ -105,4 +105,43 @@ test('the flow record is a GET, its receipt a POST, and nothing else under the G
   for (const path of ['/api/x402/gateway/status', '/api/x402/gateway/tools/risk_check', '/api/x402/tools/risk_check', '/api/arc/season']) {
     assert.equal((await call(h, 'GET', path)).handled, false, path)
   }
+})
+
+test('over MCP each verify-then-pay call is charged to its route bucket for the caller address, and over the budget it runs nothing', async () => {
+  const { deps, seen } = stubs()
+  const charged: string[] = []
+  let over = false
+  const hooks = verifyThenPayMcpHooks({
+    ip: '203.0.113.7',
+    origin: 'https://backend.example',
+    run: deps.run,
+    receipt: deps.receipt,
+    limited: (key, max, windowMs) => {
+      charged.push(`${key} ${max}/${windowMs}`)
+      return over
+    },
+  })
+  const input = { vault: '0x' + 'a1'.repeat(20), payee: '0x' + 'd4'.repeat(20), amount: '250000', payment: 'c2lnbmVk' }
+  assert.equal(((await hooks.run(input)) as { stage: string }).stage, 'payment_required')
+  assert.deepEqual(seen.run, [[input, 'c2lnbmVk', { origin: 'https://backend.example' }]])
+  await hooks.receipt({ flowId: FLOW, txHash: TX })
+  assert.deepEqual(seen.receipt, [[FLOW, TX, { origin: 'https://backend.example' }]])
+  assert.deepEqual(charged, ['203.0.113.7:vtp 30/60000', '203.0.113.7:vtp-receipt 30/60000'], 'the routes own buckets, keyed by the caller address')
+
+  over = true
+  const run = (await hooks.run(input)) as { stage: string; code: string; charged: boolean; executed: boolean; next: string }
+  assert.deepEqual([run.stage, run.code, run.charged, run.executed], ['refused', 'RATE_LIMITED', false, false])
+  assert.match(run.next, /Nothing was read and nothing was charged/)
+  const rec = (await hooks.receipt({ flowId: FLOW, txHash: TX })) as { code: string; retry: boolean; verified: boolean; flowId: string }
+  assert.deepEqual([rec.code, rec.retry, rec.verified, rec.flowId], ['RATE_LIMITED', true, false, FLOW])
+  assert.deepEqual([seen.run.length, seen.receipt.length], [1, 1], 'over the budget nothing ran')
+})
+
+test('the real limiter bounds a burst of tool calls from one address the way it bounds a burst of POSTs', async () => {
+  const { deps, seen } = stubs()
+  const hooks = verifyThenPayMcpHooks({ ip: `burst-test-${process.pid}`, origin: 'https://backend.example', run: deps.run, receipt: deps.receipt })
+  // A JSON-RPC batch runs its messages at once; thirty-five of them meet a bucket of thirty.
+  const out = await Promise.all(Array.from({ length: 35 }, () => hooks.run({ vault: 'x', payee: 'y', amount: '1' })))
+  assert.equal(seen.run.length, 30)
+  assert.equal(out.filter((o) => (o as { code?: string }).code === 'RATE_LIMITED').length, 5)
 })

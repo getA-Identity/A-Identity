@@ -17,9 +17,14 @@
  * gate on the terms http.ts states: the paid route's credential is the signed Gateway
  * authorization, the record is public by design, and the receipt route writes nothing but
  * what the chain proves.
+ *
+ * The verify_then_pay and verify_then_pay_receipt MCP tools are built here too
+ * (verifyThenPayMcpHooks), because they are these routes by another door, and a door with no
+ * budget would be the cheap way in.
  */
 import { railPaymentHeader } from '../x402-gateway/index.js'
-import { readVtpFlow, recordVtpReceipt, runVerifyThenPay, type VtpInput } from '../verify-then-pay/index.js'
+import { readVtpFlow, recordVtpReceipt, runVerifyThenPay, vtpRateLimited, vtpReceiptRateLimited, type VtpInput } from '../verify-then-pay/index.js'
+import { mcpToolBudget, rateLimited } from '../rate-budget.js'
 import { readBody, sendJson, type RouteCtx } from './shared.js'
 import { requestOrigin } from './x402-gateway-routes.js'
 
@@ -106,3 +111,37 @@ export function createVerifyThenPayRoutes(deps: VtpRouteDeps = {}): (ctx: RouteC
 }
 
 export const handleVerifyThenPayRoutes = createVerifyThenPayRoutes()
+
+/** The two verify-then-pay hooks the MCP server is built with (ServerData.verifyThenPay). */
+export type VtpMcpHooks = {
+  run: (input: VtpInput & { payment?: string }) => Promise<unknown>
+  receipt: (input: { flowId: string; txHash: string }) => Promise<unknown>
+}
+
+/**
+ * verify_then_pay and verify_then_pay_receipt as the HTTP entry injects them into the MCP
+ * server: each call is charged to its route's own per-IP bucket (vtp, vtp-receipt) before it
+ * runs, so a tool call costs what the POST would, and a JSON-RPC batch of them is bounded like
+ * a burst of POSTs. Over the budget, the tool answers a labeled refusal and reads nothing.
+ */
+export function verifyThenPayMcpHooks(o: { ip: string; origin: string; limited?: typeof rateLimited } & Pick<VtpRouteDeps, 'run' | 'receipt'>): VtpMcpHooks {
+  const run = o.run ?? runVerifyThenPay
+  const receipt = o.receipt ?? recordVtpReceipt
+  const limited = o.limited ?? rateLimited
+  const over = (tool: string) => {
+    const b = mcpToolBudget(tool)
+    return b && limited(`${o.ip}:${b.bucket}`, b.max, b.windowMs) ? b : null
+  }
+  return {
+    run: async (input) => {
+      const b = over('verify_then_pay')
+      if (b) return vtpRateLimited(b.windowMs).body
+      return (await run(input, input.payment, { origin: o.origin })).body
+    },
+    receipt: async ({ flowId, txHash }) => {
+      const b = over('verify_then_pay_receipt')
+      if (b) return vtpReceiptRateLimited(flowId, b.windowMs, o.origin).body
+      return (await receipt(flowId, txHash, { origin: o.origin })).body
+    },
+  }
+}

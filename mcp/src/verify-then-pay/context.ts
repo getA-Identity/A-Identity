@@ -81,6 +81,8 @@ export type VtpDeps = {
   store?: VtpStore
   /** Receipt and transaction read-backs, every RPC one by one (chains/evm/receipts.ts). */
   receipts?: EveryRpcOptions
+  /** The hard deadline on every chain read of one receipt post, ms. Default 12 s. */
+  receiptTotalMs?: number
   now?: () => number
   /** The most a prepared call may price gas at, wei. Default prepare.ts DEFAULT_MAX_FEE_CAP_WEI. */
   feeCapWei?: bigint

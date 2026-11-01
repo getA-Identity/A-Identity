@@ -82,6 +82,7 @@ export type VtpRefusalCode =
   | 'PAYMENT_WRONG_NETWORK'
   | 'NONCE_ALREADY_USED'
   | 'FLOW_STORE_UNREADABLE'
+  | 'RATE_LIMITED'
 
 /** Why a paid check handed back nothing to send although its verdict was not a refusal. */
 export type VtpCheckFailedCode = 'VERDICT_BLOCK_UNREADABLE' | 'FLOW_NOT_RECORDED'
@@ -390,6 +391,23 @@ function refused(chain: ChainDescriptor, httpStatus: number, code: VtpRefusalCod
         httpStatus === 503
           ? `Nothing was charged: ${chain.name} or the flow log did not answer, so nothing could be decided. Ask again shortly.`
           : `Nothing was charged and no check was bought: ${reason}.`,
+    }),
+  }
+}
+
+/** The answer for a caller over the verify-then-pay budget: nothing was read, nothing was
+ *  charged, and the same request can be sent again once the window has passed. */
+export function vtpRateLimited(windowMs: number): VtpResponse {
+  const chain = vtpChain()
+  const s = Math.ceil(windowMs / 1000)
+  return {
+    httpStatus: 429,
+    headers: { 'Retry-After': String(s) },
+    body: result(chain, {
+      stage: 'refused',
+      code: 'RATE_LIMITED',
+      reason: `too many verify_then_pay calls from this address in the last ${s} s`,
+      next: `Nothing was read and nothing was charged. Ask again in ${s} s.`,
     }),
   }
 }
