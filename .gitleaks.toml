@@ -88,6 +88,11 @@ regexes = [
   '''dd4ec289-e01d-41c9-bb89-70fa845d4bf2''',
   '''adce0002-35bc-c60a-648b-0b25f1f05503''',
   '''d548826e-79b4-db40-a3d8-11116f7e8349''',
+  # The NAME of the environment variable that holds the buyer key, as mcp/scripts/
+  # arc-vtp-runner.mjs declares it (OPERATOR_KEY_ENV = '...'), never its value. The
+  # generic-api-key rule reads "KEY" beside a high-entropy word as a credential. Added
+  # 2026-11-02, the exact name only.
+  '''^X402_3009_BUYER_KEY$''',
 ]
 
 # The Stellar transaction archive. Each file's decoded section carries `authDigestHex`: the
