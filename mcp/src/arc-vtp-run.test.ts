@@ -3,12 +3,18 @@ import assert from 'node:assert/strict'
 import { assessRisk } from './asp/risk.js'
 import {
   buildPlan,
+  checkSigningCap,
   classifyFlow,
+  DECIDED_CHECK_UNITS,
   denyFlowSigner,
   flowAmountUnits,
   forecastVerdict,
   formatUnits,
+  freshLogBlocker,
+  logBindingError,
   readRunLog,
+  receiptGaps,
+  reconcileReceipts,
   runFlows,
   RunLogError,
   weiToUnitsCeil,
@@ -25,7 +31,7 @@ import {
 
 const D = { usdc: 6, native: 18 }
 const GWEI = 1_000_000_000n
-const NO_LOG: LogState = { doneAllow: 0, doneDeny: 0, spentUnits: 0n, nextSeq: 1, unresolved: [], flows: [] }
+const NO_LOG: LogState = { header: null, doneAllow: 0, doneDeny: 0, spentUnits: 0n, nextSeq: 1, unresolved: [], flows: [] }
 const ALLOW_PAYEE: PayeeSpec = { role: 'allow', label: 'showcase', address: '0xa', agentId: '#1', note: 'Lift it first.' }
 const DENY_PAYEE: PayeeSpec = { role: 'deny', label: 'internal', address: '0xd', agentId: '#0', note: '' }
 const CLEAN_ALLOW = { verdict: 'ALLOW' as const, missing: [], caveat: null }
@@ -77,7 +83,7 @@ function flowLine(seq: number, over: Partial<FlowLine> = {}): FlowLine {
     payee: '0xd',
     payeeLabel: 'internal',
     expected: 'DENY',
-    amountUnits: '1000',
+    amountUnits: String(999 + seq),
     flowId: `0x${seq}`,
     flowUrl: 'https://x/flows/1',
     verdict: 'DENY',
@@ -87,6 +93,7 @@ function flowLine(seq: number, over: Partial<FlowLine> = {}): FlowLine {
     recorded: true,
     costs: { checkUnits: '5000', paymentUnits: '0', gasWei: '0', totalUnits: '5000', basis: 'actual' },
     counted: true,
+    receiptVerified: false,
     unexpected: null,
     unresolved: false,
     detail: null,
@@ -95,7 +102,7 @@ function flowLine(seq: number, over: Partial<FlowLine> = {}): FlowLine {
 }
 
 const jsonl = (lines: unknown[]) => lines.map((l) => JSON.stringify(l)).join('\n') + '\n'
-const intent = (seq: number, upperBoundUnits = '20000') => ({ v: 1, kind: 'intent', seq, at: 'now', payee: '0xa', payeeLabel: 'showcase', expected: 'ALLOW', amountUnits: '1000', upperBoundUnits })
+const intent = (seq: number, upperBoundUnits = '20000') => ({ v: 1, kind: 'intent', seq, at: 'now', payee: '0xa', payeeLabel: 'showcase', expected: 'ALLOW', amountUnits: String(999 + seq), upperBoundUnits })
 
 const executed = (over: Record<string, unknown> = {}) => ({
   outcome: 'executed',
@@ -548,4 +555,287 @@ test('a log that cannot be written stops the run: before a flow nothing is bough
   assert.equal(noResult.stop, 'log_failed')
   assert.match(printed.join('\n'), /outcome=refused_deny/)
   assert.match(noResult.reason ?? '', /only record of it here/)
+})
+
+// ── a paid flow the server did not record ─────────────────────────────────────────
+
+const TX = '0x' + '77'.repeat(32)
+const FLOW = '0x' + 'ab'.repeat(32)
+const paidNotRecorded = (seq: number, over: Partial<FlowLine> = {}) =>
+  flowLine(seq, {
+    payee: '0xa',
+    expected: 'ALLOW',
+    verdict: 'ALLOW',
+    outcome: 'executed',
+    flowId: FLOW,
+    txHash: TX,
+    recorded: false,
+    counted: false,
+    unresolved: true,
+    unexpected: 'the payment went through and recorded:false',
+    costs: { checkUnits: '5000', paymentUnits: '1000', gasWei: '0', totalUnits: '6000', basis: 'actual' },
+    ...over,
+  })
+const reconcile = (seq: number, over: Record<string, unknown> = {}) => ({ v: 1, kind: 'reconcile', at: 'now', seq, flowId: FLOW, txHash: TX, recorded: true, outcome: 'executed', detail: 'agent_paid', reason: null, ...over })
+
+test('a payment the server did not record blocks the next run instead of paying a new flow beside it', () => {
+  const o = classify({ ok: true, result: executed({ record: { url: 'https://x/f', recorded: false, reason: 'db down' } }) })
+  assert.equal(o.unresolved, true)
+  assert.equal(o.receiptVerified, false)
+  const state = readRunLog(jsonl([intent(1), { ...flowLine(1), ...o, flowId: FLOW, txHash: TX }]))
+  assert.deepEqual(state.unresolved, [1])
+  assert.equal(state.doneAllow + state.doneDeny, 0)
+  assert.match(buildPlan(planInput({ log: state })).blockers.join(), /flow\(s\) 1 whose money nobody has read/)
+})
+
+test('a recorded payment is the normal case: verified, counted, and nothing left open', () => {
+  const o = classify({ ok: true, result: executed() })
+  assert.equal(o.receiptVerified, true)
+  assert.equal(o.unresolved, false)
+})
+
+test('the record saying anything but executed does not count, and leaves the flow open', () => {
+  const o = classify({ ok: true, result: executed({ record: { url: 'https://x/f', recorded: true, outcome: 'blocked' } }) })
+  assert.equal(o.counted, false)
+  assert.match(o.unexpected ?? '', /the record says blocked, not executed/)
+  assert.equal(o.receiptVerified, true)
+  assert.equal(o.unresolved, true)
+})
+
+for (const [expected, decision] of [['ALLOW', 'WARN'], ['DENY', 'ALLOW']] as const) {
+  test(`a payment on ${decision} where ${expected} was expected does not count, and leaves the flow open`, () => {
+    const o = classify({ ok: true, result: executed({ verdict: { decision, signals: { reputationScore: 545 } } }) }, expected)
+    assert.equal(o.counted, false)
+    assert.match(o.unexpected ?? '', new RegExp(`${decision} paid where ${expected} was expected`))
+    assert.equal(o.unresolved, true)
+  })
+}
+
+test('an outcome nobody knows costs the whole bound until someone has looked', () => {
+  const o = classify({ ok: true, result: executed({ outcome: 'sideways' }) })
+  assert.equal(o.outcome, 'unknown:sideways')
+  assert.equal(o.costs.totalUnits, (5000n + 1000n + 6000n).toString())
+  assert.equal(o.costs.basis, 'upper_bound')
+  assert.equal(o.counted, false)
+  assert.equal(o.unresolved, true)
+})
+
+test('a revert is verified only when the server said it recorded the revert', () => {
+  const failed = (record?: Record<string, unknown>) => classify({ ok: false, error: named('VaultPaymentError', { code: 'REVERTED', flowId: FLOW, txHash: TX, recordUrl: 'https://x/f', ...(record ? { record } : {}) }) })
+  assert.equal(failed({ recorded: true }).receiptVerified, true)
+  assert.equal(failed({ recorded: false }).receiptVerified, false)
+  assert.equal(failed().receiptVerified, false)
+})
+
+test('the hashes to post again are the ones with no verified record, acknowledged or not', () => {
+  const log = readRunLog(
+    jsonl([
+      intent(1),
+      paidNotRecorded(1),
+      intent(2),
+      flowLine(2, { txHash: '0x22', flowId: '0xf2', receiptVerified: true, counted: true }),
+      intent(3),
+      flowLine(3),
+      intent(4),
+      flowLine(4, { txHash: '0x44', flowId: null, unresolved: true }),
+      intent(5),
+      flowLine(5, { txHash: '0x55', flowId: '0xf5', outcome: 'payment_error:DROPPED', unresolved: true, counted: false }),
+      { v: 1, kind: 'ack', at: 'now', seqs: [5] },
+    ]),
+  )
+  assert.deepEqual(receiptGaps(log), [
+    { seq: 1, flowId: FLOW, txHash: TX },
+    { seq: 5, flowId: '0xf5', txHash: '0x55' },
+  ])
+})
+
+test('posting a hash again lets a paid flow count, and changes neither its cost nor the next amount', () => {
+  const before = readRunLog(jsonl([intent(1), paidNotRecorded(1)]))
+  const after = readRunLog(jsonl([intent(1), paidNotRecorded(1), reconcile(1)]))
+  assert.equal(before.doneAllow, 0)
+  assert.equal(after.doneAllow, 1)
+  assert.deepEqual(after.unresolved, [])
+  assert.deepEqual(receiptGaps(after), [])
+  assert.equal(after.flows[0].receiptVerified, true)
+  assert.equal(after.spentUnits, before.spentUnits)
+  assert.equal(after.nextSeq, before.nextSeq)
+})
+
+test('a transaction reported as dropped that landed later counts once its hash is recorded, at its bound', () => {
+  const dropped = paidNotRecorded(1, { outcome: 'payment_error:DROPPED', verdict: null, costs: { checkUnits: '5000', paymentUnits: '1000', gasWei: '0', totalUnits: '12000', basis: 'upper_bound' } })
+  const acked = { v: 1, kind: 'ack', at: 'now', seqs: [1] }
+  const after = readRunLog(jsonl([intent(1), dropped, acked, reconcile(1)]))
+  assert.equal(after.doneAllow, 1)
+  assert.equal(after.spentUnits, 12_000n)
+})
+
+test('what the server read decides: a revert closes the flow uncounted, and no record leaves it open', () => {
+  const reverted = readRunLog(jsonl([intent(1), paidNotRecorded(1), reconcile(1, { outcome: 'blocked', detail: 'reverted_onchain' })]))
+  assert.equal(reverted.doneAllow, 0)
+  assert.deepEqual(reverted.unresolved, [])
+  const still = readRunLog(jsonl([intent(1), paidNotRecorded(1), reconcile(1, { recorded: false, outcome: null, reason: 'db down' })]))
+  assert.equal(still.doneAllow, 0)
+  assert.deepEqual(still.unresolved, [1])
+  assert.equal(receiptGaps(still).length, 1)
+})
+
+test('a payment recorded on a flow that expected DENY never counts as ALLOW, and stays with a human', () => {
+  const after = readRunLog(jsonl([intent(1), paidNotRecorded(1, { expected: 'DENY' }), reconcile(1)]))
+  assert.equal(after.doneDeny, 0)
+  assert.equal(after.doneAllow, 0)
+  assert.deepEqual(after.unresolved, [1])
+  const wrongVerdict = readRunLog(jsonl([intent(1), paidNotRecorded(1, { verdict: 'WARN' }), reconcile(1)]))
+  assert.equal(wrongVerdict.doneAllow, 0)
+  assert.deepEqual(wrongVerdict.unresolved, [1])
+})
+
+test('a reconcile for a hash the flow never had is refused rather than believed', () => {
+  assert.throws(() => readRunLog(jsonl([intent(1), paidNotRecorded(1), reconcile(1, { txHash: '0xother' })])), /names a hash/)
+  assert.throws(() => readRunLog(jsonl([reconcile(9)])), /names a hash/)
+  assert.throws(() => readRunLog(jsonl([{ v: 1, kind: 'reconcile', seq: 1 }])), /no hash or result/)
+})
+
+function reconcileDeps(post: (g: { seq: number }) => Promise<Record<string, unknown>>, gaps = [{ seq: 1, flowId: FLOW, txHash: TX }]) {
+  const lines: RunLogLine[] = []
+  const printed: string[] = []
+  return {
+    lines,
+    printed,
+    run: () =>
+      reconcileReceipts({
+        gaps,
+        post: post as never,
+        append: (l) => {
+          lines.push(l)
+        },
+        print: (s) => {
+          printed.push(s)
+        },
+        sleep: async () => {},
+        pauseMs: 0,
+        now: () => 'now',
+      }),
+  }
+}
+
+test('reconciling writes what the server said, one line per hash, and reads back as counted', async () => {
+  const d = reconcileDeps(async () => ({ recorded: true, outcome: 'executed', detail: 'agent_paid' }))
+  assert.deepEqual(await d.run(), { posted: 1, recorded: 1 })
+  assert.equal(d.lines.length, 1)
+  assert.match(d.printed[0], /recorded, executed/)
+  assert.equal(readRunLog(jsonl([intent(1), paidNotRecorded(1), ...d.lines])).doneAllow, 1)
+})
+
+test('a post that fails or names another flow is written as not recorded, and the rest still go', async () => {
+  const seen: number[] = []
+  const d = reconcileDeps(
+    async (g) => {
+      seen.push(g.seq)
+      if (g.seq === 1) throw new Error('no route')
+      if (g.seq === 2) return { recorded: true, outcome: 'executed', answersFlow: '0x' + 'cd'.repeat(32) }
+      return { recorded: false, code: 'TX_ANSWERS_LATER_CHECK' }
+    },
+    [1, 2, 3].map((seq) => ({ seq, flowId: FLOW, txHash: TX })),
+  )
+  assert.deepEqual(await d.run(), { posted: 3, recorded: 0 })
+  assert.deepEqual(seen, [1, 2, 3])
+  const lines = d.lines as { recorded: boolean; reason: string }[]
+  assert.deepEqual(lines.map((l) => l.recorded), [false, false, false])
+  assert.match(lines[0].reason, /no route/)
+  assert.match(lines[1].reason, /answers flow/)
+  assert.equal(lines[2].reason, 'TX_ANSWERS_LATER_CHECK')
+})
+
+test('a log line that cannot be written stops reconciling before the next post', async () => {
+  let posts = 0
+  await assert.rejects(
+    reconcileReceipts({
+      gaps: [1, 2].map((seq) => ({ seq, flowId: FLOW, txHash: TX })),
+      post: async () => {
+        posts += 1
+        return { recorded: true, outcome: 'executed' }
+      },
+      append: () => {
+        throw new Error('disk full')
+      },
+      print: () => {},
+      sleep: async () => {},
+      pauseMs: 0,
+      now: () => 'now',
+    }),
+    /disk full/,
+  )
+  assert.equal(posts, 1)
+})
+
+// ── the budget, the amounts and the log they belong to ────────────────────────────
+
+const VAULT_A = '0x' + 'a1'.repeat(20)
+const header = (over: Record<string, unknown> = {}) => ({ v: 1, kind: 'header', at: 'now', vault: VAULT_A, baseAmountUnits: '1000', ...over })
+
+test('a header binds a log to one vault and one base amount', () => {
+  const run = { vault: VAULT_A, baseAmountUnits: 1000n }
+  const log = readRunLog(jsonl([header(), intent(1), flowLine(1)]))
+  assert.equal(log.header?.vault, VAULT_A)
+  assert.equal(logBindingError(log, run), null)
+  assert.equal(logBindingError(log, { ...run, vault: VAULT_A.toUpperCase().replace('0X', '0x') }), null)
+  assert.match(logBindingError(log, { ...run, vault: '0x' + 'b2'.repeat(20) }) ?? '', /belongs to vault/)
+  assert.match(logBindingError(log, { ...run, baseAmountUnits: 995n }) ?? '', /base amount is 1000 and --amount-units says 995/)
+  assert.equal(logBindingError(readRunLog(''), run), null, 'a new log has nothing to disagree with')
+  assert.match(logBindingError(readRunLog(jsonl([intent(1), flowLine(1)])), run) ?? '', /no header/)
+})
+
+test('a header is only ever the first line, and one with no vault is no header', () => {
+  assert.throws(() => readRunLog(jsonl([intent(1), header()])), /only ever the first line/)
+  assert.throws(() => readRunLog(jsonl([header(), header()])), /only ever the first line/)
+  assert.throws(() => readRunLog(jsonl([header({ vault: undefined })])), /no vault/)
+  assert.throws(() => readRunLog(jsonl([header({ baseAmountUnits: 'x' })])), /base amount/)
+})
+
+test('an amount two flows share refuses the log: a receipt is linked by its amount', () => {
+  // 995 + flow 11 and 1000 + flow 6 both name 1005.
+  assert.throws(() => readRunLog(jsonl([{ ...intent(6), amountUnits: '1005' }, { ...intent(11), amountUnits: '1005' }])), /amount 1005 that flow 6 already has/)
+  assert.throws(() => readRunLog(jsonl([{ ...intent(1), amountUnits: '1000' }, flowLine(1, { amountUnits: '1001' })])), /another line gives it 1000/)
+  assert.throws(() => readRunLog(jsonl([{ ...intent(1), amountUnits: undefined }])), /no amountUnits/)
+  assert.throws(() => readRunLog(jsonl([flowLine(1, { amountUnits: 'x' })])), /no amountUnits/)
+})
+
+test('a line that cannot be read says to repair the log, and says why moving it is not the way', () => {
+  assert.throws(
+    () => readRunLog('{"v":1,"kind":"fl'),
+    (e: Error) => {
+      assert.match(e.message, /repair the line/)
+      assert.match(e.message, /Do not move or replace the file/)
+      assert.doesNotMatch(e.message, /repair or move/)
+      return true
+    },
+  )
+})
+
+test('a new log is refused when the public proof shows this payer has paid checks, unless acknowledged', () => {
+  const log = readRunLog('')
+  assert.equal(freshLogBlocker({ log, acknowledged: false, prior: { count: 0, latest: null } }), null)
+  assert.match(freshLogBlocker({ log, acknowledged: false, prior: { count: 3, latest: '2026-11-01T00:00:00Z' } }) ?? '', /shows 3 risk_check\(s\).*2026-11-01T00:00:00Z.*--ack-fresh-log/)
+  assert.match(freshLogBlocker({ log, acknowledged: false, prior: null }) ?? '', /could not be read.*--ack-fresh-log/)
+  assert.equal(freshLogBlocker({ log, acknowledged: true, prior: { count: 3, latest: null } }), null)
+  assert.equal(freshLogBlocker({ log, acknowledged: true, prior: null }), null)
+  const resumed = readRunLog(jsonl([header(), intent(1), flowLine(1)]))
+  assert.equal(freshLogBlocker({ log: resumed, acknowledged: false, prior: { count: 3, latest: null } }), null, 'a log with flows is that history')
+})
+
+// ── the price ─────────────────────────────────────────────────────────────────────
+
+test('a quote that is not the decided price refuses the plan, and names both', () => {
+  assert.equal(DECIDED_CHECK_UNITS, 5000n)
+  assert.deepEqual(buildPlan(planInput({ priceUnits: 5000n })).blockers, [])
+  const dearer = buildPlan(planInput({ priceUnits: 50_000n, allow: 1, deny: 1, budgetUnits: 10_000_000n })).blockers.join('|')
+  assert.match(dearer, /quotes 0\.050000 USDC and the decided price is 0\.005000 USDC/)
+  assert.match(buildPlan(planInput({ priceUnits: 4000n })).blockers.join('|'), /quotes 0\.004000 USDC/)
+  assert.deepEqual(buildPlan(planInput({ priceUnits: 50_000n, allow: 0, deny: 0 })).blockers, [], 'no flow left, nothing to sign')
+})
+
+test('the signing cap never rises above the decided price, whatever the server quotes', () => {
+  assert.equal(checkSigningCap(50_000n), 5000n)
+  assert.equal(checkSigningCap(5000n), 5000n)
+  assert.equal(checkSigningCap(4000n), 4000n)
 })

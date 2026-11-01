@@ -15,8 +15,16 @@
  *     refuses, so an ALLOW where DENY was expected stops the run with nothing sent, instead of
  *     being found after the money moved.
  *   - Nothing is retried. Any outcome other than the expected one ends the run, and when the
- *     outcome leaves money unknown (a payment with no receipt, a check with no answer) the next
- *     run refuses to start until a human has looked and said so.
+ *     outcome leaves money unknown (a payment with no receipt, a check with no answer) or moved
+ *     without the server recording it, the next run refuses to start until a human has looked
+ *     and said so.
+ *   - A paid flow the server did not record can still count. A hash with no verified record is
+ *     posted again before the next plan (reconcileReceipts), which sends nothing and only ever
+ *     adds a line saying what the server read from the chain.
+ *   - The log is bound to one vault and one base amount by a header line, so a change of either
+ *     cannot reuse an amount, and readRunLog refuses a log in which one repeats.
+ *   - The check is bought at the decided price. A quote that differs refuses the plan, and the
+ *     signing cap never rises above the decision (checkSigningCap).
  *   - Each flow pays an amount no other flow uses, one base unit apart (flowAmountUnits). A
  *     vault payment names no check, so verify-then-pay/receipt.ts links it to the latest open
  *     check on the same vault, payee and amount; a unique amount keeps that link unambiguous.
@@ -100,6 +108,8 @@ export type FlowOutcome = {
   costs: FlowCosts
   /** The expected result, recorded by the server: the flow counts as done. */
   counted: boolean
+  /** The server read this transaction's receipt from the chain and wrote it down. */
+  receiptVerified: boolean
   /** Why this ended the run; null when it did not. */
   unexpected: string | null
   /** Money may have moved in a way nobody has read yet. Blocks the next run until acknowledged. */
@@ -121,9 +131,16 @@ export type FlowLine = FlowOutcome & {
 /** A human looked at these flows and chose to go on. */
 export type AckLine = { v: 1; kind: 'ack'; at: string; seqs: number[] }
 
-export type RunLogLine = IntentLine | FlowLine | AckLine
+/** The first line of a log: what its budget and its amounts belong to. */
+export type HeaderLine = { v: 1; kind: 'header'; at: string; vault: string; baseAmountUnits: string }
+
+/** A hash posted again after the run, and what the server read from the chain for it. */
+export type ReconcileLine = { v: 1; kind: 'reconcile'; at: string; seq: number; flowId: string; txHash: string; recorded: boolean; outcome: string | null; detail: string | null; reason: string | null }
+
+export type RunLogLine = HeaderLine | IntentLine | FlowLine | AckLine | ReconcileLine
 
 export type LogState = {
+  header: HeaderLine | null
   doneAllow: number
   doneDeny: number
   spentUnits: bigint
@@ -145,7 +162,8 @@ const DIGITS = /^[0-9]+$/
 const isRecord = (v: unknown): v is Record<string, unknown> => typeof v === 'object' && v !== null && !Array.isArray(v)
 
 function parseLine(raw: string, n: number): RunLogLine {
-  const bad = (why: string) => new RunLogError(`the log's line ${n} ${why}. The budget is counted from this file, so nothing runs on a log that cannot be read whole: repair or move it and look at what the line said.`)
+  const bad = (why: string) =>
+    new RunLogError(`the log's line ${n} ${why}. The budget is counted from this file, so nothing runs on a log that cannot be read whole: repair the line and look at what it said. Do not move or replace the file: a new log starts the budget, the flow count and the unique amounts again.`)
   let p: unknown
   try {
     p = JSON.parse(raw)
@@ -157,8 +175,17 @@ function parseLine(raw: string, n: number): RunLogLine {
     if (!Array.isArray(p.seqs) || !p.seqs.every((s) => Number.isInteger(s))) throw bad('is an ack with no sequence numbers')
     return p as unknown as AckLine
   }
-  if (p.kind !== 'intent' && p.kind !== 'flow') throw bad(`has an unknown kind ${JSON.stringify(p.kind)}`)
+  if (p.kind === 'header') {
+    if (typeof p.vault !== 'string' || typeof p.baseAmountUnits !== 'string' || !DIGITS.test(p.baseAmountUnits)) throw bad('is a header with no vault or base amount')
+    return p as unknown as HeaderLine
+  }
+  if (p.kind !== 'intent' && p.kind !== 'flow' && p.kind !== 'reconcile') throw bad(`has an unknown kind ${JSON.stringify(p.kind)}`)
   if (!Number.isInteger(p.seq) || (p.seq as number) < 1) throw bad('has no usable seq')
+  if (p.kind === 'reconcile') {
+    if (typeof p.txHash !== 'string' || typeof p.recorded !== 'boolean') throw bad('is a reconcile with no hash or result')
+    return p as unknown as ReconcileLine
+  }
+  if (typeof p.amountUnits !== 'string' || !DIGITS.test(p.amountUnits)) throw bad('has no amountUnits')
   if (p.kind === 'intent') {
     if (typeof p.upperBoundUnits !== 'string' || !DIGITS.test(p.upperBoundUnits)) throw bad('has no upperBoundUnits')
     return p as unknown as IntentLine
@@ -173,24 +200,47 @@ export function readRunLog(text: string): LogState {
   const intents = new Map<number, IntentLine>()
   const flows = new Map<number, FlowLine>()
   const acked = new Set<number>()
+  const reconciled = new Map<number, ReconcileLine>()
+  const amountOwner = new Map<string, number>()
+  let header: HeaderLine | null = null
+  let lines = 0
   text.split('\n').forEach((raw, i) => {
     if (raw.trim() === '') return
     const line = parseLine(raw, i + 1)
-    if (line.kind === 'ack') {
+    lines += 1
+    if (line.kind === 'header') {
+      if (lines !== 1) throw new RunLogError(`the log's line ${i + 1} is a header, and a header is only ever the first line`)
+      header = line
+    } else if (line.kind === 'ack') {
       line.seqs.forEach((s) => acked.add(s))
-    } else if (line.kind === 'intent') {
-      if (intents.has(line.seq)) throw new RunLogError(`the log's line ${i + 1} repeats the intent of flow ${line.seq}`)
-      intents.set(line.seq, line)
+    } else if (line.kind === 'reconcile') {
+      reconciled.set(line.seq, line)
     } else {
-      if (flows.has(line.seq)) throw new RunLogError(`the log's line ${i + 1} repeats the result of flow ${line.seq}`)
-      flows.set(line.seq, line)
+      // A vault payment names no check, so the server links it by its amount: one amount per flow.
+      const owner = amountOwner.get(line.amountUnits)
+      if (owner !== undefined && owner !== line.seq) throw new RunLogError(`the log's line ${i + 1} gives flow ${line.seq} the amount ${line.amountUnits} that flow ${owner} already has, and a receipt is linked by that amount`)
+      amountOwner.set(line.amountUnits, line.seq)
+      const other = line.kind === 'intent' ? flows.get(line.seq) : intents.get(line.seq)
+      if (other && other.amountUnits !== line.amountUnits) throw new RunLogError(`the log's line ${i + 1} gives flow ${line.seq} the amount ${line.amountUnits} and another line gives it ${other.amountUnits}`)
+      if (line.kind === 'intent') {
+        if (intents.has(line.seq)) throw new RunLogError(`the log's line ${i + 1} repeats the intent of flow ${line.seq}`)
+        intents.set(line.seq, line)
+      } else {
+        if (flows.has(line.seq)) throw new RunLogError(`the log's line ${i + 1} repeats the result of flow ${line.seq}`)
+        flows.set(line.seq, line)
+      }
     }
   })
+  for (const [seq, r] of reconciled) {
+    if (flows.get(seq)?.txHash !== r.txHash) throw new RunLogError(`the log holds a reconcile for flow ${seq} that names a hash the flow's own line does not`)
+  }
   let spentUnits = 0n
   const unresolved: number[] = []
   let doneAllow = 0
   let doneDeny = 0
-  for (const [seq, f] of flows) {
+  for (const [seq, raw] of flows) {
+    const f = withReconcile(raw, reconciled.get(seq))
+    flows.set(seq, f)
     spentUnits += BigInt(f.costs.totalUnits)
     if (f.counted && f.expected === 'ALLOW') doneAllow += 1
     if (f.counted && f.expected === 'DENY') doneDeny += 1
@@ -203,6 +253,7 @@ export function readRunLog(text: string): LogState {
   }
   const seqs = [...intents.keys(), ...flows.keys()]
   return {
+    header,
     doneAllow,
     doneDeny,
     spentUnits,
@@ -210,6 +261,94 @@ export function readRunLog(text: string): LogState {
     unresolved: unresolved.sort((a, b) => a - b),
     flows: [...flows.values()].sort((a, b) => a.seq - b.seq),
   }
+}
+
+/**
+ * A flow after what the chain said when its hash was posted again. Its cost stays what the line
+ * said, which is at most an upper bound: a reconcile can make a flow count, never make it cheaper.
+ * A payment recorded as executed counts only where ALLOW was expected and nothing said otherwise;
+ * one that moved money anywhere else stays unresolved for a human. A recorded revert moved nothing.
+ */
+function withReconcile(f: FlowLine, r: ReconcileLine | undefined): FlowLine {
+  if (!r?.recorded) return f
+  const verified = { ...f, recorded: true, receiptVerified: true }
+  if (r.outcome === 'executed') {
+    if (f.expected === 'ALLOW' && (f.verdict === null || f.verdict === 'ALLOW')) return { ...verified, counted: true, unresolved: false }
+    return verified
+  }
+  return { ...verified, unresolved: false }
+}
+
+export type RunBinding = { vault: string; baseAmountUnits: bigint }
+
+/** Why this log cannot be resumed with these flags, or null. Amounts derive from the base and the
+ *  sequence number, so 995 + flow 11 and 1000 + flow 6 would name the same amount. */
+export function logBindingError(log: LogState, run: RunBinding): string | null {
+  const h = log.header
+  if (!h) return log.nextSeq > 1 ? 'the log has flows and no header line, so what its budget and amounts belong to is not known' : null
+  if (h.vault.toLowerCase() !== run.vault.toLowerCase()) return `the log belongs to vault ${h.vault}, not ${run.vault}`
+  if (BigInt(h.baseAmountUnits) !== run.baseAmountUnits) return `the log's base amount is ${h.baseAmountUnits} and --amount-units says ${run.baseAmountUnits}: a change would reuse an amount, and a receipt is linked by its amount`
+  return null
+}
+
+/** What the public proof holds from this payer. Null: it could not be read. */
+export type PriorChecks = { count: number; latest: string | null }
+
+/**
+ * A new log knows nothing the old one spent or the amounts it used, so starting one is only safe
+ * on purpose. Null when this run may go on. Read from the proof's retained window, so an empty
+ * answer is not a proof of nothing older.
+ */
+export function freshLogBlocker(a: { log: LogState; acknowledged: boolean; prior: PriorChecks | null }): string | null {
+  if (a.log.nextSeq > 1 || a.acknowledged) return null
+  if (a.prior === null) return 'this log is empty and the public proof could not be read, so whether this payer has run flows under another log is not known. Pass --ack-fresh-log to start anyway'
+  if (a.prior.count === 0) return null
+  return `this log is empty and the public proof shows ${a.prior.count} risk_check(s) from this payer on this chain, the latest at ${a.prior.latest ?? 'an unknown time'}. If they came from an earlier log, use that log: a new one starts the budget and the amounts again. Pass --ack-fresh-log if they did not`
+}
+
+/** A flow whose transaction has no verified record yet. */
+export type ReceiptGap = { seq: number; flowId: string; txHash: string }
+
+export function receiptGaps(log: LogState): ReceiptGap[] {
+  return log.flows.flatMap((f) => (f.txHash && f.flowId && !f.receiptVerified ? [{ seq: f.seq, flowId: f.flowId, txHash: f.txHash }] : []))
+}
+
+/** What the SDK's recordFlowReceipt reports. */
+export type ReceiptReport = { recorded: boolean; outcome?: string; detail?: string; code?: string; reason?: string; answersFlow?: string }
+
+/**
+ * Post each hash again, one at a time. Posting a hash is safe to repeat and this sends nothing:
+ * the server reads the chain itself. Each result is written as its own line before the next post,
+ * and a write that fails stops here, with the same line still to be had by posting again.
+ */
+export async function reconcileReceipts(d: {
+  gaps: ReceiptGap[]
+  post(g: ReceiptGap): Promise<ReceiptReport>
+  append(line: ReconcileLine): void
+  print(s: string): void
+  sleep(ms: number): Promise<void>
+  pauseMs: number
+  now(): string
+}): Promise<{ posted: number; recorded: number }> {
+  let posted = 0
+  let recorded = 0
+  for (const g of d.gaps) {
+    if (posted > 0) await d.sleep(d.pauseMs)
+    let r: ReceiptReport
+    try {
+      r = await d.post(g)
+    } catch (e) {
+      r = { recorded: false, reason: `the receipt could not be posted: ${firstLine(String(e))}` }
+    }
+    // Linked to some other flow, it says nothing about this one.
+    const proved = r.recorded && (r.answersFlow === undefined || r.answersFlow.toLowerCase() === g.flowId.toLowerCase())
+    const reason = proved ? null : (r.reason ?? r.code ?? (r.answersFlow ? `the payment answers flow ${r.answersFlow}` : 'the server did not record it'))
+    d.append({ v: 1, kind: 'reconcile', at: d.now(), seq: g.seq, flowId: g.flowId, txHash: g.txHash, recorded: proved, outcome: r.outcome ?? null, detail: r.detail ?? null, reason })
+    d.print(`receipt for flow #${g.seq} ${g.txHash}: ${proved ? `recorded, ${r.outcome ?? 'no outcome'}` : `not recorded (${reason})`}`)
+    posted += 1
+    if (proved) recorded += 1
+  }
+  return { posted, recorded }
 }
 
 // ── what risk_check will say ──────────────────────────────────────────────────────
@@ -341,6 +480,15 @@ export type Plan = {
   notes: string[]
 }
 
+/** The decided price of risk_check through Gateway on Arc Mainnet: 0.005 USDC. */
+export const DECIDED_CHECK_UNITS = 5000n
+
+/** The most any check in a run may be signed for: the decision, or a lower quote. A quote from
+ *  the server can never raise it. */
+export function checkSigningCap(priceUnits: bigint): bigint {
+  return priceUnits < DECIDED_CHECK_UNITS ? priceUnits : DECIDED_CHECK_UNITS
+}
+
 /** Used for the bound only when no live estimate could be had, and then the run is refused
  *  anyway: a payment the vault would refuse has no estimate. */
 const FALLBACK_GAS_LIMIT = 120_000n
@@ -416,6 +564,7 @@ export function buildPlan(p: PlanInput): Plan {
 
   if (flowsLeft > 0) {
     if (p.priceUnits === null) blockers.push('the check price could not be read from the hosted route')
+    else if (p.priceUnits !== DECIDED_CHECK_UNITS) blockers.push(`check price: the hosted route quotes ${u(p.priceUnits)} and the decided price is ${u(DECIDED_CHECK_UNITS)}. Nothing is signed at a price nobody decided`)
     if (p.gatewayUnits === null) blockers.push("the operator's Gateway balance could not be read from Circle's /v1/balances")
     else if (p.gatewayUnits < gatewayNeedUnits) {
       blockers.push(`Gateway balance: the operator holds ${u(p.gatewayUnits)} and ${flowsLeft} check(s) can cost ${u(gatewayNeedUnits)}: short by ${u(gatewayNeedUnits - p.gatewayUnits)}. Deposit first (scripts/gateway-deposit.mjs)`)
@@ -518,7 +667,7 @@ const NOT_SENT_CODES = new Set(['PREPARED_MISMATCH'])
  */
 export function classifyFlow(x: ClassifyInput): FlowOutcome {
   const { expected, settled, priceUnits, amountUnits, gasUpperWei, decimals: d } = x
-  const base = { flowId: null, flowUrl: null, verdict: null, reputation: null, txHash: null, recorded: false, counted: false, unresolved: false, detail: null }
+  const base = { flowId: null, flowUrl: null, verdict: null, reputation: null, txHash: null, recorded: false, counted: false, receiptVerified: false, unresolved: false, detail: null }
   const noCost = costOf({ check: 0n, payment: 0n, gasWei: 0n, basis: 'actual' }, d)
   const checkOnly = (check: bigint = priceUnits) => costOf({ check, payment: 0n, gasWei: 0n, basis: 'actual' }, d)
   const worst = costOf({ check: priceUnits, payment: amountUnits, gasWei: gasUpperWei, basis: 'upper_bound' }, d)
@@ -556,7 +705,9 @@ export function classifyFlow(x: ClassifyInput): FlowOutcome {
       const recordProblem = record.recorded !== true ? `recorded:false (${str(record.reason) ?? str(record.code) ?? 'the server did not record the receipt'})` : record.outcome !== 'executed' ? `the record says ${String(record.outcome)}, not executed` : null
       const wrongVerdict = expected !== 'ALLOW' || decision !== 'ALLOW' ? `${decision} paid where ${expected} was expected` : null
       const unexpected = wrongVerdict ?? (recordProblem ? `the payment went through and ${recordProblem}` : null)
-      return { ...base, ...seen, outcome: 'executed', txHash, costs, counted: unexpected === null, unexpected, detail: payment.transactionReadBack === false ? 'no RPC returned the transaction itself, so only its receipt was compared' : null }
+      // The money moved and it does not count, so the next run must not pass this in silence: it
+      // would pay a new flow while this one stays pending on the server.
+      return { ...base, ...seen, outcome: 'executed', txHash, costs, counted: unexpected === null, receiptVerified: record.recorded === true, unresolved: unexpected !== null, unexpected, detail: payment.transactionReadBack === false ? 'no RPC returned the transaction itself, so only its receipt was compared' : null }
     }
     return { ...base, ...seen, outcome: `unknown:${String(r.outcome)}`, costs: worst, unexpected: `verifyThenPay returned an unknown outcome ${String(r.outcome)}`, unresolved: true }
   }
@@ -623,7 +774,8 @@ export function classifyFlow(x: ClassifyInput): FlowOutcome {
   if (name === 'VaultPaymentError') {
     if (code !== null && NOT_SENT_CODES.has(code)) return { ...base, ...seen, outcome: `payment_error:${code}`, costs: checkOnly(), unexpected: said, detail: 'nothing was sent' }
     if (code === 'REVERTED') {
-      return { ...base, ...seen, outcome: `payment_error:${code}`, costs: costOf({ check: priceUnits, payment: 0n, gasWei: gasUpperWei, basis: 'upper_bound' }, d), unexpected: said, detail: 'the chain says nothing moved; the gas figure is its upper bound' }
+      const posted = isRecord(e.record) ? e.record : {}
+      return { ...base, ...seen, receiptVerified: posted.recorded === true, outcome: `payment_error:${code}`, costs: costOf({ check: priceUnits, payment: 0n, gasWei: gasUpperWei, basis: 'upper_bound' }, d), unexpected: said, detail: 'the chain says nothing moved; the gas figure is its upper bound' }
     }
     return { ...base, ...seen, outcome: `payment_error:${code}`, costs: worst, unexpected: said, unresolved: true, detail: 'look the hash up (or the nonce, with no hash) before anything else: never send again with a new nonce' }
   }
