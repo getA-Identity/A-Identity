@@ -51,7 +51,7 @@ await oracle.payCheck(address) // Algorand rail: is it safe to pay this Algorand
 await oracle.guard(id, opts)   // the gate: throws on DENY
 ```
 
-## Two rails
+## Three rails
 
 Every call is paid per request over x402. Pick where the money moves:
 
@@ -59,6 +59,7 @@ Every call is paid per request over x402. Pick where the money moves:
 | --- | --- | --- | --- | --- | --- | --- |
 | `xlayer` (default) | USDT0 on X Layer mainnet | $0.001 | $0.002 | $0.005 | $0.01 | n/a |
 | `algorand` | USDC on Algorand mainnet | $1 | $2 | $5 | $10 | $4 per agent, up to 50 |
+| `arc` | USDC through Circle Gateway on Arc Mainnet | $0.001 | $0.002 | $0.005 | $0.01 | n/a |
 
 The live price is always the one in the 402 challenge; the table is a convenience.
 
@@ -112,6 +113,100 @@ account:
 claude mcp add a-identity-trust -e A_IDENTITY_ALGORAND_MNEMONIC="..." -- npx -y @a-identity/trust-mcp
 ```
 
+## Verify, then pay from a vault, on Arc Mainnet
+
+**Status: built and tested with fakes, not yet published to npm. The hosted route it calls is live.
+Publishing 0.4.0 is Meric's step; until then this section describes the code in this repository,
+not the package you get from `npm install`.**
+
+`verifyThenPay` buys a `risk_check` through Circle Gateway and then pays the payee from an
+[AgentSpendPolicy](https://a-identity.xyz) vault, with keys only you hold. It needs Node and two
+optional peers:
+
+```bash
+npm install @a-identity/trust-guard viem @circle-fin/x402-batching
+```
+
+```ts
+import { createWalletClient, http } from 'viem'
+import { privateKeyToAccount } from 'viem/accounts'
+import { TrustDenyError } from '@a-identity/trust-guard'
+import { arcViemChain, fromViemWallet, usdcUnits, verifyThenPay } from '@a-identity/trust-guard/arc'
+
+const wallet = createWalletClient({
+  account: privateKeyToAccount(process.env.VAULT_OPERATOR_KEY as `0x${string}`),
+  chain: arcViemChain,
+  transport: http(),
+})
+
+try {
+  const out = await verifyThenPay({
+    vault,                          // the vault whose operator this key is
+    payee,                          // the 0x address to pay, holding an ERC-8004 agent on Arc Mainnet
+    amountUnits: usdcUnits('0.25'), // USDC base units; no floats
+    signer: fromViemWallet(wallet), // the operator, and by default the payer of the check too
+  })
+  if (out.outcome === 'executed') console.log(out.payment.explorerUrl, out.record.recorded)
+  if (out.outcome === 'awaiting_human') await askTheOwner(out.ownerPay) // WARN: see below
+} catch (e) {
+  if (e instanceof TrustDenyError) console.warn('Blocked:', e.verdict.reasons, e.context?.recordUrl)
+  else throw e
+}
+```
+
+The order, and what each step can cost:
+
+1. **Free checks, nothing signed.** The asset is the registry's USDC and the vault's; the payee holds
+   an ERC-8004 agent on Arc Mainnet; the vault's policy and a simulated `pay()` accept the payment; the
+   operator can pay the gas. A refusal here costs nothing: the check is not bought.
+2. **The verdict, 0.005 USDC.** The payer signs one Gateway authorization from its Gateway balance. It
+   spends no gas. The payer needs a Gateway balance on Arc Mainnet, and may be a separate key (`payer`).
+3. **The decision.** DENY throws `TrustDenyError` and never calls the operator. WARN returns
+   `awaiting_human` with a prepared `ownerPay` for the vault's owner and pays nothing, unless you set
+   `payOnWarn: true`. ALLOW goes on.
+4. **The payment.** Exactly one `sendTransaction` of `pay(payee, amountUnits)`, encoded from your own
+   inputs and compared byte for byte with what the server prepared. The server's calldata is never
+   executed, so a compromised server cannot redirect a payment. `maxFeePerGas` is at least 20 gwei,
+   below which Arc drops a transaction with no error. The receipt is looked for on every RPC, because
+   one RPC can answer null for a transaction that exists. Nothing is retried with a new nonce.
+5. **The record.** The hash is posted to the flow, the server reads the receipt from the chain itself,
+   and `record.recorded` says whether it did. Flow records are public by flow id, at
+   `/api/x402/gateway/flows/<flowId>`, DENYs included. After a WARN, send `ownerPay` from the owner's key
+   and close the flow with `recordFlowReceipt({ flowId, txHash })`.
+
+Anything that is not a usable verdict is never treated as ALLOW: a Gateway error, a settlement that does
+not echo what was signed, an unknown decision, or a reputation that is not a finite number each throw, and
+the operator is not called.
+
+| Error | Meaning |
+| --- | --- |
+| `ArcAssetError` | Not the registry's USDC. Nothing bought. |
+| `PayeeNotRegisteredError` | The payee holds no agent on Arc Mainnet, or the registry did not answer. Nothing bought. |
+| `VaultPolicyError` | The vault would refuse (its own error name), or could not be read. `stage` says whether the check was already paid. |
+| `GatewayCheckError` | No verdict came back. `paid` is true, false, or null when the answer does not say. |
+| `UnusableVerdictError` | The check was paid and its answer cannot be acted on. |
+| `TrustDenyError` | DENY. `context` holds the flow id, the check and the record's URL. |
+| `VaultPaymentError` | The payment step failed. With a `txHash`, look that hash up: never send again with a new nonce, because a transaction reported as missing can still land. |
+
+Who can get ALLOW: `risk_check` scores the payee's address, and any address that is not an A-Identity
+platform agent scores at most 60 and gets DENY. ALLOW needs a platform agent with reputation at least 500,
+attested KYA and at least 7 days of tenure. The vault cannot settle an x402 offer: its agent payment path
+is `pay(to, amount)`, a direct USDC transfer to the payee you checked.
+
+For a verdict alone, with no vault, use the rail with its payer. Send the payee's address as the agent id,
+never a CAIP id:
+
+```ts
+import { TrustGuard } from '@a-identity/trust-guard'
+import { arcGatewayPayer, fromViemWallet } from '@a-identity/trust-guard/arc'
+
+const oracle = new TrustGuard({ rail: 'arc', onPaymentRequired: arcGatewayPayer(fromViemWallet(wallet)) })
+await oracle.guard(payeeAddress, { txContext: { amountUsd: 0.25 } })
+```
+
+`preflightVault` runs the free checks alone and signs nothing. `ARC_MAINNET` holds the chain's constants,
+generated from the A-Identity chain registry rather than typed by hand.
+
 ## Paying on X Layer
 
 The X Layer rail settles through OKX. If a call returns HTTP 402, the guard invokes your
@@ -131,7 +226,8 @@ const oracle = new TrustGuard({
 
 - The core import has zero runtime dependencies and uses the global `fetch` (Node >= 18, Deno,
   Bun, browsers); inject `opts.fetch` for other runtimes or tests. Only
-  `@a-identity/trust-guard/algorand` needs `algosdk`.
+  `@a-identity/trust-guard/algorand` needs `algosdk`, and only `@a-identity/trust-guard/arc` needs
+  `viem` and `@circle-fin/x402-batching` (Node only). Each is loaded when it is first used.
 - Point `baseUrl` at your own instance if you self-host the oracle.
 - Verify first. Pay at machine speed.
 
