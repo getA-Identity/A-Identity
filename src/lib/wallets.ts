@@ -17,6 +17,9 @@ import { CHAINS, CHAIN_BY_ID, type Chain } from './chains'
 export type Eip1193 = {
   request: (a: { method: string; params?: unknown[] }) => Promise<unknown>
   isMetaMask?: boolean
+  /** EIP-1193 events (accountsChanged, chainChanged). Optional: not every provider exposes them. */
+  on?: (event: string, listener: (...args: unknown[]) => void) => void
+  removeListener?: (event: string, listener: (...args: unknown[]) => void) => void
 }
 
 export type WalletOption = {
@@ -295,20 +298,28 @@ export const walletConnectEnabled = (): boolean => WC_PROJECT_ID.length > 0
 const ARC_CHAIN_ID = CHAIN_BY_ID.arc.chainId as number
 const ARC_RPC = CHAIN_BY_ID.arc.rpcUrl as string
 
-/** Open the WalletConnect QR modal and return the connected EIP-1193 provider. */
-export async function connectWalletConnect(): Promise<Eip1193> {
+/**
+ * Open the WalletConnect QR modal and return the connected EIP-1193 provider.
+ *
+ * `required` is the chain the session must include. It defaults to Arc testnet, the console's
+ * home; a page that signs on another chain (the Arc Mainnet vault page) passes that chain, so a
+ * phone wallet that does not carry the testnet can still connect for it.
+ */
+export async function connectWalletConnect(required?: Chain): Promise<Eip1193> {
   if (!WC_PROJECT_ID) throw new Error('WalletConnect is not configured.')
   const { EthereumProvider } = await import('@walletconnect/ethereum-provider')
-  // Arc stays the required chain (the console's home); every other live EVM chain in the
-  // registry is offered as optional, with its RPC from the same source, so a mobile wallet
-  // can sign on Base, Celo or Arbitrum without a second connection.
-  const optional = EVM_WALLET_CHAINS.map((c) => c.chainId as number).filter((id) => id !== ARC_CHAIN_ID)
+  const requiredId = required?.evmCompatible && required.chainId != null ? required.chainId : ARC_CHAIN_ID
+  // The required chain first; every other live EVM chain in the registry is offered as
+  // optional, with its RPC from the same source, so a mobile wallet can sign on Base, Celo or
+  // Arbitrum without a second connection.
+  const optional = EVM_WALLET_CHAINS.map((c) => c.chainId as number).filter((id) => id !== requiredId)
   const rpcMap: Record<number, string> = { [ARC_CHAIN_ID]: ARC_RPC }
   for (const c of EVM_WALLET_CHAINS) if (c.rpcUrl && c.chainId != null) rpcMap[c.chainId] = c.rpcUrl
+  if (required?.rpcUrl && required.chainId != null) rpcMap[required.chainId] = required.rpcUrl
   const provider = await EthereumProvider.init({
     projectId: WC_PROJECT_ID,
-    chains: [ARC_CHAIN_ID],
-    optionalChains: [ARC_CHAIN_ID, ...optional],
+    chains: [requiredId],
+    optionalChains: [requiredId, ...optional],
     rpcMap,
     showQrModal: true,
     metadata: {

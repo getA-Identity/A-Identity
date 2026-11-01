@@ -67,6 +67,9 @@ const NAV_MORE = [
   { to: '/app/marketplace', label: 'Marketplace', icon: Store },
   // Public: reads any Stellar vault with no session. Owner actions ask for one when needed.
   { to: '/app/vault/stellar', label: 'Stellar vault', icon: Vault },
+  // Public: reads any Arc vault with no session; deploy and owner actions are signed in the
+  // owner's own wallet, never by us.
+  { to: '/app/vault/arc', label: 'Arc vault', icon: Vault },
 ] as const
 
 /** Whether More was left open, per browser. */
