@@ -20,6 +20,10 @@
  *     attested KYA, not revoked, no Sybil flag, reputation at least 500, tenure at least 7
  *     days), the exact conditions under which assessRisk returns ALLOW. An ALLOW that
  *     contradicts them is a scorer fault and is not paid on.
+ *   - A WARN has to agree with its signals too: none of the conditions under which assessRisk
+ *     returns DENY (revoked, Sybil high, no on-chain identity, reputation under 200, over 100
+ *     USD with reputation under 400) may hold. A WARN can lead to pay() with payOnWarn, or to
+ *     the owner being asked to pay, so a WARN that should have been a DENY is not acted on.
  *
  * An unusable answer is treated as DENY, with the failing check named, and is recorded as
  * such: the check was paid for, so the record says what was bought and why it was not used.
@@ -80,6 +84,10 @@ const SETTLED = new Set(['credited', 'completed'])
  *  that an ALLOW agrees with its own signals. */
 const ALLOW_MIN_REPUTATION = 500
 const ALLOW_MIN_TENURE_DAYS = 7
+/** The thresholds under which it returns DENY, restated to check that a WARN agrees too. */
+const DENY_BELOW_REPUTATION = 200
+const HIGH_VALUE_USD = 100
+const HIGH_VALUE_MIN_REPUTATION = 400
 
 const lower = (v: unknown) => (typeof v === 'string' ? v.toLowerCase() : null)
 const isObject = (v: unknown): v is Record<string, unknown> => typeof v === 'object' && v !== null && !Array.isArray(v)
@@ -152,6 +160,17 @@ export function evaluateVerdict(body: unknown, expected: ExpectedCheck): Verdict
     if (reputationScore < ALLOW_MIN_REPUTATION) contradictions.push(`reputation ${reputationScore} under ${ALLOW_MIN_REPUTATION}`)
     if (tenure < ALLOW_MIN_TENURE_DAYS) contradictions.push(`tenure ${tenure}d under ${ALLOW_MIN_TENURE_DAYS}d`)
     if (contradictions.length) return unusable('SIGNALS_INCONSISTENT', `ALLOW contradicts its own signals: ${contradictions.join(', ')}`)
+  }
+  if (decision === 'WARN') {
+    const denyLevel: string[] = []
+    if (signals.revoked) denyLevel.push('revoked')
+    if (signals.sybil === 'high') denyLevel.push('sybil high')
+    if (signals.onchainVerified !== true) denyLevel.push('no on-chain identity')
+    if (reputationScore < DENY_BELOW_REPUTATION) denyLevel.push(`reputation ${reputationScore} under ${DENY_BELOW_REPUTATION}`)
+    if (expected.amountUsd > HIGH_VALUE_USD && reputationScore < HIGH_VALUE_MIN_REPUTATION) {
+      denyLevel.push(`${expected.amountUsd} USD with reputation ${reputationScore} under ${HIGH_VALUE_MIN_REPUTATION}`)
+    }
+    if (denyLevel.length) return unusable('SIGNALS_INCONSISTENT', `WARN carries signals that force DENY: ${denyLevel.join(', ')}`)
   }
   return { ...common, usable: true, decision, effective: decision, reputationScore, settlement: settled.settlement }
 }

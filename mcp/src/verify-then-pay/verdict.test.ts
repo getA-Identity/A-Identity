@@ -158,3 +158,36 @@ test('an ALLOW that contradicts the signals it was computed from is a scorer fau
   assert.equal(deny.effective, 'DENY')
   assert.deepEqual(deny.reasons, ['Reputation 60 is below the safe threshold (200)'])
 })
+
+test('a WARN carrying signals that force DENY is a scorer fault and is blocked, naming each one', () => {
+  const warn = (signals: Record<string, unknown>, e: ExpectedCheck = expected) => {
+    const ctx = { amountUsd: e.amountUsd, payee: PAYEE }
+    return evaluateVerdict(body({ decision: 'WARN', risk: 'medium', reasons: ['Moderate reputation'], signals: { kyaVerified: false, reputationScore: 320, tenureDays: 0, txContext: ctx, ...signals } }), e)
+  }
+  const cases: [Record<string, unknown>, RegExp][] = [
+    [{ revoked: true }, /revoked/],
+    [{ sybil: 'high' }, /sybil high/],
+    [{ onchainVerified: false }, /no on-chain identity/],
+    [{ onchainVerified: undefined }, /no on-chain identity/],
+    [{ onchainVerified: 'true' }, /no on-chain identity/],
+    [{ reputationScore: 199 }, /reputation 199 under 200/],
+  ]
+  for (const [signals, named] of cases) {
+    const v = warn(signals)
+    assert.equal(v.usable ? null : v.code, 'SIGNALS_INCONSISTENT', JSON.stringify(signals))
+    assert.equal(v.effective, 'DENY')
+    assert.equal(v.decision, 'WARN', 'the decision the scorer gave is kept for the record')
+    assert.match(v.usable ? '' : v.reason, named)
+  }
+
+  // Over 100 USD the bar is 400, and exactly at either line the scorer does not deny.
+  const big: ExpectedCheck = { ...expected, amountUsd: 100.01 }
+  const denied = warn({ reputationScore: 399 }, big)
+  assert.equal(denied.usable ? null : denied.code, 'SIGNALS_INCONSISTENT')
+  assert.match(denied.usable ? '' : denied.reason, /100\.01 USD with reputation 399 under 400/)
+  assert.equal(warn({ reputationScore: 400 }, big).usable, true)
+  assert.equal(warn({ reputationScore: 399 }, { ...expected, amountUsd: 100 }).usable, true)
+  assert.equal(warn({ reputationScore: 200 }).usable, true)
+  // A medium Sybil flag is what a WARN is for.
+  assert.equal(warn({ sybil: 'medium' }).usable, true)
+})
