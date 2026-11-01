@@ -15,11 +15,17 @@
  * answered and none had it (it may not have landed yet), unreachable means no host answered
  * at all. Rounds repeat until the time budget is spent; the default budget is a single round.
  * Every call has its own deadline, so one stalled host costs its timeout and not the request.
+ * The budget only decides whether another round starts, so a round that began inside it can
+ * run past it, one stalled host at a time; a hard deadline (hardTimeoutMs) is the ceiling on
+ * the whole read: no call starts after it and a call in flight is cut off at it.
+ *
+ * The block at a height is read the same way, because a host that has not reached it answers
+ * null too, and the caller can name the block hash the answer must carry.
  *
  * Reusable on purpose: anything that has to prove a transaction landed can call this rather
  * than trusting whichever host a fallback client happened to reach first.
  */
-import { formatTransaction, formatTransactionReceipt, type Hex, type Transaction, type TransactionReceipt } from 'viem'
+import { formatBlock, formatTransaction, formatTransactionReceipt, type Hex, type Transaction, type TransactionReceipt } from 'viem'
 import type { ChainDescriptor } from '../types.js'
 import { resolveRpcUrls } from './client.js'
 
@@ -43,8 +49,13 @@ export type EveryRpcOptions = {
   urls?: readonly string[]
   /** The JSON-RPC caller. Injected by tests; the default is a plain fetch. */
   call?: RpcCall
-  /** Total time budget across rounds, in ms. 0 (the default) is a single round. */
+  /** Total time budget across rounds, in ms. 0 (the default) is a single round. It decides
+   *  only whether another round starts; a round in progress runs to its end. */
   timeoutMs?: number
+  /** A hard ceiling on the whole read, in ms from its start: no call starts after it, and a
+   *  call in flight is cut off at it. A host never asked is recorded as such. Unset: no
+   *  ceiling beyond the round budget and the per-call deadlines. */
+  hardTimeoutMs?: number
   /** Deadline for each single call, in ms. Default 6000. */
   perCallTimeoutMs?: number
   /** Pause between rounds, in ms. Default 1500. */
@@ -113,18 +124,19 @@ export function rpcSourceLabel(chain: ChainDescriptor, url: string): string {
 async function fromEveryRpc<T>(
   chain: ChainDescriptor,
   method: string,
-  hash: string,
+  params: readonly unknown[],
   parse: (raw: unknown) => T,
   opts: EveryRpcOptions,
 ): Promise<EveryRpcRead<T>> {
-  if (!TX_HASH.test(hash)) throw new TypeError(`not a transaction hash: ${hash}`)
   const urls = opts.urls ?? resolveRpcUrls(chain, opts.env ?? process.env)
   const call = opts.call ?? jsonRpcCall
   const now = opts.now ?? (() => Date.now())
   const sleep = opts.sleep ?? ((ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms)))
   const perCall = opts.perCallTimeoutMs ?? DEFAULT_PER_CALL_MS
   const pollMs = opts.pollMs ?? DEFAULT_POLL_MS
-  const deadline = now() + Math.max(0, opts.timeoutMs ?? 0)
+  const start = now()
+  const deadline = start + Math.max(0, opts.timeoutMs ?? 0)
+  const hardStop = opts.hardTimeoutMs === undefined ? Number.POSITIVE_INFINITY : start + Math.max(0, opts.hardTimeoutMs)
   let rounds = 0
   let anyAnswered = false
   let answers: HostAnswer[] = []
@@ -133,8 +145,14 @@ async function fromEveryRpc<T>(
     rounds += 1
     answers = []
     for (const url of urls) {
+      const left = hardStop - now()
+      if (left <= 0) {
+        answers.push({ url, answer: 'error', error: 'not asked: the read ran out of time' })
+        continue
+      }
+      const ms = Math.min(perCall, left)
       try {
-        const raw = await withDeadline(call(url, method, [hash], perCall), perCall)
+        const raw = await withDeadline(call(url, method, params, ms), ms)
         if (raw === null || raw === undefined) {
           anyAnswered = true
           answers.push({ url, answer: 'null' })
@@ -149,7 +167,7 @@ async function fromEveryRpc<T>(
         answers.push({ url, answer: 'error', error: msg(e) })
       }
     }
-    if (now() + pollMs > deadline) break
+    if (now() + pollMs > Math.min(deadline, hardStop)) break
     await sleep(pollMs)
   }
   return anyAnswered ? { status: 'not_found', rounds, answers } : { status: 'unreachable', rounds, answers }
@@ -181,12 +199,39 @@ function parseTransaction(hash: string) {
   }
 }
 
+/** A block's header facts: enough to time a transaction by the chain's own clock. */
+export type BlockStamp = { number: bigint; hash: Hex; timestamp: bigint }
+
+function parseBlock(want: { number: bigint; hash?: string }) {
+  return (raw: unknown): BlockStamp => {
+    if (typeof raw !== 'object' || raw === null) throw new Error('the block is not an object')
+    const b = formatBlock(raw as never)
+    if (b.number !== want.number) throw new Error('answered with another block')
+    if (typeof b.hash !== 'string' || !TX_HASH.test(b.hash)) throw new Error('the block carries no hash')
+    // A host that holds another block at this height (it reorged, or it is on another fork)
+    // is a failing host, not a different answer: the next host is asked.
+    if (want.hash && b.hash.toLowerCase() !== want.hash.toLowerCase()) throw new Error('answered with another block at this height')
+    if (typeof b.timestamp !== 'bigint') throw new Error('the block carries no timestamp')
+    return { number: b.number, hash: b.hash.toLowerCase() as Hex, timestamp: b.timestamp }
+  }
+}
+
 /** The receipt, from the first host that has it. */
-export function receiptFromEveryRpc(chain: ChainDescriptor, hash: Hex | string, opts: EveryRpcOptions = {}): Promise<EveryRpcRead<TransactionReceipt>> {
-  return fromEveryRpc(chain, 'eth_getTransactionReceipt', hash, parseReceipt(hash), opts)
+export async function receiptFromEveryRpc(chain: ChainDescriptor, hash: Hex | string, opts: EveryRpcOptions = {}): Promise<EveryRpcRead<TransactionReceipt>> {
+  if (!TX_HASH.test(hash)) throw new TypeError(`not a transaction hash: ${hash}`)
+  return fromEveryRpc(chain, 'eth_getTransactionReceipt', [hash], parseReceipt(hash), opts)
 }
 
 /** The transaction itself (sender, target, input, fees), from the first host that has it. */
-export function transactionFromEveryRpc(chain: ChainDescriptor, hash: Hex | string, opts: EveryRpcOptions = {}): Promise<EveryRpcRead<Transaction>> {
-  return fromEveryRpc(chain, 'eth_getTransactionByHash', hash, parseTransaction(hash), opts)
+export async function transactionFromEveryRpc(chain: ChainDescriptor, hash: Hex | string, opts: EveryRpcOptions = {}): Promise<EveryRpcRead<Transaction>> {
+  if (!TX_HASH.test(hash)) throw new TypeError(`not a transaction hash: ${hash}`)
+  return fromEveryRpc(chain, 'eth_getTransactionByHash', [hash], parseTransaction(hash), opts)
+}
+
+/** The block at a height, header only, from the first host that has it; with `hash`, only an
+ *  answer carrying that block hash counts. */
+export async function blockFromEveryRpc(chain: ChainDescriptor, want: { number: bigint; hash?: string }, opts: EveryRpcOptions = {}): Promise<EveryRpcRead<BlockStamp>> {
+  if (typeof want.number !== 'bigint' || want.number < 0n) throw new TypeError(`not a block number: ${String(want.number)}`)
+  if (want.hash !== undefined && !TX_HASH.test(want.hash)) throw new TypeError(`not a block hash: ${want.hash}`)
+  return fromEveryRpc(chain, 'eth_getBlockByNumber', [`0x${want.number.toString(16)}`, false], parseBlock(want), opts)
 }
