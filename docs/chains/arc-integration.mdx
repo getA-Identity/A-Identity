@@ -1,13 +1,20 @@
 ---
 title: "Integrate on Arc Mainnet in 10 minutes"
-description: "Buy an A-Identity trust check through Circle Gateway nanopayments before your agent pays on Arc Mainnet: the 402, the payment, the verdict, and where your payments show up."
+description: "Buy an A-Identity trust check through Circle Gateway nanopayments before your agent pays on Arc Mainnet: the 402, the payment, the verdict, where your payments show up, and verifyThenPay from a vault."
 ---
 
 Your agent pays for APIs or services on Arc Mainnet. Before each payment it buys one
 trust check from A-Identity, paid in USDC through Circle Gateway nanopayments (the buyer
 signs, nobody pays gas, Circle batches the settlement), and acts on the answer. This page
 is the whole integration. Every endpoint, header, price and address on it was read from
-the running service and from Circle's own endpoints on 2026-10-19.
+the running service and from Circle's own endpoints on 2026-10-19, except the
+[verifyThenPay section](#verify-then-pay-from-a-vault), which is dated on its own.
+
+**Your team pays for every check from its own wallet and its own Gateway balance. We do not
+fund your checks and we never hold your key. Every check you pay shows on
+[/proof/arc](https://a-identity.xyz/proof/arc) as external.** That is what Milestone 2 of the
+Arc Acceleration Season asks of an outside team: buy a check before you pay on Arc Mainnet,
+then switch to `verifyThenPay` when it ships.
 
 ## What you get
 
@@ -92,7 +99,7 @@ returns a band and flags, no verdict and no reasons, and is rate limited.
     `PAYMENT-REQUIRED` header; the two are identical. This is the live challenge:
 
     ```bash
-    curl -s -D - 'https://a-identity.xyz/api/x402/gateway/tools/risk_check?agentId=eip155:5042:8004/0&amountUsd=25'
+    curl -s -D - 'https://a-identity.xyz/api/x402/gateway/tools/risk_check?agentId=0x4e26Ae66840134Ac5979c56ba2509F3956b93431&amountUsd=25'
     ```
 
     Trimmed response (the second `accepts` entry, Base `eip155:8453`, and the description
@@ -154,7 +161,7 @@ returns a band and flags, no verdict and no reasons, and is rate limited.
     circle gateway balance --address 0xYourWallet --chain ARC
     circle services pay https://a-identity.xyz/api/x402/gateway/tools/risk_check \
       --address 0xYourWallet --chain ARC --max-amount 0.005 \
-      -X POST -d '{"agentId":"eip155:5042:8004/0","txContext":{"amountUsd":25}}'
+      -X POST -d '{"agentId":"0x4e26Ae66840134Ac5979c56ba2509F3956b93431","txContext":{"amountUsd":25}}'
     ```
 
     ```ts @circle-fin/x402-batching
@@ -169,7 +176,7 @@ returns a band and flags, no verdict and no reasons, and is rate limited.
 
     const { data } = await gateway.pay('https://a-identity.xyz/api/x402/gateway/tools/risk_check', {
       method: 'POST',
-      body: { agentId: 'eip155:5042:8004/0', txContext: { amountUsd: 25 } },
+      body: { agentId: '0x4e26Ae66840134Ac5979c56ba2509F3956b93431', txContext: { amountUsd: 25 } },
     })
     ```
 
@@ -179,7 +186,7 @@ returns a band and flags, no verdict and no reasons, and is rate limited.
     node --env-file=.env scripts/gateway-deposit.mjs --chain arc-mainnet --amount 1
     node --env-file=.env scripts/x402-gateway-buyer.mjs \
       --url https://a-identity.xyz/api/x402/gateway/tools/risk_check \
-      --agent eip155:5042:8004/0 --network eip155:5042 --dry-run   # drop --dry-run to pay
+      --agent 0x4e26Ae66840134Ac5979c56ba2509F3956b93431 --network eip155:5042 --dry-run   # drop --dry-run to pay
     ```
     </CodeGroup>
 
@@ -216,12 +223,12 @@ returns a band and flags, no verdict and no reasons, and is rate limited.
     ```json
     {
       "tool": "risk_check",
-      "agentId": "eip155:5042:8004/0",
-      "decision": "ALLOW",
-      "risk": "low",
-      "reasons": ["..."],
+      "agentId": "0x4e26Ae66840134Ac5979c56ba2509F3956b93431",
+      "decision": "WARN",
+      "risk": "medium",
+      "reasons": ["Moderate reputation (470); proceed with caution"],
       "signals": { "...": "the inputs the verdict was computed from" },
-      "checkedAt": "2026-10-19T18:30:00.000Z",
+      "checkedAt": "2026-11-01T18:30:00.000Z",
       "_meta": { "network": "Arc Mainnet (eip155:5042)", "proof": "/api/x402/gateway/proof" },
       "settlement": {
         "ts": "2026-09-24T16:43:58.731Z",
@@ -243,7 +250,8 @@ returns a band and flags, no verdict and no reasons, and is rate limited.
     }
     ```
 
-    `decision` is `ALLOW`, `WARN` or `DENY`; on `DENY`, do not make the payment. The
+    `decision` is `ALLOW`, `WARN` or `DENY`. On `DENY`, do not make the payment. `WARN` is not
+    a go-ahead: hold the payment for a person, which is what `verifyThenPay` does by itself. The
     `settlement` block above is a real row from the proof log (a `verify_agent` call our own
     wallet paid on 2026-09-24, labeled internal there); yours carries your payer and your
     tool. A fresh call comes back as `credited` with no `tx` until Gateway's on-chain batch
@@ -262,12 +270,21 @@ returns a band and flags, no verdict and no reasons, and is rate limited.
 ## The tools
 
 Six paid tools and one free preview, at `https://a-identity.xyz/api/x402/gateway/tools/<name>`.
-`agentId`, `from` and `to` each accept an ERC-8004 token id (`#73232`), a CAIP id
-(`eip155:<chain>:8004/<token>`) or a 0x owner address. `txContext` is optional and takes
+`agentId`, `from` and `to` each accept a platform agent id, an ERC-8004 token id (`#73232`), a
+CAIP id (`eip155:<chain>:8004/<token>`) or a 0x address; the next paragraph says what each form
+gets you. `txContext` is optional and takes
 `{ "amountUsd": number, "payee": "0x address" }`; on `GET`, pass it as a JSON string or use
 `amountUsd=25` as a shortcut. Prices are the ones the 402 charges; the OpenAPI document at
 [/api/x402/gateway/openapi.json](https://a-identity.xyz/api/x402/gateway/openapi.json) is
 generated from the same source.
+
+**Send the payee's 0x address as `agentId`.** `risk_check` matches a platform agent by platform
+id, token id or wallet address. A CAIP id is resolved on chain but never matched to a platform
+agent, so it is scored off-platform: at most 60, which is `DENY`, even for an agent that would
+pass under its address. `ALLOW` needs a platform agent with reputation of at least 500, attested
+KYA and at least 7 days of tenure, so an off-platform payee gets `DENY` today. That includes a
+real seller who simply has not registered with us; what such a seller should get instead is an
+open product decision.
 
 | Tool | Price | What it answers | Required input |
 | --- | --- | --- | --- |
@@ -284,8 +301,8 @@ rail; the 402 lists both and you pick by `network`.
 
 ## Where your payments show up
 
-A wallet is labeled **external** automatically: our own buyer wallets are hardcoded as
-internal on the rail, and every other payer is external. Nothing is counted until the
+Your wallet pays, from its own Gateway balance, and it is labeled **external** automatically:
+our own buyer wallets are hardcoded as internal on the rail, and every other payer is external. Nothing is counted until the
 transfer has been read back from Gateway's transfers API for the authorization's nonce,
 to our `payTo`, for the price.
 
@@ -301,14 +318,151 @@ to our `payTo`, for the price.
   computed from the same logs on every request: `usage.internal` and `usage.external`,
   external usage per wallet (`checks`, `usd`, first and last payment, `activeDays`), and
   the Milestone 2 counts against their targets (external teams live, 30 external checks,
-  a team active on more than one day, a publicly referenceable integration). It ships with
-  this guide; until that deploy lands it answers 404.
+  a team active on more than one day, a publicly referenceable integration).
 
 Send your payer address and your team name to
 [hello@a-identity.xyz](mailto:hello@a-identity.xyz) so the usage is attributed to you by
 name, and say whether we may reference the integration in public. That attribution is a
 list we keep by hand, and a team is added only after its wallet has paid a check; the
 external label itself needs nothing from you.
+
+## Verify, then pay from a vault
+
+`verifyThenPay` puts the check and the payment in one flow on Arc Mainnet. An
+[AgentSpendPolicy](/chains/arc) vault pays, its limits hold on chain, and the check is bought
+first, for 0.005 USDC, from a Gateway balance. Checked on 2026-11-01:
+
+| Path | Status |
+| --- | --- |
+| Hosted routes | **Live.** They validate input and serve flow records. The paid path is tested with fakes, and no flow has run on mainnet yet: the flow log is empty. |
+| MCP tools | **Live** on `https://a-identity.xyz/mcp`, which lists both. The stdio server does not carry them. |
+| SDK, `@a-identity/trust-guard` 0.4.0 | **Built, not published.** npm's latest is 0.3.0, which has no `/arc` entry point. |
+
+<Note>
+A vault payment is a direct USDC transfer to the checked payee, not an x402 settlement. The vault
+cannot settle an x402 offer: its agent payment path is `pay(to, amount)`, sent plainly, with no
+Memo. So a payment names no check; the server links them by vault, payee, amount and block order.
+</Note>
+
+**Whose keys.** A vault you deploy at [/app/vault/arc](https://a-identity.xyz/app/vault/arc) is
+yours: your wallet is the owner, your own agent is the operator, and A-Identity holds neither key.
+The check's payer defaults to the operator and can be a separate key. Our own flows will run
+through our launch-day vault `0xe07819e6d28a5dfd5a9f4cd94dc6dc9aeeda4146`, whose owner is our
+operating wallet and whose operator is our env-gated key, so they are not owner-held and are
+labeled internal.
+
+### What it checks, in order
+
+<Steps>
+  <Step title="Free checks, nothing signed">
+    The asset is the registry's USDC and the vault's. The payee holds an ERC-8004 agent on Arc
+    Mainnet. The vault's policy and a simulated `pay()` from its operator accept the payment (not
+    frozen, session key valid, payee allowed, within auto-approve, daily cap and balance). The
+    operator can pay the gas. If the vault would refuse, the answer is a refusal named after the
+    vault's own error, and the check is not bought.
+  </Step>
+  <Step title="The check, 0.005 USDC">
+    `risk_check` through Circle Gateway, with the payee's address as `agentId` and the amount in
+    `txContext`. Never a CAIP id. It is the same settlement row as a direct `risk_check`, so your
+    wallet shows on [/proof/arc](https://a-identity.xyz/proof/arc) as external here too.
+  </Step>
+  <Step title="The decision">
+    Read from the table below. Anything that is not a usable verdict counts as `DENY`.
+  </Step>
+  <Step title="The payment, from your key">
+    The caller sends the prepared call with its own key. Nothing is retried with a new nonce.
+  </Step>
+  <Step title="The record">
+    The transaction hash is posted to the flow. The server reads the receipt itself and records
+    only what it proves.
+  </Step>
+</Steps>
+
+| Verdict | What happens | Paid by |
+| --- | --- | --- |
+| `DENY` | Nothing to sign. The refusal is public on the flow record. You have paid for the check and nothing else. | Nobody |
+| `WARN` | No automatic payment. The answer is the verdict plus a prepared `ownerPay` for the vault's owner (`awaiting_human`). Set `payOnWarn` to true to prepare `pay()` for the operator instead; it is off unless you ask. | The owner, or the operator with `payOnWarn` |
+| `ALLOW` | The exact `pay(payee, amount)` for the operator to send. | The operator |
+
+Two addresses of ours show the first two verdicts. Both are real Arc Mainnet identities, a check on
+either costs 0.005 USDC, and a payment to either is a real transfer to us.
+
+| Payee | What it is | Verdict on 2026-11-01 |
+| --- | --- | --- |
+| Meridian, `0x4e26Ae66840134Ac5979c56ba2509F3956b93431` | Our showcase agent, a platform agent holding Arc Mainnet ERC-8004 #4306 | `WARN`, reputation 470 (below 500); this one moves with its reputation, so read the live answer |
+| Our operating wallet, `0xd305607510e0db2c95807173c7a05bea53c1ed36` (internal) | Holds Arc Mainnet agent #0, off-platform | `DENY`, reputation 60 |
+
+A payee that holds no agent on Arc Mainnet is refused at the free checks, with nothing bought. One
+that holds an agent but is off-platform passes them and then gets `DENY`, so that answer costs the
+price of the check.
+
+### The hosted route
+
+`POST https://a-identity.xyz/api/x402/gateway/verify-then-pay` takes the vault, the payee and the
+amount in USDC base units (6 decimals, digits only). It never signs and never broadcasts. The
+answer is always `executed: false`.
+
+```bash
+curl -s -X POST https://a-identity.xyz/api/x402/gateway/verify-then-pay \
+  -H 'content-type: application/json' \
+  -d '{"vault":"0xYourVault","payee":"0x4e26Ae66840134Ac5979c56ba2509F3956b93431","amount":"250000"}'
+```
+
+Unpaid, it answers `402` with the Arc Mainnet offer in `challenge`. Sign it as in
+[Pay](#the-10-minute-flow), from your Gateway balance, and send the same body again with the
+`PAYMENT-SIGNATURE` header. Optional fields are `asset`, `payeeAgentId` (checked on chain only, and
+never sent to `risk_check`) and `payOnWarn`. The body's `stage` says where the flow stands:
+
+| Status | `stage` | Meaning |
+| --- | --- | --- |
+| `400`, `422` | `refused` | Bad input, or the vault would refuse. `code` names why. Nothing charged. |
+| `402` | `payment_required` | The free checks passed. Nothing charged yet. |
+| `200` | `prepared` | Send `prepared` from the operator key, unless `prepared.simulation.ok` is false, which means the vault would refuse it right now. |
+| `200` | `awaiting_human` | `WARN`: send `ownerHandoff.ownerPay` from the owner key. |
+| `200` | `deny`, `verdict_unusable` | Do not pay. Nothing was prepared. |
+| `429` | `refused` | Over the budget of 30 calls a minute per address. Nothing charged. |
+| `409`, `500`, `502`, `503` | `check_failed`, `unavailable` | No payment to send. `charged` says whether the check was paid, and `null` means that is not known: do not sign again before looking the nonce up. |
+| `501` | `unavailable` | The rail is not selling on Arc Mainnet right now. Nothing charged. |
+
+If you send the transaction yourself, three things about Arc matter. A `maxFeePerGas` below 20 gwei
+is dropped silently, with no error. One RPC can answer null for a receipt that exists, so a null
+does not mean the transaction is gone; never resend it with a new nonce. And USDC has 6 decimals as
+an ERC-20 but 18 as native gas, so the amount here is always the 6-decimal one.
+
+### The MCP tools
+
+`verify_then_pay` and `verify_then_pay_receipt` are these routes through the
+[MCP server](/developers/mcp-server). They never sign. Call `verify_then_pay` without `payment` to
+get the challenge, then again with `payment` set to the base64 signature your own key made. Then
+send the prepared call yourself and pass the hash to `verify_then_pay_receipt`.
+
+### The public flow record
+
+`GET https://a-identity.xyz/api/x402/gateway/flows/<flowId>` needs no key. The `flowId` is the
+check's authorization nonce. The record holds the vault with its owner and operator, the payee, the
+amount, the check, the verdict with its reasons, the prepared call, and the payment once proven.
+It is public on purpose, for every flow, because a `DENY` has no transaction and this record is the
+evidence it happened. Do not use this route for a payment you need to keep private.
+
+`POST .../flows/<flowId>/receipt` with `{"txHash":"0x..."}` closes a flow. The server reads the
+receipt from every RPC and marks the flow `executed` only on the vault's `Paid` event and USDC's
+`Transfer` to the checked payee for the checked amount, in a block after the verdict. A flow waiting
+for its owner is closed only by the owner's call.
+
+### The SDK
+
+`verifyThenPay` from `@a-identity/trust-guard/arc` runs all of this with your keys: it encodes the
+payment from your own inputs, compares it byte for byte with what the server prepared, sends it, and
+posts the receipt. A compromised server cannot redirect the payment. The verdict itself is not
+signed, so you still trust our server and the TLS connection for what it says.
+
+Version 0.4.0 is built in this repository and tested with fakes, and it is not on npm yet, so
+`npm install @a-identity/trust-guard` does not give you this path today. Until it ships, use the
+hosted route, or build from
+[`trust-guard/`](https://github.com/getA-Identity/A-Identity/tree/main/trust-guard), whose
+[README](https://github.com/getA-Identity/A-Identity/blob/main/trust-guard/README.md) has the code
+and every error it throws. For Milestone 2, the direct check at the top of this page is the path
+that works today from a published client.
 
 ## Free reads
 
