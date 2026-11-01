@@ -23,7 +23,8 @@
  * null too, and the caller can name the block hash the answer must carry.
  *
  * Reusable on purpose: anything that has to prove a transaction landed can call this rather
- * than trusting whichever host a fallback client happened to reach first.
+ * than trusting whichever host a fallback client happened to reach first. Whoever just
+ * broadcast calls waitForReceiptOnEveryRpc, which adds the confirmation depth a chain asks for.
  */
 import { formatBlock, formatTransaction, formatTransactionReceipt, type Hex, type Transaction, type TransactionReceipt } from 'viem'
 import type { ChainDescriptor } from '../types.js'
@@ -226,6 +227,81 @@ export async function receiptFromEveryRpc(chain: ChainDescriptor, hash: Hex | st
 export async function transactionFromEveryRpc(chain: ChainDescriptor, hash: Hex | string, opts: EveryRpcOptions = {}): Promise<EveryRpcRead<Transaction>> {
   if (!TX_HASH.test(hash)) throw new TypeError(`not a transaction hash: ${hash}`)
   return fromEveryRpc(chain, 'eth_getTransactionByHash', [hash], parseTransaction(hash), opts)
+}
+
+/** The latest block number, from the first host that answers. */
+export async function blockNumberFromEveryRpc(chain: ChainDescriptor, opts: EveryRpcOptions = {}): Promise<EveryRpcRead<bigint>> {
+  return fromEveryRpc(
+    chain,
+    'eth_blockNumber',
+    [],
+    (raw) => {
+      if (typeof raw !== 'string' || !/^0x[0-9a-fA-F]+$/.test(raw)) throw new Error('the block number is not hex')
+      return BigInt(raw)
+    },
+    opts,
+  )
+}
+
+/** A receipt that exists but is not yet as deep as the caller asked. Not a settlement, and not
+ *  a failure either. */
+export type ShallowReceipt = {
+  status: 'too_shallow'
+  value: TransactionReceipt
+  url: string
+  rounds: number
+  answers: HostAnswer[]
+  confirmations: number
+}
+
+export type ReceiptWait = EveryRpcRead<TransactionReceipt> | ShallowReceipt
+
+/**
+ * Wait for a transaction's receipt across every RPC, at the depth the caller asks for.
+ *
+ * `timeoutMs` is the time to keep asking, and no call starts past that budget plus one call's
+ * deadline (`hardTimeoutMs` sets another ceiling). It never throws on a timeout: the three ways
+ * of not having an answer stay apart (not_found, unreachable, too_shallow), and none of them
+ * means the transaction failed. The receipt is read again while it waits for depth, because a
+ * reorg can move it or take it away, and the head comes from whichever host answers first, so
+ * a lagging host costs another round and nothing else.
+ */
+export async function waitForReceiptOnEveryRpc(
+  chain: ChainDescriptor,
+  hash: Hex | string,
+  opts: EveryRpcOptions & { confirmations?: number } = {},
+): Promise<ReceiptWait> {
+  const want = Math.max(1, Math.floor(opts.confirmations ?? 1))
+  const now = opts.now ?? (() => Date.now())
+  const sleep = opts.sleep ?? ((ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms)))
+  const pollMs = opts.pollMs ?? DEFAULT_POLL_MS
+  const budget = Math.max(0, opts.timeoutMs ?? 0)
+  const ceiling = opts.hardTimeoutMs ?? budget + (opts.perCallTimeoutMs ?? DEFAULT_PER_CALL_MS)
+  const start = now()
+  const left = () => Math.max(0, ceiling - (now() - start))
+
+  let latest = await receiptFromEveryRpc(chain, hash, { ...opts, timeoutMs: budget, hardTimeoutMs: ceiling })
+  if (want === 1) return latest
+  for (;;) {
+    if (latest.status === 'found') {
+      const head = await blockNumberFromEveryRpc(chain, { ...opts, timeoutMs: 0, hardTimeoutMs: left() })
+      if (head.status === 'found' && head.value >= latest.value.blockNumber + BigInt(want - 1)) return latest
+    }
+    if (now() - start + pollMs > budget) {
+      return latest.status === 'found' ? { ...latest, status: 'too_shallow', confirmations: want } : latest
+    }
+    await sleep(pollMs)
+    latest = await receiptFromEveryRpc(chain, hash, { ...opts, timeoutMs: 0, hardTimeoutMs: left() })
+  }
+}
+
+/** Why a wait ended without a receipt, safe to publish: counts and depth, never a host. */
+export function describeReceiptWait(wait: Exclude<ReceiptWait, { status: 'found' }>): string {
+  if (wait.status === 'too_shallow') return `the receipt is mined but not yet ${wait.confirmations} blocks deep`
+  if (wait.status === 'unreachable') return `none of ${wait.answers.length} RPC hosts answered`
+  const nulls = wait.answers.filter((a) => a.answer === 'null').length
+  const errors = wait.answers.filter((a) => a.answer === 'error').length
+  return `no receipt on any RPC host (${nulls} answered null, ${errors} did not answer, after ${wait.rounds} rounds)`
 }
 
 /** The block at a height, header only, from the first host that has it; with `hash`, only an

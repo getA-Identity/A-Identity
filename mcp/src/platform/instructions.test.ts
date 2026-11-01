@@ -593,3 +593,174 @@ test('a 0x payee on a Stellar-vault agent is not a payee at all, so nothing sett
     },
   )
 })
+
+// ── broadcast, and no receipt on any RPC ─────────────────────────────────────────────
+//
+// A slow receipt used to come back as a revert, and a revert that was not a policy error falls
+// through to Circle or direct settlement: the same money out twice, once through a transaction
+// that landed after the wait gave up.
+
+const UNCONFIRMED_TX = `0x${'6b'.repeat(32)}`
+const unconfirmed = () => ({
+  executed: false as const,
+  reverted: false as const,
+  unconfirmed: true as const,
+  txHash: UNCONFIRMED_TX,
+  explorerUrl: `https://explorer.test/tx/${UNCONFIRMED_TX}`,
+  reason: 'no receipt on any RPC host',
+})
+const neverAgain = {
+  policyOwnerPay: async () => {
+    throw new Error('an unconfirmed payment must not be sent again through the vault')
+  },
+  circlePay: async () => {
+    throw new Error('an unconfirmed vault payment must never fall through to Circle')
+  },
+  payUsdcWithMemo: async () => {
+    throw new Error('an unconfirmed vault payment must never fall through to direct settlement')
+  },
+  payUsdcBatch: async () => {
+    throw new Error('an unconfirmed vault payment must never fall through to the batch path')
+  },
+}
+
+/** A vault agent with a Circle wallet too, so a fall-through has somewhere to land, whose
+ *  payment has just come back unconfirmed. */
+async function unconfirmedVaultPayment(amountUsd = 0.5) {
+  __resetPlatformStateForTests()
+  const agent = seedVaultAgent()
+  agent.circleWalletId = 'circle-wallet-1'
+  const ix = seedInstruction(agent, amountUsd)
+  await withSettlement({ ...neverAgain, policyPay: async () => unconfirmed() }, async () => {
+    await withSignerConfigured(agent, async () => {
+      const done = await executeInstruction(ix.id, OWNER)
+      assert.ok(!('error' in done))
+    })
+  })
+  return { agent, ix }
+}
+
+test('THE DOUBLE PAYMENT: an unconfirmed vault payment never reaches Circle or direct settlement', async () => {
+  const { agent, ix } = await unconfirmedVaultPayment()
+  assert.equal(ix.status, 'pending_approval')
+  assert.equal(ix.enforcedBy, 'onchain-vault')
+  assert.equal(ix.unconfirmedTx, UNCONFIRMED_TX)
+  assert.ok(ix.explorerUrl?.includes(UNCONFIRMED_TX))
+  assert.equal(ix.txHash, undefined, 'txHash means settled, and this is not known to be')
+  assert.ok(ix.policyNote.includes(UNCONFIRMED_TX), 'the human gets the hash to check')
+  assert.match(ix.policyNote, /may have landed/)
+  assert.doesNotMatch(ix.policyNote, /reverted|nothing settled/i)
+  assert.equal(dailySpent(agent), 0)
+})
+
+test('approving an unconfirmed payment while nobody has its receipt sends nothing and hands it back', async () => {
+  const { agent, ix } = await unconfirmedVaultPayment()
+  assert.ok(!('error' in approveInstruction(ix.id, OWNER)))
+  await withSettlement(
+    { ...neverAgain, receiptStatus: async () => ({ status: 'unknown' as const, reason: 'no receipt on any RPC host' }) },
+    async () => {
+      const done = await executeInstruction(ix.id, OWNER)
+      assert.ok(!('error' in done))
+      assert.equal(done.status, 'pending_approval')
+      assert.equal(done.unconfirmedTx, UNCONFIRMED_TX)
+      assert.match(done.policyNote, /No second payment was sent/)
+      assert.equal(dailySpent(agent), 0, 'approving took the cap and handing it back returned it')
+    },
+  )
+})
+
+test('an unconfirmed payment that landed settles the instruction with that hash and no second payment', async () => {
+  const { agent, ix } = await unconfirmedVaultPayment()
+  assert.ok(!('error' in approveInstruction(ix.id, OWNER)))
+  await withSettlement(
+    {
+      ...neverAgain,
+      receiptStatus: async () => ({ status: 'success' as const, txHash: UNCONFIRMED_TX, explorerUrl: `https://explorer.test/tx/${UNCONFIRMED_TX}` }),
+    },
+    async () => {
+      const done = await executeInstruction(ix.id, OWNER)
+      assert.ok(!('error' in done))
+      assert.equal(done.status, 'executed_onchain')
+      assert.equal(done.txHash, UNCONFIRMED_TX)
+      assert.equal(done.unconfirmedTx, undefined)
+      assert.ok(done.offchainAuditId, 'the same structured why, app-layer and labeled as such')
+      assert.equal(dailySpent(agent), 0.5, 'one payment, counted once')
+    },
+  )
+})
+
+test('an unconfirmed payment that reverted is free to settle on the approval that followed', async () => {
+  const { ix, agent } = await unconfirmedVaultPayment()
+  assert.ok(!('error' in approveInstruction(ix.id, OWNER)))
+  let paid = 0
+  await withSettlement(
+    {
+      ...neverAgain,
+      receiptStatus: async () => ({ status: 'reverted' as const, txHash: UNCONFIRMED_TX, explorerUrl: 'x' }),
+      policyOwnerPay: async () => {
+        paid += 1
+        return { executed: true as const, txHash: `0x${'7c'.repeat(32)}`, explorerUrl: 'y' }
+      },
+      readVault: async () => ({}) as never,
+    },
+    async () => {
+      await withSignerConfigured(agent, async () => {
+        const done = await executeInstruction(ix.id, OWNER)
+        assert.ok(!('error' in done))
+        assert.equal(done.status, 'executed_onchain')
+        assert.equal(done.unconfirmedTx, undefined)
+        assert.equal(paid, 1)
+      })
+    },
+  )
+})
+
+test('a direct settlement with no receipt is unconfirmed, not "no signer, simulated"', async () => {
+  // Neither executed nor reverted used to mean one thing on this path: nothing was broadcast.
+  __resetPlatformStateForTests()
+  const agent = createAgent({
+    name: 'Direct Agent',
+    description: 'Seeded for direct settlement.',
+    category: 'Research',
+    capabilities: [],
+    permissions: { dailyCapUsd: 1000, autoApproveUnderUsd: 100, agentToHuman: true },
+    owner: OWNER,
+  })
+  const ix = seedInstruction(agent)
+  await withSettlement({ payUsdcWithMemo: async () => unconfirmed() }, async () => {
+    const done = await executeInstruction(ix.id, OWNER)
+    assert.ok(!('error' in done))
+    assert.equal(done.status, 'pending_approval')
+    assert.equal(done.enforcedBy, 'server')
+    assert.equal(done.unconfirmedTx, UNCONFIRMED_TX)
+    assert.doesNotMatch(done.policyNote, /simulated/)
+  })
+})
+
+test('a batch with no receipt does not degrade to a single transfer', async () => {
+  __resetPlatformStateForTests()
+  const agent = createAgent({
+    name: 'Batch Agent',
+    description: 'Seeded for batch settlement.',
+    category: 'Research',
+    capabilities: [],
+    permissions: { dailyCapUsd: 1000, autoApproveUnderUsd: 100, agentToHuman: true },
+    owner: OWNER,
+  })
+  const ix = createInstruction({ agentId: agent.id, type: 'batch', amountUsd: 0.1, count: 3, payee: PAYEE, caller: OWNER })
+  assert.ok(!('error' in ix), JSON.stringify(ix))
+  await withSettlement(
+    {
+      payUsdcBatch: async () => unconfirmed(),
+      payUsdcWithMemo: async () => {
+        throw new Error('the batch may have landed, so the single transfer must not go out')
+      },
+    },
+    async () => {
+      const done = await executeInstruction(ix.id, OWNER)
+      assert.ok(!('error' in done))
+      assert.equal(done.status, 'pending_approval')
+      assert.equal(done.unconfirmedTx, UNCONFIRMED_TX)
+    },
+  )
+})

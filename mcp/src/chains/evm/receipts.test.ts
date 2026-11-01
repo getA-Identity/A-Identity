@@ -1,6 +1,6 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { blockFromEveryRpc, receiptFromEveryRpc, transactionFromEveryRpc, rpcSourceLabel, type RpcCall } from './receipts.js'
+import { blockFromEveryRpc, describeReceiptWait, receiptFromEveryRpc, transactionFromEveryRpc, rpcSourceLabel, waitForReceiptOnEveryRpc, type RpcCall } from './receipts.js'
 import { resolveRpcUrls } from './client.js'
 import { getChainById } from '../registry.js'
 
@@ -301,4 +301,92 @@ test('a hard deadline ends the read inside a round: no host is asked after it, a
   const zero = await receiptFromEveryRpc(arc, HASH, { urls: [A], call: none.call, hardTimeoutMs: 0 })
   assert.equal(zero.status, 'unreachable')
   assert.deepEqual(none.asked, [])
+})
+
+// ── the wait a broadcaster uses ───────────────────────────────────────────────────────
+
+/** Answers receipts from `receipts` and the head from `heads`, each by url, round by round. */
+function waitScene(receipts: Record<string, Answer[]>, heads: Answer[] = ['0x15a8e30']) {
+  const receiptCalls = fake(receipts)
+  const headCalls = fake({ head: heads })
+  const call: RpcCall = (url, method, p, ms) =>
+    method === 'eth_blockNumber' ? headCalls.call('head', method, p, ms) : receiptCalls.call(url, method, p, ms)
+  return { call, receiptCalls, headCalls }
+}
+
+const TIP = 0x15a8e21n
+
+test('a wait with no depth asked takes the first receipt and never reads the head', async () => {
+  const s = waitScene({ [A]: [null], [B]: [rawReceipt()] })
+  const r = await waitForReceiptOnEveryRpc(arc, HASH, { urls: [A, B], call: s.call })
+  assert.equal(r.status, 'found')
+  assert.deepEqual(s.receiptCalls.asked, [A, B])
+  assert.deepEqual(s.headCalls.asked, [])
+})
+
+test('a wait keeps asking until a host has the receipt, inside its budget', async () => {
+  let clock = 0
+  const s = waitScene({ [A]: [null], [B]: [null, null, rawReceipt()] })
+  const r = await waitForReceiptOnEveryRpc(arc, HASH, {
+    urls: [A, B], call: s.call, timeoutMs: 100, pollMs: 10, now: () => clock, sleep: async (ms) => { clock += ms },
+  })
+  assert.equal(r.status, 'found')
+  if (r.status === 'found') assert.equal(r.rounds, 3)
+  assert.deepEqual(s.receiptCalls.asked, [A, B, A, B, A, B])
+})
+
+test('a wait that runs out says so without throwing, and tells nobody a host name', async () => {
+  let clock = 0
+  const s = waitScene({ [A]: [null], [B]: [new Error('HTTP 503')] })
+  const r = await waitForReceiptOnEveryRpc(arc, HASH, {
+    urls: [A, B], call: s.call, timeoutMs: 20, pollMs: 10, now: () => clock, sleep: async (ms) => { clock += ms },
+  })
+  if (r.status !== 'not_found') return assert.fail(`expected not_found, got ${r.status}`)
+  const said = describeReceiptWait(r)
+  assert.match(said, /1 answered null, 1 did not answer/)
+  assert.doesNotMatch(said, /rpc\.test/)
+})
+
+test('no host answering at all is unreachable, and described that way', async () => {
+  const s = waitScene({ [A]: [new Error('refused')], [B]: [new Error('refused')] })
+  const r = await waitForReceiptOnEveryRpc(arc, HASH, { urls: [A, B], call: s.call })
+  assert.equal(r.status, 'unreachable')
+  if (r.status === 'unreachable') assert.match(describeReceiptWait(r), /none of 2 RPC hosts answered/)
+})
+
+test('a chain that asks for depth gets it: the receipt counts only once the head is far enough past it', async () => {
+  let clock = 0
+  // Head at the receipt's own block is 1 confirmation, 1 past it is 2, 2 past it is 3.
+  const heads = [`0x${TIP.toString(16)}`, `0x${(TIP + 1n).toString(16)}`, `0x${(TIP + 2n).toString(16)}`]
+  const s = waitScene({ [A]: [rawReceipt()] }, heads)
+  const r = await waitForReceiptOnEveryRpc(arc, HASH, {
+    urls: [A], call: s.call, confirmations: 3, timeoutMs: 100, pollMs: 10, now: () => clock, sleep: async (ms) => { clock += ms },
+  })
+  assert.equal(r.status, 'found')
+  assert.equal(s.headCalls.asked.length, 3)
+})
+
+test('a receipt that never gets deep enough is too_shallow, which is not found', async () => {
+  const s = waitScene({ [A]: [rawReceipt()] }, [`0x${TIP.toString(16)}`])
+  const r = await waitForReceiptOnEveryRpc(arc, HASH, { urls: [A], call: s.call, confirmations: 3 })
+  assert.equal(r.status, 'too_shallow')
+  if (r.status === 'too_shallow') {
+    assert.equal(r.value.blockNumber, TIP)
+    assert.match(describeReceiptWait(r), /not yet 3 blocks deep/)
+  }
+})
+
+test('a receipt a reorg takes away while waiting for depth is not reported from memory', async () => {
+  let clock = 0
+  const s = waitScene({ [A]: [rawReceipt(), null] }, [`0x${TIP.toString(16)}`, `0x${(TIP + 5n).toString(16)}`])
+  const r = await waitForReceiptOnEveryRpc(arc, HASH, {
+    urls: [A], call: s.call, confirmations: 3, timeoutMs: 30, pollMs: 10, now: () => clock, sleep: async (ms) => { clock += ms },
+  })
+  assert.equal(r.status, 'not_found')
+})
+
+test('an unreadable head is not depth', async () => {
+  const s = waitScene({ [A]: [rawReceipt()] }, [new Error('HTTP 503')])
+  const r = await waitForReceiptOnEveryRpc(arc, HASH, { urls: [A], call: s.call, confirmations: 2 })
+  assert.equal(r.status, 'too_shallow')
 })

@@ -270,8 +270,11 @@ export async function persistCeloSettlement(rec: CeloSettlementRecord): Promise<
 export type X402SettlementRecord = {
   ts: string
   /** 'settled' = receipt status success AND a matching Transfer log. 'reverted' = mined
-   *  and failed. 'ambiguous' = broadcast, no receipt inside the timeout. Only 'settled'
-   *  is revenue; the other two are shown rather than hidden, and all three cost gas. */
+   *  and failed. 'ambiguous' = broadcast, no receipt inside the timeout, and no later read
+   *  across every RPC has found one yet. Only 'settled' is revenue; the other two are shown
+   *  rather than hidden, and all three cost gas. An ambiguous row is updated in place to
+   *  'settled' or 'reverted' when its receipt turns up (see resolveX402Settlement), and
+   *  `reconciledAt` says it happened that way. */
   outcome: 'settled' | 'reverted' | 'ambiguous'
   tool: string
   resource: string
@@ -289,7 +292,8 @@ export type X402SettlementRecord = {
   feeUsd: number
   payer: string
   payTo: string
-  /** The EIP-3009 nonce, so an ambiguous settlement can later be resolved exactly. */
+  /** The EIP-3009 nonce. A retry of the same authorization finds its earlier broadcast by this
+   *  (with the payer, asset and network), and the row's `tx` is what gets re-read. */
   authNonce: string
   tx?: string
   blockNumber?: string
@@ -300,10 +304,107 @@ export type X402SettlementRecord = {
   gasWei?: string
   /** Present when we facilitated for a third-party payTo rather than for ourselves. */
   facilitatedFor?: string
+  /** When an ambiguous row was resolved from a receipt read later. `ts` stays the broadcast's
+   *  time, so the gas lands on the day it was spent. */
+  reconciledAt?: string
+  /** When the one call a reconciled settlement pays for was served. A settlement that went
+   *  through on its first attempt was served there and never carries this. */
+  redeemedAt?: string
 }
 
 const X402_SETTLEMENTS_FILE = join(DATA_DIR, 'x402-settlements.json')
 export const X402_SETTLEMENTS_CAP = 2000
+
+/** What a receipt read later adds to an ambiguous row. */
+export type X402SettlementResolution = Pick<X402SettlementRecord, 'outcome' | 'reconciledAt'> &
+  Partial<Pick<X402SettlementRecord, 'blockNumber' | 'gasUsed' | 'gasWei'>>
+
+/** A conditional update of the log. `updated: false` means no row was in the state the update
+ *  asks for; `ok: false` means the log could not be written, so nothing is known to have changed. */
+export type X402SettlementUpdate = { ok: true; updated: boolean } | { ok: false; reason: string }
+
+const SAME_TX = "lower(data->>'tx') = $1"
+const AMBIGUOUS_ROW = (r: X402SettlementRecord) => r.outcome === 'ambiguous'
+const UNREDEEMED_ROW = (r: X402SettlementRecord) => r.outcome === 'settled' && Boolean(r.reconciledAt) && !r.redeemedAt
+
+/** Apply a patch to the rows carrying `tx` that `when` admits. Exported for its tests. */
+export function patchX402Rows(
+  rows: X402SettlementRecord[],
+  tx: string,
+  patch: Partial<X402SettlementRecord>,
+  when: (r: X402SettlementRecord) => boolean,
+): boolean {
+  let touched = false
+  for (const r of rows) {
+    if (r.tx?.toLowerCase() === tx && when(r)) {
+      Object.assign(r, patch)
+      touched = true
+    }
+  }
+  return touched
+}
+
+async function updateX402Rows(
+  tx: string,
+  patch: Partial<X402SettlementRecord>,
+  guardSql: string,
+  when: (r: X402SettlementRecord) => boolean,
+  getPoolFn: () => Promise<unknown>,
+): Promise<X402SettlementUpdate> {
+  const hash = tx.toLowerCase()
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const p = (await getPoolFn()) as any
+    if (p) {
+      await p.query('CREATE TABLE IF NOT EXISTS x402_settlements (id bigserial PRIMARY KEY, data jsonb NOT NULL)')
+      const r = await p.query(`UPDATE x402_settlements SET data = data || $2::jsonb WHERE ${SAME_TX} AND ${guardSql}`, [hash, JSON.stringify(patch)])
+      return { ok: true, updated: Number(r.rowCount ?? 0) > 0 }
+    }
+    let rows: X402SettlementRecord[]
+    try {
+      rows = JSON.parse(readFileSync(X402_SETTLEMENTS_FILE, 'utf8')) as X402SettlementRecord[]
+    } catch (e) {
+      if ((e as NodeJS.ErrnoException)?.code === 'ENOENT') return { ok: true, updated: false }
+      throw e
+    }
+    const updated = patchX402Rows(rows, hash, patch, when)
+    if (updated) writeFileSync(X402_SETTLEMENTS_FILE, JSON.stringify(rows))
+    return { ok: true, updated }
+  } catch (e) {
+    const reason = e instanceof Error ? e.message : String(e)
+    console.error('[storage] x402 settlement update failed:', reason)
+    return { ok: false, reason }
+  }
+}
+
+/**
+ * Resolve an ambiguous row from a receipt read later, keyed by the transaction hash the way
+ * updateGatewaySettlement is keyed by nonce. Only a row still ambiguous is touched, so a
+ * settled or reverted row cannot be rewritten, and two readers racing each other cannot do
+ * anything the first one did not. Never throws.
+ */
+export function resolveX402Settlement(
+  tx: string,
+  resolution: X402SettlementResolution,
+  getPoolFn: () => Promise<unknown> = getPool,
+): Promise<X402SettlementUpdate> {
+  return updateX402Rows(tx, resolution, "data->>'outcome' = 'ambiguous'", AMBIGUOUS_ROW, getPoolFn)
+}
+
+/**
+ * Claim the one call a reconciled settlement pays for. Reports `updated: true` to exactly one
+ * caller: the WHERE clause is the claim, so two retries of the same authorization cannot both
+ * be served, however many processes they reach. Never throws.
+ */
+export function redeemX402Settlement(tx: string, at: string, getPoolFn: () => Promise<unknown> = getPool): Promise<X402SettlementUpdate> {
+  return updateX402Rows(
+    tx,
+    { redeemedAt: at },
+    "data->>'outcome' = 'settled' AND data ? 'reconciledAt' AND NOT data ? 'redeemedAt'",
+    UNREDEEMED_ROW,
+    getPoolFn,
+  )
+}
 
 /**
  * The x402-3009 settlement log, with "empty" and "unreadable" told apart.

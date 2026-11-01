@@ -1,8 +1,13 @@
 /**
  * Generic viem client factory for any EVM chain descriptor. This is the extracted,
  * parameterized version of the Arc client wiring: a fallback transport over every RPC
- * (one flaky endpoint rolls to the next), a keyless public client for reads, and a
+ * (an endpoint that fails rolls to the next), a keyless public client for reads, and a
  * wallet client present only when the chain's signer env var is set.
+ *
+ * What the fallback does not do: it rolls over only when a request fails. A host that does
+ * not have a receipt answers null, which is a successful answer, so a receipt wait through
+ * this client keeps polling the first host that answers. To find a receipt, use
+ * ./receipts.ts, which asks every host; the settlement engine and the EVM adapter do.
  *
  * Behavior is identical to the original Arc wiring when handed the Arc descriptor.
  */
@@ -19,8 +24,9 @@ export function resolveRpcUrls(chain: ChainDescriptor, env: NodeJS.ProcessEnv = 
   return [primary, ...chain.rpcUrls.slice(1)].filter((v, i, a) => v && a.indexOf(v) === i)
 }
 
-/** A fallback transport over every RPC, so one flaky endpoint rolls to the next
- *  instead of failing the call. Each endpoint retries a couple of times on its own. */
+/** A fallback transport over every RPC, so an endpoint that fails rolls to the next
+ *  instead of failing the call. Each endpoint retries a couple of times on its own. A null
+ *  answer is not a failure and rolls nowhere; see the note at the top of this file. */
 export async function evmTransport(chain: ChainDescriptor, env: NodeJS.ProcessEnv = process.env) {
   const { http, fallback } = await import('viem')
   return fallback(

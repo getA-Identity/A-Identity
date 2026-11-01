@@ -106,17 +106,34 @@ flowchart TD
   V -->|passes| R[Receipt required]
   C -->|passes| R
   R -->|Transfer log matches| OK[Settled]
-  R -->|no matching log,<br/>or receipt times out| AMB[Ambiguous.<br/>Never marked settled]
+  R -->|reverted, or no<br/>matching log| REV[Recorded as reverted.<br/>Never marked settled]
+  R -->|no receipt on any RPC<br/>inside the wait| AMB[Ambiguous or unconfirmed.<br/>Read again, never sent again]
 ```
 
 Read the diagram by its refusals rather than its happy path. Each layer can say no on its
 own, and the server is only the first of the three: the vault reverts whoever signs, so the
 limit survives our server being wrong, compromised or simply switched off. Nothing reaches
 **Settled** without a successful receipt, and on the x402 EIP-3009 rail the receipt must also
-carry a matching `Transfer` log; there a receipt that does not arrive in time is recorded as
-ambiguous, never as settled. On the EVM vault path (Arc testnet) a receipt that arrives late is
-still reported as a revert today; the fix, reporting it as unconfirmed with no fall-through to
-another rail, is planned.
+carry a matching `Transfer` log.
+
+Those receipts are read from every RPC the chain lists, one host at a time
+(`mcp/src/chains/evm/receipts.ts`), because a host that does not have a receipt answers null and
+viem's fallback transport takes that as the answer. On the EIP-3009 rail a broadcast with no
+receipt inside the wait is recorded as ambiguous, never as settled, with the transaction hash. A
+retry of the same authorization reads that hash again before anything else, and so does
+`GET /api/facilitator/proof` (at most 10 rows, at most every 30 seconds). The row then resolves to
+settled or reverted by the same rule a first attempt meets, or stays ambiguous. A buyer whose
+transaction landed is served on the retry with no second charge and no second broadcast, once.
+What it does not cover: a row whose write failed when the wait ended leaves nothing to find, so
+that retry is refused as `nonce_used`, and a transaction someone else submitted with the same
+authorization is not looked up.
+
+On the EVM adapter's writes, including the vault path (Arc testnet), no receipt inside the wait
+is reported as unconfirmed with the hash, not as a revert. An instruction in that state goes back
+to a human and never falls through to another rail. Approving it again reads the hash first, and
+sends nothing unless that transaction reverted. The browser vault page and the verify-then-pay
+receipt route read every RPC the same way. Other modules that wait on a receipt through a fallback
+client (`aa-wallet.ts`, `airdrop.ts`, `cctp-stellar.ts`, `gateway.ts`) have not moved to this reader.
 
 ## Standards
 

@@ -140,6 +140,10 @@ export const policyPay = (vault: string, to: string, amountUsd: number, env: Nod
 export const policyOwnerPay = (vault: string, to: string, amountUsd: number, env: NodeJS.ProcessEnv = process.env) =>
   arc.policyOwnerPay(vault, to, amountUsd, env)
 
+/** One read-only look, across every RPC, at a transaction sent earlier. */
+export const receiptStatusOnchain = (hash: string, env: NodeJS.ProcessEnv = process.env) =>
+  arc.receiptStatus(hash, env)
+
 /** Owner updates the on-chain policy (cap, auto-approve ceiling, allowlist flag). */
 export const policySetPolicy = (
   vault: string,

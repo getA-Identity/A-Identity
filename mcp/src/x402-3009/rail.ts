@@ -28,7 +28,7 @@ import {
 import { verifyAgent, reputationScore, riskCheck, agentPassport, type TxContext } from '../asp/tools.js'
 import { loadX402Settlements, X402_SETTLEMENTS_CAP, type X402SettlementRecord } from '../storage.js'
 import { provenDomainCached } from './domain.js'
-import { settlePayment, type Limits, type Requirements, type EngineDeps, type SettleSuccess } from './engine.js'
+import { reconcileAmbiguousSettlements, settlePayment, type Limits, type Requirements, type EngineDeps, type SettleSuccess } from './engine.js'
 
 type Hex = `0x${string}`
 
@@ -516,10 +516,12 @@ function defaultHandlers(status: RailStatus): Record<RailToolName, (input: RailT
  *   501 - the rail is not configured (never a free serve)
  *   503 - the settlement token's domain cannot be proven right now
  *   402 - malformed X-PAYMENT, or the authorization does not verify (fresh challenge)
- *   502 - the settlement failed; the tool is NOT served and nothing is marked settled
+ *   502 - the settlement failed or is still unresolved; the tool is NOT served and nothing
+ *         is marked settled
  *   500 - settled, but the tool handler itself failed; the settlement is still recorded
  *         and the body names the tx so the buyer can chase it
- *   200 - settled and served
+ *   200 - settled and served, on this call or from an earlier broadcast of this same
+ *         authorization whose receipt came late (settlement.reconciled says which)
  */
 export async function railServeTool(
   tool: RailToolName,
@@ -630,7 +632,14 @@ export async function railServeToolOn(
         code: settled.code,
         reason: settled.errorReason,
         ...(settled.transaction ? { transaction: settled.transaction } : {}),
-        ...(settled.ambiguous ? { ambiguous: true, note: 'The transaction may still land. Nothing was served and the authorization was not marked spent.' } : {}),
+        ...(settled.ambiguous
+          ? {
+              ambiguous: true,
+              note:
+                'The transaction may still land. Nothing was served and the authorization was not marked spent. ' +
+                'Send this same payment again rather than signing a new one: we read the transaction from every RPC first, broadcast nothing new while it is unresolved, and if it landed we serve this call with no second charge.',
+            }
+          : {}),
       },
     }
   }
@@ -779,8 +788,27 @@ export async function railProof(
     byTool,
     byNetwork,
     recent: rows.slice(-50).reverse(),
-    note: `Real settlements only, each recorded from an on-chain receipt plus a matching Transfer log. Payments from our own buyer wallets are labeled internal, never hidden. Totals cover the retained window (last ${X402_SETTLEMENTS_CAP}).`,
+    note: `Real settlements only, each recorded from an on-chain receipt plus a matching Transfer log. A broadcast with no receipt inside the window is counted as ambiguous until a later read across every RPC finds one, and the row then carries reconciledAt. Payments from our own buyer wallets are labeled internal, never hidden. Totals cover the retained window (last ${X402_SETTLEMENTS_CAP}).`,
   }
+}
+
+/** How often a proof read may go to the chain, and how long one read may take. The route is
+ *  public and each ambiguous row asks every host, so a burst of page loads shares one sweep. */
+const PROOF_RECONCILE_EVERY_MS = 30_000
+const PROOF_RECONCILE_RECEIPTS = { perCallTimeoutMs: 2_000, hardTimeoutMs: 5_000 }
+let lastProofReconcileAt = Number.NEGATIVE_INFINITY
+
+/**
+ * Read the newest ambiguous rows from every RPC before a proof read, the way the Gateway proof
+ * refreshes its credited rows. Bounded by reconcileAmbiguousSettlements' limit, by the deadlines
+ * above and by the interval. It reads the chain and resolves rows, and it never serves or
+ * charges anything: a settled row still waits for the buyer's retry.
+ */
+export async function railReconcileOnProofRead(deps: EngineDeps = {}, at: number = Date.now()): Promise<{ checked: number; settled: number; reverted: number; ambiguous: number; skipped: boolean }> {
+  if (at - lastProofReconcileAt < PROOF_RECONCILE_EVERY_MS) return { checked: 0, settled: 0, reverted: 0, ambiguous: 0, skipped: true }
+  lastProofReconcileAt = at
+  const totals = await reconcileAmbiguousSettlements({ ...deps, receipts: { ...PROOF_RECONCILE_RECEIPTS, ...deps.receipts } })
+  return { ...totals, skipped: false }
 }
 
 /** USD value of a base-unit amount, for display next to a settlement. */

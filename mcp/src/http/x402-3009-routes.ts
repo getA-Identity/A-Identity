@@ -21,6 +21,7 @@ import {
   railChallenge,
   railPaywallGate,
   railProof,
+  railReconcileOnProofRead,
   railServeTool,
   railStatus,
   railPriceUsd,
@@ -142,9 +143,10 @@ export async function handleX402ThreeKRoutes(ctx: RouteCtx): Promise<boolean> {
     return true
   }
 
-  // ── GET /api/facilitator/proof - the durable settlement log ──
+  // ── GET /api/facilitator/proof - the durable settlement log, reconciled ──
   if (req.method === 'GET' && url.pathname === '/api/facilitator/proof') {
-    sendJson(res, 200, await railProof(status))
+    const reconciled = await railReconcileOnProofRead()
+    sendJson(res, 200, { ...(await railProof(status)), reconciled })
     return true
   }
 
