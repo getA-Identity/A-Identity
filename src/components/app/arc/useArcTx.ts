@@ -20,6 +20,7 @@ export function recordOf(p: PreparedTx, hash: `0x${string}`, vault: string | nul
     submittedAt: new Date().toISOString(),
     expect: p.expect,
     ...(p.predicted ? { predicted: p.predicted } : {}),
+    ...(p.nonce !== undefined ? { nonce: p.nonce } : {}),
     ...(p.expiry !== undefined ? { expiry: p.expiry } : {}),
     outcome: 'pending',
   }

@@ -1,21 +1,24 @@
 /**
- * What a submitted transaction became, decided from the chain alone.
+ * What a submitted transaction became, read from the chain and decided by tx-rules.ts.
  *
  * Settled means all of: a receipt with status success, every event the write was expected to
  * emit (decoded from the vault's or the USDC contract's own logs), and for the writes whose
- * effect can be read back (a deploy, a session key, a funding) the read-back agreeing. A
- * receipt without the expected event is shown as landed-but-not-as-expected and never counted.
+ * effect can be read back (a deploy, a session key, a funding) the read-back agreeing, read at
+ * the receipt's own block. A receipt without the expected event is shown as
+ * landed-but-not-as-expected and never counted.
  *
  * While no host has a receipt, the transaction is pending, and that is all it is: one host's
  * null decides nothing on Arc. Every few checks the transaction itself is read, to show the fee
  * the wallet really sent (a maxFeePerGas under 20 gwei is dropped by Arc without a receipt) and
- * to notice its nonce being used by another hash, which means the wallet replaced it.
+ * to notice its nonce being used by another hash. That, watched for a few seconds more with
+ * still no receipt for this hash, is final: the hash was replaced and can no longer land.
  */
 import { getAddress, getContractAddress, isAddress, type Hex } from 'viem'
 import type { Chain } from '../chains'
-import type { TxRecord } from './pending'
+import type { DeployArgs, TxRecord } from './pending'
+import { READ_BACK_TRIES, decideLanded, decideUnseen, deployNonce, needsReadBack, type DeployBack, type ReadBack, type Unseen } from './tx-rules'
 import { missingFromReceipt, pollReceipt, readNonce, readTransaction, readVault } from './vault-read'
-import { FEE_FLOOR_WEI, sameAddress } from './vault-rules'
+import { sameAddress } from './vault-rules'
 
 /** How often a pending transaction is asked about, and for how long before the page stops asking on its own. */
 export const POLL_FAST_MS = 1500
@@ -27,10 +30,13 @@ const DEEP_EVERY = 6
 
 export type Advance = { record: TxRecord; answered: number; total: number }
 
-/** Why a deployed vault does not read back as the setup asked, or null when it does. */
-async function deployReadback(chain: Chain, address: string, args: NonNullable<TxRecord['deployArgs']>): Promise<{ ok: boolean; why: string | null; retry: boolean }> {
-  const r = await readVault(chain, address)
-  if (!r.ok) return { ok: false, why: r.failure.reason, retry: r.failure.kind === 'unreachable' || r.failure.kind === 'no_contract' }
+/**
+ * What a deployed vault reads back as against what the setup asked, at `blockNumber` when given
+ * (the receipt's block) or at the latest block.
+ */
+export async function deployReadback(chain: Chain, address: string, args: DeployArgs, at: { blockNumber?: bigint; preferHost?: string } = {}): Promise<DeployBack> {
+  const r = await readVault(chain, address, at)
+  if (!r.ok) return { status: r.failure.kind === 'no_contract' ? 'no_code' : r.failure.kind === 'not_a_vault' ? 'mismatch' : 'unreadable', why: r.failure.reason }
   const v = r.data
   const wrong: string[] = []
   if (!v.knownBuild) wrong.push('its code is not the build this page deploys')
@@ -39,99 +45,61 @@ async function deployReadback(chain: Chain, address: string, args: NonNullable<T
   if (!sameAddress(v.usdc, args.usdc)) wrong.push(`usdc reads ${v.usdc}`)
   if (v.dailyCap !== args.dailyCap) wrong.push(`dailyCap reads ${v.dailyCap}`)
   if (v.autoApproveMax !== args.autoApproveMax) wrong.push(`autoApproveMax reads ${v.autoApproveMax}`)
-  return wrong.length ? { ok: false, why: wrong.join('; '), retry: false } : { ok: true, why: null, retry: false }
+  return wrong.length ? { status: 'mismatch', why: wrong.join('; ') } : { status: 'ok', why: null }
+}
+
+/** The vault's expiry and balance at the receipt's block, asked first of the host that returned the receipt. */
+async function readBackAt(chain: Chain, vault: string, blockNumber: bigint, host: string): Promise<ReadBack> {
+  const r = await readVault(chain, vault, { blockNumber, preferHost: host })
+  return r.ok ? { ok: true, block: r.data.block, sessionKeyExpiry: r.data.sessionKeyExpiry, balance: r.data.balance } : { ok: false, reason: r.failure.reason }
 }
 
 /** One check of a pending transaction. Returns the record unchanged (but for notes) while nothing is known. */
-export async function advance(chain: Chain, record: TxRecord, tick: number): Promise<Advance> {
+export async function advance(chain: Chain, record: TxRecord, tick: number, now: number = Date.now()): Promise<Advance> {
   const poll = await pollReceipt(chain, record.hash)
   if (poll.found) {
     const rc = poll.receipt
-    const base: TxRecord = {
-      ...record,
-      block: rc.blockNumber,
-      feeWei: rc.gasUsed * (rc.effectiveGasPrice ?? 0n),
-      host: poll.host,
+    const created = rc.contractAddress && isAddress(rc.contractAddress) ? getAddress(rc.contractAddress) : null
+    const landed = { success: rc.status === 'success', block: rc.blockNumber, feeWei: rc.gasUsed * (rc.effectiveGasPrice ?? 0n), host: poll.host, contractAddress: created }
+    const facts: Parameters<typeof decideLanded>[2] = {}
+    if (landed.success && record.action === 'deploy') {
+      // At the receipt's block first; once that has failed READ_BACK_TRIES times (a host that
+      // no longer serves state that old), at the latest block.
+      if (created && record.deployArgs)
+        facts.deploy = await deployReadback(
+          chain,
+          created,
+          record.deployArgs,
+          (record.readBackTries ?? 0) < READ_BACK_TRIES ? { blockNumber: rc.blockNumber, preferHost: poll.host } : {},
+        )
+    } else if (landed.success) {
+      facts.missing = missingFromReceipt(rc, record.expect)
+      if (!facts.missing.length && needsReadBack(record) && record.vault) facts.readBack = await readBackAt(chain, record.vault, rc.blockNumber, poll.host)
     }
-    if (rc.status !== 'success') return { record: { ...base, outcome: 'reverted', note: undefined }, answered: poll.answered, total: poll.total }
-
-    if (record.action === 'deploy') {
-      const created = rc.contractAddress && isAddress(rc.contractAddress) ? getAddress(rc.contractAddress) : null
-      if (!created) return { record: { ...base, outcome: 'unexpected', note: 'The receipt names no contract address, so no vault was created.' }, answered: poll.answered, total: poll.total }
-      if (!record.deployArgs) return { record: { ...base, outcome: 'unexpected', contractAddress: created, note: 'This page lost what the vault was meant to read back as.' }, answered: poll.answered, total: poll.total }
-      const back = await deployReadback(chain, created, record.deployArgs)
-      if (back.retry)
-        return { record: { ...base, contractAddress: created, outcome: 'pending', note: 'The receipt is in; reading the new vault back before calling it deployed.' }, answered: poll.answered, total: poll.total }
-      if (!back.ok)
-        return { record: { ...base, contractAddress: created, vault: created, outcome: 'unexpected', note: `A contract was created but it does not read back as asked: ${back.why}.` }, answered: poll.answered, total: poll.total }
-      return { record: { ...base, contractAddress: created, vault: created, outcome: 'settled', note: undefined }, answered: poll.answered, total: poll.total }
-    }
-
-    const missing = missingFromReceipt(rc, record.expect)
-    if (missing.length)
-      return { record: { ...base, outcome: 'unexpected', note: `It landed, but the receipt does not carry ${missing.join(', or ')}.` }, answered: poll.answered, total: poll.total }
-
-    if ((record.action === 'expiry' || record.action === 'extend' || record.action === 'revoke' || record.action === 'fund') && record.vault) {
-      const r = await readVault(chain, record.vault)
-      if (!r.ok)
-        return { record: { ...base, outcome: 'pending', note: 'The receipt carries the expected event; reading the vault back before calling it settled.' }, answered: poll.answered, total: poll.total }
-      if (record.expiry !== undefined && r.data.sessionKeyExpiry !== record.expiry)
-        return { record: { ...base, outcome: 'unexpected', note: `The event is there, but sessionKeyExpiry now reads ${r.data.sessionKeyExpiry}, not ${record.expiry}.` }, answered: poll.answered, total: poll.total }
-      if (record.amount !== undefined && r.data.balance < record.amount)
-        return { record: { ...base, outcome: 'unexpected', note: `The transfer is there, but the vault's balance reads ${r.data.balance} units, under the ${record.amount} sent.` }, answered: poll.answered, total: poll.total }
-    }
-    return { record: { ...base, outcome: 'settled', note: undefined }, answered: poll.answered, total: poll.total }
+    return { record: decideLanded(record, landed, facts), answered: poll.answered, total: poll.total }
   }
 
-  // Nothing yet. Every few checks, look at the transaction itself.
-  let next: TxRecord = record
-  // Until the transaction itself has been seen, read it on every early check: the fee the
-  // wallet really sent is worth knowing in seconds, not after the next deep check.
-  if (tick % DEEP_EVERY === 0 || (!record.sent && tick < 10)) {
-    const sent = await readTransaction(chain, record.hash as Hex)
-    if (sent) {
-      const fee = sent.maxFeePerGas ?? sent.gasPrice
-      next = {
-        ...next,
-        sent: {
-          maxFeePerGas: sent.maxFeePerGas,
-          gasPrice: sent.gasPrice,
-          nonce: sent.nonce,
-          belowFloor: fee !== null && fee < FEE_FLOOR_WEI,
-          from: sent.from,
-        },
-      }
-    }
-    const nonce = next.sent?.nonce
-    if (nonce !== undefined) {
-      const mined = await readNonce(chain, record.from, 'latest')
-      if (mined !== null && mined > nonce) {
-        // That nonce is used. Either this hash landed and no host will show its receipt yet,
-        // or the wallet replaced it. A deploy can tell which: its address survives a speed-up.
-        if (record.action === 'deploy' && record.deployArgs) {
-          const at = getContractAddress({ from: getAddress(record.from), nonce: BigInt(nonce) })
-          const back = await deployReadback(chain, at, record.deployArgs)
-          if (back.ok)
-            return {
-              record: {
-                ...next,
-                outcome: 'replaced',
-                vault: at,
-                contractAddress: at,
-                note: 'No host has a receipt for this hash, but a vault that reads back exactly as asked now exists at the address this nonce creates: your wallet sent a replacement (a speed-up) that landed.',
-              },
-              answered: poll.answered,
-              total: poll.total,
-            }
-        }
-        next = {
-          ...next,
-          note: 'This transaction\'s nonce has been used, but no host has a receipt for this hash yet. If your wallet sped it up or cancelled it, the replacement is what landed: check your wallet\'s activity and the explorer. Do not sign it again.',
-        }
+  // No receipt on any host. Every few checks, look at the transaction itself and its nonce; once
+  // the nonce is seen used, on every check, so the watch before 'replaced' is a matter of seconds.
+  const f: Unseen = { now }
+  const watching = Boolean(record.nonceUsedAt)
+  if (watching || tick % DEEP_EVERY === 0 || (!record.sent && tick < 10)) {
+    f.tx = await readTransaction(chain, record.hash as Hex)
+    const nonce = f.tx?.nonce ?? record.sent?.nonce
+    if (nonce !== undefined && !watching) f.latestNonce = await readNonce(chain, record.from, 'latest')
+    // A deploy: the address its nonce creates, read once that nonce is used. A speed-up keeps the
+    // nonce, so it keeps the address. With no transaction seen yet, the nonce read while preparing
+    // is tried too: only a vault that reads back exactly as asked counts.
+    const dn = f.tx?.nonce ?? deployNonce(record)
+    if (record.action === 'deploy' && record.deployArgs && dn !== undefined) {
+      const mined = typeof f.latestNonce === 'number' ? f.latestNonce : watching ? Number.MAX_SAFE_INTEGER : await readNonce(chain, record.from, 'latest')
+      if (mined !== null && mined > dn) {
+        const address = getContractAddress({ from: getAddress(record.from), nonce: BigInt(dn) })
+        f.createdAt = { address, back: await deployReadback(chain, address, record.deployArgs) }
       }
     }
   }
-  return { record: next, answered: poll.answered, total: poll.total }
+  return { record: decideUnseen(record, f), answered: poll.answered, total: poll.total }
 }
 
 /** The transaction fee in USDC wei as a short decimal, for a receipt line. */

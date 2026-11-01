@@ -34,12 +34,14 @@ import TxReceipt from '../../components/app/arc/TxReceipt'
 import VaultPicker from '../../components/app/arc/VaultPicker'
 import VaultStatus from '../../components/app/arc/VaultStatus'
 import WalletBar from '../../components/app/arc/WalletBar'
+import { useArcSetup } from '../../components/app/arc/useArcSetup'
 import { useArcWallet, type ArcWalletState } from '../../components/app/arc/useArcWallet'
-import { Chip } from '../../components/app/stellar/bits'
+import { Chip, Mono } from '../../components/app/stellar/bits'
 import { track } from '../../lib/analytics'
 import type { Chain } from '../../lib/chains'
 import { listKnownVaults, type KnownVaults } from '../../lib/arc/known-vaults'
-import { clearTx, loadSetup, loadTx, saveTx, type TxRecord } from '../../lib/arc/pending'
+import { clearTx, loadTx, saveTx, type TxRecord } from '../../lib/arc/pending'
+import { predictedVault, setupAlert, withRecord } from '../../lib/arc/tx-rules'
 import {
   ARC_CHAINS,
   ARC_MAINNET,
@@ -79,6 +81,8 @@ export default function ArcVault() {
   const target: Chain = chain ?? ARC_MAINNET
 
   const wallet = useArcWallet()
+  const store = useArcSetup()
+  const setup = store.setup
   const [known, setKnown] = useState<KnownVaults | null>(null)
   const [read, setRead] = useState<ReadState>(EMPTY)
   const [tx, setTx] = useState<(TxRecord & { key: string }) | null>(null)
@@ -160,14 +164,11 @@ export default function ArcVault() {
   const shownTx = tx && tx.key === key ? tx : null
   const ours = Boolean(v && known?.vaults.some((x) => x.kind === 'ours' && x.network === v.network && sameAddress(x.address, v.address)))
   const ownerIsOurKey = Boolean(v && (known?.ourKeys[v.network] ?? []).some((k) => sameAddress(k, v.owner)))
-  // A vault deployed from this browser whose expiry this browser has not seen land. Hidden only
-  // when the vault on screen IS that vault and reads back with an expiry.
-  const setup = loadSetup()
-  const viewingSetupVault = Boolean(setup?.vault && v && sameAddress(v.address, setup.vault) && v.network === setup.network)
-  const unboundSetup =
-    setup?.vault && !(setup.expiryTx && setup.expiryTx.outcome === 'settled') && !(viewingSetupVault && v && v.sessionKeyExpiry !== 0n)
-      ? setup
-      : null
+  // The setup this browser holds, whatever this page is showing: a deploy the wallet was asked for
+  // with no hash back, a deploy with no receipt yet, or a vault whose expiry has not been seen to
+  // land. The last is hidden only when the vault on screen IS that vault and reads an expiry.
+  const alert = setupAlert(setup, v)
+  const setupAt = setup ? predictedVault(setup) : null
 
   return (
     <AppPage
@@ -177,18 +178,60 @@ export default function ArcVault() {
       <div className="space-y-4">
         <WalletBar wallet={wallet} target={deployMode && setup ? (arcChainFor(setup.network) ?? target) : target} />
 
-        {unboundSetup && !deployMode && (
-          <div role="alert" className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-danger/30 bg-danger/[0.08] p-4 text-sm">
-            <div className="flex min-w-0 items-start gap-2">
-              <ShieldAlert size={16} className="mt-0.5 shrink-0 text-danger" aria-hidden="true" />
-              <div className="min-w-0 text-foreground">
-                <span className="font-semibold">This browser has not seen a session key expiry land for the vault you deployed.</span>{' '}
-                <span className="break-all font-mono text-xs">{unboundSetup.vault}</span>. Until one is set, its agent key has no time bound.
+        {setup && alert && !deployMode && (
+          <div
+            role="alert"
+            className={`space-y-3 rounded-2xl border p-4 text-sm ${alert === 'unbounded' ? 'border-danger/30 bg-danger/[0.08]' : 'border-warn/30 bg-warn/10'}`}
+          >
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div className="flex min-w-0 items-start gap-2">
+                <ShieldAlert size={16} className={`mt-0.5 shrink-0 ${alert === 'unbounded' ? 'text-danger' : 'text-warn'}`} aria-hidden="true" />
+                <div className="min-w-0 text-foreground">
+                  {alert === 'unbounded' ? (
+                    <>
+                      <span className="font-semibold">This browser has not seen a session key expiry land for the vault you deployed.</span>{' '}
+                      <span className="break-all font-mono text-xs">{setup.vault}</span>. Until one is set, its agent key has no time bound.
+                    </>
+                  ) : alert === 'untracked' ? (
+                    <>
+                      <span className="font-semibold">A vault deploy from this browser is no longer tracked, and no receipt was seen.</span> If it
+                      still lands, it creates a vault
+                      {setupAt ? (
+                        <>
+                          {' '}
+                          at <Mono>{setupAt}</Mono>
+                        </>
+                      ) : null}{' '}
+                      whose agent key has no time bound until one is set.
+                    </>
+                  ) : alert === 'deploying' ? (
+                    <>
+                      <span className="font-semibold">A vault deploy from this browser has no receipt yet.</span> Once it lands, the vault
+                      {setupAt ? (
+                        <>
+                          {' '}
+                          (expected at <Mono>{setupAt}</Mono>)
+                        </>
+                      ) : null}{' '}
+                      exists with an agent key that has no time bound until the setup sets one.
+                    </>
+                  ) : (
+                    <>
+                      <span className="font-semibold">Your wallet was asked to deploy a vault from this browser, and no transaction hash came back.</span>{' '}
+                      If it sent the deploy, the vault appears at <Mono>{setupAt ?? 'the address your next nonce creates'}</Mono> with an agent key
+                      that has no time bound until the setup sets one.
+                    </>
+                  )}
+                </div>
               </div>
+              <Button size="sm" onClick={() => openDeploy(setup.network)}>
+                Finish the setup
+              </Button>
             </div>
-            <Button size="sm" onClick={() => openDeploy(unboundSetup.network)}>
-              Finish the setup
-            </Button>
+            {/* The deploy is asked about here too, so leaving the setup view never stops its receipt being read. */}
+            {alert === 'deploying' && setup.deploy && (
+              <TxReceipt record={setup.deploy} onUpdate={(r) => store.patch(setup.startedAt, (s) => withRecord(s, 'deploy', r))} />
+            )}
           </div>
         )}
 
@@ -197,6 +240,7 @@ export default function ArcVault() {
             chain={target}
             onChainChange={(caip2) => setParams({ network: caip2, deploy: '1' }, { replace: true })}
             wallet={wallet}
+            store={store}
             onOpenVault={(net, addr) => pick(net, addr)}
             onClose={closeDeploy}
           />
@@ -249,7 +293,7 @@ export default function ArcVault() {
                 screen while the vault's new state loads under it. */}
             {shownTx && (
               <div className="space-y-2">
-                <TxReceipt record={shownTx} chain={chain} onUpdate={onTxUpdate} onSettled={() => void load()} />
+                <TxReceipt record={shownTx} onUpdate={onTxUpdate} onSettled={() => void load()} />
                 {shownTx.outcome !== 'pending' && (
                   <button
                     type="button"

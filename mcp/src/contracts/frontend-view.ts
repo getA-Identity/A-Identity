@@ -3,8 +3,8 @@
  *
  * The frontend is a separate package with a separate deploy and cannot import from mcp/, so
  * /app/vault/arc gets a GENERATED module instead: the ABI it encodes calls with, the creation
- * code a browser wallet deploys, and the runtime plus immutable ranges it checks a deployed
- * vault against. Pasting any of those by hand is how a page ends up deploying a build nobody
+ * code a browser wallet deploys, and the runtime plus the ranges of each named immutable it
+ * checks a deployed vault against. Pasting any of those by hand is how a page ends up deploying a build nobody
  * reviewed, so the text is rendered here from the compiled artifact, written by
  * scripts/gen-frontend-contracts.mjs, and compared byte for byte by frontend-sync.test.ts
  * and, without an mcp build, by the root scripts/check-vault-artifact.mjs.
@@ -48,11 +48,14 @@ export const AGENT_SPEND_POLICY_BYTECODE = '${AgentSpendPolicyBytecode}' as cons
 
 /**
  * The runtime code of this build with every immutable left as zero bytes. A deployed vault
- * runs this build when its code, with the ranges below set to zero, equals this exactly.
+ * runs this build, for a given owner and token, when its code equals this with every owner
+ * range below holding that owner and every usdc range that token, each as a 32-byte word.
+ * Zeroing the ranges and comparing the rest is NOT that check: a crafted copy can keep one
+ * owner where owner() reads it and another where onlyOwner checks it.
  */
 export const AGENT_SPEND_POLICY_RUNTIME = '${AgentSpendPolicyDeployedBytecode}' as const
 
-/** The byte ranges the constructor fills with the two immutables (owner and usdc), in order. */
+/** The byte ranges the constructor fills with each immutable, by name, in order. */
 export const AGENT_SPEND_POLICY_IMMUTABLES = ${JSON.stringify(AgentSpendPolicyImmutableReferences)} as const
 
 /** sha256 of the Solidity source this build was compiled from. */

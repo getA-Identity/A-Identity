@@ -171,12 +171,14 @@ export default function VaultStatus({
             {v.knownBuild ? (
               <>
                 <Chip tone="ok">This page's build</Chip> AgentSpendPolicy from mcp/contracts, source sha256 {AGENT_SPEND_POLICY_SOURCE_SHA256.slice(0, 12)}...,
-                solc {AGENT_SPEND_POLICY_COMPILER.solc.split('+')[0]}
+                solc {AGENT_SPEND_POLICY_COMPILER.solc.split('+')[0]}. Its code matches byte for byte with the owner and token below in every
+                slot the contract reads them from, so the owner shown is the key it obeys.
               </>
             ) : (
               <>
-                <Chip tone="warn">Not this page's build</Chip> Its views answer like the vault, but its code (with the owner and USDC
-                immutables zeroed) is not the build this page deploys, so the page offers no controls for it.
+                <Chip tone="warn">Not this page's build</Chip> Its views answer like the vault, but its code is not the build this page deploys
+                with the owner and token below written into it, so the owner shown may not be the key it obeys. The page offers no controls
+                and no funding for it.
               </>
             )}
           </Field>

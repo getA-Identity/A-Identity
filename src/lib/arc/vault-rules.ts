@@ -14,6 +14,9 @@
  *     owner, the zero address, the vault or the token.
  *   - Arc drops a transaction whose maxFeePerGas is under 20 gwei without an error or a
  *     receipt, so no fee below that floor is ever proposed.
+ *   - A vault is this page's build only when its code IS this build with the owner() and
+ *     usdc() it reports written into every one of their immutable slots. Zeroing the slots
+ *     and comparing the rest is not enough: a crafted copy can show one owner and obey another.
  *
  * Amounts are BigInt base units throughout. A float never touches money here.
  */
@@ -92,6 +95,12 @@ export function weiToUnitsCeil(wei: bigint, nativeDecimals: number, tokenDecimal
   if (nativeDecimals <= tokenDecimals) return wei * 10n ** BigInt(tokenDecimals - nativeDecimals)
   const scale = 10n ** BigInt(nativeDecimals - tokenDecimals)
   return (wei + scale - 1n) / scale
+}
+
+/** Native wei in the token's ERC-20 units, rounded DOWN so a balance is never overstated. */
+export function weiToUnitsFloor(wei: bigint, nativeDecimals: number, tokenDecimals: number): bigint {
+  if (nativeDecimals <= tokenDecimals) return wei * 10n ** BigInt(tokenDecimals - nativeDecimals)
+  return wei / 10n ** BigInt(nativeDecimals - tokenDecimals)
 }
 
 /**
@@ -196,17 +205,45 @@ export function withdrawRefusal(input: {
   return null
 }
 
+/** Gas an owner action takes, generously: a later freeze or withdraw needs this much left over. */
+export const OWNER_ACTION_GAS = 80_000n
+
+/** How many later owner actions a funding keeps the gas for: a freeze and a withdrawal. */
+export const OWNER_ACTIONS_KEPT = 2n
+
 /**
- * Why a funding transfer is refused, or null. On Arc USDC is also the gas token, so the
- * sender must keep enough after the transfer to pay for this transfer and what comes next.
+ * What a funding must leave behind for fees, in native wei: this transfer's own fee and the
+ * owner actions after it. Funding everything would leave the owner unable to pay the gas to
+ * stop the agent.
  */
-export function fundRefusal(input: { amount: bigint | null; senderBalance: bigint; gasReserve: bigint; decimals: number }): string | null {
+export function fundingReserveWei(gas: bigint, maxFeePerGas: bigint): bigint {
+  return (gas + OWNER_ACTIONS_KEPT * OWNER_ACTION_GAS) * maxFeePerGas
+}
+
+/**
+ * Why a funding transfer is refused, or null: the rule prepareFund applies, from the chain's own
+ * numbers. On Arc USDC is also the gas token, one balance at 18 decimals natively and 6 as an
+ * ERC-20, so the sender must keep fundingReserveWei after the transfer. The balance is rounded
+ * down and the reserve up, so neither is ever in the sender's favour.
+ */
+export function fundRefusal(input: {
+  amount: bigint | null
+  /** The sender's native balance, in wei. */
+  senderWei: bigint
+  /** This transfer's gas limit and fee cap, as prepared. */
+  gas: bigint
+  maxFeePerGas: bigint
+  nativeDecimals: number
+  decimals: number
+}): string | null {
   if (input.amount === null || input.amount <= 0n) return `Enter an amount above 0, with at most ${input.decimals} decimal places.`
-  if (input.amount + input.gasReserve > input.senderBalance)
+  const balance = weiToUnitsFloor(input.senderWei, input.nativeDecimals, input.decimals)
+  const reserve = weiToUnitsCeil(fundingReserveWei(input.gas, input.maxFeePerGas), input.nativeDecimals, input.decimals)
+  if (input.amount + reserve > balance)
     return (
-      `Your wallet holds ${formatUnitsExact(input.senderBalance, input.decimals)} USDC, and on Arc USDC also pays the network fee. ` +
-      `Keep at least ${formatUnitsExact(input.gasReserve, input.decimals)} USDC for fees: send ${formatUnitsExact(
-        input.senderBalance > input.gasReserve ? input.senderBalance - input.gasReserve : 0n,
+      `Your wallet holds ${formatUnitsExact(balance, input.decimals)} USDC, and on Arc USDC also pays the network fee. ` +
+      `Keep at least ${formatUnitsExact(reserve, input.decimals)} USDC for this fee and two later owner actions (a freeze, a withdrawal): send ${formatUnitsExact(
+        balance > reserve ? balance - reserve : 0n,
         input.decimals,
       )} or less.`
     )
@@ -219,28 +256,59 @@ export function aboveSoftWarn(amount: bigint, decimals: number): boolean {
   return line !== null && amount > line
 }
 
+/** Where the constructor writes each immutable into the runtime, by the immutable's name. */
+export type ImmutableRanges = Readonly<Record<string, readonly { start: number; length: number }[]>>
+
+/** An address as the 32-byte word solc stores an immutable address in: 12 zero bytes, then the 20. */
+export function addressWord(address: string): string | null {
+  return isHexAddress(address) ? `${'0'.repeat(24)}${address.trim().slice(2).toLowerCase()}` : null
+}
+
 /**
- * The runtime code with its immutable ranges set to zero, so it can be compared with the build
- * as solc emitted it. Null when a range falls outside the code: that cannot be this build.
+ * The runtime this build installs for the given immutable values: `runtime` with every range of
+ * each named immutable holding that immutable's address as a 32-byte word (both of this vault's
+ * immutables, owner and usdc, are addresses). Null, failing closed, when an immutable has no
+ * usable value, a value names no immutable, or a range is not one word, overlaps another, or
+ * falls outside the code.
  */
-export function maskImmutables(code: string, ranges: readonly { start: number; length: number }[]): string | null {
-  const hex = (code.startsWith('0x') ? code.slice(2) : code).toLowerCase()
-  if (hex.length % 2 !== 0) return null
-  const sorted = [...ranges].sort((a, b) => a.start - b.start)
+export function runtimeWith(runtime: string, ranges: ImmutableRanges, values: Readonly<Record<string, string>>): string | null {
+  const hex = bareHex(runtime)
+  if (hex === null) return null
+  const names = Object.keys(ranges)
+  const given = (n: string) => Object.prototype.hasOwnProperty.call(values, n)
+  if (names.length === 0 || names.length !== Object.keys(values).length || !names.every(given)) return null
+  const slots: { start: number; length: number; word: string }[] = []
+  for (const name of names) {
+    const word = addressWord(values[name])
+    if (word === null) return null
+    for (const r of ranges[name]) slots.push({ start: r.start, length: r.length, word })
+  }
+  slots.sort((a, b) => a.start - b.start)
   let out = ''
   let pos = 0
-  for (const r of sorted) {
-    if (r.start < pos || (r.start + r.length) * 2 > hex.length) return null
-    out += hex.slice(pos * 2, r.start * 2) + '0'.repeat(r.length * 2)
+  for (const r of slots) {
+    if (r.length !== 32 || r.start < pos || (r.start + r.length) * 2 > hex.length) return null
+    out += hex.slice(pos * 2, r.start * 2) + r.word
     pos = r.start + r.length
   }
   return `0x${out}${hex.slice(pos * 2)}`
 }
 
-/** True when `code` is the build whose runtime (immutables zeroed) is `runtime`. */
-export function isKnownBuild(code: string, runtime: string, ranges: readonly { start: number; length: number }[]): boolean {
-  const masked = maskImmutables(code, ranges)
-  return masked !== null && masked === runtime.toLowerCase()
+/**
+ * True when `code` is exactly this build with these immutable values: `runtime` with each value
+ * written into its own ranges, compared byte for byte. Pass the owner() and usdc() the vault
+ * itself reports, so the owner the page shows is the only key its owner checks obey.
+ */
+export function isKnownBuild(code: string, runtime: string, ranges: ImmutableRanges, values: Readonly<Record<string, string>>): boolean {
+  const expected = runtimeWith(runtime, ranges, values)
+  const actual = typeof code === 'string' ? bareHex(code) : null
+  return expected !== null && actual !== null && `0x${actual}` === expected
+}
+
+/** Hex without its 0x, lower case, or null when it is not whole bytes of hex. */
+function bareHex(x: string): string | null {
+  const h = (/^0x/i.test(x) ? x.slice(2) : x).toLowerCase()
+  return h.length % 2 === 0 && /^[0-9a-f]*$/.test(h) ? h : null
 }
 
 /** "in 6d 23h" or "4h 5m ago", for UNIX seconds against a chain time in seconds. */

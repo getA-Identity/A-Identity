@@ -39,15 +39,28 @@ test('the vault artifact was compiled from the Solidity source on disk', () => {
 test('the runtime a vault is checked against is the runtime this creation code deploys', () => {
   // The creation code carries the runtime with its immutables still zero and the constructor
   // writes them in. So the runtime must appear verbatim inside the creation code, and every
-  // immutable range must sit inside the runtime and hold zeros there: otherwise "zero those
-  // ranges and compare" would vouch for a build this page does not deploy.
+  // immutable range must sit inside the runtime and hold zeros there: otherwise "write the
+  // owner and token in and compare" would vouch for a build this page does not deploy.
   const creation = AgentSpendPolicyBytecode.slice(2)
   const runtime = AgentSpendPolicyDeployedBytecode.slice(2)
   assert.ok(runtime.length > 0, 'the artifact carries no runtime code')
   assert.ok(creation.includes(runtime), 'the runtime is not the one embedded in the creation code')
-  assert.ok(AgentSpendPolicyImmutableReferences.length > 0, 'AgentSpendPolicy has two immutables, so it must carry their ranges')
-  for (const r of AgentSpendPolicyImmutableReferences) {
-    assert.ok(r.start >= 0 && r.start + r.length <= runtime.length / 2, `immutable range ${r.start}+${r.length} lies outside the runtime`)
-    assert.equal(runtime.slice(r.start * 2, (r.start + r.length) * 2), '0'.repeat(r.length * 2), `immutable range at ${r.start} is not zero in the runtime`)
+  for (const [name, ranges] of Object.entries(AgentSpendPolicyImmutableReferences)) {
+    for (const r of ranges) {
+      assert.ok(r.start >= 0 && r.start + r.length <= runtime.length / 2, `${name} range ${r.start}+${r.length} lies outside the runtime`)
+      assert.equal(runtime.slice(r.start * 2, (r.start + r.length) * 2), '0'.repeat(r.length * 2), `${name} range at ${r.start} is not zero in the runtime`)
+    }
   }
+})
+
+test('the immutable ranges are kept per immutable, so each one can be checked against its own value', () => {
+  // Flattened into one list, the ranges let a check zero them all and compare the rest, which
+  // passes a copy whose owner() reads one key while onlyOwner checks another. Grouped by name,
+  // the page can require every owner range to hold the owner() it shows.
+  const refs = AgentSpendPolicyImmutableReferences
+  assert.deepEqual(Object.keys(refs), ['owner', 'usdc'], 'AgentSpendPolicy has exactly two immutables, owner and usdc')
+  const all = [...refs.owner, ...refs.usdc].sort((a, b) => a.start - b.start)
+  assert.ok(refs.owner.length > 1 && refs.usdc.length > 1, 'each immutable is read in more than one place, which is why one value per name must be enforced')
+  for (const r of all) assert.equal(r.length, 32, `an immutable range at ${r.start} is not one 32-byte word`)
+  for (let i = 1; i < all.length; i++) assert.ok(all[i - 1].start + all[i - 1].length <= all[i].start, `immutable ranges at ${all[i - 1].start} and ${all[i].start} overlap`)
 })

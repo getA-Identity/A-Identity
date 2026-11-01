@@ -10,7 +10,9 @@
  *
  * A receipt is different: one host returning null proves nothing on Arc (on 2026-10-11 one of
  * the four mainnet hosts returned none of 19 receipts that exist), so a receipt is asked of
- * every host at once and the first one found decides.
+ * every host at once and the first one found decides. A write's effect is then read back pinned
+ * to the receipt's own block, on the host that returned the receipt first, so a host one block
+ * behind cannot make a landed write look as if it did nothing.
  *
  * A failed read is a result, not an exception, and it carries when and why it failed, so the
  * page can say so instead of showing the previous numbers as if they were current.
@@ -36,7 +38,10 @@ import {
 } from 'viem'
 import { CHAIN_BY_ID, CHAIN_RPC_URLS, CHAIN_USDC, type Chain } from '../chains'
 import { AGENT_SPEND_POLICY_ABI, AGENT_SPEND_POLICY_IMMUTABLES, AGENT_SPEND_POLICY_RUNTIME } from '../contracts/agent-spend-policy'
+import { firstFound, missingFrom, type DecodedLog, type Expectation } from './tx-rules'
 import { isKnownBuild, sameAddress } from './vault-rules'
+
+export type { Expectation, VaultEventName } from './tx-rules'
 
 // --- which chains ---
 
@@ -210,7 +215,10 @@ export type VaultSnapshot = {
   decimals: number
   codeHash: Hex
   codeBytes: number
-  /** The on-chain code, immutables zeroed, is the build this page deploys. */
+  /**
+   * The on-chain code is exactly the build this page deploys, with the owner and usdc read above
+   * written into every one of their immutable slots: the owner shown is the key the vault obeys.
+   */
   knownBuild: boolean
   /** dailyCap - spentToday, floored at 0; null when dailyCap is 0 (no cap). */
   remainingToday: bigint | null
@@ -245,15 +253,26 @@ export const READ_FAILURE_NEXT: Record<ReadFailureKind, string> = {
   unreachable: 'Check your connection, then press Refresh. Nothing is shown in place of the values until a read succeeds.',
 }
 
-/** Read one vault live, every value pinned to one block on one host. */
-export async function readVault(chain: Chain, address: string): Promise<ReadResult<VaultSnapshot>> {
+/**
+ * Read one vault live, every value pinned to one block on one host. By default that block is the
+ * host's latest. With `blockNumber`, every value is read AT that block (a host that has not
+ * reached it is skipped), which is how a write's effect is read back at its receipt's block;
+ * `preferHost` is asked first, the host that returned the receipt.
+ */
+export async function readVault(
+  chain: Chain,
+  address: string,
+  opts: { blockNumber?: bigint; preferHost?: string } = {},
+): Promise<ReadResult<VaultSnapshot>> {
   if (!isAddress(address.trim(), { strict: false })) return failed('bad_address', 'the text is not 0x followed by 40 hexadecimal characters')
   const vault = getAddress(address.trim())
   const usdc = usdcOf(chain)
   if (!usdc) return failed('no_usdc', `${chain.name} has no USDC entry in the registry`)
   const tried: string[] = []
   let lastReason = ''
-  for (const url of rpcUrls(chain)) {
+  const urls = [...rpcUrls(chain)]
+  if (opts.preferHost) urls.sort((a, b) => Number(hostOf(b) === opts.preferHost) - Number(hostOf(a) === opts.preferHost))
+  for (const url of urls) {
     const host = hostOf(url)
     tried.push(host)
     const client = clientFor(chain, url)
@@ -263,7 +282,12 @@ export async function readVault(chain: Chain, address: string): Promise<ReadResu
         lastReason = `${host} answered for chain ${id}, not ${chain.chainId}`
         continue
       }
-      const head = await client.getBlock({ blockTag: 'latest' })
+      const latest = await client.getBlock({ blockTag: 'latest' })
+      if (opts.blockNumber !== undefined && latest.number < opts.blockNumber) {
+        lastReason = `${host} is at block ${latest.number}, not yet at ${opts.blockNumber}`
+        continue
+      }
+      const head = opts.blockNumber === undefined || latest.number === opts.blockNumber ? latest : await client.getBlock({ blockNumber: opts.blockNumber })
       const blockNumber = head.number
       const code = await client.getCode({ address: vault, blockNumber })
       if (!code || code === '0x') return failed('no_contract', `${host} has no code at ${vault} at block ${blockNumber}`)
@@ -287,7 +311,9 @@ export async function readVault(chain: Chain, address: string): Promise<ReadResu
         if (isContractAnswer(e)) return failed('not_a_vault', 'one of its views reverted or returned nothing, so it is not an AgentSpendPolicy vault')
         throw e
       }
-      const [owner, operator, token, dailyCap, autoApproveMax, frozen, allowlistEnabled, sessionKeyExpiry, today, spentToday, balance] = views
+      const [ownerRaw, operator, tokenRaw, dailyCap, autoApproveMax, frozen, allowlistEnabled, sessionKeyExpiry, today, spentToday, balance] = views
+      const owner = getAddress(ownerRaw)
+      const token = getAddress(tokenRaw)
       const remainingToday = dailyCap === 0n ? null : dailyCap > spentToday ? dailyCap - spentToday : 0n
       return {
         ok: true,
@@ -299,9 +325,9 @@ export async function readVault(chain: Chain, address: string): Promise<ReadResu
           block: blockNumber,
           chainTime: head.timestamp,
           readAt: new Date().toISOString(),
-          owner: getAddress(owner),
+          owner,
           operator: getAddress(operator),
-          usdc: getAddress(token),
+          usdc: token,
           usdcMatches: sameAddress(token, usdc.address),
           dailyCap,
           autoApproveMax,
@@ -314,7 +340,9 @@ export async function readVault(chain: Chain, address: string): Promise<ReadResu
           decimals: usdc.decimals,
           codeHash: keccak256(code),
           codeBytes: (code.length - 2) / 2,
-          knownBuild: isKnownBuild(code, AGENT_SPEND_POLICY_RUNTIME, AGENT_SPEND_POLICY_IMMUTABLES),
+          // The owner() and usdc() it just answered, written into every slot of each: a copy
+          // whose owner() reads one key while onlyOwner checks another is not this build.
+          knownBuild: isKnownBuild(code, AGENT_SPEND_POLICY_RUNTIME, AGENT_SPEND_POLICY_IMMUTABLES, { owner, usdc: token }),
           remainingToday,
           resetsAt: (today + 1n) * 86400n,
           expired: sessionKeyExpiry !== 0n && head.timestamp > sessionKeyExpiry,
@@ -494,79 +522,36 @@ export type ReceiptPoll =
  * "not found" decides nothing, and neither does a host that did not answer: they only count
  * toward how many hosts were asked.
  */
-export function pollReceipt(chain: Chain, hash: Hex): Promise<ReceiptPoll> {
+export async function pollReceipt(chain: Chain, hash: Hex): Promise<ReceiptPoll> {
   const urls = rpcUrls(chain)
-  return new Promise((resolve) => {
-    if (urls.length === 0) {
-      resolve({ found: false, answered: 0, total: 0 })
-      return
-    }
-    let settled = 0
-    let answered = 0
-    let done = false
-    for (const url of urls) {
-      clientFor(chain, url)
-        .getTransactionReceipt({ hash })
-        .then(
-          (receipt) => {
-            settled += 1
-            answered += 1
-            if (done) return
-            done = true
-            resolve({ found: true, receipt, host: hostOf(url), answered, total: urls.length })
-          },
-          (e) => {
-            settled += 1
-            if (e instanceof TransactionReceiptNotFoundError) answered += 1
-            if (!done && settled === urls.length) {
-              done = true
-              resolve({ found: false, answered, total: urls.length })
-            }
-          },
-        )
-    }
-  })
+  const r = await firstFound(
+    urls.map((url) => clientFor(chain, url).getTransactionReceipt({ hash })),
+    (e) => e instanceof TransactionReceiptNotFoundError,
+  )
+  return r.found ? { found: true, receipt: r.value, host: hostOf(urls[r.index]), answered: r.answered, total: r.total } : r
 }
 
-// --- what a receipt must carry ---
+// --- what a receipt carries ---
 
-export type VaultEventName = 'SessionKeyExpirySet' | 'FrozenSet' | 'PolicyUpdated' | 'OperatorSet' | 'Withdrawn'
-
-/** One thing a settled receipt must contain. Addresses compare case-insensitively. */
-export type Expectation =
-  | { kind: 'event'; address: string; eventName: VaultEventName; args: Record<string, string | bigint | boolean> }
-  | { kind: 'transfer'; token: string; from: string; to: string; value: bigint }
-
-function argEquals(a: unknown, b: string | bigint | boolean): boolean {
-  if (typeof b === 'string') return typeof a === 'string' && sameAddress(a, b)
-  return a === b
+/**
+ * Every log in the receipt that decodes as one of the vault's events or as an ERC-20 Transfer,
+ * with the address that emitted it. Which of them a write needed is tx-rules.ts's question.
+ */
+export function decodeLogs(receipt: TransactionReceipt): DecodedLog[] {
+  const shape = (l: { address: string; eventName: string; args: unknown }): DecodedLog => ({
+    address: l.address,
+    eventName: l.eventName,
+    args: (l.args ?? {}) as Record<string, unknown>,
+  })
+  return [
+    ...parseEventLogs({ abi: AGENT_SPEND_POLICY_ABI, logs: receipt.logs }).map(shape),
+    ...parseEventLogs({ abi: ERC20_ABI, eventName: 'Transfer', logs: receipt.logs }).map(shape),
+  ]
 }
 
 /** Which expectations the receipt does NOT meet, as plain descriptions. Empty means all met. */
 export function missingFromReceipt(receipt: TransactionReceipt, expect: readonly Expectation[]): string[] {
-  const missing: string[] = []
-  for (const x of expect) {
-    if (x.kind === 'event') {
-      const logs = parseEventLogs({ abi: AGENT_SPEND_POLICY_ABI, eventName: x.eventName, logs: receipt.logs })
-      const hit = logs.some(
-        (l) =>
-          sameAddress(l.address, x.address) &&
-          Object.entries(x.args).every(([k, v]) => argEquals((l.args as Record<string, unknown>)[k], v)),
-      )
-      if (!hit) missing.push(`a ${x.eventName} event from the vault with the values sent`)
-    } else {
-      const logs = parseEventLogs({ abi: ERC20_ABI, eventName: 'Transfer', logs: receipt.logs })
-      const hit = logs.some(
-        (l) =>
-          sameAddress(l.address, x.token) &&
-          sameAddress(l.args.from, x.from) &&
-          sameAddress(l.args.to, x.to) &&
-          l.args.value === x.value,
-      )
-      if (!hit) missing.push('a USDC Transfer of the exact amount between the expected addresses')
-    }
-  }
-  return missing
+  return missingFrom(decodeLogs(receipt), expect)
 }
 
 // --- formatting ---

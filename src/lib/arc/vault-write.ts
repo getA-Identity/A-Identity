@@ -8,10 +8,14 @@
  *      owner or zero, a withdrawal to the vault or the token), encode the call, SIMULATE it
  *      with eth_call as the owner so a NotOwner or an InvalidPayee shows up before the wallet
  *      opens, estimate gas, and price it at or above Arc's 20 gwei floor.
- *   2. send: put the wallet on the vault's chain, read eth_chainId and eth_accounts AGAIN right
- *      before sending, then eth_sendTransaction with explicit gas and fee fields.
+ *   2. send (send.ts): put the wallet on the vault's chain, read eth_chainId and eth_accounts
+ *      AGAIN right before sending, then eth_sendTransaction with explicit gas and fee fields.
  *   3. the receipt, polled across every RPC (TxReceipt.tsx), must carry the expected event
  *      before anything is called settled.
+ *
+ * Every write on an existing vault first re-reads its code and requires it to be this build with
+ * the owner() and usdc() the page showed written into every immutable slot, so the owner on
+ * screen is the only key the vault's owner checks obey.
  *
  * Every prepared write is a plain object (contract, function, arguments, network, fee) that
  * the page shows before the wallet is asked, the browser's version of prepared-or-executed.
@@ -25,13 +29,12 @@ import {
   getAddress,
   getContractAddress,
   isAddress,
-  toHex,
   type Address,
   type Hex,
 } from 'viem'
 import type { Chain } from '../chains'
 import { AGENT_SPEND_POLICY_ABI, AGENT_SPEND_POLICY_BYTECODE, AGENT_SPEND_POLICY_IMMUTABLES, AGENT_SPEND_POLICY_RUNTIME } from '../contracts/agent-spend-policy'
-import { ensureEvmChain, isWalletRejection, type Eip1193 } from '../wallets'
+import { messageOf, TxStop, txStop as stop } from './send'
 import {
   ERC20_ABI,
   RpcUnreachableError,
@@ -45,11 +48,12 @@ import {
   type VaultSnapshot,
 } from './vault-read'
 import {
-  FEE_FLOOR_WEI,
+  OWNER_ACTION_GAS,
   capsRefusal,
   expiryRefusal,
   feeFields,
   formatUnitsExact,
+  fundRefusal,
   gasWithMargin,
   isKnownBuild,
   operatorRefusal,
@@ -60,17 +64,11 @@ import {
   withdrawRefusal,
 } from './vault-rules'
 
+// The send path and its typed failures live in send.ts, where the suite can drive them; the
+// page's components keep importing them from here.
+export { STEP_LABEL, TxStop, failureOf, sendPrepared, type TxFailure, type TxFailureCode, type TxStep } from './send'
+
 export type TxAction = 'deploy' | 'expiry' | 'fund' | 'freeze' | 'unfreeze' | 'policy' | 'withdraw' | 'extend' | 'revoke' | 'operator'
-
-export type TxStep = 'checking' | 'simulating' | 'switching' | 'wallet' | 'submitted'
-
-export const STEP_LABEL: Record<TxStep, string> = {
-  checking: 'Reading the chain',
-  simulating: 'Simulating as the owner',
-  switching: 'Checking your wallet network',
-  wallet: 'Waiting for your wallet',
-  submitted: 'Submitted',
-}
 
 /** One argument of the prepared call, as shown before signing. */
 export type ShownArg = { name: string; value: string; note?: string }
@@ -101,61 +99,11 @@ export type PreparedTx = {
   preparedAt: number
 }
 
-export type TxFailureCode =
-  | 'refused'
-  | 'reverted_in_simulation'
-  | 'not_this_build'
-  | 'insufficient_gas'
-  | 'rpc_unreachable'
-  | 'no_wallet'
-  | 'rejected'
-  | 'wrong_chain'
-  | 'account_mismatch'
-  | 'wallet_pending'
-  | 'fee_too_low'
-  | 'nonce'
-  | 'wallet_error'
-
-export type TxFailure = { code: TxFailureCode; message: string; errorName?: string }
-
-/** A stop with a typed reason. Thrown inside this module and turned into a TxFailure by the page. */
-export class TxStop extends Error {
-  readonly failure: TxFailure
-  constructor(failure: TxFailure) {
-    super(failure.message)
-    this.name = 'TxStop'
-    this.failure = failure
-  }
-}
-
-const stop = (code: TxFailureCode, message: string, errorName?: string) => new TxStop({ code, message, ...(errorName ? { errorName } : {}) })
-
 /** A prepared write older than this is prepared again before the wallet sees it: fees and nonces move. */
 const PREPARED_TTL_MS = 60_000
 export const preparedStale = (p: PreparedTx) => Date.now() - p.preparedAt > PREPARED_TTL_MS
 
-/** Gas an owner action takes, generously: a later freeze or withdraw needs this much left over. */
-const OWNER_ACTION_GAS = 80_000n
-
 // --- errors ---
-
-function messageOf(e: unknown): string {
-  if (e instanceof BaseError) return e.shortMessage
-  if (e instanceof Error) return e.message
-  if (e && typeof e === 'object' && 'message' in e) return String((e as { message: unknown }).message)
-  return typeof e === 'string' ? e : ''
-}
-
-function codeOf(e: unknown): number | undefined {
-  let x: unknown = e
-  for (let i = 0; i < 8 && x && typeof x === 'object'; i++) {
-    const o = x as { code?: unknown; data?: { originalError?: { code?: unknown } }; cause?: unknown }
-    if (typeof o.code === 'number') return o.code
-    if (typeof o.data?.originalError?.code === 'number') return o.data.originalError.code
-    x = o.cause
-  }
-  return undefined
-}
 
 /** The revert data somewhere in an error's cause chain, however the host or wallet wrapped it. */
 function revertData(e: unknown): Hex | null {
@@ -193,23 +141,6 @@ export function contractErrorName(e: unknown): string | null {
     }
   }
   return null
-}
-
-/** Any thrown value as a typed failure, never an uncaught one. */
-export function failureOf(e: unknown): TxFailure {
-  if (e instanceof TxStop) return e.failure
-  if (e instanceof RpcUnreachableError) return { code: 'rpc_unreachable', message: e.message }
-  if (isWalletRejection(e) || codeOf(e) === 4001) return { code: 'rejected', message: 'You declined in your wallet. Nothing was sent.' }
-  const msg = messageOf(e)
-  const code = codeOf(e)
-  if (code === -32002 || /already pending|already processing/i.test(msg))
-    return { code: 'wallet_pending', message: 'Your wallet already has a request open. Finish or dismiss it there, then try again.' }
-  if (code === 4100) return { code: 'account_mismatch', message: 'Your wallet has not authorized this account for this site. Connect it again.' }
-  if (/insufficient funds/i.test(msg)) return { code: 'insufficient_gas', message: msg }
-  if (/fee cap|max fee per gas|underpriced|base fee/i.test(msg)) return { code: 'fee_too_low', message: msg }
-  if (/nonce/i.test(msg)) return { code: 'nonce', message: msg }
-  if (/chain ?id|wrong chain|chain mismatch/i.test(msg)) return { code: 'wrong_chain', message: msg }
-  return { code: 'wallet_error', message: msg || 'The wallet stopped the request without saying why.' }
 }
 
 /** A revert during simulation, named, or the host's own failure passed on. */
@@ -268,6 +199,17 @@ function assertOurBuild(v: VaultSnapshot): void {
   if (!v.usdcMatches) throw stop('not_this_build', "This vault holds a token that is not the registry's USDC, so this page builds no calls for it.")
 }
 
+/**
+ * The vault's code, read again on the host about to simulate the write, must still be this build
+ * with the owner and token the snapshot showed written into every immutable slot. That is what
+ * makes "only its owner can take it out" true of the owner on screen.
+ */
+async function assertCodeStill(c: ArcClient, v: VaultSnapshot): Promise<void> {
+  const code = await c.getCode({ address: v.address })
+  if (!code || !isKnownBuild(code, AGENT_SPEND_POLICY_RUNTIME, AGENT_SPEND_POLICY_IMMUTABLES, { owner: v.owner, usdc: v.usdc }))
+    throw stop('not_this_build', 'The code at this address is not the build this page deploys with the owner and USDC shown. Nothing was sent.')
+}
+
 // --- deploy ---
 
 /**
@@ -309,7 +251,8 @@ export async function prepareDeploy(
     throw simulationStop(e, 'the deploy')
   }
   const { sim, nonce, fee, gas } = r.value
-  if (!isKnownBuild(sim, AGENT_SPEND_POLICY_RUNTIME, AGENT_SPEND_POLICY_IMMUTABLES))
+  // Exactly this build, with this owner and the registry's USDC in every immutable slot.
+  if (!isKnownBuild(sim, AGENT_SPEND_POLICY_RUNTIME, AGENT_SPEND_POLICY_IMMUTABLES, { owner, usdc: usdc.address }))
     throw stop('not_this_build', 'The simulated deploy did not install the build this page carries. Nothing was sent; reload the page.')
   const units = (x: bigint) => `${formatUnitsExact(x, usdc.decimals)} USDC (${x.toString()} units)`
   return {
@@ -382,9 +325,7 @@ export async function prepareOwnerCall(chain: Chain, v: VaultSnapshot, call: Own
   let r
   try {
     r = await onFirstHost(chain, async (c) => {
-      const code = await c.getCode({ address: vault })
-      if (!code || !isKnownBuild(code, AGENT_SPEND_POLICY_RUNTIME, AGENT_SPEND_POLICY_IMMUTABLES))
-        throw stop('not_this_build', 'The code at this address is no longer the build this page deploys. Nothing was sent.')
+      await assertCodeStill(c, v)
       let expiry: bigint | undefined
       if (call.fn === 'extend') {
         const head = await c.getBlock({ blockTag: 'latest' })
@@ -542,18 +483,26 @@ export async function prepareFund(chain: Chain, v: VaultSnapshot, from: string, 
   const sender = checkedAddress(from, 'sender')
   if (amount <= 0n) throw stop('refused', 'Enter an amount above 0.')
   const data = encodeFunctionData({ abi: ERC20_ABI, functionName: 'transfer', args: [v.address, amount] })
-  // On Arc the ERC-20 face and the native balance are one balance at 6 and 18 decimals.
-  const scale = 10n ** BigInt(chain.nativeCurrency.decimals - usdc.decimals)
   let r
   try {
     r = await onFirstHost(chain, async (c) => {
+      await assertCodeStill(c, v)
       const sim = await c.call({ account: sender, to: usdc.address, data })
       const estimate = await c.estimateGas({ account: sender, to: usdc.address, data })
       const fee = await feeQuote(c)
       const gas = gasWithMargin(estimate)
-      // Keep enough behind for two later owner actions (a freeze, a withdrawal): funding
-      // everything would leave the owner unable to pay the gas to stop the agent.
-      await assertCovered(c, chain, sender, (gas + 2n * OWNER_ACTION_GAS) * fee.maxFeePerGas, amount * scale)
+      // On Arc the ERC-20 face and the native balance are one balance at 6 and 18 decimals.
+      // fundRefusal keeps this fee and two later owner actions (a freeze, a withdrawal) behind:
+      // funding everything would leave the owner unable to pay the gas to stop the agent.
+      const refusal = fundRefusal({
+        amount,
+        senderWei: await c.getBalance({ address: sender }),
+        gas,
+        maxFeePerGas: fee.maxFeePerGas,
+        nativeDecimals: chain.nativeCurrency.decimals,
+        decimals: usdc.decimals,
+      })
+      if (refusal) throw stop('insufficient_gas', refusal)
       return { sim: sim.data ?? '0x', fee, gas }
     })
   } catch (e) {
@@ -583,61 +532,4 @@ export async function prepareFund(chain: Chain, v: VaultSnapshot, from: string, 
     expect: [{ kind: 'transfer', token: usdc.address, from: sender, to: v.address, value: amount }],
     preparedAt: Date.now(),
   }
-}
-
-// --- sending ---
-
-/**
- * Hand a prepared write to the owner's wallet. The chain is checked twice: ensureEvmChain
- * switches (or adds) it, and then eth_chainId is read again immediately before sending, so a
- * network change in between can never send this to another chain. The account is checked the
- * same way. Returns the hash the moment the wallet gives it.
- */
-export async function sendPrepared(provider: Eip1193, p: PreparedTx, onStep: (s: TxStep) => void): Promise<Hex> {
-  if (p.maxFeePerGas < FEE_FLOOR_WEI) throw stop('fee_too_low', 'The prepared fee is under the 20 gwei floor Arc enforces. Nothing was sent.')
-  if (p.action === 'deploy' && p.to !== null) throw stop('refused', 'A deploy has no recipient. Nothing was sent.')
-  onStep('switching')
-  try {
-    await ensureEvmChain(provider, p.chain)
-  } catch (e) {
-    throw stop(isWalletRejection(e) ? 'rejected' : 'wrong_chain', messageOf(e) || `Your wallet could not switch to ${p.chain.name}.`)
-  }
-  let walletChain: number
-  let account: string | undefined
-  try {
-    const hex = await provider.request({ method: 'eth_chainId' })
-    walletChain = typeof hex === 'string' ? parseInt(hex, 16) : Number(hex)
-    const accounts = (await provider.request({ method: 'eth_accounts' })) as string[] | undefined
-    account = accounts?.[0]
-  } catch (e) {
-    throw stop('wallet_error', `Your wallet did not say which chain and account it is on: ${messageOf(e)}`)
-  }
-  if (walletChain !== p.chain.chainId)
-    throw stop('wrong_chain', `Your wallet is on chain ${walletChain}; this transaction is for ${p.chain.name} (chain ${p.chain.chainId}). Nothing was sent.`)
-  if (!sameAddress(account, p.from))
-    throw stop(
-      'account_mismatch',
-      `Your wallet's active account is ${account ?? 'none'}, but this transaction is from ${p.from}. Pick that account in your wallet. Nothing was sent.`,
-    )
-  onStep('wallet')
-  const tx = {
-    from: p.from,
-    ...(p.to ? { to: p.to } : {}),
-    data: p.data,
-    value: '0x0',
-    gas: toHex(p.gas),
-    maxFeePerGas: toHex(p.maxFeePerGas),
-    maxPriorityFeePerGas: toHex(p.maxPriorityFeePerGas),
-    chainId: toHex(p.chain.chainId as number),
-  }
-  let hash: unknown
-  try {
-    hash = await provider.request({ method: 'eth_sendTransaction', params: [tx] })
-  } catch (e) {
-    throw new TxStop(failureOf(e))
-  }
-  if (typeof hash !== 'string' || !/^0x[0-9a-fA-F]{64}$/.test(hash))
-    throw stop('wallet_error', 'The wallet returned no transaction hash, so nothing can be tracked. Check your wallet\'s activity list before trying again.')
-  onStep('submitted')
-  return hash as Hex
 }
