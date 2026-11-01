@@ -103,6 +103,7 @@ leaves the caller's process.
 - [Documentation](https://a-identity.mintlify.site): the human-facing docs site.
 - [Quickstart](https://a-identity.mintlify.site/developers/quickstart): first call in a few minutes.
 - [Integrate on Arc Mainnet in 10 minutes](https://a-identity.mintlify.site/chains/arc-integration): buy a trust check through Circle Gateway nanopayments before your agent pays on Arc Mainnet; the 402, the payment, the ALLOW / WARN / DENY verdict, and where a payment from your own wallet shows up as external at https://a-identity.xyz/proof/arc.
+- Verify then pay on Arc Mainnet: `POST https://a-identity.xyz/api/x402/gateway/verify-then-pay`, `GET /api/x402/gateway/flows/<flowId>` (public record), `POST /api/x402/gateway/flows/<flowId>/receipt`. Never signs.
 - [SDK reference](https://a-identity.mintlify.site/developers/sdk)
 - [MCP server guide](https://a-identity.mintlify.site/developers/mcp-server)
 - [Architecture](https://a-identity.xyz/architecture): how the pieces fit together.
