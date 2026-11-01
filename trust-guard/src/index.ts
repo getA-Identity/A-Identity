@@ -10,13 +10,16 @@
  *   await guard(counterpartyAgentId, { txContext: { amountUsd: 500, kind: 'payment' } })
  *   // ...only runs if the counterparty is not DENY. Otherwise it throws TrustDenyError.
  *
- * The tools are sold per call over x402 on two rails, and this SDK never hides that:
+ * The tools are sold per call over x402 on three rails, and this SDK never hides that:
  *
  *  - rail 'xlayer' (the default, unchanged since 0.1): the OKX.AI Trust Oracle, paid in
  *    USDT0 on X Layer mainnet.
  *  - rail 'algorand': the same verdicts plus a batch audit, paid in USDC on Algorand
  *    mainnet. Pair it with `algorandPayer` from `@a-identity/trust-guard/algorand` and the
  *    agent pays from its own account, under a per-call spending cap.
+ *  - rail 'arc': USDC through Circle Gateway on Arc Mainnet, signed from a Gateway balance.
+ *    `arcGatewayPayer` from `@a-identity/trust-guard/arc` pays for a verdict, and
+ *    `verifyThenPay` from the same entry point buys a verdict and then pays from a vault.
  *
  * If a call returns HTTP 402, the guard either invokes your `onPaymentRequired` payer and
  * retries once, or throws `PaymentRequiredError` with the challenge so you can pay.
@@ -25,7 +28,7 @@
 export type Decision = 'ALLOW' | 'WARN' | 'DENY'
 
 /** Which x402 rail the calls go to and are paid on. */
-export type Rail = 'xlayer' | 'algorand'
+export type Rail = 'xlayer' | 'algorand' | 'arc'
 
 /** A transaction the guard is being asked about (sharpens the verdict). */
 export interface TxContext {
@@ -67,13 +70,39 @@ export interface BatchAudit {
   [k: string]: unknown
 }
 
+/** A risk_check bought through Circle Gateway: what was paid, and how to find it again. */
+export interface GatewayCheckReference {
+  /** CAIP-2 network the check settled on. */
+  network: string
+  /** The Gateway authorization's nonce, which is also the flow id. */
+  authNonce: string
+  transferId: string | null
+  gatewayOutcome: 'credited' | 'completed'
+  payer: string
+  /** The price in USDC base units, 6 decimals. */
+  amountUnits: string
+  resource: string
+  checkedAt?: string
+}
+
+/** Where a DENY that came out of verifyThenPay can be inspected. Absent on a plain guard(). */
+export interface TrustDenyContext {
+  /** The check's Gateway authorization nonce. */
+  flowId?: string
+  check?: GatewayCheckReference
+  /** The public flow record. Absent when the server could not record the flow. */
+  recordUrl?: string
+}
+
 /** Thrown by `guard()` when the counterparty must not be transacted with. */
 export class TrustDenyError extends Error {
   readonly verdict: RiskVerdict
-  constructor(verdict: RiskVerdict) {
+  readonly context?: TrustDenyContext
+  constructor(verdict: RiskVerdict, context?: TrustDenyContext) {
     super(`Trust guard blocked agent ${verdict.agentId}: ${verdict.decision} (${verdict.reasons?.join('; ') || 'no reasons'})`)
     this.name = 'TrustDenyError'
     this.verdict = verdict
+    if (context) this.context = context
   }
 }
 
@@ -113,8 +142,9 @@ export interface TrustGuardOptions {
   /**
    * Satisfy an x402 402 challenge and return the extra request headers to retry with (an
    * `X-PAYMENT` header from an OKX Agentic Wallet on X Layer, or the `PAYMENT-SIGNATURE`
-   * header `algorandPayer` builds on Algorand). Return null to give up (the call then throws
-   * PaymentRequiredError). Omit to always throw on 402.
+   * header `algorandPayer` builds on Algorand and `arcGatewayPayer` builds on Arc Mainnet).
+   * Return null to give up (the call then throws PaymentRequiredError). Omit to always throw
+   * on 402.
    */
   onPaymentRequired?: (challenge: unknown, ctx: { resource: string; body: unknown }) => Promise<Record<string, string> | null>
 }
@@ -122,11 +152,13 @@ export interface TrustGuardOptions {
 const DEFAULT_BASE_URLS: Record<Rail, string> = {
   xlayer: 'https://a-identity-asp.onrender.com',
   algorand: 'https://a-identity.xyz',
+  arc: 'https://a-identity.xyz',
 }
 
 const TOOL_PATHS: Record<Rail, string> = {
   xlayer: '/tools/',
   algorand: '/api/x402/algorand/tools/',
+  arc: '/api/x402/gateway/tools/',
 }
 
 export class TrustGuard {
@@ -137,7 +169,7 @@ export class TrustGuard {
 
   constructor(opts: TrustGuardOptions = {}) {
     this.rail = opts.rail ?? 'xlayer'
-    if (!(this.rail in DEFAULT_BASE_URLS)) throw new Error(`Unknown rail '${String(this.rail)}'; use 'xlayer' or 'algorand'.`)
+    if (!(this.rail in DEFAULT_BASE_URLS)) throw new Error(`Unknown rail '${String(this.rail)}'; use 'xlayer', 'algorand' or 'arc'.`)
     this.baseUrl = (opts.baseUrl ?? DEFAULT_BASE_URLS[this.rail]).replace(/\/+$/, '')
     const f = opts.fetch ?? (globalThis as { fetch?: FetchLike }).fetch
     if (!f) throw new Error('No fetch available; pass opts.fetch (Node < 18 or a custom runtime).')
