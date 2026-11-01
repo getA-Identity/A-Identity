@@ -11,6 +11,7 @@ import {
   railRequirements,
   railServeTool,
   railProof,
+  railReconcileOnProofRead,
   railPaidNetwork,
   railPaymentHeader,
   railPaymentResponseHeader,
@@ -273,7 +274,6 @@ test('an unexpected failure inside settlement is a 502, never a thrown request',
       readContract: async () => { throw new Error('rpc exploded') },
       simulateContract: async () => ({ request: {} }),
       getGasPrice: async () => 1n,
-      waitForTransactionReceipt: async () => ({ status: 'success', blockNumber: 1n, gasUsed: 1n, logs: [] }),
     },
     loadSpent: async () => { throw new Error('database is gone') },
   })
@@ -467,18 +467,16 @@ test('a v2 buyer names its network under accepted, and the rail settles on THAT 
   assert.match(String((out.body as Record<string, unknown>).verifyError), /eip155:1/)
 })
 
-test('a settled call hands the buyer its receipt in PAYMENT-RESPONSE', async () => {
-  const { decodePaymentResponseHeader } = await import('@x402/core/http')
-  clearDomainCache()
-  const KEY = '0x59c6995e998f97a5a0044966f0945389dc9e86dae88c7a8412f4603b6b78690d' as const
-  const buyer = privateKeyToAccount(KEY)
+/** A signed v2 payment for risk_check, as the X-PAYMENT header. */
+async function signedHeader(nonceByte: string) {
+  const buyer = privateKeyToAccount('0x59c6995e998f97a5a0044966f0945389dc9e86dae88c7a8412f4603b6b78690d')
   const authorization = {
     from: buyer.address,
     to: PAY_TO as `0x${string}`,
     value: 25_000n,
     validAfter: 0n,
     validBefore: BigInt(Math.floor(Date.now() / 1000) + 600),
-    nonce: `0x${'7d'.repeat(32)}` as `0x${string}`,
+    nonce: `0x${nonceByte.repeat(32)}` as `0x${string}`,
   }
   const signature = await buyer.signTypedData({
     domain: DOMAIN,
@@ -503,7 +501,34 @@ test('a settled call hands the buyer its receipt in PAYMENT-RESPONSE', async () 
       },
     },
   })).toString('base64')
+  return { buyer, header }
+}
+
+/** A mined receipt as a host answers it, carrying the buyer's Transfer to PAY_TO. */
+function hostReceipt(hash: unknown, payer: string) {
   const pad = (a: string) => `0x${a.slice(2).toLowerCase().padStart(64, '0')}`
+  return {
+    transactionHash: hash, blockNumber: '0x9', status: '0x1', gasUsed: '0x14c08', effectiveGasPrice: '0x303c950',
+    logs: [{
+      address: token.address.toLowerCase(),
+      topics: ['0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef', pad(payer), pad(PAY_TO)],
+      data: `0x${(25_000n).toString(16).padStart(64, '0')}`,
+    }],
+  }
+}
+
+/** Stubbed so an assertion is about the transport, not about a live registry read. */
+const STUB_HANDLERS = {
+  verify_agent: async () => ({ ok: true }),
+  reputation_score: async () => ({ ok: true }),
+  risk_check: async () => ({ verdict: 'ALLOW' }),
+  agent_passport: async () => ({ ok: true }),
+}
+
+test('a settled call hands the buyer its receipt in PAYMENT-RESPONSE', async () => {
+  const { decodePaymentResponseHeader } = await import('@x402/core/http')
+  clearDomainCache()
+  const { buyer, header } = await signedHeader('7d')
   const txHash = `0x${'cc'.repeat(32)}`
   const out = await railServeTool('risk_check', { agentId: '#0' }, header, railStatus({ ...configured, X402_3009_SETTLEMENT_FEE_USD: '0.02' }), {
     reader: reader(),
@@ -514,32 +539,20 @@ test('a settled call hands the buyer its receipt in PAYMENT-RESPONSE', async () 
       simulateContract: async () => ({ request: {} }),
       estimateContractGas: async () => 85_000n,
       getGasPrice: async () => 50_578_000n,
-      waitForTransactionReceipt: async () => ({
-        status: 'success', blockNumber: 9n, gasUsed: 85_000n, effectiveGasPrice: 50_578_000n,
-        logs: [{
-          address: token.address.toLowerCase(),
-          topics: [
-            '0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef',
-            pad(buyer.address),
-            pad(PAY_TO),
-          ],
-          data: `0x${(25_000n).toString(16).padStart(64, '0')}`,
-        }],
-      }),
     },
     walletClient: { writeContract: async () => txHash as `0x${string}` },
     signerAddress: PAY_TO,
     persist: async () => {},
     persistSpent: async () => {},
     loadSpent: async () => [],
+    loadSettlements: async () => ({ ok: true, rows: [] }),
     gasSpentTodayWei: async () => 0n,
-    // Stubbed so the assertion is about the transport, not about a live registry read.
-    handlers: {
-      verify_agent: async () => ({ ok: true }),
-      reputation_score: async () => ({ ok: true }),
-      risk_check: async () => ({ verdict: 'ALLOW' }),
-      agent_passport: async () => ({ ok: true }),
+    timeoutMs: 0,
+    receipts: {
+      urls: ['https://a.rpc.test'],
+      call: async (_url, method, params) => (method === 'eth_blockNumber' ? '0xffffff' : hostReceipt(params[0], buyer.address)),
     },
+    handlers: STUB_HANDLERS,
   })
   assert.equal(out.httpStatus, 200, JSON.stringify(out.body).slice(0, 300))
   const receipt = out.headers?.['PAYMENT-RESPONSE']
@@ -552,4 +565,113 @@ test('a settled call hands the buyer its receipt in PAYMENT-RESPONSE', async () 
   assert.equal(decoded.amount, '25000')
   // Nothing is claimed settled that the body does not also carry.
   assert.equal((out.body as Record<string, Record<string, unknown>>).settlement.transaction, txHash)
+})
+
+test('a buyer whose transaction landed after the wait is served on retry, with no fresh 402 and no second charge', async () => {
+  // The whole path through the rail. Before this, the retry was refused as nonce_used, and that
+  // code answers with a fresh challenge, which asks someone who already paid to pay again.
+  clearDomainCache()
+  const { buyer, header } = await signedHeader('7e')
+  const txHash = `0x${'dd'.repeat(32)}`
+  const rows: X402SettlementRecord[] = []
+  const spent: string[] = []
+  let landed = false
+  let broadcasts = 0
+  let served = 0
+  const deps = {
+    reader: reader(),
+    env: configured,
+    publicClient: {
+      readContract: async (args: Record<string, unknown>) =>
+        args.functionName === 'authorizationState' ? landed : 10_000_000n,
+      simulateContract: async () => ({ request: {} }),
+      estimateContractGas: async () => 85_000n,
+      getGasPrice: async () => 50_578_000n,
+    },
+    walletClient: { writeContract: async () => { broadcasts += 1; return txHash as `0x${string}` } },
+    signerAddress: PAY_TO as `0x${string}`,
+    persist: async (r: X402SettlementRecord) => { rows.push({ ...r }) },
+    persistSpent: async (k: string) => { spent.push(k) },
+    loadSpent: async () => [...spent],
+    loadSettlements: async () => ({ ok: true as const, rows: rows.map((r) => ({ ...r })) }),
+    resolveSettlement: async (_tx: string, resolution: Partial<X402SettlementRecord>) => {
+      Object.assign(rows[0], resolution)
+      return { ok: true as const, updated: true }
+    },
+    redeemSettlement: async (_tx: string, at: string) => {
+      const first = !rows[0].redeemedAt
+      rows[0].redeemedAt ??= at
+      return { ok: true as const, updated: first }
+    },
+    gasSpentTodayWei: async () => 0n,
+    timeoutMs: 0,
+    receipts: {
+      urls: ['https://a.rpc.test', 'https://b.rpc.test'],
+      // The first host never has it; the second has it once it lands.
+      call: async (url: string, method: string, params: readonly unknown[]) => {
+        if (method === 'eth_blockNumber') return '0xffffff'
+        return landed && url.startsWith('https://b') ? hostReceipt(params[0], buyer.address) : null
+      },
+    },
+    handlers: { ...STUB_HANDLERS, risk_check: async () => { served += 1; return { verdict: 'ALLOW' } } },
+  }
+  const s = railStatus({ ...configured, X402_3009_SETTLEMENT_FEE_USD: '0.02' })
+
+  // No receipt inside the wait: nothing is served, and the buyer is told to send the same payment.
+  const first = await railServeTool('risk_check', { agentId: '#0' }, header, s, deps)
+  assert.equal(first.httpStatus, 502)
+  const firstBody = first.body as Record<string, unknown>
+  assert.equal(firstBody.ambiguous, true)
+  assert.equal(firstBody.transaction, txHash)
+  assert.match(String(firstBody.note), /Send this same payment again rather than signing a new one/)
+  assert.equal(served, 0)
+
+  // A retry before it lands: still 502, still one broadcast, still not a 402.
+  const early = await railServeTool('risk_check', { agentId: '#0' }, header, s, deps)
+  assert.equal(early.httpStatus, 502)
+  assert.equal((early.body as Record<string, unknown>).code, 'settlement_pending')
+  assert.equal(broadcasts, 1)
+
+  // It lands. The retry is served from that transaction.
+  landed = true
+  const retry = await railServeTool('risk_check', { agentId: '#0' }, header, s, deps)
+  assert.equal(retry.httpStatus, 200, JSON.stringify(retry.body).slice(0, 300))
+  const settlement = (retry.body as { settlement: Record<string, unknown> }).settlement
+  assert.equal(settlement.transaction, txHash)
+  assert.equal(settlement.reconciled, true)
+  assert.ok(retry.headers?.['PAYMENT-RESPONSE'])
+  assert.equal(served, 1)
+  assert.equal(broadcasts, 1)
+  assert.equal(rows[0].outcome, 'settled')
+  assert.equal(rows.length, 1)
+
+  // The same payment a third time gets no second call.
+  const replay = await railServeTool('risk_check', { agentId: '#0' }, header, s, deps)
+  assert.equal(replay.httpStatus, 402)
+  assert.equal(served, 1)
+})
+
+test('a proof read reconciles at most once per interval and costs nothing with no ambiguous rows', async () => {
+  let reads = 0
+  const deps = { loadSettlements: async () => { reads += 1; return { ok: true as const, rows: [] } } }
+  const t0 = 1_900_000_000_000
+  const first = await railReconcileOnProofRead(deps, t0)
+  assert.deepEqual(first, { checked: 0, settled: 0, reverted: 0, ambiguous: 0, skipped: false })
+  const second = await railReconcileOnProofRead(deps, t0 + 1_000)
+  assert.equal(second.skipped, true)
+  assert.equal(reads, 1, 'a burst of page loads shares one sweep')
+  assert.equal((await railReconcileOnProofRead(deps, t0 + 60_000)).skipped, false)
+})
+
+test('a reconciled row counts as what it became, and its gas stays counted', async () => {
+  const landed: X402SettlementRecord = { ...row('settled', '0xaaa0000000000000000000000000000000000001', 0.021, 'risk_check'), reconciledAt: '2026-08-14T00:00:00.000Z' }
+  const p = await railProof(railStatus(configured), {
+    load: async () => [landed, row('ambiguous', '0xbbb0000000000000000000000000000000000002', 0.021, 'risk_check')],
+    env: configured,
+  })
+  assert.equal(p.totalSettlements, 1)
+  assert.equal(p.ambiguous, 1)
+  assert.equal(p.gas.settles, 2)
+  assert.equal(p.recent[1].reconciledAt, '2026-08-14T00:00:00.000Z')
+  assert.match(p.note, /reconciledAt/)
 })

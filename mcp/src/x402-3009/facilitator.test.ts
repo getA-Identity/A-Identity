@@ -4,7 +4,7 @@ import { privateKeyToAccount } from 'viem/accounts'
 import { supported, verify, settle, resolveNetwork, facilitatorChains } from './facilitator.js'
 import { railStatus, railLimits } from './rail.js'
 import { eip712DomainSeparator, clearDomainCache, type TokenReader } from './domain.js'
-import { getChainById } from '../chains/index.js'
+import { getChainById, type EveryRpcOptions } from '../chains/index.js'
 
 const chain = getChainById('rhchain')!
 const token = chain.settlementTokens![0]
@@ -41,9 +41,17 @@ function publicClient(writes: { count: number }) {
     simulateContract: async () => ({ request: {} }),
     estimateContractGas: async () => 85_000n,
     getGasPrice: async () => 50_578_000n,
-    waitForTransactionReceipt: async () => ({ status: 'success', blockNumber: 1n, gasUsed: 85_000n, logs: [] }),
     _writes: writes,
   }
+}
+
+/** One fake RPC host holding a mined receipt that carries no Transfer log. */
+const HOST_WITH_EMPTY_RECEIPT: EveryRpcOptions = {
+  urls: ['https://a.rpc.test'],
+  call: async (_url, method, params) =>
+    method === 'eth_blockNumber'
+      ? '0xffffff'
+      : { transactionHash: params[0], blockNumber: '0x1', status: '0x1', gasUsed: '0x14c08', logs: [] },
 }
 
 async function body(payTo = PAY_TO) {
@@ -211,6 +219,9 @@ test('/settle accepts an allowlisted third-party payTo when it is configured', a
     signerAddress: PAY_TO as `0x${string}`,
     now: () => NOW, loadSpent: async () => [], persist: async () => {}, persistSpent: async () => {},
     gasSpentTodayWei: async () => 0n,
+    loadSettlements: async () => ({ ok: true, rows: [] }),
+    receipts: HOST_WITH_EMPTY_RECEIPT,
+    timeoutMs: 0,
     env: withAllow,
   })
   // The receipt in this stub carries no Transfer log, so it must NOT report success.
@@ -236,6 +247,7 @@ test('an exhausted daily gas budget answers 503 and broadcasts nothing', async (
     signerAddress: PAY_TO as `0x${string}`,
     now: () => NOW, loadSpent: async () => [], persist: async () => {}, persistSpent: async () => {},
     gasSpentTodayWei: async () => 500_000_000_000_000n,
+    loadSettlements: async () => ({ ok: true, rows: [] }),
     env,
   })
   assert.equal(out.httpStatus, 503)
