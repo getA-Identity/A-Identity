@@ -9,6 +9,7 @@ import {
   ARC_VERIFY_THEN_PAY_FLOWS,
   ARC_SEASON_TARGETS,
   mergeFlows,
+  seasonFlowsFromRows,
   type ArcSeasonDeps,
   type ArcVerifyThenPayFlow,
 } from './arc-season.js'
@@ -16,7 +17,7 @@ import { getChainById } from './chains/index.js'
 import { addressUrl, txUrl } from './chains/explorer.js'
 import { internalPayers as gatewayInternalPayers } from './x402-gateway/rail.js'
 import { internalPayers as facilitatorInternalPayers } from './x402-3009/rail.js'
-import type { GatewaySettlementRecord, X402SettlementRecord } from './storage.js'
+import type { GatewaySettlementRecord, VtpFlowRecord, X402SettlementRecord } from './storage.js'
 
 /**
  * The Arc Acceleration Season report, fed rows rather than logs.
@@ -90,12 +91,16 @@ function fac(over: Partial<X402SettlementRecord> = {}): X402SettlementRecord {
 
 const CHECKED_PAYEE = '0x6666666666666666666666666666666666666666'
 
+/** One transaction proves one flow, so each flow gets its own unless a test says otherwise. */
+let txCounter = 0x55
+const nextTx = () => '0x' + (++txCounter).toString(16).padStart(64, '5')
+
 function flow(over: Partial<ArcVerifyThenPayFlow> = {}): ArcVerifyThenPayFlow {
   return {
     checkNonce: nextNonce(),
     payee: CHECKED_PAYEE,
     outcome: 'paid',
-    txHash: '0x' + '55'.repeat(32),
+    txHash: nextTx(),
     at: '2026-11-01T10:00:00Z',
     note: 'ALLOW, the vault paid',
     ...over,
@@ -526,6 +531,73 @@ test('an unreadable flow log is reported as unreadable, and the count says what 
   assert.match(r.milestone1.checks.note, /^The verify-then-pay flow log could not be read on this request \(vtp_flows unreachable\)/)
   // Without a loader wired, there is no flow log to report on at all.
   assert.equal((await arcSeasonReport(deps())).logs.flows, undefined)
+})
+
+test('one payment transaction links one flow, whatever its case and whichever list it came from', async () => {
+  const first = gw({ payer: OURS_GATEWAY })
+  const second = gw({ payer: OURS_GATEWAY })
+  const third = gw({ payer: OURS_GATEWAY })
+  const tx = '0x' + 'ab'.repeat(32)
+  const r = await arcSeasonReport(
+    deps({
+      gateway: [first, second, third],
+      flows: [flow({ checkNonce: first.authNonce, txHash: tx, note: 'curated' })],
+      flowRows: async () => [
+        flow({ checkNonce: second.authNonce, txHash: '0x' + 'AB'.repeat(32), note: 'the same payment under another check' }),
+        flow({ checkNonce: third.authNonce, note: 'a payment of its own' }),
+      ],
+    }),
+  )
+  const c = r.milestone1.checks
+  assert.deepEqual(c.items.map((f) => f.note), ['curated', 'a payment of its own'])
+  assert.deepEqual([c.count, c.linked.paid, c.unlinked], [2, 2, 1])
+
+  // A flow that did not link holds no transaction: the next one with that hash can still count.
+  const early = gw({ payer: OURS_GATEWAY, ts: '2026-11-01T11:00:00Z' })
+  const later = await arcSeasonReport(
+    deps({
+      gateway: [early, first],
+      flowRows: async () => [flow({ checkNonce: early.authNonce, txHash: tx, at: '2026-11-01T10:00:00Z', note: 'before its check' }), flow({ checkNonce: first.authNonce, txHash: tx, note: 'after its check' })],
+    }),
+  )
+  assert.deepEqual(later.milestone1.checks.items.map((f) => f.note), ['after its check'])
+})
+
+test('one malformed flow row is skipped and named in logs.flows, and the rest still count', async () => {
+  const check = gw({ payer: OURS_GATEWAY })
+  const nonce = check.authNonce
+  const good = {
+    flowId: nonce,
+    network: arc.caip2,
+    payee: CHECKED_PAYEE,
+    amount: '10000',
+    createdAt: '2026-11-01T10:00:01.000Z',
+    outcome: 'blocked',
+    detail: 'deny',
+    verdict: { decision: 'DENY' },
+    check: { payer: OURS_GATEWAY, gatewayOutcome: 'credited', checkedAt: '2026-11-01T09:59:00.000Z' },
+  } as unknown as VtpFlowRecord
+  const bad = [{ ...good, flowId: '0x' + 'ee'.repeat(32), amount: 'twelve' }, { ...good, flowId: '0x' + 'dd'.repeat(32), check: undefined }, { outcome: 'blocked' }, null] as unknown as VtpFlowRecord[]
+
+  const seen: unknown[] = []
+  assert.equal(seasonFlowsFromRows([bad[0], good, bad[1], bad[2], bad[3]], (row) => seen.push(row)).length, 1)
+  assert.equal(seen.length, 4)
+  assert.deepEqual((seen[0] as { flowId: unknown }).flowId, bad[0].flowId)
+  assert.deepEqual((seen[2] as { flowId: unknown }).flowId, null)
+
+  const r = await arcSeasonReport(deps({ gateway: [check], flowRows: async (onSkip) => seasonFlowsFromRows([bad[0], good], onSkip) }))
+  assert.equal(r.milestone1.checks.count, 1, 'the bad row hides nothing')
+  assert.equal(r.logs.flows?.readable, true)
+  assert.equal(r.logs.flows?.rows, 1)
+  assert.equal(r.logs.flows?.skipped?.length, 1)
+  assert.equal(r.logs.flows?.skipped?.[0].flowId, bad[0].flowId)
+  assert.match(r.logs.flows?.skipped?.[0].reason ?? '', /twelve/)
+  assert.match(r.milestone1.checks.note, /1 verify-then-pay flow row\(s\) could not be read and are not counted/)
+
+  // Nothing skipped, nothing said.
+  const clean = await arcSeasonReport(deps({ gateway: [check], flowRows: async (onSkip) => seasonFlowsFromRows([good], onSkip) }))
+  assert.deepEqual(clean.logs.flows, { readable: true, rows: 1 })
+  assert.doesNotMatch(clean.milestone1.checks.note, /could not be read/)
 })
 
 test("a flow that names its payer links only to that payer's check, because a nonce is unique per payer", async () => {
