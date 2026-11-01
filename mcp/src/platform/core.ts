@@ -6,7 +6,7 @@
  * internal symbols (state, save, id, ownsAgent, repOf, isShowcase, syncVaultPolicy, ...)
  * must never be re-exported.
  */
-import { loadState, saveState } from '../storage.js'
+import { flushStateDurably, loadState, saveState } from '../storage.js'
 import { ARC_CHAIN } from '../chains/index.js'
 import type { ActionPolicy, AuditEntry, AgentMeter } from '../policy/index.js'
 import type { KyaStatus, Task } from '../marketplace.js'
@@ -318,6 +318,10 @@ export type Instruction = {
   /** Sent with this instruction's Circle transfer, and kept while the outcome is open: if Circle
    *  already took it, sending the same key finds that transfer rather than making another. */
   circleIdempotencyKey?: string
+  /** The sender and nonce `unconfirmedTx` was signed with. Once that nonce is used and no RPC has
+   *  the hash, it can never land, so the hold does not have to wait out its 24 hours. */
+  unconfirmedFrom?: string
+  unconfirmedNonce?: number
   /** When the settlement above went out. */
   unconfirmedAt?: string
   /** The UTC day whose cap this held instruction still claims. A payment that may have landed
@@ -409,6 +413,23 @@ export const state: State = { agents: [], wallets: [], instructions: [], tasks: 
 let persistEnabled = true
 export const save = (s: State): void => {
   if (persistEnabled) saveState(s)
+}
+
+type DurableWrite = (s: State) => Promise<{ ok: true } | { ok: false; reason: string }>
+let durableWriteForTests: DurableWrite | null = null
+
+/** Write the state now and report whether it was written, for a save that money is waiting on. */
+export const saveDurably: DurableWrite = async (s) => {
+  if (durableWriteForTests) return durableWriteForTests(s)
+  return persistEnabled ? flushStateDurably(s) : { ok: true }
+}
+
+/** TEST-ONLY: replace the durable write; returns the restore function. */
+export function __setDurableSaveForTests(write: DurableWrite): () => void {
+  durableWriteForTests = write
+  return () => {
+    durableWriteForTests = null
+  }
 }
 
 /**

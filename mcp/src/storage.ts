@@ -107,18 +107,64 @@ async function doFlush() {
   pending = null
   if (data == null) return
   try {
-    const p = await getPool()
-    if (p) {
-      await p.query(
-        'INSERT INTO app_state (id, data) VALUES ($1, $2) ON CONFLICT (id) DO UPDATE SET data = $2',
-        ['platform', JSON.stringify(data)],
-      )
-    } else {
-      mkdirSync(DATA_DIR, { recursive: true })
-      writeFileSync(DATA_FILE, JSON.stringify(data, null, 2))
-    }
+    await writeState(data, getPool)
   } catch (e) {
     console.error('[storage] persist failed:', e instanceof Error ? e.message : e)
+  }
+}
+
+async function writeState(data: unknown, getPoolFn: () => Promise<unknown>): Promise<void> {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const p = (await getPoolFn()) as any
+  if (p) {
+    await p.query(
+      'INSERT INTO app_state (id, data) VALUES ($1, $2) ON CONFLICT (id) DO UPDATE SET data = $2',
+      ['platform', JSON.stringify(data)],
+    )
+  } else {
+    mkdirSync(DATA_DIR, { recursive: true })
+    writeFileSync(DATA_FILE, JSON.stringify(data, null, 2))
+  }
+}
+
+/** How long a save that money is waiting on may take. A stalled database is a failed save. */
+const DURABLE_FLUSH_MS = 5_000
+
+/**
+ * Write the state now and say whether it was written. saveState is a debounce that logs a failure
+ * and moves on, which is right for most writes and wrong for the hash of a payment about to be
+ * sent: a restart inside the debounce, or one failed write, loses the hash and the next execute
+ * pays again. This writes THIS snapshot rather than whatever is pending, in turn with any flush
+ * already running, so a failure of an earlier flush cannot read as success here. Never throws.
+ */
+export async function flushStateDurably(
+  state: unknown,
+  getPoolFn: () => Promise<unknown> = getPool,
+  waitMs: number = DURABLE_FLUSH_MS,
+): Promise<{ ok: true } | { ok: false; reason: string }> {
+  // This write covers what the debounce was holding when that is this same live state.
+  if (pending === state) {
+    pending = null
+    if (timer) {
+      clearTimeout(timer)
+      timer = null
+    }
+  }
+  const attempt = flushChain.then(() => writeState(state, getPoolFn))
+  flushChain = attempt.catch(() => {})
+  let deadline: ReturnType<typeof setTimeout> | undefined
+  const gaveUp = new Promise<never>((_, reject) => {
+    deadline = setTimeout(() => reject(new Error(`the save did not finish within ${waitMs} ms`)), waitMs)
+  })
+  try {
+    await Promise.race([attempt, gaveUp])
+    return { ok: true }
+  } catch (e) {
+    const reason = e instanceof Error ? e.message : String(e)
+    console.error('[storage] durable save failed:', reason)
+    return { ok: false, reason }
+  } finally {
+    if (deadline) clearTimeout(deadline)
   }
 }
 
@@ -270,12 +316,13 @@ export async function persistCeloSettlement(rec: CeloSettlementRecord): Promise<
 export type X402SettlementRecord = {
   ts: string
   /** 'settled' = receipt status success AND a matching Transfer log. 'reverted' = mined
-   *  and failed. 'ambiguous' = broadcast, no receipt inside the timeout, and no later read
-   *  across every RPC has found one yet. Only 'settled' is revenue; the other two are shown
-   *  rather than hidden, and all three cost gas. An ambiguous row is updated in place to
-   *  'settled' or 'reverted' when its receipt turns up (see resolveX402Settlement), and
+   *  and failed. 'ambiguous' = signed and written down before the send, with no receipt yet on
+   *  any RPC. 'dropped' = it went nowhere and never will: a node refused it and no RPC has it, or
+   *  its signer nonce was used by another transaction and no RPC has it. Only 'settled' is
+   *  revenue, the others are shown rather than hidden, and only a mined row costs gas. An
+   *  ambiguous row is updated in place when its answer turns up (see resolveX402Settlement), and
    *  `reconciledAt` says it happened that way. */
-  outcome: 'settled' | 'reverted' | 'ambiguous'
+  outcome: 'settled' | 'reverted' | 'ambiguous' | 'dropped'
   tool: string
   resource: string
   /** CAIP-2 network the payment settled on. */
@@ -318,6 +365,11 @@ export type X402SettlementRecord = {
   redeemedAt?: string
   /** When the paid call's response was written out. Only this ends the buyer's claim. */
   servedAt?: string
+  /** The signer and its nonce, as signed. Once that nonce is used and no RPC has this hash, the
+   *  transaction can never land (see canNeverLand). Absent on rows from before the row was written
+   *  ahead of the send, which then stay ambiguous until a receipt or the authorization's expiry. */
+  signer?: string
+  signerNonce?: number
 }
 
 const X402_SETTLEMENTS_FILE = join(DATA_DIR, 'x402-settlements.json')
@@ -423,9 +475,19 @@ export function redeemX402Settlement(
   )
 }
 
-/** Record that the paid call's response was written out. This is what ends the claim. Never throws. */
-export function markX402SettlementServed(tx: string, at: string, getPoolFn: () => Promise<unknown> = getPool): Promise<X402SettlementUpdate> {
-  return updateX402Rows(tx, { servedAt: at }, "data->>'outcome' = 'settled' AND NOT data ? 'servedAt'", UNSERVED_ROW, getPoolFn)
+/**
+ * Record that the paid call's response was written out. This is what ends the claim, and only the
+ * claim that served it can: an attempt that outlived its lease cannot end a newer one's. Never throws.
+ */
+export function markX402SettlementServed(tx: string, at: string, claimedAt: string, getPoolFn: () => Promise<unknown> = getPool): Promise<X402SettlementUpdate> {
+  return updateX402Rows(
+    tx,
+    { servedAt: at },
+    "data->>'outcome' = 'settled' AND NOT data ? 'servedAt' AND data->>'redeemedAt' = $3",
+    (r) => UNSERVED_ROW(r) && r.redeemedAt === claimedAt,
+    getPoolFn,
+    [claimedAt],
+  )
 }
 
 /**
@@ -539,10 +601,9 @@ export async function loadX402Settlements(): Promise<X402SettlementRecord[]> {
   }
 }
 
-/** Durably record one settlement attempt, trimming past the cap. Never throws: on this
- *  rail a transaction has already been broadcast by the time we get here, so a logging hiccup
- *  must not take the request down. It reports the failure instead, because the engine promises
- *  a buyer a read-back of this row and must not promise one that was never written. */
+/** Durably record one settlement attempt, trimming past the cap. Never throws, and reports a
+ *  failure instead: the engine writes this row before it sends the transaction, and if the row was
+ *  not written it does not send. `ok: true` means the row is there, whatever became of the trim. */
 export async function persistX402Settlement(
   rec: X402SettlementRecord,
   getPoolFn: () => Promise<unknown> = getPool,
@@ -553,10 +614,17 @@ export async function persistX402Settlement(
     if (p) {
       await p.query('CREATE TABLE IF NOT EXISTS x402_settlements (id bigserial PRIMARY KEY, data jsonb NOT NULL)')
       await p.query('INSERT INTO x402_settlements (data) VALUES ($1)', [JSON.stringify(rec)])
-      await p.query(
-        'DELETE FROM x402_settlements WHERE id NOT IN (SELECT id FROM x402_settlements ORDER BY id DESC LIMIT $1)',
-        [X402_SETTLEMENTS_CAP],
-      )
+      // The row exists from here on. A trim that fails is only a table a little over its cap, and
+      // the next write trims it. Reporting it as a failed write would tell the engine this row is
+      // missing and have it refuse a good payment or write the row twice.
+      try {
+        await p.query(
+          'DELETE FROM x402_settlements WHERE id NOT IN (SELECT id FROM x402_settlements ORDER BY id DESC LIMIT $1)',
+          [X402_SETTLEMENTS_CAP],
+        )
+      } catch (e) {
+        console.error('[storage] x402 settlement trim failed, the row was written:', e instanceof Error ? e.message : e)
+      }
       return { ok: true }
     }
     let arr: X402SettlementRecord[] = []
