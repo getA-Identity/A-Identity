@@ -102,7 +102,7 @@ export async function verifyKya(
       pushActivity(agent, `KYA attested on-chain (ERC-8004 ValidationRegistry, tx ${short(r.txHash)})`)
       onchain = { txHash: r.txHash, explorerUrl: r.explorerUrl, requestHash: r.requestHash }
     } else {
-      onchain = { prepared: true, reason: r.reason }
+      onchain = 'unconfirmed' in r ? { unconfirmed: true, txHash: r.txHash, explorerUrl: r.explorerUrl, reason: r.reason } : { prepared: true, reason: r.reason }
     }
   }
   save(state)
@@ -158,7 +158,7 @@ export async function revokeAgentKya(
       pushActivity(agent, `Revocation attested on-chain (ERC-8004 ValidationRegistry, tx ${short(r.txHash)})`)
       onchain = { txHash: r.txHash, explorerUrl: r.explorerUrl, requestHash: r.requestHash }
     } else {
-      onchain = { prepared: true, reason: r.reason }
+      onchain = 'unconfirmed' in r ? { unconfirmed: true, txHash: r.txHash, explorerUrl: r.explorerUrl, reason: r.reason } : { prepared: true, reason: r.reason }
     }
   }
   save(state)

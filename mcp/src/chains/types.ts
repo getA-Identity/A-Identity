@@ -354,6 +354,25 @@ export type Reverted = {
   reason: string
 }
 
+/**
+ * The fourth thing that can happen: it was broadcast, and no RPC produced a receipt inside the
+ * wait. It may have landed or it may yet land, so this is not a revert and it is not a
+ * settlement, and the caller must not settle the same thing again by another route. A slow
+ * receipt used to be reported as a revert, with the hash dropped, and that fell through to
+ * Circle or direct settlement, which could pay twice.
+ *
+ * `reverted: false` keeps it apart from Reverted, and the absence of `contract` keeps it apart
+ * from Prepared. A caller that branches only on `reverted` must read `unconfirmed` too.
+ */
+export type Unconfirmed = {
+  executed: false
+  reverted: false
+  unconfirmed: true
+  txHash: string
+  explorerUrl: string
+  reason: string
+}
+
 export type Executed = {
   executed: true
   txHash: string
@@ -378,7 +397,7 @@ export type VaultTx = { executed: true; txHash: string; explorerUrl: string }
 /** The vault-flavoured name for the same thing. One shape, so one definition. */
 export type VaultReverted = Reverted
 export type VaultNoKey = { executed: false; reverted: false; reason: string }
-export type VaultResult = VaultTx | VaultReverted | VaultNoKey
+export type VaultResult = VaultTx | VaultReverted | VaultNoKey | Unconfirmed
 
 export type ValidationExecuted = {
   executed: true

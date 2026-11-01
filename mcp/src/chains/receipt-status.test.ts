@@ -35,9 +35,26 @@ const CHECKS = [/\.status !== 'success'/, /\.status === 'success'/, /\blanded\(/
 
 /** How far after the await we look. Every real check in this file is within a few lines;
  *  a generous window still fails a site that has no check at all. */
-const WINDOW = 6
+const WINDOW = 8
 
-test('every waitForTransactionReceipt in the EVM adapter is followed by a status check', () => {
+/** Code only. A comment may name the fallback client's wait to say why it is not used. */
+const codeLines = (file: string) =>
+  readFileSync(join(EVM_DIR, file), 'utf8').split('\n').map((l) => (/^\s*(\*|\/\/|\/\*)/.test(l) ? '' : l))
+
+test('no receipt in the EVM adapter is awaited through the fallback client', () => {
+  // A host with no receipt answers null, the fallback takes that as the answer, and so the wait
+  // sits on the first host until it times out. receiptOf reads every RPC; this keeps it that way.
+  const files = readdirSync(EVM_DIR).filter((f) => f.endsWith('.ts') && !f.endsWith('.test.ts'))
+  const raw: string[] = []
+  for (const file of files) {
+    codeLines(file).forEach((line, i) => {
+      if (line.includes('waitForTransactionReceipt')) raw.push(`${file}:${i + 1}  ${line.trim()}`)
+    })
+  }
+  assert.deepEqual(raw, [], 'these wait on the fallback client, which never asks a second host about a null receipt')
+})
+
+test('every receipt read in the EVM adapter is followed by a status check', () => {
   const files = readdirSync(EVM_DIR).filter((f) => f.endsWith('.ts') && !f.endsWith('.test.ts'))
   assert.ok(files.length > 0, 'found no EVM adapter sources to check, which means this guard is not running')
 
@@ -46,10 +63,10 @@ test('every waitForTransactionReceipt in the EVM adapter is followed by a status
   let viaHelper = 0
 
   for (const file of files) {
-    const lines = readFileSync(join(EVM_DIR, file), 'utf8').split('\n')
+    const lines = codeLines(file)
     lines.forEach((line, i) => {
-      if (!line.includes('waitForTransactionReceipt')) return
-      // The helper's own definition is where the check lives, so it is not a call site.
+      if (!/await receiptOf\(/.test(line)) return
+      // The helper's own body is where the check lives, so it is not a call site.
       if (lines.slice(Math.max(0, i - 6), i).some((l) => /async function landed\(/.test(l))) return
       sites++
       const near = lines.slice(i, i + WINDOW).join('\n')
@@ -60,8 +77,8 @@ test('every waitForTransactionReceipt in the EVM adapter is followed by a status
   }
 
   // Count the helper's callers too. A write that delegates to `landed()` no longer mentions
-  // `waitForTransactionReceipt` at all, so counting only the raw awaits would let the floor
-  // fall every time a site is converted, which is backwards.
+  // `receiptOf` at all, so counting only the direct reads would let the floor fall every time
+  // a site is converted, which is backwards.
   for (const file of files) {
     for (const line of readFileSync(join(EVM_DIR, file), 'utf8').split('\n')) {
       if (/await landed\(/.test(line)) viaHelper++
@@ -75,6 +92,13 @@ test('every waitForTransactionReceipt in the EVM adapter is followed by a status
     'these writes await a receipt and never read its status, so a reverted transaction is ' +
       'reported as executed:\n  ' + unchecked.join('\n  '),
   )
+})
+
+test('the Unconfirmed arm exists and cannot be read as a revert or as prepared', () => {
+  const types = readFileSync(join(SRC, 'types.ts'), 'utf8')
+  assert.match(types, /export type Unconfirmed = \{[^}]*reverted: false[^}]*unconfirmed: true[^}]*txHash: string/s,
+    'a broadcast with no receipt needs its own arm, with the hash, or it will be reported as a revert again')
+  assert.match(types, /export type VaultResult = [^\n]*\bUnconfirmed\b/)
 })
 
 test('the Reverted arm exists, because without it there is nowhere to put a failure', () => {

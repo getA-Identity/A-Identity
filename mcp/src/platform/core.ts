@@ -308,6 +308,10 @@ export type Instruction = {
   /** Set when the instruction was broadcast for real on Arc testnet. */
   txHash?: string
   explorerUrl?: string
+  /** A settlement broadcast for this instruction that no RPC has a receipt for yet. It may have
+   *  landed, so `txHash` stays unset (that means settled) and no second payment is sent while
+   *  this is here: executeInstruction reads this hash first. */
+  unconfirmedTx?: string
   /** Which layer settled or blocked this: our server pre-check, Circle's hosted
    *  policy engine (Agent Wallet), or the trustless on-chain vault. */
   enforcedBy?: 'server' | 'circle-agent-stack' | 'onchain-vault' | 'session-key'

@@ -254,6 +254,7 @@ export async function releaseTask(
   if (task.jobId) {
     const done = await completeEscrowOnchain(BigInt(task.jobId))
     if (!done.executed) {
+      if ('unconfirmed' in done) return { error: `On-chain escrow release is unconfirmed: ${done.reason}` }
       return { error: `On-chain escrow release failed (${done.reason}); the funds remain in escrow - retry, or dispute to refund.` }
     }
     const c = done.steps.find((s) => s.step === 'complete') ?? done.steps[done.steps.length - 1]
@@ -323,6 +324,7 @@ export async function disputeTask(taskId: string, reason: string, caller?: strin
   if (task.jobId) {
     const rej = await rejectJobOnchain(BigInt(task.jobId), String(reason ?? '').slice(0, 200))
     if (!rej.executed) {
+      if ('unconfirmed' in rej) return { error: `On-chain dispute is unconfirmed: ${rej.reason}` }
       return { error: `On-chain dispute failed (${rej.reason}); retry.` }
     }
     task.refundTx = rej.txHash

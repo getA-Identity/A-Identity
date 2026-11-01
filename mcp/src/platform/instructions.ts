@@ -7,11 +7,11 @@ import {
   state, save, id, ownsAgent, dailySpent, addSpend, reverseSpend, nextUtcMidnight, pushActivity, short, cap,
   type Permissions, type Instruction, type InstructionType, type PlatformAgent,
 } from './core.js'
-import { policyPay, policyOwnerPay, payUsdcWithMemoOnchain, payUsdcBatchOnchain, memoReasonJson, readPolicyVault } from '../arc-contracts.js'
+import { policyPay, policyOwnerPay, receiptStatusOnchain, payUsdcWithMemoOnchain, payUsdcBatchOnchain, memoReasonJson, readPolicyVault } from '../arc-contracts.js'
 import type { MemoInput } from '../arc-contracts.js'
 import { circlePay } from '../circle-agent.js'
 import { vaultChainFor, isEvmVault, payFromVault, readVaultPolicy } from './vault-adapter.js'
-import { isAccountId } from '../chains/index.js'
+import { isAccountId, type Unconfirmed } from '../chains/index.js'
 
 // ── instructions ──────────────────────────────────────────────────────────────
 
@@ -407,6 +407,37 @@ function returnToHuman(ix: Instruction, agent: PlatformAgent | undefined, amount
   ix.policyNote = note
 }
 
+/** Whether a settlement call came back broadcast with no receipt on any RPC. */
+function isUnconfirmed(res: unknown): res is Unconfirmed {
+  return (res as { unconfirmed?: unknown } | null | undefined)?.unconfirmed === true
+}
+
+/**
+ * A settlement was broadcast and no RPC has its receipt, so it may have landed. It stops here:
+ * every rail below would be a second payment. The hash stays on the instruction, and when a
+ * human approves it again executeInstruction reads that hash before it sends anything.
+ *
+ * The cap goes back with it, as it does for every return to a human, because `pending_approval`
+ * holds no claim on the cap and approving adds it again. If the transaction did land, that
+ * approval is what counts it, once. Until a human looks, the chain's own cap on a vault is
+ * what holds, which is true of every vault payment.
+ */
+function holdUnconfirmed(ix: Instruction, agent: PlatformAgent | undefined, amount: number, res: Unconfirmed, enforcedBy: Instruction['enforcedBy']) {
+  returnToHuman(
+    ix,
+    agent,
+    amount,
+    `Settlement was broadcast (tx ${res.txHash}) but no RPC has its receipt yet, so it may have landed. Nothing else was sent. ` +
+      'Approving this again reads that transaction first and sends no second payment while it is unconfirmed.',
+    enforcedBy,
+  )
+  ix.unconfirmedTx = res.txHash
+  ix.explorerUrl = res.explorerUrl
+  if (agent) pushActivity(agent, `Settlement unconfirmed: tx ${short(res.txHash)} has no receipt yet; returned to a human`)
+  save(state)
+  return ix
+}
+
 /**
  * Reject a pending instruction.
  *
@@ -625,6 +656,8 @@ export function sessionKeyBound(
 type SettlementBackend = {
   policyPay: typeof policyPay
   policyOwnerPay: typeof policyOwnerPay
+  /** One look at a transaction sent earlier and not yet confirmed. Reads only. */
+  receiptStatus: typeof receiptStatusOnchain
   /**
    * The vault payment for every vault the two calls above cannot reach.
    *
@@ -647,6 +680,7 @@ type SettlementBackend = {
 const REAL_SETTLEMENT: SettlementBackend = {
   policyPay,
   policyOwnerPay,
+  receiptStatus: receiptStatusOnchain,
   payFromVault,
   circlePay,
   payUsdcWithMemo: payUsdcWithMemoOnchain,
@@ -735,6 +769,10 @@ export function __setSettlementForTests(over: Partial<SettlementBackend>): () =>
  * the direct path as `count` transfers in one atomic Multicall3From tx. Without a
  * signer key, execution is SIMULATED and labeled as such; the trail stays honest.
  *
+ * A settlement broadcast with no receipt on any RPC is none of those. It may have landed, so
+ * it never falls through to another rail: it goes back to a human with the hash (see
+ * holdUnconfirmed), and the next execute reads that hash before anything else is sent.
+ *
  * When the vault also carries a live SESSION KEY (a time bound the human owner granted
  * the agent's operator), an agent-initiated settlement is labeled `session-key` rather
  * than the broader `onchain-vault`, and a `SessionKeyExpired` revert is recorded as the
@@ -773,6 +811,37 @@ export async function executeInstruction(ixId: string, caller?: string): Promise
   // 'approved' (a human said yes). Captured before the status flips to executed_*, so
   // every audit payload records why the money was allowed to move, on-chain memo or not.
   const policyDecision: string = ix.status
+
+  // An earlier settlement of this instruction has no receipt on record. Read it first: if it
+  // landed this instruction is settled, and if nobody can say yet, nothing more is sent.
+  if (ix.unconfirmedTx) {
+    const earlier = ix.unconfirmedTx
+    const seen = await settlement.receiptStatus(earlier)
+    if (seen.status === 'unknown') {
+      returnToHuman(
+        ix,
+        agent,
+        total,
+        `Settlement tx ${earlier} still has no receipt on any RPC (${seen.reason}), so it may yet land. No second payment was sent. Approve this again to read it again, or reject this instruction if that transaction will never land.`,
+        ix.enforcedBy,
+      )
+      save(state)
+      return ix
+    }
+    delete ix.unconfirmedTx
+    if (seen.status === 'success') {
+      ix.status = 'executed_onchain'
+      ix.txHash = seen.txHash
+      ix.explorerUrl = seen.explorerUrl
+      stampAppLayerAudit(ix, policyDecision)
+      ix.policyNote = `Settled ${fmt(total)} USDC: tx ${short(seen.txHash)} landed after the wait for its receipt ended, and no second payment was sent. Reason recorded in the app-layer audit record.`
+      if (agent) pushActivity(agent, `Settlement confirmed late: ${fmt(total)} USDC to ${short(ix.payee)} (tx ${short(seen.txHash)})`)
+      save(state)
+      return ix
+    }
+    // It reverted, so nothing moved, and the approval just given may settle it for real.
+    delete ix.explorerUrl
+  }
 
   // On-chain policy vault: the chain enforces the policy. Agent-initiated
   // (auto-approved) payments go through pay(); human-approved ones through
@@ -823,6 +892,9 @@ export async function executeInstruction(ixId: string, caller?: string): Promise
       save(state)
       return ix
     }
+    // Broadcast, and no RPC has the receipt: the payment may have landed, so neither Circle
+    // nor direct settlement below may send it again.
+    if (isUnconfirmed(res)) return holdUnconfirmed(ix, agent, total, res, 'onchain-vault')
     if (res.reverted && VAULT_POLICY_ERRORS.has(res.reason)) {
       // A SessionKeyExpired revert is the session-key gate itself saying no: the agent's
       // authority lapsed, which is a different fact from the cap or the allowlist refusing
@@ -950,6 +1022,7 @@ export async function executeInstruction(ixId: string, caller?: string): Promise
         save(state)
         return ix
       }
+      if (isUnconfirmed(batch)) return holdUnconfirmed(ix, agent, total, batch, 'server')
       if (batch && 'reverted' in batch && batch.reverted) {
         // Broadcast but reverted. The batch is all-or-nothing, so nothing moved, and a
         // reverted broadcast is never reported as executed: back to the human, and NOT
@@ -983,6 +1056,8 @@ export async function executeInstruction(ixId: string, caller?: string): Promise
       save(state)
       return ix
     }
+    // Broadcast with no receipt is not "no signer" below, which is what it would read as.
+    if (isUnconfirmed(res)) return holdUnconfirmed(ix, agent, total, res, 'server')
     // The settlement was BROADCAST but reverted on-chain (e.g. insufficient balance) - never
     // mark it executed. Kick it back to the human, exactly like an on-chain policy rejection.
     if ('reverted' in res && res.reverted) {
