@@ -354,7 +354,7 @@ export default function Arc() {
             <DisplayHeading size="section">Try it</DisplayHeading>
           </motion.div>
           <div className="mt-5">
-            <TryIt inputId="arc-check-query" examples={ARC_EXAMPLES} footnote="Free preview. Your agent gets the signed verdict on Arc from $0.001 in USDC." />
+            <TryIt inputId="arc-check-query" examples={ARC_EXAMPLES} footnote="Free preview. On Arc your agent pays $0.005 in USDC for the ALLOW / WARN / DENY verdict (risk_check), or $0.001 for an identity check alone." />
           </div>
         </SectionShell>
 
