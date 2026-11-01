@@ -1,5 +1,6 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
+import { readFileSync } from 'node:fs'
 import { getAddress, getCreateAddress, zeroAddress, type Hex } from 'viem'
 import { generatePrivateKey, privateKeyToAccount } from 'viem/accounts'
 import {
@@ -18,6 +19,7 @@ import {
   matchCreationInput,
   matchRuntime,
   ourKeyEnvVars,
+  parseOwnerKind,
   pasteReadyEntry,
   pasteViolations,
   receiptFingerprint,
@@ -398,6 +400,7 @@ test('every registry RPC host is read in order, and the env endpoint is added, n
 test('the entry is paste-ready: it parses, round-trips, is ASCII and carries no chain constant', () => {
   const input: EntryInput = {
     vault: getCreateAddress({ from: OWNER, nonce: 7n }),
+    ownerKind: 'external',
     deployTx: TX.toUpperCase().replace('0X', '0x'),
     deployBlockTime: 1_793_404_799n, // 2026-10-30T23:59:59Z: the UTC day, not the local one
     state: STATE,
@@ -412,6 +415,8 @@ test('the entry is paste-ready: it parses, round-trips, is ASCII and carries no 
   assert.equal(ready.entry.deployedAt, '2026-10-30')
   assert.equal(ready.entry.deployTx, TX)
   assert.equal(ready.entry.owner, OWNER)
+  assert.equal(ready.entry.ownerKind, 'external')
+  assert.match(ready.source, /ownerKind: 'external',/)
   assert.match(ready.entry.note, /dailyCap 1 USDC, autoApproveMax 0\.25 USDC/)
   assert.match(ready.source, /^[\x20-\x7e\n]+$/)
   assert.deepEqual(pasteViolations(ready.source), [])
@@ -428,6 +433,16 @@ test('the entry is paste-ready: it parses, round-trips, is ASCII and carries no 
   assert.doesNotMatch(collides.entry.note, /dailyCap/)
 
   assert.match(renderEntry({ ...ready.entry, note: "the owner's key" }), /note: 'the owner\\'s key',/)
+})
+
+test('--owner-kind is team or external and is never defaulted, and the script refuses to admit without it', () => {
+  assert.equal(parseOwnerKind('team'), 'team')
+  assert.equal(parseOwnerKind('external'), 'external')
+  for (const bad of ['', 'Team', 'ours', 'internal', null, undefined]) assert.equal(parseOwnerKind(bad), null, String(bad))
+  // Compiled to dist/, so the script sits one level up from here.
+  const script = readFileSync(new URL('../scripts/arc-owner-vault-check.mjs', import.meta.url), 'utf8')
+  assert.match(script, /if \(opts\.tx && !rehearsal && !ownerKind\) usage\(/)
+  assert.match(script, /pasteReadyEntry\(\{\s*vault,\s*ownerKind,/)
 })
 
 test('the paste guard catches what chains/no-hardcoded-chains.test.ts catches, and only as whole values', () => {

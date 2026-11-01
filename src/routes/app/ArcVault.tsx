@@ -1,6 +1,6 @@
 /**
- * /app/vault/arc: the live state of any AgentSpendPolicy vault on Arc, read straight from the
- * chain, and, for its owner, the controls to run it. Also where a vault the owner holds is
+ * /app/vault/arc: the live state of any AgentSpendPolicy vault on Arc and its recent events, read
+ * straight from the chain, and, for its owner, the controls to run it. Also where a vault the owner holds is
  * deployed in the first place, from the owner's own wallet.
  *
  * Public on purpose, like /app/vault/stellar: a vault's limits are on a public chain already,
@@ -31,6 +31,7 @@ import FundForm from '../../components/app/arc/FundForm'
 import OwnerControls from '../../components/app/arc/OwnerControls'
 import OwnerMatch from '../../components/app/arc/OwnerMatch'
 import TxReceipt from '../../components/app/arc/TxReceipt'
+import VaultEvents from '../../components/app/arc/VaultEvents'
 import VaultPicker from '../../components/app/arc/VaultPicker'
 import VaultStatus from '../../components/app/arc/VaultStatus'
 import WalletBar from '../../components/app/arc/WalletBar'
@@ -40,6 +41,7 @@ import { Chip, Mono } from '../../components/app/stellar/bits'
 import { track } from '../../lib/analytics'
 import type { Chain } from '../../lib/chains'
 import { listKnownVaults, type KnownVaults } from '../../lib/arc/known-vaults'
+import { isOurKey, isOurVault } from '../../lib/arc/ours'
 import { clearTx, loadTx, saveTx, type TxRecord } from '../../lib/arc/pending'
 import { predictedVault, setupAlert, withRecord } from '../../lib/arc/tx-rules'
 import {
@@ -86,6 +88,8 @@ export default function ArcVault() {
   const [known, setKnown] = useState<KnownVaults | null>(null)
   const [read, setRead] = useState<ReadState>(EMPTY)
   const [tx, setTx] = useState<(TxRecord & { key: string }) | null>(null)
+  // Bumped when a write from this page reaches its end, so the activity list reads it too.
+  const [eventsRound, setEventsRound] = useState(0)
   const latestKey = useRef(key)
   latestKey.current = key
 
@@ -162,8 +166,9 @@ export default function ArcVault() {
 
   const v = read.key === key ? read.data : null
   const shownTx = tx && tx.key === key ? tx : null
-  const ours = Boolean(v && known?.vaults.some((x) => x.kind === 'ours' && x.network === v.network && sameAddress(x.address, v.address)))
-  const ownerIsOurKey = Boolean(v && (known?.ourKeys[v.network] ?? []).some((k) => sameAddress(k, v.owner)))
+  // From the ledger as generated into this build, so the labels hold with the backend asleep.
+  const ours = Boolean(v && isOurVault(v.network, v.address, known?.vaults))
+  const ownerIsOurKey = Boolean(v && isOurKey(v.network, v.owner, known?.ourKeys))
   // The setup this browser holds, whatever this page is showing: a deploy the wallet was asked for
   // with no hash back, a deploy with no receipt yet, or a vault whose expiry has not been seen to
   // land. The last is hidden only when the vault on screen IS that vault and reads an expiry.
@@ -190,7 +195,7 @@ export default function ArcVault() {
                   {alert === 'unbounded' ? (
                     <>
                       <span className="font-semibold">This browser has not seen a session key expiry land for the vault you deployed.</span>{' '}
-                      <span className="break-all font-mono text-xs">{setup.vault}</span>. Until one is set, its agent key has no time bound.
+                      <span className="break-all font-mono text-xs">{setupAt}</span>. Until one is set, its agent key has no time bound.
                     </>
                   ) : alert === 'untracked' ? (
                     <>
@@ -293,7 +298,14 @@ export default function ArcVault() {
                 screen while the vault's new state loads under it. */}
             {shownTx && (
               <div className="space-y-2">
-                <TxReceipt record={shownTx} onUpdate={onTxUpdate} onSettled={() => void load()} />
+                <TxReceipt
+                  record={shownTx}
+                  onUpdate={onTxUpdate}
+                  onSettled={() => {
+                    void load()
+                    setEventsRound((n) => n + 1)
+                  }}
+                />
                 {shownTx.outcome !== 'pending' && (
                   <button
                     type="button"
@@ -339,6 +351,8 @@ export default function ArcVault() {
             )}
 
             {v && <VaultStatus v={v} chain={chain} ours={ours} ownerIsOurKey={ownerIsOurKey} refreshing={read.loading} />}
+
+            {v && <VaultEvents key={key} chain={chain} vault={v.address} decimals={v.decimals} refreshKey={eventsRound} />}
 
             {v && (
               <section aria-label="Owner" className="rounded-2xl border border-border bg-card p-4 sm:p-5">

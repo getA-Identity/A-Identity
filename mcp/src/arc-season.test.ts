@@ -1,5 +1,6 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
+import { readFileSync } from 'node:fs'
 import {
   arcSeasonReport,
   liveArcSeasonDeps,
@@ -369,7 +370,7 @@ test('vault and refusal items derive their explorer links from the registry and 
   const refusalTx = '0x' + '22'.repeat(32)
   const r = await arcSeasonReport(
     deps({
-      vaults: [{ address: EXT_A, owner: EXT_B, deployTx, deployedAt: '2026-10-25', note: 'deployed from the browser' }],
+      vaults: [{ address: EXT_A, owner: EXT_B, ownerKind: 'external', deployTx, deployedAt: '2026-10-25', note: 'deployed from the browser' }],
       refusals: [
         { kind: 'vault-policy-on-chain', txHash: refusalTx, at: '2026-10-26T10:00:00Z', note: 'reverted AboveAutoApprove' },
         {
@@ -387,6 +388,12 @@ test('vault and refusal items derive their explorer links from the registry and 
   assert.equal(vaults.items[0].deployExplorerUrl, txUrl(arc, deployTx))
   assert.ok(vaults.items[0].explorerUrl.startsWith(arc.explorer!))
   assert.doesNotMatch(vaults.note, /No owner-held vault yet/)
+  assert.equal(vaults.items[0].ownerKind, 'external')
+  // Past 0 the note still says the launch-day vault is not counted, and the page keeps showing it.
+  assert.match(vaults.note, /launch-day vault 0x[0-9a-fA-F]{40} is owned by our operating wallet and is not among them/)
+  const page = readFileSync(new URL('../../src/components/proof/ArcSeasonProgress.tsx', import.meta.url), 'utf8')
+  assert.match(page, /metric=\{m1\.vaults\} keepNote/)
+  assert.match(page, /ownerKind\?: 'team' \| 'external'/, 'a backend from before the label must still render')
   assert.equal(refusals.count, 2)
   assert.deepEqual(refusals.byKind, { 'vault-policy-on-chain': 1, 'deny-before-signing': 1 })
   assert.equal(refusals.items[0].explorerUrl, txUrl(arc, refusalTx))
@@ -418,6 +425,7 @@ test('every curated entry carries what its kind needs, so the lists can fill wit
   }
   for (const v of ARC_OWNER_HELD_VAULTS) {
     assert.ok(isAddress(v.address) && isAddress(v.owner), `vault ${v.address} needs an address and an owner`)
+    assert.ok(v.ownerKind === 'team' || v.ownerKind === 'external', `vault ${v.address} does not say whether its owner is team or external`)
     assert.ok(isHash(v.deployTx), `vault ${v.address} has no deploy hash`)
     assert.match(v.deployedAt, /^\d{4}-\d{2}-\d{2}$/)
   }

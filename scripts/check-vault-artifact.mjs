@@ -65,8 +65,10 @@ if (embeddedSha !== null && embeddedSha !== sourceSha) {
   problems.push(`${SOURCE} changed after ${BACKEND} was compiled (sha256 ${sourceSha.slice(0, 12)}... on disk, ${embeddedSha.slice(0, 12)}... compiled)`)
 }
 for (const [what, b, f] of pairs) {
+  // Nothing was compared unless both sides were read, so either one missing is a failure, both too.
   if (b === null || f === null) {
-    if (b !== null || f !== null) problems.push(`the ${what} could not be read from both files`)
+    const unread = [b === null ? BACKEND : null, f === null ? FRONTEND : null].filter(Boolean).join(' and ')
+    problems.push(`the ${what} could not be read from ${unread}`)
     continue
   }
   if (b !== f) problems.push(`the ${what} in ${FRONTEND} differs from ${BACKEND}`)

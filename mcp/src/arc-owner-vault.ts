@@ -45,7 +45,7 @@ import {
   type Hex,
 } from 'viem'
 import { privateKeyToAccount } from 'viem/accounts'
-import { ARC_SEASON_CHAIN, type ArcOwnerHeldVault } from './arc-season.js'
+import { ARC_SEASON_CHAIN, type ArcOwnerHeldVault, type ArcOwnerKind } from './arc-season.js'
 import { ATTESTATIONS } from './asp/attestations.js'
 import { PROVENANCE, type ChainProvenance } from './chains/provenance.js'
 import { CHAINS } from './chains/registry.js'
@@ -743,8 +743,14 @@ export function verdict(checks: readonly Check[]): Verdict {
 
 // -- the entry -------------------------------------------------------------------------
 
+/** What --owner-kind accepts, or null. Never defaulted: an entry must say whose wallet the owner is. */
+export function parseOwnerKind(text: string | null | undefined): ArcOwnerKind | null {
+  return text === 'team' || text === 'external' ? text : null
+}
+
 export type EntryInput = {
   vault: string
+  ownerKind: ArcOwnerKind
   deployTx: string
   deployBlockTime: bigint
   state: VaultState
@@ -769,6 +775,7 @@ export function ownerHeldEntry(i: EntryInput, detailed = true): ArcOwnerHeldVaul
   return {
     address: getAddress(i.vault),
     owner: getAddress(i.state.owner),
+    ownerKind: i.ownerKind,
     deployTx: i.deployTx.toLowerCase(),
     deployedAt: utcDayFromSeconds(i.deployBlockTime),
     note: entryNote(i, detailed),
@@ -782,6 +789,7 @@ export function renderEntry(e: ArcOwnerHeldVault): string {
     '  {',
     `    address: ${q(e.address)},`,
     `    owner: ${q(e.owner)},`,
+    `    ownerKind: ${q(e.ownerKind)},`,
     `    deployTx: ${q(e.deployTx)},`,
     `    deployedAt: ${q(e.deployedAt)},`,
     `    note: ${q(e.note)},`,

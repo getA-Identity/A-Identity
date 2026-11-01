@@ -1,10 +1,10 @@
 /**
- * Which Arc vault to read: the ones the backend lists (ours from the provenance ledger, and the
+ * Which Arc vault to read: the ones we can list (ours from the provenance ledger, and the
  * owner-held vaults Milestone 1 counts), and a box that reads ANY AgentSpendPolicy vault by its
  * address on the network picked next to it.
  *
- * No address is typed into the frontend: the rows come from GET /api/proof/arc and
- * GET /api/arc/season. Our own vault always carries its label, "deployed with our server key,
+ * No address is typed into the frontend: the rows come from the generated src/lib/arc-ledger.ts,
+ * GET /api/proof/arc and GET /api/arc/season. Our own vault always carries its label, "deployed with our server key,
  * not user-owned", so it is never taken for the kind of vault this page exists to deploy.
  */
 import { useEffect, useState, type FormEvent } from 'react'

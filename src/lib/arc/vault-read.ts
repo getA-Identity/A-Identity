@@ -6,7 +6,8 @@
  * id, a host, an explorer or a token address. One snapshot is read from ONE host at ONE block:
  * the host's latest block is read first, and the code and every view are then read pinned to
  * that block number, so the values on screen describe a single moment and the stamp under them
- * names it. A host that does not answer passes the snapshot to the next host in registry order.
+ * names it. A host that does not answer, or answers for another chain, passes the snapshot to the
+ * next host in registry order.
  *
  * A receipt is different: one host returning null proves nothing on Arc (on 2026-10-11 one of
  * the four mainnet hosts returned none of 19 receipts that exist), so a receipt is asked of
@@ -27,6 +28,7 @@ import {
   TransactionReceiptNotFoundError,
   createPublicClient,
   defineChain,
+  erc20Abi,
   getAddress,
   http,
   isAddress,
@@ -38,6 +40,7 @@ import {
 } from 'viem'
 import { CHAIN_BY_ID, CHAIN_RPC_URLS, CHAIN_USDC, type Chain } from '../chains'
 import { AGENT_SPEND_POLICY_ABI, AGENT_SPEND_POLICY_IMMUTABLES, AGENT_SPEND_POLICY_RUNTIME } from '../contracts/agent-spend-policy'
+import { NoHostAnswered, onHosts } from './hosts'
 import { firstFound, missingFrom, type DecodedLog, type Expectation } from './tx-rules'
 import { isKnownBuild, sameAddress } from './vault-rules'
 
@@ -161,26 +164,28 @@ function shortReason(e: unknown): string {
 }
 
 /**
- * Run `fn` against the hosts in registry order until one answers. Only a host-level failure (no
- * answer, an HTTP or RPC error that is not a revert) moves on to the next host. A revert is the
- * chain's verdict and is thrown at once, because asking the next host would only get the same
- * verdict later; so is any error `fn` raises itself, which is a decision rather than a fault.
+ * Run `fn` against the hosts in registry order until one answers, each host's chain id checked
+ * first (hosts.ts). Only a host-level failure (no answer, a wrong chain, an HTTP or RPC error that
+ * is not a revert) moves on to the next host. A revert is the chain's verdict and is thrown at
+ * once, because asking the next host would only get the same verdict later; so is any error `fn`
+ * raises itself, which is a decision rather than a fault.
  */
 export async function onFirstHost<T>(chain: Chain, fn: (client: ArcClient, host: string) => Promise<T>): Promise<{ value: T; host: string }> {
-  const tried: string[] = []
-  let last: unknown = null
-  for (const url of rpcUrls(chain)) {
-    const host = hostOf(url)
-    tried.push(host)
-    try {
-      return { value: await fn(clientFor(chain, url), host), host }
-    } catch (e) {
-      if (isContractAnswer(e)) throw e
-      if (!(e instanceof BaseError) && !(e instanceof TypeError)) throw e
-      last = e
-    }
+  const hosts = rpcUrls(chain).map((url) => ({ host: hostOf(url), client: clientFor(chain, url) }))
+  try {
+    return await onHosts(
+      hosts,
+      {
+        chainId: chain.chainId as number,
+        askChainId: (c) => c.getChainId(),
+        isFinal: (e) => isContractAnswer(e) || (!(e instanceof BaseError) && !(e instanceof TypeError)),
+      },
+      fn,
+    )
+  } catch (e) {
+    if (e instanceof NoHostAnswered) throw new RpcUnreachableError(chain, e.tried, e.last ? shortReason(e.last) : '')
+    throw e
   }
-  throw new RpcUnreachableError(chain, tried, last ? shortReason(last) : '')
 }
 
 // --- one vault, at one block ---
@@ -358,11 +363,7 @@ export async function readVault(
 
 /** The chain's latest block: its number, its time and its base fee. */
 export async function readHead(chain: Chain): Promise<{ block: bigint; time: bigint; baseFeePerGas: bigint | null; host: string }> {
-  const { value, host } = await onFirstHost(chain, async (c) => {
-    const id = await c.getChainId()
-    if (id !== chain.chainId) throw new TypeError(`answered for chain ${id}`)
-    return c.getBlock({ blockTag: 'latest' })
-  })
+  const { value, host } = await onFirstHost(chain, (c) => c.getBlock({ blockTag: 'latest' }))
   return { block: value.number, time: value.timestamp, baseFeePerGas: value.baseFeePerGas ?? null, host }
 }
 
@@ -376,38 +377,12 @@ export async function readNativeBalance(chain: Chain, address: string): Promise<
   }
 }
 
-/** The slice of ERC-20 this page uses: balance, decimals, symbol, transfer and its event. */
-export const ERC20_ABI = [
-  { type: 'function', name: 'balanceOf', stateMutability: 'view', inputs: [{ name: 'a', type: 'address' }], outputs: [{ type: 'uint256' }] },
-  { type: 'function', name: 'decimals', stateMutability: 'view', inputs: [], outputs: [{ type: 'uint8' }] },
-  { type: 'function', name: 'symbol', stateMutability: 'view', inputs: [], outputs: [{ type: 'string' }] },
-  {
-    type: 'function',
-    name: 'transfer',
-    stateMutability: 'nonpayable',
-    inputs: [
-      { name: 'to', type: 'address' },
-      { name: 'amount', type: 'uint256' },
-    ],
-    outputs: [{ type: 'bool' }],
-  },
-  {
-    type: 'event',
-    name: 'Transfer',
-    inputs: [
-      { name: 'from', type: 'address', indexed: true },
-      { name: 'to', type: 'address', indexed: true },
-      { name: 'value', type: 'uint256', indexed: false },
-    ],
-  },
-] as const
-
 /** The registry USDC's ERC-20 balance for an address, in its 6-decimal units. */
 export async function readUsdcBalance(chain: Chain, address: string): Promise<bigint | null> {
   const usdc = usdcOf(chain)
   if (!usdc || !isAddress(address)) return null
   try {
-    return (await onFirstHost(chain, (c) => c.readContract({ address: usdc.address, abi: ERC20_ABI, functionName: 'balanceOf', args: [getAddress(address)] }))).value
+    return (await onFirstHost(chain, (c) => c.readContract({ address: usdc.address, abi: erc20Abi, functionName: 'balanceOf', args: [getAddress(address)] }))).value
   } catch {
     return null
   }
@@ -423,8 +398,8 @@ export async function readUsdcFacts(chain: Chain): Promise<{ ok: true; symbol: s
   try {
     const { value } = await onFirstHost(chain, (c) =>
       Promise.all([
-        c.readContract({ address: usdc.address, abi: ERC20_ABI, functionName: 'symbol' }),
-        c.readContract({ address: usdc.address, abi: ERC20_ABI, functionName: 'decimals' }),
+        c.readContract({ address: usdc.address, abi: erc20Abi, functionName: 'symbol' }),
+        c.readContract({ address: usdc.address, abi: erc20Abi, functionName: 'decimals' }),
       ]),
     )
     const [symbol, decimals] = value
@@ -545,7 +520,7 @@ export function decodeLogs(receipt: TransactionReceipt): DecodedLog[] {
   })
   return [
     ...parseEventLogs({ abi: AGENT_SPEND_POLICY_ABI, logs: receipt.logs }).map(shape),
-    ...parseEventLogs({ abi: ERC20_ABI, eventName: 'Transfer', logs: receipt.logs }).map(shape),
+    ...parseEventLogs({ abi: erc20Abi, eventName: 'Transfer', logs: receipt.logs }).map(shape),
   ]
 }
 
