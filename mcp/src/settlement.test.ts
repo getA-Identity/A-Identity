@@ -392,7 +392,7 @@ test('rejecting a reverted settlement leaves no claim on the cap', async () => {
   // rejectInstruction unwinds nothing, on the stated premise that a pending instruction
   // holds no claim on the cap. That premise is only true because the revert path gave it
   // back; without that this agent would carry 2 USD it never spent until UTC midnight.
-  const rejected = rejectInstruction(ix.id, OWNER, 'not paying this')
+  const rejected = await rejectInstruction(ix.id, OWNER, 'not paying this')
   assert.ok(!('error' in rejected))
   assert.equal(rejected.status, 'rejected')
   assert.equal(agent.spentTodayUsd, 0)

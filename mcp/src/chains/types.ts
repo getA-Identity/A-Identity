@@ -352,7 +352,15 @@ export type Reverted = {
   executed: false
   reverted: true
   reason: string
+  /** Set when this revert is a transaction that was mined. Nothing moved, but the attempt was
+   *  real and the chain said no, unlike a refused simulation, so it never falls through to a
+   *  different rail. */
+  minedTx?: string
 }
+
+/** Told about a settlement's hash before it leaves this server, so a restart inside the wait
+ *  for its receipt cannot lose it. */
+export type BroadcastHooks = { onBroadcast?: (hash: string) => void }
 
 /**
  * The fourth thing that can happen: it was broadcast, and no RPC produced a receipt inside the

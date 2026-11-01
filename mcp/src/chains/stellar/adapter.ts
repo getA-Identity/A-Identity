@@ -36,7 +36,7 @@ import {
 } from '@stellar/stellar-sdk'
 import { randomBytes } from 'node:crypto'
 
-import type { ChainDescriptor } from '../types.js'
+import type { BroadcastHooks, ChainDescriptor } from '../types.js'
 import {
   isLiveLedgerEntry,
   networkPassphrase,
@@ -654,6 +654,7 @@ export function createStellarAdapter(chain: ChainDescriptor, deps: StellarAdapte
     args: ReturnType<typeof nativeToScVal>[],
     display: unknown[],
     env: NodeJS.ProcessEnv,
+    hooks: BroadcastHooks = {},
   ): Promise<CallOutcome> {
     const shape = { contract: vault, method, args: display, network: chain.caip2 }
     const kp = stellarKeypair(chain, env)
@@ -717,7 +718,42 @@ export function createStellarAdapter(chain: ChainDescriptor, deps: StellarAdapte
 
     const assembled = rpc.assembleTransaction(tx, sim).build()
     assembled.sign(kp)
-    return land(server, assembled, shape)
+    const hash = assembled.hash().toString('hex')
+    try {
+      hooks.onBroadcast?.(hash)
+    } catch (e) {
+      console.error('[stellar] could not note a transaction hash before sending it:', e instanceof Error ? e.message : e)
+    }
+    try {
+      return await land(server, assembled, shape)
+    } catch (e) {
+      // A send or a poll that threw is NOT decided: the envelope may have been accepted with the
+      // answer lost on the way back. It is pending under the hash it already has, and the ledger
+      // decides. Throwing here left the caller free to sign and send the same payment again.
+      return {
+        outcome: 'pending',
+        txHash: hash,
+        explorerUrl: `${chain.explorer}/tx/${hash}`,
+        reason:
+          `the RPC did not answer (${e instanceof Error ? e.message : String(e)}), so whether it was accepted is unknown. ` +
+          'It stays valid until its time bound: look the hash up before sending it again.',
+      }
+    }
+  }
+
+  /** One look at a transaction sent earlier. Reads only, and never fails: an RPC that has
+   *  dropped it past its retention window says NOT_FOUND, which is unknown, not reverted. */
+  async function receiptStatus(
+    hash: string,
+    env: NodeJS.ProcessEnv = process.env,
+  ): Promise<{ status: 'success' | 'reverted'; txHash: string; explorerUrl: string } | { status: 'unknown'; reason: string }> {
+    try {
+      const got = await rpcFor(env).getTransaction(hash)
+      if (got.status === 'NOT_FOUND') return { status: 'unknown', reason: 'the RPC does not have this transaction in a ledger' }
+      return { status: got.status === 'SUCCESS' ? 'success' : 'reverted', txHash: hash, explorerUrl: `${chain.explorer}/tx/${hash}` }
+    } catch (e) {
+      return { status: 'unknown', reason: e instanceof Error ? e.message : String(e) }
+    }
   }
 
   /** The addresses whose OWN signature a simulated call needs, beyond the source account's. */
@@ -1495,6 +1531,7 @@ export function createStellarAdapter(chain: ChainDescriptor, deps: StellarAdapte
   }
 
   return {
+    receiptStatus,
     deployVault,
     uploadVaultWasm,
     prepareOwnerCall,
@@ -1769,8 +1806,8 @@ export function createStellarAdapter(chain: ChainDescriptor, deps: StellarAdapte
     },
 
     /** The agent's bounded payment. Amount is in the token's own base units. */
-    policyPay: (vault: string, to: string, amountRaw: bigint | string, env = process.env) =>
-      write(vault, 'pay', [addr(to), i128(amountRaw)], [to, String(amountRaw)], env),
+    policyPay: (vault: string, to: string, amountRaw: bigint | string, env = process.env, hooks?: BroadcastHooks) =>
+      write(vault, 'pay', [addr(to), i128(amountRaw)], [to, String(amountRaw)], env, hooks),
 
     // ── owner entrypoints signed with OUR key ─────────────────────────────────────────
     //
@@ -1791,8 +1828,8 @@ export function createStellarAdapter(chain: ChainDescriptor, deps: StellarAdapte
     // /api/stellar/vault/prepare and /submit, where this server signs nothing.
 
     /** The human override: skips ceiling, allowlist and freeze, still counted by the cap. */
-    policyOwnerPay: (vault: string, to: string, amountRaw: bigint | string, env = process.env) =>
-      write(vault, 'owner_pay', [addr(to), i128(amountRaw)], [to, String(amountRaw)], env),
+    policyOwnerPay: (vault: string, to: string, amountRaw: bigint | string, env = process.env, hooks?: BroadcastHooks) =>
+      write(vault, 'owner_pay', [addr(to), i128(amountRaw)], [to, String(amountRaw)], env, hooks),
 
     policyWithdraw: (vault: string, to: string, amountRaw: bigint | string, env = process.env) =>
       write(vault, 'withdraw', [addr(to), i128(amountRaw)], [to, String(amountRaw)], env),

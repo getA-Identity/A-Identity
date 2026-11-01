@@ -167,29 +167,61 @@ async function fundFromSigner(
 export type CirclePayTx = { executed: true; txHash: string; explorerUrl: string }
 /** Circle's hosted policy DENIED the transfer - an authoritative "no" (like a vault revert). */
 export type CirclePayRejected = { executed: false; rejected: true; reason: string }
-/** No creds / infra error / timeout - NOT a policy rejection; caller may fall back. */
+/** No creds, or Circle definitely did not take it, or it ended FAILED or CANCELLED. Nothing
+ *  moved and nothing will, so the caller may fall back. */
 export type CirclePayUnavailable = { executed: false; rejected: false; reason: string }
-export type CirclePayResult = CirclePayTx | CirclePayRejected | CirclePayUnavailable
+/**
+ * Circle may have this transfer and has not finished it: the polls ran out, a poll threw, or the
+ * create call failed in a way that does not say it was refused. It can still complete, so no
+ * other rail may pay this. `transactionId` is there to read it by; without one, the same
+ * idempotency key finds out, because Circle answers it with the transfer it already has.
+ */
+export type CirclePayPending = { executed: false; rejected: false; pending: true; transactionId?: string; reason: string }
+export type CirclePayResult = CirclePayTx | CirclePayRejected | CirclePayUnavailable | CirclePayPending
+
+/** Injected by tests. Production passes nothing and gets the lazy client and a real sleep. */
+export type CirclePayDeps = {
+  /** Sent to Circle so that sending the same instruction again cannot make a second transfer. */
+  idempotencyKey?: string
+  client?: Pick<CircleDeveloperControlledWalletsClient, 'createTransaction' | 'getTransaction'>
+  pollDelayMs?: number
+}
 
 const TERMINAL = new Set(['COMPLETE', 'FAILED', 'CANCELLED', 'DENIED'])
+/** How many reads one request waits for, inside the proxy's 30 second cut. A transfer that takes
+ *  longer is held with its id and read again, so the wait does not need to outlast it. */
+const POLL_TRIES = 8
+const POLL_DELAY_MS = 2_000
+
+/** Whether a failed create call is Circle saying no, rather than a request that may have arrived.
+ *  A 4xx answered the request and refused it. A timeout or a 5xx did not say. */
+function createWasRefused(err: unknown): boolean {
+  const e = err as { response?: { status?: unknown }; status?: unknown } | null
+  const status = Number(e?.response?.status ?? e?.status)
+  return status >= 400 && status < 500
+}
 
 /**
  * Send USDC from a Circle Agent Wallet on Arc. Circle's hosted policy engine screens
  * the transfer at the wallet layer; a screening DENY comes back as a rejection (the
  * caller treats it like a vault policy revert). COMPLETE returns the real tx hash.
- * Anything else (no creds, FAILED, timeout) is reported as "unavailable" so the caller
- * can fall back to another settlement path - never a silent success.
+ * No creds, a refused create, FAILED and CANCELLED are "unavailable", so the caller can fall
+ * back to another settlement path. Once Circle may hold the transfer the answer is pending and
+ * never unavailable: it can still complete, and falling back would pay twice.
  */
 export async function circlePay(
   walletId: string,
   to: string,
   amountUsd: number,
   env: NodeJS.ProcessEnv = process.env,
+  deps: CirclePayDeps = {},
 ): Promise<CirclePayResult> {
-  const c = await client(env)
+  const c = deps.client ?? (await client(env))
   if (!c) return { executed: false, rejected: false, reason: NOT_CONFIGURED }
+  let created: Awaited<ReturnType<CircleDeveloperControlledWalletsClient['createTransaction']>>
   try {
-    const created = await c.createTransaction({
+    created = await c.createTransaction({
+      ...(deps.idempotencyKey ? { idempotencyKey: deps.idempotencyKey } : {}),
       walletId,
       blockchain: ARC_BLOCKCHAIN as never,
       tokenAddress: ARC_USDC,
@@ -197,20 +229,53 @@ export async function circlePay(
       amount: [usdAmount(amountUsd)],
       fee: { type: 'level', config: { feeLevel: 'MEDIUM' } },
     } as never)
-    const txId = (created.data as { id?: string } | undefined)?.id
-    if (!txId) return { executed: false, rejected: false, reason: 'Circle createTransaction returned no id' }
-
-    const final = await pollTransaction(c, txId)
-    if (final.state === 'COMPLETE' && final.txHash) {
-      return { executed: true, txHash: final.txHash, explorerUrl: tx(final.txHash) }
-    }
-    if (final.state === 'DENIED') {
-      return { executed: false, rejected: true, reason: screeningReason(final) }
-    }
-    const detail = final.errorReason ? `${final.state}: ${final.errorReason}` : `Circle transaction ${final.state}`
-    return { executed: false, rejected: false, reason: detail }
   } catch (err) {
-    return { executed: false, rejected: false, reason: msg(err) }
+    if (createWasRefused(err)) return { executed: false, rejected: false, reason: msg(err) }
+    return { executed: false, rejected: false, pending: true, reason: `the request to Circle did not answer (${msg(err)}), so whether it took the transfer is unknown` }
+  }
+  const txId = (created.data as { id?: string } | undefined)?.id
+  if (!txId) return { executed: false, rejected: false, pending: true, reason: 'Circle accepted the request and returned no transaction id' }
+
+  let final: CircleTxView
+  try {
+    final = await pollTransaction(c, txId, POLL_TRIES, deps.pollDelayMs ?? POLL_DELAY_MS)
+  } catch (err) {
+    return { executed: false, rejected: false, pending: true, transactionId: txId, reason: `Circle has transaction ${txId} and could not be read (${msg(err)})` }
+  }
+  if (final.state === 'COMPLETE' && final.txHash) {
+    return { executed: true, txHash: final.txHash, explorerUrl: tx(final.txHash) }
+  }
+  if (final.state === 'DENIED') {
+    return { executed: false, rejected: true, reason: screeningReason(final) }
+  }
+  if (final.state === 'FAILED' || final.state === 'CANCELLED') {
+    return { executed: false, rejected: false, reason: final.errorReason ? `${final.state}: ${final.errorReason}` : `Circle transaction ${final.state}` }
+  }
+  return { executed: false, rejected: false, pending: true, transactionId: txId, reason: `Circle transaction ${txId} is ${final.state} and has not finished` }
+}
+
+/** One look at a transfer Circle may still be working on. Reads only, and never fails. */
+export async function circleTransferStatus(
+  transactionId: string,
+  env: NodeJS.ProcessEnv = process.env,
+  deps: Pick<CirclePayDeps, 'client'> = {},
+): Promise<
+  | { status: 'success'; txHash: string; explorerUrl: string }
+  | { status: 'denied'; reason: string }
+  | { status: 'reverted'; reason: string }
+  | { status: 'unknown'; reason: string }
+> {
+  const c = deps.client ?? (await client(env))
+  if (!c) return { status: 'unknown', reason: NOT_CONFIGURED }
+  try {
+    const r = await c.getTransaction({ id: transactionId })
+    const t = (r.data?.transaction ?? {}) as CircleTxView
+    if (t.state === 'COMPLETE' && t.txHash) return { status: 'success', txHash: t.txHash, explorerUrl: tx(t.txHash) }
+    if (t.state === 'DENIED') return { status: 'denied', reason: screeningReason(t) }
+    if (t.state === 'FAILED' || t.state === 'CANCELLED') return { status: 'reverted', reason: t.errorReason ? `${t.state}: ${t.errorReason}` : `Circle transaction ${t.state}` }
+    return { status: 'unknown', reason: `Circle transaction ${transactionId} is ${t.state ?? 'in an unknown state'}` }
+  } catch (err) {
+    return { status: 'unknown', reason: msg(err) }
   }
 }
 
@@ -223,10 +288,10 @@ type CircleTxView = {
 
 /** Poll a Circle transaction until it reaches a terminal state (or times out). */
 async function pollTransaction(
-  c: CircleDeveloperControlledWalletsClient,
+  c: Pick<CircleDeveloperControlledWalletsClient, 'getTransaction'>,
   id: string,
-  tries = 20,
-  delayMs = 2000,
+  tries: number,
+  delayMs: number,
 ): Promise<CircleTxView> {
   let last: CircleTxView = { state: 'PENDING' }
   for (let i = 0; i < tries; i++) {

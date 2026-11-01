@@ -13,6 +13,7 @@
 import type { TransactionReceipt } from 'viem'
 import type { ChainDescriptor } from '../types.js'
 import type {
+  BroadcastHooks,
   Prepared,
   Executed,
   Reverted,
@@ -57,6 +58,13 @@ type Hex = `0x${string}`
 
 /** How long a write waits for its receipt, across every RPC. */
 const RECEIPT_WAIT_MS = 180_000
+/**
+ * How long a settlement waits for its receipt inside the request. The API sits behind a proxy
+ * that cuts a request at about 30 seconds (vercel.json), and a payment with no receipt is held
+ * with its hash and read again later, so the wait does not need to outlast the proxy.
+ */
+export const SETTLEMENT_WAIT_MS = 14_000
+export const SETTLEMENT_WAIT_CEILING_MS = 20_000
 /** One look at a transaction already sent asks each host once, and never takes longer than this. */
 const RECEIPT_LOOK_PER_CALL_MS = 4_000
 const RECEIPT_LOOK_TOTAL_MS = 12_000
@@ -68,12 +76,21 @@ export type EvmAdapterDeps = {
   walletClient?: unknown
 }
 
+/**
+ * A node's answer that means it did not take this transaction. Deliberately short: "already
+ * known" and "nonce too low" are NOT here, because they are what a resend hears when the first
+ * host accepted it.
+ */
+const NODE_TURNED_IT_AWAY = /insufficient funds|intrinsic gas|fee cap|underpriced|exceeds (block )?gas limit/i
+
 /** Carries a step's Unconfirmed result out of a multi-step write to the catch that reports it. */
 class UnconfirmedStep extends Error {
   constructor(readonly result: Unconfirmed) {
     super(result.reason)
   }
 }
+
+const SETTLEMENT_BUDGET = { timeoutMs: SETTLEMENT_WAIT_MS, hardTimeoutMs: SETTLEMENT_WAIT_CEILING_MS }
 
 export function createEvmAdapter(chain: ChainDescriptor, deps: EvmAdapterDeps = {}) {
   if (chain.ecosystem !== 'evm') {
@@ -110,10 +127,11 @@ export function createEvmAdapter(chain: ChainDescriptor, deps: EvmAdapterDeps = 
     hash: Hex,
     what: string,
     env: NodeJS.ProcessEnv,
+    budget: { timeoutMs: number; hardTimeoutMs?: number } = { timeoutMs: RECEIPT_WAIT_MS },
   ): Promise<{ ok: true; receipt: TransactionReceipt } | { ok: false; result: Unconfirmed }> {
     let missing: string
     try {
-      const wait = await waitForReceiptOnEveryRpc(chain, hash, { env, timeoutMs: RECEIPT_WAIT_MS, ...deps.receipts })
+      const wait = await waitForReceiptOnEveryRpc(chain, hash, { env, ...budget, ...deps.receipts })
       if (wait.status === 'found') return { ok: true, receipt: wait.value }
       missing = describeReceiptWait(wait)
     } catch (err) {
@@ -129,6 +147,61 @@ export function createEvmAdapter(chain: ChainDescriptor, deps: EvmAdapterDeps = 
         explorerUrl: tx(hash),
         reason: `${what} was broadcast (tx ${hash}), but ${missing}. It may have landed or may still land; check the transaction before sending it again.`,
       },
+    }
+  }
+
+  /**
+   * Send a settlement with its hash known first.
+   *
+   * writeContract knows a hash only once a host has answered. A host that accepts the
+   * transaction and loses the connection throws instead, the fallback transport resends it to
+   * the next host, which answers "already known" or "nonce too low", and that error used to read
+   * as a revert while the transaction landed. So this signs locally, reports the hash, and only
+   * then sends. Everything up to the send moves nothing, so its errors are the caller's to treat
+   * as a refusal (gas estimation is where an insufficient balance or a bad call shows up). A send
+   * that throws is unconfirmed under that hash, unless the node's answer says it turned the
+   * transaction away.
+   */
+  async function sendSigned(
+    signer: NonNullable<Awaited<ReturnType<typeof walletClient>>>,
+    call: { address: Hex; abi: unknown; functionName: string; args: readonly unknown[] },
+    what: string,
+    hooks: BroadcastHooks,
+  ): Promise<{ ok: true; hash: Hex } | { ok: false; result: Reverted | Unconfirmed }> {
+    const { encodeFunctionData, keccak256 } = await import('viem')
+    const wallet = signer.client as unknown as {
+      prepareTransactionRequest: (req: Record<string, unknown>) => Promise<Record<string, unknown>>
+      signTransaction: (req: Record<string, unknown>) => Promise<Hex>
+      sendRawTransaction: (req: { serializedTransaction: Hex }) => Promise<Hex>
+    }
+    const data = encodeFunctionData({ abi: call.abi, functionName: call.functionName, args: call.args } as never)
+    const prepared = await wallet.prepareTransactionRequest({ account: signer.account, to: call.address, data })
+    const serializedTransaction = await wallet.signTransaction(prepared)
+    const hash = keccak256(serializedTransaction)
+    try {
+      hooks.onBroadcast?.(hash)
+    } catch (err) {
+      console.error('[evm] could not note a settlement hash before sending it:', err instanceof Error ? err.message : err)
+    }
+    try {
+      await wallet.sendRawTransaction({ serializedTransaction })
+      return { ok: true, hash }
+    } catch (err) {
+      const said = err instanceof Error ? err.message : String(err)
+      if (NODE_TURNED_IT_AWAY.test(said)) {
+        return { ok: false, result: { executed: false, reverted: true, reason: `the node refused ${what}, so nothing was sent: ${await revertReason(err)}` } }
+      }
+      return {
+        ok: false,
+        result: {
+          executed: false,
+          reverted: false,
+          unconfirmed: true,
+          txHash: hash,
+          explorerUrl: tx(hash),
+          reason: `${what} was sent (tx ${hash}) and the send did not answer cleanly, so whether a node took it is unknown. It may have landed or may still land; check the transaction before sending it again.`,
+        },
+      }
     }
   }
 
@@ -549,7 +622,7 @@ export function createEvmAdapter(chain: ChainDescriptor, deps: EvmAdapterDeps = 
     }
   }
 
-  async function payUsdc(to: string, amountUsd: number, env: NodeJS.ProcessEnv = process.env): Promise<Prepared | Executed | Reverted | Unconfirmed> {
+  async function payUsdc(to: string, amountUsd: number, env: NodeJS.ProcessEnv = process.env, hooks: BroadcastHooks = {}): Promise<Prepared | Executed | Reverted | Unconfirmed> {
     const amount = usdcUnits(chain, amountUsd)
     const signer = await walletClient(env)
     if (!signer) {
@@ -561,15 +634,15 @@ export function createEvmAdapter(chain: ChainDescriptor, deps: EvmAdapterDeps = 
         reason: `No ${chain.signerEnvVar ?? 'signer'} set. Fund a wallet and export the key to move real USDC.`,
       }
     }
-    const hash = await signer.client.writeContract({
-      address: usdc,
-      abi: ERC20_ABI,
-      functionName: 'transfer',
-      args: [to as Hex, amount],
-    })
-    const landing = await landed(hash, 'USDC transfer', env)
-    if (!landing.ok) return landing.result
-    return { executed: true, txHash: hash, explorerUrl: tx(hash) }
+    try {
+      const sent = await sendSigned(signer, { address: usdc, abi: ERC20_ABI, functionName: 'transfer', args: [to as Hex, amount] }, 'USDC transfer', hooks)
+      if (!sent.ok) return sent.result
+      const landing = await landed(sent.hash, 'USDC transfer', env, SETTLEMENT_BUDGET)
+      if (!landing.ok) return landing.result
+      return { executed: true, txHash: sent.hash, explorerUrl: tx(sent.hash) }
+    } catch (err) {
+      return { executed: false, reverted: true, reason: await revertReason(err) }
+    }
   }
 
   // ── memo-wrapped settlement: Arc `Memo` precompile ──────────────────────────────
@@ -589,8 +662,9 @@ export function createEvmAdapter(chain: ChainDescriptor, deps: EvmAdapterDeps = 
     amountUsd: number,
     memoInput: MemoInput,
     env: NodeJS.ProcessEnv = process.env,
+    hooks: BroadcastHooks = {},
   ): Promise<Prepared | Executed | Reverted | Unconfirmed> {
-    if (!memoContract) return payUsdc(to, amountUsd, env)
+    if (!memoContract) return payUsdc(to, amountUsd, env, hooks)
     const amount = usdcUnits(chain, amountUsd)
     const { memoId, memoBytes, reason } = encodeMemo(memoInput)
     const { encodeFunctionData } = await import('viem')
@@ -607,17 +681,14 @@ export function createEvmAdapter(chain: ChainDescriptor, deps: EvmAdapterDeps = 
     }
     // NOTE: we deliberately do NOT simulateContract here. The Memo precompile rejects
     // STATICCALL (eth_call) - "static execution is rejected" - so a normal simulate would
-    // falsely revert. writeContract's own gas estimation still catches an insufficient
-    // balance / bad call BEFORE broadcast (caught below); we then verify receipt.status so a
-    // mined-but-reverted tx is never reported as settled (honesty: no false executed_onchain).
+    // falsely revert. Gas estimation in sendSigned still catches an insufficient balance / bad
+    // call BEFORE broadcast (caught below); we then verify receipt.status so a mined-but-reverted
+    // tx is never reported as settled (honesty: no false executed_onchain).
     try {
-      const hash = await signer.client.writeContract({
-        address: memoContract,
-        abi: MEMO_ABI,
-        functionName: 'memo',
-        args: [usdc, transferData, memoId, memoBytes],
-      })
-      const read = await receiptOf(hash, 'Memo settlement', env)
+      const sent = await sendSigned(signer, { address: memoContract, abi: MEMO_ABI, functionName: 'memo', args: [usdc, transferData, memoId, memoBytes] }, 'Memo settlement', hooks)
+      if (!sent.ok) return sent.result
+      const { hash } = sent
+      const read = await receiptOf(hash, 'Memo settlement', env, SETTLEMENT_BUDGET)
       if (!read.ok) return read.result
       const { receipt } = read
       if (receipt.status !== 'success') {
@@ -692,6 +763,7 @@ export function createEvmAdapter(chain: ChainDescriptor, deps: EvmAdapterDeps = 
   async function payUsdcBatch(
     payments: { to: string; amountUsd: number }[],
     env: NodeJS.ProcessEnv = process.env,
+    hooks: BroadcastHooks = {},
   ): Promise<Prepared | (Executed & { count: number; totalUsd: number }) | Reverted | Unconfirmed> {
     const clean = payments.filter((p) => p && typeof p.to === 'string' && Number.isFinite(p.amountUsd) && p.amountUsd > 0)
     const totalUsd = clean.reduce((s, p) => s + p.amountUsd, 0)
@@ -717,16 +789,20 @@ export function createEvmAdapter(chain: ChainDescriptor, deps: EvmAdapterDeps = 
       if (!multicall3From) {
         let last: Hex = '0x' as Hex
         for (const p of clean) {
-          last = await signer.client.writeContract({ address: usdc, abi: ERC20_ABI, functionName: 'transfer', args: [p.to as Hex, usdcUnits(chain, p.amountUsd)] })
-          const read = await receiptOf(last, 'a transfer in the sequence', env)
+          const sent = await sendSigned(signer, { address: usdc, abi: ERC20_ABI, functionName: 'transfer', args: [p.to as Hex, usdcUnits(chain, p.amountUsd)] }, 'a transfer in the sequence', hooks)
+          if (!sent.ok) return sent.result
+          last = sent.hash
+          const read = await receiptOf(last, 'a transfer in the sequence', env, SETTLEMENT_BUDGET)
           if (!read.ok) return read.result
           const r = read.receipt
           if (r.status !== 'success') return { executed: false, reverted: true, reason: `a transfer reverted (tx ${last})` }
         }
         return { executed: true, txHash: last, explorerUrl: tx(last), count: clean.length, totalUsd }
       }
-      const hash = await signer.client.writeContract({ address: multicall3From, abi: MULTICALL3_FROM_ABI, functionName: 'aggregate3', args: [calls] })
-      const read = await receiptOf(hash, 'batch settlement', env)
+      const sent = await sendSigned(signer, { address: multicall3From, abi: MULTICALL3_FROM_ABI, functionName: 'aggregate3', args: [calls] }, 'batch settlement', hooks)
+      if (!sent.ok) return sent.result
+      const { hash } = sent
+      const read = await receiptOf(hash, 'batch settlement', env, SETTLEMENT_BUDGET)
       if (!read.ok) return read.result
       const { receipt } = read
       if (receipt.status !== 'success') return { executed: false, reverted: true, reason: `batch settlement reverted on-chain (tx ${hash})` }
@@ -786,10 +862,32 @@ export function createEvmAdapter(chain: ChainDescriptor, deps: EvmAdapterDeps = 
     }
   }
 
-  const policyPay = (vault: string, to: string, amountUsd: number, env: NodeJS.ProcessEnv = process.env) =>
-    vaultWrite(vault, 'pay', [to as Hex, usdcUnits(chain, amountUsd)], env)
-  const policyOwnerPay = (vault: string, to: string, amountUsd: number, env: NodeJS.ProcessEnv = process.env) =>
-    vaultWrite(vault, 'ownerPay', [to as Hex, usdcUnits(chain, amountUsd)], env)
+  /**
+   * A vault payment. Split from vaultWrite because money rides on what its errors mean: a refused
+   * simulation sent nothing, so it can be read as a refusal, and anything at or after the send is
+   * decided by the hash it left under.
+   */
+  async function vaultPayment(vault: string, functionName: 'pay' | 'ownerPay', to: string, amountUsd: number, env: NodeJS.ProcessEnv, hooks: BroadcastHooks): Promise<VaultResult> {
+    const signer = await walletClient(env)
+    if (!signer) return { executed: false, reverted: false, reason: NO_KEY }
+    const client = await publicClient(env)
+    const args = [to as Hex, usdcUnits(chain, amountUsd)] as const
+    try {
+      await client.simulateContract({ address: vault as Hex, abi: AgentSpendPolicyAbi, functionName: functionName as never, args: args as never, account: signer.account })
+      const sent = await sendSigned(signer, { address: vault as Hex, abi: AgentSpendPolicyAbi, functionName, args }, `vault ${functionName}`, hooks)
+      if (!sent.ok) return sent.result
+      const landing = await landed(sent.hash, `vault ${functionName}`, env, SETTLEMENT_BUDGET)
+      if (!landing.ok) return landing.result
+      return { executed: true, txHash: sent.hash, explorerUrl: tx(sent.hash) }
+    } catch (err) {
+      return { executed: false, reverted: true, reason: await revertReason(err) }
+    }
+  }
+
+  const policyPay = (vault: string, to: string, amountUsd: number, env: NodeJS.ProcessEnv = process.env, hooks: BroadcastHooks = {}) =>
+    vaultPayment(vault, 'pay', to, amountUsd, env, hooks)
+  const policyOwnerPay = (vault: string, to: string, amountUsd: number, env: NodeJS.ProcessEnv = process.env, hooks: BroadcastHooks = {}) =>
+    vaultPayment(vault, 'ownerPay', to, amountUsd, env, hooks)
   const policySetPolicy = (
     vault: string,
     input: { dailyCapUsd: number; autoApproveUsd: number; allowlistEnabled: boolean },
@@ -822,12 +920,13 @@ export function createEvmAdapter(chain: ChainDescriptor, deps: EvmAdapterDeps = 
     hash: Hex,
     what: string,
     env: NodeJS.ProcessEnv,
+    budget?: { timeoutMs: number; hardTimeoutMs?: number },
   ): Promise<{ ok: true } | { ok: false; result: Reverted | Unconfirmed }> {
-    const read = await receiptOf(hash, what, env)
+    const read = await receiptOf(hash, what, env, budget)
     if (!read.ok) return read
     return read.receipt.status === 'success'
       ? { ok: true }
-      : { ok: false, result: { executed: false, reverted: true, reason: `${what} reverted on-chain (tx ${hash})` } }
+      : { ok: false, result: { executed: false, reverted: true, reason: `${what} reverted on-chain (tx ${hash})`, minedTx: hash } }
   }
 
   async function readVault(vault: string) {

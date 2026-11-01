@@ -1,6 +1,7 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { createEvmAdapter } from './adapter.js'
+import { keccak256 } from 'viem'
+import { createEvmAdapter, SETTLEMENT_WAIT_CEILING_MS } from './adapter.js'
 import { resolveRpcUrls, usdcUnits, fromUsdcUnits, txUrl, addressUrl } from './client.js'
 import { ARC_CHAIN, getChainById } from '../registry.js'
 
@@ -188,14 +189,19 @@ test('a signer key is trimmed, and an unusable one is a clean no-op rather than 
 
 const VAULT = '0x2222222222222222222222222222222222222222'
 const PAYEE = '0x1111111111111111111111111111111111111111'
-const SENT = `0x${'5a'.repeat(32)}`
+const SIGNED = `0x02${'ab'.repeat(40)}` as `0x${string}`
+/** The hash of what the fake signer signs, which is how a real one is known before the send. */
+const SENT = keccak256(SIGNED)
 const HOST_A = 'https://a.rpc.test'
 const HOST_B = 'https://b.rpc.test'
 
 /** A signer and client that never touch a network, and one receipt per host. */
-function scene(hosts: Record<string, unknown>, over: { simulateThrows?: Error } = {}) {
+function scene(
+  hosts: Record<string, unknown>,
+  over: { simulateThrows?: Error; prepareThrows?: Error; sendThrows?: Error; receipts?: Record<string, unknown> } = {},
+) {
   const asked: string[] = []
-  const counters = { writes: 0 }
+  const counters = { writes: 0, sends: 0 }
   const adapter = createEvmAdapter(ARC_CHAIN, {
     publicClient: {
       simulateContract: async () => {
@@ -208,12 +214,23 @@ function scene(hosts: Record<string, unknown>, over: { simulateThrows?: Error } 
       client: {
         writeContract: async () => { counters.writes += 1; return SENT },
         deployContract: async () => { counters.writes += 1; return SENT },
+        prepareTransactionRequest: async (req: Record<string, unknown>) => {
+          if (over.prepareThrows) throw over.prepareThrows
+          return req
+        },
+        signTransaction: async () => SIGNED,
+        sendRawTransaction: async () => {
+          counters.writes += 1
+          counters.sends += 1
+          if (over.sendThrows) throw over.sendThrows
+          return SENT
+        },
       },
     },
     receipts: {
       urls: Object.keys(hosts),
       pollMs: 1,
-      timeoutMs: 0,
+      ...(over.receipts ?? { timeoutMs: 0 }),
       call: async (url, _method, params) => {
         asked.push(url)
         const held = hosts[url]
@@ -263,6 +280,77 @@ test('vaultWrite still reports a mined revert and a simulated refusal as reverte
   if (!res.executed) assert.equal(res.reverted, true)
   assert.equal(refused.counters.writes, 0, 'a refused simulation broadcasts nothing')
   assert.deepEqual(refused.asked, [])
+})
+
+test('a send that throws after a node took it is unconfirmed under the signed hash, not a revert', async () => {
+  // Host A accepted the raw transaction and lost the connection, and the fallback resent it to
+  // host B, which says one of these. Reading that as a revert paid a second time on another rail.
+  for (const said of ['already known', 'nonce too low: next nonce 8, tx nonce 7', 'The request took too long to respond']) {
+    const s = scene({ [HOST_A]: MINED }, { sendThrows: new Error(said) })
+    const res = await s.adapter.policyPay(VAULT, PAYEE, 1, {})
+    assert.equal(res.executed, false)
+    if (res.executed) continue
+    assert.equal(res.reverted, false, said)
+    assert.ok('unconfirmed' in res, said)
+    if ('unconfirmed' in res) {
+      assert.equal(res.txHash, SENT)
+      assert.ok(res.explorerUrl.includes(SENT))
+    }
+    assert.deepEqual(s.asked, [], 'there is no receipt to wait for in this request')
+  }
+  // The same rule on the direct paths, where a revert is shown to a human who then re-approves.
+  const memo = await scene({ [HOST_A]: MINED }, { sendThrows: new Error('already known') }).adapter.payUsdcWithMemo(PAYEE, 1, { agentId: 'a', instructionId: 'i', service: 'payment', policyDecision: 'auto_approved' }, {})
+  assert.ok('unconfirmed' in memo)
+  const batch = await scene({ [HOST_A]: MINED }, { sendThrows: new Error('already known') }).adapter.payUsdcBatch([{ to: PAYEE, amountUsd: 1 }], {})
+  assert.ok('unconfirmed' in batch)
+})
+
+test('a node that turned the transaction away, or a failure before the send, is a refusal', async () => {
+  const refused = scene({ [HOST_A]: MINED }, { sendThrows: new Error('insufficient funds for gas * price + value') })
+  const res = await refused.adapter.policyPay(VAULT, PAYEE, 1, {})
+  assert.equal(res.executed, false)
+  if (!res.executed) {
+    assert.equal(res.reverted, true)
+    assert.ok(!('minedTx' in res && res.minedTx), 'nothing was mined')
+  }
+  const estimate = scene({ [HOST_A]: MINED }, { prepareThrows: new Error('execution reverted') })
+  const r2 = await estimate.adapter.payUsdcWithMemo(PAYEE, 1, { agentId: 'a', instructionId: 'i', service: 'payment', policyDecision: 'auto_approved' }, {})
+  assert.equal(r2.executed, false)
+  if (!r2.executed && 'reverted' in r2) assert.equal(r2.reverted, true)
+  assert.equal(estimate.counters.sends, 0, 'estimation failed, so nothing was sent')
+})
+
+test('the hash is reported before the send and before any wait', async () => {
+  const s = scene({ [HOST_A]: MINED })
+  const order: string[] = []
+  const hooks = { onBroadcast: (h: string) => { order.push(`hash:${h}:sends=${s.counters.sends}`) } }
+  await s.adapter.policyPay(VAULT, PAYEE, 1, {}, hooks)
+  await s.adapter.policyOwnerPay(VAULT, PAYEE, 1, {}, hooks)
+  await s.adapter.payUsdcWithMemo(PAYEE, 1, { agentId: 'a', instructionId: 'i', service: 'payment', policyDecision: 'auto_approved' }, {}, hooks)
+  await s.adapter.payUsdcBatch([{ to: PAYEE, amountUsd: 1 }], {}, hooks)
+  assert.deepEqual(order, [0, 1, 2, 3].map((sends) => `hash:${SENT}:sends=${sends}`))
+  // A hook that throws costs a log line, not the payment's outcome.
+  const r = await scene({ [HOST_A]: MINED }).adapter.policyPay(VAULT, PAYEE, 1, {}, { onBroadcast: () => { throw new Error('disk full') } })
+  assert.equal(r.executed, true)
+})
+
+test('a mined vault revert names its transaction; a refused simulation has none', async () => {
+  const mined = await scene({ [HOST_A]: REVERTED }).adapter.policyPay(VAULT, PAYEE, 1, {})
+  assert.equal(!mined.executed && 'minedTx' in mined ? mined.minedTx : null, SENT)
+  const refused = await scene({ [HOST_A]: MINED }, { simulateThrows: new Error('RPC down') }).adapter.policyPay(VAULT, PAYEE, 1, {})
+  assert.ok(!('minedTx' in refused))
+})
+
+test('a settlement waits inside the proxy budget, and the wait ends unconfirmed', async () => {
+  assert.ok(SETTLEMENT_WAIT_CEILING_MS <= 20_000, 'vercel.json cuts /api at about 30 seconds')
+  let clock = 0
+  const s = scene({ [HOST_A]: null }, {
+    receipts: { now: () => clock, sleep: async (ms: number) => { clock += ms } },
+  })
+  const res = await s.adapter.policyPay(VAULT, PAYEE, 1, {})
+  assert.ok('unconfirmed' in res)
+  assert.ok(clock > 0, 'it did wait')
+  assert.ok(clock <= SETTLEMENT_WAIT_CEILING_MS, `the wait took ${clock} ms`)
 })
 
 test('registerAgent reads every host, and no receipt is unconfirmed rather than a throw', async () => {

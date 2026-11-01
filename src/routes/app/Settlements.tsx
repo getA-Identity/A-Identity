@@ -66,6 +66,11 @@ type Status =
   | 'executed_onchain'
   | 'rejected'
 
+/** Whether a settlement was sent for this instruction with no known outcome yet. */
+function settlementOpen(ix: { unconfirmedTx?: string; unconfirmedCircleTx?: string; circleIdempotencyKey?: string }): boolean {
+  return Boolean(ix.unconfirmedTx || ix.unconfirmedCircleTx || ix.circleIdempotencyKey)
+}
+
 type Instruction = {
   id: string
   agentId: string
@@ -77,6 +82,11 @@ type Instruction = {
   status: Status
   policyNote: string
   txHash?: string
+  /** A settlement already sent for this instruction with no known outcome. It may have moved
+   *  money, so it is approved to read it again and is never edited into a second payment. */
+  unconfirmedTx?: string
+  unconfirmedCircleTx?: string
+  circleIdempotencyKey?: string
   explorerUrl?: string
   enforcedBy?: 'server' | 'circle-agent-stack' | 'onchain-vault' | 'session-key'
   /** On-chain Memo audit trail (Arc Memo precompile): the indexed memoId and the
@@ -246,6 +256,11 @@ export default function Settlements() {
    */
   const saveEdit = async (id: string) => {
     if (!draft) return
+    const original = items.find((i) => i.id === id)
+    if (original && settlementOpen(original)) {
+      setError('A payment was already sent for this one and has no known outcome, so an edit could pay twice. Approve it to read that payment again.')
+      return
+    }
     const amountUsd = Math.max(0, Number(draft.amount) || 0)
     const nextPayee = draft.payee.trim()
     if (!nextPayee) { setError('Give the replacement a payee.'); return }
@@ -734,7 +749,7 @@ export default function Settlements() {
                 {/* Actions and receipt */}
                 {hasFooter && (
                 <div className="mt-3.5 flex flex-wrap items-center justify-end gap-2 border-t border-border pt-3">
-                  {pending && editing !== ix.id && (
+                  {pending && editing !== ix.id && !settlementOpen(ix) && (
                     <button
                       type="button"
                       onClick={() => { setEditing(ix.id); setDraft({ amount: String(ix.amountUsd), payee: ix.payee }); setError(null) }}

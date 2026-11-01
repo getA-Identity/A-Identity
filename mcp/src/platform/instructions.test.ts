@@ -5,8 +5,9 @@ import { __resetPlatformStateForTests, dailySpent, type PlatformAgent } from './
 import { createAgent } from './agents.js'
 import { vaultChainFor } from './vault-adapter.js'
 import {
-  __setSettlementForTests, approveInstruction, createInstruction, executeInstruction, sessionKeyBound,
+  __setSettlementForTests, approveInstruction, createInstruction, executeInstruction, rejectInstruction, sessionKeyBound, UNCONFIRMED_REJECT_AFTER_MS,
 } from './instructions.js'
+import { circlePay, circleTransferStatus } from '../circle-agent.js'
 
 /**
  * Session-key settlement labeling.
@@ -650,7 +651,7 @@ test('THE DOUBLE PAYMENT: an unconfirmed vault payment never reaches Circle or d
   assert.ok(ix.policyNote.includes(UNCONFIRMED_TX), 'the human gets the hash to check')
   assert.match(ix.policyNote, /may have landed/)
   assert.doesNotMatch(ix.policyNote, /reverted|nothing settled/i)
-  assert.equal(dailySpent(agent), 0)
+  assert.equal(dailySpent(agent), 0.5, 'a payment that may have landed stays counted')
 })
 
 test('approving an unconfirmed payment while nobody has its receipt sends nothing and hands it back', async () => {
@@ -664,7 +665,7 @@ test('approving an unconfirmed payment while nobody has its receipt sends nothin
       assert.equal(done.status, 'pending_approval')
       assert.equal(done.unconfirmedTx, UNCONFIRMED_TX)
       assert.match(done.policyNote, /No second payment was sent/)
-      assert.equal(dailySpent(agent), 0, 'approving took the cap and handing it back returned it')
+      assert.equal(dailySpent(agent), 0.5, 'one claim throughout: approving added nothing and the hold released nothing')
     },
   )
 })
@@ -710,6 +711,7 @@ test('an unconfirmed payment that reverted is free to settle on the approval tha
         assert.equal(done.status, 'executed_onchain')
         assert.equal(done.unconfirmedTx, undefined)
         assert.equal(paid, 1)
+        assert.equal(dailySpent(agent), 0.5, 'the claim the hold kept pays for this settlement, once')
       })
     },
   )
@@ -735,6 +737,528 @@ test('a direct settlement with no receipt is unconfirmed, not "no signer, simula
     assert.equal(done.unconfirmedTx, UNCONFIRMED_TX)
     assert.doesNotMatch(done.policyNote, /simulated/)
   })
+})
+
+// ── the daily cap while a payment may have landed ────────────────────────────────────
+
+/** An agent with no vault and a cap of 10, whose 9 USDC payment just came back with no receipt. */
+async function heldDirectPayment() {
+  __resetPlatformStateForTests()
+  const agent = createAgent({
+    name: 'Capped Agent',
+    description: 'Seeded for the cap while a payment is held.',
+    category: 'Research',
+    capabilities: [],
+    permissions: { dailyCapUsd: 10, autoApproveUnderUsd: 10, agentToHuman: true },
+    owner: OWNER,
+  })
+  const ix = seedInstruction(agent, 9)
+  await withSettlement({ payUsdcWithMemo: async () => unconfirmed() }, async () => {
+    const done = await executeInstruction(ix.id, OWNER)
+    assert.ok(!('error' in done))
+  })
+  return { agent, ix }
+}
+
+test('THE CAP: a held payment stays counted, so the agent cannot spend the cap again while it lands', async () => {
+  const { agent, ix } = await heldDirectPayment()
+  assert.equal(ix.status, 'pending_approval')
+  assert.equal(dailySpent(agent), 9)
+  const next = createInstruction({ agentId: agent.id, type: 'payment', amountUsd: 9, payee: PAYEE, caller: OWNER })
+  assert.ok(!('error' in next))
+  assert.notEqual(next.status, 'auto_approved', '18 against a cap of 10')
+})
+
+test('approving a held payment does not count it twice, and a revert gives it back once', async () => {
+  const { agent, ix } = await heldDirectPayment()
+  assert.ok(!('error' in approveInstruction(ix.id, OWNER)))
+  assert.equal(dailySpent(agent), 9)
+  await withSettlement(
+    {
+      receiptStatus: async () => ({ status: 'reverted' as const, txHash: UNCONFIRMED_TX, explorerUrl: 'x' }),
+      payUsdcWithMemo: async () => ({ executed: false as const, reverted: true as const, reason: 'still no funds' }),
+    },
+    async () => {
+      const done = await executeInstruction(ix.id, OWNER)
+      assert.ok(!('error' in done))
+      assert.equal(done.status, 'pending_approval')
+      assert.equal(done.unconfirmedTx, undefined)
+    },
+  )
+  assert.equal(dailySpent(agent), 0)
+  assert.ok(!('error' in approveInstruction(ix.id, OWNER)))
+  assert.equal(dailySpent(agent), 9, 'with nothing held, an approval counts as it always did')
+})
+
+test('a hold that crosses midnight is counted against the new day if it settles for real', async () => {
+  const { agent, ix } = await heldDirectPayment()
+  ix.capHeldOn = '2000-01-01'
+  agent.spendDate = '2000-01-01'
+  assert.ok(!('error' in approveInstruction(ix.id, OWNER)))
+  assert.equal(dailySpent(agent), 0)
+  await withSettlement(
+    {
+      receiptStatus: async () => ({ status: 'reverted' as const, txHash: UNCONFIRMED_TX, explorerUrl: 'x' }),
+      payUsdcWithMemo: async () => ({ executed: true as const, txHash: `0x${'8d'.repeat(32)}`, explorerUrl: 'y' }),
+    },
+    async () => { await executeInstruction(ix.id, OWNER) },
+  )
+  assert.equal(ix.status, 'executed_onchain')
+  assert.equal(dailySpent(agent), 9)
+})
+
+// ── rejecting a held instruction reads it first ──────────────────────────────────────
+
+test('THE EDIT FLOW: rejecting a held payment that landed records it as settled, and answers with an error', async () => {
+  const { agent, ix } = await heldDirectPayment()
+  await withSettlement(
+    { receiptStatus: async () => ({ status: 'success' as const, txHash: UNCONFIRMED_TX, explorerUrl: `https://explorer.test/tx/${UNCONFIRMED_TX}` }) },
+    async () => {
+      // The console rejects and then creates a replacement, so anything but an error here pays twice.
+      const out = await rejectInstruction(ix.id, OWNER, 'replaced with edited terms')
+      assert.ok('error' in out)
+      if ('error' in out) assert.match(out.error, /already landed/)
+      assert.equal(ix.status, 'executed_onchain')
+      assert.equal(ix.txHash, UNCONFIRMED_TX)
+      assert.equal(ix.unconfirmedTx, undefined)
+      assert.equal(dailySpent(agent), 9, 'the spend is counted')
+    },
+  )
+})
+
+test('rejecting a held payment nobody can read is refused, and the hold is untouched', async () => {
+  const { agent, ix } = await heldDirectPayment()
+  await withSettlement(
+    { receiptStatus: async () => ({ status: 'unknown' as const, reason: 'no receipt on any RPC host' }) },
+    async () => {
+      const out = await rejectInstruction(ix.id, OWNER, 'never mind')
+      assert.ok('error' in out)
+      if ('error' in out) assert.match(out.error, /may have moved money/)
+    },
+  )
+  assert.equal(ix.status, 'pending_approval')
+  assert.equal(ix.unconfirmedTx, UNCONFIRMED_TX)
+  assert.equal(dailySpent(agent), 9)
+})
+
+test('a day later a human may give up on it, the hash stays on the record, and the cap claim is not given back', async () => {
+  const { agent, ix } = await heldDirectPayment()
+  ix.unconfirmedAt = new Date(Date.now() - UNCONFIRMED_REJECT_AFTER_MS - 1_000).toISOString()
+  await withSettlement(
+    { receiptStatus: async () => ({ status: 'unknown' as const, reason: 'no receipt on any RPC host' }) },
+    async () => {
+      const out = await rejectInstruction(ix.id, OWNER, 'it never landed')
+      assert.ok(!('error' in out))
+    },
+  )
+  assert.equal(ix.status, 'rejected')
+  assert.equal(ix.abandonedTx, UNCONFIRMED_TX)
+  assert.match(ix.policyNote, /may still have moved money/)
+  assert.equal(dailySpent(agent), 9)
+})
+
+test('rejecting a held payment that reverted is a plain rejection, and the claim goes back', async () => {
+  const { agent, ix } = await heldDirectPayment()
+  await withSettlement(
+    { receiptStatus: async () => ({ status: 'reverted' as const, txHash: UNCONFIRMED_TX, explorerUrl: 'x' }) },
+    async () => {
+      const out = await rejectInstruction(ix.id, OWNER, 'not paying this')
+      assert.ok(!('error' in out))
+    },
+  )
+  assert.equal(ix.status, 'rejected')
+  assert.equal(ix.unconfirmedTx, undefined)
+  assert.equal(dailySpent(agent), 0)
+})
+
+// ── a mined revert, and the hash on the record before the wait ───────────────────────
+
+test('a vault payment mined and reverted never falls through: the chain refused it', async () => {
+  // The owner froze the vault after a lagging host's simulate passed. The receipt carries no
+  // typed name, and the same money through Circle or the server signer has no vault in the way.
+  __resetPlatformStateForTests()
+  const agent = seedVaultAgent()
+  agent.circleWalletId = 'circle-wallet-1'
+  const ix = seedInstruction(agent)
+  const tx = `0x${'9e'.repeat(32)}`
+  await withSettlement(
+    {
+      ...neverAgain,
+      policyPay: async () => ({ executed: false as const, reverted: true as const, reason: `vault pay reverted on-chain (tx ${tx})`, minedTx: tx }),
+    },
+    async () => {
+      await withSignerConfigured(agent, async () => {
+        const done = await executeInstruction(ix.id, OWNER)
+        assert.ok(!('error' in done))
+        assert.equal(done.status, 'pending_approval')
+        assert.equal(done.enforcedBy, 'onchain-vault')
+        assert.ok(done.policyNote.includes(tx))
+        assert.equal(dailySpent(agent), 0, 'it reverted, so nothing moved and the claim goes back')
+      })
+    },
+  )
+})
+
+test('a vault simulate that failed on infra still falls through: nothing was broadcast', async () => {
+  __resetPlatformStateForTests()
+  const agent = seedVaultAgent()
+  const ix = seedInstruction(agent)
+  let direct = 0
+  await withSettlement(
+    {
+      policyPay: async () => ({ executed: false as const, reverted: true as const, reason: 'RPC 503' }),
+      payUsdcWithMemo: async () => { direct += 1; return { executed: true as const, txHash: '0xd', explorerUrl: 'y' } },
+    },
+    async () => {
+      await withSignerConfigured(agent, async () => {
+        const done = await executeInstruction(ix.id, OWNER)
+        assert.ok(!('error' in done))
+        assert.equal(done.status, 'executed_onchain')
+      })
+    },
+  )
+  assert.equal(direct, 1)
+})
+
+test('a restart during the wait finds the hash on the instruction and pays nothing again', async () => {
+  __resetPlatformStateForTests()
+  const agent = seedVaultAgent()
+  const ix = seedInstruction(agent)
+  let noted: string | undefined
+  await withSettlement(
+    {
+      policyPay: async (_v, _t, _a, _e, hooks) => {
+        hooks?.onBroadcast?.(UNCONFIRMED_TX)
+        noted = ix.unconfirmedTx
+        // The process goes away here, inside the wait.
+        throw new Error('process restarted')
+      },
+    },
+    async () => {
+      await withSignerConfigured(agent, async () => {
+        await assert.rejects(executeInstruction(ix.id, OWNER))
+      })
+    },
+  )
+  assert.equal(noted, UNCONFIRMED_TX, 'noted before the wait')
+  assert.equal(ix.status, 'auto_approved', 'still approved, which is what used to pay twice')
+
+  await withSettlement(
+    {
+      ...neverAgain,
+      policyPay: async () => { throw new Error('the next execute must read the hash, not send') },
+      receiptStatus: async () => ({ status: 'unknown' as const, reason: 'no receipt yet' }),
+    },
+    async () => {
+      const held = await executeInstruction(ix.id, OWNER)
+      assert.ok(!('error' in held))
+      assert.equal(held.status, 'pending_approval')
+      assert.equal(held.unconfirmedTx, UNCONFIRMED_TX)
+    },
+  )
+})
+
+test('a payment answered on the first attempt leaves no open hash behind', async () => {
+  __resetPlatformStateForTests()
+  const agent = seedVaultAgent()
+  const ix = seedInstruction(agent)
+  await withSettlement(
+    {
+      policyPay: async (_v, _t, _a, _e, hooks) => {
+        hooks?.onBroadcast?.(UNCONFIRMED_TX)
+        return { executed: true as const, txHash: UNCONFIRMED_TX, explorerUrl: 'y' }
+      },
+      readVault: async () => vaultView({}),
+    },
+    async () => {
+      await withSignerConfigured(agent, async () => {
+        const done = await executeInstruction(ix.id, OWNER)
+        assert.ok(!('error' in done))
+        assert.equal(done.status, 'executed_onchain')
+        assert.equal(done.unconfirmedTx, undefined)
+        assert.equal(done.unconfirmedAt, undefined)
+      })
+    },
+  )
+})
+
+// ── a Soroban payment that may still land ────────────────────────────────────────────
+
+test('a pending Stellar vault payment is held with its hash, keeps the cap, and is read from Soroban', async () => {
+  __resetPlatformStateForTests()
+  const agent = seedStellarVaultAgent()
+  const ix = seedStellarInstruction(agent, Keypair.random().publicKey())
+  const spentBefore = dailySpent(agent)
+  const hash = 'ab'.repeat(32)
+  await withSettlement(
+    {
+      ...neverAgain,
+      payFromVault: async () => ({ executed: false as const, reverted: false as const, unconfirmed: true as const, txHash: hash, explorerUrl: `https://x/tx/${hash}`, reason: `pending: ${hash}. not in a ledger yet` }),
+    },
+    async () => {
+      await withSignerConfigured(agent, async () => {
+        const done = await executeInstruction(ix.id, OWNER)
+        assert.ok(!('error' in done))
+        assert.equal(done.status, 'pending_approval')
+        assert.equal(done.unconfirmedTx, hash)
+        assert.doesNotMatch(done.policyNote, /nothing moved|Nothing was settled/i)
+        assert.equal(dailySpent(agent), spentBefore, 'not given back while it may land')
+      })
+    },
+  )
+  assert.ok(!('error' in approveInstruction(ix.id, OWNER)))
+  const askedFor: unknown[] = []
+  await withSettlement(
+    {
+      ...neverAgain,
+      payFromVault: async () => { throw new Error('a pending payment is not sent a second time') },
+      receiptStatus: async (h, a) => {
+        askedFor.push(h, a?.id)
+        return { status: 'success' as const, txHash: h, explorerUrl: `https://x/tx/${h}` }
+      },
+    },
+    async () => {
+      const done = await executeInstruction(ix.id, OWNER)
+      assert.ok(!('error' in done))
+      assert.equal(done.status, 'executed_onchain')
+      assert.equal(done.txHash, hash)
+    },
+  )
+  assert.deepEqual(askedFor, [hash, agent.id], 'the read is told whose vault this is, which is what routes it to Soroban')
+})
+
+// ── Circle: a transfer it may still complete ─────────────────────────────────────────
+
+const circlePending = (transactionId?: string) => ({
+  executed: false as const,
+  rejected: false as const,
+  pending: true as const,
+  ...(transactionId ? { transactionId } : {}),
+  reason: 'Circle transaction is SENT and has not finished',
+})
+
+function seedCircleAgent() {
+  __resetPlatformStateForTests()
+  const agent = createAgent({
+    name: 'Circle Agent',
+    description: 'Seeded for Circle settlement.',
+    category: 'Research',
+    capabilities: [],
+    permissions: { dailyCapUsd: 1000, autoApproveUnderUsd: 100, agentToHuman: true },
+    owner: OWNER,
+  })
+  agent.circleWalletId = 'circle-wallet-1'
+  return agent
+}
+
+test('THE CIRCLE DOUBLE PAYMENT: a transfer that may still complete holds, with the id, and nothing else goes out', async () => {
+  const agent = seedCircleAgent()
+  const ix = seedInstruction(agent)
+  await withSettlement(
+    {
+      circlePay: async () => circlePending('circle-tx-1'),
+      payUsdcWithMemo: async () => { throw new Error('Circle may still complete it, so this would pay twice') },
+      payUsdcBatch: async () => { throw new Error('Circle may still complete it, so this would pay twice') },
+    },
+    async () => {
+      const done = await executeInstruction(ix.id, OWNER)
+      assert.ok(!('error' in done))
+      assert.equal(done.status, 'pending_approval')
+      assert.equal(done.enforcedBy, 'circle-agent-stack')
+      assert.equal(done.unconfirmedCircleTx, 'circle-tx-1')
+      assert.equal(done.txHash, undefined)
+    },
+  )
+  assert.equal(dailySpent(agent), 0.5)
+  assert.ok(!('error' in approveInstruction(ix.id, OWNER)))
+
+  // Still open: read it, send nothing.
+  const noSend = {
+    circlePay: async () => { throw new Error('the open transfer is read, not created again') },
+    payUsdcWithMemo: async () => { throw new Error('nothing else may go out') },
+  }
+  await withSettlement({ ...noSend, circleStatus: async () => ({ status: 'unknown' as const, reason: 'still SENT' }) }, async () => {
+    const done = await executeInstruction(ix.id, OWNER)
+    assert.ok(!('error' in done))
+    assert.equal(done.status, 'pending_approval')
+    assert.equal(dailySpent(agent), 0.5)
+  })
+
+  // It completes.
+  assert.ok(!('error' in approveInstruction(ix.id, OWNER)))
+  await withSettlement({ ...noSend, circleStatus: async () => ({ status: 'success' as const, txHash: '0xcircle', explorerUrl: 'u' }) }, async () => {
+    const done = await executeInstruction(ix.id, OWNER)
+    assert.ok(!('error' in done))
+    assert.equal(done.status, 'executed_onchain')
+    assert.equal(done.txHash, '0xcircle')
+    assert.equal(done.unconfirmedCircleTx, undefined)
+    assert.equal(done.circleIdempotencyKey, undefined)
+    assert.equal(dailySpent(agent), 0.5, 'counted once')
+  })
+})
+
+test('a held Circle transfer that ended FAILED is free to settle on the approval that followed', async () => {
+  const agent = seedCircleAgent()
+  const ix = seedInstruction(agent)
+  await withSettlement({ circlePay: async () => circlePending('circle-tx-2') }, async () => { await executeInstruction(ix.id, OWNER) })
+  assert.ok(!('error' in approveInstruction(ix.id, OWNER)))
+  const keys: unknown[] = []
+  await withSettlement(
+    {
+      circleStatus: async () => ({ status: 'reverted' as const, reason: 'FAILED' }),
+      circlePay: async (_w, _t, _a, _e, deps) => {
+        keys.push(deps?.idempotencyKey)
+        return { executed: true as const, txHash: '0xc2', explorerUrl: 'u' }
+      },
+    },
+    async () => {
+      const done = await executeInstruction(ix.id, OWNER)
+      assert.ok(!('error' in done))
+      assert.equal(done.status, 'executed_onchain')
+      assert.equal(dailySpent(agent), 0.5)
+    },
+  )
+  assert.equal(keys.length, 1)
+  assert.ok(keys[0], 'a new transfer gets a new key')
+})
+
+test('a Circle create nobody answered goes back to Circle with the same key, ahead of the vault', async () => {
+  const agent = seedCircleAgent()
+  agent.vaultAddress = VAULT
+  agent.vaultOwner = OPERATOR
+  agent.vaultOperator = OPERATOR
+  const ix = seedInstruction(agent)
+  const keys: unknown[] = []
+  await withSettlement(
+    {
+      policyPay: async () => ({ executed: false as const, reverted: true as const, reason: 'RPC 503' }),
+      circlePay: async (_w, _t, _a, _e, deps) => {
+        keys.push(deps?.idempotencyKey)
+        return circlePending()
+      },
+    },
+    async () => {
+      await withSignerConfigured(agent, async () => {
+        const done = await executeInstruction(ix.id, OWNER)
+        assert.ok(!('error' in done))
+        assert.equal(done.status, 'pending_approval')
+        assert.ok(done.circleIdempotencyKey)
+      })
+    },
+  )
+  assert.ok(!('error' in approveInstruction(ix.id, OWNER)))
+  await withSettlement(
+    {
+      policyOwnerPay: async () => { throw new Error('the vault must not run ahead of a transfer Circle may hold') },
+      circlePay: async (_w, _t, _a, _e, deps) => {
+        keys.push(deps?.idempotencyKey)
+        return { executed: true as const, txHash: '0xc3', explorerUrl: 'u' }
+      },
+    },
+    async () => {
+      await withSignerConfigured(agent, async () => {
+        const done = await executeInstruction(ix.id, OWNER)
+        assert.ok(!('error' in done))
+        assert.equal(done.status, 'executed_onchain')
+      })
+    },
+  )
+  assert.equal(keys.length, 2)
+  assert.equal(keys[0], keys[1], 'the same key finds the same transfer')
+})
+
+test('a Circle that definitely did not take it still falls through to direct settlement', async () => {
+  const agent = seedCircleAgent()
+  const ix = seedInstruction(agent)
+  let direct = 0
+  await withSettlement(
+    {
+      circlePay: async () => ({ executed: false as const, rejected: false as const, reason: 'FAILED: out of funds' }),
+      payUsdcWithMemo: async () => { direct += 1; return { executed: true as const, txHash: '0xd', explorerUrl: 'y' } },
+    },
+    async () => {
+      const done = await executeInstruction(ix.id, OWNER)
+      assert.ok(!('error' in done))
+      assert.equal(done.status, 'executed_onchain')
+      assert.equal(done.circleIdempotencyKey, undefined)
+    },
+  )
+  assert.equal(direct, 1)
+})
+
+test('rejecting a held Circle transfer reads Circle first', async () => {
+  const agent = seedCircleAgent()
+  const ix = seedInstruction(agent)
+  await withSettlement({ circlePay: async () => circlePending('circle-tx-4') }, async () => { await executeInstruction(ix.id, OWNER) })
+  await withSettlement({ circleStatus: async () => ({ status: 'unknown' as const, reason: 'still SENT' }) }, async () => {
+    assert.ok('error' in (await rejectInstruction(ix.id, OWNER)))
+  })
+  assert.equal(ix.status, 'pending_approval')
+  await withSettlement({ circleStatus: async () => ({ status: 'reverted' as const, reason: 'CANCELLED' }) }, async () => {
+    assert.ok(!('error' in (await rejectInstruction(ix.id, OWNER))))
+  })
+  assert.equal(ix.status, 'rejected')
+  assert.equal(dailySpent(agent), 0)
+})
+
+// The real circlePay against a fake client: what each Circle answer means.
+const circleClient = (over: { create?: () => unknown; get?: () => unknown }) =>
+  ({
+    createTransaction: over.create ?? (async () => ({ data: { id: 'circle-id' } })),
+    getTransaction: over.get ?? (async () => ({ data: { transaction: { state: 'SENT' } } })),
+  }) as never
+
+test('circlePay: a poll that runs out or throws is pending with the id, never unavailable', async () => {
+  const ran = await circlePay('w', PAYEE, 1, {}, { client: circleClient({}), pollDelayMs: 0 })
+  assert.ok('pending' in ran)
+  if ('pending' in ran) assert.equal(ran.transactionId, 'circle-id')
+  const threw = await circlePay('w', PAYEE, 1, {}, { client: circleClient({ get: async () => { throw new Error('socket hang up') } }), pollDelayMs: 0 })
+  assert.ok('pending' in threw)
+  if ('pending' in threw) assert.equal(threw.transactionId, 'circle-id')
+})
+
+test('circlePay: a create that may have arrived is pending; a 4xx and a terminal failure are unavailable', async () => {
+  const timeout = await circlePay('w', PAYEE, 1, {}, { client: circleClient({ create: async () => { throw new Error('timeout of 30000ms exceeded') } }), pollDelayMs: 0 })
+  assert.ok('pending' in timeout)
+  const server = await circlePay('w', PAYEE, 1, {}, { client: circleClient({ create: async () => { throw Object.assign(new Error('bad gateway'), { response: { status: 502 } }) } }), pollDelayMs: 0 })
+  assert.ok('pending' in server)
+  const refused = await circlePay('w', PAYEE, 1, {}, { client: circleClient({ create: async () => { throw Object.assign(new Error('insufficient'), { response: { status: 422 } }) } }), pollDelayMs: 0 })
+  assert.ok(!('pending' in refused))
+  assert.equal(refused.executed, false)
+  for (const state of ['FAILED', 'CANCELLED']) {
+    const ended = await circlePay('w', PAYEE, 1, {}, { client: circleClient({ get: async () => ({ data: { transaction: { state } } }) }), pollDelayMs: 0 })
+    assert.ok(!('pending' in ended), state)
+    assert.equal(ended.executed, false)
+  }
+})
+
+test('circlePay sends the idempotency key, and completes and denies as before', async () => {
+  let sent: Record<string, unknown> = {}
+  const done = await circlePay('w', PAYEE, 1, {}, {
+    idempotencyKey: 'key-1',
+    pollDelayMs: 0,
+    client: circleClient({
+      create: async (input?: unknown) => { sent = input as Record<string, unknown>; return { data: { id: 'x' } } },
+      get: async () => ({ data: { transaction: { state: 'COMPLETE', txHash: '0xfeed' } } }),
+    } as never),
+  })
+  assert.equal(sent.idempotencyKey, 'key-1')
+  assert.equal(done.executed, true)
+  const denied = await circlePay('w', PAYEE, 1, {}, { pollDelayMs: 0, client: circleClient({ get: async () => ({ data: { transaction: { state: 'DENIED' } } }) }) })
+  assert.ok(!denied.executed && denied.rejected)
+})
+
+test('one look at a Circle transfer names each state, and a read that fails is unknown', async () => {
+  const read = (t: unknown) => circleTransferStatus('x', {}, { client: circleClient({ get: async () => ({ data: { transaction: t } }) }) })
+  assert.equal((await read({ state: 'COMPLETE', txHash: '0xa' })).status, 'success')
+  assert.equal((await read({ state: 'DENIED' })).status, 'denied')
+  assert.equal((await read({ state: 'FAILED' })).status, 'reverted')
+  assert.equal((await read({ state: 'CANCELLED' })).status, 'reverted')
+  assert.equal((await read({ state: 'SENT' })).status, 'unknown')
+  assert.equal((await read({ state: 'COMPLETE' })).status, 'unknown', 'complete with no hash is no receipt')
+  const failed = await circleTransferStatus('x', {}, { client: circleClient({ get: async () => { throw new Error('no') } }) })
+  assert.equal(failed.status, 'unknown')
+  assert.equal((await circleTransferStatus('x', {})).status, 'unknown', 'no credentials is not a verdict')
 })
 
 test('a batch with no receipt does not degrade to a single transfer', async () => {

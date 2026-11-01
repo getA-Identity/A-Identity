@@ -312,6 +312,20 @@ export type Instruction = {
    *  landed, so `txHash` stays unset (that means settled) and no second payment is sent while
    *  this is here: executeInstruction reads this hash first. */
   unconfirmedTx?: string
+  /** A transfer Circle holds for this instruction and has not finished. Same rule: it can still
+   *  complete, so it is read before anything else is sent. */
+  unconfirmedCircleTx?: string
+  /** Sent with this instruction's Circle transfer, and kept while the outcome is open: if Circle
+   *  already took it, sending the same key finds that transfer rather than making another. */
+  circleIdempotencyKey?: string
+  /** When the settlement above went out. */
+  unconfirmedAt?: string
+  /** The UTC day whose cap this held instruction still claims. A payment that may have landed
+   *  stays counted, so a held `pending_approval` is the one that does hold a claim. */
+  capHeldOn?: string
+  /** A hash nobody has a receipt for, given up on by a human long after it went out. If it ever
+   *  landed this record is wrong, and this is where to look. */
+  abandonedTx?: string
   /** Which layer settled or blocked this: our server pre-check, Circle's hosted
    *  policy engine (Agent Wallet), or the trustless on-chain vault. */
   enforcedBy?: 'server' | 'circle-agent-stack' | 'onchain-vault' | 'session-key'

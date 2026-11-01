@@ -148,6 +148,16 @@ test('pending and prepared are neither executed nor reverted, which is what stop
   }
 })
 
+test('a pending Soroban payment with a hash is unconfirmed and keeps it, the way an EVM one does', () => {
+  const r = vaultResultFromOutcome({ outcome: 'pending', txHash: 'aaa', explorerUrl: 'https://x/tx/aaa', reason: 'not in a ledger yet' }, name)
+  assert.ok('unconfirmed' in r && r.unconfirmed === true)
+  if ('unconfirmed' in r) {
+    assert.equal(r.txHash, 'aaa')
+    assert.equal(r.explorerUrl, 'https://x/tx/aaa')
+  }
+  assert.ok(!('unconfirmed' in vaultResultFromOutcome({ outcome: 'pending', reason: 'no hash came back' }, name)))
+})
+
 test('an outcome nobody recognises is not quietly treated as a refusal', () => {
   const r = vaultResultFromOutcome({ outcome: 'who-knows' }, name)
   assert.equal(r.executed, false)

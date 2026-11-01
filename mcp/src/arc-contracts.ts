@@ -12,6 +12,7 @@
  * human-on-the-loop: nothing broadcasts unless a key is present and the caller
  * explicitly asks to execute. Gas is paid in USDC (~0.006 USDC per tx).
  */
+import type { BroadcastHooks } from './chains/types.js'
 import { ARC_CHAIN, createEvmAdapter, resolveRpcUrls } from './chains/index.js'
 import { readValidationOn } from './validation-registry.js'
 import type { MemoInput } from './chains/evm/memo.js'
@@ -111,7 +112,8 @@ export const payUsdcWithMemoOnchain = (
   amountUsd: number,
   memo: MemoInput,
   env: NodeJS.ProcessEnv = process.env,
-) => arc.payUsdcWithMemo(to, amountUsd, memo, env)
+  hooks?: BroadcastHooks,
+) => arc.payUsdcWithMemo(to, amountUsd, memo, env, hooks)
 
 /** Read the on-chain Memo audit trail (by indexed memoId/sender, block-bounded). */
 export const readMemosOnchain = (
@@ -124,7 +126,8 @@ export const readMemosOnchain = (
 export const payUsdcBatchOnchain = (
   payments: { to: string; amountUsd: number }[],
   env: NodeJS.ProcessEnv = process.env,
-) => arc.payUsdcBatch(payments, env)
+  hooks?: BroadcastHooks,
+) => arc.payUsdcBatch(payments, env, hooks)
 
 /** Deploy an AgentSpendPolicy vault for an agent (owner=human, operator=agent signer). */
 export const deployPolicyVault = (
@@ -133,12 +136,12 @@ export const deployPolicyVault = (
 ) => arc.deployVault(input, env)
 
 /** Agent-initiated payment, enforced on-chain. Reverts (with reason) if a gate fails. */
-export const policyPay = (vault: string, to: string, amountUsd: number, env: NodeJS.ProcessEnv = process.env) =>
-  arc.policyPay(vault, to, amountUsd, env)
+export const policyPay = (vault: string, to: string, amountUsd: number, env: NodeJS.ProcessEnv = process.env, hooks?: BroadcastHooks) =>
+  arc.policyPay(vault, to, amountUsd, env, hooks)
 
 /** Owner settles a human-approved payment (bypasses ceiling/allowlist/freeze). */
-export const policyOwnerPay = (vault: string, to: string, amountUsd: number, env: NodeJS.ProcessEnv = process.env) =>
-  arc.policyOwnerPay(vault, to, amountUsd, env)
+export const policyOwnerPay = (vault: string, to: string, amountUsd: number, env: NodeJS.ProcessEnv = process.env, hooks?: BroadcastHooks) =>
+  arc.policyOwnerPay(vault, to, amountUsd, env, hooks)
 
 /** One read-only look, across every RPC, at a transaction sent earlier. */
 export const receiptStatusOnchain = (hash: string, env: NodeJS.ProcessEnv = process.env) =>

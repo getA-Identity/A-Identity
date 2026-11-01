@@ -728,6 +728,43 @@ function landingServer(send: Record<string, unknown>, seq: Record<string, unknow
   return { server, calls }
 }
 
+test('receiptStatus reads a sent transaction from Soroban: landed, failed, or not known', async () => {
+  const hash = 'ab'.repeat(32)
+  const answering = (status: string) => createStellarAdapter(testnet(), { server: () => ({ getTransaction: async () => ({ status }) }) as never })
+  const landed = await answering('SUCCESS').receiptStatus(hash, {})
+  assert.equal(landed.status, 'success')
+  if (landed.status === 'success') assert.ok(landed.explorerUrl.endsWith(hash))
+  assert.equal((await answering('FAILED').receiptStatus(hash, {})).status, 'reverted')
+  assert.equal((await answering('NOT_FOUND').receiptStatus(hash, {})).status, 'unknown')
+  const down = createStellarAdapter(testnet(), { server: () => ({ getTransaction: async () => { throw new Error('socket hang up') } }) as never })
+  assert.equal((await down.receiptStatus(hash, {})).status, 'unknown')
+})
+
+test('a pay whose send throws is pending under the hash, which was reported before the send', async () => {
+  // A throw here left the caller free to sign and send the same payment again, while the
+  // envelope may have been accepted with the answer lost on the way back.
+  const order: string[] = []
+  const a = createStellarAdapter(testnet(), {
+    server: () =>
+      ({
+        getAccount: async (id: string) => new Account(id, '7'),
+        simulateTransaction: async () => fakeSim(),
+        sendTransaction: async () => {
+          order.push('send')
+          throw new Error('socket hang up')
+        },
+      }) as never,
+  })
+  const env = { STELLAR_TESTNET_SIGNER_SECRET: Keypair.random().secret() }
+  const r = await a.policyPay(VAULT, PAYEE, 1n, env, { onBroadcast: (h: string) => { order.push(`hash:${h}`) } })
+  assert.equal(r.outcome, 'pending')
+  if (r.outcome !== 'pending') return
+  assert.match(r.txHash, /^[0-9a-f]{64}$/)
+  assert.deepEqual(order, [`hash:${r.txHash}`, 'send'])
+  assert.ok(r.explorerUrl?.includes(r.txHash))
+  assert.match(r.reason, /look the hash up/)
+})
+
 test('land: TRY_AGAIN_LATER is not_accepted, nothing is polled, and it never reads as pending', async () => {
   const { server, calls } = landingServer({ status: 'TRY_AGAIN_LATER' })
   const a = createStellarAdapter(testnet(), { server: () => server as never, fetch: fundedHorizon(), pollMs: 0 })

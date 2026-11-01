@@ -25,7 +25,7 @@
  *     a submitted-but-unconfirmed policy write has not changed the policy yet.
  */
 import { getChainById, CHAINS, addressUrl } from '../chains/index.js'
-import type { ChainDescriptor, VaultResult } from '../chains/types.js'
+import type { BroadcastHooks, ChainDescriptor, VaultResult } from '../chains/types.js'
 import type { PlatformAgent } from './core.js'
 
 /**
@@ -294,6 +294,7 @@ export async function payFromVault(
   to: string,
   amountUsd: number,
   byOwner: boolean,
+  hooks?: BroadcastHooks,
 ): Promise<VaultResult> {
   const chain = vaultChainFor(agent)
   if (!chain) {
@@ -305,14 +306,22 @@ export async function payFromVault(
   }
   if (chain.ecosystem === 'evm') {
     const { policyPay, policyOwnerPay } = await import('../arc-contracts.js')
-    return byOwner ? policyOwnerPay(vault, to, amountUsd) : policyPay(vault, to, amountUsd)
+    return byOwner ? policyOwnerPay(vault, to, amountUsd, undefined, hooks) : policyPay(vault, to, amountUsd, undefined, hooks)
   }
 
   const a = await stellar(chain)
   const { errorName } = await import('../chains/stellar/adapter.js')
   const raw = toRaw(chain, amountUsd)
-  const r = byOwner ? await a.policyOwnerPay(vault, to, raw) : await a.policyPay(vault, to, raw)
+  const r = byOwner ? await a.policyOwnerPay(vault, to, raw, undefined, hooks) : await a.policyPay(vault, to, raw, undefined, hooks)
   return vaultResultFromOutcome(r, errorName)
+}
+
+/** One look at a settlement sent earlier, on the chain this agent's vault is on. */
+export async function vaultReceiptStatus(agent: PlatformAgent | undefined, hash: string) {
+  const chain = agent?.vaultAddress ? vaultChainFor(agent) : null
+  if (chain?.ecosystem === 'stellar') return (await stellar(chain)).receiptStatus(hash)
+  const { receiptStatusOnchain } = await import('../arc-contracts.js')
+  return receiptStatusOnchain(hash)
 }
 
 /**
@@ -348,8 +357,20 @@ export function vaultResultFromOutcome(
       return { executed: false, reverted: true, reason: r.reason ?? 'the transaction landed and failed' }
     case 'pending':
       // Neither executed nor reverted, and that is the whole point: it may still land, so
-      // the caller must not settle it again on another rail and must not call it failed.
-      return { executed: false, reverted: false, reason: `pending: ${r.txHash ?? 'no hash'}. ${r.reason ?? ''}`.trim() }
+      // the caller must not settle it again on another rail and must not call it failed. With
+      // a hash it is the same arm an EVM payment with no receipt takes, so the hash is kept and
+      // read before anything else is sent.
+      if (r.txHash) {
+        return {
+          executed: false,
+          reverted: false,
+          unconfirmed: true,
+          txHash: r.txHash,
+          explorerUrl: r.explorerUrl ?? '',
+          reason: `pending: ${r.txHash}. ${r.reason ?? ''}`.trim(),
+        }
+      }
+      return { executed: false, reverted: false, reason: `pending: no hash. ${r.reason ?? ''}`.trim() }
     default:
       return { executed: false, reverted: false, reason: r.reason ?? `unrecognised outcome ${r.outcome}` }
   }
