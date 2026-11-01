@@ -6,12 +6,14 @@ import PageHeader from '../components/PageHeader'
 import SiteFooter from '../components/sections/SiteFooter'
 import ThemeScope from '../components/ThemeScope'
 import { LogTile, LogsAgreementLine } from '../components/stats/LogTile'
+import { NetworkSplitTable } from '../components/stats/NetworkSplitTable'
 import { DisplayHeading, Eyebrow, Lede } from '../components/ui/display'
 import { SectionShell, SectionIntro, reveal, revealAt } from '../components/ui/section'
 import { apiFetch } from '../lib/api'
 import { CHAINS } from '../lib/chains'
 import { usePageMeta } from '../lib/head'
 import { BACKEND_UNREACHABLE } from '../lib/mcpBase'
+import { keepLastGoodSplit, readNetworkSplit, type NetworkSplit } from '../lib/settlement-networks'
 import {
   SETTLEMENT_LOGS,
   chainName,
@@ -32,11 +34,17 @@ import {
  * whose evidence lives somewhere else. Deep links to /proof/:rail still work and are
  * where the live re-read happens.
  *
- * Two honesty rules shape it. The rail cards come from GET /api/proof/rails, which is
- * local ledger data only, so this page never claims a live read it did not perform: the
- * per-rail pages do that and this one links to them. And the coverage row is computed
- * against the generated chain registry rather than a hand-written list, so a live chain
- * with no published rail shows up here saying exactly that instead of quietly missing.
+ * Two honesty rules shape it. The rail cards come from the rail index in GET
+ * /api/proof/rails, which is local ledger data only, so this page never claims a live read
+ * it did not perform: the per-rail pages do that and this one links to them. And the
+ * coverage row is computed against the generated chain registry rather than a hand-written
+ * list, so a live chain with no published rail shows up here saying exactly that instead
+ * of quietly missing.
+ *
+ * The same document carries settlementsByNetwork: the Gateway and facilitator settlement
+ * logs split by network, internal apart from external, counted from those logs on each
+ * request. It is a read of our own logs, not of a chain, and it is newer than the rail
+ * index, so a backend that predates it simply sends none and the table is not drawn.
  */
 
 type RailNetwork = {
@@ -182,6 +190,9 @@ export default function ProofIndex() {
   const [logs, setLogs] = useState<LogResults>({})
   const [logsReadAt, setLogsReadAt] = useState<number | null>(null)
   const [season, setSeason] = useState<SeasonSummary | null>(null)
+  // The Gateway and facilitator logs split by network, from the rail index. Null until a
+  // backend sends one, and a backend deployed before the split sends none.
+  const [split, setSplit] = useState<NetworkSplit | null>(null)
   const [failure, setFailure] = useState(false)
   const loadSeq = useRef(0)
 
@@ -195,10 +206,12 @@ export default function ProofIndex() {
   const load = useCallback(() => {
     const seq = loadSeq.current + 1
     loadSeq.current = seq
-    getJson<{ rails: Partial<Rail>[] }>('/api/proof/rails')
+    getJson<{ rails: Partial<Rail>[]; settlementsByNetwork?: unknown }>('/api/proof/rails')
       .then((data) => {
         if (seq !== loadSeq.current) return
         setRails(normalize(data.rails ?? []))
+        // Like the tiles: a refresh that loses a log keeps the last split that had them all.
+        setSplit((prev) => keepLastGoodSplit(prev, readNetworkSplit(data.settlementsByNetwork)))
         setFailure(false)
       })
       .catch(() => {
@@ -299,6 +312,7 @@ export default function ProofIndex() {
                 <LogTile key={spec.key} spec={spec} result={logs[spec.key]} />
               ))}
             </div>
+            {split && <NetworkSplitTable split={split} />}
             {season && (
               <p className="mt-4 max-w-[75ch] text-xs leading-relaxed text-foreground/50">
                 The Arc Mainnet rows in the facilitator and Gateway logs include the{' '}

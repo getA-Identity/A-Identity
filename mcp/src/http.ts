@@ -405,6 +405,7 @@ server.listen(PORT, () => {
   console.error(`  GET  /api/stellar/soroswap/quote what a swap would return, simulated live off Soroswap's router (public, signs nothing)`)
   console.error(`  GET  /api/cctp/stellar/status    CCTP between Stellar and EVM: chains, Circle-verified contracts, signers`)
   console.error(`  POST /api/cctp/stellar/bridge    prepared-or-executed CCTP transfer (verified session, capped, testnet unless opted in)`)
+  console.error(`  GET  /api/proof/rails            every published rail, plus the Gateway and facilitator logs split by network, internal apart from external`)
   console.error(`  GET  /api/proof/:rail            provenance ledger + a live re-read (see /api/proof/rails)`)
 })
 
