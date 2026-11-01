@@ -4,7 +4,7 @@
  * Layering: L2 domain module; imports ./core.js and flat ../ modules only.
  */
 import {
-  state, save, id, ownsAgent, dailySpent, addSpend, reverseSpend, nextUtcMidnight, pushActivity, short, cap, todayUTC,
+  state, save, saveDurably, id, ownsAgent, dailySpent, addSpend, reverseSpend, nextUtcMidnight, pushActivity, short, cap, todayUTC,
   type Permissions, type Instruction, type InstructionType, type PlatformAgent,
 } from './core.js'
 import { policyPay, policyOwnerPay, payUsdcWithMemoOnchain, payUsdcBatchOnchain, memoReasonJson, readPolicyVault } from '../arc-contracts.js'
@@ -12,7 +12,7 @@ import type { MemoInput } from '../arc-contracts.js'
 import { randomUUID } from 'node:crypto'
 import { circlePay, circleTransferStatus, type CirclePayPending } from '../circle-agent.js'
 import { vaultChainFor, vaultReceiptStatus, isEvmVault, payFromVault, readVaultPolicy } from './vault-adapter.js'
-import { isAccountId, type Unconfirmed } from '../chains/index.js'
+import { isAccountId, type BroadcastHooks, type Unconfirmed } from '../chains/index.js'
 
 // ── instructions ──────────────────────────────────────────────────────────────
 
@@ -472,20 +472,55 @@ async function readOpenSettlement(ix: Instruction, agent: PlatformAgent | undefi
   | { status: 'reverted' | 'denied' | 'unknown'; reason: string }
 > {
   if (ix.unconfirmedTx) {
-    const seen = await settlement.receiptStatus(ix.unconfirmedTx, agent)
+    const seen = await settlement.receiptStatus(ix.unconfirmedTx, agent, { nonce: ix.unconfirmedNonce, from: ix.unconfirmedFrom })
     if (seen.status === 'unknown') return seen
     if (seen.status === 'reverted') return { status: 'reverted', reason: `tx ${seen.txHash} reverted on-chain` }
+    // Its nonce is used and no RPC has it: it moved nothing and never will, the same as a revert.
+    if (seen.status === 'dropped') return { status: 'reverted', reason: seen.reason }
     return { status: 'success', txHash: seen.txHash, explorerUrl: seen.explorerUrl }
   }
   if (ix.unconfirmedCircleTx) return settlement.circleStatus(ix.unconfirmedCircleTx)
   return { status: 'unknown', reason: 'the request to Circle was not answered, so there is no transfer to read yet' }
 }
 
-function closeOpenSettlement(ix: Instruction) {
+function clearUnconfirmedTx(ix: Instruction) {
   delete ix.unconfirmedTx
+  delete ix.unconfirmedFrom
+  delete ix.unconfirmedNonce
+  delete ix.unconfirmedAt
+}
+
+function closeOpenSettlement(ix: Instruction) {
+  clearUnconfirmedTx(ix)
   delete ix.unconfirmedCircleTx
   delete ix.circleIdempotencyKey
-  delete ix.unconfirmedAt
+}
+
+/**
+ * Close a held settlement that moved nothing, leaving a claim for returnToHuman to give back: the
+ * hold kept one on the day it went out, and if the day has turned, today has not counted it.
+ */
+function closeHeld(ix: Instruction, agent: PlatformAgent | undefined, total: number) {
+  const heldOn = ix.capHeldOn
+  closeOpenSettlement(ix)
+  delete ix.capHeldOn
+  delete ix.explorerUrl
+  if (heldOn && heldOn !== todayUTC() && agent) addSpend(agent, total)
+}
+
+/**
+ * A held settlement turned out to have moved nothing. The human who clicked Approve consented to
+ * a read, not to a fresh payment around whatever refused this one, so nothing is sent in that
+ * click: it goes back to a human with the reason named and the cap given back, and the next
+ * approval is an informed one.
+ */
+function returnHeldNotSent(ix: Instruction, agent: PlatformAgent | undefined, total: number, reason: string, enforcedBy: Instruction['enforcedBy']) {
+  closeHeld(ix, agent, total)
+  const fmt = total < 0.01 ? total.toFixed(4) : total.toFixed(2)
+  returnToHuman(ix, agent, total, `The held settlement did not go through (${reason}). Nothing settled and nothing was sent by this approval. Approve again to pay it afresh, knowing that.`, enforcedBy)
+  if (agent) pushActivity(agent, `Held settlement of ${fmt} USDC to ${short(ix.payee)} did not go through: ${reason}`)
+  save(state)
+  return ix
 }
 
 /** Record a settlement that turned out to have landed while it was held. Counted once: by the
@@ -775,7 +810,7 @@ type SettlementBackend = {
   policyOwnerPay: typeof policyOwnerPay
   /** One look at a transaction sent earlier and not yet confirmed. Reads only. */
   /** Routed by the agent: a settlement on a Soroban vault is read from Soroban. */
-  receiptStatus: (hash: string, agent?: PlatformAgent) => ReturnType<typeof vaultReceiptStatus>
+  receiptStatus: (hash: string, agent?: PlatformAgent, held?: { nonce?: number; from?: string }) => ReturnType<typeof vaultReceiptStatus>
   circleStatus: typeof circleTransferStatus
   /**
    * The vault payment for every vault the two calls above cannot reach.
@@ -799,7 +834,7 @@ type SettlementBackend = {
 const REAL_SETTLEMENT: SettlementBackend = {
   policyPay,
   policyOwnerPay,
-  receiptStatus: (hash, agent) => vaultReceiptStatus(agent, hash),
+  receiptStatus: (hash, agent, held) => vaultReceiptStatus(agent, hash, held),
   circleStatus: circleTransferStatus,
   payFromVault,
   circlePay,
@@ -892,7 +927,9 @@ export function __setSettlementForTests(over: Partial<SettlementBackend>): () =>
  * A settlement broadcast with no receipt on any RPC is none of those. It may have landed, so
  * it never falls through to another rail: it goes back to a human with the hash (see
  * holdUnconfirmed), and the next execute reads that hash before anything else is sent. A vault
- * payment that was mined and reverted does not fall through either: the chain refused it.
+ * payment that was mined and reverted does not fall through either: the chain refused it. Nor
+ * does a held settlement that turns out to have gone nowhere: the approval that read it was given
+ * for a read, so that click sends nothing and the next one is an informed override.
  *
  * When the vault also carries a live SESSION KEY (a time bound the human owner granted
  * the agent's operator), an agent-initiated settlement is labeled `session-key` rather
@@ -954,36 +991,45 @@ export async function executeInstruction(ixId: string, caller?: string): Promise
       recordLanded(ix, agent, seen, policyDecision, total)
       return ix
     }
-    // It moved nothing, and the approval just given may settle it for real. The cap claim the hold
-    // kept is that approval's claim now, unless the day has turned and today has not counted it.
-    const heldOn = ix.capHeldOn
-    closeOpenSettlement(ix)
-    delete ix.capHeldOn
-    delete ix.explorerUrl
-    if (heldOn && heldOn !== todayUTC() && agent) addSpend(agent, total)
     if (seen.status === 'denied') {
+      closeHeld(ix, agent, total)
       returnToHuman(ix, agent, total, `Circle's hosted policy rejected this (${seen.reason}); a human must intervene.`, 'circle-agent-stack')
       if (agent) pushActivity(agent, `Circle Agent Wallet rejected ${fmt(total)} USDC to ${short(ix.payee)}: ${seen.reason}`)
       save(state)
       return ix
     }
+    return returnHeldNotSent(ix, agent, total, seen.reason, ix.enforcedBy)
   }
 
-  // Noted before the transaction is sent and saved at once, so a restart inside the wait for its
-  // receipt cannot lose it: the next execute finds this hash and reads it before sending anything.
-  const hooks = {
-    onBroadcast: (hash: string) => {
+  // Noted before the transaction is sent, and written to storage before the send: a restart inside
+  // the wait for its receipt cannot lose it, because the next execute finds this hash and reads it
+  // before sending anything. If that write fails nothing is sent, and `unsaved` says why, so the
+  // rails below do not try to pay around it.
+  let unsaved: string | undefined
+  const hooks: BroadcastHooks = {
+    onBroadcast: async (hash, signed) => {
       ix.unconfirmedTx = hash
+      if (signed?.from) ix.unconfirmedFrom = signed.from
+      if (signed?.nonce !== undefined) ix.unconfirmedNonce = signed.nonce
       ix.unconfirmedAt = new Date().toISOString()
-      save(state)
+      const saved = await saveDurably(state)
+      if (!saved.ok) {
+        clearUnconfirmedTx(ix)
+        unsaved = saved.reason
+        throw new Error(saved.reason)
+      }
     },
+  }
+  /** Back to a human when the hold could not be saved. Nothing was sent, so the cap goes back too. */
+  const refuseUnsaved = (why: string) => {
+    returnToHuman(ix, agent, total, `The server could not save this settlement's hold (${why}), so nothing was sent. Approve it again when storage is back.`, ix.enforcedBy)
+    if (agent) pushActivity(agent, `Settlement of ${fmt(total)} USDC not sent: its hold could not be saved`)
+    save(state)
+    return ix
   }
   /** An attempt answered with a known outcome leaves nothing open. */
   const settledAttempt = (res: unknown) => {
-    if (!isUnconfirmed(res)) {
-      delete ix.unconfirmedTx
-      delete ix.unconfirmedAt
-    }
+    if (!isUnconfirmed(res)) clearUnconfirmedTx(ix)
   }
 
   // On-chain policy vault: the chain enforces the policy. Agent-initiated
@@ -1008,6 +1054,7 @@ export async function executeInstruction(ixId: string, caller?: string): Promise
         : await settlement.policyPay(agent.vaultAddress, settleTo, total, undefined, hooks)
       : await settlement.payFromVault(agent, agent.vaultAddress, settleTo, total, humanApproved, hooks)
     settledAttempt(res)
+    if (unsaved) return refuseUnsaved(unsaved)
     if (res.executed) {
       // Which authority let this through. Asked ONLY now, with a receipt in hand, and only
       // on the agent path: `ownerPay` is owner-only and the contract exempts it from the
@@ -1113,12 +1160,22 @@ export async function executeInstruction(ixId: string, caller?: string): Promise
   // Vault-first by design: an agent with a vault settles there; this runs when the
   // agent has a Circle wallet (and, as a resilience bonus, if the vault infra-failed).
   if (settleTo && agent?.circleWalletId) {
-    // Saved before the call, so a restart with this request open sends the same key again.
+    // Written before the call, so a restart with this request open sends the same key again. A
+    // key that is already here went out with no known answer, so this is a resend, and only a
+    // terminal answer about the transfer itself may end it.
+    const resumed = Boolean(ix.circleIdempotencyKey)
     ix.circleIdempotencyKey ??= randomUUID()
-    save(state)
-    const res = await settlement.circlePay(agent.circleWalletId, settleTo, total, undefined, { idempotencyKey: ix.circleIdempotencyKey })
+    const saved = await saveDurably(state)
+    if (!saved.ok && !resumed) {
+      delete ix.circleIdempotencyKey
+      return refuseUnsaved(saved.reason)
+    }
+    const res = await settlement.circlePay(agent.circleWalletId, settleTo, total, undefined, { idempotencyKey: ix.circleIdempotencyKey, resumed })
     if ('pending' in res) return holdCircle(ix, agent, res)
     closeOpenSettlement(ix)
+    // A transfer that was held and has now ended without moving anything is the same case as a
+    // held settlement that reverted: the human consented to a read, so nothing is sent here.
+    if (resumed && !res.executed && !res.rejected) return returnHeldNotSent(ix, agent, total, res.reason, 'circle-agent-stack')
     if (res.executed) {
       ix.status = 'executed_onchain'
       ix.txHash = res.txHash
@@ -1164,6 +1221,7 @@ export async function executeInstruction(ixId: string, caller?: string): Promise
       } catch {
         batch = null
       }
+      if (unsaved) return refuseUnsaved(unsaved)
       // A throw after the hash was noted is a batch that may have gone out, not an unavailable
       // adapter, so it must not degrade to the single transfer below.
       if (batch === null && ix.unconfirmedTx) {
@@ -1212,6 +1270,7 @@ export async function executeInstruction(ixId: string, caller?: string): Promise
       policyDecision,
     }, undefined, hooks)
     settledAttempt(res)
+    if (unsaved) return refuseUnsaved(unsaved)
     if (res.executed) {
       ix.status = 'executed_onchain'
       ix.txHash = res.txHash

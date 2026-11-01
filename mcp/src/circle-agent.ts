@@ -167,8 +167,8 @@ async function fundFromSigner(
 export type CirclePayTx = { executed: true; txHash: string; explorerUrl: string }
 /** Circle's hosted policy DENIED the transfer - an authoritative "no" (like a vault revert). */
 export type CirclePayRejected = { executed: false; rejected: true; reason: string }
-/** No creds, or Circle definitely did not take it, or it ended FAILED or CANCELLED. Nothing
- *  moved and nothing will, so the caller may fall back. */
+/** No creds, or a first-ever create Circle definitely did not take, or it ended FAILED or
+ *  CANCELLED. Nothing moved and nothing will. */
 export type CirclePayUnavailable = { executed: false; rejected: false; reason: string }
 /**
  * Circle may have this transfer and has not finished it: the polls ran out, a poll threw, or the
@@ -183,6 +183,9 @@ export type CirclePayResult = CirclePayTx | CirclePayRejected | CirclePayUnavail
 export type CirclePayDeps = {
   /** Sent to Circle so that sending the same instruction again cannot make a second transfer. */
   idempotencyKey?: string
+  /** This key was sent before and that request has no known answer, so Circle may already hold
+   *  the transfer, and a refusal of this resend says nothing about the first request. */
+  resumed?: boolean
   client?: Pick<CircleDeveloperControlledWalletsClient, 'createTransaction' | 'getTransaction'>
   pollDelayMs?: number
 }
@@ -193,12 +196,22 @@ const TERMINAL = new Set(['COMPLETE', 'FAILED', 'CANCELLED', 'DENIED'])
 const POLL_TRIES = 8
 const POLL_DELAY_MS = 2_000
 
-/** Whether a failed create call is Circle saying no, rather than a request that may have arrived.
- *  A 4xx answered the request and refused it. A timeout or a 5xx did not say. */
-function createWasRefused(err: unknown): boolean {
+/** Answers that say nothing about the transfer: a timeout, a rate limit, and a conflict (with a
+ *  fresh random key the only thing it can conflict with is itself). */
+const NOT_A_REFUSAL = new Set([408, 409, 429])
+
+/**
+ * Whether a failed create call is Circle saying no, rather than a request that may have arrived.
+ * A 4xx answered THIS request and refused it, which rules out a transfer only when no earlier
+ * request carried this key. On a resent key a 401, a 403 or a 429 is a credential blip or a rate
+ * limit on the resend, and the first request may have made the transfer. A timeout or a 5xx did
+ * not say.
+ */
+function createWasRefused(err: unknown, resumed: boolean): boolean {
+  if (resumed) return false
   const e = err as { response?: { status?: unknown }; status?: unknown } | null
   const status = Number(e?.response?.status ?? e?.status)
-  return status >= 400 && status < 500
+  return status >= 400 && status < 500 && !NOT_A_REFUSAL.has(status)
 }
 
 /**
@@ -217,7 +230,8 @@ export async function circlePay(
   deps: CirclePayDeps = {},
 ): Promise<CirclePayResult> {
   const c = deps.client ?? (await client(env))
-  if (!c) return { executed: false, rejected: false, reason: NOT_CONFIGURED }
+  // Credentials gone on a resend do not make a transfer Circle may hold go away.
+  if (!c) return deps.resumed ? { executed: false, rejected: false, pending: true, reason: NOT_CONFIGURED } : { executed: false, rejected: false, reason: NOT_CONFIGURED }
   let created: Awaited<ReturnType<CircleDeveloperControlledWalletsClient['createTransaction']>>
   try {
     created = await c.createTransaction({
@@ -230,8 +244,8 @@ export async function circlePay(
       fee: { type: 'level', config: { feeLevel: 'MEDIUM' } },
     } as never)
   } catch (err) {
-    if (createWasRefused(err)) return { executed: false, rejected: false, reason: msg(err) }
-    return { executed: false, rejected: false, pending: true, reason: `the request to Circle did not answer (${msg(err)}), so whether it took the transfer is unknown` }
+    if (createWasRefused(err, Boolean(deps.resumed))) return { executed: false, rejected: false, reason: msg(err) }
+    return { executed: false, rejected: false, pending: true, reason: `the request to Circle did not answer clearly (${msg(err)}), so whether it took the transfer is unknown` }
   }
   const txId = (created.data as { id?: string } | undefined)?.id
   if (!txId) return { executed: false, rejected: false, pending: true, reason: 'Circle accepted the request and returned no transaction id' }

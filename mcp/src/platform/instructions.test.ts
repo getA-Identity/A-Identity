@@ -1,13 +1,16 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { Keypair } from '@stellar/stellar-sdk'
-import { __resetPlatformStateForTests, dailySpent, type PlatformAgent } from './core.js'
+import { __resetPlatformStateForTests, __setDurableSaveForTests, dailySpent, type PlatformAgent } from './core.js'
 import { createAgent } from './agents.js'
 import { vaultChainFor } from './vault-adapter.js'
 import {
   __setSettlementForTests, approveInstruction, createInstruction, executeInstruction, rejectInstruction, sessionKeyBound, UNCONFIRMED_REJECT_AFTER_MS,
 } from './instructions.js'
 import { circlePay, circleTransferStatus } from '../circle-agent.js'
+import { createEvmAdapter } from '../chains/evm/adapter.js'
+import { ARC_CHAIN } from '../chains/registry.js'
+import { flushStateDurably } from '../storage.js'
 
 /**
  * Session-key settlement labeling.
@@ -690,14 +693,39 @@ test('an unconfirmed payment that landed settles the instruction with that hash 
   )
 })
 
-test('an unconfirmed payment that reverted is free to settle on the approval that followed', async () => {
+test('approving to read a held payment that reverted sends nothing, gives the cap back and names the revert', async () => {
   const { ix, agent } = await unconfirmedVaultPayment()
   assert.ok(!('error' in approveInstruction(ix.id, OWNER)))
+  await withSettlement(
+    {
+      ...neverAgain,
+      policyPay: async () => { throw new Error('the click that read the revert must not send anything') },
+      receiptStatus: async () => ({ status: 'reverted' as const, txHash: UNCONFIRMED_TX, explorerUrl: 'x' }),
+    },
+    async () => {
+      await withSignerConfigured(agent, async () => {
+        const done = await executeInstruction(ix.id, OWNER)
+        assert.ok(!('error' in done))
+        assert.equal(done.status, 'pending_approval')
+        assert.equal(done.enforcedBy, 'onchain-vault')
+        assert.equal(done.unconfirmedTx, undefined)
+        assert.equal(done.capHeldOn, undefined)
+        assert.equal(done.explorerUrl, undefined)
+        assert.ok(done.policyNote.includes(UNCONFIRMED_TX), 'the human reads which transaction reverted')
+        assert.match(done.policyNote, /reverted on-chain/)
+        assert.match(done.policyNote, /nothing was sent by this approval/)
+        assert.equal(dailySpent(agent), 0, 'it moved nothing, so it holds no claim')
+      })
+    },
+  )
+
+  // The next approval knows what happened, so it is an informed override.
+  assert.ok(!('error' in approveInstruction(ix.id, OWNER)))
+  assert.equal(dailySpent(agent), 0.5)
   let paid = 0
   await withSettlement(
     {
       ...neverAgain,
-      receiptStatus: async () => ({ status: 'reverted' as const, txHash: UNCONFIRMED_TX, explorerUrl: 'x' }),
       policyOwnerPay: async () => {
         paid += 1
         return { executed: true as const, txHash: `0x${'7c'.repeat(32)}`, explorerUrl: 'y' }
@@ -709,12 +737,73 @@ test('an unconfirmed payment that reverted is free to settle on the approval tha
         const done = await executeInstruction(ix.id, OWNER)
         assert.ok(!('error' in done))
         assert.equal(done.status, 'executed_onchain')
-        assert.equal(done.unconfirmedTx, undefined)
         assert.equal(paid, 1)
-        assert.equal(dailySpent(agent), 0.5, 'the claim the hold kept pays for this settlement, once')
+        assert.equal(dailySpent(agent), 0.5, 'one claim, for the one payment')
       })
     },
   )
+})
+
+test('a held vault payment that reverted never pays around a vault the server cannot sign for', async () => {
+  const { ix, agent } = await unconfirmedVaultPayment()
+  agent.vaultOwner = HUMAN_OWNER
+  assert.ok(!('error' in approveInstruction(ix.id, OWNER)))
+  await withSettlement(
+    { ...neverAgain, receiptStatus: async () => ({ status: 'reverted' as const, txHash: UNCONFIRMED_TX, explorerUrl: 'x' }) },
+    async () => {
+      const done = await executeInstruction(ix.id, OWNER)
+      assert.ok(!('error' in done))
+      assert.equal(done.status, 'pending_approval', 'the direct rail is never reached in this click')
+    },
+  )
+})
+
+test('a held payment that can never land is treated as the revert it amounts to', async () => {
+  __resetPlatformStateForTests()
+  const agent = seedVaultAgent()
+  const ix = seedInstruction(agent)
+  // The node took another transaction at this nonce, so this hash is held with what it was signed with.
+  await withSettlement(
+    {
+      ...neverAgain,
+      policyPay: async (_v, _t, _a, _e, hooks) => {
+        await hooks?.onBroadcast?.(UNCONFIRMED_TX, { nonce: 12, from: OPERATOR })
+        return unconfirmed()
+      },
+    },
+    async () => {
+      await withSignerConfigured(agent, async () => {
+        await executeInstruction(ix.id, OWNER)
+      })
+    },
+  )
+  assert.equal(ix.status, 'pending_approval')
+  assert.equal(ix.unconfirmedNonce, 12)
+  assert.equal(ix.unconfirmedFrom, OPERATOR)
+  assert.equal(dailySpent(agent), 0.5)
+
+  assert.ok(!('error' in approveInstruction(ix.id, OWNER)))
+  let askedWith: unknown
+  await withSettlement(
+    {
+      ...neverAgain,
+      receiptStatus: async (_h, _a, held) => {
+        askedWith = held
+        return { status: 'dropped' as const, txHash: UNCONFIRMED_TX, reason: `tx ${UNCONFIRMED_TX} can never land: its nonce 12 is already used and no RPC has this transaction` }
+      },
+    },
+    async () => {
+      const done = await executeInstruction(ix.id, OWNER)
+      assert.ok(!('error' in done))
+      assert.equal(done.status, 'pending_approval')
+      assert.match(done.policyNote, /can never land/)
+      assert.equal(done.unconfirmedTx, undefined)
+      assert.equal(done.unconfirmedNonce, undefined)
+      assert.equal(done.unconfirmedFrom, undefined)
+    },
+  )
+  assert.deepEqual(askedWith, { nonce: 12, from: OPERATOR })
+  assert.equal(dailySpent(agent), 0, 'no longer locked for a day with its cap claim kept')
 })
 
 test('a direct settlement with no receipt is unconfirmed, not "no signer, simulated"', async () => {
@@ -790,20 +879,26 @@ test('approving a held payment does not count it twice, and a revert gives it ba
   assert.equal(dailySpent(agent), 9, 'with nothing held, an approval counts as it always did')
 })
 
-test('a hold that crosses midnight is counted against the new day if it settles for real', async () => {
+test('a hold that crosses midnight costs the new day nothing when it reverted, and counts when it then settles', async () => {
   const { agent, ix } = await heldDirectPayment()
   ix.capHeldOn = '2000-01-01'
   agent.spendDate = '2000-01-01'
   assert.ok(!('error' in approveInstruction(ix.id, OWNER)))
   assert.equal(dailySpent(agent), 0)
-  await withSettlement(
-    {
-      receiptStatus: async () => ({ status: 'reverted' as const, txHash: UNCONFIRMED_TX, explorerUrl: 'x' }),
-      payUsdcWithMemo: async () => ({ executed: true as const, txHash: `0x${'8d'.repeat(32)}`, explorerUrl: 'y' }),
-    },
-    async () => { await executeInstruction(ix.id, OWNER) },
-  )
+  let direct = 0
+  const settings = {
+    receiptStatus: async () => ({ status: 'reverted' as const, txHash: UNCONFIRMED_TX, explorerUrl: 'x' }),
+    payUsdcWithMemo: async () => { direct += 1; return { executed: true as const, txHash: `0x${'8d'.repeat(32)}`, explorerUrl: 'y' } },
+  }
+  await withSettlement(settings, async () => { await executeInstruction(ix.id, OWNER) })
+  assert.equal(ix.status, 'pending_approval')
+  assert.equal(direct, 0)
+  assert.equal(dailySpent(agent), 0, 'today never counted it, so giving the claim back must not go below zero')
+
+  assert.ok(!('error' in approveInstruction(ix.id, OWNER)))
+  await withSettlement(settings, async () => { await executeInstruction(ix.id, OWNER) })
   assert.equal(ix.status, 'executed_onchain')
+  assert.equal(direct, 1)
   assert.equal(dailySpent(agent), 9)
 })
 
@@ -928,7 +1023,7 @@ test('a restart during the wait finds the hash on the instruction and pays nothi
   await withSettlement(
     {
       policyPay: async (_v, _t, _a, _e, hooks) => {
-        hooks?.onBroadcast?.(UNCONFIRMED_TX)
+        await hooks?.onBroadcast?.(UNCONFIRMED_TX)
         noted = ix.unconfirmedTx
         // The process goes away here, inside the wait.
         throw new Error('process restarted')
@@ -965,7 +1060,7 @@ test('a payment answered on the first attempt leaves no open hash behind', async
   await withSettlement(
     {
       policyPay: async (_v, _t, _a, _e, hooks) => {
-        hooks?.onBroadcast?.(UNCONFIRMED_TX)
+        await hooks?.onBroadcast?.(UNCONFIRMED_TX)
         return { executed: true as const, txHash: UNCONFIRMED_TX, explorerUrl: 'y' }
       },
       readVault: async () => vaultView({}),
@@ -980,6 +1075,114 @@ test('a payment answered on the first attempt leaves no open hash behind', async
       })
     },
   )
+})
+
+// ── the hold is durable before the send ──────────────────────────────────────────────
+
+/** The real path below the instruction: the EVM adapter's signed send and the real durable save,
+ *  against a fake signer and a fake Postgres that records what happened in what order. */
+function realSavePath(pool: { query: (sql: string) => Promise<unknown> }) {
+  const order: string[] = []
+  const adapter = createEvmAdapter(ARC_CHAIN, {
+    publicClient: { simulateContract: async () => ({ request: {} }) },
+    walletClient: {
+      account: { address: OPERATOR },
+      client: {
+        prepareTransactionRequest: async (req: Record<string, unknown>) => ({ ...req, nonce: 3 }),
+        signTransaction: async () => '0x02aa',
+        sendRawTransaction: async () => {
+          order.push('send')
+          return `0x${'ab'.repeat(32)}`
+        },
+      },
+    },
+    receipts: {
+      urls: ['https://a.rpc.test'],
+      timeoutMs: 0,
+      call: async (_u, _m, params) => ({ transactionHash: params[0], blockNumber: '0x9', status: '0x1', gasUsed: '0x5208', logs: [] }),
+    },
+  })
+  const restoreSave = __setDurableSaveForTests((st) =>
+    flushStateDurably(st, async () => ({
+      query: async (sql: string) => {
+        order.push(sql.startsWith('INSERT INTO app_state') ? 'saved' : sql)
+        return pool.query(sql)
+      },
+    })),
+  )
+  return { order, adapter, restoreSave }
+}
+
+test('the real save path: the hold is written to storage before the transaction is sent', async () => {
+  __resetPlatformStateForTests()
+  const agent = seedVaultAgent()
+  const ix = seedInstruction(agent)
+  const real = realSavePath({ query: async () => ({ rowCount: 1 }) })
+  try {
+    await withSettlement(
+      { ...neverAgain, policyPay: (v, t, a, _e, hooks) => real.adapter.policyPay(v, t, a, {}, hooks), readVault: async () => vaultView({}) },
+      async () => {
+        await withSignerConfigured(agent, async () => {
+          const done = await executeInstruction(ix.id, OWNER)
+          assert.ok(!('error' in done))
+          assert.equal(done.status, 'executed_onchain')
+          assert.equal(done.unconfirmedTx, undefined)
+          assert.equal(done.unconfirmedNonce, undefined)
+        })
+      },
+    )
+  } finally {
+    real.restoreSave()
+  }
+  assert.deepEqual(real.order, ['saved', 'send'])
+})
+
+test('the real save path: a save that fails refuses the send and goes back to a human, on every rail', async () => {
+  __resetPlatformStateForTests()
+  const agent = seedVaultAgent()
+  agent.circleWalletId = 'circle-wallet-1'
+  const ix = seedInstruction(agent)
+  const real = realSavePath({ query: async () => { throw new Error('the database is gone') } })
+  try {
+    await withSettlement(
+      { ...neverAgain, policyPay: (v, t, a, _e, hooks) => real.adapter.policyPay(v, t, a, {}, hooks) },
+      async () => {
+        await withSignerConfigured(agent, async () => {
+          const done = await executeInstruction(ix.id, OWNER)
+          assert.ok(!('error' in done))
+          assert.equal(done.status, 'pending_approval')
+          assert.match(done.policyNote, /could not save/)
+          assert.match(done.policyNote, /the database is gone/)
+          assert.match(done.policyNote, /nothing was sent/)
+          assert.equal(done.unconfirmedTx, undefined, 'a hash that never left holds nothing open')
+          assert.equal(done.capHeldOn, undefined)
+        })
+      },
+    )
+  } finally {
+    real.restoreSave()
+  }
+  assert.deepEqual(real.order, ['saved'], 'the save was tried and the send was not')
+  assert.equal(dailySpent(agent), 0, 'nothing was sent, so the claim goes back')
+})
+
+test('a Circle key that cannot be saved is not sent to Circle', async () => {
+  __resetPlatformStateForTests()
+  const agent = seedCircleAgent()
+  const ix = seedInstruction(agent)
+  const restore = __setDurableSaveForTests(async () => ({ ok: false, reason: 'disk full' }))
+  try {
+    await withSettlement({ ...neverAgain }, async () => {
+      const done = await executeInstruction(ix.id, OWNER)
+      assert.ok(!('error' in done))
+      assert.equal(done.status, 'pending_approval')
+      assert.equal(done.circleIdempotencyKey, undefined)
+      assert.match(done.policyNote, /disk full/)
+    })
+  } finally {
+    restore()
+  }
+  assert.equal(dailySpent(agent), 0)
 })
 
 // ── a Soroban payment that may still land ────────────────────────────────────────────
@@ -1097,27 +1300,31 @@ test('THE CIRCLE DOUBLE PAYMENT: a transfer that may still complete holds, with 
   })
 })
 
-test('a held Circle transfer that ended FAILED is free to settle on the approval that followed', async () => {
+test('a held Circle transfer that ended FAILED goes back to a human, and the next approval is a new transfer', async () => {
   const agent = seedCircleAgent()
   const ix = seedInstruction(agent)
   await withSettlement({ circlePay: async () => circlePending('circle-tx-2') }, async () => { await executeInstruction(ix.id, OWNER) })
   assert.ok(!('error' in approveInstruction(ix.id, OWNER)))
   const keys: unknown[] = []
-  await withSettlement(
-    {
-      circleStatus: async () => ({ status: 'reverted' as const, reason: 'FAILED' }),
-      circlePay: async (_w, _t, _a, _e, deps) => {
-        keys.push(deps?.idempotencyKey)
-        return { executed: true as const, txHash: '0xc2', explorerUrl: 'u' }
-      },
+  const settings = {
+    circleStatus: async () => ({ status: 'reverted' as const, reason: 'FAILED' }),
+    circlePay: async (_w: string, _t: string, _a: number, _e: unknown, deps?: { idempotencyKey?: string }) => {
+      keys.push(deps?.idempotencyKey)
+      return { executed: true as const, txHash: '0xc2', explorerUrl: 'u' }
     },
-    async () => {
-      const done = await executeInstruction(ix.id, OWNER)
-      assert.ok(!('error' in done))
-      assert.equal(done.status, 'executed_onchain')
-      assert.equal(dailySpent(agent), 0.5)
-    },
-  )
+  }
+  await withSettlement(settings as never, async () => {
+    const read = await executeInstruction(ix.id, OWNER)
+    assert.ok(!('error' in read))
+    assert.equal(read.status, 'pending_approval')
+    assert.equal(keys.length, 0, 'the click that read it sends nothing')
+    assert.equal(dailySpent(agent), 0)
+    assert.ok(!('error' in approveInstruction(ix.id, OWNER)))
+    const done = await executeInstruction(ix.id, OWNER)
+    assert.ok(!('error' in done))
+    assert.equal(done.status, 'executed_onchain')
+    assert.equal(dailySpent(agent), 0.5)
+  })
   assert.equal(keys.length, 1)
   assert.ok(keys[0], 'a new transfer gets a new key')
 })
@@ -1186,6 +1393,101 @@ test('a Circle that definitely did not take it still falls through to direct set
   assert.equal(direct, 1)
 })
 
+test('THE DOUBLE PAYMENT: a 429 on a resumed Circle create keeps the key and sends nothing direct', async () => {
+  const agent = seedCircleAgent()
+  const ix = seedInstruction(agent)
+  await withSettlement(
+    { circlePay: async () => ({ executed: false as const, rejected: false as const, pending: true as const, reason: 'timed out' }) },
+    async () => { await executeInstruction(ix.id, OWNER) },
+  )
+  const key = ix.circleIdempotencyKey
+  assert.ok(key)
+  assert.equal(ix.status, 'pending_approval')
+  assert.equal(dailySpent(agent), 0.5)
+
+  for (const status of [429, 401, 403, 408, 422]) {
+    assert.ok(!('error' in approveInstruction(ix.id, OWNER)))
+    let direct = 0
+    const sent: unknown[] = []
+    await withSettlement(
+      {
+        // The real circlePay, with a client that refuses this resend.
+        circlePay: (w, t, a, e, d) => {
+          sent.push(d?.idempotencyKey)
+          return circlePay(w, t, a, e, {
+            ...d,
+            pollDelayMs: 0,
+            client: circleClient({ create: async () => { throw Object.assign(new Error(`HTTP ${status}`), { response: { status } }) } }),
+          })
+        },
+        payUsdcWithMemo: async () => { direct += 1; return { executed: true as const, txHash: '0xd', explorerUrl: 'y' } },
+        payUsdcBatch: async () => { direct += 1; return { executed: true as const, txHash: '0xd', explorerUrl: 'y', count: 1, totalUsd: 0.5 } },
+      },
+      async () => {
+        const done = await executeInstruction(ix.id, OWNER)
+        assert.ok(!('error' in done))
+        assert.equal(done.status, 'pending_approval', `HTTP ${status}`)
+        assert.equal(done.circleIdempotencyKey, key, 'the key is what finds the transfer, so it stays')
+      },
+    )
+    assert.deepEqual(sent, [key])
+    assert.equal(direct, 0, `HTTP ${status}: nothing may go out on the direct rail`)
+    assert.equal(dailySpent(agent), 0.5, 'one claim throughout')
+  }
+})
+
+test('a resumed Circle create that ends FAILED sends nothing in that click and returns to a human', async () => {
+  const agent = seedCircleAgent()
+  const ix = seedInstruction(agent)
+  await withSettlement(
+    { circlePay: async () => ({ executed: false as const, rejected: false as const, pending: true as const, reason: 'timed out' }) },
+    async () => { await executeInstruction(ix.id, OWNER) },
+  )
+  assert.ok(!('error' in approveInstruction(ix.id, OWNER)))
+  let direct = 0
+  await withSettlement(
+    {
+      circlePay: async (_w, _t, _a, _e, d) => {
+        assert.equal(d?.resumed, true)
+        return { executed: false as const, rejected: false as const, reason: 'FAILED: out of funds' }
+      },
+      payUsdcWithMemo: async () => { direct += 1; return { executed: true as const, txHash: '0xd', explorerUrl: 'y' } },
+    },
+    async () => {
+      const done = await executeInstruction(ix.id, OWNER)
+      assert.ok(!('error' in done))
+      assert.equal(done.status, 'pending_approval')
+      assert.match(done.policyNote, /FAILED: out of funds/)
+      assert.equal(done.circleIdempotencyKey, undefined)
+    },
+  )
+  assert.equal(direct, 0)
+  assert.equal(dailySpent(agent), 0)
+})
+
+test('a held Circle transfer that reads FAILED sends nothing in that click either', async () => {
+  const agent = seedCircleAgent()
+  const ix = seedInstruction(agent)
+  await withSettlement({ circlePay: async () => circlePending('circle-tx-9') }, async () => { await executeInstruction(ix.id, OWNER) })
+  assert.ok(!('error' in approveInstruction(ix.id, OWNER)))
+  let direct = 0
+  await withSettlement(
+    {
+      circleStatus: async () => ({ status: 'reverted' as const, reason: 'FAILED: out of gas' }),
+      circlePay: async () => { throw new Error('read, not resend') },
+      payUsdcWithMemo: async () => { direct += 1; return { executed: true as const, txHash: '0xd', explorerUrl: 'y' } },
+    },
+    async () => {
+      const done = await executeInstruction(ix.id, OWNER)
+      assert.ok(!('error' in done))
+      assert.equal(done.status, 'pending_approval')
+      assert.match(done.policyNote, /FAILED: out of gas/)
+    },
+  )
+  assert.equal(direct, 0)
+  assert.equal(dailySpent(agent), 0)
+})
+
 test('rejecting a held Circle transfer reads Circle first', async () => {
   const agent = seedCircleAgent()
   const ix = seedInstruction(agent)
@@ -1230,6 +1532,20 @@ test('circlePay: a create that may have arrived is pending; a 4xx and a terminal
     assert.ok(!('pending' in ended), state)
     assert.equal(ended.executed, false)
   }
+})
+
+test('circlePay: on a first create 408 and 429 are never a refusal; on a resumed key no 4xx is', async () => {
+  const answer = (status: number) => circleClient({ create: async () => { throw Object.assign(new Error(`HTTP ${status}`), { response: { status } }) } })
+  for (const status of [408, 409, 429]) {
+    assert.ok('pending' in (await circlePay('w', PAYEE, 1, {}, { client: answer(status), pollDelayMs: 0 })), `first create, HTTP ${status}`)
+  }
+  for (const status of [400, 401, 403, 404, 408, 409, 422, 429]) {
+    const held = await circlePay('w', PAYEE, 1, {}, { client: answer(status), pollDelayMs: 0, resumed: true, idempotencyKey: 'k' })
+    assert.ok('pending' in held, `resumed, HTTP ${status}`)
+  }
+  // The credentials being gone says nothing about a transfer Circle may already hold.
+  assert.ok('pending' in (await circlePay('w', PAYEE, 1, {}, { resumed: true })))
+  assert.ok(!('pending' in (await circlePay('w', PAYEE, 1, {}, {}))))
 })
 
 test('circlePay sends the idempotency key, and completes and denies as before', async () => {
