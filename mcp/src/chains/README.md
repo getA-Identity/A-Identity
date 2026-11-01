@@ -71,9 +71,11 @@ place. Three rules follow from that:
   is exactly Robinhood Chain, and that token belongs in `settlementTokens` where it is
   named for what it is. Putting it in `usdc` would silently repoint contracts that were
   never tested against it.
-- **Absence is information.** A chain with no ValidationRegistry cannot anchor a KYA
-  result, and the honest output there is "not anchorable here", not a count of zero. The
-  two read the same to a machine and mean opposite things to a person.
+- **Absence is information.** A chain whose descriptor wires no ValidationRegistry gets no
+  KYA anchor or read from us, whether or not one is deployed there: Arc Mainnet and five
+  other mainnets carry one we have not wired. The honest output there is "not wired here",
+  not a count of zero. The two read the same to a machine and mean opposite things to a
+  person.
 
 ## Adding a chain
 

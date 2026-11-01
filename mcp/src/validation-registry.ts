@@ -96,7 +96,7 @@ export async function readValidationOn(
       agentId: id,
       // Says what is missing and what that does NOT mean, because the wrong reading of
       // this line is the whole reason the field exists.
-      reason: `${chain.name} carries no ERC-8004 ValidationRegistry, so an attestation cannot be anchored or read there. This is not the same as the agent having zero attestations.`,
+      reason: `${chain.name} has no ERC-8004 ValidationRegistry wired in our chain registry, so we do not anchor or read attestations there (a registry can be deployed on a chain without being wired). This is not the same as the agent having zero attestations.`,
     }
   }
   const result = await adapterFor(chain).readValidation(agentId, env)

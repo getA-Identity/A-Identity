@@ -36,6 +36,7 @@ test('a chain with no ValidationRegistry returns supported:false, never kyaCount
   assert.equal('validations' in r, false)
   if (r.supported) return
   assert.match(r.reason, /not the same as/i, 'the reason must say what the absence does NOT mean')
+  assert.match(r.reason, /wired/i, 'the reason must say no registry is wired, not that none exists: a chain can carry one we have not wired')
   assert.equal(r.agentId, '7')
   assert.equal(r.chain, without.id)
 })
