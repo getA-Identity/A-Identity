@@ -84,7 +84,9 @@ place. Three rules follow from that:
 2. If the chain is a new VM family, add an adapter under `chains/<ecosystem>/`. If it is
    EVM, there is nothing to write.
 3. `cd mcp && npm run gen:chains` to regenerate `src/lib/chains.ts`, which is byte-pinned
-   against the registry by `frontend-sync.test.ts`.
+   against the registry by `frontend-sync.test.ts`. The same command writes
+   `src/lib/arc-ledger.ts` (our own Arc vaults and keys, from `provenance.ts`, so
+   /app/vault/arc can label them with the backend asleep), pinned by the same test.
 4. Update `public/.well-known/ai-agent-manifest.json`, which is hand-maintained but has
    three arrays pinned to registry order by the same test.
 5. `cd mcp && npm test`. The drift tests will tell you what else disagrees: enums, unions,
