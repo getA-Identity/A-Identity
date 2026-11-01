@@ -24,7 +24,8 @@ chain is which, [`mcp/src/chains/provenance.ts`](mcp/src/chains/provenance.ts) i
 of transactions behind each claim (served at `/proof/:rail`), and [SECURITY.md](SECURITY.md)
 lists every signer and what it can spend.
 
-Everything below is real code broadcasting real transactions - no mocks in the core flow.
+Everything below is real code broadcasting real transactions, except the USYC and StableFX
+section, which is architecture-level only; there are no mocks in the core flow.
 
 ---
 
@@ -40,7 +41,7 @@ flowchart LR
   A[AI agent] -->|acts within policy| P
   subgraph Identity
     ID[ERC-8004 IdentityRegistry<br/>on-chain passport]
-    KYA[ERC-8004 ValidationRegistry<br/>KYA wallet-proof attestation]
+    KYA[ERC-8004 ValidationRegistry<br/>KYA wallet-proof attestation<br/>anchored on Arc testnet only]
   end
   subgraph Enforcement
     P[Policy engine<br/>server pre-check]
@@ -61,9 +62,9 @@ flowchart LR
   P --> V
   P --> C
   P --> S & X & N & E
-  S -->|USDC on Arc| OUT[(Arc Mainnet and testnet)]
-  V --> OUT
-  E --> OUT
+  S -->|USDC, Arc testnet only| TN[(Arc testnet)]
+  V --> OUT[(Arc Mainnet and testnet)]
+  E -->|ERC-8183, Arc testnet only| TN
   X --> OUT
   N -->|batched settlement| OUT
   OUT --> G & CC -->|native USDC| OTHER[(Base / other chains)]
@@ -76,13 +77,18 @@ A payment is checked in depth - a limit you set is enforced in **three** ways:
 1. **Server policy engine** (`mcp/src/platform.ts`) - the pre-check: daily cap, auto-approve
    ceiling, payee allowlist, freeze, human-approval gate (00:00 UTC reset).
 2. **On-chain policy vault** (`mcp/contracts/AgentSpendPolicy.sol`) - a per-agent USDC contract
-   that enforces the same policy **on Arc**: an over-limit `pay()` *reverts on-chain*. This is the
-   trustless source of truth; the server is only the pre-check + fallback. The vault is deployed
-   with the human's real wallet as **`owner`** (freeze / override / withdraw) and, in this build,
-   the **server signer as the delegated `operator`** that calls `pay()` on the agent's behalf -
-   so the *limit* is trustless (the contract reverts regardless of who signs), while *initiating*
-   the payment is a delegated action. Roadmap: hand the `operator` role to an agent-held key /
-   Circle programmable wallet so the agent signs its own payments end-to-end.
+   that enforces the same policy **on Arc**: an over-limit `pay()` *reverts in the contract*, whoever
+   signs. Our server simulates every vault call first, so a refusal normally comes back from the
+   simulation with the contract's typed error and nothing is broadcast. The server is only the
+   pre-check and fallback; the contract has had internal reviews and no external audit. Vaults the
+   product deploys (on Arc testnet) name the human's own wallet as **`owner`** (freeze / override /
+   withdraw) and the **server signer as the delegated `operator`** that calls `pay()` on the
+   agent's behalf, so the *limit* holds whoever signs, while *initiating* the payment is a
+   delegated action. Our one Arc Mainnet vault is different: our server-held operating wallet is
+   its owner, the contract has no owner transfer, and since 2026-09-25 its `operator` is a
+   separate agent key that we also hold. Owner-held Arc Mainnet vaults, deployed from the browser
+   with a key we never hold, are Milestone 1 work. Roadmap: hand the `operator` role to an
+   agent-held key / Circle programmable wallet so the agent signs its own payments end-to-end.
 3. **Circle Agent Wallet** (`mcp/src/circle-agent.ts`) - a hosted, Developer-Controlled wallet
    whose policy engine screens each transfer at the wallet layer (sanctions / allow-block / freeze).
 
@@ -106,8 +112,11 @@ flowchart TD
 Read the diagram by its refusals rather than its happy path. Each layer can say no on its
 own, and the server is only the first of the three: the vault reverts whoever signs, so the
 limit survives our server being wrong, compromised or simply switched off. Nothing reaches
-**Settled** without a receipt carrying a matching `Transfer` log, which is why the ambiguous
-arm exists at all: a payment we cannot prove settled is reported as unproven, not as done.
+**Settled** without a successful receipt, and on the x402 EIP-3009 rail the receipt must also
+carry a matching `Transfer` log; there a receipt that does not arrive in time is recorded as
+ambiguous, never as settled. On the EVM vault path (Arc testnet) a receipt that arrives late is
+still reported as a revert today; the fix, reporting it as unconfirmed with no fall-through to
+another rail, is planned.
 
 ## Standards
 
@@ -144,10 +153,10 @@ here precisely because none of them is the thesis.
 
 | Standard | Where | What it does |
 |---|---|---|
-| **ERC-8004** Identity | `0x8004A818…BD9e` | On-chain agent passport (ERC-724). Real `register` tx per agent. |
-| **ERC-8004** Validation | `0x8004Cb1B…4272` | **KYA**: the agent signs a challenge (viem `verifyMessage`); the result is attested on the ValidationRegistry (`validationRequest` + `validationResponse=100`, tag `"kya"`). |
-| **ERC-8183** Commerce | `0x0747EEf0…4583` | Agent-to-agent job escrow: create → setBudget → approve → fund → submit → complete; USDC held in escrow, released on delivery. |
-| **x402** | `mcp/src/x402.ts` | HTTP-402 pay-per-call: server returns 402 + requirements, client pays USDC on Arc, server verifies on-chain (with replay protection) and serves the resource. |
+| **ERC-8004** Identity | Arc testnet `0x8004A818...BD9e`, Arc Mainnet `0x8004a169...a432` | On-chain agent passport (ERC-721). Real `register` tx per agent. |
+| **ERC-8004** Validation | Arc testnet only, `0x8004Cb1B...4272` | **KYA**: the agent signs a challenge (viem `verifyMessage`); the result is attested on the Arc testnet ValidationRegistry (`validationRequest` + `validationResponse=100`, tag `"kya"`). Arc Mainnet has the family's ValidationRegistry too (`0x8004Cc84...AB58`, code there since before the network opened), but we have not wired it, so KYA is not anchored on mainnet. |
+| **ERC-8183** Commerce | Arc testnet only, `0x0747EEf0...4583` | Agent-to-agent job escrow: create, setBudget, approve, fund, submit, complete; USDC held in escrow, released on delivery. Arc's reference escrow has no code on Arc Mainnet yet. |
+| **x402** | `mcp/src/x402.ts` | HTTP-402 pay-per-call on Arc testnet: server returns 402 + requirements, the client pays USDC itself, server verifies the receipt (with replay protection) and serves the resource. On Arc Mainnet x402 settles through `mcp/src/x402-3009/` (the buyer signs, we broadcast) and Circle Gateway. |
 | **Circle Gateway** | `mcp/src/gateway.ts` | Chain-abstracted USDC: deposit on Arc → a unified balance, then move it to Base Sepolia via the Forwarding Service (signed EIP-712 burn intent). Minted on Base in <500 ms, gaslessly. Permissionless - no Circle API key. |
 | **Circle Nanopayments** | `mcp/src/nanopay.ts` | The second x402 rail: the `exact`/`GatewayWalletBatched` scheme. Buyer signs an **EIP-3009 authorization off-chain (0 gas)**; Circle Gateway verifies + credits instantly and **batches** the on-chain settlement - sub-cent USDC becomes economical. Permissionless on Arc testnet (`@circle-fin/x402-batching`); buyer balance = the same Gateway Wallet deposit (`0x0077…19b9`). The mainnet form lives in `mcp/src/x402-gateway/`: the six trust tools on Arc Mainnet (the primary network, `eip155:5042`) and Base through Circle's mainnet Gateway, kind proven against the registry, every call read back from Gateway's transfers API before it counts. |
 | **Circle CCTP** | `mcp/src/cctp.ts` | Native USDC cross-chain by **burn-and-mint** (CCTPv2 via `@circle-fin/bridge-kit`): burn on Arc → attest → mint natively on Base Sepolia (never wrapped). Canonical bridge, distinct from Gateway's unified-balance forwarding. `mcp/src/cctp-stellar.ts` drives the same protocol between Stellar and EVM directly (Bridge Kit has no Stellar adapter), through Circle's CctpForwarder for Stellar recipients; testnet-proven both ways, mainnet opt-in only. |
@@ -171,12 +180,13 @@ conceptual/architecture-level integration is accepted with no penalty. Where the
 
 ### Autonomy - the agent runs itself, bounded
 
-`mcp/src/autopilot.ts` (`POST /api/arc/agent-run`) is the autonomous economic experience: a
-human sets a budget once, then the agent makes a **burst of real gasless nanopayments** to a
-service (pay-per-inference / streaming) on its own and **stops itself** the moment the next
-payment would breach the budget - bounded authority, demonstrated live, no human per payment.
-Each run routes a **protocol fee** (basis points of volume) to an A-Identity treasury as one
-real settlement - the on-chain proof of the "fee per settlement" model.
+`mcp/src/autopilot.ts` (`POST /api/arc/agent-run`) is the autonomous economic experience, run on
+Arc testnet through Circle's testnet Gateway: a human sets a budget once, then the agent makes a
+**burst of gasless nanopayments** to a demo service address on its own and **stops itself** the
+moment the next payment would breach the budget - bounded authority, demonstrated live, no human
+per payment. Each run routes a **protocol fee** (basis points of volume) to a treasury address (a
+placeholder unless one is configured) as one testnet settlement, as a demonstration of the "fee
+per settlement" model.
 
 ## Verifiable on-chain proof
 
@@ -314,8 +324,8 @@ authors**; registering is permissionless, so what is ours is the agent and the r
   That measurement is what the disclosed settlement fee is derived from, not a guess.
 - **Arbitrum One agent #1259** and the first settlement `0x69abb8a9…` (2026-08-13), same
   first-party EIP-3009 facilitator, buyer signs and pays no gas.
-- Neither family publishes a ValidationRegistry, so KYA is verified off-chain here and recorded
-  rather than anchored.
+- Both chains carry the family's ValidationRegistry proxy (read live 2026-10-11), but we do not
+  wire it, so KYA is verified off-chain here and recorded rather than anchored.
 
 ### Algorand mainnet
 
@@ -386,7 +396,8 @@ day it lands rather than the day someone remembers to add it.
 
 ## Honesty guardrails (we say exactly what's true)
 
-- **KYA** = the agent **proves it controls its wallet**, recorded on-chain. It's an
+- **KYA** = the agent **proves it controls its wallet**, recorded on-chain on Arc testnet only (no
+  mainnet ValidationRegistry is wired). It's an
   **operator/wallet-proof attestation, not** an independent third-party audit.
 - **Circle** *screens* transfers; it does **not** enforce the USD spend cap - the server + the on-chain
   vault do.
