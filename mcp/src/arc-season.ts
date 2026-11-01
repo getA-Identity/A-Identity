@@ -122,10 +122,18 @@ export type ArcRefusal = {
 /**
  * Refusals anyone can inspect. One of each kind is the Milestone 1 commitment: a
  * vault-policy refusal that reverted on chain (so it has a hash), and a DENY verdict
- * that stopped a payment before signing (so it has an audit entry and no hash). Empty on
- * 2026-10-19: the launch-day refusal was a simulation, see the note in the report.
+ * that stopped a payment before signing (so it has an audit entry and no hash). The
+ * launch-day refusal was a simulation and is not here, see the note in the report. The
+ * first on-chain refusal was mined on 2026-11-01 by mcp/scripts/arc-vault-refusal.mjs.
  */
-export const ARC_REFUSALS: ArcRefusal[] = []
+export const ARC_REFUSALS: ArcRefusal[] = [
+  {
+    kind: 'vault-policy-on-chain',
+    txHash: '0x134de0b2e18b516d2fb3eda456201d741a089d79dcdc827d77b83e60afd6cb72',
+    at: '2026-11-01T12:54:40Z',
+    note: 'A 0.5 USDC pay() on the launch-day vault, above its 0.25 USDC autoApproveMax, sent by its operator key (ours) to its owner (our operating wallet) with an explicit gas limit so that it would be mined. It reverted with AboveAutoApprove in block 28990543 (31079 gas, 0.00065 USDC); nothing moved.',
+  },
+]
 
 export type ArcFlowOutcome = 'paid' | 'refused'
 
