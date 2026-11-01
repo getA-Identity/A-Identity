@@ -45,6 +45,13 @@ jobs:
       - name: Install backend deps
         run: npm install --prefix mcp
 
+      # Recompiles mcp/contracts/*.sol in memory with the pinned solc and fails when the
+      # committed artifacts in mcp/src/contracts differ by a byte. The deploy path, the
+      # Sourcify verifier and the browser vault deployer all trust those artifacts, and
+      # nothing else compares them with the source (commit 33c7df69 found them stale).
+      - name: Contract artifacts match their Solidity source
+        run: npm run compile --prefix mcp -- --check
+
       - name: Lint frontend
         run: npm run lint
 
