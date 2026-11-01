@@ -16,7 +16,7 @@
  * `preActionCheckInput`), and the docs test is where strictness lives.
  */
 import { z } from 'zod'
-import { ARC_CHAIN, CHAIN_IDS, CHAINS } from './chains/index.js'
+import { ARC_CHAIN, CHAIN_IDS, CHAINS, getChainById } from './chains/index.js'
 import { payCheckChains } from './evm-pay-check/check.js'
 import { SURFACE_IDS } from './policy/index.js'
 
@@ -180,6 +180,50 @@ export const evmPayCheckInput = {
     .describe(`Which chain to read (${PAY_CHECK_CHAIN_IDS.join(', ')}). Default: ${PAY_CHECK_CHAIN_IDS[0]}. A CAIP agent id names its own chain.`),
 }
 
+// ── verify-then-pay on Arc Mainnet ────────────────────────────────────────────────
+
+/** Every Arc Mainnet value in these descriptions is read from the registry: a literal chain
+ *  id, host or token address outside chains/ fails the build. */
+const VTP_ARC = (() => {
+  const c = getChainById('arc-mainnet')
+  if (!c?.contracts.usdc) throw new Error('the registry no longer has arc-mainnet with its USDC; verify_then_pay is described from it')
+  return c
+})()
+
+export const verifyThenPayInput = {
+  vault: z
+    .string()
+    .describe(`The AgentSpendPolicy vault on ${VTP_ARC.name} that will pay (0x address). Its usdc() must be ${VTP_ARC.contracts.usdc}.`),
+  payee: z
+    .string()
+    .describe(`The 0x address to pay. It must hold an ERC-8004 agent in ${VTP_ARC.name}'s IdentityRegistry, and it is the address risk_check is asked about.`),
+  amount: z
+    .string()
+    .describe(`USDC base units (${VTP_ARC.usdcDecimals} decimals), digits only: "250000" is 0.25 USDC.`),
+  asset: z.string().optional().describe(`Optional. Refused unless it is ${VTP_ARC.contracts.usdc}.`),
+  payeeAgentId: z
+    .string()
+    .optional()
+    .describe(`Optional: "${VTP_ARC.caip2}:8004/<n>" or "#<n>". When given, ownerOf(n) on ${VTP_ARC.name} must be the payee. It is only checked on chain; risk_check is always asked about the payee address.`),
+  payment: z
+    .string()
+    .optional()
+    .describe(
+      'Base64 PAYMENT-SIGNATURE (x402 v2, Circle Gateway GatewayWalletBatched) for the risk_check challenge this tool returned. Omit it to get the challenge: nothing is charged without it, and nothing is charged when the free checks refuse.',
+    ),
+  payOnWarn: z
+    .boolean()
+    .optional()
+    .describe('Explicit opt-in: on WARN, prepare vault.pay() for the operator instead of handing the payment to the owner. Default false.'),
+}
+
+export const verifyThenPayReceiptInput = {
+  flowId: z.string().describe('The flowId verify_then_pay returned: the check\'s authorization nonce.'),
+  txHash: z
+    .string()
+    .describe('The pay() or ownerPay() transaction. The server reads its receipt from every RPC itself and records only what the receipt proves.'),
+}
+
 /**
  * Every tool name the MCP server can register, mapped to its input shape. The marketplace
  * and policy groups are only registered when the HTTP entry injects their hooks, but they
@@ -207,6 +251,8 @@ export const MCP_TOOL_SCHEMAS = {
   pre_action_check: preActionCheckInput,
   audit_log: auditLogInput,
   record_audit_outcome: recordAuditOutcomeInput,
+  verify_then_pay: verifyThenPayInput,
+  verify_then_pay_receipt: verifyThenPayReceiptInput,
 } satisfies Record<string, z.ZodRawShape>
 
 export type McpToolName = keyof typeof MCP_TOOL_SCHEMAS

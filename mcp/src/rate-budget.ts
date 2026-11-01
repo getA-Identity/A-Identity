@@ -31,7 +31,18 @@ export function rateBudget(method: string, pathname: string): { bucket: string; 
   // Both are RPC reads with no session in front of them.
   if (method === 'GET' && (pathname === '/api/stellar/passkey/vault' || pathname === '/api/stellar/passkey/fee-payer'))
     return { bucket: 'stellar-passkey-read', max: 30, windowMs: 60_000 }
+  // One public verify-then-pay flow record. A single row read, and the evidence a DENY is
+  // linked by, so it gets room; the bucket bounds a crawl of nonces, not a reader.
+  if (method === 'GET' && /^\/api\/x402\/gateway\/flows\/[^/]+$/.test(pathname)) return { bucket: 'vtp-flow-read', max: 60, windowMs: 60_000 }
   if (method !== 'POST') return null
+  // verify-then-pay. The free half of every call is about twenty Arc Mainnet reads (the
+  // vault's getters, the payee's registration, a simulated pay()), and it runs before any
+  // payment is asked for, so an unpaid caller can repeat it; the receipt route reads every
+  // RPC for a receipt and may poll for a few seconds. Neither signs or spends anything of
+  // ours. Separate buckets, so someone polling a receipt cannot lock themselves out of the
+  // next flow.
+  if (pathname === '/api/x402/gateway/verify-then-pay') return { bucket: 'vtp', max: 30, windowMs: 60_000 }
+  if (/^\/api\/x402\/gateway\/flows\/[^/]+\/receipt$/.test(pathname)) return { bucket: 'vtp-receipt', max: 30, windowMs: 60_000 }
   // Auth challenges + guest login: cheap to abuse, keep them tight.
   if (pathname === '/api/auth/nonce' || pathname === '/api/auth/verify' || pathname === '/api/auth/login')
     return { bucket: 'auth', max: 20, windowMs: 60_000 }

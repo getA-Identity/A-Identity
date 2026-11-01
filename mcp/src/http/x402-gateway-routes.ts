@@ -36,7 +36,7 @@ import type { TxContext } from '../asp/tools.js'
 import { readBody, sendJson, sendChallenge, type RouteCtx } from './shared.js'
 
 /** Scheme + host this request arrived on, as Render and local both present it. */
-function requestOrigin(ctx: RouteCtx): string {
+export function requestOrigin(ctx: RouteCtx): string {
   const proto = (ctx.req.headers['x-forwarded-proto'] as string | undefined)?.split(',')[0]?.trim() || 'http'
   const host = (ctx.req.headers['x-forwarded-host'] as string | undefined)?.split(',')[0]?.trim() || ctx.req.headers.host || 'localhost'
   return `${proto}://${host}`

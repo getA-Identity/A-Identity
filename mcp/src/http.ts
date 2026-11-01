@@ -39,7 +39,9 @@ import { handleX402StellarRoutes } from './http/x402-stellar-routes.js'
 import { handleX402AlgorandRoutes } from './http/x402-algorand-routes.js'
 import { handleAlgorandCheckRoutes } from './http/algorand-check-routes.js'
 import { handleEvmPayCheckRoutes } from './http/evm-pay-check-routes.js'
-import { handleX402GatewayRoutes } from './http/x402-gateway-routes.js'
+import { handleX402GatewayRoutes, requestOrigin } from './http/x402-gateway-routes.js'
+import { handleVerifyThenPayRoutes } from './http/verify-then-pay-routes.js'
+import { recordVtpReceipt, runVerifyThenPay } from './verify-then-pay/index.js'
 import { handleCctpRoutes } from './http/cctp-routes.js'
 import { handleChainRoutes } from './http/chain-routes.js'
 import { handleArcRoutes } from './http/arc-routes.js'
@@ -193,6 +195,15 @@ const server = http.createServer(async (req, res) => {
   // /api/x402/gateway/* is exempt on the same terms as the EIP-3009 tools: the credential
   // is a signed Gateway authorization, the rail is fail-closed (501) when unconfigured,
   // and it serves read-only trust tools. We broadcast nothing there, so no allowlist.
+  // Two verify-then-pay POSTs share the prefix, and neither signs or broadcasts anything
+  // either. POST /api/x402/gateway/verify-then-pay is payment-gated like the tools: its
+  // free part only reads Arc Mainnet and answers a refusal or the 402, and its paid part is
+  // the same Gateway authorization settled through the same rail. POST
+  // /api/x402/gateway/flows/:flowId/receipt takes no payment and no session, because what
+  // it writes is not the caller's word: it moves a flow only after the server read the
+  // receipt from every RPC itself and the receipt proved the payment that flow prepared, a
+  // transaction can prove one flow at most, and a flow that ended stays ended. All three
+  // verify-then-pay routes are rate-budgeted (vtp, vtp-flow-read, vtp-receipt).
   // /api/x402/stellar/* is exempt on similar but not identical terms, and the difference is
   // worth stating rather than glossing. On the soroban-auth scheme the credential is a signed
   // authorization entry, exactly like the EVM rails. On the `settled` scheme the credential is
@@ -250,6 +261,9 @@ const server = http.createServer(async (req, res) => {
     if (await handleX402AlgorandRoutes(ctx)) return
     if (await handleAlgorandCheckRoutes(ctx)) return
     if (await handleEvmPayCheckRoutes(ctx)) return
+    // verify-then-pay sits under the Gateway rail's prefix, so it is asked first; it answers
+    // only its own three paths.
+    if (await handleVerifyThenPayRoutes(ctx)) return
     // Same again: /api/x402/gateway/* sits under /api/x402/.
     if (await handleX402GatewayRoutes(ctx)) return
     if (await handleCctpRoutes(ctx)) return
@@ -315,6 +329,12 @@ const server = http.createServer(async (req, res) => {
           recordOutcome: (agentId, auditId, outcome, evidenceRef) =>
             recordAuditOutcome(agentId, auditId, outcome as never, mcpCaller, evidenceRef),
           register: (manifest) => registerAgentFromManifest(manifest as never, mcpCaller),
+        },
+        // No caller is baked in: the paid half is gated by the Gateway payment argument, the
+        // receipt half records only what the chain proves, and neither signs anything.
+        verifyThenPay: {
+          run: async (input) => (await runVerifyThenPay(input, input.payment, { origin: requestOrigin(ctx) })).body,
+          receipt: async ({ flowId, txHash }) => (await recordVtpReceipt(flowId, txHash, { origin: requestOrigin(ctx) })).body,
         },
       })
       const transport = new StreamableHTTPServerTransport({
@@ -389,6 +409,9 @@ server.listen(PORT, () => {
   console.error(`  GET  /api/x402/gateway/proof     Gateway-credited settlements, batch hashes once landed`)
   console.error(`  GET  /api/x402/gateway/openapi.json            OpenAPI for the paid tools (marketplace listing)`)
   console.error(`  GET  /api/x402/gateway/tools/:name             price + what to sign; POST (or GET) to pay and call`)
+  console.error(`  POST /api/x402/gateway/verify-then-pay         free vault + payee checks, then risk_check through Gateway on Arc Mainnet; returns the vault call to sign (never signs)`)
+  console.error(`  GET  /api/x402/gateway/flows/:flowId           one verify-then-pay flow, public by its check nonce`)
+  console.error(`  POST /api/x402/gateway/flows/:flowId/receipt   {txHash}: the server reads the receipt from every RPC and records what it proves`)
   console.error(`  GET  /api/stellar/vaults         live Soroban spend vaults: policy, balance, archival TTL (public)`)
   console.error(`  GET  /api/stellar/vault/read     one vault by contract, live, stamped with ledger and time (public)`)
   console.error(`  GET  /api/stellar/vault/is-allowed  one payee against a vault's allowlist, live (public)`)

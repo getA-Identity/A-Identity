@@ -44,6 +44,20 @@ async function main() {
     throw new Error(`merchant_check schema lost its inputs (got: ${merchantProps.join(',')})`)
   }
 
+  // verify_then_pay is injected by the HTTP entry like the policy tools, so the same silent
+  // drop is possible. Assert both tools and the inputs a caller builds a call from. Nothing
+  // is called: the tool would read Arc Mainnet, and a smoke test should not depend on it.
+  for (const [name, wanted] of [
+    ['verify_then_pay', ['vault', 'payee', 'amount', 'payment', 'payOnWarn']],
+    ['verify_then_pay_receipt', ['flowId', 'txHash']],
+  ] as const) {
+    const tool = tools.find((t) => t.name === name)
+    if (!tool) throw new Error(`MCP is missing ${name}`)
+    const props = Object.keys((tool.inputSchema as { properties?: Record<string, unknown> })?.properties ?? {})
+    const lost = wanted.filter((p) => !props.includes(p))
+    if (lost.length) throw new Error(`${name} schema lost its inputs: ${lost.join(', ')}`)
+  }
+
   const caps = (await client.callTool({ name: 'list_capabilities', arguments: {} })) as TextResult
   if (!textOf(caps).includes('ERC-8004')) throw new Error('list_capabilities failed over HTTP')
 
@@ -118,7 +132,7 @@ async function main() {
     throw new Error(`GET /mcp asking for SSE should be 405 with Allow: POST (got ${sse.status})`)
   }
 
-  console.log(`✅ HTTP smoke test passed (MCP + REST, ${CHAIN_IDS.length} chains, 6 policy tools + merchant_check over MCP, action-policy wired + gated, merchant-check validated, GET /mcp described)`)
+  console.log(`✅ HTTP smoke test passed (MCP + REST, ${CHAIN_IDS.length} chains, 6 policy tools + merchant_check + the 2 verify_then_pay tools over MCP, action-policy wired + gated, merchant-check validated, GET /mcp described)`)
 }
 
 main().catch((err) => {

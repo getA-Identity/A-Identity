@@ -126,6 +126,18 @@ test('the decoded-transaction read and the passkey page reads are budgeted too',
   assert.equal(rateBudget('GET', '/api/stellar/passkey/status'), null, 'the status is configuration, not a chain read')
 })
 
+test('the three verify-then-pay routes are budgeted, each in a bucket of its own', () => {
+  // The free half of every flow is about twenty Arc Mainnet reads before any payment is asked
+  // for, the receipt route polls every RPC, and the record is the public evidence for a DENY.
+  const flowId = '0x' + 'ab'.repeat(32)
+  assert.deepEqual(rateBudget('POST', '/api/x402/gateway/verify-then-pay'), { bucket: 'vtp', max: 30, windowMs: 60_000 })
+  assert.deepEqual(rateBudget('POST', `/api/x402/gateway/flows/${flowId}/receipt`), { bucket: 'vtp-receipt', max: 30, windowMs: 60_000 })
+  assert.deepEqual(rateBudget('GET', `/api/x402/gateway/flows/${flowId}`), { bucket: 'vtp-flow-read', max: 60, windowMs: 60_000 })
+  // The paid tools next door keep their own (absent) budget: these buckets match nothing else.
+  assert.equal(rateBudget('POST', '/api/x402/gateway/tools/risk_check'), null)
+  assert.equal(rateBudget('GET', `/api/x402/gateway/flows/${flowId}/receipt`), null)
+})
+
 // ── free writes: the blind spot this file had ────────────────────────────────────
 //
 // Everything above asks "does this POST spend the shared signer". A posted task, a bid and

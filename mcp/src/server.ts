@@ -4,14 +4,16 @@
  */
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
 import { listCapabilities, CHAIN_CONFIG } from './data.js'
-import { CHAINS, identityChains } from './chains/index.js'
+import { CHAINS, getChainById, identityChains } from './chains/index.js'
 import {
   resolveAgentInput, getReputationInput, listAgentsInput, getChainStatusInput, evmPayCheckInput,
   getArcStatusInput, getCircleStatusInput, listCapabilitiesInput, merchantCheckInput,
   findAgentInput, getAgentManifestInput, hireAgentInput, deliverTaskInput,
   checkTaskStatusInput, releaseEscrowInput, registerAgentInput, policyGetInput,
   policySetInput, preActionCheckInput, auditLogInput, recordAuditOutcomeInput,
+  verifyThenPayInput, verifyThenPayReceiptInput,
 } from './mcp-tool-schemas.js'
+import { PRICES } from './asp/payment.js'
 import { createIdentityProvider } from './erc8004.js'
 import { computeAgentReputation } from './reputation.js'
 import { getArcStatus } from './arc.js'
@@ -84,6 +86,25 @@ export type ServerData = {
     auditLog: (agentId: string, opts: { since?: string; limit?: number }) => unknown
     recordOutcome: (agentId: string, auditId: string, outcome: string, evidenceRef?: string) => unknown
     register: (manifest: Record<string, unknown>) => unknown
+  }
+  /**
+   * verify-then-pay on Arc Mainnet, injected by the HTTP entry (it needs the request's origin
+   * and the Gateway rail's configuration). The only hosted tool that takes a payment, and it
+   * takes it as an argument: the Gateway PAYMENT-SIGNATURE for the risk_check challenge the
+   * first call returns. Neither hook signs anything; every answer is executed:false, and a
+   * flow becomes executed only when the receipt hook reads the payment from the chain.
+   */
+  verifyThenPay?: {
+    run: (input: {
+      vault: string
+      payee: string
+      amount: string
+      asset?: string
+      payeeAgentId?: string
+      payment?: string
+      payOnWarn?: boolean
+    }) => Promise<unknown>
+    receipt: (input: { flowId: string; txHash: string }) => Promise<unknown>
   }
 }
 
@@ -402,6 +423,38 @@ export function buildServer(data: ServerData = {}): McpServer {
         inputSchema: recordAuditOutcomeInput,
       },
       async ({ agentId, auditId, outcome, evidenceRef }) => json(p.recordOutcome(agentId, auditId, outcome, evidenceRef)),
+    )
+  }
+
+  // ── verify-then-pay (only when the HTTP entry injects the hook) ──────────────────
+  // Buy risk_check through Circle Gateway on Arc Mainnet, then hand back the exact vault
+  // call, the owner hand-off or nothing. The tool never signs and never sends: the caller's
+  // own key does, and the receipt tool is how a payment gets onto the public record.
+  if (data.verifyThenPay) {
+    const vtp = data.verifyThenPay
+    const arc = getChainById('arc-mainnet')
+    const arcName = arc?.name ?? 'Arc Mainnet'
+    const price = PRICES['POST /tools/risk_check'] ?? 'its listed price'
+
+    server.registerTool(
+      'verify_then_pay',
+      {
+        title: `Verify a payee, then pay it from an ${arcName} vault`,
+        description:
+          `Before an agent pays from its AgentSpendPolicy vault on ${arcName} (${arc?.caip2 ?? 'Arc Mainnet'}): checks for free that the vault holds the registry's USDC, that the payee holds an ERC-8004 agent on ${arcName}, and that the vault's policy and a simulated pay() from its operator would accept the payment; then buys A-Identity's risk_check on the payee address for ${price} through Circle Gateway (call once without payment to get the x402 challenge, sign it from your Gateway balance, call again with payment). ALLOW returns the exact vault.pay(payee, amount) for the operator to send; WARN returns an ownerPay() hand-off for the owner unless payOnWarn is set; DENY returns nothing to sign. Always executed:false: this server signs nothing. Every paid check is recorded publicly by flowId.`,
+        inputSchema: verifyThenPayInput,
+      },
+      async (args) => json(await vtp.run(args)),
+    )
+
+    server.registerTool(
+      'verify_then_pay_receipt',
+      {
+        title: 'Record a verify-then-pay payment from its receipt',
+        description: `After the prepared pay() or ownerPay() was sent: give the flowId and the transaction hash. The server reads the receipt from every ${arcName} RPC itself and marks the flow executed only on the vault's Paid event and USDC's Transfer to the checked payee for the checked amount, or records a revert of the prepared call. Idempotent; a transaction proves one flow at most.`,
+        inputSchema: verifyThenPayReceiptInput,
+      },
+      async ({ flowId, txHash }) => json(await vtp.receipt({ flowId, txHash })),
     )
   }
 
