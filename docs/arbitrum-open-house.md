@@ -101,6 +101,9 @@ review and not an audit. What we found was wrong, and is now fixed:
   limits what the agent key can do; it does not make the owner a hardware wallet.
 - There is no ValidationRegistry in this mainnet registry family, so a KYA result cannot
   be anchored on chain here.
+  - Correction, 2026-11-01: the limit stands, but its reason was wrong. The family's
+    ValidationRegistry proxy has code on both chains (read live 2026-10-11); we do not
+    wire it, so a KYA result is not anchored on chain here.
 - These are L2s: we wait for confirmations and record the block, and we do not claim
   Ethereum finality.
 - A-Identity also runs on Arc, Base, Stellar and Algorand. This page is only about

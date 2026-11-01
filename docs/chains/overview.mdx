@@ -48,9 +48,12 @@ match everywhere.
 
 Two consequences worth stating plainly, because they are easy to get wrong:
 
-- A chain can carry an IdentityRegistry and no ValidationRegistry. On those chains a KYA
-  result cannot be anchored on-chain. It is still verified and recorded, and we say so
-  rather than reporting a zero that reads like a real count.
+- A chain can carry a ValidationRegistry that we do not wire. Arc Mainnet, Base,
+  Arbitrum One, Robinhood Chain, X Layer and Celo each have a proxy at the ERC-8004
+  mainnet family's ValidationRegistry address, and Celo Sepolia has one at the testnet
+  family's (all read live 2026-10-11), but no descriptor of ours wires them. On those
+  chains a KYA result is not anchored on-chain. It is still verified and recorded, and we
+  say so rather than reporting a zero that reads like a real count.
 - A chain can have a real settlement token and no canonical Circle USDC. Robinhood Chain
   is exactly that: the registry's USDC slot stays empty on purpose, and USDG is named as
   its own thing, because every generic USDC code path reads that slot.

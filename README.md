@@ -277,9 +277,10 @@ approval.
 ## Live contracts, chain by chain
 
 The backend reads **real deployed contracts**, no mocks. Every address below is the
-one in the chain registry (`mcp/src/chains/registry.ts`), in registry order, and an
-address that is missing here is missing on-chain: nothing is listed that a live
-`eth_getCode` plus a real read did not confirm.
+one in the chain registry (`mcp/src/chains/registry.ts`), in registry order, and
+nothing is listed that a live `eth_getCode` plus a real read did not confirm. A missing
+address is not always missing on-chain: Arc Mainnet and several other mainnets carry
+the ERC-8004 ValidationRegistry proxy, which we have not wired, so it is not listed.
 
 ### Arc Mainnet, `eip155:5042` - live
 
@@ -343,8 +344,9 @@ Its settlement token is the canonical bridge's USDC.e, which our facilitator can
 agent **#0**, the registry's first mint:
 [tx `0x602ce85a…`](https://robinhoodchain.blockscout.com/tx/0x602ce85ad044836b39918311a3031dcd689e4be0d23aed9ed0ac9227d46ec79e)
 in block 34617892, owner `0xd305607510E0Db2c95807173c7A05BEA53c1ed36`, tokenURI
-[`agent-card.json`](https://a-identity.xyz/.well-known/agent-card.json). There is no
-ValidationRegistry in this mainnet family, so KYA cannot be anchored on-chain here.
+[`agent-card.json`](https://a-identity.xyz/.well-known/agent-card.json). The family's
+ValidationRegistry proxy has code here too (read live 2026-10-11), but we do not wire it,
+so KYA is not anchored on-chain here.
 
 ### Celo mainnet, `eip155:42220` - live
 

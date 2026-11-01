@@ -388,7 +388,7 @@ export default function Arc() {
             <div className="text-[11px] font-bold uppercase tracking-[0.08em] text-foreground/50">Stated plainly</div>
             <ul className="mt-3 grid gap-2 text-[15px] leading-relaxed text-foreground/70 sm:grid-cols-2 sm:gap-x-8">
               <li>The first payments on Arc Mainnet were ours, bought from ourselves, and the ledger labels them internal.</li>
-              <li>Escrow and KYA anchoring still run on Arc testnet, where the full ERC-8004 set lives.</li>
+              <li>Escrow and KYA anchoring still run on Arc testnet. Arc Mainnet has the ERC-8004 ValidationRegistry too, but we have not wired it.</li>
               <li>Every receipt opens on Arc&apos;s public explorer in a browser, no sign-in. Only the explorer&apos;s JSON API turns scripts away with a bot check.</li>
               <li>Every claim on this page links to its transaction, and the full ledger is one click away.</li>
             </ul>

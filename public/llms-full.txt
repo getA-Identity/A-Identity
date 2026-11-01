@@ -525,8 +525,8 @@ Live today:
   `0x8004BAa17C55a88189AE136b182e5fdA19dE9b63`; our agent is #9759. x402 settles
   in native USDC through the first-party facilitator Celo runs, not one of ours. Every
   payment so far is internal: read on 2026-10-11, all 501 USDC payments into the payTo
-  came from our own buyer wallet on 2026-08-09, and none has arrived since. Celo has no
-  ValidationRegistry, so KYA cannot be anchored on-chain there.
+  came from our own buyer wallet on 2026-08-09, and none has arrived since. Celo has a
+  ValidationRegistry proxy that we do not wire, so KYA is not anchored on-chain there.
 
 
 Beta, wired and readable:

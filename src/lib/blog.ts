@@ -135,7 +135,7 @@ export const POSTS: BlogPost[] = [
       {
         heading: 'What Is Still on Testnet',
         body: [
-          'Escrow and KYA anchoring still run on Arc testnet: the ValidationRegistry and Arc\'s reference escrow contract are not on mainnet yet. The first payments on mainnet were our own and the ledger labels them internal, and while Arc described its mainnet explorer as permissioned at launch, its pages now open to anyone in a browser; only the explorer\'s JSON API turns scripts away. Start at a-identity.xyz/arc and click anything.',
+          'Escrow and KYA anchoring still run on Arc testnet. Arc Mainnet does carry the ERC-8004 ValidationRegistry, but we have not wired it, so KYA is not anchored there, and the reference escrow contract Arc documents has no code on mainnet. (Corrected 2026-11-01: this paragraph first said the ValidationRegistry was not on mainnet.) The first payments on mainnet were our own and the ledger labels them internal, and while Arc described its mainnet explorer as permissioned at launch, its pages now open to anyone in a browser; only the explorer\'s JSON API turns scripts away. Start at a-identity.xyz/arc and click anything.',
         ],
       },
     ],
@@ -181,7 +181,7 @@ export const POSTS: BlogPost[] = [
         {
           heading: 'Hala Testnet\'te Olanlar',
           body: [
-            'Escrow ve KYA baglama hala Arc testnet\'te calisiyor: ValidationRegistry ve Arc\'in referans escrow kontrati henuz mainnet\'te degil. Mainnet\'teki ilk odemeler bizimdi ve kayit defteri onlari internal olarak etiketliyor. Arc, mainnet explorer\'ini acilista yetkili erisimli olarak tanimliyordu; sayfalari artik tarayicida herkese acik, yalnizca explorer\'in JSON API\'si betikleri geri ceviriyor. a-identity.xyz/arc adresinden baslayin ve herhangi bir seye tiklayin.',
+            'Escrow ve KYA baglama hala Arc testnet\'te calisiyor. Arc Mainnet\'te ERC-8004 ValidationRegistry de var, ama biz onu henuz baglamadik, bu yuzden KYA mainnet\'te zincire baglanmiyor; Arc\'in referans escrow kontratinin ise mainnet\'te kodu yok. (2026-11-01 duzeltmesi: bu paragraf once ValidationRegistry\'nin mainnet\'te olmadigini soyluyordu.) Mainnet\'teki ilk odemeler bizimdi ve kayit defteri onlari internal olarak etiketliyor. Arc, mainnet explorer\'ini acilista yetkili erisimli olarak tanimliyordu; sayfalari artik tarayicida herkese acik, yalnizca explorer\'in JSON API\'si betikleri geri ceviriyor. a-identity.xyz/arc adresinden baslayin ve herhangi bir seye tiklayin.',
           ],
         },
       ],

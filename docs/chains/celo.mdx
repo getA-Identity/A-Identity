@@ -43,10 +43,12 @@ and sells its trust tools over that facilitator, settled in native USDC.
 | Faucet | n/a | [faucet.celo.org/celo-sepolia](https://faucet.celo.org/celo-sepolia) |
 
 <Warning>
-  Alfajores is deprecated; **Celo Sepolia** is the current testnet. Also note there is no
-  ValidationRegistry in the Celo ERC-8004 family on either network, so a KYA result
-  cannot be anchored on-chain here. We verify and record it off-chain and say so, rather
-  than reporting an anchor count of zero that would read like a real measurement.
+  Alfajores is deprecated; **Celo Sepolia** is the current testnet. Also note that both
+  networks carry a ValidationRegistry proxy from their ERC-8004 family (read live
+  2026-10-11; an earlier version of this page said neither did, which was wrong), but we
+  do not wire either, so a KYA result is not anchored on-chain here. We verify and record
+  it off-chain and say so, rather than reporting an anchor count of zero that would read
+  like a real measurement.
 </Warning>
 
 ## Connect with viem
