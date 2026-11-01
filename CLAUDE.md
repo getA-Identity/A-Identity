@@ -44,8 +44,10 @@ public/llms-full.txt, public/.well-known/ (agent card, MCP server card, agent sk
   day it lands. Two limits stated rather than implied: the scan does not reach src/ or
   scripts/ yet, and CAIP-2 ids are not banned because they legitimately appear in prose
   and published copy. Exceptions are named with reasons in the test.
-- Generated files, never hand-edit: src/lib/chains.ts (run cd mcp && npm run gen:chains)
-  and mcp/src/contracts/*.ts (run cd mcp && npm run compile).
+- Generated files, never hand-edit: src/lib/chains.ts (run cd mcp && npm run gen:chains),
+  mcp/src/contracts/AgentSpendPolicy.ts and MerkleAirdrop.ts (run cd mcp && npm run compile),
+  and src/lib/contracts/agent-spend-policy.ts, the browser's copy of the vault build (run
+  cd mcp && npm run gen:contracts after compile). CI recompiles and fails on any drift.
 - Regex-locked files, edit with care: src/lib/blog.ts is scraped by
   scripts/gen-sitemap.mjs (slug and tr keys at exact indents), and
   src/components/sections/LandingFaq.tsx by scripts/check-structured-data.mjs
@@ -54,7 +56,7 @@ public/llms-full.txt, public/.well-known/ (agent card, MCP server card, agent sk
 
 ## Verification
 
-- Backend: cd mcp && npm test (tsc + 1662 unit tests; new test files must be added to the
+- Backend: cd mcp && npm test (tsc + 1666 unit tests; new test files must be added to the
   test script in mcp/package.json, and the count literal in mcp/src/asp/proof.ts must
   match the number of test() declarations).
 - E2E: boot node mcp/dist/http.js, then npm run e2e, e2e:guardrail, http-smoke.

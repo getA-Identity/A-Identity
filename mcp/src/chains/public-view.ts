@@ -152,6 +152,17 @@ export function renderFrontendChains(): string {
   const chains = publicChains()
   const ids = chains.map((c) => `'${c.id}'`).join(' | ')
   const body = chains.map((c) => `  ${JSON.stringify(c, null, 2).split('\n').join('\n  ')},`).join('\n')
+  // Two lookups kept OUT of the Chain shape on purpose, so GET /api/chains and the
+  // get_chain_status tool answer exactly as before. Each is one JSON object (no "id" key
+  // anywhere, which frontend-sync.test.ts counts to catch an extra chain).
+  const descriptor = new Map(CHAINS.map((c) => [c.id, c]))
+  const rpcUrls = Object.fromEntries(chains.map((c) => [c.id, [...(descriptor.get(c.id)?.rpcUrls ?? [])]]))
+  const usdc = Object.fromEntries(
+    chains.flatMap((c) => {
+      const d = descriptor.get(c.id)
+      return d && d.ecosystem === 'evm' && d.contracts.usdc ? [[c.id, { address: d.contracts.usdc, decimals: d.usdcDecimals }]] : []
+    }),
+  )
 
   return `${GENERATED_HEADER}
 /** Short slug of a chain in the registry. */
@@ -211,5 +222,21 @@ export const CHAIN_BY_ID = Object.fromEntries(CHAINS.map((c) => [c.id, c])) as R
   ChainId,
   Chain
 >
+
+/**
+ * Every public RPC endpoint the registry lists for a chain, primary first, for code that
+ * reads a chain straight from the browser (the Arc vault page polls every one of them for a
+ * receipt, because one host returning null proves nothing). The registry's env-var override
+ * is deliberately NOT applied: this is public metadata, not the transport the server dials.
+ */
+export const CHAIN_RPC_URLS: Record<ChainId, readonly string[]> = ${JSON.stringify(rpcUrls, null, 2)}
+
+/**
+ * The canonical Circle USDC contract on each EVM chain that has one (the registry's
+ * contracts.usdc), with the decimals of its ERC-20 interface. On Arc that interface is 6
+ * decimals over an 18-decimal native balance: one balance, two scales. An absent key is an
+ * absent canonical USDC, never one to infer.
+ */
+export const CHAIN_USDC: Partial<Record<ChainId, { address: string; decimals: number }>> = ${JSON.stringify(usdc, null, 2)}
 `
 }
