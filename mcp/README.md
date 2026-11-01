@@ -188,7 +188,7 @@ Flat files by group: entries (`index.ts` stdio MCP, `http.ts` REST+MCP, `asp-gat
 `build-stamp.ts`) - Circle rails (`gateway.ts`, `cctp.ts`, `nanopay.ts`, `appkit.ts`,
 `circle.ts`, `circle-agent.ts`, `circle-cli.ts`, `paymaster.ts`) - Arc binding (`arc.ts`,
 `arc-contracts.ts`) - Arc Acceleration Season (`arc-season.ts` the milestone report,
-`arc-owner-vault.ts` the owner-held vault admission) - auth (`auth.ts`, `oauth.ts`, `magic.ts`, `bot-auth.ts`) - domain
+`arc-owner-vault.ts` the owner-held vault admission, `arc-vtp-run.ts` the Milestone 1 flow runner's rules) - auth (`auth.ts`, `oauth.ts`, `magic.ts`, `bot-auth.ts`) - domain
 (`erc8004.ts`, `reputation.ts`, `marketplace.ts`, `data.ts`) - x402/autonomy (`x402.ts`,
 `autopilot.ts`, `trust-oracle.ts`) - treasury (`treasury.ts`, `treasury-safe.ts`,
 `airdrop.ts`) - AA (`aa-wallet.ts`).
@@ -204,7 +204,7 @@ npm run start        # MCP server on stdio
 npm run start:http   # the HTTP server (REST + /mcp). Reads config from process.env directly.
 npm run smoke        # spin up the MCP server + exercise every read-only tool
 npm run http-smoke   # exercise the tools over HTTP (server must be running)
-npm test             # tsc + node:test unit tests (1795 across 118 files, as of Nov 2026)
+npm test             # tsc + node:test unit tests (1819 across 119 files, as of Nov 2026)
 npm run e2e          # full end-to-end flow against a running server (E2E_BASE=...)
 ```
 
@@ -216,7 +216,7 @@ node --env-file=.env dist/http.js     # Node 20.6+
 ARC_SIGNER_KEY=0x<funded-key> node dist/http.js
 ```
 
-Tests: **1795 unit tests across 118 colocated `*.test.ts` files** (as of Nov 2026; `npm test`) +
+Tests: **1819 unit tests across 118 colocated `*.test.ts` files** (as of Nov 2026; `npm test`) +
 a full **E2E of about 67 checks** (`npm run e2e`) that adapts to signer presence: green with no
 signer key (live Arc reads; on-chain writes reported as prepared), with the real Arc write
 checks activating under a funded `ARC_SIGNER_KEY`. CI runs the no-signer path.
