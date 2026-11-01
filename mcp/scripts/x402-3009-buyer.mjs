@@ -18,7 +18,7 @@
  * instead of the v1 `X-PAYMENT`. Both shapes are exercised from here rather than trusted.
  *
  * Usage:
- *   node --env-file=.env scripts/x402-3009-buyer.mjs --url http://localhost:3399/api/x402/tools/risk_check --agent '#0' [--dry-run] [--v2]
+ *   node --env-file=.env scripts/x402-3009-buyer.mjs --url http://localhost:3399/api/x402/tools/risk_check --agent '#0' [--dry-run] [--v2] [--retries 6] [--retry-wait-ms 5000]
  * Env:
  *   X402_3009_BUYER_KEY   the wallet that pays (never the server's signer)
  */
@@ -221,12 +221,43 @@ const header = Buffer.from(JSON.stringify(payment)).toString('base64')
 
 console.log(`Payer:    ${account.address}`)
 console.log(`Paying... (${V2 ? 'v2: PAYMENT-SIGNATURE' : 'v1: X-PAYMENT'})`)
-const paid = await fetch(URL_, {
-  method: 'POST',
-  headers: { 'content-type': 'application/json', ...(V2 ? { 'PAYMENT-SIGNATURE': header } : { 'X-PAYMENT': header }) },
-  body: JSON.stringify({ agentId: AGENT }),
-})
-const body = await paid.json()
+
+// The retry rule (public/llms-full.txt, section 6). This authorization can settle only once, so
+// sending it again cannot charge twice, and signing a new one while the first may still land is
+// the one thing that can. So an answer that says "may land" or "try again" gets THIS payment
+// and THIS request again, and only that. A 409 means the payment settled for a different request:
+// this script has only the one request, so it reports the rule rather than guessing.
+const RETRY_SAME_PAYMENT = new Set(['settlement_pending', 'in_flight', 'signer_busy', 'settlement_log_unavailable', 'rpc_error'])
+const RETRIES = Number(arg('retries', '6'))
+const RETRY_WAIT_MS = Number(arg('retry-wait-ms', '5000'))
+const worthRetrying = (status, b) =>
+  (status === 502 && (b?.ambiguous === true || RETRY_SAME_PAYMENT.has(b?.code))) || (status === 500 && Boolean(b?.settlement))
+
+let paid = null
+let body = null
+let lost = null
+for (let attempt = 0; ; attempt += 1) {
+  lost = null
+  try {
+    paid = await fetch(URL_, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', ...(V2 ? { 'PAYMENT-SIGNATURE': header } : { 'X-PAYMENT': header }) },
+      body: JSON.stringify({ agentId: AGENT }),
+    })
+    body = await paid.json()
+  } catch (e) {
+    // No answer, or a proxy's answer that is not ours, says nothing about the payment.
+    lost = e instanceof Error ? e.message : String(e)
+    paid = null
+  }
+  if ((paid && !worthRetrying(paid.status, body)) || attempt >= RETRIES) break
+  console.log(`  ${paid ? `HTTP ${paid.status} ${body?.code ?? ''}` : `no answer (${lost})`}: sending this same payment again in ${RETRY_WAIT_MS} ms (${attempt + 1} of ${RETRIES}). No new signature.`)
+  await new Promise((resolve) => setTimeout(resolve, RETRY_WAIT_MS))
+}
+if (!paid) {
+  console.error(`\nNo answer after ${RETRIES + 1} tries (${lost}). The payment may still land. Do not sign a new one before this authorization expires at ${validBefore}, and read GET /api/facilitator/proof first.`)
+  process.exit(1)
+}
 console.log(`\nHTTP ${paid.status}`)
 // v2 returns the settlement result in `PAYMENT-RESPONSE`, so a client can read its receipt
 // without parsing a body shaped for humans. Reported rather than required: the body carries
@@ -257,6 +288,8 @@ if (V2 && paid.status === 402 && !body.verifyError && !body.reason) {
   // an operator concluding the signature was rejected.
   console.log('hint:     the seller answered with a fresh challenge and named no fault, so it may not read PAYMENT-SIGNATURE yet. Retry without --v2 to check.')
 }
+if (paid.status === 409) console.log('rule:     this payment settled for a different request. Send that original request with this same payment; do not sign a new one.')
+if (paid.status === 502 && worthRetrying(502, body)) console.log(`rule:     still unresolved. Do not sign a new one before this authorization expires at ${validBefore}; send this same payment again.`)
 if (body.verifyError) console.log('verifyError:', body.verifyError)
 if (body.reason) console.log('reason:', body.code ? body.code + ' - ' + body.reason : body.reason)
 if (!body.settlement && !body.verifyError && !body.reason) console.log(JSON.stringify(body, null, 2).slice(0, 900))

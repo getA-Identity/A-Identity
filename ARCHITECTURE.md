@@ -118,22 +118,30 @@ carry a matching `Transfer` log.
 
 Those receipts are read from every RPC the chain lists, one host at a time
 (`mcp/src/chains/evm/receipts.ts`), because a host that does not have a receipt answers null and
-viem's fallback transport takes that as the answer. On the EIP-3009 rail a broadcast with no
-receipt inside the wait is recorded as ambiguous, never as settled, with the transaction hash. A
-retry of the same authorization reads that hash again before anything else, and so does
-`GET /api/facilitator/proof` (at most 10 rows, at most every 30 seconds). The row then resolves to
-settled or reverted by the same rule a first attempt meets, or stays ambiguous. A buyer whose
-transaction landed is served on the retry with no second charge and no second broadcast, once.
-What it does not cover: a row whose write failed when the wait ended leaves nothing to find, so
-that retry is refused as `nonce_used`, and a transaction someone else submitted with the same
-authorization is not looked up.
+viem's fallback transport takes that as the answer. The settlement sends sign locally and write
+the hash down before the transaction leaves (`mcp/src/chains/evm/send.ts`), one at a time per
+signer and chain so two settlements cannot reuse a nonce, preparing it through the same viem action
+writeContract uses. That queue is per process, and only these sends take it.
+
+On the EIP-3009 rail the row goes in as ambiguous before the send, and if it cannot be written
+nothing is sent. A send whose answer is lost, or a broadcast with no receipt inside the wait, stays
+ambiguous under that hash, never settled. A retry of the same authorization reads that hash again
+before anything else, and so does `GET /api/facilitator/proof` (at most 10 rows, at most every 30
+seconds). The row then resolves to settled or reverted by the same rule a first attempt meets, to
+dropped if a node refused it and no RPC has it, or if its signer nonce is used, no RPC has it and
+the token says the authorization is unused, or it stays ambiguous. A buyer whose transaction landed
+is served on the retry with no second charge and no second broadcast, once. What it does not cover:
+a transaction someone else submitted with the same authorization is not looked up.
 
 On the EVM adapter's writes, including the vault path (Arc testnet), no receipt inside the wait
 is reported as unconfirmed with the hash, not as a revert. An instruction in that state goes back
-to a human and never falls through to another rail. Approving it again reads the hash first, and
-sends nothing unless that transaction reverted. The browser vault page and the verify-then-pay
-receipt route read every RPC the same way. Other modules that wait on a receipt through a fallback
-client (`aa-wallet.ts`, `airdrop.ts`, `cctp-stellar.ts`, `gateway.ts`) have not moved to this reader.
+to a human and never falls through to another rail, and the hold is written to storage before the
+send, or nothing is sent. Approving it again reads the hash first and sends nothing in that click.
+If that transaction reverted, or can never land (its nonce is used and no RPC has it), the
+instruction returns to a human with the reason named and the cap given back, and only the next
+approval pays. The browser vault page and the verify-then-pay receipt route read every RPC the same
+way. Other modules that wait on a receipt through a fallback client (`aa-wallet.ts`, `airdrop.ts`,
+`cctp-stellar.ts`, `gateway.ts`) have not moved to this reader.
 
 ## Standards
 
@@ -405,7 +413,7 @@ day it lands rather than the day someone remembers to add it.
   `/mcp` JSON-RPC for agents. Durable state via Postgres (`DATABASE_URL`), JSON-file fallback for dev.
 - **Auth** - wallet sign-in on any chain family the registry knows (EVM personal_sign, Stellar SEP-43 signMessage, an Algorand signed zero-value self-payment; mcp/src/wallet-proof.ts) + email magic link (Resend) are *verified*; a plain guest
   session is read-only. Agent ownership is bound to a verified identity.
-- **Tests / CI** - `node:test` unit suite: **2041 tests across 123 colocated `*.test.ts` files**
+- **Tests / CI** - `node:test` unit suite: **2071 tests across 123 colocated `*.test.ts` files**
   (as of Nov 2026; `npm test` in `mcp/`) + a full E2E (`mcp/e2e.mjs`) of about **67 checks** that
   adapts to signer presence: live reads always run, and the on-chain write checks (x402, ERC-8183
   escrow, Gateway, **Nanopayments settle**, **CCTP burn-and-mint**) activate with a funded

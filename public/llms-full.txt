@@ -336,6 +336,24 @@ read back on Base yet (every one so far is on Arc Mainnet); the proof at
 itself. Sub-cent infrastructure, not revenue. Probe it at
 `GET https://a-identity-backend.onrender.com/api/x402/gateway/tools/verify_agent`.
 
+**If a paid call does not come back, on our EIP-3009 rail**
+(`POST /api/x402/tools/<tool>`, the buyer signing and paying no gas). The
+authorization you signed can settle only once, so sending it again cannot charge
+you twice. Do not sign a new one while the answer says the first may land.
+
+- 502 with `ambiguous: true`, or with `code` `settlement_pending`, `in_flight`,
+  `signer_busy`, `settlement_log_unavailable` or `rpc_error`, or no answer at all:
+  send this same payment with this same request again. We read the transaction
+  from every RPC first and broadcast nothing new while it is unresolved. If it
+  landed, the call is served once with no second charge.
+- 500 with a `settlement` object: it settled and the tool failed. The call is still
+  yours: same payment, same request.
+- 409 `request_mismatch`: this payment settled for a different request. Nothing was
+  served or charged. Send the original request with this same payment.
+- 402 with `verifyError`: a fresh challenge. If it names a transaction, read that
+  transaction before you sign anything. An authorization that expired with nothing
+  landed draws a 402 with no transaction, and a new signature is then safe.
+
 On Arc the native gas token is USDC, so an agent needs no second asset to
 transact. This is also why Circle Paymaster is not used on Arc: a token
 paymaster exists to let an account pay gas in USDC where the native token is
