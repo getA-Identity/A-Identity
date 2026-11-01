@@ -3,7 +3,7 @@ import assert from 'node:assert/strict'
 import { mkdtempSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { findVtpFlowByTx, loadOpenVtpFlows, loadVtpFlow, loadVtpFlowsResult, persistVtpFlow, updateVtpFlow, type VtpFlowRecord, type VtpStoreIo } from '../storage.js'
+import { findVtpFlowByTx, loadCountableVtpFlows, loadOpenVtpFlows, loadVtpFlow, loadVtpFlowsResult, persistVtpFlow, pruneAbandonedVtpFlows, updateVtpFlow, type VtpFlowRecord, type VtpStoreIo } from '../storage.js'
 import { fakeVtpPool } from './fake-pg.js'
 
 /**
@@ -89,6 +89,46 @@ test('the flow log tells no flows apart from a log it cannot read', async () => 
   assert.deepEqual(await loadVtpFlowsResult(down), { ok: false, reason: 'connect ECONNREFUSED' })
   assert.deepEqual(await loadVtpFlow(FLOW, down), { ok: false, reason: 'connect ECONNREFUSED' })
   assert.deepEqual(await persistVtpFlow(flow(), down), { ok: false, reason: 'connect ECONNREFUSED' })
+})
+
+test('the season read leaves out what cannot count, in the query, and an unreadable log stays unreadable', async () => {
+  const keep = flow({ flowId: '0x' + '01'.repeat(32) })
+  const opening = flow({ flowId: '0x' + '02'.repeat(32), outcome: 'opening', detail: 'opening' })
+  const abandoned = flow({ flowId: '0x' + '03'.repeat(32), outcome: 'abandoned', detail: 'rail_failed' })
+
+  const io = fileIo()
+  writeFileSync(io.file!, JSON.stringify([keep, opening, abandoned]))
+  const read = await loadCountableVtpFlows(io)
+  assert.deepEqual(read.ok && read.rows.map((r) => r.flowId), [keep.flowId])
+  writeFileSync(io.file!, '{ not json')
+  assert.equal((await loadCountableVtpFlows(io)).ok, false)
+
+  const seen: string[] = []
+  const pool = fakeVtpPool()
+  const spy = { query: async (text: string, params?: unknown[]) => { seen.push(text); return (pool as unknown as { query: (t: string, p?: unknown[]) => Promise<unknown> }).query(text, params).catch(() => ({ rows: [] })) } }
+  await loadCountableVtpFlows({ getPool: async () => spy })
+  assert.ok(seen.some((q) => /WHERE data->>'outcome' NOT IN \('opening', 'abandoned'\)/.test(q)), 'the rows are not loaded to be thrown away')
+})
+
+test('only an old refused attempt is pruned: never a recent one, an opening row or a real flow', async () => {
+  const old = '2026-10-01T00:00:00.000Z'
+  const stale = flow({ flowId: '0x' + '01'.repeat(32), outcome: 'abandoned', detail: 'rail_failed', updatedAt: old })
+  const recent = flow({ flowId: '0x' + '02'.repeat(32), outcome: 'abandoned', detail: 'rail_failed', updatedAt: '2026-11-01T00:00:00.000Z' })
+  const crashed = flow({ flowId: '0x' + '03'.repeat(32), outcome: 'opening', detail: 'opening', updatedAt: old })
+  const real = flow({ flowId: '0x' + '04'.repeat(32), outcome: 'blocked', detail: 'deny', updatedAt: old })
+  const io = fileIo()
+  writeFileSync(io.file!, JSON.stringify([stale, recent, crashed, real]))
+  assert.deepEqual(await pruneAbandonedVtpFlows('2026-10-15T00:00:00.000Z', io), { ok: true, removed: 1 })
+  const left = await loadVtpFlowsResult(io)
+  assert.deepEqual(left.ok && left.rows.map((r) => r.flowId), [recent.flowId, crashed.flowId, real.flowId])
+  const sql: string[] = []
+  const out = await pruneAbandonedVtpFlows('cutoff', { getPool: async () => ({ query: async (text: string) => { sql.push(text); return { rowCount: 3, rows: [] } } }) })
+  assert.equal(out.ok, true)
+  const del = sql.find((q) => q.startsWith('DELETE'))!
+  assert.match(del, /'abandoned'/)
+  assert.match(del, /'rail_failed'/)
+  assert.match(del, /LIMIT/)
+  assert.deepEqual(await pruneAbandonedVtpFlows('x', { getPool: async () => { throw new Error('down') } }), { ok: false, reason: 'down' })
 })
 
 test('Postgres gets the vtp_flows table once, the unique payment index, and an insert that never overwrites', async () => {

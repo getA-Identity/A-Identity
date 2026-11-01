@@ -797,6 +797,42 @@ test('a DENY through the Postgres-shaped log closes its reservation as a public 
   assert.deepEqual([late.httpStatus, late.body.code], [409, 'FLOW_ENDED'])
 })
 
+// ── a row costs a request something ───────────────────────────────────────────────
+
+test('a request the rail would refuse on its face writes no row: no signature, wrong recipient, wrong price', async () => {
+  const forged = '0x' + '11'.repeat(65)
+  const auth = { from: OPERATOR, to: PAY_TO, value: '5000', validAfter: '0', validBefore: '9999999999', nonce: NONCE }
+  for (const [what, payload] of [
+    ['no signature', { authorization: auth }],
+    ['a signature that is not one', { signature: 'not hex', authorization: auth }],
+    ['a short signature', { signature: '0x' + '11'.repeat(20), authorization: auth }],
+    ['pays somebody else', { signature: forged, authorization: { ...auth, to: '0x' + '66'.repeat(20) } }],
+    ['the wrong price', { signature: forged, authorization: { ...auth, value: '1' } }],
+    ['no value', { signature: forged, authorization: { ...auth, value: undefined } }],
+    ['a nonce that is not 32 bytes', { signature: forged, authorization: { ...auth, nonce: '0x12' } }],
+    ['no payer', { signature: forged, authorization: { ...auth, from: 'nobody' } }],
+  ] as [string, unknown][]) {
+    const t = setup()
+    const out = await runVerifyThenPay(request(), Buffer.from(JSON.stringify({ x402Version: 2, payload })).toString('base64'), t.deps)
+    assert.equal(out.httpStatus, 402, what)
+    assert.equal(out.body.stage, 'payment_required', what)
+    assert.equal(t.s.inserted.length, 0, `${what}: no row`)
+    assert.equal(t.g.spy.settles, 0, `${what}: nothing settled`)
+  }
+})
+
+test('a refused attempt that reaches the rail is abandoned, and old ones are pruned on the way', async () => {
+  const pruned: string[] = []
+  const t = setup({
+    gw: { settle: { success: false, errorReason: 'insufficient_balance' } },
+    store: { prune: async (olderThan) => { pruned.push(olderThan) } },
+  })
+  const out = await runVerifyThenPay(request(), header(), t.deps)
+  assert.equal(out.body.stage, 'check_failed')
+  assert.equal(t.s.closed[0].outcome, 'abandoned')
+  assert.deepEqual(pruned, [new Date(NOW - 7 * 86_400_000).toISOString()])
+})
+
 // ── a WARN with no human to hand it to ────────────────────────────────────────────
 
 test('a WARN on a vault whose owner and operator are one key blocks the flow and records no approval', async () => {

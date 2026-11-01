@@ -54,6 +54,8 @@ type RefusalItem = {
   at: string
   note: string
   explorerUrl: string | null
+  /** Why the payee is one of our own wallets, when it is. */
+  payeeInternal?: string
 }
 type LogRead = { readable: boolean; rows: number; reason?: string }
 
@@ -70,7 +72,7 @@ type SeasonReport = {
     vaults: Metric & { items: VaultItem[] }
     // linked and unlinked arrive with the flow count; a backend from before it sends neither,
     // and its count is every Gateway check, so the row is labeled by which one answered.
-    checks: Metric & { internal: number; external: number; linked?: { paid: number; refused: number }; unlinked?: number }
+    checks: Metric & { internal: number; external: number; linked?: { paid: number; refused: number }; unlinked?: number; internalPayee?: number; refusedPayees?: number }
     refusals: Metric & { items: RefusalItem[] }
     evidence: string
   }
@@ -303,7 +305,7 @@ export default function ArcSeasonProgress() {
                 <MetricRow
                   label="Verify-then-pay flows through Circle Gateway"
                   metric={m1.checks}
-                  detail={`${m1.checks.linked.paid} paid, ${m1.checks.linked.refused} refused; ${m1.checks.unlinked ?? 0} internal checks with nothing linked; ${m1.checks.external} external checks count under M2`}
+                  detail={`${m1.checks.linked.paid} paid, ${m1.checks.linked.refused} refused${m1.checks.internalPayee ? ` (${m1.checks.internalPayee} name our own wallet or the vault's own key as payee; refused flows name ${m1.checks.refusedPayees ?? 0} distinct payees)` : ''}; ${m1.checks.unlinked ?? 0} internal checks with nothing linked; ${m1.checks.external} external checks count under M2`}
                 />
               ) : (
                 <MetricRow
@@ -327,8 +329,9 @@ export default function ArcSeasonProgress() {
               {m1.refusals.items.length > 0 && (
                 <ul className="mt-3 flex flex-col gap-1.5">
                   {m1.refusals.items.map((r) => (
-                    <li key={`${r.kind}-${r.at}`} className="text-[11px] text-foreground/65">
+                    <li key={`${r.kind}-${r.at}-${r.evidenceUrl ?? r.txHash ?? ''}`} className="text-[11px] text-foreground/65">
                       <span className="font-mono text-foreground/50">{r.kind}</span> {r.note}{' '}
+                      {r.payeeInternal && <span className="font-semibold text-foreground/80">Our own probe: {r.payeeInternal}. </span>}
                       {r.explorerUrl ? (
                         <OutLink href={r.explorerUrl}>{short(r.txHash ?? '')}</OutLink>
                       ) : r.evidenceUrl ? (

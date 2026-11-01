@@ -10,6 +10,7 @@ import { evmPublicClient, getChainById, type ChainDescriptor, type EveryRpcOptio
 import type { RailDeps } from '../x402-gateway/index.js'
 import {
   findVtpFlowByTx,
+  pruneAbandonedVtpFlows,
   loadOpenVtpFlows,
   loadVtpFlow,
   persistVtpFlow,
@@ -68,6 +69,8 @@ export type VtpStore = {
   findByTx(txHash: string): Promise<VtpFlowByTx>
   /** The open flows (pending or waiting for the owner) on one vault, payee and amount. */
   openFlows(match: VtpFlowMatch): Promise<VtpFlowsRead>
+  /** Remove attempts the rail refused that are older than this. Best effort. */
+  prune?(olderThan: string): Promise<unknown>
 }
 
 /** The vtp_flows table (or its file fallback) behind the store interface. */
@@ -77,6 +80,7 @@ export function storageVtpStore(io: VtpStoreIo = {}): VtpStore {
     insert: (rec) => persistVtpFlow(rec, io),
     update: (id, patch, from) => updateVtpFlow(id, patch, from, io),
     findByTx: (hash) => findVtpFlowByTx(hash, io),
+    prune: (olderThan) => pruneAbandonedVtpFlows(olderThan, io),
     openFlows: (match) => loadOpenVtpFlows(match, io),
   }
 }

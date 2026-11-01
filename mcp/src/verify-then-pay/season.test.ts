@@ -107,6 +107,11 @@ test('a flow still open, or one whose verdict was never usable, counts nothing',
   }
 })
 
+test("a season flow carries the vault's two keys, so the report can say when a payee is one of them", () => {
+  const [deny] = toSeasonFlow(row({ outcome: 'blocked', detail: 'deny', verdict: { ...row().verdict!, decision: 'DENY', effective: 'DENY' } }))
+  assert.deepEqual(deny.vaultKeys, { owner: row().owner, operator: row().operator })
+})
+
 test('a row that is not a flow record throws here, so the report can skip that row alone', () => {
   assert.throws(() => toSeasonFlow(row({ amount: 'not a number', outcome: 'executed', detail: 'agent_paid', payment: payment('success') })))
   assert.throws(() => toSeasonFlow(row({ check: undefined as never })), /no flowId, payee or check payer/)

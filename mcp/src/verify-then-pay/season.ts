@@ -40,6 +40,7 @@ export function toSeasonFlow(row: VtpFlowRecord): ArcVerifyThenPayFlow[] {
     payer: row.check.payer,
     payee: row.payee,
     check: { network: row.network, payer: row.check.payer, outcome: row.check.gatewayOutcome, ts: row.check.checkedAt },
+    ...(typeof row.owner === 'string' && typeof row.operator === 'string' ? { vaultKeys: { owner: row.owner, operator: row.operator } } : {}),
   }
   const amount = `${formatUnitsString(BigInt(row.amount), vtpChain().usdcDecimals)} USDC`
   const decision = row.verdict?.decision ?? 'no verdict'

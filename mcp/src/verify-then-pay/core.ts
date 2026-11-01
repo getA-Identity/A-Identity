@@ -197,6 +197,8 @@ export type ParsedVtpInput = {
 
 const ADDRESS = /^0x[0-9a-fA-F]{40}$/
 const NONCE = /^0x[0-9a-fA-F]{64}$/
+/** 65 bytes for a key, more for a contract wallet. */
+const SIGNATURE = /^0x(?:[0-9a-fA-F]{2}){65,}$/
 const DEFAULT_EXPIRY_MARGIN_SEC = 60
 const VAULT_ERRORS = new Set(['ZeroAddress', 'InvalidPayee', 'IsFrozen', 'SessionKeyExpired', 'PayeeNotAllowed', 'AboveAutoApprove', 'DailyCapExceeded', 'NotOperator', 'TransferFailed'])
 
@@ -243,7 +245,9 @@ export function parseVtpInput(chain: ChainDescriptor, input: VtpInput): { ok: tr
   return { ok: true, value: { vault, payee, amount, amountUsd, asset, payeeAgentId, tokenId }, payOnWarn: input.payOnWarn === true }
 }
 
-type DecodedPayment = { ok: true; networks: string[]; nonce: string | null; from: string | null } | { ok: false; reason: string }
+type DecodedPayment =
+  | { ok: true; networks: string[]; nonce: string | null; from: string | null; to: string | null; value: string | null; signature: string | null }
+  | { ok: false; reason: string }
 
 /** Read what a PAYMENT-SIGNATURE says before it is settled. Nothing here verifies a
  *  signature: that is Gateway's job when the rail settles it. Both places a payload can name
@@ -257,15 +261,41 @@ export function decodePayment(header: string): DecodedPayment {
     return { ok: false, reason: 'PAYMENT-SIGNATURE is not base64-encoded JSON' }
   }
   if (typeof p !== 'object' || p === null) return { ok: false, reason: 'PAYMENT-SIGNATURE is not a JSON object' }
-  const o = p as { network?: unknown; accepted?: { network?: unknown } | null; payload?: { authorization?: { nonce?: unknown; from?: unknown } } }
+  const o = p as { network?: unknown; accepted?: { network?: unknown } | null; payload?: { signature?: unknown; authorization?: { nonce?: unknown; from?: unknown; to?: unknown; value?: unknown } } }
   const auth = o.payload?.authorization
   const nonce = typeof auth?.nonce === 'string' && NONCE.test(auth.nonce) ? auth.nonce.toLowerCase() : null
   const from = typeof auth?.from === 'string' && ADDRESS.test(auth.from) ? auth.from.toLowerCase() : null
   const networks = [railPaidNetwork(p), typeof o.accepted?.network === 'string' ? o.accepted.network.trim() : undefined].filter(
     (n): n is string => typeof n === 'string' && n.length > 0,
   )
-  return { ok: true, networks: [...new Set(networks)], nonce, from }
+  return {
+    ok: true,
+    networks: [...new Set(networks)],
+    nonce,
+    from,
+    to: typeof auth?.to === 'string' ? auth.to : null,
+    value: auth?.value === undefined || auth?.value === null ? null : String(auth.value),
+    signature: typeof o.payload?.signature === 'string' ? o.payload.signature : null,
+  }
 }
+
+/**
+ * What the rail would refuse anyway, asked before a row is written. The reservation is a
+ * permanent row, and this is what stops anything that plainly is not a payment from adding one.
+ * The rail still judges everything that passes: this reads the shape and proves nothing.
+ */
+function paymentShapeError(chain: ChainDescriptor, payment: Extract<DecodedPayment, { ok: true }>, payTo: string | null): string | null {
+  if (!payment.signature || !SIGNATURE.test(payment.signature)) return 'payload.signature must be a 65-byte hex value'
+  if (!payment.nonce) return 'authorization.nonce must be a 32-byte hex value'
+  if (!payment.from) return 'authorization.from must be a 0x address'
+  if (!payTo || payment.to?.toLowerCase() !== payTo.toLowerCase()) return `authorization.to must be ${payTo}`
+  const price = String(Math.round(toolPriceUsd('risk_check') * 10 ** chain.usdcDecimals))
+  if (payment.value !== price) return `authorization.value must be exactly ${price}`
+  return null
+}
+
+/** How old a refused attempt must be before its row is removed. */
+const ABANDONED_ROW_RETENTION_MS = 7 * 86_400_000
 
 function emptyChecks(chain: ChainDescriptor, p: ParsedVtpInput): VtpChecks {
   return {
@@ -615,6 +645,8 @@ export async function runVerifyThenPay(input: VtpInput, paymentHeader: string | 
 
   // 5. no usable payment yet: the challenge
   if (!payment || !payment.ok) return paymentRequired(chain, status, railDeps, pre.checks, payment && !payment.ok ? payment.reason : undefined)
+  const shapeError = paymentShapeError(chain, payment, status.payTo)
+  if (shapeError) return paymentRequired(chain, status, railDeps, pre.checks, shapeError)
 
   // 6. the nonce reserved, so one signed payment reaches Gateway once; then the check, through the rail, in process
   const flowId = payment.nonce
@@ -686,7 +718,10 @@ export async function runVerifyThenPay(input: VtpInput, paymentHeader: string | 
     }
     // No verdict and no paid failure. A reservation that cannot be marked stays opening, which
     // reads as nothing just the same.
-    if (flowId) await store.update(flowId, { outcome: 'abandoned', detail: 'rail_failed', updatedAt: ts }, ['opening'])
+    if (flowId) {
+      await store.update(flowId, { outcome: 'abandoned', detail: 'rail_failed', updatedAt: ts }, ['opening'])
+      await store.prune?.(new Date(now() - ABANDONED_ROW_RETENTION_MS).toISOString())
+    }
     const railBody = out.body as Record<string, unknown>
     const challenge = out.httpStatus === 402 && railBody && typeof railBody === 'object' ? arcOnly(chain, railBody) : null
     const railError = (railBody as { error?: unknown })?.error

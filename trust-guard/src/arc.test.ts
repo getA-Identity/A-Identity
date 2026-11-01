@@ -570,6 +570,20 @@ for (const [label, reply, code, paid] of [
   })
 }
 
+test('a WARN with no human to hand it to is a typed error: paid, with its record and the server\'s words', async () => {
+  const next = "WARN, and this vault's owner and operator are the same key, so there is no human to hand the payment to: do not pay. Give the vault an owner key the agent does not hold."
+  const { signer, opts } = setup({
+    paid: (p) => ({ status: 200, body: answerBody(p, 'warn_no_human_gate', { charged: true, next, record: { recorded: true, url: 'https://anywhere.example/x' } }) }),
+  })
+  const e = await refused(verifyThenPay(opts), GatewayCheckError)
+  assert.equal(e.code, 'NO_HUMAN_GATE')
+  assert.equal(e.paid, true)
+  assert.equal(e.serverCode, 'warn_no_human_gate')
+  assert.equal(e.message, next)
+  assert.match(e.recordUrl ?? '', /\/api\/x402\/gateway\/flows\/0x[0-9a-f]{64}$/, 'at our base URL, not where the answer says')
+  assert.equal(signer.sent.length, 0)
+})
+
 test('a fetch that throws on the paid POST leaves paid unknown and never calls the operator', async () => {
   const { signer, opts } = setup({
     paid: () => {

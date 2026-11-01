@@ -54,11 +54,11 @@ const encodeTopics = encodeEventTopics as unknown as (a: { abi: unknown; eventNa
 
 const payData = encodeFunctionData({ abi: AgentSpendPolicyAbi, functionName: 'pay', args: [PAYEE as Hex, AMOUNT] } as never)
 
-type Vault = { frozen: boolean }
+type Vault = { frozen: boolean; ownerIsOperator?: boolean }
 
 const getters = (v: Vault): Record<string, unknown> => ({
   usdc: USDC,
-  owner: OWNER,
+  owner: v.ownerIsOperator ? OPERATOR : OWNER,
   operator: OPERATOR,
   frozen: v.frozen,
   sessionKeyExpiry: BLOCK_TS + 14n * 86_400n,
@@ -87,8 +87,8 @@ function serverChain(v: Vault): VtpReadClient {
 }
 
 /** The client's view of Arc Mainnet: the same facts, through the SDK's reader interface. */
-function clientChain() {
-  const v: Vault = { frozen: false }
+function clientChain(ownerIsOperator = false) {
+  const v: Vault = { frozen: false, ownerIsOperator }
   return {
     code: async (a: string) => (a.toLowerCase() === OPERATOR ? '0x' : '0x6001'),
     latestBlock: async () => ({ number: 29_000_001n, timestamp: BLOCK_TS }),
@@ -152,7 +152,7 @@ function scored(decision: 'ALLOW' | 'WARN' | 'DENY', over: { reputationScore?: u
   })
 }
 
-type Setup = { score?: Scored; settle?: GatewaySettleResponse; transfers?: 'none'; insertFails?: boolean; closeFails?: boolean; serverFrozen?: boolean; payOnWarn?: boolean }
+type Setup = { score?: Scored; settle?: GatewaySettleResponse; transfers?: 'none'; insertFails?: boolean; closeFails?: boolean; serverFrozen?: boolean; payOnWarn?: boolean; ownerIsOperator?: boolean }
 
 function harness(o: Setup = {}) {
   const rows = new Map<string, VtpFlowRecord>()
@@ -180,7 +180,7 @@ function harness(o: Setup = {}) {
   const deps = {
     env: ENV,
     origin: ORIGIN,
-    client: serverChain({ frozen: o.serverFrozen ?? false }),
+    client: serverChain({ frozen: o.serverFrozen ?? false, ownerIsOperator: o.ownerIsOperator }),
     store,
     now: () => NOW,
     rail: {
@@ -228,7 +228,7 @@ function harness(o: Setup = {}) {
       signer,
       baseUrl: ORIGIN,
       fetch: fetchFake,
-      chain: clientChain(),
+      chain: clientChain(o.ownerIsOperator),
       clock: { now: () => 0, sleep: async () => {} },
       ...(o.payOnWarn ? { payOnWarn: true } : {}),
     })
@@ -319,6 +319,19 @@ test("Gateway's own refusal comes out as REFUSED with paid false", async () => {
   assert.equal(e.code, 'REFUSED')
   assert.equal(e.paid, false)
   assert.equal(h.sent.length, 0)
+})
+
+test('a WARN on a vault whose owner and operator are one key is NO_HUMAN_GATE: paid, with its record and the fix', async () => {
+  const h = harness({ score: scored('WARN'), ownerIsOperator: true })
+  const e = await thrown(h.run())
+  assert.equal(e.name, 'GatewayCheckError')
+  assert.equal(e.code, 'NO_HUMAN_GATE')
+  assert.equal(e.paid, true)
+  assert.equal(e.serverCode, 'warn_no_human_gate')
+  assert.ok(String(e.recordUrl).startsWith(`${ORIGIN}/api/x402/gateway/flows/`), 'the record the server wrote')
+  assert.match(e.message, /owner key the agent does not hold/)
+  assert.doesNotMatch(e.message, /unknown stage/)
+  assert.equal(h.sent.length, 0, 'nothing is sent')
 })
 
 test('a flow the server could not close comes out as FLOW_NOT_RECORDED with paid true, and nothing is sent', async () => {

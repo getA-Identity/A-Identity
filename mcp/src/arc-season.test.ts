@@ -370,6 +370,90 @@ test('an external wallet nobody attributed is reported as unattributed, never fo
   assert.equal(b.team, undefined)
 })
 
+// ── recorded DENYs and whose wallet they name ────────────────────────────────────────
+
+const OUR_VAULT_OWNER = '0x' + 'b7'.repeat(20)
+const OPERATOR_KEY = '0x' + 'a9'.repeat(20)
+const OUR_PAY_TO = '0x' + 'c8'.repeat(20)
+const denyFlow = (nonce: string, over: Partial<ArcVerifyThenPayFlow> = {}) =>
+  flow({ checkNonce: nonce, outcome: 'refused', txHash: undefined, evidenceUrl: `https://a-identity.xyz/api/x402/gateway/flows/${nonce}`, note: 'risk_check DENY stopped a payment', ...over })
+
+test('a recorded DENY with a public record fills the refusal metric, with no hand-committed entry', async () => {
+  const check = gw({ payer: OURS_GATEWAY })
+  const r = await arcSeasonReport(deps({ gateway: [check], flows: [denyFlow(check.authNonce)], refusals: [] }))
+  assert.equal(r.milestone1.refusals.count, 1)
+  assert.deepEqual(r.milestone1.refusals.byKind, { 'vault-policy-on-chain': 0, 'deny-before-signing': 1 })
+  const [item] = r.milestone1.refusals.items
+  assert.equal(item.evidenceUrl, `https://a-identity.xyz/api/x402/gateway/flows/${check.authNonce}`)
+  assert.equal(item.explorerUrl, null)
+  assert.match(r.milestone1.refusals.note, /1 DENY result\(s\) stopped before signing/)
+})
+
+test('only a linked DENY with a record counts: not a paid flow, an on-chain revert, or a nonce that names nothing', async () => {
+  const paid = gw({ payer: OURS_GATEWAY })
+  const reverted = gw({ payer: OURS_GATEWAY })
+  const r = await arcSeasonReport(
+    deps({
+      gateway: [paid, reverted],
+      refusals: [],
+      flows: [flow({ checkNonce: paid.authNonce }), flow({ checkNonce: reverted.authNonce, outcome: 'refused', txHash: '0x' + '44'.repeat(32) }), denyFlow(nextNonce())],
+    }),
+  )
+  assert.equal(r.milestone1.checks.count, 2)
+  assert.equal(r.milestone1.refusals.count, 0)
+})
+
+test('a curated entry for the same record does not count twice, and a long run is counted and not all listed', async () => {
+  const checks = Array.from({ length: 8 }, () => gw({ payer: OURS_GATEWAY }))
+  const flows = checks.map((c) => denyFlow(c.authNonce))
+  const curated = { kind: 'deny-before-signing' as const, evidenceUrl: flows[0].evidenceUrl, at: flows[0].at, note: 'curated' }
+  const r = await arcSeasonReport(deps({ gateway: checks, flows, refusals: [curated] }))
+  assert.equal(r.milestone1.refusals.count, 8)
+  assert.equal(r.milestone1.refusals.byKind['deny-before-signing'], 8)
+  assert.equal(r.milestone1.refusals.items.length, 6, 'the curated entry and the first five')
+  assert.match(r.milestone1.refusals.note, /2 more DENY record\(s\) are on checks.items/)
+})
+
+test('a flow whose payee is ours or the vault key is labeled, counted, and said in the note', async () => {
+  const toOwner = gw({ payer: OURS_GATEWAY })
+  const toOperator = gw({ payer: OURS_GATEWAY })
+  const toRail = gw({ payer: OURS_GATEWAY })
+  const toBuyer = gw({ payer: OURS_GATEWAY })
+  const toStranger = gw({ payer: OURS_GATEWAY })
+  const keys = { owner: OUR_VAULT_OWNER, operator: OPERATOR_KEY }
+  const r = await arcSeasonReport(
+    deps({
+      gateway: [toOwner, toOperator, toRail, toBuyer, toStranger],
+      refusals: [],
+      ourPayTo: [OUR_PAY_TO],
+      flows: [
+        denyFlow(toOwner.authNonce, { payee: shouty(OUR_VAULT_OWNER), vaultKeys: keys }),
+        denyFlow(toOperator.authNonce, { payee: OPERATOR_KEY, vaultKeys: keys }),
+        denyFlow(toRail.authNonce, { payee: OUR_PAY_TO, vaultKeys: keys }),
+        denyFlow(toBuyer.authNonce, { payee: lower(OURS_FACILITATOR), vaultKeys: keys }),
+        denyFlow(toStranger.authNonce, { vaultKeys: keys }),
+      ],
+    }),
+  )
+  const c = r.milestone1.checks
+  assert.equal(c.count, 5, 'they are real settled checks, so they still count')
+  assert.equal(c.internalPayee, 4)
+  assert.equal(c.refusedPayees, 5)
+  assert.deepEqual(c.items.map((i) => Boolean((i as { payeeInternal?: string }).payeeInternal)), [true, true, true, true, false])
+  assert.match((c.items[0] as { payeeInternal?: string }).payeeInternal ?? '', /owner/)
+  assert.match(c.note, /4 of the flows name a payee that is our own wallet or the vault's own key/)
+  assert.match(c.note, /5 distinct payee/)
+  assert.ok(r.milestone1.refusals.items[0].payeeInternal, 'the refusal that came from it says so too')
+  assert.equal(r.milestone1.refusals.items[4].payeeInternal, undefined)
+})
+
+test('a season with no such flow says nothing about them', async () => {
+  const check = gw({ payer: OURS_GATEWAY })
+  const r = await arcSeasonReport(deps({ gateway: [check], flows: [denyFlow(check.authNonce, { vaultKeys: { owner: OUR_VAULT_OWNER, operator: OPERATOR_KEY } })] }))
+  assert.equal(r.milestone1.checks.internalPayee, 0)
+  assert.doesNotMatch(r.milestone1.checks.note, /our own wallet or the vault/)
+})
+
 test('vault and refusal items derive their explorer links from the registry and count by list length', async () => {
   const deployTx = '0x' + '11'.repeat(32)
   const refusalTx = '0x' + '22'.repeat(32)

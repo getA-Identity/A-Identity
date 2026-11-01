@@ -44,14 +44,14 @@ import { PROVENANCE } from './chains/provenance.js'
 import {
   GATEWAY_SETTLEMENTS_CAP,
   loadGatewaySettlementsResult,
-  loadVtpFlowsResult,
+  loadCountableVtpFlows,
   loadX402SettlementsResult,
   type GatewaySettlementRecord,
   type VtpFlowRecord,
   type X402SettlementRecord,
 } from './storage.js'
-import { internalPayers as gatewayInternalPayers } from './x402-gateway/rail.js'
-import { internalPayers as facilitatorInternalPayers } from './x402-3009/rail.js'
+import { internalPayers as gatewayInternalPayers, railStatus as gatewayRailStatus } from './x402-gateway/rail.js'
+import { internalPayers as facilitatorInternalPayers, railStatus as facilitatorRailStatus } from './x402-3009/rail.js'
 import { toSeasonFlow } from './verify-then-pay/season.js'
 
 export const ARC_SEASON_CHAIN = 'arc-mainnet'
@@ -137,6 +137,8 @@ export type ArcRefusal = {
   /** UTC timestamp of the refusal. */
   at: string
   note: string
+  /** Why the payment that was refused was to a wallet of ours, when it was. */
+  payeeInternal?: string
 }
 
 /**
@@ -181,6 +183,10 @@ export type ArcVerifyThenPayFlow = {
    *  only when the check's row can have aged out of the retained Gateway log: the log is full
    *  and the check is older than its oldest row. */
   check?: { network: string; payer: string; outcome: string; ts: string }
+  /** The vault's two keys as the flow's own record holds them (recorded flows only). A flow
+   *  whose payee is one of them is labeled in the report: it is a real settled check, and it is
+   *  not a payment to anyone else. */
+  vaultKeys?: { owner: string; operator: string }
   /** UTC timestamp of the outcome. */
   at: string
   note: string
@@ -267,6 +273,11 @@ export type ArcSeasonReport = {
       /** Of count, flows linked by the settlement their own flow record holds, because their
        *  check's Gateway row aged out of the retained log. */
       agedOut: number
+      /** Of count, flows whose payee is one of our own wallets or the vault's own key. Each is
+       *  labeled on its item. Planned probes count as flows, and are not third-party payments. */
+      internalPayee: number
+      /** How many different payees the refused flows name, next to linked.refused. */
+      refusedPayees: number
       items: ArcSeasonFlowItem[]
       rail: string
       note: string
@@ -306,6 +317,8 @@ export type ArcSeasonDeps = {
   facilitatorRows: () => Promise<X402SettlementRecord[]>
   /** Our own buyer wallets, as each rail publishes them. Any case. */
   internalPayers: { gateway: string[]; facilitator: string[] }
+  /** The wallets our rails are paid to. A payment to one is a payment to ourselves. */
+  ourPayTo?: string[]
   now?: () => number
   partners?: ArcPartner[]
   vaults?: ArcOwnerHeldVault[]
@@ -336,7 +349,7 @@ async function liveFacilitatorRows(): Promise<X402SettlementRecord[]> {
 }
 
 async function liveFlowRows(onSkip?: (row: ArcSeasonSkippedRow) => void): Promise<ArcVerifyThenPayFlow[]> {
-  const read = await loadVtpFlowsResult()
+  const read = await loadCountableVtpFlows()
   if (!read.ok) throw new Error(read.reason)
   return seasonFlowsFromRows(read.rows, onSkip)
 }
@@ -362,6 +375,7 @@ export function liveArcSeasonDeps(env: NodeJS.ProcessEnv = process.env): ArcSeas
     facilitatorRows: liveFacilitatorRows,
     flowRows: liveFlowRows,
     internalPayers: { gateway: gatewayInternalPayers(env), facilitator: facilitatorInternalPayers(env) },
+    ourPayTo: [gatewayRailStatus(env, arcMainnet().caip2).payTo, facilitatorRailStatus(env, arcMainnet().caip2).payTo].filter((a): a is string => Boolean(a)),
   }
 }
 
@@ -469,6 +483,9 @@ async function readLog<T>(load: () => Promise<T[]>): Promise<{ rows: T[]; read: 
   }
 }
 
+/** A season can hold dozens of recorded DENYs. The report lists a few here and counts them all. */
+const REFUSAL_ITEMS_SHOWN = 5
+
 export async function arcSeasonReport(deps: ArcSeasonDeps): Promise<ArcSeasonReport> {
   const chain = arcMainnet()
   const now = deps.now ?? Date.now
@@ -565,8 +582,30 @@ export async function arcSeasonReport(deps: ArcSeasonDeps): Promise<ArcSeasonRep
     externalChecks.filter((c) => Number.isFinite(Date.parse(c.ts)) && Date.parse(c.ts) >= Date.parse(since)).map((c) => c.payer),
   )
 
+  // A payee that is ours, or the vault's own key: the flow is real and counts, and a reviewer
+  // should not have to work out from addresses that nobody else was going to be paid.
+  const ourAddresses = new Set([...mine, ...(deps.ourPayTo ?? []).map((a) => a.toLowerCase())])
+  const payeeInternal = (f: ArcVerifyThenPayFlow): string | null => {
+    const payee = f.payee.toLowerCase()
+    if (payee === f.vaultKeys?.owner.toLowerCase()) return "the payee is this vault's owner"
+    if (payee === f.vaultKeys?.operator.toLowerCase()) return "the payee is this vault's operator"
+    return ourAddresses.has(payee) ? 'the payee is one of our own wallets' : null
+  }
+  const linkedList = [...linkedFlows.values()]
+  const internalPayeeFlows = linkedList.filter((f) => payeeInternal(f) !== null).length
+  const refusedPayees = new Set(linkedList.filter((f) => f.outcome === 'refused').map((f) => f.payee.toLowerCase())).size
+
+  // A recorded DENY is an inspectable refusal: it has a public record, and it is what the metric
+  // asks for. Filling this by hand-committed entry left it unmet while the flows sat in checks.
+  const curatedEvidence = new Set(refusals.map((r) => r.evidenceUrl).filter(Boolean))
+  const recordedDenials: ArcRefusal[] = linkedList.flatMap((f) => {
+    if (f.outcome !== 'refused' || f.txHash || !f.evidenceUrl || curatedEvidence.has(f.evidenceUrl)) return []
+    const why = payeeInternal(f)
+    return [{ kind: 'deny-before-signing' as const, evidenceUrl: f.evidenceUrl, at: f.at, note: f.note, ...(why ? { payeeInternal: why } : {}) }]
+  })
+  const allRefusals = [...refusals, ...recordedDenials]
   const byKind: Record<ArcRefusalKind, number> = { 'vault-policy-on-chain': 0, 'deny-before-signing': 0 }
-  for (const r of refusals) byKind[r.kind] += 1
+  for (const r of allRefusals) byKind[r.kind] += 1
   const launchVault = launchDayVault()
 
   return {
@@ -601,10 +640,16 @@ export async function arcSeasonReport(deps: ArcSeasonDeps): Promise<ArcSeasonRep
         linked,
         unlinked: gatewayInternal - linkedInLog,
         agedOut,
-        items: [...linkedFlows.values()].map((f) => ({
-          ...f,
-          explorerUrl: f.txHash && TX_HASH.test(f.txHash) ? txUrl(chain, f.txHash) : null,
-        })),
+        internalPayee: internalPayeeFlows,
+        refusedPayees,
+        items: linkedList.map((f) => {
+          const why = payeeInternal(f)
+          return {
+            ...f,
+            explorerUrl: f.txHash && TX_HASH.test(f.txHash) ? txUrl(chain, f.txHash) : null,
+            ...(why ? { payeeInternal: why } : {}),
+          }
+        }),
         rail: 'circle-gateway',
         note:
           (!gateway.read.readable
@@ -619,17 +664,22 @@ export async function arcSeasonReport(deps: ArcSeasonDeps): Promise<ArcSeasonRep
             : `${linkedFlows.size} of ${ARC_SEASON_TARGETS.gatewayChecks} verify-then-pay flows on Arc Mainnet: a Circle Gateway check paid from our own wallets and followed by ${linked.paid} vault payment(s) and ${linked.refused} refusal(s), each linked by the check's settlement nonce. ${gatewayInternal - linkedInLog} internal check(s) have nothing linked and are not counted. The ${gatewayExternal} external Gateway check(s) count under Milestone 2, not here, so no check counts twice.` +
               (agedOut > 0
                 ? ` ${agedOut} of the flows link by the settlement their own flow record holds: the Gateway log keeps its newest ${cap} rows, and their check is older than the oldest row it still has.`
+                : '') +
+              (internalPayeeFlows > 0
+                ? ` ${internalPayeeFlows} of the flows name a payee that is our own wallet or the vault's own key: planned probes, labeled payeeInternal on each item, not payments to anyone else. The refused flows name ${refusedPayees} distinct payee(s).`
                 : '')),
       },
       refusals: {
-        count: refusals.length,
+        count: allRefusals.length,
         target: ARC_SEASON_TARGETS.inspectableRefusals,
-        items: refusals.map((r) => ({ ...r, explorerUrl: r.txHash ? txUrl(chain, r.txHash) : null })),
+        // The curated entries and the first few recorded ones: every recorded one is on checks.items.
+        items: [...refusals, ...recordedDenials.slice(0, REFUSAL_ITEMS_SHOWN)].map((r) => ({ ...r, explorerUrl: r.txHash ? txUrl(chain, r.txHash) : null })),
         byKind,
         note:
-          refusals.length === 0
+          allRefusals.length === 0
             ? 'No inspectable refusal yet. The launch-day refusal (a 0.50 USDC payment above autoApproveMax) was a simulation that returned the contract\'s typed AboveAutoApprove error and broadcast nothing, so it has no hash and is not counted. A refusal counts once it is a reverted vault transaction with a hash, or a DENY verdict that stopped a payment before signing with an audit entry anyone can open.'
-            : `${refusals.length} of ${ARC_SEASON_TARGETS.inspectableRefusals}: ${byKind['vault-policy-on-chain']} vault-policy refusal(s) on chain and ${byKind['deny-before-signing']} DENY result(s) stopped before signing. The launch-day simulated refusal is not among them.`,
+            : `${allRefusals.length} of ${ARC_SEASON_TARGETS.inspectableRefusals}: ${byKind['vault-policy-on-chain']} vault-policy refusal(s) on chain and ${byKind['deny-before-signing']} DENY result(s) stopped before signing, read from the public flow records. The launch-day simulated refusal is not among them.` +
+              (recordedDenials.length > REFUSAL_ITEMS_SHOWN ? ` ${recordedDenials.length - REFUSAL_ITEMS_SHOWN} more DENY record(s) are on checks.items.` : ''),
       },
       evidence: ARC_SEASON_EVIDENCE_URL,
     },

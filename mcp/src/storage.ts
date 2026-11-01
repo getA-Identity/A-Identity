@@ -1253,6 +1253,60 @@ export async function loadVtpFlowsResult(io: VtpStoreIo = {}): Promise<VtpFlowsR
   return read
 }
 
+/**
+ * The flows that can count for anything: every row but a reservation still opening and an
+ * abandoned attempt, which read as nothing wherever they are met. Those are the rows an
+ * unsigned request can add, so the report that is read on every season request leaves them out
+ * in the query rather than loading them to throw them away.
+ */
+export async function loadCountableVtpFlows(io: VtpStoreIo = {}): Promise<VtpFlowsRead> {
+  try {
+    const p = await vtpPool(io)
+    if (p) {
+      const r = await p.query("SELECT data FROM vtp_flows WHERE data->>'outcome' NOT IN ('opening', 'abandoned') ORDER BY data->>'createdAt' ASC, flow_id ASC")
+      return { ok: true, rows: r.rows.map((row: { data: VtpFlowRecord }) => row.data) }
+    }
+  } catch (e) {
+    const reason = reasonOf(e)
+    console.error('[storage] vtp flow read failed:', reason)
+    return { ok: false, reason }
+  }
+  const read = readVtpFile(io.file ?? VTP_FLOWS_FILE)
+  if (!read.ok) {
+    console.error('[storage] vtp flow file unreadable:', read.reason)
+    return read
+  }
+  return { ok: true, rows: read.rows.filter((r) => r.outcome !== 'opening' && r.outcome !== 'abandoned') }
+}
+
+/**
+ * Remove attempts the rail refused, once they are old enough that the authorization cannot still
+ * matter. Such a row costs its sender nothing, since a refused signature needs no money, and it
+ * proves nothing: no check was bought. Only abandoned/rail_failed: an `opening` row left by a
+ * crash may stand for a check that was paid, so it stays. Bounded per call. Never throws.
+ */
+export async function pruneAbandonedVtpFlows(olderThan: string, io: VtpStoreIo = {}): Promise<{ ok: true; removed: number } | { ok: false; reason: string }> {
+  const stale = (r: VtpFlowRecord) => r.outcome === 'abandoned' && r.detail === 'rail_failed' && r.updatedAt < olderThan
+  try {
+    const p = await vtpPool(io)
+    if (p) {
+      const r = await p.query(
+        "DELETE FROM vtp_flows WHERE flow_id IN (SELECT flow_id FROM vtp_flows WHERE data->>'outcome' = 'abandoned' AND data->>'detail' = 'rail_failed' AND data->>'updatedAt' < $1 LIMIT 500)",
+        [olderThan],
+      )
+      return { ok: true, removed: Number(r.rowCount ?? 0) }
+    }
+    const file = io.file ?? VTP_FLOWS_FILE
+    const read = readVtpFile(file)
+    if (!read.ok) return read
+    const kept = read.rows.filter((r) => !stale(r))
+    if (kept.length !== read.rows.length) writeFileSync(file, JSON.stringify(kept))
+    return { ok: true, removed: read.rows.length - kept.length }
+  } catch (e) {
+    return { ok: false, reason: reasonOf(e) }
+  }
+}
+
 /** One flow by id (the check nonce, any case). */
 export async function loadVtpFlow(flowId: string, io: VtpStoreIo = {}): Promise<VtpFlowRead> {
   const id = flowId.toLowerCase()

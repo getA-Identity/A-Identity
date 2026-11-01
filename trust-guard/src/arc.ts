@@ -211,6 +211,8 @@ export type GatewayCheckCode =
   | 'INSUFFICIENT_GATEWAY_BALANCE'
   | 'SIGNING_FAILED'
   | 'REFUSED'
+  /** WARN on a vault whose owner and operator are one key: there is no human to hand it to. */
+  | 'NO_HUMAN_GATE'
   | 'UNCONFIRMED'
   | 'TOOL_FAILED_AFTER_SETTLEMENT'
   | 'VERDICT_BLOCK_UNREADABLE'
@@ -997,6 +999,13 @@ function readPaidAnswer(res: { status: number; body: unknown }, o: { vault: Addr
   if (stage === 'verdict_unusable') {
     const code = UNUSABLE_CODES.includes(serverCode ?? '') ? (serverCode as UnusableVerdictCode) : 'SIGNALS_INCONSISTENT'
     throw new UnusableVerdictError(code, `the check was paid and its answer cannot be used: ${reason}`, unusable)
+  }
+  if (stage === 'warn_no_human_gate') {
+    // A paid answer and a public record, and the fix is the caller's to make: the server says
+    // what it is in `next`, which is why this is not left to read as an unknown stage.
+    readCheck(body, nonce, o.payer, o.offer, (why) => new UnusableVerdictError('SETTLEMENT_MISMATCH', `the check was paid and its settlement does not match: ${why}`, unusable))
+    const said = typeof body.next === 'string' ? body.next : reason
+    throw new GatewayCheckError('NO_HUMAN_GATE', said, { paid: true, status, authNonce: nonce, serverCode: stage, ...tail })
   }
   if (stage !== 'deny' && stage !== 'awaiting_human' && stage !== 'prepared') {
     throw new GatewayCheckError('REFUSED', `the server answered an unknown stage ${JSON.stringify(stage)}`, { paid: charged, status, authNonce: nonce })

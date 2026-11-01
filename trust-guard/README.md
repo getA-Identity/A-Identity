@@ -190,7 +190,7 @@ independently either: it comes from the same server, so it binds the answer to y
 | `ArcAssetError` | Not the registry's USDC. Nothing bought. |
 | `PayeeNotRegisteredError` | The payee holds no agent on Arc Mainnet, or the registry did not answer. Nothing bought. |
 | `VaultPolicyError` | The vault would refuse (its own error name), or could not be read. `stage` says whether the check was already paid. |
-| `GatewayCheckError` | No verdict came back. `paid` is true, false, or null when the answer does not say. |
+| `GatewayCheckError` | No usable verdict came back. `paid` is true, false, or null when the answer does not say. `code` `NO_HUMAN_GATE` is a WARN on a vault whose owner and operator are one key: the check was paid, the flow is public at `recordUrl`, nothing was prepared, and the fix is an owner key the agent does not hold. |
 | `UnusableVerdictError` | The check was paid and its answer cannot be acted on. |
 | `TrustDenyError` | DENY. `context` holds the flow id, the check and the record's URL. |
 | `VaultPaymentError` | The payment step failed. With a `txHash`, look that hash up: never send again with a new nonce, because a transaction reported as missing can still land. |
