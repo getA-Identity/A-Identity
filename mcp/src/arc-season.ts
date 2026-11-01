@@ -4,10 +4,10 @@
  * Circle judges Deliverable 2 (due 2026-10-30) on progress against each success metric
  * with current numbers, links to on-chain evidence and usage so far, with external
  * activity counted separately from our own. This module is that report, and it is
- * computed rather than written: every count comes from the two settlement logs on every
- * request, and the four lists a human has to curate (owner-held vaults, inspectable
- * refusals, partner wallets, verify-then-pay flows) are exported here as data, empty until
- * the evidence exists.
+ * computed rather than written: every count comes from the two settlement logs and the
+ * verify-then-pay flow log on every request, and the four lists a human has to curate
+ * (owner-held vaults, inspectable refusals, partner wallets, verify-then-pay flows recorded
+ * anywhere else) are exported here as data, empty until the evidence exists.
  *
  * What counts, stated once:
  *   - A check is a settled row on Arc Mainnet. On the Gateway log that is an outcome of
@@ -18,7 +18,9 @@
  *     that a vault payment or an inspectable refusal followed, linked by the nonce the
  *     check's settlement row is keyed by. A check with nothing linked is a paid check and
  *     not a flow. An external check is never counted in Milestone 1: it belongs to
- *     Milestone 2, so no check counts in both.
+ *     Milestone 2, so no check counts in both. The flows come from the vtp_flows log the
+ *     verify-then-pay route writes (verify-then-pay/season.ts maps its rows), merged with
+ *     the curated list, one flow per check nonce.
  *   - A payer is internal when it is on either rail's published list of our own buyer
  *     wallets, compared case-insensitively. Everything else is external.
  *   - A vault counts only when its owner key is one we never held, so the launch-day
@@ -36,12 +38,14 @@ import { addressUrl, txUrl } from './chains/explorer.js'
 import { PROVENANCE } from './chains/provenance.js'
 import {
   loadGatewaySettlements,
+  loadVtpFlowsResult,
   loadX402SettlementsResult,
   type GatewaySettlementRecord,
   type X402SettlementRecord,
 } from './storage.js'
 import { internalPayers as gatewayInternalPayers } from './x402-gateway/rail.js'
 import { internalPayers as facilitatorInternalPayers } from './x402-3009/rail.js'
+import { toSeasonFlow } from './verify-then-pay/season.js'
 
 export const ARC_SEASON_CHAIN = 'arc-mainnet'
 
@@ -143,20 +147,27 @@ export type ArcVerifyThenPayFlow = {
    *  refusal. Required for a payment. */
   txHash?: string
   /** Where a DENY that stopped the payment before signing can be inspected: its public
-   *  audit entry. Only for a refusal with no transaction. */
+   *  audit entry or flow record. Only for a refusal with no transaction. */
   evidenceUrl?: string
+  /** The wallet that paid for the check, when the flow names it. EIP-3009 nonces are unique
+   *  per payer, not globally, so a flow that names its payer links only to that payer's
+   *  check. */
+  payer?: string
   /** UTC timestamp of the outcome. */
   at: string
   note: string
 }
 
 /**
- * Verify-then-pay flows on Arc Mainnet: a Gateway check followed by the vault payment or
- * the refusal it led to. A flow is added only after its outcome was read back from the
- * chain (the Paid or reverted receipt, paying the payee that was checked) or published
- * (the DENY's audit entry), with the check's settlement nonce. Empty on 2026-11-01: no
- * settled check is linked to a vault payment or a refusal yet. The two launch-day vault
- * payments went to our own operating wallet and are not linked to any check.
+ * Verify-then-pay flows on Arc Mainnet recorded anywhere other than the vtp_flows log: a
+ * Gateway check followed by the vault payment or the refusal it led to. The route
+ * POST /api/x402/gateway/verify-then-pay records its own flows and the report reads them
+ * through ArcSeasonDeps.flowRows; an entry here is for a flow that ran some other way. A
+ * flow is added only after its outcome was read back from the chain (the Paid or reverted
+ * receipt, paying the payee that was checked) or published (the DENY's public record), with
+ * the check's settlement nonce. Empty on 2026-11-01: no settled check is linked to a vault
+ * payment or a refusal yet. The two launch-day vault payments went to our own operating
+ * wallet and are not linked to any check.
  */
 export const ARC_VERIFY_THEN_PAY_FLOWS: ArcVerifyThenPayFlow[] = []
 
@@ -200,8 +211,9 @@ export type ArcSeasonReport = {
   network: string
   program: typeof ARC_SEASON_PROGRAM
   /** Whether each log could be read. A log that could not be read contributes nothing,
-   *  and says so here rather than reading as zero demand. */
-  logs: { gateway: ArcSeasonLogRead; facilitator: ArcSeasonLogRead }
+   *  and says so here rather than reading as zero demand. `flows` is the verify-then-pay
+   *  flow log, present whenever a loader for it is wired (the live route always wires one). */
+  logs: { gateway: ArcSeasonLogRead; facilitator: ArcSeasonLogRead; flows?: ArcSeasonLogRead }
   usage: {
     basis: string
     internal: ArcSeasonUsageSide
@@ -262,7 +274,12 @@ export type ArcSeasonDeps = {
   partners?: ArcPartner[]
   vaults?: ArcOwnerHeldVault[]
   refusals?: ArcRefusal[]
+  /** The curated flows. Default ARC_VERIFY_THEN_PAY_FLOWS. */
   flows?: ArcVerifyThenPayFlow[]
+  /** Flows the server recorded after its own read-back (vtp_flows), mapped by toSeasonFlow.
+   *  May throw: an unreadable flow log is reported in logs.flows as unreadable, never as no
+   *  flows. Merged with `flows`, one flow per check nonce, the curated entry first. */
+  flowRows?: () => Promise<ArcVerifyThenPayFlow[]>
 }
 
 /** The real loaders and the rails' own internal-payer lists. The route adds nothing else. */
@@ -274,8 +291,26 @@ export function liveArcSeasonDeps(env: NodeJS.ProcessEnv = process.env): ArcSeas
       if (!read.ok) throw new Error(read.reason)
       return read.rows
     },
+    flowRows: async () => {
+      const read = await loadVtpFlowsResult()
+      if (!read.ok) throw new Error(read.reason)
+      return read.rows.flatMap((row) => toSeasonFlow(row))
+    },
     internalPayers: { gateway: gatewayInternalPayers(env), facilitator: facilitatorInternalPayers(env) },
   }
+}
+
+/** Curated flows first, then recorded ones, one per check nonce whatever its case. */
+export function mergeFlows(curated: ArcVerifyThenPayFlow[], recorded: ArcVerifyThenPayFlow[]): ArcVerifyThenPayFlow[] {
+  const seen = new Set<string>()
+  const out: ArcVerifyThenPayFlow[] = []
+  for (const f of [...curated, ...recorded]) {
+    const key = f.checkNonce.toLowerCase()
+    if (seen.has(key)) continue
+    seen.add(key)
+    out.push(f)
+  }
+  return out
 }
 
 const GATEWAY_SETTLED = new Set<GatewaySettlementRecord['outcome']>(['credited', 'completed'])
@@ -375,10 +410,11 @@ export async function arcSeasonReport(deps: ArcSeasonDeps): Promise<ArcSeasonRep
   const partners = deps.partners ?? ARC_PARTNERS
   const vaults = deps.vaults ?? ARC_OWNER_HELD_VAULTS
   const refusals = deps.refusals ?? ARC_REFUSALS
-  const flows = deps.flows ?? ARC_VERIFY_THEN_PAY_FLOWS
 
   const gateway = await readLog(deps.gatewayRows)
   const facilitator = await readLog(deps.facilitatorRows)
+  const recordedFlows = deps.flowRows ? await readLog(deps.flowRows) : null
+  const flows = mergeFlows(deps.flows ?? ARC_VERIFY_THEN_PAY_FLOWS, recordedFlows?.rows ?? [])
 
   const checks: Check[] = [
     ...gateway.rows
@@ -414,13 +450,16 @@ export async function arcSeasonReport(deps: ArcSeasonDeps): Promise<ArcSeasonRep
 
   // A flow counts once per check, only on one of our own settled Gateway checks, only when
   // it names the payee and its outcome did not come before the check, and only with
-  // something a reviewer can open. An external check is left to Milestone 2.
+  // something a reviewer can open. A flow that names its payer links only to that payer's
+  // check, because a nonce is unique per payer and not across payers. An external check is
+  // left to Milestone 2.
   const ownByNonce = new Map(ownGateway.map((c) => [c.nonce.toLowerCase(), c]))
   const linkedFlows = new Map<string, ArcVerifyThenPayFlow>()
   for (const f of flows) {
     const nonce = f.checkNonce.toLowerCase()
     const check = ownByNonce.get(nonce)
     if (!check || linkedFlows.has(nonce) || !ADDRESS.test(f.payee) || flowEvidence(f) === null) continue
+    if (f.payer !== undefined && f.payer.toLowerCase() !== check.payer) continue
     const outcomeAt = Date.parse(f.at)
     const checkedAt = Date.parse(check.ts)
     if (Number.isFinite(outcomeAt) && Number.isFinite(checkedAt) && outcomeAt >= checkedAt) linkedFlows.set(nonce, f)
@@ -443,7 +482,7 @@ export async function arcSeasonReport(deps: ArcSeasonDeps): Promise<ArcSeasonRep
     chain: ARC_SEASON_CHAIN,
     network: chain.caip2,
     program: ARC_SEASON_PROGRAM,
-    logs: { gateway: gateway.read, facilitator: facilitator.read },
+    logs: { gateway: gateway.read, facilitator: facilitator.read, ...(recordedFlows ? { flows: recordedFlows.read } : {}) },
     usage: {
       basis:
         'A payer is internal when its address is on either rail\'s published list of our own buyer wallets (the hardcoded KNOWN_INTERNAL_PAYERS plus X402_GATEWAY_INTERNAL_PAYERS and X402_3009_INTERNAL_PAYERS), compared case-insensitively; every other payer is external, and a check is a Circle Gateway row credited or completed, or a facilitator row settled, on Arc Mainnet.',
@@ -475,9 +514,12 @@ export async function arcSeasonReport(deps: ArcSeasonDeps): Promise<ArcSeasonRep
         })),
         rail: 'circle-gateway',
         note:
-          linkedFlows.size === 0
+          (recordedFlows && !recordedFlows.read.readable
+            ? `The verify-then-pay flow log could not be read on this request (${recordedFlows.read.reason ?? 'no reason given'}), so any flow it holds is missing from this count until it answers. `
+            : '') +
+          (linkedFlows.size === 0
             ? `No verify-then-pay flow yet. A check counts here only when it opened one: a Circle Gateway check on Arc Mainnet paid from our own wallets and followed by a vault payment or an inspectable refusal, linked by the nonce its settlement row is keyed by. ${gatewayInternal} internal Gateway check(s) have settled and none is linked to a vault payment or a refusal yet, so none counts. The ${gatewayExternal} external Gateway check(s) count under Milestone 2, not here, so no check counts twice. EIP-3009 facilitator settlements are reported under usage.`
-            : `${linkedFlows.size} of ${ARC_SEASON_TARGETS.gatewayChecks} verify-then-pay flows on Arc Mainnet: a Circle Gateway check paid from our own wallets and followed by ${linked.paid} vault payment(s) and ${linked.refused} refusal(s), each linked by the check's settlement nonce. ${gatewayInternal - linkedFlows.size} internal check(s) have nothing linked and are not counted. The ${gatewayExternal} external Gateway check(s) count under Milestone 2, not here, so no check counts twice.`,
+            : `${linkedFlows.size} of ${ARC_SEASON_TARGETS.gatewayChecks} verify-then-pay flows on Arc Mainnet: a Circle Gateway check paid from our own wallets and followed by ${linked.paid} vault payment(s) and ${linked.refused} refusal(s), each linked by the check's settlement nonce. ${gatewayInternal - linkedFlows.size} internal check(s) have nothing linked and are not counted. The ${gatewayExternal} external Gateway check(s) count under Milestone 2, not here, so no check counts twice.`),
       },
       refusals: {
         count: refusals.length,

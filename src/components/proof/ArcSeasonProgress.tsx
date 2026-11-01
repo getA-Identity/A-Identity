@@ -59,7 +59,8 @@ type SeasonReport = {
   asOf: string
   network: string
   program: { name: string; deliverable2Due: string; milestone1Due: string; milestone2Due: string }
-  logs: { gateway: LogRead; facilitator: LogRead }
+  // flows is the verify-then-pay flow log; a backend from before it sends no such field.
+  logs: { gateway: LogRead; facilitator: LogRead; flows?: LogRead }
   usage: { basis: string; internal: UsageSide; external: UsageSide & { byWallet: WalletRow[] } }
   milestone1: {
     title: string
@@ -219,7 +220,12 @@ export default function ArcSeasonProgress() {
   const m2 = report?.milestone2
   const external = report?.usage.external
   const after = report?.afterProgram.activeExternalWallets
-  const unreadable = report ? (['gateway', 'facilitator'] as const).filter((l) => !report.logs[l].readable) : []
+  const unreadable = report
+    ? [
+        ...(['gateway', 'facilitator'] as const).filter((l) => !report.logs[l].readable),
+        ...(report.logs.flows && !report.logs.flows.readable ? ['verify-then-pay flow'] : []),
+      ]
+    : []
 
   return (
     <section className="rounded-3xl border border-border bg-card p-6 sm:p-8" aria-labelledby="arc-season">
@@ -282,7 +288,7 @@ export default function ArcSeasonProgress() {
 
           {unreadable.length > 0 && (
             <p className="mt-3 rounded-xl bg-warn/10 px-4 py-2.5 text-xs leading-relaxed text-warn">
-              The {unreadable.join(' and ')} log could not be read on this request, so its checks are missing from every
+              The {unreadable.join(' and ')} log could not be read on this request, so what it holds is missing from every
               number below until it answers.
             </p>
           )}

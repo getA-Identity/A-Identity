@@ -8,6 +8,7 @@ import {
   ARC_REFUSALS,
   ARC_VERIFY_THEN_PAY_FLOWS,
   ARC_SEASON_TARGETS,
+  mergeFlows,
   type ArcSeasonDeps,
   type ArcVerifyThenPayFlow,
 } from './arc-season.js'
@@ -488,4 +489,55 @@ test("the live deps read both rails' own internal-payer lists, so neither rail's
   // The hardcoded wallets of both rails are in, with or without the env additions.
   const bare = liveArcSeasonDeps({} as NodeJS.ProcessEnv)
   assert.ok(bare.internalPayers.gateway.length >= 1 && bare.internalPayers.facilitator.length >= 1)
+})
+
+test('flows the server recorded count like curated ones, once per check nonce, with the curated entry first', async () => {
+  const paid = gw({ payer: OURS_GATEWAY })
+  const denied = gw({ payer: OURS_GATEWAY })
+  const curated = flow({ checkNonce: paid.authNonce, note: 'curated by hand' })
+  const recorded = [
+    flow({ checkNonce: shouty(paid.authNonce), note: 'recorded by the server', payer: OURS_GATEWAY }),
+    flow({ checkNonce: denied.authNonce, outcome: 'refused', txHash: undefined, evidenceUrl: `https://a-identity.xyz/api/x402/gateway/flows/${denied.authNonce}`, payer: OURS_GATEWAY }),
+    // A recorded flow whose check is not one of ours counts nothing, as a curated one would.
+    flow({ checkNonce: nextNonce(), payer: OURS_GATEWAY }),
+  ]
+  const r = await arcSeasonReport(deps({ gateway: [paid, denied], flows: [curated], flowRows: async () => recorded }))
+  const c = r.milestone1.checks
+  assert.deepEqual([c.count, c.linked], [2, { paid: 1, refused: 1 }])
+  assert.equal(c.items[0].note, 'curated by hand')
+  assert.equal(c.items[1].evidenceUrl, `https://a-identity.xyz/api/x402/gateway/flows/${denied.authNonce}`)
+  assert.deepEqual(r.logs.flows, { readable: true, rows: 3 })
+  assert.deepEqual(mergeFlows([curated], recorded).map((f) => f.note), ['curated by hand', recorded[1].note, recorded[2].note])
+})
+
+test('an unreadable flow log is reported as unreadable, and the count says what it is missing instead of reading zero', async () => {
+  const paid = gw({ payer: OURS_GATEWAY })
+  const r = await arcSeasonReport(
+    deps({
+      gateway: [paid],
+      flows: [flow({ checkNonce: paid.authNonce })],
+      flowRows: async () => {
+        throw new Error('vtp_flows unreachable')
+      },
+    }),
+  )
+  assert.deepEqual(r.logs.flows, { readable: false, rows: 0, reason: 'vtp_flows unreachable' })
+  assert.equal(r.milestone1.checks.count, 1, 'the curated list still counts')
+  assert.match(r.milestone1.checks.note, /^The verify-then-pay flow log could not be read on this request \(vtp_flows unreachable\)/)
+  // Without a loader wired, there is no flow log to report on at all.
+  assert.equal((await arcSeasonReport(deps())).logs.flows, undefined)
+})
+
+test("a flow that names its payer links only to that payer's check, because a nonce is unique per payer", async () => {
+  const check = gw({ payer: OURS_GATEWAY })
+  const other = await arcSeasonReport(deps({ gateway: [check], flowRows: async () => [flow({ checkNonce: check.authNonce, payer: OURS_FACILITATOR })] }))
+  assert.equal(other.milestone1.checks.count, 0)
+  const same = await arcSeasonReport(deps({ gateway: [check], flowRows: async () => [flow({ checkNonce: check.authNonce, payer: shouty(OURS_GATEWAY) })] }))
+  assert.equal(same.milestone1.checks.count, 1)
+})
+
+test('the live deps read the verify-then-pay flow log, mapped to season flows', async () => {
+  const d = liveArcSeasonDeps({} as NodeJS.ProcessEnv)
+  assert.equal(typeof d.flowRows, 'function')
+  assert.ok(Array.isArray(await d.flowRows!()))
 })

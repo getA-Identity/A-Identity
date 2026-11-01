@@ -1,0 +1,91 @@
+import { test } from 'node:test'
+import assert from 'node:assert/strict'
+import { toSeasonFlow } from './season.js'
+import { getChainById } from '../chains/index.js'
+import type { VtpFlowRecord } from '../storage.js'
+
+/**
+ * Which recorded flows the Arc Acceleration Season report may count. A row counts only with
+ * something a reviewer can open: a payment or a revert by its hash, or a DENY by its public
+ * flow record on https://a-identity.xyz. Everything still open, or never decided, counts
+ * nothing, however many of them there are.
+ */
+const arc = getChainById('arc-mainnet')!
+const FLOW = '0x' + 'ab'.repeat(32)
+const TX = '0x' + 'c1'.repeat(32)
+const PAYER = '0x' + 'c3'.repeat(20)
+const PAYEE = '0x' + 'd4'.repeat(20)
+
+function row(over: Partial<VtpFlowRecord> = {}): VtpFlowRecord {
+  return {
+    v: 1,
+    flowId: FLOW,
+    network: arc.caip2,
+    createdAt: '2026-11-01T10:00:01.000Z',
+    updatedAt: '2026-11-01T10:00:01.000Z',
+    vault: '0x' + 'a1'.repeat(20),
+    owner: '0x' + 'b2'.repeat(20),
+    operator: PAYER,
+    payee: PAYEE,
+    payeeAgentId: null,
+    asset: (arc.contracts.usdc as string).toLowerCase(),
+    amount: '10000',
+    amountUsd: 0.01,
+    check: { authNonce: FLOW, transferId: 'tr-1', gatewayOutcome: 'credited', payer: PAYER, value: '5000', tool: 'risk_check', checkedAt: '2026-11-01T10:00:00.000Z', checkedAtBlock: '100' },
+    verdict: { decision: 'ALLOW', effective: 'ALLOW', risk: 'low', reasons: ['strong'], reputationScore: 720, agentId: PAYEE, checkedAt: '2026-11-01T10:00:00.000Z' },
+    payOnWarn: false,
+    prepared: null,
+    outcome: 'pending',
+    detail: 'agent_will_pay',
+    ...over,
+  }
+}
+
+const payment = (status: 'success' | 'reverted', byOwner = false): NonNullable<VtpFlowRecord['payment']> => ({
+  txHash: TX,
+  blockNumber: '101',
+  status,
+  byOwner,
+  from: PAYER,
+  to: '0x' + 'a1'.repeat(20),
+  gasUsed: '90341',
+  effectiveGasPrice: '20100000000',
+  costUsdc: '0.001816',
+  readBackAt: '2026-11-01T10:05:00.000Z',
+  readBackFrom: 'rpc.example',
+  explorerUrl: 'x',
+})
+
+test('an executed flow is a payment, named by its hash, timed when the server read it back, and tied to its payer', () => {
+  const [f, ...rest] = toSeasonFlow(row({ outcome: 'executed', detail: 'agent_paid', payment: payment('success') }))
+  assert.equal(rest.length, 0)
+  assert.deepEqual(
+    { checkNonce: f.checkNonce, payer: f.payer, payee: f.payee, outcome: f.outcome, txHash: f.txHash, evidenceUrl: f.evidenceUrl, at: f.at },
+    { checkNonce: FLOW, payer: PAYER, payee: PAYEE, outcome: 'paid', txHash: TX, evidenceUrl: undefined, at: '2026-11-01T10:05:00.000Z' },
+  )
+  assert.match(f.note, /0\.01 USDC/)
+})
+
+test('a vault revert and a DENY are refusals: one by its hash, the other by its public flow record', () => {
+  const [rev] = toSeasonFlow(row({ outcome: 'blocked', detail: 'reverted_onchain', payment: payment('reverted') }))
+  assert.deepEqual([rev.outcome, rev.txHash, rev.evidenceUrl], ['refused', TX, undefined])
+  const [deny] = toSeasonFlow(row({ outcome: 'blocked', detail: 'deny', verdict: { ...row().verdict!, decision: 'DENY', effective: 'DENY' } }))
+  assert.deepEqual([deny.outcome, deny.txHash], ['refused', undefined])
+  assert.equal(deny.evidenceUrl, `https://a-identity.xyz/api/x402/gateway/flows/${FLOW}`)
+  assert.equal(deny.at, '2026-11-01T10:00:01.000Z')
+})
+
+test('a flow still open, or one whose verdict was never usable, counts nothing', () => {
+  for (const over of [
+    { outcome: 'pending', detail: 'agent_will_pay' },
+    { outcome: 'awaiting_human', detail: 'warn_handoff' },
+    { outcome: 'blocked', detail: 'verdict_unusable' },
+    { outcome: 'blocked', detail: 'verdict_unavailable', verdict: null },
+    { outcome: 'abandoned', detail: 'expired' },
+    // An executed row without a successful receipt is not a payment.
+    { outcome: 'executed', detail: 'agent_paid' },
+    { outcome: 'executed', detail: 'agent_paid', payment: payment('reverted') },
+  ] as Partial<VtpFlowRecord>[]) {
+    assert.deepEqual(toSeasonFlow(row(over)), [], JSON.stringify(over))
+  }
+})

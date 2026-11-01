@@ -140,7 +140,8 @@ Directories:
   `executed: false`, because the server signs nothing (`prepare.ts`). Every paid check is a
   public row in `vtp_flows`, keyed by the check's nonce; it becomes executed only when
   `POST /api/x402/gateway/flows/:flowId/receipt` shows the server a receipt it reads from
-  every RPC itself (`receipt.ts`, over `chains/evm/receipts.ts`).
+  every RPC itself (`receipt.ts`, over `chains/evm/receipts.ts`). The Arc Acceleration Season
+  report counts those rows through `season.ts`.
 - `src/cctp-stellar.ts` - Circle CCTP V2 between Stellar and EVM, driven directly because
   Bridge Kit has no Stellar adapter: burn, Iris attestation, mint, in both directions.
   A Stellar recipient is carried in the hook data and minted through the CctpForwarder in
@@ -193,7 +194,7 @@ npm run start        # MCP server on stdio
 npm run start:http   # the HTTP server (REST + /mcp). Reads config from process.env directly.
 npm run smoke        # spin up the MCP server + exercise every read-only tool
 npm run http-smoke   # exercise the tools over HTTP (server must be running)
-npm test             # tsc + node:test unit tests (1707 across 112 files, as of Nov 2026)
+npm test             # tsc + node:test unit tests (1714 across 113 files, as of Nov 2026)
 npm run e2e          # full end-to-end flow against a running server (E2E_BASE=...)
 ```
 
@@ -205,7 +206,7 @@ node --env-file=.env dist/http.js     # Node 20.6+
 ARC_SIGNER_KEY=0x<funded-key> node dist/http.js
 ```
 
-Tests: **1707 unit tests across 112 colocated `*.test.ts` files** (as of Nov 2026; `npm test`) +
+Tests: **1714 unit tests across 113 colocated `*.test.ts` files** (as of Nov 2026; `npm test`) +
 a full **E2E of about 67 checks** (`npm run e2e`) that adapts to signer presence: green with no
 signer key (live Arc reads; on-chain writes reported as prepared), with the real Arc write
 checks activating under a funded `ARC_SIGNER_KEY`. CI runs the no-signer path.
