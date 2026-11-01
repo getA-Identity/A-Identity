@@ -22,6 +22,10 @@
  * The block at a height is read the same way, because a host that has not reached it answers
  * null too, and the caller can name the block hash the answer must carry.
  *
+ * A reverted call is replayed the same way (eth_call at a chosen block). There a revert is an
+ * answer and not a failing host, so the error has to keep its code and data, and a host that
+ * reverts without the data gives way to the next one that has it.
+ *
  * Reusable on purpose: anything that has to prove a transaction landed can call this rather
  * than trusting whichever host a fallback client happened to reach first.
  */
@@ -86,6 +90,17 @@ async function withDeadline<T>(p: Promise<T>, ms: number): Promise<T> {
   }
 }
 
+/** A JSON-RPC error answer, with what eth_call needs of it: the revert's data. */
+export class JsonRpcError extends Error {
+  constructor(
+    readonly code: number | undefined,
+    message: string,
+    readonly data?: unknown,
+  ) {
+    super(`RPC error ${code ?? ''} ${message}`.replace(/\s+/g, ' ').trim())
+  }
+}
+
 /** The default caller: one JSON-RPC POST, aborted at the deadline. */
 export const jsonRpcCall: RpcCall = async (url, method, params, timeoutMs) => {
   const ctl = new AbortController()
@@ -98,8 +113,8 @@ export const jsonRpcCall: RpcCall = async (url, method, params, timeoutMs) => {
       signal: ctl.signal,
     })
     if (!r.ok) throw new Error(`HTTP ${r.status}`)
-    const body = (await r.json()) as { result?: unknown; error?: { code?: number; message?: string } }
-    if (body.error) throw new Error(`RPC error ${body.error.code ?? ''} ${body.error.message ?? ''}`.trim())
+    const body = (await r.json()) as { result?: unknown; error?: { code?: number; message?: string; data?: unknown } }
+    if (body.error) throw new JsonRpcError(body.error.code, body.error.message ?? '', body.error.data)
     if (!('result' in body)) throw new Error('the JSON-RPC answer carries no result')
     return body.result
   } finally {
@@ -234,4 +249,50 @@ export async function blockFromEveryRpc(chain: ChainDescriptor, want: { number: 
   if (typeof want.number !== 'bigint' || want.number < 0n) throw new TypeError(`not a block number: ${String(want.number)}`)
   if (want.hash !== undefined && !TX_HASH.test(want.hash)) throw new TypeError(`not a block hash: ${want.hash}`)
   return fromEveryRpc(chain, 'eth_getBlockByNumber', [`0x${want.number.toString(16)}`, false], parseBlock(want), opts)
+}
+
+/** What a call does when replayed: returns, or reverts with this data (null: the hosts gave none). */
+export type CallReplay = { reverted: false } | { reverted: true; data: Hex | null; message: string }
+
+const HEX_DATA = /^0x[0-9a-fA-F]+$/
+
+/** The revert data of an RPC error, wherever the host put it; null when it gave none. */
+function revertDataOf(e: JsonRpcError): Hex | null {
+  const d = e.data
+  if (typeof d === 'string') return HEX_DATA.test(d) ? (d as Hex) : null
+  const inner = (d as { data?: unknown } | null | undefined)?.data
+  return typeof inner === 'string' && HEX_DATA.test(inner) ? (inner as Hex) : null
+}
+
+/**
+ * A call as `from` would have made it at the end of a block, by eth_call: what a reverted
+ * transaction reverted with, since its receipt carries no reason. A host that has no state for
+ * that block answers with some other error, which is that host failing, and the next is asked.
+ */
+export async function replayCallFromEveryRpc(
+  chain: ChainDescriptor,
+  want: { from: string; to: string; data: string; blockNumber: bigint },
+  opts: EveryRpcOptions = {},
+): Promise<EveryRpcRead<CallReplay>> {
+  const call = opts.call ?? jsonRpcCall
+  const held: { bare: { value: CallReplay; url: string } | null } = { bare: null }
+  const params = [{ from: want.from, to: want.to, data: want.data }, `0x${want.blockNumber.toString(16)}`]
+  const read = await fromEveryRpc<CallReplay>(chain, 'eth_call', params, (raw) => raw as CallReplay, {
+    ...opts,
+    call: async (url, method, p, ms) => {
+      try {
+        const raw = await call(url, method, p, ms)
+        return raw === null || raw === undefined ? null : { reverted: false }
+      } catch (e) {
+        if (!(e instanceof JsonRpcError) || !(e.code === 3 || /revert/i.test(e.message))) throw e
+        const data = revertDataOf(e)
+        if (data) return { reverted: true, data, message: e.message }
+        // A revert with no data is an answer, but another host may hold the reason.
+        held.bare ??= { value: { reverted: true, data: null, message: e.message }, url }
+        return null
+      }
+    },
+  })
+  if (read.status !== 'found' && held.bare) return { status: 'found', value: held.bare.value, url: held.bare.url, rounds: read.rounds, answers: read.answers }
+  return read
 }
