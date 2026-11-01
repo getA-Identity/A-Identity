@@ -12,8 +12,16 @@
  *   - USDC's own Transfer event, emitted by the registry's USDC, from the vault to the payee,
  *     for the amount. On Arc the receipt also carries the native-balance Transfer of the same
  *     payment in 18 decimals from a system address; that one is not USDC's and never counts;
- *   - a block after the one the check's preflight read, so a payment made before the check
- *     cannot be passed off as the result of it.
+ *   - a block after the one the verdict came back in (check.verdictBlock), so a payment made
+ *     before the check, or while it was still running, cannot be passed off as its result.
+ *     The preflight's block is not enough for this: it was read before the check was bought,
+ *     and the check takes seconds. What a block proves is when the payment was mined, not
+ *     when it was signed; that is as close as the chain can say.
+ *
+ * The payment's time is the chain's: the block the receipt names is read (from every RPC, and
+ * only an answer with the receipt's block hash counts), and its timestamp is recorded as
+ * payment.minedAt. The season report times a flow by it, never by when the server happened
+ * to read the receipt.
  *
  * A reverted receipt has no logs, so it is matched by the transaction: sent to the vault, with
  * exactly the prepared calldata, by the key the flow prepared it for. A flow waiting for its
@@ -30,7 +38,7 @@
  * optional separate check payer is why this version does not.
  */
 import { parseEventLogs, type Transaction, type TransactionReceipt } from 'viem'
-import { receiptFromEveryRpc, rpcSourceLabel, transactionFromEveryRpc, txUrl, type ChainDescriptor } from '../chains/index.js'
+import { blockFromEveryRpc, receiptFromEveryRpc, rpcSourceLabel, transactionFromEveryRpc, txUrl, type ChainDescriptor } from '../chains/index.js'
 import { AgentSpendPolicyAbi } from '../contracts/AgentSpendPolicy.js'
 import type { VtpFlowDetail, VtpFlowOutcome, VtpFlowRecord } from '../storage.js'
 import { flowUrl, storageVtpStore, vtpChain, VTP_PUBLIC_ORIGIN, type VtpDeps } from './context.js'
@@ -52,8 +60,17 @@ const HASH = /^0x[0-9a-fA-F]{64}$/
 const OPEN: VtpFlowOutcome[] = ['pending', 'awaiting_human']
 const DEFAULT_RECEIPT_BUDGET_MS = 8000
 const DEFAULT_PER_CALL_MS = 5000
+/** The last moment a JavaScript Date can hold. */
+const MAX_DATE_MS = 8.64e15
 
-export type ReceiptRefusalCode = 'TX_BEFORE_CHECK' | 'NO_MATCHING_PAID' | 'NO_MATCHING_TRANSFER' | 'AGENT_PAID_ON_HANDOFF' | 'NOT_THIS_FLOWS_CALL' | 'TX_UNREADABLE'
+export type ReceiptRefusalCode =
+  | 'VERDICT_BLOCK_UNKNOWN'
+  | 'TX_BEFORE_CHECK'
+  | 'NO_MATCHING_PAID'
+  | 'NO_MATCHING_TRANSFER'
+  | 'AGENT_PAID_ON_HANDOFF'
+  | 'NOT_THIS_FLOWS_CALL'
+  | 'TX_UNREADABLE'
 
 export type ReceiptJudgement =
   | { ok: true; outcome: 'executed'; detail: 'agent_paid' | 'owner_paid'; byOwner: boolean }
@@ -67,8 +84,12 @@ export function judgeReceipt(chain: ChainDescriptor, flow: VtpFlowRecord, receip
   const vault = lc(flow.vault)
   const payee = lc(flow.payee)
   const amount = BigInt(flow.amount)
-  if (receipt.blockNumber <= BigInt(flow.check.checkedAtBlock)) {
-    return { ok: false, code: 'TX_BEFORE_CHECK', reason: `the transaction is in block ${receipt.blockNumber}, not after block ${flow.check.checkedAtBlock} that the check's preflight read` }
+  const verdictBlock = flow.check.verdictBlock
+  if (typeof verdictBlock !== 'string' || !/^[0-9]+$/.test(verdictBlock)) {
+    return { ok: false, code: 'VERDICT_BLOCK_UNKNOWN', reason: "this flow's check was never pinned to a block after its verdict, so no payment can be shown to come after it" }
+  }
+  if (receipt.blockNumber <= BigInt(verdictBlock)) {
+    return { ok: false, code: 'TX_BEFORE_CHECK', reason: `the transaction is in block ${receipt.blockNumber}, not after block ${verdictBlock}, the latest block when the check's verdict came back` }
   }
   if (receipt.status === 'success') {
     const paid = parseEventLogs({ abi: AgentSpendPolicyAbi, eventName: 'Paid', logs: receipt.logs }).filter(
@@ -191,12 +212,21 @@ export async function recordVtpReceipt(flowIdRaw: unknown, txHashRaw: unknown, d
   const j = judgeReceipt(chain, flow, receipt, tx)
   if (!j.ok) return reply(422, flowId, { outcome: flow.outcome, detail: flow.detail, code: j.code, reason: j.reason, next: 'The receipt does not prove this flow, so nothing changed.' }, origin)
 
+  // When the chain says it happened: the block the receipt names, and no other block at that height.
+  const blockHash = typeof receipt.blockHash === 'string' && HASH.test(receipt.blockHash) ? receipt.blockHash : undefined
+  const b = await blockFromEveryRpc(chain, { number: receipt.blockNumber, hash: blockHash }, { ...opts, timeoutMs: 0 })
+  const minedMs = b.status === 'found' ? Number(b.value.timestamp) * 1000 : Number.NaN
+  if (b.status !== 'found' || !Number.isFinite(minedMs) || minedMs <= 0 || minedMs > MAX_DATE_MS) {
+    return reply(503, flowId, { outcome: flow.outcome, detail: flow.detail, code: 'BLOCK_UNREADABLE', reason: `no ${chain.name} RPC returned block ${receipt.blockNumber} with the receipt's block hash and a usable timestamp, so the payment's time is unknown`, retry: true, next: 'Nothing changed. Post the same hash again shortly.' }, origin)
+  }
+
   const at = new Date(now()).toISOString()
   const gasUsed = receipt.gasUsed ?? 0n
   const price = receipt.effectiveGasPrice ?? 0n
   const payment: NonNullable<VtpFlowRecord['payment']> = {
     txHash: hash,
     blockNumber: receipt.blockNumber.toString(),
+    minedAt: new Date(minedMs).toISOString(),
     status: receipt.status,
     byOwner: j.byOwner,
     from: lc(receipt.from),

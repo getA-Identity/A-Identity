@@ -31,7 +31,7 @@ function row(over: Partial<VtpFlowRecord> = {}): VtpFlowRecord {
     asset: (arc.contracts.usdc as string).toLowerCase(),
     amount: '10000',
     amountUsd: 0.01,
-    check: { authNonce: FLOW, transferId: 'tr-1', gatewayOutcome: 'credited', payer: PAYER, value: '5000', tool: 'risk_check', checkedAt: '2026-11-01T10:00:00.000Z', checkedAtBlock: '100' },
+    check: { authNonce: FLOW, transferId: 'tr-1', gatewayOutcome: 'credited', payer: PAYER, value: '5000', tool: 'risk_check', checkedAt: '2026-11-01T10:00:00.000Z', checkedAtBlock: '90', verdictBlock: '100' },
     verdict: { decision: 'ALLOW', effective: 'ALLOW', risk: 'low', reasons: ['strong'], reputationScore: 720, agentId: PAYEE, checkedAt: '2026-11-01T10:00:00.000Z' },
     payOnWarn: false,
     prepared: null,
@@ -44,6 +44,7 @@ function row(over: Partial<VtpFlowRecord> = {}): VtpFlowRecord {
 const payment = (status: 'success' | 'reverted', byOwner = false): NonNullable<VtpFlowRecord['payment']> => ({
   txHash: TX,
   blockNumber: '101',
+  minedAt: '2026-11-01T10:00:09.000Z',
   status,
   byOwner,
   from: PAYER,
@@ -56,19 +57,23 @@ const payment = (status: 'success' | 'reverted', byOwner = false): NonNullable<V
   explorerUrl: 'x',
 })
 
-test('an executed flow is a payment, named by its hash, timed when the server read it back, and tied to its payer', () => {
+test('an executed flow is a payment, named by its hash, timed by the block it was mined in, and tied to its payer', () => {
   const [f, ...rest] = toSeasonFlow(row({ outcome: 'executed', detail: 'agent_paid', payment: payment('success') }))
   assert.equal(rest.length, 0)
+  // The block's time, not the read-back's: a read-back is always after the check, so timing a
+  // flow by it would make the report's "after the check" rule true of every payment.
   assert.deepEqual(
     { checkNonce: f.checkNonce, payer: f.payer, payee: f.payee, outcome: f.outcome, txHash: f.txHash, evidenceUrl: f.evidenceUrl, at: f.at },
-    { checkNonce: FLOW, payer: PAYER, payee: PAYEE, outcome: 'paid', txHash: TX, evidenceUrl: undefined, at: '2026-11-01T10:05:00.000Z' },
+    { checkNonce: FLOW, payer: PAYER, payee: PAYEE, outcome: 'paid', txHash: TX, evidenceUrl: undefined, at: '2026-11-01T10:00:09.000Z' },
   )
+  assert.notEqual(f.at, payment('success').readBackAt)
   assert.match(f.note, /0\.01 USDC/)
+  assert.match(f.note, /in block 101/)
 })
 
 test('a vault revert and a DENY are refusals: one by its hash, the other by its public flow record', () => {
   const [rev] = toSeasonFlow(row({ outcome: 'blocked', detail: 'reverted_onchain', payment: payment('reverted') }))
-  assert.deepEqual([rev.outcome, rev.txHash, rev.evidenceUrl], ['refused', TX, undefined])
+  assert.deepEqual([rev.outcome, rev.txHash, rev.evidenceUrl, rev.at], ['refused', TX, undefined, '2026-11-01T10:00:09.000Z'])
   const [deny] = toSeasonFlow(row({ outcome: 'blocked', detail: 'deny', verdict: { ...row().verdict!, decision: 'DENY', effective: 'DENY' } }))
   assert.deepEqual([deny.outcome, deny.txHash], ['refused', undefined])
   assert.equal(deny.evidenceUrl, `https://a-identity.xyz/api/x402/gateway/flows/${FLOW}`)

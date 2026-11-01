@@ -20,7 +20,11 @@
  *      ADDRESS as agentId and txContext {amountUsd, payee}. A CAIP agent id is never sent:
  *      the scorer matches platform agents by address, not by CAIP id, so one would always be
  *      scored off-platform.
- *   7. The decision, only from a verdict that passed verdict.ts. DENY stops. WARN prepares
+ *   7. The block the verdict came back in, read at once. A payment answers this check only
+ *      when it lands in a later block (receipt.ts), so a pay() sent while the check was still
+ *      running never counts as its result. If the chain does not answer for it, nothing is
+ *      prepared, because no payment could be shown to come after this check.
+ *   8. The decision, only from a verdict that passed verdict.ts. DENY stops. WARN prepares
  *      ownerPay() for the owner unless the caller opted into payOnWarn. ALLOW prepares pay()
  *      for the operator. Every paid check writes one flow row, insert-only.
  *
@@ -76,6 +80,9 @@ export type VtpRefusalCode =
   | 'PAYMENT_WRONG_NETWORK'
   | 'NONCE_ALREADY_USED'
   | 'FLOW_STORE_UNREADABLE'
+
+/** Why a paid check handed back nothing to send although its verdict was not a refusal. */
+export type VtpCheckFailedCode = 'VERDICT_BLOCK_UNREADABLE'
 
 export type VtpChecks = {
   asset: { ok: boolean | null; registryUsdc: string; vaultToken: string | null; requested: string | null; code?: string }
@@ -445,6 +452,7 @@ type RecordInput = {
   operator: string
   settlement: { transferId: string | null; outcome: 'credited' | 'completed'; payer: string; value: string; ts: string }
   block: bigint
+  verdictBlock: bigint | null
   verdict: VtpFlowRecord['verdict']
   prepared: PreparedCall | null
   outcome: VtpFlowOutcome
@@ -475,6 +483,7 @@ function flowRecord(r: RecordInput): VtpFlowRecord {
       tool: 'risk_check',
       checkedAt: r.settlement.ts,
       checkedAtBlock: r.block.toString(),
+      verdictBlock: r.verdictBlock === null ? null : r.verdictBlock.toString(),
     },
     verdict: r.verdict,
     payOnWarn: r.payOnWarn,
@@ -492,6 +501,18 @@ function verdictView(v: VerdictEvaluation): VtpVerdictView {
     reasons: v.reasons,
     reputationScore: v.reputationScore,
     ...(v.usable ? {} : { overriddenBecause: v.code }),
+  }
+}
+
+/** The latest block once the verdict is back, never below the preflight's (a host that lags
+ *  could answer with less), or null when the chain did not answer. */
+async function blockAfterVerdict(client: VtpReadClient, floor: bigint): Promise<bigint | null> {
+  try {
+    const b = await client.getBlock()
+    if (typeof b.number !== 'bigint') return null
+    return b.number > floor ? b.number : floor
+  } catch {
+    return null
   }
 }
 
@@ -574,7 +595,7 @@ export async function runVerifyThenPay(input: VtpInput, paymentHeader: string | 
     if (paid500 && flowId) {
       // Paid, and the tool failed after settlement: the record says what was bought and that
       // no verdict came back, so the flow is blocked, never pending.
-      const rec = flowRecord({ chain, flowId, now: ts, p, payOnWarn: parsed.payOnWarn, owner: pre.owner, operator: pre.operator, settlement: paid500, block: pre.block, verdict: null, prepared: null, outcome: 'blocked', detail: 'verdict_unavailable' })
+      const rec = flowRecord({ chain, flowId, now: ts, p, payOnWarn: parsed.payOnWarn, owner: pre.owner, operator: pre.operator, settlement: paid500, block: pre.block, verdictBlock: null, verdict: null, prepared: null, outcome: 'blocked', detail: 'verdict_unavailable' })
       const ins = await store.insert(rec)
       return {
         httpStatus: 500,
@@ -611,7 +632,10 @@ export async function runVerifyThenPay(input: VtpInput, paymentHeader: string | 
     }
   }
 
-  // 7. a verdict, if it is one
+  // 7. the block the verdict came back in, before anything is done with it
+  const verdictBlock = await blockAfterVerdict(client, pre.block)
+
+  // 8. a verdict, if it is one
   const v = evaluateVerdict(out.body, expected)
   const raw = (out.body as { settlement?: Record<string, unknown> }).settlement ?? {}
   const settlement = v.settlement ?? {
@@ -645,6 +669,12 @@ export async function runVerifyThenPay(input: VtpInput, paymentHeader: string | 
     stage = 'deny'
     outcome = 'blocked'
     detail = 'deny'
+  } else if (verdictBlock === null) {
+    // Nothing to send: without the block the verdict came back in, no payment could be shown
+    // to come after this check, so a receipt could never close the flow.
+    stage = 'check_failed'
+    outcome = 'blocked'
+    detail = 'verdict_block_unreadable'
   } else if (v.effective === 'WARN' && !parsed.payOnWarn) {
     stage = 'awaiting_human'
     outcome = 'awaiting_human'
@@ -688,6 +718,7 @@ export async function runVerifyThenPay(input: VtpInput, paymentHeader: string | 
     operator: pre.operator,
     settlement,
     block: pre.block,
+    verdictBlock,
     verdict,
     prepared: prepared ?? ownerHandoff?.ownerPay ?? null,
     outcome,
@@ -700,7 +731,7 @@ export async function runVerifyThenPay(input: VtpInput, paymentHeader: string | 
     refused: '',
     unavailable: '',
     payment_required: '',
-    check_failed: '',
+    check_failed: `The check was paid and answered ${v.effective}, but ${chain.name} did not answer for its latest block after the verdict, so a payment could not be shown to come after this check and nothing was prepared: do not pay on this flow, ask again with a new authorization.`,
     verdict_unusable: `The check was paid, but its answer failed ${v.usable ? '' : v.code}, so it is treated as DENY: do not pay. The paid check and why it was not used are public at ${record.url}.`,
     deny: `DENY: do not pay. Nothing was prepared and nothing should be signed. The refusal is public at ${record.url}.`,
     awaiting_human: `WARN: the agent must not pay this on its own. The owner can settle it by sending ownerHandoff.ownerPay from the owner key ${pre.owner}; then POST {"txHash": "0x..."} to ${receiptUrl} and the server reads the receipt itself.`,
@@ -710,8 +741,11 @@ export async function runVerifyThenPay(input: VtpInput, paymentHeader: string | 
         : `Send prepared exactly as given from the operator key ${pre.operator} (to the vault, value 0, chainId ${chain.evmChainId}, maxFeePerGas at least ${prepared?.fees.floorWei} wei). Then POST {"txHash": "0x..."} to ${receiptUrl}: the flow is marked executed only after the server reads the receipt from ${chain.name} itself.`,
   }
 
+  const failed: { code: VtpCheckFailedCode; reason: string } | null =
+    stage === 'check_failed' ? { code: 'VERDICT_BLOCK_UNREADABLE', reason: `${chain.name} did not answer for its latest block after the verdict` } : null
+
   return {
-    httpStatus: 200,
+    httpStatus: failed ? 503 : 200,
     ...(out.headers ? { headers: out.headers } : {}),
     body: result(chain, {
       stage,
@@ -724,6 +758,7 @@ export async function runVerifyThenPay(input: VtpInput, paymentHeader: string | 
       ownerHandoff,
       record,
       ...(v.usable ? {} : { code: v.code, reason: v.reason }),
+      ...(failed ?? {}),
       next: recorded || stage === 'deny' || stage === 'verdict_unusable' ? next[stage] : `${next[stage]} Note: the flow record could not be written (${record.reason}), so a receipt cannot be attached to it.`,
     }),
   }

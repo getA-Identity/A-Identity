@@ -74,6 +74,9 @@ type Chain = {
   revertPay?: string
   revertOwnerPay?: string
   gas: bigint
+  /** What successive getBlock reads answer (the last repeats): the preflight's, then the one
+   *  after the verdict. An Error is a read that failed. */
+  blocks: (bigint | Error)[]
   /** Reads that fail with a network error, by function name. */
   down: string[]
 }
@@ -98,6 +101,7 @@ function healthy(over: Partial<Chain> = {}): Chain {
     agentsHeld: 1n,
     ownerOf: {},
     gas: 116_370n,
+    blocks: [29_000_000n, 29_000_007n],
     down: [],
     ...over,
   }
@@ -112,11 +116,14 @@ function fakeChain(state: Chain): { client: VtpReadClient; calls: string[] } {
   const fail = (name: string) => {
     if (state.down.includes(name)) throw new Error(`fetch failed (${name})`)
   }
+  let blockReads = 0
   const client: VtpReadClient = {
     getBlock: async () => {
       calls.push('getBlock')
       fail('block')
-      return { number: 29_000_000n, timestamp: BLOCK_TS }
+      const answer = state.blocks[Math.min(blockReads++, state.blocks.length - 1)]
+      if (answer instanceof Error) throw answer
+      return { number: answer, timestamp: BLOCK_TS }
     },
     getGasPrice: async () => {
       calls.push('getGasPrice')
@@ -273,6 +280,12 @@ function setup(o: { chain?: Partial<Chain>; gw?: Parameters<typeof gateway>[0]; 
   const c = fakeChain(healthy(o.chain))
   const g = gateway(o.gw)
   const s = memStore(o.seed, o.store)
+  // The settle lands in the chain's call log too, so a test can see what was read after it.
+  const settle = g.rail.settle
+  g.rail.settle = async () => {
+    c.calls.push('settle')
+    return settle()
+  }
   const deps = { env: o.env ?? ENV, origin: ORIGIN, rail: g.rail, client: c.client, store: s.store, now: () => NOW }
   return { c, g, s, deps }
 }
@@ -466,6 +479,7 @@ test('ALLOW prepares exactly pay(payee, amount) for the operator, asks risk_chec
   assert.deepEqual([rec.outcome, rec.detail, rec.payOnWarn], ['pending', 'agent_will_pay', false])
   assert.deepEqual([rec.vault, rec.owner, rec.operator, rec.payee, rec.amount, rec.amountUsd], [VAULT, OWNER, OPERATOR, PAYEE, '250000', 0.25])
   assert.equal(rec.check.checkedAtBlock, '29000000')
+  assert.equal(rec.check.verdictBlock, '29000007')
   assert.equal(rec.prepared?.data, p.data)
   assert.equal(rec.payment, undefined, 'nothing is executed until a receipt is read')
 })
@@ -548,4 +562,41 @@ test('a simulation that fails after the verdict is reported, and a flow log that
   assert.equal(out2.body.stage, 'prepared')
   assert.deepEqual([out2.body.record?.recorded, out2.body.record?.reason], [false, 'disk full'])
   assert.match(out2.body.next, /could not be written/)
+})
+
+test('the block the verdict came back in is recorded, never below the preflight block, and without it nothing is handed back to send', async () => {
+  // The preflight reads block 29000000 before the check is bought; the verdict comes back in
+  // 29000007, and that is the block a payment has to land after.
+  const ok = setup()
+  const out = await runVerifyThenPay(request(), header(), ok.deps)
+  assert.equal(out.body.stage, 'prepared')
+  assert.deepEqual([ok.s.inserted[0].check.checkedAtBlock, ok.s.inserted[0].check.verdictBlock], ['29000000', '29000007'])
+  assert.ok(ok.c.calls.lastIndexOf('getBlock') > ok.c.calls.indexOf('settle'), 'the verdict block is read after the check was bought')
+
+  // A host that lags answers a lower block after the verdict: the preflight's stands.
+  const lag = setup({ chain: { blocks: [29_000_000n, 28_999_990n] } })
+  await runVerifyThenPay(request(), header(), lag.deps)
+  assert.equal(lag.s.inserted[0].check.verdictBlock, '29000000')
+
+  // No answer after the verdict: the verdict is reported and recorded, and nothing is prepared,
+  // because no payment could be shown to come after this check.
+  for (const decision of ['ALLOW', 'WARN'] as const) {
+    const dark = setup({ chain: { blocks: [29_000_000n, new Error('fetch failed')] }, gw: { scored: verdict(decision) } })
+    const o = await runVerifyThenPay(request(), header(), dark.deps)
+    assert.equal(o.httpStatus, 503, decision)
+    assert.deepEqual([o.body.stage, o.body.code, o.body.charged, o.body.executed], ['check_failed', 'VERDICT_BLOCK_UNREADABLE', true, false], decision)
+    assert.equal(o.body.prepared, null, decision)
+    assert.equal(o.body.ownerHandoff, null, decision)
+    assert.equal(o.body.verdict?.effective, decision)
+    assert.match(o.body.next, /do not pay on this flow/)
+    const rec = dark.s.inserted[0]
+    assert.deepEqual([rec.outcome, rec.detail, rec.check.verdictBlock, rec.prepared], ['blocked', 'verdict_block_unreadable', null, null], decision)
+    assert.deepEqual(dark.c.calls.filter((x) => x.startsWith('simulate:')), ['simulate:pay'], 'only the preflight simulated; nothing after the verdict')
+  }
+
+  // A DENY needs no block to refuse on: it is still a DENY, and recorded.
+  const deny = setup({ chain: { blocks: [29_000_000n, new Error('fetch failed')] }, gw: { scored: verdict('DENY') } })
+  const d = await runVerifyThenPay(request(), header(), deny.deps)
+  assert.deepEqual([d.httpStatus, d.body.stage], [200, 'deny'])
+  assert.deepEqual([deny.s.inserted[0].detail, deny.s.inserted[0].check.verdictBlock], ['deny', null])
 })

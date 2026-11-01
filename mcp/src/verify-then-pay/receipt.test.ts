@@ -20,6 +20,9 @@ import { persistVtpFlow, type VtpFlowRecord, type VtpStoreIo } from '../storage.
  * Mainnet (0xc1f3eb7f), which carries the vault's Paid event, USDC's Transfer in 6 decimals,
  * and a second Transfer of the same payment in 18 decimals from Arc's native-balance system
  * address. Only USDC's own may count.
+ *
+ * Block numbers: the preflight read block 90, the verdict came back in block 100, and the
+ * payment lands in block 101 unless a case says otherwise.
  */
 const arc = getChainById('arc-mainnet')!
 const URLS = arc.rpcUrls
@@ -33,6 +36,9 @@ const FLOW = '0x' + 'ab'.repeat(32)
 const HASH = '0x' + 'c1'.repeat(32)
 const AMOUNT = 250_000n
 const NOW = Date.parse('2026-11-01T10:05:00Z')
+const BLOCK_HASH = '0x' + 'bb'.repeat(32)
+/** The payment block's own timestamp: two seconds before the server reads the receipt. */
+const MINED = BigInt(Math.floor(NOW / 1000) - 2)
 
 const TRANSFER_EVENT = [
   {
@@ -61,7 +67,7 @@ function flow(over: Partial<VtpFlowRecord> = {}): VtpFlowRecord {
     asset: USDC,
     amount: AMOUNT.toString(),
     amountUsd: 0.25,
-    check: { authNonce: FLOW, transferId: 'tr-1', gatewayOutcome: 'credited', payer: OPERATOR, value: '5000', tool: 'risk_check', checkedAt: '2026-11-01T10:00:00.000Z', checkedAtBlock: '100' },
+    check: { authNonce: FLOW, transferId: 'tr-1', gatewayOutcome: 'credited', payer: OPERATOR, value: '5000', tool: 'risk_check', checkedAt: '2026-11-01T10:00:00.000Z', checkedAtBlock: '90', verdictBlock: '100' },
     verdict: { decision: 'ALLOW', effective: 'ALLOW', risk: 'low', reasons: ['strong'], reputationScore: 720, agentId: PAYEE, checkedAt: '2026-11-01T10:00:00.000Z' },
     payOnWarn: false,
     prepared: { from: OPERATOR, to: VAULT, data: payCalldata(PAYEE, AMOUNT), function: 'pay(address,uint256)', args: [PAYEE, AMOUNT.toString()] },
@@ -74,7 +80,7 @@ function flow(over: Partial<VtpFlowRecord> = {}): VtpFlowRecord {
 const hex = (n: bigint | number) => `0x${n.toString(16)}`
 
 function rawLog(address: string, topics: readonly unknown[], data: Hex, i: number) {
-  return { address, topics, data, blockNumber: hex(101), blockHash: '0x' + 'bb'.repeat(32), transactionHash: HASH, transactionIndex: '0x0', logIndex: hex(i), removed: false }
+  return { address, topics, data, blockNumber: hex(101), blockHash: BLOCK_HASH, transactionHash: HASH, transactionIndex: '0x0', logIndex: hex(i), removed: false }
 }
 
 function paidLog(o: { address?: string; to?: string; amount?: bigint; byOwner?: boolean } = {}, i = 2) {
@@ -93,7 +99,7 @@ const nativeLog = (i = 0) => transferLog({ address: NATIVE_SYSTEM, value: AMOUNT
 function rawReceipt(o: { status?: '0x1' | '0x0'; block?: number; logs?: unknown[]; from?: string } = {}) {
   return {
     transactionHash: HASH,
-    blockHash: '0x' + 'bb'.repeat(32),
+    blockHash: BLOCK_HASH,
     blockNumber: hex(o.block ?? 101),
     from: o.from ?? OPERATOR,
     to: VAULT,
@@ -131,13 +137,23 @@ function rawTx(o: { from?: string; to?: string; input?: string } = {}) {
   }
 }
 
-/** Per method, per host: what each RPC answers. Missing means null. An Error is thrown. */
+function rawBlock(number: bigint, hash = BLOCK_HASH, timestamp = MINED) {
+  return { number: hex(number), hash, parentHash: '0x' + 'aa'.repeat(32), timestamp: hex(timestamp), gasLimit: hex(30_000_000), gasUsed: '0x0', baseFeePerGas: hex(20_000_000_000n), miner: '0x' + '00'.repeat(20), transactions: [], uncles: [], logsBloom: '0x' + '00'.repeat(256) }
+}
+
+/** Per method, per host: what each RPC answers. Missing means null. An Error is thrown.
+ *  Blocks: every host has the one asked for, with the receipt's block hash, unless told otherwise. */
 type Hosts = Partial<Record<string, unknown>>
-function rpc(receipts: Hosts, txs: Hosts = {}): { call: RpcCall; asked: string[] } {
+function rpc(receipts: Hosts, txs: Hosts = {}, blocks?: Hosts): { call: RpcCall; asked: string[] } {
   const asked: string[] = []
-  const call: RpcCall = async (url, method) => {
+  const call: RpcCall = async (url, method, params) => {
     asked.push(`${method}@${url}`)
-    const a = (method === 'eth_getTransactionReceipt' ? receipts : txs)[url] ?? null
+    const a =
+      method === 'eth_getBlockByNumber'
+        ? blocks
+          ? (blocks[url] ?? null)
+          : rawBlock(BigInt(params[0] as string))
+        : ((method === 'eth_getTransactionReceipt' ? receipts : txs)[url] ?? null)
     if (a instanceof Error) throw a
     return a
   }
@@ -169,8 +185,10 @@ test('a receipt the first hosts lack is read from the next, and the vault Paid p
   assert.equal(p.costUsdc, gasCostUsdc(arc, 90_341n * 20_100_000_000n))
   assert.equal(p.readBackFrom, new URL(URLS[2]).host)
   assert.equal(p.readBackAt, new Date(NOW).toISOString())
+  // The chain's time for the payment, from its own block, apart from when it was read.
+  assert.equal(p.minedAt, new Date(Number(MINED) * 1000).toISOString())
   assert.equal(p.explorerUrl, txUrl(arc, HASH))
-  assert.deepEqual(r.asked, URLS.slice(0, 3).map((u) => `eth_getTransactionReceipt@${u}`))
+  assert.deepEqual(r.asked, [...URLS.slice(0, 3).map((u) => `eth_getTransactionReceipt@${u}`), `eth_getBlockByNumber@${URLS[0]}`])
 
   const row = (await store.load(FLOW)) as { ok: true; row: VtpFlowRecord }
   assert.deepEqual([row.row.outcome, row.row.detail, row.row.payment?.txHash], ['executed', 'agent_paid', HASH])
@@ -194,7 +212,8 @@ test('a receipt that does not prove this payment leaves the row exactly as it wa
     ['a USDC Transfer from another address', rawReceipt({ logs: [transferLog({ from: other }), paidLog()] }), 'NO_MATCHING_TRANSFER'],
     ['a USDC Transfer for another amount', rawReceipt({ logs: [transferLog({ value: AMOUNT + 1n }), paidLog()] }), 'NO_MATCHING_TRANSFER'],
     ['a transfer of another token that looks like USDC', rawReceipt({ logs: [transferLog({ address: other }), paidLog()] }), 'NO_MATCHING_TRANSFER'],
-    ['a payment in the block the check read', rawReceipt({ block: 100 }), 'TX_BEFORE_CHECK'],
+    ['a payment in the block the verdict came back in', rawReceipt({ block: 100 }), 'TX_BEFORE_CHECK'],
+    ['a payment mined while the check was still running', rawReceipt({ block: 95 }), 'TX_BEFORE_CHECK'],
     ['a payment from before the check', rawReceipt({ block: 42 }), 'TX_BEFORE_CHECK'],
   ]
   for (const [what, receipt, code] of cases) {
@@ -207,6 +226,48 @@ test('a receipt that does not prove this payment leaves the row exactly as it wa
     const row = (await store.load(FLOW)) as { ok: true; row: VtpFlowRecord }
     assert.deepEqual(row.row, seed, `${what}: the row moved`)
   }
+})
+
+test('a payment mined between the preflight and the verdict is not the result of the check; the first block after the verdict is', async () => {
+  // The preflight read block 90 and the verdict came back in block 100. A pay() sent while
+  // the check was running lands after 90, and that is exactly what must not count.
+  for (const block of [91, 99, 100]) {
+    const seed = flow()
+    const { store } = await storeWith([seed])
+    const out = await recordVtpReceipt(FLOW, HASH, deps(store, rpc({ [URLS[0]]: rawReceipt({ block }) }).call))
+    assert.deepEqual([out.httpStatus, out.body.code], [422, 'TX_BEFORE_CHECK'], `block ${block}`)
+    assert.match(out.body.reason ?? '', /not after block 100, the latest block when the check's verdict came back/)
+    assert.deepEqual(((await store.load(FLOW)) as { ok: true; row: VtpFlowRecord }).row, seed)
+  }
+  const { store } = await storeWith([flow()])
+  const first = await recordVtpReceipt(FLOW, HASH, deps(store, rpc({ [URLS[0]]: rawReceipt({ block: 101 }) }).call))
+  assert.deepEqual([first.httpStatus, first.body.outcome], [200, 'executed'])
+
+  // A row that never got a verdict block takes no receipt at all.
+  const unpinned = await storeWith([flow({ check: { ...flow().check, verdictBlock: null } })])
+  const none = await recordVtpReceipt(FLOW, HASH, deps(unpinned.store, rpc({ [URLS[0]]: rawReceipt({ block: 5000 }) }).call))
+  assert.deepEqual([none.httpStatus, none.body.code], [422, 'VERDICT_BLOCK_UNKNOWN'])
+})
+
+test("a payment whose block no host returns with the receipt's block hash is a retry, and the row stays as it was", async () => {
+  const seed = flow()
+  const lagging = await storeWith([seed])
+  const a = await recordVtpReceipt(FLOW, HASH, deps(lagging.store, rpc({ [URLS[0]]: rawReceipt() }, {}, {}).call))
+  assert.deepEqual([a.httpStatus, a.body.code, a.body.retry], [503, 'BLOCK_UNREADABLE', true])
+
+  // Every host holding another block at that height is no answer either.
+  const forked = await storeWith([seed])
+  const other = Object.fromEntries(URLS.map((u) => [u, rawBlock(101n, '0x' + 'cc'.repeat(32))]))
+  const b = await recordVtpReceipt(FLOW, HASH, deps(forked.store, rpc({ [URLS[0]]: rawReceipt() }, {}, other).call))
+  assert.deepEqual([b.httpStatus, b.body.code], [503, 'BLOCK_UNREADABLE'])
+
+  // A timestamp that is no time at all is no answer, and never a crash.
+  const garbled = await storeWith([seed])
+  const far = Object.fromEntries(URLS.map((u) => [u, rawBlock(101n, BLOCK_HASH, 2n ** 60n)]))
+  const c = await recordVtpReceipt(FLOW, HASH, deps(garbled.store, rpc({ [URLS[0]]: rawReceipt() }, {}, far).call))
+  assert.deepEqual([c.httpStatus, c.body.code], [503, 'BLOCK_UNREADABLE'])
+
+  for (const s of [lagging, forked, garbled]) assert.deepEqual(((await s.store.load(FLOW)) as { ok: true; row: VtpFlowRecord }).row, seed)
 })
 
 test('a reverted receipt of the prepared call is recorded as reverted on chain, from the one host that returns the transaction', async () => {
@@ -268,7 +329,7 @@ test('one transaction proves one flow, and a flow that ended takes no receipt', 
     check: { ...flow().check, authNonce: OTHER_FLOW },
     outcome: 'executed',
     detail: 'agent_paid',
-    payment: { txHash: HASH, blockNumber: '101', status: 'success', byOwner: false, from: OPERATOR, to: VAULT, gasUsed: '1', effectiveGasPrice: '1', costUsdc: '0.000001', readBackAt: 'x', readBackFrom: 'x', explorerUrl: 'x' },
+    payment: { txHash: HASH, blockNumber: '101', minedAt: 'x', status: 'success', byOwner: false, from: OPERATOR, to: VAULT, gasUsed: '1', effectiveGasPrice: '1', costUsdc: '0.000001', readBackAt: 'x', readBackFrom: 'x', explorerUrl: 'x' },
   })
   const { store } = await storeWith([done, flow()])
   const r = rpc({ [URLS[0]]: rawReceipt() })

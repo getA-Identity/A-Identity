@@ -9,6 +9,12 @@
  * Everything else (pending, waiting for the owner, an unusable or unavailable verdict) counts
  * nothing. The report still links each one only to one of our own settled Gateway checks on
  * Arc Mainnet, by nonce and payer, and only when its outcome came after the check.
+ *
+ * A payment or a revert is timed by the block it was mined in (payment.minedAt, the block's own
+ * timestamp), never by when the server read the receipt: a read-back time is always after the
+ * check, so it would make "the outcome came after the check" true of everything. The receipt
+ * route has already required the block to come after the verdict's; the report's comparison
+ * is the second look, on the chain's clock against the check's settlement time.
  */
 import type { ArcVerifyThenPayFlow } from '../arc-season.js'
 import type { VtpFlowRecord } from '../storage.js'
@@ -25,8 +31,8 @@ export function toSeasonFlow(row: VtpFlowRecord): ArcVerifyThenPayFlow[] {
         ...base,
         outcome: 'paid',
         txHash: row.payment.txHash,
-        at: row.payment.readBackAt,
-        note: `risk_check ${decision}, then the vault paid ${amount} (${row.detail}); receipt read back by the server from ${row.payment.readBackFrom}.`,
+        at: row.payment.minedAt,
+        note: `risk_check ${decision}, then the vault paid ${amount} (${row.detail}) in block ${row.payment.blockNumber}; receipt read back by the server from ${row.payment.readBackFrom}.`,
       },
     ]
   }
@@ -36,7 +42,7 @@ export function toSeasonFlow(row: VtpFlowRecord): ArcVerifyThenPayFlow[] {
         ...base,
         outcome: 'refused',
         txHash: row.payment.txHash,
-        at: row.payment.readBackAt,
+        at: row.payment.minedAt,
         note: `risk_check ${decision}, then the vault reverted the prepared ${row.payment.byOwner ? 'ownerPay' : 'pay'} of ${amount} on chain.`,
       },
     ]

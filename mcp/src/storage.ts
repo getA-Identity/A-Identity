@@ -882,6 +882,7 @@ export type VtpFlowDetail =
   | 'deny' // the verdict was DENY; nothing was prepared
   | 'verdict_unusable' // the check was paid but its answer failed our checks; treated as DENY
   | 'verdict_unavailable' // the check was paid and the tool failed after settlement
+  | 'verdict_block_unreadable' // the check was paid and answered, but the chain did not answer for its latest block after the verdict, so nothing was prepared
   | 'reverted_onchain' // the prepared call was sent and the vault reverted it
   | 'warn_handoff' // WARN without payOnWarn: ownerPay() was prepared for the owner
   | 'expired' // reserved: a pending flow nobody completed
@@ -918,8 +919,13 @@ export type VtpFlowRecord = {
     tool: 'risk_check'
     /** The settlement row's timestamp. */
     checkedAt: string
-    /** The latest block the free preflight read before the check. A payment has to land after it. */
+    /** The latest block the free preflight read before the check was bought. */
     checkedAtBlock: string
+    /** The latest block read after the verdict came back, never below checkedAtBlock. A
+     *  payment answers this check only when it lands in a later block: a pay() sent while the
+     *  check was still running lands after checkedAtBlock too. null when there was no verdict,
+     *  or the chain did not answer for its latest block after it; such a flow takes no receipt. */
+    verdictBlock: string | null
   }
   verdict: null | {
     decision: VtpDecision | null
@@ -941,6 +947,9 @@ export type VtpFlowRecord = {
   payment?: {
     txHash: string
     blockNumber: string
+    /** The payment block's own timestamp, ISO, read from the block whose hash the receipt
+     *  names: when the chain says the payment happened, not when the server read it. */
+    minedAt: string
     status: 'success' | 'reverted'
     /** From the vault's Paid event, or for a revert from which call was sent. */
     byOwner: boolean | null

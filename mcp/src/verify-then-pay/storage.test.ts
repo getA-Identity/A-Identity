@@ -32,7 +32,7 @@ function flow(over: Partial<VtpFlowRecord> = {}): VtpFlowRecord {
     asset: '0x' + 'e5'.repeat(20),
     amount: '250000',
     amountUsd: 0.25,
-    check: { authNonce: FLOW, transferId: null, gatewayOutcome: 'credited', payer: '0x' + 'c3'.repeat(20), value: '5000', tool: 'risk_check', checkedAt: '2026-11-01T10:00:00.000Z', checkedAtBlock: '100' },
+    check: { authNonce: FLOW, transferId: null, gatewayOutcome: 'credited', payer: '0x' + 'c3'.repeat(20), value: '5000', tool: 'risk_check', checkedAt: '2026-11-01T10:00:00.000Z', checkedAtBlock: '90', verdictBlock: '100' },
     verdict: null,
     payOnWarn: false,
     prepared: null,
@@ -45,6 +45,7 @@ function flow(over: Partial<VtpFlowRecord> = {}): VtpFlowRecord {
 const payment = (txHash = TX): NonNullable<VtpFlowRecord['payment']> => ({
   txHash,
   blockNumber: '101',
+  minedAt: '2026-11-01T10:04:58.000Z',
   status: 'success',
   byOwner: false,
   from: '0x' + 'c3'.repeat(20),
