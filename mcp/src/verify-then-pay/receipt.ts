@@ -20,6 +20,14 @@
  * owner (WARN) is closed only by the owner's call: an operator payment is not the hand-off it
  * prepared. Whatever does not match leaves the row exactly as it was, and one transaction
  * links to one flow at most.
+ *
+ * A limit, stated rather than implied: the route takes no session, so the first flow a valid
+ * receipt is posted for keeps it. Someone who paid for their own check on the same vault,
+ * payee and amount could post a payment before its owner does and leave the owner's flow
+ * unlinked (TX_LINKED_ELSEWHERE). It costs them a check per attempt and moves no money; the
+ * season report counts only flows opened by our own payers' checks, so it cannot take
+ * Milestone 1 credit either. Binding a flow to the key that will pay would close it, and the
+ * optional separate check payer is why this version does not.
  */
 import { parseEventLogs, type Transaction, type TransactionReceipt } from 'viem'
 import { receiptFromEveryRpc, rpcSourceLabel, transactionFromEveryRpc, txUrl, type ChainDescriptor } from '../chains/index.js'
