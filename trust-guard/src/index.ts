@@ -23,6 +23,10 @@
  *
  * If a call returns HTTP 402, the guard either invokes your `onPaymentRequired` payer and
  * retries once, or throws `PaymentRequiredError` with the challenge so you can pay.
+ *
+ * On rail 'arc', guard() returns only a verdict it can show is the one it paid for; see
+ * TrustGuard.guard. The other two rails keep their behaviour since 0.1: their listings are
+ * registered against it, so tightening them is a decision of its own.
  */
 
 export type Decision = 'ALLOW' | 'WARN' | 'DENY'
@@ -106,6 +110,33 @@ export class TrustDenyError extends Error {
   }
 }
 
+export type UnusableVerdictCode =
+  | 'DECISION_UNKNOWN'
+  | 'REPUTATION_NOT_FINITE'
+  | 'TENURE_NOT_FINITE'
+  | 'SIGNALS_MISSING'
+  | 'SIGNALS_INCONSISTENT'
+  | 'SETTLEMENT_MISMATCH'
+  | 'TOOL_MISMATCH'
+  | 'CONTEXT_MISMATCH'
+  | 'STAGE_MISMATCH'
+
+/** The check was paid and its answer cannot be acted on, so it is treated as DENY. */
+export class UnusableVerdictError extends Error {
+  readonly code: UnusableVerdictCode
+  readonly verdict: unknown
+  readonly flowId?: string
+  readonly recordUrl?: string
+  constructor(code: UnusableVerdictCode, message: string, o: { verdict: unknown; flowId?: string; recordUrl?: string }) {
+    super(message)
+    this.name = 'UnusableVerdictError'
+    this.code = code
+    this.verdict = o.verdict
+    if (o.flowId) this.flowId = o.flowId
+    if (o.recordUrl) this.recordUrl = o.recordUrl
+  }
+}
+
 /** Thrown when a paid tool returns HTTP 402 and no `onPaymentRequired` handler is set. */
 export class PaymentRequiredError extends Error {
   readonly challenge: unknown
@@ -161,6 +192,77 @@ const TOOL_PATHS: Record<Rail, string> = {
   arc: '/api/x402/gateway/tools/',
 }
 
+/** risk_check answers ALLOW only at or above this reputation, so an ALLOW below it is a fault. */
+export const ALLOW_MIN_REPUTATION = 500
+
+const LOOPBACK_HOSTS = new Set(['localhost', '127.0.0.1', '[::1]'])
+
+/**
+ * A verdict is not signed, so TLS is the only thing binding it to the server that wrote it.
+ * Https, or plain http on this machine. Parsed rather than matched, so that neither
+ * http://localhost.example nor http://localhost:1@example.com counts as this machine.
+ */
+export function requireSecureBaseUrl(raw: string): string {
+  const trimmed = String(raw).replace(/\/+$/, '')
+  let u: URL
+  try {
+    u = new URL(trimmed)
+  } catch {
+    throw new TypeError(`baseUrl is not a URL: ${String(raw)}`)
+  }
+  if (u.username || u.password) throw new TypeError('baseUrl must not carry credentials')
+  if (u.protocol === 'https:' || (u.protocol === 'http:' && LOOPBACK_HOSTS.has(u.hostname))) return trimmed
+  throw new TypeError(`baseUrl must be https, or http on localhost: ${trimmed}`)
+}
+
+/** What was signed for this call, read from the header the payer built. */
+type SignedCheck = { nonce: string; payer: string | null; network: string | null }
+
+const lowered = (v: unknown): string | null => (typeof v === 'string' ? v.toLowerCase() : null)
+
+function readSignedCheck(headers: Record<string, string>): SignedCheck | null {
+  const key = Object.keys(headers).find((k) => k.toLowerCase() === 'payment-signature')
+  if (!key) return null
+  try {
+    const sent = JSON.parse(decodeBase64(headers[key])) as { accepted?: { network?: unknown }; payload?: { authorization?: { nonce?: unknown; from?: unknown } } }
+    const nonce = lowered(sent.payload?.authorization?.nonce)
+    if (!nonce) return null
+    return { nonce, payer: lowered(sent.payload?.authorization?.from), network: typeof sent.accepted?.network === 'string' ? sent.accepted.network : null }
+  } catch {
+    return null
+  }
+}
+
+/**
+ * Whether a risk_check answer on the arc rail can be acted on. The caller's next line signs a
+ * payment, so everything but a shown ALLOW or WARN throws. A DENY needs nothing further to be
+ * believed: it stops here whatever else the answer says, and whatever denyOn says.
+ */
+function judgeArcVerdict(verdict: RiskVerdict, agentId: string, signed: SignedCheck | null, denyOn: Decision[]): RiskVerdict {
+  const unusable = (code: UnusableVerdictCode, why: string) => new UnusableVerdictError(code, `the answer cannot be acted on: ${why}`, { verdict, ...(signed ? { flowId: signed.nonce } : {}) })
+  const decision: unknown = verdict.decision
+  if (decision !== 'ALLOW' && decision !== 'WARN' && decision !== 'DENY') {
+    throw unusable('DECISION_UNKNOWN', `the decision is ${JSON.stringify(decision ?? null)}, not ALLOW, WARN or DENY`)
+  }
+  if (decision === 'DENY' || denyOn.includes(decision)) throw new TrustDenyError(verdict)
+  if (verdict.tool !== 'risk_check') throw unusable('TOOL_MISMATCH', `the answer is from ${String(verdict.tool)}, not risk_check`)
+  if (lowered(verdict.agentId) !== agentId.trim().toLowerCase()) throw unusable('CONTEXT_MISMATCH', `the verdict is about ${String(verdict.agentId)}, not ${agentId}`)
+  const rep = verdict.signals?.reputationScore
+  if (typeof rep !== 'number' || !Number.isFinite(rep) || rep < 0 || rep > 1000) {
+    throw unusable('REPUTATION_NOT_FINITE', `the reputation is ${JSON.stringify(rep ?? null)}, not a finite number in [0, 1000]`)
+  }
+  if (decision === 'ALLOW' && rep < ALLOW_MIN_REPUTATION) throw unusable('SIGNALS_INCONSISTENT', `ALLOW needs a reputation of at least ${ALLOW_MIN_REPUTATION}, and this one is ${rep}`)
+  if (!signed) throw unusable('SETTLEMENT_MISMATCH', 'nothing was signed for this answer, so it cannot be the verdict that was paid for')
+  const s = verdict.settlement as Record<string, unknown> | null | undefined
+  if (typeof s !== 'object' || s === null) throw unusable('SETTLEMENT_MISMATCH', 'the answer carries no settlement record')
+  if (lowered(s.authNonce) !== signed.nonce) throw unusable('SETTLEMENT_MISMATCH', 'the settlement names another authorization nonce than the one signed')
+  if (lowered(s.payer) !== signed.payer) throw unusable('SETTLEMENT_MISMATCH', 'the settlement names another payer than the one that signed')
+  if (s.network !== signed.network) throw unusable('SETTLEMENT_MISMATCH', `the check settled on ${String(s.network)}, not ${String(signed.network)}`)
+  if (s.outcome !== 'credited' && s.outcome !== 'completed') throw unusable('SETTLEMENT_MISMATCH', `the settlement outcome is ${String(s.outcome)}, not credited or completed`)
+  if (s.tool !== 'risk_check') throw unusable('SETTLEMENT_MISMATCH', `the settlement is for ${String(s.tool)}, not risk_check`)
+  return verdict
+}
+
 export class TrustGuard {
   readonly rail: Rail
   readonly baseUrl: string
@@ -171,6 +273,7 @@ export class TrustGuard {
     this.rail = opts.rail ?? 'xlayer'
     if (!(this.rail in DEFAULT_BASE_URLS)) throw new Error(`Unknown rail '${String(this.rail)}'; use 'xlayer', 'algorand' or 'arc'.`)
     this.baseUrl = (opts.baseUrl ?? DEFAULT_BASE_URLS[this.rail]).replace(/\/+$/, '')
+    if (this.rail === 'arc') requireSecureBaseUrl(this.baseUrl)
     const f = opts.fetch ?? (globalThis as { fetch?: FetchLike }).fetch
     if (!f) throw new Error('No fetch available; pass opts.fetch (Node < 18 or a custom runtime).')
     this.doFetch = f
@@ -228,16 +331,32 @@ export class TrustGuard {
    * Returns the verdict otherwise, so you can log/branch on ALLOW vs WARN.
    *
    *   await guard.guard(counterpartyId, { txContext: { amountUsd: 500 } })
+   *
+   * On rail 'arc' this fails closed, because the caller's next line signs a payment. DENY always
+   * throws, and so does anything that is not ALLOW or WARN. A returned verdict is also about
+   * this agent, carries a finite reputation (at least 500 on an ALLOW), and carries a settlement
+   * record for the nonce signed for this call. Anything else throws `UnusableVerdictError`. WARN
+   * still returns unless `denyOn` names it; on this rail pass ['DENY', 'WARN'], or use
+   * `verifyThenPay` from `@a-identity/trust-guard/arc`, where WARN never pays by itself.
    */
   async guard(agentId: string, opts: { txContext?: TxContext; denyOn?: Decision[] } = {}): Promise<RiskVerdict> {
     const denyOn = opts.denyOn ?? ['DENY']
+    if (this.rail === 'arc') {
+      const { data, signed } = await this.exchange('risk_check', { agentId, txContext: opts.txContext ?? null })
+      return judgeArcVerdict(data as unknown as RiskVerdict, agentId, signed, denyOn)
+    }
     const verdict = await this.riskCheck(agentId, opts.txContext)
     if (denyOn.includes(verdict.decision)) throw new TrustDenyError(verdict)
     return verdict
   }
 
   private async call(tool: string, body: unknown): Promise<Record<string, unknown>> {
+    return (await this.exchange(tool, body)).data
+  }
+
+  private async exchange(tool: string, body: unknown): Promise<{ data: Record<string, unknown>; signed: SignedCheck | null }> {
     const url = this.baseUrl + TOOL_PATHS[this.rail] + tool
+    let signed: SignedCheck | null = null
     let res = await this.doFetch(url, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
@@ -248,6 +367,7 @@ export class TrustGuard {
       if (this.onPaymentRequired) {
         const headers = await this.onPaymentRequired(challenge, { resource: url, body })
         if (headers) {
+          signed = readSignedCheck(headers)
           res = await this.doFetch(url, {
             method: 'POST',
             headers: { 'content-type': 'application/json', ...headers },
@@ -262,7 +382,7 @@ export class TrustGuard {
       const msg = data && typeof data === 'object' && 'error' in data ? String((data as { error: unknown }).error) : `HTTP ${res.status}`
       throw new TrustOracleError(msg, res.status, data)
     }
-    return (data ?? {}) as Record<string, unknown>
+    return { data: (data ?? {}) as Record<string, unknown>, signed }
   }
 }
 

@@ -22,7 +22,8 @@
  *   C  The decision. DENY throws TrustDenyError and never calls the operator. WARN returns
  *      `awaiting_human` with a prepared ownerPay for the owner, unless payOnWarn is set. A
  *      Gateway error, a settlement echo that does not match what was signed, an unknown
- *      decision and a reputation that is not a finite number are never ALLOW: each throws.
+ *      decision, a reputation that is not a finite number, an ALLOW below the reputation ALLOW
+ *      needs and a verdict about another agent or amount are never ALLOW: each throws.
  *   D  The payment: exactly one sendTransaction of pay(payee, amountUnits), encoded from YOUR
  *      inputs and compared byte for byte with what the server prepared. Server calldata is
  *      never executed. The transaction is read back, and its receipt is looked for on every
@@ -40,14 +41,15 @@
  * are first used. No key ever leaves your process: A-Identity holds neither key of a vault
  * paid through this entry point.
  */
-import { TrustDenyError, type Decision, type FetchLike, type GatewayCheckReference, type RiskVerdict, type TrustGuardOptions } from './index.js'
+import { ALLOW_MIN_REPUTATION, requireSecureBaseUrl, TrustDenyError, UnusableVerdictError, type Decision, type FetchLike, type GatewayCheckReference, type RiskVerdict, type TrustGuardOptions, type UnusableVerdictCode } from './index.js'
 import { ARC_MAINNET, ARC_VAULT_ABI } from './arc-mainnet.generated.js'
 import { arcChainReader, ArcCallRevert, type Address, type ArcChainReader, type ArcReceipt, type ArcTransaction, type Hex } from './arc-reader.js'
 
 export { ARC_MAINNET } from './arc-mainnet.generated.js'
 export { arcChainReader, ArcCallRevert, ArcRpcUnreachableError } from './arc-reader.js'
 export type { Address, ArcChainReader, ArcChainReaderOptions, ArcLog, ArcReceipt, ArcTransaction, Hex } from './arc-reader.js'
-export type { GatewayCheckReference } from './index.js'
+export { UnusableVerdictError } from './index.js'
+export type { GatewayCheckReference, UnusableVerdictCode } from './index.js'
 
 // ── signers ───────────────────────────────────────────────────────────────────────
 
@@ -238,33 +240,6 @@ export class GatewayCheckError extends Error {
   }
 }
 
-export type UnusableVerdictCode =
-  | 'DECISION_UNKNOWN'
-  | 'REPUTATION_NOT_FINITE'
-  | 'TENURE_NOT_FINITE'
-  | 'SIGNALS_MISSING'
-  | 'SIGNALS_INCONSISTENT'
-  | 'SETTLEMENT_MISMATCH'
-  | 'TOOL_MISMATCH'
-  | 'CONTEXT_MISMATCH'
-  | 'STAGE_MISMATCH'
-
-/** The check was paid and its answer cannot be acted on, so it is treated as DENY. */
-export class UnusableVerdictError extends Error {
-  readonly code: UnusableVerdictCode
-  readonly verdict: unknown
-  readonly flowId?: Hex
-  readonly recordUrl?: string
-  constructor(code: UnusableVerdictCode, message: string, o: { verdict: unknown; flowId?: Hex; recordUrl?: string }) {
-    super(message)
-    this.name = 'UnusableVerdictError'
-    this.code = code
-    this.verdict = o.verdict
-    if (o.flowId) this.flowId = o.flowId
-    if (o.recordUrl) this.recordUrl = o.recordUrl
-  }
-}
-
 export type VaultPaymentCode = 'PREPARED_MISMATCH' | 'BROADCAST_FAILED' | 'TX_MISMATCH' | 'UNDERPRICED' | 'DROPPED' | 'UNCONFIRMED' | 'REVERTED' | 'LOGS_MISMATCH'
 
 /** The payment step failed. With a txHash, look that hash up: never send again with a new
@@ -329,14 +304,19 @@ export interface VerifyThenPayOptions {
   proveDomain?: boolean
   /** Default ARC_MAINNET.rpcUrls. */
   rpcUrls?: readonly string[]
-  /** Default 'https://a-identity.xyz'. */
+  /** Default 'https://a-identity.xyz'. Https, or http on this machine. */
   baseUrl?: string
   /** Used for the A-Identity API and Gateway, and for the RPCs unless `chain` is given. */
   fetch?: FetchLike
   chain?: ArcChainReader
   /** Inject time (tests). */
   clock?: ArcClock
+  /** Inject the scheme that signs the check (tests). Default Circle's BatchEvmScheme. */
+  gatewayScheme?: GatewaySchemeFactory
 }
+
+/** What signs the Gateway authorization. What it returns is compared with the offer before use. */
+export type GatewaySchemeFactory = (payer: GatewayPayerSigner) => { createPaymentPayload(version: number, offer: unknown): Promise<unknown> }
 
 export interface VaultPreflight {
   vault: Address
@@ -892,17 +872,21 @@ async function checkGatewayBalance(doFetch: FetchLike, payer: Address, amount: b
 }
 
 /** One signature over the offer, returned as the PAYMENT-SIGNATURE value. */
-async function signOffer(offer: Offer, payer: GatewayPayerSigner): Promise<{ header: string; nonce: Hex }> {
-  const { BatchEvmScheme } = await loadBatching()
-  const scheme = new BatchEvmScheme({ address: payer.address, signTypedData: (r: unknown) => payer.signTypedData(r as TypedDataRequest) } as never)
+async function signOffer(offer: Offer, payer: GatewayPayerSigner, makeScheme?: GatewaySchemeFactory): Promise<{ header: string; nonce: Hex }> {
+  let scheme: ReturnType<GatewaySchemeFactory>
+  if (makeScheme) scheme = makeScheme(payer)
+  else {
+    const { BatchEvmScheme } = await loadBatching()
+    scheme = new BatchEvmScheme({ address: payer.address, signTypedData: (r: unknown) => payer.signTypedData(r as TypedDataRequest) } as never) as unknown as ReturnType<GatewaySchemeFactory>
+  }
   let created: { payload: { authorization: { from: string; to: string; value: unknown; nonce: string }; signature: string } }
   try {
-    created = (await scheme.createPaymentPayload(2, offer as never)) as unknown as typeof created
+    created = (await scheme.createPaymentPayload(2, offer)) as typeof created
   } catch (e) {
     throw new GatewayCheckError('SIGNING_FAILED', `the payer could not sign the Gateway authorization: ${msg(e)}`, { paid: false })
   }
-  const auth = created.payload.authorization
-  const nonce = lc(auth.nonce)
+  const auth = created?.payload?.authorization
+  const nonce = lc(auth?.nonce)
   if (!nonce || !HASH.test(nonce) || lc(auth.from) !== payer.address.toLowerCase() || lc(auth.to) !== offer.payTo.toLowerCase() || String(auth.value) !== offer.amount) {
     throw new GatewayCheckError('SIGNING_FAILED', 'the signed authorization does not match the offer, so it was not sent', { paid: false })
   }
@@ -986,7 +970,7 @@ type Answer = { kind: 'prepared'; prepared: Record<string, unknown> } | { kind: 
 type Verdicted = Answer & { verdict: RiskVerdict; check: GatewayCheckReference; recordUrl: string }
 
 /** What a paid answer decides. Throws for everything that is not a usable ALLOW or WARN. */
-function readPaidAnswer(res: { status: number; body: unknown }, o: { vault: Address; payee: Address; nonce: Hex; payer: Address; offer: Offer; payOnWarn: boolean; baseUrl: string }): Verdicted {
+function readPaidAnswer(res: { status: number; body: unknown }, o: { vault: Address; payee: Address; amountUnits: bigint; nonce: Hex; payer: Address; offer: Offer; payOnWarn: boolean; baseUrl: string }): Verdicted {
   const { status, body } = res
   const { nonce } = o
   if (!isObject(body) || typeof body.stage !== 'string') {
@@ -1028,7 +1012,9 @@ function readPaidAnswer(res: { status: number; body: unknown }, o: { vault: Addr
   const reasons = Array.isArray(v.reasons) ? v.reasons.filter((r): r is string => typeof r === 'string') : []
   const verdict: RiskVerdict = {
     tool: 'risk_check',
-    agentId: o.payee,
+    // What the server says it is about. An ALLOW or a WARN is compared with the payee below; a
+    // DENY about someone else is reported as that, and pays nobody either way.
+    agentId: typeof v.agentId === 'string' ? v.agentId : o.payee,
     decision: decision as Decision,
     risk: typeof v.risk === 'string' ? v.risk : 'unknown',
     reasons,
@@ -1041,6 +1027,15 @@ function readPaidAnswer(res: { status: number; body: unknown }, o: { vault: Addr
   const rep = v.reputationScore
   if (typeof rep !== 'number' || !Number.isFinite(rep) || rep < 0 || rep > 1000) {
     throw new UnusableVerdictError('REPUTATION_NOT_FINITE', `the reputation is ${JSON.stringify(rep ?? null)}, not a finite number in [0, 1000]; the scorer can turn that into ALLOW`, unusable)
+  }
+  if (decision === 'ALLOW' && rep < ALLOW_MIN_REPUTATION) {
+    throw new UnusableVerdictError('SIGNALS_INCONSISTENT', `ALLOW needs a reputation of at least ${ALLOW_MIN_REPUTATION}, and this one is ${rep}`, unusable)
+  }
+  // The same arithmetic the server uses for what it sends the scorer.
+  const amountUsd = Number(o.amountUnits) / 10 ** ARC_MAINNET.usdcDecimals
+  const context = isObject(v.txContext) ? v.txContext : null
+  if (lc(v.agentId) !== o.payee || lc(context?.payee) !== o.payee || context?.amountUsd !== amountUsd) {
+    throw new UnusableVerdictError('CONTEXT_MISMATCH', `the verdict is about agent ${String(v.agentId)} and context ${JSON.stringify(v.txContext ?? null)}, not this payee and ${amountUsd} USD`, unusable)
   }
   // The decision, the stage and the caller's own payOnWarn have to agree.
   const wanted = decision === 'WARN' && !o.payOnWarn ? 'awaiting_human' : 'prepared'
@@ -1109,7 +1104,7 @@ function receiptProvesPayment(v: Viem, r: ArcReceipt, p: CheckedPayment): boolea
 export async function recordFlowReceipt(o: { flowId: string; txHash: string; baseUrl?: string; fetch?: FetchLike; requestTimeoutMs?: number; clock?: ArcClock }): Promise<FlowRecordReport> {
   if (typeof o.flowId !== 'string' || !HASH.test(o.flowId)) throw new TypeError('flowId must be the 32-byte authorization nonce')
   if (typeof o.txHash !== 'string' || !HASH.test(o.txHash)) throw new TypeError('txHash must be a 32-byte transaction hash')
-  const baseUrl = (o.baseUrl ?? DEFAULT_BASE_URL).replace(/\/+$/, '')
+  const baseUrl = requireSecureBaseUrl(o.baseUrl ?? DEFAULT_BASE_URL)
   const doFetch = o.fetch ?? (globalThis as { fetch?: FetchLike }).fetch
   if (!doFetch) throw new TypeError('No fetch available; pass o.fetch.')
   const clock = o.clock ?? realClock
@@ -1146,6 +1141,7 @@ type Inputs = CheckedPayment & {
   payerAddress: Address
   payOnWarn: boolean
   maxCheckUnits: bigint
+  gatewayScheme?: GatewaySchemeFactory
   receiptTimeoutMs: number
   droppedAfterMs: number
   receiptPollMs: number
@@ -1228,11 +1224,11 @@ async function pay(i: Inputs, ctx: Ctx, a: Verdicted & { kind: 'prepared' }, flo
 
   // The chain again: the check took seconds, and the vault may have moved.
   const now = await runPreflight(ctx, { vault, payee, amountUnits, tokenId: null, operator: i.operator, stage: 'simulation', flowId, recordUrl, checkPayee: false })
-  const maxFeePerGas = [now.maxFeePerGas, preparedFee, ARC_MAINNET.minMaxFeePerGasWei].reduce((a, b) => (a > b ? a : b))
-  // The cap binds the server's number too: a server cannot price this payment above it.
-  if (maxFeePerGas > ctx.capWei) {
-    throw new VaultPolicyError('GasPriceAboveCap', `the prepared fee ${maxFeePerGas} wei is above the ${ctx.capWei} wei cap`, { stage: 'simulation', vault, flowId, recordUrl })
-  }
+  const wantedFee = [now.maxFeePerGas, preparedFee, ARC_MAINNET.minMaxFeePerGasWei].reduce((a, b) => (a > b ? a : b))
+  // The cap binds the server's number too: a server cannot price this payment above it, and its
+  // own higher cap must not burn a check that was already bought. Clamping keeps the fee above
+  // the price plus the tip, because runPreflight just refused otherwise.
+  const maxFeePerGas = wantedFee > ctx.capWei ? ctx.capWei : wantedFee
   if (now.operatorGasWei !== null && now.operatorGasWei < now.gasLimit * maxFeePerGas) {
     throw new VaultPolicyError('InsufficientGas', `the operator holds ${now.operatorGasWei} wei of gas and pay() can cost up to ${now.gasLimit * maxFeePerGas} wei`, { stage: 'simulation', vault, flowId, recordUrl })
   }
@@ -1367,7 +1363,7 @@ async function run(i: Inputs): Promise<VerifyThenPayResult> {
   await checkGatewayBalance(doFetch, i.payerAddress, BigInt(offer.amount), i.requestTimeoutMs)
 
   // The one signature.
-  const { header, nonce } = await signOffer(offer, i.payer)
+  const { header, nonce } = await signOffer(offer, i.payer, i.gatewayScheme)
   let paid: Awaited<ReturnType<typeof httpCall>>
   try {
     paid = await httpCall(doFetch, url, { method: 'POST', headers: { ...headers, 'PAYMENT-SIGNATURE': header }, body: request }, i.requestTimeoutMs)
@@ -1376,7 +1372,7 @@ async function run(i: Inputs): Promise<VerifyThenPayResult> {
   }
 
   // C. The decision. Everything that is not a usable ALLOW or WARN throws in here.
-  const answer = readPaidAnswer(paid, { vault, payee, nonce, payer: i.payerAddress, offer, payOnWarn: i.payOnWarn, baseUrl })
+  const answer = readPaidAnswer(paid, { vault, payee, amountUnits, nonce, payer: i.payerAddress, offer, payOnWarn: i.payOnWarn, baseUrl })
 
   // D and E, or the hand-off.
   return answer.kind === 'prepared' ? pay(i, ctx, answer, nonce, free) : handOff(i, ctx, answer, nonce, free)
@@ -1427,13 +1423,14 @@ export async function verifyThenPay(opts: VerifyThenPayOptions): Promise<VerifyT
     receiptPollMs: opts.receiptPollMs ?? DEFAULT_POLL_MS,
     requestTimeoutMs: opts.requestTimeoutMs ?? DEFAULT_REQUEST_TIMEOUT_MS,
     proveDomain: opts.proveDomain !== false,
-    baseUrl: (opts.baseUrl ?? DEFAULT_BASE_URL).replace(/\/+$/, ''),
+    baseUrl: requireSecureBaseUrl(opts.baseUrl ?? DEFAULT_BASE_URL),
     doFetch,
     chain: opts.chain ?? arcChainReader(opts.rpcUrls, opts.fetch ? { fetch: opts.fetch } : {}),
     clock: opts.clock ?? realClock,
     ...feeCaps(opts),
     ...(opts.asset ? { asset: opts.asset } : {}),
     ...(opts.payeeAgentId !== undefined ? { payeeAgentId: opts.payeeAgentId } : {}),
+    ...(opts.gatewayScheme ? { gatewayScheme: opts.gatewayScheme } : {}),
   }
   return inVaultQueue(input.vault, () => run(inputs))
 }

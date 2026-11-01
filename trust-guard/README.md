@@ -175,8 +175,15 @@ The order, and what each step can cost:
    and close the flow with `recordFlowReceipt({ flowId, txHash })`.
 
 Anything that is not a usable verdict is never treated as ALLOW: a Gateway error, a settlement that does
-not echo what was signed, an unknown decision, or a reputation that is not a finite number each throw, and
-the operator is not called.
+not echo what was signed, an unknown decision, a reputation that is not a finite number, an ALLOW below
+reputation 500, or a verdict about another agent or amount each throw, and the operator is not called.
+
+What this does not remove: the verdict is not signed, so you still trust the A-Identity server and the TLS
+connection to it (`baseUrl` must be https, or http on localhost). These comparisons catch a server bug and a
+server answering about someone else; a tampered answer that says 545 cannot be told from a real one. The
+loss from that is bounded: the server's calldata is never executed, so the payment can only go to the payee
+you named, for the amount you named, within the vault's own policy. The settlement echo proves nothing
+independently either: it comes from the same server, so it binds the answer to your nonce and no further.
 
 | Error | Meaning |
 | --- | --- |
@@ -194,15 +201,22 @@ attested KYA and at least 7 days of tenure. The vault cannot settle an x402 offe
 is `pay(to, amount)`, a direct USDC transfer to the payee you checked.
 
 For a verdict alone, with no vault, use the rail with its payer. Send the payee's address as the agent id,
-never a CAIP id:
+never a CAIP id. If your next line pays, pass `denyOn: ['DENY', 'WARN']`, because WARN returns by default
+here and it does not mean pay; `verifyThenPay` is the path that holds WARN for the owner by itself:
 
 ```ts
 import { TrustGuard } from '@a-identity/trust-guard'
 import { arcGatewayPayer, fromViemWallet } from '@a-identity/trust-guard/arc'
 
 const oracle = new TrustGuard({ rail: 'arc', onPaymentRequired: arcGatewayPayer(fromViemWallet(wallet)) })
-await oracle.guard(payeeAddress, { txContext: { amountUsd: 0.25 } })
+await oracle.guard(payeeAddress, { txContext: { amountUsd: 0.25 }, denyOn: ['DENY', 'WARN'] })
 ```
+
+On this rail `guard()` fails closed. DENY always throws `TrustDenyError`. Anything else that is not ALLOW or
+WARN, a verdict about another agent, a reputation that is not a finite number in [0, 1000], an ALLOW below
+500, and an answer with no settlement record for the nonce signed for this call each throw
+`UnusableVerdictError`. A proxy's 200 page is one of those. The `xlayer` and `algorand` rails keep their
+behaviour since 0.1, where only a verdict named in `denyOn` throws.
 
 `preflightVault` runs the free checks alone and signs nothing. `ARC_MAINNET` holds the chain's constants,
 generated from the A-Identity chain registry rather than typed by hand.

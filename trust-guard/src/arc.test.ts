@@ -251,7 +251,7 @@ function checkRef(p: Paid, over: Record<string, unknown> = {}) {
   return { network: ARC_MAINNET.caip2, authNonce: p.nonce, transferId: 'transfer-1', gatewayOutcome: 'credited', payer: p.from, amountUnits: '5000', resource: '/api/x402/gateway/tools/risk_check', checkedAt: '2026-11-01T10:00:00.000Z', ...over }
 }
 
-const verdictView = (decision: string, over: Record<string, unknown> = {}) => ({ decision, effective: decision, risk: decision === 'ALLOW' ? 'low' : 'high', reasons: [`reason for ${decision}`], reputationScore: decision === 'ALLOW' ? 545 : 470, ...over })
+const verdictView = (decision: string, over: Record<string, unknown> = {}) => ({ decision, effective: decision, risk: decision === 'ALLOW' ? 'low' : 'high', reasons: [`reason for ${decision}`], reputationScore: decision === 'ALLOW' ? 545 : 470, agentId: PAYEE, txContext: { payee: PAYEE, amountUsd: 0.25 }, ...over })
 
 function preparedCall(over: Record<string, unknown> = {}) {
   return {
@@ -551,6 +551,7 @@ const failed = (p: Paid, status: number, body: Record<string, unknown>): Reply =
 for (const [label, reply, code, paid] of [
   ['402 after paying', (p: Paid) => failed(p, 402, { charged: false, reason: 'Gateway refused the payment' }), 'REFUSED', false],
   ['502 settlement unconfirmed', (p: Paid) => failed(p, 502, { charged: null, reason: 'settlement unconfirmed' }), 'UNCONFIRMED', null],
+  ['502 settlement unknown', (p: Paid) => failed(p, 502, { charged: null, code: 'SETTLEMENT_UNKNOWN', reason: 'Gateway settle did not answer' }), 'UNCONFIRMED', null],
   ['502 settlement failed', (p: Paid) => failed(p, 502, { charged: false, reason: 'settlement failed' }), 'REFUSED', false],
   ['503 kind unproven', (p: Paid) => failed(p, 503, { charged: false, reason: 'Gateway kind unproven' }), 'REFUSED', false],
   ['500 after settlement', (p: Paid) => failed(p, 500, { charged: true, reason: 'the tool failed' }), 'TOOL_FAILED_AFTER_SETTLEMENT', true],
@@ -826,8 +827,11 @@ test('calldata that differs only in hex case is the same bytes', async () => {
 })
 
 test('what is sent is the encoding of your inputs, not the bytes the server returned', async () => {
-  const { signer, opts } = setup()
+  // The same bytes in another hex case, so that passing the server's string along would show.
+  const shouted = payData().toUpperCase().replace('0X', '0x')
+  const { signer, opts } = setup({ paid: (p) => allow(p, { prepared: preparedCall({ data: shouted }) }) })
   await verifyThenPay(opts)
+  assert.notEqual(shouted, payData())
   assert.equal(signer.sent[0].data, payData())
 })
 
@@ -860,10 +864,33 @@ test('a gas price above the cap refuses before the check is bought', async () =>
   assert.equal(signer.sent.length, 0)
 })
 
-test('a prepared fee above the cap is refused: a server cannot price the payment past it', async () => {
+test('a prepared fee above the cap is clamped to it: a server cannot price the payment past it', async () => {
   const { signer, opts } = setup({ paid: (p) => allow(p, { prepared: preparedCall({ fees: { maxFeePerGas: (10_000n * GWEI).toString() } }) }) })
+  await verifyThenPay(opts)
+  assert.equal(signer.sent.length, 1)
+  assert.equal(signer.sent[0].maxFeePerGas, 200n * GWEI)
+})
+
+test("a caller's cap below the server's fee pays at the cap, and does not burn the check it bought", async () => {
+  const capWei = 60n * GWEI
+  const { signer, opts } = setup({ paid: (p) => allow(p, { prepared: preparedCall({ fees: { maxFeePerGas: (61n * GWEI).toString() } }) }) }, { gasPrice: 30n * GWEI })
+  const out = await verifyThenPay({ ...opts, maxFeePerGasCapWei: capWei })
+  assert.equal(out.outcome, 'executed')
+  assert.equal(signer.sent.length, 1)
+  assert.equal(signer.sent[0].maxFeePerGas, capWei)
+  assert.ok(signer.sent[0].maxFeePerGas > 30n * GWEI + signer.sent[0].maxPriorityFeePerGas, 'still above the price plus the tip')
+})
+
+test('a price that rose past the cap after the check still refuses at the second read, with nothing sent', async () => {
+  const { chain, signer, opts } = setup({
+    paid: (p) => {
+      chain.w.gasPrice = 250n * GWEI
+      return allow(p)
+    },
+  })
   const e = await refused(verifyThenPay(opts), VaultPolicyError)
   assert.equal(e.code, 'GasPriceAboveCap')
+  assert.equal(e.stage, 'simulation')
   assert.equal(signer.sent.length, 0)
 })
 
@@ -1165,6 +1192,9 @@ for (const [label, offer, code] of [
   ['an amount that is not a number', { ...OFFER, amount: '1e9' }, 'OFFER_MISMATCH'],
   ['a payTo that is the payer', { ...OFFER, payTo: OPERATOR }, 'OFFER_MISMATCH'],
   ['no payTo', { ...OFFER, payTo: undefined }, 'OFFER_MISMATCH'],
+  ['no maxTimeoutSeconds', { ...OFFER, maxTimeoutSeconds: undefined }, 'OFFER_MISMATCH'],
+  ['a maxTimeoutSeconds of 0', { ...OFFER, maxTimeoutSeconds: 0 }, 'OFFER_MISMATCH'],
+  ['a maxTimeoutSeconds that is a string', { ...OFFER, maxTimeoutSeconds: '3600' }, 'OFFER_MISMATCH'],
   ['another network only', { ...OFFER, network: 'eip155:1' }, 'NO_ARC_OFFER'],
 ] as const) {
   test(`an offer with ${label} refuses before signing`, async () => {
@@ -1386,11 +1416,11 @@ test("TrustGuard's arc rail calls the Gateway tool path on the default base URL"
   const asked: string[] = []
   const f = (async (url: string) => {
     asked.push(url)
-    return new Response(JSON.stringify({ tool: 'risk_check', agentId: PAYEE, decision: 'ALLOW', risk: 'low', reasons: ['ok'] }), { status: 200 })
+    return new Response(JSON.stringify({ tool: 'risk_check', agentId: PAYEE, decision: 'DENY', risk: 'high', reasons: ['off-platform'] }), { status: 200 })
   }) as FetchLike
   const oracle = new TrustGuard({ rail: 'arc', fetch: f })
   assert.equal(oracle.baseUrl, 'https://a-identity.xyz')
-  await oracle.guard(PAYEE)
+  await refused(oracle.guard(PAYEE), TrustDenyError)
   assert.deepEqual(asked, ['https://a-identity.xyz/api/x402/gateway/tools/risk_check'])
 })
 
@@ -1420,3 +1450,286 @@ test('arcGatewayPayer refuses a price above its cap before signing', async () =>
   await assert.rejects(pay({ accepts: [OFFER] }, { resource: 'r', body: {} }), (e: Error) => e instanceof GatewayCheckError && e.code === 'PRICE_ABOVE_CAP')
   assert.equal(payer.signed.length, 0)
 })
+
+// ── 17. guard() on the arc rail fails closed ──────────────────────────────────────
+
+type OracleAnswer = (p: Paid) => { status?: number; body: unknown }
+
+/** A rail that sells the check at the offer and answers the paid call with `answer`. */
+function arcOracle(answer: OracleAnswer) {
+  const payer = spySigner(SEPARATE_PAYER)
+  const f = (async (_url: string, init?: RequestInit) => {
+    const headers = (init?.headers ?? {}) as Record<string, string>
+    const sig = headers['PAYMENT-SIGNATURE']
+    if (!sig) return new Response(JSON.stringify({ x402Version: 2, accepts: [OFFER] }), { status: 402 })
+    const payload = JSON.parse(Buffer.from(sig, 'base64').toString('utf8'))
+    const auth = payload.payload.authorization
+    const r = answer({ nonce: auth.nonce.toLowerCase(), from: auth.from.toLowerCase(), payload })
+    return new Response(typeof r.body === 'string' ? r.body : JSON.stringify(r.body), { status: r.status ?? 200 })
+  }) as FetchLike
+  return { payer, oracle: new TrustGuard({ rail: 'arc', baseUrl: BASE, fetch: f, onPaymentRequired: arcGatewayPayer(payer, { proveDomain: false }) }) }
+}
+
+const settlementOf = (p: Paid, over: Record<string, unknown> = {}) => ({ network: ARC_MAINNET.caip2, authNonce: p.nonce, payer: p.from, outcome: 'credited', tool: 'risk_check', ...over })
+const railVerdict = (p: Paid, over: Record<string, unknown> = {}) => ({
+  tool: 'risk_check',
+  agentId: PAYEE,
+  decision: 'ALLOW',
+  risk: 'low',
+  reasons: ['ok'],
+  signals: { reputationScore: 545 },
+  settlement: settlementOf(p),
+  ...over,
+})
+
+for (const [label, answer, code] of [
+  ['an empty object', () => ({ body: {} }), 'DECISION_UNKNOWN'],
+  ['an empty body', () => ({ body: '' }), 'DECISION_UNKNOWN'],
+  ["a proxy's 200 HTML page", () => ({ body: '<html>hello</html>' }), 'DECISION_UNKNOWN'],
+  ['a decision of MAYBE', (p: Paid) => ({ body: railVerdict(p, { decision: 'MAYBE' }) }), 'DECISION_UNKNOWN'],
+  ['another tool', (p: Paid) => ({ body: railVerdict(p, { tool: 'verify_agent' }) }), 'TOOL_MISMATCH'],
+  ['a verdict about another agent', (p: Paid) => ({ body: railVerdict(p, { agentId: ATTACKER }) }), 'CONTEXT_MISMATCH'],
+  ['a null reputation', (p: Paid) => ({ body: railVerdict(p, { signals: { reputationScore: null } }) }), 'REPUTATION_NOT_FINITE'],
+  ['no signals', (p: Paid) => ({ body: railVerdict(p, { signals: undefined }) }), 'REPUTATION_NOT_FINITE'],
+  ['a reputation above the scale', (p: Paid) => ({ body: railVerdict(p, { signals: { reputationScore: 1001 } }) }), 'REPUTATION_NOT_FINITE'],
+  ['an ALLOW at reputation 499', (p: Paid) => ({ body: railVerdict(p, { signals: { reputationScore: 499 } }) }), 'SIGNALS_INCONSISTENT'],
+  ['no settlement record', (p: Paid) => ({ body: railVerdict(p, { settlement: undefined }) }), 'SETTLEMENT_MISMATCH'],
+  ["another check's nonce", (p: Paid) => ({ body: railVerdict(p, { settlement: settlementOf(p, { authNonce: `0x${'01'.repeat(32)}` }) }) }), 'SETTLEMENT_MISMATCH'],
+  ['another payer', (p: Paid) => ({ body: railVerdict(p, { settlement: settlementOf(p, { payer: ATTACKER }) }) }), 'SETTLEMENT_MISMATCH'],
+  ['another network', (p: Paid) => ({ body: railVerdict(p, { settlement: settlementOf(p, { network: 'eip155:1' }) }) }), 'SETTLEMENT_MISMATCH'],
+  ['an unconfirmed settlement', (p: Paid) => ({ body: railVerdict(p, { settlement: settlementOf(p, { outcome: 'unconfirmed' }) }) }), 'SETTLEMENT_MISMATCH'],
+  ['a settlement for another tool', (p: Paid) => ({ body: railVerdict(p, { settlement: settlementOf(p, { tool: 'verify_agent' }) }) }), 'SETTLEMENT_MISMATCH'],
+] as [string, OracleAnswer, string][]) {
+  test(`guard() on the arc rail throws on ${label}, so the next line never signs`, async () => {
+    const { oracle } = arcOracle(answer)
+    const e = await refused(oracle.guard(PAYEE), UnusableVerdictError)
+    assert.equal(e.code, code)
+  })
+}
+
+test('guard() on the arc rail returns a shown ALLOW, and a shown WARN unless denyOn names it', async () => {
+  const allowed = arcOracle((p) => ({ body: railVerdict(p) }))
+  assert.equal((await allowed.oracle.guard(PAYEE)).decision, 'ALLOW')
+  const warned = arcOracle((p) => ({ body: railVerdict(p, { decision: 'WARN', signals: { reputationScore: 470 } }) }))
+  assert.equal((await warned.oracle.guard(PAYEE)).decision, 'WARN')
+  await refused(warned.oracle.guard(PAYEE, { denyOn: ['DENY', 'WARN'] }), TrustDenyError)
+})
+
+test('a settlement and an agent that differ only in hex case are the same', async () => {
+  const { oracle } = arcOracle((p) => ({ body: railVerdict(p, { agentId: PAYEE.toUpperCase().replace('0X', '0x'), settlement: settlementOf(p, { authNonce: p.nonce.toUpperCase().replace('0X', '0x') }) }) }))
+  assert.equal((await oracle.guard(PAYEE)).decision, 'ALLOW')
+})
+
+test('a DENY on the arc rail throws whatever denyOn says and whatever else the answer holds', async () => {
+  const { oracle } = arcOracle(() => ({ body: { decision: 'DENY', agentId: PAYEE, reasons: ['off-platform'] } }))
+  await refused(oracle.guard(PAYEE, { denyOn: ['WARN'] }), TrustDenyError)
+})
+
+test('a 200 with no payment behind it is not a verdict that was paid for', async () => {
+  const f = (async () => new Response(JSON.stringify({ tool: 'risk_check', agentId: PAYEE, decision: 'ALLOW', signals: { reputationScore: 545 } }))) as FetchLike
+  const e = await refused(new TrustGuard({ rail: 'arc', baseUrl: BASE, fetch: f }).guard(PAYEE), UnusableVerdictError)
+  assert.equal(e.code, 'SETTLEMENT_MISMATCH')
+})
+
+test('a payer that sends something else than a PAYMENT-SIGNATURE leaves nothing to compare the settlement with', async () => {
+  let hit = 0
+  const f = (async () => {
+    hit += 1
+    if (hit === 1) return new Response(JSON.stringify({ accepts: [OFFER] }), { status: 402 })
+    return new Response(JSON.stringify({ tool: 'risk_check', agentId: PAYEE, decision: 'ALLOW', signals: { reputationScore: 545 }, settlement: { authNonce: 'x' } }))
+  }) as FetchLike
+  const oracle = new TrustGuard({ rail: 'arc', baseUrl: BASE, fetch: f, onPaymentRequired: async () => ({ 'X-OTHER': 'y' }) })
+  assert.equal((await refused(oracle.guard(PAYEE), UnusableVerdictError)).code, 'SETTLEMENT_MISMATCH')
+})
+
+// ── 18. what a verdict is about ───────────────────────────────────────────────────
+
+test('an ALLOW below the reputation ALLOW needs is never paid on', async () => {
+  const { signer, opts } = setup({ paid: (p) => allow(p, { verdict: verdictView('ALLOW', { reputationScore: 60 }) }) })
+  const e = await refused(verifyThenPay(opts), UnusableVerdictError)
+  assert.equal(e.code, 'SIGNALS_INCONSISTENT')
+  assert.equal(signer.sent.length, 0)
+})
+
+test('an ALLOW at exactly the reputation it needs is paid on', async () => {
+  const { signer, opts } = setup({ paid: (p) => allow(p, { verdict: verdictView('ALLOW', { reputationScore: 500 }) }) })
+  assert.equal((await verifyThenPay(opts)).outcome, 'executed')
+  assert.equal(signer.sent.length, 1)
+})
+
+test('a WARN below 500 is not inconsistent: it is what a WARN is', async () => {
+  const { opts } = setup({ paid: (p) => warn(p, { verdict: verdictView('WARN', { reputationScore: 470 }) }) })
+  assert.equal((await verifyThenPay(opts)).outcome, 'awaiting_human')
+})
+
+for (const [label, over] of [
+  ['another agent', { agentId: ATTACKER }],
+  ['no agent', { agentId: null }],
+  ['no context', { txContext: null }],
+  ['another payee in its context', { txContext: { payee: ATTACKER, amountUsd: 0.25 } }],
+  ['another amount in its context', { txContext: { payee: PAYEE, amountUsd: 0.26 } }],
+] as const) {
+  test(`an ALLOW naming ${label} is CONTEXT_MISMATCH and never paid on`, async () => {
+    const { signer, opts } = setup({ paid: (p) => allow(p, { verdict: verdictView('ALLOW', over) }) })
+    assert.equal((await refused(verifyThenPay(opts), UnusableVerdictError)).code, 'CONTEXT_MISMATCH')
+    assert.equal(signer.sent.length, 0)
+  })
+  test(`a WARN naming ${label} is CONTEXT_MISMATCH and hands nothing to the owner`, async () => {
+    const { opts } = setup({ paid: (p) => warn(p, { verdict: verdictView('WARN', over) }) })
+    assert.equal((await refused(verifyThenPay(opts), UnusableVerdictError)).code, 'CONTEXT_MISMATCH')
+  })
+}
+
+test('the returned verdict names the agent the server named, not the caller stamping its own', async () => {
+  const { opts } = setup({ paid: (p) => allow(p, { verdict: verdictView('ALLOW', { agentId: PAYEE.toUpperCase().replace('0X', '0x') }) }) })
+  const out = await verifyThenPay(opts)
+  assert.equal(out.verdict.agentId, PAYEE.toUpperCase().replace('0X', '0x'))
+})
+
+test('a DENY about another agent is reported as about that agent, and pays nobody', async () => {
+  const { signer, opts } = setup({ paid: (p) => deny(p, { verdict: verdictView('DENY', { agentId: ATTACKER }) }) })
+  const e = await refused(verifyThenPay(opts), TrustDenyError)
+  assert.equal(e.verdict.agentId, ATTACKER)
+  assert.equal(signer.sent.length, 0)
+})
+
+for (const [label, baseUrl] of [
+  ['plain http', 'http://api.example'],
+  ['http to a name that only starts with localhost', 'http://localhost.example'],
+  ['http with localhost as its credentials', 'http://localhost:1@api.example'],
+  ['https with credentials', 'https://u:p@api.example'],
+  ['no URL at all', 'api.example'],
+] as const) {
+  test(`a baseUrl of ${label} refuses before anything is read`, async () => {
+    const { api, chain, opts } = setup()
+    await assert.rejects(verifyThenPay({ ...opts, baseUrl }), TypeError)
+    assert.equal(api.calls.length, 0)
+    assert.equal(chain.log.length, 0)
+    await assert.rejects(recordFlowReceipt({ flowId: `0x${'ab'.repeat(32)}`, txHash: TX_HASH, baseUrl, fetch: api }), TypeError)
+    assert.equal(api.calls.length, 0)
+    assert.throws(() => new TrustGuard({ rail: 'arc', baseUrl, fetch: api }), TypeError)
+  })
+}
+
+for (const baseUrl of ['http://localhost:8787', 'http://127.0.0.1:8787/', 'http://[::1]:8787', 'https://api.example/']) {
+  test(`a baseUrl of ${baseUrl} is accepted`, async () => {
+    const answer = (async () => new Response(JSON.stringify({ verified: true, outcome: 'executed' }))) as FetchLike
+    const out = await recordFlowReceipt({ flowId: `0x${'ab'.repeat(32)}`, txHash: TX_HASH, baseUrl, fetch: answer })
+    assert.equal(out.recorded, true)
+    assert.ok(out.url.startsWith(baseUrl.replace(/\/$/, '')))
+  })
+}
+
+// ── 19. receipts with one field wrong ─────────────────────────────────────────────
+
+function logsWith(o: { paidAt?: Address; paidTo?: Address; paidAmount?: bigint; byOwner?: boolean; movedAt?: Address; movedFrom?: Address; movedTo?: Address; movedValue?: bigint } = {}) {
+  const paidTopics = encodeTopics({ abi: VAULT_ABI, eventName: 'Paid', args: { to: o.paidTo ?? PAYEE, dayIndex: 20_000n } })
+  const movedTopics = encodeEventTopics({ abi: [TRANSFER_EVENT], eventName: 'Transfer', args: { from: o.movedFrom ?? VAULT, to: o.movedTo ?? PAYEE } }) as Hex[]
+  return [
+    { address: o.movedAt ?? USDC, topics: movedTopics, data: encodeAbiParameters([{ type: 'uint256' }], [o.movedValue ?? AMOUNT]) },
+    { address: o.paidAt ?? VAULT, topics: paidTopics, data: encodeAbiParameters([{ type: 'uint256' }, { type: 'bool' }], [o.paidAmount ?? AMOUNT, o.byOwner ?? false]) },
+  ]
+}
+
+test('the receipt built for the one-field cases proves the payment when no field is wrong', async () => {
+  const { opts } = setup({}, {}, { receipt: (h) => receiptFor(h, { logs: logsWith() }) })
+  assert.equal((await verifyThenPay(opts)).outcome, 'executed')
+})
+
+for (const [label, over] of [
+  ['a Paid event from another contract', { paidAt: ATTACKER }],
+  ['a Paid event to another payee', { paidTo: ATTACKER }],
+  ['a Paid event for another amount', { paidAmount: AMOUNT + 1n }],
+  ['a Paid event by the owner', { byOwner: true }],
+  ['a USDC-valued Transfer from a contract that is not USDC', { movedAt: ATTACKER }],
+  ['a Transfer from someone other than the vault', { movedFrom: ATTACKER }],
+  ['a Transfer to someone other than the payee', { movedTo: ATTACKER }],
+  ['a Transfer of another amount', { movedValue: AMOUNT - 1n }],
+] as const) {
+  test(`a success with ${label} is LOGS_MISMATCH, and is not recorded as paid`, async () => {
+    const { api, opts } = setup({}, {}, { receipt: (h) => receiptFor(h, { logs: logsWith(over) }) })
+    const e = await refused(verifyThenPay(opts), VaultPaymentError)
+    assert.equal(e.code, 'LOGS_MISMATCH')
+    assert.equal(e.txHash, TX_HASH)
+    assert.equal(api.receipts(), 0)
+  })
+}
+
+// ── 20. a signing scheme that signs something else ────────────────────────────────
+
+const signedBy = (auth: Record<string, unknown>) => ({ createPaymentPayload: async () => ({ x402Version: 2, payload: { signature: `0x${'ab'.repeat(65)}`, authorization: { from: OPERATOR, to: PAY_TO, value: '5000', validAfter: '0', validBefore: '9', nonce: `0x${'cd'.repeat(32)}`, ...auth } } }) })
+
+test('a scheme that signs what the offer says is sent', async () => {
+  const { api, opts } = setup({ paid: deny })
+  await refused(verifyThenPay({ ...opts, gatewayScheme: () => signedBy({}) }), TrustDenyError)
+  assert.equal(api.vtp(), 2)
+})
+
+for (const [label, auth] of [
+  ['a nonce that is not 32 bytes', { nonce: '0x12' }],
+  ['no nonce', { nonce: undefined }],
+  ['another payer', { from: ATTACKER }],
+  ['another recipient', { to: ATTACKER }],
+  ['another amount', { value: '5001' }],
+] as const) {
+  test(`a signed authorization with ${label} is never sent`, async () => {
+    const { api, opts } = setup()
+    const e = await refused(verifyThenPay({ ...opts, gatewayScheme: () => signedBy(auth) }), GatewayCheckError)
+    assert.equal(e.code, 'SIGNING_FAILED')
+    assert.equal(e.paid, false)
+    assert.equal(api.vtp(), 1, 'only the free call')
+  })
+}
+
+test('a scheme that returns no authorization at all is SIGNING_FAILED, not a crash', async () => {
+  const { api, opts } = setup()
+  const e = await refused(verifyThenPay({ ...opts, gatewayScheme: () => ({ createPaymentPayload: async () => ({}) }) }), GatewayCheckError)
+  assert.equal(e.code, 'SIGNING_FAILED')
+  assert.equal(api.vtp(), 1)
+})
+
+// ── 21. the rest of what the suite did not pin ────────────────────────────────────
+
+test('the gas is checked again at the fee the payment will really use', async () => {
+  // Enough for the 41 gwei the free preflight prices, not for the 100 gwei the server prepared.
+  const operatorGas = 120_000n * 50n * GWEI
+  const { signer, opts } = setup({ paid: (p) => allow(p, { prepared: preparedCall({ fees: { maxFeePerGas: (100n * GWEI).toString() } }) }) }, { operatorGas })
+  const e = await refused(verifyThenPay(opts), VaultPolicyError)
+  assert.equal(e.code, 'InsufficientGas')
+  assert.equal(e.stage, 'simulation')
+  assert.equal(signer.signed.length, 1)
+  assert.equal(signer.sent.length, 0)
+})
+
+for (const [label, fee, want] of [
+  ['the fee the server prepared', 41n * GWEI, 41n * GWEI],
+  ['the floor when the server prepared less', GWEI, 20n * GWEI],
+] as const) {
+  test(`the owner's hand-off carries ${label}`, async () => {
+    const { opts } = setup({ paid: (p) => warn(p, { ownerHandoff: { auditOutcome: 'awaiting_human', owner: OWNER, ownerPay: ownerPayCall({ fees: { maxFeePerGas: fee.toString(), gas: '120000' } }) } }) })
+    const out = await verifyThenPay(opts)
+    assert.equal(out.outcome, 'awaiting_human')
+    if (out.outcome !== 'awaiting_human') return
+    assert.equal(out.ownerPay.maxFeePerGas, want.toString())
+    assert.equal(out.ownerPay.gas, '120000')
+  })
+}
+
+test('a hand-off whose fee is not a number is not handed on', async () => {
+  const { opts } = setup({ paid: (p) => warn(p, { ownerHandoff: { auditOutcome: 'awaiting_human', owner: OWNER, ownerPay: ownerPayCall({ fees: { maxFeePerGas: 'lots' } }) } }) })
+  assert.equal((await refused(verifyThenPay(opts), VaultPaymentError)).code, 'PREPARED_MISMATCH')
+})
+
+for (const [label, value] of [
+  ['the string "true"', 'true'],
+  ['the string "false"', 'false'],
+  ['the number 1', 1],
+] as const) {
+  test(`a payOnWarn of ${label} is not the opt-in`, async () => {
+    const { api, signer, opts } = setup({ paid: warn })
+    const out = await verifyThenPay({ ...opts, payOnWarn: value as unknown as boolean })
+    assert.equal(out.outcome, 'awaiting_human')
+    assert.equal(signer.sent.length, 0)
+    assert.equal((api.calls[0].body as { payOnWarn: unknown }).payOnWarn, false)
+  })
+}
