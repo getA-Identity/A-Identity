@@ -29,13 +29,28 @@
  * prepared. Whatever does not match leaves the row exactly as it was, and one transaction
  * links to one flow at most.
  *
- * A limit, stated rather than implied: the route takes no session, so the first flow a valid
- * receipt is posted for keeps it. Someone who paid for their own check on the same vault,
- * payee and amount could post a payment before its owner does and leave the owner's flow
- * unlinked (TX_LINKED_ELSEWHERE). It costs them a check per attempt and moves no money; the
- * season report counts only flows opened by our own payers' checks, so it cannot take
- * Milestone 1 credit either. Binding a flow to the key that will pay would close it, and the
- * optional separate check payer is why this version does not.
+ * Which flow a payment answers is decided here, never taken from the caller. The route takes
+ * no session and no payment, and flow ids are public (every check's nonce is listed on
+ * GET /api/x402/gateway/proof), so the flowId in the path is the caller's word and nothing
+ * more. A vault payment names no check: two flows on the same vault, payee and amount are paid
+ * by byte-identical calls. So a payment answers the latest check before it: of the open flows
+ * on its vault, payee and amount that could take it, the one whose verdict block is the
+ * highest below the payment's block (a tie goes to the later record, then the higher id).
+ * Posted to any other flow it is refused (TX_ANSWERS_LATER_CHECK) with the flow it answers
+ * named, and nothing changes. Whoever posts, in whatever order, a payment cannot be moved onto
+ * an earlier check than the one it followed, and a flow whose own payment came first cannot be
+ * left behind by a later payment posted to it.
+ *
+ * What the rule cannot do, stated rather than implied. While two checks on the same vault,
+ * payee and amount are open at once, which of two identical payments answered which check is
+ * not on chain, so the rule decides it; each payment still came after the check it is linked
+ * to, and none counts twice. And a check bought on the same vault, payee and amount after a
+ * flow's verdict but before its payment is mined is the later check, so the payment answers
+ * it: whoever wants that has to buy a check and land it inside the second or two between a
+ * verdict and its payment. The Milestone 1 run keeps both from arising: each flow pays an
+ * amount no other flow uses (one base unit apart), pays as soon as its verdict is back, and
+ * posts its receipt as soon as the payment is mined. Binding a payment to its check needs the
+ * check inside the payment (a Memo wrapper), which this version does not send.
  */
 import { parseEventLogs, type Transaction, type TransactionReceipt } from 'viem'
 import { blockFromEveryRpc, receiptFromEveryRpc, rpcSourceLabel, transactionFromEveryRpc, txUrl, type ChainDescriptor } from '../chains/index.js'
@@ -118,6 +133,40 @@ export function judgeReceipt(chain: ChainDescriptor, flow: VtpFlowRecord, receip
   return { ok: false, code: 'NOT_THIS_FLOWS_CALL', reason: "the reverted transaction is not this flow's prepared call from the key it was prepared for" }
 }
 
+/** Whether a flow could take this payment at all: open, of the kind the payment is, pinned to a
+ *  verdict block below the payment's, and for a revert sent by the key it was prepared for. */
+function couldTake(f: VtpFlowRecord, paymentBlock: bigint, by: { byOwner: boolean; from: string | null }): boolean {
+  if (!OPEN.includes(f.outcome)) return false
+  // An operator payment never closes an owner hand-off.
+  if (!by.byOwner && f.outcome !== 'pending') return false
+  if (by.from !== null && lc(by.from) !== lc(by.byOwner ? f.owner : f.operator)) return false
+  const vb = f.check.verdictBlock
+  return typeof vb === 'string' && /^[0-9]+$/.test(vb) && BigInt(vb) < paymentBlock
+}
+
+/** a's check came after b's: by verdict block, then by record time, then by id. */
+function laterCheck(a: VtpFlowRecord, b: VtpFlowRecord): boolean {
+  const va = BigInt(a.check.verdictBlock as string)
+  const vb = BigInt(b.check.verdictBlock as string)
+  if (va !== vb) return va > vb
+  if (a.createdAt !== b.createdAt) return a.createdAt > b.createdAt
+  return a.flowId > b.flowId
+}
+
+/**
+ * The flow a payment answers: of the candidates that could take it, the one whose check came
+ * last before the payment's block. `from` is the sender of a reverted call (a revert is matched
+ * by who sent it) and null for a payment the vault's own Paid event names. Pure.
+ */
+export function answeredFlow(candidates: VtpFlowRecord[], paymentBlock: bigint, by: { byOwner: boolean; from: string | null }): VtpFlowRecord | null {
+  let best: VtpFlowRecord | null = null
+  for (const f of candidates) {
+    if (!couldTake(f, paymentBlock, by)) continue
+    if (!best || laterCheck(f, best)) best = f
+  }
+  return best
+}
+
 export type VtpReceiptResult = {
   tool: 'verify_then_pay_receipt'
   flowId: string | null
@@ -132,6 +181,8 @@ export type VtpReceiptResult = {
   record: { url: string } | null
   /** Post the same hash again later: nothing was decided yet. */
   retry?: boolean
+  /** On TX_ANSWERS_LATER_CHECK: the flow this payment answers. */
+  answersFlow?: string
   next: string
 }
 
@@ -211,6 +262,27 @@ export async function recordVtpReceipt(flowIdRaw: unknown, txHashRaw: unknown, d
   }
   const j = judgeReceipt(chain, flow, receipt, tx)
   if (!j.ok) return reply(422, flowId, { outcome: flow.outcome, detail: flow.detail, code: j.code, reason: j.reason, next: 'The receipt does not prove this flow, so nothing changed.' }, origin)
+
+  // Which open flow this payment answers is the server's call, not the path's.
+  const open = await store.openFlows({ vault: flow.vault, payee: flow.payee, amount: flow.amount })
+  if (!open.ok) return reply(503, flowId, { outcome: flow.outcome, detail: flow.detail, code: 'FLOW_STORE_UNREADABLE', reason: open.reason, retry: true, next: 'The flow log could not be read; nothing changed. Post the same hash again shortly.' }, origin)
+  const pool = open.rows.some((r) => r.flowId === flow.flowId) ? open.rows : [...open.rows, flow]
+  const answers = answeredFlow(pool, receipt.blockNumber, { byOwner: j.byOwner, from: j.outcome === 'blocked' && tx ? tx.from : null })
+  if (answers && answers.flowId !== flowId) {
+    return reply(
+      409,
+      flowId,
+      {
+        outcome: flow.outcome,
+        detail: flow.detail,
+        code: 'TX_ANSWERS_LATER_CHECK',
+        answersFlow: answers.flowId,
+        reason: `flow ${answers.flowId} checked the same vault, payee and amount, and its verdict came back in block ${answers.check.verdictBlock}, after this flow's (block ${flow.check.verdictBlock}) and before the payment (block ${receipt.blockNumber}); a payment answers the latest check before it`,
+        next: `Nothing changed. POST the same hash to ${flowUrl(answers.flowId, origin)}/receipt.`,
+      },
+      origin,
+    )
+  }
 
   // When the chain says it happened: the block the receipt names, and no other block at that height.
   const blockHash = typeof receipt.blockHash === 'string' && HASH.test(receipt.blockHash) ? receipt.blockHash : undefined

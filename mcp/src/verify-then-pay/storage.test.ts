@@ -3,7 +3,7 @@ import assert from 'node:assert/strict'
 import { mkdtempSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { findVtpFlowByTx, loadVtpFlow, loadVtpFlowsResult, persistVtpFlow, updateVtpFlow, type VtpFlowRecord, type VtpStoreIo } from '../storage.js'
+import { findVtpFlowByTx, loadOpenVtpFlows, loadVtpFlow, loadVtpFlowsResult, persistVtpFlow, updateVtpFlow, type VtpFlowRecord, type VtpStoreIo } from '../storage.js'
 
 /**
  * The vtp_flows log, against its two backends: the file fallback for real, and Postgres
@@ -158,4 +158,40 @@ test('only a pending or awaiting_human flow moves, and one payment transaction l
   assert.deepEqual(missing, { ok: true, updated: false, row: null })
   const other = await loadVtpFlow(OTHER, io)
   assert.equal(other.ok && other.row?.outcome, 'awaiting_human')
+})
+
+test('the open flows on one vault, payee and amount are found, and nothing else; an unreadable log is an error', async () => {
+  const io = fileIo()
+  const VAULT = '0x' + 'a1'.repeat(20)
+  const PAYEE = '0x' + 'd4'.repeat(20)
+  const id = (n: number) => '0x' + n.toString(16).padStart(64, '0')
+  for (const r of [
+    flow({ flowId: id(1) }),
+    flow({ flowId: id(2), outcome: 'awaiting_human', detail: 'warn_handoff' }),
+    flow({ flowId: id(3), outcome: 'executed', detail: 'agent_paid', payment: payment() }),
+    flow({ flowId: id(4), outcome: 'blocked', detail: 'deny' }),
+    flow({ flowId: id(5), amount: '250001' }),
+    flow({ flowId: id(6), payee: '0x' + 'd5'.repeat(20) }),
+    flow({ flowId: id(7), vault: '0x' + 'a2'.repeat(20) }),
+  ]) {
+    await persistVtpFlow(r, io)
+  }
+  const got = await loadOpenVtpFlows({ vault: '0x' + 'A1'.repeat(20), payee: PAYEE, amount: '250000' }, io)
+  assert.deepEqual(got.ok && got.rows.map((r) => r.flowId), [id(1), id(2)])
+
+  // Postgres filters in the database, on the open outcomes only.
+  const sql: { text: string; params?: unknown[] }[] = []
+  const pool = {
+    query: async (text: string, params?: unknown[]) => {
+      sql.push({ text, params })
+      return { rows: [] }
+    },
+  }
+  assert.deepEqual(await loadOpenVtpFlows({ vault: VAULT, payee: PAYEE, amount: '250000' }, { getPool: async () => pool }), { ok: true, rows: [] })
+  const q = sql.find((x) => x.text.startsWith('SELECT'))!
+  assert.match(q.text, /data->>'vault' = \$1 AND data->>'payee' = \$2 AND data->>'amount' = \$3 AND data->>'outcome' = ANY\(\$4::text\[\]\)/)
+  assert.deepEqual(q.params, [VAULT, PAYEE, '250000', ['pending', 'awaiting_human']])
+
+  writeFileSync(io.file!, '{ not json')
+  assert.equal((await loadOpenVtpFlows({ vault: VAULT, payee: PAYEE, amount: '250000' }, io)).ok, false)
 })

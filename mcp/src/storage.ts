@@ -982,6 +982,9 @@ export type VtpFlowUpdate =
   | { ok: true; updated: false; row: VtpFlowRecord | null }
   | { ok: false; reason: string; conflict?: 'tx_linked' }
 export type VtpFlowByTx = { ok: true; flowId: string | null } | { ok: false; reason: string }
+/** One vault, payee and amount: the calls that pay them are byte-identical, whichever check
+ *  they followed. Addresses lowercase, the amount in base units as a decimal string. */
+export type VtpFlowMatch = { vault: string; payee: string; amount: string }
 
 const vtpReady = new WeakSet<object>()
 
@@ -1073,6 +1076,36 @@ export async function findVtpFlowByTx(txHash: string, io: VtpStoreIo = {}): Prom
   const read = readVtpFile(io.file ?? VTP_FLOWS_FILE)
   if (!read.ok) return read
   return { ok: true, flowId: read.rows.find((r) => r.payment?.txHash === hash)?.flowId ?? null }
+}
+
+const OPEN_OUTCOMES: VtpFlowOutcome[] = ['pending', 'awaiting_human']
+
+/**
+ * The flows on one vault, payee and amount that are still open (pending, or waiting for the
+ * owner), oldest first: every check a payment on that vault, payee and amount could answer.
+ * The receipt route reads these to decide which one a payment answers, so a log it cannot
+ * read is an error and never an empty list. Never throws.
+ */
+export async function loadOpenVtpFlows(match: VtpFlowMatch, io: VtpStoreIo = {}): Promise<VtpFlowsRead> {
+  const want = { vault: match.vault.toLowerCase(), payee: match.payee.toLowerCase(), amount: match.amount }
+  try {
+    const p = await vtpPool(io)
+    if (p) {
+      const r = await p.query(
+        "SELECT data FROM vtp_flows WHERE data->>'vault' = $1 AND data->>'payee' = $2 AND data->>'amount' = $3 AND data->>'outcome' = ANY($4::text[]) ORDER BY data->>'createdAt' ASC, flow_id ASC",
+        [want.vault, want.payee, want.amount, OPEN_OUTCOMES],
+      )
+      return { ok: true, rows: r.rows.map((row: { data: VtpFlowRecord }) => row.data) }
+    }
+  } catch (e) {
+    return { ok: false, reason: reasonOf(e) }
+  }
+  const read = readVtpFile(io.file ?? VTP_FLOWS_FILE)
+  if (!read.ok) return read
+  return {
+    ok: true,
+    rows: read.rows.filter((r) => r.vault === want.vault && r.payee === want.payee && r.amount === want.amount && OPEN_OUTCOMES.includes(r.outcome)),
+  }
 }
 
 /**

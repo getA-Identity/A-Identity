@@ -199,11 +199,15 @@ const server = http.createServer(async (req, res) => {
   // either. POST /api/x402/gateway/verify-then-pay is payment-gated like the tools: its
   // free part only reads Arc Mainnet and answers a refusal or the 402, and its paid part is
   // the same Gateway authorization settled through the same rail. POST
-  // /api/x402/gateway/flows/:flowId/receipt takes no payment and no session, because what
-  // it writes is not the caller's word: it moves a flow only after the server read the
-  // receipt from every RPC itself and the receipt proved the payment that flow prepared, a
-  // transaction can prove one flow at most, and a flow that ended stays ended. All three
-  // verify-then-pay routes are rate-budgeted (vtp, vtp-flow-read, vtp-receipt).
+  // /api/x402/gateway/flows/:flowId/receipt takes no payment and no session. The caller hands
+  // it two things, a flow id and a transaction hash, and neither is taken on its word: flow
+  // ids are public, so the server decides by itself which open flow a payment answers (the
+  // latest check on the same vault, payee and amount before the payment's block) and refuses
+  // the receipt on any other, and it moves that flow only after it read the receipt from every
+  // RPC itself and the receipt proved the payment the flow prepared, mined after the block its
+  // verdict came back in. A transaction proves one flow at most, and a flow that ended stays
+  // ended. All three verify-then-pay routes are rate-budgeted (vtp, vtp-flow-read,
+  // vtp-receipt).
   // /api/x402/stellar/* is exempt on similar but not identical terms, and the difference is
   // worth stating rather than glossing. On the soroban-auth scheme the credential is a signed
   // authorization entry, exactly like the EVM rails. On the `settled` scheme the credential is

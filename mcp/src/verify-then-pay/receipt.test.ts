@@ -4,7 +4,7 @@ import { mkdtempSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { encodeAbiParameters, encodeEventTopics, type Hex } from 'viem'
-import { recordVtpReceipt } from './receipt.js'
+import { answeredFlow, recordVtpReceipt } from './receipt.js'
 import { storageVtpStore, type VtpStore } from './context.js'
 import { gasCostUsdc, ownerPayCalldata, payCalldata } from './prepare.js'
 import { AgentSpendPolicyAbi } from '../contracts/AgentSpendPolicy.js'
@@ -96,9 +96,9 @@ function transferLog(o: { address?: string; from?: string; to?: string; value?: 
 /** Arc's native-balance Transfer of the same payment, 18 decimals, from the system address. */
 const nativeLog = (i = 0) => transferLog({ address: NATIVE_SYSTEM, value: AMOUNT * 10n ** 12n }, i)
 
-function rawReceipt(o: { status?: '0x1' | '0x0'; block?: number; logs?: unknown[]; from?: string } = {}) {
+function rawReceipt(o: { status?: '0x1' | '0x0'; block?: number; logs?: unknown[]; from?: string; hash?: string } = {}) {
   return {
-    transactionHash: HASH,
+    transactionHash: o.hash ?? HASH,
     blockHash: BLOCK_HASH,
     blockNumber: hex(o.block ?? 101),
     from: o.from ?? OPERATOR,
@@ -115,9 +115,9 @@ function rawReceipt(o: { status?: '0x1' | '0x0'; block?: number; logs?: unknown[
   }
 }
 
-function rawTx(o: { from?: string; to?: string; input?: string } = {}) {
+function rawTx(o: { from?: string; to?: string; input?: string; hash?: string } = {}) {
   return {
-    hash: HASH,
+    hash: o.hash ?? HASH,
     blockHash: '0x' + 'bb'.repeat(32),
     blockNumber: hex(101),
     from: o.from ?? OPERATOR,
@@ -374,4 +374,109 @@ test('a malformed flow id or hash is a 400 and an unknown flow a 404, before any
   const unknown = await recordVtpReceipt('0x' + 'ee'.repeat(32), HASH, deps(store, r.call))
   assert.equal(unknown.httpStatus, 404)
   assert.deepEqual(r.asked, [])
+})
+
+// ── which flow a payment answers ──────────────────────────────────────────────────
+
+const HASH_B = '0x' + 'c2'.repeat(32)
+const FLOW_B = '0x' + 'cd'.repeat(32)
+
+/** Flow B: the same vault, payee and amount as flow A, checked later (verdict in block 200). */
+function flowB(over: Partial<VtpFlowRecord> = {}): VtpFlowRecord {
+  return flow({ flowId: FLOW_B, createdAt: '2026-11-01T10:10:00.000Z', updatedAt: '2026-11-01T10:10:00.000Z', check: { ...flow().check, authNonce: FLOW_B, checkedAtBlock: '190', verdictBlock: '200' }, ...over })
+}
+
+/** A chain that answers by transaction hash, and has every block asked for. */
+function chainOf(receipts: Record<string, unknown>, txs: Record<string, unknown> = {}): RpcCall {
+  return async (_url, method, params) => {
+    const key = String(params[0]).toLowerCase()
+    if (method === 'eth_getTransactionReceipt') return receipts[key] ?? null
+    if (method === 'eth_getTransactionByHash') return txs[key] ?? null
+    if (method === 'eth_getBlockByNumber') return rawBlock(BigInt(params[0] as string))
+    return null
+  }
+}
+
+const rowOf = async (store: VtpStore, id: string) => ((await store.load(id)) as { ok: true; row: VtpFlowRecord }).row
+
+test("flow B's payment posted to flow A changes nothing: a payment answers the latest open check before it, and each flow still gets its own", async () => {
+  // A's verdict came back in block 100 and A paid in block 150; B's verdict came back in block
+  // 200 and B paid in block 205. Both flow ids are public, and the route takes no session.
+  const a = flow()
+  const b = flowB()
+  const { store } = await storeWith([a, b])
+  const call = chainOf({ [HASH]: rawReceipt({ block: 150 }), [HASH_B]: rawReceipt({ hash: HASH_B, block: 205 }) })
+
+  const stolen = await recordVtpReceipt(FLOW, HASH_B, deps(store, call))
+  assert.deepEqual([stolen.httpStatus, stolen.body.code, stolen.body.answersFlow, stolen.body.verified], [409, 'TX_ANSWERS_LATER_CHECK', FLOW_B, false])
+  assert.match(stolen.body.reason ?? '', /block 200, after this flow's \(block 100\) and before the payment \(block 205\)/)
+  assert.ok(stolen.body.next.includes(`/api/x402/gateway/flows/${FLOW_B}/receipt`))
+  assert.deepEqual([await rowOf(store, FLOW), await rowOf(store, FLOW_B)], [a, b], 'neither row moved')
+
+  // A's payment came before B's check, so it can never be B's.
+  const early = await recordVtpReceipt(FLOW_B, HASH, deps(store, call))
+  assert.deepEqual([early.httpStatus, early.body.code], [422, 'TX_BEFORE_CHECK'])
+
+  // Each payment closes its own flow, in either order.
+  const own = await recordVtpReceipt(FLOW, HASH, deps(store, call))
+  assert.deepEqual([own.httpStatus, own.body.outcome, own.body.payment?.txHash], [200, 'executed', HASH])
+  const bOwn = await recordVtpReceipt(FLOW_B, HASH_B, deps(store, call))
+  assert.deepEqual([bOwn.httpStatus, bOwn.body.outcome, bOwn.body.payment?.txHash], [200, 'executed', HASH_B])
+
+  // The same in the other order: B first, then A, and A's payment still finds A.
+  const again = await storeWith([flow(), flowB()])
+  assert.equal((await recordVtpReceipt(FLOW_B, HASH_B, deps(again.store, call))).httpStatus, 200)
+  assert.equal((await recordVtpReceipt(FLOW, HASH, deps(again.store, call))).httpStatus, 200)
+})
+
+test('a revert answers the latest open check too, and an owner payment can answer a later hand-off where an operator payment cannot', async () => {
+  // A reverted pay() from the operator, mined after both verdicts, is B's refusal, not A's.
+  const reverts = await storeWith([flow(), flowB()])
+  const revert = chainOf({ [HASH_B]: rawReceipt({ hash: HASH_B, block: 205, status: '0x0', logs: [] }) }, { [HASH_B]: rawTx({ hash: HASH_B }) })
+  const toA = await recordVtpReceipt(FLOW, HASH_B, deps(reverts.store, revert))
+  assert.deepEqual([toA.httpStatus, toA.body.code, toA.body.answersFlow], [409, 'TX_ANSWERS_LATER_CHECK', FLOW_B])
+  const toB = await recordVtpReceipt(FLOW_B, HASH_B, deps(reverts.store, revert))
+  assert.deepEqual([toB.httpStatus, toB.body.outcome, toB.body.detail], [200, 'blocked', 'reverted_onchain'])
+
+  // B waits for its owner. An operator payment cannot close a hand-off, so it is A's.
+  const handoff = () => flowB({ outcome: 'awaiting_human', detail: 'warn_handoff', prepared: { from: OWNER, to: VAULT, data: ownerPayCalldata(PAYEE, AMOUNT), function: 'ownerPay(address,uint256)', args: [PAYEE, AMOUNT.toString()] } })
+  const operator = await storeWith([flow(), handoff()])
+  const byOperator = chainOf({ [HASH_B]: rawReceipt({ hash: HASH_B, block: 205 }) })
+  assert.deepEqual((await recordVtpReceipt(FLOW, HASH_B, deps(operator.store, byOperator))).body.outcome, 'executed')
+
+  // The owner's payment can close either, and B's check is the later one.
+  const owner = await storeWith([flow(), handoff()])
+  const byOwner = chainOf({ [HASH_B]: rawReceipt({ hash: HASH_B, block: 205, from: OWNER, logs: [transferLog(), paidLog({ byOwner: true })] }) })
+  const ownerToA = await recordVtpReceipt(FLOW, HASH_B, deps(owner.store, byOwner))
+  assert.deepEqual([ownerToA.httpStatus, ownerToA.body.answersFlow], [409, FLOW_B])
+  assert.deepEqual((await recordVtpReceipt(FLOW_B, HASH_B, deps(owner.store, byOwner))).body.detail, 'owner_paid')
+})
+
+test('a tie on the verdict block goes to the later check, whoever asks first, and another amount never competes', async () => {
+  const tied = flowB({ check: { ...flowB().check, checkedAtBlock: '90', verdictBlock: '100' } })
+  const { store } = await storeWith([flow(), tied])
+  const call = chainOf({ [HASH]: rawReceipt({ block: 101 }) })
+  const first = await recordVtpReceipt(FLOW, HASH, deps(store, call))
+  assert.deepEqual([first.httpStatus, first.body.answersFlow], [409, FLOW_B])
+  assert.equal((await recordVtpReceipt(FLOW_B, HASH, deps(store, call))).httpStatus, 200)
+
+  // One base unit apart is another flow entirely: B's later check does not take A's payment.
+  const apart = await storeWith([flow(), flowB({ amount: (AMOUNT + 1n).toString() })])
+  const paid = await recordVtpReceipt(FLOW, HASH, deps(apart.store, chainOf({ [HASH]: rawReceipt({ block: 205 }) })))
+  assert.deepEqual([paid.httpStatus, paid.body.outcome], [200, 'executed'])
+
+  // The rule itself, pure: nothing that could take the payment, no answer.
+  assert.equal(answeredFlow([flowB()], 150n, { byOwner: false, from: null }), null)
+  assert.equal(answeredFlow([flow(), flowB()], 205n, { byOwner: false, from: null })?.flowId, FLOW_B)
+  assert.equal(answeredFlow([flow(), flowB({ outcome: 'executed', detail: 'agent_paid' })], 205n, { byOwner: false, from: null })?.flowId, FLOW)
+  assert.equal(answeredFlow([flow(), flowB()], 205n, { byOwner: false, from: OWNER }), null, 'a revert from a key neither flow prepared for answers nothing')
+})
+
+test('the flow log not answering while the payment is matched is a retry, and nothing changes', async () => {
+  const seed = flow()
+  const { store } = await storeWith([seed])
+  const dark: VtpStore = { ...store, openFlows: async () => ({ ok: false, reason: 'postgres unreachable' }) }
+  const out = await recordVtpReceipt(FLOW, HASH, deps(dark, rpc({ [URLS[0]]: rawReceipt() }).call))
+  assert.deepEqual([out.httpStatus, out.body.code, out.body.retry], [503, 'FLOW_STORE_UNREADABLE', true])
+  assert.deepEqual(await rowOf(store, FLOW), seed)
 })

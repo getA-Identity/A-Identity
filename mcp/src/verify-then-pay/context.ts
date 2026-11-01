@@ -10,14 +10,17 @@ import { evmPublicClient, getChainById, type ChainDescriptor, type EveryRpcOptio
 import type { RailDeps } from '../x402-gateway/index.js'
 import {
   findVtpFlowByTx,
+  loadOpenVtpFlows,
   loadVtpFlow,
   persistVtpFlow,
   updateVtpFlow,
   type VtpFlowByTx,
   type VtpFlowInsert,
+  type VtpFlowMatch,
   type VtpFlowOutcome,
   type VtpFlowRead,
   type VtpFlowRecord,
+  type VtpFlowsRead,
   type VtpFlowUpdate,
   type VtpStoreIo,
 } from '../storage.js'
@@ -51,6 +54,8 @@ export type VtpStore = {
   insert(rec: VtpFlowRecord): Promise<VtpFlowInsert>
   update(flowId: string, patch: Partial<Pick<VtpFlowRecord, 'outcome' | 'detail' | 'payment' | 'updatedAt'>>, from: VtpFlowOutcome[]): Promise<VtpFlowUpdate>
   findByTx(txHash: string): Promise<VtpFlowByTx>
+  /** The open flows (pending or waiting for the owner) on one vault, payee and amount. */
+  openFlows(match: VtpFlowMatch): Promise<VtpFlowsRead>
 }
 
 /** The vtp_flows table (or its file fallback) behind the store interface. */
@@ -60,6 +65,7 @@ export function storageVtpStore(io: VtpStoreIo = {}): VtpStore {
     insert: (rec) => persistVtpFlow(rec, io),
     update: (id, patch, from) => updateVtpFlow(id, patch, from, io),
     findByTx: (hash) => findVtpFlowByTx(hash, io),
+    openFlows: (match) => loadOpenVtpFlows(match, io),
   }
 }
 

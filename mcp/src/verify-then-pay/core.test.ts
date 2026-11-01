@@ -256,6 +256,7 @@ function memStore(seed: VtpFlowRecord[] = [], over: Partial<VtpStore> = {}) {
     },
     update: async () => ({ ok: true, updated: false, row: null }),
     findByTx: async () => ({ ok: true, flowId: null }),
+    openFlows: async () => ({ ok: true, rows: [] }),
     ...over,
   }
   return { store, rows, inserted }
