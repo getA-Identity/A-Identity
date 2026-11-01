@@ -894,11 +894,16 @@ export async function updateGatewaySettlement(
 // whose Gateway row has aged out by the settlement this row recorded.
 
 /** Where a flow stands. The audit vocabulary (executed, blocked, awaiting_human, abandoned)
- *  plus pending: a verdict that allowed the payment and a receipt nobody has shown us yet. */
-export type VtpFlowOutcome = 'pending' | 'executed' | 'blocked' | 'awaiting_human' | 'abandoned'
+ *  plus three of its own: opening, a nonce reserved before its check is bought, which is
+ *  nothing yet to any reader; pending, a verdict that allowed the payment and a receipt nobody
+ *  has shown us yet; and failed, a prepared call that reverted for a reason other than the
+ *  vault's policy, which is neither a payment nor a refusal. */
+export type VtpFlowOutcome = 'opening' | 'pending' | 'executed' | 'blocked' | 'failed' | 'awaiting_human' | 'abandoned'
 
 /** Why it stands there. */
 export type VtpFlowDetail =
+  | 'opening' // the nonce is reserved and its check is being bought; no verdict yet
+  | 'rail_failed' // the rail gave no verdict and no paid failure, so no flow opened under this nonce
   | 'agent_will_pay' // ALLOW (or WARN with payOnWarn): pay() was prepared for the operator
   | 'agent_paid' // the vault's Paid(byOwner = false) and the USDC Transfer were read back
   | 'owner_paid' // the same, from ownerPay(): the owner settled it
@@ -906,8 +911,10 @@ export type VtpFlowDetail =
   | 'verdict_unusable' // the check was paid but its answer failed our checks; treated as DENY
   | 'verdict_unavailable' // the check was paid and the tool failed after settlement
   | 'verdict_block_unreadable' // the check was paid and answered, but the chain did not answer for its latest block after the verdict, so nothing was prepared
-  | 'reverted_onchain' // the prepared call was sent and the vault reverted it
+  | 'reverted_onchain' // the prepared call was sent and the vault's policy refused it: payment.revertReason names the typed error
+  | 'reverted_not_policy' // the prepared call was sent and reverted for another reason (out of gas, a sender's mistake): payment.revertReason says which
   | 'warn_handoff' // WARN without payOnWarn: ownerPay() was prepared for the owner
+  | 'warn_no_human_gate' // WARN, and the vault's owner and operator are one key: there is no human to hand it to, so nothing was prepared
   | 'expired' // reserved: a pending flow nobody completed
 
 export type VtpDecision = 'ALLOW' | 'WARN' | 'DENY'
@@ -935,7 +942,8 @@ export type VtpFlowRecord = {
   check: {
     authNonce: string
     transferId: string | null
-    gatewayOutcome: 'credited' | 'completed'
+    /** none only on a row that was never settled here: opening, or abandoned on a rail failure. */
+    gatewayOutcome: 'credited' | 'completed' | 'none'
     payer: string
     /** The price, in the settlement token's base units. */
     value: string
@@ -974,6 +982,9 @@ export type VtpFlowRecord = {
      *  names: when the chain says the payment happened, not when the server read it. */
     minedAt: string
     status: 'success' | 'reverted'
+    /** On a revert, what made it revert, recovered by replaying the call at the block before:
+     *  the vault's typed error name, the token's message, or why no reason could be recovered. */
+    revertReason?: string
     /** From the vault's Paid event, or for a revert from which call was sent. */
     byOwner: boolean | null
     from: string
@@ -999,6 +1010,9 @@ export type VtpStoreIo = { getPool?: () => Promise<unknown>; file?: string }
 export type VtpFlowsRead = { ok: true; rows: VtpFlowRecord[] } | { ok: false; reason: string }
 export type VtpFlowRead = { ok: true; row: VtpFlowRecord | null } | { ok: false; reason: string }
 export type VtpFlowInsert = { ok: true; inserted: boolean } | { ok: false; reason: string }
+/** What a compare-and-set may write: any field of the record. The row is found by its id, so
+ *  a patch that carries the id carries the same one. */
+export type VtpFlowPatch = Partial<VtpFlowRecord>
 export type VtpFlowUpdate =
   | { ok: true; updated: true; row: VtpFlowRecord }
   /** The row is missing, or its outcome had already moved: nothing was written. */
@@ -1132,10 +1146,10 @@ export async function loadOpenVtpFlows(match: VtpFlowMatch, io: VtpStoreIo = {})
 }
 
 /**
- * Write a flow once. Insert-only: a row that already exists is never overwritten, so a second
- * request for the same check cannot rewrite what the first one recorded. Never throws; a
- * failure is returned, because the check has already been paid by the time this runs and the
- * caller has to be told the record is missing rather than handed an error.
+ * Reserve a flow's nonce. Insert-only, and the one atomic step between two requests carrying
+ * one signed payment: a row that already exists is never overwritten, so exactly one of them
+ * sees inserted: true and goes on to settle it. Never throws; a failure is returned, so the
+ * caller can refuse before anything is bought.
  */
 export async function persistVtpFlow(rec: VtpFlowRecord, io: VtpStoreIo = {}): Promise<VtpFlowInsert> {
   const row: VtpFlowRecord = { ...rec, flowId: rec.flowId.toLowerCase() }
@@ -1163,13 +1177,13 @@ export async function persistVtpFlow(rec: VtpFlowRecord, io: VtpStoreIo = {}): P
 
 /**
  * Move a flow on, compare-and-set: the patch lands only while the row's outcome is one of
- * `fromOutcomes`, so two receipts racing for one flow cannot both win, and a flow that
- * already ended stays ended. A payment transaction already linked to another flow is refused
+ * `fromOutcomes`, so a reservation closes once, two receipts racing for one flow cannot both
+ * win, and a flow that already ended stays ended. A payment transaction already linked to another flow is refused
  * (the unique index in Postgres, a scan in the file fallback). Never throws.
  */
 export async function updateVtpFlow(
   flowId: string,
-  patch: Partial<Pick<VtpFlowRecord, 'outcome' | 'detail' | 'payment' | 'updatedAt'>>,
+  patch: VtpFlowPatch,
   fromOutcomes: VtpFlowOutcome[],
   io: VtpStoreIo = {},
 ): Promise<VtpFlowUpdate> {
