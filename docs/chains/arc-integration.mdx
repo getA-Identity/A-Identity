@@ -254,7 +254,7 @@ returns a band and flags, no verdict and no reasons, and is rate limited.
     | `400` | A required input is missing. Checked before any payment is taken. |
     | `402` | No header, a malformed header, `to` not our `payTo`, `value` not exactly the price, or Gateway refused. The body is the challenge again plus `verifyError`. |
     | `503` | Gateway's kind for Arc could not be proven against the registry right now. No challenge is served rather than one nobody could settle. |
-    | `502` | Gateway answered success but its transfers API returned no matching transfer inside the window. Nothing served, nothing counted; the row is recorded as `unconfirmed` on the proof so it can be resolved. |
+    | `502` | Gateway answered success but its transfers API returned no matching transfer inside the window, or the settle call itself got no usable answer. Whether money moved is not known, so no challenge is served: do not sign again before looking the nonce up. Nothing served, nothing counted; the row is recorded as `unconfirmed` on the proof so it can be resolved. |
     | `500` | Credited and recorded, but the tool failed on our side. The body names the transfer. |
   </Step>
 </Steps>
