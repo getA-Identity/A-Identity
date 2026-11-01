@@ -152,7 +152,7 @@ function scored(decision: 'ALLOW' | 'WARN' | 'DENY', over: { reputationScore?: u
   })
 }
 
-type Setup = { score?: Scored; settle?: GatewaySettleResponse; transfers?: 'none'; insertFails?: boolean; serverFrozen?: boolean; payOnWarn?: boolean }
+type Setup = { score?: Scored; settle?: GatewaySettleResponse; transfers?: 'none'; insertFails?: boolean; closeFails?: boolean; serverFrozen?: boolean; payOnWarn?: boolean }
 
 function harness(o: Setup = {}) {
   const rows = new Map<string, VtpFlowRecord>()
@@ -160,10 +160,20 @@ function harness(o: Setup = {}) {
     load: async (id) => ({ ok: true, row: rows.get(id.toLowerCase()) ?? null }),
     insert: async (rec) => {
       if (o.insertFails) return { ok: false, reason: 'db down' }
+      if (rows.has(rec.flowId)) return { ok: true, inserted: false }
       rows.set(rec.flowId, rec)
       return { ok: true, inserted: true }
     },
-    update: async () => ({ ok: true, updated: false, row: null }),
+    // The real store's compare-and-set: the reservation closes only from an outcome it names.
+    update: async (id, patch, from) => {
+      if (o.closeFails) return { ok: false, reason: 'db down' }
+      const cur = rows.get(id.toLowerCase())
+      if (!cur) return { ok: true, updated: false, row: null }
+      if (!from.includes(cur.outcome)) return { ok: true, updated: false, row: cur }
+      const next = { ...cur, ...patch }
+      rows.set(id.toLowerCase(), next)
+      return { ok: true, updated: true, row: next }
+    },
     findByTx: async () => ({ ok: true, flowId: null }),
     openFlows: async () => ({ ok: true, rows: [] }),
   }
@@ -311,12 +321,20 @@ test("Gateway's own refusal comes out as REFUSED with paid false", async () => {
   assert.equal(h.sent.length, 0)
 })
 
-test('a flow the server could not write comes out as FLOW_NOT_RECORDED with paid true, and nothing is sent', async () => {
-  const h = harness({ insertFails: true })
+test('a flow the server could not close comes out as FLOW_NOT_RECORDED with paid true, and nothing is sent', async () => {
+  const h = harness({ closeFails: true })
   const e = await thrown(h.run())
   assert.equal(e.name, 'GatewayCheckError')
   assert.equal(e.code, 'FLOW_NOT_RECORDED')
   assert.equal(e.paid, true)
+  assert.equal(h.sent.length, 0)
+})
+
+test('a reservation the server could not take refuses before anything is bought', async () => {
+  const h = harness({ insertFails: true })
+  const e = await thrown(h.run())
+  assert.equal(e.name, 'GatewayCheckError')
+  assert.notEqual(e.paid, true, 'the store failed before the settle, so nothing was charged')
   assert.equal(h.sent.length, 0)
 })
 
