@@ -307,9 +307,17 @@ export type X402SettlementRecord = {
   /** When an ambiguous row was resolved from a receipt read later. `ts` stays the broadcast's
    *  time, so the gas lands on the day it was spent. */
   reconciledAt?: string
-  /** When the one call a reconciled settlement pays for was served. A settlement that went
-   *  through on its first attempt was served there and never carries this. */
+  /** A hash of the paid request (tool and input), taken at broadcast. The signature that
+   *  authenticates a retry is public calldata, so it proves nothing about who is retrying; a
+   *  retry is served only for this same request. Never published. A row without it (written
+   *  before this field existed) cannot be redeemed. */
+  requestHash?: string
+  /** When a serve attempt claimed the one call this settlement pays for. A claim can be given
+   *  back (the tool failed, the response never reached the socket) and goes stale if the
+   *  process died holding it, so it is not the record of a call being served: `servedAt` is. */
   redeemedAt?: string
+  /** When the paid call's response was written out. Only this ends the buyer's claim. */
+  servedAt?: string
 }
 
 const X402_SETTLEMENTS_FILE = join(DATA_DIR, 'x402-settlements.json')
@@ -317,7 +325,7 @@ export const X402_SETTLEMENTS_CAP = 2000
 
 /** What a receipt read later adds to an ambiguous row. */
 export type X402SettlementResolution = Pick<X402SettlementRecord, 'outcome' | 'reconciledAt'> &
-  Partial<Pick<X402SettlementRecord, 'blockNumber' | 'gasUsed' | 'gasWei'>>
+  Partial<Pick<X402SettlementRecord, 'blockNumber' | 'gasUsed' | 'gasWei' | 'redeemedAt' | 'servedAt'>>
 
 /** A conditional update of the log. `updated: false` means no row was in the state the update
  *  asks for; `ok: false` means the log could not be written, so nothing is known to have changed. */
@@ -325,7 +333,7 @@ export type X402SettlementUpdate = { ok: true; updated: boolean } | { ok: false;
 
 const SAME_TX = "lower(data->>'tx') = $1"
 const AMBIGUOUS_ROW = (r: X402SettlementRecord) => r.outcome === 'ambiguous'
-const UNREDEEMED_ROW = (r: X402SettlementRecord) => r.outcome === 'settled' && Boolean(r.reconciledAt) && !r.redeemedAt
+const UNSERVED_ROW = (r: X402SettlementRecord) => r.outcome === 'settled' && !r.servedAt
 
 /** Apply a patch to the rows carrying `tx` that `when` admits. Exported for its tests. */
 export function patchX402Rows(
@@ -350,6 +358,7 @@ async function updateX402Rows(
   guardSql: string,
   when: (r: X402SettlementRecord) => boolean,
   getPoolFn: () => Promise<unknown>,
+  guardParams: unknown[] = [],
 ): Promise<X402SettlementUpdate> {
   const hash = tx.toLowerCase()
   try {
@@ -357,7 +366,7 @@ async function updateX402Rows(
     const p = (await getPoolFn()) as any
     if (p) {
       await p.query('CREATE TABLE IF NOT EXISTS x402_settlements (id bigserial PRIMARY KEY, data jsonb NOT NULL)')
-      const r = await p.query(`UPDATE x402_settlements SET data = data || $2::jsonb WHERE ${SAME_TX} AND ${guardSql}`, [hash, JSON.stringify(patch)])
+      const r = await p.query(`UPDATE x402_settlements SET data = data || $2::jsonb WHERE ${SAME_TX} AND ${guardSql}`, [hash, JSON.stringify(patch), ...guardParams])
       return { ok: true, updated: Number(r.rowCount ?? 0) > 0 }
     }
     let rows: X402SettlementRecord[]
@@ -392,18 +401,72 @@ export function resolveX402Settlement(
 }
 
 /**
- * Claim the one call a reconciled settlement pays for. Reports `updated: true` to exactly one
- * caller: the WHERE clause is the claim, so two retries of the same authorization cannot both
- * be served, however many processes they reach. Never throws.
+ * Claim the one call a settlement pays for. Reports `updated: true` to exactly one caller: the
+ * WHERE clause is the claim, so two retries of the same authorization cannot both be served,
+ * however many processes they reach. A claim older than `staleBefore` with no `servedAt` was
+ * left by a process that died holding it, so it can be taken again. `servedAt` is for a caller
+ * with nothing to serve after the claim. Never throws.
  */
-export function redeemX402Settlement(tx: string, at: string, getPoolFn: () => Promise<unknown> = getPool): Promise<X402SettlementUpdate> {
+export function redeemX402Settlement(
+  tx: string,
+  at: string,
+  opts: { staleBefore: string; servedAt?: string },
+  getPoolFn: () => Promise<unknown> = getPool,
+): Promise<X402SettlementUpdate> {
   return updateX402Rows(
     tx,
-    { redeemedAt: at },
-    "data->>'outcome' = 'settled' AND data ? 'reconciledAt' AND NOT data ? 'redeemedAt'",
-    UNREDEEMED_ROW,
+    { redeemedAt: at, ...(opts.servedAt ? { servedAt: opts.servedAt } : {}) },
+    "data->>'outcome' = 'settled' AND NOT data ? 'servedAt' AND (NOT data ? 'redeemedAt' OR data->>'redeemedAt' < $3)",
+    (r) => UNSERVED_ROW(r) && (!r.redeemedAt || r.redeemedAt < opts.staleBefore),
     getPoolFn,
+    [opts.staleBefore],
   )
+}
+
+/** Record that the paid call's response was written out. This is what ends the claim. Never throws. */
+export function markX402SettlementServed(tx: string, at: string, getPoolFn: () => Promise<unknown> = getPool): Promise<X402SettlementUpdate> {
+  return updateX402Rows(tx, { servedAt: at }, "data->>'outcome' = 'settled' AND NOT data ? 'servedAt'", UNSERVED_ROW, getPoolFn)
+}
+
+/**
+ * Give a claim back: the tool failed, or the response never reached the socket, so the buyer
+ * has paid and has nothing. Only this claim is released, so a late release cannot free a newer
+ * attempt's claim. Never throws.
+ */
+export async function releaseX402SettlementClaim(tx: string, claimedAt: string, getPoolFn: () => Promise<unknown> = getPool): Promise<X402SettlementUpdate> {
+  const hash = tx.toLowerCase()
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const p = (await getPoolFn()) as any
+    if (p) {
+      await p.query('CREATE TABLE IF NOT EXISTS x402_settlements (id bigserial PRIMARY KEY, data jsonb NOT NULL)')
+      const r = await p.query(
+        `UPDATE x402_settlements SET data = data - 'redeemedAt' WHERE ${SAME_TX} AND data->>'outcome' = 'settled' AND NOT data ? 'servedAt' AND data->>'redeemedAt' = $2`,
+        [hash, claimedAt],
+      )
+      return { ok: true, updated: Number(r.rowCount ?? 0) > 0 }
+    }
+    let rows: X402SettlementRecord[]
+    try {
+      rows = JSON.parse(readFileSync(X402_SETTLEMENTS_FILE, 'utf8')) as X402SettlementRecord[]
+    } catch (e) {
+      if ((e as NodeJS.ErrnoException)?.code === 'ENOENT') return { ok: true, updated: false }
+      throw e
+    }
+    let updated = false
+    for (const r of rows) {
+      if (r.tx?.toLowerCase() === hash && UNSERVED_ROW(r) && r.redeemedAt === claimedAt) {
+        delete r.redeemedAt
+        updated = true
+      }
+    }
+    if (updated) writeFileSync(X402_SETTLEMENTS_FILE, JSON.stringify(rows))
+    return { ok: true, updated }
+  } catch (e) {
+    const reason = e instanceof Error ? e.message : String(e)
+    console.error('[storage] x402 settlement release failed:', reason)
+    return { ok: false, reason }
+  }
 }
 
 /**
@@ -477,11 +540,16 @@ export async function loadX402Settlements(): Promise<X402SettlementRecord[]> {
 }
 
 /** Durably record one settlement attempt, trimming past the cap. Never throws: on this
- *  rail the money has already moved on-chain by the time we get here, so a logging
- *  hiccup must not turn a paid call into an error for the buyer. */
-export async function persistX402Settlement(rec: X402SettlementRecord): Promise<void> {
+ *  rail a transaction has already been broadcast by the time we get here, so a logging hiccup
+ *  must not take the request down. It reports the failure instead, because the engine promises
+ *  a buyer a read-back of this row and must not promise one that was never written. */
+export async function persistX402Settlement(
+  rec: X402SettlementRecord,
+  getPoolFn: () => Promise<unknown> = getPool,
+): Promise<{ ok: true } | { ok: false; reason: string }> {
   try {
-    const p = await getPool()
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const p = (await getPoolFn()) as any
     if (p) {
       await p.query('CREATE TABLE IF NOT EXISTS x402_settlements (id bigserial PRIMARY KEY, data jsonb NOT NULL)')
       await p.query('INSERT INTO x402_settlements (data) VALUES ($1)', [JSON.stringify(rec)])
@@ -489,7 +557,7 @@ export async function persistX402Settlement(rec: X402SettlementRecord): Promise<
         'DELETE FROM x402_settlements WHERE id NOT IN (SELECT id FROM x402_settlements ORDER BY id DESC LIMIT $1)',
         [X402_SETTLEMENTS_CAP],
       )
-      return
+      return { ok: true }
     }
     let arr: X402SettlementRecord[] = []
     try {
@@ -501,8 +569,11 @@ export async function persistX402Settlement(rec: X402SettlementRecord): Promise<
     if (arr.length > X402_SETTLEMENTS_CAP) arr = arr.slice(-X402_SETTLEMENTS_CAP)
     mkdirSync(DATA_DIR, { recursive: true })
     writeFileSync(X402_SETTLEMENTS_FILE, JSON.stringify(arr))
+    return { ok: true }
   } catch (e) {
-    console.error('[storage] x402 settlement persist failed:', e instanceof Error ? e.message : e)
+    const reason = e instanceof Error ? e.message : String(e)
+    console.error('[storage] x402 settlement persist failed:', reason)
+    return { ok: false, reason }
   }
 }
 

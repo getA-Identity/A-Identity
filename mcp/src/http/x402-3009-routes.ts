@@ -23,6 +23,7 @@ import {
   railProof,
   railReconcileOnProofRead,
   railServeTool,
+  watchDelivery,
   railStatus,
   railPriceUsd,
   type RailToolName,
@@ -221,6 +222,7 @@ export async function handleX402ThreeKRoutes(ctx: RouteCtx): Promise<boolean> {
   // A settled call carries its receipt in PAYMENT-RESPONSE, which is where a reference
   // client looks for it. sendChallenge owns the 402 body and header pair, nothing else.
   for (const [k, v] of Object.entries(out.headers ?? {})) res.setHeader(k, v)
+  if (out.onDelivery) watchDelivery(res, out.onDelivery)
   sendChallenge(res, out.httpStatus, out.body)
   return true
 }

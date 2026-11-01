@@ -25,10 +25,11 @@ import {
   type ChainDescriptor,
   type SettlementToken,
 } from '../chains/index.js'
+import { createHash } from 'node:crypto'
 import { verifyAgent, reputationScore, riskCheck, agentPassport, type TxContext } from '../asp/tools.js'
 import { loadX402Settlements, X402_SETTLEMENTS_CAP, type X402SettlementRecord } from '../storage.js'
 import { provenDomainCached } from './domain.js'
-import { reconcileAmbiguousSettlements, settlePayment, type Limits, type Requirements, type EngineDeps, type SettleSuccess } from './engine.js'
+import { markSettlementServed, reconcileAmbiguousSettlements, releaseSettlementClaim, settlePayment, type Limits, type Requirements, type EngineDeps, type SettleSuccess } from './engine.js'
 
 type Hex = `0x${string}`
 
@@ -484,7 +485,47 @@ export function railPaymentResponseHeader(settled: SettleSuccess): string {
  * What a served call returns. `headers` carries the transport-level headers the route
  * adapter sets on the response, which today is the v2 `PAYMENT-RESPONSE` receipt on a 200.
  */
-export type RailServeResult = { httpStatus: number; body: unknown; headers?: Record<string, string> }
+export type RailServeResult = {
+  httpStatus: number
+  body: unknown
+  headers?: Record<string, string>
+  /**
+   * Present on a settled and served 200. The route calls it once it knows whether the response
+   * was written out: only that ends the buyer's claim on the call they paid for, and a response
+   * that never reached the socket leaves the call redeemable. See watchDelivery.
+   */
+  onDelivery?: (delivered: boolean) => Promise<void>
+}
+
+/**
+ * The hash a retry of a paid call must match: the tool and its input, with object keys in a
+ * fixed order so the same request always hashes the same.
+ */
+export function railRequestHash(tool: RailToolName, input: RailToolInput): string {
+  const stable = (v: unknown): unknown =>
+    Array.isArray(v)
+      ? v.map(stable)
+      : v && typeof v === 'object'
+        ? Object.fromEntries(Object.entries(v as Record<string, unknown>).sort(([x], [y]) => (x < y ? -1 : x > y ? 1 : 0)).map(([k, x]) => [k, stable(x)]))
+        : v
+  return createHash('sha256').update(JSON.stringify({ tool, agentId: input.agentId, txContext: stable(input.txContext ?? null) })).digest('hex')
+}
+
+/**
+ * Report a response's fate to `onDelivery`: true once it was flushed, false when the socket was
+ * gone first. Called before the response is written, because a socket the proxy already cut
+ * closed long ago and will not say so again.
+ */
+export function watchDelivery(
+  res: { destroyed?: boolean; writableFinished?: boolean; once: (event: 'close', cb: () => void) => unknown },
+  onDelivery: (delivered: boolean) => Promise<void>,
+): void {
+  if (res.destroyed) {
+    void onDelivery(false)
+    return
+  }
+  res.once('close', () => void onDelivery(Boolean(res.writableFinished)))
+}
 
 export type RailServeDeps = EngineDeps & {
   handlers?: Record<RailToolName, (input: RailToolInput) => Promise<unknown>>
@@ -518,8 +559,9 @@ function defaultHandlers(status: RailStatus): Record<RailToolName, (input: RailT
  *   402 - malformed X-PAYMENT, or the authorization does not verify (fresh challenge)
  *   502 - the settlement failed or is still unresolved; the tool is NOT served and nothing
  *         is marked settled
- *   500 - settled, but the tool handler itself failed; the settlement is still recorded
- *         and the body names the tx so the buyer can chase it
+ *   409 - this authorization settled for a different request; nothing is served or charged
+ *   500 - settled, but the tool handler itself failed; the settlement is still recorded, the
+ *         body names the tx, and the same payment with the same request can still be served
  *   200 - settled and served, on this call or from an earlier broadcast of this same
  *         authorization whose receipt came late (settlement.reconciled says which)
  */
@@ -599,7 +641,7 @@ export async function railServeToolOn(
       requirements,
       payload,
       limits: railLimits(status, deps.env ?? process.env),
-      deps: { ...deps, meta: { tool, baseUsd: price.baseUsd, feeUsd: price.settlementFeeUsd } },
+      deps: { ...deps, requestHash: railRequestHash(tool, input), meta: { tool, baseUsd: price.baseUsd, feeUsd: price.settlementFeeUsd } },
     })
   } catch (e) {
     return {
@@ -625,6 +667,10 @@ export async function railServeToolOn(
       const challenge = await railChallenge(tool, status, deps, settled.errorReason)
       return { httpStatus: challenge.httpStatus, body: challenge.body }
     }
+    // The money may have moved for another request of this buyer's, so this is no fresh challenge.
+    if (settled.code === 'request_mismatch') {
+      return { httpStatus: 409, body: { error: 'payment made for a different request', code: settled.code, reason: settled.errorReason, transaction: settled.transaction } }
+    }
     return {
       httpStatus: 502,
       body: {
@@ -635,13 +681,21 @@ export async function railServeToolOn(
         ...(settled.ambiguous
           ? {
               ambiguous: true,
-              note:
-                'The transaction may still land. Nothing was served and the authorization was not marked spent. ' +
-                'Send this same payment again rather than signing a new one: we read the transaction from every RPC first, broadcast nothing new while it is unresolved, and if it landed we serve this call with no second charge.',
+              note: settled.unrecorded
+                ? 'The transaction may still land, and our settlement log could not record it, so a retry cannot be matched to it. ' +
+                  'Check the transaction on the explorer before you sign or send anything else. If it landed, your payment moved and this record may be missing from the proof.'
+                : 'The transaction may still land. Nothing was served and the authorization was not marked spent. ' +
+                  'Send this same payment again with this same request rather than signing a new one: we read the transaction from every RPC first, broadcast nothing new while it is unresolved, and if it landed we serve this call with no second charge.',
             }
           : {}),
       },
     }
+  }
+
+  // Everything up to the tool's own answer can still fail. Only a response written out ends the
+  // claim, so a buyer who paid and got nothing can send the same payment again.
+  const onDelivery = async (delivered: boolean): Promise<void> => {
+    await (delivered ? markSettlementServed(settled.transaction, deps) : releaseSettlementClaim(settled.transaction, settled.settledAt, deps))
   }
 
   const handlers = deps.handlers ?? defaultHandlers(status)
@@ -651,15 +705,17 @@ export async function railServeToolOn(
       httpStatus: 200,
       body: { ...(body as Record<string, unknown>), settlement: settled },
       headers: { 'PAYMENT-RESPONSE': railPaymentResponseHeader(settled) },
+      onDelivery,
     }
   } catch (e) {
+    await onDelivery(false)
     return {
       httpStatus: 500,
       body: {
         error: 'tool failed after settlement',
         reason: e instanceof Error ? e.message : String(e),
         settlement: settled,
-        note: 'Your payment settled on-chain and is recorded. This failure is on our side.',
+        note: 'Your payment settled on-chain and is recorded. This failure is on our side. Send this same payment again with this same request: the call is still yours, and it will not be charged again.',
       },
     }
   }
@@ -693,7 +749,7 @@ export type RailProof = {
   byTool: Record<string, { count: number; usd: number }>
   /** Per-chain breakdown. Two chains summed into one figure is a number about nothing. */
   byNetwork: Record<string, { count: number; usd: number; assetSymbol: string }>
-  recent: X402SettlementRecord[]
+  recent: ReturnType<typeof publicSettlementRow>[]
   note: string
 }
 
@@ -717,6 +773,16 @@ export function internalPayers(env: NodeJS.ProcessEnv = process.env): string[] {
     .map((s) => s.trim().toLowerCase())
     .filter((s) => /^0x[0-9a-fA-F]{40}$/.test(s))
   return [...new Set([...KNOWN_INTERNAL_PAYERS, ...extra])]
+}
+
+/**
+ * A row as the public proof shows it. The nonce and the claim state stay out: together they are
+ * a list of which landed settlements still have a call to redeem, and the request hash is what
+ * guards that call. The transaction, amount and payer are what the proof is for.
+ */
+export function publicSettlementRow(row: X402SettlementRecord): Omit<X402SettlementRecord, 'authNonce' | 'requestHash' | 'redeemedAt' | 'servedAt'> {
+  const { authNonce: _authNonce, requestHash: _requestHash, redeemedAt: _redeemedAt, servedAt: _servedAt, ...shown } = row
+  return shown
 }
 
 export async function railProof(
@@ -787,7 +853,7 @@ export async function railProof(
     },
     byTool,
     byNetwork,
-    recent: rows.slice(-50).reverse(),
+    recent: rows.slice(-50).reverse().map(publicSettlementRow),
     note: `Real settlements only, each recorded from an on-chain receipt plus a matching Transfer log. A broadcast with no receipt inside the window is counted as ambiguous until a later read across every RPC finds one, and the row then carries reconciledAt. Payments from our own buyer wallets are labeled internal, never hidden. Totals cover the retained window (last ${X402_SETTLEMENTS_CAP}).`,
   }
 }

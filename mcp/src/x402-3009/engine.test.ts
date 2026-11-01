@@ -6,8 +6,12 @@ import {
   parseAuthorizationPayload,
   reconcileAmbiguousSettlements,
   reconcileSettlementRow,
+  markSettlementServed,
+  releaseSettlementClaim,
   verifyPayment,
   settlePayment,
+  FIRST_ATTEMPT_CEILING_MS,
+  REDEEM_WINDOW_MS,
   type Limits,
 } from './engine.js'
 import { eip712DomainSeparator, clearDomainCache, type TokenReader } from './domain.js'
@@ -16,7 +20,10 @@ import {
   gasSpentOnDay,
   loadX402SettlementsResult,
   patchX402Rows,
+  markX402SettlementServed,
+  persistX402Settlement,
   redeemX402Settlement,
+  releaseX402SettlementClaim,
   resolveX402Settlement,
   GAS_BUDGET_UNKNOWN,
   type X402SettlementRecord,
@@ -470,7 +477,7 @@ test('an unprovable domain refuses before any chain read', async () => {
 test('a reverted receipt is recorded as reverted and NEVER as settled', async () => {
   clearDomainCache()
   const { payload } = await signed({ nonce: `0x${'01'.repeat(32)}` })
-  const recorded: X402SettlementRecord[] = []
+  const log = memoryLog()
   let spentWrites = 0
   const r = await settlePayment({
     chain, token, requirements: REQUIREMENTS, payload, limits: LIMITS,
@@ -478,16 +485,16 @@ test('a reverted receipt is recorded as reverted and NEVER as settled', async ()
       publicClient: publicClient({ receipt: { status: 'reverted', blockNumber: 7n, gasUsed: 85_000n, logs: [] } }),
       walletClient: { writeContract: async () => `0x${'aa'.repeat(32)}` },
       signerAddress: PAY_TO,
-      persist: async (rec: X402SettlementRecord) => { recorded.push(rec) },
+      ...log,
       persistSpent: async () => { spentWrites += 1 },
       gasSpentTodayWei: async () => 0n,
     }),
   })
   assert.equal(r.success, false)
   if (!r.success) assert.equal(r.code, 'receipt_reverted')
-  assert.equal(recorded.length, 1)
-  assert.equal(recorded[0].outcome, 'reverted')
-  assert.ok(recorded.every((x) => x.outcome !== 'settled'))
+  assert.equal(log.rows.length, 1)
+  assert.equal(log.rows[0].outcome, 'reverted')
+  assert.ok(log.rows.every((x) => x.outcome !== 'settled'))
   // A failed settlement must not consume the buyer's authorization on our side.
   assert.equal(spentWrites, 0)
 })
@@ -495,27 +502,27 @@ test('a reverted receipt is recorded as reverted and NEVER as settled', async ()
 test('a successful receipt with no matching Transfer log is not a settlement', async () => {
   clearDomainCache()
   const { payload } = await signed({ nonce: `0x${'02'.repeat(32)}` })
-  const recorded: X402SettlementRecord[] = []
+  const log = memoryLog()
   const r = await settlePayment({
     chain, token, requirements: REQUIREMENTS, payload, limits: LIMITS,
     deps: deps({
       publicClient: publicClient({ receipt: { status: 'success', blockNumber: 8n, gasUsed: 85_000n, logs: [] } }),
       walletClient: { writeContract: async () => `0x${'bb'.repeat(32)}` },
       signerAddress: PAY_TO,
-      persist: async (rec: X402SettlementRecord) => { recorded.push(rec) },
+      ...log,
       persistSpent: async () => {},
       gasSpentTodayWei: async () => 0n,
     }),
   })
   assert.equal(r.success, false)
   if (!r.success) assert.equal(r.code, 'no_transfer_log')
-  assert.equal(recorded[0].outcome, 'reverted')
+  assert.equal(log.rows[0].outcome, 'reverted')
 })
 
 test('a receipt with a matching Transfer log settles and records the asset', async () => {
   clearDomainCache()
   const { payload } = await signed({ nonce: `0x${'03'.repeat(32)}` })
-  const recorded: X402SettlementRecord[] = []
+  const log = memoryLog()
   const spent: string[] = []
   const r = await settlePayment({
     chain, token, requirements: REQUIREMENTS, payload, limits: LIMITS,
@@ -528,7 +535,7 @@ test('a receipt with a matching Transfer log settles and records the asset', asy
       }),
       walletClient: { writeContract: async () => `0x${'cc'.repeat(32)}` },
       signerAddress: PAY_TO,
-      persist: async (rec: X402SettlementRecord) => { recorded.push(rec) },
+      ...log,
       persistSpent: async (k: string) => { spent.push(k) },
       gasSpentTodayWei: async () => 0n,
       meta: { tool: 'risk_check', baseUsd: 0.005, feeUsd: 0.016 },
@@ -541,10 +548,10 @@ test('a receipt with a matching Transfer log settles and records the asset', asy
     assert.equal(r.blockNumber, '9')
     assert.ok(r.explorerUrl.includes(r.transaction))
   }
-  assert.equal(recorded[0].outcome, 'settled')
-  assert.equal(recorded[0].asset, token.address)
-  assert.equal(recorded[0].assetDecimals, 6)
-  assert.equal(recorded[0].amountUsd, 0.021)
+  assert.equal(log.rows[0].outcome, 'settled')
+  assert.equal(log.rows[0].asset, token.address)
+  assert.equal(log.rows[0].assetDecimals, 6)
+  assert.equal(log.rows[0].amountUsd, 0.021)
   assert.equal(spent.length, 1)
 })
 
@@ -593,7 +600,7 @@ test('the gas ceiling and the daily budget each refuse before broadcasting', asy
 test('a receipt timeout is ambiguous, keeps the hash, and does not mark the key spent', async () => {
   clearDomainCache()
   const { payload } = await signed({ nonce: `0x${'06'.repeat(32)}` })
-  const recorded: X402SettlementRecord[] = []
+  const log = memoryLog()
   let spentWrites = 0
   const r = await settlePayment({
     chain, token, requirements: REQUIREMENTS, payload, limits: LIMITS,
@@ -601,7 +608,7 @@ test('a receipt timeout is ambiguous, keeps the hash, and does not mark the key 
       publicClient: publicClient({ receiptThrows: 'timed out' }),
       walletClient: { writeContract: async () => `0x${'ff'.repeat(32)}` },
       signerAddress: PAY_TO,
-      persist: async (rec: X402SettlementRecord) => { recorded.push(rec) },
+      ...log,
       persistSpent: async () => { spentWrites += 1 },
       gasSpentTodayWei: async () => 0n,
     }),
@@ -612,8 +619,8 @@ test('a receipt timeout is ambiguous, keeps the hash, and does not mark the key 
     assert.equal(r.ambiguous, true)
     assert.ok(r.transaction)
   }
-  assert.equal(recorded[0].outcome, 'ambiguous')
-  assert.ok(recorded[0].authNonce)
+  assert.equal(log.rows[0].outcome, 'ambiguous')
+  assert.ok(log.rows[0].authNonce)
   assert.equal(spentWrites, 0)
 })
 
@@ -639,10 +646,29 @@ function memoryLog() {
       ok: true as const,
       updated: patchX402Rows(rows, tx.toLowerCase(), resolution, (r) => r.outcome === 'ambiguous'),
     }),
-    redeemSettlement: async (tx: string, at: string) => ({
+    redeemSettlement: async (tx: string, at: string, opts: { staleBefore: string; servedAt?: string }) => ({
       ok: true as const,
-      updated: patchX402Rows(rows, tx.toLowerCase(), { redeemedAt: at }, (r) => r.outcome === 'settled' && Boolean(r.reconciledAt) && !r.redeemedAt),
+      updated: patchX402Rows(
+        rows,
+        tx.toLowerCase(),
+        { redeemedAt: at, ...(opts.servedAt ? { servedAt: opts.servedAt } : {}) },
+        (r) => r.outcome === 'settled' && !r.servedAt && (!r.redeemedAt || r.redeemedAt < opts.staleBefore),
+      ),
     }),
+    markServed: async (tx: string, at: string) => ({
+      ok: true as const,
+      updated: patchX402Rows(rows, tx.toLowerCase(), { servedAt: at }, (r) => r.outcome === 'settled' && !r.servedAt),
+    }),
+    releaseClaim: async (tx: string, claimedAt: string) => {
+      let updated = false
+      for (const r of rows) {
+        if (r.tx?.toLowerCase() === tx.toLowerCase() && !r.servedAt && r.redeemedAt === claimedAt) {
+          delete r.redeemedAt
+          updated = true
+        }
+      }
+      return { ok: true as const, updated }
+    },
   }
 }
 
@@ -667,6 +693,7 @@ async function paymentScene(nonceByte: string, hosts: Record<string, FakeReceipt
       loadSpent: async () => [...spent],
       persistSpent: async (k: string) => { spent.push(k) },
       meta: { tool: 'risk_check', baseUsd: 0.005, feeUsd: 0.016 },
+      requestHash: 'the buyer request',
       ...log,
       ...over2,
     })
@@ -745,7 +772,8 @@ test('ambiguous, then the transaction lands: the retry is served, and not charge
   assert.equal(row.gasWei, (85_000n * 50_578_000n).toString())
   assert.deepEqual(s.spent, [paymentKey(chain.caip2, token.address, buyer.address, s.authorization.nonce)])
 
-  // The payment bought one call. Sending it a third time is the replay it always was.
+  // The payment bought one call. Once served, sending it again is the replay it always was.
+  assert.equal(await markSettlementServed(s.hash, s.engineDeps()), true)
   const replay = await s.settle()
   assert.equal(replay.success, false)
   if (!replay.success) assert.equal(replay.code, 'already_redeemed')
@@ -761,6 +789,7 @@ test('the one call is redeemed once even when the replay key cannot be written',
   assert.equal(retry.success, true)
   if (retry.success) assert.match(retry.replayKeyWarning ?? '', /authorizationState/)
   assert.ok(s.log.rows[0].redeemedAt)
+  await markSettlementServed(s.hash, s.engineDeps())
   const replay = await s.settle({ persistSpent })
   assert.equal(replay.success, false)
   if (!replay.success) assert.equal(replay.code, 'already_redeemed')
@@ -903,6 +932,234 @@ test('a resolution that cannot be written keeps the row ambiguous, and the next 
   assert.equal((await s.settle()).success, true)
 })
 
+// ── a retry is served to the request that paid, and nobody else ──────────────────────
+//
+// transferWithAuthorization puts every field and the signature in public calldata, so a genuine
+// signature proves nothing about who is presenting it. These replay the buyer's real payload.
+
+test('THE REPLAY: the public calldata with a different request gets nothing, and the buyer keeps the call', async () => {
+  const s = await paymentScene('40', { [HOST_A]: null })
+  await s.settle()
+  s.chainState.authorizationState = true
+  s.hosts[HOST_A] = SETTLED_RECEIPT()
+  // Rebuilt from the transaction input: the same authorization and the same signature.
+  const stolen = await s.settle({ requestHash: 'the attacker agent id' })
+  assert.equal(stolen.success, false)
+  if (!stolen.success) {
+    assert.equal(stolen.code, 'request_mismatch')
+    assert.match(stolen.errorReason, /do not sign a new one/)
+  }
+  assert.equal(s.log.rows[0].redeemedAt, undefined, 'the claim is untouched')
+  assert.equal(s.spent.length, 0, 'and so is the replay key')
+  const buyers = await s.settle()
+  assert.equal(buyers.success, true, JSON.stringify(buyers))
+  assert.equal(s.counters.broadcasts, 1)
+})
+
+test('a bare /settle cannot burn the call a paid tool request is owed', async () => {
+  const s = await paymentScene('41', { [HOST_A]: null })
+  await s.settle()
+  s.chainState.authorizationState = true
+  s.hosts[HOST_A] = SETTLED_RECEIPT()
+  const burn = await s.settle({ requestHash: undefined, meta: undefined })
+  assert.equal(burn.success, false)
+  if (!burn.success) assert.equal(burn.code, 'request_mismatch')
+  assert.equal(s.log.rows[0].redeemedAt, undefined)
+  assert.equal((await s.settle()).success, true)
+})
+
+test('a row from before the request hash cannot be claimed by anyone', async () => {
+  // Production has ambiguous rows with no request on them. A sweep can resolve them, and nothing
+  // about a retry then shows it came from the buyer.
+  const s = await paymentScene('42', { [HOST_A]: SETTLED_RECEIPT() })
+  await s.log.persist({ ...baseRow(), outcome: 'settled', reconciledAt: NOW.toISOString(), tx: s.hash, authNonce: s.authorization.nonce })
+  s.chainState.authorizationState = true
+  const r = await s.settle()
+  assert.equal(r.success, false)
+  if (!r.success) assert.equal(r.code, 'already_redeemed')
+  assert.equal(s.log.rows[0].redeemedAt, undefined)
+})
+
+test('a settlement can be redeemed only inside its window, and the refusal names the transaction', async () => {
+  const s = await paymentScene('43', { [HOST_A]: null })
+  await s.settle()
+  s.chainState.authorizationState = true
+  s.hosts[HOST_A] = SETTLED_RECEIPT()
+  const late = new Date(NOW.getTime() + REDEEM_WINDOW_MS + 1_000)
+  const r = await s.settle({ now: () => late })
+  assert.equal(r.success, false)
+  if (!r.success) {
+    assert.equal(r.code, 'already_redeemed')
+    assert.equal(r.transaction, s.hash)
+    assert.match(r.errorReason, /window to redeem/)
+  }
+  const inside = new Date(NOW.getTime() + REDEEM_WINDOW_MS - 1_000)
+  assert.equal((await s.settle({ now: () => inside })).success, true)
+})
+
+// ── a settlement stays owed until its response was written ───────────────────────────
+
+test('a first-attempt settlement whose tool or socket failed is served on retry, with no second charge', async () => {
+  const s = await paymentScene('44', { [HOST_A]: SETTLED_RECEIPT() })
+  const first = await s.settle()
+  assert.equal(first.success, true)
+  if (!first.success) return
+  assert.ok(s.log.rows[0].redeemedAt, 'the first attempt holds the claim')
+  assert.equal(s.log.rows[0].servedAt, undefined, 'and has served nothing yet')
+  s.chainState.authorizationState = true
+  const during = await s.settle()
+  assert.equal(during.success, false)
+  if (!during.success) assert.equal(during.code, 'in_flight', 'not already_redeemed, which would ask the buyer to pay again')
+
+  assert.equal(await releaseSettlementClaim(s.hash, first.settledAt, s.engineDeps()), true)
+  const retry = await s.settle()
+  assert.equal(retry.success, true, JSON.stringify(retry))
+  if (retry.success) {
+    assert.equal(retry.transaction, s.hash)
+    assert.equal(retry.reconciled, true)
+  }
+  assert.equal(s.counters.broadcasts, 1)
+  assert.equal(await markSettlementServed(s.hash, s.engineDeps()), true)
+  const replay = await s.settle()
+  assert.equal(replay.success, false)
+  if (!replay.success) assert.equal(replay.code, 'already_redeemed')
+})
+
+test('a claim left by a process that died goes stale, and a release of an old claim frees nothing newer', async () => {
+  const s = await paymentScene('45', { [HOST_A]: SETTLED_RECEIPT() })
+  const first = await s.settle()
+  assert.equal(first.success, true)
+  s.chainState.authorizationState = true
+  const later = new Date(NOW.getTime() + 300_000)
+  const retry = await s.settle({ now: () => later })
+  assert.equal(retry.success, true, JSON.stringify(retry))
+  if (first.success) assert.equal(await releaseSettlementClaim(s.hash, first.settledAt, s.engineDeps()), false)
+  assert.equal(s.log.rows[0].redeemedAt, later.toISOString())
+})
+
+test('a bare /settle answer is its service: the row is spent at once and names the tx when asked again', async () => {
+  const s = await paymentScene('46', { [HOST_A]: SETTLED_RECEIPT() })
+  const bare = { requestHash: undefined, meta: undefined }
+  assert.equal((await s.settle(bare)).success, true)
+  assert.ok(s.log.rows[0].servedAt)
+  s.chainState.authorizationState = true
+  const again = await s.settle(bare)
+  assert.equal(again.success, false)
+  if (!again.success) {
+    assert.equal(again.code, 'already_redeemed')
+    assert.equal(again.transaction, s.hash)
+  }
+})
+
+test('a reconciled bare /settle is answered once', async () => {
+  const s = await paymentScene('47', { [HOST_A]: null })
+  const bare = { requestHash: undefined, meta: undefined }
+  await s.settle(bare)
+  s.chainState.authorizationState = true
+  s.hosts[HOST_A] = SETTLED_RECEIPT()
+  const answered = await s.settle(bare)
+  assert.equal(answered.success, true, JSON.stringify(answered))
+  assert.ok(s.log.rows[0].servedAt)
+  const again = await s.settle(bare)
+  assert.equal(again.success, false)
+  if (!again.success) assert.equal(again.code, 'already_redeemed')
+})
+
+// ── the broadcast is on the record before any wait ───────────────────────────────────
+
+test('the ambiguous row exists before the wait starts, so a restart inside the wait loses nothing', async () => {
+  const s = await paymentScene('48', { [HOST_A]: null })
+  const seenDuringWait: X402SettlementRecord[][] = []
+  const watched: EveryRpcOptions = {
+    ...s.fake.receipts,
+    call: async (url, method, params) => {
+      seenDuringWait.push(s.log.rows.map((r) => ({ ...r })))
+      return (s.fake.receipts.call as (u: string, m: string, p: readonly unknown[]) => Promise<unknown>)(url, method, params)
+    },
+  }
+  await s.settle({ receipts: watched })
+  assert.equal(seenDuringWait[0].length, 1, 'the row was there on the first receipt read')
+  assert.equal(seenDuringWait[0][0].outcome, 'ambiguous')
+  assert.equal(seenDuringWait[0][0].tx, s.hash)
+  assert.equal(seenDuringWait[0][0].requestHash, 'the buyer request')
+
+  // The process that sent it is gone, so nothing is in memory. A retry still finds the row.
+  const restarted = await s.settle()
+  assert.equal(restarted.success, false)
+  if (!restarted.success) assert.equal(restarted.code, 'settlement_pending')
+  assert.equal(s.counters.broadcasts, 1, 'a pending transaction is not sent twice')
+})
+
+test('a broadcast that could not be recorded says so instead of promising a read-back', async () => {
+  for (const persist of [
+    async () => { throw new Error('database is gone') },
+    async () => ({ ok: false }),
+  ]) {
+    const s = await paymentScene(persist.toString().includes('throw') ? '49' : '4a', { [HOST_A]: null })
+    const r = await s.settle({ persist })
+    assert.equal(r.success, false)
+    if (!r.success) {
+      assert.equal(r.code, 'receipt_timeout')
+      assert.equal(r.unrecorded, true)
+      assert.equal(r.transaction, s.hash)
+      assert.match(r.errorReason, /could not be written/)
+      assert.doesNotMatch(r.errorReason, /database is gone/)
+    }
+  }
+})
+
+test('a first write that failed is made good when the receipt arrives', async () => {
+  const s = await paymentScene('4b', { [HOST_A]: SETTLED_RECEIPT() })
+  let attempts = 0
+  const r = await s.settle({
+    persist: async (rec: X402SettlementRecord) => {
+      attempts += 1
+      if (attempts === 1) throw new Error('database blinked')
+      await s.log.persist(rec)
+    },
+  })
+  assert.equal(r.success, true)
+  assert.equal(s.log.rows.length, 1)
+  assert.equal(s.log.rows[0].outcome, 'settled')
+  assert.equal(s.log.rows[0].gasUsed, '85000')
+  assert.ok(s.log.rows[0].redeemedAt)
+})
+
+test('a proof read that resolved the row during the wait does not lose the first attempt its claim', async () => {
+  const s = await paymentScene('4c', { [HOST_A]: SETTLED_RECEIPT() })
+  const r = await s.settle({
+    resolveSettlement: async (tx: string, res: Partial<X402SettlementRecord>) => {
+      // The sweep got there first, so this write finds no ambiguous row.
+      await s.log.resolveSettlement(tx, { outcome: 'settled', reconciledAt: NOW.toISOString(), blockNumber: res.blockNumber })
+      return s.log.resolveSettlement(tx, res)
+    },
+  })
+  assert.equal(r.success, true, JSON.stringify(r))
+  assert.equal(s.log.rows.length, 1, 'the row is not written twice')
+  assert.ok(s.log.rows[0].redeemedAt)
+  assert.equal(s.spent.length, 1)
+})
+
+test('the first attempt ends well inside the proxy budget, and a late receipt is a retry away', async () => {
+  // vercel.json cuts /api at about 30 seconds. A wait past that serves into a dead socket.
+  assert.ok(FIRST_ATTEMPT_CEILING_MS <= 20_000)
+  const s = await paymentScene('4d', { [HOST_A]: null })
+  let clock = 0
+  const slept: number[] = []
+  const r = await s.settle({
+    timeoutMs: undefined,
+    receipts: {
+      ...s.fake.receipts,
+      now: () => clock,
+      sleep: async (ms: number) => { slept.push(ms); clock += ms },
+    },
+  })
+  assert.equal(r.success, false)
+  if (!r.success) assert.equal(r.code, 'receipt_timeout')
+  assert.ok(clock > 0, 'it did wait')
+  assert.ok(clock <= FIRST_ATTEMPT_CEILING_MS, `the wait took ${clock} ms`)
+})
+
 // ── the proof read's sweep ───────────────────────────────────────────────────────────
 
 test('the sweep resolves ambiguous rows, and a settled one still waits for the buyer', async () => {
@@ -978,8 +1235,9 @@ test('persistSpent throwing after the transaction mined keeps the settled row an
   assert.equal(s.log.rows.length, 1)
   assert.equal(s.log.rows[0].outcome, 'settled')
 
-  // Replay stays blocked by the token, and a first-attempt settlement is not owed a second call.
+  // Replay stays blocked by the token, and a call that was served is not owed a second one.
   s.chainState.authorizationState = true
+  await markSettlementServed(s.hash, s.engineDeps())
   const replay = await s.settle()
   assert.equal(replay.success, false)
   if (!replay.success) assert.equal(replay.code, 'already_redeemed')
@@ -991,10 +1249,14 @@ test('with a working replay key, the settled row is still written first', async 
   const order: string[] = []
   const r = await s.settle({
     persist: async (rec: X402SettlementRecord) => { order.push(`row:${rec.outcome}`) },
+    resolveSettlement: async (_tx: string, res: Partial<X402SettlementRecord>) => {
+      order.push(`row:${res.outcome}`)
+      return { ok: true as const, updated: true }
+    },
     persistSpent: async () => { order.push('spent') },
   })
   assert.equal(r.success, true)
-  assert.deepEqual(order, ['row:settled', 'spent'])
+  assert.deepEqual(order, ['row:ambiguous', 'row:settled', 'spent'])
 })
 
 // ── the two conditional updates on the log ───────────────────────────────────────────
@@ -1024,15 +1286,36 @@ test('(producer) a resolution only ever touches a row still ambiguous, keyed by 
   assert.deepEqual(await resolveX402Settlement(tx, { outcome: 'settled', reconciledAt: 'x' }, fakePool(0).getPool), { ok: true, updated: false })
 })
 
-test('(producer) a redemption is a claim on one reconciled row, and a dead database is not a claim', async () => {
+test('(producer) a redemption is a claim on one unserved row, and a dead database is not a claim', async () => {
   const pool = fakePool(1)
-  assert.deepEqual(await redeemX402Settlement(`0x${'ab'.repeat(32)}`, 'now', pool.getPool), { ok: true, updated: true })
+  assert.deepEqual(await redeemX402Settlement(`0x${'ab'.repeat(32)}`, 'now', { staleBefore: 'then' }, pool.getPool), { ok: true, updated: true })
   const update = pool.queries.find((q) => q.sql.startsWith('UPDATE'))!
   assert.match(update.sql, /data->>'outcome' = 'settled'/)
-  assert.match(update.sql, /data \? 'reconciledAt'/)
-  assert.match(update.sql, /NOT data \? 'redeemedAt'/)
-  const dead = await redeemX402Settlement(`0x${'ab'.repeat(32)}`, 'now', async () => { throw new Error('ECONNREFUSED') })
+  assert.match(update.sql, /NOT data \? 'servedAt'/)
+  assert.match(update.sql, /NOT data \? 'redeemedAt' OR data->>'redeemedAt' < \$3/)
+  assert.equal(update.params?.[2], 'then')
+  const dead = await redeemX402Settlement(`0x${'ab'.repeat(32)}`, 'now', { staleBefore: 'then' }, async () => { throw new Error('ECONNREFUSED') })
   assert.equal(dead.ok, false)
+})
+
+test('(producer) a release frees only its own claim on an unserved row, and serving ends the claim', async () => {
+  const pool = fakePool(1)
+  assert.deepEqual(await releaseX402SettlementClaim(`0x${'AB'.repeat(32)}`, 'claimed', pool.getPool), { ok: true, updated: true })
+  const release = pool.queries.find((q) => q.sql.startsWith('UPDATE'))!
+  assert.match(release.sql, /data - 'redeemedAt'/)
+  assert.match(release.sql, /NOT data \? 'servedAt'/)
+  assert.match(release.sql, /data->>'redeemedAt' = \$2/)
+  assert.deepEqual(release.params, [`0x${'ab'.repeat(32)}`, 'claimed'])
+  const served = fakePool(1)
+  assert.deepEqual(await markX402SettlementServed(`0x${'ab'.repeat(32)}`, 'now', served.getPool), { ok: true, updated: true })
+  assert.match(served.queries.find((q) => q.sql.startsWith('UPDATE'))!.sql, /NOT data \? 'servedAt'/)
+})
+
+test('(producer) a settlement write that fails is reported, so nothing promises a read-back of it', async () => {
+  const out = await persistX402Settlement(baseRow(), async () => { throw new Error('ECONNREFUSED') })
+  assert.equal(out.ok, false)
+  const written = await persistX402Settlement(baseRow(), fakePool(1).getPool)
+  assert.deepEqual(written, { ok: true })
 })
 
 test('the file log follows the same rule: a settled row cannot be rewritten', () => {

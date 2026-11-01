@@ -18,10 +18,11 @@
  * Success is evidence we hold, not a claim we relay.
  *
  * The receipt is read from every RPC the chain lists, not through the fallback client: a host
- * that does not have it answers null, and a fallback takes that as the answer. A broadcast
- * with no receipt inside the window is recorded as ambiguous, and that row is read again when
- * a retry of the same authorization arrives and when the proof is read (see
- * reconcileSettlementRow): the buyer who paid is served, and nothing is broadcast twice.
+ * that does not have it answers null, and a fallback takes that as the answer. A broadcast is
+ * recorded as ambiguous the moment its hash exists, before any wait, so a restart inside the
+ * wait loses nothing. The row is read again when a retry of the same authorization arrives and
+ * when the proof is read (see reconcileSettlementRow): the buyer who paid is served, and nothing
+ * is broadcast twice.
  *
  * Chain-generic on purpose: everything comes from a ChainDescriptor plus one
  * SettlementToken, so any registry chain with an EIP-3009 token inherits the rail.
@@ -46,8 +47,10 @@ import {
   persistX402Settlement,
   loadSpentPayments,
   loadX402SettlementsResult,
+  markX402SettlementServed,
   persistSpentPayment,
   redeemX402Settlement,
+  releaseX402SettlementClaim,
   resolveX402Settlement,
   gasSpentOnDay,
   GAS_BUDGET_UNKNOWN,
@@ -129,6 +132,8 @@ export type SettleCode =
   | 'receipt_timeout'
   /** An earlier broadcast of this authorization is still unresolved, so nothing was broadcast. */
   | 'settlement_pending'
+  /** This authorization settled, for a different request than the one retrying it. */
+  | 'request_mismatch'
 
 export type SettleSuccess = {
   success: true
@@ -153,18 +158,30 @@ export type SettleSuccess = {
 
 export type SettleResult =
   | SettleSuccess
-  | { success: false; errorReason: string; code: SettleCode; transaction?: Hex; ambiguous?: boolean }
+  | {
+      success: false
+      errorReason: string
+      code: SettleCode
+      transaction?: Hex
+      ambiguous?: boolean
+      /** The broadcast could not be written to the log, so a retry cannot find it. */
+      unrecorded?: boolean
+    }
 
 export type EngineDeps = DomainDeps & {
   publicClient?: PublicClientLike
   walletClient?: WalletClientLike
   signerAddress?: Hex
-  persist?: (rec: X402SettlementRecord) => Promise<void>
+  /** Writes a row. Reports a failure by throwing or by answering `ok: false`. */
+  persist?: (rec: X402SettlementRecord) => Promise<void | { ok: boolean }>
   loadSpent?: () => Promise<string[]>
   persistSpent?: (key: string) => Promise<void>
   gasSpentTodayWei?: () => Promise<bigint>
   /** Settlement metadata for the durable record. Absent on a bare /settle call. */
   meta?: { tool: string; baseUsd: number; feeUsd: number; facilitatedFor?: string }
+  /** A hash of the paid request, set by a caller that serves something after settlement. A
+   *  retry is served only for the request that made the broadcast. Absent on a bare /settle. */
+  requestHash?: string
   /** How long to wait for a fresh broadcast's receipt, in ms. */
   timeoutMs?: number
   /** Options for the every-RPC receipt reads. Injected by tests; the hosts default to the chain's. */
@@ -172,7 +189,9 @@ export type EngineDeps = DomainDeps & {
   /** The settlement log, with "empty" and "unreadable" told apart. */
   loadSettlements?: () => Promise<X402SettlementsRead>
   resolveSettlement?: (tx: string, resolution: X402SettlementResolution) => Promise<X402SettlementUpdate>
-  redeemSettlement?: (tx: string, at: string) => Promise<X402SettlementUpdate>
+  redeemSettlement?: (tx: string, at: string, opts: { staleBefore: string; servedAt?: string }) => Promise<X402SettlementUpdate>
+  markServed?: (tx: string, at: string) => Promise<X402SettlementUpdate>
+  releaseClaim?: (tx: string, claimedAt: string) => Promise<X402SettlementUpdate>
 }
 
 /** The slice of a viem public client this engine uses. Structural so tests can inject. */
@@ -367,6 +386,22 @@ export async function verifyPayment(input: {
  *  the durable spent-write, which is the same TOCTOU the Arc rail guards. */
 const inFlight = new Set<string>()
 
+/**
+ * How long a fresh broadcast waits for its receipt, and the most that wait may take. The API sits
+ * behind a proxy that cuts a request at about 30 seconds (vercel.json). A receipt that arrives
+ * after the cut is a settlement served into a dead socket, so the wait ends well before it and
+ * the row stays ambiguous, which the retry path knows how to finish.
+ */
+const FIRST_ATTEMPT_WAIT_MS = 14_000
+export const FIRST_ATTEMPT_CEILING_MS = 20_000
+/** A claim this old with no servedAt was left by a process that died holding it. */
+const CLAIM_LEASE_MS = 120_000
+/**
+ * How long after its broadcast a settlement can still be redeemed. Each row is a standing claim
+ * on one call, so it does not stay open forever. A buyer retries within seconds or minutes.
+ */
+export const REDEEM_WINDOW_MS = 24 * 3_600_000
+
 type SettleInput = {
   chain: ChainDescriptor
   token: SettlementToken
@@ -485,11 +520,17 @@ export async function settlePayment(input: SettleInput): Promise<SettleResult> {
       return { success: false, code: 'broadcast_failed', errorReason: `could not broadcast the settlement: ${msg(e)}` }
     }
 
+    // Written before any wait. Until this row exists the hash is only in memory, and a restart
+    // or a second instance would find nothing to read and broadcast or charge again.
+    const base = { chain, token, requirements, a, proven, now, meta: deps.meta, tx: hash, requestHash: deps.requestHash }
+    const recorded = await safePersist(persist, record({ ...base, outcome: 'ambiguous' }))
+    const resolve = deps.resolveSettlement ?? resolveX402Settlement
+
     let missing: string
     let receipt: TransactionReceipt | null = null
     try {
       const wait = await waitForReceiptOnEveryRpc(chain, hash, {
-        env, confirmations: chain.confirmations, timeoutMs: deps.timeoutMs ?? 60_000, ...deps.receipts,
+        env, confirmations: chain.confirmations, timeoutMs: deps.timeoutMs ?? FIRST_ATTEMPT_WAIT_MS, hardTimeoutMs: FIRST_ATTEMPT_CEILING_MS, ...deps.receipts,
       })
       if (wait.status === 'found') receipt = wait.value
       missing = wait.status === 'found' ? '' : describeReceiptWait(wait)
@@ -497,35 +538,38 @@ export async function settlePayment(input: SettleInput): Promise<SettleResult> {
       missing = msg(e)
     }
     if (!receipt) {
-      // The transaction may still land. Record it as ambiguous with the hash and the nonce: a
-      // retry of this authorization finds this row and reads the hash from every RPC again
+      // The transaction may still land. The row written above carries the hash and the nonce: a
+      // retry of this authorization finds it and reads the hash from every RPC again
       // (settleFromEarlierBroadcast), and so does a read of the proof, so it ends as settled
       // only on a receipt with a matching Transfer log, and until then nothing is rebroadcast.
-      await safePersist(persist, record({
-        chain, token, requirements, a, proven, now, outcome: 'ambiguous', meta: deps.meta, tx: hash,
-      }))
       return {
         success: false, code: 'receipt_timeout', transaction: hash, ambiguous: true,
-        errorReason: `broadcast, but ${missing}. Recorded as ambiguous; the transaction may still land.`,
+        ...(recorded ? {} : { unrecorded: true }),
+        errorReason: `broadcast, but ${missing}. ${recorded ? 'Recorded as ambiguous; the transaction may still land.' : 'The transaction may still land, and the settlement log could not be written, so a retry cannot find it.'}`,
       }
     }
 
+    const blockNumber = receipt.blockNumber
     const gasUsed = receipt.gasUsed ?? 0n
     const gasWei = gasUsed * (receipt.effectiveGasPrice ?? gasPrice)
+    const mined = { blockNumber: blockNumber.toString(), gasUsed: gasUsed.toString(), gasWei: gasWei.toString() }
+    /** Move the row off ambiguous, or write it whole if the first write never happened. */
+    const finish = async (outcome: 'settled' | 'reverted', claim: { redeemedAt?: string; servedAt?: string } = {}): Promise<X402SettlementUpdate> => {
+      if (recorded) return resolve(hash, { outcome, ...mined, ...claim })
+      await safePersist(persist, {
+        ...record({ ...base, outcome, blockNumber, gasUsed, gasWei }),
+        ...claim,
+      })
+      return { ok: true, updated: true }
+    }
     if (receipt.status !== 'success') {
-      await safePersist(persist, record({
-        chain, token, requirements, a, proven, now, outcome: 'reverted', meta: deps.meta,
-        tx: hash, blockNumber: receipt.blockNumber, gasUsed, gasWei,
-      }))
+      await finish('reverted')
       return { success: false, code: 'receipt_reverted', transaction: hash, errorReason: `settlement reverted on-chain (tx ${hash})` }
     }
 
     // Status success is not proof the money moved to US. The Transfer log is.
     if (!carriesPayment(receipt, { asset: token.address, from: a.from, to: requirements.payTo, value: a.value })) {
-      await safePersist(persist, record({
-        chain, token, requirements, a, proven, now, outcome: 'reverted', meta: deps.meta,
-        tx: hash, blockNumber: receipt.blockNumber, gasUsed, gasWei,
-      }))
+      await finish('reverted')
       return {
         success: false, code: 'no_transfer_log', transaction: hash,
         errorReason: `tx ${hash} succeeded but carries no matching ${token.symbol} Transfer to ${requirements.payTo}`,
@@ -535,10 +579,20 @@ export async function settlePayment(input: SettleInput): Promise<SettleResult> {
     // The record first: the money has moved, and a replay key that cannot be written must not
     // cost us the record that says so. A replay stays blocked either way, because the token
     // itself refuses a used nonce and verifyPayment reads that before anything else happens.
-    await safePersist(persist, record({
-      chain, token, requirements, a, proven, now, outcome: 'settled', meta: deps.meta,
-      tx: hash, blockNumber: receipt.blockNumber, gasUsed, gasWei,
-    }))
+    //
+    // The row takes the claim on this call in the same write. A caller that serves something
+    // says when it was served (markSettlementServed) or gives the claim back; a bare /settle has
+    // nothing to serve, so its answer is the service.
+    const settledAt = now().toISOString()
+    const claim = { redeemedAt: settledAt, ...(deps.requestHash ? {} : { servedAt: settledAt }) }
+    const written = await finish('settled', claim)
+    if (written.ok && !written.updated) {
+      // A proof read resolved the row while this call waited. The claim is still ours to try for.
+      const taken = await claimCall(hash, settledAt, deps, now)
+      if (!taken.ok || !taken.updated) {
+        return { success: false, code: 'in_flight', transaction: hash, errorReason: 'this settlement is already being served. Do not sign a new payment; retry this one shortly.' }
+      }
+    }
     const replayKeyWarning = await writeSpentKey(key, deps)
 
     return {
@@ -553,7 +607,7 @@ export async function settlePayment(input: SettleInput): Promise<SettleResult> {
       gasUsed: gasUsed.toString(),
       gasWei: gasWei.toString(),
       explorerUrl: txUrl(chain, hash),
-      settledAt: now().toISOString(),
+      settledAt,
       ...(replayKeyWarning ? { replayKeyWarning } : {}),
     }
   } finally {
@@ -650,17 +704,19 @@ export async function reconcileAmbiguousSettlements(
  * The refusals a retry of a landed broadcast can draw. A used nonce with no replay key is what
  * a retry looks like when the first attempt's receipt came late, and the authorization's clock
  * keeps running while the buyer waits, so a late retry is refused as expired before the nonce
- * is even read. Neither may send a buyer who paid back to pay again.
+ * is even read. A replay key with no served call is a settlement whose tool failed or whose
+ * response never reached the buyer. None of them may send a buyer who paid back to pay again.
  */
-const RETRY_REFUSALS: VerifyCode[] = ['nonce_used', 'expired', 'expiring_too_soon']
+const RETRY_REFUSALS: VerifyCode[] = ['nonce_used', 'expired', 'expiring_too_soon', 'already_redeemed']
 
 /**
  * Answer a refused authorization from the log, if the log has broadcast it. Null means this is
  * no retry of ours, and the refusal stands.
  *
- * verifyPayment refuses these before it looks at the signature, and the proof page lists every
- * payer and nonce, so the signature is checked here. Without it anyone could claim the call
- * another buyer paid for by naming the buyer's address and nonce.
+ * verifyPayment refuses these before it looks at the signature, so a forged one is stopped here.
+ * That is not what authenticates a retry, though: the token call puts the whole authorization
+ * and its signature in public calldata, so anyone can present a genuine one. What a retry has
+ * to match is the request that made the broadcast (see redeem).
  */
 async function retryOfEarlierBroadcast(input: SettleInput, refusedAs: VerifyCode): Promise<SettleResult | null> {
   const { chain, token } = input
@@ -750,19 +806,54 @@ async function settleFromEarlierBroadcast(input: SettleInput, a: Authorization, 
   }
 }
 
-/** Serve the one call a reconciled settlement pays for. */
+/** Take the claim on the one call a settlement pays for. */
+function claimCall(tx: string, at: string, deps: EngineDeps, now: () => Date, servedAt?: string): Promise<X402SettlementUpdate> {
+  const staleBefore = new Date(now().getTime() - CLAIM_LEASE_MS).toISOString()
+  return (deps.redeemSettlement ?? redeemX402Settlement)(tx, at, { staleBefore, ...(servedAt ? { servedAt } : {}) })
+}
+
+/**
+ * Serve the one call a settlement pays for, to the request that paid for it.
+ *
+ * The signature cannot decide this, because it is public calldata. So a retry must carry the
+ * same request the broadcast was made for (the tool and its input, hashed on the row at
+ * broadcast and never published). Someone replaying the calldata with their own agentId gets
+ * nothing and takes nothing from the buyer. The limit, stated rather than implied: someone who
+ * already knows the exact request gets that same answer, and that uses up the call.
+ *
+ * A bare /settle has no request to compare and nothing to serve. It can answer for a row that a
+ * /settle made, once, and it can never touch a row a paid tool call made, or it could burn the
+ * buyer's call by naming its resource. When its once is spent it still names the transaction,
+ * so a seller who lost the first answer can see the money moved.
+ */
 async function redeem(input: SettleInput, row: X402SettlementRecord, key: string): Promise<SettleResult> {
   const { chain, requirements } = input
   const deps = input.deps ?? {}
   const now = deps.now ?? (() => new Date())
-  const refused = (errorReason: string): SettleResult => ({ success: false, code: 'already_redeemed', errorReason })
-  // A settlement that went through on its first attempt was served then, and one that was
-  // redeemed was served then. Neither is owed anything, whatever the replay key says.
-  if (!row.tx || !row.reconciledAt || row.redeemedAt) return refused('this authorization has already been redeemed here')
+  const refused = (errorReason: string): SettleResult => ({
+    success: false, code: 'already_redeemed', errorReason, ...(row.tx ? { transaction: row.tx as Hex } : {}),
+  })
+  const fromBareSettle = row.tool === 'facilitator'
+  if (!row.tx || row.servedAt) return refused('this authorization has already been redeemed here')
   if (row.resource !== requirements.resource || row.payTo.toLowerCase() !== requirements.payTo.toLowerCase()) {
     return refused(`this authorization paid for ${row.resource}, not for ${requirements.resource}`)
   }
-  const claim = await (deps.redeemSettlement ?? redeemX402Settlement)(row.tx, now().toISOString())
+  // Rows from before this rule carry no request to compare. A first-attempt /settle was answered
+  // when it was made, and a tool call's row cannot be told from a stranger replaying it.
+  if (fromBareSettle ? !row.reconciledAt : !row.requestHash) return refused('this authorization has already been redeemed here')
+  if (fromBareSettle ? Boolean(deps.requestHash) : row.requestHash !== deps.requestHash) {
+    return {
+      success: false,
+      code: 'request_mismatch',
+      transaction: row.tx as Hex,
+      errorReason: 'this authorization settled for a different request. Nothing was served and nothing was charged. If you paid for it, send that same request again with this same payment; do not sign a new one.',
+    }
+  }
+  if (now().getTime() - Date.parse(row.ts) > REDEEM_WINDOW_MS) {
+    return refused(`this settlement (tx ${row.tx}) landed, but the ${REDEEM_WINDOW_MS / 3_600_000} hour window to redeem its call has closed`)
+  }
+  const at = now().toISOString()
+  const claim = await claimCall(row.tx, at, deps, now, fromBareSettle ? at : undefined)
   if (!claim.ok) {
     return {
       success: false,
@@ -771,7 +862,15 @@ async function redeem(input: SettleInput, row: X402SettlementRecord, key: string
       errorReason: `the settlement landed (tx ${row.tx}) but the log could not be written, so this call cannot be claimed yet. Retry this authorization; it will not be charged again.`,
     }
   }
-  if (!claim.updated) return refused('this authorization has already been redeemed here')
+  if (!claim.updated) {
+    // Served, or another attempt holds the claim, and this read cannot tell which. The next one can.
+    return {
+      success: false,
+      code: 'in_flight',
+      transaction: row.tx as Hex,
+      errorReason: 'this settlement is already being served. Do not sign a new payment; retry this one shortly.',
+    }
+  }
   const replayKeyWarning = await writeSpentKey(key, deps)
   return {
     success: true,
@@ -785,10 +884,26 @@ async function redeem(input: SettleInput, row: X402SettlementRecord, key: string
     gasUsed: row.gasUsed ?? '',
     gasWei: row.gasWei ?? '',
     explorerUrl: txUrl(chain, row.tx),
-    settledAt: now().toISOString(),
+    settledAt: at,
     reconciled: true,
     ...(replayKeyWarning ? { replayKeyWarning } : {}),
   }
+}
+
+/** The paid call's response was written out: its claim is spent. Reports, never throws. */
+export async function markSettlementServed(tx: string, deps: EngineDeps = {}): Promise<boolean> {
+  const at = (deps.now ?? (() => new Date()))().toISOString()
+  const out = await (deps.markServed ?? markX402SettlementServed)(tx, at).catch((e: unknown) => ({ ok: false as const, reason: msg(e) }))
+  return out.ok && out.updated
+}
+
+/**
+ * The buyer paid and got nothing: the tool failed, or the socket was gone. The claim goes back,
+ * so a retry of this authorization can be served. If this write fails the lease does it later.
+ */
+export async function releaseSettlementClaim(tx: string, claimedAt: string, deps: EngineDeps = {}): Promise<boolean> {
+  const out = await (deps.releaseClaim ?? releaseX402SettlementClaim)(tx, claimedAt).catch((e: unknown) => ({ ok: false as const, reason: msg(e) }))
+  return out.ok && out.updated
 }
 
 // ── internals ─────────────────────────────────────────────────────────────────────
@@ -871,11 +986,14 @@ function msg(e: unknown): string {
   return e instanceof Error ? e.message : String(e)
 }
 
-async function safePersist(persist: (r: X402SettlementRecord) => Promise<void>, rec: X402SettlementRecord): Promise<void> {
+/** Write a row and say whether it was written. A broadcast must not be lost to a throw here. */
+async function safePersist(persist: NonNullable<EngineDeps['persist']>, rec: X402SettlementRecord): Promise<boolean> {
   try {
-    await persist(rec)
+    const out = await persist(rec)
+    return out ? out.ok : true
   } catch (e) {
     console.error('[x402-3009] settlement record failed:', msg(e))
+    return false
   }
 }
 
@@ -892,6 +1010,7 @@ function record(input: {
   blockNumber?: bigint
   gasUsed?: bigint
   gasWei?: bigint
+  requestHash?: string
 }): X402SettlementRecord {
   const { chain, token, requirements, a, proven, meta } = input
   const baseUsd = meta?.baseUsd ?? 0
@@ -917,5 +1036,6 @@ function record(input: {
     ...(input.gasUsed !== undefined ? { gasUsed: input.gasUsed.toString() } : {}),
     ...(input.gasWei !== undefined ? { gasWei: input.gasWei.toString() } : {}),
     ...(meta?.facilitatedFor ? { facilitatedFor: meta.facilitatedFor } : {}),
+    ...(input.requestHash ? { requestHash: input.requestHash } : {}),
   }
 }

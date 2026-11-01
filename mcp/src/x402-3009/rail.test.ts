@@ -1,5 +1,6 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
+import { EventEmitter } from 'node:events'
 import {
   railStatus,
   railPaywallGate,
@@ -10,6 +11,8 @@ import {
   railChallenge,
   railRequirements,
   railServeTool,
+  railRequestHash,
+  watchDelivery,
   railProof,
   railReconcileOnProofRead,
   railPaidNetwork,
@@ -543,6 +546,7 @@ test('a settled call hands the buyer its receipt in PAYMENT-RESPONSE', async () 
     walletClient: { writeContract: async () => txHash as `0x${string}` },
     signerAddress: PAY_TO,
     persist: async () => {},
+    resolveSettlement: async () => ({ ok: true as const, updated: true }),
     persistSpent: async () => {},
     loadSpent: async () => [],
     loadSettlements: async () => ({ ok: true, rows: [] }),
@@ -603,6 +607,10 @@ test('a buyer whose transaction landed after the wait is served on retry, with n
       rows[0].redeemedAt ??= at
       return { ok: true as const, updated: first }
     },
+    markServed: async (_tx: string, at: string) => {
+      rows[0].servedAt = at
+      return { ok: true as const, updated: true }
+    },
     gasSpentTodayWei: async () => 0n,
     timeoutMs: 0,
     receipts: {
@@ -623,7 +631,7 @@ test('a buyer whose transaction landed after the wait is served on retry, with n
   const firstBody = first.body as Record<string, unknown>
   assert.equal(firstBody.ambiguous, true)
   assert.equal(firstBody.transaction, txHash)
-  assert.match(String(firstBody.note), /Send this same payment again rather than signing a new one/)
+  assert.match(String(firstBody.note), /Send this same payment again with this same request rather than signing a new one/)
   assert.equal(served, 0)
 
   // A retry before it lands: still 502, still one broadcast, still not a 402.
@@ -645,10 +653,174 @@ test('a buyer whose transaction landed after the wait is served on retry, with n
   assert.equal(rows[0].outcome, 'settled')
   assert.equal(rows.length, 1)
 
-  // The same payment a third time gets no second call.
+  // The response went out, and the same payment again gets no second call.
+  await retry.onDelivery?.(true)
   const replay = await railServeTool('risk_check', { agentId: '#0' }, header, s, deps)
   assert.equal(replay.httpStatus, 402)
   assert.equal(served, 1)
+})
+
+/** One paid call against an in-memory log, for the tests of what happens after settlement. */
+async function settledCallScene(nonce: string, handler: () => Promise<unknown>) {
+  clearDomainCache()
+  const { buyer, header } = await signedHeader(nonce)
+  const txHash = `0x${nonce.repeat(32)}` as `0x${string}`
+  const rows: X402SettlementRecord[] = []
+  const spent: string[] = []
+  let broadcasts = 0
+  const log = {
+    persist: async (r: X402SettlementRecord) => { rows.push({ ...r }) },
+    persistSpent: async (k: string) => { spent.push(k) },
+    loadSpent: async () => [...spent],
+    loadSettlements: async () => ({ ok: true as const, rows: rows.map((r) => ({ ...r })) }),
+    resolveSettlement: async (_tx: string, res: Partial<X402SettlementRecord>) => {
+      Object.assign(rows[0], res)
+      return { ok: true as const, updated: true }
+    },
+    redeemSettlement: async (_tx: string, at: string) => {
+      const free = !rows[0].redeemedAt && !rows[0].servedAt
+      if (free) rows[0].redeemedAt = at
+      return { ok: true as const, updated: free }
+    },
+    markServed: async (_tx: string, at: string) => {
+      rows[0].servedAt = at
+      return { ok: true as const, updated: true }
+    },
+    releaseClaim: async () => {
+      delete rows[0].redeemedAt
+      return { ok: true as const, updated: true }
+    },
+  }
+  const deps = {
+    reader: reader(),
+    env: configured,
+    publicClient: {
+      readContract: async (args: Record<string, unknown>) =>
+        args.functionName === 'authorizationState' ? rows.length > 0 : 10_000_000n,
+      simulateContract: async () => ({ request: {} }),
+      estimateContractGas: async () => 85_000n,
+      getGasPrice: async () => 50_578_000n,
+    },
+    walletClient: { writeContract: async () => { broadcasts += 1; return txHash } },
+    signerAddress: PAY_TO as `0x${string}`,
+    gasSpentTodayWei: async () => 0n,
+    timeoutMs: 0,
+    receipts: {
+      urls: ['https://a.rpc.test'],
+      call: async (_url: string, method: string, params: readonly unknown[]) =>
+        method === 'eth_blockNumber' ? '0xffffff' : hostReceipt(params[0], buyer.address),
+    },
+    handlers: { ...STUB_HANDLERS, risk_check: handler },
+    ...log,
+  }
+  const status = railStatus({ ...configured, X402_3009_SETTLEMENT_FEE_USD: '0.02' })
+  return { header, rows, deps, status, broadcastCount: () => broadcasts }
+}
+
+test('the buyer is charged once and served once when the tool fails after settlement', async () => {
+  let fail = true
+  const s = await settledCallScene('71', async () => {
+    if (fail) throw new Error('the tool fell over')
+    return { verdict: 'ALLOW' }
+  })
+  const first = await railServeTool('risk_check', { agentId: '#0' }, s.header, s.status, s.deps)
+  assert.equal(first.httpStatus, 500)
+  assert.match(String((first.body as Record<string, unknown>).note), /Send this same payment again with this same request/)
+  assert.equal(s.rows[0].redeemedAt, undefined, 'the claim went back')
+  assert.equal(s.rows[0].servedAt, undefined)
+
+  fail = false
+  const retry = await railServeTool('risk_check', { agentId: '#0' }, s.header, s.status, s.deps)
+  assert.equal(retry.httpStatus, 200, JSON.stringify(retry.body).slice(0, 300))
+  assert.equal(s.broadcastCount(), 1)
+})
+
+test('a response that never reached the socket leaves the call redeemable; one that did ends it', async () => {
+  const s = await settledCallScene('72', async () => ({ verdict: 'ALLOW' }))
+  const first = await railServeTool('risk_check', { agentId: '#0' }, s.header, s.status, s.deps)
+  assert.equal(first.httpStatus, 200)
+  assert.ok(s.rows[0].redeemedAt)
+  await first.onDelivery?.(false)
+  assert.equal(s.rows[0].servedAt, undefined)
+
+  const retry = await railServeTool('risk_check', { agentId: '#0' }, s.header, s.status, s.deps)
+  assert.equal(retry.httpStatus, 200, JSON.stringify(retry.body).slice(0, 300))
+  await retry.onDelivery?.(true)
+  assert.ok(s.rows[0].servedAt)
+
+  const replay = await railServeTool('risk_check', { agentId: '#0' }, s.header, s.status, s.deps)
+  assert.equal(replay.httpStatus, 402)
+  assert.equal(s.broadcastCount(), 1)
+})
+
+test('THE REPLAY through the rail: another agentId on the same payment is a 409, and the buyer is still served', async () => {
+  const s = await settledCallScene('73', async () => ({ verdict: 'ALLOW' }))
+  const first = await railServeTool('risk_check', { agentId: '#0' }, s.header, s.status, s.deps)
+  await first.onDelivery?.(false)
+  const stolen = await railServeTool('risk_check', { agentId: '#attacker' }, s.header, s.status, s.deps)
+  assert.equal(stolen.httpStatus, 409)
+  assert.equal(stolen.onDelivery, undefined)
+  assert.equal(s.rows[0].redeemedAt, undefined)
+  const retry = await railServeTool('risk_check', { agentId: '#0' }, s.header, s.status, s.deps)
+  assert.equal(retry.httpStatus, 200)
+})
+
+test('the request hash ignores key order and sees every part of the request', () => {
+  const base = railRequestHash('risk_check', { agentId: '#0', txContext: { amountUsd: 1, payee: '0xabc' } as never })
+  assert.equal(base, railRequestHash('risk_check', { agentId: '#0', txContext: { payee: '0xabc', amountUsd: 1 } as never }))
+  assert.notEqual(base, railRequestHash('verify_agent', { agentId: '#0', txContext: { amountUsd: 1, payee: '0xabc' } as never }))
+  assert.notEqual(base, railRequestHash('risk_check', { agentId: '#1', txContext: { amountUsd: 1, payee: '0xabc' } as never }))
+  assert.notEqual(base, railRequestHash('risk_check', { agentId: '#0', txContext: { amountUsd: 2, payee: '0xabc' } as never }))
+  assert.equal(railRequestHash('risk_check', { agentId: '#0' }), railRequestHash('risk_check', { agentId: '#0', txContext: null }))
+})
+
+test('watchDelivery reports what the socket did, and a socket already gone is not delivered', async () => {
+  const seen: boolean[] = []
+  const report = async (ok: boolean) => { seen.push(ok) }
+  const res = new EventEmitter() as EventEmitter & { writableFinished: boolean }
+  res.writableFinished = false
+  watchDelivery(res as never, report)
+  assert.deepEqual(seen, [])
+  res.writableFinished = true
+  res.emit('close')
+  assert.deepEqual(seen, [true])
+
+  const cut = new EventEmitter() as EventEmitter & { writableFinished: boolean }
+  cut.writableFinished = false
+  watchDelivery(cut as never, report)
+  cut.emit('close')
+  assert.deepEqual(seen, [true, false])
+
+  watchDelivery(Object.assign(new EventEmitter(), { destroyed: true }) as never, report)
+  assert.deepEqual(seen, [true, false, false])
+})
+
+test('the public proof does not list which landed settlements still have a call to redeem', async () => {
+  const landed: X402SettlementRecord = {
+    ...row('settled', '0xaaa0000000000000000000000000000000000001', 0.021, 'risk_check'),
+    reconciledAt: '2026-08-14T00:00:00.000Z',
+    requestHash: 'secret',
+    redeemedAt: '2026-08-14T00:00:01.000Z',
+    servedAt: '2026-08-14T00:00:02.000Z',
+  }
+  const p = await railProof(railStatus(configured), { load: async () => [landed], env: configured })
+  for (const hidden of ['authNonce', 'requestHash', 'redeemedAt', 'servedAt']) {
+    assert.ok(!(hidden in p.recent[0]), `${hidden} is not published`)
+  }
+  assert.equal(p.recent[0].reconciledAt, landed.reconciledAt)
+})
+
+test('a broadcast the log could not record is not told to retry on a read-back that cannot happen', async () => {
+  const s = await settledCallScene('74', async () => ({ verdict: 'ALLOW' }))
+  const out = await railServeTool('risk_check', { agentId: '#0' }, s.header, s.status, {
+    ...s.deps,
+    persist: async () => ({ ok: false }),
+    receipts: { urls: ['https://a.rpc.test'], call: async (_u: string, method: string) => (method === 'eth_blockNumber' ? '0xffffff' : null) },
+  })
+  assert.equal(out.httpStatus, 502)
+  const note = String((out.body as Record<string, unknown>).note)
+  assert.match(note, /could not record it/)
+  assert.doesNotMatch(note, /Send this same payment again/)
 })
 
 test('a proof read reconciles at most once per interval and costs nothing with no ambiguous rows', async () => {
