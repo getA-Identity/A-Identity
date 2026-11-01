@@ -773,26 +773,48 @@ export type GatewaySettlementRecord = {
 const GATEWAY_SETTLEMENTS_FILE = join(DATA_DIR, 'gateway-settlements.json')
 export const GATEWAY_SETTLEMENTS_CAP = 2000
 
-/** Load the retained Gateway settlement records, oldest first. Never throws: this feeds
- *  a proof page, where showing nothing beats a 500. Nothing here guards spending, because
- *  this rail spends nothing per call. */
-export async function loadGatewaySettlements(): Promise<GatewaySettlementRecord[]> {
+export type GatewaySettlementsRead = { ok: true; rows: GatewaySettlementRecord[] } | { ok: false; reason: string }
+
+/**
+ * The retained Gateway settlement records, oldest first, with "no rows yet" and "could not
+ * read the log" told apart. The season report counts Milestone 1 from this, and a log it
+ * cannot read must say so rather than read as zero checks. The seams are injectable so both
+ * failures are tested against this function rather than a copy of it.
+ */
+export async function loadGatewaySettlementsResult(io: { getPool?: () => Promise<unknown>; file?: string } = {}): Promise<GatewaySettlementsRead> {
   try {
-    const p = await getPool()
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const p = (await (io.getPool ?? getPool)()) as any
     if (p) {
       await p.query('CREATE TABLE IF NOT EXISTS gateway_settlements (id bigserial PRIMARY KEY, data jsonb NOT NULL)')
       const r = await p.query('SELECT data FROM gateway_settlements ORDER BY id ASC')
-      return r.rows.map((row: { data: GatewaySettlementRecord }) => row.data)
+      return { ok: true, rows: r.rows.map((row: { data: GatewaySettlementRecord }) => row.data) }
     }
   } catch (e) {
-    console.error('[storage] gateway settlement read failed:', e instanceof Error ? e.message : e)
-    return []
+    const reason = e instanceof Error ? e.message : String(e)
+    console.error('[storage] gateway settlement read failed:', reason)
+    return { ok: false, reason }
   }
+  const file = io.file ?? GATEWAY_SETTLEMENTS_FILE
   try {
-    return JSON.parse(readFileSync(GATEWAY_SETTLEMENTS_FILE, 'utf8')) as GatewaySettlementRecord[]
-  } catch {
-    return []
+    const rows = JSON.parse(readFileSync(file, 'utf8')) as unknown
+    if (!Array.isArray(rows)) return { ok: false, reason: `${file} does not hold a list of settlements` }
+    return { ok: true, rows: rows as GatewaySettlementRecord[] }
+  } catch (e) {
+    if ((e as NodeJS.ErrnoException)?.code === 'ENOENT') return { ok: true, rows: [] }
+    const reason = e instanceof Error ? e.message : String(e)
+    console.error('[storage] gateway settlement file unreadable:', reason)
+    return { ok: false, reason }
   }
+}
+
+/** The retained Gateway settlement records, oldest first. Never throws: this feeds a proof
+ *  page, where showing nothing beats a 500. Nothing here guards spending, because this rail
+ *  spends nothing per call. Where an unreadable log must not read as an empty one (the season
+ *  report), use loadGatewaySettlementsResult. */
+export async function loadGatewaySettlements(): Promise<GatewaySettlementRecord[]> {
+  const r = await loadGatewaySettlementsResult()
+  return r.ok ? r.rows : []
 }
 
 /** Durably record one settlement attempt, trimming past the cap. Never throws: by the time
@@ -868,7 +890,8 @@ export async function updateGatewaySettlement(
 // the Arc Acceleration Season report use. A row records what was checked, what the verdict
 // was, and what the server prepared; only the server moves it on, and only after reading the
 // payment's receipt from the chain itself. Rows are milestone evidence, so there is no cap:
-// the Gateway log keeps 2000 rows, this keeps every flow.
+// the Gateway log keeps 2000 rows, this keeps every flow, and the season report links a flow
+// whose Gateway row has aged out by the settlement this row recorded.
 
 /** Where a flow stands. The audit vocabulary (executed, blocked, awaiting_human, abandoned)
  *  plus pending: a verdict that allowed the payment and a receipt nobody has shown us yet. */

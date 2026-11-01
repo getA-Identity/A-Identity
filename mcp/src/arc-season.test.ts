@@ -541,3 +541,43 @@ test('the live deps read the verify-then-pay flow log, mapped to season flows', 
   assert.equal(typeof d.flowRows, 'function')
   assert.ok(Array.isArray(await d.flowRows!()))
 })
+
+test('an unreadable Gateway log is reported as unreadable, and Milestone 1 says so instead of reading zero checks', async () => {
+  const d = deps({ flowRows: async () => [flow({ payer: OURS_GATEWAY })] })
+  d.gatewayRows = async () => {
+    throw new Error('postgres unreachable')
+  }
+  const r = await arcSeasonReport(d)
+  assert.deepEqual(r.logs.gateway, { readable: false, rows: 0, reason: 'postgres unreachable' })
+  assert.equal(r.milestone1.checks.count, 0)
+  assert.match(r.milestone1.checks.note, /^The Circle Gateway settlement log could not be read on this request \(postgres unreachable\), so no check, and no flow linked to one, is counted/)
+  // The live deps read it through the loader that tells the two apart.
+  assert.ok(Array.isArray(await liveArcSeasonDeps({} as NodeJS.ProcessEnv).gatewayRows()))
+})
+
+test("a recorded flow whose check aged out of a full Gateway log links by its own record's settlement, and only then", async () => {
+  // The log keeps its newest three rows here; the flow's check is older than all of them.
+  const kept = [0, 1, 2].map((i) => gw({ payer: OURS_GATEWAY, ts: `2026-11-01T10:0${i}:00Z` }))
+  const echo = { network: arc.caip2, payer: lower(OURS_GATEWAY), outcome: 'credited', ts: '2026-11-01T09:00:00Z' }
+  const old = flow({ payer: OURS_GATEWAY, at: '2026-11-01T09:00:07Z', check: echo })
+  const r = await arcSeasonReport(deps({ gateway: kept, gatewayCap: 3, flowRows: async () => [old] }))
+  const c = r.milestone1.checks
+  assert.deepEqual([c.count, c.agedOut, c.internal, c.unlinked], [1, 1, 3, 3])
+  assert.match(c.note, /1 of the flows link by the settlement their own flow record holds: the Gateway log keeps its newest 3 rows/)
+
+  // Every other case links nothing: a log that is not full, a check newer than the oldest row
+  // kept (its row should be there), a payer that is not ours, another network, an unsettled
+  // check, an outcome before the check, and a log that cannot be read.
+  const none = async (over: Parameters<typeof deps>[0], f = old) => (await arcSeasonReport(deps({ gateway: kept, gatewayCap: 3, flowRows: async () => [f], ...over }))).milestone1.checks.count
+  assert.equal(await none({ gatewayCap: 4 }), 0, 'the log is not full, so nothing aged out of it')
+  assert.equal(await none({}, flow({ payer: OURS_GATEWAY, at: '2026-11-01T10:05:00Z', check: { ...echo, ts: '2026-11-01T10:01:30Z' } })), 0)
+  assert.equal(await none({}, flow({ payer: EXT_A, at: '2026-11-01T09:00:07Z', check: { ...echo, payer: lower(EXT_A) } })), 0)
+  assert.equal(await none({}, flow({ payer: OURS_GATEWAY, at: '2026-11-01T09:00:07Z', check: { ...echo, network: base.caip2 } })), 0)
+  assert.equal(await none({}, flow({ payer: OURS_GATEWAY, at: '2026-11-01T09:00:07Z', check: { ...echo, outcome: 'failed' } })), 0)
+  assert.equal(await none({}, flow({ payer: OURS_GATEWAY, at: '2026-11-01T08:59:00Z', check: echo })), 0)
+  const dark = deps({ gatewayCap: 3, flowRows: async () => [old] })
+  dark.gatewayRows = async () => {
+    throw new Error('postgres unreachable')
+  }
+  assert.equal((await arcSeasonReport(dark)).milestone1.checks.count, 0)
+})

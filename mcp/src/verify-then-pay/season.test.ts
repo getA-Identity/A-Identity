@@ -67,6 +67,8 @@ test('an executed flow is a payment, named by its hash, timed by the block it wa
     { checkNonce: FLOW, payer: PAYER, payee: PAYEE, outcome: 'paid', txHash: TX, evidenceUrl: undefined, at: '2026-11-01T10:00:09.000Z' },
   )
   assert.notEqual(f.at, payment('success').readBackAt)
+  // The check's settlement as the row recorded it, for when its Gateway row has aged out.
+  assert.deepEqual(f.check, { network: arc.caip2, payer: PAYER, outcome: 'credited', ts: '2026-11-01T10:00:00.000Z' })
   assert.match(f.note, /0\.01 USDC/)
   assert.match(f.note, /in block 101/)
 })
