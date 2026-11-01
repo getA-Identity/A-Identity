@@ -190,7 +190,7 @@ export default function ArcVault() {
                   {alert === 'unbounded' ? (
                     <>
                       <span className="font-semibold">This browser has not seen a session key expiry land for the vault you deployed.</span>{' '}
-                      <span className="break-all font-mono text-xs">{setup.vault}</span>. Until one is set, its agent key has no time bound.
+                      <span className="break-all font-mono text-xs">{setupAt}</span>. Until one is set, its agent key has no time bound.
                     </>
                   ) : alert === 'untracked' ? (
                     <>

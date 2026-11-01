@@ -364,9 +364,39 @@ export function withRecord(s: SetupState, field: 'deploy' | 'expiryTx' | 'fundTx
   return next
 }
 
-/** The address a deploy from this setup would create, when it is known: where to look before deploying again. */
+/**
+ * The contract a finished deploy's receipt named, whether or not it read back as the setup asked.
+ * It exists and the connected owner deployed it, so a vault that is not what was asked for is
+ * never treated as no vault at all. A reverted deploy created nothing, whatever a receipt says.
+ */
+export function createdContract(s: SetupState | null): string | null {
+  const d = s?.deploy
+  if (!d || d.outcome === 'pending' || d.outcome === 'reverted') return null
+  return d.contractAddress ?? null
+}
+
+/**
+ * How a deploy ended when it left the setup with no vault to continue with:
+ *   - 'contract': a receipt named a contract that did not read back as asked. It stays in the setup.
+ *   - 'no-vault': a revert, or a receipt with no contract address. The only case that means no vault.
+ *   - 'untracked': no receipt seen and the person stopped tracking it. It can still land.
+ *   - 'replaced': this hash can no longer land; what replaced it is not known from here.
+ */
+export type DeployEnd = { kind: 'contract'; address: string } | { kind: 'no-vault' } | { kind: 'untracked' } | { kind: 'replaced' }
+
+export function deployEnd(s: SetupState | null): DeployEnd | null {
+  const d = s?.deploy
+  if (!s || s.vault || !d || d.outcome === 'pending') return null
+  const address = createdContract(s)
+  if (address) return { kind: 'contract', address }
+  if (d.outcome === 'untracked') return { kind: 'untracked' }
+  if (d.outcome === 'replaced') return { kind: 'replaced' }
+  return { kind: 'no-vault' }
+}
+
+/** The address a deploy from this setup created or would create, when it is known: where to look before deploying again. */
 export function predictedVault(s: SetupState): string | null {
-  return s.vault ?? s.deploy?.predicted ?? s.intent?.predicted ?? null
+  return s.vault ?? createdContract(s) ?? s.deploy?.predicted ?? s.intent?.predicted ?? null
 }
 
 /**
@@ -374,14 +404,19 @@ export function predictedVault(s: SetupState): string | null {
  *   - 'sending': the wallet was asked to deploy and no hash ever came back,
  *   - 'deploying': the deploy has a hash and no receipt yet,
  *   - 'untracked': the person stopped tracking the deploy, which can still land,
- *   - 'unbounded': the vault exists and no expiry has been seen to land.
- * A deploy that reverted, or whose nonce went to another transaction, made no vault: no alert.
+ *   - 'unbounded': a vault exists, or a contract a receipt named, and no expiry has been seen to land.
+ * A deploy that reverted, or whose nonce went to another transaction, left no contract to warn about.
  */
 export function setupAlert(s: SetupState | null, snapshot: VaultSnapshot | null): 'sending' | 'deploying' | 'untracked' | 'unbounded' | null {
   if (!s) return null
   if (!s.vault) {
     if (!s.deploy) return s.intent ? 'sending' : null
     if (s.deploy.outcome === 'pending') return 'deploying'
+    const created = createdContract(s)
+    if (created) {
+      const onScreen = snapshot !== null && sameAddress(snapshot.address, created) && snapshot.network === s.network
+      return onScreen && snapshot.sessionKeyExpiry !== 0n ? null : 'unbounded'
+    }
     return s.deploy.outcome === 'untracked' ? 'untracked' : null
   }
   return expirySet(s, snapshot) ? null : 'unbounded'
@@ -396,7 +431,7 @@ export function vaultToLookFor(s: SetupState | null): { predicted: string; deplo
   if (!s || s.vault) return null
   if (!s.deploy) return s.intent ? { predicted: s.intent.predicted, deployArgs: s.intent.deployArgs } : null
   if (s.deploy.outcome !== 'untracked') return null
-  const predicted = s.deploy.predicted ?? s.intent?.predicted
+  const predicted = s.deploy.contractAddress ?? s.deploy.predicted ?? s.intent?.predicted
   const deployArgs = s.deploy.deployArgs ?? s.intent?.deployArgs
   return predicted && deployArgs ? { predicted, deployArgs } : null
 }

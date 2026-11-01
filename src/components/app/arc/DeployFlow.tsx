@@ -14,6 +14,8 @@
  * A-Identity signs none of it; each step is simulated as the owner, then signed in the owner's
  * wallet, and each counts only once its receipt carries what it should. Where the setup stands is
  * decided by setupStep (tx-rules.ts), where the live vault wins over a record that is only pending.
+ * A deploy whose receipt names a contract is never called no vault, even when that contract does not
+ * read back as asked: it stays in the setup with its banner and a link to its page.
  */
 import { useCallback, useEffect, useMemo, useState, type FormEvent } from 'react'
 import { ArrowLeft, CheckCircle2, Loader2, ShieldAlert } from 'lucide-react'
@@ -21,7 +23,7 @@ import type { Chain } from '../../../lib/chains'
 import { track } from '../../../lib/analytics'
 import type { SetupState, TxRecord } from '../../../lib/arc/pending'
 import { deployReadback } from '../../../lib/arc/receipt'
-import { fundingUnresolved, predictedVault, setupStep, vaultToLookFor, withRecord } from '../../../lib/arc/tx-rules'
+import { deployEnd, fundingUnresolved, predictedVault, setupStep, vaultToLookFor, withRecord } from '../../../lib/arc/tx-rules'
 import {
   ARC_CHAINS,
   arcChainFor,
@@ -128,6 +130,10 @@ export default function DeployFlow({
   const provider = wallet.wallet?.provider ?? null
   const ownerMismatch = Boolean(setup && account && !sameAddress(account, setup.owner))
   const startedAt = setup?.startedAt ?? null
+  // How a deploy ended with no vault to continue with. A contract its receipt named is kept in the
+  // setup, and is never offered a clean slate: it belongs to the owner and has no expiry yet.
+  const ended = deployEnd(setup)
+  const created = ended?.kind === 'contract' ? ended.address : null
 
   const patch = useCallback(
     (change: (s: SetupState) => SetupState) => {
@@ -137,26 +143,27 @@ export default function DeployFlow({
   )
 
   // The vault, read back whenever the setup has one and is between steps.
+  const readAddress = setup?.vault ?? created
   const readBack = useCallback(async () => {
-    if (!setup?.vault) return
-    const r = await readVault(chain, setup.vault)
+    if (!readAddress) return
+    const r = await readVault(chain, readAddress)
     if (r.ok) {
       setSnapshot(r.data)
       setSnapshotNote(null)
     } else {
       setSnapshotNote(`The vault could not be read just now (${r.failure.reason}). Its state is shown once a read succeeds.`)
     }
-  }, [chain, setup?.vault])
+  }, [chain, readAddress])
 
   useEffect(() => {
-    if (step !== 'expiry' && step !== 'expiry-pending' && step !== 'fund' && step !== 'fund-pending' && step !== 'done') return
+    if (step !== 'expiry' && step !== 'expiry-pending' && step !== 'fund' && step !== 'fund-pending' && step !== 'done' && !created) return
     void readBack()
     // A pending step is decided by the chain as much as by its receipt: a transaction that will
     // never land must not hold the setup, and a value set by any other means counts.
     if (step !== 'expiry-pending' && step !== 'fund-pending') return
     const t = setInterval(() => void readBack(), REREAD_MS)
     return () => clearInterval(t)
-  }, [step, readBack])
+  }, [step, created, readBack])
 
   // A deploy with no hash back, or one no longer tracked, can still create the vault: look for it
   // where it should be, and take it only if it reads back exactly as this setup asked.
@@ -558,9 +565,43 @@ export default function DeployFlow({
       {setup?.deploy && (step === 'deploying' || step === 'deploy-failed') && (
         <TxReceipt record={setup.deploy} onUpdate={(r) => updateRecord('deploy', r)} onSettled={(r) => onFinal('deploy', r)} />
       )}
-      {step === 'deploy-failed' && setup?.deploy && (
+      {step === 'deploy-failed' && setup?.deploy && created && (
         <div className="space-y-2">
-          {setup.deploy.outcome === 'untracked' ? (
+          {snapshot && sameAddress(snapshot.address, created) && snapshot.sessionKeyExpiry !== 0n ? (
+            <p className="rounded-xl border border-warn/30 bg-warn/10 px-3 py-2 text-xs text-foreground/85">
+              <span className="font-semibold text-foreground">A contract came out of this deploy, and it reads a session key expiry.</span> Contract{' '}
+              <Mono>{created}</Mono>. It could not be confirmed as what this setup asked, so the setup stops here. Its page shows what it really is.
+            </p>
+          ) : (
+            <div role="alert" className="rounded-2xl border border-danger/30 bg-danger/[0.08] p-4 text-sm">
+              <div className="flex items-start gap-2">
+                <ShieldAlert size={16} className="mt-0.5 shrink-0 text-danger" aria-hidden="true" />
+                <div className="min-w-0">
+                  <div className="font-semibold text-foreground">A contract came out of this deploy, and its agent key has no time bound yet.</div>
+                  <div className="mt-1 text-foreground/80">
+                    Contract <Mono>{created}</Mono>. It could not be confirmed as what this setup asked, so the setup stops here and funds nothing. Its
+                    page shows what it really is: if it runs this page's build and you own it, set an expiry there, and send it no USDC before you
+                    have looked.
+                  </div>
+                  {snapshotNote && <div className="mt-1 text-xs text-foreground/70">{snapshotNote}</div>}
+                </div>
+              </div>
+            </div>
+          )}
+          <div className="flex flex-wrap items-center gap-2">
+            <Button size="sm" onClick={() => onOpenVault(setup.network, created)}>
+              Open its vault page
+            </Button>
+            <Button size="sm" variant="outline" onClick={forget}>
+              Forget this setup
+            </Button>
+          </div>
+          <p className="text-[11px] text-foreground/55">Forgetting the setup leaves the contract on chain, and this browser stops warning about it.</p>
+        </div>
+      )}
+      {step === 'deploy-failed' && setup?.deploy && !created && (
+        <div className="space-y-2">
+          {ended?.kind === 'untracked' ? (
             <p className="text-xs text-foreground/80">
               This page stopped tracking the deploy without seeing a receipt. If it lands later, it creates a vault
               {predicted ? (
@@ -572,11 +613,16 @@ export default function DeployFlow({
               whose agent key has no time bound until you set one. While this view is open it looks there every {LOOK_MS / 1000} seconds, and
               picks the vault up at step 2 if it appears. Look at that address before you deploy again.
             </p>
+          ) : ended?.kind === 'replaced' ? (
+            <p className="text-xs text-foreground/80">
+              This hash can no longer land, and no vault that reads back as asked came from it. What replaced it is not known from here: check your
+              wallet's activity before you deploy again.
+            </p>
           ) : (
             <p className="text-xs text-foreground/75">No vault came out of this deploy, so there is nothing to bound or fund. Start again when ready.</p>
           )}
           <div className="flex flex-wrap items-center gap-2">
-            {setup.deploy.outcome === 'untracked' && predicted && (
+            {(ended?.kind === 'untracked' || ended?.kind === 'replaced') && predicted && (
               <Button size="sm" variant="outline" onClick={() => onOpenVault(setup.network, predicted)}>
                 Look at that address
               </Button>

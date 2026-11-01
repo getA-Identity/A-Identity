@@ -77,12 +77,22 @@ type TxRules = {
   withRecord: (s: Rec, field: string, r: Rec) => Rec
   predictedVault: (s: Rec) => string | null
   setupAlert: (s: Rec | null, snapshot: Rec | null) => string | null
+  createdContract: (s: Rec | null) => string | null
+  deployEnd: (s: Rec | null) => { kind: string; address?: string } | null
   vaultToLookFor: (s: Rec | null) => { predicted: string; deployArgs: Rec } | null
 }
 type Failure = { code: string; message: string }
 type SendModule = {
   sendPrepared: (provider: { request: (a: { method: string; params?: unknown[] }) => Promise<unknown> }, p: Rec, onStep: (s: string) => void) => Promise<string>
   failureOf: (e: unknown) => Failure
+}
+type HostsModule = {
+  NoHostAnswered: new (tried: string[], last: unknown) => Error & { tried: string[]; last: unknown }
+  onHosts: <C, T>(
+    hosts: readonly { host: string; client: C }[],
+    x: { chainId: number; askChainId: (client: C) => Promise<number>; isFinal: (e: unknown) => boolean },
+    fn: (client: C, host: string) => Promise<T>,
+  ) => Promise<{ value: T; host: string }>
 }
 type ChainLike = { id: string; caip2: string; chainId: number | null; name: string; testnet: boolean }
 type ChainsModule = { CHAIN_BY_ID: Record<string, ChainLike> }
@@ -91,6 +101,7 @@ const rules = async () => (await import(repoUrl('src/lib/arc/vault-rules.ts').hr
 const vaultModule = async () => (await import(repoUrl('src/lib/contracts/agent-spend-policy.ts').href)) as VaultModule
 const txRules = async () => (await import(repoUrl('src/lib/arc/tx-rules.ts').href)) as TxRules
 const sendModule = async () => (await import(repoUrl('src/lib/arc/send.ts').href)) as SendModule
+const hostsModule = async () => (await import(repoUrl('src/lib/arc/hosts.ts').href)) as HostsModule
 const chainsModule = async () => (await import(repoUrl('src/lib/chains.ts').href)) as ChainsModule
 
 // The registry's own Arc Mainnet USDC, never a literal here either.
@@ -131,6 +142,72 @@ function fnBody(code: string, name: string): string {
   const end = code.indexOf('\n}\n', start)
   return code.slice(start, end < 0 ? undefined : end)
 }
+
+test('a host is asked its chain id once, and a host on another chain is a host that failed', async () => {
+  const { onHosts, NoHostAnswered } = await hostsModule()
+  type Fake = { name: string; chainId: number | Error; ran: number; asked: number; answer?: () => unknown }
+  const fake = (name: string, chainId: number | Error, answer?: () => unknown): Fake => ({ name, chainId, ran: 0, asked: 0, answer })
+  class Verdict extends Error {}
+  const run = (hosts: Fake[]) =>
+    onHosts(
+      hosts.map((f) => ({ host: f.name, client: f })),
+      {
+        chainId: 5,
+        askChainId: async (f) => {
+          f.asked += 1
+          if (f.chainId instanceof Error) throw f.chainId
+          return f.chainId
+        },
+        isFinal: (e) => e instanceof Verdict,
+      },
+      async (f, host) => {
+        f.ran += 1
+        return f.answer ? f.answer() : `answer from ${host}`
+      },
+    )
+
+  // The wrong chain never runs the call, and the next host answers.
+  const wrong = fake('wrong', 7)
+  const right = fake('right', 5)
+  assert.deepEqual(await run([wrong, right]), { value: 'answer from right', host: 'right' })
+  assert.equal(wrong.ran, 0, 'nothing is asked of a host on another chain')
+  assert.deepEqual([wrong.asked, right.asked], [1, 1], 'once per host')
+
+  // A host that cannot say which chain it is on, or fails the call, passes it on too.
+  const silent = fake('silent', new Error('timeout'))
+  const flaky = fake('flaky', 5, () => {
+    throw new Error('502')
+  })
+  const last = fake('last', 5)
+  assert.equal((await run([silent, flaky, last])).host, 'last')
+  assert.deepEqual([silent.ran, flaky.ran, last.ran], [0, 1, 1])
+  assert.equal(flaky.asked, 1)
+
+  // A verdict stops at once: the next host would only give the same answer later.
+  const after = fake('after', 5)
+  const refused = fake('refused', 5, () => {
+    throw new Verdict('reverted')
+  })
+  await assert.rejects(run([refused, after]), Verdict)
+  assert.equal(after.asked, 0)
+
+  // Every host on the wrong chain: nothing was read, and the failure names why.
+  await assert.rejects(run([fake('a', 7), fake('b', 8)]), (e: unknown) => {
+    assert.ok(e instanceof NoHostAnswered)
+    assert.deepEqual(e.tried, ['a', 'b'])
+    assert.match(String((e.last as Error).message), /b answered for chain 8, not 5/)
+    return true
+  })
+
+  // Every path into the chain goes through it: the writes and readUsdcFacts use onFirstHost, and
+  // onFirstHost is this loop.
+  const read = codeOnly(repo('src/lib/arc/vault-read.ts'))
+  assert.match(fnBody(read, 'onFirstHost'), /onHosts\(/)
+  assert.match(fnBody(read, 'onFirstHost'), /askChainId: \(c\) => c\.getChainId\(\)/)
+  assert.match(fnBody(read, 'readUsdcFacts'), /onFirstHost\(/)
+  const write = codeOnly(repo('src/lib/arc/vault-write.ts'))
+  for (const fn of ['prepareDeploy', 'prepareOwnerCall', 'prepareFund']) assert.match(fnBody(write, fn), /onFirstHost\(/, fn)
+})
 
 test('a 0 daily cap or per-payment ceiling is refused, because 0 means no limit in the contract', async () => {
   const r = await rules()
@@ -737,6 +814,55 @@ const setupOf = (over: Rec = {}): Rec => ({
   ...over,
 })
 const snap = (over: Rec = {}): Rec => ({ address: VAULT, network: ARC_MAINNET?.caip2 ?? '', block: 200n, sessionKeyExpiry: 0n, balance: 0n, ...over })
+
+test('a deploy whose receipt names a contract is never no vault: it stays in the setup, with the banner, until read as bounded', async () => {
+  const t = await txRules()
+  const base = { action: 'deploy', vault: null, deployArgs: DEPLOY_ARGS, predicted: ATTACKER, nonce: 3 }
+  // Both ways a receipt names a contract the setup cannot continue with, from decideLanded itself.
+  const mismatch = t.decideLanded(record(base), landed({ contractAddress: VAULT }), { deploy: { status: 'mismatch', why: 'owner reads someone else' } })
+  const lost = t.decideLanded(record({ ...base, deployArgs: undefined }), landed({ contractAddress: VAULT }), {})
+  for (const deploy of [mismatch, lost]) {
+    assert.equal(deploy.outcome, 'unexpected')
+    const s = t.withRecord(setupOf(), 'deploy', deploy)
+    assert.equal(s.vault, undefined, 'it does not become the vault the setup continues with')
+    assert.equal(t.setupStep(s, false, null), 'deploy-failed')
+    assert.deepEqual(t.deployEnd(s), { kind: 'contract', address: VAULT })
+    assert.equal(t.predictedVault(s), VAULT, 'the address the receipt named, not the one predicted')
+    assert.equal(t.setupAlert(s, null), 'unbounded', 'the vault page keeps warning')
+    assert.equal(t.setupAlert(s, snap({ address: VAULT })), 'unbounded', 'read with no expiry')
+    assert.equal(t.setupAlert(s, snap({ address: ATTACKER, sessionKeyExpiry: 1_800_000_000n })), 'unbounded', 'another vault decides nothing')
+    assert.equal(t.setupAlert(s, snap({ address: VAULT, sessionKeyExpiry: 1_800_000_000n })), null, 'read with an expiry')
+  }
+  // A deploy that stopped being tracked after its receipt named the contract is still that contract.
+  const stopped = setupOf({ deploy: record({ ...base, outcome: 'untracked', contractAddress: VAULT }) })
+  assert.deepEqual(t.deployEnd(stopped), { kind: 'contract', address: VAULT })
+  assert.equal(t.setupAlert(stopped, null), 'unbounded')
+  assert.equal(t.vaultToLookFor(stopped)?.predicted, VAULT)
+
+  // No vault is said only for a revert or a receipt with no contract address.
+  const reverted = t.decideLanded(record(base), landed({ success: false, contractAddress: VAULT }), {})
+  const noAddress = t.decideLanded(record(base), landed(), {})
+  for (const deploy of [reverted, noAddress]) {
+    const s = t.withRecord(setupOf(), 'deploy', deploy)
+    assert.deepEqual(t.deployEnd(s), { kind: 'no-vault' }, deploy.outcome as string)
+    assert.equal(t.createdContract(s), null)
+    assert.equal(t.setupAlert(s, null), null)
+  }
+  // A revert is no vault even if an older record held an address from an earlier look.
+  assert.deepEqual(t.deployEnd(setupOf({ deploy: record({ ...base, outcome: 'reverted', contractAddress: VAULT }) })), { kind: 'no-vault' })
+  assert.deepEqual(t.deployEnd(setupOf({ deploy: record({ ...base, outcome: 'untracked' }) })), { kind: 'untracked' })
+  assert.deepEqual(t.deployEnd(setupOf({ deploy: record({ ...base, outcome: 'replaced' }) })), { kind: 'replaced' })
+  // Nothing to say while it is pending, or once the setup has its vault.
+  assert.equal(t.deployEnd(setupOf({ deploy: record({ ...base, contractAddress: VAULT }) })), null)
+  assert.equal(t.deployEnd(setupOf({ vault: VAULT, deploy: record({ ...base, outcome: 'settled', contractAddress: VAULT }) })), null)
+  // The page says so: the no-vault line only behind its own case, and no way to start clean past a contract.
+  const flow = codeOnly(repo('src/components/app/arc/DeployFlow.tsx'))
+  const branch = flow.slice(flow.indexOf("step === 'deploy-failed' && setup?.deploy && created"), flow.indexOf("step === 'deploy-failed' && setup?.deploy && !created"))
+  assert.ok(branch.length > 0, 'the contract branch of the deploy-failed step is gone')
+  assert.doesNotMatch(branch, /No vault came out|Start again/)
+  assert.match(branch, /no time bound/)
+  assert.match(branch, /onOpenVault\(setup\.network, created\)/)
+})
 
 test('no funding is offered before the agent key is bounded in time, and the live vault wins over a record that is only pending', async () => {
   const t = await txRules()
