@@ -276,6 +276,8 @@ export default function Settlements() {
       if (!rej.ok) {
         const j = await readJson<{ error?: string }>(rej)
         setError(explainError(rej.status, j.error))
+        // A refusal can mean the original just settled, so the list is read again.
+        await load(agentId)
         return
       }
 

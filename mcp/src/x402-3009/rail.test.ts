@@ -1,6 +1,7 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { EventEmitter } from 'node:events'
+import { readFileSync } from 'node:fs'
 import {
   railStatus,
   railPaywallGate,
@@ -772,6 +773,13 @@ test('the request hash ignores key order and sees every part of the request', ()
   assert.notEqual(base, railRequestHash('risk_check', { agentId: '#1', txContext: { amountUsd: 1, payee: '0xabc' } as never }))
   assert.notEqual(base, railRequestHash('risk_check', { agentId: '#0', txContext: { amountUsd: 2, payee: '0xabc' } as never }))
   assert.equal(railRequestHash('risk_check', { agentId: '#0' }), railRequestHash('risk_check', { agentId: '#0', txContext: null }))
+})
+
+test('the route watches the response before it writes it, or no paid call would ever end its claim', () => {
+  const route = readFileSync(new URL('../../src/http/x402-3009-routes.ts', import.meta.url), 'utf8')
+  const watch = route.indexOf('if (out.onDelivery) watchDelivery(res, out.onDelivery)')
+  assert.ok(watch > 0)
+  assert.ok(watch < route.indexOf('sendChallenge(res, out.httpStatus, out.body)'))
 })
 
 test('watchDelivery reports what the socket did, and a socket already gone is not delivered', async () => {

@@ -1,9 +1,11 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { keccak256 } from 'viem'
+import { createWalletClient, custom, decodeFunctionData, defineChain, keccak256, parseTransaction } from 'viem'
+import { privateKeyToAccount } from 'viem/accounts'
 import { createEvmAdapter, SETTLEMENT_WAIT_CEILING_MS } from './adapter.js'
 import { resolveRpcUrls, usdcUnits, fromUsdcUnits, txUrl, addressUrl } from './client.js'
 import { ARC_CHAIN, getChainById } from '../registry.js'
+import { AgentSpendPolicyAbi } from '../../contracts/AgentSpendPolicy.js'
 
 // An env with no signer key - forces the prepared/no-key path deterministically,
 // independent of whatever is in the real process env.
@@ -351,6 +353,53 @@ test('a settlement waits inside the proxy budget, and the wait ends unconfirmed'
   assert.ok('unconfirmed' in res)
   assert.ok(clock > 0, 'it did wait')
   assert.ok(clock <= SETTLEMENT_WAIT_CEILING_MS, `the wait took ${clock} ms`)
+})
+
+test('with a real viem wallet client the raw transaction is signed here, its hash is known first, and it says what was asked', async () => {
+  // The other tests fake the three wallet calls, so this is what shows viem really does them this
+  // way. No network: the transport answers each RPC method by hand.
+  const account = privateKeyToAccount('0x59c6995e998f97a5a0044966f0945389dc9e86dae88c7a8412f4603b6b78690d')
+  const sent: `0x${string}`[] = []
+  const answers: Record<string, unknown> = {
+    eth_chainId: `0x${ARC_CHAIN.evmChainId!.toString(16)}`,
+    eth_getTransactionCount: '0x7',
+    eth_estimateGas: '0x15f90',
+    eth_gasPrice: '0x4a817c800',
+    eth_maxPriorityFeePerGas: '0x3b9aca00',
+    eth_getBlockByNumber: { baseFeePerGas: '0x4a817c800', number: '0x1', hash: `0x${'11'.repeat(32)}`, timestamp: '0x1', transactions: [] },
+  }
+  const client = createWalletClient({
+    account,
+    chain: defineChain({ id: ARC_CHAIN.evmChainId!, name: 'test', nativeCurrency: ARC_CHAIN.nativeCurrency, rpcUrls: { default: { http: [] } } }),
+    transport: custom({
+      request: async ({ method, params }: { method: string; params: unknown[] }) => {
+        if (method === 'eth_sendRawTransaction') {
+          sent.push(params[0] as `0x${string}`)
+          return keccak256(params[0] as `0x${string}`)
+        }
+        if (method in answers) return answers[method]
+        throw new Error(`no answer for ${method}`)
+      },
+    }),
+  })
+  const noted: string[] = []
+  const adapter = createEvmAdapter(ARC_CHAIN, {
+    publicClient: { simulateContract: async () => ({ request: {} }) },
+    walletClient: { account, client },
+    receipts: { urls: [HOST_A], timeoutMs: 0, call: async (_u, _m, p) => ({ transactionHash: p[0], ...MINED }) },
+  })
+  const res = await adapter.policyPay(VAULT, PAYEE, 1, {}, { onBroadcast: (h) => { noted.push(h) } })
+  assert.equal(res.executed, true, JSON.stringify(res))
+  assert.equal(sent.length, 1)
+  const hash = keccak256(sent[0])
+  assert.deepEqual(noted, [hash], 'the hash noted before the send is the hash of what was sent')
+  if (res.executed) assert.equal(res.txHash, hash)
+  const tx = parseTransaction(sent[0])
+  assert.equal(tx.to?.toLowerCase(), VAULT.toLowerCase())
+  assert.equal(tx.chainId, ARC_CHAIN.evmChainId)
+  assert.equal(tx.nonce, 7)
+  const call = decodeFunctionData({ abi: AgentSpendPolicyAbi, data: tx.data! })
+  assert.equal(call.functionName, 'pay')
 })
 
 test('registerAgent reads every host, and no receipt is unconfirmed rather than a throw', async () => {
