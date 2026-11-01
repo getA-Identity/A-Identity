@@ -5,8 +5,9 @@
  *
  *   POST /api/x402/gateway/verify-then-pay            the flow: 400 bad input, 422 refused
  *                                                     before any charge (503 when the chain
- *                                                     did not answer), 402 the Arc Mainnet
- *                                                     offer, 200 the paid result
+ *                                                     did not answer), 409 the nonce already
+ *                                                     opened a flow, 402 the Arc Mainnet offer,
+ *                                                     200 the paid result
  *   GET  /api/x402/gateway/flows/:flowId              the public record of one flow
  *   POST /api/x402/gateway/flows/:flowId/receipt      {txHash}: the server reads the receipt
  *                                                     from every RPC and records only what it
