@@ -14,7 +14,11 @@
  * EXECUTES only with --execute AND CONFIRM_ARC_VTP_RUN=yes, and --log. --allow and --deny are
  * totals for that log, so the same command resumes: what the log counts as done is not run again,
  * and what the log spent counts against --budget. Flows run strictly one at a time, refusals
- * first. It stops at the first unexpected outcome and never retries a check or a payment.
+ * first. It stops at the first unexpected outcome and never retries a check or a payment. Before
+ * it plans, it posts again every hash in the log with no verified record, which sends nothing.
+ *
+ * One run at a time per vault on this machine: the lock is in ~/.a-identity, not beside the log,
+ * so a second --log path cannot race the operator's nonce. Two machines are not covered by it.
  *
  * The operator's key is read from X402_3009_BUYER_KEY and is never printed or logged. A-Identity
  * holds this vault's keys, which is why it is not one of the owner-held vaults Milestone 1 also
@@ -31,7 +35,8 @@
  *   --amount-units <n>   USDC base units of the first flow (default 1000); each later flow pays
  *                        one unit more, so no two flows share an amount
  *   --base-url <url>     the hosted API (default https://a-identity.xyz)
- *   --budget <usdc>      the most the log may ever spend (default 0.75)
+ *   --budget <usdc>      the most the log may ever spend (default 0.75). It binds per log, so do
+ *                        not start a new log to get a new budget: --ack-fresh-log has to say so
  *   --max-fee-gwei <n>   the highest fee a payment may use, and what the gas bound is priced at
  *                        (default 60)
  *   --pause-ms <n>       between flows (default 5000: the route allows 30 POSTs a minute per IP
@@ -39,12 +44,17 @@
  *   --log <path>         JSONL log, required with --execute, read for resume in either mode
  *   --operator <0x...>   the operator's address when no key is set
  *   --ack-stop           the log holds flows whose money nobody has read, a human looked, go on
+ *   --ack-fresh-log      this log is empty on purpose, whatever the public proof shows for this
+ *                        payer: it starts the budget and the amounts again
+ *   --reconcile          only post again the hashes with no verified record, needs --log and no
+ *                        key, signs and sends nothing, then exit
  *   --execute            spend, with CONFIRM_ARC_VTP_RUN=yes
  *
  * Exit: 0 prepared with no blockers, or the run finished. 1 refused or stopped. 2 usage.
  */
 import { closeSync, existsSync, fsyncSync, mkdirSync, openSync, readFileSync, rmSync, writeSync } from 'node:fs'
-import { dirname, resolve } from 'node:path'
+import { homedir } from 'node:os'
+import { dirname, join, resolve } from 'node:path'
 import { createWalletClient, decodeFunctionResult, encodeFunctionData } from 'viem'
 import { privateKeyToAccount } from 'viem/accounts'
 
@@ -56,6 +66,7 @@ const CONFIRM_ENV = 'CONFIRM_ARC_VTP_RUN'
 const VTP_PATH = '/api/x402/gateway/verify-then-pay'
 const PREVIEW_PATH = '/api/x402/gateway/tools/trust_preview'
 const REPUTATION_PATH = '/api/reputation'
+const PROOF_PATH = '/api/x402/gateway/proof'
 const TIP_WEI = 1_000_000_000n
 const HTTP_TIMEOUT_MS = 30_000
 
@@ -79,11 +90,11 @@ const PAYEES = {
 // ── arguments ─────────────────────────────────────────────────────────────────────
 
 const VALUE_FLAGS = new Set(['allow', 'deny', 'amount-units', 'base-url', 'budget', 'max-fee-gwei', 'pause-ms', 'log', 'operator'])
-const BOOL_FLAGS = new Set(['execute', 'ack-stop', 'help'])
+const BOOL_FLAGS = new Set(['execute', 'ack-stop', 'ack-fresh-log', 'reconcile', 'help'])
 
 function usage(message) {
   console.error(`error: ${message}`)
-  console.error('usage: arc-vtp-runner.mjs --allow <n> --deny <n> [--amount-units <n>] [--base-url <url>] [--budget <usdc>] [--max-fee-gwei <n>] [--pause-ms <n>] [--log <path>] [--operator <0x...>] [--ack-stop] [--execute]')
+  console.error('usage: arc-vtp-runner.mjs --allow <n> --deny <n> [--amount-units <n>] [--base-url <url>] [--budget <usdc>] [--max-fee-gwei <n>] [--pause-ms <n>] [--log <path>] [--operator <0x...>] [--ack-stop] [--ack-fresh-log] [--reconcile] [--execute]')
   process.exit(2)
 }
 
@@ -118,24 +129,28 @@ function wholeNumber(name, fallback) {
 
 const allow = wholeNumber('allow')
 const deny = wholeNumber('deny')
-if (allow + deny === 0) usage('nothing to do: pass --allow and/or --deny')
+if (allow + deny === 0 && !args.reconcile) usage('nothing to do: pass --allow and/or --deny')
 const pauseMs = wholeNumber('pause-ms', 5000)
 const maxFeeGwei = wholeNumber('max-fee-gwei', 60)
 const amountRaw = args['amount-units'] ?? '1000'
 if (!/^[1-9][0-9]*$/.test(amountRaw)) usage(`--amount-units must be a whole number above 0, got ${amountRaw}`)
 const baseAmountUnits = BigInt(amountRaw)
 const baseUrl = (args['base-url'] ?? 'https://a-identity.xyz').replace(/\/+$/, '')
-if (!/^https:\/\/|^http:\/\/(localhost|127\.0\.0\.1)(:|\/|$)/.test(baseUrl)) usage(`--base-url must be https, or http on localhost: ${baseUrl}`)
 const execute = args.execute === true
 if (execute && !args.log) usage('--execute needs --log: the budget across runs is counted from it')
+if (args.reconcile && !args.log) usage('--reconcile needs --log: the hashes come from it')
+if (args.reconcile && execute) usage('--reconcile runs alone: it signs and sends nothing, and --execute posts the same hashes first')
+const confirmed = process.env[CONFIRM_ENV] === 'yes'
+// Writing to the log takes the vault's lock. A prepared run reads, and never writes.
+const mayWrite = args.reconcile === true || (execute && confirmed)
 const operatorArg = args.operator?.toLowerCase()
 if (operatorArg !== undefined && !/^0x[0-9a-f]{40}$/.test(operatorArg)) usage('--operator must be a 0x address')
 
 // ── what the repo built ───────────────────────────────────────────────────────────
 
-let arc, generated, registry, rpc, rules
+let arc, generated, guardCore, registry, rpc, rules
 try {
-  ;[arc, generated] = await Promise.all([import('../../trust-guard/dist/arc.js'), import('../../trust-guard/dist/arc-mainnet.generated.js')])
+  ;[arc, generated, guardCore] = await Promise.all([import('../../trust-guard/dist/arc.js'), import('../../trust-guard/dist/arc-mainnet.generated.js'), import('../../trust-guard/dist/index.js')])
 } catch (e) {
   console.error(`error: trust-guard is not built (${e.message}). Run: cd trust-guard && npm ci && npm run build`)
   process.exit(1)
@@ -146,7 +161,12 @@ try {
   console.error(`error: mcp/dist is not built (${e.message}). Run: cd mcp && npm run build`)
   process.exit(1)
 }
-const { ARC_MAINNET, arcChainReader, arcViemChain, fromViemWallet, preflightVault, usdcUnits, verifyThenPay } = arc
+const { ARC_MAINNET, arcChainReader, arcViemChain, fromViemWallet, preflightVault, recordFlowReceipt, usdcUnits, verifyThenPay } = arc
+try {
+  guardCore.requireSecureBaseUrl(baseUrl)
+} catch (e) {
+  usage(`--base-url: ${e.message}`)
+}
 const { ARC_VAULT_ABI } = generated
 const { buildPlan, forecastVerdict, formatUnits, readRunLog, RunLogError, runFlows } = rules
 
@@ -198,6 +218,7 @@ if (rawKey) {
     process.exit(1)
   }
 }
+if (account && operatorArg && lc(account.address) !== operatorArg) usage(`--operator ${operatorArg} is not the address of ${OPERATOR_KEY_ENV}`)
 const SECRETS = rawKey ? [rawKey, rawKey.replace(/^0x/, '')] : []
 const scrub = (s) => SECRETS.reduce((text, k) => text.split(k).join('[redacted]'), String(s))
 const print = (s) => console.log(scrub(s))
@@ -309,6 +330,18 @@ async function readReputation(payee) {
   }
 }
 
+/** What the public proof holds of this payer's risk_checks on this chain. Null: unreadable. */
+async function readPriorChecks(operator) {
+  try {
+    const r = await httpJson(`${baseUrl}${PROOF_PATH}`)
+    if (r.status !== 200 || !Array.isArray(r.body?.recent)) return null
+    const rows = r.body.recent.filter((x) => lc(x?.payer) === operator && x?.tool === 'risk_check' && x?.network === chain.caip2 && (x?.outcome === 'credited' || x?.outcome === 'completed'))
+    return { count: rows.length, latest: rows[0]?.ts ?? null }
+  } catch {
+    return null
+  }
+}
+
 async function readPayee(spec, amountUnits, operator) {
   const [preview, reputation, agentsHeld, agentOwner, route] = await Promise.all([
     readPreview(spec),
@@ -350,13 +383,19 @@ function appendLine(line) {
   }
 }
 
-/** One runner per log: two at once could each pass the budget alone. */
+/** One runner per vault on this machine, whichever log it names: two at once could each pass
+ *  their own budget and race the operator's nonce. Taken before the log is read. */
 function takeLock() {
-  const path = `${logPath}.lock`
+  const path = join(homedir(), '.a-identity', `arc-vtp-${VAULT}.lock`)
   try {
-    closeSync(openSync(path, 'wx'))
-  } catch {
-    console.error(`REFUSED: ${path} exists, so another run holds this log, or one crashed. If none is running, look at the log and then delete the lock file.`)
+    mkdirSync(dirname(path), { recursive: true })
+    mkdirSync(dirname(logPath), { recursive: true })
+    const fd = openSync(path, 'wx')
+    writeSync(fd, `pid ${process.pid}, log ${logPath}\n`)
+    closeSync(fd)
+  } catch (e) {
+    if (e.code === 'EEXIST') console.error(`REFUSED: ${path} exists, so another run holds this vault, or one crashed. If none is running, read the log it names and then delete the lock file. Nothing was signed and nothing was paid.`)
+    else console.error(`REFUSED: the lock ${path} could not be taken (${errText(e)}). Nothing was signed and nothing was paid.`)
     process.exit(1)
   }
   return () => rmSync(path, { force: true })
@@ -369,7 +408,7 @@ async function gatherPlan(operatorHint, log) {
   const operator = operatorHint ?? vault?.operator ?? null
   if (!operator) {
     console.error('REFUSED: the vault could not be read and no --operator was given, so there is no operator to plan for.')
-    process.exit(1)
+    return null
   }
   const [operatorGasWei, gatewayUnits] = await Promise.all([reader.nativeBalance(operator).catch(() => null), readGatewayUnits(operator)])
   const first = rules.flowAmountUnits(baseAmountUnits, log.nextSeq)
@@ -386,6 +425,13 @@ async function gatherPlan(operatorHint, log) {
   }
   for (const p of payees) {
     if (p.agentOwner && lc(p.agentOwner) !== p.spec.address) plan.blockers.push(`agent ${p.spec.agentId} on Arc Mainnet is owned by ${p.agentOwner}, not by ${p.spec.label}`)
+  }
+  // Only a log can be fresh: with no --log nothing is counted, and nothing can run either.
+  if (logPath) {
+    const acknowledged = args['ack-fresh-log'] === true
+    const prior = log.nextSeq > 1 || acknowledged ? null : await readPriorChecks(operator)
+    const fresh = rules.freshLogBlocker({ log, acknowledged, prior })
+    if (fresh) plan.blockers.push(fresh)
   }
   return { input, plan, operator, vault }
 }
@@ -469,110 +515,142 @@ function printSummary(result) {
   print(`  Each flow's public record: ${baseUrl}/api/x402/gateway/flows/<flowId>`)
 }
 
-let state
-try {
-  state = loadLogState()
-} catch (e) {
-  if (!(e instanceof RunLogError)) throw e
-  console.error(`REFUSED: ${e.message}`)
-  process.exit(1)
-}
+// Everything from here that can write to the log, or spend, runs with the vault's lock held.
+async function run() {
+  let state
+  try {
+    state = loadLogState()
+  } catch (e) {
+    if (!(e instanceof RunLogError)) throw e
+    console.error(`REFUSED: ${e.message}`)
+    return 1
+  }
 
-// With --ack-stop the plan is judged as if the acknowledged flows were looked at; they stay in
-// the budget at their upper bound. The ack is written only when a run actually starts.
-const ackSeqs = args['ack-stop'] ? state.unresolved : []
-const planState = { ...state, unresolved: args['ack-stop'] ? [] : state.unresolved }
-
-if (account && operatorArg && lc(account.address) !== operatorArg) usage(`--operator ${operatorArg} is not the address of ${OPERATOR_KEY_ENV}`)
-const operatorHint = account ? lc(account.address) : operatorArg
-const operatorSource = account ? `from ${OPERATOR_KEY_ENV}` : operatorArg ? 'from --operator, no key loaded' : "read from the vault's operator(), no key loaded"
-
-const gathered = await gatherPlan(operatorHint, planState)
-printPlan(gathered, operatorSource)
-
-if (!execute) {
-  print('')
-  print('Nothing was signed and nothing was paid.')
-  if (!gathered.plan.blockers.length) print(`To run it: ${CONFIRM_ENV}=yes with ${OPERATOR_KEY_ENV} set, plus --log <path> --execute.`)
-  process.exit(gathered.plan.blockers.length ? 1 : 0)
-}
-
-// Everything below can spend. Each gate says what it refused.
-if (process.env[CONFIRM_ENV] !== 'yes') {
-  print('')
-  print(`NOT EXECUTED: --execute also needs ${CONFIRM_ENV}=yes. Nothing was signed and nothing was paid.`)
-  process.exit(1)
-}
-if (!account) {
-  print('')
-  print(`NOT EXECUTED: ${OPERATOR_KEY_ENV} is not set. Nothing was signed and nothing was paid.`)
-  process.exit(1)
-}
-if (gathered.plan.blockers.length) {
-  print('')
-  print('NOT EXECUTED: the plan was refused. Nothing was signed and nothing was paid.')
-  process.exit(1)
-}
-if (gathered.plan.remaining.allow + gathered.plan.remaining.deny === 0) {
-  print('')
-  print('Nothing left to run: the log counts every flow in the plan as done.')
-  printSummary({ stop: 'complete', doneAllow: state.doneAllow, doneDeny: state.doneDeny, spentUnits: state.spentUnits, ranThisTime: 0, reason: null })
-  process.exit(0)
-}
-
-mkdirSync(dirname(logPath), { recursive: true })
-const releaseLock = takeLock()
-let exitCode = 1
-try {
-  // Read again under the lock: what was planned may have come from before another run ended.
-  const locked = loadLogState()
-  if (locked.spentUnits !== state.spentUnits || locked.nextSeq !== state.nextSeq) {
-    print('NOT EXECUTED: the log changed while the plan was being read. Run again.')
-  } else {
-    if (ackSeqs.length) {
-      appendLine({ v: 1, kind: 'ack', at: new Date().toISOString(), seqs: ackSeqs })
-      print(`acknowledged flow(s) ${ackSeqs.join(', ')}: each stays in the budget at its upper bound`)
+  // Refused before anything else, so a mismatched run posts and reads nothing on this log's behalf.
+  if (!args.reconcile) {
+    const binding = rules.logBindingError(state, { vault: VAULT, baseAmountUnits })
+    if (binding) {
+      console.error(`REFUSED: ${binding}`)
+      return 1
     }
-    const wallet = createWalletClient({ account, chain: arcViemChain, transport: await rpc.evmTransport(chain) })
-    const signer = fromViemWallet(wallet)
-    const priceUnits = gathered.input.priceUnits
-    print('')
-    print('Running. Each flow is on the log before it can spend.')
-    const result = await runFlows({
-      allow,
-      deny,
-      baseAmountUnits,
-      budgetUnits,
-      priceUnits,
-      capWei,
-      decimals: DECIMALS,
-      state: planState,
-      payees: PAYEES,
-      signer,
-      preflight: ({ payee, amountUnits }) => preflightVault({ vault: VAULT, payee: payee.address, amountUnits, payeeAgentId: payee.agentId, operator: signer.address, rpcUrls, maxFeePerGasCapWei: capWei, maxPriorityFeePerGasWei: TIP_WEI }),
-      verifyThenPay: ({ payee, amountUnits, signer: flowSigner }) =>
-        verifyThenPay({
-          vault: VAULT,
-          payee: payee.address,
-          amountUnits,
-          payeeAgentId: payee.agentId,
-          signer: flowSigner,
-          payOnWarn: false,
-          maxCheckUnits: priceUnits,
-          maxFeePerGasCapWei: capWei,
-          maxPriorityFeePerGasWei: TIP_WEI,
-          rpcUrls,
-          baseUrl,
-        }),
+  }
+
+  // The hashes with no verified record, posted again before anything is planned from the log.
+  // This sends nothing: the server reads the chain itself, and a flow can only gain a record.
+  const gaps = rules.receiptGaps(state)
+  if (mayWrite && gaps.length) {
+    print(`${gaps.length} transaction(s) in the log have no verified record. Posting each hash again; nothing is sent.`)
+    await rules.reconcileReceipts({
+      gaps,
+      post: (g) => recordFlowReceipt({ flowId: g.flowId, txHash: g.txHash, baseUrl }),
       append: appendLine,
       print,
       sleep: (ms) => new Promise((r) => setTimeout(r, ms)),
       pauseMs,
       now: () => new Date().toISOString(),
     })
-    printSummary(result)
-    exitCode = result.stop === 'complete' ? 0 : 1
+    state = loadLogState()
   }
+  if (args.reconcile) {
+    print(`log: ${logPath}: ${state.doneDeny} DENY and ${state.doneAllow} ALLOW flows done, ${usd(state.spentUnits)} spent`)
+    if (state.unresolved.length) print(`flow(s) ${state.unresolved.join(', ')} are still unresolved: look them up, then pass --ack-stop to go on`)
+    print('Nothing was signed and nothing was paid.')
+    return state.unresolved.length ? 1 : 0
+  }
+
+  // With --ack-stop the plan is judged as if the acknowledged flows were looked at; they stay in
+  // the budget at their upper bound. The ack is written only when a run actually starts.
+  const ackSeqs = args['ack-stop'] ? state.unresolved : []
+  const planState = { ...state, unresolved: args['ack-stop'] ? [] : state.unresolved }
+
+  const operatorHint = account ? lc(account.address) : operatorArg
+  const operatorSource = account ? `from ${OPERATOR_KEY_ENV}` : operatorArg ? 'from --operator, no key loaded' : "read from the vault's operator(), no key loaded"
+
+  const gathered = await gatherPlan(operatorHint, planState)
+  if (!gathered) return 1
+  printPlan(gathered, operatorSource)
+  if (!mayWrite && gaps.length) print(`note: ${gaps.length} transaction(s) in the log have no verified record. --reconcile posts each hash again, and so does --execute.`)
+
+  if (!execute) {
+    print('')
+    print('Nothing was signed and nothing was paid.')
+    if (!gathered.plan.blockers.length) print(`To run it: ${CONFIRM_ENV}=yes with ${OPERATOR_KEY_ENV} set, plus --log <path> --execute.`)
+    return gathered.plan.blockers.length ? 1 : 0
+  }
+
+  // Everything below can spend. Each gate says what it refused.
+  if (!confirmed) {
+    print('')
+    print(`NOT EXECUTED: --execute also needs ${CONFIRM_ENV}=yes. Nothing was signed and nothing was paid.`)
+    return 1
+  }
+  if (!account) {
+    print('')
+    print(`NOT EXECUTED: ${OPERATOR_KEY_ENV} is not set. Nothing was signed and nothing was paid.`)
+    return 1
+  }
+  if (gathered.plan.blockers.length) {
+    print('')
+    print('NOT EXECUTED: the plan was refused. Nothing was signed and nothing was paid.')
+    return 1
+  }
+  if (gathered.plan.remaining.allow + gathered.plan.remaining.deny === 0) {
+    print('')
+    print('Nothing left to run: the log counts every flow in the plan as done.')
+    printSummary({ stop: 'complete', doneAllow: state.doneAllow, doneDeny: state.doneDeny, spentUnits: state.spentUnits, ranThisTime: 0, reason: null })
+    return 0
+  }
+
+  if (!state.header) appendLine({ v: 1, kind: 'header', at: new Date().toISOString(), vault: VAULT, baseAmountUnits: baseAmountUnits.toString() })
+  if (ackSeqs.length) {
+    appendLine({ v: 1, kind: 'ack', at: new Date().toISOString(), seqs: ackSeqs })
+    print(`acknowledged flow(s) ${ackSeqs.join(', ')}: each stays in the budget at its upper bound`)
+  }
+  const wallet = createWalletClient({ account, chain: arcViemChain, transport: await rpc.evmTransport(chain) })
+  const signer = fromViemWallet(wallet)
+  const priceUnits = gathered.input.priceUnits
+  print('')
+  print('Running. Each flow is on the log before it can spend.')
+  const result = await runFlows({
+    allow,
+    deny,
+    baseAmountUnits,
+    budgetUnits,
+    priceUnits,
+    capWei,
+    decimals: DECIMALS,
+    state: planState,
+    payees: PAYEES,
+    signer,
+    preflight: ({ payee, amountUnits }) => preflightVault({ vault: VAULT, payee: payee.address, amountUnits, payeeAgentId: payee.agentId, operator: signer.address, rpcUrls, maxFeePerGasCapWei: capWei, maxPriorityFeePerGasWei: TIP_WEI }),
+    verifyThenPay: ({ payee, amountUnits, signer: flowSigner }) =>
+      verifyThenPay({
+        vault: VAULT,
+        payee: payee.address,
+        amountUnits,
+        payeeAgentId: payee.agentId,
+        signer: flowSigner,
+        payOnWarn: false,
+        maxCheckUnits: rules.checkSigningCap(priceUnits),
+        maxFeePerGasCapWei: capWei,
+        maxPriorityFeePerGasWei: TIP_WEI,
+        rpcUrls,
+        baseUrl,
+      }),
+    append: appendLine,
+    print,
+    sleep: (ms) => new Promise((r) => setTimeout(r, ms)),
+    pauseMs,
+    now: () => new Date().toISOString(),
+  })
+  printSummary(result)
+  return result.stop === 'complete' ? 0 : 1
+}
+
+let exitCode = 1
+const releaseLock = mayWrite ? takeLock() : () => {}
+try {
+  exitCode = await run()
 } catch (e) {
   print(`STOPPED by an error outside any flow: ${errText(e)}`)
   print('Read the log before running again: a flow with an intent line and no result may have spent.')
