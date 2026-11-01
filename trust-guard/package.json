@@ -1,7 +1,7 @@
 {
   "name": "@a-identity/trust-guard",
-  "version": "0.3.0",
-  "description": "One-line trust guard: verify an AI agent (ERC-8004 identity + KYA + 0-1000 reputation + Sybil + risk) before you pay or hire it. Throws on DENY. Pays per call over x402 on X Layer or Algorand.",
+  "version": "0.4.0",
+  "description": "One-line trust guard: verify an AI agent (ERC-8004 identity + KYA + 0-1000 reputation + Sybil + risk) before you pay or hire it. Throws on DENY. Pays per call over x402 on X Layer, Algorand or Arc Mainnet, with verifyThenPay for Arc vaults.",
   "type": "module",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
@@ -13,6 +13,10 @@
     "./algorand": {
       "types": "./dist/algorand.d.ts",
       "import": "./dist/algorand.js"
+    },
+    "./arc": {
+      "types": "./dist/arc.d.ts",
+      "import": "./dist/arc.js"
     }
   },
   "files": [
@@ -25,7 +29,7 @@
   },
   "scripts": {
     "build": "tsc",
-    "test": "tsc -p tsconfig.test.json && node --test dist-test/index.test.js dist-test/algorand.test.js",
+    "test": "tsc -p tsconfig.test.json && node --test dist-test/index.test.js dist-test/algorand.test.js dist-test/arc.test.js",
     "prepare": "tsc",
     "prepublishOnly": "tsc"
   },
@@ -41,6 +45,8 @@
     "guard",
     "okx",
     "algorand",
+    "arc",
+    "circle-gateway",
     "usdc"
   ],
   "homepage": "https://a-identity.xyz",
@@ -58,15 +64,25 @@
     "access": "public"
   },
   "peerDependencies": {
-    "algosdk": "^3.7.0"
+    "@circle-fin/x402-batching": "^3.4.0",
+    "algosdk": "^3.7.0",
+    "viem": "^2.0.0"
   },
   "peerDependenciesMeta": {
+    "@circle-fin/x402-batching": {
+      "optional": true
+    },
     "algosdk": {
+      "optional": true
+    },
+    "viem": {
       "optional": true
     }
   },
   "devDependencies": {
+    "@circle-fin/x402-batching": "^3.5.0",
     "algosdk": "^3.7.0",
-    "typescript": "^5.9.3"
+    "typescript": "^5.9.3",
+    "viem": "^2.57.14"
   }
 }
