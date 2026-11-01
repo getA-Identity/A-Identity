@@ -28,6 +28,7 @@ import {
   TransactionReceiptNotFoundError,
   createPublicClient,
   defineChain,
+  erc20Abi,
   getAddress,
   http,
   isAddress,
@@ -376,38 +377,12 @@ export async function readNativeBalance(chain: Chain, address: string): Promise<
   }
 }
 
-/** The slice of ERC-20 this page uses: balance, decimals, symbol, transfer and its event. */
-export const ERC20_ABI = [
-  { type: 'function', name: 'balanceOf', stateMutability: 'view', inputs: [{ name: 'a', type: 'address' }], outputs: [{ type: 'uint256' }] },
-  { type: 'function', name: 'decimals', stateMutability: 'view', inputs: [], outputs: [{ type: 'uint8' }] },
-  { type: 'function', name: 'symbol', stateMutability: 'view', inputs: [], outputs: [{ type: 'string' }] },
-  {
-    type: 'function',
-    name: 'transfer',
-    stateMutability: 'nonpayable',
-    inputs: [
-      { name: 'to', type: 'address' },
-      { name: 'amount', type: 'uint256' },
-    ],
-    outputs: [{ type: 'bool' }],
-  },
-  {
-    type: 'event',
-    name: 'Transfer',
-    inputs: [
-      { name: 'from', type: 'address', indexed: true },
-      { name: 'to', type: 'address', indexed: true },
-      { name: 'value', type: 'uint256', indexed: false },
-    ],
-  },
-] as const
-
 /** The registry USDC's ERC-20 balance for an address, in its 6-decimal units. */
 export async function readUsdcBalance(chain: Chain, address: string): Promise<bigint | null> {
   const usdc = usdcOf(chain)
   if (!usdc || !isAddress(address)) return null
   try {
-    return (await onFirstHost(chain, (c) => c.readContract({ address: usdc.address, abi: ERC20_ABI, functionName: 'balanceOf', args: [getAddress(address)] }))).value
+    return (await onFirstHost(chain, (c) => c.readContract({ address: usdc.address, abi: erc20Abi, functionName: 'balanceOf', args: [getAddress(address)] }))).value
   } catch {
     return null
   }
@@ -423,8 +398,8 @@ export async function readUsdcFacts(chain: Chain): Promise<{ ok: true; symbol: s
   try {
     const { value } = await onFirstHost(chain, (c) =>
       Promise.all([
-        c.readContract({ address: usdc.address, abi: ERC20_ABI, functionName: 'symbol' }),
-        c.readContract({ address: usdc.address, abi: ERC20_ABI, functionName: 'decimals' }),
+        c.readContract({ address: usdc.address, abi: erc20Abi, functionName: 'symbol' }),
+        c.readContract({ address: usdc.address, abi: erc20Abi, functionName: 'decimals' }),
       ]),
     )
     const [symbol, decimals] = value
@@ -545,7 +520,7 @@ export function decodeLogs(receipt: TransactionReceipt): DecodedLog[] {
   })
   return [
     ...parseEventLogs({ abi: AGENT_SPEND_POLICY_ABI, logs: receipt.logs }).map(shape),
-    ...parseEventLogs({ abi: ERC20_ABI, eventName: 'Transfer', logs: receipt.logs }).map(shape),
+    ...parseEventLogs({ abi: erc20Abi, eventName: 'Transfer', logs: receipt.logs }).map(shape),
   ]
 }
 

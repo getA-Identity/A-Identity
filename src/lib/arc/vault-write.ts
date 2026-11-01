@@ -26,6 +26,7 @@ import {
   decodeErrorResult,
   encodeDeployData,
   encodeFunctionData,
+  erc20Abi,
   getAddress,
   getContractAddress,
   isAddress,
@@ -36,7 +37,6 @@ import type { Chain } from '../chains'
 import { AGENT_SPEND_POLICY_ABI, AGENT_SPEND_POLICY_BYTECODE, AGENT_SPEND_POLICY_IMMUTABLES, AGENT_SPEND_POLICY_RUNTIME } from '../contracts/agent-spend-policy'
 import { messageOf, TxStop, txStop as stop } from './send'
 import {
-  ERC20_ABI,
   RpcUnreachableError,
   isContractAnswer,
   networkName,
@@ -129,7 +129,7 @@ export function contractErrorName(e: unknown): string | null {
   }
   const data = revertData(e)
   if (!data) return null
-  for (const abi of [AGENT_SPEND_POLICY_ABI, ERC20_ABI] as const) {
+  for (const abi of [AGENT_SPEND_POLICY_ABI, erc20Abi] as const) {
     try {
       // viem also decodes Solidity's built-in Error(string) and Panic(uint256), which the
       // typed result does not list, so the result is read as the looser shape it really is.
@@ -482,7 +482,7 @@ export async function prepareFund(chain: Chain, v: VaultSnapshot, from: string, 
   if (!usdc || !sameAddress(usdc.address, v.usdc)) throw stop('not_this_build', "This vault does not hold the registry's USDC.")
   const sender = checkedAddress(from, 'sender')
   if (amount <= 0n) throw stop('refused', 'Enter an amount above 0.')
-  const data = encodeFunctionData({ abi: ERC20_ABI, functionName: 'transfer', args: [v.address, amount] })
+  const data = encodeFunctionData({ abi: erc20Abi, functionName: 'transfer', args: [v.address, amount] })
   let r
   try {
     r = await onFirstHost(chain, async (c) => {
