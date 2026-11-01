@@ -4,6 +4,7 @@ import { readFileSync, readdirSync, statSync } from 'node:fs'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { CHAINS } from './chains/registry.js'
+import { PROVENANCE } from './chains/provenance.js'
 
 /**
  * The Arc vault page's rules, run from src/ as they ship (/app/vault/arc deploys and runs vaults
@@ -486,6 +487,36 @@ test('the Arc vault page takes every chain fact from the generated registry modu
     [],
     `Read these from src/lib/chains.ts (CHAIN_BY_ID, CHAIN_RPC_URLS, CHAIN_USDC) or from the backend's lists instead:\n  ${violations.join('\n  ')}`,
   )
+})
+
+test('our launch-day vault and our key are labelled from the build, with no answer from the backend', async () => {
+  const ours = (await import(repoUrl('src/lib/arc/ours.ts').href)) as {
+    isOurVault: (network: string, address: string, listed?: readonly { network: string; address: string; kind: string }[]) => boolean
+    isOurKey: (network: string, address: string, listed?: Readonly<Record<string, readonly string[]>>) => boolean
+  }
+  const mainnet = PROVENANCE.find((p) => p.chain === 'arc-mainnet')
+  const launchDay = mainnet?.contracts.find((c) => c.name === 'AgentSpendPolicy vault')?.address ?? ''
+  const operating = mainnet?.agent?.owner ?? ''
+  const net = ARC_MAINNET?.caip2 ?? ''
+  const testnet = CHAINS.find((c) => c.id === 'arc')?.caip2 ?? ''
+  assert.ok(launchDay && operating && net && testnet)
+  // No list from the backend at all: the labels hold, in any address case.
+  assert.equal(ours.isOurVault(net, launchDay), true)
+  assert.equal(ours.isOurVault(net, launchDay.toUpperCase().replace('0X', '0x')), true)
+  assert.equal(ours.isOurKey(net, operating), true)
+  assert.equal(ours.isOurKey(net, operating.toLowerCase()), true)
+  // The network matters: the same address elsewhere is someone else's claim to make.
+  assert.equal(ours.isOurVault(testnet, launchDay), false)
+  // Nobody else is called ours, and the backend can only add to the list.
+  assert.equal(ours.isOurVault(net, VAULT), false)
+  assert.equal(ours.isOurKey(net, OWNER), false)
+  assert.equal(ours.isOurVault(net, VAULT, [{ network: net, address: VAULT, kind: 'owner-held' }]), false)
+  assert.equal(ours.isOurVault(net, VAULT, [{ network: net, address: VAULT, kind: 'ours' }]), true)
+  assert.equal(ours.isOurKey(net, OWNER, { [net]: [OWNER] }), true)
+  // The page asks this module, and no list from the backend is what decides a control.
+  const page = codeOnly(repo('src/routes/app/ArcVault.tsx'))
+  assert.match(page, /isOurVault\(v\.network, v\.address, known\?\.vaults\)/)
+  assert.match(page, /isOurKey\(v\.network, v\.owner, known\?\.ourKeys\)/)
 })
 
 test('a revoke writes the named past second, and no operator is preset', () => {

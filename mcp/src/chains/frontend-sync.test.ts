@@ -4,6 +4,8 @@ import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { CHAINS } from './registry.js'
 import { publicChains, renderFrontendChains } from './public-view.js'
+import { ARC_PAGE_CHAINS, FRONTEND_ARC_LEDGER_MODULE, arcLedgerFacts, renderFrontendArcLedger } from './frontend-ledger.js'
+import { PROVENANCE } from './provenance.js'
 
 // The frontend's chain module is GENERATED from the registry (npm run gen:chains).
 // These guard the thing that actually went wrong before unification: a second chain
@@ -19,6 +21,39 @@ test('the generated frontend chain module is in sync with the registry', () => {
     renderFrontendChains(),
     'src/lib/chains.ts is stale or was hand-edited. Run: cd mcp && npm run gen:chains',
   )
+})
+
+test('the generated Arc ledger module is in sync with the provenance ledger', () => {
+  const onDisk = readFileSync(fileURLToPath(new URL(`../../../${FRONTEND_ARC_LEDGER_MODULE}`, import.meta.url)), 'utf8')
+  assert.equal(onDisk, renderFrontendArcLedger(), `${FRONTEND_ARC_LEDGER_MODULE} is stale or was hand-edited. Run: cd mcp && npm run gen:chains`)
+})
+
+test('the Arc ledger module names the launch-day vault and our owner key, and only keys in our custody', () => {
+  const facts = arcLedgerFacts()
+  const mainnet = PROVENANCE.find((p) => p.chain === 'arc-mainnet')
+  const vault = mainnet?.contracts.find((c) => c.name === 'AgentSpendPolicy vault')
+  const caip2 = CHAINS.find((c) => c.id === 'arc-mainnet')?.caip2
+  assert.ok(vault && caip2, 'the ledger no longer lists the launch-day vault')
+  assert.deepEqual(facts.vaults.find((v) => v.address === vault.address)?.network, caip2)
+  assert.ok(facts.keys[caip2]?.includes(String(mainnet?.agent?.owner).toLowerCase()), 'our operating wallet is not in the key list')
+  assert.deepEqual(Object.keys(facts.keys).sort(), ARC_PAGE_CHAINS.map((id) => CHAINS.find((c) => c.id === id)?.caip2).sort())
+
+  // A key an owner holds is never labelled ours, and one of ours always is, whichever way it is listed.
+  const planted = arcLedgerFacts([
+    {
+      chain: 'arc-mainnet',
+      summary: '',
+      contracts: [{ name: 'IdentityRegistry', address: 'not-a-vault' }],
+      artifacts: [],
+      caveats: [],
+      accounts: [
+        { role: 'x', address: 'ownersKey', network: 'arc-mainnet', custody: 'owner: generated inside a browser wallet, secret never on our systems', usedFor: '', publishedAt: '' },
+        { role: 'y', address: 'OursKey', network: 'arc-mainnet', custody: 'ours: local CLI keystore', usedFor: '', publishedAt: '' },
+      ],
+    },
+  ])
+  assert.deepEqual(planted.vaults, [])
+  assert.deepEqual(planted.keys[caip2], ['ourskey'])
 })
 
 test('the frontend module exposes every registry chain, and nothing else', () => {
