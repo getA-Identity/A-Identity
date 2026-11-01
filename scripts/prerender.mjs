@@ -36,8 +36,21 @@ import { sourceHash } from './prerender-hash.mjs'
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..')
 const DIST = join(ROOT, 'prerendered')
-const PORT = 4317
+// PRERENDER_PORT lets two checkouts prerender at once. Nothing the snapshot keeps depends on
+// the port: the guard below refuses any page that would bake in a localhost URL.
+const PORT = Number(process.env.PRERENDER_PORT) || 4317
 const BASE = `http://localhost:${PORT}`
+
+// Refuse to start while something already answers on the port. Our own preview would then
+// fail to bind under --strictPort, and the wait below would render whatever else is
+// listening there, such as another checkout's build.
+try {
+  await fetch(BASE + '/', { signal: AbortSignal.timeout(1500) })
+  console.error(`prerender: something already answers on ${BASE}; stop it or set PRERENDER_PORT`)
+  process.exit(1)
+} catch {
+  // nothing listening, as it should be
+}
 
 /** Read the routes to prerender straight from the sitemap, so a new page cannot
  *  be published, listed for crawlers, and then left rendering blank for them. */
@@ -147,6 +160,10 @@ for (const route of routes()) {
     const words = await page.evaluate(() => (document.body.innerText || '').split(/\s+/).filter(Boolean).length)
     if (words < 30) problems.push(`${route}: only ${words} words rendered`)
     if (errors.length) problems.push(`${route}: page error ${errors[0].slice(0, 90)}`)
+    // A local .env file can point a VITE_ variable at localhost (the docs site in dev), and
+    // hydration keeps the href it finds, so the live page would link there until a reload.
+    const local = html.match(/localhost(?::|%3A)\d+[^"'<\s]*/i)
+    if (local) problems.push(`${route}: would bake in a localhost URL (${local[0].slice(0, 60)}); check .env.local`)
 
     const dir = route === '/' ? DIST : join(DIST, route)
     mkdirSync(dir, { recursive: true })

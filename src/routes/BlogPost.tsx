@@ -244,11 +244,13 @@ export default function BlogPost() {
   )
 }
 
-/** Copy-link plus X and LinkedIn share intents. Uses the live page URL. */
+/** Copy-link plus X and LinkedIn share intents, on the canonical site origin. The page's own
+ *  origin would be the prerender server's while the snapshot is taken, and hydration keeps
+ *  the attribute it finds, so a shared link would point at localhost. */
 function ShareRow({ title, lang }: { title: string; lang: Lang }) {
   const L = t(lang)
   const [copied, setCopied] = useState(false)
-  const url = typeof window !== 'undefined' ? window.location.href : ''
+  const url = typeof window !== 'undefined' ? `https://a-identity.xyz${window.location.pathname}` : ''
 
   const copy = async () => {
     try {
