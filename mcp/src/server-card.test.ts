@@ -30,3 +30,25 @@ test("the server card's tool names are exactly the registered MCP tool names", a
 
   assert.deepEqual([...named].sort(), [...registered].sort())
 })
+
+test('every published copy of the tool count agrees with the card, and a printed tool list names them all', () => {
+  const card = JSON.parse(readFileSync(new URL('../../public/.well-known/mcp/server-card.json', import.meta.url), 'utf8')) as { tools: { name: string }[] }
+  const published = (rel: string) => readFileSync(new URL(`../../${rel}`, import.meta.url), 'utf8')
+  const copies = [
+    'docs/protocols/mcp.mdx',
+    'docs/developers/mcp-server.mdx',
+    'index.html',
+    'public/index.md',
+    'public/llms.txt',
+    'public/llms-full.txt',
+    'public/.well-known/api-catalog',
+    'public/.well-known/agent-card.json',
+  ]
+  for (const rel of copies) {
+    const counts = [...published(rel).matchAll(/\b(\d+)(?:\*\*)? tools\b/g)].map((m) => Number(m[1]))
+    assert.ok(counts.length > 0, `${rel} no longer states a tool count; drop it from this list`)
+    for (const n of counts) assert.equal(n, card.tools.length, `${rel} says ${n} tools`)
+  }
+  const list = published('docs/protocols/mcp.mdx')
+  for (const { name } of card.tools) assert.ok(list.includes(`\`${name}\``), `docs/protocols/mcp.mdx does not list ${name}`)
+})
