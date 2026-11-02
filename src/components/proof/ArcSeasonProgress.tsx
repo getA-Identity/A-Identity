@@ -40,13 +40,18 @@ type VaultItem = {
   address: string
   owner: string
   // A backend from before the label sends no such field, and the line then names no kind.
-  ownerKind?: 'team' | 'external'
+  ownerKind?: 'team' | 'external' | 'unstated'
   deployTx: string
   deployedAt: string
   note: string
   explorerUrl: string
   deployExplorerUrl: string
+  // What the owner's wallet signed. A backend from before these sends none of the three.
+  freezeTxs?: ActionTx[]
+  withdrawTxs?: ActionTx[]
+  actionsRead?: { state: 'complete' | 'reading' | 'unreadable'; scannedToBlock: string | null; reason?: string }
 }
+type ActionTx = { txHash: string; block: string; explorerUrl: string }
 type RefusalItem = {
   kind: string
   txHash?: string
@@ -79,7 +84,7 @@ type SeasonReport = {
   milestone1: {
     title: string
     due: string
-    vaults: Metric & { items: VaultItem[] }
+    vaults: Metric & { items: VaultItem[]; ownerActions?: { freezes: number; withdrawals: number; vaultsNotFullyRead: number } }
     // linked and unlinked arrive with the flow count; a backend from before it sends neither,
     // and its count is every Gateway check, so the row is labeled by which one answered.
     checks: Metric & { internal: number; external: number; linked?: { paid: number; refused: number }; unlinked?: number; internalPayee?: number; refusedPayees?: number; items?: FlowItem[] }
@@ -149,6 +154,42 @@ function MilestoneCard({ id, title, due, children }: { id: number; title: string
         <span className="font-mono text-[11px] text-foreground/50">due {due}</span>
       </div>
       <div className="mt-2">{children}</div>
+    </div>
+  )
+}
+
+/** The sum over the vaults, beside the count. A backend from before it sends none, and the row then adds nothing. */
+function ownerActionsLine(a?: { freezes: number; withdrawals: number }): string | undefined {
+  return a ? `${plural(a.freezes, 'freeze', 'freezes')} and ${plural(a.withdrawals, 'withdrawal', 'withdrawals')} signed by an owner wallet` : undefined
+}
+
+/** One kind of owner action on one vault: its hashes, or that none was found, said only when the whole chain was read. */
+function OwnerActionLine({ label, none, txs, complete }: { label: string; none: string; txs: ActionTx[]; complete: boolean }) {
+  if (txs.length === 0) return complete ? <div>{none}</div> : null
+  return (
+    <div>
+      {label}:{' '}
+      {txs.map((t, i) => (
+        <span key={t.txHash}>
+          {i > 0 && ', '}
+          <OutLink href={t.explorerUrl}>{short(t.txHash)}</OutLink>
+        </span>
+      ))}
+    </div>
+  )
+}
+
+/** What this vault's owner did, in plain words, and how much of the chain that rests on. */
+function VaultOwnerActions({ vault }: { vault: VaultItem }) {
+  const read = vault.actionsRead
+  if (!read) return null
+  const complete = read.state === 'complete'
+  return (
+    <div className="mt-0.5 pl-3 text-foreground/60">
+      <OwnerActionLine label="Frozen by the owner's wallet" none="Not frozen by the owner's wallet yet." txs={vault.freezeTxs ?? []} complete={complete} />
+      <OwnerActionLine label="USDC taken out by the owner's wallet" none="No USDC taken out by the owner's wallet yet." txs={vault.withdrawTxs ?? []} complete={complete} />
+      {read.state === 'reading' && <div>Still reading this vault's history from the chain{read.scannedToBlock ? ` (up to block ${read.scannedToBlock} so far)` : ''}, so there may be more.</div>}
+      {read.state === 'unreadable' && <div>Could not read all of this vault's history just now, so there may be more: {read.reason ?? 'no reason given'}.</div>}
     </div>
   )
 }
@@ -334,7 +375,7 @@ export default function ArcSeasonProgress() {
           <div className="mt-6 grid gap-4 sm:grid-cols-2">
             <MilestoneCard id={1} title={m1.title} due={m1.due}>
               {/* The note names the launch-day vault and why it is not counted, which stays true at any count. */}
-              <MetricRow label="Owner-held vaults deployed by the owner's own wallet" metric={m1.vaults} keepNote />
+              <MetricRow label="Owner-held vaults deployed by the owner's own wallet" metric={m1.vaults} keepNote detail={ownerActionsLine(m1.vaults.ownerActions)} />
               {m1.checks.linked ? (
                 <MetricRow
                   label="Verify-then-pay flows through Circle Gateway"
@@ -358,8 +399,10 @@ export default function ArcSeasonProgress() {
                   {m1.vaults.items.map((v) => (
                     <li key={v.address} className="text-[11px] text-foreground/65">
                       <OutLink href={v.explorerUrl}>{short(v.address)}</OutLink> owner {short(v.owner)}
-                      {(v.ownerKind === 'team' || v.ownerKind === 'external') && <span className="font-semibold text-foreground/80"> ({v.ownerKind})</span>}, deployed{' '}
+                      {(v.ownerKind === 'team' || v.ownerKind === 'external') && <span className="font-semibold text-foreground/80"> ({v.ownerKind})</span>}
+                      {v.ownerKind === 'unstated' && <span className="font-semibold text-foreground/80"> (owner not identified)</span>}, deployed{' '}
                       <OutLink href={v.deployExplorerUrl}>{v.deployedAt}</OutLink>
+                      <VaultOwnerActions vault={v} />
                     </li>
                   ))}
                 </ul>

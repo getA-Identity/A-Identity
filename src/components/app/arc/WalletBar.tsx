@@ -16,6 +16,8 @@ import { Chip, CopyButton } from '../stellar/bits'
 import type { ArcWalletState } from './useArcWallet'
 
 const GAS_REREAD_MS = 15_000
+/** On 2026-11-02 Brave Shields blocked these reads for a real owner with a real MetaMask, and lowering Shields fixed it. */
+const SHIELDS_HINT = 'If you use Brave, turn off Shields for this site (the lion icon in the address bar), then reload.'
 
 export default function WalletBar({ wallet, target }: { wallet: ArcWalletState; target: Chain }) {
   const [picking, setPicking] = useState(false)
@@ -109,6 +111,7 @@ export default function WalletBar({ wallet, target }: { wallet: ArcWalletState; 
                   </span>
                 )}
                 <span className="text-foreground/50"> (on Arc, this same balance pays every network fee)</span>
+                {shownGas === null && <div className="mt-0.5 text-foreground/70">{SHIELDS_HINT}</div>}
               </div>
             )}
           </div>
