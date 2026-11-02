@@ -16,6 +16,9 @@
  * decided by setupStep (tx-rules.ts), where the live vault wins over a record that is only pending.
  * A deploy whose receipt names a contract is never called no vault, even when that contract does not
  * read back as asked: it stays in the setup with its banner and a link to its page.
+ *
+ * On Arc Mainnet the page also asks the server to count the vault on /proof/arc once its agent key has
+ * an end date (useVaultCount). No signature, best effort, and nothing above depends on it.
  */
 import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from 'react'
 import { ArrowLeft, CheckCircle2, Loader2, ShieldAlert } from 'lucide-react'
@@ -68,9 +71,11 @@ import FailureNotice from './FailureNotice'
 import FundForm from './FundForm'
 import PreparedView from './PreparedView'
 import TxReceipt from './TxReceipt'
+import VaultCountNotice from './VaultCountNotice'
 import type { ArcSetupStore } from './useArcSetup'
 import type { ArcWalletState } from './useArcWallet'
 import { recordOf, useArcTx } from './useArcTx'
+import { useVaultCount } from './useVaultCount'
 
 const INPUT =
   'mt-1 w-full rounded-lg border border-border bg-card px-3 py-2 text-sm text-foreground outline-none focus:border-accent focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-60'
@@ -142,6 +147,7 @@ export default function DeployFlow({
   }, [prepared, chain.caip2])
 
   const step = setupStep(setup, review !== null, snapshot)
+  const vaultCount = useVaultCount(chain.testnet, setup, step)
   const account = wallet.account
   const provider = wallet.wallet?.provider ?? null
   const walletGone = !provider || !account
@@ -920,6 +926,7 @@ export default function DeployFlow({
             <div className="mt-1 text-foreground/80">
               Next, give your agent this vault's address. You can freeze the vault, change its limits or take USDC out at any time from its page.
             </div>
+            <VaultCountNotice testnet={chain.testnet} networkName={networkName(chain)} countable={vaultCount.countable} count={vaultCount.count} onRetry={vaultCount.retry} />
             <div className="mt-3 flex flex-wrap items-center gap-2">
               <Button size="sm" onClick={() => onOpenVault(setup.network, setup.vault as string)}>
                 Open the vault

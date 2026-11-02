@@ -51,4 +51,7 @@ test('no method and path is handled twice, because only the first handler can ev
   // The two circle-policy reads, each at a path of its own.
   assert.equal(seen.get('GET /api/agents/circle-policy'), 'http/guardrail-routes.ts')
   assert.equal(seen.get('GET /api/agents/circle-policy/attestation'), 'http/agent-routes.ts')
+  // The owner-held vault pair, both beside the report that counts them.
+  assert.equal(seen.get('POST /api/arc/vaults'), 'http/arc-season-routes.ts')
+  assert.equal(seen.get('GET /api/arc/vaults'), 'http/arc-season-routes.ts')
 })

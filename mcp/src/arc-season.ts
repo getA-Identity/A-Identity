@@ -4,10 +4,11 @@
  * Circle judges Deliverable 2 (due 2026-10-30) on progress against each success metric
  * with current numbers, links to on-chain evidence and usage so far, with external
  * activity counted separately from our own. This module is that report, and it is
- * computed rather than written: every count comes from the two settlement logs and the
- * verify-then-pay flow log on every request, and the four lists a human has to curate
- * (owner-held vaults, inspectable refusals, partner wallets, verify-then-pay flows recorded
- * anywhere else) are exported here as data, and fill only when the evidence exists.
+ * computed rather than written: every count comes from the two settlement logs, the
+ * verify-then-pay flow log and the admitted vault list on every request, and the four lists a
+ * human has to curate (owner-held vaults admitted by hand, inspectable refusals, partner wallets,
+ * verify-then-pay flows recorded anywhere else) are exported here as data, and fill only when the
+ * evidence exists.
  *
  * What counts, stated once:
  *   - A check is a settled row on Arc Mainnet. On the Gateway log that is an outcome of
@@ -29,7 +30,10 @@
  *   - A payer is internal when it is on either rail's published list of our own buyer
  *     wallets, compared case-insensitively. Everything else is external.
  *   - A vault counts only when its owner key is one we never held, so the launch-day
- *     vault, owned by our operating wallet, does not. A refusal counts only when a
+ *     vault, owned by our operating wallet, does not. The vaults are the curated list plus the
+ *     ones POST /api/arc/vaults admitted (arc-owner-vault-live.ts holds them to the same checks),
+ *     one per address, the curated entry first. Each carries the freezes and withdrawals its owner's
+ *     wallet signed, read from the chain (arc-vault-actions.ts). A refusal counts only when a
  *     reviewer can inspect it: a reverted vault transaction with a hash, or a DENY that
  *     stopped a payment before signing, with its audit entry. The launch-day refusal was
  *     a simulation with no hash, so it does not. The commitment is one of each kind, so the
@@ -39,6 +43,9 @@
  * injected, so the aggregation is unit-tested with rows and the route adds the real
  * loaders and nothing else.
  */
+import { ADMISSION_CHAIN, ADMISSION_EVIDENCE_URL, collectOurAddresses, liveOurAddressSources } from './arc-owner-vault.js'
+import { admittedVaultsFromStore } from './arc-owner-vault-live.js'
+import { liveOwnerActions, type ActionsReadState, type ActionTx, type ActionVault, type VaultOwnerActions } from './arc-vault-actions.js'
 import { getChainById, type ChainDescriptor } from './chains/index.js'
 import { addressUrl, txUrl } from './chains/explorer.js'
 import { PROVENANCE } from './chains/provenance.js'
@@ -55,7 +62,7 @@ import { internalPayers as gatewayInternalPayers, railStatus as gatewayRailStatu
 import { internalPayers as facilitatorInternalPayers, railStatus as facilitatorRailStatus } from './x402-3009/rail.js'
 import { toSeasonFlow } from './verify-then-pay/season.js'
 
-export const ARC_SEASON_CHAIN = 'arc-mainnet'
+export const ARC_SEASON_CHAIN = ADMISSION_CHAIN
 
 export const ARC_SEASON_PROGRAM = {
   name: 'Arc Acceleration Season',
@@ -78,7 +85,7 @@ export const ARC_SEASON_TARGETS = {
   activeWindowDays: 28,
 } as const
 
-export const ARC_SEASON_EVIDENCE_URL = 'https://a-identity.xyz/proof/arc'
+export const ARC_SEASON_EVIDENCE_URL = ADMISSION_EVIDENCE_URL
 
 // ── the curated lists ─────────────────────────────────────────────────────────────
 
@@ -102,9 +109,11 @@ export const ARC_PARTNERS: ArcPartner[] = []
  * Whose wallet an owner-held vault's owner key is. 'team': a person on the A-Identity team, in
  * their own wallet. 'external': anyone else. Our server holds neither, which is what the metric
  * counts; a reviewer still needs to see which of the two each vault is. The chain cannot tell them
- * apart, so whoever admits the vault says which, with --owner-kind.
+ * apart, so whoever admits the vault with the script says which, with --owner-kind. 'unstated': the
+ * vault was admitted automatically by POST /api/arc/vaults, where nobody can say, and a reader is
+ * told the owner is not identified.
  */
-export type ArcOwnerKind = 'team' | 'external'
+export type ArcOwnerKind = 'team' | 'external' | 'unstated'
 
 export type ArcOwnerHeldVault = {
   /** The AgentSpendPolicy contract. */
@@ -113,6 +122,8 @@ export type ArcOwnerHeldVault = {
   owner: string
   ownerKind: ArcOwnerKind
   deployTx: string
+  /** Decimal, when known: where a read of the vault's logs starts. Otherwise its deploy receipt says. */
+  deployBlock?: string
   /** UTC day of the deployment. */
   deployedAt: string
   note: string
@@ -120,9 +131,10 @@ export type ArcOwnerHeldVault = {
 
 /**
  * Owner-held AgentSpendPolicy vaults on Arc Mainnet, deployed by the owner's own wallet with a
- * key A-Identity never holds. Filled from the browser vault deployer at /app/vault/arc as
- * each deployment lands; mcp/scripts/arc-owner-vault-check.mjs admits a vault and prints its
- * entry, and a vault is listed only with its deploy hash. Empty until the first one lands.
+ * key A-Identity never holds, admitted by hand: mcp/scripts/arc-owner-vault-check.mjs admits a
+ * vault and prints its entry, which can say whose wallet it is. A vault is listed only with its
+ * deploy hash. The browser vault deployer at /app/vault/arc needs no entry here: its deploys are
+ * admitted by POST /api/arc/vaults under the same checks, and ArcSeasonDeps.admittedVaults reads them.
  */
 export const ARC_OWNER_HELD_VAULTS: ArcOwnerHeldVault[] = []
 
@@ -249,7 +261,22 @@ export type ArcSeasonUsageSide = {
 export type ArcSeasonSkippedRow = { flowId: string | null; reason: string }
 export type ArcSeasonLogRead = { readable: boolean; rows: number; reason?: string; skipped?: ArcSeasonSkippedRow[] }
 
-export type ArcSeasonVaultItem = ArcOwnerHeldVault & { explorerUrl: string; deployExplorerUrl: string }
+/** A row the admitted vault list could not count. vault is null when the row names none. */
+export type ArcSeasonSkippedVault = { vault: string | null; reason: string }
+export type ArcSeasonVaultsRead = { readable: boolean; rows: number; reason?: string; skipped?: ArcSeasonSkippedVault[] }
+export type ArcSeasonActionTx = ActionTx & { explorerUrl: string }
+/**
+ * A counted vault and what its owner's wallet did to it. Each hash is a transaction whose from is
+ * the owner, and `actionsRead` says how far the chain was read: an empty list means nothing was
+ * found so far only when its state is 'complete'.
+ */
+export type ArcSeasonVaultItem = ArcOwnerHeldVault & {
+  explorerUrl: string
+  deployExplorerUrl: string
+  freezeTxs: ArcSeasonActionTx[]
+  withdrawTxs: ArcSeasonActionTx[]
+  actionsRead: ActionsReadState
+}
 export type ArcSeasonRefusalItem = ArcRefusal & { explorerUrl: string | null }
 export type ArcSeasonFlowItem = ArcVerifyThenPayFlow & { explorerUrl: string | null }
 export type ArcSeasonTeam = ArcSeasonWallet & { team: string; publicReference: boolean }
@@ -263,7 +290,7 @@ export type ArcSeasonReport = {
   /** Whether each log could be read. A log that could not be read contributes nothing,
    *  and says so here rather than reading as zero demand. `flows` is the verify-then-pay
    *  flow log, present whenever a loader for it is wired (the live route always wires one). */
-  logs: { gateway: ArcSeasonLogRead; facilitator: ArcSeasonLogRead; flows?: ArcSeasonLogRead }
+  logs: { gateway: ArcSeasonLogRead; facilitator: ArcSeasonLogRead; flows?: ArcSeasonLogRead; admittedVaults?: ArcSeasonVaultsRead }
   usage: {
     basis: string
     internal: ArcSeasonUsageSide
@@ -272,7 +299,14 @@ export type ArcSeasonReport = {
   milestone1: {
     title: string
     due: string
-    vaults: { count: number; target: number; items: ArcSeasonVaultItem[]; note: string }
+    vaults: {
+      count: number
+      target: number
+      items: ArcSeasonVaultItem[]
+      /** The hashes of what owners signed, summed over the items, and how many vaults are not fully read. */
+      ownerActions: { freezes: number; withdrawals: number; vaultsNotFullyRead: number }
+      note: string
+    }
     checks: {
       /** Verify-then-pay flows: our own Gateway checks with a vault payment or a refusal linked. */
       count: number
@@ -338,7 +372,15 @@ export type ArcSeasonDeps = {
   ourPayees?: { address: string; why: string }[]
   now?: () => number
   partners?: ArcPartner[]
+  /** The curated vaults. Default ARC_OWNER_HELD_VAULTS. */
   vaults?: ArcOwnerHeldVault[]
+  /** Vaults POST /api/arc/vaults admitted. May throw: an unreadable list is reported in
+   *  logs.admittedVaults, and the count is then the curated list alone and says so. A row it
+   *  cannot count goes to onSkip and on into logs.admittedVaults. */
+  admittedVaults?: (onSkip?: (row: ArcSeasonSkippedVault) => void) => Promise<ArcOwnerHeldVault[]>
+  /** What each counted vault's owner did, by lowercase address. May throw: every vault then says
+   *  its actions could not be read. A vault it has no answer for says the same. */
+  ownerActions?: (vaults: readonly ActionVault[]) => Promise<Map<string, VaultOwnerActions>>
   refusals?: ArcRefusal[]
   /** The curated flows. Default ARC_VERIFY_THEN_PAY_FLOWS. */
   flows?: ArcVerifyThenPayFlow[]
@@ -391,6 +433,8 @@ export function liveArcSeasonDeps(env: NodeJS.ProcessEnv = process.env): ArcSeas
     gatewayRows: liveGatewayRows,
     facilitatorRows: liveFacilitatorRows,
     flowRows: liveFlowRows,
+    admittedVaults: (onSkip) => admittedVaultsFromStore(collectOurAddresses(liveOurAddressSources(env)), onSkip),
+    ownerActions: liveOwnerActions(env),
     internalPayers: { gateway: gatewayInternalPayers(env), facilitator: facilitatorInternalPayers(env) },
     ourPayTo: [gatewayRailStatus(env, arcMainnet().caip2).payTo, facilitatorRailStatus(env, arcMainnet().caip2).payTo].filter((a): a is string => Boolean(a)),
   }
@@ -405,6 +449,19 @@ export function mergeFlows(curated: ArcVerifyThenPayFlow[], recorded: ArcVerifyT
     if (seen.has(key)) continue
     seen.add(key)
     out.push(f)
+  }
+  return out
+}
+
+/** Curated vaults first, then admitted ones, one per address whatever its case. */
+export function mergeVaults(curated: ArcOwnerHeldVault[], admitted: ArcOwnerHeldVault[]): ArcOwnerHeldVault[] {
+  const seen = new Set<string>()
+  const out: ArcOwnerHeldVault[] = []
+  for (const v of [...curated, ...admitted]) {
+    const key = v.address.toLowerCase()
+    if (seen.has(key)) continue
+    seen.add(key)
+    out.push(v)
   }
   return out
 }
@@ -500,6 +557,31 @@ async function readLog<T>(load: () => Promise<T[]>): Promise<{ rows: T[]; read: 
   }
 }
 
+/** Each vault with its owner's actions, or with a plain statement of why they are not known. */
+async function vaultItemsWithActions(vaults: ArcOwnerHeldVault[], chain: ChainDescriptor, read: ArcSeasonDeps['ownerActions']): Promise<ArcSeasonVaultItem[]> {
+  let known = new Map<string, VaultOwnerActions>()
+  let failed: string | null = read ? null : 'the owner actions were not read on this request'
+  if (read && vaults.length > 0) {
+    try {
+      known = await read(vaults)
+    } catch (e) {
+      failed = e instanceof Error ? e.message : String(e)
+    }
+  }
+  const linked = (txs: ActionTx[]): ArcSeasonActionTx[] => txs.map((t) => ({ ...t, explorerUrl: txUrl(chain, t.txHash) }))
+  return vaults.map((v) => {
+    const actions = known.get(v.address.toLowerCase())
+    return {
+      ...v,
+      explorerUrl: addressUrl(chain, v.address),
+      deployExplorerUrl: txUrl(chain, v.deployTx),
+      freezeTxs: linked(actions?.freezeTxs ?? []),
+      withdrawTxs: linked(actions?.withdrawTxs ?? []),
+      actionsRead: actions?.read ?? { state: 'unreadable', scannedToBlock: null, reason: failed ?? 'the owner actions were not read on this request' },
+    }
+  })
+}
+
 /** A season can hold dozens of recorded DENYs. The report lists a few here and counts them all. */
 const REFUSAL_ITEMS_SHOWN = 5
 
@@ -507,7 +589,7 @@ export async function arcSeasonReport(deps: ArcSeasonDeps): Promise<ArcSeasonRep
   const chain = arcMainnet()
   const now = deps.now ?? Date.now
   const partners = deps.partners ?? ARC_PARTNERS
-  const vaults = deps.vaults ?? ARC_OWNER_HELD_VAULTS
+  const curatedVaults = deps.vaults ?? ARC_OWNER_HELD_VAULTS
   const refusals = deps.refusals ?? ARC_REFUSALS
 
   const gateway = await readLog(deps.gatewayRows)
@@ -516,6 +598,17 @@ export async function arcSeasonReport(deps: ArcSeasonDeps): Promise<ArcSeasonRep
   const loadFlowRows = deps.flowRows
   const recordedFlows = loadFlowRows ? await readLog(() => loadFlowRows((row) => skippedRows.push(row))) : null
   const flows = mergeFlows(deps.flows ?? ARC_VERIFY_THEN_PAY_FLOWS, recordedFlows?.rows ?? [])
+  const skippedVaults: ArcSeasonSkippedVault[] = []
+  const loadAdmitted = deps.admittedVaults
+  const admittedVaults = loadAdmitted ? await readLog(() => loadAdmitted((row) => skippedVaults.push(row))) : null
+  const vaults = mergeVaults(curatedVaults, admittedVaults?.rows ?? [])
+  const unstatedVaults = vaults.filter((v) => v.ownerKind === 'unstated').length
+  const vaultItems = await vaultItemsWithActions(vaults, chain, deps.ownerActions)
+  const ownerActions = {
+    freezes: vaultItems.reduce((n, v) => n + v.freezeTxs.length, 0),
+    withdrawals: vaultItems.reduce((n, v) => n + v.withdrawTxs.length, 0),
+    vaultsNotFullyRead: vaultItems.filter((v) => v.actionsRead.state !== 'complete').length,
+  }
 
   const checks: Check[] = [
     ...gateway.rows
@@ -633,7 +726,21 @@ export async function arcSeasonReport(deps: ArcSeasonDeps): Promise<ArcSeasonRep
     chain: ARC_SEASON_CHAIN,
     network: chain.caip2,
     program: ARC_SEASON_PROGRAM,
-    logs: { gateway: gateway.read, facilitator: facilitator.read, ...(recordedFlows ? { flows: { ...recordedFlows.read, ...(skippedRows.length ? { skipped: skippedRows } : {}) } } : {}) },
+    logs: {
+      gateway: gateway.read,
+      facilitator: facilitator.read,
+      ...(recordedFlows ? { flows: { ...recordedFlows.read, ...(skippedRows.length ? { skipped: skippedRows } : {}) } } : {}),
+      ...(admittedVaults
+        ? {
+            admittedVaults: {
+              readable: admittedVaults.read.readable,
+              rows: admittedVaults.read.rows,
+              ...(admittedVaults.read.reason ? { reason: admittedVaults.read.reason } : {}),
+              ...(skippedVaults.length ? { skipped: skippedVaults } : {}),
+            },
+          }
+        : {}),
+    },
     usage: {
       basis:
         'A payer is internal when its address is on either rail\'s published list of our own buyer wallets (the hardcoded KNOWN_INTERNAL_PAYERS plus X402_GATEWAY_INTERNAL_PAYERS and X402_3009_INTERNAL_PAYERS), compared case-insensitively; every other payer is external, and a check is a Circle Gateway row credited or completed, or a facilitator row settled, on Arc Mainnet.',
@@ -646,11 +753,21 @@ export async function arcSeasonReport(deps: ArcSeasonDeps): Promise<ArcSeasonRep
       vaults: {
         count: vaults.length,
         target: ARC_SEASON_TARGETS.ownerHeldVaults,
-        items: vaults.map((v) => ({ ...v, explorerUrl: addressUrl(chain, v.address), deployExplorerUrl: txUrl(chain, v.deployTx) })),
+        items: vaultItems,
+        ownerActions,
         note:
-          vaults.length === 0
+          (admittedVaults && !admittedVaults.read.readable
+            ? `The list of admitted vaults could not be read on this request (${admittedVaults.read.reason ?? 'no reason given'}), so any vault it holds is missing from this count until it answers. `
+            : '') +
+          (skippedVaults.length ? `${skippedVaults.length} admitted vault row(s) are not counted; logs.admittedVaults names them and says why. ` : '') +
+          (vaults.length === 0
             ? `No owner-held vault yet. The launch-day vault${launchVault ? ` ${launchVault}` : ''} was deployed from our server key with our operating wallet as its owner, so it is not owner-held and is not counted. This count fills from vaults deployed by the owner's own wallet, whose owner key A-Identity never holds, each listed with its deploy hash. The deploy page at /app/vault/arc is one way to do that.`
-            : `${vaults.length} of ${ARC_SEASON_TARGETS.ownerHeldVaults} vaults deployed by the owner's own wallet, with an owner key A-Identity never held. The launch-day vault${launchVault ? ` ${launchVault}` : ''} is owned by our operating wallet and is not among them.`,
+            : `${vaults.length} of ${ARC_SEASON_TARGETS.ownerHeldVaults} vaults deployed by the owner's own wallet, with an owner key A-Identity never held. The launch-day vault${launchVault ? ` ${launchVault}` : ''} is owned by our operating wallet and is not among them.` +
+              (unstatedVaults > 0
+                ? ` ${unstatedVaults} of them were admitted automatically after every check passed, with the owner not identified: the checks prove the owner's wallet sent the deploy and is none of our keys, and the chain cannot say whose wallet it is, so one could be a team member's.`
+                : '') +
+              ` Owner wallets have signed ${ownerActions.freezes} freeze(s) and ${ownerActions.withdrawals} withdrawal(s), each hash on its vault.` +
+              (ownerActions.vaultsNotFullyRead > 0 ? ` ${ownerActions.vaultsNotFullyRead} vault(s) are not fully read yet, so there may be more; each says why on actionsRead.` : '')),
       },
       checks: {
         count: linkedFlows.size,
@@ -760,6 +877,6 @@ export async function arcSeasonReport(deps: ArcSeasonDeps): Promise<ArcSeasonRep
       },
       note: `After the program the reference is ${ARC_SEASON_TARGETS.activeExternalWallets} external wallets with a settled check inside the last ${ARC_SEASON_TARGETS.activeWindowDays} days, measured on a rolling window from the time of each read.`,
     },
-    note: 'Targets are the Deliverable 1 commitments as revised by Circle on 2026-10-19; counts are read from the settlement logs on every request, and the curated lists (vaults, refusals, partners) fill only when the evidence exists.',
+    note: 'Targets are the Deliverable 1 commitments as revised by Circle on 2026-10-19; counts are read from the settlement logs and the admitted vault list on every request, and the curated lists (vaults, refusals, partners) fill only when the evidence exists.',
   }
 }

@@ -1,12 +1,12 @@
 /**
  * Milestone 1's owner-held vault admission: the half that decides, with no network in scope.
  *
- * ARC_OWNER_HELD_VAULTS in arc-season.ts counts AgentSpendPolicy vaults on Arc Mainnet whose
- * owner key A-Identity never held, and a vault joins that list only after its deploy receipt
- * has been checked. scripts/arc-owner-vault-check.mjs does the reading, read-only and from
- * every RPC host the registry lists; this module turns what it read into checks, so every
- * rule that can refuse a vault is unit-tested with plain values instead of living only in a
- * script.
+ * Milestone 1 counts AgentSpendPolicy vaults on Arc Mainnet whose owner key A-Identity never
+ * held, and a vault joins the count only after its deploy receipt has been checked.
+ * arc-owner-vault-live.ts does the reading, read-only and from every RPC host the registry
+ * lists, for both scripts/arc-owner-vault-check.mjs and POST /api/arc/vaults; this module turns
+ * what it read into checks, so every rule that can refuse a vault is unit-tested with plain
+ * values.
  *
  * A vault is admitted only when every one of these holds:
  *   - a registry RPC host returned the deploy receipt, and no two hosts that answered
@@ -45,7 +45,7 @@ import {
   type Hex,
 } from 'viem'
 import { privateKeyToAccount } from 'viem/accounts'
-import { ARC_SEASON_CHAIN, type ArcOwnerHeldVault, type ArcOwnerKind } from './arc-season.js'
+import type { ArcOwnerHeldVault, ArcOwnerKind } from './arc-season.js'
 import { ATTESTATIONS } from './asp/attestations.js'
 import { PROVENANCE, type ChainProvenance } from './chains/provenance.js'
 import { CHAINS } from './chains/registry.js'
@@ -53,8 +53,10 @@ import type { ChainDescriptor } from './chains/types.js'
 import { internalPayers as gatewayInternalPayers } from './x402-gateway/rail.js'
 import { internalPayers as facilitatorInternalPayers } from './x402-3009/rail.js'
 
-/** The chain Milestone 1 counts. */
-export const ADMISSION_CHAIN = ARC_SEASON_CHAIN
+/** The chain Milestone 1 counts. arc-season.ts takes it from here, so this module needs nothing from that one at run time. */
+export const ADMISSION_CHAIN = 'arc-mainnet'
+/** Where a counted vault shows up. */
+export const ADMISSION_EVIDENCE_URL = 'https://a-identity.xyz/proof/arc'
 /** The testnet a browser deployment may be rehearsed on. A rehearsal runs every check and
  *  is never printed as a Milestone 1 entry. */
 export const REHEARSAL_CHAIN = 'arc'

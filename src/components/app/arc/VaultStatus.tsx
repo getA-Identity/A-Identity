@@ -61,7 +61,7 @@ export default function VaultStatus({
   /** operator() is a key of ours. */
   operatorIsOurKey?: boolean
   /** Whose wallet the owner key is, for a vault on the owner-held list. */
-  ownerKind?: 'team' | 'external'
+  ownerKind?: 'team' | 'external' | 'unstated'
   refreshing?: boolean
 }) {
   const usd = (x: bigint) => `${formatUnitsExact(x, v.decimals)} USDC`

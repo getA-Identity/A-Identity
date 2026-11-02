@@ -192,7 +192,7 @@ Flat files by group: entries (`index.ts` stdio MCP, `http.ts` REST+MCP, `asp-gat
 `build-stamp.ts`) - Circle rails (`gateway.ts`, `cctp.ts`, `nanopay.ts`, `appkit.ts`,
 `circle.ts`, `circle-agent.ts`, `circle-cli.ts`, `paymaster.ts`) - Arc binding (`arc.ts`,
 `arc-contracts.ts`) - Arc Acceleration Season (`arc-season.ts` the milestone report,
-`arc-owner-vault.ts` the owner-held vault admission, `arc-vtp-run.ts` the Milestone 1 flow runner's rules) - auth (`auth.ts`, `oauth.ts`, `magic.ts`, `bot-auth.ts`) - domain
+`arc-owner-vault.ts` the owner-held vault admission rules, `arc-owner-vault-live.ts` its chain reads and the route's core, `arc-vault-actions.ts` the owner freezes and withdrawals read from the chain, `arc-vtp-run.ts` the Milestone 1 flow runner's rules) - auth (`auth.ts`, `oauth.ts`, `magic.ts`, `bot-auth.ts`) - domain
 (`erc8004.ts`, `reputation.ts`, `marketplace.ts`, `data.ts`) - x402/autonomy (`x402.ts`,
 `autopilot.ts`, `trust-oracle.ts`) - treasury (`treasury.ts`, `treasury-safe.ts`,
 `airdrop.ts`) - AA (`aa-wallet.ts`).
@@ -208,7 +208,7 @@ npm run start        # MCP server on stdio
 npm run start:http   # the HTTP server (REST + /mcp). Reads config from process.env directly.
 npm run smoke        # spin up the MCP server + exercise every read-only tool
 npm run http-smoke   # exercise the tools over HTTP (server must be running)
-npm test             # tsc + node:test unit tests (2086 across 123 files, as of Nov 2026)
+npm test             # tsc + node:test unit tests (2126 across 125 files, as of Nov 2026)
 npm run e2e          # full end-to-end flow against a running server (E2E_BASE=...)
 ```
 
@@ -220,19 +220,27 @@ node --env-file=.env dist/http.js     # Node 20.6+
 ARC_SIGNER_KEY=0x<funded-key> node dist/http.js
 ```
 
-Tests: **2086 unit tests across 123 colocated `*.test.ts` files** (as of Nov 2026; `npm test`) +
+Tests: **2126 unit tests across 125 colocated `*.test.ts` files** (as of Nov 2026; `npm test`) +
 a full **E2E of about 67 checks** (`npm run e2e`) that adapts to signer presence: green with no
 signer key (live Arc reads; on-chain writes reported as prepared), with the real Arc write
 checks activating under a funded `ARC_SIGNER_KEY`. CI runs the no-signer path.
 
 ### Admit a vault to Milestone 1's owner-held list
 
-`ARC_OWNER_HELD_VAULTS` in `src/arc-season.ts` takes a vault only after its deploy receipt is
-checked, and `scripts/arc-owner-vault-check.mjs` is that check. It is read-only: it signs and
-sends nothing. It reads the receipt from every registry RPC host (a null from one host is not an
-answer), compares the deploy with the `AgentSpendPolicy` artifact, reads the vault's getters,
-and prints the entry to paste, or `REFUSED` with every reason. The rules live in
-`src/arc-owner-vault.ts`, unit-tested.
+A vault deployed from `/app/vault/arc` on Arc Mainnet needs nothing from anyone: the page posts its
+deploy hash to `POST /api/arc/vaults` once the agent key has an end date, and a vault that passes
+every check is stored and counted by `GET /api/arc/season` with its owner not identified.
+`GET /api/arc/vaults` lists them and says under `admission` whether the server can admit at all: it
+refuses every vault until at least one of our EVM key env vars is set and all of them are readable,
+so a vault owned by a key only the env knows cannot pass.
+
+`ARC_OWNER_HELD_VAULTS` in `src/arc-season.ts` is the hand-committed list beside that, for an entry
+that can say whose wallet it is, and `scripts/arc-owner-vault-check.mjs` admits to it. It is
+read-only: it signs and sends nothing. It reads the receipt from every registry RPC host (a null
+from one host is not an answer), compares the deploy with the `AgentSpendPolicy` artifact, reads the
+vault's getters, and prints the entry to paste, or `REFUSED` with every reason. Script and route run
+the same reads (`src/arc-owner-vault-live.ts`) and the same rules (`src/arc-owner-vault.ts`),
+unit-tested. To count a vault the page could not post for, post its hash to the route.
 
 ```bash
 npm run build

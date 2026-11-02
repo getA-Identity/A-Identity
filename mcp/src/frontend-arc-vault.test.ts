@@ -1466,3 +1466,58 @@ test('a record is polled on the network it names, the deploy on the network it w
   assert.doesNotMatch(revoke, /\bheld\b/, 'Revoke waits on a pending record again')
   assert.match(owner, /disabled=\{busy !== null \|\| \(held && !next\)\}/, 'Freeze waits on a pending record again')
 })
+
+test('the deploy page counts a mainnet vault only from a settled deploy, once its key has an end date, and says the answer in plain words', async () => {
+  const count = (await import(repoUrl('src/lib/arc/vault-count.ts').href)) as {
+    vaultCountFromAnswer: (status: number, body: unknown) => { state: string; reasons?: string[]; retryable?: boolean; why?: string }
+    countableDeploy: (testnet: boolean, setup: unknown) => string | null
+    readyToCount: (step: string) => boolean
+  }
+  const settled = { vault: '0xv', deploy: { hash: '0xh', outcome: 'settled' } }
+  assert.equal(count.countableDeploy(false, settled), '0xh')
+  assert.equal(count.countableDeploy(true, settled), null, 'a testnet deploy is never posted')
+  assert.equal(count.countableDeploy(false, null), null)
+  assert.equal(count.countableDeploy(false, { vault: null, deploy: settled.deploy }), null)
+  assert.equal(count.countableDeploy(false, { vault: '0xv', deploy: { hash: '0xh', outcome: 'replaced' } }), null, 'a replaced hash created nothing the server can check')
+  assert.equal(count.countableDeploy(false, { vault: '0xv' }), null, 'found without a receipt: no hash to send')
+  // The deploy leaves sessionKeyExpiry at 0, which admission refuses, so the post waits for the end date.
+  for (const early of ['form', 'review', 'sending', 'deploying', 'expiry', 'expiry-pending', 'deploy-failed']) assert.equal(count.readyToCount(early), false, early)
+  for (const later of ['fund', 'fund-pending', 'done']) assert.equal(count.readyToCount(later), true, later)
+
+  assert.deepEqual(count.vaultCountFromAnswer(200, { status: 'admitted' }), { state: 'counted' })
+  assert.deepEqual(count.vaultCountFromAnswer(200, { status: 'refused', retryable: true, reasons: [{ reason: 'not yet' }] }), { state: 'not-counted', reasons: ['not yet'], retryable: true })
+  assert.equal(count.vaultCountFromAnswer(200, { status: 'refused', reasons: [] }).reasons?.length, 1)
+  assert.equal(count.vaultCountFromAnswer(200, { status: 'refused' }).retryable, false)
+  for (const [status, body] of [[503, { status: 'unavailable' }], [429, {}], [500, null], [200, {}], [200, null], [404, { status: 'admitted' }]] as const) {
+    assert.equal(count.vaultCountFromAnswer(status, body).state, 'failed', `${status} ${JSON.stringify(body)} must never read as counted`)
+  }
+
+  const flow = codeOnly(repo('src/components/app/arc/DeployFlow.tsx'))
+  assert.match(flow, /useVaultCount\(chain\.testnet, setup, step\)/)
+  const done = flow.slice(flow.indexOf('Your vault is set up.'), flow.indexOf('Open the vault'))
+  assert.match(done, /<VaultCountNotice /)
+  const hook = codeOnly(repo('src/components/app/arc/useVaultCount.ts'))
+  assert.match(hook, /apiFetch\('\/api\/arc\/vaults'/)
+  assert.doesNotMatch(hook, /sendPrepared|eth_sendTransaction|personal_sign|signMessage/, 'no new wallet signature')
+  assert.match(hook, /catch \{\s*next = \{ state: 'failed'/, 'a failed post is a state on the page and never a throw')
+  const notice = repo('src/components/app/arc/VaultCountNotice.tsx')
+  assert.match(notice, /This vault is now counted on/)
+  assert.match(notice, /This vault is not counted on/)
+  assert.match(notice, /Try again/)
+})
+
+test('a balance that could not be read names the Brave Shields fix, only then', () => {
+  const bar = repo('src/components/app/arc/WalletBar.tsx')
+  assert.match(bar, /If you use Brave, turn off Shields for this site \(the lion icon in the address bar\), then reload\./)
+  assert.match(codeOnly(bar), /shownGas === null && <div[^>]*>\{SHIELDS_HINT\}<\/div>/)
+})
+
+test('the proof page shows each vault\'s owner actions and says when they could not be read', () => {
+  const page = repo('src/components/proof/ArcSeasonProgress.tsx')
+  assert.match(page, /owner not identified/)
+  assert.match(page, /<VaultOwnerActions vault=\{v\} \/>/)
+  assert.match(page, /Could not read all of this vault's history just now/)
+  assert.match(page, /Still reading this vault's history from the chain/)
+  // "None yet" is said only when every block was read.
+  assert.match(page, /if \(txs\.length === 0\) return complete \? <div>\{none\}<\/div> : null/)
+})

@@ -11,8 +11,10 @@ import {
   ARC_VERIFY_THEN_PAY_FLOWS,
   ARC_SEASON_TARGETS,
   mergeFlows,
+  mergeVaults,
   seasonFlowsFromRows,
   type ArcSeasonDeps,
+  type ArcOwnerHeldVault,
   type ArcVerifyThenPayFlow,
 } from './arc-season.js'
 import { getChainById } from './chains/index.js'
@@ -538,6 +540,126 @@ test('vault and refusal items derive their explorer links from the registry and 
   // A DENY that stopped the payment before signing has no transaction, so no link is invented.
   assert.equal(refusals.items[1].explorerUrl, null)
   assert.equal(refusals.items[1].evidenceUrl, 'https://a-identity.xyz/api/agents/audit-log?id=1')
+})
+
+const vaultEntry = (address: string, over: Partial<ArcOwnerHeldVault> = {}): ArcOwnerHeldVault => ({
+  address,
+  owner: EXT_B,
+  ownerKind: 'unstated',
+  deployTx: '0x' + address.slice(2, 42).padEnd(64, '0'),
+  deployBlock: '100',
+  deployedAt: '2026-11-03',
+  note: 'admitted',
+  ...over,
+})
+
+test('Milestone 1 vaults are the curated list plus the admitted ones, one per address whatever its case, the curated entry first', async () => {
+  const curated = vaultEntry(EXT_A, { ownerKind: 'team', note: 'curated' })
+  const sameVault = vaultEntry(shouty(EXT_A), { note: 'admitted later' })
+  const another = vaultEntry(EXT_C)
+  assert.deepEqual(mergeVaults([curated], [sameVault, another, another]).map((v) => v.note), ['curated', 'admitted'])
+  const r = await arcSeasonReport(deps({ vaults: [curated], admittedVaults: async () => [sameVault, another] }))
+  const v = r.milestone1.vaults
+  assert.equal(v.count, 2)
+  assert.deepEqual(v.items.map((i) => [i.address, i.ownerKind]), [[EXT_A, 'team'], [EXT_C, 'unstated']])
+  assert.match(v.note, /1 of them were admitted automatically.*owner not identified/)
+  assert.deepEqual(r.logs.admittedVaults, { readable: true, rows: 2 })
+})
+
+test('an unreadable list of admitted vaults is said plainly and counts the curated list alone, never zero or a guess', async () => {
+  const r = await arcSeasonReport(
+    deps({
+      vaults: [vaultEntry(EXT_A, { ownerKind: 'external' })],
+      admittedVaults: async () => {
+        throw new Error('db down')
+      },
+    }),
+  )
+  assert.equal(r.milestone1.vaults.count, 1)
+  assert.equal(r.logs.admittedVaults?.readable, false)
+  assert.match(r.milestone1.vaults.note, /admitted vaults could not be read on this request \(db down\)/)
+  const none = await arcSeasonReport(deps({ admittedVaults: async () => { throw new Error('db down') } }))
+  assert.equal(none.milestone1.vaults.count, 0)
+  assert.match(none.milestone1.vaults.note, /could not be read/)
+})
+
+test('a stored row the loader will not count is named and not counted', async () => {
+  const r = await arcSeasonReport(
+    deps({
+      admittedVaults: async (onSkip) => {
+        onSkip?.({ vault: EXT_C, reason: 'its owner is one of our keys' })
+        return [vaultEntry(EXT_A)]
+      },
+    }),
+  )
+  assert.equal(r.milestone1.vaults.count, 1)
+  assert.deepEqual(r.logs.admittedVaults?.skipped, [{ vault: EXT_C, reason: 'its owner is one of our keys' }])
+  assert.match(r.milestone1.vaults.note, /1 admitted vault row\(s\) are not counted/)
+})
+
+test("each vault carries its owner's actions with registry links, and how far the chain was read", async () => {
+  const freeze = '0x' + '31'.repeat(32)
+  const out = '0x' + '32'.repeat(32)
+  const asked: string[] = []
+  const r = await arcSeasonReport(
+    deps({
+      vaults: [vaultEntry(EXT_A)],
+      admittedVaults: async () => [vaultEntry(EXT_C)],
+      ownerActions: async (vaults) => {
+        asked.push(...vaults.map((v) => v.address))
+        return new Map([
+          [lower(EXT_A), { freezeTxs: [{ txHash: freeze, block: '200' }], withdrawTxs: [{ txHash: out, block: '300' }], read: { state: 'complete' as const, scannedToBlock: '400' } }],
+          [lower(EXT_C), { freezeTxs: [], withdrawTxs: [], read: { state: 'reading' as const, scannedToBlock: '150' } }],
+        ])
+      },
+    }),
+  )
+  assert.deepEqual(asked, [EXT_A, EXT_C], 'every counted vault is read, curated and admitted')
+  const [a, c] = r.milestone1.vaults.items
+  assert.deepEqual(a.freezeTxs, [{ txHash: freeze, block: '200', explorerUrl: txUrl(arc, freeze) }])
+  assert.deepEqual(a.withdrawTxs, [{ txHash: out, block: '300', explorerUrl: txUrl(arc, out) }])
+  assert.equal(a.actionsRead.state, 'complete')
+  assert.deepEqual(c.freezeTxs, [])
+  assert.equal(c.actionsRead.state, 'reading')
+  assert.deepEqual(r.milestone1.vaults.ownerActions, { freezes: 1, withdrawals: 1, vaultsNotFullyRead: 1 })
+  assert.match(r.milestone1.vaults.note, /signed 1 freeze\(s\) and 1 withdrawal\(s\)/)
+  assert.match(r.milestone1.vaults.note, /1 vault\(s\) are not fully read yet/)
+})
+
+test('owner actions that cannot be read are said plainly on every vault and publish nothing; the vaults still count', async () => {
+  const failing = await arcSeasonReport(
+    deps({
+      vaults: [vaultEntry(EXT_A)],
+      ownerActions: async () => {
+        throw new Error('no host answered')
+      },
+    }),
+  )
+  assert.equal(failing.milestone1.vaults.count, 1)
+  const item = failing.milestone1.vaults.items[0]
+  assert.deepEqual(item.freezeTxs, [])
+  assert.deepEqual(item.withdrawTxs, [])
+  assert.deepEqual(item.actionsRead, { state: 'unreadable', scannedToBlock: null, reason: 'no host answered' })
+  assert.equal(failing.milestone1.vaults.ownerActions.vaultsNotFullyRead, 1)
+  // With no reader wired, or no answer for the vault, a vault does not read as having done nothing.
+  const unwired = await arcSeasonReport(deps({ vaults: [vaultEntry(EXT_A)] }))
+  assert.equal(unwired.milestone1.vaults.items[0].actionsRead.state, 'unreadable')
+  const silent = await arcSeasonReport(deps({ vaults: [vaultEntry(EXT_A)], ownerActions: async () => new Map() }))
+  assert.equal(silent.milestone1.vaults.items[0].actionsRead.state, 'unreadable')
+})
+
+test('with no vault, no chain is read for owner actions', async () => {
+  let called = false
+  const r = await arcSeasonReport(
+    deps({
+      ownerActions: async () => {
+        called = true
+        return new Map()
+      },
+    }),
+  )
+  assert.equal(called, false)
+  assert.deepEqual(r.milestone1.vaults.ownerActions, { freezes: 0, withdrawals: 0, vaultsNotFullyRead: 0 })
 })
 
 test('with the curated lists empty, the notes say why the launch-day vault and refusal do not count', async () => {

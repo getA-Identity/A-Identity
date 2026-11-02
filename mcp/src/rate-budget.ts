@@ -41,7 +41,13 @@ export function rateBudget(method: string, pathname: string): { bucket: string; 
   // One public verify-then-pay flow record. A single row read, and the evidence a DENY is
   // linked by, so it gets room; the bucket bounds a crawl of nonces, not a reader.
   if (method === 'GET' && /^\/api\/x402\/gateway\/flows\/[^/]+$/.test(pathname)) return { bucket: 'vtp-flow-read', max: 60, windowMs: 60_000 }
+  // The admitted vault list: one store read, public and linkable.
+  if (method === 'GET' && pathname === '/api/arc/vaults') return { bucket: 'arc-vault-list', max: 60, windowMs: 60_000 }
   if (method !== 'POST') return null
+  // Owner-held vault admission, public with no session: a post that is not already known reads
+  // every RPC host for a receipt, a transaction and a block and then the vault's state. It signs
+  // and spends nothing of ours. A page posts once or twice per vault, so this bounds a script.
+  if (pathname === '/api/arc/vaults') return { bucket: 'arc-vault-admit', max: 10, windowMs: 60_000 }
   // verify-then-pay. The free half of every call is about twenty Arc Mainnet reads (the
   // vault's getters, the payee's registration, a simulated pay()), and it runs before any
   // payment is asked for, so an unpaid caller can repeat it; the receipt route reads every

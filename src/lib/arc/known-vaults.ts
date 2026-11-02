@@ -23,7 +23,7 @@ export type KnownVault = {
   /** For an owner-held vault: the owner key it was listed with. */
   owner?: string
   /** For an owner-held vault: whose wallet that key is. */
-  ownerKind?: 'team' | 'external'
+  ownerKind?: 'team' | 'external' | 'unstated'
   note?: string
 }
 
@@ -52,7 +52,7 @@ type ProofNetwork = {
 
 type SeasonReport = {
   network?: string
-  milestone1?: { vaults?: { items?: { address?: string; owner?: string; ownerKind?: 'team' | 'external'; deployTx?: string; deployedAt?: string; note?: string }[] } }
+  milestone1?: { vaults?: { items?: { address?: string; owner?: string; ownerKind?: 'team' | 'external' | 'unstated'; deployTx?: string; deployedAt?: string; note?: string }[] } }
 }
 
 const addr = (a: unknown): Address | null => (typeof a === 'string' && isAddress(a, { strict: false }) ? getAddress(a) : null)
