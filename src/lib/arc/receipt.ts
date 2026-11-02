@@ -12,11 +12,15 @@
  * the wallet really sent (a maxFeePerGas under 20 gwei is dropped by Arc without a receipt) and
  * to notice its nonce being used by another hash. That, watched for a few seconds more with
  * still no receipt for this hash, is final: the hash was replaced and can no longer land.
+ *
+ * A transaction Arc dropped under its floor never shows up in that read, so neither its fee nor
+ * its nonce can be read back. For that case decideUnseen says so after 30 seconds, and the nonce
+ * read while preparing stands in for the one the chain would have named.
  */
 import { getAddress, getContractAddress, isAddress, type Hex } from 'viem'
 import type { Chain } from '../chains'
 import type { DeployArgs, TxRecord } from './pending'
-import { READ_BACK_TRIES, decideLanded, decideUnseen, deployNonce, needsReadBack, type DeployBack, type ReadBack, type Unseen } from './tx-rules'
+import { READ_BACK_TRIES, decideLanded, decideUnseen, deployNonce, guessedNonce, needsReadBack, type DeployBack, type ReadBack, type Unseen } from './tx-rules'
 import { missingFromReceipt, pollReceipt, readNonce, readTransaction, readVault } from './vault-read'
 import { sameAddress } from './vault-rules'
 
@@ -85,8 +89,9 @@ export async function advance(chain: Chain, record: TxRecord, tick: number, now:
   const watching = Boolean(record.nonceUsedAt)
   if (watching || tick % DEEP_EVERY === 0 || (!record.sent && tick < 10)) {
     f.tx = await readTransaction(chain, record.hash as Hex)
-    const nonce = f.tx?.nonce ?? record.sent?.nonce
-    if (nonce !== undefined && !watching) f.latestNonce = await readNonce(chain, record.from, 'latest')
+    const nonce = f.tx?.nonce ?? record.sent?.nonce ?? guessedNonce(record)
+    // A hash first seen during a watch that began on a guess: its real nonce needs reading now.
+    if (nonce !== undefined && (!watching || (f.tx && !record.sent))) f.latestNonce = await readNonce(chain, record.from, 'latest')
     // A deploy: the address its nonce creates, read once that nonce is used. A speed-up keeps the
     // nonce, so it keeps the address. With no transaction seen yet, the nonce read while preparing
     // is tried too: only a vault that reads back exactly as asked counts.

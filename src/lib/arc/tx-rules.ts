@@ -14,8 +14,15 @@
  *   - This hash's own nonce used by another transaction, with still no receipt for this hash
  *     after a short watch, is a final 'replaced'. Nothing waits forever on a transaction that
  *     can no longer land, and nothing holds the owner's controls behind it.
+ *   - A wallet can change the fee this page proposed, and Arc drops a transaction under its fee
+ *     floor without a trace. So no host seeing a hash for 30 seconds is said out loud, in plain
+ *     words, and the nonce read while preparing is watched too. That nonce is a guess (the wallet
+ *     may have given this hash a later one), so its use is never a final 'replaced': the record
+ *     stops holding the page as 'untracked', which says it may still land.
  *   - No funding is offered before the vault's key is bounded in time, and the vault's live
  *     state wins over a record that only says pending.
+ *   - An expiry or a funding is prepared only from the setup the slot holds right now, and only
+ *     while that is the setup on screen with a read of its own vault.
  */
 import type { SetupState, TxRecord } from './pending'
 import type { VaultSnapshot } from './vault-read'
@@ -140,7 +147,7 @@ export function decideLanded(
   x: { missing?: readonly string[]; readBack?: ReadBack | null; deploy?: DeployBack | null },
 ): TxRecord {
   const tries = (record.readBackTries ?? 0) + 1
-  const base: TxRecord = { ...record, block: rc.block, feeWei: rc.feeWei, host: rc.host, nonceUsedAt: undefined }
+  const base: TxRecord = { ...record, block: rc.block, feeWei: rc.feeWei, host: rc.host, nonceUsedAt: undefined, unseen: undefined, note: record.unseen ? undefined : record.note }
   if (!rc.success) return { ...base, outcome: 'reverted', note: undefined }
 
   if (record.action === 'deploy') {
@@ -214,6 +221,13 @@ export function decideLanded(
 /** How long this hash's used nonce is watched, with no receipt for the hash, before it counts as replaced. */
 export const REPLACED_AFTER_MS = 20_000
 
+/** How long a hash no host has seen waits before the page says the wallet may have changed its fee. */
+export const UNSEEN_AFTER_MS = 30_000
+
+/** What the page says at that moment. The receipt adds what to do about it. */
+export const UNSEEN_NOTE =
+  'No network node has seen this transaction yet. Arc drops a transaction without a trace if its max fee is under 20 gwei, and some wallets change the fee you were shown.'
+
 /** What one check found while no host had a receipt. Every field is optional: a check reads only some. */
 export type Unseen = {
   now: number
@@ -235,6 +249,21 @@ export function deployNonce(r: TxRecord): number | undefined {
   return r.sent?.nonce ?? r.nonce
 }
 
+/**
+ * A write other than a deploy that no host has shown yet: the nonce read when it was prepared, the
+ * only way to notice a speed-up that landed. A guess, never proof (see decideUnseen). A deploy has
+ * its own proof, the vault at the address its nonce creates.
+ */
+export function guessedNonce(r: TxRecord): number | undefined {
+  return r.action === 'deploy' || r.sent ? undefined : r.nonce
+}
+
+/** The fee the wallet really sent, when it differs from the one this page proposed. */
+export function walletRepriced(r: TxRecord): boolean {
+  const fee = r.sent ? (r.sent.maxFeePerGas ?? r.sent.gasPrice) : null
+  return fee !== null && r.proposedMaxFee !== undefined && fee !== r.proposedMaxFee
+}
+
 /** One check of a transaction no host has a receipt for. Pending unless the facts make it final. */
 export function decideUnseen(record: TxRecord, f: Unseen): TxRecord {
   let next = record
@@ -243,7 +272,12 @@ export function decideUnseen(record: TxRecord, f: Unseen): TxRecord {
     next = {
       ...next,
       sent: { maxFeePerGas: f.tx.maxFeePerGas, gasPrice: f.tx.gasPrice, nonce: f.tx.nonce, belowFloor: fee !== null && fee < FEE_FLOOR_WEI, from: f.tx.from },
+      unseen: undefined,
+      note: record.unseen ? undefined : record.note,
     }
+    // A watch that began on the nonce read while preparing ends here: the chain now says which
+    // nonce this hash carries, and that one decides.
+    if (!record.sent && record.nonceUsedAt) next = { ...next, nonceUsedAt: undefined, note: undefined }
   }
 
   // A vault reading back exactly as asked at the address this nonce creates IS the setup's
@@ -255,7 +289,7 @@ export function decideUnseen(record: TxRecord, f: Unseen): TxRecord {
       vault: f.createdAt.address,
       contractAddress: f.createdAt.address,
       nonceUsedAt: undefined,
-      note: 'No RPC has a receipt for this hash, but a vault that reads back exactly as asked now exists at the address this nonce creates: your wallet sent a replacement (a speed-up) that landed.',
+      note: 'No network node has a receipt for this transaction, but a vault that reads back exactly as asked now exists at the address it would create: your wallet sent a replacement (a speed-up) that landed.',
     }
 
   // Only the nonce the chain says this hash carries can show it was replaced. A nonce the page
@@ -266,15 +300,33 @@ export function decideUnseen(record: TxRecord, f: Unseen): TxRecord {
     return {
       ...next,
       nonceUsedAt: new Date(f.now).toISOString(),
-      note: "This transaction's nonce has been used, but no RPC has a receipt for this hash. If your wallet sped it up or cancelled it, the replacement is what landed. Watching a few more seconds before calling it replaced. Do not sign it again.",
+      note: "Your account has already sent another transaction in this one's place, and no network node has a receipt for this one. If your wallet sped it up or cancelled it, the replacement is what landed. Watching a few more seconds before calling it replaced. Do not sign it again.",
+    }
+
+  // Never seen, and the account has sent something with the nonce read while preparing.
+  const guess = guessedNonce(next)
+  if (guess !== undefined && !next.nonceUsedAt && typeof f.latestNonce === 'number' && f.latestNonce > guess)
+    return {
+      ...next,
+      unseen: undefined,
+      nonceUsedAt: new Date(f.now).toISOString(),
+      note: 'Your account has sent another transaction since this one was prepared, and no network node has seen this one. If your wallet sped it up or cancelled it, that is what landed. Watching a few more seconds.',
     }
 
   if (next.nonceUsedAt && f.now - Date.parse(next.nonceUsedAt) >= REPLACED_AFTER_MS) {
+    if (guess !== undefined)
+      return {
+        ...next,
+        outcome: 'untracked',
+        likelyReplaced: true,
+        nonceUsedAt: undefined,
+        note: "Your account's next transaction has landed and no network node has ever seen this one, so your wallet most likely replaced it (a speed-up or a cancel). The vault's state, read again, shows what happened. If it is still in your wallet's queue it can land later: check your wallet's activity before signing anything again.",
+      }
     if (record.action !== 'deploy')
       return {
         ...next,
         outcome: 'replaced',
-        note: "Its nonce was used by another transaction (a speed-up or a cancel in your wallet) and no RPC has a receipt for this hash, so this hash can no longer land. The vault's state, read again, shows what happened. Check your wallet's activity before signing anything again.",
+        note: "Your wallet sent another transaction in its place (a speed-up or a cancel) and no network node has a receipt for this one, so this one can no longer land. The vault's state, read again, shows what happened. Check your wallet's activity before signing anything again.",
       }
     // A deploy is final only once the address its nonce creates has actually been read.
     const at = f.createdAt
@@ -282,11 +334,15 @@ export function decideUnseen(record: TxRecord, f: Unseen): TxRecord {
       return {
         ...next,
         outcome: 'replaced',
-        note: `Its nonce was used by another transaction, and ${at.address}, the address that nonce creates, ${
+        note: `Your wallet sent another transaction in its place, and ${at.address}, the address this one would create, ${
           at.back.status === 'no_code' ? 'holds no contract' : `does not read back as asked (${at.back.why ?? 'its values differ'})`
-        }. No vault came out of this hash. Check your wallet's activity before deploying again.`,
+        }. No vault came out of this transaction. Check your wallet's activity before deploying again.`,
       }
   }
+
+  // Asked on this check (a null, not a check that did not ask), and still nobody has it.
+  if (f.tx === null && !next.sent && !next.nonceUsedAt && !next.unseen && f.now - Date.parse(next.submittedAt) >= UNSEEN_AFTER_MS)
+    return { ...next, unseen: true, note: UNSEEN_NOTE }
   return next
 }
 
@@ -295,13 +351,13 @@ export function untracked(r: TxRecord): TxRecord {
   return {
     ...r,
     outcome: 'untracked',
-    note: "You stopped tracking this transaction with no receipt seen on any RPC. If it is still in your wallet's queue it can land later: check your wallet's activity and the explorer before signing anything again.",
+    note: "You stopped tracking this transaction with no receipt seen on any network node. If it is still in your wallet's queue it can land later: check your wallet's activity and the explorer before signing anything again.",
   }
 }
 
 /** Track an untracked transaction again, from where it was. */
 export function retracked(r: TxRecord): TxRecord {
-  return { ...r, outcome: 'pending', note: undefined, nonceUsedAt: undefined }
+  return { ...r, outcome: 'pending', note: undefined, nonceUsedAt: undefined, unseen: undefined, likelyReplaced: undefined }
 }
 
 // --- the vault setup ---
@@ -309,8 +365,31 @@ export function retracked(r: TxRecord): TxRecord {
 export type SetupStep = 'form' | 'review' | 'sending' | 'deploying' | 'deploy-failed' | 'expiry' | 'expiry-pending' | 'fund' | 'fund-pending' | 'done'
 
 /** The snapshot, only when it is of this setup's vault on this setup's network. */
-function liveOf(s: SetupState, snapshot: VaultSnapshot | null): VaultSnapshot | null {
+export function liveOf(s: SetupState, snapshot: VaultSnapshot | null): VaultSnapshot | null {
   return snapshot && s.vault && sameAddress(snapshot.address, s.vault) && snapshot.network === s.network ? snapshot : null
+}
+
+/**
+ * Why an expiry or a funding must not be prepared, or null. `shown` is the setup this tab rendered,
+ * which the owner reviewed; `held` is what the browser's one slot holds right now, read just before
+ * asking. Another tab can forget a setup and start a new one, and this tab's own read may not have
+ * caught up, so a write is refused unless all of it is still the same setup and the snapshot about
+ * to be used is of that setup's vault on that setup's network.
+ */
+export function setupDrift(shown: SetupState | null, held: SetupState | null, snapshot: VaultSnapshot | null): string | null {
+  const reread = 'Nothing was sent. This page now shows what the browser holds: look it over, then try again.'
+  if (!shown || !held) return `This vault setup was forgotten in another tab. ${reread}`
+  if (
+    held.startedAt !== shown.startedAt ||
+    held.network !== shown.network ||
+    !sameAddress(held.owner, shown.owner) ||
+    !sameAddress(held.vault, shown.vault) ||
+    held.sessionSeconds !== shown.sessionSeconds ||
+    held.funding !== shown.funding
+  )
+    return `The vault setup in this browser changed in another tab, so it no longer matches what you reviewed here. ${reread}`
+  if (!liveOf(held, snapshot)) return `This page has not read this setup's vault yet. ${reread}`
+  return null
 }
 
 /** The expiry is set: the live vault says so, or a settled write did and no later read says otherwise. */
