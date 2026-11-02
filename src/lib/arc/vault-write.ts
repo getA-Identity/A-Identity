@@ -195,6 +195,13 @@ function usd(wei: bigint, chain: Chain): string {
 /** On Arc the balance that pays gas is USDC itself, so it must cover the fee AND what is sent. */
 async function assertCovered(c: ArcClient, chain: Chain, from: Address, needWei: bigint, sentWei: bigint): Promise<void> {
   const have = await c.getBalance({ address: from })
+  // The fee is covered and the amount to send is what does not fit: say so, because the fix is a
+  // smaller number in the form, not more USDC.
+  if (have >= needWei && have < needWei + sentWei)
+    throw stop(
+      'funding_too_high',
+      `Your wallet holds ${usd(have, chain)} on ${networkName(chain)}. That covers the network fees (up to ${usd(needWei, chain)}), but not the ${usd(sentWei, chain)} you chose to put in as well.`,
+    )
   if (have < needWei + sentWei)
     throw stop(
       'insufficient_gas',

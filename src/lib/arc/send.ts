@@ -28,6 +28,7 @@ export type TxFailureCode =
   | 'reverted_in_simulation'
   | 'not_this_build'
   | 'insufficient_gas'
+  | 'funding_too_high'
   | 'rpc_unreachable'
   | 'no_wallet'
   | 'rejected'

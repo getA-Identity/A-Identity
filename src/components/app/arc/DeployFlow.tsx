@@ -17,7 +17,7 @@
  * A deploy whose receipt names a contract is never called no vault, even when that contract does not
  * read back as asked: it stays in the setup with its banner and a link to its page.
  */
-import { useCallback, useEffect, useMemo, useState, type FormEvent } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from 'react'
 import { ArrowLeft, CheckCircle2, Loader2, ShieldAlert } from 'lucide-react'
 import type { Chain } from '../../../lib/chains'
 import { track } from '../../../lib/analytics'
@@ -150,6 +150,16 @@ export default function DeployFlow({
   // Only ever the current setup's own vault: a read of a vault another tab has since moved on from
   // must not be what an expiry or a funding is built from.
   const liveVault = setup ? liveOf(setup, snapshot) : null
+  // A wallet that was open a few seconds collapses the review under it, so a decline would leave
+  // "Nothing was sent" far below the fold. Bring it into view whenever a new failure appears.
+  const failureRef = useRef<HTMLDivElement | null>(null)
+  useEffect(() => {
+    if (!failure) return
+    const el = failureRef.current
+    if (!el) return
+    const r = el.getBoundingClientRect()
+    if (r.top < 0 || r.bottom > window.innerHeight) el.scrollIntoView({ block: 'center', behavior: 'smooth' })
+  }, [failure])
   // How a deploy ended with no vault to continue with. A contract its receipt named is kept in the
   // setup, and is never offered a clean slate: it belongs to the owner and has no expiry yet.
   const ended = deployEnd(setup)
@@ -927,7 +937,11 @@ export default function DeployFlow({
           {invalid}
         </p>
       )}
-      {failure && <FailureNotice failure={failure} next={step === 'sending' ? SENDING_NEXT : undefined} />}
+      {failure && (
+        <div ref={failureRef}>
+          <FailureNotice failure={failure} next={step === 'sending' ? SENDING_NEXT : undefined} />
+        </div>
+      )}
 
       <details className="rounded-xl border border-border bg-background/60 p-3 text-xs text-foreground/80">
         <summary className="cursor-pointer font-semibold text-foreground">What to do if a step fails</summary>

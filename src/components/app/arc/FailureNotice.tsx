@@ -44,6 +44,13 @@ function explain(f: TxFailure): { title: string; body?: string; next: string; to
     }
     case 'not_this_build':
       return { title: 'Not a vault this page acts on.', body: f.message, next: 'Read the vault again. This page only builds calls for the vault build it deploys.', tone: 'danger' }
+    case 'funding_too_high':
+      return {
+        title: 'Not enough USDC for the amount you chose to put in.',
+        body: f.message,
+        next: "Lower 'USDC to put in at step 3', or set it to 0 and add USDC later from the vault's page, then review again. Nothing was sent.",
+        tone: 'warn',
+      }
     case 'insufficient_gas':
       return {
         title: 'Not enough USDC for the network fee.',

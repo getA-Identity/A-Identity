@@ -48,6 +48,8 @@ export default function WalletBar({ wallet, target }: { wallet: ArcWalletState; 
 
   const shownGas = gas && gas.key === gasKey ? gas.wei : undefined
   const noWallet = looked && options.length === 0 && !wallet.walletConnect
+  // No browser wallet here, though a phone wallet could still connect: most owners need the extension.
+  const noExtension = looked && options.length === 0 && wallet.walletConnect
 
   return (
     <section aria-label="Your wallet" className="rounded-2xl border border-border bg-card p-4">
@@ -89,7 +91,9 @@ export default function WalletBar({ wallet, target }: { wallet: ArcWalletState; 
                   ? 'Looking for wallets in this browser...'
                   : noWallet
                     ? 'No wallet found in this browser. You can read any vault without one. To deploy or run a vault you need a wallet such as Rabby or MetaMask: install one, then reload this page.'
-                    : 'Optional. Connect to deploy a vault you own, or to run one you already own. Reading needs no wallet.'}
+                    : noExtension
+                      ? 'No browser wallet found here. You can read any vault without one. To deploy or run a vault, install Rabby or MetaMask and reload this page, or connect a phone wallet.'
+                      : 'Optional. Connect to deploy a vault you own, or to run one you already own. Reading needs no wallet.'}
               </div>
             )}
             {account && (
