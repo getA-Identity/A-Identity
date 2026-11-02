@@ -5,6 +5,7 @@ import { getAddress, getCreateAddress, zeroAddress, type Hex } from 'viem'
 import { generatePrivateKey, privateKeyToAccount } from 'viem/accounts'
 import {
   ADMISSION_CHAIN,
+  PAGE_MAX_SESSION_SECONDS,
   REHEARSAL_CHAIN,
   OUR_KEY_ENV_VARS,
   admissionHosts,
@@ -29,6 +30,7 @@ import {
   stateNotes,
   transactionFingerprint,
   utcDayFromSeconds,
+  keyOutlivesPage,
   verdict,
   type DeployEvidence,
   type EntryInput,
@@ -479,8 +481,51 @@ test('times beyond the calendar print as numbers, and a listed day is always a U
   const notes = stateNotes({ ...STATE, frozen: true, sessionKeyExpiry: NOW + 400n * 86_400n }, NOW)
   assert.equal(notes.length, 2)
   assert.match(notes[0], /frozen/)
-  assert.match(notes[1], /more than a year/)
+  assert.match(notes[1], /longer than the vault page allows/)
   assert.deepEqual(stateNotes(STATE, NOW), [])
+})
+
+test('a key valid longer than the page allows is noted in the printed entry, and refuses nothing', () => {
+  const thirty = 30n * 86_400n
+  const input: EntryInput = {
+    vault: getCreateAddress({ from: OWNER, nonce: 7n }),
+    ownerKind: 'external',
+    deployTx: TX,
+    deployBlockTime: DEPLOYED,
+    state: STATE,
+    checkedBlock: 28_990_546n,
+    checkedBlockTime: NOW,
+    token: TOKEN,
+    operatorIsOurs: false,
+  }
+  const entryFor = (expiry: bigint, over: Partial<VaultState> = {}) => {
+    const ready = pasteReadyEntry({ ...input, state: { ...STATE, ...over, sessionKeyExpiry: expiry } })
+    assert.ok(ready.ok)
+    return ready
+  }
+  // Exactly what the page allows, read the moment it was set, is not longer than it allows.
+  assert.equal(PAGE_MAX_SESSION_SECONDS, thirty)
+  assert.equal(keyOutlivesPage({ ...STATE, sessionKeyExpiry: NOW + thirty }, NOW), false)
+  assert.doesNotMatch(entryFor(NOW + thirty).entry.note, /longer than the vault page allows/)
+  assert.deepEqual(stateNotes({ ...STATE, sessionKeyExpiry: NOW + thirty }, NOW), [])
+  // One second more is, in the notes and in the entry itself.
+  const long = NOW + thirty + 1n
+  assert.equal(keyOutlivesPage({ ...STATE, sessionKeyExpiry: long }, NOW), true)
+  const ready = entryFor(long)
+  assert.equal(ready.trimmed, false)
+  assert.match(ready.entry.note, /session key was valid for longer than the vault page allows, which stops at thirty days/)
+  assert.match(ready.source, /longer than the vault page allows/)
+  assert.deepEqual(pasteViolations(ready.source), [])
+  assert.match(stateNotes({ ...STATE, sessionKeyExpiry: long }, NOW)[0], /refuses nothing/)
+  // Said even when the note's numbers had to be left out.
+  const xlayer = getChainById('xlayer')!
+  const trimmed = entryFor(long, { dailyCap: BigInt(xlayer.evmChainId!) * 1_000_000n })
+  assert.equal(trimmed.trimmed, true)
+  assert.match(trimmed.entry.note, /longer than the vault page allows/)
+  // Admitted all the same: the check is still only that the key is set and in the future.
+  const admitted = run({ state: { sessionKeyExpiry: long } })
+  assert.equal(admitted.checks.find((c) => c.id === 'session-key-expiry')?.ok, true)
+  assert.equal(admitted.v.admitted, true)
 })
 
 test('the curated list holds each vault once, and none owned by a key of ours', () => {

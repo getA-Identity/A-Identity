@@ -744,12 +744,24 @@ export function stateChecks(c: StateContext): Check[] {
   return out
 }
 
+/**
+ * The longest key /app/vault/arc offers, in seconds (MAX_SESSION_SECONDS in src/lib/arc/vault-rules.ts;
+ * frontend-arc-vault.test.ts holds the two equal). Admission does not enforce it: a key set from an
+ * explorer is the owner's to set. A longer one is noted, in the printed notes and in the entry.
+ */
+export const PAGE_MAX_SESSION_SECONDS = 30n * 86_400n
+
+/** The key outlives what the page itself would have set, measured from this block's time. */
+export function keyOutlivesPage(s: VaultState, blockTime: bigint): boolean {
+  return s.sessionKeyExpiry > blockTime + PAGE_MAX_SESSION_SECONDS
+}
+
 /** What a reader should know that refuses nothing: the rules above are the whole gate. */
 export function stateNotes(s: VaultState, blockTime: bigint): string[] {
   const notes: string[] = []
   if (s.frozen) notes.push('frozen: the operator cannot pay until the owner unfreezes it. Not a refusal: freezing is the owner\'s own control.')
-  if (s.sessionKeyExpiry > blockTime + 366n * 86400n) {
-    notes.push(`the session key is valid for more than a year (to ${isoFromSeconds(s.sessionKeyExpiry)}); the rule only asks that it be set and in the future`)
+  if (keyOutlivesPage(s, blockTime)) {
+    notes.push(`the session key is valid for longer than the vault page allows (to ${isoFromSeconds(s.sessionKeyExpiry)}, and the page stops at thirty days); the rule only asks that it be set and in the future, so this refuses nothing, and the entry says so`)
   }
   return notes
 }
@@ -796,7 +808,9 @@ export type EntryInput = {
 
 function entryNote(i: EntryInput, detailed: boolean): string {
   const lead = "Deploy sent by the owner's own wallet (receipt.from is owner()), and its creation input is AgentSpendPolicyBytecode plus its constructor args."
-  const tail = 'Checked by scripts/arc-owner-vault-check.mjs.'
+  // Said in both forms: a reader of the list should not lose this because the numbers were trimmed.
+  const long = keyOutlivesPage(i.state, i.checkedBlockTime) ? 'When checked, its session key was valid for longer than the vault page allows, which stops at thirty days. ' : ''
+  const tail = `${long}Checked by scripts/arc-owner-vault-check.mjs.`
   if (!detailed) return `${lead} ${tail}`
   const amount = (u: bigint) => `${formatUnits(u, i.token.decimals)} ${i.token.symbol}`
   const s = i.state
