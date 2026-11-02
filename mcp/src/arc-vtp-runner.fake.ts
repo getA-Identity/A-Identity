@@ -35,7 +35,7 @@ const USDC = (arc.contracts.usdc as string).toLowerCase()
 const REGISTRY = (arc.contracts.identityRegistry as string).toLowerCase()
 const OWNER = '0x' + 'b2'.repeat(20)
 const PAY_TO = '0x' + 'f6'.repeat(20)
-const MERIDIAN = '0x4e26ae66840134ac5979c56ba2509f3956b93431'
+const SIMON = '0x03f1fb189e461b88f3e8ba7100b29b594e5f98a9'
 const OPERATING = '0xd305607510e0db2c95807173c7a05bea53c1ed36'
 const FAR = 4_000_000_000n
 const GAS_PRICE = 21_000_000_000n
@@ -60,7 +60,7 @@ function ethCall(to: string, data: Hex): Hex {
   if (to.toLowerCase() === REGISTRY) {
     const d = decodeCall({ abi: REGISTRY_ABI, data })
     if (d.functionName === 'balanceOf') return encodeResult({ abi: REGISTRY_ABI, functionName: 'balanceOf', result: 1n })
-    return encodeResult({ abi: REGISTRY_ABI, functionName: 'ownerOf', result: d.args?.[0] === 4306n ? MERIDIAN : OPERATING })
+    return encodeResult({ abi: REGISTRY_ABI, functionName: 'ownerOf', result: d.args?.[0] === 104498n ? SIMON : OPERATING })
   }
   const d = decodeCall({ abi: AgentSpendPolicyAbi, data })
   if (d.functionName === 'pay') return '0x'
