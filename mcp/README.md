@@ -270,8 +270,8 @@ The first run prints the owner address to send about 0.25 test USDC to, from fau
 
 `scripts/arc-vtp-runner.mjs` runs verify-then-pay flows through the launch-day vault: each one a
 settled Gateway check followed by a vault payment or a refusal. Milestone 1 needs 100. The rules
-live in `src/arc-vtp-run.ts`, unit-tested with fakes. Status: it has run DENY flows on Arc Mainnet
-since 2026-11-01 and no ALLOW flow yet, so its paying branch is tested with fakes only.
+live in `src/arc-vtp-run.ts`, unit-tested with fakes. Status: it finished Milestone 1's 100 flows on Arc Mainnet on
+2026-11-02: 25 DENY and 75 ALLOW, all through our launch-day vault to payees of ours.
 `/api/arc/season` is what says how many have run.
 
 ```bash
