@@ -79,6 +79,7 @@ type TxRules = {
   retracked: (r: Rec) => Rec
   setupStep: (s: Rec | null, prepared: boolean, snapshot: Rec | null) => string
   fundingLanded: (r: Rec | undefined) => boolean
+  readBeforeFunding: (s: Rec, snapshot: Rec | null) => boolean
   fundingUnresolved: (r: Rec | undefined) => boolean
   withRecord: (s: Rec, field: string, r: Rec) => Rec
   predictedVault: (s: Rec) => string | null
@@ -1388,6 +1389,15 @@ test('no funding is offered before the agent key is bounded in time, and the liv
   assert.equal(t.setupStep(settled, false, snap({ block: 160n })), 'expiry')
   // A snapshot of another vault decides nothing about this one.
   assert.equal(t.setupStep(pendingExpiry, false, snap({ address: ATTACKER, sessionKeyExpiry: 1_800_000_000n })), 'expiry-pending')
+  // The last screen does not trust a balance read from before the funding's own block. Seen on Arc
+  // testnet: a landed 0.1 USDC funding sat above "balance 0 USDC", from a host a few blocks behind.
+  const funded = { ...settled, fundTx: record({ action: 'fund', outcome: 'settled', block: 200n }) }
+  assert.equal(t.readBeforeFunding(funded, snap({ block: 199n, balance: 0n })), true)
+  assert.equal(t.readBeforeFunding(funded, snap({ block: 200n, balance: 100_000n })), false)
+  assert.equal(t.readBeforeFunding(funded, snap({ block: 260n, balance: 0n })), false, 'a later zero is true: the agent may have spent it')
+  assert.equal(t.readBeforeFunding(funded, null), false, 'no read at all is said another way')
+  assert.equal(t.readBeforeFunding({ ...settled, fundTx: record({ action: 'fund', block: 200n }) }, snap({ block: 199n })), false, 'a pending funding has not landed')
+  assert.equal(t.readBeforeFunding(funded, snap({ address: ATTACKER, block: 199n })), false, 'another vault says nothing about this one')
   // The vault page warns at every stage of this.
   assert.equal(t.setupAlert(setupOf({ intent }), null), 'sending')
   assert.equal(t.setupAlert(setupOf({ deploy: record({ action: 'deploy' }) }), null), 'deploying')

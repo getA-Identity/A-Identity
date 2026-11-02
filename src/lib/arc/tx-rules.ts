@@ -409,6 +409,17 @@ export function fundingLanded(r: TxRecord | undefined): boolean {
 }
 
 /**
+ * A read of the vault from before the funding's own block, so its balance is not the funded one.
+ * The receipt and the read can come from different hosts, and the read's host can be a few blocks
+ * behind: on Arc testnet that showed "balance 0 USDC" under a funding that had landed.
+ */
+export function readBeforeFunding(s: SetupState, snapshot: VaultSnapshot | null): boolean {
+  const live = liveOf(s, snapshot)
+  const block = s.fundTx?.block
+  return fundingLanded(s.fundTx) && block !== undefined && live !== null && live.block < block
+}
+
+/**
  * A funding that left for a wallet and whose fate this page cannot see: replaced by another
  * transaction or no longer tracked. A second funding is offered only after the person confirms.
  */

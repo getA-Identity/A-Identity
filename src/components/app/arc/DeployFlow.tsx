@@ -25,7 +25,7 @@ import { AGENT_KEY_CAN, AGENT_KEY_CANNOT, CALL_FEE_ABOUT, CONFIRMATIONS, FEES_LI
 import { loadSetup, type SetupState, type TxRecord } from '../../../lib/arc/pending'
 import { FUND_RISK } from '../../../lib/arc/ours'
 import { deployReadback } from '../../../lib/arc/receipt'
-import { deployEnd, fundingUnresolved, liveOf, predictedVault, setupDrift, setupStep, vaultToLookFor, withRecord } from '../../../lib/arc/tx-rules'
+import { deployEnd, fundingUnresolved, liveOf, predictedVault, readBeforeFunding, setupDrift, setupStep, vaultToLookFor, withRecord } from '../../../lib/arc/tx-rules'
 import {
   ARC_CHAINS,
   arcChainFor,
@@ -63,7 +63,7 @@ import {
   type TxStep,
 } from '../../../lib/arc/vault-write'
 import { Button } from '../../ui/button'
-import { Chip, Mono } from '../stellar/bits'
+import { Chip, CopyButton, Mono } from '../stellar/bits'
 import FailureNotice from './FailureNotice'
 import FundForm from './FundForm'
 import PreparedView from './PreparedView'
@@ -77,6 +77,8 @@ const INPUT =
 
 /** While a step waits on the chain (a pending expiry or funding), the vault is read again this often. */
 const REREAD_MS = 10_000
+/** How soon a read from before the funding's block is tried again: a host catches up in seconds. */
+const BEHIND_MS = 3_000
 /** While a deploy has no hash, the address it should create is looked at this often. */
 const LOOK_MS = 15_000
 /** How long a wallet that has not answered is waited on before the page says what else it is doing. */
@@ -199,15 +201,18 @@ export default function DeployFlow({
     }
   }, [chain, readAddress])
 
+  const fundedReadBehind = setup ? readBeforeFunding(setup, snapshot) : false
+
   useEffect(() => {
     if (step !== 'expiry' && step !== 'expiry-pending' && step !== 'fund' && step !== 'fund-pending' && step !== 'done' && !created) return
     void readBack()
     // A pending step is decided by the chain as much as by its receipt: a transaction that will
-    // never land must not hold the setup, and a value set by any other means counts.
-    if (step !== 'expiry-pending' && step !== 'fund-pending') return
-    const t = setInterval(() => void readBack(), REREAD_MS)
+    // never land must not hold the setup, and a value set by any other means counts. The last
+    // screen must not leave a balance from before the funding standing either.
+    if (step !== 'expiry-pending' && step !== 'fund-pending' && !fundedReadBehind) return
+    const t = setInterval(() => void readBack(), fundedReadBehind ? BEHIND_MS : REREAD_MS)
     return () => clearInterval(t)
-  }, [step, created, readBack])
+  }, [step, created, readBack, fundedReadBehind])
 
   // A deploy with no hash back, or one no longer tracked, can still create the vault: look for it
   // where it should be, and take it only if it reads back exactly as this setup asked.
@@ -887,14 +892,21 @@ export default function DeployFlow({
               <Mono>{setup.vault}</Mono> on {networkName(chain)}, owned by <Mono>{setup.owner}</Mono>
               {liveVault ? (
                 <>
-                  , agent key {liveVault.sessionKeyExpiry === 0n ? <Chip tone="danger">no time bound</Chip> : 'with an end date'}, balance{' '}
-                  {formatUnitsExact(liveVault.balance, decimals)} USDC.
+                  , agent key {liveVault.sessionKeyExpiry === 0n ? <Chip tone="danger">no time bound</Chip> : 'with an end date'}
+                  {fundedReadBehind ? ', its balance still being read.' : `, balance ${formatUnitsExact(liveVault.balance, decimals)} USDC.`}
                 </>
               ) : (
                 '.'
               )}
               {setup.fundSkipped && ' You skipped putting USDC in: send it to the vault from its page when ready.'}
             </div>
+            {setup.deploy?.outcome === 'settled' && (
+              <div className="mt-2 flex flex-wrap items-center gap-2 text-xs text-foreground/75">
+                <span className="font-semibold text-foreground/60">Created by transaction:</span>
+                <Mono>{setup.deploy.hash}</Mono>
+                <CopyButton text={setup.deploy.hash} label="Copy hash" />
+              </div>
+            )}
             <div className="mt-1 text-foreground/80">
               Next, give your agent this vault's address. You can freeze the vault, change its limits or take USDC out at any time from its page.
             </div>

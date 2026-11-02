@@ -15,6 +15,8 @@ import { Button } from '../../ui/button'
 import { Chip, CopyButton } from '../stellar/bits'
 import type { ArcWalletState } from './useArcWallet'
 
+const GAS_REREAD_MS = 15_000
+
 export default function WalletBar({ wallet, target }: { wallet: ArcWalletState; target: Chain }) {
   const [picking, setPicking] = useState(false)
   const [gas, setGas] = useState<{ key: string; wei: bigint | null } | null>(null)
@@ -23,16 +25,24 @@ export default function WalletBar({ wallet, target }: { wallet: ArcWalletState; 
   const gasKey = account ? `${target.id}:${account}` : ''
 
   // The account's USDC on the target chain, read from the registry RPCs. On Arc the gas
-  // token IS USDC, so this is also what every fee below is paid from.
+  // token IS USDC, so this is also what every fee below is paid from, and it moves with every
+  // transaction this page sends: read once, it stayed at the balance from before the deploy.
   useEffect(() => {
     if (!account) return
     let alive = true
     const key = `${target.id}:${account}`
-    void readNativeBalance(target, account).then((wei) => {
-      if (alive) setGas({ key, wei })
-    })
+    const read = () => {
+      if (document.visibilityState === 'hidden') return
+      void readNativeBalance(target, account).then((wei) => {
+        // A failed read keeps the last good number rather than blanking it.
+        if (alive) setGas((g) => (wei === null && g?.key === key ? g : { key, wei }))
+      })
+    }
+    read()
+    const t = setInterval(read, GAS_REREAD_MS)
     return () => {
       alive = false
+      clearInterval(t)
     }
   }, [account, target])
 
