@@ -70,6 +70,9 @@ public/llms-full.txt, public/.well-known/ (agent card, MCP server card, agent sk
   before npm run build (the build fails on a stale snapshot by design).
 - Run prerender with the production docs URL (VITE_DOCS_URL=https://a-identity.mintlify.site),
   because a local .env.local can point it at localhost, and the guard in scripts/prerender.mjs refuses that.
+- Vault page on a real chain: node scripts/rehearse-arc-vault.mjs <baseUrl> runs the whole owner
+  flow in a browser on Arc testnet, with real transactions from a throwaway wallet and test USDC. It
+  cannot show a real wallet's own screens, which still need a person.
 - Full local proof: npm run build then npm run smoke (renders every route against the
   live backend and fails on console errors).
 

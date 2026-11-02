@@ -248,6 +248,24 @@ is none of our keys, the operator is set and is not the owner, `usdc()` is the r
 block time. Exit 0 admitted, 1 refused, 2 usage. The launch-day vault (deploy `0xabf41b6f`) is
 refused: its owner is our operating wallet.
 
+### Rehearse the vault page on a real chain
+
+`scripts/rehearse-arc-vault.mjs` at the repo root drives `/app/vault/arc` in a browser on Arc
+testnet: deploy, expiry, funding, the admission script as a rehearsal, a payment with the agent's
+own key, a payment above the ceiling refused, freeze, unfreeze, withdraw and a reload. The wallet is
+a throwaway held by the script, which signs and broadcasts real testnet transactions. Its keys stay
+in a 0600 file under the output folder, and nothing from your environment is used. It cannot show a
+real wallet's own screens or how a real wallet prices a transaction, so a person still has to run
+the page once with MetaMask or Rabby.
+
+```bash
+npm run build && (cd .. && npm run build)
+cd .. && node scripts/rehearse-arc-vault.mjs https://a-identity.xyz _internal/arc-rehearsal
+```
+
+The first run prints the owner address to send about 0.25 test USDC to, from faucet.circle.com. Exit
+0 all checks passed, 1 a check failed, 2 usage, 3 the owner needs test USDC.
+
 ### Run the Milestone 1 flows
 
 `scripts/arc-vtp-runner.mjs` runs verify-then-pay flows through the launch-day vault: each one a
