@@ -151,19 +151,11 @@ returns a band and flags, no verdict and no reasons, and is rate limited.
     `GatewayWalletBatched`, version `1`, chainId `5042`, verifyingContract
     `0x77777777Dcc4d5A8B6E418Fd04D8997ef11000eE`) for exactly `amount`, to `payTo`, and
     retry the same request with the signed payload. Any of the three clients does this
-    for you:
+    for you. With a key your team already holds, use the `@circle-fin/x402-batching` tab:
+    the Circle CLI pays only from a wallet you log in to with `circle wallet login`, and a
+    key added with `circle wallet import` cannot run `circle services pay`.
 
     <CodeGroup>
-    ```bash Circle CLI
-    npm install -g @circle-fin/cli
-    circle wallet login you@yourteam.com        # or: circle wallet import team-buyer --private-key
-    circle gateway deposit --amount 1 --address 0xYourWallet --chain ARC --method direct
-    circle gateway balance --address 0xYourWallet --chain ARC
-    circle services pay https://a-identity.xyz/api/x402/gateway/tools/risk_check \
-      --address 0xYourWallet --chain ARC --max-amount 0.005 \
-      -X POST -d '{"agentId":"0x4e26Ae66840134Ac5979c56ba2509F3956b93431","txContext":{"amountUsd":25}}'
-    ```
-
     ```ts @circle-fin/x402-batching
     import { GatewayClient } from '@circle-fin/x402-batching/client'
 
@@ -178,6 +170,16 @@ returns a band and flags, no verdict and no reasons, and is rate limited.
       method: 'POST',
       body: { agentId: '0x4e26Ae66840134Ac5979c56ba2509F3956b93431', txContext: { amountUsd: 25 } },
     })
+    ```
+
+    ```bash Circle CLI
+    npm install -g @circle-fin/cli
+    circle wallet login you@yourteam.com        # a Circle wallet login; an imported key cannot run services pay
+    circle gateway deposit --amount 1 --address 0xYourWallet --chain ARC --method direct
+    circle gateway balance --address 0xYourWallet --chain ARC
+    circle services pay https://a-identity.xyz/api/x402/gateway/tools/risk_check \
+      --address 0xYourWallet --chain ARC --max-amount 0.005 \
+      -X POST -d '{"agentId":"0x4e26Ae66840134Ac5979c56ba2509F3956b93431","txContext":{"amountUsd":25}}'
     ```
 
     ```bash Reference script
