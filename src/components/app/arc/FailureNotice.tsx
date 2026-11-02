@@ -37,7 +37,7 @@ function explain(f: TxFailure): { title: string; body?: string; next: string; to
       const name = f.errorName ?? ''
       return {
         title: `The contract would refuse this${name ? `: ${name}` : ''}.`,
-        body: `${CONTRACT_ERROR_TEXT[name] ?? f.message} It was simulated as the owner before your wallet opened, so nothing was sent and no fee was spent.`,
+        body: `${CONTRACT_ERROR_TEXT[name] ?? f.message} This page tried it first in a free practice run, before your wallet opened, so nothing was sent and no fee was spent.`,
         next: CONTRACT_ERROR_NEXT[name] ?? 'Read the vault again; if the same refusal comes back, it names what to change.',
         tone: 'danger',
       }
@@ -52,9 +52,9 @@ function explain(f: TxFailure): { title: string; body?: string; next: string; to
         tone: 'danger',
       }
     case 'rpc_unreachable':
-      return { title: 'The chain could not be read.', body: f.message, next: 'Nothing was sent. Check your connection and try again in a moment.', tone: 'danger' }
+      return { title: 'The network could not be read.', body: f.message, next: 'Nothing was sent. Check your connection and try again in a moment.', tone: 'danger' }
     case 'no_wallet':
-      return { title: 'No EVM wallet is connected.', body: f.message, next: 'Connect your wallet in the strip at the top of the page.', tone: 'warn' }
+      return { title: 'No wallet is connected.', body: f.message, next: 'Connect your wallet in the strip at the top of the page.', tone: 'warn' }
     case 'rejected':
       return { title: 'You declined in your wallet.', body: 'Nothing was sent.', next: 'Press the button again when you are ready.', tone: 'warn' }
     case 'wrong_chain':
@@ -72,19 +72,19 @@ function explain(f: TxFailure): { title: string; body?: string; next: string; to
       return {
         title: 'The fee is below what Arc accepts.',
         body: f.message,
-        next: 'Arc drops transactions under 20 gwei without a receipt. Do not lower the fee in your wallet; try again and keep the fee this page proposes.',
+        next: 'Arc drops a transaction with a max fee under 20 gwei without telling anyone. Try again, and do not lower the fee in your wallet. If your wallet set a lower fee itself, raise it to at least 20 gwei before you confirm.',
         tone: 'danger',
       }
     case 'nonce':
       return {
-        title: 'Your wallet has a nonce conflict.',
+        title: 'An earlier transaction is in the way.',
         body: f.message,
-        next: 'An earlier transaction from this account may still be pending. Let it land or cancel it in your wallet, then try again.',
+        next: 'An earlier transaction from this account may still be waiting. Let it finish or cancel it in your wallet, then try again.',
         tone: 'danger',
       }
     case 'wallet_error':
     default:
-      return { title: 'The wallet stopped the request.', body: f.message, next: 'Open the wallet, finish or dismiss any prompt there, then try again.', tone: 'danger' }
+      return { title: 'Your wallet stopped the request.', body: f.message, next: 'Open your wallet, finish or dismiss any prompt there, then try again.', tone: 'danger' }
   }
 }
 

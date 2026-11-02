@@ -3,7 +3,7 @@
  * the WALLET reports, a button to switch it to the vault's chain, and how much USDC the account
  * holds for gas there (read from the chain, not from the wallet).
  *
- * Optional by design. With no wallet the strip says so in one line and every read below still
+ * Optional by design. With no wallet the strip says so plainly and every read below still
  * works: a vault's state is public, and checking it needs no wallet and no account.
  */
 import { useEffect, useState } from 'react'
@@ -40,7 +40,7 @@ export default function WalletBar({ wallet, target }: { wallet: ArcWalletState; 
   const noWallet = looked && options.length === 0 && !wallet.walletConnect
 
   return (
-    <section aria-label="EVM wallet" className="rounded-2xl border border-border bg-card p-4">
+    <section aria-label="Your wallet" className="rounded-2xl border border-border bg-card p-4">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="flex min-w-0 items-center gap-2.5">
           <span className="grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-accent/10 text-accent">
@@ -48,7 +48,7 @@ export default function WalletBar({ wallet, target }: { wallet: ArcWalletState; 
           </span>
           <div className="min-w-0">
             <div className="text-sm font-semibold text-foreground">
-              {account ? `${wallet.wallet?.name ?? 'EVM wallet'} connected` : 'EVM wallet'}
+              {account ? `${wallet.wallet?.name ?? 'Your wallet'} connected` : 'Your wallet'}
             </div>
             {account ? (
               <div className="mt-0.5 flex flex-wrap items-center gap-2 text-xs text-foreground/70">
@@ -76,15 +76,15 @@ export default function WalletBar({ wallet, target }: { wallet: ArcWalletState; 
             ) : (
               <div className="mt-0.5 text-xs text-foreground/65">
                 {!looked
-                  ? 'Looking for EVM wallets in this browser...'
+                  ? 'Looking for wallets in this browser...'
                   : noWallet
-                    ? 'No EVM wallet in this browser. Reading a vault works without one; deploying or acting on one needs Rabby, MetaMask or another EVM wallet.'
-                    : 'Optional. Connect to deploy a vault you own, or to act on one you already own. Reading needs no wallet.'}
+                    ? 'No wallet found in this browser. You can read any vault without one. To deploy or run a vault you need a wallet such as Rabby or MetaMask: install one, then reload this page.'
+                    : 'Optional. Connect to deploy a vault you own, or to run one you already own. Reading needs no wallet.'}
               </div>
             )}
             {account && (
               <div className="mt-1 text-[11px] text-foreground/60">
-                USDC for gas on {networkName(target)}:{' '}
+                Your USDC on {networkName(target)}:{' '}
                 {shownGas === undefined ? (
                   'reading...'
                 ) : shownGas === null ? (
@@ -94,7 +94,7 @@ export default function WalletBar({ wallet, target }: { wallet: ArcWalletState; 
                     {formatUnitsExact(shownGas, target.nativeCurrency.decimals)} USDC
                   </span>
                 )}
-                <span className="text-foreground/50"> (the same balance as your ERC-20 USDC there; it pays every network fee)</span>
+                <span className="text-foreground/50"> (on Arc, this same balance pays every network fee)</span>
               </div>
             )}
           </div>
@@ -123,7 +123,7 @@ export default function WalletBar({ wallet, target }: { wallet: ArcWalletState; 
       </div>
 
       {picking && !account && (
-        <ul className="mt-3 grid gap-1.5 sm:grid-cols-2" aria-label="EVM wallets you can connect">
+        <ul className="mt-3 grid gap-1.5 sm:grid-cols-2" aria-label="Wallets you can connect">
           {options.map((o) => (
             <li key={o.id}>
               <button
