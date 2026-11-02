@@ -26,6 +26,18 @@ export function isOurKey(network: string, address: string, listed: Readonly<Reco
 }
 
 /**
+ * What the ledger itself says of an older build of ours, in plain words, or null when it says
+ * nothing: a vault of ours built from an earlier source reads as that, because that is what it
+ * is. Only the ledger entry can say this, so a contract anyone else deployed never gets the line.
+ */
+export function earlierBuildLine(network: string, address: string): string | null {
+  const v = ARC_LEDGER_VAULTS.find((x) => x.network === network && sameAddress(x.address, address))
+  if (!v?.builtFromCommit) return null
+  const verified = v.sourcifyVerified ? ' Its source is verified on Sourcify against that commit.' : ''
+  return `Built from an earlier source (commit ${v.builtFromCommit}) than the one this page deploys, so its code is not this page's build.${verified} View only here.`
+}
+
+/**
  * Our own vaults and keys, as this build already knows them. In the bundle, so the page has them
  * on its first render: asking the backend first left a cold backend's minute with nothing listed.
  */

@@ -311,8 +311,22 @@ function bareHex(x: string): string | null {
   return h.length % 2 === 0 && /^[0-9a-f]*$/.test(h) ? h : null
 }
 
+/** The last second a JavaScript Date can hold. A contract's uint256 can name far later ones. */
+const LAST_DATE_SECONDS = 8_640_000_000_000n
+
+/**
+ * UNIX seconds as a Date, or null when no Date can hold them. A contract can answer any uint256
+ * for a time, and toISOString throws on an invalid Date, so every time a contract returned goes
+ * through here before anything formats it.
+ */
+export function readableDate(unixSeconds: bigint): Date | null {
+  if (unixSeconds < 0n || unixSeconds > LAST_DATE_SECONDS) return null
+  return new Date(Number(unixSeconds) * 1000)
+}
+
 /** "in 6d 23h" or "4h 5m ago", for UNIX seconds against a chain time in seconds. */
 export function relativeSeconds(target: bigint, now: bigint): string {
+  if (readableDate(target) === null || readableDate(now) === null) return 'at a time too far off to read'
   const diff = Number(target - now)
   const abs = Math.abs(diff)
   const d = Math.floor(abs / 86400)
@@ -323,30 +337,67 @@ export function relativeSeconds(target: bigint, now: bigint): string {
 }
 
 /**
- * The owner's question, answered in one sentence from one snapshot: can the agent pay, and
- * how much more today. A key with no time bound is the loudest thing on the page, because it
- * breaks the promise the vault exists to keep.
+ * True when a deploy link must not open the deploy form: it names a network, and that network is
+ * not one we know. The form's default is real money, so a typo there is refused rather than read
+ * as Arc Mainnet. A setup already under way keeps its own network, so it is not refused.
  */
-export function vaultHeadline(v: VaultSnapshot): { text: string; tone: 'ok' | 'warn' | 'danger' } {
+export function deployFormRefused(networkParam: string | null, networkKnown: boolean, setupNetworkKnown: boolean): boolean {
+  return networkParam !== null && !networkKnown && !setupNetworkKnown
+}
+
+/** What the agent can do right now, as the page says it. */
+export type AgentNow = {
+  /** One plain sentence, the page's headline. */
+  text: string
+  tone: 'ok' | 'warn' | 'danger'
+  /** The same answer in a word or two, for the State chip, so the two can never disagree. */
+  state: string
+  /** The contract would let the agent pay at this moment, given a payee and an amount within the limits. */
+  canPay: boolean
+}
+
+/**
+ * The owner's question, answered in one sentence from one snapshot: what can the agent do right
+ * now. The order follows the contract's own gates in pay(), then what is left to spend. A key with
+ * no time bound is the loudest thing on the page, because it breaks the promise the vault exists
+ * to keep. The State chip reads this answer's `state`, so a green word can never sit beside a
+ * sentence that says the agent cannot pay.
+ */
+export function vaultHeadline(v: VaultSnapshot): AgentNow {
   const usd = (x: bigint) => `${formatUnitsExact(x, v.decimals)} USDC`
-  if (v.frozen) return { text: 'Frozen: the agent cannot pay anything until the owner unfreezes the vault.', tone: 'danger' }
-  if (sameAddress(v.operator, ZERO_ADDRESS)) return { text: 'No operator: no key can pay from this vault until the owner sets one.', tone: 'warn' }
+  const payees = v.allowlistEnabled ? ', and only to payees on its allowlist' : ''
+  if (v.frozen) return { text: 'Frozen: the agent cannot pay anything until the owner unfreezes the vault.', tone: 'danger', state: 'Frozen', canPay: false }
+  if (sameAddress(v.operator, ZERO_ADDRESS))
+    return { text: 'No agent key: nothing can pay from this vault until the owner sets one.', tone: 'warn', state: 'No agent key', canPay: false }
   if (v.sessionKeyExpiry === 0n)
     return {
-      text: "The operator's key has NO time bound: it can pay until the owner acts. Set an expiry before funding this vault.",
+      text: "The agent's key has NO time bound: it can keep paying within the limits until the owner acts, so set an expiry before funding this vault.",
       tone: 'danger',
+      state: 'No time bound',
+      canPay: true,
     }
+  if (v.sessionKeyExpiry === REVOKED_SESSION_EXPIRY)
+    return { text: "Revoked: the owner ended the agent's key, so it cannot pay anything until the owner gives it a new expiry.", tone: 'warn', state: 'Revoked', canPay: false }
   if (v.expired)
-    return { text: 'The session key has expired: the agent cannot pay until the owner extends it.', tone: 'danger' }
-  if (v.balance === 0n) return { text: 'Active, but the vault holds no USDC: the agent cannot pay anything until it is funded.', tone: 'warn' }
+    return { text: "The agent's key has expired: it cannot pay anything until the owner extends it.", tone: 'danger', state: 'Expired', canPay: false }
+  if (readableDate(v.sessionKeyExpiry) === null)
+    return {
+      text: "The agent's key has an expiry too far ahead to read as a date, so it has no real time bound: it can keep paying within the limits until the owner acts.",
+      tone: 'danger',
+      state: 'No real time bound',
+      canPay: true,
+    }
+  if (v.balance === 0n) return { text: 'The agent cannot pay anything right now: the vault holds no USDC.', tone: 'warn', state: 'Empty', canPay: false }
   if (v.remainingToday === null)
-    return { text: `Active: no daily cap is set, so the agent can spend up to the whole balance, ${usd(v.balance)}, today.`, tone: 'warn' }
+    return { text: `The agent can spend the whole balance, ${usd(v.balance)}, today, because no daily cap is set${payees}.`, tone: 'warn', state: 'Can pay, no daily cap', canPay: true }
   if (v.remainingToday === 0n)
-    return { text: "Active, but today's cap is used up: the agent cannot pay more until the reset at 00:00 UTC.", tone: 'warn' }
+    return { text: "The agent cannot pay anything more today: today's cap is used up until the reset at 00:00 UTC.", tone: 'warn', state: 'Cap used up', canPay: false }
   if (v.balance < v.remainingToday)
     return {
-      text: `Active: the agent can spend up to ${usd(v.balance)} more today, everything the vault holds (the daily cap alone would allow ${usd(v.remainingToday)}).`,
+      text: `The agent can spend up to ${usd(v.balance)} more today, everything the vault holds (the daily cap alone would allow ${usd(v.remainingToday)})${payees}.`,
       tone: 'ok',
+      state: 'Can pay',
+      canPay: true,
     }
-  return { text: `Active: the agent can spend up to ${usd(v.remainingToday)} more today.`, tone: 'ok' }
+  return { text: `The agent can spend up to ${usd(v.remainingToday)} more today${payees}.`, tone: 'ok', state: 'Can pay', canPay: true }
 }
