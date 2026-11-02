@@ -288,7 +288,7 @@ CONFIRM_ARC_VTP_RUN=yes node --env-file=.env scripts/arc-vtp-runner.mjs \
 curl -s https://a-identity.xyz/api/arc/season | jq '.milestone1.checks | {count, target, linked, unlinked}'
 ```
 
-`--allow` flows pay Meridian and expect ALLOW and a `Paid` transaction. `--deny` flows name our
+`--allow` flows pay Simon, an agent in our own account, and expect ALLOW and a `Paid` transaction. `--deny` flows name our
 operating wallet (agent #0, internal) and expect `TrustDenyError`. Other flags: `--amount-units`
 (default 1000, and each flow pays one unit more, so no two share an amount), `--base-url`,
 `--budget` (default 0.75 USDC), `--max-fee-gwei` (default 60), `--pause-ms` (default 5000),

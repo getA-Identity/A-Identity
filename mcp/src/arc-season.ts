@@ -150,6 +150,9 @@ export type ArcRefusal = {
  */
 export const ARC_OUR_PAYEES: { address: string; why: string }[] = [
   { address: '0x4e26Ae66840134Ac5979c56ba2509F3956b93431', why: 'the payee is Meridian, our own showcase agent' },
+  // Simon is a platform agent in our founder's own account (agent_mrnzx4znbxzh5). It took over as
+  // the Milestone 1 ALLOW payee on 2026-11-02, when Meridian's account could not be reached.
+  { address: '0x03f1fb189E461B88f3e8bA7100B29B594E5f98A9', why: 'the payee is Simon, an agent in our own account' },
 ]
 
 /**

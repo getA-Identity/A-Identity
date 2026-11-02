@@ -73,10 +73,13 @@ const HTTP_TIMEOUT_MS = 30_000
 const PAYEES = {
   allow: {
     role: 'allow',
-    label: 'Meridian',
-    address: '0x4e26ae66840134ac5979c56ba2509f3956b93431',
-    agentId: '#4306',
-    note: "Meridian was at 470 on 2026-11-01, and the owner's testnet payment lifts it to about 545.",
+    // Simon, a platform agent in our own account, labeled ours in the season report
+    // (ARC_OUR_PAYEES). It replaced Meridian on 2026-11-02, when Meridian's account could not be
+    // reached to lift its score; its Arc Mainnet identity #104498 was registered that day.
+    label: 'Simon (ours)',
+    address: '0x03f1fb189e461b88f3e8ba7100b29b594e5f98a9',
+    agentId: '#104498',
+    note: 'Simon read 555 on 2026-11-02 after three settled testnet payments of its own.',
   },
   deny: {
     role: 'deny',

@@ -486,6 +486,8 @@ test('a paid flow to our own agent is labeled ours, so no paid flow reads as a p
   assert.equal(c.internalPayee, 2)
   const item = c.items.find((i) => i.outcome === 'paid') as { payeeInternal?: string }
   assert.match(item.payeeInternal ?? '', /Meridian, our own showcase agent/)
+  // Simon, the ALLOW payee since 2026-11-02, is listed the same way.
+  assert.ok(ARC_OUR_PAYEES.some((p) => p.address.toLowerCase() === '0x03f1fb189e461b88f3e8ba7100b29b594e5f98a9' && /Simon/.test(p.why)))
   assert.match(c.note, /2 of the flows name a payee that is ours.*That is every flow\./)
   // A payee nobody listed stays unlabeled, and the note does not claim every flow.
   const stranger = gw({ payer: OURS_GATEWAY })
