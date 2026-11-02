@@ -22,6 +22,8 @@ on:
       - 'mcp/scripts/sol-negative-controls.mjs'
       - 'mcp/scripts/compile-contracts.mjs'
       - 'mcp/src/contracts/**'
+      - 'mcp/package.json'
+      - 'mcp/package-lock.json'
       - '.github/workflows/solidity.yml'
   pull_request:
     paths:
@@ -31,6 +33,8 @@ on:
       - 'mcp/scripts/sol-negative-controls.mjs'
       - 'mcp/scripts/compile-contracts.mjs'
       - 'mcp/src/contracts/**'
+      - 'mcp/package.json'
+      - 'mcp/package-lock.json'
       - '.github/workflows/solidity.yml'
   workflow_dispatch:
 
