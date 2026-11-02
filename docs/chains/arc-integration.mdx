@@ -320,7 +320,13 @@ to our `payTo`, for the price.
   computed from the same logs on every request: `usage.internal` and `usage.external`,
   external usage per wallet (`checks`, `usd`, first and last payment, `activeDays`), and
   the Milestone 2 counts against their targets (external teams live, 30 external checks,
-  a team active on more than one day, a publicly referenceable integration).
+  a team active on more than one day, a publicly referenceable integration). Each owner-held
+  vault under `milestone1.vaults.items` lists the freezes and withdrawals its owner's wallet
+  signed, with hashes, and `actionsRead` says how far the chain was read.
+- `POST https://a-identity.xyz/api/arc/vaults` with `{"deployTx": "0x..."}` admits an
+  owner-held vault on Arc Mainnet by its deploy transaction, or refuses with the reasons. It
+  signs nothing, needs no session, and the same hash twice is a no-op. The vault page at
+  `/app/vault/arc` does this for you. `GET` on the same path lists the admitted vaults.
 
 Send your payer address and your team name to
 [hello@a-identity.xyz](mailto:hello@a-identity.xyz) so the usage is attributed to you by
