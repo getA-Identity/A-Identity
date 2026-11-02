@@ -4,6 +4,7 @@
  * repository rule that every write is prepared-or-executed: this is the "prepared" half, and
  * nothing here is signed until the person presses the button under it.
  */
+import { WALLET_MAY_REPRICE } from '../../../lib/arc/deploy-copy'
 import { formatUnitsExact } from '../../../lib/arc/vault-rules'
 import { networkName } from '../../../lib/arc/vault-read'
 import type { PreparedTx } from '../../../lib/arc/vault-write'
@@ -25,11 +26,11 @@ export default function PreparedView({ p, decimals, title }: { p: PreparedTx; de
           <dd className="mt-0.5 break-all text-foreground">{p.call.contract}</dd>
         </div>
         <div>
-          <dt className="text-[11px] font-semibold uppercase tracking-wide text-foreground/50">Function</dt>
+          <dt className="text-[11px] font-semibold uppercase tracking-wide text-foreground/50">What it calls</dt>
           <dd className="mt-0.5 font-mono text-xs text-foreground">{p.call.function}</dd>
         </div>
         <div>
-          <dt className="text-[11px] font-semibold uppercase tracking-wide text-foreground/50">Arguments</dt>
+          <dt className="text-[11px] font-semibold uppercase tracking-wide text-foreground/50">With these values</dt>
           <dd className="mt-1 space-y-1">
             {p.call.args.map((a) => (
               <div key={a.name} className="text-xs text-foreground/85">
@@ -51,8 +52,8 @@ export default function PreparedView({ p, decimals, title }: { p: PreparedTx; de
             <dd className="mt-0.5 text-foreground">
               {feeUsdc} USDC{' '}
               <span className="text-xs text-foreground/60">
-                ({p.gas.toLocaleString('en-US')} gas at up to {formatUnitsExact(p.maxFeePerGas, 9)} gwei; Arc charges the base fee, so it is
-                usually less)
+                ({p.gas.toLocaleString('en-US')} units of gas, the work the network does, at up to {formatUnitsExact(p.maxFeePerGas, 9)} gwei each. It
+                is usually less.)
               </span>
             </dd>
           </div>
@@ -62,14 +63,14 @@ export default function PreparedView({ p, decimals, title }: { p: PreparedTx; de
             <dt className="text-[11px] font-semibold uppercase tracking-wide text-foreground/50">Vault address it should create</dt>
             <dd className="mt-0.5">
               <Mono>{p.predicted}</Mono>{' '}
-              <span className="text-xs text-foreground/60">(from your account and its next nonce; the receipt is what decides)</span>
+              <span className="text-xs text-foreground/60">(worked out from your account and its next transaction; the network's receipt is what decides)</span>
             </dd>
           </div>
         )}
         <div>
-          <dt className="text-[11px] font-semibold uppercase tracking-wide text-foreground/50">Calldata</dt>
+          <dt className="text-[11px] font-semibold uppercase tracking-wide text-foreground/50">Practice run</dt>
           <dd className="mt-0.5 text-xs text-foreground/70">
-            {((p.data.length - 2) / 2).toLocaleString('en-US')} bytes, simulated from your account before this screen:{' '}
+            This call, {((p.data.length - 2) / 2).toLocaleString('en-US')} bytes of data, was tried from your account before this screen, free and with nothing sent:{' '}
             {p.action === 'deploy'
               ? 'the deploy succeeds and installs exactly the build this page carries.'
               : 'the contract accepted it.'}
@@ -77,7 +78,7 @@ export default function PreparedView({ p, decimals, title }: { p: PreparedTx; de
         </div>
       </dl>
       <p className="mt-3 text-[11px] text-foreground/60">
-        Amounts are in USDC at {decimals} decimals. A-Identity signs nothing: your wallet shows this same call and fee and asks you to sign it.
+        Amounts are in USDC at {decimals} decimals. A-Identity signs nothing. {WALLET_MAY_REPRICE}
       </p>
     </div>
   )

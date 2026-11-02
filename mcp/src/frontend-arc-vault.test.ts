@@ -5,6 +5,8 @@ import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { CHAINS } from './chains/registry.js'
 import { PROVENANCE } from './chains/provenance.js'
+import { arcLedgerFacts } from './chains/frontend-ledger.js'
+import { PAGE_MAX_SESSION_SECONDS } from './arc-owner-vault.js'
 
 /**
  * The Arc vault page's rules, run from src/ as they ship (/app/vault/arc deploys and runs vaults
@@ -54,7 +56,10 @@ type Rules = {
   addressWord: (address: string) => string | null
   runtimeWith: (runtime: string, ranges: Ranges, values: Record<string, string>) => string | null
   isKnownBuild: (code: string, runtime: string, ranges: Ranges, values: Record<string, string>) => boolean
-  vaultHeadline: (v: Snapshot) => { text: string; tone: 'ok' | 'warn' | 'danger' }
+  vaultHeadline: (v: Snapshot) => { text: string; tone: 'ok' | 'warn' | 'danger'; state: string; canPay: boolean }
+  readableDate: (unixSeconds: bigint) => Date | null
+  relativeSeconds: (target: bigint, now: bigint) => string
+  deployFormRefused: (networkParam: string | null, networkKnown: boolean, setupNetworkKnown: boolean) => boolean
 }
 type VaultModule = {
   AGENT_SPEND_POLICY_RUNTIME: string
@@ -81,6 +86,12 @@ type TxRules = {
   createdContract: (s: Rec | null) => string | null
   deployEnd: (s: Rec | null) => { kind: string; address?: string } | null
   vaultToLookFor: (s: Rec | null) => { predicted: string; deployArgs: Rec } | null
+  UNSEEN_AFTER_MS: number
+  UNSEEN_NOTE: string
+  guessedNonce: (r: Rec) => number | undefined
+  walletRepriced: (r: Rec) => boolean
+  liveOf: (s: Rec, snapshot: Rec | null) => Rec | null
+  setupDrift: (shown: Rec | null, held: Rec | null, snapshot: Rec | null) => string | null
 }
 type Failure = { code: string; message: string }
 type SendModule = {
@@ -446,9 +457,345 @@ test('the headline names a missing time bound before balance or headroom', async
   assert.equal(r.vaultHeadline(v).tone, 'danger')
   assert.match(r.vaultHeadline(v).text, /NO time bound/)
   assert.match(r.vaultHeadline({ ...v, frozen: true }).text, /^Frozen/)
-  assert.match(r.vaultHeadline({ ...v, sessionKeyExpiry: 1n, expired: true }).text, /expired/)
+  assert.match(r.vaultHeadline({ ...v, sessionKeyExpiry: 1_700_000_000n, expired: true }).text, /expired/)
   assert.equal(r.vaultHeadline({ ...v, sessionKeyExpiry: 1_900_000_000n }).tone, 'ok')
   assert.match(r.vaultHeadline({ ...v, sessionKeyExpiry: 1_900_000_000n, balance: 0n }).text, /holds no USDC/)
+})
+
+test('every state of the vault says in one sentence what the agent can do, and the State chip reads the same answer', async () => {
+  const r = await rules()
+  const v = {
+    frozen: false,
+    operator: OPERATOR,
+    sessionKeyExpiry: 1_900_000_000n,
+    expired: false,
+    allowlistEnabled: false,
+    balance: 1_000_000n,
+    remainingToday: 1_000_000n,
+    decimals: 6,
+  }
+  const cannot: [string, Snapshot, RegExp][] = [
+    ['frozen', { frozen: true }, /Frozen: the agent cannot pay/],
+    ['no key', { operator: r.ZERO_ADDRESS }, /No agent key/],
+    ['revoked', { sessionKeyExpiry: r.REVOKED_SESSION_EXPIRY, expired: true }, /^Revoked: .*cannot pay/],
+    ['expired', { sessionKeyExpiry: 1_700_000_000n, expired: true }, /expired: it cannot pay/],
+    ['empty', { balance: 0n }, /cannot pay anything right now: the vault holds no USDC/],
+    ['no allowance left', { remainingToday: 0n }, /cannot pay anything more today/],
+  ]
+  for (const [what, over, said] of cannot) {
+    const h = r.vaultHeadline({ ...v, ...over })
+    assert.match(h.text, said, what)
+    assert.equal(h.canPay, false, `${what}: says the agent can pay`)
+    assert.notEqual(h.tone, 'ok', `${what}: green while the agent cannot pay`)
+    assert.doesNotMatch(`${h.text} ${h.state}`, /\bActive\b/, `${what}: the word that used to contradict it`)
+    assert.doesNotMatch(h.text, /can spend/, `${what}: says the agent can spend`)
+  }
+  // A revoked key is not called an expiry from 1970.
+  assert.equal(r.vaultHeadline({ ...v, sessionKeyExpiry: r.REVOKED_SESSION_EXPIRY, expired: true }).state, 'Revoked')
+  // The allowlist narrows what the agent can do, wherever the sentence says it can.
+  const open = r.vaultHeadline(v)
+  assert.equal(open.tone, 'ok')
+  assert.equal(open.canPay, true)
+  assert.equal(open.state, 'Can pay')
+  assert.match(open.text, /can spend up to 1 USDC more today\.$/)
+  assert.doesNotMatch(open.text, /allowlist/)
+  for (const over of [{}, { balance: 500_000n }, { remainingToday: null }]) {
+    assert.match(r.vaultHeadline({ ...v, ...over, allowlistEnabled: true }).text, /only to payees on its allowlist/)
+  }
+  // The chip reads the answer, and the ceiling line appears only when the agent can pay at all.
+  const status = codeOnly(repo('src/components/app/arc/VaultStatus.tsx'))
+  assert.match(status, /<Chip tone=\{h\.tone\}>\{h\.state\}<\/Chip>/)
+  assert.doesNotMatch(status, /v\.frozen \? <Chip/, 'a chip decided by frozen alone can contradict the sentence')
+  assert.match(status, /v\.autoApproveMax !== 0n && h\.canPay/)
+  assert.match(status, /v\.sessionKeyExpiry === REVOKED_SESSION_EXPIRY/)
+})
+
+test('nothing a contract answers for a time can crash the page: it reads as unreadable, and a panel that still throws stays a panel', async () => {
+  const r = await rules()
+  const huge = 2n ** 255n
+  // Every value a uint256 can reach gives a Date that formats, or no Date at all.
+  for (const x of [huge, 2n ** 256n - 1n, 2n ** 53n, 8_640_000_000_001n]) assert.equal(r.readableDate(x), null, `${x}`)
+  assert.equal(r.readableDate(8_640_000_000_000n)?.toISOString(), '+275760-09-13T00:00:00.000Z')
+  assert.equal(r.readableDate(0n)?.toISOString(), '1970-01-01T00:00:00.000Z')
+  assert.equal(r.relativeSeconds(huge, 1_900_000_000n), 'at a time too far off to read')
+  assert.equal(r.relativeSeconds(1_900_003_600n, 1_900_000_000n), 'in 1h 0m')
+  // What the agent can do is still answered, and an expiry no date can hold is no real bound.
+  const h = r.vaultHeadline({ frozen: false, operator: OPERATOR, sessionKeyExpiry: huge, expired: false, balance: 1n, remainingToday: 1n, decimals: 6 })
+  assert.equal(h.tone, 'danger')
+  assert.match(h.text, /too far ahead to read as a date/)
+
+  const status = codeOnly(repo('src/components/app/arc/VaultStatus.tsx'))
+  assert.doesNotMatch(status, /new Date\(/, 'a date built from a contract value without the guard')
+  assert.match(status, /const resets = readableDate\(v\.resetsAt\)/)
+  assert.match(status, /\{resets \? \(\s*`[^`]*resets\.toISOString\(\)/, 'toISOString only behind the guard')
+  assert.match(status, /Unreadable: this contract's today\(\) answered <Mono>\{v\.today\.toString\(\)\}<\/Mono>/)
+  assert.match(status, /readableDate\(v\.sessionKeyExpiry\) === null \?/)
+  const read = codeOnly(repo('src/lib/arc/vault-read.ts'))
+  assert.match(read, /export function utcDateTime[^\n]*\s*const d = readableDate\(unixSeconds\)\s*if \(d === null\) return String\(unixSeconds\)/)
+  // No Date is built from a contract's answer anywhere else on the page.
+  for (const rel of arcPageFiles()) {
+    if (rel === 'src/lib/arc/vault-rules.ts') continue
+    assert.doesNotMatch(codeOnly(repo(rel)), /new Date\(Number\(/, `${rel} builds a Date from a number with no guard`)
+  }
+  // The net under all of it: one vault's panel, keyed so the next vault starts clean.
+  const page = codeOnly(repo('src/routes/app/ArcVault.tsx'))
+  assert.match(page, /<VaultBoundary key=\{key\} what="This vault">\s*<section aria-label="Vault"/)
+  assert.match(page, /<VaultBoundary what="The setup">\s*<DeployFlow/)
+  assert.match(codeOnly(repo('src/components/app/arc/VaultBoundary.tsx')), /static getDerivedStateFromError/)
+})
+
+test('a deploy link naming a network we do not know opens no form, and real money is never its fallback', async () => {
+  const r = await rules()
+  for (const typo of ['arc-testnet', 'base', '', ' ']) assert.equal(r.deployFormRefused(typo, false, false), true, `"${typo}" reaches the form`)
+  assert.equal(r.deployFormRefused(null, false, false), false, 'a link that names no network still gets the form and its select')
+  assert.equal(r.deployFormRefused('arc', true, false), false)
+  assert.equal(r.deployFormRefused('base', false, true), false, 'a setup under way keeps its own network')
+  const page = codeOnly(repo('src/routes/app/ArcVault.tsx'))
+  assert.match(page, /const deployRefused = deployMode && deployFormRefused\(networkParam, Boolean\(chain\), Boolean\(setup && arcChainFor\(setup\.network\)\)\)/)
+  // The refusal comes first, so DeployFlow is not reachable while it holds.
+  assert.match(page, /\{deployRefused \? \(\s*<DeployLinkRefused networkParam=/)
+  assert.ok(page.indexOf('<DeployLinkRefused networkParam=') < page.indexOf('<DeployFlow'))
+  // By name, with a link to each network, and no second notice saying the same thing.
+  const refused = page.slice(page.indexOf('function DeployLinkRefused'), page.indexOf('function FailureLine'))
+  assert.match(refused, /"\{networkParam\}" is not an Arc network we know/)
+  assert.match(refused, /ARC_CHAINS\.map[\s\S]*<Link to=\{\{ search: `\?network=\$\{encodeURIComponent\(c\.caip2\)\}&deploy=1` \}\}/)
+  assert.match(page, /\{networkParam && !chain && !deployRefused && \(/)
+})
+
+test('our older build reads as what it is, from the ledger, and nobody else\'s unknown code gets that kindness', async () => {
+  const ours = (await import(repoUrl('src/lib/arc/ours.ts').href)) as OursModule
+  const mainnet = PROVENANCE.find((p) => p.chain === 'arc-mainnet')
+  const entry = mainnet?.contracts.find((c) => c.name === 'AgentSpendPolicy vault')
+  const net = ARC_MAINNET?.caip2 ?? ''
+  const testnet = CHAINS.find((c) => c.id === 'arc')?.caip2 ?? ''
+  assert.ok(entry && net && testnet)
+  const line = ours.earlierBuildLine(net, entry.address)
+  assert.ok(line, 'the launch vault has no ledger-backed line')
+  assert.match(line, /earlier source \(commit c05b1710\)/)
+  assert.match(line, /verified on Sourcify/)
+  assert.doesNotMatch(line, /may not be the key/, 'the wording that alarmed every visitor')
+  // The address and the network both matter, and the ledger alone can say it.
+  assert.equal(ours.earlierBuildLine(net, VAULT), null)
+  assert.equal(ours.earlierBuildLine(testnet, entry.address), null)
+  // Read from the entry's own note, so a vault the ledger says neither thing of gets neither claim.
+  const facts = (note?: string) => arcLedgerFacts([], [{ chain: 'arc-mainnet', contracts: [{ name: 'AgentSpendPolicy vault', address: VAULT, note }] } as never]).vaults[0]
+  assert.deepEqual(facts(), { network: net, address: VAULT, name: 'AgentSpendPolicy vault' })
+  assert.deepEqual(facts('a plain note'), { network: net, address: VAULT, name: 'AgentSpendPolicy vault' })
+  assert.equal(facts('Built from the contract source at commit abcdef12, before.')?.builtFromCommit, 'abcdef12')
+  assert.equal(facts('Built from the contract source at commit abcdef12, before.')?.sourcifyVerified, undefined)
+  assert.equal(facts('its source is verified on Sourcify as an exact match')?.sourcifyVerified, true)
+  // On the page: the amber wording stays for everyone else, and ours is reached only through `ours`.
+  const status = codeOnly(repo('src/components/app/arc/VaultStatus.tsx'))
+  assert.match(status, /const earlierBuild = ours \? earlierBuildLine\(v\.network, v\.address\) : null/)
+  assert.match(status, /earlierBuild \? \(\s*<>\s*<Chip tone="muted">Earlier build of ours<\/Chip> \{earlierBuild\}/)
+  assert.match(repo('src/components/app/arc/VaultStatus.tsx'), /<Chip tone="warn">Not this page's build<\/Chip>[\s\S]{0,300}may not be the key it obeys/)
+})
+
+test('a step that needs the wallet says why when there is none, and skipping needs no wallet', async () => {
+  const copy = (await import(repoUrl('src/lib/arc/deploy-copy.ts').href)) as { WALLET_GONE: string; WRONG_ACCOUNT: string }
+  assert.match(copy.WALLET_GONE, /not connected/)
+  assert.match(copy.WALLET_GONE, /press Connect wallet/)
+  assert.match(copy.WALLET_GONE, /Your setup is saved/)
+  assert.match(copy.WRONG_ACCOUNT, /Pick the owner account/)
+  const flow = codeOnly(repo('src/components/app/arc/DeployFlow.tsx'))
+  // The Deploy button: no wallet is said, and the old silent return is gone.
+  const confirm = flow.slice(flow.indexOf('const confirmDeploy'), flow.indexOf('const setExpiry'))
+  assert.match(confirm, /if \(!provider \|\| !account\) \{\s*setInvalid\(WALLET_GONE\)\s*return/)
+  assert.doesNotMatch(confirm, /\|\| !provider \|\| !account \|\| parsed\.c === null[^\n]*\) return\n/, 'a silent return when the wallet is gone')
+  assert.match(confirm, /if \(!onUsdc\) \{\s*setInvalid/, 'another silent return')
+  assert.match(flow, /\{walletGone && <WalletGap \/>\}/, 'said on the review before anyone presses')
+  assert.match(flow, /onClick=\{confirmDeploy\} disabled=\{busy !== null \|\| ownerMismatch \|\| walletGone\}/, 'a button that can do nothing, with the reason beside it')
+  assert.match(flow, /v === WALLET_GONE \? null : v/, 'the message outlives the wallet coming back')
+  // Step 3: the reason, for no wallet and for the wrong account, and Skip outside the wallet condition.
+  assert.match(flow, /\{step === 'fund' && \(walletGone \|\| ownerMismatch\) && <WalletGap wrongAccount=\{!walletGone\} \/>\}/)
+  const skip = flow.indexOf("patch((s) => ({ ...s, fundSkipped: true }))")
+  const opener = flow.lastIndexOf('{step ===', skip)
+  assert.equal(flow.slice(opener, flow.indexOf('&&', opener)).trim(), "{step === 'fund'", 'Skip sits behind a wallet condition again')
+})
+
+test('an expiry or a funding is built only from the setup the browser holds now, and only if it is still what the owner reviewed', async () => {
+  const t = await txRules()
+  const X = '0x' + '77'.repeat(20)
+  const Y = '0x' + '88'.repeat(20)
+  const shown = setupOf({ vault: X })
+  const read = snap({ address: X })
+  assert.equal(t.setupDrift(shown, shown, read), null)
+  assert.equal(t.setupDrift(shown, { ...shown, vault: X.toUpperCase().replace('0X', '0x') }, read), null, 'the same vault, whatever the case')
+  assert.equal(t.setupDrift(shown, { ...shown, expiryTx: record() }, read), null, 'a later step of the same setup is not drift')
+  // Forgotten in another tab, or never held.
+  assert.match(String(t.setupDrift(shown, null, read)), /forgotten in another tab/)
+  assert.match(String(t.setupDrift(null, shown, read)), /forgotten in another tab/)
+  // Another setup started there: the finding's case, with this tab's read still of X.
+  const other = setupOf({ vault: Y, startedAt: new Date(1000).toISOString() })
+  assert.match(String(t.setupDrift(shown, other, read)), /changed in another tab/)
+  for (const over of [{ vault: Y }, { network: 'eip155:1' }, { owner: ATTACKER }, { sessionSeconds: 3600 }, { funding: 1n }]) {
+    assert.match(String(t.setupDrift(shown, { ...shown, ...over }, read)), /no longer matches what you reviewed/, JSON.stringify(Object.keys(over)))
+  }
+  // A read of some other vault, or none, is not a read of this one.
+  assert.match(String(t.setupDrift(other, other, read)), /has not read this setup's vault/)
+  assert.match(String(t.setupDrift(shown, shown, null)), /has not read/)
+  assert.match(String(t.setupDrift(shown, shown, { ...read, network: 'eip155:1' })), /has not read/)
+  assert.equal(t.liveOf(other, read), null)
+
+  const raw = codeOnly(repo('src/components/app/arc/DeployFlow.tsx'))
+  // Read from the slot, and asked before each write is prepared.
+  assert.match(raw, /setupDrift\(setup, loadSetup\(\), snapshot\)\s*if \(drift\) \{\s*setInvalid\(drift\)/, 'said above the form, which catching up unmounts')
+  const expiry = raw.slice(raw.indexOf('const setExpiry'), raw.indexOf('const forget'))
+  assert.ok(expiry.indexOf('driftNow()') < expiry.indexOf('prepareOwnerCall'), 'the slot is read after the expiry is prepared')
+  assert.match(expiry, /prepareOwnerCall[^\n]*\s*(?:\/\/[^\n]*\s*)?if \(driftNow\(\)\) return null\s*const hash = await sendPrepared/, 'not asked again before the wallet')
+  assert.match(expiry, /prepareOwnerCall\(chain, vault,/)
+  assert.doesNotMatch(expiry, /prepareOwnerCall\(chain, snapshot/)
+  // The form gets only the live read of this setup's vault, the same question, and a fresh start per setup.
+  assert.match(raw, /const liveVault = setup \? liveOf\(setup, snapshot\) : null/)
+  assert.match(raw, /key=\{`\$\{setup\.startedAt\}:\$\{setup\.vault\}`\}\s*chain=\{chain\}\s*vault=\{liveVault\}/)
+  assert.match(raw, /stillCurrent=\{\(\) => !driftNow\(\)\}/)
+  assert.doesNotMatch(raw, /vault=\{snapshot\}/)
+  assert.match(raw, /useEffect\(\(\) => \{\s*setSnapshot\(null\)[\s\S]{0,120}\}, \[startedAt\]\)/, 'a read of the last setup survives into the next')
+  const fund = codeOnly(repo('src/components/app/arc/FundForm.tsx'))
+  assert.ok(fund.indexOf('!stillCurrent()') < fund.indexOf('await prepareFund'), 'funding is prepared before the slot is read')
+  assert.equal([...fund.matchAll(/stillCurrent && !stillCurrent\(\)/g)].length, 2, 'asked before the review and again before the wallet')
+})
+
+test('a transaction nobody has seen says so in plain words at 30 seconds, and a wallet re-pricing is named when it can be', async () => {
+  const t = await txRules()
+  const r = await rules()
+  const start = 1_000_000_000_000
+  const iso = (ms: number) => new Date(ms).toISOString()
+  const fresh = record({ submittedAt: iso(start), proposedMaxFee: 40_000_000_000n })
+  // Before the mark, or on a check that did not ask: nothing is said.
+  assert.equal(t.decideUnseen(fresh, { now: start + t.UNSEEN_AFTER_MS - 1, tx: null }).unseen, undefined)
+  assert.equal(t.decideUnseen(fresh, { now: start + t.UNSEEN_AFTER_MS }).unseen, undefined, 'no read of the transaction, so nothing is known')
+  // At the mark: said, and still only pending. It may well land.
+  const unseen = t.decideUnseen(fresh, { now: start + t.UNSEEN_AFTER_MS, tx: null })
+  assert.equal(unseen.unseen, true)
+  assert.equal(unseen.outcome, 'pending')
+  assert.equal(unseen.note, t.UNSEEN_NOTE)
+  assert.match(t.UNSEEN_NOTE, /under 20 gwei/)
+  assert.match(t.UNSEEN_NOTE, /some wallets change the fee/)
+  // Then it shows up: the warning goes, and the fee it really carries decides what is said.
+  const low = { maxFeePerGas: r.FEE_FLOOR_WEI - 1n, gasPrice: null, nonce: 7, from: OWNER }
+  const seen = t.decideUnseen(unseen, { now: start + 40_000, tx: low })
+  assert.equal(seen.unseen, undefined)
+  assert.equal(seen.note, undefined)
+  assert.equal((seen.sent as Rec).belowFloor, true)
+  assert.equal(t.walletRepriced(seen), true)
+  assert.equal(t.walletRepriced(t.decideUnseen(fresh, { now: start, tx: { ...low, maxFeePerGas: 40_000_000_000n } })), false)
+  assert.equal(t.walletRepriced(record()), false, 'nothing read back, nothing to compare')
+  // A receipt ends it, and carries no stale warning.
+  const done = t.decideLanded(unseen, landed(), { missing: [] })
+  assert.equal(done.unseen, undefined)
+  assert.equal(done.note, undefined)
+  assert.equal(t.retracked(t.untracked(unseen)).unseen, undefined)
+  const page = codeOnly(repo('src/components/app/arc/TxReceipt.tsx'))
+  assert.match(page, /record\.outcome === 'pending' && record\.unseen && \(/)
+  assert.match(page, /record\.proposedMaxFee !== undefined && ` This page asked for a max fee of/)
+  assert.match(page, /a\.unseen !== b\.unseen/, 'a change of this flag would not be saved')
+  assert.match(page, /record\.unseen \? 'Do not sign a new one until you have looked in your wallet\.'/)
+  assert.match(codeOnly(repo('src/components/app/arc/useArcTx.ts')), /proposedMaxFee: p\.maxFeePerGas/)
+  // Before signing too, where the person can still raise it, and no claim the wallet shows the same fee.
+  const copy = (await import(repoUrl('src/lib/arc/deploy-copy.ts').href)) as { WALLET_MAY_REPRICE: string }
+  assert.match(copy.WALLET_MAY_REPRICE, /may show a different network fee/)
+  assert.match(copy.WALLET_MAY_REPRICE, /raise it before you confirm/)
+  const view = repo('src/components/app/arc/PreparedView.tsx')
+  assert.match(codeOnly(view), /\{WALLET_MAY_REPRICE\}/)
+  assert.doesNotMatch(view, /shows this same call and fee/)
+})
+
+test('a speed-up of a hash never seen is noticed by the nonce read while preparing, and never called final on that guess', async () => {
+  const t = await txRules()
+  const now = 1_000_000_000_000
+  const iso = (ms: number) => new Date(ms).toISOString()
+  const write = record({ nonce: 7, submittedAt: iso(now - 60_000) })
+  assert.equal(t.guessedNonce(write), 7)
+  assert.equal(t.guessedNonce({ ...write, action: 'deploy' }), undefined, 'a deploy has its own proof, the vault at its address')
+  assert.equal(t.guessedNonce({ ...write, sent: { nonce: 8 } }), undefined, 'the chain has named the real one')
+  // Not used yet: nothing.
+  assert.equal(t.decideUnseen(write, { now, latestNonce: 7 }).nonceUsedAt, undefined)
+  // Used: watched first.
+  const first = t.decideUnseen(write, { now, tx: null, latestNonce: 8 })
+  assert.equal(first.outcome, 'pending')
+  assert.equal(first.nonceUsedAt, iso(now))
+  // Still never seen after the watch: the page stops holding on it, and says it may still land.
+  const later = t.decideUnseen(first, { now: now + t.REPLACED_AFTER_MS, tx: null })
+  assert.equal(later.outcome, 'untracked', 'a guess is never the final "replaced"')
+  assert.equal(later.likelyReplaced, true)
+  assert.equal(later.nonceUsedAt, undefined)
+  assert.match(String(later.note), /most likely replaced/)
+  assert.match(String(later.note), /can land later/)
+  assert.equal(t.retracked(later).likelyReplaced, undefined)
+  // The hash shows up during the watch with a later nonce: the wallet queued it, and it is alive.
+  const queued = { maxFeePerGas: 40_000_000_000n, gasPrice: null, nonce: 8, from: OWNER }
+  const alive = t.decideUnseen(first, { now: now + t.REPLACED_AFTER_MS, tx: queued, latestNonce: 8 })
+  assert.equal(alive.outcome, 'pending')
+  assert.equal(alive.nonceUsedAt, undefined)
+  assert.equal(alive.note, undefined)
+  // Shown with the guessed nonce itself, the existing proof takes over.
+  const own = t.decideUnseen(first, { now: now + 1000, tx: { ...queued, nonce: 7 }, latestNonce: 8 })
+  assert.equal(own.nonceUsedAt, iso(now + 1000))
+  assert.equal(t.decideUnseen(own, { now: now + 1000 + t.REPLACED_AFTER_MS, tx: null }).outcome, 'replaced')
+  // A deploy is left to the rule that reads its address.
+  assert.equal(t.decideUnseen({ ...write, action: 'deploy', deployArgs: DEPLOY_ARGS }, { now, tx: null, latestNonce: 8 }).nonceUsedAt, undefined)
+  // Every write carries the nonce, and the check asks about it.
+  const lib = codeOnly(repo('src/lib/arc/vault-write.ts'))
+  for (const fn of ['prepareOwnerCall', 'prepareFund']) assert.match(fnBody(lib, fn), /nonceHint\(c, /, `${fn} no longer reads the next nonce`)
+  assert.match(codeOnly(repo('src/lib/arc/receipt.ts')), /record\.sent\?\.nonce \?\? guessedNonce\(record\)/)
+  assert.match(codeOnly(repo('src/components/app/arc/TxReceipt.tsx')), /record\.likelyReplaced\s*\? `\$\{record\.what\}: most likely replaced/)
+  assert.match(codeOnly(repo('src/components/app/arc/DeployFlow.tsx')), /outcome === 'replaced' \|\| setup\.fundTx\?\.likelyReplaced/)
+})
+
+test('the deploy flow says plainly what each confirmation does and costs, who holds what, and what to do when a step fails', async () => {
+  const copy = (await import(repoUrl('src/lib/arc/deploy-copy.ts').href)) as {
+    DEPLOY_FEE_ABOUT: string
+    CALL_FEE_ABOUT: string
+    WHAT_IS_A_VAULT: string
+    CONFIRMATIONS: readonly { title: string; does: string; cost: string }[]
+    FEES_LINE: string
+    OWNER_KEY_LINE: string
+    AGENT_KEY_CAN: string
+    AGENT_KEY_CANNOT: string
+    REVIEW_LINE: string
+    IF_A_STEP_FAILS: readonly { when: string; then: string }[]
+  }
+  const r = await rules()
+  // Three confirmations, each with what it does and a cost in USDC. Only the third moves USDC in.
+  assert.equal(copy.CONFIRMATIONS.length, 3)
+  for (const c of copy.CONFIRMATIONS) assert.match(c.cost, /USDC/, c.title)
+  assert.match(copy.CONFIRMATIONS[0].does, /No USDC goes into it yet/)
+  assert.match(copy.CONFIRMATIONS[1].does, /No USDC moves/)
+  assert.match(copy.CONFIRMATIONS[2].cost, /^That amount, plus/)
+  // The costs are what the floor makes them: a deploy reads about 966,000 gas live, a call or transfer about 60,000.
+  const usdcAt = (gas: bigint) => Number(gas * r.FEE_FLOOR_WEI) / 1e18
+  assert.equal(copy.DEPLOY_FEE_ABOUT, `about ${usdcAt(966_000n).toFixed(2)} USDC`)
+  assert.equal(copy.CALL_FEE_ABOUT, `about ${usdcAt(60_000n).toFixed(3)} USDC`)
+  assert.match(copy.FEES_LINE, /paid in USDC/)
+  // Whose key, what the agent's can and cannot do, and the honest warnings that must stay.
+  assert.match(copy.OWNER_KEY_LINE, /stays in your wallet/)
+  assert.match(copy.OWNER_KEY_LINE, /signs nothing/)
+  assert.match(copy.AGENT_KEY_CAN, /one thing: pay from the vault, within your limits, until its end date/)
+  assert.match(copy.AGENT_KEY_CANNOT, /cannot change the limits/)
+  assert.match(copy.AGENT_KEY_CANNOT, /if it leaks/)
+  assert.match(copy.REVIEW_LINE, /internal reviews and no outside audit/)
+  assert.match(copy.REVIEW_LINE, /afford to lose/)
+  assert.ok(copy.IF_A_STEP_FAILS.length >= 4)
+  assert.ok(copy.IF_A_STEP_FAILS.some((f) => /Nothing was sent/.test(f.then)))
+  assert.ok(copy.IF_A_STEP_FAILS.some((f) => /fee is spent/.test(f.then)))
+  // No word a newcomer would have to look up, with the one that wallets show explained where it appears.
+  const said = [copy.WHAT_IS_A_VAULT, copy.FEES_LINE, copy.OWNER_KEY_LINE, copy.AGENT_KEY_CAN, copy.AGENT_KEY_CANNOT, copy.REVIEW_LINE, ...copy.CONFIRMATIONS.flatMap((c) => [c.title, c.does, c.cost]), ...copy.IF_A_STEP_FAILS.flatMap((f) => [f.when, f.then])].join(' ')
+  assert.doesNotMatch(said, /\b(nonce|calldata|simulat\w*|EVM|ERC-20|gas|gwei|bytecode|pay\(\)|AgentSpendPolicy|dust|RPC)\b/i)
+  // On the page, not just in the module.
+  const flow = codeOnly(repo('src/components/app/arc/DeployFlow.tsx'))
+  for (const name of ['WHAT_IS_A_VAULT', 'CONFIRMATIONS.map', 'FEES_LINE', 'OWNER_KEY_LINE', 'AGENT_KEY_CAN', 'AGENT_KEY_CANNOT', 'REVIEW_LINE', 'IF_A_STEP_FAILS.map']) {
+    assert.ok(flow.includes(name), `${name} is no longer on the page`)
+  }
+  // Semantic tokens only, across the page's every component.
+  for (const rel of arcPageFiles()) {
+    assert.doesNotMatch(repo(rel), /\b(?:bg|text|border|ring)-(?:red|amber|green|yellow|orange|emerald|rose|blue|gray|slate|zinc|neutral)-\d{2,3}\b/, `${rel} uses a raw palette class`)
+  }
+})
+
+test('admission\'s note about a long key uses the page\'s own cap', async () => {
+  const r = await rules()
+  assert.equal(PAGE_MAX_SESSION_SECONDS, BigInt(r.MAX_SESSION_SECONDS))
 })
 
 test('the Arc vault page takes every chain fact from the generated registry module, and types no address', () => {
@@ -522,6 +869,7 @@ test('our launch-day vault and our key are labelled from the build, with no answ
 type OursModule = {
   autoLandVault: <T extends { network: string; kind: string; owner?: string }>(rows: readonly T[], network: string, account: string | null) => T | null
   ledgerKnownVaults: () => { vaults: { network: string; address: string; kind: string }[]; ourKeys: Record<string, string[]> }
+  earlierBuildLine: (network: string, address: string) => string | null
   FUND_RISK: string
   NOT_MY_VAULT: string
   NAMES_OUR_KEY: string

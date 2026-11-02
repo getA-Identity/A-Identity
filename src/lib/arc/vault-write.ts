@@ -93,6 +93,7 @@ export type PreparedTx = {
   expect: Expectation[]
   /** A deploy: the CREATE address at the nonce read when this was prepared. */
   predicted?: Address
+  /** The account's next nonce when this was prepared. The wallet picks the real one. */
   nonce?: number
   /** A session key write: the expiry, from chain time. */
   expiry?: bigint
@@ -165,6 +166,15 @@ function checkedAddress(text: string, role: string): Address {
   // Strict: a mixed-case address whose checksum does not match is a typo until shown otherwise.
   if (!isAddress(t)) throw stop('refused', `The ${role} address is not a valid EVM address, or its mixed-case checksum does not match. Check it for a typo.`)
   return getAddress(t)
+}
+
+/** The nonce this write should get, for noticing a speed-up later. Not worth refusing a write over. */
+async function nonceHint(c: ArcClient, from: Address): Promise<number | undefined> {
+  try {
+    return await c.getTransactionCount({ address: from, blockTag: 'pending' })
+  } catch {
+    return undefined
+  }
 }
 
 async function feeQuote(c: ArcClient): Promise<{ maxFeePerGas: bigint; maxPriorityFeePerGas: bigint }> {
@@ -266,11 +276,11 @@ export async function prepareDeploy(
       contract: 'AgentSpendPolicy (new contract)',
       function: 'constructor',
       args: [
-        { name: 'owner', value: owner, note: 'you: the only key that can freeze, change the limits, withdraw or replace the operator' },
-        { name: 'operator', value: operator, note: "the agent's key: it can call pay() within the limits, and nothing else" },
+        { name: 'owner', value: owner, note: 'you: the only key that can freeze, change the limits, take USDC out or replace the agent key' },
+        { name: 'operator', value: operator, note: "the agent's key: it can pay within the limits, and do nothing else" },
         { name: 'usdc', value: usdc.address, note: `the registry's USDC on ${networkName(chain)}` },
-        { name: 'dailyCap', value: units(input.dailyCap) },
-        { name: 'autoApproveMax', value: units(input.autoApproveMax) },
+        { name: 'dailyCap', value: units(input.dailyCap), note: 'the most the agent can spend in one UTC day' },
+        { name: 'autoApproveMax', value: units(input.autoApproveMax), note: 'the largest single payment the agent can make' },
       ],
     },
     gas,
@@ -345,12 +355,12 @@ export async function prepareOwnerCall(chain: Chain, v: VaultSnapshot, call: Own
       const fee = await feeQuote(c)
       const gas = gasWithMargin(estimate)
       await assertCovered(c, chain, owner, gas * fee.maxFeePerGas, 0n)
-      return { data, expiry, fee, gas }
+      return { data, expiry, fee, gas, nonce: await nonceHint(c, owner) }
     })
   } catch (e) {
     throw simulationStop(e, 'this call')
   }
-  const { data, expiry, fee, gas } = r.value
+  const { data, expiry, fee, gas, nonce } = r.value
   const { action, what, fn, shown, expect } = describe(call, { vault, owner, usdc: v.usdc, decimals: v.decimals, expiry, operator, to })
   return {
     action,
@@ -366,6 +376,7 @@ export async function prepareOwnerCall(chain: Chain, v: VaultSnapshot, call: Own
     maxFeeWei: gas * fee.maxFeePerGas,
     expect,
     ...(expiry !== undefined ? { expiry } : {}),
+    ...(nonce !== undefined ? { nonce } : {}),
     preparedAt: Date.now(),
   }
 }
@@ -503,12 +514,12 @@ export async function prepareFund(chain: Chain, v: VaultSnapshot, from: string, 
         decimals: usdc.decimals,
       })
       if (refusal) throw stop('insufficient_gas', refusal)
-      return { sim: sim.data ?? '0x', fee, gas }
+      return { sim: sim.data ?? '0x', fee, gas, nonce: await nonceHint(c, sender) }
     })
   } catch (e) {
     throw simulationStop(e, 'the transfer')
   }
-  const { sim, fee, gas } = r.value
+  const { sim, fee, gas, nonce } = r.value
   if (!/^0x0*1$/.test(sim)) throw stop('reverted_in_simulation', 'The USDC contract did not return true for this transfer in simulation. Nothing was sent.')
   return {
     action: 'fund',
@@ -530,6 +541,7 @@ export async function prepareFund(chain: Chain, v: VaultSnapshot, from: string, 
     maxPriorityFeePerGas: fee.maxPriorityFeePerGas,
     maxFeeWei: gas * fee.maxFeePerGas,
     expect: [{ kind: 'transfer', token: usdc.address, from: sender, to: v.address, value: amount }],
+    ...(nonce !== undefined ? { nonce } : {}),
     preparedAt: Date.now(),
   }
 }

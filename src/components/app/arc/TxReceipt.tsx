@@ -11,12 +11,16 @@
  * asked about on the network its transaction was sent to. After the page stops polling on its
  * own, the person can stop tracking it, so a transaction that will never get a receipt (dropped
  * under the fee floor, or replaced in the wallet) cannot hold anything on the page forever.
+ *
+ * A wallet can change the fee this page proposed. When no network node has seen a hash after 30
+ * seconds the receipt says so out loud and says what to look for in the wallet, because that is
+ * the moment the person can still fix it, and stopping tracking is offered from then on.
  */
 import { useEffect, useRef, useState } from 'react'
 import { AlertTriangle, CheckCircle2, Clock, ExternalLink, XCircle } from 'lucide-react'
 import type { TxRecord } from '../../../lib/arc/pending'
 import { FAST_FOR_MS, POLL_FAST_MS, POLL_FOR_MS, POLL_SLOW_MS, advance, feeLine } from '../../../lib/arc/receipt'
-import { retracked, untracked } from '../../../lib/arc/tx-rules'
+import { retracked, untracked, walletRepriced } from '../../../lib/arc/tx-rules'
 import { arcChainFor, localTime, networkName, rpcUrls, txUrl } from '../../../lib/arc/vault-read'
 import { formatUnitsExact, sameAddress } from '../../../lib/arc/vault-rules'
 import { CopyButton, Mono } from '../stellar/bits'
@@ -33,6 +37,8 @@ function changed(a: TxRecord, b: TxRecord): boolean {
     a.sent?.nonce !== b.sent?.nonce ||
     a.sent?.belowFloor !== b.sent?.belowFloor ||
     a.nonceUsedAt !== b.nonceUsedAt ||
+    a.unseen !== b.unseen ||
+    a.likelyReplaced !== b.likelyReplaced ||
     a.readBackTries !== b.readBackTries
   )
 }
@@ -136,9 +142,11 @@ export default function TxReceipt({
           : record.outcome === 'replaced'
             ? record.vault && record.action === 'deploy'
               ? `${record.what}: a replacement from your wallet created the vault.`
-              : `${record.what}: replaced. Its nonce went to another transaction, so this hash can no longer land.`
+              : `${record.what}: replaced. Your wallet sent another transaction in its place, so this one can no longer land.`
             : record.outcome === 'untracked'
-              ? `${record.what}: no longer tracked, with no receipt seen.`
+              ? record.likelyReplaced
+                ? `${record.what}: most likely replaced in your wallet, with no receipt seen for this one.`
+                : `${record.what}: no longer tracked, with no receipt seen.`
               : `${record.what}: submitted, no receipt yet.`
 
   return (
@@ -166,7 +174,22 @@ export default function TxReceipt({
       {(record.outcome === 'reverted' || record.outcome === 'unexpected') && fee && (
         <div className="mt-1 text-xs text-foreground/75">Network fee charged: {fee}.</div>
       )}
-      {record.note && <div className="mt-1 text-xs text-foreground/80">{record.note}</div>}
+      {record.note && !record.unseen && <div className="mt-1 text-xs text-foreground/80">{record.note}</div>}
+      {record.outcome === 'pending' && record.unseen && (
+        <div className="mt-2 rounded-xl border border-warn/40 bg-warn/15 p-3 text-xs text-foreground">
+          <div className="font-semibold">{record.note}</div>
+          <p className="mt-1">
+            Open your wallet and find this transaction.
+            {record.proposedMaxFee !== undefined && ` This page asked for a max fee of ${gwei(record.proposedMaxFee)}.`} Gwei is the tiny unit wallets
+            use for this fee.
+          </p>
+          <ul className="mt-1 list-disc space-y-0.5 pl-4">
+            <li>If it shows a max fee under 20 gwei: speed it up in your wallet to at least 20 gwei, or cancel it there.</li>
+            <li>If it shows 20 gwei or more and is still waiting: give it a little longer.</li>
+            <li>If your wallet shows no such transaction, or says it was dropped: stop tracking it below.</li>
+          </ul>
+        </div>
+      )}
       {record.contractAddress && (
         <div className="mt-1 flex flex-wrap items-center gap-2 text-xs text-foreground/75">
           <span className="font-semibold text-foreground/60">Contract:</span>
@@ -188,8 +211,8 @@ export default function TxReceipt({
       {record.sent && (
         <div className={`mt-2 text-xs ${record.sent.belowFloor ? 'font-semibold text-danger' : 'text-foreground/70'}`}>
           {record.sent.belowFloor
-            ? `Your wallet sent this with a fee of ${gwei(record.sent.maxFeePerGas ?? record.sent.gasPrice ?? 0n)} per gas, under Arc's 20 gwei floor. Arc drops such a transaction without a receipt: speed it up in your wallet above 20 gwei, or cancel it. Once the replacement lands, this page sees the nonce used and stops waiting on this hash.`
-            : `Read back from the chain: your wallet sent it with nonce ${record.sent.nonce} and a max fee of ${gwei(record.sent.maxFeePerGas ?? record.sent.gasPrice ?? 0n)} per gas, at or above Arc's 20 gwei floor.`}
+            ? `Your wallet sent this with a max fee of ${gwei(record.sent.maxFeePerGas ?? record.sent.gasPrice ?? 0n)}, under the 20 gwei Arc needs${walletRepriced(record) && record.proposedMaxFee !== undefined ? ` (this page asked for ${gwei(record.proposedMaxFee)}, so your wallet changed it)` : ''}. Arc drops such a transaction without a receipt: speed it up in your wallet to at least 20 gwei, or cancel it. Once the replacement lands, this page sees that and stops waiting on this hash.`
+            : `Read back from the network: your wallet sent it with a max fee of ${gwei(record.sent.maxFeePerGas ?? record.sent.gasPrice ?? 0n)}${walletRepriced(record) && record.proposedMaxFee !== undefined ? ` (this page asked for ${gwei(record.proposedMaxFee)}, so your wallet changed it)` : ''}, at or above the 20 gwei Arc needs.`}
           {!sameAddress(record.sent.from, record.from) && (
             <span className="block font-semibold text-danger">It was sent from {record.sent.from}, not the account this page prepared it for.</span>
           )}
@@ -201,7 +224,7 @@ export default function TxReceipt({
         {record.outcome === 'pending' &&
           (gaveUp ? (
             <>
-              {' '}No receipt after {Math.round(POLL_FOR_MS / 60_000)} minutes on any of the {asked.total} RPCs. That is not a failure: it may still land.
+              {' '}No receipt after {Math.round(POLL_FOR_MS / 60_000)} minutes on any of the {asked.total} network nodes. That is not a failure: it may still land.
               Do not sign it again.{' '}
               <button
                 type="button"
@@ -231,8 +254,25 @@ export default function TxReceipt({
             </>
           ) : (
             <>
-              {' '}Asking all {asked.total} {networkName(chain)} RPCs every few seconds ({asked.checks} rounds so far
-              {asked.checks > 0 ? `, ${asked.answered} answered the last one` : ''}). Do not sign it again.
+              {' '}Asking all {asked.total} {networkName(chain)} network nodes every few seconds ({asked.checks} {asked.checks === 1 ? 'round' : 'rounds'} so far
+              {asked.checks > 0 ? `, ${asked.answered} answered the last one` : ''}).{' '}
+              {record.unseen ? 'Do not sign a new one until you have looked in your wallet.' : 'Do not sign it again.'}
+              {record.unseen && (
+                <>
+                  {' '}
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const r = untracked(record)
+                      onUpdate(r)
+                      onSettled?.(r)
+                    }}
+                    className={LINK}
+                  >
+                    Stop tracking this transaction
+                  </button>
+                </>
+              )}
             </>
           ))}
         {record.outcome === 'untracked' && (

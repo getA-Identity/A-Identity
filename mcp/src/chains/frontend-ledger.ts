@@ -8,8 +8,8 @@
  * fails the build if it drifts.
  *
  * Kept apart from chains.ts on purpose: the ledger is chain history, not configuration (see
- * provenance.ts), and only these two lists cross over, so a new note or transaction in the ledger
- * forces no regeneration.
+ * provenance.ts), and only these two lists cross over, so a new transaction in the ledger, or a
+ * note that changes neither fact read from it below, forces no regeneration.
  */
 import { getChainById } from './registry.js'
 import { PROVENANCE, type ChainProvenance } from './provenance.js'
@@ -21,8 +21,13 @@ export const FRONTEND_ARC_LEDGER_MODULE = 'src/lib/arc-ledger.ts'
 export const ARC_PAGE_CHAINS = ['arc-mainnet', 'arc'] as const
 
 export type ArcLedgerFacts = {
-  /** The AgentSpendPolicy vaults the ledger lists as ours, per chain, in ledger order. */
-  vaults: { network: string; address: string; name: string }[]
+  /**
+   * The AgentSpendPolicy vaults the ledger lists as ours, per chain, in ledger order. Two facts
+   * come from the entry's own note, so the page says them only of the vault the ledger says them
+   * of: the commit it was built from when that is not the current source, and that its source is
+   * verified on Sourcify.
+   */
+  vaults: { network: string; address: string; name: string; builtFromCommit?: string; sourcifyVerified?: boolean }[]
   /** Per CAIP-2, the keys that are ours, lowercased: the same committed list admission refuses an
    *  owner from, so the page and the script cannot disagree about whose key a vault names. */
   keys: Record<string, string[]>
@@ -41,7 +46,15 @@ export function arcLedgerFacts(ourKeys: readonly string[], ledger: readonly Chai
     const caip2 = getChainById(id)?.caip2
     if (!entry || !caip2) continue
     for (const c of entry.contracts) {
-      if (c.name.startsWith('AgentSpendPolicy')) vaults.push({ network: caip2, address: c.address, name: c.name })
+      if (!c.name.startsWith('AgentSpendPolicy')) continue
+      const builtFrom = c.note?.match(/Built from the contract source at commit ([0-9a-f]{7,40})/)?.[1]
+      vaults.push({
+        network: caip2,
+        address: c.address,
+        name: c.name,
+        ...(builtFrom ? { builtFromCommit: builtFrom } : {}),
+        ...(c.note && /verified on Sourcify/.test(c.note) ? { sourcifyVerified: true } : {}),
+      })
     }
     const ours = [entry.agent?.owner, ...(entry.accounts ?? []).filter((a) => a.custody.startsWith('ours')).map((a) => a.address)]
     keys[caip2] = [...new Set([...ours.filter((a): a is string => Boolean(a)), ...ourKeys].map((a) => a.toLowerCase()))]
@@ -66,7 +79,7 @@ export function renderFrontendArcLedger(ourKeys: readonly string[]): string {
   const { vaults, keys } = arcLedgerFacts(ourKeys)
   return `${GENERATED_HEADER}
 /** The AgentSpendPolicy vaults the ledger lists as ours on Arc. */
-export const ARC_LEDGER_VAULTS: readonly { network: string; address: string; name: string }[] = ${JSON.stringify(vaults, null, 2)}
+export const ARC_LEDGER_VAULTS: readonly { network: string; address: string; name: string; builtFromCommit?: string; sourcifyVerified?: boolean }[] = ${JSON.stringify(vaults, null, 2)}
 
 /** Per CAIP-2, the keys that are ours on Arc, lowercased: the committed list admission uses. */
 export const ARC_LEDGER_KEYS: Readonly<Record<string, readonly string[]>> = ${JSON.stringify(keys, null, 2)}

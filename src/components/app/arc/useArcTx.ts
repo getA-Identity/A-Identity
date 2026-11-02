@@ -22,6 +22,7 @@ export function recordOf(p: PreparedTx, hash: `0x${string}`, vault: string | nul
     ...(p.predicted ? { predicted: p.predicted } : {}),
     ...(p.nonce !== undefined ? { nonce: p.nonce } : {}),
     ...(p.expiry !== undefined ? { expiry: p.expiry } : {}),
+    proposedMaxFee: p.maxFeePerGas,
     outcome: 'pending',
   }
 }

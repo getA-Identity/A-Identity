@@ -17,7 +17,8 @@ import type { TxAction } from './vault-write'
 /**
  * 'replaced': this hash's nonce went to another transaction and no RPC has a receipt for it, so
  * it can no longer land (or, for a deploy, a vault that reads back as asked exists at its address).
- * 'untracked': the person stopped tracking it with no receipt seen; it may still land.
+ * 'untracked': no receipt was seen and the page stopped waiting on it (the person chose to, or its
+ * account moved on with this hash never seen); it may still land.
  */
 export type TxOutcome = 'pending' | 'settled' | 'unexpected' | 'reverted' | 'replaced' | 'untracked'
 
@@ -39,6 +40,12 @@ export type TxRecord = {
   predicted?: string
   /** The nonce read when it was prepared (a deploy's predicted address comes from it). The wallet may pick another. */
   nonce?: number
+  /** The max fee per gas this page handed the wallet, in native wei. The wallet may send another. */
+  proposedMaxFee?: bigint
+  /** No host has shown this transaction 30 seconds after it was handed over. */
+  unseen?: boolean
+  /** Untracked because the account moved on with this hash never seen: most likely a speed-up or a cancel. */
+  likelyReplaced?: boolean
   /** A deploy: what the vault must read back as before the deploy counts. */
   deployArgs?: DeployArgs
   /** A session key write: the value sessionKeyExpiry must read back as. */

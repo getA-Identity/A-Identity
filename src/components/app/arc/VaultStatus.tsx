@@ -1,14 +1,17 @@
 /**
  * One Arc vault's live state, owner's question first.
  *
- * The headline answers "can my agent pay, and how much more today?" in one sentence, from the
- * same block as every value under it. Then, in a fixed order: status and today's spending, the
- * per-payment ceiling, the allowlist, the session key, the balance, and the contract's own
- * identity, including whether its code is the build this page deploys. Every group carries the
- * stamp of the block it was read at.
+ * The headline answers "what can my agent do right now?" in one sentence, from the same block as
+ * every value under it, and the State chip reads the same answer, so the two cannot disagree.
+ * Then, in a fixed order: status and today's spending, the per-payment ceiling, the allowlist, the
+ * session key, the balance, and the contract's own identity, including whether its code is the
+ * build this page deploys. Every group carries the stamp of the block it was read at.
  *
  * A session key with no expiry is shown as a danger, never as a neutral "none": the vault's
  * promise is a key bounded in time, and an unbounded one breaks it.
+ *
+ * A contract can answer any uint256 for a time, so every date goes through readableDate first, and
+ * one that no date can hold is shown as the raw number it is.
  */
 import { useState, type FormEvent } from 'react'
 import { ExternalLink, Loader2 } from 'lucide-react'
@@ -16,6 +19,7 @@ import { isAddress } from 'viem'
 import type { Chain } from '../../../lib/chains'
 import { AGENT_SPEND_POLICY_COMPILER, AGENT_SPEND_POLICY_SOURCE_SHA256 } from '../../../lib/contracts/agent-spend-policy'
 import { OURS_DETAIL, OURS_LABEL } from '../../../lib/arc/known-vaults'
+import { earlierBuildLine, NAMES_OUR_KEY } from '../../../lib/arc/ours'
 import {
   addressUrl,
   localDateTime,
@@ -26,9 +30,8 @@ import {
   viewerTimeZone,
   type VaultSnapshot,
 } from '../../../lib/arc/vault-read'
-import { ZERO_ADDRESS, formatUnitsExact, relativeSeconds, sameAddress, vaultHeadline } from '../../../lib/arc/vault-rules'
+import { REVOKED_SESSION_EXPIRY, ZERO_ADDRESS, formatUnitsExact, readableDate, relativeSeconds, sameAddress, vaultHeadline } from '../../../lib/arc/vault-rules'
 import { Chip, CopyButton, Field, Group, Mono } from '../stellar/bits'
-import { NAMES_OUR_KEY } from '../../../lib/arc/ours'
 import ReadStamp from './ReadStamp'
 
 function Explorer({ href, label = 'Explorer' }: { href: string | null; label?: string }) {
@@ -65,12 +68,14 @@ export default function VaultStatus({
   const stamp = <ReadStamp v={v} refreshing={refreshing} compact />
   const h = vaultHeadline(v)
   const registryUsdc = usdcOf(chain)
-  const resets = new Date(Number(v.resetsAt) * 1000)
+  const resets = readableDate(v.resetsAt)
+  // Ledger-backed and only for our own vault: anyone else's unknown code keeps the warning below.
+  const earlierBuild = ours ? earlierBuildLine(v.network, v.address) : null
 
   return (
     <div className="space-y-3">
       {ours && (
-        <p className="rounded-xl border border-warn/30 bg-warn/10 px-3 py-2 text-xs text-foreground/85">
+        <p className="rounded-xl border border-border bg-foreground/[0.04] px-3 py-2 text-xs text-foreground/85">
           <span className="font-semibold text-foreground">Launch-day vault (ours). </span>
           {OURS_LABEL} {OURS_DETAIL}
         </p>
@@ -93,7 +98,7 @@ export default function VaultStatus({
         className={`rounded-2xl border p-4 sm:p-5 ${h.tone === 'ok' ? 'border-ok/30 bg-ok/[0.06]' : h.tone === 'warn' ? 'border-warn/30 bg-warn/[0.08]' : 'border-danger/30 bg-danger/[0.07]'}`}
       >
         <p className="text-base font-semibold leading-snug text-foreground sm:text-lg">{h.text}</p>
-        {v.autoApproveMax !== 0n && !v.frozen && (
+        {v.autoApproveMax !== 0n && h.canPay && (
           <p className="mt-1 text-sm text-foreground/75">
             A single agent payment above {usd(v.autoApproveMax)} is refused by the contract itself; only the owner can pay more.
           </p>
@@ -106,9 +111,11 @@ export default function VaultStatus({
       <div className="grid gap-3 lg:grid-cols-2">
         <Group title="Status" stamp={stamp}>
           <dl className="grid gap-3 sm:grid-cols-2">
-            <Field label="State">{v.frozen ? <Chip tone="danger">Frozen</Chip> : <Chip tone="ok">Active</Chip>}</Field>
-            <Field label="Operator">
-              {sameAddress(v.operator, ZERO_ADDRESS) ? <Chip tone="warn">None set</Chip> : <Chip tone="ok">Set</Chip>}
+            <Field label="State">
+              <Chip tone={h.tone}>{h.state}</Chip>
+            </Field>
+            <Field label="Agent key (operator)">
+              {sameAddress(v.operator, ZERO_ADDRESS) ? <Chip tone="warn">None set</Chip> : <Chip tone="muted">Set</Chip>}
             </Field>
           </dl>
         </Group>
@@ -119,7 +126,13 @@ export default function VaultStatus({
             <Field label="Spent today">{usd(v.spentToday)}</Field>
             <Field label="Still allowed today">{v.remainingToday === null ? 'No cap, so no daily limit' : usd(v.remainingToday)}</Field>
             <Field label="Resets at">
-              {utcDateTime(v.resetsAt)} ({localDateTime(resets.toISOString())}, {viewerTimeZone(resets)})
+              {resets ? (
+                `${utcDateTime(v.resetsAt)} (${localDateTime(resets.toISOString())}, ${viewerTimeZone(resets)})`
+              ) : (
+                <>
+                  Unreadable: this contract's today() answered <Mono>{v.today.toString()}</Mono>, which is not a day.
+                </>
+              )}
             </Field>
           </dl>
         </Group>
@@ -153,17 +166,26 @@ export default function VaultStatus({
       </Group>
 
       <div className="grid gap-3 lg:grid-cols-2">
-        <Group title="Session key" stamp={stamp}>
+        <Group title="When the agent's key ends (session key)" stamp={stamp}>
           {v.sessionKeyExpiry === 0n ? (
             <p className="text-sm text-foreground">
-              <Chip tone="danger">No time bound</Chip> The operator key never expires. The owner should set an expiry before this vault holds money.
+              <Chip tone="danger">No time bound</Chip> The agent's key never expires. The owner should set an expiry before this vault holds money.
+            </p>
+          ) : v.sessionKeyExpiry === REVOKED_SESSION_EXPIRY ? (
+            <p className="text-sm text-foreground">
+              <Chip tone="warn">Revoked</Chip> The owner ended this key. The owner can give it a new expiry.
+            </p>
+          ) : readableDate(v.sessionKeyExpiry) === null ? (
+            <p className="text-sm text-foreground">
+              <Chip tone="danger">Unreadable expiry</Chip> It reads <Mono>{v.sessionKeyExpiry.toString()}</Mono>, too far ahead to be a date, so the
+              key has no real time bound.
             </p>
           ) : (
             <div className="flex flex-wrap items-center gap-2 text-sm text-foreground">
               <span>
                 {v.expired ? 'Expired' : 'Expires'} {utcDateTime(v.sessionKeyExpiry)} ({relativeSeconds(v.sessionKeyExpiry, v.chainTime)} in chain time)
               </span>
-              {v.expired ? <Chip tone="danger">Expired</Chip> : <Chip tone="ok">Active</Chip>}
+              {v.expired ? <Chip tone="danger">Expired</Chip> : <Chip tone="ok">Not expired</Chip>}
             </div>
           )}
         </Group>
@@ -193,6 +215,10 @@ export default function VaultStatus({
                 solc {AGENT_SPEND_POLICY_COMPILER.solc.split('+')[0]}. Its code matches byte for byte with the owner and token below in every
                 slot the contract reads them from, so the owner shown is the key it obeys.
               </>
+            ) : earlierBuild ? (
+              <>
+                <Chip tone="muted">Earlier build of ours</Chip> {earlierBuild}
+              </>
             ) : (
               <>
                 <Chip tone="warn">Not this page's build</Chip> Its views answer like the vault, but its code is not the build this page deploys
@@ -209,7 +235,7 @@ export default function VaultStatus({
               <Explorer href={addressUrl(chain, v.owner)} />
             </span>
           </Field>
-          <Field label="Operator (the agent's key: pay() only)" wide>
+          <Field label="Agent key (operator): it can only pay, within the limits" wide>
             <span className="flex flex-wrap items-center gap-2">
               <Mono>{v.operator}</Mono>
               {sameAddress(v.operator, v.owner) && <Chip tone="danger">Same key as the owner</Chip>}

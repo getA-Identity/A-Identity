@@ -21,10 +21,11 @@ import { useCallback, useEffect, useMemo, useState, type FormEvent } from 'react
 import { ArrowLeft, CheckCircle2, Loader2, ShieldAlert } from 'lucide-react'
 import type { Chain } from '../../../lib/chains'
 import { track } from '../../../lib/analytics'
-import type { SetupState, TxRecord } from '../../../lib/arc/pending'
+import { AGENT_KEY_CAN, AGENT_KEY_CANNOT, CALL_FEE_ABOUT, CONFIRMATIONS, FEES_LINE, IF_A_STEP_FAILS, OWNER_KEY_LINE, REVIEW_LINE, WALLET_GONE, WHAT_IS_A_VAULT, WRONG_ACCOUNT } from '../../../lib/arc/deploy-copy'
+import { loadSetup, type SetupState, type TxRecord } from '../../../lib/arc/pending'
 import { FUND_RISK } from '../../../lib/arc/ours'
 import { deployReadback } from '../../../lib/arc/receipt'
-import { deployEnd, fundingUnresolved, predictedVault, setupStep, vaultToLookFor, withRecord } from '../../../lib/arc/tx-rules'
+import { deployEnd, fundingUnresolved, liveOf, predictedVault, setupDrift, setupStep, vaultToLookFor, withRecord } from '../../../lib/arc/tx-rules'
 import {
   ARC_CHAINS,
   arcChainFor,
@@ -84,11 +85,16 @@ const WALLET_SLOW_MS = 30_000
 const SENDING_NEXT =
   "Check your wallet's activity. If this page finds the vault at its address it carries on from there. If your wallet shows nothing was sent, use the start again button below."
 
-const STEPS: { key: string; label: string }[] = [
-  { key: 'deploy', label: '1. Deploy, owned by you' },
-  { key: 'expiry', label: "2. Bound the agent's key in time" },
-  { key: 'fund', label: '3. Fund it' },
-]
+const STEPS: { key: string; label: string }[] = CONFIRMATIONS.map((c, i) => ({ key: String(i), label: `${i + 1}. ${c.title}` }))
+
+/** Why nothing can be signed right now, and what to do. Shown wherever a step needs the wallet. */
+function WalletGap({ wrongAccount }: { wrongAccount?: boolean }) {
+  return (
+    <p role="alert" className="rounded-xl border border-warn/30 bg-warn/10 px-3 py-2 text-xs text-foreground">
+      {wrongAccount ? WRONG_ACCOUNT : WALLET_GONE}
+    </p>
+  )
+}
 
 export default function DeployFlow({
   chain: pageChain,
@@ -136,8 +142,12 @@ export default function DeployFlow({
   const step = setupStep(setup, review !== null, snapshot)
   const account = wallet.account
   const provider = wallet.wallet?.provider ?? null
+  const walletGone = !provider || !account
   const ownerMismatch = Boolean(setup && account && !sameAddress(account, setup.owner))
   const startedAt = setup?.startedAt ?? null
+  // Only ever the current setup's own vault: a read of a vault another tab has since moved on from
+  // must not be what an expiry or a funding is built from.
+  const liveVault = setup ? liveOf(setup, snapshot) : null
   // How a deploy ended with no vault to continue with. A contract its receipt named is kept in the
   // setup, and is never offered a clean slate: it belongs to the owner and has no expiry yet.
   const ended = deployEnd(setup)
@@ -149,6 +159,32 @@ export default function DeployFlow({
     },
     [storePatch, startedAt],
   )
+
+  // A setup is known by its startedAt. Whatever was read for the last one is not about this one.
+  useEffect(() => {
+    setSnapshot(null)
+    setSnapshotNote(null)
+    setRefundConfirmed(false)
+  }, [startedAt])
+
+  /**
+   * The setup on screen, checked against what the browser holds right now. Null when they agree.
+   * A disagreement is said here, not by the form: catching this tab up unmounts that form.
+   */
+  const driftNow = useCallback(() => {
+    const drift = setupDrift(setup, loadSetup(), snapshot)
+    if (drift) {
+      setInvalid(drift)
+      // Catch this tab up even if the other tab's storage event has not arrived.
+      if (startedAt) storePatch(startedAt, (s) => s)
+    }
+    return drift
+  }, [setup, snapshot, startedAt, storePatch])
+
+  // A wallet that came back makes "your wallet is not connected" untrue.
+  useEffect(() => {
+    if (!walletGone) setInvalid((v) => (v === WALLET_GONE ? null : v))
+  }, [walletGone])
 
   // The vault, read back whenever the setup has one and is between steps.
   const readAddress = setup?.vault ?? created
@@ -262,7 +298,16 @@ export default function DeployFlow({
   }
 
   const confirmDeploy = () => {
-    if (!review || !provider || !account || parsed.c === null || parsed.a === null || parsed.f === null) return
+    if (!review) return
+    if (!provider || !account) {
+      setInvalid(WALLET_GONE)
+      return
+    }
+    if (parsed.c === null || parsed.a === null || parsed.f === null) {
+      setPrepared(null)
+      setInvalid('The amounts in the form are no longer valid. Check them, then review the deploy again.')
+      return
+    }
     // The owner is the one the review showed. A wallet that changed account since then gets the
     // review again rather than a deploy for an owner nobody looked at.
     if (!sameAddress(account, review.from)) {
@@ -279,7 +324,11 @@ export default function DeployFlow({
     // network select may have moved since, and a deploy is tracked on the network it was sent to.
     const on = review.chain
     const onUsdc = usdcOf(on)
-    if (!onUsdc) return
+    if (!onUsdc) {
+      setInvalid(`${on.name} has no USDC in the registry, so no vault is deployed there.`)
+      return
+    }
+    setInvalid(null)
     const input = { owner: review.from, operator: operator.trim(), dailyCap: parsed.c, autoApproveMax: parsed.a, funding: parsed.f }
     const deployArgs = { owner: review.from, operator: input.operator, usdc: onUsdc.address, dailyCap: input.dailyCap, autoApproveMax: input.autoApproveMax }
     void run('deploy', async (onStep) => {
@@ -333,12 +382,23 @@ export default function DeployFlow({
   }
 
   const setExpiry = () => {
-    if (!setup || !snapshot || !provider) return
+    if (!setup) return
+    if (!provider) {
+      setInvalid(WALLET_GONE)
+      return
+    }
+    setFailure(null)
+    // Read the slot before anything is prepared: this tab may be showing a setup that has moved on.
+    if (driftNow() || !liveVault) return
+    setInvalid(null)
+    const vault = liveVault
     void run('expiry', async (onStep) => {
       onStep('simulating')
-      const p = await prepareOwnerCall(chain, snapshot, { fn: 'extend', seconds: setup.sessionSeconds })
+      const p = await prepareOwnerCall(chain, vault, { fn: 'extend', seconds: setup.sessionSeconds })
+      // Preparing takes a moment, and the other tab keeps running.
+      if (driftNow()) return null
       const hash = await sendPrepared(provider, p, onStep)
-      const record: TxRecord = { ...recordOf(p, hash, snapshot.address), action: 'expiry' }
+      const record: TxRecord = { ...recordOf(p, hash, vault.address), action: 'expiry' }
       patch((s) => ({ ...s, expiryTx: record }))
       track('arc_vault_owner_action', { network: networkWord(chain), action: 'expiry', outcome: 'submitted' })
       return hash
@@ -371,10 +431,7 @@ export default function DeployFlow({
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
           <h2 className="text-base font-semibold text-foreground">Deploy a vault you own</h2>
-          <p className="mt-1 max-w-2xl text-xs text-foreground/70">
-            Your wallet deploys an AgentSpendPolicy vault with your account as its owner, then bounds the agent's key in time, then funds it.
-            Three transactions, each signed by you. A-Identity holds no key and signs nothing on this page.
-          </p>
+          <p className="mt-1 max-w-2xl text-sm text-foreground/75">{WHAT_IS_A_VAULT}</p>
         </div>
         <Button size="sm" variant="outline" onClick={onClose}>
           <ArrowLeft size={14} aria-hidden="true" /> Back to vaults
@@ -404,14 +461,44 @@ export default function DeployFlow({
 
       {!chain.testnet ? (
         <p className="rounded-xl border border-warn/30 bg-warn/10 px-3 py-2 text-xs text-foreground/85">
-          <span className="font-semibold text-foreground">{networkName(chain)}: real USDC.</span> AgentSpendPolicy has had internal reviews
-          only, no external audit. Keep to dust amounts: the defaults are a 1 USDC daily cap and a 0.25 USDC ceiling on purpose.
+          <span className="font-semibold text-foreground">{networkName(chain)}: real USDC.</span> {REVIEW_LINE} Start small: the defaults are a 1
+          USDC daily limit and a 0.25 USDC largest payment on purpose.
         </p>
       ) : (
         <p className="rounded-xl border border-border bg-background/60 px-3 py-2 text-xs text-foreground/75">
-          <span className="font-semibold text-foreground">{networkName(chain)}: rehearsal.</span> Test USDC only (faucet.circle.com). A vault here
-          is not an Arc Mainnet vault and does not count for anything.
+          <span className="font-semibold text-foreground">{networkName(chain)}: a practice run.</span> It uses free test USDC, from
+          faucet.circle.com, so nothing here costs real money. A vault here is not an Arc Mainnet vault and does not count for anything. {REVIEW_LINE}
         </p>
+      )}
+
+      {(step === 'form' || step === 'review') && (
+        <div className="grid gap-3 lg:grid-cols-2">
+          <div className="rounded-xl border border-border bg-background/60 p-4 text-xs text-foreground/80">
+            <h3 className="text-sm font-semibold text-foreground">Your wallet will ask you to confirm up to three times</h3>
+            <ol className="mt-2 space-y-2">
+              {CONFIRMATIONS.map((c, i) => (
+                <li key={c.title}>
+                  <span className="font-semibold text-foreground">
+                    {i + 1}. {c.title}.
+                  </span>{' '}
+                  {c.does} <span className="font-semibold text-foreground">{c.cost}</span>
+                </li>
+              ))}
+            </ol>
+            <p className="mt-2">{FEES_LINE}</p>
+          </div>
+          <div className="rounded-xl border border-border bg-background/60 p-4 text-xs text-foreground/80">
+            <h3 className="text-sm font-semibold text-foreground">Who holds which key</h3>
+            <p className="mt-2">
+              <span className="font-semibold text-foreground">You: </span>
+              {OWNER_KEY_LINE}
+            </p>
+            <p className="mt-2">
+              <span className="font-semibold text-foreground">Your agent: </span>
+              {AGENT_KEY_CAN} {AGENT_KEY_CANNOT}
+            </p>
+          </div>
+        </div>
       )}
 
       {ownerMismatch && setup && (
@@ -437,7 +524,7 @@ export default function DeployFlow({
             >
               {ARC_CHAINS.map((c) => (
                 <option key={c.caip2} value={c.caip2}>
-                  {c.testnet ? 'Arc testnet: test USDC, for a rehearsal' : 'Arc Mainnet: real USDC (the default)'}
+                  {c.testnet ? 'Arc testnet: free test USDC, for a practice run' : 'Arc Mainnet: real USDC (the default)'}
                 </option>
               ))}
             </select>
@@ -447,16 +534,16 @@ export default function DeployFlow({
             <div className="mt-1 text-sm text-foreground">
               {account ? (
                 <>
-                  <Mono>{account}</Mono> <span className="text-xs text-foreground/60">(your connected account: the only key that can freeze, change the limits, withdraw or replace the operator)</span>
+                  <Mono>{account}</Mono> <span className="text-xs text-foreground/60">(your connected account: the only one that can freeze the vault, change its limits, take USDC out or replace the agent key)</span>
                 </>
               ) : (
-                <span className="text-foreground/70">Connect your wallet above. The connected account becomes the owner.</span>
+                <span className="text-foreground/70">Connect your wallet at the top of this page. The account you connect becomes the owner.</span>
               )}
             </div>
           </div>
           <div className="sm:col-span-2">
             <label htmlFor="deploy-operator" className="text-[11px] font-semibold text-foreground/65">
-              Operator: the agent's own key, which can call pay() within the limits and nothing else
+              Agent key address (the contract calls it the operator)
             </label>
             <input
               id="deploy-operator"
@@ -468,22 +555,25 @@ export default function DeployFlow({
               placeholder="0x... (paste the agent's address; it must not be your owner account)"
               className={`${INPUT} font-mono text-xs`}
             />
+            <p className="mt-1 text-[11px] text-foreground/60">Get this from whoever runs your agent. It is an address, not a secret. Never paste a private key here.</p>
           </div>
           <div>
             <label htmlFor="deploy-cap" className="text-[11px] font-semibold text-foreground/65">
-              Daily cap (USDC, above 0)
+              Daily limit (USDC, above 0)
             </label>
             <input id="deploy-cap" inputMode="decimal" value={cap} onChange={(e) => setCap(e.target.value)} className={INPUT} />
+            <p className="mt-1 text-[11px] text-foreground/60">The most the agent can spend in one day. The day resets at 00:00 UTC.</p>
           </div>
           <div>
             <label htmlFor="deploy-ceiling" className="text-[11px] font-semibold text-foreground/65">
-              Largest payment without you (USDC, above 0)
+              Largest single payment (USDC, above 0)
             </label>
             <input id="deploy-ceiling" inputMode="decimal" value={ceiling} onChange={(e) => setCeiling(e.target.value)} className={INPUT} />
+            <p className="mt-1 text-[11px] text-foreground/60">The contract refuses any agent payment above this. You can still pay more yourself.</p>
           </div>
           <div>
             <label htmlFor="deploy-session" className="text-[11px] font-semibold text-foreground/65">
-              The agent's key is valid for (from the chain's time at step 2)
+              The agent's key ends after (counted from step 2)
             </label>
             <select id="deploy-session" value={seconds} onChange={(e) => setSeconds(Number(e.target.value))} className={INPUT}>
               {SESSION_CHOICES.map((c) => (
@@ -492,20 +582,22 @@ export default function DeployFlow({
                 </option>
               ))}
             </select>
+            <p className="mt-1 text-[11px] text-foreground/60">You can extend it or end it early later, from the vault's page.</p>
           </div>
           <div>
             <label htmlFor="deploy-funding" className="text-[11px] font-semibold text-foreground/65">
-              Fund with (USDC, sent at step 3; 0 to fund later)
+              USDC to put in at step 3 (0 to add it later)
             </label>
             <input id="deploy-funding" inputMode="decimal" value={funding} onChange={(e) => setFunding(e.target.value)} className={INPUT} />
+            <p className="mt-1 text-[11px] text-foreground/60">Only you can take it back out. Your agent can spend it within your limits.</p>
           </div>
           {parsed.c !== null && parsed.a !== null && parsed.c > 0n && parsed.a > 0n && capsWarning(parsed.c, parsed.a) && (
             <p className="text-xs text-foreground/75 sm:col-span-2">{capsWarning(parsed.c, parsed.a)}</p>
           )}
           {parsed.f !== null && aboveSoftWarn(parsed.f, decimals) && (
             <p className="text-xs font-semibold text-warn sm:col-span-2">
-              More than 10 USDC. The caps limit what the agent can spend per day, not what the vault holds; fund only what you are ready to
-              lose to a bug in an unaudited contract.
+              More than 10 USDC. The limits cap what the agent can spend per day, not what the vault holds. Put in only what you are ready to
+              lose to a bug in a contract with no outside audit.
             </p>
           )}
           <div className="flex flex-wrap items-center gap-2 sm:col-span-2">
@@ -513,32 +605,33 @@ export default function DeployFlow({
               {busy && <Loader2 size={14} className="animate-spin" aria-hidden="true" />}
               {label ?? 'Review the deploy'}
             </Button>
-            <span className="text-xs text-foreground/60">Review reads USDC's own decimals, simulates the deploy and checks your gas. Nothing is signed yet.</span>
+            <span className="text-xs text-foreground/60">This does a free practice run of the deploy and checks you have enough USDC for the fees. Nothing is signed or sent.</span>
           </div>
         </form>
       )}
 
       {step === 'review' && review && (
         <div className="space-y-3">
-          <PreparedView p={review} decimals={decimals} title="Review: deploy your vault (transaction 1 of 3)" />
+          <PreparedView p={review} decimals={decimals} title="Review: create your vault (confirmation 1 of 3)" />
           <div className="rounded-xl border border-border bg-background/60 p-4 text-xs text-foreground/80">
-            <div className="font-semibold text-foreground">Then, after the deploy lands:</div>
+            <div className="font-semibold text-foreground">Then, once your vault exists:</div>
             <ul className="mt-1 list-disc space-y-0.5 pl-4">
               <li>
-                Transaction 2: setSessionKeyExpiry to the chain's time plus {SESSION_CHOICES.find((c) => c.seconds === seconds)?.label ?? `${seconds} seconds`}.
+                Confirmation 2: the agent's key ends {SESSION_CHOICES.find((c) => c.seconds === seconds)?.label ?? `${seconds} seconds`} after this step lands.
                 Until it lands, the agent's key has no time bound, and the page says so.
               </li>
               <li>
-                Transaction 3: {parsed.f && parsed.f > 0n ? `a ${formatUnitsExact(parsed.f, decimals)} USDC transfer from your account into the vault.` : 'none: you chose to fund later.'}
+                Confirmation 3: {parsed.f && parsed.f > 0n ? `${formatUnitsExact(parsed.f, decimals)} USDC goes from your account into the vault.` : 'none, because you chose to add USDC later.'}
               </li>
               <li>
-                Each of those costs about 0.001 USDC of network fee while Arc's base fee sits at its 20 gwei floor. Your balance was checked to
-                cover all three at the fee quoted here, plus the funding.
+                Each of those costs {CALL_FEE_ABOUT} in network fees while Arc's fee is at its usual level. Your balance was checked to cover all
+                three, plus the USDC you put in.
               </li>
             </ul>
           </div>
+          {walletGone && <WalletGap />}
           <div className="flex flex-wrap items-center gap-2">
-            <Button size="sm" onClick={confirmDeploy} disabled={busy !== null || ownerMismatch}>
+            <Button size="sm" onClick={confirmDeploy} disabled={busy !== null || ownerMismatch || walletGone}>
               {busy && <Loader2 size={14} className="animate-spin" aria-hidden="true" />}
               {label ?? 'Deploy from my wallet'}
             </Button>
@@ -563,12 +656,12 @@ export default function DeployFlow({
           {busy === 'deploy' ? (
             <>
               <div className="flex items-center gap-2 font-semibold">
-                <Loader2 size={14} className="animate-spin" aria-hidden="true" /> Waiting for your wallet to send the deploy and return its hash.
+                <Loader2 size={14} className="animate-spin" aria-hidden="true" /> Waiting for you to confirm in your wallet.
               </div>
               {walletSlow && (
                 <>
                   <div className="mt-1 text-xs text-foreground/80">
-                    A phone wallet can send it and never tell this page. This page looks for the vault at <Mono>{setup.intent.predicted}</Mono> every{' '}
+                    A phone wallet can send it and never tell this page. This page looks for your vault at <Mono>{setup.intent.predicted}</Mono> every{' '}
                     {LOOK_MS / 1000} seconds and carries on when it is there. Reloading this page is safe: the setup is kept in this browser.
                     {looked && !looked.found && ` Last look at ${new Date(looked.at).toLocaleTimeString()}: no vault there yet${looked.why ? ` (${looked.why})` : ''}.`}
                   </div>
@@ -582,10 +675,10 @@ export default function DeployFlow({
             </>
           ) : (
             <>
-              <div className="font-semibold">Your wallet was asked to deploy this vault, and no transaction hash came back to this page.</div>
+              <div className="font-semibold">Your wallet was asked to create this vault, and this page has not heard back.</div>
               <div className="mt-1 text-xs text-foreground/80">
                 If your wallet sent it (a phone wallet can approve after this tab closed), the vault appears at <Mono>{setup.intent.predicted}</Mono>,
-                the address your account's next nonce creates, and this page picks it up from there. It looks every {LOOK_MS / 1000} seconds.
+                the address your account's next transaction creates, and this page picks it up from there. It looks every {LOOK_MS / 1000} seconds.
                 {looked && !looked.found && ` Last look at ${new Date(looked.at).toLocaleTimeString()}: no vault there yet${looked.why ? ` (${looked.why})` : ''}.`}
               </div>
               <div className="mt-2 flex flex-wrap items-center gap-2">
@@ -659,8 +752,8 @@ export default function DeployFlow({
             </p>
           ) : ended?.kind === 'replaced' ? (
             <p className="text-xs text-foreground/80">
-              This hash can no longer land, and no vault that reads back as asked came from it. What replaced it is not known from here: check your
-              wallet's activity before you deploy again.
+              This transaction can no longer land, and no vault that reads back as asked came from it. This page cannot tell what replaced it:
+              check your wallet's activity before you deploy again.
             </p>
           ) : (
             <p className="text-xs text-foreground/75">No vault came out of this deploy, so there is nothing to bound or fund. Start again when ready.</p>
@@ -688,8 +781,8 @@ export default function DeployFlow({
               <div className="min-w-0">
                 <div className="font-semibold text-foreground">Your vault exists, but its agent key has no time bound yet.</div>
                 <div className="mt-1 text-foreground/80">
-                  Vault <Mono>{setup.vault}</Mono>. Until transaction 2 lands, the operator can pay inside the caps with no end date. Set the
-                  expiry now; nothing is funded before it.
+                  Vault <Mono>{setup.vault}</Mono>. Until confirmation 2 lands, the agent's key can pay within your limits with no end date. Set the
+                  end date now. No USDC goes in before it. This moves no USDC and costs {CALL_FEE_ABOUT} in network fees.
                 </div>
               </div>
             </div>
@@ -705,13 +798,13 @@ export default function DeployFlow({
           )}
           {step === 'expiry' && (
             <div className="flex flex-wrap items-center gap-2">
-              <Button size="sm" onClick={setExpiry} disabled={busy !== null || !snapshot || ownerMismatch || !provider}>
+              <Button size="sm" onClick={setExpiry} disabled={busy !== null || !liveVault || ownerMismatch || walletGone}>
                 {busy && <Loader2 size={14} className="animate-spin" aria-hidden="true" />}
                 {label ??
                   `Set it now: valid for ${SESSION_CHOICES.find((c) => c.seconds === setup.sessionSeconds)?.label ?? `${setup.sessionSeconds} seconds`}`}
               </Button>
-              {!snapshot && <span className="text-xs text-foreground/60">{snapshotNote ?? 'Reading the new vault back...'}</span>}
-              {!provider && <span className="text-xs text-foreground/60">Connect the owner wallet above to sign it.</span>}
+              {!liveVault && <span className="text-xs text-foreground/60">{snapshotNote ?? 'Reading the new vault back...'}</span>}
+              {(walletGone || ownerMismatch) && <div className="w-full"><WalletGap wrongAccount={!walletGone} /></div>}
             </div>
           )}
         </div>
@@ -732,50 +825,56 @@ export default function DeployFlow({
           )}
           {step === 'fund' && fundingUnresolved(setup.fundTx) && !refundConfirmed && (
             <div role="alert" className="rounded-xl border border-warn/30 bg-warn/10 p-4 text-xs text-foreground/85">
-              <div className="font-semibold text-foreground">The first funding's fate is not known to this page.</div>
+              <div className="font-semibold text-foreground">This page does not know what happened to the first USDC transfer.</div>
               <div className="mt-1">
-                {setup.fundTx?.outcome === 'replaced'
-                  ? 'Its nonce went to another transaction: if that was a speed-up, the USDC may already be in the vault.'
+                {setup.fundTx?.outcome === 'replaced' || setup.fundTx?.likelyReplaced
+                  ? 'Your wallet appears to have sent another transaction in its place: if that was a speed-up, the USDC may already be in the vault.'
                   : 'You stopped tracking it with no receipt seen: it may still land.'}{' '}
-                The vault reads {snapshot ? `${formatUnitsExact(snapshot.balance, decimals)} USDC` : 'as not yet read'}. Check your wallet's activity
+                The vault reads {liveVault ? `${formatUnitsExact(liveVault.balance, decimals)} USDC` : 'as not yet read'}. Check your wallet's activity
                 before sending USDC again.
               </div>
               <Button size="sm" variant="outline" className="mt-2" onClick={() => setRefundConfirmed(true)}>
-                I checked: send a new funding
+                I checked: send USDC again
               </Button>
             </div>
           )}
-          {step === 'fund' && snapshot && provider && account && !ownerMismatch && (!fundingUnresolved(setup.fundTx) || refundConfirmed) && (
+          {step === 'fund' && liveVault && provider && account && !ownerMismatch && (!fundingUnresolved(setup.fundTx) || refundConfirmed) && (
             <div className="rounded-xl border border-border bg-background/60 p-4">
-              <h3 className="text-sm font-semibold text-foreground">Transaction 3 of 3: fund the vault</h3>
+              <h3 className="text-sm font-semibold text-foreground">Confirmation 3 of 3: put USDC in the vault</h3>
               <p className="mt-1 text-xs text-foreground/70">
-                A USDC transfer from your account to <Mono>{setup.vault}</Mono>. The vault's key is bounded in time now. {FUND_RISK} The
-                contract has not been audited, so send what you can afford to lose.
+                This sends USDC from your account to <Mono>{setup.vault}</Mono>, plus a network fee of {CALL_FEE_ABOUT}. The agent's key has an end
+                date now. {FUND_RISK} {REVIEW_LINE}
               </p>
               <div className="mt-3">
                 <FundForm
+                  key={`${setup.startedAt}:${setup.vault}`}
                   chain={chain}
-                  vault={snapshot}
+                  vault={liveVault}
                   provider={provider}
                   account={account}
                   held={false}
                   initial={formatUnitsExact(setup.funding, decimals)}
+                  stillCurrent={() => !driftNow()}
                   onSubmitted={(r) => {
                     setRefundConfirmed(false)
                     patch((s) => ({ ...s, fundTx: { ...r, action: 'fund' } }))
                   }}
                 />
               </div>
-              <button
-                type="button"
-                onClick={() => patch((s) => ({ ...s, fundSkipped: true }))}
-                className="mt-3 text-xs font-semibold text-accent underline underline-offset-2"
-              >
-                Skip funding for now
-              </button>
             </div>
           )}
-          {step === 'fund' && !snapshot && <p className="text-xs text-foreground/60">{snapshotNote ?? 'Reading the vault back...'}</p>}
+          {step === 'fund' && (walletGone || ownerMismatch) && <WalletGap wrongAccount={!walletGone} />}
+          {step === 'fund' && !liveVault && <p className="text-xs text-foreground/60">{snapshotNote ?? 'Reading the vault back...'}</p>}
+          {/* Needs no wallet and sends nothing, so it stays on offer whatever else is missing. */}
+          {step === 'fund' && (
+            <button
+              type="button"
+              onClick={() => patch((s) => ({ ...s, fundSkipped: true }))}
+              className="text-xs font-semibold text-accent underline underline-offset-2"
+            >
+              Skip this for now: add USDC later from the vault's page
+            </button>
+          )}
         </div>
       )}
 
@@ -786,15 +885,18 @@ export default function DeployFlow({
             <div className="font-semibold text-foreground">Your vault is set up.</div>
             <div className="mt-1 text-foreground/80">
               <Mono>{setup.vault}</Mono> on {networkName(chain)}, owned by <Mono>{setup.owner}</Mono>
-              {snapshot ? (
+              {liveVault ? (
                 <>
-                  , session key {snapshot.sessionKeyExpiry === 0n ? <Chip tone="danger">no time bound</Chip> : 'bounded in time'}, balance{' '}
-                  {formatUnitsExact(snapshot.balance, decimals)} USDC.
+                  , agent key {liveVault.sessionKeyExpiry === 0n ? <Chip tone="danger">no time bound</Chip> : 'with an end date'}, balance{' '}
+                  {formatUnitsExact(liveVault.balance, decimals)} USDC.
                 </>
               ) : (
                 '.'
               )}
-              {setup.fundSkipped && ' Funding was skipped: send USDC to the vault from its page when ready.'}
+              {setup.fundSkipped && ' You skipped putting USDC in: send it to the vault from its page when ready.'}
+            </div>
+            <div className="mt-1 text-foreground/80">
+              Next, give your agent this vault's address. You can freeze the vault, change its limits or take USDC out at any time from its page.
             </div>
             <div className="mt-3 flex flex-wrap items-center gap-2">
               <Button size="sm" onClick={() => onOpenVault(setup.network, setup.vault as string)}>
@@ -814,6 +916,18 @@ export default function DeployFlow({
         </p>
       )}
       {failure && <FailureNotice failure={failure} next={step === 'sending' ? SENDING_NEXT : undefined} />}
+
+      <details className="rounded-xl border border-border bg-background/60 p-3 text-xs text-foreground/80">
+        <summary className="cursor-pointer font-semibold text-foreground">What to do if a step fails</summary>
+        <ul className="mt-2 space-y-1.5">
+          {IF_A_STEP_FAILS.map((f) => (
+            <li key={f.when}>
+              <span className="font-semibold text-foreground">{f.when}: </span>
+              {f.then}
+            </li>
+          ))}
+        </ul>
+      </details>
 
       {setup && step !== 'done' && step !== 'deploy-failed' && (
         <p className="text-[11px] text-foreground/55">

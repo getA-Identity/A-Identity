@@ -29,6 +29,7 @@ export default function FundForm({
   held,
   initial = '',
   confirmLabel = 'Confirm in wallet',
+  stillCurrent,
 }: {
   chain: Chain
   vault: VaultSnapshot
@@ -38,6 +39,8 @@ export default function FundForm({
   held: boolean
   initial?: string
   confirmLabel?: string
+  /** Asked before preparing and again before the wallet. False stops it; the caller says why. */
+  stillCurrent?: () => boolean
 }) {
   const [amount, setAmount] = useState(initial)
   const [invalid, setInvalid] = useState<string | null>(null)
@@ -59,6 +62,7 @@ export default function FundForm({
   const review = (e: FormEvent) => {
     e.preventDefault()
     setFailure(null)
+    if (stillCurrent && !stillCurrent()) return
     const raw = units()
     if (raw === null) return
     void run('prepare', async (onStep) => {
@@ -71,6 +75,10 @@ export default function FundForm({
 
   const confirm = () => {
     if (!prepared) return
+    if (stillCurrent && !stillCurrent()) {
+      setPrepared(null)
+      return
+    }
     void run('confirm', async (onStep) => {
       let p = prepared
       if (preparedStale(p)) {
@@ -97,8 +105,8 @@ export default function FundForm({
           <PreparedView p={prepared} decimals={vault.decimals} />
           {raw !== null && aboveSoftWarn(raw, vault.decimals) && (
             <p className="text-xs font-semibold text-warn">
-              This is more than 10 USDC into a contract with internal reviews only. The caps limit what the agent can spend per day, not what
-              the vault holds.
+              This is more than 10 USDC into a contract with internal reviews and no outside audit. The limits cap what the agent can spend per
+              day, not what the vault holds.
             </p>
           )}
           <div className="flex flex-wrap items-center gap-2">

@@ -20,7 +20,7 @@
  * network is asked about: the network is never guessed.
  */
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { useSearchParams } from 'react-router-dom'
+import { Link, useSearchParams } from 'react-router-dom'
 import { Loader2, RefreshCw, ShieldAlert } from 'lucide-react'
 import { getAddress, isAddress } from 'viem'
 import AppPage from '../../components/app/AppPage'
@@ -32,6 +32,7 @@ import OwnerControls from '../../components/app/arc/OwnerControls'
 import OwnerMatch from '../../components/app/arc/OwnerMatch'
 import TxReceipt from '../../components/app/arc/TxReceipt'
 import VaultEvents from '../../components/app/arc/VaultEvents'
+import VaultBoundary from '../../components/app/arc/VaultBoundary'
 import VaultPicker from '../../components/app/arc/VaultPicker'
 import VaultStatus from '../../components/app/arc/VaultStatus'
 import WalletBar from '../../components/app/arc/WalletBar'
@@ -57,7 +58,7 @@ import {
   type ReadFailure,
   type VaultSnapshot,
 } from '../../lib/arc/vault-read'
-import { sameAddress } from '../../lib/arc/vault-rules'
+import { deployFormRefused, sameAddress } from '../../lib/arc/vault-rules'
 
 type ReadState = {
   /** The vault this state is about, so a late answer for another vault is dropped. */
@@ -85,6 +86,8 @@ export default function ArcVault() {
   const wallet = useArcWallet()
   const store = useArcSetup()
   const setup = store.setup
+  // Mainnet is the form's default and it is real money, so a typo in a deploy link opens no form.
+  const deployRefused = deployMode && deployFormRefused(networkParam, Boolean(chain), Boolean(setup && arcChainFor(setup.network)))
   // What the build knows, from the first render; the backend's rows join it when it answers.
   const [known, setKnown] = useState<KnownVaults | null>(seededKnownVaults)
   // Set once someone starts on an address of their own: nothing moves the page for them after that.
@@ -185,7 +188,7 @@ export default function ArcVault() {
   return (
     <AppPage
       title="Arc vault"
-      description="The live state of any AgentSpendPolicy vault on Arc, read straight from the chain with no wallet and no account. Deploy a vault you own from your own wallet, and run it: A-Identity holds no key and signs nothing on this page."
+      description="See what any spending vault on Arc holds and what its agent can do, read live from the network with no wallet and no account. Or deploy a vault you own, from your own wallet, and run it: A-Identity holds no key and signs nothing on this page."
     >
       <div className="space-y-4">
         <WalletBar wallet={wallet} target={deployMode && setup ? (arcChainFor(setup.network) ?? target) : target} />
@@ -201,7 +204,7 @@ export default function ArcVault() {
                 <div className="min-w-0 text-foreground">
                   {alert === 'unbounded' ? (
                     <>
-                      <span className="font-semibold">This browser has not seen a session key expiry land for the vault you deployed.</span>{' '}
+                      <span className="font-semibold">This browser has not seen an end date set for the agent key of the vault you deployed.</span>{' '}
                       <span className="break-all font-mono text-xs">{setupAt}</span>. Until one is set, its agent key has no time bound.
                     </>
                   ) : alert === 'untracked' ? (
@@ -229,8 +232,8 @@ export default function ArcVault() {
                     </>
                   ) : (
                     <>
-                      <span className="font-semibold">Your wallet was asked to deploy a vault from this browser, and no transaction hash came back.</span>{' '}
-                      If it sent the deploy, the vault appears at <Mono>{setupAt ?? 'the address your next nonce creates'}</Mono> with an agent key
+                      <span className="font-semibold">Your wallet was asked to create a vault from this browser, and this page has not heard back.</span>{' '}
+                      If it sent the deploy, the vault appears at <Mono>{setupAt ?? 'the address your next transaction creates'}</Mono> with an agent key
                       that has no time bound until the setup sets one.
                     </>
                   )}
@@ -247,20 +250,24 @@ export default function ArcVault() {
           </div>
         )}
 
-        {deployMode ? (
-          <DeployFlow
-            chain={target}
-            onChainChange={(caip2) => setParams({ network: caip2, deploy: '1' }, { replace: true })}
-            wallet={wallet}
-            store={store}
-            onOpenVault={(net, addr) => pick(net, addr)}
-            onClose={closeDeploy}
-          />
+        {deployRefused ? (
+          <DeployLinkRefused networkParam={networkParam ?? ''} />
+        ) : deployMode ? (
+          <VaultBoundary what="The setup">
+            <DeployFlow
+              chain={target}
+              onChainChange={(caip2) => setParams({ network: caip2, deploy: '1' }, { replace: true })}
+              wallet={wallet}
+              store={store}
+              onOpenVault={(net, addr) => pick(net, addr)}
+              onClose={closeDeploy}
+            />
+          </VaultBoundary>
         ) : (
           <VaultPicker known={known} network={network} contract={contract} onPick={pick} onDeploy={openDeploy} onTyping={() => (typing.current = true)} />
         )}
 
-        {networkParam && !chain && (
+        {networkParam && !chain && !deployRefused && (
           <FailureLine
             title={`"${networkParam}" is not an Arc network we know.`}
             next={`Pick ${ARC_CHAINS.map(networkName).join(' or ')} in the box above. The network is never guessed: the same address means different things on each.`}
@@ -277,6 +284,7 @@ export default function ArcVault() {
         )}
 
         {!deployMode && chain && contract && (
+          <VaultBoundary key={key} what="This vault">
           <section aria-label="Vault" className="space-y-4">
             <div className="flex flex-wrap items-center justify-between gap-3">
               <div className="flex min-w-0 flex-wrap items-center gap-2">
@@ -430,9 +438,39 @@ export default function ArcVault() {
               </section>
             )}
           </section>
+          </VaultBoundary>
         )}
       </div>
     </AppPage>
+  )
+}
+
+/**
+ * A deploy link whose network is not one we know. Refused by name, with no form under it: which
+ * network to deploy on decides whether real money moves, so it is asked, never defaulted.
+ */
+function DeployLinkRefused({ networkParam }: { networkParam: string }) {
+  return (
+    <section aria-label="Choose a network" role="alert" className="rounded-2xl border border-danger/25 bg-danger/[0.07] p-4 text-sm">
+      <div className="font-semibold text-foreground">"{networkParam}" is not an Arc network we know, so this page shows no deploy form for it.</div>
+      <p className="mt-1 text-foreground/80">
+        The network is never guessed. Arc Mainnet uses real USDC and Arc testnet uses free test USDC, so you choose. Nothing has been sent.
+      </p>
+      <ul className="mt-2 space-y-1">
+        {ARC_CHAINS.map((c) => (
+          <li key={c.caip2}>
+            <Link to={{ search: `?network=${encodeURIComponent(c.caip2)}&deploy=1` }} className="font-semibold text-accent underline underline-offset-2">
+              {c.testnet ? 'Practice on Arc testnet (free test USDC)' : 'Deploy on Arc Mainnet (real USDC)'}
+            </Link>
+          </li>
+        ))}
+        <li>
+          <Link to={{ search: '' }} className="font-semibold text-accent underline underline-offset-2">
+            Back to the vault list
+          </Link>
+        </li>
+      </ul>
+    </section>
   )
 }
 

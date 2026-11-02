@@ -42,7 +42,7 @@ import { CHAIN_BY_ID, CHAIN_RPC_URLS, CHAIN_USDC, type Chain } from '../chains'
 import { AGENT_SPEND_POLICY_ABI, AGENT_SPEND_POLICY_IMMUTABLES, AGENT_SPEND_POLICY_RUNTIME } from '../contracts/agent-spend-policy'
 import { NoHostAnswered, onHosts } from './hosts'
 import { firstFound, missingFrom, type DecodedLog, type Expectation } from './tx-rules'
-import { isKnownBuild, sameAddress } from './vault-rules'
+import { isKnownBuild, readableDate, sameAddress } from './vault-rules'
 
 export type { Expectation, VaultEventName } from './tx-rules'
 
@@ -536,8 +536,8 @@ export { localTime, localDateTime, viewerTimeZone } from '../stellar/vault-read'
 
 /** UNIX seconds as "2026-11-08 14:02 UTC". */
 export function utcDateTime(unixSeconds: bigint): string {
-  const d = new Date(Number(unixSeconds) * 1000)
-  if (Number.isNaN(d.getTime())) return String(unixSeconds)
+  const d = readableDate(unixSeconds)
+  if (d === null) return String(unixSeconds)
   return `${d.toISOString().slice(0, 16).replace('T', ' ')} UTC`
 }
 

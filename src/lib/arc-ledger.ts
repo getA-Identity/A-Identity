@@ -10,11 +10,13 @@
  */
 
 /** The AgentSpendPolicy vaults the ledger lists as ours on Arc. */
-export const ARC_LEDGER_VAULTS: readonly { network: string; address: string; name: string }[] = [
+export const ARC_LEDGER_VAULTS: readonly { network: string; address: string; name: string; builtFromCommit?: string; sourcifyVerified?: boolean }[] = [
   {
     "network": "eip155:5042",
     "address": "0xe07819e6d28a5dfd5a9f4cd94dc6dc9aeeda4146",
-    "name": "AgentSpendPolicy vault"
+    "name": "AgentSpendPolicy vault",
+    "builtFromCommit": "c05b1710",
+    "sourcifyVerified": true
   }
 ]
 

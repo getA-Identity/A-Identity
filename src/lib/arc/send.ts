@@ -16,10 +16,10 @@ import { FEE_FLOOR_WEI, sameAddress } from './vault-rules.ts'
 export type TxStep = 'checking' | 'simulating' | 'switching' | 'wallet' | 'submitted'
 
 export const STEP_LABEL: Record<TxStep, string> = {
-  checking: 'Reading the chain',
-  simulating: 'Simulating as the owner',
+  checking: 'Reading the network',
+  simulating: 'Doing a free practice run',
   switching: 'Checking your wallet network',
-  wallet: 'Waiting for your wallet',
+  wallet: 'Waiting for you to confirm in your wallet',
   submitted: 'Submitted',
 }
 

@@ -44,7 +44,8 @@ public/llms-full.txt, public/.well-known/ (agent card, MCP server card, agent sk
   day it lands. Two limits stated rather than implied: the scan does not reach src/ or
   scripts/ yet, and CAIP-2 ids are not banned because they legitimately appear in prose
   and published copy. Exceptions are named with reasons in the test.
-- Generated files, never hand-edit: src/lib/chains.ts (run cd mcp && npm run gen:chains),
+- Generated files, never hand-edit: src/lib/chains.ts, src/lib/arc-ledger.ts and
+  trust-guard/src/arc-mainnet.generated.ts (all three: run cd mcp && npm run gen:chains),
   mcp/src/contracts/AgentSpendPolicy.ts and MerkleAirdrop.ts (run cd mcp && npm run compile),
   and src/lib/contracts/agent-spend-policy.ts, the browser's copy of the vault build (run
   cd mcp && npm run gen:contracts after compile). CI recompiles and fails on any drift.
@@ -56,7 +57,7 @@ public/llms-full.txt, public/.well-known/ (agent card, MCP server card, agent sk
 
 ## Verification
 
-- Backend: cd mcp && npm test (tsc + 2073 unit tests; new test files must be added to the
+- Backend: cd mcp && npm test (tsc + 2085 unit tests; new test files must be added to the
   test script in mcp/package.json, and the count literal in mcp/src/asp/proof.ts must
   match the number of test() declarations).
 - E2E: boot node mcp/dist/http.js, then npm run e2e, e2e:guardrail, http-smoke.
@@ -67,6 +68,8 @@ public/llms-full.txt, public/.well-known/ (agent card, MCP server card, agent sk
 - Frontend: npx tsc --noEmit and npm run lint from the repo root.
 - Any change under src/ makes the prerender snapshot stale: run npm run prerender once
   before npm run build (the build fails on a stale snapshot by design).
+- Run prerender with the production docs URL (VITE_DOCS_URL=https://a-identity.mintlify.site),
+  because a local .env.local can point it at localhost, and the guard in scripts/prerender.mjs refuses that.
 - Full local proof: npm run build then npm run smoke (renders every route against the
   live backend and fails on console errors).
 
