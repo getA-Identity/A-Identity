@@ -180,7 +180,7 @@ function FlowList({ items }: { items: FlowItem[] }) {
             <li key={f.checkNonce} className="text-[11px] text-foreground/65">
               <span className="font-mono text-foreground/50">{f.at.slice(0, 16).replace('T', ' ')} UTC</span>{' '}
               <span className={`font-semibold ${f.outcome === 'paid' ? 'text-ok' : 'text-foreground/80'}`}>{f.outcome}</span> payee {short(f.payee)}
-              {f.payeeInternal && <span className="font-semibold text-foreground/80"> (our own probe)</span>}{' '}
+              {f.payeeInternal && <span className="font-semibold text-foreground/80"> (payee is ours)</span>}{' '}
               {href && <OutLink href={href}>{f.explorerUrl ? 'transaction' : 'flow record'}</OutLink>}
             </li>
           )
@@ -339,7 +339,7 @@ export default function ArcSeasonProgress() {
                 <MetricRow
                   label="Verify-then-pay flows through Circle Gateway"
                   metric={m1.checks}
-                  detail={`${m1.checks.linked.paid} paid, ${m1.checks.linked.refused} refused${m1.checks.internalPayee ? ` (${m1.checks.internalPayee} name our own wallet or the vault's own key as payee; refused flows name ${plural(m1.checks.refusedPayees ?? 0, 'distinct payee', 'distinct payees')})` : ''}; ${m1.checks.unlinked ?? 0} internal checks with nothing linked; ${m1.checks.external} external checks count under M2`}
+                  detail={`${m1.checks.linked.paid} paid, ${m1.checks.linked.refused} refused${m1.checks.internalPayee ? ` (${m1.checks.internalPayee} pay or name a payee that is ours: our own wallet, our own agent or the vault's own key; refused flows name ${plural(m1.checks.refusedPayees ?? 0, 'distinct payee', 'distinct payees')})` : ''}; ${m1.checks.unlinked ?? 0} internal checks with nothing linked; ${m1.checks.external} external checks count under M2`}
                 />
               ) : (
                 <MetricRow

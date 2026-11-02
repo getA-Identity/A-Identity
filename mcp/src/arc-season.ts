@@ -143,6 +143,16 @@ export type ArcRefusal = {
 }
 
 /**
+ * Payees that are ours although they are neither a rail's wallet nor a vault key. A flow paying
+ * one is a real flow and counts, and it is labeled, because a reviewer would otherwise read it as
+ * a payment to somebody else. Meridian is our showcase agent: the ledger says so where its Arc
+ * Mainnet identity #4306 was registered and moved to this wallet (chains/provenance.ts).
+ */
+export const ARC_OUR_PAYEES: { address: string; why: string }[] = [
+  { address: '0x4e26Ae66840134Ac5979c56ba2509F3956b93431', why: 'the payee is Meridian, our own showcase agent' },
+]
+
+/**
  * Refusals anyone can inspect. One of each kind is the Milestone 1 commitment: a
  * vault-policy refusal that reverted on chain (so it has a hash), and a DENY verdict
  * that stopped a payment before signing (so it has an audit entry and no hash). The
@@ -321,6 +331,8 @@ export type ArcSeasonDeps = {
   internalPayers: { gateway: string[]; facilitator: string[] }
   /** The wallets our rails are paid to. A payment to one is a payment to ourselves. */
   ourPayTo?: string[]
+  /** Our own agents and other payees that are ours. Default ARC_OUR_PAYEES. */
+  ourPayees?: { address: string; why: string }[]
   now?: () => number
   partners?: ArcPartner[]
   vaults?: ArcOwnerHeldVault[]
@@ -587,10 +599,12 @@ export async function arcSeasonReport(deps: ArcSeasonDeps): Promise<ArcSeasonRep
   // A payee that is ours, or the vault's own key: the flow is real and counts, and a reviewer
   // should not have to work out from addresses that nobody else was going to be paid.
   const ourAddresses = new Set([...mine, ...(deps.ourPayTo ?? []).map((a) => a.toLowerCase())])
+  const ourPayees = new Map((deps.ourPayees ?? ARC_OUR_PAYEES).map((p) => [p.address.toLowerCase(), p.why]))
   const payeeInternal = (f: ArcVerifyThenPayFlow): string | null => {
     const payee = f.payee.toLowerCase()
     if (payee === f.vaultKeys?.owner.toLowerCase()) return "the payee is this vault's owner"
     if (payee === f.vaultKeys?.operator.toLowerCase()) return "the payee is this vault's operator"
+    if (ourPayees.has(payee)) return ourPayees.get(payee) as string
     return ourAddresses.has(payee) ? 'the payee is one of our own wallets' : null
   }
   const linkedList = [...linkedFlows.values()]
@@ -669,7 +683,7 @@ export async function arcSeasonReport(deps: ArcSeasonDeps): Promise<ArcSeasonRep
                 ? ` ${agedOut} of the flows link by the settlement their own flow record holds: the Gateway log keeps its newest ${cap} rows, and their check is older than the oldest row it still has.`
                 : '') +
               (internalPayeeFlows > 0
-                ? ` ${internalPayeeFlows} of the flows name a payee that is our own wallet or the vault's own key: planned probes, labeled payeeInternal on each item, not payments to anyone else. The refused flows name ${refusedPayees} distinct payee(s).`
+                ? ` ${internalPayeeFlows} of the flows name a payee that is ours (our own wallet, our own agent or the vault's own key), labeled payeeInternal on each item: our own runs, not payments to anyone else.${internalPayeeFlows === linkedFlows.size ? ' That is every flow.' : ''} The refused flows name ${refusedPayees} distinct payee(s).`
                 : '')),
       },
       refusals: {

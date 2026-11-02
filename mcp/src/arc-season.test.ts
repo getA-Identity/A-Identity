@@ -2,6 +2,7 @@ import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import {
+  ARC_OUR_PAYEES,
   arcSeasonReport,
   liveArcSeasonDeps,
   ARC_PARTNERS,
@@ -467,10 +468,30 @@ test('a flow whose payee is ours or the vault key is labeled, counted, and said 
   assert.equal(c.refusedPayees, 5)
   assert.deepEqual(c.items.map((i) => Boolean((i as { payeeInternal?: string }).payeeInternal)), [true, true, true, true, false])
   assert.match((c.items[0] as { payeeInternal?: string }).payeeInternal ?? '', /owner/)
-  assert.match(c.note, /4 of the flows name a payee that is our own wallet or the vault's own key/)
+  assert.match(c.note, /4 of the flows name a payee that is ours/)
   assert.match(c.note, /5 distinct payee/)
   assert.ok(r.milestone1.refusals.items[0].payeeInternal, 'the refusal that came from it says so too')
   assert.equal(r.milestone1.refusals.items[4].payeeInternal, undefined)
+})
+
+test('a paid flow to our own agent is labeled ours, so no paid flow reads as a payment to someone else', async () => {
+  const meridian = ARC_OUR_PAYEES[0].address
+  const paid = gw({ payer: OURS_GATEWAY })
+  const refused = gw({ payer: OURS_GATEWAY })
+  const keys = { owner: OUR_VAULT_OWNER, operator: OPERATOR_KEY }
+  const r = await arcSeasonReport(
+    deps({ gateway: [paid, refused], refusals: [], flows: [flow({ checkNonce: paid.authNonce, payee: meridian.toLowerCase(), vaultKeys: keys }), denyFlow(refused.authNonce, { payee: OUR_VAULT_OWNER, vaultKeys: keys })] }),
+  )
+  const c = r.milestone1.checks
+  assert.equal(c.internalPayee, 2)
+  const item = c.items.find((i) => i.outcome === 'paid') as { payeeInternal?: string }
+  assert.match(item.payeeInternal ?? '', /Meridian, our own showcase agent/)
+  assert.match(c.note, /2 of the flows name a payee that is ours.*That is every flow\./)
+  // A payee nobody listed stays unlabeled, and the note does not claim every flow.
+  const stranger = gw({ payer: OURS_GATEWAY })
+  const r2 = await arcSeasonReport(deps({ gateway: [paid, stranger], refusals: [], flows: [flow({ checkNonce: paid.authNonce, payee: meridian, vaultKeys: keys }), flow({ checkNonce: stranger.authNonce, vaultKeys: keys })] }))
+  assert.equal(r2.milestone1.checks.internalPayee, 1)
+  assert.doesNotMatch(r2.milestone1.checks.note, /That is every flow/)
 })
 
 test('a season with no such flow says nothing about them', async () => {
