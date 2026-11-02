@@ -408,10 +408,36 @@ test('a curated entry for the same record does not count twice, and a long run i
   const flows = checks.map((c) => denyFlow(c.authNonce))
   const curated = { kind: 'deny-before-signing' as const, evidenceUrl: flows[0].evidenceUrl, at: flows[0].at, note: 'curated' }
   const r = await arcSeasonReport(deps({ gateway: checks, flows, refusals: [curated] }))
-  assert.equal(r.milestone1.refusals.count, 8)
   assert.equal(r.milestone1.refusals.byKind['deny-before-signing'], 8)
   assert.equal(r.milestone1.refusals.items.length, 6, 'the curated entry and the first five')
   assert.match(r.milestone1.refusals.note, /2 more DENY record\(s\) are on checks.items/)
+})
+
+test('the refusal metric counts kinds: any number of DENYs is 1 of 2 until a revert is on chain too', async () => {
+  const checks = Array.from({ length: 9 }, () => gw({ payer: OURS_GATEWAY }))
+  const flows = checks.map((c) => denyFlow(c.authNonce))
+  const denyOnly = await arcSeasonReport(deps({ gateway: checks, flows, refusals: [] }))
+  assert.equal(denyOnly.milestone1.refusals.count, 1, 'nine of one kind do not stand in for the other')
+  assert.deepEqual(denyOnly.milestone1.refusals.byKind, { 'vault-policy-on-chain': 0, 'deny-before-signing': 9 })
+  assert.match(denyOnly.milestone1.refusals.note, /^1 of the 2 kinds committed to: 0 vault-policy refusal\(s\) on chain and 9 DENY/)
+
+  const reverted = { kind: 'vault-policy-on-chain' as const, txHash: '0x' + '33'.repeat(32), at: '2026-10-26T10:00:00Z', note: 'reverted AboveAutoApprove' }
+  const both = await arcSeasonReport(deps({ gateway: checks, flows, refusals: [reverted] }))
+  assert.equal(both.milestone1.refusals.count, 2)
+  assert.equal(both.milestone1.refusals.target, 2)
+  assert.deepEqual(both.milestone1.refusals.byKind, { 'vault-policy-on-chain': 1, 'deny-before-signing': 9 })
+})
+
+test('the page lists every flow, each with something a reviewer can open', async () => {
+  const check = gw({ payer: OURS_GATEWAY })
+  const paidCheck = gw({ payer: OURS_GATEWAY })
+  const r = await arcSeasonReport(deps({ gateway: [check, paidCheck], flows: [denyFlow(check.authNonce), flow({ checkNonce: paidCheck.authNonce })] }))
+  const items = r.milestone1.checks.items
+  assert.equal(items.length, 2)
+  for (const f of items) assert.ok(f.explorerUrl || f.evidenceUrl, 'a counted flow always has a link')
+  const page = readFileSync(new URL('../../src/components/proof/ArcSeasonProgress.tsx', import.meta.url), 'utf8')
+  assert.match(page, /<FlowList items=\{m1\.checks\.items\} \/>/)
+  assert.match(page, /m1\.refusals\.byKind/, 'the row says how many of each kind stand behind its two')
 })
 
 test('a flow whose payee is ours or the vault key is labeled, counted, and said in the note', async () => {

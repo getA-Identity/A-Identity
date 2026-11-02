@@ -57,6 +57,16 @@ type RefusalItem = {
   /** Why the payee is one of our own wallets, when it is. */
   payeeInternal?: string
 }
+type FlowItem = {
+  checkNonce: string
+  payee: string
+  outcome: 'paid' | 'refused'
+  txHash?: string
+  evidenceUrl?: string
+  at: string
+  explorerUrl: string | null
+  payeeInternal?: string
+}
 type LogRead = { readable: boolean; rows: number; reason?: string }
 
 type SeasonReport = {
@@ -72,8 +82,9 @@ type SeasonReport = {
     vaults: Metric & { items: VaultItem[] }
     // linked and unlinked arrive with the flow count; a backend from before it sends neither,
     // and its count is every Gateway check, so the row is labeled by which one answered.
-    checks: Metric & { internal: number; external: number; linked?: { paid: number; refused: number }; unlinked?: number; internalPayee?: number; refusedPayees?: number }
-    refusals: Metric & { items: RefusalItem[] }
+    checks: Metric & { internal: number; external: number; linked?: { paid: number; refused: number }; unlinked?: number; internalPayee?: number; refusedPayees?: number; items?: FlowItem[] }
+    // byKind arrives with the count by kind. From a backend before it, count is the list's length.
+    refusals: Metric & { items: RefusalItem[]; byKind?: Record<string, number> }
     evidence: string
   }
   milestone2: {
@@ -153,6 +164,29 @@ function OutLink({ href, children }: { href: string; children: React.ReactNode }
       <span className="break-all">{children}</span>
       <ArrowUpRight size={11} className="shrink-0" />
     </a>
+  )
+}
+
+/** Every flow the count stands on, closed by default: a reviewer can open any one of the hundred. */
+function FlowList({ items }: { items: FlowItem[] }) {
+  const newestFirst = [...items].sort((a, b) => b.at.localeCompare(a.at))
+  return (
+    <details className="mt-3">
+      <summary className="cursor-pointer text-[11px] font-semibold text-foreground/70">Every flow, newest first ({items.length})</summary>
+      <ul className="mt-2 flex max-h-72 flex-col gap-1 overflow-y-auto pr-1">
+        {newestFirst.map((f) => {
+          const href = f.explorerUrl ?? f.evidenceUrl
+          return (
+            <li key={f.checkNonce} className="text-[11px] text-foreground/65">
+              <span className="font-mono text-foreground/50">{f.at.slice(0, 16).replace('T', ' ')} UTC</span>{' '}
+              <span className={`font-semibold ${f.outcome === 'paid' ? 'text-ok' : 'text-foreground/80'}`}>{f.outcome}</span> payee {short(f.payee)}
+              {f.payeeInternal && <span className="font-semibold text-foreground/80"> (our own probe)</span>}{' '}
+              {href && <OutLink href={href}>{f.explorerUrl ? 'transaction' : 'flow record'}</OutLink>}
+            </li>
+          )
+        })}
+      </ul>
+    </details>
   )
 }
 
@@ -305,7 +339,7 @@ export default function ArcSeasonProgress() {
                 <MetricRow
                   label="Verify-then-pay flows through Circle Gateway"
                   metric={m1.checks}
-                  detail={`${m1.checks.linked.paid} paid, ${m1.checks.linked.refused} refused${m1.checks.internalPayee ? ` (${m1.checks.internalPayee} name our own wallet or the vault's own key as payee; refused flows name ${m1.checks.refusedPayees ?? 0} distinct payees)` : ''}; ${m1.checks.unlinked ?? 0} internal checks with nothing linked; ${m1.checks.external} external checks count under M2`}
+                  detail={`${m1.checks.linked.paid} paid, ${m1.checks.linked.refused} refused${m1.checks.internalPayee ? ` (${m1.checks.internalPayee} name our own wallet or the vault's own key as payee; refused flows name ${plural(m1.checks.refusedPayees ?? 0, 'distinct payee', 'distinct payees')})` : ''}; ${m1.checks.unlinked ?? 0} internal checks with nothing linked; ${m1.checks.external} external checks count under M2`}
                 />
               ) : (
                 <MetricRow
@@ -314,7 +348,11 @@ export default function ArcSeasonProgress() {
                   detail={`${m1.checks.internal} internal, ${m1.checks.external} external`}
                 />
               )}
-              <MetricRow label="Refusals anyone can inspect" metric={m1.refusals} />
+              <MetricRow
+                label="Refusals anyone can inspect, one of each kind"
+                metric={m1.refusals}
+                detail={m1.refusals.byKind ? `${m1.refusals.byKind['vault-policy-on-chain'] ?? 0} reverted on chain, ${m1.refusals.byKind['deny-before-signing'] ?? 0} DENY stopped before signing` : undefined}
+              />
               {m1.vaults.items.length > 0 && (
                 <ul className="mt-3 flex flex-col gap-1.5">
                   {m1.vaults.items.map((v) => (
@@ -328,19 +366,21 @@ export default function ArcSeasonProgress() {
               )}
               {m1.refusals.items.length > 0 && (
                 <ul className="mt-3 flex flex-col gap-1.5">
-                  {m1.refusals.items.map((r) => (
+                  {/* One of each kind reads as the commitment; the rest are in the flow list below. */}
+                  {m1.refusals.items.filter((r, i, all) => all.findIndex((x) => x.kind === r.kind) === i).map((r) => (
                     <li key={`${r.kind}-${r.at}-${r.evidenceUrl ?? r.txHash ?? ''}`} className="text-[11px] text-foreground/65">
                       <span className="font-mono text-foreground/50">{r.kind}</span> {r.note}{' '}
                       {r.payeeInternal && <span className="font-semibold text-foreground/80">Our own probe: {r.payeeInternal}. </span>}
                       {r.explorerUrl ? (
                         <OutLink href={r.explorerUrl}>{short(r.txHash ?? '')}</OutLink>
                       ) : r.evidenceUrl ? (
-                        <OutLink href={r.evidenceUrl}>audit entry</OutLink>
+                        <OutLink href={r.evidenceUrl}>flow record</OutLink>
                       ) : null}
                     </li>
                   ))}
                 </ul>
               )}
+              {m1.checks.items && m1.checks.items.length > 0 && <FlowList items={m1.checks.items} />}
             </MilestoneCard>
 
             <MilestoneCard id={2} title={m2.title} due={m2.due}>

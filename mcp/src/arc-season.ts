@@ -32,7 +32,8 @@
  *     vault, owned by our operating wallet, does not. A refusal counts only when a
  *     reviewer can inspect it: a reverted vault transaction with a hash, or a DENY that
  *     stopped a payment before signing, with its audit entry. The launch-day refusal was
- *     a simulation with no hash, so it does not.
+ *     a simulation with no hash, so it does not. The commitment is one of each kind, so the
+ *     metric counts kinds shown: any number of DENYs and no revert is 1 of 2, not met.
  *
  * Pure: the loaders, the internal payer lists, the curated lists and the clock are
  * injected, so the aggregation is unit-tested with rows and the route adds the real
@@ -283,6 +284,7 @@ export type ArcSeasonReport = {
       note: string
     }
     refusals: {
+      /** Kinds of refusal shown, 0 to 2. How many of each is in byKind. */
       count: number
       target: number
       items: ArcSeasonRefusalItem[]
@@ -606,6 +608,7 @@ export async function arcSeasonReport(deps: ArcSeasonDeps): Promise<ArcSeasonRep
   const allRefusals = [...refusals, ...recordedDenials]
   const byKind: Record<ArcRefusalKind, number> = { 'vault-policy-on-chain': 0, 'deny-before-signing': 0 }
   for (const r of allRefusals) byKind[r.kind] += 1
+  const refusalKindsShown = Object.values(byKind).filter((n) => n > 0).length
   const launchVault = launchDayVault()
 
   return {
@@ -670,7 +673,7 @@ export async function arcSeasonReport(deps: ArcSeasonDeps): Promise<ArcSeasonRep
                 : '')),
       },
       refusals: {
-        count: allRefusals.length,
+        count: refusalKindsShown,
         target: ARC_SEASON_TARGETS.inspectableRefusals,
         // The curated entries and the first few recorded ones: every recorded one is on checks.items.
         items: [...refusals, ...recordedDenials.slice(0, REFUSAL_ITEMS_SHOWN)].map((r) => ({ ...r, explorerUrl: r.txHash ? txUrl(chain, r.txHash) : null })),
@@ -678,7 +681,7 @@ export async function arcSeasonReport(deps: ArcSeasonDeps): Promise<ArcSeasonRep
         note:
           allRefusals.length === 0
             ? 'No inspectable refusal yet. The launch-day refusal (a 0.50 USDC payment above autoApproveMax) was a simulation that returned the contract\'s typed AboveAutoApprove error and broadcast nothing, so it has no hash and is not counted. A refusal counts once it is a reverted vault transaction with a hash, or a DENY verdict that stopped a payment before signing with an audit entry anyone can open.'
-            : `${allRefusals.length} of ${ARC_SEASON_TARGETS.inspectableRefusals}: ${byKind['vault-policy-on-chain']} vault-policy refusal(s) on chain and ${byKind['deny-before-signing']} DENY result(s) stopped before signing, read from the public flow records. The launch-day simulated refusal is not among them.` +
+            : `${refusalKindsShown} of the ${ARC_SEASON_TARGETS.inspectableRefusals} kinds committed to: ${byKind['vault-policy-on-chain']} vault-policy refusal(s) on chain and ${byKind['deny-before-signing']} DENY result(s) stopped before signing, read from the public flow records. The launch-day simulated refusal is not among them.` +
               (recordedDenials.length > REFUSAL_ITEMS_SHOWN ? ` ${recordedDenials.length - REFUSAL_ITEMS_SHOWN} more DENY record(s) are on checks.items.` : ''),
       },
       evidence: ARC_SEASON_EVIDENCE_URL,
