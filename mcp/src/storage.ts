@@ -1522,6 +1522,117 @@ export async function updateVtpFlow(
   }
 }
 
+// -- admitted Arc Mainnet vaults -------------------------------------------------------
+
+/**
+ * A vault that passed every owner-held check at POST /api/arc/vaults (arc-owner-vault-live.ts). A
+ * row exists only after an admission, so the table is the list Milestone 1 counts beside the
+ * curated ARC_OWNER_HELD_VAULTS. Keyed by vault address, and one deploy transaction names one vault.
+ */
+export type ArcAdmittedVaultRecord = {
+  v: 1
+  address: string
+  owner: string
+  /** The chain cannot say whose wallet this is, and nobody who could was asked. */
+  ownerKind: 'unstated'
+  /** Lowercase. */
+  deployTx: string
+  /** Decimal: where a read of the vault's logs starts. */
+  deployBlock: string
+  /** UTC day of the deployment. */
+  deployedAt: string
+  admittedAt: string
+  note: string
+}
+
+const ARC_VAULTS_FILE = join(DATA_DIR, 'arc-admitted-vaults.json')
+
+/** The seams a call reads through, as for vtp_flows. */
+export type ArcVaultStoreIo = { getPool?: () => Promise<unknown>; file?: string }
+export type ArcVaultsRead = { ok: true; rows: ArcAdmittedVaultRecord[] } | { ok: false; reason: string }
+export type ArcVaultByTx = { ok: true; row: ArcAdmittedVaultRecord | null } | { ok: false; reason: string }
+export type ArcVaultInsert = { ok: true; inserted: boolean } | { ok: false; reason: string }
+
+const arcVaultsReady = new WeakSet<object>()
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+async function arcVaultsPool(io: ArcVaultStoreIo): Promise<any> {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const p = (await (io.getPool ?? getPool)()) as any
+  if (!p) return null
+  if (!arcVaultsReady.has(p)) {
+    await p.query('CREATE TABLE IF NOT EXISTS arc_admitted_vaults (address text PRIMARY KEY, data jsonb NOT NULL)')
+    arcVaultsReady.add(p)
+  }
+  return p
+}
+
+function readArcVaultsFile(file: string): ArcVaultsRead {
+  try {
+    const rows = JSON.parse(readFileSync(file, 'utf8')) as unknown
+    if (!Array.isArray(rows)) return { ok: false, reason: `${file} does not hold a list of vaults` }
+    return { ok: true, rows: rows as ArcAdmittedVaultRecord[] }
+  } catch (e) {
+    if ((e as NodeJS.ErrnoException)?.code === 'ENOENT') return { ok: true, rows: [] }
+    return { ok: false, reason: reasonOf(e) }
+  }
+}
+
+/** Every admitted vault, oldest first, with "none yet" and "could not read the list" told apart. Never throws. */
+export async function loadAdmittedArcVaults(io: ArcVaultStoreIo = {}): Promise<ArcVaultsRead> {
+  try {
+    const p = await arcVaultsPool(io)
+    if (p) {
+      const r = await p.query("SELECT data FROM arc_admitted_vaults ORDER BY data->>'admittedAt' ASC, address ASC")
+      return { ok: true, rows: r.rows.map((row: { data: ArcAdmittedVaultRecord }) => row.data) }
+    }
+  } catch (e) {
+    return { ok: false, reason: reasonOf(e) }
+  }
+  return readArcVaultsFile(io.file ?? ARC_VAULTS_FILE)
+}
+
+/** The vault a deploy transaction already admitted, if any. Never throws. */
+export async function findAdmittedArcVaultByTx(deployTx: string, io: ArcVaultStoreIo = {}): Promise<ArcVaultByTx> {
+  const hash = deployTx.toLowerCase()
+  try {
+    const p = await arcVaultsPool(io)
+    if (p) {
+      const r = await p.query("SELECT data FROM arc_admitted_vaults WHERE data->>'deployTx' = $1 LIMIT 1", [hash])
+      return { ok: true, row: (r.rows[0]?.data as ArcAdmittedVaultRecord | undefined) ?? null }
+    }
+  } catch (e) {
+    return { ok: false, reason: reasonOf(e) }
+  }
+  const read = readArcVaultsFile(io.file ?? ARC_VAULTS_FILE)
+  if (!read.ok) return read
+  return { ok: true, row: read.rows.find((r) => r.deployTx === hash) ?? null }
+}
+
+/** Record an admitted vault. Insert-only: a vault already there is left as it was, and inserted says which. Never throws. */
+export async function persistAdmittedArcVault(rec: ArcAdmittedVaultRecord, io: ArcVaultStoreIo = {}): Promise<ArcVaultInsert> {
+  const key = rec.address.toLowerCase()
+  const row: ArcAdmittedVaultRecord = { ...rec, deployTx: rec.deployTx.toLowerCase() }
+  try {
+    const p = await arcVaultsPool(io)
+    if (p) {
+      const r = await p.query('INSERT INTO arc_admitted_vaults (address, data) VALUES ($1, $2::jsonb) ON CONFLICT (address) DO NOTHING RETURNING address', [key, JSON.stringify(row)])
+      return { ok: true, inserted: r.rows.length > 0 }
+    }
+    const file = io.file ?? ARC_VAULTS_FILE
+    const read = readArcVaultsFile(file)
+    if (!read.ok) return read
+    if (read.rows.some((r) => r.address.toLowerCase() === key)) return { ok: true, inserted: false }
+    mkdirSync(dirname(file), { recursive: true })
+    writeFileSync(file, JSON.stringify([...read.rows, row]))
+    return { ok: true, inserted: true }
+  } catch (e) {
+    const reason = reasonOf(e)
+    console.error('[storage] admitted vault insert failed:', reason)
+    return { ok: false, reason }
+  }
+}
+
 // Flush pending state on shutdown, then exit (Render sends SIGTERM on redeploy).
 process.on('SIGTERM', () => {
   void flush().finally(() => process.exit(0))

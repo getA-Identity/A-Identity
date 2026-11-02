@@ -451,7 +451,7 @@ test('admitting without our env refuses by name; a run with it passes that check
   assert.equal(verdict([none]).admitted, false)
   // The script asks only when it would admit: --tx on Milestone 1, not a rehearsal or a state read.
   const script = readFileSync(new URL('../scripts/arc-owner-vault-check.mjs', import.meta.url), 'utf8')
-  assert.match(script, /opts\.tx && !rehearsal \? \[admission\.envLoadedCheck\(ours\)\]/)
+  assert.match(script, /requireEnvKeys: Boolean\(opts\.tx && !rehearsal\)/)
 })
 
 test('--owner-kind is team or external and is never defaulted, and the script refuses to admit without it', () => {

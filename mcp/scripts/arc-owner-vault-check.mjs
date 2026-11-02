@@ -5,10 +5,11 @@
  * sent, and an env key is used for nothing but deriving its address.
  *
  * Given the deploy transaction, it reads the receipt from EVERY RPC host the built registry
- * lists for the chain, one host after another, because a null from one host is not an
- * answer: Blockdaemon serves old blocks without their transactions, and on 2026-11-01 the
- * launch-day receipt came back from dRPC alone. The transaction and its block are read the
- * same way, then the vault's code and state at one block on one host. The decision is
+ * lists for the chain, because a null from one host is not an answer: Blockdaemon serves old
+ * blocks without their transactions, and on 2026-11-01 the launch-day receipt came back from
+ * dRPC alone. The transaction and its block are read the same way, then the vault's code and
+ * state at one block on one host. This file only parses and prints: the reading is
+ * src/arc-owner-vault-live.ts, the same code POST /api/arc/vaults runs, and the decision is
  * src/arc-owner-vault.ts, unit-tested, and refuses unless all of these hold:
  *   - the receipt succeeded and created the vault at the CREATE address of a
  *     contract-creation transaction, and no two hosts disagree about any of it;
@@ -39,7 +40,7 @@
  *        node scripts/arc-owner-vault-check.mjs --vault 0x<address> [--chain arc-mainnet|arc]
  * Exit:  0 admitted, rehearsal passed, or every state check holds; 1 refused; 2 usage or build.
  */
-import { createPublicClient, formatUnits, getAddress, http, toHex } from 'viem'
+import { formatUnits, getAddress } from 'viem'
 
 const USAGE = `usage: node scripts/arc-owner-vault-check.mjs --tx <deploy tx hash> --owner-kind team|external [--vault <address>]
        node scripts/arc-owner-vault-check.mjs --tx <deploy tx hash> --chain arc [--vault <address>]
@@ -81,13 +82,13 @@ if (!opts.tx && !opts.vault) usage('give --tx <deploy hash>, or --vault <address
 if (opts.tx && !/^0x[0-9a-fA-F]{64}$/.test(opts.tx)) usage(`--tx ${opts.tx} is not a transaction hash`)
 if (opts.vault && !/^0x[0-9a-fA-F]{40}$/.test(opts.vault)) usage(`--vault ${opts.vault} is not an address`)
 
-let registry, explorer, artifact, admission
+let explorer, artifact, admission, live
 try {
-  ;[registry, explorer, artifact, admission] = await Promise.all([
-    import('../dist/chains/registry.js'),
+  ;[explorer, artifact, admission, live] = await Promise.all([
     import('../dist/chains/explorer.js'),
     import('../dist/contracts/AgentSpendPolicy.js'),
     import('../dist/arc-owner-vault.js'),
+    import('../dist/arc-owner-vault-live.js'),
   ])
 } catch (e) {
   console.error(`error: mcp/dist is missing or stale (${e?.message ?? e}). Run: cd mcp && npm run build`)
@@ -99,104 +100,20 @@ const chainId = opts.chain || ADMISSION_CHAIN
 if (chainId !== ADMISSION_CHAIN && chainId !== REHEARSAL_CHAIN) {
   usage(`--chain ${chainId}: Milestone 1 counts ${ADMISSION_CHAIN} only, and ${REHEARSAL_CHAIN} is its testnet rehearsal`)
 }
-const chain = registry.getChainById(chainId)
-if (!chain || chain.ecosystem !== 'evm') {
-  console.error(`error: the built registry has no EVM chain ${chainId}`)
+const made = live.admissionContext(chainId)
+if (!made.ok) {
+  console.error(`error: ${made.reason}`)
   process.exit(2)
 }
-const rehearsal = chainId !== ADMISSION_CHAIN
-if (rehearsal !== chain.testnet) {
-  console.error(`error: ${chainId} is ${chain.testnet ? '' : 'not '}a testnet in the registry, so it cannot be ${rehearsal ? 'the rehearsal' : 'Milestone 1'}`)
-  process.exit(2)
-}
+const { chain, rehearsal, token } = made.context
 const ownerKind = admission.parseOwnerKind(opts['owner-kind'])
 if (opts['owner-kind'] && !ownerKind) usage(`--owner-kind ${opts['owner-kind']}: it is team or external`)
 if (opts.tx && !rehearsal && !ownerKind) usage('--owner-kind team|external is required to admit a vault: an entry must say whose wallet the owner is')
-const usdcToken = (chain.settlementTokens ?? []).find((t) => t.symbol === 'USDC')
-const registryUsdc = chain.contracts.usdc ?? usdcToken?.address
-if (!registryUsdc || (usdcToken && usdcToken.address.toLowerCase() !== registryUsdc.toLowerCase())) {
-  console.error(`error: the registry names no single USDC for ${chainId}, so usdc() has nothing to be compared with`)
-  process.exit(2)
-}
-const token = { symbol: usdcToken?.symbol ?? 'USDC', decimals: usdcToken?.decimals ?? chain.usdcDecimals }
-const { AgentSpendPolicyAbi: abi, AgentSpendPolicyBytecode: bytecode } = artifact
+const { AgentSpendPolicyBytecode: bytecode } = artifact
 
-const hosts = admission.admissionHosts(chain, process.env).map((h) => ({
-  ...h,
-  client: createPublicClient({ transport: http(h.url, { timeout: 15_000, retryCount: 1, retryDelay: 500 }) }),
-}))
-/** One line of an error, with any endpoint URL replaced by its label (an env URL can hold a key). */
-const short = (e, h) => {
-  let s = String(e?.shortMessage ?? e?.message ?? e).split('\n')[0]
-  for (const x of hosts) s = s.split(x.url).join(x.label)
-  return (h ? s.split(h.url).join(h.label) : s).slice(0, 200)
-}
+const hosts = live.liveRpcHosts(chain, process.env)
 
-/** Ask every host, one after another, and keep each answer: null, a value or an error. */
-async function everyHost(method, params, normalize = (v) => v) {
-  const answers = []
-  for (const h of hosts) {
-    try {
-      const value = await h.client.request({ method, params })
-      answers.push({ host: h.label, value: value == null ? null : normalize(value) })
-    } catch (e) {
-      answers.push({ host: h.label, value: null, error: short(e, h) })
-    }
-  }
-  return answers
-}
-
-/** The vault's code and every getter at one block on one host; a host that errors, is
- *  behind the deploy or shows no code hands over to the next. */
-async function readVault(address, deployBlock) {
-  const problems = []
-  for (const h of hosts) {
-    try {
-      const head = await h.client.request({ method: 'eth_getBlockByNumber', params: ['latest', false] })
-      if (!head) throw new Error('no latest block')
-      const blockNumber = BigInt(head.number)
-      const blockTime = BigInt(head.timestamp)
-      if (deployBlock !== null && blockNumber < deployBlock) {
-        problems.push(`${h.label}: at block ${blockNumber}, behind the deploy block ${deployBlock}`)
-        continue
-      }
-      const code = await h.client.getCode({ address, blockNumber })
-      if (!code || code === '0x') {
-        problems.push(`${h.label}: no code at ${address} at block ${blockNumber}`)
-        continue
-      }
-      const read = (functionName) => h.client.readContract({ address, abi, functionName, blockNumber })
-      const names = ['owner', 'operator', 'usdc', 'dailyCap', 'autoApproveMax', 'sessionKeyExpiry', 'frozen', 'allowlistEnabled']
-      const values = await Promise.all(names.map(read))
-      const state = Object.fromEntries(names.map((n, i) => [n, values[i]]))
-      state.balance = await read('balance').catch(() => null)
-      return { host: h, blockNumber, blockTime, code, state, error: null }
-    } catch (e) {
-      problems.push(`${h.label}: ${short(e, h)}`)
-    }
-  }
-  return { host: null, blockNumber: null, blockTime: null, code: null, state: null, error: problems.join('; ') || 'no host answered' }
-}
-
-/** What the artifact's creation code returns for these args: eth_call, so nothing is sent.
- *  The state host first, at the state block; then the others at their latest block. */
-async function simulateCreation(initcode, from, preferred, blockNumber) {
-  const order = preferred ? [preferred, ...hosts.filter((h) => h !== preferred)] : hosts
-  const problems = []
-  for (const h of order) {
-    try {
-      const tag = h === preferred && blockNumber !== null ? toHex(blockNumber) : 'latest'
-      const out = await h.client.request({ method: 'eth_call', params: [{ from, data: initcode }, tag] })
-      if (typeof out === 'string' && out.length > 2) return { code: out, host: h.label, error: null }
-      problems.push(`${h.label}: empty result`)
-    } catch (e) {
-      problems.push(`${h.label}: ${short(e, h)}`)
-    }
-  }
-  return { code: null, host: null, error: problems.join('; ') }
-}
-
-// -- read ------------------------------------------------------------------------------
+// -- read: arc-owner-vault-live.ts, the same code POST /api/arc/vaults runs ------------
 
 const pad = (s, n) => String(s).padEnd(n)
 const hostWidth = Math.max(...hosts.map((h) => h.label.length)) + 2
@@ -212,56 +129,45 @@ console.log(
 console.log(`hosts     ${hosts.map((h) => h.label).join(', ')}`)
 if (ownerKind) console.log(`owner is  ${ownerKind} (stated with --owner-kind, not read from the chain)`)
 
-let evidence = null
-let deployer = null
-let deployBlockTime = null
-let vault = null
+const ours = admission.collectOurAddresses(admission.liveOurAddressSources(process.env))
+const run = await live.runAdmission({
+  context: made.context,
+  hosts,
+  tx: opts.tx || undefined,
+  vault: opts.vault || undefined,
+  ours,
+  requireEnvKeys: Boolean(opts.tx && !rehearsal),
+})
+const { vault, snapshot: snap, checks, verdict: v, notes, deployBlockTime } = run
+
 if (opts.tx) {
-  const receiptAnswers = await everyHost('eth_getTransactionReceipt', [opts.tx])
-  const receipt = admission.agreeAcrossHosts(receiptAnswers, admission.receiptFingerprint)
   console.log('\nreceipt, from every registry host one by one:')
-  for (const a of receiptAnswers) {
-    const v = a.value
+  for (const a of run.receiptAnswers) {
+    const r = a.value
     console.log(
-      `  ${pad(a.host, hostWidth)}${a.error ? `error: ${a.error}` : v ? `status ${v.status}, contract ${v.contractAddress ?? 'none'}, from ${v.from}, block ${BigInt(v.blockNumber)}` : 'null (no receipt on this host)'}`,
+      `  ${pad(a.host, hostWidth)}${a.error ? `error: ${a.error}` : r ? `status ${r.status}, contract ${r.contractAddress ?? 'none'}, from ${r.from}, block ${BigInt(r.blockNumber)}` : 'null (no receipt on this host)'}`,
     )
   }
-  const txAnswers = await everyHost('eth_getTransactionByHash', [opts.tx], (t) => ({ ...t, input: t.input ?? t.data ?? '0x' }))
-  const tx = admission.agreeAcrossHosts(txAnswers, admission.transactionFingerprint)
   console.log('transaction, the same way:')
-  for (const a of txAnswers) {
-    const v = a.value
-    console.log(`  ${pad(a.host, hostWidth)}${a.error ? `error: ${a.error}` : v ? `from ${v.from}, to ${v.to ?? '(contract creation)'}, nonce ${BigInt(v.nonce)}, ${(v.input.length - 2) / 2} bytes of input` : 'null'}`)
+  for (const a of run.txAnswers) {
+    const t = a.value
+    console.log(`  ${pad(a.host, hostWidth)}${a.error ? `error: ${a.error}` : t ? `from ${t.from}, to ${t.to ?? '(contract creation)'}, nonce ${BigInt(t.nonce)}, ${(t.input.length - 2) / 2} bytes of input` : 'null'}`)
   }
-  const r = receipt.conflict ? null : receipt.value
-  let block = null
-  if (r) {
-    const blockAnswers = await everyHost('eth_getBlockByNumber', [r.blockNumber, false], (b) => ({ number: b.number, hash: b.hash, timestamp: b.timestamp }))
-    block = admission.agreeAcrossHosts(blockAnswers, admission.blockFingerprint)
-    console.log(`block ${BigInt(r.blockNumber)}, the same way:`)
-    for (const a of blockAnswers) {
-      const v = a.value
-      console.log(`  ${pad(a.host, hostWidth)}${a.error ? `error: ${a.error}` : v ? `${v.hash} at ${admission.isoFromSeconds(BigInt(v.timestamp))}` : 'null'}`)
+  if (run.blockAnswers) {
+    console.log(`block ${BigInt(run.receiptBlock)}, the same way:`)
+    for (const a of run.blockAnswers) {
+      const b = a.value
+      console.log(`  ${pad(a.host, hostWidth)}${a.error ? `error: ${a.error}` : b ? `${b.hash} at ${admission.isoFromSeconds(BigInt(b.timestamp))}` : 'null'}`)
     }
-    if (block.value && !block.conflict) deployBlockTime = BigInt(block.value.timestamp)
   }
-  const t = tx.conflict ? null : tx.value
-  const creation = t ? admission.matchCreationInput(t.input, bytecode, abi) : null
-  evidence = { txHash: opts.tx, receipt, tx, block, creation, expectedVault: opts.vault || null }
-  deployer = r?.from ?? null
-  if (r?.contractAddress && /^0x[0-9a-fA-F]{40}$/.test(r.contractAddress)) vault = getAddress(r.contractAddress)
-  if (creation?.args) {
-    const a = creation.args
+  if (run.evidence?.creation?.args) {
+    const a = run.evidence.creation.args
     console.log(
       `constructor args in the deploy input: owner ${getAddress(a.owner)}, operator ${getAddress(a.operator)}, usdc ${getAddress(a.usdc)}, dailyCap ${a.dailyCap}, autoApproveMax ${a.autoApproveMax}`,
     )
   }
 }
-if (!vault && opts.vault) vault = getAddress(opts.vault)
 
-const snap = vault
-  ? await readVault(vault, evidence?.receipt.value && !evidence.receipt.conflict ? BigInt(evidence.receipt.value.blockNumber) : null)
-  : { host: null, blockNumber: null, blockTime: null, code: null, state: null, error: 'no vault address: the receipt named none' }
 if (snap.state) {
   const s = snap.state
   console.log(`\nvault ${vault} at block ${snap.blockNumber} (${admission.isoFromSeconds(snap.blockTime)}), read on ${snap.host.label}:`)
@@ -276,56 +182,18 @@ if (snap.state) {
     ['allowlistEnabled', String(s.allowlistEnabled)],
     ['balance', s.balance === null ? 'unreadable' : fmtAmount(s.balance)],
   ]
-  for (const [k, v] of rows) console.log(`  ${pad(k, 18)}${v}`)
+  for (const [k, val] of rows) console.log(`  ${pad(k, 18)}${val}`)
 } else if (vault) {
   console.log(`\nvault ${vault}: state not readable (${snap.error})`)
 }
 
-let runtime = null
-const simArgs =
-  evidence?.creation?.args ??
-  (snap.state ? { owner: snap.state.owner, operator: snap.state.operator, usdc: snap.state.usdc, dailyCap: snap.state.dailyCap, autoApproveMax: snap.state.autoApproveMax } : null)
-if (simArgs && snap.code) {
-  let initcode = null
-  try {
-    initcode = admission.encodeCreationInput(bytecode, abi, simArgs)
-  } catch (e) {
-    runtime = admission.matchRuntime(snap.code, null, `the constructor args do not encode: ${short(e)}`)
-  }
-  if (initcode) {
-    const sim = await simulateCreation(initcode, deployer ?? simArgs.owner, snap.host, snap.blockNumber)
-    runtime = admission.matchRuntime(snap.code, sim.code, sim.error ?? undefined)
-  }
-}
-
-const ours = admission.collectOurAddresses(admission.liveOurAddressSources(process.env))
 console.log(`\nour keys and wallets, compared case-insensitively (${ours.byAddress.size}):`)
 for (const [address, sources] of ours.byAddress) console.log(`  ${getAddress(address)}  ${sources.join('; ')}`)
 if (ours.envKeysDerived.length) console.log(`  env keys derived: ${ours.envKeysDerived.join(', ')}`)
 else console.log('  env keys: none set, so no env-derived address was compared (add --env-file=.env to include them)')
 if (ours.envKeysUnreadable.length) console.log(`  env keys set but not a 32-byte hex key, skipped: ${ours.envKeysUnreadable.join(', ')}`)
 
-// -- decide ----------------------------------------------------------------------------
-
-const checks = [
-  ...(opts.tx && !rehearsal ? [admission.envLoadedCheck(ours)] : []),
-  ...(evidence ? admission.deployChecks(evidence) : []),
-  ...admission.stateChecks({
-    state: snap.state,
-    stateError: snap.error ?? undefined,
-    stateBlockedBy: vault ? undefined : evidence ? (evidence.receipt.value && !evidence.receipt.conflict ? 'contract-created' : 'receipt-found') : undefined,
-    deployer,
-    deployerBlockedBy: opts.tx && deployer === null ? 'receipt-found' : undefined,
-    registryUsdc,
-    ours,
-    blockTime: snap.blockTime ?? 0n,
-    runtime,
-    runtimeRequired: !opts.tx,
-    token,
-    chainId: chain.id,
-  }),
-]
-const v = admission.verdict(checks)
+// -- the decision, read back -----------------------------------------------------------
 
 console.log('\nchecks:')
 for (const c of checks) {
@@ -333,7 +201,6 @@ for (const c of checks) {
   console.log(`  ${mark}  ${c.label}`)
   console.log(`        ${c.detail}`)
 }
-const notes = snap.state ? admission.stateNotes(snap.state, snap.blockTime) : []
 if (notes.length) {
   console.log('\nnotes (none of these refuses):')
   for (const n of notes) console.log(`  - ${n}`)

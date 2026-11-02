@@ -215,6 +215,8 @@ const server = http.createServer(async (req, res) => {
     !url.pathname.startsWith('/api/x402/gateway/') &&
     // Site feedback is anonymous by design: bounded by the site-feedback bucket, it sends one email and touches nothing else.
     url.pathname !== '/api/feedback' &&
+    // Owner-held vault admission: bounded by the arc-vault-admit bucket, it signs nothing and records only what it read from the chain.
+    url.pathname !== '/api/arc/vaults' &&
     !url.pathname.startsWith('/api/x402/tools/') && !url.pathname.startsWith('/api/facilitator/')
   if (isMutation && !caller) {
     sendJson(res, 401, { error: 'Authentication required. Sign in with a wallet or an email link.' })
@@ -251,7 +253,7 @@ const server = http.createServer(async (req, res) => {
     if (await handleCctpRoutes(ctx)) return
     if (await handleX402ThreeKRoutes(ctx)) return
     if (await handleChainRoutes(ctx)) return
-    // The Arc Acceleration Season report: one public GET, counted from the logs per read.
+    // The Arc Acceleration Season report and the owner-held vault list it counts.
     if (await handleArcSeasonRoutes(ctx)) return
     if (await handleArcRoutes(ctx)) return
     // Before the agent group, which owns /api/agents/vault: these are the Soroban half of
@@ -372,6 +374,7 @@ server.listen(PORT, () => {
   console.error(`  GET  /api/chains        supported chains`)
   console.error(`  GET  /api/arc           live Circle Arc testnet status`)
   console.error(`  GET  /api/arc/season    Arc Acceleration Season progress: each metric counted from the settlement logs, internal and external apart`)
+  console.error(`  POST /api/arc/vaults    Admit an owner-held Arc Mainnet vault by its deploy transaction, or refuse with reasons (GET lists them)`)
   console.error(`  GET  /api/circle        Circle platform link (wallets, gateway, USDC)`)
   console.error(`  GET  /api/agents        list agents`)
   console.error(`  GET  /api/agents/action-policy   owner-gated action policy (free)`)
