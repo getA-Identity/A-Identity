@@ -892,7 +892,7 @@ async function signOffer(offer: Offer, payer: GatewayPayerSigner, makeScheme?: G
   if (!nonce || !HASH.test(nonce) || lc(auth.from) !== payer.address.toLowerCase() || lc(auth.to) !== offer.payTo.toLowerCase() || String(auth.value) !== offer.amount) {
     throw new GatewayCheckError('SIGNING_FAILED', 'the signed authorization does not match the offer, so it was not sent', { paid: false })
   }
-  const header = Buffer.from(JSON.stringify({ x402Version: 2, accepted: offer, payload: created.payload })).toString('base64')
+  const header = base64FromText(JSON.stringify({ x402Version: 2, accepted: offer, payload: created.payload }))
   return { header, nonce: nonce as Hex }
 }
 
@@ -920,10 +920,21 @@ export function arcGatewayPayer(payer: GatewayPayerSigner, opts: ArcGatewayPayer
 
 // ── reading the server's answer ───────────────────────────────────────────────────
 
+// Platform globals rather than Buffer: this SDK also runs in a browser, and its build has no Node types.
+function base64FromText(text: string): string {
+  let binary = ''
+  for (const byte of new TextEncoder().encode(text)) binary += String.fromCharCode(byte)
+  return btoa(binary)
+}
+
+function textFromBase64(value: string): string {
+  return new TextDecoder().decode(Uint8Array.from(atob(value), (c) => c.charCodeAt(0)))
+}
+
 function decodeChallengeHeader(value: string | null): unknown {
   if (!value) return null
   try {
-    return JSON.parse(Buffer.from(value, 'base64').toString('utf8'))
+    return JSON.parse(textFromBase64(value))
   } catch {
     throw new GatewayCheckError('OFFER_MISMATCH', 'the PAYMENT-REQUIRED header is not base64 JSON', { paid: false, status: 402 })
   }
