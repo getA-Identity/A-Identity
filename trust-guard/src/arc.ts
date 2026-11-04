@@ -27,7 +27,8 @@
  *   C  The decision. DENY throws TrustDenyError and never calls the operator. WARN returns
  *      `awaiting_human` with a prepared ownerPay for the owner, unless payOnWarn is set. On a
  *      payment only the owner can make, ALLOW and WARN both return `awaiting_human`, and payOnWarn
- *      cannot change that. Either way `approvalUrl` is the link to send the owner. A
+ *      cannot change that. Either way `approvalUrl` is the link to send the owner, when the check
+ *      was paid by the operator key: the vault page offers no other, and it is null then. A
  *      Gateway error, a settlement echo that does not match what was signed, an unknown
  *      decision, a reputation that is not a finite number, an ALLOW below the reputation ALLOW
  *      needs, a WARN carrying signals that force DENY and a verdict about another agent or
@@ -426,7 +427,7 @@ export type VerifyThenPayResult =
       verdict: RiskVerdict
       check: GatewayCheckReference
       ownerPay: OwnerPayHandoff
-      /** The link to send the owner: the vault page, where they approve this with their own wallet. null when the server named none this client would pass on. */
+      /** The link to send the owner: the vault page, where they approve this with their own wallet. null when the server named none this client would pass on, or the page would refuse it: a check a separate payer paid for, or a payment to the operator key. Then ownerPay is the way. */
       approvalUrl: string | null
       /** The gate in pay() that makes this the owner's to pay whatever the verdict was. null: the verdict did, a WARN. */
       ownerOnly: OwnerOnlyCode | null
@@ -1453,7 +1454,9 @@ function handOff(i: Inputs, ctx: Ctx, a: Verdicted & { kind: 'awaiting_human' },
       gas: typeof fees.gas === 'string' ? fees.gas : null,
       simulation: sim.ok === true ? { ok: true } : { ok: false, error: typeof sim.error === 'string' ? sim.error : 'no simulation in the answer' },
     },
-    approvalUrl: approvalLinkFrom(a.handoff.approvalUrl, { baseUrl: i.baseUrl, vault, flowId }),
+    // The vault page offers only a check the operator key paid for, and never a payment to that key. A
+    // link it would refuse tells the owner a real request looks like a trick, so it is not passed on.
+    approvalUrl: i.payerAddress.toLowerCase() === free.operator.toLowerCase() && payee.toLowerCase() !== free.operator.toLowerCase() ? approvalLinkFrom(a.handoff.approvalUrl, { baseUrl: i.baseUrl, vault, flowId }) : null,
     ownerOnly: a.ownerOnly,
     // The owner's transaction is not sent yet; recordFlowReceipt closes this flow once it is.
     record: { url: recordUrl, recorded: true, outcome: 'awaiting_human', detail: a.ownerOnly ? 'owner_only_handoff' : 'warn_handoff' },

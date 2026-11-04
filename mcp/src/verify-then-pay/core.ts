@@ -56,7 +56,7 @@
 import type { ChainDescriptor } from '../chains/index.js'
 import { railChallenge, railPaidNetwork, railPaywallGate, railServeTool, railStatus, toolPriceUsd, type GatewayRailStatus, type RailDeps } from '../x402-gateway/index.js'
 import type { VtpDecision, VtpFlowDetail, VtpFlowOutcome, VtpFlowRecord } from '../storage.js'
-import { approvalUrl, flowPath, flowUrl, holdsNoFlow, storageVtpStore, vtpChain, vtpReadClient, VTP_PUBLIC_ORIGIN, type VtpDeps, type VtpStore } from './context.js'
+import { approvalUrlFor, FLOW_LOG_REFUSED_WRITE, FLOW_LOG_UNREADABLE, flowPath, flowUrl, holdsNoFlow, logFlowStoreFault, storageVtpStore, vtpChain, vtpReadClient, VTP_PUBLIC_ORIGIN, whyNoApproval, type VtpDeps, type VtpStore } from './context.js'
 import {
   assessVaultAsset,
   assessVaultPolicy,
@@ -169,8 +169,8 @@ export type OwnerHandoff = {
   auditOutcome: 'awaiting_human'
   owner: string
   ownerPay: PreparedCall
-  /** Where the owner can approve this on the vault page, with their own wallet. Always the site's own origin. */
-  approvalUrl: string
+  /** Where the owner can approve this on the vault page, with their own wallet. Always the site's own origin. null when the page would refuse it: the check was not paid by the vault's operator key, or the payee is that key. */
+  approvalUrl: string | null
   /** The gate in pay() that makes this the owner's to pay, whatever the verdict was. null: the verdict did, a WARN. */
   ownerOnly: OperatorBlockCode | null
 }
@@ -471,7 +471,7 @@ function refused(chain: ChainDescriptor, httpStatus: number, code: VtpRefusalCod
         httpStatus === 503
           ? `Nothing was charged: ${chain.name} or the flow log did not answer, so nothing could be decided. Ask again shortly.`
           : code === 'AboveAutoApprove' || code === 'PayeeNotAllowed'
-            ? `Nothing was charged and no check was bought, so there is no verdict on this payee and nothing was prepared: ${reason}. Only the owner can pay this as it stands, by calling ownerPay directly with no verdict behind it. To get a verdict and a hand-off, the owner raises the ceiling or allows the payee, and you ask again.`
+            ? `Nothing was charged and no check was bought, so there is no verdict on this payee and nothing was prepared: ${reason}. This vault's owner and operator are one key, so there is no person to hand this to. Raising the ceiling or allowing the payee gets a verdict, where ALLOW prepares pay() and WARN stops with the check paid. For a hand-off, give the vault an owner key the agent does not hold.`
             : `Nothing was charged and no check was bought: ${reason}.`,
     }),
   }
@@ -520,7 +520,10 @@ async function closePaidFlow(store: VtpStore, flowId: string, rec: VtpFlowRecord
 /** What the answer may say about its record. A record that was not written has no url: the
  *  url would 404, or open a reservation that never became this answer. */
 function recordView(closed: Closed, url: string, outcome: VtpFlowOutcome, detail: VtpFlowDetail): NonNullable<VerifyThenPayToolResult['record']> {
-  if (!closed.ok) return { url: null, outcome, detail, recorded: false, reason: `the flow log refused the write (${closed.reason})` }
+  if (!closed.ok) {
+    logFlowStoreFault('closing a paid flow', closed.reason)
+    return { url: null, outcome, detail, recorded: false, reason: FLOW_LOG_REFUSED_WRITE }
+  }
   if (!closed.updated) return { url: null, outcome, detail, recorded: false, reason: 'the reservation under this nonce was no longer open, so this answer was not recorded' }
   return { url, outcome, detail, recorded: true }
 }
@@ -565,11 +568,11 @@ async function paymentRequired(
       ...(verifyError ? { reason: verifyError } : {}),
       next: `Nothing is charged yet, and the free checks passed.${checks?.payee.agentsHeld === 0 ? ` This payee holds no ERC-8004 agent on ${chain.name}. That is not a refusal, and unless it is an agent on our platform the check will answer WARN.` : ''}${
         checks?.vault.ownerOnly
-          ? ` The agent cannot pay this and only the owner can settle it: ${checks.vault.ownerOnly.reason} (${checks.vault.ownerOnly.code}). Signing this offer still charges ${usd} USDC for the check. A usable ALLOW or WARN then hands ownerPay to the owner, payOnWarn cannot make the operator pay it, and a DENY stops it.`
+          ? ` The agent cannot pay this and only the owner can settle it: ${checks.vault.ownerOnly.reason} (${checks.vault.ownerOnly.code}). Signing this offer still charges ${usd} USDC for the check. A usable ALLOW or WARN then hands ownerPay to the owner, payOnWarn cannot make the operator pay it, and a DENY stops it. The vault page offers the owner this approval only if the check is paid from the vault's operator key ${checks.vault.operator}; from any other key, the owner sends ownerPay from their own key.`
           : checks?.vault.ownerIsOperator === true
           ? " On this vault the owner and the operator are one key, so a WARN stops with nothing prepared: there is nobody to hand the payment to, and the check is still paid. Give the vault an owner key the agent does not hold first if you need that hand-off."
           : checks?.payee.agentsHeld === 0
-            ? ' A WARN hands the payment to the owner.'
+            ? ` A WARN hands the payment to the owner. The vault page offers the owner that approval only if the check is paid from the vault's operator key ${checks.vault.operator}.`
             : ''
       } Sign the ${chain.name} offer in challenge.accepts from your Circle Gateway balance (x402 v2, GatewayWalletBatched, ${usd} USDC for risk_check), then send the same request again with the base64 PAYMENT-SIGNATURE: as that header on POST /api/x402/gateway/verify-then-pay, or as the payment argument of the verify_then_pay MCP tool.`,
     }),
@@ -701,7 +704,10 @@ export async function runVerifyThenPay(input: VtpInput, paymentHeader: string | 
     }
     if (payment.nonce) {
       const existing = await store.load(payment.nonce)
-      if (!existing.ok) return refused(chain, 503, 'FLOW_STORE_UNREADABLE', `the flow log could not be read (${existing.reason}), so a flow for this payment could not be recorded`, null)
+      if (!existing.ok) {
+        logFlowStoreFault('reading a payment nonce', existing.reason)
+        return refused(chain, 503, 'FLOW_STORE_UNREADABLE', `${FLOW_LOG_UNREADABLE}, so a flow for this payment could not be recorded`, null)
+      }
       if (existing.row) return refused(chain, 409, 'NONCE_ALREADY_USED', `this authorization nonce already opened flow ${payment.nonce}; sign a new authorization`, null)
     }
   }
@@ -737,7 +743,10 @@ export async function runVerifyThenPay(input: VtpInput, paymentHeader: string | 
       detail: 'opening',
     })
     const opened = await store.insert(opening)
-    if (!opened.ok) return refused(chain, 503, 'FLOW_STORE_UNREADABLE', `the flow log refused the write (${opened.reason}), so a flow for this payment could not be recorded`, pre.checks)
+    if (!opened.ok) {
+      logFlowStoreFault('reserving a nonce', opened.reason)
+      return refused(chain, 503, 'FLOW_STORE_UNREADABLE', `${FLOW_LOG_REFUSED_WRITE}, so a flow for this payment could not be recorded`, pre.checks)
+    }
     if (!opened.inserted) return refused(chain, 409, 'NONCE_ALREADY_USED', `this authorization nonce already opened flow ${flowId}; sign a new authorization`, pre.checks)
   }
   const out = await railServeTool('risk_check', { agentId: p.payee, txContext: { amountUsd: p.amountUsd, payee: p.payee } }, header, status, railDeps)
@@ -874,7 +883,13 @@ export async function runVerifyThenPay(input: VtpInput, paymentHeader: string | 
       fees: pre.fees,
       simulation: sim.ok ? { ok: true } : { ok: false, error: sim.error },
     })
-    ownerHandoff = { auditOutcome: 'awaiting_human', owner: pre.owner, ownerPay: call, approvalUrl: approvalUrl(chain, p.vault, flowId), ownerOnly: pre.ownerOnly?.code ?? null }
+    ownerHandoff = {
+      auditOutcome: 'awaiting_human',
+      owner: pre.owner,
+      ownerPay: call,
+      approvalUrl: approvalUrlFor(chain, p.vault, flowId, { payer: settlement.payer, operator: pre.operator, payee: p.payee }),
+      ownerOnly: pre.ownerOnly?.code ?? null,
+    }
     prepared = null
   } else if (v.effective === 'WARN' && !parsed.payOnWarn) {
     // The hand-off would go back to the key that asked: nothing a human approved could be told
@@ -966,7 +981,11 @@ export async function runVerifyThenPay(input: VtpInput, paymentHeader: string | 
       const why = pre.ownerOnly ? `${v.effective}, and the agent cannot pay this: ${pre.ownerOnly.reason} (${pre.ownerOnly.code}), so only the owner can settle it` : 'WARN: the agent must not pay this on its own'
       return ownerHandoff?.ownerPay.simulation.ok === false
         ? `${why}, and the vault would refuse the owner's payment right now (${ownerHandoff.ownerPay.simulation.error}): do not send ownerHandoff.ownerPay, it would revert and cost gas. Ask again once the vault can pay.`
-        : `${why}. Send the owner this link to approve it on the vault page with their own wallet: ${ownerHandoff?.approvalUrl ?? ''}. Or the owner can settle it by sending ownerHandoff.ownerPay from the owner key ${pre.owner}${ownerHandoff ? `, with ${sendInstruction(ownerHandoff.ownerPay, 'ownerHandoff.ownerPay')}` : ''}; then POST {"txHash": "0x..."} to ${receiptUrl} and the server reads the receipt itself.`
+        : `${why}. ${
+            ownerHandoff?.approvalUrl
+              ? `Send the owner this link to approve it on the vault page with their own wallet: ${ownerHandoff.approvalUrl}. Or the owner can settle it by sending`
+              : `There is no link for the vault page, because it will not offer this: ${whyNoApproval({ payer: settlement.payer, operator: pre.operator, payee: p.payee })}. The owner can settle it by sending`
+          } ownerHandoff.ownerPay from the owner key ${pre.owner}${ownerHandoff ? `, with ${sendInstruction(ownerHandoff.ownerPay, 'ownerHandoff.ownerPay')}` : ''}; then POST {"txHash": "0x..."} to ${receiptUrl} and the server reads the receipt itself.`
     })(),
     warn_no_human_gate: `WARN, and this vault's owner and operator are the same key (${pre.owner}), so there is no human to hand the payment to: do not pay. Nothing was prepared and no approval was recorded. Give the vault an owner key the agent does not hold${
       // A payee we know nothing about, on a vault with no human by construction: pointing an
@@ -1014,7 +1033,7 @@ export type VtpFlowReadBody = {
   url: string | null
   receiptUrl: string | null
   paymentExplorerUrl: string | null
-  /** Where the owner approves this flow, while it waits for them. */
+  /** Where the owner approves this flow, while it waits for them and the vault page would offer it. */
   approvalUrl?: string | null
   error?: string
   note: string
@@ -1056,7 +1075,10 @@ export async function readVtpVaultFlows(vaultRaw: unknown, deps: Pick<VtpDeps, '
   }
   const vault = vaultRaw.toLowerCase()
   const read = store.waiting ? await store.waiting(vault, { limit: VAULT_FLOWS_LIMIT + 1, othersCap: VAULT_FLOWS_OTHERS_CAP }) : { ok: false as const, reason: 'this store cannot list by vault' }
-  if (!read.ok) return { httpStatus: 503, body: { vault, network: chain.caip2, ...empty, error: `the flow log could not be read: ${read.reason}`, note } }
+  if (!read.ok) {
+    logFlowStoreFault('listing a vault', read.reason)
+    return { httpStatus: 503, body: { vault, network: chain.caip2, ...empty, error: FLOW_LOG_UNREADABLE, note } }
+  }
   return {
     httpStatus: 200,
     body: {
@@ -1082,7 +1104,10 @@ export async function readVtpFlow(flowIdRaw: unknown, deps: Pick<VtpDeps, 'store
   }
   const id = flowIdRaw.toLowerCase()
   const read = await store.load(id)
-  if (!read.ok) return { httpStatus: 503, body: { flowId: id, flow: null, url: null, receiptUrl: null, paymentExplorerUrl: null, error: `the flow log could not be read: ${read.reason}`, note } }
+  if (!read.ok) {
+    logFlowStoreFault('reading a flow', read.reason)
+    return { httpStatus: 503, body: { flowId: id, flow: null, url: null, receiptUrl: null, paymentExplorerUrl: null, error: FLOW_LOG_UNREADABLE, note } }
+  }
   if (!read.row || holdsNoFlow(read.row)) return { httpStatus: 404, body: { flowId: id, flow: null, url: null, receiptUrl: null, paymentExplorerUrl: null, error: 'no flow with this id', note } }
   return {
     httpStatus: 200,
@@ -1092,7 +1117,7 @@ export async function readVtpFlow(flowIdRaw: unknown, deps: Pick<VtpDeps, 'store
       url: flowUrl(id, origin),
       receiptUrl: `${origin.replace(/\/$/, '')}${flowPath(id)}/receipt`,
       paymentExplorerUrl: read.row.payment?.explorerUrl ?? null,
-      approvalUrl: read.row.outcome === 'awaiting_human' ? approvalUrl(vtpChain(), read.row.vault, id) : null,
+      approvalUrl: read.row.outcome === 'awaiting_human' ? approvalUrlFor(vtpChain(), read.row.vault, id, { payer: read.row.check.payer, operator: read.row.operator, payee: read.row.payee }) : null,
       note,
     },
   }

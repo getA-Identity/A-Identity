@@ -165,9 +165,11 @@ function scoredBy(signals: RiskSignals): Scored {
 }
 
 /** Who a real vendor that never signed up with us is: no agent, no record. */
+const SEPARATE_PAYER = '0x' + '77'.repeat(20)
+
 const UNKNOWN_PAYEE: RiskSignals = { onchainVerified: false, kyaVerified: false, reputationScore: 0, tenureDays: 0, revoked: false, onPlatform: false }
 
-type Setup = { score?: Scored; settle?: GatewaySettleResponse; transfers?: 'none'; insertFails?: boolean; closeFails?: boolean; serverFrozen?: boolean; payOnWarn?: boolean; ownerIsOperator?: boolean; agentsHeld?: bigint; policy?: Partial<Vault> }
+type Setup = { score?: Scored; settle?: GatewaySettleResponse; transfers?: 'none'; insertFails?: boolean; closeFails?: boolean; serverFrozen?: boolean; payOnWarn?: boolean; ownerIsOperator?: boolean; agentsHeld?: bigint; policy?: Partial<Vault>; payer?: string }
 
 function harness(o: Setup = {}) {
   const rows = new Map<string, VtpFlowRecord>()
@@ -202,8 +204,8 @@ function harness(o: Setup = {}) {
       now: () => NOW,
       sleep: async () => {},
       getSupported: async () => ({ kinds: [kind] }),
-      settle: async () => o.settle ?? { success: true, transaction: 'tr-1', network: arc.caip2, payer: OPERATOR },
-      searchTransfers: async (_u: string, p: { nonce?: string }): Promise<GatewayTransfer[]> => (o.transfers === 'none' ? [] : [{ id: 'tr-1', status: 'received', fromAddress: OPERATOR, toAddress: PAY_TO, amount: '5000', nonce: p.nonce }]),
+      settle: async () => o.settle ?? { success: true, transaction: 'tr-1', network: arc.caip2, payer: o.payer ?? OPERATOR },
+      searchTransfers: async (_u: string, p: { nonce?: string }): Promise<GatewayTransfer[]> => (o.transfers === 'none' ? [] : [{ id: 'tr-1', status: 'received', fromAddress: o.payer ?? OPERATOR, toAddress: PAY_TO, amount: '5000', nonce: p.nonce }]),
       handlers: { risk_check: async (input: { agentId?: string; txContext?: unknown }) => (o.score ?? scored('ALLOW'))(input) },
       persist: async (_r: GatewaySettlementRecord) => {},
       load: async () => [],
@@ -246,6 +248,17 @@ function harness(o: Setup = {}) {
       chain: clientChain(o.ownerIsOperator, o.agentsHeld ?? 1n, o.policy),
       clock: { now: () => 0, sleep: async () => {} },
       ...(o.payOnWarn ? { payOnWarn: true } : {}),
+      ...(o.payer
+        ? {
+            payer: {
+              address: o.payer,
+              signTypedData: async (r: unknown) => {
+                signed.push(r)
+                return `0x${'ab'.repeat(65)}`
+              },
+            },
+          }
+        : {}),
     })
   return { run, sent, signed, rows, deps }
 }
@@ -346,6 +359,14 @@ for (const [label, policy, code] of [
       assert.equal(link.searchParams.get('contract'), VAULT)
     })
   }
+
+  test(`${label}, through both sides: a check a separate payer paid for gets no link, because the vault page would refuse it`, async () => {
+    const h = harness({ score: scored('WARN'), policy, payer: SEPARATE_PAYER })
+    const out = await h.run()
+    assert.equal(out.outcome, 'awaiting_human')
+    assert.equal(out.approvalUrl, null, 'the SDK hands out no link')
+    assert.equal(out.ownerPay?.function, 'ownerPay(address,uint256)', 'and the call for the owner key is still there')
+  })
 
   test(`${label}, through both sides: payOnWarn pays nothing`, async () => {
     const h = harness({ score: scored('WARN'), policy, payOnWarn: true })

@@ -542,7 +542,8 @@ test('402, 502 and 503 from the rail open no flow and abandon the reservation; a
   const r500b = await runVerifyThenPay(request(), header(), lost.deps)
   assert.equal(r500b.httpStatus, 500)
   assert.deepEqual([r500b.body.record?.recorded, r500b.body.record?.url, r500b.body.flowId], [false, null, null])
-  assert.match(r500b.body.next, /not recorded as a flow: the flow log refused the write \(disk full\)/)
+  assert.match(r500b.body.next, /not recorded as a flow: the flow log refused the write/)
+  assert.doesNotMatch(r500b.body.next, /disk full/, "the log's own words stay on the server")
 })
 
 test('ALLOW prepares exactly pay(payee, amount) for the operator, asks risk_check about the payee address, and executes nothing', async () => {
@@ -674,7 +675,7 @@ test('a simulation that fails after the verdict is reported, and a flow log that
   const out2 = await runVerifyThenPay(request(), header(), full.deps)
   assert.equal(out2.httpStatus, 500)
   assert.deepEqual([out2.body.stage, out2.body.code, out2.body.flowId, out2.body.prepared, out2.body.ownerHandoff], ['check_failed', 'FLOW_NOT_RECORDED', null, null, null])
-  assert.deepEqual([out2.body.record?.recorded, out2.body.record?.url, out2.body.record?.reason], [false, null, 'the flow log refused the write (disk full)'])
+  assert.deepEqual([out2.body.record?.recorded, out2.body.record?.url, out2.body.record?.reason], [false, null, 'the flow log refused the write'])
   assert.equal(out2.body.verdict?.effective, 'ALLOW', 'the verdict that was paid for is still reported')
   assert.match(out2.body.next, /could never be tied to this check/)
 })
@@ -727,7 +728,8 @@ test('a DENY or an unusable answer whose record was not written says the refusal
     assert.equal(out.body.stage, stage)
     assert.deepEqual([out.body.record?.recorded, out.body.record?.url, out.body.flowId, out.body.prepared], [false, null, null, null], stage)
     assert.match(out.body.next, /do not pay/)
-    assert.match(out.body.next, /The refusal is not public: the flow log refused the write \(disk full\)/)
+    assert.match(out.body.next, /The refusal is not public: the flow log refused the write/)
+    assert.doesNotMatch(out.body.next, /disk full/)
     assert.ok(!JSON.stringify(out.body).includes('/api/x402/gateway/flows/'), `${stage}: no link to a record that does not exist`)
   }
 })
@@ -873,7 +875,8 @@ test('a flow log that refuses the reservation refuses the request, and nothing i
   const full = setup({ store: { insert: async () => ({ ok: false, reason: 'disk full' }) } })
   const a = await runVerifyThenPay(request(), header(), full.deps)
   assert.deepEqual([a.httpStatus, a.body.stage, a.body.code, a.body.charged], [503, 'refused', 'FLOW_STORE_UNREADABLE', false])
-  assert.match(a.body.reason ?? '', /disk full/)
+  assert.match(a.body.reason ?? '', /^the flow log refused the write/)
+  assert.doesNotMatch(a.body.reason ?? '', /disk full/, "the log's own words stay on the server")
   assert.equal(full.g.spy.settles, 0)
 
   // Passed the read and lost the insert: the row appeared between the two.
@@ -1040,12 +1043,14 @@ test('a hand-off whose simulation failed tells the owner not to send it', async 
   assert.doesNotMatch(out.body.next, /can settle it/)
 })
 
-test('on a vault with one key, a payment above the ceiling stays a refusal that says no verdict was bought and what the owner can do', async () => {
+test('on a vault with one key, a payment above the ceiling stays a refusal that promises no hand-off, because nothing there can give one', async () => {
   const above = await runVerifyThenPay(request({ amount: '250001' }), undefined, setup({ chain: { owner: OPERATOR } }).deps)
   assert.equal(above.body.code, 'AboveAutoApprove')
   assert.match(above.body.next, /no verdict on this payee/)
-  assert.match(above.body.next, /ownerPay directly/)
-  assert.match(above.body.next, /raises the ceiling or allows the payee/)
+  assert.match(above.body.next, /no person to hand this to/)
+  assert.match(above.body.next, /ALLOW prepares pay\(\) and WARN stops with the check paid/)
+  assert.match(above.body.next, /owner key the agent does not hold/)
+  assert.doesNotMatch(above.body.next, /To get a verdict and a hand-off/)
   // Any other refusal keeps its plain answer.
   const frozen = await runVerifyThenPay(request(), undefined, setup({ chain: { frozen: true } }).deps)
   assert.equal(frozen.body.code, 'IsFrozen')
@@ -1185,13 +1190,56 @@ test('a hand-off carries the approval link: the vault page at the site, with the
   const { deps } = setup({ gw: { scored: verdict('WARN') } })
   // deps.origin is what requestOrigin builds from Host and X-Forwarded-Host, so a caller chooses it.
   const out = await runVerifyThenPay(request(), header(), { ...deps, origin: 'https://evil.example' })
-  const url = new URL(out.body.ownerHandoff!.approvalUrl)
+  const url = new URL(String(out.body.ownerHandoff!.approvalUrl))
   assert.equal(url.origin, 'https://a-identity.xyz')
   assert.equal(url.pathname, '/app/vault/arc')
   assert.deepEqual(Object.fromEntries(url.searchParams), { network: arc.caip2, contract: VAULT, flow: NONCE })
-  assert.ok(out.body.next.includes(out.body.ownerHandoff!.approvalUrl), 'the agent is told to send it')
+  assert.ok(out.body.next.includes(String(out.body.ownerHandoff!.approvalUrl)), 'the agent is told to send it')
   assert.doesNotMatch(out.body.next, /evil\.example.*app\/vault/)
 })
+
+const SOMEONE = '0x' + '99'.repeat(20)
+
+test('a check another key paid for gets no approval link, because the vault page would refuse it, and the answer says what to do instead', async () => {
+  const { s, deps } = setup({
+    gw: {
+      scored: verdict('WARN'),
+      settle: { success: true, transaction: 'tr-1', network: arc.caip2, payer: SOMEONE },
+      transfers: [{ id: 'tr-1', status: 'received', fromAddress: SOMEONE, toAddress: PAY_TO, amount: '5000', nonce: NONCE }],
+    },
+  })
+  const out = await runVerifyThenPay(request(), header({}, { from: SOMEONE }), deps)
+  assert.equal(out.body.stage, 'awaiting_human')
+  assert.equal(out.body.ownerHandoff?.approvalUrl, null)
+  assert.doesNotMatch(out.body.next, /app\/vault\/arc/)
+  assert.match(out.body.next, /no link for the vault page/)
+  assert.match(out.body.next, /not by the vault's operator key/)
+  assert.match(out.body.next, /sending ownerHandoff\.ownerPay from the owner key/)
+  assert.equal(s.rows.get(NONCE)?.check.payer.toLowerCase(), SOMEONE)
+  const read = await readVtpFlow(NONCE, { store: deps.store })
+  assert.equal(read.body.approvalUrl, null, 'and reading the flow does not hand one out either')
+})
+
+test('a payment to the operator key itself gets no approval link, for the same reason', async () => {
+  const { deps } = setup({ gw: { scored: verdict('WARN', { txContext: { payee: OPERATOR, amountUsd: 0.25 }, agentId: OPERATOR }) } })
+  const out = await runVerifyThenPay(request({ payee: OPERATOR }), header(), deps)
+  assert.equal(out.body.stage, 'awaiting_human')
+  assert.equal(out.body.ownerHandoff?.approvalUrl, null)
+  assert.match(out.body.next, /the payee is the vault's own operator key/)
+  assert.equal((await readVtpFlow(NONCE, { store: deps.store })).body.approvalUrl, null)
+})
+
+for (const [label, input, chain] of [
+  ['above the ceiling', ABOVE, {}],
+  ['off the allowlist', {}, OFF_ALLOWLIST],
+] as [string, Partial<VtpInput>, Partial<Chain>][]) {
+  test(`${label}: the 402 names the key the vault page wants the check paid from, before anything is signed`, async () => {
+    const out = await runVerifyThenPay(request(input), undefined, setup({ chain }).deps)
+    assert.equal(out.httpStatus, 402)
+    assert.ok(out.body.next.includes(`operator key ${OPERATOR}`), out.body.next)
+    assert.match(out.body.next, /offers the owner this approval only if the check is paid from/)
+  })
+}
 
 test('reading a flow names its approval link only while it waits for the owner', async () => {
   const { deps } = setup({ gw: { scored: verdict('WARN') } })
@@ -1285,4 +1333,24 @@ test('the list refuses a vault that is not an address, and a log it cannot read 
   const down = await readVtpVaultFlows(VAULT, { store: memStore([], { waiting: async () => ({ ok: false, reason: 'db down' }) }).store })
   assert.equal(down.httpStatus, 503)
   assert.match(String(down.body.error), /could not be read/)
+})
+
+test("a flow log that fails says fixed words to a caller with no key, and the database's own go to the server's log", async () => {
+  const secret = 'password authentication failed for user "a_identity_prod" at dpg-abc123.oregon-postgres.render.com'
+  const logged: unknown[][] = []
+  const real = console.error
+  console.error = (...args: unknown[]) => void logged.push(args)
+  try {
+    const list = await readVtpVaultFlows(VAULT, { store: memStore([], { waiting: async () => ({ ok: false, reason: secret }) }).store })
+    assert.equal(list.httpStatus, 503)
+    assert.equal(list.body.error, 'the flow log could not be read')
+    const one = await readVtpFlow(NONCE, { store: memStore([], { load: async () => ({ ok: false, reason: secret }) }).store })
+    assert.equal(one.httpStatus, 503)
+    assert.equal(one.body.error, 'the flow log could not be read')
+    for (const out of [list.body, one.body]) assert.doesNotMatch(JSON.stringify(out), /a_identity_prod|render\.com/)
+    assert.equal(logged.length, 2)
+    assert.ok(logged.every((l) => String(l[0]).includes(secret)), 'whoever runs the server still sees why')
+  } finally {
+    console.error = real
+  }
 })

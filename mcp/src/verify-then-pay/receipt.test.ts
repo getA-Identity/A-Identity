@@ -487,6 +487,75 @@ test('a tie on the verdict block goes to the later check, whoever asks first, an
   assert.equal(answeredFlow([flow(), flowB()], 205n, { byOwner: false, from: OWNER }), null, 'a revert from a key neither flow prepared for answers nothing')
 })
 
+const STRANGER = '0x' + '99'.repeat(20)
+
+/** A hand-off for the owner, checked in block 100, with this key having paid for the check. */
+function handoffOf(base: VtpFlowRecord, payer: string): VtpFlowRecord {
+  return { ...base, outcome: 'awaiting_human', detail: 'warn_handoff', verdict: { ...base.verdict!, decision: 'WARN', effective: 'WARN' }, prepared: { from: OWNER, to: VAULT, data: ownerPayCalldata(PAYEE, AMOUNT), function: 'ownerPay(address,uint256)', args: [PAYEE, AMOUNT.toString()] }, check: { ...base.check, payer } }
+}
+
+test("a stranger's later identical check does not take the owner's payment: the agent's flow closes, and its answer says why", async () => {
+  const agents = handoffOf(flow(), OPERATOR)
+  const strangers = handoffOf(flowB(), STRANGER)
+  assert.equal(answeredFlow([agents, strangers], 205n, { byOwner: true, from: null })?.flowId, FLOW)
+  assert.equal(answeredFlow([strangers, agents], 205n, { byOwner: true, from: null })?.flowId, FLOW, 'in either order')
+  const { store } = await storeWith([agents, strangers])
+  const call = chainOf({ [HASH]: rawReceipt({ block: 205, logs: [nativeLog(), transferLog(), paidLog({ byOwner: true })] }) })
+  // Posted to the stranger's: the server says whose it is, and the stranger's flow changes nothing.
+  const posted = await recordVtpReceipt(FLOW_B, HASH, deps(store, call))
+  assert.deepEqual([posted.httpStatus, posted.body.code, posted.body.answersFlow, posted.body.verified], [409, 'TX_ANSWERS_LATER_CHECK', FLOW, false])
+  assert.match(String(posted.body.reason), /the vault's operator paid for that check/)
+  assert.doesNotMatch(String(posted.body.reason), /after this flow's/, 'the agent\'s check was the earlier one, so it does not say otherwise')
+  const paid = await recordVtpReceipt(FLOW, HASH, deps(store, call))
+  assert.deepEqual([paid.httpStatus, paid.body.outcome, paid.body.detail], [200, 'executed', 'owner_paid'])
+})
+
+test("the owner's preference only orders the operator's checks ahead: among them the latest still answers, and with none a stranger's can", async () => {
+  const older = handoffOf(flow(), OPERATOR)
+  const newer = handoffOf(flowB(), OPERATOR)
+  assert.equal(answeredFlow([older, newer], 205n, { byOwner: true, from: null })?.flowId, FLOW_B, 'the latest of the operator\'s own')
+  const separate = handoffOf(flowB(), STRANGER)
+  assert.equal(answeredFlow([separate], 205n, { byOwner: true, from: null })?.flowId, FLOW_B, 'a separate payer\'s flow is still closed by the owner\'s payment when it stands alone')
+  // Its check has to come before the payment, as ever.
+  assert.equal(answeredFlow([handoffOf(flowB(), OPERATOR), handoffOf(flow(), STRANGER)], 150n, { byOwner: true, from: null })?.flowId, FLOW)
+  // A revert is matched by its sender too, and the same preference holds.
+  assert.equal(answeredFlow([older, separate], 205n, { byOwner: true, from: OWNER })?.flowId, FLOW)
+})
+
+test("an operator's payment links as it always has: the payer of a check does not come into it", async () => {
+  const agents = flow()
+  const separate = flowB({ check: { ...flowB().check, payer: STRANGER } })
+  assert.equal(answeredFlow([agents, separate], 205n, { byOwner: false, from: null })?.flowId, FLOW_B, 'the latest check, whoever paid for it')
+  assert.equal(answeredFlow([flow({ check: { ...flow().check, payer: STRANGER } }), flowB()], 205n, { byOwner: false, from: null })?.flowId, FLOW_B)
+})
+
+test('an operator payment on a hand-off is refused, and the refusal claims no verdict it does not know', async () => {
+  const allowed = handoffOf(flow(), OPERATOR)
+  const ownerOnly = { ...allowed, detail: 'owner_only_handoff' as const, ownerOnly: 'AboveAutoApprove' as const, verdict: { ...allowed.verdict!, decision: 'ALLOW' as const, effective: 'ALLOW' as const } }
+  const { store } = await storeWith([ownerOnly])
+  const out = await recordVtpReceipt(FLOW, HASH, deps(store, chainOf({ [HASH]: rawReceipt({ block: 205, logs: [nativeLog(), transferLog(), paidLog({ byOwner: false })] }) })))
+  assert.deepEqual([out.httpStatus, out.body.code], [422, 'AGENT_PAID_ON_HANDOFF'])
+  assert.doesNotMatch(String(out.body.reason), /WARN/)
+  assert.match(String(out.body.reason), /waits for its owner/)
+})
+
+test("the flow log failing says fixed words to whoever posted, and the database's own go to the server's log", async () => {
+  const secret = 'password authentication failed for user "a_identity_prod"'
+  const real = console.error
+  const logged: string[] = []
+  console.error = (...args: unknown[]) => void logged.push(args.join(' '))
+  try {
+    const { store } = await storeWith([flow()])
+    const out = await recordVtpReceipt(FLOW, HASH, deps({ ...store, load: async () => ({ ok: false, reason: secret }) }, chainOf({})))
+    assert.equal(out.httpStatus, 503)
+    assert.equal(out.body.reason, 'the flow log could not be read')
+    assert.doesNotMatch(JSON.stringify(out.body), /a_identity_prod/)
+    assert.ok(logged.some((l) => l.includes(secret)))
+  } finally {
+    console.error = real
+  }
+})
+
 test('the flow log not answering while the payment is matched is a retry, and nothing changes', async () => {
   const seed = flow()
   const { store } = await storeWith([seed])
