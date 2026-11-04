@@ -1,6 +1,6 @@
 {
   "name": "@a-identity/trust-mcp",
-  "version": "0.4.6",
+  "version": "0.4.7",
   "description": "Pay A-Identity for trust checks (is it safe to pay this address, is this AI agent real) in USDC on Algorand, as an MCP server or as commands. check_before_pay picks the checks a payment calls for and never pays twice for the same check. Holding only XLM on Stellar? `buy` exchanges it through SideShift into USDC on Algorand as your agent's budget for checks, and `refund` sends what is left back.",
   "type": "module",
   "bin": {
