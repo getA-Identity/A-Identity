@@ -2,8 +2,8 @@ import { useEffect, useReducer, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { motion, AnimatePresence, useReducedMotion } from 'framer-motion'
 import { Search, X, ArrowUpRight, ArrowRight, ShieldCheck, Wallet, QrCode, Check, Loader2 } from 'lucide-react'
-import { resolveAgent, getReputation, getLeaderboard, type AgentIdentity, type Reputation, type FeedAgent } from '../../lib/mcp-client'
-import { adverseRecordOf, NO_VERDICT_NOTE, previewVerdict, readRecord, rosterVerdict, type RecordRead } from '../../lib/trust-preview'
+import { readPayee, getLeaderboard, type AgentIdentity, type Reputation, type FeedAgent } from '../../lib/mcp-client'
+import { adverseRecordOf, NO_VERDICT_NOTE, NOT_REACHED_NOTE, previewVerdict, rosterVerdict, UNKNOWN_PAYEE_NOTE, type RecordRead } from '../../lib/trust-preview'
 import { useAuth } from '../../store/auth'
 import { EASE_OUT_EXPO } from '../../lib/brand'
 import AgentAvatar from '../AgentAvatar'
@@ -77,7 +77,9 @@ function ResultCard({ result, q, onOpen, onClaim }: { result: NonNullable<Result
         )}
       </div>
       {unreadable && <p className="text-xs leading-relaxed text-foreground/60">The reputation could not be read just now, so this gives no verdict. Try again in a few seconds, and do not pay on this.</p>}
-      {!unreadable && !v && <p className="text-xs leading-relaxed text-foreground/60">{NO_VERDICT_NOTE}</p>}
+      {recordRead === 'not-reached' && <p className="text-xs leading-relaxed text-foreground/60">{NOT_REACHED_NOTE}</p>}
+      {recordRead === 'no-record' && !identity && <p className="text-xs leading-relaxed text-foreground/60">{UNKNOWN_PAYEE_NOTE}</p>}
+      {!unreadable && recordRead !== 'not-reached' && !v && <p className="text-xs leading-relaxed text-foreground/60">{NO_VERDICT_NOTE}</p>}
       {reputation && (
         <div>
           <div className="flex items-baseline gap-2">
@@ -281,10 +283,8 @@ export default function TrustSpotlight() {
     if (!term) { setResult(null); setLoading(false); return }
     setLoading(true)
     const t = setTimeout(async () => {
-      const [idRes, repRes] = await Promise.all([resolveAgent(term), getReputation(term)])
-      const identity = idRes.ok && idRes.data.found ? (idRes.data.agent ?? null) : null
-      const { read, reputation } = readRecord(repRes)
-      setResult(identity || reputation ? { identity, reputation, recordRead: read } : null)
+      const { identity, reputation, read } = await readPayee(term)
+      setResult({ identity, reputation, recordRead: read })
       setLoading(false)
     }, 350)
     return () => clearTimeout(t)
@@ -394,20 +394,6 @@ export default function TrustSpotlight() {
                   <div className="max-h-[52vh] overflow-y-auto p-4">
                     {loading && <div className="flex items-center gap-2 px-1 py-6 text-sm text-foreground/60"><span className="h-3 w-3 animate-spin rounded-full border-2 border-foreground/20 border-t-accent" /> Reading the chain…</div>}
                     {!loading && result && <ResultCard result={result} q={q.trim()} onOpen={() => goExplorer(q.trim())} onClaim={() => startClaim(result.identity?.owner || q.trim())} />}
-                    {!loading && !result && q.trim() && (
-                      <div className="flex flex-col gap-3 px-1 py-4">
-                        <p className="text-sm text-foreground/70">
-                          No verified agent found for <span className="font-mono text-foreground/70">{shorten(q.trim())}</span>. It may not be registered on A-Identity yet.
-                        </p>
-                        <button onClick={() => startClaim(q.trim())}
-                          className="inline-flex items-center gap-2 self-start rounded-lg bg-accent px-4 py-2.5 text-sm font-semibold text-white transition hover:opacity-90">
-                          <ShieldCheck size={15} /> Are you the owner? Claim this agent
-                        </button>
-                        <p className="text-xs text-foreground/60">
-                          Or try a demo token id like <button onClick={() => setQ('849980')} className="font-mono text-accent hover:underline">849980</button>.
-                        </p>
-                      </div>
-                    )}
                     {!loading && !q.trim() && (
                       <div>
                         <div className="px-1 pb-2 text-xs font-semibold uppercase tracking-wide text-foreground/65">Featured agents</div>

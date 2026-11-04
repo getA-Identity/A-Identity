@@ -4,8 +4,8 @@ import { Loader2, Search } from 'lucide-react'
 import VerifyStepper from '../landing/VerifyStepper'
 import { Input } from '../ui/input'
 import { CHECK_EXAMPLES } from '../../lib/rail'
-import { getReputation, resolveAgent, type AgentIdentity, type Reputation } from '../../lib/mcp-client'
-import { readRecord, type RecordRead } from '../../lib/trust-preview'
+import { readPayee, type AgentIdentity, type Reputation } from '../../lib/mcp-client'
+import { emptyReadMessage, type RecordRead } from '../../lib/trust-preview'
 
 /**
  * The live check every per-chain landing page (/arc, /algorand) opens with: it runs by
@@ -38,17 +38,13 @@ export function TryIt({
     if (!q) return
     setLoading(true)
     setError(null)
-    const [idRes, repRes] = await Promise.all([resolveAgent(q), getReputation(q)])
-    const id = idRes.ok && idRes.data.found ? (idRes.data.agent ?? null) : null
-    const { read, reputation: rep } = readRecord(repRes)
+    const { identity: id, reputation: rep, read, unreachable } = await readPayee(q)
     setIdentity(id)
     setReputation(rep)
     setRecordRead(read)
     setShown(q)
     // "Not found" and "could not ask" are different answers, so they get different words.
-    if (!idRes.ok && !repRes.ok) setError('The oracle could not be reached just now. Try again in a few seconds.')
-    else if (!id && !rep && read === 'unreadable') setError('The reputation read failed just now, so nothing can be said about this agent. Try again in a few seconds.')
-    else if (!id && !rep) setError(`No agent found for "${q}". Try a token id or an owner address.`)
+    setError(unreachable ? 'The oracle could not be reached just now. Try again in a few seconds.' : emptyReadMessage(read, !id && !rep))
     setLoading(false)
   }
 
@@ -105,7 +101,7 @@ export function TryIt({
       </div>
       <div className="mt-5">
         {error && <p className="rounded-xl border border-border bg-background p-4 text-sm text-foreground/60">{error}</p>}
-        {!error && (identity || reputation) && (
+        {!error && !loading && shown && (
           <motion.div key={shown} initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.3 }}>
             <VerifyStepper identity={identity} reputation={reputation} recordRead={recordRead} query={shown} />
           </motion.div>

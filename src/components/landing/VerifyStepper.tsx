@@ -4,7 +4,7 @@ import { Loader2, Check, X, AlertTriangle, Fingerprint, BadgeCheck, Gauge, Scale
 import { CHAIN_BY_ID, type ChainId } from '../../lib/chains'
 import { Badge, VerdictBadge } from '../ui/badge'
 import type { AgentIdentity, Reputation } from '../../lib/mcp-client'
-import { adverseRecordOf, NO_VERDICT_NOTE, previewVerdict, type RecordRead } from '../../lib/trust-preview'
+import { adverseRecordOf, NO_VERDICT_NOTE, previewVerdict, UNKNOWN_PAYEE_NOTE, type RecordRead } from '../../lib/trust-preview'
 
 /**
  * VerifyStepper, the step-by-step "verify an agent" walkthrough.
@@ -25,21 +25,26 @@ import { adverseRecordOf, NO_VERDICT_NOTE, previewVerdict, type RecordRead } fro
 type StepState = 'idle' | 'running' | 'done'
 const STEP_MS = 850
 
-function verdictReasons(score: number, kya: string | undefined, verified: boolean, sybil: string | undefined, onPlatform: boolean, adverseRecord: boolean | null): string[] {
+function verdictReasons(score: number, kya: string | undefined, verified: boolean, sybil: string | undefined, onPlatform: boolean, adverseRecord: boolean | null, contested: number): string[] {
   const r: string[] = []
   if (kya === 'revoked') r.push('KYA attestation revoked (flagged as an incident)')
   if (!onPlatform) r.push('we hold no platform record of this agent, so we do not know how it has behaved; that does not mean it is bad, and it does not mean it is clean')
   if (!verified) r.push('no on-chain ERC-8004 identity found')
   if (sybil === 'high') r.push('Sybil signals: reputation mostly self-dealt')
   if (sybil === 'medium') r.push('Sybil signals: partial same-operator activity')
+  // Revoked and Sybil high are held against it, so "holds nothing against it" would be false there.
+  const heldAgainstIt = kya === 'revoked' || sybil === 'high'
   // With no record, a score only says we have no history for it, so it is no reason.
   if (onPlatform && score < 200) {
-    r.push(adverseRecord === true
-      ? `reputation ${score} is below 200, and our record of it holds evidence against it`
-      : `our record of it holds nothing against it, and not enough to vouch for it: reputation ${score} is below 200`)
+    if (adverseRecord === true) r.push(`reputation ${score} is below 200, and our record of it holds evidence against it`)
+    else if (adverseRecord === false && !heldAgainstIt) r.push(`our record of it ${contested > 0 ? 'holds no evidence against it' : 'holds nothing against it'}, and not enough to vouch for it: reputation ${score} is below 200`)
   }
-  else if (onPlatform && score < 500) r.push(`reputation ${score} is in the caution band (200-500)`)
+  else if (onPlatform && score < 500) {
+    r.push(`reputation ${score} is in the caution band (200-500)`)
+    if (adverseRecord === true) r.push(`our record of it holds evidence against it: rejected settlements or guardrail override attempts${score < 400 ? ', so a payment over $100 to it would be refused' : ''}`)
+  }
   if (kya === 'unverified' && verified) r.push('KYA (wallet control) not attested yet')
+  if (onPlatform && contested > 0) r.push(`our record holds ${contested} job${contested === 1 ? '' : 's'} a client refunded or disputed; a contest costs the client nothing while we fund the escrow, so it lowers the score and is not counted as evidence`)
   if (r.length === 0) r.push('verified identity, attested KYA, strong reputation')
   return r
 }
@@ -129,7 +134,7 @@ export default function VerifyStepper({ identity, reputation, recordRead, query,
   const unreadable = recordRead === 'unreadable'
   const adverseRecord = adverseRecordOf(reputation)
   const verdict = previewVerdict({ score, kya, verified, sybil, read: recordRead, adverseRecord })
-  const reasons = verdictReasons(score, kya, verified, sybil, onPlatform, adverseRecord)
+  const reasons = verdictReasons(score, kya, verified, sybil, onPlatform, adverseRecord, reputation?.behavioral?.contestedJobs ?? 0)
   const bd = reputation?.breakdown
   // Name the chain the read actually happened on. The old copy named X Layer or Circle Arc
   // and nothing else, so an identity resolved on Celo or Robinhood was reported as Arc.
@@ -196,6 +201,7 @@ export default function VerifyStepper({ identity, reputation, recordRead, query,
             <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
               <VerdictBadge verdict={verdict} size="md" />
               <span className="text-sm font-medium leading-relaxed text-foreground/70">{reasons.join(' · ')}</span>
+              {recordRead === 'no-record' && !identity && <span className="w-full text-sm font-medium leading-relaxed text-foreground/70">{UNKNOWN_PAYEE_NOTE}</span>}
             </div>
           )}
         </StepRow>

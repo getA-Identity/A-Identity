@@ -528,9 +528,50 @@ test('a preview does not read an identity-only reputation as a platform record',
   assert.deepEqual(readRecord({ ok: true, data: { found: false } }), { read: 'no-record', reputation: null })
 })
 
-test('a failed reputation read is not the finding that we hold no record', async () => {
+test('a failed reputation read is not the finding that we hold no record, and neither is an id that reached nothing', async () => {
   const readRecord = await readRecordOf()
   assert.deepEqual(readRecord({ ok: false, error: 'MCP server offline' }), { read: 'unreadable', reputation: null })
+  assert.deepEqual(readRecord({ ok: true, data: { found: false, lookedUp: false } as never }), { read: 'not-reached', reputation: null })
+  // An address that was looked up is the finding, and a server from before the field keeps its reading.
+  assert.deepEqual(readRecord({ ok: true, data: { found: false, lookedUp: true } as never }), { read: 'no-record', reputation: null })
+  assert.deepEqual(readRecord({ ok: true, data: { found: false } }), { read: 'no-record', reputation: null })
+})
+
+test('a read with nothing to show is an answer when we looked, and says so on every page that previews', async () => {
+  const { emptyReadMessage, UNKNOWN_PAYEE_NOTE, NOT_REACHED_NOTE, previewVerdict } = (await import(repoUrl('src/lib/trust-preview.ts').href)) as {
+    emptyReadMessage: (read: string, nothingShown: boolean) => string | null
+    UNKNOWN_PAYEE_NOTE: string
+    NOT_REACHED_NOTE: string
+    previewVerdict: (s: PreviewInput) => string | null
+  }
+  assert.equal(emptyReadMessage('no-record', true), null, 'an ordinary merchant wallet is WARN, not an error')
+  assert.equal(emptyReadMessage('not-reached', true), NOT_REACHED_NOTE)
+  assert.match(emptyReadMessage('unreadable', true) ?? '', /failed/)
+  assert.equal(emptyReadMessage('unreadable', false), null)
+  assert.equal(previewVerdict({ score: 0, verified: false, read: 'no-record', adverseRecord: null }), 'WARN')
+  assert.equal(previewVerdict({ score: 0, verified: false, read: 'not-reached', adverseRecord: null }), null)
+  assert.match(UNKNOWN_PAYEE_NOTE, /does not mean it is bad/)
+  assert.match(UNKNOWN_PAYEE_NOTE, /does not mean it is clean/)
+  assert.match(UNKNOWN_PAYEE_NOTE, /register it and prove control/)
+  for (const page of ['src/routes/Explorer.tsx', 'src/components/rail/RailKit.tsx', 'src/components/landing/TrustSpotlight.tsx']) {
+    assert.doesNotMatch(repo(page), /No agent found|No verified agent found/, page)
+  }
+  assert.match(repo('src/components/landing/VerifyStepper.tsx'), /UNKNOWN_PAYEE_NOTE/)
+  assert.match(repo('src/components/landing/TrustSpotlight.tsx'), /UNKNOWN_PAYEE_NOTE/)
+})
+
+test('a record with no token shows the identity of the wallet it proved, and the site never reads a wallet it only names', () => {
+  const client = repo('src/lib/mcp-client.ts')
+  assert.match(client, /reputation\?\.provenWallet/)
+  assert.match(repo('mcp/src/platform/agents.ts'), /const provenWallet = record\.walletAddress && provenNow\(record, record\.walletAddress\)/)
+})
+
+test('the stepper does not tell a reader a refused agent is clean, and names evidence below a DENY', () => {
+  const stepper = repo('src/components/landing/VerifyStepper.tsx')
+  assert.match(stepper, /const heldAgainstIt = kya === 'revoked' \|\| sybil === 'high'/)
+  assert.match(stepper, /adverseRecord === false && !heldAgainstIt/)
+  assert.match(stepper, /holds evidence against it: rejected settlements or guardrail override attempts/)
+  assert.match(stepper, /a payment over \$100 to it would be refused/)
 })
 
 test('a preview takes the record the answer gives: an address only ever answers with one that proved it', async () => {
@@ -540,7 +581,7 @@ test('a preview takes the record the answer gives: an address only ever answers 
   for (const kya of ['unverified', 'verified', 'revoked']) assert.equal(readRecord(answer(kya)).read, 'record', kya)
   // What the server does for a wallet the record never proved is pinned in platform/circle-policy.test.ts.
   assert.match(repo('mcp/src/http.ts'), /getReputation: \(id\) => reputationForQuery\(id\)/)
-  assert.match(repo('mcp/src/http/public-routes.ts'), /reputationForQuery\(id\)/)
+  assert.match(repo('mcp/src/http/public-routes.ts'), /readReputationAnswer<[^\n]+>\(id, reputationForQuery,/)
 })
 
 // ── the verdict a preview shows, against the scorer it previews ───────────────────
@@ -595,8 +636,8 @@ test('a preview does not invent a verdict from what it cannot see, and a failed 
 
 test('the site reads the same evidence the scorer reads, from the fields the backend echoes', async () => {
   const { adverseRecordOf } = await trustPreview()
-  const clean = { behavioral: { contestedEvidence: 0 }, discipline: { rejectedSettlements: 0, overrideAttempts: 0 } }
-  for (const echo of [clean, {}, null, { behavioral: { contestedEvidence: 2 } }, { discipline: { rejectedSettlements: 1 } }, { ...clean, discipline: { rejectedSettlements: 0, overrideAttempts: 1 } }, { behavioral: { contestedJobs: 3 } }]) {
+  const clean = { discipline: { rejectedSettlements: 0, overrideAttempts: 0 } }
+  for (const echo of [clean, {}, null, { ...clean, behavioral: { contestedJobs: 2 } }, { discipline: { rejectedSettlements: 1 } }, { ...clean, discipline: { rejectedSettlements: 0, overrideAttempts: 1 } }, { behavioral: { contestedJobs: 3 } }]) {
     assert.equal(adverseRecordOf(echo), adverseRecordFrom(echo as never), JSON.stringify(echo))
   }
 })
@@ -615,9 +656,10 @@ test('no page that previews a verdict keeps its own copy of the line, or denies 
 test('every page that previews a verdict goes through the record read', () => {
   const src = repo
   for (const page of ['src/routes/Explorer.tsx', 'src/components/landing/TrustSpotlight.tsx', 'src/components/rail/RailKit.tsx']) {
-    assert.match(src(page), /readRecord\(repRes\)/, page)
+    assert.match(src(page), /readPayee\(/, page)
     assert.doesNotMatch(src(page), /reputation !== null\)/, page)
   }
+  assert.match(src('src/lib/mcp-client.ts'), /readRecord\(repRes\)/)
   assert.doesNotMatch(src('src/components/landing/VerifyStepper.tsx'), /onPlatform = reputation !== null/)
 })
 
@@ -650,6 +692,19 @@ test('every surface says DENY means we hold evidence, keeps the limit, and no lo
     assert.match(said, /WARN`? means unknown, not clean/, page)
     assert.match(said, /A low score alone is not evidence/, page)
   }
+  // DENY also comes out where we could not look, and no surface presents that as evidence.
+  for (const page of ['README.md', 'ARCHITECTURE.md', 'docs/chains/arc-integration.mdx', 'docs/chains/stellar.mdx', 'docs/developers/sdk.mdx', 'public/llms.txt', 'public/llms-full.txt', 'public/.well-known/agent-skills/verify-before-paying/SKILL.md', 'trust-guard/README.md', 'mcp/src/asp/proof.ts', 'mcp/src/asp/risk.ts', 'src/routes/Architecture.tsx']) {
+    assert.match(repo(page).replace(/\s+/g, ' '), /could not read our record/, page)
+  }
+  // Contested jobs are not evidence on any surface that lists what is.
+  for (const page of ['README.md', 'ARCHITECTURE.md', 'docs/chains/arc-integration.mdx', 'public/llms-full.txt', 'public/.well-known/agent-skills/verify-before-paying/SKILL.md', 'trust-guard/README.md', 'mcp/src/asp/proof.ts']) {
+    assert.doesNotMatch(repo(page).replace(/\s+/g, ' '), /holds contested jobs|with contested jobs|a contested job, a rejected settlement/, page)
+  }
+  // The owner's hand-off starts from the public record and asks for no exported key.
+  const guide = repo('docs/chains/arc-integration.mdx')
+  assert.match(guide, /custom\(window\.ethereum\)/)
+  assert.match(guide, /flows\/\$\{flowId\}/)
+  assert.doesNotMatch(guide, /process\.env\.VAULT_OWNER_KEY/)
   const risk = repo('mcp/src/asp/risk.ts')
   assert.doesNotMatch(risk, /not built a history|on its own a DENY/)
 })

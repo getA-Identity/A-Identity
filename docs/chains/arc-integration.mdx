@@ -279,7 +279,7 @@ returns a band and flags, no verdict and no reasons, and is rate limited.
       "agentId": "0x4e26Ae66840134Ac5979c56ba2509F3956b93431",
       "decision": "WARN",
       "risk": "medium",
-      "reasons": ["Moderate reputation (470); proceed with caution"],
+      "reasons": ["Moderate reputation (470): not enough for us to vouch for it"],
       "signals": { "...": "the inputs the verdict was computed from" },
       "checkedAt": "2026-11-01T18:30:00.000Z",
       "_meta": { "network": "Arc Mainnet (eip155:5042)", "proof": "/api/x402/gateway/proof" },
@@ -331,16 +331,19 @@ gets you. `txContext` is optional and takes
 [/api/x402/gateway/openapi.json](https://a-identity.xyz/api/x402/gateway/openapi.json) is
 generated from the same source.
 
-**Send the payee's 0x address as `agentId`.** `risk_check` matches a platform agent by platform
-id, token id, or an address the record proved control of. A CAIP id is resolved on chain but never
-matched to a platform agent by id. If its token is anchored on a platform agent, or is owned by an
-address a record proved control of, it is scored from the chain alone: at most 60, which is `DENY`,
-even for an agent that would pass under its address. Any other CAIP id is a token we hold no record
-of, which gets `WARN`. An id that resolves to nothing was never looked up, so it gets `DENY`.
+**Send the payee's 0x address as `agentId`.** It needs no chain read. `risk_check` also takes a
+platform id, a token id, a CAIP token id and a CAIP-10 account, and they reach the same record: a token
+answers on the chain it names, or through the record that proved the address holding it. A token we
+hold no record of gets `WARN`. An id that reaches no record and no identity was never looked up, so it
+stays strict: `DENY`, with reasons that say we could not look and hold no evidence, and to ask again
+with the 0x address.
 
 **Who gets what.** `DENY` means we hold evidence against the payee: KYA revoked, Sybil high, or, on an
-agent on our platform whose record holds contested jobs, rejected settlements or guardrail override
-attempts, a reputation under 200 or a payment over 100 USD with reputation under 400. A low score alone
+agent on our platform whose record holds rejected settlements or guardrail override attempts, a
+reputation under 200 or a payment over 100 USD with reputation under 400. It also comes out when we could
+not read our record and stayed strict, and the reasons say which. A contested job lowers the score and is
+named in the reasons, and it is not evidence by itself: it costs the client nothing while we fund the
+escrow, so counting it would let a stranger write a `DENY` on a vendor. A low score alone
 is not evidence: an agent on our platform with nothing against it gets `WARN` at those lines, with
 reasons that say our record holds nothing against it and not enough to vouch for it, and the amount
 named when it is over 100 USD. A payee with no on-chain identity, or with an identity and no record on
@@ -490,37 +493,53 @@ and a hand-off, the owner raises the ceiling or allows the payee, and the operat
 ### When a payment waits for its owner
 
 `awaiting_human` hands back the exact call for the owner's key, and that key has to send it. The
-vault page does not do that today: it has no action for sending `ownerPay` or posting its receipt,
-so a hand-off takes a script. Read the verdict's reasons first, and do not send it when the
-simulation failed: the vault would refuse it right now, and it would revert and cost gas.
+vault page does not do that today: it has no action for sending `ownerPay` or posting its receipt. If
+you deployed from the vault page your wallet is the owner, so you can send it from that wallet, with
+no key leaving it, using the sample below in the browser console or your own page. Read the verdict's
+reasons first.
+
+The flow id is what your agent got back: `out.flowId` from `verifyThenPay`, or `flowId` from the hosted
+route. Have it hand that to you. There is no list of waiting flows by vault. The flow record is public,
+so nothing here needs a secret, and the sample encodes the call itself rather than trusting the record.
 
 ```ts
-import { createWalletClient, http } from 'viem'
-import { privateKeyToAccount } from 'viem/accounts'
-import { arcViemChain, recordFlowReceipt } from '@a-identity/trust-guard/arc'
+import { createPublicClient, createWalletClient, custom, encodeFunctionData, http, parseAbi } from 'viem'
+import { ARC_MAINNET, arcViemChain } from '@a-identity/trust-guard/arc'
 
-// out is what verifyThenPay returned, with out.outcome === 'awaiting_human'.
-const { ownerPay } = out
-if (!ownerPay.simulation.ok) throw new Error(`the vault would refuse this now: ${ownerPay.simulation.error}`)
+const base = 'https://a-identity.xyz/api/x402/gateway'
+const { flow } = await (await fetch(`${base}/flows/${flowId}`)).json()
+if (flow?.outcome !== 'awaiting_human') throw new Error('this flow is not waiting for its owner')
+console.log(flow.verdict.reasons) // read these before you pay
 
-const owner = createWalletClient({
-  account: privateKeyToAccount(process.env.VAULT_OWNER_KEY as `0x${string}`),
-  chain: arcViemChain,
-  transport: http(),
-})
-const txHash = await owner.sendTransaction({
-  to: ownerPay.to,
-  data: ownerPay.data,
+const abi = parseAbi(['function ownerPay(address to, uint256 amount)'])
+const args = [flow.payee, BigInt(flow.amount)] as const
+const data = encodeFunctionData({ abi, functionName: 'ownerPay', args })
+if (data !== flow.prepared.data) throw new Error('the record prepared a different call than the one it describes')
+
+const [owner] = await window.ethereum.request({ method: 'eth_requestAccounts' })
+const reader = createPublicClient({ chain: arcViemChain, transport: http() })
+// Throws if the vault would refuse it right now: sending it then would revert and cost gas.
+await reader.simulateContract({ account: owner, address: flow.vault, abi, functionName: 'ownerPay', args })
+
+const wallet = createWalletClient({ account: owner, chain: arcViemChain, transport: custom(window.ethereum) })
+const txHash = await wallet.sendTransaction({
+  to: flow.vault,
+  data,
   value: 0n,
-  ...(ownerPay.gas ? { gas: BigInt(ownerPay.gas) } : {}),
-  maxFeePerGas: BigInt(ownerPay.maxFeePerGas),
+  maxFeePerGas: ARC_MAINNET.minMaxFeePerGasWei * 2n,
   maxPriorityFeePerGas: 1_000_000_000n,
 })
-const record = await recordFlowReceipt({ flowId: out.flowId, txHash })
+await fetch(`${base}/flows/${flowId}/receipt`, {
+  method: 'POST',
+  headers: { 'content-type': 'application/json' },
+  body: JSON.stringify({ txHash }),
+})
 ```
 
-Over the hosted route the same call is `ownerHandoff.ownerPay`, with its fee under `fees`; send it,
-then POST the hash to `/flows/<flowId>/receipt`.
+A script holding the owner key does the same with `privateKeyToAccount` in place of `custom(window.ethereum)`,
+and with what `verifyThenPay` returned in `out.ownerPay` when it runs in the owner's process. Do not put a
+browser wallet's key into a file to do this. Over the hosted route the same call is
+`ownerHandoff.ownerPay`, with its fee under `fees`; send it, then POST the hash to `/flows/<flowId>/receipt`.
 
 ### The hosted route
 

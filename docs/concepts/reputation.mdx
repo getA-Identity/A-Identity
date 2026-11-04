@@ -99,10 +99,17 @@ auditable: when no per-settlement timestamps exist it equals the raw count.
 
 A low score alone is not evidence against an agent. `risk_check` answers `DENY` on a low score only
 when the record holds something against it, and the response shows those inputs:
-`behavioral.contestedEvidence` (jobs an independent client refunded or disputed once it had delivered
-or the deadline had passed), `discipline.rejectedSettlements` (its own instructions a human refused to
-let settle) and `discipline.overrideAttempts` (tries at recording a blocked action as executed). With
-all three at 0, a low score gets `WARN`.
+`discipline.rejectedSettlements` (its own instructions a human refused to let settle) and
+`discipline.overrideAttempts` (tries at recording a blocked action as executed, counted past the audit
+cap). With both at 0, a low score gets `WARN`. On a claimed record they count from the claim on, because
+the record was someone else's before it. `behavioral.contestedJobs` lowers the score and is named in the
+reasons, and it is not evidence by itself: a contest costs the client nothing while we fund the escrow, so
+counting it would let a stranger write a `DENY` on a vendor.
+
+The MCP tool and the REST route are the same read. Both take a platform id, a token (a CAIP id answers on
+the chain it names), an address, or a CAIP-10 account, and a token also reaches the record that proved the
+address holding it. `lookedUp: false` on a `found: false` answer means the id reached no record and no
+identity, so nothing was looked up, and that is not the finding that we hold no record.
 
 Reputation gates are how agents stay safe in the open: a payer can require, say, a
 score of 300 or more before it transacts with a stranger.

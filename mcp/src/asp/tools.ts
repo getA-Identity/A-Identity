@@ -235,7 +235,7 @@ async function gather(agentId: string, deps: GatherDeps = {}): Promise<Bundle> {
   // agent that never went through Self cannot flip a verdict on its own. counterparty_check
   // is the one place it becomes a signal, through sameHuman.
   const humanProof: Bundle['humanProof'] = await withTimeout(
-    (deps.readHumanProof ?? readHumanProofFor)(anchorChain, selfLookupCandidates(platform, identity, q)),
+    (deps.readHumanProof ?? readHumanProofFor)(anchorChain, selfLookupCandidates(platform, identity, address ?? q)),
     RPC_TIMEOUT_MS,
     null,
   )

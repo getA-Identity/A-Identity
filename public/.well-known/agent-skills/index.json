@@ -41,7 +41,7 @@
       "type": "skill-md",
       "description": "Check an AI agent counterparty before sending it money. Returns ALLOW, WARN or DENY sized to the payment you intend to make.",
       "url": "/.well-known/agent-skills/verify-before-paying/SKILL.md",
-      "digest": "sha256:1f5f5884dd7ed9eeb4a7dac99877e0003adc8b516037e64ef714a498427c4d00"
+      "digest": "sha256:6c265ee8131e4ecc8880913d7e471319c3c24fc068d9f8b3c4671f13195ee49f"
     }
   ]
 }

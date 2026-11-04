@@ -16,10 +16,9 @@ import { usePageMeta } from '../lib/head'
 import { short } from '../lib/format'
 import { gradeOf } from '../lib/reputation-bands'
 import {
-  resolveAgent, getReputation, getLeaderboard,
-  type AgentIdentity, type Reputation, type FeedAgent,
+  readPayee, getLeaderboard, type AgentIdentity, type Reputation, type FeedAgent,
 } from '../lib/mcp-client'
-import { adverseRecordOf, NO_VERDICT_NOTE, previewVerdict, readRecord, rosterVerdict, type RecordRead } from '../lib/trust-preview'
+import { adverseRecordOf, emptyReadMessage, NO_VERDICT_NOTE, previewVerdict, rosterVerdict, type RecordRead } from '../lib/trust-preview'
 import { type OwlVerdict } from '../components/OwlMark'
 import AgentAvatar from '../components/AgentAvatar'
 import { track } from '../lib/analytics'
@@ -347,11 +346,9 @@ export default function Explorer() {
     const q = raw.trim()
     if (!q) return
     setLoading(true); setError(null); setPipelineDone(false)
-    const [idRes, repRes] = await Promise.all([resolveAgent(q), getReputation(q)])
-    const id = idRes.ok && idRes.data.found ? (idRes.data.agent ?? null) : null
-    const { read, reputation: rep } = readRecord(repRes)
+    const { identity: id, reputation: rep, read } = await readPayee(q)
     setIdentity(id); setReputation(rep); setRecordRead(read); setShown(q)
-    if (!id && !rep) setError(read === 'unreadable' ? 'The reputation read failed just now, so nothing can be said about this agent. Try again in a few seconds.' : `No agent found for "${q}". Try a token id (849980) or an owner address.`)
+    setError(emptyReadMessage(read, !id && !rep))
     setLoading(false)
     if (scroll) topRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })
   }
@@ -415,13 +412,13 @@ export default function Explorer() {
           <div className="mt-6">
             {error && <div className="rounded-lg border border-border bg-card p-5 text-sm text-foreground/60">{error}</div>}
             {!error && loading && !identity && !reputation && <ProfileSkeleton />}
-            {!error && (identity || reputation) && (
+            {!error && !loading && shown && (
               <motion.div key={`pipe-${shown}`} initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.3, ease: [0.16, 1, 0.3, 1] }}>
                 <VerifyStepper identity={identity} reputation={reputation} recordRead={recordRead} query={shown} onComplete={() => setPipelineDone(true)} />
               </motion.div>
             )}
             <AnimatePresence mode="wait">
-              {!error && (identity || reputation) && pipelineDone && (
+              {!error && shown && pipelineDone && (
                 <motion.div key={shown} initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} transition={{ duration: 0.3, ease: [0.16, 1, 0.3, 1] }} className="mt-4">
                   {/* A bare token id that exists on more than one chain does not identify
                       one agent, so say that instead of letting the first chain's result read

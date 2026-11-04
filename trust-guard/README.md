@@ -209,7 +209,8 @@ The order, and what each step can cost:
    `/api/x402/gateway/flows/<flowId>`, DENYs included. After a WARN, send `ownerPay` from the owner's key
    and close the flow with `recordFlowReceipt({ flowId, txHash })`, unless `ownerPay.simulation.ok` is
    false: the vault would refuse it right now, so sending it would revert and cost gas. The vault page does
-   not send `ownerPay` for you today, so this takes a script; the integration guide has a working one.
+   not send `ownerPay` for you today; the integration guide has a sample that sends it from a browser
+   wallet, starting from the public flow record.
 
 Anything that is not a usable verdict is never treated as ALLOW: a Gateway error, a settlement that does
 not echo what was signed, an unknown decision, a reputation that is not a finite number, an ALLOW below

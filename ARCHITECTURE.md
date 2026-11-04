@@ -339,8 +339,10 @@ flowchart LR
 ```
 
 `DENY` means we hold evidence against the payee: KYA revoked, Sybil high, or, on an agent on our platform
-whose record holds contested jobs, rejected settlements or guardrail override attempts, a reputation under
-200 or a payment over 100 USD with reputation under 400. A low score alone is not evidence: an agent on our
+whose record holds rejected settlements or guardrail override attempts, a reputation under 200 or a payment
+over 100 USD with reputation under 400. It also comes out when we could not read our record and stayed
+strict, and the reasons say which. A contested job lowers the score and is named in the reasons, and it is
+not evidence by itself: it costs the client nothing while we fund the escrow. A low score alone is not evidence: an agent on our
 platform with nothing against it gets `WARN` at those lines, with reasons that say our record holds nothing
 against it and not enough to vouch for it. A payee with no on-chain identity, or with an identity and no
 record on our platform, is not known bad, so it gets `WARN`, with reasons that say what we do not know. `DENY` binds an

@@ -362,7 +362,8 @@ export default function Architecture() {
               <p className="mt-3 max-w-md text-[15px] leading-relaxed text-foreground/55">
                 A buyer calls a paid tool, hits a real 402 on X Layer mainnet, settles in
                 USD₮0, and gets a deterministic verdict with its reasons. A counterparty we
-                hold evidence against is denied before any money moves, and one we know
+                hold evidence against is denied before any money moves, and so is one where we
+                could not read our record, with reasons that say which. One we know
                 nothing about gets WARN, which holds the payment for a person. The call on
                 the right is an illustration of the shape, not a recorded run.
               </p>

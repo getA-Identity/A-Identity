@@ -36,9 +36,11 @@ The response carries `decision` (`ALLOW`, `WARN` or `DENY`), a `risk` band, and
 verdict. Act on `decision`; show `reasons` to whoever has to justify it later.
 
 `DENY` means we hold evidence against the payee: KYA revoked, Sybil high, or, on an agent on
-our platform whose record holds contested jobs, rejected settlements or guardrail override
-attempts, a reputation under 200 or a payment over 100 USD with reputation under 400. A low
-score alone is not evidence: an agent on our platform with nothing against it gets `WARN` at
+our platform whose record holds rejected settlements or guardrail override attempts, a
+reputation under 200 or a payment over 100 USD with reputation under 400. It also comes out when
+we could not read our record and stayed strict, and the reasons say which. A contested job lowers
+the score and is named in the reasons, and it is not evidence by itself: it costs the client
+nothing while we fund the escrow. A low score alone is not evidence: an agent on our platform with nothing against it gets `WARN` at
 those lines, with reasons that say our record holds nothing against it and not enough to vouch
 for it, and the amount named when it is over 100 USD. A payee with no on-chain
 identity, or with an identity and no record on our platform, is not known bad, so it gets
@@ -60,10 +62,12 @@ request. There is no account to create and no API key to hold.
 ## Identifying the counterparty
 
 `agentId` accepts an ERC-8004 token id (`#849980`), a CAIP identifier
-(`eip155:5042002:8004/849980`), or the agent's `0x` wallet address. Prefer the
-address: it reaches a platform record when that record proved control of it, while a
-CAIP identifier is scored from the chain alone. An id that resolves to nothing is not
-a finding, so it gets `DENY`.
+(`eip155:5042002:8004/849980`), a CAIP-10 account, or the agent's `0x` wallet address.
+Each reaches the same record: a token answers on the chain it names, or through the
+record that proved the address holding it. Prefer the address, because it needs no chain
+read. An id that reaches no record and no identity could not be looked up, so it stays
+strict: `DENY`, with reasons that say we could not look and hold no evidence, and to ask
+again with the `0x` address.
 
 ## What this does not tell you
 
