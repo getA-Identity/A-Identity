@@ -36,7 +36,7 @@ type Rules = {
   holdOf: (s: Send | null | undefined) => { held: boolean; why?: string; hash?: string }
   holdFor: (f: Flow, records: Send[]) => { held: boolean; why?: string }
   hashToPost: (s: Send) => string | null
-  afterScan: (s: Send, f: Flow, paid: Paid[], now: number) => Send
+  afterScan: (s: Send, f: Flow, scan: { from: bigint; paid: Paid[] }, now: number) => Send
   receiptStep: (status: number, body: unknown) => { step: string; waitMs?: number; flowId?: string; code?: string; reason?: string | null }
   budgetEffect: (amount: bigint, live: Live) => { after: bigint; stopsAgent: boolean; overBy: bigint; leftForAgent: bigint | null }
   budgetLine: (amount: bigint, live: Live) => string
@@ -373,6 +373,8 @@ test('a check whose time cannot be read, or that is from the future, is not fres
 // ── double payment ────────────────────────────────────────────────────────────────
 
 const PAID = (over: Partial<Paid> = {}): Paid => ({ to: PAYEE, amount: AMOUNT, byOwner: true, block: 150n, txHash: TX2, ...over })
+/** A read of the vault's payments that came down to the block just above this file's check, which is 100. */
+const read = (paid: Paid[], from = 101n) => ({ from, paid })
 
 test('a payment of this amount to this payee after this check is this check\'s, whoever sent it', async () => {
   const r = await rules()
@@ -422,31 +424,54 @@ test("a wallet's speed-up: the replaced hash finds its payment on chain, and tha
   const r = await rules()
   const f = await flow()
   const replaced = send({ tx: txRecord('replaced') })
-  const found = r.afterScan(replaced, f, [PAID()], Date.now())
+  const found = r.afterScan(replaced, f, read([PAID()]), Date.now())
   assert.equal(found.paidBy, TX2)
   assert.equal(r.hashToPost(found), TX2)
   assert.equal(r.holdOf(found).why, 'landed', 'still held until the server answers')
   // The same for a hash the page never saw again, and for a wallet that never gave one back.
-  assert.equal(r.afterScan(send({ tx: txRecord('untracked') }), f, [PAID()], Date.now()).paidBy, TX2)
-  assert.equal(r.afterScan(send(), f, [PAID()], Date.now()).paidBy, TX2)
+  assert.equal(r.afterScan(send({ tx: txRecord('untracked') }), f, read([PAID()]), Date.now()).paidBy, TX2)
+  assert.equal(r.afterScan(send(), f, read([PAID()]), Date.now()).paidBy, TX2)
 })
 
 test('a cancel: a replaced hash with no payment is freed only by a read well after it, and an untracked one never by itself', async () => {
   const r = await rules()
   const f = await flow()
   const t0 = Date.parse('2026-11-04T12:00:00Z')
-  const first = r.afterScan(send({ tx: txRecord('replaced') }), f, [], t0)
+  const first = r.afterScan(send({ tx: txRecord('replaced') }), f, read([]), t0)
   assert.equal(r.holdOf(first).held, true, 'a host can lag by 50 seconds, so one read decides nothing')
-  assert.equal(r.holdOf(r.afterScan(first, f, [], t0 + r.REPLACED_WATCH_MS - 1)).held, true)
-  assert.deepEqual(r.holdOf(r.afterScan(first, f, [], t0 + r.REPLACED_WATCH_MS)), { held: false })
+  assert.equal(r.holdOf(r.afterScan(first, f, read([]), t0 + r.REPLACED_WATCH_MS - 1)).held, true)
+  assert.deepEqual(r.holdOf(r.afterScan(first, f, read([]), t0 + r.REPLACED_WATCH_MS)), { held: false })
   const untracked = send({ tx: txRecord('untracked') })
-  assert.equal(r.holdOf(r.afterScan(untracked, f, [], t0 + 3_600_000)).why, 'maybe', 'it may still land, and only the person can say otherwise')
-  assert.equal(r.holdOf(r.afterScan(send(), f, [], t0 + 3_600_000)).why, 'asked')
+  assert.equal(r.holdOf(r.afterScan(untracked, f, read([]), t0 + 3_600_000)).why, 'maybe', 'it may still land, and only the person can say otherwise')
+  assert.equal(r.holdOf(r.afterScan(send(), f, read([]), t0 + 3_600_000)).why, 'asked')
   // The agent's own payment is not this send's.
-  assert.equal(r.afterScan(send(), f, [PAID({ byOwner: false })], t0).paidBy, undefined)
+  assert.equal(r.afterScan(send(), f, read([PAID({ byOwner: false })]), t0).paidBy, undefined)
   // A pending hash has its own watch in tx-rules.ts, and an answered one is over.
   const pendingOne = send({ tx: txRecord('pending') })
-  assert.equal(r.afterScan(pendingOne, f, [PAID()], t0), pendingOne)
+  assert.equal(r.afterScan(pendingOne, f, read([PAID()]), t0), pendingOne)
+})
+
+test('a read that never reached the check frees nothing, and says nothing about a replaced hash', async () => {
+  const r = await rules()
+  const f = await flow()
+  const t0 = Date.parse('2026-11-04T12:00:00Z')
+  const seen = send({ tx: txRecord('replaced'), replacedSeenAt: new Date(t0 - r.REPLACED_WATCH_MS * 10).toISOString() })
+  // A short read comes back as a read, with no payment in the part it got, and the watch is long over.
+  assert.equal(r.afterScan(seen, f, read([], 102n), t0), seen, 'it stopped above the check')
+  assert.equal(r.holdOf(r.afterScan(seen, f, read([], 102n), t0)).why, 'maybe')
+  // So it does not start the watch either: only a read that reached the check can.
+  const unstamped = send({ tx: txRecord('replaced') })
+  assert.equal(r.afterScan(unstamped, f, read([], 102n), t0), unstamped)
+  // The block right above the check is all a payment could be in, so a read from there is one that reached it.
+  assert.deepEqual(r.holdOf(r.afterScan(seen, f, read([], 101n), t0)), { held: false })
+  assert.deepEqual(r.holdOf(r.afterScan(seen, f, read([], 50n), t0)), { held: false })
+  // A payment it did reach is still that, however short the read.
+  assert.equal(r.afterScan(seen, f, read([PAID()], 102n), t0).paidBy, TX2)
+  // A check never pinned to a block cannot be compared with anything, so nothing is claimed about it.
+  const unpinned = await flow({}, { verdictBlock: null })
+  assert.equal(r.afterScan(seen, unpinned, read([], 0n), t0), seen)
+  // The page hands it the read's own range, and not only what the read found.
+  assert.match(repo('src/components/app/arc/OwnerApprovals.tsx'), /afterScan\(r, f, got, Date\.now\(\)\)/)
 })
 
 test('"nothing was sent" frees a flow and proves nothing: if the payment shows up after that, it is this send', async () => {
@@ -455,16 +480,16 @@ test('"nothing was sent" frees a flow and proves nothing: if the payment shows u
   const t0 = Date.parse('2026-11-04T12:00:00Z')
   const released = send({ released: true, releasedAt: new Date(t0).toISOString() })
   assert.deepEqual(r.holdOf(released), { held: false })
-  const found = r.afterScan(released, f, [PAID()], t0 + 1000)
+  const found = r.afterScan(released, f, read([PAID()]), t0 + 1000)
   assert.equal(found.paidBy, TX2)
   assert.equal(r.holdOf(found).why, 'landed', 'held again, until the server answers')
   assert.equal(r.hashToPost(found), TX2, 'and the receipt goes to the server')
   // The same for a hash this page was told about, and for a replacement read as a cancel.
-  assert.equal(r.afterScan(send({ tx: txRecord('untracked'), released: true }), f, [PAID()], t0).paidBy, TX2)
-  assert.equal(r.afterScan(send({ tx: txRecord('replaced'), replacedClear: true }), f, [PAID()], t0).paidBy, TX2)
+  assert.equal(r.afterScan(send({ tx: txRecord('untracked'), released: true }), f, read([PAID()]), t0).paidBy, TX2)
+  assert.equal(r.afterScan(send({ tx: txRecord('replaced'), replacedClear: true }), f, read([PAID()]), t0).paidBy, TX2)
   // The agent's own payment is not this send's, and no payment leaves it freed.
-  assert.equal(r.afterScan(released, f, [PAID({ byOwner: false })], t0), released)
-  assert.equal(r.afterScan(released, f, [], t0), released)
+  assert.equal(r.afterScan(released, f, read([PAID({ byOwner: false })]), t0), released)
+  assert.equal(r.afterScan(released, f, read([]), t0), released)
   // The page keeps looking for a while after a release, and not for ever.
   assert.equal(r.stillWatched(released, t0 + r.RELEASE_WATCH_MS - 1), true)
   assert.equal(r.stillWatched(released, t0 + r.RELEASE_WATCH_MS), false)

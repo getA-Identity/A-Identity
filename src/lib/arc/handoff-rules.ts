@@ -527,17 +527,20 @@ export const REPLACED_WATCH_MS = 60_000
  * What a read of the vault's Paid events says about a send with no answer. A payment of this amount to
  * this payee from the owner, after this check, is this send's whatever hash it has: that is how a
  * wallet's speed-up shows up, and a wallet asked with no hash back. A replacement that shows no payment
- * is a cancel, but only a read well after it can say so. A person's "nothing was sent", and a quiet
- * replacement, free the flow and prove nothing: a slow wallet can still send it. If the payment shows up
- * after that it is this send's too, and what the page says and does goes back to following it.
+ * is a cancel, but only a read well after it can say so, and only one that came down to this check: a
+ * read that stopped short is answered, not failed, and what it did not reach holds no news either way.
+ * A person's "nothing was sent", and a quiet replacement, free the flow and prove nothing: a slow wallet
+ * can still send it. If the payment shows up after that it is this send's too, and what the page says and
+ * does goes back to following it.
  */
-export function afterScan(s: HandoffSend, f: Pick<HandoffFlow, 'payee' | 'amount' | 'verdictBlock'>, paid: readonly PaidEvent[], now: number): HandoffSend {
+export function afterScan(s: HandoffSend, f: Pick<HandoffFlow, 'payee' | 'amount' | 'verdictBlock'>, scan: Pick<PaidScan, 'from' | 'paid'>, now: number): HandoffSend {
   if (s.server || s.paidBy) return s
   const h = holdOf(s)
   if (h.held ? h.why !== 'asked' && h.why !== 'maybe' : !s.released && !s.replacedClear) return s
-  const hit = paidAfter(f, paid)
+  const hit = paidAfter(f, scan.paid)
   if (hit?.byOwner) return { ...s, paidBy: hit.txHash.toLowerCase() }
   if (!h.held || s.tx?.outcome !== 'replaced') return s
+  if (f.verdictBlock === null || scan.from > f.verdictBlock + 1n) return s
   if (!s.replacedSeenAt) return { ...s, replacedSeenAt: new Date(now).toISOString() }
   return now - Date.parse(s.replacedSeenAt) >= REPLACED_WATCH_MS ? { ...s, replacedClear: true } : s
 }

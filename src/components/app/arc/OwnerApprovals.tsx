@@ -188,7 +188,7 @@ export default function OwnerApprovals({ chain, vault: pageVault, wallet, canAct
         for (const r of loadHandoffs(network, address)) {
           const f = flows.find((x) => holdsFlow(r, x.flowId))
           if (!f) continue
-          const next = afterScan(r, f, got.paid, Date.now())
+          const next = afterScan(r, f, got, Date.now())
           if (next !== r) saveHandoff(next)
         }
         refreshRecords()
