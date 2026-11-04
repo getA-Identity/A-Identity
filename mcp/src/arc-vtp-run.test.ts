@@ -217,7 +217,7 @@ test('the forecast agrees with asp/risk.ts on what each set of signals decides',
     { score: 500, kya: true, tenure: 6, verified: true, revoked: false, sybil: 'none' as const },
   ]
   for (const c of cases) {
-    const truth = assessRisk({ onchainVerified: c.verified, kyaVerified: c.kya, reputationScore: c.score, tenureDays: c.tenure, revoked: c.revoked, sybil: c.sybil }).decision
+    const truth = assessRisk({ onchainVerified: c.verified, kyaVerified: c.kya, reputationScore: c.score, tenureDays: c.tenure, revoked: c.revoked, sybil: c.sybil, onPlatform: true }).decision
     const forecast = forecastVerdict(
       { verified: c.verified, kyaStatus: c.revoked ? 'revoked' : c.kya ? 'verified' : 'unknown', scoreBand: 'ignored when the exact score is there', revoked: c.revoked, sybilSuspected: c.sybil === 'medium' || c.sybil === 'high' },
       { found: true, score: c.score, tenurePoints: Math.round(c.tenure / 2), sybil: c.sybil },
@@ -232,7 +232,8 @@ test('with no exact score the bands decide, and what could not be read is said',
   assert.equal(medium.verdict, 'ALLOW')
   assert.match(medium.caveat ?? '', /tenure/)
   assert.equal(forecastVerdict({ ...preview, scoreBand: 'low' }, null).verdict, 'WARN')
-  assert.equal(forecastVerdict({ ...preview, scoreBand: 'very-low' }, { found: false }).verdict, 'DENY')
+  assert.equal(forecastVerdict({ ...preview, scoreBand: 'very-low' }, null).verdict, 'DENY', 'a reputation that could not be read says nothing about a record')
+  assert.equal(forecastVerdict({ ...preview, verified: false }, null).verdict, 'DENY', 'nor does a missing identity become a gap without it')
   assert.equal(forecastVerdict(null, null).verdict, 'UNKNOWN')
   const short = forecastVerdict(preview, { found: true, score: 470, tenurePoints: 57, sybil: 'none' })
   assert.equal(short.verdict, 'WARN')
@@ -286,16 +287,35 @@ test('refusals still need the vault and the gas to pass, with no payment left to
   assert.match(onlyDeny({ operatorGasWei: 0n }).blockers.join(), /^gas: /m)
 })
 
+test('our operating wallet, as the free reads answer for it today, forecasts what the scorer answers: WARN, and the plan refuses it as a DENY payee', () => {
+  const wallet = { verified: true, kyaStatus: 'unknown', scoreBand: 'very-low', revoked: false, sybilSuspected: false }
+  const forecast = forecastVerdict(wallet, { found: false })
+  const truth = assessRisk({ onchainVerified: true, kyaVerified: false, reputationScore: 60, tenureDays: 0, revoked: false, onPlatform: false }).decision
+  assert.equal(forecast.verdict, 'WARN')
+  assert.equal(forecast.verdict, truth)
+  assert.match(forecast.missing.join(), /holds no record/)
+  const blockers = buildPlan(planInput({ allow: 0, payees: [read(ALLOW_PAYEE), read(DENY_PAYEE, { forecast })] })).blockers
+  assert.match(blockers.join('|'), /internal is planned for 2 DENY flow\(s\) and is expected to answer WARN/)
+  // A payee with no record never forecasts ALLOW or DENY, whatever else the free reads show.
+  assert.equal(forecastVerdict({ ...wallet, kyaStatus: 'verified', scoreBand: 'high' }, { found: false }).verdict, 'WARN')
+  assert.equal(forecastVerdict({ ...wallet, verified: false }, { found: false }).verdict, 'WARN')
+  assert.equal(forecastVerdict({ ...wallet, revoked: true }, { found: false }).verdict, 'DENY')
+  // A platform agent with no identity is a WARN too, and one under 200 is still a DENY.
+  const platform = { found: true as const, score: 300, tenurePoints: 57, sybil: 'none' }
+  assert.equal(forecastVerdict({ ...wallet, verified: false, kyaStatus: 'verified' }, platform).verdict, 'WARN')
+  assert.equal(forecastVerdict({ ...wallet, kyaStatus: 'verified' }, { ...platform, score: 150 }).verdict, 'DENY')
+})
+
 test('a payee that will not reach its verdict refuses the run and says what is missing', () => {
   const warn = { verdict: 'WARN' as const, missing: ['reputation 470, and ALLOW needs >= 500: short by 30'], caveat: null }
   const blockers = buildPlan(planInput({ payees: [read(ALLOW_PAYEE, { forecast: warn }), read(DENY_PAYEE, { forecast: warn })] })).blockers
   assert.match(blockers[0], /showcase is planned for 2 ALLOW flow\(s\) and is expected to answer WARN today\. Missing: reputation 470.*short by 30\. Lift it first\./)
   assert.match(blockers[1], /internal is planned for 2 DENY flow\(s\) and is expected to answer WARN/)
   assert.deepEqual(buildPlan(planInput({ allow: 0, payees: [read(ALLOW_PAYEE, { forecast: warn }), read(DENY_PAYEE)] })).blockers, [])
-  const noAgent = buildPlan(planInput({ payees: [read(ALLOW_PAYEE, { agentsHeld: 0n }), read(DENY_PAYEE, { agentsHeld: null, routeError: 'PAYEE_UNREGISTERED', preflightError: 'IsFrozen' })] })).blockers.join('|')
-  assert.match(noAgent, /showcase holds no agent/)
+  const noAgent = buildPlan(planInput({ payees: [read(ALLOW_PAYEE, { agentsHeld: 0n }), read(DENY_PAYEE, { agentsHeld: null, routeError: 'PAYEE_AGENT_MISMATCH', preflightError: 'IsFrozen' })] })).blockers.join('|')
+  assert.match(noAgent, /showcase holds no agent.*this run names #1 for it.*PAYEE_AGENT_MISMATCH/)
   assert.match(noAgent, /balanceOf\(internal\) could not be read/)
-  assert.match(noAgent, /hosted route refuses internal: PAYEE_UNREGISTERED/)
+  assert.match(noAgent, /hosted route refuses internal: PAYEE_AGENT_MISMATCH/)
   assert.match(noAgent, /free preflight refuses internal: IsFrozen/)
 })
 
@@ -365,7 +385,7 @@ test('every failure is priced by what is known: nothing, the check, or the whole
     ['UnusableVerdictError', { code: 'SETTLEMENT_MISMATCH', flowId: '0xf' }, '5000', false],
     ['VaultPolicyError', { code: 'IsFrozen', stage: 'preflight' }, '0', false],
     ['VaultPolicyError', { code: 'DailyCapExceeded', stage: 'simulation', flowId: '0xf' }, '5000', false],
-    ['PayeeNotRegisteredError', { code: 'PAYEE_UNREGISTERED' }, '0', false],
+    ['PayeeNotRegisteredError', { code: 'PAYEE_AGENT_MISMATCH' }, '0', false],
     ['ArcAssetError', { code: 'WRONG_ASSET' }, '0', false],
     ['VaultPaymentError', { code: 'PREPARED_MISMATCH', flowId: '0xf' }, '5000', false],
     ['VaultPaymentError', { code: 'REVERTED', flowId: '0xf', txHash: '0xt' }, (5000n + 6000n).toString(), false],

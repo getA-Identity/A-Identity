@@ -392,6 +392,10 @@ test('a recorded DENY with a public record fills the refusal metric, with no han
   assert.equal(item.evidenceUrl, `https://a-identity.xyz/api/x402/gateway/flows/${check.authNonce}`)
   assert.equal(item.explorerUrl, null)
   assert.match(r.milestone1.refusals.note, /1 DENY result\(s\) stopped before signing/)
+  // A reviewer who checks that wallet again sees WARN, and the report says why before they ask.
+  assert.match(r.milestone1.refusals.note, /correct under the rule of its day/)
+  assert.match(r.milestone1.refusals.note, /changed on 2026-11-04/)
+  assert.match(r.milestone1.refusals.note, /sees WARN/)
 })
 
 test('only a linked DENY with a record counts: not a paid flow, an on-chain revert, or a nonce that names nothing', async () => {

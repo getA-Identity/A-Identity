@@ -181,6 +181,12 @@ export const ARC_OUR_PAYEES: { address: string; why: string }[] = [
 ]
 
 /**
+ * The day the trust verdict's rule changed: from then on, a payee we know nothing about gets WARN
+ * and DENY needs evidence against a payee we hold a record of. Recorded DENYs stay as recorded.
+ */
+const RISK_RULE_CHANGED_ON = '2026-11-04'
+
+/**
  * Refusals anyone can inspect. One of each kind is the Milestone 1 commitment: a
  * vault-policy refusal that reverted on chain (so it has a hash), and a DENY verdict
  * that stopped a payment before signing (so it has an audit entry and no hash). The
@@ -1040,7 +1046,10 @@ export async function arcSeasonReport(deps: ArcSeasonDeps): Promise<ArcSeasonRep
           (allRefusals.length === 0
             ? 'No inspectable refusal yet. The launch-day refusal (a 0.50 USDC payment above autoApproveMax) was a simulation that returned the contract\'s typed AboveAutoApprove error and broadcast nothing, so it has no hash and is not counted. A refusal counts once it is a reverted vault transaction with a hash, or a DENY verdict that stopped a payment before signing with an audit entry anyone can open.'
             : `${refusalKindsShown} of the ${ARC_SEASON_TARGETS.inspectableRefusals} kinds committed to: ${byKind['vault-policy-on-chain']} vault-policy refusal(s) on chain and ${byKind['deny-before-signing']} DENY result(s) stopped before signing, read from the public flow records. The launch-day simulated refusal is not among them.` +
-              (recordedDenials.length > REFUSAL_ITEMS_SHOWN ? ` ${recordedDenials.length - REFUSAL_ITEMS_SHOWN} more DENY record(s) are on checks.items.` : '')),
+              (recordedDenials.length > REFUSAL_ITEMS_SHOWN ? ` ${recordedDenials.length - REFUSAL_ITEMS_SHOWN} more DENY record(s) are on checks.items.` : '') +
+              (byKind['deny-before-signing'] > 0
+                ? ` Each recorded DENY stands as it was answered, and was correct under the rule of its day, when a payee with no platform record got DENY. That rule changed on ${RISK_RULE_CHANGED_ON}: such a payee now gets WARN, so a reviewer who checks that wallet again today sees WARN. Nothing recorded here was changed, and no count moved.`
+                : '')),
       },
       evidence: ARC_SEASON_EVIDENCE_URL,
     },

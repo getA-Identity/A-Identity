@@ -37,7 +37,9 @@
  *
  * Flags:
  *   --allow <n>          flows paying the showcase agent, expected ALLOW then a Paid tx
- *   --deny <n>           flows naming our operating wallet, expected DENY, nothing sent
+ *   --deny <n>           flows naming our operating wallet, expected DENY, nothing sent. Since
+ *                        the rule changed on 2026-11-04 it forecasts WARN, so the plan refuses
+ *                        these: Milestone 1 is finished and is not to be run again
  *   --amount-units <n>   USDC base units of the first flow (default 1000); each later flow pays
  *                        one unit more, so no two flows share an amount
  *   --base-url <url>     the hosted API (default https://a-identity.xyz)
@@ -92,7 +94,8 @@ const PAYEES = {
     label: 'operating-wallet (internal)',
     address: '0xd305607510e0db2c95807173c7a05bea53c1ed36',
     agentId: '#0',
-    note: 'It is off-platform, which scores at most 60: if that changed, pick another DENY payee.',
+    // The wallet Milestone 1's DENY flows named on 2026-11-02, when an off-platform payee got DENY.
+    note: 'It is off-platform, and since 2026-11-04 an off-platform payee gets WARN, so it is no longer a DENY payee. Milestone 1 finished on 2026-11-02 and is not to be run again, so no other payee replaces it.',
   },
 }
 

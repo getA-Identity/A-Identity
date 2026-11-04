@@ -22,6 +22,12 @@ export type FakeScenario = {
   priceLater?: { fromCall: number; price: string }
   /** What the paid check answers for the deny payee. Default DENY. */
   denyAnswer?: 'DENY' | 'ALLOW'
+  /**
+   * What the platform says of the deny payee. Default 'low-reputation': a record scoring 60, the
+   * one case that still forecasts DENY, so the rest of the run can be exercised. 'no-record' is
+   * what the real wallet reads today, and the plan refuses it.
+   */
+  denyPayeeRecord?: 'low-reputation' | 'no-record'
   /** What the receipt route answers. Default verified and executed. */
   receipt?: Record<string, unknown>
   proofRows?: Record<string, unknown>[]
@@ -218,7 +224,10 @@ function api(url: URL, method: string, headers: Headers, body: unknown): Respons
     return json(200, { verified: true, kya_status: denied ? 'unknown' : 'verified', scoreBand: denied ? 'very-low' : 'medium', flags: { revoked: false, sybilSuspected: false } })
   }
   if (path === '/api/reputation') {
-    if (url.searchParams.get('id') === OPERATING) return json(404, { error: 'not found' })
+    if (url.searchParams.get('id') === OPERATING) {
+      if (scenario.denyPayeeRecord === 'no-record') return json(404, { error: 'not found' })
+      return json(200, { reputation: { score: 60, breakdown: { tenure: 0 }, sybil: { level: 'none' } } })
+    }
     return json(200, { reputation: { score: 545, breakdown: { tenure: 50 }, sybil: { level: 'none' } } })
   }
   if (path === '/health' && scenario.commit) return json(200, { status: 'ok', commit: scenario.commit })
