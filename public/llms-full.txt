@@ -416,8 +416,9 @@ version `0.2.0`, protocol `2025-06-18`.
 `get_circle_status`
 
 **Before you pay**: `evm_pay_check` (is the token the real USDG on Robinhood Chain or
-native USDC on Arbitrum One, is its signing domain proven, is the payee a registered
-agent, and what does an x402 link's challenge ask for; free, read-only)
+native USDC on Arc Mainnet, Base or Arbitrum One, is its signing domain proven, is the payee
+a registered agent, and what does an x402 link's challenge ask for; free, read-only; pass
+`chain`, which defaults to Robinhood Chain, so Arc Mainnet needs `arc-mainnet`)
 
 **Work and escrow**: `hire_agent`, `deliver_task`, `check_task_status`,
 `release_escrow`

@@ -18,8 +18,10 @@ the registry. Arc was the phase-1 network on testnet and has been `live` on Arc 
 (`eip155:5042`) since the day it opened, 2026-09-16: agent #0 on the canonical ERC-8004
 registry, an `AgentSpendPolicy` vault holding real USDC, and x402 selling there through both
 our EIP-3009 facilitator and Circle Gateway nanopayments (see `src/x402-3009/` and
-`src/x402-gateway/` below), every payment so far self-funded and labeled internal. Escrow, KYA anchoring
-and the console's register, anchor and vault flows still run on Arc testnet. Other mainnets
+`src/x402-gateway/` below). The first payments were self-funded and labeled internal; a wallet
+off our internal lists is labeled external, a few have paid, and `GET /api/arc/season` keeps the
+two apart. Escrow, KYA anchoring and the console's register and anchor flows still run on Arc
+testnet, while `/app/vault/arc` deploys a vault on Arc Mainnet from the owner's own wallet. Other mainnets
 carrying our own traffic and real value: OKX X Layer, Celo, Base, Robinhood Chain,
 Arbitrum One and Algorand. Stellar pubnet is `live` too, not `beta`: the Soroban spend vault holds real
 USDC under its on-ledger policy, and since 2026-08-28 the Soroban x402 rail SELLS on both
@@ -33,8 +35,8 @@ key and what it can spend.
 
 ## MCP tools
 
-The server registers **20** tools (`src/server.ts`). Eight are always present; the other
-twelve appear only when the HTTP entry injects the hooks they need, so a bare stdio server
+The server registers **23** tools (`src/server.ts`). Nine are always present; the other
+fourteen appear only when the HTTP entry injects the hooks they need, so a bare stdio server
 exposes the read-only set and nothing that can move money.
 
 ### Always registered (read-only)
@@ -73,9 +75,15 @@ exposes the read-only set and nothing that can move money.
 | `audit_log`           | `agentId`                   | the decision trail                                 |
 | `record_audit_outcome`| a verdict id + what happened| the trail updated with the real outcome            |
 
-Identity reads go through a swappable `IdentityProvider` (`src/erc8004.ts`) - Arc's deployed
-ERC-8004 IdentityRegistry is read live out of the box; more EVM chains are added when their RPC
-+ registry env vars are set. Reputation is the pure, unit-tested `computeAgentReputation`
+### Verify-then-pay group (registered when the HTTP entry injects its hooks)
+
+| Tool                      | Input                       | Returns                                        |
+| ------------------------- | --------------------------- | ---------------------------------------------- |
+| `verify_then_pay`         | vault, payee, amount; optional `payment` | the challenge, then the verdict and the exact call to send. Never signs |
+| `verify_then_pay_receipt` | flow id + transaction hash  | the flow, closed only on what the receipt proves |
+
+Identity reads go through a swappable `IdentityProvider` (`src/erc8004.ts`) - the ERC-8004
+IdentityRegistry is read live on every chain in the registry that carries one. Reputation is the pure, unit-tested `computeAgentReputation`
 (`src/reputation.ts`) - the same function `platform.ts` uses in production.
 
 ## REST surface (the write side)
