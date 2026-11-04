@@ -998,6 +998,8 @@ test('the instruction names the prepared fee, its floor and the gas limit, not t
   const o = w.body.ownerHandoff!.ownerPay
   assert.ok(w.body.next.includes(`maxFeePerGas ownerHandoff.ownerPay.fees.maxFeePerGas (${o.fees.maxFeePerGas} wei)`), w.body.next)
   assert.ok(w.body.next.includes(`gas limit ownerHandoff.ownerPay.fees.gas (${o.fees.gas})`), w.body.next)
+  // Sending it costs the agent room on the vault, and the owner is told before signing.
+  assert.match(w.body.next, /counts toward the agent's day on the vault: if it uses up today's room, the agent cannot pay until 00:00 UTC unless the owner raises the cap/)
 
   // An ownerPay that could not be simulated has no limit to name, and is not offered as ready to send.
   const cannot = setup({ chain: { revertOwnerPay: 'TransferFailed' }, gw: { scored: verdict('WARN') } })

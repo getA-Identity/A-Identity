@@ -64,7 +64,19 @@ export const OWNER_KEY_LINE =
 export const AGENT_KEY_CAN = "The agent's key is a separate address your agent signs with. It can do one thing: pay from the vault, within your limits, until its end date."
 
 export const AGENT_KEY_CANNOT =
-  'It cannot change the limits, unfreeze the vault, replace itself or go over the limits. It can pay any address. The contract can limit it to a list of addresses you approve, but this page cannot add addresses to that list yet, so plan on any address. So if it leaks, whoever holds it can spend up to your daily limit every day, until you freeze the vault, the key ends or the vault is empty. The day resets at 00:00 UTC, so up to twice the limit can go within seconds around that time.'
+  'It cannot change the limits, unfreeze the vault, replace itself or go over the limits. It can pay any address. The contract can limit it to a list of addresses you approve, but this page cannot add addresses to that list yet, so plan on any address. So if it leaks, whoever holds it can spend up to your daily limit every day, until you freeze the vault, replace the key, the key ends or the vault is empty. The day resets at 00:00 UTC, so up to twice the limit can go within seconds around that time.'
+
+/** Beside the field where the owner picks the daily limit: this is the number they size for a leak. */
+export const DAILY_LIMIT_TWICE = 'Around that reset up to twice this can go within seconds, so set it to half the most you would accept losing quickly.'
+
+/** A cap change is not a stop: it undoes nothing and the new cap opens again at the reset. */
+export const LOWERING_THE_CAP = 'Lowering it does not undo what was already spent today, and the new cap applies again after 00:00 UTC. To stop the agent now, freeze the vault.'
+
+/**
+ * The agent's day and the owner's payments share one counter on the vault. This page has no button for
+ * an owner payment, so the sentence says where one comes from. Withdrawals are outside the counter.
+ */
+export const OWNER_PAYMENT_COUNTS = "If your agent hands you a payment to approve and you send it from your wallet (the contract calls it ownerPay), it counts toward the agent's day and can stop the agent until 00:00 UTC, unless you raise the cap. A withdrawal does not count."
 
 /** The operator pays for its own pay() call, so a funded vault is not yet an agent that can pay. */
 export const AGENT_KEY_FEES = `The agent's key pays a network fee for each payment, in USDC, from its own balance on this network. The vault's USDC cannot pay that fee. Send the agent's key a small amount: ${AGENT_PAYMENT_FEE_AT_MOST} covers one payment at today's fee.`

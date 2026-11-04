@@ -96,7 +96,7 @@ if (owner === operator) {
 
 const intArg = (name) => {
   const v = arg(name)
-  if (!/^\d+$/.test(v)) fail(`--${name} must be a whole number of token base units (7 decimals on Stellar), 0 or more`)
+  if (!/^\d+$/.test(v) || BigInt(v) === 0n) fail(`--${name} must be a whole number of token base units (7 decimals on Stellar), above 0: in this contract 0 means no limit`)
   return v
 }
 const dailyCap = intArg('daily-cap')

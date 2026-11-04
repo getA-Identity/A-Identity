@@ -26,7 +26,7 @@ import { ArrowLeft, CheckCircle2, Loader2, ShieldAlert } from 'lucide-react'
 import type { Chain } from '../../../lib/chains'
 import { track } from '../../../lib/analytics'
 import { countableDeploy, endDateOf, setupStage, type Listing } from '../../../lib/arc/vault-count'
-import { AFTER_SETUP, AGENT_KEY_CAN, AGENT_KEY_CANNOT, AGENT_KEY_FEES, CALL_FEE_ABOUT, CONFIRMATIONS, FEES_LINE, GIVE_THE_AGENT, IF_A_STEP_FAILS, NO_HASH_LINE, OWNER_KEY_LINE, REVIEW_LINE, SAVE_LINK_LINE, USE_ANOTHER_ACCOUNT, WALLET_GONE, WALLET_MAY_REPRICE, WHAT_IS_A_VAULT, WRONG_ACCOUNT, WRONG_OWNER_WAY_OUT, networkPrompt } from '../../../lib/arc/deploy-copy'
+import { AFTER_SETUP, AGENT_KEY_CAN, AGENT_KEY_CANNOT, AGENT_KEY_FEES, CALL_FEE_ABOUT, CONFIRMATIONS, DAILY_LIMIT_TWICE, FEES_LINE, GIVE_THE_AGENT, IF_A_STEP_FAILS, NO_HASH_LINE, OWNER_KEY_LINE, OWNER_PAYMENT_COUNTS, REVIEW_LINE, SAVE_LINK_LINE, USE_ANOTHER_ACCOUNT, WALLET_GONE, WALLET_MAY_REPRICE, WHAT_IS_A_VAULT, WRONG_ACCOUNT, WRONG_OWNER_WAY_OUT, networkPrompt } from '../../../lib/arc/deploy-copy'
 import { walletChainName } from '../../../lib/evm-chain'
 import { loadSetup, loadTx, saveTx, type SetupState, type TxRecord } from '../../../lib/arc/pending'
 import { FUND_RISK } from '../../../lib/arc/ours'
@@ -653,7 +653,7 @@ export default function DeployFlow({
               Daily limit (USDC, above 0)
             </label>
             <input id="deploy-cap" inputMode="decimal" value={cap} onChange={(e) => setCap(e.target.value)} className={INPUT} />
-            <p className="mt-1 text-[11px] text-foreground/60">The most the agent can spend in one UTC day. It applies again every day, so it is not a total. The day resets at 00:00 UTC.</p>
+            <p className="mt-1 text-[11px] text-foreground/60">The most the agent can spend in one UTC day. It applies again every day, so it is not a total. The day resets at 00:00 UTC. {DAILY_LIMIT_TWICE} {OWNER_PAYMENT_COUNTS}</p>
           </div>
           <div>
             <label htmlFor="deploy-ceiling" className="text-[11px] font-semibold text-foreground/65">

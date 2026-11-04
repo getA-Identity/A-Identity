@@ -229,6 +229,23 @@ flags. No payment, no key, rate limited to 20 calls per hour per IP.
 
 Set once, by a human, in the console.
 
+### What an owner should know about the vault
+
+These hold in the contract, whatever client calls it:
+
+- The daily cap is a calendar UTC day, so up to 2x `dailyCap` can move within seconds around 00:00
+  UTC. With a constant cap, `pay` moves at most 2x the cap between any two moments up to 24 hours
+  apart. Lowering the cap does not undo today's spending; to stop an agent now, freeze the vault.
+- An `ownerPay` counts toward the agent's day and can stop the agent until 00:00 UTC, unless the owner
+  raises the cap. A `withdraw` does not count.
+- `setPolicy` writes both limits and the allowlist flag in one call, so a caps change that sends false
+  turns the allowlist off. The list survives, so turning the flag on again restores it.
+- 0 means no limit, not no spending, on `dailyCap`, `autoApproveMax` and `sessionKeyExpiry`. Our vault
+  page and backend refuse it; the contract accepts it.
+- `sessionKeyExpiry` belongs to the vault, not to one key. A new end date after a revoke turns the same
+  key back on, and a new key keeps the end date already there. If a key may have leaked, call
+  `setOperator` first: that alone stops it.
+
 ### Where each limit is enforced
 
 Two policies live here and they are not enforced in the same number of places.

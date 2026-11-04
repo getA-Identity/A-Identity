@@ -971,6 +971,9 @@ export function createStellarAdapter(chain: ChainDescriptor, deps: StellarAdapte
     if (BigInt(input.dailyCapRaw) < 0n || BigInt(input.autoApproveMaxRaw) < 0n) {
       return refuse('a negative cap or ceiling is refused by the constructor (InvalidAmount). Nothing was submitted.')
     }
+    if (BigInt(input.dailyCapRaw) === 0n || BigInt(input.autoApproveMaxRaw) === 0n) {
+      return refuse('a cap or ceiling of 0 means no limit in this contract, so the vault would carry no bound there. Nothing was submitted.')
+    }
 
     const wasmHash = (input.wasmHash ?? chain.contracts.spendVaultWasmHash ?? '').toLowerCase()
     if (!wasmHash) {

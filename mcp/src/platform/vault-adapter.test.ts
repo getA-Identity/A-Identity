@@ -1,14 +1,17 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
+import { spawnSync } from 'node:child_process'
+import { fileURLToPath } from 'node:url'
 import { CHAINS, ARC_CHAIN } from '../chains/index.js'
-import { createEvmAdapter, vaultCapsRefusal } from '../chains/evm/adapter.js'
+import { createEvmAdapter, vaultCapsRefusal, vaultExpiryRefusal } from '../chains/evm/adapter.js'
 import { errorName } from '../chains/stellar/adapter.js'
 import {
   vaultChainFor, isEvmVault, toRaw, fromRaw, fromCallOutcome, allowlistEntriesFor,
   vaultResultFromOutcome, type VaultPolicyView,
-  sessionKeyExpiryFor, REVOKED_SESSION_EXPIRY,
+  sessionKeyExpiryFor, REVOKED_SESSION_EXPIRY, vaultPolicyPlan, writeVaultSessionExpiry,
 } from './vault-adapter.js'
-import type { PlatformAgent } from './core.js'
+import { __resetPlatformStateForTests, createAgent, provisionAgentVault } from '../platform.js'
+import { state, type PlatformAgent } from './core.js'
 
 /**
  * The dispatcher exists because an AgentSpendPolicy is deployed on two ecosystems that
@@ -199,9 +202,44 @@ test('a revoke writes expiry 1, a second already past on every chain, never 0 an
   assert.equal(sessionKeyExpiryFor({ revoke: true, durationHours: 24, expiryUnix: now + 60 }, now), 1)
   assert.equal(sessionKeyExpiryFor({ durationHours: 2 }, now), now + 7200)
   assert.equal(sessionKeyExpiryFor({ expiryUnix: now + 90.7 }, now), now + 90)
-  assert.equal(sessionKeyExpiryFor({ expiryUnix: 0 }, now), 0)
+  // 0 means no time bound at all, so nothing that is or floors to 0 names an expiry.
+  for (const expiryUnix of [0, 0.9, -5, Number.NaN, Number.POSITIVE_INFINITY]) {
+    assert.equal(sessionKeyExpiryFor({ expiryUnix }, now), null, String(expiryUnix))
+  }
   assert.equal(sessionKeyExpiryFor({ durationHours: 0 }, now), null)
   assert.equal(sessionKeyExpiryFor({}, now), null)
+})
+
+test('a server-side Stellar deploy is refused when a saved limit is 0, or rounds to 0, and nothing is recorded', async () => {
+  __resetPlatformStateForTests()
+  const OWNER = 'owner@test'
+  const seed = (dailyCapUsd: number, autoApproveUnderUsd: number) => {
+    const made = createAgent({ name: `Vault ${dailyCapUsd}/${autoApproveUnderUsd}`, description: 'Seeded for a deploy refusal.', category: 'Research', capabilities: [], permissions: {}, owner: OWNER })
+    const row = state.agents.find((a) => a.id === made.id) as PlatformAgent
+    row.permissions = { ...row.permissions, dailyCapUsd, autoApproveUnderUsd }
+    return row
+  }
+  // 0 stops spending in the server policy; the same value in the Soroban constructor means no limit.
+  const refused: [number, number, RegExp][] = [
+    [0, 0.25, /a daily cap of 0 means no limit/],
+    [1, 0, /a per-payment ceiling of 0 means no limit/],
+    [0, 0, /a daily cap and a per-payment ceiling of 0/],
+    // Stellar USDC has 7 decimals, so this is 0 raw units there while 1e-7 is one.
+    [4e-8, 0.25, /a daily cap of 0 means no limit/],
+    [1, 4e-8, /a per-payment ceiling of 0 means no limit/],
+  ]
+  for (const [cap, ceiling, said] of refused) {
+    const row = seed(cap, ceiling)
+    const r = await provisionAgentVault(row.id, { caller: OWNER, chain: 'stellar:testnet' })
+    assert.match((r as { error?: string }).error ?? '', said, `${cap}/${ceiling}`)
+    assert.equal(row.vaultAddress ?? null, null, 'a refused deploy records nothing')
+  }
+  // The control: usable limits, including one base unit on 7 decimals, pass this rule and stop later, at the owner.
+  for (const [cap, ceiling] of [[1, 0.25], [1e-7, 1e-7]] as const) {
+    const r = await provisionAgentVault(seed(cap, ceiling).id, { caller: OWNER, chain: 'stellar:testnet' })
+    assert.doesNotMatch((r as { error?: string }).error ?? '', /means no limit/, `${cap}/${ceiling}`)
+    assert.ok((r as { error?: string }).error, 'this test has no owner wallet, so it stops at the owner rule')
+  }
 })
 
 test('an EVM vault deploy with a zero daily cap or per-payment ceiling is refused before any key or RPC', async () => {
@@ -216,4 +254,82 @@ test('an EVM vault deploy with a zero daily cap or per-payment ceiling is refuse
   const r = await createEvmAdapter(ARC_CHAIN).deployVault({ dailyCapUsd: 0, autoApproveUsd: 0.25 }, {})
   assert.equal(r.executed, false)
   assert.match((r as { reason: string }).reason, /daily cap of 0 means no limit/)
+})
+
+test('a limit that rounds to 0 is refused like a 0, and the setPolicy write refuses before any key or RPC', async () => {
+  // 4e-7 passes "above 0" in dollars and is 0 token units, which the vault reads as no limit.
+  assert.match(vaultCapsRefusal(4e-7, 0.25) ?? '', /a daily cap of 0 means no limit/)
+  assert.match(vaultCapsRefusal(1, 4e-7) ?? '', /a per-payment ceiling of 0 means no limit/)
+  assert.equal(vaultCapsRefusal(0.000001, 0.000001), null, 'one base unit is a real limit')
+  const adapter = createEvmAdapter(ARC_CHAIN)
+  const deploy = await adapter.deployVault({ dailyCapUsd: 4e-7, autoApproveUsd: 4e-7 }, {})
+  assert.match((deploy as { reason: string }).reason, /of 0 means no limit/)
+  const vault = '0x2222222222222222222222222222222222222222'
+  for (const [dailyCapUsd, autoApproveUsd] of [[0, 0.25], [1, 0], [4e-7, 0.25]]) {
+    const r = await adapter.policySetPolicy(vault, { dailyCapUsd, autoApproveUsd, allowlistEnabled: false }, {})
+    assert.equal(r.executed, false)
+    assert.match((r as { reason: string }).reason, /of 0 means no limit/, 'not "no key": the refusal comes first')
+  }
+})
+
+test('no writer clamps or floors an expiry to 0, which would mean no time bound', async () => {
+  for (const bad of [0, 0.9, -5, Number.NaN]) assert.ok(vaultExpiryRefusal(bad), String(bad))
+  assert.equal(vaultExpiryRefusal(1), null, 'a revoke writes 1')
+  const vault = '0x2222222222222222222222222222222222222222'
+  const adapter = createEvmAdapter(ARC_CHAIN)
+  for (const bad of [0, -5]) {
+    const r = await adapter.policySetSessionExpiry(vault, bad, {})
+    assert.equal(r.executed, false)
+    assert.match((r as { reason: string }).reason, /an expiry of 0 means the agent key never expires/, String(bad))
+    const platform = await writeVaultSessionExpiry({} as Parameters<typeof writeVaultSessionExpiry>[0], vault, bad)
+    assert.equal(platform.ok, false)
+    assert.match((platform as { reason: string }).reason, /never expires/)
+  }
+})
+
+test('a permissions save writes no 0 to a vault, nothing over an unread policy, and no flag off unless the list changed', () => {
+  const permissions = { dailyCapUsd: 2, autoApproveUnderUsd: 0.25, payeeAllowlist: [] as string[], frozen: false }
+  const live = { dailyCapUsd: 1, autoApproveUsd: 0.25, allowlistEnabled: false, frozen: false }
+
+  // A cap change is written, and the flag comes from the list.
+  const plain = vaultPolicyPlan({ permissions, live, allowlistChanged: false })
+  assert.equal(plain.policyDrift, true)
+  assert.equal(plain.want.allowlistEnabled, false)
+  assert.equal(plain.notWritten, null)
+
+  // Off-chain 0 means stop, on-chain 0 means no limit, so it is not written and not handed on to sign.
+  for (const zero of [{ dailyCapUsd: 0 }, { autoApproveUnderUsd: 0 }, { dailyCapUsd: 4e-7 }]) {
+    const plan = vaultPolicyPlan({ permissions: { ...permissions, ...zero }, live, allowlistChanged: false })
+    assert.equal(plan.zeroLimit, true, JSON.stringify(zero))
+    assert.equal(plan.policyDrift, false, JSON.stringify(zero))
+    assert.match(plan.notWritten ?? '', /on the vault 0 means no limit/)
+    assert.match(plan.notWritten ?? '', /freeze the vault/)
+  }
+
+  // Saving a cap does not switch off an allowlist turned on at the contract.
+  const flagOn = { ...live, allowlistEnabled: true }
+  const capOnly = vaultPolicyPlan({ permissions, live: flagOn, allowlistChanged: false })
+  assert.equal(capOnly.want.allowlistEnabled, true)
+  // Emptying the list on purpose does.
+  assert.equal(vaultPolicyPlan({ permissions, live: flagOn, allowlistChanged: true }).want.allowlistEnabled, false)
+  // A list that is there still turns it on, so an earlier failed write is repaired.
+  assert.equal(vaultPolicyPlan({ permissions: { ...permissions, payeeAllowlist: ['0xabc'] }, live, allowlistChanged: false }).want.allowlistEnabled, true)
+
+  // Nothing is written over a policy no read could see, except a freeze, which can only stop.
+  const unread = vaultPolicyPlan({ permissions, live: null, allowlistChanged: true })
+  assert.equal(unread.policyDrift, false)
+  assert.equal(unread.frozenDrift, false, 'a blind unfreeze')
+  assert.match(unread.notWritten ?? '', /could not be read/)
+  assert.equal(vaultPolicyPlan({ permissions: { ...permissions, frozen: true }, live: null, allowlistChanged: true }).frozenDrift, true)
+})
+
+test('the two deploy scripts refuse a 0 limit before any key, RPC or build output', () => {
+  const script = (name: string) => fileURLToPath(new URL(`../../scripts/${name}`, import.meta.url))
+  for (const name of ['evm-mainnet-vault.mjs', 'rh-testnet-deploy-vault.mjs']) {
+    for (const args of [['--daily-cap', '0'], ['--auto-approve', '0'], ['--daily-cap', 'abc']]) {
+      const r = spawnSync(process.execPath, [script(name), ...args], { encoding: 'utf8', env: { PATH: process.env.PATH } })
+      assert.equal(r.status, 1, `${name} ${args.join(' ')}`)
+      assert.match(r.stderr, /must be above 0\. In AgentSpendPolicy 0 means no limit, not no spending/, `${name} ${args.join(' ')}`)
+    }
+  }
 })

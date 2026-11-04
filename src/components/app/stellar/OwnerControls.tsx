@@ -12,6 +12,7 @@
  */
 import { useState, type FormEvent, type ReactNode } from 'react'
 import { Loader2, LogIn } from 'lucide-react'
+import { useLiveField } from '../arc/useLiveField'
 import { ownerAction, STEP_LABEL } from '../../../lib/stellar/vault'
 import { parseAmount, type VaultRead } from '../../../lib/stellar/vault-read'
 import type { WalletSigner } from '../../../lib/wallet/types'
@@ -125,7 +126,8 @@ export default function OwnerControls({
 /**
  * The policy itself, as a secondary form: daily cap, the single-payment ceiling, and
  * whether the allowlist is enforced. All three are sent together because set_policy takes
- * all three; the form starts from the live values so an untouched field stays as it is.
+ * all three; every field follows the latest read until the owner edits it, and an edit lasts only
+ * while the value it was made against holds, so an untouched field stays as it is.
  */
 function PolicyForm({
   vault,
@@ -139,9 +141,9 @@ function PolicyForm({
   /** A transaction for this vault is still pending: nothing new is prepared until it is not. */
   held: boolean
 }) {
-  const [cap, setCap] = useState(vault.dailyCap.display)
-  const [ceiling, setCeiling] = useState(vault.autoApproveMax.display)
-  const [allowlist, setAllowlist] = useState(vault.allowlistEnabled)
+  const [cap, setCap, clearCap] = useLiveField(vault.dailyCap.display)
+  const [ceiling, setCeiling, clearCeiling] = useLiveField(vault.autoApproveMax.display)
+  const [allowlist, setAllowlist, clearAllowlist] = useLiveField(vault.allowlistEnabled)
   const [invalid, setInvalid] = useState<string | null>(null)
   const { busy, step, failure, run } = useOwnerRun()
   const sym = vault.tokenSymbol || 'USDC'
@@ -152,7 +154,11 @@ function PolicyForm({
     const c = parseAmount(cap, vault.decimals)
     const a = parseAmount(ceiling, vault.decimals)
     if (c === null || a === null) {
-      setInvalid(`Enter amounts from 0 upward, with at most ${vault.decimals} decimal places. 0 means no limit.`)
+      setInvalid(`Enter amounts above 0, with at most ${vault.decimals} decimal places.`)
+      return
+    }
+    if (c === 0n || a === 0n) {
+      setInvalid('A limit of 0 means NO LIMIT in this contract, not no spending, so this page refuses it. Set both above 0. To stop the agent, freeze the vault.')
       return
     }
     setInvalid(null)
@@ -166,6 +172,9 @@ function PolicyForm({
         onStep,
       })
       onReceipt(receiptOf('Policy change', vault.network, r))
+      clearCap()
+      clearCeiling()
+      clearAllowlist()
       return r
     })
   }
@@ -178,7 +187,7 @@ function PolicyForm({
       <form onSubmit={submit} className="mt-3 grid gap-3 sm:grid-cols-3 sm:items-end">
         <div>
           <label htmlFor={`cap-${id}`} className="text-[11px] font-semibold text-foreground/65">
-            Daily cap ({sym}, 0 = none)
+            Daily cap ({sym}, above 0)
           </label>
           <input
             id={`cap-${id}`}
@@ -190,7 +199,7 @@ function PolicyForm({
         </div>
         <div>
           <label htmlFor={`ceiling-${id}`} className="text-[11px] font-semibold text-foreground/65">
-            Largest auto-approved payment ({sym}, 0 = none)
+            Largest auto-approved payment ({sym}, above 0)
           </label>
           <input
             id={`ceiling-${id}`}
@@ -204,6 +213,18 @@ function PolicyForm({
           <input type="checkbox" checked={allowlist} onChange={(e) => setAllowlist(e.target.checked)} className="h-4 w-4 accent-accent" />
           Enforce the allowlist
         </label>
+        {!allowlist && vault.allowlistEnabled && (
+          <p className="rounded-lg border border-warn/30 bg-warn/10 px-3 py-2 text-xs text-foreground/85 sm:col-span-3">
+            This turns the allowlist off: the agent key can then pay any address, within the cap and the ceiling. The list itself stays on the
+            contract, so turning it on again brings the same payees back.
+          </p>
+        )}
+        <p className="text-xs text-foreground/75 sm:col-span-3">
+          The day resets at 00:00 UTC. Around that reset up to twice the cap can go within seconds, so set it to half the most you would accept
+          losing quickly. Lowering it does not undo what was already spent today, and the new cap applies again after 00:00 UTC. To stop the
+          agent now, freeze the vault. A payment you send as the owner (owner_pay) counts toward the agent's day and can stop the agent until
+          00:00 UTC, unless you raise the cap. A withdrawal does not count.
+        </p>
         <div className="sm:col-span-3">
           <button
             type="submit"

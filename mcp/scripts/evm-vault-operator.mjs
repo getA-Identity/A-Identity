@@ -12,6 +12,9 @@
  *
  * The contract has no owner transfer, so the owner stays where it is and the operator moves.
  *
+ * The new key keeps the expiry already on the vault, and this call alone stops the old key. To
+ * replace a key that may have leaked, run this first and evm-vault-session.mjs after.
+ *
  * Prepared-or-executed: without the owner's key this prints the exact call and exits. After
  * a broadcast it reads the operator back from the contract, then simulates (nothing
  * broadcast) that the new operator is refused every owner power and anything above the

@@ -22,6 +22,7 @@ import { useState, type FormEvent, type ReactNode } from 'react'
 import { ArrowLeft, Loader2, Snowflake, Sun } from 'lucide-react'
 import type { Chain } from '../../../lib/chains'
 import { track } from '../../../lib/analytics'
+import { DAILY_LIMIT_TWICE, LOWERING_THE_CAP, OWNER_PAYMENT_COUNTS } from '../../../lib/arc/deploy-copy'
 import type { TxRecord } from '../../../lib/arc/pending'
 import { networkName, networkWord, type VaultSnapshot } from '../../../lib/arc/vault-read'
 import {
@@ -30,9 +31,11 @@ import {
   aboveSoftWarn,
   capsRefusal,
   capsWarning,
+  extendReArms,
   formatUnitsExact,
   operatorRefusal,
   parseUnitsExact,
+  replaceKeyNotice,
   withdrawRefusal,
 } from '../../../lib/arc/vault-rules'
 import { STEP_LABEL, prepareOwnerCall, preparedStale, sendPrepared, type OwnerCall, type PreparedTx, type TxAction } from '../../../lib/arc/vault-write'
@@ -41,6 +44,7 @@ import { Button } from '../../ui/button'
 import FailureNotice from './FailureNotice'
 import PreparedView from './PreparedView'
 import { recordOf, useArcTx } from './useArcTx'
+import { useLiveField } from './useLiveField'
 
 const INPUT =
   'mt-1 w-full rounded-lg border border-border bg-card px-3 py-2 text-sm text-foreground outline-none focus:border-accent focus-visible:ring-2 focus-visible:ring-ring'
@@ -160,12 +164,25 @@ function SessionKeyControl(props: Shared) {
   const { busy, step, failure, act } = useOwnerAction(props)
   const id = `session-${vault.address.slice(2, 10)}`
   const revokeSent = props.inFlight === 'revoke'
+  const reArms = extendReArms(vault)
+  const [knowsReArm, setKnowsReArm] = useState(false)
   return (
     <Card title="Session key">
       {vault.sessionKeyExpiry === 0n && (
         <p className="mb-2 rounded-lg border border-danger/25 bg-danger/[0.07] px-3 py-2 text-xs font-semibold text-foreground">
           This vault's operator key has no time bound. Set an expiry now.
         </p>
+      )}
+      {reArms && (
+        <div className="mb-2 rounded-lg border border-warn/30 bg-warn/10 px-3 py-2 text-xs text-foreground/85">
+          <p>{reArms.text}</p>
+          {reArms.mustTick && (
+            <label className="mt-2 flex items-center gap-2 font-semibold text-foreground">
+              <input type="checkbox" checked={knowsReArm} onChange={(e) => setKnowsReArm(e.target.checked)} className="h-4 w-4 accent-accent" />
+              {reArms.tick}
+            </label>
+          )}
+        </div>
       )}
       <div className="flex flex-wrap items-end gap-3">
         <div>
@@ -180,7 +197,14 @@ function SessionKeyControl(props: Shared) {
             ))}
           </select>
         </div>
-        <Button size="sm" onClick={() => void act('extend', { fn: 'extend', seconds })} disabled={busy !== null || held}>
+        <Button
+          size="sm"
+          onClick={() => {
+            setKnowsReArm(false)
+            void act('extend', { fn: 'extend', seconds })
+          }}
+          disabled={busy !== null || held || (reArms?.mustTick === true && !knowsReArm)}
+        >
           {busy === 'extend' && <Loader2 size={14} className="animate-spin" aria-hidden="true" />}
           {busy === 'extend' ? working(busy, step, '') : vault.sessionKeyExpiry === 0n ? 'Set the expiry' : 'Extend or shorten'}
         </Button>
@@ -211,9 +235,11 @@ function SessionKeyControl(props: Shared) {
 
 function PolicyControl(props: Shared) {
   const { vault, held } = props
-  const [cap, setCap] = useState(formatUnitsExact(vault.dailyCap, vault.decimals))
-  const [ceiling, setCeiling] = useState(formatUnitsExact(vault.autoApproveMax, vault.decimals))
-  const [allowlist, setAllowlist] = useState(vault.allowlistEnabled)
+  // Every field follows the latest read until the owner edits it, and an edit lasts only while the
+  // value it was made against holds: setPolicy writes all three, so a stale one would overwrite the chain.
+  const [cap, setCap, clearCap] = useLiveField(formatUnitsExact(vault.dailyCap, vault.decimals))
+  const [ceiling, setCeiling, clearCeiling] = useLiveField(formatUnitsExact(vault.autoApproveMax, vault.decimals))
+  const [allowlist, setAllowlist, clearAllowlist] = useLiveField(vault.allowlistEnabled)
   const [invalid, setInvalid] = useState<string | null>(null)
   const { busy, step, failure, act } = useOwnerAction(props)
   const id = vault.address.slice(2, 10)
@@ -229,7 +255,12 @@ function PolicyControl(props: Shared) {
       return
     }
     setInvalid(null)
-    void act('policy', { fn: 'setPolicy', dailyCap: c, autoApproveMax: a, allowlistEnabled: allowlist })
+    void act('policy', { fn: 'setPolicy', dailyCap: c, autoApproveMax: a, allowlistEnabled: allowlist }).then((hash) => {
+      if (hash === null) return
+      clearCap()
+      clearCeiling()
+      clearAllowlist()
+    })
   }
 
   return (
@@ -260,13 +291,22 @@ function PolicyControl(props: Shared) {
             turning it on here blocks every agent payment until payees are added.
           </p>
         )}
+        {!allowlist && vault.allowlistEnabled && (
+          <p className="rounded-lg border border-warn/30 bg-warn/10 px-3 py-2 text-xs text-foreground/85 sm:col-span-3">
+            This turns the allowlist off: the agent key can then pay any address, within the cap and the ceiling. The list itself stays on the
+            contract, so turning it on again brings the same payees back.
+          </p>
+        )}
         {warn && <p className="text-xs text-foreground/75 sm:col-span-3">{warn}</p>}
+        <p className="text-xs text-foreground/75 sm:col-span-3">
+          The day resets at 00:00 UTC. {DAILY_LIMIT_TWICE} {LOWERING_THE_CAP} {OWNER_PAYMENT_COUNTS}
+        </p>
         <div className="sm:col-span-3">
           <Button type="submit" size="sm" disabled={busy !== null || held}>
             {busy && <Loader2 size={14} className="animate-spin" aria-hidden="true" />}
             {working(busy, step, 'Set the policy')}
           </Button>
-          <span className="ml-2 text-xs text-foreground/60">0 is refused: in this contract 0 means no limit.</span>
+          <span className="ml-2 text-xs text-foreground/60">0 is refused: in this contract 0 means no limit. This one call writes both limits and the allowlist setting, as shown here.</span>
         </div>
       </form>
       {invalid && (
@@ -327,9 +367,7 @@ function OperatorControl(props: Shared) {
           {working(busy, step, 'Replace the operator')}
         </Button>
       </form>
-      <p className="mt-2 text-[11px] text-foreground/60">
-        The current operator key stops working the moment this lands. The session key expiry stays as it is.
-      </p>
+      <p className="mt-2 text-xs text-foreground/75">{replaceKeyNotice(vault)}</p>
       {invalid && (
         <p role="alert" className="mt-2 text-xs font-semibold text-danger">
           {invalid}

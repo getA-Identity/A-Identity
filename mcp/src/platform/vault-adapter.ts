@@ -254,7 +254,9 @@ export async function writeVaultSessionExpiry(
   const chain = vaultChainFor(agent)
   if (!chain) return { ok: false, reason: `Unknown vault chain ${agent.vaultChainCaip2}` }
   if (chain.ecosystem === 'algorand') return noVaultPortYet(chain)
-  const expiry = Math.max(0, Math.floor(expiryUnix))
+  // Same meaning on both chains: 0 is no time bound, so neither a 0 nor a value that floors or clamps to it is sent.
+  const expiry = Math.floor(expiryUnix)
+  if (!(expiry >= 1)) return { ok: false, reason: 'An expiry of 0 means the agent key never expires, so it is not written. To revoke, ask for a revoke.' }
   if (chain.ecosystem === 'evm') {
     const { policySetSessionExpiry } = await import('../arc-contracts.js')
     const r = await policySetSessionExpiry(vault, expiry)
@@ -420,9 +422,56 @@ export function sessionKeyExpiryFor(
   now: number,
 ): number | null {
   if (input.revoke) return REVOKED_SESSION_EXPIRY
-  if (typeof input.expiryUnix === 'number' && input.expiryUnix >= 0) return Math.floor(input.expiryUnix)
+  // 0, or anything that floors to it, would mean no time bound at all, so it names no expiry.
+  if (typeof input.expiryUnix === 'number' && Number.isFinite(input.expiryUnix) && input.expiryUnix >= 1) return Math.floor(input.expiryUnix)
   if (typeof input.durationHours === 'number' && input.durationHours > 0) return now + Math.floor(input.durationHours * 3600)
   return null
+}
+
+/** Said when a permissions save holds a limit the vault would read as the opposite of what it means. */
+export const ZERO_LIMIT_NOT_WRITTEN =
+  'A limit of 0 stops spending in the server policy, but on the vault 0 means no limit, so it was not written to the vault, which keeps its current limits. To stop the agent on-chain, freeze the vault.'
+
+/** Said when the vault's current policy could not be read, so a whole-policy write would be blind. */
+export const VAULT_UNREAD_NOT_WRITTEN =
+  "This vault's current policy could not be read, so its limits and allowlist setting were not changed. Save again to retry. The server policy is updated meanwhile."
+
+/**
+ * What a permissions save may write to a vault, from the saved permissions and the vault's live
+ * policy. Pure, so the rules are pinned without a chain. setPolicy overwrites both caps and the
+ * allowlist flag in one call, so:
+ *   - a limit that is 0 in token units is not written: off-chain 0 means stop, on-chain 0 means no limit;
+ *   - nothing is written over a policy that could not be read, except a freeze, which can only stop;
+ *   - the flag goes off only when the off-chain list itself changed, so saving a cap cannot switch
+ *     off an allowlist the owner turned on at the contract.
+ */
+export function vaultPolicyPlan(input: {
+  permissions: { dailyCapUsd: number; autoApproveUnderUsd: number; payeeAllowlist: readonly unknown[]; frozen: boolean }
+  live: { dailyCapUsd: number; autoApproveUsd: number; allowlistEnabled: boolean; frozen: boolean } | null
+  allowlistChanged: boolean
+}) {
+  const { permissions: p, live, allowlistChanged } = input
+  const micro = (n: number) => Math.round(n * 1e6)
+  const want = {
+    dailyCapUsd: p.dailyCapUsd,
+    autoApproveUsd: p.autoApproveUnderUsd,
+    allowlistEnabled: p.payeeAllowlist.length > 0 || (!allowlistChanged && live?.allowlistEnabled === true),
+    frozen: p.frozen,
+  }
+  const zeroLimit = micro(want.dailyCapUsd) < 1 || micro(want.autoApproveUsd) < 1
+  const policyDrift =
+    live !== null &&
+    !zeroLimit &&
+    (micro(live.dailyCapUsd) !== micro(want.dailyCapUsd) ||
+      micro(live.autoApproveUsd) !== micro(want.autoApproveUsd) ||
+      live.allowlistEnabled !== want.allowlistEnabled)
+  return {
+    want,
+    zeroLimit,
+    policyDrift,
+    frozenDrift: live ? live.frozen !== want.frozen : want.frozen,
+    notWritten: zeroLimit ? ZERO_LIMIT_NOT_WRITTEN : live === null ? VAULT_UNREAD_NOT_WRITTEN : null,
+  }
 }
 
 /** The address shape this chain's vault allowlist accepts. An EVM vault takes 0x

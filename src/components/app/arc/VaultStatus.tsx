@@ -123,7 +123,7 @@ export default function VaultStatus({
         <Group title="Today (UTC day, chain time)" stamp={stamp}>
           <dl className="grid gap-3 sm:grid-cols-2">
             <Field label="Daily cap">{v.dailyCap === 0n ? <Chip tone="warn">No cap: 0 means no limit</Chip> : usd(v.dailyCap)}</Field>
-            <Field label="Spent today">{usd(v.spentToday)}</Field>
+            <Field label="Spent today (agent and owner payments, not withdrawals)">{usd(v.spentToday)}</Field>
             <Field label="Still allowed today">{v.remainingToday === null ? 'No cap, so no daily limit' : usd(v.remainingToday)}</Field>
             <Field label="Resets at">
               {resets ? (
@@ -173,7 +173,7 @@ export default function VaultStatus({
             </p>
           ) : v.sessionKeyExpiry === REVOKED_SESSION_EXPIRY ? (
             <p className="text-sm text-foreground">
-              <Chip tone="warn">Revoked</Chip> The owner ended this key. The owner can give it a new expiry.
+              <Chip tone="warn">Revoked</Chip> The end date is in the past, so the current key cannot pay. A new end date turns on the key set now{v.frozen ? ', which can pay again once the vault is unfrozen' : ''}: the date belongs to the vault, not to one key.
             </p>
           ) : readableDate(v.sessionKeyExpiry) === null ? (
             <p className="text-sm text-foreground">

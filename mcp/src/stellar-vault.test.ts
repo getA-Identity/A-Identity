@@ -76,11 +76,13 @@ test('set_policy builds three arguments and refuses to guess the allowlist flag'
   if (!guessed.ok) assert.match(guessed.reason, /allowlistEnabled/)
 })
 
-test('a cap of zero is allowed and means no cap; a negative or infinite one is refused', () => {
-  assert.equal(ownerCallPlan('set_policy', { dailyCapUsd: 0, autoApproveUsd: 0, allowlistEnabled: false }, DECIMALS).ok, true)
-  for (const bad of [-1, Number.NaN, Number.POSITIVE_INFINITY, '25', null]) {
+test('a cap of zero, or one that rounds to zero, is refused because the contract reads it as no cap', () => {
+  // 1e-8 is above 0 in dollars and 0 raw units at 7 decimals.
+  for (const bad of [0, 1e-8, -1, Number.NaN, Number.POSITIVE_INFINITY, '25', null]) {
     const r = ownerCallPlan('set_policy', { dailyCapUsd: bad, autoApproveUsd: 5, allowlistEnabled: false }, DECIMALS)
     assert.equal(r.ok, false, `${String(bad)} must not be accepted as a cap`)
+    const c = ownerCallPlan('set_policy', { dailyCapUsd: 5, autoApproveUsd: bad, allowlistEnabled: false }, DECIMALS)
+    assert.equal(c.ok, false, `${String(bad)} must not be accepted as a ceiling`)
   }
 })
 
@@ -93,14 +95,12 @@ test('a payment of zero is refused here, because the contract refuses it there',
   if (!zero.ok) assert.match(zero.reason, /InvalidAmount/)
 })
 
-test('an expiry of zero is accepted and the summary says what zero actually means', () => {
-  const r = ownerCallPlan('set_session_key_expiry', { expiryUnix: 0 }, DECIMALS)
-  assert.equal(r.ok, true)
-  if (!r.ok) return
-  assert.deepEqual(r.args, [{ kind: 'u64', value: '0' }])
+test('an expiry of zero is refused, and the refusal says what zero actually means', () => {
   // The thing people get backwards: 0 is NO time bound at all, which is an operator whose
   // authority never lapses, the opposite of a session key.
-  assert.match(r.summary, /never lapses/)
+  const r = ownerCallPlan('set_session_key_expiry', { expiryUnix: 0 }, DECIMALS)
+  assert.equal(r.ok, false)
+  if (!r.ok) assert.match(r.reason, /never lapses/)
   // A fractional or negative expiry is not a UNIX second.
   assert.equal(ownerCallPlan('set_session_key_expiry', { expiryUnix: 1.5 }, DECIMALS).ok, false)
   assert.equal(ownerCallPlan('set_session_key_expiry', { expiryUnix: -1 }, DECIMALS).ok, false)

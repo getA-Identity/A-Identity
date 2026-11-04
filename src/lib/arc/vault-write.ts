@@ -50,6 +50,7 @@ import {
 import {
   OWNER_ACTION_GAS,
   capsRefusal,
+  ownerFormMoved,
   expiryRefusal,
   feeFields,
   formatUnitsExact,
@@ -227,6 +228,25 @@ async function assertCodeStill(c: ArcClient, v: VaultSnapshot): Promise<void> {
     throw stop('not_this_build', 'The code at this address is not the build this page deploys with the owner and USDC shown. Nothing was sent.')
 }
 
+/**
+ * A write whose values came from what the page showed must still match the chain, read again on the
+ * host about to simulate. setPolicy overwrites both caps and the allowlist flag in one call, and a new
+ * end date or a new key takes effect against the end date on the vault. Freeze, revoke and withdraw
+ * take nothing from the form's read, so they never wait on this.
+ */
+async function assertFormStill(c: ArcClient, v: VaultSnapshot, call: OwnerCall): Promise<void> {
+  if (call.fn !== 'setPolicy' && call.fn !== 'extend' && call.fn !== 'setOperator') return
+  const at = { address: v.address, abi: AGENT_SPEND_POLICY_ABI } as const
+  const [dailyCap, autoApproveMax, allowlistEnabled, sessionKeyExpiry] = await Promise.all([
+    c.readContract({ ...at, functionName: 'dailyCap' }),
+    c.readContract({ ...at, functionName: 'autoApproveMax' }),
+    c.readContract({ ...at, functionName: 'allowlistEnabled' }),
+    c.readContract({ ...at, functionName: 'sessionKeyExpiry' }),
+  ])
+  const moved = ownerFormMoved(v, { dailyCap, autoApproveMax, allowlistEnabled, sessionKeyExpiry })
+  if (moved) throw stop('refused', moved)
+}
+
 // --- deploy ---
 
 /**
@@ -343,6 +363,7 @@ export async function prepareOwnerCall(chain: Chain, v: VaultSnapshot, call: Own
   try {
     r = await onFirstHost(chain, async (c) => {
       await assertCodeStill(c, v)
+      await assertFormStill(c, v, call)
       let expiry: bigint | undefined
       if (call.fn === 'extend') {
         const head = await c.getBlock({ blockTag: 'latest' })

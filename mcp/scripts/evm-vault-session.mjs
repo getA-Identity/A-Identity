@@ -9,6 +9,9 @@
  * every other gate (cap, ceiling, allowlist, freeze) stayed exactly as the owner set them.
  * Renewing touches the expiry and nothing else.
  *
+ * The expiry belongs to the vault, not to one key: this turns whichever key is the operator now
+ * back on, even after a revoke. If that key may have leaked, run evm-vault-operator.mjs first.
+ *
  * Owner-only on chain, so it is owner-only here: if the signer is not the vault's owner the
  * script says so and prints the call for the owner to make, instead of sending a tx that
  * would revert NotOwner.

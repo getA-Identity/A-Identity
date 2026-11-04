@@ -34,6 +34,10 @@ const arg = (name, def) => {
 const CHAIN_ID = arg('chain', '')
 const DAILY_CAP_USD = Number(arg('daily-cap', '1'))
 const AUTO_APPROVE_USD = Number(arg('auto-approve', '0.25'))
+if (!(DAILY_CAP_USD > 0) || !(AUTO_APPROVE_USD > 0)) {
+  console.error('error: --daily-cap and --auto-approve must be above 0. In AgentSpendPolicy 0 means no limit, not no spending.')
+  process.exit(1)
+}
 const SESSION_DAYS = Number(arg('session-days', '7'))
 const FUND_USD = Number(arg('fund', '0'))
 const PAY_USD = Number(arg('pay', '0'))
@@ -76,6 +80,10 @@ if (Number(liveDecimals) !== token.decimals) {
   process.exit(1)
 }
 const units = (usd) => BigInt(Math.round(usd * 10 ** Number(liveDecimals)))
+if (units(DAILY_CAP_USD) < 1n || units(AUTO_APPROVE_USD) < 1n) {
+  console.error(`error: --daily-cap and --auto-approve round to 0 at ${liveDecimals} decimals, and in AgentSpendPolicy 0 means no limit.`)
+  process.exit(1)
+}
 
 console.log(`Target: ${chain.name} (${chain.caip2})`)
 console.log(`Token:  ${token.address} (${liveSymbol}, ${liveDecimals} decimals) - the registry's declared settlement token`)

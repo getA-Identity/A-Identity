@@ -530,8 +530,10 @@ function scvals(sak: Sak) {
 }
 
 function usdcUnits(usd: number, what: string): bigint {
-  if (!Number.isFinite(usd) || usd <= 0) throw new Error(`Enter ${what} above zero.`)
-  return BigInt(Math.round(usd * 10 ** USDC_DECIMALS))
+  const units = Number.isFinite(usd) && usd > 0 ? BigInt(Math.round(usd * 10 ** USDC_DECIMALS)) : 0n
+  // Rounded to 0 is refused too: in the contract 0 is no limit, not a small one.
+  if (units === 0n) throw new Error(`Enter ${what} above zero.`)
+  return units
 }
 
 async function ownerCall(net: PasskeyNetwork, vault: string, fn: string, args: unknown[], onStep?: OnStep): Promise<ChainWrite> {
