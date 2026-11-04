@@ -37,7 +37,7 @@ the same as a good counterparty.
 `priceUsd` is the field name, in USD, capped at 1000 per hire. `agentId` is the
 platform agent id the catalog returns, not the ERC-8004 token id.
 
-USDC is committed to an ERC-8183 escrow on Arc. The worker cannot take it and
+USDC is committed to an ERC-8183 escrow on Arc testnet, in test money. The worker cannot take it and
 you cannot spend it elsewhere; it sits in the contract until the job resolves.
 
 This tool moves value, so it requires a verified session: sign in with OAuth, or
