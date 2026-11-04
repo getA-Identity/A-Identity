@@ -137,10 +137,11 @@ Directories:
   `X402_GATEWAY_PAYTO`); `GET /api/x402/gateway/status` answers for itself.
 - `src/verify-then-pay/` - verify-then-pay on Arc Mainnet, the hosted half, behind
   `POST /api/x402/gateway/verify-then-pay` and the `verify_then_pay` MCP tool. Free checks
-  first, read from Arc Mainnet (`reads.ts`): the vault holds the registry's USDC, the payee
-  holds an ERC-8004 agent on Arc Mainnet's own IdentityRegistry, and the vault's policy plus a
-  simulated `pay()` from its operator would accept the payment, so a payment the vault would
-  refuse never buys a check. Then `risk_check` is bought in process through the Gateway rail,
+  first, read from Arc Mainnet (`reads.ts`): the vault holds the registry's USDC, an agent named
+  in `payeeAgentId` is the payee's on Arc Mainnet's own IdentityRegistry, and the vault's policy
+  plus a simulated `pay()` from its operator would accept the payment, so a payment the vault
+  would refuse never buys a check. A payee that holds no agent is not refused: it goes on to
+  the check, and unless it is an agent on our platform it gets WARN. Then `risk_check` is bought in process through the Gateway rail,
   Arc Mainnet's offer only, with the payee ADDRESS as agentId (`core.ts`), and the answer must
   pass `verdict.ts` (settlement echo, payee and amount echo, a finite reputation, an ALLOW or
   a WARN that agrees with its own signals). ALLOW returns the exact `vault.pay(payee, amount)`
@@ -305,7 +306,9 @@ curl -s https://a-identity.xyz/api/arc/season | jq '.milestone1.checks | {count,
 ```
 
 `--allow` flows pay Simon, an agent in our own account, and expect ALLOW and a `Paid` transaction. `--deny` flows name our
-operating wallet (agent #0, internal) and expect `TrustDenyError`. Other flags: `--amount-units`
+operating wallet (agent #0, internal) and expect `TrustDenyError`, which is what its 25 flows got on 2026-11-02. It is
+off-platform, so since the rule changed on 2026-11-04 it forecasts WARN and the plan refuses it: Milestone 1 is finished,
+this is not to be run again, and no other payee replaces it. Other flags: `--amount-units`
 (default 1000, and each flow pays one unit more, so no two share an amount), `--base-url`,
 `--budget` (default 0.75 USDC), `--max-fee-gwei` (default 60), `--pause-ms` (default 5000),
 `--operator`, `--ack-stop`, `--ack-fresh-log`, `--reconcile`. Exit 0 fits or finished, 1 refused or

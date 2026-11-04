@@ -162,20 +162,21 @@ export const METHODOLOGY = {
     deny: [
       'KYA revoked (the agent is flagged as an incident)',
       "Sybil / wash reputation: >= 60% of jobs hired by the agent's own operator",
-      'no verifiable on-chain ERC-8004 identity',
-      'reputation < 200',
-      'transaction amount > $100 to an agent with reputation < 400',
+      'reputation < 200 on an agent on our platform',
+      'transaction amount > $100 to an agent on our platform with reputation < 400',
     ],
     warn: [
+      'no verifiable on-chain ERC-8004 identity, or no record on our platform: we do not know this payee, which does not mean it is bad',
       'KYA (wallet-control) not attested',
       'Sybil signals: partial same-operator hiring or low counterparty diversity',
       'reputation in [200, 500)',
-      'tenure < 7 days (new agent)',
+      'tenure < 7 days (new agent), on an agent we hold a record of',
+      'transaction amount > $100 to a payee with no record on our platform',
       'transaction amount > $1000',
     ],
     sybil: "Sybil/wash detection from real state: operator cluster size (agents per owner), self-deal rate (jobs hired by the agent's OWN operator), and counterparty diversity (distinct clients / jobs). HIGH = reputation mostly self-dealt -> DENY; MEDIUM -> WARN. Detects same-operator wash only; cross-operator collusion needs a funder-graph indexer (roadmap).",
-    allow: 'none of the above - verified identity, attested KYA, strong reputation',
-    note: 'DENY overrides WARN overrides ALLOW; every triggered reason is returned. Pure and unit-tested.',
+    allow: 'none of the above - a platform agent with verified identity, attested KYA, strong reputation',
+    note: 'DENY overrides WARN overrides ALLOW; every triggered reason is returned. Pure and unit-tested. DENY means we hold evidence against the payee, so a payee we know nothing about gets WARN and never ALLOW. Until 2026-11-04 no identity and a low score on such a payee forced DENY; a verdict recorded before that day was answered under that rule.',
   },
   // The tools (each a thin wrapper over the live engine; paid prices settle over x402 on X Layer).
   tools: {

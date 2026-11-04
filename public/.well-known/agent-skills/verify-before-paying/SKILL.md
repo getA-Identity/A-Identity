@@ -35,6 +35,15 @@ The response carries `decision` (`ALLOW`, `WARN` or `DENY`), a `risk` band, and
 `reasons`, which is an array of plain sentences explaining what drove the
 verdict. Act on `decision`; show `reasons` to whoever has to justify it later.
 
+`DENY` means we hold evidence against the payee: KYA revoked, Sybil high, a reputation
+under 200 on an agent on our platform, or a payment over 100 USD to an agent on our
+platform with reputation under 400. A payee with no on-chain identity, or with an identity
+and no record on our platform, is not known bad, so it gets `WARN`, with reasons that say
+what we do not know. A high-value or large payment to such a payee stays `WARN`, with the
+amount named. `ALLOW` needs a platform agent with reputation of at least 500, attested KYA
+and at least 7 days of tenure.
+`WARN` is not a go-ahead: hold the payment for a person, or decide with the reasons in front of you.
+
 ## Paying for the call
 
 An unpaid request returns HTTP 402 with a machine-readable challenge naming the

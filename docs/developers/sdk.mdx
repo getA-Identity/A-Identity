@@ -94,7 +94,8 @@ server.addTool(
 
 If all you want is to stop a bad payment, the guard package is one line and one
 dependency-free import. It calls the live Trust Oracle and throws before your agent
-can pay a counterparty that comes back DENY.
+can pay a counterparty that comes back DENY. DENY means we hold evidence against the
+counterparty. One we know nothing about comes back WARN, which does not throw by default.
 
 ```bash
 npm install @a-identity/trust-guard
@@ -114,7 +115,8 @@ try {
 The oracle's paid tools answer over x402. Pass an `onPaymentRequired` callback (an OKX
 Agentic Wallet, for instance) and the guard settles the challenge and retries once; leave
 it out and a 402 surfaces as `PaymentRequiredError` for you to handle. Widen the gate with
-`denyOn: ['DENY', 'WARN']` when a warn should also stop the payment.
+`denyOn: ['DENY', 'WARN']` when a warn should also stop the payment. Without it, the line after
+`guard()` pays a counterparty we know nothing about.
 
 ### Paying On Algorand
 

@@ -333,11 +333,18 @@ generated from the same source.
 
 **Send the payee's 0x address as `agentId`.** `risk_check` matches a platform agent by platform
 id, token id or wallet address. A CAIP id is resolved on chain but never matched to a platform
-agent, so it is scored off-platform: at most 60, which is `DENY`, even for an agent that would
-pass under its address. `ALLOW` needs a platform agent with reputation of at least 500, attested
-KYA and at least 7 days of tenure, so an off-platform payee gets `DENY` today. That includes a
-real seller who simply has not registered with us; what such a seller should get instead is an
-open product decision.
+agent, so a platform agent named that way is scored from the chain alone: at most 60, which is
+`DENY`, even for an agent that would pass under its address.
+
+**Who gets what.** `DENY` means we hold evidence against the payee: KYA revoked, Sybil high, a reputation under
+200 on an agent on our platform, or a payment over 100 USD to an agent on our platform with
+reputation under 400. A payee with no on-chain identity, or with an identity and no record on
+our platform, is not known bad, so it gets `WARN`, with reasons that say what we do not know.
+A high-value or large payment to such a payee stays `WARN`, with the amount named. `ALLOW` needs
+a platform agent with reputation of at least 500, attested KYA and at least 7 days of tenure.
+A real seller who simply has not registered with us scores at most 60 because we have no history
+for it, and that gets `WARN`. Until 2026-11-04 it got `DENY`; anything dated before that day on
+this page or on [/proof/arc](https://a-identity.xyz/proof/arc) was answered under the older rule.
 
 | Tool | Price | What it answers | Required input |
 | --- | --- | --- | --- |
@@ -393,7 +400,7 @@ first, for 0.005 USDC, from a Gateway balance. Checked on 2026-11-04:
 
 | Path | Status |
 | --- | --- |
-| Hosted routes | **Live.** They validate input and serve flow records. 100 flows have run on Arc Mainnet, all through our own launch-day vault to payees of ours and labeled so: 75 `ALLOW` flows that the vault paid, and 25 `DENY` flows stopped before signing. Each is listed on [/proof/arc](https://a-identity.xyz/proof/arc). |
+| Hosted routes | **Live.** They validate input and serve flow records. 100 flows have run on Arc Mainnet, all through our own launch-day vault to payees of ours and labeled so: 75 `ALLOW` flows that the vault paid, and 25 `DENY` flows stopped before signing, answered on 2026-11-02 under the rule of that day. Each is listed on [/proof/arc](https://a-identity.xyz/proof/arc). |
 | MCP tools | **Live** on `https://a-identity.xyz/mcp`, which lists both. The stdio server does not carry them. |
 | SDK, `@a-identity/trust-guard` 0.4.0 | **Built, not published.** npm's latest is 0.3.0, which has no `/arc` entry point. |
 
@@ -414,11 +421,11 @@ labeled internal.
 
 <Steps>
   <Step title="Free checks, nothing signed">
-    The asset is the registry's USDC and the vault's. The payee holds an ERC-8004 agent on Arc
-    Mainnet. The vault's policy and a simulated `pay()` from its operator accept the payment (not
+    The asset is the registry's USDC and the vault's. An agent named in `payeeAgentId` is the
+    payee's. The vault's policy and a simulated `pay()` from its operator accept the payment (not
     frozen, session key valid, payee allowed, within auto-approve, daily cap and balance). The
     operator can pay the gas. If the vault would refuse, the answer is a refusal named after the
-    vault's own error, and the check is not bought.
+    vault's own error, and the check is not bought. A payee that holds no agent is not refused.
   </Step>
   <Step title="The check, 0.005 USDC">
     `risk_check` through Circle Gateway, with the payee's address as `agentId` and the amount in
@@ -440,22 +447,26 @@ labeled internal.
 | Verdict | What happens | Paid by |
 | --- | --- | --- |
 | `DENY` | Nothing to sign. The refusal is public on the flow record. You have paid for the check and nothing else. | Nobody |
-| `WARN` | No automatic payment. The answer is the verdict plus a prepared `ownerPay` for the vault's owner (`awaiting_human`). Set `payOnWarn` to true to prepare `pay()` for the operator instead; it is off unless you ask. | The owner, or the operator with `payOnWarn` |
+| `WARN` | No automatic payment. The answer is the verdict plus a prepared `ownerPay` for the vault's owner (`awaiting_human`). Set `payOnWarn` to true to prepare `pay()` for the operator instead; it is off unless you ask. A payee we know nothing about gets `WARN`, so `payOnWarn` on such a payee is your own explicit choice to pay it. | The owner, or the operator with `payOnWarn` |
 | `ALLOW` | The exact `pay(payee, amount)` for the operator to send. | The operator |
 
-Three addresses of ours show the three verdicts. All are real Arc Mainnet identities, a check on
-any of them costs 0.005 USDC, and a payment to any of them is a real transfer to us. Their
+Four real addresses show the verdicts, each with the day it was read. A check on any of them costs
+0.005 USDC. The first three are ours, a payment to any of them is a real transfer to us, and their
 reputations come from our own demo payments, so they show the rule path, not independent trust.
 
-| Payee | What it is | Verdict on 2026-11-02 |
+| Payee | What it is | Verdict |
 | --- | --- | --- |
-| Simon, `0x03f1fb189E461B88f3e8bA7100B29B594E5f98A9` | A platform agent in our own account, holding Arc Mainnet ERC-8004 #104498 | `ALLOW`, reputation 555; this one moves with its reputation, so read the live answer |
-| Meridian, `0x4e26Ae66840134Ac5979c56ba2509F3956b93431` | Our showcase agent, a platform agent holding Arc Mainnet ERC-8004 #4306 | `WARN`, reputation 469 (below 500); this one moves with its reputation, so read the live answer |
-| Our operating wallet, `0xd305607510e0db2c95807173c7a05bea53c1ed36` (internal) | Holds Arc Mainnet agent #0, off-platform | `DENY`, reputation 60 |
+| Simon, `0x03f1fb189E461B88f3e8bA7100B29B594E5f98A9` | A platform agent in our own account, holding Arc Mainnet ERC-8004 #104498 | `ALLOW`, reputation 555, on 2026-11-02; this one moves with its reputation, so read the live answer |
+| Meridian, `0x4e26Ae66840134Ac5979c56ba2509F3956b93431` | Our showcase agent, a platform agent holding Arc Mainnet ERC-8004 #4306 | `WARN`, reputation 469 (below 500), on 2026-11-02; this one moves with its reputation, so read the live answer |
+| Our operating wallet, `0xd305607510e0db2c95807173c7a05bea53c1ed36` (internal) | Holds Arc Mainnet agent #0, off-platform | `WARN` since 2026-11-04, reputation 60: we hold no record of it. It got `DENY` on 2026-11-02, under the older rule, and those recorded flows stand |
+| `0xA65F35B21aB90D088c1197728cDd0563c1308735`, not ours | A platform agent named `test` on our platform | `DENY` by the rule, from the free reads on 2026-11-04 (`/api/reputation`: reputation 90, Sybil high, both of its 2 jobs hired by its own operator). No check was bought on it, so read the live answer, and do not pay it to see |
 
-A payee that holds no agent on Arc Mainnet is refused at the free checks, with nothing bought. One
-that holds an agent but is off-platform passes them and then gets `DENY`, so that answer costs the
-price of the check.
+A payee that holds no agent on Arc Mainnet passes the free checks, and the check is then bought for
+0.005 USDC. Unless it is an agent on our platform, the answer is `WARN`, so it reaches
+`awaiting_human` with the owner's prepared payment. The same goes for one that holds an agent but
+has no record on our platform. An agent named in `payeeAgentId` that the payee does not own
+(`PAYEE_AGENT_MISMATCH`) and a registry that does not answer (`REGISTRY_UNREADABLE`) are still
+refused at the free checks, with nothing bought.
 
 ### The hosted route
 
@@ -476,11 +487,11 @@ never sent to `risk_check`) and `payOnWarn`. The body's `stage` says where the f
 
 | Status | `stage` | Meaning |
 | --- | --- | --- |
-| `400`, `422` | `refused` | Bad input, or the vault would refuse. `code` names why. Nothing charged. |
+| `400`, `422` | `refused` | Bad input, a named agent that is not the payee's, or the vault would refuse. `code` names why. Nothing charged. |
 | `409` | `refused` | `NONCE_ALREADY_USED`: this authorization already opened a flow. This request charged nothing, but the first request with this nonce may have. Read `GET /api/x402/gateway/flows/<nonce>` or the Gateway proof log before signing a new one. |
-| `402` | `payment_required` | The free checks passed. Nothing charged yet. |
+| `402` | `payment_required` | The free checks passed. Nothing charged yet. A payee that holds no agent passes them, with `checks.payee.agentsHeld` 0, and `next` says what to expect. |
 | `200` | `prepared` | Send `prepared` from the operator key, unless `prepared.simulation.ok` is false, which means the vault would refuse it right now. |
-| `200` | `awaiting_human` | `WARN`: send `ownerHandoff.ownerPay` from the owner key. |
+| `200` | `awaiting_human` | `WARN`: send `ownerHandoff.ownerPay` from the owner key. A payee we know nothing about ends here. |
 | `200` | `deny`, `verdict_unusable` | Do not pay. Nothing was prepared. |
 | `200` | `warn_no_human_gate` | `WARN`, and the vault's owner and operator are one key, so there is nobody to hand it to. Do not pay. Nothing was prepared. |
 | `409`, `500` | `deny`, `verdict_unusable` | Do not pay. The check was paid and answered, but the flow log does not hold the refusal, so it is not public. |

@@ -5,7 +5,9 @@ One line of code that stops your AI agent from paying a counterparty it should n
 Agents are starting to hire and pay other agents at machine speed. `trust-guard` puts a
 verification gate in front of that payment: it calls the live **A-Identity Trust Oracle**
 (ERC-8004 on-chain identity + KYA + a deterministic 0-1000 reputation + a Sybil check) and
-**throws if the verdict is DENY**, so a revoked, Sybil, or unverified counterparty never gets paid.
+**throws if the verdict is DENY**, so a counterparty we hold evidence against (revoked KYA, a Sybil flag, or a
+low reputation on an agent on our platform) never gets paid. A counterparty we know nothing about gets WARN, not
+DENY: `guard()` returns on WARN by default, so pass `denyOn: ['DENY', 'WARN']` if your next line pays.
 
 ```bash
 npm install @a-identity/trust-guard
@@ -30,7 +32,8 @@ try {
 ## Verdicts
 
 `guard()` runs `risk_check` and returns an `ALLOW` / `WARN` verdict, or throws `TrustDenyError`
-on `DENY`. Block warnings too by widening `denyOn`:
+on `DENY`. A counterparty we know nothing about gets `WARN`, so the line after a default `guard()`
+pays it. Block warnings too by widening `denyOn`:
 
 ```ts
 await guard(id, { denyOn: ['DENY', 'WARN'] }) // stricter: throw on WARN as well
@@ -156,14 +159,16 @@ try {
 
 The order, and what each step can cost:
 
-1. **Free checks, nothing signed.** The asset is the registry's USDC and the vault's; the payee holds
-   an ERC-8004 agent on Arc Mainnet; the vault's policy and a simulated `pay()` accept the payment; the
-   operator can pay the gas. A refusal here costs nothing: the check is not bought.
+1. **Free checks, nothing signed.** The asset is the registry's USDC and the vault's; an agent named in
+   `payeeAgentId` is the payee's; the vault's policy and a simulated `pay()` accept the payment; the
+   operator can pay the gas. A refusal here costs nothing: the check is not bought. A payee that holds no
+   agent is not refused: it goes on to the check.
 2. **The verdict, 0.005 USDC.** The payer signs one Gateway authorization from its Gateway balance. It
    spends no gas. The payer needs a Gateway balance on Arc Mainnet, and may be a separate key (`payer`).
 3. **The decision.** DENY throws `TrustDenyError` and never calls the operator. WARN returns
    `awaiting_human` with a prepared `ownerPay` for the vault's owner and pays nothing, unless you set
-   `payOnWarn: true`. ALLOW goes on.
+   `payOnWarn: true`. A payee we know nothing about gets WARN, so `payOnWarn` on such a payee is your own
+   explicit choice to pay it. ALLOW goes on.
 4. **The payment.** Exactly one `sendTransaction` of `pay(payee, amountUnits)`, encoded from your own
    inputs and compared byte for byte with what the server prepared. The server's calldata is never
    executed, so a compromised server cannot redirect a payment. `maxFeePerGas` is at least 20 gwei,
@@ -176,7 +181,8 @@ The order, and what each step can cost:
 
 Anything that is not a usable verdict is never treated as ALLOW: a Gateway error, a settlement that does
 not echo what was signed, an unknown decision, a reputation that is not a finite number, an ALLOW below
-reputation 500, or a verdict about another agent or amount each throw, and the operator is not called.
+reputation 500, a WARN carrying signals that force DENY, or a verdict about another agent or amount each
+throw, and the operator is not called.
 
 What this does not remove: the verdict is not signed, so you still trust the A-Identity server and the TLS
 connection to it (`baseUrl` must be https, or http on localhost). These comparisons catch a server bug and a
@@ -188,16 +194,19 @@ independently either: it comes from the same server, so it binds the answer to y
 | Error | Meaning |
 | --- | --- |
 | `ArcAssetError` | Not the registry's USDC. Nothing bought. |
-| `PayeeNotRegisteredError` | The payee holds no agent on Arc Mainnet, or the registry did not answer. Nothing bought. |
+| `PayeeNotRegisteredError` | An agent named in `payeeAgentId` is not the payee's, or the registry did not answer. Holding no agent is not this error. Nothing bought. |
 | `VaultPolicyError` | The vault would refuse (its own error name), or could not be read. `stage` says whether the check was already paid. |
 | `GatewayCheckError` | No usable verdict came back. `paid` is true, false, or null when the answer does not say. `code` `NO_HUMAN_GATE` is a WARN on a vault whose owner and operator are one key: the check was paid, the flow is public at `recordUrl`, nothing was prepared, and the fix is an owner key the agent does not hold. |
 | `UnusableVerdictError` | The check was paid and its answer cannot be acted on. |
 | `TrustDenyError` | DENY. `context` holds the flow id, the check and the record's URL. |
 | `VaultPaymentError` | The payment step failed. With a `txHash`, look that hash up: never send again with a new nonce, because a transaction reported as missing can still land. |
 
-Who can get ALLOW: `risk_check` scores the payee's address, and any address that is not an A-Identity
-platform agent scores at most 60 and gets DENY. ALLOW needs a platform agent with reputation at least 500,
-attested KYA and at least 7 days of tenure. The vault cannot settle an x402 offer: its agent payment path
+Who gets what: `risk_check` scores the payee's address. DENY means we hold evidence against the payee: KYA
+revoked, Sybil high, a reputation under 200 on an agent on our platform, or a payment over 100 USD to an agent
+on our platform with reputation under 400. A payee with no on-chain identity, or with an identity and no record
+on our platform, is not known bad, so it gets WARN, with reasons that say what we do not know; such an address
+scores at most 60, which only says we have no history for it. ALLOW needs a platform agent with reputation at
+least 500, attested KYA and at least 7 days of tenure. The vault cannot settle an x402 offer: its agent payment path
 is `pay(to, amount)`, a direct USDC transfer to the payee you checked.
 
 For a verdict alone, with no vault, use the rail with its payer. Send the payee's address as the agent id,

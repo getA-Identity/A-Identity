@@ -259,7 +259,7 @@ export function buildServer(data: ServerData = {}): McpServer {
     {
       title: 'Verify a commerce merchant agent',
       description:
-        "Verify a merchant-side agent BEFORE a checkout or payment authorization - the trust step agentic-commerce protocols (ACP/UCP) leave to user approval. Discovers the merchant's /.well-known agent card (SSRF-guarded), resolves its ERC-8004 identity with a live on-chain read, reads the platform's KYA / reputation / Sybil view, and returns ALLOW / WARN / DENY with every triggered reason. Free, read-only, creates no state.",
+        "Verify a merchant-side agent BEFORE a checkout or payment authorization - the trust step agentic-commerce protocols (ACP/UCP) leave to user approval. Discovers the merchant's /.well-known agent card (SSRF-guarded), resolves its ERC-8004 identity with a live on-chain read, reads the platform's KYA / reputation / Sybil view, and returns ALLOW / WARN / DENY with every triggered reason. DENY means evidence against the merchant; no identity is a WARN. Free, read-only, creates no state.",
       inputSchema: merchantCheckInput,
     },
     async ({ url, agentId }) => json(await merchantCheck({ url, agentId })),
@@ -441,7 +441,7 @@ export function buildServer(data: ServerData = {}): McpServer {
       {
         title: `Verify a payee, then pay it from an ${arcName} vault`,
         description:
-          `Before an agent pays from its AgentSpendPolicy vault on ${arcName} (${arc?.caip2 ?? 'Arc Mainnet'}): checks for free that the vault holds the registry's USDC, that the payee holds an ERC-8004 agent on ${arcName}, and that the vault's policy and a simulated pay() from its operator would accept the payment; then buys A-Identity's risk_check on the payee address for ${price} through Circle Gateway (call once without payment to get the x402 challenge, sign it from your Gateway balance, call again with payment). ALLOW returns the exact vault.pay(payee, amount) for the operator to send; WARN returns an ownerPay() hand-off for the owner unless payOnWarn is set, and nothing to sign when the vault's owner and operator are one key, since no human stands behind the hand-off; DENY returns nothing to sign. Always executed:false: this server signs nothing. Every paid check is recorded publicly by flowId.`,
+          `Before an agent pays from its AgentSpendPolicy vault on ${arcName} (${arc?.caip2 ?? 'Arc Mainnet'}): checks for free that the vault holds the registry's USDC, that an agent named in payeeAgentId is the payee's on ${arcName}, and that the vault's policy and a simulated pay() from its operator would accept the payment; then buys A-Identity's risk_check on the payee address for ${price} through Circle Gateway (call once without payment to get the x402 challenge, sign it from your Gateway balance, call again with payment). ALLOW returns the exact vault.pay(payee, amount) for the operator to send; WARN returns an ownerPay() hand-off for the owner unless payOnWarn is set, and nothing to sign when the vault's owner and operator are one key, since no human stands behind the hand-off; DENY returns nothing to sign. A payee with no ERC-8004 agent is not refused: unknown is not bad, so it gets WARN, and payOnWarn on such a payee is the caller's own explicit choice. Always executed:false: this server signs nothing. Every paid check is recorded publicly by flowId.`,
         inputSchema: verifyThenPayInput,
       },
       async (args) => json(await vtp.run(args)),

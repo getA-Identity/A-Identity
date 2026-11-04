@@ -142,6 +142,14 @@ Always pass `txContext.amountUsd`. Risk is a function of exposure: a
 counterparty that is fine for one dollar may not be fine for ten thousand, and
 without the amount the verdict is an abstraction.
 
+`DENY` means we hold evidence against the payee: KYA revoked, Sybil high, a reputation
+under 200 on an agent on our platform, or a payment over 100 USD to an agent on our
+platform with reputation under 400. A payee with no on-chain identity, or with an identity
+and no record on our platform, is not known bad, so it gets `WARN`, with reasons that say
+what we do not know. A high-value or large payment to such a payee stays `WARN`, with the
+amount named. `ALLOW` needs a platform agent with reputation of at least 500, attested KYA
+and at least 7 days of tenure.
+
 ### Two-sided
 
 ```http
@@ -429,7 +437,8 @@ those on Arc Mainnet; a full id such as `eip155:5042:8004/0` names its own chain
 
 **Verify then pay (Arc Mainnet)**: `verify_then_pay`, `verify_then_pay_receipt`. Buys
 risk_check through Circle Gateway (0.005 USDC), never signs, and returns the exact vault
-pay() call on ALLOW. Over HTTP: `POST /api/x402/gateway/verify-then-pay`,
+pay() call on ALLOW, a prepared ownerPay for the owner on WARN, and nothing on DENY. A payee
+with no ERC-8004 agent is not refused: unknown is not bad, so it gets WARN. Over HTTP: `POST /api/x402/gateway/verify-then-pay`,
 `GET /api/x402/gateway/flows/<flowId>` (public) and
 `POST /api/x402/gateway/flows/<flowId>/receipt`.
 

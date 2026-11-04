@@ -95,7 +95,9 @@ them won a prize.
 
 **One rule: verify first, then pay.** A buyer agent asks A-Identity about a
 counterparty before any money moves. A clean counterparty gets paid at machine
-speed; a revoked, Sybil, or unknown one gets a hard `DENY`.
+speed; one we hold evidence against (revoked KYA, a Sybil flag, or a low reputation on
+an agent on our platform) gets a hard `DENY`; and one we know nothing about gets `WARN`,
+with reasons that say what we do not know, because unknown is not the same as bad.
 
 ```mermaid
 sequenceDiagram

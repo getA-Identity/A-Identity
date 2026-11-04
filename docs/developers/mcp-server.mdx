@@ -123,12 +123,12 @@ charged. Called with `payment`, it buys the check and returns the call to send.
 | Input | Type | Notes |
 | --- | --- | --- |
 | `vault` | string | the AgentSpendPolicy vault on Arc Mainnet that will pay |
-| `payee` | string | the 0x address to pay; it must hold an ERC-8004 agent on Arc Mainnet, and it is what `risk_check` is asked about |
+| `payee` | string | the 0x address to pay, and what `risk_check` is asked about; a payee that holds no ERC-8004 agent is not refused, and unless it is an agent on our platform it gets WARN |
 | `amount` | string | USDC base units, 6 decimals, digits only: `"250000"` is 0.25 USDC |
 | `asset` | string, optional | refused unless it is Arc Mainnet's USDC |
-| `payeeAgentId` | string, optional | checked on chain against the payee, never sent to `risk_check` |
+| `payeeAgentId` | string, optional | checked on chain against the payee and refused if it is not theirs, never sent to `risk_check` |
 | `payment` | string, optional | base64 `PAYMENT-SIGNATURE` for the challenge, signed from your own Gateway balance |
-| `payOnWarn` | boolean, optional | on WARN, prepare `pay()` for the operator instead of handing the payment to the owner; default false |
+| `payOnWarn` | boolean, optional | on WARN, prepare `pay()` for the operator instead of handing the payment to the owner; default false. A payee we know nothing about gets WARN, so on such a payee this is your own explicit choice to pay it |
 
 ### verify_then_pay_receipt
 

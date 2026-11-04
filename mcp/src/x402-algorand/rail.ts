@@ -394,11 +394,12 @@ export const ALGORAND_LISTINGS: Record<AlgorandToolName, AlgorandListing> = {
       required: ['agentIds'],
     },
     example: {
-      tool: 'agent_batch_audit', count: 2, summary: { ALLOW: 1, WARN: 0, DENY: 1 },
+      tool: 'agent_batch_audit', count: 2, summary: { ALLOW: 1, WARN: 1, DENY: 0 },
       results: [
         { agentId: '#0', decision: 'ALLOW', risk: 'low', reasons: [], reputationScore: 612, onchainVerified: true, kyaVerified: true, revoked: false },
         {
-          agentId: '#1', decision: 'DENY', risk: 'high', reasons: ['No verifiable on-chain identity (ERC-8004) found for this agent'],
+          agentId: '#1', decision: 'WARN', risk: 'medium',
+          reasons: ['No on-chain identity (ERC-8004) was found for this payee and we hold no record of it on our platform, so we do not know who it is or how it has behaved. This does not mean it is bad: we have no evidence either way.'],
           reputationScore: 0, onchainVerified: false, kyaVerified: false, revoked: false,
         },
       ],
