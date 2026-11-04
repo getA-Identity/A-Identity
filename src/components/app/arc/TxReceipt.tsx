@@ -16,16 +16,17 @@
  * seconds the receipt says so out loud and says what to look for in the wallet, because that is
  * the moment the person can still fix it, and stopping tracking is offered from then on.
  *
- * Rate limited or no answer is never a verdict about the chain: while too few hosts answer, the
- * receipt says the network did not answer and keeps asking, however long that takes. Only a check
- * that was answered can end the watch. Its state belongs to one hash, so a new transaction starts
- * clean: TxReceipt is keyed by the hash.
+ * Rate limited or no answer is never a verdict about the chain: while too few hosts answer and no
+ * receipt is in, the receipt says the network did not answer and keeps asking, however long that
+ * takes. A receipt that is in is an answer, however few hosts had spoken when it came. Only a
+ * check that was answered can end the watch. Its state belongs to one hash, so a new transaction
+ * starts clean: TxReceipt is keyed by the hash.
  */
 import { useEffect, useRef, useState } from 'react'
 import { AlertTriangle, CheckCircle2, Clock, ExternalLink, XCircle } from 'lucide-react'
 import type { TxRecord } from '../../../lib/arc/pending'
 import { FAST_FOR_MS, POLL_FAST_MS, POLL_FOR_MS, POLL_SLOW_MS, advance, feeLine } from '../../../lib/arc/receipt'
-import { heardEnough, retracked, untracked, walletRepriced } from '../../../lib/arc/tx-rules'
+import { retracked, saidNothing, untracked, walletRepriced } from '../../../lib/arc/tx-rules'
 import { arcChainFor, localTime, networkName, rpcUrls, txUrl } from '../../../lib/arc/vault-read'
 import { formatUnitsExact, sameAddress } from '../../../lib/arc/vault-rules'
 import { CopyButton, Mono } from '../stellar/bits'
@@ -102,9 +103,10 @@ function ReceiptOf({ record, onUpdate, onSettled }: ReceiptProps) {
           return
         }
       }
-      // No answer, or a receipt whose read-back has not come in: the page has nothing to give up
-      // on yet, so it goes on asking, more slowly so it does not add to the limit.
-      const quiet = !out || !heardEnough(out.answered, out.total)
+      // No answer: the page has nothing to give up on yet, so it goes on asking, more slowly so it
+      // does not add to the limit. A receipt waiting on its read-back has been answered, and goes
+      // on asking at the usual pace.
+      const quiet = !out || saidNothing(out.record, out.answered, out.total)
       const elapsed = Date.now() - started
       if (elapsed > POLL_FOR_MS) {
         setGaveUp(true)
@@ -160,8 +162,9 @@ function ReceiptOf({ record, onUpdate, onSettled }: ReceiptProps) {
               : record.block !== undefined
                 ? `${record.what}: landed in block ${block}, and is being read back.`
                 : `${record.what}: submitted, no receipt yet.`
-  // Too few hosts answered the last check, so what it could not find says nothing about the chain.
-  const silent = asked.checks > 0 && !heardEnough(asked.answered, asked.total)
+  // Too few hosts answered the last check and no receipt is in, so what it could not find says
+  // nothing about the chain.
+  const silent = asked.checks > 0 && saidNothing(record, asked.answered, asked.total)
   const receiptIn = record.block !== undefined
 
   return (

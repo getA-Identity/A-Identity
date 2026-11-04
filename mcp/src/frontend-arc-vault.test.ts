@@ -85,6 +85,7 @@ type TxRules = {
   readBeforeFunding: (s: Rec, snapshot: Rec | null) => boolean
   fundingUnresolved: (r: Rec | undefined) => boolean
   heardEnough: (answered: number, total: number) => boolean
+  saidNothing: (r: Rec, answered: number, total: number) => boolean
   readBeforeExpiry: (s: Rec, snapshot: Rec | null) => boolean
   fundingInDoubt: (s: Rec) => boolean
   fundAsked: (s: Rec, amount: bigint, at: string) => Rec
@@ -1602,7 +1603,7 @@ test('the receipt says the network did not answer and keeps asking, and its stat
   assert.match(page, /<ReceiptOf key=\{props\.record\.hash\} \{\.\.\.props\} \/>/)
   // Only a check that was answered, with no receipt in, ends the polling.
   assert.match(page, /setGaveUp\(true\)\s*if \(!quiet && out\?\.record\.block === undefined\) return/)
-  assert.match(page, /const quiet = !out \|\| !heardEnough\(out\.answered, out\.total\)/)
+  assert.match(page, /const quiet = !out \|\| saidNothing\(out\.record, out\.answered, out\.total\)/)
   assert.match(page, /elapsed < FAST_FOR_MS && !quiet \? POLL_FAST_MS : POLL_SLOW_MS/, 'hammering hosts that are already limiting this page')
   // The advice for a hash nobody has seen, and its way out, wait for an answer.
   assert.match(page, /record\.outcome === 'pending' && record\.unseen && !silent && \(/)
@@ -1611,6 +1612,41 @@ test('the receipt says the network did not answer and keeps asking, and its stat
   // A receipt that is in is never "no receipt after 3 minutes".
   assert.match(page, /record\.outcome === 'pending' && receiptIn \?/)
   assert.match(page, /record\.block !== undefined\s*\? `\$\{record\.what\}: landed in block/)
+})
+
+test('a receipt that is in is an answer: a landed transaction waiting on its read-back is never told the network did not answer', async () => {
+  const t = await txRules()
+  class NotFound extends Error {}
+  // What firstFound really returns: the first host with the receipt decides, the others still out.
+  const never = new Promise<string>(() => {})
+  const found = await t.firstFound([Promise.resolve('receipt'), never, never, never], (e) => e instanceof NotFound)
+  assert.equal(found.found, true)
+  assert.deepEqual([found.answered, found.total], [1, 4])
+  assert.equal(t.heardEnough(found.answered, found.total), false, 'if this ever holds, the case below no longer happens')
+  // The read-back has not come in, so the record stays pending, with the receipt's block on it.
+  const rc = landed({ block: 150n, contractAddress: VAULT })
+  const deploy = t.decideLanded(record({ action: 'deploy', vault: null, expect: [], deployArgs: DEPLOY_ARGS }), rc, { deploy: { status: 'unreadable', why: 'limited' } })
+  assert.equal(deploy.outcome, 'pending')
+  assert.equal(deploy.block, 150n)
+  assert.equal(t.saidNothing(deploy, found.answered, found.total), false, 'a deploy')
+  const expiry = t.decideLanded(record({ action: 'expiry', expiry: 1_800_000_000n }), rc, { missing: [], readBack: { ok: false, reason: 'limited' } })
+  assert.equal(expiry.outcome, 'pending')
+  assert.equal(t.saidNothing(expiry, found.answered, found.total), false, 'an expiry')
+  const fund = t.decideLanded(record({ action: 'fund', amount: 500_000n }), rc, { missing: [], readBack: { ok: false, reason: 'limited' } })
+  assert.equal(fund.outcome, 'pending')
+  assert.equal(t.saidNothing(fund, found.answered, found.total), false, 'a funding')
+  // A later check that nobody answers does not take the receipt back.
+  assert.equal(t.saidNothing(deploy, 0, 4), false)
+  // With no receipt in, too few answers still says nothing, and enough answers says something.
+  const waiting = record({ action: 'fund', amount: 500_000n })
+  for (const [answered, nothing] of [[0, true], [1, true], [2, true], [3, false], [4, false]] as const) {
+    assert.equal(t.saidNothing(waiting, answered, 4), nothing, `${answered} of 4`)
+  }
+  assert.equal(t.saidNothing(waiting, 0, 0), true, 'no hosts at all')
+  // The receipt's box and the poll's pace ask this same question, and no other.
+  const page = codeOnly(repo('src/components/app/arc/TxReceipt.tsx'))
+  assert.match(page, /const silent = asked\.checks > 0 && saidNothing\(record, asked\.answered, asked\.total\)/)
+  assert.doesNotMatch(page, /heardEnough/, 'the receipt asks the bare count again')
 })
 
 test('stopping tracking keeps the warning that it can still land', async () => {

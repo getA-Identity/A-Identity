@@ -125,6 +125,16 @@ export function heardEnough(answered: number, total: number): boolean {
   return total > 0 && answered * 2 > total
 }
 
+/**
+ * Whether the last check left this page knowing nothing about the transaction: too few hosts
+ * answered and no receipt is in. firstFound stops at the first host that has the receipt, so a
+ * found receipt usually comes with 1 of 4 answered. That host did answer, so a record holding its
+ * block is never "the network did not answer", however its read-back is going.
+ */
+export function saidNothing(r: Pick<TxRecord, 'block'>, answered: number, total: number): boolean {
+  return r.block === undefined && !heardEnough(answered, total)
+}
+
 // --- a receipt that a host returned ---
 
 /** A receipt, reduced to what a decision needs. The caller checksums contractAddress. */
