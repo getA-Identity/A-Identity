@@ -14,7 +14,10 @@
  * and is admitted once it has one, and a hash nobody knows and a contract that is no vault are
  * refused. With --browser it then drives the deploy page and the vault's own page: an end date set
  * from the vault page, a forgotten setup, a tab closed on a failed question, a browser with no
- * hash and a 429 all end as the server's rule says. See the section at the end.
+ * hash and a 429 all end as the server's rule says. See the section at the end. Last the server's own
+ * sweep is turned on, off until then so that only the posts above decide those checks: it counts a
+ * vault no page asked about, with one host pruned and one rate limited, and with --browser one whose
+ * owner's page had every post blocked, with no second row on reload.
  *
  * What stands in for what, so nothing here is read as more than it is:
  *   - Arc USDC at 0x3600... calls a native precompile anvil cannot run, so MockUSDC from
@@ -317,6 +320,16 @@ globalThis.fetch = async (input, init) => {
       const call = JSON.parse(init.body)
       if (nullFor.has(call.method)) return Response.json({ jsonrpc: '2.0', id: call.id, result: null })
     }
+    // What Blockdaemon does with an old block: an error for state and logs, and the block with no transactions.
+    if (mode === 'pruned') {
+      const call = JSON.parse(init.body)
+      if (call.method === 'eth_getCode' && call.params[1] !== 'latest') return Response.json({ jsonrpc: '2.0', id: call.id, error: { code: -32603, message: 'state at block is pruned' } })
+      if (call.method === 'eth_getLogs') return Response.json({ jsonrpc: '2.0', id: call.id, error: { code: 4444, message: 'pruned history unavailable' } })
+      if (call.method === 'eth_getBlockByNumber' && call.params[0] !== 'latest' && call.params[1] === true) {
+        const answer = await (await real(anvil, init)).json()
+        return Response.json({ ...answer, result: answer.result && { ...answer.result, transactions: [] } })
+      }
+    }
     return real(anvil, init)
   }
   if (url.hostname === '127.0.0.1' || url.hostname === 'localhost') return real(input, init)
@@ -353,11 +366,13 @@ if (flag('--postgres')) {
 }
 let backendOut = ''
 let backend
+// Off for every check that a post decides. restartWithSweep turns it on.
+let sweepEnv = { ARC_VAULT_SWEEP: 'off' }
 async function startBackend() {
   backend = spawn(process.execPath, ['--import', pathToFileURL(preload).href, join(backendDir, 'dist/http.js')], {
     cwd: backendDir,
     // Built from nothing on purpose. CELO_BUYER_KEY is on our list and only a script ever signs with it.
-    env: { PATH: process.env.PATH, HOME: work, PORT: String(backendPort), CELO_BUYER_KEY: ourEnvKey, ...(databaseUrl ? { DATABASE_URL: databaseUrl } : {}) },
+    env: { PATH: process.env.PATH, HOME: work, PORT: String(backendPort), CELO_BUYER_KEY: ourEnvKey, ...sweepEnv, ...(databaseUrl ? { DATABASE_URL: databaseUrl } : {}) },
     stdio: ['ignore', 'pipe', 'pipe'],
   })
   children.push(backend)
@@ -403,8 +418,11 @@ const storeCount = async () => {
 section('before any vault')
 const list0 = await getJson('/api/arc/vaults')
 check(list0.status === 200 && list0.body.readable === true && list0.body.count === 0, 'GET /api/arc/vaults answers an empty, readable list')
-check(list0.body.admission?.ready === true && list0.body.admission?.keysCompared === 1 + Object.values(OUR_KEY_PUBLIC_ADDRESSES).filter(Boolean).length, `the route says it can admit, with ${list0.body.admission?.keysCompared} keys compared: the one env key and the committed ones`)
+// CELO_BUYER_KEY has a committed address as well, and a key held both ways is one key compared.
+const keysHeld = new Set(['CELO_BUYER_KEY', ...Object.keys(OUR_KEY_PUBLIC_ADDRESSES).filter((k) => OUR_KEY_PUBLIC_ADDRESSES[k])])
+check(list0.body.admission?.ready === true && list0.body.admission?.keysCompared === keysHeld.size, `the route says it can admit, with ${list0.body.admission?.keysCompared} keys compared: the one env key and the committed ones`)
 check(list0.body.admission?.keysNotCompared?.includes('X402_3009_FUNDER_KEY') && !list0.body.admission.keysNotCompared.includes('CELO_BUYER_KEY'), 'and it names the keys it holds neither the key nor a committed address for')
+check(list0.body.sweep?.on === false && list0.body.sweep.lastRun === null && list0.body.sweep.lastBlockRead === null, 'with ARC_VAULT_SWEEP=off the list says the sweep is off, and it has read nothing')
 const report0 = await season()
 check(report0.milestone1.vaults.count === 0 && report0.milestone1.vaults.target === 5, `GET /api/arc/season counts ${report0.milestone1.vaults.count} of ${report0.milestone1.vaults.target}`)
 
@@ -624,6 +642,80 @@ check(!existsSync(join(repo, 'mcp/data/arc-admitted-vaults.json')) || !readFileS
 // injected wallet does and signs with an anvil key, the same bridge scripts/rehearse-arc-vault.mjs
 // uses. It cannot show a real wallet's own screens: those still need a person.
 if (flag('--browser')) await browserRehearsal()
+else {
+  await restartWithSweep()
+  await sweepWithNoPage()
+}
+
+/** A redeploy with the sweep on, ticking fast, from just after the fork: the blocks before it hold nobody from this run. */
+async function restartWithSweep() {
+  section("the server's own sweep: a redeploy turns it on")
+  const exited = new Promise((r) => backend.once('exit', r))
+  backend.kill('SIGTERM')
+  await exited
+  sweepEnv = { ARC_VAULT_SWEEP_EVERY_SECONDS: '2', ARC_VAULT_SWEEP_START_BLOCK: (forkBlock + 1n).toString() }
+  await startBackend()
+  const on = await getJson('/api/arc/vaults')
+  check(on.body?.sweep?.on === true, 'the list says the sweep is on')
+  check(Object.keys(on.body.sweep).sort().join() === 'lastBlockRead,lastProblem,lastRun,on', 'and says only what it read, when, and what went wrong')
+}
+
+/** The vault is on the list once the sweep has counted it. The blocks have to pass first: it stays short of the head. */
+async function sweepCounts(address, ms = 120000) {
+  await mine()
+  return waitFor(
+    `the sweep to count ${address}`,
+    async () => {
+      const row = (await getJson('/api/arc/vaults')).body?.items?.find((v) => v.address === address)
+      if (row) return row
+      await mine(1)
+      return null
+    },
+    ms,
+  ).catch(async (e) => {
+    say(`the sweep says ${JSON.stringify((await getJson('/api/arc/vaults')).body?.sweep)} and the backend log ends:\n${backendOut.slice(-1500)}`)
+    throw e
+  })
+}
+
+/** Nobody's page asks: the hosts are as real ones have been, and the only thing that can count it is the sweep. */
+async function sweepWithNoPage() {
+  section("the server's own sweep: a vault no page ever asked about")
+  const swept = acct(15)
+  await rpc('anvil_setBalance', [swept.address, toHex(10n ** 20n)])
+  const quiet = await deployVault(swept, agent.address)
+  await mine()
+  await new Promise((r) => setTimeout(r, 5000))
+  const before = await storeCount()
+  check((await getJson('/api/arc/vaults')).body.items.every((v) => v.address !== quiet.vault), 'with no end date it is not found: nothing about it says it is there yet')
+  writeFileSync(hostBehaviourFile, JSON.stringify({ [hostNames[0]]: 'pruned', [hostNames[1]]: 'rate-limited' }))
+  await setExpiry(swept, quiet.vault)
+  const row = await sweepCounts(quiet.vault)
+  writeFileSync(hostBehaviourFile, '{}')
+  say(`row ${JSON.stringify({ address: row.address, deployTx: row.deployTx, ownerKind: row.ownerKind })}`)
+  check(row.deployTx === quiet.hash.toLowerCase(), 'the sweep found the deploy hash from the chain alone, with one host pruned and one rate limited')
+  check(row.owner === swept.address && row.ownerKind === 'unstated', 'the row is the same row: the owner the chain says, not identified')
+  check(/own sweep/.test(row.note), 'and its note says who found it')
+  check(Number((await getJson('/api/arc/vaults')).body.sweep.lastBlockRead) >= Number(quiet.block), 'the list says how far it has read')
+  check(seasonItem(await season(), quiet.vault)?.deployTx === quiet.hash.toLowerCase(), 'GET /api/arc/season counts it')
+  check((await storeCount()) >= before + 1, 'the store took it')
+
+  section("the server's own sweep: what it may not count, and what it does not count twice")
+  await waitFor('the sweep to reach the vaults of ours', async () => /refused for good [^\n]*owner-not-ours/.test(backendOut), 90000)
+  const listed = (await getJson('/api/arc/vaults')).body.items
+  check(listed.every((v) => v.address !== oursVault.vault && v.address !== getAddress(committedReceipt.contractAddress)), 'a vault owned by a key of ours has an end date too, and the same checks refuse it')
+  const repeat = await postVault(quiet.hash)
+  check(repeat.body?.status === 'admitted' && repeat.body.alreadyAdmitted === true, 'a page that asks about it afterwards hears it is already counted')
+  const rows = await storeCount()
+  const exited = new Promise((r) => backend.once('exit', r))
+  backend.kill('SIGTERM')
+  await exited
+  await startBackend()
+  await waitFor('a tick after the restart', async () => (await getJson('/api/arc/vaults')).body.sweep?.lastRun, 30000)
+  await mine()
+  await new Promise((r) => setTimeout(r, 5000))
+  check((await storeCount()) === rows && (await getJson('/api/arc/vaults')).body.items.filter((v) => v.address === quiet.vault).length === 1, 'a restart reads it all again and adds no second row')
+}
 
 async function browserRehearsal() {
   section('the page: building it and serving it')
@@ -929,7 +1021,7 @@ async function browserRehearsal() {
     const other = await deployVault(acct(ownerIndex), acct(agentIndex).address)
     await setExpiry(acct(ownerIndex), other.vault)
     await open(other.vault)
-    await stopIf(await waitText(/This vault is not counted on .* yet\. This browser does not hold the transaction/, LIST_WAIT), 'an uncounted vault says it is not on the list, and why this page cannot ask')
+    await stopIf(await waitText(/This vault is not counted on .* yet\. You do not have to send anything to anyone: our server looks for vaults/, LIST_WAIT), 'an uncounted vault says it is not on the list, and why this page cannot ask')
     say(`the vault page says: ${await noticeSays()}`)
     check(posts.length === 0 && (await rowsFor(other.vault)) === 0, 'nothing is posted and no row appears: no hash, no question')
 
@@ -953,7 +1045,7 @@ async function browserRehearsal() {
     check((await page.getByRole('button', { name: 'Try again' }).count()) === 0, 'and offers no second click while it reads')
     answerSeason()
     seasonHeld = Promise.resolve()
-    await stopIf(await waitText(/This vault is not counted on .* yet\. This browser does not hold the transaction/, LIST_WAIT), 'the answer replaces it')
+    await stopIf(await waitText(/This vault is not counted on .* yet\. You do not have to send anything to anyone: our server looks for vaults/, LIST_WAIT), 'the answer replaces it')
     check(seasonReads.count === readsBefore + 1, `one click, one read of the list (${seasonReads.count - readsBefore})`)
     answerProof()
     proofHeld = Promise.resolve()
@@ -973,6 +1065,36 @@ async function browserRehearsal() {
     check((await rowsFor(other.vault)) === 0 && (await rowsFor(oursVault.vault)) === 0, 'neither vault gets a row')
     check(pageErrors.length === 0, `no page errors (${pageErrors.slice(0, 2).join(' | ')})`)
     await ctx.close()
+    return other
+  }
+
+  /** The gap the sweep closes: the owner's page never gets a question through, and the tab can close. */
+  async function blockedPostRun({ ownerIndex, agentIndex }) {
+    section("the page: every question is blocked, and the server's own sweep counts the vault")
+    const b = await ownerBrowser({ ownerIndex, agentIndex, failPost: async () => true })
+    const { ctx, wallet, posts, pageErrors, waitText, stopIf } = b
+    const page = b.current()
+    const { vault, hash } = await deployFromThePage(b, '0')
+    await page.getByRole('button', { name: 'Back to vaults' }).click()
+    await stopIf(await waitText(/IS the owner of this vault/, 60000), 'the page opens the vault this browser deployed')
+    await page.getByRole('button', { name: 'Set the expiry' }).click()
+    await waitFor('the end date on chain', async () => (await read(vault, 'sessionKeyExpiry')) !== 0n, 60000)
+    await stopIf(await waitText(/We could not find out whether this vault counts on/, 60000), 'the page says its question failed')
+    check(posts.length >= 1, `the page asked and was blocked (${posts.length})`)
+    check((await rowsFor(vault)) === 0, 'nothing is on the list yet: the sweep stays short of the head')
+    const row = await sweepCounts(vault)
+    check(row.deployTx === hash.toLowerCase(), 'the sweep counts it under the hash the wallet sent, with no question from the page')
+    check(row.ownerKind === 'unstated' && /own sweep/.test(row.note), 'the same row, and its note says who found it')
+    const sentBefore = wallet.sent.length
+    const postsBefore = posts.length
+    await page.reload({ waitUntil: 'domcontentloaded' })
+    await stopIf(await waitText(/This vault is now counted on/, 40000), 'after a reload the vault page says it is counted')
+    check((await rowsFor(vault)) === 1, 'the reload added no second row')
+    check(posts.length === postsBefore, 'and it asked nothing: the list already says')
+    check(wallet.sent.length === sentBefore, 'no wallet was asked for anything')
+    check(pageErrors.length === 0, `no page errors (${pageErrors.slice(0, 2).join(' | ')})`)
+    await ctx.close()
+    return vault
   }
 
   /** The limit on the route is shared through the site's proxy, so a real owner can meet a 429 they did nothing to earn. */
@@ -1088,8 +1210,15 @@ async function browserRehearsal() {
   await forgottenSetupRun({ ownerIndex: 11, agentIndex: 7 })
   await waitOutPostWindow()
   const closedTabVault = await closedTabRun({ ownerIndex: 12, agentIndex: 7 })
-  await otherDeviceRun({ countedVault: closedTabVault, ownerIndex: 12, agentIndex: 7 })
+  const otherDevice = await otherDeviceRun({ countedVault: closedTabVault, ownerIndex: 12, agentIndex: 7 })
   await rateLimitedRun({ ownerIndex: 14, agentIndex: 7 })
+
+  await restartWithSweep()
+  await sweepWithNoPage()
+  section("the server's own sweep: the vault from another device, that no page could ask about")
+  const otherRow = await sweepCounts(otherDevice.vault)
+  check(otherRow.deployTx === otherDevice.hash.toLowerCase(), 'it is counted, under its real deploy hash, and not the one a browser had claimed for it')
+  await blockedPostRun({ ownerIndex: 16, agentIndex: 7 })
   await browser.close()
   say(`hosts the browser tried and this run refused: ${[...refused].join(', ') || 'none'}`)
 }
