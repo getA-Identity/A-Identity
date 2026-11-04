@@ -6,6 +6,7 @@ import {
   createAgent,
   listPlatformAgents,
   recordAtAddress,
+  recordHoldsEvidence,
   recordWallet,
   assignWallet,
   agentGuardrailProfile,
@@ -23,6 +24,7 @@ import {
 import { state } from './core.js'
 import type { ContractSignatureCheck } from '../erc1271.js'
 import { adverseRecordFrom } from '../asp/risk.js'
+import { handlePublicRoutes } from '../http/public-routes.js'
 import type { Task } from '../marketplace.js'
 
 /**
@@ -263,6 +265,58 @@ test('the free read answers an address with the record that proved it, and never
   const former = reputationForQuery(wallet)
   assert.equal('error' in former ? null : former.agentId, named.id)
   assert.equal('error' in former ? null : former.kya, 'unverified')
+})
+
+test('a clean record cannot shadow one with evidence at an address that record proved, now or before', () => {
+  const wallet = privateKeyToAccount(generatePrivateKey()).address
+  const bad = seed(wallet)
+  bad.kya = 'verified'
+  const clean = seed(wallet)
+  clean.kya = 'verified'
+  const answer = () => { const r = reputationForQuery(wallet); return 'error' in r ? null : r.agentId }
+  // With nothing against either, the first proven one answers, as it did.
+  assert.equal(answer(), bad.id)
+  // Evidence on the later one wins too.
+  state.audits[clean.id] = [{ id: 'a', verdict: 'DENY', outcome: 'refused', overrideAttempts: 1 } as never]
+  assert.equal(answer(), clean.id)
+  assert.equal(recordAtAddress(listPlatformAgents(), wallet, recordHoldsEvidence).record?.id, clean.id)
+  assert.equal(recordAtAddress(listPlatformAgents(), wallet).record?.id, bad.id, 'told nothing, it picks by proof alone')
+  delete state.audits[clean.id]
+
+  // Moved off the address, and a clean record now sits there: the old one still answers for it.
+  const elsewhere = privateKeyToAccount(generatePrivateKey()).address
+  recordWallet(elsewhere)
+  assert.ok(!('error' in assignWallet(elsewhere, bad.id, OWNER)))
+  state.audits[bad.id] = [{ id: 'a', verdict: 'DENY', outcome: 'refused', overrideAttempts: 1 } as never]
+  assert.equal(answer(), bad.id)
+  const at = recordAtAddress(listPlatformAgents(), wallet, recordHoldsEvidence)
+  assert.equal(at.currentWallet, false)
+  delete state.audits[bad.id]
+  assert.equal(answer(), clean.id, 'with nothing against it, the wallet is the clean one\'s')
+})
+
+test('GET /api/reputation answers an address by proof, and the digits an address ends in are not a token id', async () => {
+  const get = async (id: string) => {
+    let status = 0
+    let body: unknown = null
+    const res = { writeHead: (s: number) => { status = s }, setHeader: () => {}, end: (b?: string) => { body = b ? JSON.parse(b) : null } }
+    const url = new URL(`http://localhost/api/reputation?id=${encodeURIComponent(id)}`)
+    const handled = await handlePublicRoutes({ req: { method: 'GET', headers: {} }, res, url } as never)
+    assert.equal(handled, true)
+    return { status, body: body as { found: boolean; reputation?: { agentId: string } } }
+  }
+  const named = privateKeyToAccount(generatePrivateKey()).address
+  const agent = seed(named)
+  assert.equal((await get(named)).status, 404, 'named without proof')
+  assert.equal((await get(agent.id)).body.reputation?.agentId, agent.id)
+
+  // An agent anchored at token 36, and a wallet nobody holds a record of that happens to end in 36.
+  const anchored = seed(privateKeyToAccount(generatePrivateKey()).address)
+  anchored.onchainAgentId = '36'
+  const stranger = '0x00000000000000000000000000000000000abc36'
+  assert.equal((await get(stranger)).status, 404)
+  assert.equal((await get('eip155:5042002:8004/36')).body.reputation?.agentId, anchored.id, 'a CAIP id still maps to its anchor')
+  delete anchored.onchainAgentId
 })
 
 // ── what a record really holds against an agent ───────────────────────────────────

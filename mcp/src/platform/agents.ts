@@ -12,6 +12,7 @@ import {
 } from './core.js'
 import { sanitizeVelocity } from './permissions.js'
 import { agentReputation } from './reputation.js'
+import { adverseRecordFrom } from '../asp/risk.js'
 import { ARC_TESTNET } from '../arc.js'
 import { registerAgentOnchain } from '../arc-contracts.js'
 import { normalizePriceUsd } from '../marketplace.js'
@@ -20,6 +21,9 @@ import { normalizePriceUsd } from '../marketplace.js'
 
 /** Enough to keep a moved record's history without letting it balloon the state document. */
 const MAX_FORMER_PROVEN_WALLETS = 20
+
+/** asp/risk.ts's high-value line: under this, evidence on a record denies a payment over 100 USD. */
+const EVIDENCE_DENIES_BELOW = 400
 
 // There is deliberately no server-side `createWallet` here. It used to generate a keypair
 // and return the private key over HTTP; `POST /api/wallets` stopped calling it, but an
@@ -291,8 +295,10 @@ export function recordProvesAddress(a: AddressFacts, address: string): boolean {
 /**
  * Which platform record speaks for a payee ADDRESS, the one reading a trust verdict gives it.
  *
- *   - record: the record that proved control of this address, a revoked one first so a clean
- *     twin registered later cannot shadow it. currentWallet says whether it is still its wallet.
+ *   - record: the record that proved control of this address. A revoked one comes first and one
+ *     holding evidence next, so a clean twin registered later cannot shadow it: an agent with
+ *     evidence gets its DENY at every address it proved, whichever record there is the newest.
+ *     currentWallet says whether it is still its wallet.
  *   - claim: a record that names this address without proof. It is not this payee's record,
  *     because a free registration can name a real vendor's wallet, and counting it would let a
  *     stranger turn that vendor's WARN into a DENY. It is returned so the reasons can say so.
@@ -301,12 +307,24 @@ export function recordProvesAddress(a: AddressFacts, address: string): boolean {
  * by recording a wallet or importing a token), and an account's linked wallets (proven, but an
  * account holds many agents, so a record against one is not evidence about that wallet).
  */
-export function recordAtAddress<T extends AddressFacts>(agents: T[], address: string): { record: T | null; currentWallet: boolean; claim: T | null } {
+export function recordAtAddress<T extends AddressFacts>(agents: T[], address: string, holdsEvidence: (a: T) => boolean = () => false): { record: T | null; currentWallet: boolean; claim: T | null } {
   const atWallet = agents.filter((a) => sameAddress(a.walletAddress, address))
   const proven = atWallet.filter(walletControlProven)
   const former = agents.filter((a) => formerlyProvenAddress(a, address))
-  const record = [...proven, ...former].find((a) => a.kya === 'revoked') ?? proven[0] ?? former[0] ?? null
+  const eligible = [...proven, ...former]
+  const record = eligible.find((a) => a.kya === 'revoked') ?? eligible.find(holdsEvidence) ?? proven[0] ?? former[0] ?? null
   return { record, currentWallet: record !== null && proven.includes(record), claim: record ? null : (atWallet[0] ?? null) }
+}
+
+/**
+ * Whether this record's own reputation answer can force a DENY at some amount: Sybil high, or
+ * evidence on the record with a score under the 400 line. This is what recordAtAddress is told, so
+ * that picking between two records at one address picks the one risk_check has to answer for.
+ */
+export function recordHoldsEvidence(a: Pick<PlatformAgent, 'id'>): boolean {
+  const r = agentReputation(a.id)
+  if ('error' in r) return false
+  return r.sybil.level === 'high' || (adverseRecordFrom(r) === true && r.score < EVIDENCE_DENIES_BELOW)
 }
 
 /**
@@ -318,7 +336,7 @@ export function recordAtAddress<T extends AddressFacts>(agents: T[], address: st
 export function reputationForQuery(query: string) {
   const q = query.trim()
   if (!/^0x[0-9a-fA-F]{40}$/.test(q)) return agentReputation(q)
-  const at = recordAtAddress(state.agents, q)
+  const at = recordAtAddress(state.agents, q, recordHoldsEvidence)
   if (!at.record) return { error: 'Unknown agent' as const }
   const view = agentReputation(at.record.id)
   if ('error' in view) return view

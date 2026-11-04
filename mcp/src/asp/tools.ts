@@ -21,6 +21,7 @@ import { computeAgentReputation, type ReputationResult } from '../reputation.js'
 import {
   listPlatformAgents,
   recordAtAddress,
+  recordHoldsEvidence,
   recordProvesAddress,
   agentReputation,
   agentGuardrailProfile,
@@ -159,7 +160,7 @@ async function gather(agentId: string): Promise<Bundle> {
     agents.find((a) => a.id === q) ??
     agents.find((a) => a.onchainAgentId && (a.onchainAgentId === q || `#${a.onchainAgentId}` === q)) ??
     null
-  const atAddress = !named && isAddress(q) ? recordAtAddress(agents, q) : null
+  const atAddress = !named && isAddress(q) ? recordAtAddress(agents, q, recordHoldsEvidence) : null
   const platform = named ?? atAddress?.record ?? null
   // A record that proved this address and has moved off it can count against the address. It
   // cannot vouch for it: KYA attests the wallet the record uses now.
