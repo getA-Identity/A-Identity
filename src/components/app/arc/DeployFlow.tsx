@@ -28,7 +28,7 @@ import { AGENT_KEY_CAN, AGENT_KEY_CANNOT, CALL_FEE_ABOUT, CONFIRMATIONS, FEES_LI
 import { loadSetup, loadTx, saveTx, type SetupState, type TxRecord } from '../../../lib/arc/pending'
 import { FUND_RISK } from '../../../lib/arc/ours'
 import { deployReadback } from '../../../lib/arc/receipt'
-import { deployEnd, fundAsked, fundSent, fundingInDoubt, fundingUnresolved, liveOf, pageTxOnStep3, predictedVault, readBeforeExpiry, readBeforeFunding, setupDrift, setupStep, vaultToLookFor, withRecord, type DeployBack } from '../../../lib/arc/tx-rules'
+import { deployEnd, fundAsked, fundSent, fundingInDoubt, fundingUnresolved, liveOf, pageTxOnStep3, predictedVault, readBeforeExpiry, readBeforeFunding, setupDrift, setupStep, stepMovedOn, vaultToLookFor, withRecord, type DeployBack } from '../../../lib/arc/tx-rules'
 import {
   ARC_CHAINS,
   arcChainFor,
@@ -92,6 +92,9 @@ const WALLET_SLOW_MS = 30_000
 /** After a failure with the setup kept: the failure's own "try again" is not on offer here. */
 const SENDING_NEXT =
   "Check your wallet's activity. If this page finds the vault at its address it carries on from there. If your wallet shows nothing was sent, use the start again button below."
+/** After a wallet failure at step 3 with the funding still open: "try again" could send the USDC twice. */
+const FUND_ASKED_NEXT =
+  "Do not send it again yet: your wallet may have sent it before it stopped. Check your wallet's activity, as the box above says. If the USDC left, this page sees it land and carries on."
 
 /** What the last look at a deploy's address found. Only an answer can say a vault is not there. */
 function lookedLine(l: { at: string; status: DeployBack['status']; why: string | null } | null): string {
@@ -162,6 +165,9 @@ export default function DeployFlow({
 
   const step = setupStep(setup, review !== null, snapshot)
   const vaultCount = useVaultCount(chain.testnet, setup, step)
+  // Where the setup stands now, for a wallet that answers long after the step has moved on.
+  const stepNow = useRef(step)
+  stepNow.current = step
   const account = wallet.account
   const provider = wallet.wallet?.provider ?? null
   const walletGone = !provider || !account
@@ -266,6 +272,13 @@ export default function DeployFlow({
   useEffect(() => {
     if (step !== 'fund') setFundAsking(false)
   }, [step])
+
+  // A failure belongs to the step it happened on, and the chain has since moved past that step.
+  const lastStep = useRef(step)
+  useEffect(() => {
+    if (stepMovedOn(lastStep.current, step)) setFailure(null)
+    lastStep.current = step
+  }, [step, setFailure])
 
   const pageTxVault = setup?.vault ?? null
   const setupNetwork = setup?.network ?? null
@@ -938,6 +951,7 @@ export default function DeployFlow({
                 onClick={() => {
                   patch((s) => ({ ...s, fundIntent: undefined }))
                   setRefundConfirmed(true)
+                  setFailure(null)
                 }}
               >
                 I checked: send USDC again
@@ -964,17 +978,20 @@ export default function DeployFlow({
                   onHandOff={(amount) => {
                     setFundAsking(true)
                     setRefundConfirmed(false)
+                    setFailure(null)
                     patch((s) => fundAsked(s, amount, new Date().toISOString()))
                   }}
                   onHandOffEnded={(f) => {
                     setFundAsking(false)
                     // Declined: nothing was sent. Any other stop may have left the wallet sending it.
+                    // A stop heard after the step has moved on says nothing: the USDC has arrived.
                     if (f.code === 'rejected') patch((s) => ({ ...s, fundIntent: undefined }))
-                    else setFailure(f)
+                    else if (stepNow.current === 'fund') setFailure(f)
                   }}
                   onSubmitted={(r) => {
                     setFundAsking(false)
                     setRefundConfirmed(false)
+                    setFailure(null)
                     patch((s) => fundSent(s, r))
                   }}
                 />
@@ -1057,7 +1074,7 @@ export default function DeployFlow({
       )}
       {failure && (
         <div ref={failureRef}>
-          <FailureNotice failure={failure} next={step === 'sending' ? SENDING_NEXT : undefined} />
+          <FailureNotice failure={failure} next={step === 'sending' ? SENDING_NEXT : step === 'fund' && setup?.fundIntent ? FUND_ASKED_NEXT : undefined} />
         </div>
       )}
 

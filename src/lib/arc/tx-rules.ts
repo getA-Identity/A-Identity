@@ -522,6 +522,17 @@ export function setupStep(s: SetupState | null, prepared: boolean, snapshot: Vau
   return s.fundSkipped ? 'done' : 'fund'
 }
 
+const STAGE: Record<SetupStep, number> = { form: 0, review: 0, sending: 0, deploying: 0, 'deploy-failed': 0, expiry: 1, 'expiry-pending': 1, fund: 2, 'fund-pending': 3, done: 4 }
+
+/**
+ * The setup went forward. A wallet failure from an earlier stage says nothing about where it is
+ * now: the chain has shown the step landed anyway, so "try again" would only invite a second send.
+ * Going back, or staying (a deploy declined at 'sending' falls back to 'review'), keeps the failure.
+ */
+export function stepMovedOn(from: SetupStep, to: SetupStep): boolean {
+  return STAGE[to] > STAGE[from]
+}
+
 /**
  * The setup's own transaction still pending on this vault, or null: it holds the vault page's
  * controls exactly as a transaction from that page does, so nothing is signed twice between them.

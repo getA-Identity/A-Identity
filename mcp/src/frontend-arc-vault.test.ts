@@ -89,6 +89,7 @@ type TxRules = {
   readBeforeExpiry: (s: Rec, snapshot: Rec | null) => boolean
   fundingInDoubt: (s: Rec, pageTx?: Rec | null) => boolean
   pageTxOnStep3: (r: Rec | null | undefined) => boolean
+  stepMovedOn: (from: string, to: string) => boolean
   setupFundEndedOn: (s: Rec | null, network: string | null, vault: string | null, snapshot: Rec | null) => Rec | null
   setupFundInDoubtOn: (s: Rec | null, network: string | null, vault: string | null, snapshot: Rec | null) => boolean
   fundAsked: (s: Rec, amount: bigint, at: string) => Rec
@@ -990,7 +991,7 @@ test('a wallet error that sent nothing has a labelled way out, and the notice do
   const raw = repo('src/components/app/arc/DeployFlow.tsx')
   assert.match(raw, /My wallet shows nothing was sent: start again/)
   const flow = codeOnly(raw)
-  assert.match(flow, /next=\{step === 'sending' \? SENDING_NEXT : undefined\}/)
+  assert.match(flow, /next=\{step === 'sending' \? SENDING_NEXT : step === 'fund' && setup\?\.fundIntent \? FUND_ASKED_NEXT : undefined\}/)
   assert.match(codeOnly(repo('src/components/app/arc/FailureNotice.tsx')), /const next = instead \?\? usual/)
 })
 
@@ -1879,4 +1880,38 @@ test('a funding that stopped being pending keeps its warning on the vault page a
   assert.match(page, /!fundingUnresolved\(setupFundEnded\) && \(/)
   const flow = codeOnly(repo('src/components/app/arc/DeployFlow.tsx'))
   assert.match(flow, /step === 'fund' && pageTx && pageTxOnStep3\(pageTx\) && \(/)
+})
+
+test('a wallet failure does not outlive its step: no "try again" once the USDC has arrived or a later send has worked', async () => {
+  const t = await txRules()
+  const bounded = snap({ sessionKeyExpiry: 1_800_000_000n })
+  const s = setupOf({ vault: VAULT, expiryTx: record({ action: 'expiry', outcome: 'settled', block: 100n }) })
+  // The scenario, through the rules: the wallet errors after sending, the intent stays, and the re-read sees the USDC.
+  const asked = t.fundAsked(s, 500_000n, '2026-11-04T00:00:00.000Z')
+  const atFund = t.setupStep(asked, false, bounded)
+  const arrived = t.setupStep(asked, false, snap({ sessionKeyExpiry: 1_800_000_000n, balance: 500_000n }))
+  assert.deepEqual([atFund, arrived], ['fund', 'done'])
+  assert.equal(t.stepMovedOn(atFund, arrived), true)
+  // A resend that worked: a hash on its way is past step 3 as well.
+  const resent = t.setupStep(t.fundSent(asked, record({ amount: 500_000n })), false, bounded)
+  assert.equal(resent, 'fund-pending')
+  assert.equal(t.stepMovedOn(atFund, resent), true)
+  assert.equal(t.stepMovedOn(resent, 'done'), true)
+  // The earlier steps, the same way.
+  for (const [from, to] of [['sending', 'expiry'], ['deploying', 'expiry'], ['deploy-failed', 'expiry'], ['expiry', 'fund'], ['expiry-pending', 'fund'], ['expiry', 'done']]) {
+    assert.equal(t.stepMovedOn(from, to), true, `${from} to ${to}`)
+  }
+  // Declined at the deploy: the notice saying nothing was sent must survive the fall back to the review.
+  for (const [from, to] of [['sending', 'review'], ['review', 'sending'], ['form', 'review'], ['fund', 'fund'], ['expiry', 'expiry-pending'], ['fund-pending', 'fund'], ['done', 'form']]) {
+    assert.equal(t.stepMovedOn(from, to), false, `${from} to ${to}`)
+  }
+  // The wiring: every way the failure can go stale, and the words while the funding is still open.
+  const raw = repo('src/components/app/arc/DeployFlow.tsx')
+  const flow = codeOnly(raw)
+  assert.match(flow, /if \(stepMovedOn\(lastStep\.current, step\)\) setFailure\(null\)/)
+  assert.match(flow, /else if \(stepNow\.current === 'fund'\) setFailure\(f\)/, 'a stop heard after the USDC arrived paints the last screen red')
+  assert.match(flow, /onHandOff=\{\(amount\) => \{[^}]*setFailure\(null\)/, 'a new send keeps the old failure on screen')
+  assert.match(flow, /onSubmitted=\{\(r\) => \{[^}]*setFailure\(null\)/, 'a send that worked keeps the old failure on screen')
+  assert.match(flow, /setRefundConfirmed\(true\)\s*setFailure\(null\)/, '"I checked" answers the failure')
+  assert.match(raw, /const FUND_ASKED_NEXT =\s*"Do not send it again yet/)
 })
