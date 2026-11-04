@@ -62,6 +62,19 @@ export function fakeVtpPool() {
       return { rows: ordered().filter((r) => r.vault === vault && r.payee === payee && r.amount === amount && outcomes.includes(r.outcome)).map((r) => ({ data: copy(r) })) }
     }
 
+    const byOperator = (r: Row) => r.check?.payer?.toLowerCase() === r.operator
+    const waitingOn = (vault: string) => ordered().filter((r) => r.vault === vault && r.outcome === 'awaiting_human')
+
+    if (text === "SELECT data FROM vtp_flows WHERE data->>'vault' = $1 AND data->>'outcome' = 'awaiting_human' AND lower(data->'check'->>'payer') = data->>'operator' ORDER BY data->>'createdAt' DESC, flow_id DESC LIMIT $2") {
+      const [vault, limit] = params as [string, number]
+      return { rows: waitingOn(vault).filter(byOperator).reverse().slice(0, limit).map((r) => ({ data: copy(r) })) }
+    }
+
+    if (text === "SELECT count(*)::int AS n FROM (SELECT 1 FROM vtp_flows WHERE data->>'vault' = $1 AND data->>'outcome' = 'awaiting_human' AND lower(data->'check'->>'payer') IS DISTINCT FROM data->>'operator' LIMIT $2) AS others") {
+      const [vault, cap] = params as [string, number]
+      return { rows: [{ n: Math.min(waitingOn(vault).filter((r) => !byOperator(r)).length, cap) }] }
+    }
+
     if (text === "SELECT data FROM vtp_flows ORDER BY data->>'createdAt' ASC, flow_id ASC") {
       return { rows: ordered().map((r) => ({ data: copy(r) })) }
     }

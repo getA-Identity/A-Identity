@@ -133,6 +133,8 @@ test('the three verify-then-pay routes are budgeted, each in a bucket of its own
   assert.deepEqual(rateBudget('POST', '/api/x402/gateway/verify-then-pay'), { bucket: 'vtp', max: 30, windowMs: 60_000 })
   assert.deepEqual(rateBudget('POST', `/api/x402/gateway/flows/${flowId}/receipt`), { bucket: 'vtp-receipt', max: 30, windowMs: 60_000 })
   assert.deepEqual(rateBudget('GET', `/api/x402/gateway/flows/${flowId}`), { bucket: 'vtp-flow-read', max: 60, windowMs: 60_000 })
+  // The list by vault names any vault, and it is two store reads, so it has a bucket of its own.
+  assert.deepEqual(rateBudget('GET', '/api/x402/gateway/flows'), { bucket: 'vtp-vault-flows', max: 30, windowMs: 60_000 })
   // The paid tools next door keep their own (absent) budget: these buckets match nothing else.
   assert.equal(rateBudget('POST', '/api/x402/gateway/tools/risk_check'), null)
   assert.equal(rateBudget('GET', `/api/x402/gateway/flows/${flowId}/receipt`), null)

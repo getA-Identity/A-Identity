@@ -19,6 +19,11 @@
  *      check and gets WARN. Nothing below reads the registry again: a flow is linked to its
  *      check by nonce, and to its payment by vault, payee and amount (receipt.ts), so a flow
  *      record needs no agent, and payeeAgentId is null unless the caller named one.
+ *      A payment the operator cannot make and the owner can (above the ceiling, or off an allowlist
+ *      that is on) is not refused either, on a vault with a human: pay() would revert and ownerPay()
+ *      would not, so ownerPay() is what is simulated, and the check is bought for the owner's sake.
+ *      The 402 says so before anything is charged. On a vault whose owner is its operator there is
+ *      no human, so both stay refusals. Every other refusal stays one.
  *   5. No payment yet: the 402, carrying the Arc Mainnet Gateway offer and nothing else.
  *   6. The nonce reserved, then the check. An insert-only opening row keyed by the nonce goes
  *      in first, so of two requests carrying one signed payment only one reaches Gateway; the
@@ -34,8 +39,10 @@
  *      when it lands in a later block (receipt.ts), so a pay() sent while the check was still
  *      running never counts as its result. If the chain does not answer for it, nothing is
  *      prepared, because no payment could be shown to come after this check.
- *   8. The decision, only from a verdict that passed verdict.ts. DENY stops. WARN prepares
- *      ownerPay() for the owner unless the caller opted into payOnWarn, and when the vault's
+ *   8. The decision, only from a verdict that passed verdict.ts. DENY stops. On a payment only the
+ *      owner can make, ALLOW and WARN both prepare ownerPay() for the owner, and payOnWarn cannot
+ *      change that: it cannot make the operator pay what the vault would refuse. Otherwise WARN
+ *      prepares ownerPay() for the owner unless the caller opted into payOnWarn, and when the vault's
  *      owner and operator are one key there is no human to hand it to, so it stops there too.
  *      ALLOW prepares pay() for the operator. Every paid check closes its reservation once,
  *      compare-and-set from opening. An answer whose row could not be closed says so and links
@@ -49,7 +56,7 @@
 import type { ChainDescriptor } from '../chains/index.js'
 import { railChallenge, railPaidNetwork, railPaywallGate, railServeTool, railStatus, toolPriceUsd, type GatewayRailStatus, type RailDeps } from '../x402-gateway/index.js'
 import type { VtpDecision, VtpFlowDetail, VtpFlowOutcome, VtpFlowRecord } from '../storage.js'
-import { flowPath, flowUrl, holdsNoFlow, storageVtpStore, vtpChain, vtpReadClient, VTP_PUBLIC_ORIGIN, type VtpDeps, type VtpStore } from './context.js'
+import { approvalUrl, flowPath, flowUrl, holdsNoFlow, storageVtpStore, vtpChain, vtpReadClient, VTP_PUBLIC_ORIGIN, type VtpDeps, type VtpStore } from './context.js'
 import {
   assessVaultAsset,
   assessVaultPolicy,
@@ -57,6 +64,8 @@ import {
   readVaultFacts,
   simulateVaultCall,
   ZERO_ADDRESS,
+  type OperatorBlock,
+  type OperatorBlockCode,
   type PayeeRegistration,
   type VaultRead,
   type VtpReadClient,
@@ -121,6 +130,9 @@ export type VtpChecks = {
     operatorGasWei: string | null
     operatorIsContract: boolean | null
     simulation: null | { ok: true; gas: string } | { ok: false; error: string }
+    /** Set when the operator cannot make this payment and the owner can: the gate in pay() that stops
+     *  it, and simulation is then ownerPay() from the owner. null otherwise. */
+    ownerOnly: OperatorBlock | null
     code?: string
   }
 }
@@ -153,7 +165,15 @@ export type VtpVerdictView = {
   overriddenBecause?: string
 }
 
-export type OwnerHandoff = { auditOutcome: 'awaiting_human'; owner: string; ownerPay: PreparedCall }
+export type OwnerHandoff = {
+  auditOutcome: 'awaiting_human'
+  owner: string
+  ownerPay: PreparedCall
+  /** Where the owner can approve this on the vault page, with their own wallet. Always the site's own origin. */
+  approvalUrl: string
+  /** The gate in pay() that makes this the owner's to pay, whatever the verdict was. null: the verdict did, a WARN. */
+  ownerOnly: OperatorBlockCode | null
+}
 
 export type VerifyThenPayToolResult = {
   tool: 'verify_then_pay'
@@ -326,6 +346,7 @@ function emptyChecks(chain: ChainDescriptor, p: ParsedVtpInput): VtpChecks {
       operatorGasWei: null,
       operatorIsContract: null,
       simulation: null,
+      ownerOnly: null,
     },
   }
 }
@@ -359,7 +380,7 @@ function fillPayee(checks: VtpChecks, reg: PayeeRegistration): void {
   Object.assign(checks.payee, { ok: reg.ok, agentsHeld: reg.agentsHeld, agentOwner: reg.agentOwner, ...(reg.code ? { code: reg.code } : {}) })
 }
 
-type PreflightOk = { ok: true; read: VaultRead; fees: Fees; gas: bigint; checks: VtpChecks; owner: string; operator: string; block: bigint }
+type PreflightOk = { ok: true; read: VaultRead; fees: Fees; gas: bigint; checks: VtpChecks; owner: string; operator: string; block: bigint; ownerOnly: OperatorBlock | null }
 type PreflightRefused = { ok: false; httpStatus: 422 | 503; code: VtpRefusalCode; reason: string; checks: VtpChecks }
 
 /** Everything that can be known for free, in the order the plan fixes: the asset, the payee,
@@ -391,27 +412,34 @@ async function preflight(client: VtpReadClient, chain: ChainDescriptor, p: Parse
   const fees = feesFor(f.gasPrice, { capWei: deps.feeCapWei })
   if (!fees.ok) return refuse('vault', 422, 'GasPriceAboveCap', fees.reason)
 
-  const sim = await simulateVaultCall(client, 'pay', { vault: p.vault, from: operator, payee: p.payee, amount: p.amount })
+  // The call the payment would be: the operator's, or on a payment only the owner can make, the owner's.
+  const ownerOnly = policy.operatorBlockedBy ?? null
+  checks.vault.ownerOnly = ownerOnly
+  const kind = ownerOnly ? 'ownerPay' : 'pay'
+  const sim = await simulateVaultCall(client, kind, { vault: p.vault, from: ownerOnly ? owner : operator, payee: p.payee, amount: p.amount })
   if (!sim.ok) {
     checks.vault.simulation = { ok: false, error: sim.error }
-    if (!sim.reverted) return refuse('vault', 503, 'VaultUnreadable', `pay() could not be simulated: ${sim.error}`)
+    if (!sim.reverted) return refuse('vault', 503, 'VaultUnreadable', `${kind}() could not be simulated: ${sim.error}`)
     const code: VtpRefusalCode = VAULT_ERRORS.has(sim.error) ? (sim.error as VtpRefusalCode) : 'SimulationReverted'
-    return refuse('vault', 422, code, `pay() from the operator reverts at the latest block: ${sim.error}`)
+    return refuse('vault', 422, code, `${kind}() from the ${ownerOnly ? 'owner' : 'operator'} reverts at the latest block: ${sim.error}`)
   }
   checks.vault.simulation = { ok: true, gas: sim.gas.toString() }
 
   // A contract operator's gas is paid by whoever relays its call, so its own balance proves
-  // nothing; an EOA operator has to hold the gas itself, in native USDC.
-  if (f.operatorHasCode === null) return refuse('vault', 503, 'VaultUnreadable', "the chain did not answer for the operator's code")
-  if (!f.operatorHasCode) {
-    if (f.operatorGas === null) return refuse('vault', 503, 'VaultUnreadable', "the chain did not answer for the operator's gas balance")
-    const need = gasLimitFor(sim.gas) * fees.fees.maxFeePerGas
-    if (f.operatorGas < need) {
-      return refuse('vault', 422, 'InsufficientGas', `the operator holds ${f.operatorGas} wei of gas and pay() can cost up to ${need} wei at the prepared fee`)
+  // nothing; an EOA operator has to hold the gas itself, in native USDC. A payment only the owner
+  // can make costs the operator no gas.
+  if (!ownerOnly) {
+    if (f.operatorHasCode === null) return refuse('vault', 503, 'VaultUnreadable', "the chain did not answer for the operator's code")
+    if (!f.operatorHasCode) {
+      if (f.operatorGas === null) return refuse('vault', 503, 'VaultUnreadable', "the chain did not answer for the operator's gas balance")
+      const need = gasLimitFor(sim.gas) * fees.fees.maxFeePerGas
+      if (f.operatorGas < need) {
+        return refuse('vault', 422, 'InsufficientGas', `the operator holds ${f.operatorGas} wei of gas and pay() can cost up to ${need} wei at the prepared fee`)
+      }
     }
   }
   checks.vault.ok = true
-  return { ok: true, read, fees: fees.fees, gas: sim.gas, checks, owner, operator, block: f.blockNumber as bigint }
+  return { ok: true, read, fees: fees.fees, gas: sim.gas, checks, owner, operator, block: f.blockNumber as bigint, ownerOnly }
 }
 
 function result(chain: ChainDescriptor, over: Partial<VerifyThenPayToolResult> & Pick<VerifyThenPayToolResult, 'stage' | 'next'>): VerifyThenPayToolResult {
@@ -536,7 +564,9 @@ async function paymentRequired(
       price: { usd, units: String(offer.amount ?? '') },
       ...(verifyError ? { reason: verifyError } : {}),
       next: `Nothing is charged yet, and the free checks passed.${checks?.payee.agentsHeld === 0 ? ` This payee holds no ERC-8004 agent on ${chain.name}. That is not a refusal, and unless it is an agent on our platform the check will answer WARN.` : ''}${
-        checks?.vault.ownerIsOperator === true
+        checks?.vault.ownerOnly
+          ? ` The agent cannot pay this and only the owner can settle it: ${checks.vault.ownerOnly.reason} (${checks.vault.ownerOnly.code}). Signing this offer still charges ${usd} USDC for the check. A usable ALLOW or WARN then hands ownerPay to the owner, payOnWarn cannot make the operator pay it, and a DENY stops it.`
+          : checks?.vault.ownerIsOperator === true
           ? " On this vault the owner and the operator are one key, so a WARN stops with nothing prepared: there is nobody to hand the payment to, and the check is still paid. Give the vault an owner key the agent does not hold first if you need that hand-off."
           : checks?.payee.agentsHeld === 0
             ? ' A WARN hands the payment to the owner.'
@@ -559,6 +589,7 @@ type RecordInput = {
   verdictBlock: bigint | null
   verdict: VtpFlowRecord['verdict']
   prepared: PreparedCall | null
+  ownerOnly?: OperatorBlockCode
   outcome: VtpFlowOutcome
   detail: VtpFlowDetail
 }
@@ -592,6 +623,7 @@ function flowRecord(r: RecordInput): VtpFlowRecord {
     verdict: r.verdict,
     payOnWarn: r.payOnWarn,
     prepared: r.prepared ? { from: r.prepared.from, to: r.prepared.to, data: r.prepared.data, function: r.prepared.function, args: r.prepared.args } : null,
+    ...(r.ownerOnly ? { ownerOnly: r.ownerOnly } : {}),
     outcome: r.outcome,
     detail: r.detail,
   }
@@ -826,16 +858,12 @@ export async function runVerifyThenPay(input: VtpInput, paymentHeader: string | 
     stage = 'check_failed'
     outcome = 'blocked'
     detail = 'verdict_block_unreadable'
-  } else if (v.effective === 'WARN' && !parsed.payOnWarn && pre.owner === pre.operator) {
-    // The hand-off would go back to the key that asked: nothing a human approved could be told
-    // apart from the agent paying itself, so no owner approval is prepared or recorded.
-    stage = 'warn_no_human_gate'
-    outcome = 'blocked'
-    detail = 'warn_no_human_gate'
-  } else if (v.effective === 'WARN' && !parsed.payOnWarn) {
+  } else if (pre.ownerOnly || (v.effective === 'WARN' && !parsed.payOnWarn && pre.owner !== pre.operator)) {
+    // The owner's to pay: the vault refuses the operator, whatever the verdict and payOnWarn say, or
+    // the verdict is a WARN and nobody opted into paying on one.
     stage = 'awaiting_human'
     outcome = 'awaiting_human'
-    detail = 'warn_handoff'
+    detail = pre.ownerOnly ? 'owner_only_handoff' : 'warn_handoff'
     const sim = await simulateVaultCall(client, 'ownerPay', { vault: p.vault, from: pre.owner, payee: p.payee, amount: p.amount })
     const call = prepareOwnerPay(chain, {
       vault: p.vault,
@@ -846,8 +874,14 @@ export async function runVerifyThenPay(input: VtpInput, paymentHeader: string | 
       fees: pre.fees,
       simulation: sim.ok ? { ok: true } : { ok: false, error: sim.error },
     })
-    ownerHandoff = { auditOutcome: 'awaiting_human', owner: pre.owner, ownerPay: call }
+    ownerHandoff = { auditOutcome: 'awaiting_human', owner: pre.owner, ownerPay: call, approvalUrl: approvalUrl(chain, p.vault, flowId), ownerOnly: pre.ownerOnly?.code ?? null }
     prepared = null
+  } else if (v.effective === 'WARN' && !parsed.payOnWarn) {
+    // The hand-off would go back to the key that asked: nothing a human approved could be told
+    // apart from the agent paying itself, so no owner approval is prepared or recorded.
+    stage = 'warn_no_human_gate'
+    outcome = 'blocked'
+    detail = 'warn_no_human_gate'
   } else {
     stage = 'prepared'
     outcome = 'pending'
@@ -878,6 +912,7 @@ export async function runVerifyThenPay(input: VtpInput, paymentHeader: string | 
     verdictBlock,
     verdict,
     prepared: prepared ?? ownerHandoff?.ownerPay ?? null,
+    ...(ownerHandoff?.ownerOnly ? { ownerOnly: ownerHandoff.ownerOnly } : {}),
     outcome,
     detail,
   })
@@ -927,10 +962,12 @@ export async function runVerifyThenPay(input: VtpInput, paymentHeader: string | 
     check_failed: `The check was paid and answered ${v.effective}, but ${chain.name} did not answer for its latest block after the verdict, so a payment could not be shown to come after this check and nothing was prepared: do not pay on this flow, ask again with a new authorization.`,
     verdict_unusable: `The check was paid, but its answer failed ${v.usable ? '' : v.code}, so it is treated as DENY: do not pay. The paid check and why it was not used are public at ${record.url}.`,
     deny: `DENY: do not pay. Nothing was prepared and nothing should be signed. The refusal is public at ${record.url}.`,
-    awaiting_human:
-      ownerHandoff?.ownerPay.simulation.ok === false
-        ? `WARN: the agent must not pay this on its own, and the vault would refuse the owner's payment right now (${ownerHandoff.ownerPay.simulation.error}): do not send ownerHandoff.ownerPay, it would revert and cost gas. Ask again once the vault can pay.`
-        : `WARN: the agent must not pay this on its own. The owner can settle it by sending ownerHandoff.ownerPay from the owner key ${pre.owner}${ownerHandoff ? `, with ${sendInstruction(ownerHandoff.ownerPay, 'ownerHandoff.ownerPay')}` : ''}; then POST {"txHash": "0x..."} to ${receiptUrl} and the server reads the receipt itself.`,
+    awaiting_human: (() => {
+      const why = pre.ownerOnly ? `${v.effective}, and the agent cannot pay this: ${pre.ownerOnly.reason} (${pre.ownerOnly.code}), so only the owner can settle it` : 'WARN: the agent must not pay this on its own'
+      return ownerHandoff?.ownerPay.simulation.ok === false
+        ? `${why}, and the vault would refuse the owner's payment right now (${ownerHandoff.ownerPay.simulation.error}): do not send ownerHandoff.ownerPay, it would revert and cost gas. Ask again once the vault can pay.`
+        : `${why}. Send the owner this link to approve it on the vault page with their own wallet: ${ownerHandoff?.approvalUrl ?? ''}. Or the owner can settle it by sending ownerHandoff.ownerPay from the owner key ${pre.owner}${ownerHandoff ? `, with ${sendInstruction(ownerHandoff.ownerPay, 'ownerHandoff.ownerPay')}` : ''}; then POST {"txHash": "0x..."} to ${receiptUrl} and the server reads the receipt itself.`
+    })(),
     warn_no_human_gate: `WARN, and this vault's owner and operator are the same key (${pre.owner}), so there is no human to hand the payment to: do not pay. Nothing was prepared and no approval was recorded. Give the vault an owner key the agent does not hold${
       // A payee we know nothing about, on a vault with no human by construction: pointing an
       // autonomous agent at payOnWarn here would walk it into paying a stranger with no one asked.
@@ -977,8 +1014,60 @@ export type VtpFlowReadBody = {
   url: string | null
   receiptUrl: string | null
   paymentExplorerUrl: string | null
+  /** Where the owner approves this flow, while it waits for them. */
+  approvalUrl?: string | null
   error?: string
   note: string
+}
+
+/** How many waiting flows one read lists, newest first. More than a person acts on at once. */
+export const VAULT_FLOWS_LIMIT = 20
+/** How far the checks some other key paid for are counted. The count is a warning, not a tally. */
+export const VAULT_FLOWS_OTHERS_CAP = 100
+
+export type VtpVaultFlowsBody = {
+  vault: string | null
+  network: string
+  /** awaiting_human flows on this vault whose check was paid by the key that was its operator at the check, newest first. Compare with the vault's operator now. */
+  waiting: VtpFlowRecord[]
+  /** More flows like these exist than are listed. */
+  truncated: boolean
+  /** awaiting_human flows naming this vault whose check another key paid, counted up to the cap. Not requests from the vault's agent. */
+  notFromOperator: { count: number; capped: boolean }
+  error?: string
+  note: string
+}
+
+/**
+ * GET /api/x402/gateway/flows?vault=0x...: the flows waiting for one vault's owner. Every flow is public
+ * by id already, so this publishes nothing new. A check costs 0.005 USDC and may name any vault, so
+ * whoever pays for one can put a flow on any vault with a payee of their own. Those are not listed as
+ * requests and cannot crowd out the ones that are: only a count of them comes back. A row names the
+ * operator of the moment it was checked, so a reader that acts on one compares it with the chain.
+ */
+export async function readVtpVaultFlows(vaultRaw: unknown, deps: Pick<VtpDeps, 'store'> = {}): Promise<{ httpStatus: number; body: VtpVaultFlowsBody }> {
+  const chain = vtpChain()
+  const store = deps.store ?? storageVtpStore()
+  const note =
+    "The flows waiting for this vault's owner. waiting holds those whose check was paid by the key that was the vault's operator when it was checked, newest first; compare that with the vault's operator now before treating one as a request. notFromOperator counts the rest: anyone can buy a check naming any vault, so those are not requests from its agent, and nothing about them is listed. Each flow's record is public at /api/x402/gateway/flows/<flowId>."
+  const empty = { waiting: [], truncated: false, notFromOperator: { count: 0, capped: false } }
+  if (typeof vaultRaw !== 'string' || !ADDRESS.test(vaultRaw)) {
+    return { httpStatus: 400, body: { vault: null, network: chain.caip2, ...empty, error: 'vault must be a 0x address', note } }
+  }
+  const vault = vaultRaw.toLowerCase()
+  const read = store.waiting ? await store.waiting(vault, { limit: VAULT_FLOWS_LIMIT + 1, othersCap: VAULT_FLOWS_OTHERS_CAP }) : { ok: false as const, reason: 'this store cannot list by vault' }
+  if (!read.ok) return { httpStatus: 503, body: { vault, network: chain.caip2, ...empty, error: `the flow log could not be read: ${read.reason}`, note } }
+  return {
+    httpStatus: 200,
+    body: {
+      vault,
+      network: chain.caip2,
+      waiting: read.waiting.rows.slice(0, VAULT_FLOWS_LIMIT),
+      truncated: read.waiting.rows.length > VAULT_FLOWS_LIMIT,
+      notFromOperator: { count: read.waiting.others, capped: read.waiting.others >= VAULT_FLOWS_OTHERS_CAP },
+      note,
+    },
+  }
 }
 
 /** GET /api/x402/gateway/flows/:flowId. Public on purpose: a DENY has no transaction, so this
@@ -1003,6 +1092,7 @@ export async function readVtpFlow(flowIdRaw: unknown, deps: Pick<VtpDeps, 'store
       url: flowUrl(id, origin),
       receiptUrl: `${origin.replace(/\/$/, '')}${flowPath(id)}/receipt`,
       paymentExplorerUrl: read.row.payment?.explorerUrl ?? null,
+      approvalUrl: read.row.outcome === 'awaiting_human' ? approvalUrl(vtpChain(), read.row.vault, id) : null,
       note,
     },
   }

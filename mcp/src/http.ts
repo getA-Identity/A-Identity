@@ -183,9 +183,9 @@ const server = http.createServer(async (req, res) => {
   // the receipt on any other, and it moves that flow only after it read the receipt from every
   // RPC itself and the receipt proved the payment the flow prepared, mined after the block its
   // verdict came back in. A transaction proves one flow at most, and a flow that ended stays
-  // ended. All three verify-then-pay routes are rate-budgeted (vtp, vtp-flow-read,
-  // vtp-receipt), and the two MCP tools are charged to the vtp and vtp-receipt buckets per
-  // call.
+  // ended. All four verify-then-pay routes are rate-budgeted (vtp, vtp-flow-read,
+  // vtp-vault-flows, vtp-receipt), and the two MCP tools are charged to the vtp and vtp-receipt
+  // buckets per call.
   // /api/x402/stellar/* is exempt on similar but not identical terms, and the difference is
   // worth stating rather than glossing. On the soroban-auth scheme the credential is a signed
   // authorization entry, exactly like the EVM rails. On the `settled` scheme the credential is
@@ -406,6 +406,7 @@ server.listen(PORT, () => {
   console.error(`  GET  /api/x402/gateway/openapi.json            OpenAPI for the paid tools (marketplace listing)`)
   console.error(`  GET  /api/x402/gateway/tools/:name             price + what to sign; POST (or GET) to pay and call`)
   console.error(`  POST /api/x402/gateway/verify-then-pay         free vault + payee checks, then risk_check through Gateway on Arc Mainnet; returns the vault call to sign (never signs)`)
+  console.error(`  GET  /api/x402/gateway/flows?vault=0x...        the flows waiting for one vault's owner, bounded`)
   console.error(`  GET  /api/x402/gateway/flows/:flowId           one verify-then-pay flow, public by its check nonce`)
   console.error(`  POST /api/x402/gateway/flows/:flowId/receipt   {txHash}: the server reads the receipt from every RPC and records what it proves`)
   console.error(`  GET  /api/stellar/vaults         live Soroban spend vaults: policy, balance, archival TTL (public)`)

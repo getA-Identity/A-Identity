@@ -8,6 +8,8 @@
  *                                                     did not answer), 409 the nonce already
  *                                                     opened a flow, 402 the Arc Mainnet offer,
  *                                                     200 the paid result
+ *   GET  /api/x402/gateway/flows?vault=0x...          the flows waiting for one vault's owner,
+ *                                                     bounded and rate limited
  *   GET  /api/x402/gateway/flows/:flowId              the public record of one flow
  *   POST /api/x402/gateway/flows/:flowId/receipt      {txHash}: the server reads the receipt
  *                                                     from every RPC and records only what it
@@ -24,7 +26,7 @@
  * budget would be the cheap way in.
  */
 import { railPaymentHeader } from '../x402-gateway/index.js'
-import { readVtpFlow, recordVtpReceipt, runVerifyThenPay, vtpRateLimited, vtpReceiptRateLimited, type VtpInput } from '../verify-then-pay/index.js'
+import { readVtpFlow, readVtpVaultFlows, recordVtpReceipt, runVerifyThenPay, vtpRateLimited, vtpReceiptRateLimited, type VtpInput } from '../verify-then-pay/index.js'
 import { mcpToolBudget, rateLimited } from '../rate-budget.js'
 import { readBody, sendJson, type RouteCtx } from './shared.js'
 import { requestOrigin } from './x402-gateway-routes.js'
@@ -33,6 +35,7 @@ import { requestOrigin } from './x402-gateway-routes.js'
 export type VtpRouteDeps = {
   run?: typeof runVerifyThenPay
   read?: typeof readVtpFlow
+  list?: typeof readVtpVaultFlows
   receipt?: typeof recordVtpReceipt
 }
 
@@ -50,6 +53,7 @@ async function jsonBody(ctx: RouteCtx): Promise<{ ok: true; body: Record<string,
 export function createVerifyThenPayRoutes(deps: VtpRouteDeps = {}): (ctx: RouteCtx) => Promise<boolean> {
   const run = deps.run ?? runVerifyThenPay
   const readFlow = deps.read ?? readVtpFlow
+  const listFlows = deps.list ?? readVtpVaultFlows
   const postReceipt = deps.receipt ?? recordVtpReceipt
 
   return async (ctx) => {
@@ -72,6 +76,18 @@ export function createVerifyThenPayRoutes(deps: VtpRouteDeps = {}): (ctx: RouteC
     }
     if (url.pathname === '/api/x402/gateway/verify-then-pay') {
       sendJson(res, 405, { error: 'use POST with {vault, payee, amount}; the first call answers 402 with the Arc Mainnet offer, or 422 if the vault would refuse' })
+      return true
+    }
+
+    // ── GET /api/x402/gateway/flows?vault=0x... ──
+    if (req.method === 'GET' && url.pathname === '/api/x402/gateway/flows') {
+      const out = await listFlows(url.searchParams.get('vault'))
+      res.setHeader('Cache-Control', 'no-store')
+      sendJson(res, out.httpStatus, out.body)
+      return true
+    }
+    if (url.pathname === '/api/x402/gateway/flows') {
+      sendJson(res, 405, { error: 'use GET with ?vault=0x...' })
       return true
     }
 

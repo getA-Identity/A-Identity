@@ -11,7 +11,8 @@
  *     not known bad, so it goes on to the check, gets WARN, and the owner decides. A named agent
  *     the payee does not own is a claim that is false, and that is refused.
  *   - Would the vault pay: its policy getters at the latest block, then pay() simulated
- *     from the operator, then whether the operator can pay the gas.
+ *     from the operator, then whether the operator can pay the gas. A payment only the owner can
+ *     make (assessVaultPolicy) is simulated as ownerPay() from the owner instead.
  *
  * A contract that answered "no" (a revert, a zero balance, a different owner) and a chain
  * that did not answer are different facts and are kept apart all the way to the caller: the
@@ -209,7 +210,11 @@ export type VaultRefusalCode =
   | 'DailyCapExceeded'
   | 'InsufficientVaultBalance'
 
-export type GateResult = { ok: true } | { ok: false; code: VaultRefusalCode; reason: string; httpStatus: 422 | 503 }
+/** The two gates in pay() that ownerPay() does not have: the operator cannot pay, and the owner can. */
+export type OperatorBlockCode = 'PayeeNotAllowed' | 'AboveAutoApprove'
+export type OperatorBlock = { code: OperatorBlockCode; reason: string }
+
+export type GateResult = { ok: true; operatorBlockedBy?: OperatorBlock } | { ok: false; code: VaultRefusalCode; reason: string; httpStatus: 422 | 503 }
 
 /** Is this a contract answering the AgentSpendPolicy getters, holding the registry's USDC? */
 export function assessVaultAsset(read: VaultRead, registryUsdc: string, chainName: string): GateResult {
@@ -230,6 +235,14 @@ export function assessVaultAsset(read: VaultRead, registryUsdc: string, chainNam
  * contract's own order, compared against the block's timestamp rather than our clock. The
  * session key needs `expiryMarginSec` of life left, because the prepared call is sent after
  * the check, not now.
+ *
+ * The allowlist and the ceiling are not refusals on a vault with a human: the contract's ownerPay
+ * has neither, so the answer is ok with operatorBlockedBy naming the gate, and core.ts buys the check
+ * for the owner's hand-off. The first gate that fails is the one named, as in the contract. Past it the
+ * daily cap is not asked, because ownerPay has no cap check; the balance still is, because nothing can
+ * pay what the vault does not hold. A vault whose owner is its operator has no human to hand it to, so
+ * for one of those both stay refusals. Everything before them (no operator, frozen, an expired session
+ * key) is a refusal in every case: the owner has stopped this agent, and it does not get to ask.
  */
 export function assessVaultPolicy(read: VaultRead, amount: bigint, opts: { expiryMarginSec: number }): GateResult {
   const f = read.facts
@@ -261,15 +274,20 @@ export function assessVaultPolicy(read: VaultRead, amount: bigint, opts: { expir
   if (expiry !== 0n && (f.blockTimestamp as bigint) + BigInt(opts.expiryMarginSec) > expiry) {
     return { ok: false, code: 'SessionKeyExpired', httpStatus: 422, reason: `the operator's session key expires at ${expiry} (unix), within ${opts.expiryMarginSec} s of the latest block or before it` }
   }
-  if (f.allowlistEnabled && !f.payeeAllowed) return { ok: false, code: 'PayeeNotAllowed', httpStatus: 422, reason: 'the vault has its allowlist on and the payee is not on it' }
   const ceiling = f.autoApproveMax as bigint
-  if (ceiling !== 0n && amount > ceiling) return { ok: false, code: 'AboveAutoApprove', httpStatus: 422, reason: `the amount is above the vault's per-payment ceiling of ${ceiling} units; only the owner can pay it (ownerPay)` }
+  const blocked: OperatorBlock | null =
+    f.allowlistEnabled && !f.payeeAllowed
+      ? { code: 'PayeeNotAllowed', reason: 'the vault has its allowlist on and the payee is not on it' }
+      : ceiling !== 0n && amount > ceiling
+        ? { code: 'AboveAutoApprove', reason: `the amount is above the vault's per-payment ceiling of ${ceiling} units; only the owner can pay it (ownerPay)` }
+        : null
+  if (blocked && f.owner === f.operator) return { ok: false, ...blocked, httpStatus: 422 }
   const cap = f.dailyCap as bigint
-  if (cap !== 0n && (f.spentToday as bigint) + amount > cap) {
+  if (!blocked && cap !== 0n && (f.spentToday as bigint) + amount > cap) {
     return { ok: false, code: 'DailyCapExceeded', httpStatus: 422, reason: `the vault has spent ${f.spentToday} of its ${cap} units today (UTC day of the latest block), so this payment would pass the cap` }
   }
   if ((f.balance as bigint) < amount) return { ok: false, code: 'InsufficientVaultBalance', httpStatus: 422, reason: `the vault holds ${f.balance} units, less than the ${amount} to pay` }
-  return { ok: true }
+  return blocked ? { ok: true, operatorBlockedBy: blocked } : { ok: true }
 }
 
 // ── simulation ────────────────────────────────────────────────────────────────────

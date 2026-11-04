@@ -1154,6 +1154,7 @@ export type VtpFlowDetail =
   | 'reverted_onchain' // the prepared call was sent and the vault's policy refused it: payment.revertReason names the typed error
   | 'reverted_not_policy' // the prepared call was sent and reverted for another reason (out of gas, a sender's mistake): payment.revertReason says which
   | 'warn_handoff' // WARN without payOnWarn: ownerPay() was prepared for the owner
+  | 'owner_only_handoff' // a usable ALLOW or WARN on a payment the operator cannot make (above the ceiling, or off the allowlist): ownerPay() was prepared for the owner, whatever payOnWarn says
   | 'warn_no_human_gate' // WARN, and the vault's owner and operator are one key: there is no human to hand it to, so nothing was prepared
   | 'expired' // reserved: a pending flow nobody completed
 
@@ -1212,6 +1213,8 @@ export type VtpFlowRecord = {
   payOnWarn: boolean
   /** The call the server prepared, built from the request's own inputs. Nothing was signed. */
   prepared: null | { from: string; to: string; data: string; function: 'pay(address,uint256)' | 'ownerPay(address,uint256)'; args: [string, string] }
+  /** On owner_only_handoff, the gate in pay() that stops the operator. Absent everywhere else, and on every older row. */
+  ownerOnly?: 'PayeeNotAllowed' | 'AboveAutoApprove'
   outcome: VtpFlowOutcome
   detail: VtpFlowDetail
   /** Present once the server read a receipt that proves what happened. */
@@ -1275,6 +1278,8 @@ async function vtpPool(io: VtpStoreIo): Promise<any> {
     // One payment transaction links to at most one flow. Rows without a payment have a NULL
     // key, and NULLs never collide in a unique index.
     await p.query("CREATE UNIQUE INDEX IF NOT EXISTS vtp_flows_payment_tx ON vtp_flows ((data->'payment'->>'txHash'))")
+    // The public list of flows waiting on one vault reads only these, and they are few.
+    await p.query("CREATE INDEX IF NOT EXISTS vtp_flows_waiting_by_vault ON vtp_flows ((data->>'vault')) WHERE data->>'outcome' = 'awaiting_human'")
     vtpReady.add(p)
   }
   return p
@@ -1436,6 +1441,52 @@ export async function loadOpenVtpFlows(match: VtpFlowMatch, io: VtpStoreIo = {})
   return {
     ok: true,
     rows: read.rows.filter((r) => r.vault === want.vault && r.payee === want.payee && r.amount === want.amount && OPEN_OUTCOMES.includes(r.outcome)),
+  }
+}
+
+/** What the list of flows waiting on one vault reads. */
+export type VtpWaitingFlows = {
+  /** Waiting flows whose check was paid by the key that was the vault's operator at the check, newest first, at most `limit`. */
+  rows: VtpFlowRecord[]
+  /** Waiting flows whose check some other key paid, counted up to `othersCap`. Anyone can buy a check naming any vault. */
+  others: number
+}
+
+/**
+ * The flows waiting for one vault's owner: public by id already, so listing them publishes nothing
+ * new. The two kinds are read apart, and each is bounded, because a check costs a stranger 0.005 USDC
+ * and names any vault: a flood of those must neither crowd out the operator's requests nor make this
+ * read long. Never throws, and a log it cannot read is an error and never an empty list.
+ */
+export async function loadWaitingVtpFlows(vault: string, bounds: { limit: number; othersCap: number }, io: VtpStoreIo = {}): Promise<{ ok: true; waiting: VtpWaitingFlows } | { ok: false; reason: string }> {
+  const want = vault.toLowerCase()
+  try {
+    const p = await vtpPool(io)
+    if (p) {
+      const rows = await p.query(
+        "SELECT data FROM vtp_flows WHERE data->>'vault' = $1 AND data->>'outcome' = 'awaiting_human' AND lower(data->'check'->>'payer') = data->>'operator' ORDER BY data->>'createdAt' DESC, flow_id DESC LIMIT $2",
+        [want, bounds.limit],
+      )
+      const others = await p.query(
+        "SELECT count(*)::int AS n FROM (SELECT 1 FROM vtp_flows WHERE data->>'vault' = $1 AND data->>'outcome' = 'awaiting_human' AND lower(data->'check'->>'payer') IS DISTINCT FROM data->>'operator' LIMIT $2) AS others",
+        [want, bounds.othersCap],
+      )
+      return { ok: true, waiting: { rows: rows.rows.map((row: { data: VtpFlowRecord }) => row.data), others: Number(others.rows[0]?.n ?? 0) } }
+    }
+  } catch (e) {
+    return { ok: false, reason: reasonOf(e) }
+  }
+  const read = readVtpFile(io.file ?? VTP_FLOWS_FILE)
+  if (!read.ok) return read
+  const waiting = read.rows.filter((r) => r.vault === want && r.outcome === 'awaiting_human')
+  const byOperator = (r: VtpFlowRecord) => r.check?.payer?.toLowerCase() === r.operator
+  const newestFirst = (a: VtpFlowRecord, b: VtpFlowRecord) => (a.createdAt === b.createdAt ? (a.flowId < b.flowId ? 1 : -1) : a.createdAt < b.createdAt ? 1 : -1)
+  return {
+    ok: true,
+    waiting: {
+      rows: waiting.filter(byOperator).sort(newestFirst).slice(0, bounds.limit),
+      others: Math.min(waiting.filter((r) => !byOperator(r)).length, bounds.othersCap),
+    },
   }
 }
 

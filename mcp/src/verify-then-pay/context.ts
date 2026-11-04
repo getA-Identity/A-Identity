@@ -13,6 +13,7 @@ import {
   pruneAbandonedVtpFlows,
   loadOpenVtpFlows,
   loadVtpFlow,
+  loadWaitingVtpFlows,
   persistVtpFlow,
   updateVtpFlow,
   type VtpFlowByTx,
@@ -25,6 +26,7 @@ import {
   type VtpFlowsRead,
   type VtpFlowUpdate,
   type VtpStoreIo,
+  type VtpWaitingFlows,
 } from '../storage.js'
 import type { VtpReadClient } from './reads.js'
 
@@ -52,6 +54,16 @@ export function flowUrl(flowId: string, origin: string = VTP_PUBLIC_ORIGIN): str
 }
 
 /**
+ * Where an owner approves one hand-off: the vault page, with the flow named. The origin is the site's
+ * own and never the request's: this link asks a person to sign a transfer of real money, and the
+ * Host and X-Forwarded-Host of a request are whatever the caller typed.
+ */
+export function approvalUrl(chain: ChainDescriptor, vault: string, flowId: string): string {
+  const q = new URLSearchParams({ network: chain.caip2, contract: vault.toLowerCase(), flow: flowId.toLowerCase() })
+  return `${VTP_PUBLIC_ORIGIN}/app/vault/arc?${q.toString()}`
+}
+
+/**
  * A row that holds a nonce and no flow: a reservation whose check is still being bought (or
  * whose server died buying it), or one the rail answered without a verdict. Its fields are the
  * unverified word of whoever posted the payment, because the signature is only checked when it
@@ -69,6 +81,8 @@ export type VtpStore = {
   findByTx(txHash: string): Promise<VtpFlowByTx>
   /** The open flows (pending or waiting for the owner) on one vault, payee and amount. */
   openFlows(match: VtpFlowMatch): Promise<VtpFlowsRead>
+  /** The flows waiting for one vault's owner, bounded. A store in a test that never lists may leave it out. */
+  waiting?(vault: string, bounds: { limit: number; othersCap: number }): Promise<{ ok: true; waiting: VtpWaitingFlows } | { ok: false; reason: string }>
   /** Remove attempts the rail refused that are older than this. Best effort. */
   prune?(olderThan: string): Promise<unknown>
 }
@@ -82,6 +96,7 @@ export function storageVtpStore(io: VtpStoreIo = {}): VtpStore {
     findByTx: (hash) => findVtpFlowByTx(hash, io),
     prune: (olderThan) => pruneAbandonedVtpFlows(olderThan, io),
     openFlows: (match) => loadOpenVtpFlows(match, io),
+    waiting: (vault, bounds) => loadWaitingVtpFlows(vault, bounds, io),
   }
 }
 
