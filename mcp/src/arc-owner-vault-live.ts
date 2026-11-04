@@ -108,6 +108,33 @@ export function withDeadline(hosts: readonly RpcHost[], ms: number, now: () => n
   }))
 }
 
+/**
+ * The same hosts, and a host whose read failed only after waiting stalledAfterMs is not asked again
+ * by this admission: a later read of it fails at once. Without this one stalled host costs its
+ * timeout on each of the receipt, the transaction, the block and the state, which uses up the
+ * deadline before the hosts that do answer are read, and every post is refused until it recovers.
+ * Wrapped per admission, so it is back in the next one. An answer is not needed from every host,
+ * so nothing a check requires is skipped: a benched host reads as any other host that errored.
+ */
+export function benchStalledHosts(hosts: readonly RpcHost[], stalledAfterMs: number, now: () => number = Date.now): RpcHost[] {
+  return hosts.map((h) => {
+    let benched = false
+    return {
+      ...h,
+      request: async (method, params) => {
+        if (benched) throw new Error('did not answer in time earlier in this read')
+        const started = now()
+        try {
+          return await h.request(method, params)
+        } catch (e) {
+          if (now() - started >= stalledAfterMs) benched = true
+          throw e
+        }
+      },
+    }
+  })
+}
+
 // -- what is checked against -----------------------------------------------------------
 
 export type AdmissionContext = {
@@ -471,7 +498,8 @@ export function liveVaultAdmissionDeps(env: NodeJS.ProcessEnv = process.env): Va
     admit: async (deployTx) => {
       const made = admissionContext()
       if (!made.ok) throw new Error(made.reason)
-      const hosts = withDeadline(liveRpcHosts(made.context.chain, env, { timeoutMs: ROUTE_READ_TIMEOUT_MS, retryCount: 0 }), ROUTE_DEADLINE_MS)
+      const live = liveRpcHosts(made.context.chain, env, { timeoutMs: ROUTE_READ_TIMEOUT_MS, retryCount: 0 })
+      const hosts = withDeadline(benchStalledHosts(live, ROUTE_READ_TIMEOUT_MS - 500), ROUTE_DEADLINE_MS)
       return runAdmission({ context: made.context, hosts, tx: deployTx, ours: collectOurAddresses(liveOurAddressSources(env)), requireEnvKeys: true })
     },
   }

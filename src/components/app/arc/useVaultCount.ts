@@ -3,13 +3,15 @@
  * setup depends on: whatever happens here, the vault and every step of the page work the same.
  *
  * It asks once the agent key has its end date (readyToCount), and asks again when the setup reaches
- * its last screen, if the vault is not counted by then. A refusal that time may fix, such as a host
- * that has not caught up, is asked about once more by itself. The server treats a repeat of a counted
- * deploy as a no-op, so a reload costs nothing.
+ * its last screen, if the vault is not counted by then. If the first question is still out when the
+ * last screen comes up, the second goes out when the first comes back (shouldAsk). A refusal or a
+ * failure that time may fix, such as a host that has not caught up, is asked about once more by
+ * itself (askAgainByItself). The server treats a repeat of a counted deploy as a no-op, so a reload
+ * costs nothing.
  */
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { apiFetch, readJson } from '../../../lib/api'
-import { countableDeploy, readyToCount, vaultCountFromAnswer, type VaultCount } from '../../../lib/arc/vault-count'
+import { askAgainByItself, countableDeploy, readyToCount, shouldAsk, vaultCountFromAnswer, type VaultCount } from '../../../lib/arc/vault-count'
 import type { SetupState } from '../../../lib/arc/pending'
 
 const AUTO_RETRY_MS = 15_000
@@ -42,20 +44,23 @@ export function useVaultCount(testnet: boolean, setup: SetupState | null, step: 
   }, [])
 
   const stage = hash && readyToCount(step) ? `${hash}:${step === 'done' ? 'done' : 'before-done'}` : null
-  const counted = count?.state === 'counted'
+  // count is a dependency so a stage reached while a question was out is asked when that one comes back.
   useEffect(() => {
-    if (!hash || !stage || counted || sent.current.has(stage)) return
+    if (!hash || !stage || !shouldAsk(stage, count, sent.current, sending.current)) return
     sent.current.add(stage)
     void send(hash)
-  }, [hash, stage, counted, send])
+  }, [hash, stage, count, send])
 
-  const retryable = count?.state === 'not-counted' && count.retryable
+  // Used up only when the timer fires: a question sent for another reason in the meantime clears it.
+  const askAgain = askAgainByItself(count)
   useEffect(() => {
-    if (!hash || !retryable || autoRetried.current.has(hash)) return
-    autoRetried.current.add(hash)
-    const t = setTimeout(() => void send(hash), AUTO_RETRY_MS)
+    if (!hash || !askAgain || autoRetried.current.has(hash)) return
+    const t = setTimeout(() => {
+      autoRetried.current.add(hash)
+      void send(hash)
+    }, AUTO_RETRY_MS)
     return () => clearTimeout(t)
-  }, [hash, retryable, send])
+  }, [hash, askAgain, send])
 
   const retry = useCallback(() => {
     if (hash) void send(hash)

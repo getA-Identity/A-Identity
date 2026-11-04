@@ -7,8 +7,9 @@
  * A throwaway wallet held in this process answers the page as an injected wallet does: it announces
  * itself over EIP-6963, starts on Ethereum (0x1) with Arc unknown, adds and switches when asked, and
  * signs and broadcasts with the fees the page asked for. Its keys live in a 0600 file under outDir,
- * which must be gitignored, and are never printed. Test money only: it refuses to run on any chain
- * but Arc testnet, and it never touches a key from the environment.
+ * and are never printed; an outDir inside this repository that git does not ignore is refused before
+ * any key exists. Test money only: it refuses to run on any chain but Arc testnet, it never touches
+ * a key from the environment, and the admission script it runs gets none either.
  *
  * What it does: connect, deploy, set the expiry, fund, open the vault page, run the admission script
  * as a rehearsal, pay from the vault with the agent's own key, get a payment above the ceiling
@@ -20,11 +21,12 @@
  *        node scripts/rehearse-arc-vault.mjs https://a-identity.xyz _internal/arc-rehearsal
  * The first run prints the owner address: send it about 0.25 test USDC from faucet.circle.com.
  * With vault and deployTx it skips the setup and rehearses on that vault.
- * Exit: 0 all checks passed, 1 a check failed, 2 usage, 3 the owner needs test USDC.
+ * Exit: 0 all checks passed, 1 a check failed, 2 usage or an outDir git would publish, 3 the owner
+ * needs test USDC.
  */
 import { existsSync, mkdirSync, readFileSync, writeFileSync, chmodSync } from 'node:fs'
 import { spawnSync } from 'node:child_process'
-import { join } from 'node:path'
+import { isAbsolute, join, relative, resolve } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 
 const repo = fileURLToPath(new URL('..', import.meta.url))
@@ -32,6 +34,20 @@ const [base, outDir = '_internal/arc-rehearsal', resumeVault, resumeDeployTx] = 
 if (!base) {
   console.error('usage: rehearse-arc-vault.mjs <baseUrl> [outDir] [vault deployTx]')
   process.exit(2)
+}
+// The key file lands in outDir and this repository is public, so a later `git add -A` must not be
+// able to reach it. Outside the repository there is nothing to check.
+const fromRepo = relative(repo, resolve(outDir))
+if (fromRepo === '') {
+  console.error('outDir cannot be the repository root: the keys written there could be committed.')
+  process.exit(2)
+}
+if (!fromRepo.startsWith('..') && !isAbsolute(fromRepo)) {
+  const ignored = spawnSync('git', ['-C', repo, 'check-ignore', '-q', '--', fromRepo], { stdio: 'ignore' })
+  if (ignored.status !== 0) {
+    console.error(`${outDir} is inside this repository and git does not ignore it, so the keys written there could be committed. Use a folder under _internal/, or one outside the repository.`)
+    process.exit(2)
+  }
 }
 mkdirSync(outDir, { recursive: true })
 const mod = (p) => import(pathToFileURL(join(repo, p)).href)
@@ -54,9 +70,9 @@ const ERC20 = parseAbi(['function transfer(address,uint256) returns (bool)', 'fu
 // --- keys: throwaway, kept on disk so a failed run does not strand its test funds ---
 const keyFile = join(outDir, 'testnet-wallet.json')
 if (!existsSync(keyFile)) {
-  writeFileSync(keyFile, JSON.stringify({ note: 'Arc testnet rehearsal only', ownerKey: generatePrivateKey(), agentKey: generatePrivateKey() }))
-  chmodSync(keyFile, 0o600)
+  writeFileSync(keyFile, JSON.stringify({ note: 'Arc testnet rehearsal only', ownerKey: generatePrivateKey(), agentKey: generatePrivateKey() }), { mode: 0o600, flag: 'wx' })
 }
+chmodSync(keyFile, 0o600)
 const keys = JSON.parse(readFileSync(keyFile, 'utf8'))
 const owner = privateKeyToAccount(keys.ownerKey)
 const agent = privateKeyToAccount(keys.agentKey)
@@ -94,6 +110,8 @@ async function rpc(method, params = [], attempt = 0) {
   }
   throw last
 }
+/** Whether this error is the contract reverting with exactly this custom error. A dropped host or any other revert is not. */
+const refusedBy = (e, errorName) => typeof e?.data === 'string' && e.data.slice(0, 10).toLowerCase() === viem.toFunctionSelector(`${errorName}()`)
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
 const nativeOf = async (a) => BigInt(await rpc('eth_getBalance', [a, 'latest']))
 async function receiptOf(hash, ms = 120000) {
@@ -365,7 +383,8 @@ await stopIf(await waitText(/IS the owner of this vault/, 60000), 'the vault pag
 await snap('vault-page')
 
 // --- 7. the admission script a real vault goes through ---
-const admit = spawnSync(process.execPath, [join(repo, 'mcp/scripts/arc-owner-vault-check.mjs'), '--tx', deploySent.hash, '--chain', 'arc'], { encoding: 'utf8', cwd: join(repo, 'mcp') })
+// With nothing from this shell, so none of our keys or addresses can reach admission.txt.
+const admit = spawnSync(process.execPath, [join(repo, 'mcp/scripts/arc-owner-vault-check.mjs'), '--tx', deploySent.hash, '--chain', 'arc'], { encoding: 'utf8', cwd: join(repo, 'mcp'), env: { PATH: process.env.PATH } })
 console.log(`      admission script exit ${admit.status}: ${(admit.stdout + admit.stderr).trim().split('\n').slice(-3).join(' | ').slice(0, 300)}`)
 writeFileSync(join(outDir, 'admission.txt'), admit.stdout + admit.stderr)
 check(admit.status === 0, 'the admission script passes this vault as a rehearsal')
@@ -384,7 +403,7 @@ try {
 } catch (e) {
   refused = e
 }
-check(Boolean(refused), `a payment above the 0.25 ceiling is refused for the agent (${String(refused?.data ?? refused?.message).slice(0, 40)})`)
+check(refusedBy(refused, 'AboveAutoApprove'), `a payment above the 0.25 ceiling is refused for the agent with AboveAutoApprove (${String(refused?.data ?? refused?.message).slice(0, 40)})`)
 await page.reload({ waitUntil: 'domcontentloaded' })
 await stopIf(await waitText(/IS the owner of this vault/, 60000), 'after a reload the page still knows its owner')
 await page.waitForTimeout(4000)
@@ -411,7 +430,7 @@ try {
 } catch (e) {
   frozenRefused = e
 }
-check(Boolean(frozenRefused), 'a frozen vault refuses the agent')
+check(refusedBy(frozenRefused, 'IsFrozen'), `a frozen vault refuses the agent with IsFrozen (${String(frozenRefused?.data ?? frozenRefused?.message).slice(0, 40)})`)
 await page.getByRole('button', { name: 'Unfreeze the vault' }).click()
 await stopIf(await frozenIs(false), 'the unfreeze lands: frozen() reads false again')
 await page.waitForTimeout(4000)
