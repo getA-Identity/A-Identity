@@ -1,6 +1,7 @@
 /**
- * The line on "Your vault is set up" that says whether this vault now counts on /proof/arc, or why
- * not. The vault works the same either way, and when the question failed the line says that too.
+ * The line that says whether an owner's vault now counts on /proof/arc, or why not: on "Your vault is
+ * set up" and on the vault's own page. The vault works the same either way, and when the question
+ * failed the line says that too.
  */
 import type { VaultCount } from '../../../lib/arc/vault-count'
 
@@ -13,14 +14,12 @@ const PROOF_LINK = (
 export default function VaultCountNotice({
   testnet,
   networkName,
-  countable,
   count,
   onRetry,
 }: {
   testnet: boolean
   networkName: string
-  countable: boolean
-  count: VaultCount | null
+  count: VaultCount
   onRetry: () => void
 }) {
   const retry = (
@@ -33,14 +32,17 @@ export default function VaultCountNotice({
   if (testnet) {
     return <div className={box}>This vault is on {networkName}, so it is not counted on {PROOF_LINK}. Only vaults on Arc Mainnet are.</div>
   }
-  if (!countable) {
+  if (count.state === 'needs-end-date') {
+    return <div className={box}>This vault can count on {PROOF_LINK} once its agent key has an end date. When this page reads one it asks by itself, and you do not have to send anything to anyone.</div>
+  }
+  if (count.state === 'no-hash') {
     return (
       <div className={box}>
-        This vault is not counted on {PROOF_LINK} yet: this page did not see the transaction that created it, so it could not ask. Find that transaction in your wallet's activity and send its hash to the A-Identity team.
+        This vault is not counted on {PROOF_LINK} yet. This browser does not hold the transaction that created it, so it cannot ask by itself. If you deployed it from another browser or device, open this page there and it asks for you. Otherwise, find that transaction in your wallet's activity and send its hash to the A-Identity team.
       </div>
     )
   }
-  if (count === null || count.state === 'checking') {
+  if (count.state === 'checking') {
     return <div className={box}>Checking whether this vault counts on {PROOF_LINK}...</div>
   }
   if (count.state === 'counted') {

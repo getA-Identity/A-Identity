@@ -63,7 +63,13 @@ export function explainFailure(f: TxFailure): { title: string; body?: string; ne
         tone: 'danger',
       }
     case 'rpc_unreachable':
-      return { title: 'The network could not be read.', body: f.message, next: 'Nothing was sent. Check your connection and try again in a moment.', tone: 'danger' }
+      // Only a read before the wallet is asked can end here (vault-write.ts, DeployFlow's USDC read), so nothing was sent.
+      return {
+        title: 'The network could not be read.',
+        body: f.message,
+        next: 'Nothing was sent. Most often the network is taking too many requests just now, and sometimes it is your internet connection. Wait a minute, then try again.',
+        tone: 'danger',
+      }
     case 'no_wallet':
       return { title: 'No wallet is connected.', body: f.message, next: 'Connect your wallet in the strip at the top of the page.', tone: 'warn' }
     case 'rejected':

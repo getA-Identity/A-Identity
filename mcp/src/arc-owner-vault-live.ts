@@ -2,8 +2,9 @@
  * Milestone 1's owner-held vault admission: the half that reads the chain.
  *
  * arc-owner-vault.ts decides, with no network in scope. This module does the reading, and both
- * callers go through it so they cannot diverge: scripts/arc-owner-vault-check.mjs, which prints
- * what it read, and POST /api/arc/vaults, which stores an admitted vault. Read-only: nothing is
+ * callers go through it so they run the same checks: scripts/arc-owner-vault-check.mjs, which prints
+ * what it read, and POST /api/arc/vaults, which stores an admitted vault. They compare the owner with
+ * whatever env each one holds, so a key set in only one of them can get two answers: see below. Read-only: nothing is
  * signed and nothing is sent. The RPC hosts are a seam (RpcHost), so every path is tested with
  * plain answers.
  *
@@ -13,10 +14,12 @@
  * read at one block on one host, and a host that errors, is behind the deploy or shows no code
  * hands over to the next.
  *
- * The owner is compared with every key we hold (collectOurAddresses), and the server keeps the
- * script's rule: admitting on Arc Mainnet without our key env vars loaded refuses
- * (envLoadedCheck), so a server missing them refuses every vault rather than admit one owned by
- * a key only the env knows.
+ * The owner is compared with every address we commit and every key this process holds
+ * (collectOurAddresses), and the server keeps the script's rule: a process with no key env var
+ * loaded, or with one it cannot read, admits nothing (envLoadedCheck). That does not reach a key
+ * set only somewhere else: a vault owned by one is not caught here, GET /api/arc/vaults names every
+ * such key under admission.keysNotCompared, and listing it in OUR_KEY_PUBLIC_ADDRESSES closes it,
+ * for rows already stored too (admittedVaultsFromStore).
  */
 import { createPublicClient, decodeFunctionResult, encodeFunctionData, getAddress, http, toHex, type Abi, type Hex } from 'viem'
 import {
@@ -395,22 +398,32 @@ const DETAIL_KEPT_BACK = new Set(['env-keys-loaded', 'owner-not-ours'])
 
 export type VaultRefusal = { id: string; reason: string; detail?: string }
 
-export function plainRefusals(v: Verdict): VaultRefusal[] {
+/**
+ * The deploy's creation input is the artifact, compared exactly. A runtime check that still fails
+ * then says a host answered wrongly, not that the vault is another contract, so it refuses (nothing
+ * here relaxes a check) in words that do not blame the vault, and posting again can change it.
+ */
+const RUNTIME_NOT_CONFIRMED = "A network host's answer about this vault's code could not be confirmed. Try again in a minute."
+const creationInputMatched = (run: Pick<AdmissionRun, 'checks'>): boolean => run.checks.some((c) => c.id === 'creation-input' && c.ok === true)
+
+export function plainRefusals(v: Verdict, run?: Pick<AdmissionRun, 'checks'>): VaultRefusal[] {
   return v.refusals.map((c) => ({
     id: c.id,
-    reason: PLAIN_REFUSALS[c.id] ?? c.label,
+    reason: c.id === 'runtime-code' && run && creationInputMatched(run) ? RUNTIME_NOT_CONFIRMED : (PLAIN_REFUSALS[c.id] ?? c.label),
     ...(DETAIL_KEPT_BACK.has(c.id) ? {} : { detail: c.detail }),
   }))
 }
 
 /**
  * Whether the same post could be admitted later, with nothing new on chain other than time: a
- * host that has not caught up, a read that failed, or an end date still being set. Anything else
- * is a fact about the vault, and posting again changes nothing.
+ * host that has not caught up, hosts that disagree, a read that failed, or an end date still being
+ * set. Anything else is a fact about the vault, and posting again changes nothing.
  */
 export function refusalIsRetryable(run: AdmissionRun): boolean {
   const passes = new Set(['receipt-found', 'deploy-block', 'vault-state', 'session-key-expiry'])
-  return run.verdict.refusals.every((c) => passes.has(c.id) || (c.id === 'creation-tx' && run.evidence?.tx.value === null) || c.ok === null)
+  const hostsSaidNothingFirm = (c: Check) =>
+    (c.id === 'creation-tx' && (run.evidence?.tx.value === null || Boolean(run.evidence?.tx.conflict))) || (c.id === 'runtime-code' && creationInputMatched(run))
+  return run.verdict.refusals.every((c) => passes.has(c.id) || hostsSaidNothingFirm(c) || c.ok === null)
 }
 
 export type VaultAdmissionDeps = {
@@ -428,8 +441,20 @@ export type VaultAdmissionAnswer =
   | { status: 'unavailable'; retryable: true; reason: string }
   | { status: 'invalid'; reason: string }
 
+/**
+ * What the route publishes when a read or a write of its own fails. A store's or a client's error
+ * text can name a host, a table or a credential, so it goes to the server log and never to the
+ * answer. A check's detail is another matter: it comes through shortRpcError, which keeps one line
+ * and takes out the endpoint.
+ */
+const LIST_UNREADABLE = 'the list of admitted vaults could not be read'
+const NOT_DECIDED = 'the deploy could not be checked just now, so nothing was decided'
+const NOT_RECORDED = 'every check passed but the vault could not be recorded'
+const OWN_CHECK_UNFINISHED = 'our server could not finish its own safety check, so nothing was decided'
+const logRouteFailure = (what: string, raw: unknown) => console.error(`[arc-vaults] ${what}:`, raw instanceof Error ? raw.message : raw)
+
 const ADMITTED_NOTE =
-  "Deploy sent by the owner's own wallet (receipt.from is owner()), its creation input is AgentSpendPolicyBytecode plus its constructor args, and its owner is none of our keys. Admitted automatically by POST /api/arc/vaults; the chain cannot say whose wallet this is, so the owner is not identified."
+  "Deploy sent by the owner's own wallet (receipt.from is owner()), its creation input is AgentSpendPolicyBytecode plus its constructor args, and its owner is none of the keys it was compared with (GET /api/arc/vaults names any it was not). Admitted automatically by POST /api/arc/vaults; the chain cannot say whose wallet this is, so the owner is not identified."
 
 /**
  * POST /api/arc/vaults. A hash already admitted answers from the store with no chain read, so the
@@ -448,17 +473,27 @@ export async function admitVaultDeploy(body: unknown, deps: VaultAdmissionDeps):
   const deployTx = b.deployTx.toLowerCase()
 
   const known = await deps.findByTx(deployTx)
-  if (!known.ok) return { httpStatus: 503, answer: { status: 'unavailable', retryable: true, reason: `the list of admitted vaults could not be read: ${known.reason}` } }
+  if (!known.ok) {
+    logRouteFailure(LIST_UNREADABLE, known.reason)
+    return { httpStatus: 503, answer: { status: 'unavailable', retryable: true, reason: LIST_UNREADABLE } }
+  }
   if (known.row) return { httpStatus: 200, answer: admittedAnswer(known.row, true) }
 
   let run: AdmissionRun
   try {
     run = await deps.admit(deployTx)
   } catch (e) {
-    return { httpStatus: 503, answer: { status: 'unavailable', retryable: true, reason: e instanceof Error ? e.message : String(e) } }
+    logRouteFailure(NOT_DECIDED, e)
+    return { httpStatus: 503, answer: { status: 'unavailable', retryable: true, reason: NOT_DECIDED } }
   }
   if (!run.verdict.admitted) {
-    return { httpStatus: 200, answer: { status: 'refused', vault: run.vault, deployTx, retryable: refusalIsRetryable(run), reasons: plainRefusals(run.verdict) } }
+    // A server missing its own key env is a fact about the server, not the vault, so it is no refusal.
+    const ownCheck = run.verdict.refusals.find((c) => c.id === 'env-keys-loaded')
+    if (ownCheck) {
+      logRouteFailure(OWN_CHECK_UNFINISHED, ownCheck.detail)
+      return { httpStatus: 503, answer: { status: 'unavailable', retryable: true, reason: OWN_CHECK_UNFINISHED } }
+    }
+    return { httpStatus: 200, answer: { status: 'refused', vault: run.vault, deployTx, retryable: refusalIsRetryable(run), reasons: plainRefusals(run.verdict, run) } }
   }
   const state = run.snapshot.state
   if (!run.vault || !state || run.deployBlock === null || run.deployBlockTime === null) {
@@ -477,7 +512,8 @@ export async function admitVaultDeploy(body: unknown, deps: VaultAdmissionDeps):
   }
   const stored = await deps.persist(rec)
   if (!stored.ok) {
-    return { httpStatus: 503, answer: { status: 'unavailable', retryable: true, reason: `every check passed but the vault could not be recorded: ${stored.reason}` } }
+    logRouteFailure(NOT_RECORDED, stored.reason)
+    return { httpStatus: 503, answer: { status: 'unavailable', retryable: true, reason: NOT_RECORDED } }
   }
   return { httpStatus: 200, answer: admittedAnswer(rec, !stored.inserted) }
 }
@@ -489,25 +525,55 @@ function admittedAnswer(rec: ArcAdmittedVaultRecord, alreadyAdmitted: boolean): 
 /** How long the server gives all of one admission's reads, and each read. Under the proxy's thirty seconds. */
 const ROUTE_DEADLINE_MS = 22_000
 const ROUTE_READ_TIMEOUT_MS = 6_000
+/**
+ * How many admissions may read the chain at once. The per-address bucket does not bound this: through
+ * the site its key is a shared proxy address, and the addresses are many. Well above what real owners
+ * need, since a page asks once or twice per vault.
+ */
+const MAX_ADMISSIONS_AT_ONCE = 8
+
+/**
+ * Runs at most max of these at once. One past that throws at once, with no read made, which the
+ * route answers as unavailable and retryable: nothing decided, and nothing about the vault.
+ */
+export function admissionSlots(max: number): <T>(run: () => Promise<T>) => Promise<T> {
+  let out = 0
+  return async (run) => {
+    if (out >= max) throw new Error('too many admissions are reading the chain right now')
+    out++
+    try {
+      return await run()
+    } finally {
+      out--
+    }
+  }
+}
+const liveAdmissionSlot = admissionSlots(MAX_ADMISSIONS_AT_ONCE)
 
 /** The real store and the real chain. The server's own env is what the owner is compared with. */
 export function liveVaultAdmissionDeps(env: NodeJS.ProcessEnv = process.env): VaultAdmissionDeps {
   return {
     findByTx: (deployTx) => findAdmittedArcVaultByTx(deployTx),
     persist: (rec) => persistAdmittedArcVault(rec),
-    admit: async (deployTx) => {
-      const made = admissionContext()
-      if (!made.ok) throw new Error(made.reason)
-      const live = liveRpcHosts(made.context.chain, env, { timeoutMs: ROUTE_READ_TIMEOUT_MS, retryCount: 0 })
-      const hosts = withDeadline(benchStalledHosts(live, ROUTE_READ_TIMEOUT_MS - 500), ROUTE_DEADLINE_MS)
-      return runAdmission({ context: made.context, hosts, tx: deployTx, ours: collectOurAddresses(liveOurAddressSources(env)), requireEnvKeys: true })
-    },
+    admit: (deployTx) =>
+      liveAdmissionSlot(async () => {
+        const made = admissionContext()
+        if (!made.ok) throw new Error(made.reason)
+        const live = liveRpcHosts(made.context.chain, env, { timeoutMs: ROUTE_READ_TIMEOUT_MS, retryCount: 0 })
+        const hosts = withDeadline(benchStalledHosts(live, ROUTE_READ_TIMEOUT_MS - 500), ROUTE_DEADLINE_MS)
+        return runAdmission({ context: made.context, hosts, tx: deployTx, ours: collectOurAddresses(liveOurAddressSources(env)), requireEnvKeys: true })
+      }),
   }
 }
 
 /** Whether the route can admit anything at all, without naming a key's address. On GET, so a server missing its env is seen before anyone deploys. */
-export function admissionReadiness(ours: OurAddresses): { ready: boolean; keysCompared: number; keysUnreadable: string[] } {
-  return { ready: envLoadedCheck(ours).ok === true, keysCompared: ours.envKeysDerived.length, keysUnreadable: ours.envKeysUnreadable }
+export function admissionReadiness(ours: OurAddresses): { ready: boolean; keysCompared: number; keysUnreadable: string[]; keysNotCompared: string[] } {
+  return {
+    ready: envLoadedCheck(ours).ok === true,
+    keysCompared: new Set([...ours.envKeysDerived, ...ours.keysCommitted]).size,
+    keysUnreadable: ours.envKeysUnreadable,
+    keysNotCompared: ours.keysNotCompared,
+  }
 }
 
 /**
@@ -552,11 +618,12 @@ export async function listAdmittedVaults(env: NodeJS.ProcessEnv = process.env, i
         items: rows.map((v) => ({ ...v, explorerUrl: addressUrl(chain, v.address), deployExplorerUrl: txUrl(chain, v.deployTx) })),
         ...(skipped.length ? { skipped } : {}),
         admission: admissionReadiness(ours),
-        note: 'Vaults that passed every owner-held check, admitted by POST /api/arc/vaults. The chain cannot say whose wallet an owner is, so each owner is not identified. The season report at GET /api/arc/season counts these with the curated list.',
+        note: 'Vaults that passed every owner-held check, admitted by POST /api/arc/vaults. The chain cannot say whose wallet an owner is, so each owner is not identified. An owner is compared with every address we commit and every key this server holds; a key named under admission.keysNotCompared was not compared, because this server has neither the key nor a committed address for it. The season report at GET /api/arc/season counts these with the curated list.',
       },
     }
   } catch (e) {
-    return { httpStatus: 503, body: { readable: false, reason: e instanceof Error ? e.message : String(e), admission: admissionReadiness(ours) } }
+    logRouteFailure(LIST_UNREADABLE, e)
+    return { httpStatus: 503, body: { readable: false, reason: LIST_UNREADABLE, admission: admissionReadiness(ours) } }
   }
 }
 

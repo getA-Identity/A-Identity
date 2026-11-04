@@ -35,6 +35,8 @@ export type KnownVaults = {
   partial: string | null
   /** True until the backend has been asked, while only what the build knows is listed. */
   loading?: boolean
+  /** The season report has answered or failed, so what this list says about owner-held vaults can be used. */
+  ownerHeldRead?: boolean
 }
 
 /** What the page shows on its first render: the build's own list, with the backend still to ask. */
@@ -52,6 +54,7 @@ type ProofNetwork = {
 
 type SeasonReport = {
   network?: string
+  logs?: { admittedVaults?: { readable?: boolean } }
   milestone1?: { vaults?: { items?: { address?: string; owner?: string; ownerKind?: 'team' | 'external' | 'unstated'; deployTx?: string; deployedAt?: string; note?: string }[] } }
 }
 
@@ -67,11 +70,20 @@ async function getJson<T>(path: string, onWaking?: () => void): Promise<T | null
   }
 }
 
-export async function listKnownVaults(onWaking?: () => void): Promise<KnownVaults> {
-  const [proof, season] = await Promise.all([
-    getJson<{ networks?: ProofNetwork[] }>('/api/proof/arc', onWaking),
-    getJson<SeasonReport>('/api/arc/season', onWaking),
-  ])
+/**
+ * Everything the backend lists. onOwnerHeldRead hears the owner-held list as soon as the season
+ * report has answered: whether a vault counts has nothing to do with /api/proof/arc, which re-reads
+ * chains live and can take far longer.
+ */
+export async function listKnownVaults(onWaking?: () => void, onOwnerHeldRead?: (k: KnownVaults) => void): Promise<KnownVaults> {
+  const proofRead = getJson<{ networks?: ProofNetwork[] }>('/api/proof/arc', onWaking)
+  const seasonRead = getJson<SeasonReport>('/api/arc/season', onWaking)
+  void seasonRead.then((season) => onOwnerHeldRead?.({ ...knownFrom(null, season), loading: true, ownerHeldRead: true }))
+  const [proof, season] = await Promise.all([proofRead, seasonRead])
+  return { ...knownFrom(proof, season), ownerHeldRead: true }
+}
+
+function knownFrom(proof: { networks?: ProofNetwork[] } | null, season: SeasonReport | null): KnownVaults {
   // What the build knows comes first, so a backend that does not answer changes no label.
   const seeded = ledgerKnownVaults()
   const vaults: KnownVault[] = seeded.vaults
@@ -101,7 +113,13 @@ export async function listKnownVaults(onWaking?: () => void): Promise<KnownVault
     if (vaults.some((x) => x.network === seasonChain.caip2 && x.address === a)) continue
     vaults.push({ network: seasonChain.caip2, address: a, kind: 'owner-held', deployTx: v.deployTx, deployedAt: v.deployedAt, owner: v.owner, ownerKind: v.ownerKind, note: v.note })
   }
-  const partial = season ? null : 'the owner-held vaults could not be listed (GET /api/arc/season did not answer)'
+  // The report answers with the curated list alone when the admitted list is unreadable, and a list
+  // that did not load is no answer about any vault that is not on it.
+  const partial = !season
+    ? 'the owner-held vaults could not be listed (GET /api/arc/season gave no list)'
+    : season.logs?.admittedVaults?.readable === false
+      ? 'the admitted vaults could not be listed just now'
+      : null
   return { vaults, ourKeys, partial }
 }
 

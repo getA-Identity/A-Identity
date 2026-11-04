@@ -5,6 +5,7 @@ import { existsSync, readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 
 import { benchStalledHosts, withDeadline, type RpcHost } from './arc-owner-vault-live.js'
+import { rateBudget } from './rate-budget.js'
 
 /**
  * Guards the fork rehearsal found or needed: a stalled host must not use up an admission's deadline,
@@ -16,12 +17,24 @@ import { benchStalledHosts, withDeadline, type RpcHost } from './arc-owner-vault
 const repoUrl = (rel: string) => new URL(`../../${rel}`, import.meta.url)
 const repoPath = (rel: string) => fileURLToPath(repoUrl(rel))
 
-type VaultCount = { state: string; retryable?: boolean; reasons?: string[]; why?: string }
+type VaultCount = { state: string; retryable?: boolean; reasons?: string[]; why?: string; waitMs?: number }
+type Held = { network: string; vault: string; hash: string }
+type KnownList = { vaults: { network: string; address: string; kind: string }[]; partial: string | null; ownerHeldRead?: boolean } | null
 const loadRules = async () =>
   (await import(repoUrl('src/lib/arc/vault-count.ts').href)) as {
     shouldAsk: (stage: string, count: VaultCount | null, asked: ReadonlySet<string>, sending: boolean) => boolean
     askAgainByItself: (count: VaultCount | null) => boolean
+    setupStage: (hash: string | null, step: string) => string | null
+    vaultPageStage: (hash: string | null, sessionKeyExpiry: bigint) => string | null
+    deployHashFor: (testnet: boolean, network: string, vault: string, setup: unknown, held: readonly Held[]) => string | null
+    vaultThisBrowserHolds: (setup: { vault?: string | null; network: string } | null, held: readonly Held[], network: string) => string | null
+    listingOf: (known: KnownList, network: string, vault: string) => string
+    shownCount: (hash: string | null, stage: string | null, asked: VaultCount | null, listing: string) => VaultCount
+    vaultCountFromAnswer: (httpStatus: number, body: unknown) => VaultCount
+    listReads: <T>(deliver: (answer: T) => void) => { begin: () => (answer: T) => void; out: () => boolean; stop: () => void }
+    PAST_RATE_WINDOW_MS: number
   }
+const readSource = (rel: string) => readFileSync(repoPath(rel), 'utf8')
 
 test('a host that stalled is not waited for again in this admission, and one that failed fast still is', async () => {
   let clock = 0
@@ -91,6 +104,188 @@ test('the page asks once more by itself only when time could change the answer',
   assert.equal(askAgainByItself({ state: 'counted' }), false)
   assert.equal(askAgainByItself({ state: 'checking' }), false)
   assert.equal(askAgainByItself(null), false)
+})
+
+test('the deploy flow asks when it did: nothing before the end date, once before the last screen and once on it', async () => {
+  const { setupStage } = await loadRules()
+  for (const early of ['form', 'review', 'sending', 'deploying', 'expiry', 'expiry-pending', 'deploy-failed']) assert.equal(setupStage('0xh', early), null, early)
+  assert.equal(setupStage('0xh', 'fund'), '0xh:before-done')
+  assert.equal(setupStage('0xh', 'fund-pending'), '0xh:before-done')
+  assert.equal(setupStage('0xh', 'done'), '0xh:done')
+  assert.equal(setupStage(null, 'done'), null, 'no hash, no question')
+})
+
+test('the vault page asks once the key reads an end date, and again when the end date changes', async () => {
+  const { vaultPageStage } = await loadRules()
+  assert.equal(vaultPageStage('0xh', 0n), null, 'the deploy leaves it at 0, which admission refuses, so nothing is asked')
+  assert.equal(vaultPageStage(null, 123n), null, 'no hash, no question')
+  const first = vaultPageStage('0xh', 123n)
+  assert.ok(first)
+  assert.notEqual(vaultPageStage('0xh', 456n), first, 'a date that passed and was then extended is a new question')
+  assert.equal(vaultPageStage('0xh', 123n), first, 'a re-read of the same date is not')
+})
+
+test('a vault page holds the hash this browser saw, and no other', async () => {
+  const { deployHashFor } = await loadRules()
+  const net = 'eip155:1'
+  const setup = { network: net, vault: '0xAA', deploy: { hash: '0xh', outcome: 'settled' } }
+  assert.equal(deployHashFor(false, net, '0xaa', setup, []), '0xh', 'the setup holds it, whatever the address case')
+  assert.equal(deployHashFor(true, net, '0xaa', setup, []), null, 'a testnet vault is never asked about')
+  assert.equal(deployHashFor(false, net, '0xbb', setup, []), null, 'the setup is about another vault')
+  assert.equal(deployHashFor(false, 'eip155:2', '0xaa', setup, []), null, 'the same address on another network is another vault')
+  const held = [{ network: net, vault: '0xBB', hash: '0xkept' }]
+  assert.equal(deployHashFor(false, net, '0xbb', null, held), '0xkept', 'a forgotten setup leaves the hash kept when its deploy settled')
+  assert.equal(deployHashFor(false, net, '0xbb', setup, held), '0xkept')
+  assert.equal(deployHashFor(false, 'eip155:2', '0xbb', null, held), null)
+  const replaced = { network: net, vault: '0xAA', deploy: { hash: '0xr', outcome: 'replaced' } }
+  assert.equal(deployHashFor(false, net, '0xaa', replaced, []), null, 'a replaced hash created nothing the server can check')
+})
+
+test('a browser remembers each settled deploy by vault, and a repeat does not add a row', async () => {
+  const pending = (await import(repoUrl('src/lib/arc/pending.ts').href)) as {
+    loadDeploys: () => Held[]
+    rememberDeploy: (d: Held) => void
+  }
+  const a = { network: 'n', vault: '0xAa', hash: '0x1' }
+  pending.rememberDeploy(a)
+  pending.rememberDeploy({ ...a, vault: '0xaA' })
+  pending.rememberDeploy({ network: 'n', vault: '0xbb', hash: '0x2' })
+  const rows = pending.loadDeploys()
+  assert.deepEqual(rows.map((d) => d.vault), ['0xaA', '0xbb'], 'newest last, one row per vault')
+})
+
+test('a link with no vault opens the one this browser deployed, on the network the link named', async () => {
+  const { vaultThisBrowserHolds } = await loadRules()
+  const held = [{ network: 'n', vault: '0xold', hash: '0x1' }, { network: 'n', vault: '0xnew', hash: '0x2' }, { network: 'm', vault: '0xother', hash: '0x3' }]
+  assert.equal(vaultThisBrowserHolds({ vault: '0xsetup', network: 'n' }, held, 'n'), '0xsetup')
+  assert.equal(vaultThisBrowserHolds({ network: 'n' }, held, 'n'), '0xnew', 'a setup with no vault yet: the newest kept')
+  assert.equal(vaultThisBrowserHolds(null, held, 'n'), '0xnew')
+  assert.equal(vaultThisBrowserHolds({ vault: '0xsetup', network: 'n' }, [], 'm'), null, 'never across networks')
+  assert.equal(vaultThisBrowserHolds(null, [], 'n'), null, 'nothing held: the page lands as it always did')
+  const page = readSource('src/routes/app/ArcVault.tsx')
+  assert.ok(page.indexOf('vaultThisBrowserHolds(setup') < page.indexOf('autoLandVault(known.vaults'), 'before the list, which an uncounted vault is not on')
+})
+
+test('only a list that loaded can say a vault is not on it', async () => {
+  const { listingOf, shownCount } = await loadRules()
+  const row = { network: 'n', address: '0xAA', kind: 'owner-held' }
+  const read = (vaults: { network: string; address: string; kind: string }[], partial: string | null = null) => ({ vaults, partial, ownerHeldRead: true })
+  assert.equal(listingOf(null, 'n', '0xaa'), 'reading')
+  assert.equal(listingOf({ vaults: [], partial: null }, 'n', '0xaa'), 'reading', 'the first render lists what the build knows, which is no answer')
+  assert.equal(listingOf(read([row]), 'n', '0xaa'), 'listed')
+  assert.equal(listingOf(read([row], 'x'), 'n', '0xaa'), 'listed', 'a partial list still holds what it holds')
+  assert.equal(listingOf(read([]), 'n', '0xaa'), 'not-listed')
+  assert.equal(listingOf(read([], 'x'), 'n', '0xaa'), 'unreadable', 'no answer is not a no')
+  assert.equal(listingOf(read([{ ...row, kind: 'ours' }]), 'n', '0xaa'), 'not-listed', 'ours is not counted')
+  assert.equal(listingOf(read([{ ...row, network: 'm' }]), 'n', '0xaa'), 'not-listed')
+
+  // The season report answers with the curated list alone when the admitted list is unreadable.
+  const lib = readSource('src/lib/arc/known-vaults.ts')
+  assert.match(lib, /season\.logs\?\.admittedVaults\?\.readable === false/, 'an unreadable admitted list must read as partial, or an uncounted line would be a guess')
+  // A slow proof route must not keep an owner waiting on an answer it plays no part in.
+  assert.match(lib, /void seasonRead\.then\(\(season\) => onOwnerHeldRead\?\.\(\{ \.\.\.knownFrom\(null, season\)/)
+
+  const failed = { state: 'failed', why: 'x' }
+  const refused = { state: 'not-counted', reasons: ['r'], retryable: false }
+  // No hash: the list is all there is, and it never says more than it knows.
+  assert.equal(shownCount(null, null, null, 'listed').state, 'counted')
+  assert.equal(shownCount(null, null, null, 'not-listed').state, 'no-hash')
+  assert.equal(shownCount(null, null, null, 'unreadable').state, 'failed')
+  assert.equal(shownCount(null, null, null, 'reading').state, 'checking')
+  // A hash and no end date: nothing asked, and not called refused.
+  assert.equal(shownCount('0xh', null, null, 'not-listed').state, 'needs-end-date')
+  assert.equal(shownCount('0xh', null, null, 'listed').state, 'counted', 'a counted vault whose key was later revoked stays counted')
+  // A hash and a question: its answer, whatever the list says.
+  assert.equal(shownCount('0xh', 's', null, 'not-listed').state, 'checking')
+  assert.deepEqual(shownCount('0xh', 's', refused, 'not-listed'), refused)
+  assert.deepEqual(shownCount('0xh', 's', failed, 'unreadable'), failed)
+  assert.equal(shownCount('0xh', 's', { state: 'counted' }, 'not-listed').state, 'counted', 'the answer is newer than the list the page read')
+})
+
+test('the no-hash failure line is true whether the server gave no answer, a 429 or a list it could not read', async () => {
+  const { shownCount } = await loadRules()
+  const told = shownCount(null, null, null, 'unreadable')
+  assert.equal(told.state, 'failed')
+  assert.equal(told.why, 'Our server could not give its list of counted vaults just now.')
+  assert.doesNotMatch(told.why ?? '', /did not answer/)
+  assert.doesNotMatch(readSource('src/lib/arc/known-vaults.ts'), /did not answer/)
+})
+
+test('a 429 does not blame the owner, and the page asks again only past the route\'s window', async () => {
+  const { vaultCountFromAnswer, askAgainByItself, PAST_RATE_WINDOW_MS } = await loadRules()
+  const limited = vaultCountFromAnswer(429, { error: 'Too many requests.' })
+  assert.equal(limited.state, 'failed')
+  assert.doesNotMatch(limited.why ?? '', /your|connection|you\b/i, 'through the site the limit is shared with strangers')
+  assert.equal(limited.waitMs, PAST_RATE_WINDOW_MS)
+  assert.equal(askAgainByItself(limited), true)
+  const budget = rateBudget('POST', '/api/arc/vaults')
+  assert.ok(budget && PAST_RATE_WINDOW_MS > budget.windowMs, 'a retry inside the window could only be refused again')
+  assert.equal(vaultCountFromAnswer(503, { status: 'unavailable', retryable: true }).waitMs, undefined, 'anything else keeps the usual delay')
+  const hook = readSource('src/components/app/arc/useVaultCount.ts')
+  assert.match(hook, /answer\.waitMs \?\? AUTO_RETRY_MS/)
+})
+
+test('only the newest read of the list may answer, and a read out holds a second one', async () => {
+  const { listReads } = await loadRules()
+  const shown: string[] = []
+  const reads = listReads<string>((a) => shown.push(a))
+  assert.equal(reads.out(), false)
+
+  // The first load's proof read is slow; its season read has failed, so the owner clicks Try again.
+  const first = reads.begin()
+  first('first: season failed')
+  assert.equal(reads.out(), false, 'that answered, so a click can start a new read')
+  const second = reads.begin()
+  assert.equal(reads.out(), true, 'a further click finds this one out')
+  second('second: season answered')
+  assert.equal(reads.out(), false)
+  first('first: its Promise.all ends with season null')
+  assert.deepEqual(shown, ['first: season failed', 'second: season answered'], 'the older read does not overwrite the newer')
+  second('second: with proof')
+  assert.equal(shown.at(-1), 'second: with proof')
+
+  const third = reads.begin()
+  reads.stop()
+  third('after the page closed')
+  assert.equal(shown.at(-1), 'second: with proof')
+  assert.equal(reads.out(), false)
+
+  const page = readSource('src/routes/app/ArcVault.tsx')
+  assert.match(page, /listReads<KnownVaults>\(setKnown\)/)
+  assert.equal([...page.matchAll(/listKnownVaults\(/g)].length, 1, 'the first load and Try again are the same read')
+  assert.match(page, /if \(reads\.out\(\)\) return\n\s+setKnown\(\(k\) => k && \{ \.\.\.k, partial: null, loading: true, ownerHeldRead: false \}\)/, 'the click shows at once, and does nothing while a read is out')
+})
+
+test('the vault page reuses the hook and the notice, asks with no wallet, and the route is the only way in', () => {
+  const page = readSource('src/routes/app/ArcVault.tsx')
+  assert.match(page, /useVaultCount\(\{ hash, stage: vaultPageStage\(hash, expiry\), listing, onReadListAgain \}\)/)
+  assert.match(page, /<VaultCountNotice /)
+  assert.match(page, /rememberDeploy\(\{ network: setup\.network, vault: setup\.vault, hash \}\)/, 'kept when the deploy settles, before anyone can forget the setup')
+  assert.match(page, /!ours && !ownerIsOurKey/, 'ours never counts, so it is never asked about')
+  const hook = readSource('src/components/app/arc/useVaultCount.ts')
+  assert.equal([...hook.matchAll(/apiFetch\(/g)].length, 1, 'one way to ask')
+  assert.doesNotMatch(hook, /sendPrepared|eth_sendTransaction|personal_sign|signMessage|provider/, 'no wallet')
+  for (const rel of ['src/lib/arc/vault-count.ts', 'src/routes/app/ArcVault.tsx', 'src/components/app/arc/DeployFlow.tsx', 'src/components/app/arc/VaultCountNotice.tsx']) {
+    assert.doesNotMatch(readSource(rel), /apiFetch\('\/api\/arc\/vaults'/, `${rel} must go through the hook`)
+  }
+  // Nothing on the page waits on it.
+  assert.doesNotMatch(page, /disabled=\{[^}]*(deployHash|ownersVault|count)\b/)
+  assert.doesNotMatch(readSource('src/components/app/arc/DeployFlow.tsx'), /disabled=\{[^}]*vaultCount/)
+})
+
+test('the notice says what it cannot know as that', () => {
+  const notice = readSource('src/components/app/arc/VaultCountNotice.tsx')
+  assert.match(notice, /once its agent key has an end date/)
+  assert.match(notice, /This browser does not hold the transaction that created it, so it cannot ask by itself/)
+  assert.match(notice, /If you deployed it from another browser or device, open this page there/)
+  assert.match(notice, /We could not find out whether this vault counts on/)
+})
+
+test('admission is what it was: only the deploy hash goes in, and the same checks stand', () => {
+  const live = readSource('mcp/src/arc-owner-vault-live.ts')
+  assert.match(live, /const b = \(body \?\? \{\}\) as \{ deployTx\?: unknown; chain\?: unknown \}/, 'the route takes no vault address: the explorer gives this server no creation transaction')
+  assert.match(live, /ownerKind: 'unstated'/)
+  assert.doesNotMatch(live, /explorer\.[a-z]+\/api|\/api\/v2\//, 'nothing here reads an explorer')
 })
 
 test('the rehearsal refuses an output folder git would publish, before any key exists', () => {

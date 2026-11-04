@@ -368,6 +368,12 @@ you twice. Do not sign a new one while the answer says the first may land.
 - 402 with `verifyError`: a fresh challenge. If it names a transaction, read that
   transaction before you sign anything. An authorization that expired with nothing
   landed draws a 402 with no transaction, and a new signature is then safe.
+- 402 whose `verifyError` says the authorization is valid for too long
+  (`validity_too_long` in the engine): nothing was sent. This rail takes a
+  `validBefore` at most 3600 seconds ahead by default and the `verifyError` names the
+  limit in force, so an unanswered broadcast cannot hold you for longer than that. The
+  challenge's `maxTimeoutSeconds` of 600 is well inside it. Sign a new one with an
+  earlier `validBefore`.
 
 On Arc the native gas token is USDC, so an agent needs no second asset to
 transact. This is also why Circle Paymaster is not used on Arc: a token

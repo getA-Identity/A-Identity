@@ -593,7 +593,7 @@ export function buildPlan(p: PlanInput): Plan {
     else if (p.priceUnits !== DECIDED_CHECK_UNITS) blockers.push(`check price: the hosted route quotes ${u(p.priceUnits)} and the decided price is ${u(DECIDED_CHECK_UNITS)}. Nothing is signed at a price nobody decided`)
     if (p.gatewayUnits === null) blockers.push("the operator's Gateway balance could not be read from Circle's /v1/balances")
     else if (p.gatewayUnits < gatewayNeedUnits) {
-      blockers.push(`Gateway balance: the operator holds ${u(p.gatewayUnits)} and ${flowsLeft} check(s) can cost ${u(gatewayNeedUnits)}: short by ${u(gatewayNeedUnits - p.gatewayUnits)}. Deposit first (scripts/gateway-deposit.mjs)`)
+      blockers.push(`Gateway balance: the operator holds ${u(p.gatewayUnits)} and ${flowsLeft} check(s) can cost ${u(gatewayNeedUnits)}: short by ${u(gatewayNeedUnits - p.gatewayUnits)}. Deposit first: cd mcp && node --env-file=.env scripts/gateway-deposit.mjs --chain arc-mainnet --amount ${formatUnits(gatewayNeedUnits - p.gatewayUnits, p.decimals.usdc)} --key-env X402_3009_BUYER_KEY`)
     }
     if (worstCaseUnits > p.budgetUnits) {
       blockers.push(`budget: this run can cost ${u(totalUnits)} on top of the ${u(p.log.spentUnits)} the log has spent, ${u(worstCaseUnits)} in all, against --budget ${u(p.budgetUnits)}: short by ${u(worstCaseUnits - p.budgetUnits)}`)

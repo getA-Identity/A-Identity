@@ -29,8 +29,11 @@
  * Ours means every address this repo publishes or derives as its own: the agent owners in
  * the provenance ledger (the operating wallet among them), both rails' internal payer
  * lists, the oracle validator that signs our published attestations, the receiving wallets
- * named in env, and the address of every EVM key env var that is set. A key is read only to
- * derive its address, inside collectOurAddresses, and is never returned, printed or kept.
+ * named in env, the addresses committed for our keys (OUR_KEY_PUBLIC_ADDRESSES) and the address
+ * of every EVM key env var that is set. A key is read only to derive its address, inside
+ * collectOurAddresses, and is never returned, printed or kept. A key that is neither set in this
+ * process nor committed cannot be compared, and is named as not compared (keysNotCompared): a
+ * server and a laptop holding different env can therefore answer differently about such a key.
  */
 import {
   decodeAbiParameters,
@@ -108,6 +111,41 @@ export const OUR_KEY_ENV_VARS: readonly { name: string; readBy: string }[] = [
   { name: 'CCTP_EVM_SIGNER_KEY', readBy: 'the EVM bridging key: cctp-stellar.ts' },
 ]
 
+/**
+ * Every key env var, with the public address a committed source ties to that name, or null when
+ * none does. A public address is not a credential, and unlike an env var it cannot be quietly
+ * unset, so one here is compared on every run. A null is a key only its env knows: it is compared
+ * only where that env is loaded, and named as not compared everywhere else. These names are
+ * declared rather than derived so that a new chain's signer has to be answered for here (a test
+ * holds this table to ourKeyEnvVars()).
+ *
+ * To fill a null, whoever holds mcp/.env runs
+ *   node --env-file=.env scripts/arc-owner-vault-check.mjs --vault 0x<any vault>
+ * which prints each set key's address next to its name, then runs npm run gen:chains, because the
+ * page's key list is built from this.
+ */
+export const OUR_KEY_PUBLIC_ADDRESSES: Readonly<Record<string, string | null>> = {
+  // asp/attestations.ts: the oracle validator scripts/publish-reputation.mjs signs with.
+  ARC_VALIDATOR_KEY: '0xee602A161232Aac1436E812676b6626382FC84a9',
+  // x402-gateway/rail.ts: the buyer wallet and the vaults' agent key, 0x8C8D...3349.
+  X402_3009_BUYER_KEY: '0x8c8d9cd12d8896a40cf2115ee731258bb4983349',
+  X402_3009_SIGNER_KEY: null,
+  X402_3009_FUNDER_KEY: null,
+  X402_GATEWAY_BUYER_KEY: null,
+  CELO_BUYER_KEY: '0x8C8D9cd12d8896A40cf2115Ee731258Bb4983349',
+  CCTP_EVM_SIGNER_KEY: null,
+  ARC_MAINNET_SIGNER_KEY: '0xd305607510E0Db2c95807173c7A05BEA53c1ed36',
+  ARC_SIGNER_KEY: '0xd305607510E0Db2c95807173c7A05BEA53c1ed36',
+  BASE_SIGNER_KEY: '0xd305607510E0Db2c95807173c7A05BEA53c1ed36',
+  RHCHAIN_SIGNER_KEY: '0xd305607510E0Db2c95807173c7A05BEA53c1ed36',
+  RHCHAIN_TESTNET_SIGNER_KEY: '0xd305607510E0Db2c95807173c7A05BEA53c1ed36',
+  ARB_SIGNER_KEY: '0xd305607510E0Db2c95807173c7A05BEA53c1ed36',
+  XLAYER_SIGNER_KEY: null,
+  CELO_SIGNER_KEY: '0xF43F43D8aee114a71B164e1f6214BC7625a5742D',
+  CELO_SEPOLIA_SIGNER_KEY: null,
+  AVAX_SIGNER_KEY: null,
+}
+
 /** Env vars that hold an EVM address of ours: the wallets the rails are paid to. */
 export const OUR_ADDRESS_ENV_VARS: readonly string[] = ['X402_PAY_TO', 'X402_GATEWAY_PAYTO', 'X402_3009_PAYTO', 'PAY_TO_ADDRESS']
 
@@ -122,6 +160,8 @@ export type OurAddressSources = {
   gatewayInternalPayers: readonly string[]
   facilitatorInternalPayers: readonly string[]
   attestationValidators: readonly string[]
+  /** The address committed for a key env var, by name. Read with no env at all. */
+  committedKeyAddresses: Readonly<Record<string, string | null>>
   keyEnvVars: readonly string[]
   addressEnvVars: readonly string[]
   env: Readonly<Record<string, string | undefined>>
@@ -134,6 +174,10 @@ export type OurAddresses = {
   envKeysDerived: string[]
   /** Key env vars that were set but held no 32-byte hex key. Named, never shown. */
   envKeysUnreadable: string[]
+  /** Key env vars whose address is committed, so it was compared whether or not they are set. */
+  keysCommitted: string[]
+  /** Key env vars this run holds neither the key nor a committed address for: never compared. */
+  keysNotCompared: string[]
 }
 
 export function collectOurAddresses(s: OurAddressSources): OurAddresses {
@@ -166,6 +210,12 @@ export function collectOurAddresses(s: OurAddressSources): OurAddresses {
   for (const a of s.gatewayInternalPayers) add(a, 'x402-gateway internal payer')
   for (const a of s.facilitatorInternalPayers) add(a, 'x402-3009 internal payer')
   for (const a of s.attestationValidators) add(a, 'the oracle validator that signs our attestations (asp/attestations.ts)')
+  const keysCommitted: string[] = []
+  for (const [name, address] of Object.entries(s.committedKeyAddresses)) {
+    if (!address) continue
+    add(address, `the committed address of ${name}`)
+    keysCommitted.push(name)
+  }
   for (const name of s.addressEnvVars) {
     for (const part of (s.env[name] ?? '').split(',')) add(part.trim(), `env ${name}`)
   }
@@ -187,7 +237,8 @@ export function collectOurAddresses(s: OurAddressSources): OurAddresses {
       envKeysUnreadable.push(name)
     }
   }
-  return { byAddress, envKeysDerived, envKeysUnreadable }
+  const keysNotCompared = s.keyEnvVars.filter((name) => !envKeysDerived.includes(name) && !envKeysUnreadable.includes(name) && !keysCommitted.includes(name))
+  return { byAddress, envKeysDerived, envKeysUnreadable, keysCommitted, keysNotCompared }
 }
 
 /** The real sources: the built provenance ledger, both rails' lists, the published
@@ -198,6 +249,7 @@ export function liveOurAddressSources(env: NodeJS.ProcessEnv = process.env): Our
     gatewayInternalPayers: gatewayInternalPayers(env),
     facilitatorInternalPayers: facilitatorInternalPayers(env),
     attestationValidators: ATTESTATIONS.map((a) => a.validator),
+    committedKeyAddresses: OUR_KEY_PUBLIC_ADDRESSES,
     keyEnvVars: ourKeyEnvVars(),
     addressEnvVars: OUR_ADDRESS_ENV_VARS,
     env,
@@ -206,7 +258,7 @@ export function liveOurAddressSources(env: NodeJS.ProcessEnv = process.env): Our
 
 /**
  * What admission calls ours with no environment at all: the provenance ledger, both rails'
- * hardcoded buyers and the published attestations. It is what the page's generated key list is
+ * hardcoded buyers, the published attestations and the addresses committed for our keys. It is what the page's generated key list is
  * built from, so a vault the script refuses as ours is labelled as ours there too. No env, so the
  * generated file does not depend on who ran the generator.
  */
@@ -220,6 +272,10 @@ export function committedOurKeys(): string[] {
  * the committed addresses only, so a vault owned by an env-only key would pass "none of our keys"
  * and print a paste-ready entry. Required to admit; a rehearsal or a state read does not need it.
  * The committed internal payers are always loaded; the env lists add to them and may be unset.
+ *
+ * It passes with at least one key derived and none unreadable, so it does not mean every key we
+ * hold was compared: a key this process holds neither the key nor a committed address for was not,
+ * and the detail names each one. The rule stays as it is, and the names are there to be read.
  */
 export function envLoadedCheck(ours: OurAddresses): Check {
   const unreadable = ours.envKeysUnreadable.length > 0
@@ -228,13 +284,13 @@ export function envLoadedCheck(ours: OurAddresses): Check {
     id: 'env-keys-loaded',
     group: 'ownership',
     required: true,
-    label: 'our key env vars were loaded, so the owner was compared with every key we hold',
+    label: 'our key env vars were loaded, and none that is set is unreadable',
     ok: !none && !unreadable,
     detail: none
       ? 'no EVM key env var is set, so the owner was compared only with the committed addresses. Run with --env-file=.env before the script path.'
       : unreadable
         ? `set but not a 32-byte hex key, so never compared: ${ours.envKeysUnreadable.join(', ')}`
-        : `compared with the addresses of ${ours.envKeysDerived.join(', ')}`,
+        : `compared with the addresses of ${[...new Set([...ours.envKeysDerived, ...ours.keysCommitted])].join(', ')}${ours.keysNotCompared.length ? `. Not compared, because this run holds neither the key nor a committed address: ${ours.keysNotCompared.join(', ')}` : ''}`,
   }
 }
 
@@ -705,7 +761,7 @@ export function stateChecks(c: StateContext): Check[] {
     ok: !ownerOurs,
     detail: ownerOurs
       ? `owner ${getAddress(s.owner)} is ours: ${ownerOurs.join('; ')}`
-      : `${getAddress(s.owner)} is not among the ${c.ours.byAddress.size} address(es) we hold or publish`,
+      : `${getAddress(s.owner)} is not among the ${c.ours.byAddress.size} address(es) we hold or publish${c.ours.keysNotCompared.length ? `; not compared with ${c.ours.keysNotCompared.join(', ')}` : ''}`,
   })
   const operatorOurs = c.ours.byAddress.get(s.operator.toLowerCase())
   const operatorOk = !same(s.operator, zeroAddress) && !same(s.operator, s.owner)

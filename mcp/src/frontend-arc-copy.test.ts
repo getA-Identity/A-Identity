@@ -215,6 +215,37 @@ test('the balance the page asks for is what its own check needs, and the review 
   assert.match(flow, /after your wallet asks for this step/)
 })
 
+test('a network that did not answer is not blamed on the connection alone, and says nothing was sent only where that holds', async () => {
+  const { explainFailure } = await explain()
+  const { failureOf, sendPrepared } = await send()
+  const told = explainFailure({ code: 'rpc_unreachable', message: 'no host answered' })
+  assert.match(told.next, /^Nothing was sent\./)
+  assert.match(told.next, /too many requests/, 'a rate limit, which is what it usually is')
+  assert.match(told.next, /internet connection/, 'and a connection, which it can also be')
+  assert.doesNotMatch(told.next, /Check your connection/)
+  // The read that throws this is known by name, and happens before the wallet is asked.
+  const unreachable = Object.assign(new Error('no host answered'), { name: 'RpcUnreachableError' })
+  assert.equal(failureOf(unreachable).code, 'rpc_unreachable')
+  // The wallet failing on the send itself is never this code, however network-like it sounds:
+  // the transaction may have left, so "Nothing was sent" would not hold there.
+  const r = await rules()
+  const mainnet = (await chains())['arc-mainnet']
+  const OWNER = '0x1111111111111111111111111111111111111111'
+  const prepared = { action: 'freeze', chain: mainnet, from: OWNER, to: '0x2222222222222222222222222222222222222222', data: '0x', gas: 52_000n, maxFeePerGas: r.FEE_FLOOR_WEI, maxPriorityFeePerGas: 0n }
+  const wallet: Wallet = {
+    request: async ({ method }) => {
+      if (method === 'eth_chainId') return `0x${(mainnet.chainId as number).toString(16)}`
+      if (method === 'eth_accounts') return [OWNER]
+      if (method === 'eth_sendTransaction') throw new Error('HTTP request failed: no host answered')
+      return null
+    },
+  }
+  await assert.rejects(sendPrepared(wallet, prepared, () => {}), (e: Error & { failure?: Failure }) => {
+    assert.equal(e.failure?.code, 'wallet_error')
+    return true
+  })
+})
+
 test('the failure list does not promise a clean slate to a wallet error, and names the way back', async () => {
   const c = await copy()
   const declined = c.IF_A_STEP_FAILS.find((f) => /decline/.test(f.when))

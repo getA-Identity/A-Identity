@@ -8,6 +8,7 @@ import {
   PAGE_MAX_SESSION_SECONDS,
   REHEARSAL_CHAIN,
   OUR_KEY_ENV_VARS,
+  OUR_KEY_PUBLIC_ADDRESSES,
   admissionHosts,
   agreeAcrossHosts,
   blockFingerprint,
@@ -353,6 +354,7 @@ test('ours: agent owners, both rails, the validator, env receiving wallets, and 
     gatewayInternalPayers: ['0x4444444444444444444444444444444444444444'],
     facilitatorInternalPayers: ['0x4444444444444444444444444444444444444444'],
     attestationValidators: ['0x5555555555555555555555555555555555555555'],
+    committedKeyAddresses: { X402_3009_BUYER_KEY: '0x6666666666666666666666666666666666666666', CELO_BUYER_KEY: null },
     keyEnvVars: ourKeyEnvVars(),
     addressEnvVars: ['X402_GATEWAY_PAYTO'],
     env,
@@ -368,6 +370,10 @@ test('ours: agent owners, both rails, the validator, env receiving wallets, and 
   assert.deepEqual(of(privateKeyToAccount(bare).address), ['the address of env CCTP_EVM_SIGNER_KEY'])
   assert.deepEqual(ours.envKeysDerived.sort(), ['ARC_MAINNET_SIGNER_KEY', 'CCTP_EVM_SIGNER_KEY'])
   assert.deepEqual(ours.envKeysUnreadable, ['ARC_VALIDATOR_KEY'])
+  assert.deepEqual(of('0x6666666666666666666666666666666666666666'), ['the committed address of X402_3009_BUYER_KEY'], 'read with that key unset')
+  assert.deepEqual(ours.keysCommitted, ['X402_3009_BUYER_KEY'])
+  assert.ok(ours.keysNotCompared.includes('CELO_BUYER_KEY'), 'a null is not compared, and is named')
+  for (const compared of ['ARC_MAINNET_SIGNER_KEY', 'CCTP_EVM_SIGNER_KEY', 'ARC_VALIDATOR_KEY', 'X402_3009_BUYER_KEY']) assert.ok(!ours.keysNotCompared.includes(compared), compared)
   // A key is used for its address and nothing else: no source names any key material.
   const everything = JSON.stringify([...ours.byAddress])
   for (const secret of [key, bare.slice(2), 'not a key']) assert.ok(!everything.includes(secret))
@@ -386,6 +392,25 @@ test('the live sources name the launch-day vault owner, both rails\' buyers and 
   const extra = '0x6666666666666666666666666666666666666666'
   const withEnv = collectOurAddresses(liveOurAddressSources({ X402_GATEWAY_INTERNAL_PAYERS: extra } as NodeJS.ProcessEnv))
   assert.ok(withEnv.byAddress.has(extra))
+})
+
+test('every key env var is declared with its committed address or as having none, and a new one has to be', () => {
+  assert.deepEqual(Object.keys(OUR_KEY_PUBLIC_ADDRESSES).sort(), [...ourKeyEnvVars()].sort())
+  const known = OURS.byAddress
+  for (const [name, address] of Object.entries(OUR_KEY_PUBLIC_ADDRESSES)) {
+    if (address === null) continue
+    assert.match(address, /^0x[0-9a-fA-F]{40}$/, name)
+    assert.ok(known.get(address.toLowerCase())?.includes(`the committed address of ${name}`), `${name} is read with no env`)
+  }
+  // With no env, exactly the nulls are the names not compared.
+  const nulls = Object.entries(OUR_KEY_PUBLIC_ADDRESSES).filter(([, a]) => a === null).map(([n]) => n)
+  assert.deepEqual([...OURS.keysNotCompared].sort(), nulls.sort())
+  // And the check says so, in words a passing run prints.
+  const check = envLoadedCheck({ byAddress: new Map(), envKeysDerived: ['A_KEY'], envKeysUnreadable: [], keysCommitted: ['B_KEY'], keysNotCompared: ['C_KEY', 'D_KEY'] })
+  assert.equal(check.ok, true, 'the rule is what it was')
+  assert.match(check.detail, /compared with the addresses of A_KEY, B_KEY/)
+  assert.match(check.detail, /Not compared.*C_KEY, D_KEY/)
+  assert.doesNotMatch(check.label, /every key we hold/)
 })
 
 test('every registry RPC host is read in order, and the env endpoint is added, never substituted or shown', () => {
@@ -439,14 +464,14 @@ test('the entry is paste-ready: it parses, round-trips, is ASCII and carries no 
 })
 
 test('admitting without our env refuses by name; a run with it passes that check', () => {
-  const none = envLoadedCheck({ byAddress: new Map(), envKeysDerived: [], envKeysUnreadable: [] })
+  const none = envLoadedCheck({ byAddress: new Map(), envKeysDerived: [], envKeysUnreadable: [], keysCommitted: [], keysNotCompared: [] })
   assert.equal(none.ok, false)
   assert.equal(none.required, true)
   assert.match(none.detail, /--env-file=\.env/)
-  const unreadable = envLoadedCheck({ byAddress: new Map(), envKeysDerived: ['A_KEY'], envKeysUnreadable: ['B_KEY'] })
+  const unreadable = envLoadedCheck({ byAddress: new Map(), envKeysDerived: ['A_KEY'], envKeysUnreadable: ['B_KEY'], keysCommitted: [], keysNotCompared: [] })
   assert.equal(unreadable.ok, false)
   assert.match(unreadable.detail, /B_KEY/)
-  const loaded = envLoadedCheck({ byAddress: new Map(), envKeysDerived: ['A_KEY'], envKeysUnreadable: [] })
+  const loaded = envLoadedCheck({ byAddress: new Map(), envKeysDerived: ['A_KEY'], envKeysUnreadable: [], keysCommitted: [], keysNotCompared: [] })
   assert.equal(loaded.ok, true)
   assert.equal(verdict([none]).admitted, false)
   // The script asks only when it would admit: --tx on Milestone 1, not a rehearsal or a state read.
