@@ -397,7 +397,9 @@ to our `payTo`, for the price.
 - `POST https://a-identity.xyz/api/arc/vaults` with `{"deployTx": "0x..."}` admits an
   owner-held vault on Arc Mainnet by its deploy transaction, or refuses with the reasons. It
   signs nothing, needs no session, and the same hash twice is a no-op. The vault page at
-  `/app/vault/arc` does this for you. `GET` on the same path lists the admitted vaults.
+  `/app/vault/arc` does this for you. `GET` on the same path lists the admitted vaults. The server
+  also looks on the chain by itself for vaults whose agent key has an end date, and puts each one
+  through the same checks, so a vault deployed from any browser can be counted without this post.
 
 Send your payer address and your team name to
 [hello@a-identity.xyz](mailto:hello@a-identity.xyz) so the usage is attributed to you by

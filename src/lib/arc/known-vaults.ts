@@ -11,6 +11,7 @@
 import { getAddress, isAddress, type Address } from 'viem'
 import { apiFetch, readJson } from '../api'
 import { ledgerKnownVaults } from './ours'
+import { sweepSaysFrom, type SweepSays } from './vault-count'
 import { arcChainFor } from './vault-read'
 
 export type KnownVault = {
@@ -68,6 +69,11 @@ async function getJson<T>(path: string, onWaking?: () => void): Promise<T | null
   } catch {
     return null
   }
+}
+
+/** Whether the server's own search for vaults is running. A read that failed says nothing about it. */
+export async function readSweepSays(): Promise<SweepSays> {
+  return sweepSaysFrom(await getJson<unknown>('/api/arc/vaults'))
 }
 
 /**

@@ -25,7 +25,7 @@ import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } fro
 import { ArrowLeft, CheckCircle2, Loader2, ShieldAlert } from 'lucide-react'
 import type { Chain } from '../../../lib/chains'
 import { track } from '../../../lib/analytics'
-import { countableDeploy, setupStage, type Listing } from '../../../lib/arc/vault-count'
+import { countableDeploy, endDateOf, setupStage, type Listing } from '../../../lib/arc/vault-count'
 import { AFTER_SETUP, AGENT_KEY_CAN, AGENT_KEY_CANNOT, AGENT_KEY_FEES, CALL_FEE_ABOUT, CONFIRMATIONS, FEES_LINE, GIVE_THE_AGENT, IF_A_STEP_FAILS, NO_HASH_LINE, OWNER_KEY_LINE, REVIEW_LINE, SAVE_LINK_LINE, USE_ANOTHER_ACCOUNT, WALLET_GONE, WALLET_MAY_REPRICE, WHAT_IS_A_VAULT, WRONG_ACCOUNT, WRONG_OWNER_WAY_OUT, networkPrompt } from '../../../lib/arc/deploy-copy'
 import { walletChainName } from '../../../lib/evm-chain'
 import { loadSetup, loadTx, saveTx, type SetupState, type TxRecord } from '../../../lib/arc/pending'
@@ -1084,7 +1084,7 @@ export default function DeployFlow({
             </div>
             <div className="mt-2 text-foreground/80">{GIVE_THE_AGENT}</div>
             <div className="mt-1 text-foreground/80">{AFTER_SETUP}</div>
-            <VaultCountNotice testnet={chain.testnet} networkName={networkName(chain)} count={vaultCount.count} onRetry={vaultCount.retry} />
+            <VaultCountNotice testnet={chain.testnet} networkName={networkName(chain)} count={vaultCount.count} onRetry={vaultCount.retry} endDate={snapshot && setup.vault && sameAddress(snapshot.address, setup.vault) ? endDateOf(snapshot.sessionKeyExpiry, snapshot.expired) : 'unknown'} />
             <div className="mt-3 flex flex-wrap items-center gap-2">
               <Button size="sm" onClick={() => onOpenVault(setup.network, setup.vault as string)}>
                 Open the vault

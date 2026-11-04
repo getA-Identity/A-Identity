@@ -432,6 +432,8 @@ export type VaultAdmissionDeps = {
   /** Everything the chain says about this deploy. May throw: then nothing is decided. */
   admit: (deployTx: string) => Promise<AdmissionRun>
   now?: () => number
+  /** Set by the server's own sweep (arc-vault-sweep.ts), so the row's note can say who found it. It changes no check. */
+  foundBy?: 'sweep'
 }
 
 export type VaultAdmissionAnswer =
@@ -453,8 +455,10 @@ const NOT_RECORDED = 'every check passed but the vault could not be recorded'
 const OWN_CHECK_UNFINISHED = 'our server could not finish its own safety check, so nothing was decided'
 const logRouteFailure = (what: string, raw: unknown) => console.error(`[arc-vaults] ${what}:`, raw instanceof Error ? raw.message : raw)
 
-const ADMITTED_NOTE =
-  "Deploy sent by the owner's own wallet (receipt.from is owner()), its creation input is AgentSpendPolicyBytecode plus its constructor args, and its owner is none of the keys it was compared with (GET /api/arc/vaults names any it was not). Admitted automatically by POST /api/arc/vaults; the chain cannot say whose wallet this is, so the owner is not identified."
+const ADMITTED_CHECKS =
+  "Deploy sent by the owner's own wallet (receipt.from is owner()), its creation input is AgentSpendPolicyBytecode plus its constructor args, and its owner is none of the keys it was compared with (GET /api/arc/vaults names any it was not)."
+const ADMITTED_NOTE = `${ADMITTED_CHECKS} Admitted automatically by POST /api/arc/vaults; the chain cannot say whose wallet this is, so the owner is not identified.`
+const SWEPT_NOTE = `${ADMITTED_CHECKS} Found on the chain by this server's own sweep and admitted automatically under the same checks as POST /api/arc/vaults; the chain cannot say whose wallet this is, so the owner is not identified.`
 
 /**
  * POST /api/arc/vaults. A hash already admitted answers from the store with no chain read, so the
@@ -508,7 +512,7 @@ export async function admitVaultDeploy(body: unknown, deps: VaultAdmissionDeps):
     deployBlock: run.deployBlock.toString(),
     deployedAt: utcDayFromSeconds(run.deployBlockTime),
     admittedAt: new Date((deps.now ?? Date.now)()).toISOString(),
-    note: ADMITTED_NOTE,
+    note: deps.foundBy === 'sweep' ? SWEPT_NOTE : ADMITTED_NOTE,
   }
   const stored = await deps.persist(rec)
   if (!stored.ok) {
@@ -618,7 +622,7 @@ export async function listAdmittedVaults(env: NodeJS.ProcessEnv = process.env, i
         items: rows.map((v) => ({ ...v, explorerUrl: addressUrl(chain, v.address), deployExplorerUrl: txUrl(chain, v.deployTx) })),
         ...(skipped.length ? { skipped } : {}),
         admission: admissionReadiness(ours),
-        note: 'Vaults that passed every owner-held check, admitted by POST /api/arc/vaults. The chain cannot say whose wallet an owner is, so each owner is not identified. An owner is compared with every address we commit and every key this server holds; a key named under admission.keysNotCompared was not compared, because this server has neither the key nor a committed address for it. The season report at GET /api/arc/season counts these with the curated list.',
+        note: 'Vaults that passed every owner-held check, admitted by POST /api/arc/vaults or found on the chain by this server\'s own sweep, under the same checks (the sweep block says what it last read). The chain cannot say whose wallet an owner is, so each owner is not identified. An owner is compared with every address we commit and every key this server holds; a key named under admission.keysNotCompared was not compared, because this server has neither the key nor a committed address for it. The season report at GET /api/arc/season counts these with the curated list.',
       },
     }
   } catch (e) {

@@ -3,7 +3,9 @@
  * set up" and on the vault's own page. The vault works the same either way, and when the question
  * failed the line says that too.
  */
-import type { VaultCount } from '../../../lib/arc/vault-count'
+import { useEffect, useState } from 'react'
+import { readSweepSays } from '../../../lib/arc/known-vaults'
+import { noHashWords, type EndDate, type SweepSays, type VaultCount } from '../../../lib/arc/vault-count'
 
 const PROOF_LINK = (
   <a href="/proof/arc" className="font-semibold text-accent underline underline-offset-2">
@@ -16,12 +18,28 @@ export default function VaultCountNotice({
   networkName,
   count,
   onRetry,
+  endDate,
 }: {
   testnet: boolean
   networkName: string
   count: VaultCount
   onRetry: () => void
+  /** What the vault's agent key end date reads as. No default: "has one" is a claim to the owner, and only a read can make it. */
+  endDate: EndDate
 }) {
+  // Asked only when it will be said: no other state of this line depends on the server's search.
+  const needsSweep = !testnet && count.state === 'no-hash'
+  const [sweep, setSweep] = useState<SweepSays>('reading')
+  useEffect(() => {
+    if (!needsSweep) return
+    let current = true
+    void readSweepSays().then((says) => {
+      if (current) setSweep(says)
+    })
+    return () => {
+      current = false
+    }
+  }, [needsSweep])
   const retry = (
     <button type="button" onClick={onRetry} className="font-semibold text-accent underline underline-offset-2">
       Try again
@@ -38,7 +56,7 @@ export default function VaultCountNotice({
   if (count.state === 'no-hash') {
     return (
       <div className={box}>
-        This vault is not counted on {PROOF_LINK} yet. This browser does not hold the transaction that created it, so it cannot ask by itself. If you deployed it from another browser or device, open this page there and it asks for you. Otherwise, find that transaction in your wallet's activity and send its hash to the A-Identity team.
+        This vault is not counted on {PROOF_LINK} yet{noHashWords(endDate, sweep)}
       </div>
     )
   }

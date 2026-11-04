@@ -9,7 +9,8 @@
 /**
  * What the page shows. 'failed' is about the question and never about the vault. 'needs-end-date'
  * and 'no-hash' are why the page is not asking, and each says so without claiming what the server
- * would answer.
+ * would answer. With no hash the server can still find the vault on the chain by itself
+ * (mcp/src/arc-vault-sweep.ts), so while it says it is looking the page sends nobody to a person.
  */
 export type VaultCount =
   | { state: 'checking' }
@@ -19,6 +20,55 @@ export type VaultCount =
   | { state: 'failed'; why: string; waitMs?: number }
   | { state: 'needs-end-date' }
   | { state: 'no-hash' }
+
+/** What the vault's agent key end date read as. A date that has passed includes a revoked key: admission needs one in the future. */
+export type EndDate = 'none' | 'future' | 'passed' | 'unknown'
+
+export function endDateOf(sessionKeyExpiry: bigint, expired: boolean): EndDate {
+  if (sessionKeyExpiry === 0n) return 'none'
+  return expired ? 'passed' : 'future'
+}
+
+/** Whether the server's own search is running, as GET /api/arc/vaults said. Only that answer can say it is. */
+export type SweepSays = 'reading' | 'looking' | 'not-looking' | 'unknown'
+
+/** The words in the sweep block that mean no round is getting as far as the chain, or no round is ending. The rest are a read that failed, which it tries again. */
+const NOT_LOOKING = new Set(['admission-not-ready', 'list-unreadable', 'round-failed', 'round-stalled'])
+
+export function sweepSaysFrom(body: unknown): SweepSays {
+  const sweep = (body as { sweep?: { on?: unknown; lastProblem?: unknown } } | null)?.sweep
+  if (typeof sweep?.on !== 'boolean') return 'unknown'
+  return sweep.on && !NOT_LOOKING.has(String(sweep.lastProblem)) ? 'looking' : 'not-looking'
+}
+
+const NOTHING_TO_SEND = 'You do not have to send anything to anyone: our server looks for vaults on the chain by itself'
+const THE_BROWSER_THAT_DEPLOYED = 'open this vault in the browser that deployed it, which can ask by itself. If you cannot, tell the A-Identity team.'
+
+/**
+ * What follows "This vault is not counted on the proof page yet" when this browser holds no hash, so
+ * the page cannot ask. Says why the vault is not counted where the page can read it, and says the
+ * server is looking only when the server says so: without that nobody is on the way.
+ */
+export function noHashWords(endDate: EndDate, sweep: SweepSays): string {
+  const reason = {
+    none: ', because its agent key has no end date. Set one from this page.',
+    passed: ", because its agent key's end date has passed. Set a new one from this page.",
+    future: '.',
+    unknown: '.',
+  }[endDate]
+  if (sweep === 'reading') return reason
+  if (sweep === 'looking') {
+    const then = {
+      none: `${NOTHING_TO_SEND}, and it finds this one once it has an end date.`,
+      passed: `${NOTHING_TO_SEND}, and it finds this one again within about an hour of the new end date.`,
+      future: `${NOTHING_TO_SEND}, and this one has the agent key end date it looks for. Look again here in a little while. If it still says this tomorrow, tell the A-Identity team, because the check may have refused it.`,
+      unknown: `${NOTHING_TO_SEND}, and it finds this one while its agent key has an end date in the future.`,
+    }[endDate]
+    return `${reason} ${then}`
+  }
+  const opening = sweep === 'not-looking' ? 'Our server is not looking for vaults on the chain right now, so' : 'We could not find out whether our server is looking for vaults on the chain right now, so'
+  return `${reason} ${opening} ${endDate === 'future' || endDate === 'unknown' ? '' : 'after that '}${THE_BROWSER_THAT_DEPLOYED}`
+}
 
 /** What the server's own list said of a vault when the page last read it. Only an answer can say a vault is not on it. */
 export type Listing = 'reading' | 'unreadable' | 'listed' | 'not-listed'

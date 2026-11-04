@@ -32,6 +32,9 @@ const loadRules = async () =>
     shownCount: (hash: string | null, stage: string | null, asked: VaultCount | null, listing: string) => VaultCount
     vaultCountFromAnswer: (httpStatus: number, body: unknown) => VaultCount
     listReads: <T>(deliver: (answer: T) => void) => { begin: () => (answer: T) => void; out: () => boolean; stop: () => void }
+    endDateOf: (sessionKeyExpiry: bigint, expired: boolean) => string
+    sweepSaysFrom: (body: unknown) => string
+    noHashWords: (endDate: string, sweep: string) => string
     PAST_RATE_WINDOW_MS: number
   }
 const readSource = (rel: string) => readFileSync(repoPath(rel), 'utf8')
@@ -276,9 +279,72 @@ test('the vault page reuses the hook and the notice, asks with no wallet, and th
 test('the notice says what it cannot know as that', () => {
   const notice = readSource('src/components/app/arc/VaultCountNotice.tsx')
   assert.match(notice, /once its agent key has an end date/)
-  assert.match(notice, /This browser does not hold the transaction that created it, so it cannot ask by itself/)
-  assert.match(notice, /If you deployed it from another browser or device, open this page there/)
+  assert.doesNotMatch(notice, /send its hash|open this page there/)
   assert.match(notice, /We could not find out whether this vault counts on/)
+})
+
+test('with no hash the page says why from the end date, and says the server is looking only when the server says so', async () => {
+  const { endDateOf, noHashWords, sweepSaysFrom } = await loadRules()
+  const LOOKS = /our server looks for vaults on the chain by itself/
+  // With no hash in this browser the server finds a vault by itself, so nobody is sent to a person first.
+  const none = noHashWords('none', 'looking')
+  assert.match(none, /^, because its agent key has no end date\. Set one from this page\. You do not have to send anything to anyone: our server looks/)
+  assert.match(none, /finds this one once it has an end date/)
+  const future = noHashWords('future', 'looking')
+  assert.match(future, /^\. You do not have to send anything to anyone/)
+  assert.match(future, /this one has the agent key end date it looks for/)
+  assert.match(future, /If it still says this tomorrow, tell the A-Identity team/)
+
+  // A date that has passed, or a revoked key: the one action that fixes it is renewing, so it says so and sends nobody to a person.
+  const passed = noHashWords('passed', 'looking')
+  assert.match(passed, /because its agent key's end date has passed\. Set a new one from this page/)
+  assert.match(passed, /within about an hour of the new end date/)
+  assert.doesNotMatch(passed, /has the agent key end date it looks for|A-Identity team/)
+  assert.equal(endDateOf(0n, false), 'none')
+  assert.equal(endDateOf(5000n, false), 'future')
+  assert.equal(endDateOf(5000n, true), 'passed')
+  assert.equal(endDateOf(1n, true), 'passed', 'revoked is a second already past')
+
+  // Off, or not able to admit: nobody is looking, and it gives the path that still works.
+  for (const endDate of ['none', 'passed', 'future', 'unknown']) {
+    for (const sweep of ['not-looking', 'unknown', 'reading']) {
+      const words = noHashWords(endDate, sweep)
+      assert.doesNotMatch(words, LOOKS, `${endDate} ${sweep}`)
+      assert.doesNotMatch(words, /has the agent key end date it looks for/)
+      if (sweep !== 'reading') assert.match(words, /open this vault in the browser that deployed it, which can ask by itself\. If you cannot, tell the A-Identity team\./)
+    }
+    assert.match(noHashWords(endDate, 'looking'), LOOKS, endDate)
+  }
+  assert.match(noHashWords('future', 'not-looking'), /^\. Our server is not looking for vaults on the chain right now/)
+  assert.match(noHashWords('none', 'not-looking'), /Set one from this page\. Our server is not looking .* so after that open this vault/)
+  assert.match(noHashWords('future', 'unknown'), /We could not find out whether our server is looking/)
+  assert.equal(noHashWords('future', 'reading'), '.', 'nothing is claimed while it reads')
+
+  const on = (lastProblem: string | null) => ({ sweep: { on: true, lastBlockRead: '1', lastRun: 'x', lastProblem } })
+  assert.equal(sweepSaysFrom(on(null)), 'looking')
+  for (const word of ['no-host-answered', 'logs-not-read', 'read-cap-reached', 'ran-out-of-time', 'deploy-not-read', 'hosts-disagree', 'admission-unavailable']) {
+    assert.equal(sweepSaysFrom(on(word)), 'looking', `${word} is a read it tries again`)
+  }
+  for (const word of ['admission-not-ready', 'list-unreadable', 'round-failed', 'round-stalled']) assert.equal(sweepSaysFrom(on(word)), 'not-looking', word)
+  assert.equal(sweepSaysFrom({ sweep: { on: false, lastBlockRead: null, lastRun: null, lastProblem: null } }), 'not-looking')
+  for (const body of [null, {}, { sweep: null }, { sweep: { on: 'yes' } }]) assert.equal(sweepSaysFrom(body), 'unknown')
+})
+
+test('the words the page reads are the words the sweep can say', async () => {
+  const sweep = readSource('mcp/src/arc-vault-sweep.ts')
+  for (const word of ['admission-not-ready', 'list-unreadable', 'round-failed', 'round-stalled']) assert.match(sweep, new RegExp(`\\| '${word}'`), word)
+})
+
+test('both places that show the notice pass what the vault reads as, and the prop has no default that could claim a date', () => {
+  const page = readSource('src/routes/app/ArcVault.tsx')
+  assert.match(page, /expired=\{v\.expired\}/, 'the vault page passes whether the date has passed')
+  assert.match(page, /endDate=\{endDateOf\(expiry, expired\)\}/)
+  const flow = readSource('src/components/app/arc/DeployFlow.tsx')
+  assert.match(flow, /endDate=\{snapshot && setup\.vault && sameAddress\(snapshot\.address, setup\.vault\) \? endDateOf\(snapshot\.sessionKeyExpiry, snapshot\.expired\) : 'unknown'\}/)
+  const notice = readSource('src/components/app/arc/VaultCountNotice.tsx')
+  assert.match(notice, /^ {2}endDate: EndDate$/m, 'required')
+  assert.doesNotMatch(notice, /endDate\s*=\s*'/, 'with no default')
+  assert.match(notice, /readSweepSays\(\)/, 'and it asks the server whether anyone is looking')
 })
 
 test('admission is what it was: only the deploy hash goes in, and the same checks stand', () => {
