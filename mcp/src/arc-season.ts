@@ -111,7 +111,12 @@ export type ArcPartner = {
  * commit; an entry written before that would make externalTeamsLive count a promise. Empty
  * on 2026-10-19: no external wallet has paid yet.
  */
-export const ARC_PARTNERS: ArcPartner[] = []
+export const ARC_PARTNERS: ArcPartner[] = [
+  // Named on the team's own written OK of 2026-11-03: as an integration, on this page and in the
+  // Milestone 2 report. Its wallet paid risk_check on Arc Mainnet from its own Gateway balance:
+  // transfer 824da778-5018-4b39-893a-7d2f5d7955f9, the row the team quoted, read back from the log.
+  { wallet: '0x40BC51511ad79166FCc3506bea745A928f7E2708', team: 'Trustless Work', publicReference: true },
+]
 
 /**
  * Whose wallet an owner-held vault's owner key is. 'team': a person on the A-Identity team, in
