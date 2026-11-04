@@ -4,6 +4,7 @@ import { Loader2, Check, X, AlertTriangle, Fingerprint, BadgeCheck, Gauge, Scale
 import { CHAIN_BY_ID, type ChainId } from '../../lib/chains'
 import { Badge, VerdictBadge } from '../ui/badge'
 import type { AgentIdentity, Reputation } from '../../lib/mcp-client'
+import type { RecordRead } from '../../lib/trust-preview'
 
 /**
  * VerifyStepper, the step-by-step "verify an agent" walkthrough.
@@ -27,9 +28,9 @@ type Verdict = 'ALLOW' | 'WARN' | 'DENY'
 const STEP_MS = 850
 
 /**
- * asp/risk.ts's line, for a preview. DENY needs evidence against an agent we hold a record of, so
- * with no platform record it is WARN and never ALLOW. A reputation read that failed looks the
- * same here: this page previews, and the paid verdict is the one anybody acts on.
+ * asp/risk.ts's line, for a preview. With no platform record it is WARN and never ALLOW. A read that
+ * failed gets no verdict at all (see RecordRead): this page previews, and the paid verdict is the
+ * one anybody acts on.
  */
 function verdictOf(score: number, kya: string | undefined, verified: boolean, sybil: string | undefined, onPlatform: boolean): Verdict {
   if (kya === 'revoked' || sybil === 'high') return 'DENY'
@@ -42,7 +43,7 @@ function verdictOf(score: number, kya: string | undefined, verified: boolean, sy
 function verdictReasons(score: number, kya: string | undefined, verified: boolean, sybil: string | undefined, onPlatform: boolean): string[] {
   const r: string[] = []
   if (kya === 'revoked') r.push('KYA attestation revoked (flagged as an incident)')
-  if (!onPlatform) r.push('we hold no platform record of this agent, so we do not know how it has behaved; that does not mean it is bad')
+  if (!onPlatform) r.push('we hold no platform record of this agent, so we do not know how it has behaved; that does not mean it is bad, and it does not mean it is clean')
   if (!verified) r.push('no on-chain ERC-8004 identity found')
   if (sybil === 'high') r.push('Sybil signals: reputation mostly self-dealt')
   if (sybil === 'medium') r.push('Sybil signals: partial same-operator activity')
@@ -107,9 +108,11 @@ function StepRow({ state, outcome, Icon, title, standard, children }: {
   )
 }
 
-export default function VerifyStepper({ identity, reputation, query, onComplete }: {
+export default function VerifyStepper({ identity, reputation, recordRead, query, onComplete }: {
   identity: AgentIdentity | null
   reputation: Reputation | null
+  /** What the reputation read found; see lib/trust-preview.ts. */
+  recordRead: RecordRead
   query: string
   onComplete?: () => void
 }) {
@@ -133,7 +136,8 @@ export default function VerifyStepper({ identity, reputation, query, onComplete 
   const kya = reputation?.kya
   const score = reputation?.score ?? 0
   const sybil = reputation?.sybil?.level
-  const onPlatform = reputation !== null
+  const onPlatform = recordRead === 'record'
+  const unreadable = recordRead === 'unreadable'
   const verdict = verdictOf(score, kya, verified, sybil, onPlatform)
   const reasons = verdictReasons(score, kya, verified, sybil, onPlatform)
   const bd = reputation?.breakdown
@@ -176,11 +180,14 @@ export default function VerifyStepper({ identity, reputation, query, onComplete 
         <StepRow state={state(2)} outcome={kya === 'verified' ? 'pass' : onPlatform ? 'fail' : 'caution'} Icon={BadgeCheck} title="Know Your Agent" standard="KYA">
           {kya === 'verified' && <>Wallet control attested in the ValidationRegistry. The operator proved they hold the agent&apos;s keys.</>}
           {kya === 'revoked' && <>KYA attestation was <b className="text-danger">revoked</b>. This agent is flagged as an incident.</>}
-          {(kya === 'unverified' || !kya) && (verified ? <>No KYA attestation yet. Identity exists, but wallet control is not proven.</> : <>No KYA attestation, and no identity to attach one to.</>)}
+          {unreadable && <>Could not be read just now, so we do not know its KYA status.</>}
+          {!unreadable && (kya === 'unverified' || !kya) && (verified ? <>No KYA attestation yet. Identity exists, but wallet control is not proven.</> : <>No KYA attestation, and no identity to attach one to.</>)}
         </StepRow>
 
         <StepRow state={state(3)} outcome={!onPlatform ? 'caution' : score >= 200 ? 'pass' : 'fail'} Icon={Gauge} title="Score reputation" standard="deterministic 0-1000">
-          {!onPlatform ? (
+          {unreadable ? (
+            <>The reputation read failed just now, so we do not know whether we hold a record of this agent.</>
+          ) : !onPlatform ? (
             <>We hold no platform record of this agent, so there is no history to score. That says nothing bad about it.</>
           ) : <>
             <b className="font-mono text-foreground">{score}</b> / 1000 from real on-chain settlements
@@ -190,11 +197,15 @@ export default function VerifyStepper({ identity, reputation, query, onComplete 
           </>}
         </StepRow>
 
-        <StepRow state={state(4)} outcome={verdict === 'ALLOW' ? 'pass' : verdict === 'WARN' ? 'caution' : 'fail'} Icon={Scale} title="Decide" standard="risk engine">
-          <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
-            <VerdictBadge verdict={verdict} size="md" />
-            <span className="text-sm font-medium leading-relaxed text-foreground/70">{reasons.join(' · ')}</span>
-          </div>
+        <StepRow state={state(4)} outcome={unreadable ? 'caution' : verdict === 'ALLOW' ? 'pass' : verdict === 'WARN' ? 'caution' : 'fail'} Icon={Scale} title="Decide" standard="risk engine">
+          {unreadable ? (
+            <span className="text-sm font-medium leading-relaxed text-foreground/70">No verdict: a preview cannot judge what it could not read. Try again in a few seconds, and do not pay on this.</span>
+          ) : (
+            <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
+              <VerdictBadge verdict={verdict} size="md" />
+              <span className="text-sm font-medium leading-relaxed text-foreground/70">{reasons.join(' · ')}</span>
+            </div>
+          )}
         </StepRow>
       </div>
     </div>

@@ -124,6 +124,8 @@ export type Reputation = {
   name?: string | null
   onchain?: string
   kya?: 'verified' | 'unverified' | 'revoked'
+  /** Present on an identity-only answer with no platform record behind it; see readRecord. */
+  basis?: string
   /** A1: the latest ERC-8004 on-chain attestation of this score, if one has been published. */
   onchainAttestation?: {
     tokenId: string

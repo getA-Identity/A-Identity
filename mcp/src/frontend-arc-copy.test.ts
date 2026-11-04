@@ -3,6 +3,7 @@ import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { feesFor, gasLimitFor } from './verify-then-pay/prepare.js'
+import { identityOnlyReputation } from './server.js'
 
 /**
  * What the Arc vault page tells someone about to put in real USDC, held against the contract and
@@ -477,4 +478,45 @@ test('the new sentences use no word a newcomer would have to look up', async () 
     c.networkPrompt('Arc', 1),
   ].join(' ')
   assert.doesNotMatch(said, /\b(nonce|calldata|simulat\w*|EVM|ERC-20|gas|gwei|bytecode|pay\(\)|AgentSpendPolicy|dust|RPC|operator)\b/i)
+})
+
+// ── what a free reputation read says about a platform record ──────────────────────
+
+type RepAnswer = { ok: true; data: { found: boolean; reputation?: { basis?: string; kya?: string } } } | { ok: false; error: string }
+type ReadRecord = (res: RepAnswer, query: string) => { read: string; reputation: unknown }
+const readRecordOf = async () => ((await import(repoUrl('src/lib/trust-preview.ts').href)) as { readRecord: ReadRecord }).readRecord
+
+test('a preview does not read an identity-only reputation as a platform record', async () => {
+  const readRecord = await readRecordOf()
+  // The tool's real fallback shape, for an operating wallet and for a token id, whole and partial.
+  for (const [query, partial] of [['0xd305607510e0db2c95807173c7a05bea53c1ed36', true], ['eip155:5042:8004/0', false]] as const) {
+    const reputation = identityOnlyReputation(query, partial)
+    assert.deepEqual(readRecord({ ok: true, data: { found: true, reputation } }, query), { read: 'no-record', reputation: null }, query)
+  }
+  assert.deepEqual(readRecord({ ok: true, data: { found: false } }, 'x'), { read: 'no-record', reputation: null })
+})
+
+test('a failed reputation read is not the finding that we hold no record', async () => {
+  const readRecord = await readRecordOf()
+  assert.deepEqual(readRecord({ ok: false, error: 'MCP server offline' }, '0x' + 'a1'.repeat(20)), { read: 'unreadable', reputation: null })
+})
+
+test('a preview counts a record at an address only once it proved it, the same reading risk_check gives it', async () => {
+  const readRecord = await readRecordOf()
+  const address = '0x' + 'a1'.repeat(20)
+  const answer = (kya: string) => ({ ok: true as const, data: { found: true, reputation: { kya, score: 90 } } })
+  assert.equal(readRecord(answer('unverified'), address).read, 'no-record')
+  assert.equal(readRecord(answer('verified'), address).read, 'record')
+  assert.equal(readRecord(answer('revoked'), address).read, 'record')
+  // Named by its own id, a record speaks for itself.
+  assert.equal(readRecord(answer('unverified'), 'agent_abc').read, 'record')
+})
+
+test('every page that previews a verdict goes through the record read', () => {
+  const src = repo
+  for (const page of ['src/routes/Explorer.tsx', 'src/components/landing/TrustSpotlight.tsx', 'src/components/rail/RailKit.tsx']) {
+    assert.match(src(page), /readRecord\(repRes,/, page)
+    assert.doesNotMatch(src(page), /reputation !== null\)/, page)
+  }
+  assert.doesNotMatch(src('src/components/landing/VerifyStepper.tsx'), /onPlatform = reputation !== null/)
 })

@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import { motion, AnimatePresence, useReducedMotion } from 'framer-motion'
 import { Search, X, ArrowUpRight, ArrowRight, ShieldCheck, Wallet, QrCode, Check, Loader2 } from 'lucide-react'
 import { resolveAgent, getReputation, getLeaderboard, type AgentIdentity, type Reputation, type FeedAgent } from '../../lib/mcp-client'
+import { readRecord, type RecordRead } from '../../lib/trust-preview'
 import { useAuth } from '../../store/auth'
 import { EASE_OUT_EXPO } from '../../lib/brand'
 import AgentAvatar from '../AgentAvatar'
@@ -48,21 +49,22 @@ function useCountUp(target: number, duration = 800) {
 
 const isMac = typeof navigator !== 'undefined' && /mac/i.test(navigator.platform || navigator.userAgent || '')
 
-type Result = { identity: AgentIdentity | null; reputation: Reputation | null } | null
+type Result = { identity: AgentIdentity | null; reputation: Reputation | null; recordRead: RecordRead } | null
 
 function ResultCard({ result, q, onOpen, onClaim }: { result: NonNullable<Result>; q: string; onOpen: () => void; onClaim: () => void }) {
-  const { identity, reputation } = result
+  const { identity, reputation, recordRead } = result
+  const unreadable = recordRead === 'unreadable'
   const verified = Boolean(identity) || reputation?.onchain === 'registered'
   const score = reputation?.score ?? 0
   const shown = useCountUp(score)
-  const v = riskOf(score, reputation?.kya, verified, reputation !== null)
+  const v = riskOf(score, reputation?.kya, verified, recordRead === 'record')
   const name = reputation?.name || (identity && !identity.partial ? `Agent #${identity.tokenId}` : identity?.partial ? 'On-chain agent' : q)
   const seed = identity?.owner || identity?.tokenId?.toString() || q
   return (
     <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.3 }} className="flex flex-col gap-4 rounded-xl border border-border bg-background/40 p-4">
       <div className="flex items-center justify-between gap-3">
         <div className="flex min-w-0 items-center gap-3">
-          <AgentAvatar seed={seed} size={54} verdict={v.toLowerCase() as OwlVerdict} />
+          <AgentAvatar seed={seed} size={54} verdict={unreadable ? 'neutral' : (v.toLowerCase() as OwlVerdict)} />
           <div className="min-w-0">
             <div className="truncate text-sm font-bold text-foreground">{name}</div>
             <div className="truncate font-mono text-[11px] text-foreground/65">
@@ -70,10 +72,15 @@ function ResultCard({ result, q, onOpen, onClaim }: { result: NonNullable<Result
             </div>
           </div>
         </div>
-        <span className="inline-flex items-center gap-1.5 rounded-md px-2.5 py-1 text-xs font-bold" style={{ color: RISK[v], background: `${RISK[v]}14`, boxShadow: `inset 0 0 0 1px ${RISK[v]}33` }}>
-          <span className="h-1.5 w-1.5 rounded-full" style={{ background: RISK[v] }} /> {v}
-        </span>
+        {unreadable ? (
+          <span className="text-xs font-semibold text-foreground/60">No verdict</span>
+        ) : (
+          <span className="inline-flex items-center gap-1.5 rounded-md px-2.5 py-1 text-xs font-bold" style={{ color: RISK[v], background: `${RISK[v]}14`, boxShadow: `inset 0 0 0 1px ${RISK[v]}33` }}>
+            <span className="h-1.5 w-1.5 rounded-full" style={{ background: RISK[v] }} /> {v}
+          </span>
+        )}
       </div>
+      {unreadable && <p className="text-xs leading-relaxed text-foreground/60">The reputation could not be read just now, so this gives no verdict. Try again in a few seconds, and do not pay on this.</p>}
       {reputation && (
         <div>
           <div className="flex items-baseline gap-2">
@@ -279,8 +286,8 @@ export default function TrustSpotlight() {
     const t = setTimeout(async () => {
       const [idRes, repRes] = await Promise.all([resolveAgent(term), getReputation(term)])
       const identity = idRes.ok && idRes.data.found ? (idRes.data.agent ?? null) : null
-      const reputation = repRes.ok && repRes.data.found ? (repRes.data.reputation ?? null) : null
-      setResult(identity || reputation ? { identity, reputation } : null)
+      const { read, reputation } = readRecord(repRes, term)
+      setResult(identity || reputation ? { identity, reputation, recordRead: read } : null)
       setLoading(false)
     }, 350)
     return () => clearTimeout(t)

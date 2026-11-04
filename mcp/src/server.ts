@@ -108,6 +108,26 @@ export type ServerData = {
   }
 }
 
+/**
+ * get_reputation's answer for an identity we hold no platform record of. The site reads `basis`
+ * to tell this from a record (src/lib/trust-preview.ts), so found:true is not "on our platform".
+ */
+export function identityOnlyReputation(agentId: string, partial: boolean) {
+  const r = computeAgentReputation({ settledCount: 0, rejected: 0, onchainRegistered: true, createdAt: new Date() })
+  return {
+    agentId,
+    name: null,
+    onchain: 'registered',
+    score: r.score,
+    breakdown: r.breakdown,
+    settledOnchain: 0,
+    settledEffective: 0,
+    settledUsd: 0,
+    basis: partial ? 'onchain-identity (existence proven; no platform settlement history)' : 'onchain-identity (no platform settlement history)',
+    computedAt: new Date().toISOString(),
+  }
+}
+
 export function buildServer(data: ServerData = {}): McpServer {
   const server = new McpServer({ name: 'a-identity-mcp', version: '0.2.0' })
   const identity = createIdentityProvider()
@@ -153,24 +173,7 @@ export function buildServer(data: ServerData = {}): McpServer {
       // tenure is 0 because we cannot vouch for a self-reported registration date.
       const id = await identity.resolve(agentId).catch(() => null)
       if (id) {
-        const r = computeAgentReputation({ settledCount: 0, rejected: 0, onchainRegistered: true, createdAt: new Date() })
-        return json({
-          found: true,
-          reputation: {
-            agentId,
-            name: null,
-            onchain: 'registered',
-            score: r.score,
-            breakdown: r.breakdown,
-            settledOnchain: 0,
-            settledEffective: 0,
-            settledUsd: 0,
-            basis: id.partial
-              ? 'onchain-identity (existence proven; no platform settlement history)'
-              : 'onchain-identity (no platform settlement history)',
-            computedAt: new Date().toISOString(),
-          },
-        })
+        return json({ found: true, reputation: identityOnlyReputation(agentId, id.partial === true) })
       }
       return json({ found: false, agentId, reason: 'Unknown agent or no activity yet' })
     },

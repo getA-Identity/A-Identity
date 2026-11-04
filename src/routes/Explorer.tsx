@@ -19,6 +19,7 @@ import {
   resolveAgent, getReputation, getLeaderboard,
   type AgentIdentity, type Reputation, type FeedAgent,
 } from '../lib/mcp-client'
+import { readRecord, type RecordRead } from '../lib/trust-preview'
 import { type OwlVerdict } from '../components/OwlMark'
 import AgentAvatar from '../components/AgentAvatar'
 import { track } from '../lib/analytics'
@@ -145,14 +146,15 @@ function StatRow({ label, value, cap, tone }: { label: string; value: number | s
   )
 }
 
-function TrustProfile({ identity, reputation, query }: { identity: AgentIdentity | null; reputation: Reputation | null; query: string }) {
+function TrustProfile({ identity, reputation, recordRead, query }: { identity: AgentIdentity | null; reputation: Reputation | null; recordRead: RecordRead; query: string }) {
   // A resolved on-chain identity (ownerOf succeeded) IS the registration proof. Do NOT
   // read `identity.valid` here: the backend deliberately pins it to false (a tokenURI
   // self-claim is never trusted), so using it would wrongly read every resolved agent as unidentified.
   const verified = Boolean(identity) || reputation?.onchain === 'registered'
   const score = reputation?.score ?? 0
   const shownScore = useCountUp(score)
-  const verdict = riskOf(score, reputation?.kya, verified, reputation?.sybil?.level, reputation !== null)
+  const verdict = riskOf(score, reputation?.kya, verified, reputation?.sybil?.level, recordRead === 'record')
+  const unreadable = recordRead === 'unreadable'
   const bd = reputation?.breakdown
   const beh = reputation?.behavioral
   const owner = identity?.owner
@@ -178,7 +180,7 @@ function TrustProfile({ identity, reputation, query }: { identity: AgentIdentity
     <div className="overflow-hidden rounded-xl border border-border bg-card">
       {/* entity header */}
       <div className="flex flex-wrap items-center gap-4 border-b border-border p-5">
-        <AgentAvatar seed={seed} size={56} verdict={verdict.toLowerCase() as OwlVerdict} />
+        <AgentAvatar seed={seed} size={56} verdict={unreadable ? 'neutral' : (verdict.toLowerCase() as OwlVerdict)} />
         <div className="min-w-0 flex-1">
           <div className="flex flex-wrap items-center gap-2">
             <h2 className="truncate text-lg font-bold tracking-tight text-foreground">{name}</h2>
@@ -225,11 +227,15 @@ function TrustProfile({ identity, reputation, query }: { identity: AgentIdentity
                   <span className={`ml-1 text-sm font-bold ${VERDICT_TEXT[verdict]}`}>{g.label}<span className="font-medium text-foreground/50"> · {g.tier}</span></span>
                 </>
               ) : (
-                <span className="text-sm font-medium text-foreground/70">No platform record, so we do not know how it has behaved. That does not mean it is bad.</span>
+                <span className="text-sm font-medium text-foreground/70">
+                  {unreadable
+                    ? 'The reputation could not be read just now, so this page gives no verdict. Try again in a few seconds, and do not pay on this.'
+                    : 'No platform record, so we do not know how it has behaved. That does not mean it is bad, and it does not mean it is clean.'}
+                </span>
               )}
             </div>
           </div>
-          <VerdictBadge verdict={verdict} size="md" />
+          {!unreadable && <VerdictBadge verdict={verdict} size="md" />}
         </div>
         {reputation && <div className="mt-4"><Spectrum score={score} /></div>}
         {reputation?.onchainAttestation && (
@@ -337,6 +343,7 @@ export default function Explorer() {
   const [error, setError] = useState<string | null>(null)
   const [identity, setIdentity] = useState<AgentIdentity | null>(null)
   const [reputation, setReputation] = useState<Reputation | null>(null)
+  const [recordRead, setRecordRead] = useState<RecordRead>('no-record')
   const [shown, setShown] = useState('')
   const [board, setBoard] = useState<FeedAgent[]>([])
   const [boardLoading, setBoardLoading] = useState(true)
@@ -350,9 +357,9 @@ export default function Explorer() {
     setLoading(true); setError(null); setPipelineDone(false)
     const [idRes, repRes] = await Promise.all([resolveAgent(q), getReputation(q)])
     const id = idRes.ok && idRes.data.found ? (idRes.data.agent ?? null) : null
-    const rep = repRes.ok && repRes.data.found ? (repRes.data.reputation ?? null) : null
-    setIdentity(id); setReputation(rep); setShown(q)
-    if (!id && !rep) setError(`No agent found for "${q}". Try a token id (849980) or an owner address.`)
+    const { read, reputation: rep } = readRecord(repRes, q)
+    setIdentity(id); setReputation(rep); setRecordRead(read); setShown(q)
+    if (!id && !rep) setError(read === 'unreadable' ? 'The reputation read failed just now, so nothing can be said about this agent. Try again in a few seconds.' : `No agent found for "${q}". Try a token id (849980) or an owner address.`)
     setLoading(false)
     if (scroll) topRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })
   }
@@ -418,7 +425,7 @@ export default function Explorer() {
             {!error && loading && !identity && !reputation && <ProfileSkeleton />}
             {!error && (identity || reputation) && (
               <motion.div key={`pipe-${shown}`} initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.3, ease: [0.16, 1, 0.3, 1] }}>
-                <VerifyStepper identity={identity} reputation={reputation} query={shown} onComplete={() => setPipelineDone(true)} />
+                <VerifyStepper identity={identity} reputation={reputation} recordRead={recordRead} query={shown} onComplete={() => setPipelineDone(true)} />
               </motion.div>
             )}
             <AnimatePresence mode="wait">
@@ -456,7 +463,7 @@ export default function Explorer() {
                       </div>
                     </div>
                   )}
-                  <TrustProfile identity={identity} reputation={reputation} query={shown} />
+                  <TrustProfile identity={identity} reputation={reputation} recordRead={recordRead} query={shown} />
                 </motion.div>
               )}
             </AnimatePresence>
