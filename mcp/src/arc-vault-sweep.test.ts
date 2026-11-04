@@ -968,6 +968,35 @@ test('a stalled host costs its timeout once per tick', async () => {
   assert.deepEqual(h.asked, [v.deployTx])
 })
 
+test('with every host benched the queue is not walked: it stops at the first contract that got no read, and that one keeps its place', async () => {
+  const chain = new Chain()
+  const many = Array.from({ length: 40 }, (_, i) => vaultAt(i + 1, 300_000 + i * 10, 300_100 + i * 10))
+  chain.add(...many)
+  const h = harness(chain)
+  let stalling = true
+  const stalls = (label: string) =>
+    host(chain, label, {
+      on: (method) => {
+        if (!stalling || method !== 'eth_call') return undefined
+        h.clock.t += 8000
+        return new Error('The request took too long to respond.')
+      },
+    })
+  const sweep = createVaultSweep({ ...h.deps, hosts: () => [stalls('one'), stalls('two')] })
+  await sweep.tick()
+  assert.equal(chain.reads.filter((r) => r.endsWith('eth_call')).length, 2, 'each host stalled once and is benched')
+  const notRead = h.lines.filter((l) => l.startsWith('deploy-not-read'))
+  assert.equal(notRead.length, 2, 'the contract whose read benched them, and the next, which got no read: not the 40 in the queue')
+  assert.equal(sweep.status().lastProblem, 'deploy-not-read')
+  assert.deepEqual(h.asked, [])
+
+  // A new tick has fresh hosts. The first turn is the longest wait: the one that got no read has not lost that.
+  stalling = false
+  await sweep.tick()
+  assert.equal(h.asked[0], many[0].deployTx)
+  assert.equal(sweep.status().lastProblem, null)
+})
+
 test('a round has a deadline: past it the asks stop, and no read goes out', async () => {
   const chain = new Chain()
   const a = vaultAt(1, 300_000, 300_010)

@@ -74,7 +74,8 @@
  *     hosts refuse, so about two such blocks a tick, or about 70 USDC to fill an 8-hour gap between
  *     deploys. A vault after them waits for that crossing, and an owner holding their hash can still post.
  *   - A bisect keeps its bounds between ticks and is finished before anything new is started, and a
- *     deploy hash once found is never looked for again.
+ *     deploy hash once found is never looked for again. A tick with every host benched stops at the
+ *     first contract that gets no read: nothing else in the queue could be read either.
  *   - Refused for good is remembered for the life of the process, and a new log does not reopen it. A
  *     retryable refusal waits longer each time, up to an hour, and is never given up on: what it is
  *     waiting for, a host catching up or an end date being renewed, may take longer than any count of
@@ -634,6 +635,7 @@ export function createVaultSweep(deps: VaultSweepDeps): VaultSweep {
         note('ran-out-of-time')
         break
       }
+      const readsBefore = budget.used()
       const found = await findDeploy(budget, c)
       if (found === 'none') {
         log(`no direct creation, or not a vault: ${c.vault}`)
@@ -655,6 +657,10 @@ export function createVaultSweep(deps: VaultSweepDeps): VaultSweep {
         note('read-cap-reached')
         break
       }
+      // Unread with no read made: every host is benched for this tick. The next contract would find the
+      // same, with no pause and no timer in between, for the whole queue. This says nothing about this
+      // one, so it keeps its place.
+      if (budget.used() === readsBefore) break
       c.midway = false
       c.unreadTimes++
       c.waitingSince = now()
