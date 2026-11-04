@@ -5,11 +5,12 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { encodeFunctionData, encodeFunctionResult, getCreateAddress, type Abi, type Hex } from 'viem'
 import { privateKeyToAccount } from 'viem/accounts'
-import { collectOurAddresses, encodeCreationInput, type OurAddresses } from './arc-owner-vault.js'
+import { OUR_KEY_PUBLIC_ADDRESSES, collectOurAddresses, encodeCreationInput, liveOurAddressSources, type OurAddresses } from './arc-owner-vault.js'
 import {
   PLAIN_REFUSALS,
   admissionContext,
   admissionReadiness,
+  admissionSlots,
   admitVaultDeploy,
   admittedVaultsFromStore,
   everyHost,
@@ -119,7 +120,7 @@ function fakeHost(label: string, facts: ChainFacts = {}, calls: string[] = []): 
 const encodeSelector = (name: string) => encodeFunctionData({ abi, functionName: name })
 
 function ours(extra: string[] = [], over: Partial<OurAddresses> = {}): OurAddresses {
-  return { byAddress: new Map(extra.map((a) => [a.toLowerCase(), ['a test wallet of ours']])), envKeysDerived: ['A_KEY'], envKeysUnreadable: [], ...over }
+  return { byAddress: new Map(extra.map((a) => [a.toLowerCase(), ['a test wallet of ours']])), envKeysDerived: ['A_KEY'], envKeysUnreadable: [], keysCommitted: [], keysNotCompared: [], ...over }
 }
 
 function tmpIo(): ArcVaultStoreIo {
@@ -194,7 +195,7 @@ test('a vault owned by any of our keys is refused and never stored: committed li
 
   // A key only the env knows: its address is derived, and the deploy from it is refused.
   const fromEnv = privateKeyToAccount(FAKE_KEY as Hex).address
-  const envOurs = collectOurAddresses({ provenance: [], gatewayInternalPayers: [], facilitatorInternalPayers: [], attestationValidators: [], keyEnvVars: ['SOME_KEY'], addressEnvVars: [], env: { SOME_KEY: FAKE_KEY } })
+  const envOurs = collectOurAddresses({ provenance: [], gatewayInternalPayers: [], facilitatorInternalPayers: [], attestationValidators: [], committedKeyAddresses: {}, keyEnvVars: ['SOME_KEY'], addressEnvVars: [], env: { SOME_KEY: FAKE_KEY } })
   const viaEnv = await admitVaultDeploy({ deployTx: TX }, routeDeps({ owner: fromEnv }, { io, ours: envOurs }))
   assert.equal(viaEnv.answer.status, 'refused')
   const read = await loadAdmittedArcVaults(io)
@@ -202,24 +203,128 @@ test('a vault owned by any of our keys is refused and never stored: committed li
   assert.deepEqual(read.rows, [])
 })
 
-test('a server without our key env refuses everything, as the script does, and GET says so before anyone deploys', async () => {
+test('a server without our key env admits nothing, says that is about the server, and GET says so before anyone deploys', async (t) => {
+  const logged = t.mock.method(console, 'error', () => {})
   const noEnv = ours([], { envKeysDerived: [] })
   const io = tmpIo()
   const none = await admitVaultDeploy({ deployTx: TX }, routeDeps({}, { io, ours: noEnv }))
-  assert.equal(none.answer.status, 'refused')
-  if (none.answer.status === 'refused') {
-    assert.deepEqual(none.answer.reasons.map((r) => r.id), ['env-keys-loaded'])
-    assert.equal(none.answer.retryable, false)
-    assert.doesNotMatch(JSON.stringify(none.answer), /--env-file/)
-  }
+  assert.equal(none.httpStatus, 503)
+  assert.deepEqual(none.answer, { status: 'unavailable', retryable: true, reason: 'our server could not finish its own safety check, so nothing was decided' })
+  assert.match(JSON.stringify(logged.mock.calls.map((c) => c.arguments)), /--env-file/, 'the detail stays in the log')
   const bad = await admitVaultDeploy({ deployTx: TX }, routeDeps({}, { io, ours: ours([], { envKeysUnreadable: ['B_KEY'] }) }))
-  assert.equal(bad.answer.status, 'refused')
+  assert.equal(bad.answer.status, 'unavailable', 'a key it cannot read is the same: nothing is admitted')
+  assert.doesNotMatch(JSON.stringify(bad.answer), /B_KEY/)
   const read = await loadAdmittedArcVaults(io)
   assert.ok(read.ok)
   assert.deepEqual(read.rows, [])
   assert.equal(admissionReadiness(noEnv).ready, false)
-  assert.deepEqual(admissionReadiness(ours([], { envKeysUnreadable: ['B_KEY'] })), { ready: false, keysCompared: 1, keysUnreadable: ['B_KEY'] })
+  assert.deepEqual(admissionReadiness(ours([], { envKeysUnreadable: ['B_KEY'] })), { ready: false, keysCompared: 1, keysUnreadable: ['B_KEY'], keysNotCompared: [] })
   assert.equal(admissionReadiness(ours()).ready, true)
+})
+
+test('a vault owned by a key neither this server holds nor the repo commits is not caught, and the server names that key', async () => {
+  const onlyThis = { ARC_SIGNER_KEY: '0x' + '11'.repeat(32) } as NodeJS.ProcessEnv
+  const funderKey = ('0x' + '22'.repeat(32)) as Hex
+  const funder = privateKeyToAccount(funderKey).address
+  const server = collectOurAddresses(liveOurAddressSources(onlyThis))
+
+  // The rule is what it was: passing envLoadedCheck does not need every key. What changed is that it says so.
+  const ready = admissionReadiness(server)
+  assert.equal(ready.ready, true)
+  assert.ok(ready.keysNotCompared.includes('X402_3009_FUNDER_KEY'), 'named on GET')
+  assert.ok(!ready.keysNotCompared.includes('ARC_SIGNER_KEY'), 'a key it holds was compared')
+  assert.ok(!ready.keysNotCompared.includes('X402_3009_BUYER_KEY'), 'a key with a committed address was compared, set or not')
+  assert.equal(ready.keysCompared, 1 + Object.values(OUR_KEY_PUBLIC_ADDRESSES).filter(Boolean).length)
+  assert.equal((await admitVaultDeploy({ deployTx: TX }, routeDeps({ owner: funder }, { ours: server }))).answer.status, 'admitted')
+
+  // With the key in env, or its public address committed, the same deploy is refused as ours.
+  const withKey = collectOurAddresses(liveOurAddressSources({ ...onlyThis, X402_3009_FUNDER_KEY: funderKey } as NodeJS.ProcessEnv))
+  const refusedByKey = await admitVaultDeploy({ deployTx: TX }, routeDeps({ owner: funder }, { ours: withKey }))
+  assert.ok(refusedByKey.answer.status === 'refused' && refusedByKey.answer.reasons.some((r) => r.id === 'owner-not-ours'))
+  const committed = collectOurAddresses({ ...liveOurAddressSources(onlyThis), committedKeyAddresses: { ...OUR_KEY_PUBLIC_ADDRESSES, X402_3009_FUNDER_KEY: funder } })
+  assert.ok(!committed.keysNotCompared.includes('X402_3009_FUNDER_KEY'))
+  const refusedByAddress = await admitVaultDeploy({ deployTx: TX }, routeDeps({ owner: funder }, { ours: committed }))
+  assert.ok(refusedByAddress.answer.status === 'refused' && refusedByAddress.answer.reasons.some((r) => r.id === 'owner-not-ours'))
+
+  // What a row and GET publish claim only what was done.
+  const live = readFileSync(new URL('../src/arc-owner-vault-live.ts', import.meta.url), 'utf8')
+  assert.match(live, /its owner is none of the keys it was compared with/)
+  assert.doesNotMatch(live, /its owner is none of our keys/)
+})
+
+/** A host that answers as `base` does, except for what `change` returns something other than undefined for. */
+const alteredHost = (label: string, change: (method: string, params: readonly unknown[], real: () => Promise<unknown>) => Promise<unknown> | undefined): RpcHost => {
+  const base = fakeHost(label)
+  return { label, request: (method, params) => change(method, params, () => base.request(method, params)) ?? base.request(method, params) }
+}
+
+test('hosts that disagree about the transaction are retryable, not a verdict, and nothing is stored', async () => {
+  const io = tmpIo()
+  const otherNonce = alteredHost('two', (method, _params, real) =>
+    method === 'eth_getTransactionByHash' ? real().then((t) => ({ ...(t as object), nonce: '0x8' })) : undefined,
+  )
+  const { answer } = await admitVaultDeploy({ deployTx: TX }, routeDeps({}, { io, hosts: [fakeHost('one'), otherNonce] }))
+  assert.equal(answer.status, 'refused')
+  if (answer.status !== 'refused') return
+  assert.deepEqual(answer.reasons.map((r) => r.id), ['creation-tx'])
+  assert.equal(answer.retryable, true)
+  const read = await loadAdmittedArcVaults(io)
+  assert.ok(read.ok)
+  assert.deepEqual(read.rows, [])
+
+  // One honest answer that it is no creation stays a fact about this transaction.
+  const calls = alteredHost('one', (method, _params, real) =>
+    method === 'eth_getTransactionByHash' ? real().then((t) => ({ ...(t as object), to: OPERATOR })) : undefined,
+  )
+  const fact = await admitVaultDeploy({ deployTx: TX }, routeDeps({}, { hosts: [calls] }))
+  assert.ok(fact.answer.status === 'refused' && fact.answer.retryable === false)
+})
+
+test('a simulation that disagrees with a creation input that matched is retryable and blames no vault; one that did not match stays a verdict', async () => {
+  const io = tmpIo()
+  const wrongBytes = alteredHost('one', (method, params) =>
+    method === 'eth_call' && (params[0] as { data: string }).data.length > 100 ? Promise.resolve('0x6002') : undefined,
+  )
+  const { answer } = await admitVaultDeploy({ deployTx: TX }, routeDeps({}, { io, hosts: [wrongBytes] }))
+  assert.equal(answer.status, 'refused', 'the check still refuses: a matched input does not waive it')
+  if (answer.status !== 'refused') return
+  assert.deepEqual(answer.reasons.map((r) => r.id), ['runtime-code'])
+  assert.equal(answer.retryable, true)
+  assert.doesNotMatch(answer.reasons[0].reason, /is not the vault contract/)
+  const read = await loadAdmittedArcVaults(io)
+  assert.ok(read.ok)
+  assert.deepEqual(read.rows, [])
+
+  const otherBuild = await admitVaultDeploy({ deployTx: TX }, routeDeps({ bytecode: '0x6000' }))
+  assert.equal(otherBuild.answer.status, 'refused')
+  if (otherBuild.answer.status !== 'refused') return
+  assert.equal(otherBuild.answer.retryable, false)
+  assert.ok(otherBuild.answer.reasons.some((r) => r.id === 'creation-input' && /is not the vault contract/.test(r.reason)))
+})
+
+test('admissions past the cap read nothing and answer unavailable, and the slot comes back', async (t) => {
+  t.mock.method(console, 'error', () => {})
+  const slot = admissionSlots(2)
+  let release = () => {}
+  const held = new Promise<void>((r) => (release = r))
+  const first = slot(() => held)
+  const second = slot(() => held)
+  let read = false
+  await assert.rejects(slot(async () => (read = true)), /too many admissions/)
+  assert.equal(read, false, 'no chain read was made')
+
+  const io = tmpIo()
+  const busy = await admitVaultDeploy({ deployTx: TX }, { ...routeDeps({}, { io }), admit: () => slot(async () => { throw new Error('never reached') }) })
+  assert.equal(busy.httpStatus, 503)
+  assert.deepEqual(busy.answer, { status: 'unavailable', retryable: true, reason: 'the deploy could not be checked just now, so nothing was decided' })
+  release()
+  await Promise.all([first, second])
+  assert.equal(await slot(async () => 'free'), 'free')
+  await assert.rejects(slot(async () => { throw new Error('a failed read') }), /failed read/)
+  assert.equal(await slot(async () => 'free again'), 'free again', 'a read that throws gives its slot back')
+
+  const src = readFileSync(new URL('../src/arc-owner-vault-live.ts', import.meta.url), 'utf8')
+  assert.match(src, /admit: \(deployTx\) =>\s+liveAdmissionSlot\(/, 'the route reads the chain through the slots')
 })
 
 test('the same deploy posted twice is a no-op: no second row and no chain read', async () => {
