@@ -37,6 +37,11 @@ jobs:
       - name: Install backend deps
         run: npm install --prefix mcp
 
+      # mcp/src/frontend-arc-vault.test.ts loads the vault page's rules straight from src/, and
+      # those import viem from the root install. Without this the job fails on a missing package.
+      - name: Install frontend deps
+        run: npm install
+
       - name: Policy engine vectors (pure, offline)
         run: npm test --prefix mcp
 
