@@ -472,9 +472,17 @@ export function fundingUnresolved(r: TxRecord | undefined): boolean {
   return Boolean(r && (r.outcome === 'replaced' || r.outcome === 'untracked'))
 }
 
-/** The same, for the whole setup: the wallet was asked and no hash came back counts too. */
-export function fundingInDoubt(s: SetupState): boolean {
-  return Boolean(s.fundIntent) || fundingUnresolved(s.fundTx)
+/**
+ * The same, for the whole setup: the wallet was asked and no hash came back counts too. `pageTx` is
+ * the latest transaction from the vault's own page, whose funding can land just the same.
+ */
+export function fundingInDoubt(s: SetupState, pageTx?: TxRecord | null): boolean {
+  return Boolean(s.fundIntent) || fundingUnresolved(s.fundTx) || (pageTx?.action === 'fund' && fundingUnresolved(pageTx))
+}
+
+/** Step 3 keeps a transaction from the vault's own page on screen while it is pending, and a funding until it settled. */
+export function pageTxOnStep3(r: TxRecord | null | undefined): boolean {
+  return Boolean(r && (r.outcome === 'pending' || (r.action === 'fund' && r.outcome !== 'settled')))
 }
 
 /** Saved right before the wallet is asked for a funding, so a hash that never comes back still leaves a trace. */
@@ -523,6 +531,25 @@ export function setupTxOn(s: SetupState | null, network: string | null, vault: s
   if (s.expiryTx?.outcome === 'pending') return { field: 'expiryTx', record: s.expiryTx }
   if (s.fundTx?.outcome === 'pending') return { field: 'fundTx', record: s.fundTx }
   return null
+}
+
+/**
+ * The setup's funding that ended on this vault with the USDC not seen to arrive, or null. It stays
+ * on the vault page, because its note says what can still happen. A skip is the person's answer to
+ * it, and a landed funding or a vault that holds the amount settles it.
+ */
+export function setupFundEndedOn(s: SetupState | null, network: string | null, vault: string | null, snapshot: VaultSnapshot | null): TxRecord | null {
+  if (!s || !network || !vault || s.network !== network || !sameAddress(s.vault, vault)) return null
+  const r = s.fundTx
+  if (!r || r.outcome === 'pending' || fundingLanded(r) || s.fundSkipped) return null
+  const live = liveOf(s, snapshot)
+  return live !== null && live.balance >= fundTarget(s) ? null : r
+}
+
+/** The vault page offers no funding while the setup holds one for this vault at step 3 whose fate is unknown. */
+export function setupFundInDoubtOn(s: SetupState | null, network: string | null, vault: string | null, snapshot: VaultSnapshot | null): boolean {
+  if (!s || !network || !vault || s.network !== network || !sameAddress(s.vault, vault)) return false
+  return fundingInDoubt(s) && setupStep(s, false, snapshot) === 'fund'
 }
 
 /** A record written into the setup; a deploy that settled or was replaced into a vault names the vault. */

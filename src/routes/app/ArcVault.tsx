@@ -44,7 +44,7 @@ import type { Chain } from '../../lib/chains'
 import { listKnownVaults, seededKnownVaults, type KnownVaults } from '../../lib/arc/known-vaults'
 import { autoLandVault, FUND_RISK, isOurKey, isOurVault, NAMES_OUR_KEY, NOT_MY_VAULT } from '../../lib/arc/ours'
 import { clearTx, loadTx, saveTx, type TxRecord } from '../../lib/arc/pending'
-import { predictedVault, setupAlert, setupStep, setupTxOn, withRecord } from '../../lib/arc/tx-rules'
+import { fundingUnresolved, predictedVault, setupAlert, setupFundEndedOn, setupFundInDoubtOn, setupTxOn, withRecord } from '../../lib/arc/tx-rules'
 import {
   ARC_CHAINS,
   ARC_MAINNET,
@@ -104,6 +104,8 @@ export default function ArcVault() {
   const [tx, setTx] = useState<(TxRecord & { key: string }) | null>(null)
   // Bumped when a write from this page reaches its end, so the activity list reads it too.
   const [eventsRound, setEventsRound] = useState(0)
+  // The setup's ended funding whose receipt was dismissed here, by hash. Only one nothing can still come of.
+  const [dismissedFund, setDismissedFund] = useState<string | null>(null)
   const latestKey = useRef(key)
   latestKey.current = key
 
@@ -192,7 +194,10 @@ export default function ArcVault() {
   const setupAt = setup ? predictedVault(setup) : null
   // A transaction the setup has on its way holds this page as one from this page does.
   const setupTx = setupTxOn(setup, network, contract)
-  const fundIntentHere = Boolean(setup?.fundIntent && setup.network === network && contract && sameAddress(setup.vault, contract) && setupStep(setup, false, v) === 'fund')
+  // A setup funding that stopped being pending keeps its note on screen, and one that can still land
+  // holds this page's Fund form behind the setup's own "I checked" card.
+  const setupFundEnded = setupFundEndedOn(setup, network, contract, v)
+  const setupFundInDoubt = setupFundInDoubtOn(setup, network, contract, v)
   // The receipt can come from a host ahead of the one read: until the read reaches the write's own
   // block, its values are from before the write and must not read as the vault's state now.
   const landedBlock = shownTx && shownTx.outcome !== 'pending' ? shownTx.block : undefined
@@ -383,6 +388,21 @@ export default function ArcVault() {
               />
             )}
 
+            {setupFundEnded && setup && setupFundEnded.hash !== dismissedFund && (
+              <div className="space-y-2">
+                <TxReceipt record={setupFundEnded} onUpdate={(r) => store.patch(setup.startedAt, (s) => withRecord(s, 'fundTx', r))} />
+                {!fundingUnresolved(setupFundEnded) && (
+                  <button
+                    type="button"
+                    onClick={() => setDismissedFund(setupFundEnded.hash)}
+                    className="text-xs font-semibold text-accent underline underline-offset-2"
+                  >
+                    Dismiss this receipt
+                  </button>
+                )}
+              </div>
+            )}
+
             {read.failure && read.key === key && (
               <div role="alert" className="rounded-2xl border border-danger/25 bg-danger/[0.07] p-4 text-sm">
                 <div className="font-semibold text-foreground">
@@ -447,11 +467,13 @@ export default function ArcVault() {
                 <h3 className="text-sm font-semibold text-foreground">Fund this vault</h3>
                 <p className="mt-1 text-xs text-foreground/70">{FUND_RISK} Send only after its session key has an expiry.</p>
                 <div className="mt-3">
-                  {fundIntentHere && setup ? (
+                  {setupFundInDoubt && setup ? (
                     <div className="space-y-2 text-xs text-foreground/85">
                       <p role="alert">
-                        Your wallet was asked to put USDC in this vault during its setup, and this page never heard back, so it may already be on its way. Nothing is offered
-                        here until the setup has that sorted out.
+                        {setup.fundIntent
+                          ? 'Your wallet was asked to put USDC in this vault during its setup, and this page never heard back, so it may already be on its way.'
+                          : "This vault's setup sent USDC, and this page no longer knows what happened to it, so it may still land. Check your wallet's activity."}{' '}
+                        Nothing is offered here until the setup has that sorted out.
                       </p>
                       <Button size="sm" onClick={() => openDeploy(setup.network)}>
                         Finish the setup

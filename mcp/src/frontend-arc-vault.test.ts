@@ -87,7 +87,10 @@ type TxRules = {
   heardEnough: (answered: number, total: number) => boolean
   saidNothing: (r: Rec, answered: number, total: number) => boolean
   readBeforeExpiry: (s: Rec, snapshot: Rec | null) => boolean
-  fundingInDoubt: (s: Rec) => boolean
+  fundingInDoubt: (s: Rec, pageTx?: Rec | null) => boolean
+  pageTxOnStep3: (r: Rec | null | undefined) => boolean
+  setupFundEndedOn: (s: Rec | null, network: string | null, vault: string | null, snapshot: Rec | null) => Rec | null
+  setupFundInDoubtOn: (s: Rec | null, network: string | null, vault: string | null, snapshot: Rec | null) => boolean
   fundAsked: (s: Rec, amount: bigint, at: string) => Rec
   fundSent: (s: Rec, r: Rec) => Rec
   fundTarget: (s: Rec) => bigint
@@ -754,7 +757,7 @@ test('a speed-up of a hash never seen is noticed by the nonce read while prepari
   for (const fn of ['prepareOwnerCall', 'prepareFund']) assert.match(fnBody(lib, fn), /nonceHint\(c, /, `${fn} no longer reads the next nonce`)
   assert.match(codeOnly(repo('src/lib/arc/receipt.ts')), /record\.sent\?\.nonce \?\? guessedNonce\(record\)/)
   assert.match(codeOnly(repo('src/components/app/arc/TxReceipt.tsx')), /record\.likelyReplaced\s*\? `\$\{record\.what\}: most likely replaced/)
-  assert.match(codeOnly(repo('src/components/app/arc/DeployFlow.tsx')), /outcome === 'replaced' \|\| setup\.fundTx\?\.likelyReplaced/)
+  assert.match(codeOnly(repo('src/components/app/arc/DeployFlow.tsx')), /outcome === 'replaced' \|\| doubtedFund\?\.likelyReplaced/)
 })
 
 test('the deploy flow says plainly what each confirmation does and costs, who holds what, and what to do when a step fails', async () => {
@@ -1459,7 +1462,7 @@ test('a funding counts once its Transfer landed or the vault holds it, and one w
   assert.equal(t.setupStep({ ...s, funding: 0n }, false, bounded), 'done')
   // And the deploy view keeps the second funding behind an explicit confirmation (wiring).
   const flow = repo('src/components/app/arc/DeployFlow.tsx')
-  assert.match(flow, /fundingInDoubt\(setup\) && !fundAsking && !refundConfirmed/, 'DeployFlow offers a second funding without asking')
+  assert.match(flow, /fundingInDoubt\(setup, pageTx\) && !fundAsking && !refundConfirmed/, 'DeployFlow offers a second funding without asking')
   assert.match(flow, /setupStep\(setup, review !== null, snapshot\)/, 'DeployFlow no longer takes its step from setupStep')
 })
 
@@ -1757,7 +1760,7 @@ test('step 3 never offers USDC again on a stale balance: an intent is saved befo
   const flow = codeOnly(repo('src/components/app/arc/DeployFlow.tsx'))
   assert.match(flow, /patch\(\(s\) => fundAsked\(s, amount, new Date\(\)\.toISOString\(\)\)\)/)
   assert.match(flow, /if \(f\.code === 'rejected'\) patch\(\(s\) => \(\{ \.\.\.s, fundIntent: undefined \}\)\)/)
-  assert.match(flow, /\(!fundingInDoubt\(setup\) \|\| fundAsking \|\| refundConfirmed\)/)
+  assert.match(flow, /\(!fundingInDoubt\(setup, pageTx\) \|\| fundAsking \|\| refundConfirmed\)/)
   assert.match(flow, /patch\(\(s\) => fundSent\(s, r\)\)/)
   // Steps 2 and 3 keep reading, the balance is shown with its read time, and a failed read holds the form.
   assert.match(flow, /const keepReading = step === 'expiry' \|\| step === 'expiry-pending' \|\| step === 'fund' \|\| step === 'fund-pending'/)
@@ -1800,4 +1803,80 @@ test('a vault read older than a settled write is said to be old, is read again, 
   assert.match(page, /held=\{held\}/)
   // And a funding the vault's page has on its way holds step 3.
   assert.match(flow, /loadTx\(setupNetwork, pageTxVault\)/)
+})
+
+test('a funding that stopped being pending keeps its warning on the vault page and at step 3, and a second one waits for "I checked"', async () => {
+  const t = await txRules()
+  const net = ARC_MAINNET?.caip2 ?? ''
+  const bounded = snap({ sessionKeyExpiry: 1_800_000_000n })
+  const s = setupOf({ vault: VAULT, expiryTx: record({ action: 'expiry', outcome: 'settled', block: 100n }) })
+  const sent = record({ action: 'fund', amount: 500_000n })
+  const now = 1_000_000_000_000
+  // Every way the record can stop being pending with the first transfer maybe still on its way,
+  // from the rules themselves: the person stops tracking it, or the account moved on.
+  const stopped = t.untracked(sent)
+  const moved = t.decideUnseen({ ...sent, nonce: 7, nonceUsedAt: new Date(now - t.REPLACED_AFTER_MS).toISOString() }, { ...heard, now, tx: null })
+  assert.equal(moved.outcome, 'untracked')
+  assert.equal(moved.likelyReplaced, true)
+  const replaced = record({ action: 'fund', amount: 500_000n, outcome: 'replaced' })
+  for (const fundTx of [stopped, moved, replaced]) {
+    const held = { ...s, fundTx }
+    assert.equal(t.setupTxOn(held, net, VAULT), null, 'no longer pending, so the page cannot lean on this to hold the form')
+    assert.equal(t.setupFundInDoubtOn(held, net, VAULT, bounded), true, String(fundTx.outcome))
+    assert.equal(t.setupFundEndedOn(held, net, VAULT, bounded), fundTx, 'its note goes from the screen')
+    // On another vault or network it is not this page's business.
+    assert.equal(t.setupFundInDoubtOn(held, net, ATTACKER, bounded), false)
+    assert.equal(t.setupFundInDoubtOn(held, 'eip155:1', VAULT, bounded), false)
+    assert.equal(t.setupFundEndedOn(held, net, ATTACKER, bounded), null)
+    assert.equal(t.setupFundEndedOn(held, 'eip155:1', VAULT, bounded), null)
+    // The USDC arrived, so nothing is left to warn about.
+    const arrived = snap({ sessionKeyExpiry: 1_800_000_000n, balance: 500_000n })
+    assert.equal(t.setupFundInDoubtOn(held, net, VAULT, arrived), false)
+    assert.equal(t.setupFundEndedOn(held, net, VAULT, arrived), null)
+    // A skip is the person's answer: the setup is done, and the page does not hold them there.
+    assert.equal(t.setupFundInDoubtOn({ ...held, fundSkipped: true }, net, VAULT, bounded), false)
+    assert.equal(t.setupFundEndedOn({ ...held, fundSkipped: true }, net, VAULT, bounded), null)
+    // A failed read hides the form anyway, and must not take the note with it.
+    assert.equal(t.setupFundEndedOn(held, net, VAULT, null), fundTx)
+  }
+  // The wallet asked with no hash back holds the page as before.
+  assert.equal(t.setupFundInDoubtOn(t.fundAsked(s, 500_000n, 'x'), net, VAULT, bounded), true)
+  assert.equal(t.setupFundEndedOn(t.fundAsked(s, 500_000n, 'x'), net, VAULT, bounded), null, 'no record to show yet')
+  // A revert moved nothing: it is said, and nothing is held behind it.
+  const reverted = { ...s, fundTx: record({ action: 'fund', amount: 500_000n, outcome: 'reverted', block: 150n }) }
+  assert.equal(t.setupFundInDoubtOn(reverted, net, VAULT, bounded), false)
+  assert.equal(t.setupFundEndedOn(reverted, net, VAULT, bounded), reverted.fundTx)
+  // Pending or landed: not this rule's. setupTxOn holds the first, and the second is done.
+  for (const fundTx of [sent, record({ action: 'fund', amount: 500_000n, outcome: 'settled', block: 150n }), record({ action: 'fund', outcome: 'unexpected', logsMatched: true })]) {
+    assert.equal(t.setupFundEndedOn({ ...s, fundTx }, net, VAULT, bounded), null)
+    assert.equal(t.setupFundInDoubtOn({ ...s, fundTx }, net, VAULT, bounded), false)
+  }
+  assert.equal(t.setupFundEndedOn(null, net, VAULT, bounded), null)
+  assert.equal(t.setupFundInDoubtOn(null, net, VAULT, bounded), false)
+
+  // Step 3: a funding from the vault's own page counts the same, and any other write from there does not.
+  const fromPage = (over: Rec) => record({ action: 'fund', amount: 500_000n, ...over })
+  assert.equal(t.fundingInDoubt(s, t.untracked(fromPage({}))), true)
+  assert.equal(t.fundingInDoubt(s, fromPage({ outcome: 'replaced' })), true)
+  assert.equal(t.fundingInDoubt(s, fromPage({})), false, 'a pending one holds the form by itself')
+  assert.equal(t.fundingInDoubt(s, fromPage({ outcome: 'settled' })), false)
+  assert.equal(t.fundingInDoubt(s, fromPage({ outcome: 'reverted' })), false)
+  assert.equal(t.fundingInDoubt(s, record({ action: 'freeze', outcome: 'untracked' })), false, 'a freeze moves no USDC')
+  assert.equal(t.fundingInDoubt(s, null), false)
+  assert.equal(t.pageTxOnStep3(fromPage({})), true)
+  assert.equal(t.pageTxOnStep3(record({ action: 'freeze' })), true, 'pending holds step 3, whatever it is')
+  for (const outcome of ['untracked', 'replaced', 'reverted', 'unexpected']) assert.equal(t.pageTxOnStep3(fromPage({ outcome })), true, outcome)
+  assert.equal(t.pageTxOnStep3(fromPage({ outcome: 'settled' })), false)
+  assert.equal(t.pageTxOnStep3(record({ action: 'freeze', outcome: 'reverted' })), false, 'a stopped freeze has no business at step 3')
+  assert.equal(t.pageTxOnStep3(null), false)
+
+  // The wiring: the page gates on the rule, shows the record, and only what cannot land can be dismissed.
+  const page = codeOnly(repo('src/routes/app/ArcVault.tsx'))
+  assert.match(page, /const setupFundInDoubt = setupFundInDoubtOn\(setup, network, contract, v\)/)
+  assert.match(page, /\{setupFundInDoubt && setup \? \(/)
+  assert.match(page, /const setupFundEnded = setupFundEndedOn\(setup, network, contract, v\)/)
+  assert.match(page, /<TxReceipt record=\{setupFundEnded\}/)
+  assert.match(page, /!fundingUnresolved\(setupFundEnded\) && \(/)
+  const flow = codeOnly(repo('src/components/app/arc/DeployFlow.tsx'))
+  assert.match(flow, /step === 'fund' && pageTx && pageTxOnStep3\(pageTx\) && \(/)
 })

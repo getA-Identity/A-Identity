@@ -28,7 +28,7 @@ import { AGENT_KEY_CAN, AGENT_KEY_CANNOT, CALL_FEE_ABOUT, CONFIRMATIONS, FEES_LI
 import { loadSetup, loadTx, saveTx, type SetupState, type TxRecord } from '../../../lib/arc/pending'
 import { FUND_RISK } from '../../../lib/arc/ours'
 import { deployReadback } from '../../../lib/arc/receipt'
-import { deployEnd, fundAsked, fundSent, fundingInDoubt, liveOf, predictedVault, readBeforeExpiry, readBeforeFunding, setupDrift, setupStep, vaultToLookFor, withRecord, type DeployBack } from '../../../lib/arc/tx-rules'
+import { deployEnd, fundAsked, fundSent, fundingInDoubt, fundingUnresolved, liveOf, pageTxOnStep3, predictedVault, readBeforeExpiry, readBeforeFunding, setupDrift, setupStep, vaultToLookFor, withRecord, type DeployBack } from '../../../lib/arc/tx-rules'
 import {
   ARC_CHAINS,
   arcChainFor,
@@ -492,6 +492,7 @@ export default function DeployFlow({
           : 2
   const label = busy ? `${txStep ? STEP_LABEL[txStep] : 'Working'}...` : null
   const predicted = setup ? predictedVault(setup) : null
+  const doubtedFund = fundingUnresolved(setup?.fundTx) ? setup?.fundTx : pageTx
 
   return (
     <section aria-label="Deploy a vault you own" className="space-y-4 rounded-2xl border border-border bg-card p-4 sm:p-5">
@@ -901,7 +902,7 @@ export default function DeployFlow({
               the receipt above says.
             </p>
           )}
-          {step === 'fund' && pageTx?.outcome === 'pending' && (
+          {step === 'fund' && pageTx && pageTxOnStep3(pageTx) && (
             <TxReceipt
               record={pageTx}
               onUpdate={(r) => {
@@ -917,7 +918,7 @@ export default function DeployFlow({
               {snapshotNote && ` The last read failed: ${snapshotNote} Nothing new can be sent until a read comes back.`}
             </p>
           )}
-          {step === 'fund' && fundingInDoubt(setup) && !fundAsking && !refundConfirmed && (
+          {step === 'fund' && fundingInDoubt(setup, pageTx) && !fundAsking && !refundConfirmed && (
             <div role="alert" className="rounded-xl border border-warn/30 bg-warn/10 p-4 text-xs text-foreground/85">
               <div className="font-semibold text-foreground">
                 {setup.fundIntent ? 'Your wallet was asked to send USDC, and this page never heard back.' : 'This page does not know what happened to the first USDC transfer.'}
@@ -925,7 +926,7 @@ export default function DeployFlow({
               <div className="mt-1">
                 {setup.fundIntent
                   ? `It may have sent ${formatUnitsExact(setup.fundIntent.amount, decimals)} USDC: if it did, this page sees it land in the vault and carries on.`
-                  : setup.fundTx?.outcome === 'replaced' || setup.fundTx?.likelyReplaced
+                  : doubtedFund?.outcome === 'replaced' || doubtedFund?.likelyReplaced
                     ? 'Your wallet appears to have sent another transaction in its place: if that was a speed-up, the USDC may already be in the vault.'
                     : 'You stopped tracking it with no receipt seen: it may still land.'}{' '}
                 Check your wallet's activity before sending USDC again.
@@ -943,7 +944,7 @@ export default function DeployFlow({
               </Button>
             </div>
           )}
-          {step === 'fund' && liveVault && provider && account && !ownerMismatch && (!fundingInDoubt(setup) || fundAsking || refundConfirmed) && (
+          {step === 'fund' && liveVault && provider && account && !ownerMismatch && (!fundingInDoubt(setup, pageTx) || fundAsking || refundConfirmed) && (
             <div className="rounded-xl border border-border bg-background/60 p-4">
               <h3 className="text-sm font-semibold text-foreground">Confirmation 3 of 3: put USDC in the vault</h3>
               <p className="mt-1 text-xs text-foreground/70">
