@@ -999,9 +999,54 @@ test('the instruction names the prepared fee, its floor and the gas limit, not t
   assert.ok(w.body.next.includes(`maxFeePerGas ownerHandoff.ownerPay.fees.maxFeePerGas (${o.fees.maxFeePerGas} wei)`), w.body.next)
   assert.ok(w.body.next.includes(`gas limit ownerHandoff.ownerPay.fees.gas (${o.fees.gas})`), w.body.next)
 
-  // An ownerPay that could not be estimated has no limit to name, and says that.
+  // An ownerPay that could not be simulated has no limit to name, and is not offered as ready to send.
   const cannot = setup({ chain: { revertOwnerPay: 'TransferFailed' }, gw: { scored: verdict('WARN') } })
   const c = await runVerifyThenPay(request(), header(), cannot.deps)
   assert.equal(c.body.ownerHandoff?.ownerPay.fees.gas, null)
-  assert.match(c.body.next, /your own gas limit, since ownerHandoff\.ownerPay\.fees\.gas could not be estimated/)
+  assert.match(c.body.next, /do not send ownerHandoff\.ownerPay/)
+})
+
+// ── what the answers tell an agent to do next ─────────────────────────────────────
+
+test('the 402 does not promise an owner hand-off that a vault with one key cannot give', async () => {
+  const oneKey = await runVerifyThenPay(request(), undefined, setup({ chain: { agentsHeld: 0n, owner: OPERATOR } }).deps)
+  assert.equal(oneKey.body.stage, 'payment_required')
+  assert.match(oneKey.body.next, /owner and the operator are one key/)
+  assert.match(oneKey.body.next, /stops with nothing prepared/)
+  assert.doesNotMatch(oneKey.body.next, /hands the payment to the owner/)
+  const twoKeys = await runVerifyThenPay(request(), undefined, setup({ chain: { agentsHeld: 0n } }).deps)
+  assert.match(twoKeys.body.next, /hands the payment to the owner/)
+  assert.doesNotMatch(twoKeys.body.next, /one key/)
+})
+
+test('a WARN with no human gate does not point the agent at payOnWarn for a payee we know nothing about', async () => {
+  const unknown = setup({ chain: { owner: OPERATOR }, gw: { scored: verdict('WARN', { onPlatform: false, onchainVerified: false, reputationScore: 0 }) } })
+  const out = await runVerifyThenPay(request(), header(), unknown.deps)
+  assert.equal(out.body.stage, 'warn_no_human_gate')
+  assert.doesNotMatch(out.body.next, /payOnWarn/)
+  assert.match(out.body.next, /owner key the agent does not hold/)
+  // A WARN on an agent we hold a record of keeps the option: its reasons are about something we know.
+  const known = setup({ chain: { owner: OPERATOR }, gw: { scored: verdict('WARN', { onPlatform: true }) } })
+  assert.match((await runVerifyThenPay(request(), header(), known.deps)).body.next, /payOnWarn/)
+})
+
+test('a hand-off whose simulation failed tells the owner not to send it', async () => {
+  const moved = setup({ chain: { revertOwnerPay: 'TransferFailed' }, gw: { scored: verdict('WARN') } })
+  const out = await runVerifyThenPay(request(), header(), moved.deps)
+  assert.equal(out.body.stage, 'awaiting_human')
+  assert.deepEqual(out.body.ownerHandoff?.ownerPay.simulation, { ok: false, error: 'TransferFailed' })
+  assert.match(out.body.next, /do not send ownerHandoff\.ownerPay/)
+  assert.doesNotMatch(out.body.next, /can settle it/)
+})
+
+test('a payment only the owner can make says no verdict was bought and what the owner can do', async () => {
+  const above = await runVerifyThenPay(request({ amount: '250001' }), undefined, setup().deps)
+  assert.equal(above.body.code, 'AboveAutoApprove')
+  assert.match(above.body.next, /no verdict on this payee/)
+  assert.match(above.body.next, /ownerPay directly/)
+  assert.match(above.body.next, /raises the ceiling or allows the payee/)
+  // Any other refusal keeps its plain answer.
+  const frozen = await runVerifyThenPay(request(), undefined, setup({ chain: { frozen: true } }).deps)
+  assert.equal(frozen.body.code, 'IsFrozen')
+  assert.doesNotMatch(frozen.body.next, /ownerPay/)
 })

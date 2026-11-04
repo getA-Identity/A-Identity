@@ -442,7 +442,9 @@ function refused(chain: ChainDescriptor, httpStatus: number, code: VtpRefusalCod
       next:
         httpStatus === 503
           ? `Nothing was charged: ${chain.name} or the flow log did not answer, so nothing could be decided. Ask again shortly.`
-          : `Nothing was charged and no check was bought: ${reason}.`,
+          : code === 'AboveAutoApprove' || code === 'PayeeNotAllowed'
+            ? `Nothing was charged and no check was bought, so there is no verdict on this payee and nothing was prepared: ${reason}. Only the owner can pay this as it stands, by calling ownerPay directly with no verdict behind it. To get a verdict and a hand-off, the owner raises the ceiling or allows the payee, and you ask again.`
+            : `Nothing was charged and no check was bought: ${reason}.`,
     }),
   }
 }
@@ -533,7 +535,13 @@ async function paymentRequired(
       challenge,
       price: { usd, units: String(offer.amount ?? '') },
       ...(verifyError ? { reason: verifyError } : {}),
-      next: `Nothing is charged yet, and the free checks passed.${checks?.payee.agentsHeld === 0 ? ` This payee holds no ERC-8004 agent on ${chain.name}. That is not a refusal, and unless it is an agent on our platform the check will answer WARN, which hands the payment to the owner.` : ''} Sign the ${chain.name} offer in challenge.accepts from your Circle Gateway balance (x402 v2, GatewayWalletBatched, ${usd} USDC for risk_check), then send the same request again with the base64 PAYMENT-SIGNATURE: as that header on POST /api/x402/gateway/verify-then-pay, or as the payment argument of the verify_then_pay MCP tool.`,
+      next: `Nothing is charged yet, and the free checks passed.${checks?.payee.agentsHeld === 0 ? ` This payee holds no ERC-8004 agent on ${chain.name}. That is not a refusal, and unless it is an agent on our platform the check will answer WARN.` : ''}${
+        checks?.vault.ownerIsOperator === true
+          ? " On this vault the owner and the operator are one key, so a WARN stops with nothing prepared: there is nobody to hand the payment to, and the check is still paid. Give the vault an owner key the agent does not hold first if you need that hand-off."
+          : checks?.payee.agentsHeld === 0
+            ? ' A WARN hands the payment to the owner.'
+            : ''
+      } Sign the ${chain.name} offer in challenge.accepts from your Circle Gateway balance (x402 v2, GatewayWalletBatched, ${usd} USDC for risk_check), then send the same request again with the base64 PAYMENT-SIGNATURE: as that header on POST /api/x402/gateway/verify-then-pay, or as the payment argument of the verify_then_pay MCP tool.`,
     }),
   }
 }
@@ -919,8 +927,15 @@ export async function runVerifyThenPay(input: VtpInput, paymentHeader: string | 
     check_failed: `The check was paid and answered ${v.effective}, but ${chain.name} did not answer for its latest block after the verdict, so a payment could not be shown to come after this check and nothing was prepared: do not pay on this flow, ask again with a new authorization.`,
     verdict_unusable: `The check was paid, but its answer failed ${v.usable ? '' : v.code}, so it is treated as DENY: do not pay. The paid check and why it was not used are public at ${record.url}.`,
     deny: `DENY: do not pay. Nothing was prepared and nothing should be signed. The refusal is public at ${record.url}.`,
-    awaiting_human: `WARN: the agent must not pay this on its own. The owner can settle it by sending ownerHandoff.ownerPay from the owner key ${pre.owner}${ownerHandoff ? `, with ${sendInstruction(ownerHandoff.ownerPay, 'ownerHandoff.ownerPay')}` : ''}; then POST {"txHash": "0x..."} to ${receiptUrl} and the server reads the receipt itself.`,
-    warn_no_human_gate: `WARN, and this vault's owner and operator are the same key (${pre.owner}), so there is no human to hand the payment to: do not pay. Nothing was prepared and no approval was recorded. Give the vault an owner key the agent does not hold, or ask again with payOnWarn to pay on the WARN as the agent's own decision. The block is public at ${record.url}.`,
+    awaiting_human:
+      ownerHandoff?.ownerPay.simulation.ok === false
+        ? `WARN: the agent must not pay this on its own, and the vault would refuse the owner's payment right now (${ownerHandoff.ownerPay.simulation.error}): do not send ownerHandoff.ownerPay, it would revert and cost gas. Ask again once the vault can pay.`
+        : `WARN: the agent must not pay this on its own. The owner can settle it by sending ownerHandoff.ownerPay from the owner key ${pre.owner}${ownerHandoff ? `, with ${sendInstruction(ownerHandoff.ownerPay, 'ownerHandoff.ownerPay')}` : ''}; then POST {"txHash": "0x..."} to ${receiptUrl} and the server reads the receipt itself.`,
+    warn_no_human_gate: `WARN, and this vault's owner and operator are the same key (${pre.owner}), so there is no human to hand the payment to: do not pay. Nothing was prepared and no approval was recorded. Give the vault an owner key the agent does not hold${
+      // A payee we know nothing about, on a vault with no human by construction: pointing an
+      // autonomous agent at payOnWarn here would walk it into paying a stranger with no one asked.
+      v.signals?.onPlatform === false ? '' : ", or ask again with payOnWarn to pay on the WARN as the agent's own decision"
+    }. The block is public at ${record.url}.`,
     prepared:
       prepared?.simulation.ok === false
         ? `${v.effective === 'WARN' ? 'payOnWarn prepared this payment on a WARN' : 'The verdict allows this payment'}, but the vault would refuse it right now (${prepared.simulation.error}): do not send it. Ask again once the vault can pay.`
