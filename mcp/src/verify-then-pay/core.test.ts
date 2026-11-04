@@ -835,6 +835,60 @@ test('two concurrent requests with one signed payment reach Gateway once, on eve
   }
 })
 
+test('a used nonce says this request charged nothing, and sends the caller to the first one before it signs again', async () => {
+  const said = (next: string, reason: string | undefined) => {
+    assert.match(next, /This request charged nothing/)
+    assert.match(next, /may have been charged and may hold a verdict, or may still be running/)
+    assert.ok(next.includes(`GET /api/x402/gateway/flows/${NONCE.toLowerCase()}`), next)
+    assert.match(next, /GET \/api\/x402\/gateway\/proof/)
+    assert.match(next, /Sign a new authorization only if neither shows this nonce by then, or the proof log says it failed/)
+    assert.doesNotMatch(next, /no check was bought/)
+    assert.doesNotMatch(reason ?? '', /sign a new authorization/i)
+  }
+  // The first request settled and holds a verdict, and its answer was lost on the way back.
+  const lostAnswer = setup({ gw: { scored: verdict('WARN') } })
+  const first = await runVerifyThenPay(request(), header(), lostAnswer.deps)
+  assert.equal(first.body.stage, 'awaiting_human')
+  const again = await runVerifyThenPay(request(), header(), lostAnswer.deps)
+  assert.deepEqual([again.httpStatus, again.body.stage, again.body.code, again.body.charged, lostAnswer.g.spy.settles], [409, 'refused', 'NONCE_ALREADY_USED', false, 1])
+  said(again.body.next, again.body.reason)
+  // The read it points to has the verdict and the owner's link, so nothing has to be bought twice.
+  const read = await readVtpFlow(NONCE, { store: lostAnswer.s.store })
+  assert.deepEqual([read.httpStatus, read.body.flow?.outcome, read.body.flow?.verdict?.effective], [200, 'awaiting_human', 'WARN'])
+
+  // A first request still running: its row is a reservation, no reader can see it, and the words have to cover that.
+  let letItFinish = () => {}
+  const gate = new Promise<void>((r) => (letItFinish = r))
+  const running = setup()
+  const settle = running.g.rail.settle
+  running.g.rail.settle = async () => {
+    await gate
+    return settle()
+  }
+  const slow = runVerifyThenPay(request(), header(), running.deps)
+  while (!running.s.inserted.length) await new Promise((r) => setTimeout(r, 1))
+  const meanwhile = await runVerifyThenPay(request(), header(), running.deps)
+  assert.equal(meanwhile.body.code, 'NONCE_ALREADY_USED')
+  said(meanwhile.body.next, meanwhile.body.reason)
+  assert.equal((await readVtpFlow(NONCE, { store: running.s.store })).httpStatus, 404, 'a read says nothing yet, so reading once is not the end of it')
+  letItFinish()
+  await slow
+
+  // Passed the read and lost the insert: the same answer from the second place it is given.
+  const lost = setup({ store: { insert: async () => ({ ok: true, inserted: false }) } })
+  const raced = await runVerifyThenPay(request(), header(), lost.deps)
+  assert.equal(raced.body.code, 'NONCE_ALREADY_USED')
+  said(raced.body.next, raced.body.reason)
+
+  // After the server said it does not know whether this settled, the same header does not contradict that.
+  const stalled = setup({ gw: { settle: { success: false, unknown: true, errorReason: 'Gateway settle did not answer within 8000 ms' } } })
+  const unknown = await runVerifyThenPay(request(), header(), stalled.deps)
+  assert.equal(unknown.body.code, 'SETTLEMENT_UNKNOWN')
+  const resent = await runVerifyThenPay(request(), header(), stalled.deps)
+  assert.equal(resent.body.code, 'NONCE_ALREADY_USED')
+  said(resent.body.next, resent.body.reason)
+})
+
 test('the reservation goes in before the rail is asked, and to a reader it is nothing yet', async () => {
   const { g, s, deps } = setup()
   const seen: unknown[] = []

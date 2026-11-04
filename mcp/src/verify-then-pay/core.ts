@@ -494,6 +494,22 @@ export function vtpRateLimited(windowMs: number): VtpResponse {
   }
 }
 
+/**
+ * A nonce seen before says what this request did, and nothing about how the first one went: that one may
+ * have been charged and hold a verdict, its answer lost on the way back, or still be running, in which case
+ * no reader can see it yet. So this does not send the caller off to pay for a second check and open a second flow.
+ */
+function nonceUsed(chain: ChainDescriptor, nonce: string, checks: VtpChecks | null): VtpResponse {
+  const out = refused(chain, 409, 'NONCE_ALREADY_USED', `this authorization nonce already opened flow ${nonce}`, checks)
+  return {
+    ...out,
+    body: {
+      ...out.body,
+      next: `This request charged nothing. The first request with this nonce may have been charged and may hold a verdict, or may still be running. Read GET ${flowPath(nonce)}: a flow there is your answer, so do not sign again. If that answers 404, look this nonce up on GET /api/x402/gateway/proof and read both again in a minute, because a request still running shows in neither. Sign a new authorization only if neither shows this nonce by then, or the proof log says it failed.`,
+    },
+  }
+}
+
 type Closed = Awaited<ReturnType<VtpStore['update']>>
 
 const CLOSE_FLOW_RETRY_MS = [200, 800]
@@ -708,7 +724,7 @@ export async function runVerifyThenPay(input: VtpInput, paymentHeader: string | 
         logFlowStoreFault('reading a payment nonce', existing.reason)
         return refused(chain, 503, 'FLOW_STORE_UNREADABLE', `${FLOW_LOG_UNREADABLE}, so a flow for this payment could not be recorded`, null)
       }
-      if (existing.row) return refused(chain, 409, 'NONCE_ALREADY_USED', `this authorization nonce already opened flow ${payment.nonce}; sign a new authorization`, null)
+      if (existing.row) return nonceUsed(chain, payment.nonce, null)
     }
   }
 
@@ -747,7 +763,7 @@ export async function runVerifyThenPay(input: VtpInput, paymentHeader: string | 
       logFlowStoreFault('reserving a nonce', opened.reason)
       return refused(chain, 503, 'FLOW_STORE_UNREADABLE', `${FLOW_LOG_REFUSED_WRITE}, so a flow for this payment could not be recorded`, pre.checks)
     }
-    if (!opened.inserted) return refused(chain, 409, 'NONCE_ALREADY_USED', `this authorization nonce already opened flow ${flowId}; sign a new authorization`, pre.checks)
+    if (!opened.inserted) return nonceUsed(chain, flowId, pre.checks)
   }
   const out = await railServeTool('risk_check', { agentId: p.payee, txContext: { amountUsd: p.amountUsd, payee: p.payee } }, header, status, railDeps)
   const expected: ExpectedCheck = { network: chain.caip2, authNonce: payment.nonce ?? '', payer: payment.from ?? '', payee: p.payee, amountUsd: p.amountUsd }
