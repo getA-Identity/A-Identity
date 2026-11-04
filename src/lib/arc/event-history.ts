@@ -251,7 +251,10 @@ export async function readOlder(
   const top = nextWindowTop(h)
   if (top === null) return out
   const queue: HostQueue = { order: [...x.readers], strikes: new Map() }
-  const plan = planWindows(top, Math.min(WINDOWS_PER_READ, MAX_WINDOWS - h.windows.length)).filter((w) => x.downTo === undefined || w.to >= x.downTo)
+  const floor = x.downTo
+  const plan = planWindows(top, Math.min(WINDOWS_PER_READ, MAX_WINDOWS - h.windows.length))
+    .filter((w) => floor === undefined || w.to >= floor)
+    .map((w) => (floor !== undefined && w.from < floor ? { ...w, from: floor } : w))
   for (const [i, w] of plan.entries()) {
     if (i > 0) await x.pause?.()
     if (x.aborted?.()) return out

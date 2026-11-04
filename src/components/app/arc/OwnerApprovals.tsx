@@ -694,6 +694,8 @@ function SendTracker({ record, chain, onRecords, onLanded }: { record: HandoffSe
   const hash = hashToPost(record)
   const latest = useRef(record)
   latest.current = record
+  const told = useRef({ onRecords, onLanded })
+  told.current = { onRecords, onLanded }
 
   useEffect(() => {
     if (!hash) return
@@ -701,8 +703,8 @@ function SendTracker({ record, chain, onRecords, onLanded }: { record: HandoffSe
     let timer: ReturnType<typeof setTimeout> | undefined
     const answer = (server: NonNullable<HandoffSend['server']>) => {
       saveHandoff({ ...latest.current, server })
-      onRecords()
-      onLanded()
+      told.current.onRecords()
+      told.current.onLanded()
     }
     const at = () => new Date().toISOString()
     const decide = (s: ReceiptStep, flowId: string): boolean => {
@@ -730,7 +732,7 @@ function SendTracker({ record, chain, onRecords, onLanded }: { record: HandoffSe
       alive = false
       if (timer) clearTimeout(timer)
     }
-  }, [hash, onRecords, onLanded])
+  }, [hash])
 
   const update = (tx: TxRecord) => {
     saveHandoff({ ...latest.current, tx })
