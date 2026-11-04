@@ -709,6 +709,18 @@ test('every surface says DENY means we hold evidence, keeps the limit, and no lo
   assert.doesNotMatch(risk, /not built a history|on its own a DENY/)
 })
 
+test('the SDK page reads the verdict where trustCheck puts it, and stops on anything but ALLOW', () => {
+  const page = repo('docs/developers/sdk.mdx')
+  const sample = page.slice(page.indexOf('## Verify Before You Pay'), page.indexOf('## Hire, Deliver, Release'))
+  assert.match(repo('sdk/src/index.ts'), /trustCheck[\s\S]{0,200}\/api\/arc\/trust-oracle-demo/)
+  assert.match(repo('mcp/src/trust-oracle.ts'), /executed: false/)
+  assert.match(repo('mcp/src/trust-oracle.ts'), /riskCheck: \{/)
+  assert.match(sample, /if \(!check\.executed\) throw/, 'no signer is no verdict')
+  assert.match(sample, /const verdict = check\.riskCheck/)
+  assert.match(sample, /verdict\.decision !== "ALLOW"/, 'a WARN does not pay by itself')
+  assert.doesNotMatch(page, /verdict\.score|e\.reasons/)
+})
+
 test('the guide keeps its DENY example on real evidence, and no sample passes denyOn to stop on WARN', () => {
   const guide = repo('docs/chains/arc-integration.mdx')
   assert.match(guide, /Sybil high, both of its 2 jobs hired by its own operator/)

@@ -10,7 +10,7 @@ import { addressInQuery, readReputationAnswer, recordNamedBy, tokenInQuery } fro
 import { riskCheck, type GatherDeps } from './tools.js'
 import { merchantCheck } from '../commerce.js'
 import { handlePublicRoutes } from '../http/public-routes.js'
-import { __resetPlatformStateForTests, createAgent, reputationForQuery, type PlatformAgent } from '../platform.js'
+import { __resetPlatformStateForTests, assignWallet, createAgent, recordWallet, reputationForQuery, type PlatformAgent } from '../platform.js'
 import { state } from '../platform/core.js'
 import { ARC_TESTNET } from '../arc.js'
 import type { AgentIdentity } from '../data.js'
@@ -252,6 +252,25 @@ test('merchant_check: a record reached by id counts as identity, by its anchor o
   const squat = await merchantCheck({ agentId: unproven.id }, { resolveIdentity: async () => null })
   assert.ok(!('error' in squat))
   assert.ok(squat.reasons.some((x) => x.code === 'no_onchain_identity'), 'a wallet it only names is no identity')
+})
+
+test('moving off an address and back does not clear a DENY there, in the verdict or the free read', async () => {
+  const a = wallet()
+  const b = wallet()
+  const agent = sybilRecord(a, '777010')
+  recordWallet(a)
+  recordWallet(b)
+  assert.ok(!('error' in assignWallet(b, agent.id, agent.owner)))
+  assert.equal((await riskCheck(a, null, offline())).decision, 'DENY')
+  assert.ok(!('error' in assignWallet(a, agent.id, agent.owner)))
+  assert.equal(agent.kya, 'unverified')
+  const back = await riskCheck(a, null, offline())
+  assert.equal(back.decision, 'DENY', back.reasons.join(' | '))
+  assert.match(back.reasons[0], /Sybil/)
+  assert.equal(back.signals.onPlatform, true)
+  assert.ok(back.reasons.some((x) => /that proof is not current/.test(x)))
+  const read = reputationForQuery(a)
+  assert.equal('error' in read ? null : read.sybil.level, 'high', 'and the free read does not say Unknown agent')
 })
 
 test('a stranger who hires and disputes a vendor moves its score, and never makes it a DENY', async () => {
