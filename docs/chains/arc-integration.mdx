@@ -17,7 +17,7 @@ fund your checks and we never hold your key. Every check you pay shows on
 [/proof/arc](https://a-identity.xyz/proof/arc) as external.** That is what Milestone 2 of the
 Arc Acceleration Season asks of an outside team: buy a check before you pay on Arc Mainnet.
 [`verifyThenPay`](#verify-then-pay-from-a-vault) is the next step, and its hosted route and MCP
-tools are live today; only its SDK is not published yet.
+tools are live today, and its SDK is on npm.
 
 ## What you get
 
@@ -415,7 +415,7 @@ first, for 0.005 USDC, from a Gateway balance. Checked on 2026-11-04:
 | --- | --- |
 | Hosted routes | **Live.** They validate input and serve flow records. 100 flows have run on Arc Mainnet, all through our own launch-day vault to payees of ours and labeled so: 75 `ALLOW` flows that the vault paid, and 25 `DENY` flows stopped before signing, answered on 2026-11-01 and 2026-11-02 UTC under the rule of that day. Each is listed on [/proof/arc](https://a-identity.xyz/proof/arc). |
 | MCP tools | **Live** on `https://a-identity.xyz/mcp`, which lists both. The stdio server does not carry them. |
-| SDK, `@a-identity/trust-guard` 0.4.0 | **Built, not published.** npm's latest is 0.3.0, which has no `/arc` entry point. |
+| SDK, `@a-identity/trust-guard` 0.4.0 | **On npm**, with the `/arc` entry point. This code ran our own 100 flows. No outside team has run the published package yet. |
 
 <Note>
 A vault payment is a direct USDC transfer to the checked payee, not an x402 settlement. The vault
@@ -605,13 +605,10 @@ payment from your own inputs, compares it byte for byte with what the server pre
 posts the receipt. A compromised server cannot redirect the payment. The verdict itself is not
 signed, so you still trust our server and the TLS connection for what it says.
 
-Version 0.4.0 is built in this repository and tested with fakes, and it is not on npm yet, so
-`npm install @a-identity/trust-guard` does not give you this path today. Until it ships, use the
-hosted route, or build from
-[`trust-guard/`](https://github.com/getA-Identity/A-Identity/tree/main/trust-guard), whose
-[README](https://github.com/getA-Identity/A-Identity/blob/main/trust-guard/README.md) has the code
-and every error it throws. For Milestone 2, the direct check at the top of this page is the path
-that works today from a published client.
+Install it with `npm install @a-identity/trust-guard viem @circle-fin/x402-batching`, version 0.4.0
+or later. Its [README](https://github.com/getA-Identity/A-Identity/blob/main/trust-guard/README.md)
+has the code and every error it throws. For Milestone 2, the direct check at the top of this page is
+the shortest path.
 
 ## Free reads
 

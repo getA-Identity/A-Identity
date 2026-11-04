@@ -734,5 +734,4 @@ test('the guide keeps its DENY example on real evidence, and no sample passes de
   const readme = repo('trust-guard/README.md')
   assert.match(readme, /Behavior change in 0\.4\.0/)
   assert.match(readme, /a payee that\s+used to throw now returns/)
-  assert.equal(JSON.parse(repo('trust-guard/package.json')).version, '0.4.0', '0.4.0 is not published, so it does not move')
 })

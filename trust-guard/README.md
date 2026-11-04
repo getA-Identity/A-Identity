@@ -147,8 +147,8 @@ claude mcp add a-identity-trust -e A_IDENTITY_ALGORAND_MNEMONIC="..." -- npx -y 
 ## Verify, then pay from a vault, on Arc Mainnet
 
 **Status: this code ran our own 100 flows on Arc Mainnet on 2026-11-02, and the hosted route it calls
-is live. If `npm view @a-identity/trust-guard version` still answers 0.3.0, this section describes the
-code in this repository and not the package you get from `npm install`.**
+is live. It needs version 0.4.0 or later, because 0.3.0 has no `/arc` entry point. No outside team has
+run the published package yet.**
 
 `verifyThenPay` buys a `risk_check` through Circle Gateway and then pays the payee from an
 [AgentSpendPolicy](https://a-identity.xyz) vault, with keys only you hold. It needs Node and two

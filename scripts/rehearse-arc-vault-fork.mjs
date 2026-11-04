@@ -356,8 +356,8 @@ let backend
 async function startBackend() {
   backend = spawn(process.execPath, ['--import', pathToFileURL(preload).href, join(backendDir, 'dist/http.js')], {
     cwd: backendDir,
-    // Built from nothing on purpose. CELO_BUYER_KEY is on our list and only a script ever signs with it.
-    env: { PATH: process.env.PATH, HOME: work, PORT: String(backendPort), CELO_BUYER_KEY: ourEnvKey, ...(databaseUrl ? { DATABASE_URL: databaseUrl } : {}) },
+    // Built from nothing on purpose. CCTP_EVM_SIGNER_KEY is on our list, has no committed address, and only a script ever signs with it.
+    env: { PATH: process.env.PATH, HOME: work, PORT: String(backendPort), CCTP_EVM_SIGNER_KEY: ourEnvKey, ...(databaseUrl ? { DATABASE_URL: databaseUrl } : {}) },
     stdio: ['ignore', 'pipe', 'pipe'],
   })
   children.push(backend)
@@ -404,7 +404,7 @@ section('before any vault')
 const list0 = await getJson('/api/arc/vaults')
 check(list0.status === 200 && list0.body.readable === true && list0.body.count === 0, 'GET /api/arc/vaults answers an empty, readable list')
 check(list0.body.admission?.ready === true && list0.body.admission?.keysCompared === 1 + Object.values(OUR_KEY_PUBLIC_ADDRESSES).filter(Boolean).length, `the route says it can admit, with ${list0.body.admission?.keysCompared} keys compared: the one env key and the committed ones`)
-check(list0.body.admission?.keysNotCompared?.includes('X402_3009_FUNDER_KEY') && !list0.body.admission.keysNotCompared.includes('CELO_BUYER_KEY'), 'and it names the keys it holds neither the key nor a committed address for')
+check(list0.body.admission?.keysNotCompared?.includes('X402_3009_FUNDER_KEY') && !list0.body.admission.keysNotCompared.includes('CCTP_EVM_SIGNER_KEY'), 'and it names the keys it holds neither the key nor a committed address for')
 const report0 = await season()
 check(report0.milestone1.vaults.count === 0 && report0.milestone1.vaults.target === 5, `GET /api/arc/season counts ${report0.milestone1.vaults.count} of ${report0.milestone1.vaults.target}`)
 
@@ -519,7 +519,7 @@ await setExpiry(ourEnvAccount, oursVault.vault)
 const oursAnswer = await postVault(oursVault.hash)
 const oursIds = (oursAnswer.body?.reasons ?? []).map((r) => r.id)
 check(oursAnswer.body?.status === 'refused' && oursIds.length === 1 && oursIds[0] === 'owner-not-ours' && oursAnswer.body.retryable === false, 'a vault owned by a key in our env is refused, for good, for that reason alone')
-check(!JSON.stringify(oursAnswer.body).includes('CELO_BUYER_KEY'), 'the refusal does not name the env var that holds the key')
+check(!JSON.stringify(oursAnswer.body).includes('CCTP_EVM_SIGNER_KEY'), 'the refusal does not name the env var that holds the key')
 
 const committed = committedOurKeys()
 const committedAddress = getAddress(committed[0])
