@@ -725,7 +725,7 @@ export async function handleStellarPasskeyRoutes(ctx: RouteCtx, deps: PasskeyRou
       binding: bound.binding,
       bindingNote: bound.note,
       decision: plan.decision,
-      risk: riskLevel ?? (plan.decision === 'DENY' ? 'high' : null),
+      risk: riskLevel ?? (plan.decision === 'WARN' ? 'medium' : null),
       reasons,
       signals,
       chainAction: plan.chainAction,

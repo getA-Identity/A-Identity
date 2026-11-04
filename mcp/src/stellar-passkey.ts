@@ -1514,7 +1514,9 @@ export function allowlistPlan(
   payee: string,
   reasons: string[],
 ): { decision: RiskDecisionName; chainAction: AllowlistChainAction; serverWarning: string | null; enforcement: typeof ALLOWLIST_ENFORCEMENT } {
-  const effective: RiskDecisionName = decision ?? 'DENY'
+  // No agent bound means no scorer ran and nothing is known against this payee, so it is WARN,
+  // the same line risk_check holds: nothing is written, and a payee nobody has allowed stays off.
+  const effective: RiskDecisionName = decision ?? 'WARN'
   if (effective === 'ALLOW') {
     return { decision: effective, chainAction: { method: 'set_allowed', payee, ok: true }, serverWarning: null, enforcement: ALLOWLIST_ENFORCEMENT }
   }
@@ -1529,10 +1531,10 @@ export function allowlistPlan(
   return { decision: effective, chainAction: { method: 'set_allowed', payee, ok: false }, serverWarning: null, enforcement: ALLOWLIST_ENFORCEMENT }
 }
 
-/** The reasons an unbound payee is denied, in the same voice risk_check uses. */
+/** The reasons an unbound payee gets WARN, in the same voice risk_check uses. */
 export const UNBOUND_PAYEE_REASONS = [
-  'No A-Identity agent is bound to this payee: no account proved control of the address and no agentId was named, so there is no identity, KYA or reputation to assess',
-  'An unbound payee is denied rather than warned about, because on a binary allowlist the only safe default is off',
+  'No A-Identity agent is bound to this payee: no account proved control of the address and no agentId was named, so there is no identity, KYA or reputation to assess. This does not mean it is bad, and it does not mean it is clean',
+  'Nothing is written on chain: a payee nobody has allowed stays refused by the vault until the owner allows it, and one the owner already allowed stays allowed',
 ]
 
 // ── the status view ──────────────────────────────────────────────────────────────

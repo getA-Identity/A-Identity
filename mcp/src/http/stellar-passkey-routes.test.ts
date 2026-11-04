@@ -811,7 +811,7 @@ test('a settled payment reports the hash, the ledger and an explorer link', asyn
 
 // ── the allowlist plan ───────────────────────────────────────────────────────────
 
-test('an unbound payee is DENY with an on-chain revoke, and no scorer is run for it', async () => {
+test('an unbound payee is WARN and writes nothing, and no scorer is run for it', async () => {
   const payee = accountId()
   const { deps } = stubs()
   let scored = 0
@@ -823,8 +823,9 @@ test('an unbound payee is DENY with an on-chain revoke, and no scorer is run for
   )
   assert.equal(r.status, 200)
   assert.equal(r.body.binding, 'none')
-  assert.equal(r.body.decision, 'DENY')
-  assert.deepEqual(r.body.chainAction, { method: 'set_allowed', payee, ok: false })
+  assert.equal(r.body.decision, 'WARN')
+  assert.equal(r.body.risk, 'medium')
+  assert.equal(r.body.chainAction, null, 'no revoke: nothing is known against this payee')
   assert.equal(scored, 0, 'with no agent there is nothing to score')
   assert.ok(Array.isArray(r.body.reasons) && (r.body.reasons as string[]).length > 0)
 })
