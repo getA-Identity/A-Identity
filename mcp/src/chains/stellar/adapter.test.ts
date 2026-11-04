@@ -279,6 +279,19 @@ test('owner == operator is refused before the network is touched at all', async 
   assert.match(r.reason, /OwnerIsOperator/)
 })
 
+test('a deploy refuses a 0 cap or ceiling, which the constructor reads as no limit, before any network', async () => {
+  const a = createStellarAdapter(testnet(), { server: noNetwork })
+  const token = requireChain('stellar:testnet').settlementTokens?.[0]?.address as string
+  for (const [dailyCapRaw, autoApproveMaxRaw] of [[0n, 1n], [1n, 0n], ['0', '0']] as const) {
+    const r = await a.deployVault(
+      { owner: Keypair.random().publicKey(), operator: Keypair.random().publicKey(), token, dailyCapRaw, autoApproveMaxRaw },
+      { STELLAR_TESTNET_SIGNER_SECRET: Keypair.random().secret() },
+    )
+    assert.equal(r.outcome, 'refused')
+    if (r.outcome === 'refused') assert.match(r.reason, /0 means no limit/)
+  }
+})
+
 test('a deploy refuses a payee-shaped owner and a G... token before it can confuse the chain', async () => {
   const a = createStellarAdapter(testnet(), { server: noNetwork })
   const token = requireChain('stellar:testnet').settlementTokens?.[0]?.address as string

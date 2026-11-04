@@ -10,7 +10,8 @@ import {
   vaultResultFromOutcome, type VaultPolicyView,
   sessionKeyExpiryFor, REVOKED_SESSION_EXPIRY, vaultPolicyPlan, writeVaultSessionExpiry,
 } from './vault-adapter.js'
-import type { PlatformAgent } from './core.js'
+import { __resetPlatformStateForTests, createAgent, provisionAgentVault } from '../platform.js'
+import { state, type PlatformAgent } from './core.js'
 
 /**
  * The dispatcher exists because an AgentSpendPolicy is deployed on two ecosystems that
@@ -207,6 +208,38 @@ test('a revoke writes expiry 1, a second already past on every chain, never 0 an
   }
   assert.equal(sessionKeyExpiryFor({ durationHours: 0 }, now), null)
   assert.equal(sessionKeyExpiryFor({}, now), null)
+})
+
+test('a server-side Stellar deploy is refused when a saved limit is 0, or rounds to 0, and nothing is recorded', async () => {
+  __resetPlatformStateForTests()
+  const OWNER = 'owner@test'
+  const seed = (dailyCapUsd: number, autoApproveUnderUsd: number) => {
+    const made = createAgent({ name: `Vault ${dailyCapUsd}/${autoApproveUnderUsd}`, description: 'Seeded for a deploy refusal.', category: 'Research', capabilities: [], permissions: {}, owner: OWNER })
+    const row = state.agents.find((a) => a.id === made.id) as PlatformAgent
+    row.permissions = { ...row.permissions, dailyCapUsd, autoApproveUnderUsd }
+    return row
+  }
+  // 0 stops spending in the server policy; the same value in the Soroban constructor means no limit.
+  const refused: [number, number, RegExp][] = [
+    [0, 0.25, /a daily cap of 0 means no limit/],
+    [1, 0, /a per-payment ceiling of 0 means no limit/],
+    [0, 0, /a daily cap and a per-payment ceiling of 0/],
+    // Stellar USDC has 7 decimals, so this is 0 raw units there while 1e-7 is one.
+    [4e-8, 0.25, /a daily cap of 0 means no limit/],
+    [1, 4e-8, /a per-payment ceiling of 0 means no limit/],
+  ]
+  for (const [cap, ceiling, said] of refused) {
+    const row = seed(cap, ceiling)
+    const r = await provisionAgentVault(row.id, { caller: OWNER, chain: 'stellar:testnet' })
+    assert.match((r as { error?: string }).error ?? '', said, `${cap}/${ceiling}`)
+    assert.equal(row.vaultAddress ?? null, null, 'a refused deploy records nothing')
+  }
+  // The control: usable limits, including one base unit on 7 decimals, pass this rule and stop later, at the owner.
+  for (const [cap, ceiling] of [[1, 0.25], [1e-7, 1e-7]] as const) {
+    const r = await provisionAgentVault(seed(cap, ceiling).id, { caller: OWNER, chain: 'stellar:testnet' })
+    assert.doesNotMatch((r as { error?: string }).error ?? '', /means no limit/, `${cap}/${ceiling}`)
+    assert.ok((r as { error?: string }).error, 'this test has no owner wallet, so it stops at the owner rule')
+  }
 })
 
 test('an EVM vault deploy with a zero daily cap or per-payment ceiling is refused before any key or RPC', async () => {

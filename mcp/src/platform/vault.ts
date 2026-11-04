@@ -5,6 +5,7 @@
  */
 import { state, save, ownsAgent, pushActivity, short, inFlightAgentOps, normalizeSubject, type PlatformAgent } from './core.js'
 import { deployPolicyVault, payUsdcOnchain } from '../arc-contracts.js'
+import { vaultCapsRefusal } from '../chains/evm/adapter.js'
 import {
   vaultChainFor, readVaultPolicy, writeVaultPolicy, writeVaultFrozen, writeVaultAllowed,
   writeVaultSessionExpiry, deployStellarVault, stellarOperatorAddress, vaultPolicyPlan,
@@ -76,6 +77,15 @@ async function provisionStellarVault(
         `The rehearsal network needs no flag, so ${CHAINS.find((c) => c.ecosystem === 'stellar' && c.testnet)?.id ?? 'the Stellar testnet'} is available now.`,
     }
   }
+
+  // 0 stops spending in the server policy, and the same value in the constructor means no limit,
+  // so a vault deployed from those permissions would carry the opposite of what the owner saved.
+  const capsRefused = vaultCapsRefusal(
+    agent.permissions.dailyCapUsd,
+    agent.permissions.autoApproveUnderUsd,
+    chain.settlementTokens?.[0]?.decimals ?? chain.usdcDecimals ?? 6,
+  )
+  if (capsRefused) return { error: capsRefused }
 
   // Permanent once deployed (the contract has no set_owner), so the rules live in one pure,
   // tested function instead of a ternary that quietly took the oldest linked wallet and let a
