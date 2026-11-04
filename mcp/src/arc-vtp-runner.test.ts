@@ -362,3 +362,59 @@ test('a base URL that only looks local is refused before anything is read', asyn
   assert.deepEqual(r.entries, [])
   rmSync(b.dir, { recursive: true })
 })
+
+test('the plan names the build that is answering, and says so when it cannot be read', async () => {
+  const b = box()
+  const up = await runner(b, ['--deny', '1'], { scenario: { commit: 'abc123def' } })
+  assert.match(up.stdout, /build abc123def \(GET \/health\)/)
+  assertSpentNothing(up)
+  const down = await runner(b, ['--deny', '1'])
+  assert.match(down.stdout, /build UNREADABLE \(GET \/health\)/)
+  assert.equal(down.code, 0, 'an unreadable build is shown, it does not refuse the plan')
+  rmSync(b.dir, { recursive: true })
+})
+
+// ── scripts/gateway-deposit.mjs ───────────────────────────────────────────────────
+
+function deposit(args: string[], env: NodeJS.ProcessEnv): Promise<{ code: number; stdout: string; stderr: string; entries: Entry[] }> {
+  const b = box()
+  const record = join(b.dir, 'requests.jsonl')
+  writeFileSync(record, '')
+  const scenario: FakeScenario = { record, operator: OPERATOR, baseUrl: BASE }
+  const script = fileURLToPath(new URL('../scripts/gateway-deposit.mjs', import.meta.url))
+  return new Promise((resolve) => {
+    execFile(process.execPath, ['--import', FAKE, script, ...args], { env: { PATH: process.env.PATH, HOME: b.home, ARC_VTP_FAKE: JSON.stringify(scenario), ...env }, cwd: MCP_ROOT, timeout: 60_000 }, (err, stdout, stderr) => {
+      const entries = readFileSync(record, 'utf8').split('\n').filter(Boolean).map((l) => JSON.parse(l) as Entry)
+      rmSync(b.dir, { recursive: true })
+      resolve({ code: err ? (typeof err.code === 'number' ? err.code : -1) : 0, stdout, stderr, entries })
+    })
+  })
+}
+
+test('a deposit with no --key-env moves nothing, whichever keys are in the environment', async () => {
+  // A balance can only be spent by the key that deposited it, so a default key can put money where
+  // the buyer the caller meant cannot reach it.
+  const r = await deposit(['--chain', 'arc-mainnet', '--amount', '0.1'], { X402_GATEWAY_BUYER_KEY: KEY, X402_3009_BUYER_KEY: KEY })
+  assert.equal(r.code, 0, r.stderr)
+  assert.match(r.stdout, /No --key-env given - PREPARED \(nothing was broadcast\)/)
+  assert.match(r.stdout, /X402_3009_BUYER_KEY/)
+  assert.doesNotMatch(r.stdout, /Depositor:/)
+  assert.deepEqual(r.entries, [], 'not one request left the process')
+  assert.ok(!r.stdout.includes(KEY.slice(2)))
+})
+
+test('a deposit naming a variable that is unset says which one, and moves nothing', async () => {
+  const r = await deposit(['--chain', 'arc-mainnet', '--amount', '0.1', '--key-env', 'X402_3009_BUYER_KEY'], { X402_GATEWAY_BUYER_KEY: KEY })
+  assert.equal(r.code, 0, r.stderr)
+  assert.match(r.stdout, /No X402_3009_BUYER_KEY set - PREPARED/)
+  assert.deepEqual(r.entries, [])
+})
+
+test('a deposit that names its key prints that key\'s address before it reads or signs anything', async () => {
+  // The fake has no token to read, so the script stops at its first read. What this proves is whose
+  // key it reached for, ahead of anything that could be signed.
+  const r = await deposit(['--chain', 'arc-mainnet', '--amount', '0.1', '--key-env', 'X402_3009_BUYER_KEY'], { X402_GATEWAY_BUYER_KEY: `0x${'11'.repeat(32)}`, X402_3009_BUYER_KEY: KEY })
+  assert.ok(r.stdout.includes(`Depositor: ${privateKeyToAccount(KEY as `0x${string}`).address} (X402_3009_BUYER_KEY)`), r.stdout)
+  assert.ok(!r.stdout.includes(KEY.slice(2)) && !r.stderr.includes(KEY.slice(2)))
+  assert.deepEqual(r.entries.filter((e) => e.kind === 'raw_tx'), [])
+})

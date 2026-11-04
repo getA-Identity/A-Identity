@@ -25,9 +25,15 @@
  * counts: those use the owner's own agent as operator.
  *
  * Usage (from mcp/, after npm run build and cd ../trust-guard && npm run build):
- *   node scripts/arc-vtp-runner.mjs --allow 2 --deny 2
+ *   node scripts/arc-vtp-runner.mjs --allow 1 --deny 9 --log data/arc-vtp-run.jsonl
  *   CONFIRM_ARC_VTP_RUN=yes node --env-file=.env scripts/arc-vtp-runner.mjs \
- *     --allow 30 --deny 70 --log data/arc-vtp-run.jsonl --execute
+ *     --allow 1 --deny 9 --log data/arc-vtp-run.jsonl --execute
+ *
+ * Run in batches, raising the totals each time, and start with one ALLOW: it is the first real
+ * run of the receipt post and the season link. The plan prices every payment at the gas limit
+ * read now, and the first one funds a new account when the payee holds no USDC, so a large first
+ * plan overstates gas and can be refused against the default --budget. Read the plan's shortfall
+ * and pass --budget. Keep a batch inside one UTC day.
  *
  * Flags:
  *   --allow <n>          flows paying the showcase agent, expected ALLOW then a Paid tx
@@ -311,6 +317,16 @@ async function readRoute(payee, amountUnits) {
   }
 }
 
+/** Which build is answering. An older one quotes the same 402, so the plan cannot see it any other way. */
+async function readBackendCommit() {
+  try {
+    const r = await httpJson(`${baseUrl}/health`, { method: 'GET' })
+    return r.status === 200 && typeof r.body?.commit === 'string' ? r.body.commit : null
+  } catch {
+    return null
+  }
+}
+
 async function readPreview(payee) {
   try {
     const r = await httpJson(`${baseUrl}${PREVIEW_PATH}`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ agentId: payee.address }) })
@@ -439,12 +455,13 @@ async function gatherPlan(operatorHint, log) {
   return { input, plan, operator, vault }
 }
 
-function printPlan({ input, plan, operator, vault }, operatorSource) {
+function printPlan({ input, plan, operator, vault, backendCommit }, operatorSource) {
   const { gatewayUnits, gasPriceWei, operatorGasWei, priceUnits, payees, log } = input
   const known = (v, f) => (v === null || v === undefined ? 'UNREADABLE' : f(v))
   print('Arc Mainnet verify-then-pay run')
   print(`mode: ${execute ? 'EXECUTE' : 'PREPARED (nothing signed, nothing paid)'}`)
   print(`api: ${baseUrl}`)
+  print(`  build ${backendCommit ?? 'UNREADABLE'} (GET /health). Check it is the commit you expect: a build older than the route's agentId and txContext fields passes this plan, then loses one paid check to CONTEXT_MISMATCH.`)
   print(`vault: ${VAULT} (launch-day vault)`)
   if (vault) {
     print(`  owner ${vault.owner}`)
@@ -571,7 +588,7 @@ async function run() {
 
   const gathered = await gatherPlan(operatorHint, planState)
   if (!gathered) return 1
-  printPlan(gathered, operatorSource)
+  printPlan({ ...gathered, backendCommit: await readBackendCommit() }, operatorSource)
   if (!mayWrite && gaps.length) print(`note: ${gaps.length} transaction(s) in the log have no verified record. --reconcile posts each hash again, and so does --execute.`)
 
   if (!execute) {
