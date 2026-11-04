@@ -48,3 +48,17 @@ export function countableDeploy(testnet: boolean, setup: DeploySetup | null): st
 export function readyToCount(step: string): boolean {
   return step === 'fund' || step === 'fund-pending' || step === 'done'
 }
+
+/**
+ * Whether to put the question for this stage now. One question at a time, and a stage reached while
+ * one is out stays unasked, so it goes out when that one comes back: a first question that fails must
+ * not use up the last screen's.
+ */
+export function shouldAsk(stage: string, count: VaultCount | null, asked: ReadonlySet<string>, sending: boolean): boolean {
+  return !sending && count?.state !== 'counted' && !asked.has(stage)
+}
+
+/** Whether time alone could change the answer, so the page may ask once more by itself. A refusal that is a fact about the vault stays. */
+export function askAgainByItself(count: VaultCount | null): boolean {
+  return count?.state === 'failed' || (count?.state === 'not-counted' && count.retryable)
+}
