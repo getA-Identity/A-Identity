@@ -236,7 +236,7 @@ test('found and counted through the real admission and store: one row, same shap
   assert.doesNotMatch(rows[0].note, /Admitted automatically by POST/)
 })
 
-test('the page and the sweep racing give one row: the store is insert-only and the sweep is no new writer', async () => {
+test('the sweep is no new writer of the store: only admitVaultDeploy writes it', async () => {
   const source = readFileSync(new URL('../src/arc-vault-sweep.ts', import.meta.url), 'utf8')
   assert.doesNotMatch(source, /persistAdmittedArcVault/, 'only admitVaultDeploy writes the store')
   assert.match(source, /admitVaultDeploy\(\{ deployTx \}/)
@@ -306,6 +306,27 @@ test('no direct creation: a contract a factory made is not asked about, and not 
   assert.equal(chain.reads.filter((r) => /getCode|getBlockByNumber|eth_call/.test(r)).length, before)
 })
 
+test('no host able to read the block before: no conclusion about a factory yet', async () => {
+  const factoryMade = vaultAt(1, 300_000, 300_040, OWNER, { deployTx: null })
+  const chain = new Chain().add(factoryMade)
+  let down = false
+  const only = host(chain, 'only', {
+    on: (method) => {
+      if (method === 'eth_getBlockByNumber') down = true
+      return method === 'eth_getCode' && down ? new Error('502') : undefined
+    },
+  })
+  const h = harness(chain, { hostList: [only] })
+  const sweep = createVaultSweep(h.deps)
+  await sweep.tick()
+  assert.equal(sweep.status().lastProblem, 'deploy-not-read')
+  assert.equal(h.lines.filter((l) => l.includes('no direct creation')).length, 0)
+  down = false
+  // The next tick reads the whole block again, which sets down again: so it is still not concluded.
+  await sweep.tick()
+  assert.equal(h.lines.filter((l) => l.includes('no direct creation')).length, 0)
+})
+
 test('a host that led the bisect past the real block is caught before anyone is called a factory', async () => {
   const v = vaultAt(1, 300_000, 300_040)
   const chain = new Chain().add(v)
@@ -323,7 +344,8 @@ test('a host that led the bisect past the real block is caught before anyone is 
 })
 
 test('a host failure leaves the cursor where it was, and blocks read stay read', async () => {
-  const v = vaultAt(1, 300_000, 300_040)
+  // Its log is in the first chunk that cannot be read, so a cursor moved over that chunk loses it.
+  const v = vaultAt(1, 201_000, 201_010)
   const chain = new Chain().add(v)
   let down = true
   const flaky = host(chain, 'flaky', {
@@ -337,7 +359,7 @@ test('a host failure leaves the cursor where it was, and blocks read stay read',
   const sweep = createVaultSweep(h.deps)
   await sweep.tick()
   const stopped = Number(sweep.status().lastBlockRead)
-  assert.ok(stopped >= 195_000 && stopped < 300_000, `stopped before the blocks it could not read: ${stopped}`)
+  assert.equal(stopped, 200_999, 'stopped before the blocks it could not read')
   assert.equal(sweep.status().lastProblem, 'logs-not-read')
   assert.deepEqual(h.asked, [], 'the vault in the unread blocks was not skipped: it is just not found yet')
   down = false
@@ -484,6 +506,26 @@ test('under a flood the caps hold on every tick and the real owner is still reac
   }
   assert.ok(h.asked.includes(real.deployTx as string), 'a flood delays a real owner and does not lock one out')
   assert.ok(ticks > 2, `it did delay: ${ticks} ticks`)
+})
+
+test('the read cap holds whatever else is going on, and a bisect it stopped goes on from its bounds', async () => {
+  const chain = new Chain()
+  const flooder = '0x9999999999999999999999999999999999999999' as Hex
+  for (let i = 0; i < 40; i++) chain.add(vaultAt(100 + i, 200_000 + i * 10, 200_005 + i * 10, flooder))
+  const h = harness(chain)
+  const sweep = createVaultSweep({ ...h.deps, limits: { readsPerTick: 50, logReadsPerTick: 20, asksPerTick: 1000 } })
+  const perTick: number[] = []
+  for (let i = 0; i < 40; i++) {
+    const before = chain.reads.length
+    await sweep.tick()
+    perTick.push(chain.reads.length - before)
+    h.clock.t += 5 * 60_000
+  }
+  assert.ok(perTick.every((n) => n <= 50), `at most the cap each tick: ${perTick.join(',')}`)
+  assert.equal(new Set(h.asked).size, 40, 'and they all get their turn')
+  // 2 getters, about 18 steps and a block read per contract: a bisect that started over each tick would never finish in 50.
+  const codeReads = chain.reads.filter((r) => r.includes('getCode')).length
+  assert.ok(codeReads <= 40 * 20, `no bound was given up: ${codeReads}`)
 })
 
 test('those being asked again do not starve while new contracts keep coming, and the reverse', async () => {

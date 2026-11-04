@@ -278,7 +278,7 @@ export function createVaultSweep(deps: VaultSweepDeps): VaultSweep {
   }
 
   /** New blocks, oldest first. The cursor moves only over a chunk a host whose head had reached it answered. */
-  async function readNewBlocks(budget: Budget, counted: ReadonlySet<string>): Promise<boolean> {
+  async function readNewBlocks(budget: Budget): Promise<boolean> {
     const hosts = budget.hosts
     const heads = new Map<string, number>()
     for (const a of await everyHost<number>(hosts, 'eth_blockNumber', [], (v) => Number(BigInt(v)))) {
@@ -304,7 +304,7 @@ export function createVaultSweep(deps: VaultSweepDeps): VaultSweep {
       const asked = await firstAnswer(covering, 'eth_getLogs', [{ fromBlock: toHex(from), toBlock: toHex(end), topics: [EXPIRY_TOPIC] }], readLogs(from, end))
       if (asked.ok) {
         for (const { vault, block } of asked.value) {
-          if (!candidates.has(vault) && !closed.has(vault) && !counted.has(vault)) {
+          if (!candidates.has(vault) && !closed.has(vault)) {
             candidates.set(vault, { vault, waitingSince: now(), notBefore: 0, shapeRead: false, lo: 0, hi: block, deployTx: null, refusals: 0 })
           }
         }
@@ -464,7 +464,7 @@ export function createVaultSweep(deps: VaultSweepDeps): VaultSweep {
     const hosts = withDeadline(benchStalledHosts(budget.hosts, limits.stalledAfterMs, now), limits.tickDeadlineMs, now)
     const bounded: Budget = { ...budget, hosts }
     const deadline = now() + limits.tickDeadlineMs
-    if (await readNewBlocks(bounded, counted.vaults)) await askAboutCandidates(bounded, counted.vaults, deadline)
+    if (await readNewBlocks(bounded)) await askAboutCandidates(bounded, counted.vaults, deadline)
   }
 
   return {
