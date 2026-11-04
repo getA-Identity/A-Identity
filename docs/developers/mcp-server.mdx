@@ -46,7 +46,7 @@ npm run smoke         # exercise every tool over stdio
 | `get_reputation` | An agent's deterministic reputation from 0 to 1000, computed from real activity |
 | `list_agents` | List the real agents registered on the platform, with KYA and on-chain status |
 | `get_chain_status` | Every chain in the registry, with its identity standard, x402 support and live status |
-| `evm_pay_check` | Before paying on an EVM chain we settle on (pass `chain`: it defaults to Robinhood Chain, and Arc Mainnet is `arc-mainnet`): is the token the real USDG or USDC with a proven signing domain, is the payee a registered agent, and what an x402 link asks for. Free and read-only |
+| `evm_pay_check` | Before paying on an EVM chain we settle on (without `chain`, a bare address, `#n` id or link is read on Robinhood Chain, so pass `arc-mainnet` for those on Arc Mainnet; a full agent id names its own chain): is the token the real USDG or USDC with a proven signing domain, is the payee a registered agent, and what an x402 link asks for. Free and read-only |
 | `get_arc_status` | Live Circle Arc testnet state read over JSON-RPC: chain id, latest block, contracts. Testnet only: Arc Mainnet evidence is at `GET /api/proof/arc` |
 | `get_circle_status` | The Circle developer platform link: wallets, Gateway unified balance, USDC |
 | `list_capabilities` | The full protocol surface: identity, payments, connectivity, reputation |
