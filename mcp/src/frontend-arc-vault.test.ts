@@ -1764,7 +1764,8 @@ test('step 3 never offers USDC again on a stale balance: an intent is saved befo
   assert.match(flow, /\(!fundingInDoubt\(setup, pageTx\) \|\| fundAsking \|\| refundConfirmed\)/)
   assert.match(flow, /patch\(\(s\) => fundSent\(s, r\)\)/)
   // Steps 2 and 3 keep reading, the balance is shown with its read time, and a failed read holds the form.
-  assert.match(flow, /const keepReading = step === 'expiry' \|\| step === 'expiry-pending' \|\| step === 'fund' \|\| step === 'fund-pending'/)
+  assert.match(flow, /const every = rereadMs\(step, readBehind, haveRead\)/)
+  assert.match(readFileSync(new URL('../../src/lib/arc/vault-reread.ts', import.meta.url), 'utf8'), /step === 'expiry' \|\| step === 'expiry-pending' \|\| step === 'fund' \|\| step === 'fund-pending'/)
   assert.match(flow, /The vault holds \{formatUnitsExact\(liveVault\.balance, decimals\)\} USDC, read at \{localTime\(liveVault\.readAt\)\}/)
   assert.match(flow, /held=\{pageTx\?\.outcome === 'pending' \|\| snapshotNote !== null\}/)
   // A hung wallet is said out loud, and an expiry that landed anyway lets go of it.

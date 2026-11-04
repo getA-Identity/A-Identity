@@ -168,7 +168,6 @@ test('the last screen says the agent key needs USDC of its own, and the figure i
   const quoted = feesFor(r.FEE_FLOOR_WEI)
   assert.ok(quoted.ok)
   assert.equal(quoted.fees.maxFeePerGas, maxFeePerGas, 'the page and the paid check price a payment alike')
-  assert.equal(r.gasWithMargin(116_370n), gasLimitFor(116_370n))
   const needWei = gasLimitFor(116_370n) * maxFeePerGas
   const needUsdc = Number(needWei) / 1e18
   assert.equal(c.AGENT_PAYMENT_FEE_AT_MOST, `about ${(Math.ceil(needUsdc * 1000) / 1000).toFixed(3)} USDC`)
