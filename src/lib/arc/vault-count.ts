@@ -80,7 +80,7 @@ export function noHashWords(endDate: EndDate, sweep: SweepSays): string {
   if (sweep === 'looking') {
     const then = {
       none: `${NOTHING_TO_SEND}, and it finds this one once it has an end date.`,
-      passed: `${NOTHING_TO_SEND}, and it finds this one again within about an hour of the new end date.`,
+      passed: `${NOTHING_TO_SEND}, and it finds this one again within about ten minutes of the new end date, later if many contracts are waiting.`,
       revoked: `${NOTHING_TO_SEND}, and it finds this one with its key revoked too. ${LOOK_AGAIN}`,
       future: `${NOTHING_TO_SEND}, and this one has the agent key end date it looks for. ${LOOK_AGAIN}`,
       unknown: `${NOTHING_TO_SEND}, and it finds this one while its agent key has an end date in the future, or is revoked.`,

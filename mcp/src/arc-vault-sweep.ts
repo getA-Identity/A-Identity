@@ -75,9 +75,13 @@
  *     deploys. A vault after them waits for that crossing, and an owner holding their hash can still post.
  *   - A bisect keeps its bounds between ticks and is finished before anything new is started, and a
  *     deploy hash once found is never looked for again.
- *   - Refused for good is remembered for the life of the process. A retryable refusal waits longer
- *     each time, up to an hour, and is never given up on: what it is waiting for, a host catching up
- *     or an end date being renewed, may take longer than any count of tries.
+ *   - Refused for good is remembered for the life of the process, and a new log does not reopen it. A
+ *     retryable refusal waits longer each time, up to an hour, and is never given up on: what it is
+ *     waiting for, a host catching up or an end date being renewed, may take longer than any count of
+ *     tries. A newer log may be that end date, so the wait starts over and is cut to one step from when
+ *     the contract was last asked about. With a tick and a step of 5 minutes an owner is asked about
+ *     within about ten minutes of the write, which is what the page says, and a contract paying gas for
+ *     logs gets one ask a step, inside the same cap per tick.
  * The queue itself is not capped, since dropping an entry could drop a real vault. It grows only as
  * fast as someone pays to deploy contracts, at a few hundred bytes each.
  *
@@ -205,7 +209,7 @@ type Candidate = {
   vault: string
   /** Since when it has waited: found, or last asked about. The longest wait goes first on its turn. */
   waitingSince: number
-  /** Its newest log. It orders the contracts nobody has asked about yet, and changes nothing for one already asked. */
+  /** Its newest log. It orders the contracts nobody has asked about yet. For one already asked, a newer one brings the next ask forward. */
   logBlock: number
   /** Admission has been asked about it at least once. */
   asked: boolean
@@ -388,8 +392,13 @@ export function createVaultSweep(deps: VaultSweepDeps): VaultSweep {
   const noteFound = (logs: readonly LogEntry[]) => {
     for (const { vault, block } of logs) {
       const known = candidates.get(vault)
-      if (known) known.logBlock = Math.max(known.logBlock, block)
-      else if (!closed.has(vault)) {
+      if (known) {
+        if (block <= known.logBlock) continue
+        known.logBlock = block
+        // A new end date may be what its refusals were waiting for. Not sooner than a step from the last ask, whatever someone pays for logs.
+        known.refusals = 0
+        known.notBefore = Math.min(known.notBefore, known.waitingSince + limits.retryAfterMs)
+      } else if (!closed.has(vault)) {
         candidates.set(vault, { vault, waitingSince: now(), logBlock: block, asked: false, unreadTimes: 0, midway: false, notBefore: 0, shapeRead: false, lo: 0, hi: block, deployTx: null, refusals: 0 })
       }
     }

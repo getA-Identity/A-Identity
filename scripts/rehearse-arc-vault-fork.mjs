@@ -1201,7 +1201,7 @@ async function browserRehearsal({ handoffOnly = false } = {}) {
     // A date that has passed, and not the revoke's own value: admission refuses this one and takes that one.
     await send(acct(ownerIndex), vaultCall(vault, 'setSessionKeyExpiry', [2n]))
     await open(vault)
-    await stopIf(await waitText(/yet, because its agent key's end date has passed\. Set a new one in the Session key box on this vault's page, with its Extend or shorten button\. .*within about an hour of the new end date/, 30000), 'a date that has passed: it says so, where to set a new one, and when the server finds it again')
+    await stopIf(await waitText(/yet, because its agent key's end date has passed\. Set a new one in the Session key box on this vault's page, with its Extend or shorten button\. .*within about ten minutes of the new end date/, 30000), 'a date that has passed: it says so, where to set a new one, and when the server finds it again')
     const passedSays = await noticeSays()
     say(`the vault page says: ${passedSays}`)
     await sessionKeyButton('Extend or shorten').waitFor({ timeout: 30000 })

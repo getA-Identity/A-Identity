@@ -303,7 +303,8 @@ test('with no hash the page says why from the end date, and says the server is l
   // A date that has passed: the one action that fixes it is renewing, so it says so and sends nobody to a person.
   const passed = noHashWords('passed', 'looking')
   assert.match(passed, /because its agent key's end date has passed\. Set a new one in the Session key box on this vault's page, with its Extend or shorten button\./)
-  assert.match(passed, /within about an hour of the new end date/)
+  // A test in arc-vault-sweep.test.ts runs the sweep against these words.
+  assert.match(passed, /within about ten minutes of the new end date, later if many contracts are waiting\./)
   assert.doesNotMatch(passed, /has the agent key end date it looks for|A-Identity team/)
   assert.equal(endDateOf(0n, false), 'none')
   assert.equal(endDateOf(5000n, false), 'future')

@@ -7,7 +7,7 @@ import { encodeEventTopics, encodeFunctionData, encodeFunctionResult, getCreateA
 import { encodeCreationInput, type OurAddresses } from './arc-owner-vault.js'
 import { admissionContext, admitVaultDeploy, runAdmission, type AdmissionContext, type RpcHost, type VaultAdmissionAnswer } from './arc-owner-vault-live.js'
 import { ARC_VAULT_SWEEP_START_BLOCK } from './arc-season.js'
-import { createVaultSweep, liveVaultSweepDeps, runOnTimer, startVaultSweep, sweepAdmissionDeps, sweepConfig, vaultSweepStatus, type VaultSweepDeps } from './arc-vault-sweep.js'
+import { DEFAULT_SWEEP_LIMITS, createVaultSweep, liveVaultSweepDeps, runOnTimer, startVaultSweep, sweepAdmissionDeps, sweepConfig, vaultSweepStatus, type VaultSweepDeps } from './arc-vault-sweep.js'
 import { handleArcSeasonRoutes } from './http/arc-season-routes.js'
 import { AgentSpendPolicyAbi, AgentSpendPolicyBytecode } from './contracts/AgentSpendPolicy.js'
 import { findAdmittedArcVaultByTx, loadAdmittedArcVaults, persistAdmittedArcVault, type ArcVaultStoreIo } from './storage.js'
@@ -475,6 +475,164 @@ test('a retryable refusal is asked again, later each time, up to an hour, with n
   h.clock.t += 61 * minute
   await sweep.tick()
   assert.equal(h.asked.length, 16, 'counted, and done with')
+})
+
+test('a new end date does not wait out the backoff: it is asked about within one step, and the backoff starts over', async () => {
+  const v = vaultAt(1, 300_000, 300_040)
+  let answer = refused(true, 'session-key-expiry')
+  const counted = new Set<string>()
+  const h = harness(new Chain().add(v), { answer: () => answer, counted2: counted })
+  const sweep = createVaultSweep(h.deps)
+  const minute = 60_000
+  const newLog = () => {
+    h.chain.contracts.push({ ...v, logBlock: h.chain.head })
+    h.chain.head += 100
+  }
+  await sweep.tick()
+  for (const wait of [5, 10, 20, 40, 60]) {
+    h.clock.t += wait * minute
+    await sweep.tick()
+  }
+  assert.equal(h.asked.length, 6, 'the wait has grown to an hour')
+
+  h.clock.t += 1 * minute
+  newLog()
+  await sweep.tick()
+  assert.equal(h.asked.length, 6, 'last asked a minute ago, so the log alone does not ask at once')
+  h.clock.t += 3 * minute
+  await sweep.tick()
+  assert.equal(h.asked.length, 6, 'not before the step')
+  h.clock.t += 1 * minute
+  await sweep.tick()
+  assert.equal(h.asked.length, 7, 'one step from the last ask, and not the hour')
+
+  // Refused again: the wait is one step again, and doubles from there.
+  h.clock.t += 4 * minute
+  await sweep.tick()
+  assert.equal(h.asked.length, 7)
+  h.clock.t += 1 * minute
+  await sweep.tick()
+  assert.equal(h.asked.length, 8)
+  h.clock.t += 9 * minute
+  await sweep.tick()
+  assert.equal(h.asked.length, 8, 'the wait doubled, with no new log')
+
+  // A log long after the last ask is asked about in the tick that reads it.
+  h.clock.t += 1 * minute
+  await sweep.tick()
+  assert.equal(h.asked.length, 9)
+  h.clock.t += 19 * minute
+  newLog()
+  answer = admitted(v.address, v.deployTx as string)
+  await sweep.tick()
+  assert.equal(h.asked.length, 10)
+  counted.add(v.address)
+  h.clock.t += 60 * minute
+  newLog()
+  await sweep.tick()
+  assert.equal(h.asked.length, 10, 'counted, and a new log does not bring it back')
+})
+
+test('the words on the page hold against the sweep: a new end date is asked about within about ten minutes of the write', async () => {
+  const words = (await import(new URL('../../src/lib/arc/vault-count.ts', import.meta.url).href)) as { noHashWords: (endDate: string, sweep: string) => string }
+  assert.match(words.noHashWords('passed', 'looking'), /within about ten minutes of the new end date/)
+  const everyMs = sweepConfig({}).everyMs
+  const stepMs = DEFAULT_SWEEP_LIMITS.retryAfterMs
+  assert.equal(everyMs + stepMs, 10 * 60_000, 'a tick to read the log, then at most a step from the last ask: if these move, the page has to move')
+  assert.ok(DEFAULT_SWEEP_LIMITS.maxRetryAfterMs > 10 * 60_000, 'and it is the new log that makes it so short, not the wait it would have had')
+
+  const v = vaultAt(1, 300_000, 300_040)
+  const chain = new Chain().add(v)
+  const start = Date.parse('2026-11-04T12:00:00Z')
+  const asks: number[] = []
+  const h = harness(chain, {
+    answer: () => {
+      asks.push(h.clock.t)
+      h.clock.t += 3000
+      return refused(true, 'session-key-expiry')
+    },
+  })
+  // A real read takes a moment, so a step from the last ask usually ends just after the next tick, and the wait is then two ticks.
+  const taking = (label: string) => host(chain, label, { on: () => void (h.clock.t += 150) })
+  const sweep = createVaultSweep({ ...h.deps, hosts: () => [taking('one'), taking('two')] })
+  let tick = 0
+  const nextTick = async () => {
+    h.clock.t = start + tick++ * everyMs
+    await sweep.tick()
+  }
+  // Until the wait has grown to its longest. The worst moment for an owner is a write just after an ask.
+  while (asks.length < 2 || (asks.at(-1) as number) - (asks.at(-2) as number) < DEFAULT_SWEEP_LIMITS.maxRetryAfterMs) {
+    assert.ok(tick < 100, 'the wait grows to its longest in a few asks')
+    await nextTick()
+  }
+  const writtenAt = h.clock.t
+  chain.contracts.push({ ...v, logBlock: chain.head })
+  chain.head += 100
+  const before = asks.length
+  await nextTick()
+  await nextTick()
+  assert.ok(asks.length > before, 'asked within two ticks of the write, and not an hour after the last ask')
+  assert.ok(asks[before] - writtenAt <= 10 * 60_000, `asked ${asks[before] - writtenAt} ms after the write`)
+})
+
+test('a contract paying gas for a new log every tick is asked about no more than once a step, and the cap per tick holds', async () => {
+  const minute = 60_000
+  const v = vaultAt(1, 300_000, 300_040)
+  const h = harness(new Chain().add(v), { answer: () => refused(true, 'session-key-expiry') })
+  const sweep = createVaultSweep(h.deps)
+  for (let i = 0; i <= 60; i++) {
+    h.chain.contracts.push({ ...v, logBlock: h.chain.head })
+    h.chain.head += 100
+    await sweep.tick()
+    h.clock.t += minute
+  }
+  assert.equal(h.asked.length, 13, 'an hour of ticks a minute apart: one ask at the start, then one every five')
+
+  // Many of them at once: however many have a new log, a tick asks about no more than its cap.
+  const chain = new Chain()
+  const many = Array.from({ length: 12 }, (_, i) => vaultAt(i + 1, 300_000 + i * 10, 300_100 + i * 10))
+  chain.add(...many)
+  const m = harness(chain, { answer: () => refused(true, 'session-key-expiry'), limits: { readsPerTick: 2000 } })
+  const flood = createVaultSweep(m.deps)
+  for (let i = 0; i < 12; i++) {
+    const before = m.asked.length
+    await flood.tick()
+    assert.ok(m.asked.length - before <= DEFAULT_SWEEP_LIMITS.asksPerTick, `tick ${i} asked ${m.asked.length - before}`)
+    chain.contracts.push(...many.map((c) => ({ ...c, logBlock: chain.head })))
+    chain.head += 100
+    m.clock.t += 5 * minute
+  }
+  assert.ok(m.asked.length >= 5 * 12 - 5, `the cap is what holds it back (${m.asked.length})`)
+})
+
+test('an older log brings nothing forward: only a log newer than the one it knows can be a new end date', async () => {
+  const FULL = 250_000
+  const v = vaultAt(1, 240_000, 300_040)
+  const chain = new Chain().add(v)
+  // A log of the same contract in a block no host will read yet. It turns up once the hole is read, after the newer one.
+  chain.contracts.push({ ...v, logBlock: FULL })
+  let block: number | null = FULL
+  const hosts = [refusing(chain, 'one', () => block, { receipts: true }), refusing(chain, 'two', () => block, { receipts: true })]
+  const h = harness(chain, { hostList: hosts, answer: () => refused(true, 'session-key-expiry'), limits: { logReadsPerTick: 1000, readsPerTick: 2000 } })
+  const sweep = createVaultSweep(h.deps)
+  const minute = 60_000
+  await sweep.tick()
+  assert.equal(h.asked.length, 1)
+  h.clock.t += 5 * minute
+  await sweep.tick()
+  assert.equal(h.asked.length, 2)
+  // Both are due in this tick: the hole is read first, and that must not start the wait over.
+  block = null
+  h.clock.t += 10 * minute
+  await sweep.tick()
+  assert.equal(sweep.status().lastProblem, null, 'the hole was read')
+  assert.equal(h.asked.length, 3)
+  h.clock.t += 5 * minute
+  await sweep.tick()
+  assert.equal(h.asked.length, 3, 'the wait doubled to twenty minutes, as with no log at all')
+  h.clock.t += 15 * minute
+  await sweep.tick()
+  assert.equal(h.asked.length, 4)
 })
 
 test('an answer that is no answer about the vault, or an admission that throws, closes nothing', async () => {
