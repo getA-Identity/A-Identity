@@ -9,6 +9,7 @@
 import { useEffect, useState } from 'react'
 import { Loader2, QrCode, RefreshCw, Wallet } from 'lucide-react'
 import type { Chain } from '../../../lib/chains'
+import { CONNECT_RIGHT_ACCOUNT, USE_ANOTHER_ACCOUNT, phoneWalletHint } from '../../../lib/arc/deploy-copy'
 import { networkName, readNativeBalance, shortAddress } from '../../../lib/arc/vault-read'
 import { formatUnitsExact } from '../../../lib/arc/vault-rules'
 import { Button } from '../../ui/button'
@@ -94,8 +95,8 @@ export default function WalletBar({ wallet, target }: { wallet: ArcWalletState; 
                   : noWallet
                     ? 'No wallet found in this browser. You can read any vault without one. To deploy or run a vault you need a wallet such as Rabby or MetaMask: install one, then reload this page.'
                     : noExtension
-                      ? 'No browser wallet found here. You can read any vault without one. To deploy or run a vault, install Rabby or MetaMask and reload this page, or connect a phone wallet.'
-                      : 'Optional. Connect to deploy a vault you own, or to run one you already own. Reading needs no wallet.'}
+                      ? 'No browser wallet found here. You can read any vault without one. To deploy or run a vault, open this page in the browser that has Rabby or MetaMask, or install one and reload. A phone wallet can connect too.'
+                      : `Optional. Connect to deploy a vault you own, or to run one you already own. Reading needs no wallet. ${CONNECT_RIGHT_ACCOUNT}`}
               </div>
             )}
             {account && (
@@ -124,8 +125,13 @@ export default function WalletBar({ wallet, target }: { wallet: ArcWalletState; 
               Switch to {networkName(target)}
             </Button>
           )}
+          {account && (
+            <Button size="sm" variant="outline" onClick={() => void wallet.chooseAccount()} disabled={busy}>
+              {USE_ANOTHER_ACCOUNT}
+            </Button>
+          )}
           {account ? (
-            <Button size="sm" variant="outline" onClick={wallet.disconnect} disabled={busy}>
+            <Button size="sm" variant="outline" onClick={wallet.disconnect} disabled={busy} title="This page stops using the wallet. Your wallet itself does not change.">
               Forget this wallet
             </Button>
           ) : (
@@ -173,6 +179,7 @@ export default function WalletBar({ wallet, target }: { wallet: ArcWalletState; 
               </button>
             </li>
           )}
+          {wallet.walletConnect && <li className="text-[11px] text-foreground/60 sm:col-span-2">{phoneWalletHint(networkName(target))}</li>}
         </ul>
       )}
 

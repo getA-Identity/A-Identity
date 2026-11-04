@@ -24,13 +24,16 @@ import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } fro
 import { ArrowLeft, CheckCircle2, Loader2, ShieldAlert } from 'lucide-react'
 import type { Chain } from '../../../lib/chains'
 import { track } from '../../../lib/analytics'
-import { AGENT_KEY_CAN, AGENT_KEY_CANNOT, CALL_FEE_ABOUT, CONFIRMATIONS, FEES_LINE, IF_A_STEP_FAILS, OWNER_KEY_LINE, REVIEW_LINE, WALLET_GONE, WHAT_IS_A_VAULT, WRONG_ACCOUNT } from '../../../lib/arc/deploy-copy'
+import { AFTER_SETUP, AGENT_KEY_CAN, AGENT_KEY_CANNOT, AGENT_KEY_FEES, CALL_FEE_ABOUT, CONFIRMATIONS, FEES_LINE, GIVE_THE_AGENT, IF_A_STEP_FAILS, NO_HASH_LINE, OWNER_KEY_LINE, REVIEW_LINE, SAVE_LINK_LINE, USE_ANOTHER_ACCOUNT, WALLET_GONE, WALLET_MAY_REPRICE, WHAT_IS_A_VAULT, WRONG_ACCOUNT, WRONG_OWNER_WAY_OUT, networkPrompt } from '../../../lib/arc/deploy-copy'
+import { walletChainName } from '../../../lib/evm-chain'
 import { loadSetup, loadTx, saveTx, type SetupState, type TxRecord } from '../../../lib/arc/pending'
 import { FUND_RISK } from '../../../lib/arc/ours'
 import { deployReadback } from '../../../lib/arc/receipt'
 import { deployEnd, fundAsked, fundSent, fundingInDoubt, fundingUnresolved, liveOf, pageTxOnStep3, predictedVault, readBeforeExpiry, readBeforeFunding, setupDrift, setupStep, stepMovedOn, vaultToLookFor, withRecord, type DeployBack } from '../../../lib/arc/tx-rules'
+import { REREAD_MS, newerRead, rereadMs } from '../../../lib/arc/vault-reread'
 import {
   ARC_CHAINS,
+  addressUrl,
   arcChainFor,
   localTime,
   networkName,
@@ -81,10 +84,6 @@ import { useVaultCount } from './useVaultCount'
 const INPUT =
   'mt-1 w-full rounded-lg border border-border bg-card px-3 py-2 text-sm text-foreground outline-none focus:border-accent focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-60'
 
-/** While a step waits on the owner or the chain (steps 2 and 3), the vault is read again this often. */
-const REREAD_MS = 10_000
-/** How soon a read from before the funding's block is tried again: a host catches up in seconds. */
-const BEHIND_MS = 3_000
 /** While a deploy has no hash, the address it should create is looked at this often. */
 const LOOK_MS = 15_000
 /** How long a wallet that has not answered is waited on before the page says what else it is doing. */
@@ -232,7 +231,7 @@ export default function DeployFlow({
     const r = await readVault(chain, readAddress)
     if (r.ok) {
       // A host a block behind the last one answered never takes the page back in time.
-      setSnapshot((prev) => (prev && sameAddress(prev.address, r.data.address) && prev.network === r.data.network && prev.block > r.data.block ? prev : r.data))
+      setSnapshot((held) => newerRead(held, r.data))
       setSnapshotNote(null)
     } else if (r.failure.kind === 'unreachable') {
       setSnapshotNote(`The network did not answer just now, which says nothing about your vault. This page reads it again every ${REREAD_MS / 1000} seconds.`)
@@ -251,14 +250,15 @@ export default function DeployFlow({
     void readBack()
     // Steps 2 and 3 are decided by the chain as much as by their receipts: a transaction that will
     // never land must not hold the setup, a value set by any other means counts, one failed read
-    // must not leave the step stuck, and USDC is never offered again on a balance read once, long
-    // ago. The last screen must not leave a value from before its write standing either, or no
-    // value at all. A read this page will never use is not made while the tab is hidden.
-    const keepReading = step === 'expiry' || step === 'expiry-pending' || step === 'fund' || step === 'fund-pending' || (step === 'done' && !haveRead)
-    if (!keepReading && !readBehind) return
+    // must not leave the step stuck, a wallet error can leave a transaction on its way with no hash
+    // here to follow, and USDC is never offered again on a balance read once, long ago. The last
+    // screen must not leave a value from before its write standing either, or no value at all. A
+    // read this page will never use is not made while the tab is hidden.
+    const every = rereadMs(step, readBehind, haveRead)
+    if (every === null) return
     const t = setInterval(() => {
       if (!document.hidden) void readBack()
-    }, readBehind ? BEHIND_MS : REREAD_MS)
+    }, every)
     return () => clearInterval(t)
   }, [step, created, readBack, readBehind, haveRead])
 
@@ -298,10 +298,11 @@ export default function DeployFlow({
       // The wallet's promise may never settle (a phone browser suspended while the wallet app was
       // open), and the vault is here, so the page moves on rather than wait on it.
       release('deploy')
+      setFailure(null)
       setPrepared(null)
       track('arc_vault_deploy', { network: networkWord(chain), outcome: 'found_without_receipt' })
     }
-  }, [chain, patch, target, release])
+  }, [chain, patch, target, release, setFailure])
 
   // From the moment the wallet is asked: `target` exists only once the setup holds that intent, and
   // the hash may never come back to this page while the vault lands.
@@ -555,7 +556,7 @@ export default function DeployFlow({
       {(step === 'form' || step === 'review') && (
         <div className="grid gap-3 lg:grid-cols-2">
           <div className="rounded-xl border border-border bg-background/60 p-4 text-xs text-foreground/80">
-            <h3 className="text-sm font-semibold text-foreground">Your wallet will ask you to confirm up to three times</h3>
+            <h3 className="text-sm font-semibold text-foreground">Your wallet will ask you to confirm up to three transactions</h3>
             <ol className="mt-2 space-y-2">
               {CONFIRMATIONS.map((c, i) => (
                 <li key={c.title}>
@@ -566,6 +567,7 @@ export default function DeployFlow({
                 </li>
               ))}
             </ol>
+            <p className="mt-2">{networkPrompt(walletChainName(chain), chain.chainId)}</p>
             <p className="mt-2">{FEES_LINE}</p>
           </div>
           <div className="rounded-xl border border-border bg-background/60 p-4 text-xs text-foreground/80">
@@ -576,7 +578,7 @@ export default function DeployFlow({
             </p>
             <p className="mt-2">
               <span className="font-semibold text-foreground">Your agent: </span>
-              {AGENT_KEY_CAN} {AGENT_KEY_CANNOT}
+              {AGENT_KEY_CAN} {AGENT_KEY_CANNOT} {AGENT_KEY_FEES}
             </p>
           </div>
         </div>
@@ -585,7 +587,7 @@ export default function DeployFlow({
       {ownerMismatch && setup && (
         <p role="alert" className="rounded-xl border border-danger/25 bg-danger/[0.07] px-3 py-2 text-xs text-foreground">
           This setup belongs to <Mono>{setup.owner}</Mono>, but your wallet is on <Mono>{account}</Mono>. Pick the owner account in your wallet
-          to continue; nothing is sent from any other account.
+          to continue; if your wallet will not switch here, press {USE_ANOTHER_ACCOUNT} at the top of this page. Nothing is sent from any other account.
         </p>
       )}
 
@@ -615,7 +617,7 @@ export default function DeployFlow({
             <div className="mt-1 text-sm text-foreground">
               {account ? (
                 <>
-                  <Mono>{account}</Mono> <span className="text-xs text-foreground/60">(your connected account: the only one that can freeze the vault, change its limits, take USDC out or replace the agent key)</span>
+                  <Mono>{account}</Mono> <span className="text-xs text-foreground/60">(your connected account: the only one that can freeze the vault, change its limits, take USDC out or replace the agent key. {WRONG_OWNER_WAY_OUT})</span>
                 </>
               ) : (
                 <span className="text-foreground/70">Connect your wallet at the top of this page. The account you connect becomes the owner.</span>
@@ -643,14 +645,14 @@ export default function DeployFlow({
               Daily limit (USDC, above 0)
             </label>
             <input id="deploy-cap" inputMode="decimal" value={cap} onChange={(e) => setCap(e.target.value)} className={INPUT} />
-            <p className="mt-1 text-[11px] text-foreground/60">The most the agent can spend in one day. The day resets at 00:00 UTC.</p>
+            <p className="mt-1 text-[11px] text-foreground/60">The most the agent can spend in one UTC day. It applies again every day, so it is not a total. The day resets at 00:00 UTC.</p>
           </div>
           <div>
             <label htmlFor="deploy-ceiling" className="text-[11px] font-semibold text-foreground/65">
               Largest single payment (USDC, above 0)
             </label>
             <input id="deploy-ceiling" inputMode="decimal" value={ceiling} onChange={(e) => setCeiling(e.target.value)} className={INPUT} />
-            <p className="mt-1 text-[11px] text-foreground/60">The contract refuses any agent payment above this. You can still pay more yourself.</p>
+            <p className="mt-1 text-[11px] text-foreground/60">The contract refuses any agent payment above this. To send more, you can withdraw to that address yourself from the vault's page.</p>
           </div>
           <div>
             <label htmlFor="deploy-session" className="text-[11px] font-semibold text-foreground/65">
@@ -698,7 +700,7 @@ export default function DeployFlow({
             <div className="font-semibold text-foreground">Then, once your vault exists:</div>
             <ul className="mt-1 list-disc space-y-0.5 pl-4">
               <li>
-                Confirmation 2: the agent's key ends {SESSION_CHOICES.find((c) => c.seconds === seconds)?.label ?? `${seconds} seconds`} after this step lands.
+                Confirmation 2: the agent's key ends about {SESSION_CHOICES.find((c) => c.seconds === seconds)?.label ?? `${seconds} seconds`} after your wallet asks for this step.
                 Until it lands, the agent's key has no time bound, and the page says so.
               </li>
               <li>
@@ -711,6 +713,7 @@ export default function DeployFlow({
             </ul>
           </div>
           {walletGone && <WalletGap />}
+          {!walletGone && wallet.chainId !== chain.chainId && <p className="text-xs text-foreground/80">{networkPrompt(walletChainName(chain), chain.chainId)}</p>}
           <div className="flex flex-wrap items-center gap-2">
             <Button size="sm" onClick={confirmDeploy} disabled={busy !== null || ownerMismatch || walletGone}>
               {busy && <Loader2 size={14} className="animate-spin" aria-hidden="true" />}
@@ -897,6 +900,7 @@ export default function DeployFlow({
                 </p>
               )}
               {(walletGone || ownerMismatch) && <div className="w-full"><WalletGap wrongAccount={!walletGone} /></div>}
+              <p className="w-full text-[11px] text-foreground/60">{WALLET_MAY_REPRICE}</p>
             </div>
           )}
         </div>
@@ -957,6 +961,12 @@ export default function DeployFlow({
                 I checked: send USDC again
               </Button>
             </div>
+          )}
+          {step === 'fund' && liveVault && liveVault.balance > 0n && (
+            <p role="status" className="rounded-xl border border-warn/30 bg-warn/10 px-3 py-2 text-xs text-foreground/85">
+              The vault already holds {formatUnitsExact(liveVault.balance, decimals)} USDC, less than the {formatUnitsExact(setup.funding, decimals)} USDC you
+              planned. Check your wallet's activity before you send more.
+            </p>
           )}
           {step === 'fund' && liveVault && provider && account && !ownerMismatch && (!fundingInDoubt(setup, pageTx) || fundAsking || refundConfirmed) && (
             <div className="rounded-xl border border-border bg-background/60 p-4">
@@ -1044,16 +1054,28 @@ export default function DeployFlow({
               )}
               {setup.fundSkipped && ' You skipped putting USDC in: send it to the vault from its page when ready.'}
             </div>
-            {setup.deploy?.outcome === 'settled' && (
+            {setup.deploy?.outcome === 'settled' ? (
               <div className="mt-2 flex flex-wrap items-center gap-2 text-xs text-foreground/75">
                 <span className="font-semibold text-foreground/60">Created by transaction:</span>
                 <Mono>{setup.deploy.hash}</Mono>
                 <CopyButton text={setup.deploy.hash} label="Copy hash" />
               </div>
+            ) : (
+              <div className="mt-2 flex flex-wrap items-center gap-2 text-xs text-foreground/75">
+                {NO_HASH_LINE}
+                {addressUrl(chain, setup.vault) && (
+                  <a href={addressUrl(chain, setup.vault) as string} target="_blank" rel="noopener noreferrer" className="font-semibold text-accent underline underline-offset-2">
+                    Open its explorer page
+                  </a>
+                )}
+              </div>
             )}
-            <div className="mt-1 text-foreground/80">
-              Next, give your agent this vault's address. You can freeze the vault, change its limits or take USDC out at any time from its page.
+            <div className="mt-2 flex flex-wrap items-center gap-2 text-xs text-foreground/75">
+              {SAVE_LINK_LINE}
+              <CopyButton text={`${window.location.origin}${window.location.pathname}?network=${encodeURIComponent(setup.network)}&contract=${setup.vault}`} label="Copy link" />
             </div>
+            <div className="mt-2 text-foreground/80">{GIVE_THE_AGENT}</div>
+            <div className="mt-1 text-foreground/80">{AFTER_SETUP}</div>
             <VaultCountNotice testnet={chain.testnet} networkName={networkName(chain)} countable={vaultCount.countable} count={vaultCount.count} onRetry={vaultCount.retry} />
             <div className="mt-3 flex flex-wrap items-center gap-2">
               <Button size="sm" onClick={() => onOpenVault(setup.network, setup.vault as string)}>

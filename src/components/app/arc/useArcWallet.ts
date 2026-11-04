@@ -12,7 +12,9 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { getAddress, isAddress, type Address } from 'viem'
 import type { Chain } from '../../../lib/chains'
+import { ACCOUNT_UNCHANGED, PHONE_ACCOUNT_WAY_OUT } from '../../../lib/arc/deploy-copy'
 import {
+  askForAnotherAccount,
   connectWalletConnect,
   currentEvmWallet,
   ensureEvmChain,
@@ -41,6 +43,8 @@ export type ArcWalletState = {
   error: string | null
   connect: (option: WalletOption | 'walletconnect', target: Chain) => Promise<void>
   disconnect: () => void
+  /** Ask the wallet which accounts this site may see, for a wallet connected on the wrong one. */
+  chooseAccount: () => Promise<void>
   refresh: () => Promise<void>
   switchTo: (chain: Chain) => Promise<void>
 }
@@ -162,6 +166,28 @@ export function useArcWallet(): ArcWalletState {
     setError(null)
   }, [])
 
+  const chooseAccount = useCallback(async () => {
+    const w = current.current
+    if (!w) return
+    if (w.name === 'WalletConnect') {
+      setError(PHONE_ACCOUNT_WAY_OUT)
+      return
+    }
+    setBusy(true)
+    setError(null)
+    try {
+      const before = firstAccount(await w.provider.request({ method: 'eth_accounts' }))
+      await askForAnotherAccount(w.provider)
+      const after = firstAccount(await w.provider.request({ method: 'eth_accounts' }))
+      setAccount(after)
+      if (after === before) setError(ACCOUNT_UNCHANGED)
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Your wallet would not change account from this page.')
+    } finally {
+      setBusy(false)
+    }
+  }, [])
+
   const refresh = useCallback(async () => {
     refreshInjectedWallets()
     setOptions(getInjectedWallets())
@@ -197,6 +223,7 @@ export function useArcWallet(): ArcWalletState {
     error,
     connect,
     disconnect,
+    chooseAccount,
     refresh,
     switchTo,
   }

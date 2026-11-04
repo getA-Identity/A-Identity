@@ -355,7 +355,7 @@ export type AgentNow = {
   tone: 'ok' | 'warn' | 'danger'
   /** The same answer in a word or two, for the State chip, so the two can never disagree. */
   state: string
-  /** The contract would let the agent pay at this moment, given a payee and an amount within the limits. */
+  /** The contract would let the agent pay at this moment, given a payee it accepts and an amount within the limits. */
   canPay: boolean
 }
 
@@ -364,11 +364,14 @@ export type AgentNow = {
  * now. The order follows the contract's own gates in pay(), then what is left to spend. A key with
  * no time bound is the loudest thing on the page, because it breaks the promise the vault exists
  * to keep. The State chip reads this answer's `state`, so a green word can never sit beside a
- * sentence that says the agent cannot pay.
+ * sentence that says the agent cannot pay. With the allowlist on, the snapshot cannot tell whether
+ * the list holds anyone, so the word is not green and the sentence says what that means.
  */
 export function vaultHeadline(v: VaultSnapshot): AgentNow {
   const usd = (x: bigint) => `${formatUnitsExact(x, v.decimals)} USDC`
   const payees = v.allowlistEnabled ? ', and only to payees on its allowlist' : ''
+  const listed = v.allowlistEnabled ? ' This page cannot list them: if nobody has added any, every agent payment is refused. Check a payee below.' : ''
+  const open = v.allowlistEnabled ? { tone: 'warn' as const, state: 'Allowlist on' } : { tone: 'ok' as const, state: 'Can pay' }
   if (v.frozen) return { text: 'Frozen: the agent cannot pay anything until the owner unfreezes the vault.', tone: 'danger', state: 'Frozen', canPay: false }
   if (sameAddress(v.operator, ZERO_ADDRESS))
     return { text: 'No agent key: nothing can pay from this vault until the owner sets one.', tone: 'warn', state: 'No agent key', canPay: false }
@@ -392,15 +395,14 @@ export function vaultHeadline(v: VaultSnapshot): AgentNow {
     }
   if (v.balance === 0n) return { text: 'The agent cannot pay anything right now: the vault holds no USDC.', tone: 'warn', state: 'Empty', canPay: false }
   if (v.remainingToday === null)
-    return { text: `The agent can spend the whole balance, ${usd(v.balance)}, today, because no daily cap is set${payees}.`, tone: 'warn', state: 'Can pay, no daily cap', canPay: true }
+    return { text: `The agent can spend the whole balance, ${usd(v.balance)}, today, because no daily cap is set${payees}.${listed}`, tone: 'warn', state: v.allowlistEnabled ? 'Allowlist on, no daily cap' : 'Can pay, no daily cap', canPay: true }
   if (v.remainingToday === 0n)
     return { text: "The agent cannot pay anything more today: today's cap is used up until the reset at 00:00 UTC.", tone: 'warn', state: 'Cap used up', canPay: false }
   if (v.balance < v.remainingToday)
     return {
-      text: `The agent can spend up to ${usd(v.balance)} more today, everything the vault holds (the daily cap alone would allow ${usd(v.remainingToday)})${payees}.`,
-      tone: 'ok',
-      state: 'Can pay',
+      text: `The agent can spend up to ${usd(v.balance)} more today, everything the vault holds (the daily cap alone would allow ${usd(v.remainingToday)})${payees}.${listed}`,
+      ...open,
       canPay: true,
     }
-  return { text: `The agent can spend up to ${usd(v.remainingToday)} more today${payees}.`, tone: 'ok', state: 'Can pay', canPay: true }
+  return { text: `The agent can spend up to ${usd(v.remainingToday)} more today${payees}.${listed}`, ...open, canPay: true }
 }

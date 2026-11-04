@@ -21,6 +21,37 @@ export type Eip1193 = {
 export const evmChainHex = (chain: Chain): string => '0x' + (chain.chainId as number).toString(16)
 
 /**
+ * The name a wallet is asked to add a chain under, where it differs from ours. MetaMask compares it
+ * with its public chain list (chainid.network) and warns when they differ, on the first screen an
+ * owner sees after pressing Deploy. That list and Arc's own docs call Arc Mainnet "Arc". Ours stays
+ * "Arc Mainnet" everywhere else, so the page itself is never read as talking about the testnet.
+ */
+const WALLET_CHAIN_NAME: Readonly<Record<string, string>> = { 'arc-mainnet': 'Arc' }
+
+export const walletChainName = (chain: Chain): string => WALLET_CHAIN_NAME[chain.id] ?? chain.name
+
+const WALLET_BUSY = 'Your wallet already has a request open. Open it, finish or dismiss it, then try again.'
+
+/**
+ * Why a wallet did not end up on a chain, for a caller that says something different for each. The
+ * message is always fit to show as it is.
+ */
+export type ChainStopKind = 'declined' | 'busy' | 'cannot_add' | 'elsewhere'
+
+export class ChainStop extends Error {
+  readonly kind: ChainStopKind
+  constructor(kind: ChainStopKind, message: string) {
+    super(message)
+    this.name = 'ChainStop'
+    this.kind = kind
+  }
+}
+
+function walletBusy(e: unknown): boolean {
+  return walletCode(e) === -32002 || /already pending|already processing/i.test(walletMessage(e))
+}
+
+/**
  * Make sure the wallet is on `chain` before anything is signed against it. Otherwise a
  * transfer meant for Arc would be broadcast to the Arc USDC address on whatever chain is
  * active, which on Ethereum mainnet is a real, confusing and possibly fund-losing
@@ -28,14 +59,15 @@ export const evmChainHex = (chain: Chain): string => '0x' + (chain.chainId as nu
  * has never seen it. This used to exist for Arc alone; every registry chain now gets it.
  */
 export async function ensureEvmChain(eth: Eip1193, chain: Chain): Promise<void> {
-  if (chain.chainId == null || !chain.evmCompatible) throw new Error(`${chain.name} is not an EVM chain; a browser wallet cannot switch to it.`)
+  if (chain.chainId == null || !chain.evmCompatible) throw new ChainStop('elsewhere', `${chain.name} is not an EVM chain; a browser wallet cannot switch to it.`)
   const hex = evmChainHex(chain)
   if ((await readChainHex(eth)) === hex) return
   const switchTo = () => eth.request({ method: 'wallet_switchEthereumChain', params: [{ chainId: hex }] })
   try {
     await switchTo()
   } catch (err) {
-    if (isWalletRejection(err)) throw new Error(`You declined to switch your wallet to ${chain.name}.`)
+    if (isWalletRejection(err)) throw new ChainStop('declined', `You declined to switch your wallet to ${chain.name}.`)
+    if (walletBusy(err)) throw new ChainStop('busy', WALLET_BUSY)
     // "I do not know this chain" arrives in several shapes: 4902, a -32603 wrapping 4902 in
     // data.originalError (MetaMask mobile, some Rabby builds), or text only. Matching one
     // shape is what used to leave people with "switch your wallet" and nothing to press.
@@ -45,24 +77,29 @@ export async function ensureEvmChain(eth: Eip1193, chain: Chain): Promise<void> 
         method: 'wallet_addEthereumChain',
         params: [{
           chainId: hex,
-          chainName: chain.name,
+          chainName: walletChainName(chain),
           nativeCurrency: chain.nativeCurrency,
           rpcUrls: chain.rpcUrl ? [chain.rpcUrl] : [],
           blockExplorerUrls: chain.explorer ? [chain.explorer] : [],
         }],
       })
     } catch (addErr) {
-      if (isWalletRejection(addErr)) throw new Error(`You declined to add ${chain.name} to your wallet.`)
-      throw new Error(
-        `Your wallet could not add ${chain.name}${walletMessage(addErr) ? ` (${walletMessage(addErr)})` : ''}. ` +
-          `Add it by hand: chain id ${chain.chainId}, RPC ${chain.rpcUrl ?? 'not published'}.`,
+      if (isWalletRejection(addErr)) throw new ChainStop('declined', `You declined to add ${chain.name} to your wallet.`)
+      if (walletBusy(addErr)) throw new ChainStop('busy', WALLET_BUSY)
+      // A phone wallet connected without this chain lands here, with a library's own error text
+      // that means nothing to the person reading it, so that text is not shown.
+      throw new ChainStop(
+        'cannot_add',
+        `Your wallet could not add ${chain.name}. The simplest way is a computer browser with the MetaMask or Rabby extension. ` +
+          `With a phone wallet, add it in the wallet first (chain id ${chain.chainId}, RPC ${chain.rpcUrl ?? 'not published'}), then forget the wallet on this page and connect it again.`,
       )
     }
     // Most wallets switch as part of adding; the ones that do not get asked once more.
     try {
       await switchTo()
     } catch (again) {
-      if (isWalletRejection(again)) throw new Error(`You declined to switch your wallet to ${chain.name}.`)
+      if (isWalletRejection(again)) throw new ChainStop('declined', `You declined to switch your wallet to ${chain.name}.`)
+      if (walletBusy(again)) throw new ChainStop('busy', WALLET_BUSY)
     }
   }
   // The wallet's own answer decides, not the absence of an error: a switch that "succeeded"
@@ -71,7 +108,22 @@ export async function ensureEvmChain(eth: Eip1193, chain: Chain): Promise<void> 
     if ((await readChainHex(eth)) === hex) return
     await new Promise((r) => setTimeout(r, 250))
   }
-  throw new Error(`Your wallet is still on another network. Switch it to ${chain.name}, then try again.`)
+  throw new ChainStop('elsewhere', `Your wallet is still on another network. Switch it to ${chain.name}, then try again.`)
+}
+
+/**
+ * Ask the wallet which accounts this site may see. Pressing Connect again cannot do this: a wallet
+ * like MetaMask answers eth_requestAccounts with the accounts it already allows, with no screen,
+ * and switching to an account it does not allow here changes nothing the page can see.
+ */
+export async function askForAnotherAccount(eth: Eip1193): Promise<void> {
+  try {
+    await eth.request({ method: 'wallet_requestPermissions', params: [{ eth_accounts: {} }] })
+  } catch (e) {
+    if (isWalletRejection(e)) throw new Error('You kept the account that was connected. Nothing changed.')
+    if (walletBusy(e)) throw new Error(WALLET_BUSY)
+    throw new Error("Your wallet would not change account from this page. Open the wallet's list of connected sites, remove this site, then connect again with the account you want active.")
+  }
 }
 
 async function readChainHex(eth: Eip1193): Promise<string> {
