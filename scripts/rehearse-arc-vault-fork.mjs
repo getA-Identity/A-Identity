@@ -12,7 +12,9 @@
  * attempt reverts, and a log the stranger causes through an owner that has code does not appear. A
  * vault deployed by a key on our lists is refused, a vault with no expiry gets a retryable refusal
  * and is admitted once it has one, and a hash nobody knows and a contract that is no vault are
- * refused. With --browser it then drives the deploy page: see the section at the end.
+ * refused. With --browser it then drives the deploy page and the vault's own page: an end date set
+ * from the vault page, a forgotten setup, a tab closed on a failed question and a browser with no
+ * hash all end as the server's rule says. See the section at the end.
  *
  * What stands in for what, so nothing here is read as more than it is:
  *   - Arc USDC at 0x3600... calls a native precompile anvil cannot run, so MockUSDC from
@@ -593,11 +595,15 @@ async function browserRehearsal() {
   const CHAIN_HEX = toHex(chain.evmChainId)
   const refused = new Set()
 
-  /** One owner, from a fresh browser profile. flaky answers the first POST 503 only once the last screen is up, and the second 503 at once. */
-  async function ownerRun({ label, ownerIndex, agentIndex, flaky = false, ownerActions = false }) {
-    section(`the page: ${label}`)
+  /**
+   * One owner in one browser profile: a stub wallet, the routing, and helpers to read the page.
+   * failPost(n) is asked about the nth POST to /api/arc/vaults, and may wait; true answers it 503.
+   * failSeason makes GET /api/arc/season fail, so the page's list does not load.
+   */
+  async function ownerBrowser({ ownerIndex, agentIndex, failPost = async () => false, failSeason = () => false }) {
     const owner = acct(ownerIndex)
     const agent = acct(agentIndex)
+    if (ownerIndex > 9) await rpc('anvil_setBalance', [owner.address, toHex(10n ** 20n)])
     await send(foreignDeployer, { to: USDC, data: encodeFunctionData({ abi: MOCK, functionName: 'mint', args: [owner.address, parseUnits('5', 6)] }) })
     const wallet = { chainHex: '0x1', added: new Set(['0x1']), connected: false, sent: [] }
     const ctx = await browser.newContext({ viewport: { width: 1280, height: 1100 } })
@@ -674,8 +680,6 @@ async function browserRehearsal() {
     })
 
     const posts = []
-    let lastScreen
-    const lastScreenUp = new Promise((resolve) => (lastScreen = resolve))
     await ctx.route('**/*', async (route, request) => {
       const url = new URL(request.url())
       const cors = { 'access-control-allow-origin': '*', 'access-control-allow-headers': '*', 'access-control-allow-methods': '*' }
@@ -687,11 +691,11 @@ async function browserRehearsal() {
       if (url.origin === base && (url.pathname.startsWith('/api/') || url.pathname === '/health')) {
         if (request.method() === 'POST' && url.pathname === '/api/arc/vaults') {
           posts.push(url.pathname)
-          if (flaky && posts.length <= 2) {
-            if (posts.length === 1) await lastScreenUp
+          if (await failPost(posts.length)) {
             return route.fulfill({ status: 503, headers: { 'content-type': 'application/json' }, body: JSON.stringify({ status: 'unavailable', retryable: true, reason: 'held by the rehearsal' }) })
           }
         }
+        if (url.pathname === '/api/arc/season' && failSeason()) return route.fulfill({ status: 503, headers: { 'content-type': 'application/json' }, body: '{}' })
         const headers = { 'content-type': request.headers()['content-type'] ?? 'application/json', accept: 'application/json' }
         const res = await fetch(`${api}${url.pathname}${url.search}`, { method: request.method(), headers, body: request.method() === 'POST' ? request.postData() : undefined })
         return route.fulfill({ status: res.status, headers: { 'content-type': res.headers.get('content-type') ?? 'application/json' }, body: Buffer.from(await res.arrayBuffer()) })
@@ -703,6 +707,7 @@ async function browserRehearsal() {
 
     page = await ctx.newPage()
     const pageErrors = []
+    ctx.on('page', (p) => p.on('pageerror', (e) => pageErrors.push(e.message.slice(0, 300))))
     page.on('pageerror', (e) => pageErrors.push(e.message.slice(0, 300)))
     const text = () => page.evaluate(() => document.getElementById('root')?.innerText ?? '')
     const waitText = async (re, ms = 60000) => {
@@ -723,13 +728,25 @@ async function browserRehearsal() {
       }
     }
 
+    const connect = async () => {
+      await page.getByRole('button', { name: 'Connect wallet' }).first().waitFor({ timeout: 30000 })
+      await page.getByRole('button', { name: 'Connect wallet' }).first().click()
+      await page.getByRole('button', { name: 'RehearsalWallet' }).click()
+      await stopIf(await waitText(/RehearsalWallet connected/), 'the wallet connects')
+    }
+    /** The notice that says whether this vault counts, by what only it says. */
+    const noticeSays = async () => (await text()).split('\n').find((l) => /on a-identity\.xyz\/proof\/arc|counts? on a-identity|counted on/.test(l)) ?? '(no line about the count)'
+    return { ctx, owner, agent, wallet, posts, pageErrors, text, waitText, stopIf, connect, noticeSays, page, newPage: async () => (page = await ctx.newPage()), current: () => page }
+  }
+
+  /** The deploy flow from the form to the moment the deploy has landed and the end date is asked for. */
+  async function deployFromThePage(b, funding = '0.1') {
+    const { agent, wallet, waitText, stopIf, connect, current } = b
+    const page = current()
     await page.goto(`${base}/app/vault/arc?network=${encodeURIComponent(chain.caip2)}&deploy=1`, { waitUntil: 'domcontentloaded' })
-    await page.getByRole('button', { name: 'Connect wallet' }).first().waitFor({ timeout: 30000 })
-    await page.getByRole('button', { name: 'Connect wallet' }).first().click()
-    await page.getByRole('button', { name: 'RehearsalWallet' }).click()
-    await stopIf(await waitText(/RehearsalWallet connected/), 'the wallet connects')
+    await connect()
     await page.fill('#deploy-operator', agent.address)
-    await page.fill('#deploy-funding', '0.1')
+    await page.fill('#deploy-funding', funding)
     await page.getByRole('button', { name: 'Review the deploy' }).click()
     await stopIf(await waitText(/Review: create your vault/, 60000), 'the deploy is prepared and simulated on the fork')
     await page.getByRole('button', { name: 'Deploy from my wallet' }).click()
@@ -738,6 +755,159 @@ async function browserRehearsal() {
     const vault = getAddress(receipt.contractAddress)
     say(`vault ${vault}, deploy ${wallet.sent[0].hash}`)
     check(wallet.chainHex === CHAIN_HEX, 'the page moved the wallet to Arc Mainnet')
+    return { vault, hash: wallet.sent[0].hash }
+  }
+
+  const rowsFor = async (vault) => (await getJson('/api/arc/vaults')).body.items.filter((v) => v.address === vault).length
+
+  /** The route takes 10 posts a minute from one address, and every run here comes from one. */
+  const waitOutPostWindow = async () => {
+    say('waiting out the 10-a-minute window on the route')
+    await new Promise((r) => setTimeout(r, 61000))
+  }
+
+  /** The gap this guards: an owner who sets the end date from the vault's page and never returns to the deploy flow. */
+  async function vaultPageRun({ ownerIndex, agentIndex }) {
+    section('the page: the end date is set from the vault page, and the owner never goes back to the setup')
+    const b = await ownerBrowser({ ownerIndex, agentIndex })
+    const { ctx, wallet, posts, pageErrors, waitText, stopIf, noticeSays } = b
+    const page = b.current()
+    const { vault, hash } = await deployFromThePage(b, '0')
+    check(posts.length === 0, 'the setup has not asked: the agent key has no end date')
+    await page.getByRole('button', { name: 'Back to vaults' }).click()
+    await stopIf(await waitText(/IS the owner of this vault/, 60000), 'with no vault in the link the page opens the one this browser deployed, not ours')
+    check(new URL(page.url()).searchParams.get('contract')?.toLowerCase() === vault.toLowerCase(), 'the link now names that vault')
+    await stopIf(await waitText(/can count on .* once its agent key has an end date/, 30000), 'the vault page says what it is waiting for, without calling the vault counted or refused')
+    say(`the vault page says: ${await noticeSays()}`)
+    check(posts.length === 0, 'it has not asked either, with no end date to show')
+    const sentBefore = wallet.sent.length
+    await page.getByRole('button', { name: 'Set the expiry' }).click()
+    await waitFor('the end date on chain', async () => (await read(vault, 'sessionKeyExpiry')) !== 0n, 60000)
+    check(wallet.sent.length === sentBefore + 1, 'setting it took the one transaction the owner signed')
+    await stopIf(await waitText(/This vault is now counted on/, 60000), 'the vault page says this vault is counted, by itself')
+    say(`the vault page says: ${await noticeSays()}`)
+    check(posts.length === 1, `the page asked once (${posts.length}), with the deploy hash this browser held`)
+    check(wallet.sent.length === sentBefore + 1, 'asking prompted no wallet: no transaction, nothing to sign')
+    const item = seasonItem(await season(), vault)
+    check(item?.ownerKind === 'unstated' && item.deployTx === hash.toLowerCase(), 'GET /api/arc/season counts it, under the hash the wallet sent, owner not identified')
+    check((await rowsFor(vault)) === 1, 'GET /api/arc/vaults holds one row for it')
+    const before = await storeCount()
+    await page.reload({ waitUntil: 'domcontentloaded' })
+    check(await waitText(/This vault is now counted on/, 40000), 'after a reload the vault page still says it is counted')
+    check((await rowsFor(vault)) === 1 && (await storeCount()) === before, 'the reload added no second row')
+    check(pageErrors.length === 0, `no page errors (${pageErrors.slice(0, 2).join(' | ')})`)
+    await ctx.close()
+  }
+
+  /** The setup itself offers this: forget the setup, and set the end date from the vault's page. Forgetting must not lose the hash. */
+  async function forgottenSetupRun({ ownerIndex, agentIndex }) {
+    section('the page: the owner forgets the setup, then sets the end date from the vault page')
+    const b = await ownerBrowser({ ownerIndex, agentIndex })
+    const { ctx, posts, pageErrors, waitText, stopIf } = b
+    const page = b.current()
+    const { vault } = await deployFromThePage(b, '0')
+    await page.getByRole('button', { name: 'Forget this setup' }).click()
+    check(await page.evaluate(() => localStorage.getItem('aid-arc-vault-setup')) === null, 'the setup slot is empty')
+    await page.getByRole('button', { name: 'Back to vaults' }).click()
+    await stopIf(await waitText(/IS the owner of this vault/, 60000), 'the page still opens the vault this browser deployed')
+    await page.getByRole('button', { name: 'Set the expiry' }).click()
+    await stopIf(await waitText(/This vault is now counted on/, 90000), 'the vault is counted from the hash kept when its deploy settled')
+    check(posts.length === 1 && (await rowsFor(vault)) === 1, 'one question, one row')
+    check(pageErrors.length === 0, `no page errors (${pageErrors.slice(0, 2).join(' | ')})`)
+    await ctx.close()
+  }
+
+  /** The owner closes the tab with the first question failed, and comes back on a bare link with no wallet connected. */
+  async function closedTabRun({ ownerIndex, agentIndex }) {
+    section('the page: the tab closes after a failed first question, and the owner comes back with no wallet connected')
+    let serverDown = true
+    const b = await ownerBrowser({ ownerIndex, agentIndex, failPost: async () => serverDown })
+    const { ctx, wallet, posts, pageErrors, waitText, stopIf } = b
+    const first = b.current()
+    const { vault } = await deployFromThePage(b, '0')
+    await first.getByRole('button', { name: /Set it now/ }).click()
+    await waitFor('the first question', () => posts.length === 1, 60000)
+    await first.waitForTimeout(500)
+    check((await rowsFor(vault)) === 0, 'the question failed: nothing is on the list')
+    await first.close()
+    serverDown = false
+    const page = await b.newPage()
+    const sentBefore = wallet.sent.length
+    wallet.connected = false
+    await page.goto(`${base}/app/vault/arc`, { waitUntil: 'domcontentloaded' })
+    await stopIf(await waitText(/This vault is now counted on/, 90000), 'it is asked about again and counted, with no wallet connected and no person involved')
+    check(new URL(page.url()).searchParams.get('contract')?.toLowerCase() === vault.toLowerCase(), 'a bare link opened the vault this browser deployed')
+    check((await rowsFor(vault)) === 1, 'one row')
+    check(wallet.sent.length === sentBefore, 'nothing was sent')
+    check(pageErrors.length === 0, `no page errors (${pageErrors.slice(0, 2).join(' | ')})`)
+    await ctx.close()
+    return vault
+  }
+
+  /** Another device, or cleared storage: no hash in this browser. The page says what it can know, asks nothing it cannot ask, and a refusal stands. */
+  async function otherDeviceRun({ countedVault, ownerIndex, agentIndex }) {
+    section('the page: another device, with no deploy hash in this browser')
+    let seasonDown = false
+    const b = await ownerBrowser({ ownerIndex, agentIndex, failSeason: () => seasonDown })
+    const { ctx, posts, pageErrors, waitText, stopIf, connect, text, noticeSays } = b
+    const page = b.current()
+    const open = (address) => page.goto(`${base}/app/vault/arc?network=${encodeURIComponent(chain.caip2)}&contract=${address}`, { waitUntil: 'domcontentloaded' })
+    // What the page says needs only the season report. /api/proof/arc is slow in this run, because it
+    // re-reads Arc testnet live and those hosts are refused above, so an answer inside this wait
+    // shows the notice does not wait for it.
+    const LIST_WAIT = 20000
+    const t0 = Date.now()
+    const proofStatus = (await getJson('/api/proof/arc')).status
+    say(`GET /api/proof/arc answered ${proofStatus} in ${Date.now() - t0} ms`)
+    await open(countedVault)
+    await connect()
+    await stopIf(await waitText(/This vault is now counted on/, LIST_WAIT), 'a counted vault reads as counted from the server list')
+    check(posts.length === 0, 'and nothing is posted: this browser holds no hash, and none was needed')
+
+    // Deployed and bounded by the same owner on another device, and never counted.
+    const other = await deployVault(acct(ownerIndex), acct(agentIndex).address)
+    await setExpiry(acct(ownerIndex), other.vault)
+    await open(other.vault)
+    await stopIf(await waitText(/This vault is not counted on .* yet\. This browser does not hold the transaction/, LIST_WAIT), 'an uncounted vault says it is not on the list, and why this page cannot ask')
+    say(`the vault page says: ${await noticeSays()}`)
+    check(posts.length === 0 && (await rowsFor(other.vault)) === 0, 'nothing is posted and no row appears: no hash, no question')
+
+    seasonDown = true
+    await open(other.vault)
+    await stopIf(await waitText(/We could not find out whether this vault counts on/, LIST_WAIT), 'a list that did not load is said to be that')
+    const screen = await text()
+    check(!/This vault is not counted on/.test(screen) && !/This vault is now counted on/.test(screen), 'and is presented as neither counted nor not counted')
+    seasonDown = false
+
+    // The page's memory is not evidence. A hash claimed for a vault it did not create, or for one our
+    // key owns, goes to the same checks and is refused on the same grounds.
+    const foreignHash = oursVault.hash
+    await page.evaluate(
+      ([network, vault, hash]) => localStorage.setItem('aid-arc-vault-deploys', JSON.stringify([{ network, vault, hash }])),
+      [chain.caip2, other.vault, foreignHash],
+    )
+    await open(other.vault)
+    await stopIf(await waitText(/This vault is not counted on a-identity\.xyz\/proof\/arc, for this reason/, 60000), "a hash this browser's storage claims for this vault is checked like any other, and refused")
+    say(`the vault page says: ${await noticeSays()}`)
+    check((await rowsFor(other.vault)) === 0 && (await rowsFor(oursVault.vault)) === 0, 'neither vault gets a row')
+    check(pageErrors.length === 0, `no page errors (${pageErrors.slice(0, 2).join(' | ')})`)
+    await ctx.close()
+  }
+
+  /** One owner, from a fresh browser profile. flaky answers the first POST 503 only once the last screen is up, and the second 503 at once. */
+  async function ownerRun({ label, ownerIndex, agentIndex, flaky = false, ownerActions = false }) {
+    section(`the page: ${label}`)
+    let lastScreen
+    const lastScreenUp = new Promise((resolve) => (lastScreen = resolve))
+    const failPost = async (n) => {
+      if (!flaky || n > 2) return false
+      if (n === 1) await lastScreenUp
+      return true
+    }
+    const b = await ownerBrowser({ ownerIndex, agentIndex, failPost })
+    const { ctx, wallet, posts, pageErrors, text, waitText, stopIf } = b
+    const page = b.current()
+    const { vault } = await deployFromThePage(b)
     await page.getByRole('button', { name: /Set it now/ }).click()
     await stopIf(await waitText(/Confirmation 3 of 3: put USDC in the vault/, 90000), 'the end date lands and the funding step opens')
     await page.getByRole('button', { name: 'Review', exact: true }).first().click()
@@ -800,6 +970,12 @@ async function browserRehearsal() {
 
   await ownerRun({ label: 'an owner goes all the way', ownerIndex: 6, agentIndex: 7, ownerActions: true })
   await ownerRun({ label: 'the server fails twice, the first time while the last screen comes up', ownerIndex: 8, agentIndex: 7, flaky: true })
+  await waitOutPostWindow()
+  await vaultPageRun({ ownerIndex: 10, agentIndex: 7 })
+  await forgottenSetupRun({ ownerIndex: 11, agentIndex: 7 })
+  await waitOutPostWindow()
+  const closedTabVault = await closedTabRun({ ownerIndex: 12, agentIndex: 7 })
+  await otherDeviceRun({ countedVault: closedTabVault, ownerIndex: 12, agentIndex: 7 })
   await browser.close()
   say(`hosts the browser tried and this run refused: ${[...refused].join(', ') || 'none'}`)
 }
