@@ -176,7 +176,7 @@ function MilestoneCard({ id, title, due, children }: { id: number; title: string
         <h3 className="text-sm font-semibold text-foreground">
           <span className="font-mono text-foreground/50">M{id}</span> {title}
         </h3>
-        <span className="font-mono text-[11px] text-foreground/50">due {due}</span>
+        <span className="font-mono text-[11px] text-foreground/50">target {due}</span>
       </div>
       <div className="mt-2">{children}</div>
     </div>
