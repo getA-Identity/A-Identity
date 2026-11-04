@@ -67,7 +67,7 @@ const RUN_ALLOW: LogLine[] = [
 
 const RUN_DENY: LogLine[] = [
   { tag: '$ risk_check 0x8f21…c4d9' },
-  { tag: '[resolve]', body: 'ERC-8004 identity', tail: 'none', tone: 'bad' },
+  { tag: '[resolve]', body: 'ERC-8004 identity', tail: 'ok', tone: 'ok' },
   { tag: '[sybil]', body: 'operator cluster', tail: 'flagged', tone: 'bad' },
   { tag: '[verdict]', body: 'DENY', tone: 'bad' },
   { tag: '[pay]', body: 'not funded', tone: 'bad' },

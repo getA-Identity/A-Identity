@@ -219,9 +219,9 @@ const CALL: TLine[] = [
   { kind: 'out', text: '402  PAYMENT-REQUIRED   eip155:196 · USD₮0 · $0.005' },
   { kind: 'cmd', text: 'sign + retry            X-PAYMENT: <settled on X Layer>' },
   { kind: 'in', text: 'resolve identity        ERC-8004 · owner verified' },
-  { kind: 'in', text: 'know your agent         no KYA attestation' },
-  { kind: 'in', text: 'score                   0 / 1000 · no history' },
-  { kind: 'out', text: '200  DENY               reputation 0 is below 200', tone: 'deny' },
+  { kind: 'in', text: 'know your agent         KYA revoked · incident' },
+  { kind: 'in', text: 'score                   90 / 1000 · on our platform' },
+  { kind: 'out', text: '200  DENY               KYA revoked, reputation 90 is below 200', tone: 'deny' },
 ]
 
 function Terminal() {

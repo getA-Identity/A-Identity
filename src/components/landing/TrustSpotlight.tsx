@@ -23,7 +23,9 @@ import { connectWalletConnect, getInjectedWallets, refreshInjectedWallets, walle
 const ACCENT = '#7342E2'
 const RISK = { ALLOW: '#059669', WARN: '#d97706', DENY: '#dc2626' } as const
 type Verdict = keyof typeof RISK
-const riskOf = (s: number, kya?: string, verified = true): Verdict => (kya === 'revoked' || !verified || s < 200 ? 'DENY' : s < 500 ? 'WARN' : 'ALLOW')
+/** asp/risk.ts's line, for a preview: with no platform record it is WARN, unless the agent is revoked. */
+const riskOf = (s: number, kya?: string, verified = true, onPlatform = true): Verdict =>
+  kya === 'revoked' ? 'DENY' : !onPlatform ? 'WARN' : s < 200 ? 'DENY' : !verified || s < 500 ? 'WARN' : 'ALLOW'
 const gradeOf = (s: number) =>
   s >= 800 ? 'Excellent' : s >= 650 ? 'Strong' : s >= 500 ? 'Good' : s >= 350 ? 'Fair' : s >= 200 ? 'Weak' : 'High risk'
 const shorten = (a?: string | null) => (a && a.length > 14 ? `${a.slice(0, 8)}…${a.slice(-6)}` : a ?? '')
@@ -53,7 +55,7 @@ function ResultCard({ result, q, onOpen, onClaim }: { result: NonNullable<Result
   const verified = Boolean(identity) || reputation?.onchain === 'registered'
   const score = reputation?.score ?? 0
   const shown = useCountUp(score)
-  const v = riskOf(score, reputation?.kya, verified)
+  const v = riskOf(score, reputation?.kya, verified, reputation !== null)
   const name = reputation?.name || (identity && !identity.partial ? `Agent #${identity.tokenId}` : identity?.partial ? 'On-chain agent' : q)
   const seed = identity?.owner || identity?.tokenId?.toString() || q
   return (

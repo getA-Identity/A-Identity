@@ -496,6 +496,7 @@ export default function ArcSeasonProgress() {
               <MetricRow
                 label="Refusals anyone can inspect, one of each kind"
                 metric={m1.refusals}
+                keepNote
                 detail={m1.refusals.byKind && !m1.refusals.incomplete ? `${m1.refusals.byKind['vault-policy-on-chain'] ?? 0} reverted on chain, ${m1.refusals.byKind['deny-before-signing'] ?? 0} DENY stopped before signing` : undefined}
               />
               {m1.vaults.items.length > 0 && (

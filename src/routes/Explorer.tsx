@@ -35,10 +35,13 @@ const VERDICT_TEXT: Record<Verdict, string> = {
   WARN: 'text-warn',
   DENY: 'text-danger',
 }
-function riskOf(score: number, kya?: string, verified = true, sybil?: string): Verdict {
-  if (kya === 'revoked' || !verified || sybil === 'high') return 'DENY'
+/** asp/risk.ts's line, for a preview. DENY needs evidence against an agent we hold a record of, so
+ *  with no platform record it is WARN and never ALLOW. */
+function riskOf(score: number, kya?: string, verified = true, sybil?: string, onPlatform = true): Verdict {
+  if (kya === 'revoked' || sybil === 'high') return 'DENY'
+  if (!onPlatform) return 'WARN'
   if (score < 200) return 'DENY'
-  if (score < 500 || sybil === 'medium') return 'WARN'
+  if (!verified || score < 500 || sybil === 'medium') return 'WARN'
   return 'ALLOW'
 }
 
@@ -145,11 +148,11 @@ function StatRow({ label, value, cap, tone }: { label: string; value: number | s
 function TrustProfile({ identity, reputation, query }: { identity: AgentIdentity | null; reputation: Reputation | null; query: string }) {
   // A resolved on-chain identity (ownerOf succeeded) IS the registration proof. Do NOT
   // read `identity.valid` here: the backend deliberately pins it to false (a tokenURI
-  // self-claim is never trusted), so using it would wrongly DENY every resolved agent.
+  // self-claim is never trusted), so using it would wrongly read every resolved agent as unidentified.
   const verified = Boolean(identity) || reputation?.onchain === 'registered'
   const score = reputation?.score ?? 0
   const shownScore = useCountUp(score)
-  const verdict = riskOf(score, reputation?.kya, verified, reputation?.sybil?.level)
+  const verdict = riskOf(score, reputation?.kya, verified, reputation?.sybil?.level, reputation !== null)
   const bd = reputation?.breakdown
   const beh = reputation?.behavioral
   const owner = identity?.owner
@@ -215,14 +218,20 @@ function TrustProfile({ identity, reputation, query }: { identity: AgentIdentity
           <div>
             <div className="text-[11px] font-semibold uppercase tracking-[0.1em] text-foreground/70">Reputation</div>
             <div className="mt-1.5 flex flex-wrap items-baseline gap-x-2.5 gap-y-1">
-              <span className="text-[clamp(2.2rem,7vw,2.8rem)] font-semibold leading-none tracking-[-0.035em] tabular-nums text-foreground">{shownScore}</span>
-              <span className="text-sm font-medium text-foreground/50">/ 1000</span>
-              <span className={`ml-1 text-sm font-bold ${VERDICT_TEXT[verdict]}`}>{g.label}<span className="font-medium text-foreground/50"> · {g.tier}</span></span>
+              {reputation ? (
+                <>
+                  <span className="text-[clamp(2.2rem,7vw,2.8rem)] font-semibold leading-none tracking-[-0.035em] tabular-nums text-foreground">{shownScore}</span>
+                  <span className="text-sm font-medium text-foreground/50">/ 1000</span>
+                  <span className={`ml-1 text-sm font-bold ${VERDICT_TEXT[verdict]}`}>{g.label}<span className="font-medium text-foreground/50"> · {g.tier}</span></span>
+                </>
+              ) : (
+                <span className="text-sm font-medium text-foreground/70">No platform record, so we do not know how it has behaved. That does not mean it is bad.</span>
+              )}
             </div>
           </div>
           <VerdictBadge verdict={verdict} size="md" />
         </div>
-        <div className="mt-4"><Spectrum score={score} /></div>
+        {reputation && <div className="mt-4"><Spectrum score={score} /></div>}
         {reputation?.onchainAttestation && (
           <div className="mt-3.5 text-[11px]">
             <a href={reputation.onchainAttestation.txUrl} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 font-semibold text-accent hover:underline">

@@ -30,7 +30,7 @@ const LEDGER: {
   you?: boolean
 }[] = [
   { from: 'Research agent', to: 'Data API', reason: 'KYA attested, reputation 720', verdict: 'ALLOW', amount: '$0.004', settle: 'Settled · USDC on Arc' },
-  { from: 'Unknown agent', to: 'Your agent', reason: 'No on-chain identity', verdict: 'DENY', amount: '$240.00', settle: 'Refused · never funded' },
+  { from: 'Flagged agent', to: 'Your agent', reason: 'KYA revoked after an incident', verdict: 'DENY', amount: '$240.00', settle: 'Refused · never funded' },
   { from: 'Your agent', to: 'Compute vendor', reason: 'Inside the daily cap', verdict: 'ALLOW', amount: '$1.20', settle: 'Settled · Gateway + CCTP', bridge: true, you: true },
   { from: 'Translator #4471', to: 'Verifier agent', reason: 'Escrow release on delivery', verdict: 'ALLOW', amount: '$2.00', settle: 'Settled · USDC on Arc' },
   { from: 'Scraper bot', to: 'Your agent', reason: 'Sybil cluster flagged', verdict: 'DENY', amount: '$18.40', settle: 'Refused · never funded' },
