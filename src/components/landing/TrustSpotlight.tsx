@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import { motion, AnimatePresence, useReducedMotion } from 'framer-motion'
 import { Search, X, ArrowUpRight, ArrowRight, ShieldCheck, Wallet, QrCode, Check, Loader2 } from 'lucide-react'
 import { resolveAgent, getReputation, getLeaderboard, type AgentIdentity, type Reputation, type FeedAgent } from '../../lib/mcp-client'
-import { readRecord, type RecordRead } from '../../lib/trust-preview'
+import { adverseRecordOf, NO_VERDICT_NOTE, previewVerdict, readRecord, rosterVerdict, type RecordRead } from '../../lib/trust-preview'
 import { useAuth } from '../../store/auth'
 import { EASE_OUT_EXPO } from '../../lib/brand'
 import AgentAvatar from '../AgentAvatar'
@@ -23,12 +23,8 @@ import { connectWalletConnect, getInjectedWallets, refreshInjectedWallets, walle
 
 const ACCENT = '#7342E2'
 const RISK = { ALLOW: '#059669', WARN: '#d97706', DENY: '#dc2626' } as const
-type Verdict = keyof typeof RISK
-/** asp/risk.ts's line, for a preview: with no platform record it is WARN, unless the agent is revoked. */
-const riskOf = (s: number, kya?: string, verified = true, onPlatform = true): Verdict =>
-  kya === 'revoked' ? 'DENY' : !onPlatform ? 'WARN' : s < 200 ? 'DENY' : !verified || s < 500 ? 'WARN' : 'ALLOW'
 const gradeOf = (s: number) =>
-  s >= 800 ? 'Excellent' : s >= 650 ? 'Strong' : s >= 500 ? 'Good' : s >= 350 ? 'Fair' : s >= 200 ? 'Weak' : 'High risk'
+  s >= 800 ? 'Excellent' : s >= 650 ? 'Strong' : s >= 500 ? 'Good' : s >= 350 ? 'Fair' : s >= 200 ? 'Weak' : 'Low'
 const shorten = (a?: string | null) => (a && a.length > 14 ? `${a.slice(0, 8)}…${a.slice(-6)}` : a ?? '')
 const isAddr = (s?: string | null) => !!s && /^0x[0-9a-fA-F]{40}$/.test(s.trim())
 
@@ -57,14 +53,14 @@ function ResultCard({ result, q, onOpen, onClaim }: { result: NonNullable<Result
   const verified = Boolean(identity) || reputation?.onchain === 'registered'
   const score = reputation?.score ?? 0
   const shown = useCountUp(score)
-  const v = riskOf(score, reputation?.kya, verified, recordRead === 'record')
+  const v = previewVerdict({ score, kya: reputation?.kya, verified, sybil: reputation?.sybil?.level, read: recordRead, adverseRecord: adverseRecordOf(reputation) })
   const name = reputation?.name || (identity && !identity.partial ? `Agent #${identity.tokenId}` : identity?.partial ? 'On-chain agent' : q)
   const seed = identity?.owner || identity?.tokenId?.toString() || q
   return (
     <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.3 }} className="flex flex-col gap-4 rounded-xl border border-border bg-background/40 p-4">
       <div className="flex items-center justify-between gap-3">
         <div className="flex min-w-0 items-center gap-3">
-          <AgentAvatar seed={seed} size={54} verdict={unreadable ? 'neutral' : (v.toLowerCase() as OwlVerdict)} />
+          <AgentAvatar seed={seed} size={54} verdict={v ? (v.toLowerCase() as OwlVerdict) : 'neutral'} />
           <div className="min-w-0">
             <div className="truncate text-sm font-bold text-foreground">{name}</div>
             <div className="truncate font-mono text-[11px] text-foreground/65">
@@ -72,7 +68,7 @@ function ResultCard({ result, q, onOpen, onClaim }: { result: NonNullable<Result
             </div>
           </div>
         </div>
-        {unreadable ? (
+        {!v ? (
           <span className="text-xs font-semibold text-foreground/60">No verdict</span>
         ) : (
           <span className="inline-flex items-center gap-1.5 rounded-md px-2.5 py-1 text-xs font-bold" style={{ color: RISK[v], background: `${RISK[v]}14`, boxShadow: `inset 0 0 0 1px ${RISK[v]}33` }}>
@@ -81,12 +77,13 @@ function ResultCard({ result, q, onOpen, onClaim }: { result: NonNullable<Result
         )}
       </div>
       {unreadable && <p className="text-xs leading-relaxed text-foreground/60">The reputation could not be read just now, so this gives no verdict. Try again in a few seconds, and do not pay on this.</p>}
+      {!unreadable && !v && <p className="text-xs leading-relaxed text-foreground/60">{NO_VERDICT_NOTE}</p>}
       {reputation && (
         <div>
           <div className="flex items-baseline gap-2">
             <span className="font-mono text-3xl font-bold tabular-nums tracking-tight text-foreground">{shown}</span>
             <span className="font-mono text-xs text-foreground/60">/ 1000</span>
-            <span className="ml-auto text-xs font-semibold" style={{ color: RISK[v] }}>{gradeOf(score)}</span>
+            <span className="ml-auto text-xs font-semibold" style={v ? { color: RISK[v] } : undefined}>{gradeOf(score)}</span>
           </div>
           <div className="mt-2.5 h-2 w-full rounded-full" style={{ background: 'linear-gradient(90deg,#dc2626,#d97706 45%,#059669)' }}>
             <div className="relative h-full">
@@ -286,7 +283,7 @@ export default function TrustSpotlight() {
     const t = setTimeout(async () => {
       const [idRes, repRes] = await Promise.all([resolveAgent(term), getReputation(term)])
       const identity = idRes.ok && idRes.data.found ? (idRes.data.agent ?? null) : null
-      const { read, reputation } = readRecord(repRes, term)
+      const { read, reputation } = readRecord(repRes)
       setResult(identity || reputation ? { identity, reputation, recordRead: read } : null)
       setLoading(false)
     }, 350)
@@ -416,17 +413,17 @@ export default function TrustSpotlight() {
                         <div className="px-1 pb-2 text-xs font-semibold uppercase tracking-wide text-foreground/65">Featured agents</div>
                         <div className="flex flex-col">
                           {(featured.length ? featured : []).map((a) => {
-                            const s = a.reputation?.score ?? 0, v = riskOf(s, a.kya)
+                            const s = a.reputation?.score ?? 0, v = rosterVerdict(s, a.kya)
                             return (
                               <button key={a.id} onClick={() => setQ(a.onchainAgentId || a.id)}
                                 className="flex items-center gap-3 rounded-lg px-2 py-2.5 text-left transition-colors hover:bg-foreground/[0.04]">
-                                <AgentAvatar seed={a.onchainAgentId || a.id} size={34} verdict={v.toLowerCase() as OwlVerdict} />
+                                <AgentAvatar seed={a.onchainAgentId || a.id} size={34} verdict={v ? (v.toLowerCase() as OwlVerdict) : 'neutral'} />
                                 <div className="min-w-0 flex-1">
                                   <div className="truncate text-sm font-medium text-foreground">{a.name}</div>
                                   <div className="truncate font-mono text-[11px] text-foreground/65">{a.category}{a.onchainAgentId ? ` · #${a.onchainAgentId}` : ''}</div>
                                 </div>
                                 <span className="font-mono text-xs font-semibold tabular-nums text-foreground/70">{s}</span>
-                                <span className="h-1.5 w-1.5 rounded-full" style={{ background: RISK[v] }} />
+                                <span className="h-1.5 w-1.5 rounded-full bg-foreground/30" style={v ? { background: RISK[v] } : undefined} />
                               </button>
                             )
                           })}

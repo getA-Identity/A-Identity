@@ -100,6 +100,8 @@ export type AgentIdentity = {
 export type Behavioral = {
   completedJobs: number
   contestedJobs: number
+  /** Of those, the ones that count against the worker. Absent on a backend from before it. */
+  contestedEvidence?: number
   disputeRate: number
   avgRating: number | null
   ratedJobs: number
@@ -119,6 +121,8 @@ export type Reputation = {
   breakdown: { settlement: number; validation: number; tenure: number; behavior?: number }
   behavioral?: Behavioral | null
   sybil?: Sybil | null
+  /** The guardrail record, of which the preview reads what can count against the agent. */
+  discipline?: { overrideAttempts?: number; rejectedSettlements?: number } | null
   settledOnchain?: number
   settledUsd?: number
   name?: string | null

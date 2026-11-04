@@ -4,7 +4,7 @@ import { Loader2, Check, X, AlertTriangle, Fingerprint, BadgeCheck, Gauge, Scale
 import { CHAIN_BY_ID, type ChainId } from '../../lib/chains'
 import { Badge, VerdictBadge } from '../ui/badge'
 import type { AgentIdentity, Reputation } from '../../lib/mcp-client'
-import type { RecordRead } from '../../lib/trust-preview'
+import { adverseRecordOf, NO_VERDICT_NOTE, previewVerdict, type RecordRead } from '../../lib/trust-preview'
 
 /**
  * VerifyStepper, the step-by-step "verify an agent" walkthrough.
@@ -23,24 +23,9 @@ import type { RecordRead } from '../../lib/trust-preview'
  */
 
 type StepState = 'idle' | 'running' | 'done'
-type Verdict = 'ALLOW' | 'WARN' | 'DENY'
-
 const STEP_MS = 850
 
-/**
- * asp/risk.ts's line, for a preview. With no platform record it is WARN and never ALLOW. A read that
- * failed gets no verdict at all (see RecordRead): this page previews, and the paid verdict is the
- * one anybody acts on.
- */
-function verdictOf(score: number, kya: string | undefined, verified: boolean, sybil: string | undefined, onPlatform: boolean): Verdict {
-  if (kya === 'revoked' || sybil === 'high') return 'DENY'
-  if (!onPlatform) return 'WARN'
-  if (score < 200) return 'DENY'
-  if (!verified || score < 500 || sybil === 'medium') return 'WARN'
-  return 'ALLOW'
-}
-
-function verdictReasons(score: number, kya: string | undefined, verified: boolean, sybil: string | undefined, onPlatform: boolean): string[] {
+function verdictReasons(score: number, kya: string | undefined, verified: boolean, sybil: string | undefined, onPlatform: boolean, adverseRecord: boolean | null): string[] {
   const r: string[] = []
   if (kya === 'revoked') r.push('KYA attestation revoked (flagged as an incident)')
   if (!onPlatform) r.push('we hold no platform record of this agent, so we do not know how it has behaved; that does not mean it is bad, and it does not mean it is clean')
@@ -48,7 +33,11 @@ function verdictReasons(score: number, kya: string | undefined, verified: boolea
   if (sybil === 'high') r.push('Sybil signals: reputation mostly self-dealt')
   if (sybil === 'medium') r.push('Sybil signals: partial same-operator activity')
   // With no record, a score only says we have no history for it, so it is no reason.
-  if (onPlatform && score < 200) r.push(`reputation ${score} is below 200`)
+  if (onPlatform && score < 200) {
+    r.push(adverseRecord === true
+      ? `reputation ${score} is below 200, and our record of it holds evidence against it`
+      : `our record of it holds nothing against it, and not enough to vouch for it: reputation ${score} is below 200`)
+  }
   else if (onPlatform && score < 500) r.push(`reputation ${score} is in the caution band (200-500)`)
   if (kya === 'unverified' && verified) r.push('KYA (wallet control) not attested yet')
   if (r.length === 0) r.push('verified identity, attested KYA, strong reputation')
@@ -138,8 +127,9 @@ export default function VerifyStepper({ identity, reputation, recordRead, query,
   const sybil = reputation?.sybil?.level
   const onPlatform = recordRead === 'record'
   const unreadable = recordRead === 'unreadable'
-  const verdict = verdictOf(score, kya, verified, sybil, onPlatform)
-  const reasons = verdictReasons(score, kya, verified, sybil, onPlatform)
+  const adverseRecord = adverseRecordOf(reputation)
+  const verdict = previewVerdict({ score, kya, verified, sybil, read: recordRead, adverseRecord })
+  const reasons = verdictReasons(score, kya, verified, sybil, onPlatform, adverseRecord)
   const bd = reputation?.breakdown
   // Name the chain the read actually happened on. The old copy named X Layer or Circle Arc
   // and nothing else, so an identity resolved on Celo or Robinhood was reported as Arc.
@@ -184,7 +174,7 @@ export default function VerifyStepper({ identity, reputation, recordRead, query,
           {!unreadable && (kya === 'unverified' || !kya) && (verified ? <>No KYA attestation yet. Identity exists, but wallet control is not proven.</> : <>No KYA attestation, and no identity to attach one to.</>)}
         </StepRow>
 
-        <StepRow state={state(3)} outcome={!onPlatform ? 'caution' : score >= 200 ? 'pass' : 'fail'} Icon={Gauge} title="Score reputation" standard="deterministic 0-1000">
+        <StepRow state={state(3)} outcome={!onPlatform ? 'caution' : score >= 200 ? 'pass' : adverseRecord === true ? 'fail' : 'caution'} Icon={Gauge} title="Score reputation" standard="deterministic 0-1000">
           {unreadable ? (
             <>The reputation read failed just now, so we do not know whether we hold a record of this agent.</>
           ) : !onPlatform ? (
@@ -197,9 +187,11 @@ export default function VerifyStepper({ identity, reputation, recordRead, query,
           </>}
         </StepRow>
 
-        <StepRow state={state(4)} outcome={unreadable ? 'caution' : verdict === 'ALLOW' ? 'pass' : verdict === 'WARN' ? 'caution' : 'fail'} Icon={Scale} title="Decide" standard="risk engine">
+        <StepRow state={state(4)} outcome={!verdict ? 'caution' : verdict === 'ALLOW' ? 'pass' : verdict === 'WARN' ? 'caution' : 'fail'} Icon={Scale} title="Decide" standard="risk engine">
           {unreadable ? (
             <span className="text-sm font-medium leading-relaxed text-foreground/70">No verdict: a preview cannot judge what it could not read. Try again in a few seconds, and do not pay on this.</span>
+          ) : !verdict ? (
+            <span className="text-sm font-medium leading-relaxed text-foreground/70">{NO_VERDICT_NOTE}</span>
           ) : (
             <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
               <VerdictBadge verdict={verdict} size="md" />

@@ -10,7 +10,7 @@
  * agreed verbatim on the level ladder (0/100/300/500/900); LEVELS is canonical and
  * is copied here unchanged. Dashboard and Explorer agreed verbatim on the credit
  * grade scale (200/350/500/650/800), which is deliberately a different reading of
- * the same score: a grade answers "how risky is this counterparty now", a level
+ * the same score: a grade answers "how much does this score show now", a level
  * answers "what has this agent unlocked". Both scales live here so neither pair
  * can drift again, and every consumer renders exactly what it rendered before.
  */
@@ -68,7 +68,7 @@ export const REPUTATION_GRADES: readonly (ReputationGrade & { min: number })[] =
   { min: 500, label: 'Good', tier: 'A' },
   { min: 350, label: 'Fair', tier: 'BBB' },
   { min: 200, label: 'Weak', tier: 'B' },
-  { min: 0, label: 'High risk', tier: 'C' },
+  { min: 0, label: 'Low', tier: 'C' },
 ]
 
 /** Grade for a 0-1000 score. Anything below the lowest floor reads as the lowest band. */

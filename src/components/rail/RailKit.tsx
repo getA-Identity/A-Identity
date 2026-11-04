@@ -40,7 +40,7 @@ export function TryIt({
     setError(null)
     const [idRes, repRes] = await Promise.all([resolveAgent(q), getReputation(q)])
     const id = idRes.ok && idRes.data.found ? (idRes.data.agent ?? null) : null
-    const { read, reputation: rep } = readRecord(repRes, q)
+    const { read, reputation: rep } = readRecord(repRes)
     setIdentity(id)
     setReputation(rep)
     setRecordRead(read)
