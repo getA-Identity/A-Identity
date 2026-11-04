@@ -210,7 +210,9 @@ The order, and what each step can cost:
    and close the flow with `recordFlowReceipt({ flowId, txHash })`, unless `ownerPay.simulation.ok` is
    false: the vault would refuse it right now, so sending it would revert and cost gas. The vault page does
    not send `ownerPay` for you today; the integration guide has a sample that sends it from a browser
-   wallet, starting from the public flow record.
+   wallet, starting from the public flow record. An `ownerPay` counts toward the agent's day on the
+   vault: if it uses up today's room, the agent cannot pay until 00:00 UTC unless the owner raises the
+   cap, so tell the owner before they sign.
 
 Anything that is not a usable verdict is never treated as ALLOW: a Gateway error, a settlement that does
 not echo what was signed, an unknown decision, a reputation that is not a finite number, an ALLOW below

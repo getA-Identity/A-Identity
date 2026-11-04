@@ -21,7 +21,9 @@ can still DENY on its limits.
   settlements, validation and tenure, with a recency decay and a Sybil check.
 - **Bounded authority**: daily caps, an auto-approve line, payee allowlists and a freeze
   switch, enforced in three independent places (a server pre-check, an on-chain vault
-  that reverts an over-limit payment, and Circle's wallet-layer screening).
+  that reverts an over-limit payment, and Circle's wallet-layer screening). The daily cap is a
+  calendar UTC day, so up to 2x the cap can move within seconds around 00:00 UTC. An owner payment
+  counts toward the agent's day, 0 means no limit, and a new end date turns a revoked key back on.
 - **Payments**: x402 pay-per-call, gasless Circle Nanopayments (the trust tools on Arc
   Mainnet, first credit 2026-09-16, and configured on Base mainnet for Circle Agent
   Marketplace buyers), ERC-8183 job

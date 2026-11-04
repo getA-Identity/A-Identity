@@ -227,6 +227,15 @@ about total outflow.
 | 9 | `InsufficientBalance` | The vault does not hold enough. Named here so an underfunded vault gives a reason the human path can act on. |
 | 10 | `OwnerIsOperator` | Owner and operator are the same address. Refused at construction and on `set_operator`. |
 
+**The same five behaviours as the Solidity vault.** The cap is a calendar UTC day, so up to twice it
+can go within seconds around 00:00 UTC, and lowering it does not undo today's spending. `owner_pay`
+counts toward the agent's day and can stop the agent until 00:00 UTC, unless the owner raises the cap;
+`withdraw` does not count. `set_policy` writes both limits and the allowlist setting in one call. 0
+means no limit, not no spending: the console and our backend refuse it, and the contract accepts it.
+The end date belongs to the vault, so a new one after a revoke turns the same key back on and a new key
+keeps it: replace a key that may have leaked first. The 2x bound also needs the day's temporary entry
+to outlive its day, which holds while the mean ledger close stays above 2.5 seconds.
+
 These discriminants are frozen public ABI. A client decodes an integer, not a name, so the
 list is append-only. Two changes that would break that ABI or the constructor, renumbering
 the errors (internal finding A4-01) and taking the allowlist as a constructor argument,

@@ -430,6 +430,39 @@ through our launch-day vault `0xe07819e6d28a5dfd5a9f4cd94dc6dc9aeeda4146`, whose
 operating wallet and whose operator is our env-gated key, so they are not owner-held and are
 labeled internal.
 
+**Five things the contract does that an owner should know.** Each is pinned by a test in
+`mcp/test-sol/AgentSpendPolicy.olx.t.sol`. The vault page says them where you act on them, but a call
+from an explorer or a script reaches the contract with none of the page's checks.
+
+- **The daily cap is a calendar day, so up to twice it can go around 00:00 UTC.** The day resets at
+  00:00 UTC, and the agent key can spend a full cap in the last second of one day and another in the
+  first second of the next. With a cap that does not change, `pay` moves at most 2x the cap between
+  any two moments up to 24 hours apart; one second more can touch a third day and reach 3x. Set the cap
+  to half the most you would accept losing quickly. Lowering the cap does not undo what was already
+  spent today, and the new cap applies again after 00:00 UTC, so to stop an agent now, freeze the
+  vault. The cap binds `pay` only: `ownerPay` and `withdraw` are the owner's and are not capped by it.
+- **An owner payment counts toward the agent's day.** `ownerPay` adds to the same day counter that
+  `pay` checks, with no cap check of its own, so it can stop the agent until 00:00 UTC. The owner can
+  lift that by raising the cap, and the higher cap then stays until the owner lowers it. `withdraw`
+  does not count, so the counter records `Paid` events, not all money leaving the vault. The counter
+  limits the agent only when the owner paid first: an agent that goes first can spend its whole cap,
+  and the owner can still pay on top.
+- **`setPolicy` writes both limits and the allowlist setting in one call.** There is no way to change
+  only the caps, and the contract writes whatever flag it is sent, so a caps change that sends `false`
+  turns the allowlist off. The list itself survives, so turning the flag on again restores it. The
+  vault page follows the latest read and re-reads the chain before it signs, and says so when the
+  allowlist is about to go off. A script has to read the flag first.
+- **0 means no limit, not no spending.** A `dailyCap` or `autoApproveMax` of 0 removes that gate, and a
+  `sessionKeyExpiry` of 0 means no time limit, even for a key that had expired. Each 0 removes only its
+  own gate. The vault page and our backend refuse a 0, and one that rounds to 0, but the contract
+  accepts it. To stop an agent, call `setFrozen(true)`, replace the key, or set an end date already
+  past, such as 1.
+- **The end date belongs to the vault, not to one key.** `sessionKeyExpiry` is one value that `pay`
+  checks against whichever key is the operator now. A new end date after a revoke turns the same key
+  back on, up to the cap on every UTC day until it ends. A new key keeps the end date already on the
+  vault. If a key may have leaked, call `setOperator` first, which stops the old key at once, and set
+  a new end date after.
+
 ### What it checks, in order
 
 <Steps>
@@ -491,6 +524,11 @@ can pay it as it stands, by calling `ownerPay` directly, with no verdict behind 
 and a hand-off, the owner raises the ceiling or allows the payee, and the operator asks again.
 
 ### When a payment waits for its owner
+
+Sending `ownerPay` counts toward the agent's day on the vault. If it uses up today's room, the agent
+cannot pay until 00:00 UTC unless the owner raises the cap, and any verify-then-pay request for that
+vault is refused at the free checks until then. Raising the ceiling or the cap to get a verdict on a
+larger payment also widens what the agent key can pay, so lower it again afterward.
 
 `awaiting_human` hands back the exact call for the owner's key, and that key has to send it. The
 vault page does not do that today: it has no action for sending `ownerPay` or posting its receipt. If

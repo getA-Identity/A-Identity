@@ -631,6 +631,13 @@ expression of *bounded authority - no human in the loop, but it can't run amok* 
 contract ([`mcp/contracts/AgentSpendPolicy.sol`](mcp/contracts/AgentSpendPolicy.sol) `sessionKeyExpiry` / `setSessionKeyExpiry`), not a
 server. Grant it from **Permissions → On-chain Policy Vault → Session key**.
 
+The bounds have sharp edges an owner should know. The cap is a calendar UTC day, so up to twice it can
+go within seconds around 00:00 UTC. An `ownerPay` counts toward the agent's day and can stop it until
+00:00 UTC; a `withdraw` does not. `setPolicy` writes both limits and the allowlist flag in one call. 0
+means no limit, not no spending. The end date belongs to the vault, so a new one after a revoke turns
+the same key back on, and a new key keeps it: replace a key that may have leaked first. See
+[the integration guide](docs/chains/arc-integration.mdx).
+
 Try it: `cd mcp && node --env-file=.env scripts/test-session.mjs` runs the full lifecycle on real
 Arc testnet - grant → pay within the window → the key expires → the agent's pay reverts → the owner
 extends → pays again → revoke → reverts.

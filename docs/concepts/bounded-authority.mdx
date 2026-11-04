@@ -44,7 +44,10 @@ comes from the chain:
 
 ```solidity
 function pay(address to, uint256 amount) external onlyOperator {
+    if (to == address(0)) revert ZeroAddress();
+    if (to == address(this) || to == address(usdc)) revert InvalidPayee();
     if (frozen) revert IsFrozen();
+    if (sessionKeyExpiry != 0 && block.timestamp > sessionKeyExpiry) revert SessionKeyExpired();
     if (allowlistEnabled && !allowed[to]) revert PayeeNotAllowed();
     if (autoApproveMax != 0 && amount > autoApproveMax) revert AboveAutoApprove();
     uint256 d = today();
@@ -63,6 +66,25 @@ An agent that tries to overspend doesn't get a server error page. Its transactio
 freezes, withdraws). The `operator` is the agent's signer (may only `pay` within
 policy). They are genuinely separate keys, and the agent can never change its own limits.
 </Note>
+
+## What an owner should know about the limits
+
+- **The cap is a calendar day.** It resets at 00:00 UTC, so up to twice the cap can go within seconds
+  around that time. With a cap that does not change, the agent's payments reach at most 2x the cap
+  between any two moments up to 24 hours apart. Lowering the cap does not undo today's spending, so to
+  stop an agent now, freeze the vault.
+- **An owner payment counts toward the agent's day** and can stop the agent until 00:00 UTC, unless
+  the owner raises the cap. A withdrawal does not count.
+- **`setPolicy` writes both limits and the allowlist setting in one call,** so a caps change that sends
+  `false` turns the allowlist off. The list survives, so turning it on again restores it.
+- **0 means no limit, not no spending,** on the cap, the ceiling and the end date. The vault page and
+  our backend refuse it; the contract accepts it.
+- **The end date belongs to the vault, not to one key.** A new end date after a revoke turns the same
+  key back on, and a new key keeps the end date already there. If a key may have leaked, replace it
+  first: that alone stops it.
+
+[The integration guide](/chains/arc-integration#verify-then-pay-from-a-vault) has the details, and the
+page holds a warning at each of these.
 
 ## What each layer actually enforces
 
