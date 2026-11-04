@@ -4,6 +4,7 @@ import { spawnSync } from 'node:child_process'
 import { existsSync, readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 
+import { REVOKED_KEY_EXPIRY } from './arc-owner-vault.js'
 import { benchStalledHosts, withDeadline, type RpcHost } from './arc-owner-vault-live.js'
 import { rateBudget } from './rate-budget.js'
 
@@ -295,7 +296,7 @@ test('with no hash the page says why from the end date, and says the server is l
   assert.match(future, /this one has the agent key end date it looks for/)
   assert.match(future, /If it still says this tomorrow, tell the A-Identity team/)
 
-  // A date that has passed, or a revoked key: the one action that fixes it is renewing, so it says so and sends nobody to a person.
+  // A date that has passed: the one action that fixes it is renewing, so it says so and sends nobody to a person.
   const passed = noHashWords('passed', 'looking')
   assert.match(passed, /because its agent key's end date has passed\. Set a new one from this page/)
   assert.match(passed, /within about an hour of the new end date/)
@@ -303,10 +304,20 @@ test('with no hash the page says why from the end date, and says the server is l
   assert.equal(endDateOf(0n, false), 'none')
   assert.equal(endDateOf(5000n, false), 'future')
   assert.equal(endDateOf(5000n, true), 'passed')
-  assert.equal(endDateOf(1n, true), 'passed', 'revoked is a second already past')
+
+  // Revoked: admission takes it and the sweep finds it from the revoke's own log, so the key being off is no reason, and nothing is asked of the owner.
+  assert.equal(endDateOf(REVOKED_KEY_EXPIRY, true), 'revoked', 'the very value admission takes')
+  assert.equal(endDateOf(REVOKED_KEY_EXPIRY + 1n, true), 'passed', 'and only that value: admission refuses any other date in the past')
+  const revoked = noHashWords('revoked', 'looking')
+  assert.match(revoked, /^\. Its agent key is revoked, and that does not stop a vault counting\. You do not have to send anything to anyone: our server looks/)
+  assert.match(revoked, /it finds this one with its key revoked too/)
+  assert.match(revoked, /If it still says this tomorrow, tell the A-Identity team/)
+  assert.doesNotMatch(revoked, /has passed|new one|Set |end date/, 'it never asks an owner to turn back on a key they just cut off')
+  assert.equal(noHashWords('revoked', 'reading'), '. Its agent key is revoked, and that does not stop a vault counting.', 'it says what the read showed, and claims no search')
+  assert.match(noHashWords('revoked', 'not-looking'), /that does not stop a vault counting\. Our server is not looking .* so open this vault/, 'nothing to do first, so no after that')
 
   // Off, or not able to admit: nobody is looking, and it gives the path that still works.
-  for (const endDate of ['none', 'passed', 'future', 'unknown']) {
+  for (const endDate of ['none', 'passed', 'revoked', 'future', 'unknown']) {
     for (const sweep of ['not-looking', 'unknown', 'reading']) {
       const words = noHashWords(endDate, sweep)
       assert.doesNotMatch(words, LOOKS, `${endDate} ${sweep}`)

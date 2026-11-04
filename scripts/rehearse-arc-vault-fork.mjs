@@ -1174,7 +1174,7 @@ async function browserRehearsal({ handoffOnly = false } = {}) {
     const { ctx, posts, pageErrors, text, waitText, stopIf, connect, noticeSays } = b
     const page = b.current()
     const open = (address) => page.goto(`${base}/app/vault/arc?network=${encodeURIComponent(chain.caip2)}&contract=${address}`, { waitUntil: 'domcontentloaded' })
-    const { vault } = await deployVault(acct(ownerIndex), acct(agentIndex).address)
+    const { vault, hash } = await deployVault(acct(ownerIndex), acct(agentIndex).address)
 
     await open(vault)
     await connect()
@@ -1186,13 +1186,26 @@ async function browserRehearsal({ handoffOnly = false } = {}) {
     await open(vault)
     await stopIf(await waitText(/yet\. You do not have to send anything to anyone: our server looks for vaults on the chain by itself, and this one has the agent key end date it looks for/, 30000), 'a date in the future: it says this one has what the server looks for')
 
-    // Revoked is the date a second after the epoch, which the page reads as passed.
+    // A date that has passed, and not the revoke's own value: admission refuses this one and takes that one.
+    await send(acct(ownerIndex), vaultCall(vault, 'setSessionKeyExpiry', [2n]))
+    await open(vault)
+    await stopIf(await waitText(/yet, because its agent key's end date has passed\. Set a new one from this page\. .*within about an hour of the new end date/, 30000), 'a date that has passed: it says so, to set a new one, and when the server finds it again')
+    const passedSays = await noticeSays()
+    say(`the vault page says: ${passedSays}`)
+    check(!/has the agent key end date it looks for/.test(passedSays) && !/tell the A-Identity team/.test(passedSays), 'and it neither claims a date the server wants nor sends anyone to a person')
+
+    // Revoked is what the page's own button writes. Admission takes it, so it is no reason, and nothing is asked of the owner.
     await send(acct(ownerIndex), vaultCall(vault, 'setSessionKeyExpiry', [1n]))
     await open(vault)
-    await stopIf(await waitText(/yet, because its agent key's end date has passed\. Set a new one from this page\. .*within about an hour of the new end date/, 30000), 'a revoked key: it says the date has passed, to set a new one, and when the server finds it again')
-    say(`the vault page says: ${await noticeSays()}`)
-    const said = await text()
-    check(!/has the agent key end date it looks for/.test(said) && !/tell the A-Identity team/.test(said), 'and it neither claims a date the server wants nor sends anyone to a person')
+    await stopIf(await waitText(/yet\. Its agent key is revoked, and that does not stop a vault counting\. You do not have to send anything to anyone: our server looks for vaults on the chain by itself, and it finds this one with its key revoked too/, 30000), 'a revoked key: it says that does not stop the vault counting, and that the server is looking')
+    const revokedSays = await noticeSays()
+    say(`the vault page says: ${revokedSays}`)
+    check(!/has passed|new one|has the agent key end date it looks for/.test(revokedSays), 'and it neither calls that a date that has passed nor asks the owner to turn the key back on')
+    const counted = await sweepCounts(vault)
+    check(counted.deployTx === hash.toLowerCase(), 'and it was true: the sweep counts the vault with its key revoked')
+    const onlyRevoked = await deployVault(acct(ownerIndex), acct(agentIndex).address)
+    await send(acct(ownerIndex), vaultCall(onlyRevoked.vault, 'setSessionKeyExpiry', [1n]))
+    check((await sweepCounts(onlyRevoked.vault)).deployTx === onlyRevoked.hash.toLowerCase(), "and it finds a vault whose only log is the revoke's own")
     check(posts.length === 0, 'nothing is posted: no hash, no question')
     check(pageErrors.length === 0, `no page errors (${pageErrors.slice(0, 2).join(' | ')})`)
     await ctx.close()
