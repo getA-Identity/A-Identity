@@ -23,7 +23,8 @@ export function isContractAnswer(e: unknown): boolean {
   for (let i = 0; i < 12 && x && typeof x === 'object'; i += 1) {
     if (x.code === 3) return true
     if (x.name === 'ContractFunctionZeroDataError' || x.name === 'AbiDecodingZeroDataError' || x.name === 'AbiDecodingDataSizeTooSmallError') return true
-    if (x.name === 'ContractFunctionRevertedError' && (x.data || x.signature || (typeof x.reason === 'string' && /revert/i.test(x.reason)))) return true
+    // No reason at all means revert data came back that did not decode: still the contract's.
+    if (x.name === 'ContractFunctionRevertedError') return Boolean(x.data || x.signature || typeof x.reason !== 'string' || /revert/i.test(x.reason))
     x = x.cause as Walked | null | undefined
   }
   return false
