@@ -9,13 +9,16 @@ import { AGENT_SPEND_POLICY_ABI } from '../contracts/agent-spend-policy'
 import {
   WINDOW_PAUSE_MS,
   emptyHistory,
+  covered,
   pickHosts,
+  readDownTo,
   readOlder,
   withBlockTimes,
   type EventHistory,
   type HostHead,
   type HostReader,
 } from './event-history'
+import type { PaidEvent } from './handoff-rules'
 import { clientFor, hostOf, rpcUrls } from './vault-read'
 
 /** The three events, named by the generated ABI, so a contract that renamed one fails the build. */
@@ -60,6 +63,24 @@ async function readHeads(chain: Chain): Promise<HostHead[]> {
       }
     }),
   )
+}
+
+/**
+ * The vault's Paid events from `from` up to the chain's head, or that this could not be read. A window
+ * no host answered is not "no payment": the caller gets nothing but the failure.
+ */
+export async function readPaidSince(chain: Chain, vault: string, from: bigint): Promise<{ ok: true; paid: PaidEvent[]; through: bigint } | { ok: false; reason: string }> {
+  const address = getAddress(vault)
+  const picked = pickHosts(await readHeads(chain), chain.chainId as number)
+  if (picked.top === null) return { ok: false, reason: 'no network node answered for this chain' }
+  if (picked.top < from) return { ok: true, paid: [], through: picked.top }
+  const urls = rpcUrls(chain).filter((u) => picked.usable.includes(hostOf(u)))
+  const h = await readDownTo(emptyHistory(address, picked.top), from, { readers: urls.map((u) => readerFor(chain, u, address)), pause })
+  const range = covered(h)
+  if (h.failed || !range || range.from > from) return { ok: false, reason: h.failed?.reason ?? 'the read stopped before it reached the block it needed' }
+  const paid: PaidEvent[] = []
+  for (const e of h.events) if (e.kind === 'Paid') paid.push({ to: e.to, amount: e.amount, byOwner: e.byOwner, block: e.block, txHash: e.txHash })
+  return { ok: true, paid, through: range.to }
 }
 
 /**

@@ -660,7 +660,7 @@ export default function DeployFlow({
               Largest single payment (USDC, above 0)
             </label>
             <input id="deploy-ceiling" inputMode="decimal" value={ceiling} onChange={(e) => setCeiling(e.target.value)} className={INPUT} />
-            <p className="mt-1 text-[11px] text-foreground/60">The contract refuses any agent payment above this. To send more, you can withdraw to that address yourself from the vault's page.</p>
+            <p className="mt-1 text-[11px] text-foreground/60">The contract refuses any agent payment above this. Your agent can ask you to approve more on the vault's page, or you can withdraw to that address yourself.</p>
           </div>
           <div>
             <label htmlFor="deploy-session" className="text-[11px] font-semibold text-foreground/65">

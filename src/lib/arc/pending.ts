@@ -1,7 +1,7 @@
 /**
  * What this browser remembers about transactions it handed to a wallet, so a reload or a closed
- * tab never loses a hash: the latest transaction per vault, the one vault setup in progress, and
- * the deploy hash of each vault it saw settle.
+ * tab never loses a hash: the latest transaction per vault, the one vault setup in progress, the
+ * deploy hash of each vault it saw settle, and what it sent for each flow an owner approved.
  *
  * Only public facts are stored (hashes, addresses, amounts, the setup's chosen limits): never a
  * key, never a signature. BigInts travel as tagged decimal strings so nothing is rounded. When
@@ -70,6 +70,37 @@ export type TxRecord = {
   readBackTries?: number
   /** The receipt carried every event this write was expected to emit. */
   logsMatched?: boolean
+}
+
+/**
+ * What this browser did about one flow an owner approved. Written BEFORE the wallet is asked, so a
+ * closed tab or a phone wallet that approves later still leaves the record that stops a second send.
+ * Shared by every tab, because a second tab that does not know about the first pays twice.
+ */
+export type HandoffSend = {
+  v: 1
+  /** CAIP-2. */
+  network: string
+  vault: string
+  flowId: string
+  payee: string
+  amount: bigint
+  from: string
+  askedAt: string
+  /** Which tab's claim this is. A claim another tab overwrote is not this tab's to send on. */
+  token: string
+  /** The transaction the wallet handed back. */
+  tx?: TxRecord
+  /** A payment of this flow's amount to its payee found on chain, under another hash than tx: a speed-up, usually. */
+  paidBy?: string
+  /** When tx was first seen replaced with no payment of it found. A host can lag, so one read is not the answer. */
+  replacedSeenAt?: string
+  /** tx was replaced, and the Paid events, read well after that, hold no payment: it can no longer land and nothing replaced it with a payment. */
+  replacedClear?: boolean
+  /** The person said they checked their wallet and nothing is on its way. */
+  released?: boolean
+  /** The server's final answer on a hash. Absent until it gave one. */
+  server?: { state: 'settled' | 'ended' | 'moved' | 'refused'; txHash: string; flowId: string; code?: string; reason?: string; at: string }
 }
 
 export type SetupState = {
@@ -171,6 +202,93 @@ export function saveTx(r: TxRecord): void {
 
 export function clearTx(network: string, vault: string): void {
   write(txKey(network, vault), null)
+}
+
+const handoffPrefix = (network: string, vault: string) => `aid-arc-handoff:${network}:${vault.toLowerCase()}:`
+const declinedKey = (network: string, vault: string) => `aid-arc-handoff-declined:${network}:${vault.toLowerCase()}`
+/** More than anyone approves by hand from one browser in the time these matter: a bound on what is kept, not a rule. */
+const HANDOFFS_KEPT = 50
+const DECLINED_KEPT = 50
+
+/** Every key in this browser's records that starts so, storage or the memory standing in for it. */
+function keysWith(prefix: string): string[] {
+  const out = new Set<string>()
+  try {
+    for (let i = 0; i < localStorage.length; i++) {
+      const k = localStorage.key(i)
+      if (k?.startsWith(prefix)) out.add(k)
+    }
+  } catch {
+    /* storage is blocked: memory below is all there is */
+  }
+  for (const k of memory.keys()) if (k.startsWith(prefix)) out.add(k)
+  return [...out]
+}
+
+/** The record is about this flow. */
+export function holdsFlow(r: HandoffSend, flowId: string): boolean {
+  return r.flowId.toLowerCase() === flowId.toLowerCase()
+}
+
+function isHandoff(r: HandoffSend | null): r is HandoffSend {
+  return Boolean(r && r.v === 1 && typeof r.flowId === 'string' && typeof r.payee === 'string' && typeof r.amount === 'bigint')
+}
+
+/** Everything this browser did about flows on this vault. */
+export function loadHandoffs(network: string, vault: string): HandoffSend[] {
+  return keysWith(handoffPrefix(network, vault))
+    .map((k) => read<HandoffSend>(k))
+    .filter(isHandoff)
+    .sort((a, b) => (a.askedAt < b.askedAt ? 1 : -1))
+}
+
+export function saveHandoff(r: HandoffSend): void {
+  write(`${handoffPrefix(r.network, r.vault)}${r.flowId.toLowerCase()}`, r)
+  // Only a record with a final answer is ever dropped to keep this bounded: an open one stops a second send.
+  const all = loadHandoffs(r.network, r.vault)
+  for (const old of all.filter((x) => x.server).slice(HANDOFFS_KEPT)) clearHandoff(old.network, old.vault, old.flowId)
+}
+
+export function clearHandoff(network: string, vault: string, flowId: string): void {
+  write(`${handoffPrefix(network, vault)}${flowId.toLowerCase()}`, null)
+}
+
+/** The flows the person said no to in this browser. Nothing else knows: a flow has no such state. */
+export function loadDeclined(network: string, vault: string): string[] {
+  const rows = read<string[]>(declinedKey(network, vault))
+  return Array.isArray(rows) ? rows.filter((x) => typeof x === 'string') : []
+}
+
+export function saveDeclined(network: string, vault: string, flowId: string, declined: boolean): void {
+  const rest = loadDeclined(network, vault).filter((x) => x !== flowId.toLowerCase())
+  write(declinedKey(network, vault), (declined ? [...rest, flowId.toLowerCase()] : rest).slice(-DECLINED_KEPT))
+}
+
+/** The Web Locks a browser offers, or a stand-in in a test. */
+export type SendLocks = { request: <T>(name: string, fn: () => T) => Promise<T> }
+
+/**
+ * Take the send for a flow, or say another send holds it. `refused` is asked inside the lock, with every
+ * record read fresh. Two tabs reach this at the same moment, and only one of them gets to open a wallet.
+ * With no Web Locks the record is written and read back, which leaves a window of a few milliseconds
+ * between two tabs a person would have to click in at once.
+ */
+export async function claimHandoff(r: HandoffSend, refused: (records: HandoffSend[]) => boolean, locks: SendLocks | null | undefined = defaultLocks()): Promise<boolean> {
+  const take = () => {
+    if (refused(loadHandoffs(r.network, r.vault))) return false
+    saveHandoff(r)
+    return read<HandoffSend>(`${handoffPrefix(r.network, r.vault)}${r.flowId.toLowerCase()}`)?.token === r.token
+  }
+  return locks ? locks.request(`aid-arc-handoff:${r.vault.toLowerCase()}`, take) : take()
+}
+
+function defaultLocks(): SendLocks | null {
+  try {
+    const l = (navigator as Navigator & { locks?: { request: (name: string, fn: () => unknown) => Promise<unknown> } }).locks
+    return l ? { request: (name, fn) => l.request(name, fn) as Promise<never> } : null
+  } catch {
+    return null
+  }
 }
 
 export function loadDeploys(): HeldDeploy[] {

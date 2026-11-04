@@ -56,13 +56,15 @@ type ReceiptProps = {
   onUpdate: (r: TxRecord) => void
   /** Called once when a pending record reaches any final outcome, so the page can read the vault again. */
   onSettled?: (r: TxRecord) => void
+  /** A write the server has the last word on: a good receipt reads as landed, and the caller says when it is settled. */
+  serverJudges?: boolean
 }
 
 export default function TxReceipt(props: ReceiptProps) {
   return <ReceiptOf key={props.record.hash} {...props} />
 }
 
-function ReceiptOf({ record, onUpdate, onSettled }: ReceiptProps) {
+function ReceiptOf({ record, onUpdate, onSettled, serverJudges }: ReceiptProps) {
   const chain = arcChainFor(record.network)
   const [gaveUp, setGaveUp] = useState(false)
   const [asked, setAsked] = useState<{ answered: number; total: number; checks: number }>({
@@ -137,16 +139,19 @@ function ReceiptOf({ record, onUpdate, onSettled }: ReceiptProps) {
 
   const href = txUrl(chain, record.hash)
   const fee = feeLine(record.feeWei, chain.nativeCurrency.decimals)
+  const settled = record.outcome === 'settled' && !serverJudges
   const tone =
-    record.outcome === 'settled'
+    settled
       ? 'border-ok/30 bg-ok/[0.07]'
-      : record.outcome === 'pending' || record.outcome === 'replaced' || record.outcome === 'untracked'
+      : record.outcome === 'settled' || record.outcome === 'pending' || record.outcome === 'replaced' || record.outcome === 'untracked'
         ? 'border-warn/30 bg-warn/10'
         : 'border-danger/25 bg-danger/[0.07]'
   const block = record.block !== undefined ? record.block.toLocaleString('en-US') : '(not reported)'
   const headline =
-    record.outcome === 'settled'
+    settled
       ? `${record.what}: settled in block ${block}.`
+      : record.outcome === 'settled'
+      ? `${record.what}: landed in block ${block}. Our server is reading it from the chain, and it is not settled until the server says so.`
       : record.outcome === 'reverted'
         ? `${record.what}: landed in block ${block} and REVERTED. Nothing in the vault changed; the network fee was still charged.`
         : record.outcome === 'unexpected'
@@ -170,9 +175,9 @@ function ReceiptOf({ record, onUpdate, onSettled }: ReceiptProps) {
   return (
     <div className={`rounded-2xl border p-4 text-sm ${tone}`} role="status" aria-live="polite">
       <div className="flex flex-wrap items-center gap-2 font-semibold text-foreground">
-        {record.outcome === 'settled' ? (
+        {settled ? (
           <CheckCircle2 size={16} className="text-ok" aria-hidden="true" />
-        ) : record.outcome === 'pending' ? (
+        ) : record.outcome === 'settled' || record.outcome === 'pending' ? (
           <Clock size={16} className="text-warn" aria-hidden="true" />
         ) : record.outcome === 'replaced' || record.outcome === 'untracked' ? (
           <AlertTriangle size={16} className="text-warn" aria-hidden="true" />
@@ -181,7 +186,7 @@ function ReceiptOf({ record, onUpdate, onSettled }: ReceiptProps) {
         )}
         {headline}
       </div>
-      {record.outcome === 'settled' && (
+      {settled && (
         <div className="mt-1 text-xs text-foreground/75">
           The receipt carries what this write was expected to emit
           {record.action === 'deploy' ? ' (a contract at the address the receipt names, reading back as asked)' : ''}

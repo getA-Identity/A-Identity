@@ -245,13 +245,13 @@ export function nextWindowTop(h: EventHistory): bigint | null {
  */
 export async function readOlder(
   h: EventHistory,
-  x: { readers: readonly HostReader[]; pause?: () => Promise<void>; aborted?: () => boolean; onProgress?: (h: EventHistory) => void },
+  x: { readers: readonly HostReader[]; pause?: () => Promise<void>; aborted?: () => boolean; onProgress?: (h: EventHistory) => void; downTo?: bigint },
 ): Promise<EventHistory> {
   let out: EventHistory = { ...h, failed: null }
   const top = nextWindowTop(h)
   if (top === null) return out
   const queue: HostQueue = { order: [...x.readers], strikes: new Map() }
-  const plan = planWindows(top, Math.min(WINDOWS_PER_READ, MAX_WINDOWS - h.windows.length))
+  const plan = planWindows(top, Math.min(WINDOWS_PER_READ, MAX_WINDOWS - h.windows.length)).filter((w) => x.downTo === undefined || w.to >= x.downTo)
   for (const [i, w] of plan.entries()) {
     if (i > 0) await x.pause?.()
     if (x.aborted?.()) return out
@@ -265,6 +265,28 @@ export async function readOlder(
     x.onProgress?.(out)
   }
   return out
+}
+
+/**
+ * Read from the newest block down to `downTo` and no further, however many reads that takes: a check that
+ * came back a minute ago does not need seventeen hours of logs. Stops at a window no host answers, and
+ * then `failed` says so and nothing below it is known. Whoever asks about a payment treats that as not
+ * knowing, never as no payment.
+ */
+export async function readDownTo(
+  h: EventHistory,
+  downTo: bigint,
+  x: { readers: readonly HostReader[]; pause?: () => Promise<void>; aborted?: () => boolean },
+): Promise<EventHistory> {
+  let out = h
+  for (;;) {
+    const next = nextWindowTop(out)
+    if (next === null || next < downTo) return out
+    const read = await readOlder(out, { ...x, downTo })
+    // A read that added no window got no further and never will on this pass.
+    if (read.failed || read.windows.length === out.windows.length || x.aborted?.()) return read
+    out = read
+  }
 }
 
 /** The range the windows cover, or null when no window was answered. */

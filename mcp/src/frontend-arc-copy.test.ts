@@ -149,8 +149,10 @@ test('a vault with its allowlist on never reads green, since the list may be emp
 })
 
 test('no sentence offers an owner payment the page has no button for', async () => {
-  // ownerPay exists in the contract and is not an owner call on this page.
-  assert.doesNotMatch(repo('src/lib/arc/vault-write.ts'), /fn: 'ownerPay'/, 'the page can pay as the owner now: these sentences can name it')
+  // ownerPay is an owner call on this page only for a request from the agent (OwnerApprovals), so no
+  // sentence offers to pay an amount of the owner's own choosing. That is what Withdraw is for.
+  assert.match(repo('src/lib/arc/vault-write.ts'), /fn: 'ownerPay'/)
+  assert.doesNotMatch(repo('src/components/app/arc/OwnerControls.tsx'), /ownerPay/)
   assert.match(repo(CONTRACT), /function withdraw\(address to, uint256 amount\) external onlyOwner/)
   const flow = repo(FLOW)
   const status = repo('src/components/app/arc/VaultStatus.tsx')

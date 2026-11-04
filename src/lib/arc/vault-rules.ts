@@ -172,6 +172,21 @@ export function gasWithMargin(estimate: bigint): bigint {
 }
 
 /**
+ * The vault's first spend of a UTC day writes spentOnDay from zero, which costs about 17,200 gas more
+ * than an estimate read on a day that already had a spend, and 20% of an ownerPay estimate is about
+ * that. An owner can be looking at their wallet's prompt as 00:00 UTC passes, and out of gas costs them
+ * the fee and ends the flow. A limit is not a charge, so this costs nothing unless the gas is used.
+ */
+export const OWNER_PAY_DAY_ROLLOVER_GAS = 25_000n
+
+/** The limit for ownerPay: the page's usual margin, and never less than the day's first write needs. */
+export function ownerPayGas(estimate: bigint): bigint {
+  const margin = gasWithMargin(estimate)
+  const rollover = estimate + OWNER_PAY_DAY_ROLLOVER_GAS
+  return margin > rollover ? margin : rollover
+}
+
+/**
  * Why an operator address is refused, or null. The operator is a separate key that can only
  * call pay(); the owner key keeps every other power, so the two are never the same.
  */
