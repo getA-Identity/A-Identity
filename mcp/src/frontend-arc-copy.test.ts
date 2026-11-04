@@ -798,6 +798,21 @@ test('a leak has a remedy that keeps the agent running, and the page names it', 
     assert.match(repo(panel).replace(/\s+/g, ' '), /A new date turns the current key back on, even after Revoke/, panel)
 })
 
+test('the leak advice names a remedy the owner can reach from the screen that gives it', () => {
+  const said = (page: string) => repo(page).replace(/\s+/g, ' ')
+  // The Stellar console and its prepare route have no replace control, so the page does not promise one.
+  const stellarPanel = said('src/components/app/permissions/StellarVaultPanel.tsx')
+  assert.match(stellarPanel, /freeze the vault and keep it frozen: this page cannot replace the key, that takes a set_operator call signed by the owner key/)
+  assert.doesNotMatch(stellarPanel, /replace the key first/)
+  assert.doesNotMatch(repo('mcp/src/stellar-vault.ts'), /'set_operator',/, 'the prepare route gained set_operator: the page can now say so')
+  const stellarDoc = said('docs/chains/stellar.mdx')
+  assert.match(stellarDoc, /freeze the vault and keep it frozen: the console and the hosted prepare API cannot replace the key/)
+  assert.doesNotMatch(stellarDoc, /replace a key that may have leaked first/)
+  // The Arc control exists, on another page, so the sentence links to it.
+  const arcPanel = said('src/components/app/permissions/VaultPanel.tsx')
+  assert.match(arcPanel, /freeze the vault and\{' '\} <Link to=\{arcPanel \?\? '\/app\/vault\/arc'\}[^>]*> replace the key <\/Link>\{' '\} on the Arc vault page first/)
+})
+
 test('the public docs state the five vault behaviours, without calling the contracts audited', () => {
   const said = (page: string) => repo(page).replace(/\s+/g, ' ')
   const guide = said('docs/chains/arc-integration.mdx')

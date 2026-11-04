@@ -194,7 +194,7 @@ export default function StellarVaultPanel({
           )}
         </div>
         <p className="mt-1 text-[11px] text-foreground/45">
-          Give the agent's spend authority a deadline. When it passes, the vault reverts the agent's payments until you extend it. A new date turns the current key back on, even after Revoke, because the date belongs to the vault and not to one key. If the key may have leaked, freeze the vault and replace the key first.
+          Give the agent's spend authority a deadline. When it passes, the vault reverts the agent's payments until you extend it. A new date turns the current key back on, even after Revoke, because the date belongs to the vault and not to one key. If the key may have leaked, freeze the vault and keep it frozen: this page cannot replace the key, that takes a set_operator call signed by the owner key.
         </p>
         <div className="mt-2 flex flex-wrap items-end gap-2">
           <div>

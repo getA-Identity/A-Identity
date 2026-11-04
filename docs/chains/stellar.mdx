@@ -232,8 +232,9 @@ can go within seconds around 00:00 UTC, and lowering it does not undo today's sp
 counts toward the agent's day and can stop the agent until 00:00 UTC, unless the owner raises the cap;
 `withdraw` does not count. `set_policy` writes both limits and the allowlist setting in one call. 0
 means no limit, not no spending: the console and our backend refuse it, and the contract accepts it.
-The end date belongs to the vault, so a new one after a revoke turns the same key back on and a new key
-keeps it: replace a key that may have leaked first. The 2x bound also needs the day's temporary entry
+The end date belongs to the vault, so a new one after a revoke turns the current key back on and a new
+key keeps it. If a key may have leaked, freeze the vault and keep it frozen: the console and the hosted
+prepare API cannot replace the key, which takes a `set_operator` call signed by the owner key. The 2x bound also needs the day's temporary entry
 to outlive its day, which holds while the mean ledger close stays above 2.5 seconds.
 
 These discriminants are frozen public ABI. A client decodes an integer, not a name, so the
