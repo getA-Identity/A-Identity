@@ -74,10 +74,19 @@ test('a healthy merchant (identity + attested KYA + strong reputation + card) is
   assert.equal(r.reasons[0].code, 'verified_merchant')
 })
 
-test('no on-chain identity is DENY - the documented default for an unverifiable merchant', () => {
+test('no on-chain identity is WARN: a merchant we know nothing about is not known bad', () => {
   const r = computeMerchantVerdict({ ...healthy, identityFound: false, kya: null, reputationScore: null, sybil: null })
-  assert.equal(r.verdict, 'DENY')
+  assert.equal(r.verdict, 'WARN')
   assert.equal(r.reasons[0].code, 'no_onchain_identity')
+  assert.equal(r.reasons[0].severity, 'warn')
+  assert.match(r.reasons[0].detail, /does not mean it is bad/)
+})
+
+test('no on-chain identity never reaches ALLOW, and evidence against the merchant still denies', () => {
+  assert.equal(computeMerchantVerdict({ ...healthy, identityFound: false }).verdict, 'WARN')
+  assert.equal(computeMerchantVerdict({ ...healthy, identityFound: false, kya: 'revoked' }).verdict, 'DENY')
+  assert.equal(computeMerchantVerdict({ ...healthy, identityFound: false, sybil: 'high' }).verdict, 'DENY')
+  assert.equal(computeMerchantVerdict({ ...healthy, identityFound: false, reputationScore: 150 }).verdict, 'DENY')
 })
 
 test('sybil-high wash reputation is DENY; sybil-medium is only WARN', () => {

@@ -50,6 +50,8 @@ type Bundle = {
   /** KYA revoked (incident) - forces a risk DENY. */
   revoked: boolean
   tenureDays: number
+  /** Do we hold a platform record of this agent? See onPlatformSignal. */
+  onPlatform: boolean | undefined
 }
 
 /** A transparent echo of the behavioral inputs behind the reputation `behavior` band. */
@@ -84,6 +86,33 @@ async function withTimeout<T>(p: Promise<T>, ms: number, fallback: T): Promise<T
   const result = await Promise.race([p.catch(() => fallback), timeout])
   clearTimeout(timer!)
   return result
+}
+
+/**
+ * RiskSignals.onPlatform, from whether a platform record exists. false is a finding, so it is
+ * answered only when we could actually look, and absent leaves the scorer on its strict rule:
+ *
+ *   - An empty roster means this process cannot see platform state, not that the agent has no
+ *     record, the same reading guardrail_check gives it. Calling that "no record" would turn a
+ *     failed state load into a WARN on an agent that may be revoked.
+ *   - A CAIP or Stellar 8004 id never matches a platform agent by id, so a record can exist
+ *     that the query did not reach. If the identity it resolved to is anchored on a platform
+ *     agent on the same chain, "we hold no record" would be false.
+ *
+ * What this cannot see, stated rather than implied: a payee ADDRESS matches a platform agent
+ * by its settlement wallet only. Paying the on-chain owner of a platform agent at an address
+ * that is not its wallet reads as no record.
+ */
+export function onPlatformSignal(
+  platform: unknown,
+  roster: Pick<PlatformAgent, 'onchainAgentId' | 'chain'>[],
+  query: string,
+  identity: { tokenId: number; chain: string; partial?: boolean } | null,
+): boolean | undefined {
+  if (platform) return true
+  if (roster.length === 0) return undefined
+  if (!isAddress(query) && identity && !identity.partial && roster.some((a) => a.onchainAgentId === String(identity.tokenId) && a.chain === identity.chain)) return undefined
+  return false
 }
 
 /** Resolve every real signal we have for an agent, from platform state + the chain. */
@@ -156,7 +185,7 @@ async function gather(agentId: string): Promise<Bundle> {
   // Tenure only from a timestamp WE can vouch for (platform-tracked creation). We do NOT
   // trust `identity.registeredAt`, which is read from the agent's own tokenURI JSON - a
   // counterparty could self-attest an ancient date to inflate tenure (worth up to 160
-  // reputation points) and flip a DENY into a WARN. Unknown tenure -> 0, not self-reported.
+  // reputation points) and flip a verdict. Unknown tenure -> 0, not self-reported.
   const createdAt = platform?.createdAt ?? null
   const createdMs = createdAt ? new Date(createdAt).getTime() : NaN
   const tenureDays = Number.isFinite(createdMs)
@@ -182,8 +211,19 @@ async function gather(agentId: string): Promise<Bundle> {
     }
   }
 
-  return { agentId: q, platform, identity, tokenId, validation, humanProof, reputation, onchainVerified, kyaVerified, kyaStatus, revoked: kyaStatus === 'revoked', tenureDays }
+  return { agentId: q, platform, identity, tokenId, validation, humanProof, reputation, onchainVerified, kyaVerified, kyaStatus, revoked: kyaStatus === 'revoked', tenureDays, onPlatform: onPlatformSignal(platform, agents, q, identity) }
 }
+
+/** The signals every verdict in this file is scored from. */
+const riskSignals = (b: Bundle): RiskSignals => ({
+  onchainVerified: b.onchainVerified,
+  kyaVerified: b.kyaVerified,
+  reputationScore: b.reputation.score,
+  tenureDays: b.tenureDays,
+  revoked: b.revoked,
+  sybil: b.reputation.sybil?.level,
+  onPlatform: b.onPlatform,
+})
 
 /**
  * The addresses worth asking the Self Agent ID registry about, in order of how likely
@@ -329,15 +369,7 @@ export async function reputationScore(agentId: string) {
 /** risk_check - pre-transaction ALLOW/WARN/DENY over an agent's trust signals. */
 export async function riskCheck(agentId: string, txContext: TxContext | null = null) {
   const b = await gather(agentId)
-  const signals: RiskSignals = {
-    onchainVerified: b.onchainVerified,
-    kyaVerified: b.kyaVerified,
-    reputationScore: b.reputation.score,
-    tenureDays: b.tenureDays,
-    revoked: b.revoked,
-    sybil: b.reputation.sybil?.level,
-  }
-  const r = assessRisk(signals, txContext)
+  const r = assessRisk(riskSignals(b), txContext)
   return {
     tool: 'risk_check',
     _meta: TOOL_META,
@@ -354,10 +386,7 @@ export async function riskCheck(agentId: string, txContext: TxContext | null = n
 export async function agentPassport(agentId: string) {
   const b = await gather(agentId)
   const liveness = await checkLiveness(b)
-  const risk = assessRisk(
-    { onchainVerified: b.onchainVerified, kyaVerified: b.kyaVerified, reputationScore: b.reputation.score, tenureDays: b.tenureDays, revoked: b.revoked, sybil: b.reputation.sybil?.level },
-    null,
-  )
+  const risk = assessRisk(riskSignals(b), null)
   return {
     tool: 'agent_passport',
     _meta: TOOL_META,
@@ -392,9 +421,10 @@ export async function agentPassport(agentId: string) {
 
 /**
  * Coarse public band for a 0-1000 score. The free tier deliberately returns a band, not
- * the exact score: bands align with the risk thresholds (DENY < 200, WARN 200-500), so a
- * free caller still gets an actionable signal while the exact score + breakdown stay a
- * paid read.
+ * the exact score: bands align with the risk thresholds for an agent we hold a record of
+ * (DENY < 200, WARN 200-500), so a free caller still gets an actionable signal while the
+ * exact score + breakdown stay a paid read. A payee with no platform record gets WARN on any
+ * band: its score only says we have no history for it.
  */
 export function scoreBand(score: number): 'very-low' | 'low' | 'medium' | 'high' {
   if (score < 200) return 'very-low'
@@ -554,10 +584,7 @@ export function sameOperator(a: PlatformAgent | null, b: PlatformAgent | null): 
  */
 export async function counterpartyCheck(from: string, to: string, txContext: TxContext | null = null) {
   const [payer, cp] = await Promise.all([gather(from), gather(to)])
-  const base = assessRisk(
-    { onchainVerified: cp.onchainVerified, kyaVerified: cp.kyaVerified, reputationScore: cp.reputation.score, tenureDays: cp.tenureDays, revoked: cp.revoked, sybil: cp.reputation.sybil?.level },
-    txContext,
-  )
+  const base = assessRisk(riskSignals(cp), txContext)
   const isSelfDeal = sameOperator(payer.platform, cp.platform)
   const reasons = [...base.reasons]
   let decision = base.decision

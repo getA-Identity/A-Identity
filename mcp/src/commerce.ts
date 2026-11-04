@@ -11,9 +11,10 @@
  *
  * Free and read-only by construction: no keys, no state writes, no metering. The
  * verdict ladder mirrors the published risk methodology (asp/proof.ts /methodology:
- * DENY on revoked KYA / wash reputation / no on-chain identity / reputation < 200;
- * WARN on reputation < 500 / unattested KYA) but deliberately does NOT import the
- * paid ASP tool code paths, so this free surface can never drift the paid product.
+ * DENY on revoked KYA / wash reputation / reputation < 200 on an agent we hold a record of;
+ * WARN on no on-chain identity / no platform history / reputation < 500 / unattested KYA,
+ * because a merchant we know nothing about is not known bad) but deliberately does NOT import
+ * the paid ASP tool code paths, so this free surface can never drift the paid product.
  * The thresholds are pinned by commerce.test.ts instead.
  */
 import type { AgentIdentity } from './data.js'
@@ -67,13 +68,13 @@ export function computeMerchantVerdict(s: MerchantSignals): { verdict: MerchantV
   if (s.sybil === 'high') {
     deny.push({ code: 'sybil_high', severity: 'deny', detail: 'Reputation appears Sybil / wash-traded - most of its jobs were hired by its own operator, not independent buyers' })
   }
-  if (!s.identityFound) {
-    deny.push({ code: 'no_onchain_identity', severity: 'deny', detail: 'No verifiable on-chain identity (ERC-8004) found for this merchant agent - there is no accountable party to pay' })
-  }
   if (s.reputationScore !== null && s.reputationScore < REP_DENY_BELOW) {
     deny.push({ code: 'low_reputation', severity: 'deny', detail: `Reputation ${s.reputationScore} is below the safe threshold (${REP_DENY_BELOW})` })
   }
 
+  if (!s.identityFound) {
+    warn.push({ code: 'no_onchain_identity', severity: 'warn', detail: 'No on-chain identity (ERC-8004) was found for this merchant agent, so we do not know who is behind it. This does not mean it is bad: we have no evidence either way' })
+  }
   if (s.reputationScore !== null && s.reputationScore >= REP_DENY_BELOW && s.reputationScore < REP_WARN_BELOW) {
     warn.push({ code: 'moderate_reputation', severity: 'warn', detail: `Moderate reputation (${s.reputationScore}); proceed with caution` })
   }

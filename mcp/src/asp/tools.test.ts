@@ -4,7 +4,7 @@
  */
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { asTokenId, isAddress, sameOperator, scoreBand, livenessTarget, selfLookupCandidates } from './tools.js'
+import { asTokenId, isAddress, onPlatformSignal, sameOperator, scoreBand, livenessTarget, selfLookupCandidates } from './tools.js'
 import type { PlatformAgent } from '../platform.js'
 
 // A minimal agent for the counterparty_check same-operator relationship signal.
@@ -119,4 +119,25 @@ test('selfLookupCandidates: wallet first, then owner, then identity owner, then 
 test('selfLookupCandidates: non-addresses (ids, usernames, CAIP ids) are dropped, so an empty list means no lookup', () => {
   assert.deepEqual(selfLookupCandidates(agent({ owner: 'user_42', walletAddress: null }), null, '#6271'), [])
   assert.deepEqual(selfLookupCandidates(null, null, 'eip155:42220:0x6a5f1b8e56a19d456b799c2fa00e513244f58ce6'), [])
+})
+
+test('onPlatformSignal: true with a record, false only when we could look and hold none', () => {
+  const roster = [{ onchainAgentId: '7', chain: 'arc' }, { onchainAgentId: undefined, chain: 'arc' }] as Pick<PlatformAgent, 'onchainAgentId' | 'chain'>[]
+  const address = '0x' + 'd4'.repeat(20)
+  assert.equal(onPlatformSignal({ id: 'a' }, roster, address, null), true)
+  assert.equal(onPlatformSignal(null, roster, address, null), false)
+  assert.equal(onPlatformSignal(null, roster, 'eip155:1:8004/9', { tokenId: 9, chain: 'arc' }), false, 'an identity no platform agent is anchored on')
+  // A roster this process cannot see is not a finding, so the scorer stays strict.
+  assert.equal(onPlatformSignal(null, [], address, null), undefined)
+})
+
+test('onPlatformSignal: a CAIP id that resolves to an agent we hold a record of is not "no record"', () => {
+  const roster = [{ onchainAgentId: '7', chain: 'arc' }] as Pick<PlatformAgent, 'onchainAgentId' | 'chain'>[]
+  assert.equal(onPlatformSignal(null, roster, 'eip155:1:8004/7', { tokenId: 7, chain: 'arc' }), undefined)
+  // The same number on another chain is another agent.
+  assert.equal(onPlatformSignal(null, roster, 'eip155:1:8004/7', { tokenId: 7, chain: 'base' }), false)
+  // A partial identity carries no usable id.
+  assert.equal(onPlatformSignal(null, roster, 'eip155:1:8004/7', { tokenId: 7, chain: 'arc', partial: true }), false)
+  // An address names a wallet: it matches by settlement wallet only, and this is stated in the comment.
+  assert.equal(onPlatformSignal(null, roster, '0x' + 'd4'.repeat(20), { tokenId: 7, chain: 'arc' }), false)
 })

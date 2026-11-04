@@ -14,7 +14,7 @@ test('ALLOW: verified identity + KYA + strong reputation', () => {
   assert.ok(r.reasons.length >= 1)
 })
 
-test('DENY: no on-chain identity', () => {
+test('DENY: no on-chain identity, when the caller does not say whether it holds a record', () => {
   const r = assessRisk({ ...strong, onchainVerified: false })
   assert.equal(r.decision, 'DENY')
   assert.equal(r.risk, 'high')
@@ -83,6 +83,88 @@ test('a revoked agent is not also flagged as merely "KYA not attested"', () => {
   assert.equal(r.decision, 'DENY')
   assert.ok(r.reasons.some((x) => /REVOKED/i.test(x)))
   assert.ok(!r.reasons.some((x) => /not attested/i.test(x)), 'revoked should suppress the redundant not-attested warn')
+})
+
+// ── the line, decided 2026-11-04: DENY needs evidence against a payee we hold a record of ──
+
+const unknown: RiskSignals = { onchainVerified: false, kyaVerified: false, reputationScore: 0, tenureDays: 0, onPlatform: false }
+
+test('a payee with no identity and no platform record is WARN, and the reasons say what we do not know', () => {
+  const r = assessRisk(unknown)
+  assert.equal(r.decision, 'WARN')
+  assert.equal(r.risk, 'medium')
+  assert.match(r.reasons[0], /No on-chain identity/)
+  assert.match(r.reasons[0], /we do not know who it is/)
+  assert.match(r.reasons[0], /does not mean it is bad/)
+  for (const reason of r.reasons) {
+    assert.doesNotMatch(reason, /Identity resolved/, 'no identity was found, so none resolved')
+    assert.doesNotMatch(reason, /New agent/, 'with no record a tenure of 0 means unknown, not new')
+  }
+  assert.ok(r.reasons.some((x) => /KYA/.test(x)))
+})
+
+test('a payee with an identity and no platform record is WARN, at the score it can actually reach', () => {
+  const r = assessRisk({ ...unknown, onchainVerified: true, reputationScore: 60 })
+  assert.equal(r.decision, 'WARN')
+  assert.match(r.reasons[0], /An on-chain identity was found/)
+  assert.match(r.reasons[0], /does not mean it is bad/)
+  assert.ok(r.reasons.some((x) => /score of 60 only reflects/.test(x)))
+})
+
+test('a high-value or large payment to a payee with no record stays WARN, with the amount named', () => {
+  const high = assessRisk({ ...unknown, onchainVerified: true, reputationScore: 60 }, { amountUsd: 500 })
+  assert.equal(high.decision, 'WARN')
+  assert.ok(high.reasons.some((x) => /\$500/.test(x)))
+  assert.ok(!high.reasons.some((x) => /low-reputation agent/.test(x)))
+  const large = assessRisk(unknown, { amountUsd: 5000 })
+  assert.equal(large.decision, 'WARN')
+  assert.ok(large.reasons.some((x) => /Large transaction amount \(\$5000\)/.test(x)))
+  // At exactly 100 USD it is not high-value, the same line the platform rule uses.
+  assert.ok(!assessRisk(unknown, { amountUsd: 100 }).reasons.some((x) => /High-value/.test(x)))
+})
+
+test('a payee with no record is never ALLOW, whatever else it shows', () => {
+  const r = assessRisk({ ...strong, onPlatform: false })
+  assert.equal(r.decision, 'WARN')
+  assert.equal(assessRisk({ ...strong, onchainVerified: false, onPlatform: false }).decision, 'WARN')
+})
+
+test('evidence against a payee is DENY with or without a platform record', () => {
+  assert.equal(assessRisk({ ...unknown, revoked: true }).decision, 'DENY')
+  assert.equal(assessRisk({ ...unknown, sybil: 'high' }).decision, 'DENY')
+})
+
+test('an agent on our platform keeps the DENY lines: under 200, and over 100 USD under 400', () => {
+  const platform: RiskSignals = { ...strong, onPlatform: true }
+  const low = assessRisk({ ...platform, reputationScore: 199 })
+  assert.equal(low.decision, 'DENY')
+  assert.ok(low.reasons.some((x) => /below the safe threshold/.test(x)))
+  assert.equal(assessRisk({ ...platform, reputationScore: 200 }).decision, 'WARN')
+  const high = assessRisk({ ...platform, reputationScore: 399 }, { amountUsd: 100.01 })
+  assert.equal(high.decision, 'DENY')
+  assert.ok(high.reasons.some((x) => /High-value transaction/.test(x)))
+  assert.equal(assessRisk({ ...platform, reputationScore: 399 }, { amountUsd: 100 }).decision, 'WARN')
+  assert.equal(assessRisk({ ...platform, reputationScore: 400 }, { amountUsd: 100.01 }).decision, 'WARN')
+  assert.equal(assessRisk(platform).decision, 'ALLOW')
+})
+
+test('an agent on our platform with no identity is WARN, not ALLOW and not DENY, and no identity is claimed', () => {
+  const r = assessRisk({ ...strong, onchainVerified: false, onPlatform: true })
+  assert.equal(r.decision, 'WARN')
+  assert.match(r.reasons[0], /does not mean it is bad/)
+  const noKya = assessRisk({ ...strong, onchainVerified: false, kyaVerified: false, reputationScore: 300, onPlatform: true })
+  assert.equal(noKya.decision, 'WARN')
+  assert.ok(!noKya.reasons.some((x) => /Identity resolved/.test(x)))
+})
+
+test('with the input absent nothing loosens: every strict DENY stays, and no identity claims none resolved', () => {
+  const absent = assessRisk({ onchainVerified: false, kyaVerified: false, reputationScore: 60, tenureDays: 0 }, { amountUsd: 500 })
+  assert.equal(absent.decision, 'DENY')
+  assert.ok(absent.reasons.some((x) => /No verifiable on-chain identity/.test(x)))
+  assert.ok(absent.reasons.some((x) => /below the safe threshold/.test(x)))
+  assert.ok(absent.reasons.some((x) => /High-value transaction/.test(x)))
+  assert.ok(!absent.reasons.some((x) => /Identity resolved/.test(x)))
+  assert.deepEqual(assessRisk({ ...strong, onPlatform: undefined }).decision, 'ALLOW')
 })
 
 // ── Sybil / wash-reputation detection (A4) ────────────────────────────────────────

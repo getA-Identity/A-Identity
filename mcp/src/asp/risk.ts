@@ -8,6 +8,18 @@
  * existing engine: it composes the verified identity + reputation signals into a
  * single ALLOW/WARN/DENY decision an agent can act on before it pays a counterparty.
  * Pure and side-effect free so it unit-tests offline (no RPC, no keys).
+ *
+ * Where the line sits (decided 2026-11-04): DENY means we hold evidence against this payee,
+ * WARN means we do not know enough. A reputation is evidence only about an agent we hold a
+ * record of: an agent on our platform with a low score has a history we can read, while a
+ * payee we have never seen scores at most 60 because nothing has been recorded, not because
+ * anything went wrong. A real vendor that never signed up with us is not known bad, so it gets
+ * WARN and reasons that say what we do not know. It never gets ALLOW: ALLOW needs a record.
+ *
+ * So the line needs one more input, RiskSignals.onPlatform, computed where the platform state
+ * is read (tools.ts). A caller that does not pass it keeps the older, stricter rule, in which
+ * no identity and a low score both force DENY: nothing that does not say what it knows
+ * silently loosens.
  */
 
 export type RiskDecision = 'ALLOW' | 'WARN' | 'DENY'
@@ -28,6 +40,12 @@ export type RiskSignals = {
   revoked?: boolean
   /** Sybil / wash-reputation cluster risk (same-operator self-dealing). 'high' forces DENY. */
   sybil?: SybilLevel
+  /**
+   * Do we hold a platform record of this agent? true: we do, so its reputation is evidence.
+   * false: we looked and hold none, so it is unknown, not bad. Absent: the caller could not say,
+   * so the strict rule applies. Why the line sits here is at the top of this file.
+   */
+  onPlatform?: boolean
 }
 
 /** Optional transaction context - makes the decision amount-aware. */
@@ -45,10 +63,10 @@ export type RiskResult = {
 }
 
 // Thresholds. Kept as named constants so the policy is auditable and testable.
-const REP_DENY_BELOW = 200 // reputation under this is untrustworthy on its own
+const REP_DENY_BELOW = 200 // on an agent we hold a record of, reputation under this is untrustworthy on its own
 const REP_WARN_BELOW = 500 // reputation under this warrants caution
-const REP_HIGHVALUE_MIN = 400 // below this, high-value txs are denied
-const HIGH_VALUE_USD = 100 // "high value" relative to a low-rep counterparty
+const REP_HIGHVALUE_MIN = 400 // on an agent we hold a record of, below this, high-value txs are denied
+const HIGH_VALUE_USD = 100 // "high value" relative to a low-rep counterparty, or to one we know nothing about
 const LARGE_TX_USD = 1000 // large absolute amount -> always at least a warning
 const NEW_AGENT_DAYS = 7 // younger than this is a "new agent" caution
 
@@ -89,6 +107,11 @@ export function assessRisk(signals: RiskSignals, txContext: TxContext | null = n
   const denyReasons: string[] = []
   const warnReasons: string[] = []
   const amount = txContext?.amountUsd
+  // Explicitly false: we looked and hold no record. Absent is not this: it stays strict.
+  const unknownPayee = signals.onPlatform === false
+  // Explicitly true or false: the caller said what it knows, so a missing identity is a gap
+  // and not evidence. Absent keeps the older rule, in which it forces DENY.
+  const saidWhatItKnows = typeof signals.onPlatform === 'boolean'
 
   // ── DENY rules ────────────────────────────────────────────────────────────
   if (signals.revoked) {
@@ -97,21 +120,33 @@ export function assessRisk(signals: RiskSignals, txContext: TxContext | null = n
   if (signals.sybil === 'high') {
     denyReasons.push('Reputation appears Sybil / wash-traded - most of its jobs were hired by its own operator, not independent counterparties')
   }
-  if (!signals.onchainVerified) {
+  if (!signals.onchainVerified && !saidWhatItKnows) {
     denyReasons.push('No verifiable on-chain identity (ERC-8004) found for this agent')
   }
-  if (signals.reputationScore < REP_DENY_BELOW) {
+  if (signals.reputationScore < REP_DENY_BELOW && !unknownPayee) {
     denyReasons.push(`Reputation ${signals.reputationScore} is below the safe threshold (${REP_DENY_BELOW})`)
   }
-  if (typeof amount === 'number' && amount > HIGH_VALUE_USD && signals.reputationScore < REP_HIGHVALUE_MIN) {
+  if (typeof amount === 'number' && amount > HIGH_VALUE_USD && signals.reputationScore < REP_HIGHVALUE_MIN && !unknownPayee) {
     denyReasons.push(
       `High-value transaction ($${amount}) to a low-reputation agent (${signals.reputationScore} < ${REP_HIGHVALUE_MIN})`,
     )
   }
 
   // ── WARN rules ────────────────────────────────────────────────────────────
+  if (unknownPayee) {
+    warnReasons.push(
+      signals.onchainVerified
+        ? 'An on-chain identity was found for this payee, but we hold no record of it on our platform, so we do not know how it has behaved. This does not mean it is bad: we have no evidence either way.'
+        : 'No on-chain identity (ERC-8004) was found for this payee and we hold no record of it on our platform, so we do not know who it is or how it has behaved. This does not mean it is bad: we have no evidence either way.',
+    )
+    if (signals.reputationScore < REP_DENY_BELOW) {
+      warnReasons.push(`Its score of ${signals.reputationScore} only reflects that we have no history for it, not anything it did`)
+    }
+  } else if (!signals.onchainVerified && saidWhatItKnows) {
+    warnReasons.push('No on-chain identity (ERC-8004) was found for this agent. We hold its platform record, and a missing identity alone does not mean it is bad')
+  }
   if (!signals.kyaVerified && !signals.revoked) {
-    warnReasons.push('Identity resolved but KYA (wallet-control) is not attested')
+    warnReasons.push(signals.onchainVerified ? 'Identity resolved but KYA (wallet-control) is not attested' : 'KYA (wallet-control) is not attested')
   }
   if (signals.reputationScore >= REP_DENY_BELOW && signals.reputationScore < REP_WARN_BELOW) {
     warnReasons.push(`Moderate reputation (${signals.reputationScore}); proceed with caution`)
@@ -119,8 +154,12 @@ export function assessRisk(signals: RiskSignals, txContext: TxContext | null = n
   if (signals.sybil === 'medium') {
     warnReasons.push('Possible Sybil signals: partial same-operator hiring or low counterparty diversity')
   }
-  if (signals.tenureDays < NEW_AGENT_DAYS) {
+  // Tenure comes only from our own record, so with no record a 0 means unknown, not new.
+  if (signals.tenureDays < NEW_AGENT_DAYS && !unknownPayee) {
     warnReasons.push(`New agent (${signals.tenureDays}d tenure); limited on-chain track record`)
+  }
+  if (unknownPayee && typeof amount === 'number' && amount > HIGH_VALUE_USD) {
+    warnReasons.push(`High-value payment ($${amount}) to a payee we hold no record of`)
   }
   if (typeof amount === 'number' && amount > LARGE_TX_USD) {
     warnReasons.push(`Large transaction amount ($${amount})`)
