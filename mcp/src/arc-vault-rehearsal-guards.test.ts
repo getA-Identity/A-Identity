@@ -18,7 +18,7 @@ const repoPath = (rel: string) => fileURLToPath(repoUrl(rel))
 
 type VaultCount = { state: string; retryable?: boolean; reasons?: string[]; why?: string }
 type Held = { network: string; vault: string; hash: string }
-type KnownList = { vaults: { network: string; address: string; kind: string }[]; partial: string | null; loading?: boolean } | null
+type KnownList = { vaults: { network: string; address: string; kind: string }[]; partial: string | null; ownerHeldRead?: boolean } | null
 const loadRules = async () =>
   (await import(repoUrl('src/lib/arc/vault-count.ts').href)) as {
     shouldAsk: (stage: string, count: VaultCount | null, asked: ReadonlySet<string>, sending: boolean) => boolean
@@ -165,18 +165,21 @@ test('a link with no vault opens the one this browser deployed, on the network t
 test('only a list that loaded can say a vault is not on it', async () => {
   const { listingOf, shownCount } = await loadRules()
   const row = { network: 'n', address: '0xAA', kind: 'owner-held' }
+  const read = (vaults: { network: string; address: string; kind: string }[], partial: string | null = null) => ({ vaults, partial, ownerHeldRead: true })
   assert.equal(listingOf(null, 'n', '0xaa'), 'reading')
-  assert.equal(listingOf({ vaults: [row], partial: null, loading: true }, 'n', '0xaa'), 'reading')
-  assert.equal(listingOf({ vaults: [row], partial: null }, 'n', '0xaa'), 'listed')
-  assert.equal(listingOf({ vaults: [row], partial: 'x' }, 'n', '0xaa'), 'listed', 'a partial list still holds what it holds')
-  assert.equal(listingOf({ vaults: [], partial: null }, 'n', '0xaa'), 'not-listed')
-  assert.equal(listingOf({ vaults: [], partial: 'x' }, 'n', '0xaa'), 'unreadable', 'no answer is not a no')
-  assert.equal(listingOf({ vaults: [{ ...row, kind: 'ours' }], partial: null }, 'n', '0xaa'), 'not-listed', 'ours is not counted')
-  assert.equal(listingOf({ vaults: [{ ...row, network: 'm' }], partial: null }, 'n', '0xaa'), 'not-listed')
+  assert.equal(listingOf({ vaults: [], partial: null }, 'n', '0xaa'), 'reading', 'the first render lists what the build knows, which is no answer')
+  assert.equal(listingOf(read([row]), 'n', '0xaa'), 'listed')
+  assert.equal(listingOf(read([row], 'x'), 'n', '0xaa'), 'listed', 'a partial list still holds what it holds')
+  assert.equal(listingOf(read([]), 'n', '0xaa'), 'not-listed')
+  assert.equal(listingOf(read([], 'x'), 'n', '0xaa'), 'unreadable', 'no answer is not a no')
+  assert.equal(listingOf(read([{ ...row, kind: 'ours' }]), 'n', '0xaa'), 'not-listed', 'ours is not counted')
+  assert.equal(listingOf(read([{ ...row, network: 'm' }]), 'n', '0xaa'), 'not-listed')
 
   // The season report answers with the curated list alone when the admitted list is unreadable.
   const lib = readSource('src/lib/arc/known-vaults.ts')
   assert.match(lib, /season\.logs\?\.admittedVaults\?\.readable === false/, 'an unreadable admitted list must read as partial, or an uncounted line would be a guess')
+  // A slow proof route must not keep an owner waiting on an answer it plays no part in.
+  assert.match(lib, /void seasonRead\.then\(\(season\) => onOwnerHeldRead\?\.\(\{ \.\.\.knownFrom\(null, season\)/)
 
   const failed = { state: 'failed', why: 'x' }
   const refused = { state: 'not-counted', reasons: ['r'], retryable: false }

@@ -35,6 +35,8 @@ export type KnownVaults = {
   partial: string | null
   /** True until the backend has been asked, while only what the build knows is listed. */
   loading?: boolean
+  /** The season report has answered or failed, so what this list says about owner-held vaults can be used. */
+  ownerHeldRead?: boolean
 }
 
 /** What the page shows on its first render: the build's own list, with the backend still to ask. */
@@ -68,11 +70,20 @@ async function getJson<T>(path: string, onWaking?: () => void): Promise<T | null
   }
 }
 
-export async function listKnownVaults(onWaking?: () => void): Promise<KnownVaults> {
-  const [proof, season] = await Promise.all([
-    getJson<{ networks?: ProofNetwork[] }>('/api/proof/arc', onWaking),
-    getJson<SeasonReport>('/api/arc/season', onWaking),
-  ])
+/**
+ * Everything the backend lists. onOwnerHeldRead hears the owner-held list as soon as the season
+ * report has answered: whether a vault counts has nothing to do with /api/proof/arc, which re-reads
+ * chains live and can take far longer.
+ */
+export async function listKnownVaults(onWaking?: () => void, onOwnerHeldRead?: (k: KnownVaults) => void): Promise<KnownVaults> {
+  const proofRead = getJson<{ networks?: ProofNetwork[] }>('/api/proof/arc', onWaking)
+  const seasonRead = getJson<SeasonReport>('/api/arc/season', onWaking)
+  void seasonRead.then((season) => onOwnerHeldRead?.({ ...knownFrom(null, season), loading: true, ownerHeldRead: true }))
+  const [proof, season] = await Promise.all([proofRead, seasonRead])
+  return { ...knownFrom(proof, season), ownerHeldRead: true }
+}
+
+function knownFrom(proof: { networks?: ProofNetwork[] } | null, season: SeasonReport | null): KnownVaults {
   // What the build knows comes first, so a backend that does not answer changes no label.
   const seeded = ledgerKnownVaults()
   const vaults: KnownVault[] = seeded.vaults

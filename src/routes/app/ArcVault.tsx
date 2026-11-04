@@ -117,14 +117,14 @@ export default function ArcVault() {
 
   useEffect(() => {
     let alive = true
-    void listKnownVaults().then((k) => alive && setKnown(k))
+    void listKnownVaults(undefined, (k) => alive && setKnown(k)).then((k) => alive && setKnown(k))
     return () => {
       alive = false
     }
   }, [])
 
   const readListAgain = useCallback(() => {
-    void listKnownVaults().then(setKnown)
+    void listKnownVaults(undefined, setKnown).then(setKnown)
   }, [])
 
   // Kept by vault the moment a deploy settles: an owner can forget the setup and carry on from the

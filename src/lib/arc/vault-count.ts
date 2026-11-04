@@ -105,8 +105,8 @@ export function vaultThisBrowserHolds(setup: { vault?: string | null; network: s
 }
 
 /** What a list the page already read says of one vault. A list that did not fully load says nothing. */
-export function listingOf(known: { vaults: readonly { network: string; address: string; kind: string }[]; partial: string | null; loading?: boolean } | null, network: string, vault: string): Listing {
-  if (!known || known.loading) return 'reading'
+export function listingOf(known: { vaults: readonly { network: string; address: string; kind: string }[]; partial: string | null; ownerHeldRead?: boolean } | null, network: string, vault: string): Listing {
+  if (!known?.ownerHeldRead) return 'reading'
   if (known.vaults.some((v) => v.kind === 'owner-held' && v.network === network && same(v.address, vault))) return 'listed'
   return known.partial ? 'unreadable' : 'not-listed'
 }
