@@ -61,11 +61,14 @@
  *     every deploy, for good if deploys come faster than the flood drains. With the turns, an owner
  *     newer than the flood is reached within a few ticks of the scan reaching their log, and new
  *     contracts cannot starve an old one. An owner with a flood on both sides waits on the random
- *     turn, which is about two contracts a tick at about 35 reads each: with 1000 on each side and a
- *     deploy every 8 hours, about 3 days, and a restart does not put them back. So a flood costs the
- *     flooder gas per contract and delays an owner, by far less when it is on one side only, and an owner
- *     holding their hash can still post at any time. A contract that passes every check is counted,
- *     and then costs no read.
+ *     turn, about two contracts a tick. Run against stub hosts with 1000 contracts on each side that
+ *     answer usdc() and owner(): about a day with no restart, and with a deploy every 8 hours between
+ *     1.5 and 11 days over five runs, a mean of about 5.5. With 300 on each side, about 6 hours. A
+ *     restart forgets what was closed, which is why it is slower, but every process gets its own
+ *     chance at the owner, so the wait has an end. A flood on both sides at that size can still use up
+ *     what is left of a season: it delays, and it costs the flooder gas per contract, and an owner
+ *     holding their hash can post at any time. A contract that passes every check is counted, and
+ *     then costs no read.
  *   - A flood of blocks costs more for what it gets: about 0.34 USDC for each block too full to read at
  *     the measured gas price. Crossing one takes up to about 50 of the 100 log reads a tick when all four
  *     hosts refuse, so about two such blocks a tick, or about 70 USDC to fill an 8-hour gap between
