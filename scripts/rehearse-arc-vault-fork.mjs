@@ -114,12 +114,16 @@ function finish(code) {
   process.exit(code || (failed ? 1 : 0))
 }
 for (const s of ['SIGINT', 'SIGTERM']) process.on(s, () => finish(130))
+// A failed fetch says only "fetch failed", and its reason is on the cause, so print that too.
+const whyStopped = (e) => [e?.message ?? e, e?.cause?.code, e?.cause?.message].filter(Boolean).join(' | ')
 process.on('uncaughtException', (e) => {
-  check(false, `the run stopped: ${e.message}`)
+  check(false, `the run stopped: ${whyStopped(e)}`)
+  console.error(e?.stack)
   finish(1)
 })
 process.on('unhandledRejection', (e) => {
-  check(false, `the run stopped: ${e?.message ?? e}`)
+  check(false, `the run stopped: ${whyStopped(e)}`)
+  console.error(e?.stack)
   finish(1)
 })
 
