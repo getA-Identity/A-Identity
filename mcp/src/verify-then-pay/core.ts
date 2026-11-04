@@ -10,11 +10,15 @@
  *      network is refused, because the rail settles on whatever network a payload names; and
  *      a nonce that already opened a flow is refused, because a flow is keyed by it. This read
  *      only saves the preflight: the reservation in step 6 is what holds under concurrency.
- *   4. The free preflight, read from Arc Mainnet: the vault holds the registry's USDC, the
- *      payee holds an ERC-8004 agent there, the vault's policy and a simulated pay() from its
+ *   4. The free preflight, read from Arc Mainnet: the vault holds the registry's USDC, an agent
+ *      the caller named is the payee's, the vault's policy and a simulated pay() from its
  *      operator accept the payment, and the operator can pay the gas. A refusal here costs
  *      nothing: the check is never bought for a payment the vault would refuse anyway. It
  *      runs again when the payment arrives, because the vault may have moved since the 402.
+ *      A payee that holds no agent is not refused: it is unknown, not bad, so it goes on to the
+ *      check and gets WARN. Nothing below reads the registry again: a flow is linked to its
+ *      check by nonce, and to its payment by vault, payee and amount (receipt.ts), so a flow
+ *      record needs no agent, and payeeAgentId is null unless the caller named one.
  *   5. No payment yet: the 402, carrying the Arc Mainnet Gateway offer and nothing else.
  *   6. The nonce reserved, then the check. An insert-only opening row keyed by the nonce goes
  *      in first, so of two requests carrying one signed payment only one reaches Gateway; the
@@ -71,7 +75,6 @@ export type VtpRefusalCode =
   | 'WRONG_ASSET'
   | 'NOT_A_VAULT'
   | 'VAULT_TOKEN_MISMATCH'
-  | 'PAYEE_UNREGISTERED'
   | 'PAYEE_AGENT_MISMATCH'
   | 'REGISTRY_UNREADABLE'
   | 'VaultUnreadable'
@@ -96,6 +99,7 @@ export type VtpCheckFailedCode = 'VERDICT_BLOCK_UNREADABLE' | 'FLOW_NOT_RECORDED
 
 export type VtpChecks = {
   asset: { ok: boolean | null; registryUsdc: string; vaultToken: string | null; requested: string | null; code?: string }
+  /** ok: nothing here refuses the payee. agentsHeld 0 still passes: holding no agent means unknown, not refused. */
   payee: { ok: boolean | null; agentsHeld: number | null; payeeAgentId: string | null; agentOwner: string | null; code?: string }
   vault: {
     ok: boolean | null
@@ -142,6 +146,8 @@ export type VtpVerdictView = {
   reputationScore: number | null
   /** Who the scorer says this verdict is about. The caller compares it with its own payee. */
   agentId: string | null
+  /** The signals behind it, so the caller can check a WARN against them for itself. */
+  signals: VerdictEvaluation['signals']
   /** The context the scorer echoed. The caller compares it with its own payee and amount. */
   txContext: { payee: string | null; amountUsd: number | null } | null
   overriddenBecause?: string
@@ -373,7 +379,7 @@ async function preflight(client: VtpReadClient, chain: ChainDescriptor, p: Parse
   checks.asset.ok = true
 
   fillPayee(checks, reg)
-  if (!reg.ok) return refuse('payee', reg.code === 'REGISTRY_UNREADABLE' ? 503 : 422, reg.code ?? 'PAYEE_UNREGISTERED', reg.reason ?? 'the payee is not registered')
+  if (!reg.ok) return refuse('payee', reg.code === 'REGISTRY_UNREADABLE' ? 503 : 422, reg.code ?? 'REGISTRY_UNREADABLE', reg.reason ?? 'the registry did not say whether the payee is who it was named as')
 
   const policy = assessVaultPolicy(read, p.amount, { expiryMarginSec: deps.expiryMarginSec ?? DEFAULT_EXPIRY_MARGIN_SEC })
   if (!policy.ok) return refuse('vault', policy.httpStatus, policy.code, policy.reason)
@@ -527,7 +533,7 @@ async function paymentRequired(
       challenge,
       price: { usd, units: String(offer.amount ?? '') },
       ...(verifyError ? { reason: verifyError } : {}),
-      next: `Nothing is charged yet, and the free checks passed. Sign the ${chain.name} offer in challenge.accepts from your Circle Gateway balance (x402 v2, GatewayWalletBatched, ${usd} USDC for risk_check), then send the same request again with the base64 PAYMENT-SIGNATURE: as that header on POST /api/x402/gateway/verify-then-pay, or as the payment argument of the verify_then_pay MCP tool.`,
+      next: `Nothing is charged yet, and the free checks passed.${checks?.payee.agentsHeld === 0 ? ` This payee holds no ERC-8004 agent on ${chain.name}. That is not a refusal, and unless it is an agent on our platform the check will answer WARN, which hands the payment to the owner.` : ''} Sign the ${chain.name} offer in challenge.accepts from your Circle Gateway balance (x402 v2, GatewayWalletBatched, ${usd} USDC for risk_check), then send the same request again with the base64 PAYMENT-SIGNATURE: as that header on POST /api/x402/gateway/verify-then-pay, or as the payment argument of the verify_then_pay MCP tool.`,
     }),
   }
 }
@@ -591,6 +597,7 @@ function verdictView(v: VerdictEvaluation): VtpVerdictView {
     reasons: v.reasons,
     reputationScore: v.reputationScore,
     agentId: v.agentId,
+    signals: v.signals,
     txContext: v.txContext,
     ...(v.usable ? {} : { overriddenBecause: v.code }),
   }
@@ -916,8 +923,8 @@ export async function runVerifyThenPay(input: VtpInput, paymentHeader: string | 
     warn_no_human_gate: `WARN, and this vault's owner and operator are the same key (${pre.owner}), so there is no human to hand the payment to: do not pay. Nothing was prepared and no approval was recorded. Give the vault an owner key the agent does not hold, or ask again with payOnWarn to pay on the WARN as the agent's own decision. The block is public at ${record.url}.`,
     prepared:
       prepared?.simulation.ok === false
-        ? `The verdict allows this payment, but the vault would refuse it right now (${prepared.simulation.error}): do not send it. Ask again once the vault can pay.`
-        : `Send prepared exactly as given from the operator key ${pre.operator} (to the vault, value 0, chainId ${chain.evmChainId}${prepared ? `, ${sendInstruction(prepared, 'prepared')}` : ''}). Then POST {"txHash": "0x..."} to ${receiptUrl}: the flow is marked executed only after the server reads the receipt from ${chain.name} itself.`,
+        ? `${v.effective === 'WARN' ? 'payOnWarn prepared this payment on a WARN' : 'The verdict allows this payment'}, but the vault would refuse it right now (${prepared.simulation.error}): do not send it. Ask again once the vault can pay.`
+        : `${v.effective === 'WARN' ? 'WARN, and you asked to pay on a WARN with payOnWarn, so this payment is your own decision. ' : ''}Send prepared exactly as given from the operator key ${pre.operator} (to the vault, value 0, chainId ${chain.evmChainId}${prepared ? `, ${sendInstruction(prepared, 'prepared')}` : ''}). Then POST {"txHash": "0x..."} to ${receiptUrl}: the flow is marked executed only after the server reads the receipt from ${chain.name} itself.`,
   }
 
   const failed: { code: VtpCheckFailedCode; reason: string } | null =

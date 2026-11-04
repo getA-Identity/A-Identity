@@ -620,6 +620,8 @@ test('the server refusing the free checks raises the same error a local refusal 
   const cases: [string, new (...a: never[]) => Error, string][] = [
     ['AboveAutoApprove', VaultPolicyError, 'AboveAutoApprove'],
     ['InsufficientGas', VaultPolicyError, 'InsufficientGas'],
+    ['PAYEE_AGENT_MISMATCH', PayeeNotRegisteredError, 'PAYEE_AGENT_MISMATCH'],
+    // What a server from before the rule change still answers.
     ['PAYEE_UNREGISTERED', PayeeNotRegisteredError, 'PAYEE_UNREGISTERED'],
     ['VAULT_TOKEN_MISMATCH', ArcAssetError, 'VAULT_TOKEN_MISMATCH'],
     ['RATE_LIMITED', GatewayCheckError, 'REFUSED'],
@@ -694,10 +696,9 @@ test('a WARN the server prepared without the opt-in is not paid', async () => {
 // ── 7. the payee ──────────────────────────────────────────────────────────────────
 
 for (const [label, w, agentId, code] of [
-  ['a payee holding no agent', { agentsHeld: 0n }, undefined, 'PAYEE_UNREGISTERED'],
   ['a registry that does not answer', { agentsHeld: 'unreadable' }, undefined, 'REGISTRY_UNREADABLE'],
   ['an agent owned by someone else', { agentOwner: OWNER }, '#7', 'PAYEE_AGENT_MISMATCH'],
-  ['an agent that does not exist', { agentOwner: 'reverts' }, '#7', 'PAYEE_UNREGISTERED'],
+  ['an agent that does not exist', { agentOwner: 'reverts' }, '#7', 'PAYEE_AGENT_MISMATCH'],
   ['an ownerOf that does not answer', { agentOwner: 'unreadable' }, '#7', 'REGISTRY_UNREADABLE'],
   ['an agent on another chain', {}, 'eip155:1:8004/7', 'PAYEE_AGENT_MISMATCH'],
 ] as const) {
@@ -710,6 +711,23 @@ for (const [label, w, agentId, code] of [
     assert.equal(signer.signed.length, 0)
   })
 }
+
+test('a payee holding no agent is not refused: it buys the check, gets WARN, and the owner decides', async () => {
+  const unknown = { onPlatform: false, onchainVerified: false, revoked: false, sybil: 'none' }
+  const { api, signer, opts } = setup({ paid: (p) => warn(p, { verdict: verdictView('WARN', { reputationScore: 0, signals: unknown, reasons: ['We do not know this payee. This does not mean it is bad.'] }) }) }, { agentsHeld: 0n })
+  const out = await verifyThenPay(opts)
+  assert.equal(out.outcome, 'awaiting_human')
+  assert.equal(signer.signed.length, 1, 'the check was bought')
+  assert.equal(signer.sent.length, 0, 'no automatic payment')
+  assert.ok(api.calls.length > 0)
+  assert.equal(out.verdict.signals?.onPlatform, false)
+})
+
+test('preflightVault says a payee holds no agent, and does not refuse it', async () => {
+  const { chain } = setup({}, { agentsHeld: 0n })
+  const p = await preflightVault({ vault: VAULT, payee: PAYEE, amountUnits: AMOUNT, operator: OPERATOR, chain })
+  assert.equal(p.agentsHeld, 0)
+})
 
 // ── 8. the vault's policy ─────────────────────────────────────────────────────────
 
@@ -1582,6 +1600,44 @@ test('an ALLOW at exactly the reputation it needs is paid on', async () => {
   const { signer, opts } = setup({ paid: (p) => allow(p, { verdict: verdictView('ALLOW', { reputationScore: 500 }) }) })
   assert.equal((await verifyThenPay(opts)).outcome, 'executed')
   assert.equal(signer.sent.length, 1)
+})
+
+for (const [label, over, named] of [
+  ['a revoked signal', { signals: { onPlatform: true, onchainVerified: true, revoked: true } }, /revoked/],
+  ['a revoked signal on a payee with no record', { signals: { onPlatform: false, revoked: true } }, /revoked/],
+  ['a Sybil-high signal', { signals: { onPlatform: false, sybil: 'high' } }, /sybil high/],
+  ['a platform agent under 200', { reputationScore: 199, signals: { onPlatform: true, onchainVerified: true } }, /reputation 199 under 200/],
+  ['no onPlatform signal and no identity', { reputationScore: 470, signals: { onchainVerified: false } }, /no on-chain identity/],
+  ['no signals at all and a score under 200', { reputationScore: 60 }, /reputation 60 under 200/],
+] as const) {
+  test(`a WARN with ${label} is SIGNALS_INCONSISTENT and hands nothing to the owner`, async () => {
+    const { signer, opts } = setup({ paid: (p) => warn(p, { verdict: verdictView('WARN', over) }) })
+    const e = await refused(verifyThenPay(opts), UnusableVerdictError)
+    assert.equal(e.code, 'SIGNALS_INCONSISTENT')
+    assert.match(e.message, named)
+    assert.equal(signer.sent.length, 0)
+  })
+}
+
+test('a high-value WARN on a platform agent under 400, or with no signal, is SIGNALS_INCONSISTENT; with no record it is what a WARN is', async () => {
+  const amountUnits = 100_010_000n
+  const big = { txContext: { payee: PAYEE, amountUsd: 100.01 }, reputationScore: 399 }
+  const w = { autoApproveMax: 0n, dailyCap: 0n, balance: 200_000_000n }
+  for (const signals of [{ onPlatform: true, onchainVerified: true }, undefined]) {
+    const { opts } = setup({ paid: (p) => warn(p, { verdict: verdictView('WARN', { ...big, ...(signals ? { signals } : {}) }) }) }, w)
+    const e = await refused(verifyThenPay({ ...opts, amountUnits }), UnusableVerdictError)
+    assert.equal(e.code, 'SIGNALS_INCONSISTENT')
+    assert.match(e.message, /100\.01 USD with reputation 399 under 400/)
+  }
+  const handoff = { auditOutcome: 'awaiting_human', owner: OWNER, ownerPay: ownerPayCall({ data: ownerPayData(PAYEE, amountUnits), args: [PAYEE, amountUnits.toString()] }) }
+  const { opts } = setup({ paid: (p) => warn(p, { verdict: verdictView('WARN', { ...big, reputationScore: 60, signals: { onPlatform: false, onchainVerified: true } }), ownerHandoff: handoff }) }, w)
+  assert.equal((await verifyThenPay({ ...opts, amountUnits })).outcome, 'awaiting_human')
+})
+
+test('an ALLOW on a payee with no platform record is SIGNALS_INCONSISTENT and never paid on', async () => {
+  const { signer, opts } = setup({ paid: (p) => allow(p, { verdict: verdictView('ALLOW', { signals: { onPlatform: false, onchainVerified: true } }) }) })
+  assert.equal((await refused(verifyThenPay(opts), UnusableVerdictError)).code, 'SIGNALS_INCONSISTENT')
+  assert.equal(signer.sent.length, 0)
 })
 
 test('a WARN below 500 is not inconsistent: it is what a WARN is', async () => {

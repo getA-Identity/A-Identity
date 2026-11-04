@@ -8,13 +8,15 @@ import { AgentSpendPolicyAbi } from '../contracts/AgentSpendPolicy.js'
 import { getChainById } from '../chains/index.js'
 import { clearKindCache, type GatewayKind, type GatewaySettleResponse, type GatewayTransfer } from '../x402-gateway/index.js'
 import type { GatewaySettlementRecord, VtpFlowRecord } from '../storage.js'
+import { assessRisk, type RiskSignals, type TxContext } from '../asp/risk.js'
 
 /**
  * The hosted route's real answers, fed to the built SDK. trust-guard's own tests fake the route
  * by hand and the hosted tests never run the client, so a shape that drifted on one side would
  * pass both suites: this is what ties them together. runVerifyThenPay and the rail are the real
  * ones, and so is verifyThenPay with Circle's real signing scheme. Faked: Arc Mainnet's reads on
- * both sides, Gateway's settle and transfers, the scorer, the flow log and the receipt route.
+ * both sides, Gateway's settle and transfers, the signals the scorer reads (scoredBy runs the real
+ * assessRisk over them), the flow log and the receipt route.
  *
  * It needs trust-guard built (scripts/prepare-trust-guard.mjs, part of npm test).
  */
@@ -37,7 +39,7 @@ const ENV = { X402_GATEWAY_NETWORKS: arc.caip2, X402_GATEWAY_PAYTO: PAY_TO } as 
 
 // The path is computed so that mcp's own compile does not reach into another package's build.
 type Sdk = {
-  verifyThenPay(o: Record<string, unknown>): Promise<{ outcome: string; flowId: string; verdict: { agentId: string; decision: string }; check: { amountUnits: string }; ownerPay?: { from: string; function: string; data: string }; record: { recorded: boolean; url: string } }>
+  verifyThenPay(o: Record<string, unknown>): Promise<{ outcome: string; flowId: string; verdict: { agentId: string; decision: string; reasons: string[]; signals?: Record<string, unknown> }; check: { amountUnits: string }; ownerPay?: { from: string; function: string; data: string }; record: { recorded: boolean; url: string } }>
 }
 const sdk = (await import(new URL('../../../trust-guard/dist/arc.js', import.meta.url).href)) as Sdk
 
@@ -54,7 +56,7 @@ const encodeTopics = encodeEventTopics as unknown as (a: { abi: unknown; eventNa
 
 const payData = encodeFunctionData({ abi: AgentSpendPolicyAbi, functionName: 'pay', args: [PAYEE as Hex, AMOUNT] } as never)
 
-type Vault = { frozen: boolean; ownerIsOperator?: boolean }
+type Vault = { frozen: boolean; ownerIsOperator?: boolean; agentsHeld?: bigint }
 
 const getters = (v: Vault): Record<string, unknown> => ({
   usdc: USDC,
@@ -78,7 +80,7 @@ function serverChain(v: Vault): VtpReadClient {
     getBalance: async () => 10n ** 17n,
     getCode: async ({ address }) => (address.toLowerCase() === VAULT ? '0x6080' : '0x'),
     readContract: async ({ address, functionName }) => {
-      if (address.toLowerCase() === REGISTRY) return functionName === 'balanceOf' ? 1n : PAYEE
+      if (address.toLowerCase() === REGISTRY) return functionName === 'balanceOf' ? (v.agentsHeld ?? 1n) : PAYEE
       return getters(v)[functionName]
     },
     simulateContract: async () => ({ result: undefined }),
@@ -87,7 +89,7 @@ function serverChain(v: Vault): VtpReadClient {
 }
 
 /** The client's view of Arc Mainnet: the same facts, through the SDK's reader interface. */
-function clientChain(ownerIsOperator = false) {
+function clientChain(ownerIsOperator = false, agentsHeld = 1n) {
   const v: Vault = { frozen: false, ownerIsOperator }
   return {
     code: async (a: string) => (a.toLowerCase() === OPERATOR ? '0x' : '0x6001'),
@@ -98,7 +100,7 @@ function clientChain(ownerIsOperator = false) {
     call: async ({ to, data }: { to: string; data: Hex }) => {
       if (to.toLowerCase() === REGISTRY) {
         const name = decodeCall({ abi: REGISTRY_ABI, data }).functionName
-        return encodeResult({ abi: REGISTRY_ABI, functionName: name, result: name === 'balanceOf' ? 1n : PAYEE })
+        return encodeResult({ abi: REGISTRY_ABI, functionName: name, result: name === 'balanceOf' ? agentsHeld : PAYEE })
       }
       const name = decodeCall({ abi: AgentSpendPolicyAbi, data }).functionName
       if (name === 'pay') return '0x'
@@ -131,7 +133,7 @@ const kind: GatewayKind = {
 
 type Scored = (input: { agentId?: string; txContext?: unknown }) => unknown
 
-function scored(decision: 'ALLOW' | 'WARN' | 'DENY', over: { reputationScore?: unknown; agentId?: string } = {}): Scored {
+function scored(decision: 'ALLOW' | 'WARN' | 'DENY', over: { reputationScore?: unknown; agentId?: string } = {}, signals: Record<string, unknown> = {}): Scored {
   return (input) => ({
     tool: 'risk_check',
     _meta: {},
@@ -147,12 +149,24 @@ function scored(decision: 'ALLOW' | 'WARN' | 'DENY', over: { reputationScore?: u
       revoked: false,
       sybil: 'none',
       txContext: input.txContext,
+      ...signals,
     },
     checkedAt: new Date(NOW).toISOString(),
   })
 }
 
-type Setup = { score?: Scored; settle?: GatewaySettleResponse; transfers?: 'none'; insertFails?: boolean; closeFails?: boolean; serverFrozen?: boolean; payOnWarn?: boolean; ownerIsOperator?: boolean }
+/** The real scorer over the signals given, answered the way riskCheck answers. */
+function scoredBy(signals: RiskSignals): Scored {
+  return (input) => {
+    const r = assessRisk(signals, input.txContext as TxContext)
+    return { tool: 'risk_check', _meta: {}, agentId: input.agentId, decision: r.decision, risk: r.risk, reasons: r.reasons, signals: r.signals, checkedAt: new Date(NOW).toISOString() }
+  }
+}
+
+/** Who a real vendor that never signed up with us is: no agent, no record. */
+const UNKNOWN_PAYEE: RiskSignals = { onchainVerified: false, kyaVerified: false, reputationScore: 0, tenureDays: 0, revoked: false, onPlatform: false }
+
+type Setup = { score?: Scored; settle?: GatewaySettleResponse; transfers?: 'none'; insertFails?: boolean; closeFails?: boolean; serverFrozen?: boolean; payOnWarn?: boolean; ownerIsOperator?: boolean; agentsHeld?: bigint }
 
 function harness(o: Setup = {}) {
   const rows = new Map<string, VtpFlowRecord>()
@@ -180,7 +194,7 @@ function harness(o: Setup = {}) {
   const deps = {
     env: ENV,
     origin: ORIGIN,
-    client: serverChain({ frozen: o.serverFrozen ?? false, ownerIsOperator: o.ownerIsOperator }),
+    client: serverChain({ frozen: o.serverFrozen ?? false, ownerIsOperator: o.ownerIsOperator, agentsHeld: o.agentsHeld }),
     store,
     now: () => NOW,
     rail: {
@@ -228,7 +242,7 @@ function harness(o: Setup = {}) {
       signer,
       baseUrl: ORIGIN,
       fetch: fetchFake,
-      chain: clientChain(o.ownerIsOperator),
+      chain: clientChain(o.ownerIsOperator, o.agentsHeld ?? 1n),
       clock: { now: () => 0, sleep: async () => {} },
       ...(o.payOnWarn ? { payOnWarn: true } : {}),
     })
@@ -283,7 +297,45 @@ test('the real WARN answer with payOnWarn pays once', async () => {
   assert.equal(h.sent.length, 1)
 })
 
+test('a payee we know nothing about, through both sides with the real scorer: the check is bought, WARN comes back, the owner gets the call', async () => {
+  const h = harness({ score: scoredBy(UNKNOWN_PAYEE), agentsHeld: 0n })
+  const out = await h.run()
+  assert.equal(out.outcome, 'awaiting_human')
+  assert.equal(h.signed.length, 1, 'the check was bought')
+  assert.equal(h.sent.length, 0, 'no automatic payment')
+  assert.equal(out.verdict.decision, 'WARN')
+  assert.equal(out.verdict.signals?.onPlatform, false)
+  assert.match(out.verdict.reasons[0], /does not mean it is bad/)
+  assert.doesNotMatch(out.verdict.reasons.join(' '), /Identity resolved/)
+  assert.equal(out.ownerPay?.from, OWNER)
+  assert.equal(out.ownerPay?.function, 'ownerPay(address,uint256)')
+  const row = h.rows.get(out.flowId)
+  assert.equal(row?.outcome, 'awaiting_human')
+  assert.equal(row?.payeeAgentId, null)
+})
+
+test('with payOnWarn, a payee we know nothing about is paid once, because the caller asked', async () => {
+  const h = harness({ score: scoredBy(UNKNOWN_PAYEE), agentsHeld: 0n, payOnWarn: true })
+  const out = await h.run()
+  assert.equal(out.outcome, 'executed')
+  assert.equal(h.sent.length, 1)
+  assert.equal(h.rows.get(out.flowId)?.payOnWarn, true)
+})
+
+test('evidence against a payee we hold a record of, through both sides with the real scorer, is still DENY and sends nothing', async () => {
+  const platform: RiskSignals = { onchainVerified: true, kyaVerified: true, reputationScore: 720, tenureDays: 40, onPlatform: true }
+  for (const signals of [{ ...platform, revoked: true }, { ...platform, sybil: 'high' as const }, { ...platform, reputationScore: 150 }]) {
+    const h = harness({ score: scoredBy(signals), agentsHeld: 0n })
+    const e = await thrown(h.run())
+    assert.equal(e.name, 'TrustDenyError', JSON.stringify(signals))
+    assert.equal(h.sent.length, 0)
+  }
+})
+
 for (const [label, score, code] of [
+  ['a WARN carrying a revoked signal', scored('WARN', {}, { revoked: true, onPlatform: false }), 'SIGNALS_INCONSISTENT'],
+  ['a WARN on a platform agent under 200', scored('WARN', { reputationScore: 150 }, { onPlatform: true }), 'SIGNALS_INCONSISTENT'],
+  ['a WARN with no identity and no onPlatform signal', scored('WARN', {}, { onchainVerified: false }), 'SIGNALS_INCONSISTENT'],
   ['an ALLOW below 500', scored('ALLOW', { reputationScore: 60 }), 'SIGNALS_INCONSISTENT'],
   ['a null reputation', scored('ALLOW', { reputationScore: null }), 'REPUTATION_NOT_FINITE'],
   ['a verdict about another agent', scored('ALLOW', { agentId: OTHER }), 'CONTEXT_MISMATCH'],

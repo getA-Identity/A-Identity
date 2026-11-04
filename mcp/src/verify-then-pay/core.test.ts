@@ -323,7 +323,8 @@ test('refusals before the check never reach the rail, even with a valid payment 
     { what: 'the payee is the zero address', status: 422, code: 'ZeroAddress', input: { payee: '0x' + '00'.repeat(20) } },
     { what: 'no contract at the vault', status: 422, code: 'NOT_A_VAULT', chain: { code: '0x' } },
     { what: "the vault's usdc() is a lookalike", status: 422, code: 'VAULT_TOKEN_MISMATCH', chain: { usdc: '0x' + '36'.repeat(19) + '01' } },
-    { what: 'the payee holds no agent on Arc Mainnet', status: 422, code: 'PAYEE_UNREGISTERED', chain: { agentsHeld: 0n } },
+    { what: 'a named agent the registry does not have', status: 422, code: 'PAYEE_AGENT_MISMATCH', input: { payeeAgentId: '#7' } },
+    { what: 'a named agent the payee does not own', status: 422, code: 'PAYEE_AGENT_MISMATCH', input: { payeeAgentId: '#7' }, chain: { ownerOf: { '7': OWNER } } },
     { what: 'the registry did not answer', status: 503, code: 'REGISTRY_UNREADABLE', chain: { down: ['balanceOf'] } },
     { what: 'a vault getter did not answer', status: 503, code: 'VaultUnreadable', chain: { down: ['dailyCap'] } },
     { what: 'the vault has no operator', status: 422, code: 'NotOperator', chain: { operator: '0x' + '00'.repeat(20) } },
@@ -391,6 +392,50 @@ test('without a payment, the free checks run and the challenge carries the Arc M
   assert.deepEqual(out.body.checks?.vault.simulation, { ok: true, gas: '116370' })
   assert.equal(g.spy.settles, 0)
   assert.equal(s.inserted.length, 0)
+})
+
+test('a payee that holds no agent is not refused: the free checks pass, say so, and the check is on offer', async () => {
+  const { g, s, deps } = setup({ chain: { agentsHeld: 0n } })
+  const out = await runVerifyThenPay(request(), undefined, deps)
+  assert.equal(out.httpStatus, 402)
+  assert.equal(out.body.stage, 'payment_required')
+  assert.equal(out.body.checks?.payee.ok, true)
+  assert.equal(out.body.checks?.payee.agentsHeld, 0)
+  assert.equal(out.body.checks?.payee.code, undefined)
+  assert.match(out.body.next, /holds no ERC-8004 agent/)
+  assert.match(out.body.next, /not a refusal/)
+  assert.equal(g.spy.settles, 0)
+  assert.equal(s.inserted.length, 0)
+  // A payee that holds one is not told any of that.
+  const held = await runVerifyThenPay(request(), undefined, setup().deps)
+  assert.doesNotMatch(held.body.next, /holds no ERC-8004 agent/)
+})
+
+test('a payee that holds no agent buys the check, gets WARN, and reaches the owner; the flow record says only what is true', async () => {
+  const scored = verdict('WARN', { onPlatform: false, onchainVerified: false, reputationScore: 0 })
+  const { g, s, deps } = setup({ chain: { agentsHeld: 0n }, gw: { scored } })
+  const out = await runVerifyThenPay(request(), header(), deps)
+  assert.equal(out.httpStatus, 200)
+  assert.equal(out.body.stage, 'awaiting_human')
+  assert.equal(out.body.charged, true)
+  assert.equal(g.spy.settles, 1)
+  assert.equal(out.body.prepared, null, 'no automatic payment')
+  assert.equal(out.body.ownerHandoff?.ownerPay.function, 'ownerPay(address,uint256)')
+  assert.deepEqual(out.body.verdict?.signals, { onPlatform: false, onchainVerified: false, revoked: false, sybil: 'none' })
+  const row = s.rows.get(NONCE)
+  assert.equal(row?.outcome, 'awaiting_human')
+  assert.equal(row?.detail, 'warn_handoff')
+  assert.equal(row?.payeeAgentId, null, 'nobody named an agent, so the record names none')
+  assert.equal(row?.verdict?.decision, 'WARN')
+})
+
+test('payOnWarn on a payee that holds no agent is the caller\'s own choice, and the answer says so', async () => {
+  const scored = verdict('WARN', { onPlatform: false, onchainVerified: false, reputationScore: 0 })
+  const { deps } = setup({ chain: { agentsHeld: 0n }, gw: { scored } })
+  const out = await runVerifyThenPay(request({ payOnWarn: true }), header(), deps)
+  assert.equal(out.body.stage, 'prepared')
+  assert.equal(out.body.prepared?.function, 'pay(address,uint256)')
+  assert.match(out.body.next, /your own decision/)
 })
 
 test('a payment that names another network, in either place, is refused before it is settled', async () => {

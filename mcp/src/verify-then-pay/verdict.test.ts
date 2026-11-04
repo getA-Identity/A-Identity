@@ -6,9 +6,8 @@ import { getChainById } from '../chains/index.js'
 /**
  * The paid answer, checked before anything is prepared from it.
  *
- * The scorer behind risk_check is frozen (the OKX.AI listings are registered against it), and
- * it has two holes this layer closes: a NaN reputation comes out ALLOW, and the payee in
- * txContext is echoed and never compared. Every case here is an answer the scorer could give
+ * The scorer behind risk_check has two holes this layer closes: a NaN reputation comes out
+ * ALLOW, and the payee in txContext is echoed and never compared. Every case here is an answer the scorer could give
  * that must not lead to a payment.
  */
 const arc = getChainById('arc-mainnet')!
@@ -144,6 +143,7 @@ test('an ALLOW that contradicts the signals it was computed from is a scorer fau
     { sybil: 'high' },
     { reputationScore: 499 },
     { tenureDays: 6 },
+    { onPlatform: false },
   ]
   for (const signals of cases) {
     const v = evaluateVerdict(body({ signals }), expected)
@@ -159,7 +159,7 @@ test('an ALLOW that contradicts the signals it was computed from is a scorer fau
   assert.deepEqual(deny.reasons, ['Reputation 60 is below the safe threshold (200)'])
 })
 
-test('a WARN carrying signals that force DENY is a scorer fault and is blocked, naming each one', () => {
+test('a WARN carrying signals that force DENY is a scorer fault and is blocked, naming each one; with no onPlatform signal, the strict line', () => {
   const warn = (signals: Record<string, unknown>, e: ExpectedCheck = expected) => {
     const ctx = { amountUsd: e.amountUsd, payee: PAYEE }
     return evaluateVerdict(body({ decision: 'WARN', risk: 'medium', reasons: ['Moderate reputation'], signals: { kyaVerified: false, reputationScore: 320, tenureDays: 0, txContext: ctx, ...signals } }), e)
@@ -190,4 +190,49 @@ test('a WARN carrying signals that force DENY is a scorer fault and is blocked, 
   assert.equal(warn({ reputationScore: 200 }).usable, true)
   // A medium Sybil flag is what a WARN is for.
   assert.equal(warn({ sybil: 'medium' }).usable, true)
+})
+
+test('a WARN on a payee we hold no record of is usable, at any reputation and with no identity', () => {
+  const big: ExpectedCheck = { ...expected, amountUsd: 5000 }
+  const warn = (signals: Record<string, unknown>, e: ExpectedCheck = expected) =>
+    evaluateVerdict(body({ decision: 'WARN', risk: 'medium', reasons: ['we do not know this payee'], signals: { onPlatform: false, kyaVerified: false, reputationScore: 0, tenureDays: 0, onchainVerified: false, txContext: { amountUsd: e.amountUsd, payee: PAYEE }, ...signals } }), e)
+  const v = warn({})
+  assert.equal(v.usable, true)
+  assert.equal(v.effective, 'WARN')
+  assert.deepEqual(v.signals, { onPlatform: false, onchainVerified: false, revoked: false, sybil: 'none' }, 'the signals go on to the client')
+  assert.equal(warn({ onchainVerified: true, reputationScore: 60 }).usable, true)
+  assert.equal(warn({ reputationScore: 60 }, big).usable, true, 'a large payment to such a payee stays WARN')
+})
+
+test('a WARN that carries evidence against the payee is blocked even with no platform record', () => {
+  for (const [signals, named] of [
+    [{ revoked: true }, /revoked/],
+    [{ sybil: 'high' }, /sybil high/],
+  ] as [Record<string, unknown>, RegExp][]) {
+    const v = evaluateVerdict(body({ decision: 'WARN', risk: 'medium', reasons: ['r'], signals: { onPlatform: false, kyaVerified: false, reputationScore: 60, tenureDays: 0, ...signals } }), expected)
+    assert.equal(v.usable ? null : v.code, 'SIGNALS_INCONSISTENT', JSON.stringify(signals))
+    assert.match(v.usable ? '' : v.reason, named)
+  }
+})
+
+test('a WARN on a platform agent that should have been DENY is blocked; a missing identity alone is not that', () => {
+  const big: ExpectedCheck = { ...expected, amountUsd: 100.01 }
+  const warn = (signals: Record<string, unknown>, e: ExpectedCheck = expected) =>
+    evaluateVerdict(body({ decision: 'WARN', risk: 'medium', reasons: ['r'], signals: { onPlatform: true, kyaVerified: false, reputationScore: 320, tenureDays: 0, txContext: { amountUsd: e.amountUsd, payee: PAYEE }, ...signals } }), e)
+  const low = warn({ reputationScore: 199 })
+  assert.equal(low.usable ? null : low.code, 'SIGNALS_INCONSISTENT')
+  assert.match(low.usable ? '' : low.reason, /reputation 199 under 200/)
+  const high = warn({ reputationScore: 399 }, big)
+  assert.equal(high.usable ? null : high.code, 'SIGNALS_INCONSISTENT')
+  assert.match(high.usable ? '' : high.reason, /100\.01 USD with reputation 399 under 400/)
+  assert.equal(warn({ reputationScore: 400 }, big).usable, true)
+  assert.equal(warn({ onchainVerified: false }).usable, true, 'WARN is what a platform agent with no identity gets')
+})
+
+test('an onPlatform that is not a boolean is not the signal, so the strict line holds', () => {
+  for (const onPlatform of ['false', 0, null]) {
+    const v = evaluateVerdict(body({ decision: 'WARN', risk: 'medium', reasons: ['r'], signals: { onPlatform, onchainVerified: false, kyaVerified: false, reputationScore: 60, tenureDays: 0 } }), expected)
+    assert.equal(v.usable ? null : v.code, 'SIGNALS_INCONSISTENT', String(onPlatform))
+    assert.match(v.usable ? '' : v.reason, /no on-chain identity.*reputation 60 under 200/)
+  }
 })

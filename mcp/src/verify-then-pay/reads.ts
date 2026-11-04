@@ -3,10 +3,13 @@
  *
  * Three questions, each read from Arc Mainnet itself and never from a cache:
  *   - Is the money real: does the vault hold the registry's USDC (its usdc() getter)?
- *   - Is the payee an agent: does it hold an ERC-8004 identity on Arc Mainnet's own
- *     IdentityRegistry (balanceOf, or ownerOf(n) when the caller names the agent)? The
- *     ERC-8004 resolver behind risk_check probes every chain, testnets included, and says
- *     neither which chain nor which owner it found, so this is asked here, on this chain.
+ *   - What does the registry say about the payee: how many ERC-8004 identities does it hold on
+ *     Arc Mainnet's own IdentityRegistry (balanceOf), and is the agent the caller named its own
+ *     (ownerOf(n))? The ERC-8004 resolver behind risk_check probes every chain, testnets
+ *     included, and says neither which chain nor which owner it found, so this is asked here,
+ *     on this chain. Holding no agent is not a refusal: a real vendor that never registered is
+ *     not known bad, so it goes on to the check, gets WARN, and the owner decides. A named agent
+ *     the payee does not own is a claim that is false, and that is refused.
  *   - Would the vault pay: its policy getters at the latest block, then pay() simulated
  *     from the operator, then whether the operator can pay the gas.
  *
@@ -70,8 +73,9 @@ async function got<T>(p: Promise<T>): Promise<Got<T>> {
 // ── the payee ─────────────────────────────────────────────────────────────────────
 
 export type PayeeRegistration = {
+  /** Nothing here refuses the payee. agentsHeld 0 is ok: that payee is unknown, not refused. */
   ok: boolean
-  code?: 'PAYEE_UNREGISTERED' | 'PAYEE_AGENT_MISMATCH' | 'REGISTRY_UNREADABLE'
+  code?: 'PAYEE_AGENT_MISMATCH' | 'REGISTRY_UNREADABLE'
   reason?: string
   /** balanceOf(payee) on the identity registry; null when it could not be read. */
   agentsHeld: number | null
@@ -96,12 +100,11 @@ export async function readPayeeRegistration(client: VtpReadClient, chain: ChainD
       if (owner === payee.toLowerCase()) return { ...base, ok: true, agentsHeld, agentOwner: owner }
       return { ...base, ok: false, code: 'PAYEE_AGENT_MISMATCH', agentsHeld, agentOwner: owner, reason: `agent #${tokenId} on ${chain.name} is owned by ${owner}, not by the payee` }
     }
-    if (own.reverted) return { ...base, ok: false, code: 'PAYEE_UNREGISTERED', agentsHeld, reason: `${chain.name}'s IdentityRegistry has no agent #${tokenId} (ownerOf reverted)` }
+    if (own.reverted) return { ...base, ok: false, code: 'PAYEE_AGENT_MISMATCH', agentsHeld, reason: `${chain.name}'s IdentityRegistry has no agent #${tokenId} (ownerOf reverted), so the payee does not own it` }
     return { ...base, ok: false, code: 'REGISTRY_UNREADABLE', agentsHeld, reason: `ownerOf(${tokenId}) could not be read: ${own.error}` }
   }
   if (!bal.ok) return { ...base, ok: false, code: 'REGISTRY_UNREADABLE', reason: `balanceOf(payee) could not be read on ${chain.name}'s IdentityRegistry: ${bal.error}` }
-  if (agentsHeld !== null && agentsHeld > 0) return { ...base, ok: true, agentsHeld }
-  return { ...base, ok: false, code: 'PAYEE_UNREGISTERED', agentsHeld, reason: `the payee holds no ERC-8004 agent on ${chain.name}'s IdentityRegistry` }
+  return { ...base, ok: true, agentsHeld }
 }
 
 // ── the vault ─────────────────────────────────────────────────────────────────────
