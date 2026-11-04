@@ -23,8 +23,9 @@ export function renderProofHtml(): string {
   const repStr = String(p.showcaseAgent.reputation)
   const scoreNum = parseInt(repStr, 10) || 0
   const scorePct = Math.max(0, Math.min(100, scoreNum / 10))
-  const verdict = scoreNum >= 500 ? 'ALLOW' : scoreNum >= 200 ? 'WARN' : 'DENY'
-  const vColor = verdict === 'ALLOW' ? 'var(--ok)' : verdict === 'WARN' ? 'var(--warn)' : 'var(--bad)'
+  // A score alone is never a DENY: DENY means we hold evidence, and this figure carries none.
+  const verdict = scoreNum >= 500 ? 'ALLOW' : 'WARN'
+  const vColor = verdict === 'ALLOW' ? 'var(--ok)' : 'var(--warn)'
   const gradeLabel =
     scoreNum >= 800 ? 'Excellent · AAA' : scoreNum >= 650 ? 'Strong · AA' : scoreNum >= 500 ? 'Good · A'
     : scoreNum >= 350 ? 'Fair · BBB' : scoreNum >= 200 ? 'Weak · B' : 'Low · C'

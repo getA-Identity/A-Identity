@@ -262,7 +262,7 @@ export function buildServer(data: ServerData = {}): McpServer {
     {
       title: 'Verify a commerce merchant agent',
       description:
-        "Verify a merchant-side agent BEFORE a checkout or payment authorization - the trust step agentic-commerce protocols (ACP/UCP) leave to user approval. Discovers the merchant's /.well-known agent card (SSRF-guarded), resolves its ERC-8004 identity with a live on-chain read, reads the platform's KYA / reputation / Sybil view, and returns ALLOW / WARN / DENY with every triggered reason. DENY means a record we hold counts against the merchant; no identity is a WARN, which means unknown, not clean. Free, read-only, creates no state.",
+        "Verify a merchant-side agent BEFORE a checkout or payment authorization - the trust step agentic-commerce protocols (ACP/UCP) leave to user approval. Discovers the merchant's /.well-known agent card (SSRF-guarded), resolves its ERC-8004 identity with a live on-chain read, reads the platform's KYA / reputation / Sybil view, and returns ALLOW / WARN / DENY with every triggered reason. DENY means we hold evidence against the merchant; no identity, or a low score with nothing against it, is a WARN, which means unknown, not clean. Free, read-only, creates no state.",
       inputSchema: merchantCheckInput,
     },
     async ({ url, agentId }) => json(await merchantCheck({ url, agentId })),

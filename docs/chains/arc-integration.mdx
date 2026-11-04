@@ -338,15 +338,17 @@ address a record proved control of, it is scored from the chain alone: at most 6
 even for an agent that would pass under its address. Any other CAIP id is a token we hold no record
 of, which gets `WARN`. An id that resolves to nothing was never looked up, so it gets `DENY`.
 
-**Who gets what.** `DENY` means a record we hold counts against the payee: KYA revoked, Sybil high, a reputation under
-200 on an agent on our platform, or a payment over 100 USD to an agent on our platform with
-reputation under 400. A low score is enough on its own, so a new agent on our platform with no
-history yet also gets `DENY` until it builds one. A payee with no on-chain identity, or with an identity and no record on
+**Who gets what.** `DENY` means we hold evidence against the payee: KYA revoked, Sybil high, or, on an
+agent on our platform whose record holds contested jobs, rejected settlements or guardrail override
+attempts, a reputation under 200 or a payment over 100 USD with reputation under 400. A low score alone
+is not evidence: an agent on our platform with nothing against it gets `WARN` at those lines, with
+reasons that say our record holds nothing against it and not enough to vouch for it, and the amount
+named when it is over 100 USD. A payee with no on-chain identity, or with an identity and no record on
 our platform, is not known bad, so it gets `WARN`, with reasons that say what we do not know.
 A high-value or large payment to such a payee stays `WARN`, with the amount named. `ALLOW` needs
 a platform agent with reputation of at least 500, attested KYA and at least 7 days of tenure.
 A real seller who simply has not registered with us scores at most 60 because we have no history
-for it, and that gets `WARN`. Until 2026-11-04 it got `DENY`; anything dated before that day on
+for it, and that gets `WARN`, and signing up with us does not make that worse. Until 2026-11-04 it got `DENY`; anything dated before that day on
 this page or on [/proof/arc](https://a-identity.xyz/proof/arc) was answered under the older rule.
 
 **What that line cannot see.** `DENY` binds an address we hold a proven record of. A record counts
@@ -464,10 +466,10 @@ reputations come from our own demo payments, so they show the rule path, not ind
 
 | Payee | What it is | Verdict |
 | --- | --- | --- |
-| Simon, `0x03f1fb189E461B88f3e8bA7100B29B594E5f98A9` | A platform agent in our own account, holding Arc Mainnet ERC-8004 #104498 | `ALLOW`, reputation 555, on 2026-11-02; this one moves with its reputation, so read the live answer |
-| Meridian, `0x4e26Ae66840134Ac5979c56ba2509F3956b93431` | Our showcase agent, a platform agent holding Arc Mainnet ERC-8004 #4306 | `WARN`, reputation 469 (below 500), on 2026-11-02; this one moves with its reputation, so read the live answer |
+| Simon, `0x03f1fb189E461B88f3e8bA7100B29B594E5f98A9` | A platform agent in our own account, holding Arc Mainnet ERC-8004 #104498 | `ALLOW`, reputation 555, on 2026-11-02; the free read shows 553 on 2026-11-04, still over the 500 it needs, and this one moves with its reputation, so read the live answer |
+| Meridian, `0x4e26Ae66840134Ac5979c56ba2509F3956b93431` | Our showcase agent, a platform agent holding Arc Mainnet ERC-8004 #4306 | `WARN`, reputation 469 (below 500), on 2026-11-02, and the same on the free read of 2026-11-04; this one moves with its reputation, so read the live answer |
 | Our operating wallet, `0xd305607510e0db2c95807173c7a05bea53c1ed36` (internal) | Holds Arc Mainnet agent #0, off-platform | `WARN` since 2026-11-04, reputation 60: we hold no record of it. It got `DENY` on 2026-11-02, under the older rule, and those recorded flows stand |
-| `0xA65F35B21aB90D088c1197728cDd0563c1308735` | An agent on our platform named `test`, which we are not vouching for in any way | `DENY` by the rule, from the free reads on 2026-11-04 (`/api/reputation`: reputation 90, Sybil high, both of its 2 jobs hired by its own operator). No check was bought on it, so read the live answer, and do not pay it to see |
+| `0xA65F35B21aB90D088c1197728cDd0563c1308735` | An agent on our platform named `test`, which we are not vouching for in any way | `DENY` by the rule, from the free reads on 2026-11-04 (`/api/reputation`: Sybil high, both of its 2 jobs hired by its own operator, reputation 90). The Sybil flag is the evidence: the low score alone would be `WARN`. No check was bought on it, so read the live answer, and do not pay it to see |
 
 A payee that holds no agent on Arc Mainnet passes the free checks, within the vault's ceiling and
 allowlist, and the check is then bought for 0.005 USDC. Unless it is an agent on our platform, the

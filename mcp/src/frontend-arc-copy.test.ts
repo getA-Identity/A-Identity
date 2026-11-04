@@ -589,3 +589,52 @@ test('every page that previews a verdict goes through the record read', () => {
   }
   assert.doesNotMatch(src('src/components/landing/VerifyStepper.tsx'), /onPlatform = reputation !== null/)
 })
+
+// ── the plain statement of the line, on every surface that states it ──────────────
+
+test('every surface says DENY means we hold evidence, keeps the limit, and no longer says a new agent gets DENY', () => {
+  const surfaces = [
+    'README.md',
+    'ARCHITECTURE.md',
+    'docs/chains/arc-integration.mdx',
+    'docs/chains/stellar.mdx',
+    'docs/developers/sdk.mdx',
+    'public/llms.txt',
+    'public/llms-full.txt',
+    'public/.well-known/agent-skills/verify-before-paying/SKILL.md',
+    'trust-guard/README.md',
+    'src/routes/Architecture.tsx',
+    'mcp/src/asp/proof.ts',
+    'mcp/src/asp/risk.ts',
+    'mcp/src/server.ts',
+  ]
+  for (const page of surfaces) {
+    const said = repo(page).replace(/\s+/g, ' ')
+    assert.match(said, /(we )?hold evidence against/, page)
+    assert.doesNotMatch(said, /until it builds|new agent on our platform|a record we hold counts against/, page)
+  }
+  for (const page of ['ARCHITECTURE.md', 'docs/chains/arc-integration.mdx', 'public/llms-full.txt', 'public/.well-known/agent-skills/verify-before-paying/SKILL.md', 'trust-guard/README.md']) {
+    const said = repo(page).replace(/\s+/g, ' ')
+    assert.match(said, /binds an address we hold a proven record of/, page)
+    assert.match(said, /WARN`? means unknown, not clean/, page)
+    assert.match(said, /A low score alone is not evidence/, page)
+  }
+  const risk = repo('mcp/src/asp/risk.ts')
+  assert.doesNotMatch(risk, /not built a history|on its own a DENY/)
+})
+
+test('the guide keeps its DENY example on real evidence, and no sample passes denyOn to stop on WARN', () => {
+  const guide = repo('docs/chains/arc-integration.mdx')
+  assert.match(guide, /Sybil high, both of its 2 jobs hired by its own operator/)
+  assert.match(guide, /The Sybil flag is the evidence/)
+  for (const page of ['trust-guard/README.md', 'docs/developers/sdk.mdx', 'src/routes/Algorand.tsx']) {
+    for (const line of repo(page).split('\n').filter((l) => /await .*guard\(/.test(l) && /denyOn/.test(l))) {
+      assert.match(line, /denyOn: \['DENY'\]/, `${page}: ${line}`)
+    }
+  }
+  // The behavior change is stated, and so is the note for who already installed it.
+  const readme = repo('trust-guard/README.md')
+  assert.match(readme, /Behavior change in 0\.4\.0/)
+  assert.match(readme, /a payee that\s+used to throw now returns/)
+  assert.equal(JSON.parse(repo('trust-guard/package.json')).version, '0.4.0', '0.4.0 is not published, so it does not move')
+})

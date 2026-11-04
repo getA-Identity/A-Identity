@@ -5,10 +5,11 @@ One line of code that stops your AI agent from paying a counterparty it should n
 Agents are starting to hire and pay other agents at machine speed. `trust-guard` puts a
 verification gate in front of that payment: it calls the live **A-Identity Trust Oracle**
 (ERC-8004 on-chain identity + KYA + a deterministic 0-1000 reputation + a Sybil check) and
-**throws if the verdict is DENY**, so a counterparty with a record against it (revoked KYA, a Sybil flag, or a
-low reputation on an agent on our platform) is refused at that address. A counterparty we know nothing about gets
-WARN, not DENY, and WARN means unknown, not clean: `guard()` returns on WARN by default, so pass
-`denyOn: ['DENY', 'WARN']` if your next line pays.
+**throws unless the verdict is ALLOW**. DENY means we hold evidence against the counterparty (revoked KYA, a Sybil
+flag, or a low reputation with contested jobs, rejected settlements or guardrail override attempts on its record),
+and it is refused at that address. A counterparty we know nothing about, or one we hold a record of that holds
+nothing against it and not enough to vouch for it, gets WARN. WARN means unknown, not clean, and it does not pay by
+itself: `guard()` throws on it too. If you want to pay on WARN, say so in code with `denyOn: ['DENY']`.
 
 ```bash
 npm install @a-identity/trust-guard
@@ -18,8 +19,8 @@ npm install @a-identity/trust-guard
 import { guard, TrustDenyError } from '@a-identity/trust-guard'
 
 try {
-  // Verify before you pay. denyOn makes it throw on WARN too, because the next line pays.
-  await guard(counterpartyAgentId, { txContext: { amountUsd: 500, kind: 'payment' }, denyOn: ['DENY', 'WARN'] })
+  // Verify before you pay. It throws on DENY and on WARN, because the next line pays.
+  await guard(counterpartyAgentId, { txContext: { amountUsd: 500, kind: 'payment' } })
   await payAgent(counterpartyAgentId, 500) // only runs on ALLOW
 } catch (e) {
   if (e instanceof TrustDenyError) {
@@ -32,22 +33,31 @@ try {
 
 ## Verdicts
 
-`guard()` runs `risk_check` and returns an `ALLOW` / `WARN` verdict, or throws `TrustDenyError`
-on `DENY`. A counterparty we know nothing about gets `WARN`, so the line after a default `guard()`
-pays it. Block warnings too by widening `denyOn`, or branch on the verdict it returns:
+`guard()` runs `risk_check`. It returns an `ALLOW` verdict and throws `TrustDenyError` on `DENY` and on
+`WARN`, on every rail. `DENY` always throws, whatever `denyOn` says. A counterparty we know nothing about
+gets `WARN`, and `WARN` does not pay by itself, so a caller who wants to pay on it says so in code and
+gets the verdict back to branch on:
 
 ```ts
-await guard(id, { denyOn: ['DENY', 'WARN'] }) // throw on WARN as well
+await guard(id) // the default: only returns on ALLOW
 
-const verdict = await guard(id) // the default: returns on WARN
+const verdict = await guard(id, { denyOn: ['DENY'] }) // returns on WARN as well
 if (verdict.decision === 'WARN') return askAPerson(verdict.reasons)
 ```
 
+The error's `verdict.decision` says which one it was. The message on a `WARN` says it is not a finding
+against the counterparty, and names `denyOn: ['DENY']`.
+
+**Behavior change in 0.4.0.** `guard()` used to default to `denyOn: ['DENY']`, so a `WARN` returned and
+the next line paid. It now defaults to `['DENY', 'WARN']` on every rail. A caller who relied on `WARN`
+returning adds `denyOn: ['DENY']`. `verifyThenPay` is not affected: it never paid on `WARN` by itself.
+
 **If you installed 0.3.0 or earlier, read this.** The verdict's rule lives on the server, so it
-reaches every installed version with no change on your side. Until 2026-11-04 a counterparty with no
-on-chain identity or no record on our platform got `DENY`, and `guard()` threw. Now it gets `WARN`,
-and a default `guard()` returns, so code that pays on its next line pays it. If that is not what you
-want, add `denyOn: ['DENY', 'WARN']`.
+reaches every installed version with no change on your side, and the default above does not. Until
+2026-11-04 a counterparty with no on-chain identity or no record on our platform got `DENY`, and
+`guard()` threw. Now it gets `WARN`, and your installed `guard()` returns on `WARN`, so a payee that
+used to throw now returns, and code that pays on its next line pays it. If that is not what you want,
+add `denyOn: ['DENY', 'WARN']`, or upgrade to 0.4.0 when it is published.
 
 ## The full client
 
@@ -61,7 +71,7 @@ await oracle.reputation(id)    // 0-1000 score (+ its on-chain attestation, if p
 await oracle.riskCheck(id, tx) // ALLOW / WARN / DENY
 await oracle.passport(id)      // identity + reputation + KYA + risk in one call
 await oracle.payCheck(address) // Algorand rail: is it safe to pay this Algorand address? (5 USDC)
-await oracle.guard(id, opts)   // the gate: throws on DENY
+await oracle.guard(id, opts)   // the gate: throws on DENY and on WARN
 ```
 
 ## Three rails
@@ -94,7 +104,7 @@ const oracle = new TrustGuard({
   }),
 })
 
-await oracle.guard(counterpartyId) // pays 5 USDC for the verdict, throws on DENY
+await oracle.guard(counterpartyId) // pays 5 USDC for the verdict, throws unless it is ALLOW
 ```
 
 What the payer signs, and nothing more: one USDC transfer of exactly the quoted amount to the
@@ -215,34 +225,35 @@ independently either: it comes from the same server, so it binds the answer to y
 | `TrustDenyError` | DENY. `context` holds the flow id, the check and the record's URL. |
 | `VaultPaymentError` | The payment step failed. With a `txHash`, look that hash up: never send again with a new nonce, because a transaction reported as missing can still land. |
 
-Who gets what: `risk_check` scores the payee's address. DENY means a record we hold counts against the payee: KYA
-revoked, Sybil high, a reputation under 200 on an agent on our platform, or a payment over 100 USD to an agent
-on our platform with reputation under 400. A low score is enough on its own, so a new agent on our platform with
-no history yet also gets DENY until it builds one. A payee with no on-chain identity, or with an identity and no
-record on our platform, is not known bad, so it gets WARN, with reasons that say what we do not know; such an
-address scores at most 60, which only says we have no history for it. DENY binds an address we hold a proven
-record of: a record counts at an address only once it proved control of it, and a payee with a bad record can
-appear under a new address and get WARN, so WARN means unknown, not clean. ALLOW needs a platform agent with
-reputation at least 500, attested KYA and at least 7 days of tenure. The vault cannot settle an x402 offer: its agent payment path
+Who gets what: `risk_check` scores the payee's address. DENY means we hold evidence against the payee: KYA revoked,
+Sybil high, or, on an agent on our platform whose record holds contested jobs, rejected settlements or guardrail
+override attempts, a reputation under 200 or a payment over 100 USD with reputation under 400. A low score alone is
+not evidence. An agent on our platform with nothing against it gets WARN at those lines, with reasons that say our
+record holds nothing against it and not enough to vouch for it, and the amount named when it is over 100 USD. A
+payee with no on-chain identity, or with an identity and no record on our platform, is not known bad, so it gets
+WARN too, with reasons that say what we do not know; such an address scores at most 60, which only says we have no
+history for it. DENY binds an address we hold a proven record of: a record counts at an address only once it proved
+control of it, and a payee with a bad record can appear under a new address and get WARN, so WARN means unknown, not
+clean. ALLOW needs a platform agent with reputation at least 500, attested KYA and at least 7 days of tenure. The vault cannot settle an x402 offer: its agent payment path
 is `pay(to, amount)`, a direct USDC transfer to the payee you checked.
 
 For a verdict alone, with no vault, use the rail with its payer. Send the payee's address as the agent id,
-never a CAIP id. If your next line pays, pass `denyOn: ['DENY', 'WARN']`, because WARN returns by default
-here and it does not mean pay; `verifyThenPay` is the path that holds WARN for the owner by itself:
+never a CAIP id. `guard()` throws on DENY and on WARN by default, so your next line only runs on ALLOW;
+`verifyThenPay` is the path that hands a WARN to the owner:
 
 ```ts
 import { TrustGuard } from '@a-identity/trust-guard'
 import { arcGatewayPayer, fromViemWallet } from '@a-identity/trust-guard/arc'
 
 const oracle = new TrustGuard({ rail: 'arc', onPaymentRequired: arcGatewayPayer(fromViemWallet(wallet)) })
-await oracle.guard(payeeAddress, { txContext: { amountUsd: 0.25 }, denyOn: ['DENY', 'WARN'] })
+await oracle.guard(payeeAddress, { txContext: { amountUsd: 0.25 } })
 ```
 
-On this rail `guard()` fails closed. DENY always throws `TrustDenyError`. Anything else that is not ALLOW or
-WARN, a verdict about another agent, a reputation that is not a finite number in [0, 1000], an ALLOW below
-500, and an answer with no settlement record for the nonce signed for this call each throw
-`UnusableVerdictError`. A proxy's 200 page is one of those. The `xlayer` and `algorand` rails keep their
-behaviour since 0.1, where only a verdict named in `denyOn` throws.
+On this rail `guard()` fails closed. DENY always throws `TrustDenyError`, and WARN does too unless you pass
+`denyOn: ['DENY']`. Anything else that is not ALLOW or WARN, a verdict about another agent, a reputation that
+is not a finite number in [0, 1000], an ALLOW below 500, and an answer with no settlement record for the nonce
+signed for this call each throw `UnusableVerdictError`. A proxy's 200 page is one of those. The `xlayer` and
+`algorand` rails do not make those checks on a verdict that is returned.
 
 `preflightVault` runs the free checks alone and signs nothing. `ARC_MAINNET` holds the chain's constants,
 generated from the A-Identity chain registry rather than typed by hand.

@@ -142,10 +142,12 @@ Always pass `txContext.amountUsd`. Risk is a function of exposure: a
 counterparty that is fine for one dollar may not be fine for ten thousand, and
 without the amount the verdict is an abstraction.
 
-`DENY` means a record we hold counts against the payee: KYA revoked, Sybil high, a reputation
-under 200 on an agent on our platform, or a payment over 100 USD to an agent on our
-platform with reputation under 400. A low score is enough on its own, so a new agent on our
-platform with no history yet also gets `DENY` until it builds one. A payee with no on-chain
+`DENY` means we hold evidence against the payee: KYA revoked, Sybil high, or, on an agent on
+our platform whose record holds contested jobs, rejected settlements or guardrail override
+attempts, a reputation under 200 or a payment over 100 USD with reputation under 400. A low
+score alone is not evidence: an agent on our platform with nothing against it gets `WARN` at
+those lines, with reasons that say our record holds nothing against it and not enough to vouch
+for it, and the amount named when it is over 100 USD. A payee with no on-chain
 identity, or with an identity and no record on our platform, is not known bad, so it gets
 `WARN`, with reasons that say what we do not know. A high-value or large payment to such a
 payee stays `WARN`, with the amount named. `ALLOW` needs a platform agent with reputation of
