@@ -28,6 +28,14 @@ export const DEFAULT_TIP_WEI = 1n * GWEI
 export const DEFAULT_MAX_FEE_CAP_WEI = 200n * GWEI
 /** Headroom on a gas estimate, in percent, for the limit a prepared call carries. */
 export const GAS_HEADROOM_PCT = 20n
+/**
+ * The least headroom, in gas. pay() and ownerPay() both write spentOnDay, and the vault's first
+ * spend of a UTC day writes it from zero, which costs about 17,200 more than an estimate read on a
+ * day that already had a spend. An owner signing a WARN hand-off can easily cross 00:00 UTC. A
+ * limit is not a charge, so this costs nothing unless the gas is used. trust-guard's own limit
+ * for pay() follows the same rule.
+ */
+export const GAS_HEADROOM_MIN = 25_000n
 
 export type Fees = {
   maxFeePerGas: bigint
@@ -65,9 +73,11 @@ export function feesFor(gasPriceWei: bigint, opts: { tipWei?: bigint; capWei?: b
   }
 }
 
-/** A gas estimate with headroom, rounded up. */
+/** A gas estimate with headroom, rounded up: the larger of the percentage and the minimum. */
 export function gasLimitFor(estimate: bigint): bigint {
-  return (estimate * (100n + GAS_HEADROOM_PCT) + 99n) / 100n
+  const pct = (estimate * (100n + GAS_HEADROOM_PCT) + 99n) / 100n
+  const min = estimate + GAS_HEADROOM_MIN
+  return pct > min ? pct : min
 }
 
 /** Format base units as a decimal string, trailing zeros trimmed: 250000 at 6 -> "0.25". */

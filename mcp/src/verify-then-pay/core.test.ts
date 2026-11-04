@@ -337,6 +337,9 @@ test('refusals before the check never reach the rail, even with a valid payment 
     { what: 'the simulation reverts', status: 422, code: 'TransferFailed', chain: { revertPay: 'TransferFailed' } },
     { what: 'the simulation could not run', status: 503, code: 'VaultUnreadable', chain: { down: ['simulate'] } },
     { what: 'the operator cannot pay the gas', status: 422, code: 'InsufficientGas', chain: { operatorGas: 1_000n } },
+    // One wei short of the limit prepared.fees.gas would carry, 74,115 + 25,000 at the 41.002 gwei fee, so
+    // an operator who could afford only the old 20% limit is refused here rather than out of gas later.
+    { what: 'the operator holds one wei under the prepared limit', status: 422, code: 'InsufficientGas', chain: { gas: 74_115n, operatorGas: 99_115n * 41_002_000_000n - 1n } },
   ]
   for (const k of cases) {
     const { g, s, deps } = setup({ chain: k.chain })
