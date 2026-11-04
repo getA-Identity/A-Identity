@@ -236,11 +236,18 @@ checks activating under a funded `ARC_SIGNER_KEY`. CI runs the no-signer path.
 ### Admit a vault to Milestone 1's owner-held list
 
 A vault deployed from `/app/vault/arc` on Arc Mainnet needs nothing from anyone: the page posts its
-deploy hash to `POST /api/arc/vaults` once the agent key has an end date, and a vault that passes
-every check is stored and counted by `GET /api/arc/season` with its owner not identified.
+deploy hash to `POST /api/arc/vaults` once the agent key has an end date, from the setup or from the
+vault's own page, and a vault that passes every check is stored and counted by `GET /api/arc/season`
+with its owner not identified. A browser that never saw the deploy holds no hash, so its page only says
+what the list says. The route takes no vault address on purpose: the one public source of a contract's
+creation transaction is the explorer's JSON API, which answered this kind of client with a Cloudflare
+challenge (403) when last read on 2026-11-04, so the server cannot get it reliably.
 `GET /api/arc/vaults` lists them and says under `admission` whether the server can admit at all: it
-refuses every vault until at least one of our EVM key env vars is set and all of them are readable,
-so a vault owned by a key only the env knows cannot pass.
+admits nothing, and answers unavailable, until at least one of our EVM key env vars is set and all of them are readable.
+That does not compare a key set only somewhere else: `admission.keysNotCompared` names every key the
+server holds neither the key nor a committed address for, and a vault owned by one of those is not
+caught. Listing its public address in `OUR_KEY_PUBLIC_ADDRESSES` (`src/arc-owner-vault.ts`) closes it,
+including for a row already stored.
 
 `ARC_OWNER_HELD_VAULTS` in `src/arc-season.ts` is the hand-committed list beside that, for an entry
 that can say whose wallet it is, and `scripts/arc-owner-vault-check.mjs` admits to it. It is

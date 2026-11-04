@@ -37,6 +37,7 @@ test('every published copy of the tool count agrees with the card, and a printed
   const copies = [
     'docs/protocols/mcp.mdx',
     'docs/developers/mcp-server.mdx',
+    'mcp/README.md',
     'index.html',
     'public/index.md',
     'public/llms.txt',

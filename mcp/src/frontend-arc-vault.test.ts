@@ -1513,7 +1513,8 @@ test('the deploy page counts a mainnet vault only from a settled deploy, once it
   }
 
   const flow = codeOnly(repo('src/components/app/arc/DeployFlow.tsx'))
-  assert.match(flow, /useVaultCount\(chain\.testnet, setup, step\)/)
+  assert.match(flow, /useVaultCount\(\{ hash: deployHash, stage: setupStage\(deployHash, step\), listing, onReadListAgain \}\)/)
+  assert.match(flow, /const deployHash = countableDeploy\(chain\.testnet, setup\)/)
   const done = flow.slice(flow.indexOf('Your vault is set up.'), flow.indexOf('Open the vault'))
   assert.match(done, /<VaultCountNotice /)
   const hook = codeOnly(repo('src/components/app/arc/useVaultCount.ts'))

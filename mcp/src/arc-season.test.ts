@@ -1264,7 +1264,7 @@ test('admission takes a key the owner revoked, and no other lapsed key', () => {
       state: { ...state, sessionKeyExpiry },
       deployer: OWNER_KEY,
       registryUsdc: arc.contracts.usdc!,
-      ours: { byAddress: new Map(), envKeysDerived: [], envKeysUnreadable: [] },
+      ours: { byAddress: new Map(), envKeysDerived: [], envKeysUnreadable: [], keysCommitted: [], keysNotCompared: [] },
       blockTime,
       runtime: null,
       runtimeRequired: false,

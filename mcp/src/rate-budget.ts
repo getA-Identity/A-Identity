@@ -47,6 +47,9 @@ export function rateBudget(method: string, pathname: string): { bucket: string; 
   // Owner-held vault admission, public with no session: a post that is not already known reads
   // every RPC host for a receipt, a transaction and a block and then the vault's state. It signs
   // and spends nothing of ours. A page posts once or twice per vault, so this bounds a script.
+  // Through the site the key is a shared proxy address rather than the visitor's, so a 429 here can
+  // be someone else's doing: the page says so, and asks again past this window. What bounds the
+  // chain reads overall is admissionSlots, in arc-owner-vault-live.ts.
   if (pathname === '/api/arc/vaults') return { bucket: 'arc-vault-admit', max: 10, windowMs: 60_000 }
   // verify-then-pay. The free half of every call is about twenty Arc Mainnet reads (the
   // vault's getters, the payee's registration, a simulated pay()), and it runs before any

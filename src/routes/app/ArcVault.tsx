@@ -15,11 +15,14 @@
  * vault whose code is the build this page deploys, and our own launch-day vault is view only and
  * labelled as deployed with our server key.
  *
+ * Whichever view holds an owner's vault asks the server to count it on /proof/arc (useVaultCount):
+ * no wallet, best effort, and no control on the page waits for it.
+ *
  * Deep link: ?network=<CAIP-2 or registry id>&contract=<0x...>, or ?deploy=1 for the setup. A
  * network that is not an Arc chain in the registry is refused by name, and a contract with no
  * network is asked about: the network is never guessed.
  */
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
 import { Loader2, RefreshCw, ShieldAlert } from 'lucide-react'
 import { getAddress, isAddress } from 'viem'
@@ -33,17 +36,20 @@ import OwnerMatch from '../../components/app/arc/OwnerMatch'
 import TxReceipt from '../../components/app/arc/TxReceipt'
 import VaultEvents from '../../components/app/arc/VaultEvents'
 import VaultBoundary from '../../components/app/arc/VaultBoundary'
+import VaultCountNotice from '../../components/app/arc/VaultCountNotice'
 import VaultPicker from '../../components/app/arc/VaultPicker'
 import VaultStatus from '../../components/app/arc/VaultStatus'
 import WalletBar from '../../components/app/arc/WalletBar'
 import { useArcSetup } from '../../components/app/arc/useArcSetup'
 import { useArcWallet, type ArcWalletState } from '../../components/app/arc/useArcWallet'
+import { useVaultCount } from '../../components/app/arc/useVaultCount'
 import { Chip, Mono } from '../../components/app/stellar/bits'
 import { track } from '../../lib/analytics'
 import type { Chain } from '../../lib/chains'
 import { listKnownVaults, seededKnownVaults, type KnownVaults } from '../../lib/arc/known-vaults'
 import { autoLandVault, FUND_RISK, isOurKey, isOurVault, NAMES_OUR_KEY, NOT_MY_VAULT } from '../../lib/arc/ours'
-import { clearTx, loadTx, saveTx, type TxRecord } from '../../lib/arc/pending'
+import { clearTx, loadDeploys, loadTx, rememberDeploy, saveTx, type TxRecord } from '../../lib/arc/pending'
+import { countableDeploy, deployHashFor, listingOf, listReads, vaultPageStage, vaultThisBrowserHolds, type Listing } from '../../lib/arc/vault-count'
 import { fundingUnresolved, predictedVault, setupAlert, setupFundEndedOn, setupFundInDoubtOn, setupTxOn, withRecord } from '../../lib/arc/tx-rules'
 import {
   ARC_CHAINS,
@@ -109,13 +115,32 @@ export default function ArcVault() {
   const latestKey = useRef(key)
   latestKey.current = key
 
+  // One newest read of the list, the first included: a slow older one never overwrites a newer answer.
+  const reads = useMemo(() => listReads<KnownVaults>(setKnown), [])
+  const readList = useCallback(() => {
+    const answered = reads.begin()
+    void listKnownVaults(undefined, answered).then(answered)
+  }, [reads])
+
   useEffect(() => {
-    let alive = true
-    void listKnownVaults().then((k) => alive && setKnown(k))
-    return () => {
-      alive = false
-    }
-  }, [])
+    readList()
+    return () => reads.stop()
+  }, [reads, readList])
+
+  // From the notice's Try again: it goes back to Checking at once, so the click visibly did something.
+  const readListAgain = useCallback(() => {
+    if (reads.out()) return
+    setKnown((k) => k && { ...k, partial: null, loading: true, ownerHeldRead: false })
+    readList()
+  }, [reads, readList])
+
+  // Kept by vault the moment a deploy settles: an owner can forget the setup and carry on from the
+  // vault's page, as the setup itself offers, and the hash is what asks for this vault to be counted.
+  useEffect(() => {
+    if (!setup?.vault) return
+    const hash = countableDeploy(arcChainFor(setup.network)?.testnet !== false, setup)
+    if (hash) rememberDeploy({ network: setup.network, vault: setup.vault, hash })
+  }, [setup])
 
   const pick = useCallback(
     (net: string, c: string, replace?: boolean) => setParams({ network: net, contract: c }, { replace: Boolean(replace) }),
@@ -124,15 +149,20 @@ export default function ArcVault() {
   const openDeploy = useCallback((net: string) => setParams({ network: net, deploy: '1' }), [setParams])
   const closeDeploy = useCallback(() => setParams(network ? { network } : {}), [setParams, network])
 
-  // With no vault in the link, open one so the page lands on live values: the connected account's
-  // own, else ours (labelled as ours), on the network the link named. Never a stranger's, and
-  // never once someone has started typing an address of their own.
+  // With no vault in the link, open one so the page lands on live values: the one this browser
+  // deployed, else the connected account's own, else ours (labelled as ours), on the network the
+  // link named. Never a stranger's, and never once someone has started typing an address of their own.
   const refused = Boolean(networkParam && !chain) || Boolean(contractParam && !contract)
   useEffect(() => {
     if (deployMode || contractParam || refused || !known || typing.current) return
+    const held = vaultThisBrowserHolds(setup, loadDeploys(), network ?? ARC_MAINNET.caip2)
+    if (held) {
+      pick(network ?? ARC_MAINNET.caip2, held, true)
+      return
+    }
     const first = autoLandVault(known.vaults, network ?? ARC_MAINNET.caip2, wallet.account)
     if (first) pick(first.network, first.address, true)
-  }, [deployMode, contractParam, refused, known, network, pick, wallet.account])
+  }, [deployMode, contractParam, refused, known, network, pick, wallet.account, setup])
 
   const load = useCallback(async () => {
     if (!chain || !contract) return
@@ -205,6 +235,10 @@ export default function ArcVault() {
   const held = shownTx?.outcome === 'pending' || setupTx !== null || readBehind
   const inFlight: TxAction | null = shownTx && (shownTx.outcome === 'pending' || readBehind) ? shownTx.action : (setupTx?.record.action ?? null)
   const failedKind = read.key === key ? read.failure?.kind : undefined
+  // The hash this browser holds for the vault on screen, if it saw the deploy. Null is common, and says nothing about the vault.
+  const deployHash = useMemo(() => (chain && contract ? deployHashFor(chain.testnet, chain.caip2, contract, setup, loadDeploys()) : null), [chain, contract, setup])
+  // A vault of an owner: this browser deployed it, or the connected wallet owns this page's build. Ours never counts.
+  const ownersVault = Boolean(v && !ours && !ownerIsOurKey && (deployHash !== null || (isOwner && v.knownBuild)))
 
   useEffect(() => {
     if (!readBehind) return
@@ -294,6 +328,8 @@ export default function ArcVault() {
               onChainChange={(caip2) => setParams({ network: caip2, deploy: '1' }, { replace: true })}
               wallet={wallet}
               store={store}
+              listing={setup?.vault ? listingOf(known, setup.network, setup.vault) : 'reading'}
+              onReadListAgain={readListAgain}
               onOpenVault={(net, addr) => pick(net, addr)}
               onClose={closeDeploy}
             />
@@ -458,6 +494,7 @@ export default function ArcVault() {
                     inFlight={inFlight}
                     onSubmitted={onSubmitted}
                   />
+                  {ownersVault && <VaultCountLine chain={chain} expiry={v.sessionKeyExpiry} hash={deployHash} listing={listingOf(known, chain.caip2, v.address)} onReadListAgain={readListAgain} />}
                 </div>
               </section>
             )}
@@ -552,6 +589,12 @@ function DeployLinkRefused({ networkParam }: { networkParam: string }) {
       </ul>
     </section>
   )
+}
+
+/** Whether this vault counts on /proof/arc, asked for and said here too: an owner may never go back to the setup. Inside the owner box, and nothing in it depends on the answer. */
+function VaultCountLine({ chain, expiry, hash, listing, onReadListAgain }: { chain: Chain; expiry: bigint; hash: string | null; listing: Listing; onReadListAgain: () => void }) {
+  const { count, retry } = useVaultCount({ hash, stage: vaultPageStage(hash, expiry), listing, onReadListAgain })
+  return <VaultCountNotice testnet={chain.testnet} networkName={networkName(chain)} count={count} onRetry={retry} />
 }
 
 function FailureLine({ title, next }: { title: string; next: string }) {

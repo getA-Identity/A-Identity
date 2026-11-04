@@ -19,9 +19,11 @@
  *     eth_call when a host can run one;
  *   - owner() is receipt.from, so the owner's own wallet sent the deploy;
  *   - owner() is none of our keys: the provenance ledger's agent owners (the operating
- *     wallet), both rails' internal payer lists, the oracle validator, and the address of
- *     every EVM key env var that is set (run with --env-file=.env to include those; admitting
- *     with --tx on arc-mainnet refuses without them, a rehearsal or a --vault read does not);
+ *     wallet), both rails' internal payer lists, the oracle validator, the addresses committed
+ *     for our keys, and the address of every EVM key env var that is set (run with
+ *     --env-file=.env to include those; admitting with --tx on arc-mainnet refuses without
+ *     them, a rehearsal or a --vault read does not). A key set only in this run's env is
+ *     compared here and not on the server: GET /api/arc/vaults names those;
  *   - operator() is set and is not the owner; usdc() is the registry USDC;
  *   - dailyCap and autoApproveMax are not 0 (0 means no limit);
  *   - sessionKeyExpiry is not 0 and is later than the chain's current block time.
@@ -192,6 +194,7 @@ for (const [address, sources] of ours.byAddress) console.log(`  ${getAddress(add
 if (ours.envKeysDerived.length) console.log(`  env keys derived: ${ours.envKeysDerived.join(', ')}`)
 else console.log('  env keys: none set, so no env-derived address was compared (add --env-file=.env to include them)')
 if (ours.envKeysUnreadable.length) console.log(`  env keys set but not a 32-byte hex key, skipped: ${ours.envKeysUnreadable.join(', ')}`)
+if (ours.keysNotCompared.length) console.log(`  not compared, no key here and no committed address: ${ours.keysNotCompared.join(', ')}`)
 
 // -- the decision, read back -----------------------------------------------------------
 
