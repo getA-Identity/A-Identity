@@ -119,3 +119,13 @@ regexes = ['''^authDigestHex": "[0-9a-f]{64}"$''']
 description = "authNonce in quoted Gateway proof rows is the buyer's public EIP-3009 nonce"
 regexTarget = "match"
 regexes = ['''^"?authNonce": "0x[0-9a-f.]+"$''']
+
+# mcp/src/arc-owner-vault.ts ties each key env var's NAME to the PUBLIC address of that key, so a
+# vault owned by one of ours is refused even where the env var is not set. The generic-api-key rule
+# reads the word KEY beside a hex value as a credential. Allowed by the shape of the whole match:
+# a name ending in _KEY and 20 bytes of hex. A private key is 32 bytes, so it does not fit this shape
+# and is still reported. Added 2026-11-04.
+[[allowlists]]
+description = "OUR_KEY_PUBLIC_ADDRESSES: an env var name and the public address of that key"
+regexTarget = "match"
+regexes = ['''^[A-Z0-9_]+_KEY: '0x[0-9a-fA-F]{40}'$''']

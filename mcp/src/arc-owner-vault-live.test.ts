@@ -223,7 +223,7 @@ test('a server without our key env admits nothing, says that is about the server
 })
 
 test('a vault owned by a key neither this server holds nor the repo commits is not caught, and the server names that key', async () => {
-  const onlyThis = { ARC_SIGNER_KEY: '0x' + '11'.repeat(32) } as NodeJS.ProcessEnv
+  const onlyThis = { XLAYER_SIGNER_KEY: '0x' + '11'.repeat(32) } as NodeJS.ProcessEnv
   const funderKey = ('0x' + '22'.repeat(32)) as Hex
   const funder = privateKeyToAccount(funderKey).address
   const server = collectOurAddresses(liveOurAddressSources(onlyThis))
@@ -232,7 +232,7 @@ test('a vault owned by a key neither this server holds nor the repo commits is n
   const ready = admissionReadiness(server)
   assert.equal(ready.ready, true)
   assert.ok(ready.keysNotCompared.includes('X402_3009_FUNDER_KEY'), 'named on GET')
-  assert.ok(!ready.keysNotCompared.includes('ARC_SIGNER_KEY'), 'a key it holds was compared')
+  assert.ok(!ready.keysNotCompared.includes('XLAYER_SIGNER_KEY'), 'a key it holds was compared')
   assert.ok(!ready.keysNotCompared.includes('X402_3009_BUYER_KEY'), 'a key with a committed address was compared, set or not')
   assert.equal(ready.keysCompared, 1 + Object.values(OUR_KEY_PUBLIC_ADDRESSES).filter(Boolean).length)
   assert.equal((await admitVaultDeploy({ deployTx: TX }, routeDeps({ owner: funder }, { ours: server }))).answer.status, 'admitted')
