@@ -243,7 +243,7 @@ what the list says. The route takes no vault address on purpose: the one public 
 creation transaction is the explorer's JSON API, which answered this kind of client with a Cloudflare
 challenge (403) when last read on 2026-11-04, so the server cannot get it reliably.
 `GET /api/arc/vaults` lists them and says under `admission` whether the server can admit at all: it
-refuses every vault until at least one of our EVM key env vars is set and all of them are readable.
+admits nothing, and answers unavailable, until at least one of our EVM key env vars is set and all of them are readable.
 That does not compare a key set only somewhere else: `admission.keysNotCompared` names every key the
 server holds neither the key nor a committed address for, and a vault owned by one of those is not
 caught. Listing its public address in `OUR_KEY_PUBLIC_ADDRESSES` (`src/arc-owner-vault.ts`) closes it,
