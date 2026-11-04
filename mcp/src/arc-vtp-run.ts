@@ -35,6 +35,8 @@
  */
 
 export type PayeeRole = 'allow' | 'deny'
+export { adverseRecordFrom } from './asp/risk.js'
+
 export type ExpectedVerdict = 'ALLOW' | 'DENY'
 
 export type PayeeSpec = {
@@ -358,7 +360,16 @@ export async function reconcileReceipts(d: {
 export type PreviewRead = { verified: boolean; kyaStatus: string; scoreBand: string; revoked: boolean; sybilSuspected: boolean }
 
 /** GET /api/reputation, free. found:false: the platform does not know this address. */
-export type ReputationRead = { found: true; score: number; tenurePoints: number | null; sybil: string | null } | { found: false }
+export type ReputationRead =
+  | {
+      found: true
+      score: number
+      tenurePoints: number | null
+      sybil: string | null
+      /** What the read shows the record holds against it. Null when it does not show it: see adverseRecordFrom in asp/risk.ts. */
+      adverseRecord: boolean | null
+    }
+  | { found: false }
 
 export type VerdictForecast = {
   verdict: 'ALLOW' | 'WARN' | 'DENY' | 'UNKNOWN'
@@ -382,6 +393,9 @@ const TENURE_POINTS_AT_7_DAYS = 4
  * (null) says nothing about that, so it stays on the strict side, as the scorer does when it is
  * not told. Our operating wallet is off-platform, so it forecasts WARN, and the plan refuses it
  * as a DENY payee: the rule changed on 2026-11-04, after Milestone 1's DENY flows were recorded.
+ *
+ * On a record, a low score is a DENY only with evidence against it. A read that does not show the
+ * evidence stays strict too, and says so, because that is what the scorer does when it is not told.
  */
 export function forecastVerdict(preview: PreviewRead | null, rep: ReputationRead | null): VerdictForecast {
   if (!preview) return { verdict: 'UNKNOWN', missing: ['the free trust_preview could not be read'], caveat: null }
@@ -392,8 +406,11 @@ export function forecastVerdict(preview: PreviewRead | null, rep: ReputationRead
   if (preview.revoked) deny.push('its KYA is revoked')
   if (!preview.verified) (rep === null ? deny : warn).push('it has no verifiable on-chain identity')
   if (noRecord) warn.push('the platform holds no record of it, and ALLOW needs one')
-  else if (score !== null ? score < DENY_REPUTATION : preview.scoreBand === 'very-low') {
-    deny.push(score !== null ? `reputation ${score} is below ${DENY_REPUTATION}, where risk_check denies` : `its score band is very-low (under ${DENY_REPUTATION}, where risk_check denies)`)
+  else if (rep?.found && score !== null && score < DENY_REPUTATION && rep.adverseRecord === false) {
+    warn.push(`reputation ${score} is below ${DENY_REPUTATION}, with nothing on its record against it: risk_check warns, and ALLOW needs >= ${ALLOW_REPUTATION}`)
+  } else if (score !== null ? score < DENY_REPUTATION : preview.scoreBand === 'very-low') {
+    const seen = rep?.found && rep.adverseRecord === true ? ', with evidence on its record against it' : ', and the free read does not show its record is clean'
+    deny.push(score !== null ? `reputation ${score} is below ${DENY_REPUTATION}${seen}, where risk_check denies` : `its score band is very-low (under ${DENY_REPUTATION}, where risk_check denies without a read showing nothing against it)`)
   }
   if (rep?.found && rep.sybil === 'high') deny.push('its reputation reads as wash-traded (sybil high)')
   if (preview.kyaStatus !== 'verified') warn.push(`its KYA is ${preview.kyaStatus}, and ALLOW needs it attested`)

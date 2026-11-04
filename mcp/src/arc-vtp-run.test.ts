@@ -217,12 +217,15 @@ test('the forecast agrees with asp/risk.ts on what each set of signals decides',
     { score: 500, kya: true, tenure: 6, verified: true, revoked: false, sybil: 'none' as const },
   ]
   for (const c of cases) {
-    const truth = assessRisk({ onchainVerified: c.verified, kyaVerified: c.kya, reputationScore: c.score, tenureDays: c.tenure, revoked: c.revoked, sybil: c.sybil, onPlatform: true }).decision
-    const forecast = forecastVerdict(
-      { verified: c.verified, kyaStatus: c.revoked ? 'revoked' : c.kya ? 'verified' : 'unknown', scoreBand: 'ignored when the exact score is there', revoked: c.revoked, sybilSuspected: c.sybil === 'medium' || c.sybil === 'high' },
-      { found: true, score: c.score, tenurePoints: Math.round(c.tenure / 2), sybil: c.sybil },
-    )
-    assert.equal(forecast.verdict, truth, JSON.stringify(c))
+    // Every case with both readings of the evidence, and with the read that does not show it.
+    for (const adverseRecord of [true, false, null]) {
+      const truth = assessRisk({ onchainVerified: c.verified, kyaVerified: c.kya, reputationScore: c.score, tenureDays: c.tenure, revoked: c.revoked, sybil: c.sybil, onPlatform: true, ...(adverseRecord === null ? {} : { adverseRecord }) }).decision
+      const forecast = forecastVerdict(
+        { verified: c.verified, kyaStatus: c.revoked ? 'revoked' : c.kya ? 'verified' : 'unknown', scoreBand: 'ignored when the exact score is there', revoked: c.revoked, sybilSuspected: c.sybil === 'medium' || c.sybil === 'high' },
+        { found: true, score: c.score, tenurePoints: Math.round(c.tenure / 2), sybil: c.sybil, adverseRecord },
+      )
+      assert.equal(forecast.verdict, truth, JSON.stringify({ ...c, adverseRecord }))
+    }
   }
 })
 
@@ -235,7 +238,7 @@ test('with no exact score the bands decide, and what could not be read is said',
   assert.equal(forecastVerdict({ ...preview, scoreBand: 'very-low' }, null).verdict, 'DENY', 'a reputation that could not be read says nothing about a record')
   assert.equal(forecastVerdict({ ...preview, verified: false }, null).verdict, 'DENY', 'nor does a missing identity become a gap without it')
   assert.equal(forecastVerdict(null, null).verdict, 'UNKNOWN')
-  const short = forecastVerdict(preview, { found: true, score: 470, tenurePoints: 57, sybil: 'none' })
+  const short = forecastVerdict(preview, { found: true, score: 470, tenurePoints: 57, sybil: 'none', adverseRecord: false })
   assert.equal(short.verdict, 'WARN')
   assert.match(short.missing.join(), /short by 30/)
 })
@@ -300,10 +303,21 @@ test('our operating wallet, as the free reads answer for it today, forecasts wha
   assert.equal(forecastVerdict({ ...wallet, kyaStatus: 'verified', scoreBand: 'high' }, { found: false }).verdict, 'WARN')
   assert.equal(forecastVerdict({ ...wallet, verified: false }, { found: false }).verdict, 'WARN')
   assert.equal(forecastVerdict({ ...wallet, revoked: true }, { found: false }).verdict, 'DENY')
-  // A platform agent with no identity is a WARN too, and one under 200 is still a DENY.
-  const platform = { found: true as const, score: 300, tenurePoints: 57, sybil: 'none' }
+  // A platform agent with no identity is a WARN too. One under 200 is a WARN with nothing against
+  // it, a DENY with evidence, and a DENY when the read does not show which.
+  const platform = { found: true as const, score: 300, tenurePoints: 57, sybil: 'none', adverseRecord: false }
   assert.equal(forecastVerdict({ ...wallet, verified: false, kyaStatus: 'verified' }, platform).verdict, 'WARN')
-  assert.equal(forecastVerdict({ ...wallet, kyaStatus: 'verified' }, { ...platform, score: 150 }).verdict, 'DENY')
+  const low = forecastVerdict({ ...wallet, kyaStatus: 'verified' }, { ...platform, score: 150 })
+  assert.equal(low.verdict, 'WARN')
+  assert.match(low.missing.join(), /nothing on its record against it/)
+  const evidence = forecastVerdict({ ...wallet, kyaStatus: 'verified' }, { ...platform, score: 150, adverseRecord: true })
+  assert.equal(evidence.verdict, 'DENY')
+  assert.match(evidence.missing.join(), /with evidence on its record against it/)
+  const unseen = forecastVerdict({ ...wallet, kyaStatus: 'verified' }, { ...platform, score: 150, adverseRecord: null })
+  assert.equal(unseen.verdict, 'DENY')
+  assert.match(unseen.missing.join(), /does not show its record is clean/)
+  // Sybil high needs no evidence read: it is evidence.
+  assert.equal(forecastVerdict({ ...wallet, kyaStatus: 'verified' }, { ...platform, score: 90, sybil: 'high' }).verdict, 'DENY')
 })
 
 test('a payee that will not reach its verdict refuses the run and says what is missing', () => {

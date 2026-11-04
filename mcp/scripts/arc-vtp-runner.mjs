@@ -180,7 +180,7 @@ try {
   usage(`--base-url: ${e.message}`)
 }
 const { ARC_VAULT_ABI } = generated
-const { buildPlan, forecastVerdict, formatUnits, readRunLog, RunLogError, runFlows } = rules
+const { buildPlan, forecastVerdict, formatUnits, readRunLog, RunLogError, runFlows, adverseRecordFrom } = rules
 
 // ── the registry, and a trust-guard build that agrees with it ─────────────────────
 
@@ -346,7 +346,7 @@ async function readReputation(payee) {
     if (r.status === 404) return { found: false }
     const rep = r.body?.reputation
     if (r.status !== 200 || typeof rep?.score !== 'number') return null
-    return { found: true, score: rep.score, tenurePoints: typeof rep.breakdown?.tenure === 'number' ? rep.breakdown.tenure : null, sybil: rep.sybil?.level ?? null }
+    return { found: true, score: rep.score, tenurePoints: typeof rep.breakdown?.tenure === 'number' ? rep.breakdown.tenure : null, sybil: rep.sybil?.level ?? null, adverseRecord: adverseRecordFrom(rep) }
   } catch {
     return null
   }
@@ -489,7 +489,7 @@ function printPlan({ input, plan, operator, vault, backendCommit }, operatorSour
     print(`  ${p.spec.label} ${p.spec.address}`)
     print(`    flows: ${left} left of ${wanted}; expected ${rules.expectedFor(p.spec.role)}; forecast today ${p.forecast.verdict}`)
     print(`    trust_preview: ${p.preview ? `verified ${p.preview.verified}, kya ${p.preview.kyaStatus}, band ${p.preview.scoreBand}, revoked ${p.preview.revoked}, sybil suspected ${p.preview.sybilSuspected}` : 'UNREADABLE'}`)
-    print(`    /api/reputation: ${p.reputation === null ? 'UNREADABLE' : p.reputation.found ? `score ${p.reputation.score}, tenure points ${p.reputation.tenurePoints}, sybil ${p.reputation.sybil}` : 'not on the platform'}`)
+    print(`    /api/reputation: ${p.reputation === null ? 'UNREADABLE' : p.reputation.found ? `score ${p.reputation.score}, tenure points ${p.reputation.tenurePoints}, sybil ${p.reputation.sybil}, adverse record ${p.reputation.adverseRecord ?? 'not shown'}` : 'not on the platform'}`)
     print(`    registry: balanceOf ${p.agentsHeld ?? 'UNREADABLE'}; agent ${p.spec.agentId} owner ${p.agentOwner ?? 'UNREADABLE'}`)
     print(`    pay() gas: estimate ${p.gasEstimate ?? 'none'}, limit ${p.gasLimit ?? 'none'}`)
     if (p.forecast.missing.length) print(`    between it and ALLOW: ${p.forecast.missing.join('; ')}`)
