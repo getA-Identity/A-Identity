@@ -26,6 +26,8 @@ export type FakeScenario = {
   receipt?: Record<string, unknown>
   proofRows?: Record<string, unknown>[]
   proofStatus?: number
+  /** What GET /health names as the running build. Absent: /health is down. */
+  commit?: string
 }
 
 const scenario = JSON.parse(process.env.ARC_VTP_FAKE ?? '{}') as FakeScenario
@@ -219,6 +221,7 @@ function api(url: URL, method: string, headers: Headers, body: unknown): Respons
     if (url.searchParams.get('id') === OPERATING) return json(404, { error: 'not found' })
     return json(200, { reputation: { score: 545, breakdown: { tenure: 50 }, sybil: { level: 'none' } } })
   }
+  if (path === '/health' && scenario.commit) return json(200, { status: 'ok', commit: scenario.commit })
   if (path === '/api/x402/gateway/proof') return json(scenario.proofStatus ?? 200, { recent: scenario.proofRows ?? [] })
   if (path.endsWith('/receipt')) return json(200, scenario.receipt ?? { verified: true, outcome: 'executed', detail: 'agent_paid' })
   throw new Error(`the fake API has no ${method} ${path}`)

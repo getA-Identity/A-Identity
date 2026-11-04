@@ -11,10 +11,15 @@
  * /v1/balances shows the depositor's balance for this chain's domain (Circle credits a
  * deposit once it sees the chain's finality, which on Arc is one block).
  *
- * Prepared-or-executed: without the key env var this prints the exact calls and exits.
+ * Prepared-or-executed: without --key-env, or without the variable it names, this prints the
+ * exact calls and exits. The flag has no default on purpose: a balance can only be spent by the key
+ * that deposited it, and this repo has two buyers, so a default sends money to whichever one the
+ * caller did not mean as soon as both keys are in .env.
  *
  * Usage: cd mcp && npm run build && node --env-file=.env scripts/gateway-deposit.mjs \
- *          --chain arc-mainnet --amount 0.2 [--key-env X402_GATEWAY_BUYER_KEY]
+ *          --chain arc-mainnet --amount 0.2 --key-env <env var>
+ *   X402_GATEWAY_BUYER_KEY  spends through scripts/x402-gateway-buyer.mjs
+ *   X402_3009_BUYER_KEY     spends through scripts/arc-vtp-runner.mjs, the Milestone 1 operator
  */
 import { createPublicClient, createWalletClient, parseAbi, formatUnits } from 'viem'
 import { privateKeyToAccount } from 'viem/accounts'
@@ -25,7 +30,7 @@ const arg = (name, def) => {
 }
 const CHAIN_ID = arg('chain', '')
 const AMOUNT = Number(arg('amount', '0'))
-const KEY_ENV = arg('key-env', 'X402_GATEWAY_BUYER_KEY')
+const KEY_ENV = arg('key-env', '')
 
 let getChainById, evmTransport
 try {
@@ -58,9 +63,9 @@ const balanceOnGateway = async (depositor) => {
   return { available: Number(b?.balance ?? 0), pending: Number(b?.pendingBatch ?? 0) }
 }
 
-const key = process.env[KEY_ENV]
+const key = KEY_ENV ? process.env[KEY_ENV] : undefined
 if (!key) {
-  console.log(`No ${KEY_ENV} set - PREPARED (nothing was broadcast):`)
+  console.log(`${KEY_ENV ? `No ${KEY_ENV} set` : 'No --key-env given'} - PREPARED (nothing was broadcast):`)
   console.log(JSON.stringify({
     executed: false,
     chain: chain.caip2,
@@ -68,7 +73,9 @@ if (!key) {
       { contract: USDC, function: 'approve', args: [WALLET, value.toString()] },
       { contract: WALLET, function: 'deposit', args: [USDC, value.toString()] },
     ],
-    reason: `set ${KEY_ENV} to deposit for real`,
+    reason: KEY_ENV
+      ? `set ${KEY_ENV} to deposit for real`
+      : 'pass --key-env with the variable holding the key that will spend this balance, because only the depositor can spend it: X402_GATEWAY_BUYER_KEY for scripts/x402-gateway-buyer.mjs, X402_3009_BUYER_KEY for scripts/arc-vtp-runner.mjs',
   }, null, 2))
   process.exit(0)
 }

@@ -18,9 +18,13 @@
  * can lag a transaction another host just took (some hosts answer "pending" from the latest
  * block), so the nonce after an accepted send is kept as a floor for a short while. A send that
  * threw leaves no floor: if no node took it, a floor would leave a gap that stalls everything
- * behind it. Worst case, the next send reuses that nonce, and then the loser can never land,
- * which canNeverLand (./receipts.ts) proves later. This lock is process-local, like the other
- * in-flight guards in this codebase, and only sends that come through here take it.
+ * behind it. The floor's clock runs from the last time the pending count moved, not from the last
+ * send: if an accepted transaction vanishes, the count stays put, and a steady stream of sends must
+ * not keep signing above a gap nothing will fill. So after FLOOR_TTL_MS with no movement the next
+ * send takes the pending nonce again and fills it. Worst case, the next send reuses that nonce, and
+ * then the loser can never land, which canNeverLand (./receipts.ts) proves later. This lock is
+ * process-local, like the other in-flight guards in this codebase, and only sends that come through
+ * here take it.
  */
 import { encodeFunctionData, keccak256, type Hex } from 'viem'
 import type { ChainDescriptor } from '../types.js'
@@ -81,7 +85,8 @@ const REFUSAL_LOOK = { perCallTimeoutMs: 3_000, hardTimeoutMs: 8_000 }
 export class SignerBusyError extends Error {}
 
 const queues = new Map<string, Promise<void>>()
-const floors = new Map<string, { next: number; at: number }>()
+/** `pending` is the highest count a prepare has answered, and `at` is when it last rose. */
+const floors = new Map<string, { next: number; at: number; pending?: number }>()
 
 /** TEST-ONLY: forget every kept nonce floor. Production code never calls this. */
 export function __resetSendStateForTests(): void {
@@ -157,7 +162,8 @@ export async function sendCallSigned(
 
   return inTurn(key, opts.queueWaitMs ?? QUEUE_WAIT_MS, async () => {
     const prepared = await wallet.prepareTransactionRequest({ ...(signer.account ? { account: signer.account } : {}), to: call.address, data })
-    let nonce = typeof prepared.nonce === 'number' ? prepared.nonce : undefined
+    const pending = typeof prepared.nonce === 'number' ? prepared.nonce : undefined
+    let nonce = pending
     const floor = floors.get(key)
     if (floor && (Date.now() - floor.at > FLOOR_TTL_MS || (nonce !== undefined && nonce >= floor.next))) floors.delete(key)
     else if (floor && nonce !== undefined) nonce = floor.next
@@ -184,7 +190,11 @@ export async function sendCallSigned(
       if (seen === 'absent') return { ...tx, status: 'refused', reason: said, error: err }
       return { ...tx, status: 'unknown', reason: `${said} (${seen === 'held' ? 'and an RPC host has it' : 'and not every RPC host could be asked for it'})` }
     }
-    if (nonce !== undefined) floors.set(key, { next: nonce + 1, at: Date.now() })
+    if (nonce !== undefined) {
+      const kept = floors.get(key)
+      const stalled = kept?.pending !== undefined && pending !== undefined && pending <= kept.pending
+      floors.set(key, stalled ? { ...kept, next: nonce + 1 } : { next: nonce + 1, at: Date.now(), pending })
+    }
     return { ...tx, status: 'sent' }
   })
 }

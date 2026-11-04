@@ -98,6 +98,8 @@ const DEFAULTS = {
   settlementFeeUsd: 0.02,
   maxValueUsd: 1,
   expiryHeadroomSec: 60,
+  /** The challenge asks for 600. See Limits.maxValiditySec for what the limit protects. */
+  maxValiditySec: 3_600,
   /** ~0.0004 ETH at 0.05 gwei is far above one settlement and far below a wallet. */
   maxGasWei: 20_000_000_000_000n,
   dailyGasWei: 500_000_000_000_000n,
@@ -266,6 +268,7 @@ export function railLimits(status: RailStatus, env: NodeJS.ProcessEnv = process.
     minValue: tokenUnits(decimals, status.minValueUsd),
     maxValue: tokenUnits(decimals, status.maxValueUsd),
     expiryHeadroomSec: num(env, 'X402_3009_EXPIRY_HEADROOM_SEC', DEFAULTS.expiryHeadroomSec),
+    maxValiditySec: Math.floor(num(env, 'X402_3009_MAX_VALIDITY_SEC', DEFAULTS.maxValiditySec)),
     maxGasWei: stable
       ? big(env, 'X402_3009_STABLE_GAS_MAX_WEI', DEFAULTS.stableGasMaxWei)
       : big(env, 'X402_3009_MAX_GAS_WEI', DEFAULTS.maxGasWei),
@@ -660,7 +663,7 @@ export async function railServeToolOn(
     // Anything else is our side or the chain, and must not be retried blindly.
     const retryable: string[] = [
       'malformed_payload', 'requirements_mismatch', 'unsupported_asset', 'wrong_recipient', 'wrong_amount',
-      'below_minimum', 'above_maximum', 'not_yet_valid', 'expired', 'expiring_too_soon', 'nonce_used',
+      'below_minimum', 'above_maximum', 'not_yet_valid', 'expired', 'expiring_too_soon', 'validity_too_long', 'nonce_used',
       'already_redeemed', 'bad_signature', 'insufficient_funds',
     ]
     if (retryable.includes(settled.code)) {

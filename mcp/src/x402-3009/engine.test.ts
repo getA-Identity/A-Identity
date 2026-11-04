@@ -15,6 +15,7 @@ import {
   FIRST_ATTEMPT_CEILING_MS,
   REDEEM_WINDOW_MS,
   type Limits,
+  type SettleResult,
 } from './engine.js'
 import { eip712DomainSeparator, clearDomainCache, type TokenReader } from './domain.js'
 import { EIP3009_ABI, SignerBusyError, __resetSendStateForTests, getChainById, sendCallSigned, type EveryRpcOptions } from '../chains/index.js'
@@ -168,6 +169,7 @@ const LIMITS: Limits = {
   minValue: 1_000n,
   maxValue: 1_000_000n,
   expiryHeadroomSec: 60,
+  maxValiditySec: 3_600,
   maxGasWei: 20_000_000_000_000n,
   dailyGasWei: 500_000_000_000_000n,
 }
@@ -262,6 +264,7 @@ test('every refusal reports its own code', async () => {
     { name: 'not yet valid', code: 'not_yet_valid', build: () => signed({ validAfter: BigInt(nowSec + 300) }) },
     { name: 'expired', code: 'expired', build: () => signed({ validBefore: BigInt(nowSec - 5) }) },
     { name: 'expiring inside the mining window', code: 'expiring_too_soon', build: () => signed({ validBefore: BigInt(nowSec + 10) }) },
+    { name: 'valid for longer than the limit', code: 'validity_too_long', build: () => signed({ validBefore: BigInt(nowSec + 3_601) }) },
   ]
   for (const c of cases) {
     const { payload } = await c.build()
@@ -1898,4 +1901,205 @@ test('an unreadable gas ledger refuses the settlement and broadcasts nothing', a
     assert.match(r.errorReason ?? '', /could not be read/, 'an outage must not read as a spent budget')
   }
   assert.equal(broadcasts, 0, 'nothing may be broadcast against a ceiling we cannot measure')
+})
+
+// ── how long a buyer can be held ──────────────────────────────────────────────────
+
+test('an authorization valid for days is refused before anything is sent, so a vanished send cannot hold a buyer for days', async () => {
+  const s = await paymentScene('70', { [HOST_A]: null }, { validBefore: BigInt(nowSec + 7 * 86_400) })
+  const r = await s.settle()
+  assert.equal(r.success, false)
+  if (!r.success) {
+    assert.equal(r.code, 'validity_too_long')
+    assert.match(r.errorReason, /Nothing was sent/)
+  }
+  assert.equal(s.counters.broadcasts, 0)
+  assert.deepEqual(s.log.rows, [])
+
+  const atTheLimit = await paymentScene('71', { [HOST_A]: SETTLED_RECEIPT() }, { validBefore: BigInt(nowSec + LIMITS.maxValiditySec) })
+  assert.equal((await atTheLimit.settle()).success, true)
+})
+
+test('a broadcast made before the limit is still answered from the log, and its buyer is not sent to pay again', async () => {
+  const s = await paymentScene('72', { [HOST_A]: null }, { validBefore: BigInt(nowSec + 7 * 86_400) })
+  const before = await settlePayment({ chain, token, requirements: REQUIREMENTS, payload: s.payload, limits: { ...LIMITS, maxValiditySec: 30 * 86_400 }, deps: s.engineDeps() })
+  assert.equal(before.success, false)
+  if (!before.success) assert.equal(before.code, 'receipt_timeout')
+  assert.equal(s.log.rows.length, 1)
+
+  const waiting = await s.settle()
+  assert.equal(waiting.success, false)
+  if (!waiting.success) assert.equal(waiting.code, 'settlement_pending')
+
+  s.hosts[HOST_A] = SETTLED_RECEIPT()
+  const served = await s.settle()
+  assert.equal(served.success, true, JSON.stringify(served))
+  if (served.success) assert.equal(served.reconciled, true)
+  assert.equal(s.counters.broadcasts, 1)
+})
+
+// ── closing the row of a transaction never sent ───────────────────────────────────
+
+/** Poll until `ok`, for what happens after the answer has gone back to the buyer. */
+async function eventually(ok: () => boolean, what: string) {
+  for (let i = 0; i < 400 && !ok(); i++) await new Promise((r) => setTimeout(r, 5))
+  assert.ok(ok(), what)
+}
+
+/** Retry until the key is free, which is what a buyer told to retry shortly does. */
+async function settleOnceFree(settle: () => Promise<SettleResult>): Promise<SettleResult> {
+  for (let i = 0; i < 400; i++) {
+    const r = await settle()
+    if (r.success || r.code !== 'in_flight') return r
+    await new Promise((res) => setTimeout(res, 5))
+  }
+  throw new Error('the key was never freed')
+}
+
+test('a row written with its answer lost closes even when the mark fails first, and a retry cannot send until it has', async () => {
+  const s = await paymentScene('73', { [HOST_A]: null })
+  let open!: () => void
+  const gate = new Promise<void>((r) => { open = r })
+  let marks = 0
+  const first = await s.settle({
+    persist: async (rec: X402SettlementRecord) => { s.log.rows.push({ ...rec }); return { ok: false } },
+    resolveSettlement: async (tx: string, res: Partial<X402SettlementRecord>) => {
+      marks += 1
+      await gate
+      return marks === 1 ? { ok: false as const, reason: 'database blip' } : s.log.resolveSettlement(tx, res)
+    },
+    closeRetryMs: [1, 1],
+  })
+  assert.equal(first.success, false)
+  if (!first.success) assert.equal(first.code, 'settlement_log_unavailable')
+  assert.equal(s.log.rows[0].outcome, 'ambiguous')
+
+  // A retry now could sign this very hash, and the mark would then close a row whose transaction is out.
+  const during = await s.settle()
+  assert.equal(during.success, false)
+  if (!during.success) {
+    assert.equal(during.code, 'in_flight')
+    assert.match(during.errorReason, /Do not sign a new one/)
+  }
+  assert.equal(s.counters.broadcasts, 0)
+
+  open()
+  await eventually(() => s.log.rows[0].outcome === 'dropped', 'the second mark closes the row')
+  assert.equal(marks, 2)
+  s.hosts[HOST_A] = SETTLED_RECEIPT()
+  const retry = await settleOnceFree(() => s.settle())
+  assert.equal(retry.success, true, JSON.stringify(retry))
+  assert.equal(s.counters.broadcasts, 1)
+})
+
+test('a row write that outran its deadline and commits late is closed, not left to hold the buyer', async () => {
+  const s = await paymentScene('74', { [HOST_A]: null })
+  let commit!: () => void
+  const late = new Promise<void>((r) => { commit = r })
+  const first = await s.settle({
+    persist: async (rec: X402SettlementRecord) => { await late; s.log.rows.push({ ...rec }) },
+    rowWriteMs: 5,
+    closeRetryMs: [1],
+  })
+  assert.equal(first.success, false)
+  if (!first.success) assert.equal(first.code, 'settlement_log_unavailable')
+  assert.deepEqual(s.log.rows, [], 'the write has not committed yet')
+  commit()
+  await eventually(() => s.log.rows[0]?.outcome === 'dropped', 'the mark ran after the write, and found the row')
+  assert.equal(s.counters.broadcasts, 0)
+  s.hosts[HOST_A] = SETTLED_RECEIPT()
+  const retry = await settleOnceFree(() => s.settle())
+  assert.equal(retry.success, true, JSON.stringify(retry))
+})
+
+test('a refused send whose first mark fails still closes the row before the buyer hears, and the retry sends', async () => {
+  const s = await paymentScene('75', { [HOST_A]: null })
+  let marks = 0
+  const r = await s.settle({
+    walletClient: fakeSigningWallet('0x0275', { onSend: () => { throw new Error('insufficient funds for gas * price + value') } }),
+    resolveSettlement: async (tx: string, res: Partial<X402SettlementRecord>) => {
+      marks += 1
+      return marks === 1 ? { ok: false as const, reason: 'database blip' } : s.log.resolveSettlement(tx, res)
+    },
+    closeRetryMs: [1],
+  })
+  assert.equal(r.success, false)
+  if (!r.success) assert.equal(r.code, 'broadcast_failed')
+  assert.equal(s.log.rows[0].outcome, 'dropped')
+  s.hosts[HOST_A] = SETTLED_RECEIPT()
+  assert.equal((await s.settle()).success, true)
+  assert.equal(s.counters.broadcasts, 1)
+})
+
+test('a mark that never succeeds or never answers cannot hold the key or the answer: the row stays, and says it may land', async () => {
+  const s = await paymentScene('76', { [HOST_A]: null })
+  const first = await s.settle({
+    persist: async (rec: X402SettlementRecord) => { s.log.rows.push({ ...rec }); return { ok: false } },
+    resolveSettlement: async () => ({ ok: false as const, reason: 'database down' }),
+    closeRetryMs: [1, 1],
+  })
+  assert.equal(first.success, false)
+  const retry = await settleOnceFree(() => s.settle())
+  assert.equal(retry.success, false)
+  if (!retry.success) assert.equal(retry.code, 'settlement_pending')
+  assert.equal(s.counters.broadcasts, 0, 'an open row still means nothing is sent')
+
+  const hung = await paymentScene('77', { [HOST_A]: null })
+  const answered = await hung.settle({
+    walletClient: fakeSigningWallet('0x0277', { onSend: () => { throw new Error('insufficient funds for gas * price + value') } }),
+    resolveSettlement: () => new Promise(() => {}),
+    rowWriteMs: 5,
+  })
+  assert.equal(answered.success, false)
+  if (!answered.success) assert.equal(answered.code, 'broadcast_failed')
+})
+
+// ── the nonce floor, when an accepted send vanishes ───────────────────────────────
+
+function stuckNonceWallet(signerKey: `0x${string}`, pendingCount: () => number) {
+  const seen: number[] = []
+  const wallet = {
+    account: privateKeyToAccount(signerKey),
+    prepareTransactionRequest: async (req: Record<string, unknown>) => ({ ...req, nonce: pendingCount() }),
+    signTransaction: async (req: Record<string, unknown>) => {
+      seen.push(req.nonce as number)
+      return `0x02${seen.length.toString(16).padStart(2, '0')}${(req.nonce as number).toString(16).padStart(2, '0')}` as `0x${string}`
+    },
+    sendRawTransaction: async () => `0x${'00'.repeat(32)}` as `0x${string}`,
+  }
+  return { wallet, seen }
+}
+
+test('a steady stream of sends cannot keep signing above a nonce that vanished: after the floor lapses the gap is filled', async (t) => {
+  let clock = 1_800_000_000_000
+  t.mock.method(Date, 'now', () => clock)
+  const { wallet, seen } = stuckNonceWallet('0x47e179ec197488593b187f80a00eb0da91f1b9d0b13f8733639f19c30a34926a', () => 17)
+  const scenes = await Promise.all(['78', '79', '7a', '7b', '7c'].map((b) => paymentScene(b, { [HOST_A]: null })))
+  for (const s of scenes.slice(0, 3)) {
+    await s.settle({ walletClient: wallet, signerAddress: wallet.account.address })
+    clock += 30_000
+  }
+  // Sends under 60 s apart, the count never moving, and the floor's clock has not been refreshed.
+  assert.deepEqual(seen, [17, 18, 19])
+  clock += 1_000
+  await scenes[3].settle({ walletClient: wallet, signerAddress: wallet.account.address })
+  assert.deepEqual(seen, [17, 18, 19, 17], 'the empty nonce is taken again')
+  clock += 30_000
+  await scenes[4].settle({ walletClient: wallet, signerAddress: wallet.account.address })
+  assert.deepEqual(seen, [17, 18, 19, 17, 18], 'the floor starts again from what was just accepted')
+})
+
+test('a pending count that lags but moves keeps its floor however long the stream runs, so no nonce is reused', async (t) => {
+  let clock = 1_800_000_000_000
+  t.mock.method(Date, 'now', () => clock)
+  // A host answering from the latest block: one behind what was just accepted, always moving.
+  let sent = 0
+  const { wallet, seen } = stuckNonceWallet('0x8166f546bab6da521a8369cab06c5d2b9e46670292d85c875ee9ec20e84ffb61', () => 40 + Math.max(0, sent - 1))
+  const scenes = await Promise.all(['7d', '7e', '7f', '80', '81', '82'].map((b) => paymentScene(b, { [HOST_A]: null })))
+  for (const s of scenes) {
+    await s.settle({ walletClient: wallet, signerAddress: wallet.account.address })
+    sent += 1
+    clock += 30_000
+  }
+  assert.deepEqual(seen, [40, 41, 42, 43, 44, 45])
 })

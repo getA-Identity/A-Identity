@@ -418,6 +418,13 @@ const GWEI = 1_000_000_000n
 const DEFAULT_FEE_CAP_WEI = 200n * GWEI
 const DEFAULT_TIP_WEI = GWEI
 const GAS_HEADROOM_PCT = 20n
+/**
+ * The least headroom in gas. The vault's first payment of a UTC day writes spentOnDay from zero,
+ * which costs about 17,200 more than the estimate a payment read just before midnight got: an
+ * estimate of 74,115 with 20% on top is 88,938, and that payment needs 90,341 mined on the new day.
+ * A limit is not a charge, so this costs nothing unless the gas is used.
+ */
+const GAS_HEADROOM_MIN = 25_000n
 /** The server's own margin: the call is sent after the check, not now. */
 const EXPIRY_MARGIN_SEC = 60n
 const DEFAULT_RECEIPT_TIMEOUT_MS = 60_000
@@ -571,7 +578,8 @@ function feesFor(gasPriceWei: bigint, capWei: bigint, tipWei: bigint): { maxFeeP
 }
 
 function gasLimitFor(estimate: bigint): bigint {
-  return (estimate * (100n + GAS_HEADROOM_PCT) + 99n) / 100n
+  const pct = (estimate * (100n + GAS_HEADROOM_PCT) + 99n) / 100n
+  return pct > estimate + GAS_HEADROOM_MIN ? pct : estimate + GAS_HEADROOM_MIN
 }
 
 /** The vault's own error name from a revert's bytes; null when there are none to decode. */

@@ -80,11 +80,11 @@ test('a prepared call carries the registry chain id, value 0, its sender, a gas 
   assert.deepEqual(p.args, [PAYEE, '250000'])
   assert.equal(p.data, payCalldata(PAYEE, 250_000n))
   assert.equal(p.fees.gas, gasLimitFor(116_370n).toString())
-  assert.equal(p.fees.gas, '139644')
+  assert.equal(p.fees.gas, '141370')
   assert.ok(BigInt(p.fees.maxFeePerGas) >= ARC_MIN_MAX_FEE_WEI)
   assert.equal(p.fees.floorWei, '20000000000')
-  // 139644 gas x 41.002 gwei = 0.005725683288 USDC of native gas, rounded up to the unit.
-  assert.equal(p.fees.maxCostUsdc, '0.005726')
+  // 141370 gas x 41.002 gwei = 0.00579645274 USDC of native gas, rounded up to the unit.
+  assert.equal(p.fees.maxCostUsdc, '0.005797')
 
   const o = prepareOwnerPay(arc, { vault: VAULT, owner: OWNER, payee: PAYEE, amount: 250_000n, gasEstimate: null, fees: fees.fees, simulation: { ok: false, error: 'TransferFailed' } })
   assert.equal(o.from, OWNER)
@@ -92,6 +92,26 @@ test('a prepared call carries the registry chain id, value 0, its sender, a gas 
   assert.equal(o.fees.gas, null)
   assert.equal(o.fees.maxCostUsdc, null)
   assert.deepEqual(o.simulation, { ok: false, error: 'TransferFailed' })
+})
+
+test('a gas limit survives the first spend of a new UTC day, for pay and for ownerPay alike', () => {
+  // Measured pay(): 74,115 read on a day with a spend, 90,341 needed as the first of the next day.
+  // 20% alone is 88,938, which runs out of gas and loses the fee.
+  assert.equal(gasLimitFor(74_115n), 99_115n)
+  assert.ok(gasLimitFor(74_115n) >= 90_341n)
+  // ownerPay writes the same slot, so it pays the same 17,100 or so on a smaller estimate.
+  assert.equal(gasLimitFor(60_000n), 85_000n)
+  // The two rules meet at 125,000, and above that the percentage is the larger one.
+  assert.equal(gasLimitFor(125_000n), 150_000n)
+  assert.equal(gasLimitFor(200_000n), 240_000n)
+  // The percentage still rounds up.
+  assert.equal(gasLimitFor(125_001n), 150_002n)
+
+  const fees = feesFor(20_001_000_000n)
+  assert.ok(fees.ok)
+  if (!fees.ok) return
+  const o = prepareOwnerPay(arc, { vault: VAULT, owner: OWNER, payee: PAYEE, amount: 250_000n, gasEstimate: 60_000n, fees: fees.fees, simulation: { ok: true } })
+  assert.equal(o.fees.gas, '85000')
 })
 
 test('amounts are formatted with string math, and gas cost uses the registry decimals of both faces of USDC', () => {

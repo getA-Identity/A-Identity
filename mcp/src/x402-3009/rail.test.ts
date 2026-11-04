@@ -167,6 +167,14 @@ test('limits derive from the token decimals and the configured bounds', () => {
   assert.equal(l.maxValue, 1_000_000n)
 })
 
+test('the validity limit is well above what the challenge asks for, and a bad setting cannot crash the check', () => {
+  const s = railStatus(configured)
+  assert.equal(railLimits(s, {} as NodeJS.ProcessEnv).maxValiditySec, 3_600)
+  assert.equal(railLimits(s, { X402_3009_MAX_VALIDITY_SEC: '900' } as NodeJS.ProcessEnv).maxValiditySec, 900)
+  assert.equal(railLimits(s, { X402_3009_MAX_VALIDITY_SEC: '900.5' } as NodeJS.ProcessEnv).maxValiditySec, 900, 'BigInt() throws on a fraction')
+  assert.equal(railLimits(s, { X402_3009_MAX_VALIDITY_SEC: 'soon' } as NodeJS.ProcessEnv).maxValiditySec, 3_600)
+})
+
 test('a chain whose gas token is USDC gets dollar gas ceilings, and the ETH variables do not reach it', () => {
   // Arc Mainnet's first settlement on 2026-09-16 was refused by the ETH-denominated default:
   // 0.0258 USDC of projected gas against a ceiling of 0.00002 "ether" read as USDC.
@@ -474,14 +482,14 @@ test('a v2 buyer names its network under accepted, and the rail settles on THAT 
 })
 
 /** A signed v2 payment for risk_check, as the X-PAYMENT header. */
-async function signedHeader(nonceByte: string) {
+async function signedHeader(nonceByte: string, validForSec = 600) {
   const buyer = privateKeyToAccount('0x59c6995e998f97a5a0044966f0945389dc9e86dae88c7a8412f4603b6b78690d')
   const authorization = {
     from: buyer.address,
     to: PAY_TO as `0x${string}`,
     value: 25_000n,
     validAfter: 0n,
-    validBefore: BigInt(Math.floor(Date.now() / 1000) + 600),
+    validBefore: BigInt(Math.floor(Date.now() / 1000) + validForSec),
     nonce: `0x${nonceByte.repeat(32)}` as `0x${string}`,
   }
   const signature = await buyer.signTypedData({
@@ -509,6 +517,24 @@ async function signedHeader(nonceByte: string) {
   })).toString('base64')
   return { buyer, header }
 }
+
+test('an authorization valid for days gets a fresh challenge the buyer can act on, and nothing is sent', async () => {
+  clearDomainCache()
+  const { header } = await signedHeader('7c', 7 * 86_400)
+  let broadcasts = 0
+  const out = await railServeTool('risk_check', { agentId: '#0' }, header, railStatus({ ...configured, X402_3009_SETTLEMENT_FEE_USD: '0.02' }), {
+    reader: reader(),
+    env: configured,
+    walletClient: fakeSigningWallet('0x027c', { onSend: () => { broadcasts += 1 } }),
+    signerAddress: PAY_TO as `0x${string}`,
+    loadSpent: async () => [] as string[],
+    loadSettlements: async () => ({ ok: true as const, rows: [] as X402SettlementRecord[] }),
+    handlers: STUB_HANDLERS,
+  })
+  assert.equal(out.httpStatus, 402)
+  assert.match(String((out.body as Record<string, unknown>).verifyError), /at most 3600s/)
+  assert.equal(broadcasts, 0)
+})
 
 /** A mined receipt as a host answers it, carrying the buyer's Transfer to PAY_TO. */
 function hostReceipt(hash: unknown, payer: string) {
