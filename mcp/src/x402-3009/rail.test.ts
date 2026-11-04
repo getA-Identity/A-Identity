@@ -167,6 +167,14 @@ test('limits derive from the token decimals and the configured bounds', () => {
   assert.equal(l.maxValue, 1_000_000n)
 })
 
+test('the validity limit is well above what the challenge asks for, and a bad setting cannot crash the check', () => {
+  const s = railStatus(configured)
+  assert.equal(railLimits(s, {} as NodeJS.ProcessEnv).maxValiditySec, 3_600)
+  assert.equal(railLimits(s, { X402_3009_MAX_VALIDITY_SEC: '900' } as NodeJS.ProcessEnv).maxValiditySec, 900)
+  assert.equal(railLimits(s, { X402_3009_MAX_VALIDITY_SEC: '900.5' } as NodeJS.ProcessEnv).maxValiditySec, 900, 'BigInt() throws on a fraction')
+  assert.equal(railLimits(s, { X402_3009_MAX_VALIDITY_SEC: 'soon' } as NodeJS.ProcessEnv).maxValiditySec, 3_600)
+})
+
 test('a chain whose gas token is USDC gets dollar gas ceilings, and the ETH variables do not reach it', () => {
   // Arc Mainnet's first settlement on 2026-09-16 was refused by the ETH-denominated default:
   // 0.0258 USDC of projected gas against a ceiling of 0.00002 "ether" read as USDC.

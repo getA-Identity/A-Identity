@@ -95,6 +95,10 @@ export type Limits = {
    *  we are mining it, burning our gas for nothing, and the buyer would see a failure
    *  they cannot distinguish from a bad signature. */
   expiryHeadroomSec: number
+  /** Refuse an authorization valid for longer than this many seconds from now. While a broadcast
+   *  of it has no answer the buyer is told to wait, and the authorization's own deadline is what
+   *  ends that wait, so a window of days would hold them for days. A retry only has less left. */
+  maxValiditySec: number
   /** Hard native-unit ceiling on one settlement's gas. Native units only, so no price
    *  oracle is invented; a gas spike fails closed rather than quietly costing more. */
   maxGasWei: bigint
@@ -114,6 +118,7 @@ export type VerifyCode =
   | 'not_yet_valid'
   | 'expired'
   | 'expiring_too_soon'
+  | 'validity_too_long'
   | 'nonce_used'
   | 'already_redeemed'
   | 'bad_signature'
@@ -192,6 +197,10 @@ export type EngineDeps = DomainDeps & {
   requestHash?: string
   /** How long to wait for a fresh broadcast's receipt, in ms. */
   timeoutMs?: number
+  /** How long a send waits for its row, in ms. Injected by tests. */
+  rowWriteMs?: number
+  /** The waits between tries at closing the row of a transaction never sent. Injected by tests. */
+  closeRetryMs?: readonly number[]
   /** Options for the every-RPC receipt reads. Injected by tests; the hosts default to the chain's. */
   receipts?: EveryRpcOptions
   /** The settlement log, with "empty" and "unreadable" told apart. */
@@ -321,6 +330,14 @@ export async function verifyPayment(input: {
     }
   }
 
+  if (a.validBefore - nowSec > BigInt(limits.maxValiditySec)) {
+    return {
+      isValid: false,
+      code: 'validity_too_long',
+      invalidReason: `authorization is valid for ${a.validBefore - nowSec}s, and this rail takes at most ${limits.maxValiditySec}s. Nothing was sent. Sign a new one with an earlier validBefore; the challenge's maxTimeoutSeconds is enough.`,
+    }
+  }
+
   const domain = await provenDomainCached(chain, token, deps)
   if (!domain.ok) return { isValid: false, code: 'domain_unproven', invalidReason: domain.reason }
 
@@ -442,9 +459,11 @@ export async function settlePayment(input: SettleInput): Promise<SettleResult> {
 
   const { authorization: a, signature, proven, key } = verified
   if (inFlight.has(key)) {
-    return { success: false, code: 'in_flight', errorReason: 'this authorization is already being settled' }
+    return { success: false, code: 'in_flight', errorReason: 'this authorization is already being settled. Do not sign a new one; retry this one shortly.' }
   }
   inFlight.add(key)
+  // Set when the key must outlive this call. See closeUnsentRow.
+  let keyHeldUntil: Promise<void> | null = null
   try {
     // The same authorization may already be on its way. Broadcasting it again could only
     // revert at our cost, and the host that said its nonce was unused may simply lag.
@@ -529,6 +548,7 @@ export async function settlePayment(input: SettleInput): Promise<SettleResult> {
     // it and the connection dropped, or this process dies, the row still names the hash and the
     // nonce: a retry of this authorization reads that hash from every RPC and broadcasts nothing.
     let sent: SignedSend
+    let rowWrite: Promise<boolean> = Promise.resolve(false)
     try {
       sent = await sendCallSigned(
         chain,
@@ -539,7 +559,8 @@ export async function settlePayment(input: SettleInput): Promise<SettleResult> {
           rpc: deps.receipts,
           beforeSend: async ({ hash, nonce, from }) => {
             const rec = record({ ...base, outcome: 'ambiguous', tx: hash, signer: from ?? signerAddress, signerNonce: nonce })
-            if (!(await writeInTime(persist, rec))) throw new Error('the settlement log could not be written')
+            rowWrite = safePersist(persist, rec)
+            if (!(await inTime(rowWrite, deps.rowWriteMs ?? ROW_WRITE_MS))) throw new Error('the settlement log could not be written')
           },
         },
       )
@@ -550,9 +571,9 @@ export async function settlePayment(input: SettleInput): Promise<SettleResult> {
       return { success: false, code: 'broadcast_failed', errorReason: `could not prepare the settlement, so nothing was sent: ${nodeSaid(e)}` }
     }
     if (sent.status === 'not_noted') {
-      // The write may have committed with its answer lost, so the row is closed if it is there.
-      // Not awaited: a log that just failed must not hold up the answer to the buyer.
-      void resolve(sent.hash, { outcome: 'dropped', reconciledAt: now().toISOString() }).catch(() => null)
+      // The write may have committed with its answer lost, or may still commit, so the row is
+      // closed if it is there. Not awaited: a log that just failed must not hold up the answer.
+      keyHeldUntil = closeUnsentRow(resolve, sent.hash, now, rowWrite, CLOSE_DEADLINE_MS, deps.closeRetryMs)
       return {
         success: false,
         code: 'settlement_log_unavailable',
@@ -561,7 +582,7 @@ export async function settlePayment(input: SettleInput): Promise<SettleResult> {
     }
     if (sent.status === 'refused') {
       // No node took it and no RPC has it. The authorization is still unused and may be retried.
-      await resolve(sent.hash, { outcome: 'dropped', reconciledAt: now().toISOString() }).catch(() => null)
+      await closeUnsentRow(resolve, sent.hash, now, rowWrite, ROW_WRITE_MS, deps.closeRetryMs)
       return { success: false, code: 'broadcast_failed', errorReason: `the node refused the settlement, so nothing was sent: ${sent.reason}` }
     }
     const hash = sent.hash
@@ -656,7 +677,8 @@ export async function settlePayment(input: SettleInput): Promise<SettleResult> {
       ...(replayKeyWarning ? { replayKeyWarning } : {}),
     }
   } finally {
-    inFlight.delete(key)
+    if (keyHeldUntil) void keyHeldUntil.finally(() => inFlight.delete(key))
+    else inFlight.delete(key)
   }
 }
 
@@ -777,9 +799,11 @@ export async function reconcileAmbiguousSettlements(
  * a retry looks like when the first attempt's receipt came late, and the authorization's clock
  * keeps running while the buyer waits, so a late retry is refused as expired before the nonce
  * is even read. A replay key with no served call is a settlement whose tool failed or whose
- * response never reached the buyer. None of them may send a buyer who paid back to pay again.
+ * response never reached the buyer. A window over the limit can only be a broadcast made before
+ * the limit, since it is refused before any send. None of them may send a buyer who paid back to
+ * pay again.
  */
-const RETRY_REFUSALS: VerifyCode[] = ['nonce_used', 'expired', 'expiring_too_soon', 'already_redeemed']
+const RETRY_REFUSALS: VerifyCode[] = ['nonce_used', 'expired', 'expiring_too_soon', 'validity_too_long', 'already_redeemed']
 
 /**
  * Answer a refused authorization from the log, if the log has broadcast it. Null means this is
@@ -1068,15 +1092,63 @@ function msg(e: unknown): string {
 /** How long a send waits for its row. A stalled database is a failed write, and nothing is sent. */
 const ROW_WRITE_MS = 8_000
 
-/** safePersist with a deadline, for the write a send is waiting on, one signer's sends behind it. */
-async function writeInTime(persist: NonNullable<EngineDeps['persist']>, rec: X402SettlementRecord): Promise<boolean> {
+/** A write with a deadline, for the one a send is waiting on, one signer's sends behind it. */
+async function inTime(write: Promise<boolean>, ms: number): Promise<boolean> {
   let timer: ReturnType<typeof setTimeout> | undefined
   const gaveUp = new Promise<boolean>((resolve) => {
-    timer = setTimeout(() => resolve(false), ROW_WRITE_MS)
+    timer = setTimeout(() => resolve(false), ms)
   })
   try {
-    return await Promise.race([safePersist(persist, rec), gaveUp])
+    return await Promise.race([write, gaveUp])
   } finally {
+    if (timer) clearTimeout(timer)
+  }
+}
+
+const CLOSE_RETRY_MS: readonly number[] = [250, 1_000, 4_000]
+/** The most a closing may hold this authorization's key after the answer has gone back. */
+const CLOSE_DEADLINE_MS = 30_000
+
+/**
+ * Close the row of a transaction that was never sent, so a retry of the authorization can send it.
+ * Left open, no host will ever hold that hash, and the buyer is told to wait until validBefore.
+ *
+ * It waits for the row's own write first, because a write that outran its deadline can commit
+ * after a mark that found nothing, and it tries again because the log just failed. It never
+ * throws and it ends by the deadline, with the row left as it is (the validBefore limit bounds
+ * that). The caller keeps the authorization's key in `inFlight` until this ends: a retry signed
+ * with the same nonce and fees has this very hash, and a mark landing after that send would close
+ * the row of a transaction that really went out.
+ */
+async function closeUnsentRow(
+  resolve: NonNullable<EngineDeps['resolveSettlement']>,
+  hash: string,
+  now: () => Date,
+  rowWrite: Promise<unknown>,
+  deadlineMs: number,
+  retryMs: readonly number[] = CLOSE_RETRY_MS,
+): Promise<void> {
+  let over = false
+  const closing = async () => {
+    await rowWrite
+    for (let attempt = 0; !over; attempt += 1) {
+      const out = await resolve(hash, { outcome: 'dropped', reconciledAt: now().toISOString() }).catch(() => null)
+      if (out?.ok) return
+      if (attempt >= retryMs.length) {
+        console.error(`[x402-3009] the row of ${hash}, never sent, could not be closed`)
+        return
+      }
+      await new Promise((r) => setTimeout(r, retryMs[attempt]))
+    }
+  }
+  let timer: ReturnType<typeof setTimeout> | undefined
+  const gaveUp = new Promise<void>((r) => {
+    timer = setTimeout(r, deadlineMs)
+  })
+  try {
+    await Promise.race([closing(), gaveUp])
+  } finally {
+    over = true
     if (timer) clearTimeout(timer)
   }
 }
