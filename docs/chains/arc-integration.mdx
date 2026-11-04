@@ -462,6 +462,7 @@ labeled internal.
 | `DENY` | Nothing to sign. The refusal is public on the flow record. You have paid for the check and nothing else. | Nobody |
 | `WARN` | No automatic payment. The answer is the verdict plus a prepared `ownerPay` for the vault's owner (`awaiting_human`). Set `payOnWarn` to true to prepare `pay()` for the operator instead; it is off unless you ask. A payee we know nothing about gets `WARN`, so `payOnWarn` on such a payee is your own explicit choice to pay it. | The owner, or the operator with `payOnWarn` |
 | `ALLOW` | The exact `pay(payee, amount)` for the operator to send. | The operator |
+| `ALLOW` or `WARN`, on a payment above the vault's ceiling or off its allowlist | No automatic payment, whatever `payOnWarn` says: the vault would refuse the operator. The answer is the verdict plus a prepared `ownerPay` (`awaiting_human`, `ownerHandoff.ownerOnly` names the gate). | The owner |
 
 Four real addresses show the verdicts, each with the day it was read. A check on any of them costs
 0.005 USDC. The first three are ours, a payment to any of them is a real transfer to us, and their
@@ -483,24 +484,76 @@ prepared. An agent named in `payeeAgentId` that the payee does not own
 (`PAYEE_AGENT_MISMATCH`) and a registry that does not answer (`REGISTRY_UNREADABLE`) are still
 refused at the free checks, with nothing bought.
 
-**The vault's own limits come first.** A payment above the vault's per-payment ceiling
+**What the operator cannot pay, the owner can.** A payment above the vault's per-payment ceiling
 (`AboveAutoApprove`; a vault deployed at [/app/vault/arc](https://a-identity.xyz/app/vault/arc)
-starts at 0.25 USDC), or to a payee off an allowlist that is on (`PayeeNotAllowed`), is refused at
-the free checks. Nothing is bought, no verdict comes back and nothing is prepared. Only the owner
-can pay it as it stands, by calling `ownerPay` directly, with no verdict behind it. For a verdict
-and a hand-off, the owner raises the ceiling or allows the payee, and the operator asks again.
+starts at 0.25 USDC), or to a payee off an allowlist that is on (`PayeeNotAllowed`), is one `pay()`
+would revert and `ownerPay()` would not. So it is not refused at the free checks. The `402` says up
+front that this applies, that the check is still charged, and that only the owner can settle it, and
+`checks.vault.ownerOnly` names the gate. The flow then buys the check. A usable `ALLOW` or `WARN`
+answers `awaiting_human` with `ownerPay`, a `DENY` refuses as usual, and `payOnWarn` cannot make the
+operator pay what the vault would refuse. Since `ownerPay` has no cap check, a real invoice above the
+ceiling reaches the owner even if it is above the daily cap too.
+
+Every other refusal stays one, with nothing charged: a frozen vault, an expired session key, no
+operator, a daily cap the payment would pass inside the ceiling, too little in the vault. On a vault
+whose owner is its operator there is no human to hand anything to, so `AboveAutoApprove` and
+`PayeeNotAllowed` stay refusals there as well.
 
 ### When a payment waits for its owner
 
-`awaiting_human` hands back the exact call for the owner's key, and that key has to send it. The
-vault page does not do that today: it has no action for sending `ownerPay` or posting its receipt. If
-you deployed from the vault page your wallet is the owner, so you can send it from that wallet, with
-no key leaving it, using the sample below in the browser console or your own page. Read the verdict's
-reasons first.
+`awaiting_human` hands back the exact call for the owner's key, and that key has to send it. If you
+deployed from the vault page your wallet is the owner, so the vault page is where you do that.
 
-The flow id is what your agent got back: `out.flowId` from `verifyThenPay`, or `flowId` from the hosted
-route. Have it hand that to you. There is no list of waiting flows by vault. The flow record is public,
-so nothing here needs a secret, and the sample encodes the call itself rather than trusting the record.
+Open your vault at [/app/vault/arc](https://a-identity.xyz/app/vault/arc) with the owner wallet
+connected, and it lists the payments waiting for you. Or follow the link your agent sends you:
+`ownerHandoff.approvalUrl` from the hosted route, `out.approvalUrl` from `verifyThenPay`, always on
+`https://a-identity.xyz`. For each payment the page says who gets paid, how much, what the check said
+and why, when it was checked, and that approving counts toward today's budget. `ownerPay` adds to the
+day's spending with no cap check, so an approval can use up the budget and stop your agent until 00:00
+UTC. It works while the vault is frozen, by design, and the page says that too. You review it, your
+wallet signs it, the page waits for the receipt and posts it, and the server reads it from the chain.
+Nothing shows as paid before that.
+
+What the page refuses, each for a reason:
+
+- **A check your agent did not pay for.** A check costs 0.005 USDC and can name any vault, so a stranger
+  can open a flow on yours with a payee of their own, and send you a link to it. A flow counts as a
+  request from your agent only when its check was paid by this vault's operator as the chain reads it
+  now, and by the operator of the moment it was checked. Anything else gets no action. The list shows
+  only a count of them. A direct link shows a plain warning, and neither the payee nor the amount. So
+  pay for the check from the operator key, which is the default, if you want the page to offer the
+  approval: a flow whose check a separate `payer` paid gets no action on the page, and the sample below
+  is the path for that.
+- **A record that does not match.** `owner()`, the operator and the balance are read from the chain, and
+  `ownerPay` is encoded from the payee and the amount on screen and compared with the call the record
+  prepared. On any difference there is no action. The connected wallet has to be the vault's owner, on
+  the registry's chain.
+- **A second send.** The contract knows nothing of flows, so two sends pay twice. The page keeps the hash
+  by flow in your browser, from before your wallet is asked, shared by tabs and kept across a reload, and
+  offers no second send until that hash has a final answer. It also reads the vault's own `Paid` events
+  before it offers anything, so a payment you made from another browser or wallet is not made again. A
+  wallet's speed-up gives the payment a new hash, and the page finds that one the same way.
+- **A check older than 24 hours**, by the chain's clock. An owner has to be able to find a request in a
+  working day, and past that our answer may be wrong without anyone having seen it change. A new check
+  costs your agent 0.005 USDC.
+- **A failed practice run.** The call is simulated from your account right before each send, and if that
+  fails the page says why and sends nothing.
+- **`DENY` and refused flows** never get an action, and neither does a payment to your agent's own key.
+
+**Saying no.** A flow has no state for it, so nothing records your answer. The page hides the payment in
+your browser, and that is all: your agent is not told, the public record still says it is waiting, and the
+agent can ask again. It stops being offered 24 hours after the check. Saying no does not stop your agent:
+use Freeze or Revoke on the same page for that.
+
+What only a person with a real wallet can see is how that wallet shows the call. The page has been run
+against a real backend and a real browser on a local fork of Arc Mainnet with a stand-in wallet, and that
+does not show a real wallet's own screens or how it prices a transaction.
+
+**A key held by a script, or a browser wallet with no page.** The flow id is what your agent got back:
+`out.flowId` from `verifyThenPay`, or `flowId` from the hosted route. `GET /api/x402/gateway/flows?vault=0x...`
+lists what waits on a vault. The flow record is public, so nothing here needs a secret, and the sample
+encodes the call itself rather than trusting the record. Read the verdict's reasons first, and check
+`flow.check.payer` against the vault's `operator()`: nothing below does that for you.
 
 ```ts
 import { createPublicClient, createWalletClient, custom, encodeFunctionData, http, parseAbi } from 'viem'
@@ -560,11 +613,11 @@ never sent to `risk_check`) and `payOnWarn`. The body's `stage` says where the f
 
 | Status | `stage` | Meaning |
 | --- | --- | --- |
-| `400`, `422` | `refused` | Bad input, a named agent that is not the payee's, or the vault would refuse. `code` names why. Nothing charged, and no verdict comes back. |
+| `400`, `422` | `refused` | Bad input, a named agent that is not the payee's, or the vault would refuse and its owner could not settle it either. `code` names why. Nothing charged, and no verdict comes back. |
 | `409` | `refused` | `NONCE_ALREADY_USED`: this authorization already opened a flow. This request charged nothing, but the first request with this nonce may have. Read `GET /api/x402/gateway/flows/<nonce>` or the Gateway proof log before signing a new one. |
-| `402` | `payment_required` | The free checks passed. Nothing charged yet. A payee that holds no agent passes them, with `checks.payee.agentsHeld` 0, and `next` says what to expect. |
+| `402` | `payment_required` | The free checks passed. Nothing charged yet. A payee that holds no agent passes them, with `checks.payee.agentsHeld` 0, and `next` says what to expect. So does a payment only the owner can settle, with `checks.vault.ownerOnly` set, and `next` says the check is still charged. |
 | `200` | `prepared` | Send `prepared` from the operator key, unless `prepared.simulation.ok` is false, which means the vault would refuse it right now. |
-| `200` | `awaiting_human` | `WARN`: send `ownerHandoff.ownerPay` from the owner key, unless `ownerHandoff.ownerPay.simulation.ok` is false, which means the vault would refuse it right now. A payee we know nothing about ends here. |
+| `200` | `awaiting_human` | `WARN`, or a usable verdict on a payment only the owner can settle: send the owner `ownerHandoff.approvalUrl`, or send `ownerHandoff.ownerPay` from the owner key, unless `ownerHandoff.ownerPay.simulation.ok` is false, which means the vault would refuse it right now. A payee we know nothing about ends here. |
 | `200` | `deny`, `verdict_unusable` | Do not pay. Nothing was prepared. |
 | `200` | `warn_no_human_gate` | `WARN`, and the vault's owner and operator are one key, so there is nobody to hand it to. The check was paid. Do not pay. Nothing was prepared. |
 | `409`, `500` | `deny`, `verdict_unusable` | Do not pay. The check was paid and answered, but the flow log does not hold the refusal, so it is not public. |
@@ -592,6 +645,13 @@ check's authorization nonce. The record holds the vault with its owner and opera
 amount, the check, the verdict with its reasons, the prepared call, and the payment once proven.
 It is public on purpose, for every flow, because a `DENY` has no transaction and this record is the
 evidence it happened. Do not use this route for a payment you need to keep private.
+
+`GET https://a-identity.xyz/api/x402/gateway/flows?vault=0x...` needs no key either, and publishes
+nothing new. `waiting` holds the flows waiting for that vault's owner whose check was paid by the key
+that was its operator when checked, newest first, at most 20, and `truncated` says when there were
+more. Compare that with the vault's operator now before you treat one as a request. `notFromOperator`
+only counts the rest, up to 100: anyone can buy a check naming any vault, so those are not requests,
+and they cannot crowd out the ones that are. It allows 30 reads a minute per address.
 
 `POST .../flows/<flowId>/receipt` with `{"txHash":"0x..."}` closes a flow. The server reads the
 receipt from every RPC and marks the flow `executed` only on the vault's `Paid` event and USDC's
