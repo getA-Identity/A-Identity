@@ -7,6 +7,8 @@ import { CHAINS } from './chains/registry.js'
 import { PROVENANCE } from './chains/provenance.js'
 import { arcLedgerFacts } from './chains/frontend-ledger.js'
 import { PAGE_MAX_SESSION_SECONDS } from './arc-owner-vault.js'
+import { BaseError, ContractFunctionZeroDataError, HttpRequestError, InternalRpcError, LimitExceededRpcError, RpcRequestError } from 'viem'
+import { getContractError } from 'viem/utils'
 
 /**
  * The Arc vault page's rules, run from src/ as they ship (/app/vault/arc deploys and runs vaults
@@ -38,6 +40,7 @@ type Rules = {
   MAX_SESSION_SECONDS: number
   DEFAULT_DAILY_CAP: string
   DEFAULT_AUTO_APPROVE: string
+  DEFAULT_FUNDING: string
   OWNER_ACTION_GAS: bigint
   parseUnitsExact: (text: string, decimals: number) => bigint | null
   formatUnitsExact: (raw: bigint, decimals: number) => string
@@ -81,6 +84,18 @@ type TxRules = {
   fundingLanded: (r: Rec | undefined) => boolean
   readBeforeFunding: (s: Rec, snapshot: Rec | null) => boolean
   fundingUnresolved: (r: Rec | undefined) => boolean
+  heardEnough: (answered: number, total: number) => boolean
+  saidNothing: (r: Rec, answered: number, total: number) => boolean
+  readBeforeExpiry: (s: Rec, snapshot: Rec | null) => boolean
+  fundingInDoubt: (s: Rec, pageTx?: Rec | null) => boolean
+  pageTxOnStep3: (r: Rec | null | undefined) => boolean
+  stepMovedOn: (from: string, to: string) => boolean
+  setupFundEndedOn: (s: Rec | null, network: string | null, vault: string | null, snapshot: Rec | null) => Rec | null
+  setupFundInDoubtOn: (s: Rec | null, network: string | null, vault: string | null, snapshot: Rec | null) => boolean
+  fundAsked: (s: Rec, amount: bigint, at: string) => Rec
+  fundSent: (s: Rec, r: Rec) => Rec
+  fundTarget: (s: Rec) => bigint
+  setupTxOn: (s: Rec | null, network: string | null, vault: string | null) => { field: string; record: Rec } | null
   withRecord: (s: Rec, field: string, r: Rec) => Rec
   predictedVault: (s: Rec) => string | null
   setupAlert: (s: Rec | null, snapshot: Rec | null) => string | null
@@ -126,6 +141,8 @@ const VAULT = '0x3333333333333333333333333333333333333333'
 const VICTIM = '0x1111111111111111111111111111111111111111'
 const ATTACKER = '0x4444444444444444444444444444444444444444'
 const HASH = `0x${'ab'.repeat(32)}`
+/** A check every host answered with "no receipt". Without this, nothing is known about the chain. */
+const heard = { receipts: { answered: 4, total: 4 } }
 
 /** Every Arc vault page source file, from the repository root. */
 function arcPageFiles(): string[] {
@@ -664,10 +681,10 @@ test('a transaction nobody has seen says so in plain words at 30 seconds, and a 
   const iso = (ms: number) => new Date(ms).toISOString()
   const fresh = record({ submittedAt: iso(start), proposedMaxFee: 40_000_000_000n })
   // Before the mark, or on a check that did not ask: nothing is said.
-  assert.equal(t.decideUnseen(fresh, { now: start + t.UNSEEN_AFTER_MS - 1, tx: null }).unseen, undefined)
-  assert.equal(t.decideUnseen(fresh, { now: start + t.UNSEEN_AFTER_MS }).unseen, undefined, 'no read of the transaction, so nothing is known')
+  assert.equal(t.decideUnseen(fresh, { ...heard, now: start + t.UNSEEN_AFTER_MS - 1, tx: null }).unseen, undefined)
+  assert.equal(t.decideUnseen(fresh, { ...heard, now: start + t.UNSEEN_AFTER_MS }).unseen, undefined, 'no read of the transaction, so nothing is known')
   // At the mark: said, and still only pending. It may well land.
-  const unseen = t.decideUnseen(fresh, { now: start + t.UNSEEN_AFTER_MS, tx: null })
+  const unseen = t.decideUnseen(fresh, { ...heard, now: start + t.UNSEEN_AFTER_MS, tx: null })
   assert.equal(unseen.unseen, true)
   assert.equal(unseen.outcome, 'pending')
   assert.equal(unseen.note, t.UNSEEN_NOTE)
@@ -675,12 +692,12 @@ test('a transaction nobody has seen says so in plain words at 30 seconds, and a 
   assert.match(t.UNSEEN_NOTE, /some wallets change the fee/)
   // Then it shows up: the warning goes, and the fee it really carries decides what is said.
   const low = { maxFeePerGas: r.FEE_FLOOR_WEI - 1n, gasPrice: null, nonce: 7, from: OWNER }
-  const seen = t.decideUnseen(unseen, { now: start + 40_000, tx: low })
+  const seen = t.decideUnseen(unseen, { ...heard, now: start + 40_000, tx: low })
   assert.equal(seen.unseen, undefined)
   assert.equal(seen.note, undefined)
   assert.equal((seen.sent as Rec).belowFloor, true)
   assert.equal(t.walletRepriced(seen), true)
-  assert.equal(t.walletRepriced(t.decideUnseen(fresh, { now: start, tx: { ...low, maxFeePerGas: 40_000_000_000n } })), false)
+  assert.equal(t.walletRepriced(t.decideUnseen(fresh, { ...heard, now: start, tx: { ...low, maxFeePerGas: 40_000_000_000n } })), false)
   assert.equal(t.walletRepriced(record()), false, 'nothing read back, nothing to compare')
   // A receipt ends it, and carries no stale warning.
   const done = t.decideLanded(unseen, landed(), { missing: [] })
@@ -688,7 +705,7 @@ test('a transaction nobody has seen says so in plain words at 30 seconds, and a 
   assert.equal(done.note, undefined)
   assert.equal(t.retracked(t.untracked(unseen)).unseen, undefined)
   const page = codeOnly(repo('src/components/app/arc/TxReceipt.tsx'))
-  assert.match(page, /record\.outcome === 'pending' && record\.unseen && \(/)
+  assert.match(page, /record\.outcome === 'pending' && record\.unseen && !silent && \(/)
   assert.match(page, /record\.proposedMaxFee !== undefined && ` This page asked for a max fee of/)
   assert.match(page, /a\.unseen !== b\.unseen/, 'a change of this flag would not be saved')
   assert.match(page, /record\.unseen \? 'Do not sign a new one until you have looked in your wallet\.'/)
@@ -711,13 +728,13 @@ test('a speed-up of a hash never seen is noticed by the nonce read while prepari
   assert.equal(t.guessedNonce({ ...write, action: 'deploy' }), undefined, 'a deploy has its own proof, the vault at its address')
   assert.equal(t.guessedNonce({ ...write, sent: { nonce: 8 } }), undefined, 'the chain has named the real one')
   // Not used yet: nothing.
-  assert.equal(t.decideUnseen(write, { now, latestNonce: 7 }).nonceUsedAt, undefined)
+  assert.equal(t.decideUnseen(write, { ...heard, now, latestNonce: 7 }).nonceUsedAt, undefined)
   // Used: watched first.
-  const first = t.decideUnseen(write, { now, tx: null, latestNonce: 8 })
+  const first = t.decideUnseen(write, { ...heard, now, tx: null, latestNonce: 8 })
   assert.equal(first.outcome, 'pending')
   assert.equal(first.nonceUsedAt, iso(now))
   // Still never seen after the watch: the page stops holding on it, and says it may still land.
-  const later = t.decideUnseen(first, { now: now + t.REPLACED_AFTER_MS, tx: null })
+  const later = t.decideUnseen(first, { ...heard, now: now + t.REPLACED_AFTER_MS, tx: null })
   assert.equal(later.outcome, 'untracked', 'a guess is never the final "replaced"')
   assert.equal(later.likelyReplaced, true)
   assert.equal(later.nonceUsedAt, undefined)
@@ -726,22 +743,22 @@ test('a speed-up of a hash never seen is noticed by the nonce read while prepari
   assert.equal(t.retracked(later).likelyReplaced, undefined)
   // The hash shows up during the watch with a later nonce: the wallet queued it, and it is alive.
   const queued = { maxFeePerGas: 40_000_000_000n, gasPrice: null, nonce: 8, from: OWNER }
-  const alive = t.decideUnseen(first, { now: now + t.REPLACED_AFTER_MS, tx: queued, latestNonce: 8 })
+  const alive = t.decideUnseen(first, { ...heard, now: now + t.REPLACED_AFTER_MS, tx: queued, latestNonce: 8 })
   assert.equal(alive.outcome, 'pending')
   assert.equal(alive.nonceUsedAt, undefined)
   assert.equal(alive.note, undefined)
   // Shown with the guessed nonce itself, the existing proof takes over.
-  const own = t.decideUnseen(first, { now: now + 1000, tx: { ...queued, nonce: 7 }, latestNonce: 8 })
+  const own = t.decideUnseen(first, { ...heard, now: now + 1000, tx: { ...queued, nonce: 7 }, latestNonce: 8 })
   assert.equal(own.nonceUsedAt, iso(now + 1000))
-  assert.equal(t.decideUnseen(own, { now: now + 1000 + t.REPLACED_AFTER_MS, tx: null }).outcome, 'replaced')
+  assert.equal(t.decideUnseen(own, { ...heard, now: now + 1000 + t.REPLACED_AFTER_MS, tx: null }).outcome, 'replaced')
   // A deploy is left to the rule that reads its address.
-  assert.equal(t.decideUnseen({ ...write, action: 'deploy', deployArgs: DEPLOY_ARGS }, { now, tx: null, latestNonce: 8 }).nonceUsedAt, undefined)
+  assert.equal(t.decideUnseen({ ...write, action: 'deploy', deployArgs: DEPLOY_ARGS }, { ...heard, now, tx: null, latestNonce: 8 }).nonceUsedAt, undefined)
   // Every write carries the nonce, and the check asks about it.
   const lib = codeOnly(repo('src/lib/arc/vault-write.ts'))
   for (const fn of ['prepareOwnerCall', 'prepareFund']) assert.match(fnBody(lib, fn), /nonceHint\(c, /, `${fn} no longer reads the next nonce`)
   assert.match(codeOnly(repo('src/lib/arc/receipt.ts')), /record\.sent\?\.nonce \?\? guessedNonce\(record\)/)
   assert.match(codeOnly(repo('src/components/app/arc/TxReceipt.tsx')), /record\.likelyReplaced\s*\? `\$\{record\.what\}: most likely replaced/)
-  assert.match(codeOnly(repo('src/components/app/arc/DeployFlow.tsx')), /outcome === 'replaced' \|\| setup\.fundTx\?\.likelyReplaced/)
+  assert.match(codeOnly(repo('src/components/app/arc/DeployFlow.tsx')), /outcome === 'replaced' \|\| doubtedFund\?\.likelyReplaced/)
 })
 
 test('the deploy flow says plainly what each confirmation does and costs, who holds what, and what to do when a step fails', async () => {
@@ -974,7 +991,7 @@ test('a wallet error that sent nothing has a labelled way out, and the notice do
   const raw = repo('src/components/app/arc/DeployFlow.tsx')
   assert.match(raw, /My wallet shows nothing was sent: start again/)
   const flow = codeOnly(raw)
-  assert.match(flow, /next=\{step === 'sending' \? SENDING_NEXT : undefined\}/)
+  assert.match(flow, /next=\{step === 'sending' \? SENDING_NEXT : step === 'fund' && setup\?\.fundIntent \? FUND_ASKED_NEXT : undefined\}/)
   assert.match(codeOnly(repo('src/components/app/arc/FailureNotice.tsx')), /const next = instead \?\? usual/)
 })
 
@@ -1246,24 +1263,24 @@ test('one host\'s null decides nothing; this hash\'s nonce used by another is wa
   const now = 1_000_000_000_000
   const iso = (ms: number) => new Date(ms).toISOString()
   // No receipt anywhere and nothing else known: still pending, unchanged.
-  const quiet = t.decideUnseen(record(), { now })
+  const quiet = t.decideUnseen(record(), { ...heard, now })
   assert.equal(quiet.outcome, 'pending')
   assert.equal(quiet.nonceUsedAt, undefined)
   // The transaction itself, read back: a fee under the floor is flagged.
   const tx = { maxFeePerGas: r.FEE_FLOOR_WEI - 1n, gasPrice: null, nonce: 7, from: OWNER }
-  const seen = t.decideUnseen(record(), { now, tx })
+  const seen = t.decideUnseen(record(), { ...heard, now, tx })
   assert.equal((seen.sent as Rec).belowFloor, true)
   assert.equal(seen.outcome, 'pending')
   const sent = { maxFeePerGas: r.FEE_FLOOR_WEI, gasPrice: null, nonce: 7, belowFloor: false, from: OWNER }
   // Its nonce not yet used: nothing to say.
-  assert.equal(t.decideUnseen(record({ sent }), { now, latestNonce: 7 }).nonceUsedAt, undefined)
+  assert.equal(t.decideUnseen(record({ sent }), { ...heard, now, latestNonce: 7 }).nonceUsedAt, undefined)
   // Used: watched first, never final on one look.
-  const first = t.decideUnseen(record({ sent }), { now, latestNonce: 8 })
+  const first = t.decideUnseen(record({ sent }), { ...heard, now, latestNonce: 8 })
   assert.equal(first.outcome, 'pending')
   assert.equal(first.nonceUsedAt, iso(now))
-  assert.equal(t.decideUnseen(record({ sent, nonceUsedAt: iso(now - t.REPLACED_AFTER_MS + 1) }), { now }).outcome, 'pending')
+  assert.equal(t.decideUnseen(record({ sent, nonceUsedAt: iso(now - t.REPLACED_AFTER_MS + 1) }), { ...heard, now }).outcome, 'pending')
   // Still no receipt for this hash after the watch: replaced, final, and nothing waits on it.
-  const done = t.decideUnseen(record({ sent, nonceUsedAt: iso(now - t.REPLACED_AFTER_MS) }), { now })
+  const done = t.decideUnseen(record({ sent, nonceUsedAt: iso(now - t.REPLACED_AFTER_MS) }), { ...heard, now })
   assert.equal(done.outcome, 'replaced')
   assert.match(String(done.note), /can no longer land/)
   // A receipt after all wins over the watch.
@@ -1279,23 +1296,23 @@ test('a deploy with no receipt is recognized by the vault at its CREATE address,
   const now = 1_000_000_000_000
   const deploy = record({ action: 'deploy', vault: null, expect: [], deployArgs: DEPLOY_ARGS, predicted: VAULT, nonce: 3 })
   // A speed-up landed: the vault reads back exactly as asked where this nonce deploys.
-  const found = t.decideUnseen(deploy, { now, latestNonce: 4, createdAt: { address: VAULT, back: { status: 'ok', why: null } } })
+  const found = t.decideUnseen(deploy, { ...heard, now, latestNonce: 4, createdAt: { address: VAULT, back: { status: 'ok', why: null } } })
   assert.equal(found.outcome, 'replaced')
   assert.equal(found.vault, VAULT)
   // The transaction never seen and only the nonce read while preparing used: the wallet may have
   // given the deploy a later nonce, so this is not called replaced.
-  const guessed = t.decideUnseen(deploy, { now, latestNonce: 4, createdAt: { address: VAULT, back: { status: 'no_code', why: 'no code' } } })
+  const guessed = t.decideUnseen(deploy, { ...heard, now, latestNonce: 4, createdAt: { address: VAULT, back: { status: 'no_code', why: 'no code' } } })
   assert.equal(guessed.outcome, 'pending')
   assert.equal(guessed.nonceUsedAt, undefined)
   // Its own nonce used, watched, and the address it creates holds nothing: no vault, final.
   const sent = { maxFeePerGas: r.FEE_FLOOR_WEI, gasPrice: null, nonce: 3, belowFloor: false, from: OWNER }
   const watched = { ...deploy, sent, nonceUsedAt: new Date(now - t.REPLACED_AFTER_MS).toISOString() }
-  const cancelled = t.decideUnseen(watched, { now, createdAt: { address: VAULT, back: { status: 'no_code', why: 'no code' } } })
+  const cancelled = t.decideUnseen(watched, { ...heard, now, createdAt: { address: VAULT, back: { status: 'no_code', why: 'no code' } } })
   assert.equal(cancelled.outcome, 'replaced')
   assert.equal(cancelled.vault, null)
   // ...but not while that address could not be read at all.
-  assert.equal(t.decideUnseen(watched, { now, createdAt: { address: VAULT, back: { status: 'unreadable', why: 'down' } } }).outcome, 'pending')
-  assert.equal(t.decideUnseen(watched, { now }).outcome, 'pending')
+  assert.equal(t.decideUnseen(watched, { ...heard, now, createdAt: { address: VAULT, back: { status: 'unreadable', why: 'down' } } }).outcome, 'pending')
+  assert.equal(t.decideUnseen(watched, { ...heard, now }).outcome, 'pending')
 })
 
 const setupOf = (over: Rec = {}): Rec => ({
@@ -1446,7 +1463,7 @@ test('a funding counts once its Transfer landed or the vault holds it, and one w
   assert.equal(t.setupStep({ ...s, funding: 0n }, false, bounded), 'done')
   // And the deploy view keeps the second funding behind an explicit confirmation (wiring).
   const flow = repo('src/components/app/arc/DeployFlow.tsx')
-  assert.match(flow, /fundingUnresolved\(setup\.fundTx\) && !refundConfirmed/, 'DeployFlow offers a second funding without asking')
+  assert.match(flow, /fundingInDoubt\(setup, pageTx\) && !fundAsking && !refundConfirmed/, 'DeployFlow offers a second funding without asking')
   assert.match(flow, /setupStep\(setup, review !== null, snapshot\)/, 'DeployFlow no longer takes its step from setupStep')
 })
 
@@ -1464,7 +1481,10 @@ test('a record is polled on the network it names, the deploy on the network it w
   const owner = codeOnly(repo('src/components/app/arc/OwnerControls.tsx'))
   const revoke = owner.slice(owner.indexOf("act('revoke'"), owner.indexOf("act('revoke'") + 160)
   assert.doesNotMatch(revoke, /\bheld\b/, 'Revoke waits on a pending record again')
-  assert.match(owner, /disabled=\{busy !== null \|\| \(held && !next\)\}/, 'Freeze waits on a pending record again')
+  assert.match(owner, /disabled=\{busy !== null \|\| sent \|\| \(held && !next\)\}/, 'Freeze waits on a pending record again')
+  // It waits only for itself: the same call already on its way is not signed twice.
+  assert.match(owner, /const sent = props\.inFlight === \(next \? 'freeze' : 'unfreeze'\)/)
+  assert.match(owner, /const revokeSent = props\.inFlight === 'revoke'/)
 })
 
 test('the deploy page counts a mainnet vault only from a settled deploy, once its key has an end date, and says the answer in plain words', async () => {
@@ -1520,4 +1540,378 @@ test('the proof page shows each vault\'s owner actions and says when they could 
   assert.match(page, /Still reading this vault's history from the chain/)
   // "None yet" is said only when every block was read.
   assert.match(page, /if \(txs\.length === 0\) return complete \? <div>\{none\}<\/div> : null/)
+})
+
+test('rate limited or no answer is never a verdict: a landed transaction is not called replaced or unseen on hosts that said nothing', async () => {
+  const t = await txRules()
+  const now = 1_000_000_000_000
+  const iso = (ms: number) => new Date(ms).toISOString()
+  // More than half really answering: one host's null is routine on Arc, and an error is no answer.
+  assert.deepEqual([0, 1, 2, 3, 4].map((a) => t.heardEnough(a, 4)), [false, false, false, true, true])
+  assert.equal(t.heardEnough(0, 0), false)
+  class NotFound extends Error {}
+  const limited = await t.firstFound(
+    [Promise.reject(new Error('-32005')), Promise.reject(new Error('429')), Promise.reject(new Error('-32005')), Promise.reject(new Error('429'))],
+    (e) => e instanceof NotFound,
+  )
+  assert.deepEqual(limited, { found: false, answered: 0, total: 4 })
+  const silent = { receipts: { answered: 0, total: 4 } }
+  const oneHost = { receipts: { answered: 1, total: 4 } }
+  const sent = { maxFeePerGas: 40_000_000_000n, gasPrice: null, nonce: 7, belowFloor: false, from: OWNER }
+  const write = record({ sent, submittedAt: iso(now - 60_000) })
+  // The nonce read gets through and the receipt calls do not: no watch begins, on any number of checks.
+  let r = write
+  for (let i = 0; i < 40; i += 1) {
+    for (const quiet of [silent, oneHost]) {
+      r = t.decideUnseen(r, { ...quiet, now: now + i * 5000, latestNonce: 8 })
+      assert.equal(r.outcome, 'pending')
+      assert.equal(r.nonceUsedAt, undefined)
+      assert.doesNotMatch(String(r.note), /sent another transaction/)
+    }
+  }
+  // A watch already running, past its 20 seconds, is ended by such a check, never finished by it.
+  const watching = { ...write, nonceUsedAt: iso(now - t.REPLACED_AFTER_MS), note: 'watching' }
+  for (const quiet of [silent, oneHost, {}]) {
+    const held = t.decideUnseen(watching, { ...quiet, now })
+    assert.equal(held.outcome, 'pending')
+    assert.equal(held.nonceUsedAt, undefined)
+    assert.equal(held.note, undefined)
+  }
+  // Answered, it still ends as it should: a real replacement is called replaced.
+  assert.equal(t.decideUnseen(watching, { ...heard, now }).outcome, 'replaced')
+  // A hash never seen, under a limit: "nobody has seen it" is not said from hosts that said nothing.
+  const fresh = record({ submittedAt: iso(now - 60_000), nonce: 7 })
+  assert.equal(t.decideUnseen(fresh, { ...silent, now, tx: null }).unseen, undefined)
+  assert.equal(t.decideUnseen(fresh, { ...heard, now }).unseen, undefined, 'the transaction read itself went unanswered')
+  // ...and its guess watch is not closed on an unanswered read of the transaction.
+  const guessing = { ...fresh, nonceUsedAt: iso(now - t.REPLACED_AFTER_MS) }
+  assert.equal(t.decideUnseen(guessing, { ...heard, now }).outcome, 'pending')
+  assert.equal(t.decideUnseen(guessing, { ...heard, now, tx: null }).outcome, 'untracked')
+  // A deploy's own proof is a positive fact, so it holds whoever else answered.
+  const deploy = record({ action: 'deploy', vault: null, expect: [], deployArgs: DEPLOY_ARGS, sent: { ...sent, nonce: 3 } })
+  const found = t.decideUnseen(deploy, { ...silent, now, latestNonce: 4, createdAt: { address: VAULT, back: { status: 'ok', why: null } } })
+  assert.equal(found.outcome, 'replaced')
+  assert.equal(found.vault, VAULT)
+  const noCode = { ...deploy, nonceUsedAt: iso(now - t.REPLACED_AFTER_MS) }
+  assert.equal(t.decideUnseen(noCode, { ...silent, now, createdAt: { address: VAULT, back: { status: 'no_code', why: 'one host' } } }).outcome, 'pending')
+  // The wiring: the check hands over how many answered, and the read of the transaction says when it does not know.
+  assert.match(codeOnly(repo('src/lib/arc/receipt.ts')), /receipts: \{ answered: poll\.answered, total: poll\.total \}/)
+  const read = codeOnly(repo('src/lib/arc/vault-read.ts'))
+  assert.match(fnBody(read, 'readTransaction'), /if \(e instanceof TransactionNotFoundError\) answered \+= 1/)
+  assert.match(fnBody(read, 'readTransaction'), /heardEnough\(answered, urls\.length\) \? null : undefined/)
+})
+
+test('the receipt says the network did not answer and keeps asking, and its state belongs to one hash', () => {
+  const page = codeOnly(repo('src/components/app/arc/TxReceipt.tsx'))
+  // Keyed by the hash: a new transaction never inherits "no receipt after 3 minutes".
+  assert.match(page, /<ReceiptOf key=\{props\.record\.hash\} \{\.\.\.props\} \/>/)
+  // Only a check that was answered, with no receipt in, ends the polling.
+  assert.match(page, /setGaveUp\(true\)\s*if \(!quiet && out\?\.record\.block === undefined\) return/)
+  assert.match(page, /const quiet = !out \|\| saidNothing\(out\.record, out\.answered, out\.total\)/)
+  assert.match(page, /elapsed < FAST_FOR_MS && !quiet \? POLL_FAST_MS : POLL_SLOW_MS/, 'hammering hosts that are already limiting this page')
+  // The advice for a hash nobody has seen, and its way out, wait for an answer.
+  assert.match(page, /record\.outcome === 'pending' && record\.unseen && !silent && \(/)
+  assert.match(page, /record\.outcome === 'pending' && silent && \(/)
+  assert.match(page, /record\.unseen && !silent && \(/)
+  // A receipt that is in is never "no receipt after 3 minutes".
+  assert.match(page, /record\.outcome === 'pending' && receiptIn \?/)
+  assert.match(page, /record\.block !== undefined\s*\? `\$\{record\.what\}: landed in block/)
+})
+
+test('a receipt that is in is an answer: a landed transaction waiting on its read-back is never told the network did not answer', async () => {
+  const t = await txRules()
+  class NotFound extends Error {}
+  // What firstFound really returns: the first host with the receipt decides, the others still out.
+  const never = new Promise<string>(() => {})
+  const found = await t.firstFound([Promise.resolve('receipt'), never, never, never], (e) => e instanceof NotFound)
+  assert.equal(found.found, true)
+  assert.deepEqual([found.answered, found.total], [1, 4])
+  assert.equal(t.heardEnough(found.answered, found.total), false, 'if this ever holds, the case below no longer happens')
+  // The read-back has not come in, so the record stays pending, with the receipt's block on it.
+  const rc = landed({ block: 150n, contractAddress: VAULT })
+  const deploy = t.decideLanded(record({ action: 'deploy', vault: null, expect: [], deployArgs: DEPLOY_ARGS }), rc, { deploy: { status: 'unreadable', why: 'limited' } })
+  assert.equal(deploy.outcome, 'pending')
+  assert.equal(deploy.block, 150n)
+  assert.equal(t.saidNothing(deploy, found.answered, found.total), false, 'a deploy')
+  const expiry = t.decideLanded(record({ action: 'expiry', expiry: 1_800_000_000n }), rc, { missing: [], readBack: { ok: false, reason: 'limited' } })
+  assert.equal(expiry.outcome, 'pending')
+  assert.equal(t.saidNothing(expiry, found.answered, found.total), false, 'an expiry')
+  const fund = t.decideLanded(record({ action: 'fund', amount: 500_000n }), rc, { missing: [], readBack: { ok: false, reason: 'limited' } })
+  assert.equal(fund.outcome, 'pending')
+  assert.equal(t.saidNothing(fund, found.answered, found.total), false, 'a funding')
+  // A later check that nobody answers does not take the receipt back.
+  assert.equal(t.saidNothing(deploy, 0, 4), false)
+  // With no receipt in, too few answers still says nothing, and enough answers says something.
+  const waiting = record({ action: 'fund', amount: 500_000n })
+  for (const [answered, nothing] of [[0, true], [1, true], [2, true], [3, false], [4, false]] as const) {
+    assert.equal(t.saidNothing(waiting, answered, 4), nothing, `${answered} of 4`)
+  }
+  assert.equal(t.saidNothing(waiting, 0, 0), true, 'no hosts at all')
+  // The receipt's box and the poll's pace ask this same question, and no other.
+  const page = codeOnly(repo('src/components/app/arc/TxReceipt.tsx'))
+  assert.match(page, /const silent = asked\.checks > 0 && saidNothing\(record, asked\.answered, asked\.total\)/)
+  assert.doesNotMatch(page, /heardEnough/, 'the receipt asks the bare count again')
+})
+
+test('stopping tracking keeps the warning that it can still land', async () => {
+  const t = await txRules()
+  const now = 1_000_000_000_000
+  const unseen = t.decideUnseen(record({ submittedAt: new Date(now - 60_000).toISOString() }), { ...heard, now, tx: null })
+  assert.equal(unseen.unseen, true)
+  const stopped = t.untracked(unseen)
+  assert.equal(stopped.unseen, undefined, 'TxReceipt hides the note of a record still marked unseen')
+  assert.match(String(stopped.note), /it can land later/)
+  const sent = { maxFeePerGas: 40_000_000_000n, gasPrice: null, nonce: 3, belowFloor: false, from: OWNER }
+  const created = t.decideUnseen(
+    { ...unseen, action: 'deploy', vault: null, expect: [], deployArgs: DEPLOY_ARGS, sent },
+    { ...heard, now, latestNonce: 4, createdAt: { address: VAULT, back: { status: 'ok', why: null } } },
+  )
+  assert.equal(created.unseen, undefined)
+  assert.match(String(created.note), /a replacement \(a speed-up\) that landed/)
+  assert.match(codeOnly(repo('src/components/app/arc/TxReceipt.tsx')), /record\.note && !record\.unseen/)
+})
+
+test('a host fault is not a revert: -32603 and rate limits move on to the next host, and one host never says a vault is absent', async () => {
+  const { isContractAnswer, agreedAbsence } = (await hostsModule()) as unknown as {
+    isContractAnswer: (e: unknown) => boolean
+    agreedAbsence: (said: readonly { kind: string; reason: string }[], hostCount: number) => { kind: string; reason: string } | null
+  }
+  const abi = [{ type: 'function', name: 'owner', inputs: [], outputs: [{ type: 'address' }], stateMutability: 'view' }] as const
+  const url = 'https://rpc.example'
+  const rpc = (code: number, message: string, data?: string) => new RpcRequestError({ body: {}, error: { code, message, ...(data ? { data } : {}) }, url })
+  const asContract = (cause: BaseError) => getContractError(cause, { abi, address: VAULT as `0x${string}`, args: [], functionName: 'owner' })
+  // What viem really builds for each answer.
+  const pruned = asContract(new InternalRpcError(rpc(-32603, 'state at block #28764286 is pruned')))
+  assert.ok(pruned.walk((e) => (e as BaseError).name === 'ContractFunctionRevertedError'), 'viem no longer calls this a revert, so this test proves nothing')
+  assert.equal(isContractAnswer(pruned), false, 'a pruned host called a real vault not a vault')
+  assert.equal(isContractAnswer(asContract(new LimitExceededRpcError(rpc(-32005, 'Request exceeds defined limit')))), false)
+  assert.equal(isContractAnswer(asContract(new HttpRequestError({ url, status: 429, body: {}, details: 'Too Many Requests' }))), false)
+  // The contract's own answers still are verdicts, whichever code carries them.
+  assert.equal(isContractAnswer(asContract(rpc(3, 'execution reverted'))), true)
+  assert.equal(isContractAnswer(asContract(rpc(3, 'execution reverted: Nope', '0x08c379a0000000000000000000000000000000000000000000000000000000000000002000000000000000000000000000000000000000000000000000000000000000044e6f706500000000000000000000000000000000000000000000000000000000'))), true)
+  assert.equal(isContractAnswer(asContract(rpc(-32603, 'execution reverted: Nope', '0x08c379a0000000000000000000000000000000000000000000000000000000000000002000000000000000000000000000000000000000000000000000000000000000044e6f706500000000000000000000000000000000000000000000000000000000'))), true, 'a node that speaks -32603 with real revert data')
+  assert.equal(isContractAnswer(asContract(rpc(3, 'custom error', '0xdeadbeef'))), true, 'revert data this ABI does not know')
+  assert.equal(isContractAnswer(asContract(rpc(3, 'truncated', '0x08c379a0'))), true, 'revert data that does not decode')
+  assert.equal(isContractAnswer(asContract(new InternalRpcError(rpc(-32603, 'execution reverted')))), true)
+  assert.equal(isContractAnswer(new ContractFunctionZeroDataError({ functionName: 'owner' })), true)
+  assert.equal(isContractAnswer(new Error('nothing to do with a contract')), false)
+  assert.equal(isContractAnswer(null), false)
+  // Two hosts agreeing, or the only host there is.
+  const noCode = { kind: 'no_contract', reason: 'a' }
+  const notVault = { kind: 'not_a_vault', reason: 'b' }
+  assert.equal(agreedAbsence([], 4), null)
+  assert.equal(agreedAbsence([noCode], 4), null, 'one host may only be behind')
+  assert.equal(agreedAbsence([noCode, notVault], 4), null, 'hosts that disagree agree on nothing')
+  assert.deepEqual(agreedAbsence([noCode, noCode], 4), noCode)
+  assert.deepEqual(agreedAbsence([noCode], 1), noCode)
+  // readVault asks them, and returns neither verdict from one host.
+  const read = codeOnly(repo('src/lib/arc/vault-read.ts'))
+  const body = fnBody(read, 'readVault')
+  assert.equal([...body.matchAll(/agreedAbsence\(said, urls\.length\)/g)].length, 2)
+  assert.doesNotMatch(body, /return failed\('no_contract'/)
+  assert.doesNotMatch(body, /return failed\('not_a_vault'/)
+  // A rate limit never asks the owner to change the values they typed.
+  assert.match(fnBody(read, 'readUsdcFacts'), /noAnswer: e instanceof RpcUnreachableError/)
+  const flow = codeOnly(repo('src/components/app/arc/DeployFlow.tsx'))
+  assert.match(flow, /code: facts\.noAnswer \? 'rpc_unreachable' : 'refused'/)
+  // "No vault there yet" only on an answer that says so.
+  const line = flow.slice(flow.indexOf('function lookedLine'), flow.indexOf('const STEPS'))
+  assert.ok(line.indexOf("l.status === 'unreadable'") < line.indexOf('no vault there yet'))
+  assert.ok(line.indexOf("l.status === 'mismatch'") < line.indexOf('no vault there yet'))
+})
+
+test('step 3 never offers USDC again on a stale balance: an intent is saved before the wallet, and counts as unresolved until the vault or the person settles it', async () => {
+  const t = await txRules()
+  const r = await rules()
+  assert.equal(r.DEFAULT_FUNDING, '0.02', 'owners are told to use 0.02, and many hold about 0.08 USDC')
+  const bounded = snap({ sessionKeyExpiry: 1_800_000_000n, balance: 0n })
+  const s = setupOf({ vault: VAULT, expiryTx: record({ action: 'expiry', outcome: 'settled', block: 100n }) })
+  assert.equal(t.fundingInDoubt(s), false)
+  // The wallet asked, no hash back: the step is still 3, and it is in doubt.
+  const asked = t.fundAsked(s, 500_000n, '2026-11-04T00:00:00.000Z')
+  assert.equal(t.setupStep(asked, false, bounded), 'fund')
+  assert.equal(t.fundingInDoubt(asked), true)
+  // It survives a reload: bigints round trip through the slot.
+  const pending = (await import(repoUrl('src/lib/arc/pending.ts').href)) as { toStored: (v: unknown) => string; fromStored: <T>(x: string) => T }
+  assert.equal(pending.fromStored<{ fundIntent: { amount: bigint } }>(pending.toStored(asked)).fundIntent.amount, 500_000n)
+  // The re-read sees the USDC arrive: done, with no second prompt.
+  assert.equal(t.setupStep(asked, false, snap({ sessionKeyExpiry: 1_800_000_000n, balance: 500_000n })), 'done')
+  // An amount edited down at step 3 is what the funding is measured against, not the setup's.
+  const editedDown = t.fundAsked(s, 250_000n, '2026-11-04T00:00:00.000Z')
+  assert.equal(t.fundTarget(editedDown), 250_000n)
+  assert.equal(t.setupStep(editedDown, false, snap({ sessionKeyExpiry: 1_800_000_000n, balance: 250_000n })), 'done')
+  assert.equal(t.setupStep({ ...s, fundTx: record({ action: 'fund', outcome: 'untracked', amount: 250_000n }) }, false, snap({ sessionKeyExpiry: 1_800_000_000n, balance: 250_000n })), 'done')
+  // More than the setup asked never moves the mark: the setup's own funding is enough.
+  assert.equal(t.fundTarget(t.fundAsked(s, 900_000n, '2026-11-04T00:00:00.000Z')), 500_000n)
+  // The hash back ends the intent, and a skip pressed while the wallet was open does not stand.
+  const sent = t.fundSent({ ...asked, fundSkipped: true }, record({ amount: 500_000n }))
+  assert.equal(sent.fundIntent, undefined)
+  assert.equal(sent.fundSkipped, undefined)
+  assert.equal((sent.fundTx as Rec).action, 'fund')
+  assert.equal(t.setupStep(sent, false, bounded), 'fund-pending')
+  assert.equal(t.fundingInDoubt(sent), false)
+  // A funding on its way is not skipped, even with the flag still set.
+  assert.equal(t.setupStep({ ...s, fundSkipped: true, fundTx: record({ action: 'fund', amount: 500_000n }) }, false, bounded), 'fund-pending')
+  assert.equal(t.setupStep({ ...s, fundSkipped: true }, false, bounded), 'done')
+  // The wiring: told before the wallet, and the form's gate reads the same question.
+  const fund = codeOnly(repo('src/components/app/arc/FundForm.tsx'))
+  assert.match(fund, /s === 'wallet' && value !== undefined\) \{\s*handedOff = true\s*onHandOff\?\.\(value\)/)
+  assert.match(fund, /sendPrepared\(provider, p, handOff\)/)
+  assert.match(fund, /if \(handedOff\) onHandOffEnded\?\.\(failureOf\(e\)\)/)
+  const flow = codeOnly(repo('src/components/app/arc/DeployFlow.tsx'))
+  assert.match(flow, /patch\(\(s\) => fundAsked\(s, amount, new Date\(\)\.toISOString\(\)\)\)/)
+  assert.match(flow, /if \(f\.code === 'rejected'\) patch\(\(s\) => \(\{ \.\.\.s, fundIntent: undefined \}\)\)/)
+  assert.match(flow, /\(!fundingInDoubt\(setup, pageTx\) \|\| fundAsking \|\| refundConfirmed\)/)
+  assert.match(flow, /patch\(\(s\) => fundSent\(s, r\)\)/)
+  // Steps 2 and 3 keep reading, the balance is shown with its read time, and a failed read holds the form.
+  assert.match(flow, /const keepReading = step === 'expiry' \|\| step === 'expiry-pending' \|\| step === 'fund' \|\| step === 'fund-pending'/)
+  assert.match(flow, /The vault holds \{formatUnitsExact\(liveVault\.balance, decimals\)\} USDC, read at \{localTime\(liveVault\.readAt\)\}/)
+  assert.match(flow, /held=\{pageTx\?\.outcome === 'pending' \|\| snapshotNote !== null\}/)
+  // A hung wallet is said out loud, and an expiry that landed anyway lets go of it.
+  assert.match(flow, /busy === 'expiry' && step !== 'expiry' && step !== 'expiry-pending'\) release\('expiry'\)/)
+  assert.match(flow, /\(busy === 'deploy' && target !== null\) \|\| busy === 'expiry' \|\| fundAsking/)
+  assert.match(flow, /onClick=\{forget\} disabled=\{busy !== null && !walletSlow\}/)
+})
+
+test('a vault read older than a settled write is said to be old, is read again, and holds the controls', async () => {
+  const t = await txRules()
+  // The setup's last screen, for an expiry too: a 0 from before its block is not the vault's state.
+  const expiry = setupOf({ vault: VAULT, funding: 0n, expiryTx: record({ action: 'expiry', outcome: 'settled', block: 100n }) })
+  assert.equal(t.setupStep(expiry, false, snap({ block: 99n })), 'done')
+  assert.equal(t.readBeforeExpiry(expiry, snap({ block: 99n })), true)
+  assert.equal(t.readBeforeExpiry(expiry, snap({ block: 100n })), false)
+  assert.equal(t.readBeforeExpiry({ ...expiry, expiryTx: record({ action: 'expiry', block: 100n }) }, snap({ block: 99n })), false, 'pending has not landed')
+  assert.equal(t.readBeforeExpiry(expiry, snap({ address: ATTACKER, block: 99n })), false)
+  const flow = codeOnly(repo('src/components/app/arc/DeployFlow.tsx'))
+  assert.match(flow, /expiryReadBehind \? 'with its end date still being read'/)
+  const page = codeOnly(repo('src/routes/app/ArcVault.tsx'))
+  assert.match(page, /const readBehind = Boolean\(v && landedBlock !== undefined && v\.block < landedBlock\)/)
+  assert.match(page, /if \(!readBehind\) return\s*const t = setInterval\(\(\) => void load\(\), BEHIND_MS\)/)
+  assert.match(page, /const held = shownTx\?\.outcome === 'pending' \|\| setupTx !== null \|\| readBehind/)
+  // A read no host answered is tried again by itself.
+  assert.match(page, /if \(failedKind !== 'unreachable'\) return\s*const t = setInterval/)
+  // A transaction pending in the setup holds this page's controls, and is watched from here.
+  const net = ARC_MAINNET?.caip2 ?? ''
+  const pendingFund = setupOf({ vault: VAULT, fundTx: record({ action: 'fund', amount: 500_000n }) })
+  assert.equal(t.setupTxOn(pendingFund, net, VAULT.toUpperCase().replace('0X', '0x'))?.field, 'fundTx')
+  assert.equal(t.setupTxOn(pendingFund, net, ATTACKER), null, 'another vault')
+  assert.equal(t.setupTxOn(pendingFund, 'eip155:1', VAULT), null, 'another network')
+  assert.equal(t.setupTxOn(setupOf({ vault: VAULT, fundTx: record({ action: 'fund', outcome: 'settled' }) }), net, VAULT), null)
+  assert.equal(t.setupTxOn(setupOf({ vault: VAULT, expiryTx: record({ action: 'expiry' }) }), net, VAULT)?.field, 'expiryTx')
+  assert.match(page, /const setupTx = setupTxOn\(setup, network, contract\)/)
+  assert.match(page, /record=\{setupTx\.record\}/)
+  assert.match(page, /pending=\{held\}/)
+  assert.match(page, /held=\{held\}/)
+  // And a funding the vault's page has on its way holds step 3.
+  assert.match(flow, /loadTx\(setupNetwork, pageTxVault\)/)
+})
+
+test('a funding that stopped being pending keeps its warning on the vault page and at step 3, and a second one waits for "I checked"', async () => {
+  const t = await txRules()
+  const net = ARC_MAINNET?.caip2 ?? ''
+  const bounded = snap({ sessionKeyExpiry: 1_800_000_000n })
+  const s = setupOf({ vault: VAULT, expiryTx: record({ action: 'expiry', outcome: 'settled', block: 100n }) })
+  const sent = record({ action: 'fund', amount: 500_000n })
+  const now = 1_000_000_000_000
+  // Every way the record can stop being pending with the first transfer maybe still on its way,
+  // from the rules themselves: the person stops tracking it, or the account moved on.
+  const stopped = t.untracked(sent)
+  const moved = t.decideUnseen({ ...sent, nonce: 7, nonceUsedAt: new Date(now - t.REPLACED_AFTER_MS).toISOString() }, { ...heard, now, tx: null })
+  assert.equal(moved.outcome, 'untracked')
+  assert.equal(moved.likelyReplaced, true)
+  const replaced = record({ action: 'fund', amount: 500_000n, outcome: 'replaced' })
+  for (const fundTx of [stopped, moved, replaced]) {
+    const held = { ...s, fundTx }
+    assert.equal(t.setupTxOn(held, net, VAULT), null, 'no longer pending, so the page cannot lean on this to hold the form')
+    assert.equal(t.setupFundInDoubtOn(held, net, VAULT, bounded), true, String(fundTx.outcome))
+    assert.equal(t.setupFundEndedOn(held, net, VAULT, bounded), fundTx, 'its note goes from the screen')
+    // On another vault or network it is not this page's business.
+    assert.equal(t.setupFundInDoubtOn(held, net, ATTACKER, bounded), false)
+    assert.equal(t.setupFundInDoubtOn(held, 'eip155:1', VAULT, bounded), false)
+    assert.equal(t.setupFundEndedOn(held, net, ATTACKER, bounded), null)
+    assert.equal(t.setupFundEndedOn(held, 'eip155:1', VAULT, bounded), null)
+    // The USDC arrived, so nothing is left to warn about.
+    const arrived = snap({ sessionKeyExpiry: 1_800_000_000n, balance: 500_000n })
+    assert.equal(t.setupFundInDoubtOn(held, net, VAULT, arrived), false)
+    assert.equal(t.setupFundEndedOn(held, net, VAULT, arrived), null)
+    // A skip is the person's answer: the setup is done, and the page does not hold them there.
+    assert.equal(t.setupFundInDoubtOn({ ...held, fundSkipped: true }, net, VAULT, bounded), false)
+    assert.equal(t.setupFundEndedOn({ ...held, fundSkipped: true }, net, VAULT, bounded), null)
+    // A failed read hides the form anyway, and must not take the note with it.
+    assert.equal(t.setupFundEndedOn(held, net, VAULT, null), fundTx)
+  }
+  // The wallet asked with no hash back holds the page as before.
+  assert.equal(t.setupFundInDoubtOn(t.fundAsked(s, 500_000n, 'x'), net, VAULT, bounded), true)
+  assert.equal(t.setupFundEndedOn(t.fundAsked(s, 500_000n, 'x'), net, VAULT, bounded), null, 'no record to show yet')
+  // A revert moved nothing: it is said, and nothing is held behind it.
+  const reverted = { ...s, fundTx: record({ action: 'fund', amount: 500_000n, outcome: 'reverted', block: 150n }) }
+  assert.equal(t.setupFundInDoubtOn(reverted, net, VAULT, bounded), false)
+  assert.equal(t.setupFundEndedOn(reverted, net, VAULT, bounded), reverted.fundTx)
+  // Pending or landed: not this rule's. setupTxOn holds the first, and the second is done.
+  for (const fundTx of [sent, record({ action: 'fund', amount: 500_000n, outcome: 'settled', block: 150n }), record({ action: 'fund', outcome: 'unexpected', logsMatched: true })]) {
+    assert.equal(t.setupFundEndedOn({ ...s, fundTx }, net, VAULT, bounded), null)
+    assert.equal(t.setupFundInDoubtOn({ ...s, fundTx }, net, VAULT, bounded), false)
+  }
+  assert.equal(t.setupFundEndedOn(null, net, VAULT, bounded), null)
+  assert.equal(t.setupFundInDoubtOn(null, net, VAULT, bounded), false)
+
+  // Step 3: a funding from the vault's own page counts the same, and any other write from there does not.
+  const fromPage = (over: Rec) => record({ action: 'fund', amount: 500_000n, ...over })
+  assert.equal(t.fundingInDoubt(s, t.untracked(fromPage({}))), true)
+  assert.equal(t.fundingInDoubt(s, fromPage({ outcome: 'replaced' })), true)
+  assert.equal(t.fundingInDoubt(s, fromPage({})), false, 'a pending one holds the form by itself')
+  assert.equal(t.fundingInDoubt(s, fromPage({ outcome: 'settled' })), false)
+  assert.equal(t.fundingInDoubt(s, fromPage({ outcome: 'reverted' })), false)
+  assert.equal(t.fundingInDoubt(s, record({ action: 'freeze', outcome: 'untracked' })), false, 'a freeze moves no USDC')
+  assert.equal(t.fundingInDoubt(s, null), false)
+  assert.equal(t.pageTxOnStep3(fromPage({})), true)
+  assert.equal(t.pageTxOnStep3(record({ action: 'freeze' })), true, 'pending holds step 3, whatever it is')
+  for (const outcome of ['untracked', 'replaced', 'reverted', 'unexpected']) assert.equal(t.pageTxOnStep3(fromPage({ outcome })), true, outcome)
+  assert.equal(t.pageTxOnStep3(fromPage({ outcome: 'settled' })), false)
+  assert.equal(t.pageTxOnStep3(record({ action: 'freeze', outcome: 'reverted' })), false, 'a stopped freeze has no business at step 3')
+  assert.equal(t.pageTxOnStep3(null), false)
+
+  // The wiring: the page gates on the rule, shows the record, and only what cannot land can be dismissed.
+  const page = codeOnly(repo('src/routes/app/ArcVault.tsx'))
+  assert.match(page, /const setupFundInDoubt = setupFundInDoubtOn\(setup, network, contract, v\)/)
+  assert.match(page, /\{setupFundInDoubt && setup \? \(/)
+  assert.match(page, /const setupFundEnded = setupFundEndedOn\(setup, network, contract, v\)/)
+  assert.match(page, /<TxReceipt record=\{setupFundEnded\}/)
+  assert.match(page, /!fundingUnresolved\(setupFundEnded\) && \(/)
+  const flow = codeOnly(repo('src/components/app/arc/DeployFlow.tsx'))
+  assert.match(flow, /step === 'fund' && pageTx && pageTxOnStep3\(pageTx\) && \(/)
+})
+
+test('a wallet failure does not outlive its step: no "try again" once the USDC has arrived or a later send has worked', async () => {
+  const t = await txRules()
+  const bounded = snap({ sessionKeyExpiry: 1_800_000_000n })
+  const s = setupOf({ vault: VAULT, expiryTx: record({ action: 'expiry', outcome: 'settled', block: 100n }) })
+  // The scenario, through the rules: the wallet errors after sending, the intent stays, and the re-read sees the USDC.
+  const asked = t.fundAsked(s, 500_000n, '2026-11-04T00:00:00.000Z')
+  const atFund = t.setupStep(asked, false, bounded)
+  const arrived = t.setupStep(asked, false, snap({ sessionKeyExpiry: 1_800_000_000n, balance: 500_000n }))
+  assert.deepEqual([atFund, arrived], ['fund', 'done'])
+  assert.equal(t.stepMovedOn(atFund, arrived), true)
+  // A resend that worked: a hash on its way is past step 3 as well.
+  const resent = t.setupStep(t.fundSent(asked, record({ amount: 500_000n })), false, bounded)
+  assert.equal(resent, 'fund-pending')
+  assert.equal(t.stepMovedOn(atFund, resent), true)
+  assert.equal(t.stepMovedOn(resent, 'done'), true)
+  // The earlier steps, the same way.
+  for (const [from, to] of [['sending', 'expiry'], ['deploying', 'expiry'], ['deploy-failed', 'expiry'], ['expiry', 'fund'], ['expiry-pending', 'fund'], ['expiry', 'done']]) {
+    assert.equal(t.stepMovedOn(from, to), true, `${from} to ${to}`)
+  }
+  // Declined at the deploy: the notice saying nothing was sent must survive the fall back to the review.
+  for (const [from, to] of [['sending', 'review'], ['review', 'sending'], ['form', 'review'], ['fund', 'fund'], ['expiry', 'expiry-pending'], ['fund-pending', 'fund'], ['done', 'form']]) {
+    assert.equal(t.stepMovedOn(from, to), false, `${from} to ${to}`)
+  }
+  // The wiring: every way the failure can go stale, and the words while the funding is still open.
+  const raw = repo('src/components/app/arc/DeployFlow.tsx')
+  const flow = codeOnly(raw)
+  assert.match(flow, /if \(stepMovedOn\(lastStep\.current, step\)\) setFailure\(null\)/)
+  assert.match(flow, /else if \(stepNow\.current === 'fund'\) setFailure\(f\)/, 'a stop heard after the USDC arrived paints the last screen red')
+  assert.match(flow, /onHandOff=\{\(amount\) => \{[^}]*setFailure\(null\)/, 'a new send keeps the old failure on screen')
+  assert.match(flow, /onSubmitted=\{\(r\) => \{[^}]*setFailure\(null\)/, 'a send that worked keeps the old failure on screen')
+  assert.match(flow, /setRefundConfirmed\(true\)\s*setFailure\(null\)/, '"I checked" answers the failure')
+  assert.match(raw, /const FUND_ASKED_NEXT =\s*"Do not send it again yet/)
 })

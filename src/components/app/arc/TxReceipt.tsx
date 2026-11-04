@@ -15,12 +15,18 @@
  * A wallet can change the fee this page proposed. When no network node has seen a hash after 30
  * seconds the receipt says so out loud and says what to look for in the wallet, because that is
  * the moment the person can still fix it, and stopping tracking is offered from then on.
+ *
+ * Rate limited or no answer is never a verdict about the chain: while too few hosts answer and no
+ * receipt is in, the receipt says the network did not answer and keeps asking, however long that
+ * takes. A receipt that is in is an answer, however few hosts had spoken when it came. Only a
+ * check that was answered can end the watch. Its state belongs to one hash, so a new transaction
+ * starts clean: TxReceipt is keyed by the hash.
  */
 import { useEffect, useRef, useState } from 'react'
 import { AlertTriangle, CheckCircle2, Clock, ExternalLink, XCircle } from 'lucide-react'
 import type { TxRecord } from '../../../lib/arc/pending'
 import { FAST_FOR_MS, POLL_FAST_MS, POLL_FOR_MS, POLL_SLOW_MS, advance, feeLine } from '../../../lib/arc/receipt'
-import { retracked, untracked, walletRepriced } from '../../../lib/arc/tx-rules'
+import { retracked, saidNothing, untracked, walletRepriced } from '../../../lib/arc/tx-rules'
 import { arcChainFor, localTime, networkName, rpcUrls, txUrl } from '../../../lib/arc/vault-read'
 import { formatUnitsExact, sameAddress } from '../../../lib/arc/vault-rules'
 import { CopyButton, Mono } from '../stellar/bits'
@@ -45,16 +51,18 @@ function changed(a: TxRecord, b: TxRecord): boolean {
 
 const LINK = 'font-semibold text-accent underline underline-offset-2'
 
-export default function TxReceipt({
-  record,
-  onUpdate,
-  onSettled,
-}: {
+type ReceiptProps = {
   record: TxRecord
   onUpdate: (r: TxRecord) => void
   /** Called once when a pending record reaches any final outcome, so the page can read the vault again. */
   onSettled?: (r: TxRecord) => void
-}) {
+}
+
+export default function TxReceipt(props: ReceiptProps) {
+  return <ReceiptOf key={props.record.hash} {...props} />
+}
+
+function ReceiptOf({ record, onUpdate, onSettled }: ReceiptProps) {
   const chain = arcChainFor(record.network)
   const [gaveUp, setGaveUp] = useState(false)
   const [asked, setAsked] = useState<{ answered: number; total: number; checks: number }>({
@@ -87,20 +95,24 @@ export default function TxReceipt({
       }
       if (!alive) return
       tick += 1
+      setAsked((a) => (out ? { answered: out.answered, total: out.total, checks: a.checks + 1 } : { ...a, answered: 0, checks: a.checks + 1 }))
       if (out) {
-        setAsked((a) => ({ answered: out.answered, total: out.total, checks: a.checks + 1 }))
         if (changed(cur.record, out.record)) cur.onUpdate(out.record)
         if (out.record.outcome !== 'pending') {
           cur.onSettled?.(out.record)
           return
         }
       }
+      // No answer: the page has nothing to give up on yet, so it goes on asking, more slowly so it
+      // does not add to the limit. A receipt waiting on its read-back has been answered, and goes
+      // on asking at the usual pace.
+      const quiet = !out || saidNothing(out.record, out.answered, out.total)
       const elapsed = Date.now() - started
       if (elapsed > POLL_FOR_MS) {
         setGaveUp(true)
-        return
+        if (!quiet && out?.record.block === undefined) return
       }
-      timer = setTimeout(() => void run(), elapsed < FAST_FOR_MS ? POLL_FAST_MS : POLL_SLOW_MS)
+      timer = setTimeout(() => void run(), elapsed < FAST_FOR_MS && !quiet ? POLL_FAST_MS : POLL_SLOW_MS)
     }
     timer = setTimeout(() => void run(), POLL_FAST_MS)
     return () => {
@@ -147,7 +159,13 @@ export default function TxReceipt({
               ? record.likelyReplaced
                 ? `${record.what}: most likely replaced in your wallet, with no receipt seen for this one.`
                 : `${record.what}: no longer tracked, with no receipt seen.`
-              : `${record.what}: submitted, no receipt yet.`
+              : record.block !== undefined
+                ? `${record.what}: landed in block ${block}, and is being read back.`
+                : `${record.what}: submitted, no receipt yet.`
+  // Too few hosts answered the last check and no receipt is in, so what it could not find says
+  // nothing about the chain.
+  const silent = asked.checks > 0 && saidNothing(record, asked.answered, asked.total)
+  const receiptIn = record.block !== undefined
 
   return (
     <div className={`rounded-2xl border p-4 text-sm ${tone}`} role="status" aria-live="polite">
@@ -175,7 +193,16 @@ export default function TxReceipt({
         <div className="mt-1 text-xs text-foreground/75">Network fee charged: {fee}.</div>
       )}
       {record.note && !record.unseen && <div className="mt-1 text-xs text-foreground/80">{record.note}</div>}
-      {record.outcome === 'pending' && record.unseen && (
+      {record.outcome === 'pending' && silent && (
+        <div className="mt-2 rounded-xl border border-warn/40 bg-warn/15 p-3 text-xs text-foreground">
+          <div className="font-semibold">The network did not answer just now, so this page does not know yet.</div>
+          <p className="mt-1">
+            {asked.answered === 0 ? `None of the ${asked.total} network nodes` : `Only ${asked.answered} of the ${asked.total} network nodes`} answered the last check. They limit
+            how fast a page can ask, so this says nothing about your transaction: it may well have landed. This page keeps asking by itself. Do not sign it again.
+          </p>
+        </div>
+      )}
+      {record.outcome === 'pending' && record.unseen && !silent && (
         <div className="mt-2 rounded-xl border border-warn/40 bg-warn/15 p-3 text-xs text-foreground">
           <div className="font-semibold">{record.note}</div>
           <p className="mt-1">
@@ -221,10 +248,21 @@ export default function TxReceipt({
 
       <div className="mt-2 text-[11px] text-foreground/55">
         Submitted at {localTime(record.submittedAt)} (local), on {networkName(chain)}.
-        {record.outcome === 'pending' &&
+        {record.outcome === 'pending' && receiptIn ? (
+          <>
+            {' '}
+            {gaveUp
+              ? `The receipt is in, and the new vault could not be read back for ${Math.round(POLL_FOR_MS / 60_000)} minutes. That is the network not answering, not a failure. This page keeps asking.`
+              : 'The receipt is in. Reading it back from the network.'}{' '}
+            Do not sign it again.
+          </>
+        ) : record.outcome === 'pending' &&
           (gaveUp ? (
             <>
-              {' '}No receipt after {Math.round(POLL_FOR_MS / 60_000)} minutes on any of the {asked.total} network nodes. That is not a failure: it may still land.
+              {' '}
+              {silent
+                ? `No clear answer after ${Math.round(POLL_FOR_MS / 60_000)} minutes, because too few of the ${asked.total} network nodes are answering. That says nothing about this transaction, and this page keeps asking.`
+                : `No receipt after ${Math.round(POLL_FOR_MS / 60_000)} minutes on any of the ${asked.total} network nodes. That is not a failure: it may still land.`}{' '}
               Do not sign it again.{' '}
               <button
                 type="button"
@@ -257,7 +295,7 @@ export default function TxReceipt({
               {' '}Asking all {asked.total} {networkName(chain)} network nodes every few seconds ({asked.checks} {asked.checks === 1 ? 'round' : 'rounds'} so far
               {asked.checks > 0 ? `, ${asked.answered} answered the last one` : ''}).{' '}
               {record.unseen ? 'Do not sign a new one until you have looked in your wallet.' : 'Do not sign it again.'}
-              {record.unseen && (
+              {record.unseen && !silent && (
                 <>
                   {' '}
                   <button

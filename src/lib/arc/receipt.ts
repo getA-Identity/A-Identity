@@ -11,7 +11,8 @@
  * null decides nothing on Arc. Every few checks the transaction itself is read, to show the fee
  * the wallet really sent (a maxFeePerGas under 20 gwei is dropped by Arc without a receipt) and
  * to notice its nonce being used by another hash. That, watched for a few seconds more with
- * still no receipt for this hash, is final: the hash was replaced and can no longer land.
+ * enough hosts still answering that they have no receipt for this hash, is final: the hash was
+ * replaced and can no longer land. A check too few hosts answered decides nothing.
  *
  * A transaction Arc dropped under its floor never shows up in that read, so neither its fee nor
  * its nonce can be read back. For that case decideUnseen says so after 30 seconds, and the nonce
@@ -85,7 +86,7 @@ export async function advance(chain: Chain, record: TxRecord, tick: number, now:
 
   // No receipt on any host. Every few checks, look at the transaction itself and its nonce; once
   // the nonce is seen used, on every check, so the watch before 'replaced' is a matter of seconds.
-  const f: Unseen = { now }
+  const f: Unseen = { now, receipts: { answered: poll.answered, total: poll.total } }
   const watching = Boolean(record.nonceUsedAt)
   if (watching || tick % DEEP_EVERY === 0 || (!record.sent && tick < 10)) {
     f.tx = await readTransaction(chain, record.hash as Hex)

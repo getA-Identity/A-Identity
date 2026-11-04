@@ -92,6 +92,11 @@ export type SetupState = {
   vault?: string
   expiryTx?: TxRecord
   fundTx?: TxRecord
+  /**
+   * Saved right BEFORE the wallet is asked to send the funding and cleared when its hash comes back
+   * or the person says nothing was sent. While it is here, this page cannot say the USDC did not leave.
+   */
+  fundIntent?: { amount: bigint; at: string }
   fundSkipped?: boolean
 }
 

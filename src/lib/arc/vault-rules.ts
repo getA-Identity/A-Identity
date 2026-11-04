@@ -49,10 +49,13 @@ export const SESSION_CHOICES: readonly { seconds: number; label: string }[] = [
   { seconds: 30 * 86400, label: '30 days' },
 ]
 
-/** Dust defaults, the values mcp/scripts/evm-mainnet-vault.mjs uses: the caps are the product. */
+/**
+ * Dust defaults. The caps are the values mcp/scripts/evm-mainnet-vault.mjs uses, because the caps
+ * are the product. The funding is what owners are told to put in: many hold about 0.08 USDC.
+ */
 export const DEFAULT_DAILY_CAP = '1'
 export const DEFAULT_AUTO_APPROVE = '0.25'
-export const DEFAULT_FUNDING = '0.5'
+export const DEFAULT_FUNDING = '0.02'
 
 /** Above this many USDC in one transfer, the review says so before anything is signed. */
 export const SOFT_WARN_USDC = '10'

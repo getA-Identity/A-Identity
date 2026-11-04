@@ -8,6 +8,39 @@
  * it is on fails the same way.
  */
 
+type Walked = { name?: unknown; code?: unknown; cause?: unknown; data?: unknown; signature?: unknown; reason?: unknown }
+
+/**
+ * True when a failure is the contract's own answer, not the host's: a revert, or no data back.
+ *
+ * viem builds its "contract reverted" error for RPC code 3 and ALSO for -32603, the code a host uses
+ * for its own trouble ("state at block N is pruned"). So the error's type is not enough: a revert
+ * counts only with code 3, with revert data, or with a message that says reverted. Anything else is
+ * a host's fault and the next host is asked. Known by name, so this file needs no viem.
+ */
+export function isContractAnswer(e: unknown): boolean {
+  let x = e as Walked | null | undefined
+  for (let i = 0; i < 12 && x && typeof x === 'object'; i += 1) {
+    if (x.code === 3) return true
+    if (x.name === 'ContractFunctionZeroDataError' || x.name === 'AbiDecodingZeroDataError' || x.name === 'AbiDecodingDataSizeTooSmallError') return true
+    // No reason at all means revert data came back that did not decode: still the contract's.
+    if (x.name === 'ContractFunctionRevertedError') return Boolean(x.data || x.signature || typeof x.reason !== 'string' || /revert/i.test(x.reason))
+    x = x.cause as Walked | null | undefined
+  }
+  return false
+}
+
+/**
+ * What hosts that answered agree is absent, or null when they do not yet. One host saying there
+ * is no code, or that a view reverted, may only be behind or broken, so it takes two saying the
+ * same (or every host, on a chain with one). Until then the next host is asked, and hosts that
+ * did not answer count for nothing.
+ */
+export function agreedAbsence<K extends string>(said: readonly { kind: K; reason: string }[], hostCount: number): { kind: K; reason: string } | null {
+  const need = Math.min(2, hostCount)
+  return said.find((s) => said.filter((o) => o.kind === s.kind).length >= need) ?? null
+}
+
 /** Every host failed: the hosts tried, in order, and the last failure. */
 export class NoHostAnswered extends Error {
   readonly tried: string[]
