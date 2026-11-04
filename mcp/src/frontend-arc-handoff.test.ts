@@ -56,6 +56,7 @@ type Rules = {
   ANSWER_SHOWN_MS: number
   holdsPage: (r: Send) => boolean
   unreadRecords: (records: Send[], flowIds: string[], now: number) => Send[]
+  followedHere: (r: Send | null, s: Standing) => boolean
   cardHeading: (s: Standing, o: { sent: boolean; held: boolean; paid: boolean }) => { heading: string; asks: boolean }
 }
 const rules = async () => (await import(repoUrl('src/lib/arc/handoff-rules.ts').href)) as Rules
@@ -804,6 +805,34 @@ test('an answer in this browser has a line of its own, and an old one does not s
   const page = repo('src/components/app/arc/OwnerApprovals.tsx')
   assert.match(page, /server\?\.state === 'settled'/)
   assert.match(page, /server\?\.state === 'ended'/)
+})
+
+test('a record with no answer keeps its tracker on a flow someone else closed, because nothing else can finish it', async () => {
+  const r = await rules()
+  const closed: Standing[] = [{ kind: 'settled' }, { kind: 'reverted' }]
+  const answer = { state: 'settled', txHash: TX, flowId: FLOW, at: CHECKED }
+  for (const s of closed) {
+    for (const open of [send(), send({ tx: txRecord('pending') }), send({ tx: txRecord('settled') }), send({ tx: txRecord('untracked') }), send({ tx: txRecord('replaced'), paidBy: TX2 })]) {
+      assert.equal(r.followedHere(open, s), true, `${s.kind}: ${JSON.stringify(open.tx?.outcome ?? 'asked')}`)
+    }
+    // Answered, the flow's own card says the rest, and nothing here holds anything.
+    assert.equal(r.followedHere(send({ tx: txRecord('settled'), server: answer }), s), false, s.kind)
+    assert.equal(r.followedHere(send({ released: true }), s), false, 'said to be nothing: the flow is what is left to say')
+    assert.equal(r.followedHere(null, s), false, 'and with no record there is nothing to follow')
+  }
+  // On a flow still open, an answer such as a refusal stays on the tracker, as it always did.
+  assert.equal(r.followedHere(send({ tx: txRecord('settled'), server: { ...answer, state: 'refused' } }), { kind: 'approvable' }), true)
+  assert.equal(r.followedHere(send({ tx: txRecord('pending') }), { kind: 'stale', ageSeconds: 90_000n }), true)
+  assert.equal(r.followedHere(null, { kind: 'approvable' }), false)
+  // What the finish frees: this is the record that held the page's controls and every later check.
+  const f = await flow()
+  assert.equal(r.holdsPage(send({ tx: txRecord('pending') })), true)
+  assert.equal(r.holdFor(f, [send({ flowId: '0x' + 'cd'.repeat(32), tx: txRecord('settled') })]).held, true)
+  assert.equal(r.holdFor(f, [send({ flowId: '0x' + 'cd'.repeat(32), tx: txRecord('settled'), server: answer })]).held, false)
+  // The card asks this and nothing else, and the tracker's refusal does not claim a read that branch never made.
+  const page = repo('src/components/app/arc/OwnerApprovals.tsx')
+  assert.match(page, /if \(followedHere\(record, standing\)\) return <RequestCard \{\.\.\.props\} record=\{record\} \/>/)
+  assert.doesNotMatch(page, /Our server read this transaction/)
 })
 
 test("a tab left open reads the vault again when it comes back, and after every recheck, and the card's figures come from the newest read", () => {

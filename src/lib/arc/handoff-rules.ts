@@ -502,6 +502,19 @@ export function holdsPage(r: HandoffSend): boolean {
   return h.held && h.why !== 'answered' && h.why !== 'landed'
 }
 
+/**
+ * Whether this flow's card is what this browser sent, with its tracker, rather than what the flow's record
+ * says. Only that tracker finishes a record: it follows the hash, posts it, and writes the server's answer.
+ * So a record with no answer keeps it on a flow another browser or a phone already closed. The post gets the
+ * recorded answer or a refusal, and either one is the answer the record was waiting for. Without it a pending
+ * hash holds the page's controls, and a landed one every later check of the same payee and amount, with
+ * nothing on screen to finish or stop.
+ */
+export function followedHere(r: HandoffSend | null | undefined, s: HandoffStanding): boolean {
+  if (!holdOf(r).held) return false
+  return !r?.server || (s.kind !== 'settled' && s.kind !== 'reverted')
+}
+
 /** How long a final answer is shown for a record whose flow did not read back. */
 export const ANSWER_SHOWN_MS = 10 * 60_000
 

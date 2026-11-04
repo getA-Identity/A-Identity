@@ -31,6 +31,7 @@ import {
   agePhrase,
   budgetLine,
   cardHeading,
+  followedHere,
   hashToPost,
   holdFor,
   holdOf,
@@ -412,7 +413,7 @@ function FlowCard(props: CardProps) {
   const record = records.find((r) => holdsFlow(r, flow.flowId)) ?? null
 
   // Whatever the flow says now, what this browser sent is followed until it has its answer.
-  if (holdOf(record).held && standing.kind !== 'settled' && standing.kind !== 'reverted') return <RequestCard {...props} record={record} />
+  if (followedHere(record, standing)) return <RequestCard {...props} record={record} />
   if (standing.kind === 'not_from_agent')
     return (
       <div role="alert" data-flow={flow.flowId} className="rounded-xl border border-danger/30 bg-danger/[0.08] p-4 text-sm text-foreground">
@@ -945,7 +946,7 @@ function SendTracker({ record, chain, asking = false, onRecords, onLanded }: { r
       )}
       {server?.state === 'refused' && (
         <div role="alert" className="rounded-lg border border-danger/25 bg-danger/[0.07] px-3 py-2 text-xs text-foreground">
-          <div className="font-semibold">Our server read this transaction, and it does not prove this payment, so nothing is marked as settled.</div>
+          <div className="font-semibold">Our server does not take this transaction as proof of this payment, so nothing is marked as settled.</div>
           <p className="mt-1 break-words">{server.reason}</p>
           <p className="mt-1">It is not offered again. Look at the transaction before you do anything else: if it paid someone, a second send would pay twice.</p>
           <TxLink chain={chain} hash={server.txHash} />

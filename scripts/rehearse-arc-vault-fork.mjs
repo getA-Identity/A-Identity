@@ -1733,6 +1733,70 @@ async function browserRehearsal({ handoffOnly = false } = {}) {
     stand.failReceipt = false
     await stopIf(await waitFor('the receipt once the server answers', async () => (await flowOf(i.flowId)).outcome === 'executed', 90000, 2500), 'once our server answers, the page posts it and it is read')
 
+    section('the page: reopened on a flow someone else closed, with no answer in this browser')
+    // Small amounts from here on: an owner's payment counts toward the day, and later checks need room in it.
+    const recordHere = (flowId) => page.evaluate((key) => JSON.parse(localStorage.getItem(key) ?? 'null'), `aid-arc-handoff:${chain.caip2}:${vault.toLowerCase()}:${flowId.toLowerCase()}`)
+    const answered = (flowId) => waitFor('the record to get its answer', async () => (await recordHere(flowId))?.server?.state === 'settled', 60000, 500).then(() => true, () => false)
+    // Another device or anyone: the route takes no session, and the page's own post is not what closes it here.
+    const postFromElsewhere = async (flowId, txHash) => {
+      const res = await fetch(`${api}/api/x402/gateway/flows/${flowId}/receipt`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ txHash }) })
+      return { status: res.status, body: await res.json() }
+    }
+    const confirmOn = async (card) => {
+      await reviewOn(card)
+      await card.getByRole('button', { name: 'Review this payment' }).click()
+      const confirm = card.getByRole('button', { name: 'Confirm in wallet' })
+      await confirm.waitFor({ timeout: 60000 })
+      return confirm
+    }
+    // The tab closes with the hash pending, and it lands while nobody has the page open.
+    const payeeK = payee()
+    const amountK = parseUnits('0.001', 6)
+    const k = await buyCheck(agent, payeeK, amountK)
+    const cardK = page.locator(`[data-flow="${k.flowId}"]`)
+    await page.goto(`${vaultUrl}&flow=${k.flowId}`, { waitUntil: 'domcontentloaded' })
+    const confirmK = await confirmOn(cardK)
+    await rpc('evm_setAutomine', [false])
+    const sentBeforeK = wallet.sent.length
+    await confirmK.click()
+    await waitFor('the wallet to send', () => wallet.sent.length === sentBeforeK + 1, 60000)
+    const hashK = wallet.sent[sentBeforeK].hash
+    await waitFor('the hash on the record', async () => (await recordHere(k.flowId))?.tx?.hash === hashK, 30000)
+    await page.goto('about:blank')
+    await rpc('evm_mine')
+    await rpc('evm_setAutomine', [true])
+    const closedK = await postFromElsewhere(k.flowId, hashK)
+    check(closedK.status === 200 && closedK.body.outcome === 'executed', `the payment lands with the tab closed, and another device closes the flow (${closedK.status} ${closedK.body.code ?? closedK.body.outcome})`)
+    await page.goto(`${vaultUrl}&flow=${k.flowId}`, { waitUntil: 'domcontentloaded' })
+    await stopIf(await answered(k.flowId), "the page reopens on the closed flow and still finishes this browser's pending hash: the record gets the server's answer")
+    await stopIf(await waitText(/Paid\. Our server read this payment/, 30000), 'the card says it is paid')
+    check(!/still pending/.test(await text()), "and the page's own controls are not held by a hash that has its answer")
+    // The tab closes on a landed hash with its post unanswered, and the server takes it from someone else.
+    const payeeL = payee()
+    const amountL = parseUnits('0.002', 6)
+    const l = await buyCheck(agent, payeeL, amountL)
+    const cardL = page.locator(`[data-flow="${l.flowId}"]`)
+    await page.goto(`${vaultUrl}&flow=${l.flowId}`, { waitUntil: 'domcontentloaded' })
+    const confirmL = await confirmOn(cardL)
+    stand.failReceipt = true
+    const sentBeforeL = wallet.sent.length
+    await confirmL.click()
+    await stopIf(await waitText(/Our server has not read it yet/, 90000), 'the second one has landed, and our server has not answered this browser')
+    const hashL = wallet.sent[sentBeforeL].hash
+    await page.goto('about:blank')
+    stand.failReceipt = false
+    const closedL = await postFromElsewhere(l.flowId, hashL)
+    check(closedL.status === 200 && closedL.body.outcome === 'executed', `another device closes that flow too (${closedL.status} ${closedL.body.code ?? closedL.body.outcome})`)
+    await page.goto(`${vaultUrl}&flow=${l.flowId}`, { waitUntil: 'domcontentloaded' })
+    await stopIf(await answered(l.flowId), "the page reopens on it and still gets this browser's answer, though the flow reads closed before the post comes back")
+    await waitText(/Paid\. Our server read this payment/, 30000)
+    // The next invoice of the same amount to the same payee is a new check, and this one no longer stands in its way.
+    const lAgain = await buyCheck(agent, payeeL, amountL)
+    const cardLA = page.locator(`[data-flow="${lAgain.flowId}"]`)
+    await page.goto(`${vaultUrl}&flow=${lAgain.flowId}`, { waitUntil: 'domcontentloaded' })
+    await reviewOn(cardLA)
+    check(!/has no final answer for it yet/.test(await cardLA.innerText()), 'and a new check of the same payee and amount is offered, with nothing left to hold it')
+
     section('the page: an old waiting flow does not hold up a fresh one')
     const payeeJ = payee()
     const j = await buyCheck(agent, payeeJ, amountA)
