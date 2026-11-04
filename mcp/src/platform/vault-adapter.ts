@@ -406,8 +406,8 @@ export async function deployStellarVault(
  * The expiry a revoke writes. Both vault contracts check the key with a strict rule, pay
  * reverts only once the chain time is greater than the expiry (`block.timestamp > expiry` on
  * EVM, the same comparison on Soroban). So an expiry of the current second leaves the key
- * valid until that second ends, and on a fast chain that is several blocks (Olympix pre-audit
- * finding F-02). 0 cannot stand in either, because 0 means no time bound at all. 1 is the
+ * valid until that second ends, and on a fast chain that is several blocks (Arc Studio review
+ * finding F-02, in OLYMPIX_SUBMISSION.md). 0 cannot stand in either, because 0 means no time bound at all. 1 is the
  * smallest expiry that is already in the past on every chain, so the revoke holds from the
  * block that includes it.
  */

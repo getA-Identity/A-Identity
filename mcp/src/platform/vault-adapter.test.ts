@@ -193,7 +193,7 @@ test('the session-key expiry survives the trip through the view, on both chains'
 test('a revoke writes expiry 1, a second already past on every chain, never 0 and never the current second', () => {
   const now = 1_793_000_000
   // Both vault contracts let pay through until chain time is GREATER than the expiry, so the
-  // current second would leave the key valid until it ends (Olympix pre-audit F-02), and 0
+  // current second would leave the key valid until it ends (Arc Studio review F-02), and 0
   // would mean no time bound at all.
   assert.equal(REVOKED_SESSION_EXPIRY, 1)
   assert.equal(sessionKeyExpiryFor({ revoke: true }, now), REVOKED_SESSION_EXPIRY)

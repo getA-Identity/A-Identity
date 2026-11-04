@@ -194,9 +194,9 @@ the first one is tracked as an open audit finding rather than a settled decision
 - **No external audit, on any chain.** The Soroban contract has been through free tooling we can
   run and re-run, plus an adversarial review that found and fixed real defects. The Solidity
   `AgentSpendPolicy` and `MerkleAirdrop` have had internal reviews, the latest an Arc Studio AI
-  review on 2026-10-30 (33 findings, none Critical or High; see `OLYMPIX_SUBMISSION.md`), and were
-  submitted to Olympix for an automated pre-audit scan whose results are pending. None of that is
-  an audit and this project does not call it one. Internal review finding G-1, the payee-validity
+  review on 2026-10-30 (33 findings, none Critical or High; see `OLYMPIX_SUBMISSION.md`), and then
+  went through an automated Olympix pre-audit scan, whose results came back on 2026-11-02 and are
+  being answered. None of that is an audit and this project does not call it one. Internal review finding G-1, the payee-validity
   gate the EVM
   `AgentSpendPolicy` was missing, has since been backported: the Solidity declares
   `InvalidPayee` and reverts with it in `pay`, `ownerPay` and `withdraw`.

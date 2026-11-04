@@ -18,8 +18,8 @@
  *
  * --source-ref reads the contract from git at that ref instead of the working tree. A vault
  * is verified against the source it was BUILT from: the three vaults deployed before the
- * Olympix pre-audit (Arc Mainnet, Robinhood Chain, Arbitrum One) came from commit c05b1710,
- * and the reviewed source made owner immutable, which changes the bytecode. Verify those with
+ * Arc Studio review (Arc Mainnet, Robinhood Chain, Arbitrum One) came from commit c05b1710,
+ * and that review made owner immutable, which changes the bytecode. Verify those with
  * --source-ref c05b1710; vaults deployed later match the working tree.
  */
 import solc from 'solc'
@@ -97,7 +97,7 @@ console.log(`Runtime:  local ${(local.length - 2) / 2} bytes, on chain ${(onchai
 if (onchain === '0x') { console.error('error: no code at that address on this chain'); process.exit(1) }
 if (maskImmutables(onchain) !== maskImmutables(local)) {
   console.error('error: the recompiled runtime bytecode does NOT match the chain. Nothing was sent.')
-  if (!SOURCE_REF) console.error('hint: a vault deployed before the Olympix pre-audit was built from commit c05b1710; rerun with --source-ref c05b1710')
+  if (!SOURCE_REF) console.error('hint: a vault deployed before the Arc Studio review was built from commit c05b1710; rerun with --source-ref c05b1710')
   process.exit(1)
 }
 console.log(`Match:    exact outside ${immutableRanges.length} immutable slot(s), metadata hash included`)
