@@ -137,6 +137,13 @@ export type PlatformAgent = {
    */
   kyaProof?: { address: string; at: string; method: 'wallet-signature' | 'erc1271-signature'; chain?: string }
   /**
+   * Wallets this record once proved control of and has since moved off. assignWallet drops the
+   * proof when the wallet changes, so without this the old address would read as a stranger's
+   * and a record gone bad could be paid at the wallet it just left. Only ever a proven address:
+   * state.wallets[].agentId is not, because anyone can record a wallet and point it at an agent.
+   */
+  formerProvenWallets?: string[]
+  /**
    * The owner's signed statement that Circle enforces a spending policy on this wallet.
    *
    * Circle exposes no API for reading another party's policy, so this can only ever be

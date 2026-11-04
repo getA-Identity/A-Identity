@@ -197,3 +197,12 @@ test('WARN: medium Sybil risk warns', () => {
   assert.equal(r.decision, 'WARN')
   assert.ok(r.reasons.some((x) => /Sybil/i.test(x)))
 })
+
+test('the reason on an unknown payee says both halves: not bad, and not clean', () => {
+  // An owner signs on this sentence, and a revoked operator on a fresh address gets it too.
+  for (const onchainVerified of [true, false]) {
+    const r = assessRisk({ onchainVerified, kyaVerified: false, reputationScore: 60, tenureDays: 0, onPlatform: false })
+    assert.match(r.reasons[0], /does not mean it is bad, and it does not mean it is clean/)
+    assert.match(r.reasons[0], /appear under a new/)
+  }
+})

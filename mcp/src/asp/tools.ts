@@ -20,6 +20,8 @@ import { readHumanProofFor, sameHumanOn, type HumanProofRead } from '../self-age
 import { computeAgentReputation, type ReputationResult } from '../reputation.js'
 import {
   listPlatformAgents,
+  recordAtAddress,
+  recordProvesAddress,
   agentReputation,
   agentGuardrailProfile,
   refreshPlatformState,
@@ -35,6 +37,10 @@ const DAY_MS = 86_400_000
 type Bundle = {
   agentId: string
   platform: PlatformAgent | null
+  /** A record that names this address as its wallet without proof. Not this payee's record; see recordAtAddress. */
+  walletClaim: PlatformAgent | null
+  /** What a reader has to know about how this address relates to a record, or null. */
+  addressNote: string | null
   /** Live on-chain ERC-8004 identity, or null if unresolved. */
   identity: Awaited<ReturnType<ReturnType<typeof createIdentityProvider>['resolve']>>
   /** ERC-8004 token id (bigint) if we know one, for on-chain KYA / reputation anchoring. */
@@ -89,41 +95,78 @@ async function withTimeout<T>(p: Promise<T>, ms: number, fallback: T): Promise<T
 }
 
 /**
- * RiskSignals.onPlatform, from whether a platform record exists. false is a finding, so it is
- * answered only when we could actually look, and absent leaves the scorer on its strict rule:
+ * RiskSignals.onPlatform, from whether a platform record speaks for this query. false is a
+ * finding, so it is answered only when we could actually look, and absent leaves the scorer on
+ * its strict rule:
  *
  *   - An empty roster means this process cannot see platform state, not that the agent has no
  *     record, the same reading guardrail_check gives it. Calling that "no record" would turn a
- *     failed state load into a WARN on an agent that may be revoked.
- *   - A CAIP or Stellar 8004 id never matches a platform agent by id, so a record can exist
- *     that the query did not reach. If the identity it resolved to is anchored on a platform
- *     agent on the same chain, "we hold no record" would be false.
+ *     failed state load into a WARN on an agent that may be revoked. A refresh that failed in the
+ *     ASP process (rosterReadable false) is the same thing.
+ *   - An address is the one form that can be looked up in full: recordAtAddress has read it, so
+ *     no record there is a finding.
+ *   - An id that is not an address and resolved to nothing was never looked up: a made-up string,
+ *     a CAIP-10 account, an upper-case 0X, or a token whose RPC read timed out. If "no record"
+ *     were answered there, a bad seller could present a meaningless id and get WARN.
+ *   - A CAIP or Stellar 8004 id never matches a platform agent by id, so a record can exist that
+ *     the query did not reach. If the identity it resolved to is anchored on a platform agent on
+ *     the same chain, or is owned by an address a record proved control of, "we hold no record"
+ *     would be false. The second case is what catches an Arc Mainnet token of a record anchored
+ *     on testnet, or of one with no anchor at all.
  *
- * What this cannot see, stated rather than implied: a payee ADDRESS matches a platform agent
- * by its settlement wallet only. Paying the on-chain owner of a platform agent at an address
- * that is not its wallet reads as no record.
+ * What this cannot see, stated rather than implied: a record that only names an address without
+ * proof does not count (see recordAtAddress), so the on-chain owner of an unproven record's token
+ * reads as no record. DENY binds an address we hold a proven record of, and a payee with a bad
+ * record can appear under a new address and get WARN, so WARN means unknown, not clean.
  */
 export function onPlatformSignal(
   platform: unknown,
-  roster: Pick<PlatformAgent, 'onchainAgentId' | 'chain'>[],
+  roster: Pick<PlatformAgent, 'onchainAgentId' | 'chain' | 'walletAddress' | 'kya' | 'kyaProof' | 'claimProof' | 'formerProvenWallets'>[],
   query: string,
-  identity: { tokenId: number; chain: string; partial?: boolean } | null,
+  identity: { tokenId: number; chain: string; owner?: string; partial?: boolean } | null,
+  rosterReadable = true,
 ): boolean | undefined {
   if (platform) return true
-  if (roster.length === 0) return undefined
-  if (!isAddress(query) && identity && !identity.partial && roster.some((a) => a.onchainAgentId === String(identity.tokenId) && a.chain === identity.chain)) return undefined
+  if (!rosterReadable || roster.length === 0) return undefined
+  if (isAddress(query)) return false
+  if (!identity || identity.partial) return undefined
+  if (roster.some((a) => a.onchainAgentId === String(identity.tokenId) && a.chain === identity.chain)) return undefined
+  const owner = identity.owner
+  if (owner && roster.some((a) => recordProvesAddress(a, owner))) return undefined
   return false
+}
+
+/**
+ * Whether gather() re-reads platform state before scoring. Off by default: the main http process
+ * writes state itself and holds the live copy. The ASP process turns it on at boot, because it
+ * loads state once and never writes it, so without this an agent created since its last restart
+ * would read as "no record", and under the WARN and DENY line that stale miss fails toward paying.
+ */
+let refreshRosterForScoring = false
+export function refreshRosterBeforeScoring(on = true): void {
+  refreshRosterForScoring = on
 }
 
 /** Resolve every real signal we have for an agent, from platform state + the chain. */
 async function gather(agentId: string): Promise<Bundle> {
   const q = agentId.trim()
+  // Cached, shared with guardrail_check, and bounded so a paying caller never hangs on the store.
+  const rosterReadable = refreshRosterForScoring ? await withTimeout(refreshGuardrailState(), RPC_TIMEOUT_MS, false) : true
   const agents = listPlatformAgents()
-  const platform =
+  const named =
     agents.find((a) => a.id === q) ??
     agents.find((a) => a.onchainAgentId && (a.onchainAgentId === q || `#${a.onchainAgentId}` === q)) ??
-    (isAddress(q) ? agents.find((a) => a.walletAddress?.toLowerCase() === q.toLowerCase()) : undefined) ??
     null
+  const atAddress = !named && isAddress(q) ? recordAtAddress(agents, q) : null
+  const platform = named ?? atAddress?.record ?? null
+  // A record that proved this address and has moved off it can count against the address. It
+  // cannot vouch for it: KYA attests the wallet the record uses now.
+  const movedOff = Boolean(atAddress?.record) && !atAddress?.currentWallet
+  const addressNote = movedOff
+    ? 'This address once proved control for an agent on our platform and is not its wallet now, so that record can count against it but does not vouch for it'
+    : atAddress?.claim
+      ? 'A record on our platform names this address as its wallet, but control of it was never proven, so we do not treat that record as this payee'
+      : null
 
   // On-chain resolve. Prefer the platform agent's known token id; else the raw query.
   // Timeout-guarded so a slow/unavailable RPC never leaves a paying caller hanging.
@@ -178,7 +221,7 @@ async function gather(agentId: string): Promise<Bundle> {
   // The narrowing loses a real distinction (unclaimed is weaker than unverified, because
   // the record is not even the caller's), so if this tool should ever report it, that is a
   // deliberate schema change and a re-registration, not a patch.
-  if (platform) kyaStatus = platform.kya === 'unclaimed' ? 'unverified' : platform.kya
+  if (platform) kyaStatus = platform.kya === 'unclaimed' || (movedOff && platform.kya === 'verified') ? 'unverified' : platform.kya
   else if (validation && Number((validation as { kyaCount?: number }).kyaCount ?? 0) > 0) kyaStatus = 'verified'
   const kyaVerified = kyaStatus === 'verified'
 
@@ -211,7 +254,7 @@ async function gather(agentId: string): Promise<Bundle> {
     }
   }
 
-  return { agentId: q, platform, identity, tokenId, validation, humanProof, reputation, onchainVerified, kyaVerified, kyaStatus, revoked: kyaStatus === 'revoked', tenureDays, onPlatform: onPlatformSignal(platform, agents, q, identity) }
+  return { agentId: q, platform, walletClaim: atAddress?.claim ?? null, addressNote, identity, tokenId, validation, humanProof, reputation, onchainVerified, kyaVerified, kyaStatus, revoked: kyaStatus === 'revoked', tenureDays, onPlatform: onPlatformSignal(platform, agents, q, identity, rosterReadable) }
 }
 
 /** The signals every verdict in this file is scored from. */
@@ -224,6 +267,12 @@ const riskSignals = (b: Bundle): RiskSignals => ({
   sybil: b.reputation.sybil?.level,
   onPlatform: b.onPlatform,
 })
+
+/** The verdict of a bundle, with what the address itself adds to its reasons. */
+function assess(b: Bundle, txContext: TxContext | null) {
+  const r = assessRisk(riskSignals(b), txContext)
+  return b.addressNote ? { ...r, reasons: [...r.reasons, b.addressNote] } : r
+}
 
 /**
  * The addresses worth asking the Self Agent ID registry about, in order of how likely
@@ -369,7 +418,7 @@ export async function reputationScore(agentId: string) {
 /** risk_check - pre-transaction ALLOW/WARN/DENY over an agent's trust signals. */
 export async function riskCheck(agentId: string, txContext: TxContext | null = null) {
   const b = await gather(agentId)
-  const r = assessRisk(riskSignals(b), txContext)
+  const r = assess(b, txContext)
   return {
     tool: 'risk_check',
     _meta: TOOL_META,
@@ -386,7 +435,7 @@ export async function riskCheck(agentId: string, txContext: TxContext | null = n
 export async function agentPassport(agentId: string) {
   const b = await gather(agentId)
   const liveness = await checkLiveness(b)
-  const risk = assessRisk(riskSignals(b), null)
+  const risk = assess(b, null)
   return {
     tool: 'agent_passport',
     _meta: TOOL_META,
@@ -584,8 +633,9 @@ export function sameOperator(a: PlatformAgent | null, b: PlatformAgent | null): 
  */
 export async function counterpartyCheck(from: string, to: string, txContext: TxContext | null = null) {
   const [payer, cp] = await Promise.all([gather(from), gather(to)])
-  const base = assessRisk(riskSignals(cp), txContext)
-  const isSelfDeal = sameOperator(payer.platform, cp.platform)
+  const base = assess(cp, txContext)
+  // A relationship signal, so an unproven wallet claim still counts here: it only ever moves ALLOW to WARN.
+  const isSelfDeal = sameOperator(payer.platform ?? payer.walletClaim, cp.platform ?? cp.walletClaim)
   const reasons = [...base.reasons]
   let decision = base.decision
   let risk = base.risk

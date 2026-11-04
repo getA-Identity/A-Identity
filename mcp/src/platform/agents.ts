@@ -17,6 +17,9 @@ import { normalizePriceUsd } from '../marketplace.js'
 
 // ── wallets ───────────────────────────────────────────────────────────────────
 
+/** Enough to keep a moved record's history without letting it balloon the state document. */
+const MAX_FORMER_PROVEN_WALLETS = 20
+
 // There is deliberately no server-side `createWallet` here. It used to generate a keypair
 // and return the private key over HTTP; `POST /api/wallets` stopped calling it, but an
 // exported function is one call site away from re-opening a custody path the project
@@ -66,9 +69,12 @@ export function assignWallet(address: string, agentId: string, caller?: string):
   // new key and it verifies again. The old proof goes with it, because a proof about an
   // address this agent no longer uses is worse than no proof.
   const hadProof = agent.kya === 'verified' && agent.walletAddress?.toLowerCase() !== wallet.address.toLowerCase()
+  const provenBefore = hadProof ? agent.walletAddress : null
   wallet.agentId = agentId
   agent.walletAddress = wallet.address
   if (hadProof) {
+    // The proof goes, the fact that it was proven stays: see formerProvenWallets.
+    if (provenBefore) agent.formerProvenWallets = [...(agent.formerProvenWallets ?? []), provenBefore].slice(-MAX_FORMER_PROVEN_WALLETS)
     agent.kya = 'unverified'
     delete agent.kyaProof
     delete agent.kyaOnchainTx
@@ -243,6 +249,53 @@ export function createAgent(input: {
 
 export function listPlatformAgents(): PlatformAgent[] {
   return state.agents
+}
+
+type AddressFacts = Pick<PlatformAgent, 'walletAddress' | 'kya' | 'kyaProof' | 'claimProof' | 'formerProvenWallets'>
+
+const sameAddress = (a: string | null | undefined, b: string) => typeof a === 'string' && a.toLowerCase() === b.toLowerCase()
+
+/**
+ * Has this record proved control of the wallet it names? A walletAddress is a free text claim at
+ * registration, so anyone can name anyone's wallet. `verified` always means the current wallet:
+ * assignWallet resets it when the wallet changes, and a claim writes the wallet it proved.
+ * `revoked` counts only after a proof, because any owner can revoke a record that proved nothing.
+ */
+export function walletControlProven(a: AddressFacts): boolean {
+  if (!a.walletAddress) return false
+  return a.kya === 'verified' || (a.kya === 'revoked' && Boolean(a.kyaProof))
+}
+
+/** An address this record proved control of and that is not its wallet now. */
+export function formerlyProvenAddress(a: AddressFacts, address: string): boolean {
+  if (sameAddress(a.walletAddress, address)) return false
+  return sameAddress(a.kyaProof?.address, address) || sameAddress(a.claimProof?.address, address) || (a.formerProvenWallets ?? []).some((w) => sameAddress(w, address))
+}
+
+/** Has this record proved control of this address, now or before? */
+export function recordProvesAddress(a: AddressFacts, address: string): boolean {
+  return (sameAddress(a.walletAddress, address) && walletControlProven(a)) || formerlyProvenAddress(a, address)
+}
+
+/**
+ * Which platform record speaks for a payee ADDRESS, the one reading a trust verdict gives it.
+ *
+ *   - record: the record that proved control of this address, a revoked one first so a clean
+ *     twin registered later cannot shadow it. currentWallet says whether it is still its wallet.
+ *   - claim: a record that names this address without proof. It is not this payee's record,
+ *     because a free registration can name a real vendor's wallet, and counting it would let a
+ *     stranger turn that vendor's WARN into a DENY. It is returned so the reasons can say so.
+ *
+ * Deliberately not read: state.wallets[].agentId and importedFrom.owner (anyone can write them,
+ * by recording a wallet or importing a token), and an account's linked wallets (proven, but an
+ * account holds many agents, so a record against one is not evidence about that wallet).
+ */
+export function recordAtAddress<T extends AddressFacts>(agents: T[], address: string): { record: T | null; currentWallet: boolean; claim: T | null } {
+  const atWallet = agents.filter((a) => sameAddress(a.walletAddress, address))
+  const proven = atWallet.filter(walletControlProven)
+  const former = agents.filter((a) => formerlyProvenAddress(a, address))
+  const record = [...proven, ...former].find((a) => a.kya === 'revoked') ?? proven[0] ?? former[0] ?? null
+  return { record, currentWallet: record !== null && proven.includes(record), claim: record ? null : (atWallet[0] ?? null) }
 }
 
 /**

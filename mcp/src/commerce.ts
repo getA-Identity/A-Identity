@@ -73,7 +73,7 @@ export function computeMerchantVerdict(s: MerchantSignals): { verdict: MerchantV
   }
 
   if (!s.identityFound) {
-    warn.push({ code: 'no_onchain_identity', severity: 'warn', detail: 'No on-chain identity (ERC-8004) was found for this merchant agent, so we do not know who is behind it. This does not mean it is bad: we have no evidence either way' })
+    warn.push({ code: 'no_onchain_identity', severity: 'warn', detail: 'No on-chain identity (ERC-8004) was found for this merchant agent, so we do not know who is behind it. This does not mean it is bad, and it does not mean it is clean: we have no evidence at this address, and a merchant with a bad record can appear under a new one' })
   }
   if (s.reputationScore !== null && s.reputationScore >= REP_DENY_BELOW && s.reputationScore < REP_WARN_BELOW) {
     warn.push({ code: 'moderate_reputation', severity: 'warn', detail: `Moderate reputation (${s.reputationScore}); proceed with caution` })
@@ -272,8 +272,18 @@ export type PlatformReputationView = {
  * entry stays free of platform state until the tool is actually called.
  */
 async function defaultPlatformView(queries: string[]): Promise<PlatformReputationView | null> {
-  const { agentReputation, listPlatformAgents } = await import('./platform.js')
+  const { agentReputation, listPlatformAgents, recordAtAddress } = await import('./platform.js')
   for (const q of queries) {
+    // An address speaks for a record only if the record proved it: the same reading risk_check
+    // gives it, so a free registration naming a real merchant's wallet cannot earn it a DENY.
+    if (/^0x[0-9a-fA-F]{40}$/.test(q)) {
+      const at = recordAtAddress(listPlatformAgents(), q)
+      if (!at.record) continue
+      const view = agentReputation(at.record.id)
+      if ('error' in view) continue
+      // A record that has moved off this address does not vouch for it.
+      return (at.currentWallet || view.kya !== 'verified' ? view : { ...view, kya: 'unverified' }) as unknown as PlatformReputationView
+    }
     let rep = agentReputation(q)
     if ('error' in rep) {
       const tokenId = q.match(/(\d+)\s*$/)?.[1]

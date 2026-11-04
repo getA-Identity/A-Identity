@@ -4,6 +4,8 @@ import { generatePrivateKey, privateKeyToAccount } from 'viem/accounts'
 import {
   __resetPlatformStateForTests,
   createAgent,
+  listPlatformAgents,
+  recordAtAddress,
   recordWallet,
   assignWallet,
   agentGuardrailProfile,
@@ -187,4 +189,26 @@ test('a wallet is marked as a Circle agent wallet by its attestation, and loses 
   assert.ok(!('error' in moved))
   assert.equal(agent.circlePolicyAttestation, undefined)
   assert.equal(circleAgentWalletFor(fresh.address), null)
+})
+
+test('a proven wallet the agent moves off stays on its record, so a later revocation still reads there', () => {
+  const fresh = privateKeyToAccount(generatePrivateKey())
+  const agent = seed(fresh.address)
+  // Named but never proven: moving off it records nothing, because nothing was proven about it.
+  recordWallet(SCA)
+  assert.ok(!('error' in assignWallet(SCA, agent.id, OWNER)))
+  assert.equal(agent.formerProvenWallets, undefined)
+
+  const next = privateKeyToAccount(generatePrivateKey()).address
+  agent.kya = 'verified'
+  agent.kyaProof = { address: SCA, at: new Date().toISOString(), method: 'wallet-signature' }
+  recordWallet(next)
+  assert.ok(!('error' in assignWallet(next, agent.id, OWNER)))
+  assert.equal(agent.kya, 'unverified', 'KYA is about the wallet it proved')
+  assert.equal(agent.kyaProof, undefined)
+  assert.deepEqual(agent.formerProvenWallets, [SCA])
+
+  agent.kya = 'revoked'
+  assert.equal(recordAtAddress(listPlatformAgents(), SCA).record?.id, agent.id)
+  assert.equal(recordAtAddress(listPlatformAgents(), SCA).currentWallet, false)
 })

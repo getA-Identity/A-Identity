@@ -22,7 +22,7 @@ import { fileURLToPath } from 'node:url'
 import { dirname, join } from 'node:path'
 import { initState } from './platform.js'
 import { TRUSTED_PROXY_COUNT } from './client-ip.js'
-import { verifyAgent, reputationScore, riskCheck, agentPassport, counterpartyCheck, trustPreview, guardrailCheck, type TxContext } from './asp/tools.js'
+import { verifyAgent, reputationScore, riskCheck, agentPassport, counterpartyCheck, trustPreview, guardrailCheck, refreshRosterBeforeScoring, type TxContext } from './asp/tools.js'
 import { applyOkxX402, type PaymentStatus } from './asp/payment.js'
 import { PROOF, METHODOLOGY } from './asp/proof.js'
 import { renderProofHtml } from './asp/proof-html.js'
@@ -171,6 +171,8 @@ function serviceCard(payment: PaymentStatus) {
 
 async function main() {
   await initState()
+  // This process loads state once and never writes it, so its roster goes stale; see the function.
+  refreshRosterBeforeScoring()
 
   const app = express()
   // Behind Render's (and Cloudflare's) proxy, TLS terminates upstream, so Express's
