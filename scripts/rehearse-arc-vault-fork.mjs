@@ -1201,7 +1201,7 @@ async function browserRehearsal({ handoffOnly = false } = {}) {
     await stopIf(await waitText(/yet, because its agent key has no end date\. Set one in the Session key box on this vault's page, with its Set the expiry button\. You do not have to send anything to anyone: our server looks for vaults/, 30000), 'no end date: it says so, says where to set one, and says the server then finds it')
     say(`the vault page says: ${await noticeSays()}`)
     check(!/has the agent key end date it looks for/.test(await text()), 'and it does not claim a date the vault does not have')
-    await page.getByRole('button', { name: /^Switch to / }).first().click()
+    await page.getByRole('button', { name: 'Switch to Arc Mainnet', exact: true }).first().click()
     const sessionKeyButton = (name) => page.getByRole('region', { name: 'Session key', exact: true }).getByRole('button', { name, exact: true })
     await sessionKeyButton('Set the expiry').waitFor({ timeout: 30000 })
     check((await sessionKeyButton('Set the expiry').count()) === 1, 'with the wallet on this network the owner sees the box the line names, and in it the button')
