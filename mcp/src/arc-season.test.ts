@@ -397,6 +397,22 @@ test('a recorded DENY with a public record fills the refusal metric, with no han
   assert.match(r.milestone1.refusals.note, /correct under the rule of its day/)
   assert.match(r.milestone1.refusals.note, /changed on 2026-11-04/)
   assert.match(r.milestone1.refusals.note, /sees WARN/)
+  // It names the wallet and how many, because "that wallet" alone points at nothing.
+  const payee = denyFlow(check.authNonce).payee.toLowerCase()
+  assert.ok(r.milestone1.refusals.note.includes(`1 recorded DENY result(s), dated before 2026-11-04, name ${payee}`), r.milestone1.refusals.note)
+})
+
+test('the old-rule note is only about DENYs answered under the old rule', async () => {
+  const check = gw({ payer: OURS_GATEWAY, ts: '2026-11-04T12:00:00.000Z' })
+  const after = await arcSeasonReport(deps({ gateway: [check], flows: [denyFlow(check.authNonce, { at: '2026-11-04T12:00:05.000Z' })], now: () => Date.parse('2026-11-05T00:00:00.000Z') }))
+  assert.equal(after.milestone1.refusals.byKind['deny-before-signing'], 1, 'it counts like any other')
+  assert.doesNotMatch(after.milestone1.refusals.note, /rule of its day|sees WARN/)
+
+  // A DENY on an agent of ours with a platform record was not the old rule's doing, and a re-check gives DENY.
+  const early = gw({ payer: OURS_GATEWAY })
+  const own = await arcSeasonReport(deps({ gateway: [early], flows: [denyFlow(early.authNonce, { payee: ARC_OUR_PAYEES[0].address })] }))
+  assert.equal(own.milestone1.refusals.byKind['deny-before-signing'], 1)
+  assert.doesNotMatch(own.milestone1.refusals.note, /rule of its day|sees WARN/)
 })
 
 test('only a linked DENY with a record counts: not a paid flow, an on-chain revert, or a nonce that names nothing', async () => {
@@ -1145,7 +1161,7 @@ test('with the flow log unreadable nobody is told how many checks have nothing l
   assert.equal(r.milestone1.refusals.incomplete, true)
   assert.match(r.milestone1.refusals.note, /any DENY it holds is missing from this count/)
   assert.equal(r.milestone2.externalFlows.incomplete, true)
-  assert.doesNotMatch(r.milestone2.externalFlows.note, /No external verify-then-pay flow is recorded yet/)
+  assert.doesNotMatch(r.milestone2.externalFlows.note, /No external verify-then-pay flow has reached/)
   assert.equal(r.milestone2.externalChecks.incomplete, undefined, 'the settlement logs answered')
   assert.ok(!JSON.stringify(r).includes('vtp_flows unreachable'))
 })
@@ -1167,7 +1183,8 @@ test("an external team's verify-then-pay flow is listed under Milestone 2, by th
   // No check, no flow; before the check, no flow; one transaction stands behind one flow only.
   const quiet = await arcSeasonReport(deps({ gateway: [ours], flows: [paid] }))
   assert.equal(quiet.milestone2.externalFlows.count, 0)
-  assert.match(quiet.milestone2.externalFlows.note, /^No external verify-then-pay flow is recorded yet/)
+  assert.match(quiet.milestone2.externalFlows.note, /^No external verify-then-pay flow has reached a vault payment or a refusal yet/)
+  assert.match(quiet.milestone2.externalFlows.note, /A WARN waiting for its owner has a public record/)
   const early = await arcSeasonReport(deps({ gateway: [theirs], flows: [flow({ checkNonce: theirs.authNonce, at: '2026-11-03T09:00:00.000Z' })] }))
   assert.equal(early.milestone2.externalFlows.count, 0)
   const reused = await arcSeasonReport(deps({ gateway: [theirs, ours], flows: [flow({ checkNonce: ours.authNonce, txHash: tx }), { ...paid }] }))

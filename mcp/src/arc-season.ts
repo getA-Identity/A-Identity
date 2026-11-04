@@ -948,6 +948,13 @@ export async function arcSeasonReport(deps: ArcSeasonDeps): Promise<ArcSeasonRep
     const why = payeeInternal(f)
     return [{ kind: 'deny-before-signing' as const, evidenceUrl: f.evidenceUrl, at: f.at, note: f.note, ...(why ? { payeeInternal: why } : {}) }]
   })
+  // What a re-check today would answer differently, and only that: a DENY dated after the change,
+  // or one on an agent of ours that has a platform record, was not answered under the older rule.
+  const ourPlatformAgents = new Set(ARC_OUR_PAYEES.map((p) => p.address.toLowerCase()))
+  const deniesUnderOldRule = linkedList.filter(
+    (f) => f.outcome === 'refused' && !f.txHash && f.evidenceUrl && !curatedEvidence.has(f.evidenceUrl) && Date.parse(f.at) < Date.parse(`${RISK_RULE_CHANGED_ON}T00:00:00.000Z`) && !ourPlatformAgents.has(f.payee.toLowerCase()),
+  )
+  const namedUnderOldRule = [...new Set(deniesUnderOldRule.map((f) => f.payee.toLowerCase()))]
   const allRefusals = [...refusals, ...recordedDenials]
   const byKind: Record<ArcRefusalKind, number> = { 'vault-policy-on-chain': 0, 'deny-before-signing': 0 }
   for (const r of allRefusals) byKind[r.kind] += 1
@@ -1050,8 +1057,8 @@ export async function arcSeasonReport(deps: ArcSeasonDeps): Promise<ArcSeasonRep
             ? 'No inspectable refusal yet. The launch-day refusal (a 0.50 USDC payment above autoApproveMax) was a simulation that returned the contract\'s typed AboveAutoApprove error and broadcast nothing, so it has no hash and is not counted. A refusal counts once it is a reverted vault transaction with a hash, or a DENY verdict that stopped a payment before signing with an audit entry anyone can open.'
             : `${refusalKindsShown} of the ${ARC_SEASON_TARGETS.inspectableRefusals} kinds committed to: ${byKind['vault-policy-on-chain']} vault-policy refusal(s) on chain and ${byKind['deny-before-signing']} DENY result(s) stopped before signing, read from the public flow records. The launch-day simulated refusal is not among them.` +
               (recordedDenials.length > REFUSAL_ITEMS_SHOWN ? ` ${recordedDenials.length - REFUSAL_ITEMS_SHOWN} more DENY record(s) are on checks.items.` : '') +
-              (byKind['deny-before-signing'] > 0
-                ? ` Each recorded DENY stands as it was answered, and was correct under the rule of its day, when a payee with no platform record got DENY. That rule changed on ${RISK_RULE_CHANGED_ON}: such a payee now gets WARN, so a reviewer who checks that wallet again today sees WARN. Nothing recorded here was changed, and no count moved.`
+              (deniesUnderOldRule.length > 0
+                ? ` ${deniesUnderOldRule.length} recorded DENY result(s), dated before ${RISK_RULE_CHANGED_ON}, name ${namedUnderOldRule.join(' and ')}, which holds no platform record. Each stands as it was answered, and was correct under the rule of its day, when a payee with no platform record got DENY. That rule changed on ${RISK_RULE_CHANGED_ON}: such a payee now gets WARN, so a reviewer who checks ${namedUnderOldRule.length === 1 ? 'that wallet' : 'those wallets'} again today sees WARN. Nothing recorded here was changed, and no count moved.`
                 : '')),
       },
       evidence: ARC_SEASON_EVIDENCE_URL,
@@ -1129,7 +1136,7 @@ export async function arcSeasonReport(deps: ArcSeasonDeps): Promise<ArcSeasonRep
         note:
           (flowsIncomplete ? 'The Circle Gateway settlement log or the verify-then-pay flow log could not be read on this request, so this list may be short. ' : '') +
           (externalFlowItems.length === 0
-            ? `${flowsIncomplete ? '' : 'No external verify-then-pay flow is recorded yet. '}A flow appears here when a wallet outside our own pays a Circle Gateway check and the route then records its vault payment or a refusal. An external check with no recorded flow still counts as a paid check above.`
+            ? `${flowsIncomplete ? '' : 'No external verify-then-pay flow has reached a vault payment or a refusal yet. '}A flow appears here when a wallet outside our own pays a Circle Gateway check and the route then records its vault payment or a refusal. A WARN waiting for its owner has a public record at its flow URL and counts as neither until the owner acts. An external check with no flow here still counts as a paid check above.`
             : `${externalFlowItems.length} verify-then-pay flow(s) opened by a check from a wallet A-Identity does not control, by the same linking rules as Milestone 1 and counted apart from it.`),
       },
       unattributed: {

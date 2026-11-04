@@ -295,20 +295,21 @@ live in `src/arc-vtp-run.ts`, unit-tested with fakes. Status: it finished Milest
 npm run build && (cd ../trust-guard && npm run build)
 
 # PREPARED, the default: reads only, signs nothing, needs no key. Prints the plan, or REFUSED.
-node scripts/arc-vtp-runner.mjs --allow 25 --deny 75
+node scripts/arc-vtp-runner.mjs --allow 25
 
 # EXECUTES, with the operator key in env X402_3009_BUYER_KEY, never printed.
 CONFIRM_ARC_VTP_RUN=yes node --env-file=.env scripts/arc-vtp-runner.mjs \
-  --allow 25 --deny 75 --log data/arc-vtp-run.jsonl --execute
+  --allow 25 --log data/arc-vtp-run.jsonl --execute
 
 # Confirm the count on the public report.
 curl -s https://a-identity.xyz/api/arc/season | jq '.milestone1.checks | {count, target, linked, unlinked}'
 ```
 
 `--allow` flows pay Simon, an agent in our own account, and expect ALLOW and a `Paid` transaction. `--deny` flows name our
-operating wallet (agent #0, internal) and expect `TrustDenyError`, which is what its 25 flows got on 2026-11-02. It is
-off-platform, so since the rule changed on 2026-11-04 it forecasts WARN and the plan refuses it: Milestone 1 is finished,
-this is not to be run again, and no other payee replaces it. Other flags: `--amount-units`
+operating wallet (agent #0, internal) and expect `TrustDenyError`, which is what its 25 flows got on 2026-11-01 and
+2026-11-02 UTC. It is off-platform, so since the rule changed on 2026-11-04 it forecasts WARN and the plan refuses any
+`--deny`: Milestone 1's 100 flows finished on 2026-11-02 and are not to be run again, and no other payee replaces it.
+The historical invocation was `--allow 25 --deny 75`, and it now ends REFUSED. Other flags: `--amount-units`
 (default 1000, and each flow pays one unit more, so no two share an amount), `--base-url`,
 `--budget` (default 0.75 USDC), `--max-fee-gwei` (default 60), `--pause-ms` (default 5000),
 `--operator`, `--ack-stop`, `--ack-fresh-log`, `--reconcile`. Exit 0 fits or finished, 1 refused or
