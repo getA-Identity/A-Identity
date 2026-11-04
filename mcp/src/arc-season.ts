@@ -150,9 +150,18 @@ export type ArcOwnerHeldVault = {
  * key A-Identity never holds, admitted by hand: mcp/scripts/arc-owner-vault-check.mjs admits a
  * vault and prints its entry, which can say whose wallet it is. A vault is listed only with its
  * deploy hash. The browser vault deployer at /app/vault/arc needs no entry here: its deploys are
- * admitted by POST /api/arc/vaults under the same checks, and ArcSeasonDeps.admittedVaults reads them.
+ * admitted by POST /api/arc/vaults or the server's own sweep under the same checks, and
+ * ArcSeasonDeps.admittedVaults reads them.
  */
 export const ARC_OWNER_HELD_VAULTS: ArcOwnerHeldVault[] = []
+
+/**
+ * Where the server's own vault sweep (arc-vault-sweep.ts) starts after a restart, on Arc Mainnet: just
+ * before block 28991766, the first at or after 2026-11-01T13:05Z, when /app/vault/arc was first
+ * committed. No owner could deploy from the page before it, and a vault only appears to the sweep once
+ * its end date is set, which is later still. Older than this it would only cost reads for nothing.
+ */
+export const ARC_VAULT_SWEEP_START_BLOCK = 28_990_000
 
 export type ArcRefusalKind = 'vault-policy-on-chain' | 'deny-before-signing'
 

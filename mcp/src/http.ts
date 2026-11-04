@@ -54,6 +54,7 @@ import { handleGuardrailRoutes } from './http/guardrail-routes.js'
 import { handleInstructionRoutes } from './http/instruction-routes.js'
 import { handleMarketplaceRoutes } from './http/marketplace-routes.js'
 import { mcpNonPostResponse } from './http/mcp-info.js'
+import { startVaultSweep } from './arc-vault-sweep.js'
 
 // Render/most hosts inject PORT; fall back to our own var, then the local default.
 const PORT = Number(process.env.PORT ?? process.env.A_IDENTITY_HTTP_PORT ?? 3399)
@@ -427,6 +428,9 @@ server.listen(PORT, () => {
   console.error(`  GET  /api/proof/rails            every published rail, plus the Gateway and facilitator logs split by network, internal apart from external`)
   console.error(`  GET  /api/proof/:rail            provenance ledger + a live re-read (see /api/proof/rails)`)
 })
+
+// Looks for countable vaults on the chain by itself: unref'd, and a failed round ends only that round.
+startVaultSweep()
 
 // Keep-alive: free-tier hosts (e.g. Render) idle-sleep after ~15 min without inbound
 // traffic. When RENDER_EXTERNAL_URL is present, ping our own public /health every 10
