@@ -399,7 +399,7 @@ export const ALGORAND_LISTINGS: Record<AlgorandToolName, AlgorandListing> = {
         { agentId: '#0', decision: 'ALLOW', risk: 'low', reasons: [], reputationScore: 612, onchainVerified: true, kyaVerified: true, revoked: false },
         {
           agentId: '#1', decision: 'WARN', risk: 'medium',
-          reasons: ['No on-chain identity (ERC-8004) was found for this payee and we hold no record of it on our platform, so we do not know who it is or how it has behaved. This does not mean it is bad, and it does not mean it is clean: we have no evidence at this address, and a payee with a bad record can appear under a new one.'],
+          reasons: ['No on-chain identity (ERC-8004) was found for this payee and we hold no record of it on our platform, so we do not know who it is or how it has behaved. This does not mean it is bad, and it does not mean it is clean: we have no evidence at this address, and a payee with a bad record can appear under a new one. Hold the payment for a person to approve, unless the owner has chosen to pay payees like this.'],
           reputationScore: 0, onchainVerified: false, kyaVerified: false, revoked: false,
         },
       ],

@@ -87,7 +87,7 @@ export function computeMerchantVerdict(s: MerchantSignals): { verdict: MerchantV
   }
 
   if (!s.identityFound) {
-    warn.push({ code: 'no_onchain_identity', severity: 'warn', detail: 'No on-chain identity (ERC-8004) was found for this merchant agent, so we do not know who is behind it. This does not mean it is bad, and it does not mean it is clean: we have no evidence at this address, and a merchant with a bad record can appear under a new one' })
+    warn.push({ code: 'no_onchain_identity', severity: 'warn', detail: 'No on-chain identity (ERC-8004) was found for this merchant agent, so we do not know who is behind it. This does not mean it is bad, and it does not mean it is clean: we have no evidence at this address, and a merchant with a bad record can appear under a new one. Hold the payment for a person to approve, unless the owner has chosen to pay merchants like this' })
   }
   if (s.reputationScore !== null && s.reputationScore < REP_DENY_BELOW && s.adverseRecord === false && !heldAgainstIt) {
     warn.push({ code: 'low_reputation', severity: 'warn', detail: `Our record of this merchant agent ${contested > 0 ? 'holds no evidence against it' : 'holds nothing against it'}, and not enough to vouch for it: its reputation is ${s.reputationScore}, under ${REP_DENY_BELOW}` })

@@ -132,9 +132,13 @@ const HIGH_VALUE_USD = 100 // "high value" relative to a low-rep counterparty, o
 const LARGE_TX_USD = 1000 // large absolute amount -> always at least a warning
 const NEW_AGENT_DAYS = 7 // younger than this is a "new agent" caution
 
-/** Both halves, because an owner signs on this sentence: unknown is not bad, and it is not clean either. */
+/**
+ * Both halves, because an owner signs on this sentence: unknown is not bad, and it is not clean either.
+ * The last sentence is for the clients already installed: this rule reaches them when the server
+ * deploys, and an agent that acts on the reasons has to read here that a WARN does not pay by itself.
+ */
 const UNKNOWN_IS_NOT_CLEAN =
-  'This does not mean it is bad, and it does not mean it is clean: we have no evidence at this address, and a payee with a bad record can appear under a new one.'
+  'This does not mean it is bad, and it does not mean it is clean: we have no evidence at this address, and a payee with a bad record can appear under a new one. Hold the payment for a person to approve, unless the owner has chosen to pay payees like this.'
 
 /** Real Sybil / wash-reputation signals from platform state (same-operator hiring + cluster size). */
 export type SybilSignals = {
