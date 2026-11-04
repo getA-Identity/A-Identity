@@ -49,7 +49,7 @@ import type { Chain } from '../../lib/chains'
 import { listKnownVaults, seededKnownVaults, type KnownVaults } from '../../lib/arc/known-vaults'
 import { autoLandVault, FUND_RISK, isOurKey, isOurVault, NAMES_OUR_KEY, NOT_MY_VAULT } from '../../lib/arc/ours'
 import { clearTx, loadDeploys, loadTx, rememberDeploy, saveTx, type TxRecord } from '../../lib/arc/pending'
-import { countableDeploy, deployHashFor, listingOf, listReads, vaultPageStage, vaultThisBrowserHolds, type Listing } from '../../lib/arc/vault-count'
+import { countableDeploy, deployHashFor, endDateOf, listingOf, listReads, vaultPageStage, vaultThisBrowserHolds, type Listing } from '../../lib/arc/vault-count'
 import { fundingUnresolved, predictedVault, setupAlert, setupFundEndedOn, setupFundInDoubtOn, setupTxOn, withRecord } from '../../lib/arc/tx-rules'
 import {
   ARC_CHAINS,
@@ -494,7 +494,7 @@ export default function ArcVault() {
                     inFlight={inFlight}
                     onSubmitted={onSubmitted}
                   />
-                  {ownersVault && <VaultCountLine chain={chain} expiry={v.sessionKeyExpiry} hash={deployHash} listing={listingOf(known, chain.caip2, v.address)} onReadListAgain={readListAgain} />}
+                  {ownersVault && <VaultCountLine chain={chain} expiry={v.sessionKeyExpiry} expired={v.expired} hash={deployHash} listing={listingOf(known, chain.caip2, v.address)} onReadListAgain={readListAgain} />}
                 </div>
               </section>
             )}
@@ -592,9 +592,9 @@ function DeployLinkRefused({ networkParam }: { networkParam: string }) {
 }
 
 /** Whether this vault counts on /proof/arc, asked for and said here too: an owner may never go back to the setup. Inside the owner box, and nothing in it depends on the answer. */
-function VaultCountLine({ chain, expiry, hash, listing, onReadListAgain }: { chain: Chain; expiry: bigint; hash: string | null; listing: Listing; onReadListAgain: () => void }) {
+function VaultCountLine({ chain, expiry, expired, hash, listing, onReadListAgain }: { chain: Chain; expiry: bigint; expired: boolean; hash: string | null; listing: Listing; onReadListAgain: () => void }) {
   const { count, retry } = useVaultCount({ hash, stage: vaultPageStage(hash, expiry), listing, onReadListAgain })
-  return <VaultCountNotice testnet={chain.testnet} networkName={networkName(chain)} count={count} onRetry={retry} hasEndDate={expiry !== 0n} />
+  return <VaultCountNotice testnet={chain.testnet} networkName={networkName(chain)} count={count} onRetry={retry} endDate={endDateOf(expiry, expired)} />
 }
 
 function FailureLine({ title, next }: { title: string; next: string }) {

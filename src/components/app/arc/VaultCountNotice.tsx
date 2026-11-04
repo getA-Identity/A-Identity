@@ -3,7 +3,9 @@
  * set up" and on the vault's own page. The vault works the same either way, and when the question
  * failed the line says that too.
  */
-import type { VaultCount } from '../../../lib/arc/vault-count'
+import { useEffect, useState } from 'react'
+import { readSweepSays } from '../../../lib/arc/known-vaults'
+import { noHashWords, type EndDate, type SweepSays, type VaultCount } from '../../../lib/arc/vault-count'
 
 const PROOF_LINK = (
   <a href="/proof/arc" className="font-semibold text-accent underline underline-offset-2">
@@ -16,15 +18,28 @@ export default function VaultCountNotice({
   networkName,
   count,
   onRetry,
-  hasEndDate = true,
+  endDate,
 }: {
   testnet: boolean
   networkName: string
   count: VaultCount
   onRetry: () => void
-  /** Whether the vault read back an end date, which is what the server's own search on the chain looks for. */
-  hasEndDate?: boolean
+  /** What the vault's agent key end date reads as. No default: "has one" is a claim to the owner, and only a read can make it. */
+  endDate: EndDate
 }) {
+  // Asked only when it will be said: no other state of this line depends on the server's search.
+  const needsSweep = !testnet && count.state === 'no-hash'
+  const [sweep, setSweep] = useState<SweepSays>('reading')
+  useEffect(() => {
+    if (!needsSweep) return
+    let current = true
+    void readSweepSays().then((says) => {
+      if (current) setSweep(says)
+    })
+    return () => {
+      current = false
+    }
+  }, [needsSweep])
   const retry = (
     <button type="button" onClick={onRetry} className="font-semibold text-accent underline underline-offset-2">
       Try again
@@ -39,13 +54,9 @@ export default function VaultCountNotice({
     return <div className={box}>This vault can count on {PROOF_LINK} once its agent key has an end date. When this page reads one it asks by itself, and you do not have to send anything to anyone.</div>
   }
   if (count.state === 'no-hash') {
-    return hasEndDate ? (
+    return (
       <div className={box}>
-        This vault is not counted on {PROOF_LINK} yet. You do not have to send anything to anyone: our server looks for vaults on the chain by itself, and this one has the agent key end date it looks for. Look again here in a little while. If it still says this tomorrow, tell the A-Identity team, because the check may have refused it.
-      </div>
-    ) : (
-      <div className={box}>
-        This vault is not counted on {PROOF_LINK} yet, because its agent key has no end date. Set one from this page. You do not have to send anything to anyone: our server looks for vaults on the chain by itself, and it finds this one once it has an end date.
+        This vault is not counted on {PROOF_LINK} yet{noHashWords(endDate, sweep)}
       </div>
     )
   }

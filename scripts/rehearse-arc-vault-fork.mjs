@@ -710,11 +710,21 @@ async function sweepWithNoPage() {
   const exited = new Promise((r) => backend.once('exit', r))
   backend.kill('SIGTERM')
   await exited
+  backendOut = ''
   await startBackend()
-  await waitFor('a tick after the restart', async () => (await getJson('/api/arc/vaults')).body.sweep?.lastRun, 30000)
+  // Only a sweep that read past the vault with nothing wrong has said anything about it.
   await mine()
-  await new Promise((r) => setTimeout(r, 5000))
-  check((await storeCount()) === rows && (await getJson('/api/arc/vaults')).body.items.filter((v) => v.address === quiet.vault).length === 1, 'a restart reads it all again and adds no second row')
+  const reread = await waitFor(
+    'the restarted sweep to read past the vault with no problem',
+    async () => {
+      const sweep = (await getJson('/api/arc/vaults')).body.sweep
+      return sweep?.lastRun && sweep.lastProblem === null && Number(sweep.lastBlockRead) >= Number(quiet.block) ? sweep : null
+    },
+    60000,
+  )
+  say(`after the restart the sweep says ${JSON.stringify(reread)}`)
+  check((await storeCount()) === rows && (await getJson('/api/arc/vaults')).body.items.filter((v) => v.address === quiet.vault).length === 1, 'a restart reads it all again, past that vault, and adds no second row')
+  check(!backendOut.includes(`counted ${quiet.vault.toLowerCase()}`), 'and it was on the list, so nothing asked about it again')
 }
 
 async function browserRehearsal() {
@@ -1021,8 +1031,10 @@ async function browserRehearsal() {
     const other = await deployVault(acct(ownerIndex), acct(agentIndex).address)
     await setExpiry(acct(ownerIndex), other.vault)
     await open(other.vault)
-    await stopIf(await waitText(/This vault is not counted on .* yet\. You do not have to send anything to anyone: our server looks for vaults/, LIST_WAIT), 'an uncounted vault says it is not on the list, and why this page cannot ask')
+    // The sweep is off until restartWithSweep, and the list says so, so the page must not say it is looking.
+    await stopIf(await waitText(/This vault is not counted on .* yet\. Our server is not looking for vaults on the chain right now, so open this vault in the browser that deployed it/, LIST_WAIT), 'an uncounted vault says it is not on the list, and with the sweep off it says nobody is looking and what still works')
     say(`the vault page says: ${await noticeSays()}`)
+    check(!/our server looks for vaults/.test(await text()), 'it does not claim a search that is not running')
     check(posts.length === 0 && (await rowsFor(other.vault)) === 0, 'nothing is posted and no row appears: no hash, no question')
 
     seasonDown = true
@@ -1045,7 +1057,7 @@ async function browserRehearsal() {
     check((await page.getByRole('button', { name: 'Try again' }).count()) === 0, 'and offers no second click while it reads')
     answerSeason()
     seasonHeld = Promise.resolve()
-    await stopIf(await waitText(/This vault is not counted on .* yet\. You do not have to send anything to anyone: our server looks for vaults/, LIST_WAIT), 'the answer replaces it')
+    await stopIf(await waitText(/This vault is not counted on .* yet\. Our server is not looking for vaults/, LIST_WAIT), 'the answer replaces it')
     check(seasonReads.count === readsBefore + 1, `one click, one read of the list (${seasonReads.count - readsBefore})`)
     answerProof()
     proofHeld = Promise.resolve()
@@ -1066,6 +1078,37 @@ async function browserRehearsal() {
     check(pageErrors.length === 0, `no page errors (${pageErrors.slice(0, 2).join(' | ')})`)
     await ctx.close()
     return other
+  }
+
+  /** What a browser with no hash says with the sweep on, for each thing the vault's end date can read as. The page's prop decides this, so only the page can prove it. */
+  async function noHashWordsRun({ ownerIndex, agentIndex }) {
+    section('the page: with the sweep on and no hash, it says what the end date reads as')
+    const b = await ownerBrowser({ ownerIndex, agentIndex })
+    const { ctx, posts, pageErrors, text, waitText, stopIf, connect, noticeSays } = b
+    const page = b.current()
+    const open = (address) => page.goto(`${base}/app/vault/arc?network=${encodeURIComponent(chain.caip2)}&contract=${address}`, { waitUntil: 'domcontentloaded' })
+    const { vault } = await deployVault(acct(ownerIndex), acct(agentIndex).address)
+
+    await open(vault)
+    await connect()
+    await stopIf(await waitText(/yet, because its agent key has no end date\. Set one from this page\. You do not have to send anything to anyone: our server looks for vaults/, 30000), 'no end date: it says so, says to set one, and says the server then finds it')
+    say(`the vault page says: ${await noticeSays()}`)
+    check(!/has the agent key end date it looks for/.test(await text()), 'and it does not claim a date the vault does not have')
+
+    await setExpiry(acct(ownerIndex), vault)
+    await open(vault)
+    await stopIf(await waitText(/yet\. You do not have to send anything to anyone: our server looks for vaults on the chain by itself, and this one has the agent key end date it looks for/, 30000), 'a date in the future: it says this one has what the server looks for')
+
+    // Revoked is the date a second after the epoch, which the page reads as passed.
+    await send(acct(ownerIndex), vaultCall(vault, 'setSessionKeyExpiry', [1n]))
+    await open(vault)
+    await stopIf(await waitText(/yet, because its agent key's end date has passed\. Set a new one from this page\. .*within about an hour of the new end date/, 30000), 'a revoked key: it says the date has passed, to set a new one, and when the server finds it again')
+    say(`the vault page says: ${await noticeSays()}`)
+    const said = await text()
+    check(!/has the agent key end date it looks for/.test(said) && !/tell the A-Identity team/.test(said), 'and it neither claims a date the server wants nor sends anyone to a person')
+    check(posts.length === 0, 'nothing is posted: no hash, no question')
+    check(pageErrors.length === 0, `no page errors (${pageErrors.slice(0, 2).join(' | ')})`)
+    await ctx.close()
   }
 
   /** The gap the sweep closes: the owner's page never gets a question through, and the tab can close. */
@@ -1219,6 +1262,7 @@ async function browserRehearsal() {
   section("the server's own sweep: the vault from another device, that no page could ask about")
   const otherRow = await sweepCounts(otherDevice.vault)
   check(otherRow.deployTx === otherDevice.hash.toLowerCase(), 'it is counted, under its real deploy hash, and not the one a browser had claimed for it')
+  await noHashWordsRun({ ownerIndex: 17, agentIndex: 7 })
   await blockedPostRun({ ownerIndex: 16, agentIndex: 7 })
   await browser.close()
   say(`hosts the browser tried and this run refused: ${[...refused].join(', ') || 'none'}`)
