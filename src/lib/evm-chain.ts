@@ -32,6 +32,21 @@ export const walletChainName = (chain: Chain): string => WALLET_CHAIN_NAME[chain
 
 const WALLET_BUSY = 'Your wallet already has a request open. Open it, finish or dismiss it, then try again.'
 
+/**
+ * Why a wallet did not end up on a chain, for a caller that says something different for each. The
+ * message is always fit to show as it is.
+ */
+export type ChainStopKind = 'declined' | 'busy' | 'cannot_add' | 'elsewhere'
+
+export class ChainStop extends Error {
+  readonly kind: ChainStopKind
+  constructor(kind: ChainStopKind, message: string) {
+    super(message)
+    this.name = 'ChainStop'
+    this.kind = kind
+  }
+}
+
 function walletBusy(e: unknown): boolean {
   return walletCode(e) === -32002 || /already pending|already processing/i.test(walletMessage(e))
 }
@@ -44,15 +59,15 @@ function walletBusy(e: unknown): boolean {
  * has never seen it. This used to exist for Arc alone; every registry chain now gets it.
  */
 export async function ensureEvmChain(eth: Eip1193, chain: Chain): Promise<void> {
-  if (chain.chainId == null || !chain.evmCompatible) throw new Error(`${chain.name} is not an EVM chain; a browser wallet cannot switch to it.`)
+  if (chain.chainId == null || !chain.evmCompatible) throw new ChainStop('elsewhere', `${chain.name} is not an EVM chain; a browser wallet cannot switch to it.`)
   const hex = evmChainHex(chain)
   if ((await readChainHex(eth)) === hex) return
   const switchTo = () => eth.request({ method: 'wallet_switchEthereumChain', params: [{ chainId: hex }] })
   try {
     await switchTo()
   } catch (err) {
-    if (isWalletRejection(err)) throw new Error(`You declined to switch your wallet to ${chain.name}.`)
-    if (walletBusy(err)) throw new Error(WALLET_BUSY)
+    if (isWalletRejection(err)) throw new ChainStop('declined', `You declined to switch your wallet to ${chain.name}.`)
+    if (walletBusy(err)) throw new ChainStop('busy', WALLET_BUSY)
     // "I do not know this chain" arrives in several shapes: 4902, a -32603 wrapping 4902 in
     // data.originalError (MetaMask mobile, some Rabby builds), or text only. Matching one
     // shape is what used to leave people with "switch your wallet" and nothing to press.
@@ -69,11 +84,12 @@ export async function ensureEvmChain(eth: Eip1193, chain: Chain): Promise<void> 
         }],
       })
     } catch (addErr) {
-      if (isWalletRejection(addErr)) throw new Error(`You declined to add ${chain.name} to your wallet.`)
-      if (walletBusy(addErr)) throw new Error(WALLET_BUSY)
+      if (isWalletRejection(addErr)) throw new ChainStop('declined', `You declined to add ${chain.name} to your wallet.`)
+      if (walletBusy(addErr)) throw new ChainStop('busy', WALLET_BUSY)
       // A phone wallet connected without this chain lands here, with a library's own error text
       // that means nothing to the person reading it, so that text is not shown.
-      throw new Error(
+      throw new ChainStop(
+        'cannot_add',
         `Your wallet could not add ${chain.name}. The simplest way is a computer browser with the MetaMask or Rabby extension. ` +
           `With a phone wallet, add it in the wallet first (chain id ${chain.chainId}, RPC ${chain.rpcUrl ?? 'not published'}), then forget the wallet on this page and connect it again.`,
       )
@@ -82,7 +98,8 @@ export async function ensureEvmChain(eth: Eip1193, chain: Chain): Promise<void> 
     try {
       await switchTo()
     } catch (again) {
-      if (isWalletRejection(again)) throw new Error(`You declined to switch your wallet to ${chain.name}.`)
+      if (isWalletRejection(again)) throw new ChainStop('declined', `You declined to switch your wallet to ${chain.name}.`)
+      if (walletBusy(again)) throw new ChainStop('busy', WALLET_BUSY)
     }
   }
   // The wallet's own answer decides, not the absence of an error: a switch that "succeeded"
@@ -91,7 +108,7 @@ export async function ensureEvmChain(eth: Eip1193, chain: Chain): Promise<void> 
     if ((await readChainHex(eth)) === hex) return
     await new Promise((r) => setTimeout(r, 250))
   }
-  throw new Error(`Your wallet is still on another network. Switch it to ${chain.name}, then try again.`)
+  throw new ChainStop('elsewhere', `Your wallet is still on another network. Switch it to ${chain.name}, then try again.`)
 }
 
 /**

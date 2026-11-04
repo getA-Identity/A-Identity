@@ -9,7 +9,7 @@
  * the suite watches happen, not a line it searches for.
  */
 import type { Hex } from 'viem'
-import { ensureEvmChain, isWalletRejection, type Eip1193 } from '../evm-chain.ts'
+import { ChainStop, ensureEvmChain, isWalletRejection, type ChainStopKind, type Eip1193 } from '../evm-chain.ts'
 import type { PreparedTx } from './vault-write'
 import { FEE_FLOOR_WEI, sameAddress } from './vault-rules.ts'
 
@@ -33,6 +33,7 @@ export type TxFailureCode =
   | 'no_wallet'
   | 'rejected'
   | 'wrong_chain'
+  | 'chain_not_added'
   | 'account_mismatch'
   | 'wallet_pending'
   | 'fee_too_low'
@@ -90,6 +91,14 @@ export function failureOf(e: unknown): TxFailure {
   return { code: 'wallet_error', message: msg || 'The wallet stopped the request without saying why.' }
 }
 
+/** Each way a wallet can stay off the chain has its own notice: only one of them means "switch". */
+const CHAIN_STOP_CODE: Record<ChainStopKind, TxFailureCode> = {
+  declined: 'rejected',
+  busy: 'wallet_pending',
+  cannot_add: 'chain_not_added',
+  elsewhere: 'wrong_chain',
+}
+
 const hex = (n: bigint | number) => `0x${n.toString(16)}`
 
 /**
@@ -108,7 +117,7 @@ export async function sendPrepared(provider: Eip1193, p: PreparedTx, onStep: (s:
   try {
     await ensureEvmChain(provider, p.chain)
   } catch (e) {
-    throw txStop(isWalletRejection(e) ? 'rejected' : 'wrong_chain', messageOf(e) || `Your wallet could not switch to ${p.chain.name}.`)
+    throw e instanceof ChainStop ? txStop(CHAIN_STOP_CODE[e.kind], e.message) : new TxStop(failureOf(e))
   }
   let walletChain: number
   let account: string | undefined

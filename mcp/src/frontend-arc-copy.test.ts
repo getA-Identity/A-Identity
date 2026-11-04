@@ -2,6 +2,7 @@ import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
+import { feesFor, gasLimitFor } from './verify-then-pay/prepare.js'
 
 /**
  * What the Arc vault page tells someone about to put in real USDC, held against the contract and
@@ -40,6 +41,22 @@ const copy = async () => (await import(repoUrl('src/lib/arc/deploy-copy.ts').hre
 const rules = async () => (await import(repoUrl('src/lib/arc/vault-rules.ts').href)) as Rules
 const evm = async () => (await import(repoUrl('src/lib/evm-chain.ts').href)) as EvmChain
 const chains = async () => ((await import(repoUrl('src/lib/chains.ts').href)) as { CHAIN_BY_ID: Record<string, ChainLike> }).CHAIN_BY_ID
+
+type Failure = { code: string; message: string }
+type Send = { sendPrepared: (w: Wallet, p: unknown, onStep: (s: string) => void) => Promise<unknown>; failureOf: (e: unknown) => Failure }
+type Explain = { explainFailure: (f: Failure) => { title: string; body?: string; next: string } }
+type Reread = {
+  REREAD_MS: number
+  BEHIND_MS: number
+  rereadMs: (step: string, behind: boolean) => number | null
+  newerRead: <T>(held: T | null, read: T) => T
+}
+type TxRules = { setupStep: (s: unknown, prepared: boolean, snapshot: unknown) => string }
+
+const send = async () => (await import(repoUrl('src/lib/arc/send.ts').href)) as Send
+const explain = async () => (await import(repoUrl('src/lib/arc/failure-explain.ts').href)) as Explain
+const reread = async () => (await import(repoUrl('src/lib/arc/vault-reread.ts').href)) as Reread
+const txRules = async () => (await import(repoUrl('src/lib/arc/tx-rules.ts').href)) as TxRules
 
 const FLOW = 'src/components/app/arc/DeployFlow.tsx'
 const CONTRACT = 'mcp/contracts/AgentSpendPolicy.sol'
@@ -144,17 +161,39 @@ test('no sentence offers an owner payment the page has no button for', async () 
 test('the last screen says the agent key needs USDC of its own, and the figure is what a payment can cost', async () => {
   const c = await copy()
   const r = await rules()
-  // The operator signs pay() and so pays for it: this is the gas one payment was measured at.
+  // The operator signs pay() and so pays for it: this is the gas one payment was measured at. What
+  // the paid check demands of the key is the gas limit, the estimate plus its margin, at the max fee.
+  assert.match(repo('mcp/src/verify-then-pay/core.ts'), /const need = gasLimitFor\(sim\.gas\) \* fees\.fees\.maxFeePerGas/)
   const { maxFeePerGas } = r.feeFields(r.FEE_FLOOR_WEI, 1_000_000_000n)
-  const paymentUsdc = Number(116_370n * maxFeePerGas) / 1e18
-  assert.equal(c.AGENT_PAYMENT_FEE_AT_MOST, `about ${paymentUsdc.toFixed(3)} USDC`)
+  const quoted = feesFor(r.FEE_FLOOR_WEI)
+  assert.ok(quoted.ok)
+  assert.equal(quoted.fees.maxFeePerGas, maxFeePerGas, 'the page and the paid check price a payment alike')
+  assert.equal(r.gasWithMargin(116_370n), gasLimitFor(116_370n))
+  const needWei = gasLimitFor(116_370n) * maxFeePerGas
+  const needUsdc = Number(needWei) / 1e18
+  assert.equal(c.AGENT_PAYMENT_FEE_AT_MOST, `about ${(Math.ceil(needUsdc * 1000) / 1000).toFixed(3)} USDC`)
+  // The amount it names passes the check that would otherwise answer InsufficientGas.
+  const named = BigInt(Math.round(Number(/[\d.]+/.exec(c.AGENT_PAYMENT_FEE_AT_MOST)?.[0]) * 1e6)) * 1_000_000_000_000n
+  assert.ok(named >= needWei, `${named} wei is below the ${needWei} wei the check demands`)
   assert.match(c.AGENT_KEY_FEES, /from its own balance/)
   assert.match(c.AGENT_KEY_FEES, /The vault's USDC cannot pay that fee/)
   assert.ok(c.GIVE_THE_AGENT.includes(c.AGENT_KEY_FEES))
-  assert.match(c.GIVE_THE_AGENT, /Circle Gateway balance/)
   const flow = repo(FLOW)
   assert.match(flow, /\{GIVE_THE_AGENT\}/)
   assert.match(flow, /\{AGENT_KEY_CAN\} \{AGENT_KEY_CANNOT\} \{AGENT_KEY_FEES\}/)
+})
+
+test('only verify-then-pay is said to need a Gateway balance, because a check can also be paid from plain USDC', async () => {
+  const c = await copy()
+  // The rail that needs none: on Arc Mainnet the registry declares a token to settle in by EIP-3009.
+  const { CHAINS } = (await import('./chains/registry.js')) as unknown as { CHAINS: { id: string; payment?: { note?: string } }[] }
+  assert.match(CHAINS.find((x) => x.id === 'arc-mainnet')?.payment?.note ?? '', /our own EIP-3009 facilitator \(the buyer signs/)
+  assert.match(repo('mcp/src/http/x402-3009-routes.ts'), /\/api\/x402\/tools\//)
+  // The path that does: its 402 says to sign from a Circle Gateway balance.
+  assert.match(repo('mcp/src/verify-then-pay/core.ts'), /from your Circle Gateway balance/)
+  assert.match(c.GIVE_THE_AGENT, /If your agent uses verify-then-pay .* it also needs a Circle Gateway balance\./)
+  assert.match(c.GIVE_THE_AGENT, /paid from plain USDC the agent holds, with no Gateway balance/)
+  assert.doesNotMatch(c.GIVE_THE_AGENT, /To buy checks through A-Identity/)
 })
 
 test('the balance the page asks for is what its own check needs, and the review is not said to show every fee', async () => {
@@ -183,9 +222,126 @@ test('the failure list does not promise a clean slate to a wallet error, and nam
   assert.match(declined.then, /Nothing was sent/)
   assert.doesNotMatch(errored.then, /^Nothing was sent/)
   assert.match(errored.then, /activity list/)
+  assert.match(errored.then, /do not send it again/)
   const reload = c.IF_A_STEP_FAILS.find((f) => /reloaded/.test(f.when))
   assert.match(reload?.then ?? '', /press Deploy a vault you own/)
   assert.match(repo('src/components/app/arc/VaultPicker.tsx'), /Deploy a vault you own/, 'the button that sentence names')
+})
+
+test('a wallet error with no hash is followed on the chain at steps 2 and 3, so the page does carry on', async () => {
+  const c = await copy()
+  const { REREAD_MS, BEHIND_MS, rereadMs, newerRead } = await reread()
+  const { setupStep } = await txRules()
+  assert.match(c.IF_A_STEP_FAILS.find((f) => /error/.test(f.when))?.then ?? '', /carries on when it lands/)
+  // The steps a wallet error leaves the page on, with no record to follow, are read again like the pending ones.
+  for (const step of ['expiry', 'expiry-pending', 'fund', 'fund-pending']) assert.equal(rereadMs(step, false), REREAD_MS, step)
+  for (const step of ['form', 'review', 'sending', 'deploying', 'deploy-failed', 'done']) assert.equal(rereadMs(step, false), null, step)
+  assert.equal(rereadMs('done', true), BEHIND_MS)
+  const flow = repo(FLOW)
+  assert.match(flow, /const every = rereadMs\(step, fundedReadBehind\)/)
+  assert.match(flow, /setInterval\(\(\) => void readBack\(\), every\)/)
+  // And such a read is enough to move on: no record exists, and the vault's own state decides.
+  const vault = '0x1111111111111111111111111111111111111111'
+  const setup = { network: 'eip155:1', vault, funding: 500_000n }
+  const read = (over: Record<string, unknown>) => ({ address: vault, network: 'eip155:1', block: 10n, sessionKeyExpiry: 0n, balance: 0n, ...over })
+  assert.equal(setupStep(setup, false, read({})), 'expiry')
+  assert.equal(setupStep(setup, false, read({ sessionKeyExpiry: 5n })), 'fund')
+  assert.equal(setupStep(setup, false, read({ sessionKeyExpiry: 5n, balance: 500_000n })), 'done')
+  // A host behind the last read cannot put a step that moved on back where it was.
+  const landed = read({ block: 11n, sessionKeyExpiry: 5n })
+  const behind = read({ block: 10n })
+  assert.equal(newerRead(landed, behind), landed)
+  assert.equal(newerRead(behind, landed), landed)
+  assert.equal(newerRead(null, behind), behind)
+  assert.equal(newerRead(read({ address: '0x2222222222222222222222222222222222222222', block: 99n }), behind), behind, 'another vault says nothing about this one')
+  assert.match(flow, /setSnapshot\(\(held\) => newerRead\(held, r\.data\)\)/)
+  // A wallet promise left open cannot hold the page once the chain has moved step 2 on, and its failure goes with it.
+  assert.match(flow, /was === 'expiry' && step !== 'expiry' && step !== 'expiry-pending'\) \{\s+release\('expiry'\)\s+setFailure\(null\)/)
+  // A transfer of less than planned never reaches the funding, so the page says what the vault holds.
+  assert.match(flow, /liveVault\.balance > 0n[\s\S]{0,260}The vault already holds/)
+  // The notice beside the button agrees with the list: a wallet error is not simply "try again".
+  const { explainFailure } = await explain()
+  const told = explainFailure({ code: 'wallet_error', message: 'Internal JSON-RPC error.' })
+  assert.match(told.next, /activity list/)
+  assert.match(told.next, /do not send it again/)
+})
+
+test('a wallet that stays off the network says why, and only a wrong network is told to switch', async () => {
+  const { sendPrepared, failureOf } = await send()
+  const { explainFailure } = await explain()
+  const { ensureEvmChain } = await evm()
+  const r = await rules()
+  const mainnet = (await chains())['arc-mainnet']
+  const OWNER = '0x1111111111111111111111111111111111111111'
+  const prepared = { action: 'freeze', chain: mainnet, from: OWNER, to: '0x2222222222222222222222222222222222222222', data: '0x', gas: 52_000n, maxFeePerGas: r.FEE_FLOOR_WEI, maxPriorityFeePerGas: 0n }
+  const attempt = async (answers: Record<string, (params?: unknown[]) => unknown>) => {
+    const { wallet, calls } = walletWithout(answers)
+    let failure: Failure | null = null
+    await sendPrepared(wallet, prepared, () => {}).catch((e) => {
+      failure = failureOf(e)
+    })
+    assert.ok(failure, 'the send went through')
+    assert.equal(calls.some((x) => x.method === 'eth_sendTransaction'), false, 'nothing is sent off the network')
+    return { failure: failure as Failure, told: explainFailure(failure), calls }
+  }
+  const busyError = Object.assign(new Error('Request already pending'), { code: -32002 })
+
+  // A prompt already open, on the first switch.
+  const busy = await attempt({ wallet_switchEthereumChain: fails(busyError) })
+  assert.equal(busy.failure.code, 'wallet_pending')
+  assert.match(busy.told.title, /already has a request open/)
+  assert.doesNotMatch(busy.told.title, /network/)
+  assert.doesNotMatch(busy.told.next, /Switch/)
+  assert.equal(busy.calls.some((x) => x.method === 'wallet_addEthereumChain'), false)
+
+  // Or on the add, or on the switch after the add: the same.
+  const busyAdding = await attempt({ wallet_switchEthereumChain: fails(new Error('Unrecognized chain')), wallet_addEthereumChain: fails(busyError) })
+  assert.equal(busyAdding.failure.code, 'wallet_pending')
+  let switches = 0
+  const busyAfter = await attempt({
+    wallet_switchEthereumChain: () => {
+      if (switches++ === 0) throw new Error('Unrecognized chain')
+      throw busyError
+    },
+    wallet_addEthereumChain: () => null,
+  })
+  assert.equal(busyAfter.failure.code, 'wallet_pending')
+
+  // A wallet that cannot add the chain: the next step agrees with the sentence above it.
+  const cannot = await attempt({ wallet_switchEthereumChain: fails(new Error('Unrecognized chain')), wallet_addEthereumChain: fails(new Error('Missing or invalid. request()')) })
+  assert.equal(cannot.failure.code, 'chain_not_added')
+  assert.match(cannot.told.title, /could not add this network/)
+  assert.match(cannot.told.body ?? '', /computer browser/)
+  assert.doesNotMatch(cannot.told.next, /Switch/)
+  assert.match(cannot.told.next, /Nothing was sent/)
+
+  // A person's no is a no, whichever screen it was on.
+  const no = Object.assign(new Error('User rejected'), { code: 4001 })
+  const declined = await attempt({ wallet_switchEthereumChain: fails(no) })
+  assert.equal(declined.failure.code, 'rejected')
+  assert.match(declined.told.title, /You declined/)
+  const declinedAdd = await attempt({ wallet_switchEthereumChain: fails(new Error('Unrecognized chain')), wallet_addEthereumChain: fails(no) })
+  assert.equal(declinedAdd.failure.code, 'rejected')
+
+  // Only a wallet that really is elsewhere hears about switching.
+  const stuck = await attempt({ wallet_switchEthereumChain: () => null })
+  assert.equal(stuck.failure.code, 'wrong_chain')
+  assert.match(stuck.told.next, /Switch the network/)
+  assert.match(stuck.failure.message, /still on another network/)
+
+  // A wallet that fails in a way this page did not name is not called a wrong network either.
+  const odd: Wallet = {
+    request: async ({ method }) => {
+      if (method === 'eth_chainId') throw new Error('The wallet is disconnected')
+      throw new Error(`the fake wallet does not answer ${method}`)
+    },
+  }
+  await assert.rejects(ensureEvmChain(odd, mainnet), /disconnected/)
+  const oddFailure = await sendPrepared(odd, prepared, () => {}).then(
+    () => assert.fail('the send went through'),
+    (e) => failureOf(e),
+  )
+  assert.equal(oddFailure.code, 'wallet_error')
 })
 
 test('the wallet is asked to add Arc Mainnet under the public name, and the page warns before that screen', async () => {
@@ -278,7 +434,7 @@ test('a wrong account connected first has a way out on the page, and funding it 
   assert.match(hook, /setError\(PHONE_ACCOUNT_WAY_OUT\)/)
   assert.match(hook, /setError\(ACCOUNT_UNCHANGED\)/)
   // The advice that used to send people to fund the agent's key.
-  const notice = repo('src/components/app/arc/FailureNotice.tsx')
+  const notice = repo('src/lib/arc/failure-explain.ts')
   assert.match(notice, /Check that this is the account holding your USDC/)
   assert.doesNotMatch(notice, /next: 'Send a little USDC to this account/)
   assert.match(c.WRONG_ACCOUNT, /press Use another account/)

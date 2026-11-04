@@ -18,8 +18,13 @@ export const CALL_FEE_ABOUT = 'about 0.001 USDC'
  * because each is the most it can cost. Held against vault-rules.ts in frontend-arc-copy.test.ts.
  */
 export const BALANCE_NEEDED_ABOUT = 'about 0.06 USDC'
-/** What one agent payment can cost the agent's key: about 116,000 gas at the page's max fee. */
-export const AGENT_PAYMENT_FEE_AT_MOST = 'about 0.005 USDC'
+/**
+ * What the agent's key must hold for one payment: about 116,000 gas plus the 20% margin, at the max
+ * fee, rounded up. It is the gas limit that counts, not the estimate: verify-then-pay refuses a key
+ * below this before pay() is ever sent, and a node checks the same thing up front. Held against
+ * verify-then-pay/prepare.ts in frontend-arc-copy.test.ts.
+ */
+export const AGENT_PAYMENT_FEE_AT_MOST = 'about 0.006 USDC'
 
 export const WHAT_IS_A_VAULT =
   'A vault is a small contract that holds USDC for your agent. Your agent can spend from it only within the limits you set here. While you hold the account that owns it, you can freeze it or take the USDC back at any time.'
@@ -69,7 +74,7 @@ export const REVIEW_LINE = 'This contract has had internal reviews and no outsid
 /** What each way of failing means, and what to do. Every one is true at every step of the setup. */
 export const IF_A_STEP_FAILS: readonly { when: string; then: string }[] = [
   { when: 'You pressed decline', then: 'Nothing was sent and nothing was spent. Press the button again when you are ready.' },
-  { when: 'Your wallet showed an error', then: "Look at its activity list first. If nothing is there, nothing was sent, and this page offers a way to try again. If the transaction is there, wait for it: this page carries on when it lands." },
+  { when: 'Your wallet showed an error', then: "Look at its activity list first. If nothing is there, nothing was sent, and this page offers a way to try again. If the transaction is there, do not send it again. Wait for it: this page checks every few seconds and carries on when it lands." },
   { when: 'You reloaded the page or closed the tab', then: 'Your place is saved in this browser. Open this page again. If your setup does not show, press Deploy a vault you own and it carries on. A phone wallet may need connecting again.' },
   { when: 'The page keeps waiting and nothing seems to happen', then: "Open your wallet and look at its activity list. Do not sign a new transaction until you have looked: the first one may still go through." },
   { when: 'A transaction failed on the network', then: 'Its network fee is spent. The USDC you meant to send is still in your wallet. The page says what to do next.' },
@@ -117,4 +122,4 @@ export const NO_HASH_LINE = "This page did not see the transaction that created 
 export const AFTER_SETUP =
   'You can freeze the vault, change its limits or take USDC out at any time from its page, as long as you hold the owner account and it has a little USDC for the fee.'
 
-export const GIVE_THE_AGENT = `Next, give your agent this vault's address. ${AGENT_KEY_FEES} To buy checks through A-Identity, the agent also needs a Circle Gateway balance.`
+export const GIVE_THE_AGENT = `Next, give your agent this vault's address. ${AGENT_KEY_FEES} If your agent uses verify-then-pay (A-Identity checks a payee, then your agent pays), it also needs a Circle Gateway balance. A check bought on its own can be paid from plain USDC the agent holds, with no Gateway balance.`

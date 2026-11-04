@@ -30,6 +30,7 @@ import { loadSetup, type SetupState, type TxRecord } from '../../../lib/arc/pend
 import { FUND_RISK } from '../../../lib/arc/ours'
 import { deployReadback } from '../../../lib/arc/receipt'
 import { deployEnd, fundingUnresolved, liveOf, predictedVault, readBeforeFunding, setupDrift, setupStep, vaultToLookFor, withRecord } from '../../../lib/arc/tx-rules'
+import { REREAD_MS, newerRead, rereadMs } from '../../../lib/arc/vault-reread'
 import {
   ARC_CHAINS,
   addressUrl,
@@ -82,10 +83,6 @@ import { useVaultCount } from './useVaultCount'
 const INPUT =
   'mt-1 w-full rounded-lg border border-border bg-card px-3 py-2 text-sm text-foreground outline-none focus:border-accent focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-60'
 
-/** While a step waits on the chain (a pending expiry or funding), the vault is read again this often. */
-const REREAD_MS = 10_000
-/** How soon a read from before the funding's block is tried again: a host catches up in seconds. */
-const BEHIND_MS = 3_000
 /** While a deploy has no hash, the address it should create is looked at this often. */
 const LOOK_MS = 15_000
 /** How long a wallet that has not answered is waited on before the page says what else it is doing. */
@@ -212,7 +209,7 @@ export default function DeployFlow({
     if (!readAddress) return
     const r = await readVault(chain, readAddress)
     if (r.ok) {
-      setSnapshot(r.data)
+      setSnapshot((held) => newerRead(held, r.data))
       setSnapshotNote(null)
     } else {
       setSnapshotNote(`The vault could not be read just now (${r.failure.reason}). Its state is shown once a read succeeds.`)
@@ -224,13 +221,27 @@ export default function DeployFlow({
   useEffect(() => {
     if (step !== 'expiry' && step !== 'expiry-pending' && step !== 'fund' && step !== 'fund-pending' && step !== 'done' && !created) return
     void readBack()
-    // A pending step is decided by the chain as much as by its receipt: a transaction that will
-    // never land must not hold the setup, and a value set by any other means counts. The last
-    // screen must not leave a balance from before the funding standing either.
-    if (step !== 'expiry-pending' && step !== 'fund-pending' && !fundedReadBehind) return
-    const t = setInterval(() => void readBack(), fundedReadBehind ? BEHIND_MS : REREAD_MS)
+    // A step is decided by the chain as much as by a receipt: a transaction that will never land
+    // must not hold the setup, a value set by any other means counts, and a wallet error can leave
+    // a transaction on its way with no hash here to follow. The last screen must not leave a balance
+    // from before the funding standing either.
+    const every = rereadMs(step, fundedReadBehind)
+    if (every === null) return
+    const t = setInterval(() => void readBack(), every)
     return () => clearInterval(t)
   }, [step, created, readBack, fundedReadBehind])
+
+  // The chain moved step 2 on with the wallet's answer still out: its promise may never settle (a
+  // phone browser suspended while the wallet app was open), and a failure from before no longer applies.
+  const stepWas = useRef(step)
+  useEffect(() => {
+    const was = stepWas.current
+    stepWas.current = step
+    if (was === 'expiry' && step !== 'expiry' && step !== 'expiry-pending') {
+      release('expiry')
+      setFailure(null)
+    }
+  }, [step, release, setFailure])
 
   // A deploy with no hash back, or one no longer tracked, can still create the vault: look for it
   // where it should be, and take it only if it reads back exactly as this setup asked.
@@ -244,10 +255,11 @@ export default function DeployFlow({
       // The wallet's promise may never settle (a phone browser suspended while the wallet app was
       // open), and the vault is here, so the page moves on rather than wait on it.
       release('deploy')
+      setFailure(null)
       setPrepared(null)
       track('arc_vault_deploy', { network: networkWord(chain), outcome: 'found_without_receipt' })
     }
-  }, [chain, patch, target, release])
+  }, [chain, patch, target, release, setFailure])
 
   // From the moment the wallet is asked: `target` exists only once the setup holds that intent, and
   // the hash may never come back to this page while the vault lands.
@@ -863,6 +875,12 @@ export default function DeployFlow({
                 I checked: send USDC again
               </Button>
             </div>
+          )}
+          {step === 'fund' && liveVault && liveVault.balance > 0n && (
+            <p role="status" className="rounded-xl border border-warn/30 bg-warn/10 px-3 py-2 text-xs text-foreground/85">
+              The vault already holds {formatUnitsExact(liveVault.balance, decimals)} USDC, less than the {formatUnitsExact(setup.funding, decimals)} USDC you
+              planned. Check your wallet's activity before you send more.
+            </p>
           )}
           {step === 'fund' && liveVault && provider && account && !ownerMismatch && (!fundingUnresolved(setup.fundTx) || refundConfirmed) && (
             <div className="rounded-xl border border-border bg-background/60 p-4">
