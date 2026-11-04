@@ -125,13 +125,23 @@ export function capsRefusal(dailyCap: bigint | null, autoApproveMax: bigint | nu
 export type FormEdit<T> = { value: T; base: T }
 
 /**
+ * The edit a form may still hold at this read: gone for good once the live value leaves the one it
+ * was made against. A value that later comes back does not bring the edit back with it (useLiveField
+ * applies this on every read).
+ */
+export function editThatHolds<T>(edit: FormEdit<T> | null, live: T): FormEdit<T> | null {
+  return edit !== null && edit.base === live ? edit : null
+}
+
+/**
  * What a form field shows: the owner's edit while the live value it was made against still holds,
  * otherwise the live value. A read that brings a different value drops the edit, so a form left
  * open cannot send back a value the chain no longer has. setPolicy writes both caps and the
  * allowlist flag in one call, so a stale flag here would switch an allowlist off unasked.
  */
 export function followLive<T>(edit: FormEdit<T> | null, live: T): T {
-  return edit !== null && edit.base === live ? edit.value : live
+  const held = editThatHolds(edit, live)
+  return held !== null ? held.value : live
 }
 
 /** The values a policy form or an end-date choice was built from. */
@@ -187,13 +197,17 @@ export function expiryRefusal(expiry: bigint): string | null {
 /**
  * What setting a new end date does to the key in place, or null when it wakes nothing. The end date
  * belongs to the vault, not to one key, so after a revoke or a lapse a new date turns the current
- * operator back on. After a revoke the owner has to say they know that first.
+ * operator back on. After a revoke the owner has to say they know that first. The page cannot tell
+ * whether the key was replaced after the revoke, so this is worded around the key set now, and a
+ * freeze holds whatever the date says, so it says when that key can really pay.
  */
-export function extendReArms(v: Pick<VaultSnapshot, 'sessionKeyExpiry' | 'expired' | 'operator'>): { text: string; mustTick: boolean } | null {
+export function extendReArms(v: Pick<VaultSnapshot, 'sessionKeyExpiry' | 'expired' | 'operator' | 'frozen'>): { text: string; mustTick: boolean; tick: string } | null {
   if (!v.expired || sameAddress(v.operator, ZERO_ADDRESS)) return null
+  const when = v.frozen ? 'once the vault is unfrozen' : 'as soon as this lands'
   return {
-    text: `This turns the same agent key back on (${v.operator}). The end date belongs to the vault, not to one key, so a new date wakes whichever key is set now. If this key may have leaked, replace it first.`,
+    text: `This turns on the agent key set now (${v.operator}), which can pay again ${when}. The end date belongs to the vault, not to one key, so a new date wakes whichever key is set now. If that is the old key and it may have leaked, replace it first. If you already replaced it, this is the right next step.`,
     mustTick: v.sessionKeyExpiry === REVOKED_SESSION_EXPIRY,
+    tick: `I know this key can pay again ${when}.`,
   }
 }
 
@@ -440,7 +454,7 @@ export function vaultHeadline(v: VaultSnapshot): AgentNow {
       canPay: true,
     }
   if (v.sessionKeyExpiry === REVOKED_SESSION_EXPIRY)
-    return { text: "Revoked: the vault's end date is in the past, so the current agent key cannot pay anything. A new end date turns that same key back on, so replace a key that may have leaked first.", tone: 'warn', state: 'Revoked', canPay: false }
+    return { text: "Revoked: the vault's end date is in the past, so the current agent key cannot pay anything. A new end date turns on the key set now. If that is the old key and it may have leaked, replace it first. If you already replaced it, setting the date is the right next step.", tone: 'warn', state: 'Revoked', canPay: false }
   if (v.expired)
     return { text: "The agent's key has expired: it cannot pay anything until the owner extends it.", tone: 'danger', state: 'Expired', canPay: false }
   if (readableDate(v.sessionKeyExpiry) === null)

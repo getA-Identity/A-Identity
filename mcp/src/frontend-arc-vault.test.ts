@@ -48,11 +48,12 @@ type Rules = {
   weiToUnitsFloor: (wei: bigint, nativeDecimals: number, tokenDecimals: number) => bigint
   capsRefusal: (dailyCap: bigint | null, autoApproveMax: bigint | null, decimals: number) => string | null
   followLive: <T>(edit: { value: T; base: T } | null, live: T) => T
+  editThatHolds: <T>(edit: { value: T; base: T } | null, live: T) => { value: T; base: T } | null
   ownerFormMoved: (
     shown: { dailyCap: bigint; autoApproveMax: bigint; allowlistEnabled: boolean; sessionKeyExpiry: bigint },
     live: { dailyCap: bigint; autoApproveMax: bigint; allowlistEnabled: boolean; sessionKeyExpiry: bigint },
   ) => string | null
-  extendReArms: (v: { sessionKeyExpiry: bigint; expired: boolean; operator: string }) => { text: string; mustTick: boolean } | null
+  extendReArms: (v: { sessionKeyExpiry: bigint; expired: boolean; operator: string; frozen?: boolean }) => { text: string; mustTick: boolean; tick: string } | null
   replaceKeyNotice: (v: { sessionKeyExpiry: bigint; expired: boolean }) => string
   sessionSecondsRefusal: (seconds: number) => string | null
   sessionExpiryFor: (chainNow: bigint, seconds: number) => bigint | null
@@ -1934,13 +1935,40 @@ test('a policy form left open cannot send back a flag or a cap the chain no long
   assert.equal(r.followLive({ value: '2', base: '1' }, '3'), '3')
   const form = codeOnly(repo('src/components/app/arc/OwnerControls.tsx'))
   assert.doesNotMatch(form, /useState\(vault\.allowlistEnabled\)|useState\(formatUnitsExact\(vault\.(dailyCap|autoApproveMax)/, 'a field is seeded once again')
-  assert.match(form, /const allowlist = followLive\(allowlistEdit, vault\.allowlistEnabled\)/)
-  assert.match(form, /const cap = followLive\(capEdit, liveCap\)/)
-  assert.match(form, /const ceiling = followLive\(ceilingEdit, liveCeiling\)/)
+  assert.match(form, /useLiveField\(vault\.allowlistEnabled\)/)
+  assert.match(form, /useLiveField\(formatUnitsExact\(vault\.dailyCap, vault\.decimals\)\)/)
+  assert.match(form, /useLiveField\(formatUnitsExact\(vault\.autoApproveMax, vault\.decimals\)\)/)
   // The Stellar form had the same seeding under a stable key, and now follows the same rule.
   const stellar = codeOnly(repo('src/components/app/stellar/OwnerControls.tsx'))
   assert.doesNotMatch(stellar, /useState\(vault\.allowlistEnabled\)/)
-  assert.match(stellar, /const allowlist = followLive\(allowlistEdit, vault\.allowlistEnabled\)/)
+  assert.match(stellar, /useLiveField\(vault\.allowlistEnabled\)/)
+})
+
+test('an edit the chain moved past stays gone when the old value comes back', async () => {
+  const r = await rules()
+  // What the hook does on every read: keep only the edit that holds, then show from what is kept.
+  const reads = <T,>(edit: { value: T; base: T }, lives: T[]) => {
+    let kept: { value: T; base: T } | null = edit
+    return lives.map((live) => {
+      kept = r.editThatHolds(kept, live)
+      return r.followLive(kept, live)
+    })
+  }
+  // The cap goes 10 to 5 from here, then back to 10 from another tab: the form shows 10, not the old 5.
+  assert.deepEqual(reads({ value: '5', base: '10' }, ['10', '5', '10']), ['5', '5', '10'])
+  // The flag, where a revived edit would turn an allowlist off inside a later caps change.
+  assert.deepEqual(reads({ value: false, base: true }, [true, false, true]), [false, false, true])
+  // An edit no read has moved past is still the owner's.
+  assert.deepEqual(reads({ value: '7', base: '10' }, ['10', '10']), ['7', '7'])
+  // The hook applies the rule during render, and both forms use it and clear after a submit.
+  const hook = codeOnly(repo('src/components/app/arc/useLiveField.ts'))
+  assert.match(hook, /const held = editThatHolds\(edit, live\)/)
+  assert.match(hook, /if \(held !== edit\) setEdit\(held\)/)
+  const arc = codeOnly(repo('src/components/app/arc/OwnerControls.tsx'))
+  const stellar = codeOnly(repo('src/components/app/stellar/OwnerControls.tsx'))
+  assert.match(arc, /if \(hash === null\) return\s+clearCap\(\)\s+clearCeiling\(\)\s+clearAllowlist\(\)/)
+  assert.match(stellar, /clearCap\(\)\s+clearCeiling\(\)\s+clearAllowlist\(\)\s+return r/)
+  for (const form of [arc, stellar]) assert.doesNotMatch(form, /followLive/, 'a form reads an edit without dropping a stale one')
 })
 
 test('a write built from what the page showed is refused when the chain has moved since', async () => {
@@ -1959,24 +1987,33 @@ test('a write built from what the page showed is refused when the chain has move
   assert.match(write, /if \(call\.fn !== 'setPolicy' && call\.fn !== 'extend' && call\.fn !== 'setOperator'\) return/)
 })
 
-test('a new end date after a revoke or a lapse says it turns the same key back on, and a revoke needs a tick', async () => {
+test('a new end date after a revoke or a lapse names the key set now, and a revoke needs a tick', async () => {
   const r = await rules()
   const operator = '0x2222222222222222222222222222222222222222'
   const revoked = r.extendReArms({ sessionKeyExpiry: r.REVOKED_SESSION_EXPIRY, expired: true, operator })
   assert.equal(revoked?.mustTick, true)
-  assert.match(revoked?.text ?? '', /turns the same agent key back on/)
+  assert.match(revoked?.text ?? '', /turns on the agent key set now/)
   assert.ok(revoked?.text.includes(operator), 'the owner is not told which key')
-  assert.match(revoked?.text ?? '', /may have leaked, replace it first/)
+  assert.match(revoked?.text ?? '', /If that is the old key and it may have leaked, replace it first/)
+  // The page cannot tell a replacement happened, so an owner who followed the safe order is told they are right.
+  assert.match(revoked?.text ?? '', /If you already replaced it, this is the right next step/)
+  assert.doesNotMatch(revoked?.text ?? '', /same/)
+  assert.equal(revoked?.tick, 'I know this key can pay again as soon as this lands.')
+  // On a frozen vault pay still reverts, so neither the text nor the tick says it pays when this lands.
+  const frozen = r.extendReArms({ sessionKeyExpiry: r.REVOKED_SESSION_EXPIRY, expired: true, operator, frozen: true })
+  assert.equal(frozen?.tick, 'I know this key can pay again once the vault is unfrozen.')
+  assert.match(frozen?.text ?? '', /can pay again once the vault is unfrozen/)
+  assert.doesNotMatch(frozen?.text ?? '', /as soon as this lands/)
   const lapsed = r.extendReArms({ sessionKeyExpiry: 1_700_000_000n, expired: true, operator })
   assert.equal(lapsed?.mustTick, false, 'a normal renewal stays one click')
-  assert.match(lapsed?.text ?? '', /turns the same agent key back on/)
+  assert.match(lapsed?.text ?? '', /turns on the agent key set now/)
   assert.equal(r.extendReArms({ sessionKeyExpiry: 1_900_000_000n, expired: false, operator }), null, 'a live key is not being woken')
   assert.equal(r.extendReArms({ sessionKeyExpiry: 0n, expired: false, operator }), null, 'the first end date wakes nothing')
   assert.equal(r.extendReArms({ sessionKeyExpiry: 1n, expired: true, operator: r.ZERO_ADDRESS }), null, 'no key to wake')
   const form = codeOnly(repo('src/components/app/arc/OwnerControls.tsx'))
   assert.match(form, /const reArms = extendReArms\(vault\)/)
   assert.match(form, /disabled=\{busy !== null \|\| held \|\| \(reArms\?\.mustTick === true && !knowsReArm\)\}/)
-  assert.match(form, /I know this key can pay again as soon as this lands\./)
+  assert.match(form, /\{reArms\.tick\}/)
   // The revoke button itself stays free of it: stopping an agent is one click.
   assert.match(form, /disabled=\{busy !== null \|\| vault\.expired \|\| revokeSent\}/)
 })
@@ -1994,8 +2031,11 @@ test('replacing the key says it stops the old key and what the new key keeps', a
   // A headline after a replacement is about the vault's date, not a key nobody revoked.
   const v = { frozen: false, operator: '0x2222222222222222222222222222222222222222', allowlistEnabled: false, balance: 1n, remainingToday: 1n, decimals: 6 }
   const h = r.vaultHeadline({ ...v, sessionKeyExpiry: r.REVOKED_SESSION_EXPIRY, expired: true })
-  assert.match(h.text, /A new end date turns that same key back on/)
-  assert.doesNotMatch(`${h.text} ${repo('src/components/app/arc/VaultStatus.tsx')}`, /The owner ended/)
+  assert.match(h.text, /A new end date turns on the key set now/)
+  assert.match(h.text, /If you already replaced it, setting the date is the right next step/)
+  const status = repo('src/components/app/arc/VaultStatus.tsx')
+  assert.match(status, /A new end date turns on the key set now\{v\.frozen \? ', which can pay again once the vault is unfrozen' : ''\}/)
+  assert.doesNotMatch(`${h.text} ${status}`, /The owner ended|that same key/)
 })
 
 test('a 0 typed anywhere on the Arc page stops at the same rule, wired in every place it is sent from', () => {

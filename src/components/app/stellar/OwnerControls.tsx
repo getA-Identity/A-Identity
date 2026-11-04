@@ -12,7 +12,7 @@
  */
 import { useState, type FormEvent, type ReactNode } from 'react'
 import { Loader2, LogIn } from 'lucide-react'
-import { followLive, type FormEdit } from '../../../lib/arc/vault-rules'
+import { useLiveField } from '../arc/useLiveField'
 import { ownerAction, STEP_LABEL } from '../../../lib/stellar/vault'
 import { parseAmount, type VaultRead } from '../../../lib/stellar/vault-read'
 import type { WalletSigner } from '../../../lib/wallet/types'
@@ -141,12 +141,9 @@ function PolicyForm({
   /** A transaction for this vault is still pending: nothing new is prepared until it is not. */
   held: boolean
 }) {
-  const [capEdit, setCapEdit] = useState<FormEdit<string> | null>(null)
-  const [ceilingEdit, setCeilingEdit] = useState<FormEdit<string> | null>(null)
-  const [allowlistEdit, setAllowlistEdit] = useState<FormEdit<boolean> | null>(null)
-  const cap = followLive(capEdit, vault.dailyCap.display)
-  const ceiling = followLive(ceilingEdit, vault.autoApproveMax.display)
-  const allowlist = followLive(allowlistEdit, vault.allowlistEnabled)
+  const [cap, setCap, clearCap] = useLiveField(vault.dailyCap.display)
+  const [ceiling, setCeiling, clearCeiling] = useLiveField(vault.autoApproveMax.display)
+  const [allowlist, setAllowlist, clearAllowlist] = useLiveField(vault.allowlistEnabled)
   const [invalid, setInvalid] = useState<string | null>(null)
   const { busy, step, failure, run } = useOwnerRun()
   const sym = vault.tokenSymbol || 'USDC'
@@ -175,6 +172,9 @@ function PolicyForm({
         onStep,
       })
       onReceipt(receiptOf('Policy change', vault.network, r))
+      clearCap()
+      clearCeiling()
+      clearAllowlist()
       return r
     })
   }
@@ -193,7 +193,7 @@ function PolicyForm({
             id={`cap-${id}`}
             inputMode="decimal"
             value={cap}
-            onChange={(e) => setCapEdit({ value: e.target.value, base: vault.dailyCap.display })}
+            onChange={(e) => setCap(e.target.value)}
             className="mt-1 w-full rounded-lg border border-border bg-card px-3 py-2 text-sm text-foreground outline-none focus:border-accent focus-visible:ring-2 focus-visible:ring-ring"
           />
         </div>
@@ -205,12 +205,12 @@ function PolicyForm({
             id={`ceiling-${id}`}
             inputMode="decimal"
             value={ceiling}
-            onChange={(e) => setCeilingEdit({ value: e.target.value, base: vault.autoApproveMax.display })}
+            onChange={(e) => setCeiling(e.target.value)}
             className="mt-1 w-full rounded-lg border border-border bg-card px-3 py-2 text-sm text-foreground outline-none focus:border-accent focus-visible:ring-2 focus-visible:ring-ring"
           />
         </div>
         <label className="flex items-center gap-2 text-sm text-foreground">
-          <input type="checkbox" checked={allowlist} onChange={(e) => setAllowlistEdit({ value: e.target.checked, base: vault.allowlistEnabled })} className="h-4 w-4 accent-accent" />
+          <input type="checkbox" checked={allowlist} onChange={(e) => setAllowlist(e.target.checked)} className="h-4 w-4 accent-accent" />
           Enforce the allowlist
         </label>
         {!allowlist && vault.allowlistEnabled && (

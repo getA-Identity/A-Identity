@@ -32,13 +32,11 @@ import {
   capsRefusal,
   capsWarning,
   extendReArms,
-  followLive,
   formatUnitsExact,
   operatorRefusal,
   parseUnitsExact,
   replaceKeyNotice,
   withdrawRefusal,
-  type FormEdit,
 } from '../../../lib/arc/vault-rules'
 import { STEP_LABEL, prepareOwnerCall, preparedStale, sendPrepared, type OwnerCall, type PreparedTx, type TxAction } from '../../../lib/arc/vault-write'
 import type { Eip1193 } from '../../../lib/wallets'
@@ -46,6 +44,7 @@ import { Button } from '../../ui/button'
 import FailureNotice from './FailureNotice'
 import PreparedView from './PreparedView'
 import { recordOf, useArcTx } from './useArcTx'
+import { useLiveField } from './useLiveField'
 
 const INPUT =
   'mt-1 w-full rounded-lg border border-border bg-card px-3 py-2 text-sm text-foreground outline-none focus:border-accent focus-visible:ring-2 focus-visible:ring-ring'
@@ -180,7 +179,7 @@ function SessionKeyControl(props: Shared) {
           {reArms.mustTick && (
             <label className="mt-2 flex items-center gap-2 font-semibold text-foreground">
               <input type="checkbox" checked={knowsReArm} onChange={(e) => setKnowsReArm(e.target.checked)} className="h-4 w-4 accent-accent" />
-              I know this key can pay again as soon as this lands.
+              {reArms.tick}
             </label>
           )}
         </div>
@@ -238,14 +237,9 @@ function PolicyControl(props: Shared) {
   const { vault, held } = props
   // Every field follows the latest read until the owner edits it, and an edit lasts only while the
   // value it was made against holds: setPolicy writes all three, so a stale one would overwrite the chain.
-  const liveCap = formatUnitsExact(vault.dailyCap, vault.decimals)
-  const liveCeiling = formatUnitsExact(vault.autoApproveMax, vault.decimals)
-  const [capEdit, setCapEdit] = useState<FormEdit<string> | null>(null)
-  const [ceilingEdit, setCeilingEdit] = useState<FormEdit<string> | null>(null)
-  const [allowlistEdit, setAllowlistEdit] = useState<FormEdit<boolean> | null>(null)
-  const cap = followLive(capEdit, liveCap)
-  const ceiling = followLive(ceilingEdit, liveCeiling)
-  const allowlist = followLive(allowlistEdit, vault.allowlistEnabled)
+  const [cap, setCap, clearCap] = useLiveField(formatUnitsExact(vault.dailyCap, vault.decimals))
+  const [ceiling, setCeiling, clearCeiling] = useLiveField(formatUnitsExact(vault.autoApproveMax, vault.decimals))
+  const [allowlist, setAllowlist, clearAllowlist] = useLiveField(vault.allowlistEnabled)
   const [invalid, setInvalid] = useState<string | null>(null)
   const { busy, step, failure, act } = useOwnerAction(props)
   const id = vault.address.slice(2, 10)
@@ -261,7 +255,12 @@ function PolicyControl(props: Shared) {
       return
     }
     setInvalid(null)
-    void act('policy', { fn: 'setPolicy', dailyCap: c, autoApproveMax: a, allowlistEnabled: allowlist })
+    void act('policy', { fn: 'setPolicy', dailyCap: c, autoApproveMax: a, allowlistEnabled: allowlist }).then((hash) => {
+      if (hash === null) return
+      clearCap()
+      clearCeiling()
+      clearAllowlist()
+    })
   }
 
   return (
@@ -274,16 +273,16 @@ function PolicyControl(props: Shared) {
           <label htmlFor={`cap-${id}`} className="text-[11px] font-semibold text-foreground/65">
             Daily cap (USDC, above 0)
           </label>
-          <input id={`cap-${id}`} inputMode="decimal" value={cap} onChange={(e) => setCapEdit({ value: e.target.value, base: liveCap })} className={INPUT} />
+          <input id={`cap-${id}`} inputMode="decimal" value={cap} onChange={(e) => setCap(e.target.value)} className={INPUT} />
         </div>
         <div>
           <label htmlFor={`ceiling-${id}`} className="text-[11px] font-semibold text-foreground/65">
             Largest auto-approved payment (USDC, above 0)
           </label>
-          <input id={`ceiling-${id}`} inputMode="decimal" value={ceiling} onChange={(e) => setCeilingEdit({ value: e.target.value, base: liveCeiling })} className={INPUT} />
+          <input id={`ceiling-${id}`} inputMode="decimal" value={ceiling} onChange={(e) => setCeiling(e.target.value)} className={INPUT} />
         </div>
         <label className="flex items-center gap-2 text-sm text-foreground">
-          <input type="checkbox" checked={allowlist} onChange={(e) => setAllowlistEdit({ value: e.target.checked, base: vault.allowlistEnabled })} className="h-4 w-4 accent-accent" />
+          <input type="checkbox" checked={allowlist} onChange={(e) => setAllowlist(e.target.checked)} className="h-4 w-4 accent-accent" />
           Enforce the allowlist
         </label>
         {allowlist && !vault.allowlistEnabled && (

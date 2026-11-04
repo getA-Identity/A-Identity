@@ -173,7 +173,7 @@ export default function VaultStatus({
             </p>
           ) : v.sessionKeyExpiry === REVOKED_SESSION_EXPIRY ? (
             <p className="text-sm text-foreground">
-              <Chip tone="warn">Revoked</Chip> The end date is in the past, so the current key cannot pay. A new end date turns that same key back on: the date belongs to the vault, not to one key.
+              <Chip tone="warn">Revoked</Chip> The end date is in the past, so the current key cannot pay. A new end date turns on the key set now{v.frozen ? ', which can pay again once the vault is unfrozen' : ''}: the date belongs to the vault, not to one key.
             </p>
           ) : readableDate(v.sessionKeyExpiry) === null ? (
             <p className="text-sm text-foreground">
