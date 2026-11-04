@@ -13,6 +13,7 @@ import {
   admitVaultDeploy,
   admittedVaultsFromStore,
   everyHost,
+  listAdmittedVaults,
   plainRefusals,
   refusalIsRetryable,
   runAdmission,
@@ -250,24 +251,41 @@ test('two posts racing past the lookup still leave one row', async () => {
   assert.equal(read.rows.length, 1)
 })
 
-test('an admitted vault the store could not take is not called admitted, and neither is an unreadable store', async () => {
-  const failing = { ...routeDeps(), persist: async () => ({ ok: false as const, reason: 'disk full' }) }
+test('an admitted vault the store could not take is not called admitted, and neither is an unreadable store', async (t) => {
+  const logged = t.mock.method(console, 'error', () => {})
+  const loggedText = () => JSON.stringify(logged.mock.calls.map((c) => c.arguments))
+
+  const failing = { ...routeDeps(), persist: async () => ({ ok: false as const, reason: 'disk full at /var/data' }) }
   const unstored = await admitVaultDeploy({ deployTx: TX }, failing)
   assert.equal(unstored.httpStatus, 503)
-  assert.equal(unstored.answer.status, 'unavailable')
-  assert.match(JSON.stringify(unstored.answer), /disk full/)
+  assert.deepEqual(unstored.answer, { status: 'unavailable', retryable: true, reason: 'every check passed but the vault could not be recorded' })
+  assert.match(loggedText(), /disk full at \/var\/data/, 'the raw text stays in the server log')
 
   const calls: string[] = []
-  const blind = { ...routeDeps({}, { calls }), findByTx: async () => ({ ok: false as const, reason: 'db down' }) }
+  const blind = { ...routeDeps({}, { calls }), findByTx: async () => ({ ok: false as const, reason: 'connect ECONNREFUSED db.internal:5432' }) }
   const unread = await admitVaultDeploy({ deployTx: TX }, blind)
   assert.equal(unread.httpStatus, 503)
-  assert.equal(unread.answer.status, 'unavailable')
+  assert.deepEqual(unread.answer, { status: 'unavailable', retryable: true, reason: 'the list of admitted vaults could not be read' })
   assert.equal(calls.length, 0)
+  assert.match(loggedText(), /db\.internal/)
 
-  const broken = { ...routeDeps(), admit: async () => { throw new Error('registry gone') } }
+  const broken = { ...routeDeps(), admit: async () => { throw new Error('registry gone at https://key@rpc.example') } }
   const thrown = await admitVaultDeploy({ deployTx: TX }, broken)
   assert.equal(thrown.httpStatus, 503)
-  assert.equal(thrown.answer.status, 'unavailable')
+  assert.deepEqual(thrown.answer, { status: 'unavailable', retryable: true, reason: 'the deploy could not be checked just now, so nothing was decided' })
+  assert.match(loggedText(), /registry gone/)
+})
+
+test('GET /api/arc/vaults publishes a short fixed message for a store it cannot read, and logs the raw text', async (t) => {
+  const logged = t.mock.method(console, 'error', () => {})
+  const raw = 'password authentication failed for user "render" at db.internal:5432'
+  const down: ArcVaultStoreIo = { getPool: async () => ({ query: async () => { throw new Error(raw) } }) }
+  const { httpStatus, body } = await listAdmittedVaults({}, down)
+  assert.equal(httpStatus, 503)
+  assert.equal(body.readable, false)
+  assert.equal(body.reason, 'the list of admitted vaults could not be read')
+  assert.ok(!JSON.stringify(body).includes('db.internal'), 'the store error does not reach the answer')
+  assert.ok(JSON.stringify(logged.mock.calls.map((c) => c.arguments)).includes('db.internal'), 'it reaches the log')
 })
 
 test('a body that is not a transaction hash on Arc Mainnet is refused before anything is read', async () => {

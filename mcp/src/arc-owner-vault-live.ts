@@ -428,6 +428,17 @@ export type VaultAdmissionAnswer =
   | { status: 'unavailable'; retryable: true; reason: string }
   | { status: 'invalid'; reason: string }
 
+/**
+ * What the route publishes when a read or a write of its own fails. A store's or a client's error
+ * text can name a host, a table or a credential, so it goes to the server log and never to the
+ * answer. A check's detail is another matter: it comes through shortRpcError, which keeps one line
+ * and takes out the endpoint.
+ */
+const LIST_UNREADABLE = 'the list of admitted vaults could not be read'
+const NOT_DECIDED = 'the deploy could not be checked just now, so nothing was decided'
+const NOT_RECORDED = 'every check passed but the vault could not be recorded'
+const logRouteFailure = (what: string, raw: unknown) => console.error(`[arc-vaults] ${what}:`, raw instanceof Error ? raw.message : raw)
+
 const ADMITTED_NOTE =
   "Deploy sent by the owner's own wallet (receipt.from is owner()), its creation input is AgentSpendPolicyBytecode plus its constructor args, and its owner is none of our keys. Admitted automatically by POST /api/arc/vaults; the chain cannot say whose wallet this is, so the owner is not identified."
 
@@ -448,14 +459,18 @@ export async function admitVaultDeploy(body: unknown, deps: VaultAdmissionDeps):
   const deployTx = b.deployTx.toLowerCase()
 
   const known = await deps.findByTx(deployTx)
-  if (!known.ok) return { httpStatus: 503, answer: { status: 'unavailable', retryable: true, reason: `the list of admitted vaults could not be read: ${known.reason}` } }
+  if (!known.ok) {
+    logRouteFailure(LIST_UNREADABLE, known.reason)
+    return { httpStatus: 503, answer: { status: 'unavailable', retryable: true, reason: LIST_UNREADABLE } }
+  }
   if (known.row) return { httpStatus: 200, answer: admittedAnswer(known.row, true) }
 
   let run: AdmissionRun
   try {
     run = await deps.admit(deployTx)
   } catch (e) {
-    return { httpStatus: 503, answer: { status: 'unavailable', retryable: true, reason: e instanceof Error ? e.message : String(e) } }
+    logRouteFailure(NOT_DECIDED, e)
+    return { httpStatus: 503, answer: { status: 'unavailable', retryable: true, reason: NOT_DECIDED } }
   }
   if (!run.verdict.admitted) {
     return { httpStatus: 200, answer: { status: 'refused', vault: run.vault, deployTx, retryable: refusalIsRetryable(run), reasons: plainRefusals(run.verdict) } }
@@ -477,7 +492,8 @@ export async function admitVaultDeploy(body: unknown, deps: VaultAdmissionDeps):
   }
   const stored = await deps.persist(rec)
   if (!stored.ok) {
-    return { httpStatus: 503, answer: { status: 'unavailable', retryable: true, reason: `every check passed but the vault could not be recorded: ${stored.reason}` } }
+    logRouteFailure(NOT_RECORDED, stored.reason)
+    return { httpStatus: 503, answer: { status: 'unavailable', retryable: true, reason: NOT_RECORDED } }
   }
   return { httpStatus: 200, answer: admittedAnswer(rec, !stored.inserted) }
 }
@@ -556,7 +572,8 @@ export async function listAdmittedVaults(env: NodeJS.ProcessEnv = process.env, i
       },
     }
   } catch (e) {
-    return { httpStatus: 503, body: { readable: false, reason: e instanceof Error ? e.message : String(e), admission: admissionReadiness(ours) } }
+    logRouteFailure(LIST_UNREADABLE, e)
+    return { httpStatus: 503, body: { readable: false, reason: LIST_UNREADABLE, admission: admissionReadiness(ours) } }
   }
 }
 
